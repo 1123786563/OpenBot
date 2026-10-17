@@ -10,6 +10,7 @@ import {
 import type {
   PaymentOrderRecord,
   PaymentProviderId,
+  PaymentService,
   PaymentStore,
 } from "../src/billing/payments/types";
 import { BillingError } from "../src/billing/types";
@@ -29,6 +30,12 @@ const addMonths = (from: Date, months: number) => {
   to.setUTCMonth(to.getUTCMonth() + months);
   return to;
 };
+
+/**
+ * The personal PayerRef the routes resolve from the session; the tests pass it alongside the
+ * audit actor, and several pins deliberately make the two DIFFERENT people.
+ */
+const ref = (id: string) => ({ kind: "personal" as const, id });
 
 function memoryStore(): PaymentStore {
   const orders = new Map<string, PaymentOrderRecord>();
@@ -52,6 +59,7 @@ function memoryStore(): PaymentStore {
     paidAt: null,
     terminalAt: null,
     createdBy: "admin-1",
+    ownerPayerRef: null,
     createdAt: new Date(clockMs),
     version: 0,
   };
@@ -82,12 +90,16 @@ function memoryStore(): PaymentStore {
     async readOrder(id) {
       return orders.get(id) ?? null;
     },
-    async readPendingOrder(planCode, provider) {
+    async readPendingOrder(planCode, provider, owner) {
       for (const order of [...orders.values()].reverse()) {
         if (
           order.planCode === planCode &&
           order.provider === provider &&
-          order.status === "pending"
+          order.status === "pending" &&
+          // Owner-scoped, like the real store: a replay never answers another person's order.
+          (!owner ||
+            (order.ownerPayerRef?.kind === owner.kind &&
+              order.ownerPayerRef?.id === owner.id))
         ) {
           return order;
         }
@@ -467,12 +479,14 @@ describe("purchase ordering", () => {
       cycle: "monthly",
       provider: "alipay",
       createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
     });
     const second = await service.createPurchase({
       planCode: "pro",
       cycle: "monthly",
       provider: "alipay",
       createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
     });
     expect(second.order.orderId).toBe(first.order.orderId);
     expect((await store.readOrder(first.order.orderId))?.version).toBe(0);
@@ -490,6 +504,7 @@ describe("purchase ordering", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 15 * 60_000),
       createdBy: "someone-else",
+      ownerPayerRef: ref("admin-1"),
       checkoutPayload: "qr-winner",
     });
     await store.setCheckoutPayload(winner.id, "qr-winner");
@@ -497,9 +512,13 @@ describe("purchase ordering", () => {
       ...store,
       async insertOrder(input) {
         // Simulate the index conflict: no insert, the winner's row back, the conflict named.
+        // Owner-scoped, like the real store's conflict resolution: the winner this double
+        // answers is the SAME OWNER's row (the concurrent double-submit case), never another
+        // person's — the service separately refuses a cross-owner conflict answer.
         const existing = await store.readPendingOrder(
           input.planCode,
           input.provider,
+          input.ownerPayerRef,
         );
         return { order: existing!, conflict: "pending-pair" as const };
       },
@@ -510,6 +529,7 @@ describe("purchase ordering", () => {
       cycle: "monthly",
       provider: "alipay",
       createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
     });
     expect(result.order.orderId).toBe(winner.id);
     expect(result.order.checkout).toEqual({
@@ -527,6 +547,7 @@ describe("purchase ordering", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 15 * 60_000),
       createdBy: "admin-2",
+      ownerPayerRef: ref("admin-2"),
       checkoutPayload: "qr-existing",
     });
     const alipay = fakeProvider("alipay");
@@ -546,6 +567,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "wechat",
         createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
       }),
     ).rejects.toMatchObject({
       refusal: { reason: "pending-purchase", pendingPlanCode: "team" },
@@ -563,6 +585,7 @@ describe("purchase ordering", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 15 * 60_000),
       createdBy: "admin-2",
+      ownerPayerRef: ref("admin-2"),
       checkoutPayload: "qr-existing",
     });
     const store: PaymentStore = {
@@ -590,6 +613,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "wechat",
         createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
       }),
     ).rejects.toMatchObject({
       refusal: { reason: "pending-purchase", pendingPlanCode: "team" },
@@ -606,6 +630,7 @@ describe("purchase ordering", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 15 * 60_000),
       createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
       checkoutPayload: "qr-existing",
     });
     const store: PaymentStore = {
@@ -632,6 +657,7 @@ describe("purchase ordering", () => {
       cycle: "monthly",
       provider: "wechat",
       createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
     });
 
     expect(result.order.orderId).toBe(existing.id);
@@ -648,12 +674,14 @@ describe("purchase ordering", () => {
       cycle: "monthly",
       provider: "alipay",
       createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
     });
     const second = await service.createPurchase({
       planCode: "pro",
       cycle: "monthly",
       provider: "wechat",
       createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
     });
     expect(second.order.orderId).not.toBe(first.order.orderId);
     expect(second.order.provider).toBe("wechat");
@@ -673,6 +701,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "alipay",
         createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
       }),
     ).rejects.toMatchObject({
       refusal: { reason: "active-subscription", activePlanCode: "pro" },
@@ -687,6 +716,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "alipay",
         createdBy: "a",
+      ownerPayerRef: ref("a"),
       }),
     ).rejects.toBeInstanceOf(PurchaseError);
   });
@@ -700,6 +730,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "wechat",
         createdBy: "a",
+      ownerPayerRef: ref("a"),
       }),
     ).rejects.toMatchObject({ refusal: { reason: "unknown-provider" } });
     // The refusal left no stranded order behind: nothing pending on either channel, and the
@@ -734,6 +765,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "alipay",
         createdBy: "a",
+      ownerPayerRef: ref("a"),
       }),
     ).rejects.toThrow(/unreachable/);
     const pending = await store.readPendingOrder("pro", "alipay");
@@ -747,8 +779,129 @@ describe("purchase ordering", () => {
       cycle: "monthly",
       provider: "alipay",
       createdBy: "a",
+      ownerPayerRef: ref("a"),
     });
     expect(replayed.order.orderId).toBe(pending?.id);
+  });
+
+  test("a purchase without a resolvable owner is refused before any order row exists", async () => {
+    const { service, store } = buildService();
+    const missing = { planCode: "pro", cycle: "monthly" as const, provider: "alipay" as const, createdBy: "a" };
+    await expect(
+      // The input the runtime can see when a caller forgets the resolved owner entirely.
+      service.createPurchase(
+        missing as unknown as Parameters<PaymentService["createPurchase"]>[0],
+      ),
+    ).rejects.toMatchObject({ refusal: { reason: "missing-owner" } });
+    await expect(
+      service.createPurchase({
+        planCode: "pro",
+        cycle: "monthly",
+        provider: "alipay",
+        createdBy: "a",
+        ownerPayerRef: { kind: "unknown_owner", id: "openbot-deployment-x" },
+      }),
+    ).rejects.toMatchObject({ refusal: { reason: "missing-owner" } });
+    await expect(
+      service.createPurchase({
+        planCode: "pro",
+        cycle: "monthly",
+        provider: "alipay",
+        createdBy: "a",
+        ownerPayerRef: { kind: "personal", id: " padded" },
+      }),
+    ).rejects.toMatchObject({ refusal: { reason: "missing-owner" } });
+    expect(await store.readPendingPurchase()).toBeNull();
+  });
+
+  test("the created order binds the resolved PayerRef, and the audit actor rides beside it", async () => {
+    const { service, store } = buildService();
+    const { order } = await service.createPurchase({
+      planCode: "pro",
+      cycle: "monthly",
+      provider: "alipay",
+      createdBy: "clerk-1",
+      ownerPayerRef: ref("buyer-1"),
+    });
+    const record = await store.readOrder(order.orderId);
+    expect(record?.ownerPayerRef).toEqual({ kind: "personal", id: "buyer-1" });
+    expect(record?.createdBy).toBe("clerk-1");
+  });
+
+  test("another person's pending order is neither replayed nor canceled — the request just refuses", async () => {
+    const store = memoryStore();
+    const { order: someoneElses } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 15 * 60_000),
+      createdBy: "clerk-b",
+      ownerPayerRef: ref("buyer-b"),
+      checkoutPayload: "qr-b",
+    });
+    const alipay = fakeProvider("alipay");
+    const { service } = buildService({ store, providers: [alipay] });
+    // Same plan, same channel, different person: NOT a replay — nobody sees buyer-b's QR.
+    await expect(
+      service.createPurchase({
+        planCode: "pro",
+        cycle: "monthly",
+        provider: "alipay",
+        createdBy: "clerk-a",
+        ownerPayerRef: ref("buyer-a"),
+      }),
+    ).rejects.toMatchObject({
+      refusal: { reason: "pending-purchase", pendingPlanCode: "pro" },
+    });
+    // Same plan, other channel, different person: the channel-switch path must not cancel
+    // buyer-b's open order either.
+    const wechat = fakeProvider("wechat");
+    const switched = buildService({
+      store,
+      providers: [alipay, wechat],
+    });
+    await expect(
+      switched.service.createPurchase({
+        planCode: "pro",
+        cycle: "monthly",
+        provider: "wechat",
+        createdBy: "clerk-a",
+        ownerPayerRef: ref("buyer-a"),
+      }),
+    ).rejects.toMatchObject({
+      refusal: { reason: "pending-purchase", pendingPlanCode: "pro" },
+    });
+    expect(wechat.creates).toEqual([]);
+    // The foreign order survives, untouched: still pending, still buyer-b's.
+    const survived = await store.readOrder(someoneElses.id);
+    expect(survived?.status).toBe("pending");
+    expect(survived?.ownerPayerRef).toEqual({ kind: "personal", id: "buyer-b" });
+    expect(survived?.version).toBe(0);
+    expect(alipay.closes).toEqual([]);
+  });
+
+  test("the replay answers only the owner's own pending order", async () => {
+    const store = memoryStore();
+    const { order: mine } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 15 * 60_000),
+      createdBy: "clerk-a",
+      ownerPayerRef: ref("buyer-a"),
+      checkoutPayload: "qr-a",
+    });
+    const { service } = buildService({ store });
+    const replayed = await service.createPurchase({
+      planCode: "pro",
+      cycle: "monthly",
+      provider: "alipay",
+      createdBy: "clerk-a",
+      ownerPayerRef: ref("buyer-a"),
+    });
+    expect(replayed.order.orderId).toBe(mine.id);
   });
 });
 
@@ -770,6 +923,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     store.confirmPaid = async () => {
@@ -797,6 +951,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.confirmPaid({
@@ -815,6 +970,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     store.recordAnomaly = async (event) => {
@@ -852,6 +1008,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.confirmPaid({
@@ -870,6 +1027,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const wechat = fakeProvider("wechat", {
@@ -914,6 +1072,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.confirmPaid({
@@ -932,6 +1091,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const originalConfirmPaid = store.confirmPaid.bind(store);
@@ -992,6 +1152,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.blockOrder({
@@ -1034,6 +1195,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.blockOrder({
@@ -1090,6 +1252,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     store.blockOrder = async () => {
@@ -1117,6 +1280,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     store.recordAnomaly = async () => {
@@ -1148,6 +1312,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.expireOrder(order.id, order.version);
@@ -1214,6 +1379,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const { service } = buildService({ providers: [alipay], store });
@@ -1246,6 +1412,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const alipay = fakeProvider("alipay", {
@@ -1290,6 +1457,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const alipay = fakeProvider("alipay", {
@@ -1321,6 +1489,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const alipay = fakeProvider("alipay", {
@@ -1350,6 +1519,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const lago = fakeLago();
@@ -1391,6 +1561,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.expireOrder(order.id, order.version);
@@ -1425,6 +1596,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const alipay = fakeProvider("alipay", {
@@ -1465,6 +1637,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const exactStart = "2026-01-01T00:00:00.000Z";
@@ -1508,6 +1681,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.expireOrder(order.id, order.version);
@@ -1540,6 +1714,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.cancelOrder(older.id, older.version);
@@ -1555,6 +1730,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.confirmPaid({
@@ -1602,6 +1778,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.confirmPaid({
@@ -1630,6 +1807,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const wechat = fakeProvider("wechat", {
@@ -1668,6 +1846,7 @@ describe("callback triage", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.blockOrder({
@@ -1704,6 +1883,7 @@ describe("the poll's read side", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.setCheckoutPayload(order.id, "qr-open");
@@ -1738,6 +1918,7 @@ describe("the poll's read side", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.setCheckoutPayload(order.id, "qr-open");
@@ -1766,6 +1947,7 @@ describe("cancel", () => {
       cycle: "monthly",
       provider: "alipay",
       createdBy: "a",
+      ownerPayerRef: ref("a"),
     });
     const first = await service.cancelPurchase(order.orderId);
     expect(first.outcome).toBe("canceled");
@@ -1785,6 +1967,7 @@ describe("cancel", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.confirmPaid({
@@ -1803,6 +1986,7 @@ describe("cancel", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs - 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     await store.expireOrder(expired.id, expired.version);
@@ -1828,6 +2012,7 @@ describe("activation gate", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const alipay = fakeProvider("alipay", {
@@ -1995,6 +2180,7 @@ describe("activation gate", () => {
         provider: "alipay",
         cycle: "monthly",
         createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
       }),
     ).rejects.toMatchObject({
       refusal: { reason: "active-subscription", activePlanCode: "pro" },
@@ -2010,6 +2196,7 @@ describe("activation gate", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const unreadable = () =>
@@ -2051,6 +2238,7 @@ describe("activation gate", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const unreadable = () =>
@@ -2184,6 +2372,7 @@ describe("the plan allowance payout", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const alipay = fakeProvider("alipay", {
@@ -2225,6 +2414,7 @@ describe("the plan allowance payout", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const alipay = fakeProvider("alipay", {
@@ -2290,6 +2480,7 @@ describe("the expiry sweep", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs - 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const { order: stale } = await store.insertOrder({
@@ -2299,6 +2490,7 @@ describe("the expiry sweep", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs - 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const alipay = fakeProvider("alipay", {
@@ -2331,6 +2523,7 @@ describe("the expiry sweep", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs - 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     const alipay = fakeProvider("alipay", {
@@ -2352,6 +2545,7 @@ describe("the expiry sweep", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs - 60_000),
       createdBy: "a",
+      ownerPayerRef: ref("a"),
       checkoutPayload: null,
     });
     // The shape a 404 (WeChat) or ACQ.TRADE_NOT_EXIST (Alipay) is spelled as: a verdict, not a
@@ -2380,6 +2574,7 @@ describe("the currency gate (audit A5)", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 15 * 60_000),
       createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
       checkoutPayload: null,
     });
     const { service } = buildService({
@@ -2423,6 +2618,7 @@ describe("the currency gate (audit A5)", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 15 * 60_000),
       createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
       checkoutPayload: null,
     });
     const { service } = buildService({

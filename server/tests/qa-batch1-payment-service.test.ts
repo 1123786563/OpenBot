@@ -54,6 +54,7 @@ function memoryStore(): PaymentStore & {
         paidAt: null,
         terminalAt: null,
         createdBy: "qa",
+        ownerPayerRef: { kind: "personal" as const, id: "qa" },
         createdAt: new Date(clockMs + serial),
         version: 0,
         ...input,
@@ -298,6 +299,7 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "qa",
+      ownerPayerRef: { kind: "personal" as const, id: "qa" },
       checkoutPayload: null,
     });
     // The first purchase pays through the callback path.
@@ -336,6 +338,7 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "qa",
+      ownerPayerRef: { kind: "personal" as const, id: "qa" },
       checkoutPayload: null,
     });
     const wechatDelivery: PaymentProvider = {
@@ -395,6 +398,7 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "qa",
+      ownerPayerRef: { kind: "personal" as const, id: "qa" },
       checkoutPayload: null,
     });
     const service = createPaymentService({
@@ -431,6 +435,7 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "qa",
+      ownerPayerRef: { kind: "personal" as const, id: "qa" },
       checkoutPayload: null,
     });
     const wechatService = createPaymentService({
@@ -519,6 +524,7 @@ describe("probe d: the payout keeps applied honest", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "qa",
+      ownerPayerRef: { kind: "personal" as const, id: "qa" },
       checkoutPayload: null,
     });
     const service = createPaymentService({
@@ -548,6 +554,7 @@ describe("probe d: the payout keeps applied honest", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "qa",
+      ownerPayerRef: { kind: "personal" as const, id: "qa" },
       checkoutPayload: null,
     });
     const service = createPaymentService({
@@ -578,6 +585,7 @@ describe("probe d: the payout keeps applied honest", () => {
       currency: "CNY",
       expiresAt: new Date(clockMs + 60_000),
       createdBy: "qa",
+      ownerPayerRef: { kind: "personal" as const, id: "qa" },
       checkoutPayload: null,
     });
     const failing = createPaymentService({
