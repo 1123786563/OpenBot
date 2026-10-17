@@ -5249,7 +5249,10 @@ const aiObservability = createAiObservabilityRoutes({
   // A listing that fails propagates: a 500 the page maps to its unavailable
   // fault, never a 200 with an empty list that reads as "nothing in scope".
   // (The T33-rev3 listBots minor, server side.)
-  listBots: (actor) => agentProfileStore.list(actor),
+  // R2-59: the enumeration is the store's unfiltered-by-sidebar listing — a
+  // Bot hidden from the caller's sidebar stays in the admin summary; the
+  // per-bot manage gate below still re-derives every scope's authorization.
+  listBots: (actor) => agentProfileStore.listAll(actor),
 });
 
 /*

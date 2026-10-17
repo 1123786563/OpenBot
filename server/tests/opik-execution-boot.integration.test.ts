@@ -282,13 +282,15 @@ test("the production boot's work-item lease outlives the per-case gateway budget
   // The sweep claimed the item: the lease is live and somebody owns it.
   expect(item?.owner).not.toBeNull();
   expect(item?.leaseUntil).not.toBeNull();
-  // The whole point (OCR m131): the production lease must outlast the runner's
-  // per-case gateway budget (execution-runner.ts's GATEWAY_CALL_TIMEOUT_MS). At
-  // the old 60s default the lease and the gateway timeout lapsed together — the
-  // taker-over marked the row unknown and refused the original worker's outcome
-  // write. Read live from the claimed row, not from a constant.
+  // The whole point (OCR m131, tightened by R2-36): the production lease must
+  // outlast the WORST single work item, which is no longer one gateway call —
+  // the judge composes a second one on top (evaluation call + judge call, two
+  // GATEWAY_CALL_TIMEOUT_MS budgets) before settlement even starts. At 2× the
+  // lease sat exactly at that composed boundary; the remaining lease must
+  // still exceed the whole worst case, not merely one of its two calls.
+  // Read live from the claimed row, not from a constant.
   const remainingMs = item.leaseUntil!.getTime() - Date.now();
-  expect(remainingMs).toBeGreaterThan(GATEWAY_CALL_TIMEOUT_MS);
+  expect(remainingMs).toBeGreaterThan(2 * GATEWAY_CALL_TIMEOUT_MS);
 
   releaseCase();
   await sweeping;

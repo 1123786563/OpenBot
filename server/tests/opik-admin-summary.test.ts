@@ -10,6 +10,8 @@
 // seam the export worker boots with, and the control-plane cancel seam the admin
 // people-revocation route calls.
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AgentProfile } from "../src/agents/profile-types";
@@ -344,6 +346,19 @@ describe("the T01 mount seam (Part 2 wiring)", () => {
     );
     expect(detail.status).toBe(503);
     expect(await detail.json()).toEqual({ error: "capability_missing" });
+  });
+
+  test("the boot wires the summary's bot enumeration without the sidebar hidden filter (R2-59)", () => {
+    // The assembly's listBots must use the store's unfiltered enumeration: a
+    // Bot hidden from the caller's sidebar is still in the admin summary's
+    // scope (the per-bot manage gate downstream re-checks authorization).
+    const indexSource = readFileSync(
+      join(import.meta.dir, "..", "src", "index.ts"),
+      "utf8",
+    );
+    expect(indexSource).toMatch(
+      /listBots:\s*\(actor\)\s*=>\s*agentProfileStore\.listAll\(actor\)/,
+    );
   });
 });
 
