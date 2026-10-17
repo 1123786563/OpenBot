@@ -260,5 +260,9 @@
   "gateway": {
     "load": "Could not load the gateway status.",
     "operation": "The gateway operation failed."
+  },
+  "modelSelection": {
+    "loadFailed": "Your model selection could not be loaded.",
+    "writeFailed": "Your model selection could not be saved."
   }
 }
