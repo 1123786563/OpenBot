@@ -748,6 +748,38 @@ describe("the three failure classes are explicit, never a 0", () => {
     }
   });
 
+  test("a lookbehind header does not swallow the rest of the pattern (R3-30)", () => {
+    // R3-30: the (?< branch scanned straight to `>` without first telling a
+    // lookbehind (`(?<=`, `(?<!` — never followed by `>`) from a named group,
+    // so the scan ran past the end of the pattern and every atom after the
+    // lookbehind was never parsed. `(?<=x)(a+)+` parsed as a lone lookbehind
+    // and the static ReDoS gate answered false on a classic catastrophic shape.
+    for (const pattern of [
+      "(?<=x)(a+)+",
+      "(?<!x)(\\w+)*",
+      "(?<=x)(?:[a-z]+)+",
+    ]) {
+      expect(regexHasNestedQuantifiers(pattern)).toBe(true);
+    }
+    // Honest negatives: a lookbehind is a zero-width guard, not a consuming
+    // group — patterns with a lookbehind but no nested quantifier stay false,
+    // and a named group still finds its `>` and reports its own body.
+    for (const pattern of [
+      "(?<=a)b",
+      "(?<!a)b",
+      "(?<=a)b+",
+      "(?<=^)(a+)",
+      "(?<!a)(b+)",
+      "(?<name>a+)",
+    ]) {
+      expect(regexHasNestedQuantifiers(pattern)).toBe(false);
+    }
+    // The `>` search is for named groups only — and their dangerous bodies
+    // still count, before or after a lookbehind.
+    expect(regexHasNestedQuantifiers("(?<name>a+)+")).toBe(true);
+    expect(regexHasNestedQuantifiers("(?<=x)y(?<!z)(\\d+)*")).toBe(true);
+  });
+
   test("evaluation timeout: budget exhaustion marks the unaffordable rules, deterministically", () => {
     const rs = rules([
       { id: "cheap", kind: "exact_match", expected: "Paris" },

@@ -585,3 +585,47 @@ test("the export list paginates and never inlines the artifact (R2-40)", async (
     expect(body.error).toBe("EXPORT_INPUT_INVALID");
   }
 });
+
+test("the store's list face pages in SQL and never reads the artifact column (R3-33)", async () => {
+  // Four jobs, three of them completed with real artifacts: the shape whose
+  // product (a jsonbArray up to the row cap) used to materialize on every
+  // list read, poll after poll (R3-33).
+  const created: string[] = [];
+  for (let index = 0; index < 3; index += 1) {
+    const job = await store.enqueue(scopeA, 100);
+    await store.markRunning(job.id);
+    await store.settleCompleted(job.id, [
+      projectRow({ id: `r33-trace-${index}`, status: "COMPLETED" }),
+    ]);
+    created.push(job.id);
+  }
+  const queued = await store.enqueue(scopeA, 100);
+  created.push(queued.id);
+
+  // The page is applied in SQL: limit=2 offset=1 answers exactly rows two and
+  // three of the newest-first order — not the whole history trimmed after.
+  const page = await store.list(scopeA, { limit: 2, offset: 1 });
+  expect(page).toHaveLength(2);
+  expect(page.map((job) => job.id)).toEqual([created[2], created[1]]);
+  for (const job of page) {
+    // The artifact is projected away in the query itself — the list face is
+    // the poll's read; the detail endpoint is the artifact's only carrier.
+    expect(job).not.toHaveProperty("artifact");
+    // The facts the route's list projection reads still ride along.
+    expect(job).toHaveProperty("state");
+    expect(job).toHaveProperty("rowCount");
+    expect(job).toHaveProperty("createdAt");
+  }
+
+  // Without a page, the store still answers the whole scope, newest first —
+  // the shape the worker and the scope-isolation reads have always used.
+  const all = await store.list(scopeA);
+  expect(all).toHaveLength(4);
+  expect(all.map((job) => job.id)).toEqual([...created].reverse());
+  for (const job of all) expect(job).not.toHaveProperty("artifact");
+
+  // The total is its own answered question, counted in the database under the
+  // same scope filter — the other scope's rows never enter either answer.
+  expect(await store.count(scopeA)).toBe(4);
+  expect(await store.count(scopeB)).toBe(0);
+});

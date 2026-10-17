@@ -205,6 +205,18 @@ const DEFAULT_POLL_MS = 2_000;
 
 export type ObservationExportJob = typeof aiObservationExportJobs.$inferSelect;
 
+/**
+ * The list face's row (R3-33): every fact about the job, never the artifact.
+ * A completed job's artifact is the rows themselves — a jsonbArray up to the
+ * row cap — and the list is what the 5-second poll reads, so the column is
+ * projected away in the query itself and the detail endpoint (`get`) remains
+ * the artifact's only carrier.
+ */
+export type ObservationExportJobListItem = Omit<
+  ObservationExportJob,
+  "artifact"
+>;
+
 export type ObservationExportStore = {
   /**
    * Queue one export of this scope's run observation data. One transaction
@@ -227,8 +239,24 @@ export type ObservationExportStore = {
     scope: ObservationScope,
     id: string,
   ): Promise<ObservationExportJob | null>;
-  /** This scope's jobs, newest first. */
-  list(scope: ObservationScope): Promise<readonly ObservationExportJob[]>;
+  /**
+   * This scope's jobs, newest first. The artifact column is projected away in
+   * the query itself (R3-33 — see `ObservationExportJobListItem`), and a
+   * `page` applies limit/offset in SQL: the pagination contract's numbers are
+   * answered by the database, not by materializing this scope's whole history
+   * to slice it in memory. No page means every row — the shape the
+   * worker-side and scope-isolation reads have always used.
+   */
+  list(
+    scope: ObservationScope,
+    page?: { limit: number; offset: number },
+  ): Promise<readonly ObservationExportJobListItem[]>;
+  /**
+   * The page envelope's `total`, counted under the same scope filter `list`
+   * answers. Its own query, because the page and the total are two questions
+   * and neither should force the other to materialize rows (R3-33).
+   */
+  count(scope: ObservationScope): Promise<number>;
   /**
    * The revocation seam: settle every queued or running job of one actor as
    * cancelled. Takes the actor id, not a scope, because it runs exactly when
@@ -382,10 +410,31 @@ export function createObservationExportStore(
       return rows[0] ?? null;
     },
 
-    async list(scope) {
+    async list(scope, page) {
       assertObservationScope(scope);
-      return db
-        .select()
+      // R3-33: the explicit column projection — every job fact, never the
+      // artifact — and the order is total (created_at desc, then id desc), so
+      // LIMIT/OFFSET pages cannot overlap or drop a row when two jobs share a
+      // created_at.
+      const query = db
+        .select({
+          id: aiObservationExportJobs.id,
+          scopeKey: aiObservationExportJobs.scopeKey,
+          actorId: aiObservationExportJobs.actorId,
+          botId: aiObservationExportJobs.botId,
+          state: aiObservationExportJobs.state,
+          rowLimit: aiObservationExportJobs.rowLimit,
+          rowCount: aiObservationExportJobs.rowCount,
+          errorCode: aiObservationExportJobs.errorCode,
+          redactionPolicyVersion:
+            aiObservationExportJobs.redactionPolicyVersion,
+          locatorWorkspace: aiObservationExportJobs.locatorWorkspace,
+          locatorProject: aiObservationExportJobs.locatorProject,
+          createdAt: aiObservationExportJobs.createdAt,
+          updatedAt: aiObservationExportJobs.updatedAt,
+          startedAt: aiObservationExportJobs.startedAt,
+          settledAt: aiObservationExportJobs.settledAt,
+        })
         .from(aiObservationExportJobs)
         .where(
           and(
@@ -393,7 +442,25 @@ export function createObservationExportStore(
             notPendingDeletion("export", aiObservationExportJobs.id),
           ),
         )
-        .orderBy(desc(aiObservationExportJobs.createdAt));
+        .orderBy(
+          desc(aiObservationExportJobs.createdAt),
+          desc(aiObservationExportJobs.id),
+        );
+      return page ? query.limit(page.limit).offset(page.offset) : query;
+    },
+
+    async count(scope) {
+      assertObservationScope(scope);
+      const [row] = await db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(aiObservationExportJobs)
+        .where(
+          and(
+            eq(aiObservationExportJobs.scopeKey, scope.key),
+            notPendingDeletion("export", aiObservationExportJobs.id),
+          ),
+        );
+      return row?.total ?? 0;
     },
 
     async cancelForActor(actorId) {
