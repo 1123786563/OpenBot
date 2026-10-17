@@ -30,6 +30,10 @@ import {
   type TranscriptionConfig,
   transcriptionConfig,
 } from "./dictation/config";
+import {
+  type ConversionRate,
+  parseConversionRate,
+} from "./gateway/conversion-rate";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
 
@@ -424,6 +428,13 @@ export type DeploymentConfig = {
    * environment and in the request headers the client sends — never in a log line or a response.
    */
   billing?: LagoBillingConfig;
+  /**
+   * The Bifrost gateway block. Absent means the deployment set none of its environment —
+   * which is legal: the conversion rate is *required before billing may be enabled*, not
+   * required to boot, so an unconfigured deployment starts with billing disabled and an
+   * explainable state (`readConversionRate()`), never a fallback rate.
+   */
+  gateway?: GatewayConfig;
   /**
    * The direct-collection channels, beside the billing projection above. Same absent-means-
    * unmounted contract: a deployment that configured no channel mounts no payment surface at all.
@@ -1358,6 +1369,18 @@ const MAX_CATALOG_CREDITS = Number(
 /** The largest integer cent amount a 32-bit `amount_cents` column can hold. */
 const MAX_STORED_CENTS = Number(MAX_STORED_CREDIT_UNITS);
 
+/**
+ * The Bifrost gateway configuration block.
+ *
+ * Only the USD→credits conversion rate lives here today. It is validated by the gateway module's
+ * one shared validator (`parseConversionRate`), the same one the administrator write path runs,
+ * and it carries no secret. Absent entirely when `GATEWAY_CREDIT_CONVERSION_RATE` is unset.
+ */
+export type GatewayConfig = {
+  /** 1 USD = this many credits, as an exact rational. An administrator's saved row overrides it. */
+  creditConversionRate?: ConversionRate;
+};
+
 export type LagoBillingConfig = {
   /** The provider origin, for example `https://api.getlago.com`. No path, no query, no fragment. */
   apiUrl: string;
@@ -1401,6 +1424,28 @@ export type LagoBillingConfig = {
  * silently wrong. A deployment that has configured none of it gets `undefined` and no billing
  * surface at all, which is the correct state of a free deployment.
  */
+function gatewayConfig(environment: Environment): GatewayConfig | undefined {
+  const raw = optional(environment, "GATEWAY_CREDIT_CONVERSION_RATE");
+  if (raw === undefined) return undefined;
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(raw);
+  } catch {
+    throw new Error(
+      'GATEWAY_CREDIT_CONVERSION_RATE must be valid JSON like { "numerator": "100", "denominator": "1" }',
+    );
+  }
+  const parsed = parseConversionRate(parsedJson);
+  if (!parsed.ok) {
+    throw new Error(
+      `GATEWAY_CREDIT_CONVERSION_RATE is invalid: ${parsed.issues
+        .map((issue) => issue.message)
+        .join("; ")}`,
+    );
+  }
+  return { creditConversionRate: parsed.rate };
+}
+
 function billingConfig(
   environment: Environment,
 ): LagoBillingConfig | undefined {
@@ -2756,6 +2801,7 @@ export function loadConfig(
   const workerSharedSecret = optional(environment, "WORKER_SHARED_SECRET");
   // Read once so the payments block can refuse a channel configured without its projection.
   const billing = billingConfig(environment);
+  const gateway = gatewayConfig(environment);
   const deploymentKey = keyEncryptionKey(environment);
   const webBotAuth = webBotAuthFromEnv(environment, {
     publicUrl,
@@ -2831,6 +2877,7 @@ export function loadConfig(
       : {}),
     computer: computerConfig(environment),
     billing,
+    ...(gateway ? { gateway } : {}),
     payments: paymentsConfig(environment, billing),
     handoff: handoffCaps(environment),
     ...(optional(environment, "AGENT_TOOL_TOKEN")
