@@ -82,6 +82,18 @@ export type SetupSessionWorkspaceInput = {
    * the tag alone.
    */
   mcpRelayBaseUrl?: string | null;
+  /**
+   * The session's dev-form /<label> mount (F-2, #365) — the preview origin's
+   * webappBasePathFor, threaded so the protected start script injects the
+   * mount env the dev-form preview's resource URLs need. Unset (host form,
+   * closed origin) or answering null for a LEGACY session (#367's D10 gate,
+   * webapp-generation.ts) leaves the script root-path — production unchanged,
+   * and a legacy app keeps its old cwd-fallback mount. May be async: the D10
+   * gate reads the workspace marker through the file API.
+   */
+  webappBasePathFor?: (
+    sessionId: string,
+  ) => Promise<string | null> | string | null;
 };
 
 export type WorkspaceApi = {
@@ -167,6 +179,7 @@ export async function setupSessionWorkspace(
       input.sessionId,
       input.config,
       input.webappPort,
+      input.webappBasePathFor,
     );
   }
 
