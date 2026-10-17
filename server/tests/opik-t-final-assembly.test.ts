@@ -261,6 +261,45 @@ describe("T-final M1: the ambient run-scope seam", () => {
     ).toBeNull();
   });
 
+  test("ownership is answered explicitly, never inferred (OCR h10)", async () => {
+    // The widened gate the enterprise seam reserved for (shared management,
+    // organization roles) could ship: it hands the
+    // profile to a non-owner, plain-role collaborator. The inference the resolver
+    // used to copy ("whoever manages is at least an admin") would mint that
+    // collaborator an admin-owned observation scope for every model call the run
+    // makes. The explicit answer refuses: owner or global admin, nothing else.
+    const widenedGate = createBuiltinRunScopeResolver({
+      enabled: () => true,
+      canManageBot: (_actor, id) =>
+        Promise.resolve(
+          id === botId
+            ? ({
+                id,
+                ownerUserId: actorId,
+                visibility: "private",
+                systemOwned: false,
+                deletedAt: null,
+              } as AgentProfile)
+            : null,
+        ),
+      scopeEpoch: async () => epoch,
+    });
+    // The owner keeps the exact scope the route seam issues.
+    const owned = (await widenedGate(
+      { id: actorId, role: "user" },
+      botId,
+    )) as ObservationScope | null;
+    expect(owned?.key).toBe(scopeFor(actorId).key);
+    // A global admin earns the admin scope explicitly.
+    expect(
+      (await widenedGate({ id: "global-admin", role: "admin" }, botId)) !== null,
+    ).toBe(true);
+    // A collaborator the widened gate manages earns nothing — fail closed.
+    expect(
+      await widenedGate({ id: "collaborator", role: "user" }, botId),
+    ).toBeNull();
+  });
+
   test("a disabled deployment and a failing resolution both answer null, never throw", async () => {
     const disabled = createBuiltinRunScopeResolver({
       enabled: () => false,

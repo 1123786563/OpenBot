@@ -28,6 +28,30 @@ export type BotManagementCheck = (
 export const OBSERVATION_BOT_NOT_FOUND = "Bot not found.";
 export const OBSERVATION_BOT_REQUIRED = "A Bot id is required.";
 
+/** The ownership an observation scope may be minted under. */
+export type ObservationOwnership = "owner" | "admin";
+
+/**
+ * The explicit ownership answer, read off the same profile row the manage decision
+ * was made on: the profile's owner is "owner", a global admin is "admin", and
+ * anything else is a refusal — never an inference.
+ *
+ * Today's manage gate only lets an owner or a global admin through, so the refusal
+ * branch is unreachable in production — and that is exactly the point: the scope
+ * minting must not inherit the gate's implementation details. A future widening of
+ * the gate (shared management, organization roles — the enterprise seam's reserved
+ * direction) then fails closed here instead of silently granting observation scopes
+ * to whoever the widened gate lets through (OCR round-1 h10/m182).
+ */
+export function explicitObservationOwnership(
+  actor: AgentActor,
+  profile: AgentProfile,
+): ObservationOwnership | null {
+  if (profile.ownerUserId === actor.id) return "owner";
+  if (actor.role === "admin") return "admin";
+  return null;
+}
+
 export type ObservationBotAccess =
   | { ok: true; botId: string; profile: AgentProfile }
   | { ok: false; status: 404; error: string };
