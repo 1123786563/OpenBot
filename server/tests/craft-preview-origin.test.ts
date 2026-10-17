@@ -521,9 +521,7 @@ describe("fix-ocr22 #2: the localhost base claims only the template port, never 
       origin.handlesRequest(new Request("https://preview.example.com/")),
     ).toBe(true);
     expect(
-      origin.handlesRequest(
-        new Request("https://x.preview.example.com:9999/"),
-      ),
+      origin.handlesRequest(new Request("https://x.preview.example.com:9999/")),
     ).toBe(true);
   });
 });
@@ -744,9 +742,9 @@ describe("preview origin admission", () => {
       // Fail-closed (AC6): no address exists, and the loopback host and port
       // space are never claimed into the preview namespace.
       expect(() => broken.originFor(SESSION_ID)).toThrow();
-      expect(
-        broken.handlesRequest(new Request("http://127.0.0.1:3001/")),
-      ).toBe(false);
+      expect(broken.handlesRequest(new Request("http://127.0.0.1:3001/"))).toBe(
+        false,
+      );
     }
   });
 
@@ -774,9 +772,9 @@ describe("preview origin admission", () => {
         );
       }
       expect(() => broken.originFor(SESSION_ID)).toThrow();
-      expect(
-        broken.handlesRequest(new Request("https://x..localhost/")),
-      ).toBe(false);
+      expect(broken.handlesRequest(new Request("https://x..localhost/"))).toBe(
+        false,
+      );
     }
   });
 
@@ -1317,9 +1315,7 @@ describe("fix-ocr22 #1: a pass-holder's entry-root ?ticket= is a business parame
       }),
     );
     expect(response.status).toBe(200);
-    expect(calls).toEqual([
-      { sessionId: SESSION_ID, appPath: "/", query: "" },
-    ]);
+    expect(calls).toEqual([{ sessionId: SESSION_ID, appPath: "/", query: "" }]);
   });
 });
 

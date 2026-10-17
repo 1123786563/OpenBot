@@ -217,10 +217,7 @@ import {
   personalUnconnectedApps,
 } from "./craft/managed-content";
 import { resolveCraftMcpServers } from "./craft/mcp-servers";
-import {
-  createPreviewOrigin,
-  samePreviewOrigin,
-} from "./craft/preview-origin";
+import { createPreviewOrigin, samePreviewOrigin } from "./craft/preview-origin";
 import { createPreviewTickets } from "./craft/preview-ticket";
 import type {
   CraftLLMProviderConfig,
@@ -4771,10 +4768,9 @@ const craftManagedContentFor = createCraftManagedContentResolver({
  * origin's redemption entry share this instance (#360's review constraint).
  * Undefined when craft is off: with no craft surface there is nothing to claim.
  */
-const craftPreviewTickets =
-  craftEffectiveConfig.enabled
-    ? createPreviewTickets({ store: createCraftStore(database) })
-    : undefined;
+const craftPreviewTickets = craftEffectiveConfig.enabled
+  ? createPreviewTickets({ store: createCraftStore(database) })
+  : undefined;
 /*
  * The deployment's sandbox identity facts, shared by EVERY craft surface that
  * routes to the sandbox (fix-ocr17): the HTTP webapp proxy, the craft routes
@@ -4796,15 +4792,14 @@ const craftSandboxConnection = () =>
  * gateway connection), so the two surfaces can never route one session to
  * different upstreams. Attached to the origin below as its servePreview seam.
  */
-const craftPreviewProxy =
-  craftEffectiveConfig.enabled
-    ? createPreviewProxy({
-        config: craftEffectiveConfig,
-        store: createCraftStore(database),
-        botIdFor: craftSandboxBotId,
-        sandboxConnectionFor: craftSandboxConnection,
-      })
-    : undefined;
+const craftPreviewProxy = craftEffectiveConfig.enabled
+  ? createPreviewProxy({
+      config: craftEffectiveConfig,
+      store: createCraftStore(database),
+      botIdFor: craftSandboxBotId,
+      sandboxConnectionFor: craftSandboxConnection,
+    })
+  : undefined;
 const craftPreviewOrigin =
   craftEffectiveConfig.enabled && craftPreviewTickets && craftPreviewProxy
     ? createPreviewOrigin({
@@ -4830,74 +4825,74 @@ const craftPreviewOrigin =
 const craftRoutes: CraftRoutesFactory | undefined =
   craftEffectiveConfig.enabled && craftPreviewOrigin !== undefined
     ? ({ requireUser }) =>
-      createCraftRoutes({
-        requireUser,
-        deps: {
-          config: craftEffectiveConfig,
-          db: database,
-          // Same port the workshop's locks and bus answer on: Redis when configured,
-          // the in-process fallback when not — craft's turn state carries both shapes.
-          redis: workshopRedisPort,
-          // Craft's decision surface reads/writes the raw approval store (not the
-          // coordination-wrapped approvalService.store) so opening/deciding never runs
-          // run-orchestration side effects.
-          approvals: storedApprovals,
-          // craft_sessions rows hold no Bot relationship; every session routes to the
-          // one deployment-chosen Bot workspace (validated to agent-sandbox's id rules
-          // inside loadCraftConfig — an unusable configured id already fell back).
-          botIdFor: craftSandboxBotId,
-          llmConfigFor: async () => craftLlmConfig(),
-          sandboxConnectionFor: craftSandboxConnection,
-          userNameFor: async (userId) =>
-            (await peopleStore.find(userId))?.name ?? null,
-          generateName: craftGenerateName,
-          // The managed-content layer over the plugins domain: connectable apps are
-          // the enabled connector rows that act in the person's own account and that
-          // they have NOT connected yet (onyx's get_connectable_apps_for_user —
-          // shared/deployment-account apps answer for everybody and never appear).
-          managedContentFor: craftManagedContentFor,
-          // The relay's credential resolution: the plugins domain's own
-          // per-person connection handling (MCP-wire servers only), decrypted
-          // per forwarded call and never written anywhere the agent reads.
-          mcpConnectionFor: (userId, serverId) =>
-            pluginStore.mcpWireConnectionFor(userId, serverId),
-          kbSearch: craftKbSearch,
-          mcpRelayBaseUrl: craftMcpRelayBaseUrl,
-          /*
-           * The process's ONE preview-ticket table and the preview origin's
-           * address derivation (#360/#361): the issuing route mints through these
-           * very instances and the preview origin's entry (the dispatcher branch
-           * below) redeems against the same table — never a second instance.
-           */
-          previewTickets: craftPreviewTickets,
-          previewOriginFor: (sessionId: string) =>
-            craftPreviewOrigin.originFor(sessionId),
-          /*
-           * The admission the #362 surfaces read: webapp-info's closed reason
-           * (m-5) and the issuing route's refusal to mint into a closed origin
-           * — the same gate the preview origin's dispatcher branch enforces.
-           */
-          previewOriginAdmission: () => craftPreviewOrigin.admission(),
-          /*
-           * fix-ocr13: the registry half of the pane's same-origin liveness
-           * probe — the SAME instance whose originFor registers the label, so
-           * "has" and "mint" can never disagree about what is registered.
-           */
-          previewOriginHas: (sessionId: string) =>
-            craftPreviewOrigin.hasSession(sessionId),
-          /*
-           * F-2 (#365): the dev form's /<label> mount, threaded into the
-           * session's start script — the same HMAC label derivation the minted
-           * address rides (one derivation, preview-origin.ts), so the dev
-           * server's basePath always matches the address the pane iframes.
-           * Null for the host form and any closed origin — root path, the
-           * production behavior unchanged.
-           */
-          webappBasePathFor: (sessionId: string) =>
-            craftPreviewOrigin.webappBasePathFor(sessionId),
-        },
-      })
-  : undefined;
+        createCraftRoutes({
+          requireUser,
+          deps: {
+            config: craftEffectiveConfig,
+            db: database,
+            // Same port the workshop's locks and bus answer on: Redis when configured,
+            // the in-process fallback when not — craft's turn state carries both shapes.
+            redis: workshopRedisPort,
+            // Craft's decision surface reads/writes the raw approval store (not the
+            // coordination-wrapped approvalService.store) so opening/deciding never runs
+            // run-orchestration side effects.
+            approvals: storedApprovals,
+            // craft_sessions rows hold no Bot relationship; every session routes to the
+            // one deployment-chosen Bot workspace (validated to agent-sandbox's id rules
+            // inside loadCraftConfig — an unusable configured id already fell back).
+            botIdFor: craftSandboxBotId,
+            llmConfigFor: async () => craftLlmConfig(),
+            sandboxConnectionFor: craftSandboxConnection,
+            userNameFor: async (userId) =>
+              (await peopleStore.find(userId))?.name ?? null,
+            generateName: craftGenerateName,
+            // The managed-content layer over the plugins domain: connectable apps are
+            // the enabled connector rows that act in the person's own account and that
+            // they have NOT connected yet (onyx's get_connectable_apps_for_user —
+            // shared/deployment-account apps answer for everybody and never appear).
+            managedContentFor: craftManagedContentFor,
+            // The relay's credential resolution: the plugins domain's own
+            // per-person connection handling (MCP-wire servers only), decrypted
+            // per forwarded call and never written anywhere the agent reads.
+            mcpConnectionFor: (userId, serverId) =>
+              pluginStore.mcpWireConnectionFor(userId, serverId),
+            kbSearch: craftKbSearch,
+            mcpRelayBaseUrl: craftMcpRelayBaseUrl,
+            /*
+             * The process's ONE preview-ticket table and the preview origin's
+             * address derivation (#360/#361): the issuing route mints through these
+             * very instances and the preview origin's entry (the dispatcher branch
+             * below) redeems against the same table — never a second instance.
+             */
+            previewTickets: craftPreviewTickets,
+            previewOriginFor: (sessionId: string) =>
+              craftPreviewOrigin.originFor(sessionId),
+            /*
+             * The admission the #362 surfaces read: webapp-info's closed reason
+             * (m-5) and the issuing route's refusal to mint into a closed origin
+             * — the same gate the preview origin's dispatcher branch enforces.
+             */
+            previewOriginAdmission: () => craftPreviewOrigin.admission(),
+            /*
+             * fix-ocr13: the registry half of the pane's same-origin liveness
+             * probe — the SAME instance whose originFor registers the label, so
+             * "has" and "mint" can never disagree about what is registered.
+             */
+            previewOriginHas: (sessionId: string) =>
+              craftPreviewOrigin.hasSession(sessionId),
+            /*
+             * F-2 (#365): the dev form's /<label> mount, threaded into the
+             * session's start script — the same HMAC label derivation the minted
+             * address rides (one derivation, preview-origin.ts), so the dev
+             * server's basePath always matches the address the pane iframes.
+             * Null for the host form and any closed origin — root path, the
+             * production behavior unchanged.
+             */
+            webappBasePathFor: (sessionId: string) =>
+              craftPreviewOrigin.webappBasePathFor(sessionId),
+          },
+        })
+    : undefined;
 
 /*
  * The craft webapp's HMR websocket proxy (onyx webapp_proxy.py:387-398). An upgrade is not a

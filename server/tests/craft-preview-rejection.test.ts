@@ -54,7 +54,7 @@ const OTHER_USER_ID = "u2";
 const SECRET = "test-rejection-suite-secret";
 const TEMPLATE = "https://{session}.preview.example.com";
 const DIRECTORY = `/workspace/sessions/${SESSION_A}`;
-const WEBAPP = `${DIRECTORY}/outputs/web`;
+const _WEBAPP = `${DIRECTORY}/outputs/web`;
 
 /** The redemption leg's one refusal sentence — exact, so drift is loud. */
 const TICKET_REFUSAL =
@@ -156,7 +156,17 @@ function entryCase(
     userId: USER_ID,
     previewHost: host,
   });
-  return { clock, store, state, tickets, origin, address, host, ticket, sessionId };
+  return {
+    clock,
+    store,
+    state,
+    tickets,
+    origin,
+    address,
+    host,
+    ticket,
+    sessionId,
+  };
 }
 
 /** The redemption request a browser would land on: previewEntryUrl's exact
@@ -195,7 +205,10 @@ function signedInAs(userId: string): MiddlewareHandler<{
   };
 }
 
-function sessionRow(sessionId: string, nextjsPort: number | null): CraftSessionRow {
+function sessionRow(
+  sessionId: string,
+  nextjsPort: number | null,
+): CraftSessionRow {
   return {
     id: sessionId,
     userId: USER_ID,
@@ -413,9 +426,7 @@ describe("逐条拒绝: every refusal answers its status with a displayable, cre
     const app = createWebappProxyRoutes(signedInAs(OTHER_USER_ID), {
       config: loadCraftConfig({}),
       store,
-      gateway: gatewayWith(
-        recordingFileApi().api,
-      ),
+      gateway: gatewayWith(recordingFileApi().api),
       botIdFor: async () => "craft-bot",
       sandboxConnectionFor: () => ({
         baseUrl: "http://sbox.internal:4300",
@@ -496,8 +507,16 @@ describe("并发兑换竞争: two concurrent redemptions of one ticket — exact
     });
 
     const [first, second] = await Promise.all([
-      tickets.redeemPreviewTicket({ ticket, sessionId: SESSION_A, previewHost: host }),
-      tickets.redeemPreviewTicket({ ticket, sessionId: SESSION_A, previewHost: host }),
+      tickets.redeemPreviewTicket({
+        ticket,
+        sessionId: SESSION_A,
+        previewHost: host,
+      }),
+      tickets.redeemPreviewTicket({
+        ticket,
+        sessionId: SESSION_A,
+        previewHost: host,
+      }),
     ]);
     const outcomes = [first, second].map((outcome) =>
       "userId" in outcome ? "redeemed" : outcome.reason,
@@ -675,9 +694,12 @@ describe("准入关闭: a closed origin answers its displayable reason on EVERY 
       previewOriginAdmission: () => closedOrigin.admission(),
     });
 
-    const response = await app.request(`/sessions/${SESSION_A}/preview-ticket`, {
-      method: "POST",
-    });
+    const response = await app.request(
+      `/sessions/${SESSION_A}/preview-ticket`,
+      {
+        method: "POST",
+      },
+    );
     expect(response.status).toBe(503);
     const admission = closedOrigin.admission();
     expect(await response.json()).toEqual({
