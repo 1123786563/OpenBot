@@ -1,6 +1,8 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
+import { Hono } from "hono";
+import type { AgentProfile } from "../src/agents/profile-types";
 import type { OpikConfig } from "../src/ai-observability/config";
 import {
   createObservationExportStore,
@@ -10,10 +12,12 @@ import {
 } from "../src/ai-observability/exports";
 import type { OpikPort, OpikTraceRow } from "../src/ai-observability/opik-port";
 import { projectRow } from "../src/ai-observability/queries/runs";
+import { createExportRoutes } from "../src/ai-observability/routes/exports";
 import {
   resolveObservationScope,
   resolveStorageLocator,
 } from "../src/ai-observability/scope";
+import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { aiObservationBindings } from "../src/db/schema/ai-observability-bindings";
 import { aiObservationExportJobs } from "../src/db/schema/ai-observability-exports";
 import { aiObservationRetentionDeletions } from "../src/db/schema/ai-observability-retention";
@@ -475,4 +479,109 @@ test("jobs are invisible and uncancelable across scopes (AC2)", async () => {
   // And B's job still runs to completion afterwards.
   await worker.sweep();
   expect((await store.get(scopeB, jobB.id))?.state).toBe("completed");
+});
+
+test("the export list paginates and never inlines the artifact (R2-40)", async () => {
+  // Three completed jobs carrying artifacts, one still queued: the exact shape a
+  // 5s poll used to amplify into tens of megabytes.
+  for (let index = 0; index < 3; index += 1) {
+    const job = await store.enqueue(scopeA, 100);
+    // Only a running job settles (the revocation race's own rule), so take the
+    // claim first, exactly as the worker does.
+    await store.markRunning(job.id);
+    await store.settleCompleted(job.id, [
+      projectRow({ id: `r40-trace-${index}`, status: "COMPLETED" }),
+    ]);
+  }
+  await store.enqueue(scopeA, 100);
+
+  const app = new Hono<{ Variables: AppVariables }>();
+  app.use("*", async (context, next) => {
+    context.set("actor", {
+      id: scopeA.actorId,
+      role: "user",
+    } as AuthenticatedActor);
+    await next();
+  });
+  app.route(
+    "/bots/:botId/exports",
+    createExportRoutes({
+      database,
+      canManageBot: async (_actor, id) =>
+        id === scopeA.botId
+          ? ({ id, ownerUserId: scopeA.actorId } as AgentProfile)
+          : null,
+      scopeEpoch: async () => 1,
+    }),
+  );
+
+  const first = await app.request("/bots/agent-1/exports?limit=2");
+  expect(first.status).toBe(200);
+  const page1 = (await first.json()) as {
+    jobs: Array<Record<string, unknown>>;
+    pagination: Record<string, unknown>;
+  };
+  expect(page1.jobs).toHaveLength(2);
+  expect(page1.pagination).toEqual({
+    total: 4,
+    offset: 0,
+    limit: 2,
+    nextOffset: 2,
+  });
+  for (const job of page1.jobs) {
+    // The list is what the poll reads: no artifact rides here, whatever the state.
+    expect(job).not.toHaveProperty("artifact");
+    if (job.state === "completed") {
+      expect(typeof job.artifactUrl).toBe("string");
+    } else {
+      expect(job).not.toHaveProperty("artifactUrl");
+    }
+  }
+
+  // The completed rows' product lives where the URL says: the detail endpoint.
+  const completed = page1.jobs.find((job) => job.state === "completed");
+  expect(completed).toBeDefined();
+  const detail = await app.request(completed?.artifactUrl as string);
+  expect(detail.status).toBe(200);
+  const detailBody = (await detail.json()) as {
+    job: { artifact: unknown; state: string };
+  };
+  expect(detailBody.job.state).toBe("completed");
+  expect(Array.isArray(detailBody.job.artifact)).toBe(true);
+
+  // The second page answers the rest, and the walk ends with no next offset.
+  const second = await app.request("/bots/agent-1/exports?limit=2&offset=2");
+  const page2 = (await second.json()) as {
+    jobs: Array<Record<string, unknown>>;
+    pagination: Record<string, unknown>;
+  };
+  expect(page2.jobs).toHaveLength(2);
+  expect(page2.pagination.nextOffset).toBeNull();
+  // The two pages never overlap and never drop a row.
+  const ids = [...page1.jobs, ...page2.jobs].map((job) => job.jobId);
+  expect(new Set(ids).size).toBe(4);
+
+  // An offset past the end is an honest empty page, not an error.
+  const beyond = await app.request("/bots/agent-1/exports?limit=2&offset=4");
+  const page3 = (await beyond.json()) as {
+    jobs: unknown[];
+    pagination: { total: number };
+  };
+  expect(page3.jobs).toEqual([]);
+  expect(page3.pagination.total).toBe(4);
+
+  // Bounds are an explicit contract, not a silent clamp.
+  for (const bad of [
+    "limit=0",
+    "limit=101",
+    "limit=abc",
+    "limit=2.5",
+    "offset=-1",
+    "offset=xyz",
+  ]) {
+    const refused = await app.request(`/bots/agent-1/exports?${bad}`);
+    expect(refused.status).toBe(400);
+    const body = (await refused.json()) as { error: string };
+    expect(body.error).toBe("EXPORT_INPUT_INVALID");
+  }
 });

@@ -84,7 +84,7 @@ function parseLimit(raw: string | undefined): number {
 /** House convention: known errors map to their code, anything else rethrows. */
 function classify(error: unknown): {
   body: { error: string };
-  status: 400 | 401 | 402 | 403 | 404 | 422 | 502 | 503;
+  status: 400 | 401 | 402 | 403 | 404 | 409 | 422 | 502 | 503;
 } {
   if (error instanceof ObservationScopeError) {
     return { body: { error: error.code }, status: error.status };

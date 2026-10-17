@@ -30,6 +30,12 @@
   // let a test pass an options object where a connection string belongs and hear nothing back. Its
   // own change, because it is a sweep and not a fix.
   //
+  // THE ONE EXCEPTION IS `tests/types/**` (R2-55): the ai-observability contracts'
+  // type-level anti-drift assertions live there as constants, and m216's version of them
+  // sat in an untyped test file where bun stripped the types and nothing ever checked
+  // them — one assertion had been indexing a key that does not exist since birth. This
+  // include is what makes "drift is a compile error" actually mean `tsc --noEmit` fails.
+  //
   // THAT GAP NOW DELIBERATELY INCLUDES `tests/enterprise/**` ONLY. The frozen cross-package
   // zod contracts keep a DIRECT type gate instead: `../shared/enterprise` is included in full
   // below, so nothing under `shared/enterprise` is a gap any more (app and server tests both
@@ -45,6 +51,7 @@
     "src",
     "scripts",
     "tests/support/enterprise-database.ts",
+    "tests/types",
     "../shared/enterprise",
     "../scripts/composio-smoke.ts"
   ]

@@ -94,6 +94,8 @@ function botSummary(
       capabilities: { basic: 4, detailed: 8, unavailable: 0 },
       unboundUpstream: 3,
       usage: { providerReported: 10, unavailable: 2 },
+      // R2-46's shared-contract field: the fixture's counts are exact, so false.
+      upstreamTruncated: false,
     },
     experiments: { draft: 1, frozen: 2 },
     exports: {

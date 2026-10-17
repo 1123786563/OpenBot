@@ -123,7 +123,14 @@ export type ExperimentSampleReason =
   | {
       class: "in_progress";
       code: "EXECUTION_NOT_SETTLED";
-      state: ExperimentExecutionState;
+      /**
+       * R2-57: the words the server actually produces (results.ts narrows an
+       * unsettled execution to exactly these two — a settled execution lands in
+       * a terminal class, never here). The five-word execution-state vocabulary
+       * was wider than the truth and is narrowed to match the producer; the
+       * anti-drift assertion in server/tests/types pins both sides to each other.
+       */
+      state: "pending" | "running";
     }
   | { class: "execution_failed"; code: string }
   | {

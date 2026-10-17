@@ -34,7 +34,11 @@ import type {
   OpikPortResult,
   OpikTraceRow,
 } from "../src/ai-observability/opik-port";
-import { createRunsQueryService } from "../src/ai-observability/queries/runs";
+import {
+  createRunsQueryService,
+  projectRow,
+  UPSTREAM_RUN_STATUS,
+} from "../src/ai-observability/queries/runs";
 import { createRunsQueryRoutes } from "../src/ai-observability/routes/runs";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
@@ -984,5 +988,57 @@ describe("runs query — the M1 cache invalidation target", () => {
     await runs.list(scopeA, {});
     // The same eviction as invalidate(scopeA), keyed on the stored string.
     expect(reads(port.calls)).toBe(4);
+  });
+});
+
+describe("the upstream status vocabulary is pinned, unknown the only fallback (R2-33)", () => {
+  test("the mapping is one explicit, exported table — the whole claim about which upstream words this build understands", () => {
+    expect(UPSTREAM_RUN_STATUS).toEqual({
+      COMPLETED: "completed",
+      OK: "completed",
+      ERROR: "failed",
+      IN_PROGRESS: "running",
+      RUNNING: "running",
+    });
+  });
+
+  test("every pinned word maps onto the T10 vocabulary through the projection", () => {
+    for (const [word, expected] of Object.entries(UPSTREAM_RUN_STATUS)) {
+      expect(projectRow({ id: "trace-1", status: word }).state).toBe(expected);
+    }
+  });
+
+  test("a word no evidence ever carried stays unknown, never a guess", () => {
+    // Round 2 hypothesized ONGOING; the evidence (T37) never carried it — and
+    // an unmapped word must not silently become running, failed or completed.
+    for (const alien of [
+      "ONGOING",
+      "INITIATED",
+      "PENDING",
+      "queued",
+      "running ",
+      "",
+      0,
+      null,
+      true,
+    ]) {
+      expect(
+        projectRow({ id: "trace-1", status: alien as unknown }).state,
+      ).toBe("unknown");
+    }
+  });
+
+  test("the real evidence row shape — no status field at all — is unknown", () => {
+    // docs/plans/evidence/2026-10-16-issue4/T37/evidence/b1-framework-rows.json:
+    // the trace rows the real instance returned carry id/start_time/metadata/
+    // span_count… and no `status` key — the honest unknown, not a guessed state.
+    const evidenceShape = {
+      id: "01a145fa-9e48-7454-8879-d3be83a24cba",
+      project_id: "0190babc-62a0-71d2-832a-0feffa4676eb",
+      start_time: "2026-10-16T18:30:14.856Z",
+      metadata: { integration: "openbot.agent-langgraph" },
+      span_count: 6,
+    };
+    expect(projectRow(evidenceShape).state).toBe("unknown");
   });
 });

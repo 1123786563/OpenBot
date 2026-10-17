@@ -22,6 +22,7 @@
  * is the thing that ended.
  */
 import { Hono } from "hono";
+import type { ExportJobsResult } from "../../../../shared/ai-observability-admin";
 import type { AgentActor } from "../../agents/profile-types";
 import type { AppVariables } from "../../auth/guards";
 import type { Database } from "../../db/client";
@@ -49,8 +50,8 @@ export type ExportRouteDeps = Readonly<{
 
 /** What a route may say about a job. The state is parsed, never echoed raw. */
 /**
- * Exported for the m216 anti-drift test: the wire shape the route answers with,
- * against the shared contract type in shared/ai-observability-admin.ts.
+ * Exported for the m216 anti-drift test: the wire shapes the routes answer with,
+ * against the shared contract types in shared/ai-observability-admin.ts.
  */
 export function projectJob(job: ObservationExportJob) {
   const state = parseExportJobState(job.state);
@@ -64,12 +65,70 @@ export function projectJob(job: ObservationExportJob) {
     createdAt: job.createdAt.toISOString(),
     settledAt: job.settledAt?.toISOString() ?? null,
     // The product rides along exactly when it exists — completed is the only
-    // state the database lets carry one.
-    artifact:
-      isTerminalExportJobState(state) && state === "completed"
-        ? job.artifact
-        : undefined,
+    // state the database lets carry one — and never as null: the schema's own
+    // check makes a completed job's artifact an array, so a null (schema drift,
+    // if it ever appeared) is not a value this projection repeats. The key is
+    // absent rather than undefined on non-completed states, so the wire shape
+    // and the shared ExportJobView's optional field are the same type.
+    ...(isTerminalExportJobState(state) && state === "completed"
+      ? { artifact: job.artifact ?? undefined }
+      : {}),
   };
+}
+
+/** The list page's bounds: the same explicit cap, not a silent clamp, as the runs face. */
+export const MAX_EXPORTS_LIMIT = 100;
+const DEFAULT_EXPORTS_LIMIT = 20;
+
+/**
+ * The list projection (R2-40): the job's facts, and for a completed job where the
+ * product lives — never the rows themselves. The list is what the frontend's 5-second
+ * poll reads; a thousand jobs each carrying their artifact inline amplified every
+ * poll to tens of megabytes. The detail endpoint is the one artifact carrier, and a
+ * completed job's `artifactUrl` names it. The base is the request's own mounted path,
+ * so the link lands wherever the coordinator mounts the routes.
+ */
+export function projectJobListItem(
+  job: ObservationExportJob,
+  artifactUrlBase: string,
+) {
+  const state = parseExportJobState(job.state);
+  return {
+    jobId: job.id,
+    state,
+    rowLimit: job.rowLimit,
+    rowCount: job.rowCount,
+    errorCode: job.errorCode,
+    redactionPolicyVersion: job.redactionPolicyVersion,
+    createdAt: job.createdAt.toISOString(),
+    settledAt: job.settledAt?.toISOString() ?? null,
+    ...(state === "completed"
+      ? { artifactUrl: `${artifactUrlBase}/${job.id}` }
+      : {}),
+  };
+}
+
+/** The list query's paging numbers, validated fail-closed: garbage is a 400, never a clamp. */
+function pageOf(searchParams: URLSearchParams): {
+  limit: number;
+  offset: number;
+} {
+  const limitRaw = searchParams.get("limit") ?? String(DEFAULT_EXPORTS_LIMIT);
+  const offsetRaw = searchParams.get("offset") ?? "0";
+  const limit = Number.parseInt(limitRaw, 10);
+  if (
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > MAX_EXPORTS_LIMIT ||
+    String(limit) !== limitRaw
+  ) {
+    throw new ExportError("EXPORT_INPUT_INVALID", 400);
+  }
+  const offset = Number.parseInt(offsetRaw, 10);
+  if (!Number.isInteger(offset) || offset < 0 || String(offset) !== offsetRaw) {
+    throw new ExportError("EXPORT_INPUT_INVALID", 400);
+  }
+  return { limit, offset };
 }
 
 /** House convention: known errors map to their code, anything else rethrows. */
@@ -143,8 +202,25 @@ export function createExportRoutes(
     try {
       const resolved = await scopeFor(context);
       if (resolved instanceof Response) return resolved;
+      // R2-40: the poll face pages, and no artifact rides the list — the rows
+      // live on the detail endpoint a completed job's artifactUrl names. The
+      // scope filter stays the store's, so an out-of-range offset answers an
+      // honest empty page and can never widen what this caller sees.
+      const { limit, offset } = pageOf(new URL(context.req.url).searchParams);
       const jobs = await store.list(resolved.scope);
-      return context.json({ jobs: jobs.map(projectJob) });
+      const page = jobs.slice(offset, offset + limit);
+      // The annotation is the pin: the route's list answer IS the shared
+      // ExportJobsResult, so contract drift here is a compile error.
+      const body: ExportJobsResult = {
+        jobs: page.map((job) => projectJobListItem(job, context.req.path)),
+        pagination: {
+          total: jobs.length,
+          offset,
+          limit,
+          nextOffset: offset + limit < jobs.length ? offset + limit : null,
+        },
+      };
+      return context.json(body);
     } catch (error) {
       const failure = classify(error);
       return context.json(failure.body, failure.status);

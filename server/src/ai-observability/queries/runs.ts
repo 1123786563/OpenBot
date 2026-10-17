@@ -152,12 +152,27 @@ type CachedWindow = {
   total: number;
 };
 
+/**
+ * The upstream trace status onto the T10 vocabulary, one explicit table: the map is
+ * the whole claim about which upstream words this build understands (R2-33). The
+ * vocabulary is pinned to what the verified instances actually carried — the T37
+ * evidence's trace rows answer no `status` field at all, and no word outside this
+ * table (no ONGOING, no INITIATED) was ever observed upstream — so anything else,
+ * including a row without the field, is unknown, never a guess. A new word is a
+ * change to this table plus the tests that pin it, never an inline branch.
+ */
+export const UPSTREAM_RUN_STATUS: Readonly<Record<string, AttemptRunState>> = {
+  COMPLETED: "completed",
+  OK: "completed",
+  ERROR: "failed",
+  IN_PROGRESS: "running",
+  RUNNING: "running",
+};
+
 /** Upstream status onto the T10 vocabulary. Unrecognized is unknown, never a guess. */
 function runStateFromUpstream(status: unknown): AttemptRunState {
-  if (status === "COMPLETED" || status === "OK") return "completed";
-  if (status === "ERROR") return "failed";
-  if (status === "IN_PROGRESS" || status === "RUNNING") return "running";
-  return "unknown";
+  if (typeof status !== "string") return "unknown";
+  return UPSTREAM_RUN_STATUS[status] ?? "unknown";
 }
 
 const USAGE_UNAVAILABLE: RunUsageReport = { source: "unavailable" };
