@@ -62,3 +62,19 @@
 
 4. **端口语义收敛**：`defaultPreviewOrigin` 在 PORT 与 SERVER_PORT 不一致时静默偏好 PORT，而 `server/src/config.ts` 的 `serverPort` 会抛错 —— 本票收敛（#360 审阅 Nit 3/4）。
 5. **消费 #360 交付的接缝**（审阅已确认干净）：`deps.previewTickets` 注入同一实例；`previewSessionCookieHeader` 真正 Set-Cookie 并按 D9 验收；`redeem` 返回 `{userId}`，归属校验在 #360 的 store 重查里，**不要重复实现**；`previewOriginFor` 注入点替换默认实现。
+
+---
+
+## 来自 #361 终审与 OCR 修复轮的补充约束（2026-10-15，coordinator #361 会话写入）
+
+在上方「来自前置审阅的约束」五条之上，#361 的 Pi 终审（`.superpowers/evidence/issue-361/pi-review-361.md`）与 OCR 三轮修复（同目录 ocr-range.md / pi-review-361-fix{,-r2,-r3}.md）新增以下 #362 吸收项：
+
+1. **M-1 扩充——主机名规范化与模板基域合法性**：带尾点通配主机（`x.preview.example.com.`）逃逸 `handlesRequest` 后缀匹配落主站路由（cookie 按 host 隔离使泄露面≈0）；双点退化模板 `https://{session}..` 与 `{session}` 后置 userinfo（`https://{session}.x@evil.com`）仍 OPEN（fail-closed 方向的垃圾配置）；准入时应校验模板基域不得是主站主机的后缀/祖先。M-1 落地时一并定义「主站主机绝不被 claim」规则与测试。
+2. **m-5 扩充——签发侧面**：准入关闭时 `POST /api/craft/sessions/:id/preview-ticket` 因 `previewOriginFor→originFor` 抛错变 500（Hono 兜底）；应捕获并透出 `admission().reason` 为可展示 503。
+3. **D9 cookie 加固**：https 生产模板下 preview 会话 cookie 应补 `; Secure`（值是 session id，无 Secure 会随明文 http 请求发送）。
+4. **契约测试钉死**：预览代理绝不向下游 app 转发 cookie（preview_session cookie 值 = session id）。
+5. **设计确认**：craft-off 时 `craftPreviewOrigin` 为 undefined、`127.0.0.1:<port>` 不被 claim 落主站路由——确认预期形状或在 dispatcher 挂接点处理；dev 形态激活时建议 boot 日志声明 127.0.0.1 已被 preview 命领。
+6. **依赖收紧**：`CraftRoutesDeps.previewTickets/previewOriginFor` 改必填、移除 webapp-proxy 的 `defaultPreviewOrigin` 回退（防第二票表与无准入铸址路径；生产装配已注入，回退仅测试路径可达）。
+7. **备忘**：registry 无逐出（进程生命周期单调增长，随 M-2 二选一定）；HMAC 密钥轮换=全部预览地址重铸（运维文档记一句）；`resolvePreviewRequest` 嵌套三元与死写法顺手重构。
+
+注：#362 实现期间已通过 Orca follow-up 收到其中 1–5 条，其 worker_done 声明已吸收；本节为持久化记录。

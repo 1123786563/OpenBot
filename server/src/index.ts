@@ -211,6 +211,8 @@ import {
   personalUnconnectedApps,
 } from "./craft/managed-content";
 import { resolveCraftMcpServers } from "./craft/mcp-servers";
+import { createPreviewOrigin } from "./craft/preview-origin";
+import { createPreviewTickets } from "./craft/preview-ticket";
 import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
@@ -222,8 +224,12 @@ import {
 } from "./craft/routes";
 import { createCraftStore } from "./craft/store";
 import {
+  createPreviewProxy,
+  type PreviewWebappHmrDeps,
+  resolvePreviewWebappHmrUpgrade,
   type WebappHmrSocketData,
   resolveWebappHmrUpgrade,
+  webappHmrIsAppPath,
   webappHmrSessionIdFromPath,
   webappHmrSocketHandlers,
 } from "./craft/webapp-proxy";
@@ -4719,8 +4725,74 @@ const craftManagedContentFor = createCraftManagedContentResolver({
     });
   },
 });
-const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
-  ? ({ requireUser }) =>
+/*
+ * The craft preview origin (#361, spec craft-preview-origin D5/D7): hosts in the
+ * preview namespace — dev: 127.0.0.1 on this server's own port beside a localhost
+ * login; production: <hash-label>.<preview base> from the configured template —
+ * are claimed by the dispatcher below, ahead of every main-site branch. One
+ * preview-ticket table for the whole process: the issuing route and the preview
+ * origin's redemption entry share this instance (#360's review constraint).
+ * Undefined when craft is off: with no craft surface there is nothing to claim.
+ */
+const craftPreviewTickets =
+  craftEffectiveConfig.enabled
+    ? createPreviewTickets({ store: createCraftStore(database) })
+    : undefined;
+/*
+ * The deployment's sandbox identity facts, shared by EVERY craft surface that
+ * routes to the sandbox (fix-ocr17): the HTTP webapp proxy, the craft routes
+ * and the HMR upgrade dispatcher each used to carry their own verbatim copy
+ * of these two lambdas — one missed edit would make two surfaces disagree
+ * about the upstream, the exact divergence the "same facts" comments on each
+ * site promise can never happen. One const each, referenced three times.
+ */
+const craftSandboxBotId = async () => craftEffectiveConfig.sandboxBotId;
+const craftSandboxConnection = () =>
+  sandboxUrl && sandboxToken
+    ? { baseUrl: sandboxUrl, token: sandboxToken }
+    : null;
+
+/*
+ * The preview origin's serving half (#362): a cookie-authenticated request on
+ * a preview host proxies to the session's sandbox dev server — the same facts
+ * the main-site webapp proxy resolves (the deployment's sandbox Bot, its
+ * gateway connection), so the two surfaces can never route one session to
+ * different upstreams. Attached to the origin below as its servePreview seam.
+ */
+const craftPreviewProxy =
+  craftEffectiveConfig.enabled
+    ? createPreviewProxy({
+        config: craftEffectiveConfig,
+        store: createCraftStore(database),
+        botIdFor: craftSandboxBotId,
+        sandboxConnectionFor: craftSandboxConnection,
+      })
+    : undefined;
+const craftPreviewOrigin =
+  craftEffectiveConfig.enabled && craftPreviewTickets && craftPreviewProxy
+    ? createPreviewOrigin({
+        config: craftEffectiveConfig,
+        previewTickets: craftPreviewTickets,
+        secret: config.keyEncryptionKey,
+        servePreview: craftPreviewProxy,
+      })
+    : undefined;
+
+/*
+ * fix-ocr20 #1: the gate is `enabled && craftPreviewOrigin !== undefined`, not
+ * `enabled` alone. The two gates used to be equivalent only by COUPLING —
+ * craftPreviewOrigin exists exactly when enabled && tickets && proxy — and the
+ * deps below carried `craftPreviewOrigin!` assertions to bridge the gap: any
+ * future divergence between the gates (a third conjunct on one side) would
+ * have turned those `!` into a runtime TypeError at the first preview call,
+ * defeating the optional-deps degradation design the boot file's other craft
+ * surfaces follow. The `!== undefined` conjunct narrows the const into the
+ * closure, so the assertions are gone and the deps type-check against the
+ * real shape; tsc is the pin.
+ */
+const craftRoutes: CraftRoutesFactory | undefined =
+  craftEffectiveConfig.enabled && craftPreviewOrigin !== undefined
+    ? ({ requireUser }) =>
       createCraftRoutes({
         requireUser,
         deps: {
@@ -4736,12 +4808,9 @@ const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
           // craft_sessions rows hold no Bot relationship; every session routes to the
           // one deployment-chosen Bot workspace (validated to agent-sandbox's id rules
           // inside loadCraftConfig — an unusable configured id already fell back).
-          botIdFor: async () => craftEffectiveConfig.sandboxBotId,
+          botIdFor: craftSandboxBotId,
           llmConfigFor: async () => craftLlmConfig(),
-          sandboxConnectionFor: () =>
-            sandboxUrl && sandboxToken
-              ? { baseUrl: sandboxUrl, token: sandboxToken }
-              : null,
+          sandboxConnectionFor: craftSandboxConnection,
           userNameFor: async (userId) =>
             (await peopleStore.find(userId))?.name ?? null,
           generateName: craftGenerateName,
@@ -4757,6 +4826,38 @@ const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
             pluginStore.mcpWireConnectionFor(userId, serverId),
           kbSearch: craftKbSearch,
           mcpRelayBaseUrl: craftMcpRelayBaseUrl,
+          /*
+           * The process's ONE preview-ticket table and the preview origin's
+           * address derivation (#360/#361): the issuing route mints through these
+           * very instances and the preview origin's entry (the dispatcher branch
+           * below) redeems against the same table — never a second instance.
+           */
+          previewTickets: craftPreviewTickets,
+          previewOriginFor: (sessionId: string) =>
+            craftPreviewOrigin.originFor(sessionId),
+          /*
+           * The admission the #362 surfaces read: webapp-info's closed reason
+           * (m-5) and the issuing route's refusal to mint into a closed origin
+           * — the same gate the preview origin's dispatcher branch enforces.
+           */
+          previewOriginAdmission: () => craftPreviewOrigin.admission(),
+          /*
+           * fix-ocr13: the registry half of the pane's same-origin liveness
+           * probe — the SAME instance whose originFor registers the label, so
+           * "has" and "mint" can never disagree about what is registered.
+           */
+          previewOriginHas: (sessionId: string) =>
+            craftPreviewOrigin.hasSession(sessionId),
+          /*
+           * F-2 (#365): the dev form's /<label> mount, threaded into the
+           * session's start script — the same HMAC label derivation the minted
+           * address rides (one derivation, preview-origin.ts), so the dev
+           * server's basePath always matches the address the pane iframes.
+           * Null for the host form and any closed origin — root path, the
+           * production behavior unchanged.
+           */
+          webappBasePathFor: (sessionId: string) =>
+            craftPreviewOrigin.webappBasePathFor(sessionId),
         },
       })
   : undefined;
@@ -4773,13 +4874,31 @@ const craftWebappHmrDeps =
     ? {
         config: craftEffectiveConfig,
         store: createCraftStore(database),
-        botIdFor: async () => craftEffectiveConfig.sandboxBotId,
-        sandboxConnectionFor: () =>
-          sandboxUrl && sandboxToken
-            ? { baseUrl: sandboxUrl, token: sandboxToken }
-            : null,
+        botIdFor: craftSandboxBotId,
+        sandboxConnectionFor: craftSandboxConnection,
       }
     : undefined;
+
+/*
+ * fix-ocr18 #3: the preview origin's upgrade half rides its OWN deps, gated on
+ * `enabled` ONLY. The main-site gate above is a conjunction with
+ * `webappProxyEnabled` — correct there, where the HMR half is the upgrade twin
+ * of the HTTP webapp proxy — but the preview origin's HTTP half lives on
+ * `enabled` alone (craftPreviewTickets/craftPreviewProxy/craftPreviewOrigin
+ * below). Sharing the main gate would make `enabled && !webappProxyEnabled` a
+ * half-dead origin: HTTP served, while the HMR upgrade check short-circuits on
+ * the undefined deps and falls through to handlePreviewRequest, which forwards
+ * the upgrade as an ordinary HTTP request (upgrade headers stripped) — live
+ * reload silently dead on the deployment's only webapp surface.
+ */
+const craftPreviewWebappHmrDeps = craftEffectiveConfig.enabled
+  ? {
+      config: craftEffectiveConfig,
+      store: createCraftStore(database),
+      botIdFor: craftSandboxBotId,
+      sandboxConnectionFor: craftSandboxConnection,
+    }
+  : undefined;
 
 /**
  * The craft model catalog as one descriptor. The limits are honest defaults rather than
@@ -5644,6 +5763,65 @@ serve<SocketData>({
   port,
   async fetch(request, server) {
     const url = new URL(request.url);
+    // The craft preview origin (#361/#362): claimed hosts NEVER fall through to
+    // the main-site branches below — unknown preview hosts 404 right here, closed
+    // admission answers 503 with its displayable reason, and a resolved session
+    // lands on the preview entry: a `?ticket=` hop redeems and plants the D9
+    // cookie, every further request is gated on that cookie and proxied to the
+    // session's dev server (no platform session is ever in scope on these
+    // hosts — AC1). Bun derives request.url's host from the Host header on this
+    // listener for plain HTTP and websocket upgrades alike (verified against a
+    // live listener).
+    if (craftPreviewOrigin?.handlesRequest(request)) {
+      const resolved = craftPreviewOrigin.resolvePreviewRequest(request);
+      if ("sessionId" in resolved) {
+        // #363: the HMR websocket upgrade on a preview host. An upgrade is not a
+        // request/response, so the HTTP entry below cannot carry it — the session
+        // comes from the Host (never the path: host routing moved identity out of
+        // the URL), and the authorization is the preview pass the redemption hop
+        // planted, the SAME judgment the HTTP entry's cookie gate makes. Every
+        // refusal lands BEFORE `server.upgrade` commits the socket, in the
+        // proxy's own 401/404/503 shapes; the upstream path is the pathname
+        // VERBATIM (the dev form's leading label INCLUDED — the basePath-mounted
+        // dev server serves under it), exactly what the HTTP entry requests —
+        // see appPathFor and webappHmrUpstreamUrl for why forwarding the
+        // app's own path verbatim is load-bearing.
+        if (
+          craftPreviewWebappHmrDeps !== undefined &&
+          request.headers.get("upgrade")?.toLowerCase() === "websocket" &&
+          webappHmrIsAppPath(craftPreviewOrigin.appPathFor(request))
+        ) {
+          const decision = await resolvePreviewWebappHmrUpgrade(
+            craftPreviewWebappHmrDeps satisfies PreviewWebappHmrDeps,
+            {
+              sessionId: resolved.sessionId,
+              request,
+              path: craftPreviewOrigin.appPathFor(request),
+              query: url.search,
+            },
+          );
+          if (!decision.ok) {
+            return new Response(decision.error, { status: decision.status });
+          }
+          if (
+            server.upgrade(request, {
+              data: { upstream: decision.upstreamUrl, hmr: true as const },
+            })
+          ) {
+            return undefined as unknown as Response;
+          }
+          return new Response("Expected a WebSocket upgrade.", { status: 400 });
+        }
+        return craftPreviewOrigin.handlePreviewRequest(
+          resolved.sessionId,
+          request,
+        );
+      }
+      return Response.json(
+        { error: resolved.refuse.reason },
+        { status: resolved.refuse.status },
+      );
+    }
     if (url.pathname === "/api/audio/transcriptions") {
       server.timeout(request, DICTATION_HTTP_IDLE_SECONDS);
     }

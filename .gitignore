@@ -13,6 +13,24 @@
 .env
 .env.*
 !.env.example
+# The TLS sidecar's DNS-01 credentials (docker/compose/certs.yml) and its
+# certificate output directory: both hold secrets that must never land in a
+# commit. The tls pattern is root-anchored — the sidecar's output is exactly
+# ./tls at the repo root (overridable via OPENBOT_TLS_HOST_DIR), and an
+# unanchored name would ignore every directory called tls anywhere in the
+# tree. No trailing slash, deliberately (same symlink semantics as
+# node_modules below): with one, the pattern matches a DIRECTORY only, so a
+# symlink named tls would be committed.
+dns.env
+/tls
+# fix-ocr22 #8: compose resolves relative host paths against
+# --project-directory — omit it, and the OPENBOT_TLS_HOST_DIR default `./tls`
+# lands beside the compose file at docker/compose/tls instead of the repo
+# root, where the root-anchored `/tls` above cannot see it. This entry is the
+# fallback for that spelling; a CUSTOM in-repo host directory (any other
+# OPENBOT_TLS_HOST_DIR value inside the tree) is the deployment's own
+# gitignore job.
+docker/compose/tls/
 # Per-Bot egress proxies. Carries credentials in the URL, like .env does.
 egress.env
 # No trailing slash, deliberately. With one, this pattern matches a DIRECTORY only, and a symlink

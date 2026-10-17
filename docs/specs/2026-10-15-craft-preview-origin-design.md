@@ -64,6 +64,8 @@ craft 的 webapp 预览目前与主站**同源**：`app/src/lib/craft/client.ts`
 - **D5 dev 环境默认 `127.0.0.1:<SERVER_PORT>` 作为 preview origin**，不需要泛域名 DNS（实测 C 行证明 `127.0.0.1` 与 `localhost` 即为不同主机、隔离生效）。`localhost` 上登录的会话 cookie 不会泄漏到 `127.0.0.1` 的 preview。
 - **D6 basePath 机制在形态 2 下整体退场**：脚手架的 `resolveWebappBasePath()`（靠 `process.cwd()` 正则抠 session id）、`assetPrefix`、`redirects` 的 `/` 兜底全部删除；`lib/base-path.ts` 退化为常量空串（保留导出以免破坏已生成的应用，第一步已交付）。
 
+  > **修订 2026-10-16（R-6，final-review F-2）**：#365 实测发现 dev 形态（127.0.0.1 路径 label，D5）下应用资源 URL 仍需 `/<label>` 前缀，纯空串退场导致预览页 404 不 hydrate。裁决为**显式 env basePath**：服务端生成的 start 脚本注入 `ONYX_WEBAPP_BASE_PATH`/`NEXT_PUBLIC_BASE_PATH`，`next.config.ts` 读 env（trim 非空才设 basePath/assetPrefix，空/未设即根路径=生产 host 形态不变），`lib/base-path.ts` 读 `NEXT_PUBLIC_BASE_PATH`。**cwd 正则推导与 `/` 兜底 redirects 维持退场**（env 由受控启动方注入，非进程位置猜测）；代理转发 dev 形态完整路径（不剥 label）。裁决记录：执行 Ledger §11 R-6；实现与测试见 #365 F-2 修复。
+
 ## 已确认决定（2026-10-15，用户逐条确认）
 
 - **D7（Q1）子域名用 hash，不用明文 session id**。避免把内部标识写进 DNS 记录与证书透明度日志。派生必须稳定（会话存活期间预览地址不漂移）、不可枚举（不能由他人猜出其它会话的预览主机）、DNS 标签安全（≤63 字符），且服务端可反查到会话。具体机制（HMAC 截断 + 存储映射列，或其他）由 Ticket 02 选定，Spec 只锁要求。
