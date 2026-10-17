@@ -512,6 +512,89 @@ describe("the save flow answers every step (acceptance 3)", () => {
       ),
     ).toBeTruthy();
   });
+
+  test("a review or save the network layer never answers says so (OCR round 1 medium)", async () => {
+    // The fetch-reject half of the write verdicts: a refusal envelope has its own
+    // sentence, but a request that never answered at all used to leave the dialog
+    // silent with its buttons re-armed. Both writes now reuse the same sentence.
+    const view = draw();
+    listHandler = () => Response.json(datasetsBody([]));
+    const { user, dialog } = await openReviewedDialog(view);
+    reviewHandler = () => {
+      throw new TypeError("network down");
+    };
+    // Re-review after killing the wire: the retry starts from a clean slate.
+    await user.click(
+      within(dialog).getByRole("button", { name: "Preview the freeze" }),
+    );
+    expect(
+      await within(dialog).findByText(
+        "The observability store did not answer. Nothing was saved.",
+      ),
+    ).toBeTruthy();
+    saveHandler = () => {
+      throw new TypeError("network down");
+    };
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save version" }),
+    );
+    // The same sentence as the review refusal beside it, so the plural answer is
+    // asserted for, not guessed between.
+    const answers = await within(dialog).findAllByText(
+      "The observability store did not answer. Nothing was saved.",
+    );
+    expect(answers.length).toBe(2);
+  });
+
+  test("a preview entry that is not a frozen case is refused, never rendered (OCR round 1 medium)", async () => {
+    // The dialog reads preview[0].safeInput.state — an entry that lost its shape
+    // used to crash it; the guard answers with the store-did-not-anter refusal.
+    reviewHandler = () =>
+      Response.json({ ...reviewBody(), preview: [{ nope: true }] });
+    const view = draw();
+    listHandler = () => Response.json(datasetsBody([]));
+    const user = userEvent.setup({ document: view.container.ownerDocument });
+    await user.click(
+      await view.findByRole("button", { name: /Save a case from a run/ }),
+    );
+    const dialog = await view.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Run id"), "run-9");
+    await user.type(within(dialog).getByLabelText("Dataset name"), "Refunds");
+    await user.type(
+      within(dialog).getByLabelText("Case input"),
+      "What is the refund policy?",
+    );
+    await user.type(
+      within(dialog).getByLabelText("Reference output"),
+      "30 days.",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Preview the freeze" }),
+    );
+    expect(
+      await within(dialog).findByText(
+        "The observability store did not answer. Nothing was saved.",
+      ),
+    ).toBeTruthy();
+    expect(within(dialog).queryByText(/What will freeze/)).toBeNull();
+  });
+
+  test("a save answer that lost its projected facts is refused (OCR round 1 medium)", async () => {
+    // The success toast reads datasetName and version.contentHash/caseCount; a body
+    // missing them is the store failing to answer, not a save to celebrate.
+    saveHandler = () => Response.json({ version: {} });
+    const view = draw();
+    listHandler = () => Response.json(datasetsBody([]));
+    const { user, dialog } = await openReviewedDialog(view);
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save version" }),
+    );
+    expect(
+      await within(dialog).findByText(
+        "The observability store did not answer. Nothing was saved.",
+      ),
+    ).toBeTruthy();
+  });
 });
 
 describe("the screen conditions stay distinct (acceptance 5)", () => {
@@ -547,6 +630,16 @@ describe("the screen conditions stay distinct (acceptance 5)", () => {
     const view = draw();
     await view.findByText("Upstream unavailable");
     expect(view.queryByText("No dataset versions yet")).toBeNull();
+  });
+
+  test("a dataset row that lost its readable facts says the store did not answer (OCR round 1 medium)", async () => {
+    // The envelope guard alone passed a row missing versionCount/syncState through,
+    // and the row rendered `sync.undefined`-style fragments instead of a fault.
+    listHandler = () =>
+      Response.json({ datasets: [{ id: "ds-1", name: "Refunds" }] });
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+    expect(view.queryByText("Refunds")).toBeNull();
   });
 });
 

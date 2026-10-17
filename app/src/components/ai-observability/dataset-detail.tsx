@@ -19,7 +19,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { observationDatasetDetailQueryOptions } from "@/lib/ai-observability/datasets";
 import { useDateTime } from "@/lib/i18n/datetime";
-import { StateNotice } from "./datasets-list";
+import { observationScreenFault, StateNotice } from "./state-notice";
 
 /*
  * The frozen version history of one dataset (Issue #27). The page is deliberately the most
@@ -44,11 +44,7 @@ export function ObservationDatasetDetailPage({
 
   const loaded = screen.data?.view === "detail" ? screen.data.result : null;
   // A transport-level error is the store failing to answer — the unavailable sentence.
-  const fault = screen.error
-    ? "unavailable"
-    : screen.data?.view === "fault"
-      ? screen.data.fault
-      : null;
+  const fault = observationScreenFault(screen);
 
   return (
     <PageShell

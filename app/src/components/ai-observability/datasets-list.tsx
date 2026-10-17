@@ -7,6 +7,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { StateNotice } from "@/components/ai-observability/state-notice";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,26 +53,6 @@ import type { SafeText, SafeValue } from "../../../../shared/ai-observability";
  * a dataset row navigates, a version row (on the detail page) does not edit — there is no
  * second kind of truth to reconcile with the database's no-UPDATE trigger.
  */
-
-/** One availability sentence: a title and the description that qualifies it. */
-export function StateNotice({
-  className,
-  description,
-  title,
-}: {
-  className?: string;
-  description: string;
-  title: string;
-}) {
-  return (
-    <div className={className} role="status">
-      <p className="font-medium text-sm">{title}</p>
-      <p className="mt-1 max-w-prose text-muted-foreground text-sm">
-        {description}
-      </p>
-    </div>
-  );
-}
 
 /** The one translation the preview's markers need — narrow so typed keys still check. */
 type MarkerTranslate = (key: "marker.omitted" | "marker.truncated") => string;
@@ -312,6 +293,9 @@ function SaveCaseSection({ botId }: { botId: string }) {
             setReviewRefusal(attempt.refusal);
           }
         },
+        // A request that never answered at all (the network layer rejected before
+        // any HTTP verdict) is its own sentence, not a silently re-enabled button.
+        onError: () => setReviewRefusal(null),
       },
     );
   };
@@ -336,6 +320,9 @@ function SaveCaseSection({ botId }: { botId: string }) {
             setSaveRefusal(attempt.refusal);
           }
         },
+        // A request that never answered at all (the network layer rejected before
+        // any HTTP verdict) is its own sentence, not a silently re-enabled button.
+        onError: () => setSaveRefusal(null),
       },
     );
   };

@@ -12,6 +12,10 @@ import { Link } from "@tanstack/react-router";
 import type * as React from "react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  observationScreenFault,
+  StateNotice,
+} from "@/components/ai-observability/state-notice";
 import { BotSubpage } from "@/components/bot-profile/bot-subpage";
 import { PageRows } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
@@ -112,11 +116,7 @@ export function ObservationRunsList({ botId }: { botId: string }) {
   if (screen.isPending) return null;
 
   // A transport-level error is the store failing to answer — the unavailable sentence.
-  const fault = screen.error
-    ? "unavailable"
-    : screen.data.view === "fault"
-      ? screen.data.fault
-      : null;
+  const fault = observationScreenFault(screen);
   if (fault !== null) {
     /*
      * A fault while paginating is most often a cursor the server rotated out from under
@@ -301,26 +301,6 @@ function FilterChip({
     >
       {label}
     </Button>
-  );
-}
-
-/** One availability sentence: a title and the description that qualifies it. */
-export function StateNotice({
-  className,
-  description,
-  title,
-}: {
-  className?: string;
-  description: string;
-  title: string;
-}) {
-  return (
-    <div className={className} role="status">
-      <p className="font-medium text-sm">{title}</p>
-      <p className="mt-1 max-w-prose text-muted-foreground text-sm">
-        {description}
-      </p>
-    </div>
   );
 }
 

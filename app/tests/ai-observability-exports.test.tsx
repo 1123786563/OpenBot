@@ -324,6 +324,9 @@ describe("fault, in-flight and not-enabled stay three answers (acceptance 5)", (
     expect(pageText(view)).toContain(
       "The observability store was too slow to answer.",
     );
+    // A terminal job never completes, so its rows are not "pending" — the pending
+    // word is reserved for jobs that can still produce them (OCR round 1 medium).
+    expect(pageText(view)).not.toContain("rows pending");
   });
 
   test("a capability-missing failure says the integration is off, not a fault", async () => {

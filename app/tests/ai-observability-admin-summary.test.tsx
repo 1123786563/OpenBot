@@ -255,6 +255,36 @@ describe("the page is no bypass around the API's scope (acceptance 1)", () => {
     await view.findByText("Upstream unavailable");
   });
 
+  test("a bot row that lost a nested count the row renders is the unavailable fault (OCR round 1 medium)", async () => {
+    // The old per-bot guard stopped at `botId` and `runs.total`, so a row whose
+    // `exports.byState` went missing passed the guard and crashed AdminBotRow
+    // mid-render. The deeper guard answers the store's non-answer instead.
+    summaryHandler = () =>
+      Response.json(
+        summaryBody([
+          botSummary("bot-1", {
+            exports:
+              {} as unknown as AdminSummaryResult["bots"][number]["exports"],
+          }),
+        ]),
+      );
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+  });
+
+  test("the truncation notice names the cutoff, never a literal placeholder (OCR round 1 medium)", async () => {
+    summaryHandler = () =>
+      Response.json(
+        summaryBody([botSummary("bot-1")], { botsTruncated: true }),
+      );
+    const view = draw();
+    await view.findByText("Scope truncated");
+    const text = pageText(view);
+    expect(text).not.toContain("{{count}}");
+    // One Bot in scope: the sentence shows that one, formatted.
+    expect(text).toContain("This answer covers the first 1 Bots");
+  });
+
   test("a role narrowed while the admin stays on the page reaches them on focus", async () => {
     // Spec A6, review Maj-2: this page has no poll and the app-wide QueryClient
     // turns focus refetch off, so the opt-in is the only production path a

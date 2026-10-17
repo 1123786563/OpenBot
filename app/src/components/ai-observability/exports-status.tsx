@@ -26,7 +26,7 @@ import {
   observationExportsQueryOptions,
 } from "@/lib/ai-observability/exports";
 import { useDateTime } from "@/lib/i18n/datetime";
-import { StateNotice } from "./runs-list";
+import { observationScreenFault, StateNotice } from "./state-notice";
 
 /*
  * The creator's export status page (Issue #42): the Bot's export jobs and the file each
@@ -98,11 +98,7 @@ function ObservationExportsList({
   if (screen.isPending) return null;
 
   // A transport-level error is the store failing to answer — the unavailable sentence.
-  const fault = screen.error
-    ? "unavailable"
-    : screen.data?.view === "fault"
-      ? screen.data.fault
-      : null;
+  const fault = observationScreenFault(screen);
   if (fault !== null) {
     return (
       <StateNotice
@@ -165,12 +161,20 @@ function ExportJobRow({
                       minute: "2-digit",
                     }),
                   }),
-              job.rowCount === null
-                ? t("exports.rowsPending")
-                : t("exports.rowCount", {
+              /*
+               * rowCount is null until the job completes (the shared contract's own
+               * words), so "rows pending" is only honest while the job can still
+               * produce them — a failed or cancelled job never will, and calling its
+               * rows pending would contradict the terminal state named beside it.
+               */
+              job.rowCount !== null
+                ? t("exports.rowCount", {
                     count: formatNumber(job.rowCount),
                     limit: formatNumber(job.rowLimit),
-                  }),
+                  })
+                : job.state === "queued" || job.state === "running"
+                  ? t("exports.rowsPending")
+                  : null,
             ]
               .filter((part) => part !== null)
               .join(" · ")}

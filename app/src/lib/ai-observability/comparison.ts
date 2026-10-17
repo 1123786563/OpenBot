@@ -56,13 +56,98 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || typeof value === "number";
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+/*
+ * Entry-level shape defense (OCR round 1 medium, comparison page): the page reads
+ * `meanScore.baseline.toFixed(2)`, indexes `report.samples[delta.index]`, and walks
+ * each delta's and each regression row's nested halves — a body that dropped any of
+ * those crashed mid-render instead of answering unavailable. Each guard covers the
+ * fields the page reads; a class word the build has never heard of is a missing i18n
+ * sentence, not a crash, so classes are claimed as strings while the direction — the
+ * page's own four-word verdict — stays a closed set.
+ */
+function isComparisonHalf(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.class === "string" &&
+    isNullableNumber(value.score)
+  );
+}
+
+function isSampleDelta(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.index === "number" &&
+    isComparisonHalf(value.baseline) &&
+    isComparisonHalf(value.candidate) &&
+    isNullableNumber(value.scoreDelta) &&
+    (value.direction === "regressed" ||
+      value.direction === "improved" ||
+      value.direction === "unchanged" ||
+      value.direction === "incomparable")
+  );
+}
+
+function isRegressionRow(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.index !== "number") return false;
+  if (
+    !isRecord(value.case) ||
+    typeof value.case.datasetVersionId !== "string" ||
+    typeof value.case.contentHash !== "string"
+  ) {
+    return false;
+  }
+  for (const side of [value.baseline, value.candidate]) {
+    if (
+      !isRecord(side) ||
+      typeof side.class !== "string" ||
+      !isNullableNumber(side.score) ||
+      !isNullableString(side.code) ||
+      typeof side.resultLink !== "string"
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isCompatibilityEntry(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.field === "string" &&
+    isNullableString(value.baseline) &&
+    isNullableString(value.candidate) &&
+    typeof value.equal === "boolean" &&
+    typeof value.blocking === "boolean"
+  );
+}
+
+function isMeanScore(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNullableNumber(value.baseline) &&
+    isNullableNumber(value.candidate) &&
+    isNullableNumber(value.delta)
+  );
+}
+
 function isComparisonSide(value: unknown): boolean {
   return (
     isRecord(value) &&
     typeof value.experimentId === "string" &&
     typeof value.executionId === "string" &&
     typeof value.resultLink === "string" &&
-    isRecord(value.report)
+    // The deltas section indexes each side's samples by a delta's index, so a side
+    // whose report lost its samples array crashes the map before any optional chain.
+    isRecord(value.report) &&
+    Array.isArray(value.report.samples)
   );
 }
 
@@ -74,11 +159,17 @@ function isExperimentComparisonBody(
     return false;
   if (!isRecord(body.compatibility)) return false;
   if (!Array.isArray(body.compatibility.fields)) return false;
-  if (body.deltas !== null && !isRecord(body.deltas)) return false;
-  if (body.deltas !== null && !Array.isArray(body.deltas.perSample))
-    return false;
-  if (body.regressions !== null && !Array.isArray(body.regressions))
-    return false;
+  if (!body.compatibility.fields.every(isCompatibilityEntry)) return false;
+  if (body.deltas !== null) {
+    if (!isRecord(body.deltas)) return false;
+    if (!isMeanScore(body.deltas.meanScore)) return false;
+    if (!Array.isArray(body.deltas.perSample)) return false;
+    if (!body.deltas.perSample.every(isSampleDelta)) return false;
+  }
+  if (body.regressions !== null) {
+    if (!Array.isArray(body.regressions)) return false;
+    if (!body.regressions.every(isRegressionRow)) return false;
+  }
   return true;
 }
 
@@ -106,5 +197,12 @@ export function observationExperimentComparisonQueryOptions(
       }
       return { view: "comparison", comparison: body };
     },
+    /*
+     * Spec A6, the creator chains' half (admin/exports opt in the same way): after a
+     * permission narrows, the tab returning to the foreground re-asks, so a revoked
+     * scope answers forbidden instead of riding its stale answer until the next
+     * navigation — the app-wide QueryClient turns focus refetch off.
+     */
+    refetchOnWindowFocus: true,
   });
 }

@@ -105,6 +105,80 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+/*
+ * Entry-level shape defense (OCR round 1 medium, datasets list/detail/review/save): the
+ * envelope guards alone let a half-shaped row through to the renderer, where reading
+ * `syncState`, `versionCount`, `contentHash` or a preview entry's `safeInput.state` is a
+ * TypeError instead of the unavailable fault this module promises. Each guard below
+ * covers exactly the fields the corresponding page renders — nothing deeper, because a
+ * fact the page never reads cannot crash it.
+ */
+function isDatasetListItem(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.syncState === "string" &&
+    typeof value.versionCount === "number" &&
+    isNullableString(value.latestVersionAt)
+  );
+}
+
+function isDatasetVersionItem(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.contentHash === "string" &&
+    typeof value.redactionPolicyVersion === "string" &&
+    typeof value.caseCount === "number" &&
+    typeof value.createdAt === "string"
+  );
+}
+
+/** A projected text leaf: the three SafeText states, each with the field it promises. */
+function isSafeTextShape(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.state === "omitted") return true;
+  if (value.state === "projected" || value.state === "truncated") {
+    return typeof value.text === "string";
+  }
+  return false;
+}
+
+/** A projected value leaf: omitted names a reason, the other two states carry a value. */
+function isSafeValueShape(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.state === "omitted") return true;
+  if (value.state === "projected" || value.state === "truncated") {
+    return "value" in value;
+  }
+  return false;
+}
+
+/** One preview row the review dialog reads: the input, the reference output, the fixtures. */
+function isReviewPreviewEntry(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isSafeTextShape(value.safeInput) &&
+    isSafeTextShape(value.referenceOutput) &&
+    isSafeValueShape(value.toolFixtures)
+  );
+}
+
+function isSavedDatasetVersionBody(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.datasetId === "string" &&
+    typeof value.datasetName === "string" &&
+    typeof value.replayed === "boolean" &&
+    isDatasetVersionItem(value.version)
+  );
+}
+
 export function observationDatasetsQueryOptions(botId: string) {
   return queryOptions({
     queryKey: observationDatasetKeys.list(botId),
@@ -115,11 +189,22 @@ export function observationDatasetsQueryOptions(botId: string) {
       const verdict = await classifyRead(response);
       if ("fault" in verdict) return { view: "fault", fault: verdict.fault };
       const body = (await response.json().catch(() => null)) as unknown;
-      if (!isRecord(body) || !Array.isArray(body.datasets)) {
+      if (
+        !isRecord(body) ||
+        !Array.isArray(body.datasets) ||
+        !body.datasets.every(isDatasetListItem)
+      ) {
         return { view: "fault", fault: "unavailable" };
       }
       return { view: "list", result: body as ObservationDatasetsResult };
     },
+    /*
+     * Spec A6, the creator chains' half (admin/exports opt in the same way): after a
+     * permission narrows, the tab returning to the foreground re-asks, so a revoked
+     * scope answers forbidden instead of riding its stale answer until the next
+     * navigation — the app-wide QueryClient turns focus refetch off.
+     */
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -139,12 +224,25 @@ export function observationDatasetDetailQueryOptions(
       if (
         !isRecord(body) ||
         !isRecord(body.dataset) ||
-        !Array.isArray(body.versions)
+        typeof body.dataset.name !== "string" ||
+        typeof body.dataset.syncState !== "string" ||
+        !Array.isArray(body.versions) ||
+        !body.versions.every(isDatasetVersionItem)
       ) {
         return { view: "fault", fault: "unavailable" };
       }
-      return { view: "detail", result: body as ObservationDatasetDetailResult };
+      return {
+        view: "detail",
+        result: body as ObservationDatasetDetailResult,
+      };
     },
+    /*
+     * Spec A6, the creator chains' half (admin/exports opt in the same way): after a
+     * permission narrows, the tab returning to the foreground re-asks, so a revoked
+     * scope answers forbidden instead of riding its stale answer until the next
+     * navigation — the app-wide QueryClient turns focus refetch off.
+     */
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -170,7 +268,13 @@ export function observationReviewCaseMutationOptions() {
         return { ok: false, refusal: await refusalCode(response) };
       }
       const body = (await response.json().catch(() => null)) as unknown;
-      if (!isRecord(body) || !Array.isArray(body.preview)) {
+      if (
+        !isRecord(body) ||
+        !Array.isArray(body.preview) ||
+        !body.preview.every(isReviewPreviewEntry)
+      ) {
+        // A preview entry that is not a frozen case would crash the dialog reading
+        // safeInput.state — the store did not answer, so neither may this claim.
         return { ok: false, refusal: null };
       }
       return { ok: true, result: body as CaseReviewOutcome };
@@ -197,7 +301,9 @@ export function observationSaveCaseMutationOptions(queryClient: QueryClient) {
         return { ok: false, refusal: await refusalCode(response) };
       }
       const body = (await response.json().catch(() => null)) as unknown;
-      if (!isRecord(body) || !isRecord(body.version)) {
+      if (!isSavedDatasetVersionBody(body)) {
+        // The success toast reads datasetName, version.contentHash and version.caseCount —
+        // a body missing them is the store failing to answer, not a save to celebrate.
         return { ok: false, refusal: null };
       }
       return { ok: true, result: body as SavedDatasetVersionResult };
