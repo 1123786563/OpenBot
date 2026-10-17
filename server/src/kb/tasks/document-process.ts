@@ -309,8 +309,8 @@ export async function processDocument(
   }));
   // pre/next 链表（相邻一跳扩展依赖）。
   for (let i = 0; i < rows.length; i += 1) {
-    if (i > 0) rows[i]!.preChunkId = rows[i - 1]!.id;
-    if (i < rows.length - 1) rows[i]!.nextChunkId = rows[i + 1]!.id;
+    if (i > 0) rows[i]!.preChunkId = rows[i - 1]?.id;
+    if (i < rows.length - 1) rows[i]!.nextChunkId = rows[i + 1]?.id;
   }
   await db.insert(chunks).values(rows);
   await db.insert(chunkRevisions).values(

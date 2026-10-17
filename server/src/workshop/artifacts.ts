@@ -7,7 +7,7 @@
  * {@link artifactTypeFor} so tests can drive it without a database.
  */
 import type { SandboxArtifact } from "../codesandbox/types";
-import type { WorkshopArtifactRow, WorkshopStore } from "./store";
+import type { WorkshopStore } from "./store";
 
 /** The gallery's ceiling for one run: more files are collected by the gateway's own caps, this
  *  keeps a pathological run from flooding the table (and the gallery) with hundreds of rows. */

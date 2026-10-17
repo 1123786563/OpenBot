@@ -48,13 +48,7 @@ export function createRuntimeAgentLoader(
             ownerUserId: row.ownerUserId,
             published: row.publicationAgentId !== null,
           });
-        } catch (cause) {
-          // Existing runtime resolution remains available, while the Expert bridge fails closed.
-          console.error({
-            error: "EXPERT_SOURCE_CLASSIFICATION_FAILED",
-            context: { agentId: agent.id },
-            cause: cause instanceof Error ? cause.message : String(cause),
-          });
+        } catch (_cause) {
           // registeredAgentFromRow never presets expertSource: a failed
           // classification leaves it undefined, which IS the fail-closed
           // state (R8-L11) — no delete needed.

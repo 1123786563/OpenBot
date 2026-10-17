@@ -49,7 +49,7 @@ export function WorkshopTurnView({
     enabled:
       !running && latestTurn !== undefined && latestTurn.id !== undefined,
     staleTime: Number.POSITIVE_INFINITY,
-    queryFn: () => fetchWorkshopTurnEvents(channelId, latestTurn!.id!),
+    queryFn: () => fetchWorkshopTurnEvents(channelId, latestTurn?.id!),
   });
   const shown = running ? events : (settledEvents.data?.events ?? []);
 

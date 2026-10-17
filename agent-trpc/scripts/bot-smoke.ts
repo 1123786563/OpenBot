@@ -39,7 +39,7 @@ const fakeProvider = Bun.serve({
     if (url.pathname.endsWith("/chat/completions")) {
       seenBodies.push(await request.text());
       const frames = replyWith === "text" ? textFrames : toolFrames;
-      return new Response(frames.join("\n\n") + "\n\n", {
+      return new Response(`${frames.join("\n\n")}\n\n`, {
         headers: { "content-type": "text/event-stream" },
       });
     }

@@ -14,7 +14,7 @@ import { tenantKeys } from "./queries";
  * switch during the write is handled by the reads' generation guard on the refetch itself.
  */
 
-const FALLBACK = "That did not work. Try again.";
+const _FALLBACK = "That did not work. Try again.";
 
 function invalidateChannelViews(
   queryClient: QueryClient,

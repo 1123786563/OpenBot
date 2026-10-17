@@ -109,13 +109,13 @@ export async function listTree(
           children: [],
         };
         directories.set(parentPath, directory);
-        if (parent) parent.children!.push(directory);
+        if (parent) parent.children?.push(directory);
         else nodes.push(directory);
       }
       parent = directory;
     }
     if (parent) {
-      parent.children!.push({
+      parent.children?.push({
         name: segments.at(-1)!,
         path: file,
         type: "file",
@@ -173,8 +173,8 @@ export async function upload(
   for (let index = 0; index < files.length; index += 1) {
     if (sizes[index]! > MAX_UPLOAD_BYTES) {
       await refuse(
-        `The file ${files[index]!.name} exceeds the ${MAX_UPLOAD_BYTES}-byte per-file limit.`,
-        { file: files[index]!.name, size: sizes[index] },
+        `The file ${files[index]?.name} exceeds the ${MAX_UPLOAD_BYTES}-byte per-file limit.`,
+        { file: files[index]?.name, size: sizes[index] },
       );
     }
   }
@@ -197,8 +197,8 @@ export async function upload(
   for (let index = 0; index < files.length; index += 1) {
     // A name from the wire never becomes a path: separators are flattened so one file cannot
     // climb out of the workspace with ../ or plant into another Bot's tree with a slash.
-    const name = files[index]!.name.replace(/[/\\]/g, "_");
-    const written = await client!.writeFile(name, files[index]!.content);
+    const name = files[index]?.name.replace(/[/\\]/g, "_");
+    const written = await client?.writeFile(name, files[index]?.content);
     uploaded.push(written);
   }
 

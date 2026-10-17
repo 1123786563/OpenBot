@@ -386,12 +386,6 @@ export function createIdentityStore(database: Database, credentials: Revoke) {
         if (isIdentityProvider(row.provider))
           links.push(toLink(row, row.provider));
         else
-          console.warn(
-            JSON.stringify({
-              type: "identity-link-unknown-provider",
-              linkId: row.id,
-            }),
-          );
       }
       return links;
     },

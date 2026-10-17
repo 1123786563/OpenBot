@@ -145,7 +145,7 @@ export function createSandboxSupervisor(
 
   const reap: SandboxSupervisor["reap"] = async (botId) => {
     const live = await state.liveOf(botId);
-    if (!live || live.status !== "ready") return; // Nothing awake is nothing to sleep.
+    if (live?.status !== "ready") return; // Nothing awake is nothing to sleep.
     await state.transition(live.id, "ready", "sleeping");
   };
 

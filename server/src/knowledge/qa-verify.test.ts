@@ -248,7 +248,7 @@ describe("qa: retriever blind spots", () => {
       retriever({ circuit }).retrieve("q"),
       retriever({ circuit }).retrieve("q"),
     ]);
-    const outcomes = [first, second].sort((a, b) =>
+    const outcomes = [first, second].sort((a, _b) =>
       a.status === "hit" ? -1 : 1,
     );
     expect(outcomes[0]?.status).toBe("hit");

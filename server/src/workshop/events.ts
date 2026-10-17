@@ -37,7 +37,7 @@ export type SeqencedStreamEvent = WorkshopStreamEvent & { seq: number };
 const propertiesOf = (
   payload: Record<string, unknown>,
 ): Record<string, unknown> => {
-  const nested = payload["properties"];
+  const nested = payload.properties;
   if (nested !== null && typeof nested === "object") {
     return nested as Record<string, unknown>;
   }
@@ -46,16 +46,16 @@ const propertiesOf = (
 
 const textOf = (payload: Record<string, unknown>): string => {
   const properties = propertiesOf(payload);
-  const delta = properties["delta"];
+  const delta = properties.delta;
   if (typeof delta === "string") return delta;
-  const part = properties["part"] as { text?: unknown } | undefined;
+  const part = properties.part as { text?: unknown } | undefined;
   if (typeof part?.text === "string") return part.text;
   return "";
 };
 
 const labelOf = (payload: Record<string, unknown>): string => {
   const properties = propertiesOf(payload);
-  const status = properties["status"] as { type?: unknown } | undefined;
+  const status = properties.status as { type?: unknown } | undefined;
   if (typeof status?.type === "string") return status.type;
   return "working";
 };
@@ -75,7 +75,7 @@ export function translate(
     case "thought":
       return { seq, type: "thought", text: textOf(payload) };
     case "tool_call": {
-      const part = propertiesOf(payload)["part"] as
+      const part = propertiesOf(payload).part as
         | { tool?: unknown; state?: unknown }
         | undefined;
       return {

@@ -5,7 +5,6 @@ import type {
   ModelInvocationContext,
   PlatformScope,
   RunFailureCode,
-  RunnerRequestLease,
   RunService,
 } from "../contracts";
 import { createAiSdkV3GatewayAdapter } from "../models/ai-sdk-v3-gateway-adapter";
@@ -270,11 +269,6 @@ export function createGovernedModelExecution(
       if (
         !(cause instanceof Error && cause.message.startsWith("MODEL_ROUTE_"))
       ) {
-        console.error({
-          error: "MODEL_ROUTE_REBIND_INFRASTRUCTURE_FAILED",
-          context: { routeRef, agentId: deps.agentId },
-          cause: cause instanceof Error ? cause.message : String(cause),
-        });
       }
       return null;
     }

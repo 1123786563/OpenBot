@@ -187,7 +187,7 @@ export function createTurnRoutes(
               // drain is inert unless gated tools are configured.
               announceDrain:
                 deps.approvalSignals && config.approvalGatedTools.length > 0
-                  ? () => deps.approvalSignals!.drainAnnouncements(sessionId)
+                  ? () => deps.approvalSignals?.drainAnnouncements(sessionId)
                   : null,
               // connect_app asks are in the permissions template (not a gated-
               // tools config), so the drain is wired whenever the KV is.

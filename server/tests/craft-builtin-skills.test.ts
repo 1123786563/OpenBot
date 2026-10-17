@@ -57,7 +57,7 @@ function sources(
   };
 }
 
-const baseConfig: CraftConfig = loadCraftConfig({});
+const _baseConfig: CraftConfig = loadCraftConfig({});
 
 // ── the fileset ─────────────────────────────────────────────────────────────
 

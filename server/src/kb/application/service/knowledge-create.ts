@@ -9,7 +9,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { and, eq, isNull } from "drizzle-orm";
 import { getLogger } from "../../../../../shared/logger";
 import type { Db } from "../../db/client";

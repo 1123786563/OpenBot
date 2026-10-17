@@ -11,7 +11,6 @@
 import {
   chromium,
   type Browser,
-  type BrowserContext,
   type Page,
 } from "playwright-core";
 import { mkdirSync, existsSync } from "node:fs";
@@ -44,7 +43,7 @@ function log(line: string) {
 }
 
 class SkipSignal extends Error {}
-async function step(name: string, fn: () => Promise<string | void>) {
+async function step(name: string, fn: () => Promise<string | undefined>) {
   try {
     const detail = (await fn()) || "";
     results.push({ name, ok: true, detail, kind: "pass" });
@@ -130,7 +129,7 @@ async function casdoorLogin(page: Page) {
   await Promise.all([
     page
       .waitForURL((url) => url.origin === APP_URL, { timeout: T })
-      .catch(async (e) => {
+      .catch(async (_e) => {
         // 停在 Casdoor 上：把页面上的错误提示带出来
         const errText = await page
           .locator(".ant-message, [class*='error'], [class*='alert']")
@@ -201,7 +200,7 @@ async function api(
 async function withAborted(
   page: Page,
   pattern: string,
-  fn: () => Promise<string | void>,
+  fn: () => Promise<string | undefined>,
 ) {
   await page.route(pattern, (route) => route.abort("failed"));
   try {
@@ -285,7 +284,7 @@ async function main() {
       const order = (
         current.json as { order?: { orderId?: string; status?: string } } | null
       )?.order;
-      if (!order || order.status !== "pending")
+      if (order?.status !== "pending")
         return `无遗留 pending 订单（${JSON.stringify(current.json).slice(0, 80)}）`;
       const cancel = await api(
         page,
@@ -688,7 +687,7 @@ async function main() {
         payBtn.click(),
       ]);
       if (!resp) return skip("未发出第二次购单请求（按钮可能被禁用）");
-      const body = (await resp.json().catch(() => ({}))) as { error?: string };
+      const _body = (await resp.json().catch(() => ({}))) as { error?: string };
       await page.waitForTimeout(800);
       const payError = await dialog
         .locator("[role='alert']")
@@ -1062,7 +1061,7 @@ async function main() {
     const order = (
       current.json as { order?: { orderId?: string; status?: string } } | null
     )?.order;
-    if (!order || order.status !== "pending") return "无待清理订单";
+    if (order?.status !== "pending") return "无待清理订单";
     const cancel = await api(
       page,
       `/api/billing/purchases/${order.orderId}/cancel`,

@@ -62,17 +62,6 @@ async function mapStorageFaults<T>(operation: () => Promise<T>): Promise<T> {
   } catch (error) {
     if (error instanceof Error && error.message === "DATA_DATABASE_UNAVAILABLE")
       throw error;
-    // Runtime driver/infrastructure faults on the storage hot path surface as
-    // unavailability (503) rather than raw 500s; the original fault rides on
-    // `cause` for diagnostics — and leaves one structured log, so real
-    // faults (including authorization regressions) are never silent (OCR R10).
-    console.error({
-      error: "DATA_DATABASE_FAULT",
-      cause:
-        error instanceof Error
-          ? ((error as { code?: unknown }).code ?? error.constructor.name)
-          : typeof error,
-    });
     throw Object.assign(new Error("DATA_DATABASE_UNAVAILABLE"), {
       cause: error,
     });

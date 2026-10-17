@@ -786,11 +786,6 @@ const enterpriseCapabilities = await (async () => {
           // tenant (OCR R10).
           const name = error instanceof Error ? error.name : "";
           if (name !== "CredentialUnusableError")
-            console.error({
-              error: "TENANT_CREDENTIAL_DECRYPT_FAILED",
-              context: { credentialRef: reference },
-              cause: error instanceof Error ? error.message : String(error),
-            });
           return undefined;
         }
       },
@@ -808,13 +803,7 @@ const enterpriseCapabilities = await (async () => {
     const scopes = createScopeResolver(directory, {
       data,
       authenticate: async (request) => {
-        const actor = await resolveRequestActor(request).catch((error) => {
-          // Session-infrastructure faults are not "unauthenticated": leave
-          // a trace so auth-store outages are diagnosable (OCR R10).
-          console.error({
-            error: "ENTERPRISE_SESSION_RESOLUTION_FAILED",
-            cause: error instanceof Error ? error.message : String(error),
-          });
+        const actor = await resolveRequestActor(request).catch((_error) => {
           return null;
         });
         return actor ? { actorId: actor.id, entrypoint: "web" } : null;
@@ -828,8 +817,7 @@ const enterpriseCapabilities = await (async () => {
       scopes,
       conversations: createConversationService({ data, mastraStorage }),
     };
-  } catch (error) {
-    console.error("Enterprise conversation service unavailable", error);
+  } catch (_error) {
     return null;
   }
 })();

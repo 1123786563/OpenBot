@@ -10,9 +10,9 @@
 // since NODE_PATH is not set in the sandbox.
 
 
-const fs = require("fs");
-const path = require("path");
-const { execFileSync } = require("child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 
 const DEFAULT_SIZE = 512;
 const DEFAULT_COLOR = "000000";
@@ -23,7 +23,7 @@ const SVG_NATIVE_SIZE = 24; // both packages ship 24x24 viewBox SVGs
 const MISSING_DEPS_MESSAGE = `Error: icon rendering dependencies (lucide-static, @tabler/icons, sharp) are missing from this sandbox image.`;
 
 function fail(message) {
-  process.stderr.write(message + "\n");
+  process.stderr.write(`${message}\n`);
   process.exit(1);
 }
 
@@ -181,7 +181,7 @@ function runList(query, setArg) {
         `Try a shorter/simpler query (e.g. "chart" not "growth chart"), or the other set with --set.`,
     );
   }
-  process.stdout.write(matches.slice(0, MAX_LIST_RESULTS).join("\n") + "\n");
+  process.stdout.write(`${matches.slice(0, MAX_LIST_RESULTS).join("\n")}\n`);
   if (matches.length > MAX_LIST_RESULTS) {
     process.stdout.write(
       `... ${matches.length - MAX_LIST_RESULTS} more matches truncated; refine the query\n`,
@@ -199,7 +199,7 @@ function normalizeColor(raw) {
       .split("")
       .map((c) => c + c)
       .join("");
-  return "#" + hex.toUpperCase();
+  return `#${hex.toUpperCase()}`;
 }
 
 async function runRender(iconName, opts) {
@@ -272,7 +272,7 @@ function parseArgs(argv) {
       return argv[i];
     };
     if (arg === "--help" || arg === "-h") {
-      process.stdout.write(USAGE + "\n");
+      process.stdout.write(`${USAGE}\n`);
       process.exit(0);
     } else if (arg === "--color" || arg === "-c") opts.color = next();
     else if (arg === "--size" || arg === "-s") opts.size = next();

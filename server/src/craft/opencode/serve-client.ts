@@ -1878,7 +1878,7 @@ export class OpencodeServeClient {
             } else {
               await deny("no connect-app rendezvous for this turn");
             }
-          } else if (gate !== null && gate.isGated(info)) {
+          } else if (gate?.isGated(info)) {
             try {
               const approvalId = await gate.open(info);
               pendingPermissions.set(info.permissionId, {

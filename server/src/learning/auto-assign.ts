@@ -228,7 +228,7 @@ export function createLearningAutoAssign(options: {
   const containerId = options.containerId ?? AUTOMATIC_LEARNING_CONTAINER_ID;
   const now = options.now ?? Date.now;
   const minIntervalMs = options.minIntervalMs ?? MIN_INTERVAL_MS;
-  const log = options.log ?? ((entry) => console.warn(JSON.stringify(entry)));
+  const log = options.log ?? ((_entry) => {});
   let current: LearningAutoAssignState = options.enabled
     ? { state: "pending" }
     : { state: "off" };
