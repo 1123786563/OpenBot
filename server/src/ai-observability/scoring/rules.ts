@@ -72,6 +72,147 @@ export const MAX_PATH_SEGMENTS = 16;
 export const DEFAULT_EVALUATION_BUDGET = 1_000_000;
 export const REGEX_COST_MULTIPLIER = 8;
 
+/**
+ * Static catastrophic-backtracking guard (OCR round-1 h9).
+ *
+ * A pattern that nests an unbounded quantifier inside another unbounded quantifier —
+ * `(a+)+`, `(\w+)*`, `(?:a{2,})+` — drives V8's backtracking engine to exponential time,
+ * and a `.test()` that has already started cannot be interrupted by this module's byte-cost
+ * budget (nor by anything on the synchronous request path that calls it). Such a pattern is
+ * therefore refused at the syntax gate, before any RegExp is run: a controlled per-rule
+ * `RULE_SYNTAX_INVALID`, the other rules still scoring.
+ *
+ * The detector recognizes the quantified-group class only — an unbounded quantifier applied
+ * to a group whose body contains an unbounded quantifier over a single-character atom (any
+ * alternation branch counts). It is deliberately conservative: exotic shapes (ambiguous
+ * alternation like `(a|aa)+`) are not statically detected; the byte-cost budget and the
+ * execution orchestrator's wall-clock kill remain the second and third layers.
+ */
+export function regexHasNestedQuantifiers(pattern: string): boolean {
+  // Parsing: index-based recursive descent over the regex surface grammar this
+  // scorer accepts (the freeze's projection caps the patterns long before exotic
+  // features could matter). Each group answers "does my body contain an unbounded
+  // quantifier over a single-character atom"; the danger verdict fires whenever an
+  // unbounded quantifier is applied to such a group.
+  const dangerous = { value: false };
+  let at = 0;
+
+  const peek = () => pattern[at];
+  const done = () => at >= pattern.length;
+
+  type GroupInfo = { unboundedSingle: boolean };
+
+  /** Does this atom consume exactly one character (or a class of them)? */
+  const consumesSingleChar = (atom: string): boolean => {
+    if (atom === ".") return true;
+    if (atom.startsWith("\\")) {
+      // \b \B \A \Z are zero-width; every other one-char escape consumes one.
+      return !["b", "B", "A", "Z", "z"].includes(atom.slice(1));
+    }
+    return atom.startsWith("[") || [...atom].length === 1;
+  };
+
+  const isUnbounded = (quantifier: string | null): boolean =>
+    quantifier === "*" ||
+    quantifier === "+" ||
+    (quantifier?.startsWith("{") === true && quantifier.includes(",") &&
+      !/\{\d+,\d+\}/.test(quantifier));
+
+  const parseAtom = (): { text: string; group: GroupInfo | null } | null => {
+    const ch = peek();
+    if (ch === undefined) return null;
+    if (ch === "\\") {
+      // Consume the escape: backreference (\1), class (\w), or literal (\/).
+      at += 2;
+      return { text: pattern.slice(at - 2, at), group: null };
+    }
+    if (ch === "[") {
+      let cursor = at + 1;
+      if (pattern[cursor] === "^") cursor += 1;
+      if (pattern[cursor] === "]") cursor += 1;
+      while (cursor < pattern.length && pattern[cursor] !== "]") {
+        cursor += pattern[cursor] === "\\" ? 2 : 1;
+      }
+      at = Math.min(cursor + 1, pattern.length);
+      return { text: pattern.slice(0, at), group: null };
+    }
+    if (ch === "(") {
+      // (?: (?<name> (?= (?! (?<= (?<! — headers consumed to the body.
+      let cursor = at + 1;
+      if (pattern[cursor] === "?") {
+        cursor += 1;
+        const marker = pattern[cursor];
+        if (marker === ":" || marker === "=" || marker === "!") {
+          cursor += 1;
+        } else if (marker === "<") {
+          // Named group or lookbehind: skip to the closing >.
+          while (cursor < pattern.length && pattern[cursor] !== ">") cursor += 1;
+          cursor += 1;
+        }
+      }
+      at = cursor;
+      const group: GroupInfo = { unboundedSingle: false };
+      parseAlternation(group);
+      if (peek() === ")") at += 1;
+      return { text: "(…)", group };
+    }
+    at += 1;
+    return { text: ch, group: null };
+  };
+
+  const parseTerm = (owner: GroupInfo): void => {
+    const atom = parseAtom();
+    if (atom === null) return;
+    let quantifier: string | null = null;
+    const ch = peek();
+    if (ch === "*" || ch === "+" || ch === "?") {
+      quantifier = ch;
+      at += 1;
+      if (peek() === "?") at += 1; // lazy — cost shape unchanged
+    } else if (ch === "{") {
+      const close = pattern.indexOf("}", at);
+      const body = close > at ? pattern.slice(at + 1, close) : "";
+      if (/^\d+(,\d*)?$/.test(body)) {
+        quantifier = `{${body}}`;
+        at = close + 1;
+        if (peek() === "?") at += 1;
+      }
+    }
+    if (quantifier !== null) {
+      if (atom.group !== null) {
+        // Quantifier over a group: the dangerous shape is an unbounded outer
+        // quantifier whose group body itself runs an unbounded single-char
+        // quantifier — the classic `(a+)+` ambiguity.
+        if (isUnbounded(quantifier) && atom.group.unboundedSingle) {
+          dangerous.value = true;
+        }
+      } else if (
+        isUnbounded(quantifier) &&
+        consumesSingleChar(atom.text)
+      ) {
+        owner.unboundedSingle = true;
+      }
+    }
+  };
+
+  const parseSequence = (owner: GroupInfo): void => {
+    while (!done() && peek() !== ")" && peek() !== "|") {
+      parseTerm(owner);
+    }
+  };
+
+  const parseAlternation = (owner: GroupInfo): void => {
+    parseSequence(owner);
+    while (peek() === "|") {
+      at += 1;
+      parseSequence(owner);
+    }
+  };
+
+  parseAlternation({ unboundedSingle: false });
+  return dangerous.value;
+}
+
 export type NumericComparison = ">" | ">=" | "<" | "<=" | "==" | "!=";
 export type JsonPathAssertion =
   | "exists"
@@ -604,6 +745,16 @@ export function scoreRunOutput(
           void new RegExp(rule.pattern, flags);
         } catch (cause) {
           syntaxError(`pattern does not compile: ${(cause as Error).message}`);
+          continue;
+        }
+        // The static backtracking guard runs after the compile check: a pattern
+        // that nests unbounded quantifiers can outrun this module's budget on the
+        // synchronous request path, so it is a controlled per-rule refusal, not a
+        // cost line item (OCR h9).
+        if (regexHasNestedQuantifiers(rule.pattern)) {
+          syntaxError(
+            "pattern rejected: nested unbounded quantifiers (catastrophic backtracking risk)",
+          );
           continue;
         }
         cost = (subjectBytes + utf8Bytes(rule.pattern)) * REGEX_COST_MULTIPLIER;

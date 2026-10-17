@@ -677,6 +677,37 @@ describe("the three failure classes are explicit, never a 0", () => {
     });
   });
 
+  test("a nested-quantifier pattern is refused before it can run (OCR h9)", () => {
+    const rs = rules([
+      { id: "catastrophic", kind: "regex", pattern: "^(a+)+$", flags: "" },
+      { id: "catastrophic-star", kind: "regex", pattern: "(\\w+)*x", flags: "" },
+      { id: "catastrophic-count", kind: "regex", pattern: "(a{2,})+b", flags: "" },
+      { id: "fine", kind: "regex", pattern: "^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$", flags: "i" },
+      { id: "plain-group", kind: "regex", pattern: "^(ab)+$", flags: "" },
+      { id: "bounded", kind: "regex", pattern: "(a+){2}", flags: "" },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    const out = scoreRunOutput(rs, textOutput("user@example.com")).results;
+    // The exponential-backtracking shapes are per-rule syntax errors — controlled
+    // refusals, the other rules still score. The rule never reaches RegExp.test.
+    for (const i of [0, 1, 2]) {
+      expect(out[i]).toMatchObject({
+        status: "error",
+        code: "RULE_SYNTAX_INVALID",
+      });
+      expect(
+        out[i].status === "error" &&
+          /nested unbounded quantifier/i.test(String(out[i].message)),
+      ).toBe(true);
+    }
+    // Ordinary patterns — bounded repetition, plain groups, the classic email
+    // shape — are untouched (the email rule matches the subject; the others don't).
+    expect(out[3]).toMatchObject({ status: "passed" });
+    expect(out[4]).toMatchObject({ status: "failed", reason: "no_match" });
+    expect(out[5]).toMatchObject({ status: "failed", reason: "no_match" });
+  });
+
   test("evaluation timeout: budget exhaustion marks the unaffordable rules, deterministically", () => {
     const rs = rules([
       { id: "cheap", kind: "exact_match", expected: "Paris" },
