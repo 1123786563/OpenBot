@@ -22,6 +22,7 @@ import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import type { CreditWriter } from "./credits-writer";
 import type { Credits } from "./credits";
+import { findForeignAccountIdentity, PayerCrossAccountAccessError } from "./payer-personal";
 import type { PaymentOrderReadScope } from "./payments/types";
 import type { BillingStatements } from "./statements";
 import { BillingError, type BillingService } from "./types";
@@ -160,6 +161,13 @@ export function createBillingStatementRoutes(deps: {
  * provider's reader and not the payment order table. `summary` is the plan's base allowance plus
  * the reward totals, `grants` the reward list, `consumption` the ledger with the same window/page
  * grammar as the bill list.
+ *
+ * One refusal comes before any read (ticket 02.4): a request that carries an account identity
+ * (`userId`, `externalCustomerId`, `payerId`, `accountId`, `companyId`, `tenantId`, any casing)
+ * is answered 400, never an empty result — the account these reads answer is decided server-side
+ * (the deployment key today; the signed-in user's resolved personal account from ticket 02.6),
+ * so a client naming an account is a forgery attempt, not a filter. Authentication still wins:
+ * the identity check sits behind `requireUser`, so an unauthenticated caller sees 401.
  */
 export function createBillingCreditRoutes(deps: {
   credits: Credits;
@@ -167,7 +175,19 @@ export function createBillingCreditRoutes(deps: {
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
+  routes.use("*", async (context, next) => {
+    const identity = findForeignAccountIdentity(context.req.query());
+    if (identity !== null) {
+      throw new PayerCrossAccountAccessError(
+        `Credits are resolved server-side; the "${identity}" parameter names an account and is not accepted.`,
+      );
+    }
+    await next();
+  });
   routes.onError((error, context) => {
+    if (error instanceof PayerCrossAccountAccessError) {
+      return context.json({ error: error.message }, 400);
+    }
     if (error instanceof z.ZodError) {
       return context.json({ error: "Supply a valid request." }, 400);
     }
