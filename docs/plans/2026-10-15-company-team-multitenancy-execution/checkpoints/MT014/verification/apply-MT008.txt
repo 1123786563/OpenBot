@@ -1,0 +1,2 @@
+applied: MT008 @ openbot_enterprise_mt014_test (127.0.0.1:55481)
+  已执行并记入 journal: 0001_mt008_resource_visibility_column.sql, 0002_mt008_visibility_operator_grant.sql

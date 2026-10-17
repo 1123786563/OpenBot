@@ -1,0 +1,8 @@
+multitenancy migrate-test — dry-run（默认；执行需 --apply --manifest <file>）
+task: MT014 — MT014（Issue #57）：公司运行配置装配——新增 enterprise_runtime_configs 与 enterprise_runtime_config_overrides（expand-only，仅新增表与最小 RLS，不改既有对象）。
+database: openbot_enterprise_mt014_test @ 127.0.0.1:55481
+journal: 已应用 2/2；待应用 0 步
+summary: 待应用 0 步 / 0 条语句 / 涉及对象: 无
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT014","planDigest":"f1882005120c8334e137748dc7d0e836f007818b6ed29c871007d953c001c53c","steps":[{"number":1,"name":"0001_mt014_runtime_config_tables.sql","statementDigest":"ebce5e3c6887a272bd7b237106b1ac6475802cdaaba3468b82d7a8362c6db6c6","statementCount":4},{"number":2,"name":"0002_mt014_runtime_config_rls.sql","statementDigest":"be76e1fec80b70f7297369763da468dfb80c11f0fdd86d2990529d32e05c28e4","statementCount":20}]}
+dry-run exit=0
