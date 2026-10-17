@@ -29,6 +29,10 @@ import { randomBytes } from "node:crypto";
 // imported, so the dev preview's port judgment is config.ts's own answer and
 // the two can no longer drift, not even in how they read the environment.
 import { portFromEnvironment } from "../config";
+// #358 repair (Task 1): the value whitelist accepts the SIGNED pass shape as
+// one definition imported from its codec — the header side and the verify side
+// can never drift apart on what a pass looks like.
+import { PREVIEW_PASS_COOKIE_SHAPE } from "./preview-pass";
 import type { CraftStore } from "./store";
 
 /** D9, locked: 30 seconds, single use. No idle invalidation exists by design. */
@@ -177,14 +181,27 @@ export function previewSessionCookieHeader(value: string, path = "/"): string {
   // fix-ocr23 #6: the value sits in the NAME=VALUE position of the same header
   // — the dual of the path guard above, not its neighbor: a `;`, `,`, or
   // control byte in the value can rewrite cookie attributes exactly the way a
-  // hostile path can. Today's only caller passes the registry-internal
-  // sessionId (controlled), but this export's stated contract is that a future
-  // caller cannot grow an injection here — so the value gets the same boundary
-  // whitelist (`[A-Za-z0-9_-]`, the sessionId alphabet, bounded at 128) and a
+  // hostile path can. This export's stated contract is that a caller cannot
+  // grow an injection here — so the value gets a boundary whitelist and a
   // mismatch folds it to EMPTY rather than guessing a repair. Fail-safe by
-  // construction: an empty pass can never equal a session id, so the preview
-  // gate refuses with 401 forever — a folded value can never open anything.
-  const safeValue = /^[A-Za-z0-9_-]{1,128}$/.test(value) ? value : "";
+  // construction: an empty pass verifies to nothing, so the preview gate
+  // refuses with 401 forever — a folded value can never open anything.
+  //
+  // #358 repair (Task 1): two legitimate caller shapes, both charset-safe
+  // (neither carries `;` `,` or a control byte, so neither can rewrite an
+  // attribute): the registry-internal sessionId (`[A-Za-z0-9_-]`, bounded at
+  // 128 — the pre-repair transitional caller, gone once redemption mints
+  // passes) and the SIGNED pass (`v1.<user>.<mac>`, PREVIEW_PASS_COOKIE_SHAPE
+  // — the codec's own definition, bounded at 512: `v1.` + a ≤256-byte userId's
+  // base64url + `.` + the 43-char MAC). The whitelist is an INJECTION guard,
+  // not the auth decision — whether a carried value opens anything is the
+  // codec's signature check alone, and the old plaintext session-id cookie is
+  // rejected THERE (verify), never waved through here.
+  const safeValue =
+    (/^[A-Za-z0-9_-]{1,128}$/.test(value) ||
+      (PREVIEW_PASS_COOKIE_SHAPE.test(value) && value.length <= 512))
+      ? value
+      : "";
   // fix-ocr24 #6, why the fold is SILENT: the fold itself is the rejection
   // signal — an empty pass can never equal any session id, so the preview
   // gate answers 401 on every request and the failure is visible at exactly

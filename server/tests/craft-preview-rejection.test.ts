@@ -37,6 +37,7 @@ import {
   PREVIEW_TICKET_TTL_MS,
   type PreviewTickets,
 } from "../src/craft/preview-ticket";
+import { createPreviewPassCodec } from "../src/craft/preview-pass";
 import type {
   AgentSandboxFileApi,
   SandboxGateway,
@@ -61,6 +62,10 @@ const TICKET_REFUSAL =
   "The preview ticket is invalid, expired, or already used.";
 /** The unknown-host refusal sentence (resolvePreviewRequest, both forms). */
 const UNKNOWN_HOST_REFUSAL = "Unknown preview host.";
+
+/** The pass codec the suite's origins derive from the SAME secret — the
+ * planted-value shape assertions and the forged/refused cookie shapes read it. */
+const passCodec = createPreviewPassCodec(SECRET);
 
 /** A steppable clock — expiry is tested by advancing it, never by sleeping. */
 function fakeClock(startMs = 1_700_000_000_000) {
@@ -88,9 +93,6 @@ function fakeStore() {
     },
     async findSession(sessionId: string, userId: string) {
       return state.owner === userId ? row(sessionId) : undefined;
-    },
-    async findSessionById(sessionId: string) {
-      return state.owner !== null ? row(sessionId) : undefined;
     },
   } as unknown as CraftStore;
   return { store, state };
@@ -384,9 +386,14 @@ describe("逐条拒绝: every refusal answers its status with a displayable, cre
       redeemRequest(addressB, ticketB),
     );
     expect(own.status).toBe(302);
-    expect(own.headers.get("set-cookie")).toContain(
-      `${PREVIEW_SESSION_COOKIE}=${SESSION_B}`,
-    );
+    // #358 repair: the planted value is a SIGNED pass, never the session id —
+    // verify it against the codec the origin derives from the same secret.
+    const ownCookie = own.headers.get("set-cookie") ?? "";
+    const ownPass = ownCookie
+      .split(";")[0]
+      ?.slice(`${PREVIEW_SESSION_COOKIE}=`.length) ?? "";
+    expect(ownPass).not.toBe(SESSION_B);
+    expect(passCodec.verify(SESSION_B, ownPass)).toEqual({ userId: USER_ID });
   });
 
   test("他人会话票 — the session reassigned after issue refuses at redeem; another user cannot mint for it either", async () => {
@@ -641,7 +648,9 @@ describe("准入关闭: a closed origin answers its displayable reason on EVERY 
       const response = await closedOrigin.handlePreviewRequest(
         SESSION_A,
         new Request(`${address}/`, {
-          headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_A}` },
+          headers: {
+            cookie: `${PREVIEW_SESSION_COOKIE}=${passCodec.issue(SESSION_A, USER_ID)}`,
+          },
         }),
       );
       const admission = closedOrigin.admission();
@@ -735,8 +744,8 @@ describe("附着模型: upstream dev server absent → the established 503, no s
     const serve = createPreviewProxy({
       config: loadCraftConfig({}),
       store: {
-        async findSessionById(sessionId: string) {
-          return sessionRow(sessionId, 3011);
+        async findSession(sessionId: string, userId: string) {
+          return userId === USER_ID ? sessionRow(sessionId, 3011) : undefined;
         },
       } as unknown as CraftStore,
       botIdFor: async () => "craft-bot",
@@ -749,8 +758,9 @@ describe("附着模型: upstream dev server absent → the established 503, no s
 
     const response = await serve({
       sessionId: SESSION_A,
+      userId: USER_ID,
       request: new Request(`http://127.0.0.1:3001/label/`, {
-        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_A}` },
+        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${passCodec.issue(SESSION_A, USER_ID)}` },
       }),
       appPath: "/label/",
       query: "",
@@ -779,8 +789,8 @@ describe("附着模型: upstream dev server absent → the established 503, no s
     const serve = createPreviewProxy({
       config: loadCraftConfig({}),
       store: {
-        async findSessionById(sessionId: string) {
-          return sessionRow(sessionId, 3011);
+        async findSession(sessionId: string, userId: string) {
+          return userId === USER_ID ? sessionRow(sessionId, 3011) : undefined;
         },
       } as unknown as CraftStore,
       botIdFor: async () => "craft-bot",
@@ -793,10 +803,11 @@ describe("附着模型: upstream dev server absent → the established 503, no s
 
     const framed = await serve({
       sessionId: SESSION_A,
+      userId: USER_ID,
       request: new Request(`http://127.0.0.1:3001/label/`, {
         headers: {
           accept: "text/html,application/xhtml+xml",
-          cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_A}`,
+          cookie: `${PREVIEW_SESSION_COOKIE}=${passCodec.issue(SESSION_A, USER_ID)}`,
         },
       }),
       appPath: "/label/",
@@ -854,5 +865,80 @@ describe("附着模型: upstream dev server absent → the established 503, no s
     // forward, no fallback dial, no bootstrap script written.
     expect(dials).toEqual(["http://sbox.internal:3011/"]);
     expect(writes).toEqual([]);
+  });
+});
+
+// ── #358 repair, Review Focus 3: a planted pass dies with the session's owner ─
+
+describe("#358 repair: a planted pass stops working when the session leaves its owner", () => {
+  test("redeem → owner reassigned → the planted pass is refused through the whole surface", async () => {
+    const { origin, address, ticket } = entryCase();
+
+    // The honest flow first: redeem, hold the planted pass.
+    const redemption = await origin.handlePreviewRequest(
+      SESSION_A,
+      redeemRequest(address, ticket),
+    );
+    expect(redemption.status).toBe(302);
+    const planted = redemption.headers.get("set-cookie") ?? "";
+    const passValue = planted
+      .split(";")[0]
+      ?.slice(`${PREVIEW_SESSION_COOKIE}=`.length) ?? "";
+    expect(passCodec.verify(SESSION_A, passValue)).toEqual({ userId: USER_ID });
+
+    // The session moves to another user UNDER the live pass. The signature
+    // still verifies — the refusal must come from the proxy seam's owner
+    // re-check (findSession(sessionId, verifiedUserId) misses → 404).
+    const seamStore = fakeStore();
+    seamStore.state.owner = OTHER_USER_ID;
+    const serve = createPreviewProxy({
+      config: loadCraftConfig({}),
+      store: seamStore.store,
+      botIdFor: async () => "craft-bot",
+      sandboxConnectionFor: () => ({
+        baseUrl: "http://sbox.internal:4300",
+        token: null,
+      }),
+      fetchImpl: (async () => {
+        throw new Error("the ownership re-check must run before any dial");
+      }) as typeof fetch,
+    });
+    const response = await serve({
+      sessionId: SESSION_A,
+      userId: USER_ID,
+      request: new Request(`http://127.0.0.1:3001/label/`, {
+        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${passValue}` },
+      }),
+      appPath: "/label/",
+      query: "",
+    });
+    expect(response.status).toBe(404);
+    expect(await expectCleanRefusal(response, [passValue, ticket])).toEqual({
+      error: "This preview session no longer exists.",
+    });
+
+    // And the deleted row is the same verdict.
+    const deletedStore = fakeStore();
+    deletedStore.state.owner = null;
+    const serveForDeleted = createPreviewProxy({
+      config: loadCraftConfig({}),
+      store: deletedStore.store,
+      botIdFor: async () => "craft-bot",
+      sandboxConnectionFor: () => ({
+        baseUrl: "http://sbox.internal:4300",
+        token: null,
+      }),
+      fetchImpl: (async () => {
+        throw new Error("the ownership re-check must run before any dial");
+      }) as typeof fetch,
+    });
+    const deleted = await serveForDeleted({
+      sessionId: SESSION_A,
+      userId: USER_ID,
+      request: new Request(`http://127.0.0.1:3001/label/`),
+      appPath: "/label/",
+      query: "",
+    });
+    expect(deleted.status).toBe(404);
   });
 });

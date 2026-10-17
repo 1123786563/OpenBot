@@ -50,9 +50,21 @@ webapp-info 面可以给出原因）——这是预期形状，不是退化。
    Max-Age/Expires——浏览器关闭即失效）→ 302 到同地址的干净路径（票据从 URL 消失）。
 4. 此后该 host 上的一切请求（应用文档、API 调用、Server Actions）凭该 cookie 放行，
    代理到该会话沙箱内的 dev server（附着模型：只探测、不重复拉起）。
-   cookie 必须命名**当前 host 的**会话——A 会话的通行证打不开 B 会话的 host。
+   cookie 必须是**本部署用部署密钥为当前会话签发的** preview pass（`v1.<userId>.<MAC>`，
+   #358 修复）：HTTP 与 HMR 共用同一 verifyPass 签名校验，签出的 userId 再经 store 按
+   (sessionId, userId) 复核会话行——会话被删除或转移后，旧 pass 立即失效（401/404）。
+   A 会话的通行证打不开 B 会话的 host；明文 session id 不是通行证，一律 401。
 
 票据值不出现在任何日志、错误响应或重定向后的 URL（唯一合法出现位置是签发响应体）。
+
+### #358 修复的升级语义（pass 从明文 id 换为签名值）
+
+修复前 preview cookie 的值就是 session id 本身——知道预览地址 + session id 即可伪造凭据。
+修复后 cookie 值是部署密钥签发的 pass。**部署新版本后：所有旧 preview cookie（明文 id）
+立即被拒（401），不存在兼容旁路**；受影响用户从主站重新进入预览（面板的 webapp-info 轮
+询或重新换票都会走完整兑换，种下新 pass）即恢复。不需要迁移旧会话的 webapp 代际（D10 不
+受影响），不需要任何数据迁移；pass 无状态、不过期（会话级 cookie，浏览器关闭即消失），
+只有“签名密钥 ≠ 当前部署密钥”或“会话行不再属于签发 userId”两种失效方式。
 
 ## 已知约束
 
@@ -137,6 +149,9 @@ dev 形态的 `127.0.0.1` 是 trust origin，不受此约束）、基座（`{ses
 预览主机的 label 由 HMAC(HMAC(keyEncryptionKey, `"craft-preview-label"`), sessionId) 域分
 离派生：**轮换 key 即全部预览地址重铸**——已打开的预览标签在旧地址上 404（host 形态）或
 落回主站（dev 形态），恢复方式与 M-2 相同（经主站重新进入）。
+#358 修复后 pass 的 MAC 密钥同样从 keyEncryptionKey 按 `"craft-preview-pass"` 用途域分离
+派生：轮换 key 还会使全部已签发 pass 失效（验证不过 → 401），用户经主站重新换票即恢复。
+两条派生互不可逆推、不可互相伪造（用途域分离）。
 registry 不做逐出：条目数以会话数为上界，与 M-2 一并接受。
 
 ### HMR（#363 的范围）
@@ -259,3 +274,21 @@ unknown 的代价只是多一次重试。
 | `webapp-download` | 无需改动：自行打包 outputs/web，从不读 `webapp_url` | `server/src/craft/webapp-proxy.ts`（路由体无引用） |
 | 桌面端（Tauri） | 无需改动：`desktop/` 全树无 `webapp_url`/`webapp-info`/`previewOrigin` 引用 | `grep -rn "webapp_url|previewOrigin|webapp-info" desktop/` → 0 命中 |
 | 分享链路 | 无需改动：craft 的分享面是 `sharingScope`（会话行元数据），没有消费 `webapp_url` 的分享 URL 构造 | `grep -rn sharingScope server/src/craft app/src/lib/craft` |
+
+## #358 修复期裁决提案（待批准，批准前不作为验收依据）
+
+以下两条是与批准 Spec 原文有出入的表述修正提案，按修复计划 Task 4 提出，
+**批准前**相关验收结论保持 `partial`，不标 `verified`：
+
+1. **D6（basePath 退场）建议表述为**："生产 hash Host 在根路径；dev 默认
+   `127.0.0.1/<label>` 由显式 env（`ONYX_WEBAPP_BASE_PATH`/`NEXT_PUBLIC_BASE_PATH`，
+   受控启动方注入）挂载；禁止 cwd 猜测"。原文 R-6 修订已含此义，但 D6 正文
+   仍是"整体退场"的旧句 —— 建议把 R-6 的 env 挂载并入 D6 正文，消除两处表述
+   差异。影响面：纯表述；实现（env 注入 + cwd 推导退场）不变。
+2. **AC1（协议层 401）建议区分两层**："浏览器侧：生成代码 fetch 主站 API 受
+   CSP 拦截或得到未认证响应，`document.cookie`/`localStorage` 隔离"与"服务端
+   协议层：来自 preview origin 的同形请求为 401"。原文只写浏览器观测
+   （fetch 得到 401），而 Chromium 对跨源 fetch 常以 CSP 拒绝（网络层不可见），
+   协议层 401 只能用顶层面板或 curl 形状复现。建议 AC1 明确两层各自可接受
+   的证据形状。影响面：验收证据的判读方式；行为不变（两层都已由本 SHA 的
+   单元与真实栈证据覆盖）。
