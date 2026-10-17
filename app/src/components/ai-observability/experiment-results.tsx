@@ -1,7 +1,10 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { StateNotice } from "@/components/ai-observability/runs-list";
+import {
+  observationScreenFault,
+  StateNotice,
+} from "@/components/ai-observability/state-notice";
 import {
   PageRows,
   PageSection,
@@ -87,11 +90,7 @@ export function ObservationExperimentResultsPage({
   if (screen.isPending) return null;
 
   // A transport-level error is the store failing to answer — the unavailable sentence.
-  const fault = screen.error
-    ? "unavailable"
-    : screen.data?.view === "fault"
-      ? screen.data.fault
-      : null;
+  const fault = observationScreenFault(screen);
   if (fault !== null) {
     return (
       <PageShell
@@ -192,7 +191,10 @@ export function ObservationExperimentResultsPage({
               <ItemActions>
                 <Button
                   disabled={cancelExecution.isPending}
-                  onClick={() =>
+                  onClick={() => {
+                    // A retry starts from a clean slate — the previous attempt's
+                    // answer described a request that is no longer the one in flight.
+                    setCancelRefusal(undefined);
                     cancelExecution.mutate(
                       {
                         botId: agentId,
@@ -203,9 +205,12 @@ export function ObservationExperimentResultsPage({
                         onSuccess: (attempt) => {
                           if (!attempt.ok) setCancelRefusal(attempt.refusal);
                         },
+                        // A request that never answered at all (the network layer
+                        // rejected before any HTTP verdict) is its own sentence.
+                        onError: () => setCancelRefusal(null),
                       },
-                    )
-                  }
+                    );
+                  }}
                   size="sm"
                   type="button"
                   variant="outline"

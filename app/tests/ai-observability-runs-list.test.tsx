@@ -243,6 +243,48 @@ describe("the run list answers the real facts (acceptance 1)", () => {
   });
 });
 
+describe("a success body that lost its shape is the unavailable fault, never a crash (OCR round 1 medium)", () => {
+  test("a row without its metadata SafeRecord says the store did not answer", async () => {
+    // The row guard (OCR round 1 medium): the list envelope alone used to pass a row
+    // that lost `metadata` through, and RunRow's `run.metadata.run_id` crashed the
+    // render — the exact silently-broken page the module header promises never to
+    // answer with. The whole list is the store's non-answer, so the page faults.
+    runsHandler = () =>
+      Response.json({
+        ...listBody([]),
+        runs: [{ ...summary(), metadata: undefined }],
+      });
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+    expect(view.queryByText("21.9 s")).toBeNull();
+  });
+
+  test("a row whose usage lost its source says the store did not answer", async () => {
+    runsHandler = () =>
+      Response.json({
+        ...listBody([]),
+        runs: [
+          summary({
+            // `source: "provider"` without its counts is a promise the body breaks.
+            usage: { source: "provider" } as unknown as RunSummary["usage"],
+          }),
+        ],
+      });
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+  });
+
+  test("a pagination whose range numbers are gone says the store did not answer", async () => {
+    runsHandler = () =>
+      Response.json({
+        ...listBody([]),
+        pagination: { ...listBody([]).pagination, offset: undefined },
+      });
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+  });
+});
+
 describe("the five screen conditions stay five different sentences (acceptance 2)", () => {
   test("a truthful empty page says empty, with no syncing noise", async () => {
     runsHandler = () => Response.json(listBody([]));

@@ -106,20 +106,79 @@ export async function refusalCode(response: Response): Promise<string | null> {
  * state string this build has never heard of is not a broken promise (the vocabulary simply
  * moved on), so it fails closed to "unknown", the same word the server gives upstream
  * statuses it cannot name — never a crash, never a guess.
+ *
+ * The OCR round 1 review closed the last gap: the LIST guard validated only the envelope,
+ * while the row reads (`run.metadata.run_id`, walking metadata values for their states,
+ * `run.usage.source`) crash on a row that lost its own shape. So a row is a claim too, and
+ * gets the same depth the detail and steps guards already had.
  */
+function isSafeRecordBody(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value).every(isSafeValueBody);
+}
+
+function isRunSummaryRow(row: unknown): boolean {
+  if (typeof row !== "object" || row === null) return false;
+  const record = row as Record<string, unknown>;
+  for (const field of ["opikTraceId", "state", "createdAt", "capability"]) {
+    if (typeof record[field] !== "string") return false;
+  }
+  if (
+    record.durationMs !== "unavailable" &&
+    typeof record.durationMs !== "number"
+  ) {
+    return false;
+  }
+  /*
+   * The usage report is either the provider's numbers or the explicit absence — a "provider"
+   * without its counts would crash the token cell, and an unknown source is a promise the
+   * body breaks rather than a vocabulary to guess at.
+   */
+  const usage = record.usage;
+  if (typeof usage !== "object" || usage === null) return false;
+  const usageRecord = usage as Record<string, unknown>;
+  if (usageRecord.source === "provider") {
+    for (const field of ["promptTokens", "completionTokens", "totalTokens"]) {
+      if (typeof usageRecord[field] !== "number") return false;
+    }
+  } else if (usageRecord.source !== "unavailable") {
+    return false;
+  }
+  // metadata is a SafeRecord: the row walks its values for their states, so a metadata
+  // entry that is not a SafeValue crashes the markers derivation — the store failing.
+  return isSafeRecordBody(record.metadata);
+}
+
 function isRunsListBody(body: unknown): body is RunsListResult {
   if (typeof body !== "object" || body === null) return false;
   const candidate = body as Partial<RunsListResult>;
+  if (!Array.isArray(candidate.runs)) return false;
+  for (const row of candidate.runs) {
+    if (!isRunSummaryRow(row)) return false;
+  }
+  if (
+    typeof candidate.pagination !== "object" ||
+    candidate.pagination === null
+  ) {
+    return false;
+  }
+  const pagination = candidate.pagination as Record<string, unknown>;
+  /*
+   * The range sentence arithmetic (`offset + 1 … offset + window.length` of `total`) is
+   * only as honest as its numbers; NaN here would read as a fabricated range.
+   */
+  for (const field of ["total", "window", "offset", "limit"]) {
+    if (typeof pagination[field] !== "number") return false;
+  }
+  /*
+   * A missing cursor is not "no next page": undefined would slip past the page's null
+   * checks and arm a Next button that fires an undefined cursor.
+   */
   return (
-    Array.isArray(candidate.runs) &&
-    typeof candidate.pagination === "object" &&
-    candidate.pagination !== null &&
-    /*
-     * A missing cursor is not "no next page": undefined would slip past the page's null
-     * checks and arm a Next button that fires an undefined cursor.
-     */
-    (candidate.pagination.nextCursor === null ||
-      typeof candidate.pagination.nextCursor === "string") &&
+    (pagination.nextCursor === null ||
+      typeof pagination.nextCursor === "string") &&
     typeof candidate.syncing === "boolean"
   );
 }
@@ -235,6 +294,13 @@ export function observationRunsQueryOptions(
         },
       };
     },
+    /*
+     * Spec A6, the creator chains' half (admin/exports opt in the same way): after a
+     * permission narrows, the tab returning to the foreground re-asks, so a revoked
+     * scope answers forbidden instead of riding its stale answer until the next
+     * navigation — the app-wide QueryClient turns focus refetch off.
+     */
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -280,6 +346,13 @@ export function observationRunDetailQueryOptions(botId: string, runId: string) {
         },
       };
     },
+    /*
+     * Spec A6, the creator chains' half (admin/exports opt in the same way): after a
+     * permission narrows, the tab returning to the foreground re-asks, so a revoked
+     * scope answers forbidden instead of riding its stale answer until the next
+     * navigation — the app-wide QueryClient turns focus refetch off.
+     */
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -426,5 +499,12 @@ export function observationRunStepsQueryOptions(botId: string, runId: string) {
       }
       return { view: "steps", result: { steps: body.steps.map(toKnownStep) } };
     },
+    /*
+     * Spec A6, the creator chains' half (admin/exports opt in the same way): after a
+     * permission narrows, the tab returning to the foreground re-asks, so a revoked
+     * scope answers forbidden instead of riding its stale answer until the next
+     * navigation — the app-wide QueryClient turns focus refetch off.
+     */
+    refetchOnWindowFocus: true,
   });
 }

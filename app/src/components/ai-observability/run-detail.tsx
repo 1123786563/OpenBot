@@ -21,7 +21,8 @@ import { Separator } from "@/components/ui/separator";
 import { observationRunDetailQueryOptions } from "@/lib/ai-observability/runs";
 import { useDateTime } from "@/lib/i18n/datetime";
 import { ObservationRunSteps, projectedValueText } from "./run-steps";
-import { formatDuration, STATE_ICONS, StateNotice } from "./runs-list";
+import { formatDuration, STATE_ICONS } from "./runs-list";
+import { observationScreenFault, StateNotice } from "./state-notice";
 
 /*
  * The creator's run detail (Issue #19). Every fact comes from the T11 detail contract; every
@@ -56,11 +57,7 @@ export function ObservationRunDetail({
   if (screen.isPending) return null;
 
   // A transport-level error is the store failing to answer — the unavailable sentence.
-  const fault = screen.error
-    ? "unavailable"
-    : screen.data.view === "fault"
-      ? screen.data.fault
-      : null;
+  const fault = observationScreenFault(screen);
   if (fault !== null) {
     return (
       <div className="mt-6">

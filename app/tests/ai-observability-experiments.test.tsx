@@ -863,6 +863,57 @@ describe("the fault answers stay distinct, and the route is typed-address safe (
     await view.findByText("Upstream unavailable");
   });
 
+  test("a summary without its mean says unavailable, never a mid-render crash (OCR round 1 medium)", async () => {
+    // `.toFixed(2)` runs on the mean after only a `=== null` check, so an undefined
+    // used to slip through the envelope-only guard into a TypeError. The guard now
+    // claims the number-or-null promise and refuses the body as the store's answer.
+    const { summary, ...rest } = reportBody();
+    resultsHandler = () =>
+      Response.json({
+        ...rest,
+        summary: { ...summary, meanScore: undefined },
+      });
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await view.findByText("Upstream unavailable");
+  });
+
+  test("a submit or cancel the network layer never answers says so (OCR round 1 medium)", async () => {
+    // The fetch-reject half of the write verdicts: a refusal envelope has its own
+    // sentence, but a request that never answered at all used to leave the dialog
+    // silent. Both writes now reuse the store-did-not-answer sentence.
+    listHandler = () => Response.json(datasetsBody([datasetRow()]));
+    const view = draw();
+    const { user, dialog } = await openReadyDialog(view);
+    submitHandler = () => {
+      throw new TypeError("network down");
+    };
+    await user.click(
+      within(dialog).getByRole("button", { name: "Submit experiment" }),
+    );
+    expect(
+      await within(dialog).findByText(
+        "The observability store did not answer. Nothing changed.",
+      ),
+    ).toBeTruthy();
+    // The cancel sentence below is the same words, so the submit view stands down
+    // before it — findByText refuses to guess between two matches.
+    view.unmount();
+
+    resultsHandler = () => Response.json(runningReport());
+    cancelHandler = () => {
+      throw new TypeError("network down");
+    };
+    const results = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await user.click(
+      await results.findByRole("button", { name: "Cancel this experiment" }),
+    );
+    expect(
+      await results.findByText(
+        "The observability store did not answer. Nothing changed.",
+      ),
+    ).toBeTruthy();
+  });
+
   test("the results link is keyboard reachable and navigates to the results route", async () => {
     listHandler = () => Response.json(datasetsBody([datasetRow()]));
     const view = draw() as Drawn;

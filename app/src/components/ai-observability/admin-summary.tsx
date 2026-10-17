@@ -25,7 +25,7 @@ import {
   observationAdminSummaryQueryOptions,
 } from "@/lib/ai-observability/admin";
 import { useDateTime } from "@/lib/i18n/datetime";
-import { StateNotice } from "./runs-list";
+import { StateNotice } from "./state-notice";
 
 /*
  * The administrator's observability page (Issue #42): the scope summary, the collection
@@ -131,7 +131,10 @@ function AdminSummaryBody({ summary }: { summary: AdminSummaryResult }) {
         {summary.botsTruncated ? (
           <StateNotice
             className="mt-4"
-            description={t("summary.truncatedDescription")}
+            description={t("summary.truncatedDescription", {
+              // The sentence names the cutoff, so the cutoff is the count it shows.
+              count: formatNumber(bots.length),
+            })}
             title={t("summary.truncatedTitle")}
           />
         ) : null}

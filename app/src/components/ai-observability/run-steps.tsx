@@ -23,7 +23,8 @@ import {
 } from "@/lib/ai-observability/runs";
 import type { SafeValue } from "../../../../shared/ai-observability";
 import type { RunCapabilityLevel } from "../../../../shared/ai-observability-runs";
-import { formatDuration, StateNotice } from "./runs-list";
+import { formatDuration } from "./runs-list";
+import { observationScreenFault, StateNotice } from "./state-notice";
 
 /*
  * The run's step tree (Issue #24 / T18), rendered into the detail page's Steps section.
@@ -122,11 +123,7 @@ function StepTimeline({ botId, runId }: { botId: string; runId: string }) {
   if (screen.isPending) return null;
 
   // A transport-level error is the store failing to answer — the unavailable sentence.
-  const fault = screen.error
-    ? "unavailable"
-    : screen.data.view === "fault"
-      ? screen.data.fault
-      : null;
+  const fault = observationScreenFault(screen);
   if (fault !== null) {
     return (
       <StateNotice

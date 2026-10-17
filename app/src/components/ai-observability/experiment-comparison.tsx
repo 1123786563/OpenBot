@@ -2,7 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { StateNotice } from "@/components/ai-observability/runs-list";
+import {
+  observationScreenFault,
+  StateNotice,
+} from "@/components/ai-observability/state-notice";
 import {
   PageRows,
   PageSection,
@@ -120,11 +123,8 @@ export function ObservationExperimentComparisonPage({
   if (screen.isPending) return null;
 
   // A transport-level error is the store failing to answer — the unavailable sentence.
-  const fault: ObservationExperimentFault | null = screen.error
-    ? "unavailable"
-    : screen.data?.view === "fault"
-      ? screen.data.fault
-      : null;
+  const fault: ObservationExperimentFault | null =
+    observationScreenFault(screen);
   if (fault !== null) {
     return shell(
       <StateNotice

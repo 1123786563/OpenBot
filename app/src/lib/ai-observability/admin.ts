@@ -67,6 +67,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function isNumberRecord(value: unknown): boolean {
+  return (
+    isRecord(value) && Object.values(value).every((v) => typeof v === "number")
+  );
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || typeof value === "number";
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
 function isAdminSummaryBody(body: unknown): body is AdminSummaryResult {
   if (!isRecord(body)) return false;
   const collection = body.collection;
@@ -91,9 +105,46 @@ function isAdminSummaryBody(body: unknown): body is AdminSummaryResult {
     return false;
   }
   if (!Array.isArray(body.bots)) return false;
+  /*
+   * OCR round 1 medium: a per-bot guard that stopped at `botId` and `runs.total` let a
+   * row that lost `exports` (or any nested count the row renders) through to a
+   * TypeError in AdminBotRow — exactly the silently-broken page this module promises
+   * never to answer with. The checks below cover the fields the row reads; a record
+   * this build has never heard a state of (byState keys) is claimed as all-numbers,
+   * which is what every read of it does with it.
+   */
   for (const bot of body.bots) {
     if (!isRecord(bot) || typeof bot.botId !== "string") return false;
-    if (!isRecord(bot.runs) || typeof bot.runs.total !== "number") return false;
+    const runs = bot.runs;
+    if (!isRecord(runs) || typeof runs.total !== "number") return false;
+    if (!isNumberRecord(runs.byState)) return false;
+    if (typeof runs.pendingSync !== "number") return false;
+    if (!isNullableNumber(runs.unboundUpstream)) return false;
+    if (runs.usage !== null) {
+      if (
+        !isRecord(runs.usage) ||
+        typeof runs.usage.providerReported !== "number" ||
+        typeof runs.usage.unavailable !== "number"
+      ) {
+        return false;
+      }
+    }
+    if (
+      !isRecord(bot.experiments) ||
+      typeof bot.experiments.draft !== "number" ||
+      typeof bot.experiments.frozen !== "number"
+    ) {
+      return false;
+    }
+    const exports = bot.exports;
+    if (!isRecord(exports) || !isNumberRecord(exports.byState)) return false;
+    if (!isNullableString(exports.lastFailedErrorCode)) return false;
+    if (
+      !isRecord(bot.collection) ||
+      !isNullableString(bot.collection.lastCollectedAt)
+    ) {
+      return false;
+    }
   }
   return typeof body.botsTruncated === "boolean";
 }

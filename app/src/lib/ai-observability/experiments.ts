@@ -138,9 +138,27 @@ function isExperimentResultsBody(
     return false;
   }
   if (!isRecord(body.execution) || !isRecord(body.summary)) return false;
+  /*
+   * The OCR round 1 review: the page calls `.toFixed(2)` on the mean and on every
+   * sample score after only a `=== null` check, so an undefined slips through to a
+   * TypeError — a number-or-null promise the summary and each sample must keep. The
+   * sample's index and class ride the same row (`#3 Scored`), so they are claimed here
+   * too: a missing index is a crash, a class word the build has never heard of is a
+   * missing i18n sentence, not a crash — claimed as a string, not a closed set.
+   */
+  if (
+    body.summary.meanScore !== null &&
+    typeof body.summary.meanScore !== "number"
+  ) {
+    return false;
+  }
+  if (typeof body.summary.sampleBase !== "number") return false;
   if (!Array.isArray(body.samples)) return false;
   for (const sample of body.samples) {
     if (!isRecord(sample) || !isRecord(sample.reason)) return false;
+    if (typeof sample.index !== "number") return false;
+    if (typeof sample.class !== "string") return false;
+    if (sample.score !== null && typeof sample.score !== "number") return false;
   }
   return true;
 }
@@ -168,6 +186,13 @@ export function observationExperimentResultsQueryOptions(
       }
       return { view: "results", report: body };
     },
+    /*
+     * Spec A6, the creator chains' half (admin/exports opt in the same way): after a
+     * permission narrows, the tab returning to the foreground re-asks, so a revoked
+     * scope answers forbidden instead of riding its stale answer until the next
+     * navigation — the app-wide QueryClient turns focus refetch off.
+     */
+    refetchOnWindowFocus: true,
   });
 }
 

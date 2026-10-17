@@ -640,6 +640,47 @@ describe("the fault answers stay distinct (acceptance 4)", () => {
     const broken = draw(ADDRESSED);
     await broken.findByText("Upstream unavailable");
   });
+
+  test("a body that lost a shape the page indexes into says unavailable, never a crash (OCR round 1 medium)", async () => {
+    // meanScore is read as three `.toFixed(2)` cells; a body without it used to pass
+    // the envelope-only guard and crash MeanRow instead of answering.
+    comparisonHandler = () =>
+      Response.json({
+        ...comparisonBody(),
+        deltas: { perSample: [] },
+      });
+    const meanLess = draw(ADDRESSED);
+    await meanLess.findByText("Upstream unavailable");
+    meanLess.unmount();
+
+    // The deltas section indexes each side's report samples by a delta's index, so a
+    // report without its samples array crashes the map — the guard refuses it first.
+    const withoutSamples = comparisonBody();
+    const reportless = {
+      ...withoutSamples,
+      baseline: {
+        ...withoutSamples.baseline,
+        report: {},
+      },
+    };
+    comparisonHandler = () => Response.json(reportless);
+    const noSamples = draw(ADDRESSED);
+    await noSamples.findByText("Upstream unavailable");
+    noSamples.unmount();
+
+    // A per-sample delta that lost one of its halves is the store failing too.
+    comparisonHandler = () =>
+      Response.json({
+        ...comparisonBody(),
+        deltas: {
+          meanScore: { baseline: 1, candidate: 0.5, delta: 0.5 },
+          perSample: [{ index: 0 }],
+        },
+      });
+    const halfDelta = draw(ADDRESSED);
+    await halfDelta.findByText("Upstream unavailable");
+    halfDelta.unmount();
+  });
 });
 
 describe("the machine-readable export and literal text (acceptance 4)", () => {

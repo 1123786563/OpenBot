@@ -197,6 +197,9 @@ function SubmitExperimentRow({
             setRefusal(attempt.refusal);
           }
         },
+        // A request that never answered at all (the network layer rejected before
+        // any HTTP verdict) is its own sentence, not a silently re-enabled button.
+        onError: () => setRefusal(null),
       },
     );
   };
