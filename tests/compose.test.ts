@@ -609,6 +609,8 @@ test("gives the selected harness the same governed callback as the framework Bot
  * the switch: a file that parses but lost a service is a stack that half-starts.
  */
 const optionalStacks = [
+  // certs: the #359 TLS sidecar (openbot-tls) — same `--project-directory .` contract.
+  { name: "certs", services: ["openbot-tls"] },
   { name: "kb", services: ["qdrant", "kb-redis", "docreader"] },
   { name: "services", services: ["casdoor", "open-connector"] },
   { name: "lago", services: ["lago-api", "lago-front", "lago-worker"] },
