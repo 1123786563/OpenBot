@@ -1,21 +1,26 @@
 import { randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import {
+  DEPLOYMENT_INITIATOR,
+  type AuditStore,
+  recordAuditEvent,
+} from "../audit";
 import type { Database } from "../db/client";
 import {
   accessGrants,
   botServices,
-  gatewayCatalogSyncState,
   gatewayModelCatalogRefs,
   gatewayModelOpenScopes,
   payerAccounts,
 } from "../db/schema";
 import { gatewayPriceSnapshots } from "../db/schema";
-import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../gateway/catalog-sync";
 import { MODEL_CAPABILITIES, type ModelRef } from "../gateway/catalog";
 import {
-  assertPriceSnapshotDims,
-} from "../gateway/price-snapshot";
+  DEFAULT_CATALOG_FRESHNESS_WINDOW_MS,
+  assertCatalogFresh,
+} from "../gateway/catalog-freshness";
+import { assertPriceSnapshotDims } from "../gateway/price-snapshot";
 import { classifyPriceDims } from "../gateway/price-status";
 import type { Tx } from "./capacity";
 import type { CreditServiceVariables } from "./credit-service-auth";
@@ -24,22 +29,26 @@ import {
   createCreditWriter,
 } from "./credits-writer";
 import { CREDIT_SCALE } from "./credits";
+import { getLogger } from "../../../shared/logger";
 import { payerKey, type PayerKind, type PayerRef } from "./payer";
 
 /**
- * The Reserve protocol's transactional revalidation (Bifrost #253, 06.2).
+ * The Reserve protocol's transactional revalidation (Bifrost #253, 06.2; payer conflict
+ * semantics Bifrost #255, 06.4).
  *
- * ONE TRANSACTION, SIX VERDICTS, ONE WRITE. Before any capacity is held, the same database
+ * ONE TRANSACTION, SEVEN VERDICTS, ONE WRITE. Before any capacity is held, the same database
  * transaction that would write the hold re-proves every basis admission named in the request
  * contract: the model access grant is still active (and its Bot still registered and active),
- * the payer resolves to a real account, the ref is still cataloged and still administrator-
- * opened, the catalog itself is still fresh, the locked price basis exists and classifies as
- * priced, and the request carries enforceable bound evidence. Any `no` is a refusal with a
- * fixed reason code and ZERO writes — not a partial hold, not a customer floor, nothing.
- * Only after every verdict may the reservation write land, and it lands INSIDE this same
- * transaction, so a revocation (or a scope close, or a sync) either commits before the
- * revalidation reads it or waits until after the reservation is committed — there is no
- * window in which a dead authorization pays for a live hold.
+ * the payment account is the one the grant itself resolves to (06.4's conflict verdict — the
+ * request's payer is a claim, never an input), the resolved payer maps to a real account, the
+ * ref is still cataloged and still administrator- opened, the catalog itself is still fresh,
+ * the locked price basis exists and classifies as priced, and the request carries enforceable
+ * bound evidence. Any `no` is a refusal with a fixed reason code and ZERO writes — not a
+ * partial hold, not a customer floor, nothing. Only after every verdict may the reservation
+ * write land, and it lands INSIDE this same transaction, so a revocation (or a scope close,
+ * or a sync) either commits before the revalidation reads it or waits until after the
+ * reservation is committed — there is no window in which a dead authorization pays for a
+ * live hold.
  *
  * HOW THE WRITE SHARES THE TRANSACTION. The credit writer (credits-writer.ts) is the only
  * writer `credit_reservations` has ever had, and it opens its own transaction when called
@@ -55,10 +64,19 @@ import { payerKey, type PayerKind, type PayerRef } from "./payer";
  * WHAT A REFUSAL SAYS. One closed reason-code set, displayable on any surface: the five
  * ticket categories (grant_invalid, model_not_open, price_unknown / price_basis_not_found,
  * catalog_stale / catalog_never_synced, bound_evidence_not_enforceable) plus the shapes a
- * protocol request can honestly fail in (request_invalid, payer_unresolved,
+ * protocol request can honestly fail in (request_invalid, payer_unresolved, payer_conflict,
  * insufficient_credits, reservation_conflict). A refusal never names another customer's
  * data: the detail carries only the refused request's own basis (which dimensions are
  * unpriced, how stale the catalog is, how much was available).
+ *
+ * WHOSE ACCOUNT A RESERVE BILLS. The server's, and only the server's: the payment account is
+ * resolved from the authorization itself (06.4) — every grant scope today is personal, so the
+ * resolution is the grant's own user — and the request's `payer` is a claim that resolution
+ * verifies, never an input. A mismatched claim (another person's account, a company account on
+ * a personal grant, a quarantined unknown_owner) refuses as `payer_conflict` and is audited as
+ * `credit_reserve.payer_conflict`; a request that carries ANY self-reported account key
+ * (`externalCustomerId` or an account-identity parameter, top level or inside `payer`) refuses
+ * the same way at the shape boundary — never silently ignored, never adopted.
  *
  * WHAT IS NOT EVIDENCE. The conservative token estimate (ADR 0001, input-bound.ts) is a
  * rejection aid, never an enforceable ceiling: the bound-evidence kinds below are a closed
@@ -78,6 +96,7 @@ export const RESERVE_REFUSAL_REASONS = [
   "request_invalid",
   "grant_invalid",
   "payer_unresolved",
+  "payer_conflict",
   "model_not_open",
   "catalog_never_synced",
   "catalog_stale",
@@ -146,7 +165,7 @@ export type CreditReserveOutcome =
       snapshotVersion: number;
       rateVersion: number;
     }
-    | {
+  | {
       status: "refused";
       reasonCode: CreditReserveRefusalReasonCode;
       /** The refused request's own basis — never another subject's data. */
@@ -159,15 +178,20 @@ export type CreditReserveEnvironment = {
   now?: () => Date;
   /**
    * How long since the last fully successful sync a new admission may still trust the
-   * catalog. Default 15 minutes (the parent spec's freshness cap). 03.6's dedicated
-   * freshness gate was not in this worktree's baseline; this module reads the delivered
-   * 03.4 sync state directly and its window here is the seam that gate plugs into.
+   * catalog. Default 15 minutes (the parent spec's freshness cap). 03.6's freshness gate
+   * (gateway/catalog-freshness.ts) owns the verdict; this is where a deployment's
+   * `catalogFreshnessWindowConfig(process.env)` answer is injected.
    */
   catalogFreshnessWindowMs?: number;
 };
 
 export type CreditReserveServiceDependencies = CreditReserveEnvironment & {
   database: Database;
+  /**
+   * When wired, every `payer_conflict` refusal leaves one `credit_reserve.payer_conflict`
+   * audit row (06.4): the bypass attempt, recorded where 22.2 can count it.
+   */
+  auditStore?: AuditStore;
 };
 
 export type CreditReserveService = {
@@ -178,17 +202,48 @@ export type CreditReserveService = {
 /** Largest value a 32-bit PostgreSQL integer column can hold (the hold ceiling's bound). */
 const MAX_STORED_UNITS = 2_147_483_647;
 
+const log = getLogger("server");
+
 /** The default hold TTL: recovery may release an unanswered hold after this long. */
 const DEFAULT_HOLD_TTL_MS = 15 * 60 * 1000;
 
-/** The parent spec's default catalog freshness cap. */
-export const DEFAULT_CATALOG_FRESHNESS_WINDOW_MS = 15 * 60 * 1000;
+/**
+ * The account-identity fields a reserve request must never carry (06.4): a caller naming any
+ * of these is self-reporting the account key the server alone resolves. A closed vocabulary,
+ * matched case-insensitively — the reserve boundary's own list, a superset of 02.4's
+ * cross-surface set (this protocol also refuses `customerKey`).
+ */
+export const RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS = [
+  "userId",
+  "externalCustomerId",
+  "payerId",
+  "accountId",
+  "customerKey",
+  "companyId",
+  "tenantId",
+] as const;
+
+/** The forbidden field present in a request's own spelling, or null. Presence is the attempt. */
+function findForbiddenAccountKeyField(
+  source: Record<string, unknown>,
+): string | null {
+  const forbidden = new Set(
+    RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS.map((key) => key.toLowerCase()),
+  );
+  for (const key of Object.keys(source)) {
+    if (forbidden.has(key.toLowerCase())) return key;
+  }
+  return null;
+}
 
 /** The one displayable sentence per refusal code — the same words on every surface. */
 const REFUSAL_SENTENCES: Record<CreditReserveRefusalReasonCode, string> = {
   request_invalid: "The reserve request is not a valid reserve request.",
   grant_invalid: "The model access grant cannot be used for this call.",
-  payer_unresolved: "The payment account named by the request does not resolve.",
+  payer_unresolved:
+    "The payment account named by the request does not resolve.",
+  payer_conflict:
+    "The request names a payment account other than the one its authorization resolves to; the payment account is resolved server-side and self-reported accounts are refused.",
   model_not_open: "The model is not open for new requests.",
   catalog_never_synced:
     "The model catalog has never synced, so no new request can be priced.",
@@ -196,10 +251,12 @@ const REFUSAL_SENTENCES: Record<CreditReserveRefusalReasonCode, string> = {
     "The model catalog is stale; new requests are paused until the next successful sync.",
   price_basis_not_found:
     "The locked price basis does not exist for this model.",
-  price_unknown: "The model's price is not completely known, so it cannot be billed strictly.",
+  price_unknown:
+    "The model's price is not completely known, so it cannot be billed strictly.",
   bound_evidence_not_enforceable:
     "The request carries no enforceable cost-ceiling evidence; estimates are not evidence.",
-  insufficient_credits: "The payment account does not have enough available credits.",
+  insufficient_credits:
+    "The payment account does not have enough available credits.",
   reservation_conflict:
     "The reservation identity conflicts with an existing reservation.",
 };
@@ -239,10 +296,7 @@ const PAYER_KINDS: readonly PayerKind[] = [
 
 /** Identifier-shaped string: non-empty, bounded, no leading or trailing whitespace. */
 function isIdentifier(value: unknown, maxLength: number): value is string {
-  return (
-    isNonEmptyString(value, maxLength) &&
-    value.trim() === value
-  );
+  return isNonEmptyString(value, maxLength) && value.trim() === value;
 }
 
 /** Validation's discriminated answer: a valid request, or the refusal that replaces it. */
@@ -257,12 +311,18 @@ type RequestValidation =
  */
 function validateRequest(input: unknown, now: Date): RequestValidation {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "body" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "body" }),
+    };
   }
   const raw = input as Record<string, unknown>;
 
   if (!isIdentifier(raw.grantId, 512)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "grantId" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "grantId" }),
+    };
   }
   const payer = raw.payer as Record<string, unknown> | null | undefined;
   if (
@@ -271,7 +331,37 @@ function validateRequest(input: unknown, now: Date): RequestValidation {
     !PAYER_KINDS.includes(payer.kind as PayerKind) ||
     !isIdentifier(payer.id, 512)
   ) {
-    return { ok: false, outcome: refused("request_invalid", { field: "payer" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "payer" }),
+    };
+  }
+  // The payer claim is exactly {kind, id} — anything else riding inside it (a self-reported
+  // `externalCustomerId` above all) is a caller naming the account key itself, which the
+  // protocol refuses at the shape boundary instead of silently ignoring (06.4).
+  const extraPayerKey = Object.keys(payer).find(
+    (key) => key !== "kind" && key !== "id",
+  );
+  if (extraPayerKey !== undefined) {
+    return {
+      ok: false,
+      outcome: refused("payer_conflict", {
+        stage: "request_shape",
+        field: `payer.${extraPayerKey}`,
+      }),
+    };
+  }
+  // The same refusal for an account-identity parameter at the top level: presence is
+  // the attempt, whatever the value names.
+  const foreignField = findForbiddenAccountKeyField(raw);
+  if (foreignField !== null) {
+    return {
+      ok: false,
+      outcome: refused("payer_conflict", {
+        stage: "request_shape",
+        field: foreignField,
+      }),
+    };
   }
   const model = raw.model as Record<string, unknown> | null | undefined;
   if (
@@ -281,19 +371,37 @@ function validateRequest(input: unknown, now: Date): RequestValidation {
     !isIdentifier(model.model, 512) ||
     !MODEL_CAPABILITIES.includes(model.capability as never)
   ) {
-    return { ok: false, outcome: refused("request_invalid", { field: "model" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "model" }),
+    };
   }
   if (!isPositiveInteger(raw.snapshotVersion)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "snapshotVersion" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "snapshotVersion" }),
+    };
   }
   if (!isNonNegativeInteger(raw.rateVersion)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "rateVersion" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "rateVersion" }),
+    };
   }
-  if (!isPositiveInteger(raw.maximumCredits) || raw.maximumCredits > MAX_STORED_UNITS) {
-    return { ok: false, outcome: refused("request_invalid", { field: "maximumCredits" }) };
+  if (
+    !isPositiveInteger(raw.maximumCredits) ||
+    raw.maximumCredits > MAX_STORED_UNITS
+  ) {
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "maximumCredits" }),
+    };
   }
   if (!isIdentifier(raw.idempotencyKey, 512)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "idempotencyKey" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "idempotencyKey" }),
+    };
   }
 
   // Bound evidence: a non-empty set of mechanism proofs with real ceilings. Anything
@@ -302,7 +410,9 @@ function validateRequest(input: unknown, now: Date): RequestValidation {
   if (!Array.isArray(evidence) || evidence.length === 0) {
     return {
       ok: false,
-      outcome: refused("bound_evidence_not_enforceable", { field: "boundEvidence" }),
+      outcome: refused("bound_evidence_not_enforceable", {
+        field: "boundEvidence",
+      }),
     };
   }
   for (const entry of evidence) {
@@ -335,12 +445,18 @@ function validateRequest(input: unknown, now: Date): RequestValidation {
           ? new Date(raw.expiresAt)
           : null;
     if (parsed === null || Number.isNaN(parsed.getTime())) {
-      return { ok: false, outcome: refused("request_invalid", { field: "expiresAt" }) };
+      return {
+        ok: false,
+        outcome: refused("request_invalid", { field: "expiresAt" }),
+      };
     }
     expiresAt = parsed;
   }
   if (expiresAt.getTime() <= now.getTime()) {
-    return { ok: false, outcome: refused("request_invalid", { field: "expiresAt" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "expiresAt" }),
+    };
   }
 
   return {
@@ -398,13 +514,35 @@ export async function reserveCreditInTransaction(
     return refused("grant_invalid", { grantId: request.grantId });
   }
 
-  // 2. The payer: the request's ref must resolve through the payer-account mapping to
-  //    exactly the key its own kind and id derive — no shape-shifting accounts. (The
-  //    grant-versus-request payer comparison is 06.4's conflict semantics.)
-  if (request.payer.kind === "unknown_owner") {
-    return refused("payer_unresolved", { payerKind: request.payer.kind });
+  // 2. The payer conflict (06.4): the payment account is resolved SERVER-SIDE from the
+  //    authorization itself, and the request's payer is only a claim that resolution
+  //    verifies. The scope vocabulary is closed ("model-access" today — a personal grant),
+  //    so the resolution is the grant's own user; a scope this server cannot resolve is an
+  //    unusable grant. A mismatched claim — another person's account, a company account on
+  //    a personal grant, a quarantined unknown_owner — refuses as `payer_conflict` with
+  //    zero writes, audited upstream by the service wrapper, never a silent adoption.
+  if (grant.scope !== "model-access") {
+    return refused("grant_invalid", {
+      grantId: request.grantId,
+      scope: grant.scope,
+    });
   }
-  const derivedKey = payerKey(request.payer);
+  const resolvedPayer: PayerRef = { kind: "personal", id: grant.userId };
+  if (
+    request.payer.kind !== resolvedPayer.kind ||
+    request.payer.id !== resolvedPayer.id
+  ) {
+    return refused("payer_conflict", {
+      stage: "transaction_revalidation",
+      requestedPayer: { kind: request.payer.kind, id: request.payer.id },
+      resolvedPayer,
+    });
+  }
+
+  // 3. The payer account: the resolved ref must map to exactly the key it derives — no
+  //    shape-shifting accounts. The lookup keys on the SERVER's resolution, never on the
+  //    request's spelling of it (they are equal only because the comparison above passed).
+  const derivedKey = payerKey(resolvedPayer);
   const [account] = await tx
     .select({
       externalCustomerId: payerAccounts.externalCustomerId,
@@ -412,16 +550,16 @@ export async function reserveCreditInTransaction(
     .from(payerAccounts)
     .where(
       and(
-        eq(payerAccounts.kind, request.payer.kind),
-        eq(payerAccounts.payerId, request.payer.id),
+        eq(payerAccounts.kind, resolvedPayer.kind),
+        eq(payerAccounts.payerId, resolvedPayer.id),
       ),
     )
     .limit(1);
   if (!account || account.externalCustomerId !== derivedKey) {
-    return refused("payer_unresolved", { payerKind: request.payer.kind });
+    return refused("payer_unresolved", { payerKind: resolvedPayer.kind });
   }
 
-  // 3. The open scope: an administrator left this exact cell open, AND the cell is still
+  // 4. The open scope: an administrator left this exact cell open, AND the cell is still
   //    in the last-good catalog (03.7's own conjunction; a delisted model is not open).
   const [scope] = await tx
     .select({ state: gatewayModelOpenScopes.state })
@@ -460,32 +598,22 @@ export async function reserveCreditInTransaction(
     });
   }
 
-  // 4. The catalog's freshness: the last FULLY successful sync must be inside the window.
-  //    The reason codes say freshness, never model-not-found — the model may be perfectly
-  //    open and priced; what expired is the evidence both stand on.
-  const [syncState] = await tx
-    .select({
-      lastSuccessfulSyncAt: gatewayCatalogSyncState.lastSuccessfulSyncAt,
-    })
-    .from(gatewayCatalogSyncState)
-    .where(eq(gatewayCatalogSyncState.id, GATEWAY_CATALOG_SYNC_STATE_ID))
-    .limit(1);
-  const lastSuccessfulSyncAt = syncState?.lastSuccessfulSyncAt ?? null;
-  if (lastSuccessfulSyncAt === null) {
-    return refused("catalog_never_synced", {
-      freshnessWindowMs,
-    });
-  }
-  const ageMs = now.getTime() - lastSuccessfulSyncAt.getTime();
-  if (ageMs > freshnessWindowMs) {
-    return refused("catalog_stale", {
-      lastSuccessfulSyncAt: lastSuccessfulSyncAt.toISOString(),
-      ageMs,
-      freshnessWindowMs,
-    });
+  // 5. The catalog's freshness — 03.6's gate, not a local predicate (review-253 F3 made
+  //    gateway/catalog-freshness.ts the single source of truth): the gate reads the 03.4
+  //    sync state INSIDE this admission transaction, so a sync either commits before the
+  //    gate reads it or waits until after the reservation commits. The verdict names
+  //    freshness, never model-not-found — the model may be perfectly open and priced;
+  //    what expired is the evidence both stand on.
+  const freshness = await assertCatalogFresh(tx, {
+    modelRef: request.model,
+    now,
+    windowMs: freshnessWindowMs,
+  });
+  if (!freshness.fresh) {
+    return refused(freshness.reasonCode, freshness.detail);
   }
 
-  // 5. The locked price basis: the exact version the request names must still resolve,
+  // 6. The locked price basis: the exact version the request names must still resolve,
   //    and its dims — re-validated through 03.2's own checker, re-classified through
   //    03.3's own classifier, never a copied semantic — must be completely priced.
   //    `free` is a price; `unknown` never is.
@@ -497,10 +625,7 @@ export async function reserveCreditInTransaction(
         eq(gatewayPriceSnapshots.provider, request.model.provider),
         eq(gatewayPriceSnapshots.model, request.model.model),
         eq(gatewayPriceSnapshots.capability, request.model.capability),
-        eq(
-          gatewayPriceSnapshots.snapshotVersion,
-          request.snapshotVersion,
-        ),
+        eq(gatewayPriceSnapshots.snapshotVersion, request.snapshotVersion),
       ),
     )
     .limit(1);
@@ -523,7 +648,7 @@ export async function reserveCreditInTransaction(
     });
   }
 
-  // 6. Every verdict said yes: the reservation write rides THIS transaction. The writer
+  // 7. Every verdict said yes: the reservation write rides THIS transaction. The writer
   //    is the reservation table's only writer; constructed over the transaction handle,
   //    its statements run on this connection under this transaction's SAVEPOINT, and the
   //    caller's commit is what makes revalidation + hold visible as one fact.
@@ -534,10 +659,12 @@ export async function reserveCreditInTransaction(
         ? new Date(request.expiresAt)
         : new Date(now.getTime() + DEFAULT_HOLD_TTL_MS);
   const writer = createCreditWriter(tx as unknown as Database);
-  let reserved: { reserved: true; reservationId: string } | {
-    reserved: false;
-    availableCents: number;
-  };
+  let reserved:
+    | { reserved: true; reservationId: string }
+    | {
+        reserved: false;
+        availableCents: number;
+      };
   try {
     reserved = await writer.reserveCredits({
       externalCustomerId: derivedKey,
@@ -568,9 +695,49 @@ export async function reserveCreditInTransaction(
 }
 
 /**
- * The Reserve service: pure request validation, then one transaction for the five
+ * The `credit_reserve.payer_conflict` audit row (06.4): one per refused tamper attempt,
+ * naming the request's claim and the server's resolution so 22.2 can count bypass attempts.
+ * The claimed grantId rides as the target id when it is at least identifier-shaped — the
+ * event type itself marks the row as a recorded ATTEMPT, and `stage` in the payload says
+ * whether the server ever proved the grant — never as a caller-authenticated fact. A trail
+ * that cannot be written does not un-refuse the request: the failure is logged, the
+ * refusal already decided stands (the 06.1 discipline).
+ */
+async function recordPayerConflict(
+  auditStore: AuditStore | undefined,
+  request: unknown,
+  outcome: Extract<CreditReserveOutcome, { status: "refused" }>,
+): Promise<void> {
+  if (!auditStore) return;
+  const claimedGrantId = (request as { grantId?: unknown } | null)?.grantId;
+  try {
+    await recordAuditEvent(auditStore, {
+      eventType: "credit_reserve.payer_conflict",
+      targetType: "credit_protocol",
+      ...(isIdentifier(claimedGrantId, 512)
+        ? { targetId: claimedGrantId }
+        : {}),
+      initiator: DEPLOYMENT_INITIATOR,
+      payload: {
+        stage: outcome.detail.stage ?? "request_shape",
+        ...outcome.detail,
+      },
+    });
+  } catch (error) {
+    log.error(
+      {
+        type: "credit-reserve-payer-conflict-audit-write-failed",
+        error: String(error),
+      },
+      "credit-reserve-payer-conflict-audit-write-failed",
+    );
+  }
+}
+
+/**
+ * The Reserve service: pure request validation, then one transaction for the six
  * revalidations and the write. A refusal — validation's or the transaction's — never
- * reaches a write.
+ * reaches a write; a payer conflict, at either stage, additionally leaves its audit row.
  */
 export function createCreditReserveService(
   dependencies: CreditReserveServiceDependencies,
@@ -583,10 +750,18 @@ export function createCreditReserveService(
     async reserve(request: unknown): Promise<CreditReserveOutcome> {
       const now = dependencies.now?.() ?? new Date();
       const validated = validateRequest(request, now);
-      if (!validated.ok) return validated.outcome;
-      return dependencies.database.transaction((tx) =>
-        reserveCreditInTransaction(tx, validated.request, environment),
-      );
+      const outcome = validated.ok
+        ? await dependencies.database.transaction((tx) =>
+            reserveCreditInTransaction(tx, validated.request, environment),
+          )
+        : validated.outcome;
+      if (
+        outcome.status === "refused" &&
+        outcome.reasonCode === "payer_conflict"
+      ) {
+        await recordPayerConflict(dependencies.auditStore, request, outcome);
+      }
+      return outcome;
     },
   };
 }
