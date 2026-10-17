@@ -19,6 +19,13 @@ import { creditGrants, creditLedger } from "./credits";
  * their grants' free capacity; a terminal state (`settled`/`released`) is written once and never
  * changes, which is what makes settle/release replays return the first result.
  *
+ * `unknown` is the result-unconfirmed state (Bifrost 06.8, Q12/AC15): a hold whose provider
+ * outcome never reliably arrived keeps occupying capacity FOREVER as far as the clock is
+ * concerned — `expires_at` fences only plain reserved holds and new admissions, never an
+ * unknown one. Entering the state records `unknown_at`/`unknown_reason` (the evidence 08.x's
+ * recovery and an operator's evidenced disposal stand on); only recovery settles it (the
+ * ordinary settle path, same reservation id) or the recovery release moves it.
+ *
  * The actual cost of a settled hold is kept as the exact rational `actual_numerator /
  * actual_denominator` (scaled units), because per-token rates are fractional; the integer actually
  * charged is `charged`, and the fraction left over lives in `credit_charge_remainders`.
@@ -33,11 +40,15 @@ export const creditReservations = pgTable(
     idempotencyKey: text("idempotency_key").notNull(),
     maximum: integer("maximum").notNull(),
     status: text("status")
-      .$type<"reserved" | "settled" | "released">()
+      .$type<"reserved" | "unknown" | "settled" | "released">()
       .notNull()
       .default("reserved"),
     /** After this instant recovery may release the hold; it does not release itself. */
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** When the hold entered `unknown` (set once, kept as history afterwards). */
+    unknownAt: timestamp("unknown_at", { withTimezone: true }),
+    /** Why the hold entered `unknown` (the unsettled reason), kept as history. */
+    unknownReason: text("unknown_reason"),
     actualNumerator: text("actual_numerator"),
     actualDenominator: text("actual_denominator"),
     /** Whole units the exact actual cost (plus the carried remainder) came to. */
@@ -61,12 +72,19 @@ export const creditReservations = pgTable(
   (table) => [
     check(
       "credit_reservations_status_check",
-      sql`${table.status} IN ('reserved', 'settled', 'released')`,
+      sql`${table.status} IN ('reserved', 'unknown', 'settled', 'released')`,
     ),
     check("credit_reservations_maximum_check", sql`${table.maximum} > 0`),
     check(
       "credit_reservations_terminal_check",
-      sql`(${table.status} = 'reserved' AND ${table.terminalAt} IS NULL) OR (${table.status} <> 'reserved' AND ${table.terminalAt} IS NOT NULL)`,
+      sql`(${table.status} IN ('reserved', 'unknown') AND ${table.terminalAt} IS NULL) OR (${table.status} IN ('settled', 'released') AND ${table.terminalAt} IS NOT NULL)`,
+    ),
+    // An unknown hold carries its evidence (06.8 step 3): the reason and the instant it
+    // entered, paired and present exactly when the hold is unknown. Later terminal states
+    // keep both as history; a hold that was never unknown has neither.
+    check(
+      "credit_reservations_unknown_evidence_check",
+      sql`(${table.unknownAt} IS NULL) = (${table.unknownReason} IS NULL) AND (${table.status} <> 'reserved' OR ${table.unknownAt} IS NULL) AND (${table.status} <> 'unknown' OR ${table.unknownAt} IS NOT NULL)`,
     ),
     check(
       "credit_reservations_settled_check",

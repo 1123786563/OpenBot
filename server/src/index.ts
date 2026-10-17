@@ -592,6 +592,27 @@ function logReservationReleaseFailure(input: {
   );
 }
 
+/** Same shape and discipline as the release-failure log, for a failed unknown mark (06.8). */
+function logReservationUnknownMarkFailure(input: {
+  source: "llm";
+  eventId: string;
+  reservationId: string;
+  reason: string;
+  error: unknown;
+}) {
+  log.error(
+    {
+      type: "billing-reservation-unknown-mark-failed",
+      source: input.source,
+      eventId: input.eventId,
+      reservationId: input.reservationId,
+      reason: input.reason,
+      code: reservationReleaseFailureCode(input.error),
+    },
+    "billing-reservation-unknown-mark-failed",
+  );
+}
+
 // 本进程的全部出站依赖都是内网/本机（Casdoor、kb-mastra、agent 运行时等）：
 // 开发机的 HTTP_PROXY 会把 localhost 请求劫持成代理 404/HTML（Bun fetch 读
 // 环境代理且部分上下文连 NO_PROXY 都不生效——kb-mastra E2E 实测）。摘掉本
@@ -4060,9 +4081,11 @@ if (billing !== undefined && usageOutbox !== undefined) {
          * before the provider (`bound_refused`), or the provider reported zero usage (`no_usage`).
          * Everything else is an unknown outcome — `usage_missing`, `stream_error`, `cancelled`:
          * the provider may have produced billable work we never learned about. Those keep the
-         * hold (it expires on its own clock and reconciliation reports it) and leave a durable
-         * evidence row naming the event, the reason, and whatever token counts the stream had
-         * learned by the time it failed.
+         * hold AND, since 06.8, leave the plain `reserved` state for `unknown`: the hold stays
+         * occupied no matter how far the clock advances past its expiry (the clock is not
+         * release evidence), with the reason and instant recorded for 08.x's recovery, plus a
+         * durable evidence row naming the event, the reason, and whatever token counts the
+         * stream had learned by the time it failed.
          */
         if (isConfirmedNoCost(failure.reason)) {
           try {
@@ -4080,6 +4103,24 @@ if (billing !== undefined && usageOutbox !== undefined) {
             });
           }
           return;
+        }
+        // 06.8: the hold must outlive its own expiry, so it may not stay plain-reserved —
+        // mark it unknown BEFORE the evidence write. Best-effort by the same contract as the
+        // release above: a failed mark is logged, never allowed to mask the evidence row or
+        // the stream's own failure.
+        try {
+          await billing.creditWriter.markReservationUnknown(
+            reservation.reservationId,
+            failure.reason,
+          );
+        } catch (error) {
+          logReservationUnknownMarkFailure({
+            source: "llm",
+            eventId: input.eventId,
+            reservationId: reservation.reservationId,
+            reason: failure.reason,
+            error,
+          });
         }
         await recordUnsettledUsage({
           eventId: input.eventId,

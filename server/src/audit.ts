@@ -570,6 +570,16 @@ export const auditEventTypes = [
   "credit_service.called",
   "credit_service.refused",
   /*
+   * The Reserve admission's payer conflict (Bifrost #255, 06.4): a reserve request tried to
+   * bill an account its own authorization does not resolve to — another person's account, a
+   * company account on a personal grant, or a self-reported account key (`externalCustomerId`
+   * or any account-identity parameter, at the top level or inside `payer`). One row per
+   * refused attempt: the payload carries the request's claim beside the server's resolution,
+   * and `stage` says whether the server ever proved the grant — the claim is stored as a
+   * claim, the row exists so bypass attempts are countable, not to assert what happened.
+   */
+  "credit_reserve.payer_conflict",
+  /*
    * What a Bot is and what it may reach.
    *
    * The trail recorded every mouse movement a Bot made and could not answer "who pointed this Bot at
