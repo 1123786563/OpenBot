@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
 import { like, sql } from "drizzle-orm";
+import type { Logger } from "../../shared/logger";
 import { createAuditStore } from "../src/audit";
 import { botServiceRoutes } from "../src/bot-services/auth";
 import { createBindingOfferIssuer } from "../src/bot-services/binding-codes";
@@ -15,7 +16,6 @@ import {
   credentials,
 } from "../src/db/schema";
 import { gatewayCustomers, gatewayVirtualKeys } from "../src/db/schema/gateway";
-import { createGatewayCustomerProvisioner } from "../src/gateway/customer";
 import {
   type CredentialBundleSources,
   credentialSecretVariants,
@@ -23,6 +23,7 @@ import {
   redactCredentialSecrets,
   redactCredentialSecretsDeep,
 } from "../src/gateway/credential-bundle";
+import { createGatewayCustomerProvisioner } from "../src/gateway/customer";
 import {
   createGatewayKeyIssuer,
   createGatewayVirtualKeyClient,
@@ -33,7 +34,6 @@ import {
   type GatewayReadiness,
   type GatewayReadinessService,
 } from "../src/gateway/readiness";
-import type { Logger } from "../../shared/logger";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /**
@@ -77,7 +77,11 @@ function randomBase64Key(): string {
  */
 const selectableRefs = [
   { provider: "fake-provider", model: "boundary-chat", capability: "chat" },
-  { provider: "fake-provider", model: "boundary-embed", capability: "embedding" },
+  {
+    provider: "fake-provider",
+    model: "boundary-embed",
+    capability: "embedding",
+  },
 ];
 
 /** The fake Bifrost: mints the recognizable marker value into every key. */
@@ -203,12 +207,18 @@ afterAll(async () => {
   await database
     .delete(gatewayCustomers)
     .where(like(gatewayCustomers.payerId, `${prefix}%`));
-  await database.delete(accessGrants).where(like(accessGrants.userId, `${prefix}%`));
+  await database
+    .delete(accessGrants)
+    .where(like(accessGrants.userId, `${prefix}%`));
   await database
     .delete(botBindingOffers)
     .where(like(botBindingOffers.botId, `${prefix}%`));
-  await database.delete(credentials).where(like(credentials.keyId, `${prefix}%`));
-  await database.delete(botServices).where(like(botServices.botId, `${prefix}%`));
+  await database
+    .delete(credentials)
+    .where(like(credentials.keyId, `${prefix}%`));
+  await database
+    .delete(botServices)
+    .where(like(botServices.botId, `${prefix}%`));
   await database.$client.close();
   fake.stop();
 });
@@ -253,7 +263,10 @@ async function confirmGrant(userId: string, botId: string, identity: string) {
     { botId, status: "active" },
     { externalIdentityHint: identity },
   );
-  const { grant } = await registry.modelAccess.confirm(userId, offer.bindingCode);
+  const { grant } = await registry.modelAccess.confirm(
+    userId,
+    offer.bindingCode,
+  );
   return grant;
 }
 
@@ -296,7 +309,11 @@ describe("05.4 credential bundle boundary", () => {
     const response = await claimKey(app, bot.secret, grant.grantId);
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
-      key: { secret: string; credentialVersion: number; expiresAt: string | null };
+      key: {
+        secret: string;
+        credentialVersion: number;
+        expiresAt: string | null;
+      };
       bundle: {
         endpoint: string;
         modelRefs: { provider: string; model: string; capability: string }[];
@@ -307,9 +324,13 @@ describe("05.4 credential bundle boundary", () => {
     };
 
     // The frozen contract: five fields, nothing else riding with the secret.
-    expect(Object.keys(body.bundle).sort()).toEqual(
-      ["credentialVersion", "endpoint", "expiresAt", "modelRefs", "secret"],
-    );
+    expect(Object.keys(body.bundle).sort()).toEqual([
+      "credentialVersion",
+      "endpoint",
+      "expiresAt",
+      "modelRefs",
+      "secret",
+    ]);
     expect(body.bundle.endpoint).toBe(endpoint.baseUrl);
     expect(body.bundle.modelRefs).toEqual(selectableRefs);
     expect(body.bundle.secret).toBe(body.key.secret);
@@ -341,8 +362,12 @@ describe("05.4 credential bundle boundary", () => {
 
     const impostor = await claimKey(app, `${bot.secret}-wrong`, grant.grantId);
     expect(impostor.status).toBe(401);
-    assertNoLeak(JSON.stringify(await impostor.json()), secret, "impostor 401 body");
-  });
+    assertNoLeak(
+      JSON.stringify(await impostor.json()),
+      secret,
+      "impostor 401 body",
+    );
+  }, 30_000);
 
   test("no log line on any path carries the secret or a reducible variant", async () => {
     const log = captureLogger();
@@ -369,7 +394,11 @@ describe("05.4 credential bundle boundary", () => {
       gateBot.botId,
       `slack:${prefix}-logs-gate-user`,
     );
-    const gateRefusal = await claimKey(gated, gateBot.secret, gateGrant.grantId);
+    const gateRefusal = await claimKey(
+      gated,
+      gateBot.secret,
+      gateGrant.grantId,
+    );
     expect(gateRefusal.status).toBe(503);
 
     fake.stage({ vkRespondWith: "status-500" });
@@ -380,14 +409,18 @@ describe("05.4 credential bundle boundary", () => {
       `slack:${prefix}-logs-remote-user`,
     );
     // Through the READY app: the remote 500 is the path under test, not the gate.
-    const remoteRefusal = await claimKey(app, remoteBot.secret, remoteGrant.grantId);
+    const remoteRefusal = await claimKey(
+      app,
+      remoteBot.secret,
+      remoteGrant.grantId,
+    );
     expect(remoteRefusal.status).toBe(502);
     fake.stage({ vkRespondWith: "valid" });
 
     const dump = log.dump().join("\n");
     expect(dump.length).toBeGreaterThan(0);
     assertNoLeak(dump, secret, "captured logs");
-  });
+  }, 60_000);
 
   test("no audit row carries the secret; the fingerprint is not a reducible fragment", async () => {
     const app = appFor();
@@ -438,7 +471,9 @@ describe("05.4 credential bundle boundary", () => {
 
     // The whole local record is plaintext-free; the hash identifies, never redeems.
     assertNoLeak(JSON.stringify(row), secret, "stored row");
-    expect(row.valueHash).toBe(createHash("sha256").update(secret).digest("hex"));
+    expect(row.valueHash).toBe(
+      createHash("sha256").update(secret).digest("hex"),
+    );
 
     // The status view contract: expiry, version and status — nothing else.
     const view = gatewayKeyStatusView(row);
@@ -478,9 +513,17 @@ describe("05.4 credential bundle boundary", () => {
       gateBot.botId,
       `slack:${prefix}-errors-gate-user`,
     );
-    const gateRefusal = await claimKey(gated, gateBot.secret, gateGrant.grantId);
+    const gateRefusal = await claimKey(
+      gated,
+      gateBot.secret,
+      gateGrant.grantId,
+    );
     expect(gateRefusal.status).toBe(503);
-    assertNoLeak(JSON.stringify(await gateRefusal.json()), secret, "503 gate body");
+    assertNoLeak(
+      JSON.stringify(await gateRefusal.json()),
+      secret,
+      "503 gate body",
+    );
 
     fake.stage({ vkRespondWith: "status-500" });
     const remoteBot = await credentialedBot("errors-remote");
@@ -490,9 +533,17 @@ describe("05.4 credential bundle boundary", () => {
       `slack:${prefix}-errors-remote-user`,
     );
     // Through the READY app: the remote 500 is the path under test, not the gate.
-    const remoteRefusal = await claimKey(app, remoteBot.secret, remoteGrant.grantId);
+    const remoteRefusal = await claimKey(
+      app,
+      remoteBot.secret,
+      remoteGrant.grantId,
+    );
     expect(remoteRefusal.status).toBe(502);
-    assertNoLeak(JSON.stringify(await remoteRefusal.json()), secret, "502 remote body");
+    assertNoLeak(
+      JSON.stringify(await remoteRefusal.json()),
+      secret,
+      "502 remote body",
+    );
     fake.stage({ vkRespondWith: "valid" });
 
     // The bundle cannot be completed without an endpoint: refuse, plaintext-free.
@@ -534,8 +585,12 @@ describe("05.4 credential bundle boundary", () => {
       ).grantId,
     );
     expect(modelsRefusal.status).toBe(502);
-    assertNoLeak(JSON.stringify(await modelsRefusal.json()), secret, "502 models body");
-  });
+    assertNoLeak(
+      JSON.stringify(await modelsRefusal.json()),
+      secret,
+      "502 models body",
+    );
+  }, 60_000);
 
   test("a deployment with no bundle sources refuses before minting anything", async () => {
     const app = appWithoutBundleSources();
@@ -546,7 +601,11 @@ describe("05.4 credential bundle boundary", () => {
     const createsBefore = fake.virtualKeyCreateCount();
     const response = await claimKey(app, bot.secret, grant.grantId);
     expect(response.status).toBe(503);
-    assertNoLeak(JSON.stringify(await response.json()), MARKER, "503 degraded body");
+    assertNoLeak(
+      JSON.stringify(await response.json()),
+      MARKER,
+      "503 degraded body",
+    );
     expect(fake.virtualKeyCreateCount()).toBe(createsBefore);
   });
 
@@ -580,7 +639,10 @@ describe("05.4 credential bundle boundary", () => {
       ok: true,
       nested: { list: ["a", { deeper: `value ${secret} end` }] },
     };
-    const scrubbed = redactCredentialSecretsDeep(payload, secret) as typeof payload;
+    const scrubbed = redactCredentialSecretsDeep(
+      payload,
+      secret,
+    ) as typeof payload;
     expect(JSON.stringify(scrubbed).includes(secret)).toBe(false);
     expect(scrubbed.nested.list[1]).toHaveProperty("deeper");
     expect(variants.length).toBeGreaterThan(4);
@@ -619,7 +681,9 @@ function startFakeBifrost() {
           return json(400, { error: "Customer name is required" });
         }
         if (customers.has(name)) {
-          return json(409, { error: "A customer with this name already exists" });
+          return json(409, {
+            error: "A customer with this name already exists",
+          });
         }
         const id = crypto.randomUUID();
         customers.set(name, { id });

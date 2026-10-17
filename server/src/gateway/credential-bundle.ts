@@ -165,11 +165,21 @@ export function credentialSecretVariants(secret: string): string[] {
     ];
   };
   for (const variant of encodingsOf(secret)) variants.add(variant);
-  for (let end = CREDENTIAL_SECRET_MIN_FRAGMENT; end < secret.length; end += 1) {
-    for (const variant of encodingsOf(secret.slice(0, end))) variants.add(variant);
+  for (
+    let end = CREDENTIAL_SECRET_MIN_FRAGMENT;
+    end < secret.length;
+    end += 1
+  ) {
+    for (const variant of encodingsOf(secret.slice(0, end)))
+      variants.add(variant);
   }
-  for (let start = 0; start <= secret.length - CREDENTIAL_SECRET_MIN_FRAGMENT; start += 1) {
-    for (const variant of encodingsOf(secret.slice(start))) variants.add(variant);
+  for (
+    let start = 0;
+    start <= secret.length - CREDENTIAL_SECRET_MIN_FRAGMENT;
+    start += 1
+  ) {
+    for (const variant of encodingsOf(secret.slice(start)))
+      variants.add(variant);
   }
   return [...variants];
 }
@@ -202,7 +212,9 @@ export function redactCredentialSecretsDeep<T>(value: T, secret: string): T {
     if (node instanceof Date) return node;
     if (node !== null && typeof node === "object") {
       const scrubbed: Record<string, unknown> = {};
-      for (const [key, entry] of Object.entries(node as Record<string, unknown>)) {
+      for (const [key, entry] of Object.entries(
+        node as Record<string, unknown>,
+      )) {
         scrubbed[key] = walk(entry);
       }
       return scrubbed;

@@ -76,3 +76,5 @@ bunx biome lint --error-on-warnings server/src/gateway/credential-bundle.ts serv
 ## Checkpoint
 
 完成后：`.omc/reports/b5-245.md` + 本文件 Checkpoint 节补 sha256 清单；git 保持未提交。
+
+2026-10-18 第四任：已完成，报告见 `.omc/reports/b5-245.md`；票面 05.4 文件 Checkpoint 节已填 sha256 清单。收敛性修复三处：① claim 路由对 bundle 两个源 seam 的任意抛错翻译为类型化拒绝（503/502），非类型化错误不再落 500；② 05.3 回归测试 `appFor()` 补接 bundle 源（生产同构接线，断言零改动）；③ 多轮 claim 测试补显式超时预算（本机共享负载下单周期可达 ~2s，默认 5s 会误杀）。

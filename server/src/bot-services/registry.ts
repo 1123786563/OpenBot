@@ -5,24 +5,24 @@ import type {
   CredentialStore,
 } from "../credentials";
 import type { Database } from "../db/client";
-import {
-  createAccessGrantService,
-  type AccessGrantService,
-} from "./access-grants";
-import { bindingCodeRoutes, createBindingOfferIssuer } from "./binding-codes";
+import { CredentialBundleUnavailableError } from "../gateway/credential-bundle";
+import { gatewayEndpointControls } from "../gateway/endpoint-config";
 import {
   createDeploymentKeyIssuer,
   createKeyIssuanceRoutes,
 } from "../gateway/key-issuance";
-import { gatewayEndpointControls } from "../gateway/endpoint-config";
 import { gatewayModelCapabilityFilterControls } from "../gateway/model-capability-filter";
 import { mappedModelCapabilities } from "../gateway/model-selection-routes";
-import { CredentialBundleUnavailableError } from "../gateway/credential-bundle";
+import {
+  type AccessGrantService,
+  createAccessGrantService,
+} from "./access-grants";
 import { createBotServiceAuthenticator } from "./auth";
+import { bindingCodeRoutes, createBindingOfferIssuer } from "./binding-codes";
 import type { BotServiceCredentialService } from "./service-credentials";
 import { createBotServiceCredentialService } from "./service-credentials";
-import { createBotServiceStore } from "./store";
 import type { BotServiceStore } from "./store";
+import { createBotServiceStore } from "./store";
 
 /**
  * The bot service registry as app.ts receives it: the 04.1 store every existing reader uses,
