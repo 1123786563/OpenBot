@@ -6,6 +6,7 @@ import { HttpAgent } from "@ag-ui/client";
 import { LLMock } from "@copilotkit/aimock";
 import { BuiltInAgent } from "@copilotkit/runtime/v2";
 import { EMPTY, lastValueFrom } from "rxjs";
+import { getLogger } from "../../shared/logger";
 import { z } from "zod";
 import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
 import { createActorAgentResolver } from "../src/agents/agent-resolver";
@@ -1020,7 +1021,11 @@ describe("connected-vendor lookup diagnostics", () => {
   }
 
   test("reports a failed lookup once for the roster and still completes the run", async () => {
-    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    // The build reports through the shared pino logger; the payload object
+    // is the first call argument.
+    const diagnostic = spyOn(getLogger("server"), "error").mockImplementation(
+      () => undefined as never,
+    );
     try {
       await runWithVendors(async () => {
         throw new Error(
@@ -1479,7 +1484,11 @@ describe("a person's standing instructions", () => {
   }
 
   test("reports a failed instruction read once and still completes a built-in run", async () => {
-    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    // The build reports through the shared pino logger; the payload object
+    // is the first call argument.
+    const diagnostic = spyOn(getLogger("server"), "error").mockImplementation(
+      () => undefined as never,
+    );
     let reads = 0;
     try {
       const sent = await runWithInstructions(async () => {

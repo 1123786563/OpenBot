@@ -26,6 +26,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import { getLogger } from "../../../shared/logger";
 import {
   type ContainerProbe,
   type KeyIdentity,
@@ -38,6 +39,8 @@ export const MANAGED_API = "https://api.intelligence.copilotkit.ai";
 const CONTAINER_ID = "openbot";
 const CONTAINER_NAME = "OpenBot";
 const SERVICE_TOKEN_HEADER = "x-copilotkit-ei-service-token";
+
+const logger = getLogger("server");
 
 export type CliResult = { exitCode: number; stdout: string };
 export type RunCli = (args: string[], directory: string) => Promise<CliResult>;
@@ -544,7 +547,7 @@ async function jobMain() {
     throw new Error(
       "INTELLIGENCE_SERVICE_TOKEN and INTELLIGENCE_PROJECT_ID go together.",
     );
-  const _result = await ensureLearningContainer({
+  const result = await ensureLearningContainer({
     directory: process.cwd(),
     apiUrl,
     nonInteractive: true,
@@ -555,10 +558,18 @@ async function jobMain() {
     ),
     ...(token && projectId ? { serviceToken: { token, projectId } } : {}),
   });
+  logger.info(
+    result === "skipped"
+      ? `Automatic Learning: no credential here could create the openbot container. ${learningSetupInstructions(apiUrl)}`
+      : `Automatic Learning: the openbot container is ${result === "created" ? "created" : "present"}; OpenBot assigns it as the default unless Admin → Automatic Learning has a saved setting.`,
+  );
 }
 
 if (import.meta.main) {
-  jobMain().catch((_error: unknown) => {
+  jobMain().catch((error: unknown) => {
+    logger.error(
+      `Automatic Learning: ${error instanceof Error ? error.message : "setup failed; nothing was assigned."}`,
+    );
     process.exitCode = 1;
   });
 }

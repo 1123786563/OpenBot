@@ -1,15 +1,20 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { getLogger } from "../../shared/logger";
 import { logLinkAuditFailure } from "../src/identity/audit-failure";
+
+const log = getLogger("server");
 
 let spy: ReturnType<typeof spyOn>;
 beforeEach(() => {
-  spy = spyOn(console, "error").mockImplementation(() => {});
+  // The audit failure logs through the shared pino logger; the payload
+  // object is the first call argument.
+  spy = spyOn(log, "error").mockImplementation(() => undefined as never);
 });
 afterEach(() => spy.mockRestore());
 
 function logged(error: unknown): Record<string, unknown> {
   logLinkAuditFailure("github", error);
-  return JSON.parse(spy.mock.calls[0][0] as string);
+  return spy.mock.calls[0][0] as Record<string, unknown>;
 }
 
 function pgError(errno: string, message = "boom user-123"): Error {
@@ -62,5 +67,5 @@ test("handles non-Error thrown values", () => {
 
 test("never logs the message or ids", () => {
   logLinkAuditFailure("slack", pgError("23505", "secret user-123"));
-  expect(spy.mock.calls[0][0] as string).not.toContain("user-123");
+  expect(JSON.stringify(spy.mock.calls[0][0])).not.toContain("user-123");
 });

@@ -240,7 +240,16 @@ export function createMemoryStore(
         for (const row of rows) {
           try {
             await mirrorRow(memory, row);
-          } catch (_error) {
+          } catch (error) {
+            log.error(
+              {
+                type: "memory-mirror-error",
+                error: error instanceof Error ? error.name : "UnknownError",
+                context: { memoryId: row.id },
+                timestamp: new Date().toISOString(),
+              },
+              "memory-mirror-error",
+            );
           }
         }
         return rows.length;

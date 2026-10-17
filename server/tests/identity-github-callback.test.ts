@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
+import { getLogger } from "../../shared/logger";
 import type { AuditEventInput } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import { seal } from "../src/auth/signed-value";
@@ -124,24 +125,25 @@ async function validState(userId = "person") {
   return encodeURIComponent(await sealGithubState(userId, key, now));
 }
 
+const log = getLogger("server");
+
 let errors: ReturnType<typeof spyOn>;
 let warns: ReturnType<typeof spyOn>;
-let logs: ReturnType<typeof spyOn>;
 beforeEach(() => {
-  errors = spyOn(console, "error").mockImplementation(() => {});
-  warns = spyOn(console, "warn").mockImplementation(() => {});
-  logs = spyOn(console, "log").mockImplementation(() => {});
+  // The callback logs through the shared pino logger; the payload object is
+  // the first call argument, so the assertions read it directly.
+  errors = spyOn(log, "error").mockImplementation(() => undefined as never);
+  warns = spyOn(log, "warn").mockImplementation(() => undefined as never);
 });
 afterEach(() => {
   errors.mockRestore();
   warns.mockRestore();
-  logs.mockRestore();
 });
 
 function output() {
-  return [errors, warns, logs]
+  return [errors, warns]
     .flatMap((spy) => spy.mock.calls)
-    .map((args: unknown[]) => args.map(String).join(" "))
+    .map((args: unknown[]) => JSON.stringify(args[0]))
     .join("\n");
 }
 
@@ -318,17 +320,17 @@ describe("GitHub sign-in callback", () => {
     ).toBe(OK);
     expect(harness.linked).toHaveLength(1);
     expect(harness.revoked).toHaveLength(0);
-    const logged = errors.mock.calls.map((args: unknown[]) => String(args[0]));
+    const logged = errors.mock.calls.map((args: unknown[]) => args[0]);
     expect(logged).toHaveLength(1);
-    expect(JSON.parse(logged[0] as string)).toEqual({
+    expect(logged[0]).toEqual({
       type: "identity-link-audit-failed",
       provider: "github",
       errorName: "DrizzleQueryError",
       errorCode: "08006",
     });
-    expect(logged[0]).not.toContain("user-id-77");
-    expect(logged[0]).not.toContain("link-id-88");
-    expect(logged[0]).not.toContain("Failed query");
+    expect(JSON.stringify(logged[0])).not.toContain("user-id-77");
+    expect(JSON.stringify(logged[0])).not.toContain("link-id-88");
+    expect(JSON.stringify(logged[0])).not.toContain("Failed query");
     for (const secret of [
       "the-code",
       "gho_secret",
@@ -400,10 +402,9 @@ describe("GitHub sign-in callback", () => {
 
   describe("diagnostics", () => {
     function lines() {
-      return [
-        ...errors.mock.calls.map((args: unknown[]) => String(args[0])),
-        ...warns.mock.calls.map((args: unknown[]) => String(args[0])),
-      ].map((line) => JSON.parse(line));
+      return [errors, warns].flatMap((spy) =>
+        spy.mock.calls.map((args: unknown[]) => args[0]),
+      );
     }
 
     const refusals: [string, () => Promise<[Harness, string]>][] = [

@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { getLogger } from "../../../shared/logger";
 import type { ModelCredentialSecretReader } from "../../src/credentials";
 import { encryptSecret } from "../../src/credentials";
 import type { Database } from "../../src/db/client";
@@ -558,10 +559,12 @@ test("rebind_infrastructure_failure_is_logged_and_drift_is_not", async () => {
   const originalGet = catalog.get.bind(catalog);
   bind(carrier);
   const logs: unknown[][] = [];
-  const originalError = console.error;
-  console.error = (...args: unknown[]) => {
-    logs.push(args);
-  };
+  const logError = spyOn(getLogger("server"), "error").mockImplementation(
+    (...args: unknown[]) => {
+      logs.push(args);
+      return undefined as never;
+    },
+  );
   try {
     (catalog as unknown as { get: unknown }).get = async () => {
       throw new Error("PG_CONNECTION_LOST");
@@ -585,7 +588,7 @@ test("rebind_infrastructure_failure_is_logged_and_drift_is_not", async () => {
     // Drift is an expected fail-closed outcome: nothing to page anyone about.
     expect(logs).toHaveLength(0);
   } finally {
-    console.error = originalError;
+    logError.mockRestore();
     (catalog as unknown as { get: unknown }).get = originalGet;
   }
 });

@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { getLogger } from "../../../shared/logger";
 import { BunSQLPreparedQuery } from "drizzle-orm/bun-sql";
 import type { PreparedQueryConfig } from "drizzle-orm/pg-core";
 import { PROVENANCE_GUIDANCE } from "../../../shared/bot-prompt";
@@ -406,10 +407,12 @@ test("expert_classification_failure_is_logged_and_agent_survives", async () => {
     [],
   );
   const logs: unknown[][] = [];
-  const originalError = console.error;
-  console.error = (...args: unknown[]) => {
-    logs.push(args);
-  };
+  const logError = spyOn(getLogger("server"), "error").mockImplementation(
+    (...args: unknown[]) => {
+      logs.push(args);
+      return undefined as never;
+    },
+  );
   try {
     const loaded = await fixture.loader({ id: "actor-a", role: "admin" });
     // The runtime resolution survives (fail-closed Expert bridge), and the
@@ -421,7 +424,7 @@ test("expert_classification_failure_is_logged_and_agent_survives", async () => {
       "EXPERT_SOURCE_CLASSIFICATION_FAILED",
     );
   } finally {
-    console.error = originalError;
+    logError.mockRestore();
     await fixture.restore();
   }
 });

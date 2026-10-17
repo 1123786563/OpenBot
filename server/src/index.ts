@@ -786,6 +786,11 @@ const enterpriseCapabilities = await (async () => {
           // tenant (OCR R10).
           const name = error instanceof Error ? error.name : "";
           if (name !== "CredentialUnusableError")
+            log.error({
+              error: "TENANT_CREDENTIAL_DECRYPT_FAILED",
+              context: { credentialRef: reference },
+              cause: error instanceof Error ? error.message : String(error),
+            });
           return undefined;
         }
       },
@@ -803,7 +808,13 @@ const enterpriseCapabilities = await (async () => {
     const scopes = createScopeResolver(directory, {
       data,
       authenticate: async (request) => {
-        const actor = await resolveRequestActor(request).catch((_error) => {
+        const actor = await resolveRequestActor(request).catch((error) => {
+          // Session-infrastructure faults are not "unauthenticated": leave
+          // a trace so auth-store outages are diagnosable (OCR R10).
+          log.error({
+            error: "ENTERPRISE_SESSION_RESOLUTION_FAILED",
+            cause: error instanceof Error ? error.message : String(error),
+          });
           return null;
         });
         return actor ? { actorId: actor.id, entrypoint: "web" } : null;
@@ -817,7 +828,8 @@ const enterpriseCapabilities = await (async () => {
       scopes,
       conversations: createConversationService({ data, mastraStorage }),
     };
-  } catch (_error) {
+  } catch (error) {
+    log.error(error, "Enterprise conversation service unavailable");
     return null;
   }
 })();
@@ -4636,7 +4648,7 @@ const craftKbSearch: CraftKbSearch | null = knowledgeService
       const settled = await Promise.allSettled(
         kbs.map((kb) =>
           knowledgeRequest(
-            knowledgeService!,
+            knowledgeService,
             `/kb/${encodeURIComponent(kb.id)}/retrieve`,
             {
               method: "POST",
