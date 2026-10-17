@@ -402,3 +402,6 @@
 - 运行中：#228（ctx_47adfb156ed6）、fix-256（ctx_d2ef9693db5b）、review-292（ctx_44b7c69ebd5d）。
 - 下一波三张派发（#233 集成解锁）：#244（05.3 每授权独立 Key，task_0aaae5b003b0/ctx_c0adf6f36336）、#258（06.7 Status 查询与同 ID 恢复，task_7817d1ef4da2/ctx_2c9018dcc7c4，注明 #256 未集成勿依赖 0140）、#264（07.1 准入扩展挂载，task_9b75614e0c45/ctx_ae410b6296e5，bifrost 主战场硬拒绝语义）。#293（10.4）就绪但与 #292 同域暂缓至 review-292 落定。
 - 运行中 6：#228、fix-256、review-292、#244、#258、#264。
+- #258（06.7 Status 查询与同 ID 恢复）完成并闭环前半：reservation-status.ts（纯函数 attemptId 映射无迁移、grant 定界越权保护一律 unknown、只读双 SELECT）、credit-reserve.ts 4 处定点（删 generateAttemptId、statusService 槽位、POST /status 挂载）；14/14+78/78+tsc 0+lint 0+九表 0 残留。release→checkpoint 258（36 文件/86KB）→复验 @5594 openbot_b5_258c：status+revalidation+tampering 49/49+tsc 0→review-258 派发（task_642bdd2e2f6a，ctx_ebdee99fd7ed）。
+- 注意：Checkpoint 有时填 '- **Checkpoint**：' 列表项而非 '### Checkpoint' 标题——核查产出时两种格式都要查。
+- 运行中 7：#228、fix-256、review-292、#244、#264、review-258。
