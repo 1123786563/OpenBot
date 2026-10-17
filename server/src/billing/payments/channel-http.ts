@@ -57,7 +57,7 @@ export async function postForm(
   } catch {
     throw new BillingError("unreachable");
   }
-  const { status, text } = await readVerifiedResponse(response);
+  const { text } = await readVerifiedResponse(response);
   // Alipay's sandbox gateway randomly sheds load as 404/302 HTML pages (observed ~40% of
   // requests in a bad window): every business answer is JSON, so an HTML body is the platform
   // shedding, not an answer — retryable, like a timeout. Gated on the flag because WeChat's

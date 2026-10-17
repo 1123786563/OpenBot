@@ -10,6 +10,10 @@ const ADMIN = { authorization: "Bearer sk-t05-admin" };
 const READER = { authorization: "Bearer sk-t05-read" };
 const OTHER = { authorization: "Bearer sk-t05-other" };
 
+/** One JSON answer, always read defensively (`?.` + fallback) in this script. */
+type JsonValue = null | boolean | number | string | JsonValue[] | JsonRecord;
+type JsonRecord = { [key: string]: JsonValue };
+
 let pass = 0;
 let fail = 0;
 
@@ -28,7 +32,7 @@ async function json(
   path: string,
   headers: Record<string, string>,
   body?: unknown,
-): Promise<{ status: number; json: any }> {
+): Promise<{ status: number; json: JsonRecord | null }> {
   const response = await fetch(`${B}${path}`, {
     method,
     headers:
@@ -40,7 +44,7 @@ async function json(
   const text = await response.text();
   return {
     status: response.status,
-    json: text === "" ? null : JSON.parse(text),
+    json: text === "" ? null : (JSON.parse(text) as JsonRecord),
   };
 }
 
@@ -52,7 +56,7 @@ async function main() {
     chunk_size: 64,
     chunk_overlap: 8,
   });
-  const kbId: string = created.json?.id ?? "";
+  const kbId: string = String(created.json?.id ?? "");
   check("create-kb", "200", String(created.status));
   check("create-kb id len", "36", String(kbId.length));
   console.log("  kb:", JSON.stringify(created.json).slice(0, 140));
@@ -67,7 +71,7 @@ async function main() {
     title: "t05 text doc",
     content: paragraphs,
   });
-  const docId: string = added.json?.doc_id ?? "";
+  const docId: string = String(added.json?.doc_id ?? "");
   check("upload-text", "202", String(added.status));
   console.log("  add:", JSON.stringify(added.json));
 
@@ -75,7 +79,7 @@ async function main() {
   let status = "";
   for (let i = 0; i < 30; i += 1) {
     const task = await json("GET", `/kb/${kbId}/tasks/${docId}`, ADMIN);
-    status = task.json?.status ?? "";
+    status = String(task.json?.status ?? "");
     if (status === "completed" || status === "failed") break;
     await new Promise((r) => setTimeout(r, 1000));
   }
@@ -97,10 +101,16 @@ async function main() {
     hybrid: true,
   });
   check("retrieve-hits", "200", String(retrieved.status));
-  check("retrieve count>0", "true", String((retrieved.json?.count ?? 0) > 0));
+  check(
+    "retrieve count>0",
+    "true",
+    String(Number(retrieved.json?.count ?? 0) > 0),
+  );
   console.log(
     "  hit:",
-    JSON.stringify(retrieved.json?.results?.[0] ?? {}).slice(0, 160),
+    JSON.stringify(
+      (retrieved.json as { results?: unknown[] })?.results?.[0] ?? {},
+    ).slice(0, 160),
   );
 
   // 5. 删除文档 → 检索空 → task 404
@@ -136,7 +146,7 @@ async function main() {
   let pdfStatus = "";
   for (let i = 0; i < 90; i += 1) {
     const task = await json("GET", `/kb/${kbId}/tasks/${pdfId}`, ADMIN);
-    pdfStatus = task.json?.status ?? "";
+    pdfStatus = String(task.json?.status ?? "");
     if (pdfStatus === "completed" || pdfStatus === "failed") break;
     await new Promise((r) => setTimeout(r, 1000));
   }
@@ -157,7 +167,7 @@ async function main() {
     check(
       "pdf retrieve-hits",
       "true",
-      String((pdfRetrieve.json?.count ?? 0) > 0),
+      String(Number(pdfRetrieve.json?.count ?? 0) > 0),
     );
   }
 

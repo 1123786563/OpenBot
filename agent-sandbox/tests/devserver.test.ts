@@ -99,7 +99,7 @@ describe("the per-bot dev server pool (S8)", () => {
   });
 
   test("a child dying on its own releases its slot (belief follows the process)", async () => {
-    const { devservers, spawns, children } = build(2);
+    const { devservers, children } = build(2);
     const a = await devservers.start({ botId: "a", dir: "web" });
     await devservers.start({ botId: "b", dir: "web" });
     // The first child crashes out from under us (vite died).

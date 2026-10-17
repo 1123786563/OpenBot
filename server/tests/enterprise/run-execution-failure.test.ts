@@ -594,11 +594,10 @@ test("renewal_extends_run_and_attempt_main_leases", async () => {
       statement.kind === "update" && statement.table === "enterprise_runs",
   ) as Extract<FakeStatement, { kind: "update" }> | undefined;
   // The renewal must extend the run's main lease, not only the request claim.
+  const renewedLease = runUpdate?.values.leaseExpiresAt;
   expect(runUpdate).toBeDefined();
-  expect(runUpdate?.values.leaseExpiresAt).toBeInstanceOf(Date);
-  expect((runUpdate?.values.leaseExpiresAt as Date).getTime()).toBeGreaterThan(
-    now + 20_000,
-  );
+  expect(renewedLease).toBeInstanceOf(Date);
+  expect((renewedLease as Date).getTime()).toBeGreaterThan(now + 20_000);
   // The active attempt's main lease rides the same extension.
   const attemptUpdate = attemptUpdateOf(state).at(-1);
   expect(attemptUpdate?.values.leaseExpiresAt).toBe(
@@ -624,10 +623,11 @@ test("renewal_extends_run_lease_capped_by_maximum_run_duration", async () => {
     (statement) =>
       statement.kind === "update" && statement.table === "enterprise_runs",
   ) as Extract<FakeStatement, { kind: "update" }> | undefined;
-  expect(runUpdate?.values.leaseExpiresAt).toBeInstanceOf(Date);
-  expect(
-    (runUpdate?.values.leaseExpiresAt as Date).getTime(),
-  ).toBeLessThanOrEqual(now + 15 * 60_000);
+  const renewedLease = runUpdate?.values.leaseExpiresAt;
+  expect(renewedLease).toBeInstanceOf(Date);
+  expect((renewedLease as Date).getTime()).toBeLessThanOrEqual(
+    now + 15 * 60_000,
+  );
   expect(renewed.expiresAt.getTime()).toBeLessThanOrEqual(now + 15 * 60_000);
 });
 

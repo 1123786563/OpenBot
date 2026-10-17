@@ -188,6 +188,7 @@ describe("connect-app plugin source (F4 tool schema)", () => {
       '"One short sentence on why you need it, shown to the user"',
     );
     expect(source).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the assertion matches the target source's own uninterpolated ${...} text.
       "`The user declined to connect external app ${args.external_app_id}. `",
     );
     expect(source).toContain("`Do not retry connecting ` +");
@@ -195,6 +196,7 @@ describe("connect-app plugin source (F4 tool schema)", () => {
       "`it; offer an alternative or proceed without it.`",
     );
     expect(source).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the assertion matches the target source's own uninterpolated ${...} text.
       "`External app ${args.external_app_id} is connected. You can use it now.`",
     );
     // The ask carries the metadata the server side keys the card on.

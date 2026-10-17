@@ -152,7 +152,6 @@
     "emailAria": "对方的邮箱",
     "emailPlaceholder": "对方的邮箱",
     "add": "添加",
-    "people": "成员：",
     "leaveAria": "退出此群组",
     "removePersonAria": "移除 {{email}}",
     "leave": "退出",
