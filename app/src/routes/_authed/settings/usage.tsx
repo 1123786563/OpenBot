@@ -177,7 +177,7 @@ function RouteComponent() {
         ) : (
           <PlanCard
             planName={planName ?? t("creditsPage.freePlan")}
-            planCredits={summary.data.plan}
+            planCredits={summary.data?.plan ?? 0}
             resetsAt={entitlements.data.subscription?.currentPeriodEnd ?? null}
             onUpgrade={hasCatalog ? () => setUpgradeOpen(true) : undefined}
           />
@@ -218,9 +218,9 @@ function RouteComponent() {
           </p>
           <p className="text-muted-foreground mt-1 text-sm tabular-nums">
             {t("creditsPage.rewardsSummary", {
-              count: summary.data?.rewards.grantCount ?? 0,
-              remaining: formatCredits(summary.data?.rewards.remaining ?? 0),
-              held: formatCredits(summary.data?.rewards.held ?? 0),
+              count: summary.data?.rewards?.grantCount ?? 0,
+              remaining: formatCredits(summary.data?.rewards?.remaining ?? 0),
+              held: formatCredits(summary.data?.rewards?.held ?? 0),
             })}
           </p>
         </div>
@@ -243,9 +243,9 @@ function RouteComponent() {
           <div className="mt-4">
             <CreditGrantList
               grants={grants.data.grants}
-              grantCount={summary.data?.rewards.grantCount ?? 0}
-              remaining={summary.data?.rewards.remaining ?? 0}
-              held={summary.data?.rewards.held ?? 0}
+              grantCount={summary.data?.rewards?.grantCount ?? 0}
+              remaining={summary.data?.rewards?.remaining ?? 0}
+              held={summary.data?.rewards?.held ?? 0}
             />
           </div>
         )}

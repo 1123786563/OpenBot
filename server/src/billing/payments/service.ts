@@ -16,6 +16,7 @@
  */
 
 import { getLogger } from "../../../../shared/logger";
+import type { PayerRef } from "../payer";
 import { BillingError } from "../types";
 import type { NotificationRefusal, PaymentProvider } from "./provider";
 import type {
@@ -57,7 +58,8 @@ export type PurchaseRefusal =
   | { reason: "unknown-plan" }
   | { reason: "unknown-provider" }
   | { reason: "pending-purchase"; pendingPlanCode: string }
-  | { reason: "active-subscription"; activePlanCode: string };
+  | { reason: "active-subscription"; activePlanCode: string }
+  | { reason: "missing-owner" };
 
 export class PurchaseError extends Error {
   override name = "PurchaseError";
@@ -70,7 +72,9 @@ export class PurchaseError extends Error {
           ? "That channel is not configured on this deployment."
           : refusal.reason === "pending-purchase"
             ? "Another purchase is already pending for this deployment."
-            : "This deployment already has an active subscription.",
+            : refusal.reason === "missing-owner"
+              ? "An order requires an owner resolved from the signed-in identity."
+              : "This deployment already has an active subscription.",
     );
     this.refusal = refusal;
   }
@@ -113,6 +117,29 @@ export type PlanCreditGrantor = {
   readCurrentPeriodEnd(planCode: string): Promise<Date | null>;
 };
 
+/** The owner kinds a NEW order may carry; `unknown_owner` is a legacy-row verdict, not a buyer. */
+const OWNABLE_PAYER_KINDS = new Set(["personal", "company", "legacy_deployment"]);
+
+/**
+ * The owner a purchase binds, as the seam demands it: present, well-formed, whitespace-strict,
+ * and never the quarantined kind. The ROUTE resolves this ref server-side from the session
+ * (payer-personal's `resolvePayerForPersonalUser`); the service's job is to refuse to create
+ * an order when no resolvable owner arrived — the AC14 answer to "missing ownership refuses
+ * the order", and the guarantee that no caller can slip an ownerless or quarantined order
+ * past the boundary.
+ */
+function isResolvableOwnerPayerRef(ref: PayerRef | undefined): ref is PayerRef {
+  return (
+    typeof ref === "object" &&
+    ref !== null &&
+    typeof ref.id === "string" &&
+    ref.id.length > 0 &&
+    ref.id.trim() === ref.id &&
+    typeof ref.kind === "string" &&
+    OWNABLE_PAYER_KINDS.has(ref.kind)
+  );
+}
+
 export type PaymentService = {
   /** The catalog, price-snapshotted at boot; `canPurchase` and `activePlanCode` are the caller's. */
   catalog(canPurchase: boolean, activePlanCode: string | null): PaymentCatalog;
@@ -127,7 +154,14 @@ export type PaymentService = {
     provider: PaymentProviderId;
     /** The billing cycle, already normalized to `monthly` by the routes (v1's only cycle). */
     cycle: "monthly";
+    /** The audit actor who opened the order — not the payment subject (CONTEXT.md). */
     createdBy: string | null;
+    /**
+     * The order's payment subject, resolved SERVER-SIDE from the authenticated identity and
+     * REQUIRED (AC14/Q27): a purchase without one is refused before any row exists, and the
+     * quarantined `unknown_owner` kind never passes. Requests carry no ownership field at all.
+     */
+    ownerPayerRef: PayerRef;
   }): Promise<{ order: PaymentOrderView }>;
   /** One order as its creator may see it. A pending order's channel is asked once (the poll). */
   readOrder(
@@ -677,6 +711,12 @@ export function createPaymentService(deps: {
     },
 
     async createPurchase(input) {
+      // Ownership first, before anything the request chose is even looked at: an order binds a
+      // server-resolved PayerRef or it does not happen (AC14). Nothing below can create an
+      // ownerless or quarantined order.
+      if (!isResolvableOwnerPayerRef(input.ownerPayerRef)) {
+        throw new PurchaseError({ reason: "missing-owner" });
+      }
       const entry = deps.catalog.get(input.planCode);
       if (!entry) {
         throw new PurchaseError({ reason: "unknown-plan" });
@@ -704,16 +744,29 @@ export function createPaymentService(deps: {
         });
       }
 
-      // Replay: the same plan on the same channel, still open, comes back untouched. The read is
-      // a fast path only — the pending-scope partial unique index and the store's conflict
+      // Replay: the same plan on the same channel, still open, comes back untouched. The read
+      // is OWNER-SCOPED (AC14: another person's open order is neither replayed nor shown) and a
+      // fast path only — the pending-scope partial unique index and the store's conflict
       // re-read below are the actual guarantee, so concurrent requests converge on one order.
       const replayed = await deps.store
-        .readPendingOrder(input.planCode, input.provider)
+        .readPendingOrder(input.planCode, input.provider, input.ownerPayerRef)
         .catch(() => null);
       if (replayed) return { order: toView(replayed) };
 
       const pending = await deps.store.readPendingPurchase().catch(() => null);
       if (pending) {
+        // The deployment holds one pending purchase at a time. If it belongs to someone else,
+        // this request refuses — it must NEVER replay the other person's view (and its QR) or
+        // cancel their open order in the channel-switch path below.
+        if (
+          pending.ownerPayerRef?.kind !== input.ownerPayerRef.kind ||
+          pending.ownerPayerRef?.id !== input.ownerPayerRef.id
+        ) {
+          throw new PurchaseError({
+            reason: "pending-purchase",
+            pendingPlanCode: pending.planCode,
+          });
+        }
         if (pending.planCode !== input.planCode) {
           throw new PurchaseError({
             reason: "pending-purchase",
@@ -760,11 +813,24 @@ export function createPaymentService(deps: {
         currency: "CNY",
         expiresAt,
         createdBy: input.createdBy,
+        ownerPayerRef: input.ownerPayerRef,
         checkoutPayload: null,
       });
       if (conflict === "pending-pair") {
         // Another caller's insert won the same plan/provider slot while we were between the read
-        // above and this insert. No second QR is created; the winner is the replay answer.
+        // above and this insert. No second QR is created; the winner is the replay answer — but
+        // ONLY for the same owner: the store's conflict re-read is deployment-wide (the pending
+        // slot is single), so a winner belonging to someone else is a refusal here, never a
+        // replay of another person's order view.
+        if (
+          order.ownerPayerRef?.kind !== input.ownerPayerRef.kind ||
+          order.ownerPayerRef?.id !== input.ownerPayerRef.id
+        ) {
+          throw new PurchaseError({
+            reason: "pending-purchase",
+            pendingPlanCode: order.planCode,
+          });
+        }
         return { order: toView(order) };
       }
       if (conflict === "pending-purchase") {
