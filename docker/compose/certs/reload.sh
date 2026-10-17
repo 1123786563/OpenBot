@@ -1,14 +1,17 @@
 #!/bin/sh
 # docker/compose/certs/reload.sh — acme.sh's --reloadcmd (#359, AC8): runs inside the
 # sidecar after --install-cert, i.e. on first issuance AND on every successful
-# renewal. A reload, never a restart: the preview server keeps its listener and its
-# in-flight connections/websocket upgrades, and picks the new certificate up on its
-# next accept. Two mechanisms, both optional and both documented in docs/tls-certs.md:
+# renewal. A reload, never a restart: whatever terminates TLS for the preview origin
+# keeps its listener and its in-flight connections/websocket upgrades, and picks the
+# new certificate up on its next accept. Note that this is NOT the OpenBot server —
+# server/src never opens cert.pem/key.pem, and the server listens plain HTTP behind
+# the proxy that holds the certificate. Two mechanisms, both optional and both
+# documented in docs/tls-certs.md:
 #
-#   1. tls/reload.stamp — mtime bump, the polling seam for the server-side watcher
-#      (#362's consumer decides: watch the stamp, or re-stat cert.pem directly).
-#   2. OPENBOT_TLS_RELOAD_URL — an http(s) POST to the server's own reload endpoint
-#      (e.g. http://host.docker.internal:3001/... as wired by the server side). The
+#   1. tls/reload.stamp — mtime bump, the polling seam for a terminator that can watch
+#      the directory (an nginx-style proxy reloaded by SIGHUP does not need it).
+#   2. OPENBOT_TLS_RELOAD_URL — an http(s) POST to the TLS terminator's own reload
+#      endpoint (e.g. a Traefik/Caddy admin API), when it exposes one. The
 #      hook's failure is logged, never fatal: the certificate IS installed, only the
 #      live reload needs attention, and the next renewal retries it.
 #

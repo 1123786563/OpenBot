@@ -42,9 +42,17 @@ docker logs -f openbot-tls
 When it succeeds, `tls/` holds `cert.pem`, `key.pem` (0600), `renewal-status.json`,
 `reload.stamp`, and the sidecar's whole acme state under `acme-home/` (0700:
 account key, issued certificates, `acme.sh.log`). Everything the sidecar writes
-lives under this one bind mount. The preview server (#362) consumes
-`cert.pem`/`key.pem` from this directory — the `/etc/openbot/tls` convention
-inside containers.
+lives under this one bind mount.
+
+**Who reads `cert.pem`/`key.pem`** (corrected 2026-10-18, #419): the process that
+terminates TLS for `*.<preview-host>`. In this repository that is **not** the OpenBot
+server — `server/src` never opens these files and the server listens plain HTTP; the
+adopted topology (#403 R2) puts a reverse proxy in front of the preview origin, and
+that proxy is the certificate consumer. Point its `ssl_certificate` / `ssl_certificate_key`
+at this same directory (host `tls/`, `/etc/openbot/tls` inside containers) and wire its
+reload to the hooks below. A deployment that terminates TLS some other way — a managed
+load balancer, for example — can leave this sidecar out entirely and let the platform
+own the certificate.
 
 ## What the pipeline does
 
@@ -120,16 +128,21 @@ deSEC is the fully-free alternative (delegation + token in one place).
       (internal resolvers answer `<hash>.<preview-host>` with the internal IP while
       the public zone still answers the ACME TXT queries), or a public A record
       pointing at the internal IP (accepting the exposure that implies).
-- [ ] The preview template's scheme is `https` and matches how the server actually
-      serves the origin.
+- [ ] The preview template's scheme is `https`. The server enforces this on both sides
+      (it closes admission on an `http://` template) — but it describes the scheme
+      browsers see, **not** a listener the server owns. Something in front of the server
+      must actually terminate TLS for `*.<preview-host>` and forward plaintext HTTP.
 
 ## Renewal failure observability (AC8)
 
 `tls/renewal-status.json` is the durable signal (scalar fields, written by the
 guard): `health`, `healthReason`, `daysLeft`, `lastAttemptOk/At/Kind/Error/Digest`,
-`lastSuccessAt`, `lastAlertAt/Severity`, `previewHost`, `certificate`. #362's
-admission gate and any dashboard read this file; the `Produces` contract of #359 is
-satisfied by it plus the alert channels below.
+`lastSuccessAt`, `lastAlertAt/Severity`, `previewHost`, `certificate`. Consumers today
+are the container healthcheck and the alert channels below; a dashboard can read the
+file directly. The server does **not** read it (grep over `server/src` at `bbea87ba`
+finds no reference), so preview admission never depends on certificate health — an
+expired certificate fails in the browser and in the alerts, not in the gate. #359's
+`Produces` contract is this file plus the alert channels below.
 
 `renewal-guard.sh` turns the certificate's remaining days plus the last attempt
 into health (`starting` / `ok` / `warn` / `critical`). `starting` is a fresh
@@ -160,20 +173,26 @@ warn→critical escalation fires immediately; recovery emits exactly one `ok` ev
 
 1. Permission floor: `key.pem` 0600, `cert.pem` 0644, optional
    `OPENBOT_TLS_OWNER=uid:gid` chown when the sidecar runs as root.
-2. `touch tls/reload.stamp` — the polling seam: the server side watches the stamp's
-   mtime (or `cert.pem`'s) and reloads.
-3. `OPENBOT_TLS_RELOAD_URL=http://host.docker.internal:<port>/…` — an HTTP POST to
-   the server's reload endpoint when it exposes one.
+2. `touch tls/reload.stamp` — the polling seam: a mtime bump for whoever terminates
+   TLS and can watch the directory (an nginx-style proxy re-reading on `SIGHUP` does
+   not need this; a process that can only poll does).
+3. `OPENBOT_TLS_RELOAD_URL=http://…` — an HTTP POST to the reload endpoint of
+   **whatever is terminated the TLS**. Use it when the proxy exposes one (Traefik,
+   Caddy, an API-driven managed balancer); leave it unset for a proxy reloaded by
+   signal, and do not point it at the OpenBot server, which has no such endpoint.
 
 A reload, never a restart: the listener, in-flight requests and websocket upgrades
-survive; the next accept already uses the new certificate. The exact server-side
-reload mechanics are #362's to consume; this pipeline guarantees the files are in
-place and the signal fires.
+survive; the next accept already uses the new certificate. This pipeline guarantees only
+that the files are in place and the signals fire — the reload itself belongs to the TLS
+terminator, and as of `bbea87ba` no deployment evidence in this repo shows that handoff
+running in production (see #419: AC8 is `partial` — pipeline implemented, production run
+not yet proven).
 
 ## Private-key and credential hygiene
 
-- `key.pem` is 0600, owned by `OPENBOT_TLS_UID:GID` — the same uid the server reads
-  it as; the sidecar itself runs as that uid (`user:` in the compose file), not root.
+- `key.pem` is 0600, owned by `OPENBOT_TLS_UID:GID` — the uid that needs to read the
+  private key, i.e. the sidecar and whatever process terminates TLS for the preview
+  origin; the sidecar itself runs as that uid (`user:` in the compose file), not root.
 - `dns.env` is git-ignored, 0600, read via `env_file` into the sidecar only — no
   other service sees it, no value is ever logged (startup checks name variables).
 - `tls/` is git-ignored: `git status` after a drill or issuance must stay clean.
@@ -211,7 +230,7 @@ binds its own scratch dir as the TLS directory, and cleans the project up after.
 | `OPENBOT_TLS_WARN_DAYS` / `OPENBOT_TLS_CRIT_DAYS` | `30` / `14` | Health bands |
 | `OPENBOT_TLS_ALERT_WEBHOOK` | — | `https://…` POST or `file:/path` JSONL |
 | `OPENBOT_TLS_ALERT_COOLDOWN_SECONDS` | `86400` | Re-page interval while degraded |
-| `OPENBOT_TLS_RELOAD_URL` | — | Optional reload hook on the server |
+| `OPENBOT_TLS_RELOAD_URL` | — | Optional reload POST to the **TLS terminator** (not the OpenBot server, which exposes no such endpoint) |
 | `OPENBOT_TLS_RENEW_INTERVAL_SECONDS` | `21600` | Renewal loop cadence (min 600) |
 | `OPENBOT_TLS_RENEW_CMD` | — | **Test seam — do not set in production.** Replaces the renewal command (`sh -c`); the failure drill (`drill-renewal-failure.sh`) and `scripts/tls-pipeline.test.ts` drive failure/recovery through it |
 | `OPENBOT_TLS_STATUS_SET_HOOK` | — | **Test seam — do not set in production.** A `sh -c` command status_set runs between the status-file read and the publish, so a test can hold a second writer inside the write window (the concurrency suite's race seam) |
