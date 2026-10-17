@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import {
@@ -27,6 +26,11 @@ import {
   createCreditWriter,
 } from "./credits-writer";
 import { CREDIT_SCALE } from "./credits";
+import {
+  attemptIdForReservation,
+  reservationStatusEndpoints,
+  type ReservationStatusService,
+} from "./reservation-status";
 import { getLogger } from "../../../shared/logger";
 import { payerKey, type PayerKind, type PayerRef } from "./payer";
 
@@ -267,11 +271,6 @@ function refused(
   detail: Record<string, unknown> = {},
 ): CreditReserveOutcome {
   return { status: "refused", reasonCode, detail };
-}
-
-/** An `att-` attempt id: 8 random bytes as hex, the draw size the other billing ids use. */
-function generateAttemptId(): string {
-  return `att-${randomBytes(8).toString("hex")}`;
 }
 
 function isPositiveInteger(value: unknown): value is number {
@@ -682,6 +681,15 @@ export async function reserveCreditInTransaction(
       idempotencyKey: request.idempotencyKey,
       maximumCents: request.maximumCredits,
       expiresAt: holdExpiresAt,
+      // 06.5: the hold persists the pricing basis it was admitted against, so settlement
+      // resolves this exact combination even after newer prices or a newer rate land.
+      lockedBasis: {
+        provider: request.model.provider,
+        model: request.model.model,
+        capability: request.model.capability,
+        snapshotVersion: request.snapshotVersion,
+        rateVersion: request.rateVersion,
+      },
     });
   } catch (error) {
     if (error instanceof CreditReservationConflictError) {
@@ -697,7 +705,10 @@ export async function reserveCreditInTransaction(
   }
   return {
     status: "reserved",
-    attemptId: generateAttemptId(),
+    // The same reservation answers the SAME attempt id on every replay (06.7's identity
+    // mapping): a caller recovering from a lost response recovers the original identity,
+    // and a Status query can resolve that attempt id back to this reservation.
+    attemptId: attemptIdForReservation(reserved.reservationId),
     reservationId: reserved.reservationId,
     maximumCredits: request.maximumCredits,
     snapshotVersion: request.snapshotVersion,
@@ -777,9 +788,16 @@ export function createCreditReserveService(
   };
 }
 
-/** The endpoints the 06.1 guard mounts: today exactly one — `POST /reserve`. */
+/** The endpoints the 06.1 guard mounts: `POST /reserve`, and `POST /status` when wired. */
 export type CreditProtocolEndpointDependencies = {
   service: CreditReserveService;
+  /**
+   * When wired, the guard also mounts 06.7's read-only Status surface (`POST /status`),
+   * giving a caller whose reserve response was lost a way to recover the hold's fate by
+   * attemptId or reservationId. Optional so a deployment cannot half-mount it by accident:
+   * the slot exists only where the service is provided.
+   */
+  statusService?: ReservationStatusService;
 };
 
 /**
@@ -793,6 +811,12 @@ export function creditProtocolEndpoints(
   dependencies: CreditProtocolEndpointDependencies,
 ): Hono<{ Variables: CreditServiceVariables }> {
   const app = new Hono<{ Variables: CreditServiceVariables }>();
+  if (dependencies.statusService) {
+    app.route(
+      "/",
+      reservationStatusEndpoints({ service: dependencies.statusService }),
+    );
+  }
   app.post("/reserve", async (context) => {
     let body: unknown;
     try {

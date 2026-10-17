@@ -405,3 +405,68 @@
 - #258（06.7 Status 查询与同 ID 恢复）完成并闭环前半：reservation-status.ts（纯函数 attemptId 映射无迁移、grant 定界越权保护一律 unknown、只读双 SELECT）、credit-reserve.ts 4 处定点（删 generateAttemptId、statusService 槽位、POST /status 挂载）；14/14+78/78+tsc 0+lint 0+九表 0 残留。release→checkpoint 258（36 文件/86KB）→复验 @5594 openbot_b5_258c：status+revalidation+tampering 49/49+tsc 0→review-258 派发（task_642bdd2e2f6a，ctx_ebdee99fd7ed）。
 - 注意：Checkpoint 有时填 '- **Checkpoint**：' 列表项而非 '### Checkpoint' 标题——核查产出时两种格式都要查。
 - 运行中 7：#228、fix-256、review-292、#244、#264、review-258。
+
+## T100（2026-10-17）
+- review-258 双 PASS（Spec 4/4 + 质量 A-，高0/中0/低3；报告 reviews/b5-258.md）。
+- #258（06.7 Status 查询与同 ID 恢复）集成完成（第 46 张）：credit-reserve.ts 4 处定点直复制（diff 逐一核对恰为本票增量）+ reservation-status.ts + 集成测试；集成库回归 @5594 openbot_b5_258i：status+revalidation+tampering 49/49 + tsc 0。
+- 运行中：#228（ctx_47adfb156ed6）、fix-256（ctx_d2ef9693db5b）、review-292（ctx_44b7c69ebd5d）、#244（ctx_c0adf6f36336）、#264（ctx_ae410b6296e5）。
+- #259（06.8 unknown hold 不超时回收）解锁并派发：worktree b5-259（HEAD 44754feb 用户又推进+sync_delta 5 文件）、task_16f16f05ba5c、ctx_79c7e15201f8。
+- 运行中 6：#228、fix-256、review-292、#244、#264、#259。
+- 429 速率限制事件（第 9 次上游故障，与 502 同构）：#228 与 fix-256 消息投递被拒。#228 数分钟自愈继续工作；fix-256 停滞 9+ 分钟 → 按失联纪律 abandon+重启（第七任 ctx_a096c6034ec8+接续简报：F2 CHECK 已落地确认、F1 snapshot 未建、DB 级实证测试待补）。
+- 运行中 6：#228（ctx_47adfb156ed6）、fix-256（ctx_a096c6034ec8）、review-292（ctx_44b7c69ebd5d）、#244（ctx_c0adf6f36336）、#264（ctx_ae410b6296e5）、#259（ctx_79c7e15201f8）。
+- #264（07.1 准入扩展挂载）实施完成：bifrost 子模块 governance 域 creditadmission（开关/版本声明/付费三态判定）、Evaluate 门装配（身份后 grant 前、keyless 同门）、credit_admission_not_enabled 503 决策、12 测试+竞态+vet 干净；server tsc 0。两项裁决请求：Q1 块缺失=硬拒绝（coordinator 裁决维持票面字面）；Q2 transports 层 version 透传 15 行越界（移交 review-264 裁定）。集成期警告：版本 bump 后 transports DK-12 测试需一行装配。
+- 264 闭环前半：release → checkpoint 264 → coordinator 复验（go test -C plugins/governance -count=1 全量 20s ok + Admission ok + vet 0；坑：bifrost 多模块根无 go.mod 必须用 -C plugins/governance）→ review-264 派发（task_58885d118a2b，ctx_d6f765f8021c）。
+- 运行中 6：#228、fix-256（ctx_a096c6034ec8）、review-292、#244、#259、review-264。
+
+## T101（2026-10-17）
+- review-264 双 PASS（Spec 4/4 + 质量 A-）：门真实性=core 装配证据链（五处 RunLLMPreHooks+tryRequest 每尝试+short-circuit 先于 provider）；裁决 Q1 维持硬拒绝（票面+父 Spec fail-closed 规范性）、Q2 移交独立票（transports /api/plugins version 透传，07.12 阻塞项，07.2 不受阻）；L1 骑 07.2 一行（负费率→pricingUnknown）；I1 部署档案不挂 semanticcache/routing。
+- #264（07.1 准入扩展挂载）集成完成（第 47 张）：bifrost 子模块 governance 5 文件直复制（creditadmission.go/测试/main.go/resolver.go/providerscopedlimits_test.go 适配）；集成复验 go test -count=1 全量 18s ok + vet 0。
+- 待立票：transports version 透传（Q2 裁决）；待 07.2：L1 一行加固。
+- Q2 独立票已立：docs/tickets/bifrost-5/issues/07.1b-transports-plugin-version.md + task_8c3767e7c833（暂不派发，07.12 前落地）。
+- #265（07.2 PreLLM 认证并申请预留）派发：task_18a91c6886aa/ctx_8198021fbaf6。**子模块坑两起**：①sync_delta 不覆盖子模块内未提交修改（os.path.isfile 跳过目录）；②worktree 子模块未初始化+git submodule update --init 网络卡死后台竞争覆盖 rsync 结果。修复法=直接 rsync 主仓库 bifrost 工作树+重复制 5 文件（后台任务已死无竞争），实测 governance 测试 ok；.git 相对指针失效（git 不可用，go 编译无碍）。教训：bifrost 域 worktree 基线=rsync 主仓库 bifrost/，勿用 submodule update。
+- 运行中 6：#228、fix-256、review-292、#244、#259、#265。
+- #259（06.8 unknown hold 不超时回收）完成并闭环前半：0141 迁移（unknown 态+3 CHECK+snapshot 齐，避让 0140 且不依赖其列）、credits-writer markUnknown/releaseUnknown/Release 拒 unknown、capacity held 无视 expires_at、status 含 unknown、index gate fail 先 mark unknown；audit.ts 基线缺口（sync_delta 遗漏 payer_conflict）自愈修复。RED 7/7→GREEN 7/7、回归 59/61（2 红=预占 0140 ENOENT 待 #256 集成即愈）、九表 0 残留。release→checkpoint 259（15 文件/56KB）→复验 @5594 openbot_b5_259c：unknown-hold+reservation-status 21/21+tsc 0→review-259 派发（task_27230ccf645b，ctx_f3f7eb606559）。
+- 环境注意：用户主仓库 HEAD 推进至 44754feb（=9c7868e2+PR#401）。
+- 运行中 6：#228、fix-256、review-292、#244、#265、review-259。
+- #265（07.2 PreLLM 认证并申请预留）完成并闭环前半：creditadmission.go 555 行（Reserve 门配置/L1 负费率→pricingUnknown 加固/明确免费不预留·付费+未知过门/无乐观放行）、creditreserve_test.go 471 行 9 测试+fake 计费服务、attemptId bfat-+sha256 稳定生成作 idempotencyKey、credit_reserve_not_held 拒绝路径；**子模块二次清空事故由 worker 自愈**（杀掉竞争 setup shell PID 55411+从 b5-264 本地 fetch 恢复+#264 增量 sha256 核验重放+修 gitdir）。release→checkpoint 265（7 文件/47KB）→复验：governance 全量 29s ok+vet 0→review-265 派发（task_2a6179e3cff5，ctx_08e9a6ec2467）。
+- 运行中 6：#228、fix-256、review-292、#244、review-259、review-265。
+
+## T102（2026-10-17）
+- review-265 双 PASS（Spec 4/4 + 质量 A-）：201 回显五字段先验证再落戳、拒绝路径唯一出口+突变 M1/M2a/M2b/M3/M6 全红、attemptId 纯函数稳定（突变 M3 红）、bfat-+32hex 满足 server isIdentifier 形状。
+- #265（07.2 PreLLM 认证并申请预留）集成完成（第 48 张）：bifrost governance 6 文件直复制；集成复验 governance 全量 22s ok+vet 0。review-264 L1 骑缝项（负费率→pricingUnknown）已随本票落地。
+- 运行中：#228、fix-256、review-292、#244、review-259。
+- #266（07.3 未预留 short-circuit 拒绝语义）派发：worktree b5-266（bifrost 子模块 rsync 法基线全量验证 19.5s ok）、task_667d10eef1f1、ctx_a3a68a34a46b。
+- 运行中 6：#228、fix-256、review-292、#244、review-259、#266。
+- fix-256 完成：F1（0140_snapshot.json 建齐，0140 红清零；剩 1 红=基线既有漂移——净 HEAD 复现实证 13 历史条目 224 问题 0140 零涉及，coordinator 裁决维持现状记基线债池）；F2（CHECK NULL-safe by construction+DB 级实证测试 :545 direct INSERT 半锁违反约束，注释点名 review-256 抓的 NULL 洞）。coordinator 复验 @5594 openbot_b5_256c2：migration-journal 8 例 1 fail（=裁定基线债）+bound/version-locking 25/25+tsc 0 → review-256-fix 第二轮派发（task_42a32afd5188，ctx_7a94ef9185c9）。
+- 运行中 6：#228、review-292、#244、review-259、#266、review-256-fix。
+
+## T103（2026-10-17）
+- review-256-fix 第二轮 PASS（F1/F2 修复到位无回归披露完整；口径 222 条目数勘误）。
+- #256（06.5 上限取整与版本锁定，含 fix 轮）集成完成（第 49 张）：直复制 reserve-bound.ts/两测试/0140 SQL+snapshot/credits-writer/credit-reservations schema；credit-reserve.ts 三向合并（仅 lockedBasis 9 行块锚点插入，#258 增量保留）；_journal 追加 0140（141 条）；注释差异（worktree 改写 vs 主仓库预告注释）保留主仓库版不并。
+- 集成库回归 @5594 openbot_b5_256i（141 迁移+roles）：bound+version-locking 25/25、#258 回归 status+revalidation+tampering 49/49、migration-journal 8 例 1 fail（=已裁定基线债）、tsc 0。
+- 运行中：#228、review-292、#244、review-259、#266。
+- #266（07.3 未预留 short-circuit 拒绝语义）完成并闭环前半：creditrefusal.go 五 reasonCode 封闭词表+12→5 映射（未识别归 admission_unreachable）、全部拒绝出口携 ReasonCode、EvaluationResult.ReasonCode 字段、creditRefusal() 构建器（error.code+AllowFallbacks=false）、11 测试（含 allowed 对照组+无泄露四类）。复验 governance 全量 23s ok+vet 0。**checkpoint 0 文件事故**：bifrost/.git 相对指针在 worktree 失效致父仓 git status fatal → 修绝对指针后重 checkpoint（10 文件/52KB；rsync 法建 worktree 后必须先修 gitdir）。review-266 派发（task_cfb17be94786，ctx_fe2518ad7bec）。
+- 运行中：#228、review-292、#244、review-259、review-266。
+- review-266 双 PASS（Spec 4/4 + 质量 A-；12→5 映射 1+4+4+1+2 全覆盖、突变 M1-M5 全红含 M4b 双层防御定性）。
+- #266（07.3 未预留 short-circuit 拒绝语义）集成完成（第 50 张）：governance 5 文件直复制；集成复验全量 34s ok+vet 0。
+- #267（07.4 dispatch 承诺持久化与幂等 claim）派发：worktree b5-267（rsync+修 gitdir 一次到位，基线 43s ok）、task_1def62eb4686、ctx_bcedc226d58b。
+- 运行中：#228、review-292、#244、review-259、#267。
+- #267（07.4 dispatch 承诺持久化与幂等 claim）完成并闭环前半：DispatchCommitment{attemptId,reservationId,provider,model,claimedAt,pending,grantId,payer,上限,版本}+Store 接口（Claim 幂等/ListPending 08.x seam）+进程内实现；claim 接入 201 分支先承诺后派发；重复 claim→dispatch_already_claimed 503；store 失败→fail-closed。复验全量 89.6s ok+vet 0 → review-267 派发（task_32bd6a1e4fda，ctx_2a119a04faee，重点：并发 claim 原子性、pending 无 requeue 路径扫描、五词表归类正当性）。
+- 运行中：#228、review-292、#244、review-259、review-267。
+
+## T105（2026-10-17）
+- review-267 双 PASS（Spec 4/4 + 质量 A-：claim 位置=201 后 ctx 戳前放行前、32 goroutine -race 单胜出、pending 无迁移路径整树 diff 证实、字段=票面 Produces+归属+预留基准；进程内限定已声明，持久化后端经 store seam=Q-2）。
+- #267（07.4 dispatch 承诺持久化与幂等 claim）集成完成（第 51 张）：governance 6 文件直复制；集成复验全量 45.6s ok+vet 0。
+- #268（07.5 重试需新准入）派发：worktree b5-268（rsync+修 gitdir 一次到位）、task_4e9d6353b350、ctx_4786faa54bc2。
+- 运行中：#228、review-292、#244、review-259、#268。
+- #268（07.5 重试需新准入）完成并闭环前半：核验型+扩展型混合（fallback 每 slot 新 attemptId 已由 #265/#267 结构保证——核验成立；增量=DispatchCommitment 重试链四字段+commitDispatch 落盘，71 行恰在 dispatchcommit.go，creditadmission 等 0 差异）；5 新测试（双预留/旧标识拒/三 link 归属不变/重试准入失败不执行/attemptIdentity 映射）。复验全量 25s ok+vet 0 → review-268 派发（task_f57fc24fb20d，ctx_61bceea899f0）。
+- 运行中：#228、review-292、#244、review-259、review-268。
+- 静默卡死事件（第 10 次故障，新形态）：#228/review-292/#244/review-259 四 dispatch 终端 1.5 小时零输出且状态 [ready] 无 Retry 标志（429 余波后 idle 挂起）。按失联纪律全量重启：review-259 探针（ctx_8b2722f929a8，4 分钟确认在读 0141 内容存活）→ 批量 228（ctx_868851f0e4e4）/review-292（ctx_6e263ebd7ed0）/244（ctx_95ac5e2ca73f）+ 三份接续简报（#228 附 0141 冲突警告与 0140 已集成事实）。
+- 运行中 4：#228、review-292、#244、review-259。
+- #244（05.3 每授权独立 Key 签发）完成并闭环前半（两任失联后第三任续作）：key-issuance.ts（issuer+vk 客户端+/keys 路由）、5 测试、0140_gateway_virtual_keys.sql（本地号，集成时重编 0142——0140=#256 已集成、0141=#259 待集成）。release→checkpoint 244（43 文件/96KB）→复验 @5594 openbot_b5_244c：5/5+tsc 0→review-244 派发（task_fd1bf2f0860a，ctx_4d23c57e0620）。
+- 运行中 4：#228（ctx_868851f0e4e4）、review-292（ctx_6e263ebd7ed0）、review-259（ctx_8b2722f929a8）、review-244（ctx_4d23c57e0620）。
+
+## T106（2026-10-17）
+- review-292 第二任双 PASS（Spec 4/4 + 质量 B+，1 MEDIUM F1=migration-journal 红未披露——定性为基线既有+前序票本地号快照缺陷，集成层重编号+snapshot 重建自然消解，无需 worker 返工；3 low/4 info）。
+- #292 集成重编号计划确定：worktree 本地 0130-0133 实为主仓库已集成内容（sync_delta 复制），唯一新迁移 0134_subscription_owner_allowance → 集成层 **0142**；#259 的 0141 先集成、#244 的 0140_gateway_virtual_keys → 0143。集成顺序：#259 → #292 → #244。
+- 运行中：#228（ctx_868851f0e4e4）、review-259（ctx_8b2722f929a8）、review-244（ctx_4d23c57e0620）。
