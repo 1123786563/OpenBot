@@ -19420,7 +19420,7 @@
     },
     "public.ai_observation_experiments": {
       "name": "ai_observation_experiments",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "id": {
           "name": "id",
@@ -19575,7 +19575,7 @@
         },
         "ai_observation_experiments_frozen_coherence_check": {
           "name": "ai_observation_experiments_frozen_coherence_check",
-          "value": "((\"ai_observation_experiments\".\"state\" = 'draft' AND \"ai_observation_experiments\".\"frozen_at\" IS NULL AND \"ai_observation_experiments\".\"config_hash\" = '') OR (\"ai_observation_experiments\".\"state\" = 'frozen' AND \"ai_observation_experiments\".\"frozen_at\" IS NOT NULL AND \"ai_observation_experiments\".\"config_hash\" <> ''))"
+          "value": "(\"ai_observation_experiments\".\"state\" = 'draft' AND \"ai_observation_experiments\".\"frozen_at\" IS NULL AND \"ai_observation_experiments\".\"config_hash\" = '') OR (\"ai_observation_experiments\".\"state\" = 'frozen' AND \"ai_observation_experiments\".\"frozen_at\" IS NOT NULL AND \"ai_observation_experiments\".\"config_hash\" <> '')"
         }
       },
       "isRLSEnabled": false
@@ -19757,6 +19757,7 @@
     },
     "public.ai_observation_id_links": {
       "name": "ai_observation_id_links",
+      "schema": "",
       "columns": {
         "id": {
           "name": "id",
@@ -19895,7 +19896,8 @@
           "name": "ai_observation_id_links_upstream_kind_check",
           "value": "\"ai_observation_id_links\".\"upstream_kind\" IN ('span')"
         }
-      }
+      },
+      "isRLSEnabled": false
     }
   },
   "enums": {

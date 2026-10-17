@@ -19420,7 +19420,7 @@
     },
     "public.ai_observation_experiments": {
       "name": "ai_observation_experiments",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "id": {
           "name": "id",
@@ -19575,7 +19575,7 @@
         },
         "ai_observation_experiments_frozen_coherence_check": {
           "name": "ai_observation_experiments_frozen_coherence_check",
-          "value": "((\"ai_observation_experiments\".\"state\" = 'draft' AND \"ai_observation_experiments\".\"frozen_at\" IS NULL AND \"ai_observation_experiments\".\"config_hash\" = '') OR (\"ai_observation_experiments\".\"state\" = 'frozen' AND \"ai_observation_experiments\".\"frozen_at\" IS NOT NULL AND \"ai_observation_experiments\".\"config_hash\" <> ''))"
+          "value": "(\"ai_observation_experiments\".\"state\" = 'draft' AND \"ai_observation_experiments\".\"frozen_at\" IS NULL AND \"ai_observation_experiments\".\"config_hash\" = '') OR (\"ai_observation_experiments\".\"state\" = 'frozen' AND \"ai_observation_experiments\".\"frozen_at\" IS NOT NULL AND \"ai_observation_experiments\".\"config_hash\" <> '')"
         }
       },
       "isRLSEnabled": false
@@ -19757,7 +19757,7 @@
     },
     "public.ai_observation_experiment_executions": {
       "name": "ai_observation_experiment_executions",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "id": {
           "name": "id",
@@ -19819,7 +19819,7 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": "0"
+          "default": 0
         },
         "result": {
           "name": "result",
@@ -19955,13 +19955,14 @@
         },
         "ai_observation_experiment_executions_settled_terminal_check": {
           "name": "ai_observation_experiment_executions_settled_terminal_check",
-          "value": "((\"ai_observation_experiment_executions\".\"settled_at\" IS NULL AND \"ai_observation_experiment_executions\".\"state\" IN ('pending', 'running')) OR (\"ai_observation_experiment_executions\".\"settled_at\" IS NOT NULL AND \"ai_observation_experiment_executions\".\"state\" NOT IN ('pending', 'running')))"
+          "value": "(\"ai_observation_experiment_executions\".\"settled_at\" IS NULL AND \"ai_observation_experiment_executions\".\"state\" IN ('pending', 'running')) OR (\"ai_observation_experiment_executions\".\"settled_at\" IS NOT NULL AND \"ai_observation_experiment_executions\".\"state\" NOT IN ('pending', 'running'))"
         }
       },
       "isRLSEnabled": false
     },
     "public.ai_observation_id_links": {
       "name": "ai_observation_id_links",
+      "schema": "",
       "columns": {
         "id": {
           "name": "id",
@@ -20100,11 +20101,12 @@
           "name": "ai_observation_id_links_upstream_kind_check",
           "value": "\"ai_observation_id_links\".\"upstream_kind\" IN ('span')"
         }
-      }
+      },
+      "isRLSEnabled": false
     },
     "public.ai_observation_execution_case_outcomes": {
       "name": "ai_observation_execution_case_outcomes",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "execution_id": {
           "name": "execution_id",
@@ -20170,6 +20172,7 @@
           ]
         }
       },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
         "ai_observation_execution_case_outcomes_status_check": {
@@ -20181,7 +20184,7 @@
           "value": "\"ai_observation_execution_case_outcomes\".\"detail\" IS NULL OR \"ai_observation_execution_case_outcomes\".\"status\" <> 'in_flight'"
         }
       },
-      "uniqueConstraints": {}
+      "isRLSEnabled": false
     },
     "public.ai_observation_retention_deletions": {
       "name": "ai_observation_retention_deletions",
@@ -20265,7 +20268,7 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": "0"
+          "default": 0
         },
         "last_error": {
           "name": "last_error",
