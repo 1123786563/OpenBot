@@ -129,7 +129,9 @@ describe("folding upstream pages under a row cap", () => {
     // The envelope promised 1; the page carried 3. Shipping the extra rows as a
     // success would be an over-limit export wearing a clean answer.
     await expect(
-      foldExportPages(2, async () => page(1, [{ id: "a" }, { id: "b" }, { id: "c" }])),
+      foldExportPages(2, async () =>
+        page(1, [{ id: "a" }, { id: "b" }, { id: "c" }]),
+      ),
     ).rejects.toBeInstanceOf(ExportRowLimitExceeded);
   });
 

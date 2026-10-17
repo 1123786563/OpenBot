@@ -230,7 +230,8 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
   // Times degrade honestly (OCR m157): see baseSpan in tool-steps — a borrowed
   // sibling timestamp beats filing the span in 1970 under "0".
   const nowNs = (): string => (BigInt(Date.now()) * 1_000_000n).toString();
-  const startNs = nanos(observation.occurredAt) ?? nanos(observation.endedAt) ?? nowNs();
+  const startNs =
+    nanos(observation.occurredAt) ?? nanos(observation.endedAt) ?? nowNs();
   return {
     traceId,
     ...(parentSpanId !== undefined ? { parentSpanId } : {}),

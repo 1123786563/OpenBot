@@ -519,7 +519,7 @@ import { createUserInstructionsStore } from "./user-instructions";
 import { createUserPreferencesStore } from "./user-preferences";
 import { createVoiceSessionStore } from "./voice/sessions";
 import { createVoiceSummarizer } from "./voice/summary";
-import { repeatAfterEach, type Repeating } from "./work/loop";
+import { type Repeating, repeatAfterEach } from "./work/loop";
 import {
   createWorkQueue,
   DEFAULT_MAX_ATTEMPTS,

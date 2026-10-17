@@ -655,7 +655,7 @@ describe("the case-runner wrapper", () => {
 
 test("a verdict wrapped in a markdown fence or prose still parses (OCR m226)", async () => {
   const fenced = scorerFor({
-    output: "```json\n" + VERDICT + "\n```",
+    output: `\`\`\`json\n${VERDICT}\n\`\`\``,
     inputTokens: 3,
     outputTokens: 4,
   });
@@ -665,7 +665,7 @@ test("a verdict wrapped in a markdown fence or prose still parses (OCR m226)", a
   });
 
   const prosed = scorerFor({
-    output: "Here is my verdict:\n" + VERDICT + "\nHope that helps.",
+    output: `Here is my verdict:\n${VERDICT}\nHope that helps.`,
     inputTokens: 3,
     outputTokens: 4,
   });
@@ -714,9 +714,7 @@ test("a scorer that throws leaves the case's own outcome standing (OCR m223)", a
   });
   const exploding = (async () => {
     throw new Error("judge seam exploded");
-  }) as unknown as Parameters<
-    typeof createJudgeScoringCaseRunner
-  >[0]["judge"];
+  }) as unknown as Parameters<typeof createJudgeScoringCaseRunner>[0]["judge"];
   const runner = createJudgeScoringCaseRunner({
     inner,
     judge: exploding,
