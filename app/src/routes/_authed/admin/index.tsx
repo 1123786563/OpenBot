@@ -9,6 +9,7 @@ import {
   IconLayoutGrid,
   IconListDetails,
   IconPuzzle,
+  IconRobot,
   IconShieldCheck,
   IconUsers,
 } from "@tabler/icons-react";
@@ -53,6 +54,12 @@ const SECTIONS = [
         description: "overview.reach.credentials.description",
         icon: IconKey,
         linkOptions: { to: "/admin/credentials" },
+      },
+      {
+        title: "overview.reach.botServices.title",
+        description: "overview.reach.botServices.description",
+        icon: IconRobot,
+        linkOptions: { to: "/admin/bot-services" },
       },
       {
         title: "overview.reach.boundaries.title",

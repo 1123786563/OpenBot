@@ -20,6 +20,10 @@
       "approvals": {
         "title": "批准",
         "description": "每个成员的 Bot 行动前需要请求什么。"
+      },
+      "botServices": {
+        "title": "Bot 服务登记",
+        "description": "Bifrost 模型访问中获准接入的服务端 Bot 及其唯一服务身份。"
       }
     },
     "do": {
@@ -1025,5 +1029,55 @@
   "approvals": {
     "title": "审批",
     "description": "成员的 Bots 在行动前必须先请求什么、适用于所有人的规则，以及使用共享账户的请求。"
+  },
+  "botServices": {
+    "title": "Bot 服务登记",
+    "description": "登记可接入本部署模型访问的服务端 Bot。登记只建立唯一服务身份，不产生凭据、用户授权或任何积分权限。",
+    "add": "登记 Bot",
+    "cancel": "取消",
+    "kinds": {
+      "builtin": "内置",
+      "external": "外部"
+    },
+    "capabilities": {
+      "chat": "对话",
+      "image": "图像",
+      "audio": "语音",
+      "embedding": "向量",
+      "realtime": "实时",
+      "async": "异步"
+    },
+    "fields": {
+      "botId": "服务身份（botId）",
+      "displayName": "显示名称",
+      "kind": "类型",
+      "capabilities": "能力声明"
+    },
+    "form": {
+      "botIdInvalid": "botId 只能包含小写字母、数字和 . _ : - ，以字母或数字开头，最长 128 位，且创建后不可更改。",
+      "displayNameRequired": "请填写显示名称。",
+      "capabilitiesRequired": "请至少声明一项能力。"
+    },
+    "dialog": {
+      "title": "登记 Bot 服务",
+      "description": "为服务端 Bot 建立唯一服务身份与能力声明。",
+      "botIdPlaceholder": "例如 com.example.bot",
+      "displayNamePlaceholder": "例如 Example Bot",
+      "noCredentials": "登记不产生服务凭据，也不授予任何用户模型访问或积分权限；凭据由后续步骤单独签发。",
+      "save": "登记",
+      "saving": "登记中…"
+    },
+    "edit": {
+      "title": "编辑 Bot 服务"
+    },
+    "registered": {
+      "title": "已登记的 Bot",
+      "empty": "还没有登记任何 Bot 服务。",
+      "loadError": "无法加载已登记的 Bot 服务。",
+      "disabled": "已停用",
+      "edit": "编辑",
+      "disable": "停用",
+      "enable": "启用"
+    }
   }
 }
