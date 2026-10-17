@@ -52,6 +52,12 @@ export type AdminBotSummary = Readonly<{
     /** Null when collection cannot answer — never a zero in disguise. */
     unboundUpstream: number | null;
     usage: Readonly<{ providerReported: number; unavailable: number }> | null;
+    /**
+     * R2-46: true when the upstream listing covered only the first window of a
+     * larger project — unboundUpstream and usage are then window-bounded lower
+     * bounds over what was seen, never the project's exact answer.
+     */
+    upstreamTruncated: boolean;
   }>;
   experiments: Readonly<{ draft: number; frozen: number }>;
   exports: Readonly<{
@@ -95,4 +101,41 @@ export type ExportJobView = Readonly<{
   settledAt: string | null;
   /** The projected rows, riding along exactly when the state is completed. */
   artifact?: readonly RunSummary[];
+}>;
+
+/**
+ * One job as the LIST answers it (R2-40): the poll face, without the artifact inline.
+ * The list is what a 5-second poll reads, and a thousand jobs each carrying their rows
+ * inline amplified every poll to tens of megabytes — so the list carries the job's facts
+ * and, for a completed job, where the product lives: the detail endpoint, which rides
+ * the artifact exactly when the state is completed.
+ */
+export type ExportJobListItem = Readonly<{
+  jobId: string;
+  state: AdminExportJobState;
+  /** The deployment's row cap, snapshotted at enqueue time. */
+  rowLimit: number;
+  /** Rows in the artifact; null until the job completes. */
+  rowCount: number | null;
+  /** The closed-vocabulary code, exactly when the state is failed. */
+  errorCode: string | null;
+  /** The redaction policy the job froze under — mirrors ExportJobView's same field. */
+  redactionPolicyVersion: string;
+  createdAt: string;
+  settledAt: string | null;
+  /** Where the artifact rides, exactly when the state is completed: the detail URL. */
+  artifactUrl?: string;
+}>;
+
+/** The list answer: one page of jobs plus the offset facts the next request needs. */
+export type ExportJobsResult = Readonly<{
+  jobs: readonly ExportJobListItem[];
+  pagination: Readonly<{
+    /** Live jobs of this scope, whatever paging did — the poll's "anything new" signal. */
+    total: number;
+    offset: number;
+    limit: number;
+    /** The offset of the next page, or null when this page was the last. */
+    nextOffset: number | null;
+  }>;
 }>;

@@ -21,12 +21,21 @@ import { assertObservationScope, resolveStorageLocator } from "./scope";
  * upstream trace id is a value it records, not an identity it derives from.
  */
 
-export type RunBindingErrorCode = "BINDING_INPUT_INVALID" | "BINDING_NOT_FOUND";
+export type RunBindingErrorCode =
+  | "BINDING_INPUT_INVALID"
+  | "BINDING_NOT_FOUND"
+  /**
+   * R2-29: the (scope_key, opik_trace_id) unique index refused the reconcile —
+   * another live binding of this scope already recorded that upstream id. The
+   * first claim stands; this attempt stays unreconciled and the caller hears a
+   * deterministic 409, never the driver's bare constraint violation as a 500.
+   */
+  | "BINDING_TRACE_CONFLICT";
 
 export class RunBindingError extends Error {
   constructor(
     public code: RunBindingErrorCode,
-    public status: 400 | 404,
+    public status: 400 | 404 | 409,
   ) {
     super(code);
   }
@@ -56,7 +65,11 @@ export type RunBindingStore = {
   /**
    * Record the upstream identifier for a binding that was already begun — the lost-acknowledgment
    * path, where Opik succeeded but the local write did not. The first recorded id stands: a
-   * divergent later id signals upstream duplication and changes nothing here.
+   * divergent later id signals upstream duplication and changes nothing here. A DIFFERENT
+   * binding of this scope already holding that upstream id (the cross-row
+   * (scope_key, opik_trace_id) unique index) refuses with 409 BINDING_TRACE_CONFLICT (R2-29):
+   * the first claim stands, this row stays unreconciled, and a retry hears the same answer —
+   * never the driver's constraint violation surfacing as a 500.
    */
   reconcile(
     scope: ObservationScope,
@@ -143,6 +156,27 @@ function reference(value: string): string {
     throw new RunBindingError("BINDING_INPUT_INVALID", 400);
   }
   return value;
+}
+
+/**
+ * The violated constraint's name when `error` is a Postgres unique_violation (SQLSTATE 23505),
+ * else null. Bun's driver puts the SQLSTATE in `errno` and the constraint name in `constraint`;
+ * drizzle wraps the driver error as `cause` (the same shape identity/store.ts classifies).
+ */
+function uniqueViolationConstraint(error: unknown): string | null {
+  type Driver = { errno?: unknown; constraint?: unknown };
+  const candidates = [
+    error as Driver | null | undefined,
+    (error as { cause?: Driver } | null | undefined)?.cause,
+  ];
+  for (const candidate of candidates) {
+    if (candidate?.errno === "23505") {
+      return typeof candidate.constraint === "string"
+        ? candidate.constraint
+        : "";
+    }
+  }
+  return null;
 }
 
 export function createRunBindingStore(db: Database): RunBindingStore {
@@ -243,16 +277,32 @@ export function createRunBindingStore(db: Database): RunBindingStore {
           // signalling upstream duplication, changes nothing here.
           return { binding: current, adopted: false };
         }
-        const updated = await tx
-          .update(aiObservationBindings)
-          .set({ opikTraceId, updatedAt: new Date() })
-          .where(eq(aiObservationBindings.id, current.id))
-          .returning();
-        const adopted = updated[0];
-        if (!adopted) {
+        let adoptedRow: RunBinding | undefined;
+        try {
+          const updated = await tx
+            .update(aiObservationBindings)
+            .set({ opikTraceId, updatedAt: new Date() })
+            .where(eq(aiObservationBindings.id, current.id))
+            .returning();
+          adoptedRow = updated[0];
+        } catch (error) {
+          // R2-29: the (scope_key, opik_trace_id) unique index is the cross-row authority —
+          // a DIFFERENT binding of this scope already recorded that upstream id (two local
+          // runs reconciled onto one upstream trace). The first claim stands; this reconcile
+          // is refused with a deterministic 409 instead of the driver's bare 23505 surfacing
+          // as a 500 whose retry could never end differently. This row stays unreconciled.
+          if (
+            uniqueViolationConstraint(error) ===
+            "ai_observation_bindings_scope_opik_trace_uq"
+          ) {
+            throw new RunBindingError("BINDING_TRACE_CONFLICT", 409);
+          }
+          throw error;
+        }
+        if (!adoptedRow) {
           throw new Error("reconcile updated a row it cannot read back");
         }
-        return { binding: adopted, adopted: true };
+        return { binding: adoptedRow, adopted: true };
       });
     },
 

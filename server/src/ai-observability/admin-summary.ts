@@ -66,6 +66,16 @@ export type AdminBotRunSummary = Readonly<{
    * tokens for, and how many did not. Null when collection cannot answer.
    */
   usage: Readonly<{ providerReported: number; unavailable: number }> | null;
+  /**
+   * R2-46: true when the upstream listing covered only the first window of a
+   * larger project — the summary reads one page and never walks on, so when the
+   * project's total exceeds that window, `unboundUpstream` and `usage` are
+   * window-bounded lower bounds over what was seen, and this flag says so. A
+   * partial count must not masquerade as the exact answer (the honesty rule at
+   * the file's head): an exact count carries the flag false; an unanswerable
+   * count stays null beside the flag false — null already says "unknown".
+   */
+  upstreamTruncated: boolean;
 }>;
 
 export type AdminBotSummary = Readonly<{
@@ -112,6 +122,50 @@ export type AdminSummaryService = {
   }): Promise<AdminSummary>;
 };
 
+/** R2-47: the scope summaries' concurrency ceiling — 8 at a time, never the whole fleet. */
+const SUMMARY_CONCURRENCY = 8;
+
+/**
+ * The project lookups' per-request cache (R2-47): one `summarize` call asks each
+ * distinct scope key at most once, whatever the scopes array carries. Request-scoped
+ * by construction — a new request builds a new cache, so no staleness story exists.
+ */
+type ProjectLookup = Awaited<ReturnType<OpikPort["retrieveProject"]>>;
+
+/**
+ * The portless answer, unreachable through the readiness gate (a portless deployment
+ * is never `ready`), made explicit so the seam stays total without a cast.
+ */
+const PROJECT_PORTLESS: ProjectLookup = {
+  outcome: "unavailable",
+  operation: "retrieveProject",
+  code: "OPIK_UNREACHABLE",
+};
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      for (;;) {
+        // The claim is synchronous between awaits, so no two runners take one index.
+        const index = next;
+        if (index >= items.length) return;
+        next += 1;
+        results[index] = await worker(items[index]);
+      }
+    },
+  );
+  // The old Promise.all semantics stand: any scope failing fails the whole summary.
+  await Promise.all(runners);
+  return results;
+}
+
 export function createAdminSummaryService(deps: {
   database: Database;
   config: () => OpikConfig;
@@ -128,6 +182,7 @@ export function createAdminSummaryService(deps: {
     scope: ObservationScope,
     window: AdminSummaryWindow,
     readiness: OpikReadiness,
+    getProject: (scope: ObservationScope) => Promise<ProjectLookup>,
   ): Promise<AdminBotSummary> => {
     const bindingRows = await deps.database
       .select({
@@ -240,6 +295,7 @@ export function createAdminSummaryService(deps: {
      */
     let unboundUpstream: number | null = null;
     let usage: { providerReported: number; unavailable: number } | null = null;
+    let upstreamTruncated = false;
     const port = deps.port;
     const config = deps.config();
     if (
@@ -249,7 +305,7 @@ export function createAdminSummaryService(deps: {
       config.baseUrl !== null
     ) {
       try {
-        const project = await port.retrieveProject(scope);
+        const project = await getProject(scope);
         if (project.outcome !== "ok") throw new Error(project.outcome);
         if (project.value === null) {
           // The verified 404 on the scope's own project: truthfully nothing.
@@ -262,6 +318,10 @@ export function createAdminSummaryService(deps: {
           });
           if (page.outcome !== "ok") throw new Error(page.outcome);
           const rows = page.value.content;
+          // R2-46: one page is all this summary reads. A project bigger than the
+          // window makes the per-row counts partial — say so, never let them
+          // masquerade as the project's exact answer.
+          upstreamTruncated = page.value.total > rows.length;
           const ids = rows.map((row) => row.id);
           const bound = new Set(
             ids.length === 0
@@ -305,6 +365,7 @@ export function createAdminSummaryService(deps: {
         capabilities,
         unboundUpstream,
         usage,
+        upstreamTruncated,
       },
       experiments,
       exports: {
@@ -330,11 +391,26 @@ export function createAdminSummaryService(deps: {
       }
       const stats = snapshot.writes;
       // The scopes are independent summaries (OCR m169): each does its own counts
-      // against shared tables, so sequential awaits multiply the wall clock by the
-      // scope count. Promise.all keeps the old failure semantics — any scope failing
-      // fails the whole summary — while the counts now run concurrently.
-      const bots: AdminBotSummary[] = await Promise.all(
-        scopes.map((scope) => summarizeOne(scope, window, snapshot.readiness)),
+      // against shared tables. R2-47: at most SUMMARY_CONCURRENCY at a time — the
+      // old bare Promise.all put every scope's ~400 DB queries and ~2 upstream
+      // requests on the wire at once; the bounded map keeps the failure semantics
+      // (any scope failing fails the whole summary) without the stampede. The
+      // project lookup is request-cached, so a scope key costs one upstream call
+      // no matter how often the array names it.
+      const projectCache = new Map<string, Promise<ProjectLookup>>();
+      const getProject = (scope: ObservationScope): Promise<ProjectLookup> => {
+        const hit = projectCache.get(scope.key);
+        if (hit) return hit;
+        const pending =
+          deps.port?.retrieveProject(scope) ??
+          Promise.resolve(PROJECT_PORTLESS);
+        projectCache.set(scope.key, pending);
+        return pending;
+      };
+      const bots = await mapWithConcurrency(
+        scopes,
+        SUMMARY_CONCURRENCY,
+        (scope) => summarizeOne(scope, window, snapshot.readiness, getProject),
       );
       return {
         window: {

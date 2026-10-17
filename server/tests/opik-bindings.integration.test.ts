@@ -209,6 +209,52 @@ test("a lost local acknowledgment reconciles onto the original binding", async (
   expect(clash.code).toBe("23505");
 });
 
+test("a cross-row trace-id clash answers 409 BINDING_TRACE_CONFLICT, never a raw 23505 (R2-29)", async () => {
+  const shared = `opik-${prefix}-shared-trace`;
+  const first = {
+    runId: `${prefix}-run-clash-1`,
+    attemptId: "attempt-1",
+    traceId: "trace-clash-1",
+    capability: "detailed" as const,
+    expiresAt: new Date("2026-10-22T00:00:00.000Z"),
+  };
+  const second = {
+    ...first,
+    runId: `${prefix}-run-clash-2`,
+    traceId: "trace-clash-2",
+  };
+  await store.begin(scopeA, first);
+  const begunSecond = await store.begin(scopeA, second);
+
+  // Two local runs, one upstream trace (upstream duplication): the first reconcile claims
+  // the (scope_key, opik_trace_id) unique index, so the second's UPDATE cannot land.
+  await store.reconcile(scopeA, first.runId, first.attemptId, shared);
+
+  // The mapped answer, not the driver's bare constraint error as a 500: the typed
+  // house error, 409, code is the contract.
+  const failure = await store
+    .reconcile(scopeA, second.runId, second.attemptId, shared)
+    .catch((error: unknown) => error);
+  expect(failure).toBeInstanceOf(RunBindingError);
+  expect((failure as RunBindingError).code).toBe("BINDING_TRACE_CONFLICT");
+  expect((failure as RunBindingError).status).toBe(409);
+
+  // And the answer is deterministic: the retry hears the same refusal — the first
+  // claim stands, this row simply stays unreconciled — never a constant 500.
+  const retry = await store
+    .reconcile(scopeA, second.runId, second.attemptId, shared)
+    .catch((error: unknown) => error);
+  expect((retry as RunBindingError).code).toBe("BINDING_TRACE_CONFLICT");
+
+  const reread = await store.get(scopeA, begunSecond.binding.id);
+  expect(reread?.opikTraceId).toBeNull();
+  expect(reread?.state).toBe("running");
+
+  // The first claimant is untouched.
+  const winner = await store.latestAttempt(scopeA, first.runId);
+  expect(winner?.opikTraceId).toBe(shared);
+});
+
 test("reconciliation never creates the binding Opik metadata refers to", async () => {
   await expect(
     store.reconcile(

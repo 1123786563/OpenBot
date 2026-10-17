@@ -15,6 +15,7 @@ import { eq, inArray } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AgentActor, AgentProfile } from "../src/agents/profile-types";
+import { createAdminSummaryService } from "../src/ai-observability/admin-summary";
 import { createRunBindingStore } from "../src/ai-observability/bindings";
 import type { OpikConfig } from "../src/ai-observability/config";
 import { createOpikHealthService } from "../src/ai-observability/health";
@@ -525,4 +526,125 @@ test("the epoch source reads the live profile generation", async () => {
   // refused the call before this could matter.
   expect(await epochSource(actorA, `nope-${randomUUID()}`)).toBe(0);
   await database.delete(agents).where(eq(agents.id, agentId));
+});
+
+test("upstream counts a single window cannot cover carry the truncated flag (R2-46)", async () => {
+  const window = Array.from({ length: 4 }, (_, index) =>
+    traceRow(`t46-${run}-${index}`),
+  );
+  const base = fakePort(window, true);
+  // The project holds 9 traces; one window of 4 is all the summary reads.
+  const port: OpikPort = {
+    ...base,
+    listTraces: async () => ({
+      outcome: "ok" as const,
+      value: { total: 9, content: window },
+    }),
+  };
+  const service = createAdminSummaryService({
+    database,
+    config: () => enabledConfig,
+    port,
+    healthService: createOpikHealthService({
+      config: () => enabledConfig,
+      port,
+    }),
+    windowSize: 4,
+  });
+  const scope = resolveObservationScope({
+    actorId: `t33-r46-${run}`,
+    botId,
+    ownership: "owner",
+    epoch: 1,
+  });
+  const summary = await service.summarize({
+    scopes: [scope],
+    window: { from: null, to: null },
+    botId,
+  });
+  const bot = summary.bots[0];
+  // The counts are what the window saw, and the flag says so — no partial
+  // count masquerading as the project's exact answer.
+  expect(bot.runs.upstreamTruncated).toBe(true);
+  expect(bot.runs.unboundUpstream).toBe(4);
+  expect(bot.runs.usage).toEqual({ providerReported: 4, unavailable: 0 });
+
+  // A project the one window does cover reports the flag false: exact counts.
+  const covered = createAdminSummaryService({
+    database,
+    config: () => enabledConfig,
+    port: base,
+    healthService: createOpikHealthService({
+      config: () => enabledConfig,
+      port: base,
+    }),
+    windowSize: 4,
+  });
+  const small = await covered.summarize({
+    scopes: [scope],
+    window: { from: null, to: null },
+    botId,
+  });
+  expect(small.bots[0].runs.upstreamTruncated).toBe(false);
+  expect(small.bots[0].runs.unboundUpstream).toBe(4);
+});
+
+test("scope summaries run eight at a time and ask retrieveProject once per scope (R2-47)", async () => {
+  let active = 0;
+  let maxActive = 0;
+  let projectCalls = 0;
+  const base = fakePort([], true);
+  const port: OpikPort = {
+    ...base,
+    // The 404-project answer skips listTraces entirely, so the concurrency
+    // instrument rides the call every scope summary makes: retrieveProject.
+    retrieveProject: async () => {
+      projectCalls += 1;
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      active -= 1;
+      return { outcome: "ok" as const, value: null };
+    },
+  };
+  const service = createAdminSummaryService({
+    database,
+    config: () => enabledConfig,
+    port,
+    healthService: createOpikHealthService({
+      config: () => enabledConfig,
+      port,
+    }),
+  });
+  const duplicated = resolveObservationScope({
+    actorId: `t33-r47-${run}`,
+    botId,
+    ownership: "owner",
+    epoch: 1,
+  });
+  const scopes = [
+    duplicated,
+    duplicated,
+    ...Array.from({ length: 15 }, (_, index) =>
+      resolveObservationScope({
+        actorId: `t33-r47-${run}`,
+        botId: `${botId}-r47-${index}`,
+        ownership: "owner",
+        epoch: 1,
+      }),
+    ),
+  ];
+  const summary = await service.summarize({
+    scopes,
+    window: { from: null, to: null },
+    botId: null,
+  });
+  expect(summary.bots).toHaveLength(17);
+  // Eight at a time — not the old Promise.all's 17 concurrent scopes, and not
+  // sequential either: the wall clock still benefits from the concurrency.
+  expect(maxActive).toBeLessThanOrEqual(8);
+  expect(maxActive).toBeGreaterThan(1);
+  // 17 scope summaries over 16 distinct scope keys: retrieveProject answered
+  // once per key, from the per-request cache.
+  expect(projectCalls).toBe(16);
 });

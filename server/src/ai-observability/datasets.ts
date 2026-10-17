@@ -1,10 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import {
-  REDACTION_POLICY_VERSION,
-  type SafeText,
-  type SafeValue,
-} from "../../../shared/ai-observability";
+import { REDACTION_POLICY_VERSION } from "../../../shared/ai-observability";
 import type { Database } from "../db/client";
 import {
   aiObservationDatasets,
@@ -61,15 +57,16 @@ export type DatasetCaseInput = {
   sourceBindingId?: string | null;
 };
 
-/** One case as the version freezes it: projected content plus opaque provenance ids. */
-export type FrozenDatasetCase = Readonly<{
-  safeInput: SafeText;
-  referenceOutput: SafeText;
-  toolFixtures: SafeValue;
-  sourceRunId: string;
-  sourceAttemptId: string;
-  sourceBindingId: string | null;
-}>;
+/**
+ * One case as the version freezes it: projected content plus opaque provenance ids.
+ * R2-56: this is the shared contract's own type, imported — not a second spelling —
+ * so the "byte-for-byte mirror" rule holds by construction and no future edit here
+ * can drift from what the browser renders. The shared file's header names this file
+ * as one of the two sources it mirrors; the import is the mirror's enforcement half.
+ */
+import type { FrozenDatasetCase } from "../../../shared/ai-observability-datasets";
+
+export type { FrozenDatasetCase };
 
 export const MAX_DATASET_CASES = 200;
 const MAX_DATASET_NAME_BYTES = 128;

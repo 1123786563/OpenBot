@@ -28,6 +28,7 @@
  */
 
 import type { SafeValue } from "../../../shared/ai-observability";
+import type { CaseFragmentInput } from "../../../shared/ai-observability-datasets";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { RunBindingStore } from "./bindings";
 import type { ObservationScope } from "./contracts";
@@ -55,20 +56,12 @@ export class CaseReviewError extends Error {
   }
 }
 
-/** One fragment the reviewer selected from the observed run's record. */
-export type CaseFragment = {
-  /** The observed input the case is distilled from; free text the deny scan still refuses. */
-  input: string;
-  /** The reference output — the answer an evaluated run is scored against. */
-  referenceOutput: string;
-  /** Tool fixtures: the structured stand-ins evaluation replays instead of live tools. */
-  toolFixtures: Record<string, unknown>;
-  /**
-   * The attempt the fragment was observed on. Optional; it must match the run's latest
-   * bound attempt when given, because that binding is the provenance being frozen.
-   */
-  attemptId?: string;
-};
+/**
+ * One fragment the reviewer selected from the observed run's record. R2-56: the shared
+ * contract's own type, aliased under the server's historical spelling — one definition,
+ * shared/ai-observability-datasets.ts, so this file and the browser cannot drift.
+ */
+export type CaseFragment = CaseFragmentInput;
 
 export type CaseReviewDecision = "approved" | "rejected";
 
