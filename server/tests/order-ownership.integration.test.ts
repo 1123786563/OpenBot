@@ -240,7 +240,9 @@ test("a personal read scope sees only orders owned by that same personal ref", a
     ownerPayerId: userB,
   });
   // The owner reads their own order…
-  expect((await store.readOrder(mine.order.id, scopeA))?.id).toBe(mine.order.id);
+  expect((await store.readOrder(mine.order.id, scopeA))?.id).toBe(
+    mine.order.id,
+  );
   // …another user's scoped read answers null (the route renders that as 404)…
   expect(await store.readOrder(theirsId, scopeA)).toBeNull();
   // …the ownerless internal read (callbacks, sweeper, admin cancel) still answers any row…

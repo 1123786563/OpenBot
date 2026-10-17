@@ -5,10 +5,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { createAuditStore } from "../src/audit";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
-import {
-  createDatabase,
-  type Database,
-} from "../src/db/client";
+import { createDatabase, type Database } from "../src/db/client";
 import {
   auditEvents,
   billingCustomers,
@@ -224,9 +221,7 @@ describe("default closed (同步新增的模型默认未开放)", () => {
 
     // The admin view says the same: cataloged, never acted on, closed by default.
     const view = await scope.listAdminCatalog();
-    const entry = view.find(
-      (candidate) => candidate.ref.provider === provider,
-    );
+    const entry = view.find((candidate) => candidate.ref.provider === provider);
     expect(entry).toBeDefined();
     expect(entry?.open).toBe(false);
     expect(entry?.scope).toBeNull();
@@ -238,7 +233,9 @@ describe("default closed (同步新增的模型默认未开放)", () => {
     const modelRef = chatRef(provider);
 
     const scope = service();
-    await priceStore.appendSnapshots([appendInput(modelRef, fullyPricedDims())]);
+    await priceStore.appendSnapshots([
+      appendInput(modelRef, fullyPricedDims()),
+    ]);
     const opened = await scope.openModel({
       ref: modelRef,
       reason: "reviewed pricing",
@@ -260,12 +257,18 @@ describe("default closed (同步新增的模型默认未开放)", () => {
     const modelRef = chatRef(provider);
 
     const scope = service();
-    await priceStore.appendSnapshots([appendInput(modelRef, fullyPricedDims())]);
-    expect((await scope.openModel({
-      ref: modelRef,
-      reason: "temporary window",
-      actor: { userId: "admin-1", email: "admin@openbot.test" },
-    })).ok).toBe(true);
+    await priceStore.appendSnapshots([
+      appendInput(modelRef, fullyPricedDims()),
+    ]);
+    expect(
+      (
+        await scope.openModel({
+          ref: modelRef,
+          reason: "temporary window",
+          actor: { userId: "admin-1", email: "admin@openbot.test" },
+        })
+      ).ok,
+    ).toBe(true);
     expect(await scope.isModelOpen(modelRef)).toBe(true);
 
     // The gateway stops listing the model: not selectable, not invocable.
@@ -279,7 +282,9 @@ describe("opening and closing refuse without their preconditions", () => {
     const provider = nextId("no-reason");
     await syncCatalog([{ provider }]);
     const modelRef = chatRef(provider);
-    await priceStore.appendSnapshots([appendInput(modelRef, fullyPricedDims())]);
+    await priceStore.appendSnapshots([
+      appendInput(modelRef, fullyPricedDims()),
+    ]);
 
     const scope = service();
     for (const reason of ["", "   "]) {
@@ -364,7 +369,9 @@ describe("open and close are audited with their reasons", () => {
     const provider = nextId("open-audit");
     await syncCatalog([{ provider }]);
     const modelRef = chatRef(provider);
-    await priceStore.appendSnapshots([appendInput(modelRef, fullyPricedDims())]);
+    await priceStore.appendSnapshots([
+      appendInput(modelRef, fullyPricedDims()),
+    ]);
 
     const scope = service();
     const opened = await scope.openModel({
@@ -401,14 +408,20 @@ describe("open and close are audited with their reasons", () => {
     const provider = nextId("close-audit");
     await syncCatalog([{ provider }]);
     const modelRef = chatRef(provider);
-    await priceStore.appendSnapshots([appendInput(modelRef, fullyPricedDims())]);
+    await priceStore.appendSnapshots([
+      appendInput(modelRef, fullyPricedDims()),
+    ]);
 
     const scope = service();
-    expect((await scope.openModel({
-      ref: modelRef,
-      reason: "opened for the pilot",
-      actor: { userId: "admin-1", email: "admin@openbot.test" },
-    })).ok).toBe(true);
+    expect(
+      (
+        await scope.openModel({
+          ref: modelRef,
+          reason: "opened for the pilot",
+          actor: { userId: "admin-1", email: "admin@openbot.test" },
+        })
+      ).ok,
+    ).toBe(true);
     const before = await auditRowCount(`${provider}|gpt-4o|chat`);
 
     const closed = await scope.closeModel({
@@ -442,19 +455,29 @@ describe("open and close are audited with their reasons", () => {
     const provider = nextId("closed-select");
     await syncCatalog([{ provider }]);
     const modelRef = chatRef(provider);
-    await priceStore.appendSnapshots([appendInput(modelRef, fullyPricedDims())]);
+    await priceStore.appendSnapshots([
+      appendInput(modelRef, fullyPricedDims()),
+    ]);
 
     const scope = service();
-    expect((await scope.openModel({
-      ref: modelRef,
-      reason: "opened",
-      actor: { userId: "admin-1", email: "admin@openbot.test" },
-    })).ok).toBe(true);
-    expect((await scope.closeModel({
-      ref: modelRef,
-      reason: "pricing re-check pending",
-      actor: { userId: "admin-1", email: "admin@openbot.test" },
-    })).ok).toBe(true);
+    expect(
+      (
+        await scope.openModel({
+          ref: modelRef,
+          reason: "opened",
+          actor: { userId: "admin-1", email: "admin@openbot.test" },
+        })
+      ).ok,
+    ).toBe(true);
+    expect(
+      (
+        await scope.closeModel({
+          ref: modelRef,
+          reason: "pricing re-check pending",
+          actor: { userId: "admin-1", email: "admin@openbot.test" },
+        })
+      ).ok,
+    ).toBe(true);
 
     // The selection/invocation gate (consumed by 03.8 and 06.2) refuses.
     expect(await scope.isModelOpen(modelRef)).toBe(false);
@@ -475,7 +498,9 @@ describe("a scope change does not touch locked snapshots or existing reservation
     const modelRef = chatRef(provider);
 
     // The snapshot a running request locked, through the real store.
-    await priceStore.appendSnapshots([appendInput(modelRef, fullyPricedDims())]);
+    await priceStore.appendSnapshots([
+      appendInput(modelRef, fullyPricedDims()),
+    ]);
     const locked = await priceStore.latestPriceSnapshot(modelRef);
     expect(locked).toBeDefined();
 
@@ -492,17 +517,25 @@ describe("a scope change does not touch locked snapshots or existing reservation
     });
 
     const scope = service();
-    expect((await scope.openModel({
-      ref: modelRef,
-      reason: "opened",
-      actor: { userId: "admin-1", email: "admin@openbot.test" },
-    })).ok).toBe(true);
+    expect(
+      (
+        await scope.openModel({
+          ref: modelRef,
+          reason: "opened",
+          actor: { userId: "admin-1", email: "admin@openbot.test" },
+        })
+      ).ok,
+    ).toBe(true);
 
-    expect((await scope.closeModel({
-      ref: modelRef,
-      reason: "closed while reservation in flight",
-      actor: { userId: "admin-1", email: "admin@openbot.test" },
-    })).ok).toBe(true);
+    expect(
+      (
+        await scope.closeModel({
+          ref: modelRef,
+          reason: "closed while reservation in flight",
+          actor: { userId: "admin-1", email: "admin@openbot.test" },
+        })
+      ).ok,
+    ).toBe(true);
 
     // New selections and admissions are refused…
     expect(await scope.isModelOpen(modelRef)).toBe(false);
@@ -560,13 +593,12 @@ describe("the admin routes carry the surface's authorization and codes", () => {
     const provider = nextId("routes");
     await syncCatalog([{ provider }]);
     const modelRef = chatRef(provider);
-    await priceStore.appendSnapshots([appendInput(modelRef, fullyPricedDims())]);
+    await priceStore.appendSnapshots([
+      appendInput(modelRef, fullyPricedDims()),
+    ]);
 
     const adminApp = new Hono<{ Variables: AppVariables }>();
-    adminApp.route(
-      "/api/admin/gateway",
-      routesWith(service()),
-    );
+    adminApp.route("/api/admin/gateway", routesWith(service()));
 
     const read = await adminApp.request("/api/admin/gateway/models");
     expect(read.status).toBe(200);

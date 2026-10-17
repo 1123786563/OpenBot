@@ -225,8 +225,7 @@ export function createOpenMuseOpsSignals(
                  * that buries the genuinely wedged rows and tells the
                  * operator to wait for a worker that will never come.
                  */
-                if (row.attempts >= OPENMUSE_TASK_MAX_ATTEMPTS)
-                  return false;
+                if (row.attempts >= OPENMUSE_TASK_MAX_ATTEMPTS) return false;
                 if (row.claimedBy === null)
                   return at.getTime() - row.runAt.getTime() > queuedRunnableMs;
                 return (

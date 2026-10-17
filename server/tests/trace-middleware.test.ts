@@ -71,10 +71,9 @@ describe("trace middleware", () => {
   test("an inbound traceparent flows into the handler and the access log line", async () => {
     initProcessTracing("trace-mw-inbound", {});
     try {
-      const response = await miniApp(createLogger("test", capture().stream)).request(
-        "/api/work",
-        { headers: { traceparent: INBOUND_PARENT } },
-      );
+      const response = await miniApp(
+        createLogger("test", capture().stream),
+      ).request("/api/work", { headers: { traceparent: INBOUND_PARENT } });
       expect(response.status).toBe(200);
       expect(((await response.json()) as { traceId: string }).traceId).toBe(
         INBOUND_TRACE_ID,

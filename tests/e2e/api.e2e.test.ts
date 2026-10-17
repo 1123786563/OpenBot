@@ -25,10 +25,7 @@ const BASE_URL = process.env.OPENBOT_API_BASE_URL ?? "http://127.0.0.1:3001";
  * 每次调用都用一个全新请求、显式不带 Cookie——保证任何 401 都来自鉴权失败，
  * 而不是客户端状态污染。只允许打这个本地 http 服务。
  */
-async function raw(
-  path: string,
-  init: RequestInit = {},
-): Promise<Response> {
+async function raw(path: string, init: RequestInit = {}): Promise<Response> {
   const url = new URL(path, BASE_URL);
   if (url.protocol !== "http:") {
     throw new Error(`只允许 http 请求，收到 ${url.protocol}`);
@@ -70,9 +67,7 @@ describe("健康与公开能力", () => {
       "ssoRequired",
       "billing",
     ] as const;
-    expect(Object.keys(body).sort()).toEqual(
-      [...allowed].sort(),
-    );
+    expect(Object.keys(body).sort()).toEqual([...allowed].sort());
 
     expect(typeof body.mode).toBe("string");
     expect((body.mode as string).length).toBeGreaterThan(0);

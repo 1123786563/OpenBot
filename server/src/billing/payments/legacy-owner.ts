@@ -174,7 +174,8 @@ export async function attributeLegacyOrderOwnership(
 
   return {
     scannedUnowned: unowned.length,
-    attributedFromMapping: outcomes.filter((o) => o.kind === "attributed").length,
+    attributedFromMapping: outcomes.filter((o) => o.kind === "attributed")
+      .length,
     quarantinedUnknownOwner: outcomes.filter((o) => o.kind === "quarantined")
       .length,
     alreadyAttributed: outcomes.filter((o) => o.kind === "already_attributed")

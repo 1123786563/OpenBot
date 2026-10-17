@@ -52,12 +52,9 @@ export function openMusePersonalTools(options: {
     tasks,
     ownerFenced,
   } = options;
-  const fenced = async () =>
-    ownerFenced ? await ownerFenced() : false;
+  const fenced = async () => (ownerFenced ? await ownerFenced() : false);
   const refuseIfFenced = async (): Promise<string | null> =>
-    (await fenced())
-      ? `${REFUSAL_MARKER} This account is disabled.`
-      : null;
+    (await fenced()) ? `${REFUSAL_MARKER} This account is disabled.` : null;
   function tool<T>(
     name: string,
     description: string,
@@ -136,13 +133,15 @@ export function openMusePersonalTools(options: {
         }
         let task: Awaited<ReturnType<typeof tasks.create>>["task"];
         try {
-          task = (await tasks.create({
-            ownerUserId,
-            botId: agentId,
-            kind: "agent",
-            prompt: task_summary,
-            idempotencyKey: idempotency_key ?? null,
-          })).task;
+          task = (
+            await tasks.create({
+              ownerUserId,
+              botId: agentId,
+              kind: "agent",
+              prompt: task_summary,
+              idempotencyKey: idempotency_key ?? null,
+            })
+          ).task;
         } catch (error) {
           // The fence can land between the check above and this insert (the account deletion
           // marker arrives on its own clock): refuse the readable way, the quota's own shape,

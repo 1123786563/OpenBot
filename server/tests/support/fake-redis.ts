@@ -110,7 +110,8 @@ export function fakeRedisPort(): RedisPort & {
         const handle = portOf();
         handle.quit = async () => {
           for (const [channel, listener] of core.listeners) {
-            if (before.get(channel) !== listener) core.listeners.delete(channel);
+            if (before.get(channel) !== listener)
+              core.listeners.delete(channel);
           }
         };
         return handle;

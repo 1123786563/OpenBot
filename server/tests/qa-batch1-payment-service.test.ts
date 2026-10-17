@@ -31,7 +31,8 @@ function memoryStore(): PaymentStore & {
 } {
   const orders = new Map<string, PaymentOrderRecord>();
   const paidFacts = new Set<string>();
-  const anomalies: Array<{ orderId: string; code: string; detail: string }> = [];
+  const anomalies: Array<{ orderId: string; code: string; detail: string }> =
+    [];
   let serial = 0;
 
   return {
@@ -95,14 +96,17 @@ function memoryStore(): PaymentStore & {
       );
     },
     async countAnomalies(orderId, code) {
-      return anomalies.filter(
-        (a) => a.orderId === orderId && a.code === code,
-      ).length;
+      return anomalies.filter((a) => a.orderId === orderId && a.code === code)
+        .length;
     },
     async resolveActivationOwnership(orderId) {
       const anchor = orders.get(orderId);
       if (!anchor) return { outcome: "unknown" as const };
-      if (anchor.status !== "paid" || !anchor.periodStart || !anchor.periodEnd) {
+      if (
+        anchor.status !== "paid" ||
+        !anchor.periodStart ||
+        !anchor.periodEnd
+      ) {
         return { outcome: "not-paid" as const };
       }
       const locked = [...orders.values()].filter(
@@ -166,7 +170,11 @@ function memoryStore(): PaymentStore & {
     async setCheckoutPayload() {},
     async cancelOrder(id, expectedVersion) {
       const order = orders.get(id);
-      if (!order || order.version !== expectedVersion || order.status !== "pending") {
+      if (
+        !order ||
+        order.version !== expectedVersion ||
+        order.status !== "pending"
+      ) {
         return false;
       }
       orders.set(id, {
@@ -205,7 +213,11 @@ function memoryStore(): PaymentStore & {
     },
     async blockOrder(input) {
       const order = orders.get(input.id);
-      if (!order || order.version !== input.expectedVersion || order.status !== "pending") {
+      if (
+        !order ||
+        order.version !== input.expectedVersion ||
+        order.status !== "pending"
+      ) {
         return false;
       }
       orders.set(input.id, {
@@ -214,12 +226,20 @@ function memoryStore(): PaymentStore & {
         terminalAt: tick(),
         version: input.expectedVersion + 1,
       });
-      anomalies.push({ orderId: input.id, code: "amount_mismatch", detail: input.detail });
+      anomalies.push({
+        orderId: input.id,
+        code: "amount_mismatch",
+        detail: input.detail,
+      });
       return true;
     },
     async expireOrder(id, expectedVersion) {
       const order = orders.get(id);
-      if (!order || order.version !== expectedVersion || order.status !== "pending") {
+      if (
+        !order ||
+        order.version !== expectedVersion ||
+        order.status !== "pending"
+      ) {
         return false;
       }
       orders.set(id, {
@@ -231,7 +251,11 @@ function memoryStore(): PaymentStore & {
       return true;
     },
     async recordAnomaly(event: PaymentEventInput) {
-      anomalies.push({ orderId: event.orderId, code: event.code, detail: event.detail });
+      anomalies.push({
+        orderId: event.orderId,
+        code: event.code,
+        detail: event.detail,
+      });
     },
     async recordPaidFact(event) {
       if (paidFacts.has(event.channelTransactionId)) return false;
@@ -306,7 +330,9 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
     const firstService = createPaymentService({
       providers: new Map([["alipay", paidDelivery(first.id, "tx-first")]]),
       store,
-      catalog: new Map([["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }]]),
+      catalog: new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      ]),
       notifyBaseUrl: "https://x.example",
       orderTtlMinutes: 15,
       latePaymentWindowHours: 24,
@@ -352,7 +378,9 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
         PaymentProvider
       >),
       store,
-      catalog: new Map([["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }]]),
+      catalog: new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      ]),
       notifyBaseUrl: "https://x.example",
       orderTtlMinutes: 15,
       latePaymentWindowHours: 24,
@@ -404,7 +432,9 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
     const service = createPaymentService({
       providers: new Map([["alipay", paidDelivery(first.id, "tx-shared")]]),
       store,
-      catalog: new Map([["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }]]),
+      catalog: new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      ]),
       notifyBaseUrl: "https://x.example",
       orderTtlMinutes: 15,
       latePaymentWindowHours: 24,
@@ -423,9 +453,9 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
       now: tick,
       log: { warn: () => undefined },
     });
-    expect(
-      await service.handleCallback("alipay", new Headers(), "x"),
-    ).toEqual({ kind: "success" });
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "success",
+    });
 
     // The SAME channel transaction, now reported against a different order.
     const { order: second } = await store.insertOrder({
@@ -443,7 +473,9 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
         ["wechat", { ...paidDelivery(second.id, "tx-shared"), id: "wechat" }],
       ] as ReadonlyMap<PaymentProviderId, PaymentProvider>),
       store,
-      catalog: new Map([["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }]]),
+      catalog: new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      ]),
       notifyBaseUrl: "https://x.example",
       orderTtlMinutes: 15,
       latePaymentWindowHours: 24,
@@ -494,7 +526,12 @@ describe("probe d: the payout keeps applied honest", () => {
   function baseDeps(store: PaymentStore) {
     return {
       store,
-      catalog: new Map([["pro", { amountCents: 8800, currency: "CNY" as const, periodMonths: 1 }]]),
+      catalog: new Map([
+        [
+          "pro",
+          { amountCents: 8800, currency: "CNY" as const, periodMonths: 1 },
+        ],
+      ]),
       notifyBaseUrl: "https://x.example",
       orderTtlMinutes: 15,
       latePaymentWindowHours: 24,
@@ -529,7 +566,9 @@ describe("probe d: the payout keeps applied honest", () => {
     });
     const service = createPaymentService({
       ...baseDeps(store),
-      providers: new Map([["alipay", paidDelivery(order.id, `tx-${order.id}`)]]),
+      providers: new Map([
+        ["alipay", paidDelivery(order.id, `tx-${order.id}`)],
+      ]),
       grantor: grantorThrows(),
     });
     await service.handleCallback("alipay", new Headers(), "x");
@@ -559,7 +598,9 @@ describe("probe d: the payout keeps applied honest", () => {
     });
     const service = createPaymentService({
       ...baseDeps(store),
-      providers: new Map([["alipay", paidDelivery(order.id, `tx-${order.id}`)]]),
+      providers: new Map([
+        ["alipay", paidDelivery(order.id, `tx-${order.id}`)],
+      ]),
       grantor: {
         creditsFor: () => 900_000,
         async grantPlanCredits() {
@@ -590,7 +631,9 @@ describe("probe d: the payout keeps applied honest", () => {
     });
     const failing = createPaymentService({
       ...baseDeps(store),
-      providers: new Map([["alipay", paidDelivery(order.id, `tx-${order.id}`)]]),
+      providers: new Map([
+        ["alipay", paidDelivery(order.id, `tx-${order.id}`)],
+      ]),
       grantor: grantorThrows(),
     });
     await failing.handleCallback("alipay", new Headers(), "x");
@@ -598,7 +641,9 @@ describe("probe d: the payout keeps applied honest", () => {
     const payouts: string[] = [];
     const recovered = createPaymentService({
       ...baseDeps(store),
-      providers: new Map([["alipay", paidDelivery(order.id, `tx-${order.id}`)]]),
+      providers: new Map([
+        ["alipay", paidDelivery(order.id, `tx-${order.id}`)],
+      ]),
       grantor: {
         creditsFor: () => 900_000,
         async grantPlanCredits(input) {

@@ -81,7 +81,11 @@ export type ModelExclusionReason = (typeof MODEL_EXCLUSION_REASONS)[number];
  * `free` are determinable prices; `unknown` and `unmapped` (no snapshot ever
  * synced) are not determinable, and a not-determinable price is never offered.
  */
-export type ModelSelectionPriceStatus = "known" | "free" | "unknown" | "unmapped";
+export type ModelSelectionPriceStatus =
+  | "known"
+  | "free"
+  | "unknown"
+  | "unmapped";
 
 /** Everything the decision needs, already resolved — the pure seam above the stores. */
 export type ModelSelectionDecisionInput = {
@@ -252,7 +256,9 @@ export function createGatewayModelCapabilityFilterService(
       );
       const freshness = deps.isCatalogFresh;
       const [openFlags, freshFlags] = await Promise.all([
-        Promise.all(needingScope.map((decision) => deps.scopes.isModelOpen(decision.ref))),
+        Promise.all(
+          needingScope.map((decision) => deps.scopes.isModelOpen(decision.ref)),
+        ),
         freshness
           ? Promise.all(
               needingScope.map((decision) =>

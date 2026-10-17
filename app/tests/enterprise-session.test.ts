@@ -39,7 +39,9 @@ const realFetch = globalThis.fetch;
 
 type Asked = { input: RequestInfo | URL; init: RequestInit | undefined };
 
-function intercept(respond: (asked: Asked) => Response | Promise<Response>): Asked[] {
+function intercept(
+  respond: (asked: Asked) => Response | Promise<Response>,
+): Asked[] {
   const asked: Asked[] = [];
   globalThis.fetch = (async (
     input: RequestInfo | URL,
@@ -80,7 +82,8 @@ function pageOf(...channelIds: string[]): ChannelPage {
 function selectorOf(init: RequestInit | undefined): string | undefined {
   const headers = init?.headers;
   if (headers === undefined || headers === null) return undefined;
-  if (headers instanceof Headers) return headers.get("x-openbot-tenant") ?? undefined;
+  if (headers instanceof Headers)
+    return headers.get("x-openbot-tenant") ?? undefined;
   return (headers as Record<string, string>)["x-openbot-tenant"];
 }
 
@@ -108,7 +111,11 @@ function freshClient(): QueryClient {
 test("every key names the user, the tenant and the parameters it was asked under", () => {
   // Spread before comparing: `queryOptions` brands keys with TanStack's DataTag phantom symbols,
   // which exist only in the type system, so the elements are what get compared.
-  expect([...tenantKeys.chooser("u-1")]).toEqual(["enterprise-tenant", "u-1", ":chooser"]);
+  expect([...tenantKeys.chooser("u-1")]).toEqual([
+    "enterprise-tenant",
+    "u-1",
+    ":chooser",
+  ]);
   expect([...tenantKeys.scope("u-1", "acme")]).toEqual([
     "enterprise-tenant",
     "u-1",
@@ -164,7 +171,10 @@ test("the channels read starts pending, then answers rows", async () => {
 
   const result = observer.getCurrentResult();
   expect(result.status).toBe("success");
-  expect(result.data?.items.map((row) => row.channelId)).toEqual(["ch-1", "ch-2"]);
+  expect(result.data?.items.map((row) => row.channelId)).toEqual([
+    "ch-1",
+    "ch-2",
+  ]);
   // The read rode the header and the exact path the route mounts.
   expect(asked[0]?.input).toBe("/api/enterprise/v1/channels");
   expect(selectorOf(asked[0]?.init)).toBe("acme");
@@ -239,7 +249,9 @@ test("the chooser read names no tenant — it is answered before the scope exist
 test("switching tenants drops the old tenant's cache and keeps the chooser", async () => {
   const queryClient = freshClient();
   intercept(() => jsonResponse(200, pageOf("ch-1")));
-  await queryClient.fetchQuery(channelsQueryOptions(queryClient, "u-1", "acme"));
+  await queryClient.fetchQuery(
+    channelsQueryOptions(queryClient, "u-1", "acme"),
+  );
   await queryClient.fetchQuery(
     channelQueryOptions(queryClient, "u-1", "acme", "ch-1"),
   );
@@ -253,7 +265,9 @@ test("switching tenants drops the old tenant's cache and keeps the chooser", asy
   expect(
     queryClient.getQueryData(tenantKeys.channel("u-1", "acme", "ch-1")),
   ).toBeUndefined();
-  expect(queryClient.getQueryData(tenantKeys.chooser("u-1")) as unknown).toEqual({
+  expect(
+    queryClient.getQueryData(tenantKeys.chooser("u-1")) as unknown,
+  ).toEqual({
     items: [],
   });
 });
@@ -280,9 +294,7 @@ test("a response that outlives its selection is refused, not rendered", async ()
   const options = channelsQueryOptions(queryClient, "u-1", "acme");
 
   // The read starts under acme; the switch happens while it is still in flight.
-  const inFlight = options.queryFn?.(
-    contextOf(options.queryKey, queryClient),
-  );
+  const inFlight = options.queryFn?.(contextOf(options.queryKey, queryClient));
   selectTenant(queryClient, "u-1", "acme", "other");
   release?.(jsonResponse(200, pageOf("ch-1")));
 
@@ -341,7 +353,9 @@ test("creating a channel mints a fresh request id and refreshes the tenant's vie
 });
 
 test("archiving a channel posts to its own path and refreshes the tenant's views", async () => {
-  const asked = intercept(() => jsonResponse(200, { channelId: "ch/1", status: "archived" }));
+  const asked = intercept(() =>
+    jsonResponse(200, { channelId: "ch/1", status: "archived" }),
+  );
   const queryClient = freshClient();
   const invalidateCalls: unknown[] = [];
   const invalidate = queryClient.invalidateQueries.bind(queryClient);

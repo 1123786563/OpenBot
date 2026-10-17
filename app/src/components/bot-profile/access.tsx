@@ -167,10 +167,7 @@ function Granted({ agentId }: { agentId: string }) {
   const connectors = [...connectorTools(plugins.data).entries()];
   const skills = plugins.data.skills;
   return (
-    <PageSection
-      description={t("access.intro")}
-      title={t("access.granted")}
-    >
+    <PageSection description={t("access.intro")} title={t("access.granted")}>
       {connectors.length === 0 && skills.length === 0 ? (
         <PageEmpty>{t("access.nothingGranted")}</PageEmpty>
       ) : (

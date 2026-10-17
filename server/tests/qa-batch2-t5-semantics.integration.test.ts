@@ -32,12 +32,20 @@ const prefix = `qa2t5-${randomUUID().slice(0, 8)}`;
 const planOf = () => `qa-plan-${randomUUID().slice(0, 8)}`;
 
 afterAll(async () => {
-  await database.delete(paymentEvents).where(like(paymentEvents.orderId, `${prefix}%`));
-  await database.delete(paymentOrders).where(like(paymentOrders.id, `${prefix}%`));
+  await database
+    .delete(paymentEvents)
+    .where(like(paymentEvents.orderId, `${prefix}%`));
+  await database
+    .delete(paymentOrders)
+    .where(like(paymentOrders.id, `${prefix}%`));
   await database.$client.close();
 });
 
-function providerFor(orderId: string, fact: Record<string, unknown>, id = "alipay"): PaymentProvider {
+function providerFor(
+  orderId: string,
+  fact: Record<string, unknown>,
+  id = "alipay",
+): PaymentProvider {
   return {
     id,
     async createSession() {
@@ -48,7 +56,10 @@ function providerFor(orderId: string, fact: Record<string, unknown>, id = "alipa
     },
     async closePayment() {},
     async verifyNotification() {
-      return { ok: true as const, fact: { outTradeNo: orderId, state: "paid" as const, ...fact } };
+      return {
+        ok: true as const,
+        fact: { outTradeNo: orderId, state: "paid" as const, ...fact },
+      };
     },
     successAck: { body: "success", contentType: "text/plain" },
   };
@@ -58,7 +69,9 @@ function serviceFor(provider: PaymentProvider, planCode: string) {
   return createPaymentService({
     providers: new Map([[provider.id, provider]]),
     store,
-    catalog: new Map([[planCode, { amountCents: 8800, currency: "CNY", periodMonths: 1 }]]),
+    catalog: new Map([
+      [planCode, { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+    ]),
     notifyBaseUrl: "https://qa.example",
     orderTtlMinutes: 15,
     latePaymentWindowHours: 24,
@@ -80,7 +93,11 @@ function serviceFor(provider: PaymentProvider, planCode: string) {
   });
 }
 
-async function openOrder(planCode: string, provider: "alipay" | "wechat", tag: string) {
+async function openOrder(
+  planCode: string,
+  provider: "alipay" | "wechat",
+  tag: string,
+) {
   const { order } = await store.insertOrder({
     planCode,
     provider,
@@ -105,7 +122,10 @@ async function anomaliesOn(orderId: string, code?: string) {
             eq(paymentEvents.kind, "anomaly"),
             eq(paymentEvents.code, code),
           )
-        : and(eq(paymentEvents.orderId, orderId), eq(paymentEvents.kind, "anomaly")),
+        : and(
+            eq(paymentEvents.orderId, orderId),
+            eq(paymentEvents.kind, "anomaly"),
+          ),
     );
 }
 
@@ -116,10 +136,18 @@ describe("probe g: failed activation revival through the real sweep query", () =
     // First: a refusing gate marks it failed.
     const refusing = createPaymentService({
       providers: new Map([
-        ["alipay", providerFor(order.id, { channelTransactionId: `${prefix}-tx-g`, amountCents: 8800 })],
+        [
+          "alipay",
+          providerFor(order.id, {
+            channelTransactionId: `${prefix}-tx-g`,
+            amountCents: 8800,
+          }),
+        ],
       ]),
       store,
-      catalog: new Map([[plan, { amountCents: 8800, currency: "CNY", periodMonths: 1 }]]),
+      catalog: new Map([
+        [plan, { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      ]),
       notifyBaseUrl: "https://qa.example",
       orderTtlMinutes: 15,
       latePaymentWindowHours: 24,
@@ -129,10 +157,10 @@ describe("probe g: failed activation revival through the real sweep query", () =
           return { found: false }; // the refusing verdict
         },
         async ensureSubscription() {
-        // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
-        // "provider stated no exact period", not "no answer at all").
-        return { currentPeriodStart: null, currentPeriodEnd: null };
-      },
+          // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
+          // "provider stated no exact period", not "no answer at all").
+          return { currentPeriodStart: null, currentPeriodEnd: null };
+        },
       },
       externalCustomerKey: `${prefix}-deployment`,
       activePlanCode: async () => null,
@@ -160,10 +188,18 @@ describe("probe g: failed activation revival through the real sweep query", () =
     const order = await openOrder(plan, "alipay", "g2");
     const refusing = createPaymentService({
       providers: new Map([
-        ["alipay", providerFor(order.id, { channelTransactionId: `${prefix}-tx-g2`, amountCents: 8800 })],
+        [
+          "alipay",
+          providerFor(order.id, {
+            channelTransactionId: `${prefix}-tx-g2`,
+            amountCents: 8800,
+          }),
+        ],
       ]),
       store,
-      catalog: new Map([[plan, { amountCents: 8800, currency: "CNY", periodMonths: 1 }]]),
+      catalog: new Map([
+        [plan, { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      ]),
       notifyBaseUrl: "https://qa.example",
       orderTtlMinutes: 15,
       latePaymentWindowHours: 24,
@@ -173,10 +209,10 @@ describe("probe g: failed activation revival through the real sweep query", () =
           return { found: false };
         },
         async ensureSubscription() {
-        // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
-        // "provider stated no exact period", not "no answer at all").
-        return { currentPeriodStart: null, currentPeriodEnd: null };
-      },
+          // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
+          // "provider stated no exact period", not "no answer at all").
+          return { currentPeriodStart: null, currentPeriodEnd: null };
+        },
       },
       externalCustomerKey: `${prefix}-deployment`,
       activePlanCode: async () => null,
@@ -201,7 +237,10 @@ describe("probe h: the amount_unreadable endgame against the real partial index"
     const plan = planOf();
     const order = await openOrder(plan, "alipay", "h");
     const silent = () =>
-      serviceFor(providerFor(order.id, { channelTransactionId: `${prefix}-tx-h` }), plan);
+      serviceFor(
+        providerFor(order.id, { channelTransactionId: `${prefix}-tx-h` }),
+        plan,
+      );
 
     await silent().handleCallback("alipay", new Headers(), "x");
     await silent().handleCallback("alipay", new Headers(), "x");
@@ -242,11 +281,11 @@ describe("probe i: the purchase guard's uncached projection read", () => {
     });
 
     const guard = createPaymentService({
-      providers: new Map([
-        ["alipay", providerFor("po-none", {}, "alipay")],
-      ]),
+      providers: new Map([["alipay", providerFor("po-none", {}, "alipay")]]),
       store,
-      catalog: new Map([[plan, { amountCents: 8800, currency: "CNY", periodMonths: 1 }]]),
+      catalog: new Map([
+        [plan, { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      ]),
       notifyBaseUrl: "https://qa.example",
       orderTtlMinutes: 15,
       latePaymentWindowHours: 24,
@@ -256,10 +295,10 @@ describe("probe i: the purchase guard's uncached projection read", () => {
           return { found: true, interval: "monthly", currency: "CNY" };
         },
         async ensureSubscription() {
-        // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
-        // "provider stated no exact period", not "no answer at all").
-        return { currentPeriodStart: null, currentPeriodEnd: null };
-      },
+          // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
+          // "provider stated no exact period", not "no answer at all").
+          return { currentPeriodStart: null, currentPeriodEnd: null };
+        },
       },
       externalCustomerKey: deploymentKey,
       // The cached read lags: it still answers "no active plan".
@@ -293,7 +332,9 @@ describe("probe i: the purchase guard's uncached projection read", () => {
     const legacy = createPaymentService({
       providers: new Map([["alipay", providerFor("po-none", {}, "alipay")]]),
       store,
-      catalog: new Map([[plan, { amountCents: 8800, currency: "CNY", periodMonths: 1 }]]),
+      catalog: new Map([
+        [plan, { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      ]),
       notifyBaseUrl: "https://qa.example",
       orderTtlMinutes: 15,
       latePaymentWindowHours: 24,
@@ -303,10 +344,10 @@ describe("probe i: the purchase guard's uncached projection read", () => {
           return { found: true, interval: "monthly", currency: "CNY" };
         },
         async ensureSubscription() {
-        // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
-        // "provider stated no exact period", not "no answer at all").
-        return { currentPeriodStart: null, currentPeriodEnd: null };
-      },
+          // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
+          // "provider stated no exact period", not "no answer at all").
+          return { currentPeriodStart: null, currentPeriodEnd: null };
+        },
       },
       externalCustomerKey: deploymentKey,
       activePlanCode: async () => null,

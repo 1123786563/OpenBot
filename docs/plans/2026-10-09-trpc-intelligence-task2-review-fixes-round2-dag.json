@@ -11,14 +11,8 @@
       "title": "Reject elevated LOGIN privileges and test self-visible RLS rows",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-05",
-        "R2-1-R01",
-        "R2-1-R02"
-      ],
-      "depends_on": [
-        "R2-1"
-      ],
+      "acceptance": ["AC-05", "R2-1-R01", "R2-1-R02"],
+      "depends_on": ["R2-1"],
       "dependency_evidence": "R2-1 supplies restricted capability policies and connections; this is the next repair checkpoint for two independent findings against it.",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -33,10 +27,7 @@
       },
       "verification": "focused Bun suites; fresh guarded PostgreSQL migration and role tests; scoped strict TSC/Biome/Drizzle/diff checks",
       "status": "verified",
-      "finding_ids": [
-        "R2-1-R01",
-        "R2-1-R02"
-      ]
+      "finding_ids": ["R2-1-R01", "R2-1-R02"]
     }
   ]
 }

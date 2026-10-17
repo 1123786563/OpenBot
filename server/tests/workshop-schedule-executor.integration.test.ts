@@ -36,7 +36,9 @@ const seeded: { userId: string; channelId: string; sessionId: string } = {
 beforeEach(async () => {
   await database.delete(workshopScheduleRuns);
   await database.delete(workshopSchedules);
-  await database.delete(workshopSessions).where(eq(workshopSessions.id, seeded.sessionId));
+  await database
+    .delete(workshopSessions)
+    .where(eq(workshopSessions.id, seeded.sessionId));
   await database.delete(channels).where(eq(channels.id, seeded.channelId));
   await database.delete(users).where(eq(users.id, seeded.userId));
   await database.insert(users).values({
@@ -68,7 +70,9 @@ beforeEach(async () => {
 afterAll(async () => {
   await database.delete(workshopScheduleRuns);
   await database.delete(workshopSchedules);
-  await database.delete(workshopSessions).where(eq(workshopSessions.id, seeded.sessionId));
+  await database
+    .delete(workshopSessions)
+    .where(eq(workshopSessions.id, seeded.sessionId));
   await database.delete(channels).where(eq(channels.id, seeded.channelId));
   await database.delete(agents).where(eq(agents.id, "sch-test-bot"));
   await database.delete(users).where(eq(users.id, seeded.userId));
@@ -145,15 +149,16 @@ describe("the workshop schedule executor (B18)", () => {
       actorUserId: seeded.userId,
       initiator: { kind: "routine", id: "sch-1" },
     });
-    const runs = await database
-      .select()
-      .from(workshopScheduleRuns);
+    const runs = await database.select().from(workshopScheduleRuns);
     expect(runs).toHaveLength(1);
     expect(runs[0]?.status).toBe("running");
     expect(runs[0]?.turnId).toBe("sch-turn-1"); // The recorder's REAL turn row, not a phantom id.
     // And the schedule advanced: nextRunAt moved past the sweep moment.
     const schedule = (
-      await database.select().from(workshopSchedules).where(eq(workshopSchedules.id, "sch-1"))
+      await database
+        .select()
+        .from(workshopSchedules)
+        .where(eq(workshopSchedules.id, "sch-1"))
     )[0];
     expect(schedule?.nextRunAt?.getTime()).toBeGreaterThan(SWEEP_AT.getTime());
   });
@@ -163,8 +168,14 @@ describe("the workshop schedule executor (B18)", () => {
     const first = recorder();
     const second = recorder();
     // Same sweep moment: both replicas see the same due schedule and race the insert.
-    await sweepWorkshopSchedules({ db: database, enqueue: first.enqueue }, { now: () => SWEEP_AT });
-    await sweepWorkshopSchedules({ db: database, enqueue: second.enqueue }, { now: () => SWEEP_AT });
+    await sweepWorkshopSchedules(
+      { db: database, enqueue: first.enqueue },
+      { now: () => SWEEP_AT },
+    );
+    await sweepWorkshopSchedules(
+      { db: database, enqueue: second.enqueue },
+      { now: () => SWEEP_AT },
+    );
     expect(first.enqueued).toHaveLength(1);
     expect(second.enqueued).toHaveLength(0); // The second pass found the winner's row.
     const runs = await database.select().from(workshopScheduleRuns);
@@ -200,7 +211,10 @@ describe("the workshop schedule executor (B18)", () => {
     expect(run?.note).toContain("orchestrator refused");
     // The recurrence advanced anyway: the next pass fires the NEXT occurrence, not this one again.
     const schedule = (
-      await database.select().from(workshopSchedules).where(eq(workshopSchedules.id, "sch-4"))
+      await database
+        .select()
+        .from(workshopSchedules)
+        .where(eq(workshopSchedules.id, "sch-4"))
     )[0];
     expect(schedule?.nextRunAt?.getTime()).toBeGreaterThan(SWEEP_AT.getTime());
   });
@@ -213,14 +227,20 @@ describe("the workshop schedule executor (B18)", () => {
       prompt: "更新报表",
     });
     const { enqueued, enqueue } = recorder();
-    await sweepWorkshopSchedules({ db: database, enqueue }, { now: () => SWEEP_AT });
+    await sweepWorkshopSchedules(
+      { db: database, enqueue },
+      { now: () => SWEEP_AT },
+    );
     expect(enqueued[0]?.prompt).toContain("out/");
     expect(enqueued[0]?.prompt).toContain("python");
     expect(enqueued[0]?.prompt).toContain("2 轮");
     expect(enqueued[0]?.prompt).toContain("更新报表");
     // And the boundary statement itself, so the shape is pinned:
-    expect(composeFiringPrompt({ prompt: "x", preapproval: { paths: [], tools: [], maxTurnsPerRun: 3 } })).toContain(
-      "边界之外的操作必须等待审批",
-    );
+    expect(
+      composeFiringPrompt({
+        prompt: "x",
+        preapproval: { paths: [], tools: [], maxTurnsPerRun: 3 },
+      }),
+    ).toContain("边界之外的操作必须等待审批");
   });
 });

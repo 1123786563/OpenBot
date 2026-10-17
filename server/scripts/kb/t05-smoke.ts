@@ -31,13 +31,17 @@ async function json(
 ): Promise<{ status: number; json: any }> {
   const response = await fetch(`${B}${path}`, {
     method,
-    headers: body !== undefined
-      ? { ...headers, "content-type": "application/json" }
-      : headers,
+    headers:
+      body !== undefined
+        ? { ...headers, "content-type": "application/json" }
+        : headers,
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   const text = await response.text();
-  return { status: response.status, json: text === "" ? null : JSON.parse(text) };
+  return {
+    status: response.status,
+    json: text === "" ? null : JSON.parse(text),
+  };
 }
 
 async function main() {
@@ -107,7 +111,9 @@ async function main() {
     top_k: 5,
   });
   check("retrieve-after-delete", "0", String(after.json?.count ?? -1));
-  const taskAfter = await fetch(`${B}/kb/${kbId}/tasks/${docId}`, { headers: ADMIN });
+  const taskAfter = await fetch(`${B}/kb/${kbId}/tasks/${docId}`, {
+    headers: ADMIN,
+  });
   check("task-after-delete 404", "404", String(taskAfter.status));
 
   // 6. PDF 全链（docreader builtin）
@@ -148,7 +154,11 @@ async function main() {
       query: "OpenBot kb-mastra PDF smoke",
       top_k: 5,
     });
-    check("pdf retrieve-hits", "true", String((pdfRetrieve.json?.count ?? 0) > 0));
+    check(
+      "pdf retrieve-hits",
+      "true",
+      String((pdfRetrieve.json?.count ?? 0) > 0),
+    );
   }
 
   // 7. 越权：tenant-b → 404

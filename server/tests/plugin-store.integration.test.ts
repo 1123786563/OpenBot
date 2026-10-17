@@ -41,14 +41,21 @@ import {
   CatalogueTransportUnroutableError,
   ServerRowAmbiguousError,
 } from "../src/plugins/access";
-import type { BrokerConnection, ComposioBroker, ConnectedAppBroker } from "../src/plugins/broker";
+import type {
+  BrokerConnection,
+  ComposioBroker,
+  ConnectedAppBroker,
+} from "../src/plugins/broker";
 import type { CatalogueEntry } from "../src/plugins/catalogue";
 import { catalogueEntry } from "../src/plugins/catalogue";
 import {
   type ComposioResult,
   useComposioClient,
 } from "../src/plugins/composio";
-import { personalAlias, useOpenConnectorClient } from "../src/plugins/openconnector";
+import {
+  personalAlias,
+  useOpenConnectorClient,
+} from "../src/plugins/openconnector";
 import { redirectUriFor } from "../src/plugins/oauth";
 import type { AccountRef } from "../src/plugins/shared-accounts";
 import {
@@ -2910,7 +2917,9 @@ describe("a dynamic client the vendor has evicted", () => {
         said.push(
           args
             .map((argument) =>
-              typeof argument === "string" ? argument : JSON.stringify(argument),
+              typeof argument === "string"
+                ? argument
+                : JSON.stringify(argument),
             )
             .join(" "),
         );
@@ -7832,8 +7841,11 @@ describe("an OpenConnector app runs the brokered gates under its own provider", 
       },
     };
     /** What the OpenConnector transport dialled, with the account handle it was handed. */
-    const dialled: { service: string; actionId: string; alias: string | null }[] =
-      [];
+    const dialled: {
+      service: string;
+      actionId: string;
+      alias: string | null;
+    }[] = [];
     useOpenConnectorClient({
       listActions: async () => [
         {
@@ -7979,7 +7991,11 @@ describe("an OpenConnector app runs the brokered gates under its own provider", 
       });
       // Accepted without being checked: OpenConnector publishes no safety labels, so there is
       // nothing this deployment may spend a just-typed key on. The row says so honestly.
-      expect(connected).toEqual({ connected: true, verified: false, probe: null });
+      expect(connected).toEqual({
+        connected: true,
+        verified: false,
+        probe: null,
+      });
       expect(brokerAsked).toEqual([
         {
           call: "connectWithFields",
@@ -8075,13 +8091,15 @@ describe("an OpenConnector app runs the brokered gates under its own provider", 
       await database
         .delete(mcpServers)
         .where(eq(mcpServers.id, "open-connector-github"));
-      await database.delete(brokeredConnections).where(
-        and(
-          eq(brokeredConnections.provider, "open-connector"),
-          eq(brokeredConnections.app, "github"),
-          eq(brokeredConnections.userId, "user_asker"),
-        ),
-      );
+      await database
+        .delete(brokeredConnections)
+        .where(
+          and(
+            eq(brokeredConnections.provider, "open-connector"),
+            eq(brokeredConnections.app, "github"),
+            eq(brokeredConnections.userId, "user_asker"),
+          ),
+        );
     }
   });
 });

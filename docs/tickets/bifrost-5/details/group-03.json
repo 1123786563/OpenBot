@@ -1,436 +1,412 @@
 {
- "group": "03",
- "context": [
-  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC06/AC09/AC10/AC12/AC19）",
-  "docs/specs/2026-10-14-bifrost-integration-design.md（Q4 可用模型定义、Q16 模型选择层级、Q17 同步与新鲜度）",
-  "docs/adr/0001-conservative-input-bound.md（经验估算不得充当成本上限证明）",
-  "CONTEXT.md（模型目录、价格快照、开放范围、能力、模型偏好术语）"
- ],
- "anchors": {
-  "bifrost-catalog": "bifrost/framework/configstore/tables/model.go、modelconfig.go（模型与配置表）",
-  "bifrost-pricing": "bifrost/framework/jobaccounting/（types.go、pricingscopes、batch.go、video.go：多维定价与作用域）",
-  "openbot-models": "server/src/enterprise/models/catalog.ts、policy.ts、budget.ts、money.ts（现有目录/策略/金额模式）",
-  "openbot-input-bound": "server/src/billing/input-bound.ts（countChatInputTokens / fitChatInputRequest / CONSERVATIVE_* 经验估算，只能作为上限证据不足时的拒绝依据，不能当作价格）",
-  "admin-ui": "app/src/routes/_authed/admin/enterprise.tsx、credentials.tsx（管理员页面模式）",
-  "model-picker": "工作台模型选择入口需在执行时定位（app/src/routes/_authed/*、apps/openmuse 子模块或 agent-trpc）；第一步用 rg 定位后再改",
-  "test-harness": "server/tests/support/database.ts（TEST_DATABASE_URL 必需）"
- },
- "verification_common": [
-  "bun run --filter server typecheck",
-  "bun run --filter app typecheck",
-  "bunx biome lint --error-on-warnings <changed files>"
- ],
- "tickets": {
-  "03.1": {
-   "slug": "catalog-fetch-and-model-ref",
-   "contracts": {
-    "consumes": ["01.7 的 assertGatewayReadyForBilling()", "网关模型清单查询能力（bifrost 模型与配置表）"],
-    "produces": [
-     "ModelRef { provider, model, capability }：目录条目的唯一身份，同名不同 provider 不合并",
-     "CatalogFetchRecord { fetchedAt, source, rawItemCount, configVersion }：原始抓取记录，供审计与价格映射复核",
-     "fetchCatalog() 与 listModelRefs()，供 03.2 价格映射与 03.7 开放范围消费"
-    ]
-   },
-   "steps": [
-    "先确认门禁通过再抓取；未就绪时不发起任何抓取",
-    "通过网关管理接口拉取模型清单，规范化为 ModelRef 三元组，保留原始条目以便复核",
-    "capability 从上游能力字段推导，无法判定时标记 unknown 而不是默认 chat",
-    "抓取失败不写入目录、保留上次成功结果并记录失败原因",
-    "先写失败测试：同名不同 provider 产生两条 ModelRef；capability 未知不被当作 chat"
-   ],
-   "criteria": [
-    "目录条目按 provider+model+capability 唯一，同名不同 provider 不合并",
-    "capability 无法判定时标记 unknown 并保留原因，不默认成文本能力",
-    "抓取失败保留上次成功目录，且失败原因可展示",
-    "门禁未就绪时不发起抓取"
-   ],
-   "tests": [
-    "fixture 驱动的规范化测试（含同名不同 provider、缺 capability）",
-    "抓取失败保留 last-good 测试",
-    "门禁未就绪时不抓取的断言（探测 spy 未被调用）"
-   ],
-   "verification": [
-    "bun test server/tests/catalog-model-ref.test.ts"
-   ],
-   "owned_scope": [
-    "目录适配模块（新增，server/src/gateway/catalog*）",
-    "目录快照存储与迁移",
-    "测试 fixture"
-   ],
-   "resume_hint": "若已有目录同步但按模型名合并，改为 ModelRef 三元组键并补同名不同 provider 的回归测试；价格映射不在本 Ticket（见 03.2）。"
+  "group": "03",
+  "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC06/AC09/AC10/AC12/AC19）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q4 可用模型定义、Q16 模型选择层级、Q17 同步与新鲜度）",
+    "docs/adr/0001-conservative-input-bound.md（经验估算不得充当成本上限证明）",
+    "CONTEXT.md（模型目录、价格快照、开放范围、能力、模型偏好术语）"
+  ],
+  "anchors": {
+    "bifrost-catalog": "bifrost/framework/configstore/tables/model.go、modelconfig.go（模型与配置表）",
+    "bifrost-pricing": "bifrost/framework/jobaccounting/（types.go、pricingscopes、batch.go、video.go：多维定价与作用域）",
+    "openbot-models": "server/src/enterprise/models/catalog.ts、policy.ts、budget.ts、money.ts（现有目录/策略/金额模式）",
+    "openbot-input-bound": "server/src/billing/input-bound.ts（countChatInputTokens / fitChatInputRequest / CONSERVATIVE_* 经验估算，只能作为上限证据不足时的拒绝依据，不能当作价格）",
+    "admin-ui": "app/src/routes/_authed/admin/enterprise.tsx、credentials.tsx（管理员页面模式）",
+    "model-picker": "工作台模型选择入口需在执行时定位（app/src/routes/_authed/*、apps/openmuse 子模块或 agent-trpc）；第一步用 rg 定位后再改",
+    "test-harness": "server/tests/support/database.ts（TEST_DATABASE_URL 必需）"
   },
-  "03.2": {
-   "slug": "multi-dimension-price-snapshot",
-   "contracts": {
-    "consumes": ["03.1 的 ModelRef 与原始抓取记录", "01.4 的 RateVersion"],
-    "produces": [
-     "PriceSnapshot { snapshotVersion, modelRef, dims, fetchedAt, source, rateVersion }：dims 覆盖 input/output/image/audio/cache/surcharge 等全部计费维度",
-     "精确十进制存储（不用浮点），缺维度显式为 unknown 而不是 0",
-     "快照不可变：任何变更生成新 snapshotVersion；latestPriceSnapshot(modelRef) 查询"
-    ]
-   },
-   "steps": [
-    "定义完整计费维度集合，逐一映射上游定价字段，映射不到的维度记 unknown",
-    "以精确十进制/整数存储价格，禁止浮点近似",
-    "每个快照记录版本、成功同步时间、来源与当时 rateVersion",
-    "快照不可变：更新只新增版本，历史版本可被结算路径引用",
-    "先写失败测试：多维 datasheet fixture 往返一致；缺维度为 unknown；改写历史快照被拒绝"
-   ],
-   "criteria": [
-    "价格快照保存全部计费维度且数值精确，无浮点误差",
-    "同名不同 provider 的价格不合并",
-    "缺维度记为 unknown 而非 0，且不会被当作免费",
-    "历史快照不可改写，新版本另存并可按版本解析"
-   ],
-   "tests": [
-    "多维 datasheet fixture 的往返一致性测试",
-    "快照不可变性测试（尝试改写历史版本被拒绝）",
-    "精度测试：极小单价不丢精度"
-   ],
-   "verification": [
-    "TEST_DATABASE_URL=... bun test server/tests/price-snapshot.integration.test.ts",
-    "bun test server/tests/price-snapshot.test.ts"
-   ],
-   "owned_scope": [
-    "价格快照存储与迁移",
-    "目录适配模块的价格映射逻辑",
-    "测试 fixture"
-   ],
-   "resume_hint": "最常见缺陷是只有 input/output 两列就当作完整价格；接手先核对维度集合是否覆盖图像、音频、缓存与附加费，再谈同步与门禁。"
-  },
-  "03.3": {
-   "slug": "price-status-known-free-unknown",
-   "contracts": {
-    "consumes": ["03.2 的 PriceSnapshot"],
-    "produces": [
-     "PriceStatus = known | free | unknown，unknown 必带 reasonCode 与缺失维度清单",
-     "classifyPrice(snapshot) 纯函数与持久化字段",
-     "可调用性输入：供 03.8 能力过滤、06.2 预留重验、07.6 上限证据消费"
-    ]
-   },
-   "steps": [
-    "实现分类规则：全部必要维度齐备为 known；上游明确标价为 0 且有证据为 free；缺任一必要维度为 unknown",
-    "unknown 记录缺失维度与原因，供展示与拒绝说明使用",
-    "明确 free 仍需通过授权与门禁，不等于无准入",
-    "分类绑定 snapshotVersion，快照变更后重新分类",
-    "先写失败测试：三类边界与 unknown 不得被当作 0 成本"
-   ],
-   "criteria": [
-    "明确免费的模型标记 free，且仍需授权与门禁才可调用",
-    "缺任一必要计费维度标记 unknown，并给出缺失维度与原因",
-    "unknown 绝不被当作 0 成本放行",
-    "分类随快照版本变化，旧分类不残留"
-   ],
-   "tests": [
-    "三类 fixture 分类断言",
-    "unknown 原因可读性断言",
-    "快照版本变更后重新分类测试"
-   ],
-   "verification": [
-    "bun test server/tests/price-status-classification.test.ts"
-   ],
-   "owned_scope": [
-    "价格状态分类模块与存储字段",
-    "对应测试"
-   ],
-   "resume_hint": "若分类已存在但没有 reasonCode，补原因并接入展示；不要把 unknown 合并进 free，这是 AC06 的关键区分。"
-  },
-  "03.4": {
-   "slug": "auto-catalog-sync-last-good",
-   "contracts": {
-    "consumes": ["03.1 的 fetchCatalog()", "03.2 的 PriceSnapshot"],
-    "produces": [
-     "周期同步任务（默认 5 分钟，可配置）：成功后写入新快照并更新 lastSuccessfulSyncAt",
-     "失败时保留 last-good 快照并记录连续失败次数与原因",
-     "同步运行状态可被 03.5 与 01.8/03.10 展示消费"
-    ]
-   },
-   "steps": [
-    "实现可配置周期的后台同步，周期默认 5 分钟",
-    "成功路径：写入新快照版本并更新最后成功时间",
-    "失败路径：保留上次成功快照、累加失败计数、记录脱敏原因",
-    "并发保护：同一时刻只运行一个同步任务，重复触发不产生重复快照",
-    "先写失败测试：用可控时钟推进 5 分钟触发同步；失败时 last-good 保留"
-   ],
-   "criteria": [
-    "时钟推进 5 分钟后自动同步被触发一次",
-    "同步失败保留最后成功快照，且最后成功时间不被更新",
-    "连续失败次数与原因可查询",
-    "并发触发不产生重复快照版本"
-   ],
-   "tests": [
-    "可控时钟驱动的周期同步测试",
-    "失败保留 last-good 测试",
-    "并发触发单飞测试"
-   ],
-   "verification": [
-    "bun test server/tests/catalog-auto-sync.test.ts"
-   ],
-   "owned_scope": [
-    "目录同步任务模块",
-    "同步状态存储与迁移",
-    "对应测试"
-   ],
-   "resume_hint": "若已有定时器但失败时清空目录，改为保留 last-good 并补失败计数；周期必须是可配置项而不是硬编码。"
-  },
-  "03.5": {
-   "slug": "admin-manual-sync",
-   "contracts": {
-    "consumes": ["03.4 的同步任务与运行状态"],
-    "produces": [
-     "管理员“立即同步”动作：复用同一同步实现，不绕过失败保护",
-     "同步结果反馈（成功时间、新快照版本、失败原因）",
-     "触发权限限定管理员，操作写入审计"
-    ]
-   },
-   "steps": [
-    "新增管理员触发接口，复用 03.4 的同步实现与单飞保护",
-    "返回结果包含新的 snapshotVersion 或失败原因",
-    "写入审计记录（操作者、时间、结果）",
-    "在管理员页面加入按钮与结果展示",
-    "先写失败测试：非管理员触发被拒绝；重复点击不产生并发同步"
-   ],
-   "criteria": [
-    "管理员触发后立即执行同步并返回结果",
-    "非管理员触发被拒绝",
-    "重复触发不产生并发同步或重复快照",
-    "每次触发都有审计记录"
-   ],
-   "tests": [
-    "触发权限与审计测试",
-    "并发触发单飞测试",
-    "管理员界面按钮流程测试"
-   ],
-   "verification": [
-    "bun test server/tests/catalog-manual-sync.test.ts",
-    "bun test app/tests/admin-catalog-sync-ui.test.tsx"
-   ],
-   "owned_scope": [
-    "管理员同步路由",
-    "管理员目录页面的同步入口",
-    "对应测试"
-   ],
-   "resume_hint": "手动同步最容易绕过失败保护直接写目录；接手先断言它复用同一实现，再补界面。"
-  },
-  "03.6": {
-   "slug": "catalog-freshness-gate",
-   "contracts": {
-    "consumes": ["03.4 的 lastSuccessfulSyncAt", "03.2 的 snapshotVersion", "01.7 的门禁模式"],
-    "produces": [
-     "新鲜度上限配置（默认 15 分钟）与 assertCatalogFresh(modelRef, now) 门禁",
-     "超期语义：暂停受影响模型的新请求并给出可展示原因",
-     "已锁定快照的既有预留不受影响：结算继续使用准入时锁定的 snapshotVersion 与 rateVersion"
-    ]
-   },
-   "steps": [
-    "以最后成功同步时间与当前时间差判定新鲜度，上限可配置、默认 15 分钟",
-    "超期时对受影响模型的新请求返回明确拒绝，并说明是价格过期而非模型不存在",
-    "确保结算路径使用准入时锁定的版本，不因目录过期而重新定价",
-    "先写失败测试：可控时钟推进 16 分钟后新请求被拒绝；既有预留结算价格不变"
-   ],
-   "criteria": [
-    "时钟推进超过默认 15 分钟后，受影响模型的新请求被拒绝且原因明确",
-    "已预留请求按其锁定的价格快照与比例版本结算，不被重新定价",
-    "新鲜度上限可通过配置调整，调整后立即生效于新请求",
-    "同步恢复后新请求自动放行，无需重启"
-   ],
-   "tests": [
-    "可控时钟的新鲜度门禁测试（14/15/16 分钟三点）",
-    "既有预留不重新定价测试",
-    "同步恢复后放行测试"
-   ],
-   "verification": [
-    "bun test server/tests/catalog-freshness-gate.test.ts"
-   ],
-   "owned_scope": [
-    "新鲜度门禁模块",
-    "新鲜度上限配置项",
-    "对应测试"
-   ],
-   "resume_hint": "两个易错点：把“过期”报成“模型不存在”，以及在结算时重新读取最新快照。先补这两条拒绝测试。"
-  },
-  "03.7": {
-   "slug": "admin-model-scope",
-   "contracts": {
-    "consumes": ["03.1 的 ModelRef 列表", "现有管理员能力/策略模式（server/src/enterprise/models/policy.ts）"],
-    "produces": [
-     "开放范围存储：管理员显式开放的 ModelRef 集合与开放状态（open/closed）及原因",
-     "默认语义：目录中新增模型默认未开放",
-     "isModelOpen(modelRef) 查询，供 03.8 与 06.2 消费"
-    ]
-   },
-   "steps": [
-    "新增开放范围存储与管理接口：开放、关闭、查询",
-    "同步新增的模型默认未开放，必须管理员显式开放",
-    "关闭时记录原因，供用户侧展示不可用理由",
-    "先写失败测试：新同步模型默认未开放；关闭后不可选"
-   ],
-   "criteria": [
-    "目录存在但未被管理员开放的模型不可被选择或调用",
-    "同步新增的模型默认未开放",
-    "开放与关闭操作都有审计记录与原因",
-    "开放范围变更不影响已锁定快照的既有预留"
-   ],
-   "tests": [
-    "默认未开放测试",
-    "开放/关闭状态切换与审计测试",
-    "关闭后选择与调用被拒绝测试"
-   ],
-   "verification": [
-    "TEST_DATABASE_URL=... bun test server/tests/model-scope.integration.test.ts"
-   ],
-   "owned_scope": [
-    "开放范围存储与管理路由",
-    "管理员目录页面",
-    "对应测试"
-   ],
-   "resume_hint": "若现状是“同步即开放”，改为默认关闭并补一条回归测试断言新增模型不可调用。"
-  },
-  "03.8": {
-   "slug": "bot-capability-filter",
-   "contracts": {
-    "consumes": ["03.7 的 isModelOpen", "03.3 的 PriceStatus", "04.1 之后的 Bot 能力声明（本 Ticket 先以 Bot 能力描述输入为契约）"],
-    "produces": [
-     "listSelectableModels(botCapability, requester) → 已开放、价格可判定且能力匹配的 ModelRef 列表",
-     "不可用条目附 reasonCode（未开放 / 价格未知 / 能力不匹配 / 目录过期）",
-     "过滤结果不含管理配置或凭据信息"
-    ]
-   },
-   "steps": [
-    "实现按 Bot 能力过滤：聊天 Bot 不返回只能生成图像的模型",
-    "叠加开放范围与价格状态过滤，未开放或 unknown 的模型不出现在可选列表",
-    "为不可用模型提供原因，供界面展示（03.10）与拒绝说明",
-    "先写失败测试：能力不匹配、未开放、价格未知三种情形都被排除且原因正确"
-   ],
-   "criteria": [
-    "聊天能力的 Bot 不会拿到纯图像模型作为可选聊天模型",
-    "未开放或价格未知的模型不出现在可选列表",
-    "每个被排除的模型都有明确原因码",
-    "过滤结果不泄露管理配置或凭据"
-   ],
-   "tests": [
-    "三类排除情形断言",
-    "原因码可读性断言",
-    "结果不含敏感字段断言"
-   ],
-   "verification": [
-    "bun test server/tests/model-capability-filter.test.ts"
-   ],
-   "owned_scope": [
-    "模型可选性过滤模块",
-    "对应测试"
-   ],
-   "resume_hint": "Bot 能力声明若尚未存在，先用最小能力枚举（chat/image/audio/embedding/realtime）落地过滤，等 04.1 交付后再接真实声明，不要为此扩大本 Ticket 范围。"
-  },
-  "03.9": {
-   "slug": "user-model-preference-layers",
-   "contracts": {
-    "consumes": ["03.8 的 listSelectableModels"],
-    "produces": [
-     "模型偏好层级：用户全局默认 → 用户在某 Bot 的默认 → 当前会话选择，越具体越优先",
-     "resolveEffectiveModel(user, bot, conversation) → ModelRef 与生效层级来源",
-     "偏好写入只接受可选列表内的 ModelRef；不可选时拒绝而不是静默改选"
-    ]
-   },
-   "steps": [
-    "新增三层偏好存储与解析函数，返回生效值与来源层级",
-    "写入时校验目标模型在请求者可选列表内",
-    "会话级选择只影响该会话，不写回全局默认",
-    "先写失败测试：会话覆盖 Bot 默认、Bot 默认覆盖全局；写入不可选模型被拒绝"
-   ],
-   "criteria": [
-    "会话选择优先于 Bot 默认，Bot 默认优先于全局默认",
-    "解析结果包含生效层级来源，便于展示与排查",
-    "写入不在可选列表内的模型被拒绝",
-    "会话级覆盖不改变全局或 Bot 默认"
-   ],
-   "tests": [
-    "三层覆盖优先级测试",
-    "非法偏好写入拒绝测试",
-    "会话覆盖隔离测试"
-   ],
-   "verification": [
-    "TEST_DATABASE_URL=... bun test server/tests/model-preference.integration.test.ts"
-   ],
-   "owned_scope": [
-    "模型偏好存储与解析模块",
-    "对应测试"
-   ],
-   "resume_hint": "若已存在单一全局模型设置，改为分层解析并保持旧值作为全局默认，不要删除用户既有选择。"
-  },
-  "03.10": {
-   "slug": "model-picker-and-unavailable-errors",
-   "contracts": {
-    "consumes": ["03.9 的偏好解析与写入", "03.8 的不可用原因码", "现有模型选择入口（执行时先定位）"],
-    "produces": [
-     "用户界面：展示可选模型、当前生效选择与来源层级、价格展示信息",
-     "不可用与下架模型的明确报错与重选提示，不静默替换模型",
-     "组内展示缝合点：目录同步 → 开放 → 选择 → 报错 端到端可演示"
-    ]
-   },
-   "steps": [
-    "第一步用 rg 定位现有模型选择入口（app/src/routes/_authed/*、apps/openmuse 子模块或 agent-trpc），复用其组件模式",
-    "展示可选列表、生效选择与来源层级，并显示价格展示信息",
-    "所选模型变为不可用或下架时明确报错并提示重选，禁止自动换成另一模型",
-    "先写失败的界面测试：三层来源展示、不可用报错、无静默替换"
-   ],
-   "criteria": [
-    "用户看到可选模型、当前生效选择及其来源层级",
-    "所选模型不可用或下架时展示明确原因并要求重选",
-    "界面不会自动替换为另一个模型",
-    "价格展示与后端快照一致，未知价格不显示为免费"
-   ],
-   "tests": [
-    "界面测试：来源层级与不可用报错渲染",
-    "无静默替换断言",
-    "未知价格展示断言"
-   ],
-   "verification": [
-    "bun test app/tests/model-picker-ui.test.tsx",
-    "bun run --filter app build"
-   ],
-   "owned_scope": [
-    "定位到的模型选择入口组件与其查询封装",
-    "对应 app/tests 测试"
-   ],
-   "resume_hint": "定位入口是本 Ticket 的第一步；若选择器分散在多处，先只改工作台主入口并记录其余入口，留给 22.1 全入口枚举核查。"
-  },
-  "03.11": {
-   "slug": "bot-facing-model-discovery-api",
-   "contracts": {
-    "consumes": ["03.10 的展示契约", "03.8 的过滤结果", "04.2 之后的 Bot 服务认证（本 Ticket 以“已认证 Bot 服务端”为前置契约）"],
-    "produces": [
-     "只读发现接口：已认证 Bot 服务端可查询已开放模型、能力兼容状态、价格展示信息与不可用原因",
-     "响应不含管理凭据、内部配置或他人偏好",
-     "供 05.3（Key 签发返回 ModelRef）与 07.x（调用前校验）消费的稳定契约"
-    ]
-   },
-   "steps": [
-    "新增只读路由，要求 Bot 服务身份认证，未认证一律拒绝",
-    "返回该 Bot 可选模型集合与状态，字段与 03.8/03.10 保持一致",
-    "确保不返回管理配置、凭据或其他用户的偏好",
-    "把响应结构写成本组对外契约，冻结字段命名以便下游依赖",
-    "先写失败测试：未认证拒绝、认证后返回过滤结果、敏感字段不存在"
-   ],
-   "criteria": [
-    "未认证的调用方无法访问发现接口",
-    "已认证 Bot 只看到与自己能力匹配且已开放的模型",
-    "响应中不存在管理凭据、内部配置或他人偏好字段",
-    "响应结构与 03.8/03.10 的字段一致，可被下游稳定依赖"
-   ],
-   "tests": [
-    "认证与越权测试",
-    "响应结构快照测试",
-    "敏感字段缺失断言"
-   ],
-   "verification": [
-    "bun test server/tests/model-discovery-api.test.ts"
-   ],
-   "owned_scope": [
-    "模型发现只读路由与服务",
-    "对应测试"
-   ],
-   "resume_hint": "本 Ticket 是组 03 的对外契约出口：字段一旦发布就要保持稳定，若要改结构，先记录到 produces 并通知下游（05.3、07.x）。"
+  "verification_common": [
+    "bun run --filter server typecheck",
+    "bun run --filter app typecheck",
+    "bunx biome lint --error-on-warnings <changed files>"
+  ],
+  "tickets": {
+    "03.1": {
+      "slug": "catalog-fetch-and-model-ref",
+      "contracts": {
+        "consumes": [
+          "01.7 的 assertGatewayReadyForBilling()",
+          "网关模型清单查询能力（bifrost 模型与配置表）"
+        ],
+        "produces": [
+          "ModelRef { provider, model, capability }：目录条目的唯一身份，同名不同 provider 不合并",
+          "CatalogFetchRecord { fetchedAt, source, rawItemCount, configVersion }：原始抓取记录，供审计与价格映射复核",
+          "fetchCatalog() 与 listModelRefs()，供 03.2 价格映射与 03.7 开放范围消费"
+        ]
+      },
+      "steps": [
+        "先确认门禁通过再抓取；未就绪时不发起任何抓取",
+        "通过网关管理接口拉取模型清单，规范化为 ModelRef 三元组，保留原始条目以便复核",
+        "capability 从上游能力字段推导，无法判定时标记 unknown 而不是默认 chat",
+        "抓取失败不写入目录、保留上次成功结果并记录失败原因",
+        "先写失败测试：同名不同 provider 产生两条 ModelRef；capability 未知不被当作 chat"
+      ],
+      "criteria": [
+        "目录条目按 provider+model+capability 唯一，同名不同 provider 不合并",
+        "capability 无法判定时标记 unknown 并保留原因，不默认成文本能力",
+        "抓取失败保留上次成功目录，且失败原因可展示",
+        "门禁未就绪时不发起抓取"
+      ],
+      "tests": [
+        "fixture 驱动的规范化测试（含同名不同 provider、缺 capability）",
+        "抓取失败保留 last-good 测试",
+        "门禁未就绪时不抓取的断言（探测 spy 未被调用）"
+      ],
+      "verification": ["bun test server/tests/catalog-model-ref.test.ts"],
+      "owned_scope": [
+        "目录适配模块（新增，server/src/gateway/catalog*）",
+        "目录快照存储与迁移",
+        "测试 fixture"
+      ],
+      "resume_hint": "若已有目录同步但按模型名合并，改为 ModelRef 三元组键并补同名不同 provider 的回归测试；价格映射不在本 Ticket（见 03.2）。"
+    },
+    "03.2": {
+      "slug": "multi-dimension-price-snapshot",
+      "contracts": {
+        "consumes": ["03.1 的 ModelRef 与原始抓取记录", "01.4 的 RateVersion"],
+        "produces": [
+          "PriceSnapshot { snapshotVersion, modelRef, dims, fetchedAt, source, rateVersion }：dims 覆盖 input/output/image/audio/cache/surcharge 等全部计费维度",
+          "精确十进制存储（不用浮点），缺维度显式为 unknown 而不是 0",
+          "快照不可变：任何变更生成新 snapshotVersion；latestPriceSnapshot(modelRef) 查询"
+        ]
+      },
+      "steps": [
+        "定义完整计费维度集合，逐一映射上游定价字段，映射不到的维度记 unknown",
+        "以精确十进制/整数存储价格，禁止浮点近似",
+        "每个快照记录版本、成功同步时间、来源与当时 rateVersion",
+        "快照不可变：更新只新增版本，历史版本可被结算路径引用",
+        "先写失败测试：多维 datasheet fixture 往返一致；缺维度为 unknown；改写历史快照被拒绝"
+      ],
+      "criteria": [
+        "价格快照保存全部计费维度且数值精确，无浮点误差",
+        "同名不同 provider 的价格不合并",
+        "缺维度记为 unknown 而非 0，且不会被当作免费",
+        "历史快照不可改写，新版本另存并可按版本解析"
+      ],
+      "tests": [
+        "多维 datasheet fixture 的往返一致性测试",
+        "快照不可变性测试（尝试改写历史版本被拒绝）",
+        "精度测试：极小单价不丢精度"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/price-snapshot.integration.test.ts",
+        "bun test server/tests/price-snapshot.test.ts"
+      ],
+      "owned_scope": [
+        "价格快照存储与迁移",
+        "目录适配模块的价格映射逻辑",
+        "测试 fixture"
+      ],
+      "resume_hint": "最常见缺陷是只有 input/output 两列就当作完整价格；接手先核对维度集合是否覆盖图像、音频、缓存与附加费，再谈同步与门禁。"
+    },
+    "03.3": {
+      "slug": "price-status-known-free-unknown",
+      "contracts": {
+        "consumes": ["03.2 的 PriceSnapshot"],
+        "produces": [
+          "PriceStatus = known | free | unknown，unknown 必带 reasonCode 与缺失维度清单",
+          "classifyPrice(snapshot) 纯函数与持久化字段",
+          "可调用性输入：供 03.8 能力过滤、06.2 预留重验、07.6 上限证据消费"
+        ]
+      },
+      "steps": [
+        "实现分类规则：全部必要维度齐备为 known；上游明确标价为 0 且有证据为 free；缺任一必要维度为 unknown",
+        "unknown 记录缺失维度与原因，供展示与拒绝说明使用",
+        "明确 free 仍需通过授权与门禁，不等于无准入",
+        "分类绑定 snapshotVersion，快照变更后重新分类",
+        "先写失败测试：三类边界与 unknown 不得被当作 0 成本"
+      ],
+      "criteria": [
+        "明确免费的模型标记 free，且仍需授权与门禁才可调用",
+        "缺任一必要计费维度标记 unknown，并给出缺失维度与原因",
+        "unknown 绝不被当作 0 成本放行",
+        "分类随快照版本变化，旧分类不残留"
+      ],
+      "tests": [
+        "三类 fixture 分类断言",
+        "unknown 原因可读性断言",
+        "快照版本变更后重新分类测试"
+      ],
+      "verification": [
+        "bun test server/tests/price-status-classification.test.ts"
+      ],
+      "owned_scope": ["价格状态分类模块与存储字段", "对应测试"],
+      "resume_hint": "若分类已存在但没有 reasonCode，补原因并接入展示；不要把 unknown 合并进 free，这是 AC06 的关键区分。"
+    },
+    "03.4": {
+      "slug": "auto-catalog-sync-last-good",
+      "contracts": {
+        "consumes": ["03.1 的 fetchCatalog()", "03.2 的 PriceSnapshot"],
+        "produces": [
+          "周期同步任务（默认 5 分钟，可配置）：成功后写入新快照并更新 lastSuccessfulSyncAt",
+          "失败时保留 last-good 快照并记录连续失败次数与原因",
+          "同步运行状态可被 03.5 与 01.8/03.10 展示消费"
+        ]
+      },
+      "steps": [
+        "实现可配置周期的后台同步，周期默认 5 分钟",
+        "成功路径：写入新快照版本并更新最后成功时间",
+        "失败路径：保留上次成功快照、累加失败计数、记录脱敏原因",
+        "并发保护：同一时刻只运行一个同步任务，重复触发不产生重复快照",
+        "先写失败测试：用可控时钟推进 5 分钟触发同步；失败时 last-good 保留"
+      ],
+      "criteria": [
+        "时钟推进 5 分钟后自动同步被触发一次",
+        "同步失败保留最后成功快照，且最后成功时间不被更新",
+        "连续失败次数与原因可查询",
+        "并发触发不产生重复快照版本"
+      ],
+      "tests": [
+        "可控时钟驱动的周期同步测试",
+        "失败保留 last-good 测试",
+        "并发触发单飞测试"
+      ],
+      "verification": ["bun test server/tests/catalog-auto-sync.test.ts"],
+      "owned_scope": ["目录同步任务模块", "同步状态存储与迁移", "对应测试"],
+      "resume_hint": "若已有定时器但失败时清空目录，改为保留 last-good 并补失败计数；周期必须是可配置项而不是硬编码。"
+    },
+    "03.5": {
+      "slug": "admin-manual-sync",
+      "contracts": {
+        "consumes": ["03.4 的同步任务与运行状态"],
+        "produces": [
+          "管理员“立即同步”动作：复用同一同步实现，不绕过失败保护",
+          "同步结果反馈（成功时间、新快照版本、失败原因）",
+          "触发权限限定管理员，操作写入审计"
+        ]
+      },
+      "steps": [
+        "新增管理员触发接口，复用 03.4 的同步实现与单飞保护",
+        "返回结果包含新的 snapshotVersion 或失败原因",
+        "写入审计记录（操作者、时间、结果）",
+        "在管理员页面加入按钮与结果展示",
+        "先写失败测试：非管理员触发被拒绝；重复点击不产生并发同步"
+      ],
+      "criteria": [
+        "管理员触发后立即执行同步并返回结果",
+        "非管理员触发被拒绝",
+        "重复触发不产生并发同步或重复快照",
+        "每次触发都有审计记录"
+      ],
+      "tests": [
+        "触发权限与审计测试",
+        "并发触发单飞测试",
+        "管理员界面按钮流程测试"
+      ],
+      "verification": [
+        "bun test server/tests/catalog-manual-sync.test.ts",
+        "bun test app/tests/admin-catalog-sync-ui.test.tsx"
+      ],
+      "owned_scope": ["管理员同步路由", "管理员目录页面的同步入口", "对应测试"],
+      "resume_hint": "手动同步最容易绕过失败保护直接写目录；接手先断言它复用同一实现，再补界面。"
+    },
+    "03.6": {
+      "slug": "catalog-freshness-gate",
+      "contracts": {
+        "consumes": [
+          "03.4 的 lastSuccessfulSyncAt",
+          "03.2 的 snapshotVersion",
+          "01.7 的门禁模式"
+        ],
+        "produces": [
+          "新鲜度上限配置（默认 15 分钟）与 assertCatalogFresh(modelRef, now) 门禁",
+          "超期语义：暂停受影响模型的新请求并给出可展示原因",
+          "已锁定快照的既有预留不受影响：结算继续使用准入时锁定的 snapshotVersion 与 rateVersion"
+        ]
+      },
+      "steps": [
+        "以最后成功同步时间与当前时间差判定新鲜度，上限可配置、默认 15 分钟",
+        "超期时对受影响模型的新请求返回明确拒绝，并说明是价格过期而非模型不存在",
+        "确保结算路径使用准入时锁定的版本，不因目录过期而重新定价",
+        "先写失败测试：可控时钟推进 16 分钟后新请求被拒绝；既有预留结算价格不变"
+      ],
+      "criteria": [
+        "时钟推进超过默认 15 分钟后，受影响模型的新请求被拒绝且原因明确",
+        "已预留请求按其锁定的价格快照与比例版本结算，不被重新定价",
+        "新鲜度上限可通过配置调整，调整后立即生效于新请求",
+        "同步恢复后新请求自动放行，无需重启"
+      ],
+      "tests": [
+        "可控时钟的新鲜度门禁测试（14/15/16 分钟三点）",
+        "既有预留不重新定价测试",
+        "同步恢复后放行测试"
+      ],
+      "verification": ["bun test server/tests/catalog-freshness-gate.test.ts"],
+      "owned_scope": ["新鲜度门禁模块", "新鲜度上限配置项", "对应测试"],
+      "resume_hint": "两个易错点：把“过期”报成“模型不存在”，以及在结算时重新读取最新快照。先补这两条拒绝测试。"
+    },
+    "03.7": {
+      "slug": "admin-model-scope",
+      "contracts": {
+        "consumes": [
+          "03.1 的 ModelRef 列表",
+          "现有管理员能力/策略模式（server/src/enterprise/models/policy.ts）"
+        ],
+        "produces": [
+          "开放范围存储：管理员显式开放的 ModelRef 集合与开放状态（open/closed）及原因",
+          "默认语义：目录中新增模型默认未开放",
+          "isModelOpen(modelRef) 查询，供 03.8 与 06.2 消费"
+        ]
+      },
+      "steps": [
+        "新增开放范围存储与管理接口：开放、关闭、查询",
+        "同步新增的模型默认未开放，必须管理员显式开放",
+        "关闭时记录原因，供用户侧展示不可用理由",
+        "先写失败测试：新同步模型默认未开放；关闭后不可选"
+      ],
+      "criteria": [
+        "目录存在但未被管理员开放的模型不可被选择或调用",
+        "同步新增的模型默认未开放",
+        "开放与关闭操作都有审计记录与原因",
+        "开放范围变更不影响已锁定快照的既有预留"
+      ],
+      "tests": [
+        "默认未开放测试",
+        "开放/关闭状态切换与审计测试",
+        "关闭后选择与调用被拒绝测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/model-scope.integration.test.ts"
+      ],
+      "owned_scope": ["开放范围存储与管理路由", "管理员目录页面", "对应测试"],
+      "resume_hint": "若现状是“同步即开放”，改为默认关闭并补一条回归测试断言新增模型不可调用。"
+    },
+    "03.8": {
+      "slug": "bot-capability-filter",
+      "contracts": {
+        "consumes": [
+          "03.7 的 isModelOpen",
+          "03.3 的 PriceStatus",
+          "04.1 之后的 Bot 能力声明（本 Ticket 先以 Bot 能力描述输入为契约）"
+        ],
+        "produces": [
+          "listSelectableModels(botCapability, requester) → 已开放、价格可判定且能力匹配的 ModelRef 列表",
+          "不可用条目附 reasonCode（未开放 / 价格未知 / 能力不匹配 / 目录过期）",
+          "过滤结果不含管理配置或凭据信息"
+        ]
+      },
+      "steps": [
+        "实现按 Bot 能力过滤：聊天 Bot 不返回只能生成图像的模型",
+        "叠加开放范围与价格状态过滤，未开放或 unknown 的模型不出现在可选列表",
+        "为不可用模型提供原因，供界面展示（03.10）与拒绝说明",
+        "先写失败测试：能力不匹配、未开放、价格未知三种情形都被排除且原因正确"
+      ],
+      "criteria": [
+        "聊天能力的 Bot 不会拿到纯图像模型作为可选聊天模型",
+        "未开放或价格未知的模型不出现在可选列表",
+        "每个被排除的模型都有明确原因码",
+        "过滤结果不泄露管理配置或凭据"
+      ],
+      "tests": ["三类排除情形断言", "原因码可读性断言", "结果不含敏感字段断言"],
+      "verification": ["bun test server/tests/model-capability-filter.test.ts"],
+      "owned_scope": ["模型可选性过滤模块", "对应测试"],
+      "resume_hint": "Bot 能力声明若尚未存在，先用最小能力枚举（chat/image/audio/embedding/realtime）落地过滤，等 04.1 交付后再接真实声明，不要为此扩大本 Ticket 范围。"
+    },
+    "03.9": {
+      "slug": "user-model-preference-layers",
+      "contracts": {
+        "consumes": ["03.8 的 listSelectableModels"],
+        "produces": [
+          "模型偏好层级：用户全局默认 → 用户在某 Bot 的默认 → 当前会话选择，越具体越优先",
+          "resolveEffectiveModel(user, bot, conversation) → ModelRef 与生效层级来源",
+          "偏好写入只接受可选列表内的 ModelRef；不可选时拒绝而不是静默改选"
+        ]
+      },
+      "steps": [
+        "新增三层偏好存储与解析函数，返回生效值与来源层级",
+        "写入时校验目标模型在请求者可选列表内",
+        "会话级选择只影响该会话，不写回全局默认",
+        "先写失败测试：会话覆盖 Bot 默认、Bot 默认覆盖全局；写入不可选模型被拒绝"
+      ],
+      "criteria": [
+        "会话选择优先于 Bot 默认，Bot 默认优先于全局默认",
+        "解析结果包含生效层级来源，便于展示与排查",
+        "写入不在可选列表内的模型被拒绝",
+        "会话级覆盖不改变全局或 Bot 默认"
+      ],
+      "tests": [
+        "三层覆盖优先级测试",
+        "非法偏好写入拒绝测试",
+        "会话覆盖隔离测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/model-preference.integration.test.ts"
+      ],
+      "owned_scope": ["模型偏好存储与解析模块", "对应测试"],
+      "resume_hint": "若已存在单一全局模型设置，改为分层解析并保持旧值作为全局默认，不要删除用户既有选择。"
+    },
+    "03.10": {
+      "slug": "model-picker-and-unavailable-errors",
+      "contracts": {
+        "consumes": [
+          "03.9 的偏好解析与写入",
+          "03.8 的不可用原因码",
+          "现有模型选择入口（执行时先定位）"
+        ],
+        "produces": [
+          "用户界面：展示可选模型、当前生效选择与来源层级、价格展示信息",
+          "不可用与下架模型的明确报错与重选提示，不静默替换模型",
+          "组内展示缝合点：目录同步 → 开放 → 选择 → 报错 端到端可演示"
+        ]
+      },
+      "steps": [
+        "第一步用 rg 定位现有模型选择入口（app/src/routes/_authed/*、apps/openmuse 子模块或 agent-trpc），复用其组件模式",
+        "展示可选列表、生效选择与来源层级，并显示价格展示信息",
+        "所选模型变为不可用或下架时明确报错并提示重选，禁止自动换成另一模型",
+        "先写失败的界面测试：三层来源展示、不可用报错、无静默替换"
+      ],
+      "criteria": [
+        "用户看到可选模型、当前生效选择及其来源层级",
+        "所选模型不可用或下架时展示明确原因并要求重选",
+        "界面不会自动替换为另一个模型",
+        "价格展示与后端快照一致，未知价格不显示为免费"
+      ],
+      "tests": [
+        "界面测试：来源层级与不可用报错渲染",
+        "无静默替换断言",
+        "未知价格展示断言"
+      ],
+      "verification": [
+        "bun test app/tests/model-picker-ui.test.tsx",
+        "bun run --filter app build"
+      ],
+      "owned_scope": [
+        "定位到的模型选择入口组件与其查询封装",
+        "对应 app/tests 测试"
+      ],
+      "resume_hint": "定位入口是本 Ticket 的第一步；若选择器分散在多处，先只改工作台主入口并记录其余入口，留给 22.1 全入口枚举核查。"
+    },
+    "03.11": {
+      "slug": "bot-facing-model-discovery-api",
+      "contracts": {
+        "consumes": [
+          "03.10 的展示契约",
+          "03.8 的过滤结果",
+          "04.2 之后的 Bot 服务认证（本 Ticket 以“已认证 Bot 服务端”为前置契约）"
+        ],
+        "produces": [
+          "只读发现接口：已认证 Bot 服务端可查询已开放模型、能力兼容状态、价格展示信息与不可用原因",
+          "响应不含管理凭据、内部配置或他人偏好",
+          "供 05.3（Key 签发返回 ModelRef）与 07.x（调用前校验）消费的稳定契约"
+        ]
+      },
+      "steps": [
+        "新增只读路由，要求 Bot 服务身份认证，未认证一律拒绝",
+        "返回该 Bot 可选模型集合与状态，字段与 03.8/03.10 保持一致",
+        "确保不返回管理配置、凭据或其他用户的偏好",
+        "把响应结构写成本组对外契约，冻结字段命名以便下游依赖",
+        "先写失败测试：未认证拒绝、认证后返回过滤结果、敏感字段不存在"
+      ],
+      "criteria": [
+        "未认证的调用方无法访问发现接口",
+        "已认证 Bot 只看到与自己能力匹配且已开放的模型",
+        "响应中不存在管理凭据、内部配置或他人偏好字段",
+        "响应结构与 03.8/03.10 的字段一致，可被下游稳定依赖"
+      ],
+      "tests": ["认证与越权测试", "响应结构快照测试", "敏感字段缺失断言"],
+      "verification": ["bun test server/tests/model-discovery-api.test.ts"],
+      "owned_scope": ["模型发现只读路由与服务", "对应测试"],
+      "resume_hint": "本 Ticket 是组 03 的对外契约出口：字段一旦发布就要保持稳定，若要改结构，先记录到 produces 并通知下游（05.3、07.x）。"
+    }
   }
- }
 }

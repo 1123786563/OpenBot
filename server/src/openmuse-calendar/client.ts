@@ -211,14 +211,11 @@ export function buildOpenMuseCalendarClient(deps: {
     async callAction(alias, actionId, input) {
       let wire: Awaited<ReturnType<CalendarWireDial>>;
       try {
-        wire = await deps.dial(
-          `/v1/actions/${encodeURIComponent(actionId)}`,
-          {
-            method: "POST",
-            headers: { "x-oo-connector-alias": alias },
-            body: { input },
-          },
-        );
+        wire = await deps.dial(`/v1/actions/${encodeURIComponent(actionId)}`, {
+          method: "POST",
+          headers: { "x-oo-connector-alias": alias },
+          body: { input },
+        });
       } catch (error) {
         // M28: named and logged like list()'s. callAction answers the
         // reviewed-action executors, whose own judgment (R02) treats an

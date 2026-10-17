@@ -365,12 +365,12 @@ describe("materializeManagedContent", () => {
     expect(api.files.get("cs-mc/.openbot/web-template/package.json")).toEqual(
       encoder.encode('{"name":"web"}'),
     );
-    expect(
-      api.files.get("cs-mc/.openbot/web-template/.oxlintrc.json"),
-    ).toEqual(encoder.encode("{}"));
-    expect(
-      api.files.get("cs-mc/.openbot/web-template/app/page.tsx"),
-    ).toEqual(encoder.encode("page"));
+    expect(api.files.get("cs-mc/.openbot/web-template/.oxlintrc.json")).toEqual(
+      encoder.encode("{}"),
+    );
+    expect(api.files.get("cs-mc/.openbot/web-template/app/page.tsx")).toEqual(
+      encoder.encode("page"),
+    );
   });
 
   test("rejects path-escaping web template entries; a failed template write never fails hydration", async () => {

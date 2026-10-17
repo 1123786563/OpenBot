@@ -189,7 +189,10 @@ export function createPaymentRoutes(deps: {
       if (error.refusal.reason === "missing-owner") {
         // No server-resolved owner arrived: refused before any order row existed (AC14).
         return context.json(
-          { error: "An order requires an owner resolved from the signed-in identity." },
+          {
+            error:
+              "An order requires an owner resolved from the signed-in identity.",
+          },
           400,
         );
       }
@@ -226,7 +229,9 @@ export function createPaymentRoutes(deps: {
     );
   });
   routes.get("/purchases/current", async (context) => {
-    return context.json(await deps.service.readCurrentOrder(billingReadScopeOf(context)));
+    return context.json(
+      await deps.service.readCurrentOrder(billingReadScopeOf(context)),
+    );
   });
 
   routes.get("/purchases/:id", async (context) => {

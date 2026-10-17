@@ -31,7 +31,11 @@ const config = loadCraftConfig({});
 
 function fakeRequireUser(): MiddlewareHandler<{ Variables: AppVariables }> {
   return async (context, next) => {
-    context.set("actor", { id: USER_ID, email: "u1@example.com", role: "user" });
+    context.set("actor", {
+      id: USER_ID,
+      email: "u1@example.com",
+      role: "user",
+    });
     await next();
   };
 }
@@ -68,14 +72,22 @@ function fakeStore(options: { failUserMessagesOnce?: boolean } = {}) {
   let failedOnce = false;
   const store: CraftStore = {
     async getSession(sessionId, userId) {
-      return sessionId === SESSION_ID && userId === USER_ID ? sessionRow() : undefined;
+      return sessionId === SESSION_ID && userId === USER_ID
+        ? sessionRow()
+        : undefined;
     },
     async updateSessionActivity() {},
     async countUserMessages(sessionId) {
-      return messages.filter((m) => m.sessionId === sessionId && m.type === "user").length;
+      return messages.filter(
+        (m) => m.sessionId === sessionId && m.type === "user",
+      ).length;
     },
     async createMessage(input) {
-      if (input.type === "user" && options.failUserMessagesOnce && !failedOnce) {
+      if (
+        input.type === "user" &&
+        options.failUserMessagesOnce &&
+        !failedOnce
+      ) {
         failedOnce = true;
         throw new Error("db down");
       }
@@ -100,7 +112,11 @@ function fakeExecutor() {
   return { executor, started };
 }
 
-function buildApp(store: CraftStore, turnState: TurnStateStore, executor: TurnExecutor) {
+function buildApp(
+  store: CraftStore,
+  turnState: TurnStateStore,
+  executor: TurnExecutor,
+) {
   return createMessageRoutes(fakeRequireUser(), {
     config,
     store,
@@ -173,7 +189,10 @@ describe("POST /send-message — idempotency (client_request_id)", () => {
     const { executor, started } = fakeExecutor();
     const app = buildApp(store, turnState, executor);
 
-    const first = await sendRequest(app, { content: "hello", client_request_id: "req-1" });
+    const first = await sendRequest(app, {
+      content: "hello",
+      client_request_id: "req-1",
+    });
     const { turn_id: turnId } = (await first.json()) as Record<string, string>;
     const claimed = await turnState.claimTurnForRunner(turnId);
     await turnState.finishTurn({
@@ -182,7 +201,10 @@ describe("POST /send-message — idempotency (client_request_id)", () => {
       runnerId: claimed?.runnerId,
     });
 
-    const retry = await sendRequest(app, { content: "hello", client_request_id: "req-1" });
+    const retry = await sendRequest(app, {
+      content: "hello",
+      client_request_id: "req-1",
+    });
     expect(retry.status).toBe(200);
     const retryBody = (await retry.json()) as Record<string, string>;
     expect(retryBody.turn_id).toBe(turnId);
@@ -198,12 +220,18 @@ describe("POST /send-message — idempotency (client_request_id)", () => {
     const { executor, started } = fakeExecutor();
     const app = buildApp(store, turnState, executor);
 
-    const failed = await sendRequest(app, { content: "hello", client_request_id: "req-1" });
+    const failed = await sendRequest(app, {
+      content: "hello",
+      client_request_id: "req-1",
+    });
     expect(failed.status).toBe(500); // the row-write error propagates after the FAILED finish
     expect(started).toEqual([]); // runner never started
 
     // The retry with the same request id resolves the FAILED turn — no duplicate row.
-    const retry = await sendRequest(app, { content: "hello", client_request_id: "req-1" });
+    const retry = await sendRequest(app, {
+      content: "hello",
+      client_request_id: "req-1",
+    });
     expect(retry.status).toBe(200);
     const retryBody = (await retry.json()) as Record<string, string>;
     expect(retryBody.status).toBe("FAILED");
@@ -219,10 +247,16 @@ describe("POST /send-message — idempotency (client_request_id)", () => {
     const { executor } = fakeExecutor();
     const app = buildApp(store, turnState, executor);
 
-    const first = await sendRequest(app, { content: "hello", client_request_id: "req-1" });
+    const first = await sendRequest(app, {
+      content: "hello",
+      client_request_id: "req-1",
+    });
     expect(first.status).toBe(200);
 
-    const second = await sendRequest(app, { content: "again", client_request_id: "req-2" });
+    const second = await sendRequest(app, {
+      content: "again",
+      client_request_id: "req-2",
+    });
     expect(second.status).toBe(409);
     const body = (await second.json()) as { error: string };
     expect(body.error).toBe("This session is busy with a previous turn.");
@@ -263,7 +297,10 @@ describe("POST /send-message — admission guards", () => {
     const { executor } = fakeExecutor();
     const app = buildApp(store, turnState, executor);
 
-    const first = await sendRequest(app, { content: "one", client_request_id: "r1" });
+    const first = await sendRequest(app, {
+      content: "one",
+      client_request_id: "r1",
+    });
     const firstBody = (await first.json()) as Record<string, unknown>;
     expect(firstBody.turn_index).toBe(0);
 
@@ -275,8 +312,13 @@ describe("POST /send-message — admission guards", () => {
       runnerId: claimed?.runnerId,
     });
 
-    const second = await sendRequest(app, { content: "two", client_request_id: "r2" });
-    expect(((await second.json()) as Record<string, unknown>).turn_index).toBe(1);
+    const second = await sendRequest(app, {
+      content: "two",
+      client_request_id: "r2",
+    });
+    expect(((await second.json()) as Record<string, unknown>).turn_index).toBe(
+      1,
+    );
     expect(userRows(messages())).toHaveLength(2);
   });
 });
@@ -309,7 +351,10 @@ describe("POST /send-message — attachment validation", () => {
       );
       // Nothing was admitted: no turn became active.
       expect(
-        await turnState.getActiveTurn({ sessionId: SESSION_ID, userId: USER_ID }),
+        await turnState.getActiveTurn({
+          sessionId: SESSION_ID,
+          userId: USER_ID,
+        }),
       ).toBeNull();
     }
   });
@@ -333,7 +378,9 @@ describe("POST /send-message — attachment validation", () => {
         client_request_id: `req-${Math.random().toString(36).slice(2)}`,
         attachments: [attachment],
       });
-      expect(response.status, `attachment ${JSON.stringify(attachment)}`).toBe(400);
+      expect(response.status, `attachment ${JSON.stringify(attachment)}`).toBe(
+        400,
+      );
     }
   });
 
@@ -344,7 +391,10 @@ describe("POST /send-message — attachment validation", () => {
 
     const response = await sendRequest(app, validBody("attachments/shot.png"));
     expect(response.status).toBe(200);
-    const { turn_id: turnId } = (await response.json()) as Record<string, string>;
+    const { turn_id: turnId } = (await response.json()) as Record<
+      string,
+      string
+    >;
 
     const turn = await turnState.getTurn(turnId);
     expect(turn?.attachments).toEqual([
@@ -352,7 +402,11 @@ describe("POST /send-message — attachment validation", () => {
     ]);
     const metadata = userRows(messages())[0].messageMetadata;
     expect(metadata.attachments).toEqual([
-      { name: "shot.png", path: "attachments/shot.png", mime_type: "image/png" },
+      {
+        name: "shot.png",
+        path: "attachments/shot.png",
+        mime_type: "image/png",
+      },
     ]);
   });
 
@@ -363,16 +417,26 @@ describe("POST /send-message — attachment validation", () => {
 
     const response = await sendRequest(
       app,
-      validBody("attachments/doc.pdf", { name: "doc.pdf", mime_type: "application/pdf" }),
+      validBody("attachments/doc.pdf", {
+        name: "doc.pdf",
+        mime_type: "application/pdf",
+      }),
     );
     expect(response.status).toBe(200);
-    const { turn_id: turnId } = (await response.json()) as Record<string, string>;
+    const { turn_id: turnId } = (await response.json()) as Record<
+      string,
+      string
+    >;
 
     const turn = await turnState.getTurn(turnId);
     expect(turn?.attachments).toEqual([]); // only image/* ride the prompt
     const metadata = userRows(messages())[0].messageMetadata;
     expect(metadata.attachments).toEqual([
-      { name: "doc.pdf", path: "attachments/doc.pdf", mime_type: "application/pdf" },
+      {
+        name: "doc.pdf",
+        path: "attachments/doc.pdf",
+        mime_type: "application/pdf",
+      },
     ]);
   });
 });
@@ -395,7 +459,9 @@ describe("POST /send-message — per-message model override", () => {
       model: "gpt-5",
     });
     expect(both.status).toBe(200);
-    expect(sessionPatches).toEqual([{ agentProvider: "openai", agentModel: "gpt-5" }]);
+    expect(sessionPatches).toEqual([
+      { agentProvider: "openai", agentModel: "gpt-5" },
+    ]);
 
     const patchesBefore = sessionPatches.length;
     const lone = await sendRequest(app, {

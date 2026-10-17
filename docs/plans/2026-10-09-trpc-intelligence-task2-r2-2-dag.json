@@ -1,12 +1,8 @@
 {
   "root": "R2-2",
-  "source_issues": [
-    "Independent review finding T02-R03 (Medium)"
-  ],
+  "source_issues": ["Independent review finding T02-R03 (Medium)"],
   "source_of_requirements": "Approved migration design AC-05, enterprise tenancy T1-B/T1-C, and repair plan R2-2; no GitHub Issue was provided.",
-  "depends_on": [
-    "R2-1 verified"
-  ],
+  "depends_on": ["R2-1 verified"],
   "dependency_evidence": "The parent Task 2 repair DAG makes channel revocation consistency dependent on verified RLS and role boundaries; R2-1 and cleanup repair R2-1C are verified in this same serial worktree.",
   "base": "fbdecc29cd786952c4b496abc68384b31a320b17",
   "worktree": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot",
@@ -14,9 +10,7 @@
   "nodes": [
     {
       "id": "R2-2",
-      "source_issues": [
-        "T02-R03"
-      ],
+      "source_issues": ["T02-R03"],
       "acceptance": [
         "canReadLegacyChannel determines membership, live-channel state, and optional Bot mapping in one SQL statement/snapshot.",
         "Missing membership/channel/Bot, deleted channel, malformed input, and database errors deny access.",
@@ -42,9 +36,7 @@
       "status": "verified"
     }
   ],
-  "topological_order": [
-    "R2-2"
-  ],
+  "topological_order": ["R2-2"],
   "isolated_checks": {
     "unique_node_ids": true,
     "dependencies_resolve": true,

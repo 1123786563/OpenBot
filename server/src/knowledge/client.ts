@@ -155,7 +155,11 @@ function dispatch(
         const chunks: Buffer[] = [];
         res.on("data", (chunk: Buffer) => chunks.push(chunk));
         res.on("end", () => {
-          resolve(new Response(Buffer.concat(chunks), { status: res.statusCode ?? 0 }));
+          resolve(
+            new Response(Buffer.concat(chunks), {
+              status: res.statusCode ?? 0,
+            }),
+          );
         });
         res.on("error", reject);
       },

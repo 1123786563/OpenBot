@@ -17,7 +17,9 @@ mock.module("@/components/ui/dialog", () => {
     DialogHeader: pass,
     DialogBody: pass,
     DialogFooter: pass,
-    DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
+    DialogTitle: ({ children }: { children?: ReactNode }) => (
+      <h2>{children}</h2>
+    ),
     DialogDescription: ({ children }: { children?: ReactNode }) => (
       <p>{children}</p>
     ),
@@ -67,7 +69,9 @@ const originalFetch = global.fetch;
 
 type CapturedRequest = { url: string; body: Record<string, unknown> };
 
-function installFetchStub(responder: (body: Record<string, unknown>) => Response) {
+function installFetchStub(
+  responder: (body: Record<string, unknown>) => Response,
+) {
   const requests: CapturedRequest[] = [];
   globalThis.fetch = (async (
     input: string | URL | Request,
@@ -202,7 +206,9 @@ test("重复提交应答 replay 时明确说明未重复入账", async () => {
 });
 
 test("失败渲染服务端错误句（展示失败原因）", async () => {
-  installFetchStub(() => json({ error: "Administrator access required." }, 403));
+  installFetchStub(() =>
+    json({ error: "Administrator access required." }, 403),
+  );
   const view = renderCard();
   await fillAndSubmit(view);
 

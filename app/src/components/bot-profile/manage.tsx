@@ -85,7 +85,9 @@ function ResetDialog({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t("manage.reset.title", { name: agent.name })}</DialogTitle>
+          <DialogTitle>
+            {t("manage.reset.title", { name: agent.name })}
+          </DialogTitle>
           <DialogDescription>
             {t("manage.reset.description", { name: agent.name })}
           </DialogDescription>
@@ -137,7 +139,9 @@ function ResetDialog({
             size="sm"
             variant="outline"
           >
-            {reset.isSuccess ? t("manage.reset.close") : t("manage.reset.cancel")}
+            {reset.isSuccess
+              ? t("manage.reset.close")
+              : t("manage.reset.cancel")}
           </Button>
           {reset.isSuccess ? null : (
             <Button
@@ -315,7 +319,9 @@ export function ManageSection({
       <Dialog onOpenChange={setDeleteOpen} open={deleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t("manage.deleteTitle", { name: agent.name })}</DialogTitle>
+            <DialogTitle>
+              {t("manage.deleteTitle", { name: agent.name })}
+            </DialogTitle>
             <DialogDescription>{t("manage.cannotBeUndone")}</DialogDescription>
           </DialogHeader>
           {remove.error ? (

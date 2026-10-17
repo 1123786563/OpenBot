@@ -1277,7 +1277,9 @@ test("an unconfigured OpenConnector row names its own env vars, not Composio's",
   // The whole point of the sentence in this state is naming the setting to set — and naming the
   // WRONG broker's setting is what the live browser test caught an OpenConnector app saying.
   expect(
-    view.getByText(/Set OPENCONNECTOR_ADMIN_TOKEN and OPENCONNECTOR_RUNTIME_TOKEN/),
+    view.getByText(
+      /Set OPENCONNECTOR_ADMIN_TOKEN and OPENCONNECTOR_RUNTIME_TOKEN/,
+    ),
   ).toBeTruthy();
   expect(view.queryByText(NAMES_THE_SETTING)).toBeNull();
 });

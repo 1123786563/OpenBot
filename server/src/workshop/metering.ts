@@ -72,11 +72,7 @@ function compareWhole(amount: ExactCharge, whole: bigint): number {
 }
 
 function wholeTokens(value: number | undefined): number {
-  if (
-    value === undefined ||
-    !Number.isSafeInteger(value) ||
-    value < 0
-  ) {
+  if (value === undefined || !Number.isSafeInteger(value) || value < 0) {
     throw new UsageChargeError("usage_invalid_tokens");
   }
   return value;

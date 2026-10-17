@@ -436,9 +436,7 @@ function runtimeModel(model: RuntimeModel, apiKey: string | null) {
  * often absent. `index.ts` wires the billing service's meter in at assembly; the default drops
  * usage on the floor, which is exactly right for a deployment that meters nowhere.
  */
-let usageMeter:
-  | ((usage: ModelUsageReport) => void | Promise<void>)
-  | undefined;
+let usageMeter: ((usage: ModelUsageReport) => void | Promise<void>) | undefined;
 
 export function setModelUsageMeter(
   meter: ((usage: ModelUsageReport) => void | Promise<void>) | undefined,
@@ -714,8 +712,7 @@ function meteredModel<T>(model: T): T {
           lifecycle = await modelUsageGate({
             eventId,
             occurredAt,
-            modelId:
-              typeof inner.modelId === "string" ? inner.modelId : null,
+            modelId: typeof inner.modelId === "string" ? inner.modelId : null,
             client: currentUsageOrigin(),
           });
         } catch (error) {
@@ -813,9 +810,8 @@ function meteredModel<T>(model: T): T {
         if (cap > BigInt(Number.MAX_SAFE_INTEGER)) {
           return refuse("output_bound_unsupported");
         }
-        const requested = (
-          params as { maxOutputTokens?: unknown }
-        ).maxOutputTokens;
+        const requested = (params as { maxOutputTokens?: unknown })
+          .maxOutputTokens;
         const effective =
           typeof requested === "number" &&
           Number.isSafeInteger(requested) &&
@@ -997,8 +993,12 @@ function meteredModel<T>(model: T): T {
               // with the failure, so the evidence row records what arrived, not zeros — with
               // keys only for what did arrive, absent like every other settleFail site.
               await settleFail("usage_missing", {
-                ...(reportedInput !== undefined && { inputTokens: reportedInput }),
-                ...(reportedOutput !== undefined && { outputTokens: reportedOutput }),
+                ...(reportedInput !== undefined && {
+                  inputTokens: reportedInput,
+                }),
+                ...(reportedOutput !== undefined && {
+                  outputTokens: reportedOutput,
+                }),
               });
             }
             const validInput =
@@ -1238,10 +1238,7 @@ export function builtInAgentConfiguration(
   }
 
   const resolvedModel = planModel ?? runtimeModel(model, apiKey);
-  if (
-    modelUsageGate !== undefined &&
-    typeof resolvedModel === "string"
-  ) {
+  if (modelUsageGate !== undefined && typeof resolvedModel === "string") {
     return {
       type: "custom",
       // biome-ignore lint/correctness/useYield: this agent must fail when iteration starts.

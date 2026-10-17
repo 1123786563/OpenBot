@@ -58,7 +58,11 @@ describe("accessFor on an open-connector row", () => {
   test("an entry declaring a broker transport is unroutable for either broker", () => {
     expect(() =>
       accessFor(
-        { provenance: "first-party", url: "https://example.test", authScheme: null },
+        {
+          provenance: "first-party",
+          url: "https://example.test",
+          authScheme: null,
+        },
         {
           ...CATALOGUE[0],
           transport: "open-connector" as never,

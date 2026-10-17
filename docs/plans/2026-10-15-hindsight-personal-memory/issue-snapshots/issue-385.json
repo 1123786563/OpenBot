@@ -1,1 +1,18 @@
-{"body":"## Parent\nSpec: #376\n\n## What to build\nHindsight 暂时不可用时，用户仍能从 OpenBot 找回已确认且当前有权的个人记忆。\n\n## Acceptance criteria\n- [ ] 服务宕机或超时时，SQL 降级只返回已确认、未暂停使用且当前有权的记录；候选与失权来源不可见。\n- [ ] 新确认内容保留待同步状态，服务恢复后补建索引；不得声称故障期间已完成语义索引。\n- [ ] 网页、频道与定时任务在故障下遵守相同权限和降级规则。\n\n## Blocked by\n- #383\n- #384\n\n## Verification\n关闭 Hindsight、恢复服务并跨入口复测；覆盖候选、来源撤权和同用户跨公司数据。\n\n## Handoff notes\n沿用 #01 的同一审核门槛和 #06 的授权规则，不建立独立的宽松降级策略。\n事实源：父 Spec #376、仓库已批准的 Hindsight ADR、个人记忆领域术语与公司/团队多租户 Spec。只处理本票行为；前置票交付的接口以其验收结果和当前 Git 状态为准。接手前先核对前置票是否已验证并集成。完成或中断时记录变更范围、HEAD/未提交检查点、实际验证命令与结果、遗留问题；无提交授权时不要自行提交、推送或部署。\n","closedAt":null,"comments":[],"createdAt":"2026-10-15T08:20:09Z","labels":[{"id":"LA_kwDOVCA0Ss8AAAAC9E3BJg","name":"ready-for-agent","description":"Specified and ready for agent implementation","color":"0E8A16"}],"number":385,"state":"OPEN","title":"[Hindsight 08] Hindsight 故障时的安全降级召回","url":"https://github.com/1123786563/OpenBot/issues/385"}
+{
+  "body": "## Parent\nSpec: #376\n\n## What to build\nHindsight 暂时不可用时，用户仍能从 OpenBot 找回已确认且当前有权的个人记忆。\n\n## Acceptance criteria\n- [ ] 服务宕机或超时时，SQL 降级只返回已确认、未暂停使用且当前有权的记录；候选与失权来源不可见。\n- [ ] 新确认内容保留待同步状态，服务恢复后补建索引；不得声称故障期间已完成语义索引。\n- [ ] 网页、频道与定时任务在故障下遵守相同权限和降级规则。\n\n## Blocked by\n- #383\n- #384\n\n## Verification\n关闭 Hindsight、恢复服务并跨入口复测；覆盖候选、来源撤权和同用户跨公司数据。\n\n## Handoff notes\n沿用 #01 的同一审核门槛和 #06 的授权规则，不建立独立的宽松降级策略。\n事实源：父 Spec #376、仓库已批准的 Hindsight ADR、个人记忆领域术语与公司/团队多租户 Spec。只处理本票行为；前置票交付的接口以其验收结果和当前 Git 状态为准。接手前先核对前置票是否已验证并集成。完成或中断时记录变更范围、HEAD/未提交检查点、实际验证命令与结果、遗留问题；无提交授权时不要自行提交、推送或部署。\n",
+  "closedAt": null,
+  "comments": [],
+  "createdAt": "2026-10-15T08:20:09Z",
+  "labels": [
+    {
+      "id": "LA_kwDOVCA0Ss8AAAAC9E3BJg",
+      "name": "ready-for-agent",
+      "description": "Specified and ready for agent implementation",
+      "color": "0E8A16"
+    }
+  ],
+  "number": 385,
+  "state": "OPEN",
+  "title": "[Hindsight 08] Hindsight 故障时的安全降级召回",
+  "url": "https://github.com/1123786563/OpenBot/issues/385"
+}

@@ -70,7 +70,12 @@ test("an expired grant is not part of the balance, and a live hold is", async ()
   });
 
   const beforeHold = await credits.summary();
-  expect(beforeHold.plan).toEqual({ total: 100, used: 0, remaining: 100, held: 0 });
+  expect(beforeHold.plan).toEqual({
+    total: 100,
+    used: 0,
+    remaining: 100,
+    held: 0,
+  });
   expect(beforeHold.rewards.remaining).toBe(0);
   expect(beforeHold.rewards.grantCount).toBe(0);
   expect(beforeHold.rewards.total).toBe(0);
@@ -96,5 +101,9 @@ test("an expired grant is not part of the balance, and a live hold is", async ()
 
   // The page and the gate agree, to within the one unit a carried remainder occupies.
   const spendable = await writer.availableBalance(customer);
-  expect(released.plan.remaining * 100 + released.rewards.remaining * 100 - spendable).toBeLessThanOrEqual(1);
+  expect(
+    released.plan.remaining * 100 +
+      released.rewards.remaining * 100 -
+      spendable,
+  ).toBeLessThanOrEqual(1);
 });

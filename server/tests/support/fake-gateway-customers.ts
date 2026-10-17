@@ -97,7 +97,10 @@ export async function startFakeCustomerGateway(options: {
       }
 
       // 05.1's create: one customer per unique deterministic name.
-      if (request.method === "POST" && url.pathname === "/api/governance/customers") {
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/governance/customers"
+      ) {
         const body = (await request.json()) as { name?: unknown };
         const name = typeof body.name === "string" ? body.name : "";
         if (name.length === 0) {
@@ -144,7 +147,10 @@ export async function startFakeCustomerGateway(options: {
         return Response.json({
           customers: customers
             .filter((customer) => customer.name.includes(search))
-            .map((customer) => ({ id: customer.customerId, name: customer.name })),
+            .map((customer) => ({
+              id: customer.customerId,
+              name: customer.name,
+            })),
         });
       }
 

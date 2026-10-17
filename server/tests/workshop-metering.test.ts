@@ -5,7 +5,10 @@ import {
   reportCodeRunUsage,
   UsageChargeError,
 } from "../src/workshop/metering";
-import type { UsageOutbox, UsageOutboxInput } from "../src/billing/usage-outbox";
+import type {
+  UsageOutbox,
+  UsageOutboxInput,
+} from "../src/billing/usage-outbox";
 import { withUsageOrigin } from "../src/usage-origin";
 
 /**
@@ -205,31 +208,39 @@ describe("a code-run usage row must carry its reservation facts (audit B3)", () 
     );
     expect(written).toBe(false);
     expect(rows).toEqual([]);
-    expect(messages.join("\n")).toContain("billing-code-run-reservation-missing");
+    expect(messages.join("\n")).toContain(
+      "billing-code-run-reservation-missing",
+    );
   });
 
   test("credit metering on with reservation facts writes them through", async () => {
     const rows: { reservationId?: string | null }[] = [];
-    const written = await reportCodeRunUsage(recording(rows) as never, {
-      ...RUN,
-      externalCustomerId: "c1",
-      creditMeteringEnabled: true,
-      reservation: {
-        reservationId: "cr-1",
-        actualCostNumerator: "120",
-        actualCostDenominator: "100",
-      },
-    } as never);
+    const written = await reportCodeRunUsage(
+      recording(rows) as never,
+      {
+        ...RUN,
+        externalCustomerId: "c1",
+        creditMeteringEnabled: true,
+        reservation: {
+          reservationId: "cr-1",
+          actualCostNumerator: "120",
+          actualCostDenominator: "100",
+        },
+      } as never,
+    );
     expect(written).toBe(true);
     expect(rows[0]?.reservationId).toBe("cr-1");
   });
 
   test("Lago-only metering (no credit metering) still writes its row", async () => {
     const rows: { reservationId?: string | null }[] = [];
-    const written = await reportCodeRunUsage(recording(rows) as never, {
-      ...RUN,
-      externalCustomerId: "c1",
-    } as never);
+    const written = await reportCodeRunUsage(
+      recording(rows) as never,
+      {
+        ...RUN,
+        externalCustomerId: "c1",
+      } as never,
+    );
     expect(written).toBe(true);
     expect(rows[0]?.reservationId).toBeNull();
   });

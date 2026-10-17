@@ -85,7 +85,9 @@ describe("builtinSkillFilesFor", () => {
   });
 
   test("a connection ships exactly its own connector skill", async () => {
-    const files = await builtinSkillFilesFor({ connectedServerIds: new Set(["github"]) });
+    const files = await builtinSkillFilesFor({
+      connectedServerIds: new Set(["github"]),
+    });
     expect(files.has("github/SKILL.md")).toBe(true);
     for (const skill of CONNECTOR_SKILLS) {
       if (skill !== "github") {
@@ -104,7 +106,9 @@ describe("builtinSkillFilesFor", () => {
   });
 
   test("connector templates render on load: no .template suffix, no placeholder", async () => {
-    const files = await builtinSkillFilesFor({ connectedServerIds: new Set([...CONNECTOR_SKILLS]) });
+    const files = await builtinSkillFilesFor({
+      connectedServerIds: new Set([...CONNECTOR_SKILLS]),
+    });
     for (const skill of CONNECTOR_SKILLS) {
       const rendered = new TextDecoder().decode(files.get(`${skill}/SKILL.md`));
       expect(rendered).not.toContain("{{");
@@ -116,7 +120,9 @@ describe("builtinSkillFilesFor", () => {
 
   test("company-search ships only with a sources section, CLI riding along", async () => {
     // No knowledge wiring: the skill is held back entirely.
-    const without = await builtinSkillFilesFor({ connectedServerIds: new Set() });
+    const without = await builtinSkillFilesFor({
+      connectedServerIds: new Set(),
+    });
     expect(without.has("company-search/SKILL.md")).toBe(false);
     expect(without.has("company-search/onyx-cli")).toBe(false);
 
@@ -124,7 +130,9 @@ describe("builtinSkillFilesFor", () => {
       connectedServerIds: new Set(),
       companySearchSourcesSection: NO_SOURCES_SECTION,
     });
-    const rendered = new TextDecoder().decode(files.get("company-search/SKILL.md"));
+    const rendered = new TextDecoder().decode(
+      files.get("company-search/SKILL.md"),
+    );
     expect(rendered).not.toContain("{{");
     expect(rendered).toContain("## Sources Available in This Session");
     expect(rendered).toContain(NO_SOURCES_SECTION);
@@ -175,9 +183,7 @@ describe("serverBacksConnectorSkill", () => {
       true,
     );
     expect(serverBacksConnectorSkill("notion", "github")).toBe(false);
-    expect(serverBacksConnectorSkill("my-custom-server", "github")).toBe(
-      false,
-    );
+    expect(serverBacksConnectorSkill("my-custom-server", "github")).toBe(false);
     // A slug must end on its own segment, not merely share characters.
     expect(serverBacksConnectorSkill("composio-hubspotx", "hubspot")).toBe(
       false,
@@ -209,7 +215,8 @@ describe("managed-content skills leg integration", () => {
     const empty = await createCraftManagedContentResolver(sources())(session());
     const withSkills = await createCraftManagedContentResolver(
       sources({
-        skillFilesFor: () => builtinSkillFilesFor({ connectedServerIds: new Set(["github"]) }),
+        skillFilesFor: () =>
+          builtinSkillFilesFor({ connectedServerIds: new Set(["github"]) }),
       }),
     )(session());
     expect(withSkills?.skillFiles.has("github/SKILL.md")).toBe(true);
@@ -218,11 +225,15 @@ describe("managed-content skills leg integration", () => {
 
   test("a connection change flips the hash: the connector gate is hash-visible", async () => {
     const before = await createCraftManagedContentResolver(
-      sources({ skillFilesFor: () => builtinSkillFilesFor({ connectedServerIds: new Set() }) }),
+      sources({
+        skillFilesFor: () =>
+          builtinSkillFilesFor({ connectedServerIds: new Set() }),
+      }),
     )(session());
     const after = await createCraftManagedContentResolver(
       sources({
-        skillFilesFor: () => builtinSkillFilesFor({ connectedServerIds: new Set(["slack"]) }),
+        skillFilesFor: () =>
+          builtinSkillFilesFor({ connectedServerIds: new Set(["slack"]) }),
       }),
     )(session());
     expect(after?.skillsHash).not.toBe(before?.skillsHash);

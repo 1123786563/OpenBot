@@ -1,12 +1,8 @@
 {
   "root": "R2-2-R01-fix1",
-  "source_issues": [
-    "R2-2-R01 Medium"
-  ],
+  "source_issues": ["R2-2-R01 Medium"],
   "source_of_requirements": "Independent R2-2 task review, approved R2-2 query contract; no GitHub Issue was provided.",
-  "depends_on": [
-    "R2-2 implementation checkpoint"
-  ],
+  "depends_on": ["R2-2 implementation checkpoint"],
   "dependency_evidence": "The initial R2-2 implementation and backend validation passed source behavior inspection; this repair adds missing exact contract tests only.",
   "base": "dce86f89d6263b7c6630023ae90c1394cc71cb03",
   "worktree": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot",
@@ -14,9 +10,7 @@
   "nodes": [
     {
       "id": "R2-2-R01-fix1",
-      "source_issues": [
-        "R2-2-R01"
-      ],
+      "source_issues": ["R2-2-R01"],
       "acceptance": [
         "Test captures actual Drizzle SQL and bound values for Bot and no-Bot single-statement paths.",
         "Assertions verify membership/channel join, actor/channel WHERE bindings, live channel predicate, Bot/channel relation and exact Bot binding.",
@@ -28,9 +22,7 @@
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
       "reviewer_role": "reviewer",
-      "owned_files": [
-        "server/tests/enterprise/legacy-channel-scope.test.ts"
-      ],
+      "owned_files": ["server/tests/enterprise/legacy-channel-scope.test.ts"],
       "interfaces": [
         "pg-proxy callback SQL and bound params",
         "canReadLegacyChannel unchanged"
@@ -43,9 +35,7 @@
       "status": "verified"
     }
   ],
-  "topological_order": [
-    "R2-2-R01-fix1"
-  ],
+  "topological_order": ["R2-2-R01-fix1"],
   "isolated_checks": {
     "unique_node_ids": true,
     "dependencies_resolve": true,

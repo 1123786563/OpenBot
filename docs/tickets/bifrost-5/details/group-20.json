@@ -1,132 +1,160 @@
 {
- "group": "20",
- "context": [
-  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC06/AC07/AC13/AC19）",
-  "docs/specs/2026-10-14-bifrost-integration-design.md（Q20 另外收费的供应商工具第一版默认禁用，直到能完整计费并限制成本；Q4 可用范围精确到“模型 + 调用方式”）",
-  "docs/adr/0004-company-team-tenancy.md（个人模型 Key 不授予公司内容与公司工具权限）",
-  "CONTEXT.md（供应商工具、路由附加调用、附加费用、明细归因术语）"
- ],
- "anchors": {
-  "bifrost-tools": "bifrost/plugins/governance/main.go（PreMCPHook / PostMCPHook、PreMCPConnectionHook / PostMCPConnectionHook、stampMCPToolAccessForCodemode、PreA2AHook / PostA2AHook）、mcpauthorization.go、mcplibrary.go、mcpclientaccess_test.go、bifrost/core/injectedtools.go、responsestools.go",
-  "bifrost-pricing": "bifrost/framework/jobaccounting/（PricingManager、pricingscopes）与上游工具/路由附加定价",
-  "openbot-price": "组 03 的 PriceSnapshot surcharge 维度与 03.3 的 known/free/unknown",
-  "openbot-credit": "组 06 的 Reserve/Settle 与 06.12 的用户明细；组 07 的 attempt/承诺语义",
-  "openbot-isolation": "组 09.3 的个人 Key 不获得公司内容与公司工具权限",
-  "test-harness": "go test ./plugins/governance/...；server/tests/support/database.ts"
- },
- "verification_common": [
-  "bun run --filter server typecheck",
-  "cd bifrost/plugins/governance && go test ./...",
-  "bunx biome lint --error-on-warnings <changed files>"
- ],
- "tickets": {
-  "20.1": {
-   "slug": "tool-surcharge-dimensions",
-   "contracts": {
-    "consumes": ["08.1 的 RecoveryItem（工具调用未知结果恢复）", "03.2 的价格快照", "上游工具/路由附加定价"],
-    "produces": [
-     "附加费用维度映射：供应商工具调用、路由附加调用、按次/按量收费项进入 PriceSnapshot 的 surcharge 维度",
-     "工具调用的计费身份：每次真实工具调用有自己的 attemptId 与归属，复用组 07 的承诺语义",
-     "缺维度记 unknown，不得默认为 0"
-    ]
-   },
-   "steps": [
-    "枚举会产生附加费用的工具与路由调用类型（含 MCP 工具、内置工具、A2A）",
-    "把上游附加定价映射到 surcharge 维度，缺项记 unknown 并附原因",
-    "为每次真实工具调用建立计费身份与归属，避免与模型调用混为一笔",
-    "先写失败测试：含工具调用的请求上限包含附加费用；缺附加定价时标记 unknown"
-   ],
-   "criteria": [
-    "全部会产生附加费用的工具/路由调用类型都被枚举并映射维度",
-    "附加费用进入价格快照的 surcharge 维度，缺项记 unknown 而非 0",
-    "每次真实工具调用有独立计费身份与归属",
-    "工具费用与模型费用在数据模型上可区分"
-   ],
-   "tests": ["工具类型枚举完整性断言", "surcharge 维度映射测试", "独立计费身份测试"],
-   "verification": ["bun test server/tests/tool-surcharge-pricing.test.ts"],
-   "owned_scope": ["附加费用维度映射与工具计费身份", "对应测试"],
-   "resume_hint": "枚举要基于实际路由与 hook，而不是工具名称清单；接手用 hook 调用点反推枚举完整性。"
+  "group": "20",
+  "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC06/AC07/AC13/AC19）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q20 另外收费的供应商工具第一版默认禁用，直到能完整计费并限制成本；Q4 可用范围精确到“模型 + 调用方式”）",
+    "docs/adr/0004-company-team-tenancy.md（个人模型 Key 不授予公司内容与公司工具权限）",
+    "CONTEXT.md（供应商工具、路由附加调用、附加费用、明细归因术语）"
+  ],
+  "anchors": {
+    "bifrost-tools": "bifrost/plugins/governance/main.go（PreMCPHook / PostMCPHook、PreMCPConnectionHook / PostMCPConnectionHook、stampMCPToolAccessForCodemode、PreA2AHook / PostA2AHook）、mcpauthorization.go、mcplibrary.go、mcpclientaccess_test.go、bifrost/core/injectedtools.go、responsestools.go",
+    "bifrost-pricing": "bifrost/framework/jobaccounting/（PricingManager、pricingscopes）与上游工具/路由附加定价",
+    "openbot-price": "组 03 的 PriceSnapshot surcharge 维度与 03.3 的 known/free/unknown",
+    "openbot-credit": "组 06 的 Reserve/Settle 与 06.12 的用户明细；组 07 的 attempt/承诺语义",
+    "openbot-isolation": "组 09.3 的个人 Key 不获得公司内容与公司工具权限",
+    "test-harness": "go test ./plugins/governance/...；server/tests/support/database.ts"
   },
-  "20.2": {
-   "slug": "tools-enabled-only-when-bounded",
-   "contracts": {
-    "consumes": ["20.1 的维度映射", "07.6 的 boundEvidence", "07.3 的短路拒绝"],
-    "produces": [
-     "启用门禁：工具/路由附加调用只有在费用可完整计价且成本可强制限额时才启用",
-     "不可限额时短路拒绝该调用方式，供应商与工具均未被调用",
-     "第一版默认禁用未定价工具，禁用状态可配置但不可静默放开"
-    ]
-   },
-   "steps": [
-    "为每个工具调用方式判定“可计价 + 可限额”，不满足则标记不可用",
-    "在 hook 中对不可用工具短路拒绝，确认工具与供应商都未被调用",
-    "把默认禁用状态与放开条件写入配置与审计，放开需要显式操作",
-    "先写失败测试：未定价工具调用被拒绝且工具执行数为 0"
-   ],
-   "criteria": [
-    "只有可完整计价且可强制限额的工具调用才被启用",
-    "未定价或不可限额的工具调用被短路拒绝，工具执行数为 0",
-    "默认禁用状态的放开需要显式配置且有审计",
-    "拒绝不产生预留、承诺或结算"
-   ],
-   "tests": ["未定价工具拒绝测试（工具 spy=0）", "不可限额拒绝测试", "默认禁用与放开审计断言"],
-   "verification": ["cd bifrost/plugins/governance && go test -run ToolAdmission ./..."],
-   "owned_scope": ["工具启用门禁与拒绝接线", "配置与审计", "对应 Go 测试"],
-   "resume_hint": "Q20 的默认是禁用；接手确认不存在“未定价但先放行、事后补账”的分支。"
-  },
-  "20.3": {
-   "slug": "usage-breakdown-model-vs-surcharge",
-   "contracts": {
-    "consumes": ["20.1 的费用区分", "06.12 的用户视图"],
-    "produces": [
-     "消费明细区分：模型费用与工具/路由附加费用分行展示，各自可追溯到具体调用",
-     "合计金额与台账一致，两级归因不重不漏",
-     "明细不泄露他人账户或内部工具配置细节"
-    ]
-   },
-   "steps": [
-    "扩展消费明细结构与页面，把附加费用作为独立行展示",
-    "确认合计等于台账金额，且模型费用与附加费用不重复计入",
-    "对内部工具标识做展示友好化，不暴露内部配置",
-    "先写失败的界面测试：含工具调用的消费显示两行且合计正确"
-   ],
-   "criteria": [
-    "用户明细区分模型费用与附加费用，各自可追溯",
-    "两级归因合计与台账一致，不重不漏",
-    "明细不泄露他人账户数据或内部工具配置",
-    "无附加费用时不显示空行或误导性 0"
-   ],
-   "tests": ["明细两行展示测试", "合计一致性集成断言", "越权不可见断言"],
-   "verification": ["bun test app/tests/usage-breakdown-ui.test.tsx", "TEST_DATABASE_URL=... bun test server/tests/usage-breakdown.integration.test.ts"],
-   "owned_scope": ["消费明细结构与页面", "对应测试"],
-   "resume_hint": "合计不一致通常来自附加费用既进模型行又进附加行；接手先断言台账总额与明细合计相等。"
-  },
-  "20.4": {
-   "slug": "no-unpriced-tool-bypass-and-company-tool-isolation",
-   "contracts": {
-    "consumes": ["20.2 的启用门禁", "09.3 的个人 Key 隔离"],
-    "produces": [
-     "旁路拒绝清单：替代端点、直接工具调用、注入工具、codemode 路径等都不能绕过附加费用准入",
-     "权限隔离：模型 Key 不授予公司工具权限，个人授权不能调用公司范围工具",
-     "组 20 缝合点：工具附加费用端到端可演示，旁路尝试全部被拒绝并审计"
-    ]
-   },
-   "steps": [
-    "枚举所有可触发工具执行的入口（MCP hook、注入工具、responses tools、A2A、codemode）",
-    "逐入口确认经过附加费用准入，未接入者硬拒绝",
-    "确认个人 Key 无法调用公司范围工具，越权尝试被拒绝并审计",
-    "先写失败测试：逐入口余额不足或未定价时工具执行数为 0；个人 Key 调用公司工具被拒绝"
-   ],
-   "criteria": [
-    "所有工具执行入口都经过附加费用准入，无旁路",
-    "未定价或余额不足时工具执行数为 0",
-    "个人模型 Key 不授予公司工具权限，越权被拒绝",
-    "旁路与越权尝试都有审计记录"
-   ],
-   "tests": ["逐入口拒绝矩阵测试", "公司工具越权拒绝测试", "审计记录断言"],
-   "verification": ["cd bifrost/plugins/governance && go test -run ToolBypass ./...", "bun test server/tests/tool-isolation.test.ts"],
-   "owned_scope": ["工具入口清单与准入接线", "越权拒绝与审计", "对应测试与验收记录"],
-   "resume_hint": "本 Ticket 是组 20 缝合点：入口枚举结果要写入验收记录，供 22.1 直接引用，不要只留在测试里。"
+  "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/plugins/governance && go test ./...",
+    "bunx biome lint --error-on-warnings <changed files>"
+  ],
+  "tickets": {
+    "20.1": {
+      "slug": "tool-surcharge-dimensions",
+      "contracts": {
+        "consumes": [
+          "08.1 的 RecoveryItem（工具调用未知结果恢复）",
+          "03.2 的价格快照",
+          "上游工具/路由附加定价"
+        ],
+        "produces": [
+          "附加费用维度映射：供应商工具调用、路由附加调用、按次/按量收费项进入 PriceSnapshot 的 surcharge 维度",
+          "工具调用的计费身份：每次真实工具调用有自己的 attemptId 与归属，复用组 07 的承诺语义",
+          "缺维度记 unknown，不得默认为 0"
+        ]
+      },
+      "steps": [
+        "枚举会产生附加费用的工具与路由调用类型（含 MCP 工具、内置工具、A2A）",
+        "把上游附加定价映射到 surcharge 维度，缺项记 unknown 并附原因",
+        "为每次真实工具调用建立计费身份与归属，避免与模型调用混为一笔",
+        "先写失败测试：含工具调用的请求上限包含附加费用；缺附加定价时标记 unknown"
+      ],
+      "criteria": [
+        "全部会产生附加费用的工具/路由调用类型都被枚举并映射维度",
+        "附加费用进入价格快照的 surcharge 维度，缺项记 unknown 而非 0",
+        "每次真实工具调用有独立计费身份与归属",
+        "工具费用与模型费用在数据模型上可区分"
+      ],
+      "tests": [
+        "工具类型枚举完整性断言",
+        "surcharge 维度映射测试",
+        "独立计费身份测试"
+      ],
+      "verification": ["bun test server/tests/tool-surcharge-pricing.test.ts"],
+      "owned_scope": ["附加费用维度映射与工具计费身份", "对应测试"],
+      "resume_hint": "枚举要基于实际路由与 hook，而不是工具名称清单；接手用 hook 调用点反推枚举完整性。"
+    },
+    "20.2": {
+      "slug": "tools-enabled-only-when-bounded",
+      "contracts": {
+        "consumes": [
+          "20.1 的维度映射",
+          "07.6 的 boundEvidence",
+          "07.3 的短路拒绝"
+        ],
+        "produces": [
+          "启用门禁：工具/路由附加调用只有在费用可完整计价且成本可强制限额时才启用",
+          "不可限额时短路拒绝该调用方式，供应商与工具均未被调用",
+          "第一版默认禁用未定价工具，禁用状态可配置但不可静默放开"
+        ]
+      },
+      "steps": [
+        "为每个工具调用方式判定“可计价 + 可限额”，不满足则标记不可用",
+        "在 hook 中对不可用工具短路拒绝，确认工具与供应商都未被调用",
+        "把默认禁用状态与放开条件写入配置与审计，放开需要显式操作",
+        "先写失败测试：未定价工具调用被拒绝且工具执行数为 0"
+      ],
+      "criteria": [
+        "只有可完整计价且可强制限额的工具调用才被启用",
+        "未定价或不可限额的工具调用被短路拒绝，工具执行数为 0",
+        "默认禁用状态的放开需要显式配置且有审计",
+        "拒绝不产生预留、承诺或结算"
+      ],
+      "tests": [
+        "未定价工具拒绝测试（工具 spy=0）",
+        "不可限额拒绝测试",
+        "默认禁用与放开审计断言"
+      ],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run ToolAdmission ./..."
+      ],
+      "owned_scope": ["工具启用门禁与拒绝接线", "配置与审计", "对应 Go 测试"],
+      "resume_hint": "Q20 的默认是禁用；接手确认不存在“未定价但先放行、事后补账”的分支。"
+    },
+    "20.3": {
+      "slug": "usage-breakdown-model-vs-surcharge",
+      "contracts": {
+        "consumes": ["20.1 的费用区分", "06.12 的用户视图"],
+        "produces": [
+          "消费明细区分：模型费用与工具/路由附加费用分行展示，各自可追溯到具体调用",
+          "合计金额与台账一致，两级归因不重不漏",
+          "明细不泄露他人账户或内部工具配置细节"
+        ]
+      },
+      "steps": [
+        "扩展消费明细结构与页面，把附加费用作为独立行展示",
+        "确认合计等于台账金额，且模型费用与附加费用不重复计入",
+        "对内部工具标识做展示友好化，不暴露内部配置",
+        "先写失败的界面测试：含工具调用的消费显示两行且合计正确"
+      ],
+      "criteria": [
+        "用户明细区分模型费用与附加费用，各自可追溯",
+        "两级归因合计与台账一致，不重不漏",
+        "明细不泄露他人账户数据或内部工具配置",
+        "无附加费用时不显示空行或误导性 0"
+      ],
+      "tests": ["明细两行展示测试", "合计一致性集成断言", "越权不可见断言"],
+      "verification": [
+        "bun test app/tests/usage-breakdown-ui.test.tsx",
+        "TEST_DATABASE_URL=... bun test server/tests/usage-breakdown.integration.test.ts"
+      ],
+      "owned_scope": ["消费明细结构与页面", "对应测试"],
+      "resume_hint": "合计不一致通常来自附加费用既进模型行又进附加行；接手先断言台账总额与明细合计相等。"
+    },
+    "20.4": {
+      "slug": "no-unpriced-tool-bypass-and-company-tool-isolation",
+      "contracts": {
+        "consumes": ["20.2 的启用门禁", "09.3 的个人 Key 隔离"],
+        "produces": [
+          "旁路拒绝清单：替代端点、直接工具调用、注入工具、codemode 路径等都不能绕过附加费用准入",
+          "权限隔离：模型 Key 不授予公司工具权限，个人授权不能调用公司范围工具",
+          "组 20 缝合点：工具附加费用端到端可演示，旁路尝试全部被拒绝并审计"
+        ]
+      },
+      "steps": [
+        "枚举所有可触发工具执行的入口（MCP hook、注入工具、responses tools、A2A、codemode）",
+        "逐入口确认经过附加费用准入，未接入者硬拒绝",
+        "确认个人 Key 无法调用公司范围工具，越权尝试被拒绝并审计",
+        "先写失败测试：逐入口余额不足或未定价时工具执行数为 0；个人 Key 调用公司工具被拒绝"
+      ],
+      "criteria": [
+        "所有工具执行入口都经过附加费用准入，无旁路",
+        "未定价或余额不足时工具执行数为 0",
+        "个人模型 Key 不授予公司工具权限，越权被拒绝",
+        "旁路与越权尝试都有审计记录"
+      ],
+      "tests": ["逐入口拒绝矩阵测试", "公司工具越权拒绝测试", "审计记录断言"],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run ToolBypass ./...",
+        "bun test server/tests/tool-isolation.test.ts"
+      ],
+      "owned_scope": [
+        "工具入口清单与准入接线",
+        "越权拒绝与审计",
+        "对应测试与验收记录"
+      ],
+      "resume_hint": "本 Ticket 是组 20 缝合点：入口枚举结果要写入验收记录，供 22.1 直接引用，不要只留在测试里。"
+    }
   }
- }
 }

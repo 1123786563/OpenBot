@@ -19,7 +19,10 @@ import {
 } from "../db/schema/openmuse";
 import type { WorkQueue } from "../work/queue";
 import { ACTIVE_TASKS_PER_USER, TASK_LIMIT_MESSAGE } from "./capacity";
-import { createOwnerDisabled, OpenMuseOwnerDisabledError } from "../openmuse-personal/shared";
+import {
+  createOwnerDisabled,
+  OpenMuseOwnerDisabledError,
+} from "../openmuse-personal/shared";
 
 export { OpenMuseOwnerDisabledError };
 
@@ -338,8 +341,6 @@ export type OpenMuseEvidence = {
    */
   attempt?: number;
 };
-
-
 
 export type OpenMuseTaskStore = {
   /** Creates one queued task; an existing idempotency key returns the stored row with created=false. */

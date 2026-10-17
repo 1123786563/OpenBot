@@ -133,7 +133,11 @@ export async function setupSessionWorkspace(
   if (api.listFiles && api.readFile) {
     try {
       await appendAttachmentsSectionIfMissing(
-        { listFiles: api.listFiles, readFile: api.readFile, writeFile: api.writeFile },
+        {
+          listFiles: api.listFiles,
+          readFile: api.readFile,
+          writeFile: api.writeFile,
+        },
         root,
         input.config.attachmentsDirectory,
       );
@@ -183,10 +187,7 @@ export async function setupSessionWorkspace(
   // so the workspace carries no credential (the relay resolves the owner from
   // the tag, the same trust model as the MCP relay).
   if (input.mcpRelayBaseUrl) {
-    await api.writeFile(
-      `${root}/.opencode/craft-session`,
-      input.sessionId,
-    );
+    await api.writeFile(`${root}/.opencode/craft-session`, input.sessionId);
     await api.writeFile(
       `${root}/.opencode/craft-api-base`,
       input.mcpRelayBaseUrl,

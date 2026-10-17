@@ -167,8 +167,7 @@ async function seedWorld(options: SeedOptions = {}): Promise<SeededWorld> {
     externalIdentity: `${prefix}:ext:${n}`,
     scope: "model-access",
     status: options.grantStatus ?? "active",
-    revokedAt:
-      options.grantStatus === "revoked" ? new Date() : null,
+    revokedAt: options.grantStatus === "revoked" ? new Date() : null,
   });
 
   const { account } = await createPayerAccount(database, {
@@ -223,7 +222,8 @@ async function seedWorld(options: SeedOptions = {}): Promise<SeededWorld> {
   // The sync state is a deployment singleton; every scenario states the freshness it
   // needs, and the scenario's own assertions follow from exactly what it wrote here.
   // `undefined` means a fresh sync (the common case); explicit `null` means never synced.
-  const syncedMinutesAgo = options.syncedMinutesAgo === undefined ? 1 : options.syncedMinutesAgo;
+  const syncedMinutesAgo =
+    options.syncedMinutesAgo === undefined ? 1 : options.syncedMinutesAgo;
   if (syncedMinutesAgo === null) {
     await database
       .delete(gatewayCatalogSyncState)
@@ -294,7 +294,10 @@ async function postReserve(
     headers,
     body: JSON.stringify(body),
   });
-  return { status: response.status, json: (await response.json()) as Record<string, unknown> };
+  return {
+    status: response.status,
+    json: (await response.json()) as Record<string, unknown>,
+  };
 }
 
 /**
@@ -326,7 +329,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
@@ -337,12 +343,18 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM credit_grants WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
-  await database.delete(payerAccounts).where(like(payerAccounts.payerId, `${prefix}%`));
+  await database
+    .delete(payerAccounts)
+    .where(like(payerAccounts.payerId, `${prefix}%`));
   await database.execute(
     sql`DELETE FROM billing_customers WHERE external_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
-  await database.delete(accessGrants).where(like(accessGrants.grantId, `${prefix}%`));
-  await database.delete(botServices).where(like(botServices.botId, `${prefix}%`));
+  await database
+    .delete(accessGrants)
+    .where(like(accessGrants.grantId, `${prefix}%`));
+  await database
+    .delete(botServices)
+    .where(like(botServices.botId, `${prefix}%`));
   await database
     .delete(gatewayModelOpenScopes)
     .where(like(gatewayModelOpenScopes.provider, `${prefix}%`));
@@ -480,7 +492,12 @@ test("missing or estimate-shaped bound evidence refuses; the conservative estima
     ...world.request,
     boundEvidence: [],
   });
-  await expectRefusal(absent, "bound_evidence_not_enforceable", world.customerKey, before);
+  await expectRefusal(
+    absent,
+    "bound_evidence_not_enforceable",
+    world.customerKey,
+    before,
+  );
 
   // A conservative token estimate is NOT enforceable evidence (ADR 0001): any kind
   // outside the closed enforceable set is refused, estimate-shaped or not.
@@ -491,7 +508,12 @@ test("missing or estimate-shaped bound evidence refuses; the conservative estima
       { kind: "conservative_input_estimate", maximumTokens: 8192 },
     ],
   });
-  await expectRefusal(estimate, "bound_evidence_not_enforceable", world.customerKey, before);
+  await expectRefusal(
+    estimate,
+    "bound_evidence_not_enforceable",
+    world.customerKey,
+    before,
+  );
 
   // Malformed evidence: a kind from the set without a usable ceiling.
   const malformed = await service.reserve({
@@ -501,11 +523,19 @@ test("missing or estimate-shaped bound evidence refuses; the conservative estima
       { kind: "provider_max_tokens", maximumTokens: 0 },
     ],
   });
-  await expectRefusal(malformed, "bound_evidence_not_enforceable", world.customerKey, before);
+  await expectRefusal(
+    malformed,
+    "bound_evidence_not_enforceable",
+    world.customerKey,
+    before,
+  );
 });
 
 test("the reserve module never imports the conservative input-bound estimator", () => {
-  const source = readFileSync(new URL("../src/billing/credit-reserve.ts", import.meta.url), "utf8");
+  const source = readFileSync(
+    new URL("../src/billing/credit-reserve.ts", import.meta.url),
+    "utf8",
+  );
   // No import or require may name the estimator module: the estimate can reject a
   // request, never prove one's ceiling (ADR 0001).
   expect(/from\s+"[^"]*input-bound/.test(source)).toBe(false);
@@ -586,7 +616,9 @@ test("an explicitly free price passes the price gate; unknown never reads as fre
   // Sanity on the fixture itself: the free entry classifies free, the unknown one does not.
   const freeDims = mapPriceDims(FREE_RAW_ENTRY);
   expect(classifyPriceDims(freeDims).status).toBe("free");
-  expect(classifyPriceDims(mapPriceDims(UNKNOWN_RAW_ENTRY)).status).toBe("unknown");
+  expect(classifyPriceDims(mapPriceDims(UNKNOWN_RAW_ENTRY)).status).toBe(
+    "unknown",
+  );
 });
 
 test("an insufficient balance refuses with the available amount and no reservation", async () => {
@@ -713,7 +745,9 @@ test("a revocation that committed before the reserve refuses it", async () => {
 
 /** The revocation act, through the 04.7 service (the same door a user's revoke uses). */
 async function revokeForUserDirect(grantId: string, userId: string) {
-  const { createAccessGrantService } = await import("../src/bot-services/access-grants");
+  const { createAccessGrantService } = await import(
+    "../src/bot-services/access-grants"
+  );
   const { createBotServiceStore } = await import("../src/bot-services/store");
   const grantService = createAccessGrantService({
     database,

@@ -25,10 +25,7 @@ const TYPES = readFileSync(
   join(import.meta.dir, "../src/billing/payments/types.ts"),
   "utf8",
 );
-const CONFIG = readFileSync(
-  join(import.meta.dir, "../src/config.ts"),
-  "utf8",
-);
+const CONFIG = readFileSync(join(import.meta.dir, "../src/config.ts"), "utf8");
 
 describe("probe e: the cycle grammar is one contract across three files", () => {
   test("the routes accept exactly the two monthly spellings", () => {
@@ -38,9 +35,7 @@ describe("probe e: the cycle grammar is one contract across three files", () => 
   });
 
   test("the catalog discloses exactly the same two spellings", () => {
-    expect(SERVICE).toContain(
-      'cycles: ["monthly", "recurring_monthly"]',
-    );
+    expect(SERVICE).toContain('cycles: ["monthly", "recurring_monthly"]');
     expect(TYPES).toContain(
       'cycles: readonly ("monthly" | "recurring_monthly")[]',
     );
@@ -99,7 +94,10 @@ describe("probe j: the QR renders locally", () => {
 
   test("the dialog imports the local qrcode package, not an image service", () => {
     const dialog = readFileSync(
-      join(import.meta.dir, "../../app/src/components/billing/upgrade-dialog.tsx"),
+      join(
+        import.meta.dir,
+        "../../app/src/components/billing/upgrade-dialog.tsx",
+      ),
       "utf8",
     );
     expect(dialog).toMatch(/from "qrcode"|from 'qrcode'/);

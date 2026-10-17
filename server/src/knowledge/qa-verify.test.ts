@@ -59,7 +59,11 @@ afterEach(() => {
   fetchImpl = null;
 });
 
-const config = { baseUrl: "http://kb.test", apiKey: "secret", timeoutMs: 10_000 };
+const config = {
+  baseUrl: "http://kb.test",
+  apiKey: "secret",
+  timeoutMs: 10_000,
+};
 
 function retriever(options: {
   kbIds?: string[];
@@ -181,9 +185,9 @@ describe("qa: retriever blind spots", () => {
     expect(outcome.status).toBe("hit");
     if (outcome.status !== "hit") return;
     expect(outcome.chunks.length).toBe(5);
-    expect(
-      outcome.chunks.reduce((sum, c) => sum + c.content.length, 0),
-    ).toBe(4000);
+    expect(outcome.chunks.reduce((sum, c) => sum + c.content.length, 0)).toBe(
+      4000,
+    );
   });
 
   test("context budget boundary: one char over drops the whole trailing chunk", async () => {
@@ -255,9 +259,7 @@ describe("qa: retriever blind spots", () => {
   test("query is capped at exactly 512 chars at the retrieval layer", async () => {
     fetchImpl = async () => jsonResponse({ results: [], count: 0 });
     await retriever({}).retrieve("x".repeat(513));
-    expect(
-      JSON.parse(String(calls[0]?.init?.body)).query.length,
-    ).toBe(512);
+    expect(JSON.parse(String(calls[0]?.init?.body)).query.length).toBe(512);
   });
 });
 
@@ -332,7 +334,12 @@ describe("qa: middleware blind spots", () => {
             {
               id: "m1",
               role: "user",
-              content: [{ type: "image", source: { type: "url", value: "https://x/img.png" } }],
+              content: [
+                {
+                  type: "image",
+                  source: { type: "url", value: "https://x/img.png" },
+                },
+              ],
             },
           ],
         } as Partial<RunAgentInput>),
@@ -360,7 +367,10 @@ describe("qa: middleware blind spots", () => {
               role: "user",
               content: [
                 { type: "text", text: "风险" },
-                { type: "image", source: { type: "url", value: "https://x/img.png" } },
+                {
+                  type: "image",
+                  source: { type: "url", value: "https://x/img.png" },
+                },
                 { type: "text", text: "准备金" },
               ],
             },
@@ -397,13 +407,21 @@ describe("qa: search_knowledge schema boundaries", () => {
     const longId = "k".repeat(128);
     const idOk = await tools[0]?.execute({ query: "q", kb_id: longId });
     expect(idOk).toContain("no matching content");
-    const idTooLong = await tools[0]?.execute({ kb_id: "k".repeat(129), query: "q" });
+    const idTooLong = await tools[0]?.execute({
+      kb_id: "k".repeat(129),
+      query: "q",
+    });
     expect(idTooLong).toBe("Refused. Invalid knowledge arguments.");
   });
 
   test("degraded note JSON is deliberately NOT untrusted-wrapped (no upstream content)", async () => {
     const tools = knowledgeTools({
-      retriever: { retrieve: async () => ({ status: "degraded" as const, reason: "unavailable" as const }) },
+      retriever: {
+        retrieve: async () => ({
+          status: "degraded" as const,
+          reason: "unavailable" as const,
+        }),
+      },
     });
     const answer = await tools[0]?.execute({ query: "q" });
     expect(answer).toBe(

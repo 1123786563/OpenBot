@@ -12,7 +12,11 @@ import {
 
 const stub: OpenConnectorActions = {
   listActions: async () => [
-    { id: "github.get_current_user", description: "Get the authenticated user", inputSchema: { type: "object" } },
+    {
+      id: "github.get_current_user",
+      description: "Get the authenticated user",
+      inputSchema: { type: "object" },
+    },
   ],
   execute: async (_call) => ({ data: { login: "octocat" } }),
 };
@@ -33,8 +37,12 @@ describe("toolkitOf", () => {
 
 describe("aliases", () => {
   test("personal and deployment aliases are distinct and deterministic", () => {
-    expect(personalAlias("user-1", "github")).toBe(personalAlias("user-1", "github"));
-    expect(personalAlias("user-1", "github")).not.toBe(personalAlias("user-2", "github"));
+    expect(personalAlias("user-1", "github")).toBe(
+      personalAlias("user-1", "github"),
+    );
+    expect(personalAlias("user-1", "github")).not.toBe(
+      personalAlias("user-2", "github"),
+    );
     expect(deploymentAlias("dep-1", "github")).toMatch(/^openbot-d-/);
     expect(personalAlias("user-1", "github")).toMatch(/^openbot-u-/);
   });
@@ -56,7 +64,9 @@ describe("listTools", () => {
     expect(tools.map((tool) => tool.name)).toEqual(["github.get_current_user"]);
   });
   test("refuses without an installed client rather than answering empty", async () => {
-    await expect(listTools({ url: "openconnector://github" })).rejects.toThrow(/not configured/i);
+    await expect(listTools({ url: "openconnector://github" })).rejects.toThrow(
+      /not configured/i,
+    );
   });
   test("refuses a url that is not one of ours rather than asking the vendor", async () => {
     useOpenConnectorClient(stub);
@@ -68,7 +78,10 @@ describe("callTool", () => {
   test("dials with the alias handle when one is set", async () => {
     useOpenConnectorClient(stub);
     const result = await callTool(
-      { url: "openconnector://github", accountHandle: personalAlias("u1", "github") },
+      {
+        url: "openconnector://github",
+        accountHandle: personalAlias("u1", "github"),
+      },
       "github.get_current_user",
       {},
     );
@@ -76,7 +89,11 @@ describe("callTool", () => {
   });
   test("dials without an alias for a no-auth service (virtual connection)", async () => {
     useOpenConnectorClient(stub);
-    const result = await callTool({ url: "openconnector://hackernews" }, "hackernews.get_top_stories", {});
+    const result = await callTool(
+      { url: "openconnector://hackernews" },
+      "hackernews.get_top_stories",
+      {},
+    );
     expect(result.isError).toBe(false);
   });
   test("a non-alias actorId is not sent as an alias", async () => {
@@ -87,11 +104,19 @@ describe("callTool", () => {
         return { data: {} };
       },
     });
-    await callTool({ url: "openconnector://github" }, "github.get_current_user", {});
+    await callTool(
+      { url: "openconnector://github" },
+      "github.get_current_user",
+      {},
+    );
   });
   test("refuses a url with no service", async () => {
     useOpenConnectorClient(stub);
-    const result = await callTool({ url: "https://example.com" }, "github.get_current_user", {});
+    const result = await callTool(
+      { url: "https://example.com" },
+      "github.get_current_user",
+      {},
+    );
     expect(result.isError).toBe(true);
   });
 });

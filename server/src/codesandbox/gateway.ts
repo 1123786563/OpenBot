@@ -11,17 +11,17 @@
  * under the workspace is data, not instructions — the same envelope lesson the server's run
  * context already teaches the main model.
  */
-import { recordAuditEvent, type AuditInitiator, type AuditStore } from "../audit";
+import {
+  recordAuditEvent,
+  type AuditInitiator,
+  type AuditStore,
+} from "../audit";
 import {
   CodeSandboxActivityTimeoutError,
   CodeSandboxTimeoutError,
   type SandboxClient,
 } from "./client";
-import type {
-  SandboxUsage,
-  SandboxArtifact,
-  TranslatedEvent,
-} from "./types";
+import type { SandboxUsage, SandboxArtifact, TranslatedEvent } from "./types";
 import type { CodeRunStore } from "./store";
 import { newCodeRunId } from "./store";
 
@@ -111,7 +111,10 @@ export type CodeRunGateway = {
    * the five-family event stream and can be cancelled. Where `run` is one HTTP call, this is
    * the workshop's turn shape — a stream that survives refreshes and interruptions.
    */
-  startStreaming(task: string, opts?: CodeRunStreamOptions): Promise<StreamingRun>;
+  startStreaming(
+    task: string,
+    opts?: CodeRunStreamOptions,
+  ): Promise<StreamingRun>;
   resetWorkspace(): Promise<{ ok: true } | { ok: false; reason: string }>;
 };
 
@@ -123,7 +126,9 @@ const DEFAULT_ACTIVITY_TIMEOUT_MS = 300_000;
 /** A one-event stream that answers "not configured" in the same shape a real run would. */
 const BILLING_TOKEN_BUDGET_UNAVAILABLE = "billing-token-budget-unavailable";
 
-function refusedStream(reason = "not-configured"): AsyncIterable<TranslatedEvent> {
+function refusedStream(
+  reason = "not-configured",
+): AsyncIterable<TranslatedEvent> {
   return {
     [Symbol.asyncIterator]() {
       let sent = false;
@@ -157,7 +162,9 @@ function clampRunSeconds(seconds: number | undefined): number {
   return Math.min(seconds, MAX_RUN_TIMEOUT_SECONDS);
 }
 
-export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGateway {
+export function createCodeRunGateway(
+  options: CodeRunGatewayOptions,
+): CodeRunGateway {
   const maxArtifacts = options.maxArtifacts ?? 5;
   const maxArtifactBytes = options.maxArtifactBytes ?? 64 * 1024;
   const billingBlocked =
@@ -216,7 +223,12 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
         };
       }
       if (!options.client) {
-        await audit("code.run_refused", { runId, reason: "not-configured", toolCallId, timeoutMs });
+        await audit("code.run_refused", {
+          runId,
+          reason: "not-configured",
+          toolCallId,
+          timeoutMs,
+        });
         await options.store.create({
           id: runId,
           botId: options.botId,
@@ -224,7 +236,10 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
           task,
           model: options.modelId,
         });
-        await options.store.finish(runId, { status: "refused", error: "not-configured" });
+        await options.store.finish(runId, {
+          status: "refused",
+          error: "not-configured",
+        });
         return {
           kind: "refused",
           reason: "Code execution is not configured on this deployment.",
@@ -252,7 +267,9 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
         );
 
         const after = await client.listFiles();
-        const created = after.filter((path) => !before.has(path)).slice(0, maxArtifacts);
+        const created = after
+          .filter((path) => !before.has(path))
+          .slice(0, maxArtifacts);
         const artifacts: SandboxArtifact[] = [];
         let budget = maxArtifactBytes;
         for (const path of created) {
@@ -262,7 +279,12 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
           budget -= file.content.length;
         }
 
-        await audit("code.run_completed", { runId, sessionId, usage: result.usage, artifacts: created.length });
+        await audit("code.run_completed", {
+          runId,
+          sessionId,
+          usage: result.usage,
+          artifacts: created.length,
+        });
         const occurredAt = new Date();
         await options.store.finish(runId, {
           status: "completed",
@@ -303,11 +325,23 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
           result.text.length > MAX_RESULT_CHARS
             ? `${result.text.slice(0, MAX_RESULT_CHARS)}\n…（结果已截断）`
             : result.text;
-        return { kind: "completed", runId, text, artifacts, usage: result.usage };
+        return {
+          kind: "completed",
+          runId,
+          text,
+          artifacts,
+          usage: result.usage,
+        };
       } catch (error) {
         const timedOut = error instanceof CodeSandboxTimeoutError;
         const reason = error instanceof Error ? error.message : String(error);
-        await audit("code.run_failed", { runId, sessionId, reason, timedOut, timeoutMs });
+        await audit("code.run_failed", {
+          runId,
+          sessionId,
+          reason,
+          timedOut,
+          timeoutMs,
+        });
         await options.store.finish(runId, {
           status: timedOut ? "timeout" : "failed",
           sessionId,
@@ -364,7 +398,10 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
           task,
           model: options.modelId,
         });
-        await options.store.finish(runId, { status: "refused", error: "not-configured" });
+        await options.store.finish(runId, {
+          status: "refused",
+          error: "not-configured",
+        });
         // The stream answers a single refusal event and ends: the caller reads a complete,
         // honest shape instead of a throw that would make "no sandbox" a code path per consumer.
         const events = refusedStream();
@@ -372,7 +409,13 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
       }
 
       const client = options.client;
-      await audit("code.run_started", { runId, task, toolCallId, timeoutMs, activityTimeoutMs });
+      await audit("code.run_started", {
+        runId,
+        task,
+        toolCallId,
+        timeoutMs,
+        activityTimeoutMs,
+      });
       await options.store.create({
         id: runId,
         botId: options.botId,
@@ -385,12 +428,21 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
       let lastEventAtMs = Date.now();
       let cancelled = false;
       let finished = false;
-      const fail = async (status: "failed" | "timeout" | "cancelled", error: string) => {
+      const fail = async (
+        status: "failed" | "timeout" | "cancelled",
+        error: string,
+      ) => {
         if (finished) return;
         finished = true;
         await audit(
           status === "cancelled" ? "code.run_cancelled" : "code.run_failed",
-          { runId, sessionId, reason: error, timedOut: status === "timeout", toolCallId },
+          {
+            runId,
+            sessionId,
+            reason: error,
+            timedOut: status === "timeout",
+            toolCallId,
+          },
         );
         await options.store.finish(runId, {
           status: status === "cancelled" ? "failed" : status,
@@ -489,9 +541,7 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
         // quiet past a short window, and cutting before prompt_response reads, live, as
         // "stream ended without completing". The ceiling keeps a truly dead stream bounded.
         const ceiling = Date.now() + 15_000;
-        let sawIdle = queue.some(
-          (event) => event.family === "prompt_response",
-        );
+        let sawIdle = queue.some((event) => event.family === "prompt_response");
         while (!sawIdle && Date.now() < ceiling && !cancelled) {
           await new Promise((resolve) => setTimeout(resolve, 100));
           sawIdle = queue.some((event) => event.family === "prompt_response");
@@ -508,7 +558,10 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
                   if (!event) continue;
                   if (event.payload.__end === true) {
                     await drainTail();
-                    return { done: true, value: undefined } as IteratorResult<TranslatedEvent>;
+                    return {
+                      done: true,
+                      value: undefined,
+                    } as IteratorResult<TranslatedEvent>;
                   }
                   return { done: false, value: event };
                 }
@@ -517,13 +570,19 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
                 // finished run, not an orphan.
                 if (Date.now() - lastEventAtMs > activityTimeoutMs) {
                   subscription.stop();
-                  await fail("timeout", `stream silent for ${activityTimeoutMs}ms`);
+                  await fail(
+                    "timeout",
+                    `stream silent for ${activityTimeoutMs}ms`,
+                  );
                   streamDone?.();
                   throw new CodeSandboxActivityTimeoutError(activityTimeoutMs);
                 }
                 if (finished) {
                   await drainTail();
-                  return { done: true, value: undefined } as IteratorResult<TranslatedEvent>;
+                  return {
+                    done: true,
+                    value: undefined,
+                  } as IteratorResult<TranslatedEvent>;
                 }
                 // Wait for the next event, or re-check the activity clock shortly.
                 await Promise.race([

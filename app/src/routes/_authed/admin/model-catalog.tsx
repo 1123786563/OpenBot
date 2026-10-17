@@ -69,7 +69,6 @@ const SCOPE_REFUSAL_KEYS = [
   "model_scope_state_invalid",
 ] as const;
 
-
 function refusalKey(message: string): string | undefined {
   return (SCOPE_REFUSAL_KEYS as readonly string[]).includes(message)
     ? `modelCatalog.refusals.${message}`
@@ -173,8 +172,7 @@ function ModelCatalogPage() {
                     </ItemDescription>
                     {model.scope ? (
                       <ItemDescription>
-                        {t("modelCatalog.fields.reason")}:{" "}
-                        {model.scope.reason}
+                        {t("modelCatalog.fields.reason")}: {model.scope.reason}
                       </ItemDescription>
                     ) : null}
                   </ItemContent>

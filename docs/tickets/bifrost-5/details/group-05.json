@@ -1,296 +1,367 @@
 {
- "group": "05",
- "context": [
-  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC01/AC02/AC08/AC11/AC19）",
-  "docs/specs/2026-10-14-bifrost-integration-design.md（Q6 Customer 承载主体、Q7 按需开户、Q8 每「用户 × Bot 授权」独立 Key、Q13 默认 15 分钟、Q18 OpenBot 掌管授权与生命周期）",
-  "docs/adr/0002-per-user-bot-model-access.md",
-  "CONTEXT.md（治理主体 Customer、虚拟 Key、CredentialBundle、credentialVersion、Key 漂移术语）"
- ],
- "anchors": {
-  "bifrost-customer-vk": "bifrost/plugins/governance/store.go（TableCustomer / TableVirtualKey、GetVirtualKey(vkValue)、CreateVirtualKeyInMemory / UpdateVirtualKeyInMemory / DeleteVirtualKeyInMemory）、bifrost/framework/configstore/tables/customer.go、agent.go（TableVirtualKeyAgentGrant）、budget.go（scope=customer/virtual_key/team）、clientconfig.go（DeleteExpiredVirtualKeys）",
-  "openbot-gateway-client": "server/src/gateway/*（01.x 交付的配置、凭据解密入口、探测与门禁）",
-  "openbot-secrets": "server/src/credentials.ts（加密、轮换、撤销与脱敏模式）",
-  "openbot-grants": "04.5 交付的 AccessGrant 与 04.7 的撤销语义",
-  "user-ui": "app/src/routes/_authed/settings/*（连接与授权管理页面模式）",
-  "test-harness": "server/tests/support/database.ts；Bifrost 侧以 plugins/governance 的 *_test.go 模式与本地 go test 为准"
- },
- "verification_common": [
-  "bun run --filter server typecheck",
-  "bunx biome lint --error-on-warnings <changed files>"
- ],
- "tickets": {
-  "05.1": {
-   "slug": "customer-idempotent-provisioning",
-   "contracts": {
-    "consumes": ["01.7 的门禁与网关客户端", "02.1 的 PayerRef / PayerAccount"],
-    "produces": [
-     "provisionCustomer(PayerRef) → { customerId, provisionState }：个人用户与网关 Customer 一一映射",
-     "幂等语义：并发调用只留下一个有效映射，重复调用返回同一 customerId",
-     "映射持久化，供 05.3 签发 Key 与 05.8 状态同步消费"
-    ]
-   },
-   "steps": [
-    "先确认门禁通过；未就绪时拒绝开户",
-    "调用网关 Customer 创建接口，并在同一事务内写入本地映射（账户 ↔ customerId）",
-    "映射表加唯一约束，并发开户只留一条有效记录",
-    "开户不产生余额、不产生 Grant、不复制任何额度",
-    "先写失败测试：并发开户唯一性、重复开户返回同一 customerId"
-   ],
-   "criteria": [
-    "并发开户只留下一个有效映射",
-    "重复开户返回同一 customerId，不创建第二份主体",
-    "门禁未就绪时开户被拒绝",
-    "开户不产生任何余额或积分 Grant"
-   ],
-   "tests": ["PostgreSQL 集成测试：多连接并发开户唯一性", "重复开户幂等测试", "门禁未就绪拒绝测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/customer-provisioning.integration.test.ts"],
-   "owned_scope": ["网关 Customer 适配模块与映射存储、迁移", "对应测试"],
-   "resume_hint": "若映射表已存在但缺唯一约束，先补约束与并发测试；远端成功本地丢失的恢复属于 05.2，不要在此混合实现。"
+  "group": "05",
+  "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC01/AC02/AC08/AC11/AC19）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q6 Customer 承载主体、Q7 按需开户、Q8 每「用户 × Bot 授权」独立 Key、Q13 默认 15 分钟、Q18 OpenBot 掌管授权与生命周期）",
+    "docs/adr/0002-per-user-bot-model-access.md",
+    "CONTEXT.md（治理主体 Customer、虚拟 Key、CredentialBundle、credentialVersion、Key 漂移术语）"
+  ],
+  "anchors": {
+    "bifrost-customer-vk": "bifrost/plugins/governance/store.go（TableCustomer / TableVirtualKey、GetVirtualKey(vkValue)、CreateVirtualKeyInMemory / UpdateVirtualKeyInMemory / DeleteVirtualKeyInMemory）、bifrost/framework/configstore/tables/customer.go、agent.go（TableVirtualKeyAgentGrant）、budget.go（scope=customer/virtual_key/team）、clientconfig.go（DeleteExpiredVirtualKeys）",
+    "openbot-gateway-client": "server/src/gateway/*（01.x 交付的配置、凭据解密入口、探测与门禁）",
+    "openbot-secrets": "server/src/credentials.ts（加密、轮换、撤销与脱敏模式）",
+    "openbot-grants": "04.5 交付的 AccessGrant 与 04.7 的撤销语义",
+    "user-ui": "app/src/routes/_authed/settings/*（连接与授权管理页面模式）",
+    "test-harness": "server/tests/support/database.ts；Bifrost 侧以 plugins/governance 的 *_test.go 模式与本地 go test 为准"
   },
-  "05.2": {
-   "slug": "customer-provision-crash-recovery",
-   "contracts": {
-    "consumes": ["05.1 的 provisionCustomer 与映射存储"],
-    "produces": [
-     "可恢复关联流程：远端已创建但本地确认丢失时，通过稳定关联键找回远端主体而不是新建",
-     "provisionState 状态机：pending → confirmed | recoverable，恢复过程幂等",
-     "恢复不产生第二份 Customer，也不改变账户余额"
-    ]
-   },
-   "steps": [
-    "开户请求带上由本地生成的稳定关联键（如账户 ID 派生的外部引用），便于事后查找",
-    "远端响应丢失时标记 recoverable，下次调用先按关联键查询远端是否已存在",
-    "找到则确认映射，未找到才重新创建；两种路径都幂等",
-    "先写失败测试：注入“远端成功但响应丢失”，断言重试后只有一个 Customer"
-   ],
-   "criteria": [
-    "远端成功但本地确认丢失时，重试不创建第二份 Customer",
-    "恢复后本地映射与远端主体一致",
-    "恢复过程可重复执行且结果一致",
-    "恢复不产生余额、Grant 或额外 Key"
-   ],
-   "tests": ["响应丢失注入测试（fake 网关）", "重试幂等测试", "恢复后映射一致性断言"],
-   "verification": ["bun test server/tests/customer-provision-recovery.test.ts"],
-   "owned_scope": ["开户恢复逻辑与状态字段", "fake 网关测试 helper", "对应测试"],
-   "resume_hint": "缺少稳定关联键时无法安全恢复；接手先确认请求是否携带可查询的外部引用，再实现找回逻辑。"
-  },
-  "05.3": {
-   "slug": "per-authorization-short-key-issuance",
-   "contracts": {
-    "consumes": ["05.1 的 customerId", "03.11 的模型发现契约", "04.5 的 AccessGrant", "04.2 的 Bot 服务认证"],
-    "produces": [
-     "issueKeyForGrant(grantId, botIdentity) → 每个「用户 × Bot 授权」一个独立虚拟 Key",
-     "所有 Key 关联同一 customerId（同一付款账户），签发不新增额度、不新增 Grant",
-     "credentialVersion 从 1 开始单调递增，签发记录持久化（不含明文）"
-    ]
-   },
-   "steps": [
-    "校验请求方 Bot 服务身份与目标 AccessGrant 匹配（跨 Bot 使用拒绝）",
-    "调用网关虚拟 Key 创建接口，关联 customerId 与授权范围",
-    "本地持久化 Key 记录（ID、版本、过期时间、状态），明文只经 05.4 的响应通道返回",
-    "确认两个 Bot 的 Key 共享同一账户且不复制预算",
-    "先写失败测试：两个 Bot 领取不同 Key、同一 customerId、无新增 Grant；跨 Bot 领取拒绝"
-   ],
-   "criteria": [
-    "两个不同 Bot 为同一用户领取到两个不同 Key，且都关联同一 Customer",
-    "签发 Key 不新增积分额度、不创建新 Grant、不复制预算",
-    "跨 Bot 使用他人授权领取 Key 被拒绝",
-    "本地 Key 记录不含明文，且 credentialVersion 单调递增"
-   ],
-   "tests": ["双 Bot 领取集成测试（断言同一 customerId、不同 Key）", "跨 Bot 越权拒绝测试", "无新增 Grant 断言"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/key-issuance.integration.test.ts"],
-   "owned_scope": ["虚拟 Key 适配模块与存储、迁移", "签发路由", "对应测试"],
-   "resume_hint": "最容易出错的是给每个 Key 各配一份预算，导致额度翻倍；接手先断言 Key 上没有独立预算或预算不叠加。"
-  },
-  "05.4": {
-   "slug": "credential-bundle-and-plaintext-boundary",
-   "contracts": {
-    "consumes": ["05.3 的签发结果", "03.11 的 ModelRef 契约"],
-    "produces": [
-     "CredentialBundle { endpoint, modelRefs[], secret, expiresAt, credentialVersion }：仅向已认证 Bot 服务端返回",
-     "明文边界：secret 不出现在用户前端、聊天消息、普通日志、审计记录或错误信息中",
-     "状态类接口只返回期限与状态，永不返回 secret"
-    ]
-   },
-   "steps": [
-    "定义 CredentialBundle 响应结构，明确只经认证的 Bot 服务端通道返回",
-    "在所有日志、审计与错误路径上对 secret 脱敏（含 base64/截断变体）",
-    "用户侧与状态查询接口只返回 expiresAt、credentialVersion 与状态",
-    "先写失败测试：注入可识别 secret，断言前端响应、日志、审计中都不出现"
-   ],
-   "criteria": [
-    "只有已认证 Bot 服务端能收到 secret 明文",
-    "用户界面、聊天消息与普通日志中不出现 secret 明文或可还原片段",
-    "状态查询接口永不返回 secret",
-    "错误响应中不包含 secret"
-   ],
-   "tests": ["明文边界断言（前端响应、日志、审计三处）", "状态接口不含 secret 断言", "错误响应脱敏断言"],
-   "verification": ["bun test server/tests/credential-bundle-boundary.test.ts"],
-   "owned_scope": ["CredentialBundle 响应层与脱敏工具", "对应测试"],
-   "resume_hint": "脱敏遗漏常出现在错误信息与调试日志；接手用注入式敏感字符串全局搜索响应与日志输出。"
-  },
-  "05.5": {
-   "slug": "key-expiry-default-and-config",
-   "contracts": {
-    "consumes": ["05.3 的 Key 记录"],
-    "produces": [
-     "默认 15 分钟过期，部署级可配置（含合法范围校验）",
-     "过期语义：过期只阻止新请求与新供应商尝试，不取消已发生消费的结算责任（与 06.8/08.x 一致）",
-     "expiresAt 在 CredentialBundle 与状态查询中一致可见"
-    ]
-   },
-   "steps": [
-    "实现默认期限与配置项，非法配置（0、负数、过大）被拒绝",
-    "用可控时钟验证到期后 Key 不可用于新请求",
-    "明确到期不清除待结算责任，相关状态仍可查询",
-    "先写失败测试：时钟快进 15 分钟后新请求被拒绝；待结算记录仍存在"
-   ],
-   "criteria": [
-    "默认期限为 15 分钟，可通过部署配置调整",
-    "非法期限配置被拒绝并给出原因",
-    "时钟快进超过期限后，该 Key 不能发起新请求",
-    "到期不取消已发生消费的结算责任"
-   ],
-   "tests": ["可控时钟的到期测试", "配置校验测试", "到期后待结算记录仍存在断言"],
-   "verification": ["bun test server/tests/key-expiry.test.ts"],
-   "owned_scope": ["Key 期限配置与校验", "到期判定逻辑", "对应测试"],
-   "resume_hint": "别把到期实现成“删除 Key 记录”：记录必须保留以承载结算责任，只是状态变为不可用于新请求。"
-  },
-  "05.6": {
-   "slug": "key-renewal-revalidation",
-   "contracts": {
-    "consumes": ["05.5 的期限语义", "04.5 的 AccessGrant 状态", "02.x 的账户解析"],
-    "produces": [
-     "renewKey(grantId, botIdentity) → 新 credentialVersion；仅在授权仍有效时成功",
-     "续期复核：授权状态、账户状态、门禁就绪、开放范围与新鲜度",
-     "续期不重置账务、不产生新 Grant、不新增额度"
-    ]
-   },
-   "steps": [
-    "续期时重新校验 AccessGrant 有效、门禁就绪、模型仍开放且价格新鲜",
-    "生成新 credentialVersion 并使旧版本按 05.7 的规则失效",
-    "确认续期不触碰账务与额度",
-    "先写失败测试：授权撤销后续期失败；续期后账务记录不变"
-   ],
-   "criteria": [
-    "授权有效时续期成功并返回新的 credentialVersion",
-    "授权撤销、门禁未就绪或模型不再开放时续期失败并给出原因",
-    "续期不重置账务、不新增 Grant 或额度",
-    "续期后可继续调用，且调用仍经过积分准入"
-   ],
-   "tests": ["续期成功与四类失败路径测试", "账务不变断言", "时钟驱动的自动续期测试"],
-   "verification": ["bun test server/tests/key-renewal.test.ts"],
-   "owned_scope": ["续期逻辑与路由", "对应测试"],
-   "resume_hint": "续期最常见缺陷是只做时间延长而不复核授权；接手先跑“撤销后续期”用例。"
-  },
-  "05.7": {
-   "slug": "revocation-immediate-refusal",
-   "contracts": {
-    "consumes": ["04.7 的撤销语义", "05.6 的 credentialVersion"],
-    "produces": [
-     "撤销后立即拒绝：新请求、新续期、新供应商尝试全部拒绝，不依赖 Key 自然过期",
-     "旧 credentialVersion 立即失效并在网关侧禁用",
-     "OpenBot 侧同步准入拒绝作为兜底：即使网关暂不可达，撤销仍生效"
-    ]
-   },
-   "steps": [
-    "撤销时禁用网关侧 Key 并标记所有有效 credentialVersion 失效",
-    "在准入路径加入撤销检查，网关不可达时也拒绝（不允许“稍后同步”）",
-    "已发生的消费仍从原预留结算，未确认结果保持待结算",
-    "先写失败测试：撤销后旧 Key 调用被拒绝；网关不可达时撤销仍拒绝"
-   ],
-   "criteria": [
-    "撤销后使用旧 Key 的新请求被拒绝",
-    "撤销后续期被拒绝",
-    "网关不可达时撤销仍然生效（同步准入拒绝）",
-    "撤销不影响已发生消费的结算与待结算责任"
-   ],
-   "tests": ["撤销后调用拒绝测试", "网关不可达时的撤销兜底测试", "已发生消费仍结算断言"],
-   "verification": ["bun test server/tests/key-revocation.test.ts"],
-   "owned_scope": ["撤销与失效逻辑", "准入路径的撤销检查", "对应测试"],
-   "resume_hint": "“靠 15 分钟过期兜底撤销”是不合格的实现；必须存在同步拒绝路径，并有网关不可达的测试证明。"
-  },
-  "05.8": {
-   "slug": "key-state-sync",
-   "contracts": {
-    "consumes": ["05.3 的 Key 记录", "网关 Key 查询能力"],
-    "produces": [
-     "周期与按需的 Key 状态同步：网关侧删除/禁用/过期 → 本地立即视为不可用",
-     "同步结果记录（最后成功时间、差异清单）",
-     "同步不产生新授权：从网关状态变化不能推导出 OpenBot 授权"
-    ]
-   },
-   "steps": [
-    "实现 Key 状态同步（周期 + 管理触发），比对本地记录与网关实际状态",
-    "网关侧删除或禁用的 Key 本地立即标记不可用",
-    "同步只更新状态，不创建授权、不发放额度",
-    "先写失败测试：网关删除 Key 后本地调用被拒绝；同步不产生新授权记录"
-   ],
-   "criteria": [
-    "网关侧删除或禁用的 Key 在本地立即不可用",
-    "同步不创建任何新授权或额度",
-    "同步失败保留上次成功状态并记录原因",
-    "最后成功同步时间可查询"
-   ],
-   "tests": ["状态同步一致性测试（fake 网关）", "同步失败保留 last-good 测试", "无新增授权断言"],
-   "verification": ["bun test server/tests/key-state-sync.test.ts"],
-   "owned_scope": ["Key 状态同步模块", "对应测试与 fake 网关 fixture"],
-   "resume_hint": "同步方向只能是网关 → 本地状态；若发现代码从同步结果创建授权，立即移除，这是 Q18 的硬约束。"
-  },
-  "05.9": {
-   "slug": "ownership-drift-and-manual-keys",
-   "contracts": {
-    "consumes": ["05.8 的同步差异清单"],
-    "produces": [
-     "漂移处置：Key 归属（Customer）、范围或期限与本地记录不一致时暂停发放与续期并告警",
-     "手工创建的 Key 不被接管：不产生 OpenBot 授权，也不能绕过积分准入",
-     "漂移事件可审计、可人工处置"
-    ]
-   },
-   "steps": [
-    "定义关键字段漂移（归属 Customer、授权范围、期限）与告警条件",
-    "漂移时暂停该授权的发放与续期，并记录可审计事件",
-    "对网关侧手工创建的 Key 明确不接管：不建立映射、不授予权限",
-    "确认未接管 Key 的调用仍受准入约束（由 07.x 保证，此处只留断言）",
-    "先写失败测试：归属漂移触发暂停与告警；手工 Key 不产生授权"
-   ],
-   "criteria": [
-    "Key 归属漂移时暂停发放与续期并产生告警",
-    "手工创建的 Key 不获得 OpenBot 授权、不建立账户映射",
-    "漂移事件有审计记录且可人工处置",
-    "漂移处置不误伤未受影响的授权"
-   ],
-   "tests": ["归属漂移暂停与告警测试", "手工 Key 不接管测试", "审计记录断言"],
-   "verification": ["bun test server/tests/key-drift-handling.test.ts"],
-   "owned_scope": ["漂移检测与处置模块", "告警与审计接线", "对应测试"],
-   "resume_hint": "漂移检测容易过宽导致误暂停；接手先用最小关键字段集合（归属、范围、期限）实现，再按需扩展。"
-  },
-  "05.10": {
-   "slug": "user-key-status-ui-and-revoke-all",
-   "contracts": {
-    "consumes": ["05.4 的状态字段（不含 secret）", "05.7 的撤销语义", "04.7 的授权列表"],
-    "produces": [
-     "用户界面：按 Bot 展示 Key 状态、期限与 credentialVersion，提供“撤销全部有效版本”动作",
-     "远端不可用时明确报错，不伪装成空列表",
-     "组 05 缝合点：开户 → 签发 → 续期 → 漂移 → 撤销，端到端可演示"
-    ]
-   },
-   "steps": [
-    "复用 04.7 的授权页展示 Key 状态与期限，绝不展示 secret",
-    "提供撤销全部有效版本动作，调用 05.7 的撤销语义",
-    "远端 401 或不可达时展示错误状态，而不是空列表",
-    "先写失败的界面测试：状态渲染、撤销全部、远端错误态"
-   ],
-   "criteria": [
-    "用户看到每个 Bot 的 Key 状态与期限，看不到明文",
-    "“撤销全部有效版本”一次撤销该用户该 Bot 的所有有效 Key",
-    "远端不可用时展示错误而不是空列表",
-    "撤销后界面状态立即更新"
-   ],
-   "tests": ["界面状态与撤销流程测试", "远端错误态测试", "无 secret 渲染断言"],
-   "verification": ["bun test app/tests/user-key-status-ui.test.tsx", "bun run --filter app typecheck"],
-   "owned_scope": ["用户 Key 状态页面与组件", "对应 app/tests 测试"],
-   "resume_hint": "远端失败渲染成空列表是常见缺陷；接手先注入 401 检查界面是否显示错误态。"
+  "verification_common": [
+    "bun run --filter server typecheck",
+    "bunx biome lint --error-on-warnings <changed files>"
+  ],
+  "tickets": {
+    "05.1": {
+      "slug": "customer-idempotent-provisioning",
+      "contracts": {
+        "consumes": [
+          "01.7 的门禁与网关客户端",
+          "02.1 的 PayerRef / PayerAccount"
+        ],
+        "produces": [
+          "provisionCustomer(PayerRef) → { customerId, provisionState }：个人用户与网关 Customer 一一映射",
+          "幂等语义：并发调用只留下一个有效映射，重复调用返回同一 customerId",
+          "映射持久化，供 05.3 签发 Key 与 05.8 状态同步消费"
+        ]
+      },
+      "steps": [
+        "先确认门禁通过；未就绪时拒绝开户",
+        "调用网关 Customer 创建接口，并在同一事务内写入本地映射（账户 ↔ customerId）",
+        "映射表加唯一约束，并发开户只留一条有效记录",
+        "开户不产生余额、不产生 Grant、不复制任何额度",
+        "先写失败测试：并发开户唯一性、重复开户返回同一 customerId"
+      ],
+      "criteria": [
+        "并发开户只留下一个有效映射",
+        "重复开户返回同一 customerId，不创建第二份主体",
+        "门禁未就绪时开户被拒绝",
+        "开户不产生任何余额或积分 Grant"
+      ],
+      "tests": [
+        "PostgreSQL 集成测试：多连接并发开户唯一性",
+        "重复开户幂等测试",
+        "门禁未就绪拒绝测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/customer-provisioning.integration.test.ts"
+      ],
+      "owned_scope": ["网关 Customer 适配模块与映射存储、迁移", "对应测试"],
+      "resume_hint": "若映射表已存在但缺唯一约束，先补约束与并发测试；远端成功本地丢失的恢复属于 05.2，不要在此混合实现。"
+    },
+    "05.2": {
+      "slug": "customer-provision-crash-recovery",
+      "contracts": {
+        "consumes": ["05.1 的 provisionCustomer 与映射存储"],
+        "produces": [
+          "可恢复关联流程：远端已创建但本地确认丢失时，通过稳定关联键找回远端主体而不是新建",
+          "provisionState 状态机：pending → confirmed | recoverable，恢复过程幂等",
+          "恢复不产生第二份 Customer，也不改变账户余额"
+        ]
+      },
+      "steps": [
+        "开户请求带上由本地生成的稳定关联键（如账户 ID 派生的外部引用），便于事后查找",
+        "远端响应丢失时标记 recoverable，下次调用先按关联键查询远端是否已存在",
+        "找到则确认映射，未找到才重新创建；两种路径都幂等",
+        "先写失败测试：注入“远端成功但响应丢失”，断言重试后只有一个 Customer"
+      ],
+      "criteria": [
+        "远端成功但本地确认丢失时，重试不创建第二份 Customer",
+        "恢复后本地映射与远端主体一致",
+        "恢复过程可重复执行且结果一致",
+        "恢复不产生余额、Grant 或额外 Key"
+      ],
+      "tests": [
+        "响应丢失注入测试（fake 网关）",
+        "重试幂等测试",
+        "恢复后映射一致性断言"
+      ],
+      "verification": [
+        "bun test server/tests/customer-provision-recovery.test.ts"
+      ],
+      "owned_scope": [
+        "开户恢复逻辑与状态字段",
+        "fake 网关测试 helper",
+        "对应测试"
+      ],
+      "resume_hint": "缺少稳定关联键时无法安全恢复；接手先确认请求是否携带可查询的外部引用，再实现找回逻辑。"
+    },
+    "05.3": {
+      "slug": "per-authorization-short-key-issuance",
+      "contracts": {
+        "consumes": [
+          "05.1 的 customerId",
+          "03.11 的模型发现契约",
+          "04.5 的 AccessGrant",
+          "04.2 的 Bot 服务认证"
+        ],
+        "produces": [
+          "issueKeyForGrant(grantId, botIdentity) → 每个「用户 × Bot 授权」一个独立虚拟 Key",
+          "所有 Key 关联同一 customerId（同一付款账户），签发不新增额度、不新增 Grant",
+          "credentialVersion 从 1 开始单调递增，签发记录持久化（不含明文）"
+        ]
+      },
+      "steps": [
+        "校验请求方 Bot 服务身份与目标 AccessGrant 匹配（跨 Bot 使用拒绝）",
+        "调用网关虚拟 Key 创建接口，关联 customerId 与授权范围",
+        "本地持久化 Key 记录（ID、版本、过期时间、状态），明文只经 05.4 的响应通道返回",
+        "确认两个 Bot 的 Key 共享同一账户且不复制预算",
+        "先写失败测试：两个 Bot 领取不同 Key、同一 customerId、无新增 Grant；跨 Bot 领取拒绝"
+      ],
+      "criteria": [
+        "两个不同 Bot 为同一用户领取到两个不同 Key，且都关联同一 Customer",
+        "签发 Key 不新增积分额度、不创建新 Grant、不复制预算",
+        "跨 Bot 使用他人授权领取 Key 被拒绝",
+        "本地 Key 记录不含明文，且 credentialVersion 单调递增"
+      ],
+      "tests": [
+        "双 Bot 领取集成测试（断言同一 customerId、不同 Key）",
+        "跨 Bot 越权拒绝测试",
+        "无新增 Grant 断言"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/key-issuance.integration.test.ts"
+      ],
+      "owned_scope": ["虚拟 Key 适配模块与存储、迁移", "签发路由", "对应测试"],
+      "resume_hint": "最容易出错的是给每个 Key 各配一份预算，导致额度翻倍；接手先断言 Key 上没有独立预算或预算不叠加。"
+    },
+    "05.4": {
+      "slug": "credential-bundle-and-plaintext-boundary",
+      "contracts": {
+        "consumes": ["05.3 的签发结果", "03.11 的 ModelRef 契约"],
+        "produces": [
+          "CredentialBundle { endpoint, modelRefs[], secret, expiresAt, credentialVersion }：仅向已认证 Bot 服务端返回",
+          "明文边界：secret 不出现在用户前端、聊天消息、普通日志、审计记录或错误信息中",
+          "状态类接口只返回期限与状态，永不返回 secret"
+        ]
+      },
+      "steps": [
+        "定义 CredentialBundle 响应结构，明确只经认证的 Bot 服务端通道返回",
+        "在所有日志、审计与错误路径上对 secret 脱敏（含 base64/截断变体）",
+        "用户侧与状态查询接口只返回 expiresAt、credentialVersion 与状态",
+        "先写失败测试：注入可识别 secret，断言前端响应、日志、审计中都不出现"
+      ],
+      "criteria": [
+        "只有已认证 Bot 服务端能收到 secret 明文",
+        "用户界面、聊天消息与普通日志中不出现 secret 明文或可还原片段",
+        "状态查询接口永不返回 secret",
+        "错误响应中不包含 secret"
+      ],
+      "tests": [
+        "明文边界断言（前端响应、日志、审计三处）",
+        "状态接口不含 secret 断言",
+        "错误响应脱敏断言"
+      ],
+      "verification": [
+        "bun test server/tests/credential-bundle-boundary.test.ts"
+      ],
+      "owned_scope": ["CredentialBundle 响应层与脱敏工具", "对应测试"],
+      "resume_hint": "脱敏遗漏常出现在错误信息与调试日志；接手用注入式敏感字符串全局搜索响应与日志输出。"
+    },
+    "05.5": {
+      "slug": "key-expiry-default-and-config",
+      "contracts": {
+        "consumes": ["05.3 的 Key 记录"],
+        "produces": [
+          "默认 15 分钟过期，部署级可配置（含合法范围校验）",
+          "过期语义：过期只阻止新请求与新供应商尝试，不取消已发生消费的结算责任（与 06.8/08.x 一致）",
+          "expiresAt 在 CredentialBundle 与状态查询中一致可见"
+        ]
+      },
+      "steps": [
+        "实现默认期限与配置项，非法配置（0、负数、过大）被拒绝",
+        "用可控时钟验证到期后 Key 不可用于新请求",
+        "明确到期不清除待结算责任，相关状态仍可查询",
+        "先写失败测试：时钟快进 15 分钟后新请求被拒绝；待结算记录仍存在"
+      ],
+      "criteria": [
+        "默认期限为 15 分钟，可通过部署配置调整",
+        "非法期限配置被拒绝并给出原因",
+        "时钟快进超过期限后，该 Key 不能发起新请求",
+        "到期不取消已发生消费的结算责任"
+      ],
+      "tests": [
+        "可控时钟的到期测试",
+        "配置校验测试",
+        "到期后待结算记录仍存在断言"
+      ],
+      "verification": ["bun test server/tests/key-expiry.test.ts"],
+      "owned_scope": ["Key 期限配置与校验", "到期判定逻辑", "对应测试"],
+      "resume_hint": "别把到期实现成“删除 Key 记录”：记录必须保留以承载结算责任，只是状态变为不可用于新请求。"
+    },
+    "05.6": {
+      "slug": "key-renewal-revalidation",
+      "contracts": {
+        "consumes": [
+          "05.5 的期限语义",
+          "04.5 的 AccessGrant 状态",
+          "02.x 的账户解析"
+        ],
+        "produces": [
+          "renewKey(grantId, botIdentity) → 新 credentialVersion；仅在授权仍有效时成功",
+          "续期复核：授权状态、账户状态、门禁就绪、开放范围与新鲜度",
+          "续期不重置账务、不产生新 Grant、不新增额度"
+        ]
+      },
+      "steps": [
+        "续期时重新校验 AccessGrant 有效、门禁就绪、模型仍开放且价格新鲜",
+        "生成新 credentialVersion 并使旧版本按 05.7 的规则失效",
+        "确认续期不触碰账务与额度",
+        "先写失败测试：授权撤销后续期失败；续期后账务记录不变"
+      ],
+      "criteria": [
+        "授权有效时续期成功并返回新的 credentialVersion",
+        "授权撤销、门禁未就绪或模型不再开放时续期失败并给出原因",
+        "续期不重置账务、不新增 Grant 或额度",
+        "续期后可继续调用，且调用仍经过积分准入"
+      ],
+      "tests": [
+        "续期成功与四类失败路径测试",
+        "账务不变断言",
+        "时钟驱动的自动续期测试"
+      ],
+      "verification": ["bun test server/tests/key-renewal.test.ts"],
+      "owned_scope": ["续期逻辑与路由", "对应测试"],
+      "resume_hint": "续期最常见缺陷是只做时间延长而不复核授权；接手先跑“撤销后续期”用例。"
+    },
+    "05.7": {
+      "slug": "revocation-immediate-refusal",
+      "contracts": {
+        "consumes": ["04.7 的撤销语义", "05.6 的 credentialVersion"],
+        "produces": [
+          "撤销后立即拒绝：新请求、新续期、新供应商尝试全部拒绝，不依赖 Key 自然过期",
+          "旧 credentialVersion 立即失效并在网关侧禁用",
+          "OpenBot 侧同步准入拒绝作为兜底：即使网关暂不可达，撤销仍生效"
+        ]
+      },
+      "steps": [
+        "撤销时禁用网关侧 Key 并标记所有有效 credentialVersion 失效",
+        "在准入路径加入撤销检查，网关不可达时也拒绝（不允许“稍后同步”）",
+        "已发生的消费仍从原预留结算，未确认结果保持待结算",
+        "先写失败测试：撤销后旧 Key 调用被拒绝；网关不可达时撤销仍拒绝"
+      ],
+      "criteria": [
+        "撤销后使用旧 Key 的新请求被拒绝",
+        "撤销后续期被拒绝",
+        "网关不可达时撤销仍然生效（同步准入拒绝）",
+        "撤销不影响已发生消费的结算与待结算责任"
+      ],
+      "tests": [
+        "撤销后调用拒绝测试",
+        "网关不可达时的撤销兜底测试",
+        "已发生消费仍结算断言"
+      ],
+      "verification": ["bun test server/tests/key-revocation.test.ts"],
+      "owned_scope": ["撤销与失效逻辑", "准入路径的撤销检查", "对应测试"],
+      "resume_hint": "“靠 15 分钟过期兜底撤销”是不合格的实现；必须存在同步拒绝路径，并有网关不可达的测试证明。"
+    },
+    "05.8": {
+      "slug": "key-state-sync",
+      "contracts": {
+        "consumes": ["05.3 的 Key 记录", "网关 Key 查询能力"],
+        "produces": [
+          "周期与按需的 Key 状态同步：网关侧删除/禁用/过期 → 本地立即视为不可用",
+          "同步结果记录（最后成功时间、差异清单）",
+          "同步不产生新授权：从网关状态变化不能推导出 OpenBot 授权"
+        ]
+      },
+      "steps": [
+        "实现 Key 状态同步（周期 + 管理触发），比对本地记录与网关实际状态",
+        "网关侧删除或禁用的 Key 本地立即标记不可用",
+        "同步只更新状态，不创建授权、不发放额度",
+        "先写失败测试：网关删除 Key 后本地调用被拒绝；同步不产生新授权记录"
+      ],
+      "criteria": [
+        "网关侧删除或禁用的 Key 在本地立即不可用",
+        "同步不创建任何新授权或额度",
+        "同步失败保留上次成功状态并记录原因",
+        "最后成功同步时间可查询"
+      ],
+      "tests": [
+        "状态同步一致性测试（fake 网关）",
+        "同步失败保留 last-good 测试",
+        "无新增授权断言"
+      ],
+      "verification": ["bun test server/tests/key-state-sync.test.ts"],
+      "owned_scope": ["Key 状态同步模块", "对应测试与 fake 网关 fixture"],
+      "resume_hint": "同步方向只能是网关 → 本地状态；若发现代码从同步结果创建授权，立即移除，这是 Q18 的硬约束。"
+    },
+    "05.9": {
+      "slug": "ownership-drift-and-manual-keys",
+      "contracts": {
+        "consumes": ["05.8 的同步差异清单"],
+        "produces": [
+          "漂移处置：Key 归属（Customer）、范围或期限与本地记录不一致时暂停发放与续期并告警",
+          "手工创建的 Key 不被接管：不产生 OpenBot 授权，也不能绕过积分准入",
+          "漂移事件可审计、可人工处置"
+        ]
+      },
+      "steps": [
+        "定义关键字段漂移（归属 Customer、授权范围、期限）与告警条件",
+        "漂移时暂停该授权的发放与续期，并记录可审计事件",
+        "对网关侧手工创建的 Key 明确不接管：不建立映射、不授予权限",
+        "确认未接管 Key 的调用仍受准入约束（由 07.x 保证，此处只留断言）",
+        "先写失败测试：归属漂移触发暂停与告警；手工 Key 不产生授权"
+      ],
+      "criteria": [
+        "Key 归属漂移时暂停发放与续期并产生告警",
+        "手工创建的 Key 不获得 OpenBot 授权、不建立账户映射",
+        "漂移事件有审计记录且可人工处置",
+        "漂移处置不误伤未受影响的授权"
+      ],
+      "tests": [
+        "归属漂移暂停与告警测试",
+        "手工 Key 不接管测试",
+        "审计记录断言"
+      ],
+      "verification": ["bun test server/tests/key-drift-handling.test.ts"],
+      "owned_scope": ["漂移检测与处置模块", "告警与审计接线", "对应测试"],
+      "resume_hint": "漂移检测容易过宽导致误暂停；接手先用最小关键字段集合（归属、范围、期限）实现，再按需扩展。"
+    },
+    "05.10": {
+      "slug": "user-key-status-ui-and-revoke-all",
+      "contracts": {
+        "consumes": [
+          "05.4 的状态字段（不含 secret）",
+          "05.7 的撤销语义",
+          "04.7 的授权列表"
+        ],
+        "produces": [
+          "用户界面：按 Bot 展示 Key 状态、期限与 credentialVersion，提供“撤销全部有效版本”动作",
+          "远端不可用时明确报错，不伪装成空列表",
+          "组 05 缝合点：开户 → 签发 → 续期 → 漂移 → 撤销，端到端可演示"
+        ]
+      },
+      "steps": [
+        "复用 04.7 的授权页展示 Key 状态与期限，绝不展示 secret",
+        "提供撤销全部有效版本动作，调用 05.7 的撤销语义",
+        "远端 401 或不可达时展示错误状态，而不是空列表",
+        "先写失败的界面测试：状态渲染、撤销全部、远端错误态"
+      ],
+      "criteria": [
+        "用户看到每个 Bot 的 Key 状态与期限，看不到明文",
+        "“撤销全部有效版本”一次撤销该用户该 Bot 的所有有效 Key",
+        "远端不可用时展示错误而不是空列表",
+        "撤销后界面状态立即更新"
+      ],
+      "tests": [
+        "界面状态与撤销流程测试",
+        "远端错误态测试",
+        "无 secret 渲染断言"
+      ],
+      "verification": [
+        "bun test app/tests/user-key-status-ui.test.tsx",
+        "bun run --filter app typecheck"
+      ],
+      "owned_scope": ["用户 Key 状态页面与组件", "对应 app/tests 测试"],
+      "resume_hint": "远端失败渲染成空列表是常见缺陷；接手先注入 401 检查界面是否显示错误态。"
+    }
   }
- }
 }

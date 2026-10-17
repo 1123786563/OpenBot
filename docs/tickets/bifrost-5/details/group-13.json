@@ -1,131 +1,162 @@
 {
- "group": "13",
- "context": [
-  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC06/AC07）",
-  "docs/specs/2026-10-14-bifrost-integration-design.md（Q20 第一版覆盖语音能力、Q26 按可强制限制的计费单元逐段预留、Q11 无法限制时长/用量则不启用）",
-  "CONTEXT.md（计费单元、尾部费用、待结算术语）"
- ],
- "anchors": {
-  "capability-playbook": "沿用组 11 能力族做法：维度齐备 + 边界可强制才启用；缺证据短路拒绝且不写账务；结算走 06.9，未知走 06.8",
-  "bifrost-speech": "OpenAI 兼容语音合成入口 /v1/audio/speech（core/providers/*，如 openrouter.go 的 SpeechSynthesis 能力标志）；流式音频与播放器路径执行时先定位",
-  "bifrost-pricing": "bifrost/framework/jobaccounting/（types.go PricingManager、engine.go）与上游按字符/按秒定价",
-  "openbot-price": "组 03 的 PriceSnapshot audio 维度（输入字符、输出音频时长、语音档位）",
-  "openbot-admission": "组 06/07 的 Reserve（boundEvidence）与 Settle；06.8 unknown 用于尾部未确认",
-  "test-harness": "server/tests/support/database.ts；go test ./plugins/governance/...；音频时长用可控 fake 时钟与 fake provider 输出"
- },
- "verification_common": [
-  "bun run --filter server typecheck",
-  "cd bifrost/plugins/governance && go test ./...",
-  "bunx biome lint --error-on-warnings <changed files>"
- ],
- "tickets": {
-  "13.1": {
-   "slug": "speech-synthesis-bounded-reservation",
-   "contracts": {
-    "consumes": ["07.12 的端到端准入路径", "03.2 的 audio 维度价格快照"],
-    "produces": [
-     "语音生成上限换算：输入字符数 × 单价 + 输出音频时长上限 × 单价（含语音档位/音色差异）",
-     "boundEvidence：输入文本完整计数、输出时长存在可强制上限（供应商参数或本地封顶）",
-     "启用判定：无法限制输出时长或音频维度缺价 → 不启用"
-    ]
-   },
-   "steps": [
-    "核对上游语音定价维度（按字符、按输出秒、按音色/档位），映射到 PriceSnapshot",
-    "实现上限换算纯函数，输入按完整文本计数，输出按可强制的时长上限",
-    "接入 Reserve；输出时长不可强制时判证据不足并拒绝",
-    "先写失败测试：长文本上限换算正确；无时长上限能力时拒绝"
-   ],
-   "criteria": [
-    "语音生成按输入字符与输出时长上限全维度预留",
-    "输出时长必须有可强制上限，否则该模型/调用方式不启用",
-    "缺音频维度价格时标记 unknown 并拒绝",
-    "预留锁定当时价格快照与比例版本"
-   ],
-   "tests": ["上限换算单元测试（多档位）", "无时长上限拒绝测试", "缺价 unknown 断言"],
-   "verification": ["bun test server/tests/speech-pricing.test.ts"],
-   "owned_scope": ["语音维度映射与上限换算", "对应测试与 fixture"],
-   "resume_hint": "只按输入字符计价会漏掉输出音频费用；接手先确认快照同时含输入与输出两侧维度。"
+  "group": "13",
+  "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC06/AC07）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q20 第一版覆盖语音能力、Q26 按可强制限制的计费单元逐段预留、Q11 无法限制时长/用量则不启用）",
+    "CONTEXT.md（计费单元、尾部费用、待结算术语）"
+  ],
+  "anchors": {
+    "capability-playbook": "沿用组 11 能力族做法：维度齐备 + 边界可强制才启用；缺证据短路拒绝且不写账务；结算走 06.9，未知走 06.8",
+    "bifrost-speech": "OpenAI 兼容语音合成入口 /v1/audio/speech（core/providers/*，如 openrouter.go 的 SpeechSynthesis 能力标志）；流式音频与播放器路径执行时先定位",
+    "bifrost-pricing": "bifrost/framework/jobaccounting/（types.go PricingManager、engine.go）与上游按字符/按秒定价",
+    "openbot-price": "组 03 的 PriceSnapshot audio 维度（输入字符、输出音频时长、语音档位）",
+    "openbot-admission": "组 06/07 的 Reserve（boundEvidence）与 Settle；06.8 unknown 用于尾部未确认",
+    "test-harness": "server/tests/support/database.ts；go test ./plugins/governance/...；音频时长用可控 fake 时钟与 fake provider 输出"
   },
-  "13.2": {
-   "slug": "speech-synthesis-actual-settlement",
-   "contracts": {
-    "consumes": ["13.1 的预留与锁定版本", "06.9 的 Settle", "06.12 的用户视图"],
-    "produces": [
-     "按实际用量结算：实际输入字符与实际输出音频时长决定金额，未使用额度释放",
-     "用户明细中的语音条目：包含时长/字符与金额，可与其他能力区分",
-     "结算幂等：同一次生成重复上报只结算一次"
-    ]
-   },
-   "steps": [
-    "在结果路径采集实际字符数与音频时长（来自供应商 usage 或可验证的产物元数据）",
-    "换算实际金额并 Settle，释放未使用额度",
-    "写入消费明细，附时长与字符维度",
-    "先写失败测试：上限 60 秒实际 25 秒 → 只结算 25 秒；重复上报只扣一次"
-   ],
-   "criteria": [
-    "结算金额按实际字符与音频时长计算，未使用部分释放",
-    "实际用量来源可验证（供应商 usage 或产物元数据），不用估算代替",
-    "重复上报同一结果只结算一次",
-    "用户明细显示语音时长/字符与金额"
-   ],
-   "tests": ["实际用量结算集成测试", "重复上报幂等测试", "明细展示测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/speech-settlement.integration.test.ts"],
-   "owned_scope": ["语音结算路径与明细归因", "对应测试"],
-   "resume_hint": "拿不到真实 usage 时进入 unknown（06.8），不要用输入字符估算输出时长来结算。"
-  },
-  "13.3": {
-   "slug": "speech-interruption-tail-settled-once",
-   "contracts": {
-    "consumes": ["13.2 的结算路径", "06.8 的 unknown 状态", "流式/播放中断的实际入口"],
-    "produces": [
-     "中断语义：客户端停止播放或断开连接时，已发生的音频生成费用完整结算且只结算一次",
-     "无法确认已生成量的部分进入 unknown，保持预留",
-     "中断不触发第二次派发或第二次结算"
-    ]
-   },
-   "steps": [
-    "定位语音播放/流式传输的中断点，在中断时收集已确认的实际用量",
-    "已确认部分按 13.2 结算；未确认部分标记 unknown 交 08.x",
-    "确认中断不重发请求、不重复结算",
-    "先写失败测试：播放中途断开 → 已发生费用结算一次，未确认部分保持 unknown"
-   ],
-   "criteria": [
-    "播放或流中断后已发生费用被完整结算，且只结算一次",
-    "无法确认的部分进入 unknown 并保持预留占用",
-    "中断不触发第二次供应商派发",
-    "结算金额不超过原预留上限"
-   ],
-   "tests": ["中断结算集成测试", "无重复派发/结算断言", "unknown 保持占用断言"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/speech-interruption.integration.test.ts"],
-   "owned_scope": ["中断路径的用量收集与结算接线", "对应测试"],
-   "resume_hint": "“客户端断开=无费用”是错误默认；接手先跑中断用例，确认已发生费用进入结算或 unknown。"
-  },
-  "13.4": {
-   "slug": "unbounded-speech-paths-disabled",
-   "contracts": {
-    "consumes": ["13.1 的 boundEvidence 判定", "13.3 的尾部语义", "03.11 的发现接口"],
-    "produces": [
-     "不可约束路径的禁用清单：无法限制输出时长或无法确认尾部费用的模型/调用方式标记为不可用",
-     "不可用原因可在发现接口与用户界面查询",
-     "组 13 缝合点：可约束语音路径端到端可演示，不可约束路径明确拒绝"
-    ]
-   },
-   "steps": [
-    "对每个语音模型/调用方式判定尾部是否可约束（能否确定已生成量、能否停止计费）",
-    "不可约束者标记不可用并在发现接口给出原因，不出现在可选列表",
-    "确认不可用路径被调用时短路拒绝且供应商未被调用",
-    "先写失败测试：不可约束路径不出现在可选列表；强制调用被拒绝"
-   ],
-   "criteria": [
-    "无法约束输出时长或尾部费用的语音路径不可用",
-    "不可用原因可在发现接口与界面查询",
-    "强制调用不可用路径时被短路拒绝，供应商调用数为 0",
-    "可约束路径正常执行且结算正确"
-   ],
-   "tests": ["不可用标记与发现接口断言", "强制调用拒绝测试", "可约束路径回归测试"],
-   "verification": ["cd bifrost/plugins/governance && go test -run SpeechCapability ./...", "bun test server/tests/capability-availability.test.ts"],
-   "owned_scope": ["语音能力可用性判定与标记", "对应测试与验收记录"],
-   "resume_hint": "本 Ticket 是组 13 缝合点：宁可少开放一个模型，也不要开放无法约束尾部的路径——那是系统性超支来源。"
+  "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/plugins/governance && go test ./...",
+    "bunx biome lint --error-on-warnings <changed files>"
+  ],
+  "tickets": {
+    "13.1": {
+      "slug": "speech-synthesis-bounded-reservation",
+      "contracts": {
+        "consumes": ["07.12 的端到端准入路径", "03.2 的 audio 维度价格快照"],
+        "produces": [
+          "语音生成上限换算：输入字符数 × 单价 + 输出音频时长上限 × 单价（含语音档位/音色差异）",
+          "boundEvidence：输入文本完整计数、输出时长存在可强制上限（供应商参数或本地封顶）",
+          "启用判定：无法限制输出时长或音频维度缺价 → 不启用"
+        ]
+      },
+      "steps": [
+        "核对上游语音定价维度（按字符、按输出秒、按音色/档位），映射到 PriceSnapshot",
+        "实现上限换算纯函数，输入按完整文本计数，输出按可强制的时长上限",
+        "接入 Reserve；输出时长不可强制时判证据不足并拒绝",
+        "先写失败测试：长文本上限换算正确；无时长上限能力时拒绝"
+      ],
+      "criteria": [
+        "语音生成按输入字符与输出时长上限全维度预留",
+        "输出时长必须有可强制上限，否则该模型/调用方式不启用",
+        "缺音频维度价格时标记 unknown 并拒绝",
+        "预留锁定当时价格快照与比例版本"
+      ],
+      "tests": [
+        "上限换算单元测试（多档位）",
+        "无时长上限拒绝测试",
+        "缺价 unknown 断言"
+      ],
+      "verification": ["bun test server/tests/speech-pricing.test.ts"],
+      "owned_scope": ["语音维度映射与上限换算", "对应测试与 fixture"],
+      "resume_hint": "只按输入字符计价会漏掉输出音频费用；接手先确认快照同时含输入与输出两侧维度。"
+    },
+    "13.2": {
+      "slug": "speech-synthesis-actual-settlement",
+      "contracts": {
+        "consumes": [
+          "13.1 的预留与锁定版本",
+          "06.9 的 Settle",
+          "06.12 的用户视图"
+        ],
+        "produces": [
+          "按实际用量结算：实际输入字符与实际输出音频时长决定金额，未使用额度释放",
+          "用户明细中的语音条目：包含时长/字符与金额，可与其他能力区分",
+          "结算幂等：同一次生成重复上报只结算一次"
+        ]
+      },
+      "steps": [
+        "在结果路径采集实际字符数与音频时长（来自供应商 usage 或可验证的产物元数据）",
+        "换算实际金额并 Settle，释放未使用额度",
+        "写入消费明细，附时长与字符维度",
+        "先写失败测试：上限 60 秒实际 25 秒 → 只结算 25 秒；重复上报只扣一次"
+      ],
+      "criteria": [
+        "结算金额按实际字符与音频时长计算，未使用部分释放",
+        "实际用量来源可验证（供应商 usage 或产物元数据），不用估算代替",
+        "重复上报同一结果只结算一次",
+        "用户明细显示语音时长/字符与金额"
+      ],
+      "tests": ["实际用量结算集成测试", "重复上报幂等测试", "明细展示测试"],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/speech-settlement.integration.test.ts"
+      ],
+      "owned_scope": ["语音结算路径与明细归因", "对应测试"],
+      "resume_hint": "拿不到真实 usage 时进入 unknown（06.8），不要用输入字符估算输出时长来结算。"
+    },
+    "13.3": {
+      "slug": "speech-interruption-tail-settled-once",
+      "contracts": {
+        "consumes": [
+          "13.2 的结算路径",
+          "06.8 的 unknown 状态",
+          "流式/播放中断的实际入口"
+        ],
+        "produces": [
+          "中断语义：客户端停止播放或断开连接时，已发生的音频生成费用完整结算且只结算一次",
+          "无法确认已生成量的部分进入 unknown，保持预留",
+          "中断不触发第二次派发或第二次结算"
+        ]
+      },
+      "steps": [
+        "定位语音播放/流式传输的中断点，在中断时收集已确认的实际用量",
+        "已确认部分按 13.2 结算；未确认部分标记 unknown 交 08.x",
+        "确认中断不重发请求、不重复结算",
+        "先写失败测试：播放中途断开 → 已发生费用结算一次，未确认部分保持 unknown"
+      ],
+      "criteria": [
+        "播放或流中断后已发生费用被完整结算，且只结算一次",
+        "无法确认的部分进入 unknown 并保持预留占用",
+        "中断不触发第二次供应商派发",
+        "结算金额不超过原预留上限"
+      ],
+      "tests": [
+        "中断结算集成测试",
+        "无重复派发/结算断言",
+        "unknown 保持占用断言"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/speech-interruption.integration.test.ts"
+      ],
+      "owned_scope": ["中断路径的用量收集与结算接线", "对应测试"],
+      "resume_hint": "“客户端断开=无费用”是错误默认；接手先跑中断用例，确认已发生费用进入结算或 unknown。"
+    },
+    "13.4": {
+      "slug": "unbounded-speech-paths-disabled",
+      "contracts": {
+        "consumes": [
+          "13.1 的 boundEvidence 判定",
+          "13.3 的尾部语义",
+          "03.11 的发现接口"
+        ],
+        "produces": [
+          "不可约束路径的禁用清单：无法限制输出时长或无法确认尾部费用的模型/调用方式标记为不可用",
+          "不可用原因可在发现接口与用户界面查询",
+          "组 13 缝合点：可约束语音路径端到端可演示，不可约束路径明确拒绝"
+        ]
+      },
+      "steps": [
+        "对每个语音模型/调用方式判定尾部是否可约束（能否确定已生成量、能否停止计费）",
+        "不可约束者标记不可用并在发现接口给出原因，不出现在可选列表",
+        "确认不可用路径被调用时短路拒绝且供应商未被调用",
+        "先写失败测试：不可约束路径不出现在可选列表；强制调用被拒绝"
+      ],
+      "criteria": [
+        "无法约束输出时长或尾部费用的语音路径不可用",
+        "不可用原因可在发现接口与界面查询",
+        "强制调用不可用路径时被短路拒绝，供应商调用数为 0",
+        "可约束路径正常执行且结算正确"
+      ],
+      "tests": [
+        "不可用标记与发现接口断言",
+        "强制调用拒绝测试",
+        "可约束路径回归测试"
+      ],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run SpeechCapability ./...",
+        "bun test server/tests/capability-availability.test.ts"
+      ],
+      "owned_scope": ["语音能力可用性判定与标记", "对应测试与验收记录"],
+      "resume_hint": "本 Ticket 是组 13 缝合点：宁可少开放一个模型，也不要开放无法约束尾部的路径——那是系统性超支来源。"
+    }
   }
- }
 }

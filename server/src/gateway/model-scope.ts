@@ -175,7 +175,9 @@ export function createEnterpriseGatewayModelScopeStore(
         );
       return rows
         .map(scopeRecordFromRow)
-        .filter((record): record is ModelOpenScopeRecord => record !== undefined);
+        .filter(
+          (record): record is ModelOpenScopeRecord => record !== undefined,
+        );
     },
 
     async setScope({ ref, state, reason, changedBy, changedAt }) {

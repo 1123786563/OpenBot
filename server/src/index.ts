@@ -138,7 +138,10 @@ import {
   createUsageEvidenceRecorder,
   isConfirmedNoCost,
 } from "./billing/usage-evidence";
-import { createUsageOutbox, UsageOutboxConflictError } from "./billing/usage-outbox";
+import {
+  createUsageOutbox,
+  UsageOutboxConflictError,
+} from "./billing/usage-outbox";
 import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./billing/types";
 import { createWebhookVerifier } from "./billing/webhook-signature";
 import {
@@ -203,7 +206,10 @@ import {
   type ToolSelection,
 } from "./copilot";
 import { loadCraftConfig } from "./craft/config";
-import { builtinSkillFilesFor, buildAvailableSourcesSection } from "./craft/builtin-skills";
+import {
+  builtinSkillFilesFor,
+  buildAvailableSourcesSection,
+} from "./craft/builtin-skills";
 import type { CraftKbSearch } from "./craft/kb-search-relay";
 import { projectKbSearchResults } from "./craft/kb-search-relay";
 import {
@@ -342,7 +348,10 @@ import {
 } from "./openmuse-deletion/retention";
 import { createOpenMuseDeletionRestore } from "./openmuse-deletion/restore";
 import { createOpenMuseExternalAccessRevoker } from "./openmuse-deletion/revoke";
-import { createOpenMuseWorkShutdown, recordWorkShutdown } from "./openmuse-deletion/shutdown";
+import {
+  createOpenMuseWorkShutdown,
+  recordWorkShutdown,
+} from "./openmuse-deletion/shutdown";
 import {
   createOpenMuseAccountDeletionStore,
   createOpenMuseDeletionResourceRows,
@@ -3129,7 +3138,8 @@ const openMuseTaskStore = createOpenMuseTaskStore({
  * below fences reads through its isDisabled, and the app tail's delete route and
  * /api/mobile fence answer through the same instance.
  */
-const openMuseAccountDeletionStore = createOpenMuseAccountDeletionStore(database);
+const openMuseAccountDeletionStore =
+  createOpenMuseAccountDeletionStore(database);
 /*
  * The personal-files store (F01), hoisted beside the runner it feeds: the task
  * runner reads finance CSVs and document versions through it, and the app tail
@@ -3737,7 +3747,9 @@ if (
   log.error(
     {
       type: "billing-credit-policy-unconfigured",
-      issues: billingSettings.creditPolicy.issues.map((issue) => `${issue.key}:${issue.reason}`),
+      issues: billingSettings.creditPolicy.issues.map(
+        (issue) => `${issue.key}:${issue.reason}`,
+      ),
     },
     "billing-credit-policy-unconfigured: metered work will refuse until these keys are fixed",
   );
@@ -3767,9 +3779,12 @@ const billing =
          * resolution. An insufficient balance on whatever binding a request resolves to is
          * refused on that account; nothing here or downstream ever switches accounts.
          */
-        const deploymentPayerBinding = await ensureDeploymentPayerBinding(database, {
-          id: config.deploymentId ?? tenantPackage.tenantId,
-        });
+        const deploymentPayerBinding = await ensureDeploymentPayerBinding(
+          database,
+          {
+            id: config.deploymentId ?? tenantPackage.tenantId,
+          },
+        );
         const lagoClient = createLagoClient({
           baseUrl: settings.apiUrl,
           apiKey: settings.apiKey,
@@ -3799,12 +3814,16 @@ const billing =
             // lookup prices each plan's expected allowance in scaled integer units (the same
             // arithmetic the grantor below uses), so the pass can audit that a paid order's
             // plan payout actually landed at the priced amount.
-            reconciler: createReconciler(database, externalCustomerKey, (planCode) => {
-              const entry = settings.planCatalog.get(planCode);
-              return entry && entry.credits > 0
-                ? Math.round(entry.credits * CREDIT_SCALE)
-                : null;
-            }),
+            reconciler: createReconciler(
+              database,
+              externalCustomerKey,
+              (planCode) => {
+                const entry = settings.planCatalog.get(planCode);
+                return entry && entry.credits > 0
+                  ? Math.round(entry.credits * CREDIT_SCALE)
+                  : null;
+              },
+            ),
             ...(settings.webhookKey
               ? {
                   verifier: createWebhookVerifier({
@@ -3844,8 +3863,9 @@ const usageOutbox =
  */
 if (billing !== undefined && usageOutbox !== undefined) {
   const creditPolicy = billingSettings?.creditPolicy;
-  const recordUnsettledUsage = createUsageEvidenceRecorder(usageOutbox, (message) =>
-    log.warn(message),
+  const recordUnsettledUsage = createUsageEvidenceRecorder(
+    usageOutbox,
+    (message) => log.warn(message),
   );
   setModelUsageGate(async (input) => {
     if (!creditPolicy?.configured) {
@@ -3974,7 +3994,9 @@ if (billing !== undefined && usageOutbox !== undefined) {
           // gets its own event and never the write-failure code a foreign error would
           // otherwise fall back to. The hold is retained either way.
           const code =
-            error instanceof UsageChargeError ? error.code : "usage_charge_failed";
+            error instanceof UsageChargeError
+              ? error.code
+              : "usage_charge_failed";
           log.error(
             {
               type: "billing-usage-charge-refused",
@@ -4346,26 +4368,34 @@ const codeRunStore = createCodeRunStore(database);
  * column is a display copy and is never read here). A deployment without billing passes
  * `billing === undefined` straight through: silent, and the run row still stands.
  */
-const codeRunUsageReporter = billing && usageOutbox
-  ? async (input: import("./workshop/metering").CodeRunUsageInput): Promise<void> => {
-      try {
-        await reportCodeRunUsage(
-          usageOutbox,
-          {
-            ...input,
-            externalCustomerId: billing.externalCustomerKey,
-            // True only when the hard-cap policy actually prices code runs; the gateway refuses
-            // billed runs until the sandbox can enforce a budget, so this stays false today and
-            // the guard inside reportCodeRunUsage is what makes flipping it safe.
-            creditMeteringEnabled: billingSettings?.creditPolicy.configured === true,
-          },
-          (message) => log.warn(message),
-        );
-      } catch (error) {
-        logUsageOutboxWriteFailure("code_run", `code-run:${input.runId}`, error);
+const codeRunUsageReporter =
+  billing && usageOutbox
+    ? async (
+        input: import("./workshop/metering").CodeRunUsageInput,
+      ): Promise<void> => {
+        try {
+          await reportCodeRunUsage(
+            usageOutbox,
+            {
+              ...input,
+              externalCustomerId: billing.externalCustomerKey,
+              // True only when the hard-cap policy actually prices code runs; the gateway refuses
+              // billed runs until the sandbox can enforce a budget, so this stays false today and
+              // the guard inside reportCodeRunUsage is what makes flipping it safe.
+              creditMeteringEnabled:
+                billingSettings?.creditPolicy.configured === true,
+            },
+            (message) => log.warn(message),
+          );
+        } catch (error) {
+          logUsageOutboxWriteFailure(
+            "code_run",
+            `code-run:${input.runId}`,
+            error,
+          );
+        }
       }
-    }
-  : undefined;
+    : undefined;
 const sandboxClientFor = (botId: string) =>
   sandboxUrl && sandboxToken
     ? createSandboxClient({
@@ -4583,9 +4613,11 @@ const craftMcpRelayBaseUrl =
  * An unwired knowledge service holds the skill back entirely (null) — the
  * AGENTS.md Company-knowledge section stays out with it.
  */
-const craftKnowledgeBases = async (): Promise<
-  Array<{ id: string; name: string; description: string | null }> | null
-> => {
+const craftKnowledgeBases = async (): Promise<Array<{
+  id: string;
+  name: string;
+  description: string | null;
+}> | null> => {
   if (!knowledgeService) return null;
   try {
     const response = await knowledgeRequest(knowledgeService, "/kb");
@@ -4689,7 +4721,9 @@ const craftManagedContentFor = createCraftManagedContentResolver({
         ...held.map((row) => row.serverId),
         ...brokered.map((row) => row.serverId),
       ]),
-      ...(sourcesSection !== null ? { companySearchSourcesSection: sourcesSection } : {}),
+      ...(sourcesSection !== null
+        ? { companySearchSourcesSection: sourcesSection }
+        : {}),
     });
   },
   /*
@@ -5121,9 +5155,8 @@ const openMuseActivity = createOpenMuseActivityRoutes({
  * above their first consumer (round 6 M3) so no reader builds its own
  * second instance of either.
  */
-const openMuseDeletionResourceRows = createOpenMuseDeletionResourceRows(
-  database,
-);
+const openMuseDeletionResourceRows =
+  createOpenMuseDeletionResourceRows(database);
 const openMuseDeletionCleanup = createOpenMuseDeletionCleanupView({
   markers: openMuseAccountDeletionStore,
   rows: openMuseDeletionResourceRows,
@@ -5726,7 +5759,9 @@ serve<SocketData>({
   websocket: {
     open(ws) {
       if (isHmrSocket(ws.data)) {
-        webappHmrSocketHandlers.open(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        webappHmrSocketHandlers.open(
+          ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+        );
         return;
       }
       if (!isProxiedStream(ws.data)) {
@@ -5832,7 +5867,9 @@ serve<SocketData>({
     },
     close(ws, code, reason) {
       if (isHmrSocket(ws.data)) {
-        webappHmrSocketHandlers.close(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        webappHmrSocketHandlers.close(
+          ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+        );
         return;
       }
       if (!isProxiedStream(ws.data)) {
@@ -5891,4 +5928,3 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 log.info({ port }, "OpenBot server listening on http://127.0.0.1");
-

@@ -74,12 +74,12 @@ export type GatewayExtensionView = {
 
 export type GatewayRateView =
   | {
-          configured: true;
-          numerator: string;
-          denominator: string;
-          rateVersion: number;
-          source: string;
-      }
+      configured: true;
+      numerator: string;
+      denominator: string;
+      rateVersion: number;
+      source: string;
+    }
   | { configured: false; reason: string; explanation: string };
 
 export type GatewayAdminStatus = {

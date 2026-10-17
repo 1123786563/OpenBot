@@ -1,4 +1,7 @@
-import { isBrokeredProvenance, type BrokeredProvenance } from "../../../shared/src/brokered-provenance";
+import {
+  isBrokeredProvenance,
+  type BrokeredProvenance,
+} from "../../../shared/src/brokered-provenance";
 import { schemeKind } from "./broker";
 import type { CatalogueEntry } from "./catalogue";
 import { toolkitOf as composioToolkitOf } from "./composio";
@@ -202,7 +205,10 @@ const BROKERS: Record<
   { transport: TransportKind; toolkitOf: (url: string) => string | null }
 > = {
   composio: { transport: "composio", toolkitOf: composioToolkitOf },
-  "open-connector": { transport: "open-connector", toolkitOf: openConnectorToolkitOf },
+  "open-connector": {
+    transport: "open-connector",
+    toolkitOf: openConnectorToolkitOf,
+  },
 };
 
 /**

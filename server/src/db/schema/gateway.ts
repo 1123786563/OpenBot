@@ -387,10 +387,7 @@ export const gatewayCustomers = pgTable(
       .defaultNow(),
   },
   (table) => [
-    check(
-      "gateway_customers_kind_check",
-      sql`${table.kind} IN ('personal')`,
-    ),
+    check("gateway_customers_kind_check", sql`${table.kind} IN ('personal')`),
     check(
       "gateway_customers_provision_state_check",
       sql`${table.provisionState} IN ('pending', 'confirmed', 'recoverable', 'active')`,

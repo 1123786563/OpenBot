@@ -135,17 +135,83 @@ const DECLARED_EDGES: {
   parentColumn: string;
   onDelete: string;
 }[] = [
-  { childTable: "payer_accounts", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "billing_subscriptions", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "credit_grants", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "credit_ledger", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "credit_ledger", childColumn: "grant_id", parentTable: "credit_grants", parentColumn: "id", onDelete: "set_null" },
-  { childTable: "credit_reservations", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "credit_reservations", childColumn: "ledger_id", parentTable: "credit_ledger", parentColumn: "id", onDelete: "set_null" },
-  { childTable: "credit_reservation_allocations", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
-  { childTable: "credit_reservation_allocations", childColumn: "grant_id", parentTable: "credit_grants", parentColumn: "id", onDelete: "cascade" },
-  { childTable: "credit_charge_remainders", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "payment_events", childColumn: "order_id", parentTable: "payment_orders", parentColumn: "id", onDelete: "cascade" },
+  {
+    childTable: "payer_accounts",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "billing_subscriptions",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_grants",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_ledger",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_ledger",
+    childColumn: "grant_id",
+    parentTable: "credit_grants",
+    parentColumn: "id",
+    onDelete: "set_null",
+  },
+  {
+    childTable: "credit_reservations",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_reservations",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "set_null",
+  },
+  {
+    childTable: "credit_reservation_allocations",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_reservation_allocations",
+    childColumn: "grant_id",
+    parentTable: "credit_grants",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_charge_remainders",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "payment_events",
+    childColumn: "order_id",
+    parentTable: "payment_orders",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
 ];
 
 let classification: CleanupClassification;
@@ -155,10 +221,22 @@ afterAll(async () => {
   // Children first, mirroring the FK graph the module evaluates.
   await database
     .delete(paymentEvents)
-    .where(inArray(paymentEvents.orderId, [flightOrderId, activeSubOrderId, cleanOrderId]));
+    .where(
+      inArray(paymentEvents.orderId, [
+        flightOrderId,
+        activeSubOrderId,
+        cleanOrderId,
+      ]),
+    );
   await database
     .delete(paymentOrders)
-    .where(inArray(paymentOrders.id, [flightOrderId, activeSubOrderId, cleanOrderId]));
+    .where(
+      inArray(paymentOrders.id, [
+        flightOrderId,
+        activeSubOrderId,
+        cleanOrderId,
+      ]),
+    );
   await database
     .delete(usageOutbox)
     .where(inArray(usageOutbox.externalCustomerId, fixtureKeys));
@@ -192,7 +270,11 @@ afterAll(async () => {
   await database
     .delete(creditLedger)
     .where(
-      inArray(creditLedger.id, [flightLedgerId, flightLedger2Id, cleanLedgerId]),
+      inArray(creditLedger.id, [
+        flightLedgerId,
+        flightLedger2Id,
+        cleanLedgerId,
+      ]),
     );
   await database
     .delete(creditGrants)
@@ -627,7 +709,9 @@ describe("the legacy billing relations evaluation maps associations from live da
       manifest.fkEdges.filter((edge) => edge.childTable === "usage_outbox"),
     ).toEqual([]);
     expect(
-      manifest.fkEdges.filter((edge) => edge.childTable === "billing_webhook_events"),
+      manifest.fkEdges.filter(
+        (edge) => edge.childTable === "billing_webhook_events",
+      ),
     ).toEqual([]);
     expect(
       manifest.fkEdges.filter((edge) => edge.childTable === "payment_orders"),
@@ -649,7 +733,9 @@ describe("the legacy billing relations evaluation maps associations from live da
     const customer = evaluationOf("billing_customers", flightKey);
     expect(customer.removed).toBe(true);
     expect(customer.removalReason).toBe("cascade_impact_on_retained");
-    const retainedIds = customer.retainedImpact.map((impact) => impact.recordId);
+    const retainedIds = customer.retainedImpact.map(
+      (impact) => impact.recordId,
+    );
     expect(retainedIds).toContain(flightReservedId);
     expect(retainedIds).toContain(flightAllocationId);
     for (const impact of customer.retainedImpact) {
@@ -727,7 +813,8 @@ describe("the legacy billing relations evaluation maps associations from live da
     expect(
       manifest.evaluations.filter(
         (entry) =>
-          entry.recordId === flightReservedId || entry.recordId === flightAllocationId,
+          entry.recordId === flightReservedId ||
+          entry.recordId === flightAllocationId,
       ),
     ).toEqual([]);
   });
@@ -750,7 +837,10 @@ describe("the legacy billing relations evaluation maps associations from live da
   test("external live subscriptions are listed separately and never auto-cancelled", () => {
     // Exactly the candidate keys' live subscriptions — the company key's active subscription
     // is not the cleanup's business; canceled ones are not live.
-    expect(EXTERNAL_LIVE_SUBSCRIPTION_STATUSES).toEqual(["active", "incomplete"]);
+    expect(EXTERNAL_LIVE_SUBSCRIPTION_STATUSES).toEqual([
+      "active",
+      "incomplete",
+    ]);
     expect(manifest.externalActiveSubscriptions).toHaveLength(1);
     const listed = manifest.externalActiveSubscriptions[0];
     expect(listed.externalSubscriptionId).toBe(activeSubscriptionId);
@@ -759,7 +849,10 @@ describe("the legacy billing relations evaluation maps associations from live da
     expect(listed.planCode).toBe("legacy-active");
     // The anchor is pulled from the cleanup set: a human confirms before anything happens.
     expect(isSafe("billing_subscriptions", activeSubscriptionId)).toBe(false);
-    const anchor = removedEntryOf("billing_subscriptions", activeSubscriptionId);
+    const anchor = removedEntryOf(
+      "billing_subscriptions",
+      activeSubscriptionId,
+    );
     expect(anchor.reason).toBe("external_subscription_anchor");
     // The customer row's cascade would take the anchor, so it is pulled too.
     const customer = evaluationOf("billing_customers", activeSubKey);
@@ -862,9 +955,9 @@ describe("the legacy billing relations evaluation maps associations from live da
         },
       ],
     };
-    expect(
-      evaluateCleanupRelations(database, drifted),
-    ).rejects.toThrow(/no longer exists/);
+    expect(evaluateCleanupRelations(database, drifted)).rejects.toThrow(
+      /no longer exists/,
+    );
   });
 
   test("a row the classification does not cover defaults to protected", async () => {
