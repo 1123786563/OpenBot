@@ -1,0 +1,25 @@
+bun test v1.4.2 (50a8a8387)
+
+server/tests/multitenancy/fixtures.test.ts:
+(pass) createIsolationFixture refuses to run without a dedicated test database [2.89ms]
+(pass) createIsolationFixture refuses unknown isolation domains [0.09ms]
+(pass) fixture covers every Spec §11 minimum identity matrix class [345.58ms]
+(pass) identity facts come from real database rows under the directory role [48.44ms]
+(pass) fixture data was created by the real provisioning factory, not by mocks [56.45ms]
+(pass) restricted business roles are the real restricted capabilities [35.37ms]
+(pass) data-role business transactions are tenant-scoped by RLS [50.70ms]
+(pass) worker identity runs tenant/workspace-scoped reads without principal powers [20.57ms]
+(pass) transaction context is cleared after commit and pooled reuse carries no scope [29.58ms]
+(pass) transaction context is cleared after rollback [17.83ms]
+(pass) requestAs positive control: each team member reads their own team resource [140.22ms]
+(pass) requestAs demands explicit company and team selectors [0.71ms]
+(pass) requestAs denies cross-company, cross-team and personal-resource access invisibly [77.15ms]
+(pass) machine identities have no authenticated session and unknown routes are invisible [28.43ms]
+(pass) membership status combinations: suspending one company leaves the other intact [116.41ms]
+(pass) scenario registry runs registered adapters and refuses everything else [1.34ms]
+(pass) dispose cleans up fixture rows and refuses further use [229.47ms]
+
+ 17 pass
+ 0 fail
+ 146 expect() calls
+Ran 17 tests across 1 file. [1.64s]

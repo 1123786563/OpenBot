@@ -1,0 +1,15 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/runtime-config.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '../../src/enterprise/tenancy/runtime-config' from '/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt014/server/tests/multitenancy/runtime-config.test.ts'
+-------------------------------
+
+
+ 0 pass
+ 1 fail
+ 1 error
+Ran 1 test across 1 file. [441.00ms]
+exit=1

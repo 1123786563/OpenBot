@@ -18,6 +18,7 @@ export * from "./enterprise-conversations";
 export * from "./enterprise-expert-versions";
 export * from "./enterprise-model-routes";
 export * from "./enterprise-runs";
+export * from "./enterprise-runtime-config";
 export * from "./enterprise-tenancy";
 export * from "./group";
 export * from "./identity";

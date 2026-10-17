@@ -1,0 +1,38 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/runtime-config.test.ts:
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 1 — 两个公司各自解析，切换不串用 > company A resolves its own model, bot defaults, credentials and plan mapping [6.54ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 1 — 两个公司各自解析，切换不串用 > company B resolves its own — different end to end from company A [8.94ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 1 — 两个公司各自解析，切换不串用 > switching companies back and forth never cross-contaminates (A → B → A identical) [17.67ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 1 — 两个公司各自解析，切换不串用 > company A's resolution never carries company B's model, credential ref or billing customer [4.31ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 1 — 两个公司各自解析，切换不串用 > the read path is tenant-scoped at the database: RLS hides other companies' rows under the restricted data role [11.72ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 1 — 两个公司各自解析，切换不串用 > two teams of one company share the company config but keep distinct overrides and thread seeds [44.15ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 2 — 团队覆盖只能收窄，不能扩大；个人凭据不升级 > a narrowing override resolves to the narrowed allowlist and its default [0.28ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 2 — 团队覆盖只能收窄，不能扩大；个人凭据不升级 > an override adding a model outside the company allowlist is refused as policy widening [0.15ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 2 — 团队覆盖只能收窄，不能扩大；个人凭据不升级 > an override default outside the effective allowlist is refused [0.07ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 2 — 团队覆盖只能收窄，不能扩大；个人凭据不升级 > an override naming an agent the company never published is refused as capability widening [0.07ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 2 — 团队覆盖只能收窄，不能扩大；个人凭据不升级 > an override allowlist narrowed to empty is refused (the runtime keeps a usable model) [0.05ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 2 — 团队覆盖只能收窄，不能扩大；个人凭据不升级 > company A's team override never changes company B's resolution [15.84ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 2 — 团队覆盖只能收窄，不能扩大；个人凭据不升级 > an override referencing a personal-access credential is refused and never upgraded to team access [4.24ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 2 — 团队覆盖只能收窄，不能扩大；个人凭据不升级 > an override declaring an access field is refused — overrides only ever add team-scope entries [0.17ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 2 — 团队覆盖只能收窄，不能扩大；个人凭据不升级 > an override re-declaring a company credential is refused — company entries are not team shadows [0.22ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 2 — 团队覆盖只能收窄，不能扩大；个人凭据不升级 > resolved credentials preserve company access and append team additions; plan mapping is not team-overridable [0.18ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 3 — 不读环境变量，凭据值不进日志或错误 > resolution output is identical under a polluted process environment (switch, provider, keys) [3.53ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 3 — 不读环境变量，凭据值不进日志或错误 > the runtime-config module reads no environment variables (source-level guarantee) [0.43ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 3 — 不读环境变量，凭据值不进日志或错误 > every refusal names codes and field paths only — a canary secret never appears in any error [3.09ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 3 — 不读环境变量，凭据值不进日志或错误 > flipping the multitenancy switch never changes resolution output (MT013 interaction at this seam) [5.79ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 4 — 解析只依赖入参，无进程级全局状态 > two independent service instances resolve identically for identical inputs [18.71ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 4 — 解析只依赖入参，无进程级全局状态 > resolution never mutates its inputs (deep-frozen documents stay pristine) [0.31ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 4 — 解析只依赖入参，无进程级全局状态 > concurrent resolutions for both companies each match their own expected config [5.72ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 验收 4 — 解析只依赖入参，无进程级全局状态 > a company config revision bump is visible on the very next resolve — no stale process cache [34.36ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 存储与迁移契约 > missing company config is RUNTIME_CONFIG_NOT_FOUND — never a fallback to another company or a deployment default [2.41ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 存储与迁移契约 > missing team selector is refused before any database read [0.19ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 存储与迁移契约 > an unverified database channel is refused at service creation [2.21ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 存储与迁移契约 > every restricted query of this suite ran as a capability role, never a superuser [0.07ms]
+(pass) MT014 / Issue #57 — 公司运行配置装配 > 存储与迁移契约 > MT014 migration is deterministic and registered with stable step names [0.13ms]
+
+ 29 pass
+ 0 fail
+ 100 expect() calls
+Ran 29 tests across 1 file. [949.00ms]
+exit=0
