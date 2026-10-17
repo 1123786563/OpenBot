@@ -42,22 +42,95 @@
  */
 
 import type { CraftConfig } from "./config";
+import {
+  WEBAPP_APP_BODY_SENTINEL,
+  WEBAPP_GENERATION_CURRENT,
+  WEBAPP_GENERATION_MARKER,
+} from "./webapp-generation";
 import { sessionDirectory } from "./workspace";
 
 /** The session-root filename of the generated script (onyx WEBAPP start script name). */
 export const WEBAPP_BOOTSTRAP_SCRIPT_NAME = "start-webapp.sh";
 
 /**
+ * The session-root file where the generated script records the mount the
+ * RUNNING server was spawned with (review-367 H; fix-ocr4 #8): written ONLY in
+ * the script's respawn branch, beside the pid file — a reused (still-live)
+ * server keeps the record its own spawn wrote, so the record can never mirror a
+ * rewritten script instead of the running reality. It is the second signal
+ * webapp-info cross-checks the preview address against — the generation marker
+ * alone cannot catch the rebuild window (a script written under a LEGACY
+ * generation judgment is current-format yet root-path, and still stamps the
+ * marker at its template copy), but the mount record names what the
+ * RUNNING server actually answers on.
+ */
+export const WEBAPP_MOUNT_MARKER = ".webapp-mount";
+
+/**
  * The protected, agent-facing bootstrap script. Its header (`SESSION_PATH`, `PORT`) is
  * the plugin's parsePort source; its success/failure lines are onyx byte-verbatim.
+ *
+ * `basePath` (F-2, #365) is the dev form's `/<label>` mount — the same HMAC label the
+ * session's preview address rides (preview-origin.ts's webappBasePathFor). The server
+ * cannot inject env into a process the sandbox spawns for it, so the mount travels
+ * INSIDE this script: ONYX_WEBAPP_BASE_PATH feeds the scaffold's next.config.ts
+ * (basePath/assetPrefix) and NEXT_PUBLIC_BASE_PATH feeds lib/base-path.ts, both
+ * exported before the spawn so `bun run dev` inherits them. Undefined/null/empty →
+ * no exports: the host form (and every hand-run dev server) serves at the port root.
  */
+
+/**
+ * The consumption-side mount whitelist (fix-ocr6 B): a mount is either empty
+ * or a `/<label>` of one to 64 [0-9a-z-] characters — exactly the shape
+ * webappBasePathFor mints, CASE-SENSITIVE (fix-ocr17): minted labels are
+ * always lowercase hex, so an uppercase value is by definition not a minted
+ * mount and takes the empty fallback. The label needs at least ONE character
+ * (fix-ocr15): a bare "/" matched the old `{0,64}` quantifier and exported a
+ * slash-only mount, whose basePath:"/" app emits `//api/...` resource URLs —
+ * protocol-relative addresses that escape this origin entirely. A bare slash
+ * IS the root shape's spelling of "no mount" and takes the empty fallback
+ * like any other malformed value. The export lines below sit in single-quoted
+ * bash, but single quotes are only the SHELL's half of the defense; this
+ * pattern is the value's own: any character outside the label alphabet — and
+ * especially an injection character (', $, backtick) — can never reach a
+ * shell context, whatever the derivation side does or drifts into.
+ */
+const WEBAPP_BASE_PATH_PATTERN = /^\/[0-9a-z-]{1,64}$/;
+
 export function buildWebappBootstrapScript(input: {
   /** The session directory the script lives in (either sessionDirectoryMode spelling). */
   sessionDirectory: string;
   /** The session's reserved port — the bind target AND the preview's routing contract. */
   port: number;
+  /** The dev form's /<label> mount (preview-origin webappBasePathFor); omit for root. */
+  basePath?: string | null;
 }): string {
   const { sessionDirectory, port } = input;
+  const requested = (input.basePath ?? "").trim();
+  // The consumption-side whitelist (fix-ocr6 B): anything outside the
+  // /<label> shape falls back to the EMPTY mount — the script is written
+  // root-path, and the .webapp-mount record below follows the sanitized
+  // value, so the webapp-info cross-check still names what the running
+  // server actually serves (a rejected mount degrades to root form, never
+  // to a mismatch between the two).
+  const basePath =
+    requested === "" || WEBAPP_BASE_PATH_PATTERN.test(requested)
+      ? requested
+      : "";
+  // The mount env block: only emitted when a mount exists. The value is a
+  // server-derived HMAC label (hex + slash), but the export is single-quoted
+  // anyway (review-367 L2): bash double quotes do not neutralize $, backticks
+  // or embedded double quotes, so the line must never trust its interpolation
+  // to stay inert — single quotes make the inertness the shell's, not the
+  // value discipline's.
+  const basePathEnv =
+    basePath === ""
+      ? ""
+      : `
+# The dev-form preview serves this app under its label — mount the dev server
+# there so every resource URL it emits resolves on the preview origin.
+export ONYX_WEBAPP_BASE_PATH='${basePath}'
+export NEXT_PUBLIC_BASE_PATH='${basePath}'`;
   return `#!/bin/bash
 SESSION_PATH=${sessionDirectory}
 # Normalize so bot-relative session dirs survive the script's own cd. The
@@ -81,13 +154,19 @@ echo $PORT > "$SESSION_PATH/.nextjs-port"
     # onyx's scaffold semantics, restored: the template ships with the session
     # (materialized under .openbot/web-template by the managed-content push)
     # instead of a template baked into the sandbox image.
-    if [ ! -f "$SESSION_PATH/outputs/web/package.json" ]; then
+    if [ ! -f "$SESSION_PATH/${WEBAPP_APP_BODY_SENTINEL}" ]; then
         if [ -f "$SESSION_PATH/.openbot/web-template/package.json" ]; then
             echo "Copying outputs template"
             mkdir -p "$SESSION_PATH/outputs"
             cp -R "$SESSION_PATH/.openbot/web-template" "$SESSION_PATH/outputs/web"
+            # The assembly-generation marker (#367, D10): stamped ONLY here, at
+            # the one moment a current-shape app is born. An app that already
+            # exists is never re-stamped — its generation is whatever assembled
+            # it, and re-stamping a pre-marker app would flip the legacy
+            # judgment and route it to a preview address it is not mounted for.
+            echo ${WEBAPP_GENERATION_CURRENT} > "$SESSION_PATH/${WEBAPP_GENERATION_MARKER}"
         else
-            echo "no web app scaffold found - build your web app under outputs/web first (outputs/web/package.json), then call webapp start again" >&2
+            echo "no web app scaffold found - build your web app under outputs/web first (${WEBAPP_APP_BODY_SENTINEL}), then call webapp start again" >&2
             exit 1
         fi
     fi
@@ -121,6 +200,7 @@ echo $PORT > "$SESSION_PATH/.nextjs-port"
             bun install
         fi
         echo "Starting Next.js dev server on port $PORT..."
+${basePathEnv}
         # 9>&-: the server must not inherit the lock fd, or it would hold the
         # check-and-spawn lock for its entire lifetime. -H 0.0.0.0 is onyx's own
         # bind: the preview dials this port on the sandbox host (F-E), not the
@@ -140,6 +220,15 @@ echo $PORT > "$SESSION_PATH/.nextjs-port"
         NEXTJS_PID=$!
         echo "Next.js server started with PID $NEXTJS_PID"
         echo $NEXTJS_PID > "$SESSION_PATH/nextjs.pid"
+        # The record of the mount the RUNNING server was spawned with
+        # (review-367 H; fix-ocr4 #8 moved it here from the script head):
+        # the dev form's /<label>, or empty for the port root. Written ONLY
+        # in this respawn branch — a reused server must keep the record its
+        # own spawn wrote, or a rewritten script (a re-minted label) would
+        # paper over the exact script/assembly mismatch the webapp-info
+        # cross-check exists to surface as needs-restart instead of a
+        # silent 404.
+        printf '%s' '${basePath}' > "$SESSION_PATH/${WEBAPP_MOUNT_MARKER}"
     fi
 ) 9>"$SESSION_PATH/.webapp.lock"
 if [ "$?" -ne 0 ]; then
@@ -168,13 +257,26 @@ exit 1
  * Protection is the opencode.json permission set, not chmod (the gateway's file API
  * writes bytes only): PROTECTED_FILE_RULES denies edit/write/patch on the name, and the
  * bash rules allow exactly the two documented fallback invocations.
+ *
+ * `webappBasePathFor` (F-2, #365) resolves the session's dev-form /<label> mount —
+ * the same derivation the preview origin mints its address with; unset (host
+ * form, closed origin, or a LEGACY session — #367's D10 gate,
+ * webapp-generation.ts) leaves the script root-path, which for a legacy app
+ * means its template's cwd fallback re-mounts the old same-origin prefix.
+ *
+ * The resolver may be async (the #367 generation gate reads the workspace
+ * marker through the file API); the awaited value is what the script exports.
  */
 export async function writeWebappBootstrapScript(
   api: { writeFile(path: string, content: string): Promise<void> },
   sessionId: string,
   config: CraftConfig,
   port: number,
+  webappBasePathFor?: (
+    sessionId: string,
+  ) => Promise<string | null> | string | null,
 ): Promise<void> {
+  const basePath = (await webappBasePathFor?.(sessionId)) ?? null;
   await api.writeFile(
     `${sessionDirectory(sessionId, config.sessionDirectoryMode)}/${
       WEBAPP_BOOTSTRAP_SCRIPT_NAME
@@ -185,6 +287,7 @@ export async function writeWebappBootstrapScript(
         config.sessionDirectoryMode,
       ),
       port,
+      basePath,
     }),
   );
 }
