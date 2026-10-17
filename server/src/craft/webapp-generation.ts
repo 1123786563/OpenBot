@@ -121,7 +121,18 @@ export async function readWebappGeneration(
     // address rewritten to a path the dev server 404s.
     return "unknown";
   }
-  if (appBody === null) return "current";
+  // Absent includes the deployed gateway's shape for it: the sandbox
+  // /file/content envelope answers 200 {"type":"text","content":""} for a
+  // MISSING path — readFile's 404→null branch never fires against it — so
+  // the "absent ⇒ current" fact above must read the empty string the same
+  // way. Reading "" as an assembled app made every brand-new session fall
+  // through to the marker comparison (`"" !== "2"` ⇒ "legacy"), and
+  // provisioning wrote a root-path start script beside a /<label> preview
+  // address: the F-2 silent first-build 404 (live-repro'd three times; see
+  // the parity test in craft-webapp-generation.test.ts). A zero-byte
+  // package.json is not an assembled app either, so the treatment is sound
+  // for both absent spellings; a REAL app body is a non-empty manifest.
+  if (appBody === null || appBody.trim() === "") return "current";
   try {
     const content = await api.readFile(
       `${sessionRoot}/${WEBAPP_GENERATION_MARKER}`,

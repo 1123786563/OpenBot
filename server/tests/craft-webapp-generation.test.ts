@@ -118,6 +118,43 @@ describe("readWebappGeneration — the D10 judgment signal", () => {
     expect(reads).toEqual([APP_BODY]); // RED pre-fix: the marker was read first
   });
 
+  test("the deployed gateway's absent shape — 200 envelope with content:\"\", never a 404 — answers current for a fresh session (live repro 2026-10-18)", async () => {
+    // The REAL sandbox /file/content answers 200 {"type":"text","content":""}
+    // for a MISSING path — the readFile 404→null branch never fires against it
+    // (sandbox-gateway.ts). Under that wire shape a brand-new session read ""
+    // for BOTH the sentinel and the marker, fell through the null check, and
+    // the marker comparison `"" !== "2"` invented "legacy" — provisioning then
+    // wrote a root-path start script beside a /<label> preview address: the
+    // F-2 silent first-build 404, reproduced live three times (audit run
+    // 2026-10-17T13-45Z isolated_run_2 and the 2026-10-18 clean-stack rerun
+    // twice). The sentinel's absent-treatment must accept the empty-string
+    // shape: a zero-byte package.json is not an assembled app, and the next
+    // start WILL copy the template and stamp current — the same H1 reasoning
+    // as the null case above, now pinned against the observed wire semantics.
+    const generation = await readWebappGeneration(
+      {
+        async readFile() {
+          return ""; // the deployed envelope's "absent"
+        },
+      },
+      DIRECTORY,
+    );
+    expect(generation).toBe("current");
+  });
+
+  test("an empty-content body overrules a foreign marker exactly like an absent one (fix-ocr17 parity under the envelope shape)", async () => {
+    // Under the envelope shape the sentinel's empty string IS the absent
+    // population — the gateway cannot answer 404, so "" and missing are the
+    // same wire fact. The fix-ocr17 marker-overrule parity must therefore
+    // hold for it too: no assembled app, so the next start rebuilds from the
+    // current template and re-stamps — the stale "1" marker must not win.
+    const generation = await readWebappGeneration(
+      fileApiWith({ [APP_BODY]: "", [MARKER_PATH]: "1" }),
+      DIRECTORY,
+    );
+    expect(generation).toBe("current");
+  });
+
   test("a marker present but the app ABSENT answers current — the next start rebuilds and re-stamps (fix-ocr17)", async () => {
     // The semantic divergence the reorder buys: the app body's absence proves
     // the copy branch WILL run on the next start, stamping current over
