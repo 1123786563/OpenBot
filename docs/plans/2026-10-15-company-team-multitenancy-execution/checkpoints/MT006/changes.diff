@@ -1,0 +1,2496 @@
+MT006 changes.diff（相对 BASE f0520524）
+=============================================
+范围说明：
+- index.ts 的 hunk 中包含 MT005 已集成交付的头名改动（x-openbot-tenant-id →
+  x-openbot-tenant 两行，见 checkpoints/MT005/changes.diff 与 integration.json），
+  不属于本票改动；本票在 index.ts 的净变化 = import 块追加 + workspace-scope
+  路由装配段追加 + createApp 命名对象一行注册。
+- store.ts / scope-gate.ts 零改动（before/after 哈希一致，expand-only）。
+- MT001-MT005 交付测试文件零改动（只读约束遵守；仅新增本票两个测试文件）。
+- 删除行共计 3 行实质删除：store import 行（并入类型导入）+ 上述两行 MT005 头名。
+
+diff --git a/server/src/app.ts b/server/src/app.ts
+index 50a90d18..cf416830 100644
+--- a/server/src/app.ts
++++ b/server/src/app.ts
+@@ -540,6 +540,8 @@ export function createApp(
+     };
+     groups?: GroupConversations;
+     enterpriseConversations?: Hono;
++    /** MT006 (issue #49): workspace scope listing + team administration routes. */
++    enterpriseWorkspaceScope?: Hono;
+     teamBots?: TeamBots;
+     /** Pause, reset, Activity and attention for a person's own Bots. See agents/lifecycle.ts. */
+     lifecycle?: BotLifecycleServices;
+@@ -891,6 +893,14 @@ export function createApp(
+       coworker.enterpriseConversations,
+     );
+   }
++  // MT006 (issue #49): scope listing is the login-time discovery surface; the
++  // admin half inside answers 503 itself when the operator channel is unwired.
++  if (coworker?.enterpriseWorkspaceScope) {
++    app.route(
++      "/api/enterprise/workspace-scope",
++      coworker.enterpriseWorkspaceScope,
++    );
++  }
+   /*
+    * Registering an identity provider is an administrator's decision, not a signed-in one.
+    *
+diff --git a/server/src/config.ts b/server/src/config.ts
+index 3456859e..d9a8bc6d 100644
+--- a/server/src/config.ts
++++ b/server/src/config.ts
+@@ -238,6 +238,8 @@ export type DeploymentConfig = {
+   databaseUrl: string;
+   enterpriseDirectoryDatabaseUrl?: string;
+   enterpriseDataDatabaseUrl?: string;
++  /** Restricted operator-channel database; unwired → workspace admin routes answer 503. */
++  enterpriseOperatorDatabaseUrl?: string;
+   tenantStorageRuntimeDatabaseUrl?: string;
+   keyEncryptionKey: string;
+   /**
+@@ -2775,6 +2777,10 @@ export function loadConfig(
+       "enterpriseDataDatabaseUrl",
+       optional(environment, "ENTERPRISE_DATA_DATABASE_URL"),
+     ),
++    ...spreadOptional(
++      "enterpriseOperatorDatabaseUrl",
++      optional(environment, "ENTERPRISE_OPERATOR_DATABASE_URL"),
++    ),
+     ...spreadOptional(
+       "tenantStorageRuntimeDatabaseUrl",
+       optional(environment, "OPENBOT_TENANT_STORAGE_RUNTIME_DATABASE_URL"),
+diff --git a/server/src/index.ts b/server/src/index.ts
+index 0e7387bd..d2ca0fbd 100644
+--- a/server/src/index.ts
++++ b/server/src/index.ts
+@@ -257,8 +257,21 @@ import { createProductionRunnerComposition } from "./enterprise/runs/runner";
+ import {
+   verifyDataDatabase,
+   verifyDirectoryDatabase,
++  verifyOperatorDatabase,
+ } from "./enterprise/tenancy/connections";
+-import { createScopeResolver } from "./enterprise/tenancy/store";
++import {
++  createCompanyAdminAuthorizer,
++  createWorkspaceAdminService,
++  createWorkspaceScopeLister,
++} from "./enterprise/tenancy/workspace-admin";
++import {
++  createUnavailableWorkspaceScopeRoutes,
++  createWorkspaceScopeRoutes,
++} from "./enterprise/tenancy/workspace-scope-routes";
++import {
++  type AuthenticatedRequestIdentity,
++  createScopeResolver,
++} from "./enterprise/tenancy/store";
+ import {
+   createHostAccessBroker,
+   HostAccessRefusedError,
+@@ -799,11 +812,14 @@ const enterpriseCapabilities = await (async () => {
+         });
+         return actor ? { actorId: actor.id, entrypoint: "web" } : null;
+       },
+-      selectTenant: (request) => request.headers.get("x-openbot-tenant-id"),
++      // MT005 ruling #1: selection headers are x-openbot-tenant and
++      // x-openbot-workspace. They only select; database membership decides.
++      selectTenant: (request) => request.headers.get("x-openbot-tenant"),
+       selectWorkspace: (request) =>
+-        request.headers.get("x-openbot-workspace-id"),
++        request.headers.get("x-openbot-workspace"),
+     });
+     return {
++      directory,
+       data,
+       scopes,
+       conversations: createConversationService({ data, mastraStorage }),
+@@ -819,6 +835,52 @@ const enterpriseConversationRoutes = enterpriseCapabilities
+       enterpriseCapabilities.scopes,
+     )
+   : createUnavailableConversationRoutes();
++// MT006 (issue #49): workspace scope listing plus company team administration.
++// The listing half runs on the directory/data channels already verified above;
++// the admin half needs the restricted operator channel, and its routes answer
++// 503 when that channel is not wired — never a permissive stand-in. Ruling #1:
++// x-openbot-tenant / x-openbot-workspace select; database membership decides.
++const authenticateWorkspaceScopeRequest = async (
++  request: Request,
++): Promise<AuthenticatedRequestIdentity | null> => {
++  // Session faults answer 401 through the routes' error map; the identical
++  // resolution beside the conversation scopes carries the structured trace.
++  const actor = await resolveRequestActor(request).catch(() => null);
++  return actor ? { actorId: actor.id, entrypoint: "web" } : null;
++};
++const enterpriseWorkspaceScopeRoutes = enterpriseCapabilities
++  ? await (async () => {
++      const operatorUrl = config.enterpriseOperatorDatabaseUrl;
++      const operator = operatorUrl
++        ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
++            // The operator channel failing its capability check leaves the
++            // admin routes answering 503 — refused, never permissive; no
++            // console here (server/src is noConsole-enforced).
++            () => null,
++          )
++        : null;
++      return createWorkspaceScopeRoutes({
++        authenticate: authenticateWorkspaceScopeRequest,
++        lister: createWorkspaceScopeLister(
++          enterpriseCapabilities.directory,
++          enterpriseCapabilities.data,
++        ),
++        admin: operator
++          ? {
++              authorizer: createCompanyAdminAuthorizer(
++                enterpriseCapabilities.directory,
++                {
++                  authenticate: authenticateWorkspaceScopeRequest,
++                  selectTenant: (request) =>
++                    request.headers.get("x-openbot-tenant"),
++                },
++              ),
++              service: createWorkspaceAdminService(operator),
++            }
++          : undefined,
++      });
++    })()
++  : createUnavailableWorkspaceScopeRoutes();
+ const identityStore = createIdentityStore(database, credentialStore);
+ 
+ const agentVault = {
+@@ -5422,6 +5484,7 @@ const app = createApp(
+     groups: groupConversations,
+     teamBots,
+     enterpriseConversations: enterpriseConversationRoutes,
++    enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
+     lifecycle: {
+       lifecycle: createBotLifecycleStore(database),
+       reset: createBotReset({
+=== NEW FILES (untracked, full content as diff) ===
+--- /dev/null
++++ server/src/enterprise/tenancy/workspace-admin.ts
++++ b/server/src/enterprise/tenancy/workspace-admin.ts
+@@ -0,0 +1,698 @@
++// server/src/enterprise/tenancy/workspace-admin.ts
++// MT006（Issue #49）：工作范围列出与公司级团队管理。
++//
++// 两个服务面，判定事实与 MT005 完全同源（enterprise_memberships +
++// enterprise_workspace_memberships 的有效行）：
++//
++//   1. createWorkspaceScopeLister —— 登录用户列出其有资格的公司与团队。
++//      目录事务按 self-read RLS（app.user_id）读取公司成员行与团队成员行，
++//      团队名按公司经 data 角色租户上下文补齐。没有任何默认团队逻辑：
++//      无资格 → companies: []（明确空状态）；公司无团队 → teams: []。
++//
++//   2. createCompanyAdminAuthorizer + createWorkspaceAdminService —— 公司
++//      管理员管理本公司团队与成员名单的**等价集中入口**（MT005 scope gate
++//      的管理面孪生）：签发信任的 CompanyAdminContext（WeakSet + freeze，
++//      与 createScopeResolver 同一信任机制），每个管理操作在同一 operator
++//      事务内重验 tenant_admin 身份 + 公司 epoch + principal 状态后，经
++//      受限 operator 角色 + RLS 写入。裁决 #1：x-openbot-tenant 只做选择。
++//
++// 事务形状与 conversations/store.ts、scope-gate.ts 完全一致：
++// read committed + lock/statement timeout + set_config(…, true)（事务本地，
++// 提交即清除，RLS 纵深防御）+ advisory 锁（键序 tenant → membership →
++// workspace-membership；gate 持共享锁，管理写持排他锁，同键串行化）。
++// 写中途需要切换 app.operator_principal_id（重验期 pin 操作者，写入期 pin
++// 目标成员——MT004 的 update 策略按该上下文收紧行范围）。
++
++import { and, eq, sql } from "drizzle-orm";
++import {
++  enterpriseMemberships,
++  enterprisePrincipals,
++  enterpriseTenants,
++  enterpriseWorkspaceMemberships,
++  enterpriseWorkspaces,
++} from "../../db/schema/enterprise-tenancy";
++import {
++  assertDataDatabase,
++  assertDirectoryDatabase,
++  assertOperatorDatabase,
++  type DataDatabase,
++  type DirectoryDatabase,
++  type OperatorDatabase,
++} from "./connections";
++import type { AuthenticatedRequestIdentity } from "./store";
++
++// ---------------------------------------------------------------------------
++// 信任机制：与 createScopeResolver 的 issuedScopes 同构（WeakSet + freeze）
++// ---------------------------------------------------------------------------
++
++const issuedAdminContexts = new WeakSet<object>();
++
++export interface CompanyAdminContext {
++  readonly tenantId: string;
++  readonly principalId: string;
++  readonly actorId: string;
++  readonly memberEpoch: number;
++}
++
++export function assertTrustedAdminContext(context: CompanyAdminContext): void {
++  if (
++    !context ||
++    typeof context !== "object" ||
++    !issuedAdminContexts.has(context)
++  ) {
++    throw new Error("UNVERIFIED_ADMIN_CONTEXT");
++  }
++}
++
++// ---------------------------------------------------------------------------
++// 1. 工作范围列出（登录用户的全部有资格公司 + 团队）
++// ---------------------------------------------------------------------------
++
++export interface WorkspaceScopeTeam {
++  readonly workspaceId: string;
++  readonly name: string;
++}
++
++export interface WorkspaceScopeCompany {
++  readonly tenantId: string;
++  readonly name: string;
++  /** The actor's own company role for this company. */
++  readonly role: string;
++  readonly memberEpoch: number;
++  readonly teams: readonly WorkspaceScopeTeam[];
++}
++
++export interface WorkspaceScopeListing {
++  readonly companies: readonly WorkspaceScopeCompany[];
++}
++
++export interface WorkspaceScopeLister {
++  list(identity: AuthenticatedRequestIdentity): Promise<WorkspaceScopeListing>;
++}
++
++export function createWorkspaceScopeLister(
++  directory: DirectoryDatabase,
++  data: DataDatabase,
++): WorkspaceScopeLister {
++  assertDirectoryDatabase(directory);
++  assertDataDatabase(data);
++  return {
++    async list(identity) {
++      if (!identity?.actorId) throw new Error("AUTH_REQUIRED");
++      // Directory transaction: the actor's own membership facts, visible
++      // through the self-read RLS policies pinned to app.user_id.
++      const { companies, teamRows } = await directory.transaction(
++        async (tx) => {
++          await tx.execute(sql`set transaction isolation level read committed`);
++          await tx.execute(sql`set local lock_timeout = '2s'`);
++          await tx.execute(sql`set local statement_timeout = '5s'`);
++          await tx.execute(
++            sql`select set_config('app.user_id', ${identity.actorId}, true)`,
++          );
++          const companyRows = await tx
++            .select({
++              tenantId: enterpriseMemberships.tenantId,
++              tenantName: enterpriseTenants.name,
++              tenantStatus: enterpriseTenants.status,
++              principalStatus: enterprisePrincipals.status,
++              memberStatus: enterpriseMemberships.status,
++              role: enterpriseMemberships.role,
++              memberEpoch: enterpriseMemberships.epoch,
++            })
++            .from(enterpriseMemberships)
++            .innerJoin(
++              enterprisePrincipals,
++              eq(enterprisePrincipals.id, enterpriseMemberships.principalId),
++            )
++            .innerJoin(
++              enterpriseTenants,
++              eq(enterpriseTenants.id, enterpriseMemberships.tenantId),
++            )
++            .where(eq(enterprisePrincipals.userId, identity.actorId));
++          const teamRows = await tx
++            .select({
++              tenantId: enterpriseWorkspaceMemberships.tenantId,
++              workspaceId: enterpriseWorkspaceMemberships.workspaceId,
++            })
++            .from(enterpriseWorkspaceMemberships)
++            .innerJoin(
++              enterprisePrincipals,
++              eq(
++                enterprisePrincipals.id,
++                enterpriseWorkspaceMemberships.principalId,
++              ),
++            )
++            .where(
++              and(
++                eq(enterprisePrincipals.userId, identity.actorId),
++                eq(enterpriseWorkspaceMemberships.status, "active"),
++              ),
++            );
++          return { companies: companyRows, teamRows };
++        },
++      );
++      // Eligibility = every status fact active; a suspended company row hides
++      // the whole company (the same fact source the MT005 resolver reads).
++      const eligible = companies.filter(
++        (company) =>
++          company.tenantStatus === "active" &&
++          company.principalStatus === "active" &&
++          company.memberStatus === "active",
++      );
++      const teamsByTenant = new Map<string, string[]>();
++      for (const team of teamRows) {
++        const ids = teamsByTenant.get(team.tenantId) ?? [];
++        ids.push(team.workspaceId);
++        teamsByTenant.set(team.tenantId, ids);
++      }
++      // Team display names come from the tenant-scoped data read; only teams
++      // the actor is a member of are ever named.
++      const resolvedCompanies: WorkspaceScopeCompany[] = [];
++      for (const company of eligible) {
++        const teamIds = (teamsByTenant.get(company.tenantId) ?? []).sort();
++        const teams: WorkspaceScopeTeam[] = [];
++        if (teamIds.length > 0) {
++          const named = await data.transaction(async (tx) => {
++            await tx.execute(
++              sql`set transaction isolation level read committed`,
++            );
++            await tx.execute(sql`set local lock_timeout = '2s'`);
++            await tx.execute(sql`set local statement_timeout = '5s'`);
++            await tx.execute(
++              sql`select set_config('app.tenant_id', ${company.tenantId}, true)`,
++            );
++            return tx
++              .select({
++                workspaceId: enterpriseWorkspaces.id,
++                name: enterpriseWorkspaces.name,
++              })
++              .from(enterpriseWorkspaces)
++              .where(eq(enterpriseWorkspaces.tenantId, company.tenantId));
++          });
++          const nameOf = new Map(
++            named.map((row) => [row.workspaceId, row.name]),
++          );
++          for (const workspaceId of teamIds) {
++            const name = nameOf.get(workspaceId);
++            // A membership row whose workspace vanished cannot happen (FK
++            // cascade); an RLS-invisible row is skipped rather than invented.
++            if (name !== undefined) {
++              teams.push({ workspaceId, name });
++            }
++          }
++        }
++        resolvedCompanies.push({
++          tenantId: company.tenantId,
++          name: company.tenantName,
++          role: company.role,
++          memberEpoch: company.memberEpoch,
++          teams,
++        });
++      }
++      resolvedCompanies.sort((a, b) => a.tenantId.localeCompare(b.tenantId));
++      // Explicit empty state: no companies means an empty array — never a
++      // defaulted or suggested scope.
++      return { companies: resolvedCompanies };
++    },
++  };
++}
++
++// ---------------------------------------------------------------------------
++// 2a. 公司管理员上下文签发（等价集中入口的签发半边）
++// ---------------------------------------------------------------------------
++
++export interface CompanyAdminAuthorizerOptions {
++  authenticate(request: Request): Promise<AuthenticatedRequestIdentity | null>;
++  /** Ruling #1: the tenant header only selects; membership decides. */
++  selectTenant?(request: Request): string | null;
++}
++
++export interface CompanyAdminAuthorizer {
++  authenticate(request: Request): Promise<AuthenticatedRequestIdentity | null>;
++  resolveAdminContext(request: Request): Promise<CompanyAdminContext>;
++}
++
++export function createCompanyAdminAuthorizer(
++  directory: DirectoryDatabase,
++  options: CompanyAdminAuthorizerOptions,
++): CompanyAdminAuthorizer {
++  assertDirectoryDatabase(directory);
++  return {
++    authenticate: (request) => options.authenticate(request),
++    async resolveAdminContext(request) {
++      const identity = await options.authenticate(request);
++      if (!identity?.actorId) throw new Error("AUTH_REQUIRED");
++      const tenantId = options.selectTenant?.(request);
++      if (!tenantId?.trim()) throw new Error("TENANT_REQUIRED");
++      const context = await directory.transaction(async (tx) => {
++        await tx.execute(sql`set transaction isolation level read committed`);
++        await tx.execute(sql`set local lock_timeout = '2s'`);
++        await tx.execute(sql`set local statement_timeout = '5s'`);
++        await tx.execute(
++          sql`select set_config('app.user_id', ${identity.actorId}, true)`,
++        );
++        const [membership] = await tx
++          .select({
++            principalId: enterprisePrincipals.id,
++            tenantStatus: enterpriseTenants.status,
++            principalStatus: enterprisePrincipals.status,
++            memberStatus: enterpriseMemberships.status,
++            role: enterpriseMemberships.role,
++            memberEpoch: enterpriseMemberships.epoch,
++          })
++          .from(enterpriseMemberships)
++          .innerJoin(
++            enterprisePrincipals,
++            eq(enterprisePrincipals.id, enterpriseMemberships.principalId),
++          )
++          .innerJoin(
++            enterpriseTenants,
++            eq(enterpriseTenants.id, enterpriseMemberships.tenantId),
++          )
++          .where(
++            and(
++              eq(enterprisePrincipals.userId, identity.actorId),
++              eq(enterpriseMemberships.tenantId, tenantId),
++            ),
++          )
++          .limit(1);
++        if (
++          membership?.tenantStatus !== "active" ||
++          membership.principalStatus !== "active" ||
++          membership.memberStatus !== "active"
++        ) {
++          // Same code as the business resolver: no existence leak.
++          throw new Error("TENANT_FORBIDDEN");
++        }
++        if (membership.role !== "tenant_admin") {
++          throw new Error("TENANT_ADMIN_REQUIRED");
++        }
++        return Object.freeze({
++          tenantId,
++          principalId: membership.principalId,
++          actorId: identity.actorId,
++          memberEpoch: membership.memberEpoch,
++        } satisfies CompanyAdminContext);
++      });
++      issuedAdminContexts.add(context);
++      return context;
++    },
++  };
++}
++
++// ---------------------------------------------------------------------------
++// 2b. 团队与成员名单管理（等价集中入口的事务半边）
++// ---------------------------------------------------------------------------
++
++export interface CreatedTeam {
++  readonly workspaceId: string;
++  readonly name: string;
++}
++
++export type TeamMembershipFact = {
++  readonly workspaceId: string;
++  readonly principalId: string;
++  readonly status: "active" | "suspended";
++  readonly epoch: number;
++};
++
++export interface AddTeamMembershipResult {
++  readonly membership: TeamMembershipFact;
++  /** "created" = fresh row; "reactivated" = suspended row restored. */
++  readonly outcome: "created" | "reactivated";
++}
++
++export interface WorkspaceAdminService {
++  createTeam(
++    context: CompanyAdminContext,
++    input: { readonly name: string; readonly workspaceId?: string },
++  ): Promise<CreatedTeam>;
++  addTeamMember(
++    context: CompanyAdminContext,
++    input: { readonly workspaceId: string; readonly principalId: string },
++  ): Promise<AddTeamMembershipResult>;
++  suspendTeamMember(
++    context: CompanyAdminContext,
++    input: { readonly workspaceId: string; readonly principalId: string },
++  ): Promise<{ readonly membership: TeamMembershipFact }>;
++  removeTeamMember(
++    context: CompanyAdminContext,
++    input: { readonly workspaceId: string; readonly principalId: string },
++  ): Promise<{ readonly removed: true }>;
++}
++
++/** The advisory key the MT005 gate takes shared and admin writes take exclusive. */
++function membershipLockKey(tenantId: string, principalId: string): string {
++  return JSON.stringify(["enterprise", "membership", tenantId, principalId]);
++}
++
++function workspaceMembershipLockKey(
++  tenantId: string,
++  workspaceId: string,
++  principalId: string,
++): string {
++  return JSON.stringify([
++    "enterprise",
++    "workspace-membership",
++    tenantId,
++    workspaceId,
++    principalId,
++  ]);
++}
++
++async function beginTransaction(
++  tx: Parameters<Parameters<OperatorDatabase["transaction"]>[0]>[0],
++): Promise<void> {
++  await tx.execute(sql`set transaction isolation level read committed`);
++  await tx.execute(sql`set local lock_timeout = '2s'`);
++  await tx.execute(sql`set local statement_timeout = '5s'`);
++}
++
++/**
++ * Runs one management operation: trust → exclusive locks (canonical order) →
++ * in-transaction tenant_admin + epoch + principal revalidation → operation.
++ * The operator-transaction settings are transaction-local; nothing
++ * session-level survives commit or rollback.
++ */
++/** The management-plane write service over the restricted operator role. */
++export function createWorkspaceAdminService(
++  operator: OperatorDatabase,
++): WorkspaceAdminService {
++  assertOperatorDatabase(operator);
++  type Tx = Parameters<Parameters<OperatorDatabase["transaction"]>[0]>[0];
++
++  /** Exclusive locks in canonical order: tenant → membership → workspace-membership. */
++  const takeLocks = async (tx: Tx, keys: readonly string[]): Promise<void> => {
++    for (const key of keys) {
++      await tx.execute(
++        sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`,
++      );
++    }
++  };
++
++  /**
++   * Revalidates the acting admin inside the transaction: active company
++   * membership with the tenant_admin role, epoch equal to the issued
++   * context, principal still active. Any drift → SCOPE_REVOKED.
++   */
++  const revalidateAdmin = async (
++    tx: Tx,
++    context: CompanyAdminContext,
++  ): Promise<void> => {
++    const [membership] = await tx
++      .select({
++        memberStatus: enterpriseMemberships.status,
++        memberEpoch: enterpriseMemberships.epoch,
++        role: enterpriseMemberships.role,
++        principalStatus: enterprisePrincipals.status,
++      })
++      .from(enterpriseMemberships)
++      .innerJoin(
++        enterprisePrincipals,
++        and(
++          eq(enterprisePrincipals.id, enterpriseMemberships.principalId),
++          // principals operator read policy pins app.operator_principal_id.
++          sql`${enterprisePrincipals.id} = nullif(current_setting('app.operator_principal_id', true), '')`,
++        ),
++      )
++      .where(
++        and(
++          eq(enterpriseMemberships.tenantId, context.tenantId),
++          eq(enterpriseMemberships.principalId, context.principalId),
++        ),
++      )
++      .limit(1);
++    if (
++      membership?.memberStatus !== "active" ||
++      membership.principalStatus !== "active" ||
++      membership.role !== "tenant_admin" ||
++      membership.memberEpoch !== context.memberEpoch
++    ) {
++      throw new Error("SCOPE_REVOKED");
++    }
++  };
++
++  /** Switches the operator pin from the acting admin to the target member. */
++  const pinTarget = async (tx: Tx, principalId: string): Promise<void> => {
++    await tx.execute(
++      sql`select set_config('app.operator_principal_id', ${principalId}, true)`,
++    );
++  };
++
++  return {
++    async createTeam(context, input) {
++      assertTrustedAdminContext(context);
++      const name = input.name?.trim();
++      if (!name || name.length > 200) {
++        throw new Error("INVALID_REQUEST");
++      }
++      const requestedId = input.workspaceId?.trim();
++      if (
++        requestedId !== undefined &&
++        requestedId !== "" &&
++        !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(requestedId)
++      ) {
++        throw new Error("INVALID_REQUEST");
++      }
++      return operator.transaction(async (tx) => {
++        await beginTransaction(tx);
++        await tx.execute(
++          sql`select set_config('app.tenant_id', ${context.tenantId}, true), set_config('app.operator_principal_id', ${context.principalId}, true)`,
++        );
++        await takeLocks(tx, [
++          JSON.stringify(["enterprise", "tenant", context.tenantId]),
++        ]);
++        await revalidateAdmin(tx, context);
++        const workspaceId =
++          requestedId !== undefined && requestedId !== ""
++            ? requestedId
++            : `team-${crypto.randomUUID()}`;
++        if (requestedId !== undefined && requestedId !== "") {
++          const [existing] = await tx
++            .select({ id: enterpriseWorkspaces.id })
++            .from(enterpriseWorkspaces)
++            .where(
++              and(
++                eq(enterpriseWorkspaces.tenantId, context.tenantId),
++                eq(enterpriseWorkspaces.id, workspaceId),
++              ),
++            )
++            .limit(1);
++          if (existing) throw new Error("TEAM_ALREADY_EXISTS");
++        }
++        await tx.insert(enterpriseWorkspaces).values({
++          tenantId: context.tenantId,
++          id: workspaceId,
++          name,
++        });
++        return { workspaceId, name };
++      });
++    },
++
++    async addTeamMember(context, input) {
++      assertTrustedAdminContext(context);
++      const workspaceId = input.workspaceId?.trim();
++      const principalId = input.principalId?.trim();
++      if (!workspaceId || !principalId) {
++        throw new Error("INVALID_REQUEST");
++      }
++      return operator.transaction(async (tx) => {
++        await beginTransaction(tx);
++        await tx.execute(
++          sql`select set_config('app.tenant_id', ${context.tenantId}, true), set_config('app.operator_principal_id', ${context.principalId}, true)`,
++        );
++        await takeLocks(tx, [
++          membershipLockKey(context.tenantId, context.principalId),
++          membershipLockKey(context.tenantId, principalId),
++          workspaceMembershipLockKey(
++            context.tenantId,
++            workspaceId,
++            principalId,
++          ),
++        ]);
++        await revalidateAdmin(tx, context);
++        const [workspace] = await tx
++          .select({ id: enterpriseWorkspaces.id })
++          .from(enterpriseWorkspaces)
++          .where(
++            and(
++              eq(enterpriseWorkspaces.tenantId, context.tenantId),
++              eq(enterpriseWorkspaces.id, workspaceId),
++            ),
++          )
++          .limit(1);
++        if (!workspace) throw new Error("WORKSPACE_NOT_FOUND");
++        // The target must be an active company member (the FK guarantees the
++        // row exists only when the company membership does; the status is the
++        // live fact).
++        const [companyMembership] = await tx
++          .select({ status: enterpriseMemberships.status })
++          .from(enterpriseMemberships)
++          .where(
++            and(
++              eq(enterpriseMemberships.tenantId, context.tenantId),
++              eq(enterpriseMemberships.principalId, principalId),
++            ),
++          )
++          .limit(1);
++        if (companyMembership?.status !== "active") {
++          // Non-member and unknown principal are deliberately
++          // indistinguishable (no existence leak).
++          throw new Error("TEAM_MEMBER_NOT_COMPANY_MEMBER");
++        }
++        // From here the write acts on the target member: switch the pin the
++        // MT004 update policy is pinned to.
++        await pinTarget(tx, principalId);
++        const [existing] = await tx
++          .select({
++            status: enterpriseWorkspaceMemberships.status,
++            epoch: enterpriseWorkspaceMemberships.epoch,
++          })
++          .from(enterpriseWorkspaceMemberships)
++          .where(
++            and(
++              eq(enterpriseWorkspaceMemberships.tenantId, context.tenantId),
++              eq(enterpriseWorkspaceMemberships.workspaceId, workspaceId),
++              eq(enterpriseWorkspaceMemberships.principalId, principalId),
++            ),
++          )
++          .limit(1);
++        if (existing?.status === "active") {
++          throw new Error("TEAM_MEMBER_ALREADY_EXISTS");
++        }
++        if (existing) {
++          const [updated] = await tx
++            .update(enterpriseWorkspaceMemberships)
++            .set({
++              status: "active",
++              epoch: sql`${enterpriseWorkspaceMemberships.epoch} + 1`,
++            })
++            .where(
++              and(
++                eq(enterpriseWorkspaceMemberships.tenantId, context.tenantId),
++                eq(enterpriseWorkspaceMemberships.workspaceId, workspaceId),
++                eq(enterpriseWorkspaceMemberships.principalId, principalId),
++              ),
++            )
++            .returning({ epoch: enterpriseWorkspaceMemberships.epoch });
++          return {
++            membership: {
++              workspaceId,
++              principalId,
++              status: "active" as const,
++              epoch: updated.epoch,
++            },
++            outcome: "reactivated" as const,
++          };
++        }
++        const [inserted] = await tx
++          .insert(enterpriseWorkspaceMemberships)
++          .values({
++            tenantId: context.tenantId,
++            workspaceId,
++            principalId,
++          })
++          .returning({ epoch: enterpriseWorkspaceMemberships.epoch });
++        return {
++          membership: {
++            workspaceId,
++            principalId,
++            status: "active" as const,
++            epoch: inserted.epoch,
++          },
++          outcome: "created" as const,
++        };
++      });
++    },
++
++    async suspendTeamMember(context, input) {
++      assertTrustedAdminContext(context);
++      const workspaceId = input.workspaceId?.trim();
++      const principalId = input.principalId?.trim();
++      if (!workspaceId || !principalId) {
++        throw new Error("INVALID_REQUEST");
++      }
++      return operator.transaction(async (tx) => {
++        await beginTransaction(tx);
++        await tx.execute(
++          sql`select set_config('app.tenant_id', ${context.tenantId}, true), set_config('app.operator_principal_id', ${context.principalId}, true)`,
++        );
++        await takeLocks(tx, [
++          membershipLockKey(context.tenantId, context.principalId),
++          workspaceMembershipLockKey(
++            context.tenantId,
++            workspaceId,
++            principalId,
++          ),
++        ]);
++        await revalidateAdmin(tx, context);
++        await pinTarget(tx, principalId);
++        const [updated] = await tx
++          .update(enterpriseWorkspaceMemberships)
++          .set({
++            status: "suspended",
++            epoch: sql`${enterpriseWorkspaceMemberships.epoch} + 1`,
++          })
++          .where(
++            and(
++              eq(enterpriseWorkspaceMemberships.tenantId, context.tenantId),
++              eq(enterpriseWorkspaceMemberships.workspaceId, workspaceId),
++              eq(enterpriseWorkspaceMemberships.principalId, principalId),
++              eq(enterpriseWorkspaceMemberships.status, "active"),
++            ),
++          )
++          .returning({ epoch: enterpriseWorkspaceMemberships.epoch });
++        if (!updated) throw new Error("TEAM_MEMBER_NOT_FOUND");
++        return {
++          membership: {
++            workspaceId,
++            principalId,
++            status: "suspended" as const,
++            epoch: updated.epoch,
++          },
++        };
++      });
++    },
++
++    async removeTeamMember(context, input) {
++      assertTrustedAdminContext(context);
++      const workspaceId = input.workspaceId?.trim();
++      const principalId = input.principalId?.trim();
++      if (!workspaceId || !principalId) {
++        throw new Error("INVALID_REQUEST");
++      }
++      return operator.transaction(async (tx) => {
++        await beginTransaction(tx);
++        await tx.execute(
++          sql`select set_config('app.tenant_id', ${context.tenantId}, true), set_config('app.operator_principal_id', ${context.principalId}, true)`,
++        );
++        await takeLocks(tx, [
++          membershipLockKey(context.tenantId, context.principalId),
++          workspaceMembershipLockKey(
++            context.tenantId,
++            workspaceId,
++            principalId,
++          ),
++        ]);
++        await revalidateAdmin(tx, context);
++        await pinTarget(tx, principalId);
++        const removed = await tx
++          .delete(enterpriseWorkspaceMemberships)
++          .where(
++            and(
++              eq(enterpriseWorkspaceMemberships.tenantId, context.tenantId),
++              eq(enterpriseWorkspaceMemberships.workspaceId, workspaceId),
++              eq(enterpriseWorkspaceMemberships.principalId, principalId),
++            ),
++          )
++          .returning({
++            principalId: enterpriseWorkspaceMemberships.principalId,
++          });
++        if (removed.length === 0) {
++          throw new Error("TEAM_MEMBER_NOT_FOUND");
++        }
++        return { removed: true as const };
++      });
++    },
++  };
++}
+--- /dev/null
++++ server/src/enterprise/tenancy/workspace-scope-routes.ts
++++ b/server/src/enterprise/tenancy/workspace-scope-routes.ts
+@@ -0,0 +1,259 @@
++// server/src/enterprise/tenancy/workspace-scope-routes.ts
++// MT006（Issue #49）：工作范围列出与团队管理的 HTTP 路由面。
++//
++//   GET    /                                   列出登录用户有资格的公司与团队
++//   POST   /admin/teams                        公司管理员创建团队
++//   POST   /admin/teams/:workspaceId/members   加入成员（停用行 → 重新激活）
++//   POST   /admin/teams/:workspaceId/members/:principalId/suspend  停用成员
++//   DELETE /admin/teams/:workspaceId/members/:principalId          移除成员
++//
++// 裁决 #1：x-openbot-tenant / x-openbot-workspace 只做选择；列出不读取任何
++// 选择头（全新用户还没有可选择的范围），管理面只消费 x-openbot-tenant。
++// 管理路由未装配 operator 通道时回答 503 unavailable（与 conversations 的
++// unavailable 模式一致），绝不以宽松替身放行。
++
++import { Hono } from "hono";
++import type { AuthenticatedRequestIdentity } from "./store";
++import type {
++  CompanyAdminAuthorizer,
++  WorkspaceAdminService,
++  WorkspaceScopeLister,
++} from "./workspace-admin";
++
++export interface WorkspaceScopeRouteDeps {
++  authenticate(request: Request): Promise<AuthenticatedRequestIdentity | null>;
++  lister: WorkspaceScopeLister;
++  /** Absent (operator channel unwired) → admin routes answer 503. */
++  admin?: {
++    authorizer: CompanyAdminAuthorizer;
++    service: WorkspaceAdminService;
++  };
++}
++
++const WORKSPACE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
++const PRINCIPAL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
++function errorResponse(error: unknown): {
++  status: number;
++  body: { error: { code: string; message: string } };
++} {
++  const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
++  const mapped: Record<string, number> = {
++    AUTH_REQUIRED: 401,
++    TENANT_REQUIRED: 400,
++    WORKSPACE_REQUIRED: 400,
++    INVALID_REQUEST: 400,
++    TENANT_FORBIDDEN: 403,
++    TENANT_ADMIN_REQUIRED: 403,
++    WORKSPACE_FORBIDDEN: 403,
++    UNVERIFIED_SCOPE: 403,
++    UNVERIFIED_ADMIN_CONTEXT: 403,
++    WORKSPACE_NOT_FOUND: 404,
++    TEAM_MEMBER_NOT_FOUND: 404,
++    TEAM_MEMBER_NOT_COMPANY_MEMBER: 404,
++    TEAM_ALREADY_EXISTS: 409,
++    TEAM_MEMBER_ALREADY_EXISTS: 409,
++    DATA_DATABASE_UNAVAILABLE: 503,
++    WORKSPACE_ADMIN_UNAVAILABLE: 503,
++  };
++  const status = mapped[code];
++  if (status === undefined) {
++    // No log here: server/src is noConsole-enforced and the codes above
++    // cover every expected business failure. A request reaching this branch
++    // is a bug the suite pins, not a runtime event to trace.
++    return {
++      status: 500,
++      body: {
++        error: { code: "internal", message: "Request failed." },
++      },
++    };
++  }
++  return {
++    status,
++    body: { error: { code, message: "Request refused." } },
++  };
++}
++
++async function jsonObject(request: Request): Promise<Record<string, unknown>> {
++  let value: unknown;
++  try {
++    value = await request.json();
++  } catch {
++    throw new Error("INVALID_REQUEST");
++  }
++  if (typeof value !== "object" || value === null || Array.isArray(value)) {
++    throw new Error("INVALID_REQUEST");
++  }
++  return value as Record<string, unknown>;
++}
++
++function requireSelector(value: string | undefined, pattern: RegExp): string {
++  if (value === undefined || !pattern.test(value)) {
++    throw new Error("INVALID_REQUEST");
++  }
++  return value;
++}
++
++export function createWorkspaceScopeRoutes(
++  deps: WorkspaceScopeRouteDeps,
++): Hono {
++  const routes = new Hono();
++
++  routes.get("/", async (context) => {
++    try {
++      const identity = await deps.authenticate(context.req.raw);
++      if (!identity?.actorId) throw new Error("AUTH_REQUIRED");
++      return context.json(await deps.lister.list(identity));
++    } catch (error) {
++      const response = errorResponse(error);
++      return context.json(
++        response.body,
++        response.status as 400 | 401 | 403 | 404 | 409 | 500 | 503,
++      );
++    }
++  });
++
++  const requireAdmin = () => {
++    if (!deps.admin) throw new Error("WORKSPACE_ADMIN_UNAVAILABLE");
++    return deps.admin;
++  };
++
++  routes.post("/admin/teams", async (context) => {
++    try {
++      const adminContext = await requireAdmin().authorizer.resolveAdminContext(
++        context.req.raw,
++      );
++      const body = await jsonObject(context.req.raw);
++      if (
++        typeof body.name !== "string" ||
++        (body.workspaceId !== undefined && typeof body.workspaceId !== "string")
++      ) {
++        throw new Error("INVALID_REQUEST");
++      }
++      const team = await requireAdmin().service.createTeam(adminContext, {
++        name: body.name,
++        workspaceId:
++          body.workspaceId === undefined
++            ? undefined
++            : requireSelector(body.workspaceId, WORKSPACE_ID_PATTERN),
++      });
++      return context.json({ team }, 201);
++    } catch (error) {
++      const response = errorResponse(error);
++      return context.json(
++        response.body,
++        response.status as 400 | 401 | 403 | 404 | 409 | 500 | 503,
++      );
++    }
++  });
++
++  routes.post("/admin/teams/:workspaceId/members", async (context) => {
++    try {
++      const adminContext = await requireAdmin().authorizer.resolveAdminContext(
++        context.req.raw,
++      );
++      const workspaceId = requireSelector(
++        context.req.param("workspaceId"),
++        WORKSPACE_ID_PATTERN,
++      );
++      const body = await jsonObject(context.req.raw);
++      if (typeof body.principalId !== "string") {
++        throw new Error("INVALID_REQUEST");
++      }
++      const principalId = requireSelector(
++        body.principalId,
++        PRINCIPAL_ID_PATTERN,
++      );
++      const result = await requireAdmin().service.addTeamMember(adminContext, {
++        workspaceId,
++        principalId,
++      });
++      return context.json(
++        { membership: result.membership },
++        result.outcome === "created" ? 201 : 200,
++      );
++    } catch (error) {
++      const response = errorResponse(error);
++      return context.json(
++        response.body,
++        response.status as 400 | 401 | 403 | 404 | 409 | 500 | 503,
++      );
++    }
++  });
++
++  routes.post(
++    "/admin/teams/:workspaceId/members/:principalId/suspend",
++    async (context) => {
++      try {
++        const adminContext =
++          await requireAdmin().authorizer.resolveAdminContext(context.req.raw);
++        const workspaceId = requireSelector(
++          context.req.param("workspaceId"),
++          WORKSPACE_ID_PATTERN,
++        );
++        const principalId = requireSelector(
++          context.req.param("principalId"),
++          PRINCIPAL_ID_PATTERN,
++        );
++        const result = await requireAdmin().service.suspendTeamMember(
++          adminContext,
++          { workspaceId, principalId },
++        );
++        return context.json({ membership: result.membership });
++      } catch (error) {
++        const response = errorResponse(error);
++        return context.json(
++          response.body,
++          response.status as 400 | 401 | 403 | 404 | 409 | 500 | 503,
++        );
++      }
++    },
++  );
++
++  routes.delete(
++    "/admin/teams/:workspaceId/members/:principalId",
++    async (context) => {
++      try {
++        const adminContext =
++          await requireAdmin().authorizer.resolveAdminContext(context.req.raw);
++        const workspaceId = requireSelector(
++          context.req.param("workspaceId"),
++          WORKSPACE_ID_PATTERN,
++        );
++        const principalId = requireSelector(
++          context.req.param("principalId"),
++          PRINCIPAL_ID_PATTERN,
++        );
++        return context.json(
++          await requireAdmin().service.removeTeamMember(adminContext, {
++            workspaceId,
++            principalId,
++          }),
++        );
++      } catch (error) {
++        const response = errorResponse(error);
++        return context.json(
++          response.body,
++          response.status as 400 | 401 | 403 | 404 | 409 | 500 | 503,
++        );
++      }
++    },
++  );
++
++  return routes;
++}
++
++export function createUnavailableWorkspaceScopeRoutes(): Hono {
++  const routes = new Hono();
++  routes.all("*", (context) =>
++    context.json(
++      {
++        error: {
++          code: "unavailable",
++          message: "Workspace scope surface unavailable.",
++        },
++      },
++      503,
++    ),
++  );
++  return routes;
++}
+--- /dev/null
++++ server/tests/multitenancy/workspace-scope.test.ts
++++ b/server/tests/multitenancy/workspace-scope.test.ts
+@@ -0,0 +1,952 @@
++// server/tests/multitenancy/workspace-scope.test.ts
++// MT006（Issue #49）：工作范围选择与团队管理。
++//
++// 验收事实源（Issue #49 四条，逐条对应 describe）：
++//   (1) 登录用户可列出其有资格的公司与团队——判定事实 = 有效的
++//       enterprise_memberships + enterprise_workspace_memberships 行（与
++//       MT005 判定同一事实源）。
++//   (2) 选择当前工作范围经裁决 #1 头（x-openbot-tenant / x-openbot-workspace）；
++//       无可用团队时返回明确空状态，绝不回退默认团队。
++//   (3) 公司管理员可管理本公司团队与成员名单（创建团队、成员加入/移除/
++//       停用）——全部经集中管理入口（等价集中入口）执行，在事务内重验
++//       tenant_admin 身份与 epoch，写路径走受限 operator 角色 + RLS。
++//   (4) 管理权不隐含业务内容读取权——管理角色没有资源读路径授权
++//       （越权用例证明：管理员即便自加入团队，无 grant 仍读不到资源）。
++//
++// 环境契约：只认显式 TEST_DATABASE_URL（或 ENTERPRISE_TEST_SETUP_DATABASE_URL）
++// 加三个受限角色 URL；缺配置时整套显式 skip（跳过原因写在用例名里，
++// skipped 不计为通过），绝不回退开发库。裁决 #1：请求头仅作选择。
++// 裁决 #2：不引入任何策略版本常量。
++
++import { afterAll, beforeAll, describe, expect, test } from "bun:test";
++import { createUnavailableWorkspaceScopeRoutes } from "../../src/enterprise/tenancy/workspace-scope-routes";
++import {
++  enterpriseRuntimeDatabaseUrlFrom,
++  enterpriseTestDatabaseUrlFrom,
++} from "../support/enterprise-database";
++import {
++  createWorkspaceScopeFixture,
++  type WorkspaceScopeFixture,
++} from "./support/workspace-scope";
++
++// ---------------------------------------------------------------------------
++// 环境探针：缺 env 显式 skip（带理由），绝不静默回退
++// ---------------------------------------------------------------------------
++
++function probeEnvironment(): { ok: true } | { ok: false; reason: string } {
++  const required = [
++    "TEST_DATABASE_URL",
++    "ENTERPRISE_TEST_SETUP_DATABASE_URL",
++    "ENTERPRISE_TEST_DIRECTORY_DATABASE_URL",
++    "ENTERPRISE_TEST_DATA_DATABASE_URL",
++    "ENTERPRISE_TEST_OPERATOR_DATABASE_URL",
++  ] as const;
++  const missing = required.filter((key) => !process.env[key]?.trim());
++  if (missing.length > 0) {
++    return {
++      ok: false,
++      reason: `MT006 requires the dedicated enterprise test database env (${missing.join(", ")}) — no dev-database fallback`,
++    };
++  }
++  try {
++    enterpriseTestDatabaseUrlFrom(process.env);
++    for (const role of ["directory", "data", "operator"] as const) {
++      enterpriseRuntimeDatabaseUrlFrom(role, process.env);
++    }
++    return { ok: true };
++  } catch (error) {
++    return {
++      ok: false,
++      reason: error instanceof Error ? error.message : String(error),
++    };
++  }
++}
++
++const ENV = probeEnvironment();
++const itDb = ((name: string, fn: () => void | Promise<void>) =>
++  ENV.ok
++    ? test(name, fn)
++    : test.skip(`${name} [skipped: ${ENV.reason}]`, fn)) as typeof test;
++const describeDb = ENV.ok ? describe : describe.skip;
++
++// ---------------------------------------------------------------------------
++// 共享夹具：MT002 隔离矩阵 + MT004 团队成员行 + MT005 resolver + 真实路由
++// ---------------------------------------------------------------------------
++
++let fixture: WorkspaceScopeFixture;
++
++/** The JSON body of a Response (typed loose for assertions). */
++async function bodyOf(response: Response): Promise<Record<string, unknown>> {
++  return (await response.json()) as Record<string, unknown>;
++}
++
++/** The companies array of a listing response body. */
++function companiesOf(body: Record<string, unknown>): Array<{
++  tenantId: string;
++  name: string;
++  role: string;
++  memberEpoch: number;
++  teams: Array<{ workspaceId: string; name: string }>;
++}> {
++  return body.companies as Array<{
++    tenantId: string;
++    name: string;
++    role: string;
++    memberEpoch: number;
++    teams: Array<{ workspaceId: string; name: string }>;
++  }>;
++}
++
++/** Resolves to the rejected error code string ("" when it did not throw). */
++async function codeOf(promise: Promise<unknown>): Promise<string> {
++  try {
++    await promise;
++    return "";
++  } catch (error) {
++    const codes: string[] = [];
++    const messages: string[] = [];
++    for (let e: unknown = error; e instanceof Error; e = e.cause) {
++      messages.push(e.message);
++      const code = (e as { code?: unknown }).code;
++      if (typeof code === "string") codes.push(code);
++    }
++    const text = messages.join(" | ");
++    return codes.length > 0 ? `${text} [${codes.join(",")}]` : text;
++  }
++}
++
++describeDb("MT006 workspace scope and team administration (Issue #49)", () => {
++  beforeAll(async () => {
++    fixture = await createWorkspaceScopeFixture();
++  });
++
++  afterAll(async () => {
++    await fixture?.dispose();
++  });
++
++  // -------------------------------------------------------------------------
++  // 验收 (1)：登录用户可列出其有资格的公司与团队（事实 = 两种成员行）
++  // -------------------------------------------------------------------------
++
++  describe("issue #49 criterion 1: a signed-in user lists eligible companies and teams from membership facts", () => {
++    itDb(
++      "a member of both teams of one company lists that company with exactly those teams",
++      async () => {
++        const response = await fixture.request("a1a2-member", {
++          method: "GET",
++          path: "/",
++        });
++        expect(response.status).toBe(200);
++        const companies = companiesOf(await bodyOf(response));
++        expect(companies).toHaveLength(1);
++        const [company] = companies;
++        expect(company.tenantId).toBe(fixture.ids["company-a"]);
++        expect(company.name).toBe("Company A");
++        expect(company.role).toBe("member");
++        expect(company.teams.map((team) => team.workspaceId).sort()).toEqual(
++          [fixture.ids["team-a1"], fixture.ids["team-a2"]].sort(),
++        );
++        expect(company.teams.map((team) => team.name).sort()).toEqual(
++          ["Company A / Team A1", "Company A / Team A2"].sort(),
++        );
++      },
++    );
++
++    itDb(
++      "a multi-company member lists each company with only that company's teams",
++      async () => {
++        const response = await fixture.request("multi-company", {
++          method: "GET",
++          path: "/",
++        });
++        expect(response.status).toBe(200);
++        const companies = companiesOf(await bodyOf(response));
++        expect(companies).toHaveLength(2);
++        const byTenant = new Map(
++          companies.map((company) => [company.tenantId, company]),
++        );
++        const companyA = byTenant.get(fixture.ids["company-a"]);
++        const companyB = byTenant.get(fixture.ids["company-b"]);
++        expect(companyA?.teams.map((team) => team.workspaceId)).toEqual([
++          fixture.ids["team-a1"],
++        ]);
++        expect(companyB?.teams.map((team) => team.workspaceId)).toEqual([
++          fixture.ids["team-b1"],
++        ]);
++      },
++    );
++
++    itDb(
++      "a company admin lists their company with an explicit empty teams array",
++      async () => {
++        const response = await fixture.request("company-admin", {
++          method: "GET",
++          path: "/",
++        });
++        expect(response.status).toBe(200);
++        const companies = companiesOf(await bodyOf(response));
++        expect(companies).toHaveLength(1);
++        expect(companies[0]?.tenantId).toBe(fixture.ids["company-a"]);
++        expect(companies[0]?.role).toBe("tenant_admin");
++        expect(companies[0]?.teams).toEqual([]);
++      },
++    );
++
++    itDb(
++      "a user with no company memberships gets an explicit empty listing, not a default",
++      async () => {
++        const response = await fixture.request("scopeless-user", {
++          method: "GET",
++          path: "/",
++        });
++        expect(response.status).toBe(200);
++        expect(companiesOf(await bodyOf(response))).toEqual([]);
++      },
++    );
++
++    itDb("an unauthenticated request is refused, not listed", async () => {
++      const response = await fixture.requestAnonymous({
++        method: "GET",
++        path: "/",
++      });
++      expect(response.status).toBe(401);
++      expect((await bodyOf(response)).error).toBeDefined();
++    });
++
++    itDb(
++      "a suspended team membership disappears from the listing while other teams stay",
++      async () => {
++        await fixture.gate.suspendTeamMembership("a1a2-member", "team-a2");
++        try {
++          const response = await fixture.request("a1a2-member", {
++            method: "GET",
++            path: "/",
++          });
++          expect(response.status).toBe(200);
++          const [company] = companiesOf(await bodyOf(response));
++          expect(company?.teams.map((team) => team.workspaceId)).toEqual([
++            fixture.ids["team-a1"],
++          ]);
++        } finally {
++          await fixture.gate.grantTeamMembership("a1a2-member", "team-a2");
++        }
++      },
++    );
++
++    itDb(
++      "a suspended company membership hides the whole company from the listing",
++      async () => {
++        const b1 = fixture.identities["multi-company"];
++        const companyB = b1.companies.find(
++          (entry) => entry.companyKey === "company-b",
++        );
++        if (!companyB) throw new Error("fixture company-b fact missing");
++        await fixture.isolation.suspendCompanyMembership(
++          "multi-company",
++          companyB.tenantId,
++        );
++        const response = await fixture.request("multi-company", {
++          method: "GET",
++          path: "/",
++        });
++        expect(response.status).toBe(200);
++        const companies = companiesOf(await bodyOf(response));
++        expect(
++          companies.some((company) => company.tenantId === companyB.tenantId),
++        ).toBe(false);
++      },
++    );
++
++    itDb(
++      "the listing never carries a server-chosen current or default scope field",
++      async () => {
++        const response = await fixture.request("a1-member", {
++          method: "GET",
++          path: "/",
++        });
++        const body = await bodyOf(response);
++        for (const key of ["current", "selected", "default", "active"]) {
++          expect(key in body).toBe(false);
++        }
++        for (const company of companiesOf(body)) {
++          for (const key of ["current", "selected", "default", "active"]) {
++            expect(key in company).toBe(false);
++          }
++        }
++      },
++    );
++  });
++
++  // -------------------------------------------------------------------------
++  // 验收 (2)：选择经裁决 #1 头；无可用团队 → 明确空状态，不回退默认团队
++  // -------------------------------------------------------------------------
++
++  describe("issue #49 criterion 2: scope selection goes through the ruling #1 headers; no default fallback, explicit empty state", () => {
++    itDb(
++      "every listed team admits scope selection through the ruling #1 headers",
++      async () => {
++        const listing = companiesOf(
++          await bodyOf(
++            await fixture.request("a1a2-member", { method: "GET", path: "/" }),
++          ),
++        );
++        const listed = listing
++          .flatMap((company) =>
++            company.teams.map((team) => ({
++              tenantId: company.tenantId,
++              workspaceId: team.workspaceId,
++            })),
++          )
++          .sort((a, b) => a.workspaceId.localeCompare(b.workspaceId));
++        expect(listed).toHaveLength(2);
++        for (const selector of listed) {
++          const scope = await fixture.gate.resolver.resolve(
++            fixture.gate.requestFor("a1a2-member", selector),
++          );
++          expect(scope.tenantId).toBe(selector.tenantId);
++          expect(scope.workspaceId).toBe(selector.workspaceId);
++        }
++      },
++    );
++
++    itDb(
++      "a team that is not listed is not selectable (WORKSPACE_FORBIDDEN)",
++      async () => {
++        // a1-member 的列表只有 team-a1；team-a2 不在列表中，选择即被拒。
++        const listing = companiesOf(
++          await bodyOf(
++            await fixture.request("a1-member", { method: "GET", path: "/" }),
++          ),
++        );
++        const listedTeams = listing.flatMap((company) =>
++          company.teams.map((team) => team.workspaceId),
++        );
++        expect(listedTeams).toEqual([fixture.ids["team-a1"]]);
++        expect(
++          await codeOf(
++            fixture.gate.resolver.resolve(
++              fixture.gate.requestFor("a1-member", {
++                tenantId: fixture.ids["company-a"],
++                workspaceId: fixture.ids["team-a2"],
++              }),
++            ),
++          ),
++        ).toBe("WORKSPACE_FORBIDDEN");
++      },
++    );
++
++    itDb(
++      "a user with no teams still gets WORKSPACE_REQUIRED without a header — no only-team or first-team default",
++      async () => {
++        // company-admin 在唯一公司里没有任何团队；即便全公司只有一个团队，
++        // 缺 workspace 头也绝不自动选择。
++        expect(
++          await codeOf(
++            fixture.gate.resolver.resolve(
++              fixture.gate.requestFor("company-admin", {
++                tenantId: fixture.ids["company-a"],
++              }),
++            ),
++          ),
++        ).toBe("WORKSPACE_REQUIRED");
++        expect(
++          await codeOf(
++            fixture.gate.resolver.resolve(
++              fixture.gate.requestFor("a1-member", {
++                tenantId: fixture.ids["company-a"],
++              }),
++            ),
++          ),
++        ).toBe("WORKSPACE_REQUIRED");
++      },
++    );
++
++    itDb(
++      "a user with no companies selecting any company is TENANT_FORBIDDEN (empty state has no hidden default)",
++      async () => {
++        const listing = companiesOf(
++          await bodyOf(
++            await fixture.request("scopeless-user", {
++              method: "GET",
++              path: "/",
++            }),
++          ),
++        );
++        expect(listing).toEqual([]);
++        expect(
++          await codeOf(
++            fixture.resolveScope("scopeless-user", {
++              tenantId: fixture.ids["company-a"],
++              workspaceId: fixture.ids["team-a1"],
++            }),
++          ),
++        ).toBe("TENANT_FORBIDDEN");
++      },
++    );
++
++    itDb("blank selector headers are refused like missing ones", async () => {
++      expect(
++        await codeOf(
++          fixture.gate.resolver.resolve(
++            fixture.gate.requestFor("a1-member", {
++              tenantId: "  ",
++              workspaceId: fixture.ids["team-a1"],
++            }),
++          ),
++        ),
++      ).toBe("TENANT_REQUIRED");
++      expect(
++        await codeOf(
++          fixture.gate.resolver.resolve(
++            fixture.gate.requestFor("a1-member", {
++              tenantId: fixture.ids["company-a"],
++              workspaceId: " ",
++            }),
++          ),
++        ),
++      ).toBe("WORKSPACE_REQUIRED");
++    });
++  });
++
++  // -------------------------------------------------------------------------
++  // 验收 (3)：公司管理员经集中管理入口管理团队与成员名单
++  // -------------------------------------------------------------------------
++
++  describe("issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry", () => {
++    itDb(
++      "the admin creates a team; the row exists and the team appears in listings after membership",
++      async () => {
++        const response = await fixture.request("company-admin", {
++          method: "POST",
++          path: "/admin/teams",
++          tenantId: fixture.ids["company-a"],
++          body: {
++            name: "Company A / Team A3",
++            workspaceId: fixture.newTeamId(),
++          },
++        });
++        expect(response.status).toBe(201);
++        const created = (await bodyOf(response)).team as {
++          workspaceId: string;
++          name: string;
++        };
++        expect(created.name).toBe("Company A / Team A3");
++
++        const rows = await fixture.query(
++          "operator",
++          { tenantId: fixture.ids["company-a"] },
++          "select id, name from enterprise_workspaces where id = $1",
++          [created.workspaceId],
++        );
++        expect(rows).toHaveLength(1);
++        expect(rows[0]?.name).toBe("Company A / Team A3");
++
++        fixture.registerCreatedTeam(created.workspaceId);
++      },
++    );
++
++    itDb(
++      "creating a team with an existing workspace id is a 409, not a silent overwrite",
++      async () => {
++        const response = await fixture.request("company-admin", {
++          method: "POST",
++          path: "/admin/teams",
++          tenantId: fixture.ids["company-a"],
++          body: {
++            name: "Duplicate",
++            workspaceId: fixture.ids["team-a1"],
++          },
++        });
++        expect(response.status).toBe(409);
++      },
++    );
++
++    itDb(
++      "a plain member is refused team creation (TENANT_ADMIN_REQUIRED), and so is a non-member",
++      async () => {
++        const member = await fixture.request("a1-member", {
++          method: "POST",
++          path: "/admin/teams",
++          tenantId: fixture.ids["company-a"],
++          body: { name: "Rogue team" },
++        });
++        expect(member.status).toBe(403);
++        expect(((await bodyOf(member)).error as { code: string }).code).toBe(
++          "TENANT_ADMIN_REQUIRED",
++        );
++        const outsider = await fixture.request("b1-member", {
++          method: "POST",
++          path: "/admin/teams",
++          tenantId: fixture.ids["company-a"],
++          body: { name: "Outsider team" },
++        });
++        expect(outsider.status).toBe(403);
++      },
++    );
++
++    itDb(
++      "the admin of company-a cannot administer company-b (company boundary holds)",
++      async () => {
++        const response = await fixture.request("company-admin", {
++          method: "POST",
++          path: "/admin/teams",
++          tenantId: fixture.ids["company-b"],
++          body: { name: "Company B rogue" },
++        });
++        expect(response.status).toBe(403);
++        expect(((await bodyOf(response)).error as { code: string }).code).toBe(
++          "TENANT_FORBIDDEN",
++        );
++      },
++    );
++
++    itDb(
++      "the admin adds a company member to a team; the same membership fact feeds the MT005 gate",
++      async () => {
++        const workspaceId = fixture.ids["team-a2"];
++        const before = await fixture.request("company-admin", {
++          method: "POST",
++          path: `/admin/teams/${workspaceId}/members`,
++          tenantId: fixture.ids["company-a"],
++          body: { principalId: fixture.principalIdOf("a1-member") },
++        });
++        expect(before.status).toBe(201);
++        const membership = (await bodyOf(before)).membership as {
++          status: string;
++          epoch: number;
++        };
++        expect(membership.status).toBe("active");
++        expect(membership.epoch).toBeGreaterThan(0);
++
++        // 同一事实源：新成员行立即可被 MT005 判定接受（真实 resolver）。
++        const scope = await fixture.gate.resolver.resolve(
++          fixture.gate.requestFor("a1-member", {
++            tenantId: fixture.ids["company-a"],
++            workspaceId,
++          }),
++        );
++        expect(scope.workspaceId).toBe(workspaceId);
++        // 且成员自己的列表现在包含该团队。
++        const listing = companiesOf(
++          await bodyOf(
++            await fixture.request("a1-member", { method: "GET", path: "/" }),
++          ),
++        );
++        const a2 = listing
++          .find((company) => company.tenantId === fixture.ids["company-a"])
++          ?.teams.find((team) => team.workspaceId === workspaceId);
++        expect(a2).toBeDefined();
++
++        // 再加入已是 active 的成员 → 409。
++        const duplicate = await fixture.request("company-admin", {
++          method: "POST",
++          path: `/admin/teams/${workspaceId}/members`,
++          tenantId: fixture.ids["company-a"],
++          body: { principalId: fixture.principalIdOf("a1-member") },
++        });
++        expect(duplicate.status).toBe(409);
++      },
++    );
++
++    itDb(
++      "adding a principal who is not an active company member is refused without leaking existence",
++      async () => {
++        // b1-member 是 company-b 的成员，不是 company-a 的成员。
++        const cross = await fixture.request("company-admin", {
++          method: "POST",
++          path: `/admin/teams/${fixture.ids["team-a1"]}/members`,
++          tenantId: fixture.ids["company-a"],
++          body: { principalId: fixture.principalIdOf("b1-member") },
++        });
++        expect(cross.status).toBe(404);
++        // 完全不存在的 principal 同样 404 —— 两种不可区分。
++        const ghost = await fixture.request("company-admin", {
++          method: "POST",
++          path: `/admin/teams/${fixture.ids["team-a1"]}/members`,
++          tenantId: fixture.ids["company-a"],
++          body: { principalId: `${fixture.ids["company-a"]}-ghost-principal` },
++        });
++        expect(ghost.status).toBe(404);
++        expect(((await bodyOf(ghost)).error as { code: string }).code).toBe(
++          ((await bodyOf(cross)).error as { code: string }).code,
++        );
++      },
++    );
++
++    itDb(
++      "the admin suspends a member; the MT005 gate revokes the very next selection",
++      async () => {
++        const workspaceId = fixture.ids["team-a2"];
++        const suspended = await fixture.request("company-admin", {
++          method: "POST",
++          path: `/admin/teams/${workspaceId}/members/${fixture.principalIdOf("a1-member")}/suspend`,
++          tenantId: fixture.ids["company-a"],
++        });
++        expect(suspended.status).toBe(200);
++        const membership = (await bodyOf(suspended)).membership as {
++          status: string;
++          epoch: number;
++        };
++        expect(membership.status).toBe("suspended");
++
++        const listing = companiesOf(
++          await bodyOf(
++            await fixture.request("a1-member", { method: "GET", path: "/" }),
++          ),
++        );
++        expect(
++          listing
++            .find((company) => company.tenantId === fixture.ids["company-a"])
++            ?.teams.some((team) => team.workspaceId === workspaceId),
++        ).toBe(false);
++
++        // 重新激活（停用后的再加入）→ epoch 严格递增。
++        const resumed = await fixture.request("company-admin", {
++          method: "POST",
++          path: `/admin/teams/${workspaceId}/members`,
++          tenantId: fixture.ids["company-a"],
++          body: { principalId: fixture.principalIdOf("a1-member") },
++        });
++        expect(resumed.status).toBe(200);
++        const resumedMembership = (await bodyOf(resumed)).membership as {
++          status: string;
++          epoch: number;
++        };
++        expect(resumedMembership.status).toBe("active");
++        expect(resumedMembership.epoch).toBeGreaterThan(membership.epoch);
++      },
++    );
++
++    itDb(
++      "the admin removes a member; the row is gone and re-adding restores eligibility with a larger epoch",
++      async () => {
++        const workspaceId = fixture.ids["team-a2"];
++        const removed = await fixture.request("company-admin", {
++          method: "DELETE",
++          path: `/admin/teams/${workspaceId}/members/${fixture.principalIdOf("a1-member")}`,
++          tenantId: fixture.ids["company-a"],
++        });
++        expect(removed.status).toBe(200);
++
++        const rows = await fixture.query(
++          "operator",
++          { tenantId: fixture.ids["company-a"] },
++          "select principal_id from enterprise_workspace_memberships where workspace_id = $1 and principal_id = $2",
++          [workspaceId, fixture.principalIdOf("a1-member")],
++        );
++        expect(rows).toEqual([]);
++
++        // 行已删除：选择立即被拒（同一事实源）。
++        expect(
++          await codeOf(
++            fixture.gate.resolver.resolve(
++              fixture.gate.requestFor("a1-member", {
++                tenantId: fixture.ids["company-a"],
++                workspaceId,
++              }),
++            ),
++          ),
++        ).toBe("WORKSPACE_FORBIDDEN");
++
++        // 移除不存在的成员行 → 404，与不存在团队同样不可区分语义由各自码区分。
++        const missing = await fixture.request("company-admin", {
++          method: "DELETE",
++          path: `/admin/teams/${workspaceId}/members/${fixture.principalIdOf("a1-member")}`,
++          tenantId: fixture.ids["company-a"],
++        });
++        expect(missing.status).toBe(404);
++      },
++    );
++
++    itDb(
++      "another company's team is invisible to the admin: removal answers 404 and writes nothing",
++      async () => {
++        const response = await fixture.request("company-admin", {
++          method: "DELETE",
++          path: `/admin/teams/${fixture.ids["team-b1"]}/members/${fixture.principalIdOf("b1-member")}`,
++          tenantId: fixture.ids["company-a"],
++        });
++        // 跨公司对象按不可见处理（404），且绝不产生跨公司写入。
++        expect(response.status).toBe(404);
++        const intact = await fixture.query(
++          "operator",
++          { tenantId: fixture.ids["company-b"] },
++          "select principal_id from enterprise_workspace_memberships where workspace_id = $1 and principal_id = $2",
++          [fixture.ids["team-b1"], fixture.principalIdOf("b1-member")],
++        );
++        expect(intact).toHaveLength(1);
++      },
++    );
++
++    itDb(
++      "a stale admin context (company epoch bumped after issuance) is refused by the in-transaction revalidation",
++      async () => {
++        const stale = await fixture.staleAdminContext("company-admin");
++        expect(
++          await codeOf(
++            fixture.adminService().createTeam(stale, {
++              name: "Post-revocation team",
++            }),
++          ),
++        ).toBe("SCOPE_REVOKED");
++      },
++    );
++
++    itDb(
++      "an admin demoted to plain member (role changed, epoch untouched) is refused by the in-transaction revalidation",
++      async () => {
++        const context = await fixture.adminContextOf("company-admin");
++        await fixture.setCompanyMembershipRole("company-admin", "member");
++        try {
++          expect(
++            await codeOf(
++              fixture.adminService().createTeam(context, {
++                name: "Demoted admin team",
++              }),
++            ),
++          ).toBe("SCOPE_REVOKED");
++        } finally {
++          await fixture
++            .setCompanyMembershipRole("company-admin", "tenant_admin");
++        }
++      },
++    );
++
++    itDb(
++      "a forged or deserialized admin context is rejected like a forged scope",
++      async () => {
++        const genuine = await fixture.adminContextOf("company-admin");
++        const forged = {
++          tenantId: genuine.tenantId,
++          principalId: genuine.principalId,
++          actorId: genuine.actorId,
++          memberEpoch: genuine.memberEpoch,
++        };
++        expect(
++          await codeOf(
++            fixture.adminService().createTeam(forged, { name: "Forged" }),
++          ),
++        ).toBe("UNVERIFIED_ADMIN_CONTEXT");
++        const serialized = JSON.parse(
++          JSON.stringify(genuine),
++        ) as typeof genuine;
++        expect(
++          await codeOf(
++            fixture.adminService().createTeam(serialized, { name: "Cloned" }),
++          ),
++        ).toBe("UNVERIFIED_ADMIN_CONTEXT");
++      },
++    );
++
++    itDb(
++      "an in-flight MT005 gate transaction serializes the admin membership write (same advisory key)",
++      async () => {
++        // 先把 a1-member 加回 team-a2（上面的移除用例删掉了行）。
++        const rejoin = await fixture.request("company-admin", {
++          method: "POST",
++          path: `/admin/teams/${fixture.ids["team-a2"]}/members`,
++          tenantId: fixture.ids["company-a"],
++          body: { principalId: fixture.principalIdOf("a1-member") },
++        });
++        expect([200, 201]).toContain(rejoin.status);
++
++        const scope = await fixture.gate.resolver.resolve(
++          fixture.gate.requestFor("a1-member", {
++            tenantId: fixture.ids["company-a"],
++            workspaceId: fixture.ids["team-a2"],
++          }),
++        );
++        // 持有 gate 事务（共享锁）期间，同一管理写（服务层直调，保留原始错）
++        // 以 55P03 lock timeout 失败；释放后同一写立即生效。
++        const gate = await fixture.gateTransactionProbe(scope);
++        const adminContext = await fixture.adminContextOf("company-admin");
++        let released = false;
++        try {
++          const blocked = await codeOf(
++            fixture.adminService().suspendTeamMember(adminContext, {
++              workspaceId: fixture.ids["team-a2"],
++              principalId: fixture.principalIdOf("a1-member"),
++            }),
++          );
++          expect(blocked).toContain("lock timeout");
++
++          gate.release();
++          released = true;
++          expect(await gate.done).toBe("done");
++        } finally {
++          // 断言失败也不能留下悬挂的 gate 事务（否则清理会阻塞在锁上）。
++          if (!released) gate.release();
++          await gate.done.catch(() => {});
++        }
++
++        // 锁释放后管理写正常生效。
++        const after = await fixture.request("company-admin", {
++          method: "POST",
++          path: `/admin/teams/${fixture.ids["team-a2"]}/members/${fixture.principalIdOf("a1-member")}/suspend`,
++          tenantId: fixture.ids["company-a"],
++        });
++        expect(after.status).toBe(200);
++      },
++    );
++
++    itDb(
++      "admin routes answer 503 unavailable when the operator channel is not wired",
++      async () => {
++        const routes = createUnavailableWorkspaceScopeRoutes();
++        const response = await routes.fetch(
++          new Request("https://mt006.invalid/admin/teams", {
++            method: "POST",
++            headers: { "x-openbot-tenant": "t" },
++            body: JSON.stringify({ name: "x" }),
++          }),
++        );
++        expect(response.status).toBe(503);
++      },
++    );
++  });
++
++  // -------------------------------------------------------------------------
++  // 验收 (4)：管理权不隐含业务内容读取权
++  // -------------------------------------------------------------------------
++
++  describe("issue #49 criterion 4: admin power implies no business-content read authorization", () => {
++    itDb(
++      "a company admin with no team membership cannot resolve into a team to read anything",
++      async () => {
++        expect(
++          await codeOf(
++            fixture.gate.resolver.resolve(
++              fixture.gate.requestFor("company-admin", {
++                tenantId: fixture.ids["company-a"],
++                workspaceId: fixture.ids["team-a1"],
++              }),
++            ),
++          ),
++        ).toBe("WORKSPACE_FORBIDDEN");
++      },
++    );
++
++    itDb(
++      "even an admin who explicitly adds themselves to a team cannot read a resource without a grant",
++      async () => {
++        // 管理员把自己加进 team-a1（管理权内的显式行为），读取团队资源仍被拒。
++        const joined = await fixture.request("company-admin", {
++          method: "POST",
++          path: `/admin/teams/${fixture.ids["team-a1"]}/members`,
++          tenantId: fixture.ids["company-a"],
++          body: { principalId: fixture.principalIdOf("company-admin") },
++        });
++        expect([200, 201]).toContain(joined.status);
++        try {
++          const scope = await fixture.gate.resolver.resolve(
++            fixture.gate.requestFor("company-admin", {
++              tenantId: fixture.ids["company-a"],
++              workspaceId: fixture.ids["team-a1"],
++            }),
++          );
++          const response = await fixture.isolation.requestAs("company-admin", {
++            method: "GET",
++            path: `/resources/${fixture.ids["resource-a1"]}`,
++            tenantId: fixture.ids["company-a"],
++            workspaceId: fixture.ids["team-a1"],
++          });
++          void scope;
++          // 资源读取走真实 reader：无 grant → 不可见（404），绝不是 200。
++          expect(response.status).toBe(404);
++        } finally {
++          await fixture.request("company-admin", {
++            method: "DELETE",
++            path: `/admin/teams/${fixture.ids["team-a1"]}/members/${fixture.principalIdOf("company-admin")}`,
++            tenantId: fixture.ids["company-a"],
++          });
++        }
++      },
++    );
++
++    itDb(
++      "the admin surface exposes no resource-read path: every management DTO carries membership facts only",
++      async () => {
++        // a2-member 只在 team-a2；加入 team-a1 产生新行。
++        const response = await fixture.request("company-admin", {
++          method: "POST",
++          path: `/admin/teams/${fixture.ids["team-a1"]}/members`,
++          tenantId: fixture.ids["company-a"],
++          body: { principalId: fixture.principalIdOf("a2-member") },
++        });
++        expect([200, 201]).toContain(response.status);
++        const membership = (await bodyOf(response)).membership as Record<
++          string,
++          unknown
++        >;
++        for (const key of Object.keys(membership)) {
++          expect(["workspaceId", "principalId", "status", "epoch"]).toContain(
++            key,
++          );
++        }
++        await fixture.request("company-admin", {
++          method: "DELETE",
++          path: `/admin/teams/${fixture.ids["team-a1"]}/members/${fixture.principalIdOf("a2-member")}`,
++          tenantId: fixture.ids["company-a"],
++        });
++      },
++    );
++
++    itDb(
++      "the admin service cannot list or read enterprise resources at all (no such method)",
++      async () => {
++        const service = fixture.adminService() as unknown as Record<
++          string,
++          unknown
++        >;
++        for (const key of Object.keys(service)) {
++          expect(key.toLowerCase()).not.toContain("resource");
++          expect(key.toLowerCase()).not.toContain("read");
++        }
++      },
++    );
++  });
++
++  // -------------------------------------------------------------------------
++  // 输入校验：畸形请求在授权之前就被拒绝
++  // -------------------------------------------------------------------------
++
++  describe("input validation precedes authorization on every management route", () => {
++    itDb("team creation without a name is INVALID_REQUEST", async () => {
++      const response = await fixture.request("company-admin", {
++        method: "POST",
++        path: "/admin/teams",
++        tenantId: fixture.ids["company-a"],
++        body: {},
++      });
++      expect(response.status).toBe(400);
++    });
++
++    itDb(
++      "member addition without a principalId is INVALID_REQUEST",
++      async () => {
++        const response = await fixture.request("company-admin", {
++          method: "POST",
++          path: `/admin/teams/${fixture.ids["team-a1"]}/members`,
++          tenantId: fixture.ids["company-a"],
++          body: {},
++        });
++        expect(response.status).toBe(400);
++      },
++    );
++
++    itDb(
++      "admin routes without a tenant header are TENANT_REQUIRED",
++      async () => {
++        const response = await fixture.request("company-admin", {
++          method: "POST",
++          path: "/admin/teams",
++          body: { name: "No tenant" },
++        });
++        expect(response.status).toBe(400);
++        expect(((await bodyOf(response)).error as { code: string }).code).toBe(
++          "TENANT_REQUIRED",
++        );
++      },
++    );
++  });
++});
+--- /dev/null
++++ server/tests/multitenancy/support/workspace-scope.ts
++++ b/server/tests/multitenancy/support/workspace-scope.ts
+@@ -0,0 +1,402 @@
++/**
++ * MT006 (Issue #49) workspace-scope fixture support.
++ *
++ * Builds on the MT002 isolation matrix and the MT005 scope-gate fixture and
++ * adds what this ticket owns:
++ *
++ *  1. The MT006 operator DELETE policy on enterprise_workspace_memberships,
++ *     provisioned once per test database through the dedicated setup
++ *     connection (superuser). The MT004-era table ships read/insert/update
++ *     operator policies only; this ticket's remove-member write path performs
++ *     its DELETE through the restricted operator role, which needs the policy
++ *     to exist. Production migration generation for the policy is schema-chain
++ *     work outside this ticket (disclosed in reports/MT006.md); the write path
++ *     itself is RLS-enforced against the real policy in this database.
++ *  2. The real MT006 surface — lister, company-admin authorizer, admin
++ *     service and the actual Hono routes — wired to the restricted directory /
++ *     data / operator roles, driven through `routes.fetch` with a WeakMap
++ *     request→identity session seam (no mocked authorization anywhere).
++ *  3. A gate-transaction probe that proves the admin writes serialize against
++ *     the MT005 gate on the shared workspace-membership advisory key.
++ */
++
++import { sql } from "drizzle-orm";
++import type { Hono } from "hono";
++import { createDatabase, type Database } from "../../../src/db/client";
++import type { PlatformScope } from "../../../src/enterprise/contracts";
++import { verifyOperatorDatabase } from "../../../src/enterprise/tenancy/connections";
++import { createWorkspaceGate } from "../../../src/enterprise/tenancy/scope-gate";
++import { createScopeResolver } from "../../../src/enterprise/tenancy/store";
++import {
++  type CompanyAdminContext,
++  createCompanyAdminAuthorizer,
++  createWorkspaceAdminService,
++  createWorkspaceScopeLister,
++  type WorkspaceAdminService,
++} from "../../../src/enterprise/tenancy/workspace-admin";
++import { createWorkspaceScopeRoutes } from "../../../src/enterprise/tenancy/workspace-scope-routes";
++import {
++  enterpriseRuntimeDatabaseUrlFrom,
++  enterpriseTestDatabaseUrlFrom,
++} from "../../support/enterprise-database";
++import type { FixtureIdentity } from "./fixture";
++import { createScopeGateFixture, type ScopeGateFixture } from "./scope-gate";
++
++export type { FixtureIdentity };
++
++/** A signed-in user with zero company memberships (no default scope). */
++type ScopelessUserIdentity = "scopeless-user";
++export type WorkspaceScopeIdentity = FixtureIdentity | ScopelessUserIdentity;
++
++export interface WorkspaceScopeRequestInput {
++  method: string;
++  path: string;
++  body?: unknown;
++  /** Ruling #1 tenant selector header; absent means the header is not sent. */
++  tenantId?: string;
++  /** Ruling #1 workspace selector header; absent means the header is not sent. */
++  workspaceId?: string;
++}
++
++export interface GateTransactionProbe {
++  /** Resolves with the operation's return value once the gate tx commits. */
++  done: Promise<unknown>;
++  /** Releases the in-transaction gate operation (locks are held until then). */
++  release: () => void;
++}
++
++export interface WorkspaceScopeFixture {
++  readonly gate: ScopeGateFixture;
++  readonly isolation: ScopeGateFixture["isolation"];
++  /** The real MT006 routes with real restricted-role dependencies. */
++  readonly routes: Hono;
++  /** Drives a Request through the real routes bound to a fixture identity. */
++  request(
++    identity: WorkspaceScopeIdentity,
++    input: WorkspaceScopeRequestInput,
++  ): Promise<Response>;
++  /** Same, but with no session at all (anonymous). */
++  requestAnonymous(input: WorkspaceScopeRequestInput): Promise<Response>;
++  readonly ids: Readonly<Record<string, string>>;
++  readonly identities: ReturnType<
++    ScopeGateFixture["isolation"]["identities"]["valueOf"]
++  >;
++  principalIdOf(identity: FixtureIdentity): string;
++  query(
++    role: string,
++    context:
++      | { tenantId: string; principalId?: string; workspaceId?: string }
++      | undefined,
++    text: string,
++    values: readonly unknown[],
++  ): Promise<readonly Record<string, unknown>[]>;
++  /** The real admin service (for direct, unmapped-error assertions). */
++  adminService(): WorkspaceAdminService;
++  /** Resolves a real, trusted admin context for one identity. */
++  adminContextOf(identity: FixtureIdentity): Promise<CompanyAdminContext>;
++  /** Issues a context, then bumps the company epoch behind its back. */
++  staleAdminContext(identity: FixtureIdentity): Promise<CompanyAdminContext>;
++  /** Unique id for a team this test creates (cleaned up by the isolation fixture). */
++  newTeamId(): string;
++  registerCreatedTeam(workspaceId: string): void;
++  /** Starts a gate transaction holding the shared membership lock. */
++  gateTransactionProbe(scope: PlatformScope): Promise<GateTransactionProbe>;
++  /** Resolves a business scope through the real resolver (ruling #1 headers). */
++  resolveScope(
++    identity: WorkspaceScopeIdentity,
++    selectors: { tenantId?: string; workspaceId?: string },
++  ): Promise<PlatformScope>;
++  /**
++   * Offline fact mutation through the dedicated setup connection: flips one
++   * identity's company membership role. The operator role cannot update the
++   * role column (MT004 grants cover status/epoch only), and no production
++   * write path reassigns roles yet — this is the disclosed stand-in used to
++   * pin the in-transaction revalidation against demoted admins.
++   */
++  setCompanyMembershipRole(
++    identity: FixtureIdentity,
++    role: "tenant_admin" | "member",
++  ): Promise<void>;
++  dispose(): Promise<void>;
++}
++
++const MT006_DELETE_POLICY = "enterprise_workspace_membership_operator_delete";
++
++/**
++ * Provisions the MT006 operator DELETE policy + grant once per database.
++ * Idempotent via the pg_policies catalog; the grant itself is idempotent.
++ */
++async function provisionOperatorDeletePolicy(setup: Database): Promise<void> {
++  const existing = await setup.execute(sql`
++    select 1 from pg_policies
++    where schemaname = 'public'
++      and tablename = 'enterprise_workspace_memberships'
++      and policyname = ${MT006_DELETE_POLICY}
++  `);
++  const rows = (Array.isArray(existing) ? existing : []) as unknown[];
++  if (rows.length === 0) {
++    await setup.execute(
++      sql.raw(`
++      CREATE POLICY "${MT006_DELETE_POLICY}" ON "enterprise_workspace_memberships"
++        FOR DELETE TO ob_ent_operator
++        USING ("enterprise_workspace_memberships"."tenant_id" = nullif(current_setting('app.tenant_id', true), '')
++          AND "enterprise_workspace_memberships"."principal_id" = nullif(current_setting('app.operator_principal_id', true), ''))
++    `),
++    );
++  }
++  await setup.execute(
++    sql`grant delete on table "enterprise_workspace_memberships" to "ob_ent_operator"`,
++  );
++}
++
++export async function createWorkspaceScopeFixture(): Promise<WorkspaceScopeFixture> {
++  const gate = await createScopeGateFixture();
++  const isolation = gate.isolation;
++
++  const operator = await openVerified(
++    enterpriseRuntimeDatabaseUrlFrom("operator"),
++    verifyOperatorDatabase,
++  );
++  const setup: Database = createDatabase(enterpriseTestDatabaseUrlFrom(), {
++    max: 1,
++  });
++
++  await provisionOperatorDeletePolicy(setup);
++
++  // A signed-in user with no company membership at all: the explicit empty
++  // state's identity. Rows live inside the isolation prefix, so the
++  // isolation fixture's cleanup removes them.
++  const scopelessUserId = `${isolation.idPrefix}-user-scopeless`;
++  const scopelessPrincipalId = `${isolation.idPrefix}-principal-scopeless`;
++  await setup.execute(sql`
++    insert into users (id, email, name)
++    values (${scopelessUserId}, ${`${scopelessUserId}@example.invalid`}, 'MT006 scopeless user')
++  `);
++  await setup.execute(sql`
++    insert into enterprise_principals (id, user_id)
++    values (${scopelessPrincipalId}, ${scopelessUserId})
++  `);
++  const extraSessions = new Map<string, string>([
++    ["scopeless-user", scopelessUserId],
++  ]);
++
++  // ---- The real MT006 surface over the restricted roles. -------------------
++  const lister = createWorkspaceScopeLister(gate.directory, gate.data);
++  const sessions = new WeakMap<Request, WorkspaceScopeIdentity>();
++  const authenticate = async (request: Request) => {
++    const identity = sessions.get(request);
++    if (!identity) return null;
++    const extraUserId = extraSessions.get(identity);
++    if (extraUserId) return { actorId: extraUserId, entrypoint: "web" };
++    const fact = isolation.identities[identity as FixtureIdentity];
++    if (fact.kind !== "human" || !fact.userId) return null;
++    return { actorId: fact.userId, entrypoint: "web" };
++  };
++  const authorizer = createCompanyAdminAuthorizer(gate.directory, {
++    authenticate,
++    // Ruling #1: the tenant header selects which company is administered.
++    selectTenant: (request) => request.headers.get("x-openbot-tenant"),
++  });
++  // The selection-proof resolver over the same directory: the MT005 gate
++  // fixture's own resolver cannot know the scopeless session, so this one
++  // carries the same authenticate seam with the extra session map.
++  const selectionResolver = createScopeResolver(gate.directory, {
++    authenticate,
++    selectTenant: (request) => request.headers.get("x-openbot-tenant"),
++    selectWorkspace: (request) => request.headers.get("x-openbot-workspace"),
++  });
++  const adminService = createWorkspaceAdminService(operator);
++
++  const routes = createWorkspaceScopeRoutes({
++    authenticate: authorizer.authenticate,
++    lister,
++    admin: { authorizer, service: adminService },
++  });
++
++  const requestUrl = "https://mt006-workspace-scope.invalid";
++  let teamCounter = 0;
++  const createdTeams = new Set<string>();
++
++  const buildRequest = (
++    identity: WorkspaceScopeIdentity | null,
++    input: WorkspaceScopeRequestInput,
++  ): Request => {
++    const headers: Record<string, string> = {};
++    if (input.tenantId !== undefined) {
++      headers["x-openbot-tenant"] = input.tenantId;
++    }
++    if (input.workspaceId !== undefined) {
++      headers["x-openbot-workspace"] = input.workspaceId;
++    }
++    const init: RequestInit = { method: input.method, headers };
++    if (input.body !== undefined) {
++      headers["content-type"] = "application/json";
++      init.body = JSON.stringify(input.body);
++    }
++    const request = new Request(new URL(input.path, requestUrl), init);
++    if (identity !== null) sessions.set(request, identity);
++    return request;
++  };
++
++  let disposed = false;
++  return {
++    gate,
++    isolation,
++    routes,
++
++    async request(identity, input) {
++      return routes.fetch(buildRequest(identity, input));
++    },
++
++    async requestAnonymous(input) {
++      return routes.fetch(buildRequest(null, input));
++    },
++
++    ids: isolation.ids,
++    identities: isolation.identities,
++    principalIdOf: (identity) => {
++      const fact = isolation.identities[identity];
++      if (!fact?.principalId) {
++        throw new Error(`IDENTITY_HAS_NO_PRINCIPAL:${identity}`);
++      }
++      return fact.principalId;
++    },
++
++    query: (role, context, text, values) =>
++      isolation.queryRestricted(role, context, text, values),
++
++    adminService: () => adminService,
++
++    async adminContextOf(identity) {
++      const fact = isolation.identities[identity];
++      const companyKey = fact.companies[0]?.companyKey;
++      if (!companyKey) {
++        throw new Error(`IDENTITY_HAS_NO_COMPANY:${identity}`);
++      }
++      const request = buildRequest(identity, {
++        method: "POST",
++        path: "/admin/teams",
++        tenantId: isolation.ids[companyKey],
++      });
++      return authorizer.resolveAdminContext(request);
++    },
++
++    async staleAdminContext(identity) {
++      const context = await this.adminContextOf(identity);
++      const fact = isolation.identities[identity];
++      const companyKey = fact.companies[0]?.companyKey;
++      if (!companyKey) {
++        throw new Error(`IDENTITY_HAS_NO_COMPANY:${identity}`);
++      }
++      await gate.bumpCompanyMembershipEpoch(identity, companyKey);
++      return context;
++    },
++
++    newTeamId: () => {
++      teamCounter += 1;
++      return `${isolation.idPrefix}-team-created-${teamCounter}`;
++    },
++
++    registerCreatedTeam(workspaceId) {
++      createdTeams.add(workspaceId);
++    },
++
++    async resolveScope(identity, selectors) {
++      return selectionResolver.resolve(
++        buildRequest(identity, {
++          method: "GET",
++          path: "/",
++          tenantId: selectors.tenantId,
++          workspaceId: selectors.workspaceId,
++        }),
++      );
++    },
++
++    async setCompanyMembershipRole(identity, role) {
++      const fact = isolation.identities[identity];
++      if (fact.kind !== "human" || !fact.principalId) {
++        throw new Error(`IDENTITY_NOT_DEMOTABLE:${identity}`);
++      }
++      const companyKey = fact.companies[0]?.companyKey;
++      if (!companyKey) {
++        throw new Error(`IDENTITY_HAS_NO_COMPANY:${identity}`);
++      }
++      await setup.execute(
++        sql`update enterprise_memberships set role = ${role} where tenant_id = ${isolation.ids[companyKey]} and principal_id = ${fact.principalId}`,
++      );
++    },
++
++    async gateTransactionProbe(scope) {
++      let releaseGate: (() => void) | undefined;
++      const released = new Promise<void>((resolve) => {
++        releaseGate = resolve;
++      });
++      let signalInside: (() => void) | undefined;
++      const inside = new Promise<void>((resolve) => {
++        signalInside = resolve;
++      });
++      const gateDb = createWorkspaceGate(gate.data);
++      const done = gateDb.transaction(scope, async () => {
++        // Running here means trust, revalidation and every shared advisory
++        // lock have been acquired — the exact serialization point.
++        signalInside?.();
++        await released;
++        return "done";
++      });
++      await inside;
++      return {
++        done: done as Promise<unknown>,
++        release: () => releaseGate?.(),
++      };
++    },
++
++    async dispose() {
++      if (disposed) return gate.dispose();
++      disposed = true;
++      const failures: unknown[] = [];
++      // Teams this test created are inside the isolation prefix, but their
++      // memberships are deleted first so workspace cleanup cannot hit FK
++      // conflicts on databases without cascade-safe ordering.
++      for (const workspaceId of createdTeams) {
++        try {
++          await setup.execute(
++            sql`delete from enterprise_workspace_memberships where workspace_id = ${workspaceId}`,
++          );
++        } catch (error) {
++          failures.push(error);
++        }
++      }
++      try {
++        await setup.$client.close();
++      } catch (error) {
++        failures.push(error);
++      }
++      try {
++        await operator.$client.close();
++      } catch (error) {
++        failures.push(error);
++      }
++      try {
++        await gate.dispose();
++      } catch (error) {
++        failures.push(error);
++      }
++      if (failures.length) {
++        throw new AggregateError(failures, "MT006 fixture disposal failed.");
++      }
++    },
++  };
++}
++
++async function openVerified<T extends Database>(
++  url: string,
++  verify: (database: Database) => Promise<T>,
++): Promise<T> {
++  const candidate = createDatabase(url, { max: 1 });
++  try {
++    return await verify(candidate);
++  } catch (error) {
++    await candidate.$client.close();
++    throw error;
++  }
++}

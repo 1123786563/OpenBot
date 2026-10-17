@@ -1,0 +1,9 @@
+D5 披露：触及文件的 biome 发现与 BASE（f0520524）比对
+- 新文件（workspace-admin.ts / workspace-scope-routes.ts / workspace-scope.test.ts / support/workspace-scope.ts）：0 发现
+- BASE index.ts/app.ts/config.ts（git show f0520524 提取后于 server/src/** 路径规则下检查）：
+  9 errors + 2 warnings（noConsole×4 @769/794/812/1696、noNonNull @4541、
+  app noUnusedFunctionParameters @1003、organizeImports×2、format×3）
+- 改后同名文件：9 errors + 2 warnings，行号仅因纯追加而平移
+  （noConsole×4 @782/807/828/1758、noNonNull @4603、app noUnusedFunctionParameters @1013）
+- 净新增 lint 发现：0（本票 index.ts 追加块不含 console.error——
+  server/src 为 noConsole:error 覆盖区，故障经 401/503 显式呈现）
