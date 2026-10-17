@@ -1,21 +1,22 @@
 import type { NextConfig } from "next";
 
-// The cwd fallback lets a dev server the agent starts by hand still serve
-// under the path the preview proxy expects.
-function resolveWebappBasePath(): string | undefined {
-  if (process.env.ONYX_WEBAPP_BASE_PATH) {
-    return process.env.ONYX_WEBAPP_BASE_PATH;
-  }
-  // The session id sits right before outputs/web in both directory shapes the
-  // server scaffolds: OpenBot's bot-relative `/workspace/bots/<bot>/<id>/…`
-  // and the absolute sessions root. The mount the preview proxy serves is
-  // /api/craft/sessions/<id>/webapp — without a basePath every asset URL
-  // escapes to the host origin and the preview iframe never hydrates.
-  const match = process.cwd().match(/\/([^/]+)\/outputs\/web\/?$/);
-  return match ? `/api/craft/sessions/${match[1]}/webapp` : undefined;
-}
+// WHERE THIS APP IS MOUNTED, in one explicit env (F-2, #365):
+//
+// - dev-form preview: the session's start script (start-webapp.sh, generated
+//   by the server) exports ONYX_WEBAPP_BASE_PATH=/<label> — the same label the
+//   preview address http://127.0.0.1:<port>/<label> rides — so every resource
+//   URL the app emits carries the label and resolves on the preview origin.
+// - production host form (and any hand-run dev server): the env is unset, the
+//   app serves at the origin's root (spec D3) — exactly the root-path behavior
+//   #364 shipped.
+//
+// The env is injected by the controlled start side only. What #364 retired
+// stays retired: no cwd-sniffing mount resolver, no session-id-in-cwd regex,
+// no `/` → prefix redirect rules — a mount is never guessed from where the
+// process happens to run.
 
-const webappBasePath = resolveWebappBasePath();
+const configuredBasePath = (process.env.ONYX_WEBAPP_BASE_PATH ?? "").trim();
+
 const allowedDevOrigins = (process.env.ONYX_WEBAPP_ALLOWED_DEV_ORIGINS || "")
   .split(",")
   .map((origin) => origin.trim())
@@ -25,34 +26,22 @@ const allowedDevOrigins = (process.env.ONYX_WEBAPP_ALLOWED_DEV_ORIGINS || "")
 // blocks /_next/webpack-hmr cross-origin and live reload dies silently.
 allowedDevOrigins.push("127.0.0.1", "localhost");
 
-const nextConfig: NextConfig = {};
-
-if (webappBasePath) {
-  nextConfig.basePath = webappBasePath;
-  nextConfig.assetPrefix = webappBasePath;
-  // Point naive probes of "/" (which otherwise 404) at the real app.
-  nextConfig.redirects = async () => [
-    {
-      source: "/",
-      destination: webappBasePath,
-      basePath: false,
-      permanent: false,
-    },
-  ];
-}
-
-// basePath prefixes <Link>, router pushes and assets — and NOTHING else. A raw
-// fetch("/api/tasks") in a client component is not prefixed, so it resolves against the HOST
-// origin and lands in OpenBot's own /api/** (authenticated with the person's cookie), while
-// the relative fetch("api/tasks") drops the /webapp segment because the document URL has no
-// trailing slash. Measured live: neither reaches the app the agent just built, so the preview
-// renders but nothing in it can be operated. `env` is the one mechanism Next inlines into both
-// the server and the client bundle, which is what lets the app build correct URLs at all —
-// lib/base-path.ts reads it and AGENTS.md tells the agent to route its API calls through it.
-nextConfig.env = { NEXT_PUBLIC_BASE_PATH: webappBasePath ?? "" };
-
-if (allowedDevOrigins.length > 0) {
-  nextConfig.allowedDevOrigins = allowedDevOrigins;
-}
+const nextConfig: NextConfig = {
+  ...(configuredBasePath === ""
+    ? {}
+    : {
+        // basePath prefixes <Link>, router pushes and assets; assetPrefix
+        // keeps chunk/CSS URLs on the same mount — one env, one truth.
+        basePath: configuredBasePath,
+        assetPrefix: configuredBasePath,
+      }),
+  // The one mechanism Next inlines into BOTH the server and the client bundle:
+  // lib/base-path.ts reads it so raw fetch()/EventSource/WebSocket URLs can
+  // carry the prefix Next does not add for them. Always set ("" in the
+  // root-path shape) so a stale env from a previous dev-form boot can never
+  // leak a dead prefix into a root-mounted app.
+  env: { NEXT_PUBLIC_BASE_PATH: configuredBasePath },
+  allowedDevOrigins,
+};
 
 export default nextConfig;
