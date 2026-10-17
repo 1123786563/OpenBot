@@ -15,5 +15,7 @@
   "agent-strands",
   "agent-ag2",
   "agent-langroid",
-  "agent-mastra"
+  "agent-mastra",
+  "agent-sandbox",
+  "runtime-go"
 ]
