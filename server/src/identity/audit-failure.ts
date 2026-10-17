@@ -1,4 +1,8 @@
+import { getLogger } from "../../../shared/logger";
+
 type Driver = { name?: unknown; errno?: unknown; code?: unknown };
+
+const log = getLogger("server");
 
 function sqlState(error: unknown): string | undefined {
   // Bun's driver throws a `PostgresError` with the SQLSTATE in `errno`; node-style drivers use
@@ -24,12 +28,13 @@ function sqlState(error: unknown): string | undefined {
  */
 export function logLinkAuditFailure(provider: string, error: unknown): void {
   const code = sqlState(error);
-  console.error(
-    JSON.stringify({
+  log.error(
+    {
       type: "identity-link-audit-failed",
       provider,
       errorName: error instanceof Error ? error.name : "unknown",
       ...(code ? { errorCode: code } : {}),
-    }),
+    },
+    "identity-link-audit-failed",
   );
 }

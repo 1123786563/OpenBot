@@ -138,7 +138,10 @@ import {
   createUsageEvidenceRecorder,
   isConfirmedNoCost,
 } from "./billing/usage-evidence";
-import { createUsageOutbox, UsageOutboxConflictError } from "./billing/usage-outbox";
+import {
+  createUsageOutbox,
+  UsageOutboxConflictError,
+} from "./billing/usage-outbox";
 import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./billing/types";
 import { createWebhookVerifier } from "./billing/webhook-signature";
 import {
@@ -203,7 +206,10 @@ import {
   type ToolSelection,
 } from "./copilot";
 import { loadCraftConfig } from "./craft/config";
-import { builtinSkillFilesFor, buildAvailableSourcesSection } from "./craft/builtin-skills";
+import {
+  builtinSkillFilesFor,
+  buildAvailableSourcesSection,
+} from "./craft/builtin-skills";
 import type { CraftKbSearch } from "./craft/kb-search-relay";
 import { projectKbSearchResults } from "./craft/kb-search-relay";
 import {
@@ -211,10 +217,7 @@ import {
   personalUnconnectedApps,
 } from "./craft/managed-content";
 import { resolveCraftMcpServers } from "./craft/mcp-servers";
-import {
-  createPreviewOrigin,
-  samePreviewOrigin,
-} from "./craft/preview-origin";
+import { createPreviewOrigin, samePreviewOrigin } from "./craft/preview-origin";
 import { createPreviewTickets } from "./craft/preview-ticket";
 import type {
   CraftLLMProviderConfig,
@@ -351,7 +354,10 @@ import {
 } from "./openmuse-deletion/retention";
 import { createOpenMuseDeletionRestore } from "./openmuse-deletion/restore";
 import { createOpenMuseExternalAccessRevoker } from "./openmuse-deletion/revoke";
-import { createOpenMuseWorkShutdown, recordWorkShutdown } from "./openmuse-deletion/shutdown";
+import {
+  createOpenMuseWorkShutdown,
+  recordWorkShutdown,
+} from "./openmuse-deletion/shutdown";
 import {
   createOpenMuseAccountDeletionStore,
   createOpenMuseDeletionResourceRows,
@@ -786,7 +792,7 @@ const enterpriseCapabilities = await (async () => {
           // tenant (OCR R10).
           const name = error instanceof Error ? error.name : "";
           if (name !== "CredentialUnusableError")
-            console.error({
+            log.error({
               error: "TENANT_CREDENTIAL_DECRYPT_FAILED",
               context: { credentialRef: reference },
               cause: error instanceof Error ? error.message : String(error),
@@ -811,7 +817,7 @@ const enterpriseCapabilities = await (async () => {
         const actor = await resolveRequestActor(request).catch((error) => {
           // Session-infrastructure faults are not "unauthenticated": leave
           // a trace so auth-store outages are diagnosable (OCR R10).
-          console.error({
+          log.error({
             error: "ENTERPRISE_SESSION_RESOLUTION_FAILED",
             cause: error instanceof Error ? error.message : String(error),
           });
@@ -829,7 +835,7 @@ const enterpriseCapabilities = await (async () => {
       conversations: createConversationService({ data, mastraStorage }),
     };
   } catch (error) {
-    console.error("Enterprise conversation service unavailable", error);
+    log.error(error, "Enterprise conversation service unavailable");
     return null;
   }
 })();
@@ -3138,7 +3144,8 @@ const openMuseTaskStore = createOpenMuseTaskStore({
  * below fences reads through its isDisabled, and the app tail's delete route and
  * /api/mobile fence answer through the same instance.
  */
-const openMuseAccountDeletionStore = createOpenMuseAccountDeletionStore(database);
+const openMuseAccountDeletionStore =
+  createOpenMuseAccountDeletionStore(database);
 /*
  * The personal-files store (F01), hoisted beside the runner it feeds: the task
  * runner reads finance CSVs and document versions through it, and the app tail
@@ -3746,7 +3753,9 @@ if (
   log.error(
     {
       type: "billing-credit-policy-unconfigured",
-      issues: billingSettings.creditPolicy.issues.map((issue) => `${issue.key}:${issue.reason}`),
+      issues: billingSettings.creditPolicy.issues.map(
+        (issue) => `${issue.key}:${issue.reason}`,
+      ),
     },
     "billing-credit-policy-unconfigured: metered work will refuse until these keys are fixed",
   );
@@ -3776,9 +3785,12 @@ const billing =
          * resolution. An insufficient balance on whatever binding a request resolves to is
          * refused on that account; nothing here or downstream ever switches accounts.
          */
-        const deploymentPayerBinding = await ensureDeploymentPayerBinding(database, {
-          id: config.deploymentId ?? tenantPackage.tenantId,
-        });
+        const deploymentPayerBinding = await ensureDeploymentPayerBinding(
+          database,
+          {
+            id: config.deploymentId ?? tenantPackage.tenantId,
+          },
+        );
         const lagoClient = createLagoClient({
           baseUrl: settings.apiUrl,
           apiKey: settings.apiKey,
@@ -3808,12 +3820,16 @@ const billing =
             // lookup prices each plan's expected allowance in scaled integer units (the same
             // arithmetic the grantor below uses), so the pass can audit that a paid order's
             // plan payout actually landed at the priced amount.
-            reconciler: createReconciler(database, externalCustomerKey, (planCode) => {
-              const entry = settings.planCatalog.get(planCode);
-              return entry && entry.credits > 0
-                ? Math.round(entry.credits * CREDIT_SCALE)
-                : null;
-            }),
+            reconciler: createReconciler(
+              database,
+              externalCustomerKey,
+              (planCode) => {
+                const entry = settings.planCatalog.get(planCode);
+                return entry && entry.credits > 0
+                  ? Math.round(entry.credits * CREDIT_SCALE)
+                  : null;
+              },
+            ),
             ...(settings.webhookKey
               ? {
                   verifier: createWebhookVerifier({
@@ -3853,8 +3869,9 @@ const usageOutbox =
  */
 if (billing !== undefined && usageOutbox !== undefined) {
   const creditPolicy = billingSettings?.creditPolicy;
-  const recordUnsettledUsage = createUsageEvidenceRecorder(usageOutbox, (message) =>
-    log.warn(message),
+  const recordUnsettledUsage = createUsageEvidenceRecorder(
+    usageOutbox,
+    (message) => log.warn(message),
   );
   setModelUsageGate(async (input) => {
     if (!creditPolicy?.configured) {
@@ -3983,7 +4000,9 @@ if (billing !== undefined && usageOutbox !== undefined) {
           // gets its own event and never the write-failure code a foreign error would
           // otherwise fall back to. The hold is retained either way.
           const code =
-            error instanceof UsageChargeError ? error.code : "usage_charge_failed";
+            error instanceof UsageChargeError
+              ? error.code
+              : "usage_charge_failed";
           log.error(
             {
               type: "billing-usage-charge-refused",
@@ -4355,26 +4374,34 @@ const codeRunStore = createCodeRunStore(database);
  * column is a display copy and is never read here). A deployment without billing passes
  * `billing === undefined` straight through: silent, and the run row still stands.
  */
-const codeRunUsageReporter = billing && usageOutbox
-  ? async (input: import("./workshop/metering").CodeRunUsageInput): Promise<void> => {
-      try {
-        await reportCodeRunUsage(
-          usageOutbox,
-          {
-            ...input,
-            externalCustomerId: billing.externalCustomerKey,
-            // True only when the hard-cap policy actually prices code runs; the gateway refuses
-            // billed runs until the sandbox can enforce a budget, so this stays false today and
-            // the guard inside reportCodeRunUsage is what makes flipping it safe.
-            creditMeteringEnabled: billingSettings?.creditPolicy.configured === true,
-          },
-          (message) => log.warn(message),
-        );
-      } catch (error) {
-        logUsageOutboxWriteFailure("code_run", `code-run:${input.runId}`, error);
+const codeRunUsageReporter =
+  billing && usageOutbox
+    ? async (
+        input: import("./workshop/metering").CodeRunUsageInput,
+      ): Promise<void> => {
+        try {
+          await reportCodeRunUsage(
+            usageOutbox,
+            {
+              ...input,
+              externalCustomerId: billing.externalCustomerKey,
+              // True only when the hard-cap policy actually prices code runs; the gateway refuses
+              // billed runs until the sandbox can enforce a budget, so this stays false today and
+              // the guard inside reportCodeRunUsage is what makes flipping it safe.
+              creditMeteringEnabled:
+                billingSettings?.creditPolicy.configured === true,
+            },
+            (message) => log.warn(message),
+          );
+        } catch (error) {
+          logUsageOutboxWriteFailure(
+            "code_run",
+            `code-run:${input.runId}`,
+            error,
+          );
+        }
       }
-    }
-  : undefined;
+    : undefined;
 const sandboxClientFor = (botId: string) =>
   sandboxUrl && sandboxToken
     ? createSandboxClient({
@@ -4592,9 +4619,11 @@ const craftMcpRelayBaseUrl =
  * An unwired knowledge service holds the skill back entirely (null) — the
  * AGENTS.md Company-knowledge section stays out with it.
  */
-const craftKnowledgeBases = async (): Promise<
-  Array<{ id: string; name: string; description: string | null }> | null
-> => {
+const craftKnowledgeBases = async (): Promise<Array<{
+  id: string;
+  name: string;
+  description: string | null;
+}> | null> => {
   if (!knowledgeService) return null;
   try {
     const response = await knowledgeRequest(knowledgeService, "/kb");
@@ -4625,7 +4654,7 @@ const craftKbSearch: CraftKbSearch | null = knowledgeService
       const settled = await Promise.allSettled(
         kbs.map((kb) =>
           knowledgeRequest(
-            knowledgeService!,
+            knowledgeService,
             `/kb/${encodeURIComponent(kb.id)}/retrieve`,
             {
               method: "POST",
@@ -4698,7 +4727,9 @@ const craftManagedContentFor = createCraftManagedContentResolver({
         ...held.map((row) => row.serverId),
         ...brokered.map((row) => row.serverId),
       ]),
-      ...(sourcesSection !== null ? { companySearchSourcesSection: sourcesSection } : {}),
+      ...(sourcesSection !== null
+        ? { companySearchSourcesSection: sourcesSection }
+        : {}),
     });
   },
   /*
@@ -4737,10 +4768,9 @@ const craftManagedContentFor = createCraftManagedContentResolver({
  * origin's redemption entry share this instance (#360's review constraint).
  * Undefined when craft is off: with no craft surface there is nothing to claim.
  */
-const craftPreviewTickets =
-  craftEffectiveConfig.enabled
-    ? createPreviewTickets({ store: createCraftStore(database) })
-    : undefined;
+const craftPreviewTickets = craftEffectiveConfig.enabled
+  ? createPreviewTickets({ store: createCraftStore(database) })
+  : undefined;
 /*
  * The deployment's sandbox identity facts, shared by EVERY craft surface that
  * routes to the sandbox (fix-ocr17): the HTTP webapp proxy, the craft routes
@@ -4762,15 +4792,14 @@ const craftSandboxConnection = () =>
  * gateway connection), so the two surfaces can never route one session to
  * different upstreams. Attached to the origin below as its servePreview seam.
  */
-const craftPreviewProxy =
-  craftEffectiveConfig.enabled
-    ? createPreviewProxy({
-        config: craftEffectiveConfig,
-        store: createCraftStore(database),
-        botIdFor: craftSandboxBotId,
-        sandboxConnectionFor: craftSandboxConnection,
-      })
-    : undefined;
+const craftPreviewProxy = craftEffectiveConfig.enabled
+  ? createPreviewProxy({
+      config: craftEffectiveConfig,
+      store: createCraftStore(database),
+      botIdFor: craftSandboxBotId,
+      sandboxConnectionFor: craftSandboxConnection,
+    })
+  : undefined;
 const craftPreviewOrigin =
   craftEffectiveConfig.enabled && craftPreviewTickets && craftPreviewProxy
     ? createPreviewOrigin({
@@ -4796,74 +4825,74 @@ const craftPreviewOrigin =
 const craftRoutes: CraftRoutesFactory | undefined =
   craftEffectiveConfig.enabled && craftPreviewOrigin !== undefined
     ? ({ requireUser }) =>
-      createCraftRoutes({
-        requireUser,
-        deps: {
-          config: craftEffectiveConfig,
-          db: database,
-          // Same port the workshop's locks and bus answer on: Redis when configured,
-          // the in-process fallback when not — craft's turn state carries both shapes.
-          redis: workshopRedisPort,
-          // Craft's decision surface reads/writes the raw approval store (not the
-          // coordination-wrapped approvalService.store) so opening/deciding never runs
-          // run-orchestration side effects.
-          approvals: storedApprovals,
-          // craft_sessions rows hold no Bot relationship; every session routes to the
-          // one deployment-chosen Bot workspace (validated to agent-sandbox's id rules
-          // inside loadCraftConfig — an unusable configured id already fell back).
-          botIdFor: craftSandboxBotId,
-          llmConfigFor: async () => craftLlmConfig(),
-          sandboxConnectionFor: craftSandboxConnection,
-          userNameFor: async (userId) =>
-            (await peopleStore.find(userId))?.name ?? null,
-          generateName: craftGenerateName,
-          // The managed-content layer over the plugins domain: connectable apps are
-          // the enabled connector rows that act in the person's own account and that
-          // they have NOT connected yet (onyx's get_connectable_apps_for_user —
-          // shared/deployment-account apps answer for everybody and never appear).
-          managedContentFor: craftManagedContentFor,
-          // The relay's credential resolution: the plugins domain's own
-          // per-person connection handling (MCP-wire servers only), decrypted
-          // per forwarded call and never written anywhere the agent reads.
-          mcpConnectionFor: (userId, serverId) =>
-            pluginStore.mcpWireConnectionFor(userId, serverId),
-          kbSearch: craftKbSearch,
-          mcpRelayBaseUrl: craftMcpRelayBaseUrl,
-          /*
-           * The process's ONE preview-ticket table and the preview origin's
-           * address derivation (#360/#361): the issuing route mints through these
-           * very instances and the preview origin's entry (the dispatcher branch
-           * below) redeems against the same table — never a second instance.
-           */
-          previewTickets: craftPreviewTickets,
-          previewOriginFor: (sessionId: string) =>
-            craftPreviewOrigin.originFor(sessionId),
-          /*
-           * The admission the #362 surfaces read: webapp-info's closed reason
-           * (m-5) and the issuing route's refusal to mint into a closed origin
-           * — the same gate the preview origin's dispatcher branch enforces.
-           */
-          previewOriginAdmission: () => craftPreviewOrigin.admission(),
-          /*
-           * fix-ocr13: the registry half of the pane's same-origin liveness
-           * probe — the SAME instance whose originFor registers the label, so
-           * "has" and "mint" can never disagree about what is registered.
-           */
-          previewOriginHas: (sessionId: string) =>
-            craftPreviewOrigin.hasSession(sessionId),
-          /*
-           * F-2 (#365): the dev form's /<label> mount, threaded into the
-           * session's start script — the same HMAC label derivation the minted
-           * address rides (one derivation, preview-origin.ts), so the dev
-           * server's basePath always matches the address the pane iframes.
-           * Null for the host form and any closed origin — root path, the
-           * production behavior unchanged.
-           */
-          webappBasePathFor: (sessionId: string) =>
-            craftPreviewOrigin.webappBasePathFor(sessionId),
-        },
-      })
-  : undefined;
+        createCraftRoutes({
+          requireUser,
+          deps: {
+            config: craftEffectiveConfig,
+            db: database,
+            // Same port the workshop's locks and bus answer on: Redis when configured,
+            // the in-process fallback when not — craft's turn state carries both shapes.
+            redis: workshopRedisPort,
+            // Craft's decision surface reads/writes the raw approval store (not the
+            // coordination-wrapped approvalService.store) so opening/deciding never runs
+            // run-orchestration side effects.
+            approvals: storedApprovals,
+            // craft_sessions rows hold no Bot relationship; every session routes to the
+            // one deployment-chosen Bot workspace (validated to agent-sandbox's id rules
+            // inside loadCraftConfig — an unusable configured id already fell back).
+            botIdFor: craftSandboxBotId,
+            llmConfigFor: async () => craftLlmConfig(),
+            sandboxConnectionFor: craftSandboxConnection,
+            userNameFor: async (userId) =>
+              (await peopleStore.find(userId))?.name ?? null,
+            generateName: craftGenerateName,
+            // The managed-content layer over the plugins domain: connectable apps are
+            // the enabled connector rows that act in the person's own account and that
+            // they have NOT connected yet (onyx's get_connectable_apps_for_user —
+            // shared/deployment-account apps answer for everybody and never appear).
+            managedContentFor: craftManagedContentFor,
+            // The relay's credential resolution: the plugins domain's own
+            // per-person connection handling (MCP-wire servers only), decrypted
+            // per forwarded call and never written anywhere the agent reads.
+            mcpConnectionFor: (userId, serverId) =>
+              pluginStore.mcpWireConnectionFor(userId, serverId),
+            kbSearch: craftKbSearch,
+            mcpRelayBaseUrl: craftMcpRelayBaseUrl,
+            /*
+             * The process's ONE preview-ticket table and the preview origin's
+             * address derivation (#360/#361): the issuing route mints through these
+             * very instances and the preview origin's entry (the dispatcher branch
+             * below) redeems against the same table — never a second instance.
+             */
+            previewTickets: craftPreviewTickets,
+            previewOriginFor: (sessionId: string) =>
+              craftPreviewOrigin.originFor(sessionId),
+            /*
+             * The admission the #362 surfaces read: webapp-info's closed reason
+             * (m-5) and the issuing route's refusal to mint into a closed origin
+             * — the same gate the preview origin's dispatcher branch enforces.
+             */
+            previewOriginAdmission: () => craftPreviewOrigin.admission(),
+            /*
+             * fix-ocr13: the registry half of the pane's same-origin liveness
+             * probe — the SAME instance whose originFor registers the label, so
+             * "has" and "mint" can never disagree about what is registered.
+             */
+            previewOriginHas: (sessionId: string) =>
+              craftPreviewOrigin.hasSession(sessionId),
+            /*
+             * F-2 (#365): the dev form's /<label> mount, threaded into the
+             * session's start script — the same HMAC label derivation the minted
+             * address rides (one derivation, preview-origin.ts), so the dev
+             * server's basePath always matches the address the pane iframes.
+             * Null for the host form and any closed origin — root path, the
+             * production behavior unchanged.
+             */
+            webappBasePathFor: (sessionId: string) =>
+              craftPreviewOrigin.webappBasePathFor(sessionId),
+          },
+        })
+    : undefined;
 
 /*
  * The craft webapp's HMR websocket proxy (onyx webapp_proxy.py:387-398). An upgrade is not a
@@ -5246,9 +5275,8 @@ const openMuseActivity = createOpenMuseActivityRoutes({
  * above their first consumer (round 6 M3) so no reader builds its own
  * second instance of either.
  */
-const openMuseDeletionResourceRows = createOpenMuseDeletionResourceRows(
-  database,
-);
+const openMuseDeletionResourceRows =
+  createOpenMuseDeletionResourceRows(database);
 const openMuseDeletionCleanup = createOpenMuseDeletionCleanupView({
   markers: openMuseAccountDeletionStore,
   rows: openMuseDeletionResourceRows,
@@ -5936,7 +5964,9 @@ serve<SocketData>({
   websocket: {
     open(ws) {
       if (isHmrSocket(ws.data)) {
-        webappHmrSocketHandlers.open(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        webappHmrSocketHandlers.open(
+          ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+        );
         return;
       }
       if (!isProxiedStream(ws.data)) {
@@ -6042,7 +6072,9 @@ serve<SocketData>({
     },
     close(ws, code, reason) {
       if (isHmrSocket(ws.data)) {
-        webappHmrSocketHandlers.close(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        webappHmrSocketHandlers.close(
+          ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+        );
         return;
       }
       if (!isProxiedStream(ws.data)) {
@@ -6101,4 +6133,3 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 log.info({ port }, "OpenBot server listening on http://127.0.0.1");
-

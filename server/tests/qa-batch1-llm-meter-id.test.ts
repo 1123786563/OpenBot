@@ -13,10 +13,7 @@ import { join } from "node:path";
  *   2. BEHAVIORAL: the event-id grammar the stream uses — UUID-shaped and distinct across calls.
  */
 
-const SOURCE = readFileSync(
-  join(import.meta.dir, "../src/index.ts"),
-  "utf8",
-);
+const SOURCE = readFileSync(join(import.meta.dir, "../src/index.ts"), "utf8");
 
 describe("probe f: the meter's outbox write (static contract, index.ts)", () => {
   test("the finish writes usage facts to the outbox, not directly to Lago or credits", () => {
@@ -24,20 +21,22 @@ describe("probe f: the meter's outbox write (static contract, index.ts)", () => 
     // made the failure decisive — logged with both stable ids, then rethrown (see below).
     expect(SOURCE).toMatch(/await usageOutbox\.record\(\{/);
     expect(SOURCE).not.toMatch(/void billingService\s*\n?\s*\.recordUsage/);
-    expect(SOURCE).not.toMatch(/void billing\.creditWriter\s*\n?\s*\.consumeCredits/);
+    expect(SOURCE).not.toMatch(
+      /void billing\.creditWriter\s*\n?\s*\.consumeCredits/,
+    );
   });
 
   test("an unusable finish writes nothing and KEEPS the reservation for reconciliation", () => {
     // The reservation-first contract after the remediation: an invalid or over-bound usage
     // report is a distinct settlement failure. Nothing is written, the hold is never
     // released as no_usage, and the failure is thrown so the run cannot report success.
-    expect(SOURCE).toMatch(/logUsageOutboxWriteFailure\(\s*\n\s*"llm",\s*\n\s*input\.eventId,\s*\n\s*error,\s*\n\s*reservation\.reservationId,/);
+    expect(SOURCE).toMatch(
+      /logUsageOutboxWriteFailure\(\s*\n\s*"llm",\s*\n\s*input\.eventId,\s*\n\s*error,\s*\n\s*reservation\.reservationId,/,
+    );
     expect(SOURCE).toMatch(/throw new ModelUsageSettlementError\(/);
     // Audit A2: release is now a decision over an explicit confirmed-no-cost vocabulary, so the
     // probe asserts the vocabulary rather than the literal argument of one call site.
-    expect(SOURCE).toMatch(
-      /if \(isConfirmedNoCost\(failure\.reason\)\)/,
-    );
+    expect(SOURCE).toMatch(/if \(isConfirmedNoCost\(failure\.reason\)\)/);
     expect(SOURCE).toMatch(/await recordUnsettledUsage\(\{/);
   });
 

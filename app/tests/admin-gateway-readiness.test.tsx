@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -9,6 +9,8 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
+import * as Dialog from "@/components/ui/dialog";
 import i18n from "@/lib/i18n";
 import { settleReactWork } from "./settle-react-work";
 
@@ -32,27 +34,34 @@ import { settleReactWork } from "./settle-react-work";
  * server/tests/gateway-admin-routes.test.ts).
  */
 
-mock.module("@/components/ui/dialog", () => {
-  const pass = ({ children }: { children?: React.ReactNode }) =>
-    children ?? null;
-  return {
-    Dialog: pass,
-    DialogContent: pass,
-    DialogHeader: pass,
-    DialogBody: pass,
-    DialogFooter: pass,
-    DialogTitle: ({ children }: { children?: React.ReactNode }) => (
-      <h2>{children}</h2>
-    ),
-    DialogDescription: ({ children }: { children?: React.ReactNode }) => (
-      <p>{children}</p>
-    ),
-    DialogClose: pass,
-    DialogOverlay: pass,
-    DialogPortal: pass,
-    DialogTrigger: pass,
-  };
-});
+/* The dialogs this page does not use are replaced with a no-op shell so the module graph stays
+ * honest without Base UI's portals. The shell goes on as NAMESPACE SPIES, not `mock.module`,
+ * because bun cannot take a module mock back off: a registry-level mock would stay installed for
+ * every test file walked into the same process afterwards, rendering their closed dialogs open
+ * (see composer-queue-attachments.test.tsx). A spy is restorable, and the `afterAll` below
+ * genuinely puts the real module back for the files that follow this one. */
+const pass = ({ children }: { children?: ReactNode }) => children ?? null;
+const dialogSpies = [
+  spyOn(Dialog, "Dialog").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogContent").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogHeader").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogBody").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogFooter").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogTitle").mockImplementation((({
+    children,
+  }: {
+    children?: ReactNode;
+  }) => <h2>{children}</h2>) as never),
+  spyOn(Dialog, "DialogDescription").mockImplementation((({
+    children,
+  }: {
+    children?: ReactNode;
+  }) => <p>{children}</p>) as never),
+  spyOn(Dialog, "DialogClose").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogOverlay").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogPortal").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogTrigger").mockImplementation(pass as never),
+];
 
 const { Route } = await import("@/routes/_authed/admin/gateway");
 
@@ -68,6 +77,7 @@ afterAll(async () => {
   await settleReactWork();
   void i18n.changeLanguage("en");
   GlobalRegistrator.unregister();
+  for (const spy of dialogSpies) spy.mockRestore();
 });
 
 const originalFetch = global.fetch;
@@ -87,7 +97,12 @@ type Deployment = {
     configVersion: number;
   } | null;
   credential:
-    | { state: "configured"; configVersion: number; fingerprint: string; updatedAt: string }
+    | {
+        state: "configured";
+        configVersion: number;
+        fingerprint: string;
+        updatedAt: string;
+      }
     | { state: "unconfigured" };
   probe: {
     status: string;
@@ -207,8 +222,7 @@ function installFetchStub() {
         baseUrl: string;
         requestTimeoutMs?: number;
       };
-      const configVersion =
-        (deployment.endpoint?.configVersion ?? 0) + 1;
+      const configVersion = (deployment.endpoint?.configVersion ?? 0) + 1;
       deployment = {
         ...deployment,
         endpoint: {
@@ -354,12 +368,15 @@ test("saving the endpoint, the rate and the credential refreshes what the page s
   // The endpoint: type the address, save, and the saved address + its version appear.
   // TYPED RATHER THAN SET — the input reads keystrokes, not dispatched change
   // events (connection-fields.test.tsx documents the same trap).
-  await userEvent.type(view.getByLabelText("Gateway address"), "https://bifrost.internal");
+  await userEvent.type(
+    view.getByLabelText("Gateway address"),
+    "https://bifrost.internal",
+  );
   fireEvent.click(view.getByRole("button", { name: "Save address" }));
   await waitFor(() =>
-    expect(
-      view.getByTestId("gateway-endpoint-saved").textContent,
-    ).toContain("https://bifrost.internal"),
+    expect(view.getByTestId("gateway-endpoint-saved").textContent).toContain(
+      "https://bifrost.internal",
+    ),
   );
   await waitFor(() =>
     expect(view.getByTestId("gateway-config-version").textContent).toContain(

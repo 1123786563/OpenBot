@@ -62,7 +62,12 @@ describe("the per-bot dev server pool (S8)", () => {
     await devservers.start({ botId: "a", dir: "web" });
     await devservers.start({ botId: "b", dir: "web" });
     const third = await devservers.start({ botId: "c", dir: "web" });
-    expect(third).toEqual({ ok: false, reason: "capacity", running: 2, max: 2 });
+    expect(third).toEqual({
+      ok: false,
+      reason: "capacity",
+      running: 2,
+      max: 2,
+    });
     expect(capacityLogs).toHaveLength(1);
     expect(capacityLogs[0]).toMatchObject({
       type: "sandbox-devserver-capacity",
@@ -94,7 +99,7 @@ describe("the per-bot dev server pool (S8)", () => {
   });
 
   test("a child dying on its own releases its slot (belief follows the process)", async () => {
-    const { devservers, spawns, children } = build(2);
+    const { devservers, children } = build(2);
     const a = await devservers.start({ botId: "a", dir: "web" });
     await devservers.start({ botId: "b", dir: "web" });
     // The first child crashes out from under us (vite died).
@@ -108,10 +113,20 @@ describe("the per-bot dev server pool (S8)", () => {
 
   test("a dir that climbs out of the Bot's workspace is refused, not spawned", async () => {
     const { devservers, spawns } = build();
-    const escaped = await devservers.start({ botId: "alpha", dir: "../../../etc" });
-    expect(escaped).toEqual({ ok: false, reason: "outside-workspace", dir: "../../../etc" });
+    const escaped = await devservers.start({
+      botId: "alpha",
+      dir: "../../../etc",
+    });
+    expect(escaped).toEqual({
+      ok: false,
+      reason: "outside-workspace",
+      dir: "../../../etc",
+    });
     // And the absolute-smuggling shape: an input that starts like a path but resolves elsewhere.
-    const absolute = await devservers.start({ botId: "alpha", dir: "/etc/passwd/../../x" });
+    const absolute = await devservers.start({
+      botId: "alpha",
+      dir: "/etc/passwd/../../x",
+    });
     expect(absolute.ok).toBe(false);
     if (!absolute.ok) expect(absolute.reason).toBe("outside-workspace");
     expect(spawns).toHaveLength(0); // Nothing was spawned for either.
@@ -119,14 +134,24 @@ describe("the per-bot dev server pool (S8)", () => {
 
   test("a legal subdirectory (dots and all) resolves inside the workspace", async () => {
     const { devservers, spawns } = build();
-    const fine = await devservers.start({ botId: "alpha", dir: "apps/./web/dist/../src" });
+    const fine = await devservers.start({
+      botId: "alpha",
+      dir: "apps/./web/dist/../src",
+    });
     expect(fine.ok).toBe(true);
     expect(spawns[0]?.cwd).toBe("/workspace/bots/alpha/apps/web/src");
   });
 
   test("an explicit command overrides vite, verbatim", async () => {
     const { devservers, spawns } = build();
-    await devservers.start({ botId: "a", dir: "web", command: "next dev -p 3000" });
-    expect(spawns[0]).toMatchObject({ command: "next", args: ["dev", "-p", "3000"] });
+    await devservers.start({
+      botId: "a",
+      dir: "web",
+      command: "next dev -p 3000",
+    });
+    expect(spawns[0]).toMatchObject({
+      command: "next",
+      args: ["dev", "-p", "3000"],
+    });
   });
 });

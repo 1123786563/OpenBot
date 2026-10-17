@@ -253,7 +253,7 @@ export function UpgradeDialog({
     if (!open || !order || order.status !== "pending") return;
     const timer = setInterval(() => {
       const current = orderRef.current;
-      if (!current || current.status !== "pending") return;
+      if (current?.status !== "pending") return;
       void queryClient
         .fetchQuery(purchaseOrderQueryOptions(current.orderId))
         .then(({ order: fresh }) => {
@@ -275,7 +275,7 @@ export function UpgradeDialog({
         });
     }, 5_000);
     return () => clearInterval(timer);
-  }, [open, order?.orderId, order?.status, queryClient]);
+  }, [open, order?.orderId, order?.status, queryClient, order]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

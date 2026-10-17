@@ -72,7 +72,9 @@ import { AMOUNT_CONVENTION, analyzeSpending } from "../openmuse-finance/csv";
 import type { OpenMuseNotificationEvent } from "../openmuse-notifications/store";
 import type { DocumentReplyReview } from "../openmuse-reviewed-actions/service";
 import type { WorkQueue } from "../work/queue";
-import { type TaskWorkerCapacity, taskWorkerCapacity,
+import {
+  type TaskWorkerCapacity,
+  taskWorkerCapacity,
   OPENMUSE_TASK_MAX_ATTEMPTS,
 } from "./capacity";
 import type {

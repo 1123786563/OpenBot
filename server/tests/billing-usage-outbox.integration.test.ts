@@ -274,13 +274,15 @@ test("a blocked delivery target leaves durable manual-review evidence and no lon
   await outbox.record(event);
   await outbox.markLagoDelivered(event.eventId);
 
-  await (outbox as UsageOutbox & {
-    blockDelivery(
-      eventId: string,
-      target: "lago" | "credits",
-      failureCode: string,
-    ): Promise<void>;
-  }).blockDelivery(event.eventId, "credits", "missing_reservation");
+  await (
+    outbox as UsageOutbox & {
+      blockDelivery(
+        eventId: string,
+        target: "lago" | "credits",
+        failureCode: string,
+      ): Promise<void>;
+    }
+  ).blockDelivery(event.eventId, "credits", "missing_reservation");
 
   expect(await outbox.pending(10)).toEqual([]);
   expect(
@@ -303,13 +305,15 @@ test("a stale worker cannot mark a blocked target delivered", async () => {
   // be able to overwrite it, and an idempotent re-mark of a delivered target stays silent.
   const event = usageEvent(`${prefix}-blocked-guard`);
   await outbox.record(event);
-  await (outbox as UsageOutbox & {
-    blockDelivery(
-      eventId: string,
-      target: "lago" | "credits",
-      failureCode: string,
-    ): Promise<void>;
-  }).blockDelivery(event.eventId, "lago", "missing_reservation");
+  await (
+    outbox as UsageOutbox & {
+      blockDelivery(
+        eventId: string,
+        target: "lago" | "credits",
+        failureCode: string,
+      ): Promise<void>;
+    }
+  ).blockDelivery(event.eventId, "lago", "missing_reservation");
   await outbox.markCreditsDelivered(event.eventId);
 
   // The stale worker arrives after the block and after delivery of the sibling.

@@ -65,8 +65,14 @@ describe.skipIf(!up)("ingest → qdrant → retrieve roundtrip (live)", () => {
   const sql = postgres(DB_URL, { max: 5 });
   const db = drizzle(sql, { schema });
   const qdrant = new QdrantClient({ baseUrl: QDRANT_URL });
-  const indexWriter = createIndexWriter(qdrant, "kb_chunks_8", { batchSize: 4, concurrency: 2 });
-  const engine = createQdrantVectorEngine({ client: qdrant, collection: "kb_chunks_8" });
+  const indexWriter = createIndexWriter(qdrant, "kb_chunks_8", {
+    batchSize: 4,
+    concurrency: 2,
+  });
+  const engine = createQdrantVectorEngine({
+    client: qdrant,
+    collection: "kb_chunks_8",
+  });
   const composite = createCompositeRetrieveEngine([engine]);
   const tenantId = `rt-qa-${Date.now().toString(36)}`;
   let kbId = "";
@@ -78,7 +84,12 @@ describe.skipIf(!up)("ingest → qdrant → retrieve roundtrip (live)", () => {
       id: kbId,
       tenantId,
       name: `roundtrip-${Date.now()}`,
-      chunkingConfig: { chunkSize: 24, chunkOverlap: 4, separators: ["\n\n"], strategy: "recursive" },
+      chunkingConfig: {
+        chunkSize: 24,
+        chunkOverlap: 4,
+        separators: ["\n\n"],
+        strategy: "recursive",
+      },
       embeddingModelId: "mock-rt",
     });
   });
@@ -88,8 +99,12 @@ describe.skipIf(!up)("ingest → qdrant → retrieve roundtrip (live)", () => {
     await qdrant.deletePointsByFilter("kb_chunks_8", {
       must: [{ key: "tenant_id", match: { value: tenantId } }],
     });
-    await db.delete(schema.knowledges).where(eq(schema.knowledges.knowledgeBaseId, kbId));
-    await db.delete(schema.knowledgeBases).where(eq(schema.knowledgeBases.id, kbId));
+    await db
+      .delete(schema.knowledges)
+      .where(eq(schema.knowledges.knowledgeBaseId, kbId));
+    await db
+      .delete(schema.knowledgeBases)
+      .where(eq(schema.knowledgeBases.id, kbId));
     await sql.end();
   });
 
@@ -132,9 +147,12 @@ describe.skipIf(!up)("ingest → qdrant → retrieve roundtrip (live)", () => {
       "风险准备金率是交易所要求的资金。\n\n杠杆交易的风险控制要点。",
     );
     // completed 落行
-    const [row] = await db.select().from(knowledges).where(eq(knowledges.id, docId));
+    const [row] = await db
+      .select()
+      .from(knowledges)
+      .where(eq(knowledges.id, docId));
     expect(row.parseStatus).toBe("completed");
-    expect((row.progress?.chunksTotal ?? 0)).toBeGreaterThan(0);
+    expect(row.progress?.chunksTotal ?? 0).toBeGreaterThan(0);
 
     // 立刻检索（同 embedding 输入 → 同向量 → 命中自身）
     const outcome = await hybridSearch(
@@ -171,7 +189,10 @@ describe.skipIf(!up)("ingest → qdrant → retrieve roundtrip (live)", () => {
     expect(before).toBeGreaterThan(0);
 
     // reparse：attempt+1 后重跑
-    await db.update(knowledges).set({ attempt: 1, parseStatus: "pending" }).where(eq(knowledges.id, docId));
+    await db
+      .update(knowledges)
+      .set({ attempt: 1, parseStatus: "pending" })
+      .where(eq(knowledges.id, docId));
     await processDocument(
       { db, registry: null as never, embedder: mockEmbedder, indexWriter },
       {
@@ -228,7 +249,10 @@ describe.skipIf(!up)("ingest → qdrant → retrieve roundtrip (live)", () => {
     );
     expect(out.skipped).toBe("attemptSuperseded");
     // 行未被旧 job 碰过
-    const [row] = await db.select().from(knowledges).where(eq(knowledges.id, docId));
+    const [row] = await db
+      .select()
+      .from(knowledges)
+      .where(eq(knowledges.id, docId));
     expect(row.parseStatus).toBe("pending");
   });
 
@@ -251,7 +275,10 @@ describe.skipIf(!up)("ingest → qdrant → retrieve roundtrip (live)", () => {
     // 删除（先 Qdrant 后 SQL）
     await indexWriter.deleteByDoc(tenantId, docId);
     await db.delete(schema.chunks).where(eq(schema.chunks.knowledgeId, docId));
-    await db.update(knowledges).set({ deletedAt: new Date(), parseStatus: "deleting" }).where(eq(knowledges.id, docId));
+    await db
+      .update(knowledges)
+      .set({ deletedAt: new Date(), parseStatus: "deleting" })
+      .where(eq(knowledges.id, docId));
 
     const after = await hybridSearch(
       { embedder: mockEmbedder, composite, db },
@@ -269,7 +296,10 @@ describe.skipIf(!up)("ingest → qdrant → retrieve roundtrip (live)", () => {
 
   test("neighbor expansion joins pre/next content (chunk_index ordering)", async () => {
     const docId = `doc-nb-${Date.now().toString(36)}`;
-    await ingestDoc(docId, "首段邻接内容甲。\n\n中段邻接内容乙。\n\n尾段邻接内容丙。");
+    await ingestDoc(
+      docId,
+      "首段邻接内容甲。\n\n中段邻接内容乙。\n\n尾段邻接内容丙。",
+    );
     const outcome = await hybridSearch(
       { embedder: mockEmbedder, composite, db },
       {

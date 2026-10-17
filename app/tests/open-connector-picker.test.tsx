@@ -62,9 +62,9 @@ test("an app this deployment already has is offered as added, not as one more th
   expect(github[0]?.enabled).toBe(true);
 
   // The other side of the same claim: an app that is genuinely not here stays addable.
-  expect(
-    listed.find((entry) => entry.slug === "hackernews")?.enabled,
-  ).toBe(false);
+  expect(listed.find((entry) => entry.slug === "hackernews")?.enabled).toBe(
+    false,
+  );
 });
 
 test("the size of the decision survives, however large the app", () => {
@@ -73,19 +73,16 @@ test("the size of the decision survives, however large the app", () => {
   // The count is the whole reason the row states one: an app is not a small thing to switch on,
   // and the number is what says so before anybody presses Add.
   expect(listed.find((entry) => entry.slug === "github")?.actionCount).toBe(96);
-  expect(
-    listed.find((entry) => entry.slug === "hackernews")?.actionCount,
-  ).toBe(7);
+  expect(listed.find((entry) => entry.slug === "hackernews")?.actionCount).toBe(
+    7,
+  );
 });
 
 test("the directory is listed by name, and the container's own order is left alone", () => {
   const apps = [GITHUB, HACKERNEWS];
   const listed = matchingApps(apps);
 
-  expect(listed.map((entry) => entry.name)).toEqual([
-    "GitHub",
-    "Hacker News",
-  ]);
+  expect(listed.map((entry) => entry.name)).toEqual(["GitHub", "Hacker News"]);
   // A copy: the query's cached array is the same object every render, and sorting it in place
   // would rewrite what TanStack Query holds.
   expect(apps.map((entry) => entry.name)).toEqual(["GitHub", "Hacker News"]);

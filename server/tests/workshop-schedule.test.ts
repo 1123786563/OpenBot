@@ -18,20 +18,30 @@ const TZ = "Asia/Shanghai";
 
 describe("the schedule compiler (B17)", () => {
   test("interval mode maps every-unit shapes to stepped fields", () => {
-    expect(compileInterval({ every: 30, unit: "minutes" })).toBe("*/30 * * * *");
+    expect(compileInterval({ every: 30, unit: "minutes" })).toBe(
+      "*/30 * * * *",
+    );
     expect(compileInterval({ every: 6, unit: "hours" })).toBe("0 */6 * * *");
     expect(compileInterval({ every: 2, unit: "days" })).toBe("0 0 */2 * *");
   });
 
   test("daily mode maps a wall clock, and weekday lists spell themselves", () => {
     expect(compileDaily({ time: "09:30" })).toBe("30 9 * * *");
-    expect(compileDaily({ time: "09:30", days: ["mon", "tue", "wed", "thu", "fri"] })).toBe(
-      "30 9 * * mon,tue,wed,thu,fri",
+    expect(
+      compileDaily({
+        time: "09:30",
+        days: ["mon", "tue", "wed", "thu", "fri"],
+      }),
+    ).toBe("30 9 * * mon,tue,wed,thu,fri");
+    expect(compileDaily({ time: "8:05", days: ["sun", "sat"] })).toBe(
+      "5 8 * * sun,sat",
     );
-    expect(compileDaily({ time: "8:05", days: ["sun", "sat"] })).toBe("5 8 * * sun,sat");
     // All seven days is every day: the field collapses to *.
     expect(
-      compileDaily({ time: "07:00", days: ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] }),
+      compileDaily({
+        time: "07:00",
+        days: ["sun", "mon", "tue", "wed", "thu", "fri", "sat"],
+      }),
     ).toBe("0 7 * * *");
   });
 
@@ -40,13 +50,27 @@ describe("the schedule compiler (B17)", () => {
   });
 
   test("illegal inputs are refused, each with a sentence", () => {
-    expect(() => compileInterval({ every: 0, unit: "minutes" })).toThrow(WorkshopScheduleRefusedError);
-    expect(() => compileInterval({ every: 3.7, unit: "hours" })).toThrow(WorkshopScheduleRefusedError);
-    expect(() => compileDaily({ time: "25:00" })).toThrow(WorkshopScheduleRefusedError);
-    expect(() => compileDaily({ time: "0900" })).toThrow(WorkshopScheduleRefusedError);
-    expect(() => compileAdvanced("*/10 * * * * *", TZ)).toThrow(WorkshopScheduleRefusedError); // six fields
-    expect(() => nextRunAt("* * * * *", TZ, Date.now())).toThrow(WorkshopScheduleRefusedError); // sub-minute is impossible anyway
-    expect(() => nextRunAt("0 9 * * mon", "Not/AZone", Date.now())).toThrow(WorkshopScheduleRefusedError);
+    expect(() => compileInterval({ every: 0, unit: "minutes" })).toThrow(
+      WorkshopScheduleRefusedError,
+    );
+    expect(() => compileInterval({ every: 3.7, unit: "hours" })).toThrow(
+      WorkshopScheduleRefusedError,
+    );
+    expect(() => compileDaily({ time: "25:00" })).toThrow(
+      WorkshopScheduleRefusedError,
+    );
+    expect(() => compileDaily({ time: "0900" })).toThrow(
+      WorkshopScheduleRefusedError,
+    );
+    expect(() => compileAdvanced("*/10 * * * * *", TZ)).toThrow(
+      WorkshopScheduleRefusedError,
+    ); // six fields
+    expect(() => nextRunAt("* * * * *", TZ, Date.now())).toThrow(
+      WorkshopScheduleRefusedError,
+    ); // sub-minute is impossible anyway
+    expect(() => nextRunAt("0 9 * * mon", "Not/AZone", Date.now())).toThrow(
+      WorkshopScheduleRefusedError,
+    );
   });
 
   test("nextRunAt derives the next firing, strictly after the from moment", () => {
@@ -67,11 +91,21 @@ describe("the schedule compiler (B17)", () => {
   });
 
   test("the preapproval shape is clamped, never trusted", () => {
-    expect(parsePreapproval(undefined)).toEqual({ paths: [], tools: [], maxTurnsPerRun: 3 });
+    expect(parsePreapproval(undefined)).toEqual({
+      paths: [],
+      tools: [],
+      maxTurnsPerRun: 3,
+    });
     expect(
-      parsePreapproval({ paths: ["out/", "", 7], tools: ["python"], maxTurnsPerRun: 99 }),
+      parsePreapproval({
+        paths: ["out/", "", 7],
+        tools: ["python"],
+        maxTurnsPerRun: 99,
+      }),
     ).toEqual({ paths: ["out/"], tools: ["python"], maxTurnsPerRun: 20 });
-    expect(parsePreapproval({ maxTurnsPerRun: 0 })).toMatchObject({ maxTurnsPerRun: 1 });
+    expect(parsePreapproval({ maxTurnsPerRun: 0 })).toMatchObject({
+      maxTurnsPerRun: 1,
+    });
   });
 
   test("a draft compiles its mode and validates its recurrence before the store sees it", () => {
@@ -84,9 +118,17 @@ describe("the schedule compiler (B17)", () => {
     expect(draft.prompt).toBe("每天早晨跑一遍数据");
     expect(draft.rrule).toBe("0 9 * * *");
     expect(draft.status).toBe("enabled");
-    expect(draft.preapproval).toEqual({ paths: [], tools: ["python"], maxTurnsPerRun: 3 });
+    expect(draft.preapproval).toEqual({
+      paths: [],
+      tools: ["python"],
+      maxTurnsPerRun: 3,
+    });
     expect(() =>
-      draftForCreate({ prompt: "", mode: { kind: "daily", time: "09:00" }, timezone: TZ }),
+      draftForCreate({
+        prompt: "",
+        mode: { kind: "daily", time: "09:00" },
+        timezone: TZ,
+      }),
     ).toThrow(WorkshopScheduleRefusedError);
     expect(() =>
       draftForCreate({

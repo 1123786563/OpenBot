@@ -3,7 +3,10 @@ import { Hono, type MiddlewareHandler } from "hono";
 import type { AuditStore } from "../src/audit";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { requireAdmin } from "../src/auth/guards";
-import type { CreditWriter, CreditGrantResult } from "../src/billing/credits-writer";
+import type {
+  CreditWriter,
+  CreditGrantResult,
+} from "../src/billing/credits-writer";
 import { createBillingAdminRoutes } from "../src/billing/routes";
 import type { BillingService } from "../src/billing/types";
 
@@ -211,7 +214,9 @@ describe("probe e: the admin grant route", () => {
     expect(call.idempotencyKey).toBeNull();
 
     // Default expiry: no expiresAt in the body → about a year out, never the epoch.
-    expect(call.expiresAt.getTime()).toBeGreaterThan(Date.now() + 364 * 24 * 3600_000);
+    expect(call.expiresAt.getTime()).toBeGreaterThan(
+      Date.now() + 364 * 24 * 3600_000,
+    );
 
     // The audit row names the actor, the type, and the grant id.
     expect(audit.events).toHaveLength(1);

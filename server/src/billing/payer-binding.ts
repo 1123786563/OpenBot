@@ -71,7 +71,9 @@ export class CreditInsufficientError extends Error {
     super(
       `Insufficient credits on the ${label} payment account: ${(
         input.availableCents / CREDIT_SCALE
-      ).toFixed(2)} credits available. Ask for credits to be granted to this payment account, or reduce the size of the request.`,
+      ).toFixed(
+        2,
+      )} credits available. Ask for credits to be granted to this payment account, or reduce the size of the request.`,
     );
     this.payerKind = input.payerKind;
     this.availableCents = input.availableCents;
@@ -179,10 +181,7 @@ export function currentPayerBinding(): PayerBinding | undefined {
  * here, at the consumption entry's trust boundary — the same answer an untrusted scope
  * gets in the company branch.
  */
-function assertBindingCoherent(
-  binding: PayerBinding,
-  origin: string,
-): void {
+function assertBindingCoherent(binding: PayerBinding, origin: string): void {
   if (payerKey(binding.payer) !== binding.externalCustomerId) {
     throw new PayerBindingConflictError(
       `${origin}: the binding's account key does not derive from its own payer ref; the binding is refused.`,
@@ -206,7 +205,10 @@ export function resolveConsumptionPayerBinding(input: {
   deploymentBinding: PayerBinding;
 }): PayerBinding {
   if (input.requestBinding !== undefined) {
-    assertBindingCoherent(input.requestBinding, "resolveConsumptionPayerBinding");
+    assertBindingCoherent(
+      input.requestBinding,
+      "resolveConsumptionPayerBinding",
+    );
     return input.requestBinding;
   }
   assertBindingCoherent(

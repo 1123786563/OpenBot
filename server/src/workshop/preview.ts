@@ -28,7 +28,12 @@ export type PreviewMode = "auto" | "static" | "devserver" | "off";
 
 export function parsePreviewMode(raw: string | undefined): PreviewMode {
   const trimmed = raw?.trim();
-  if (trimmed === "static" || trimmed === "devserver" || trimmed === "off" || trimmed === "auto")
+  if (
+    trimmed === "static" ||
+    trimmed === "devserver" ||
+    trimmed === "off" ||
+    trimmed === "auto"
+  )
     return trimmed;
   return "auto";
 }
@@ -130,7 +135,7 @@ export function createPreviewRoutes(input: PreviewRoutesInput): Hono<{
     }
 
     const path = context.req.path.replace(
-      new RegExp(`^/api/workshop/[^/]+/preview/`),
+      /^\/api\/workshop\/[^/]+\/preview\//,
       "",
     );
 
@@ -151,7 +156,10 @@ export function createPreviewRoutes(input: PreviewRoutesInput): Hono<{
       const origin = context.req.header("origin") ?? "";
       const allowed = allowedDevOrigins.includes(origin);
       if (!allowed) {
-        return context.json({ error: "Origin is not allowed for the dev preview." }, 403);
+        return context.json(
+          { error: "Origin is not allowed for the dev preview." },
+          403,
+        );
       }
       const target = devTarget;
       if (!target) {
@@ -171,15 +179,18 @@ export function createPreviewRoutes(input: PreviewRoutesInput): Hono<{
           upgradeHeaders: context.req.raw.headers,
         });
       }
-      const upstream = await fetch(
-        `http://127.0.0.1:${target.port}/${path}`,
-        { signal: context.req.raw.signal, redirect: "manual" },
-      ).catch(() => null);
+      const upstream = await fetch(`http://127.0.0.1:${target.port}/${path}`, {
+        signal: context.req.raw.signal,
+        redirect: "manual",
+      }).catch(() => null);
       if (!upstream) {
         return context.json({ error: "The dev server did not answer." }, 502);
       }
       const headers = new Headers();
-      headers.set("content-type", upstream.headers.get("content-type") ?? "text/html");
+      headers.set(
+        "content-type",
+        upstream.headers.get("content-type") ?? "text/html",
+      );
       headers.set("content-security-policy", DEV_CSP_ALLOW_LISTED);
       return new Response(upstream.body, { status: upstream.status, headers });
     }

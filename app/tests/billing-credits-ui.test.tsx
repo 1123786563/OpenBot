@@ -10,7 +10,6 @@ import {
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type * as React from "react";
-import { cloneElement, createContext, useContext } from "react";
 import type {
   CreditConsumptionEntry,
   CreditGrantEntry,
@@ -18,134 +17,25 @@ import type {
 } from "@/lib/billing/credits";
 import i18n from "@/lib/i18n";
 import { settleReactWork } from "./settle-react-work";
+import { installDialogPassThrough } from "./dialog-pass-through";
 
 /*
  * The Base UI dialog never mounts under happy-dom: its portal rides browser transition APIs this
  * DOM shim does not implement, so an open dialog renders nothing at all (verified: bare
- * <Dialog open> leaves <body> empty). The repo's established answer for "the library's shell is
- * not what this test is about" is `mock.module` (approval-tools.test.tsx), so the portal shell is
- * replaced with pass-through components and the dialog's own logic — tier and cycle drawing from
- * the catalog, the agreement gate, the price arithmetic — is what gets asserted.
+ * <Dialog open> leaves <body> empty). The portal shell is therefore replaced with a
+ * SHAPE-COMPATIBLE passthrough — the one dialog-pass-through.tsx installs — and the dialog's own
+ * logic — tier and cycle drawing from the catalog, the agreement gate, the price arithmetic — is
+ * what gets asserted. The shell goes on as NAMESPACE SPIES, not `mock.module`, because bun
+ * cannot take a module mock back off: a registry-level mock would stay installed for every test
+ * file walked into the same process afterwards, rendering their closed dialogs open (see
+ * composer-queue-attachments.test.tsx). A spy is restorable, and the `afterAll` below genuinely
+ * puts the real module back.
  *
- * The mocked imports below must load AFTER `mock.module` and BEFORE any render; `@testing-library/
+ * The mocked imports below must load AFTER the spies and BEFORE any render; `@testing-library/
  * react` itself is imported statically above because it registers suite-level hooks at import
  * time and refuses them from inside a test.
  */
-mock.module("@/components/ui/dialog", () => {
-  const pass = ({ children }: { children?: React.ReactNode }) =>
-    children ?? null;
-  const CloseContext = createContext<() => void>(() => {});
-  /*
-   * A SHAPE-COMPATIBLE passthrough, because mock.module is registry-level and OUTLIVES THIS
-   * FILE. Later files (brokered-account-row's key dialog, the transcript's lightbox) exercise
-   * the real Dialog's semantics through this mock, so it honors the real one's split behavior:
-   * - a DialogTrigger child ALWAYS renders (the real trigger is the closed-state affordance;
-   *   eating it made the transcript's attachment tiles vanish for every later file);
-   * - every other child (the DialogContent tree) renders ONLY while open, wrapped in
-   *   role="dialog" (a closed dialog mounting its content gave the no-auth row a phantom
-   *   Close button — the real popup mounts nothing until open);
-   * - DialogContent keeps the close button a real one renders (they close it by name).
-   * Content renders inline instead of into a portal — the only part happy-dom cannot do, and
-   * the part this file's assertions never looked at.
-   */
-  /*
-   * The trigger honors `render` the way the real one does: the rendered element IS the trigger
-   * (carrying its aria-label) with the children inside it, plus the `aria-haspopup="dialog"` the
-   * real trigger answers for. Without this the transcript's tile button vanished and its label
-   * and semantics with it.
-   */
-  const DialogTriggerMock = ({
-    children,
-    render,
-  }: {
-    children?: React.ReactNode;
-    render?: React.ReactElement<Record<string, unknown>>;
-  }) =>
-    render
-      ? cloneElement(render, { "aria-haspopup": "dialog" }, children)
-      : (children ?? null);
-  DialogTriggerMock.displayName = "DialogTriggerMock";
-  const isTrigger = (child: React.ReactNode) =>
-    child !== null &&
-    typeof child === "object" &&
-    "type" in child &&
-    (child as { type?: { displayName?: string } }).type?.displayName ===
-      "DialogTriggerMock";
-  const Dialog = ({
-    children,
-    open = false,
-    onOpenChange,
-  }: {
-    children?: React.ReactNode;
-    open?: boolean;
-    onOpenChange?: (open: boolean) => void;
-  }) => {
-    const array = (Array.isArray(children) ? children : [children]).filter(
-      Boolean,
-    );
-    const triggers = array.filter(isTrigger);
-    const rest = array.filter((child) => !isTrigger(child));
-    /*
-     * The close affordance is threaded through context rather than props: a real DialogContent's
-     * Close button asks the Dialog root to close (onOpenChange(false)), and a later file's tests
-     * click that button by name and wait for the dialog to be gone — a dumb button that rendered
-     * but did nothing broke them.
-     */
-    const close = () => onOpenChange?.(false);
-    return open ? (
-      <CloseContext.Provider value={close}>
-        <div role="dialog">
-          {triggers}
-          {rest}
-        </div>
-      </CloseContext.Provider>
-    ) : (
-      <>
-        {triggers}
-        {rest.length === 0 ? null : null}
-      </>
-    );
-  };
-  const DialogTrigger = DialogTriggerMock;
-  const DialogContent = ({ children }: { children?: React.ReactNode }) => {
-    const close = useContext(CloseContext);
-    return (
-      <div>
-        {children}
-        <button onClick={close} type="button">
-          <span className="sr-only">Close</span>
-        </button>
-      </div>
-    );
-  };
-  return {
-    Dialog,
-    DialogContent,
-    DialogHeader: pass,
-    DialogBody: pass,
-    DialogFooter: pass,
-    /*
-     * Title and Description get their own elements, as the real ones do (heading and p): a
-     * later file's getByText pins a sentence that sits in a Description, and a bare passthrough
-     * merged title and description into one text blob no exact matcher could hit.
-     */
-    DialogTitle: ({ children }: { children?: React.ReactNode }) => (
-      <h2>{children}</h2>
-    ),
-    DialogDescription: ({ children }: { children?: React.ReactNode }) => (
-      <p>{children}</p>
-    ),
-    /*
-     * EVERY export, because mock.module is process-lifetime: a later test file importing
-     * chat-transcript pulls this same mock, and a missing DialogClose/Overlay/Portal/Trigger
-     * was a SyntaxError that failed that file before its own first test ran.
-     */
-    DialogClose: pass,
-    DialogOverlay: pass,
-    DialogPortal: pass,
-    DialogTrigger,
-  };
-});
+const restoreDialogPassThrough = installDialogPassThrough();
 
 const { ConsumptionTable } = await import(
   "@/components/billing/consumption-table"
@@ -232,6 +122,7 @@ afterAll(async () => {
    */
   await settleReactWork();
   GlobalRegistrator.unregister();
+  restoreDialogPassThrough();
 });
 
 /*
@@ -538,13 +429,23 @@ test("CreditGrantList renders the held figure in the rewards summary, with no ra
     expiringSoon: false,
   };
   const zh = render(
-    <CreditGrantList grants={[grant]} grantCount={2} remaining={45} held={21} />,
+    <CreditGrantList
+      grants={[grant]}
+      grantCount={2}
+      remaining={45}
+      held={21}
+    />,
   );
   expect(zh.container.textContent).toContain("（进行中调用占用 21）");
   expect(zh.container.textContent).not.toContain("{{");
   await i18n.changeLanguage("en");
   const en = render(
-    <CreditGrantList grants={[grant]} grantCount={2} remaining={45} held={21} />,
+    <CreditGrantList
+      grants={[grant]}
+      grantCount={2}
+      remaining={45}
+      held={21}
+    />,
   );
   expect(en.container.textContent).toContain("21 held by in-progress calls");
   expect(en.container.textContent).not.toContain("{{");
@@ -602,10 +503,7 @@ function installPurchaseStub(handlers: {
           headers: { "content-type": "application/json" },
         });
       }
-      if (
-        handlers.current &&
-        url.endsWith("/api/billing/purchases/current")
-      ) {
+      if (handlers.current && url.endsWith("/api/billing/purchases/current")) {
         const h = handlers.current;
         return new Response(JSON.stringify(h.body), {
           status: h.status,
@@ -789,9 +687,15 @@ test("the pay button stays inert while a cancel is in flight, and a cancel while
     ),
   );
   await openToAPayableDialog(view);
-  const pay = view.getByRole("button", { name: "同意协议并支付" }) as HTMLButtonElement;
+  const pay = view.getByRole("button", {
+    name: "同意协议并支付",
+  }) as HTMLButtonElement;
   fireEvent.click(pay);
-  await until(() => view.queryByText("订单待支付") !== null, 4000, "order pending");
+  await until(
+    () => view.queryByText("订单待支付") !== null,
+    4000,
+    "order pending",
+  );
 
   // Cancel is clicked and hangs on the wire: the pay button must disable for the whole flight.
   fireEvent.click(view.getByRole("button", { name: "取消订单" }));
@@ -800,7 +704,9 @@ test("the pay button stays inert while a cancel is in flight, and a cancel while
   // disabled button fires no handler; the guard inside startCheckout covers the rest.
   releaseCancel(
     new Response(
-      JSON.stringify({ order: { ...ORDER_VIEW, status: "canceled", checkout: null } }),
+      JSON.stringify({
+        order: { ...ORDER_VIEW, status: "canceled", checkout: null },
+      }),
       { status: 200, headers: { "content-type": "application/json" } },
     ),
   );
@@ -830,12 +736,19 @@ test("a pending-purchase 409 on a remounted dialog restores the blocking order s
   await openToAPayableDialog(view);
   fireEvent.click(view.getByRole("button", { name: "同意协议并支付" }));
   await until(
-    () => view.queryByText("已有一笔待支付订单，请先完成支付或取消该订单后再购买") !== null,
+    () =>
+      view.queryByText(
+        "已有一笔待支付订单，请先完成支付或取消该订单后再购买",
+      ) !== null,
     4000,
     "localized refusal",
   );
   // The blocking order came back with its cancel entry — the escape the message names.
-  await until(() => view.queryByText("订单待支付") !== null, 4000, "order restored");
+  await until(
+    () => view.queryByText("订单待支付") !== null,
+    4000,
+    "order restored",
+  );
   expect(view.getByRole("button", { name: "取消订单" })).toBeTruthy();
   await new Promise((resolve) => setTimeout(resolve, 0));
 });
@@ -846,7 +759,10 @@ test("a failed cancel says the failure in the reader's language", async () => {
   // to the server's raw sentence.
   installPurchaseStub({
     create: { status: 200, body: { order: ORDER_VIEW } },
-    cancel: { status: 409, body: { error: "That purchase is already settled." } },
+    cancel: {
+      status: 409,
+      body: { error: "That purchase is already settled." },
+    },
   });
   const view = render(
     withProvider(
@@ -855,7 +771,11 @@ test("a failed cancel says the failure in the reader's language", async () => {
   );
   await openToAPayableDialog(view);
   fireEvent.click(view.getByRole("button", { name: "同意协议并支付" }));
-  await until(() => view.queryByText("订单待支付") !== null, 4000, "order pending");
+  await until(
+    () => view.queryByText("订单待支付") !== null,
+    4000,
+    "order pending",
+  );
   fireEvent.click(view.getByRole("button", { name: "取消订单" }));
   await until(
     () => view.queryByText(/取消订单失败/) !== null,
@@ -872,7 +792,12 @@ test("ConsumptionTable keeps the pager for a page walked off the end", () => {
   const view = render(
     <ConsumptionTable
       entries={[]}
-      pagination={{ totalCount: 5, totalPages: 1, currentPage: 99, nextPage: null }}
+      pagination={{
+        totalCount: 5,
+        totalPages: 1,
+        currentPage: 99,
+        nextPage: null,
+      }}
       range="7d"
       onRangeChange={() => {}}
       onPage={() => {}}
@@ -901,7 +826,12 @@ test("ConsumptionTable shows the unfunded suffix only on a row the grants could 
   const view = render(
     <ConsumptionTable
       entries={[entry(true), entry(false)]}
-      pagination={{ totalCount: 2, totalPages: 1, currentPage: 1, nextPage: null }}
+      pagination={{
+        totalCount: 2,
+        totalPages: 1,
+        currentPage: 1,
+        nextPage: null,
+      }}
       range="7d"
       onRangeChange={() => {}}
       onPage={() => {}}

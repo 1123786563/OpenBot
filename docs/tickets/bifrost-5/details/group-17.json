@@ -1,239 +1,305 @@
 {
- "group": "17",
- "context": [
-  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC07/AC15/AC16/AC17/AC19）",
-  "docs/specs/2026-10-14-bifrost-integration-design.md（Q26 异步任务提交前预留完整任务成本上限，完成后结算；查询不重复扣费；客户端离开、取消失败或 Key 到期都不自动释放预留）",
-  "docs/adr/0003-bifrost-openbot-credit-admission.md",
-  "CONTEXT.md（异步任务 Job、providerJobID、待结算、终态术语）"
- ],
- "anchors": {
-  "bifrost-jobs": "bifrost/framework/jobaccounting/（types.go JobRequest / JobStore / PricingManager / ProviderJobKind、engine.go、sweeper.go Sweeper + SweeperConfig、batch.go AccountBatchResults / NewBatchSweeper / BatchSettler / BatchResultFetcher、video.go VideoSettler / VideoRetriever / Poll / Settle、doc.go 提到 /v1/batches/{id}/results post-hook）",
-  "bifrost-tables": "bifrost/framework/configstore/tables/batchjob.go（VirtualKeyID、CustomerID）、TableProviderJob",
-  "openbot-credit": "组 06 的 Reserve/Status/Settle/Release、06.8 unknown；组 08 的 RecoveryItem 与恢复扫描",
-  "openbot-ui": "组 06.12 的用户视图",
-  "test-harness": "provider 异步 fake（queued → running → completed/failed/cancel-unsupported）+ 真实持久化跨进程重启；server/tests/support/database.ts；go test ./framework/jobaccounting/..."
- },
- "verification_common": [
-  "bun run --filter server typecheck",
-  "cd bifrost/framework/jobaccounting && go test ./...",
-  "bunx biome lint --error-on-warnings <changed files>"
- ],
- "tickets": {
-  "17.1": {
-   "slug": "async-job-identity",
-   "contracts": {
-    "consumes": ["08.1 的 RecoveryItem（未知任务恢复入口）", "05.4 的 CredentialBundle", "03.11 的 ModelRef"],
-    "produces": [
-     "AsyncJob { jobId, payerRef, grantId, modelRef, providerJobID?, reservationId?, snapshotVersion, rateVersion, state }",
-     "任务归属固定：创建时绑定付款账户与授权，之后不随会话、Key 或调用方变化",
-     "providerJobID 与本地 jobId 的双向映射，供终态查询与恢复使用"
-    ]
-   },
-   "steps": [
-    "在异步提交入口创建任务身份记录，固定 payer/grant/model 与锁定版本",
-    "建立 providerJobID 映射字段，允许提交时暂缺（响应丢失场景）",
-    "确认任务归属不随当前会话或 Key 变化",
-    "先写失败测试：任务创建后归属固定；Key 到期后任务仍归属原账户"
-   ],
-   "criteria": [
-    "每个异步任务都有稳定的本地身份与固定归属",
-    "providerJobID 与本地 jobId 可双向映射，允许暂缺",
-    "任务归属不随会话、Key 或调用方变化",
-    "任务记录包含恢复所需的预留与版本信息"
-   ],
-   "tests": ["任务身份创建与归属固定测试", "providerJobID 缺失容忍测试", "Key 到期后归属不变测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/async-job-identity.integration.test.ts"],
-   "owned_scope": ["异步任务身份模块与存储、迁移", "对应测试"],
-   "resume_hint": "复用 Bifrost 既有 provider job 表而不是新建平行体系；接手先确认映射关系落在哪一侧，避免两套 ID 漂移。"
+  "group": "17",
+  "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC07/AC15/AC16/AC17/AC19）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q26 异步任务提交前预留完整任务成本上限，完成后结算；查询不重复扣费；客户端离开、取消失败或 Key 到期都不自动释放预留）",
+    "docs/adr/0003-bifrost-openbot-credit-admission.md",
+    "CONTEXT.md（异步任务 Job、providerJobID、待结算、终态术语）"
+  ],
+  "anchors": {
+    "bifrost-jobs": "bifrost/framework/jobaccounting/（types.go JobRequest / JobStore / PricingManager / ProviderJobKind、engine.go、sweeper.go Sweeper + SweeperConfig、batch.go AccountBatchResults / NewBatchSweeper / BatchSettler / BatchResultFetcher、video.go VideoSettler / VideoRetriever / Poll / Settle、doc.go 提到 /v1/batches/{id}/results post-hook）",
+    "bifrost-tables": "bifrost/framework/configstore/tables/batchjob.go（VirtualKeyID、CustomerID）、TableProviderJob",
+    "openbot-credit": "组 06 的 Reserve/Status/Settle/Release、06.8 unknown；组 08 的 RecoveryItem 与恢复扫描",
+    "openbot-ui": "组 06.12 的用户视图",
+    "test-harness": "provider 异步 fake（queued → running → completed/failed/cancel-unsupported）+ 真实持久化跨进程重启；server/tests/support/database.ts；go test ./framework/jobaccounting/..."
   },
-  "17.2": {
-   "slug": "async-submit-full-bound-reservation",
-   "contracts": {
-    "consumes": ["17.1 的任务身份", "06.2/06.3/06.5 的重验、原子预留与足额上限"],
-    "produces": [
-     "提交前完整上限预留：以任务最坏情况成本（全部条目 × 最坏单价）作为上限，一次性预留",
-     "提交幂等：同一提交请求重放返回同一任务，不创建第二个任务、不产生第二份预留",
-     "预留成功后才向供应商派发任务"
-    ]
-   },
-   "steps": [
-    "实现任务成本上限换算（覆盖全部条目与最坏规格），足额方向取整",
-    "在派发前完成 Reserve，预留失败则拒绝提交",
-    "以提交幂等键保证重放收敛为同一任务",
-    "先写失败测试：余额不足时提交被拒绝且供应商未被调用；重放提交只产生一个任务"
-   ],
-   "criteria": [
-    "提交前完成覆盖最坏情况的完整上限预留",
-    "预留失败时提交被拒绝，供应商派发数为 0",
-    "同一提交重放只产生一个任务与一份预留",
-    "上限换算覆盖全部条目与规格维度"
-   ],
-   "tests": ["完整上限换算测试", "余额不足拒绝测试（provider spy=0）", "提交幂等重放集成测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/async-submit-reservation.integration.test.ts"],
-   "owned_scope": ["异步提交与预留接线", "幂等键规则", "对应测试"],
-   "resume_hint": "幂等键必须来自提交请求的稳定标识（而非时间戳）；接手先检查重放是否产生第二个任务。"
-  },
-  "17.3": {
-   "slug": "lost-provider-job-id-recovery",
-   "contracts": {
-    "consumes": ["17.2 的预留与派发", "08.1 的恢复扫描", "06.8 的 unknown"],
-    "produces": [
-     "providerJobID 响应丢失语义：任务进入 unknown 恢复流程，不自动创建第二个任务",
-     "找回路径：以稳定提交标识向供应商查询是否已存在该任务，找到则补映射",
-     "找不到证据时保持预留占用，不释放"
-    ]
-   },
-   "steps": [
-    "派发时携带可查询的稳定提交标识，便于事后找回",
-    "响应丢失时标记任务为 pending-unknown 并交给恢复扫描",
-    "实现找回逻辑：查到则补 providerJobID 映射，查不到则保持 unknown",
-    "先写失败测试：注入响应丢失 → 不创建第二任务、预留仍占用、可找回映射"
-   ],
-   "criteria": [
-    "providerJobID 响应丢失时不创建第二个任务",
-    "任务进入 unknown 恢复流程，预留保持占用",
-    "可通过稳定标识找回远端任务并补映射",
-    "找回失败时保持 unknown，不释放预留"
-   ],
-   "tests": ["响应丢失注入集成测试", "无第二任务断言", "找回映射成功/失败两路测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/async-lost-jobid.integration.test.ts"],
-   "owned_scope": ["派发响应丢失处理与找回逻辑", "对应测试"],
-   "resume_hint": "“响应丢失=提交失败=释放预留”是错误默认；远端可能已在运行，必须进入 unknown。"
-  },
-  "17.4": {
-   "slug": "async-status-read-authorization",
-   "contracts": {
-    "consumes": ["17.1 的任务身份与归属"],
-    "produces": [
-     "状态与结果查询为只读授权操作：只有归属账户（或管理员按既有审计路径）可查询",
-     "查询不触发预留、结算或供应商派发",
-     "越权查询返回统一拒绝，不泄露任务存在性"
-    ]
-   },
-   "steps": [
-    "为状态/结果查询接口加入归属校验，拒绝跨账户读取",
-    "确认查询路径为纯只读，不调用 Reserve/Settle，也不重复派发",
-    "统一越权拒绝响应，避免通过错误差异推断任务存在",
-    "先写失败测试：他人任务查询被拒绝；查询不产生账务或派发"
-   ],
-   "criteria": [
-    "只有归属账户可查询任务状态与结果",
-    "越权查询被拒绝且不泄露任务存在性",
-    "查询不触发预留、结算或供应商派发",
-    "管理员访问走既有审计路径"
-   ],
-   "tests": ["越权查询拒绝测试", "只读断言（无账务/派发 spy）", "统一拒绝响应断言"],
-   "verification": ["bun test server/tests/async-status-authz.test.ts"],
-   "owned_scope": ["异步任务查询路由与授权", "对应测试"],
-   "resume_hint": "结果里可能含敏感输出；接手确认越权拒绝不返回部分内容或长度差异。"
-  },
-  "17.5": {
-   "slug": "repeated-poll-and-notification-settle-once",
-   "contracts": {
-    "consumes": ["17.4 的只读查询", "06.9 的 Settle 幂等", "供应商完成通知/回调入口"],
-    "produces": [
-     "重复查询与重复完成通知都只结算一次：结算由后台按终态触发，查询本身不结算",
-     "通知与轮询两条路径共用同一幂等键",
-     "结算触发次数可观测，供 22.3 验收"
-    ]
-   },
-   "steps": [
-    "把结算触发点从查询路径移到后台终态处理，查询只读",
-    "为通知与轮询统一幂等键（jobId + 终态版本）",
-    "记录结算触发次数与来源，便于发现重复",
-    "先写失败测试：并发 10 次轮询 + 3 次通知 → 只结算一次"
-   ],
-   "criteria": [
-    "重复查询不触发结算",
-    "重复完成通知只结算一次",
-    "通知与轮询两条路径收敛为同一笔结算",
-    "结算触发次数与来源可观测"
-   ],
-   "tests": ["并发轮询与重复通知集成测试", "幂等键一致性断言", "触发次数可观测断言"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/async-settle-once.integration.test.ts"],
-   "owned_scope": ["结算触发路径与幂等键", "对应测试"],
-   "resume_hint": "若现状是“查询时顺便结算”，必须移到后台；否则重复轮询会重复扣费或产生竞争。"
-  },
-  "17.6": {
-   "slug": "async-terminal-usage-settlement",
-   "contracts": {
-    "consumes": ["17.5 的结算触发", "供应商终态 usage（Bifrost jobaccounting 的 Poll/Settle）", "06.9 的 Settle"],
-    "produces": [
-     "按可靠终态 usage 结算：金额来自供应商终态与锁定价格版本，不用估算",
-     "未使用额度释放；超出预留上限的部分按规则记录（不静默丢弃、不静默追加）",
-     "结算结果写入消费明细，可按任务归因"
-    ]
-   },
-   "steps": [
-    "复用 Bifrost 既有 job 结算路径取得终态 usage，换算为积分并 Settle",
-    "释放未使用额度；上限外的部分记录为异常并交 08.x 处置",
-    "把任务归因写入消费明细",
-    "先写失败测试：上限 100 实际 60 → 结算 60、释放 40；实际超上限 → 异常记录且不静默追加"
-   ],
-   "criteria": [
-    "结算金额来自真实终态 usage 与锁定版本，不使用估算",
-    "未使用额度被释放，用户可用余额恢复",
-    "实际超出预留上限时产生异常记录，不静默丢弃或追加",
-    "消费明细可按任务归因"
-   ],
-   "tests": ["终态结算集成测试", "超上限异常路径测试", "明细归因断言"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/async-terminal-settlement.integration.test.ts", "cd bifrost/framework/jobaccounting && go test ./..."],
-   "owned_scope": ["异步结算路径与异常记录", "对应测试"],
-   "resume_hint": "超上限属于真实风险，必须有异常记录与处置入口；不要为了余额一致而悄悄按上限截断。"
-  },
-  "17.7": {
-   "slug": "cancel-unknown-keeps-full-reservation",
-   "contracts": {
-    "consumes": ["17.6 的结算路径", "06.11 的 Release 证据要求", "06.8 的 unknown"],
-    "produces": [
-     "取消语义：取消请求不等于无费用证明；供应商不支持取消或取消结果未知时保持完整预留",
-     "只有取得明确未计费证据才释放，释放走 06.11 或 08.9",
-     "Key 到期或客户端离开不改变上述语义"
-    ]
-   },
-   "steps": [
-    "实现取消请求路径：向供应商发起取消并记录结论",
-    "取消成功且有未计费证据 → 释放；取消失败或结论未知 → 保持完整预留",
-    "确认 Key 到期与客户端离开都不触发自动释放",
-    "先写失败测试：供应商不支持取消 → 预留保持；取消结果未知 → unknown"
-   ],
-   "criteria": [
-    "取消失败或结果未知时保持完整预留，不自动释放",
-    "只有具备明确未计费证据时才释放",
-    "Key 到期或客户端离开不触发释放",
-    "取消动作与结论可审计"
-   ],
-   "tests": ["取消不支持保持预留测试", "取消结果未知 unknown 测试", "有证据释放测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/async-cancel-semantics.integration.test.ts"],
-   "owned_scope": ["取消路径与释放判定", "对应测试"],
-   "resume_hint": "供应商“取消已接受”不等于“未产生费用”；必须有明确证据才释放，否则保持 unknown。"
-  },
-  "17.8": {
-   "slug": "async-job-status-ui",
-   "contracts": {
-    "consumes": ["17.6/17.7 的结算与取消结果", "06.12 的用户视图", "08.7 的待结算展示"],
-    "produces": [
-     "用户与管理员视图：任务状态（queued/running/pending-settlement/settled/refused/cancelled）与原因、归属、金额",
-     "Key 到期后任务仍显示原归属，待结算项显示原因",
-     "组 17 缝合点：提交 → 预留 → 查询 → 终态结算/取消 → 明细可见，端到端可演示"
-    ]
-   },
-   "steps": [
-    "在用户页面加入异步任务列表与状态、原因、金额展示",
-    "管理员视图复用 08.8 的只读核查，附加任务维度过滤",
-    "确认展示不泄露他人任务",
-    "先写失败的界面测试：五种状态渲染、待结算原因、越权不可见"
-   ],
-   "criteria": [
-    "用户看到本人任务的状态、原因与金额",
-    "Key 到期后任务仍显示原归属账户",
-    "待结算任务显示可理解原因",
-    "他人任务不可见，管理员访问走审计路径"
-   ],
-   "tests": ["界面状态渲染测试", "越权不可见断言", "归属不变断言"],
-   "verification": ["bun test app/tests/async-jobs-ui.test.tsx", "bun run --filter app typecheck"],
-   "owned_scope": ["异步任务页面与查询封装", "对应 app/tests 测试与验收记录"],
-   "resume_hint": "本 Ticket 是组 17 缝合点：状态码表要与 17.1–17.7 的实现一致，接手先核对码表再写界面。"
+  "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/framework/jobaccounting && go test ./...",
+    "bunx biome lint --error-on-warnings <changed files>"
+  ],
+  "tickets": {
+    "17.1": {
+      "slug": "async-job-identity",
+      "contracts": {
+        "consumes": [
+          "08.1 的 RecoveryItem（未知任务恢复入口）",
+          "05.4 的 CredentialBundle",
+          "03.11 的 ModelRef"
+        ],
+        "produces": [
+          "AsyncJob { jobId, payerRef, grantId, modelRef, providerJobID?, reservationId?, snapshotVersion, rateVersion, state }",
+          "任务归属固定：创建时绑定付款账户与授权，之后不随会话、Key 或调用方变化",
+          "providerJobID 与本地 jobId 的双向映射，供终态查询与恢复使用"
+        ]
+      },
+      "steps": [
+        "在异步提交入口创建任务身份记录，固定 payer/grant/model 与锁定版本",
+        "建立 providerJobID 映射字段，允许提交时暂缺（响应丢失场景）",
+        "确认任务归属不随当前会话或 Key 变化",
+        "先写失败测试：任务创建后归属固定；Key 到期后任务仍归属原账户"
+      ],
+      "criteria": [
+        "每个异步任务都有稳定的本地身份与固定归属",
+        "providerJobID 与本地 jobId 可双向映射，允许暂缺",
+        "任务归属不随会话、Key 或调用方变化",
+        "任务记录包含恢复所需的预留与版本信息"
+      ],
+      "tests": [
+        "任务身份创建与归属固定测试",
+        "providerJobID 缺失容忍测试",
+        "Key 到期后归属不变测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/async-job-identity.integration.test.ts"
+      ],
+      "owned_scope": ["异步任务身份模块与存储、迁移", "对应测试"],
+      "resume_hint": "复用 Bifrost 既有 provider job 表而不是新建平行体系；接手先确认映射关系落在哪一侧，避免两套 ID 漂移。"
+    },
+    "17.2": {
+      "slug": "async-submit-full-bound-reservation",
+      "contracts": {
+        "consumes": [
+          "17.1 的任务身份",
+          "06.2/06.3/06.5 的重验、原子预留与足额上限"
+        ],
+        "produces": [
+          "提交前完整上限预留：以任务最坏情况成本（全部条目 × 最坏单价）作为上限，一次性预留",
+          "提交幂等：同一提交请求重放返回同一任务，不创建第二个任务、不产生第二份预留",
+          "预留成功后才向供应商派发任务"
+        ]
+      },
+      "steps": [
+        "实现任务成本上限换算（覆盖全部条目与最坏规格），足额方向取整",
+        "在派发前完成 Reserve，预留失败则拒绝提交",
+        "以提交幂等键保证重放收敛为同一任务",
+        "先写失败测试：余额不足时提交被拒绝且供应商未被调用；重放提交只产生一个任务"
+      ],
+      "criteria": [
+        "提交前完成覆盖最坏情况的完整上限预留",
+        "预留失败时提交被拒绝，供应商派发数为 0",
+        "同一提交重放只产生一个任务与一份预留",
+        "上限换算覆盖全部条目与规格维度"
+      ],
+      "tests": [
+        "完整上限换算测试",
+        "余额不足拒绝测试（provider spy=0）",
+        "提交幂等重放集成测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/async-submit-reservation.integration.test.ts"
+      ],
+      "owned_scope": ["异步提交与预留接线", "幂等键规则", "对应测试"],
+      "resume_hint": "幂等键必须来自提交请求的稳定标识（而非时间戳）；接手先检查重放是否产生第二个任务。"
+    },
+    "17.3": {
+      "slug": "lost-provider-job-id-recovery",
+      "contracts": {
+        "consumes": ["17.2 的预留与派发", "08.1 的恢复扫描", "06.8 的 unknown"],
+        "produces": [
+          "providerJobID 响应丢失语义：任务进入 unknown 恢复流程，不自动创建第二个任务",
+          "找回路径：以稳定提交标识向供应商查询是否已存在该任务，找到则补映射",
+          "找不到证据时保持预留占用，不释放"
+        ]
+      },
+      "steps": [
+        "派发时携带可查询的稳定提交标识，便于事后找回",
+        "响应丢失时标记任务为 pending-unknown 并交给恢复扫描",
+        "实现找回逻辑：查到则补 providerJobID 映射，查不到则保持 unknown",
+        "先写失败测试：注入响应丢失 → 不创建第二任务、预留仍占用、可找回映射"
+      ],
+      "criteria": [
+        "providerJobID 响应丢失时不创建第二个任务",
+        "任务进入 unknown 恢复流程，预留保持占用",
+        "可通过稳定标识找回远端任务并补映射",
+        "找回失败时保持 unknown，不释放预留"
+      ],
+      "tests": [
+        "响应丢失注入集成测试",
+        "无第二任务断言",
+        "找回映射成功/失败两路测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/async-lost-jobid.integration.test.ts"
+      ],
+      "owned_scope": ["派发响应丢失处理与找回逻辑", "对应测试"],
+      "resume_hint": "“响应丢失=提交失败=释放预留”是错误默认；远端可能已在运行，必须进入 unknown。"
+    },
+    "17.4": {
+      "slug": "async-status-read-authorization",
+      "contracts": {
+        "consumes": ["17.1 的任务身份与归属"],
+        "produces": [
+          "状态与结果查询为只读授权操作：只有归属账户（或管理员按既有审计路径）可查询",
+          "查询不触发预留、结算或供应商派发",
+          "越权查询返回统一拒绝，不泄露任务存在性"
+        ]
+      },
+      "steps": [
+        "为状态/结果查询接口加入归属校验，拒绝跨账户读取",
+        "确认查询路径为纯只读，不调用 Reserve/Settle，也不重复派发",
+        "统一越权拒绝响应，避免通过错误差异推断任务存在",
+        "先写失败测试：他人任务查询被拒绝；查询不产生账务或派发"
+      ],
+      "criteria": [
+        "只有归属账户可查询任务状态与结果",
+        "越权查询被拒绝且不泄露任务存在性",
+        "查询不触发预留、结算或供应商派发",
+        "管理员访问走既有审计路径"
+      ],
+      "tests": [
+        "越权查询拒绝测试",
+        "只读断言（无账务/派发 spy）",
+        "统一拒绝响应断言"
+      ],
+      "verification": ["bun test server/tests/async-status-authz.test.ts"],
+      "owned_scope": ["异步任务查询路由与授权", "对应测试"],
+      "resume_hint": "结果里可能含敏感输出；接手确认越权拒绝不返回部分内容或长度差异。"
+    },
+    "17.5": {
+      "slug": "repeated-poll-and-notification-settle-once",
+      "contracts": {
+        "consumes": [
+          "17.4 的只读查询",
+          "06.9 的 Settle 幂等",
+          "供应商完成通知/回调入口"
+        ],
+        "produces": [
+          "重复查询与重复完成通知都只结算一次：结算由后台按终态触发，查询本身不结算",
+          "通知与轮询两条路径共用同一幂等键",
+          "结算触发次数可观测，供 22.3 验收"
+        ]
+      },
+      "steps": [
+        "把结算触发点从查询路径移到后台终态处理，查询只读",
+        "为通知与轮询统一幂等键（jobId + 终态版本）",
+        "记录结算触发次数与来源，便于发现重复",
+        "先写失败测试：并发 10 次轮询 + 3 次通知 → 只结算一次"
+      ],
+      "criteria": [
+        "重复查询不触发结算",
+        "重复完成通知只结算一次",
+        "通知与轮询两条路径收敛为同一笔结算",
+        "结算触发次数与来源可观测"
+      ],
+      "tests": [
+        "并发轮询与重复通知集成测试",
+        "幂等键一致性断言",
+        "触发次数可观测断言"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/async-settle-once.integration.test.ts"
+      ],
+      "owned_scope": ["结算触发路径与幂等键", "对应测试"],
+      "resume_hint": "若现状是“查询时顺便结算”，必须移到后台；否则重复轮询会重复扣费或产生竞争。"
+    },
+    "17.6": {
+      "slug": "async-terminal-usage-settlement",
+      "contracts": {
+        "consumes": [
+          "17.5 的结算触发",
+          "供应商终态 usage（Bifrost jobaccounting 的 Poll/Settle）",
+          "06.9 的 Settle"
+        ],
+        "produces": [
+          "按可靠终态 usage 结算：金额来自供应商终态与锁定价格版本，不用估算",
+          "未使用额度释放；超出预留上限的部分按规则记录（不静默丢弃、不静默追加）",
+          "结算结果写入消费明细，可按任务归因"
+        ]
+      },
+      "steps": [
+        "复用 Bifrost 既有 job 结算路径取得终态 usage，换算为积分并 Settle",
+        "释放未使用额度；上限外的部分记录为异常并交 08.x 处置",
+        "把任务归因写入消费明细",
+        "先写失败测试：上限 100 实际 60 → 结算 60、释放 40；实际超上限 → 异常记录且不静默追加"
+      ],
+      "criteria": [
+        "结算金额来自真实终态 usage 与锁定版本，不使用估算",
+        "未使用额度被释放，用户可用余额恢复",
+        "实际超出预留上限时产生异常记录，不静默丢弃或追加",
+        "消费明细可按任务归因"
+      ],
+      "tests": ["终态结算集成测试", "超上限异常路径测试", "明细归因断言"],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/async-terminal-settlement.integration.test.ts",
+        "cd bifrost/framework/jobaccounting && go test ./..."
+      ],
+      "owned_scope": ["异步结算路径与异常记录", "对应测试"],
+      "resume_hint": "超上限属于真实风险，必须有异常记录与处置入口；不要为了余额一致而悄悄按上限截断。"
+    },
+    "17.7": {
+      "slug": "cancel-unknown-keeps-full-reservation",
+      "contracts": {
+        "consumes": [
+          "17.6 的结算路径",
+          "06.11 的 Release 证据要求",
+          "06.8 的 unknown"
+        ],
+        "produces": [
+          "取消语义：取消请求不等于无费用证明；供应商不支持取消或取消结果未知时保持完整预留",
+          "只有取得明确未计费证据才释放，释放走 06.11 或 08.9",
+          "Key 到期或客户端离开不改变上述语义"
+        ]
+      },
+      "steps": [
+        "实现取消请求路径：向供应商发起取消并记录结论",
+        "取消成功且有未计费证据 → 释放；取消失败或结论未知 → 保持完整预留",
+        "确认 Key 到期与客户端离开都不触发自动释放",
+        "先写失败测试：供应商不支持取消 → 预留保持；取消结果未知 → unknown"
+      ],
+      "criteria": [
+        "取消失败或结果未知时保持完整预留，不自动释放",
+        "只有具备明确未计费证据时才释放",
+        "Key 到期或客户端离开不触发释放",
+        "取消动作与结论可审计"
+      ],
+      "tests": [
+        "取消不支持保持预留测试",
+        "取消结果未知 unknown 测试",
+        "有证据释放测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/async-cancel-semantics.integration.test.ts"
+      ],
+      "owned_scope": ["取消路径与释放判定", "对应测试"],
+      "resume_hint": "供应商“取消已接受”不等于“未产生费用”；必须有明确证据才释放，否则保持 unknown。"
+    },
+    "17.8": {
+      "slug": "async-job-status-ui",
+      "contracts": {
+        "consumes": [
+          "17.6/17.7 的结算与取消结果",
+          "06.12 的用户视图",
+          "08.7 的待结算展示"
+        ],
+        "produces": [
+          "用户与管理员视图：任务状态（queued/running/pending-settlement/settled/refused/cancelled）与原因、归属、金额",
+          "Key 到期后任务仍显示原归属，待结算项显示原因",
+          "组 17 缝合点：提交 → 预留 → 查询 → 终态结算/取消 → 明细可见，端到端可演示"
+        ]
+      },
+      "steps": [
+        "在用户页面加入异步任务列表与状态、原因、金额展示",
+        "管理员视图复用 08.8 的只读核查，附加任务维度过滤",
+        "确认展示不泄露他人任务",
+        "先写失败的界面测试：五种状态渲染、待结算原因、越权不可见"
+      ],
+      "criteria": [
+        "用户看到本人任务的状态、原因与金额",
+        "Key 到期后任务仍显示原归属账户",
+        "待结算任务显示可理解原因",
+        "他人任务不可见，管理员访问走审计路径"
+      ],
+      "tests": ["界面状态渲染测试", "越权不可见断言", "归属不变断言"],
+      "verification": [
+        "bun test app/tests/async-jobs-ui.test.tsx",
+        "bun run --filter app typecheck"
+      ],
+      "owned_scope": [
+        "异步任务页面与查询封装",
+        "对应 app/tests 测试与验收记录"
+      ],
+      "resume_hint": "本 Ticket 是组 17 缝合点：状态码表要与 17.1–17.7 的实现一致，接手先核对码表再写界面。"
+    }
   }
- }
 }

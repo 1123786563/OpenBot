@@ -1,4 +1,5 @@
 import type { CopilotKitIntelligence } from "@copilotkit/runtime/v2";
+import { getLogger } from "../../../shared/logger";
 
 /**
  * The slice of the Intelligence client memory needs. Typed from the client OpenBot already uses, so a
@@ -34,6 +35,9 @@ const KIND = "topical";
 
 /** How long a known answer about whether memory is available is reused. */
 const AVAILABLE_TTL_MS = 10 * 60_000;
+
+const logger = getLogger("server");
+
 /** How long a failure holds memory on the local store before Intelligence is asked again. */
 const FAILURE_TTL_MS = 60_000;
 /**
@@ -89,7 +93,7 @@ export function createIntelligenceMemory(options: {
 }): IntelligenceMemory {
   const { client } = options;
   const now = options.now ?? Date.now;
-  const log = options.log ?? ((message: string) => console.warn(message));
+  const log = options.log ?? ((message: string) => logger.warn(message));
   let state: { available: boolean; until: number } | undefined;
   let loggedUnavailable = false;
   const lists = new Map<

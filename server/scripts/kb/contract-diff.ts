@@ -41,11 +41,8 @@ function shapeOf(value: unknown, depth = 0): Shape {
 /** 提取动态字段（id 类）为通配，让两次调用的结构可比。 */
 function normalize(value: unknown): unknown {
   return JSON.parse(
-    JSON.stringify(value, (key, val) => {
-      if (
-        typeof val === "string" &&
-        /^(req-|kb-|doc-)/.test(val)
-      ) {
+    JSON.stringify(value, (_key, val) => {
+      if (typeof val === "string" && /^(req-|kb-|doc-)/.test(val)) {
         return "<id>";
       }
       return val;
@@ -188,8 +185,13 @@ async function main() {
 
   // 9. 越权语义：错误 key → 401
   await compare("unauthorized 401", async (base) => {
-    const response = await fetch(`${base}/kb`, { headers: { authorization: "Bearer wrong" } });
-    return { status: response.status, json: await response.json().catch(() => null) };
+    const response = await fetch(`${base}/kb`, {
+      headers: { authorization: "Bearer wrong" },
+    });
+    return {
+      status: response.status,
+      json: await response.json().catch(() => null),
+    };
   });
 
   // 10. DELETE 文档

@@ -15,10 +15,7 @@
     {
       "id": "T04-R1",
       "source_issues": [],
-      "acceptance": [
-        "T04-R01",
-        "T04-R02"
-      ],
+      "acceptance": ["T04-R01", "T04-R02"],
       "depends_on": [],
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -43,13 +40,8 @@
     {
       "id": "T04-R2",
       "source_issues": [],
-      "acceptance": [
-        "T04-R03",
-        "T04-R04"
-      ],
-      "depends_on": [
-        "T04-R1"
-      ],
+      "acceptance": ["T04-R03", "T04-R04"],
+      "depends_on": ["T04-R1"],
       "dependency_evidence": "Appends next migration and consumes the stable per-attempt model/run contract from T04-R1; execution is serial because Drizzle migration artifacts are shared",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -73,16 +65,8 @@
     {
       "id": "T04-R3",
       "source_issues": [],
-      "acceptance": [
-        "T04-R02",
-        "T04-R05",
-        "T04-R06",
-        "T04-R07"
-      ],
-      "depends_on": [
-        "T04-R1",
-        "T04-R2"
-      ],
+      "acceptance": ["T04-R02", "T04-R05", "T04-R06", "T04-R07"],
+      "depends_on": ["T04-R1", "T04-R2"],
       "dependency_evidence": "Consumes the capability and usage APIs from R1 and live attempt validation from R2; streaming provider adaptation must target the stable Go-facing gateway contract",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -109,11 +93,7 @@
     "T04-R06": "T04-R3 incremental bounded SSE forwarding and cancellation",
     "T04-R07": "T04-R3 concrete API credential/model adapter plus existing desktop PlanModel adapter"
   },
-  "topological_order": [
-    "T04-R1",
-    "T04-R2",
-    "T04-R3"
-  ],
+  "topological_order": ["T04-R1", "T04-R2", "T04-R3"],
   "execution": "Serial SDD in one managed worktree, no commits or stashes; each task must be independently validated and reviewed before downstream work",
   "current_task": "T04-R2"
 }

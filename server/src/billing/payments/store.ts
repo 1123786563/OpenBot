@@ -38,7 +38,11 @@ const ID_COLLISION_RETRIES = 5;
 const DEPLOYMENT_SCOPE = "default";
 
 /** The owner kinds an order may legally carry; `unknown_owner` is deliberately absent. */
-const OWNABLE_PAYER_KINDS = new Set(["personal", "company", "legacy_deployment"]);
+const OWNABLE_PAYER_KINDS = new Set([
+  "personal",
+  "company",
+  "legacy_deployment",
+]);
 
 /**
  * Validate the owner a caller binds to a NEW order, as a last line behind the service's

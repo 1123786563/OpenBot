@@ -119,7 +119,8 @@ export function createCreditUsageTarget(
         numerator: BigInt(record.actualCostNumerator),
         denominator: BigInt(record.actualCostDenominator),
       },
-      title: record.source === "llm" ? "LLM token usage" : "Code run token usage",
+      title:
+        record.source === "llm" ? "LLM token usage" : "Code run token usage",
       requestId: record.eventId,
       model: record.model,
       client: record.client,
@@ -164,23 +165,23 @@ export function createUsageDelivery(deps: {
           markDelivered: () => Promise<void>;
           block: (failureCode: string) => Promise<void>;
         }[] = [
-            {
-              name: "lago",
-              pending: record.lagoStatus === "pending",
-              effect: () => deps.sendToLago(record),
-              markDelivered: () => outbox.markLagoDelivered(record.eventId),
-              block: (failureCode) =>
-                outbox.blockDelivery(record.eventId, "lago", failureCode),
-            },
-            {
-              name: "credits",
-              pending: record.creditsStatus === "pending",
-              effect: () => deps.chargeCredits(record),
-              markDelivered: () => outbox.markCreditsDelivered(record.eventId),
-              block: (failureCode) =>
-                outbox.blockDelivery(record.eventId, "credits", failureCode),
-            },
-          ];
+          {
+            name: "lago",
+            pending: record.lagoStatus === "pending",
+            effect: () => deps.sendToLago(record),
+            markDelivered: () => outbox.markLagoDelivered(record.eventId),
+            block: (failureCode) =>
+              outbox.blockDelivery(record.eventId, "lago", failureCode),
+          },
+          {
+            name: "credits",
+            pending: record.creditsStatus === "pending",
+            effect: () => deps.chargeCredits(record),
+            markDelivered: () => outbox.markCreditsDelivered(record.eventId),
+            block: (failureCode) =>
+              outbox.blockDelivery(record.eventId, "credits", failureCode),
+          },
+        ];
 
         let effectFailed = false;
         let allDelivered = true;

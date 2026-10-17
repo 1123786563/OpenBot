@@ -981,6 +981,13 @@
       "when": 1792090557121,
       "tag": "0139_gateway_model_preferences",
       "breakpoints": true
+    },
+    {
+      "version": "7",
+      "when": 1792228933612,
+      "tag": "0140_restore_skills_icon",
+      "idx": 140,
+      "breakpoints": true
     }
   ]
 }

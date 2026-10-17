@@ -1,9 +1,6 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { client } from "@/lib/client";
-import {
-  gatewayKeys,
-  type ModelScopeView,
-} from "./queries";
+import { gatewayKeys, type ModelScopeView } from "./queries";
 
 /**
  * The administrator's gateway actions (Bifrost #214, 01.8). Each one changes
@@ -20,7 +17,11 @@ export type GatewayEndpointSave = {
 };
 
 export type GatewayEndpointSaved = {
-  endpoint: { baseUrl: string; requestTimeoutMs: number; configVersion: number };
+  endpoint: {
+    baseUrl: string;
+    requestTimeoutMs: number;
+    configVersion: number;
+  };
 };
 
 export function saveGatewayEndpointMutationOptions(queryClient: QueryClient) {
@@ -69,9 +70,7 @@ export type GatewayCredentialSaved = {
     | { state: "unconfigured" };
 };
 
-export function saveGatewayCredentialMutationOptions(
-  queryClient: QueryClient,
-) {
+export function saveGatewayCredentialMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
     mutationFn: (input: { adminKey: string }) =>
       client<GatewayCredentialSaved>(

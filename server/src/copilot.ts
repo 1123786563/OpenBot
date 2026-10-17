@@ -436,9 +436,7 @@ function runtimeModel(model: RuntimeModel, apiKey: string | null) {
  * often absent. `index.ts` wires the billing service's meter in at assembly; the default drops
  * usage on the floor, which is exactly right for a deployment that meters nowhere.
  */
-let usageMeter:
-  | ((usage: ModelUsageReport) => void | Promise<void>)
-  | undefined;
+let usageMeter: ((usage: ModelUsageReport) => void | Promise<void>) | undefined;
 
 export function setModelUsageMeter(
   meter: ((usage: ModelUsageReport) => void | Promise<void>) | undefined,
@@ -714,8 +712,7 @@ function meteredModel<T>(model: T): T {
           lifecycle = await modelUsageGate({
             eventId,
             occurredAt,
-            modelId:
-              typeof inner.modelId === "string" ? inner.modelId : null,
+            modelId: typeof inner.modelId === "string" ? inner.modelId : null,
             client: currentUsageOrigin(),
           });
         } catch (error) {
@@ -813,9 +810,8 @@ function meteredModel<T>(model: T): T {
         if (cap > BigInt(Number.MAX_SAFE_INTEGER)) {
           return refuse("output_bound_unsupported");
         }
-        const requested = (
-          params as { maxOutputTokens?: unknown }
-        ).maxOutputTokens;
+        const requested = (params as { maxOutputTokens?: unknown })
+          .maxOutputTokens;
         const effective =
           typeof requested === "number" &&
           Number.isSafeInteger(requested) &&
@@ -997,8 +993,12 @@ function meteredModel<T>(model: T): T {
               // with the failure, so the evidence row records what arrived, not zeros — with
               // keys only for what did arrive, absent like every other settleFail site.
               await settleFail("usage_missing", {
-                ...(reportedInput !== undefined && { inputTokens: reportedInput }),
-                ...(reportedOutput !== undefined && { outputTokens: reportedOutput }),
+                ...(reportedInput !== undefined && {
+                  inputTokens: reportedInput,
+                }),
+                ...(reportedOutput !== undefined && {
+                  outputTokens: reportedOutput,
+                }),
               });
             }
             const validInput =
@@ -1168,7 +1168,7 @@ export function builtInAgentConfiguration(
    * the wire input can select the route, the credential, or the run identity.
    */
   governedModel?: GovernedModelRequest,
-  loadKnowledge?: LoadKnowledgeForBot,
+  _loadKnowledge?: LoadKnowledgeForBot,
 ): BuiltInAgentConfiguration {
   if (!apiKey && !planModel && !governedModel) {
     return {
@@ -1238,10 +1238,7 @@ export function builtInAgentConfiguration(
   }
 
   const resolvedModel = planModel ?? runtimeModel(model, apiKey);
-  if (
-    modelUsageGate !== undefined &&
-    typeof resolvedModel === "string"
-  ) {
+  if (modelUsageGate !== undefined && typeof resolvedModel === "string") {
     return {
       type: "custom",
       // biome-ignore lint/correctness/useYield: this agent must fail when iteration starts.
@@ -1381,7 +1378,7 @@ export async function buildAgents(
   acquireLearnedSkills?: AcquireLearnedSkills,
   loadPersonalMemory?: LoadPersonalMemory,
   /** Appended after `loadPersonalMemory`, for the positional reason it gives. */
-  loadKnowledge?: LoadKnowledgeForBot,
+  _loadKnowledge?: LoadKnowledgeForBot,
   /** Present only inside a governed admission. See {@link builtInAgentConfiguration}. */
   governedModel?: GovernedModelRequest,
 ): Promise<Record<string, AbstractAgent>> {
@@ -1392,7 +1389,7 @@ export async function buildAgents(
     // Vendor guidance is best-effort: losing it must not prevent a run or change its grants.
     // Report once per build here, including failures from the production plugin-store loader.
     // Never log the thrown value: database errors can contain connection details or row contents.
-    console.error({
+    log.error({
       error: "connected_vendor_lookup_failed",
       context: { operation: "loadVendors", agentCount: agents.length },
       timestamp: new Date().toISOString(),
@@ -1413,7 +1410,7 @@ export async function buildAgents(
       instructions = (await loadInstructions?.()) ?? null;
     } catch {
       // Never log the thrown value: database errors can expose instructions or credentials.
-      console.error({
+      log.error({
         error: "standing_instruction_read_failed",
         context: { operation: "loadInstructions", agentCount: agents.length },
         timestamp: new Date().toISOString(),
@@ -1687,17 +1684,17 @@ async function buildAgent(
   agent: RegisteredAgent,
   model: RuntimeModel,
   apiKey: string | null,
-  stallGuard: StallGuard | undefined,
+  _stallGuard: StallGuard | undefined,
   loadTools: LoadToolsForBot,
-  signRun?: SignRun,
+  _signRun?: SignRun,
   computerGuidance?: string,
   connectedVendors: readonly string[] = [],
   selection?: ToolSelection,
-  agentFetch?: AgentFetch,
+  _agentFetch?: AgentFetch,
   handoff?: HandoffForRun,
   /** Already resolved by {@link buildAgents}, so one roster costs one read. */
   standingInstructions: string | null = null,
-  initiator?: AuditInitiator,
+  _initiator?: AuditInitiator,
   /** How this run's attached files are inlined. See {@link buildAgents}. */
   loadAttachment?: LoadAttachment,
   /** How this run records that those files were sent. See {@link buildAgents}. */
@@ -1734,7 +1731,7 @@ async function buildAgent(
       skills = await selection.loadSkills(agent.id);
     } catch {
       // Never log the thrown value: database errors can contain connection details or row contents.
-      console.error({
+      log.error({
         error: "tool_selection_skill_read_failed",
         context: { operation: "loadSkills", agentId: agent.id },
         timestamp: new Date().toISOString(),
@@ -1749,7 +1746,7 @@ async function buildAgent(
       : undefined;
 
   const diagnoseRecordFailure = (chosen: Selection<GrantedTool>) => {
-    console.error({
+    log.error({
       error: "tool_selection_record_failed",
       context: {
         operation: "record",
@@ -1934,7 +1931,7 @@ type MastraClientForBridge = Parameters<
  * mapping from that protocol to AG-UI events belongs to the people who change both ends of it.
  * Imported dynamically so a deployment that registers no Mastra Bot never loads it.
  */
-async function remoteTransport(
+async function _remoteTransport(
   agent: RegisteredRemoteAgent,
   stallGuard: StallGuard | undefined,
   agentFetch?: AgentFetch,
@@ -2036,7 +2033,7 @@ export function pickFromRoster(
   );
 }
 
-function remoteAgentWithStandingRole(
+function _remoteAgentWithStandingRole(
   agent: RegisteredRemoteAgent,
   /**
    * The dialled endpoint, already built. See {@link remoteTransport}.

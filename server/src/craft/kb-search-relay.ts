@@ -53,8 +53,7 @@ export type CraftKbSearch = (input: {
   sourceTypes?: readonly string[];
   days?: number;
 }) => Promise<
-  | { status: "ok"; results: CraftKbSearchResult[] }
-  | { status: "unavailable" }
+  { status: "ok"; results: CraftKbSearchResult[] } | { status: "unavailable" }
 >;
 
 /** The onyx-cli result shape (the SKILL.md Output contract). */
@@ -133,8 +132,10 @@ export function createCraftKbSearchRelayApp(
 
     // Single query: the top-level results array, or 503 when it failed.
     if (queries.length === 1) {
-      const only = answers[0]!;
-      if (only.answer.status === "unavailable") {
+      // `answers` is 1:1 with `queries`, so `answers[0]` is always present
+      // here; folding the impossible undefined into the 503 fails closed.
+      const only = answers[0];
+      if (only === undefined || only.answer.status === "unavailable") {
         return Response.json(
           { error: "knowledge service is unavailable. Try again." },
           { status: 503 },

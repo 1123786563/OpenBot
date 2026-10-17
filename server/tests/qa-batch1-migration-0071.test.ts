@@ -22,7 +22,10 @@ const JOURNAL = JSON.parse(
   readFileSync(join(import.meta.dir, "../drizzle/meta/_journal.json"), "utf8"),
 ) as { entries: Array<{ idx: number; tag: string }> };
 const SNAPSHOT = JSON.parse(
-  readFileSync(join(import.meta.dir, "../drizzle/meta/0071_snapshot.json"), "utf8"),
+  readFileSync(
+    join(import.meta.dir, "../drizzle/meta/0071_snapshot.json"),
+    "utf8",
+  ),
 );
 
 describe("probe g: 0071 SQL statements", () => {
@@ -47,7 +50,9 @@ describe("probe g: 0071 SQL statements", () => {
   });
 
   test("the journal carries 0071_billing_idempotency in order", () => {
-    const entry = JOURNAL.entries.find((e) => e.tag === "0071_billing_idempotency");
+    const entry = JOURNAL.entries.find(
+      (e) => e.tag === "0071_billing_idempotency",
+    );
     expect(entry?.idx).toBe(71);
   });
 });
@@ -57,14 +62,14 @@ describe("probe g: snapshot consistency (schema ↔ migration ↔ next generate)
     const grants = SNAPSHOT.tables["public.credit_grants"];
     expect(grants.columns.idempotency_key.notNull).toBe(true);
     expect(grants.columns.idempotency_key.type).toBe("text");
-    const index = grants.indexes["credit_grants_idempotency_key_unique_idx"];
+    const index = grants.indexes.credit_grants_idempotency_key_unique_idx;
     expect(index.isUnique).toBe(true);
     expect(index.where).toBeUndefined();
   });
 
   test("the snapshot's payment_orders carries the pending-pair partial unique index", () => {
     const orders = SNAPSHOT.tables["public.payment_orders"];
-    const index = orders.indexes["payment_orders_pending_pair_unique_idx"];
+    const index = orders.indexes.payment_orders_pending_pair_unique_idx;
     expect(index.isUnique).toBe(true);
     expect(index.where).toContain("pending");
   });

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, gt, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import { CredentialRefusedError, type CredentialStore } from "../credentials";
 import type { Database } from "../db/client";
 import {
@@ -27,6 +28,8 @@ import {
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Revoke = Pick<CredentialStore, "revoke">;
 type Locker = Pick<Transaction, "execute">;
+
+const log = getLogger("server");
 
 /**
  * The per-person identity lock: a transaction-scoped advisory lock on `userId`. issueChallenge
@@ -386,11 +389,12 @@ export function createIdentityStore(database: Database, credentials: Revoke) {
         if (isIdentityProvider(row.provider))
           links.push(toLink(row, row.provider));
         else
-          console.warn(
-            JSON.stringify({
+          log.warn(
+            {
               type: "identity-link-unknown-provider",
               linkId: row.id,
-            }),
+            },
+            "identity-link-unknown-provider",
           );
       }
       return links;

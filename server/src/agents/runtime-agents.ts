@@ -1,4 +1,5 @@
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import type { ManagedAgentConfig } from "../config";
 import { type RegisteredAgent, registeredAgentFromRow } from "../copilot";
 import type { CredentialSecretReader } from "../credentials";
@@ -14,6 +15,8 @@ import {
 import { teamBotAccess } from "../team-bots/access";
 import { agentAuthHeaders, authFromConfiguration } from "./auth-header";
 import type { AgentActor } from "./profile-types";
+
+const log = getLogger("server");
 
 /**
  * Read the agents one person may run, on every request.
@@ -50,7 +53,7 @@ export function createRuntimeAgentLoader(
           });
         } catch (cause) {
           // Existing runtime resolution remains available, while the Expert bridge fails closed.
-          console.error({
+          log.error({
             error: "EXPERT_SOURCE_CLASSIFICATION_FAILED",
             context: { agentId: agent.id },
             cause: cause instanceof Error ? cause.message : String(cause),

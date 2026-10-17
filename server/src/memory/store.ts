@@ -241,13 +241,14 @@ export function createMemoryStore(
           try {
             await mirrorRow(memory, row);
           } catch (error) {
-            console.error(
-              JSON.stringify({
+            log.error(
+              {
                 type: "memory-mirror-error",
                 error: error instanceof Error ? error.name : "UnknownError",
                 context: { memoryId: row.id },
                 timestamp: new Date().toISOString(),
-              }),
+              },
+              "memory-mirror-error",
             );
           }
         }

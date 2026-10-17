@@ -46,10 +46,16 @@ export function WorkshopTurnView({
   // while it holds them; the store's take over the moment the turn settles).
   const settledEvents = useQuery({
     queryKey: ["workshop", "turn-events", channelId, latestTurn?.id],
-    enabled:
-      !running && latestTurn !== undefined && latestTurn.id !== undefined,
+    enabled: !running && latestTurn?.id !== undefined,
     staleTime: Number.POSITIVE_INFINITY,
-    queryFn: () => fetchWorkshopTurnEvents(channelId, latestTurn!.id!),
+    queryFn: () => {
+      const turnId = latestTurn?.id;
+      // Unreachable while `enabled` holds the gate; fail closed here rather
+      // than assert the id is present.
+      if (turnId === undefined)
+        throw new Error("workshop turn has no id to read events for");
+      return fetchWorkshopTurnEvents(channelId, turnId);
+    },
   });
   const shown = running ? events : (settledEvents.data?.events ?? []);
 

@@ -125,7 +125,11 @@ export type PlanCreditGrantor = {
 };
 
 /** The owner kinds a NEW order may carry; `unknown_owner` is a legacy-row verdict, not a buyer. */
-const OWNABLE_PAYER_KINDS = new Set(["personal", "company", "legacy_deployment"]);
+const OWNABLE_PAYER_KINDS = new Set([
+  "personal",
+  "company",
+  "legacy_deployment",
+]);
 
 /**
  * The owner a purchase binds, as the seam demands it: present, well-formed, whitespace-strict,

@@ -334,9 +334,9 @@ test("a failed signature moves no money, grants nothing, and records an anomaly 
   // Nothing about any order moved, and no account was touched — the forger least of all.
   expect((await store.readOrder(order.id))?.status).toBe("pending");
   expect(await factCount(order.id)).toBe(0);
-  expect(
-    await grantsFor([owner.key, forger.key, deployment.key]),
-  ).toHaveLength(0);
+  expect(await grantsFor([owner.key, forger.key, deployment.key])).toHaveLength(
+    0,
+  );
 
   // The attempt is not silently dropped: an anomaly row names the order the delivery claimed.
   const anomalies = await anomaliesOf(order.id);

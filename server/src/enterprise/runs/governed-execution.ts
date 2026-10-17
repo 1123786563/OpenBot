@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { LanguageModel } from "ai";
+import { getLogger } from "../../../../shared/logger";
 import type { ModelCredentialSecretReader } from "../../credentials";
 import type {
   ModelInvocationContext,
   PlatformScope,
   RunFailureCode,
-  RunnerRequestLease,
   RunService,
 } from "../contracts";
 import { createAiSdkV3GatewayAdapter } from "../models/ai-sdk-v3-gateway-adapter";
@@ -19,6 +19,8 @@ import type {
 import { rebindModelRoute } from "./model-route-rebind";
 
 type LanguageModelV3 = Extract<LanguageModel, { specificationVersion: "v3" }>;
+
+const log = getLogger("server");
 
 /**
  * The server-only collaborator a governed admission hands the agent resolver.
@@ -270,7 +272,7 @@ export function createGovernedModelExecution(
       if (
         !(cause instanceof Error && cause.message.startsWith("MODEL_ROUTE_"))
       ) {
-        console.error({
+        log.error({
           error: "MODEL_ROUTE_REBIND_INFRASTRUCTURE_FAILED",
           context: { routeRef, agentId: deps.agentId },
           cause: cause instanceof Error ? cause.message : String(cause),

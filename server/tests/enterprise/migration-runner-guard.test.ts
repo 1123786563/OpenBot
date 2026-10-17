@@ -503,10 +503,7 @@ test("every_snapshot_records_the_same_explicit_event_fk_names", () => {
     // A snapshot that records the table must record the same explicit FK
     // names as every other one, or the next generate diffs a phantom
     // constraint rename against names no real database carries.
-    expect(
-      Object.keys(table.foreignKeys ?? {}).sort(),
-      file,
-    ).toEqual(
+    expect(Object.keys(table.foreignKeys ?? {}).sort(), file).toEqual(
       file.startsWith("0069")
         ? [
             "enterprise_runner_events_attempts_fk",
@@ -516,6 +513,9 @@ test("every_snapshot_records_the_same_explicit_event_fk_names", () => {
     );
   }
   // And the journal keeps its trailing newline for clean future appends.
-  const journal = readFileSync(new URL("meta/_journal.json", drizzleDir), "utf8");
+  const journal = readFileSync(
+    new URL("meta/_journal.json", drizzleDir),
+    "utf8",
+  );
   expect(journal.endsWith("}\n")).toBe(true);
 });

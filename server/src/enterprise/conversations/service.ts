@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { getLogger } from "../../../../shared/logger";
 import {
   authorizeAttachmentForSendInTransaction,
   lockAttachmentChannelsInTransaction,
@@ -52,6 +53,7 @@ import {
 
 const MAX_PAGE_SIZE = 100;
 const MAX_CONTENT_LENGTH = 1_000_000;
+const log = getLogger("server");
 type ConversationTransaction = Parameters<
   Parameters<DataDatabase["transaction"]>[0]
 >[0];
@@ -454,7 +456,7 @@ export function createConversationService({
             backend: "mastra",
           });
         } catch (cause) {
-          console.error({
+          log.error({
             error: "MASTRA_STORAGE_PROBE_FAILED",
             context: {
               operation: "getOrCreate",

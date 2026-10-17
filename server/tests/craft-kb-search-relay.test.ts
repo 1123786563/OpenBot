@@ -7,9 +7,7 @@ import {
 import type { CraftStore } from "../src/craft/store";
 import type { KnowledgeSearchResult } from "../src/knowledge/types";
 
-function sessionRow(
-  overrides: Partial<{ id: string; status: string }> = {},
-): {
+function sessionRow(overrides: Partial<{ id: string; status: string }> = {}): {
   id: string;
   userId: string;
   name: string | null;
@@ -49,9 +47,7 @@ function storeWith(
   return {
     async findSessionById(id: string) {
       const entry = sessions[id];
-      return entry
-        ? (sessionRow({ id, status: entry.status }) as never)
-        : null;
+      return entry ? (sessionRow({ id, status: entry.status }) as never) : null;
     },
   };
 }
@@ -80,7 +76,8 @@ async function call(
           : {}),
         "content-type": "application/json",
       },
-      body: options.rawBody ?? JSON.stringify(options.body ?? { queries: ["q"] }),
+      body:
+        options.rawBody ?? JSON.stringify(options.body ?? { queries: ["q"] }),
     }),
   );
 }
@@ -116,10 +113,7 @@ describe("POST /api/craft/kb-search — attribution", () => {
   });
 
   test("unknown tag: 403 not_authorized", async () => {
-    const response = await call(
-      app(storeWith({}), okSearch),
-      { tag: "nope" },
-    );
+    const response = await call(app(storeWith({}), okSearch), { tag: "nope" });
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ error: "not_authorized" });
   });
@@ -215,24 +209,21 @@ describe("response shape", () => {
   test("multiple queries: searches in argument order, results per query", async () => {
     const seen: string[] = [];
     const response = await call(
-      app(
-        storeWith(active),
-        async ({ query }) => {
-          seen.push(query);
-          return {
-            status: "ok" as const,
-            results: [
-              {
-                title: query,
-                url: "",
-                source_type: "text",
-                content: `for ${query}`,
-                updated_at: new Date().toISOString(),
-              },
-            ],
-          };
-        },
-      ),
+      app(storeWith(active), async ({ query }) => {
+        seen.push(query);
+        return {
+          status: "ok" as const,
+          results: [
+            {
+              title: query,
+              url: "",
+              source_type: "text",
+              content: `for ${query}`,
+              updated_at: new Date().toISOString(),
+            },
+          ],
+        };
+      }),
       { body: { queries: ["first", "second"] } },
     );
     expect(response.status).toBe(200);
@@ -245,15 +236,13 @@ describe("response shape", () => {
 
   test("partial failure: the failed query carries error + null results, HTTP 200", async () => {
     const response = await call(
-      app(
-        storeWith(active),
-        async ({ query }) =>
-          query === "bad"
-            ? { status: "unavailable" as const }
-            : {
-                status: "ok" as const,
-                results: [],
-              },
+      app(storeWith(active), async ({ query }) =>
+        query === "bad"
+          ? { status: "unavailable" as const }
+          : {
+              status: "ok" as const,
+              results: [],
+            },
       ),
       { body: { queries: ["good", "bad"] } },
     );
@@ -290,7 +279,9 @@ describe("response shape", () => {
 // ── the projection (merge / filter / cut) ───────────────────────────────────
 
 describe("projectKbSearchResults", () => {
-  const result = (overrides: Partial<KnowledgeSearchResult>): KnowledgeSearchResult => ({
+  const result = (
+    overrides: Partial<KnowledgeSearchResult>,
+  ): KnowledgeSearchResult => ({
     chunk_id: "c1",
     doc_id: "d1",
     content: "body",
@@ -319,7 +310,12 @@ describe("projectKbSearchResults", () => {
   test("--days keeps only results inside the window", () => {
     const old = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
     const projected = projectKbSearchResults(
-      [result({}), result({ metadata: { title: "T", source_type: "url", updated_at: old } })],
+      [
+        result({}),
+        result({
+          metadata: { title: "T", source_type: "url", updated_at: old },
+        }),
+      ],
       { days: 30 },
     );
     expect(projected).toHaveLength(1);
@@ -328,8 +324,21 @@ describe("projectKbSearchResults", () => {
   test("--source filters on the KB domain's source types", () => {
     const projected = projectKbSearchResults(
       [
-        result({ metadata: { title: "T", source_type: "url", updated_at: new Date().toISOString() } }),
-        result({ doc_id: "d2", metadata: { title: "T", source_type: "text", updated_at: new Date().toISOString() } }),
+        result({
+          metadata: {
+            title: "T",
+            source_type: "url",
+            updated_at: new Date().toISOString(),
+          },
+        }),
+        result({
+          doc_id: "d2",
+          metadata: {
+            title: "T",
+            source_type: "text",
+            updated_at: new Date().toISOString(),
+          },
+        }),
       ],
       { sourceTypes: ["text"] },
     );

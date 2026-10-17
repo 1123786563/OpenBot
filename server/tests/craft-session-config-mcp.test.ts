@@ -28,7 +28,7 @@ const USER_ID = "u1";
 const config = loadCraftConfig({});
 const DIRECTORY = `/workspace/sessions/${SESSION_ID}`;
 
-const encoder = new TextEncoder();
+const _encoder = new TextEncoder();
 
 const llm: CraftLLMProviderConfig = {
   provider: "openbot",
@@ -61,7 +61,8 @@ function contentWith(
     skillsHash: computeSkillRuntimeHash({}, "No connectable apps available."),
     mcpConfigHash: craftMcpFingerprint(mcpServers),
     libraryFiles: new Map(),
-    webTemplateFiles: new Map(),  };
+    webTemplateFiles: new Map(),
+  };
 }
 
 function expectedConfigBytes(

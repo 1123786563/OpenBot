@@ -1,4 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
+import { getLogger } from "../../../../shared/logger";
 import {
   channelMemberships,
   channels,
@@ -43,6 +44,8 @@ export interface ScopeResolverOptions {
 
 const issuedScopes = new WeakSet<object>();
 
+const log = getLogger("server");
+
 export function assertTrustedScope(scope: PlatformScope): void {
   if (!scope || typeof scope !== "object" || !issuedScopes.has(scope)) {
     throw new Error("UNVERIFIED_SCOPE");
@@ -66,7 +69,7 @@ async function mapStorageFaults<T>(operation: () => Promise<T>): Promise<T> {
     // unavailability (503) rather than raw 500s; the original fault rides on
     // `cause` for diagnostics — and leaves one structured log, so real
     // faults (including authorization regressions) are never silent (OCR R10).
-    console.error({
+    log.error({
       error: "DATA_DATABASE_FAULT",
       cause:
         error instanceof Error

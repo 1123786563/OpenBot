@@ -77,7 +77,7 @@ const EMBEDDING_DIMENSIONS = 8;
 function log(entry) {
   appendFileSync(
     logFile,
-    JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n",
+    `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`,
   );
 }
 
@@ -153,7 +153,11 @@ const server = createServer((req, res) => {
       };
     else payload = { error: { message: `stand-in: no route ${req.url}` } };
 
-    const status = path.startsWith("/") && ["/chat/completions", "/embeddings", "/models"].includes(path) ? 200 : 404;
+    const status =
+      path.startsWith("/") &&
+      ["/chat/completions", "/embeddings", "/models"].includes(path)
+        ? 200
+        : 404;
     res.writeHead(status, { "content-type": "application/json" });
     res.end(JSON.stringify(payload));
   });

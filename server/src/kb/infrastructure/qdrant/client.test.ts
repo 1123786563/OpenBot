@@ -9,17 +9,32 @@ import { QdrantClient, QdrantError } from "./client";
  * （A 线加固的核心就是要绕开 Bun fetch 的代理劫持，mock fetch 会测不到这条路径）。
  */
 
-function serveOnce(handler: (req: Request) => Response | Promise<Response>): Promise<{
+function serveOnce(
+  handler: (req: Request) => Response | Promise<Response>,
+): Promise<{
   url: string;
   close: () => Promise<void>;
-  requests: { method: string; path: string; body?: string; headers: Record<string, string> }[];
+  requests: {
+    method: string;
+    path: string;
+    body?: string;
+    headers: Record<string, string>;
+  }[];
 }> {
-  const requests: { method: string; path: string; body?: string; headers: Record<string, string> }[] = [];
+  const requests: {
+    method: string;
+    path: string;
+    body?: string;
+    headers: Record<string, string>;
+  }[] = [];
   const server = Bun.serve({
     port: 0,
     fetch: async (req) => {
       const url = new URL(req.url);
-      const body = req.method === "GET" || req.method === "DELETE" ? undefined : await req.text();
+      const body =
+        req.method === "GET" || req.method === "DELETE"
+          ? undefined
+          : await req.text();
       requests.push({
         method: req.method,
         path: url.pathname + url.search,
@@ -38,7 +53,9 @@ function serveOnce(handler: (req: Request) => Response | Promise<Response>): Pro
 
 describe("node:http QdrantClient 行为", () => {
   test("happy path: JSON parsed, ok/status shape, api-key + content-type headers sent", async () => {
-    const svc = await serveOnce(() => Response.json({ result: { points: [] } }));
+    const svc = await serveOnce(() =>
+      Response.json({ result: { points: [] } }),
+    );
     try {
       const client = new QdrantClient({ baseUrl: svc.url, apiKey: "secret" });
       const out = await client.queryPoints("c", {
@@ -75,11 +92,18 @@ describe("node:http QdrantClient 行为", () => {
   });
 
   test("non-2xx → QdrantError with status and body excerpt", async () => {
-    const svc = await serveOnce(() => new Response('{"status":{"error":"bad"}}', { status: 400 }));
+    const svc = await serveOnce(
+      () => new Response('{"status":{"error":"bad"}}', { status: 400 }),
+    );
     try {
       const client = new QdrantClient({ baseUrl: svc.url });
       try {
-        await client.queryPoints("c", { query: [1], filter: { must: [] }, limit: 1, with_payload: false });
+        await client.queryPoints("c", {
+          query: [1],
+          filter: { must: [] },
+          limit: 1,
+          with_payload: false,
+        });
         expect.unreachable();
       } catch (error) {
         expect(error).toBeInstanceOf(QdrantError);
@@ -109,7 +133,10 @@ describe("node:http QdrantClient 行为", () => {
     const probe = Bun.serve({ port: 0, fetch: () => new Response("x") });
     const port = probe.port;
     await probe.stop(true);
-    const client = new QdrantClient({ baseUrl: `http://127.0.0.1:${port}`, timeoutMs: 2_000 });
+    const client = new QdrantClient({
+      baseUrl: `http://127.0.0.1:${port}`,
+      timeoutMs: 2_000,
+    });
     try {
       await client.getCollection("c");
       expect.unreachable();
@@ -122,7 +149,10 @@ describe("node:http QdrantClient 行为", () => {
   test("timeout → QdrantError 504", async () => {
     // 服务端挂起不响应：1s 后 client 超时（timeoutMs=100）
     const svc = await serveOnce(
-      () => new Promise<Response>(() => { /* never resolves */ }),
+      () =>
+        new Promise<Response>(() => {
+          /* never resolves */
+        }),
     );
     try {
       const client = new QdrantClient({ baseUrl: svc.url, timeoutMs: 100 });
@@ -145,7 +175,11 @@ describe("node:http QdrantClient 行为", () => {
     try {
       const client = new QdrantClient({ baseUrl: svc.url });
       await client.upsertPoints("c", [
-        { id: "558701d7-762c-4996-bc45-4b3258a784ef", vector: [0.1], payload: { tenant_id: "t" } },
+        {
+          id: "558701d7-762c-4996-bc45-4b3258a784ef",
+          vector: [0.1],
+          payload: { tenant_id: "t" },
+        },
       ]);
       expect(svc.requests[0].path).toBe("/collections/c/points?wait=true");
       const body = JSON.parse(svc.requests[0].body ?? "{}");

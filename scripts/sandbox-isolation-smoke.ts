@@ -15,7 +15,8 @@ process.env.NO_PROXY = "127.0.0.1,localhost";
 process.env.no_proxy = "127.0.0.1,localhost";
 
 const token = process.env.SANDBOX_TOKEN?.trim();
-const baseUrl = process.env.AGENT_SANDBOX_URL?.trim() || "http://127.0.0.1:4300";
+const baseUrl =
+  process.env.AGENT_SANDBOX_URL?.trim() || "http://127.0.0.1:4300";
 if (!token) {
   console.error(
     "SANDBOX_TOKEN is empty: bring the sandbox up (docker compose up -d agent-sandbox) and set SANDBOX_TOKEN in .env first.",
@@ -79,17 +80,24 @@ if (bFiles.some((name) => name.includes(onlyA)))
 // 2. The writer sees its own file (the claim is separation, not invisibility).
 const aFiles = await listFiles("bot-a");
 if (!aFiles.some((name) => name.includes(onlyA)))
-  fail(`bot-a does not see its own ${onlyA}: the write itself failed silently.`);
+  fail(
+    `bot-a does not see its own ${onlyA}: the write itself failed silently.`,
+  );
 
 // 3. Reset bot-a: its workspace empties, bot-b's files stand.
-const reset = await call(`/workspace/reset`, { method: "POST", botId: "bot-a" });
+const reset = await call(`/workspace/reset`, {
+  method: "POST",
+  botId: "bot-a",
+});
 if (!reset.ok) fail(`bot-a reset answered ${reset.status}.`);
 const aAfter = await listFiles("bot-a");
 if (aAfter.some((name) => name.includes(onlyA)))
   fail(`bot-a still holds ${onlyA} after reset.`);
 const bAfter = await listFiles("bot-b");
 if (!bAfter.every((name) => !name.includes(onlyA)))
-  fail(`bot-b's listing changed after bot-a's reset: the reset leaked across Bots.`);
+  fail(
+    `bot-b's listing changed after bot-a's reset: the reset leaked across Bots.`,
+  );
 
 console.log(
   `OK: bot-a's ${onlyA} was invisible to bot-b, visible to bot-a, and reset cleared bot-a only (bot-b: ${bAfter.length} files untouched).`,

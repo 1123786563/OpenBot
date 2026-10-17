@@ -65,7 +65,12 @@ type Snapshot = {
     error: string | null;
     usage: unknown;
   }>;
-  artifacts: Array<{ id: string; name: string; type: string; sizeBytes: number }>;
+  artifacts: Array<{
+    id: string;
+    name: string;
+    type: string;
+    sizeBytes: number;
+  }>;
 };
 
 console.log(`smoke: bootstrapping against ${serverUrl}`);
@@ -89,7 +94,7 @@ console.log(`smoke: channel ${channelId} created`);
 //    the same Bot's workspace would find yesterday's smoke.txt already there — no diff, no
 //    artifact, a false failure. The unique name makes every run's diff non-empty by design.
 const fileName = `smoke-${Date.now().toString(36)}.txt`;
-const started = await call<TurnResponse>("/api/workshop/" + channelId + "/turns", {
+const started = await call<TurnResponse>(`/api/workshop/${channelId}/turns`, {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({
@@ -107,7 +112,8 @@ let status = "queued";
 while (Date.now() < deadline) {
   snapshot = await call<Snapshot>(`/api/workshop/${channelId}`);
   status = snapshot.turns.at(-1)?.status ?? "missing";
-  if (status === "succeeded" || status === "failed" || status === "cancelled") break;
+  if (status === "succeeded" || status === "failed" || status === "cancelled")
+    break;
   await new Promise((resolve) => setTimeout(resolve, 3_000));
 }
 if (status !== "succeeded") {
@@ -118,13 +124,15 @@ if (status !== "succeeded") {
 console.log(`smoke: turn ${started.turnId} succeeded`);
 
 // 3. The artifact the prompt demanded is in the session's gallery.
-const artifact = snapshot!.artifacts.find((row) => row.name === fileName);
+const artifact = snapshot?.artifacts.find((row) => row.name === fileName);
 if (!artifact) {
   fail(
-    `${fileName} not in the gallery: ${JSON.stringify(snapshot!.artifacts.map((row) => row.name))}`,
+    `${fileName} not in the gallery: ${JSON.stringify(snapshot?.artifacts.map((row) => row.name))}`,
   );
 }
-console.log(`smoke: artifact ${artifact.id} (${artifact.type}, ${artifact.sizeBytes}B)`);
+console.log(
+  `smoke: artifact ${artifact.id} (${artifact.type}, ${artifact.sizeBytes}B)`,
+);
 
 // 4. It downloads, and the bytes are what the prompt asked for.
 const download = await fetch(
@@ -133,23 +141,24 @@ const download = await fetch(
 );
 if (!download.ok) fail(`download answered ${download.status}`);
 const bytes = (await download.text()).trim();
-if (bytes !== "workshop-ok") fail(`download holds ${JSON.stringify(bytes)}, expected workshop-ok`);
+if (bytes !== "workshop-ok")
+  fail(`download holds ${JSON.stringify(bytes)}, expected workshop-ok`);
 console.log("smoke: download verified (workshop-ok)");
 
 // 5. The audit trail: the turn's started and completed rows, read through the server's own
 //    audit surface (black-box: no database credentials in a smoke script).
 try {
-  const audits = await call<{ events: Array<{ eventType: string; payload: Record<string, unknown> }> }>(
-    `/api/admin/audit-events?limit=100`,
-    {},
-    15_000,
-  );
+  const audits = await call<{
+    events: Array<{ eventType: string; payload: Record<string, unknown> }>;
+  }>(`/api/admin/audit-events?limit=100`, {}, 15_000);
   const mine = audits.events.filter(
     (event) => event.payload?.turnId === started.turnId,
   );
   const has = (type: string) => mine.some((event) => event.eventType === type);
-  if (!has("workshop.turn_started")) fail("audit has no workshop.turn_started for this turn");
-  if (!has("workshop.turn_completed")) fail("audit has no workshop.turn_completed for this turn");
+  if (!has("workshop.turn_started"))
+    fail("audit has no workshop.turn_started for this turn");
+  if (!has("workshop.turn_completed"))
+    fail("audit has no workshop.turn_completed for this turn");
   console.log(`smoke: audit rows present (${mine.length} for this turn)`);
 } catch (error) {
   // The audit surface's shape is not this smoke's subject on deployments that gate it; a

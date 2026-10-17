@@ -28,202 +28,590 @@
   "failure_policy": "可修复代码问题在本 Ticket 内完成修复及相关重验；缺权限/环境/供应商上限证据或发现已批准需求冲突时，记录精确阻塞及受影响能力，不反复猜测、不静默降级、不把 skipped 当通过。",
   "tickets": [
     {
-      "id": "T01", "slug": "gateway-readiness", "title": "管理员配置 Bifrost 并检查启用就绪状态", "depends_on": [], "acceptance_ids": ["AC05", "AC12", "AC19"],
+      "id": "T01",
+      "slug": "gateway-readiness",
+      "title": "管理员配置 Bifrost 并检查启用就绪状态",
+      "depends_on": [],
+      "acceptance_ids": ["AC05", "AC12", "AC19"],
       "what": "管理员保存网关连接与显式兑换比例，测试连接、扩展能力与认证；用户看到就绪或不可用原因，未就绪不能开始模型消费。",
       "modules": "网关管理适配器、部署配置、服务身份认证、管理员设置和就绪查询。",
       "contracts": "GatewayReadiness 返回配置版本、连接/认证/扩展状态和脱敏原因；转换比例是正值精确十进制且有不可变版本。管理 Secret 只写不可读回前端。普通请求不可调用管理诊断。",
-      "steps": ["复用配置和凭据加密存储，新增网关地址、管理认证、回调服务身份及必填比例校验。", "做认证的管理探测及扩展版本协商，建立持久化配置版本；缺扩展不得只因健康接口200就判就绪。", "接入管理员保存/测试页面和脱敏状态查询，失败保留可解释状态而不泄露敏感响应。", "消费入口读取统一就绪条件，关闭/未配置/鉴权失败时明确拒绝，不启用任何付费能力。"],
-      "criteria": ["普通用户不能读写管理配置或 Secret。", "比例未设置、为零/负数/非法精度时拒绝启用。", "HTTP健康但缺积分准入扩展时状态未就绪。", "保存重启后状态和版本稳定，界面不展示管理Key。"],
-      "tests": ["模拟连接成功/超时/401/缺扩展；从管理入口和普通消费入口观察结果。", "配置更新并重启服务，验证比例版本和凭据脱敏。"]
+      "steps": [
+        "复用配置和凭据加密存储，新增网关地址、管理认证、回调服务身份及必填比例校验。",
+        "做认证的管理探测及扩展版本协商，建立持久化配置版本；缺扩展不得只因健康接口200就判就绪。",
+        "接入管理员保存/测试页面和脱敏状态查询，失败保留可解释状态而不泄露敏感响应。",
+        "消费入口读取统一就绪条件，关闭/未配置/鉴权失败时明确拒绝，不启用任何付费能力。"
+      ],
+      "criteria": [
+        "普通用户不能读写管理配置或 Secret。",
+        "比例未设置、为零/负数/非法精度时拒绝启用。",
+        "HTTP健康但缺积分准入扩展时状态未就绪。",
+        "保存重启后状态和版本稳定，界面不展示管理Key。"
+      ],
+      "tests": [
+        "模拟连接成功/超时/401/缺扩展；从管理入口和普通消费入口观察结果。",
+        "配置更新并重启服务，验证比例版本和凭据脱敏。"
+      ]
     },
     {
-      "id": "T02", "slug": "payer-credit-accounts", "title": "用户查看个人积分并固定公司及个人付款账户", "depends_on": [], "acceptance_ids": ["AC01", "AC13", "AC14", "AC15"],
+      "id": "T02",
+      "slug": "payer-credit-accounts",
+      "title": "用户查看个人积分并固定公司及个人付款账户",
+      "depends_on": [],
+      "acceptance_ids": ["AC01", "AC13", "AC14", "AC15"],
       "what": "用户查看自己的积分，管理员向明确个人账户发放额度；受信公司业务与个人授权能解析不同付款账户，账户不足不切换。",
       "modules": "付款账户解析、积分读取/发放、现有 CreditWriter、积分管理及余额页面。",
       "contracts": "PayerRef 是账户类型与稳定ID的组合，来源只可为已认证用户或可信公司业务归属；存量 externalCustomerId 经明确映射复用，不由字符串猜账户类型。余额按该账户隔离。",
-      "steps": ["复用积分台账增量引入账户类型/映射约束，保留旧记录而不删除或复制余额。", "将个人积分摘要、Grant列表和管理员发放接到当前个人账户；公司解析复用现有受信scope，缺归属拒绝。", "给用户及管理员现有页面展示账户类型和可用/已消费/过期额度，屏蔽跨账户查询。", "提供下游统一账户解析接口，记录公司后续工作台接线不属于个人Key授权。"],
-      "criteria": ["甲乙各发10积分，乙无法查询或消费甲余额。", "公司账户10和个人账户3分别读取，不会合并显示或复制Grant。", "客户端伪造公司ID或付款账户不会改变解析结果。", "旧未知归属记录保持隔离并可核验，用户/Bot数据不变。"],
-      "tests": ["SQL集成验证账户映射唯一性、发放幂等及跨账户隔离。", "通过已登录积分接口和管理发放界面验证归属及越权拒绝。"]
+      "steps": [
+        "复用积分台账增量引入账户类型/映射约束，保留旧记录而不删除或复制余额。",
+        "将个人积分摘要、Grant列表和管理员发放接到当前个人账户；公司解析复用现有受信scope，缺归属拒绝。",
+        "给用户及管理员现有页面展示账户类型和可用/已消费/过期额度，屏蔽跨账户查询。",
+        "提供下游统一账户解析接口，记录公司后续工作台接线不属于个人Key授权。"
+      ],
+      "criteria": [
+        "甲乙各发10积分，乙无法查询或消费甲余额。",
+        "公司账户10和个人账户3分别读取，不会合并显示或复制Grant。",
+        "客户端伪造公司ID或付款账户不会改变解析结果。",
+        "旧未知归属记录保持隔离并可核验，用户/Bot数据不变。"
+      ],
+      "tests": [
+        "SQL集成验证账户映射唯一性、发放幂等及跨账户隔离。",
+        "通过已登录积分接口和管理发放界面验证归属及越权拒绝。"
+      ]
     },
     {
-      "id": "T03", "slug": "catalog-model-selection", "title": "同步模型与完整价格并按 Bot 和会话选择模型", "depends_on": ["T01"], "acceptance_ids": ["AC06", "AC09", "AC10", "AC12", "AC19"],
+      "id": "T03",
+      "slug": "catalog-model-selection",
+      "title": "同步模型与完整价格并按 Bot 和会话选择模型",
+      "depends_on": ["T01"],
+      "acceptance_ids": ["AC06", "AC09", "AC10", "AC12", "AC19"],
       "what": "管理员同步和开放模型，用户在Bot/会话中选择兼容模型并看到价格及不可用原因；供应商新增模型不自动开放。",
       "modules": "Bifrost目录适配器、版本化价格/能力目录、用户模型偏好、Bot模型查询与选择页面。",
       "contracts": "ModelRef由provider/model/capability构成；PriceSnapshot包含版本、成功同步时间、各计费维度和known/free/unknown状态。Quote只引用不可变快照，不把input/output两列当完整价格。",
-      "steps": ["映射真实目录及价格结构，保存完整精确维度与版本，未知能力保留原因。", "实现自动5分钟和管理员立即同步；成功时间超过默认15分钟禁止受影响新请求，失败保留last-good。", "实现管理员开放与能力过滤，用户全局/Bot/会话选择逐级覆盖；不可用报错不换模型。", "公开只读模型发现与价格查询并接现有选择器，输出兼容状态，不将目录存在等同可调用。"],
-      "criteria": ["同名不同provider模型价格不合并。", "同步失败保留历史；推进时间16分钟后受影响调用不可用。", "未知价格不标免费，图像/音频/缓存/附加费用不遗漏。", "会话覆盖Bot默认，模型下架明确报错；同步新增模型默认未开放。"],
-      "tests": ["以多维datasheet fixture及可控时钟测试同步、版本和新鲜度。", "公开Bot目录和前端选择流程验证偏好优先级与权限。"]
+      "steps": [
+        "映射真实目录及价格结构，保存完整精确维度与版本，未知能力保留原因。",
+        "实现自动5分钟和管理员立即同步；成功时间超过默认15分钟禁止受影响新请求，失败保留last-good。",
+        "实现管理员开放与能力过滤，用户全局/Bot/会话选择逐级覆盖；不可用报错不换模型。",
+        "公开只读模型发现与价格查询并接现有选择器，输出兼容状态，不将目录存在等同可调用。"
+      ],
+      "criteria": [
+        "同名不同provider模型价格不合并。",
+        "同步失败保留历史；推进时间16分钟后受影响调用不可用。",
+        "未知价格不标免费，图像/音频/缓存/附加费用不遗漏。",
+        "会话覆盖Bot默认，模型下架明确报错；同步新增模型默认未开放。"
+      ],
+      "tests": [
+        "以多维datasheet fixture及可控时钟测试同步、版本和新鲜度。",
+        "公开Bot目录和前端选择流程验证偏好优先级与权限。"
+      ]
     },
     {
-      "id": "T04", "slug": "bot-user-authorization", "title": "登记服务端 Bot 并完成一次性用户绑定授权", "depends_on": ["T02"], "acceptance_ids": ["AC03", "AC08", "AC19"],
+      "id": "T04",
+      "slug": "bot-user-authorization",
+      "title": "登记服务端 Bot 并完成一次性用户绑定授权",
+      "depends_on": ["T02"],
+      "acceptance_ids": ["AC03", "AC08", "AC19"],
       "what": "管理员登记Bot，外部使用者通过链接/码登录并确认身份，得到可单独撤销的模型授权；服务认证本身不给个人积分权限。",
       "modules": "Bot服务登记、外部身份绑定、登录确认、模型访问授权及用户授权管理。",
       "contracts": "BindingChallenge绑定Bot与外部identity issuer/subject，有限期且一次性；AccessGrant固定user/Bot/PayerRef和授权版本，active/revoked/suspended。工作台身份直接来自登录用户。",
-      "steps": ["定义Bot服务身份及管理员登记/停用接口，使用现有认证能力而非共享部署token认领用户。", "创建一次性challenge并绑定安全回调；用户登录后显式确认指定Bot和外部身份。", "事务消费challenge和建立绑定/授权，重复或跨Bot使用拒绝；先不为授权复制积分。", "用户授权列表可撤销，Bot或账户停用更新统一授权有效性供下游实时检查。"],
-      "criteria": ["仅提交userID/邮箱或仅持Bottoken无法建立绑定。", "challenge过期、重放、换Bot、换外部身份均拒绝。", "用户只能查看/撤销自己的授权。", "撤销/停用后统一授权查询立即无效，不必等待Key同步。"],
-      "tests": ["通过外部Bot发起、登录确认、授权列表、撤销完成端到端闭环。", "并发消费一次性码只建立一份绑定，测试跨用户和跨Bot攻击。"]
+      "steps": [
+        "定义Bot服务身份及管理员登记/停用接口，使用现有认证能力而非共享部署token认领用户。",
+        "创建一次性challenge并绑定安全回调；用户登录后显式确认指定Bot和外部身份。",
+        "事务消费challenge和建立绑定/授权，重复或跨Bot使用拒绝；先不为授权复制积分。",
+        "用户授权列表可撤销，Bot或账户停用更新统一授权有效性供下游实时检查。"
+      ],
+      "criteria": [
+        "仅提交userID/邮箱或仅持Bottoken无法建立绑定。",
+        "challenge过期、重放、换Bot、换外部身份均拒绝。",
+        "用户只能查看/撤销自己的授权。",
+        "撤销/停用后统一授权查询立即无效，不必等待Key同步。"
+      ],
+      "tests": [
+        "通过外部Bot发起、登录确认、授权列表、撤销完成端到端闭环。",
+        "并发消费一次性码只建立一份绑定，测试跨用户和跨Bot攻击。"
+      ]
     },
     {
-      "id": "T05", "slug": "principal-short-keys", "title": "按需关联 Customer 并领取续期短期虚拟 Key", "depends_on": ["T01", "T03", "T04"], "acceptance_ids": ["AC01", "AC02", "AC08", "AC11", "AC19"],
+      "id": "T05",
+      "slug": "principal-short-keys",
+      "title": "按需关联 Customer 并领取续期短期虚拟 Key",
+      "depends_on": ["T01", "T03", "T04"],
+      "acceptance_ids": ["AC01", "AC02", "AC08", "AC11", "AC19"],
       "what": "已认证Bot为有效授权领取地址、模型和15分钟Key；用户看状态并撤销，续期及Bifrost漂移不生成新余额或新授权。",
       "modules": "Customer/Key管理适配器、幂等开户、授权凭据版本、状态同步、服务端凭据发放与授权页面。",
       "contracts": "CredentialBundle含endpoint/ModelRef/secret/expiresAt/credentialVersion，仅向认证Bot返回；个人user与Customer一一映射，所有版本关联同一AccessGrant。状态接口不含secret。",
-      "steps": ["幂等创建Customer并处理远端成功但本地确认丢失，使用可恢复关联避免重试建重复主体。", "为有效授权发独立Key，默认15分钟；续期复核余额及授权，不重置账务。", "同步Key删除/禁用/过期/归属漂移，关键漂移暂停发放续期并告警，手工Key不接管。", "撤销所有仍有效版本并依赖OpenBot即时拒绝兜底；用户列表显示期限状态而非明文。"],
-      "criteria": ["并发开户只留下一个有效映射，远端超时重试不创建第二份账户。", "两个Bot拿到不同Key，均关联同一用户账户且不新增Grant。", "过期续期、撤销后拒绝续期、旧版本禁用均可验证。", "前端/消息/常规日志无Key明文，远端401不伪装为空列表。"],
-      "tests": ["以真实Bifrost管理协议fixture测CRUD、轮换和部分成功恢复。", "测试两Bot领取、用户撤销及远端归属漂移；快进时钟检查15分钟期限。"]
+      "steps": [
+        "幂等创建Customer并处理远端成功但本地确认丢失，使用可恢复关联避免重试建重复主体。",
+        "为有效授权发独立Key，默认15分钟；续期复核余额及授权，不重置账务。",
+        "同步Key删除/禁用/过期/归属漂移，关键漂移暂停发放续期并告警，手工Key不接管。",
+        "撤销所有仍有效版本并依赖OpenBot即时拒绝兜底；用户列表显示期限状态而非明文。"
+      ],
+      "criteria": [
+        "并发开户只留下一个有效映射，远端超时重试不创建第二份账户。",
+        "两个Bot拿到不同Key，均关联同一用户账户且不新增Grant。",
+        "过期续期、撤销后拒绝续期、旧版本禁用均可验证。",
+        "前端/消息/常规日志无Key明文，远端401不伪装为空列表。"
+      ],
+      "tests": [
+        "以真实Bifrost管理协议fixture测CRUD、轮换和部分成功恢复。",
+        "测试两Bot领取、用户撤销及远端归属漂移；快进时钟检查15分钟期限。"
+      ]
     },
     {
-      "id": "T06", "slug": "strict-credit-protocol", "title": "认证模型调用原子预留并幂等结算个人积分", "depends_on": ["T02", "T03", "T04"], "acceptance_ids": ["AC04", "AC05", "AC07", "AC12", "AC15"],
+      "id": "T06",
+      "slug": "strict-credit-protocol",
+      "title": "认证模型调用原子预留并幂等结算个人积分",
+      "depends_on": ["T02", "T03", "T04"],
+      "acceptance_ids": ["AC04", "AC05", "AC07", "AC12", "AC15"],
       "what": "受信网关代表有效授权为一次有强制上限的调用申请额度，查看承诺状态并提交可靠结算；用户同步看到可用和待结算变化。",
       "modules": "网关计费协议、CreditWriter严格预留、事务账户锁、价格/比例锁定、余额与消费读取。",
       "contracts": "Reserve接受受信attempt身份、授权/付款依据、ModelRef/PriceSnapshot及上限证据，不接受Bot自报随意账户；返回稳定reservation及精确锁定依据。Status查询同一承诺。Settle接受真实用量及证据；Release需确认未计费。不同payer/金额重放冲突。",
-      "steps": ["将Reserve/Status/Settle/Release定义成认证服务接口并在事务内重验当前授权及价格。", "复用customer行锁及Grant分配，引入未知结果保持占用的严格状态，禁止按到期时间回收此类hold。", "使用精确价格/比例、足额上限取整及每账户尾差；结算同一消息无副作用，不同金额冲突。", "把预留、待结算、实扣及释放输出接入用户余额和消费明细；按准入时Grant过期语义结算。"],
-      "criteria": ["余额10两个上限8并发请求只有一个成功，可用余额2。", "预留响应丢失后用同ID恢复，不创建第二份hold。", "未知hold过期后仍占用；Grant中途过期结算正确且释放不复活过期余额。", "两次0.005积分费用按尾差累计，不重复向上收0.01；重放不重扣。"],
-      "tests": ["专用PostgreSQL，多连接/进程并发Reserve与Settle，不用mock证明原子性。", "服务HTTP认证、篡改payer、重放冲突、时钟过期和微小费用公开边界测试。"]
+      "steps": [
+        "将Reserve/Status/Settle/Release定义成认证服务接口并在事务内重验当前授权及价格。",
+        "复用customer行锁及Grant分配，引入未知结果保持占用的严格状态，禁止按到期时间回收此类hold。",
+        "使用精确价格/比例、足额上限取整及每账户尾差；结算同一消息无副作用，不同金额冲突。",
+        "把预留、待结算、实扣及释放输出接入用户余额和消费明细；按准入时Grant过期语义结算。"
+      ],
+      "criteria": [
+        "余额10两个上限8并发请求只有一个成功，可用余额2。",
+        "预留响应丢失后用同ID恢复，不创建第二份hold。",
+        "未知hold过期后仍占用；Grant中途过期结算正确且释放不复活过期余额。",
+        "两次0.005积分费用按尾差累计，不重复向上收0.01；重放不重扣。"
+      ],
+      "tests": [
+        "专用PostgreSQL，多连接/进程并发Reserve与Settle，不用mock证明原子性。",
+        "服务HTTP认证、篡改payer、重放冲突、时钟过期和微小费用公开边界测试。"
+      ]
     },
     {
-      "id": "T07", "slug": "bounded-text-inference", "title": "Bot 直连 Bifrost 完成一次严格计费文本与流式调用", "depends_on": ["T01", "T05", "T06"], "acceptance_ids": ["AC04", "AC05", "AC06", "AC07", "AC08", "AC13"],
+      "id": "T07",
+      "slug": "bounded-text-inference",
+      "title": "Bot 直连 Bifrost 完成一次严格计费文本与流式调用",
+      "depends_on": ["T01", "T05", "T06"],
+      "acceptance_ids": ["AC04", "AC05", "AC06", "AC07", "AC08", "AC13"],
       "what": "获授权Bot使用短期Key调用文本/Chat/Responses，供应商执行前锁定额度，成功或已计费失败后结算；用户看到对应Bot和模型消费。",
       "modules": "Bifrost调用准入扩展、文本能力上限适配、provider attempt生命周期、执行承诺/result outbox与消费事件接收。",
       "contracts": "每个attempt先认证并获得Reservation，再持久记录唯一dispatch承诺；提供实际usage/result及结算ack。未知dispatch保留hold不自动重发。明确拒绝使用short-circuit并禁止fallback，不靠普通plugin error。",
-      "steps": ["连接PreLLM/PostLLM与T06，验证完整序列化输入、受支持精确/可证明上限及provider输出封顶；先支持有证据路径。", "在provider前持久化dispatch承诺及幂等claim，结算结果在用户响应结束前可靠入outbox；重复ack只记录一次。", "处理最终stream、计费失败/取消、无usage和短路；每个真实重试重新准入，不自动换模型。", "为非已验证路径及缺扩展入口设置硬拒绝，将Bot和模型用量关联到原账户/授权。"],
-      "criteria": ["余额不足/超时/撤销/缺边界时provider spy计数为0。", "一次上限8、实际3调用最终余额从10变7，无悬挂余量。", "已计费失败仍扣实际费用；未知usage保持预留。", "普通plugin报错、fallback及重复dispatch不能越过准入；明确免费也须授权和完整依据。"],
-      "tests": ["认证Bot→真实Bifrost管线→确定性provider fake→SQL余额全链路。", "故障注入在reserve确认、dispatch承诺和outbox保存边界；实际供应商上限验证形成能力证据。"]
+      "steps": [
+        "连接PreLLM/PostLLM与T06，验证完整序列化输入、受支持精确/可证明上限及provider输出封顶；先支持有证据路径。",
+        "在provider前持久化dispatch承诺及幂等claim，结算结果在用户响应结束前可靠入outbox；重复ack只记录一次。",
+        "处理最终stream、计费失败/取消、无usage和短路；每个真实重试重新准入，不自动换模型。",
+        "为非已验证路径及缺扩展入口设置硬拒绝，将Bot和模型用量关联到原账户/授权。"
+      ],
+      "criteria": [
+        "余额不足/超时/撤销/缺边界时provider spy计数为0。",
+        "一次上限8、实际3调用最终余额从10变7，无悬挂余量。",
+        "已计费失败仍扣实际费用；未知usage保持预留。",
+        "普通plugin报错、fallback及重复dispatch不能越过准入；明确免费也须授权和完整依据。"
+      ],
+      "tests": [
+        "认证Bot→真实Bifrost管线→确定性provider fake→SQL余额全链路。",
+        "故障注入在reserve确认、dispatch承诺和outbox保存边界；实际供应商上限验证形成能力证据。"
+      ]
     },
     {
-      "id": "T08", "slug": "settlement-recovery", "title": "重启后恢复未知消费并提供证据化结算处置", "depends_on": ["T07"], "acceptance_ids": ["AC07", "AC15", "AC17", "AC19"],
+      "id": "T08",
+      "slug": "settlement-recovery",
+      "title": "重启后恢复未知消费并提供证据化结算处置",
+      "depends_on": ["T07"],
+      "acceptance_ids": ["AC07", "AC15", "AC17", "AC19"],
       "what": "网关或计费服务中断后恢复未确认消费；用户看待结算原因，管理员查询证据、结算/释放或单独补偿。",
       "modules": "结果outbox恢复、provider状态查询、异常扫描告警、管理员Settlement Resolution及用户待结算页面。",
       "contracts": "RecoveryItem固定attempt/reservation/payer和原价格版本；已送达target不重发，未知不可自动Release。人工命令含版本、操作者、证据及幂等标识；平台损失补偿独立于无费用证明。",
-      "steps": ["恢复dispatch未知、结果已持久化未ack、账本已settle但ack丢失三类状态。", "增加后台重试和provider终态查询，保持预留占用并保存失败次数和可解释状态。", "建立管理员只读核查与独立授权处置操作，更新用户待结算状态。", "账户停用/删除后仍能恢复原债务，不级联删除账务或换payer。"],
-      "criteria": ["杀进程后重启不会重复dispatch或重复扣费。", "ledger成功但ack丢失可重放为同一结果。", "查不到日志仍保持hold；无费用证据才能释放。", "非管理员不可处置，补偿有单独审计与版本冲突防重复。"],
-      "tests": ["真实持久化跨进程重启和双worker并发认领，验证最终台账。", "管理页面处置权限、证据缺失、补偿重放和已删除用户恢复。"]
+      "steps": [
+        "恢复dispatch未知、结果已持久化未ack、账本已settle但ack丢失三类状态。",
+        "增加后台重试和provider终态查询，保持预留占用并保存失败次数和可解释状态。",
+        "建立管理员只读核查与独立授权处置操作，更新用户待结算状态。",
+        "账户停用/删除后仍能恢复原债务，不级联删除账务或换payer。"
+      ],
+      "criteria": [
+        "杀进程后重启不会重复dispatch或重复扣费。",
+        "ledger成功但ack丢失可重放为同一结果。",
+        "查不到日志仍保持hold；无费用证据才能释放。",
+        "非管理员不可处置，补偿有单独审计与版本冲突防重复。"
+      ],
+      "tests": [
+        "真实持久化跨进程重启和双worker并发认领，验证最终台账。",
+        "管理页面处置权限、证据缺失、补偿重放和已删除用户恢复。"
+      ]
     },
     {
-      "id": "T09", "slug": "workbench-company-routing", "title": "内置工作台调用 Bifrost 并保持公司付款账户", "depends_on": ["T02", "T03", "T07"], "acceptance_ids": ["AC09", "AC13", "AC19"],
+      "id": "T09",
+      "slug": "workbench-company-routing",
+      "title": "内置工作台调用 Bifrost 并保持公司付款账户",
+      "depends_on": ["T02", "T03", "T07"],
+      "acceptance_ids": ["AC09", "AC13", "AC19"],
       "what": "公司工作台内置Bot的普通模型调用走统一网关，但从受信业务scope固定公司payer；外部个人Key不能访问公司内容。",
       "modules": "工作台模型执行、可信公司scope/payer适配、Bot会话模型偏好、harness计费标识与消费归属。",
       "contracts": "WorkbenchInvocation从持久业务对象/受信scope解析tenant/workspace/actor/payer；跨服务委托绑定该事实而非重用个人AccessGrant。缺有效公司权限拒绝。",
-      "steps": ["接现有公司scope和固定付款事实；若公司账户工作流尚未可用则记录外部阻塞，不从个人Key推导公司资格。", "将普通模型执行改接T07网关生命周期，传播公司payer到预留/usage/settlement。", "工作台选择模型遵循偏好与开放限制；订阅harness显式独立，不成为余额不足回退。", "测试切换团队/公司和并发同公司调用，保留业务内容授权不扩大。"],
-      "criteria": ["公司10、个人10，一次公司费用3后公司7个人10。", "任务执行中切换团队不改变付款方，个人Key无法拿公司资源。", "公司不足且个人充足仍拒绝，不调用harness逃逸。", "缺公司scope拒绝；个人外部路径仍扣个人并保留Bot归属。"],
-      "tests": ["从现有认证工作台运行边界测scope/模型/账本，不以个人Key假扮公司授权。", "跨公司、team切换及公司/个人同用户幂等ID碰撞测试。"]
+      "steps": [
+        "接现有公司scope和固定付款事实；若公司账户工作流尚未可用则记录外部阻塞，不从个人Key推导公司资格。",
+        "将普通模型执行改接T07网关生命周期，传播公司payer到预留/usage/settlement。",
+        "工作台选择模型遵循偏好与开放限制；订阅harness显式独立，不成为余额不足回退。",
+        "测试切换团队/公司和并发同公司调用，保留业务内容授权不扩大。"
+      ],
+      "criteria": [
+        "公司10、个人10，一次公司费用3后公司7个人10。",
+        "任务执行中切换团队不改变付款方，个人Key无法拿公司资源。",
+        "公司不足且个人充足仍拒绝，不调用harness逃逸。",
+        "缺公司scope拒绝；个人外部路径仍扣个人并保留Bot归属。"
+      ],
+      "tests": [
+        "从现有认证工作台运行边界测scope/模型/账本，不以个人Key假扮公司授权。",
+        "跨公司、team切换及公司/个人同用户幂等ID碰撞测试。"
+      ]
     },
     {
-      "id": "T10", "slug": "personal-credit-purchases", "title": "个人购买、套餐和奖励到账并隔离公司账务", "depends_on": ["T02"], "acceptance_ids": ["AC14", "AC19"],
+      "id": "T10",
+      "slug": "personal-credit-purchases",
+      "title": "个人购买、套餐和奖励到账并隔离公司账务",
+      "depends_on": ["T02"],
+      "acceptance_ids": ["AC14", "AC19"],
       "what": "用户购买/订阅、签到及管理员发放进入个人积分，回调不能改收款用户，个人页面可追溯订单与Grant。",
       "modules": "个人订单/订阅所有权、支付回调、套餐发放、签到奖励和账单页面。",
       "contracts": "创建订单固定personal payer和授权用户，payment callback仅按持久订单/provider关联解析；发放幂等按订单/账期/奖励事实。现有公司订单不得改为个人。",
-      "steps": ["扩展个人付款账户到创建订单、订阅和读权限，价格/发放额沿套餐目录而非消费兑换率反推。", "将激活、续期、奖励和管理员发放接统一个人Grant写入。", "支付签名、重复回调及异常订单按已有事实处理，不信任回调userID。", "用户显示其订单、套餐和到账Grant，公司账务保持原归属。"],
-      "criteria": ["甲订单的回调即使夹带乙userID仍只能到账甲。", "回调重放、支付和扫描同时发放仅一份Grant。", "乙不能读甲订单；个人与公司订单权限不被放宽。", "订阅账期与签到事实重复不重复发放。"],
-      "tests": ["支付provider fake及真实SQL验证创建→签名回调→Grant→余额链路。", "用户账单可见性、失败/重复回调、套餐续期及公司记录保留。"]
+      "steps": [
+        "扩展个人付款账户到创建订单、订阅和读权限，价格/发放额沿套餐目录而非消费兑换率反推。",
+        "将激活、续期、奖励和管理员发放接统一个人Grant写入。",
+        "支付签名、重复回调及异常订单按已有事实处理，不信任回调userID。",
+        "用户显示其订单、套餐和到账Grant，公司账务保持原归属。"
+      ],
+      "criteria": [
+        "甲订单的回调即使夹带乙userID仍只能到账甲。",
+        "回调重放、支付和扫描同时发放仅一份Grant。",
+        "乙不能读甲订单；个人与公司订单权限不被放宽。",
+        "订阅账期与签到事实重复不重复发放。"
+      ],
+      "tests": [
+        "支付provider fake及真实SQL验证创建→签名回调→Grant→余额链路。",
+        "用户账单可见性、失败/重复回调、套餐续期及公司记录保留。"
+      ]
     },
     {
-      "id": "T11", "slug": "embedding-ranking-ocr", "title": "严格计费 Embedding、Rerank 与 OCR 请求", "depends_on": ["T07", "T03"], "acceptance_ids": ["AC05", "AC06", "AC07"],
+      "id": "T11",
+      "slug": "embedding-ranking-ocr",
+      "title": "严格计费 Embedding、Rerank 与 OCR 请求",
+      "depends_on": ["T07", "T03"],
+      "acceptance_ids": ["AC05", "AC06", "AC07"],
       "what": "Bot使用已验证输入边界的Embedding/重排/OCR并查看消费，未知图像/页数价格不能免费执行。",
       "modules": "对应能力准入及费用适配、gateway请求/结果处理、能力目录与消费展示。",
       "contracts": "上限覆盖全部batch输入、长度/页数/图像规格和provider计费单位；输入集合在quote后不可扩张，实际usage锁同一snapshot。",
-      "steps": ["按实际接口分别定义输入计数与强制限制，不复用文本输出token假设。", "把每种受支持能力接T07承诺/结算及T08可恢复状态接口。", "能力目录输出验证及不可用原因，用户消费显示正确计费单位。"],
-      "criteria": ["合并多个输入仍预留完整成本，超界请求provider不执行。", "OCR缺页数/图像价格不能按0收费。", "结果缺usage进入待结算，重放不重扣。"],
-      "tests": ["向真实gateway发输入batch/异常页数/provider错误，观察dispatch与账本。", "给各启用适配器保存输入上限和usage对应的conformance证据。"]
+      "steps": [
+        "按实际接口分别定义输入计数与强制限制，不复用文本输出token假设。",
+        "把每种受支持能力接T07承诺/结算及T08可恢复状态接口。",
+        "能力目录输出验证及不可用原因，用户消费显示正确计费单位。"
+      ],
+      "criteria": [
+        "合并多个输入仍预留完整成本，超界请求provider不执行。",
+        "OCR缺页数/图像价格不能按0收费。",
+        "结果缺usage进入待结算，重放不重扣。"
+      ],
+      "tests": [
+        "向真实gateway发输入batch/异常页数/provider错误，观察dispatch与账本。",
+        "给各启用适配器保存输入上限和usage对应的conformance证据。"
+      ]
     },
     {
-      "id": "T12", "slug": "image-inference", "title": "按图像规格预留并结算生成、编辑和变体", "depends_on": ["T07", "T03"], "acceptance_ids": ["AC05", "AC06", "AC07"],
+      "id": "T12",
+      "slug": "image-inference",
+      "title": "按图像规格预留并结算生成、编辑和变体",
+      "depends_on": ["T07", "T03"],
+      "acceptance_ids": ["AC05", "AC06", "AC07"],
       "what": "Bot按数量、尺寸、质量和输入成本调用图像能力，用户看图像计费明细；不能靠生成/编辑不同入口绕过预算。",
       "modules": "图像能力quote、参数限制、gateway生成/编辑/变体处理与费用展示。",
       "contracts": "ImageQuote固定操作、输入、数量、size、quality、token/每张费用及snapshot；所有provider实际参数必须与预留证明一致。",
-      "steps": ["校验完整图像规格和默认参数，保守覆盖响应数量与所有计费维度。", "生成/编辑/变体逐入口接统一准入及可靠结果，不继承缺价格返回0。", "把实际图像数量/usage进入消费明细并处理部分生成及取消计费。"],
-      "criteria": ["请求2张必须预留2张完整上限，不因provider默认数量超出。", "换quality/size或编辑入口后不能复用旧quote免费执行。", "部分生成失败按可靠费用结算；未知结果保留。"],
-      "tests": ["provider fake验证三类入口、数量超界、缺价、部分失败及重复结果。", "供应商每张与token混合计价能力验证，未通过则不可启用。"]
+      "steps": [
+        "校验完整图像规格和默认参数，保守覆盖响应数量与所有计费维度。",
+        "生成/编辑/变体逐入口接统一准入及可靠结果，不继承缺价格返回0。",
+        "把实际图像数量/usage进入消费明细并处理部分生成及取消计费。"
+      ],
+      "criteria": [
+        "请求2张必须预留2张完整上限，不因provider默认数量超出。",
+        "换quality/size或编辑入口后不能复用旧quote免费执行。",
+        "部分生成失败按可靠费用结算；未知结果保留。"
+      ],
+      "tests": [
+        "provider fake验证三类入口、数量超界、缺价、部分失败及重复结果。",
+        "供应商每张与token混合计价能力验证，未通过则不可启用。"
+      ]
     },
     {
-      "id": "T13", "slug": "speech-synthesis", "title": "限制语音生成长度并完整结算音频费用", "depends_on": ["T07", "T03"], "acceptance_ids": ["AC05", "AC06", "AC07"],
+      "id": "T13",
+      "slug": "speech-synthesis",
+      "title": "限制语音生成长度并完整结算音频费用",
+      "depends_on": ["T07", "T03"],
+      "acceptance_ids": ["AC05", "AC06", "AC07"],
       "what": "Bot可在输入、输出音频及时长成本受控时生成语音，播放或流中断后仍正确结算已发生费用。",
       "modules": "speech能力边界、文字/字符/token/音频时长定价、流式关停及消费展示。",
       "contracts": "SpeechBound同时覆盖输入和provider可能生成的音频成本及取消尾部；仅有输入长度但输出费用无限时不得启用。",
-      "steps": ["按provider实际计价明确字符/token/时长与格式、voice附加费用，固定参数和强制上限。", "接入gateway预留及流式生成，断流保留已产生费用且可靠落usage。", "目录展示可用/不可用证据与费用单位，接入用户明细。"],
-      "criteria": ["未知时长价格或无法限制输出成本时拒绝。", "中途断开不直接Release，已计费部分结算一次。", "改变voice/format计费参数不能继续用旧上限。"],
-      "tests": ["语音流截断、错误末包、voice价差及最终usage缺失的gateway测试。", "验证生成封顶与关停尾部费用，不以播放结束作为provider结束。"]
+      "steps": [
+        "按provider实际计价明确字符/token/时长与格式、voice附加费用，固定参数和强制上限。",
+        "接入gateway预留及流式生成，断流保留已产生费用且可靠落usage。",
+        "目录展示可用/不可用证据与费用单位，接入用户明细。"
+      ],
+      "criteria": [
+        "未知时长价格或无法限制输出成本时拒绝。",
+        "中途断开不直接Release，已计费部分结算一次。",
+        "改变voice/format计费参数不能继续用旧上限。"
+      ],
+      "tests": [
+        "语音流截断、错误末包、voice价差及最终usage缺失的gateway测试。",
+        "验证生成封顶与关停尾部费用，不以播放结束作为provider结束。"
+      ]
     },
     {
-      "id": "T14", "slug": "audio-transcription", "title": "按音频输入边界结算转录及受支持音频处理", "depends_on": ["T07", "T03"], "acceptance_ids": ["AC05", "AC06", "AC07"],
+      "id": "T14",
+      "slug": "audio-transcription",
+      "title": "按音频输入边界结算转录及受支持音频处理",
+      "depends_on": ["T07", "T03"],
+      "acceptance_ids": ["AC05", "AC06", "AC07"],
       "what": "用户通过Bot提交音频处理，按可靠输入长度、时长及输出成本预留并结算，篡改音频元数据不能低报费用。",
       "modules": "音频上传/输入校验、转录能力quote、provider usage适配与费用展示。",
       "contracts": "AudioInputBound由受信解析或provider可强制上限确定，不信任客户端duration；输出和翻译等附加能力费用单独纳入。",
-      "steps": ["限制可验证媒体大小/时长/格式，拒绝不可解析输入及不支持的计费维度。", "将转录和受支持音频处理接入T07，处理多段音频及最终usage。", "在目录及消费页面显示受支持路径、分钟/token等真实单位。"],
-      "criteria": ["真实60秒音频伪报1秒不能按1秒预留。", "超输入上限及未知价格无provider调用。", "失败但provider已处理音频按可靠usage结算，查询不重扣。"],
-      "tests": ["伪造媒体元数据、超界、分段、失败有BilledUsage与重复消息测试。", "供应商计费时长舍入及输出维度conformance校验。"]
+      "steps": [
+        "限制可验证媒体大小/时长/格式，拒绝不可解析输入及不支持的计费维度。",
+        "将转录和受支持音频处理接入T07，处理多段音频及最终usage。",
+        "在目录及消费页面显示受支持路径、分钟/token等真实单位。"
+      ],
+      "criteria": [
+        "真实60秒音频伪报1秒不能按1秒预留。",
+        "超输入上限及未知价格无provider调用。",
+        "失败但provider已处理音频按可靠usage结算，查询不重扣。"
+      ],
+      "tests": [
+        "伪造媒体元数据、超界、分段、失败有BilledUsage与重复消息测试。",
+        "供应商计费时长舍入及输出维度conformance校验。"
+      ]
     },
     {
-      "id": "T15", "slug": "realtime-websocket", "title": "实时 WebSocket 按受控单元预留并在耗尽时停止", "depends_on": ["T08", "T13", "T14"], "acceptance_ids": ["AC05", "AC07", "AC08", "AC16", "AC17"],
+      "id": "T15",
+      "slug": "realtime-websocket",
+      "title": "实时 WebSocket 按受控单元预留并在耗尽时停止",
+      "depends_on": ["T08", "T13", "T14"],
+      "acceptance_ids": ["AC05", "AC07", "AC08", "AC16", "AC17"],
       "what": "用户通过Bot持续实时对话，每段音频/响应先预留，余额不足或授权撤销后不开始后续付费单元。",
       "modules": "Realtime session/controller、每单元计费hook、音频输入门控、关停及待结算展示。",
       "contracts": "Session固定payer/authorization/model；Unit有独立attempt及Reservation，涵盖输入、输出、时间和关停尾部。不能因新unitID在旧unit仍消耗时放开未预留输入。",
-      "steps": ["给现有realtime pre/post unit hook接T06/T08并建立会话级输入/输出门控。", "设置实际可强制单元边界，关闭未承诺付费输入；持久化单元状态支持断线恢复。", "余额耗尽、授权撤销、Key到期阻止后续unit并尽力关停，既有费用可靠结算。", "用户显示实时会话消费及异常状态，不将每turn查余额当严格保证。"],
-      "criteria": ["连续音频在未获得下一unit预留时不继续送provider计费。", "同时两个session共享同一账户原子额度。", "撤销后无新unit；关停尾部已在上限内且实际只结算一次。", "无法约束尾部的adapter不可启用。"],
-      "tests": ["真实WebSocket连接、双session、可控音频时钟和provider tail fake。", "断线/重启/授权撤销/耗尽时观测provider输入及SQL余额。"]
+      "steps": [
+        "给现有realtime pre/post unit hook接T06/T08并建立会话级输入/输出门控。",
+        "设置实际可强制单元边界，关闭未承诺付费输入；持久化单元状态支持断线恢复。",
+        "余额耗尽、授权撤销、Key到期阻止后续unit并尽力关停，既有费用可靠结算。",
+        "用户显示实时会话消费及异常状态，不将每turn查余额当严格保证。"
+      ],
+      "criteria": [
+        "连续音频在未获得下一unit预留时不继续送provider计费。",
+        "同时两个session共享同一账户原子额度。",
+        "撤销后无新unit；关停尾部已在上限内且实际只结算一次。",
+        "无法约束尾部的adapter不可启用。"
+      ],
+      "tests": [
+        "真实WebSocket连接、双session、可控音频时钟和provider tail fake。",
+        "断线/重启/授权撤销/耗尽时观测provider输入及SQL余额。"
+      ]
     },
     {
-      "id": "T16", "slug": "realtime-webrtc", "title": "WebRTC 实时入口复用同一严格会话计费", "depends_on": ["T15"], "acceptance_ids": ["AC05", "AC08", "AC16"],
+      "id": "T16",
+      "slug": "realtime-webrtc",
+      "title": "WebRTC 实时入口复用同一严格会话计费",
+      "depends_on": ["T15"],
+      "acceptance_ids": ["AC05", "AC08", "AC16"],
       "what": "通过WebRTC建立实时通话的Bot也受相同单元预留与关停约束，不能用临时provider会话绕开OpenBot。",
       "modules": "WebRTC创建/交换及媒体路径、realtime unit控制、临时凭据限制和会话状态。",
       "contracts": "WebRTCSession沿用T15会话/单元归属；不可向客户端交付能绕开网关的无限制provider凭据。媒体数据通路必须具有强制门控证据。",
-      "steps": ["核验现有WebRTC实际媒体路径，接入相同授权和会话建立契约。", "实现媒体与provider处理的单元门控和撤销关停；直通无法强控时拒绝该路径。", "把通话/断开/待结算状态接用户展示，保留T15恢复身份。"],
-      "criteria": ["WebSocket和WebRTC共用账户不能双花。", "临时会话建立后撤销仍阻止后续收费输入。", "不能获取绕网关的无限制provider调用能力。"],
-      "tests": ["WebRTC媒体和控制链路集成，检查真实路由和余额而非只测试HTTP创建。", "媒体泄漏旁路、断线尾部和Key过期用例。"]
+      "steps": [
+        "核验现有WebRTC实际媒体路径，接入相同授权和会话建立契约。",
+        "实现媒体与provider处理的单元门控和撤销关停；直通无法强控时拒绝该路径。",
+        "把通话/断开/待结算状态接用户展示，保留T15恢复身份。"
+      ],
+      "criteria": [
+        "WebSocket和WebRTC共用账户不能双花。",
+        "临时会话建立后撤销仍阻止后续收费输入。",
+        "不能获取绕网关的无限制provider调用能力。"
+      ],
+      "tests": [
+        "WebRTC媒体和控制链路集成，检查真实路由和余额而非只测试HTTP创建。",
+        "媒体泄漏旁路、断线尾部和Key过期用例。"
+      ]
     },
     {
-      "id": "T17", "slug": "async-job-accounting", "title": "异步任务提交、查询和完成只结算一次", "depends_on": ["T08"], "acceptance_ids": ["AC05", "AC07", "AC15", "AC16", "AC17"],
+      "id": "T17",
+      "slug": "async-job-accounting",
+      "title": "异步任务提交、查询和完成只结算一次",
+      "depends_on": ["T08"],
+      "acceptance_ids": ["AC05", "AC07", "AC15", "AC16", "AC17"],
       "what": "Bot提交完整成本受控的异步任务，离开或Key到期后仍可恢复任务并结算，反复查询不重复收费。",
       "modules": "Async任务归属、提交预留、状态查询、provider终态恢复、消费记录及任务状态展示。",
       "contracts": "Job固定payer/grant/providerJobID/reservation/snapshot；提交幂等与provider dispatch一致，GET状态/结果无第二次预留。取消不是终态费用证明。",
-      "steps": ["给异步提交建立完整输入/输出成本上限及持久化任务身份。", "提交前预留，providerJobID响应丢失进入未知恢复，不自动创建第二任务。", "查询结果只做授权读取，后台按可靠终态usage结算；无取消接口也不释放hold。", "用户/管理员看到queued/running/pending/settled及原因，任务归属不随当前会话变化。"],
-      "criteria": ["Key到期后后台任务仍归属原账户并结算。", "重复GET及完成通知不重复扣费。", "提交响应丢失不会生成第二任务。", "取消失败或未知终态保持完整预留。"],
-      "tests": ["provider异步fake模拟queued、完成、取消不支持、丢jobID及重启。", "两用户越权取结果、并发poll与事件通知只结算一次。"]
+      "steps": [
+        "给异步提交建立完整输入/输出成本上限及持久化任务身份。",
+        "提交前预留，providerJobID响应丢失进入未知恢复，不自动创建第二任务。",
+        "查询结果只做授权读取，后台按可靠终态usage结算；无取消接口也不释放hold。",
+        "用户/管理员看到queued/running/pending/settled及原因，任务归属不随当前会话变化。"
+      ],
+      "criteria": [
+        "Key到期后后台任务仍归属原账户并结算。",
+        "重复GET及完成通知不重复扣费。",
+        "提交响应丢失不会生成第二任务。",
+        "取消失败或未知终态保持完整预留。"
+      ],
+      "tests": [
+        "provider异步fake模拟queued、完成、取消不支持、丢jobID及重启。",
+        "两用户越权取结果、并发poll与事件通知只结算一次。"
+      ]
     },
     {
-      "id": "T18", "slug": "batch-accounting", "title": "批量任务完整预留并结算部分成功和取消", "depends_on": ["T17"], "acceptance_ids": ["AC05", "AC07", "AC16"],
+      "id": "T18",
+      "slug": "batch-accounting",
+      "title": "批量任务完整预留并结算部分成功和取消",
+      "depends_on": ["T17"],
+      "acceptance_ids": ["AC05", "AC07", "AC16"],
       "what": "Bot批量提交多个有界请求，先锁定整体上限，逐条实际结果和部分取消都能归属结算。",
       "modules": "Batch输入冻结、逐条费用/任务身份、结果导入和批次消费展示。",
       "contracts": "Batch包含不可变子任务集合与幂等childID；整体上限是所有可能费用之和，batch价格维度锁定；terminal child charges总和不得重复计入父费用。",
-      "steps": ["验证整个批次而非首条输入，冻结对象并计算完整上限。", "接T17生命周期，持久化provider batch及child映射。", "处理乱序/重复/部分成功结果与取消仍计费项，父子费用采用唯一聚合事实。"],
-      "criteria": ["追加或变更提交文件不能突破已预留集合。", "一半成功一半取消按可靠实际费用结算且不父子双扣。", "结果乱序重放与重复下载不重扣。"],
-      "tests": ["批次文件变更、失败条目、取消尾部、partial result重启恢复。", "总费用与子项精确聚合以及未知子项hold未释放。"]
+      "steps": [
+        "验证整个批次而非首条输入，冻结对象并计算完整上限。",
+        "接T17生命周期，持久化provider batch及child映射。",
+        "处理乱序/重复/部分成功结果与取消仍计费项，父子费用采用唯一聚合事实。"
+      ],
+      "criteria": [
+        "追加或变更提交文件不能突破已预留集合。",
+        "一半成功一半取消按可靠实际费用结算且不父子双扣。",
+        "结果乱序重放与重复下载不重扣。"
+      ],
+      "tests": [
+        "批次文件变更、失败条目、取消尾部、partial result重启恢复。",
+        "总费用与子项精确聚合以及未知子项hold未释放。"
+      ]
     },
     {
-      "id": "T19", "slug": "video-job-accounting", "title": "视频生成和编辑按规格预留并恢复异步结算", "depends_on": ["T17", "T03"], "acceptance_ids": ["AC05", "AC06", "AC16"],
+      "id": "T19",
+      "slug": "video-job-accounting",
+      "title": "视频生成和编辑按规格预留并恢复异步结算",
+      "depends_on": ["T17", "T03"],
+      "acceptance_ids": ["AC05", "AC06", "AC16"],
       "what": "Bot提交有界视频生成/编辑/变体任务，按时长、分辨率等完整费用预留并查询产物，未定价规格明确不可用。",
       "modules": "视频规格quote、provider任务适配、产物读取授权和视频消费展示。",
       "contracts": "VideoQuote冻结duration/resolution/operation/input/附加费用与snapshot；内容下载引用原任务授权而非触发新收费执行。",
-      "steps": ["定义provider实际可强制视频规格及输入/输出维度，缺任何计费项拒绝。", "生成/编辑/remix逐路径复用T17任务身份与预留，不只覆盖创建入口。", "可靠终态费用结算，下载/删除不改变已发生费用，提供状态和规格明细。"],
-      "criteria": ["请求duration/分辨率超界时无provider创建。", "缺视频价格不按0执行。", "重复retrieve/content不重扣；删除/取消不能免掉未知账务。"],
-      "tests": ["video provider任务fake含queued、取消仍计费、产物重取和remix。", "启用规格的强制参数和定价usage一致性验证。"]
+      "steps": [
+        "定义provider实际可强制视频规格及输入/输出维度，缺任何计费项拒绝。",
+        "生成/编辑/remix逐路径复用T17任务身份与预留，不只覆盖创建入口。",
+        "可靠终态费用结算，下载/删除不改变已发生费用，提供状态和规格明细。"
+      ],
+      "criteria": [
+        "请求duration/分辨率超界时无provider创建。",
+        "缺视频价格不按0执行。",
+        "重复retrieve/content不重扣；删除/取消不能免掉未知账务。"
+      ],
+      "tests": [
+        "video provider任务fake含queued、取消仍计费、产物重取和remix。",
+        "启用规格的强制参数和定价usage一致性验证。"
+      ]
     },
     {
-      "id": "T20", "slug": "tool-additional-costs", "title": "纳入工具附加费用并阻止未定价工具旁路", "depends_on": ["T08", "T03"], "acceptance_ids": ["AC05", "AC06", "AC07", "AC13"],
+      "id": "T20",
+      "slug": "tool-additional-costs",
+      "title": "纳入工具附加费用并阻止未定价工具旁路",
+      "depends_on": ["T08", "T03"],
+      "acceptance_ids": ["AC05", "AC06", "AC07", "AC13"],
       "what": "Bot的供应商工具/路由附加调用只有在完整费用可限额时可用，用户明细区分模型与额外费用；模型Key不授予公司工具权限。",
       "modules": "工具授权、附加费用quote、provider工具执行门控、usage breakdown及费用页面。",
       "contracts": "ToolCostBound含工具类型/每次费用/次数及耗时等强制限制；所有实际注入工具须在授权及quote集合内。模型token、额外工具费及路由fee各一次，不重复入账。",
-      "steps": ["枚举实际可执行供应商工具和追加费用，缺定价/次数上限先禁用。", "将工具与provider attempts接统一门控，模型调用成功不能授权无限追加执行。", "保持工具业务授权独立于Key模型资格，消费明细拆分费用。"],
-      "criteria": ["客户端/插件注入未报价收费工具时拒绝。", "重复工具调用有对应额度，未知附加cost不默认0。", "个人Key不能据此获取公司业务工具/内容权限。"],
-      "tests": ["工具注入、tool loop、失败计费、重复event和模型/附加费聚合。", "各启用工具真实次数/时长限制conformance。"]
+      "steps": [
+        "枚举实际可执行供应商工具和追加费用，缺定价/次数上限先禁用。",
+        "将工具与provider attempts接统一门控，模型调用成功不能授权无限追加执行。",
+        "保持工具业务授权独立于Key模型资格，消费明细拆分费用。"
+      ],
+      "criteria": [
+        "客户端/插件注入未报价收费工具时拒绝。",
+        "重复工具调用有对应额度，未知附加cost不默认0。",
+        "个人Key不能据此获取公司业务工具/内容权限。"
+      ],
+      "tests": [
+        "工具注入、tool loop、失败计费、重复event和模型/附加费聚合。",
+        "各启用工具真实次数/时长限制conformance。"
+      ]
     },
     {
-      "id": "T21", "slug": "obsolete-test-billing-cleanup", "title": "核验并清理废弃测试计费数据且保留公司历史", "depends_on": ["T02", "T08", "T10"], "acceptance_ids": ["AC18", "AC19"],
+      "id": "T21",
+      "slug": "obsolete-test-billing-cleanup",
+      "title": "核验并清理废弃测试计费数据且保留公司历史",
+      "depends_on": ["T02", "T08", "T10"],
+      "acceptance_ids": ["AC18", "AC19"],
       "what": "管理员获得可审查的旧测试计费清单与dry-run，在精确核验范围执行清理后个人新体系可用，公司历史及业务数据不受影响。",
       "modules": "计费数据归属清单、测试数据重建程序、dry-run/执行报告及受限管理操作。",
       "contracts": "CleanupManifest列出明确数据库/对象ID、归属证据、外键关联、在途预留及外部订阅关联；未知归属保留隔离。执行只消费已核验版本的manifest，不使用宽泛customer前缀猜测。",
-      "steps": ["生成旧计费和测试订单/订阅依赖清单，分类公司历史、个人记录、确认废弃测试和未知。", "提供dry-run与校验hash，检查在途任务和结算；公司记录/业务对象设置不删除约束。", "在独立测试库验证事务清理及重建；实际环境按用户已授权精确范围执行，外部有效订阅不自动取消。", "报告实际删除数量、保留记录、恢复方式和账务校验，管理员可查看结果。"],
-      "criteria": ["公司历史和用户/Bot/会话/知识库hash不变。", "未知归属和在途费用不删除。", "manifest变化后拒绝沿用旧执行确认，重复执行不误删新数据。", "旧余额不被复制到个人及公司两账户。"],
-      "tests": ["混合公司/个人/测试/未知数据fixture，dry-run和真实清理结果比较。", "失败回滚、外键保护、并发新增记录及审计/恢复验证。"]
+      "steps": [
+        "生成旧计费和测试订单/订阅依赖清单，分类公司历史、个人记录、确认废弃测试和未知。",
+        "提供dry-run与校验hash，检查在途任务和结算；公司记录/业务对象设置不删除约束。",
+        "在独立测试库验证事务清理及重建；实际环境按用户已授权精确范围执行，外部有效订阅不自动取消。",
+        "报告实际删除数量、保留记录、恢复方式和账务校验，管理员可查看结果。"
+      ],
+      "criteria": [
+        "公司历史和用户/Bot/会话/知识库hash不变。",
+        "未知归属和在途费用不删除。",
+        "manifest变化后拒绝沿用旧执行确认，重复执行不误删新数据。",
+        "旧余额不被复制到个人及公司两账户。"
+      ],
+      "tests": [
+        "混合公司/个人/测试/未知数据fixture，dry-run和真实清理结果比较。",
+        "失败回滚、外键保护、并发新增记录及审计/恢复验证。"
+      ]
     },
     {
-      "id": "T22", "slug": "capability-release-verification", "title": "完整能力准入证据与跨入口交付验收", "depends_on": ["T09", "T10", "T11", "T12", "T16", "T18", "T19", "T20", "T21"], "acceptance_ids": ["AC01", "AC02", "AC03", "AC04", "AC05", "AC06", "AC07", "AC08", "AC09", "AC10", "AC11", "AC12", "AC13", "AC14", "AC15", "AC16", "AC17", "AC18", "AC19"],
+      "id": "T22",
+      "slug": "capability-release-verification",
+      "title": "完整能力准入证据与跨入口交付验收",
+      "depends_on": [
+        "T09",
+        "T10",
+        "T11",
+        "T12",
+        "T16",
+        "T18",
+        "T19",
+        "T20",
+        "T21"
+      ],
+      "acceptance_ids": [
+        "AC01",
+        "AC02",
+        "AC03",
+        "AC04",
+        "AC05",
+        "AC06",
+        "AC07",
+        "AC08",
+        "AC09",
+        "AC10",
+        "AC11",
+        "AC12",
+        "AC13",
+        "AC14",
+        "AC15",
+        "AC16",
+        "AC17",
+        "AC18",
+        "AC19"
+      ],
       "what": "管理员看到真实能力验证和部署就绪报告；所有父Spec验收有可复现证据，未通过能力不可开放，旧入口无直接供应商旁路。",
       "modules": "全入口能力注册、supplier conformance harness、就绪/证据页面、交付验收与跨repo版本固定。",
       "contracts": "CapabilityEvidence绑定provider/model/invocation/价格及边界版本、验证环境、实际结果；配置变更使受影响证据失效。父AC映射到具体行为证据，不能只附测试exit0。",
-      "steps": ["从实际路由/任务/工具/订阅harness枚举全部入口，检查gate与付款账户，不仅按Ticket标题推定覆盖。", "整理各adapter可复现上限/usage/取消tail证据，拒绝未验证能力；真实供应商测试缺环境明确阻塞。", "跑父Spec19项完整场景和跨进程故障，验证管理员及用户界面显示真实能力与异常。", "固定OpenBot及Bifrost交付版本，完成独立Review和全范围OCR/修复复审，保存覆盖与遗留限制后给出部署就绪结论。"],
-      "criteria": ["19项AC均有代码版本绑定的结果，skip不算通过。", "文本/图像/音频/Embedding/实时/异步各族有交付证据，无法启用路径列明原因而非悄悄缩水。", "未配置比例、缺扩展及旧入口不产生未经准入消费。", "公司/个人账务、Key敏感数据与跨repo版本完整核验，无有效中高风险finding。"],
-      "tests": ["专用数据库的公开Bot→gateway→provider与公司工作台全链路验收。", "所有受影响Bun/Go测试、race、类型/Lint/构建及实际supplier conformance；最终Diff范围核验。"]
+      "steps": [
+        "从实际路由/任务/工具/订阅harness枚举全部入口，检查gate与付款账户，不仅按Ticket标题推定覆盖。",
+        "整理各adapter可复现上限/usage/取消tail证据，拒绝未验证能力；真实供应商测试缺环境明确阻塞。",
+        "跑父Spec19项完整场景和跨进程故障，验证管理员及用户界面显示真实能力与异常。",
+        "固定OpenBot及Bifrost交付版本，完成独立Review和全范围OCR/修复复审，保存覆盖与遗留限制后给出部署就绪结论。"
+      ],
+      "criteria": [
+        "19项AC均有代码版本绑定的结果，skip不算通过。",
+        "文本/图像/音频/Embedding/实时/异步各族有交付证据，无法启用路径列明原因而非悄悄缩水。",
+        "未配置比例、缺扩展及旧入口不产生未经准入消费。",
+        "公司/个人账务、Key敏感数据与跨repo版本完整核验，无有效中高风险finding。"
+      ],
+      "tests": [
+        "专用数据库的公开Bot→gateway→provider与公司工作台全链路验收。",
+        "所有受影响Bun/Go测试、race、类型/Lint/构建及实际supplier conformance；最终Diff范围核验。"
+      ]
     }
   ]
 }

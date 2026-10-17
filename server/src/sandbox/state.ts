@@ -1,4 +1,4 @@
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import type { Database } from "../db/client";
 import {
@@ -59,10 +59,7 @@ export type SandboxInstanceStateStore = {
     | undefined
   >;
   /** Insert a provisioning row at the next attempt number; returns it, or the winner's row. */
-  beginAttempt(input: {
-    botId: string;
-    ownerUserId: string;
-  }): Promise<{
+  beginAttempt(input: { botId: string; ownerUserId: string }): Promise<{
     id: string;
     attemptNumber: number;
     won: boolean;
@@ -179,10 +176,7 @@ export function createSandboxInstanceStateStore(
           ...(patch?.ports !== undefined ? { ports: patch.ports } : {}),
         })
         .where(
-          and(
-            eq(sandboxInstances.id, id),
-            eq(sandboxInstances.status, from),
-          ),
+          and(eq(sandboxInstances.id, id), eq(sandboxInstances.status, from)),
         )
         .returning({ id: sandboxInstances.id });
       return rows.length > 0;

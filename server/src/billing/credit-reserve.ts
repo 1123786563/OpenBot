@@ -13,9 +13,7 @@ import {
 import { gatewayPriceSnapshots } from "../db/schema";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../gateway/catalog-sync";
 import { MODEL_CAPABILITIES, type ModelRef } from "../gateway/catalog";
-import {
-  assertPriceSnapshotDims,
-} from "../gateway/price-snapshot";
+import { assertPriceSnapshotDims } from "../gateway/price-snapshot";
 import { classifyPriceDims } from "../gateway/price-status";
 import type { Tx } from "./capacity";
 import type { CreditServiceVariables } from "./credit-service-auth";
@@ -146,7 +144,7 @@ export type CreditReserveOutcome =
       snapshotVersion: number;
       rateVersion: number;
     }
-    | {
+  | {
       status: "refused";
       reasonCode: CreditReserveRefusalReasonCode;
       /** The refused request's own basis — never another subject's data. */
@@ -188,7 +186,8 @@ export const DEFAULT_CATALOG_FRESHNESS_WINDOW_MS = 15 * 60 * 1000;
 const REFUSAL_SENTENCES: Record<CreditReserveRefusalReasonCode, string> = {
   request_invalid: "The reserve request is not a valid reserve request.",
   grant_invalid: "The model access grant cannot be used for this call.",
-  payer_unresolved: "The payment account named by the request does not resolve.",
+  payer_unresolved:
+    "The payment account named by the request does not resolve.",
   model_not_open: "The model is not open for new requests.",
   catalog_never_synced:
     "The model catalog has never synced, so no new request can be priced.",
@@ -196,10 +195,12 @@ const REFUSAL_SENTENCES: Record<CreditReserveRefusalReasonCode, string> = {
     "The model catalog is stale; new requests are paused until the next successful sync.",
   price_basis_not_found:
     "The locked price basis does not exist for this model.",
-  price_unknown: "The model's price is not completely known, so it cannot be billed strictly.",
+  price_unknown:
+    "The model's price is not completely known, so it cannot be billed strictly.",
   bound_evidence_not_enforceable:
     "The request carries no enforceable cost-ceiling evidence; estimates are not evidence.",
-  insufficient_credits: "The payment account does not have enough available credits.",
+  insufficient_credits:
+    "The payment account does not have enough available credits.",
   reservation_conflict:
     "The reservation identity conflicts with an existing reservation.",
 };
@@ -239,10 +240,7 @@ const PAYER_KINDS: readonly PayerKind[] = [
 
 /** Identifier-shaped string: non-empty, bounded, no leading or trailing whitespace. */
 function isIdentifier(value: unknown, maxLength: number): value is string {
-  return (
-    isNonEmptyString(value, maxLength) &&
-    value.trim() === value
-  );
+  return isNonEmptyString(value, maxLength) && value.trim() === value;
 }
 
 /** Validation's discriminated answer: a valid request, or the refusal that replaces it. */
@@ -257,12 +255,18 @@ type RequestValidation =
  */
 function validateRequest(input: unknown, now: Date): RequestValidation {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "body" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "body" }),
+    };
   }
   const raw = input as Record<string, unknown>;
 
   if (!isIdentifier(raw.grantId, 512)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "grantId" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "grantId" }),
+    };
   }
   const payer = raw.payer as Record<string, unknown> | null | undefined;
   if (
@@ -271,7 +275,10 @@ function validateRequest(input: unknown, now: Date): RequestValidation {
     !PAYER_KINDS.includes(payer.kind as PayerKind) ||
     !isIdentifier(payer.id, 512)
   ) {
-    return { ok: false, outcome: refused("request_invalid", { field: "payer" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "payer" }),
+    };
   }
   const model = raw.model as Record<string, unknown> | null | undefined;
   if (
@@ -281,19 +288,37 @@ function validateRequest(input: unknown, now: Date): RequestValidation {
     !isIdentifier(model.model, 512) ||
     !MODEL_CAPABILITIES.includes(model.capability as never)
   ) {
-    return { ok: false, outcome: refused("request_invalid", { field: "model" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "model" }),
+    };
   }
   if (!isPositiveInteger(raw.snapshotVersion)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "snapshotVersion" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "snapshotVersion" }),
+    };
   }
   if (!isNonNegativeInteger(raw.rateVersion)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "rateVersion" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "rateVersion" }),
+    };
   }
-  if (!isPositiveInteger(raw.maximumCredits) || raw.maximumCredits > MAX_STORED_UNITS) {
-    return { ok: false, outcome: refused("request_invalid", { field: "maximumCredits" }) };
+  if (
+    !isPositiveInteger(raw.maximumCredits) ||
+    raw.maximumCredits > MAX_STORED_UNITS
+  ) {
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "maximumCredits" }),
+    };
   }
   if (!isIdentifier(raw.idempotencyKey, 512)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "idempotencyKey" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "idempotencyKey" }),
+    };
   }
 
   // Bound evidence: a non-empty set of mechanism proofs with real ceilings. Anything
@@ -302,7 +327,9 @@ function validateRequest(input: unknown, now: Date): RequestValidation {
   if (!Array.isArray(evidence) || evidence.length === 0) {
     return {
       ok: false,
-      outcome: refused("bound_evidence_not_enforceable", { field: "boundEvidence" }),
+      outcome: refused("bound_evidence_not_enforceable", {
+        field: "boundEvidence",
+      }),
     };
   }
   for (const entry of evidence) {
@@ -335,12 +362,18 @@ function validateRequest(input: unknown, now: Date): RequestValidation {
           ? new Date(raw.expiresAt)
           : null;
     if (parsed === null || Number.isNaN(parsed.getTime())) {
-      return { ok: false, outcome: refused("request_invalid", { field: "expiresAt" }) };
+      return {
+        ok: false,
+        outcome: refused("request_invalid", { field: "expiresAt" }),
+      };
     }
     expiresAt = parsed;
   }
   if (expiresAt.getTime() <= now.getTime()) {
-    return { ok: false, outcome: refused("request_invalid", { field: "expiresAt" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "expiresAt" }),
+    };
   }
 
   return {
@@ -497,10 +530,7 @@ export async function reserveCreditInTransaction(
         eq(gatewayPriceSnapshots.provider, request.model.provider),
         eq(gatewayPriceSnapshots.model, request.model.model),
         eq(gatewayPriceSnapshots.capability, request.model.capability),
-        eq(
-          gatewayPriceSnapshots.snapshotVersion,
-          request.snapshotVersion,
-        ),
+        eq(gatewayPriceSnapshots.snapshotVersion, request.snapshotVersion),
       ),
     )
     .limit(1);
@@ -534,10 +564,12 @@ export async function reserveCreditInTransaction(
         ? new Date(request.expiresAt)
         : new Date(now.getTime() + DEFAULT_HOLD_TTL_MS);
   const writer = createCreditWriter(tx as unknown as Database);
-  let reserved: { reserved: true; reservationId: string } | {
-    reserved: false;
-    availableCents: number;
-  };
+  let reserved:
+    | { reserved: true; reservationId: string }
+    | {
+        reserved: false;
+        availableCents: number;
+      };
   try {
     reserved = await writer.reserveCredits({
       externalCustomerId: derivedKey,

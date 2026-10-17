@@ -45,10 +45,7 @@ import {
   type GatewayEndpointService,
   gatewayEndpointControls,
 } from "./endpoint-config";
-import {
-  type GatewayProbeService,
-  gatewayProbeControls,
-} from "./probe";
+import { type GatewayProbeService, gatewayProbeControls } from "./probe";
 import {
   gatewayReadinessControls,
   type GatewayReadinessService,
@@ -323,7 +320,10 @@ export function gatewayAdminRoutes(
               capability: input.capability as never,
             },
             reason: input.reason,
-            actor: { userId: context.var.actor.id, email: context.var.actor.email },
+            actor: {
+              userId: context.var.actor.id,
+              email: context.var.actor.email,
+            },
           })
         : await modelScope.closeModel({
             ref: {
@@ -332,7 +332,10 @@ export function gatewayAdminRoutes(
               capability: input.capability as never,
             },
             reason: input.reason,
-            actor: { userId: context.var.actor.id, email: context.var.actor.email },
+            actor: {
+              userId: context.var.actor.id,
+              email: context.var.actor.email,
+            },
           });
     if (!result.ok) {
       // Input problems are the caller's (400); a ref the catalog does not hold is
@@ -356,7 +359,9 @@ export function gatewayAdminRoutes(
   return app;
 }
 
-async function readDetail<T>(read: () => Promise<T | undefined>): Promise<T | null> {
+async function readDetail<T>(
+  read: () => Promise<T | undefined>,
+): Promise<T | null> {
   try {
     return (await read()) ?? null;
   } catch {

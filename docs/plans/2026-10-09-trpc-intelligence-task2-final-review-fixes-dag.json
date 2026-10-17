@@ -22,12 +22,29 @@
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
       "reviewer_role": "reviewer",
-      "owned_files": ["server/src/enterprise/tenancy/provision.ts", "server/tests/enterprise/tenancy.integration.test.ts"],
-      "interfaces": ["suspendMembership(OperatorDatabase, SuspendMembershipInput) receipt", "enterpriseSecurityEvents.details JSON object"],
-      "verification": ["fresh reserved DB migration through 0055", "bun --no-env-file test tests/enterprise/tenancy.integration.test.ts", "scoped strict TypeScript, Biome, git diff --check"],
+      "owned_files": [
+        "server/src/enterprise/tenancy/provision.ts",
+        "server/tests/enterprise/tenancy.integration.test.ts"
+      ],
+      "interfaces": [
+        "suspendMembership(OperatorDatabase, SuspendMembershipInput) receipt",
+        "enterpriseSecurityEvents.details JSON object"
+      ],
+      "verification": [
+        "fresh reserved DB migration through 0055",
+        "bun --no-env-file test tests/enterprise/tenancy.integration.test.ts",
+        "scoped strict TypeScript, Biome, git diff --check"
+      ],
       "status": "pending"
     }
   ],
   "topological_order": ["T02-FR01"],
-  "isolated_checks": {"unique_node_ids": true, "dependencies_resolve": true, "no_self_edges": true, "acyclic": true, "no_orphan_nodes": true, "all_acceptance_mapped": true}
+  "isolated_checks": {
+    "unique_node_ids": true,
+    "dependencies_resolve": true,
+    "no_self_edges": true,
+    "acyclic": true,
+    "no_orphan_nodes": true,
+    "all_acceptance_mapped": true
+  }
 }

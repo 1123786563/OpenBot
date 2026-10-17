@@ -23,10 +23,11 @@ import { DEV_CSP_ALLOW_LISTED, STATIC_CSP } from "./preview";
 export type PublicWorkshopInput = {
   /** B14's service: the one door in, and the signed artifact URLs. */
   sharing: {
-    resolveShareActor(token: string): Promise<
-      | { channelId: string; botId: string; scope: "preview" | "preview_download" }
-      | null
-    >;
+    resolveShareActor(token: string): Promise<{
+      channelId: string;
+      botId: string;
+      scope: "preview" | "preview_download";
+    } | null>;
     underRateLimit(token: string): Promise<boolean>;
     signArtifactUrl(input: {
       channelId: string;
@@ -89,8 +90,12 @@ export function createWorkshopPublicRoutes(input: PublicWorkshopInput): Hono {
     // (app.ts's anonymous mount) without either mount's prefix leaking into a file name.
     const marker = "/public/preview/";
     const markerAt = context.req.path.lastIndexOf(marker);
-    const path = markerAt === -1 ? "" : context.req.path.slice(markerAt + marker.length);
-    const file = await input.readArtifactFile(actor.channelId, path || "index.html");
+    const path =
+      markerAt === -1 ? "" : context.req.path.slice(markerAt + marker.length);
+    const file = await input.readArtifactFile(
+      actor.channelId,
+      path || "index.html",
+    );
     if (!file) return context.notFound();
     const headers = publicHeaders(new Headers());
     headers.set("content-type", file.contentType);

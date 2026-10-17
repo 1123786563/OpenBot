@@ -530,7 +530,7 @@ describe("status-file JSON integrity (High#1: quoted error text)", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  test("a clean attempt records a BARE null digest — not the string \"null\" (fix-ocr21 #5)", async () => {
+  test('a clean attempt records a BARE null digest — not the string "null" (fix-ocr21 #5)', async () => {
     // No error → no digest. The old code quoted the sentinel ('null' →
     // "\"null\""), a STRING no consumer can read as "no digest" (and an
     // openssl-less host wrote the empty string ""). lastAttemptError already
@@ -594,9 +594,7 @@ describe("tls_numeric — the numeric-env guard (fix-ocr18 #10)", () => {
   test("a letter-rot cooldown env answers the default 86400 through the guard", async () => {
     const dir = await mkdtemp(join(tmpdir(), "openbot-tls-ocr18-num-"));
     const webhook = `file:${join(dir, "alerts.jsonl")}`;
-    const ninetyMinutesAgo = String(
-      Math.floor(Date.now() / 1000) - 90000,
-    );
+    const ninetyMinutesAgo = String(Math.floor(Date.now() / 1000) - 90000);
     await run([lib, "__status-set", dir, "lastAlertAt", ninetyMinutesAgo]);
     await run([lib, "__status-set", dir, "lastAlertSeverity", '"critical"']);
     await run([
@@ -697,6 +695,7 @@ describe("json_escape control characters (fix-ocr17: strict-JSON readable status
     // Every control byte became a plain space; the readable text survives.
     // (CRLF becomes two spaces — CR via the cntrl rule, NL via the standing
     // tr — so the assertion is on fragments, not on one exact string.)
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: the whole point is asserting no control bytes survived.
     expect(String(status.lastAttemptError)).not.toMatch(/[\u0000-\u001f]/);
     expect(String(status.lastAttemptError)).toContain("acme.sh failed: fatal");
     expect(String(status.lastAttemptError)).toContain("bell here");
@@ -799,8 +798,8 @@ describe("compose + entrypoint + drill wiring (fix-ocr17)", () => {
     const offenders = drillSource
       .split("\n")
       .filter((l) => !l.trim().startsWith("#"))
-      .filter((l) => /(\"\$LIB\"\s+__run-renewal|\"\$GUARD\"\s+--once)/.test(l))
-      .filter((l) => !/sh \"\$(LIB|GUARD)\"/.test(l));
+      .filter((l) => /("\$LIB"\s+__run-renewal|"\$GUARD"\s+--once)/.test(l))
+      .filter((l) => !/sh "\$(LIB|GUARD)"/.test(l));
     expect(offenders).toEqual([]);
     // And the sh forms are really there (the pin cannot pass vacuously).
     expect(drillSource).toContain('sh "$LIB" __run-renewal');
@@ -817,12 +816,18 @@ describe("compose + entrypoint + drill wiring (fix-ocr17)", () => {
 describe("reload.sh writes the hook outcome to the status file (fix-ocr18 #11)", () => {
   const reload = join(certsDir, "reload.sh");
 
-  function hookServer(status: number): { stop: () => void; urlOf: () => string } {
+  function hookServer(status: number): {
+    stop: () => void;
+    urlOf: () => string;
+  } {
     const server = Bun.serve({
       port: 0,
       fetch: () => new Response(null, { status }),
     });
-    return { stop: () => server.stop(true), urlOf: () => `http://127.0.0.1:${server.port}/reload` };
+    return {
+      stop: () => server.stop(true),
+      urlOf: () => `http://127.0.0.1:${server.port}/reload`,
+    };
   }
 
   test("a delivered hook writes lastReloadOk=true + lastReloadAt", async () => {
@@ -1001,7 +1006,14 @@ describe("guard alert critical section (fix-ocr22 #5: two concurrent --once fire
     const dir = await mkdtemp(join(tmpdir(), "openbot-tls-ocr22-5-"));
     // critical|renewal-failed: no certificate, a failed attempt on record,
     // no lastAlert* yet — every guard that reads it must want to fire.
-    await run([lib, "__record-attempt", dir, "false", "renew", "concurrent drill"]);
+    await run([
+      lib,
+      "__record-attempt",
+      dir,
+      "false",
+      "renew",
+      "concurrent drill",
+    ]);
     const alertsFile = join(dir, "alerts.jsonl");
     // Deterministic double-fire on the unfixed code: each guard parks at its
     // FIRST status_set until BOTH have arrived — both have already read
@@ -1027,7 +1039,11 @@ describe("guard alert critical section (fix-ocr22 #5: two concurrent --once fire
     const guardB = run([guard, "--once"], env);
     const deadline = Date.now() + 2000;
     while (Date.now() < deadline) {
-      const n = Number(await Bun.file(arrived).text().catch(() => "0"));
+      const n = Number(
+        await Bun.file(arrived)
+          .text()
+          .catch(() => "0"),
+      );
       if (n >= 2) break;
       await Bun.sleep(20);
     }
@@ -1517,7 +1533,9 @@ describe("restart fast path finds acme.sh's `_.` wildcard directory (fix-ocr8 #1
     const dir = await mkdtemp(join(tmpdir(), "openbot-tls-ocr8-1-"));
     const acmeHome = join(dir, "acme-home");
     // acme.sh's own normalization: `*.` is stored as `_.`.
-    await mkdir(join(acmeHome, "_.preview.example.com_ecc"), { recursive: true });
+    await mkdir(join(acmeHome, "_.preview.example.com_ecc"), {
+      recursive: true,
+    });
     // A shim that logs every invocation; --issue (which must NEVER run here)
     // and anything unrecognized fail loudly, --install-cert succeeds so the
     // startup reaches the renewal loop.
@@ -1617,7 +1635,8 @@ describe("a refused start records an explicit failed state (fix-ocr9 #3)", () =>
     const dir = await mkdtemp(join(tmpdir(), "openbot-tls-ocr9-3-"));
     const r = await run([entrypoint], {
       OPENBOT_TLS_DIR: dir,
-      OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE: "https://{session}preview.example.com",
+      OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE:
+        "https://{session}preview.example.com",
     });
     expect(r.exit).toBe(1);
     expect(r.err).toContain("refusing to start");
@@ -1678,7 +1697,13 @@ describe("a refused start records an explicit failed state (fix-ocr9 #3)", () =>
     // 都要刷（healthcheck 的 60s 探测是失败期唯一的心跳来源）。
     const dir = await mkdtemp(join(tmpdir(), "openbot-tls-ocr22-6-"));
     await run([lib, "__status-set", dir, "health", '"failed"']);
-    await run([lib, "__status-set", dir, "healthReason", '"ACME_DNS is required"']);
+    await run([
+      lib,
+      "__status-set",
+      dir,
+      "healthReason",
+      '"ACME_DNS is required"',
+    ]);
     await run([lib, "__status-set", dir, "evaluatedAt", "1000"]);
     const before = Math.floor(Date.now() / 1000) - 1;
     const probe = await run([guard, "--healthcheck"], { OPENBOT_TLS_DIR: dir });
@@ -1744,7 +1769,7 @@ describe("stale-lock recycling TOCTOU (fix-ocr8 #2: a live lock is never recycle
     });
     // Either the recycler enters the window (fixed) or it finishes without
     // one (pre-fix: it rmdir'd the corpse and acquired immediately).
-    const outcome = await Promise.race([
+    const _outcome = await Promise.race([
       (async () => {
         while (!existsSync(marker)) await Bun.sleep(10);
         return "marker" as const;
@@ -2001,8 +2026,12 @@ describe("deployment wiring pins (fix-ocr20 #8/#9/#10)", () => {
     expect(docs).toContain("2.24");
     const drillSource = readFileSync(drill, "utf8");
     // The drill's shebang is /bin/sh; its usage line must not teach `bash`.
-    expect(drillSource).toContain("Usage: sh docker/compose/certs/drill-renewal-failure.sh");
-    expect(drillSource).not.toContain("Usage: bash docker/compose/certs/drill-renewal-failure.sh");
+    expect(drillSource).toContain(
+      "Usage: sh docker/compose/certs/drill-renewal-failure.sh",
+    );
+    expect(drillSource).not.toContain(
+      "Usage: bash docker/compose/certs/drill-renewal-failure.sh",
+    );
   });
 });
 
@@ -2083,7 +2112,10 @@ describe("run_renewal honors ACME_BIN (fix-ocr19 #6)", () => {
     // A shim that logs its invocation and exits 0 (not due: no cert change).
     const shimLog = join(dir, "cron-invocations.log");
     const shim = join(dir, "fake-cron.sh");
-    await Bun.write(shim, `#!/bin/sh\nprintf 'cron\\n' >> '${shimLog}'\nexit 0\n`);
+    await Bun.write(
+      shim,
+      `#!/bin/sh\nprintf 'cron\\n' >> '${shimLog}'\nexit 0\n`,
+    );
     await chmod(shim, 0o755);
     const r = await run([lib, "__run-renewal", dir], { ACME_BIN: shim });
     expect(r.exit).toBe(0);
@@ -2111,9 +2143,14 @@ describe("the renewal INTERVAL rides tls_numeric (fix-ocr19 #7)", () => {
   test("a non-numeric INTERVAL warns and takes the default, not the 600s floor", async () => {
     const dir = await mkdtemp(join(tmpdir(), "openbot-tls-ocr19-interval-"));
     const acmeHome = join(dir, "acme-home");
-    await mkdir(join(acmeHome, "_.preview.example.com_ecc"), { recursive: true });
+    await mkdir(join(acmeHome, "_.preview.example.com_ecc"), {
+      recursive: true,
+    });
     const shim = join(dir, "fake-acme.sh");
-    await Bun.write(shim, "#!/bin/sh\ncase \"$*\" in *--install-cert*) exit 0 ;; esac\nexit 0\n");
+    await Bun.write(
+      shim,
+      '#!/bin/sh\ncase "$*" in *--install-cert*) exit 0 ;; esac\nexit 0\n',
+    );
     await chmod(shim, 0o755);
     const { stderr, kill } = await runEntrypointUntilRenewalLoop(dir, shim, {
       OPENBOT_TLS_RENEW_INTERVAL_SECONDS: "864OO",

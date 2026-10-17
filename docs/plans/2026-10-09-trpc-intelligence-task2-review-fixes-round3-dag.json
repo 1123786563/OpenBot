@@ -1,8 +1,6 @@
 {
   "root": "R2-1C",
-  "source_issues": [
-    "Independent review finding R2-1B-L01 (Low)"
-  ],
+  "source_issues": ["Independent review finding R2-1B-L01 (Low)"],
   "source_of_requirements": "Approved R2-1B plan and independent review; no GitHub Issue was provided.",
   "base": "fbdecc29cd786952c4b496abc68384b31a320b17",
   "worktree": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot",
@@ -10,9 +8,7 @@
   "nodes": [
     {
       "id": "R2-1C",
-      "source_issues": [
-        "R2-1B-L01"
-      ],
+      "source_issues": ["R2-1B-L01"],
       "acceptance": [
         "A focused test proves every sequential fallback cleanup action runs even if an earlier action rejects, with errors surfaced after all attempts.",
         "afterAll independently attempts owner restoration, direct grant revocation, and each child-before-parent fixture deletion.",
@@ -37,9 +33,7 @@
       "status": "verified"
     }
   ],
-  "topological_order": [
-    "R2-1C"
-  ],
+  "topological_order": ["R2-1C"],
   "isolated_checks": {
     "unique_node_ids": true,
     "dependencies_resolve": true,

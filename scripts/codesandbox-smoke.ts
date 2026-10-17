@@ -9,14 +9,19 @@
  * ships no dotenv dependency, and the root scripts already standardize on --env-file.
  */
 const token = process.env.SANDBOX_TOKEN?.trim();
-const baseUrl = process.env.AGENT_SANDBOX_URL?.trim() || "http://127.0.0.1:4300";
+const baseUrl =
+  process.env.AGENT_SANDBOX_URL?.trim() || "http://127.0.0.1:4300";
 const modelId = process.env.BOT_MODEL?.trim() || "GLM-5.3";
 if (!token) {
-  console.error("SANDBOX_TOKEN is empty: set it in .env before running this suite.");
+  console.error(
+    "SANDBOX_TOKEN is empty: set it in .env before running this suite.",
+  );
   process.exit(1);
 }
 
-const { createSandboxClient } = await import("../server/src/codesandbox/client");
+const { createSandboxClient } = await import(
+  "../server/src/codesandbox/client"
+);
 const client = createSandboxClient({ baseUrl, token, botId: "smoke-bot" });
 
 const sessionId = await client.createSession("smoke");
@@ -27,12 +32,16 @@ const run = await client.sendMessage(
 );
 const files = await client.listFiles();
 if (!files.includes("answer.txt")) {
-  console.error(`FAIL: answer.txt was not created. Workspace: ${files.join(", ")}`);
+  console.error(
+    `FAIL: answer.txt was not created. Workspace: ${files.join(", ")}`,
+  );
   process.exit(1);
 }
 const answer = await client.readFile("answer.txt", 1024);
 if (answer.content.trim() !== "1024") {
-  console.error(`FAIL: answer.txt holds ${JSON.stringify(answer.content)}, expected 1024`);
+  console.error(
+    `FAIL: answer.txt holds ${JSON.stringify(answer.content)}, expected 1024`,
+  );
   process.exit(1);
 }
 if (!run.text) {

@@ -9,12 +9,37 @@ type Dependencies = {
   runTokenCeiling: number;
 };
 type CallOptions = Parameters<LanguageModelV3["doGenerate"]>[0];
-
-const object = (value: unknown): value is Record<string, any> =>
-  !!value && typeof value === "object" && !Array.isArray(value);
-const fail = (): never => {
-  throw new Error("UNSUPPORTED_OR_INVALID_MODEL_GATEWAY_RESPONSE");
+// The concrete v3 part unions are not exported through "ai", so they are
+// projected off the call-option and result types of LanguageModelV3 itself.
+type PromptMessage = CallOptions["prompt"][number];
+type AssistantPart = Extract<
+  PromptMessage,
+  { role: "assistant" }
+>["content"][number];
+type ToolResultPart = Extract<
+  PromptMessage,
+  { role: "tool" }
+>["content"][number];
+type GenerateResult = Awaited<ReturnType<LanguageModelV3["doGenerate"]>>;
+type StreamResult = Awaited<ReturnType<LanguageModelV3["doStream"]>>;
+type StreamPart =
+  StreamResult["stream"] extends ReadableStream<infer Part> ? Part : never;
+type FinishReason = GenerateResult["finishReason"];
+// usage() validates the raw totals as safe non-negative integers, so its own
+// totals are provably present even though the SDK's usage type allows undefined.
+type Usage = GenerateResult["usage"] & {
+  inputTokens: { total: number };
+  outputTokens: { total: number };
 };
+
+const object = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+// A function declaration, not a `const` arrow: only the declaration form
+// lets the compiler treat `fail()` as never-returning for control-flow
+// narrowing, which the guards below rely on to narrow validated wire data.
+function fail(): never {
+  throw new Error("UNSUPPORTED_OR_INVALID_MODEL_GATEWAY_RESPONSE");
+}
 const validGatewayName = (value: unknown): value is string =>
   typeof value === "string" &&
   value.length > 0 &&
@@ -81,13 +106,15 @@ function requestMessages(prompt: CallOptions["prompt"]) {
     if (message.role === "assistant") {
       const text: string[] = [];
       const tool_calls: unknown[] = [];
-      for (const part of message.content as any[]) {
+      for (const part of message.content as AssistantPart[]) {
         if (part.providerOptions) fail();
         if (part.type === "text") text.push(part.text);
         else if (
           part.type === "tool-call" &&
           !part.providerExecuted &&
-          !(part as any).dynamic
+          // Dynamic (runtime-defined, e.g. MCP) tool calls stay unsupported;
+          // the prompt-side part type does not carry the flag, but the wire does.
+          !(part as { dynamic?: unknown }).dynamic
         ) {
           if (
             !validGatewayId(part.toolCallId) ||
@@ -118,7 +145,7 @@ function requestMessages(prompt: CallOptions["prompt"]) {
       // each carry their own toolCallId; the OpenAI chat wire format wants
       // one tool message per tool_call_id (R5-H1).
       const entries: unknown[] = [];
-      for (const part of message.content as any[]) {
+      for (const part of message.content as ToolResultPart[]) {
         if (
           part.type !== "tool-result" ||
           part.providerOptions ||
@@ -172,8 +199,8 @@ function callPayload(
       !validGatewayName(tool.name)
     )
       fail();
-    const description = (tool as any).description;
-    const parameters = (tool as any).inputSchema;
+    const description = tool.description;
+    const parameters = tool.inputSchema;
     if (
       (description !== undefined && typeof description !== "string") ||
       !object(parameters)
@@ -250,17 +277,23 @@ async function invoke(
   );
 }
 
-function usage(value: unknown) {
+function usage(value: unknown): Usage {
+  if (!object(value)) fail();
+  const raw = value as GenerateResult["usage"]["raw"];
+  const usageValue = value as {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
   if (
-    !object(value) ||
-    !Number.isSafeInteger(value.prompt_tokens) ||
-    value.prompt_tokens < 0 ||
-    !Number.isSafeInteger(value.completion_tokens) ||
-    value.completion_tokens < 0 ||
-    value.total_tokens !== value.prompt_tokens + value.completion_tokens
+    !Number.isSafeInteger(usageValue.prompt_tokens) ||
+    usageValue.prompt_tokens < 0 ||
+    !Number.isSafeInteger(usageValue.completion_tokens) ||
+    usageValue.completion_tokens < 0 ||
+    usageValue.total_tokens !==
+      usageValue.prompt_tokens + usageValue.completion_tokens
   )
     fail();
-  const usageValue = value as Record<string, any>;
   return {
     inputTokens: {
       total: usageValue.prompt_tokens,
@@ -273,20 +306,23 @@ function usage(value: unknown) {
       text: usageValue.completion_tokens,
       reasoning: undefined,
     },
-    raw: usageValue,
+    raw,
   };
 }
 
-// `Record<string, any>` / `as any[]` at these boundaries: @ai-sdk/provider
-// does not export the concrete prompt part unions for LanguageModelV3, so
-// every field is narrowed and fail()-closed manually instead.
-function mappedContent(message: Record<string, any>) {
+// Typed record views at these boundaries: @ai-sdk/provider does not export
+// the concrete prompt part unions for LanguageModelV3 through "ai", so every
+// field is projected off the SDK's own call/result types, narrowed, and
+// fail()-closed manually instead.
+function mappedContent(
+  message: Record<string, unknown>,
+): GenerateResult["content"] {
   if (
     message.role !== "assistant" ||
     !(typeof message.content === "string" || message.content === null)
   )
     fail();
-  const content: any[] = [];
+  const content: GenerateResult["content"] = [];
   if (message.content) content.push({ type: "text", text: message.content });
   if (message.tool_calls !== undefined) {
     if (!Array.isArray(message.tool_calls)) fail();
@@ -340,19 +376,19 @@ async function gatewayHttpError(response: Response): Promise<Error> {
   );
 }
 
-const UNIFIED_FINISH_REASONS: Record<string, string> = {
+const UNIFIED_FINISH_REASONS: Record<string, FinishReason["unified"]> = {
   length: "length",
   tool_calls: "tool-calls",
   content_filter: "content-filter",
   stop: "stop",
 };
 
-function finishReason(reason: unknown) {
+function finishReason(reason: unknown): FinishReason {
   if (typeof reason !== "string" || !(reason in UNIFIED_FINISH_REASONS)) fail();
   return {
-    unified: UNIFIED_FINISH_REASONS[reason as string],
+    unified: UNIFIED_FINISH_REASONS[reason],
     raw: reason,
-  } as const;
+  };
 }
 
 export function createAiSdkV3GatewayAdapter(
@@ -382,7 +418,13 @@ export function createAiSdkV3GatewayAdapter(
         !object(body.choices[0].message)
       )
         fail();
-      const bodyValue = body as Record<string, any>;
+      const bodyValue = body as {
+        choices: [{ message: Record<string, unknown>; finish_reason: unknown }];
+        usage: unknown;
+        id?: unknown;
+        created?: unknown;
+        model?: unknown;
+      };
       const choice = bodyValue.choices[0];
       const mapped = mappedContent(choice.message);
       const reason = finishReason(choice.finish_reason);
@@ -403,7 +445,7 @@ export function createAiSdkV3GatewayAdapter(
             : {}),
         },
         warnings: [],
-      } as any;
+      };
     },
     async doStream(options) {
       const response = await invoke(options, dependencies, true, ledger);
@@ -411,7 +453,7 @@ export function createAiSdkV3GatewayAdapter(
       // A 2xx with no body is protocol damage, not an HTTP error: never
       // surface it as MODEL_GATEWAY_HTTP_200 (OCR R10).
       if (!response.body) fail();
-      const reader = response.body!.getReader();
+      const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8", { fatal: true });
       let buffer = "";
       let id = "gateway-response";
@@ -431,7 +473,9 @@ export function createAiSdkV3GatewayAdapter(
         }
       >();
       const observedToolIds = new Set<string>();
-      let controllerRef: ReadableStreamDefaultController<any> | undefined;
+      let controllerRef:
+        | ReadableStreamDefaultController<StreamPart>
+        | undefined;
       const abortReason = () =>
         options.abortSignal?.reason ?? new Error("MODEL_GATEWAY_ABORTED");
       const onAbort = () => {
@@ -441,7 +485,7 @@ export function createAiSdkV3GatewayAdapter(
           controllerRef?.error(reason);
         } catch {}
       };
-      const stream = new ReadableStream<any>({
+      const stream = new ReadableStream<StreamPart>({
         start(controller) {
           controllerRef = controller;
           controller.enqueue({ type: "stream-start", warnings: [] });
@@ -514,7 +558,11 @@ export function createAiSdkV3GatewayAdapter(
                     !Array.isArray(chunk.choices)
                   )
                     fail();
-                  const chunkValue = chunk as Record<string, any>;
+                  const chunkValue = chunk as {
+                    id?: unknown;
+                    usage?: unknown;
+                    choices: unknown[];
+                  };
                   if (
                     terminalReason &&
                     terminalUsage &&
@@ -555,14 +603,19 @@ export function createAiSdkV3GatewayAdapter(
                     terminalUsage = settledUsage;
                   }
                   for (const choice of chunkValue.choices) {
+                    if (!object(choice)) fail();
+                    const choiceValue = choice as {
+                      index: number;
+                      delta: Record<string, unknown>;
+                      finish_reason?: unknown;
+                    };
                     if (
-                      !object(choice) ||
-                      !Number.isSafeInteger(choice.index) ||
-                      choice.index < 0 ||
-                      !object(choice.delta)
+                      !Number.isSafeInteger(choiceValue.index) ||
+                      choiceValue.index < 0 ||
+                      !object(choiceValue.delta)
                     )
                       fail();
-                    let state = choiceStates.get(choice.index);
+                    let state = choiceStates.get(choiceValue.index);
                     if (!state) {
                       state = {
                         textId: `${id}-text-${choice.index}`,
@@ -570,16 +623,16 @@ export function createAiSdkV3GatewayAdapter(
                         textEnded: false,
                         tools: new Map(),
                       };
-                      choiceStates.set(choice.index, state);
+                      choiceStates.set(choiceValue.index, state);
                     }
                     if (state.finishReason) fail();
                     if (
-                      choice.delta.role !== undefined &&
-                      choice.delta.role !== "assistant"
+                      choiceValue.delta.role !== undefined &&
+                      choiceValue.delta.role !== "assistant"
                     )
                       fail();
-                    if (choice.delta.content !== undefined) {
-                      if (typeof choice.delta.content !== "string") fail();
+                    if (choiceValue.delta.content !== undefined) {
+                      if (typeof choiceValue.delta.content !== "string") fail();
                       if (!state.textStarted) {
                         state.textStarted = true;
                         controller.enqueue({
@@ -590,43 +643,51 @@ export function createAiSdkV3GatewayAdapter(
                       controller.enqueue({
                         type: "text-delta",
                         id: state.textId,
-                        delta: choice.delta.content,
+                        delta: choiceValue.delta.content,
                       });
                     }
-                    if (choice.delta.tool_calls !== undefined) {
-                      if (!Array.isArray(choice.delta.tool_calls)) fail();
-                      for (const call of choice.delta.tool_calls) {
+                    if (choiceValue.delta.tool_calls !== undefined) {
+                      if (!Array.isArray(choiceValue.delta.tool_calls)) fail();
+                      for (const call of choiceValue.delta.tool_calls) {
+                        if (!object(call)) fail();
+                        const callValue = call as {
+                          index: number;
+                          id?: unknown;
+                          function: Record<string, unknown>;
+                        };
                         if (
-                          !object(call) ||
-                          !Number.isSafeInteger(call.index) ||
-                          !object(call.function ?? {})
+                          !Number.isSafeInteger(callValue.index) ||
+                          !object(callValue.function ?? {})
                         )
                           fail();
-                        let tool = state.tools.get(call.index);
+                        let tool = state.tools.get(callValue.index);
                         if (!tool) {
                           tool = { id: "", name: "", arguments: "" };
-                          state.tools.set(call.index, tool);
+                          state.tools.set(callValue.index, tool);
                         }
-                        if (call.id !== undefined) {
-                          if (typeof call.id !== "string") fail();
-                          tool.id += call.id;
+                        if (callValue.id !== undefined) {
+                          if (typeof callValue.id !== "string") fail();
+                          tool.id += callValue.id;
                         }
-                        if (call.function.name !== undefined) {
-                          if (typeof call.function.name !== "string") fail();
-                          tool.name += call.function.name;
-                        }
-                        if (call.function.arguments !== undefined) {
-                          if (typeof call.function.arguments !== "string")
+                        if (callValue.function.name !== undefined) {
+                          if (typeof callValue.function.name !== "string")
                             fail();
-                          tool.arguments += call.function.arguments;
+                          tool.name += callValue.function.name;
+                        }
+                        if (callValue.function.arguments !== undefined) {
+                          if (typeof callValue.function.arguments !== "string")
+                            fail();
+                          tool.arguments += callValue.function.arguments;
                         }
                       }
                     }
                     if (
-                      choice.finish_reason !== undefined &&
-                      choice.finish_reason !== null
+                      choiceValue.finish_reason !== undefined &&
+                      choiceValue.finish_reason !== null
                     ) {
-                      state.finishReason = finishReason(choice.finish_reason);
+                      state.finishReason = finishReason(
+                        choiceValue.finish_reason,
+                      );
                       if (
                         terminalReason &&
                         JSON.stringify(terminalReason) !==
@@ -718,7 +779,7 @@ export function createAiSdkV3GatewayAdapter(
       return {
         stream,
         response: { headers: Object.fromEntries(response.headers.entries()) },
-      } as any;
+      };
     },
   };
 }

@@ -83,8 +83,18 @@ const USAGE: BillingUsage = {
   amountCents: 19900,
   totalAmountCents: 19900,
   charges: [
-    { metricCode: "llm_tokens", metricName: "模型 tokens", units: "1500.0", amountCents: 19900 },
-    { metricCode: "computer_minutes", metricName: "云电脑时长", units: "42", amountCents: 0 },
+    {
+      metricCode: "llm_tokens",
+      metricName: "模型 tokens",
+      units: "1500.0",
+      amountCents: 19900,
+    },
+    {
+      metricCode: "computer_minutes",
+      metricName: "云电脑时长",
+      units: "42",
+      amountCents: 0,
+    },
   ],
 };
 
@@ -117,7 +127,7 @@ function order(over: Partial<PaymentOrderRecord> = {}): PaymentOrderRecord {
     paidAt: new Date("2026-10-01T00:05:00.000Z"),
     terminalAt: new Date("2026-10-01T00:05:00.000Z"),
     createdBy: "user-admin",
-        ownerPayerRef: { kind: "personal" as const, id: "user-admin" },
+    ownerPayerRef: { kind: "personal" as const, id: "user-admin" },
     createdAt: new Date("2026-10-01T00:01:00.000Z"),
     version: 1,
     ...over,
@@ -239,7 +249,12 @@ describe("plan usage", () => {
       service: fakeService(ACTIVE, {
         ...USAGE,
         charges: [
-          { metricCode: "llm_tokens", metricName: "t", units: "9999", amountCents: 1 },
+          {
+            metricCode: "llm_tokens",
+            metricName: "t",
+            units: "9999",
+            amountCents: 1,
+          },
         ],
       }),
       quotas: new Map([["pro", QUOTAS]]),
@@ -440,13 +455,17 @@ describe("invoices", () => {
     expect(page.invoices.map((invoice) => invoice.invoiceId)).toEqual([
       "po-member",
     ]);
-    expect(await statements.invoice("po-member", { actorPayerRef: { kind: "personal" as const, id: MEMBER.id } })).toMatchObject(
-      {
-        invoiceId: "po-member",
-      },
-    );
     expect(
-      await statements.invoice("po-other", { actorPayerRef: { kind: "personal" as const, id: MEMBER.id } }),
+      await statements.invoice("po-member", {
+        actorPayerRef: { kind: "personal" as const, id: MEMBER.id },
+      }),
+    ).toMatchObject({
+      invoiceId: "po-member",
+    });
+    expect(
+      await statements.invoice("po-other", {
+        actorPayerRef: { kind: "personal" as const, id: MEMBER.id },
+      }),
     ).toBeNull();
   });
 });
@@ -460,7 +479,8 @@ describe("statement routes", () => {
       context,
       next,
     ) => {
-      if (!actor) return context.json({ error: "Authentication required." }, 401);
+      if (!actor)
+        return context.json({ error: "Authentication required." }, 401);
       context.set("actor", actor);
       await next();
     };
@@ -496,7 +516,10 @@ describe("statement routes", () => {
       "/api/billing/plan-usage",
     );
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { active: boolean; quotas: unknown[] };
+    const body = (await response.json()) as {
+      active: boolean;
+      quotas: unknown[];
+    };
     expect(body.active).toBe(true);
     expect(body.quotas).toHaveLength(2);
   });
@@ -564,9 +587,9 @@ describe("statement routes", () => {
     const list = await app(statements, MEMBER).request("/api/billing/invoices");
     expect(list.status).toBe(200);
     expect(
-      ((await list.json()) as { invoices: Array<{ invoiceId: string }> }).invoices.map(
-        (invoice) => invoice.invoiceId,
-      ),
+      (
+        (await list.json()) as { invoices: Array<{ invoiceId: string }> }
+      ).invoices.map((invoice) => invoice.invoiceId),
     ).toEqual(["po-member"]);
 
     const own = await app(statements, MEMBER).request(

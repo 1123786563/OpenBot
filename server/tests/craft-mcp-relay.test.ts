@@ -422,7 +422,8 @@ describe("relay inside the assembled craft tree", () => {
           skillsHash: "x",
           mcpConfigHash: "y",
           libraryFiles: new Map(),
-          webTemplateFiles: new Map(),        }),
+          webTemplateFiles: new Map(),
+        }),
       },
     });
     const response = await app.request("/mcp/42", {

@@ -136,11 +136,12 @@ async function withoutLinkCodes(
       try {
         await deps.identity.discard(code);
       } catch (error) {
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "opentag-link-code-discard-error",
             errorType: error instanceof Error ? error.name : "UnknownError",
-          }),
+          },
+          "opentag-link-code-discard-error",
         );
       }
     }

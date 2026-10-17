@@ -308,9 +308,9 @@ export async function processDocument(
     contentHash: createHash("sha256").update(chunk.content).digest("hex"),
   }));
   // pre/next 链表（相邻一跳扩展依赖）。
-  for (let i = 0; i < rows.length; i += 1) {
-    if (i > 0) rows[i]!.preChunkId = rows[i - 1]!.id;
-    if (i < rows.length - 1) rows[i]!.nextChunkId = rows[i + 1]!.id;
+  for (const [i, row] of rows.entries()) {
+    if (i > 0) row.preChunkId = rows[i - 1]?.id;
+    if (i < rows.length - 1) row.nextChunkId = rows[i + 1]?.id;
   }
   await db.insert(chunks).values(rows);
   await db.insert(chunkRevisions).values(
@@ -351,19 +351,26 @@ export async function processDocument(
   }
 
   // ④ Qdrant upsert（40/批 × 5 并发，wait=true）+ 节流进度回写。
-  const points: ChunkPointInput[] = rows.map((row, i) => ({
-    chunkId: row.id,
-    tenantId: row.tenantId,
-    kbId: row.knowledgeBaseId,
-    docId: row.knowledgeId,
-    chunkIndex: row.chunkIndex,
-    chunkType: row.chunkType,
-    sourceType: "chunk",
-    enabled: true,
-    content: row.content,
-    contextHeader: row.contextHeader,
-    vector: vectors[i]!,
-  }));
+  const points: ChunkPointInput[] = rows.map((row, i) => {
+    const vector = vectors[i];
+    if (vector === undefined) {
+      // Unreachable: the length invariant above throws before this map runs.
+      throw new Error(`embedder returned no vector for chunk ${i}`);
+    }
+    return {
+      chunkId: row.id,
+      tenantId: row.tenantId,
+      kbId: row.knowledgeBaseId,
+      docId: row.knowledgeId,
+      chunkIndex: row.chunkIndex,
+      chunkType: row.chunkType,
+      sourceType: "chunk" as const,
+      enabled: true,
+      content: row.content,
+      contextHeader: row.contextHeader,
+      vector,
+    };
+  });
   let lastProgressAt = 0;
   try {
     await indexWriter.upsertChunks(points, (progress) => {

@@ -78,12 +78,7 @@
   "dependency_ruling": {
     "report": ".superpowers/sdd/2026-10-12-mastra-t2-production-cutover/reports/headless-history-dependency-ruling-evidence.md",
     "sha256": "044ecb1eac2308321a8d955cb48ff161311702cb918337609f711eb1a5337312",
-    "ratified_order": [
-      "T2-SSE",
-      "T2-GOV",
-      "T3-CORE",
-      "T2-HEADLESS"
-    ],
+    "ratified_order": ["T2-SSE", "T2-GOV", "T3-CORE", "T2-HEADLESS"],
     "database_gates": "remain unverified; aggregate T2/T3 acceptance preserved"
   },
   "sse_implementation": {

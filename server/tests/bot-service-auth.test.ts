@@ -42,9 +42,7 @@ const prefix = `b5-235-${randomUUID()}`;
 afterAll(async () => {
   await database
     .delete(credentials)
-    .where(
-      like(credentials.keyId, `${prefix}%`),
-    );
+    .where(like(credentials.keyId, `${prefix}%`));
   await database.$client.close();
 });
 
@@ -222,7 +220,9 @@ test("repeated failures rate limit that identity, and the window heals", async (
   );
   // A different bot presenting bad secrets is its own bucket: not poisoned by its neighbour.
   const other = await credentialedBot("limited-other");
-  expect(await authenticated(other.secret)).toMatchObject({ botId: other.botId });
+  expect(await authenticated(other.secret)).toMatchObject({
+    botId: other.botId,
+  });
   // Time passes, the window drains, the honest secret works again.
   now += 61_000;
   expect(await authenticated(secret)).toMatchObject({ botId });

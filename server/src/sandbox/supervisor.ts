@@ -1,7 +1,4 @@
-import type {
-  ContainerRuntimeView,
-  SandboxInstanceStateStore,
-} from "./state";
+import type { ContainerRuntimeView, SandboxInstanceStateStore } from "./state";
 
 /**
  * The sandbox supervisor: four verbs, nothing else.
@@ -132,7 +129,10 @@ export function createSandboxSupervisor(
     switch (live.status) {
       case "ready":
         return live.address
-          ? { kind: "ready", address: { address: live.address, ports: live.ports } }
+          ? {
+              kind: "ready",
+              address: { address: live.address, ports: live.ports },
+            }
           : { kind: "provisioning" };
       case "provisioning":
         return { kind: "provisioning" };
@@ -145,7 +145,7 @@ export function createSandboxSupervisor(
 
   const reap: SandboxSupervisor["reap"] = async (botId) => {
     const live = await state.liveOf(botId);
-    if (!live || live.status !== "ready") return; // Nothing awake is nothing to sleep.
+    if (live?.status !== "ready") return; // Nothing awake is nothing to sleep.
     await state.transition(live.id, "ready", "sleeping");
   };
 
@@ -162,22 +162,26 @@ export function createSandboxSupervisor(
     }
   };
 
-  const reapIdleSupervision: SandboxSupervisor["reapIdleSupervision"] = async (input) => {
+  const reapIdleSupervision: SandboxSupervisor["reapIdleSupervision"] = async (
+    input,
+  ) => {
     const lived = await state.listLive();
     const slept: string[] = [];
     let fresh = 0;
     for (const row of lived) {
       if (row.status !== "ready") continue; // Sleeping is done; provisioning is not ours to judge.
-      const age = row.lastHeartbeatAt === null
-        ? Number.POSITIVE_INFINITY // Never heartbeated: provision died mid-flight, asleep it goes.
-        : input.nowMs - row.lastHeartbeatAt.getTime();
+      const age =
+        row.lastHeartbeatAt === null
+          ? Number.POSITIVE_INFINITY // Never heartbeated: provision died mid-flight, asleep it goes.
+          : input.nowMs - row.lastHeartbeatAt.getTime();
       if (age <= input.idleMs) {
         fresh += 1;
         continue;
       }
       // CAS-quiet: if the row moved first (a provision woke it, a stop tore it down), the
       // transition answers false and the sweep simply disagrees with a newer truth.
-      if (await state.transition(row.id, "ready", "sleeping")) slept.push(row.botId);
+      if (await state.transition(row.id, "ready", "sleeping"))
+        slept.push(row.botId);
     }
     return { slept, fresh };
   };

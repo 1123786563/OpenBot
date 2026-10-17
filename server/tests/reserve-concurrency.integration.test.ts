@@ -369,13 +369,19 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM credit_grants WHERE external_customer_id LIKE ${derived}`,
   );
-  await database.delete(payerAccounts).where(like(payerAccounts.payerId, `${prefix}%`));
+  await database
+    .delete(payerAccounts)
+    .where(like(payerAccounts.payerId, `${prefix}%`));
   await database.execute(
     sql`DELETE FROM billing_customers WHERE external_id LIKE ${derived}`,
   );
   // Access, bot and gateway fixtures key on raw ids, so the raw prefix is correct here.
-  await database.delete(accessGrants).where(like(accessGrants.grantId, `${prefix}%`));
-  await database.delete(botServices).where(like(botServices.botId, `${prefix}%`));
+  await database
+    .delete(accessGrants)
+    .where(like(accessGrants.grantId, `${prefix}%`));
+  await database
+    .delete(botServices)
+    .where(like(botServices.botId, `${prefix}%`));
   await database
     .delete(gatewayModelOpenScopes)
     .where(like(gatewayModelOpenScopes.provider, `${prefix}%`));
@@ -414,11 +420,15 @@ test("two concurrent limit-8 reserves against balance 10: one wins, one sees 2, 
   ]);
   const outcomes = [left, right];
   const winners = outcomes.filter(
-    (outcome): outcome is Extract<CreditReserveOutcome, { status: "reserved" }> =>
+    (
+      outcome,
+    ): outcome is Extract<CreditReserveOutcome, { status: "reserved" }> =>
       outcome.status === "reserved",
   );
   const losers = outcomes.filter(
-    (outcome): outcome is Extract<CreditReserveOutcome, { status: "refused" }> =>
+    (
+      outcome,
+    ): outcome is Extract<CreditReserveOutcome, { status: "refused" }> =>
       outcome.status === "refused",
   );
 
@@ -433,7 +443,9 @@ test("two concurrent limit-8 reserves against balance 10: one wins, one sees 2, 
   expect(rows[0].status).toBe("reserved");
   expect(rows[0].maximum).toBe(800);
   expect(rows[0].id).toBe(winners[0].reservationId);
-  expect(await fixtureCreditWriter.availableBalance(world.customerKey)).toBe(200);
+  expect(await fixtureCreditWriter.availableBalance(world.customerKey)).toBe(
+    200,
+  );
 });
 
 // ── AC1/AC4: the same race with the interleaving nailed down deterministically ──────
@@ -473,7 +485,9 @@ test("deterministic interleaving: T2 evaluates only after T1's hold commits", as
     expect(rows).toHaveLength(1);
     if (t1.status !== "reserved") return;
     expect(rows[0].id).toBe(t1.reservationId);
-    expect(await fixtureCreditWriter.availableBalance(world.customerKey)).toBe(200);
+    expect(await fixtureCreditWriter.availableBalance(world.customerKey)).toBe(
+      200,
+    );
   });
 });
 
@@ -509,7 +523,9 @@ test("deterministic cross-key race: bot B's key waits on bot A's hold of the sam
     expect(rows).toHaveLength(1);
     if (t1.status !== "reserved") return;
     expect(rows[0].id).toBe(t1.reservationId);
-    expect(await fixtureCreditWriter.availableBalance(world.customerKey)).toBe(200);
+    expect(await fixtureCreditWriter.availableBalance(world.customerKey)).toBe(
+      200,
+    );
   });
 });
 
@@ -520,15 +536,21 @@ test("natural cross-key race: two bots, one account, one winner", async () => {
     service.reserve(requestLike(world, 1, "d2", 800)),
   ]);
   const outcomes = [left, right];
-  expect(outcomes.filter((outcome) => outcome.status === "reserved")).toHaveLength(1);
+  expect(
+    outcomes.filter((outcome) => outcome.status === "reserved"),
+  ).toHaveLength(1);
   const losers = outcomes.filter(
-    (outcome): outcome is Extract<CreditReserveOutcome, { status: "refused" }> =>
+    (
+      outcome,
+    ): outcome is Extract<CreditReserveOutcome, { status: "refused" }> =>
       outcome.status === "refused",
   );
   expect(losers[0].reasonCode).toBe("insufficient_credits");
   expect(losers[0].detail).toMatchObject({ availableCredits: 2 });
   expect(await reservationsOf(world.customerKey)).toHaveLength(1);
-  expect(await fixtureCreditWriter.availableBalance(world.customerKey)).toBe(200);
+  expect(await fixtureCreditWriter.availableBalance(world.customerKey)).toBe(
+    200,
+  );
 });
 
 // ── AC3: the failed request writes nothing and answers the standing balance ─────────
@@ -573,7 +595,12 @@ test("the losing reserve leaves zero writes and never occupied capacity", async 
     const rows = await reservationsOf(world.customerKey);
     expect(rows).toHaveLength(1);
     if (t1.status !== "reserved") return;
-    await fixtureCreditWriter.releaseReservation(t1.reservationId, "b5-254 test release");
-    expect(await fixtureCreditWriter.availableBalance(world.customerKey)).toBe(1000);
+    await fixtureCreditWriter.releaseReservation(
+      t1.reservationId,
+      "b5-254 test release",
+    );
+    expect(await fixtureCreditWriter.availableBalance(world.customerKey)).toBe(
+      1000,
+    );
   });
 });

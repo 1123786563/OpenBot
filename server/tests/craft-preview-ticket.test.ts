@@ -65,10 +65,7 @@ function fakeStore(ownerUserId: string | null = USER_ID) {
   return { store, state };
 }
 
-function ticketsWith(
-  store: CraftStore,
-  clock: ReturnType<typeof fakeClock>,
-) {
+function ticketsWith(store: CraftStore, clock: ReturnType<typeof fakeClock>) {
   return createPreviewTickets({ store, now: clock.now });
 }
 
@@ -348,9 +345,11 @@ describe("defaultPreviewOrigin: PORT/SERVER_PORT semantics (serverPort convergen
     expect(defaultPreviewOrigin({ SERVER_PORT: "3002" })).toEqual({
       origin: "http://127.0.0.1:3002",
     });
-    expect(defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3001" })).toEqual({
-      origin: "http://127.0.0.1:3001",
-    });
+    expect(defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3001" })).toEqual(
+      {
+        origin: "http://127.0.0.1:3001",
+      },
+    );
     // Unset everywhere: the documented D5 default port.
     expect(defaultPreviewOrigin({})).toEqual({
       origin: "http://127.0.0.1:3001",
@@ -382,9 +381,11 @@ describe("defaultPreviewOrigin: PORT/SERVER_PORT semantics (serverPort convergen
   });
 
   test("disagreement refuses with a reason naming both, never a silent PORT preference", () => {
-    expect(defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3002" })).toEqual({
-      reason: expect.stringContaining("PORT"),
-    });
+    expect(defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3002" })).toEqual(
+      {
+        reason: expect.stringContaining("PORT"),
+      },
+    );
     const refused = defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3002" });
     expect("reason" in refused && refused.reason).toContain("SERVER_PORT");
   });

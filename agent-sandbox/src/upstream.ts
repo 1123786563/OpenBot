@@ -56,7 +56,8 @@ export function startOpencodeServe(options: UpstreamOptions): Upstream {
   const ready = (async () => {
     const deadline = Date.now() + (options.readyTimeoutMs ?? 20_000);
     for (;;) {
-      if (exitCode !== undefined) throw new Error("opencode serve exited before it was ready.");
+      if (exitCode !== undefined)
+        throw new Error("opencode serve exited before it was ready.");
       try {
         // A per-probe timeout: a fetch that never settles must not wedge the loop past the
         // deadline below.
@@ -68,7 +69,9 @@ export function startOpencodeServe(options: UpstreamOptions): Upstream {
         // Not listening yet; poll until the deadline.
       }
       if (Date.now() > deadline)
-        throw new Error("opencode serve did not answer its OpenAPI probe in time.");
+        throw new Error(
+          "opencode serve did not answer its OpenAPI probe in time.",
+        );
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
   })();

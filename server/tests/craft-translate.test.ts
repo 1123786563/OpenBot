@@ -60,9 +60,10 @@ function drain(
 }
 
 /** Dict-backed fetch_message stub recording every call (onyx _fetch_from). */
-function fetchFrom(
-  responses: Record<string, RawEvent | null>,
-): { fetch: FetchMessage; calls: string[] } {
+function fetchFrom(responses: Record<string, RawEvent | null>): {
+  fetch: FetchMessage;
+  calls: string[];
+} {
   const calls: string[] = [];
   const fetch: FetchMessage = (messageId) => {
     calls.push(messageId);
@@ -79,7 +80,13 @@ function deltaEvent(
 ): RawEvent {
   return {
     type: "message.part.delta",
-    properties: { sessionID, messageID: messageId, partID: partId, field: "text", delta },
+    properties: {
+      sessionID,
+      messageID: messageId,
+      partID: partId,
+      field: "text",
+      delta,
+    },
   };
 }
 
@@ -154,7 +161,10 @@ describe("translateOpencodeEvent — text deltas", () => {
       s,
     );
     expect(s.partTypes.get("p_reason")).toBe("reasoning");
-    const out = drain(deltaEvent("msg_assistant", "p_reason", "weighing options"), s);
+    const out = drain(
+      deltaEvent("msg_assistant", "p_reason", "weighing options"),
+      s,
+    );
     expect(out).toHaveLength(1);
     expect(isAgentThoughtChunk(out[0])).toBe(true);
   });
@@ -162,7 +172,9 @@ describe("translateOpencodeEvent — text deltas", () => {
   test("step-boundary and unknown-field deltas yield nothing", () => {
     const s = assistantState();
     s.partTypes.set("p_step", "step-start");
-    expect(drain(deltaEvent("msg_assistant", "p_step", "step boundary"), s)).toEqual([]);
+    expect(
+      drain(deltaEvent("msg_assistant", "p_step", "step boundary"), s),
+    ).toEqual([]);
     expect(
       drain(
         {
@@ -185,7 +197,12 @@ describe("translateOpencodeEvent — text deltas", () => {
     const msgUpdated = (id: string) => ({
       type: "message.updated",
       properties: {
-        info: { id, sessionID: SESS, role: "assistant", time: { completed: null } },
+        info: {
+          id,
+          sessionID: SESS,
+          role: "assistant",
+          time: { completed: null },
+        },
       },
     });
     drain(msgUpdated("msg_A"), s);
@@ -194,7 +211,12 @@ describe("translateOpencodeEvent — text deltas", () => {
     expect(s.assistantMessageIds.has("msg_B")).toBe(true);
 
     drain(
-      partUpdated({ id: "p_answer", messageID: "msg_B", type: "text", text: "" }),
+      partUpdated({
+        id: "p_answer",
+        messageID: "msg_B",
+        type: "text",
+        text: "",
+      }),
       s,
     );
     const out = drain(deltaEvent("msg_B", "p_answer", "Yuhong"), s);
@@ -224,7 +246,15 @@ describe("translateOpencodeEvent — role filtering and REST hydrate", () => {
     const s = state();
     s.assistantMessageIds.add("msg_assistant");
     expect(
-      drain(partUpdated({ id: "p_user", messageID: "msg_user", type: "text", text: "user echo" }), s),
+      drain(
+        partUpdated({
+          id: "p_user",
+          messageID: "msg_user",
+          type: "text",
+          text: "user echo",
+        }),
+        s,
+      ),
     ).toEqual([]);
   });
 
@@ -236,8 +266,12 @@ describe("translateOpencodeEvent — role filtering and REST hydrate", () => {
         parts: [{ id: "p1", type: "text" }],
       },
     });
-    const out1 = drain(deltaEvent("msg_new", "p1", "hi "), s, { fetchMessage: fetch });
-    const out2 = drain(deltaEvent("msg_new", "p1", "there"), s, { fetchMessage: fetch });
+    const out1 = drain(deltaEvent("msg_new", "p1", "hi "), s, {
+      fetchMessage: fetch,
+    });
+    const out2 = drain(deltaEvent("msg_new", "p1", "there"), s, {
+      fetchMessage: fetch,
+    });
     expect(out1).toHaveLength(1);
     expect(isAgentMessageChunk(out1[0])).toBe(true);
     expect(out2).toHaveLength(1);
@@ -252,8 +286,12 @@ describe("translateOpencodeEvent — role filtering and REST hydrate", () => {
     const { fetch, calls } = fetchFrom({
       msg_user: { info: { id: "msg_user", role: "user" }, parts: [] },
     });
-    expect(drain(deltaEvent("msg_user"), s, { fetchMessage: fetch })).toEqual([]);
-    expect(drain(deltaEvent("msg_user"), s, { fetchMessage: fetch })).toEqual([]);
+    expect(drain(deltaEvent("msg_user"), s, { fetchMessage: fetch })).toEqual(
+      [],
+    );
+    expect(drain(deltaEvent("msg_user"), s, { fetchMessage: fetch })).toEqual(
+      [],
+    );
     expect(s.assistantMessageIds.has("msg_user")).toBe(false);
     expect(s.userMessageIds.has("msg_user")).toBe(true);
     expect(calls).toEqual(["msg_user"]);
@@ -266,7 +304,9 @@ describe("translateOpencodeEvent — role filtering and REST hydrate", () => {
       ["msg_system", { info: { role: "system" }, parts: [] }],
     ] as const) {
       const s = state();
-      const { fetch, calls } = fetchFrom({ [messageId]: body as RawEvent | null });
+      const { fetch, calls } = fetchFrom({
+        [messageId]: body as RawEvent | null,
+      });
       drain(deltaEvent(messageId), s, { fetchMessage: fetch });
       drain(deltaEvent(messageId), s, { fetchMessage: fetch });
       expect(calls).toEqual([messageId]);
@@ -283,7 +323,9 @@ describe("translateOpencodeEvent — role filtering and REST hydrate", () => {
 
   test("events for an unrelated session are dropped", () => {
     const s = assistantState();
-    expect(drain(deltaEvent("msg_assistant", "p1", "hello", "ses_OTHER"), s)).toEqual([]);
+    expect(
+      drain(deltaEvent("msg_assistant", "p1", "hello", "ses_OTHER"), s),
+    ).toEqual([]);
     expect(s.localText.size).toBe(0);
   });
 });
@@ -301,7 +343,12 @@ describe("translateOpencodeEvent — turn terminators", () => {
         {
           type: "message.updated",
           properties: {
-            info: { sessionID: SESS, role: "assistant", time: { completed: 1779000000000 }, finish: "stop" },
+            info: {
+              sessionID: SESS,
+              role: "assistant",
+              time: { completed: 1779000000000 },
+              finish: "stop",
+            },
           },
         },
         s,
@@ -311,7 +358,13 @@ describe("translateOpencodeEvent — turn terminators", () => {
       drain(
         {
           type: "message.updated",
-          properties: { info: { sessionID: SESS, role: "assistant", time: { completed: null } } },
+          properties: {
+            info: {
+              sessionID: SESS,
+              role: "assistant",
+              time: { completed: null },
+            },
+          },
         },
         s,
       ).filter(isPromptResponse),
@@ -320,7 +373,13 @@ describe("translateOpencodeEvent — turn terminators", () => {
       drain(
         {
           type: "message.updated",
-          properties: { info: { sessionID: SESS, role: "user", time: { completed: 1779000000000 } } },
+          properties: {
+            info: {
+              sessionID: SESS,
+              role: "user",
+              time: { completed: 1779000000000 },
+            },
+          },
         },
         s,
       ).filter(isPromptResponse),
@@ -329,16 +388,27 @@ describe("translateOpencodeEvent — turn terminators", () => {
 
   test("session.idle yields exactly one PromptResponse; later backstops are no-ops", () => {
     const s = state();
-    const out1 = promptResponse({ type: "session.idle", properties: { sessionID: SESS } }, s);
+    const out1 = promptResponse(
+      { type: "session.idle", properties: { sessionID: SESS } },
+      s,
+    );
     expect(out1).toHaveLength(1);
     expect(out1[0]).toMatchObject({ stopReason: "end_turn" });
 
     const out2 = drain(
-      { type: "session.status", properties: { sessionID: SESS, status: { type: "idle" } } },
+      {
+        type: "session.status",
+        properties: { sessionID: SESS, status: { type: "idle" } },
+      },
       s,
     );
     expect(out2).toEqual([]);
-    expect(promptResponse({ type: "session.idle", properties: { sessionID: SESS } }, s)).toEqual([]);
+    expect(
+      promptResponse(
+        { type: "session.idle", properties: { sessionID: SESS } },
+        s,
+      ),
+    ).toEqual([]);
   });
 
   test("session.idle without an explicit sessionID still terminates", () => {
@@ -351,14 +421,20 @@ describe("translateOpencodeEvent — turn terminators", () => {
     const idle = state();
     expect(
       promptResponse(
-        { type: "session.status", properties: { sessionID: SESS, status: { type: "idle" } } },
+        {
+          type: "session.status",
+          properties: { sessionID: SESS, status: { type: "idle" } },
+        },
         idle,
       ),
     ).toHaveLength(1);
     const busy = state();
     expect(
       drain(
-        { type: "session.status", properties: { sessionID: SESS, status: { type: "busy" } } },
+        {
+          type: "session.status",
+          properties: { sessionID: SESS, status: { type: "busy" } },
+        },
         busy,
       ),
     ).toEqual([]);
@@ -369,11 +445,16 @@ describe("translateOpencodeEvent — turn terminators", () => {
     drain(
       {
         type: "message.updated",
-        properties: { info: { sessionID: SESS, role: "assistant", finish: "stop" } },
+        properties: {
+          info: { sessionID: SESS, role: "assistant", finish: "stop" },
+        },
       },
       stop,
     );
-    const outStop = drain({ type: "session.idle", properties: { sessionID: SESS } }, stop);
+    const outStop = drain(
+      { type: "session.idle", properties: { sessionID: SESS } },
+      stop,
+    );
     expect(outStop).toHaveLength(1);
     expect(outStop[0]).toMatchObject({ stopReason: "end_turn" });
 
@@ -381,11 +462,16 @@ describe("translateOpencodeEvent — turn terminators", () => {
     drain(
       {
         type: "message.updated",
-        properties: { info: { sessionID: SESS, role: "assistant", finish: "max_tokens" } },
+        properties: {
+          info: { sessionID: SESS, role: "assistant", finish: "max_tokens" },
+        },
       },
       max,
     );
-    const outMax = drain({ type: "session.idle", properties: { sessionID: SESS } }, max);
+    const outMax = drain(
+      { type: "session.idle", properties: { sessionID: SESS } },
+      max,
+    );
     expect(outMax).toHaveLength(1);
     expect(outMax[0]).toMatchObject({ stopReason: "max_tokens" });
   });
@@ -429,7 +515,10 @@ describe("translateOpencodeEvent — error envelope (code -1)", () => {
             sessionID: SESS,
             role: "assistant",
             time: { completed: 1779000000000 },
-            error: { name: "UnknownError", data: { message: "Model not found." } },
+            error: {
+              name: "UnknownError",
+              data: { message: "Model not found." },
+            },
           },
         },
       },
@@ -437,7 +526,10 @@ describe("translateOpencodeEvent — error envelope (code -1)", () => {
     );
     const errors = out.filter(isSandboxError);
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({ code: TURN_ERROR_CODE_SESSION, message: "Model not found." });
+    expect(errors[0]).toMatchObject({
+      code: TURN_ERROR_CODE_SESSION,
+      message: "Model not found.",
+    });
   });
 
   test("an aborted message terminates as cancelled, not as a turn failure", () => {
@@ -450,7 +542,10 @@ describe("translateOpencodeEvent — error envelope (code -1)", () => {
             sessionID: SESS,
             role: "assistant",
             time: { completed: 1779000000000 },
-            error: { name: "MessageAbortedError", data: { message: "Aborted" } },
+            error: {
+              name: "MessageAbortedError",
+              data: { message: "Aborted" },
+            },
           },
         },
       },
@@ -622,7 +717,12 @@ describe("translateOpencodeEvent — tool calls", () => {
 
     const s2 = state();
     drain(toolEvent("c2", "bash", "pending"), s2);
-    const failed = drain(toolEvent("c2", "bash", "error", { error: "sudo: a password is required" }), s2);
+    const failed = drain(
+      toolEvent("c2", "bash", "error", {
+        error: "sudo: a password is required",
+      }),
+      s2,
+    );
     expect(failed).toHaveLength(1);
     expect(failed[0]).toMatchObject({
       status: "failed",
@@ -694,14 +794,18 @@ describe("translateOpencodeEvent — context usage and compaction", () => {
 
   const msgUpdated = (extra: RawEvent) => ({
     type: "message.updated",
-    properties: { info: { role: "assistant", id: "m1", sessionID: SESS, ...extra } },
+    properties: {
+      info: { role: "assistant", id: "m1", sessionID: SESS, ...extra },
+    },
   });
 
   test("message.updated with tokens emits one context_usage packet (sum incl. cache)", () => {
     const s = state();
     const out = drain(msgUpdated({ tokens: TOKENS, cost: 0.4 }), s);
     const usage = out.filter(
-      (event) => isBuildPacket(event) && (event as { type?: string }).type === "context_usage",
+      (event) =>
+        isBuildPacket(event) &&
+        (event as { type?: string }).type === "context_usage",
     );
     expect(usage).toHaveLength(1);
     expect(usage[0]).toMatchObject({ used_tokens: 165, cost: 0.4 });
@@ -711,7 +815,14 @@ describe("translateOpencodeEvent — context usage and compaction", () => {
     const zero = state();
     expect(
       drain(
-        msgUpdated({ tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }),
+        msgUpdated({
+          tokens: {
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+        }),
         zero,
       ),
     ).toEqual([]);
@@ -760,7 +871,9 @@ describe("translateOpencodeEvent — context usage and compaction", () => {
       { fetchMessage: fetch },
     );
     const markers = out.filter(
-      (event) => isBuildPacket(event) && (event as { type?: string }).type === "compaction",
+      (event) =>
+        isBuildPacket(event) &&
+        (event as { type?: string }).type === "compaction",
     );
     expect(markers).toHaveLength(1);
     expect(markers[0]).toMatchObject({ summary: "Recap" });
@@ -783,7 +896,10 @@ describe("translateOpencodeEvent — informational and malformed events", () => 
       "completely.unknown.event",
     ]) {
       const s = state();
-      expect(drain({ type: etype, properties: { sessionID: SESS } }, s), etype).toEqual([]);
+      expect(
+        drain({ type: etype, properties: { sessionID: SESS } }, s),
+        etype,
+      ).toEqual([]);
     }
   });
 
@@ -827,7 +943,10 @@ describe("translateOpencodeEvent — subagent routing", () => {
   test("session.created for our child emits a subagent_started packet", () => {
     const s = new TurnState(PARENT);
     const out = drain(
-      { type: "session.created", properties: { info: { id: CHILD, parentID: PARENT } } },
+      {
+        type: "session.created",
+        properties: { info: { id: CHILD, parentID: PARENT } },
+      },
       s,
     );
     expect(out).toHaveLength(1);
@@ -842,7 +961,10 @@ describe("translateOpencodeEvent — subagent routing", () => {
     const s = new TurnState(PARENT);
     expect(
       drain(
-        { type: "session.created", properties: { info: { id: CHILD, parentID: "ses_OTHER" } } },
+        {
+          type: "session.created",
+          properties: { info: { id: CHILD, parentID: "ses_OTHER" } },
+        },
         s,
       ),
     ).toEqual([]);
@@ -901,13 +1023,21 @@ describe("translateOpencodeEvent — subagent routing", () => {
         type: "message.updated",
         properties: {
           sessionID: CHILD,
-          info: { id: "msg_child", sessionID: CHILD, role: "assistant", finish: "max_tokens" },
+          info: {
+            id: "msg_child",
+            sessionID: CHILD,
+            role: "assistant",
+            finish: "max_tokens",
+          },
         },
       },
       s,
       { parentResolver },
     );
-    const out = drain({ type: "session.idle", properties: { sessionID: PARENT } }, s);
+    const out = drain(
+      { type: "session.idle", properties: { sessionID: PARENT } },
+      s,
+    );
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ stopReason: "end_turn" });
   });
@@ -915,7 +1045,9 @@ describe("translateOpencodeEvent — subagent routing", () => {
   test("unrelated-session tool events drop without a parent resolver", () => {
     const s = new TurnState(PARENT);
     expect(drain(childToolEvent(), s)).toEqual([]);
-    expect(drain(childToolEvent(), s, { parentResolver: () => null })).toEqual([]);
+    expect(drain(childToolEvent(), s, { parentResolver: () => null })).toEqual(
+      [],
+    );
   });
 
   test("the parent's task tool event is tagged with its spawned subagent session", () => {
@@ -931,7 +1063,11 @@ describe("translateOpencodeEvent — subagent routing", () => {
             callID: "toolu_t",
             state: {
               status: "completed",
-              input: { description: "explore", prompt: "Explore the auth code", subagent_type: "general" },
+              input: {
+                description: "explore",
+                prompt: "Explore the auth code",
+                subagent_type: "general",
+              },
             },
             id: "prt_t",
             sessionID: PARENT,
@@ -945,7 +1081,10 @@ describe("translateOpencodeEvent — subagent routing", () => {
     expect(out.length).toBeGreaterThanOrEqual(1);
     for (const event of out) {
       const meta = (event as { _meta?: Record<string, unknown> })._meta;
-      expect(meta).toMatchObject({ subagentSessionId: CHILD, toolName: "task" });
+      expect(meta).toMatchObject({
+        subagentSessionId: CHILD,
+        toolName: "task",
+      });
     }
   });
 
@@ -986,7 +1125,9 @@ describe("translateOpencodeEvent — subagent routing", () => {
  * translator. Driven at the seam: a stub PodEventBus (real SubscriberQueue) + stubbed fetch,
  * so only the network boundary is faked.
  */
-function fakeBus(overrides: { closed?: boolean; streamReady?: boolean } = {}): PodEventBus {
+function fakeBus(
+  overrides: { closed?: boolean; streamReady?: boolean } = {},
+): PodEventBus {
   return {
     streamReady: overrides.streamReady ?? false,
     isClosed: () => overrides.closed ?? false,

@@ -1,240 +1,303 @@
 {
- "group": "15",
- "context": [
-  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC07/AC08/AC16/AC17/AC19）",
-  "docs/specs/2026-10-14-bifrost-integration-design.md（Q26 实时会话按可强制限制的计费单元逐段预留、余额不足或授权失效时停止并尽力关停；做不到的路径保持不可用）",
-  "docs/adr/0003-bifrost-openbot-credit-admission.md",
-  "CONTEXT.md（实时会话、计费单元 unit、尾部费用、待结算术语）"
- ],
- "anchors": {
-  "bifrost-realtime": "bifrost/core/providers/azure/realtime.go（RealtimeWebSocketURL、RealtimeWebSocketSubprotocol、SupportsRealtimeWebRTC、ExchangeRealtimeWebRTCSDP、RealtimeWebRTCDataChannelLabel、client_secrets 会话）、bifrost/core/sessionaffinity_test.go（会话与 Key 绑定语义）",
-  "bifrost-hooks": "bifrost/plugins/governance/main.go（PreRequestHook、PostLLMHook、HTTPTransportStreamChunkHook、postHookWorker）",
-  "openbot-credit": "组 06 的 Reserve/Status/Settle/Release 与 06.8 unknown；组 08 的 RecoveryItem 与恢复扫描",
-  "openbot-audio": "组 13/14 交付的音频计量、尾部结算与能力证据",
-  "openbot-ui": "组 06.12 的用户视图（待结算与消费明细）",
-  "test-harness": "真实 WebSocket 连接测试 + 可控音频时钟 + fake provider 尾部输出；server/tests/support/database.ts；go test ./plugins/governance/..."
- },
- "verification_common": [
-  "bun run --filter server typecheck",
-  "cd bifrost/plugins/governance && go test ./...",
-  "bunx biome lint --error-on-warnings <changed files>"
- ],
- "tickets": {
-  "15.1": {
-   "slug": "realtime-session-identity",
-   "contracts": {
-    "consumes": ["08.1 的 RecoveryItem（未确认单元的恢复入口）", "13.3 的尾部结算语义", "14.2 的可信计量", "05.4 的 CredentialBundle"],
-    "produces": [
-     "RealtimeSession { sessionId, payerRef, grantId, modelRef, snapshotVersion, rateVersion, startedAt, state }：会话期间身份与账务基准固定不变",
-     "会话建立即校验授权、门禁、开放范围与新鲜度；任一不满足则拒绝建立",
-     "会话身份可被恢复流程还原（断线/重启后仍归属同一账户）"
-    ]
-   },
-   "steps": [
-    "在实时会话建立入口（WebSocket/WebRTC 握手）解析 Key → 授权 → 付款账户，并锁定价格与比例版本",
-    "持久化会话身份记录，包含恢复所需字段",
-    "校验失败时拒绝建立会话，不进入任何计费单元",
-    "先写失败测试：授权撤销或门禁未就绪时会话建立被拒绝；会话期间 payer 不变"
-   ],
-   "criteria": [
-    "会话建立时固定 payer、授权、模型与价格版本，会话期间不变",
-    "授权失效、门禁未就绪或模型不再开放时拒绝建立会话",
-    "会话身份持久化，断线或重启后可还原归属",
-    "会话建立本身不产生供应商计费派发"
-   ],
-   "tests": ["会话建立校验测试（四类拒绝）", "身份固定断言（会话期间注入变更）", "重启后身份还原测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/realtime-session-identity.integration.test.ts"],
-   "owned_scope": ["实时会话身份模块与存储、迁移", "对应测试"],
-   "resume_hint": "会话身份必须在建立时锁定；若实现成每单元重新解析 payer，撤销与价格变更语义会漂移，接手先断言版本不变。"
+  "group": "15",
+  "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC07/AC08/AC16/AC17/AC19）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q26 实时会话按可强制限制的计费单元逐段预留、余额不足或授权失效时停止并尽力关停；做不到的路径保持不可用）",
+    "docs/adr/0003-bifrost-openbot-credit-admission.md",
+    "CONTEXT.md（实时会话、计费单元 unit、尾部费用、待结算术语）"
+  ],
+  "anchors": {
+    "bifrost-realtime": "bifrost/core/providers/azure/realtime.go（RealtimeWebSocketURL、RealtimeWebSocketSubprotocol、SupportsRealtimeWebRTC、ExchangeRealtimeWebRTCSDP、RealtimeWebRTCDataChannelLabel、client_secrets 会话）、bifrost/core/sessionaffinity_test.go（会话与 Key 绑定语义）",
+    "bifrost-hooks": "bifrost/plugins/governance/main.go（PreRequestHook、PostLLMHook、HTTPTransportStreamChunkHook、postHookWorker）",
+    "openbot-credit": "组 06 的 Reserve/Status/Settle/Release 与 06.8 unknown；组 08 的 RecoveryItem 与恢复扫描",
+    "openbot-audio": "组 13/14 交付的音频计量、尾部结算与能力证据",
+    "openbot-ui": "组 06.12 的用户视图（待结算与消费明细）",
+    "test-harness": "真实 WebSocket 连接测试 + 可控音频时钟 + fake provider 尾部输出；server/tests/support/database.ts；go test ./plugins/governance/..."
   },
-  "15.2": {
-   "slug": "realtime-unit-reservation-hook",
-   "contracts": {
-    "consumes": ["15.1 的会话身份", "06.3 的原子预留"],
-    "produces": [
-     "计费单元模型：RealtimeUnit { unitId, sessionId, attemptId, reservationId, kind（输入音频/输出音频/响应/时长）, boundCents }",
-     "每个单元在开始处理前独立预留，单元之间共享同一账户的原子额度",
-     "单元状态机：pending → reserved → processing → settled | unknown | refused"
-    ]
-   },
-   "steps": [
-    "定义计费单元与其状态机，明确哪些事件构成一个单元（按供应商实际计费粒度）",
-    "在单元开始前调用 Reserve，取得独立 attemptId 与 reservationId",
-    "预留失败时单元标记 refused，不进入处理",
-    "先写失败测试：两个单元各自预留；余额只够一个单元时第二个被拒绝"
-   ],
-   "criteria": [
-    "每个计费单元在处理前都有独立 attemptId 与预留",
-    "同一会话的多个单元共享同一账户的原子额度",
-    "预留失败的单元不进入处理，且不产生供应商计费输入",
-    "单元状态可查询并支持恢复"
-   ],
-   "tests": ["多单元独立预留测试", "余额不足时第二个单元拒绝测试", "状态机流转断言"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/realtime-unit-reservation.integration.test.ts"],
-   "owned_scope": ["计费单元模块与存储、迁移", "预留接线", "对应测试"],
-   "resume_hint": "单元粒度必须与供应商实际计费粒度一致；粒度过粗会高估占用，过细会漏计费，接手先核对上游计费文档。"
-  },
-  "15.3": {
-   "slug": "realtime-audio-input-gating",
-   "contracts": {
-    "consumes": ["15.2 的单元预留"],
-    "produces": [
-     "输入门控：未获得当前单元预留时，音频输入不向供应商转发（丢弃或缓冲但不计费）",
-     "门控在网关侧强制，客户端无法绕过",
-     "门控决策可观测（被拦截的输入量与原因），供排查与 22.2 证据"
-    ]
-   },
-   "steps": [
-    "在实时输入转发路径插入门控检查：当前单元是否已预留",
-    "未预留时不转发到供应商，并记录拦截事件",
-    "确认门控位于网关侧，客户端直连供应商的替代端点不可用（与 16.3 一致）",
-    "先写失败测试：未预留时供应商未收到任何计费输入"
-   ],
-   "criteria": [
-    "未获得单元预留时音频输入不被转发到供应商",
-    "门控由网关强制，客户端无法通过参数绕过",
-    "被拦截的输入有可观测记录与原因",
-    "门控不改变已预留单元的正常处理"
-   ],
-   "tests": ["未预留输入拦截测试（真实 WebSocket + provider spy）", "绕过尝试拒绝测试", "拦截记录断言"],
-   "verification": ["cd bifrost/plugins/governance && go test -run RealtimeInputGating ./..."],
-   "owned_scope": ["实时输入转发路径的门控", "拦截记录", "对应 Go 测试"],
-   "resume_hint": "门控必须在转发之前；若实现成“转发后检查”，供应商已产生费用，接手用 provider spy 验证顺序。"
-  },
-  "15.4": {
-   "slug": "no-new-input-while-unit-outstanding",
-   "contracts": {
-    "consumes": ["15.3 的门控"],
-    "produces": [
-     "严格串行语义：上一单元仍在消耗（未结算且未进入 unknown）时，不因客户端提交新 unitId 而放开未预留输入",
-     "并发单元请求的排队或拒绝规则，且规则可观测",
-     "该语义对同一会话内的所有输入类型一致生效"
-    ]
-   },
-   "steps": [
-    "在门控中加入“前一单元未结清”判定，阻止新单元在未预留时接收输入",
-    "明确排队与拒绝策略（默认拒绝并提示，不静默缓冲无限增长）",
-    "确认策略对音频输入、文本输入与工具事件一致",
-    "先写失败测试：旧单元处理中提交新 unitId，未预留输入仍被拦截"
-   ],
-   "criteria": [
-    "旧单元未结清时，新 unitId 不能放开未预留输入",
-    "并发单元请求按明确策略排队或拒绝，且策略可观测",
-    "策略对所有输入类型一致生效",
-    "不因客户端行为导致无上限缓冲或内存增长"
-   ],
-   "tests": ["旧单元未结清时的新单元拦截测试", "并发单元策略测试", "缓冲上限断言"],
-   "verification": ["cd bifrost/plugins/governance && go test -run RealtimeUnitSerialization ./..."],
-   "owned_scope": ["门控的未结清判定与排队策略", "对应 Go 测试"],
-   "resume_hint": "客户端可用新 unitId 制造并发；接手先跑并发用例，确认没有“新 ID 即放行”的分支。"
-  },
-  "15.5": {
-   "slug": "exhaustion-stops-further-units",
-   "contracts": {
-    "consumes": ["15.2 的单元预留", "06.3 的原子额度"],
-    "produces": [
-     "耗尽语义：余额不足以覆盖下一单元上限时，不开始该单元，会话进入可解释的停止状态",
-     "停止后不产生新的供应商计费输入，已发生费用仍按 15.7 结算",
-     "耗尽原因对用户与 Bot 可见，区别于网络错误"
-    ]
-   },
-   "steps": [
-    "在单元预留失败且原因为余额不足时，停止后续单元并标记会话状态",
-    "确认停止后输入门控持续生效，不产生新的计费输入",
-    "把耗尽原因映射为可展示文案，与授权失效、网络错误区分",
-    "先写失败测试：余额耗尽后无新单元、供应商未收到新计费输入"
-   ],
-   "criteria": [
-    "余额耗尽后不开始新的计费单元",
-    "耗尽后供应商不会收到新的计费输入",
-    "耗尽原因对用户可见且与网络错误可区分",
-    "已发生费用的结算责任不受停止影响"
-   ],
-   "tests": ["耗尽停止集成测试", "无新计费输入断言", "原因可区分断言"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/realtime-exhaustion.integration.test.ts"],
-   "owned_scope": ["耗尽停止逻辑与状态", "原因映射", "对应测试"],
-   "resume_hint": "停止不等于关闭会话（关闭见 15.6/15.7）；接手确认停止后仍能完成既有单元的结算。"
-  },
-  "15.6": {
-   "slug": "revocation-and-expiry-stop-realtime",
-   "contracts": {
-    "consumes": ["15.5 的停止语义", "05.7 的撤销立即拒绝", "05.5 的 Key 到期"],
-    "produces": [
-     "撤销/到期语义：授权撤销或 Key 到期后阻止后续单元，并尽力关停会话（关闭上游连接与流）",
-     "关停不取消已发生费用的结算责任，未确认部分进入 unknown",
-     "网关不可达时同样拒绝后续单元（不依赖稍后同步）"
-    ]
-   },
-   "steps": [
-    "在每个单元开始前复核授权与 Key 状态，撤销或到期即停止并触发关停",
-    "实现尽力关停：关闭上游会话、停止转发、标记会话终态",
-    "确认网关侧不可达时按拒绝处理，不乐观继续",
-    "先写失败测试：会话中撤销授权 → 无新单元且会话被关停；已发生费用仍结算"
-   ],
-   "criteria": [
-    "授权撤销后不开始新单元，且会话被尽力关停",
-    "Key 到期后同样阻止新单元并关停",
-    "网关不可达时后续单元被拒绝，不继续计费",
-    "关停不取消已发生费用的结算，未确认部分进入 unknown"
-   ],
-   "tests": ["会话中撤销关停集成测试", "到期关停测试", "网关不可达拒绝测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/realtime-revocation.integration.test.ts"],
-   "owned_scope": ["单元前复核与关停逻辑", "对应测试"],
-   "resume_hint": "关停要覆盖上游连接与本地转发两侧；只停一侧会继续产生费用，接手用 provider spy 双向断言。"
-  },
-  "15.7": {
-   "slug": "realtime-tail-settled-once",
-   "contracts": {
-    "consumes": ["15.6 的关停", "13.3 的尾部结算语义", "06.9 的 Settle", "06.8 的 unknown"],
-    "produces": [
-     "关停尾部费用语义：关停后仍可能产生的尾部用量在原预留上限内结算，且只结算一次",
-     "尾部无法约束的 adapter/模型标记不可用（与 13.4 一致）",
-     "尾部超出上限时的处理规则：超出部分进入 unknown，不静默丢弃也不静默追加"
-    ]
-   },
-   "steps": [
-    "在关停路径收集尾部用量，按锁定版本换算并在原预留内结算",
-    "确认尾部结算幂等，重复关停或重复上报只结算一次",
-    "尾部无法约束的 adapter 标记不可用并记录原因",
-    "先写失败测试：关停后尾部费用结算一次；无法约束尾部的 adapter 不可用"
-   ],
-   "criteria": [
-    "关停后的尾部费用在原预留上限内结算，且只结算一次",
-    "尾部无法确认时进入 unknown 并保持预留",
-    "无法约束尾部的 adapter/模型不可用且原因可见",
-    "尾部结算不超过原预留上限"
-   ],
-   "tests": ["尾部结算一次集成测试", "unknown 尾部断言", "不可约束 adapter 禁用测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/realtime-tail-settlement.integration.test.ts"],
-   "owned_scope": ["尾部用量收集与结算", "adapter 可用性标记", "对应测试"],
-   "resume_hint": "尾部超过预留上限时不要静默追加扣费；进入 unknown 并由 08.x 处置，这是 Q26 的硬约束。"
-  },
-  "15.8": {
-   "slug": "realtime-recovery-and-usage-ui",
-   "contracts": {
-    "consumes": ["15.7 的结算结果", "08.1 的 RecoveryItem", "06.12 的用户视图"],
-    "produces": [
-     "断线/重启恢复：单元状态持久化，恢复后不重复派发、不重复结算",
-     "多会话共享账户：同一账户的两个实时会话竞争同一份原子额度",
-     "用户界面：实时会话消费、待结算与异常状态可见；组 15 缝合点"
-    ]
-   },
-   "steps": [
-    "确认单元与会话状态在断线/重启后可还原，恢复走 08.x 而不新建单元",
-    "验证两个并发会话共享账户额度（一个耗尽时另一个的新单元被拒绝）",
-    "在用户界面展示实时会话消费、待结算与异常原因",
-    "先写失败测试：断线重连后无重复扣费；双会话额度竞争；界面展示正确"
-   ],
-   "criteria": [
-    "断线或重启后恢复不重复派发、不重复结算",
-    "同一账户的两个实时会话共享原子额度，一个耗尽会影响另一个的新单元",
-    "用户看到实时会话消费、待结算额度与异常原因",
-    "界面不泄露他人会话或账户数据"
-   ],
-   "tests": ["断线重连恢复集成测试", "双会话额度竞争测试", "界面展示与越权不可见测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/realtime-recovery.integration.test.ts", "bun test app/tests/realtime-usage-ui.test.tsx"],
-   "owned_scope": ["会话/单元恢复接线", "实时消费展示页面", "对应测试与验收记录"],
-   "resume_hint": "本 Ticket 是组 15 缝合点：完成后应能演示“连续实时对话 → 耗尽停止 → 撤销关停 → 断线恢复 → 明细可见”全流程。"
+  "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/plugins/governance && go test ./...",
+    "bunx biome lint --error-on-warnings <changed files>"
+  ],
+  "tickets": {
+    "15.1": {
+      "slug": "realtime-session-identity",
+      "contracts": {
+        "consumes": [
+          "08.1 的 RecoveryItem（未确认单元的恢复入口）",
+          "13.3 的尾部结算语义",
+          "14.2 的可信计量",
+          "05.4 的 CredentialBundle"
+        ],
+        "produces": [
+          "RealtimeSession { sessionId, payerRef, grantId, modelRef, snapshotVersion, rateVersion, startedAt, state }：会话期间身份与账务基准固定不变",
+          "会话建立即校验授权、门禁、开放范围与新鲜度；任一不满足则拒绝建立",
+          "会话身份可被恢复流程还原（断线/重启后仍归属同一账户）"
+        ]
+      },
+      "steps": [
+        "在实时会话建立入口（WebSocket/WebRTC 握手）解析 Key → 授权 → 付款账户，并锁定价格与比例版本",
+        "持久化会话身份记录，包含恢复所需字段",
+        "校验失败时拒绝建立会话，不进入任何计费单元",
+        "先写失败测试：授权撤销或门禁未就绪时会话建立被拒绝；会话期间 payer 不变"
+      ],
+      "criteria": [
+        "会话建立时固定 payer、授权、模型与价格版本，会话期间不变",
+        "授权失效、门禁未就绪或模型不再开放时拒绝建立会话",
+        "会话身份持久化，断线或重启后可还原归属",
+        "会话建立本身不产生供应商计费派发"
+      ],
+      "tests": [
+        "会话建立校验测试（四类拒绝）",
+        "身份固定断言（会话期间注入变更）",
+        "重启后身份还原测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/realtime-session-identity.integration.test.ts"
+      ],
+      "owned_scope": ["实时会话身份模块与存储、迁移", "对应测试"],
+      "resume_hint": "会话身份必须在建立时锁定；若实现成每单元重新解析 payer，撤销与价格变更语义会漂移，接手先断言版本不变。"
+    },
+    "15.2": {
+      "slug": "realtime-unit-reservation-hook",
+      "contracts": {
+        "consumes": ["15.1 的会话身份", "06.3 的原子预留"],
+        "produces": [
+          "计费单元模型：RealtimeUnit { unitId, sessionId, attemptId, reservationId, kind（输入音频/输出音频/响应/时长）, boundCents }",
+          "每个单元在开始处理前独立预留，单元之间共享同一账户的原子额度",
+          "单元状态机：pending → reserved → processing → settled | unknown | refused"
+        ]
+      },
+      "steps": [
+        "定义计费单元与其状态机，明确哪些事件构成一个单元（按供应商实际计费粒度）",
+        "在单元开始前调用 Reserve，取得独立 attemptId 与 reservationId",
+        "预留失败时单元标记 refused，不进入处理",
+        "先写失败测试：两个单元各自预留；余额只够一个单元时第二个被拒绝"
+      ],
+      "criteria": [
+        "每个计费单元在处理前都有独立 attemptId 与预留",
+        "同一会话的多个单元共享同一账户的原子额度",
+        "预留失败的单元不进入处理，且不产生供应商计费输入",
+        "单元状态可查询并支持恢复"
+      ],
+      "tests": [
+        "多单元独立预留测试",
+        "余额不足时第二个单元拒绝测试",
+        "状态机流转断言"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/realtime-unit-reservation.integration.test.ts"
+      ],
+      "owned_scope": ["计费单元模块与存储、迁移", "预留接线", "对应测试"],
+      "resume_hint": "单元粒度必须与供应商实际计费粒度一致；粒度过粗会高估占用，过细会漏计费，接手先核对上游计费文档。"
+    },
+    "15.3": {
+      "slug": "realtime-audio-input-gating",
+      "contracts": {
+        "consumes": ["15.2 的单元预留"],
+        "produces": [
+          "输入门控：未获得当前单元预留时，音频输入不向供应商转发（丢弃或缓冲但不计费）",
+          "门控在网关侧强制，客户端无法绕过",
+          "门控决策可观测（被拦截的输入量与原因），供排查与 22.2 证据"
+        ]
+      },
+      "steps": [
+        "在实时输入转发路径插入门控检查：当前单元是否已预留",
+        "未预留时不转发到供应商，并记录拦截事件",
+        "确认门控位于网关侧，客户端直连供应商的替代端点不可用（与 16.3 一致）",
+        "先写失败测试：未预留时供应商未收到任何计费输入"
+      ],
+      "criteria": [
+        "未获得单元预留时音频输入不被转发到供应商",
+        "门控由网关强制，客户端无法通过参数绕过",
+        "被拦截的输入有可观测记录与原因",
+        "门控不改变已预留单元的正常处理"
+      ],
+      "tests": [
+        "未预留输入拦截测试（真实 WebSocket + provider spy）",
+        "绕过尝试拒绝测试",
+        "拦截记录断言"
+      ],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run RealtimeInputGating ./..."
+      ],
+      "owned_scope": ["实时输入转发路径的门控", "拦截记录", "对应 Go 测试"],
+      "resume_hint": "门控必须在转发之前；若实现成“转发后检查”，供应商已产生费用，接手用 provider spy 验证顺序。"
+    },
+    "15.4": {
+      "slug": "no-new-input-while-unit-outstanding",
+      "contracts": {
+        "consumes": ["15.3 的门控"],
+        "produces": [
+          "严格串行语义：上一单元仍在消耗（未结算且未进入 unknown）时，不因客户端提交新 unitId 而放开未预留输入",
+          "并发单元请求的排队或拒绝规则，且规则可观测",
+          "该语义对同一会话内的所有输入类型一致生效"
+        ]
+      },
+      "steps": [
+        "在门控中加入“前一单元未结清”判定，阻止新单元在未预留时接收输入",
+        "明确排队与拒绝策略（默认拒绝并提示，不静默缓冲无限增长）",
+        "确认策略对音频输入、文本输入与工具事件一致",
+        "先写失败测试：旧单元处理中提交新 unitId，未预留输入仍被拦截"
+      ],
+      "criteria": [
+        "旧单元未结清时，新 unitId 不能放开未预留输入",
+        "并发单元请求按明确策略排队或拒绝，且策略可观测",
+        "策略对所有输入类型一致生效",
+        "不因客户端行为导致无上限缓冲或内存增长"
+      ],
+      "tests": [
+        "旧单元未结清时的新单元拦截测试",
+        "并发单元策略测试",
+        "缓冲上限断言"
+      ],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run RealtimeUnitSerialization ./..."
+      ],
+      "owned_scope": ["门控的未结清判定与排队策略", "对应 Go 测试"],
+      "resume_hint": "客户端可用新 unitId 制造并发；接手先跑并发用例，确认没有“新 ID 即放行”的分支。"
+    },
+    "15.5": {
+      "slug": "exhaustion-stops-further-units",
+      "contracts": {
+        "consumes": ["15.2 的单元预留", "06.3 的原子额度"],
+        "produces": [
+          "耗尽语义：余额不足以覆盖下一单元上限时，不开始该单元，会话进入可解释的停止状态",
+          "停止后不产生新的供应商计费输入，已发生费用仍按 15.7 结算",
+          "耗尽原因对用户与 Bot 可见，区别于网络错误"
+        ]
+      },
+      "steps": [
+        "在单元预留失败且原因为余额不足时，停止后续单元并标记会话状态",
+        "确认停止后输入门控持续生效，不产生新的计费输入",
+        "把耗尽原因映射为可展示文案，与授权失效、网络错误区分",
+        "先写失败测试：余额耗尽后无新单元、供应商未收到新计费输入"
+      ],
+      "criteria": [
+        "余额耗尽后不开始新的计费单元",
+        "耗尽后供应商不会收到新的计费输入",
+        "耗尽原因对用户可见且与网络错误可区分",
+        "已发生费用的结算责任不受停止影响"
+      ],
+      "tests": ["耗尽停止集成测试", "无新计费输入断言", "原因可区分断言"],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/realtime-exhaustion.integration.test.ts"
+      ],
+      "owned_scope": ["耗尽停止逻辑与状态", "原因映射", "对应测试"],
+      "resume_hint": "停止不等于关闭会话（关闭见 15.6/15.7）；接手确认停止后仍能完成既有单元的结算。"
+    },
+    "15.6": {
+      "slug": "revocation-and-expiry-stop-realtime",
+      "contracts": {
+        "consumes": [
+          "15.5 的停止语义",
+          "05.7 的撤销立即拒绝",
+          "05.5 的 Key 到期"
+        ],
+        "produces": [
+          "撤销/到期语义：授权撤销或 Key 到期后阻止后续单元，并尽力关停会话（关闭上游连接与流）",
+          "关停不取消已发生费用的结算责任，未确认部分进入 unknown",
+          "网关不可达时同样拒绝后续单元（不依赖稍后同步）"
+        ]
+      },
+      "steps": [
+        "在每个单元开始前复核授权与 Key 状态，撤销或到期即停止并触发关停",
+        "实现尽力关停：关闭上游会话、停止转发、标记会话终态",
+        "确认网关侧不可达时按拒绝处理，不乐观继续",
+        "先写失败测试：会话中撤销授权 → 无新单元且会话被关停；已发生费用仍结算"
+      ],
+      "criteria": [
+        "授权撤销后不开始新单元，且会话被尽力关停",
+        "Key 到期后同样阻止新单元并关停",
+        "网关不可达时后续单元被拒绝，不继续计费",
+        "关停不取消已发生费用的结算，未确认部分进入 unknown"
+      ],
+      "tests": ["会话中撤销关停集成测试", "到期关停测试", "网关不可达拒绝测试"],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/realtime-revocation.integration.test.ts"
+      ],
+      "owned_scope": ["单元前复核与关停逻辑", "对应测试"],
+      "resume_hint": "关停要覆盖上游连接与本地转发两侧；只停一侧会继续产生费用，接手用 provider spy 双向断言。"
+    },
+    "15.7": {
+      "slug": "realtime-tail-settled-once",
+      "contracts": {
+        "consumes": [
+          "15.6 的关停",
+          "13.3 的尾部结算语义",
+          "06.9 的 Settle",
+          "06.8 的 unknown"
+        ],
+        "produces": [
+          "关停尾部费用语义：关停后仍可能产生的尾部用量在原预留上限内结算，且只结算一次",
+          "尾部无法约束的 adapter/模型标记不可用（与 13.4 一致）",
+          "尾部超出上限时的处理规则：超出部分进入 unknown，不静默丢弃也不静默追加"
+        ]
+      },
+      "steps": [
+        "在关停路径收集尾部用量，按锁定版本换算并在原预留内结算",
+        "确认尾部结算幂等，重复关停或重复上报只结算一次",
+        "尾部无法约束的 adapter 标记不可用并记录原因",
+        "先写失败测试：关停后尾部费用结算一次；无法约束尾部的 adapter 不可用"
+      ],
+      "criteria": [
+        "关停后的尾部费用在原预留上限内结算，且只结算一次",
+        "尾部无法确认时进入 unknown 并保持预留",
+        "无法约束尾部的 adapter/模型不可用且原因可见",
+        "尾部结算不超过原预留上限"
+      ],
+      "tests": [
+        "尾部结算一次集成测试",
+        "unknown 尾部断言",
+        "不可约束 adapter 禁用测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/realtime-tail-settlement.integration.test.ts"
+      ],
+      "owned_scope": ["尾部用量收集与结算", "adapter 可用性标记", "对应测试"],
+      "resume_hint": "尾部超过预留上限时不要静默追加扣费；进入 unknown 并由 08.x 处置，这是 Q26 的硬约束。"
+    },
+    "15.8": {
+      "slug": "realtime-recovery-and-usage-ui",
+      "contracts": {
+        "consumes": [
+          "15.7 的结算结果",
+          "08.1 的 RecoveryItem",
+          "06.12 的用户视图"
+        ],
+        "produces": [
+          "断线/重启恢复：单元状态持久化，恢复后不重复派发、不重复结算",
+          "多会话共享账户：同一账户的两个实时会话竞争同一份原子额度",
+          "用户界面：实时会话消费、待结算与异常状态可见；组 15 缝合点"
+        ]
+      },
+      "steps": [
+        "确认单元与会话状态在断线/重启后可还原，恢复走 08.x 而不新建单元",
+        "验证两个并发会话共享账户额度（一个耗尽时另一个的新单元被拒绝）",
+        "在用户界面展示实时会话消费、待结算与异常原因",
+        "先写失败测试：断线重连后无重复扣费；双会话额度竞争；界面展示正确"
+      ],
+      "criteria": [
+        "断线或重启后恢复不重复派发、不重复结算",
+        "同一账户的两个实时会话共享原子额度，一个耗尽会影响另一个的新单元",
+        "用户看到实时会话消费、待结算额度与异常原因",
+        "界面不泄露他人会话或账户数据"
+      ],
+      "tests": [
+        "断线重连恢复集成测试",
+        "双会话额度竞争测试",
+        "界面展示与越权不可见测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/realtime-recovery.integration.test.ts",
+        "bun test app/tests/realtime-usage-ui.test.tsx"
+      ],
+      "owned_scope": [
+        "会话/单元恢复接线",
+        "实时消费展示页面",
+        "对应测试与验收记录"
+      ],
+      "resume_hint": "本 Ticket 是组 15 缝合点：完成后应能演示“连续实时对话 → 耗尽停止 → 撤销关停 → 断线恢复 → 明细可见”全流程。"
+    }
   }
- }
 }

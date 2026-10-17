@@ -1112,8 +1112,7 @@ describe("§9 lifecycle hook", () => {
       ownerUserId: "user-1",
       fileId: uploaded.file.id,
       bytes: new Uint8Array([11]),
-      parentVersionId:
-        (first as { versionId: string } | null)?.versionId ?? "",
+      parentVersionId: (first as { versionId: string } | null)?.versionId ?? "",
       values: { field: "v1" },
     });
     expect(second).not.toBe("stale-parent");

@@ -155,9 +155,10 @@ describe("GET /api/mobile/openmuse-mail", () => {
     const dial: MailWireDial = async () => {
       throw new TypeError("connect ECONNREFUSED");
     };
-    const response = await mailApp({ dial, connections: connectedUsers() }).request(
-      "/",
-    );
+    const response = await mailApp({
+      dial,
+      connections: connectedUsers(),
+    }).request("/");
     expect(response.status).toBe(502);
     const body = (await response.json()) as { error: string };
     expect(body.error).toContain("could not be reached");
@@ -174,9 +175,10 @@ describe("GET /api/mobile/openmuse-mail", () => {
           nextToken: null,
         }),
     });
-    const response = await mailApp({ dial, connections: connectedUsers() }).request(
-      "/",
-    );
+    const response = await mailApp({
+      dial,
+      connections: connectedUsers(),
+    }).request("/");
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       messages: Array<{ id: string }>;
@@ -1129,8 +1131,12 @@ function attachmentMailboxes(): Map<string, AttachmentMailbox> {
 
 describe("attachment bytes decode-side ceiling (round 6 M30)", () => {
   test("a lying provider's oversized base64 is refused before the decode allocates", async () => {
-    const { buildOpenMuseMailClient } = await import("../src/openmuse-mail/client");
-    const oversized = "A".repeat(Math.ceil((ATTACHMENT_MAX_BYTES + 2) / 3) * 4 + 4);
+    const { buildOpenMuseMailClient } = await import(
+      "../src/openmuse-mail/client"
+    );
+    const oversized = "A".repeat(
+      Math.ceil((ATTACHMENT_MAX_BYTES + 2) / 3) * 4 + 4,
+    );
     const client = buildOpenMuseMailClient({
       dial: async () => ({
         ok: true,

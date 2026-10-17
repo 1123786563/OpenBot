@@ -26,8 +26,18 @@
         "server/src/channels/attachments.ts"
       ],
       "interfaces": {
-        "consumes": ["T02 assertTrustedScope", "T02 enterprise resource advisory lock namespace", "T03 ConversationService", "guarded PostgreSQL test harness"],
-        "produces": ["lookup-only supplied thread IDs", "same-transaction resource grant gate", "shared/exclusive legacy channel advisory protocol", "validated empty-message boundary"]
+        "consumes": [
+          "T02 assertTrustedScope",
+          "T02 enterprise resource advisory lock namespace",
+          "T03 ConversationService",
+          "guarded PostgreSQL test harness"
+        ],
+        "produces": [
+          "lookup-only supplied thread IDs",
+          "same-transaction resource grant gate",
+          "shared/exclusive legacy channel advisory protocol",
+          "validated empty-message boundary"
+        ]
       },
       "verification": [
         "fresh guarded PostgreSQL RED and GREEN evidence",

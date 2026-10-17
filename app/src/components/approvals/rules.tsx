@@ -147,12 +147,8 @@ export function RuleRow({
   // The tool is the title; the rest of what the rule matches is the line beneath, never clamped,
   // since two rules for one tool differ only there.
   const match = [
-    rule.effect !== "*"
-      ? t("ruleEffectSuffix", { effect: rule.effect })
-      : null,
-    rule.scope !== "*"
-      ? t("ruleScopeSuffix", { scope: rule.scope })
-      : null,
+    rule.effect !== "*" ? t("ruleEffectSuffix", { effect: rule.effect }) : null,
+    rule.scope !== "*" ? t("ruleScopeSuffix", { scope: rule.scope }) : null,
     rule.botId !== "*" ? t("ruleBotSuffix", { bot: rule.botId }) : null,
   ]
     .filter(Boolean)
@@ -293,9 +289,15 @@ export function RuleForm({
                   t("form.toolOrApp"),
                   "mcp/gmail/*, computer_click, host/*",
                 )}
-                {field("effect", t("form.kindOfAction"), "* , write, read, delegate")}
+                {field(
+                  "effect",
+                  t("form.kindOfAction"),
+                  "* , write, read, delegate",
+                )}
                 {field("scope", t("form.target"), t("form.targetHint"))}
-                {botField ? field("botId", t("form.bot"), t("form.botHint")) : null}
+                {botField
+                  ? field("botId", t("form.bot"), t("form.botHint"))
+                  : null}
                 <Field>
                   <FieldLabel htmlFor={`${id}-behaviour`}>
                     {t("form.behaviour")}

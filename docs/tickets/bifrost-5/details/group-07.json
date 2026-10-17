@@ -1,361 +1,456 @@
 {
- "group": "07",
- "context": [
-  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC04/AC05/AC06/AC07/AC08/AC13）",
-  "docs/specs/2026-10-14-bifrost-integration-design.md（Q2 Bot 直连 Bifrost、Q5 严格预留、Q11 无上限证据不启用、Q12 结果未知保留预留、Q20 能力范围、Q21 内置 Bot 同一路径）",
-  "docs/adr/0003-bifrost-openbot-credit-admission.md（供应商调用前向 OpenBot 原子预留，结束后可靠结算）",
-  "docs/adr/0001-conservative-input-bound.md（经验估算不作为上限证明）",
-  "CONTEXT.md（provider attempt、dispatch 承诺、result outbox、待结算术语）"
- ],
- "anchors": {
-  "bifrost-hooks": "bifrost/plugins/governance/main.go（PreRequestHook、PreLLMHook 返回 *schemas.LLMPluginShortCircuit、PostLLMHook、HTTPTransportPreHook / HTTPTransportPostHook / HTTPTransportStreamChunkHook、Evaluate/decide、ResolveAccess、postHookWorker（含 billingNonce、attemptNumber、fallbackIndex、pricingScopes）、ReportUsage + framework/jobaccounting.UsageReport）",
-  "bifrost-pricing": "bifrost/framework/jobaccounting/（types.go、pricingscopes、batch.go、video.go）与 bifrost/framework/configstore/tables/model.go、modelconfig.go",
-  "bifrost-vk": "bifrost/plugins/governance/store.go（GetVirtualKey(vkValue)、TableVirtualKey/TableCustomer、budget scope）",
-  "openbot-credit-protocol": "组 06 交付的 Reserve/Status/Settle/Release 受信接口",
-  "openbot-outbox": "server/src/billing/usage-outbox.ts（createUsageOutbox）、usage-delivery.ts、usage-delivery-error.ts、reconcile.ts（既有出站与对账模式，可复用其可靠投递语义）",
-  "openbot-input-bound": "server/src/billing/input-bound.ts（countChatInputTokens / fitChatInputRequest / CONSERVATIVE_*）",
-  "test-harness": "server/tests/support/database.ts；Bifrost 侧 plugins/governance/*_test.go 模式（hookrefusal_test.go、accounting_test.go、customer_scope_test.go）与 go test ./plugins/governance/..."
- },
- "verification_common": [
-  "bun run --filter server typecheck",
-  "cd bifrost/plugins/governance && go test ./... ",
-  "bunx biome lint --error-on-warnings <changed files>"
- ],
- "tickets": {
-  "07.1": {
-   "slug": "bifrost-admission-extension-mount",
-   "contracts": {
-    "consumes": ["06.1 的受信计费服务身份与端点", "01.6 的扩展能力协商结果"],
-    "produces": [
-     "Bifrost 侧积分准入扩展（插件）挂载点与开关配置：扩展存在且启用时才允许付费调用",
-     "扩展缺失或未启用时的硬拒绝语义：不回退供应商直连、不降级为免费放行",
-     "扩展向 OpenBot 声明自身版本，供 01.6 协商"
-    ]
-   },
-   "steps": [
-    "在 Bifrost 治理插件体系中新增或扩展积分准入插件，注册到请求生命周期",
-    "配置缺失、扩展未加载或开关关闭时，付费模型请求直接拒绝并返回可解释原因",
-    "确认不存在绕过该插件的推理入口（含备用路由与 fallback 链）",
-    "暴露扩展版本标识，使 OpenBot 侧协商可判定兼容性",
-    "先写失败测试：扩展缺失时请求被拒绝且供应商未被调用"
-   ],
-   "criteria": [
-    "扩展缺失或未启用时，付费模型请求被拒绝且供应商调用数为 0",
-    "拒绝原因是可解释的准入未启用，而不是通用错误",
-    "不存在绕过扩展的推理入口（含 fallback 与备用路由）",
-    "扩展版本可被 OpenBot 协商判定"
-   ],
-   "tests": [
-    "Go 测试：扩展缺失/关闭时 hook 拒绝（参照 plugins/governance/hookrefusal_test.go 模式）",
-    "入口枚举测试：断言所有推理路径都经过该 hook",
-    "版本标识可读取测试"
-   ],
-   "verification": [
-    "cd bifrost/plugins/governance && go test -run Admission ./..."
-   ],
-   "owned_scope": ["bifrost/plugins/governance 下的准入扩展与其配置", "对应 Go 测试"],
-   "resume_hint": "先确认 hook 注册点覆盖所有推理入口（含 stream 与 fallback）；若只覆盖单一路径，拒绝语义形同虚设。"
+  "group": "07",
+  "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC04/AC05/AC06/AC07/AC08/AC13）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q2 Bot 直连 Bifrost、Q5 严格预留、Q11 无上限证据不启用、Q12 结果未知保留预留、Q20 能力范围、Q21 内置 Bot 同一路径）",
+    "docs/adr/0003-bifrost-openbot-credit-admission.md（供应商调用前向 OpenBot 原子预留，结束后可靠结算）",
+    "docs/adr/0001-conservative-input-bound.md（经验估算不作为上限证明）",
+    "CONTEXT.md（provider attempt、dispatch 承诺、result outbox、待结算术语）"
+  ],
+  "anchors": {
+    "bifrost-hooks": "bifrost/plugins/governance/main.go（PreRequestHook、PreLLMHook 返回 *schemas.LLMPluginShortCircuit、PostLLMHook、HTTPTransportPreHook / HTTPTransportPostHook / HTTPTransportStreamChunkHook、Evaluate/decide、ResolveAccess、postHookWorker（含 billingNonce、attemptNumber、fallbackIndex、pricingScopes）、ReportUsage + framework/jobaccounting.UsageReport）",
+    "bifrost-pricing": "bifrost/framework/jobaccounting/（types.go、pricingscopes、batch.go、video.go）与 bifrost/framework/configstore/tables/model.go、modelconfig.go",
+    "bifrost-vk": "bifrost/plugins/governance/store.go（GetVirtualKey(vkValue)、TableVirtualKey/TableCustomer、budget scope）",
+    "openbot-credit-protocol": "组 06 交付的 Reserve/Status/Settle/Release 受信接口",
+    "openbot-outbox": "server/src/billing/usage-outbox.ts（createUsageOutbox）、usage-delivery.ts、usage-delivery-error.ts、reconcile.ts（既有出站与对账模式，可复用其可靠投递语义）",
+    "openbot-input-bound": "server/src/billing/input-bound.ts（countChatInputTokens / fitChatInputRequest / CONSERVATIVE_*）",
+    "test-harness": "server/tests/support/database.ts；Bifrost 侧 plugins/governance/*_test.go 模式（hookrefusal_test.go、accounting_test.go、customer_scope_test.go）与 go test ./plugins/governance/..."
   },
-  "07.2": {
-   "slug": "prellm-reserve-call",
-   "contracts": {
-    "consumes": ["07.1 的扩展挂载", "06.2/06.3 的 Reserve 契约与响应"],
-    "produces": [
-     "PreLLM 阶段：以受信服务身份认证并调用 Reserve，携带 attemptId、grantId、modelRef、上限证据",
-     "预留成功才继续供应商调用；失败时进入 07.3 的短路拒绝",
-     "预留结果（reservationId、锁定版本）写入请求上下文，供 PostLLM 结算使用"
-    ]
-   },
-   "steps": [
-    "在 PreLLMHook 中解析虚拟 Key → 授权 → 付款账户，构造 Reserve 请求",
-    "以受信服务身份认证调用 OpenBot Reserve，处理成功、拒绝、超时三类响应",
-    "把 reservationId 与锁定版本写入 BifrostContext，供后续 hook 读取",
-    "超时或不可达按拒绝处理，不得乐观放行",
-    "先写失败测试：Reserve 拒绝与超时两种情况下供应商未被调用"
-   ],
-   "criteria": [
-    "预留成功后请求继续，且上下文携带 reservationId 与锁定版本",
-    "预留被拒绝时供应商调用数为 0",
-    "Reserve 超时或不可达时按拒绝处理，不放行",
-    "attemptId 由网关侧稳定生成，可被 OpenBot 幂等识别"
-   ],
-   "tests": ["Go 测试：fake 计费服务返回成功/拒绝/超时三种情形", "上下文携带 reservationId 断言", "供应商调用计数为 0 断言"],
-   "verification": ["cd bifrost/plugins/governance && go test -run PreLLMReserve ./..."],
-   "owned_scope": ["PreLLMHook 的准入调用逻辑", "fake 计费服务测试 helper", "对应 Go 测试"],
-   "resume_hint": "超时按拒绝处理是最容易被“为了可用性”放宽的点；接手先跑超时用例，确认没有乐观放行分支。"
-  },
-  "07.3": {
-   "slug": "short-circuit-refusal-semantics",
-   "contracts": {
-    "consumes": ["07.2 的预留失败路径"],
-    "produces": [
-     "拒绝通过 LLMPluginShortCircuit 返回，不依赖普通 plugin error，也不触发 fallback 链",
-     "拒绝响应结构稳定：包含 reasonCode（余额不足/授权失效/价格未知/上限不可证明/准入不可达）",
-     "拒绝不产生供应商调用，也不产生结算责任"
-    ]
-   },
-   "steps": [
-    "用短路机制返回拒绝，确认不会继续走 provider 或 fallback",
-    "为不同拒绝原因返回不同 reasonCode，便于用户与管理员排查",
-    "确认拒绝路径不写结算、不创建 dispatch 承诺",
-    "先写失败测试：五类 reasonCode 与“供应商调用数为 0”断言"
-   ],
-   "criteria": [
-    "拒绝经短路返回，未触发供应商调用与 fallback",
-    "五类拒绝原因分别返回可区分的 reasonCode",
-    "拒绝不产生 dispatch 承诺或结算记录",
-    "拒绝响应不泄露他人账户数据或凭据"
-   ],
-   "tests": ["五类 reasonCode 测试", "fallback 未触发断言", "无 dispatch/结算写入断言"],
-   "verification": ["cd bifrost/plugins/governance && go test -run ShortCircuit ./..."],
-   "owned_scope": ["短路拒绝逻辑与 reasonCode 映射", "对应 Go 测试"],
-   "resume_hint": "用普通 error 返回时上层可能继续 fallback；必须使用短路类型，并加断言证明 provider 未被调用。"
-  },
-  "07.4": {
-   "slug": "dispatch-commitment-and-idempotent-claim",
-   "contracts": {
-    "consumes": ["07.2 的 reservationId 与 attemptId"],
-    "produces": [
-     "dispatch 承诺记录：供应商调用前持久化 { attemptId, reservationId, provider, model, claimedAt }",
-     "幂等 claim：同一 attemptId 只允许一次有效派发；未知结果的承诺不被自动重发",
-     "承诺记录可被 08.x 恢复流程扫描"
-    ]
-   },
-   "steps": [
-    "在调用供应商前持久化 dispatch 承诺（先写承诺，后派发）",
-    "以 attemptId 为幂等键，重复派发请求返回既有承诺而不是新建",
-    "结果未知的承诺保持 pending，交由 08.x 恢复，不在本 Ticket 自动重试",
-    "先写失败测试：进程在承诺写入后、派发前崩溃 → 重启不重复派发"
-   ],
-   "criteria": [
-    "供应商调用前一定存在 dispatch 承诺记录",
-    "同一 attemptId 的重复派发不产生第二条承诺或第二次供应商调用",
-    "结果未知的承诺保持 pending，不被自动重发",
-    "承诺记录包含恢复所需的归属与预留信息"
-   ],
-   "tests": ["承诺先写后派发顺序测试", "重复 claim 幂等测试", "崩溃点注入测试（承诺后未派发）"],
-   "verification": ["cd bifrost/plugins/governance && go test -run DispatchCommitment ./..."],
-   "owned_scope": ["dispatch 承诺存储与 claim 逻辑", "对应 Go 测试"],
-   "resume_hint": "顺序错误（先派发后写承诺）会让恢复无法判断是否已产生费用；接手先验证写入顺序。"
-  },
-  "07.5": {
-   "slug": "retry-requires-new-admission",
-   "contracts": {
-    "consumes": ["07.4 的幂等 claim", "06.3 的原子预留"],
-    "produces": [
-     "重试语义：每次真实供应商尝试都是新 attemptId、新预留、新承诺",
-     "复用旧 attemptId 不能获得免费的第二次派发",
-     "重试次数与归属可审计，供 22.2 证据使用"
-    ]
-   },
-   "steps": [
-    "确认 fallback/重试路径为每次真实尝试生成新 attemptId 并重新走 Reserve",
-    "拒绝任何复用旧标识进行第二次派发的路径",
-    "记录重试链（原 attempt 与新 attempt 的关联）",
-    "先写失败测试：触发一次重试，断言产生两次预留与两条承诺"
-   ],
-   "criteria": [
-    "每次真实供应商尝试都有独立 attemptId、预留与承诺",
-    "复用旧 attemptId 不能触发新的供应商调用",
-    "重试链可追溯，归属账户不变",
-    "重试不会绕过准入或产生免费执行"
-   ],
-   "tests": ["重试双预留断言", "复用旧标识拒绝测试", "重试链归属一致性测试"],
-   "verification": ["cd bifrost/plugins/governance && go test -run RetryAdmission ./..."],
-   "owned_scope": ["重试/fallback 路径的准入接线", "对应 Go 测试"],
-   "resume_hint": "Bifrost 现有 fallbackIndex/attemptNumber 语义要映射到新的 attemptId 规则；接手先确认二者关系，避免出现“同一 attempt 多次派发”。"
-  },
-  "07.6": {
-   "slug": "input-bound-evidence",
-   "contracts": {
-    "consumes": ["07.2 的 Reserve 请求构造", "03.3 的 PriceStatus", "input-bound.ts 的现有估算能力"],
-    "produces": [
-     "boundEvidence 结构：完整序列化输入计数 + 输出上限 + 供应商可强制性的证据来源",
-     "判定规则：证据不足（无法完整序列化、输出上限不可强制）→ 该调用方式不启用",
-     "经验估算只用于拒绝判断，不得作为价格或上限证明"
-    ]
-   },
-   "steps": [
-    "实现完整序列化输入计数（含工具定义、系统提示、附件等全部计费输入）",
-    "确认输出上限被供应商实际强制（如 max_tokens 生效），否则判定证据不足",
-    "证据不足时拒绝该调用方式，并给出可展示原因",
-    "先写失败测试：缺工具定义计数、输出上限不可强制两类拒绝"
-   ],
-   "criteria": [
-    "输入计数覆盖全部计费输入，不遗漏工具定义与附件",
-    "输出上限不可强制时该调用方式被拒绝",
-    "经验估算结果不被当作上限证明或价格",
-    "证据不足时拒绝原因可展示且不泄露内部细节"
-   ],
-   "tests": ["完整序列化计数测试（含工具定义）", "输出上限不可强制拒绝测试", "估算不作为证据的断言"],
-   "verification": ["cd bifrost/plugins/governance && go test -run BoundEvidence ./...", "bun test server/tests/input-bound.test.ts"],
-   "owned_scope": ["上限证据构造逻辑（Bifrost 侧）与 OpenBot 侧校验", "对应测试"],
-   "resume_hint": "ADR 0001 的经验估算只能变严不能变松；接手检查是否存在把 CONSERVATIVE_* 估算当作可接受上限的分支。"
-  },
-  "07.7": {
-   "slug": "provider-output-cap-enforcement",
-   "contracts": {
-    "consumes": ["07.6 的 boundEvidence"],
-    "produces": [
-     "输出封顶强制证据：供应商实际遵守输出上限，超出部分不产生不可预留的费用",
-     "封顶不可强制的模型/调用方式标记为不可用，并记录原因",
-     "该证据成为 22.3 conformance 的输入"
-    ]
-   },
-   "steps": [
-    "为每个启用的模型/调用方式记录输出封顶的强制方式与实际验证结果",
-    "不可强制时标记不可用，拒绝调用而不是事后追加费用",
-    "把证据结构化保存（模型、调用方式、验证环境、结果），供 22.3 汇总",
-    "先写失败测试：无封顶证据的模型不可调用"
-   ],
-   "criteria": [
-    "启用的模型都有输出封顶强制证据",
-    "无证据的模型/调用方式不可调用且原因可见",
-    "证据记录包含验证环境与结果，可复现",
-    "供应商超出封顶时不会产生未预留费用"
-   ],
-   "tests": ["无证据模型拒绝测试", "证据结构完整性断言", "封顶生效的行为测试（fake provider）"],
-   "verification": ["cd bifrost/plugins/governance && go test -run OutputCap ./..."],
-   "owned_scope": ["输出封顶证据模块", "对应 Go 测试与 fixture"],
-   "resume_hint": "缺真实供应商环境时用 fake provider 完成本地确定性验证，并把该能力标记为“未验证/不可启用”，不要编造证据。"
-  },
-  "07.8": {
-   "slug": "postllm-settlement-outbox",
-   "contracts": {
-    "consumes": ["07.4 的 dispatch 承诺", "06.9 的 Settle 契约", "现有 usage-outbox 可靠投递模式"],
-    "produces": [
-     "PostLLM 阶段：把实际用量与结果写入 result outbox，并在用户响应结束前可靠投递到 Settle",
-     "outbox 记录含 attemptId、reservationId、实际用量、锁定版本与投递状态",
-     "投递失败进入重试队列，由 08.x 恢复；本 Ticket 不实现恢复扫描"
-    ]
-   },
-   "steps": [
-    "在 PostLLMHook 收集实际用量与结果，写入 outbox（先持久化，后投递）",
-    "复用现有 usage-outbox 的投递与错误语义，把结算消息送达 OpenBot Settle",
-    "确保在用户响应结束前完成持久化，进程崩溃后可由恢复流程接管",
-    "先写失败测试：结算消息在响应结束前已持久化；投递失败进入重试而不丢失"
-   ],
-   "criteria": [
-    "实际用量在用户响应结束前已持久化到 outbox",
-    "结算消息可靠投递到 Settle，投递失败不丢失",
-    "outbox 记录包含恢复所需的归属、预留与版本信息",
-    "结算金额使用锁定版本换算，与预留一致"
-   ],
-   "tests": ["持久化先于响应结束的顺序测试", "投递失败重试测试", "崩溃注入后 outbox 记录完整断言"],
-   "verification": ["cd bifrost/plugins/governance && go test -run SettlementOutbox ./...", "TEST_DATABASE_URL=... bun test server/tests/usage-outbox.integration.test.ts"],
-   "owned_scope": ["PostLLMHook 的结算写入与投递", "outbox 记录结构与迁移", "对应测试"],
-   "resume_hint": "顺序是关键：先持久化再响应；若实现成“先响应后写账”，崩溃即丢账，接手先验证顺序。"
-  },
-  "07.9": {
-   "slug": "duplicate-ack-single-record",
-   "contracts": {
-    "consumes": ["07.8 的 outbox 投递", "06.9 的 Settle 幂等"],
-    "produces": [
-     "重复投递/重复 ack 只记录一次结算，不重复扣费",
-     "ack 丢失后的重投仍收敛为同一结果",
-     "重复事件可被审计观测（次数、来源）"
-    ]
-   },
-   "steps": [
-    "确认 outbox 重投使用同一幂等键，Settle 端返回首次结果",
-    "记录重复事件次数，便于发现投递异常",
-    "先写失败测试：同一结算消息投递三次只扣费一次"
-   ],
-   "criteria": [
-    "同一结算消息重复投递只扣费一次",
-    "ack 丢失后的重投收敛为同一结算结果",
-    "重复事件被记录且可观测",
-    "重复投递不改变用户可见余额的正确性"
-   ],
-   "tests": ["三次重复投递集成测试", "ack 丢失重投测试", "重复事件计数断言"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/settlement-duplicate-ack.integration.test.ts"],
-   "owned_scope": ["outbox 投递与 ack 处理", "对应测试"],
-   "resume_hint": "若 Settle 幂等键来自时间戳或随机值，重投会重复扣费；接手先检查幂等键的生成来源是否稳定。"
-  },
-  "07.10": {
-   "slug": "stream-final-usage-settlement",
-   "contracts": {
-    "consumes": ["07.8 的 outbox", "Bifrost 流式 hook（HTTPTransportStreamChunkHook、postHookWorker 的 isFinalChunk）"],
-    "produces": [
-     "流式响应按最终用量结算：只在最终 chunk 或流终止时确定 actualUsage",
-     "客户端中途断开时仍按已发生的真实用量结算，未确认部分进入 unknown",
-     "流式路径与非流式路径共用同一 Settle 契约"
-    ]
-   },
-   "steps": [
-    "在流式路径识别最终 chunk 与流终止，收集累计真实用量",
-    "客户端断开时不丢弃已发生用量；无法确认的部分标记 unknown 交 08.x",
-    "复用 07.8 的 outbox 与幂等键规则",
-    "先写失败测试：完整流式结算金额正确；断开后已发生用量仍结算"
-   ],
-   "criteria": [
-    "完整流式响应按最终真实用量结算，金额与台账一致",
-    "客户端中途断开时已发生用量仍被结算，不丢账",
-    "无法确认的部分进入 unknown 并保持预留",
-    "流式与非流式使用同一 Settle 契约与幂等键规则"
-   ],
-   "tests": ["流式完整结算测试（fake provider 分块）", "断开后结算测试", "unknown 标记断言"],
-   "verification": ["cd bifrost/plugins/governance && go test -run StreamSettlement ./..."],
-   "owned_scope": ["流式结算逻辑", "对应 Go 测试"],
-   "resume_hint": "断开常被当作“无费用”；接手先跑断开用例，确认已发生用量仍进入结算或 unknown。"
-  },
-  "07.11": {
-   "slug": "billable-failure-cancel-no-usage",
-   "contracts": {
-    "consumes": ["07.8/07.10 的结算路径", "06.8 的 unknown 状态", "06.11 的 Release 证据要求"],
-    "produces": [
-     "三类结果语义：已计费失败（按实际费用结算）、取消（按已发生费用结算或进入 unknown）、无 usage（进入 unknown 保持预留）",
-     "任何情况下都不得因失败/取消而自动释放预留",
-     "结果分类可审计，供 08.x 恢复与 22.3 验收引用"
-    ]
-   },
-   "steps": [
-    "区分供应商返回的失败类型：已产生费用的失败按实际结算，未派发的失败可凭证据释放",
-    "取消请求按已发生费用结算；无法确认时进入 unknown",
-    "无 usage 信息时进入 unknown，不用估算值代替真实用量",
-    "先写失败测试：三类结果分别断言结算/unknown/释放行为"
-   ],
-   "criteria": [
-    "已计费的失败仍按实际费用结算",
-    "取消且无法确认结果时保持预留（unknown）",
-    "无 usage 时不使用估算值结算，而是进入 unknown",
-    "未派发且有证据的失败才可释放预留"
-   ],
-   "tests": ["三类结果分类测试", "无 usage 不用估算断言", "释放需证据断言"],
-   "verification": ["cd bifrost/plugins/governance && go test -run FailureSettlement ./...", "bun test server/tests/settle-failure-semantics.test.ts"],
-   "owned_scope": ["失败/取消/无 usage 分类逻辑", "对应测试"],
-   "resume_hint": "最容易出错的是把“无 usage”当作 0 费用释放；接手先跑该用例，确认进入 unknown。"
-  },
-  "07.12": {
-   "slug": "end-to-end-strict-billing-acceptance",
-   "contracts": {
-    "consumes": ["07.3/07.5/07.7/07.9/07.11 的全部语义", "05.4 的 CredentialBundle", "06.12 的用户视图"],
-    "produces": [
-     "端到端可演示路径：已认证 Bot 用短期 Key 调用文本/流式模型 → 准入预留 → 供应商执行 → 结算 → 用户可见消费",
-     "拒绝矩阵证据：余额不足、超时、撤销、缺上限证据、扩展缺失五类场景下供应商调用数为 0",
-     "组 07 缝合点，也是 09.x 与 11–20 各能力族的共同前置"
-    ]
-   },
-   "steps": [
-    "搭建端到端测试环境：真实 Bifrost 管线 + 确定性 provider fake + 专用 PostgreSQL",
-    "跑通成功路径：上限 8、实际 3 的调用使余额从 10 变为 7，无悬挂余量",
-    "逐条跑拒绝矩阵，断言供应商 spy 调用数为 0",
-    "确认消费在用户视图按 Bot 与模型归因可见",
-    "把上述结果整理为可复现的验收记录，供 22.3 引用"
-   ],
-   "criteria": [
-    "成功路径：余额 10、上限 8、实际 3 的调用最终余额为 7，无悬挂余量",
-    "五类拒绝场景中供应商调用数均为 0",
-    "已计费失败仍扣实际费用，未知结果保持预留",
-    "用户视图按 Bot 与模型显示本次消费，且不泄露他人数据"
-   ],
-   "tests": ["端到端成功路径集成测试", "五类拒绝矩阵测试", "用户视图归因断言"],
-   "verification": [
-    "TEST_DATABASE_URL=... bun test server/tests/e2e-strict-billing-text.integration.test.ts",
-    "cd bifrost/plugins/governance && go test -run EndToEnd ./..."
-   ],
-   "owned_scope": ["端到端测试环境与用例", "验收记录文档", "必要时修正上游 Ticket 暴露的缺陷（在本 Ticket 内记录并修复）"],
-   "resume_hint": "本 Ticket 是缝合点：若某条断言失败，先定位属于哪张前置 Ticket 的语义缺口，修复后重跑全矩阵，不要只让失败用例通过。"
+  "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/plugins/governance && go test ./... ",
+    "bunx biome lint --error-on-warnings <changed files>"
+  ],
+  "tickets": {
+    "07.1": {
+      "slug": "bifrost-admission-extension-mount",
+      "contracts": {
+        "consumes": [
+          "06.1 的受信计费服务身份与端点",
+          "01.6 的扩展能力协商结果"
+        ],
+        "produces": [
+          "Bifrost 侧积分准入扩展（插件）挂载点与开关配置：扩展存在且启用时才允许付费调用",
+          "扩展缺失或未启用时的硬拒绝语义：不回退供应商直连、不降级为免费放行",
+          "扩展向 OpenBot 声明自身版本，供 01.6 协商"
+        ]
+      },
+      "steps": [
+        "在 Bifrost 治理插件体系中新增或扩展积分准入插件，注册到请求生命周期",
+        "配置缺失、扩展未加载或开关关闭时，付费模型请求直接拒绝并返回可解释原因",
+        "确认不存在绕过该插件的推理入口（含备用路由与 fallback 链）",
+        "暴露扩展版本标识，使 OpenBot 侧协商可判定兼容性",
+        "先写失败测试：扩展缺失时请求被拒绝且供应商未被调用"
+      ],
+      "criteria": [
+        "扩展缺失或未启用时，付费模型请求被拒绝且供应商调用数为 0",
+        "拒绝原因是可解释的准入未启用，而不是通用错误",
+        "不存在绕过扩展的推理入口（含 fallback 与备用路由）",
+        "扩展版本可被 OpenBot 协商判定"
+      ],
+      "tests": [
+        "Go 测试：扩展缺失/关闭时 hook 拒绝（参照 plugins/governance/hookrefusal_test.go 模式）",
+        "入口枚举测试：断言所有推理路径都经过该 hook",
+        "版本标识可读取测试"
+      ],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run Admission ./..."
+      ],
+      "owned_scope": [
+        "bifrost/plugins/governance 下的准入扩展与其配置",
+        "对应 Go 测试"
+      ],
+      "resume_hint": "先确认 hook 注册点覆盖所有推理入口（含 stream 与 fallback）；若只覆盖单一路径，拒绝语义形同虚设。"
+    },
+    "07.2": {
+      "slug": "prellm-reserve-call",
+      "contracts": {
+        "consumes": ["07.1 的扩展挂载", "06.2/06.3 的 Reserve 契约与响应"],
+        "produces": [
+          "PreLLM 阶段：以受信服务身份认证并调用 Reserve，携带 attemptId、grantId、modelRef、上限证据",
+          "预留成功才继续供应商调用；失败时进入 07.3 的短路拒绝",
+          "预留结果（reservationId、锁定版本）写入请求上下文，供 PostLLM 结算使用"
+        ]
+      },
+      "steps": [
+        "在 PreLLMHook 中解析虚拟 Key → 授权 → 付款账户，构造 Reserve 请求",
+        "以受信服务身份认证调用 OpenBot Reserve，处理成功、拒绝、超时三类响应",
+        "把 reservationId 与锁定版本写入 BifrostContext，供后续 hook 读取",
+        "超时或不可达按拒绝处理，不得乐观放行",
+        "先写失败测试：Reserve 拒绝与超时两种情况下供应商未被调用"
+      ],
+      "criteria": [
+        "预留成功后请求继续，且上下文携带 reservationId 与锁定版本",
+        "预留被拒绝时供应商调用数为 0",
+        "Reserve 超时或不可达时按拒绝处理，不放行",
+        "attemptId 由网关侧稳定生成，可被 OpenBot 幂等识别"
+      ],
+      "tests": [
+        "Go 测试：fake 计费服务返回成功/拒绝/超时三种情形",
+        "上下文携带 reservationId 断言",
+        "供应商调用计数为 0 断言"
+      ],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run PreLLMReserve ./..."
+      ],
+      "owned_scope": [
+        "PreLLMHook 的准入调用逻辑",
+        "fake 计费服务测试 helper",
+        "对应 Go 测试"
+      ],
+      "resume_hint": "超时按拒绝处理是最容易被“为了可用性”放宽的点；接手先跑超时用例，确认没有乐观放行分支。"
+    },
+    "07.3": {
+      "slug": "short-circuit-refusal-semantics",
+      "contracts": {
+        "consumes": ["07.2 的预留失败路径"],
+        "produces": [
+          "拒绝通过 LLMPluginShortCircuit 返回，不依赖普通 plugin error，也不触发 fallback 链",
+          "拒绝响应结构稳定：包含 reasonCode（余额不足/授权失效/价格未知/上限不可证明/准入不可达）",
+          "拒绝不产生供应商调用，也不产生结算责任"
+        ]
+      },
+      "steps": [
+        "用短路机制返回拒绝，确认不会继续走 provider 或 fallback",
+        "为不同拒绝原因返回不同 reasonCode，便于用户与管理员排查",
+        "确认拒绝路径不写结算、不创建 dispatch 承诺",
+        "先写失败测试：五类 reasonCode 与“供应商调用数为 0”断言"
+      ],
+      "criteria": [
+        "拒绝经短路返回，未触发供应商调用与 fallback",
+        "五类拒绝原因分别返回可区分的 reasonCode",
+        "拒绝不产生 dispatch 承诺或结算记录",
+        "拒绝响应不泄露他人账户数据或凭据"
+      ],
+      "tests": [
+        "五类 reasonCode 测试",
+        "fallback 未触发断言",
+        "无 dispatch/结算写入断言"
+      ],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run ShortCircuit ./..."
+      ],
+      "owned_scope": ["短路拒绝逻辑与 reasonCode 映射", "对应 Go 测试"],
+      "resume_hint": "用普通 error 返回时上层可能继续 fallback；必须使用短路类型，并加断言证明 provider 未被调用。"
+    },
+    "07.4": {
+      "slug": "dispatch-commitment-and-idempotent-claim",
+      "contracts": {
+        "consumes": ["07.2 的 reservationId 与 attemptId"],
+        "produces": [
+          "dispatch 承诺记录：供应商调用前持久化 { attemptId, reservationId, provider, model, claimedAt }",
+          "幂等 claim：同一 attemptId 只允许一次有效派发；未知结果的承诺不被自动重发",
+          "承诺记录可被 08.x 恢复流程扫描"
+        ]
+      },
+      "steps": [
+        "在调用供应商前持久化 dispatch 承诺（先写承诺，后派发）",
+        "以 attemptId 为幂等键，重复派发请求返回既有承诺而不是新建",
+        "结果未知的承诺保持 pending，交由 08.x 恢复，不在本 Ticket 自动重试",
+        "先写失败测试：进程在承诺写入后、派发前崩溃 → 重启不重复派发"
+      ],
+      "criteria": [
+        "供应商调用前一定存在 dispatch 承诺记录",
+        "同一 attemptId 的重复派发不产生第二条承诺或第二次供应商调用",
+        "结果未知的承诺保持 pending，不被自动重发",
+        "承诺记录包含恢复所需的归属与预留信息"
+      ],
+      "tests": [
+        "承诺先写后派发顺序测试",
+        "重复 claim 幂等测试",
+        "崩溃点注入测试（承诺后未派发）"
+      ],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run DispatchCommitment ./..."
+      ],
+      "owned_scope": ["dispatch 承诺存储与 claim 逻辑", "对应 Go 测试"],
+      "resume_hint": "顺序错误（先派发后写承诺）会让恢复无法判断是否已产生费用；接手先验证写入顺序。"
+    },
+    "07.5": {
+      "slug": "retry-requires-new-admission",
+      "contracts": {
+        "consumes": ["07.4 的幂等 claim", "06.3 的原子预留"],
+        "produces": [
+          "重试语义：每次真实供应商尝试都是新 attemptId、新预留、新承诺",
+          "复用旧 attemptId 不能获得免费的第二次派发",
+          "重试次数与归属可审计，供 22.2 证据使用"
+        ]
+      },
+      "steps": [
+        "确认 fallback/重试路径为每次真实尝试生成新 attemptId 并重新走 Reserve",
+        "拒绝任何复用旧标识进行第二次派发的路径",
+        "记录重试链（原 attempt 与新 attempt 的关联）",
+        "先写失败测试：触发一次重试，断言产生两次预留与两条承诺"
+      ],
+      "criteria": [
+        "每次真实供应商尝试都有独立 attemptId、预留与承诺",
+        "复用旧 attemptId 不能触发新的供应商调用",
+        "重试链可追溯，归属账户不变",
+        "重试不会绕过准入或产生免费执行"
+      ],
+      "tests": ["重试双预留断言", "复用旧标识拒绝测试", "重试链归属一致性测试"],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run RetryAdmission ./..."
+      ],
+      "owned_scope": ["重试/fallback 路径的准入接线", "对应 Go 测试"],
+      "resume_hint": "Bifrost 现有 fallbackIndex/attemptNumber 语义要映射到新的 attemptId 规则；接手先确认二者关系，避免出现“同一 attempt 多次派发”。"
+    },
+    "07.6": {
+      "slug": "input-bound-evidence",
+      "contracts": {
+        "consumes": [
+          "07.2 的 Reserve 请求构造",
+          "03.3 的 PriceStatus",
+          "input-bound.ts 的现有估算能力"
+        ],
+        "produces": [
+          "boundEvidence 结构：完整序列化输入计数 + 输出上限 + 供应商可强制性的证据来源",
+          "判定规则：证据不足（无法完整序列化、输出上限不可强制）→ 该调用方式不启用",
+          "经验估算只用于拒绝判断，不得作为价格或上限证明"
+        ]
+      },
+      "steps": [
+        "实现完整序列化输入计数（含工具定义、系统提示、附件等全部计费输入）",
+        "确认输出上限被供应商实际强制（如 max_tokens 生效），否则判定证据不足",
+        "证据不足时拒绝该调用方式，并给出可展示原因",
+        "先写失败测试：缺工具定义计数、输出上限不可强制两类拒绝"
+      ],
+      "criteria": [
+        "输入计数覆盖全部计费输入，不遗漏工具定义与附件",
+        "输出上限不可强制时该调用方式被拒绝",
+        "经验估算结果不被当作上限证明或价格",
+        "证据不足时拒绝原因可展示且不泄露内部细节"
+      ],
+      "tests": [
+        "完整序列化计数测试（含工具定义）",
+        "输出上限不可强制拒绝测试",
+        "估算不作为证据的断言"
+      ],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run BoundEvidence ./...",
+        "bun test server/tests/input-bound.test.ts"
+      ],
+      "owned_scope": [
+        "上限证据构造逻辑（Bifrost 侧）与 OpenBot 侧校验",
+        "对应测试"
+      ],
+      "resume_hint": "ADR 0001 的经验估算只能变严不能变松；接手检查是否存在把 CONSERVATIVE_* 估算当作可接受上限的分支。"
+    },
+    "07.7": {
+      "slug": "provider-output-cap-enforcement",
+      "contracts": {
+        "consumes": ["07.6 的 boundEvidence"],
+        "produces": [
+          "输出封顶强制证据：供应商实际遵守输出上限，超出部分不产生不可预留的费用",
+          "封顶不可强制的模型/调用方式标记为不可用，并记录原因",
+          "该证据成为 22.3 conformance 的输入"
+        ]
+      },
+      "steps": [
+        "为每个启用的模型/调用方式记录输出封顶的强制方式与实际验证结果",
+        "不可强制时标记不可用，拒绝调用而不是事后追加费用",
+        "把证据结构化保存（模型、调用方式、验证环境、结果），供 22.3 汇总",
+        "先写失败测试：无封顶证据的模型不可调用"
+      ],
+      "criteria": [
+        "启用的模型都有输出封顶强制证据",
+        "无证据的模型/调用方式不可调用且原因可见",
+        "证据记录包含验证环境与结果，可复现",
+        "供应商超出封顶时不会产生未预留费用"
+      ],
+      "tests": [
+        "无证据模型拒绝测试",
+        "证据结构完整性断言",
+        "封顶生效的行为测试（fake provider）"
+      ],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run OutputCap ./..."
+      ],
+      "owned_scope": ["输出封顶证据模块", "对应 Go 测试与 fixture"],
+      "resume_hint": "缺真实供应商环境时用 fake provider 完成本地确定性验证，并把该能力标记为“未验证/不可启用”，不要编造证据。"
+    },
+    "07.8": {
+      "slug": "postllm-settlement-outbox",
+      "contracts": {
+        "consumes": [
+          "07.4 的 dispatch 承诺",
+          "06.9 的 Settle 契约",
+          "现有 usage-outbox 可靠投递模式"
+        ],
+        "produces": [
+          "PostLLM 阶段：把实际用量与结果写入 result outbox，并在用户响应结束前可靠投递到 Settle",
+          "outbox 记录含 attemptId、reservationId、实际用量、锁定版本与投递状态",
+          "投递失败进入重试队列，由 08.x 恢复；本 Ticket 不实现恢复扫描"
+        ]
+      },
+      "steps": [
+        "在 PostLLMHook 收集实际用量与结果，写入 outbox（先持久化，后投递）",
+        "复用现有 usage-outbox 的投递与错误语义，把结算消息送达 OpenBot Settle",
+        "确保在用户响应结束前完成持久化，进程崩溃后可由恢复流程接管",
+        "先写失败测试：结算消息在响应结束前已持久化；投递失败进入重试而不丢失"
+      ],
+      "criteria": [
+        "实际用量在用户响应结束前已持久化到 outbox",
+        "结算消息可靠投递到 Settle，投递失败不丢失",
+        "outbox 记录包含恢复所需的归属、预留与版本信息",
+        "结算金额使用锁定版本换算，与预留一致"
+      ],
+      "tests": [
+        "持久化先于响应结束的顺序测试",
+        "投递失败重试测试",
+        "崩溃注入后 outbox 记录完整断言"
+      ],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run SettlementOutbox ./...",
+        "TEST_DATABASE_URL=... bun test server/tests/usage-outbox.integration.test.ts"
+      ],
+      "owned_scope": [
+        "PostLLMHook 的结算写入与投递",
+        "outbox 记录结构与迁移",
+        "对应测试"
+      ],
+      "resume_hint": "顺序是关键：先持久化再响应；若实现成“先响应后写账”，崩溃即丢账，接手先验证顺序。"
+    },
+    "07.9": {
+      "slug": "duplicate-ack-single-record",
+      "contracts": {
+        "consumes": ["07.8 的 outbox 投递", "06.9 的 Settle 幂等"],
+        "produces": [
+          "重复投递/重复 ack 只记录一次结算，不重复扣费",
+          "ack 丢失后的重投仍收敛为同一结果",
+          "重复事件可被审计观测（次数、来源）"
+        ]
+      },
+      "steps": [
+        "确认 outbox 重投使用同一幂等键，Settle 端返回首次结果",
+        "记录重复事件次数，便于发现投递异常",
+        "先写失败测试：同一结算消息投递三次只扣费一次"
+      ],
+      "criteria": [
+        "同一结算消息重复投递只扣费一次",
+        "ack 丢失后的重投收敛为同一结算结果",
+        "重复事件被记录且可观测",
+        "重复投递不改变用户可见余额的正确性"
+      ],
+      "tests": ["三次重复投递集成测试", "ack 丢失重投测试", "重复事件计数断言"],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/settlement-duplicate-ack.integration.test.ts"
+      ],
+      "owned_scope": ["outbox 投递与 ack 处理", "对应测试"],
+      "resume_hint": "若 Settle 幂等键来自时间戳或随机值，重投会重复扣费；接手先检查幂等键的生成来源是否稳定。"
+    },
+    "07.10": {
+      "slug": "stream-final-usage-settlement",
+      "contracts": {
+        "consumes": [
+          "07.8 的 outbox",
+          "Bifrost 流式 hook（HTTPTransportStreamChunkHook、postHookWorker 的 isFinalChunk）"
+        ],
+        "produces": [
+          "流式响应按最终用量结算：只在最终 chunk 或流终止时确定 actualUsage",
+          "客户端中途断开时仍按已发生的真实用量结算，未确认部分进入 unknown",
+          "流式路径与非流式路径共用同一 Settle 契约"
+        ]
+      },
+      "steps": [
+        "在流式路径识别最终 chunk 与流终止，收集累计真实用量",
+        "客户端断开时不丢弃已发生用量；无法确认的部分标记 unknown 交 08.x",
+        "复用 07.8 的 outbox 与幂等键规则",
+        "先写失败测试：完整流式结算金额正确；断开后已发生用量仍结算"
+      ],
+      "criteria": [
+        "完整流式响应按最终真实用量结算，金额与台账一致",
+        "客户端中途断开时已发生用量仍被结算，不丢账",
+        "无法确认的部分进入 unknown 并保持预留",
+        "流式与非流式使用同一 Settle 契约与幂等键规则"
+      ],
+      "tests": [
+        "流式完整结算测试（fake provider 分块）",
+        "断开后结算测试",
+        "unknown 标记断言"
+      ],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run StreamSettlement ./..."
+      ],
+      "owned_scope": ["流式结算逻辑", "对应 Go 测试"],
+      "resume_hint": "断开常被当作“无费用”；接手先跑断开用例，确认已发生用量仍进入结算或 unknown。"
+    },
+    "07.11": {
+      "slug": "billable-failure-cancel-no-usage",
+      "contracts": {
+        "consumes": [
+          "07.8/07.10 的结算路径",
+          "06.8 的 unknown 状态",
+          "06.11 的 Release 证据要求"
+        ],
+        "produces": [
+          "三类结果语义：已计费失败（按实际费用结算）、取消（按已发生费用结算或进入 unknown）、无 usage（进入 unknown 保持预留）",
+          "任何情况下都不得因失败/取消而自动释放预留",
+          "结果分类可审计，供 08.x 恢复与 22.3 验收引用"
+        ]
+      },
+      "steps": [
+        "区分供应商返回的失败类型：已产生费用的失败按实际结算，未派发的失败可凭证据释放",
+        "取消请求按已发生费用结算；无法确认时进入 unknown",
+        "无 usage 信息时进入 unknown，不用估算值代替真实用量",
+        "先写失败测试：三类结果分别断言结算/unknown/释放行为"
+      ],
+      "criteria": [
+        "已计费的失败仍按实际费用结算",
+        "取消且无法确认结果时保持预留（unknown）",
+        "无 usage 时不使用估算值结算，而是进入 unknown",
+        "未派发且有证据的失败才可释放预留"
+      ],
+      "tests": ["三类结果分类测试", "无 usage 不用估算断言", "释放需证据断言"],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run FailureSettlement ./...",
+        "bun test server/tests/settle-failure-semantics.test.ts"
+      ],
+      "owned_scope": ["失败/取消/无 usage 分类逻辑", "对应测试"],
+      "resume_hint": "最容易出错的是把“无 usage”当作 0 费用释放；接手先跑该用例，确认进入 unknown。"
+    },
+    "07.12": {
+      "slug": "end-to-end-strict-billing-acceptance",
+      "contracts": {
+        "consumes": [
+          "07.3/07.5/07.7/07.9/07.11 的全部语义",
+          "05.4 的 CredentialBundle",
+          "06.12 的用户视图"
+        ],
+        "produces": [
+          "端到端可演示路径：已认证 Bot 用短期 Key 调用文本/流式模型 → 准入预留 → 供应商执行 → 结算 → 用户可见消费",
+          "拒绝矩阵证据：余额不足、超时、撤销、缺上限证据、扩展缺失五类场景下供应商调用数为 0",
+          "组 07 缝合点，也是 09.x 与 11–20 各能力族的共同前置"
+        ]
+      },
+      "steps": [
+        "搭建端到端测试环境：真实 Bifrost 管线 + 确定性 provider fake + 专用 PostgreSQL",
+        "跑通成功路径：上限 8、实际 3 的调用使余额从 10 变为 7，无悬挂余量",
+        "逐条跑拒绝矩阵，断言供应商 spy 调用数为 0",
+        "确认消费在用户视图按 Bot 与模型归因可见",
+        "把上述结果整理为可复现的验收记录，供 22.3 引用"
+      ],
+      "criteria": [
+        "成功路径：余额 10、上限 8、实际 3 的调用最终余额为 7，无悬挂余量",
+        "五类拒绝场景中供应商调用数均为 0",
+        "已计费失败仍扣实际费用，未知结果保持预留",
+        "用户视图按 Bot 与模型显示本次消费，且不泄露他人数据"
+      ],
+      "tests": [
+        "端到端成功路径集成测试",
+        "五类拒绝矩阵测试",
+        "用户视图归因断言"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/e2e-strict-billing-text.integration.test.ts",
+        "cd bifrost/plugins/governance && go test -run EndToEnd ./..."
+      ],
+      "owned_scope": [
+        "端到端测试环境与用例",
+        "验收记录文档",
+        "必要时修正上游 Ticket 暴露的缺陷（在本 Ticket 内记录并修复）"
+      ],
+      "resume_hint": "本 Ticket 是缝合点：若某条断言失败，先定位属于哪张前置 Ticket 的语义缺口，修复后重跑全矩阵，不要只让失败用例通过。"
+    }
   }
- }
 }

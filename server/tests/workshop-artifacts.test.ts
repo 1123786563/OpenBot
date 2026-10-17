@@ -46,7 +46,11 @@ function recordingStore() {
   return {
     inserted,
     store: {
-      async insertArtifact(input: { sessionId: string; path: string; type: string }) {
+      async insertArtifact(input: {
+        sessionId: string;
+        path: string;
+        type: string;
+      }) {
         inserted.push({
           sessionId: input.sessionId,
           path: input.path,
@@ -57,7 +61,10 @@ function recordingStore() {
   };
 }
 
-function file(path: string, size = 10): {
+function file(
+  path: string,
+  size = 10,
+): {
   path: string;
   size: number;
   content: string;
@@ -164,21 +171,17 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       await database
         .insert(users)
         .values({ id: ownerUserId, email: `${run}@artifacts-test.invalid` });
-      await database
-        .insert(agents)
-        .values({
-          id: botId,
-          name: "artifacts bot",
-          type: "remote_ag_ui",
-          configuration: {},
-        });
-      await database
-        .insert(channels)
-        .values({
-          id: channelId,
-          name: "artifacts channel",
-          description: "workshop-artifacts.test.ts",
-        });
+      await database.insert(agents).values({
+        id: botId,
+        name: "artifacts bot",
+        type: "remote_ag_ui",
+        configuration: {},
+      });
+      await database.insert(channels).values({
+        id: channelId,
+        name: "artifacts channel",
+        description: "workshop-artifacts.test.ts",
+      });
       const session = await store.getOrCreateSession({
         channelId,
         botId,

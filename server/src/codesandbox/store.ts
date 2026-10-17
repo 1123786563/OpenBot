@@ -33,15 +33,18 @@ export type CodeRunFinish = {
 export type CodeRunStore = {
   create(input: CodeRunCreate): Promise<void>;
   finish(id: string, patch: CodeRunFinish): Promise<void>;
-  get(id: string): Promise<{
-    id: string;
-    botId: string;
-    status: CodeRunStatus;
-    inputTokens: number | null;
-    outputTokens: number | null;
-    error: string | null;
-    finishedAt: Date | null;
-  } | undefined>;
+  get(id: string): Promise<
+    | {
+        id: string;
+        botId: string;
+        status: CodeRunStatus;
+        inputTokens: number | null;
+        outputTokens: number | null;
+        error: string | null;
+        finishedAt: Date | null;
+      }
+    | undefined
+  >;
 };
 
 export function createCodeRunStore(db: Database): CodeRunStore {

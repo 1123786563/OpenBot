@@ -8,11 +8,10 @@
 // Deps (lucide-static, @tabler/icons, sharp) are baked into the sandbox image
 // as global npm packages; this script resolves them from the global npm root
 // since NODE_PATH is not set in the sandbox.
-"use strict";
 
-const fs = require("fs");
-const path = require("path");
-const { execFileSync } = require("child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 
 const DEFAULT_SIZE = 512;
 const DEFAULT_COLOR = "000000";
@@ -23,13 +22,16 @@ const SVG_NATIVE_SIZE = 24; // both packages ship 24x24 viewBox SVGs
 const MISSING_DEPS_MESSAGE = `Error: icon rendering dependencies (lucide-static, @tabler/icons, sharp) are missing from this sandbox image.`;
 
 function fail(message) {
-  process.stderr.write(message + "\n");
+  process.stderr.write(`${message}\n`);
   process.exit(1);
 }
 
 function globalNpmRoot() {
   try {
-    return execFileSync("npm", ["root", "-g"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return execFileSync("npm", ["root", "-g"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
   } catch {
     return null;
   }
@@ -69,7 +71,9 @@ function loadSharp() {
   try {
     return require(resolved);
   } catch (err) {
-    fail(`${MISSING_DEPS_MESSAGE}\n\n(underlying error loading "sharp": ${err.message.split("\n")[0]})`);
+    fail(
+      `${MISSING_DEPS_MESSAGE}\n\n(underlying error loading "sharp": ${err.message.split("\n")[0]})`,
+    );
   }
 }
 
@@ -78,12 +82,16 @@ function loadSharp() {
 function iconSets() {
   const sets = [];
   const lucideRoot = packageDir("lucide-static");
-  if (lucideRoot) sets.push({ name: "lucide", dirs: [path.join(lucideRoot, "icons")] });
+  if (lucideRoot)
+    sets.push({ name: "lucide", dirs: [path.join(lucideRoot, "icons")] });
   const tablerRoot = packageDir("@tabler/icons");
   if (tablerRoot) {
     sets.push({
       name: "tabler",
-      dirs: [path.join(tablerRoot, "icons", "outline"), path.join(tablerRoot, "icons", "filled")],
+      dirs: [
+        path.join(tablerRoot, "icons", "outline"),
+        path.join(tablerRoot, "icons", "filled"),
+      ],
     });
   }
   if (sets.length === 0) fail(MISSING_DEPS_MESSAGE);
@@ -94,7 +102,10 @@ function scopeSets(sets, setArg) {
   if (!setArg) return sets;
   const wanted = setArg.toLowerCase();
   const scoped = sets.filter((s) => s.name === wanted);
-  if (scoped.length === 0) fail(`Error: unknown icon set "${setArg}". Available sets: lucide, tabler.`);
+  if (scoped.length === 0)
+    fail(
+      `Error: unknown icon set "${setArg}". Available sets: lucide, tabler.`,
+    );
   return scoped;
 }
 
@@ -131,7 +142,11 @@ function levenshtein(a, b) {
   for (let i = 1; i <= m; i++) {
     const cur = [i];
     for (let j = 1; j <= n; j++) {
-      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      cur[j] = Math.min(
+        prev[j] + 1,
+        cur[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
     }
     prev = cur;
   }
@@ -162,21 +177,28 @@ function runList(query, setArg) {
   if (matches.length === 0) {
     fail(
       `No icons matching "${query}" in ${sets.map((s) => s.name).join(", ")}.\n` +
-        `Try a shorter/simpler query (e.g. "chart" not "growth chart"), or the other set with --set.`
+        `Try a shorter/simpler query (e.g. "chart" not "growth chart"), or the other set with --set.`,
     );
   }
-  process.stdout.write(matches.slice(0, MAX_LIST_RESULTS).join("\n") + "\n");
+  process.stdout.write(`${matches.slice(0, MAX_LIST_RESULTS).join("\n")}\n`);
   if (matches.length > MAX_LIST_RESULTS) {
-    process.stdout.write(`... ${matches.length - MAX_LIST_RESULTS} more matches truncated; refine the query\n`);
+    process.stdout.write(
+      `... ${matches.length - MAX_LIST_RESULTS} more matches truncated; refine the query\n`,
+    );
   }
 }
 
 function normalizeColor(raw) {
   const m = /^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/.exec(raw);
-  if (!m) fail(`Error: --color must be a 3- or 6-digit hex color (got "${raw}").`);
+  if (!m)
+    fail(`Error: --color must be a 3- or 6-digit hex color (got "${raw}").`);
   let hex = m[1];
-  if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
-  return "#" + hex.toUpperCase();
+  if (hex.length === 3)
+    hex = hex
+      .split("")
+      .map((c) => c + c)
+      .join("");
+  return `#${hex.toUpperCase()}`;
 }
 
 async function runRender(iconName, opts) {
@@ -191,21 +213,28 @@ async function runRender(iconName, opts) {
       `Error: icon "${iconName}" not found in ${sets.map((s) => s.name).join(", ")}.\n` +
         `Names are kebab-case (e.g. circle-check, trending-up).\n` +
         `Close matches:\n  ${suggestions.join("\n  ")}\n` +
-        `Or search by keyword: node icon.js --list "<keyword>"`
+        `Or search by keyword: node icon.js --list "<keyword>"`,
     );
   }
 
   // Both sets draw with stroke/fill="currentColor"; substitute the literal hex.
-  const svg = fs.readFileSync(file, "utf8").replace(/currentColor/g, opts.color);
+  const svg = fs
+    .readFileSync(file, "utf8")
+    .replace(/currentColor/g, opts.color);
 
   const outPath = opts.out || path.join("outputs", "icons", `${iconName}.png`);
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   // density scales SVG rasterization so the icon renders vector-crisp at the
   // target size instead of being upscaled from 24px.
   const density = (72 * opts.size) / SVG_NATIVE_SIZE;
-  const png = await sharp(Buffer.from(svg), { density }).resize(opts.size, opts.size).png().toBuffer();
+  const png = await sharp(Buffer.from(svg), { density })
+    .resize(opts.size, opts.size)
+    .png()
+    .toBuffer();
   fs.writeFileSync(outPath, png);
-  process.stdout.write(`Wrote ${outPath} (${opts.size}x${opts.size}px, ${opts.color})\n`);
+  process.stdout.write(
+    `Wrote ${outPath} (${opts.size}x${opts.size}px, ${opts.color})\n`,
+  );
 }
 
 const USAGE = `Usage:
@@ -242,14 +271,15 @@ function parseArgs(argv) {
       return argv[i];
     };
     if (arg === "--help" || arg === "-h") {
-      process.stdout.write(USAGE + "\n");
+      process.stdout.write(`${USAGE}\n`);
       process.exit(0);
     } else if (arg === "--color" || arg === "-c") opts.color = next();
     else if (arg === "--size" || arg === "-s") opts.size = next();
     else if (arg === "--out" || arg === "-o") opts.out = next();
     else if (arg === "--list") opts.list = next();
     else if (arg === "--set") opts.set = next();
-    else if (arg.startsWith("--")) fail(`Error: unknown option "${arg}".\n\n${USAGE}`);
+    else if (arg.startsWith("--"))
+      fail(`Error: unknown option "${arg}".\n\n${USAGE}`);
     else if (opts.iconName === null) opts.iconName = arg;
     else fail(`Error: unexpected extra argument "${arg}".\n\n${USAGE}`);
   }

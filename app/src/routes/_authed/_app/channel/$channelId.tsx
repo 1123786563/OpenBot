@@ -1,17 +1,11 @@
 import { IconCode, IconSettings } from "@tabler/icons-react";
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
-import { hasUnseenActivity } from "@/components/app-sidebar/app-sidebar";
 import { BotPausedBanner } from "@/components/bot-profile/pause-banner";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { ChannelChat } from "@/components/channels/channel-chat";
@@ -39,7 +33,7 @@ const HEADING_ENTRANCE_SECONDS = 0.18;
 const HEADING_ENTRANCE_OFFSET = "translateY(4px)";
 
 /** Shared detail pane width for the live screen view. */
-const SCREEN_PANEL_WIDTH = 400;
+const _SCREEN_PANEL_WIDTH = 400;
 
 /** The workshop pane is wider: it carries the turn's stream beside the file tree. */
 const WORKSHOP_PANEL_WIDTH = 480;

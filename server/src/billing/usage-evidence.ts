@@ -1,3 +1,4 @@
+import { getLogger } from "../../../shared/logger";
 import { type UsageOutbox, UsageOutboxConflictError } from "./usage-outbox";
 
 /**
@@ -47,13 +48,15 @@ export const CONFIRMED_NO_COST_REASONS: ReadonlySet<string> = new Set([
   "no_usage", // the provider reported a finish with zero tokens
 ]);
 
+const logger = getLogger("server");
+
 export function isConfirmedNoCost(reason: string): boolean {
   return CONFIRMED_NO_COST_REASONS.has(reason);
 }
 
 export function createUsageEvidenceRecorder(
   outbox: Pick<UsageOutbox, "record">,
-  log: (message: string) => void = (message) => console.warn(message),
+  log: (message: string) => void = (message) => logger.warn(message),
 ): (input: UnsettledUsageInput) => Promise<void> {
   return async (input) => {
     try {

@@ -1,4 +1,9 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 
 /**
  * Workshop share tokens, and the scoped actor they mint.
@@ -111,14 +116,11 @@ export type ShareService = {
    * Token → scoped actor, or null. THE canUseBot exception (see the file's head). All three
    * failure shapes — wrong token, expired, revoked — answer the same null, on purpose.
    */
-  resolveShareActor(token: string): Promise<
-    | {
-        channelId: string;
-        botId: string;
-        scope: ShareScope;
-      }
-    | null
-  >;
+  resolveShareActor(token: string): Promise<{
+    channelId: string;
+    botId: string;
+    scope: ShareScope;
+  } | null>;
   /** A signed artifact URL for one artifact under one share scope. */
   signArtifactUrl(input: {
     channelId: string;
@@ -192,7 +194,8 @@ export function createShareService(options: {
       // The uniform miss: no row, revoked, or expired all answer null, and nothing about
       // which one it was reaches the caller.
       if (!live || live.revokedAt) return null;
-      if (live.expiresAt && live.expiresAt.getTime() <= now().getTime()) return null;
+      if (live.expiresAt && live.expiresAt.getTime() <= now().getTime())
+        return null;
       return {
         channelId: live.channelId,
         botId: live.botId,

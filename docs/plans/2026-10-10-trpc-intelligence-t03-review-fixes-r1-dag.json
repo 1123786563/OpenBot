@@ -21,7 +21,9 @@
         "server/tests/enterprise/conversations.integration.test.ts"
       ],
       "interfaces": {
-        "consumes": ["R3-1 authorizedLegacyList candidate and post-lock validation protocol"],
+        "consumes": [
+          "R3-1 authorizedLegacyList candidate and post-lock validation protocol"
+        ],
         "produces": ["100 newest authorized legacy conversation rows"]
       },
       "verification": [
@@ -40,6 +42,8 @@
     "no_self_edges": true,
     "acyclic": true,
     "isolated_node_reviewed": true,
-    "coverage": {"R3-1-Q01": "Acceptance 1 plus guarded PostgreSQL regression"}
+    "coverage": {
+      "R3-1-Q01": "Acceptance 1 plus guarded PostgreSQL regression"
+    }
   }
 }

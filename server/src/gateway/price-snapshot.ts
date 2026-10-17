@@ -127,7 +127,9 @@ export type PriceDimState =
   | { status: "unknown"; reason: PriceDimensionUnknownReason };
 
 /** The full dimension map: every dimension of the vocabulary is present, always. */
-export type PriceSnapshotDims = { readonly [D in PriceDimension]: PriceDimState };
+export type PriceSnapshotDims = {
+  readonly [D in PriceDimension]: PriceDimState;
+};
 
 /** The fixed source a snapshot carries: the catalog's own constant, never a URL. */
 export const GATEWAY_PRICE_SNAPSHOT_SOURCE = GATEWAY_CATALOG_SOURCE;
@@ -196,7 +198,9 @@ export const WIRE_PRICED_DIMENSIONS: readonly PriceDimension[] =
  * here. Every dimension of the vocabulary is present in the answer; nothing is ever 0 by
  * default.
  */
-export function mapPriceDims(rawEntry: Record<string, unknown>): PriceSnapshotDims {
+export function mapPriceDims(
+  rawEntry: Record<string, unknown>,
+): PriceSnapshotDims {
   const pricing =
     rawEntry.pricing !== null &&
     typeof rawEntry.pricing === "object" &&
@@ -250,11 +254,7 @@ export function assertPriceSnapshotDims(
   const dims = {} as Record<PriceDimension, PriceDimState>;
   for (const dimension of PRICE_DIMENSIONS) {
     const entry = raw[dimension];
-    if (
-      entry === null ||
-      typeof entry !== "object" ||
-      Array.isArray(entry)
-    ) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
       throw new TypeError(`${where}: dims.${dimension} is not an object.`);
     }
     const state = entry as Record<string, unknown>;
@@ -389,7 +389,10 @@ function priceSnapshotFromRow(row: SnapshotRow): PriceSnapshot {
       `The stored price snapshot for ${row.provider}/${row.model} carries snapshot version ${String(row.snapshotVersion)}, which is not a positive whole number.`,
     );
   }
-  if (row.rateVersion !== null && (row.rateVersion < 0 || !Number.isSafeInteger(row.rateVersion))) {
+  if (
+    row.rateVersion !== null &&
+    (row.rateVersion < 0 || !Number.isSafeInteger(row.rateVersion))
+  ) {
     throw new TypeError(
       `The stored price snapshot for ${row.provider}/${row.model} carries rate version ${String(row.rateVersion)}, which is neither null nor a non-negative whole number.`,
     );
@@ -582,11 +585,14 @@ export function createEnterpriseGatewayPriceSnapshotStore(
     async listLatestPriceSnapshots() {
       // DISTINCT ON keeps one row per ref — the newest, by the primary key's version order.
       const rows = await database
-        .selectDistinctOn([
-          gatewayPriceSnapshots.provider,
-          gatewayPriceSnapshots.model,
-          gatewayPriceSnapshots.capability,
-        ], selection)
+        .selectDistinctOn(
+          [
+            gatewayPriceSnapshots.provider,
+            gatewayPriceSnapshots.model,
+            gatewayPriceSnapshots.capability,
+          ],
+          selection,
+        )
         .from(gatewayPriceSnapshots)
         .orderBy(
           gatewayPriceSnapshots.provider,
@@ -645,9 +651,7 @@ export type GatewayPriceSnapshotService = {
    */
   syncFromCatalog: () => Promise<PriceSnapshotSyncOutcome>;
   /** The newest snapshot for one ref — what a gate or a picker reads. */
-  latestPriceSnapshot: (
-    ref: ModelRef,
-  ) => Promise<PriceSnapshot | undefined>;
+  latestPriceSnapshot: (ref: ModelRef) => Promise<PriceSnapshot | undefined>;
   /** One recorded version — what settlement resolves against. */
   priceSnapshot: (
     ref: ModelRef,

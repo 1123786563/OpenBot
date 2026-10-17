@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createWorkshopPublicRoutes } from "../src/workshop/public-routes";
 import {
-  createInProcessShareLimiter,
   createShareService,
   hashShareToken,
   newShareToken,

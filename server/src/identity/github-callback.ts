@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
+import { getLogger } from "../../../shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import { type CredentialStore, encryptSecret } from "../credentials";
@@ -29,22 +30,26 @@ export type GithubCallbackDeps = {
   now?: () => Date;
 };
 
+const log = getLogger("server");
+
 function logRefused(reason: string): void {
-  console.warn(
-    JSON.stringify({ type: "identity-github-callback-refused", reason }),
+  log.warn(
+    { type: "identity-github-callback-refused", reason },
+    "identity-github-callback-refused",
   );
 }
 
 // Only GithubOAuthError messages are logged: they are fixed sentences. Any other error's message
 // could carry vendor or database text, so it contributes its name alone.
 function logFailed(stage: string, error: unknown): void {
-  console.error(
-    JSON.stringify({
+  log.error(
+    {
       type: "identity-github-callback-failed",
       stage,
       reason: error instanceof Error ? error.name : "unknown",
       ...(error instanceof GithubOAuthError ? { message: error.message } : {}),
-    }),
+    },
+    "identity-github-callback-failed",
   );
 }
 

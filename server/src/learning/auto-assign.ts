@@ -3,6 +3,7 @@ import {
   AUTOMATIC_LEARNING_CONTAINER_ID,
   type LearningAutoAssignState,
 } from "../../../shared/learning";
+import { getLogger } from "../../../shared/logger";
 import {
   type AuditStore,
   DEPLOYMENT_INITIATOR,
@@ -192,6 +193,8 @@ const RETRY_MS = 10 * 60_000;
 /** The shortest gap between background checks started by page loads and turns. */
 const MIN_INTERVAL_MS = 60_000;
 
+const logger = getLogger("server");
+
 /**
  * Assign this project's `openbot` Learning container as the default when nobody has chosen one.
  *
@@ -228,7 +231,7 @@ export function createLearningAutoAssign(options: {
   const containerId = options.containerId ?? AUTOMATIC_LEARNING_CONTAINER_ID;
   const now = options.now ?? Date.now;
   const minIntervalMs = options.minIntervalMs ?? MIN_INTERVAL_MS;
-  const log = options.log ?? ((entry) => console.warn(JSON.stringify(entry)));
+  const log = options.log ?? ((entry) => logger.warn(JSON.stringify(entry)));
   let current: LearningAutoAssignState = options.enabled
     ? { state: "pending" }
     : { state: "off" };

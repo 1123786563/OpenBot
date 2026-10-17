@@ -4,7 +4,13 @@ import {
   IconExternalLink,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { previewOriginLive } from "@/lib/craft/client";
@@ -88,7 +94,7 @@ export function previewEntryUrl(origin: string, ticket: string): string {
  * URLs either, so if they were meant as addresses at all, they are malformed
  * absolute forms, not relative paths.
  */
-const ABSOLUTE_LIKE = /^[a-z0-9][a-z0-9+.\-]*:/i;
+const ABSOLUTE_LIKE = /^[a-z0-9][a-z0-9+.-]*:/i;
 
 /**
  * An http(s) ABSOLUTE address — the shape every post-D11 `webapp_url`/
@@ -951,7 +957,8 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
     // A fresh attempt starts with a clean slate (Object.is bail-out makes
     // the common case free).
     setExchangeRefusal(null);
-    void exchangePassRef.current()
+    void exchangePassRef
+      .current()
       .then(({ ticket, origin }) => {
         if (guard.cancelled) return;
         // fix-ocr6 A, second half: the frame navigates THIS response's
@@ -1003,8 +1010,7 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
         // so there is nothing to re-translate at render.
         setExchangeRefusal({
           kind: "server",
-          text:
-            error instanceof Error && error.message ? error.message : "",
+          text: error instanceof Error && error.message ? error.message : "",
         });
       })
       .finally(() => {
@@ -1033,7 +1039,7 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
     locationOrigin,
     // The brake is part of the decision (fix-ocr11): a streak change (an
     // error counting up, a clean load clearing) re-walks it.
-    frameErrorStreak
+    frameErrorStreak,
   ]);
 
   /*
@@ -1189,10 +1195,7 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
   // either.
   if (closedReason && hasWebapp) {
     return (
-      <PreviewPaneState
-        title={t("preview.closedTitle")}
-        hint={closedReason}
-      />
+      <PreviewPaneState title={t("preview.closedTitle")} hint={closedReason} />
     );
   }
 
