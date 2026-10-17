@@ -20,10 +20,15 @@ import { cleanup, configure, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type {
   ExportJobListItem,
+  ExportJobsResult,
   ExportJobView,
 } from "../../shared/ai-observability-admin";
 import { ObservationExportsPage } from "../src/components/ai-observability/exports-status";
 import { ObservationRunsPage } from "../src/components/ai-observability/runs-list";
+import {
+  type ObservationExportsScreen,
+  observationExportsQueryOptions,
+} from "../src/lib/ai-observability/exports";
 // English copy: the i18n bundles initialize on import, so assertions see real sentences.
 import "@/lib/i18n";
 
@@ -64,8 +69,8 @@ afterAll(async () => {
 
 const originalFetch = global.fetch;
 const requested: string[] = [];
-let exportsHandler: () => Response = () =>
-  Response.json({ jobs: [job({ state: "queued" })] });
+let exportsHandler: (url: string) => Response = () =>
+  Response.json(listBody([job({ state: "queued" })]));
 let detailHandler: () => Response = () => new Response(null, { status: 404 });
 
 const ME = {
@@ -95,7 +100,7 @@ const PROFILE = {
 
 beforeEach(() => {
   requested.length = 0;
-  exportsHandler = () => Response.json({ jobs: [job({ state: "queued" })] });
+  exportsHandler = () => Response.json(listBody([job({ state: "queued" })]));
   detailHandler = () => new Response(null, { status: 404 });
   global.fetch = Object.assign(
     async (path: Parameters<typeof fetch>[0]) => {
@@ -104,12 +109,13 @@ beforeEach(() => {
       if (url === "/api/me") return Response.json({ user: ME });
       if (url.startsWith("/api/agents/agent-1"))
         return Response.json({ agent: PROFILE });
-      // The list face is the bare path; the detail face is the artifactUrl a
+      // The list face names its window in the query string (R3-07/R3-14: the
+      // pagination contract consumed by name); the detail face is the artifactUrl a
       // completed row carries (R2-40's shape: the list never inlines the rows).
-      if (url === "/api/ai-observability/bots/agent-1/exports")
-        return exportsHandler();
       if (url.startsWith("/api/ai-observability/bots/agent-1/exports/"))
         return detailHandler();
+      if (url.startsWith("/api/ai-observability/bots/agent-1/exports"))
+        return exportsHandler(url);
       if (url.startsWith("/api/ai-observability/bots/agent-1/runs"))
         return Response.json({
           runs: [],
@@ -151,6 +157,23 @@ function job(overrides: Partial<ExportJobListItem> = {}): ExportJobListItem {
       ? { artifactUrl: `/api/ai-observability/bots/agent-1/exports/${jobId}` }
       : {}),
     ...overrides,
+  };
+}
+
+/** The list answer's envelope: one page of jobs plus the offset facts it was read with. */
+function listBody(
+  jobs: ExportJobListItem[],
+  pagination: Partial<ExportJobsResult["pagination"]> = {},
+): ExportJobsResult {
+  return {
+    jobs,
+    pagination: {
+      total: jobs.length,
+      offset: 0,
+      limit: 20,
+      nextOffset: null,
+      ...pagination,
+    },
   };
 }
 
@@ -247,7 +270,7 @@ describe("a job answers its state, rows, times and file (acceptance 2)", () => {
     // endpoint in artifactUrl, and the download must fetch the bytes from there —
     // the old `job.artifact ?? []` read downloads an empty file on the real wire.
     const row = job();
-    exportsHandler = () => Response.json({ jobs: [row] });
+    exportsHandler = () => Response.json(listBody([row]));
     detailHandler = () => Response.json(detailAnswer(row));
     const blobs: Blob[] = [];
     const createObjectURL = URL.createObjectURL;
@@ -282,7 +305,7 @@ describe("a job answers its state, rows, times and file (acceptance 2)", () => {
 
   test("a download the manage gate refuses flips the page to the refusal it now is", async () => {
     const row = job();
-    exportsHandler = () => Response.json({ jobs: [row] });
+    exportsHandler = () => Response.json(listBody([row]));
     detailHandler = () =>
       Response.json({ error: "OWNERSHIP_REQUIRED" }, { status: 403 });
     const view = draw();
@@ -301,7 +324,7 @@ describe("a job answers its state, rows, times and file (acceptance 2)", () => {
 
   test("a detail answer that lost its artifact never downloads an empty file", async () => {
     const row = job();
-    exportsHandler = () => Response.json({ jobs: [row] });
+    exportsHandler = () => Response.json(listBody([row]));
     detailHandler = () =>
       Response.json({ job: { ...row, artifact: undefined } });
     const blobs: Blob[] = [];
@@ -335,8 +358,8 @@ describe("a job answers its state, rows, times and file (acceptance 2)", () => {
 
   test("rows answer state, rows and times", async () => {
     exportsHandler = () =>
-      Response.json({
-        jobs: [
+      Response.json(
+        listBody([
           job({ state: "completed", rowCount: 500 }),
           job({
             state: "running",
@@ -344,8 +367,8 @@ describe("a job answers its state, rows, times and file (acceptance 2)", () => {
             settledAt: null,
             createdAt: "2026-10-16T08:00:00.000Z",
           }),
-        ],
-      });
+        ]),
+      );
     const view = draw();
     await waitFor(() => expect(pageText(view)).toContain("500 of 1,000 rows"));
     expect(pageText(view)).toContain("Ready to download");
@@ -355,7 +378,7 @@ describe("a job answers its state, rows, times and file (acceptance 2)", () => {
   });
 
   test("an empty list says no exports yet", async () => {
-    exportsHandler = () => Response.json({ jobs: [] });
+    exportsHandler = () => Response.json(listBody([]));
     const view = draw();
     await view.findByText("No exports yet");
   });
@@ -364,9 +387,9 @@ describe("a job answers its state, rows, times and file (acceptance 2)", () => {
 describe("a permission change flips the page, not the cache (acceptance 2)", () => {
   test("a revocation mid-flight answers forbidden with no stale rows", async () => {
     exportsHandler = () =>
-      Response.json({
-        jobs: [job({ state: "running", rowCount: null, settledAt: null })],
-      });
+      Response.json(
+        listBody([job({ state: "running", rowCount: null, settledAt: null })]),
+      );
     const view = draw();
     await waitFor(() => expect(pageText(view)).toContain("Exporting"));
     // The manage right ends: the next answer is the refusal, and the page flips. In the
@@ -387,7 +410,7 @@ describe("a permission change flips the page, not the cache (acceptance 2)", () 
     // focus refetch the shipped app had turned off left the download button
     // alive indefinitely. The tab returning to the foreground now re-asks, the
     // refusal replaces the data, and the file offer goes with it.
-    exportsHandler = () => Response.json({ jobs: [job()] });
+    exportsHandler = () => Response.json(listBody([job()]));
     const view = draw();
     await view.findByText("Ready to download");
     exportsHandler = () =>
@@ -411,11 +434,11 @@ describe("a directly typed URL cannot widen scope (acceptance 4)", () => {
 describe("fault, in-flight and not-enabled stay three answers (acceptance 5)", () => {
   test("a failed job names its closed-vocabulary code", async () => {
     exportsHandler = () =>
-      Response.json({
-        jobs: [
+      Response.json(
+        listBody([
           job({ state: "failed", errorCode: "OPIK_TIMEOUT", rowCount: null }),
-        ],
-      });
+        ]),
+      );
     const view = draw();
     await view.findByText("Failed");
     expect(pageText(view)).toContain(
@@ -428,15 +451,15 @@ describe("fault, in-flight and not-enabled stay three answers (acceptance 5)", (
 
   test("a capability-missing failure says the integration is off, not a fault", async () => {
     exportsHandler = () =>
-      Response.json({
-        jobs: [
+      Response.json(
+        listBody([
           job({
             state: "failed",
             errorCode: "CAPABILITY_MISSING",
             rowCount: null,
           }),
-        ],
-      });
+        ]),
+      );
     const view = draw();
     await view.findByText("Failed");
     // The not-enabled sentence: a configuration state, in the reserved disabled words —
@@ -462,7 +485,8 @@ describe("a body this build cannot trust is the unavailable fault (acceptance 5)
     const row = job();
     const withoutUrl = { ...row } as Record<string, unknown>;
     delete withoutUrl.artifactUrl;
-    exportsHandler = () => Response.json({ jobs: [withoutUrl] });
+    exportsHandler = () =>
+      Response.json(listBody([withoutUrl as ExportJobListItem]));
     const view = draw();
     await view.findByText("Upstream unavailable");
     expect(pageText(view)).not.toContain("Ready to download");
@@ -470,7 +494,7 @@ describe("a body this build cannot trust is the unavailable fault (acceptance 5)
 
   test("a state word this build has never heard of fails closed", async () => {
     exportsHandler = () =>
-      Response.json({ jobs: [job({ state: "exploded" as never })] });
+      Response.json(listBody([job({ state: "exploded" as never })]));
     const view = draw();
     await view.findByText("Upstream unavailable");
     expect(pageText(view)).not.toContain("job-1");
@@ -480,6 +504,121 @@ describe("a body this build cannot trust is the unavailable fault (acceptance 5)
     exportsHandler = () => Response.json({ jobs: "no" });
     const view = draw();
     await view.findByText("Upstream unavailable");
+  });
+});
+
+/*
+ * OCR round 3 (R3-07 ≡ R3-14): the page used to read only `body.jobs` — the server's
+ * pagination envelope (limit/offset/nextOffset) was neither requested, validated nor
+ * rendered, and the poll decided purely from the visible page, so an in-flight job
+ * that fell beyond the first 20 rows silently closed the poll. The read now names its
+ * window, refuses a body without the offset facts, says what it is not showing, and
+ * keeps asking while anything — anywhere in the scope — is still in flight.
+ */
+describe("the list consumes the pagination contract (R3-07 ≡ R3-14)", () => {
+  test("the read names its window, and a truncated list says what it is not showing", async () => {
+    // One row answers, the envelope says the scope holds 47: the notice is about
+    // the envelope, not about filling the page.
+    exportsHandler = () =>
+      Response.json(listBody([job()], { total: 47, nextOffset: 20 }));
+    const view = draw();
+    await view.findByText("Ready to download");
+    // The contract by name: the request pins the window it wants.
+    expect(
+      requested.some(
+        (url) =>
+          url ===
+          "/api/ai-observability/bots/agent-1/exports?limit=20&offset=0",
+      ),
+    ).toBe(true);
+    expect(pageText(view)).toContain("Showing the newest 1 of 47 export jobs");
+  });
+
+  test("a 200 without its pagination is the unavailable fault, never a page of rows", async () => {
+    exportsHandler = () => Response.json({ jobs: [job()] });
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+    expect(pageText(view)).not.toContain("Ready to download");
+  });
+
+  test("an in-flight job beyond the visible page holds the poll open", async () => {
+    const running = job({ state: "running", rowCount: null, settledAt: null });
+    exportsHandler = (url) =>
+      url.includes("offset=20")
+        ? Response.json(
+            listBody([running], { total: 21, offset: 20, nextOffset: null }),
+          )
+        : Response.json(listBody([job()], { total: 21, nextOffset: 20 }));
+    const view = draw();
+    // The read walks past its own page to decide: the off-page in-flight job is found.
+    await waitFor(() =>
+      expect(
+        requested.filter((url) => url.includes("offset=20")).length,
+      ).toBeGreaterThan(0),
+    );
+    expect(pageText(view)).toContain("Showing the newest 1 of 21 export jobs");
+    view.unmount();
+
+    /*
+     * The poll's own decision, read off the query the page runs with: it stays open
+     * while anything in the scope is in flight — even beyond the window — and closes
+     * only when everything has settled. (The harness cannot watch the live interval —
+     * react-query's scheduler is inert here, frozen isServer at import — so the same
+     * function the interval consults is exercised directly, page answer in hand.)
+     */
+    const options = observationExportsQueryOptions("agent-1", 40);
+    const refetchIntervalFn = options.refetchInterval;
+    const decide = (
+      data: ObservationExportsScreen,
+    ): number | false | undefined => {
+      if (typeof refetchIntervalFn !== "function") return refetchIntervalFn;
+      const query = { state: { data } } as unknown as Parameters<
+        typeof refetchIntervalFn
+      >[0];
+      return refetchIntervalFn(query);
+    };
+    // The read exercised the way the page runs it: the query options' own queryFn.
+    const run = async (): Promise<ObservationExportsScreen> => {
+      const queryFn = options.queryFn;
+      if (!queryFn) throw new Error("the read defines its queryFn");
+      const context = {
+        queryKey: options.queryKey,
+        signal: new AbortController().signal,
+        meta: undefined,
+      } as unknown as Parameters<typeof queryFn>[0];
+      return (await queryFn(context)) as ObservationExportsScreen;
+    };
+    const walking = await run();
+    expect(walking.view).toBe("list");
+    expect(walking.view === "list" ? walking.offPageInFlight : false).toBe(
+      true,
+    );
+    expect(decide(walking)).toBe(40);
+
+    // When the off-page job settles, the poll closes as it always did. (The settled
+    // row is a proper completed job — artifactUrl and all — the only shape the
+    // projection lets carry a finished state.)
+    exportsHandler = (url) =>
+      url.includes("offset=20")
+        ? Response.json(
+            listBody(
+              [
+                job({
+                  state: "completed",
+                  rowCount: 2,
+                  settledAt: "2026-10-16T09:40:00.000Z",
+                }),
+              ],
+              { total: 21, offset: 20, nextOffset: null },
+            ),
+          )
+        : Response.json(listBody([job()], { total: 21, nextOffset: 20 }));
+    const settled = await run();
+    expect(settled.view).toBe("list");
+    expect(settled.view === "list" ? settled.offPageInFlight : true).toBe(
+      false,
+    );
+    expect(decide(settled)).toBe(false);
   });
 });
 

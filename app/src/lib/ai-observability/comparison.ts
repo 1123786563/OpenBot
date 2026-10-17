@@ -105,6 +105,21 @@ function isNullableNumberRecord(
 function isSideReport(value: unknown): boolean {
   if (!isRecord(value)) return false;
   if (!Array.isArray(value.samples)) return false;
+  /*
+   * The deltas section indexes each side's samples positionally —
+   * `samples[delta.index]` — while the server builds the array dense with each
+   * sample carrying its own index. Positional trust without the carried index
+   * agreeing would put another case's judge beside a delta (OCR round 3, R3-01):
+   * misattribution, the same discipline as any malformed success — the store
+   * failing to answer — so the claim is checked here, not assumed.
+   */
+  if (
+    !value.samples.every(
+      (sample, position) => isRecord(sample) && sample.index === position,
+    )
+  ) {
+    return false;
+  }
   if (
     !isNullableNumberRecord(
       value.summary,
@@ -205,6 +220,14 @@ function isExperimentComparisonBody(
   if (!isComparisonSide(body.baseline) || !isComparisonSide(body.candidate))
     return false;
   if (!isRecord(body.compatibility)) return false;
+  /*
+   * compatible is the field that decides the conclusion sentence — the page's only
+   * compatible/incompatible branch — and the shared contract makes it a required
+   * boolean. A 200 without it used to reach the page as undefined, take the falsy
+   * branch and confidently declare the pair incompatible (OCR round 3, R3-10); an
+   * answer without its verdict is the store failing to answer, the unavailable fault.
+   */
+  if (typeof body.compatibility.compatible !== "boolean") return false;
   if (!Array.isArray(body.compatibility.fields)) return false;
   if (!body.compatibility.fields.every(isCompatibilityEntry)) return false;
   if (body.deltas !== null) {

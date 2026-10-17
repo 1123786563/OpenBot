@@ -13,17 +13,24 @@ import { tryClient } from "@/lib/client";
  * refusing to widen (a directly typed URL to someone else's Bot hears it on the first
  * load), anything else is the store failing to answer.
  *
- * The query polls while any job is still in flight, which is how a permission change
- * reaches the page: the poll's next answer is the refusal, and because a refusal replaces
- * the data rather than throwing beside it, no stale row survives the flip.
+ * The query polls while any job in the scope is still in flight — on the page the
+ * reader sees, or (OCR round 3, R3-07 ≡ R3-14) beyond its window, which the read
+ * finds by walking the remaining pages whenever the visible one is quiet but the
+ * scope continues. The poll is how a permission change reaches the page: the poll's
+ * next answer is the refusal, and because a refusal replaces the data rather than
+ * throwing beside it, no stale row survives the flip.
  */
 
 export type {
   AdminExportJobState,
   ExportJobListItem,
+  ExportJobsResult,
 } from "../../../../shared/ai-observability-admin";
 
-import type { ExportJobListItem } from "../../../../shared/ai-observability-admin";
+import type {
+  ExportJobListItem,
+  ExportJobsResult,
+} from "../../../../shared/ai-observability-admin";
 
 export const observationExportKeys = {
   all: ["ai-observability-exports"] as const,
@@ -32,7 +39,14 @@ export const observationExportKeys = {
 
 /** What the screen is allowed to conclude: the jobs, or the fault that explains them. */
 export type ObservationExportsScreen =
-  | { view: "list"; jobs: readonly ExportJobListItem[] }
+  | {
+      view: "list";
+      jobs: readonly ExportJobListItem[];
+      /** The window facts the read was answered with (OCR round 3, R3-07 ≡ R3-14). */
+      pagination: ExportJobsResult["pagination"];
+      /** An in-flight job this page's window does not show — the poll's other half. */
+      offPageInFlight: boolean;
+    }
   | { view: "fault"; fault: "forbidden" | "unavailable" };
 
 const EXPORT_JOB_STATES = [
@@ -82,6 +96,83 @@ function isJobListItem(value: unknown): value is ExportJobListItem {
 /** The default in-flight poll; tests shrink it to keep the flip fast. */
 export const EXPORT_POLL_MS = 5_000;
 
+/**
+ * The window the page reads. The server's own default (DEFAULT_EXPORTS_LIMIT = 20),
+ * now named in the request instead of implied — R3-07 ≡ R3-14's first half: the
+ * pagination contract is consumed, starting with asking for a window by name.
+ */
+const EXPORTS_PAGE_LIMIT = 20;
+
+/** A job the page must keep an eye on: queued or running, not yet settled. */
+const inFlight = (job: ExportJobListItem) =>
+  job.state === "queued" || job.state === "running";
+
+function isExportsPagination(
+  value: unknown,
+): value is ExportJobsResult["pagination"] {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  for (const field of ["total", "offset", "limit"]) {
+    if (typeof record[field] !== "number") return false;
+  }
+  return record.nextOffset === null || typeof record.nextOffset === "number";
+}
+
+/**
+ * One page of the list face, read and shape-defended. The request names its window
+ * (`limit`/`offset`), and a 200 must carry the offset facts back — a body without
+ * its pagination is a claim this page cannot size, the unavailable fault rather
+ * than a list that silently pretends it is the whole scope.
+ */
+async function fetchExportsPage(
+  botId: string,
+  offset: number,
+): Promise<ObservationExportsScreen> {
+  const response = await tryClient(
+    `/api/ai-observability/bots/${encodeURIComponent(botId)}/exports?limit=${EXPORTS_PAGE_LIMIT}&offset=${offset}`,
+  );
+  if (
+    response.status === 401 ||
+    response.status === 403 ||
+    response.status === 404
+  ) {
+    /*
+     * The manage gate's unified not-found: a Bot this caller cannot manage does not
+     * exist for them, which for the page is the forbidden answer. A queued or running
+     * job behind a scope that just ended settles cancelled on the server; the page's
+     * job is only to stop showing rows the refusal now disowns.
+     */
+    return { view: "fault", fault: "forbidden" };
+  }
+  if (!response.ok) {
+    return { view: "fault", fault: "unavailable" };
+  }
+  const body = (await response.json().catch(() => null)) as unknown;
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !Array.isArray((body as Record<string, unknown>).jobs) ||
+    !isExportsPagination((body as Record<string, unknown>).pagination)
+  ) {
+    return { view: "fault", fault: "unavailable" };
+  }
+  const list = body as ExportJobsResult;
+  if (!list.jobs.every((job) => isJobListItem(job))) {
+    /*
+     * A state word this build has never heard of is not a row to half-draw — the
+     * server's own projection is fail-closed on it, so a 200 carrying one is a body
+     * this page cannot read, the unavailable fault rather than a guess.
+     */
+    return { view: "fault", fault: "unavailable" };
+  }
+  return {
+    view: "list",
+    jobs: list.jobs,
+    pagination: list.pagination,
+    offPageInFlight: false,
+  };
+}
+
 export function observationExportsQueryOptions(
   botId: string,
   pollMs: number = EXPORT_POLL_MS,
@@ -89,45 +180,64 @@ export function observationExportsQueryOptions(
   return queryOptions({
     queryKey: observationExportKeys.list(botId),
     queryFn: async (): Promise<ObservationExportsScreen> => {
-      const response = await tryClient(
-        `/api/ai-observability/bots/${encodeURIComponent(botId)}/exports`,
-      );
-      if (
-        response.status === 401 ||
-        response.status === 403 ||
-        response.status === 404
-      ) {
+      const first = await fetchExportsPage(botId, 0);
+      if (first.view !== "list") return first;
+      /*
+       * R3-07 ≡ R3-14's poll half: the poll must not close just because the visible
+       * page looks quiet — the list is a window over the scope's jobs, and an
+       * in-flight job beyond it would otherwise settle unobserved. When this page
+       * holds nothing in flight but the scope continues, the remaining pages are
+       * walked once per decision; anything in flight found out there (or a page
+       * that will not answer — unknown keeps asking, the fail-closed direction
+       * every guard here takes) holds the poll open, and a scope that is settled
+       * everywhere closes it as before.
+       *
+       * The walk is bounded three ways so a hostile or drifting nextOffset chain
+       * cannot spin it: each offset is visited at most once (cycles end), the walk
+       * never steps past the scope's reported total (beyond it there is nothing),
+       * and a scope too big for the visit budget answers conservatively — keep
+       * polling — instead of walking forever.
+       */
+      let offPageInFlight = false;
+      if (!first.jobs.some(inFlight)) {
+        const visited = new Set<number>([0]);
+        const budget = 200;
+        let next = first.pagination.nextOffset;
+        while (
+          next !== null &&
+          next < first.pagination.total &&
+          !visited.has(next) &&
+          visited.size <= budget
+        ) {
+          visited.add(next);
+          const page = await fetchExportsPage(botId, next);
+          if (page.view !== "list") {
+            offPageInFlight = true;
+            break;
+          }
+          offPageInFlight = page.jobs.some(inFlight);
+          next = page.pagination.nextOffset;
+        }
         /*
-         * The manage gate's unified not-found: a Bot this caller cannot manage does not
-         * exist for them, which for the page is the forbidden answer. A queued or running
-         * job behind a scope that just ended settles cancelled on the server; the page's
-         * job is only to stop showing rows the refusal now disowns.
+         * Out of walk with scope left to check — the visit budget spent, or a
+         * nextOffset chain that cycles or overruns its own total — is not evidence
+         * that everything settled: unknown holds the poll open, never a silent close.
          */
-        return { view: "fault", fault: "forbidden" };
+        if (!offPageInFlight && next !== null) {
+          offPageInFlight = true;
+        }
       }
-      if (!response.ok) {
-        return { view: "fault", fault: "unavailable" };
-      }
-      const body = (await response.json().catch(() => null)) as unknown;
-      if (!isRecord(body) || !Array.isArray(body.jobs)) {
-        return { view: "fault", fault: "unavailable" };
-      }
-      if (!body.jobs.every((job) => isJobListItem(job))) {
-        /*
-         * A state word this build has never heard of is not a row to half-draw — the
-         * server's own projection is fail-closed on it, so a 200 carrying one is a body
-         * this page cannot read, the unavailable fault rather than a guess.
-         */
-        return { view: "fault", fault: "unavailable" };
-      }
-      return { view: "list", jobs: body.jobs };
+      return {
+        view: "list",
+        jobs: first.jobs,
+        pagination: first.pagination,
+        offPageInFlight,
+      };
     },
     refetchInterval: (query) => {
       const data = query.state.data;
       return data?.view === "list" &&
-        data.jobs.some(
-          (job) => job.state === "queued" || job.state === "running",
-        )
+        (data.jobs.some(inFlight) || data.offPageInFlight)
         ? pollMs
         : false;
     },

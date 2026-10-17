@@ -105,13 +105,20 @@ export function ObservationRunSteps({
   /*
    * Step-level spans are claimed only by detailed coverage. Basic coverage says the remote
    * runtime's interior was never recorded — the absence is not evidence nothing happened —
-   * and an unverified verdict vouches for nothing, so neither run asks the store.
+   * and an unverified verdict vouches for nothing, so neither run asks the store. The
+   * gate is total on purpose (OCR round 3, R3-13): anything that is not literally
+   * "detailed" — including a verdict word this build has never heard of, which the
+   * detail guard now refuses upstream — answers with its own honest sentence and never
+   * falls through to a timeline query.
    */
-  if (capability === "basic") {
-    return <PageEmpty>{t("detail.steps.basicNote")}</PageEmpty>;
-  }
-  if (capability === "unavailable") {
-    return <PageEmpty>{t("detail.steps.coverageNote")}</PageEmpty>;
+  if (capability !== "detailed") {
+    return (
+      <PageEmpty>
+        {capability === "basic"
+          ? t("detail.steps.basicNote")
+          : t("detail.steps.coverageNote")}
+      </PageEmpty>
+    );
   }
   return <StepTimeline botId={botId} runId={runId} />;
 }

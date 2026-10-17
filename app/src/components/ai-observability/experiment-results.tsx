@@ -23,6 +23,7 @@ import {
   type ExperimentResultsSample,
   type ExperimentSampleClass,
   isKnownExecutionState,
+  isKnownSampleClass,
   judgeFacts,
   observationCancelExecutionMutationOptions,
   observationExperimentResultsQueryOptions,
@@ -338,7 +339,17 @@ function SampleRow({
       <Item size="sm">
         <ItemContent>
           <ItemTitle>
-            {`#${sample.index} ${t(`classes.${sample.class}`)}`}
+            {/*
+             * The class words are the shared seven-class closed set (R3-04, R2-09's
+             * standard): a word the bundle cannot name renders itself — the same
+             * verbatim fallback the execution state beside it already uses — never
+             * `classes.<word>` echoed as a raw key.
+             */}
+            {`#${sample.index} ${
+              isKnownSampleClass(sample.class)
+                ? t(`classes.${sample.class}`)
+                : sample.class
+            }`}
           </ItemTitle>
           <ItemDescription className="line-clamp-none">
             {/* A missing score is its own fact — unavailable, never a masked zero. */}

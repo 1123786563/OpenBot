@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import type { TFunction } from "i18next";
 import type * as React from "react";
 import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
@@ -42,6 +43,35 @@ type FactRowSpec = {
   note?: string;
   value: React.ReactNode;
 };
+
+type RunTranslate = TFunction<"ai-observability-runs">;
+
+/**
+ * The upstream three-state's own words, translated once (OCR round 3, R3-00): the
+ * upstream-link row draws its value and its note from this one table, and the started
+ * row borrows the same absence titles. Three copied three-layer ternaries become one
+ * switch, so the shared three-state copy can only move together — the same shape as
+ * observationScreenFault, whose fault vocabulary went through the identical collapse.
+ */
+function upstreamStatusCopy(
+  status: "present" | "unreconciled" | "absent",
+  t: RunTranslate,
+): { value: string; note: string | null } {
+  switch (status) {
+    case "present":
+      return { value: t("detail.upstream.present"), note: null };
+    case "unreconciled":
+      return {
+        value: t("availability.syncing.title"),
+        note: t("availability.syncing.description"),
+      };
+    case "absent":
+      return {
+        value: t("detail.upstream.absentTitle"),
+        note: t("detail.upstream.absentDescription"),
+      };
+  }
+}
 
 export function ObservationRunDetail({
   botId,
@@ -90,6 +120,8 @@ export function ObservationRunDetail({
   const { run, upstream } = answer.result;
   const present = upstream.status === "present" ? upstream : null;
   const StateIcon = STATE_ICONS[run.state];
+  // The three-state's own words, translated once and read by both sections below.
+  const upstreamCopy = upstreamStatusCopy(upstream.status, t);
 
   const overview: readonly FactRowSpec[] = [
     {
@@ -103,12 +135,9 @@ export function ObservationRunDetail({
         present === null || present.createdAt === "unavailable"
           ? t("row.timeUnavailable")
           : formatDateTime(present.createdAt),
-      note:
-        present === null
-          ? upstream.status === "unreconciled"
-            ? t("availability.syncing.title")
-            : t("detail.upstream.absentTitle")
-          : undefined,
+      // The started row cannot name a time without the upstream record, so its note
+      // is the record's own absence title — the same word the link row leads with.
+      note: present === null ? upstreamCopy.value : undefined,
     },
     {
       label: t("detail.facts.duration"),
@@ -144,6 +173,12 @@ export function ObservationRunDetail({
   const availability: readonly FactRowSpec[] = [
     {
       label: t("detail.facts.coverage"),
+      /*
+       * The coverage verdict is a closed shared vocabulary the detail guard now
+       * claims (OCR round 3, R3-13), so this key is always one the bundle can
+       * say: an unknown verdict is the unavailable fault upstream, never a
+       * `capability.<word>` key echoed literally.
+       */
       value: t(`capability.${run.capability}`),
       note:
         run.capability === "basic"
@@ -152,18 +187,8 @@ export function ObservationRunDetail({
     },
     {
       label: t("detail.facts.upstreamLink"),
-      value:
-        upstream.status === "present"
-          ? t("detail.upstream.present")
-          : upstream.status === "unreconciled"
-            ? t("availability.syncing.title")
-            : t("detail.upstream.absentTitle"),
-      note:
-        upstream.status === "unreconciled"
-          ? t("availability.syncing.description")
-          : upstream.status === "absent"
-            ? t("detail.upstream.absentDescription")
-            : undefined,
+      value: upstreamCopy.value,
+      note: upstreamCopy.note ?? undefined,
     },
     {
       label: t("detail.facts.updated"),

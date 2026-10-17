@@ -664,6 +664,32 @@ describe("the results page answers the report (acceptance 1 and 2)", () => {
     expect(pageText(view)).not.toContain("0.00");
   });
 
+  test("a class word the build cannot name renders verbatim, never a raw key (OCR round 3, R3-04)", async () => {
+    // The summary's own closed-set classes render their sentences; a newer server's
+    // class word is a missing i18n sentence, so the sample row shows the word itself
+    // instead of echoing `classes.quarantined` (R2-09's standard, applied here).
+    resultsHandler = () =>
+      Response.json(
+        reportBody({
+          samples: [
+            {
+              index: 0,
+              class: "quarantined" as never,
+              score: null,
+              reason: { class: "quarantined", code: "QUARANTINED" } as never,
+              usage: null,
+              judge: null,
+              resultLink:
+                "/api/ai-observability/bots/agent-1/experiments/exp-1/results/exec-1",
+            },
+          ],
+        }),
+      );
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await view.findByText(/#0 quarantined/);
+    expect(pageText(view)).not.toContain("classes.quarantined");
+  });
+
   test("no scored sample means no mean, never a masked zero", async () => {
     resultsHandler = () =>
       Response.json(

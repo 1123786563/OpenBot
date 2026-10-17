@@ -676,6 +676,103 @@ describe("the round-2 review and dialog seams (OCR round 2)", () => {
   });
 });
 
+/*
+ * OCR round 3 (R3-05/R3-08): the list's sync word gets the R2-09 closed-set treatment,
+ * and the review guard stops accepting a preview that does not answer the cases the
+ * page actually sent.
+ */
+describe("the round-3 guard and vocabulary seams (OCR round 3)", () => {
+  test("a sync word the build cannot name renders verbatim, never a raw key (R3-05)", async () => {
+    listHandler = () =>
+      Response.json(
+        datasetsBody([
+          datasetItem({
+            id: "ds-x",
+            name: "Paused one",
+            syncState: "paused" as never,
+          }),
+        ]),
+      );
+    const view = draw();
+    await view.findByText("Paused one");
+    expect(pageText(view)).toContain("paused");
+    expect(pageText(view)).not.toContain("sync.paused");
+  });
+
+  test("a review answer with an empty preview is refused — no Save, no mustReview self-contradiction, no vanished canary (R3-08)", async () => {
+    // The page sends exactly one case; a preview array that lost it used to pass the
+    // every() guard, armed the Save button against a preview block that could not
+    // render (mustReview beside an enabled Save) and took the canary warning with it.
+    reviewHandler = () => Response.json({ ...reviewBody(), preview: [] });
+    const view = draw();
+    listHandler = () => Response.json(datasetsBody([]));
+    const user = userEvent.setup({ document: view.container.ownerDocument });
+    await user.click(
+      await view.findByRole("button", { name: /Save a case from a run/ }),
+    );
+    const dialog = await view.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Run id"), "run-9");
+    await user.type(within(dialog).getByLabelText("Dataset name"), "Refunds");
+    await user.type(
+      within(dialog).getByLabelText("Case input"),
+      "What is the refund policy?",
+    );
+    await user.type(
+      within(dialog).getByLabelText("Reference output"),
+      "30 days.",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Preview the freeze" }),
+    );
+    expect(
+      await within(dialog).findByText(
+        "The observability store did not answer. Nothing was saved.",
+      ),
+    ).toBeTruthy();
+    expect(
+      (
+        within(dialog).getByRole("button", {
+          name: "Save version",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(within(dialog).queryByText(/Preview the freeze first/)).toBeNull();
+    expect(within(dialog).queryByText(/What will freeze/)).toBeNull();
+  });
+
+  test("a review answer with more previews than cases sent is refused too (R3-08)", async () => {
+    const body = reviewBody();
+    reviewHandler = () =>
+      Response.json({ ...body, preview: [body.preview[0], body.preview[0]] });
+    const view = draw();
+    listHandler = () => Response.json(datasetsBody([]));
+    const user = userEvent.setup({ document: view.container.ownerDocument });
+    await user.click(
+      await view.findByRole("button", { name: /Save a case from a run/ }),
+    );
+    const dialog = await view.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Run id"), "run-9");
+    await user.type(within(dialog).getByLabelText("Dataset name"), "Refunds");
+    await user.type(
+      within(dialog).getByLabelText("Case input"),
+      "What is the refund policy?",
+    );
+    await user.type(
+      within(dialog).getByLabelText("Reference output"),
+      "30 days.",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Preview the freeze" }),
+    );
+    expect(
+      await within(dialog).findByText(
+        "The observability store did not answer. Nothing was saved.",
+      ),
+    ).toBeTruthy();
+    expect(within(dialog).queryByText(/What will freeze/)).toBeNull();
+  });
+});
+
 describe("the screen conditions stay distinct (acceptance 5)", () => {
   test("a truthful empty page says empty and still offers the save entry", async () => {
     listHandler = () => Response.json(datasetsBody([]));

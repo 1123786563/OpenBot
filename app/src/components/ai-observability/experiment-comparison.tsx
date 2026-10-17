@@ -28,7 +28,9 @@ import {
   observationExperimentComparisonQueryOptions,
 } from "@/lib/ai-observability/comparison";
 import {
+  isKnownCompatibilityField,
   isKnownExecutionState,
+  isKnownSampleClass,
   judgeFacts,
 } from "@/lib/ai-observability/experiments";
 import { useDateTime } from "@/lib/i18n/datetime";
@@ -423,6 +425,15 @@ function FieldRow({
   showSeparator: boolean;
 }) {
   const { t } = useTranslation("ai-observability-evaluations");
+  /*
+   * The ledger's field names are a closed shared vocabulary (R3-02, R2-09's
+   * standard): the bundle has a sentence for each of them, and a word it cannot
+   * name — a newer server's field — renders itself, never `comparison.fields.<word>`
+   * echoed as a raw key.
+   */
+  const fieldWord = isKnownCompatibilityField(entry.field)
+    ? t(`comparison.fields.${entry.field}`)
+    : entry.field;
   const witness = (value: string | null) =>
     value ?? t("comparison.witnessUnavailable");
   const verdict = entry.equal
@@ -435,7 +446,7 @@ function FieldRow({
       {showSeparator ? <Separator /> : null}
       <Item size="sm">
         <ItemContent>
-          <ItemTitle>{t(`comparison.fields.${entry.field}`)}</ItemTitle>
+          <ItemTitle>{fieldWord}</ItemTitle>
           <ItemDescription className="line-clamp-none">
             <span className="break-all font-mono text-xs">
               {`${witness(entry.baseline)} → ${witness(entry.candidate)}`}
@@ -496,11 +507,14 @@ function SampleDeltaRow({
   candidateJudge: unknown;
 }) {
   const { t } = useTranslation("ai-observability-evaluations");
+  /*
+   * The class words are the shared seven-class closed set (R3-03, R2-09's standard):
+   * a word the bundle cannot name renders itself, never `classes.<word>` as a key.
+   */
+  const classWord = (one: { class: ExperimentSampleClass }): string =>
+    isKnownSampleClass(one.class) ? t(`classes.${one.class}`) : one.class;
   const side = (one: { class: ExperimentSampleClass; score: number | null }) =>
-    [
-      t(`classes.${one.class}`),
-      one.score === null ? null : one.score.toFixed(2),
-    ]
+    [classWord(one), one.score === null ? null : one.score.toFixed(2)]
       .filter((part) => part !== null)
       .join(" ");
   // Each side's judge fact, beside the classes it belongs to — its own score or its
@@ -560,10 +574,13 @@ function RegressionRowView({
   showSeparator: boolean;
 }) {
   const { t } = useTranslation("ai-observability-evaluations");
+  // Same closed-set class word as the delta rows (R3-03): verbatim when unnameable.
+  const classWord = (one: { class: ExperimentSampleClass }): string =>
+    isKnownSampleClass(one.class) ? t(`classes.${one.class}`) : one.class;
   const one = (one: ExperimentRegressionRow["baseline"]) => (
     <ItemDescription className="line-clamp-none">
       {[
-        t(`classes.${one.class}`),
+        classWord(one),
         one.score === null ? null : one.score.toFixed(2),
         one.code,
       ]

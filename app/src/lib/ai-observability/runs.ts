@@ -31,6 +31,7 @@ export type {
 } from "../../../../shared/ai-observability-runs";
 
 import type {
+  RunCapabilityLevel,
   RunDetailResult,
   RunState,
   RunStep,
@@ -151,6 +152,25 @@ function isRunSummaryRow(row: unknown): boolean {
   return isSafeRecordBody(record.metadata);
 }
 
+/**
+ * The coverage verdicts the binding table can issue — the shared RunCapabilityLevel,
+ * a closed, database-backed vocabulary: a body carrying any other word is contract
+ * drift, not a verdict to draw.
+ *
+ * The detail guard claims it (OCR round 3, R3-13) because two things the page does
+ * depend on it being exactly these three words: the coverage row renders
+ * `capability.<verdict>` as an i18n key, and the steps section's gates answer basic
+ * and unavailable with their own sentences and only detailed coverage asks the store
+ * for a timeline. Before the claim, a 200 whose run lost `capability` half-drew the
+ * page — `capability.undefined` echoed literally — and undefined passed both gates,
+ * firing a steps query for a report the binding never adjudicated.
+ */
+const KNOWN_CAPABILITY_LEVELS: readonly RunCapabilityLevel[] = [
+  "detailed",
+  "basic",
+  "unavailable",
+];
+
 function isRunsListBody(body: unknown): body is RunsListResult {
   if (typeof body !== "object" || body === null) return false;
   const candidate = body as Partial<RunsListResult>;
@@ -198,6 +218,24 @@ function isRunDetailBody(body: unknown): body is RunDetailResult {
     "expiresAt",
   ]) {
     if (typeof record[field] !== "string") return false;
+  }
+  /*
+   * The two fields the page reads for its coverage verdict but the guard never
+   * claimed (OCR round 3, R3-13): capability must speak the binding table's closed
+   * verdict vocabulary — an unknown word is the store failing to answer, never a
+   * half-drawn page echoing `capability.<word>` — and the upstream trace binding is
+   * a string or the explicit null ("not linked"), never an absent-or-garbled key.
+   * The summary row guard has claimed capability all along; the detail guard now
+   * keeps the same promise (T7 deepened the present branch but skipped these).
+   */
+  if (
+    typeof record.capability !== "string" ||
+    !KNOWN_CAPABILITY_LEVELS.includes(record.capability as RunCapabilityLevel)
+  ) {
+    return false;
+  }
+  if (record.opikTraceId !== null && typeof record.opikTraceId !== "string") {
+    return false;
   }
   const upstream = (body as { upstream?: unknown }).upstream;
   if (typeof upstream !== "object" || upstream === null) return false;
