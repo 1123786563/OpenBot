@@ -15,7 +15,11 @@ import type { AgentActor } from "../agents/profile-types";
 import type { OpenBotRole } from "../auth/roles";
 import type { Database } from "../db/client";
 import { agentProfiles } from "../db/schema";
-import { type BotManagementCheck, resolveObservationBot } from "./context";
+import {
+  type BotManagementCheck,
+  explicitObservationOwnership,
+  resolveObservationBot,
+} from "./context";
 import type { ExportReauthorization } from "./exports";
 import { createOpikHttpPort } from "./opik-http";
 import type { OpikPort, VerifiedOpikContract } from "./opik-port";
@@ -81,10 +85,10 @@ export function createExportReauthorization(deps: {
     if (actor === null) return null;
     const access = await resolveObservationBot(deps.canManageBot, actor, botId);
     if (!access.ok) return null;
-    const ownership =
-      access.profile.ownerUserId === actor.id
-        ? ("owner" as const)
-        : ("admin" as const);
+    // Explicit, never inferred (OCR h10/m182): a non-owner without the admin role
+    // earns no scope even if a future gate widening lets them manage.
+    const ownership = explicitObservationOwnership(actor, access.profile);
+    if (ownership === null) return null;
     try {
       const epoch = await deps.scopeEpoch(actor, access.botId);
       return resolveObservationScope({
@@ -179,10 +183,11 @@ export function createBuiltinRunScopeResolver(deps: {
         botId,
       );
       if (!access.ok) return null;
-      const ownership =
-        access.profile.ownerUserId === actor.id
-          ? ("owner" as const)
-          : ("admin" as const);
+      // Explicit, never inferred (OCR h10): this resolver mints the scope every
+      // builtin model-span/tool-step write carries — the exact place a widened
+      // manage gate must not translate into wider observation.
+      const ownership = explicitObservationOwnership(actor, access.profile);
+      if (ownership === null) return null;
       const epoch = await deps.scopeEpoch(actor, access.botId);
       return resolveObservationScope({
         actorId: actor.id,

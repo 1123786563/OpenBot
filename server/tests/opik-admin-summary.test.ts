@@ -407,6 +407,21 @@ describe("createExportReauthorization (the worker's T11-style seam)", () => {
     });
     expect(scope?.actorId).toBe("user-admin");
   });
+
+  test("ownership is explicit, never inferred from a widened gate (OCR h10)", async () => {
+    // A gate that manages for a non-owner, plain-role collaborator — the future
+    // widening the inference used to leak through. The reauthorization answers
+    // null for them: owner or global admin, nothing else.
+    const widened = createExportReauthorization({
+      canManageBot: async (actor, botId) =>
+        botId === "agent-1" ? profile() : null,
+      scopeEpoch: epochFor,
+      resolveActor: createActorResolver(async () => ["user"]),
+    });
+    expect(await widened({ actorId: "user-collaborator", botId: "agent-1" })).toBe(
+      null,
+    );
+  });
 });
 
 describe("the control-plane cancel seam (T32 wiring)", () => {
