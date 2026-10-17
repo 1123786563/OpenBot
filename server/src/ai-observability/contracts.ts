@@ -68,5 +68,6 @@ export type ObservationStorageLocator = Readonly<{
 }>;
 
 export type EvaluationEligibility = Readonly<
-  { allowed: true; scopeKey: string } | { allowed: false; code: ObservationScopeErrorCode }
+  | { allowed: true; scopeKey: string }
+  | { allowed: false; code: ObservationScopeErrorCode }
 >;

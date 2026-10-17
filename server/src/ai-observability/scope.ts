@@ -18,9 +18,9 @@
  */
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import {
-  ObservationScopeError,
   type EvaluationEligibility,
   type ObservationScope,
+  ObservationScopeError,
   type ObservationStorageLocator,
   type ScopeResolutionInput,
 } from "./contracts";
@@ -31,17 +31,21 @@ const issued = new WeakSet<object>();
 const PLACEHOLDER_ACTOR = "dev-local-user";
 
 /**
- * Key layout: length-prefixed so a botId containing the separator cannot shift fields and collide
- * with another (actor, bot, epoch) triple. `wb` is the kind tag; a future kind gets its own tag and
- * therefore its own key space rather than sharing this one.
+ * Length-prefix every component so a component containing the separator cannot shift fields and
+ * collide with a different component vector. `wb` is the kind tag; a future kind gets its own tag
+ * and therefore its own key space rather than sharing this one.
  */
+function injectiveKey(parts: string[]): string {
+  return parts.map((part) => `${part.length}:${part}`).join("|");
+}
+
+/** Scope key layout: `wb|actor|bot|epoch`, each component length-prefixed — see injectiveKey. */
 export function scopeKey(
   actorId: string,
   botId: string,
   epoch: number,
 ): string {
-  const parts = ["wb", actorId, botId, String(epoch)];
-  return parts.map((part) => `${part.length}:${part}`).join("|");
+  return injectiveKey(["wb", actorId, botId, String(epoch)]);
 }
 
 function isEnterpriseHint(hint: unknown): boolean {
@@ -152,14 +156,19 @@ export function readCursor(scope: ObservationScope, cursor: string): string {
   return payload;
 }
 
-/** Cache, job and export keys all carry the scope key, so none of them can be reused across scopes. */
+/**
+ * Cache, job and export keys all carry the scope key, so none of them can be reused across scopes.
+ * Every component is length-prefixed (injectiveKey): a name or idempotency key containing the
+ * separator cannot shift fields and borrow another identity — `jobKey` is the idempotency identity
+ * of billable evaluation runs, so a collision there is a billing defect, not a cosmetic one.
+ */
 export function cacheKey(
   scope: ObservationScope,
   name: string,
   ...parts: Array<string | number>
 ): string {
   assertObservationScope(scope);
-  return ["cache", scope.key, name, ...parts.map(String)].join("|");
+  return injectiveKey(["cache", scope.key, name, ...parts.map(String)]);
 }
 
 export function jobKey(
@@ -168,12 +177,12 @@ export function jobKey(
   idempotencyKey: string,
 ): string {
   assertObservationScope(scope);
-  return ["job", scope.key, name, idempotencyKey].join("|");
+  return injectiveKey(["job", scope.key, name, idempotencyKey]);
 }
 
 export function exportKey(scope: ObservationScope, exportId: string): string {
   assertObservationScope(scope);
-  return ["export", scope.key, exportId].join("|");
+  return injectiveKey(["export", scope.key, exportId]);
 }
 
 /**
