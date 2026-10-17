@@ -487,4 +487,36 @@ describe("the start script stamps the generation at assembly time", () => {
     });
     expect(await resolve("cs-x")).toBeNull();
   });
+
+  test("a throwing fileApiFor degrades to null — the SYNC injections are gated reads too (fix-ocr28 #10)", async () => {
+    // fix-ocr15/#17 wrapped the async seams (botIdFor, webappBasePathFor)
+    // but left the two SYNC injections bare: a throwing fileApiFor pierced
+    // the returned async function and rode writeWebappBootstrapScript's
+    // `await webappBasePathFor?.(sessionId)` up into provisioning as a
+    // whole — the exact pattern the module header's "every degraded read
+    // falls back conservatively" promise exists to prevent. Null (legacy:
+    // no mount) is the conservative answer, mirroring the async twins.
+    const resolve = generationGatedWebappBasePathFor({
+      webappBasePathFor: () => "/abc123label",
+      fileApiFor: () => {
+        throw new Error("gateway wiring down");
+      },
+      botIdFor: async () => "craft-bot",
+      sessionDirectoryFor: () => DIRECTORY,
+    });
+    expect(await resolve("cs-x")).toBeNull();
+  });
+
+  test("a throwing sessionDirectoryFor degrades to null — the second sync injection, same contract (fix-ocr28 #10)", async () => {
+    const resolve = generationGatedWebappBasePathFor({
+      webappBasePathFor: () => "/abc123label",
+      fileApiFor: () =>
+        fileApiWith({ [MARKER_PATH]: WEBAPP_GENERATION_CURRENT }) as never,
+      botIdFor: async () => "craft-bot",
+      sessionDirectoryFor: () => {
+        throw new Error("config wiring down");
+      },
+    });
+    expect(await resolve("cs-x")).toBeNull();
+  });
 });

@@ -306,6 +306,28 @@ const EXCHANGE_REFUSAL_COPY = {
   foreignOrigin: "preview.exchangeForeignOrigin",
 } as const;
 
+/**
+ * The exchange refusal's sentence, or null when there is nothing to render
+ * (fix-ocr28 #11). The kind arms translate through the i18n copy; the server
+ * arm renders the transport's message verbatim — and that message can be
+ * EMPTY (a server answering {error: ""}; client.ts passes any string error
+ * through, the empty one included). An empty paragraph wearing the
+ * refusal's styling is not a refusal — a blank line where a sentence was
+ * promised — so empty text normalizes to null and the caller renders no
+ * paragraph at all, exactly the no-refusal shape.
+ */
+function refusalSentence(
+  refusal: ExchangeRefusal,
+  t: (
+    key: (typeof EXCHANGE_REFUSAL_COPY)[keyof typeof EXCHANGE_REFUSAL_COPY],
+  ) => string,
+): string | null {
+  if (refusal.kind === "server") {
+    return refusal.text === "" ? null : refusal.text;
+  }
+  return t(EXCHANGE_REFUSAL_COPY[refusal.kind]);
+}
+
 type PreviewEntry = {
   src: string;
   plain: string;
@@ -503,6 +525,22 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
     },
     [applyEntry],
   );
+  /*
+   * THE SHARED ZERO VERDICT (fix-ocr28 #12, countFrameDeath's precedent —
+   * fix-ocr19 M2): handleFrameLoad's two success paths (the legacy load
+   * branch and the second-level probe's alive verdict) used to carry
+   * verbatim copies of the zero-preserving updater; one spelling now, so
+   * the "zero keeps the previous reference" contract (fix-ocr24 #4 — React
+   * bails out, no re-render, no entering-effect re-walk) cannot drift
+   * between the copies the way the death verdict once did.
+   */
+  const clearFrameErrorStreak = useCallback(() => {
+    setFrameErrorStreak((prev) =>
+      prev.count === 0 && prev.address === ""
+        ? prev
+        : { address: "", count: 0 },
+    );
+  }, []);
   const handleFrameError = useCallback(
     (node: HTMLIFrameElement) => {
       // A disposed pane takes no verdict (fix-ocr19 #4): the frame-error
@@ -583,15 +621,10 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
       // a clean load alone proves nothing, a 401-with-body page loads
       // cleanly too.)
       if (!HTTP_ABSOLUTE.test(entered.src)) {
-        // fix-ocr24 #4: a functional update — a preview app's own internal
-        // navigation fires load on every hop, and a fresh object at zero
-        // re-rendered the pane and re-walked the entering effect for nothing.
-        // Zero must keep the previous reference so React bails out.
-        setFrameErrorStreak((prev) =>
-          prev.count === 0 && prev.address === ""
-            ? prev
-            : { address: "", count: 0 },
-        );
+        // fix-ocr24 #4 (through the shared setter, fix-ocr28 #12): zero
+        // keeps the previous reference so React bails out — a preview app's
+        // own navigation fires load on every hop.
+        clearFrameErrorStreak();
         return;
       }
       // One probe at a time, and each aborts its predecessor: a stale
@@ -647,14 +680,11 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
                 const alive = isLiveFramePair(node, entered);
                 if (alive === null) return;
                 // Reachable: the success signal that survives the frame's
-                // opacity is THIS resolve — clear the streak. fix-ocr24 #4:
-                // functional form, same reference at zero — the alive verdict
-                // lands on every healthy navigation too.
-                setFrameErrorStreak((prev) =>
-                  prev.count === 0 && prev.address === ""
-                    ? prev
-                    : { address: "", count: 0 },
-                );
+                // opacity is THIS resolve — clear the streak (the shared
+                // setter, fix-ocr28 #12; same reference at zero so the alive
+                // verdict lands on every healthy navigation without a
+                // re-render, fix-ocr24 #4).
+                clearFrameErrorStreak();
               })
               .catch((error: unknown) => {
                 // Preview-source network death: the SAME counted brake a
@@ -696,7 +726,7 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
           // action: nobody is left to receive a verdict.)
         });
     },
-    [countFrameDeath, isLiveFramePair],
+    [clearFrameErrorStreak, countFrameDeath, isLiveFramePair],
   );
   const handleFrameRef = useCallback(
     (node: HTMLIFrameElement | null) => {
@@ -1184,21 +1214,24 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
   // exchange. A serving app must never fall into the "isn't running" state:
   // the server IS running; only the one-time pass is missing.
   if (serving) {
+    // The refusal's sentence, derived ONCE before the branch (fix-ocr28 #11):
+    // a server arm with empty text answers null here and no paragraph
+    // renders — the paragraph exists only when a sentence does.
+    const refusalText =
+      exchangeRefusal === null ? null : refusalSentence(exchangeRefusal, t);
     return (
       <PreviewPaneState
         title={t("preview.passTitle")}
         hint={t("preview.passHint")}
       >
-        {exchangeRefusal ? (
+        {refusalText !== null ? (
           // The refusal's own sentence (fix-ocr25 #2), the closedReason
           // precedent's shape: the person retrying reads the reason instead
           // of hammering a hint that never changes. fix-ocr27 #10: the KIND
           // arm translates at render time (the current language, always);
           // the server arm renders the server's own sentence verbatim.
           <p className="mx-auto max-w-[36ch] text-sm leading-relaxed text-muted-foreground">
-            {exchangeRefusal.kind === "server"
-              ? exchangeRefusal.text
-              : t(EXCHANGE_REFUSAL_COPY[exchangeRefusal.kind])}
+            {refusalText}
           </p>
         ) : null}
         <Button

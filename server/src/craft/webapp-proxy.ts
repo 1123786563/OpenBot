@@ -53,7 +53,7 @@ import {
   defaultPreviewOrigin,
   type PreviewTickets,
 } from "./preview-ticket";
-import type { SandboxGateway } from "./sandbox-gateway";
+import type { AgentSandboxFileApi, SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import { readWebappGeneration } from "./webapp-generation";
 import { sessionDirectory } from "./workspace";
@@ -147,6 +147,47 @@ const PREVIEW_TICKET_LEGACY_ERROR =
  */
 const PREVIEW_TICKET_UNVERIFIABLE_ERROR =
   "The session's web app generation could not be verified just now (the sandbox workspace did not answer); try again in a moment.";
+
+/**
+ * The .webapp-mount record the RUNNING script left beside .nextjs-port
+ * (review-367 H's second signal) — the ONE read behind three verdicts
+ * (fix-ocr28 #4): the preview-ticket mint's legacy-heal mirror and
+ * webapp-info's legacy and current branches each used to spell the
+ * readFile + trim + null-fold + catch verbatim, and any one site drifting
+ * its fold would make the two mirrored surfaces disagree about the SAME
+ * session's record. null means "cannot vouch" — no fileApi (undefined), no
+ * record ever written (readFile's null), or a thrown read (a gateway
+ * flake); a READ record answers its trimmed content, "" included (the
+ * empty record is a real answer: the root mount). The consumers' judgments
+ * stay at their own seams on purpose: the mint needs a non-empty exact
+ * match, the legacy branch reads an empty record as the true legacy
+ * answer, the current branch compares against the expected mount — same
+ * read, different verdicts, exactly the part that must NOT be merged.
+ */
+async function readMountRecord(
+  fileApi: AgentSandboxFileApi | null | undefined,
+  directory: string,
+): Promise<string | null> {
+  try {
+    const raw = await fileApi?.readFile(`${directory}/${WEBAPP_MOUNT_MARKER}`);
+    return raw === undefined ? null : (raw?.trim() ?? "");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The mount a preview address's own path names (fix-ocr28 #4): the address
+ * path with the bare "/" folded to "" — the start script's record shape
+ * (nextjs-dev.ts writes the empty mount for a root-path script). The mint's
+ * mirror and webapp-info's two branches each used to hand-copy the fold;
+ * one derivation keeps the ticket route and webapp-info comparing the same
+ * session's record the same way.
+ */
+function expectedMountFor(previewAddress: string): string {
+  const addressPath = new URL(previewAddress).pathname;
+  return addressPath === "/" ? "" : addressPath;
+}
 
 /**
  * The caller's request body, or undefined when there is nothing to forward.
@@ -401,6 +442,18 @@ export function createPreviewProxy(deps: {
   return async ({ sessionId, request, appPath, query }) => {
     const session = await deps.store.findSessionById(sessionId);
     if (!session) {
+      // fix-ocr28 #5: the deleted session's memo entries die with the row.
+      // The 404 branch used to leave them behind — dead-session keys whose
+      // values only the TTL would retire, and a re-created row (or a
+      // re-reserved port for a new session) could ride a readiness verdict
+      // minted for a DIFFERENT process's lifetime. sessionId is cs-<hex> —
+      // no ":" — so the `${sessionId}:` prefix can only match this
+      // session's own keys. (The other residual — entries whose VALUES have
+      // expired but whose keys linger until overwritten — is a bounded,
+      // per-session-const count and stays out of scope here.)
+      for (const key of readyUntil.keys()) {
+        if (key.startsWith(`${sessionId}:`)) readyUntil.delete(key);
+      }
       return refuseResponse(
         request,
         "This preview session no longer exists.",
@@ -580,24 +633,17 @@ export function createWebappProxyRoutes(
       // mint proceeds. Any other record (empty, absent, unreadable, another
       // mount) keeps the refusal: the conservative answer for every
       // population the record cannot vouch for, byte-for-byte unchanged.
-      const addressPath = new URL(origin).pathname;
-      const expectedMount = addressPath === "/" ? "" : addressPath;
-      let recordProvesMount = false;
-      try {
-        const raw = await deps.gateway
-          .fileApiFor(botId)
-          ?.readFile(
-            `${sessionDirectory(sessionId, deps.config.sessionDirectoryMode)}/${WEBAPP_MOUNT_MARKER}`,
-          );
-        // Same read shape as webapp-info's cross-check: null (no fileApi, no
-        // record, or a thrown read) is NOT proof, only a READ non-empty
-        // record naming the derived mount is.
-        const recorded = raw === undefined ? null : (raw?.trim() ?? "");
-        recordProvesMount =
-          recorded !== null && recorded !== "" && recorded === expectedMount;
-      } catch {
-        recordProvesMount = false;
-      }
+      const expectedMount = expectedMountFor(origin);
+      // The one shared read (readMountRecord, fix-ocr28 #4) — the SAME shape
+      // as webapp-info's cross-check: null (no fileApi, no record, or a
+      // thrown read) is NOT proof, only a READ non-empty record naming the
+      // derived mount is.
+      const recorded = await readMountRecord(
+        deps.gateway.fileApiFor(botId),
+        sessionDirectory(sessionId, deps.config.sessionDirectoryMode),
+      );
+      const recordProvesMount =
+        recorded !== null && recorded !== "" && recorded === expectedMount;
       if (!recordProvesMount) {
         return context.json({ error: PREVIEW_TICKET_LEGACY_ERROR }, 409);
       }
@@ -763,19 +809,12 @@ export function createWebappProxyRoutes(
       // - non-empty and different → the WEBAPP_MOUNT_STALE repair sentence;
       // - empty, absent, or unreadable → the true legacy answer, unchanged.
       if (ready) {
-        let recordedMount: string | null;
-        try {
-          const raw = await fileApi?.readFile(
-            `${directory}/${WEBAPP_MOUNT_MARKER}`,
-          );
-          // readFile's null is an ANSWER ("no record was ever written"),
-          // undefined (no fileApi at all) cannot verify, a throw is a
-          // gateway flake — all three fold to null: only a READ record
-          // cross-checks, everything else keeps the conservative path.
-          recordedMount = raw === undefined ? null : (raw?.trim() ?? "");
-        } catch {
-          recordedMount = null;
-        }
+        // The one shared read (readMountRecord, fix-ocr28 #4): readFile's
+        // null is an ANSWER ("no record was ever written"), undefined (no
+        // fileApi at all) cannot verify, a throw is a gateway flake — all
+        // three fold to null: only a READ record cross-checks, everything
+        // else keeps the conservative path.
+        const recordedMount = await readMountRecord(fileApi, directory);
         if (recordedMount !== null && recordedMount !== "") {
           const admission = previewOriginAdmission();
           if (!admission.ok) {
@@ -795,8 +834,7 @@ export function createWebappProxyRoutes(
             });
           }
           const previewAddress = previewOriginFor(sessionId);
-          const addressPath = new URL(previewAddress).pathname;
-          const expectedMount = addressPath === "/" ? "" : addressPath;
+          const expectedMount = expectedMountFor(previewAddress);
           if (recordedMount === expectedMount) {
             // The manual-assembly middle state heals: the app carries no
             // marker, but the server it runs is label-mounted exactly
@@ -863,8 +901,7 @@ export function createWebappProxyRoutes(
     // name would 404 silently — refuse the address and surface the state
     // through the same displayable channel the closed origin uses.
     if (previewAddress !== null) {
-      const addressPath = new URL(previewAddress).pathname;
-      const expectedMount = addressPath === "/" ? "" : addressPath;
+      const expectedMount = expectedMountFor(previewAddress);
       // A read that CANNOT happen is not a record that came back wrong
       // (fix-ocr5 M-1): a sandbox-gateway flake on exactly this call used to
       // collapse into "no record" — indistinguishable from the rebuild
@@ -881,19 +918,13 @@ export function createWebappProxyRoutes(
       // panel polls webapp-info every 5s, each poll paying a sandbox-gateway
       // file read for nothing. Only a serving session's judgment reads.
       if (ready) {
-        let recordedMount: string | null;
-        try {
-          const raw = await fileApi?.readFile(
-            `${directory}/${WEBAPP_MOUNT_MARKER}`,
-          );
-          // readFile's null is an ANSWER — "no record was ever written", the
-          // rebuild window's whole signal — so it keeps comparing as the empty
-          // mount; only undefined (no fileApi at all) means "cannot verify".
-          recordedMount = raw === undefined ? null : (raw?.trim() ?? "");
-        } catch {
-          // The gateway flaked: unverifiable, not mismatched.
-          recordedMount = null;
-        }
+        // The one shared read (readMountRecord, fix-ocr28 #4): readFile's
+        // null is an ANSWER — "no record was ever written", the rebuild
+        // window's whole signal — so it keeps comparing as the empty mount;
+        // only undefined (no fileApi at all) means "cannot verify", and a
+        // throw (the gateway flaked: unverifiable, not mismatched) folds
+        // the same way.
+        const recordedMount = await readMountRecord(fileApi, directory);
         // fix-ocr18 #2: the mismatch VERDICT is a ready-gated judgment. An
         // absent record on a not-yet-serving session is the first-build
         // window, not a stale script — no frame is pointed at the address

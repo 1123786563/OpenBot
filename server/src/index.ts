@@ -211,7 +211,10 @@ import {
   personalUnconnectedApps,
 } from "./craft/managed-content";
 import { resolveCraftMcpServers } from "./craft/mcp-servers";
-import { createPreviewOrigin } from "./craft/preview-origin";
+import {
+  createPreviewOrigin,
+  samePreviewOrigin,
+} from "./craft/preview-origin";
 import { createPreviewTickets } from "./craft/preview-ticket";
 import type {
   CraftLLMProviderConfig,
@@ -4881,15 +4884,18 @@ const craftWebappHmrDeps =
 
 /*
  * fix-ocr18 #3: the preview origin's upgrade half rides its OWN deps, gated on
- * `enabled` ONLY. The main-site gate above is a conjunction with
- * `webappProxyEnabled` — correct there, where the HMR half is the upgrade twin
- * of the HTTP webapp proxy — but the preview origin's HTTP half lives on
- * `enabled` alone (craftPreviewTickets/craftPreviewProxy/craftPreviewOrigin
- * below). Sharing the main gate would make `enabled && !webappProxyEnabled` a
- * half-dead origin: HTTP served, while the HMR upgrade check short-circuits on
- * the undefined deps and falls through to handlePreviewRequest, which forwards
- * the upgrade as an ordinary HTTP request (upgrade headers stripped) — live
- * reload silently dead on the deployment's only webapp surface.
+ * `enabled` ONLY — never the main-site conjunction with `webappProxyEnabled`
+ * above. That split is DEFENSIVE, not a load-bearing admission distinction:
+ * when `enabled && !webappProxyEnabled`, admission() is closed too (the same
+ * config field feeds it, preview-origin.ts), so BOTH halves answer the same
+ * 503 — the HTTP entry through handlePreviewRequest's gate, an upgrade through
+ * resolvePreviewRequest's refusal — and no "HTTP served while HMR silently
+ * dead" half-state exists for this gate to prevent. fix-ocr28 #3 corrects the
+ * earlier comment, which built this deps structure on that half-dead scenario:
+ * it never happens, because admission() — not these deps — is the one verdict
+ * that decides whether a preview host serves anything at all. Keeping the
+ * preview branch off the main-site conjunction just means its wiring cannot
+ * inherit a gate the preview origin's own admission story does not use.
  */
 const craftPreviewWebappHmrDeps = craftEffectiveConfig.enabled
   ? {
@@ -5786,17 +5792,43 @@ serve<SocketData>({
         // dev server serves under it), exactly what the HTTP entry requests —
         // see appPathFor and webappHmrUpstreamUrl for why forwarding the
         // app's own path verbatim is load-bearing.
+        // fix-ocr28 #2: the app path is derived ONCE here — the branch gate and
+        // the resolver's path argument used to call appPathFor twice for one
+        // request (two URL parses for one pathname, and a silent seam if either
+        // call ever grew a judgment of its own).
+        const appPath = craftPreviewOrigin.appPathFor(request);
         if (
           craftPreviewWebappHmrDeps !== undefined &&
           request.headers.get("upgrade")?.toLowerCase() === "websocket" &&
-          webappHmrIsAppPath(craftPreviewOrigin.appPathFor(request))
+          webappHmrIsAppPath(appPath)
         ) {
+          // fix-ocr28 #1 (CSWSH): the Origin gate. A WS handshake is not
+          // CORS-gated and the preview pass is SameSite=None, so a malicious
+          // page's `new WebSocket("wss://<preview-host>/…")` would otherwise
+          // ride the pass cookie into the live HMR channel. Origin present →
+          // it must be the session's own preview origin; absent (a
+          // non-browser client) → the pre-existing behavior. originFor is
+          // safe here: "sessionId" in resolved means admission already
+          // answered open (resolvePreviewRequest refuses 503 when closed),
+          // and originFor throws on a closed origin.
+          const origin = request.headers.get("origin");
+          if (
+            !samePreviewOrigin(
+              origin,
+              craftPreviewOrigin.originFor(resolved.sessionId),
+            )
+          ) {
+            return new Response(
+              "Cross-origin WebSocket upgrades are refused.",
+              { status: 403 },
+            );
+          }
           const decision = await resolvePreviewWebappHmrUpgrade(
             craftPreviewWebappHmrDeps satisfies PreviewWebappHmrDeps,
             {
               sessionId: resolved.sessionId,
               request,
-              path: craftPreviewOrigin.appPathFor(request),
+              path: appPath,
               query: url.search,
             },
           );
