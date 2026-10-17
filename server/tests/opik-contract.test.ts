@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
   buildOtlpJsonPayload,
+  collectForbiddenCanaryLabels,
   contractTarget,
   parseVersionsManifest,
   sampleContractManifest,
@@ -238,6 +239,57 @@ describe("evidence sanitizer and canary scan", () => {
       [{ label: "env-secret", value: "super-secret-datastore-password" }],
     );
     expect(found).toEqual(["env-secret"]);
+  });
+
+  // R2-31: writeEvidence sanitizes before writing, so a final scan over the
+  // sanitized disk files (or manifest/diagnostics built from them) is
+  // structurally empty — the redline could never fire. The final scan must
+  // also see the raw, pre-sanitization evidence text (kept in memory only).
+  test("R2-31: the disk-only scan is structurally empty at a sanitized position", () => {
+    const canary = {
+      label: "env-secret",
+      value: "super-secret-datastore-password",
+    };
+    // The canary sits in a response body — exactly the position sanitizeEvidence
+    // rewrites before the evidence lands on disk.
+    const rawEvidence = JSON.stringify({
+      step: "canary-step",
+      response: { body: { message: `token ${canary.value} leaked` } },
+    });
+    const diskEvidence = JSON.stringify(
+      sanitizeEvidence(JSON.parse(rawEvidence), [canary.value]),
+    );
+    expect(diskEvidence).not.toContain(canary.value);
+    expect(scanTextForCanaries(diskEvidence, [canary])).toEqual([]);
+  });
+
+  test("R2-31: the final scan over the raw evidence reports the injected canary", () => {
+    const canary = {
+      label: "env-secret",
+      value: "super-secret-datastore-password",
+    };
+    const rawEvidence = JSON.stringify({
+      step: "canary-step",
+      response: { body: { message: `token ${canary.value} leaked` } },
+    });
+    const diskEvidence = JSON.stringify(
+      sanitizeEvidence(JSON.parse(rawEvidence), [canary.value]),
+    );
+    // The scan set the runner must feed: sanitized disk text AND raw memory text.
+    const found = collectForbiddenCanaryLabels(
+      [JSON.stringify({ diagnostics: "clean" }), diskEvidence, rawEvidence],
+      [canary],
+    );
+    expect(found).toEqual(["env-secret"]);
+  });
+
+  test("R2-31: the final scan stays silent when no canary is present", () => {
+    expect(
+      collectForbiddenCanaryLabels(
+        ['{"a":"clean"}', '{"b":"also clean"}'],
+        [{ label: "env-secret", value: "super-secret-datastore-password" }],
+      ),
+    ).toEqual([]);
   });
 });
 

@@ -38,7 +38,7 @@ const DENY: ReadonlyArray<{ reason: OmitReason; pattern: RegExp }> = [
   { reason: "credential", pattern: /\bBearer\s+[A-Za-z0-9._-]{16,}/i },
   {
     reason: "credential",
-    pattern: /\bsk-(?:live|test|proj)-[A-Za-z0-9._-]{16,}/,
+    pattern: /\bsk-(?:live|test|proj|ant)-[A-Za-z0-9._-]{16,}/,
   },
   { reason: "credential", pattern: /\bAKIA[0-9A-Z]{16}\b/ },
   { reason: "credential", pattern: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/ },
@@ -62,16 +62,20 @@ const DENY: ReadonlyArray<{ reason: OmitReason; pattern: RegExp }> = [
   },
 ];
 
-// A 40-char base64 run is only a secret in credential context, but that context can be on either
-// side at any distance: config files and env dumps put the label before the value with arbitrary
-// filler between. A single regex can only look one direction, and the unbounded lookahead that
-// looked forward was quadratic on adversarial input — one '=' every 41 characters manufactures a
-// word-boundary candidate per chunk (review findings F2 and F5). Two single-pass tests instead:
-// deny when a labelled context and a candidate run coexist in the same string. An unlabeled run
+// A 40-char-or-longer base64 run is only a secret in credential context, but that context can be
+// on either side at any distance: config files and env dumps put the label before the value with
+// arbitrary filler between. A single regex can only look one direction, and the unbounded lookahead
+// that looked forward was quadratic on adversarial input — one '=' every 41 characters manufactures
+// a word-boundary candidate per chunk (review findings F2 and F5). Two single-pass tests instead:
+// deny when a labelled context and a candidate run coexist in the same string. The quantifier is
+// {40,}, not {40}: inside a longer in-class run a fixed {40} has no word boundary to anchor on —
+// the run's interior offers no \b and the boundary only exists past the run's end — so 64-hex and
+// 96-base64 labelled keys projected as-is (review finding R2-30). Greedy {40,} consumes the whole
+// run once and its end boundary then always holds, so the scan stays linear. An unlabeled run
 // stays projectable in reviewed text — it is indistinguishable from any other base64 run.
 const SECRET_LABEL =
   /(?:secret|password|passwd|pwd|token|api[_-]?key|access[_-]?key)/i;
-const SECRET_RUN = /\b[A-Za-z0-9/+=]{40}\b/;
+const SECRET_RUN = /\b[A-Za-z0-9/+=]{40,}\b/;
 
 function hasLabelledSecret(input: string): boolean {
   return SECRET_RUN.test(input) && SECRET_LABEL.test(input);

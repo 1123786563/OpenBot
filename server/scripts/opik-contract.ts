@@ -27,11 +27,11 @@ import {
   buildOtlpJsonPayload,
   type Canary,
   type ContractCheck,
+  collectForbiddenCanaryLabels,
   contractTarget,
   type IdMappingSpan,
   parseVersionsManifest,
   sanitizeEvidence,
-  scanTextForCanaries,
   uuidV7,
   type VerifiedOpikContract,
   validateContract,
@@ -256,6 +256,7 @@ export async function runOpikContract(options: {
   const checks: ContractCheck[] = [];
   const diagnostics: string[] = [];
   const writtenFiles: string[] = [];
+  const rawEvidenceTexts: string[] = [];
   let evidenceCounter = 0;
 
   // Request/response bodies larger than MAX_EVIDENCE_BODY_BYTES are stored as a
@@ -276,6 +277,11 @@ export async function runOpikContract(options: {
     value: unknown,
   ): Promise<string> => {
     const fileName = `${String(++evidenceCounter).padStart(2, "0")}-${name}.json`;
+    // The disk copy is sanitized, but the final forbidden-canary scan must see
+    // what WOULD have leaked: sanitized-only scanning removes the canaries
+    // before it looks for them and can never fire (review finding R2-31). The
+    // raw text is retained in memory only — nothing unsanitized is written.
+    rawEvidenceTexts.push(JSON.stringify(value));
     await writeFile(
       `${evidenceDir}/${fileName}`,
       `${JSON.stringify(sanitizeEvidence(value, secretValues), null, 2)}\n`,
@@ -1153,19 +1159,25 @@ export async function runOpikContract(options: {
     forbiddenCanaryLabels: forbiddenCanaries.map((canary) => canary.label),
   });
 
-  // Canary scan across everything this run serialized (requests kept in memory
-  // are gone; the scan covers the manifest, diagnostics and per-step evidence).
-  const forbiddenFound = new Set<string>();
-  for (const text of [JSON.stringify(manifest), JSON.stringify(diagnostics)]) {
-    for (const label of scanTextForCanaries(text, forbiddenCanaries))
-      forbiddenFound.add(label);
-  }
+  // Canary scan across everything this run serialized: the raw (pre-sanitization)
+  // evidence text in memory, the manifest and diagnostics, and the sanitized disk
+  // files as a final defense. Requests kept in memory are gone; the raw evidence
+  // texts are what make the forbidden redline genuinely triggerable — a
+  // sanitized-files-only scan deletes the canaries before it searches and is
+  // structurally empty (review finding R2-31).
+  const forbiddenTexts: string[] = [
+    JSON.stringify(manifest),
+    JSON.stringify(diagnostics),
+    ...rawEvidenceTexts,
+  ];
   for (const file of writtenFiles) {
-    const text = await Bun.file(`${evidenceDir}/${file}`).text();
-    for (const label of scanTextForCanaries(text, forbiddenCanaries))
-      forbiddenFound.add(label);
+    forbiddenTexts.push(await Bun.file(`${evidenceDir}/${file}`).text());
   }
-  manifest.canaries.forbiddenFound = [...forbiddenFound];
+  const forbiddenFound = collectForbiddenCanaryLabels(
+    forbiddenTexts,
+    forbiddenCanaries,
+  );
+  manifest.canaries.forbiddenFound = forbiddenFound;
   manifest.fixtures = writtenFiles;
 
   const verdict = validateContract(manifest);

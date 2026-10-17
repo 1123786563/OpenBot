@@ -559,6 +559,77 @@ describe("T05 review repair: deny gaps", () => {
     expect(JSON.stringify(result)).not.toContain(forty);
   });
 
+  // R2-30: the fixed {40} quantifier had no word boundary to anchor on inside a longer
+  // in-class run, so a labelled key of 64 hex or 96 base64 characters projected as-is.
+  // The quantifier must extend to the end of the run; the "unlabelled long runs stay
+  // projectable" trade-off is unchanged.
+  describe("R2-30: SECRET_RUN quantifier must cover runs longer than 40", () => {
+    const hex64 =
+      "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2";
+    // 96 chars of the base64 alphabet (A-Za-z0-9), with and without one trailing '='.
+    const b64WithoutPad =
+      "Hx0bJm3Qv8Kz2Wp7Yc5Rn1Td6Ug9Se4Af0hBi3Oj6Lk9Xz2Cv5Nb8Mq1Wr4Et7YuGy1cKn4Rw9Lz3Xq8Zd6So2Uf7Vh0Wj5F";
+    const b64WithPad = `${b64WithoutPad}=`;
+    expect(hex64).toHaveLength(64);
+    expect(b64WithoutPad).toHaveLength(96);
+    expect(b64WithPad).toHaveLength(97);
+
+    test("a 64-hex key with a label is denied", () => {
+      const result = projectSafeText(`api_key=${hex64}`, {
+        allowFreeText: true,
+      });
+      expect(result.state).toBe("omitted");
+      expect(JSON.stringify(result)).not.toContain(hex64);
+    });
+
+    test("a 96-char base64 key with a label and a trailing '=' is denied", () => {
+      const result = projectSafeText(`access_token=${b64WithPad}`, {
+        allowFreeText: true,
+      });
+      expect(result.state).toBe("omitted");
+      expect(JSON.stringify(result)).not.toContain(b64WithPad);
+    });
+
+    test("a 96-char base64 key with a label and no trailing '=' is denied", () => {
+      const result = projectSafeText(`password=${b64WithoutPad}`, {
+        allowFreeText: true,
+      });
+      expect(result.state).toBe("omitted");
+      expect(JSON.stringify(result)).not.toContain(b64WithoutPad);
+    });
+
+    test("the same long runs are denied in record leaves too", () => {
+      const result = projectSafeMetadata({ environment: `secret=${hex64}` });
+      expect(result.environment?.state).toBe("omitted");
+      expect(JSON.stringify(result)).not.toContain(hex64);
+    });
+
+    test("the exactly-40-char labelled case is still denied", () => {
+      const result = projectSafeText(`api_key=${forty}`, {
+        allowFreeText: true,
+      });
+      expect(result.state).toBe("omitted");
+      expect(JSON.stringify(result)).not.toContain(forty);
+    });
+
+    test("an unlabelled long run stays projected (unchanged trade-off)", () => {
+      const input = `digest ${hex64}`;
+      expect(projectSafeText(input, { allowFreeText: true })).toEqual({
+        state: "projected",
+        text: input,
+      });
+    });
+
+    test("sk-ant- keys are denied like the other sk- families", () => {
+      const key = "sk-ant-api03-9f3a7c21e8b44d0f8e7d6c5b4a3f2e1d";
+      const result = projectSafeText(`anthropic key ${key}`, {
+        allowFreeText: true,
+      });
+      expect(result.state).toBe("omitted");
+      expect(JSON.stringify(result)).not.toContain(key);
+    });
+  });
+
   test("F3: <think> chains are denied as reasoning content", () => {
     const result = projectSafeText(
       "<think>internal chain of thought about the budget</think>",

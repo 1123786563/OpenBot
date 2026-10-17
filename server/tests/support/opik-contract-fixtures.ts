@@ -406,7 +406,7 @@ export type Canary = { label: string; value: string };
  */
 export function scanTextForCanaries(
   text: string,
-  canaries: Canary[],
+  canaries: readonly Canary[],
 ): string[] {
   const found: string[] = [];
   for (const canary of canaries) {
@@ -415,6 +415,29 @@ export function scanTextForCanaries(
     }
   }
   return found;
+}
+
+/**
+ * Labels of forbidden canaries found in ANY of the given serialized texts.
+ *
+ * The caller MUST include the raw, pre-sanitization evidence text: evidence is
+ * sanitized before it is written to disk, so a scan confined to the sanitized
+ * disk files (plus the manifest and diagnostics) removes the canaries before it
+ * looks for them and is structurally empty — the redline could never fire
+ * (review finding R2-31). Raw texts stay in memory only; nothing unsanitized is
+ * ever written.
+ */
+export function collectForbiddenCanaryLabels(
+  texts: readonly string[],
+  canaries: readonly Canary[],
+): string[] {
+  const found = new Set<string>();
+  for (const text of texts) {
+    for (const label of scanTextForCanaries(text, canaries)) {
+      found.add(label);
+    }
+  }
+  return [...found];
 }
 
 /**
