@@ -1,8 +1,17 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import type { Attachment } from "@copilotkit/react-core/v2";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { Composer } from "@/components/channels/composer/composer";
+import { deploymentKeys } from "@/lib/deployment/queries";
+import { queryClient } from "@/query-client";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -32,7 +41,24 @@ import { settleReactWork } from "./settle-react-work";
  */
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost/" }));
-afterEach(cleanup);
+beforeEach(() => {
+  /*
+   * THE ONE FETCH THIS FILE USED TO LET REACH THE REAL NETWORK. Mounting the Composer subscribes
+   * its dictation hook to the `/api/capabilities` query, and without cache data that query fires a
+   * real fetch at the registration URL's origin — an unhandled ECONNREFUSED that leaked between
+   * tests even though nothing asserted on it. Seed the all-off capabilities a failed fetch used to
+   * produce (absent fields read as off, see `deployment/queries.ts`), so no request leaves the
+   * process; same pre-seeding `composer-dictation.test.tsx` does.
+   */
+  queryClient.setQueryData(deploymentKeys.capabilities(), {
+    generativeUi: false,
+    selfHostBanner: false,
+  });
+});
+afterEach(() => {
+  cleanup();
+  queryClient.clear();
+});
 afterAll(async () => {
   await settleReactWork();
   GlobalRegistrator.unregister();
