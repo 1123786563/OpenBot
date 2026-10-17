@@ -14,14 +14,14 @@ import { Hono } from "hono";
 import type { AgentActor } from "../../agents/profile-types";
 import type { AppVariables } from "../../auth/guards";
 import { type BotManagementCheck, resolveObservationBot } from "../context";
+import type { ObservationScope } from "../contracts";
+import { ObservationScopeError } from "../contracts";
 import type {
   ObservationDataset,
   ObservationDatasetStore,
   ObservationDatasetVersion,
 } from "../datasets";
 import { DatasetStoreError } from "../datasets";
-import type { ObservationScope } from "../contracts";
-import { ObservationScopeError } from "../contracts";
 import { resolveObservationScope } from "../scope";
 
 export type ObservationDatasetReadRouteDeps = Readonly<{

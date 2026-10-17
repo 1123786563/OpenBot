@@ -93,7 +93,8 @@ async function beginRun(runId: string) {
 const fragments = [
   {
     input: "the user asked for a haiku about tides",
-    referenceOutput: "Moon pulls the water\nthe shore breathes in and out\ntime keeps its own score",
+    referenceOutput:
+      "Moon pulls the water\nthe shore breathes in and out\ntime keeps its own score",
     toolFixtures: {},
   },
 ];
@@ -161,11 +162,18 @@ describe("OCR fix: the datasets chain is mounted at the one seam", () => {
     expect(version.caseCount).toBe(fragments.length);
     expect(typeof version.contentHash).toBe("string");
     // No store fact crosses the wire: not the scope key, not the locator, not the actor.
-    for (const forbidden of ["scopeKey", "actorId", "locatorWorkspace", "locatorProject"]) {
+    for (const forbidden of [
+      "scopeKey",
+      "actorId",
+      "locatorWorkspace",
+      "locatorProject",
+    ]) {
       expect(JSON.stringify(saved)).not.toContain(forbidden);
     }
 
-    const list = await app.request(`http://openbot.test/bots/${botId}/datasets`);
+    const list = await app.request(
+      `http://openbot.test/bots/${botId}/datasets`,
+    );
     expect(list.status).toBe(200);
     const listed = (await list.json()) as {
       datasets: Record<string, unknown>[];
@@ -222,8 +230,14 @@ describe("OCR fix: the datasets chain is mounted at the one seam", () => {
     );
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    const one = (await first.json()) as { version: { id: string }; replayed: boolean };
-    const two = (await second.json()) as { version: { id: string }; replayed: boolean };
+    const one = (await first.json()) as {
+      version: { id: string };
+      replayed: boolean;
+    };
+    const two = (await second.json()) as {
+      version: { id: string };
+      replayed: boolean;
+    };
     expect(one.replayed).toBe(false);
     expect(two.replayed).toBe(true);
     expect(two.version.id).toBe(one.version.id);
@@ -236,11 +250,17 @@ describe("OCR fix: the datasets chain is mounted at the one seam", () => {
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ runId: "r", decision: "approved", cases: fragments }),
+        body: JSON.stringify({
+          runId: "r",
+          decision: "approved",
+          cases: fragments,
+        }),
       },
     );
     expect(review.status).toBe(404);
-    const list = await app.request(`http://openbot.test/bots/${botId}/datasets`);
+    const list = await app.request(
+      `http://openbot.test/bots/${botId}/datasets`,
+    );
     expect(list.status).toBe(200);
   });
 
@@ -266,7 +286,11 @@ describe("OCR fix: the datasets chain is mounted at the one seam", () => {
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ runId: "r", decision: "approved", cases: fragments }),
+        body: JSON.stringify({
+          runId: "r",
+          decision: "approved",
+          cases: fragments,
+        }),
       },
     );
     expect(review.status).toBe(404);

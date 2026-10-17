@@ -680,9 +680,24 @@ describe("the three failure classes are explicit, never a 0", () => {
   test("a nested-quantifier pattern is refused before it can run (OCR h9)", () => {
     const rs = rules([
       { id: "catastrophic", kind: "regex", pattern: "^(a+)+$", flags: "" },
-      { id: "catastrophic-star", kind: "regex", pattern: "(\\w+)*x", flags: "" },
-      { id: "catastrophic-count", kind: "regex", pattern: "(a{2,})+b", flags: "" },
-      { id: "fine", kind: "regex", pattern: "^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$", flags: "i" },
+      {
+        id: "catastrophic-star",
+        kind: "regex",
+        pattern: "(\\w+)*x",
+        flags: "",
+      },
+      {
+        id: "catastrophic-count",
+        kind: "regex",
+        pattern: "(a{2,})+b",
+        flags: "",
+      },
+      {
+        id: "fine",
+        kind: "regex",
+        pattern: "^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$",
+        flags: "i",
+      },
       { id: "plain-group", kind: "regex", pattern: "^(ab)+$", flags: "" },
       { id: "bounded", kind: "regex", pattern: "(a+){2}", flags: "" },
     ]);

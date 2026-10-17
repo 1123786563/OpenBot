@@ -420,9 +420,9 @@ test("a deletion-in-flight dataset is gone to the reverse lookup, the freeze tar
   await expect(
     store.saveVersion(scopeA, { datasetName, cases: [caseA] }),
   ).rejects.toThrow(new DatasetStoreError("DATASET_NOT_FOUND", 404));
-  await expect(
-    store.markSyncing(scopeA, dataset.id),
-  ).rejects.toThrow(new DatasetStoreError("DATASET_NOT_FOUND", 404));
+  await expect(store.markSyncing(scopeA, dataset.id)).rejects.toThrow(
+    new DatasetStoreError("DATASET_NOT_FOUND", 404),
+  );
   await expect(
     store.markSynced(scopeA, dataset.id, `opik-m119b-${randomUUID()}`),
   ).rejects.toThrow(new DatasetStoreError("DATASET_NOT_FOUND", 404));

@@ -266,7 +266,9 @@ export function createEntranceModelCall(
   if (envName !== undefined && !process.env[envName]) {
     return () =>
       Promise.reject(
-        new Error(`judge entrance refused: credential env ${envName} is not set`),
+        new Error(
+          `judge entrance refused: credential env ${envName} is not set`,
+        ),
       );
   }
   return createGatewayModelCall({

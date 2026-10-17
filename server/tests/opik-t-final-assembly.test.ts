@@ -24,10 +24,10 @@
 // guards read the real assembly source the way opik-execution-wiring.test.ts
 // does, so the seam BETWEEN the modules and the boot file cannot silently rot.
 import { describe, expect, test } from "bun:test";
-import type { AbstractAgent, BaseEvent } from "@ag-ui/client";
-import { LLMock } from "@copilotkit/aimock";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { AbstractAgent, BaseEvent } from "@ag-ui/client";
+import { LLMock } from "@copilotkit/aimock";
 import { eq } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
@@ -314,7 +314,8 @@ describe("T-final M1: the ambient run-scope seam", () => {
     expect(owned?.key).toBe(scopeFor(actorId).key);
     // A global admin earns the admin scope explicitly.
     expect(
-      (await widenedGate({ id: "global-admin", role: "admin" }, botId)) !== null,
+      (await widenedGate({ id: "global-admin", role: "admin" }, botId)) !==
+        null,
     ).toBe(true);
     // A collaborator the widened gate manages earns nothing — fail closed.
     expect(
@@ -494,7 +495,10 @@ describe("T-final M1: createActorAgentResolver threads the run scope (behavior)"
       loadVendors: async () => [],
       ...(resolveRunObservationScope
         ? {
-            resolveRunObservationScope: (actor: AgentActor, runBotId: string) => {
+            resolveRunObservationScope: (
+              actor: AgentActor,
+              runBotId: string,
+            ) => {
               asked.push({ actorId: actor.id, botId: runBotId });
               return resolveRunObservationScope(actor, runBotId);
             },

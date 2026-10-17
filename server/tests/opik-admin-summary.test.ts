@@ -413,14 +413,14 @@ describe("createExportReauthorization (the worker's T11-style seam)", () => {
     // widening the inference used to leak through. The reauthorization answers
     // null for them: owner or global admin, nothing else.
     const widened = createExportReauthorization({
-      canManageBot: async (actor, botId) =>
+      canManageBot: async (_actor, botId) =>
         botId === "agent-1" ? profile() : null,
       scopeEpoch: epochFor,
       resolveActor: createActorResolver(async () => ["user"]),
     });
-    expect(await widened({ actorId: "user-collaborator", botId: "agent-1" })).toBe(
-      null,
-    );
+    expect(
+      await widened({ actorId: "user-collaborator", botId: "agent-1" }),
+    ).toBe(null);
   });
 });
 

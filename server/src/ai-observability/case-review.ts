@@ -26,8 +26,9 @@
  *   and it is projected before it is recorded, so a secret typed into a note is refused, not
  *   echoed.
  */
-import { type AuditStore, recordAuditEvent } from "../audit";
+
 import type { SafeValue } from "../../../shared/ai-observability";
+import { type AuditStore, recordAuditEvent } from "../audit";
 import type { RunBindingStore } from "./bindings";
 import type { ObservationScope } from "./contracts";
 import type {

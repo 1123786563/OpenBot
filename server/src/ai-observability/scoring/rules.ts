@@ -115,7 +115,8 @@ export function regexHasNestedQuantifiers(pattern: string): boolean {
   const isUnbounded = (quantifier: string | null): boolean =>
     quantifier === "*" ||
     quantifier === "+" ||
-    (quantifier?.startsWith("{") === true && quantifier.includes(",") &&
+    (quantifier?.startsWith("{") === true &&
+      quantifier.includes(",") &&
       !/\{\d+,\d+\}/.test(quantifier));
 
   const parseAtom = (): { text: string; group: GroupInfo | null } | null => {
@@ -146,7 +147,8 @@ export function regexHasNestedQuantifiers(pattern: string): boolean {
           cursor += 1;
         } else if (marker === "<") {
           // Named group or lookbehind: skip to the closing >.
-          while (cursor < pattern.length && pattern[cursor] !== ">") cursor += 1;
+          while (cursor < pattern.length && pattern[cursor] !== ">")
+            cursor += 1;
           cursor += 1;
         }
       }
@@ -186,10 +188,7 @@ export function regexHasNestedQuantifiers(pattern: string): boolean {
         if (isUnbounded(quantifier) && atom.group.unboundedSingle) {
           dangerous.value = true;
         }
-      } else if (
-        isUnbounded(quantifier) &&
-        consumesSingleChar(atom.text)
-      ) {
+      } else if (isUnbounded(quantifier) && consumesSingleChar(atom.text)) {
         owner.unboundedSingle = true;
       }
     }

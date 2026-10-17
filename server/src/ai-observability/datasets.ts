@@ -11,11 +11,7 @@ import {
   aiObservationDatasetVersions,
 } from "../db/schema/ai-observability-datasets";
 import type { ObservationScope } from "./contracts";
-import {
-  denyReason,
-  projectSafeFixture,
-  projectSafeText,
-} from "./redaction";
+import { denyReason, projectSafeFixture, projectSafeText } from "./redaction";
 import { notPendingDeletion } from "./retention";
 import { assertObservationScope, resolveStorageLocator } from "./scope";
 
@@ -396,8 +392,7 @@ export function createObservationDatasetStore(
             sql<number>`count(${aiObservationDatasetVersions.id})`.mapWith(
               Number,
             ),
-          latestVersionAt:
-            sql<Date | null>`max(${aiObservationDatasetVersions.createdAt})`,
+          latestVersionAt: sql<Date | null>`max(${aiObservationDatasetVersions.createdAt})`,
         })
         .from(aiObservationDatasets)
         .leftJoin(

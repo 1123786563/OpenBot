@@ -209,7 +209,9 @@ describe("the freeze pipeline projects configuration before it is hashed", () =>
       readOnlyTools: ["web_search", "sk-live-abc123def456ghi789jkl012"],
     });
     expect(frozen.readOnlyTools).toHaveLength(2);
-    const refused = frozen.readOnlyTools.filter((one) => one.state === "omitted");
+    const refused = frozen.readOnlyTools.filter(
+      (one) => one.state === "omitted",
+    );
     expect(refused).toHaveLength(1);
     expect(countExperimentCanaryFindings(frozen)).toBe(1);
   });
