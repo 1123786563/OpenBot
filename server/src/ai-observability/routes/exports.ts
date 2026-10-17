@@ -27,7 +27,11 @@ import type { AgentActor } from "../../agents/profile-types";
 import type { AppVariables } from "../../auth/guards";
 import type { Database } from "../../db/client";
 import type { BotManagementCheck } from "../context";
-import { resolveObservationBot } from "../context";
+import {
+  explicitObservationOwnership,
+  OBSERVATION_BOT_NOT_FOUND,
+  resolveObservationBot,
+} from "../context";
 import { ObservationScopeError } from "../contracts";
 import {
   createObservationExportStore,
@@ -170,10 +174,18 @@ export function createExportRoutes(
       return Response.json({ error: access.error }, { status: access.status });
     }
     const actor = context.var.actor;
-    const ownership =
-      access.profile.ownerUserId === actor.id
-        ? ("owner" as const)
-        : ("admin" as const);
+    // Explicit, never inferred (OCR h10/m182, R4-36): the ownership comes off
+    // the seam, not off this route's own guess — the inline `owner ? "owner"
+    // : "admin"` minted any manage-passing non-owner an admin scope on the
+    // data-egress face, exactly what the seam exists to fail closed against.
+    // A null refusal answers the same unified not-found the manage gate uses.
+    const ownership = explicitObservationOwnership(actor, access.profile);
+    if (ownership === null) {
+      return Response.json(
+        { error: OBSERVATION_BOT_NOT_FOUND },
+        { status: 404 },
+      );
+    }
     const epoch = await deps.scopeEpoch(actor, access.botId);
     return {
       scope: resolveObservationScope({

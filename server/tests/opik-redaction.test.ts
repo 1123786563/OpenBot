@@ -664,6 +664,59 @@ describe("T05 review repair: deny gaps", () => {
     }
   });
 
+  test("R4-19: the IPv6 link-local block (fe80::/10) is omitted as a raw attachment", () => {
+    // The parser hands the host over canonical lowercase hex, so the range is
+    // matched on the first hextet: fe80..febf.
+    for (const url of [
+      "https://[fe80::1]/latest/meta-data/",
+      "https://[FE80::A9FE:A9FE]/",
+      "https://[febf::1]/",
+    ]) {
+      const result = projectSafeUrl(url);
+      expect(result.state, url).toBe("omitted");
+      if (result.state === "omitted")
+        expect(result.reason, url).toBe("raw_attachment");
+    }
+  });
+
+  test("R4-19: the IPv6 unique-local block (fc00::/7) is omitted as a raw attachment", () => {
+    // fc00..fdff — the AWS IPv6 metadata endpoint lives here (fd00:ec2::254).
+    for (const url of [
+      "https://[fd00:ec2::254]/latest/meta-data/",
+      "https://[fc00::1]/",
+    ]) {
+      const result = projectSafeUrl(url);
+      expect(result.state, url).toBe("omitted");
+      if (result.state === "omitted")
+        expect(result.reason, url).toBe("raw_attachment");
+    }
+  });
+
+  test("R4-19: an IPv4-mapped IPv6 spelling of the metadata endpoint is omitted too", () => {
+    // The parser canonicalizes every IPv4-mapped spelling — dotted or hex, full
+    // or compressed — to `::ffff:a9fe:a9fe`; the mapped tail is decoded and
+    // answered with the same 169.254/16 verdict its IPv4 spelling gets.
+    for (const url of [
+      "https://[::ffff:169.254.169.254]/latest/meta-data/",
+      "https://[::ffff:a9fe:a9fe]/",
+      "https://[0:0:0:0:0:ffff:169.254.169.254]/",
+    ]) {
+      const result = projectSafeUrl(url);
+      expect(result.state, url).toBe("omitted");
+      if (result.state === "omitted")
+        expect(result.reason, url).toBe("raw_attachment");
+    }
+  });
+
+  test("R4-19: ordinary global IPv6 hosts are still projected (non-regression)", () => {
+    for (const url of [
+      "https://[2001:db8::1]/trace",
+      "https://[2606:4700::6810:85e5]/",
+    ]) {
+      expect(projectSafeUrl(url).state, url).toBe("projected");
+    }
+  });
+
   test("F5: adversarial '=' padding scans in bounded time", () => {
     // One '=' every 41 characters manufactures a word-boundary candidate per chunk. With no
     // label present, the old per-candidate lookahead walked the whole tail for every candidate

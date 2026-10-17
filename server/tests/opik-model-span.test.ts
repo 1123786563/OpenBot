@@ -22,6 +22,7 @@ import {
 import type { OpikOtlpSpan, OpikPort } from "../src/ai-observability/opik-port";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import {
+  appendSpanOutputDeltaForTests,
   type BuiltinModelSpanFact,
   CreditGateError,
   type ModelUsageGateLifecycle,
@@ -667,6 +668,31 @@ describe("the built-in observation bypass (metered path)", () => {
     expect(facts[0].output!.length).toBe(2_000);
   });
 
+  test("a single over-ceiling delta is cut at the capture ceiling too (OCR R4-33)", async () => {
+    // The non-streamed fallback emits the WHOLE completion as one text-delta;
+    // the capture-side accumulator cuts it to the remaining capacity at push
+    // time (R4-33) instead of pinning it whole until settlement's join.
+    const { model } = scriptedModel([
+      { type: "text-delta", id: "t", delta: "y".repeat(10_000) },
+      finishPart(5, 10_000),
+    ]);
+    const facts: BuiltinModelSpanFact[] = [];
+    try {
+      setBuiltinModelSpanObserver((fact) => facts.push(fact));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream({ prompt: [] });
+      await drain(result.stream);
+    } finally {
+      setBuiltinModelSpanObserver(undefined);
+    }
+    expect(facts[0].ending).toEqual({
+      kind: "succeeded",
+      inputTokens: 5,
+      outputTokens: 10_000,
+    });
+    expect(facts[0].output).toBe("y".repeat(2_000));
+  });
+
   test("the fact carries the scope captured at entry even when settlement lands after teardown (OCR R2-58)", async () => {
     const scope = aScope();
     const { model } = scriptedModel([
@@ -742,6 +768,50 @@ describe("the built-in observation bypass (metered path)", () => {
     // The person's stream completed; no usage fact was ever committed, so the
     // meter stays silent and the span will say unavailable — never 0/0.
     expect(metered).toEqual([]);
+  });
+
+  test("a half-reported usage whose reported half is invalid yields exactly ONE span fact (OCR R4-32)", async () => {
+    // input=-5 is present-but-negative (invalid), output absent (half-report):
+    // settleFail("usage_missing") claims `settled` and reports the fact, then
+    // the invalid-usage branch below it still reached failSettlement, which
+    // reported a second, contradictory settlement_failed span for the same call
+    // — exactly the two-records shape OCR R4-32 pins against.
+    const { model } = scriptedModel([
+      { type: "text-delta", id: "t", delta: "hi" },
+      {
+        type: "finish",
+        usage: { inputTokens: { total: -5 }, outputTokens: {} },
+      },
+    ]);
+    const facts: BuiltinModelSpanFact[] = [];
+    const failReasons: string[] = [];
+    const unsettled: string[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        fail: async (input) => {
+          failReasons.push(input.reason);
+        },
+        recordUnsettled: async (input) => {
+          unsettled.push(input.reason);
+        },
+      }));
+      setBuiltinModelSpanObserver((fact) => facts.push(fact));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      // The settlement itself still fails (the teardown discipline is
+      // unchanged); what this pin owns is that the observation carries ONE
+      // verdict for the call, not two contradictory ones.
+      await expect(
+        drain((await wrapped.doStream({ prompt: [] })).stream),
+      ).rejects.toThrow(/usage_invalid/);
+    } finally {
+      setModelUsageGate(undefined);
+      setBuiltinModelSpanObserver(undefined);
+    }
+    expect(failReasons).toEqual(["usage_missing"]);
+    expect(unsettled).toEqual(["usage_invalid"]);
+    expect(facts).toHaveLength(1);
+    expect(facts[0].ending).toEqual({ kind: "usage_missing" });
   });
 
   test("a gate refusal is observed as refused, before the provider is called (acceptance 3)", async () => {
@@ -994,5 +1064,43 @@ describe("the built-in observation bypass (metered path)", () => {
     }
     expect(metered).toHaveLength(1);
     expect(phases).toEqual(["gate-finish"]);
+  });
+});
+
+/*
+ * OCR R4-33: the accumulator itself, not just its settled join. The capture
+ * ceiling is a RETENTION bound — the delta that crosses it is cut to the
+ * remaining capacity (the appendToolStepArg discipline) — so a whole
+ * non-streamed completion emitted as one text-delta is never pinned alive
+ * until settlement. The settled join's own slice makes the same output
+ * readable either way; this seam is where the bound itself is provable.
+ */
+describe("the span-output accumulator's capture ceiling (OCR R4-33)", () => {
+  test("a single delta over the ceiling is cut to the ceiling, not retained whole", () => {
+    const deltas: string[] = [];
+    const length = appendSpanOutputDeltaForTests(deltas, 0, "z".repeat(5_000));
+    expect(length).toBe(2_000);
+    expect(deltas.join("")).toHaveLength(2_000);
+  });
+
+  test("a delta partially into the ceiling is cut to the remaining capacity", () => {
+    const deltas: string[] = ["ab"];
+    const length = appendSpanOutputDeltaForTests(deltas, 2, "z".repeat(5_000));
+    expect(length).toBe(2_000);
+    expect(deltas.join("")).toBe(`ab${"z".repeat(1_998)}`);
+  });
+
+  test("past the ceiling nothing is retained at all", () => {
+    const deltas: string[] = ["z".repeat(2_000)];
+    const length = appendSpanOutputDeltaForTests(deltas, 2_000, "overflow");
+    expect(length).toBe(2_000);
+    expect(deltas).toHaveLength(1);
+  });
+
+  test("deltas under the ceiling are kept whole, as before (non-regression)", () => {
+    const deltas: string[] = [];
+    const length = appendSpanOutputDeltaForTests(deltas, 0, "hello");
+    expect(length).toBe(5);
+    expect(deltas).toEqual(["hello"]);
   });
 });

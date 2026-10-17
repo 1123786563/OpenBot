@@ -15,7 +15,12 @@ import { Hono } from "hono";
 import type { AgentActor, AgentProfile } from "../../agents/profile-types";
 import type { AppVariables } from "../../auth/guards";
 import type { AdminSummaryService } from "../admin-summary";
-import { type BotManagementCheck, resolveObservationBot } from "../context";
+import {
+  type BotManagementCheck,
+  explicitObservationOwnership,
+  OBSERVATION_BOT_NOT_FOUND,
+  resolveObservationBot,
+} from "../context";
 import { ObservationScopeError } from "../contracts";
 import { resolveObservationScope } from "../scope";
 
@@ -75,10 +80,15 @@ export function createAdminSummaryRoutes(
     const access = await resolveObservationBot(deps.canManageBot, actor, botId);
     if (!access.ok)
       throw new ManageRefusal(access.status, { error: access.error });
-    const ownership =
-      access.profile.ownerUserId === actor.id
-        ? ("owner" as const)
-        : ("admin" as const);
+    // Explicit, never inferred (OCR h10/m182, R4-35): the seam answers the
+    // ownership off the profile row the manage decision read. A null — a
+    // caller a future widened gate lets manage but the seam refuses to mint
+    // for — is refused with the same unified not-found the manage gate uses,
+    // so the enumeration's skip and the filtered call's 404 stay one answer.
+    const ownership = explicitObservationOwnership(actor, access.profile);
+    if (ownership === null) {
+      throw new ManageRefusal(404, { error: OBSERVATION_BOT_NOT_FOUND });
+    }
     const epoch = await deps.scopeEpoch(actor, access.botId);
     return resolveObservationScope({
       actorId: actor.id,
