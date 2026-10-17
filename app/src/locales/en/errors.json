@@ -245,5 +245,13 @@
     "loadForBot": "This Bot's shared apps could not be loaded.",
     "saveDecision": "That decision could not be saved.",
     "send": "The request could not be sent."
+  },
+  "botServices": {
+    "load": "Could not load the registered bot services.",
+    "operation": "The bot service operation failed."
+  },
+  "modelAccess": {
+    "previewFailed": "That binding code could not be checked.",
+    "confirmFailed": "The model access authorization could not be created."
   }
 }
