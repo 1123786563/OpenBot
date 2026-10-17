@@ -939,6 +939,39 @@ describe("the preview HMR upgrade's Origin gate (fix-ocr28 #1 — CSWSH)", () =>
     ).toBe(false);
   });
 
+  test("a trailing-dot FQDN Origin of the session's own host passes — the dotted page IS this host (fix-ocr29 #1)", () => {
+    // WHATWG KEEPS a hostname's trailing dot when serializing an origin: a
+    // page loaded from the dotted FQDN form (`https://<label>.<base>.`)
+    // sends an Origin header THAT CARRIES THE DOT, while originFor mints
+    // from the template — which refuses a trailing dot, so its address
+    // never has one. The strict `new URL(x).origin` comparison therefore
+    // 403s a legitimate page's HMR upgrade and live reload silently dies.
+    // Every host-side comparison in this module (handlesRequest,
+    // resolvePreviewRequest, the ticket binding) dot-folds through
+    // normalizeHostname (fix-ocr22); the origin gate folds the same way.
+    const hostForm = createPreviewOrigin({
+      config: {
+        enabled: true,
+        webappProxyEnabled: true,
+        previewOriginEnabled: true,
+        previewOriginTemplate: "https://{session}.preview.example.com",
+      },
+      previewTickets: createPreviewTickets({ store: {} as never }),
+      secret: "same-origin-suite-secret",
+      env: {},
+      servePreview: async () => new Response("unused"),
+    });
+    const hostAddress = hostForm.originFor(SESSION_ID);
+    // The dotted spelling of the session's own host is the SAME host to
+    // DNS and to certificates — the gate must admit it.
+    expect(samePreviewOrigin(`${hostAddress}.`, hostAddress)).toBe(true);
+    // The fold is host-scoped, not dot-blind: a sibling label in the
+    // dotted form is still a different host and still refused.
+    expect(
+      samePreviewOrigin("https://deadbeef.preview.example.com.", hostAddress),
+    ).toBe(false);
+  });
+
   test("the boot file gates the upgrade on Origin inside the preview HMR branch, BEFORE the resolver (source pin)", () => {
     const source = readFileSync(
       join(import.meta.dir, "../src/index.ts"),
