@@ -1,0 +1,44 @@
+# MT013 sha256 manifest — 2026-10-16T05:01:39Z — uncommitted working tree (no commits authorized)
+# BASE f0520524f0faa2b4533b9d2f1aa692c8f907ba71 (prereq verified 18/18 at task start: prereq-recompute.txt)
+
+# --- deliverables (final state) ---
+da645dc6ebc0d35b548c11b326e93ff86d4e9e28583874d6e4793de6099c65f6  src/index.ts
+44024b97770c95bcf8c5edcc54ec4cd8d221cfe940ab8ad82b14f37980642231  src/config.ts
+7ab7275eff18fd2c38a5f38bbed3ebfaa265c6eb87b25028b6883c83e98f8a46  src/enterprise/tenancy/startup-checks.ts
+f2ba8453fa8542803355e61d9d611f76e46805985c2cfdf4c52774d900eb79af  tests/config.test.ts
+2d030bf23789e3c7817018375f994c33bd4467c765e20efcc2ee826621d6087a  tests/multitenancy/startup-checks.test.ts
+
+# --- MT013 checkpoints ---
+f8a5b2e36053d09c892e62d696295f3fcb55e30ef95173e410b696c8c5d70a57  ./before-after-hashes.txt
+b86ba2733764835aa46c2176e2107767a1532c085b1d3595b2dbf00862e83530  ./changes.diff
+510939deff576340dc1f12401ea1bc180a11ea6d4006b47bd058432a8d1232e0  ./mutation/MUT1-coverage-refusal-dropped-TESTS-FAIL.txt
+c00d1c3b36bc62d151eb0f5b8fdce2c0e755e75d74bfdf1a7f0fc65971ff0479  ./mutation/MUT2-devbypass-refusal-dropped-TESTS-FAIL.txt
+869ab85cf2064154a90d8d4a03f218484d6415b6859d8b52fba70df393e6e5be  ./mutation/MUT3-roles-refusal-dropped-TESTS-FAIL.txt
+a9b7156ff933af216108cb20d0d4b880359fa890df990870059ee843fad83042  ./mutation/MUT4-verdict-no-exit-TESTS-FAIL.txt
+343a747b0b73bb14b82b98c4c6f8a902d60d41f3b5e9a7180acc9c932b3d8e69  ./mutation/original-hashes.txt
+9f17be7851241a037ca8042e282a167a4ddf0080367fc719770f0aa0e2a73e24  ./mutation/README.md
+cb8896fc06c05beae5ab87f2651c333e11c42053326eed406b2590e693cb6eaa  ./mutation/RED-restore/GREEN-after-restore.txt
+cd63c3af7a60b14f1b18d7c386b87478aacff4ee2a49389fe323e192eeaf18a3  ./prereq-recompute.txt
+111f7edd56dd64927398dc8dceb2f08091427afa9992fdb8b5b7c02f262ecf4f  ./red-green/BASELINE-before-mt013.txt
+a6e0df1203acc3b4552b58e69783b18b806eb8c164d5a2d186abb46b64b9f485  ./red-green/GREEN-config-155tests.txt
+d76046ca6170587076c62a66641ab54dbb9795a75bea02450967499373d926b0  ./red-green/GREEN-full-regression-181pass-0skip.txt
+0c8e8d67f1c1fdba29ece69440f9460d7e8a2459c43de7e417596542b8323670  ./red-green/GREEN-unit-33tests.txt
+dcc7204942b377ee4552daaee10c24374718873637eea0481caf9d4d49096517  ./red-green/RED-1-module-missing.txt
+5232f7f5943eed0a904bf3d51dc2ec516df49423073c88f3726c9189bfa9a98c  ./red-green/RED-2-config-switch.txt
+654d40059f440ca7de1810aff6c4b05702479941344ed8bef7a4e8a8a338b025  ./review-package.json
+fc40b7f157d7552dbb3c5b9efa773a39affcd1f52cd6ffecd350efa38e4c0372  ./review-sha256-manifest.txt
+fc40b7f157d7552dbb3c5b9efa773a39affcd1f52cd6ffecd350efa38e4c0372  ./sha256-manifest.txt
+2efc9a8e6811b217ef588ad107a8a1e6947edf7752341b0a54cb8a630fcd5f24  ./verification/2-integration-realdb-33tests.txt
+a3963992143866e42838ce845343fa86b42ffca554fc1b43acaac0e6aeb2db82  ./verification/3a-boot-smoke-no-inventory-EXIT1.jsonl
+298c2405ecaebf1aa4daa3a1ea074a4ddfea74ea0d577ecf25cf6de6f70794fb  ./verification/3b-boot-smoke-real-owned-inventory-EXIT0.jsonl
+97090799760ff0b91ea7e52634cf554ff5a38112f496b076621e61f01659ffd3  ./verification/3c-boot-smoke-raw-539-uncovered-EXIT1.jsonl
+d6b943fe512c778f717a69accf6c3df39e9e498a914bef1d833b387b1303edd5  ./verification/3d-boot-smoke-waiver-trail-EXIT1.jsonl
+85cb53938f42c006b8be3cdeddfe8ad318ff24b86ec38ce82c156362e690806a  ./verification/4-legacy-adjacent-suites.txt
+f4164c0530e4aa618bed136b72745ecfe9fb8b669e51c90add6adef7165d4ec7  ./verification/4b-shared-wiring.txt
+82689ecef2d516ed80b00127455efc145e89c3435a115bbbc213e2855bf6e506  ./verification/biome.txt
+6ae7c5937460e4b17c6b58aec6416188979251111e82e349974bcc5e563bd231  ./verification/ownership-input-smoke.json
+b577eea46742d0910e2830a848539f4d7b37ef2410125a03902d1f9defc59da6  ./verification/real-inventory-artifacts.sha256
+8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92  ./verification/typecheck.txt
+
+# --- report ---
+e552054eacb66277956ddc9102f92537b6d71789ee70af9298c4e6e9f5e107f8  docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT013.md

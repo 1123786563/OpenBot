@@ -1,0 +1,15 @@
+# MT013 before/after hashes — 2026-10-16
+# BASE f0520524f0faa2b4533b9d2f1aa692c8f907ba71
+
+## before (prereq-manifest verified 18/18 at task start; config.ts & config.test.ts were HEAD-clean)
+8c2583847bb056bbb27ef8782542be476f87677b42619dc3a5d162dc43678c5d  server/src/index.ts
+01870d4fa4084dd2dac87150ca61f11c5e86ca09f933d9eda2e64efae22b281d  server/src/config.ts (HEAD)
+861f2e1d658151da16cc3b881adea78cb58bccbc67674dfc43164997e96befa9  server/tests/config.test.ts (HEAD)
+(new files had no before-state)
+
+## after (final, post-mutation-restore)
+da645dc6ebc0d35b548c11b326e93ff86d4e9e28583874d6e4793de6099c65f6  src/index.ts
+44024b97770c95bcf8c5edcc54ec4cd8d221cfe940ab8ad82b14f37980642231  src/config.ts
+7ab7275eff18fd2c38a5f38bbed3ebfaa265c6eb87b25028b6883c83e98f8a46  src/enterprise/tenancy/startup-checks.ts
+f2ba8453fa8542803355e61d9d611f76e46805985c2cfdf4c52774d900eb79af  tests/config.test.ts
+2d030bf23789e3c7817018375f994c33bd4467c765e20efcc2ee826621d6087a  tests/multitenancy/startup-checks.test.ts

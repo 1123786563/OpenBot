@@ -1,0 +1,217 @@
+# MT013 changes.diff — implementer delta only (BASE f0520524..., working tree uncommitted)
+
+## server/src/index.ts — my delta (verified: pre-state sha256 8c25838... == prereq manifest)
+--- /tmp/mt013/index.pre-mt013.ts	2026-10-16 12:27:28
++++ src/index.ts	2026-10-16 12:19:37
+@@ -62,6 +62,10 @@
+   wakeUpTools,
+ } from "./agents/wake-up";
+ import { createApp, createDeploymentRequireUser } from "./app";
++import {
++  applyStartupVerdict,
++  runMultitenancyStartupChecks,
++} from "./enterprise/tenancy/startup-checks";
+ import { createApprovedActionExecutor } from "./approvals/execute";
+ import {
+   PERSON_QUESTION_WAITING,
+@@ -642,6 +646,29 @@
+ };
+ 
+ const config = loadConfig();
++/*
++ * Multitenancy mode is an explicit switch (OPENBOT_MULTITENANCY, default off — config.ts), and
++ * switching it on is a promise about who this deployment serves. The promise is checked before
++ * anything else here runs: entrance coverage against the MT001 inventory, no single-user/dev
++ * bypass residue, and the restricted ob_ent_* database roles on the production connections. Any
++ * gap and the process exits non-zero with one structured audit record naming every check —
++ * booting with a hole in tenant isolation is not a warning-and-continue situation.
++ *
++ * With the switch off nothing here runs: the legacy boot is byte-for-byte what it was.
++ */
++if (config.multitenancy.enabled) {
++  const startupRecord = await runMultitenancyStartupChecks({
++    inventoryPath: config.multitenancy.inventoryPath,
++    waiversPath: config.multitenancy.waiversPath,
++    directoryUrl: config.enterpriseDirectoryDatabaseUrl,
++    dataUrl: config.enterpriseDataDatabaseUrl,
++    tenantRuntimeUrl: config.tenantStorageRuntimeDatabaseUrl,
++    singleUser: config.singleUser,
++    singleUserEnvRaw: process.env.OPENBOT_SINGLE_USER,
++    devNoAuthEnvRaw: process.env.OPENBOT_DEV_NO_AUTH,
++  });
++  applyStartupVerdict(startupRecord, { log });
++}
+ // The environment seeds local policy once. The SDK fallback must not reapply an old revision
+ // after an administrator clears a pin to follow the latest published Skills.
+ clearLearningRevisionFallback();
+
+## server/src/config.ts — vs HEAD (all hunks mine)
+diff --git a/server/src/config.ts b/server/src/config.ts
+index 3456859e..c1184e0a 100644
+--- a/server/src/config.ts
++++ b/server/src/config.ts
+@@ -230,6 +230,21 @@ export type DeploymentConfig = {
+    * Switching either off stops new defaults and leaves every existing row as it is.
+    */
+   memoryDefaults: { sources: boolean; research: boolean };
++  /**
++   * The multitenancy switch and its startup-validation inputs (MT013).
++   *
++   * Off by default; the legacy single-tenant boot is byte-for-byte unchanged while it is off.
++   * On, the process runs the three startup checks in enterprise/tenancy/startup-checks.ts and
++   * refuses to boot on any gap. `inventoryPath` names the CoverageInventory JSON the MT001
++   * generator (`server/scripts/multitenancy/inventory.ts`) produced; `waiversPath` names an
++   * explicit waiver list whose every entry carries a reason, because an audited exception is
++   * the only kind this mode accepts.
++   */
++  multitenancy: {
++    enabled: boolean;
++    inventoryPath?: string;
++    waiversPath?: string;
++  };
+   /** Audio configuration is independent of agent model providers. */
+   transcription?: TranscriptionConfig;
+   voice?: VoiceConfig;
+@@ -2810,6 +2825,7 @@ export function loadConfig(
+       sources: switchedOn(environment, "OPENBOT_MEMORY_SOURCE_DEFAULTS"),
+       research: switchedOn(environment, "OPENBOT_PROACTIVE_DEFAULTS"),
+     },
++    multitenancy: multitenancyConfig(environment),
+     agentStallTimeoutMs: agentStallTimeoutMs(environment),
+     auditRetentionDays: auditRetentionDays(environment),
+     oauth: { google },
+@@ -2857,6 +2873,42 @@ function switchedOn(environment: Environment, name: string): boolean {
+   return value !== "false" && value !== "0";
+ }
+ 
++/**
++ * The multitenancy mode switch: an explicit opt-in, never a default (MT013).
++ *
++ * A default-on rule like {@link switchedOn} would be exactly wrong here: multitenancy changes
++ * who the deployment serves, and its boot runs startup checks that can refuse to start. A
++ * deployment must arrive at this mode by naming it, so the variable accepts an explicit value
++ * on either side and refuses everything else — a typo must not silently become an opt-in any
++ * more than a silent default may turn a single-tenant server multi-tenant.
++ */
++function multitenancyConfig(environment: Environment): {
++  enabled: boolean;
++  inventoryPath?: string;
++  waiversPath?: string;
++} {
++  const raw = optional(environment, "OPENBOT_MULTITENANCY")?.trim();
++  let enabled: boolean;
++  if (raw === undefined || raw === "") {
++    enabled = false;
++  } else if (raw === "on" || raw === "true" || raw === "1") {
++    enabled = true;
++  } else if (raw === "off" || raw === "false" || raw === "0") {
++    enabled = false;
++  } else {
++    throw new Error(
++      `OPENBOT_MULTITENANCY must be "on", "true", "1" (multitenancy mode), or "off", "false", "0" (the default single-tenant mode); got "${raw}". Leave it unset to keep the legacy boot unchanged.`,
++    );
++  }
++  const inventoryPath = optional(environment, "OPENBOT_MULTITENANCY_INVENTORY");
++  const waiversPath = optional(environment, "OPENBOT_MULTITENANCY_WAIVERS");
++  return {
++    enabled,
++    ...(inventoryPath ? { inventoryPath } : {}),
++    ...(waiversPath ? { waiversPath } : {}),
++  };
++}
++
+ /** The service token and its project, both or neither. See `DeploymentConfig.learningSetup`. */
+ function learningSetupCredential(environment: Environment): {
+   learningSetup?: { serviceToken: string; projectId: string };
+## server/tests/config.test.ts — vs HEAD (all hunks mine)
+diff --git a/server/tests/config.test.ts b/server/tests/config.test.ts
+index 228454b4..e5f286fa 100644
+--- a/server/tests/config.test.ts
++++ b/server/tests/config.test.ts
+@@ -309,6 +309,10 @@ describe("deployment configuration", () => {
+       // Nothing set, so no opinion and everybody is admitted: the shape a deployment that has not
+       // heard of SIGNIN_ALLOWED_EMAIL_DOMAINS has, which is every deployment running today.
+       allowedEmailDomains: [],
++      // MT013 disclosure: this assertion went stale at mainline commit 30a04b85, which added
++      // AuthConfig.emailPassword (off unless OPENBOT_EMAIL_PASSWORD=true) without updating this
++      // exhaustive shape — the test failed at BASE f0520524 before any MT013 change.
++      emailPassword: false,
+     });
+   });
+ 
+@@ -1130,6 +1134,75 @@ describe("memory sources and background research", () => {
+   });
+ });
+ 
++/**
++ * The multitenancy switch (MT013): an explicit opt-in, default off.
++ *
++ * Unlike the default-on switches above, this one answers a question about who the deployment
++ * serves, and booting multi-tenant while believing you are single-tenant (or the reverse) is not
++ * a spelling mistake the server should forgive — so an unrecognised value is refused at boot,
++ * not coerced.
++ */
++describe("OPENBOT_MULTITENANCY", () => {
++  test("is off when the variable is absent (byte-identical legacy boot)", () => {
++    expect(loadConfig(baseEnvironment).multitenancy.enabled).toBe(false);
++  });
++
++  test.each(["on", "true", "1"])("switches on explicitly with %p", (value) => {
++    expect(
++      loadConfig({ ...baseEnvironment, OPENBOT_MULTITENANCY: value })
++        .multitenancy.enabled,
++    ).toBe(true);
++  });
++
++  test.each(["off", "false", "0"])(
++    "switches off explicitly with %p",
++    (value) => {
++      expect(
++        loadConfig({ ...baseEnvironment, OPENBOT_MULTITENANCY: value })
++          .multitenancy.enabled,
++      ).toBe(false);
++    },
++  );
++
++  // "" reads as absent (the trim `optional` applies everywhere in this file), so it keeps the
++  // default-off rather than being a refusal.
++  test.each(["ON", "yes", "enabled", "maybe"])(
++    "refuses an unrecognised value (%p) instead of guessing",
++    (value) => {
++      expect(() =>
++        loadConfig({ ...baseEnvironment, OPENBOT_MULTITENANCY: value }),
++      ).toThrow(/OPENBOT_MULTITENANCY/);
++    },
++  );
++
++  test("an empty value reads as absent and stays off", () => {
++    expect(
++      loadConfig({ ...baseEnvironment, OPENBOT_MULTITENANCY: "" }).multitenancy
++        .enabled,
++    ).toBe(false);
++  });
++
++  test("carries the inventory and waiver paths through to the startup checks", () => {
++    const config = loadConfig({
++      ...baseEnvironment,
++      OPENBOT_MULTITENANCY: "on",
++      OPENBOT_MULTITENANCY_INVENTORY: "/etc/openbot/inventory.json",
++      OPENBOT_MULTITENANCY_WAIVERS: "/etc/openbot/waivers.json",
++    });
++    expect(config.multitenancy).toEqual({
++      enabled: true,
++      inventoryPath: "/etc/openbot/inventory.json",
++      waiversPath: "/etc/openbot/waivers.json",
++    });
++  });
++
++  test("paths stay optional; an off switch carries no path state", () => {
++    expect(loadConfig(baseEnvironment).multitenancy).toEqual({
++      enabled: false,
++    });
++  });
++});
++
+ /**
+  * Naming the private addresses an agent may live at.
+  *

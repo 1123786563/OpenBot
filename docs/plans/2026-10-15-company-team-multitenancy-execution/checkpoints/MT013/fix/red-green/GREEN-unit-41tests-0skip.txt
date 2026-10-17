@@ -1,0 +1,3 @@
+# GREEN — startup-checks suite with five-var env (mt013-fix-pg @127.0.0.1:55473), 0 skip — FINAL bound to after-hashes
+# command: source /tmp/mt013fix/env.sh && bun --no-env-file test tests/multitenancy/startup-checks.test.ts
+bun test v1.4.2 (50a8a8387)

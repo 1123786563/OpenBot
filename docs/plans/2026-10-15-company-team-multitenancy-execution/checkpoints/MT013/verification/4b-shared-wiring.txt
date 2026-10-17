@@ -1,0 +1,18 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/shared-wiring.integration.test.ts:
+{"level":30,"time":1792124831379,"service":"server","type":"openmuse-mail-placeholder-action-ids","ids":["gmail.list","gmail.search","gmail.thread","gmail.attachment.get","gmail.attachment.bytes"],"msg":"openmuse-mail-placeholder-action-ids"}
+{"level":40,"time":1792124831441,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":30,"time":1792124831461,"service":"server","request_id":"bd667585-5c03-42ce-8c5e-6c8050daf71d","method":"GET","path":"/api/approvals/shared-use","status":200,"duration_ms":9,"msg":"request"}
+(pass) a deployment built with shared apps > serves the administrators' request inbox [60.04ms]
+{"level":40,"time":1792124831469,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":30,"time":1792124831488,"service":"server","request_id":"dba564c4-a5bd-4d28-af7b-277161b718d0","method":"PUT","path":"/api/plugins/servers/wired-975d0066/account-mode","status":200,"duration_ms":17,"msg":"request"}
+(pass) a deployment built with shared apps > serves the Personal or Shared switch [24.46ms]
+{"level":40,"time":1792124831494,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":30,"time":1792124831496,"service":"server","request_id":"0a06992b-53e8-46b8-9021-e55d4aea88f9","method":"PUT","path":"/api/plugins/servers/wired-975d0066/account-mode","status":503,"duration_ms":0,"msg":"request"}
+(pass) a deployment built without them > says the switch is unavailable rather than pretending to switch [8.78ms]
+
+ 3 pass
+ 0 fail
+ 5 expect() calls
+Ran 3 tests across 1 file. [1.64s]

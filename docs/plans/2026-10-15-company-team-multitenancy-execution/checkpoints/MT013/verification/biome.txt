@@ -1,0 +1,2 @@
+Checked 3 files in 33ms. No fixes applied.
+biome new/edited files EXIT=0
