@@ -471,6 +471,55 @@ export type CreditSummary = {
   };
 };
 
+/**
+ * The personal read's pending-settlement placeholders (ticket 02.6).
+ *
+ * Settlement-disposition views are group 06's slice; until that group's work is delivered the
+ * feature does not exist on a deployment, and the fields stand in the response as a fixed shape
+ * carrying constant zeros with `enabled: false` spelled out — the 未启用 marker the contract
+ * asks for, so a client never has to guess whether a zero means "nothing pending" or "not a
+ * feature here". The literal types are the discipline: this module cannot put a non-zero
+ * amount behind a disabled flag, and group 06 enabling the feature MUST touch this type —
+ * the contract change is then a visible commit, not a silent drift.
+ */
+export type PendingSettlementSummary = {
+  /** The feature gate, group 06's to switch — every amount below is constant while it is false. */
+  enabled: false;
+  available: 0;
+  consumed: 0;
+  expired: 0;
+};
+
+/**
+ * The personal credit read's whole answer (ticket 02.6): the signed-in user's own account, in
+ * credits (×100 scaled units on the wire). The account is never a parameter — the route resolves
+ * it from the authenticated identity through the payer resolution module — so the response names
+ * the account type it answers, and a client can never be shown someone else's numbers under a
+ * different label.
+ *
+ * `available` is the writer's own spendable figure (live grant capacity minus active holds and
+ * the owed remainder unit, `readCapacity`), `consumed` the lifetime amount charged to the
+ * account's grants, `expired` the lapsed-unused part of past grants, and `held` the open
+ * reservations — the four numbers the parent spec says a user sees. `grants` carries every
+ * grant of the account with its derived life, and `pendingSettlement` the group-06 placeholders.
+ */
+export type PersonalCreditBalance = {
+  /** The billing subject kind the answer names — always the authenticated user's own. */
+  accountType: "personal";
+  /** What a new draw or hold could take right now, the gate's own admission figure. */
+  available: number;
+  /** The lifetime amount the account's grants have absorbed, live and expired grants alike. */
+  consumed: number;
+  /** The lapsed-unused part of expired grants — gone from the balance, visible here. */
+  expired: number;
+  /** Active holds against live grants: reserved, still occupying the balance. */
+  held: number;
+  /** Every grant of the account, soonest expiry first, with its derived status. */
+  grants: readonly CreditGrantEntry[];
+  /** Group 06's placeholders: constant zeros behind an explicit not-enabled marker. */
+  pendingSettlement: PendingSettlementSummary;
+};
+
 /** The four subscription states the sync reads. */
 export type BillingSubscriptionStatus =
   | "active"

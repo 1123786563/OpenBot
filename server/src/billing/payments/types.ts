@@ -12,6 +12,8 @@
  * implementation this descends from kept its PaymentFact identity-free.
  */
 
+import type { PayerRef } from "../payer";
+
 /** The five states the local order can be in. Only forward; paid and blocked absorb. */
 export type PaymentOrderStatus =
   | "pending"
@@ -42,7 +44,16 @@ export type PaymentSettlementResult =
     }
   | { kind: "retryable-failure" };
 
-/** One order, as the store holds it. */
+/**
+ * One order, as the store holds it.
+ *
+ * `ownerPayerRef` is the order's payment subject, resolved server-side from the authenticated
+ * identity at creation and bound at insert (AC14/Q27): the refund, the read scope and — from
+ * 10.2 — the callback's credit all trace to it. It is null ONLY on legacy rows awaiting the
+ * write-once attribution pass (`legacy-owner.ts`), and a null owner never matches a personal
+ * read scope. `createdBy` is a different thing on purpose: the audit actor who opened the order,
+ * which the domain keeps separate from the payment subject (CONTEXT.md, Payment Order).
+ */
 export type PaymentOrder = {
   id: string;
   planCode: string;
@@ -72,8 +83,10 @@ export type PaymentOrder = {
    * `terminalAt + window`, never after — the anchor is when it ended, not when it was created.
    */
   terminalAt: Date | null;
-  /** The administrator who created it; the audit trail's actor. */
+  /** The administrator who created it; the audit trail's actor — not the payment subject. */
   createdBy: string | null;
+  /** The order's payment subject (see the type docblock). Null only pre-attribution. */
+  ownerPayerRef: PayerRef | null;
   createdAt: Date;
   /** The optimistic-concurrency token every transition is CAS'd on. */
   version: number;
@@ -84,9 +97,14 @@ export type PaymentCheckout =
   | { kind: "qrcode"; payload: string }
   | { kind: "redirect"; url: string };
 
-/** The signed-in actor whose own payment rows may be read. */
+/** The signed-in actor whose own payment rows may be read.
+ * The signed-in actor whose own payment rows may be read, carried as the PayerRef the
+ * server resolved from the session — never from a request field. Reads filter on the
+ * order's owner columns, so a scope can only ever surface orders owned by exactly this
+ * ref: another person's order, and any quarantined or pre-attribution row, answers null.
+ */
 export type PaymentOrderReadScope = {
-  actorId: string;
+  actorPayerRef: PayerRef;
 };
 
 /** One order, as the HTTP surface spells it. Times ISO-8601, amounts integer cents, no drift. */
@@ -151,8 +169,11 @@ export type PaymentEventKind = "fact" | "anomaly";
  * (`paid_after_blocked`), a second channel transaction on an already-paid order (`over_paid`),
  * a payment re-activating a plan that a newer paid order already covers (`duplicate_paid`), a
  * payment outside the late-fulfilment window (`late_payment`), a paid fact whose amount the
- * channel did not state (`amount_unreadable`), and a paid fact whose stated currency disagrees
- * with the order snapshot (`currency_mismatch`).
+ * channel did not state (`amount_unreadable`), a paid fact whose stated currency disagrees
+ * with the order snapshot (`currency_mismatch`), an activation whose allowance cannot pay out
+ * because the order resolves to no billable account (`unowned_payout`), and a delivery that
+ * failed signature verification while naming an existing order (`callback_unverified` — the
+ * delivery's contents are not evidence; only the attempt itself is being recorded).
  */
 export type PaymentAnomalyCode =
   | "amount_mismatch"
@@ -162,7 +183,9 @@ export type PaymentAnomalyCode =
   | "late_payment"
   | "amount_unreadable"
   | "currency_mismatch"
-  | "activation_retry_exhausted";
+  | "activation_retry_exhausted"
+  | "unowned_payout"
+  | "callback_unverified";
 
 /**
  * One money event on one order.
@@ -199,6 +222,13 @@ export type PaymentStore = {
     currency: "CNY";
     expiresAt: Date;
     createdBy: string | null;
+    /**
+     * The order's payment subject, REQUIRED: the store refuses to write an ownerless order
+     * (the service refuses one step earlier with a business answer; this is the last line).
+     * The quarantined `unknown_owner` kind is refused too — an order can be attributed, or it
+     * cannot be created; quarantine is a legacy-row verdict, never a new order's owner.
+     */
+    ownerPayerRef: PayerRef;
     checkoutPayload: string | null;
   }): Promise<{
     order: PaymentOrderRecord;
@@ -211,10 +241,15 @@ export type PaymentStore = {
   ): Promise<PaymentOrderRecord | null>;
   /** The deployment's pending purchase, regardless of plan or provider. */
   readPendingPurchase(): Promise<PaymentOrderRecord | null>;
-  /** The newest order for one (plan, provider) pair still pending — the replay lookup. */
+  /**
+   * The newest order for one (plan, provider) pair still pending — the replay lookup. When
+   * `owner` is passed, the lookup answers only that owner's pending order: a replay must
+   * never hand back another person's open order (or its QR), whoever inserted it first.
+   */
   readPendingOrder(
     planCode: string,
     provider: PaymentProviderId,
+    owner?: PayerRef,
   ): Promise<PaymentOrderRecord | null>;
   /** The newest order still live (pending or paid) — what "current purchase" means. */
   readLatestLiveOrder(

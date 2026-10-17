@@ -117,6 +117,7 @@ function order(over: Partial<PaymentOrderRecord> = {}): PaymentOrderRecord {
     paidAt: new Date("2026-10-01T00:05:00.000Z"),
     terminalAt: new Date("2026-10-01T00:05:00.000Z"),
     createdBy: "user-admin",
+        ownerPayerRef: { kind: "personal" as const, id: "user-admin" },
     createdAt: new Date("2026-10-01T00:01:00.000Z"),
     version: 1,
     ...over,
@@ -127,7 +128,15 @@ function matchesScope(
   row: PaymentOrderRecord,
   scope: PaymentOrderReadScope | undefined,
 ): boolean {
-  return !scope || row.createdBy === scope.actorId;
+  // The converged read scope: the order's OWNER PayerRef against the scope's ref — a null
+  // owner (a pre-attribution legacy row) never matches, exactly like the real store.
+  if (!scope) return true;
+  const ref = scope.actorPayerRef;
+  return (
+    row.ownerPayerRef !== null &&
+    row.ownerPayerRef.kind === ref.kind &&
+    row.ownerPayerRef.id === ref.id
+  );
 }
 
 /** A payment ledger over a fixed list, recording the window it was asked for. */
@@ -407,11 +416,13 @@ describe("invoices", () => {
       order({
         id: "po-member",
         createdBy: MEMBER.id,
+        ownerPayerRef: { kind: "personal" as const, id: MEMBER.id },
         createdAt: new Date("2026-10-02T00:01:00.000Z"),
       }),
       order({
         id: "po-other",
         createdBy: "user-other",
+        ownerPayerRef: { kind: "personal" as const, id: "user-other" },
         createdAt: new Date("2026-10-01T00:01:00.000Z"),
       }),
     ]);
@@ -423,19 +434,19 @@ describe("invoices", () => {
 
     const page = await statements.invoices(
       { from: null, to: null, page: 1 },
-      { actorId: MEMBER.id },
+      { actorPayerRef: { kind: "personal" as const, id: MEMBER.id } },
     );
 
     expect(page.invoices.map((invoice) => invoice.invoiceId)).toEqual([
       "po-member",
     ]);
-    expect(await statements.invoice("po-member", { actorId: MEMBER.id })).toMatchObject(
+    expect(await statements.invoice("po-member", { actorPayerRef: { kind: "personal" as const, id: MEMBER.id } })).toMatchObject(
       {
         invoiceId: "po-member",
       },
     );
     expect(
-      await statements.invoice("po-other", { actorId: MEMBER.id }),
+      await statements.invoice("po-other", { actorPayerRef: { kind: "personal" as const, id: MEMBER.id } }),
     ).toBeNull();
   });
 });
@@ -460,7 +471,12 @@ describe("statement routes", () => {
   }
 
   const withOrders = () => {
-    const { store } = fakeOrders([order({ createdBy: MEMBER.id })]);
+    const { store } = fakeOrders([
+      order({
+        createdBy: MEMBER.id,
+        ownerPayerRef: { kind: "personal" as const, id: MEMBER.id },
+      }),
+    ]);
     return createBillingStatements({
       service: fakeService(ACTIVE, USAGE),
       quotas: new Map([["pro", QUOTAS]]),
@@ -529,11 +545,13 @@ describe("statement routes", () => {
       order({
         id: "po-member",
         createdBy: MEMBER.id,
+        ownerPayerRef: { kind: "personal" as const, id: MEMBER.id },
         createdAt: new Date("2026-10-02T00:01:00.000Z"),
       }),
       order({
         id: "po-other",
         createdBy: "user-other",
+        ownerPayerRef: { kind: "personal" as const, id: "user-other" },
         createdAt: new Date("2026-10-01T00:01:00.000Z"),
       }),
     ]);
