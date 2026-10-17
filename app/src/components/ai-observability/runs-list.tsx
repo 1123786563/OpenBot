@@ -7,7 +7,7 @@ import {
   IconPlayerPause,
   IconPlayerStop,
 } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type * as React from "react";
 import { useState } from "react";
@@ -109,9 +109,16 @@ export function ObservationRunsList({ botId }: { botId: string }) {
   const [stateFilter, setStateFilter] = useState<RunState | "all">("all");
   const [timeFilter, setTimeFilter] = useState<TimeFilterId>("all");
 
-  const screen = useQuery(
-    observationRunsQueryOptions(botId, { cursor, limit: PAGE_LIMIT }),
-  );
+  /*
+   * The cursor is part of the query key, so a forward navigation used to make the
+   * next query isPending — unmounting the whole page (filters, rows, pagination)
+   * until the answer came back (OCR round 2, R2-12). keepPreviousData holds the
+   * last answer as placeholder data, so the page keeps its rows while it loads.
+   */
+  const screen = useQuery({
+    ...observationRunsQueryOptions(botId, { cursor, limit: PAGE_LIMIT }),
+    placeholderData: keepPreviousData,
+  });
 
   if (screen.isPending) return null;
 

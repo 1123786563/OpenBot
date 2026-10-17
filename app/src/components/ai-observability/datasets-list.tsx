@@ -5,7 +5,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { StateNotice } from "@/components/ai-observability/state-notice";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
@@ -248,6 +248,13 @@ function SaveCaseSection({ botId }: { botId: string }) {
     undefined,
   );
 
+  /*
+   * The dialog's generation (OCR round 2, R2-02): closing raises it, so an in-flight
+   * review or save whose answer lands after the reset is a fact about a dialog that
+   * is gone — it must not write the reopened blank's state.
+   */
+  const dialogSession = useRef(0);
+
   const reviewCase = useMutation(observationReviewCaseMutationOptions());
   const saveCase = useMutation(observationSaveCaseMutationOptions(queryClient));
 
@@ -275,6 +282,7 @@ function SaveCaseSection({ botId }: { botId: string }) {
   const startReview = () => {
     setReviewRefusal(undefined);
     if (!complete || fixtures.value === null) return;
+    const session = dialogSession.current;
     reviewCase.mutate(
       {
         botId,
@@ -286,6 +294,7 @@ function SaveCaseSection({ botId }: { botId: string }) {
       },
       {
         onSuccess: (attempt) => {
+          if (dialogSession.current !== session) return;
           if (attempt.ok) {
             setReview({ snapshot, outcome: attempt.result });
           } else {
@@ -295,7 +304,10 @@ function SaveCaseSection({ botId }: { botId: string }) {
         },
         // A request that never answered at all (the network layer rejected before
         // any HTTP verdict) is its own sentence, not a silently re-enabled button.
-        onError: () => setReviewRefusal(null),
+        onError: () => {
+          if (dialogSession.current !== session) return;
+          setReviewRefusal(null);
+        },
       },
     );
   };
@@ -303,6 +315,7 @@ function SaveCaseSection({ botId }: { botId: string }) {
   const startSave = () => {
     setSaveRefusal(undefined);
     if (!reviewed) return;
+    const session = dialogSession.current;
     saveCase.mutate(
       {
         botId,
@@ -314,6 +327,7 @@ function SaveCaseSection({ botId }: { botId: string }) {
       },
       {
         onSuccess: (attempt) => {
+          if (dialogSession.current !== session) return;
           if (attempt.ok) {
             setSaved(attempt.result);
           } else {
@@ -322,7 +336,10 @@ function SaveCaseSection({ botId }: { botId: string }) {
         },
         // A request that never answered at all (the network layer rejected before
         // any HTTP verdict) is its own sentence, not a silently re-enabled button.
-        onError: () => setSaveRefusal(null),
+        onError: () => {
+          if (dialogSession.current !== session) return;
+          setSaveRefusal(null);
+        },
       },
     );
   };
@@ -332,6 +349,8 @@ function SaveCaseSection({ botId }: { botId: string }) {
     if (!next) {
       // The dialog resets: a reopened entry starts from a blank slate, not from the last
       // freeze's leftovers — a stale preview is a promise about content that is gone.
+      // The session bump retires any in-flight answer so it cannot write the reset.
+      dialogSession.current += 1;
       setDraft(EMPTY_DRAFT);
       setReview(null);
       setReviewRefusal(undefined);

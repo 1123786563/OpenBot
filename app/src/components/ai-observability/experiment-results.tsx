@@ -22,6 +22,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   type ExperimentResultsSample,
   type ExperimentSampleClass,
+  isKnownExecutionState,
   judgeFacts,
   observationCancelExecutionMutationOptions,
   observationExperimentResultsQueryOptions,
@@ -138,7 +139,17 @@ export function ObservationExperimentResultsPage({
         <PageRows>
           <Item size="sm">
             <ItemContent>
-              <ItemTitle>{t(`states.${execution.state}`)}</ItemTitle>
+              <ItemTitle>
+                {/*
+                 * A state word the vocabulary has never heard of renders verbatim
+                 * (OCR round 2, R2-09) — a missing i18n sentence is not a key to
+                 * echo. The guard claims the field as a string; the fallback keeps
+                 * the render honest for a newer server's word.
+                 */}
+                {isKnownExecutionState(execution.state)
+                  ? t(`states.${execution.state}`)
+                  : execution.state}
+              </ItemTitle>
               <ItemDescription className="line-clamp-none">
                 {[
                   execution.errorCode,

@@ -67,10 +67,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isNumberRecord(value: unknown): boolean {
-  return (
-    isRecord(value) && Object.values(value).every((v) => typeof v === "number")
-  );
+function isNumberRecord(value: unknown, keys: readonly string[] = []): boolean {
+  if (!isRecord(value)) return false;
+  /*
+   * OCR round 2 (R2-05): "every value that exists is a number" let `{}` through, and
+   * the page's first read of a missing key (`byState.failed`) crashed
+   * formatNumber's toLocaleString on undefined. The keys the page's own sentences
+   * read must exist and be numbers; every other value stays claimed as a number,
+   * which is what every read of it does with it.
+   */
+  for (const key of keys) {
+    if (typeof value[key] !== "number") return false;
+  }
+  return Object.values(value).every((v) => typeof v === "number");
 }
 
 function isNullableNumber(value: unknown): value is number | null {
@@ -117,7 +126,9 @@ function isAdminSummaryBody(body: unknown): body is AdminSummaryResult {
     if (!isRecord(bot) || typeof bot.botId !== "string") return false;
     const runs = bot.runs;
     if (!isRecord(runs) || typeof runs.total !== "number") return false;
-    if (!isNumberRecord(runs.byState)) return false;
+    // The runs row's sentences read the failed count ("2 failed"); the exports row's
+    // read its four work states (the in-flight sum and both terminal counts).
+    if (!isNumberRecord(runs.byState, ["failed"])) return false;
     if (typeof runs.pendingSync !== "number") return false;
     if (!isNullableNumber(runs.unboundUpstream)) return false;
     if (runs.usage !== null) {
@@ -137,7 +148,17 @@ function isAdminSummaryBody(body: unknown): body is AdminSummaryResult {
       return false;
     }
     const exports = bot.exports;
-    if (!isRecord(exports) || !isNumberRecord(exports.byState)) return false;
+    if (
+      !isRecord(exports) ||
+      !isNumberRecord(exports.byState, [
+        "queued",
+        "running",
+        "completed",
+        "failed",
+      ])
+    ) {
+      return false;
+    }
     if (!isNullableString(exports.lastFailedErrorCode)) return false;
     if (
       !isRecord(bot.collection) ||

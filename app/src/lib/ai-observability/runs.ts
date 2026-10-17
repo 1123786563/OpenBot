@@ -214,15 +214,35 @@ function isRunDetailBody(body: unknown): body is RunDetailResult {
    * "present" is the promise that the upstream record rides along: a present whose
    * payload objects are missing would crash the page mid-render (reading usage.source,
    * walking metadata), so it is the store failing to answer, not a record to half-draw.
+   * The present branch keeps the same per-value promises the summary row does (OCR
+   * round 2, R2-06 ≡ R2-07): a metadata entry that is not a SafeValue crashes
+   * projectedValueText's switch, a "provider" usage without its counts crashes the
+   * token cell, and createdAt/durationMs promise "a value or the explicit word".
    */
-  const present = upstream as Partial<
-    Extract<RunDetailResult["upstream"], { status: "present" }>
-  >;
+  const present = upstream as Record<string, unknown>;
+  if (
+    typeof present.metadata !== "object" ||
+    present.metadata === null ||
+    Array.isArray(present.metadata)
+  ) {
+    return false;
+  }
+  if (!Object.values(present.metadata).every(isSafeValueBody)) return false;
+  const usage = present.usage;
+  if (typeof usage !== "object" || usage === null) return false;
+  const usageRecord = usage as Record<string, unknown>;
+  if (usageRecord.source === "provider") {
+    for (const field of ["promptTokens", "completionTokens", "totalTokens"]) {
+      if (typeof usageRecord[field] !== "number") return false;
+    }
+  } else if (usageRecord.source !== "unavailable") {
+    return false;
+  }
   return (
-    typeof present.metadata === "object" &&
-    present.metadata !== null &&
-    typeof present.usage === "object" &&
-    present.usage !== null
+    (present.createdAt === "unavailable" ||
+      typeof present.createdAt === "string") &&
+    (present.durationMs === "unavailable" ||
+      typeof present.durationMs === "number")
   );
 }
 

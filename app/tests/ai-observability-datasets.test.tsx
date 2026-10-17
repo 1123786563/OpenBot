@@ -61,8 +61,10 @@ const requested: string[] = [];
 let listHandler: () => Response = () => Response.json(datasetsBody([]));
 let detailHandler: () => Response | Promise<Response> = () =>
   Response.json(detailBody());
-let reviewHandler: () => Response = () => Response.json(reviewBody());
-let saveHandler: () => Response = () => Response.json(savedBody());
+let reviewHandler: () => Response | Promise<Response> = () =>
+  Response.json(reviewBody());
+let saveHandler: () => Response | Promise<Response> = () =>
+  Response.json(savedBody());
 
 const ME = {
   id: "me",
@@ -594,6 +596,83 @@ describe("the save flow answers every step (acceptance 3)", () => {
         "The observability store did not answer. Nothing was saved.",
       ),
     ).toBeTruthy();
+  });
+});
+
+describe("the round-2 review and dialog seams (OCR round 2)", () => {
+  test("a review answer without its canary count is refused — the warning never silently vanishes (R2-10)", async () => {
+    // datasets-list renders the red-line warning from review.outcome.canaryFindings;
+    // the review guard used to let a body without it through, so `undefined > 0`
+    // silently dropped the refusal warning. Same shape as experiments.ts:265.
+    reviewHandler = () => {
+      const { canaryFindings: _dropped, ...rest } =
+        reviewBody() as unknown as Record<string, unknown>;
+      return Response.json(rest);
+    };
+    const view = draw();
+    listHandler = () => Response.json(datasetsBody([]));
+    const user = userEvent.setup({ document: view.container.ownerDocument });
+    await user.click(
+      await view.findByRole("button", { name: /Save a case from a run/ }),
+    );
+    const dialog = await view.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Run id"), "run-9");
+    await user.type(within(dialog).getByLabelText("Dataset name"), "Refunds");
+    await user.type(
+      within(dialog).getByLabelText("Case input"),
+      "What is the refund policy?",
+    );
+    await user.type(
+      within(dialog).getByLabelText("Reference output"),
+      "30 days.",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Preview the freeze" }),
+    );
+    expect(
+      await within(dialog).findByText(
+        "The observability store did not answer. Nothing was saved.",
+      ),
+    ).toBeTruthy();
+    expect(within(dialog).queryByText(/What will freeze/)).toBeNull();
+  });
+
+  test("a save that lands after the dialog closed never writes the reopened blank (R2-02)", async () => {
+    listHandler = () => Response.json(datasetsBody([]));
+    let release: ((response: Response | Promise<Response>) => void) | null =
+      null;
+    saveHandler = () =>
+      new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+    // Indirection: release's narrowing resets inside a closure, so the late
+    // settlement reads the declared type.
+    const settle = (response: Response | Promise<Response>) =>
+      release?.(response);
+    const view = draw();
+    const { user, dialog } = await openReviewedDialog(view);
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save version" }),
+    );
+    // Close while the save is in flight; the reopened dialog is a blank slate.
+    // (The dialog has a built-in sr-only "Close" X beside the footer's — pick the
+    // footer's, the last one.)
+    const closeButtons = within(dialog).getAllByRole("button", {
+      name: "Close",
+    });
+    await user.click(closeButtons[closeButtons.length - 1]);
+    await user.click(
+      await view.findByRole("button", { name: /Save a case from a run/ }),
+    );
+    const reopened = await view.findByRole("dialog");
+    expect(
+      (within(reopened).getByLabelText("Run id") as HTMLInputElement).value,
+    ).toBe("");
+    settle(Response.json(savedBody()));
+    // Let the late answer land — the buggy implementation writes the frozen-version
+    // block onto the reopened blank here — then the dialog must still be blank.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(view.queryByText(/Frozen as a new version/)).toBeNull();
   });
 });
 

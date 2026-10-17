@@ -417,6 +417,33 @@ describe("loading and fault conditions keep the T02 vocabulary (acceptance 4)", 
   });
 });
 
+describe("the present branch keeps its per-value promises (OCR round 2 R2-06/R2-07)", () => {
+  test("a present upstream whose metadata holds a broken entry says unavailable, never a crash", async () => {
+    // The detail page feeds each metadata entry to projectedValueText, which switches
+    // on value.state — a null entry used to pass the present-branch guard ("an object")
+    // and crash mid-render. The present branch now validates entries per value.
+    const broken = {
+      ...presentUpstream(),
+      metadata: { model: null },
+    } as unknown as Extract<RunDetailResult["upstream"], { status: "present" }>;
+    detailHandler = () => Response.json(detailBody({ upstream: broken }));
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+    expect(view.queryByText("21.9 s")).toBeNull();
+  });
+
+  test("a present upstream whose usage lost its provider numbers says unavailable (OCR round 2 R2-06/R2-07)", async () => {
+    const broken = {
+      ...presentUpstream(),
+      usage: { source: "provider" } as RunUsageReport,
+    } as unknown as Extract<RunDetailResult["upstream"], { status: "present" }>;
+    detailHandler = () => Response.json(detailBody({ upstream: broken }));
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+    expect(view.queryByText("30 tokens")).toBeNull();
+  });
+});
+
 describe("upstream content is projected text, never code (acceptance 5)", () => {
   test("a script payload in metadata renders as literal text", async () => {
     detailHandler = () =>

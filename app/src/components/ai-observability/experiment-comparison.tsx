@@ -27,11 +27,15 @@ import {
   type ObservationExperimentFault,
   observationExperimentComparisonQueryOptions,
 } from "@/lib/ai-observability/comparison";
-import { judgeFacts } from "@/lib/ai-observability/experiments";
+import {
+  isKnownExecutionState,
+  judgeFacts,
+} from "@/lib/ai-observability/experiments";
 import { useDateTime } from "@/lib/i18n/datetime";
 import type {
   ExperimentComparison,
   ExperimentCompatibilityEntry,
+  ExperimentExecutionState,
   ExperimentRegressionRow,
   ExperimentSampleClass,
   ExperimentSampleDelta,
@@ -304,7 +308,14 @@ function SelectionSection({ agentId }: { agentId: string }) {
   );
 }
 
-/** One side's own facts: the execution projection and the result link, verbatim. */
+/**
+ * One side's own facts: the execution projection and the result link, verbatim. Every
+ * numeric the row interpolates is finite-checked at the seam (OCR round 2, R2-08):
+ * JSON can carry 1e999 — a typeof-number Infinity the guard cannot tell from a real
+ * count — and `Infinity * 100` rounding to NaN% or a 1e999 s duration is not a
+ * sentence. An execution state the vocabulary cannot name renders verbatim, never as
+ * a raw i18n key.
+ */
 function SideRow({
   label,
   side,
@@ -317,6 +328,16 @@ function SideRow({
   const { t } = useTranslation("ai-observability-evaluations");
   const { formatDateTime } = useDateTime();
   const { execution, summary } = side.report;
+  const stateWord = isKnownExecutionState(execution.state)
+    ? t(`states.${execution.state as ExperimentExecutionState}`)
+    : execution.state;
+  const finite = (value: number): number | null =>
+    Number.isFinite(value) ? value : null;
+  const completionPercent = finite(side.completionRate);
+  const meanScore =
+    summary.meanScore === null ? null : finite(summary.meanScore);
+  const durationMs =
+    side.timing.durationMs === null ? null : finite(side.timing.durationMs);
   return (
     <>
       {showSeparator ? <Separator /> : null}
@@ -330,23 +351,30 @@ function SideRow({
           </ItemDescription>
           <ItemDescription className="line-clamp-none">
             {[
-              t(`states.${execution.state}`),
+              stateWord,
               t("results.base", { count: summary.sampleBase }),
               t("comparison.scored", { count: summary.scored }),
               summary.meanScore === null
                 ? t("results.meanNone")
-                : `${t("results.meanScore")} ${summary.meanScore.toFixed(2)}`,
-              t("comparison.completion", {
-                percent: Math.round(side.completionRate * 100),
-              }),
-              t("comparison.usageLedger", {
-                reported: side.usage.reported,
-                missing: side.usage.missing,
-              }),
-              side.timing.durationMs === null
+                : meanScore === null
+                  ? null
+                  : `${t("results.meanScore")} ${meanScore.toFixed(2)}`,
+              completionPercent === null
+                ? null
+                : t("comparison.completion", {
+                    percent: Math.round(completionPercent * 100),
+                  }),
+              Number.isFinite(side.usage.reported) &&
+              Number.isFinite(side.usage.missing)
+                ? t("comparison.usageLedger", {
+                    reported: side.usage.reported,
+                    missing: side.usage.missing,
+                  })
+                : null,
+              durationMs === null
                 ? null
                 : t("comparison.duration", {
-                    seconds: Math.round(side.timing.durationMs / 1000),
+                    seconds: Math.round(durationMs / 1000),
                   }),
               execution.startedAt === null
                 ? null
