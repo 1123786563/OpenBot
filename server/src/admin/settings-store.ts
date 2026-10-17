@@ -18,9 +18,30 @@ import {
   userRoles,
   users,
 } from "../db/schema";
+import {
+  gatewayVersionFromStored,
+  storedGatewayEndpointState,
+  type GatewayEndpointConfig,
+  type GatewayEndpointSettings,
+  type StoredGatewayEndpoint,
+} from "../gateway/endpoint-config";
 import type { CapabilityRow, Member } from "./capabilities";
 
 export const ENTERPRISE_TOPIC = "enterprise_settings_changed";
+
+/**
+ * The advisory lock key serializing gateway endpoint saves; see `writeGatewayEndpointRow`.
+ * Namespaced the way the conversion rate store's is (`openbot:gateway:…`).
+ */
+const GATEWAY_ENDPOINT_SAVE_LOCK_KEY = "openbot:gateway:endpoint-save";
+
+/**
+ * The one row key the Bifrost gateway endpoint configuration is stored under — a settings row like
+ * every other one, so the existing change notification carries it and no schema change is needed.
+ * The row's value is `{ value: { baseUrl, requestTimeoutMs, configVersion } }`, written only by
+ * {@link createEnterpriseStore.writeGatewayEndpointRow}, which assigns the version.
+ */
+export const GATEWAY_ENDPOINT_KEY = "gateway_endpoint";
 
 export type EnterpriseSettings = {
   /** Only a registered enterprise identity provider may sign anybody in. */
@@ -138,6 +159,70 @@ export function createEnterpriseStore(database: Database) {
             set: { value: { value }, updatedBy: by, updatedAt: new Date() },
           });
         await announce(tx);
+      });
+    },
+
+    /**
+     * The gateway endpoint row, classified: `configured`, `corrupted` (a row exists but does not
+     * validate — nothing writes one except the write below, which validates first, so this is
+     * tampering or a hand edit), or `absent`. The caller decides what each state means; the
+     * service in `gateway/endpoint-config.ts` reads `corrupted` as unconfigured rather than as an
+     * environment fallback.
+     */
+    async readGatewayEndpointRow(): Promise<StoredGatewayEndpoint> {
+      const [row] = await database
+        .select()
+        .from(enterpriseSettings)
+        .where(eq(enterpriseSettings.key, GATEWAY_ENDPOINT_KEY))
+        .limit(1);
+      return storedGatewayEndpointState(row?.value);
+    },
+
+    /**
+     * Save the gateway endpoint configuration, assigning the next configVersion.
+     *
+     * A transaction-scoped advisory lock is taken BEFORE the read and held until commit, so the
+     * read-compute-write sequence cannot interleave with another save. A row lock is not enough
+     * here: on an empty table there is no row to lock, and two simultaneous first saves both read
+     * "nothing" and both computed version 1 (the race review F1 reproduced). The advisory lock
+     * covers every save — first and later alike — so every successful save observes the previous
+     * committed version and hands out the next one. Same shape as the conversion rate store
+     * (gateway/conversion-rate-store.ts) and memory/defaults.ts.
+     *
+     * The version is read from the stored row even when its address is broken
+     * (`gatewayVersionFromStored`), so a corrupted row cannot drag the numbering backwards. The
+     * row is announced on the settings topic like every other one, so every replica drops whatever
+     * it had cached the moment this commits.
+     */
+    async writeGatewayEndpointRow(
+      settings: GatewayEndpointSettings,
+      by: string,
+    ): Promise<GatewayEndpointConfig> {
+      return database.transaction(async (tx) => {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${GATEWAY_ENDPOINT_SAVE_LOCK_KEY}))`,
+        );
+        const [existing] = await tx
+          .select()
+          .from(enterpriseSettings)
+          .where(eq(enterpriseSettings.key, GATEWAY_ENDPOINT_KEY))
+          .limit(1);
+        const configVersion = gatewayVersionFromStored(existing?.value) + 1;
+        const value = { value: { ...settings, configVersion } };
+        await tx
+          .insert(enterpriseSettings)
+          .values({
+            key: GATEWAY_ENDPOINT_KEY,
+            value,
+            updatedBy: by,
+            updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: enterpriseSettings.key,
+            set: { value, updatedBy: by, updatedAt: new Date() },
+          });
+        await announce(tx);
+        return { ...settings, configVersion };
       });
     },
 
