@@ -54,6 +54,7 @@ export const auditEventTypes = [
   "credential.created",
   "credential.rotated",
   /**
+   /*
    * A rotation the vault refused, and why.
    *
    * Recorded because the refusals are the interesting ones. A rotation aimed at a key other than the
@@ -64,6 +65,7 @@ export const auditEventTypes = [
   "credential.rotation_refused",
   "credential.revoked",
   /**
+   /*
    * Which coworker an untagged message was routed to, and why.
    *
    * A channel is pinned to one coworker before its first turn, so when the person did not name one
@@ -78,6 +80,7 @@ export const auditEventTypes = [
   "delivery.opted_out",
   "delivery.failed",
   /**
+   /*
    * A channel was removed from every member's roster, and by whom.
    *
    * The removal is soft, so the row and its thread survive and `channels.deleted_at` records that it
@@ -87,6 +90,7 @@ export const auditEventTypes = [
    */
   "channel.deleted",
   /**
+   /*
    * An address this deployment declined to dial for a Bot, and why.
    *
    * The stored endpoint is re-checked on the way out of every run, and so is each address it
@@ -101,6 +105,7 @@ export const auditEventTypes = [
    */
   "agent.dial_refused",
   /**
+   /*
    * A Bot's stream stopped producing anything and the turn was ended for it.
    *
    * Recorded because a Bot is somebody else's infrastructure and this is the failure it has that
@@ -289,6 +294,7 @@ export const auditEventTypes = [
   // restarted, which interrupts whatever it was doing, so who asked is worth a row.
   "computer.updated",
   /**
+   /*
    * The boundary this deployment booted with.
    *
    * The live policy is held in memory, so a restart returns to the configured default unless the
@@ -301,6 +307,7 @@ export const auditEventTypes = [
    */
   "computer.policy_loaded",
   /**
+   /*
    * Whether this deployment gives each Bot a computer of its own, said out loud at boot.
    *
    * Without a supervisor every Bot shares one browser, which is a legitimate way to run on a laptop
@@ -313,6 +320,7 @@ export const auditEventTypes = [
    */
   "computer.isolation_loaded",
   /**
+   /*
    * The Bot declined something it was asked to do.
    *
    * Every event above records an action a Bot took, decided on by the gateway. A model that refuses
@@ -501,6 +509,43 @@ export const auditEventTypes = [
   "identity_provider.registered",
   "identity_provider.removed",
   /*
+   * The Bifrost bot service registry (Bifrost #234, 04.1): a server-side Bot's service identity,
+   * registered, redeclared, disabled and re-enabled by an administrator.
+   *
+   * A row here is about IDENTITY AND DECLARATION ONLY. Registering a Bot mints no credential,
+   * creates no user authorization and attaches no credit (04.2 and 04.5+ do each of those under
+   * their own rows), so a `bot_service.registered` row next to a credential or a grant is two
+   * separate facts that happened to the same botId, never one act. `bot_service.disabled` is the
+   * row downstream authentication and key issuance are refused on; it is deliberately its own
+   * event rather than a `bot.*` one, because an agent a person runs and a registered service a
+   * deployment approves are different questions, however much the word "Bot" covers both.
+   */
+  "bot_service.registered",
+  "bot_service.updated",
+  "bot_service.disabled",
+  "bot_service.enabled",
+  /*
+   * The Bot service credential lifecycle (Bifrost #235, 04.2), one row per act an administrator
+   * made against a botId. The vault writes its own credential.created/rotated/revoked rows keyed
+   * by credential id; these name the botId as the target, so the trail answers "what happened to
+   * this Bot's access" without joining through a uuid. A plaintext secret is in none of them —
+   * it exists exactly once, in the response that minted it.
+   */
+  "bot_service.credential_issued",
+  "bot_service.credential_rotated",
+  "bot_service.credential_revoked",
+   /*
+   * The Bifrost gateway admin credential (01.2, #208) was saved or its save was refused.
+   *
+   * Its own events rather than `credential.*` because the act is the deployment changing its own
+   * key for another system's control plane, and the payload is the redacted status alone — a
+   * configVersion and a fingerprint, never key material: the whole ticket is that this credential
+   * is write-only. A refused save is almost always a tampered reference row, which is exactly the
+   * row an operator needs to find.
+   */
+  "gateway_admin_credential.saved",
+  "gateway_admin_credential.save_refused",
+  /*
    * What a Bot is and what it may reach.
    *
    * The trail recorded every mouse movement a Bot made and could not answer "who pointed this Bot at
@@ -677,6 +722,7 @@ export const auditEventTypes = [
    */
   "billing.credits.granted",
   /**
+   /*
    * The reconciliation pass was run (T7): an on-demand audit of the books' two invariants
    * (the payment three-way and the credit identity). Audited because it is an operator
    * action with a finding trail — the payload carries the counts and the finding codes, so
@@ -684,6 +730,7 @@ export const auditEventTypes = [
    */
   "billing.reconciled",
   /**
+   /*
    * A craft session's owner answered a connect_app card (connected/declined; the session,
    * the app id and the decision in the payload). The handshake itself rides ephemeral KV
    * (onyx parity — no approval row), so this audit row is the one durable record that a
@@ -709,6 +756,7 @@ export const PERSON_INITIATOR: AuditInitiator = { kind: "person" };
 export const DEPLOYMENT_INITIATOR: AuditInitiator = { kind: "deployment" };
 
 /**
+ /*
  * The initiator a hop from `fromBotId` runs under.
  *
  * `origin` IS ALWAYS THE ROOT — what started the first run in the chain — and never another hop, so
@@ -777,6 +825,7 @@ export type AuditEventQuery = {
   cursor?: string;
   limit: number;
   /**
+   /*
    * One event type, or several separated by commas.
    *
    * Several, because the questions people arrive with cut across the events that answer them: "was
@@ -868,6 +917,7 @@ export type AuditTap = (event: AuditTapEvent) => void;
 const auditTaps = new Set<AuditTap>();
 
 /**
+ /*
  * Hear every row after it is written: the OpenTelemetry/SIEM exporter and Action Recording.
  *
  * After the insert, and only when it succeeded, so nothing is streamed that the trail does not hold.
@@ -917,6 +967,7 @@ export class AuditQueryError extends Error {
 }
 
 /**
+ /*
  * The shape `audit_events.id` is, because that is what a cursor's id is compared against.
  *
  * Not a taste in ids: `lt(auditEvents.id, cursor.id)` is the DATABASE parsing this string, and
@@ -926,6 +977,7 @@ export class AuditQueryError extends Error {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
+ /*
  * A caller's page marker, read as the two values the query builder will actually bind.
  *
  * WHAT ARRIVES HERE IS A STRING SOMEBODY TYPED. The cast below used to say `AuditCursor` outright,
@@ -977,6 +1029,7 @@ function decodeCursor(cursor: string): AuditCursor {
 }
 
 /**
+ /*
  * A comma-separated filter, read as the set of values it names.
  *
  * `undefined` means the caller did not ask, and the column goes unconstrained. `[]` means the caller
@@ -995,6 +1048,7 @@ function requestedValues(raw: string | undefined) {
 }
 
 /**
+ /*
  * The condition a requested set puts on a column, including the condition that nothing satisfies.
  *
  * An asked-for set that came out empty must narrow to nothing. It used to widen instead: both
@@ -1148,6 +1202,7 @@ export function auditQueryFromUrl(url: URL): AuditEventQuery {
 }
 
 /**
+ /*
  * CSV export for the admin audit trail.
  *
  * The table at Admin > Audit is the only read surface, so a review that needs evidence —
@@ -1177,6 +1232,7 @@ export const AUDIT_EXPORT_COLUMNS = [
 ] as const;
 
 /**
+ /*
  * One CSV cell.
  *
  * A spreadsheet runs a cell that starts with `=`, `+`, `-` or `@` (or a tab or carriage return
@@ -1228,6 +1284,7 @@ export function auditEventsToCsv(events: AuditEvent[]): string {
 }
 
 /**
+ /*
  * The rows behind an export, walked page by page through the same reader the JSON list
  * uses, so the CSV and the table never disagree about what a filter matches.
  *
