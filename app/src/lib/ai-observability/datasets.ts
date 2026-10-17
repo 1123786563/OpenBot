@@ -271,7 +271,12 @@ export function observationReviewCaseMutationOptions() {
       if (
         !isRecord(body) ||
         !Array.isArray(body.preview) ||
-        !body.preview.every(isReviewPreviewEntry)
+        !body.preview.every(isReviewPreviewEntry) ||
+        // OCR round 2 (R2-10): the dialog's red-line warning reads canaryFindings —
+        // a body without it would render `undefined > 0` and the refusal warning
+        // would silently vanish behind a success story. The submit path's guard
+        // (experiments.ts, T30-rev L-1) refuses the same omission; so does this one.
+        typeof body.canaryFindings !== "number"
       ) {
         // A preview entry that is not a frozen case would crash the dialog reading
         // safeInput.state — the store did not answer, so neither may this claim.

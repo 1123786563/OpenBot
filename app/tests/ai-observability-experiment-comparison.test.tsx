@@ -683,6 +683,75 @@ describe("the fault answers stay distinct (acceptance 4)", () => {
   });
 });
 
+describe("a side that lost a fact the page reads is the unavailable fault (OCR round 2, R2-08)", () => {
+  test("a side without its completionRate/usage/timing/report.summary is unavailable, never NaN% or a crash", async () => {
+    // SideRow reads side.completionRate*100, side.usage.reported/missing,
+    // side.timing.durationMs and report.summary.{meanScore,sampleBase,scored}; the
+    // round-1 guard stopped at report.samples, so a side missing the rest passed and
+    // crashed SideRow (undefined.toFixed) and rendered NaN% — never again.
+    const body = comparisonBody();
+    comparisonHandler = () =>
+      Response.json({
+        ...body,
+        baseline: {
+          experimentId: body.baseline.experimentId,
+          executionId: body.baseline.executionId,
+          resultLink: body.baseline.resultLink,
+          report: body.baseline.report,
+        },
+      });
+    const view = draw(ADDRESSED);
+    await view.findByText("Upstream unavailable");
+    expect(pageText(view)).not.toContain("NaN");
+  });
+
+  test("a summary whose meanScore is gone is unavailable, never a mid-render TypeError", async () => {
+    const body = comparisonBody();
+    comparisonHandler = () =>
+      Response.json({
+        ...body,
+        baseline: {
+          ...body.baseline,
+          report: {
+            ...body.baseline.report,
+            summary: {
+              ...body.baseline.report.summary,
+              meanScore: undefined,
+            },
+          },
+        },
+      });
+    const view = draw(ADDRESSED);
+    await view.findByText("Upstream unavailable");
+    expect(pageText(view)).not.toContain("NaN");
+  });
+
+  test("an execution state word the build cannot name renders verbatim, never a raw i18n key", async () => {
+    // A newer server's state word is a missing i18n sentence, not a key to echo: the
+    // side shows its own word instead of `states.terminated` (R2-08/R2-09, same seam).
+    const body = comparisonBody();
+    comparisonHandler = () =>
+      Response.json({
+        ...body,
+        baseline: {
+          ...body.baseline,
+          report: {
+            ...body.baseline.report,
+            execution: {
+              ...body.baseline.report.execution,
+              state: "terminated",
+            },
+          },
+        },
+      });
+    const view = draw(ADDRESSED);
+    await view.findByText("Download comparison (JSON)");
+    const text = pageText(view);
+    expect(text).toContain("terminated");
+    expect(text).not.toContain("states.terminated");
+  });
+});
+
 describe("the machine-readable export and literal text (acceptance 4)", () => {
   test("the download carries the comparison the server answered, as JSON", async () => {
     const blobs: Blob[] = [];

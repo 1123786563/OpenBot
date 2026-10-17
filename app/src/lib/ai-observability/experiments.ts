@@ -124,6 +124,15 @@ const EXECUTION_STATES: readonly ExperimentExecutionState[] = [
   "cancelled",
 ];
 
+/*
+ * Whether the build's states.* sentences can name this execution state (OCR round 2,
+ * R2-09): a newer server's word is a missing i18n sentence, and the pages render the
+ * raw state verbatim instead of echoing a key the bundle has never heard of.
+ */
+export function isKnownExecutionState(state: string): boolean {
+  return (EXECUTION_STATES as readonly string[]).includes(state);
+}
+
 function isExperimentResultsBody(
   body: unknown,
 ): body is ExperimentResultsReport {
@@ -138,6 +147,9 @@ function isExperimentResultsBody(
     return false;
   }
   if (!isRecord(body.execution) || !isRecord(body.summary)) return false;
+  // The page renders the execution projection's state as a word — a non-string there
+  // is not a fact to fall back to, so it is claimed here (OCR round 2, R2-09).
+  if (typeof body.execution.state !== "string") return false;
   /*
    * The OCR round 1 review: the page calls `.toFixed(2)` on the mean and on every
    * sample score after only a `=== null` check, so an undefined slips through to a
@@ -159,6 +171,25 @@ function isExperimentResultsBody(
     if (typeof sample.index !== "number") return false;
     if (typeof sample.class !== "string") return false;
     if (sample.score !== null && typeof sample.score !== "number") return false;
+    /*
+     * The scored reason's row reads `reason.rules.filter(...)` after counts the page
+     * interpolates (OCR round 2, R2-09): the guard used to claim only "a record", so
+     * a scored reason without its rules array reached the renderer as
+     * undefined.filter. Each entry's id and status are claimed too — the row prints
+     * them; anything deeper (a failed rule's reason) is a string the page would show
+     * as text, so the claim stops where the crash stops.
+     */
+    if (sample.reason.class === "scored") {
+      if (typeof sample.reason.passed !== "number") return false;
+      if (typeof sample.reason.failed !== "number") return false;
+      if (!Array.isArray(sample.reason.rules)) return false;
+      for (const rule of sample.reason.rules) {
+        if (!isRecord(rule)) return false;
+        if (typeof rule.id !== "string" || typeof rule.status !== "string") {
+          return false;
+        }
+      }
+    }
   }
   return true;
 }

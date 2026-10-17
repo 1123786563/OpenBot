@@ -65,8 +65,10 @@ afterAll(() => GlobalRegistrator.unregister());
 const originalFetch = global.fetch;
 const requested: { url: string; method: string; body?: string }[] = [];
 let listHandler: () => Response = () => Response.json(datasetsBody([]));
-let detailHandler: () => Response = () => Response.json(detailBody());
-let submitHandler: () => Response = () => Response.json(submittedBody());
+let detailHandler: () => Response | Promise<Response> = () =>
+  Response.json(detailBody());
+let submitHandler: () => Response | Promise<Response> = () =>
+  Response.json(submittedBody());
 let resultsHandler: () => Response = () => Response.json(reportBody());
 let cancelHandler: () => Response = () =>
   Response.json({ executionId: "exec-1", state: "cancelled" });
@@ -931,6 +933,107 @@ describe("the fault answers stay distinct, and the route is typed-address safe (
         "/bots/agent-1/evaluations/experiments/exp-1/exec-1",
       ),
     );
+  });
+});
+
+describe("the round-2 guard and dialog seams (OCR round 2)", () => {
+  test("a scored sample without its rules array says unavailable, never a crash (R2-09)", async () => {
+    // The results page filters reason.rules for the scored class; the guard used to
+    // claim only `isRecord(sample.reason)`, so a scored reason without its rules
+    // reached the renderer as undefined.filter.
+    const body = reportBody();
+    const samples = body.samples.map((sample, index) =>
+      index === 0
+        ? {
+            ...sample,
+            reason: { class: "scored", passed: 2, failed: 0 },
+          }
+        : sample,
+    );
+    resultsHandler = () => Response.json({ ...body, samples });
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await view.findByText("Upstream unavailable");
+  });
+
+  test("an execution state word the build cannot name renders verbatim, never a raw i18n key (R2-09)", async () => {
+    const body = reportBody();
+    resultsHandler = () =>
+      Response.json({
+        ...body,
+        execution: { ...body.execution, state: "draining" },
+      });
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await view.findByText("Execution record");
+    const text = pageText(view);
+    expect(text).toContain("draining");
+    expect(text).not.toContain("states.draining");
+  });
+
+  test("a dataset whose frozen versions did not answer says so instead of an empty dropdown (R2-04)", async () => {
+    // The transport-error half of the detail read used to leave the version select
+    // silently empty — the sentence rendered only for `detail.data?.view === "fault"`,
+    // so detail.error (fetch rejected before any HTTP verdict) drew nothing, and with
+    // versionId required the submit silently locked. The shared observationScreenFault
+    // derivation covers both halves.
+    listHandler = () => Response.json(datasetsBody([datasetRow()]));
+    detailHandler = () => {
+      throw new TypeError("network down");
+    };
+    const view = draw();
+    const user = userEvent.setup({ document: view.container.ownerDocument });
+    await user.click(
+      await view.findByRole("button", { name: /Run an experiment/ }),
+    );
+    const dialog = await view.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Dataset"), "ds-1");
+    // The page's query client retries once before the error is the state, so the
+    // sentence lands after the default wait — give the retry its beat.
+    expect(
+      await within(dialog).findByText(
+        "The frozen versions of this dataset did not answer.",
+        {},
+        { timeout: 4000 },
+      ),
+    ).toBeTruthy();
+  });
+
+  test("a submission that lands after the dialog closed never writes the reopened blank (R2-03)", async () => {
+    listHandler = () => Response.json(datasetsBody([datasetRow()]));
+    let release: ((response: Response | Promise<Response>) => void) | null =
+      null;
+    submitHandler = () =>
+      new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+    // Indirection: release's narrowing resets inside a closure, so the late
+    // settlement reads the declared type.
+    const settle = (response: Response | Promise<Response>) =>
+      release?.(response);
+    const view = draw();
+    const { user, dialog } = await openReadyDialog(view);
+    await user.click(
+      within(dialog).getByRole("button", { name: "Submit experiment" }),
+    );
+    // Close while the submit is in flight; the reopened dialog is a blank slate.
+    // (The dialog has a built-in sr-only "Close" X beside the footer's — pick the
+    // footer's, the last one.)
+    const closeButtons = within(dialog).getAllByRole("button", {
+      name: "Close",
+    });
+    await user.click(closeButtons[closeButtons.length - 1]);
+    await user.click(
+      await view.findByRole("button", { name: /Run an experiment/ }),
+    );
+    const reopened = await view.findByRole("dialog");
+    expect(
+      (within(reopened).getByLabelText("Experiment name") as HTMLInputElement)
+        .value,
+    ).toBe("");
+    settle(Response.json(submittedBody()));
+    // Let the late answer land — the buggy implementation writes the frozen-
+    // experiment block onto the reopened blank here — then it must still be blank.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(view.queryByText("Experiment frozen and started.")).toBeNull();
   });
 });
 

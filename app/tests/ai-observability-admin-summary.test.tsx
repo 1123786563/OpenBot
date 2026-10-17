@@ -272,6 +272,28 @@ describe("the page is no bypass around the API's scope (acceptance 1)", () => {
     await view.findByText("Upstream unavailable");
   });
 
+  test("a bot row whose byState lost the keys the page reads is the unavailable fault (OCR round 2 R2-05)", async () => {
+    // isNumberRecord used to pass `{}` — "every value that exists is a number" — so a
+    // body whose byState lost its keys reached formatNumber(bot.runs.byState.failed)
+    // as undefined.toLocaleString. The guard now requires the page-read keys to exist.
+    const base = botSummary("bot-1");
+    summaryHandler = () =>
+      Response.json(
+        summaryBody([
+          {
+            ...base,
+            runs: {
+              ...base.runs,
+              byState:
+                {} as unknown as AdminSummaryResult["bots"][number]["runs"]["byState"],
+            },
+          },
+        ]),
+      );
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+  });
+
   test("the truncation notice names the cutoff, never a literal placeholder (OCR round 1 medium)", async () => {
     summaryHandler = () =>
       Response.json(

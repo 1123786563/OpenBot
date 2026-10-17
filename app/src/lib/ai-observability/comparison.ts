@@ -81,6 +81,48 @@ function isComparisonHalf(value: unknown): boolean {
   );
 }
 
+function isNullableNumberRecord(
+  value: unknown,
+  numberFields: readonly string[],
+  nullableFields: readonly string[] = [],
+): boolean {
+  if (!isRecord(value)) return false;
+  for (const field of numberFields) {
+    if (typeof value[field] !== "number") return false;
+  }
+  for (const field of nullableFields) {
+    if (!isNullableNumber(value[field])) return false;
+  }
+  return true;
+}
+
+/*
+ * The side's report as SideRow reads it: the summary cells (mean after a `=== null`
+ * check, so an undefined is a TypeError), the execution projection (state word,
+ * config hash, both times) — OCR round 2: the round-1 guard stopped at samples and
+ * let a side missing the rest through to undefined.toFixed and NaN%.
+ */
+function isSideReport(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (!Array.isArray(value.samples)) return false;
+  if (
+    !isNullableNumberRecord(
+      value.summary,
+      ["sampleBase", "scored"],
+      ["meanScore"],
+    )
+  ) {
+    return false;
+  }
+  return (
+    isRecord(value.execution) &&
+    typeof value.execution.state === "string" &&
+    typeof value.execution.experimentConfigHash === "string" &&
+    isNullableString(value.execution.startedAt) &&
+    isNullableString(value.execution.settledAt)
+  );
+}
+
 function isSampleDelta(value: unknown): boolean {
   return (
     isRecord(value) &&
@@ -146,8 +188,13 @@ function isComparisonSide(value: unknown): boolean {
     typeof value.resultLink === "string" &&
     // The deltas section indexes each side's samples by a delta's index, so a side
     // whose report lost its samples array crashes the map before any optional chain.
-    isRecord(value.report) &&
-    Array.isArray(value.report.samples)
+    isSideReport(value.report) &&
+    // The side's own ledger row (OCR round 2): completionRate feeds a `*100`, usage
+    // feeds two counts, timing feeds a seconds division — a missing or non-number
+    // fact there is a NaN% or an undefined interpolation, not a sentence.
+    typeof value.completionRate === "number" &&
+    isNullableNumberRecord(value.usage, ["reported", "missing"]) &&
+    isNullableNumberRecord(value.timing, [], ["durationMs"])
   );
 }
 

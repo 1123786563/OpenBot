@@ -1,8 +1,9 @@
 import { IconChevronRight, IconFlask } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { observationScreenFault } from "@/components/ai-observability/state-notice";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -136,6 +137,13 @@ function SubmitExperimentRow({
   );
   const [refusal, setRefusal] = useState<string | null | undefined>(undefined);
 
+  /*
+   * The dialog's generation (OCR round 2, R2-03): closing raises it, so an in-flight
+   * submission whose answer lands after the reset is a fact about a submission that
+   * is gone — it must not write the reopened blank dialog's state.
+   */
+  const dialogSession = useRef(0);
+
   const submitExperiment = useMutation(
     observationSubmitExperimentMutationOptions(),
   );
@@ -165,6 +173,13 @@ function SubmitExperimentRow({
   });
   const versions =
     detail.data?.view === "detail" ? detail.data.result.versions : [];
+  /*
+   * The version select's one fault sentence (OCR round 2, R2-04): the shared screen
+   * derivation covers both halves — the read's fault view and a transport-level
+   * error (detail.error) — where the data?.view check alone left the dropdown
+   * silently empty and, with versionId required, the submit silently locked.
+   */
+  const versionsFault = observationScreenFault(detail);
 
   const update = (patch: Partial<SubmitDraft>) =>
     setDraft((current) => ({ ...current, ...patch }));
@@ -172,6 +187,7 @@ function SubmitExperimentRow({
   const startSubmit = () => {
     setRefusal(undefined);
     if (!complete || jsonInvalid) return;
+    const session = dialogSession.current;
     submitExperiment.mutate(
       {
         botId,
@@ -191,6 +207,7 @@ function SubmitExperimentRow({
       },
       {
         onSuccess: (attempt) => {
+          if (dialogSession.current !== session) return;
           if (attempt.ok) {
             setSubmitted(attempt.result);
           } else {
@@ -199,7 +216,10 @@ function SubmitExperimentRow({
         },
         // A request that never answered at all (the network layer rejected before
         // any HTTP verdict) is its own sentence, not a silently re-enabled button.
-        onError: () => setRefusal(null),
+        onError: () => {
+          if (dialogSession.current !== session) return;
+          setRefusal(null);
+        },
       },
     );
   };
@@ -208,7 +228,9 @@ function SubmitExperimentRow({
     setOpen(next);
     if (!next) {
       // A reopened dialog starts from a blank slate — the last submission's answer
-      // is a fact about a submission that is gone.
+      // is a fact about a submission that is gone. The session bump retires any
+      // in-flight answer so it cannot write over the reset.
+      dialogSession.current += 1;
       setDraft(EMPTY_DRAFT);
       setSubmitted(null);
       setRefusal(undefined);
@@ -311,7 +333,7 @@ function SubmitExperimentRow({
                     </option>
                   ))}
                 </select>
-                {draft.datasetId !== "" && detail.data?.view === "fault" ? (
+                {draft.datasetId !== "" && versionsFault !== null ? (
                   <p className="text-destructive text-sm" role="alert">
                     {t("submit.versionsUnavailable")}
                   </p>

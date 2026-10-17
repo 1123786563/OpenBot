@@ -46,7 +46,8 @@ afterAll(() => GlobalRegistrator.unregister());
 
 const originalFetch = global.fetch;
 const requested: string[] = [];
-let runsHandler: (url: string) => Response = () => Response.json(listBody([]));
+let runsHandler: (url: string) => Response | Promise<Response> = () =>
+  Response.json(listBody([]));
 
 const ME = {
   id: "me",
@@ -601,5 +602,45 @@ describe("cursor pagination (acceptance 5, T06 semantics)", () => {
     await user.keyboard("{Enter}");
     await waitFor(() => expect(pageText(view)).toContain("21.9 s"));
     expect(pageText(view)).not.toContain("Upstream unavailable");
+  });
+
+  test("a forward page still shows the previous rows while it loads, never a blank screen (OCR round 2 R2-12)", async () => {
+    // The cursor is part of the query key, so a forward navigation used to make the
+    // new query isPending — unmounting the whole page (filters, rows, pagination)
+    // until the answer came back. keepPreviousData holds the last answer instead.
+    runsHandler = (url) => {
+      const cursor = new URL(url, "http://openbot.test").searchParams.get(
+        "cursor",
+      );
+      if (cursor === null)
+        return Response.json(
+          listBody([summary({ state: "failed", durationMs: 21_860 })], {
+            pagination: {
+              total: 5,
+              window: 5,
+              offset: 0,
+              limit: 20,
+              nextCursor: "cursor-2",
+            },
+          }),
+        );
+      // Page two never answers within this test: the assertion is that page one's
+      // rows stay on screen for as long as the fetch is in flight.
+      return new Promise<Response>(() => {});
+    };
+    const view = draw();
+    await waitFor(() => expect(pageText(view)).toContain("1–1 of 5"));
+    const user = userEvent.setup({ document: view.container.ownerDocument });
+    const next = view.getByRole("button", { name: "Next page" });
+    next.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(requested.some((url) => url.includes("cursor=cursor-2"))).toBe(
+        true,
+      ),
+    );
+    // The in-flight page must not blank the screen: page one is still drawn.
+    expect(pageText(view)).toContain("1–1 of 5");
+    expect(pageText(view)).toContain("21.9 s");
   });
 });
