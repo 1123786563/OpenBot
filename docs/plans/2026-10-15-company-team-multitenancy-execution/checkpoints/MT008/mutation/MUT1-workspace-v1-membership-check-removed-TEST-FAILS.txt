@@ -1,0 +1,9 @@
+# MUT1: resource-policy.ts workspaceV1Decide — `workspaceMembership.status !== "active"`
+# check replaced with `if (false)` (team-public path no longer requires an active membership).
+# Command (server/, five env vars as in verification/1-*.txt):
+#   bun test tests/multitenancy/resource-policy.test.ts --timeout 30000 -t "suspended team members"
+# Result: KILLED.
+#   (fail) ... criterion 1 > suspended team members lose the team-public path but
+#   keep grant-based reads (existing behavior preserved)
+#   Expected deny/RESOURCE_NOT_FOUND; Received allow. 0 pass / 1 fail / 28 filtered out.
+# Restore: original file copied back; mutation marker grep count = 0; focused suite 29/0 green.
