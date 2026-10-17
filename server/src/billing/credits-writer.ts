@@ -69,7 +69,11 @@ const MAX_ACTUAL_DENOMINATOR = 10n ** 60n;
 /** An exact non-negative rational, in scaled credit units (×100). */
 export type CreditAmount = { numerator: bigint; denominator: bigint };
 
-export type CreditReservationState = "reserved" | "settled" | "released";
+export type CreditReservationState =
+  | "reserved"
+  | "unknown"
+  | "settled"
+  | "released";
 
 /** A reservation call that conflicts with the reservation's recorded identity or terminal state. */
 export class CreditReservationConflictError extends Error {
@@ -149,7 +153,9 @@ export type CreditWriter = {
    * (written once to `credit_ledger`), and the new fraction is persisted. Unused hold is
    * released. Replaying the same actual returns the first result; a different actual, or settling
    * a released hold, throws `CreditReservationConflictError`. Cost above the hold is recorded in
-   * the ledger in full but only the held capacity is applied.
+   * the ledger in full but only the held capacity is applied. An `unknown` hold settles too —
+   * that IS recovery's settlement (06.8/AC15): the same reservation, the same attempt id, and
+   * the entry evidence stays on the row as history.
    */
   settleReservation(input: {
     reservationId: string;
@@ -162,9 +168,33 @@ export type CreditWriter = {
 
   /**
    * Hand a still-`reserved` hold back, unused. Idempotent: releasing a released or settled hold
-   * changes nothing (the first terminal result stands).
+   * changes nothing (the first terminal result stands). An `unknown` hold is REFUSED: its
+   * provider outcome never arrived, so a release is never ordinary — only 08.x's recovery flow
+   * or an evidenced admin disposal may move it, through `releaseUnknownReservation`.
    */
   releaseReservation(reservationId: string, reason: string): Promise<void>;
+
+  /**
+   * The recovery-only release (06.8): move a result-unconfirmed (`unknown`) hold to `released`
+   * once evidence says no cost was produced (08.x's recovery flow, or an evidenced admin
+   * disposal). A still-`reserved` hold refuses — this door is never a second ordinary release —
+   * and a terminal hold changes nothing (the first terminal result stands). `reason` names the
+   * evidence the disposal stands on; the row keeps its `unknownAt`/`unknownReason` history.
+   */
+  releaseUnknownReservation(
+    reservationId: string,
+    reason: string,
+  ): Promise<void>;
+
+  /**
+   * Record that a hold's provider outcome is unknown (06.8, Q12/AC15): a stream error, a
+   * missing usage report, a cancellation — anything that is NOT a confirmed no-cost. The hold
+   * leaves the plain `reserved` state for `unknown`, keeping its FULL capacity occupied no
+   * matter how far the clock advances past `expiresAt`, with the reason and instant recorded
+   * for 08.x's recovery. Idempotent: the first reason and instant stand; a hold already
+   * settled or released changes nothing (a terminal fact is never reopened).
+   */
+  markReservationUnknown(reservationId: string, reason: string): Promise<void>;
 };
 
 export function createCreditWriter(database: Database): CreditWriter {
@@ -535,6 +565,14 @@ export function createCreditWriter(database: Database): CreditWriter {
           .from(creditReservations)
           .where(eq(creditReservations.id, reservationId))
           .limit(1);
+        if (reservation?.status === "unknown") {
+          // 06.8: an unknown hold is never ordinary-release evidence — the provider may have
+          // produced billable work nobody reported. Refuse loudly instead of silently leaving
+          // the caller to believe capacity was handed back.
+          throw new CreditReservationConflictError(
+            "releaseReservation: the reservation's outcome is unknown; only recovery may dispose of it.",
+          );
+        }
         if (reservation?.status !== "reserved") return;
         await tx
           .update(creditReservations)
@@ -544,6 +582,74 @@ export function createCreditWriter(database: Database): CreditWriter {
             released: reservation.maximum,
             releaseReason: reason,
             terminalAt: new Date(),
+          })
+          .where(eq(creditReservations.id, reservationId));
+      });
+    },
+
+    async releaseUnknownReservation(reservationId, reason) {
+      const [head] = await database
+        .select({ customer: creditReservations.externalCustomerId })
+        .from(creditReservations)
+        .where(eq(creditReservations.id, reservationId))
+        .limit(1);
+      if (!head) return;
+      await database.transaction(async (tx) => {
+        await lockCustomer(tx, head.customer);
+        const [reservation] = await tx
+          .select({
+            status: creditReservations.status,
+            maximum: creditReservations.maximum,
+          })
+          .from(creditReservations)
+          .where(eq(creditReservations.id, reservationId))
+          .limit(1);
+        if (!reservation) return;
+        if (reservation.status === "reserved") {
+          // The recovery door is never a second ordinary release: a hold still in the plain
+          // reserved state has an ordinary path, and evidence-backed disposal must not
+          // bypass it.
+          throw new CreditReservationConflictError(
+            "releaseUnknownReservation: the reservation is still reserved; use the ordinary release.",
+          );
+        }
+        if (reservation.status !== "unknown") return;
+        await tx
+          .update(creditReservations)
+          .set({
+            status: "released",
+            applied: 0,
+            released: reservation.maximum,
+            releaseReason: reason,
+            terminalAt: new Date(),
+          })
+          .where(eq(creditReservations.id, reservationId));
+      });
+    },
+
+    async markReservationUnknown(reservationId, reason) {
+      const [head] = await database
+        .select({ customer: creditReservations.externalCustomerId })
+        .from(creditReservations)
+        .where(eq(creditReservations.id, reservationId))
+        .limit(1);
+      if (!head) return;
+      await database.transaction(async (tx) => {
+        await lockCustomer(tx, head.customer);
+        const [reservation] = await tx
+          .select({ status: creditReservations.status })
+          .from(creditReservations)
+          .where(eq(creditReservations.id, reservationId))
+          .limit(1);
+        // Only a plain hold becomes unknown: the first evidence stands, and a terminal
+        // fact (settled/released) is never reopened.
+        if (reservation?.status !== "reserved") return;
+        await tx
+          .update(creditReservations)
+          .set({
+            status: "unknown",
+            unknownAt: new Date(),
+            unknownReason: reason,
           })
           .where(eq(creditReservations.id, reservationId));
       });

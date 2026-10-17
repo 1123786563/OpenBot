@@ -76,6 +76,21 @@ export const payerAccounts = pgTable(
  * One subscription projection per external subscription ID. `status` is the four states the sync
  * asks the provider about; a terminated subscription stays as a row because "no longer active" is
  * information the entitlement read needs, not an absence.
+ *
+ * OWNERSHIP (10.3, AC14/Q27): the subscription belongs to the OpenBot payer the paid order was
+ * bound to — the same personal account its plan allowance and every renewal payout land in. The
+ * pair is resolved SERVER-SIDE from the persisted order at creation (the activation call is the
+ * only writer that names it); the provider's webhook deliveries carry no OpenBot identity at all,
+ * so the projection refresh physically cannot move it, and a client names no ownership field
+ * anywhere on the purchase boundary. Nullable for rows written before the columns existed (the
+ * reconciler matches those against ownerless orders by the deployment key, and Q23 forbids
+ * auto-attribution).
+ *
+ * ALLOWANCE PERIOD: the billing period whose plan allowance has been covered — set by the
+ * activation path together with the owner (the period the order paid for), advanced by the
+ * renewal path only after the new period's grant is recorded. The paired columns are the
+ * fast "already covered" marker; the ledger's own `plan-renewal:<id>:<periodStart>` idempotency
+ * key is the fence that makes a duplicate or racing delivery a no-op.
  */
 export const billingSubscriptions = pgTable(
   "billing_subscriptions",
@@ -86,6 +101,16 @@ export const billingSubscriptions = pgTable(
     externalSubscriptionId: text("external_subscription_id").primaryKey(),
     planCode: text("plan_code").notNull(),
     status: text("status").$type<BillingSubscriptionStatus>().notNull(),
+    /** The payment subject the owning order was bound to; the pair moves together or not at all. */
+    ownerPayerKind: text("owner_payer_kind").$type<PayerKind>(),
+    ownerPayerId: text("owner_payer_id"),
+    /** The billing period whose plan allowance has been paid out (the renewal marker). */
+    allowancePeriodStart: timestamp("allowance_period_start", {
+      withTimezone: true,
+    }),
+    allowancePeriodEnd: timestamp("allowance_period_end", {
+      withTimezone: true,
+    }),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -95,7 +120,29 @@ export const billingSubscriptions = pgTable(
       "billing_subscriptions_status_check",
       sql`${table.status} IN ('active', 'incomplete', 'canceled', 'terminated')`,
     ),
+    // The owner pair moves together: a half-written owner is a bug, not a state (the same
+    // shape payment_orders carries, so the reconciler's pairing reads like the orders').
+    check(
+      "billing_subscriptions_owner_pair_check",
+      sql`(${table.ownerPayerKind} IS NULL) = (${table.ownerPayerId} IS NULL)`,
+    ),
+    check(
+      "billing_subscriptions_owner_kind_check",
+      sql`${table.ownerPayerKind} IS NULL OR ${table.ownerPayerKind} IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')`,
+    ),
+    // The allowance marker moves together too: a period whose end is unknown is not a
+    // covered period, and an end without a start is not a period.
+    check(
+      "billing_subscriptions_allowance_pair_check",
+      sql`(${table.allowancePeriodStart} IS NULL) = (${table.allowancePeriodEnd} IS NULL)`,
+    ),
     index("billing_subscriptions_customer_idx").on(table.externalCustomerId),
+    // The renewal pass and the per-account reconciliation match by the owner pair, never by
+    // a deployment-wide walk.
+    index("billing_subscriptions_owner_idx").on(
+      table.ownerPayerId,
+      table.ownerPayerKind,
+    ),
   ],
 );
 

@@ -100,14 +100,18 @@ export type ReservationStatusRequest = {
 };
 
 /**
- * What a Status query answers: one of the four closed states. `unknown` covers every case
+ * What a Status query answers: one of the five closed states. `unknown` covers every case
  * the query may not distinguish — a reservation that does not exist, one that belongs to
- * another account, a grant that scopes nothing — so an answer never leaks existence.
- * The locked versions are null until 06.5's locked-basis persistence integrates.
+ * another account, a grant that scopes nothing — so an answer never leaks existence; in that
+ * bare shape NOTHING but `status` rides along. The answered variant can also carry
+ * `"unknown"` for a reservation that EXISTS but whose provider result never arrived (06.8):
+ * the two unknowns are told apart by the facts they carry — the answered one always names
+ * the reservation. The locked versions are null until 06.5's locked-basis persistence
+ * integrates.
  */
 export type CreditReservationStatusOutcome =
   | {
-      status: "reserved" | "settled" | "released";
+      status: "reserved" | "unknown" | "settled" | "released";
       attemptId: string;
       reservationId: string;
       maximumCredits: number;
@@ -119,6 +123,10 @@ export type CreditReservationStatusOutcome =
       expiresAt: string;
       /** When the hold reached its terminal state, if it has. */
       terminalAt: string | null;
+      /** When the hold entered the unknown-result state (06.8), if it ever did. */
+      unknownAt: string | null;
+      /** Why the hold entered the unknown-result state (06.8), if it ever did. */
+      unknownReason: string | null;
     }
   | { status: "unknown" };
 
@@ -268,9 +276,10 @@ export type ReservationStatusService = {
  * The Status service: shape validation, then two plain reads — the scope grant and the
  * reservation — and nothing else. No transaction, because no invariant spans the two reads:
  * the grant's account resolution is derived per read, and a reservation row is immutable in
- * the fields this answer reports except by the writer's own settle/release transitions,
- * which a status query never races into corruption (it answers whatever committed state it
- * sees). Another account's reservation and an unresolvable scope both answer `unknown`.
+ * the fields this answer reports except by the writer's own mark-unknown/settle/release
+ * transitions, which a status query never races into corruption (it answers whatever
+ * committed state it sees). Another account's reservation and an unresolvable scope both
+ * answer `unknown`.
  */
 export function createReservationStatusService(
   dependencies: ReservationStatusServiceDependencies,
@@ -331,6 +340,11 @@ export function createReservationStatusService(
           rateVersion: null,
           createdAt: reservation.createdAt.toISOString(),
           expiresAt: reservation.expiresAt.toISOString(),
+          // 06.8's entry evidence, when the hold ever went unknown; null otherwise.
+          unknownAt: reservation.unknownAt
+            ? reservation.unknownAt.toISOString()
+            : null,
+          unknownReason: reservation.unknownReason,
           terminalAt: reservation.terminalAt
             ? reservation.terminalAt.toISOString()
             : null,

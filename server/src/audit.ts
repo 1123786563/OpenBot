@@ -800,6 +800,18 @@ export const auditEventTypes = [
    * own answer, never upstream bytes, so the trail stays displayable.
    */
   "gateway.catalog_sync_triggered",
+  /*
+   * A short-lived virtual key was issued for a user × Bot authorization (Bifrost 05.3).
+   *
+   * One row per issuance, because every issuance is a new key the trail must be able to name:
+   * the grant it was claimed against, the Bot whose credential claimed it, the one Customer it
+   * bills and the per-grant credentialVersion — the whole "who got a key, for which
+   * authorization, billing whom" question an incident asks first. The payload carries a
+   * four-hex fingerprint of the key value for identification; the plaintext exists only in the
+   * issuance response and only at the gateway, and neither this row nor any error path can
+   * redeem a key.
+   */
+  "gateway.key_issued",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];
