@@ -1,0 +1,426 @@
+--- a/server/scripts/multitenancy/inventory.ts
++++ b/server/scripts/multitenancy/inventory.ts
+@@ -13,6 +13,9 @@
+  *                            registration, registeredIn, registrations }>,
+  *     backgroundPrograms: Array<{ id, name, source, evidence,
+  *                                  businessClosure, ownerTicket, status }>,
++ *     serviceSurfaces: Array<{ id, name, evidence, businessClosure,
++ *                              assemblyStatus, routeEnumeration,
++ *                              ownerTicket, status, note }>,
+  *     dataTables:   Array<{ id, table, schema, businessClosure,
+  *                            ownerTicket, status }>,
+  *     externalDependencies: Array<{ id, dependency, configKeys,
+@@ -35,7 +38,14 @@
+  *   路由表里，以静态提取 + 真实纯函数/源码校验登记；src/index.ts 中的
+  *   server.upgrade( 分支数作为 tripwire 与已登记数比对。
+  * - 后台程序 / 数据表 / 外部依赖为静态候选提取（Scope boundary），均带
+- *   证据（文件:行）。数据表来自 drizzle schema 的真实导入。
++ *   证据（文件:行）。数据表来自 drizzle schema 的真实导入。后台程序覆盖
++ *   常驻 daemon 的实际形态：顶层 `void main()` 守护启动（worker 循环）、
++ *   BullMQ `new Worker(`（kb worker）、`start*()`/`.start()`/`setInterval`
++ *   （部署入口），以及文档声明的 CronJob 驱动脚本（scripts/fire-*、cull-*）。
++ * - serviceSurfaces：已知部署但不在四个应用装配内的服务面（supervisor、
++ *   go-runtime、agent-computer、agent-sandbox）。它们只被登记
++ *   （assemblyStatus=unassembled、routeEnumeration=not_enumerated），
++ *   绝不因其被列出而声称路由已覆盖；证据为源码/compose 行。
+  * - 缺少测试数据库配置时命令仍可运行；需要数据库的阶段在 `stages` 里显式
+  *   记录 skipped 与原因，绝不回退 DATABASE_URL，也不把 skipped 记为通过。
+  *
+@@ -107,6 +117,26 @@
+   status: CoverageStatus;
+ }
+ 
++/**
++ * 已知部署但不在应用装配内的服务面（supervisor / go-runtime /
++ * agent-computer / agent-sandbox 等）。unassembled + not_enumerated 是
++ * 诚实语义：登记存在 ≠ 路由已覆盖；缺口报告必须显式呈现这一区别。
++ */
++export interface ServiceSurfaceEntry {
++  id: string;
++  name: string;
++  /** 源码/compose 中的存在证据（文件:行: 内容）。 */
++  evidence: string[];
++  businessClosure: string;
++  /** 该面是否已被本清单的真实装配枚举；已知四面均为 unassembled。 */
++  assemblyStatus: "assembled" | "unassembled";
++  /** not_enumerated = 只登记服务存在，绝不声称其 HTTP 路由已覆盖。 */
++  routeEnumeration: "assembled" | "not_enumerated";
++  ownerTicket: string | null;
++  status: CoverageStatus;
++  note: string;
++}
++
+ export interface DataTableEntry {
+   id: string;
+   /** 物理表名（drizzle pgTable 的 name）。 */
+@@ -150,6 +180,7 @@
+   assemblies: AssemblyInfo[];
+   entrances: EntranceEntry[];
+   backgroundPrograms: BackgroundProgramEntry[];
++  serviceSurfaces: ServiceSurfaceEntry[];
+   dataTables: DataTableEntry[];
+   externalDependencies: ExternalDependencyEntry[];
+   unmappedConfigKeys: string[];
+@@ -164,6 +195,7 @@
+     serveUpgradeEntrances: number;
+     dataTables: number;
+     backgroundPrograms: number;
++    serviceSurfaces: number;
+     externalDependencies: number;
+     byClosure: Record<string, { total: number; unowned: number }>;
+   };
+@@ -192,6 +224,8 @@
+    * 提供该钩子时装配缓存被绕过。
+    */
+   mutateApp?: (name: string, app: RouteApp) => void;
++  /** 服务面 drift 测试用：对静态登记的服务面清单的变异钩子。 */
++  mutateServiceSurfaces?: (surfaces: ServiceSurfaceEntry[]) => void;
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -769,9 +803,7 @@
+ };
+ 
+ export function classifyPath(path: string): string {
+-  const normalized = path
+-    .replace(/\*+$/, "")
+-    .replace(/\/+$/, "");
++  const normalized = path.replace(/\*+$/, "").replace(/\/+$/, "");
+   if (normalized === "" || normalized === "/") return "platform";
+   // 全局中间件注册形如 ALL /api/*：归 platform；真正的 /api/... 路由
+   // 必须命中分类表，否则落入 unclassified（新面不被吞掉）。
+@@ -876,6 +908,10 @@
+   "src/index.ts",
+   "src/kb/worker.ts",
+   "../worker/src/index.ts",
++  "scripts/fire-routines.ts",
++  "scripts/fire-workshop-schedules.ts",
++  "scripts/cull-idle-computers.ts",
++  "scripts/cull-staged-attachments.ts",
+ ];
+ 
+ const PROGRAM_CLOSURES: Array<[RegExp, string]> = [
+@@ -890,10 +926,23 @@
+   [/group/i, "conversation"],
+   [/delivery/i, "delivery"],
+   [/task/i, "openmuse"],
++  [/routine/i, "responsibilities"],
++  [/workshop/i, "workshop"],
++  [/computer/i, "computer"],
++  [/attachment/i, "conversation"],
+   [/sweep|Sweep|setInterval/, "responsibilities"],
+ ];
+ 
+-function classifyProgram(name: string): string {
++/** 已知常驻 worker 的源级归属（名字本身过泛，不足以分类）。 */
++const PROGRAM_CLOSURES_BY_SOURCE: Array<[string, string]> = [
++  ["../worker/src/index.ts", "responsibilities"],
++  ["src/kb/worker.ts", "knowledge"],
++];
++
++function classifyProgram(name: string, source: string): string {
++  for (const [file, closure] of PROGRAM_CLOSURES_BY_SOURCE) {
++    if (source === file) return closure;
++  }
+   for (const [pattern, closure] of PROGRAM_CLOSURES) {
+     if (pattern.test(name)) return closure;
+   }
+@@ -906,31 +955,42 @@
+     const path = resolve(SERVER_ROOT, relative);
+     if (!existsSync(path)) continue;
+     const lines = readFileSync(path, "utf8").split("\n");
++    const stem = relative.split("/").pop()?.replace(/\.ts$/, "") ?? "program";
+     lines.forEach((line, index) => {
+       const trimmed = line.trim();
+-      if (trimmed.startsWith("import ") || trimmed.startsWith("*")) return;
+-      const patterns = [
+-        /\b(start[A-Z][A-Za-z0-9_]*)\s*\(/,
+-        /([a-zA-Z][A-Za-z0-9_]*)\.start\(\)/,
+-        /\bsetInterval\s*\(/,
+-      ];
+-      for (const pattern of patterns) {
+-        const match = trimmed.match(pattern);
+-        if (!match) continue;
+-        const name = match[1] ?? "setInterval";
+-        const id = `${relative}#${name}`;
+-        if (entries.has(id)) break;
+-        entries.set(id, {
+-          id,
+-          name,
+-          source: relative,
+-          evidence: `${relative}:${index + 1}: ${trimmed.slice(0, 120)}`,
+-          businessClosure: classifyProgram(name),
+-          ownerTicket: null,
+-          status: "unowned",
+-        });
+-        break;
++      // cron 声明在文档注释里（"Run from a CronJob …"）：先于注释守卫判定。
++      const cronDoc = /\bRun from a CronJob\b/.test(trimmed);
++      if (
++        !cronDoc &&
++        (trimmed.startsWith("import ") || trimmed.startsWith("*"))
++      ) {
++        return;
+       }
++      // 形态优先级：cron 文档声明 > 顶层 void 守护启动（worker 循环 daemon）
++      // > 常驻 Worker 实例化（BullMQ）> start*() / .start() / setInterval()。
++      const name = cronDoc
++        ? stem
++        : (trimmed.match(
++            /^void\s+([a-zA-Z][A-Za-z0-9_]*)\s*\(\s*\)\s*;/,
++          )?.[1] ??
++          trimmed.match(
++            /([a-zA-Z][A-Za-z0-9_]*)\s*=\s*new\s+Worker\s*\(/,
++          )?.[1] ??
++          trimmed.match(/\b(start[A-Z][A-Za-z0-9_]*)\s*\(/)?.[1] ??
++          trimmed.match(/([a-zA-Z][A-Za-z0-9_]*)\.start\(\)/)?.[1] ??
++          (/\bsetInterval\s*\(/.test(trimmed) ? "setInterval" : undefined));
++      if (!name) return;
++      const id = `${relative}#${name}`;
++      if (entries.has(id)) return;
++      entries.set(id, {
++        id,
++        name,
++        source: relative,
++        evidence: `${relative}:${index + 1}: ${trimmed.slice(0, 120)}`,
++        businessClosure: classifyProgram(name, relative),
++        ownerTicket: null,
++        status: "unowned",
++      });
+     });
+   }
+   return [...entries.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
+@@ -1034,7 +1094,11 @@
+   return entries.sort((a, b) => (a.id < b.id ? -1 : 1));
+ }
+ 
+-const CONFIG_SOURCES = ["src/config.ts", "src/redis.ts", "src/kb/config.ts"];
++const CONFIG_SOURCES = [
++  "src/config.ts",
++  "src/redis.ts",
++  "src/kb/config/index.ts",
++];
+ 
+ const EXTERNAL_DEPS: Array<[string, string, string]> = [
+   // env 前缀 → 依赖名 → 业务闭环
+@@ -1046,13 +1110,16 @@
+     "PostgreSQL（租户运行时库）",
+     "conversation",
+   ],
+-  ["OPENBOT_REDIS_URL", "Redis", "workshop"],
++  ["KB_DATABASE_URL", "PostgreSQL（KB 服务库）", "knowledge"],
++  ["OPENBOT_REDIS_URL", "Redis（workshop 总线与锁）", "workshop"],
++  ["WORKSHOP_REQUIRE_REDIS", "Redis（workshop 总线与锁）", "workshop"],
++  ["KB_REDIS_URL", "Redis（KB BullMQ 队列）", "knowledge"],
+   ["INTELLIGENCE_", "Intelligence 运行时", "agent-runtime"],
+   ["COPILOTKIT_", "CopilotKit Runtime", "agent-runtime"],
+   ["MANAGED_AGENT_", "受管 Agent（AG-UI）", "agent-runtime"],
+   ["LAGO_", "Lago 计费", "billing"],
+   ["ALIPAY_", "支付宝", "billing"],
+-  ["WECHAT", "微信支付", "billing"],
++  ["WXPAY_", "微信支付", "billing"],
+   ["COMPOSIO_", "Composio 应用目录", "plugins"],
+   ["OPENCONNECTOR_", "OpenConnector", "openmuse"],
+   ["GITHUB_APP_", "GitHub App", "identity"],
+@@ -1061,7 +1128,10 @@
+   ["COMPUTER_SANDBOX_", "代码沙箱", "codesandbox"],
+   ["COMPUTER_", "computer 基础设施", "computer"],
+   ["QDRANT_", "Qdrant 向量库", "knowledge"],
++  ["KB_QDRANT_BATCH", "Qdrant 向量库", "knowledge"],
+   ["OLLAMA_", "Ollama 嵌入", "knowledge"],
++  ["DOCREADER_", "Docreader 文档解析服务", "knowledge"],
++  ["KB_RERANK_URL", "Reranker 服务", "knowledge"],
+   ["SMTP", "SMTP 邮件", "responsibilities"],
+   ["SES_", "AWS SES", "responsibilities"],
+   ["SNS_", "AWS SNS", "responsibilities"],
+@@ -1078,11 +1148,17 @@
+     if (!existsSync(path)) continue;
+     const lines = readFileSync(path, "utf8").split("\n");
+     lines.forEach((line, index) => {
++      // 三种真实配置面形态：src/config.ts 的 optional(environment, "KEY")、
++      // 参数名不为 environment 的直接成员访问（如 src/redis.ts 的
++      // env.OPENBOT_REDIS_URL）、src/kb/config/index.ts 的 env/envInt/
++      // envFloat/envBool("KEY") 辅助函数。
+       const match = line.match(
+         /(?:optional|required)\(\s*environment,\s*"([A-Z0-9_]+)"\s*\)/,
+       );
+       if (match) keys.set(match[1], `${relative}:${index + 1}`);
+-      const direct = line.match(/environment\.([A-Z][A-Z0-9_]+)/);
++      const helper = line.match(/\benv(?:Int|Float|Bool)?\(\s*"([A-Z0-9_]+)"/);
++      if (helper) keys.set(helper[1], `${relative}:${index + 1}`);
++      const direct = line.match(/(?:environment|env)\.([A-Z][A-Z0-9_]+)/);
+       if (direct) keys.set(direct[1], `${relative}:${index + 1}`);
+     });
+   }
+@@ -1113,6 +1189,104 @@
+     }))
+     .sort((a, b) => (a.id < b.id ? -1 : 1));
+   return { entries, unmappedKeys: unmapped };
++}
++
++// ---------------------------------------------------------------------------
++// 已知部署但未装配的服务面（静态登记 + 源码/compose 证据）
++// ---------------------------------------------------------------------------
++
++interface SurfaceSpec {
++  id: string;
++  businessClosure: string;
++  note: string;
++  /** 存在性证据：仓库根相对文件 → 首个命中行。 */
++  markers: Array<{ file: string; pattern: RegExp }>;
++}
++
++/**
++ * 四个应用装配（deployment-bare/full、enterprise 降级、kb-service）之外的
++ * 已知部署服务面。无法安全导入装配（supervisor 顶层 serve() 自启动、
++ * go-runtime 是 Go 进程、两个 agent-* 是 compose 镜像），因此只登记为
++ * unassembled / not_enumerated：登记不构成路由覆盖。
++ */
++const SERVICE_SURFACE_SPECS: SurfaceSpec[] = [
++  {
++    id: "supervisor",
++    businessClosure: "computer",
++    note: "独立 Bun/Hono 进程（token 门禁）；模块顶层 serve() 自启动，导入即起服务，无法在清单装配内安全枚举路由。仅登记为已知部署服务面，不构成路由覆盖。",
++    markers: [
++      { file: "supervisor/src/index.ts", pattern: /new Hono\(\)/ },
++      { file: "supervisor/src/index.ts", pattern: /^serve\(/ },
++    ],
++  },
++  {
++    id: "go-runtime",
++    businessClosure: "agent-runtime",
++    note: "Go 独立执行运行时（compose profile go-runtime，默认关闭；企业 run gateway 直连）。跨语言进程无法由本清单装配枚举；仅登记服务面。",
++    markers: [
++      { file: "docker-compose.yml", pattern: /^\s{2}go-runtime:$/ },
++      {
++        file: "runtime-go/cmd/runtime/main.go",
++        pattern: /http\.Server\{/,
++      },
++    ],
++  },
++  {
++    id: "agent-computer",
++    businessClosure: "computer",
++    note: "compose 构建镜像；由 supervisor 按 Bot 启动独立 computer 容器。容器内部入口面未枚举，仅登记服务面。",
++    markers: [
++      { file: "docker-compose.yml", pattern: /^\s{2}agent-computer:$/ },
++    ],
++  },
++  {
++    id: "agent-sandbox",
++    businessClosure: "codesandbox",
++    note: "compose 独立沙箱服务镜像。容器内部入口面未枚举，仅登记服务面。",
++    markers: [{ file: "docker-compose.yml", pattern: /^\s{2}agent-sandbox:$/ }],
++  },
++];
++
++/**
++ * 逐面从真实源码/compose 提取存在性证据行；标记未命中时在 note 里显式
++ * 标注，绝不静默丢弃，也绝不因登记而声称路由覆盖。
++ */
++export function extractServiceSurfaces(): ServiceSurfaceEntry[] {
++  const repoRoot = resolve(SERVER_ROOT, "..");
++  return SERVICE_SURFACE_SPECS.map((spec) => {
++    const evidence: string[] = [];
++    const missing: string[] = [];
++    for (const marker of spec.markers) {
++      const path = resolve(repoRoot, marker.file);
++      let found = false;
++      if (existsSync(path)) {
++        const lines = readFileSync(path, "utf8").split("\n");
++        for (let index = 0; index < lines.length; index += 1) {
++          if (marker.pattern.test(lines[index])) {
++            evidence.push(
++              `${marker.file}:${index + 1}: ${lines[index].trim()}`,
++            );
++            found = true;
++            break;
++          }
++        }
++      }
++      if (!found) missing.push(marker.file);
++    }
++    return {
++      id: spec.id,
++      name: spec.id,
++      evidence,
++      businessClosure: spec.businessClosure,
++      assemblyStatus: "unassembled" as const,
++      routeEnumeration: "not_enumerated" as const,
++      ownerTicket: null,
++      status: "unowned" as const,
++      note: missing.length
++        ? `${spec.note}（⚠️ 证据标记未找到：${missing.join(", ")}）`
++        : spec.note,
++    };
++  }).sort((a, b) => (a.id < b.id ? -1 : 1));
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -1415,6 +1589,8 @@
+   const dataTables = await extractDataTables();
+   const { entries: externalDependencies, unmappedKeys } =
+     extractExternalDependencies();
++  const serviceSurfaces = extractServiceSurfaces();
++  options.mutateServiceSurfaces?.(serviceSurfaces);
+ 
+   applyOwnership(entrances, ownership, {
+     exact: (entry) => entry.entrance,
+@@ -1429,6 +1605,7 @@
+   applyOwnership(externalDependencies, ownership, {
+     tableId: (entry) => entry.id,
+   });
++  applyOwnership(serviceSurfaces, ownership, {});
+ 
+   const stages: StageRecord[] = [];
+   stages.push(await liveTableCrosscheck(dataTables, environment));
+@@ -1451,6 +1628,7 @@
+     assemblies: assembliesInfo,
+     entrances,
+     backgroundPrograms,
++    serviceSurfaces,
+     dataTables,
+     externalDependencies,
+     unmappedConfigKeys: unmappedKeys,
+@@ -1470,6 +1648,7 @@
+       serveUpgradeEntrances: serve.entrances.length,
+       dataTables: dataTables.length,
+       backgroundPrograms: backgroundPrograms.length,
++      serviceSurfaces: serviceSurfaces.length,
+       externalDependencies: externalDependencies.length,
+       byClosure,
+     },
+@@ -1496,6 +1675,9 @@
+     `- 后台程序 ${summary.backgroundPrograms} · 数据表 ${summary.dataTables} · 外部依赖 ${summary.externalDependencies}`,
+   );
+   lines.push(
++    `- 服务面 ${summary.serviceSurfaces}（已知部署、未装配、路由未枚举——列出不构成路由覆盖）`,
++  );
++  lines.push(
+     `- serve() 升级分支 ${summary.serveUpgradeBranches} 个，已登记 stream 入口 ${summary.serveUpgradeEntrances} 个${
+       summary.serveUpgradeBranches > summary.serveUpgradeEntrances
+         ? "（⚠️ 存在未登记的升级分支）"
+@@ -1514,6 +1696,23 @@
+     if (assembly.note) lines.push(`  - note: ${assembly.note}`);
+   }
+   lines.push("");
++  lines.push("## 服务面（已知部署 · 未装配 · 路由未枚举 ≠ 已覆盖）");
++  lines.push("");
++  for (const surface of inventory.serviceSurfaces) {
++    lines.push(
++      `- \`${surface.id}\`（${surface.businessClosure}，${surface.assemblyStatus}，路由${
++        surface.routeEnumeration === "not_enumerated" ? "未枚举" : "已枚举"
++      }，${surface.status}）— ${surface.note}`,
++    );
++    for (const line of surface.evidence) {
++      lines.push(`  - 证据：${line}`);
++    }
++  }
++  lines.push("");
++  lines.push(
++    "> 上述服务面为已知部署但未进入四个应用装配的进程；登记不构成路由覆盖，统一上线验收前须为其单独补装配或显式登记为未覆盖。",
++  );
++  lines.push("");
+   lines.push("## 未归属入口（按业务闭环）");
+   for (const [closure, bucket] of Object.entries(summary.byClosure).sort()) {
+     const label = CLOSURE_LABELS[closure] ?? closure;

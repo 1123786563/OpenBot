@@ -1,0 +1,16 @@
+# MT001 SHA-256 manifest
+HEAD: f0520524f0faa2b4533b9d2f1aa692c8f907ba71
+branch: 1123786563/i6-mt001
+
+## Task delta (untracked, added by MT001)
+8f4566f0240651613144421a15396def251a31fe347de14b93a496ea78facc4d  server/scripts/multitenancy/inventory.ts
+a41f47d74876d56640d78981df832effbba753bc5d35317ad5ad8b2c1d810ca1  server/tests/multitenancy/inventory.test.ts
+
+## Checkpoint artifacts
+ee7351c0a96871bfd3f893d31cc6b8c1b52c27d541d7dbc3f46a9fa1f96ac728  inventory.json
+97d61dab081da88474ff513c8db357ab142ce9e813a4032922cd8f0c56167419  gap-report.md
+5b0d46ea97810507985c78c178f71df4ab9f153d14d5c84ef99f7cda37e92d7f  verification.txt
+
+## git status (full)
+?? server/scripts/multitenancy/
+?? server/tests/multitenancy/
