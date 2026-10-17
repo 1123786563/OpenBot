@@ -17,6 +17,7 @@ import {
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import { createAuditStore } from "../src/audit";
 import { aiObservationExperiments } from "../src/db/schema/ai-observability-experiments";
+import { aiObservationRetentionDeletions } from "../src/db/schema/ai-observability-retention";
 import { testDatabaseUrl } from "./support/database";
 import { opikTestDatabase } from "./support/opik-test-db";
 import { rejectionOf } from "./support/pg-errors";
@@ -107,6 +108,54 @@ afterEach(async () => {
 
 afterAll(async () => {
   await database.$client.close();
+});
+
+test("the byName replay channel is a reader too: a deletion-in-flight experiment stays gone (OCR R2-37)", async () => {
+  const { version } = await pinnedVersion(scopeA);
+  const input = {
+    name: `${prefix}-r237-${randomUUID()}`,
+    datasetVersionId: version.id,
+    config,
+  };
+  const { experiment } = await store.submit(scopeA, input);
+  // Retention found it: from the deletion record on, every reader answers
+  // not-found for this experiment (OCR m138) — including the replay channels of
+  // a submit whose INSERT still conflicts with the surviving (scope, name)
+  // unique index entry. Handing the frozen row back as an idempotent answer
+  // would resurrect a subject the deletion is mid-way through destroying.
+  await database.insert(aiObservationRetentionDeletions).values({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    kind: "experiment",
+    targetId: experiment.id,
+    retentionDays: 30,
+    state: "pending",
+  });
+  try {
+    await expect(store.submit(scopeA, input)).rejects.toThrow();
+  } finally {
+    // The governance counts read every scope; leave no record behind.
+    await database
+      .delete(aiObservationRetentionDeletions)
+      .where(eq(aiObservationRetentionDeletions.targetId, experiment.id));
+  }
+});
+
+test("the byName replay channel answers the same frozen configuration (regression anchor)", async () => {
+  const { version } = await pinnedVersion(scopeA);
+  const input = {
+    name: `${prefix}-r237b-${randomUUID()}`,
+    datasetVersionId: version.id,
+    config,
+  };
+  const first = await store.submit(scopeA, input);
+  // No deletion record: the byName channel still replays idempotently — the
+  // predicate added above must narrow the deletion-in-flight case only.
+  const replay = await store.submit(scopeA, input);
+  expect(replay.replayed).toBe(true);
+  expect(replay.experiment.id).toBe(first.experiment.id);
 });
 
 test("the dedicated test database carries the experiment schema and both guards", async () => {

@@ -410,6 +410,10 @@ export function createObservationExperimentStore(
 
         // The insert conflicted. On the name: the subject exists, and it is either the same
         // frozen configuration (a retry) or a frozen name carrying different content (refused).
+        // The conflict read is a reader too (OCR m138/R2-37): the row still holds the
+        // (scope, name) unique index, but a deletion-in-flight experiment must not come
+        // back through the byName replay channel — same predicate the byHash channel
+        // below already carries.
         const found = await tx
           .select()
           .from(aiObservationExperiments)
@@ -417,6 +421,7 @@ export function createObservationExperimentStore(
             and(
               eq(aiObservationExperiments.scopeKey, scope.key),
               eq(aiObservationExperiments.name, name),
+              notPendingDeletion("experiment", aiObservationExperiments.id),
             ),
           )
           .for("update");

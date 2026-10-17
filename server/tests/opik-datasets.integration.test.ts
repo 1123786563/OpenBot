@@ -428,6 +428,158 @@ test("a deletion-in-flight dataset is gone to the reverse lookup, the freeze tar
   ).rejects.toThrow(new DatasetStoreError("DATASET_NOT_FOUND", 404));
 });
 
+/**
+ * The sub-statement window no external caller can otherwise reach: the store's own
+ * transaction runs its Nth `select` only after `armed` has committed. The conflicting
+ * row vanishes between the INSERT that saw it and the read-back that must explain
+ * it — exactly the retention-cascade race the "conflicted but absent" branches exist
+ * for (OCR R2-35).
+ */
+function storeWithArmedSelect(
+  arm: (selectIndex: number) => Promise<void> | undefined,
+) {
+  const hooked = {
+    ...database,
+    transaction: (callback: (tx: never) => unknown) =>
+      database.transaction(async (tx) => {
+        let selects = 0;
+        const originalSelect = tx.select.bind(tx);
+        (tx as { select: unknown }).select = (...args: unknown[]) => {
+          const builder = originalSelect(
+            ...(args as Parameters<typeof originalSelect>),
+          );
+          const originalFrom = builder.from.bind(builder);
+          builder.from = (table: Parameters<typeof originalFrom>[0]) => {
+            // The object `.from()` hands back is the awaited query; `.where()`
+            // returns it unchanged, so a then-wrap here sees the execution.
+            const query = originalFrom(table);
+            selects += 1;
+            const armed = arm(selects);
+            if (!armed) return query;
+            const then = query.then.bind(query);
+            // Intentional thenable wrap (biome-ignore in the next line): this IS a
+            // then property — the hook point that lets the armed commit run inside
+            // the store's sub-statement window before the query executes.
+            // biome-ignore lint/suspicious/noThenProperty: intentional test hook, see above.
+            query.then = (
+              resolve: (value: never) => unknown,
+              reject: (reason?: unknown) => unknown,
+            ) => armed.then(() => then(resolve, reject), reject);
+            return query;
+          };
+          return builder;
+        };
+        return callback(tx as never);
+      }),
+  };
+  return createObservationDatasetStore(hooked as unknown as typeof database);
+}
+
+/** Deletes a dataset subject the only sanctioned way: under the cleanup flag. */
+const cleanupDataset = (id: string) =>
+  database.$client.begin(async (tx: TransactionSQL) => {
+    await tx`select set_config('ai_observation.dataset_cleanup', 'on', true)`;
+    await tx`delete from ai_observation_datasets where id = ${id}`;
+  });
+
+test("deleteDataset refuses a syncing subject: only pending or failed may be cleaned (OCR R2-34)", async () => {
+  const { dataset } = await store.saveVersion(scopeA, {
+    datasetName: `t19-r234-${randomUUID()}`,
+    cases: [caseA],
+  });
+  await store.markSyncing(scopeA, dataset.id);
+
+  // The old guard pre-checked only `synced`, so a syncing subject — a push in
+  // flight, the exact state the cleanup comment says must not be raced — sailed
+  // through and was deleted under the push.
+  await expect(store.deleteDataset(scopeA, dataset.id)).rejects.toThrow(
+    new DatasetStoreError("DATASET_STATE_INVALID", 409),
+  );
+  // The refusal is real: subject and frozen versions survive.
+  expect(await store.getDataset(scopeA, dataset.id)).not.toBeNull();
+  const versions = await database
+    .select({ id: aiObservationDatasetVersions.id })
+    .from(aiObservationDatasetVersions)
+    .where(eq(aiObservationDatasetVersions.datasetId, dataset.id));
+  expect(versions).toHaveLength(1);
+});
+
+test("the delete decision rides the DELETE: a markSynced committing under a racing delete wins (OCR R2-34)", async () => {
+  const { dataset } = await store.saveVersion(scopeA, {
+    datasetName: `t19-r234b-${randomUUID()}`,
+    cases: [caseA],
+  });
+  // Hold the row's write lock the way a concurrent push holds it between the
+  // victim's precheck and its DELETE: the precheck reads the still-pending
+  // committed row, the DELETE blocks, then the push commits synced. A decision
+  // made outside the deleting statement is a decision about a row that no
+  // longer exists by the time the statement runs. The assertion waits outside
+  // the holding transaction: the DELETE can only unblock at COMMIT, which bun's
+  // begin() issues after the callback resolves.
+  let racing: Promise<unknown> | undefined;
+  await database.$client.begin(async (tx: TransactionSQL) => {
+    await tx`select sync_state from ai_observation_datasets where id = ${dataset.id} for update`;
+    racing = store.deleteDataset(scopeA, dataset.id);
+    // Let the victim's precheck run against the locked-but-pending row and its
+    // transaction reach the blocked DELETE.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await tx`update ai_observation_datasets
+             set sync_state = 'synced', opik_dataset_id = ${`opik-r234-${randomUUID()}`}
+             where id = ${dataset.id}`;
+    // Pre-fix the unblocked DELETE wipes the synced row; post-fix it matches
+    // nothing and the read-back classifies the survivor as 409.
+  });
+  await expect(racing).rejects.toThrow(
+    new DatasetStoreError("DATASET_STATE_INVALID", 409),
+  );
+  const rows = await database
+    .select({ syncState: aiObservationDatasets.syncState })
+    .from(aiObservationDatasets)
+    .where(eq(aiObservationDatasets.id, dataset.id));
+  expect(rows).toEqual([{ syncState: "synced" }]);
+});
+
+test("a conflict whose subject vanished mid-transaction answers 404, never a bare error (OCR R2-35)", async () => {
+  const name = `t19-r235-${randomUUID()}`;
+  const saved = await store.saveVersion(scopeA, {
+    datasetName: name,
+    cases: [caseA],
+  });
+  // The conflicting INSERT sees the committed subject; the read-back must not.
+  // Arm the read-back (the tx's first select): the subject is deleted inside the
+  // window between the conflict and the explanation, the retention-cascade shape.
+  const armed = storeWithArmedSelect((index) =>
+    index === 1 ? cleanupDataset(saved.dataset.id) : undefined,
+  );
+  await expect(
+    armed.saveVersion(scopeA, { datasetName: name, cases: [caseA] }),
+  ).rejects.toThrow(new DatasetStoreError("DATASET_NOT_FOUND", 404));
+});
+
+test("a conflict whose version vanished mid-transaction answers 404, never a bare error (OCR R2-35)", async () => {
+  const name = `t19-r235b-${randomUUID()}`;
+  const { dataset, version } = await store.saveVersion(scopeA, {
+    datasetName: name,
+    cases: [caseA],
+  });
+  // The same name and hash re-saved: the dataset conflict resolves to the
+  // subject, the version INSERT conflicts, and the version read-back (the tx's
+  // second select) is armed so the conflicting version is gone by the time the
+  // store must explain the conflict.
+  const armed = storeWithArmedSelect((index) =>
+    index === 2
+      ? database.$client.begin(async (tx: TransactionSQL) => {
+          await tx`select set_config('ai_observation.dataset_cleanup', 'on', true)`;
+          await tx`delete from ai_observation_dataset_versions where id = ${version.id}`;
+        })
+      : undefined,
+  );
+  await expect(
+    armed.saveVersion(scopeA, { datasetName: name, cases: [caseA] }),
+  ).rejects.toThrow(new DatasetStoreError("DATASET_NOT_FOUND", 404));
+  expect(await store.getDataset(scopeA, dataset.id)).not.toBeNull();
+});
+
 test("deleteDataset refuses a synced subject: the upstream mapping must not be orphaned (OCR m125)", async () => {
   const { dataset } = await store.saveVersion(scopeA, {
     datasetName: `t19-m125-${randomUUID()}`,

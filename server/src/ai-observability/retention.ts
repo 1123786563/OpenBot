@@ -400,6 +400,15 @@ export function createObservationRetentionWorker(
      * Each query folds the policy in SQL — coalesce(override, default) decides the cutoff
      * per row, which is the same fold `effectiveRetention` states in TypeScript. `limit`
      * keeps one pass bounded; the poll loop behind `sweep` eats the rest.
+     *
+     * A target that already has a deletion record does not resurface (OCR R2-39): its
+     * record is the offer, however long the record parks in failed or pinned — resurfacing
+     * it every pass let 500 stranded targets eat the whole batch and starve fresh expiries.
+     * The one exception is the purge precondition below: a non-terminal record whose work
+     * ticket went missing resurfaces, so discovery can rebuild the ticket — a wedge, not a
+     * quota question. `order by` makes the quota deterministic: oldest-expired first
+     * (settled-first for exports, whose clock is the settle), id as the tiebreak, so which
+     * target waits for the next pass is a rule, never heap layout.
      */
     const runs = await db.$client<DiscoveredTarget[]>`
       select b.id, b.scope_key, b.actor_id, b.bot_id, b.opik_trace_id,
@@ -409,6 +418,16 @@ export function createObservationRetentionWorker(
       left join ai_observation_retention_overrides o on o.scope_key = b.scope_key
       where b.state <> 'running'
         and b.created_at <= now() - make_interval(days => coalesce(o.runs_days, ${global.runs}))
+        and not exists (
+          select 1
+          from ai_observation_retention_deletions d
+          where d.kind = 'run' and d.target_id = b.id
+            and (d.state = 'deleted' or exists (
+              select 1 from work_items w
+              where w.kind = 'opik.retention' and w.key = d.id
+            ))
+        )
+      order by b.created_at asc, b.id asc
       limit ${DISCOVERY_BATCH}`;
 
     const datasets = await db.$client<DiscoveredTarget[]>`
@@ -420,6 +439,15 @@ export function createObservationRetentionWorker(
       where d.created_at <= now() - make_interval(days => coalesce(o.datasets_days, ${global.datasets}))
         and not exists (
           select 1
+          from ai_observation_retention_deletions rd
+          where rd.kind = 'dataset' and rd.target_id = d.id
+            and (rd.state = 'deleted' or exists (
+              select 1 from work_items w
+              where w.kind = 'opik.retention' and w.key = rd.id
+            ))
+        )
+        and not exists (
+          select 1
           from ai_observation_experiments e
           left join ai_observation_retention_overrides oe on oe.scope_key = e.scope_key
           where e.dataset_version_id in (
@@ -427,6 +455,7 @@ export function createObservationRetentionWorker(
           )
           and e.created_at > now() - make_interval(days => coalesce(oe.experiments_days, ${global.experiments}))
         )
+      order by d.created_at asc, d.id asc
       limit ${DISCOVERY_BATCH}`;
 
     const experiments = await db.$client<DiscoveredTarget[]>`
@@ -435,6 +464,16 @@ export function createObservationRetentionWorker(
       from ai_observation_experiments e
       left join ai_observation_retention_overrides o on o.scope_key = e.scope_key
       where e.created_at <= now() - make_interval(days => coalesce(o.experiments_days, ${global.experiments}))
+        and not exists (
+          select 1
+          from ai_observation_retention_deletions d
+          where d.kind = 'experiment' and d.target_id = e.id
+            and (d.state = 'deleted' or exists (
+              select 1 from work_items w
+              where w.kind = 'opik.retention' and w.key = d.id
+            ))
+        )
+      order by e.created_at asc, e.id asc
       limit ${DISCOVERY_BATCH}`;
 
     const exports = await db.$client<DiscoveredTarget[]>`
@@ -447,6 +486,16 @@ export function createObservationRetentionWorker(
       -- the row is pure residue, and skipping it let exports grow without bound.
       where j.state in ('completed', 'failed', 'cancelled') and j.settled_at is not null
         and j.settled_at <= now() - make_interval(days => coalesce(o.exports_days, ${global.exports}))
+        and not exists (
+          select 1
+          from ai_observation_retention_deletions d
+          where d.kind = 'export' and d.target_id = j.id
+            and (d.state = 'deleted' or exists (
+              select 1 from work_items w
+              where w.kind = 'opik.retention' and w.key = d.id
+            ))
+        )
+      order by j.settled_at asc, j.id asc
       limit ${DISCOVERY_BATCH}`;
 
     /**
@@ -716,18 +765,24 @@ export function createObservationRetentionWorker(
        * data face is what the scope's queued/running exports fetch, so they are
        * settled cancelled before the deletion changes it under them; (c) drop the
        * read caches, so no projection keeps serving what readers can no longer
-       * see. All three are idempotent — a retry pass runs the sequence again
-       * harmlessly.
+       * see. (a) and (c) are idempotent — a retry replays them harmlessly. (b)
+       * is not (OCR R2-43): a scope-wide cancel re-run on every retry would
+       * settle the exports the user enqueued AFTER the failed pass — with m163's
+       * immediate first retries, in the same poll loop — so the stop runs once
+       * per record, on its first pass, and only once the gate is open (a
+       * capability-missing deployment must not cancel the scope's exports on
+       * every pass when no deletion can proceed at all).
        */
-      if (record.kind === "run") {
-        await exportStore.cancelForScope(record.scopeKey);
-      }
+      const stopWork = record.kind === "run" && record.state === "pending";
       await deps.invalidateReads?.({
         scopeKey: record.scopeKey,
         kind: record.kind,
       });
       if (record.upstreamKind !== null && record.state !== "upstream_done") {
         const port = gate();
+        if (stopWork) {
+          await exportStore.cancelForScope(record.scopeKey);
+        }
         const locator = Object.freeze({
           scopeKey: record.scopeKey,
           workspace: record.locatorWorkspace ?? "",
@@ -753,6 +808,11 @@ export function createObservationRetentionWorker(
           await finish();
           return;
         }
+      } else if (stopWork) {
+        // No upstream half to gate on (an unreconciled run): the same
+        // first-pass-only stop still applies before the local deletion changes
+        // the run's data face.
+        await exportStore.cancelForScope(record.scopeKey);
       }
 
       await deleteLocal(record);

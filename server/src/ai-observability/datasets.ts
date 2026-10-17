@@ -329,9 +329,11 @@ export function createObservationDatasetStore(
           if (ghost[0]) {
             throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
           }
-          throw new Error(
-            "saveVersion conflicted but the dataset subject is absent",
-          );
+          // The conflict saw a row that is gone before the store could explain it
+          // — the retention cascade committed inside this transaction's window.
+          // The honest answer is the same not-found every read gives, never a
+          // bare 500 (OCR R2-35).
+          throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
         }
 
         const inserted = await tx
@@ -371,9 +373,9 @@ export function createObservationDatasetStore(
           );
         const replay = existing[0];
         if (!replay) {
-          throw new Error(
-            "saveVersion conflicted but the conflicting version is absent",
-          );
+          // Same sub-statement window, same answer (OCR R2-35): the conflicting
+          // version left with its subject's cleanup.
+          throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
         }
         return { dataset, version: replay, replayed: true };
       });
@@ -624,26 +626,43 @@ export function createObservationDatasetStore(
       // dataset id lives, and deleting it here would orphan that upstream copy
       // forever — retention's discovery scans this same table. Only a subject
       // that has nothing pushed (pending) or a failed push may be cleaned.
-      const subject = await db
-        .select({ syncState: aiObservationDatasets.syncState })
-        .from(aiObservationDatasets)
-        .where(scopeDataset(scope, datasetId));
-      if (!subject[0]) throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
-      if (subject[0].syncState === "synced") {
-        throw new DatasetStoreError("DATASET_STATE_INVALID", 409);
-      }
-      // The one sanctioned way past the versions' delete guard (migration 0124): the
-      // transaction-local flag says "this is dataset cleanup", so a direct DELETE of a
-      // frozen version is refused by the database while the cascade from here passes.
+      //
+      // The state predicate rides the DELETE itself (OCR R2-34), the same
+      // discipline as markSyncing/markFailed: a precheck outside the statement
+      // is a decision about a row that may not exist when the DELETE runs — a
+      // markSynced committing in between deleted a synced row and orphaned its
+      // upstream copy, and a syncing subject (a push in flight) sailed through
+      // a synced-only precheck entirely. EvalPlanQual re-tests the predicate
+      // against the row a concurrent writer leaves behind, so the statement's
+      // own decision is the only one there is. An empty result is classified by
+      // reading the survivor back: absent is 404, present-but-stateful is 409.
       await db.transaction(async (tx) => {
+        // The one sanctioned way past the versions' delete guard (migration
+        // 0124): the transaction-local flag says "this is dataset cleanup", so
+        // a direct DELETE of a frozen version is refused by the database while
+        // the cascade from here passes.
         await tx.execute(
           sql`select set_config('ai_observation.dataset_cleanup', 'on', true)`,
         );
         const removed = await tx
           .delete(aiObservationDatasets)
-          .where(scopeDataset(scope, datasetId))
+          .where(
+            and(
+              scopeDataset(scope, datasetId),
+              inArray(aiObservationDatasets.syncState, ["pending", "failed"]),
+            ),
+          )
           .returning({ id: aiObservationDatasets.id });
-        if (!removed[0]) throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
+        if (!removed[0]) {
+          const subject = await tx
+            .select({ syncState: aiObservationDatasets.syncState })
+            .from(aiObservationDatasets)
+            .where(scopeDataset(scope, datasetId));
+          if (!subject[0]) {
+            throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
+          }
+          throw new DatasetStoreError("DATASET_STATE_INVALID", 409);
+        }
       });
     },
   };

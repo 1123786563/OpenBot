@@ -1,7 +1,8 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, type SQL, sql } from "drizzle-orm";
 import postgres from "postgres";
+import { REDACTION_POLICY_VERSION } from "../../shared/ai-observability";
 import { createRunBindingStore } from "../src/ai-observability/bindings";
 import type { OpikConfig } from "../src/ai-observability/config";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";
@@ -402,6 +403,219 @@ test("the expiry boundary: exactly-expired is offered, comfortably-newer and run
   expect(await deletionsFor(scopeA)).toHaveLength(records.length);
 });
 
+/*
+ * OCR R2-39: discovery must spend its batch quota only on targets it can still
+ * do something about, and hand the quota out deterministically. A record that
+ * already exists — parked failed or pinned, the long-stranded shape — must not
+ * re-occupy a slot every pass, and an unordered batch makes "which expired
+ * target waits" a coin flip of heap layout.
+ */
+
+const backdate = (days: number) => sql`now() - make_interval(days => ${days})`;
+
+/** One terminal, expired binding, planted directly: the quota tests need hundreds. */
+const plantedExpiredBinding = (backdated: SQL) => ({
+  id: randomUUID(),
+  scopeKey: scopeA.key,
+  actorId: scopeA.actorId,
+  botId: scopeA.botId,
+  runId: `run-${randomUUID()}`,
+  attemptId: `attempt-${randomUUID()}`,
+  traceId: `trace-${randomUUID().replaceAll("-", "")}`,
+  locatorWorkspace: "ws",
+  locatorProject: "proj",
+  capability: "basic",
+  state: "completed",
+  expiresAt: new Date(Date.now() + 3_600_000),
+  createdAt: backdated,
+  updatedAt: backdated,
+});
+
+/** The stranded record: parked failed, the shape that used to starve fresh targets. */
+const strandedRecord = (
+  kind: "run" | "dataset" | "experiment" | "export",
+  targetId: string,
+) => ({
+  id: randomUUID(),
+  scopeKey: scopeA.key,
+  actorId: scopeA.actorId,
+  botId: scopeA.botId,
+  kind,
+  targetId,
+  retentionDays: 7,
+  state: "failed" as const,
+  lastError: "OPIK_TIMEOUT" as const,
+});
+
+/**
+ * Plants stranded records the way the wild has them: parked failed, each still
+ * holding its live work ticket (a retry waiting on its delay — not a purge
+ * orphan; an orphan must resurface so discovery can rebuild its ticket, the
+ * purge precondition below).
+ */
+const plantStranded = async (
+  kind: "run" | "dataset" | "experiment" | "export",
+  targetIds: readonly string[],
+) => {
+  const records = targetIds.map((id) => strandedRecord(kind, id));
+  await database.insert(aiObservationRetentionDeletions).values(records);
+  await database
+    .insert(workItems)
+    .values(
+      records.map(({ id }) => ({ kind: "opik.retention", key: id as string })),
+    );
+};
+
+const offered = async (
+  kind: "run" | "dataset" | "experiment" | "export",
+  targetId: string,
+) => {
+  const records = await deletionsFor(scopeA);
+  return records.some(
+    (record) => record.kind === kind && record.targetId === targetId,
+  );
+};
+
+test("a stranded run record does not crowd a fresh target out of the batch (OCR R2-39)", async () => {
+  // 500 expired bindings whose records already exist, planted first so the old
+  // unordered scan offers them first, then one fresh expired binding with no
+  // record at all.
+  const stranded = Array.from({ length: 500 }, () =>
+    plantedExpiredBinding(backdate(8)),
+  );
+  await database.insert(aiObservationBindings).values(stranded);
+  const fresh = plantedExpiredBinding(backdate(8));
+  await database.insert(aiObservationBindings).values(fresh);
+  await plantStranded(
+    "run",
+    stranded.map(({ id }) => id),
+  );
+
+  await workerFor().discover();
+
+  expect(await offered("run", fresh.id)).toBe(true);
+});
+
+test("discovery offers oldest-expired first, not scan order (OCR R2-39)", async () => {
+  const newest = plantedExpiredBinding(
+    sql`now() - make_interval(days => 7, hours => 12)`,
+  );
+  const fillers = Array.from({ length: 500 }, () =>
+    plantedExpiredBinding(backdate(8)),
+  );
+  const oldest = plantedExpiredBinding(backdate(100));
+  // Physical order puts the oldest LAST: an unordered batch of 500 starves it
+  // every pass. The 12-hour margin keeps the boundary deterministic — the
+  // newest expired target is the one that waits, never a random uuid tiebreak.
+  await database
+    .insert(aiObservationBindings)
+    .values([newest, ...fillers, oldest]);
+
+  await workerFor().discover();
+
+  expect(await offered("run", oldest.id)).toBe(true);
+  expect(await offered("run", newest.id)).toBe(false);
+});
+
+test("a stranded dataset record does not crowd a fresh target out of the batch (OCR R2-39)", async () => {
+  const stranded = Array.from({ length: 500 }, () => ({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    name: `t35-r239-${randomUUID()}`,
+    locatorWorkspace: "ws",
+    locatorProject: "proj",
+    syncState: "pending",
+    createdAt: backdate(40),
+    updatedAt: backdate(40),
+  }));
+  await database.insert(aiObservationDatasets).values(stranded);
+  const fresh = {
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    name: `t35-r239-${randomUUID()}`,
+    locatorWorkspace: "ws",
+    locatorProject: "proj",
+    syncState: "pending",
+    createdAt: backdate(40),
+    updatedAt: backdate(40),
+  };
+  await database.insert(aiObservationDatasets).values(fresh);
+  await plantStranded(
+    "dataset",
+    stranded.map(({ id }) => id),
+  );
+
+  await workerFor().discover();
+
+  expect(await offered("dataset", fresh.id)).toBe(true);
+});
+
+test("a stranded experiment record does not crowd a fresh target out of the batch (OCR R2-39)", async () => {
+  // One shared pinned version is enough: discovery reads the experiment rows.
+  const { version } = await datasetStore.saveVersion(scopeA, {
+    datasetName: `t35-r239-${randomUUID()}`,
+    cases: [oneCase(`run-${randomUUID()}`)],
+  });
+  const experimentRow = () => ({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    name: `t35-r239-${randomUUID()}`,
+    datasetVersionId: version.id,
+    datasetContentHash: version.contentHash,
+    config: {},
+    state: "draft",
+    createdAt: backdate(40),
+    updatedAt: backdate(40),
+  });
+  const stranded = Array.from({ length: 500 }, experimentRow);
+  await database.insert(aiObservationExperiments).values(stranded);
+  const fresh = experimentRow();
+  await database.insert(aiObservationExperiments).values(fresh);
+  await plantStranded(
+    "experiment",
+    stranded.map(({ id }) => id),
+  );
+
+  await workerFor().discover();
+
+  expect(await offered("experiment", fresh.id)).toBe(true);
+});
+
+test("a stranded export record does not crowd a fresh target out of the batch (OCR R2-39)", async () => {
+  const exportRow = () => ({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    state: "failed",
+    rowLimit: 10,
+    redactionPolicyVersion: REDACTION_POLICY_VERSION,
+    locatorWorkspace: "ws",
+    locatorProject: "proj",
+    settledAt: backdate(8),
+    createdAt: backdate(9),
+    updatedAt: backdate(8),
+  });
+  const stranded = Array.from({ length: 500 }, exportRow);
+  await database.insert(aiObservationExportJobs).values(stranded);
+  const fresh = exportRow();
+  await database.insert(aiObservationExportJobs).values(fresh);
+  await plantStranded(
+    "export",
+    stranded.map(({ id }) => id),
+  );
+
+  await workerFor().discover();
+
+  expect(await offered("export", fresh.id)).toBe(true);
+});
+
 test("discovery re-offers a purged ticket while the record is non-terminal (the purge precondition)", async () => {
   // The L2 forward pitfall, as the precondition it is: a purge that removes a
   // ticket parked on a pending/failed record must not wedge the target for good
@@ -641,6 +855,58 @@ test("a missing capability fails upstream-carrying records without deleting them
   expect(
     await fresh`select count(*)::int as n from ai_observation_bindings where id = ${unreconciled.id}`,
   ).toEqual([{ n: 0 }]);
+});
+
+test("the stop-work pass waits for the gate: a capability-missing deletion cancels no export (OCR R2-43)", async () => {
+  await expiredBinding(scopeA, {
+    opikTraceId: `trace-${randomUUID()}`,
+    days: 8,
+  });
+  // A user export already queued in this scope when the deletion pass starts.
+  const exportJob = await exportStore.enqueue(scopeA, 10);
+
+  // No port: the gate refuses every upstream-carrying deletion.
+  await workerFor({ port: null }).sweep();
+
+  const record = (await deletionsFor(scopeA))[0];
+  expect(record.state).toBe("failed");
+  expect(record.lastError).toBe("CAPABILITY_MISSING");
+  // The gate closed before any deletion I/O — and before the stop-work pass:
+  // settling the scope's exports cancelled is damage, not a precondition,
+  // when no deletion can proceed at all.
+  const job = await exportStore.get(scopeA, exportJob.id);
+  expect(job?.state).toBe("queued");
+  expect(job?.settledAt).toBeNull();
+});
+
+test("a failed pass never re-cancels the exports the user enqueued after it (OCR R2-43)", async () => {
+  await expiredBinding(scopeA, {
+    opikTraceId: `trace-${randomUUID()}`,
+    days: 8,
+  });
+  const before = await exportStore.enqueue(scopeA, 10);
+  const upstream = fakePort({ failFirstTraceDelete: true });
+  const worker = workerFor({ port: upstream.port });
+
+  await worker.sweep();
+  // Pass one: the stop-work precondition ran — the export already queued in the
+  // scope settled cancelled, before the upstream call failed under it.
+  expect((await exportStore.get(scopeA, before.id))?.state).toBe("cancelled");
+  let record = (await deletionsFor(scopeA))[0];
+  expect(record.state).toBe("failed");
+  expect(record.lastError).toBe("OPIK_TIMEOUT");
+
+  // While the record parks failed, the user enqueues a fresh export.
+  const after = await exportStore.enqueue(scopeA, 10);
+
+  // The retry pass (m163's immediate first retry) completes the deletion…
+  await worker.sweep();
+  record = (await deletionsFor(scopeA))[0];
+  expect(record.state).toBe("deleted");
+  expect(upstream.calls.deleteTraces).toHaveLength(2);
+  // …and must NOT replay the stop-work pass against it: the fresh export is
+  // the user's new intent, not data the deletion is about to change.
+  expect((await exportStore.get(scopeA, after.id))?.state).toBe("queued");
 });
 
 test("dataset deletion goes through the sanctioned channel: versions cascade, the guard still refuses everyone else (AC2)", async () => {

@@ -19,6 +19,7 @@ import { createExperimentResultService } from "../src/ai-observability/results";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import { createAuditStore } from "../src/audit";
 import { aiObservationExperimentExecutions } from "../src/db/schema/ai-observability-executions";
+import { aiObservationRetentionDeletions } from "../src/db/schema/ai-observability-retention";
 import { workItems } from "../src/db/schema/work";
 import { opikTestDatabase } from "./support/opik-test-db";
 import { rejectionOf } from "./support/pg-errors";
@@ -219,6 +220,115 @@ test("enqueue refuses a draft experiment outright", async () => {
       .from(aiObservationExperimentExecutions)
       .where(eq(aiObservationExperimentExecutions.experimentId, draft.id)),
   ).toEqual([]);
+});
+
+/**
+ * Plants a retention deletion record for the target (M1a): from this moment
+ * every reader — and every write seam, the execution face included — must treat
+ * the target as gone (OCR m138), while the record stays until retention's own
+ * worker deletes the row.
+ */
+async function plantDeletion(
+  kind: "experiment" | "dataset",
+  targetId: string,
+): Promise<string> {
+  const id = randomUUID();
+  await database.insert(aiObservationRetentionDeletions).values({
+    id,
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    kind,
+    targetId,
+    retentionDays: 30,
+    state: "pending",
+  });
+  return id;
+}
+
+test("enqueue cannot find a deletion-in-flight experiment (OCR R2-44)", async () => {
+  const { experiment } = await frozenExperiment();
+  const recordId = await plantDeletion("experiment", experiment.id);
+  try {
+    // The read face already answers not-found for this experiment (m138); the
+    // enqueue seam — start, ticket and billing all ride behind it — must give
+    // the same answer, not mint an execution the read face cannot see.
+    await expect(executions.enqueue(scopeA, experiment.id)).rejects.toThrow(
+      new ExecutionError("EXECUTION_EXPERIMENT_NOT_FOUND", 404),
+    );
+    expect(
+      await database
+        .select()
+        .from(aiObservationExperimentExecutions)
+        .where(
+          eq(aiObservationExperimentExecutions.experimentId, experiment.id),
+        ),
+    ).toEqual([]);
+  } finally {
+    await database
+      .delete(aiObservationRetentionDeletions)
+      .where(eq(aiObservationRetentionDeletions.id, recordId));
+  }
+});
+
+test("the worker refuses to bill an experiment whose deletion landed after enqueue (OCR R2-44)", {
+  timeout: 30_000,
+}, async () => {
+  const { experiment } = await frozenExperiment();
+  const row = await executions.enqueue(scopeA, experiment.id);
+  const recordId = await plantDeletion("experiment", experiment.id);
+  try {
+    let ran = false;
+    const worker = workerFor(async () => {
+      ran = true;
+      return { status: "completed" };
+    });
+    await worker.sweep();
+
+    // Fail-closed before a single case: the deletion record blinds the
+    // re-check exactly as it blinds the read face, so the execution settles
+    // failed and nothing runs — no cases, no charge.
+    const settled = await executions.get(scopeA, row.id);
+    expect(settled?.state).toBe("failed");
+    expect(settled?.errorCode).toBe("EXPERIMENT_NOT_FROZEN");
+    expect(ran).toBe(false);
+  } finally {
+    await database
+      .delete(aiObservationRetentionDeletions)
+      .where(eq(aiObservationRetentionDeletions.id, recordId));
+  }
+});
+
+test("the worker refuses to bill a case whose pinned dataset is deletion-in-flight (OCR R2-44)", {
+  timeout: 30_000,
+}, async () => {
+  const { experiment } = await frozenExperiment();
+  const version = await datasets.getVersion(
+    scopeA,
+    experiment.datasetVersionId,
+  );
+  const row = await executions.enqueue(scopeA, experiment.id);
+  const recordId = await plantDeletion("dataset", version!.datasetId);
+  try {
+    let ran = false;
+    const worker = workerFor(async () => {
+      ran = true;
+      return { status: "completed" };
+    });
+    await worker.sweep();
+
+    // The version row hides with its dataset: the deletion record targets the
+    // subject, the cascade will take the versions — and the execution reading
+    // frozen cases out of them settles failed before anything runs.
+    const settled = await executions.get(scopeA, row.id);
+    expect(settled?.state).toBe("failed");
+    expect(settled?.errorCode).toBe("DATASET_VERSION_MISSING");
+    expect(ran).toBe(false);
+  } finally {
+    await database
+      .delete(aiObservationRetentionDeletions)
+      .where(eq(aiObservationRetentionDeletions.id, recordId));
+  }
 });
 
 test("enqueue cannot find another scope's experiment", async () => {
