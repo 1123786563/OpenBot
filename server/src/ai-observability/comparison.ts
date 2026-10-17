@@ -233,6 +233,17 @@ function textEqual(baseline: SafeText, candidate: SafeText): boolean {
   );
 }
 
+/** Tool whitelists compare only when every name is projected on both sides (OCR m115). */
+function readOnlyToolsEqual(
+  baseline: readonly SafeText[],
+  candidate: readonly SafeText[],
+): boolean {
+  return (
+    baseline.length === candidate.length &&
+    baseline.every((one, index) => textEqual(one, candidate[index]))
+  );
+}
+
 /** The per-field ledger over two frozen experiments. */
 function compatibility(
   baseline: ObservationExperiment,
@@ -270,9 +281,13 @@ function compatibility(
       field: "readOnlyTools",
       baseline: canonicalJson(baseline.config.readOnlyTools.map(textWitness)),
       candidate: canonicalJson(candidate.config.readOnlyTools.map(textWitness)),
-      equal:
-        canonicalJson(baseline.config.readOnlyTools.map(textWitness)) ===
-        canonicalJson(candidate.config.readOnlyTools.map(textWitness)),
+      // Unknown, never assumed equal (OCR m115, the textEqual discipline): a
+      // withheld tool name folds to null on either side, and two lists of nulls
+      // are not a positive claim that the whitelists match.
+      equal: readOnlyToolsEqual(
+        baseline.config.readOnlyTools,
+        candidate.config.readOnlyTools,
+      ),
       blocking: false,
     },
     {

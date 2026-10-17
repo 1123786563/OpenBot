@@ -216,7 +216,9 @@ export function createEvaluationToolGate(
         typeof value === "object" &&
         value !== null &&
         !Array.isArray(value) &&
-        toolName in value
+        // Own properties only (OCR m130): a prototype-chain hit would replay an
+        // inherited function as if the freeze had pinned it.
+        Object.hasOwn(value, toolName)
       ) {
         return (value as Record<string, unknown>)[toolName];
       }

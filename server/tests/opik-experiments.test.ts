@@ -199,6 +199,20 @@ describe("the freeze pipeline projects configuration before it is hashed", () =>
       0,
     );
   });
+
+  test("a refused readOnlyTools name narrows the evaluation and is counted (OCR m136)", () => {
+    // The whitelist name matches a credential class: projectSafeName drops it to
+    // omitted, silently narrowing what the evaluation may call — exactly what the
+    // canary count exists to surface.
+    const frozen = freezeExperimentConfig({
+      ...config,
+      readOnlyTools: ["web_search", "sk-live-abc123def456ghi789jkl012"],
+    });
+    expect(frozen.readOnlyTools).toHaveLength(2);
+    const refused = frozen.readOnlyTools.filter((one) => one.state === "omitted");
+    expect(refused).toHaveLength(1);
+    expect(countExperimentCanaryFindings(frozen)).toBe(1);
+  });
 });
 
 describe("the configuration hash is stable, canonical and policy-bound", () => {

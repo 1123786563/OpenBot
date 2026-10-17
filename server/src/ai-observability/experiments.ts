@@ -250,10 +250,23 @@ export function countExperimentCanaryFindings(
     }
     return 0;
   };
-  return Object.values(frozen).reduce(
-    (sum, one) => sum + walk(one as SafeValue | SafeText),
-    0,
-  );
+  // readOnlyTools is a SafeText list, not a SafeValue tree — the generic walk
+  // above sees one non-projected node at most, never the refused names inside it
+  // (OCR m136). Each refused whitelist entry is its own canary: the evaluation's
+  // callable-tool set silently narrowed, and the submitter must see that.
+  const refusedTools = frozen.readOnlyTools.filter(
+    (one) => one.state === "omitted",
+  ).length;
+  const walked = [
+    frozen.botConfig,
+    frozen.prompt,
+    frozen.modelName,
+    frozen.modelParameters,
+    frozen.toolFixtures,
+    frozen.judgeConfig,
+    frozen.judgeVersion,
+  ].reduce((sum, one) => sum + walk(one), 0);
+  return refusedTools + walked;
 }
 
 export function createObservationExperimentStore(
@@ -271,6 +284,10 @@ export function createObservationExperimentStore(
         and(
           eq(aiObservationDatasetVersions.id, versionId),
           eq(aiObservationDatasetVersions.scopeKey, scope.key),
+          // A version hides with its dataset (OCR m137): the sibling reads already
+          // answer this, and a pin channel that bypasses the visibility rule would
+          // either block the deletion forever or freeze experiments onto a ghost.
+          notPendingDeletion("dataset", aiObservationDatasetVersions.datasetId),
         ),
       );
     const version = rows[0];
@@ -422,6 +439,10 @@ export function createObservationExperimentStore(
                 eq(aiObservationExperiments.scopeKey, scope.key),
                 eq(aiObservationExperiments.configHash, hash),
                 eq(aiObservationExperiments.state, "frozen"),
+                // The replay channel is a reader too (OCR m138): a deletion-in-flight
+                // experiment stays gone — a retry must not resurrect it as an
+                // idempotent answer.
+                notPendingDeletion("experiment", aiObservationExperiments.id),
               ),
             );
           if (elsewhere[0]) {
@@ -475,6 +496,8 @@ export function createObservationExperimentStore(
               eq(aiObservationExperiments.scopeKey, scope.key),
               eq(aiObservationExperiments.configHash, hash),
               eq(aiObservationExperiments.state, "frozen"),
+              // Same replay-channel visibility (OCR m138) as the draft branch above.
+              notPendingDeletion("experiment", aiObservationExperiments.id),
             ),
           );
         if (byHash[0]) {
