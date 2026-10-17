@@ -1,16 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { createAiObservabilityRoutes } from "../src/ai-observability/routes";
+import { canManageAgent } from "../src/agents/profile-policy";
+import type { AgentProfile } from "../src/agents/profile-types";
 import {
+  type BotManagementCheck,
   OBSERVATION_ACCESS_DENIED,
   OBSERVATION_BOT_REQUIRED,
   resolveObservationBot,
-  type BotManagementCheck,
 } from "../src/ai-observability/context";
+import { createAiObservabilityRoutes } from "../src/ai-observability/routes";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
-import { canManageAgent } from "../src/agents/profile-policy";
-import type { AgentProfile } from "../src/agents/profile-types";
 
 const owner = { id: "user-owner", role: "user" } as const;
 const stranger = { id: "user-stranger", role: "user" } as const;
