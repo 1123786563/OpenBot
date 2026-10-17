@@ -5,6 +5,7 @@ import type {
   CraftAttachment,
   CraftFileEntry,
   CraftMessage,
+  CraftPreviewTicket,
   CraftSandboxStatusResponse,
   CraftSession,
   CraftWebappInfo,
@@ -223,6 +224,19 @@ export function webappInfo(
   return client(sessionPath(id, "/webapp-info"), {
     fallback: "The web app could not be inspected.",
     signal,
+  }).then((r) => r.json());
+}
+
+/**
+ * Exchange the signed-in session for a single-use preview pass (#360/#362).
+ * The ticket appears in exactly one place — the one navigation to `origin` —
+ * and is consumed by the 302 that follows; it is never stored, logged, or
+ * retried with.
+ */
+export function issuePreviewTicket(id: string): Promise<CraftPreviewTicket> {
+  return client(sessionPath(id, "/preview-ticket"), {
+    method: "POST",
+    fallback: "The preview pass could not be issued.",
   }).then((r) => r.json());
 }
 

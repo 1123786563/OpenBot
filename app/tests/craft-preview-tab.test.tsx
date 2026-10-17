@@ -50,19 +50,50 @@ afterEach(() => {
 type Info = {
   has_webapp: boolean | null;
   webapp_url: string | null;
+  previewOrigin?: string | null;
+  previewOriginClosedReason?: string | null;
   status: string;
   ready: boolean;
 };
 
-/** Answer `/webapp-info` with a fixed shape. */
-function serving(info: Info) {
-  global.fetch = (async (input: RequestInfo | URL) => {
+/** D11 (#362): the preview address is ABSOLUTE — the preview origin's own host. */
+const PREVIEW_ORIGIN = "http://127.0.0.1:3001/abc123label";
+
+/** The single-use pass the exchange answers with (D4/D9). */
+const TICKET = "single-use-ticket-32-bytes";
+
+/** Answer `/webapp-info` and `POST /preview-ticket`, recording the exchanges. */
+function serving(
+  info: Info,
+  options: { ticketFails?: boolean } = {},
+) {
+  const posts: string[] = [];
+  global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes("/webapp-info")) {
-      return Response.json(info);
+      return Response.json({
+        previewOrigin: info.webapp_url,
+        previewOriginClosedReason: null,
+        ...info,
+      });
+    }
+    if (url.includes("/preview-ticket")) {
+      posts.push(`${init?.method ?? "GET"} ${url}`);
+      if (options.ticketFails) {
+        return Response.json(
+          { error: "The sandbox is not available." },
+          { status: 503 },
+        );
+      }
+      return Response.json({
+        ticket: TICKET,
+        expiresAt: new Date().toISOString(),
+        origin: PREVIEW_ORIGIN,
+      });
     }
     return Response.json({});
   }) as unknown as typeof fetch;
+  return { posts };
 }
 
 function draw(): RenderResult {
@@ -77,6 +108,7 @@ function draw(): RenderResult {
 }
 
 const URL = "/api/craft/sessions/cs-1/webapp";
+void URL;
 
 /**
  * The pane's own copy, read through i18n so the assertions follow the bundle instead of
@@ -92,7 +124,9 @@ function t(
     | "preview.emptyTitle"
     | "preview.expand"
     | "preview.collapse"
-    | "preview.openInNewTab",
+    | "preview.openInNewTab"
+    | "preview.passTitle"
+    | "preview.closedTitle",
 ) {
   return i18n.t(key, { ns: "craft" });
 }
@@ -110,7 +144,7 @@ describe("expanding the preview", () => {
   function drawServing() {
     serving({
       has_webapp: true,
-      webapp_url: URL,
+      webapp_url: PREVIEW_ORIGIN,
       status: "running",
       ready: true,
     });
@@ -126,7 +160,7 @@ describe("expanding the preview", () => {
   test("no expand control while nothing is serving", async () => {
     serving({
       has_webapp: true,
-      webapp_url: URL,
+      webapp_url: PREVIEW_ORIGIN,
       status: "stopped",
       ready: false,
     });
@@ -178,11 +212,14 @@ describe("expanding the preview", () => {
     expect(view.container.querySelector("iframe")).toBe(before);
   });
 
-  test("a serving preview also offers the proxy URL in a new tab", async () => {
+  test("a serving preview offers the preview origin in a new tab (the cookie is already planted)", async () => {
     const view = drawServing();
     await view.findByTitle(t("preview.title"));
     const link = view.getByLabelText(t("preview.openInNewTab"));
-    expect(link.getAttribute("href")).toBe(URL);
+    // The PLAIN origin, never the entry URL: the pass is single-use and already
+    // consumed by the 302; the new tab rides the preview domain's cookie.
+    expect(link.getAttribute("href")).toBe(PREVIEW_ORIGIN);
+    expect(link.getAttribute("href")).not.toContain("ticket=");
     expect(link.getAttribute("target")).toBe("_blank");
     // A new tab is a new browsing context: without this the opened app keeps a
     // handle on its opener, which is the coupling a separate tab exists to avoid.
@@ -193,7 +230,7 @@ describe("expanding the preview", () => {
 test("a scaffold whose dev server is down renders the down state, never an iframe", async () => {
   serving({
     has_webapp: true,
-    webapp_url: URL,
+    webapp_url: PREVIEW_ORIGIN,
     status: "stopped",
     ready: false,
   });
@@ -205,10 +242,12 @@ test("a scaffold whose dev server is down renders the down state, never an ifram
   expect(view.getByText(t("preview.downHint"))).toBeTruthy();
 });
 
-test("a ready dev server renders the iframe pointed at the proxy URL", async () => {
-  serving({
+// ── #362: the ticket exchange — one hop, one ticket, then a clean URL ─────────
+
+test("a ready dev server exchanges a pass first; the iframe enters with the ticket exactly once", async () => {
+  const { posts } = serving({
     has_webapp: true,
-    webapp_url: URL,
+    webapp_url: PREVIEW_ORIGIN,
     status: "running",
     ready: true,
   });
@@ -217,13 +256,75 @@ test("a ready dev server renders the iframe pointed at the proxy URL", async () 
   const frame = (await view.findByTitle(
     t("preview.title"),
   )) as HTMLIFrameElement;
-  expect(frame.getAttribute("src")).toBe(URL);
+  // The ONE appearance of the pass: the entry navigation. The preview origin's
+  // 302 strips it from every URL that follows (D4).
+  expect(frame.getAttribute("src")).toBe(
+    `${PREVIEW_ORIGIN}?ticket=${encodeURIComponent(TICKET)}`,
+  );
+  expect(posts).toEqual(["POST /api/craft/sessions/cs-1/preview-ticket"]);
+});
+
+test("a fresh webapp-info answer never re-entries the frame — the src is stable across refetches", async () => {
+  const { posts } = serving({
+    has_webapp: true,
+    webapp_url: PREVIEW_ORIGIN,
+    status: "running",
+    ready: true,
+  });
+  const view = draw();
+  const frame = (await view.findByTitle(
+    t("preview.title"),
+  )) as HTMLIFrameElement;
+  const src = frame.getAttribute("src");
+
+  // A turn's end (or any invalidation) refetches webapp-info; the answer is
+  // byte-identical. The exchange must NOT run again and the frame must NOT
+  // navigate — a replaced src reloads the app mid-test.
+  await settleReactWork();
+  expect(frame.getAttribute("src")).toBe(src);
+  expect(posts.length).toBe(1);
+});
+
+test("a failed exchange holds the pass state with a retry, never points a frame at the origin", async () => {
+  serving(
+    {
+      has_webapp: true,
+      webapp_url: PREVIEW_ORIGIN,
+      status: "running",
+      ready: true,
+    },
+    { ticketFails: true },
+  );
+  const view = draw();
+
+  await view.findByText(t("preview.passTitle"));
+  expect(view.container.querySelector("iframe")).toBeNull();
+  // The serving app must not wear the "isn't running" sentence: the server is
+  // up; only the pass is missing.
+  expect(view.queryByText(t("preview.downTitle"))).toBeNull();
+});
+
+test("a closed preview origin surfaces its displayable reason (m-5), never an iframe", async () => {
+  serving({
+    has_webapp: true,
+    webapp_url: null,
+    previewOrigin: null,
+    previewOriginClosedReason:
+      "The preview origin is disabled on this deployment (OPENBOT_CRAFT_PREVIEW_ORIGIN_ENABLED is false).",
+    status: "running",
+    ready: true,
+  });
+  const view = draw();
+
+  await view.findByText(t("preview.closedTitle"));
+  expect(view.getByText(/OPENBOT_CRAFT_PREVIEW_ORIGIN_ENABLED/)).toBeTruthy();
+  expect(view.container.querySelector("iframe")).toBeNull();
 });
 
 test("no scaffold at all renders the waiting state, not the down state", async () => {
   serving({
     has_webapp: false,
-    webapp_url: URL,
+    webapp_url: PREVIEW_ORIGIN,
     status: "stopped",
     ready: false,
   });
@@ -253,25 +354,31 @@ test("the poll runs only while an app exists but is not serving", () => {
   // and waits for a turn's end to invalidate it.
   const down = previewPollInterval({
     has_webapp: true,
-    webapp_url: URL,
+    webapp_url: PREVIEW_ORIGIN,
     status: "stopped",
     ready: false,
+    previewOrigin: PREVIEW_ORIGIN,
+    previewOriginClosedReason: null,
   });
   expect(down).toBeGreaterThan(0);
   expect(
     previewPollInterval({
       has_webapp: true,
-      webapp_url: URL,
+      webapp_url: PREVIEW_ORIGIN,
       status: "running",
       ready: true,
+      previewOrigin: PREVIEW_ORIGIN,
+      previewOriginClosedReason: null,
     }),
   ).toBe(false);
   expect(
     previewPollInterval({
       has_webapp: false,
-      webapp_url: URL,
+      webapp_url: PREVIEW_ORIGIN,
       status: "stopped",
       ready: false,
+      previewOrigin: PREVIEW_ORIGIN,
+      previewOriginClosedReason: null,
     }),
   ).toBe(false);
   expect(
@@ -280,6 +387,8 @@ test("the poll runs only while an app exists but is not serving", () => {
       webapp_url: null,
       status: "no_sandbox",
       ready: false,
+      previewOrigin: null,
+      previewOriginClosedReason: null,
     }),
   ).toBe(false);
   expect(previewPollInterval(undefined)).toBe(false);

@@ -1,19 +1,22 @@
 /**
  * How this app reaches its OWN API routes.
  *
- * The preview serves the app under a session-scoped basePath (`/api/craft/sessions/<id>/webapp`),
- * and Next.js prefixes `<Link>`, `router.push` and assets with it — but not a raw `fetch()`.
- * So the URL you hand to `fetch` has to carry the prefix yourself:
+ * The preview serves the app at the ROOT of its own origin (the host-routed
+ * preview origin), so the correct — and only — way to call this app's own API
+ * is a root-absolute path:
  *
- *   import { apiUrl } from "@/lib/base-path";
- *   await fetch(apiUrl("/api/tasks"));            // ✅ reaches this app's route handler
- *   await fetch("/api/tasks");                    // ❌ hits the host product's /api/** instead
- *   await fetch("api/tasks");                     // ❌ drops the /webapp segment (no trailing slash)
+ *   await fetch("/api/tasks");   // ✅ reaches this app's own route handler
  *
- * `apiUrl` accepts a leading slash or not, and collapses to the bare path when the app is
- * served at the root, so call sites never branch on where they are mounted.
+ * The app's origin is its own (the preview host), separate from the platform's,
+ * so a same-origin `fetch` cannot reach any other server's API and no platform
+ * cookie is in scope.
+ *
+ * `BASE_PATH`/`apiUrl` stay exported for apps generated when the scaffold
+ * served under a session-scoped mount: `BASE_PATH` is now always the empty
+ * string, so `apiUrl` returns the input path with a single leading slash —
+ * code that already routes through it keeps working unchanged.
  */
-export const BASE_PATH: string = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+export const BASE_PATH: string = "";
 
 export function apiUrl(path: string): string {
   const suffix = path.startsWith("/") ? path : `/${path}`;

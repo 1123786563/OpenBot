@@ -32,17 +32,105 @@
   "不回退交互能力：hydration、HMR 热更新、POST/PUT/PATCH/DELETE 透传、全屏放大均为既有行为，每张 Ticket 不得引入回归。",
   "拒绝形状与既有预览代理一致（401/404/503），拒绝原因可向用户展示。",
   "票据值不得进入任何日志字段；错误响应不回显票据。",
-  "每张 Ticket 完成须以真实浏览器证据为准（Playwright + Casdoor 登录 + 真实 dev server），单测桩不算通过。"
+  "每张 Ticket 完成须以真实浏览器证据为准（Playwright + Casdoor 登录 + 真实 dev server），单测桩不算通过。",
+  "实现者在自己的分支上周期性 commit（绝不 push）：worktree 与终端会随 Orca 重启丢失，未提交工作不会丢但会失去 resume 会话；每次 commit 都是可恢复检查点。push 与合并由 coordinator 决定。"
  ],
  "tickets": [
-  { "id": "00", "file": "issues/00-acme-dns01-wildcard-certificate.md", "ac": ["AC8"], "blocked_by": [], "note": "仅生产形态需要；dev (127.0.0.1) 不阻塞" },
-  { "id": "01", "file": "issues/01-preview-ticket-primitive.md", "ac": ["AC4"], "blocked_by": [] },
-  { "id": "02", "file": "issues/02-preview-origin-host-routing-and-gate.md", "ac": ["AC6", "AC9"], "blocked_by": ["01"] },
-  { "id": "03", "file": "issues/03-preview-proxy-host-routing-and-ticket-flow.md", "ac": ["AC1", "AC2"], "blocked_by": ["01", "02"] },
-  { "id": "04", "file": "issues/04-hmr-upgrade-on-preview-origin.md", "ac": ["AC5"], "blocked_by": ["03"] },
-  { "id": "05", "file": "issues/05-scaffold-drop-basepath.md", "ac": ["AC2"], "blocked_by": ["03"] },
-  { "id": "06", "file": "issues/06-seam-isolation-plus-interactivity-e2e.md", "ac": ["AC1", "AC2", "AC3", "AC5"], "blocked_by": ["03", "04", "05"] },
-  { "id": "07", "file": "issues/07-refusal-and-failure-injection.md", "ac": ["AC3", "AC4"], "blocked_by": ["06"] },
-  { "id": "08", "file": "issues/08-legacy-session-regression.md", "ac": ["AC7"], "blocked_by": ["06"] }
+  {
+   "id": "00",
+   "file": "issues/00-acme-dns01-wildcard-certificate.md",
+   "ac": [
+    "AC8"
+   ],
+   "blocked_by": [],
+   "note": "仅生产形态需要；dev (127.0.0.1) 不阻塞"
+  },
+  {
+   "id": "01",
+   "file": "issues/01-preview-ticket-primitive.md",
+   "ac": [
+    "AC4"
+   ],
+   "blocked_by": []
+  },
+  {
+   "id": "02",
+   "file": "issues/02-preview-origin-host-routing-and-gate.md",
+   "ac": [
+    "AC6",
+    "AC9"
+   ],
+   "blocked_by": [
+    "01"
+   ]
+  },
+  {
+   "id": "03",
+   "file": "issues/03-preview-proxy-host-routing-and-ticket-flow.md",
+   "ac": [
+    "AC1",
+    "AC2"
+   ],
+   "blocked_by": [
+    "01",
+    "02"
+   ]
+  },
+  {
+   "id": "04",
+   "file": "issues/04-hmr-upgrade-on-preview-origin.md",
+   "ac": [
+    "AC5"
+   ],
+   "blocked_by": [
+    "03"
+   ]
+  },
+  {
+   "id": "05",
+   "file": "issues/05-scaffold-drop-basepath.md",
+   "ac": [
+    "AC2"
+   ],
+   "blocked_by": [
+    "03"
+   ]
+  },
+  {
+   "id": "06",
+   "file": "issues/06-seam-isolation-plus-interactivity-e2e.md",
+   "ac": [
+    "AC1",
+    "AC2",
+    "AC3",
+    "AC5"
+   ],
+   "blocked_by": [
+    "03",
+    "04",
+    "05"
+   ]
+  },
+  {
+   "id": "07",
+   "file": "issues/07-refusal-and-failure-injection.md",
+   "ac": [
+    "AC3",
+    "AC4"
+   ],
+   "blocked_by": [
+    "06"
+   ]
+  },
+  {
+   "id": "08",
+   "file": "issues/08-legacy-session-regression.md",
+   "ac": [
+    "AC7"
+   ],
+   "blocked_by": [
+    "06"
+   ]
+  }
  ]
 }
