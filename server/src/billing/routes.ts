@@ -20,8 +20,13 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
-import type { CreditWriter } from "./credits-writer";
 import type { Credits } from "./credits";
+import type { CreditWriter } from "./credits-writer";
+import {
+  findForeignAccountIdentity,
+  PayerCrossAccountAccessError,
+  resolvePayerForPersonalUser,
+} from "./payer-personal";
 import type { PaymentOrderReadScope } from "./payments/types";
 import type { BillingStatements } from "./statements";
 import { BillingError, type BillingService } from "./types";
@@ -130,11 +135,14 @@ export function createBillingStatementRoutes(deps: {
       return context.json({ error: "Supply a valid request." }, 400);
     }
     return context.json(
-      await deps.statements.invoices({
-        from: parsed.data.from ? new Date(parsed.data.from) : null,
-        to: parsed.data.to ? new Date(parsed.data.to) : null,
-        page: parsed.data.page,
-      }, billingReadScopeOf(context)),
+      await deps.statements.invoices(
+        {
+          from: parsed.data.from ? new Date(parsed.data.from) : null,
+          to: parsed.data.to ? new Date(parsed.data.to) : null,
+          page: parsed.data.page,
+        },
+        billingReadScopeOf(context),
+      ),
     );
   });
 
@@ -157,9 +165,24 @@ export function createBillingStatementRoutes(deps: {
  *
  * Mounted on the same `/api/billing` prefix under the same session, in the same spirit as the
  * statement reads beside it — but from a different source: the local credit ledger, not the
- * provider's reader and not the payment order table. `summary` is the plan's base allowance plus
- * the reward totals, `grants` the reward list, `consumption` the ledger with the same window/page
- * grammar as the bill list.
+ * provider's reader and not the payment order table.
+ *
+ * Every read answers ONE account: the signed-in user's own, resolved server-side from the
+ * authenticated identity through the payer resolution module (ticket 02.6). No route below takes
+ * an account parameter and none falls back to the deployment key: `/credits/summary` is the
+ * personal balance read — account type, available/consumed/expired and held, every grant with
+ * its derived life, and the pending-settlement placeholders (constant zeros behind an explicit
+ * not-enabled marker until group 06) — while `grants` is the reward list and `consumption` the
+ * ledger with the same window/page grammar as the bill list. The path is read-only by
+ * construction: resolution is the payer module's pure function (no mapping row is opened by a
+ * read) and every query beneath it is a SELECT.
+ *
+ * One refusal comes before any read (ticket 02.4): a request that carries an account identity
+ * (`userId`, `externalCustomerId`, `payerId`, `accountId`, `companyId`, `tenantId`, any casing)
+ * is answered 400, never an empty result — the account these reads answer is decided server-side
+ * from the session, so a client naming an account is a forgery attempt, not a filter.
+ * Authentication still wins: the identity check sits behind `requireUser`, so an unauthenticated
+ * caller sees 401.
  */
 export function createBillingCreditRoutes(deps: {
   credits: Credits;
@@ -167,7 +190,19 @@ export function createBillingCreditRoutes(deps: {
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
+  routes.use("*", async (context, next) => {
+    const identity = findForeignAccountIdentity(context.req.query());
+    if (identity !== null) {
+      throw new PayerCrossAccountAccessError(
+        `Credits are resolved server-side; the "${identity}" parameter names an account and is not accepted.`,
+      );
+    }
+    await next();
+  });
   routes.onError((error, context) => {
+    if (error instanceof PayerCrossAccountAccessError) {
+      return context.json({ error: error.message }, 400);
+    }
     if (error instanceof z.ZodError) {
       return context.json({ error: "Supply a valid request." }, 400);
     }
@@ -179,14 +214,19 @@ export function createBillingCreditRoutes(deps: {
   });
 
   routes.get("/credits/summary", async (context) => {
-    return context.json(await deps.credits.summary());
+    // The account is the session's own personal payer, resolved from the authenticated identity —
+    // pure, parameter-free, and a read that cannot open a mapping row.
+    const payer = resolvePayerForPersonalUser(context.var.actor);
+    return context.json(await deps.credits.personalBalance(payer));
   });
 
   routes.get("/credits/grants", async (context) => {
-    return context.json({ grants: await deps.credits.grants() });
+    const payer = resolvePayerForPersonalUser(context.var.actor);
+    return context.json({ grants: await deps.credits.grants(payer) });
   });
 
   routes.get("/credits/consumption", async (context) => {
+    const payer = resolvePayerForPersonalUser(context.var.actor);
     const parsed = statementQueryInput.safeParse({
       from: context.req.query("from"),
       to: context.req.query("to"),
@@ -196,11 +236,14 @@ export function createBillingCreditRoutes(deps: {
       return context.json({ error: "Supply a valid request." }, 400);
     }
     return context.json(
-      await deps.credits.consumption({
-        from: parsed.data.from ? new Date(parsed.data.from) : null,
-        to: parsed.data.to ? new Date(parsed.data.to) : null,
-        page: parsed.data.page,
-      }),
+      await deps.credits.consumption(
+        {
+          from: parsed.data.from ? new Date(parsed.data.from) : null,
+          to: parsed.data.to ? new Date(parsed.data.to) : null,
+          page: parsed.data.page,
+        },
+        payer,
+      ),
     );
   });
 
@@ -327,7 +370,10 @@ export function createBillingAdminRoutes(deps: {
     if (!deps.creditWriter) {
       // Configured without the writer, asked to grant: a refusal, not a silent no-op — the
       // caller is an operator who believes the credits landed, and they did not.
-      return context.json({ error: "Credits are unavailable. Try again." }, 503);
+      return context.json(
+        { error: "Credits are unavailable. Try again." },
+        503,
+      );
     }
     const expiresAt =
       input.expiresAt !== undefined
