@@ -12,7 +12,8 @@
     "invoices": "Bills",
     "notifications": "Notifications",
     "approvals": "Approvals",
-    "memory": "Memory"
+    "memory": "Memory",
+    "modelAccess": "Model access"
   },
   "billing": {
     "retry": "Retry",
@@ -405,5 +406,30 @@
       "pendingPurchase": "Another purchase is already pending. Finish or cancel it before buying again.",
       "cancelFailed": "The order could not be cancelled. Try again shortly."
     }
+  },
+  "modelAccess": {
+    "title": "Model access",
+    "description": "Authorize registered Bots to call models as you. Each authorization comes from your own confirmation of a one-time binding code; you can revoke any of them on its own.",
+    "confirmSection": "Confirm a Bot",
+    "codeTitle": "Binding code",
+    "codeDescription": "Paste the one-time code the Bot gave you. Nothing is authorized until you confirm what it names.",
+    "codePlaceholder": "obot_bbind_…",
+    "checkCode": "Check code",
+    "checking": "Checking…",
+    "invalidCode": "That binding code is not valid. Ask the Bot for a fresh one and try again.",
+    "previewTitle": "Authorize {{bot}}",
+    "previewIdentity": "It will act as your external identity {{identity}}.",
+    "previewExpires": "The code is valid until {{expiry}}.",
+    "confirm": "Authorize this Bot",
+    "confirming": "Authorizing…",
+    "confirmFailed": "The authorization could not be created. Try again with a fresh code.",
+    "cancel": "Cancel",
+    "grantedTitle": "Authorization created",
+    "grantedDescription": "{{bot}} may now call models as you ({{identity}}).",
+    "grantId": "Authorization ID: {{grantId}}",
+    "grantActive": "Active. Its key goes to the Bot's server only — never to this page or a chat.",
+    "grantedNext": "The Bot's server receives its own short-lived key from OpenBot; every call it makes spends your personal credits through this authorization.",
+    "aboutSection": "How this works",
+    "about": "A Bot asks its server for a binding code and hands it to you out of band. The code names one Bot and one external identity, lives for a few minutes, and works exactly once. Confirming here creates the authorization; no key, balance or credits are created with it."
   }
 }

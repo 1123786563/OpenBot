@@ -12,7 +12,8 @@
     "invoices": "账单管理",
     "notifications": "通知",
     "approvals": "批准",
-    "memory": "记忆"
+    "memory": "记忆",
+    "modelAccess": "模型访问"
   },
   "billing": {
     "retry": "重试",
@@ -405,5 +406,30 @@
       "pendingPurchase": "已有一笔待支付订单，请先完成支付或取消该订单后再购买",
       "cancelFailed": "取消订单失败，请稍后重试"
     }
+  },
+  "modelAccess": {
+    "title": "模型访问",
+    "description": "授权已登记的 Bot 以你的身份调用模型。每条授权都来自你对一次性绑定码的亲自确认，且可单独撤销。",
+    "confirmSection": "确认 Bot 授权",
+    "codeTitle": "绑定码",
+    "codeDescription": "粘贴 Bot 给你的一次性绑定码。在确认它所指向的内容之前，不会创建任何授权。",
+    "codePlaceholder": "obot_bbind_…",
+    "checkCode": "校验绑定码",
+    "checking": "校验中…",
+    "invalidCode": "绑定码无效。请向 Bot 重新获取后再试。",
+    "previewTitle": "授权 {{bot}}",
+    "previewIdentity": "它将绑定你的外部身份 {{identity}}。",
+    "previewExpires": "该绑定码有效期至 {{expiry}}。",
+    "confirm": "确认授权",
+    "confirming": "授权中…",
+    "confirmFailed": "授权创建失败。请换一个新的绑定码重试。",
+    "cancel": "取消",
+    "grantedTitle": "授权已创建",
+    "grantedDescription": "{{bot}} 现在可以以你的身份（{{identity}}）调用模型。",
+    "grantId": "授权 ID：{{grantId}}",
+    "grantActive": "已生效。Key 只会发给 Bot 的服务端，绝不出现在本页面或聊天中。",
+    "grantedNext": "Bot 的服务端会另行从 OpenBot 获取自己的短期 Key；它的每次调用都经由这条授权消耗你的个人积分。",
+    "aboutSection": "工作原理",
+    "about": "Bot 在它的服务端申请绑定码，并通过站外渠道交给你。绑定码只对应一个 Bot 和一个外部身份，几分钟内有效，且只能使用一次。在这里确认即创建授权；确认本身不产生 Key、余额或积分。"
   }
 }
