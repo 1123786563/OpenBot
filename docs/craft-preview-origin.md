@@ -274,3 +274,21 @@ unknown 的代价只是多一次重试。
 | `webapp-download` | 无需改动：自行打包 outputs/web，从不读 `webapp_url` | `server/src/craft/webapp-proxy.ts`（路由体无引用） |
 | 桌面端（Tauri） | 无需改动：`desktop/` 全树无 `webapp_url`/`webapp-info`/`previewOrigin` 引用 | `grep -rn "webapp_url|previewOrigin|webapp-info" desktop/` → 0 命中 |
 | 分享链路 | 无需改动：craft 的分享面是 `sharingScope`（会话行元数据），没有消费 `webapp_url` 的分享 URL 构造 | `grep -rn sharingScope server/src/craft app/src/lib/craft` |
+
+## #358 修复期裁决提案（待批准，批准前不作为验收依据）
+
+以下两条是与批准 Spec 原文有出入的表述修正提案，按修复计划 Task 4 提出，
+**批准前**相关验收结论保持 `partial`，不标 `verified`：
+
+1. **D6（basePath 退场）建议表述为**："生产 hash Host 在根路径；dev 默认
+   `127.0.0.1/<label>` 由显式 env（`ONYX_WEBAPP_BASE_PATH`/`NEXT_PUBLIC_BASE_PATH`，
+   受控启动方注入）挂载；禁止 cwd 猜测"。原文 R-6 修订已含此义，但 D6 正文
+   仍是"整体退场"的旧句 —— 建议把 R-6 的 env 挂载并入 D6 正文，消除两处表述
+   差异。影响面：纯表述；实现（env 注入 + cwd 推导退场）不变。
+2. **AC1（协议层 401）建议区分两层**："浏览器侧：生成代码 fetch 主站 API 受
+   CSP 拦截或得到未认证响应，`document.cookie`/`localStorage` 隔离"与"服务端
+   协议层：来自 preview origin 的同形请求为 401"。原文只写浏览器观测
+   （fetch 得到 401），而 Chromium 对跨源 fetch 常以 CSP 拒绝（网络层不可见），
+   协议层 401 只能用顶层面板或 curl 形状复现。建议 AC1 明确两层各自可接受
+   的证据形状。影响面：验收证据的判读方式；行为不变（两层都已由本 SHA 的
+   单元与真实栈证据覆盖）。
