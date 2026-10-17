@@ -501,6 +501,40 @@ export const auditEventTypes = [
   "identity_provider.registered",
   "identity_provider.removed",
   /*
+   * The Bifrost bot service registry (Bifrost #234, 04.1): a server-side Bot's service identity,
+   * registered, redeclared, disabled and re-enabled by an administrator.
+   *
+   * A row here is about IDENTITY AND DECLARATION ONLY. Registering a Bot mints no credential,
+   * creates no user authorization and attaches no credit (04.2 and 04.5+ do each of those under
+   * their own rows), so a `bot_service.registered` row next to a credential or a grant is two
+   * separate facts that happened to the same botId, never one act. `bot_service.disabled` is the
+   * row downstream authentication and key issuance are refused on; it is deliberately its own
+   * event rather than a `bot.*` one, because an agent a person runs and a registered service a
+   * deployment approves are different questions, however much the word "Bot" covers both.
+   */
+  "bot_service.registered",
+  "bot_service.updated",
+  "bot_service.disabled",
+  "bot_service.enabled",
+  /*
+   * The Bot service credential lifecycle (Bifrost #235, 04.2), one row per act an administrator
+   * made against a botId. The vault writes its own credential.created/rotated/revoked rows keyed
+   * by credential id; these name the botId as the target, so the trail answers "what happened to
+   * this Bot's access" without joining through a uuid. A plaintext secret is in none of them —
+   * it exists exactly once, in the response that minted it.
+   */
+  "bot_service.credential_issued",
+  "bot_service.credential_rotated",
+  "bot_service.credential_revoked",
+  /*
+   * A one-time binding offer was issued (Bifrost #236, 04.3): a Bot's authenticated server asked to
+   * start binding one external identity. The row names the offer by its sha256 digest — the
+   * plaintext code exists exactly once, in the response that minted it, and a trail reader can
+   * never redeem what they read. The offer is not a user authorization (04.5 creates that when the
+   * person confirms), so this row sits beside the bot_service.* rows rather than replacing any.
+   */
+  "bot_binding.offered",
+  /*
    * What a Bot is and what it may reach.
    *
    * The trail recorded every mouse movement a Bot made and could not answer "who pointed this Bot at

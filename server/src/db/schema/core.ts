@@ -59,6 +59,15 @@ export const credentialKind = pgEnum("credential_kind", [
    * that speaks for the deployment, and one row per person that speaks for them.
    */
   "mcp_user_token",
+  /*
+   * A registered Bot's service credential (Bifrost #235, 04.2): the secret a Bot's own server
+   * presents to prove which Bot it is. Its own kind for the same reason every other kind is: an
+   * administrator reading "what does this deployment hold" must be able to see the Bots without
+   * them surfacing as agents or connectors, and revoking one must never be confused with revoking
+   * anything else. `keyId` carries the botId; `credentials_active_key_idx` keeps at most one live
+   * credential per Bot, which is what makes issuance and rotation race-safe.
+   */
+  "bot_service",
 ]);
 
 export const users = pgTable("users", {

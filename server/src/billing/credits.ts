@@ -5,6 +5,7 @@ import {
   type GrantCapacity,
   liveGrants,
 } from "./capacity";
+import { type PayerRef, payerKey } from "./payer";
 import type {
   CreditConsumptionPage,
   CreditGrantEntry,
@@ -22,10 +23,13 @@ import type {
  * float" rule the payment orders keep, so a grant of "23.63" is the integer `2363` and never a
  * binary float that drifts.
  *
- * All three reads are scoped to one customer key — the deployment's own, unless a caller names
- * another — and are read-only. `status` and `expiringSoon` are derived here, not stored, because
- * "used up" and "expired" are functions of the clock and the balance, not facts a writer must
- * remember to flip; the page never shows a stale pill.
+ * All three reads are scoped to one account key, and the caller cannot spell one: the account
+ * rides in as a `PayerRef` — the payer resolution module's output, never a caller-supplied
+ * externalCustomerId (ticket 02.4's parameter convergence). Omitting the ref reads the
+ * deployment's own key, the reads the 套餐与积分 page answers today; ticket 02.6 switches the
+ * person-facing routes to the signed-in user's resolved personal ref. `status` and `expiringSoon`
+ * are derived here, not stored, because "used up" and "expired" are functions of the clock and
+ * the balance, not facts a writer must remember to flip; the page never shows a stale pill.
  */
 
 /** One credit = this many stored units, so the two-place decimals stay exact. */
@@ -44,11 +48,11 @@ export type CreditConsumptionWindow = {
 export type Credits = {
   /** The plan catalog this deployment configured, for the upgrade dialog. */
   catalog: ReadonlyMap<string, PlanCatalogEntry>;
-  summary(externalCustomerId?: string): Promise<CreditSummary>;
-  grants(externalCustomerId?: string): Promise<readonly CreditGrantEntry[]>;
+  summary(payer?: PayerRef): Promise<CreditSummary>;
+  grants(payer?: PayerRef): Promise<readonly CreditGrantEntry[]>;
   consumption(
     window: CreditConsumptionWindow,
-    externalCustomerId?: string,
+    payer?: PayerRef,
   ): Promise<CreditConsumptionPage>;
 };
 
@@ -60,30 +64,33 @@ export function createCredits(deps: {
   catalog: ReadonlyMap<string, PlanCatalogEntry>;
 }): Credits {
   const { database, externalCustomerKey, catalog } = deps;
-  const keyOf = (externalCustomerId?: string) =>
-    externalCustomerId ?? externalCustomerKey;
+  // The one place a read's account key is decided: from the resolved payer ref, or the
+  // deployment's own key when no ref was resolved. A bare externalCustomerId cannot reach here
+  // — the parameter is a PayerRef or nothing (02.4's convergence).
+  const keyOf = (payer?: PayerRef) =>
+    payer ? payerKey(payer) : externalCustomerKey;
 
   return {
     catalog,
-    async summary(externalCustomerId) {
+    async summary(payer) {
       // The same live-grant read admission uses, unlocked: expired grants drop out and active
       // holds are subtracted, so this answer and the gate's answer cannot disagree (audit A1).
       const grants = await liveGrants(
         database,
-        keyOf(externalCustomerId),
+        keyOf(payer),
         new Date(),
         false,
       );
       return summarizeCapacity(grants);
     },
 
-    async grants(externalCustomerId) {
+    async grants(payer) {
       const rows = await database
         .select()
         .from(creditGrants)
         .where(
           and(
-            eq(creditGrants.externalCustomerId, keyOf(externalCustomerId)),
+            eq(creditGrants.externalCustomerId, keyOf(payer)),
             ne(creditGrants.source, "plan"),
           ),
         )
@@ -95,9 +102,9 @@ export function createCredits(deps: {
       return rows.map((row) => grantOf(row, now, soon));
     },
 
-    async consumption(window, externalCustomerId) {
+    async consumption(window, payer) {
       const conditions = [
-        eq(creditLedger.externalCustomerId, keyOf(externalCustomerId)),
+        eq(creditLedger.externalCustomerId, keyOf(payer)),
       ];
       if (window.from) conditions.push(gte(creditLedger.createdAt, window.from));
       if (window.to) conditions.push(lte(creditLedger.createdAt, window.to));
