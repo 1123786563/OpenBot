@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, like } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { PaymentProvider } from "../src/billing/payments/provider";
 import { createPaymentService } from "../src/billing/payments/service";
 import { createPaymentStore } from "../src/billing/payments/store";
@@ -25,13 +25,19 @@ const store = createPaymentStore(database);
 const prefix = `qa2h4-${randomUUID().slice(0, 8)}`;
 const planCode = `qa-plan-${randomUUID().slice(0, 8)}`;
 
+/** The one order this file opened — the teardown's exact reach. */
+const orderIds: string[] = [];
+
 afterAll(async () => {
+  // The store mints `po-…` order ids, so an id-prefix sweep matches nothing and
+  // the order (and its evidence rows) survived the run — stranding unknown_owner
+  // rows that broke the suite's global-count assertions downstream.
   await database
     .delete(paymentEvents)
-    .where(like(paymentEvents.orderId, `${prefix}%`));
+    .where(inArray(paymentEvents.orderId, orderIds));
   await database
     .delete(paymentOrders)
-    .where(like(paymentOrders.id, `${prefix}%`));
+    .where(inArray(paymentOrders.id, orderIds));
   await database.$client.close();
 });
 
@@ -114,6 +120,7 @@ describe("probe h-fourth: what the real store answers after the endgame", () => 
       ownerPayerRef: { kind: "personal" as const, id: `${prefix}-h4` },
       checkoutPayload: null,
     });
+    orderIds.push(order.id);
 
     const deliver = () =>
       serviceFor(silentDelivery(order.id)).handleCallback(
