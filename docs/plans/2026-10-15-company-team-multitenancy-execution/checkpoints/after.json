@@ -1,0 +1,49 @@
+{
+  "task": "MT131",
+  "head_after": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+  "head_matches_before": true,
+  "commit_created": false,
+  "staged_or_tracked_changes": [],
+  "worktree_status_after": [
+    "?? docs/plans/2026-10-15-company-team-multitenancy-execution/",
+    "?? server/scripts/multitenancy/",
+    "?? server/tests/multitenancy/"
+  ],
+  "owned_files": [
+    {
+      "path": "server/scripts/multitenancy/acceptance-harness.ts",
+      "sha256": "2b29aeb63be347883a997de765da75676e883b7219b8d09a5184ae75c3fa1390",
+      "bytes": 32580
+    },
+    {
+      "path": "server/tests/multitenancy/acceptance-harness.test.ts",
+      "sha256": "df6f6f31dfa0e9b61e32ca55fee2f715917ab891281aec969b6d37eb8fd92a12",
+      "bytes": 19434
+    },
+    {
+      "path": "docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT131-harness.md",
+      "sha256": "0d174527373663c514058cf562cb09428bc3e6efb1319710067b7794ee8554f7",
+      "bytes": 13701
+    }
+  ],
+  "shared_prerequisites_unchanged": true,
+  "test_environment": {
+    "container": "openbot-i6-mt131-test-pg",
+    "host": "127.0.0.1",
+    "port": 55434,
+    "database": "openbot_enterprise_mt131_test",
+    "http_port": 45435,
+    "external_namespace_prefix": "issue6_mt131_",
+    "env_file": "/tmp/mt131-env.sh (task-private; variable NAMES only: TEST_DATABASE_URL, ENTERPRISE_TEST_SETUP_DATABASE_URL, ENTERPRISE_TEST_DIRECTORY_DATABASE_URL, ENTERPRISE_TEST_DATA_DATABASE_URL, ENTERPRISE_TEST_OPERATOR_DATABASE_URL; credentials never recorded here)"
+  },
+  "verification": {
+    "targeted_suite": "bun test server/tests/multitenancy/acceptance-harness.test.ts — 14 pass, 0 fail, 1713 expect()",
+    "all_multitenancy": "bun test server/tests/multitenancy/ — 64 pass, 0 fail",
+    "typecheck": "cd server && bun run typecheck — exit 0",
+    "biome": "bunx biome check on both owned code files — exit 0",
+    "cli_honest_run": "exit 0; overall acceptance-not-passed; self-check passed; seedPoison detected; 0/539 covered; serviceSurfacesCountingAsRouteCoverage 0",
+    "cli_missing_env": "exit 1; HARNESS_RUN_FAILED:HARNESS_ENVIRONMENT_FAILED naming TEST_DATABASE_URL/ENTERPRISE_TEST_SETUP_DATABASE_URL",
+    "output": "checkpoints/MT131/verification-output.txt"
+  },
+  "status_note": "owned paths only; no shared MT001/MT002 file modified; no commit/push/merge/stash"
+}
