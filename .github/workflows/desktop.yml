@@ -87,7 +87,9 @@ jobs:
       - run: bun run typecheck
         working-directory: desktop
       - name: Desktop version regressions
-        run: bun test scripts/desktop-version.test.ts
+        run: bunx e2e run --config e2e.unit.config.ts scripts/desktop-version.test.ts
+        env:
+          E2E_UNIT_SCOPE: scripts
         working-directory: desktop
       - name: Prepare internal build version
         run: bun scripts/desktop-version.ts internal

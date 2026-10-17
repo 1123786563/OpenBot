@@ -153,7 +153,7 @@ jobs:
       - run: npm run --prefix mobile typecheck
 
   # The agent-computer tests that launch a real Chromium. They are asked for by name because a
-  # machine running `bun test` is not required to have a browser, and these are the only tests that
+  # machine running the suite is not required to have a browser, and these are the only tests that
   # would catch a password reaching the snapshot a model reads, a session cookie lost on restart, or
   # WebRTC leaving around the egress filter. The browser is the one the computer image installs,
   # pinned by agent-computer's own lockfile.
@@ -176,23 +176,27 @@ jobs:
       # Headless here: these launch through the profile path without the computer's own X server.
       # The headless run of the Web Bot Auth test is also the one that checks the user agent fix.
       - run: >-
-          bun test tests/sign-in.test.ts tests/session-cookies.test.ts tests/follows-popup.test.ts
-          tests/demonstration-live.test.ts tests/webrtc-proxy.test.ts tests/web-bot-auth-browser.test.ts
-          tests/handoff-page-restore.test.ts
-        working-directory: agent-computer
+          bunx e2e run --config e2e.unit.config.ts
+          agent-computer/tests/sign-in.test.ts agent-computer/tests/session-cookies.test.ts
+          agent-computer/tests/follows-popup.test.ts agent-computer/tests/demonstration-live.test.ts
+          agent-computer/tests/webrtc-proxy.test.ts agent-computer/tests/web-bot-auth-browser.test.ts
+          agent-computer/tests/handoff-page-restore.test.ts
         env:
+          E2E_UNIT_SCOPE: agent-computer
           OPENBOT_COMPUTER_BROWSER: '1'
           OPENBOT_DEMONSTRATION_LIVE: '1'
           COMPUTER_BROWSER_MODE: headless
       # Headed is the default for hosted computers, so it is tested as one: the computer starting its
       # own Xvfb, and the signing again with cross-site frames in processes of their own.
-      - run: bun test tests/headed-browser.test.ts
-        working-directory: agent-computer
+      - run: bunx e2e run --config e2e.unit.config.ts agent-computer/tests/headed-browser.test.ts
         env:
+          E2E_UNIT_SCOPE: agent-computer
           OPENBOT_HEADED_BROWSER: '1'
-      - run: xvfb-run --auto-servernum bun test tests/web-bot-auth-browser.test.ts
-        working-directory: agent-computer
+      - run: >-
+          xvfb-run --auto-servernum bunx e2e run --config e2e.unit.config.ts
+          agent-computer/tests/web-bot-auth-browser.test.ts
         env:
+          E2E_UNIT_SCOPE: agent-computer
           OPENBOT_COMPUTER_BROWSER: '1'
           COMPUTER_BROWSER_MODE: headed
 
@@ -426,8 +430,9 @@ jobs:
       # The second service is fresh and isolated from the regular test database. Prove a missing-role
       # migration fails before DDL, then bootstrap and migrate it through the reserved test wrapper.
       - name: Enterprise migration preflight and role-safety fixture
-        run: bun test server/tests/enterprise/migration-role-preflight.integration.test.ts
+        run: bunx e2e run --config e2e.unit.config.ts server/tests/enterprise/migration-role-preflight.integration.test.ts
         env:
+          E2E_UNIT_SCOPE: server
           ENTERPRISE_TEST_PREFLIGHT_MODE: fresh
       - name: Prepare the enterprise test database
         run: bun scripts/enterprise-test-db.ts migrate
@@ -453,7 +458,9 @@ jobs:
         with:
           bun-version: 1.4.3
       - run: bun install --frozen-lockfile
-      - run: bun test app/tests/build-cache.test.ts
+      - run: bunx e2e run --config e2e.unit.config.ts app/tests/build-cache.test.ts
+        env:
+          E2E_UNIT_SCOPE: app
 
   python-harness:
     name: python harness regressions
@@ -547,7 +554,9 @@ jobs:
           python -m pip install --requirement agent-microsoft/requirements.txt --requirement agent-microsoft/requirements-test.txt
           python -m pytest agent-microsoft/tests -q
       - run: bun install --frozen-lockfile
-      - run: bun test tests/compose.test.ts
+      - run: bunx e2e run --config e2e.unit.config.ts tests/compose.test.ts
+        env:
+          E2E_UNIT_SCOPE: tests
       - run: docker compose --env-file /dev/null --profile harness config --format json >/dev/null
         env:
           PICKED_HARNESS_IMAGE: openbot-agent-langgraph-agui:test
