@@ -981,6 +981,13 @@
       "when": 1792090557121,
       "tag": "0139_gateway_model_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1792090558121,
+      "tag": "0140_reservation_locked_basis",
+      "breakpoints": true
     }
   ]
 }
