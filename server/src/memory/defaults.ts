@@ -29,6 +29,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import { type DefaultFeature, defaultOptOuts } from "../db/schema/defaults";
 import { memorySources } from "../db/schema/memory";
@@ -39,6 +40,8 @@ import type { MemoryIngestion } from "./ingestion";
 export const DEFAULT_RESEARCH_INTERVAL_MINUTES = 240;
 /** The shortest gap between two adoption passes for one person and Bot in this process. */
 const MIN_INTERVAL_MS = 5 * 60_000;
+
+const logger = getLogger("server");
 
 /** A transaction or the database: anything that can run the statements below. */
 type Executor = Pick<Database, "execute" | "select" | "insert" | "delete">;
@@ -145,7 +148,7 @@ export function createMemoryDefaults(options: {
 }) {
   const now = options.now ?? Date.now;
   const minIntervalMs = options.minIntervalMs ?? MIN_INTERVAL_MS;
-  const log = options.log ?? ((_entry) => {});
+  const log = options.log ?? ((entry) => logger.warn(JSON.stringify(entry)));
   const lastRun = new Map<string, number>();
 
   /** True at most once per `minIntervalMs` for one key, so a busy conversation adopts once. */

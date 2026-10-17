@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { getLogger } from "../../shared/logger";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import { slackCodeRedeemer } from "../src/identity/slack-redeem";
 import type { IdentityStore } from "../src/identity/store";
@@ -122,7 +123,11 @@ describe("slackCodeRedeemer", () => {
 
   test("an audit write that fails after the link committed still reports linked, and logs", async () => {
     const { store } = setup(async () => link);
-    const errors = spyOn(console, "error").mockImplementation(() => {});
+    // The redeem path logs through the shared pino logger; the payload
+    // object is the first call argument.
+    const errors = spyOn(getLogger("server"), "error").mockImplementation(
+      () => undefined as never,
+    );
     try {
       const failing: AuditStore = {
         insert: async () => {
@@ -140,21 +145,19 @@ describe("slackCodeRedeemer", () => {
       expect(
         await slackCodeRedeemer(store, failing).redeem("CODE-1", sender),
       ).toBe("linked");
-      const logged = errors.mock.calls.map((args: unknown[]) =>
-        String(args[0]),
-      );
+      const logged = errors.mock.calls.map((args: unknown[]) => args[0]);
       expect(logged).toHaveLength(1);
-      expect(JSON.parse(logged[0] as string)).toEqual({
+      expect(logged[0]).toEqual({
         type: "identity-link-audit-failed",
         provider: "slack",
         errorName: "DrizzleQueryError",
         errorCode: "08006",
       });
-      expect(logged[0]).not.toContain("user-id-77");
-      expect(logged[0]).not.toContain("link-id-88");
-      expect(logged[0]).not.toContain("Failed query");
-      expect(logged[0]).not.toContain("CODE-1");
-      expect(logged[0]).not.toContain("U1");
+      expect(JSON.stringify(logged[0])).not.toContain("user-id-77");
+      expect(JSON.stringify(logged[0])).not.toContain("link-id-88");
+      expect(JSON.stringify(logged[0])).not.toContain("Failed query");
+      expect(JSON.stringify(logged[0])).not.toContain("CODE-1");
+      expect(JSON.stringify(logged[0])).not.toContain("U1");
     } finally {
       errors.mockRestore();
     }

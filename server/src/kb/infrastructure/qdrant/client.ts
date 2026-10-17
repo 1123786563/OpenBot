@@ -8,6 +8,7 @@
  */
 
 import { request as httpRequest } from "node:http";
+import { getLogger } from "../../../../../shared/logger";
 import type {
   CollectionInfo,
   CreateCollectionConfig,
@@ -26,6 +27,8 @@ export class QdrantError extends Error {
     this.status = status;
   }
 }
+
+const log = getLogger("kb");
 
 /** Qdrant 客户端构造项。 */
 export type QdrantClientOptions = {
@@ -72,6 +75,10 @@ export class QdrantClient {
       if (!response.ok) {
         const text = await response.text().catch(() => "");
         if (process.env.KB_QDRANT_DEBUG === "1") {
+          // 排障档：完整请求/响应落日志（含代理介入时的 url）。
+          log.error(
+            `[qdrant-debug] ${method} ${path} -> ${response.status} url=${response.url} body=${text.slice(0, 300)}`,
+          );
         }
         throw new QdrantError(
           response.status,

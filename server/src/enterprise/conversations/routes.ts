@@ -1,3 +1,4 @@
+import { getLogger } from "../../../../shared/logger";
 import { Hono } from "hono";
 import type {
   AppendMessageInput,
@@ -6,6 +7,8 @@ import type {
   PlatformScope,
   ScopeResolver,
 } from "../contracts";
+
+const log = getLogger("server");
 
 function errorResponse(error: unknown) {
   const code = (error as { code?: unknown } | null)?.code;
@@ -106,6 +109,7 @@ function errorResponse(error: unknown) {
       status: 400,
       body: { error: { code: "invalid_request", message } },
     };
+  log.error(error, "Enterprise conversation request failed");
   return {
     status: 500,
     body: { error: { code: "internal", message: "Request failed." } },

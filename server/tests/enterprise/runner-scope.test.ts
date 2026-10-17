@@ -1,5 +1,6 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { getLogger } from "../../../shared/logger";
 import { createApp } from "../../src/app";
 import { loadConfig } from "../../src/config";
 import type { Database } from "../../src/db/client";
@@ -1302,10 +1303,12 @@ test("mastra_storage_probe_runs_before_conversation_transaction", async () => {
 
 test("mastra_storage_probe_failure_preserves_cause_and_logs_once", async () => {
   const logs: unknown[][] = [];
-  const originalError = console.error;
-  console.error = (...args: unknown[]) => {
-    logs.push(args);
-  };
+  const logError = spyOn(getLogger("server"), "error").mockImplementation(
+    (...args: unknown[]) => {
+      logs.push(args);
+      return undefined as never;
+    },
+  );
   try {
     const resolver = await makeResolver(
       [{ tenantId: "tenant-a", principalId: "principal-a", memberEpoch: 3 }],
@@ -1347,7 +1350,7 @@ test("mastra_storage_probe_failure_preserves_cause_and_logs_once", async () => {
       "MASTRA_STORAGE_PROBE_FAILED",
     );
   } finally {
-    console.error = originalError;
+    logError.mockRestore();
   }
 });
 

@@ -1386,6 +1386,14 @@ export async function buildAgents(
   try {
     vendors = await loadVendors();
   } catch {
+    // Vendor guidance is best-effort: losing it must not prevent a run or change its grants.
+    // Report once per build here, including failures from the production plugin-store loader.
+    // Never log the thrown value: database errors can contain connection details or row contents.
+    log.error({
+      error: "connected_vendor_lookup_failed",
+      context: { operation: "loadVendors", agentCount: agents.length },
+      timestamp: new Date().toISOString(),
+    });
   }
   /*
    * Read once per build and only when somebody will be told it, like the vendors above and the model
@@ -1401,6 +1409,12 @@ export async function buildAgents(
     try {
       instructions = (await loadInstructions?.()) ?? null;
     } catch {
+      // Never log the thrown value: database errors can expose instructions or credentials.
+      log.error({
+        error: "standing_instruction_read_failed",
+        context: { operation: "loadInstructions", agentCount: agents.length },
+        timestamp: new Date().toISOString(),
+      });
     }
   }
   return Object.fromEntries(
@@ -1716,6 +1730,12 @@ async function buildAgent(
     try {
       skills = await selection.loadSkills(agent.id);
     } catch {
+      // Never log the thrown value: database errors can contain connection details or row contents.
+      log.error({
+        error: "tool_selection_skill_read_failed",
+        context: { operation: "loadSkills", agentId: agent.id },
+        timestamp: new Date().toISOString(),
+      });
     }
   }
   const narrowing =
@@ -1725,7 +1745,19 @@ async function buildAgent(
       ? selection
       : undefined;
 
-  const diagnoseRecordFailure = (_chosen: Selection<GrantedTool>) => {
+  const diagnoseRecordFailure = (chosen: Selection<GrantedTool>) => {
+    log.error({
+      error: "tool_selection_record_failed",
+      context: {
+        operation: "record",
+        agentId: agent.id,
+        reason: chosen.reason,
+        granted: chosen.granted,
+        offered: chosen.offered.length,
+        skills: chosen.skills,
+      },
+      timestamp: new Date().toISOString(),
+    });
   };
 
   /** Pass one and pass two, for one run. Shared by both agent kinds; each applies it differently. */

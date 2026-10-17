@@ -1,4 +1,8 @@
+import { getLogger } from "../../../shared/logger";
+
 type Driver = { name?: unknown; errno?: unknown; code?: unknown };
+
+const log = getLogger("server");
 
 function sqlState(error: unknown): string | undefined {
   // Bun's driver throws a `PostgresError` with the SQLSTATE in `errno`; node-style drivers use
@@ -22,6 +26,15 @@ function sqlState(error: unknown): string | undefined {
  * message carries the failed query's parameters (user id, link id, payload), so only the error's
  * name and its Postgres SQLSTATE are logged: never the message, query, ids or subjects.
  */
-export function logLinkAuditFailure(_provider: string, error: unknown): void {
-  const _code = sqlState(error);
+export function logLinkAuditFailure(provider: string, error: unknown): void {
+  const code = sqlState(error);
+  log.error(
+    {
+      type: "identity-link-audit-failed",
+      provider,
+      errorName: error instanceof Error ? error.name : "unknown",
+      ...(code ? { errorCode: code } : {}),
+    },
+    "identity-link-audit-failed",
+  );
 }
