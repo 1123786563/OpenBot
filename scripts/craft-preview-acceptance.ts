@@ -75,7 +75,16 @@ const APP_ORIGIN =
   process.env.CRAFT_ACCEPTANCE_APP_ORIGIN ?? "http://localhost:3220";
 const API_ORIGIN =
   process.env.CRAFT_ACCEPTANCE_API_ORIGIN ?? "http://localhost:3221";
-const PREVIEW_ORIGIN = `http://127.0.0.1:${new URL(API_ORIGIN).port || "80"}`;
+/**
+ * fix-ocr28 #13：镜像服务端默认端口拼写（fix-ocr27 #6 —— preview-ticket 的
+ * defaultPreviewOrigin / preview-origin 的 portSuffix 同一规则）：http 的
+ * scheme 默认端口 80 会被 URL 序列化丢弃，:80 监听的预览地址不带后缀。
+ * 旧的 `|| "80"` 无条件拼出 `http://127.0.0.1:80` —— 行为正确的服务端
+ * 永远不铸造这个地址，步骤 3 的 `origin.startsWith(PREVIEW_ORIGIN)` 对它
+ * 必 FAIL。端口为空或 80 时不带后缀，与服务端逐字一致。
+ */
+const API_PORT = new URL(API_ORIGIN).port;
+const PREVIEW_ORIGIN = `http://127.0.0.1${API_PORT === "" || API_PORT === "80" ? "" : `:${API_PORT}`}`;
 const CASDOOR_USER = process.env.CRAFT_ACCEPTANCE_CASDOOR_USER ?? "admin";
 const CASDOOR_PASSWORD = process.env.CRAFT_ACCEPTANCE_CASDOOR_PASSWORD ?? "123";
 const GATEWAY =

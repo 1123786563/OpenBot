@@ -179,11 +179,28 @@ export function generationGatedWebappBasePathFor(input: {
     } catch {
       return null;
     }
-    const fileApi = botId ? input.fileApiFor(botId) : null;
-    const generation = await readWebappGeneration(
-      fileApi,
-      input.sessionDirectoryFor(sessionId),
-    );
+    // fix-ocr28 #10: the SYNC injections are gated reads like every other
+    // this gate takes — the async twins (botIdFor above, webappBasePathFor
+    // below) were already caught, but a throwing fileApiFor or
+    // sessionDirectoryFor pierced the returned async function and rode
+    // writeWebappBootstrapScript's `await webappBasePathFor?.(sessionId)`
+    // into provisioning/script-regeneration as a whole, exactly the
+    // pattern the module header's "every degraded read falls back
+    // conservatively" promise exists to prevent. Null (legacy: no mount)
+    // is the conservative answer, mirroring the twins.
+    let fileApi: ReturnType<typeof input.fileApiFor>;
+    try {
+      fileApi = botId ? input.fileApiFor(botId) : null;
+    } catch {
+      return null;
+    }
+    let sessionRoot: string;
+    try {
+      sessionRoot = input.sessionDirectoryFor(sessionId);
+    } catch {
+      return null;
+    }
+    const generation = await readWebappGeneration(fileApi, sessionRoot);
     // fix-ocr26 #8: "unknown" degrades like legacy HERE — the conservative
     // arm at the script write is null (no mount), never the label derivation.
     // Deriving for an actually-legacy app would export the env and silently

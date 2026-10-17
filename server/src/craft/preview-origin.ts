@@ -101,6 +101,41 @@ export function holdsPreviewSessionPass(
   );
 }
 
+/**
+ * fix-ocr28 #1 (round28 CSWSH): the preview websocket upgrade's Origin gate,
+ * exported beside its sibling (holdsPreviewSessionPass) so the two manual
+ * disciplines the upgrade half applies — pass judgment and origin judgment —
+ * live in one place. A WebSocket handshake is NOT subject to CORS, and the
+ * preview pass cookie is SameSite=None: without this check, any page on the
+ * web could `new WebSocket("wss://<preview-host>/_next/webpack-hmr")` and the
+ * pass would ride the cross-site handshake, handing the attacker the live HMR
+ * channel (reading source frames, injecting protocol messages).
+ *
+ * The comparison normalizes BOTH sides through `new URL(x).origin` — never a
+ * bare string equality — because originFor answers the session's ADDRESS,
+ * and in the dev form that address carries the `/<label>` path an Origin
+ * header never spells (a bare comparison would refuse every legitimate
+ * dev-form browser upgrade). Normalization also makes the equality
+ * independent of default-port spelling on either side (originFor drops :80
+ * by its portSuffix rule, fix-ocr27 #6; WHATWG serialization and the
+ * browser's Origin header drop scheme defaults the same way). An absent
+ * Origin (a non-browser client) is waved through — the gate exists for
+ * pages, and WS clients that send no Origin cannot be a browser's document.
+ * An opaque origin ("null", from a sandboxed frame) or any unparseable
+ * value parse-fails into a refusal, never a throw.
+ */
+export function samePreviewOrigin(
+  originHeader: string | null,
+  sessionAddress: string,
+): boolean {
+  if (originHeader === null) return true;
+  try {
+    return new URL(originHeader).origin === new URL(sessionAddress).origin;
+  } catch {
+    return false;
+  }
+}
+
 export type PreviewOrigin = {
   /** The gate + its displayable closed reason (the 503 body; webapp-info's #362 field). */
   admission(): PreviewOriginAdmission;
@@ -177,6 +212,20 @@ const LABEL_KEY_PURPOSE = "craft-preview-label";
  * configure, per-use material, so a label here can never be confused with —
  * or computed as — any other use of the secret (a signature or a credential
  * ciphertext there). fix-ocr3 medium: this was the library's one bare-KEK MAC.
+ *
+ * UPGRADE CONSEQUENCE (fix-ocr28 #7, recorded beside M-2's restart note so
+ * upgrade day is not misread as a new fault): the derivation has changed
+ * once already — bare KEK → this purpose-derived key — and any future
+ * re-derivation flips every label again with the deployment secret
+ * UNCHANGED: labels are a function of (derivation, secret, sessionId), so
+ * new code + old secret = new labels. In the dev form a RUNNING dev server
+ * still mounts its OLD label basePath (the start script injected the env at
+ * spawn), and its `.webapp-mount` record names the old mount — the
+ * re-minted label matches neither, so webapp-info answers
+ * WEBAPP_MOUNT_STALE and withholds the address until the session's start
+ * script is rewritten (the reconcile light path: re-entering the session
+ * re-provisions it) and the web app restarted. One-time, self-healing per
+ * session — the same shape as an M-2 restart, not an outage.
  */
 function previewLabelKey(secret: string): Buffer {
   return createHmac("sha256", secret).update(LABEL_KEY_PURPOSE).digest();
@@ -243,7 +292,7 @@ function parseTemplate(raw: string): ParsedTemplate {
   const value = raw.trim();
   if (value === "") return { kind: "dev" };
   const usage =
-    "OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE must be an http(s) URL with {session} exactly once as the hostname's leading label, e.g. https://{session}.preview.example.com.";
+    "OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE must be an https URL with {session} exactly once as the hostname's leading label, e.g. https://{session}.preview.example.com.";
   // The address a template mints is what certificates and DNS must answer for,
   // so the shape is strict on purpose (#359 review F2, absorbed by #362): no
   // userinfo, no trailing-dot FQDN, no IDN (the certificate pipeline sees the
@@ -316,7 +365,7 @@ function parseTemplate(raw: string): ParsedTemplate {
   // fix-ocr26 #9: port 0 has no serving meaning, and the certificate sidecar's
   // derive_preview_host already refuses it (its port floor is `-lt 1`, the
   // fix-ocr4 #5 fail-closed category) — a :0 template accepted here made the
-  // sidecar crash-loop against a template the server served. Two-口径一致 with
+  // sidecar crash-loop against a template the server served. Consistent with
   // :70000 (fix-ocr18 #8) and the bare `:` (fix-ocr4 #5): neither face serves
   // what the other refuses. WHATWG normalizes :00/:000 to "0", so the numeric
   // read catches every zero spelling.
@@ -673,13 +722,17 @@ export function createPreviewOrigin(deps: {
           // Never the ticket value, never a reason that echoes it (#360's rule).
           // fix-ocr27 #7: the refusal family's no-store discipline lands here
           // too — a 401 describes a transient state (the ticket burned,
-          // expired, or foreign) and is never a cacheable answer; this was
-          // the one bare Response.json left in the family.
-          return Response.json(
-            {
-              error: "The preview ticket is invalid, expired, or already used.",
-            },
-            { status: 401, headers: { "cache-control": "no-store" } },
+          // expired, or foreign) and is never a cacheable answer.
+          // fix-ocr28 #6: and so does the family's DUAL SHAPE — this was the
+          // one bare Response.json left in the family, so an iframe
+          // re-navigating the spent entry URL (the ticket already consumed
+          // by the first hop) landed on raw JSON instead of the readable
+          // page. refuseResponse answers no-store in both branches, keeping
+          // fix-ocr27 #7's goal intact.
+          return refuseResponse(
+            request,
+            "The preview ticket is invalid, expired, or already used.",
+            401,
           );
         }
         // ponytail: the cookie carries the session id itself — HttpOnly on the

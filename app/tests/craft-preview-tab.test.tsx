@@ -375,6 +375,42 @@ test("a refused exchange surfaces the server's displayable reason under the pass
   expect(view.container.querySelector("iframe")).toBeNull();
 });
 
+test("a server refusal with EMPTY text renders no paragraph — an empty <p> is not a refusal (fix-ocr28 #11)", async () => {
+  // The server arm stores the transport's message verbatim, and that message
+  // can be EMPTY (a server answering {error: ""} — client.ts passes any
+  // string error through, including the empty one; a non-Error rejection
+  // already collapses to ""). The paragraph used to render unconditionally:
+  // an empty <p> with the refusal's styling — a blank line wearing the
+  // clothes of a sentence. The sentence is derived first and the paragraph
+  // renders only when one exists. RED: the empty p is in the tree.
+  global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/webapp-info")) {
+      return Response.json({
+        has_webapp: true,
+        webapp_url: PREVIEW_ORIGIN,
+        previewOrigin: PREVIEW_ORIGIN,
+        previewOriginClosedReason: null,
+        webappGeneration: "current",
+        status: "running",
+        ready: true,
+      });
+    }
+    if (url.includes("/preview-ticket")) {
+      return Response.json({ error: "" }, { status: 503 });
+    }
+    return Response.json({});
+  }) as unknown as typeof fetch;
+  const view = draw();
+
+  await view.findByText(t("preview.passTitle"));
+  expect(view.container.querySelector("iframe")).toBeNull();
+  // No paragraph in the pass state renders empty — the refusal slot is
+  // simply absent, exactly like the no-refusal shape one test up.
+  const paragraphs = [...view.container.querySelectorAll("p")];
+  expect(paragraphs.some((p) => p.textContent?.trim() === "")).toBe(false);
+});
+
 test("a closed preview origin surfaces its displayable reason (m-5), never an iframe", async () => {
   serving({
     has_webapp: true,
@@ -2717,7 +2753,7 @@ describe("a disposed pane's late frame events write nothing (fix-ocr19 #3/#4 —
   });
 });
 
-describe("the load-path streak zeroing preserves the zero reference (fix-ocr24 #4 — source pin)", () => {
+describe("the load-path streak zeroing rides ONE shared setter (fix-ocr24 #4 / fix-ocr28 #12 — source pin)", () => {
   const source = readFileSync(
     join(
       import.meta.dir,
@@ -2726,28 +2762,33 @@ describe("the load-path streak zeroing preserves the zero reference (fix-ocr24 #
     "utf8",
   );
 
-  test("both zeroing sites in handleFrameLoad ride the functional update that returns prev at zero", () => {
-    // A preview app's own internal navigation fires load on EVERY hop; the
-    // unconditional fresh object re-rendered the pane and re-walked the
-    // entering effect (frameErrorStreak is its dep) even when the streak was
-    // already zero. The functional form keeps the reference identical at
-    // zero — React bails out, nothing re-renders. Property is invisible to
-    // the DOM (behavior is equivalent), so it pins the source, the same way
-    // the fix-ocr19 ordering pins above do.
+  test("both zeroing sites in handleFrameLoad call clearFrameErrorStreak, the ONE zero-preserving updater", () => {
+    // fix-ocr24 #4 made the zeroing functional (prev at zero → the same
+    // reference, React bails out — a preview app's own navigation fires load
+    // on every hop, and a fresh object at zero re-rendered the pane and
+    // re-walked the entering effect for nothing). fix-ocr28 #12 collapsed
+    // the TWO verbatim updater copies inside handleFrameLoad into one shared
+    // setter — countFrameDeath's precedent (fix-ocr19 M2): a contract this
+    // easy to hand-sync wrongly does not live in twins. The property is
+    // invisible to the DOM (behavior is equivalent), so the shape is pinned
+    // at source, the same way the fix-ocr19 ordering pins do.
+    const setter = source.match(
+      /const clearFrameErrorStreak = useCallback\(\s*\(\) => \{[\S\s]*?\n\s*\}, \[\]\);/,
+    );
+    expect(setter).not.toBeNull();
+    // The ONE spelling of the zero-preserving update lives in the setter.
+    expect(setter?.[0]).toContain('prev.count === 0 && prev.address === ""');
     const load = source.slice(
       source.indexOf("const handleFrameLoad"),
       source.indexOf("const handleFrameRef"),
     );
-    const functionalZeros = [
-      ...load.matchAll(
-        /setFrameErrorStreak\(\s*\(\s*prev\s*\)\s*=>/g,
-      ),
-    ];
-    expect(functionalZeros.length).toBe(2);
-    // Neither site keeps the bare-object form that allocates per load.
-    expect(
-      load.includes('setFrameErrorStreak({ address: "", count: 0 })'),
-    ).toBe(false);
+    const calls = [...load.matchAll(/clearFrameErrorStreak\(\)/g)];
+    expect(calls.length).toBe(2);
+    // Neither site kept a private copy — functional or bare-object.
+    expect(load).not.toContain("setFrameErrorStreak((");
+    expect(load).not.toContain(
+      'setFrameErrorStreak({ address: "", count: 0 })',
+    );
   });
 });
 
