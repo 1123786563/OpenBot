@@ -1246,6 +1246,9 @@ function proxyHarness(input: {
         baseUrl: "http://127.0.0.1:1",
         token: null,
       }),
+      // #362 (D11): the address is the preview origin's ABSOLUTE one — pinned
+      // here so the route's answer is a fact of the wiring, not of the env.
+      previewOriginFor: () => "http://127.0.0.1:3001/pinnedlabel",
     },
   );
   return { app };
@@ -1262,7 +1265,10 @@ describe("webapp preview route (reserved-port attach)", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as Record<string, unknown>;
     expect(body.has_webapp).toBe(true);
-    expect(body.webapp_url).toBe("/api/craft/sessions/cs-pv/webapp");
+    // D11 (#362): the ABSOLUTE preview address, never the same-origin proxy path.
+    expect(body.webapp_url).toBe("http://127.0.0.1:3001/pinnedlabel");
+    expect(body.previewOrigin).toBe("http://127.0.0.1:3001/pinnedlabel");
+    expect(body.previewOriginClosedReason).toBeNull();
     expect(body.ready).toBe(true);
   });
 

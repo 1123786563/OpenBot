@@ -219,6 +219,7 @@ import {
 } from "./craft/routes";
 import { createCraftStore } from "./craft/store";
 import {
+  createPreviewProxy,
   type WebappHmrSocketData,
   resolveWebappHmrUpgrade,
   webappHmrSessionIdFromPath,
@@ -4656,12 +4657,32 @@ const craftPreviewTickets =
   craftEffectiveConfig.enabled
     ? createPreviewTickets({ store: createCraftStore(database) })
     : undefined;
+/*
+ * The preview origin's serving half (#362): a cookie-authenticated request on
+ * a preview host proxies to the session's sandbox dev server — the same facts
+ * the main-site webapp proxy resolves (the deployment's sandbox Bot, its
+ * gateway connection), so the two surfaces can never route one session to
+ * different upstreams. Attached to the origin below as its servePreview seam.
+ */
+const craftPreviewProxy =
+  craftEffectiveConfig.enabled
+    ? createPreviewProxy({
+        config: craftEffectiveConfig,
+        store: createCraftStore(database),
+        botIdFor: async () => craftEffectiveConfig.sandboxBotId,
+        sandboxConnectionFor: () =>
+          sandboxUrl && sandboxToken
+            ? { baseUrl: sandboxUrl, token: sandboxToken }
+            : null,
+      })
+    : undefined;
 const craftPreviewOrigin =
-  craftEffectiveConfig.enabled && craftPreviewTickets
+  craftEffectiveConfig.enabled && craftPreviewTickets && craftPreviewProxy
     ? createPreviewOrigin({
         config: craftEffectiveConfig,
         previewTickets: craftPreviewTickets,
         secret: config.keyEncryptionKey,
+        servePreview: craftPreviewProxy,
       })
     : undefined;
 
@@ -4711,6 +4732,12 @@ const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
            */
           previewTickets: craftPreviewTickets,
           previewOriginFor: (sessionId: string) => craftPreviewOrigin!.originFor(sessionId),
+          /*
+           * The admission the #362 surfaces read: webapp-info's closed reason
+           * (m-5) and the issuing route's refusal to mint into a closed origin
+           * — the same gate the preview origin's dispatcher branch enforces.
+           */
+          previewOriginAdmission: () => craftPreviewOrigin!.admission(),
         },
       })
   : undefined;
@@ -5597,12 +5624,15 @@ serve<SocketData>({
   port,
   async fetch(request, server) {
     const url = new URL(request.url);
-    // The craft preview origin (#361): claimed hosts NEVER fall through to the
-    // main-site branches below — unknown preview hosts 404 right here, closed
+    // The craft preview origin (#361/#362): claimed hosts NEVER fall through to
+    // the main-site branches below — unknown preview hosts 404 right here, closed
     // admission answers 503 with its displayable reason, and a resolved session
-    // lands on the preview entry (ticket redemption → D9 cookie). Bun derives
-    // request.url's host from the Host header on this listener for plain HTTP
-    // and websocket upgrades alike (verified against a live listener).
+    // lands on the preview entry: a `?ticket=` hop redeems and plants the D9
+    // cookie, every further request is gated on that cookie and proxied to the
+    // session's dev server (no platform session is ever in scope on these
+    // hosts — AC1). Bun derives request.url's host from the Host header on this
+    // listener for plain HTTP and websocket upgrades alike (verified against a
+    // live listener).
     if (craftPreviewOrigin?.handlesRequest(request)) {
       const resolved = craftPreviewOrigin.resolvePreviewRequest(request);
       if ("sessionId" in resolved) {
