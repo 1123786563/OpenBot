@@ -1,8 +1,11 @@
 /** One import path for every table, with schema files grouped by owner. */
 
+export * from "./access-grants";
 export * from "./admin";
 export * from "./approvals";
 export * from "./billing";
+export * from "./bot-binding";
+export * from "./bot-services";
 export * from "./code-runs";
 export * from "./components";
 export * from "./computer";
@@ -19,6 +22,7 @@ export * from "./enterprise-expert-versions";
 export * from "./enterprise-model-routes";
 export * from "./enterprise-runs";
 export * from "./enterprise-tenancy";
+export * from "./gateway";
 export * from "./group";
 export * from "./identity";
 export * from "./learning";

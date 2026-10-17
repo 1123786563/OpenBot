@@ -48,6 +48,7 @@ function orderInput(overrides: Partial<Parameters<typeof store.insertOrder>[0]> 
     currency: "CNY" as const,
     expiresAt: new Date(Date.now() + 15 * 60_000),
     createdBy: prefix,
+    ownerPayerRef: { kind: "personal" as const, id: prefix },
     checkoutPayload: null,
     ...overrides,
   };
