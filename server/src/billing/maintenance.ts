@@ -23,6 +23,30 @@ import type { UsageDelivery } from "./usage-delivery";
 export type SweepLock = { databaseUrl: string; key: number };
 
 /**
+ * The one connection a lock pass owns for its length: a tagged-template query handle plus the
+ * `end` that releases the session-scoped lock. Shaped like the postgres.js handle the default
+ * factory returns, so an injected factory can stand in for a real database in tests without a
+ * process-global module mock (bun's mock.module cannot be undone and would poison every later
+ * test file in the same run).
+ */
+export type SweepLockConnection = {
+  (
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): PromiseLike<Record<string, unknown>[]>;
+  end: (options?: { timeout?: number }) => Promise<void>;
+};
+
+/** How a lock pass opens its dedicated connection. Injectable for the same reason as above. */
+export type SweepLockConnector = (databaseUrl: string) => SweepLockConnection;
+
+const postgresLockConnector: SweepLockConnector = (databaseUrl) =>
+  // The Sql handle is structurally the query-callable plus `end` (plus extras the lock pass
+  // never touches); the cast keeps this module's public type free of postgres.js's private
+  // thenable plumbing.
+  postgres(databaseUrl, { max: 1 }) as unknown as SweepLockConnection;
+
+/**
  * Run one sweep pass under an advisory lock, or skip it when another replica holds the lock.
  * Absent lock config, the pass runs unguarded — a single-replica deployment and the tests do
  * not need a second database connection to work.
@@ -30,17 +54,21 @@ export type SweepLock = { databaseUrl: string; key: number };
 export async function withSweepLock<T>(
   lock: SweepLock | undefined,
   work: () => Promise<T>,
+  connect: SweepLockConnector = postgresLockConnector,
 ): Promise<T | undefined> {
   if (!lock) return await work();
 
   // Session-scoped, on a connection this pass owns for its length. It cannot go through the
   // shared pool: a session lock belongs to one connection, so a pool would happily take it on
   // one and try to release it on another, and the lock would leak until that connection died.
-  const connection = postgres(lock.databaseUrl, { max: 1 });
+  const connection = connect(lock.databaseUrl);
 
   try {
     const [row] =
-      await connection`select pg_try_advisory_lock(${lock.key}) as held`;
+      (await connection`select pg_try_advisory_lock(${lock.key}) as held`) as Record<
+        string,
+        unknown
+      >[];
     if (!row?.held) return undefined;
     return await work();
   } finally {
@@ -58,12 +86,15 @@ export function startUsageDeliverySweeps(
     limit?: number;
     log?: (message: string) => void;
     lock?: SweepLock;
+    /** Overrides how a lock pass opens its dedicated connection; tests inject a fake here. */
+    connect?: SweepLockConnector;
   } = {},
 ): { stop(): void } {
   const intervalMs = options.intervalMs ?? 30_000;
   const firstRunMs = options.firstRunMs ?? 30_000;
   const limit = options.limit ?? 100;
   const lock = options.lock;
+  const connect = options.connect;
   // biome-ignore lint/suspicious/noConsole: stable-code operational log
   const log = options.log ?? ((message: string) => console.warn(message));
   const timers: ReturnType<typeof setTimeout>[] = [];
@@ -72,7 +103,7 @@ export function startUsageDeliverySweeps(
   const run = () => {
     if (running) return;
     running = true;
-    void withSweepLock(lock, () => delivery.runBatch(limit))
+    void withSweepLock(lock, () => delivery.runBatch(limit), connect)
       .catch((error: unknown) => {
         log(
           `billing: usage delivery pass failed error=${

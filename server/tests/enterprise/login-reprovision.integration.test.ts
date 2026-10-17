@@ -60,14 +60,16 @@ test.skipIf(!enabled)(
       const reprovisioned = await runProvision();
       expect(reprovisioned.exitCode).toBe(0);
 
-      const [state] = await setup.unsafe<
+      // Tagged template, not unsafe(): a plain call would interpolate ${loginName} as SQL
+      // text and turn the login name into a column reference.
+      const [state] = await setup<
         {
           memberships: string[];
           rolsuper: boolean;
           rolbypassrls: boolean;
           rolcanlogin: boolean;
         }[]
-      >(`
+      >`
       SELECT COALESCE(array_agg(parent.rolname ORDER BY parent.rolname), '{}') AS memberships,
         actor.rolsuper, actor.rolbypassrls, actor.rolcanlogin
       FROM pg_roles actor
@@ -75,7 +77,7 @@ test.skipIf(!enabled)(
       LEFT JOIN pg_roles parent ON parent.oid = membership.roleid
       WHERE actor.rolname = ${loginName}
       GROUP BY actor.rolsuper, actor.rolbypassrls, actor.rolcanlogin
-    `);
+    `;
       expect(state?.memberships).toEqual(["ob_ent_data"]);
       expect(state?.rolsuper).toBe(false);
       expect(state?.rolbypassrls).toBe(false);
