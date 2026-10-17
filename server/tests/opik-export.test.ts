@@ -125,6 +125,14 @@ describe("folding upstream pages under a row cap", () => {
     ).rejects.toBeInstanceOf(ExportRowLimitExceeded);
   });
 
+  test("an over-shipped FIRST page fails the cap too (OCR m139)", async () => {
+    // The envelope promised 1; the page carried 3. Shipping the extra rows as a
+    // success would be an over-limit export wearing a clean answer.
+    await expect(
+      foldExportPages(2, async () => page(1, [{ id: "a" }, { id: "b" }, { id: "c" }])),
+    ).rejects.toBeInstanceOf(ExportRowLimitExceeded);
+  });
+
   test("pages that run out before total are malformed, never a short success", async () => {
     await expect(
       foldExportPages(10, async (n) =>

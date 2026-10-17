@@ -124,7 +124,7 @@ function job(overrides: Partial<ExportJobView> = {}): ExportJobView {
     rowLimit: 1000,
     rowCount: 2,
     errorCode: null,
-    redactionPolicyVersion: 1,
+    redactionPolicyVersion: "opik-redaction/1",
     createdAt: "2026-10-16T09:30:00.000Z",
     settledAt: "2026-10-16T09:31:00.000Z",
     ...overrides,

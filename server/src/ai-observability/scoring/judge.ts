@@ -209,6 +209,7 @@ export type JudgeFailureCode =
   | "JUDGE_BUDGET_REFUSED"
   | "JUDGE_INPUT_UNAVAILABLE"
   | "JUDGE_OUTPUT_MISSING"
+  | "JUDGE_OUTPUT_UNSAFE"
   | "JUDGE_CALL_FAILED"
   | "JUDGE_VERDICT_INVALID"
   | "JUDGE_SETTLEMENT_ERROR";
@@ -256,8 +257,20 @@ export type JudgeScorer = (
 export function createEntranceModelCall(
   entrance: ApprovedJudgeEntrance,
 ): EvaluationModelCall {
+  const envName = entrance.apiKeyEnv;
+  // Fail closed per entrance (OCR m224): a declared credential missing from the
+  // environment refuses THIS entrance — createGatewayModelCall's OPENAI_API_KEY
+  // fallback would otherwise ship the deployment gateway's key to this entrance's
+  // baseURL, whoever operates it. The refusal is per-call, so one misconfigured
+  // entrance answers as a failed judge record and the worker stays up.
+  if (envName !== undefined && !process.env[envName]) {
+    return () =>
+      Promise.reject(
+        new Error(`judge entrance refused: credential env ${envName} is not set`),
+      );
+  }
   return createGatewayModelCall({
-    apiKey: entrance.apiKeyEnv ? process.env[entrance.apiKeyEnv] : undefined,
+    apiKey: envName === undefined ? undefined : process.env[envName],
     baseURL: entrance.baseURL,
   });
 }
@@ -268,29 +281,73 @@ const failed = (code: JudgeFailureCode, message: string): JudgeScoreRecord => ({
   message,
 });
 
+/**
+ * The judge's verdict JSON, recovered from the shapes models actually answer in
+ * (OCR m226): a fenced block, a fenced block inside prose, or a balanced object
+ * with a prose prefix. The strict whole-string parse stays the first candidate —
+ * these widen what is ACCEPTED, never what the verdict contract admits.
+ */
+const firstBalancedObject = (text: string): string | null => {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const ch = text[index];
+    if (ch === undefined) return null;
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth += 1;
+    else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index + 1);
+    }
+  }
+  return null;
+};
+
+const verdictJsonCandidates = (text: string): readonly string[] => {
+  const trimmed = text.trim();
+  const candidates = [trimmed];
+  const fenced = /^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/.exec(trimmed);
+  if (fenced?.[1] !== undefined) candidates.unshift(fenced[1].trim());
+  const balanced = firstBalancedObject(trimmed);
+  if (balanced !== null) candidates.unshift(balanced);
+  return candidates;
+};
+
 /** The strict verdict contract: one JSON object, a finite 0..1 score, a rationale. */
 function parseVerdict(
   text: string,
 ): { score: number; rationale: string } | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text.trim());
-  } catch {
-    return null;
+  for (const candidate of verdictJsonCandidates(text)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      continue;
+    const { score, rationale } = parsed as Record<string, unknown>;
+    if (
+      typeof score !== "number" ||
+      !Number.isFinite(score) ||
+      score < 0 ||
+      score > 1
+    ) {
+      continue;
+    }
+    if (typeof rationale !== "string" || rationale.length === 0) continue;
+    return { score, rationale };
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-    return null;
-  const { score, rationale } = parsed as Record<string, unknown>;
-  if (
-    typeof score !== "number" ||
-    !Number.isFinite(score) ||
-    score < 0 ||
-    score > 1
-  ) {
-    return null;
-  }
-  if (typeof rationale !== "string" || rationale.length === 0) return null;
-  return { score, rationale };
+  return null;
 }
 
 /**
@@ -373,6 +430,21 @@ export function createJudgeScorer(
       return failed(
         "JUDGE_OUTPUT_MISSING",
         "the case produced no scoreable output",
+      );
+    }
+    // The raw output is projected before it joins the prompt (OCR m229): every
+    // other string that reaches this module's surfaces rides a projection envelope,
+    // and the judge's entrance may point at a third-party baseURL — a credential
+    // the evaluated model echoed must not travel there verbatim. Free text is the
+    // honest projection here (allowFreeText, like the rationale); an omitted value
+    // means the refusal, not a stripped prompt.
+    const outputEnvelope = projectSafeText(input.output, {
+      allowFreeText: true,
+    });
+    if (outputEnvelope.state === "omitted") {
+      return failed(
+        "JUDGE_OUTPUT_UNSAFE",
+        "the case output carries a credential-class value; it is refused, not forwarded",
       );
     }
 
@@ -489,7 +561,7 @@ export function createJudgeScorer(
           "## Reference",
           referenceText,
           "## Output",
-          input.output,
+          outputEnvelope.text,
         ].join("\n\n"),
       });
     } catch {
@@ -551,18 +623,30 @@ export function createJudgeScoringCaseRunner(
   return async (context): Promise<EvaluationCaseOutcome> => {
     const outcome = await deps.inner(context);
     if (outcome.status !== "completed") return outcome;
-    const record = await deps.judge({
-      executionId: context.executionId,
-      caseIndex: context.caseIndex,
-      scope: context.scope,
-      judgeVersion: context.config.judgeVersion,
-      judgeConfig: context.config.judgeConfig,
-      sample: {
-        input: context.frozenCase.safeInput,
-        reference: context.frozenCase.referenceOutput,
-      },
-      output: outcome.output,
-    });
+    // The judge failing never unseats the case's own outcome (OCR m223): an escape
+    // from the scorer — a seam throwing, a projection regressing — lands as a failed
+    // judge record, so the completed case and its settled billing stay answerable
+    // instead of being swallowed whole by CASE_EXECUTION_ERROR.
+    let record: JudgeScoreRecord | null;
+    try {
+      record = await deps.judge({
+        executionId: context.executionId,
+        caseIndex: context.caseIndex,
+        scope: context.scope,
+        judgeVersion: context.config.judgeVersion,
+        judgeConfig: context.config.judgeConfig,
+        sample: {
+          input: context.frozenCase.safeInput,
+          reference: context.frozenCase.referenceOutput,
+        },
+        output: outcome.output,
+      });
+    } catch (error) {
+      record = failed(
+        "JUDGE_CALL_FAILED",
+        error instanceof Error ? error.message : "the judge scorer threw",
+      );
+    }
     if (record === null) return outcome;
     return { ...outcome, judge: record };
   };

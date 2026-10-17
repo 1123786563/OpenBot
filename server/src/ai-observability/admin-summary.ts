@@ -329,10 +329,13 @@ export function createAdminSummaryService(deps: {
         };
       }
       const stats = snapshot.writes;
-      const bots: AdminBotSummary[] = [];
-      for (const scope of scopes) {
-        bots.push(await summarizeOne(scope, window, snapshot.readiness));
-      }
+      // The scopes are independent summaries (OCR m169): each does its own counts
+      // against shared tables, so sequential awaits multiply the wall clock by the
+      // scope count. Promise.all keeps the old failure semantics — any scope failing
+      // fails the whole summary — while the counts now run concurrently.
+      const bots: AdminBotSummary[] = await Promise.all(
+        scopes.map((scope) => summarizeOne(scope, window, snapshot.readiness)),
+      );
       return {
         window: {
           from: window.from?.toISOString() ?? null,

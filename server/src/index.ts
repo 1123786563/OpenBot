@@ -519,7 +519,7 @@ import { createUserInstructionsStore } from "./user-instructions";
 import { createUserPreferencesStore } from "./user-preferences";
 import { createVoiceSessionStore } from "./voice/sessions";
 import { createVoiceSummarizer } from "./voice/summary";
-import { repeatAfterEach } from "./work/loop";
+import { repeatAfterEach, type Repeating } from "./work/loop";
 import {
   createWorkQueue,
   DEFAULT_MAX_ATTEMPTS,
@@ -4940,7 +4940,7 @@ if (openMuseGoogleClient && openMuseGoogleCredentials && openMusePublicOrigin) {
 // twin: a second copy would age separately, and one prefix family guarded two ways is a
 // silent fork the first time either gains a check. (Unreachable-in-a-booted-deployment branch
 // included for the same reason it always was.)
-const openMuseGoogleGuard = createDeploymentRequireUser(
+const deploymentRequireUser = createDeploymentRequireUser(
   config,
   auth,
   roleRepository,
@@ -4948,7 +4948,7 @@ const openMuseGoogleGuard = createDeploymentRequireUser(
 const openMuseGoogleOAuth = {
   app: createOpenMuseGoogleRoutes({
     service: openMuseGoogleService,
-    requireUser: openMuseGoogleGuard,
+    requireUser: deploymentRequireUser,
     ...(openMusePublicOrigin
       ? { allowedHttpOrigin: openMusePublicOrigin }
       : {}),
@@ -4992,7 +4992,7 @@ const openMuseMail = createOpenMuseMailRoutes({
     ? { client: buildOpenMuseMailClient({ dial: openMuseMailDial }) }
     : {}),
   service: openMuseGoogleService,
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
   ownerDisabled: openMuseGoogleRows.ownerDisabled,
 });
 
@@ -5024,7 +5024,7 @@ const openMuseCalendarClient = (() => {
 const openMuseCalendar = createOpenMuseCalendarRoutes({
   ...(openMuseCalendarClient ? { client: openMuseCalendarClient } : {}),
   service: openMuseGoogleService,
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
   ownerDisabled: openMuseGoogleRows.ownerDisabled,
 });
 
@@ -5085,7 +5085,7 @@ void openMuseReviewedActionService
   });
 const openMuseReviewedActions = createOpenMuseReviewedActionsRoutes({
   service: openMuseReviewedActionService,
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /*
@@ -5107,7 +5107,7 @@ const openMuseActivity = createOpenMuseActivityRoutes({
     }),
     notifications: openMuseNotificationStore,
   }),
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /*
@@ -5140,7 +5140,7 @@ const openMuseOpsSignals = createOpenMuseOpsSignalsRoutes({
       cleanupView: openMuseDeletionCleanup,
     }),
   }),
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /**
@@ -5219,7 +5219,9 @@ const aiObservabilityRunsQuery = createRunsQueryService({
   port: opikObservationPort,
 });
 const aiObservability = createAiObservabilityRoutes({
-  requireUser: createDeploymentRequireUser(config, auth, roleRepository),
+  // The shared guard, not a second construction (OCR m209): one deployment-level
+  // requireUser per process, or two copies age separately and fork silently.
+  requireUser: deploymentRequireUser,
   canManageBot: aiObservabilityCanManageBot,
   healthService: opikHealthService,
   database,
@@ -5266,14 +5268,17 @@ const opikExportReauthorize = createExportReauthorization({
     roleRepository.rolesForUser(userId),
   ),
 });
-if (opikBootConfig.enabled) {
-  createObservationExportWorker({
-    database,
-    config: () => opikBootConfig,
-    port: opikObservationPort,
-    reauthorize: opikExportReauthorize,
-  }).start();
-}
+// Handles held for shutdown (OCR m204): an unheld `Repeating` keeps claiming
+// leased work through the graceful-shutdown window, then dies mid-write at
+// process.exit. Stop order below runs before the listeners go away.
+const opikExportWorker = opikBootConfig.enabled
+  ? createObservationExportWorker({
+      database,
+      config: () => opikBootConfig,
+      port: opikObservationPort,
+      reauthorize: opikExportReauthorize,
+    }).start()
+  : null;
 /*
  * The T35 retention worker (the fix report §5 wiring): sweep the four local
  * tables for expired targets and delete them for real. The M1c read
@@ -5284,18 +5289,20 @@ if (opikBootConfig.enabled) {
  * default lease 60s vs the 5s upstream timeout): raise the upstream timeout or
  * concurrency and a T34-style renew belongs here.
  */
-if (opikBootConfig.enabled) {
-  createObservationRetentionWorker({
-    database,
-    config: () => opikBootConfig,
-    port: opikObservationPort,
-    retention: () => resolveRetentionDays(process.env),
-    audit: bootAuditStore,
-    exportStore: observationExportStore,
-    invalidateReads: ({ scopeKey }) =>
-      aiObservabilityRunsQuery.invalidateKey(scopeKey),
-  }).start();
-}
+const opikRetentionWorker = opikBootConfig.enabled
+  ? createObservationRetentionWorker({
+      database,
+      config: () => opikBootConfig,
+      port: opikObservationPort,
+      retention: () => resolveRetentionDays(process.env),
+      audit: bootAuditStore,
+      exportStore: observationExportStore,
+      invalidateReads: ({ scopeKey }) =>
+        aiObservabilityRunsQuery.invalidateKey(scopeKey),
+    }).start()
+  : null;
+/** Held for shutdown (OCR m205); assigned in the billing-ready block below. */
+let opikExecutionWorker: Repeating | null = null;
 // The finished opik.export and opik.retention tickets ride the same work_items
 // table every bounded task does; the wake-up reaper's own cadence (a week past
 // done) keeps the table from growing without end. A purged retention ticket on
@@ -5480,7 +5487,8 @@ if (
   // answered; this cast-free narrow exists for the same compiler reason.
   const opikEvaluationCreditPolicy = billingSettings.creditPolicy;
   if (opikEvaluationCreditPolicy.configured) {
-    createExperimentExecutionWorkerBoot({
+    // Held for shutdown (OCR m205), like the other observation workers.
+    opikExecutionWorker = createExperimentExecutionWorkerBoot({
       database,
       audit: bootAuditStore,
       billing: {
@@ -5511,7 +5519,7 @@ const openMuseGoals = createOpenMuseGoalsRoutes({
   store: createOpenMuseGoalStore({
     rows: createOpenMuseGoalRows(database),
   }),
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /*
@@ -5529,7 +5537,7 @@ const openMuseIdeas = createOpenMuseIdeasRoutes({
     getTask: (ownerUserId, taskId) =>
       openMuseTaskStore.get(ownerUserId, taskId),
   }),
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /*
@@ -5543,7 +5551,7 @@ const openMuseMemories = createOpenMuseMemoriesRoutes({
   store: createOpenMuseMemoryStore({
     rows: createOpenMuseMemoryRows(database),
   }),
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /*
@@ -5554,7 +5562,7 @@ const openMuseMemories = createOpenMuseMemoriesRoutes({
  */
 const openMuseNotifications = createOpenMuseNotificationRoutes({
   store: openMuseNotificationStore,
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /*
@@ -5566,7 +5574,7 @@ const openMuseNotifications = createOpenMuseNotificationRoutes({
 // openMuseFileStore is the instance hoisted beside the task runner above.
 const openMuseDocuments = createOpenMuseDocumentsRoutes({
   store: openMuseFileStore,
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /*
@@ -6234,6 +6242,11 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     wakeUpSweep.stop();
     wakeUpReaper.stop();
     opikTicketReaper.stop();
+    // The observation workers (OCR m204/m205): leases expire in 60s, so stop need
+    // not wait on in-flight work — it only has to stop CLAIMING new work.
+    opikExportWorker?.stop();
+    opikRetentionWorker?.stop();
+    opikExecutionWorker?.stop();
     openMuseTaskSweep.stop();
     openMuseTaskReaper.stop();
     memorySweep.stop();

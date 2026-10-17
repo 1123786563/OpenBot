@@ -289,6 +289,17 @@ export function buildOtlpJsonPayload(
     for (const [key, value] of Object.entries(span.attributes ?? {})) {
       attributes.push({ key, value: { stringValue: value } });
     }
+    // Overrides are refused, never silently dropped (OCR m213): a probe that meant
+    // to exercise the explicit path must not slide into the derived path and mint
+    // an idMapping that attests a surface nobody verified.
+    if (
+      (span.opikSpanId !== undefined || span.opikParentSpanId !== undefined) &&
+      span.opikTraceId === undefined
+    ) {
+      throw new Error(
+        "opik.span_id/opik.parent_span_id require opik.trace_id — the overrides ride the explicit path only",
+      );
+    }
     if (span.opikTraceId) {
       if (!isUuidV7(span.opikTraceId))
         throw new Error("opik.trace_id override must be a UUIDv7");

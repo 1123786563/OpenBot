@@ -227,6 +227,10 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
       ? `model:${observation.modelId}`
       : "model";
   const name = projectSafeName(label);
+  // Times degrade honestly (OCR m157): see baseSpan in tool-steps — a borrowed
+  // sibling timestamp beats filing the span in 1970 under "0".
+  const nowNs = (): string => (BigInt(Date.now()) * 1_000_000n).toString();
+  const startNs = nanos(observation.occurredAt) ?? nanos(observation.endedAt) ?? nowNs();
   return {
     traceId,
     ...(parentSpanId !== undefined ? { parentSpanId } : {}),
@@ -234,8 +238,8 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
     // A withheld name would be refused by the port; a known-safe literal stands in.
     name:
       name.state === "omitted" ? { state: "projected", text: "model" } : name,
-    startTimeUnixNano: nanos(observation.occurredAt) ?? "0",
-    endTimeUnixNano: nanos(observation.endedAt) ?? "0",
+    startTimeUnixNano: startNs,
+    endTimeUnixNano: nanos(observation.endedAt) ?? startNs,
     attributes,
   };
 }

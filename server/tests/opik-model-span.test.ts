@@ -100,6 +100,36 @@ const CANARY_GH = `ghp_${"c".repeat(24)}`;
 // ---------------------------------------------------------------------------
 
 describe("the model span recorder", () => {
+  test("unusable timestamps degrade to borrowed ones, never to 1970 (OCR m157)", async () => {
+    const badDates = await recordAndCapture({
+      occurredAt: new Date("not-a-date"),
+      endedAt: new Date("not-a-date"),
+      provider: "openai",
+      modelId: "gpt-test",
+      ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
+      scope: aScope(),
+    });
+    const span = badDates.writes[0]?.spans[0];
+    expect(span?.startTimeUnixNano).not.toBe("0");
+    expect(span?.endTimeUnixNano).not.toBe("0");
+    // Zero duration is the honest answer when only one time survives.
+    expect(span?.startTimeUnixNano).toBe(span?.endTimeUnixNano);
+
+    // A valid end with an unusable start borrows the end; the order stays sane.
+    const borrowed = await recordAndCapture({
+      occurredAt: new Date("not-a-date"),
+      endedAt,
+      provider: "openai",
+      modelId: "gpt-test",
+      ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
+      scope: aScope(),
+    });
+    const b = borrowed.writes[0]?.spans[0];
+    expect(BigInt(b?.startTimeUnixNano ?? "0")).toBe(
+      BigInt(b?.endTimeUnixNano ?? "1"),
+    );
+  });
+
   test("a provable run chain is joined, a malformed one is never claimed (OCR h6)", async () => {
     const runTraceId = "a".repeat(32);
     const runSpanId = "b".repeat(16);

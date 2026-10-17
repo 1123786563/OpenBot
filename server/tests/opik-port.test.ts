@@ -184,8 +184,11 @@ describe("the verified contract gates every operation before network I/O", () =>
   });
 
   test("writes need a verified body limit; an oversized body never leaves", async () => {
+    // Both verified boundary facts absent: nothing about the cap is proven.
     const noLimit = structuredClone(manifest);
     noLimit.bodyLimit.cappedAtBytes = null;
+    noLimit.bodyLimit.maxAcceptedBytes = null;
+    noLimit.bodyLimit.minRejectedBytes = 999999;
     const { calls: none, transport: t1 } = recorder(() => new Response(""));
     await expect(
       port({ contract: noLimit, fetch: t1 }).writeSpans(trusted, {
@@ -193,6 +196,10 @@ describe("the verified contract gates every operation before network I/O", () =>
       }),
     ).rejects.toThrow(new OpikPortError("BODY_LIMIT_UNVERIFIED"));
     expect(none.length).toBe(0);
+
+    // A rejected byte is a floor, never a ceiling: with the cap and the largest
+    // proven-accepted byte both absent, minRejectedBytes cannot stand in (OCR m149)
+    // — noLimit above already carries that floor and still refuses.
 
     const tiny = structuredClone(manifest);
     tiny.bodyLimit.cappedAtBytes = 32;
@@ -432,6 +439,7 @@ describe("serialization follows the verified T04 contract exactly", () => {
       p.createTrace(trusted, {
         traceId: "8ac709aae94a39a5032699e02e9475f7",
         startTime: new Date("2026-10-15T03:57:39.074Z"),
+        binding: ownBinding,
       }),
     ).rejects.toThrow(new OpikPortError("OPERATION_INPUT_INVALID"));
     expect(calls.length).toBe(0);
@@ -537,6 +545,7 @@ describe("every serialized body respects the verified cap and the projection cei
         traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
         threadId: "x".repeat(200),
         startTime: new Date("2026-10-15T03:57:39.074Z"),
+        binding: ownBinding,
       }),
     ).rejects.toThrow(new OpikPortError("REQUEST_BODY_TOO_LARGE"));
     expect(calls.length).toBe(0);
@@ -561,6 +570,7 @@ describe("every serialized body respects the verified cap and the projection cei
         traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
         threadId: "x".repeat(MAX_SAFE_TEXT_BYTES + 1),
         startTime: new Date("2026-10-15T03:57:39.074Z"),
+        binding: ownBinding,
       }),
     ).rejects.toThrow(new OpikPortError("OPERATION_INPUT_INVALID"));
     expect(calls.length).toBe(0);
@@ -703,6 +713,7 @@ describe("a hostile or dead upstream settles within the deadline", () => {
     const result = await port({ fetch: transport }).createTrace(trusted, {
       traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
       startTime: new Date("2026-10-15T03:57:39.074Z"),
+      binding: ownBinding,
     });
     expect(result).toEqual({
       outcome: "malformed",
@@ -820,9 +831,25 @@ describe("ownership drift fails closed and stops the writes behind it", () => {
       await p.createTrace(trusted, {
         traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
         startTime: new Date(),
+        binding: ownBinding,
       }),
     );
     expect(calls.length).toBe(1);
+  });
+
+  test("a REST creation without a binding is refused before any I/O (OCR m154)", async () => {
+    const { calls, transport } = recorder(
+      () => new Response("", { status: 201 }),
+    );
+    const p = port({ fetch: transport });
+    await expect(
+      p.createTrace(trusted, {
+        traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
+        startTime: new Date(),
+        binding: undefined,
+      }),
+    ).rejects.toThrow(new OpikPortError("OPERATION_INPUT_INVALID"));
+    expect(calls.length).toBe(0);
   });
 
   test("a binding that no longer matches the trusted scope is drift before any I/O", async () => {
