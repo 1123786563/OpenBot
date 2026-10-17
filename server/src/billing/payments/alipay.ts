@@ -248,14 +248,25 @@ export function createAlipayProvider(config: AlipayConfig): PaymentProvider {
     async verifyNotification(
       _headers: Headers,
       rawBody: string,
-    ): Promise<{ ok: true; fact: PaymentFact } | { ok: false }> {
+    ): Promise<
+      | { ok: true; fact: PaymentFact }
+      | { ok: false; referencedOutTradeNo?: string }
+    > {
       // The form is parsed exactly once, from the raw bytes; every check below reads that parse.
       const parameters: Record<string, string> = {};
       for (const [key, value] of new URLSearchParams(rawBody)) {
         parameters[key] = value;
       }
+      // The form is plaintext regardless of the signature's fate, so a refused delivery can
+      // still name the order it claims — an audit pointer only (see the seam's docblock); the
+      // service may anchor an anomaly row with it and settle nothing through it.
+      const referencedOutTradeNo = stringField(parameters, "out_trade_no");
+      const refusal = () =>
+        referencedOutTradeNo
+          ? { ok: false as const, referencedOutTradeNo }
+          : { ok: false as const };
       const signature = parameters.sign;
-      if (!signature) return { ok: false };
+      if (!signature) return refusal();
       if (
         !rsaVerify(
           config.alipayPublicKeyPem,
@@ -263,11 +274,11 @@ export function createAlipayProvider(config: AlipayConfig): PaymentProvider {
           signature,
         )
       ) {
-        return { ok: false };
+        return refusal();
       }
       // The app id is the one merchant identity this deployment owns; anything else is not our
       // notification, however well signed for someone else.
-      if (parameters.app_id !== config.appId) return { ok: false };
+      if (parameters.app_id !== config.appId) return refusal();
       const outTradeNo = stringField(parameters, "out_trade_no");
       if (!outTradeNo) return { ok: false };
       return { ok: true, fact: alipayFact(parameters, outTradeNo) };

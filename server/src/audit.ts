@@ -501,6 +501,58 @@ export const auditEventTypes = [
   "identity_provider.registered",
   "identity_provider.removed",
   /*
+   * The Bifrost bot service registry (Bifrost #234, 04.1): a server-side Bot's service identity,
+   * registered, redeclared, disabled and re-enabled by an administrator.
+   *
+   * A row here is about IDENTITY AND DECLARATION ONLY. Registering a Bot mints no credential,
+   * creates no user authorization and attaches no credit (04.2 and 04.5+ do each of those under
+   * their own rows), so a `bot_service.registered` row next to a credential or a grant is two
+   * separate facts that happened to the same botId, never one act. `bot_service.disabled` is the
+   * row downstream authentication and key issuance are refused on; it is deliberately its own
+   * event rather than a `bot.*` one, because an agent a person runs and a registered service a
+   * deployment approves are different questions, however much the word "Bot" covers both.
+   */
+  "bot_service.registered",
+  "bot_service.updated",
+  "bot_service.disabled",
+  "bot_service.enabled",
+  /*
+   * The Bot service credential lifecycle (Bifrost #235, 04.2), one row per act an administrator
+   * made against a botId. The vault writes its own credential.created/rotated/revoked rows keyed
+   * by credential id; these name the botId as the target, so the trail answers "what happened to
+   * this Bot's access" without joining through a uuid. A plaintext secret is in none of them —
+   * it exists exactly once, in the response that minted it.
+   */
+  "bot_service.credential_issued",
+  "bot_service.credential_rotated",
+  "bot_service.credential_revoked",
+  /*
+   * A one-time binding offer was issued (Bifrost #236, 04.3): a Bot's authenticated server asked to
+   * start binding one external identity. The row names the offer by its sha256 digest — the
+   * plaintext code exists exactly once, in the response that minted it, and a trail reader can
+   * never redeem what they read. The offer is not a user authorization (04.5 creates that when the
+   * person confirms), so this row sits beside the bot_service.* rows rather than replacing any.
+   */
+  "bot_binding.offered",
+  /*
+   * The model access grant lifecycle (Bifrost #238, 04.5+): `granted` is the confirmation itself —
+   * a signed-in person turned a one-time binding code into an authorization for one Bot to call
+   * models as them — and `reconfirmed` is the idempotent repeat, the same authorization confirmed
+   * again with a fresh code, answered with the grant that already was. Both rows name the grant
+   * and carry the offer's sha256 digest; the plaintext code is in neither, and the grant's own
+   * later acts get their own events rather than rewriting these.
+   */
+  "model_access.granted",
+  "model_access.reconfirmed",
+  /*
+   * The person's own revocation (Bifrost #240, 04.7): one event per real revocation, naming the
+   * actor and the grant. A repeated revocation is a no-op, not an event — nothing happened for it
+   * to record — and the event carries no more than the grant's own fields.
+   */
+  "model_access.revoked",
+  "gateway_admin_credential.saved",
+  "gateway_admin_credential.save_refused",
+  /*
    * What a Bot is and what it may reach.
    *
    * The trail recorded every mouse movement a Bot made and could not answer "who pointed this Bot at
@@ -690,6 +742,28 @@ export const auditEventTypes = [
    * decision was asked for and made.
    */
   "craft.connect_app_decided",
+  /**
+   * An administrator opened or closed a model for this deployment (Bifrost 03.7).
+   *
+   * Every successful open and close writes one row here, carrying the ModelRef triple, the
+   * previous state, the new state and the administrator's recorded reason — the history of
+   * the open scope lives in this append-only trail, while `gateway_model_open_scopes` holds
+   * only the current state. The reason is displayable by design: it is what a user-facing
+   * screen shows when a model is closed, and what an auditor reads when asking why a model
+   * stopped (or started) being selectable.
+   */
+  "gateway.model_scope_changed",
+  /**
+   * An administrator triggered an immediate catalog/price sync (Bifrost 03.5).
+   *
+   * Every executed trigger — the manual action shares 03.4's single sync
+   * implementation, so concurrent triggers may share one run — writes one row
+   * here, carrying who triggered it, when, and the outcome: the synced time
+   * and the appended/skipped snapshot counts on success, or the failing
+   * layer's fixed reason code on failure. The trigger's result is the sync's
+   * own answer, never upstream bytes, so the trail stays displayable.
+   */
+  "gateway.catalog_sync_triggered",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

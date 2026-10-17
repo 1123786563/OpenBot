@@ -1,0 +1,53 @@
+-- Bifrost 05.2 (#243): recovery for the gateway Customer association — added to the
+-- table 05.1 (#242) already created and applied, in place. This is an ALTER evolution
+-- of that table, never a rebuild: 05.1's migration is immutable history, and every
+-- row it wrote (provision_state 'active', a gateway_customer_id on file) must keep
+-- answering unchanged.
+--
+-- WHAT RECOVERY NEEDS THAT THE 05.1 SHAPE DID NOT CARRY:
+--
+-- 1. external_reference — the stable correlation key a create request carries and
+--    recovery looks the remote subject up by. It is derived deterministically from
+--    the subject, and 05.1 already encodes exactly that derivation in
+--    gateway_customer_name (= payerKey), so the key is a *stored generation* of that
+--    column rather than a second hand-maintained copy:
+--
+--      GENERATED ALWAYS AS (gateway_customer_name) STORED, NOT NULL
+--
+--    The generation IS the backfill (PostgreSQL computes it for every existing row
+--    during the ADD COLUMN), and — decisive — it is what keeps 05.1's provisioning
+--    insert working unmodified: that insert names no external_reference, so a plain
+--    NOT NULL column backfilled once would reject every *future* 05.1 insert and
+--    break the seam this ticket must consume (and with it 05.1's own tests). A
+--    generated column admits no direct write, which is correct: local code never
+--    invents the key, it derives from the subject like everything else here.
+--
+-- 2. gateway_customer_id becomes nullable. A recovery reservation (provision_state
+--    'pending') records an attempt in flight before any outcome is on file — no
+--    remote id exists yet. 05.1's rows all carry an id and are untouched: dropping
+--    NOT NULL constrains nothing that exists, and 05.1's remote-id unique index
+--    already tolerates any number of NULLs (PostgreSQL unique indexes treat NULLs
+--    as distinct), so that index needs no replacement — a second, partial index on
+--    the same column would be pure write overhead.
+--
+-- 3. provision_state widens from 05.1's single 'active' to the recovery machine
+--    pending → confirmed | recoverable. 'active' STAYS a legal value: 05.1's
+--    provisioning inserts 'active' on every fresh create through the seam this
+--    ticket consumes, so excluding it would break that seam on its next insert, and
+--    rewriting 05.1's existing rows to a new spelling would mutate applied history
+--    for nothing. 05.2's read boundary maps 'active' to 'confirmed' — both spell
+--    the same fact, an association whose remote id is on file. Adoption of a
+--    reservation (the one place recovery completes a row inside the create path)
+--    writes 'confirmed', the 3-state vocabulary this ticket owns.
+--
+-- 4. One new unique index: external_reference. One association per correlation key,
+--    the database arbitrates, never a read-check — the same discipline as 05.1's
+--    three indexes.
+--
+-- The mapping remains a mapping and nothing more: no balance, no grant and no
+-- virtual key is born, moved or copied by any of this.
+ALTER TABLE "gateway_customers" ALTER COLUMN "gateway_customer_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "gateway_customers" ADD COLUMN "external_reference" text GENERATED ALWAYS AS ("gateway_customer_name") STORED NOT NULL;--> statement-breakpoint
+ALTER TABLE "gateway_customers" DROP CONSTRAINT "gateway_customers_provision_state_check";--> statement-breakpoint
+ALTER TABLE "gateway_customers" ADD CONSTRAINT "gateway_customers_provision_state_check" CHECK ("gateway_customers"."provision_state" IN ('pending', 'confirmed', 'recoverable', 'active'));--> statement-breakpoint
+CREATE UNIQUE INDEX "gateway_customers_external_reference_unique_idx" ON "gateway_customers" USING btree ("external_reference");

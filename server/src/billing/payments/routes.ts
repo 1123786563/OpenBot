@@ -28,6 +28,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../../audit";
 import type { AppVariables } from "../../auth/guards";
+import { resolvePayerForPersonalUser } from "../payer-personal";
 import { readBodyCapped } from "../raw-body";
 import { billingReadScopeOf } from "../routes";
 import { BillingError } from "../types";
@@ -185,6 +186,13 @@ export function createPaymentRoutes(deps: {
           400,
         );
       }
+      if (error.refusal.reason === "missing-owner") {
+        // No server-resolved owner arrived: refused before any order row existed (AC14).
+        return context.json(
+          { error: "An order requires an owner resolved from the signed-in identity." },
+          400,
+        );
+      }
       if (error.refusal.reason === "pending-purchase") {
         return context.json(
           {
@@ -236,6 +244,10 @@ export function createPaymentRoutes(deps: {
     const denied = deps.requireAdmin(context);
     if (denied) return denied;
     const input = purchaseInput.parse(await context.req.json());
+    // The order's owner is resolved HERE, from the authenticated session — the request body
+    // (a strict zod object) carries no ownership field at all, so nothing a caller sends can
+    // choose or change who the order belongs to (AC14/Q27). The audit actor rides beside it.
+    const ownerPayerRef = resolvePayerForPersonalUser(context.var.actor);
     const { order } = await deps.service.createPurchase({
       planCode: input.planCode,
       provider: input.provider,
@@ -244,6 +256,7 @@ export function createPaymentRoutes(deps: {
       // catalogs' monthly prices identical, so there is no second number to choose).
       cycle: "monthly",
       createdBy: context.var.actor.id,
+      ownerPayerRef,
     });
     if (deps.audit) {
       await recordAuditEvent(deps.audit, {

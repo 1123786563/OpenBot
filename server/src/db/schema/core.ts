@@ -59,6 +59,26 @@ export const credentialKind = pgEnum("credential_kind", [
    * that speaks for the deployment, and one row per person that speaks for them.
    */
   "mcp_user_token",
+  /*
+   * A registered Bot's service credential (Bifrost #235, 04.2): the secret a Bot's own server
+   * presents to prove which Bot it is. Its own kind for the same reason every other kind is: an
+   * administrator reading "what does this deployment hold" must be able to see the Bots without
+   * them surfacing as agents or connectors, and revoking one must never be confused with revoking
+   * anything else. `keyId` carries the botId; `credentials_active_key_idx` keeps at most one live
+   * credential per Bot, which is what makes issuance and rotation race-safe.
+   */
+  "bot_service",
+  /*
+   * The deployment's own credential for its Bifrost gateway's admin surface (Bifrost 01.2, #208).
+   *
+   * Its own kind because it is the one secret that speaks for the whole deployment at another
+   * system's control plane. It is write-only: the administrator writes and rotates it through the
+   * gateway credential routes and every read path answers a redacted status; only the server-internal
+   * resolver in `gateway/admin-credential.ts` ever decrypts it, and it never returns through an HTTP
+   * response. It must therefore never be writable through the generic `/api/admin/credentials`
+   * routes — their allowlist deliberately does not widen to match this enum.
+   */
+  "gateway_admin",
 ]);
 
 export const users = pgTable("users", {
