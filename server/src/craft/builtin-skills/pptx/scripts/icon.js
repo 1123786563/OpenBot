@@ -9,7 +9,6 @@
 // as global npm packages; this script resolves them from the global npm root
 // since NODE_PATH is not set in the sandbox.
 
-
 const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
