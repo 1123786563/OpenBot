@@ -94,6 +94,16 @@ export type ActorAgentResolverDependencies = {
   acquireLearnedSkills?: AcquireLearnedSkills;
   loadPersonalMemoryForActor?: (actorId: string) => LoadPersonalMemory;
   loadKnowledgeForActor?: (actorId: string) => LoadKnowledgeForBot;
+  /**
+   * The builtin run's trusted observation-scope resolver (T-final M1). Handed
+   * through to the builtin agents, which ask it once per run; a null answer
+   * keeps that run's facts scope-less. Absent means no threading at all — the
+   * same inert footing the observation recorders keep when unregistered.
+   */
+  resolveRunObservationScope?: (
+    actor: AgentActor,
+    botId: string,
+  ) => Promise<unknown>;
 };
 
 /**

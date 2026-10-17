@@ -39,7 +39,7 @@ import { createAiObservabilityHealthRoutes } from "../src/ai-observability/route
 const manifest = (await Bun.file(
   join(
     import.meta.dir,
-    "../../docs/plans/evidence/2026-10-16-issue4/T04/opik-contract/47-manifest.json",
+    "../src/ai-observability/opik-contract/47-manifest.json",
   ),
 ).json()) as VerifiedOpikContract;
 

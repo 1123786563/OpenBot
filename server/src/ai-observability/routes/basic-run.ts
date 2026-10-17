@@ -1,13 +1,16 @@
 /**
  * The basic remote run-reporting seam (Issue #16 / DAG T10).
  *
- * Mounting contract for the coordinator (this file is deliberately NOT wired into
- * routes/index.ts — that seam is T01-owned):
+ * Mounting contract (T-final H1 — now MET, after the final review found the
+ * route assembly-complete but zero-mounted):
  *
  *   routes.route("/bots/:botId/runs", createBasicRunRoutes({ ... }))
  *
- * inside createAiObservabilityRoutes, which puts the endpoint at
- * POST /api/ai-observability/bots/:botId/runs behind the root requireUser.
+ * inside createAiObservabilityRoutes (routes/index.ts), which puts the endpoint
+ * at POST /api/ai-observability/bots/:botId/runs behind the root requireUser —
+ * the same prefix the T11 query routes own the GETs of. The mount is guarded by
+ * the deps actually carrying begin/finish; absent, the route stays unmounted
+ * under the module's "absent = not mounted" contract.
  *
  * This is the seam through which an OpenBot-mediated remote AG-UI execution reports
  * the events OpenBot actually observed. Authorization is the management question

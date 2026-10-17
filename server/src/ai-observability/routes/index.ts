@@ -39,6 +39,7 @@ import type { OpikPort } from "../opik-port";
 import type { RunsQueryService } from "../queries/runs";
 import { createWorkTicketReader } from "../results";
 import { createAdminSummaryRoutes } from "./admin-summary";
+import { createBasicRunRoutes } from "./basic-run";
 import { createExperimentComparisonRoutes } from "./comparison";
 import { createExperimentWriteRoutes } from "./experiments";
 import { createExportRoutes } from "./exports";
@@ -57,7 +58,18 @@ export type AiObservabilityDeps = {
   /** T07's authoritative ownership seam (Issue #13), injected. */
   bindings?: Pick<RunBindingStore, "latestAttempt"> &
     Partial<
-      Pick<RunBindingStore, "capabilitiesByOpikTraceIds" | "countUnreconciled">
+      Pick<
+        RunBindingStore,
+        | "capabilitiesByOpikTraceIds"
+        | "countUnreconciled"
+        // The write half (T-final H1): the basic-run report route's begin/finish.
+        // Absent, the report route is not mounted — the same "absent = not
+        // mounted" contract as every other sub-router here. Never partially:
+        // both are required together, because a binding that begins but can
+        // never settle terminal would strand the retention discovery.
+        | "begin"
+        | "finish"
+      >
     >;
   config?: () => OpikConfig;
   /** The verified port, or null when no verified contract backs this deployment. */
@@ -93,7 +105,34 @@ export function createAiObservabilityRoutes(
   }
 
   // The T12 leftover: the creator's run query routes, honestly 503 when the
-  // deployment has no verified port.
+  // deployment has no verified port. Beside them, the T-final H1 mount: the
+  // basic-run report route (Issue #16 / T10), the POST half of the same seam —
+  // the one production caller of bindings.begin/finish and the report face a
+  // remote AG-UI execution reports through. Query routes own the GETs of this
+  // path; the report owns the POST, so both mount on the same prefix.
+  if (
+    deps.scopeEpoch &&
+    deps.bindings &&
+    deps.config &&
+    deps.bindings.begin &&
+    deps.bindings.finish
+  ) {
+    routes.route(
+      "/bots/:botId/runs",
+      createBasicRunRoutes({
+        canManageBot: deps.canManageBot,
+        scopeEpoch: deps.scopeEpoch,
+        // begin/finish only: the report route classifies and settles — it
+        // never reads attempts, so the read methods stay unasked.
+        bindings: {
+          begin: deps.bindings.begin,
+          finish: deps.bindings.finish,
+        },
+        // bindingTtlMs stays at the seam default (7 days, the Spec's
+        // run-trace retention default).
+      }),
+    );
+  }
   if (deps.scopeEpoch && deps.bindings && deps.config) {
     routes.route(
       "/bots/:botId/runs",
