@@ -104,12 +104,19 @@ import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
 import { CREDIT_SCALE, createCredits } from "./billing/credits";
 import { createCreditWriter } from "./billing/credits-writer";
+import { createPlanRenewalGrantor } from "./billing/plan-renewals";
+import {
+  CreditInsufficientError,
+  currentPayerBinding,
+  ensureDeploymentPayerBinding,
+  resolveConsumptionPayerBinding,
+} from "./billing/payer-binding";
 import {
   countChatInputTokens,
   fitChatInputRequest,
 } from "./billing/input-bound";
 import { createLagoClient } from "./billing/lago";
-import { startUsageDeliverySweeps } from "./billing/maintenance";
+import { startBillingRenewalSweeps, startUsageDeliverySweeps } from "./billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
 import { createAlipayProvider } from "./billing/payments/alipay";
 import { startPaymentSweeps } from "./billing/payments/maintenance";
@@ -184,7 +191,6 @@ import { createSnapshotStore } from "./computer/snapshot-store";
 import { createStreamAuthorizer } from "./computer/stream-auth";
 import { loadConfig } from "./config";
 import {
-  CreditGateError,
   CreditGateFailureError,
   CreditPolicyUnconfiguredError,
   type IdentifyActor,
@@ -228,6 +234,11 @@ import {
   decryptCredentialForUse,
   resolveModelApiKey,
 } from "./credentials";
+import {
+  createGatewayAdminCredentialService,
+  installGatewayAdminCredentialService,
+} from "./gateway/admin-credential";
+import { createEnterpriseStore } from "./admin/settings-store";
 import { createDatabase } from "./db/client";
 import {
   channelAgents,
@@ -268,6 +279,7 @@ import { githubCallbackRoutes } from "./identity/github-callback";
 import { retireIdentityLinks, retireOwnedAccounts } from "./identity/retire";
 import { slackCodeRedeemer } from "./identity/slack-redeem";
 import { createIdentityStore } from "./identity/store";
+import { createBotServiceRegistry } from "./bot-services/registry";
 import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
@@ -976,6 +988,29 @@ const policyListener = await startPolicyListener(
  * unavailable, and the row is a note for a reader rather than something the server depends on.
  */
 const bootAuditStore = createAuditStore(database);
+// The Bifrost bot service registry (04.1) composed with its credential surface and
+// authenticator (04.2): the shared vault holds each Bot's service secret encrypted, and
+// authentication re-reads it on every presentation, so revocation and disabling bite at once.
+const botServiceStore = createBotServiceRegistry(database, {
+  encryptionKey: config.keyEncryptionKey,
+  credentialStore,
+  auditStore: bootAuditStore,
+});
+
+/*
+ * The Bifrost gateway's admin credential (01.2, #208): encrypted in the shared vault under its
+ * own kind, read back only as a redacted status. The routes answer writes and status; the one
+ * decryption path is installed here so server-side trusted code (01.5's probe, 07.x's admission
+ * extension) resolves it without ever holding the key itself. The writer's role is re-checked
+ * against the same `user_roles` table `requireAdmin` consults.
+ */
+const gatewayAdminCredentialService = createGatewayAdminCredentialService({
+  database,
+  encryptionKey: config.keyEncryptionKey,
+  member: (userId: string) => createEnterpriseStore(database).member(userId),
+  auditStore: bootAuditStore,
+});
+installGatewayAdminCredentialService(gatewayAdminCredentialService);
 // One store: the gateway writes through it, a route reads it, and the sweep below takes the old ones out.
 const pageFrameStore = createPageFrameStore(database);
 let deliveryNotifications: (
@@ -3720,6 +3755,18 @@ const billing =
         const externalCustomerKey = deploymentExternalCustomerId(
           config.deploymentId ?? tenantPackage.tenantId,
         );
+        /*
+         * The consumption entry's payer binding (B5-219): the deployment's own account,
+         * made once at boot through the payer layer so the mapping row exists and recovery
+         * can restore it. It is the explicit default the gate below resolves to when a
+         * request carries no binding of its own — the ONE deployment-key default on the
+         * consumption path, and the branch group 09 (09.2) replaces with per-surface payer
+         * resolution. An insufficient balance on whatever binding a request resolves to is
+         * refused on that account; nothing here or downstream ever switches accounts.
+         */
+        const deploymentPayerBinding = await ensureDeploymentPayerBinding(database, {
+          id: config.deploymentId ?? tenantPackage.tenantId,
+        });
         const lagoClient = createLagoClient({
           baseUrl: settings.apiUrl,
           apiKey: settings.apiKey,
@@ -3730,6 +3777,9 @@ const billing =
             ? { requestTimeoutMs: settings.requestTimeoutMs }
             : {}),
         });
+        // The credit ledger's write side, hoisted so the billing service's renewal payout and
+        // the assembly's creditWriter below share one writer (one set of birth invariants).
+        const billingCreditWriter = createCreditWriter(database);
         return {
           service: createBillingService({
             config: {
@@ -3763,6 +3813,20 @@ const billing =
                 }
               : {}),
             planEntitlements: settings.planEntitlements,
+            // The renewal payout (10.3): a subscription period's allowance lands in the
+            // subscription owner's account. The SERVICE derives that account from the row's own
+            // owner pair; the grantor below spells the ledger write, under the period-tagged key
+            // (composed in ./billing/plan-renewals, the one tested place) that makes a duplicate
+            // or racing delivery a no-op while the next period pays again.
+            renewals: createPlanRenewalGrantor({
+              creditsFor: (planCode) => {
+                const entry = settings.planCatalog.get(planCode);
+                return entry && entry.credits > 0
+                  ? Math.round(entry.credits * CREDIT_SCALE)
+                  : null;
+              },
+              grantCredits: billingCreditWriter.grantCredits,
+            }),
           }),
           // Exposed for the payment assembly below: its activation gate reads the plan's wire
           // facts (interval, currency) through the same client, so the two never disagree about
@@ -3770,9 +3834,13 @@ const billing =
           client: lagoClient,
           externalCustomerKey,
           customerName: `OpenBot deployment ${externalCustomerKey}`,
+          // The consumption entry's payer binding (B5-219): what the model gate below
+          // resolves to when the request carries no binding of its own. See the boot
+          // comment above for why this is the one explicit deployment default.
+          deploymentPayerBinding,
           // The credit ledger's write side — the same writer the admin grant route and the plan
           // payout below share. One writer, one set of birth invariants, every grant flows here.
-          creditWriter: createCreditWriter(database),
+          creditWriter: billingCreditWriter,
         };
       })();
 const usageOutbox =
@@ -3803,12 +3871,24 @@ if (billing !== undefined && usageOutbox !== undefined) {
     const modelPolicy = creditPolicy.models.get(modelId);
     if (!modelPolicy) throw new ModelNotPricedError(modelId);
 
+    /*
+     * The request's one payer (B5-219): resolved ONCE here, from the request's own
+     * binding when the surface bound one, otherwise the deployment's boot binding — and
+     * every write below (reserve, outbox fact, unsettled evidence) names exactly this
+     * account. A refusal below never re-resolves and never switches: an insufficient
+     * balance on the bound account is the final answer for this request.
+     */
+    const payerBinding = resolveConsumptionPayerBinding({
+      requestBinding: currentPayerBinding(),
+      deploymentBinding: billing.deploymentPayerBinding,
+    });
+
     let reservation: Awaited<
       ReturnType<typeof billing.creditWriter.reserveCredits>
     >;
     try {
       reservation = await billing.creditWriter.reserveCredits({
-        externalCustomerId: billing.externalCustomerKey,
+        externalCustomerId: payerBinding.externalCustomerId,
         idempotencyKey: `${USAGE_IDEMPOTENCY_KEY_PREFIX}${input.eventId}`,
         maximumCents: Number(modelPolicy.maximumReservationUnits),
         expiresAt: new Date(
@@ -3839,12 +3919,21 @@ if (billing !== undefined && usageOutbox !== undefined) {
           type: "billing-credit-reservation-refused",
           eventId: input.eventId,
           model: modelId,
+          payerKind: payerBinding.payer.kind,
           available: reservation.availableCents,
           required: Number(modelPolicy.maximumReservationUnits),
         },
         "billing-credit-reservation-refused",
       );
-      throw new CreditGateError();
+      /*
+       * The one insufficiency semantics (B5-219 / AC13): a displayable refusal on the
+       * bound account — its type and its own available amount, no other account's data,
+       * no second resolution, no switch. The hold attempt wrote nothing.
+       */
+      throw new CreditInsufficientError({
+        payerKind: payerBinding.payer.kind,
+        availableCents: reservation.availableCents,
+      });
     }
 
     return {
@@ -3916,7 +4005,7 @@ if (billing !== undefined && usageOutbox !== undefined) {
           await recordUnsettledUsage({
             eventId: input.eventId,
             source: "llm",
-            externalCustomerId: billing.externalCustomerKey,
+            externalCustomerId: payerBinding.externalCustomerId,
             model: modelId,
             client: input.client,
             occurredAt: input.occurredAt,
@@ -3930,7 +4019,7 @@ if (billing !== undefined && usageOutbox !== undefined) {
           await usageOutbox.record({
             eventId: input.eventId,
             source: "llm",
-            externalCustomerId: billing.externalCustomerKey,
+            externalCustomerId: payerBinding.externalCustomerId,
             transactionId: input.eventId,
             inputTokens: charged.inputTokens,
             outputTokens: charged.outputTokens,
@@ -3957,7 +4046,7 @@ if (billing !== undefined && usageOutbox !== undefined) {
         await recordUnsettledUsage({
           eventId: unsettled.eventId,
           source: "llm",
-          externalCustomerId: billing.externalCustomerKey,
+          externalCustomerId: payerBinding.externalCustomerId,
           model: modelId,
           client: input.client,
           occurredAt: unsettled.occurredAt,
@@ -3997,7 +4086,7 @@ if (billing !== undefined && usageOutbox !== undefined) {
         await recordUnsettledUsage({
           eventId: input.eventId,
           source: "llm",
-          externalCustomerId: billing.externalCustomerKey,
+          externalCustomerId: payerBinding.externalCustomerId,
           model: modelId,
           client: input.client,
           occurredAt: input.occurredAt,
@@ -4032,6 +4121,15 @@ if (billing !== undefined && usageOutbox !== undefined) {
     lock: { databaseUrl: config.databaseUrl, key: 4_192_005 },
   });
   billingSweepStops.push(usageSweeps.stop);
+  // The renewal sweep (10.3): every live owned subscription whose provider period moved past
+  // its allowance marker gets that period's payout into the owner's account, once — the pass
+  // backs the webhook path up and retries what it could not finish. The service no-ops when
+  // no renewal payout was wired (a deployment with no plan catalog).
+  const renewalSweeps = startBillingRenewalSweeps(billing.service, {
+    log: (message) => log.warn(message),
+    lock: { databaseUrl: config.databaseUrl, key: 4_192_007 },
+  });
+  billingSweepStops.push(renewalSweeps.stop);
 }
 
 /*
@@ -4102,6 +4200,10 @@ const payments =
 
         const externalCustomerKey = billing.externalCustomerKey;
         const paymentOrderStore = createPaymentStore(database);
+        // The subscription projection's write side, for the one write the activation path owns:
+        // stamping the paying order's ownership onto the row (10.3). The same store instance the
+        // purchase guard's uncached read below uses.
+        const billingProjectionStore = createBillingStore(database);
         const paymentService = createPaymentService({
           providers,
           store: paymentOrderStore,
@@ -4124,6 +4226,12 @@ const payments =
             },
             ensureSubscription: async (input) => {
               return billing.service.ensureSubscription(input);
+            },
+            // 10.3: the activation path stamps the order's ownership onto the subscription row
+            // (the only writer that names it); `false` keeps the order pending-activation so
+            // the sweep retries the idempotent sequence.
+            stampSubscriptionOwnership: async (input) => {
+              return billingProjectionStore.stampSubscriptionOwnership(input);
             },
           },
           externalCustomerKey,
@@ -4186,7 +4294,7 @@ const payments =
           // and the webhooks both maintain; "live" matches the entitlement read's own
           // definition (active/incomplete).
           activePlanCodeUncached: async () => {
-            const rows = await createBillingStore(database).readSubscriptions(
+            const rows = await billingProjectionStore.readSubscriptions(
               billing.externalCustomerKey,
             );
             const live = rows.find(
@@ -5504,6 +5612,7 @@ const app = createApp(
   },
   identityStore,
   identityGithubCallback,
+  botServiceStore,
 );
 
 /**

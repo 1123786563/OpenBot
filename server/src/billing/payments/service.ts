@@ -16,6 +16,8 @@
  */
 
 import { getLogger } from "../../../../shared/logger";
+import type { PayerRef } from "../payer";
+import { payerKey } from "../payer";
 import { BillingError } from "../types";
 import type { NotificationRefusal, PaymentProvider } from "./provider";
 import type {
@@ -50,6 +52,21 @@ export type PaymentLagoFacade = {
     currentPeriodStart?: string | null;
     currentPeriodEnd?: string | null;
   }>;
+  /**
+   * 10.3 (AC14/Q27): stamp the subscription's owner — the paid order's payer, resolved
+   * server-side — and the paid period onto the projection row. The activation call is the
+   * only writer that names ownership; the projection refresh's own upsert names none of the
+   * columns, so a delivery can never move an owner. Optional only so an assembly predating
+   * the seam still compiles: production wires it (index.ts), and an assembly without it
+   * logs a warning on every activation, never silently.
+   */
+  stampSubscriptionOwnership?(input: {
+    externalSubscriptionId: string;
+    ownerPayerKind: PayerRef["kind"];
+    ownerPayerId: string;
+    allowancePeriodStart: Date;
+    allowancePeriodEnd: Date;
+  }): Promise<boolean>;
 };
 
 /** Why a purchase request cannot proceed; the routes map these to 400/409. */
@@ -57,7 +74,8 @@ export type PurchaseRefusal =
   | { reason: "unknown-plan" }
   | { reason: "unknown-provider" }
   | { reason: "pending-purchase"; pendingPlanCode: string }
-  | { reason: "active-subscription"; activePlanCode: string };
+  | { reason: "active-subscription"; activePlanCode: string }
+  | { reason: "missing-owner" };
 
 export class PurchaseError extends Error {
   override name = "PurchaseError";
@@ -70,7 +88,9 @@ export class PurchaseError extends Error {
           ? "That channel is not configured on this deployment."
           : refusal.reason === "pending-purchase"
             ? "Another purchase is already pending for this deployment."
-            : "This deployment already has an active subscription.",
+            : refusal.reason === "missing-owner"
+              ? "An order requires an owner resolved from the signed-in identity."
+              : "This deployment already has an active subscription.",
     );
     this.refusal = refusal;
   }
@@ -102,6 +122,12 @@ export type PlanCreditGrantor = {
   /** Scaled credit units (×100) for the plan, or null when the plan grants no credits. */
   creditsFor(planCode: string): number | null;
   grantPlanCredits(input: {
+    /**
+     * The account key the allowance lands in — derived by the SERVICE from the order's own
+     * `ownerPayerRef` (payerKey), never the deployment's default key and never anything a
+     * delivery carried. The caller of this seam only spells the account it was given
+     * (10.2: the callback's payout follows the order's ownership).
+     */
     externalCustomerId: string;
     planCode: string;
     /** The order whose activation pays this allowance out — the idempotency key's anchor. */
@@ -112,6 +138,29 @@ export type PlanCreditGrantor = {
   /** The subscription's current period end at the provider, when it answers one. */
   readCurrentPeriodEnd(planCode: string): Promise<Date | null>;
 };
+
+/** The owner kinds a NEW order may carry; `unknown_owner` is a legacy-row verdict, not a buyer. */
+const OWNABLE_PAYER_KINDS = new Set(["personal", "company", "legacy_deployment"]);
+
+/**
+ * The owner a purchase binds, as the seam demands it: present, well-formed, whitespace-strict,
+ * and never the quarantined kind. The ROUTE resolves this ref server-side from the session
+ * (payer-personal's `resolvePayerForPersonalUser`); the service's job is to refuse to create
+ * an order when no resolvable owner arrived — the AC14 answer to "missing ownership refuses
+ * the order", and the guarantee that no caller can slip an ownerless or quarantined order
+ * past the boundary.
+ */
+function isResolvableOwnerPayerRef(ref: PayerRef | undefined): ref is PayerRef {
+  return (
+    typeof ref === "object" &&
+    ref !== null &&
+    typeof ref.id === "string" &&
+    ref.id.length > 0 &&
+    ref.id.trim() === ref.id &&
+    typeof ref.kind === "string" &&
+    OWNABLE_PAYER_KINDS.has(ref.kind)
+  );
+}
 
 export type PaymentService = {
   /** The catalog, price-snapshotted at boot; `canPurchase` and `activePlanCode` are the caller's. */
@@ -127,7 +176,14 @@ export type PaymentService = {
     provider: PaymentProviderId;
     /** The billing cycle, already normalized to `monthly` by the routes (v1's only cycle). */
     cycle: "monthly";
+    /** The audit actor who opened the order — not the payment subject (CONTEXT.md). */
     createdBy: string | null;
+    /**
+     * The order's payment subject, resolved SERVER-SIDE from the authenticated identity and
+     * REQUIRED (AC14/Q27): a purchase without one is refused before any row exists, and the
+     * quarantined `unknown_owner` kind never passes. Requests carry no ownership field at all.
+     */
+    ownerPayerRef: PayerRef;
   }): Promise<{ order: PaymentOrderView }>;
   /** One order as its creator may see it. A pending order's channel is asked once (the poll). */
   readOrder(
@@ -321,6 +377,39 @@ export function createPaymentService(deps: {
     // A plan the catalog grants no credits to (or a zero allowance) grants nothing — not an
     // error, not a warning: "this plan has no credit component" is a configured fact.
     if (totalCents === null || totalCents <= 0) return true;
+    /*
+     * THE recipient is the order's own owner (10.2/Q27/AC14): the payout lands in the account
+     * the order bound at creation, and nothing else names it — the delivery's bytes carry no
+     * user field the service would read, and the deployment's own key is not a fallback. An
+     * order that resolves to NO billable account (a pre-attribution legacy row, or the
+     * quarantined `unknown_owner` kind) has its allowance WITHHELD: the activation stays
+     * un-applied so the sweep retries — converging the moment the write-once attribution pass
+     * gives the row an owner — and the withheld payout is recorded (`unowned_payout`), never
+     * silently dropped into a guessed account (Q23: stock deployment credits are not
+     * auto-attributed).
+     */
+    let recipientKey: string | null = null;
+    if (order.ownerPayerRef) {
+      try {
+        recipientKey = payerKey(order.ownerPayerRef);
+      } catch {
+        // The quarantined kind, or a malformed ref: no billable account, by design.
+        recipientKey = null;
+      }
+    }
+    if (recipientKey === null) {
+      await recordAnomalyQuietly({
+        orderId: order.id,
+        code: "unowned_payout",
+        channelTransactionId: order.channelTransactionId,
+        amountCents: order.amountCents,
+        detail: `plan credit payout withheld: the order resolves to no billable account (owner ${order.ownerPayerRef ? order.ownerPayerRef.kind : "absent"}); the activation retry re-runs it once an owner is attributed`,
+      });
+      log.warn(
+        `payments: plan credit payout for order ${order.id} withheld — the order has no billable owner (Q23); the sweep retries after attribution`,
+      );
+      return false;
+    }
     try {
       // The expiry aligns to the provider's period end. Unknown period (provider refused the
       // courtesy read) falls back to the order's own paid period — never to "no expiry", which
@@ -336,7 +425,7 @@ export function createPaymentService(deps: {
         return false;
       }
       const { inserted } = await grantor.grantPlanCredits({
-        externalCustomerId: deps.externalCustomerKey,
+        externalCustomerId: recipientKey,
         planCode: order.planCode,
         orderId: order.id,
         totalCents,
@@ -356,6 +445,66 @@ export function createPaymentService(deps: {
       // what makes that retry safe.
       log.warn(
         `payments: plan credit grant for order ${order.id} failed; the activation retry re-runs it`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * 10.3: the subscription row carries the order's owner — the pair resolved from the
+   * persisted order (already duplicate-refused by `resolveActivationOwnership`), plus the
+   * period the order paid for: the provider's exact period when it answered one, the order's
+   * own snapshot otherwise. Answers whether the stamp landed: `false` keeps the order out of
+   * `applied` so the sweep's next pass re-runs the whole idempotent sequence (the grant key
+   * and the stamp are both retry-safe); a stamp that moved nothing silently would let a
+   * paid subscription sit unattributed forever.
+   */
+  async function stampOwnershipFor(
+    order: PaymentOrderRecord,
+    subscription: {
+      currentPeriodStart?: string | null;
+      currentPeriodEnd?: string | null;
+    },
+  ): Promise<boolean> {
+    const stamp = deps.lago.stampSubscriptionOwnership;
+    if (!stamp) {
+      log.warn(
+        `payments: order ${order.id} activated without a subscription-ownership stamp seam; the projection row stays unattributed`,
+      );
+      return true;
+    }
+    // A pre-attribution legacy order names nobody (Q23): the grant upstream already withheld
+    // its payout, so its activation never reaches this branch in practice.
+    const owner = order.ownerPayerRef;
+    if (!owner) return true;
+    const period =
+      exactPeriodOf(subscription) ??
+      (order.periodStart && order.periodEnd
+        ? { start: order.periodStart, end: order.periodEnd }
+        : null);
+    if (!period) {
+      log.warn(
+        `payments: order ${order.id} answered no period for the ownership stamp; the activation retry re-runs it`,
+      );
+      return false;
+    }
+    try {
+      const stamped = await stamp({
+        externalSubscriptionId: `${deps.externalCustomerKey}-${order.planCode}`,
+        ownerPayerKind: owner.kind,
+        ownerPayerId: owner.id,
+        allowancePeriodStart: period.start,
+        allowancePeriodEnd: period.end,
+      });
+      if (!stamped) {
+        log.warn(
+          `payments: ownership stamp for order ${order.id} found no subscription row; the activation retry re-runs it`,
+        );
+      }
+      return stamped;
+    } catch {
+      log.warn(
+        `payments: ownership stamp for order ${order.id} failed; the activation retry re-runs it`,
       );
       return false;
     }
@@ -421,6 +570,10 @@ export function createPaymentService(deps: {
       // belongs to) and before `recordActivation(applied)` (a payout that has not landed leaves
       // the activation un-applied, so the sweep's next pass retries it).
       if (!(await grantPlanCreditsFor(order))) return "pending";
+      // The subscription row now carries the order's owner (10.3): stamped after the payout
+      // (the allowance and the row name the same account) and before `applied`, so a stamp
+      // that did not land is retried by the sweep like every other un-applied half.
+      if (!(await stampOwnershipFor(order, subscription))) return "pending";
       deps.invalidateEntitlementCache();
       await deps.store.recordActivation(
         order.id,
@@ -677,6 +830,12 @@ export function createPaymentService(deps: {
     },
 
     async createPurchase(input) {
+      // Ownership first, before anything the request chose is even looked at: an order binds a
+      // server-resolved PayerRef or it does not happen (AC14). Nothing below can create an
+      // ownerless or quarantined order.
+      if (!isResolvableOwnerPayerRef(input.ownerPayerRef)) {
+        throw new PurchaseError({ reason: "missing-owner" });
+      }
       const entry = deps.catalog.get(input.planCode);
       if (!entry) {
         throw new PurchaseError({ reason: "unknown-plan" });
@@ -704,16 +863,29 @@ export function createPaymentService(deps: {
         });
       }
 
-      // Replay: the same plan on the same channel, still open, comes back untouched. The read is
-      // a fast path only — the pending-scope partial unique index and the store's conflict
+      // Replay: the same plan on the same channel, still open, comes back untouched. The read
+      // is OWNER-SCOPED (AC14: another person's open order is neither replayed nor shown) and a
+      // fast path only — the pending-scope partial unique index and the store's conflict
       // re-read below are the actual guarantee, so concurrent requests converge on one order.
       const replayed = await deps.store
-        .readPendingOrder(input.planCode, input.provider)
+        .readPendingOrder(input.planCode, input.provider, input.ownerPayerRef)
         .catch(() => null);
       if (replayed) return { order: toView(replayed) };
 
       const pending = await deps.store.readPendingPurchase().catch(() => null);
       if (pending) {
+        // The deployment holds one pending purchase at a time. If it belongs to someone else,
+        // this request refuses — it must NEVER replay the other person's view (and its QR) or
+        // cancel their open order in the channel-switch path below.
+        if (
+          pending.ownerPayerRef?.kind !== input.ownerPayerRef.kind ||
+          pending.ownerPayerRef?.id !== input.ownerPayerRef.id
+        ) {
+          throw new PurchaseError({
+            reason: "pending-purchase",
+            pendingPlanCode: pending.planCode,
+          });
+        }
         if (pending.planCode !== input.planCode) {
           throw new PurchaseError({
             reason: "pending-purchase",
@@ -760,11 +932,24 @@ export function createPaymentService(deps: {
         currency: "CNY",
         expiresAt,
         createdBy: input.createdBy,
+        ownerPayerRef: input.ownerPayerRef,
         checkoutPayload: null,
       });
       if (conflict === "pending-pair") {
         // Another caller's insert won the same plan/provider slot while we were between the read
-        // above and this insert. No second QR is created; the winner is the replay answer.
+        // above and this insert. No second QR is created; the winner is the replay answer — but
+        // ONLY for the same owner: the store's conflict re-read is deployment-wide (the pending
+        // slot is single), so a winner belonging to someone else is a refusal here, never a
+        // replay of another person's order view.
+        if (
+          order.ownerPayerRef?.kind !== input.ownerPayerRef.kind ||
+          order.ownerPayerRef?.id !== input.ownerPayerRef.id
+        ) {
+          throw new PurchaseError({
+            reason: "pending-purchase",
+            pendingPlanCode: order.planCode,
+          });
+        }
         return { order: toView(order) };
       }
       if (conflict === "pending-purchase") {
@@ -885,6 +1070,30 @@ export function createPaymentService(deps: {
         return { kind: "unverified" };
       }
       if (!verified.ok) {
+        /*
+         * Signature-failure discipline (10.2): nothing about any order moves, and the attempt
+         * is not silently dropped — when the raw bytes even name an order and that order
+         * exists, one anomaly row anchors the attempt to it. The name is UNVERIFIED data: it
+         * decides nothing about the order, and the detail says so; the (order, code) dedup
+         * index keeps a repeat delivery from stacking rows. A delivery that names no existing
+         * order leaves no row at all — fabricating one from attacker-chosen bytes would be a
+         * worse record than the refusal itself, and the HTTP 401 is that refusal.
+         */
+        const referenced = verified.referencedOutTradeNo;
+        if (referenced) {
+          const named = await deps.store
+            .readOrder(referenced)
+            .catch(() => null);
+          if (named) {
+            await recordAnomalyQuietly({
+              orderId: named.id,
+              code: "callback_unverified",
+              channelTransactionId: null,
+              amountCents: null,
+              detail: `a delivery naming this order failed signature verification${verified.refusal ? ` (${verified.refusal})` : ""}; its contents are not evidence and nothing moved`,
+            });
+          }
+        }
         return { kind: "unverified", refusal: verified.refusal };
       }
       const fact = verified.fact;

@@ -1,4 +1,4 @@
-import { and, count, eq, max, ne, notInArray } from "drizzle-orm";
+import { and, count, eq, max, ne, notInArray, sql } from "drizzle-orm";
 import { DrizzleQueryError } from "drizzle-orm/errors";
 import type { Database } from "../db/client";
 import {
@@ -10,6 +10,7 @@ import {
   BillingPersistenceError,
   type BillingPersistenceOperation,
   type BillingStore,
+  type OwnedSubscriptionRow,
 } from "./types";
 
 const RETRYABLE_POSTGRES_CODES = new Set([
@@ -218,6 +219,100 @@ export function createBillingStore(
             },
           }),
       );
+    },
+    async stampSubscriptionOwnership(input) {
+      const now = new Date();
+      const rows = await withPersistenceError(
+        "subscription_stamp",
+        database
+          .update(billingSubscriptions)
+          .set({
+            ownerPayerKind: input.ownerPayerKind,
+            ownerPayerId: input.ownerPayerId,
+            allowancePeriodStart: input.allowancePeriodStart,
+            allowancePeriodEnd: input.allowancePeriodEnd,
+            updatedAt: now,
+          })
+          .where(
+            eq(
+              billingSubscriptions.externalSubscriptionId,
+              input.externalSubscriptionId,
+            ),
+          )
+          .returning({ id: billingSubscriptions.externalSubscriptionId }),
+      );
+      // `false` is the activation retry's answer, not an error: the row this stamp names was
+      // created through ensureSubscription moments ago, so absence means the fold has not
+      // committed yet (or the provider answered a different external id) — the next pass
+      // re-runs the whole idempotent sequence.
+      return rows.length > 0;
+    },
+    async advanceSubscriptionAllowance(input) {
+      const now = new Date();
+      const rows = await withPersistenceError(
+        "subscription_allowance",
+        database
+          .update(billingSubscriptions)
+          .set({
+            allowancePeriodStart: input.allowancePeriodStart,
+            allowancePeriodEnd: input.allowancePeriodEnd,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(
+                billingSubscriptions.externalSubscriptionId,
+                input.externalSubscriptionId,
+              ),
+              // Forward-only: a marker already at — or past — this period is the answer
+              // "covered", and an out-of-order delivery must not walk it backwards.
+              sql`(${billingSubscriptions.allowancePeriodStart} IS NULL OR ${billingSubscriptions.allowancePeriodStart} < ${input.allowancePeriodStart.toISOString()}::timestamptz)`,
+            ),
+          )
+          .returning({ id: billingSubscriptions.externalSubscriptionId }),
+      );
+      return rows.length > 0;
+    },
+    async readLiveOwnedSubscriptions(externalCustomerId) {
+      const conditions = [
+        sql`${billingSubscriptions.status} IN ('active', 'incomplete')`,
+        sql`${billingSubscriptions.ownerPayerId} IS NOT NULL`,
+      ];
+      if (externalCustomerId !== undefined) {
+        conditions.push(
+          eq(billingSubscriptions.externalCustomerId, externalCustomerId),
+        );
+      }
+      const rows = await withPersistenceError(
+        "subscription_read",
+        database
+          .select({
+            externalCustomerId: billingSubscriptions.externalCustomerId,
+            externalSubscriptionId:
+              billingSubscriptions.externalSubscriptionId,
+            planCode: billingSubscriptions.planCode,
+            status: billingSubscriptions.status,
+            ownerPayerKind: billingSubscriptions.ownerPayerKind,
+            ownerPayerId: billingSubscriptions.ownerPayerId,
+            allowancePeriodStart: billingSubscriptions.allowancePeriodStart,
+            allowancePeriodEnd: billingSubscriptions.allowancePeriodEnd,
+          })
+          .from(billingSubscriptions)
+          .where(and(...conditions)),
+      );
+      // The owner-pair CHECK makes a half-written row impossible; the filter narrows the
+      // nullable columns into the owned shape without lying about it.
+      const owned: OwnedSubscriptionRow[] = [];
+      for (const row of rows) {
+        if (row.ownerPayerKind && row.ownerPayerId) {
+          owned.push({
+            ...row,
+            ownerPayerKind: row.ownerPayerKind,
+            ownerPayerId: row.ownerPayerId,
+          });
+        }
+      }
+      return owned;
     },
     async retireAbsentSubscriptions(
       externalCustomerId,

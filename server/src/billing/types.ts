@@ -11,6 +11,8 @@
  * status text, response body or credential can leak through a stack trace into a log. Callers that
  * need to explain themselves to a person match on `code`.
  */
+import type { PayerKind } from "./payer";
+
 export type BillingErrorCode =
   | "unconfigured"
   | "unreachable"
@@ -51,6 +53,8 @@ export type BillingPersistenceOperation =
   | "customer_upsert"
   | "customer_ensure"
   | "subscription_upsert"
+  | "subscription_stamp"
+  | "subscription_allowance"
   | "subscription_retire"
   | "subscription_read"
   | "webhook_lookup"
@@ -171,6 +175,7 @@ export type ReconcileFinding = {
     | "reservation_allocation_imbalance"
     | "plan_grant_missing"
     | "plan_grant_amount_mismatch"
+    | "plan_grant_owner_mismatch"
     | "activation_backlog"
     | "duplicate_paid_order"
     | "usage_target_pending"
@@ -471,6 +476,55 @@ export type CreditSummary = {
   };
 };
 
+/**
+ * The personal read's pending-settlement placeholders (ticket 02.6).
+ *
+ * Settlement-disposition views are group 06's slice; until that group's work is delivered the
+ * feature does not exist on a deployment, and the fields stand in the response as a fixed shape
+ * carrying constant zeros with `enabled: false` spelled out — the 未启用 marker the contract
+ * asks for, so a client never has to guess whether a zero means "nothing pending" or "not a
+ * feature here". The literal types are the discipline: this module cannot put a non-zero
+ * amount behind a disabled flag, and group 06 enabling the feature MUST touch this type —
+ * the contract change is then a visible commit, not a silent drift.
+ */
+export type PendingSettlementSummary = {
+  /** The feature gate, group 06's to switch — every amount below is constant while it is false. */
+  enabled: false;
+  available: 0;
+  consumed: 0;
+  expired: 0;
+};
+
+/**
+ * The personal credit read's whole answer (ticket 02.6): the signed-in user's own account, in
+ * credits (×100 scaled units on the wire). The account is never a parameter — the route resolves
+ * it from the authenticated identity through the payer resolution module — so the response names
+ * the account type it answers, and a client can never be shown someone else's numbers under a
+ * different label.
+ *
+ * `available` is the writer's own spendable figure (live grant capacity minus active holds and
+ * the owed remainder unit, `readCapacity`), `consumed` the lifetime amount charged to the
+ * account's grants, `expired` the lapsed-unused part of past grants, and `held` the open
+ * reservations — the four numbers the parent spec says a user sees. `grants` carries every
+ * grant of the account with its derived life, and `pendingSettlement` the group-06 placeholders.
+ */
+export type PersonalCreditBalance = {
+  /** The billing subject kind the answer names — always the authenticated user's own. */
+  accountType: "personal";
+  /** What a new draw or hold could take right now, the gate's own admission figure. */
+  available: number;
+  /** The lifetime amount the account's grants have absorbed, live and expired grants alike. */
+  consumed: number;
+  /** The lapsed-unused part of expired grants — gone from the balance, visible here. */
+  expired: number;
+  /** Active holds against live grants: reserved, still occupying the balance. */
+  held: number;
+  /** Every grant of the account, soonest expiry first, with its derived status. */
+  grants: readonly CreditGrantEntry[];
+  /** Group 06's placeholders: constant zeros behind an explicit not-enabled marker. */
+  pendingSettlement: PendingSettlementSummary;
+};
+
 /** The four subscription states the sync reads. */
 export type BillingSubscriptionStatus =
   | "active"
@@ -484,6 +538,55 @@ export type BillingSubscriptionRow = {
   externalSubscriptionId: string;
   planCode: string;
   status: BillingSubscriptionStatus;
+};
+
+/**
+ * The ownership write (10.3, AC14/Q27): the owner pair resolved SERVER-SIDE from the paid
+ * order at activation, plus the allowance period the order paid for. This is the ONLY input
+ * that can name the ownership columns; the projection upsert's input carries no such fields,
+ * so a webhook refresh or a sync call physically cannot move an owner.
+ */
+export type SubscriptionOwnershipStamp = {
+  externalSubscriptionId: string;
+  ownerPayerKind: PayerKind;
+  ownerPayerId: string;
+  /** The billing period whose plan allowance the order paid for — the renewal marker. */
+  allowancePeriodStart: Date;
+  allowancePeriodEnd: Date;
+};
+
+/** A live subscription row that carries its owner — the renewal pass's walk (10.3). */
+export type OwnedSubscriptionRow = {
+  externalCustomerId: string;
+  externalSubscriptionId: string;
+  planCode: string;
+  status: BillingSubscriptionStatus;
+  ownerPayerKind: PayerKind;
+  ownerPayerId: string;
+  /** The period whose allowance has been covered; null until the first payout landed. */
+  allowancePeriodStart: Date | null;
+  allowancePeriodEnd: Date | null;
+};
+
+/**
+ * The renewal payout (10.3): what the billing service needs to pay a period's allowance into
+ * the subscription owner's account, and nothing more. The account key is derived by the
+ * SERVICE from the row's own owner pair — a delivery's bytes carry no OpenBot identity — and
+ * the idempotency key (`plan-renewal:<externalSubscriptionId>:<periodStart>`) is the ledger's
+ * own fence: a duplicate or racing delivery of the same period is a no-op, while the next
+ * period's key never collides with the last one's.
+ */
+export type SubscriptionRenewalGrantor = {
+  /** Scaled credit units (×100) the plan's period allowance pays, or null when it grants none. */
+  creditsFor(planCode: string): number | null;
+  grantRenewal(input: {
+    externalCustomerId: string;
+    planCode: string;
+    externalSubscriptionId: string;
+    periodStart: Date;
+    periodEnd: Date;
+    totalCents: number;
+  }): Promise<{ inserted: boolean }>;
 };
 
 /**
@@ -544,6 +647,33 @@ export type BillingStore = {
    */
   ensureCustomerRow(input: { externalId: string }): Promise<void>;
   upsertSubscription(input: BillingSubscriptionRow): Promise<void>;
+  /**
+   * Stamp the ownership pair and the allowance period onto one subscription row — the write
+   * only the ACTIVATION path performs (10.3). Update-only, answered `false` when the row the
+   * activation just created through `ensureSubscription` is absent: stamping a ghost would
+   * quietly invent a subscription this deployment never projected. The conflict-free update
+   * means a stamp never touches a row's provider facts (status/plan), and — because the
+   * projection upsert names none of these columns — a delivery can never touch them either.
+   */
+  stampSubscriptionOwnership(input: SubscriptionOwnershipStamp): Promise<boolean>;
+  /**
+   * Advance the allowance marker (10.3's renewal marker), forward-only: a row whose marker
+   * already names this period — or a later one — is left untouched, so an out-of-order or
+   * racing delivery cannot walk the marker backwards. `false` means nothing moved.
+   */
+  advanceSubscriptionAllowance(input: {
+    externalSubscriptionId: string;
+    allowancePeriodStart: Date;
+    allowancePeriodEnd: Date;
+  }): Promise<boolean>;
+  /**
+   * The live, OWNED subscription rows (10.3): the renewal pass's walk, scoped to one customer
+   * when the caller is a delivery for that customer, deployment-wide for the sweep. Ownerless
+   * rows are excluded — they have no account to pay (Q23), and the pass logs their skip.
+   */
+  readLiveOwnedSubscriptions(
+    externalCustomerId?: string,
+  ): Promise<readonly OwnedSubscriptionRow[]>;
   /**
    * Retire the local rows for one customer that the provider's own list no longer contains:
    * status → `terminated`, `updatedAt` → now. Returns how many rows moved. Never deletes —
@@ -664,4 +794,12 @@ export type BillingService = {
    * absent keeps the honest refusal.
    */
   reconcile(): Promise<ReconcileReport>;
+  /**
+   * The renewal pass (10.3): every live owned subscription whose provider period has moved
+   * past its allowance marker gets that period's payout into the owner's account, once — the
+   * ledger key (`plan-renewal:<id>:<periodStart>`) is the fence. The webhook path runs it for
+   * the delivery's subscriptions; this sweep asks the provider directly, so a period whose
+   * notification never arrived still pays. Absent renewal config keeps it a no-op.
+   */
+  sweepRenewals(): Promise<void>;
 };

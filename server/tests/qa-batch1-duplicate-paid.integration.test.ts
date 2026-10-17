@@ -97,6 +97,7 @@ async function openOrder(provider: "alipay" | "wechat", tag: string) {
     currency: "CNY",
     expiresAt: new Date(Date.now() + 15 * 60_000),
     createdBy: `qa-${tag}`,
+    ownerPayerRef: { kind: "personal" as const, id: `qa-${tag}` },
     checkoutPayload: null,
   });
   return order;

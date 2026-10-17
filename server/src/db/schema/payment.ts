@@ -13,6 +13,7 @@ import type {
   PaymentOrderStatus,
   PaymentProviderId,
 } from "../../billing/payments/types";
+import type { PayerKind } from "../../billing/payer";
 
 /**
  * One local payment order, keyed by the out-trade number this deployment generated (`po-` plus
@@ -62,6 +63,16 @@ export const paymentOrders = pgTable(
     paidAt: timestamp("paid_at", { withTimezone: true }),
     terminalAt: timestamp("terminal_at", { withTimezone: true }),
     createdBy: text("created_by"),
+    /**
+     * The order's payment subject, as a PayerRef ({ kind, id }) resolved SERVER-SIDE from the
+     * authenticated identity at creation — never from a request field (AC14/Q27). Nullable
+     * only as the legacy rows' pre-attribution state: new orders refuse to insert without one
+     * (the store refuses; the pair CHECK keeps the columns togther), the legacy-owner
+     * attribution pass fills them from 02.2's explicit mapping or quarantines the row as
+     * `unknown_owner`. A null or non-personal owner never matches a personal read scope.
+     */
+    ownerPayerKind: text("owner_payer_kind").$type<PayerKind>(),
+    ownerPayerId: text("owner_payer_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -88,6 +99,17 @@ export const paymentOrders = pgTable(
       "payment_orders_currency_check",
       sql`${table.currency} = 'CNY'`,
     ),
+    // The owner pair moves together: a half-written owner is a bug, not a state.
+    check(
+      "payment_orders_owner_pair_check",
+      sql`(${table.ownerPayerKind} IS NULL) = (${table.ownerPayerId} IS NULL)`,
+    ),
+    // The owner kind is a PayerKind: the quarantine vocabulary rides in the column, so an
+    // unknown_owner row is data an operator can query, never a guessable default.
+    check(
+      "payment_orders_owner_kind_check",
+      sql`${table.ownerPayerKind} IS NULL OR ${table.ownerPayerKind} IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')`,
+    ),
     // The replay lookup for "same plan, same provider, still open": one live order per pair.
     index("payment_orders_plan_provider_status_idx").on(
       table.planCode,
@@ -102,6 +124,8 @@ export const paymentOrders = pgTable(
       .where(sql`${table.status} = 'pending'`),
     // The sweeper's query-first pass reads exactly this.
     index("payment_orders_status_expires_idx").on(table.status, table.expiresAt),
+    // The owner-scoped reads (a person's order list, the statement window) filter on exactly this.
+    index("payment_orders_owner_idx").on(table.ownerPayerId, table.ownerPayerKind),
   ],
 );
 
