@@ -1236,9 +1236,9 @@ describe("workspace wiring", () => {
         webappBasePathFor: () => null,
       },
     );
-    expect(rooted.get("/workspace/sessions/cs-b2/start-webapp.sh")).not.toContain(
-      "ONYX_WEBAPP_BASE_PATH",
-    );
+    expect(
+      rooted.get("/workspace/sessions/cs-b2/start-webapp.sh"),
+    ).not.toContain("ONYX_WEBAPP_BASE_PATH");
   });
 
   test("the script is protected content: edit/write/patch deny + the two bash fallbacks allow", async () => {

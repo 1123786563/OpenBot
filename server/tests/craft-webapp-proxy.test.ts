@@ -776,21 +776,21 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     return {
       config: loadCraftConfig({}),
       store: {
-        async findSessionById(id: string) {
+        async findSessionById(_id: string) {
           const port =
             options.nextjsPort === undefined ? 3011 : options.nextjsPort;
           return options.sessionExists === false
             ? undefined
             : sessionRow("app", port);
         },
-        async getSession(id: string, userId: string) {
+        async getSession(_id: string, _userId: string) {
           const port =
             options.nextjsPort === undefined ? 3011 : options.nextjsPort;
           return options.sessionExists === false
             ? undefined
             : sessionRow("app", port);
         },
-        async findSession(id: string, userId: string) {
+        async findSession(_id: string, _userId: string) {
           const port =
             options.nextjsPort === undefined ? 3011 : options.nextjsPort;
           return options.sessionExists === false
@@ -1215,8 +1215,10 @@ function infoRoutes(options: {
       (() => {
         let inner = options.mountReadThrows ? flakyMountRead(api) : api;
         if (options.generationReadThrows) inner = flakyGenerationRead(inner);
-        if (options.mountReadSpy) inner = countingMountRead(inner, options.mountReadSpy);
-        if (options.fileReadSpy) inner = countingFileReads(inner, options.fileReadSpy);
+        if (options.mountReadSpy)
+          inner = countingMountRead(inner, options.mountReadSpy);
+        if (options.fileReadSpy)
+          inner = countingFileReads(inner, options.fileReadSpy);
         return inner;
       })(),
     ),
@@ -1913,7 +1915,7 @@ describe("webapp-info: the first-build birth sequence (H1) — script, mount and
     sandbox.files.set(`${WEBAPP}/package.json`, '{"name":"web"}');
     sandbox.files.set(
       `${WEBAPP}/next.config.ts`,
-      "const basePath = process.env.ONYX_WEBAPP_BASE_PATH ?? \"\";",
+      'const basePath = process.env.ONYX_WEBAPP_BASE_PATH ?? "";',
     );
     sandbox.files.set(
       `${DIRECTORY}/${WEBAPP_GENERATION_MARKER}`,
@@ -1999,7 +2001,10 @@ describe("start-webapp.sh: the mount record mirrors the RUNNING server (fix-ocr4
     });
     writeFileSync(join(dir, "outputs/web/package.json"), '{"name":"web"}');
     // An existing install: the spawn branch must not need bun install.
-    writeFileSync(join(dir, "outputs/web/node_modules/.bin/next"), "#!/bin/sh\n");
+    writeFileSync(
+      join(dir, "outputs/web/node_modules/.bin/next"),
+      "#!/bin/sh\n",
+    );
     chmodSync(join(dir, "outputs/web/node_modules/.bin/next"), 0o755);
   }
 
@@ -2539,7 +2544,10 @@ describe("refuseResponse — the shared HTML/JSON refusal sink (fix-ocr15)", () 
   });
 
   test("the HTML response carries the hardening headers: strict CSP + nosniff", () => {
-    const response = refuseResponse(htmlRequest(), "The sandbox is not available.");
+    const response = refuseResponse(
+      htmlRequest(),
+      "The sandbox is not available.",
+    );
     expect(response.headers.get("content-security-policy")).toBe(
       "default-src 'none'; style-src 'unsafe-inline'",
     );
@@ -2563,12 +2571,12 @@ describe("refuseResponse — the shared HTML/JSON refusal sink (fix-ocr15)", () 
     // refusal has long expired. The family discipline already marks the
     // probe's 204 no-store for exactly this reason; both refusal shapes
     // hold the same line.
-    const json = refuseResponse(new Request("http://127.0.0.1:3001/x/"), "down");
-    expect(json.headers.get("cache-control")).toBe("no-store");
-    const html = refuseResponse(
-      htmlRequest(),
-      "The web app is not running.",
+    const json = refuseResponse(
+      new Request("http://127.0.0.1:3001/x/"),
+      "down",
     );
+    expect(json.headers.get("cache-control")).toBe("no-store");
+    const html = refuseResponse(htmlRequest(), "The web app is not running.");
     expect(html.headers.get("cache-control")).toBe("no-store");
   });
 });

@@ -153,13 +153,15 @@ const results: StepResult[] = [];
  * （经 step 的 catch → record）。替换幂等：ticket=<redacted> 再过一遍不变。
  */
 function redactTicket(text: string): string {
-  return text
-    .replace(/ticket=[^&\s"']+/g, "ticket=<redacted>")
-    // 红线补丁（fix-ocr18 #16）：JSON 字段形态的票据值。一旦断言把
-    // JSON.stringify 过的响应体带进日志（"ticket":"<活体值>"），上面的
-    // query 形态盖不住它 —— 票据不得进任何日志字段，两种形态都要兜底。
-    // 替换幂等："<redacted>" 再过一遍不变。
-    .replace(/("ticket"\s*:\s*)"[^"]*"/g, '$1"<redacted>"');
+  return (
+    text
+      .replace(/ticket=[^&\s"']+/g, "ticket=<redacted>")
+      // 红线补丁（fix-ocr18 #16）：JSON 字段形态的票据值。一旦断言把
+      // JSON.stringify 过的响应体带进日志（"ticket":"<活体值>"），上面的
+      // query 形态盖不住它 —— 票据不得进任何日志字段，两种形态都要兜底。
+      // 替换幂等："<redacted>" 再过一遍不变。
+      .replace(/("ticket"\s*:\s*)"[^"]*"/g, '$1"<redacted>"')
+  );
 }
 
 function log(line: string) {
@@ -938,10 +940,7 @@ try {
       // 成 //api/probe 双斜杠形态，最终以 5×60s 就绪门慢失败收场且误指
       // nextjs.log 尾部 —— 形状断言前移到安装之前（下方 D7 步骤同款），
       // fail-fast 把真实原因（webapp_url 异常）留在报错里。
-      assert(
-        LABEL_SHAPE.test(label),
-        `label 形状异常（webapp_url=${origin}）`,
-      );
+      assert(LABEL_SHAPE.test(label), `label 形状异常（webapp_url=${origin}）`);
       await installProbeApp({ id: row.id, port: row.nextjs_port, label }, tag);
       const info = await api.craft(`sessions/${row.id}/webapp-info`);
       assert(
@@ -1489,30 +1488,28 @@ try {
       assert(previewPage, "前置失败");
       hmrFrames = await previewPage.evaluate(
         (wsUrl) =>
-          new Promise<{ frames: string[]; wsUrl: string }>(
-            (resolve) => {
-              const frames: string[] = [];
-              // fix-ocr25 #5：完整地址由脚本侧 hmrWsUrl 派生后作为实参传入
-              // —— 页面内不再各自从 location 拼接（fix-ocr21 #1 的修复曾
-              // 被迫在两处 socket 各打一遍，正是该重复的实证风险）。
-              const ws = new WebSocket(wsUrl);
-              const finish = () => resolve({ frames, wsUrl: ws.url });
-              ws.onmessage = (event) => {
-                frames.push(String(event.data).slice(0, 120));
-                if (frames.length >= 3) {
-                  ws.close();
-                  finish();
-                }
-              };
-              ws.onerror = () => resolve({ frames, wsUrl: ws.url });
-              setTimeout(() => {
-                try {
-                  ws.close();
-                } catch {}
+          new Promise<{ frames: string[]; wsUrl: string }>((resolve) => {
+            const frames: string[] = [];
+            // fix-ocr25 #5：完整地址由脚本侧 hmrWsUrl 派生后作为实参传入
+            // —— 页面内不再各自从 location 拼接（fix-ocr21 #1 的修复曾
+            // 被迫在两处 socket 各打一遍，正是该重复的实证风险）。
+            const ws = new WebSocket(wsUrl);
+            const finish = () => resolve({ frames, wsUrl: ws.url });
+            ws.onmessage = (event) => {
+              frames.push(String(event.data).slice(0, 120));
+              if (frames.length >= 3) {
+                ws.close();
                 finish();
-              }, 20_000);
-            },
-          ),
+              }
+            };
+            ws.onerror = () => resolve({ frames, wsUrl: ws.url });
+            setTimeout(() => {
+              try {
+                ws.close();
+              } catch {}
+              finish();
+            }, 20_000);
+          }),
         hmrWsUrl(sessionA.label),
       );
       assert(
@@ -1768,7 +1765,9 @@ try {
       });
       await api.craft(`sessions/${id}`, { method: "DELETE" }).catch(() => {});
     }
-    log(`已停并删除 ${cleanupIds.length} 个探针会话（CLEANUP=1，pendingIds 与创建范围对齐）`);
+    log(
+      `已停并删除 ${cleanupIds.length} 个探针会话（CLEANUP=1，pendingIds 与创建范围对齐）`,
+    );
   }
   const counts = { pass: 0, fail: 0, skip: 0, finding: 0 } as Record<
     string,

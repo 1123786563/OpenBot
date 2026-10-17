@@ -821,10 +821,7 @@ describe("webappHmrSocketHandlers — the client↔upstream bridge", () => {
 // answers to). The boot file is not importable (it starts a listener), so the
 // wiring is pinned at the source level — the same shape the qa-batch1 pins use.
 describe("the boot file's preview HMR wiring (fix-ocr18 #3 — source pin)", () => {
-  const source = readFileSync(
-    join(import.meta.dir, "../src/index.ts"),
-    "utf8",
-  );
+  const source = readFileSync(join(import.meta.dir, "../src/index.ts"), "utf8");
 
   test("the preview-origin branch dispatches upgrades through its OWN deps const", () => {
     // The preview branch (inside `craftPreviewOrigin?.handlesRequest`) must

@@ -123,7 +123,8 @@ function serving(info: Info, options: { ticketFails?: boolean } = {}) {
  */
 function draw(client?: QueryClient): RenderResult {
   const queryClient =
-    client ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client ??
+    new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <PreviewTab sessionId="cs-1" />
@@ -348,7 +349,7 @@ test("a refused exchange surfaces the server's displayable reason under the pass
   // 渲染」的先例；句子不含票据，无泄露面。RED：现状只渲染通用 passHint。
   const refusal =
     "This session's preview pass predates the current preview origin; reopen the session to re-enter.";
-  global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  global.fetch = (async (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = String(input);
     if (url.includes("/webapp-info")) {
       return Response.json({
@@ -383,7 +384,7 @@ test("a server refusal with EMPTY text renders no paragraph — an empty <p> is 
   // an empty <p> with the refusal's styling — a blank line wearing the
   // clothes of a sentence. The sentence is derived first and the paragraph
   // renders only when one exists. RED: the empty p is in the tree.
-  global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  global.fetch = (async (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = String(input);
     if (url.includes("/webapp-info")) {
       return Response.json({
@@ -481,9 +482,7 @@ test("an answer carrying closedReason AND a same-origin webapp_url shows the clo
   // the platform from) cannot heal a closed origin.
   await view.findByText(t("preview.closedTitle"));
   expect(view.queryByText(t("preview.sameOriginTitle"))).toBeNull();
-  expect(
-    view.getByText(/OPENBOT_CRAFT_PREVIEW_ORIGIN_ENABLED/),
-  ).toBeTruthy();
+  expect(view.getByText(/OPENBOT_CRAFT_PREVIEW_ORIGIN_ENABLED/)).toBeTruthy();
   expect(view.container.querySelector("iframe")).toBeNull();
 });
 
@@ -696,7 +695,7 @@ describe("a legacy session's preview (webappGeneration: legacy)", () => {
       "cs-1": PREVIEW_ORIGIN,
       "cs-2": "http://127.0.0.1:3001/newlabel",
     };
-    global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    global.fetch = (async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       const session = url.match(/sessions\/(cs-\d+)\//)?.[1] ?? "cs-1";
       if (url.includes("/webapp-info")) {
@@ -831,7 +830,9 @@ describe("the same-origin line compares hostnames, and the entry re-verifies wha
     // #367's rule: never point the frame where the app is not mounted —
     // entryless (the pass state explains and offers the retry) beats a silent
     // 404 frame, and the ticket never appears in any copy.
-    const { posts } = answeringElsewhere("http://evil.example:3001/abc123label");
+    const { posts } = answeringElsewhere(
+      "http://evil.example:3001/abc123label",
+    );
     const view = draw();
 
     await view.findByText(t("preview.passTitle"));
@@ -848,7 +849,9 @@ describe("the same-origin line compares hostnames, and the entry re-verifies wha
   // reason (the fix-ocr25 #2 exchangeRefusal slot), i18n'd in the preview.*
   // key family.
   test("a cross-check mismatch renders its own refusal sentence under the pass hint (fix-ocr26 #5)", async () => {
-    const { posts } = answeringElsewhere("http://evil.example:3001/abc123label");
+    const { posts } = answeringElsewhere(
+      "http://evil.example:3001/abc123label",
+    );
     const view = draw();
 
     await view.findByText(t("preview.passTitle"));
@@ -974,13 +977,14 @@ describe("the legacy direct entry only accepts a same-origin relative path (fix-
     // sees `//evil.com` — a scheme-relative hop to a foreign origin, spelled
     // with a character the length/starts-with/not-slash checks never look at.
     ["/\t/evil.com", "an ASCII-tab scheme-relative escape (fix-ocr26 #1)"],
-  ])("%s (%s) never reaches a frame — the pane stays in the pass state", async (
-    webappUrl,
-  ) => {
-    const view = drawLegacyShaped(webappUrl);
-    await view.findByText(t("preview.passTitle"));
-    expect(view.container.querySelector("iframe")).toBeNull();
-  });
+  ])(
+    "%s (%s) never reaches a frame — the pane stays in the pass state",
+    async (webappUrl) => {
+      const view = drawLegacyShaped(webappUrl);
+      await view.findByText(t("preview.passTitle"));
+      expect(view.container.querySelector("iframe")).toBeNull();
+    },
+  );
 
   test("the version-skew window (no generation field) refuses a script scheme too", async () => {
     // An old server's answer is classified legacy by the `!http(s)` regex, so
@@ -1208,7 +1212,7 @@ test("concurrent effect re-entries for the same address exchange ONCE — and th
 // the re-walk buys the new session its own pass.
 test("a session switch never sets the spent entry's src on the new session's frame node", async () => {
   const posts: string[] = [];
-  global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  global.fetch = (async (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = String(input);
     if (url.includes("/webapp-info")) {
       return Response.json({
@@ -1295,7 +1299,7 @@ describe("a replaced frame element re-enters with a fresh pass (fix-ocr5 M-2)", 
     // address): no staleness flip, no query pend — the only thing the
     // rerender changes is the frame element (one frame per session,
     // key={sessionId}).
-    global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    global.fetch = (async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/webapp-info")) {
         return Response.json({
@@ -1372,15 +1376,17 @@ describe("previewOriginBlocked fail direction on unparsable addresses (fix-ocr8 
   test("a scheme-less host:port form is blocked — fail closed, not waved through", () => {
     // new URL throws (no digit-leading scheme): the catch must treat the
     // absolute-looking shape as a refusal, not a pass.
-    expect(previewOriginBlocked("127.0.0.1:3001", "http://localhost:5173"))
-      .toBe(true);
+    expect(
+      previewOriginBlocked("127.0.0.1:3001", "http://localhost:5173"),
+    ).toBe(true);
   });
 
   test("a scheme-shaped unparsable form (digit-leading is not the only case) is blocked", () => {
     // e.g. a hypothetical `1e3:preview` — anything carrying a scheme-shaped
     // prefix that new URL cannot resolve must not pass the defense.
-    expect(previewOriginBlocked("1e3:preview", "http://localhost:5173"))
-      .toBe(true);
+    expect(previewOriginBlocked("1e3:preview", "http://localhost:5173")).toBe(
+      true,
+    );
   });
 
   test("a relative path (the legacy entry) still passes — the deliberate exception", () => {
@@ -1394,7 +1400,10 @@ describe("previewOriginBlocked fail direction on unparsable addresses (fix-ocr8 
 
   test("parsable addresses keep their pinned directions (same host blocked, other host allowed)", () => {
     expect(
-      previewOriginBlocked("http://localhost/abc123label", "http://localhost:5173"),
+      previewOriginBlocked(
+        "http://localhost/abc123label",
+        "http://localhost:5173",
+      ),
     ).toBe(true);
     expect(
       previewOriginBlocked(
@@ -1534,7 +1543,7 @@ describe("a dead entry recovers through the frame's error event (fix-ocr10 #2)",
     // longer shows: it must not drop cs-2's live entry and buy a third
     // single-use ticket.
     const posts: string[] = [];
-    global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    global.fetch = (async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/webapp-info")) {
         return Response.json({
@@ -1639,7 +1648,7 @@ describe("consecutive frame errors stop the auto re-exchange (fix-ocr11)", () =>
   beforeEach(() => {
     if (frameDispatchOwner === null) {
       let proto: object | null = HTMLIFrameElement.prototype;
-      while (proto && !Object.prototype.hasOwnProperty.call(proto, "dispatchEvent")) {
+      while (proto && !Object.hasOwn(proto, "dispatchEvent")) {
         proto = Object.getPrototypeOf(proto);
       }
       frameDispatchOwner = proto as {
@@ -1651,7 +1660,11 @@ describe("consecutive frame errors stop the auto re-exchange (fix-ocr11)", () =>
     frameDispatchOwner!.dispatchEvent = function (event: Event) {
       // Only iframe `load` events are gated; every other dispatch — clicks,
       // the error events these tests drive — passes through untouched.
-      if (!allowFrameLoad && this instanceof HTMLIFrameElement && event.type === "load") {
+      if (
+        !allowFrameLoad &&
+        this instanceof HTMLIFrameElement &&
+        event.type === "load"
+      ) {
         return true;
       }
       return realDispatch!.call(this, event);
@@ -1713,14 +1726,10 @@ describe("consecutive frame errors stop the auto re-exchange (fix-ocr11)", () =>
     )) as HTMLIFrameElement;
     expect(frame.getAttribute("src")).toContain("1-ticket");
     fireEvent.error(frame);
-    frame = (await view.findByTitle(
-      t("preview.title"),
-    )) as HTMLIFrameElement;
+    frame = (await view.findByTitle(t("preview.title"))) as HTMLIFrameElement;
     expect(frame.getAttribute("src")).toContain("2-ticket");
     fireEvent.error(frame);
-    frame = (await view.findByTitle(
-      t("preview.title"),
-    )) as HTMLIFrameElement;
+    frame = (await view.findByTitle(t("preview.title"))) as HTMLIFrameElement;
     expect(frame.getAttribute("src")).toContain("3-ticket");
 
     // The third consecutive death: no fourth exchange on its own. The pane
@@ -1751,13 +1760,9 @@ describe("consecutive frame errors stop the auto re-exchange (fix-ocr11)", () =>
 
     // Two consecutive deaths: the streak sits at two.
     fireEvent.error(frame);
-    frame = (await view.findByTitle(
-      t("preview.title"),
-    )) as HTMLIFrameElement;
+    frame = (await view.findByTitle(t("preview.title"))) as HTMLIFrameElement;
     fireEvent.error(frame);
-    frame = (await view.findByTitle(
-      t("preview.title"),
-    )) as HTMLIFrameElement;
+    frame = (await view.findByTitle(t("preview.title"))) as HTMLIFrameElement;
     expect(frame.getAttribute("src")).toContain("3-ticket");
 
     // The app actually loads: whatever broke is over, the streak clears. The
@@ -1772,14 +1777,10 @@ describe("consecutive frame errors stop the auto re-exchange (fix-ocr11)", () =>
     // Three further deaths AFTER the clean load: each is auto-retried, and
     // only the third consecutive one reaches the cap.
     fireEvent.error(frame);
-    frame = (await view.findByTitle(
-      t("preview.title"),
-    )) as HTMLIFrameElement;
+    frame = (await view.findByTitle(t("preview.title"))) as HTMLIFrameElement;
     expect(frame.getAttribute("src")).toContain("4-ticket");
     fireEvent.error(frame);
-    frame = (await view.findByTitle(
-      t("preview.title"),
-    )) as HTMLIFrameElement;
+    frame = (await view.findByTitle(t("preview.title"))) as HTMLIFrameElement;
     expect(frame.getAttribute("src")).toContain("5-ticket");
     fireEvent.error(frame);
     await view.findByText(t("preview.passTitle"));
@@ -1821,7 +1822,7 @@ describe("a loaded frame's liveness probe catches the restart-dead entry (fix-oc
   beforeEach(() => {
     if (frameDispatchOwner === null) {
       let proto: object | null = HTMLIFrameElement.prototype;
-      while (proto && !Object.prototype.hasOwnProperty.call(proto, "dispatchEvent")) {
+      while (proto && !Object.hasOwn(proto, "dispatchEvent")) {
         proto = Object.getPrototypeOf(proto);
       }
       frameDispatchOwner = proto as {
@@ -1989,7 +1990,9 @@ describe("a loaded frame's liveness probe catches the restart-dead entry (fix-oc
   });
 
   test("a probe that answers 204 keeps the entry — no re-exchange, no reload", async () => {
-    const { posts, view } = drawProbed(() => new Response(null, { status: 204 }));
+    const { posts, view } = drawProbed(
+      () => new Response(null, { status: 204 }),
+    );
     const frame = (await view.findByTitle(
       t("preview.title"),
     )) as HTMLIFrameElement;
@@ -2211,10 +2214,7 @@ describe("fix-ocr15: the load handler and the frame wiring", () => {
   beforeEach(() => {
     if (frameDispatchOwner === null) {
       let proto: object | null = HTMLIFrameElement.prototype;
-      while (
-        proto &&
-        !Object.prototype.hasOwnProperty.call(proto, "dispatchEvent")
-      ) {
+      while (proto && !Object.hasOwn(proto, "dispatchEvent")) {
         proto = Object.getPrototypeOf(proto);
       }
       frameDispatchOwner = proto as {
@@ -2446,10 +2446,7 @@ describe("the liveness probe rides the craft client, and dies with the pane (fix
   beforeEach(() => {
     if (frameDispatchOwner === null) {
       let proto: object | null = HTMLIFrameElement.prototype;
-      while (
-        proto &&
-        !Object.prototype.hasOwnProperty.call(proto, "dispatchEvent")
-      ) {
+      while (proto && !Object.hasOwn(proto, "dispatchEvent")) {
         proto = Object.getPrototypeOf(proto);
       }
       frameDispatchOwner = proto as {
@@ -2811,10 +2808,7 @@ describe("fix-ocr26 #2: the second-level probe's abort is not a death", () => {
   beforeEach(() => {
     if (frameDispatchOwner === null) {
       let proto: object | null = HTMLIFrameElement.prototype;
-      while (
-        proto &&
-        !Object.prototype.hasOwnProperty.call(proto, "dispatchEvent")
-      ) {
+      while (proto && !Object.hasOwn(proto, "dispatchEvent")) {
         proto = Object.getPrototypeOf(proto);
       }
       frameDispatchOwner = proto as {
@@ -2961,10 +2955,7 @@ describe("fix-ocr26 #3: the cancelled exchange's catch holds the guard too", () 
 
     // cs-1's response lands AFTER the cancellation — as a refusal.
     pending[0](
-      Response.json(
-        { error: "stale-run refusal sentence" },
-        { status: 409 },
-      ),
+      Response.json({ error: "stale-run refusal sentence" }, { status: 409 }),
     );
     await settleReactWork();
 
