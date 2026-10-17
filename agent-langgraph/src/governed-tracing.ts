@@ -22,6 +22,18 @@
  * `docs/plans/evidence/2026-10-16-issue4/T37/evidence/b1-framework-rows.json` (probe
  * `T37/probe/b-framework.ts`, ALL PASS). The wiring constant below is therefore true and
  * every run span this module stamps claims `detailed`.
+ *
+ * R2fix-T1 (round-2 triage R2-00/R2-01/R2-11) tightened the path AFTER that verification:
+ * span names now follow the server projection's parse convention — `model:`/`tool:` colon
+ * prefixes, the bare word `retrieval` — instead of the space join T37's rows recorded, and
+ * `handleChainStart` binds the runtime dispatch order (parentRunId at position 4, runType at
+ * 7, runName at 8; @langchain/core manager.cjs, not the d.ts doc order). The steps survive
+ * the server's stepFamily projection and nest run → chain → step on a REAL @langchain/core
+ * graph — pinned RED→GREEN by the regression in `tests/governed-tracing.test.ts`, the
+ * in-process basis for the constant's validity going forward. The T37 instance evidence
+ * predates the rename (its rows carry the old names; the probe's name assertions are
+ * correspondingly stale until a live re-run), while its parent-child shape over the real
+ * OTLP path is unaffected by the parameter-order fix that restores exactly that nesting.
  */
 
 import type { RunAgentInput } from "@ag-ui/core";
@@ -35,7 +47,9 @@ import { REDACTION_POLICY_VERSION } from "../../shared/ai-observability";
 /**
  * Whether the model/tool/retrieval parent-child shape has been verified on a real Opik
  * instance. T37 verified it on 2026-10-16 (see the module head for the evidence pointer);
- * a future path change must re-verify before flipping this back.
+ * R2fix-T1's real-graph regression (tests/governed-tracing.test.ts) re-pins the naming and
+ * nesting in-process after the round-2 fixes; a future path change must re-verify before
+ * flipping this back.
  */
 export const FRAMEWORK_STEPS_VERIFIED_ON_REAL_INSTANCE = true;
 
@@ -225,8 +239,13 @@ export class GovernedCallbackHandler extends BaseCallbackHandler {
     const parent =
       (parentRunId ? this.spans.get(parentRunId) : undefined) ??
       trace.getSpan(context.active());
+    // The span name is the projection's parse target (server stepFamily): `model:`/
+    // `tool:` colon prefixes, and the bare word `retrieval` — the retriever's own
+    // name rides `openbot.step.name` below. Any other spelling (e.g. a space join)
+    // silently drops the step from the timeline.
+    const spanName = kind === "retrieval" ? kind : `${kind}:${name}`;
     const span = trace.getTracer(TRACER_NAME).startSpan(
-      `${kind} ${name}`,
+      spanName,
       {
         attributes: {
           "openbot.step.kind": kind,
@@ -308,15 +327,22 @@ export class GovernedCallbackHandler extends BaseCallbackHandler {
     this.finish(runId, "failed", err);
   }
 
+  // Parameter order is the RUNTIME dispatch order, not the d.ts doc order: the
+  // framework's callback manager re-dispatches handleChainStart as
+  // (chain, inputs, runId, this._parentRunId, tags, metadata, runType, runName,
+  // extra) — parentRunId at position 4, runType at 7, runName at 8 (see
+  // @langchain/core dist/callbacks/manager.cjs handleChainStart). Bound per the
+  // docs instead, the parent link is dropped (every chain span falls back to the
+  // ambient) and the name degrades to the runType ("chain chain").
   handleChainStart(
     chain: Serialized,
     _inputs: Record<string, unknown>,
     runId: string,
-    _runType?: string,
+    parentRunId?: string,
     _tags?: string[],
     _metadata?: Record<string, unknown>,
+    _runType?: string,
     runName?: string,
-    parentRunId?: string,
   ): void {
     this.start(
       "chain",
@@ -403,7 +429,7 @@ export async function traceDeploymentToolCall<T>(
 ): Promise<T> {
   const span = trace
     .getTracer(TRACER_NAME)
-    .startSpan(`tool ${safeName(name)}`, {
+    .startSpan(`tool:${safeName(name)}`, {
       attributes: {
         "openbot.step.kind": "tool",
         "openbot.step.name": safeName(name),

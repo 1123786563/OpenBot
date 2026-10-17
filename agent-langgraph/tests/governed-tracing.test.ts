@@ -16,6 +16,12 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import type { BaseEvent } from "@ag-ui/core";
+import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
+import { DynamicTool } from "@langchain/core/tools";
+import {
+  FakeListChatModel,
+  FakeRetriever,
+} from "@langchain/core/utils/testing";
 import type { Serialized } from "@langchain/core/load/serializable";
 import type { LLMResult } from "@langchain/core/outputs";
 import { context, SpanStatusCode, trace } from "@opentelemetry/api";
@@ -24,6 +30,7 @@ import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import {
   FRAMEWORK_STEPS_VERIFIED_ON_REAL_INSTANCE,
   GovernedCallbackHandler,
+  governedRunSpan,
   resolveFrameworkCapability,
   traceDeploymentToolCall,
 } from "../src/governed-tracing";
@@ -171,10 +178,10 @@ describe("the callback handler's span tree", () => {
       handler.handleRetrieverEnd([], "run-ret");
       handler.handleChainEnd({}, "run-graph");
 
-      const chain = spanOf(recorder.spans, "chain graph");
-      const model = spanOf(recorder.spans, "model gpt-5.5");
-      const tool = spanOf(recorder.spans, "tool web_search");
-      const retrieval = spanOf(recorder.spans, "retrieval kb");
+      const chain = spanOf(recorder.spans, "chain:graph");
+      const model = spanOf(recorder.spans, "model:gpt-5.5");
+      const tool = spanOf(recorder.spans, "tool:web_search");
+      const retrieval = spanOf(recorder.spans, "retrieval");
 
       // The parent-child relationship is maintained at the callback layer, from the
       // framework's own run ids — the tree the real instance check (T37) will walk.
@@ -215,7 +222,7 @@ describe("the callback handler's span tree", () => {
       handler.handleLLMEnd({ generations: [] } as LLMResult, "run-model");
       ambient.end();
 
-      const model = spanOf(recorder.spans, "model unnamed");
+      const model = spanOf(recorder.spans, "model:unnamed");
       expect(model.parentSpanContext?.spanId).toBe(
         ambient.spanContext().spanId,
       );
@@ -238,7 +245,7 @@ describe("the callback handler's span tree", () => {
       handler.handleLLMError(new Error(`boom ${CANARIES[0]}`), "run-model");
       handler.handleChainError(new Error("graph failed"), "run-graph");
 
-      const model = spanOf(recorder.spans, "model unnamed");
+      const model = spanOf(recorder.spans, "model:unnamed");
       expect(model.attributes).toMatchObject({
         "openbot.span.state": "failed",
         "openbot.error.name": "Error",
@@ -341,7 +348,7 @@ describe("the callback handler's span tree", () => {
       expect(recorder.spans.length).toBeGreaterThan(0);
       assertNoCanaries(recorder.spans);
       // The omission is stated, not silent: content this layer refuses to carry says so.
-      expect(spanOf(recorder.spans, "model unnamed").attributes).toMatchObject({
+      expect(spanOf(recorder.spans, "model:unnamed").attributes).toMatchObject({
         "openbot.content.state": "omitted",
         "openbot.content.reason": "unhandled_free_text",
       });
@@ -367,7 +374,7 @@ describe("the callback handler's span tree", () => {
 
       const tool = recorder.spans.find((span) => span.name.startsWith("tool"));
       if (!tool) throw new Error("no tool span");
-      expect(tool.name).toBe("tool unnamed");
+      expect(tool.name).toBe("tool:unnamed");
       expect(tool.attributes).toMatchObject({ "openbot.step.name": "unnamed" });
       assertNoCanaries(recorder.spans);
     } finally {
@@ -387,6 +394,154 @@ describe("the callback handler's span tree", () => {
   });
 });
 
+describe("the server stepFamily contract, driven by a real @langchain/core graph", () => {
+  // Pinned copy of server/src/ai-observability/queries/runs.ts `stepFamily` (R2fix-T1):
+  // the projection's naming contract, which reads recorder families off the span name.
+  // This module's image and tests cannot depend on server/, so the contract rides here
+  // verbatim; the triage round 2 report (R2-00) pins the source line.
+  function stepFamily(name: unknown): "tool" | "model" | "retrieval" | null {
+    if (typeof name !== "string") return null;
+    if (name === "retrieval") return "retrieval";
+    if (name === "tool" || name.startsWith("tool:")) return "tool";
+    if (name === "model" || name.startsWith("model:")) return "model";
+    return null;
+  }
+
+  /** A real graph (real dispatch, no hand-called handlers): model -> tool -> retriever. */
+  function realGraph() {
+    return RunnableSequence.from([
+      new FakeListChatModel({ responses: ["graph says hi"] }),
+      RunnableLambda.from((message: unknown) =>
+        String((message as { content?: unknown }).content ?? message),
+      ),
+      new DynamicTool({
+        name: "search_tool",
+        description: "the graph's tool step",
+        func: async () => "ok",
+      }),
+      new FakeRetriever({
+        output: [{ pageContent: "kb hit", metadata: {} }],
+      }),
+    ]);
+  }
+
+  async function driveRealGraph(): Promise<ReturnType<typeof recordedSpans>> {
+    const recorder = recordedSpans();
+    const handler = new GovernedCallbackHandler();
+    const run = governedRunSpan({
+      runId: "run_real_graph",
+      threadId: "thread_real_graph",
+    });
+    try {
+      await context.with(trace.setSpan(context.active(), run.span), async () => {
+        await realGraph().invoke("hello graph", { callbacks: [handler] });
+      });
+      run.finish("completed");
+    } catch (error) {
+      await recorder.stop();
+      throw error;
+    }
+    return recorder;
+  }
+
+  test("a real graph's model/tool/retrieval steps survive the server's stepFamily projection", async () => {
+    const recorder = await driveRealGraph();
+    try {
+      // The deployment's steps projection drops any span whose name has no recorder
+      // family (projectStep's first line). The framework's model/tool/retrieval steps
+      // must project — this is the acceptance the T37 claim rests on.
+      const families = recorder.spans.map((span) => stepFamily(span.name));
+      expect(families.filter((family) => family === "model").length).toBe(1);
+      expect(families.filter((family) => family === "tool")).toEqual(["tool"]);
+      expect(families.filter((family) => family === "retrieval")).toEqual([
+        "retrieval",
+      ]);
+    } finally {
+      await recorder.stop();
+    }
+  });
+
+  test("a real graph's steps carry the colon-prefix names and nest run -> chain -> step", async () => {
+    const recorder = await driveRealGraph();
+    try {
+      const run = spanOf(recorder.spans, "ag-ui run");
+      const sequence = spanOf(recorder.spans, "chain:RunnableSequence");
+      const lambda = spanOf(recorder.spans, "chain:RunnableLambda");
+      const model = recorder.spans.find(
+        (span) => stepFamily(span.name) === "model",
+      );
+      const tool = spanOf(recorder.spans, "tool:search_tool");
+      const retrieval = spanOf(recorder.spans, "retrieval");
+
+      // Names read the recorder convention the projection parses: `kind:` prefix for
+      // model/tool, the bare `retrieval` word (its name rides the attribute).
+      expect(model?.name).toMatch(/^model:/);
+      expect(tool.name).toBe("tool:search_tool");
+      expect(retrieval.name).toBe("retrieval");
+
+      // Parentage rides the framework's own run ids: chain runs nest under their
+      // parent chain run (the runtime hands parentRunId at handler position 4),
+      // and every step hangs under its chain, which hangs under the run span.
+      expect(sequence.parentSpanContext?.spanId).toBe(run.spanContext().spanId);
+      expect(lambda.parentSpanContext?.spanId).toBe(
+        sequence.spanContext().spanId,
+      );
+      for (const step of [model, tool, retrieval]) {
+        expect(step?.parentSpanContext?.spanId).toBe(
+          sequence.spanContext().spanId,
+        );
+      }
+    } finally {
+      await recorder.stop();
+    }
+  });
+
+  test("handleChainStart binds the runtime dispatch order, not the d.ts doc order", async () => {
+    // @langchain/core's manager re-dispatches handleChainStart as
+    // (chain, inputs, runId, parentRunId, tags, metadata, runType, runName, extra)
+    // — parentRunId at position 4, runType at 7, runName at 8 (manager.cjs), which is
+    // NOT the documented order. Hand-calling in the true runtime order must therefore
+    // land the parent link and the run name where the handler keeps them.
+    const recorder = recordedSpans();
+    const handler = new GovernedCallbackHandler();
+    try {
+      handler.handleChainStart(
+        serialized("outer"),
+        { input: true },
+        "run-outer",
+        undefined, // pos 4: parentRunId — the root chain has none
+        [], // pos 5: tags
+        {}, // pos 6: metadata
+        "chain", // pos 7: runType
+        "outer-chain", // pos 8: runName
+      );
+      handler.handleChainStart(
+        serialized("inner"),
+        { input: true },
+        "run-inner",
+        "run-outer", // pos 4: parentRunId — the framework's own parent link
+        [],
+        {},
+        "chain",
+        "inner-chain",
+      );
+      handler.handleChainEnd({}, "run-inner");
+      handler.handleChainEnd({}, "run-outer");
+
+      const outer = spanOf(recorder.spans, "chain:outer-chain");
+      const inner = spanOf(recorder.spans, "chain:inner-chain");
+      // The parent run id rides position 4; bound anywhere else, nesting flattens.
+      expect(inner.parentSpanContext?.spanId).toBe(outer.spanContext().spanId);
+      // The run name rides position 8; bound anywhere else, the name is the runType.
+      expect(outer.attributes).toMatchObject({
+        "openbot.step.name": "outer-chain",
+      });
+    } finally {
+      await recorder.stop();
+    }
+  });
+});
+
 describe("the deployment tool wrapper", () => {
   test("the call's result passes through and its span records the outcome", async () => {
     const recorder = recordedSpans();
@@ -398,7 +553,7 @@ describe("the deployment tool wrapper", () => {
       );
       expect(answer).toBe("found it");
 
-      const tool = spanOf(recorder.spans, "tool web_search");
+      const tool = spanOf(recorder.spans, "tool:web_search");
       expect(tool.attributes).toMatchObject({
         "openbot.step.kind": "tool",
         "openbot.tool.call_id": "call_1",
@@ -418,7 +573,7 @@ describe("the deployment tool wrapper", () => {
         }),
       ).rejects.toThrow();
       expect(
-        spanOf(recorder.spans, "tool web_search").attributes,
+        spanOf(recorder.spans, "tool:web_search").attributes,
       ).toMatchObject({
         "openbot.span.state": "failed",
       });
