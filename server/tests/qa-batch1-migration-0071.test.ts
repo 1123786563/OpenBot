@@ -62,14 +62,14 @@ describe("probe g: snapshot consistency (schema ↔ migration ↔ next generate)
     const grants = SNAPSHOT.tables["public.credit_grants"];
     expect(grants.columns.idempotency_key.notNull).toBe(true);
     expect(grants.columns.idempotency_key.type).toBe("text");
-    const index = grants.indexes["credit_grants_idempotency_key_unique_idx"];
+    const index = grants.indexes.credit_grants_idempotency_key_unique_idx;
     expect(index.isUnique).toBe(true);
     expect(index.where).toBeUndefined();
   });
 
   test("the snapshot's payment_orders carries the pending-pair partial unique index", () => {
     const orders = SNAPSHOT.tables["public.payment_orders"];
-    const index = orders.indexes["payment_orders_pending_pair_unique_idx"];
+    const index = orders.indexes.payment_orders_pending_pair_unique_idx;
     expect(index.isUnique).toBe(true);
     expect(index.where).toContain("pending");
   });

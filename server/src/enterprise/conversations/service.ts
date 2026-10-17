@@ -454,17 +454,6 @@ export function createConversationService({
             backend: "mastra",
           });
         } catch (cause) {
-          console.error({
-            error: "MASTRA_STORAGE_PROBE_FAILED",
-            context: {
-              operation: "getOrCreate",
-              tenantId: scope.tenantId,
-            },
-            cause:
-              cause instanceof Error
-                ? ((cause as { code?: unknown }).code ?? cause.constructor.name)
-                : typeof cause,
-          });
           throw Object.assign(new Error("MASTRA_STORAGE_UNAVAILABLE"), {
             code: "MASTRA_STORAGE_UNAVAILABLE",
             status: 503,

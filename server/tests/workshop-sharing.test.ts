@@ -165,7 +165,7 @@ describe("workshop shares (B14)", () => {
         "ch_1",
         "wa_1",
         "preview_download",
-        signature.slice(0, -2) + "x=",
+        `${signature.slice(0, -2)}x=`,
       ),
     ).toBe(false);
   });

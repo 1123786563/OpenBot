@@ -544,7 +544,7 @@ async function jobMain() {
     throw new Error(
       "INTELLIGENCE_SERVICE_TOKEN and INTELLIGENCE_PROJECT_ID go together.",
     );
-  const result = await ensureLearningContainer({
+  const _result = await ensureLearningContainer({
     directory: process.cwd(),
     apiUrl,
     nonInteractive: true,
@@ -555,18 +555,10 @@ async function jobMain() {
     ),
     ...(token && projectId ? { serviceToken: { token, projectId } } : {}),
   });
-  console.log(
-    result === "skipped"
-      ? `Automatic Learning: no credential here could create the openbot container. ${learningSetupInstructions(apiUrl)}`
-      : `Automatic Learning: the openbot container is ${result === "created" ? "created" : "present"}; OpenBot assigns it as the default unless Admin → Automatic Learning has a saved setting.`,
-  );
 }
 
 if (import.meta.main) {
-  jobMain().catch((error: unknown) => {
-    console.log(
-      `Automatic Learning: ${error instanceof Error ? error.message : "setup failed; nothing was assigned."}`,
-    );
+  jobMain().catch((_error: unknown) => {
     process.exitCode = 1;
   });
 }

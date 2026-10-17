@@ -41,7 +41,7 @@ function shapeOf(value: unknown, depth = 0): Shape {
 /** 提取动态字段（id 类）为通配，让两次调用的结构可比。 */
 function normalize(value: unknown): unknown {
   return JSON.parse(
-    JSON.stringify(value, (key, val) => {
+    JSON.stringify(value, (_key, val) => {
       if (typeof val === "string" && /^(req-|kb-|doc-)/.test(val)) {
         return "<id>";
       }

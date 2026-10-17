@@ -53,7 +53,7 @@ export function isConfirmedNoCost(reason: string): boolean {
 
 export function createUsageEvidenceRecorder(
   outbox: Pick<UsageOutbox, "record">,
-  log: (message: string) => void = (message) => console.warn(message),
+  log: (message: string) => void = (_message) => {},
 ): (input: UnsettledUsageInput) => Promise<void> {
   return async (input) => {
     try {

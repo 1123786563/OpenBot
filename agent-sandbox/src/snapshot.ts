@@ -3,7 +3,6 @@ import {
   readdir,
   readFile,
   rm,
-  stat,
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
@@ -217,7 +216,7 @@ function tarHeader(path: string, size: number): Uint8Array {
   header.write("0000000\0", 108, "ascii"); // uid
   header.write("0000000\0", 116, "ascii"); // gid
   // Size as octal, zero-padded to 11, NUL-terminated.
-  header.write(size.toString(8).padStart(11, "0") + "\0", 124, "ascii");
+  header.write(`${size.toString(8).padStart(11, "0")}\0`, 124, "ascii");
   header.write("00000000000\0", 136, "ascii"); // mtime: "now" is a lie we refuse to tell
   header.write("        ", 148, "ascii"); // checksum placeholder: 8 spaces
   header.write("0", 156, "ascii"); // typeflag: regular file
@@ -226,7 +225,7 @@ function tarHeader(path: string, size: number): Uint8Array {
   // The checksum: the header's bytes summed as unsigned, written as 6 octal digits + NUL + space.
   let sum = 0;
   for (const byte of header) sum += byte;
-  header.write(sum.toString(8).padStart(6, "0") + "\0 ", 148, "ascii");
+  header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, "ascii");
   return new Uint8Array(header);
 }
 

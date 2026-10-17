@@ -129,7 +129,7 @@ async function main() {
     kbId,
     taskId: created.knowledgeId,
   });
-  if (!task || task.status !== "completed") fail("task-projection", task);
+  if (task?.status !== "completed") fail("task-projection", task);
   console.log(
     `task completed: chunks ${task.chunks_done}/${task.chunks_total}, progress ${task.progress}%`,
   );
@@ -230,7 +230,7 @@ async function main() {
     kbId,
     taskId: created.knowledgeId,
   });
-  if (!taskAfter || taskAfter.status !== "failed")
+  if (taskAfter?.status !== "failed")
     fail("deleted-projects-failed", taskAfter);
   console.log(
     "delete cascade: 0 points, task projects failed (deleting→failed)",

@@ -7,7 +7,6 @@ import { logLinkAuditFailure } from "./audit-failure";
 import {
   exchangeGithubCode,
   fetchGithubUser,
-  GithubOAuthError,
   githubRedirectUri,
   openGithubState,
 } from "./github-oauth";
@@ -29,23 +28,12 @@ export type GithubCallbackDeps = {
   now?: () => Date;
 };
 
-function logRefused(reason: string): void {
-  console.warn(
-    JSON.stringify({ type: "identity-github-callback-refused", reason }),
-  );
+function logRefused(_reason: string): void {
 }
 
 // Only GithubOAuthError messages are logged: they are fixed sentences. Any other error's message
 // could carry vendor or database text, so it contributes its name alone.
-function logFailed(stage: string, error: unknown): void {
-  console.error(
-    JSON.stringify({
-      type: "identity-github-callback-failed",
-      stage,
-      reason: error instanceof Error ? error.name : "unknown",
-      ...(error instanceof GithubOAuthError ? { message: error.message } : {}),
-    }),
-  );
+function logFailed(_stage: string, _error: unknown): void {
 }
 
 /**

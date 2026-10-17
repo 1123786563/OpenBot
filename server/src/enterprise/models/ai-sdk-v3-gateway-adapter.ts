@@ -411,7 +411,7 @@ export function createAiSdkV3GatewayAdapter(
       // A 2xx with no body is protocol damage, not an HTTP error: never
       // surface it as MODEL_GATEWAY_HTTP_200 (OCR R10).
       if (!response.body) fail();
-      const reader = response.body!.getReader();
+      const reader = response.body?.getReader();
       const decoder = new TextDecoder("utf-8", { fatal: true });
       let buffer = "";
       let id = "gateway-response";

@@ -15,7 +15,7 @@ import { loadConfig } from "../src/config";
 import { createDatabase } from "../src/db/client";
 import { sweepWorkshopSchedules } from "../src/workshop/schedule-executor";
 
-const config = loadConfig(process.env);
+const _config = loadConfig(process.env);
 const database = createDatabase(process.env.DATABASE_URL ?? "");
 
 // The enqueue a firing hands the turn to: the workshop routes' own orchestrator path, reached

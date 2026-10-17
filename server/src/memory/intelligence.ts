@@ -89,7 +89,7 @@ export function createIntelligenceMemory(options: {
 }): IntelligenceMemory {
   const { client } = options;
   const now = options.now ?? Date.now;
-  const log = options.log ?? ((message: string) => console.warn(message));
+  const log = options.log ?? ((_message: string) => {});
   let state: { available: boolean; until: number } | undefined;
   let loggedUnavailable = false;
   const lists = new Map<

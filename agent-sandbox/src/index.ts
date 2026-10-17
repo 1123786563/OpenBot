@@ -5,7 +5,6 @@
  * token never appears in any of them.
  */
 import { serve, type WebSocketHandler } from "bun";
-import type { Duplex } from "node:stream";
 import { bridgeWebSocket } from "./ws-passthrough";
 import { SANDBOX_VERSION } from "./version";
 import { sandboxEnvFrom } from "./env";

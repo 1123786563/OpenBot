@@ -46,7 +46,7 @@ const results: StepResult[] = [];
 
 class SkipError extends Error {}
 
-async function step(name: string, fn: () => Promise<string | void>) {
+async function step(name: string, fn: () => Promise<string | undefined>) {
   try {
     const detail = (await fn()) || "";
     results.push({ name, ok: true, detail });

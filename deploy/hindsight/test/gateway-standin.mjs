@@ -77,7 +77,7 @@ const EMBEDDING_DIMENSIONS = 8;
 function log(entry) {
   appendFileSync(
     logFile,
-    JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n",
+    `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`,
   );
 }
 

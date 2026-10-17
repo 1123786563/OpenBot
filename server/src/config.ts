@@ -36,7 +36,6 @@ import {
 } from "./gateway/conversion-rate";
 import {
   gatewayEnvDefaultConfig,
-  type GatewayEndpointSettings,
 } from "./gateway/endpoint-config";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";

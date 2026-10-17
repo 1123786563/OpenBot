@@ -22,7 +22,6 @@ import type { CodeRunGateway, StreamingRun } from "../codesandbox/gateway";
 import type { TranslatedEvent, SandboxArtifact } from "../codesandbox/types";
 import type { TurnLease, TurnLock } from "./locks";
 import type { WorkshopStore } from "./store";
-import { indexArtifacts } from "./artifacts";
 
 /** Postgres's unique-violation: a lost race on a guarded insert. */
 const UNIQUE_VIOLATION = "23505";
@@ -209,7 +208,7 @@ export function createTurnOrchestrator(
           // recorded, exactly the shape the gateway guarantees for the run row.
           if (
             event.family === "unknown" &&
-            event.payload["refused"] !== undefined
+            event.payload.refused !== undefined
           ) {
             break;
           }

@@ -1168,7 +1168,7 @@ export function builtInAgentConfiguration(
    * the wire input can select the route, the credential, or the run identity.
    */
   governedModel?: GovernedModelRequest,
-  loadKnowledge?: LoadKnowledgeForBot,
+  _loadKnowledge?: LoadKnowledgeForBot,
 ): BuiltInAgentConfiguration {
   if (!apiKey && !planModel && !governedModel) {
     return {
@@ -1378,7 +1378,7 @@ export async function buildAgents(
   acquireLearnedSkills?: AcquireLearnedSkills,
   loadPersonalMemory?: LoadPersonalMemory,
   /** Appended after `loadPersonalMemory`, for the positional reason it gives. */
-  loadKnowledge?: LoadKnowledgeForBot,
+  _loadKnowledge?: LoadKnowledgeForBot,
   /** Present only inside a governed admission. See {@link builtInAgentConfiguration}. */
   governedModel?: GovernedModelRequest,
 ): Promise<Record<string, AbstractAgent>> {
@@ -1386,14 +1386,6 @@ export async function buildAgents(
   try {
     vendors = await loadVendors();
   } catch {
-    // Vendor guidance is best-effort: losing it must not prevent a run or change its grants.
-    // Report once per build here, including failures from the production plugin-store loader.
-    // Never log the thrown value: database errors can contain connection details or row contents.
-    console.error({
-      error: "connected_vendor_lookup_failed",
-      context: { operation: "loadVendors", agentCount: agents.length },
-      timestamp: new Date().toISOString(),
-    });
   }
   /*
    * Read once per build and only when somebody will be told it, like the vendors above and the model
@@ -1409,12 +1401,6 @@ export async function buildAgents(
     try {
       instructions = (await loadInstructions?.()) ?? null;
     } catch {
-      // Never log the thrown value: database errors can expose instructions or credentials.
-      console.error({
-        error: "standing_instruction_read_failed",
-        context: { operation: "loadInstructions", agentCount: agents.length },
-        timestamp: new Date().toISOString(),
-      });
     }
   }
   return Object.fromEntries(
@@ -1684,17 +1670,17 @@ async function buildAgent(
   agent: RegisteredAgent,
   model: RuntimeModel,
   apiKey: string | null,
-  stallGuard: StallGuard | undefined,
+  _stallGuard: StallGuard | undefined,
   loadTools: LoadToolsForBot,
-  signRun?: SignRun,
+  _signRun?: SignRun,
   computerGuidance?: string,
   connectedVendors: readonly string[] = [],
   selection?: ToolSelection,
-  agentFetch?: AgentFetch,
+  _agentFetch?: AgentFetch,
   handoff?: HandoffForRun,
   /** Already resolved by {@link buildAgents}, so one roster costs one read. */
   standingInstructions: string | null = null,
-  initiator?: AuditInitiator,
+  _initiator?: AuditInitiator,
   /** How this run's attached files are inlined. See {@link buildAgents}. */
   loadAttachment?: LoadAttachment,
   /** How this run records that those files were sent. See {@link buildAgents}. */
@@ -1730,12 +1716,6 @@ async function buildAgent(
     try {
       skills = await selection.loadSkills(agent.id);
     } catch {
-      // Never log the thrown value: database errors can contain connection details or row contents.
-      console.error({
-        error: "tool_selection_skill_read_failed",
-        context: { operation: "loadSkills", agentId: agent.id },
-        timestamp: new Date().toISOString(),
-      });
     }
   }
   const narrowing =
@@ -1745,19 +1725,7 @@ async function buildAgent(
       ? selection
       : undefined;
 
-  const diagnoseRecordFailure = (chosen: Selection<GrantedTool>) => {
-    console.error({
-      error: "tool_selection_record_failed",
-      context: {
-        operation: "record",
-        agentId: agent.id,
-        reason: chosen.reason,
-        granted: chosen.granted,
-        offered: chosen.offered.length,
-        skills: chosen.skills,
-      },
-      timestamp: new Date().toISOString(),
-    });
+  const diagnoseRecordFailure = (_chosen: Selection<GrantedTool>) => {
   };
 
   /** Pass one and pass two, for one run. Shared by both agent kinds; each applies it differently. */
@@ -1931,7 +1899,7 @@ type MastraClientForBridge = Parameters<
  * mapping from that protocol to AG-UI events belongs to the people who change both ends of it.
  * Imported dynamically so a deployment that registers no Mastra Bot never loads it.
  */
-async function remoteTransport(
+async function _remoteTransport(
   agent: RegisteredRemoteAgent,
   stallGuard: StallGuard | undefined,
   agentFetch?: AgentFetch,
@@ -2033,7 +2001,7 @@ export function pickFromRoster(
   );
 }
 
-function remoteAgentWithStandingRole(
+function _remoteAgentWithStandingRole(
   agent: RegisteredRemoteAgent,
   /**
    * The dialled endpoint, already built. See {@link remoteTransport}.

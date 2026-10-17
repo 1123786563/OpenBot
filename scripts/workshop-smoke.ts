@@ -95,7 +95,7 @@ console.log(`smoke: channel ${channelId} created`);
 //    artifact, a false failure. The unique name makes every run's diff non-empty by design.
 const fileName = `smoke-${Date.now().toString(36)}.txt`;
 const started = await call<TurnResponse>(
-  "/api/workshop/" + channelId + "/turns",
+  `/api/workshop/${channelId}/turns`,
   {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -127,10 +127,10 @@ if (status !== "succeeded") {
 console.log(`smoke: turn ${started.turnId} succeeded`);
 
 // 3. The artifact the prompt demanded is in the session's gallery.
-const artifact = snapshot!.artifacts.find((row) => row.name === fileName);
+const artifact = snapshot?.artifacts.find((row) => row.name === fileName);
 if (!artifact) {
   fail(
-    `${fileName} not in the gallery: ${JSON.stringify(snapshot!.artifacts.map((row) => row.name))}`,
+    `${fileName} not in the gallery: ${JSON.stringify(snapshot?.artifacts.map((row) => row.name))}`,
   );
 }
 console.log(

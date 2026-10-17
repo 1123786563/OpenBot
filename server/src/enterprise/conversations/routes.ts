@@ -106,7 +106,6 @@ function errorResponse(error: unknown) {
       status: 400,
       body: { error: { code: "invalid_request", message } },
     };
-  console.error("Enterprise conversation request failed", error);
   return {
     status: 500,
     body: { error: { code: "internal", message: "Request failed." } },

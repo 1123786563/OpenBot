@@ -145,7 +145,7 @@ export function createMemoryDefaults(options: {
 }) {
   const now = options.now ?? Date.now;
   const minIntervalMs = options.minIntervalMs ?? MIN_INTERVAL_MS;
-  const log = options.log ?? ((entry) => console.warn(JSON.stringify(entry)));
+  const log = options.log ?? ((_entry) => {});
   const lastRun = new Map<string, number>();
 
   /** True at most once per `minIntervalMs` for one key, so a busy conversation adopts once. */

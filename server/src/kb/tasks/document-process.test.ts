@@ -44,10 +44,10 @@ function recordingIndexWriter() {
           payload: { doc_id: input.docId, tenant_id: input.tenantId },
         });
     },
-    async deleteByDoc(tenantId, docId) {
+    async deleteByDoc(_tenantId, docId) {
       calls.push(`deleteDoc:${docId}`);
     },
-    async deleteByKb(tenantId, kbId) {
+    async deleteByKb(_tenantId, kbId) {
       calls.push(`deleteKb:${kbId}`);
     },
   };
@@ -59,7 +59,7 @@ function mockEmbedder(dimensions = 8) {
   let calls = 0;
   return {
     calls: () => calls,
-    async embed(text: string) {
+    async embed(_text: string) {
       calls += 1;
       return new Array<number>(dimensions).fill(1);
     },

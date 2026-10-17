@@ -135,13 +135,7 @@ async function withoutLinkCodes(
       if (!code) continue;
       try {
         await deps.identity.discard(code);
-      } catch (error) {
-        console.error(
-          JSON.stringify({
-            type: "opentag-link-code-discard-error",
-            errorType: error instanceof Error ? error.name : "UnknownError",
-          }),
-        );
+      } catch (_error) {
       }
     }
   return text.replace(LINKS, "link [code removed]");
