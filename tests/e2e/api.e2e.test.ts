@@ -10,6 +10,14 @@
  *  4. 仅在 OPENBOT_INTERNAL_TOKEN 未配置时不挂载的 /internal/routines/run
  *     断言 404（app.ts:1244 条件挂载），并注释说明该功能未启用。
  *
+ * 与 tests/smoke/journey.test.ts 同一契约：这是打真实部署的 e2e 套件，不属于
+ * `bun run test`。默认整文件跳过；起好部署后点名运行：
+ *
+ *   bash scripts/start.sh
+ *   bun run test:api-e2e
+ *
+ * `OPENBOT_API_BASE_URL` 指向别的端口。
+ *
  * 鉴权后的写路径与闭环流程按计划交由浏览器套件在 http://localhost:3010 真实登录
  * （admin/123）走通——Casdoor OAuth 无法纯 API 建立会话，本套件不含登录态正向用例。
  * 负路径与正向组共用的端点（/api/agents、/api/plugins 等）在本套件中仅存在于独立的、
@@ -19,6 +27,7 @@
 
 import { describe, expect, test } from "bun:test";
 
+const asked = process.env.OPENBOT_API_E2E === "1";
 const BASE_URL = process.env.OPENBOT_API_BASE_URL ?? "http://127.0.0.1:3001";
 
 /**
@@ -41,7 +50,7 @@ async function raw(path: string, init: RequestInit = {}): Promise<Response> {
 // 1. 健康与公开能力（app.ts:496 / app.ts:500，无鉴权）
 // ---------------------------------------------------------------------------
 
-describe("健康与公开能力", () => {
+describe.skipIf(!asked)("健康与公开能力", () => {
   test("GET /health → 200 且声明 status=ok", async () => {
     const res = await raw("/health");
     expect(res.status).toBe(200);
@@ -133,7 +142,7 @@ const PROTECTED_GET_PATHS: Array<[string, string]> = [
   ["/api/billing/usage", "billing/routes.ts 挂载 /api/billing"],
 ];
 
-describe("鉴权负路径（无 cookie，预期 401）", () => {
+describe.skipIf(!asked)("鉴权负路径（无 cookie，预期 401）", () => {
   for (const [path, where] of PROTECTED_GET_PATHS) {
     test(`GET ${path} → 401（${where}）`, async () => {
       const res = await raw(path);
