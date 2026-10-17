@@ -111,26 +111,40 @@ export function holdsPreviewSessionPass(
  * pass would ride the cross-site handshake, handing the attacker the live HMR
  * channel (reading source frames, injecting protocol messages).
  *
- * The comparison normalizes BOTH sides through `new URL(x).origin` — never a
- * bare string equality — because originFor answers the session's ADDRESS,
- * and in the dev form that address carries the `/<label>` path an Origin
- * header never spells (a bare comparison would refuse every legitimate
- * dev-form browser upgrade). Normalization also makes the equality
- * independent of default-port spelling on either side (originFor drops :80
- * by its portSuffix rule, fix-ocr27 #6; WHATWG serialization and the
- * browser's Origin header drop scheme defaults the same way). An absent
- * Origin (a non-browser client) is waved through — the gate exists for
- * pages, and WS clients that send no Origin cannot be a browser's document.
- * An opaque origin ("null", from a sandboxed frame) or any unparseable
- * value parse-fails into a refusal, never a throw.
+ * The comparison normalizes BOTH sides through a shared origin form —
+ * never a bare string equality — because originFor answers the session's
+ * ADDRESS, and in the dev form that address carries the `/<label>` path an
+ * Origin header never spells (a bare comparison would refuse every
+ * legitimate dev-form browser upgrade). Normalization also makes the
+ * equality independent of default-port spelling on either side (originFor
+ * drops :80 by its portSuffix rule, fix-ocr27 #6; WHATWG serialization and
+ * the browser's Origin header drop scheme defaults the same way) and of the
+ * trailing-dot FQDN spelling: a page loaded from the dotted host serializes
+ * an Origin header THAT KEEPS THE DOT (WHATWG, fix-ocr14), while originFor
+ * mints from the template — which refuses a trailing dot — so the strict
+ * `new URL(x).origin` comparison 403ed a legitimate page's upgrade; both
+ * sides now dot-fold through the SAME normalizeHostname every host-side
+ * comparison in this module runs (fix-ocr29 #1). An absent Origin (a
+ * non-browser client) is waved through — the gate exists for pages, and WS
+ * clients that send no Origin cannot be a browser's document. An opaque
+ * origin ("null", from a sandboxed frame) or any unparseable value
+ * parse-fails into a refusal, never a throw.
  */
 export function samePreviewOrigin(
   originHeader: string | null,
   sessionAddress: string,
 ): boolean {
   if (originHeader === null) return true;
+  // The origin's comparable form: scheme://host[:port], the host dot-folded
+  // and the port carried only when present (WHATWG already dropped scheme
+  // defaults, so an empty url.port means no suffix — originFor's portSuffix
+  // rule mirrored).
+  const originOf = (value: string): string => {
+    const url = new URL(value);
+    return `${url.protocol}//${normalizeHostname(url.hostname)}${url.port === "" ? "" : `:${url.port}`}`;
+  };
   try {
-    return new URL(originHeader).origin === new URL(sessionAddress).origin;
+    return originOf(originHeader) === originOf(sessionAddress);
   } catch {
     return false;
   }

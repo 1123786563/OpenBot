@@ -81,10 +81,15 @@ const API_ORIGIN =
  * scheme 默认端口 80 会被 URL 序列化丢弃，:80 监听的预览地址不带后缀。
  * 旧的 `|| "80"` 无条件拼出 `http://127.0.0.1:80` —— 行为正确的服务端
  * 永远不铸造这个地址，步骤 3 的 `origin.startsWith(PREVIEW_ORIGIN)` 对它
- * 必 FAIL。端口为空或 80 时不带后缀，与服务端逐字一致。
+ * 必 FAIL。端口为空时不带后缀，与服务端逐字一致。这里不存在「端口字面量
+ * 为 "80"」的形态：WHATWG URL 解析丢弃 scheme 默认端口（`new URL(
+ * "http://host:80").port` 返回 ""，":080" 同），http 形态下 URL.port 永远
+ * 不会是字符串 "80"，:80 场景完全由空串分支覆盖（fix-ocr29 #2 删除了
+ * 不可达的 `|| API_PORT === "80"` 死分支；服务端 `parsed.port === 80`
+ * 比较的是 env 数值口径，与此字符串口径不对应）。
  */
 const API_PORT = new URL(API_ORIGIN).port;
-const PREVIEW_ORIGIN = `http://127.0.0.1${API_PORT === "" || API_PORT === "80" ? "" : `:${API_PORT}`}`;
+const PREVIEW_ORIGIN = `http://127.0.0.1${API_PORT === "" ? "" : `:${API_PORT}`}`;
 const CASDOOR_USER = process.env.CRAFT_ACCEPTANCE_CASDOOR_USER ?? "admin";
 const CASDOOR_PASSWORD = process.env.CRAFT_ACCEPTANCE_CASDOOR_PASSWORD ?? "123";
 const GATEWAY =
