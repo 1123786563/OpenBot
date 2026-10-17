@@ -29,6 +29,7 @@ export * from "./memory";
 export * from "./openmuse";
 export * from "./passwords";
 export * from "./payment";
+export * from "./personal-shares";
 export * from "./plugins";
 export * from "./proactive";
 export * from "./responsibilities";

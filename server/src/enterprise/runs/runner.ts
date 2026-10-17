@@ -36,6 +36,7 @@ import { messageDigest } from "../conversations/store";
 import { ExpertVersionCatalog } from "../experts/version-catalog";
 import type { RuntimeModelRoute } from "../models/runtime-adapter";
 import type { DataDatabase } from "../tenancy/connections";
+import { createRevocationGuard } from "../tenancy/revocation";
 import {
   createDrizzleRunnerEventRepository,
   createRunnerEventService,
@@ -883,6 +884,9 @@ export function createProductionRunnerComposition(
   );
   const events = createRunnerEventService({
     repository: createDrizzleRunnerEventRepository(deps.data),
+    // MT007（Issue #50）：生产装配总是带上撤权检查点——事件流面
+    // （replay/subscribe）对已签发 Scope 在每次读取前重验两级成员资格。
+    revocation: createRevocationGuard(deps.data),
     ...(deps.pollMilliseconds !== undefined
       ? { pollMilliseconds: deps.pollMilliseconds }
       : {}),

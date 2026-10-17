@@ -62,6 +62,10 @@ import {
   wakeUpTools,
 } from "./agents/wake-up";
 import { createApp, createDeploymentRequireUser } from "./app";
+import {
+  applyStartupVerdict,
+  runMultitenancyStartupChecks,
+} from "./enterprise/tenancy/startup-checks";
 import { createApprovedActionExecutor } from "./approvals/execute";
 import {
   PERSON_QUESTION_WAITING,
@@ -257,8 +261,25 @@ import { createProductionRunnerComposition } from "./enterprise/runs/runner";
 import {
   verifyDataDatabase,
   verifyDirectoryDatabase,
+  verifyOperatorDatabase,
 } from "./enterprise/tenancy/connections";
-import { createScopeResolver } from "./enterprise/tenancy/store";
+import {
+  createPersonalShareAdminService,
+  createPersonalShareDecisionService,
+} from "./enterprise/tenancy/personal-share-rules";
+import {
+  createCompanyAdminAuthorizer,
+  createWorkspaceAdminService,
+  createWorkspaceScopeLister,
+} from "./enterprise/tenancy/workspace-admin";
+import {
+  createUnavailableWorkspaceScopeRoutes,
+  createWorkspaceScopeRoutes,
+} from "./enterprise/tenancy/workspace-scope-routes";
+import {
+  type AuthenticatedRequestIdentity,
+  createScopeResolver,
+} from "./enterprise/tenancy/store";
 import {
   createHostAccessBroker,
   HostAccessRefusedError,
@@ -642,6 +663,29 @@ const identifyActor: IdentifyActor = async (request) => {
 };
 
 const config = loadConfig();
+/*
+ * Multitenancy mode is an explicit switch (OPENBOT_MULTITENANCY, default off — config.ts), and
+ * switching it on is a promise about who this deployment serves. The promise is checked before
+ * anything else here runs: entrance coverage against the MT001 inventory, no single-user/dev
+ * bypass residue, and the restricted ob_ent_* database roles on the production connections. Any
+ * gap and the process exits non-zero with one structured audit record naming every check —
+ * booting with a hole in tenant isolation is not a warning-and-continue situation.
+ *
+ * With the switch off nothing here runs: the legacy boot is byte-for-byte what it was.
+ */
+if (config.multitenancy.enabled) {
+  const startupRecord = await runMultitenancyStartupChecks({
+    inventoryPath: config.multitenancy.inventoryPath,
+    waiversPath: config.multitenancy.waiversPath,
+    directoryUrl: config.enterpriseDirectoryDatabaseUrl,
+    dataUrl: config.enterpriseDataDatabaseUrl,
+    tenantRuntimeUrl: config.tenantStorageRuntimeDatabaseUrl,
+    singleUser: config.singleUser,
+    singleUserEnvRaw: process.env.OPENBOT_SINGLE_USER,
+    devNoAuthEnvRaw: process.env.OPENBOT_DEV_NO_AUTH,
+  });
+  applyStartupVerdict(startupRecord, { log });
+}
 // The environment seeds local policy once. The SDK fallback must not reapply an old revision
 // after an administrator clears a pin to follow the latest published Skills.
 clearLearningRevisionFallback();
@@ -799,11 +843,14 @@ const enterpriseCapabilities = await (async () => {
         });
         return actor ? { actorId: actor.id, entrypoint: "web" } : null;
       },
-      selectTenant: (request) => request.headers.get("x-openbot-tenant-id"),
+      // MT005 ruling #1: selection headers are x-openbot-tenant and
+      // x-openbot-workspace. They only select; database membership decides.
+      selectTenant: (request) => request.headers.get("x-openbot-tenant"),
       selectWorkspace: (request) =>
-        request.headers.get("x-openbot-workspace-id"),
+        request.headers.get("x-openbot-workspace"),
     });
     return {
+      directory,
       data,
       scopes,
       conversations: createConversationService({ data, mastraStorage }),
@@ -819,6 +866,74 @@ const enterpriseConversationRoutes = enterpriseCapabilities
       enterpriseCapabilities.scopes,
     )
   : createUnavailableConversationRoutes();
+// MT006 (issue #49): workspace scope listing plus company team administration.
+// The listing half runs on the directory/data channels already verified above;
+// the admin half needs the restricted operator channel, and its routes answer
+// 503 when that channel is not wired — never a permissive stand-in. Ruling #1:
+// x-openbot-tenant / x-openbot-workspace select; database membership decides.
+const authenticateWorkspaceScopeRequest = async (
+  request: Request,
+): Promise<AuthenticatedRequestIdentity | null> => {
+  // Session faults answer 401 through the routes' error map; the identical
+  // resolution beside the conversation scopes carries the structured trace.
+  const actor = await resolveRequestActor(request).catch(() => null);
+  return actor ? { actorId: actor.id, entrypoint: "web" } : null;
+};
+const enterpriseWorkspaceScopeRoutes = enterpriseCapabilities
+  ? await (async () => {
+      const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+      const operator = operatorUrl
+        ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
+            // The operator channel failing its capability check leaves the
+            // admin routes answering 503 — refused, never permissive; no
+            // console here (server/src is noConsole-enforced).
+            () => null,
+          )
+        : null;
+      return createWorkspaceScopeRoutes({
+        authenticate: authenticateWorkspaceScopeRequest,
+        lister: createWorkspaceScopeLister(
+          enterpriseCapabilities.directory,
+          enterpriseCapabilities.data,
+        ),
+        admin: operator
+          ? {
+              authorizer: createCompanyAdminAuthorizer(
+                enterpriseCapabilities.directory,
+                {
+                  authenticate: authenticateWorkspaceScopeRequest,
+                  selectTenant: (request) =>
+                    request.headers.get("x-openbot-tenant"),
+                },
+              ),
+              service: createWorkspaceAdminService(operator),
+            }
+          : undefined,
+      });
+    })()
+  : createUnavailableWorkspaceScopeRoutes();
+// MT010 (Issue #53): personal-resource share rules. The decision half rides
+// the already-verified restricted data channel; the owner-only share/revoke
+// half needs the restricted operator channel and stays null — fail-closed,
+// no share can ever be created or revoked — when that channel is not wired.
+// Held here for the share-token and share-page entrypoints that land in
+// MT058 and MT092; nothing in this assembly serves traffic with it yet.
+export const personalShareRules = await (async () => {
+  if (!enterpriseCapabilities) return null;
+  const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+  const operator = operatorUrl
+    ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
+        // Same discipline as the workspace-admin channel above: a failing
+        // operator verification leaves the write half unavailable, never
+        // permissive; no console here (server/src is noConsole-enforced).
+        () => null,
+      )
+    : null;
+  return {
+    decisions: createPersonalShareDecisionService(enterpriseCapabilities.data),
+    admin: operator ? createPersonalShareAdminService(operator) : null,
+  };
+})();
 const identityStore = createIdentityStore(database, credentialStore);
 
 const agentVault = {
@@ -5422,6 +5537,7 @@ const app = createApp(
     groups: groupConversations,
     teamBots,
     enterpriseConversations: enterpriseConversationRoutes,
+    enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
     lifecycle: {
       lifecycle: createBotLifecycleStore(database),
       reset: createBotReset({

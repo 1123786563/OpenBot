@@ -1,0 +1,105 @@
+bun test v1.4.2 (50a8a8387)
+
+server/tests/multitenancy/inventory.test.ts:
+{"level":30,"time":1792085662746,"service":"server","type":"openmuse-mail-placeholder-action-ids","ids":["gmail.list","gmail.search","gmail.thread","gmail.attachment.get","gmail.attachment.bytes"],"msg":"openmuse-mail-placeholder-action-ids"}
+{"level":40,"time":1792085662790,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792085662795,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+[CopilotKit Runtime] telemetry enabled — see https://docs.copilotkit.ai/telemetry to opt out (set COPILOTKIT_TELEMETRY_DISABLED=true).
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+{"level":30,"time":1792085662835,"service":"server","type":"openmuse-calendar-placeholder-action-id","id":"gcalendar.list","msg":"openmuse-calendar-placeholder-action-id"}
+{"level":40,"time":1792085663052,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+(node:6226) TimeoutNaNWarning: NaN is not a number.
+Timeout duration was set to 1.
+(Use `bun --trace-warnings ...` to show where the warning was created)
+(pass) coverage inventory contract > pins the schema version and stays JSON-serializable [2.91ms]
+(pass) coverage inventory contract > every entrance carries exactly the contract fields with valid values [1.74ms]
+(pass) coverage inventory contract > summary counts agree with the entries [0.16ms]
+(pass) coverage inventory contract > digest is deterministic and excludes the timestamp [16.17ms]
+(pass) entrances come from real application assembly > assembles the deployment, enterprise and kb entrance faces [0.14ms]
+(pass) entrances come from real application assembly > always-mounted deployment routes are marked always [0.09ms]
+(pass) entrances come from real application assembly > dynamically and conditionally registered routes are captured [0.09ms]
+(pass) entrances come from real application assembly > captures the enterprise entrance in both assembly lines [0.12ms]
+(pass) entrances come from real application assembly > captures the kb service entrance [0.07ms]
+(pass) entrances come from real application assembly > classifies stream entrances and verifies serve() upgrades [0.05ms]
+(pass) entrances come from real application assembly > classification helpers stay honest about unknowns [0.05ms]
+(pass) static candidate extraction > background programs carry evidence from the deployment entry [0.09ms]
+(pass) static candidate extraction > data tables come from the real drizzle schemas [0.04ms]
+(pass) static candidate extraction > external dependencies map config keys to named systems [0.03ms]
+(pass) gap report and ownership > lists unowned entrances grouped by business closure [1.60ms]
+(pass) gap report and ownership > ownership input flips entries to owned and shrinks the gap [17.49ms]
+(pass) gap report and ownership > exact entrance ownership wins over closure ownership [18.46ms]
+{"level":40,"time":1792085663159,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792085663159,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+{"level":40,"time":1792085663161,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+(pass) drift detection > adding an entrance changes inventory, digest and gap report [19.27ms]
+(pass) drift detection > removing an entrance source changes the inventory and digest [12.77ms]
+(pass) review-fix round 1: external dependencies from real config sources > Redis appears from src/redis.ts env member access [0.08ms]
+(pass) review-fix round 1: external dependencies from real config sources > Qdrant and Ollama come from the real src/kb/config/index.ts [0.04ms]
+(pass) review-fix round 1: external dependencies from real config sources > WeChat Pay maps the real WXPAY_* keys instead of falling into unmapped [0.14ms]
+(pass) review-fix round 2: background programs from real daemon forms > registers the routines worker loop daemon from worker/src/index.ts [0.12ms]
+(pass) review-fix round 2: background programs from real daemon forms > registers the BullMQ kb worker from src/kb/worker.ts [0.12ms]
+(pass) review-fix round 2: background programs from real daemon forms > registers the cron-driven sweep scripts with file/line evidence [0.16ms]
+(pass) review-fix round 3: known deployed service surfaces > lists exactly supervisor, go-runtime, agent-computer, agent-sandbox as unassembled [0.15ms]
+(pass) review-fix round 3: known deployed service surfaces > supervisor and go-runtime carry real source/compose evidence [0.17ms]
+(pass) review-fix round 3: known deployed service surfaces > summary counts service surfaces and the gap report states them honestly [0.76ms]
+(pass) review-fix round 3: known deployed service surfaces > service surfaces affect the digest [19.03ms]
+(pass) database stages are explicit, never silent > without TEST_DATABASE_URL both stages are skipped with reasons [0.12ms]
+(pass) database stages are explicit, never silent > a DATABASE_URL is never used as a fallback [0.13ms]
+(pass) database stages are explicit, never silent > refuses a test URL that names the development database [20.29ms]
+(pass) database stages are explicit, never silent > a configured but unreachable test database fails loudly [18.13ms]
+
+server/tests/multitenancy/migration-tool.test.ts:
+(pass) refusal probe helper contract > expectNoSideEffects also fails when a refused path performed file reads [0.94ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > rejects an unknown command with the offending name and no side effects [0.31ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > rejects a missing command and a missing task id [0.12ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > rejects an unknown task id and is case-sensitive about known ones [0.18ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > rejects unknown flags and extra positionals [0.15ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > apply without a manifest is an argument refusal before any side effect [0.27ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > generate rejects migrate-only flags [0.05ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > migrate rejects generate-only flags [0.03ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > migrate --manifest without --apply refuses instead of silently ignoring the manifest [0.12ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > missing TEST_DATABASE_URL refuses even when DATABASE_URL is present [0.12ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > blank TEST_DATABASE_URL refuses [0.04ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > a non-loopback host is a production target and refuses [0.22ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > the live application database name refuses [0.16ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > generic database names like postgres refuse [0.07ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > non-postgres protocols refuse [0.13ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > an unparseable URL refuses with a reason [0.13ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > a URL fragment refuses [0.15ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > generate validates the same database configuration before anything else [0.04ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > the allowlist is exactly the registry and the shipped self-check task [0.04ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > plan names are fixed, numbered from 0001, and deterministic [0.11ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > buildPlan refuses unknown task ids [0.04ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > plan numbering rejects duplicates, gaps, and duplicate names [0.10ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > journal numbers must be a contiguous prefix of the plan [0.11ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > the manifest mirrors the plan with per-step digests [0.09ms]
+(pass) issue #46 criterion 4: dry-run is the default > migrate without --apply plans without executing anything [1.22ms]
+(pass) issue #46 criterion 4: dry-run is the default > dry-run reports pending steps against a partial journal [0.23ms]
+(pass) issue #46 criterion 4: dry-run is the default > a journal with gaps or duplicates refuses before executing [0.38ms]
+(pass) issue #46 criterion 4: apply requires an exact manifest > a missing manifest file refuses before connecting [0.26ms]
+(pass) issue #46 criterion 4: apply requires an exact manifest > a manifest that disagrees with the plan refuses before connecting [0.31ms]
+(pass) issue #46 criterion 4: apply requires an exact manifest > a valid manifest applies each step in its own transaction and journals it [0.31ms]
+(pass) issue #46 criterion 4: apply requires an exact manifest > an already fully applied task is an explicit no-op, not a re-run [0.12ms]
+(pass) MT003-fix2 F2: journal digests must match the current plan > a journal whose recorded digests all match the plan converges [0.06ms]
+(pass) MT003-fix2 F2: journal digests must match the current plan > a journaled digest that differs from the plan refuses with a manual-review reason [0.07ms]
+(pass) MT003-fix2 F2: journal digests must match the current plan > numbering errors still surface before digest comparison [0.02ms]
+(pass) MT003-fix2 F2: journal digests must match the current plan > migrate refuses on journal/plan digest drift before applying and never self-repairs [0.24ms]
+(pass) MT003-fix2 F2: journal digests must match the current plan > dry-run also refuses on journal/plan digest drift instead of planning past it [0.13ms]
+(pass) MT003-fix2 F2: journal digests must match the current plan > up-to-date is not reported when a journaled digest drifts from the plan [0.19ms]
+(pass) issue #46 criterion 3/4: generate materializes deterministic files > generate --out writes NNNN-named SQL files plus the manifest [4.73ms]
+(pass) issue #46 criterion 3/4: generate materializes deterministic files > regenerating the same plan verifies instead of rewriting [2.55ms]
+(pass) issue #46 criterion 3/4: generate materializes deterministic files > duplicate numbers, gaps, drift, and beyond-plan files all refuse [8.48ms]
+(pass) issue #46 criterion 3/4: generate materializes deterministic files > generate without --out has no file side effects and prints the plan [0.21ms]
+(skip) applies MT000 end-to-end on the assigned dedicated test database [skipped: MT003_ASSIGNED_TEST_DATABASE_URL is not set; set it to a dedicated loopback openbot_enterprise_* test database to run the real-apply integration test]
+
+1 tests skipped:
+(skip) applies MT000 end-to-end on the assigned dedicated test database [skipped: MT003_ASSIGNED_TEST_DATABASE_URL is not set; set it to a dedicated loopback openbot_enterprise_* test database to run the real-apply integration test]
+
+ 74 pass
+ 1 skip
+ 0 fail
+ 5304 expect() calls
+Ran 75 tests across 2 files. [4.09s]
