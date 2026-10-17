@@ -12,11 +12,6 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  */
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const writer = createCreditWriter(database);
-const credits = createCredits({
-  database,
-  externalCustomerKey: "",
-  catalog: new Map(),
-});
 const prefix = `sumtest-${randomUUID().slice(0, 8)}`;
 
 // The same teardown discipline the other integration suites use: delete by the run's own prefix,
@@ -51,6 +46,14 @@ test("an expired grant is not part of the balance, and a live hold is", async ()
   const live = `${prefix}-live`;
   const expired = `${prefix}-expired`;
 
+  // The account key rides in the constructor now (02.4's convergence): the reads answer this
+  // deployment's own key, and no read call names a customer any more.
+  const credits = createCredits({
+    database,
+    externalCustomerKey: customer,
+    catalog: new Map(),
+  });
+
   await writer.grantCredits({
     externalCustomerId: customer,
     source: "plan",
@@ -66,7 +69,7 @@ test("an expired grant is not part of the balance, and a live hold is", async ()
     idempotencyKey: expired,
   });
 
-  const beforeHold = await credits.summary(customer);
+  const beforeHold = await credits.summary();
   expect(beforeHold.plan).toEqual({ total: 100, used: 0, remaining: 100, held: 0 });
   expect(beforeHold.rewards.remaining).toBe(0);
   expect(beforeHold.rewards.grantCount).toBe(0);
@@ -80,14 +83,14 @@ test("an expired grant is not part of the balance, and a live hold is", async ()
   });
   expect(reserved.reserved).toBe(true);
 
-  const held = await credits.summary(customer);
+  const held = await credits.summary();
   expect(held.plan.held).toBe(21);
   expect(held.plan.remaining).toBe(79);
 
   if (reserved.reserved) {
     await writer.releaseReservation(reserved.reservationId, "test");
   }
-  const released = await credits.summary(customer);
+  const released = await credits.summary();
   expect(released.plan.remaining).toBe(100);
   expect(released.plan.held).toBe(0);
 

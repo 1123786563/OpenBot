@@ -268,6 +268,7 @@ import { githubCallbackRoutes } from "./identity/github-callback";
 import { retireIdentityLinks, retireOwnedAccounts } from "./identity/retire";
 import { slackCodeRedeemer } from "./identity/slack-redeem";
 import { createIdentityStore } from "./identity/store";
+import { createBotServiceStore } from "./bot-services/store";
 import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
@@ -820,6 +821,8 @@ const enterpriseConversationRoutes = enterpriseCapabilities
     )
   : createUnavailableConversationRoutes();
 const identityStore = createIdentityStore(database, credentialStore);
+// The Bifrost bot service registry (04.1): identities only — no credential is minted here.
+const botServiceStore = createBotServiceStore(database);
 
 const agentVault = {
   store: credentialStore,
@@ -5504,6 +5507,7 @@ const app = createApp(
   },
   identityStore,
   identityGithubCallback,
+  botServiceStore,
 );
 
 /**
