@@ -143,6 +143,106 @@ test("the byName replay channel is a reader too: a deletion-in-flight experiment
   }
 });
 
+test("a submit whose only conflict is the deletion window answers the domain 409, never a bare 500 (OCR R3-26)", async () => {
+  const { version } = await pinnedVersion(scopeA);
+  const input = {
+    name: `${prefix}-r326-${randomUUID()}`,
+    datasetVersionId: version.id,
+    config,
+  };
+  const { experiment } = await store.submit(scopeA, input);
+  // Retention found it: both m138 readers (byName, byHash) now answer empty,
+  // yet the surviving (scope, name) and (scope, hash) unique indexes still
+  // refuse the insert. The honest answer is the domain conflict the routes
+  // translate — not the bare Error this path fell into under R2-37's
+  // predicates, which a retry would have ridden straight into a 500.
+  await database.insert(aiObservationRetentionDeletions).values({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    kind: "experiment",
+    targetId: experiment.id,
+    retentionDays: 30,
+    state: "pending",
+  });
+  try {
+    const failure = await store.submit(scopeA, input).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(ExperimentStoreError);
+    expect((failure as ExperimentStoreError).code).toBe(
+      "EXPERIMENT_STATE_INVALID",
+    );
+    expect((failure as ExperimentStoreError).status).toBe(409);
+    // A different configuration under the same held name is the same answer:
+    // one unfiltered read-back names the holder, whatever channel conflicted.
+    const other = await store
+      .submit(scopeA, {
+        ...input,
+        config: { ...config, prompt: "A different prompt entirely." },
+      })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(other).toBeInstanceOf(ExperimentStoreError);
+    expect((other as ExperimentStoreError).code).toBe(
+      "EXPERIMENT_STATE_INVALID",
+    );
+    expect((other as ExperimentStoreError).status).toBe(409);
+  } finally {
+    // The governance counts read every scope; leave no record behind.
+    await database
+      .delete(aiObservationRetentionDeletions)
+      .where(eq(aiObservationRetentionDeletions.targetId, experiment.id));
+  }
+});
+
+test("a draft held by the deletion window refuses saveDraft with the domain 409 (OCR R3-26)", async () => {
+  // The m138 visibility rule makes a deletion-in-flight row unreadable; a
+  // saveDraft whose name still collides with it must neither serve the row (an
+  // UPDATE would rewrite a subject the store treats as gone) nor fall into a
+  // bare 500 — one unfiltered read-back names the holder, and the answer is
+  // the domain 409.
+  const { version } = await pinnedVersion(scopeA);
+  const name = `${prefix}-r326d-${randomUUID()}`;
+  const input = { name, datasetVersionId: version.id, config };
+  await store.saveDraft(scopeA, input);
+  const drafted = (
+    await database
+      .select()
+      .from(aiObservationExperiments)
+      .where(eq(aiObservationExperiments.name, name))
+  )[0];
+  await database.insert(aiObservationRetentionDeletions).values({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    kind: "experiment",
+    targetId: drafted.id,
+    retentionDays: 30,
+    state: "pending",
+  });
+  try {
+    const failure = await store.saveDraft(scopeA, input).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(ExperimentStoreError);
+    expect((failure as ExperimentStoreError).code).toBe(
+      "EXPERIMENT_STATE_INVALID",
+    );
+    expect((failure as ExperimentStoreError).status).toBe(409);
+  } finally {
+    await database
+      .delete(aiObservationRetentionDeletions)
+      .where(eq(aiObservationRetentionDeletions.targetId, drafted.id));
+  }
+});
+
 test("the byName replay channel answers the same frozen configuration (regression anchor)", async () => {
   const { version } = await pinnedVersion(scopeA);
   const input = {

@@ -711,6 +711,21 @@ export function createObservationRetentionWorker(
       );
   };
 
+  /*
+   * R3-34: the stop is a fact about the world — the scope's in-flight exports
+   * were cancelled — not about this pass. Persist it the moment it happens, so
+   * a later failure cannot make the retry re-derive "still owed" from a state
+   * the failure rewrote: `state` leaves `pending` on the very pass the stop
+   * rides, and a state-projected stop-work is a stop that never runs again
+   * once the first pass fails before (or after) it.
+   */
+  const markWorkStopped = async (id: string): Promise<void> => {
+    await db
+      .update(aiObservationRetentionDeletions)
+      .set({ workStoppedAt: new Date(), updatedAt: new Date() })
+      .where(eq(aiObservationRetentionDeletions.id, id));
+  };
+
   /** Terminal, exactly once: only a non-deleted row can become deleted. */
   const markDeleted = async (
     id: string,
@@ -769,11 +784,17 @@ export function createObservationRetentionWorker(
        * is not (OCR R2-43): a scope-wide cancel re-run on every retry would
        * settle the exports the user enqueued AFTER the failed pass — with m163's
        * immediate first retries, in the same poll loop — so the stop runs once
-       * per record, on its first pass, and only once the gate is open (a
-       * capability-missing deployment must not cancel the scope's exports on
-       * every pass when no deletion can proceed at all).
+       * per record, and only once the gate is open (a capability-missing
+       * deployment must not cancel the scope's exports on every pass when no
+       * deletion can proceed at all). R3-34: "once" is a durable fact, not a
+       * state projection — the first pass can fail before the stop (a gate
+       * refusal) or under it (a cancel that throws), and `state` leaves
+       * `pending` on exactly that pass; the persisted `work_stopped_at` is
+       * what the retry derives from, so a failed stop is retried and a
+       * completed stop is never replayed.
        */
-      const stopWork = record.kind === "run" && record.state === "pending";
+      const stopWork =
+        record.kind === "run" && record.workStoppedAt === null;
       await deps.invalidateReads?.({
         scopeKey: record.scopeKey,
         kind: record.kind,
@@ -782,6 +803,7 @@ export function createObservationRetentionWorker(
         const port = gate();
         if (stopWork) {
           await exportStore.cancelForScope(record.scopeKey);
+          await markWorkStopped(id);
         }
         const locator = Object.freeze({
           scopeKey: record.scopeKey,
@@ -810,9 +832,10 @@ export function createObservationRetentionWorker(
         }
       } else if (stopWork) {
         // No upstream half to gate on (an unreconciled run): the same
-        // first-pass-only stop still applies before the local deletion changes
+        // once-per-record stop still applies before the local deletion changes
         // the run's data face.
         await exportStore.cancelForScope(record.scopeKey);
+        await markWorkStopped(id);
       }
 
       await deleteLocal(record);

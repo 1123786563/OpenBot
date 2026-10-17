@@ -10,6 +10,7 @@ import { createObservationExperimentStore } from "../src/ai-observability/experi
 import {
   createObservationExportStore,
   ExportError,
+  type ObservationExportStore,
 } from "../src/ai-observability/exports";
 import { createIdLinkStore } from "../src/ai-observability/id-links";
 import type { OpikPort, OpikTraceRow } from "../src/ai-observability/opik-port";
@@ -193,6 +194,8 @@ function workerFor(
       scopeKey: string;
       kind: string;
     }) => Promise<void> | void;
+    /** Overrides the stop-work store (the M1b cancel seam). */
+    exportStore?: ObservationExportStore;
   } = {},
 ): ObservationRetentionWorker {
   return createObservationRetentionWorker({
@@ -204,6 +207,7 @@ function workerFor(
     owner: input.owner ?? `t35-owner-${randomUUID()}`,
     concurrency: input.concurrency,
     invalidateReads: input.invalidateReads,
+    ...(input.exportStore ? { exportStore: input.exportStore } : {}),
   });
 }
 
@@ -907,6 +911,70 @@ test("a failed pass never re-cancels the exports the user enqueued after it (OCR
   // …and must NOT replay the stop-work pass against it: the fresh export is
   // the user's new intent, not data the deletion is about to change.
   expect((await exportStore.get(scopeA, after.id))?.state).toBe("queued");
+});
+
+test("a stop-work pass the gate refused still runs on the retry once the gate opens (OCR R3-34)", async () => {
+  // R2-43 made the stop first-pass-only by deriving "already stopped" from
+  // record.state === 'pending' — a state the first failing pass rewrites to
+  // 'failed'. A gate refusal (or a stop that itself throws) on pass one left
+  // every retry believing the stop had run: the deletion advanced while the
+  // scope's queued exports were still fetching the data being deleted. The
+  // stop is its own durable fact now, not a state projection.
+  await expiredBinding(scopeA, {
+    opikTraceId: `trace-${randomUUID()}`,
+    days: 8,
+  });
+  const exportJob = await exportStore.enqueue(scopeA, 10);
+
+  // Pass one: no port — the gate refuses before the stop can run.
+  await workerFor({ port: null }).sweep();
+  let record = (await deletionsFor(scopeA))[0];
+  expect(record.state).toBe("failed");
+  expect(record.lastError).toBe("CAPABILITY_MISSING");
+  expect(record.workStoppedAt).toBeNull();
+  expect((await exportStore.get(scopeA, exportJob.id))?.state).toBe("queued");
+
+  // Pass two: the gate is open. The stop is still owed — and it runs before
+  // the upstream delete changes the data face under the queued fetch.
+  await workerFor({ port: fakePort({}).port }).sweep();
+  record = (await deletionsFor(scopeA))[0];
+  expect(record.state).toBe("deleted");
+  expect((await exportStore.get(scopeA, exportJob.id))?.state).toBe(
+    "cancelled",
+  );
+  // The stop is a persisted fact a later pass (or replica) derives from.
+  expect(record.workStoppedAt).not.toBeNull();
+});
+
+test("a stop that itself fails on the first pass still runs on the retry (OCR R3-34)", async () => {
+  // The unreconciled branch has no gate to wait behind: its stop is the
+  // else-if cancelForScope. A cancel that throws must not flip the record
+  // into a state whose retries believe the stop already ran.
+  await expiredBinding(scopeA, { opikTraceId: null, days: 8 });
+  const exportJob = await exportStore.enqueue(scopeA, 10);
+  let cancelBroken = true;
+  const flakyStore: ObservationExportStore = {
+    ...exportStore,
+    cancelForScope: async (scopeKey) => {
+      if (cancelBroken) throw new Error("cancel channel exploded");
+      return exportStore.cancelForScope(scopeKey);
+    },
+  };
+
+  await workerFor({ port: null, exportStore: flakyStore }).sweep();
+  let record = (await deletionsFor(scopeA))[0];
+  expect(record.state).toBe("failed");
+  expect(record.workStoppedAt).toBeNull();
+  expect((await exportStore.get(scopeA, exportJob.id))?.state).toBe("queued");
+
+  cancelBroken = false;
+  await workerFor({ port: null }).sweep();
+  record = (await deletionsFor(scopeA))[0];
+  expect(record.state).toBe("deleted");
+  expect((await exportStore.get(scopeA, exportJob.id))?.state).toBe(
+    "cancelled",
+  );
+  expect(record.workStoppedAt).not.toBeNull();
 });
 
 test("dataset deletion goes through the sanctioned channel: versions cascade, the guard still refuses everyone else (AC2)", async () => {

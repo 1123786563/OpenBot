@@ -42,7 +42,12 @@ import type {
 import type { OpikPort } from "./opik-port";
 import { DEFAULT_RUNS_WINDOW, projectRow } from "./queries/runs";
 
-/** The time filter every aggregate honors: inclusive bounds, null for open. */
+/**
+ * The time filter every aggregate honors: inclusive bounds, null for open. The
+ * upstream-derived run counts honor it by declining to answer (OCR R3-29): the
+ * port's listing carries no time parameters, so a windowed summary leaves them
+ * null rather than answering all-time numbers beside window-filtered locals.
+ */
 export type AdminSummaryWindow = Readonly<{
   from: Date | null;
   to: Date | null;
@@ -58,12 +63,14 @@ export type AdminBotRunSummary = Readonly<{
   capabilities: Readonly<Record<AiObservationBindingCapability, number>>;
   /**
    * Upstream traces this scope never bound. Null when collection cannot
-   * answer — an unknown count, never a zero in disguise.
+   * answer — an unknown count, never a zero in disguise — and null too under a
+   * time window, which the upstream listing cannot honor (OCR R3-29).
    */
   unboundUpstream: number | null;
   /**
    * Usage honesty: how many upstream rows the provider actually reported
-   * tokens for, and how many did not. Null when collection cannot answer.
+   * tokens for, and how many did not. Null when collection cannot answer, and
+   * null under a time window the listing cannot honor (OCR R3-29).
    */
   usage: Readonly<{ providerReported: number; unavailable: number }> | null;
   /**
@@ -338,41 +345,64 @@ export function createAdminSummaryService(deps: {
           if (page.outcome !== "ok") throw new Error(page.outcome);
           upstreamListed = true;
           const rows = page.value.content;
-          // R2-46: one page is all this summary reads. A project bigger than the
-          // window makes the per-row counts partial — say so, never let them
-          // masquerade as the project's exact answer.
-          upstreamTruncated = page.value.total > rows.length;
-          const ids = rows.map((row) => row.id);
-          const bound = new Set(
-            ids.length === 0
-              ? []
-              : (
-                  await deps.database
-                    .select({ opikTraceId: aiObservationBindings.opikTraceId })
-                    .from(aiObservationBindings)
-                    .where(
-                      and(
-                        eq(aiObservationBindings.scopeKey, scope.key),
-                        inArray(aiObservationBindings.opikTraceId, ids),
-                      ),
-                    )
-                )
-                  .map((row) => row.opikTraceId)
-                  .filter((id): id is string => id !== null),
-          );
-          unboundUpstream = ids.filter((id) => !bound.has(id)).length;
-          usage = { providerReported: 0, unavailable: 0 };
-          for (const row of rows) {
-            if (projectRow(row).usage.source === "provider") {
-              usage.providerReported += 1;
-            } else {
-              usage.unavailable += 1;
+          /*
+           * R3-29: the window above is "the time filter every aggregate
+           * honors", but the port's listing carries no time parameters — the
+           * per-row counts below are all-time facts, and answering them beside
+           * the window-filtered local aggregates would silently ignore the
+           * filter the response's own `window` field announces. Under a window
+           * they stay unknown (null beside the flag false, the honesty rule at
+           * the field's contract); the listing still answers what is
+           * window-invariant — the collection freshness above. The verified-404
+           * branch stays exact under any window: a project that is not there
+           * has zero traces and zero usage, windowed or not. An open window —
+           * the default page — keeps the exact counts.
+           */
+          if (window.from === null && window.to === null) {
+            // R2-46: one page is all this summary reads. A project bigger than
+            // the window makes the per-row counts partial — say so, never let
+            // them masquerade as the project's exact answer.
+            upstreamTruncated = page.value.total > rows.length;
+            const ids = rows.map((row) => row.id);
+            const bound = new Set(
+              ids.length === 0
+                ? []
+                : (
+                    await deps.database
+                      .select({
+                        opikTraceId: aiObservationBindings.opikTraceId,
+                      })
+                      .from(aiObservationBindings)
+                      .where(
+                        and(
+                          eq(aiObservationBindings.scopeKey, scope.key),
+                          inArray(aiObservationBindings.opikTraceId, ids),
+                        ),
+                      )
+                  )
+                    .map((row) => row.opikTraceId)
+                    .filter((id): id is string => id !== null),
+            );
+            unboundUpstream = ids.filter((id) => !bound.has(id)).length;
+            usage = { providerReported: 0, unavailable: 0 };
+            for (const row of rows) {
+              if (projectRow(row).usage.source === "provider") {
+                usage.providerReported += 1;
+              } else {
+                usage.unavailable += 1;
+              }
             }
           }
         }
       } catch {
         unboundUpstream = null;
         usage = null;
+        // R3-24: the flag belongs to the same answer as the counts. A listing
+        // that answered but whose local read-back then failed has produced no
+        // count at all — null ("unknown") must carry the flag false, or the
+        // T11 surface renders a count that does not exist as "a truncated
+        // partial count".
+        upstreamTruncated = false;
       }
     }
 

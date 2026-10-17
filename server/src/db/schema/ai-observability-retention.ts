@@ -119,6 +119,16 @@ export const aiObservationRetentionDeletions = pgTable(
       .default("pending"),
     /** How many worker passes have taken this record, including the failing ones. */
     attempts: integer("attempts").notNull().default(0),
+    /**
+     * When the M1b stop-work pass — a run deletion cancels the scope's
+     * queued/running exports before their data face changes — actually ran.
+     * Persisted because the state column cannot carry it: a first pass that
+     * fails before (or after) the stop rewrites `pending` to `failed`, and a
+     * retry that derived "already stopped" from the state would either re-cancel
+     * the user's fresh exports or, worse, never cancel at all while the deletion
+     * advanced (OCR R3-34). Null means the stop is still owed.
+     */
+    workStoppedAt: timestamp("work_stopped_at", { withTimezone: true }),
     /** The stored failure vocabulary; a body-free code, never upstream text. */
     lastError: text("last_error"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -159,6 +169,12 @@ export const aiObservationRetentionDeletions = pgTable(
     check(
       "ai_observation_retention_deletions_upstream_kind_check",
       sql`${table.upstreamKind} IS NULL OR ${table.upstreamKind} IN ('trace', 'dataset')`,
+    ),
+    // Only a run's deletion has a work face to stop: the fact column cannot
+    // appear beside any other kind.
+    check(
+      "ai_observation_retention_deletions_work_stopped_run_check",
+      sql`${table.workStoppedAt} IS NULL OR ${table.kind} = 'run'`,
     ),
     // The upstream pair is both-or-neither: an id without its kind names nothing.
     check(

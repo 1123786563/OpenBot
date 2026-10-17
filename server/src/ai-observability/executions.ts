@@ -1187,13 +1187,38 @@ export function createObservationExecutionWorker(
       return;
     }
 
+    /*
+     * R3-27: a renewal whose ANSWER is unknown — a driver or connection blip
+     * under the bare UPDATE — is not a case failure. Terminalizing it as
+     * CASE_EXECUTION_ERROR wrote infrastructure noise over a run that was
+     * running fine, with zero log of the real cause. The ownership answer is
+     * the same as a refused renewal: the truth belongs to whoever holds the
+     * lease now, the durable markers keep what already ran, and the ticket's
+     * lease expiry hands the rest of the work to the next sweep.
+     */
+    const renewLease = async (): Promise<boolean> => {
+      try {
+        return await renew();
+      } catch (error) {
+        log.warn(
+          {
+            type: "opik-execution-renew-failed",
+            executionId: execution.id,
+            error: String(error),
+          },
+          "opik-execution-renew-failed",
+        );
+        return false;
+      }
+    };
+
     const gate = createEvaluationToolGate(experiment.config, deps.classify);
     const config = experiment.config;
     let lastTally = 0;
 
     try {
       for (const [index, frozenCase] of version.cases.entries()) {
-        if (!(await renew())) {
+        if (!(await renewLease())) {
           throw new ExecutionLeaseLost();
         }
         // Re-authorization BEFORE every sample (the T06 obligation, per case in T24):
@@ -1265,6 +1290,17 @@ export function createObservationExecutionWorker(
         // Another owner holds the ticket; the truth is theirs to write.
         return;
       }
+      // R3-27: a settlement is a written fact about the case run — it is
+      // never silent. The reason lands in the log beside the row first, so a
+      // terminal CASE_EXECUTION_ERROR can always be traced to its cause.
+      log.warn(
+        {
+          type: "opik-execution-case-error",
+          executionId: execution.id,
+          error: String(error),
+        },
+        "opik-execution-case-error",
+      );
       const settled = await store.settleFailed(
         execution.id,
         "CASE_EXECUTION_ERROR",
@@ -1298,12 +1334,17 @@ export function createObservationExecutionWorker(
             }),
           ).catch((error) => {
             // The execution row keeps its own truth; a runner crash must not take
-            // the sweep (and the poll loop behind it) down with it.
+            // the sweep (and the poll loop behind it) down with it. R3-27: the
+            // catch that swallows must still speak — the error object is the only
+            // root-cause evidence this level will ever see.
             log.warn(
-              { type: "opik-execution-run-failed", key: item.key },
+              {
+                type: "opik-execution-run-failed",
+                key: item.key,
+                error: String(error),
+              },
               "opik-execution-run-failed",
             );
-            void error;
           }),
         ),
       );

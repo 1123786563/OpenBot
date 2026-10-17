@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import {
   REDACTION_POLICY_VERSION,
   type SafeText,
@@ -337,11 +337,33 @@ export function createObservationExperimentStore(
             and(
               eq(aiObservationExperiments.scopeKey, scope.key),
               eq(aiObservationExperiments.name, name),
+              // The conflict read is a reader too (OCR m138/R3-26): a
+              // deletion-in-flight experiment must not be served — and an
+              // UPDATE would rewrite a subject every reader answers not-found
+              // for, resurrecting it behind the deletion's back.
+              notPendingDeletion("experiment", aiObservationExperiments.id),
             ),
           )
           .for("update");
         const existing = found[0];
         if (!existing) {
+          // The insert conflicted with a row this reader cannot see: the
+          // deletion window (R3-26) — the (scope, name) index still holds, but
+          // the m138 readers must not serve the holder. One unfiltered read
+          // names it, and the answer is the domain 409, never the bare 500 a
+          // fall-through would give a retry.
+          const held = await tx
+            .select({ id: aiObservationExperiments.id })
+            .from(aiObservationExperiments)
+            .where(
+              and(
+                eq(aiObservationExperiments.scopeKey, scope.key),
+                eq(aiObservationExperiments.name, name),
+              ),
+            );
+          if (held[0]) {
+            throw new ExperimentStoreError("EXPERIMENT_STATE_INVALID", 409);
+          }
           throw new Error(
             "saveDraft conflicted but the experiment subject is absent",
           );
@@ -483,7 +505,15 @@ export function createObservationExperimentStore(
           const raced = await tx
             .select()
             .from(aiObservationExperiments)
-            .where(eq(aiObservationExperiments.id, existing.id));
+            .where(
+              and(
+                eq(aiObservationExperiments.id, existing.id),
+                // The replay channel is a reader too (OCR m138/R3-26): a row
+                // that slipped into the deletion window after the freeze
+                // attempts must not come back as an idempotent answer.
+                notPendingDeletion("experiment", aiObservationExperiments.id),
+              ),
+            );
           if (raced[0]?.state === "frozen" && raced[0].configHash === hash) {
             return { experiment: raced[0], replayed: true, canaryFindings };
           }
@@ -507,6 +537,31 @@ export function createObservationExperimentStore(
           );
         if (byHash[0]) {
           return { experiment: byHash[0], replayed: true, canaryFindings };
+        }
+        // Both replay channels came up empty, yet the INSERT conflicted: the
+        // only holder the m138 readers cannot see is the deletion window
+        // (R3-26) — the unique indexes still hold, but the row is gone to
+        // every reader. One unfiltered read over both channels names it, and
+        // the answer is the domain 409, never the bare 500 R2-37's predicates
+        // let this path fall into. The bare Error stays for a conflict neither
+        // channel can explain — an invariant violation worth failing loudly on.
+        const held = await tx
+          .select({ id: aiObservationExperiments.id })
+          .from(aiObservationExperiments)
+          .where(
+            and(
+              eq(aiObservationExperiments.scopeKey, scope.key),
+              or(
+                eq(aiObservationExperiments.name, name),
+                and(
+                  eq(aiObservationExperiments.configHash, hash),
+                  eq(aiObservationExperiments.state, "frozen"),
+                ),
+              ),
+            ),
+          );
+        if (held[0]) {
+          throw new ExperimentStoreError("EXPERIMENT_STATE_INVALID", 409);
         }
         throw new Error(
           "submit conflicted but neither the name nor the configuration explains it",
