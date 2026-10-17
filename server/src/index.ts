@@ -5351,6 +5351,18 @@ if (opikBootConfig.enabled) {
       // answers are scopes this process issued — or null, which keeps this
       // observation exactly as scope-less (a no-op upstream) as it always was.
       scope: currentRunObservationScope() as ObservationScope | undefined,
+      // The run's W3C chain captured at doStream entry (OCR h6, the tool-step
+      // precedent): the model span joins the run's trace instead of rooting a
+      // fresh random one — one trace per run, no orphan pseudo-runs in the
+      // collection window.
+      ...(fact.trace
+        ? {
+            trace: {
+              traceId: fact.trace.traceId,
+              parentSpanId: fact.trace.spanId,
+            },
+          }
+        : {}),
     }),
   );
 }

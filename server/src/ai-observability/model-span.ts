@@ -71,6 +71,13 @@ export type ModelSpanObservation = Readonly<{
   output?: string | null;
   /** The trusted scope, when this path carries one; absent submits nothing upstream. */
   scope?: ObservationScope;
+  /**
+   * The run's W3C trace context captured when the model call began — the chain this
+   * span joins instead of rooting its own (the T15 tool-step precedent, OCR round-1
+   * h6). Absent, malformed, or outside the W3C shapes roots the span's own trace with
+   * no parent, exactly as before: a context the caller cannot prove is never claimed.
+   */
+  trace?: Readonly<{ traceId: string; parentSpanId?: string }>;
 }>;
 
 export type ModelSpanRecorder = {
@@ -167,6 +174,26 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
   const usage = usageOf(ending);
   const spanState = modelSpanTerminalState(ending);
 
+  // The run's chain (OCR h6): a provable W3C context joins the run's trace and
+  // parents under the run span, so every model call of one run lands in one trace
+  // instead of minting an orphan per call. The context is adopted whole — a
+  // malformed trace id claims nothing, not even a well-formed parent. Same
+  // discipline as the tool-step spanIdentity.
+  const W3C_TRACE_ID = /^[0-9a-f]{32}$/;
+  const W3C_SPAN_ID = /^[0-9a-f]{16}$/;
+  const proven =
+    observation.trace !== undefined &&
+    W3C_TRACE_ID.test(observation.trace.traceId);
+  const traceId = proven
+    ? observation.trace.traceId
+    : randomBytes(16).toString("hex");
+  const parentSpanId =
+    proven &&
+    observation.trace?.parentSpanId !== undefined &&
+    W3C_SPAN_ID.test(observation.trace.parentSpanId)
+      ? observation.trace.parentSpanId
+      : undefined;
+
   const attributes: SafeRecord = projectSafeRecord(
     {
       model: observation.modelId ?? undefined,
@@ -201,7 +228,8 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
       : "model";
   const name = projectSafeName(label);
   return {
-    traceId: randomBytes(16).toString("hex"),
+    traceId,
+    ...(parentSpanId !== undefined ? { parentSpanId } : {}),
     spanId: randomBytes(8).toString("hex"),
     // A withheld name would be refused by the port; a known-safe literal stands in.
     name:

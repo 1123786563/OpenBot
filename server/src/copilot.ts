@@ -501,6 +501,14 @@ export type BuiltinModelSpanFact = {
    * bypass saw. Projection happens ONLY at the recorder (see `input`).
    */
   output: string | null;
+  /**
+   * The run's W3C trace coordinates captured when the model call began (OCR h6, the
+   * T15 tool-step precedent) — the chain the span joins instead of rooting its own.
+   * Captured at `doStream` entry, inside the request's context, because settlement
+   * can land at stream teardown where the ambient context is no longer guaranteed.
+   * Null when no valid span was active (no provider, outside a traced request).
+   */
+  trace: { traceId: string; spanId: string } | null;
 };
 
 /**
@@ -1052,6 +1060,10 @@ function meteredModel<T>(model: T): T {
        */
       const spanObserver = builtinModelSpanObserver;
       let spanInput: string | null = null;
+      // Captured at entry, inside the request's context (the tool-step cell's own
+      // discipline): by stream teardown the ambient context is not guaranteed.
+      const spanTrace =
+        spanObserver !== undefined ? (currentTraceContext() ?? null) : null;
       /*
        * Output deltas accumulate into an array joined once at report time — linear,
        * where repeated string concatenation would re-copy on every delta (T14 review
@@ -1081,6 +1093,7 @@ function meteredModel<T>(model: T): T {
             input: spanInput,
             output:
               spanOutputDeltas.length === 0 ? null : spanOutputDeltas.join(""),
+            trace: spanTrace,
           });
         } catch {
           // Observation never takes the product path down.
