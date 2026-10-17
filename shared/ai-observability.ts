@@ -11,7 +11,7 @@
  */
 
 /** Bump this whenever the semantics below change. Frozen into dataset versions by ticket #25. */
-export const REDACTION_POLICY_VERSION = "opik-redaction/1";
+export const REDACTION_POLICY_VERSION = "opik-redaction/2";
 
 export type SafeContentState = "projected" | "omitted" | "truncated";
 
@@ -32,7 +32,13 @@ export type SafeText =
 export type SafeValue =
   | { state: "projected"; value: unknown }
   | { state: "omitted"; reason: OmitReason }
-  | { state: "truncated"; value: string; originalBytes: number };
+  | {
+      state: "truncated";
+      /** The kept prefix: a cut string, or the kept items of an array/object. */
+      value: unknown;
+      /** For a string, its original UTF-8 byte size; for an array/object, its original item count. */
+      originalBytes: number;
+    };
 
 /**
  * Reason -> the i18n key that explains it. Keys live in the `ai-observability-*` namespaces

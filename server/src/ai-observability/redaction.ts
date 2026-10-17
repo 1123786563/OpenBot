@@ -35,10 +35,17 @@ const DENY: ReadonlyArray<{ reason: OmitReason; pattern: RegExp }> = [
   { reason: "credential", pattern: /\bAKIA[0-9A-Z]{16}\b/ },
   { reason: "credential", pattern: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/ },
   { reason: "credential", pattern: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/ },
-  { reason: "credential", pattern: /\b-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+  // No \b here: a PEM block sits at the start of a field or after a newline, colon or space —
+  // positions where a word boundary never holds. `-----BEGIN` is specific enough alone.
+  { reason: "credential", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
   {
+    // Context may sit on either side of the token: `aws_secret_access_key=<40 chars>` is the
+    // form every real config file and env dump uses, and a forward-only lookahead misses it.
+    // A bare 40-char token stays projected on purpose: rejecting those would flag every hash,
+    // and unreviewed text is metrics-only anyway (`allowFreeText` is the gate).
     reason: "credential",
-    pattern: /\b[A-Za-z0-9/+=]{40}\b(?=.*(?:secret|password|passwd|pwd))/i,
+    pattern:
+      /\b[A-Za-z0-9/+=]{40}\b(?=.*(?:secret|password|passwd|pwd))|(?:secret|password|passwd|pwd)[^\n]{0,64}[A-Za-z0-9/+=]{40}/i,
   },
   { reason: "account_identifier", pattern: /\bacct_[A-Za-z0-9]{12,}\b/ },
   { reason: "account_identifier", pattern: /\bcus_[A-Za-z0-9]{12,}\b/ },
@@ -57,8 +64,7 @@ function denyReason(input: string): OmitReason | undefined {
 function cutToBytes(input: string, budget: number): string {
   const encoder = new TextEncoder();
   if (encoder.encode(input).length <= budget) return input;
-  let text = input;
-  // Binary-search the longest prefix that fits, then drop a trailing partial code point.
+  // Binary-search the longest prefix that fits the budget.
   let low = 0;
   let high = input.length;
   while (low < high) {
@@ -66,8 +72,17 @@ function cutToBytes(input: string, budget: number): string {
     if (encoder.encode(input.slice(0, mid)).length <= budget) low = mid;
     else high = mid - 1;
   }
-  text = input.slice(0, low);
-  return text.replace(/�$/, "");
+  // The fitting prefix can still end on the high half of a surrogate pair: as a string that is
+  // a lone surrogate, not a U+FFFD character, so scrubbing U+FFFD from the text never caught it.
+  // Drop it at the source, where the split actually happened, instead of patching the bytes.
+  while (
+    low > 0 &&
+    input.charCodeAt(low - 1) >= 0xd800 &&
+    input.charCodeAt(low - 1) <= 0xdbff
+  ) {
+    low -= 1;
+  }
+  return input.slice(0, low);
 }
 
 function project(input: string, budget: number): SafeText {
@@ -195,19 +210,26 @@ function projectDeep(value: unknown, depth: number): SafeValue {
   if (depth > MAX_SAFE_RECORD_DEPTH)
     return { state: "omitted", reason: "unhandled_free_text" };
   if (Array.isArray(value)) {
-    return {
-      state: "projected",
-      value: value
-        .slice(0, MAX_SAFE_RECORD_KEYS)
-        .map((item) => projectDeep(item, depth + 1)),
-    };
+    const items = value
+      .slice(0, MAX_SAFE_RECORD_KEYS)
+      .map((item) => projectDeep(item, depth + 1));
+    // `projected` claims nothing was dropped, so a cut container must say `truncated`.
+    // For containers originalBytes is the original item count.
+    if (value.length > MAX_SAFE_RECORD_KEYS)
+      return { state: "truncated", value: items, originalBytes: value.length };
+    return { state: "projected", value: items };
   }
   if (value && typeof value === "object") {
     const source = value as Record<string, unknown>;
-    const out: Record<string, SafeValue> = {};
-    for (const key of Object.keys(source).slice(0, MAX_SAFE_RECORD_KEYS)) {
+    const keys = Object.keys(source);
+    // Null-prototype accumulator: an own `__proto__` key (JSON input gives you those) must
+    // stay an own key, not trigger the setter on a plain object.
+    const out: Record<string, SafeValue> = Object.create(null);
+    for (const key of keys.slice(0, MAX_SAFE_RECORD_KEYS)) {
       out[key] = projectDeep(source[key], depth + 1);
     }
+    if (keys.length > MAX_SAFE_RECORD_KEYS)
+      return { state: "truncated", value: out, originalBytes: keys.length };
     return { state: "projected", value: out };
   }
   return projectLeaf(value);
@@ -220,9 +242,13 @@ export function projectSafeRecord(
 ): SafeRecord {
   if (!record || typeof record !== "object" || Array.isArray(record)) return {};
   const source = record as Record<string, unknown>;
-  const out: SafeRecord = {};
-  for (const key of allowlist.slice(0, MAX_SAFE_RECORD_KEYS)) {
-    if (!(key in source)) continue;
+  // Null prototype + own-property lookup: inherited names produce no phantom keys, and an own
+  // `__proto__` key stays data instead of hijacking the accumulator's prototype.
+  const out: SafeRecord = Object.create(null);
+  // Requested keys are caller code, so none is dropped silently: the item cap bounds the data
+  // side (arrays, nested objects), not the caller's own key list.
+  for (const key of allowlist) {
+    if (!Object.hasOwn(source, key)) continue;
     const value = source[key];
     if (typeof value === "string") {
       out[key] = projectLeaf(value);
