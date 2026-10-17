@@ -77,13 +77,22 @@ export type PaymentProvider = {
    * adapter's own reason staying inside it; the route layer answers the channel from the shape
    * alone. A refusal the channel grades differently (a stale timestamp, an undecryptable
    * resource) names itself, so the HTTP answer can differ the way the channel's own docs do.
+   *
+   * `referencedOutTradeNo` on a refusal is a best-effort, UNVERIFIED read of the order the
+   * delivery claimed — the raw bytes can carry one whether or not the signature holds. It is
+   * audit plumbing only: the service may use it to anchor an anomaly row on an existing order,
+   * and for nothing else. No code path may settle, move or read state through it.
    */
   verifyNotification(
     headers: Headers,
     rawBody: string,
   ): Promise<
     | { ok: true; fact: PaymentFact }
-    | { ok: false; refusal?: NotificationRefusal }
+    | {
+        ok: false;
+        refusal?: NotificationRefusal;
+        referencedOutTradeNo?: string;
+      }
   >;
   /** What a successful delivery is answered with, verbatim. */
   readonly successAck: { body: string; contentType: string };
