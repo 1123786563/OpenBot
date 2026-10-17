@@ -356,10 +356,85 @@ describe("every unavailable state prohibits observation writes (acceptance 2)", 
   });
 
   test("an unprobed service refuses writes fail-closed", async () => {
+    // R2-45 narrowed this case: the refusal now belongs to a deployment the
+    // first probe found unavailable (or a disabled one). A healthy deployment
+    // assembled with no probe at all is the bootstrap case below, not this one.
+    const svc = service({ port: fakePort(() => upstreamError(500)) });
+    await expect(svc.readiness()).resolves.toEqual({
+      ready: false,
+      reason: "unreachable",
+    });
     const probe = probeWrite();
-    expect(service().submit(probe.write)).toBe("refused_not_ready");
-    await service().drain();
+    expect(svc.submit(probe.write)).toBe("refused_not_ready");
+    await svc.drain();
     expect(probe.seen).toEqual([]);
+  });
+
+  test("an assembled-but-unprobed deployment's first submit is not refused by the gate (R2-45)", async () => {
+    // Exactly the production assembly: enabled, healthy upstream, and nobody
+    // has ever called readiness() — no GET /health, no admin summary page. The
+    // first submit must establish the gate (one background probe) instead of
+    // refusing every observation write for the life of the process.
+    const svc = service();
+    const probe = probeWrite();
+    expect(svc.submit(probe.write)).toBe("accepted");
+    await svc.drain();
+    // The write began only after the bootstrap probe answered ready, and ran.
+    expect(probe.seen).toEqual(["ran"]);
+    expect(svc.writeStats().completed).toBe(1);
+    expect(svc.writeStats().refusedNotReady).toBe(0);
+  });
+
+  test("the bootstrap probe decides a queued write, and a failed one still refuses what follows (R2-45)", async () => {
+    // Fail-closed is not relaxed: a write submitted before any probe waits for
+    // the bootstrap probe and never begins against an unreachable upstream.
+    const svc = service({ port: fakePort(() => upstreamError(500)) });
+    const probe = probeWrite();
+    expect(svc.submit(probe.write)).toBe("accepted");
+    await svc.drain();
+    expect(probe.seen).toEqual([]);
+    expect(svc.writeStats().failed.unavailable).toBe(1);
+    // The gate is now established by a real verdict: everything after refuses.
+    const refused = probeWrite("refused");
+    expect(svc.submit(refused.write)).toBe("refused_not_ready");
+    await svc.drain();
+    expect(refused.seen).toEqual([]);
+  });
+
+  test("exactly one bootstrap probe fires no matter how many unprobed submits arrive (R2-45)", async () => {
+    let healthCalls = 0;
+    const port = fakePort(async () => {
+      healthCalls += 1;
+      return { outcome: "ok", value: { healthy: true } };
+    });
+    const svc = service({ port });
+    const writes = [probeWrite("a"), probeWrite("b"), probeWrite("c")];
+    for (const { write } of writes) {
+      expect(svc.submit(write)).toBe("accepted");
+    }
+    await svc.drain();
+    // One probe to establish the gate, then one perform per write — never a
+    // probe storm.
+    expect(healthCalls).toBe(4);
+    for (const { seen } of writes) expect(seen).toEqual(["ran"]);
+  });
+
+  test("a disabled deployment still refuses without the probe touching the network (R2-45)", async () => {
+    const { calls, transport } = recorder(okHealth);
+    const svc = service({
+      config: () => ({ ...enabledConfig, enabled: false }),
+      port: createOpikHttpPort({
+        baseUrl: enabledConfig.baseUrl,
+        contract: manifest,
+        fetch: transport,
+        timeoutMs: 60,
+      }),
+    });
+    const probe = probeWrite();
+    expect(svc.submit(probe.write)).toBe("refused_not_ready");
+    await svc.drain();
+    expect(probe.seen).toEqual([]);
+    expect(calls.length).toBe(0);
   });
 
   test("a ready service accepts and performs exactly once", async () => {

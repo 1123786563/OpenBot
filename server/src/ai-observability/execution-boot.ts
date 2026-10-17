@@ -194,13 +194,16 @@ export type ExperimentExecutionBootDeps = Readonly<{
  * invented here.
  */
 /**
- * The production execution worker's work-item lease (OCR m131): two gateway call
- * timeouts (execution-runner.ts's GATEWAY_CALL_TIMEOUT_MS = 60s). The lease must
- * strictly outlive the slowest single case it covers — renewal runs only before
- * each case — so equal budgets would race at the boundary; twice the budget leaves
- * settle and renew a full timeout of headroom.
+ * The production execution worker's work-item lease (OCR m131, R2-36): three
+ * gateway call timeouts (execution-runner.ts's GATEWAY_CALL_TIMEOUT_MS = 60s).
+ * The lease must strictly outlive the slowest single work item it covers —
+ * renewal runs only before each case — and with the judge composed outside the
+ * billed runner that worst case is no longer one gateway round trip: evaluation
+ * call (60s) + judge call (60s) + settlement ≈ 120s, which is exactly where the
+ * old 2× lease sat. Three times the per-call budget leaves the settle-and-renew
+ * path a full call budget of headroom over the composed worst case.
  */
-export const EXECUTION_WORKER_LEASE_MS = 120_000;
+export const EXECUTION_WORKER_LEASE_MS = 180_000;
 
 export function createExperimentExecutionWorkerBoot(
   deps: ExperimentExecutionBootDeps,
@@ -230,14 +233,15 @@ export function createExperimentExecutionWorkerBoot(
     ...(deps.concurrency === undefined
       ? {}
       : { concurrency: deps.concurrency }),
-    // The work-item lease must outlive the slowest single case, not equal one
-    // gateway round trip (OCR m131): the runner's per-case budget is
+    // The work-item lease must outlive the slowest single work item, not equal
+    // one gateway round trip (OCR m131, R2-36): the runner's per-call budget is
     // GATEWAY_CALL_TIMEOUT_MS (60s), and renewal happens only before each case —
-    // so at the old 60s default a case at the full budget let the lease lapse at
-    // the very moment the gateway gave up. The takeover then marked the execution
-    // unknown and refused the original worker's recordCaseOutcome flip: real
-    // observation truth, thrown away. Twice the budget leaves the settle-and-renew
-    // path a full timeout of headroom.
+    // at the old 60s default a case at the full budget let the lease lapse at
+    // the very moment the gateway gave up; at the 2× revision the judge's
+    // composed worst case (evaluation call + judge call + settlement ≈ 120s)
+    // landed exactly on the lease boundary. Three times the per-call budget
+    // keeps the takeover from marking a real observation row unknown while a
+    // case is still legitimately inside its own budget.
     leaseMs: EXECUTION_WORKER_LEASE_MS,
     ...(deps.owner === undefined ? {} : { owner: deps.owner }),
   });

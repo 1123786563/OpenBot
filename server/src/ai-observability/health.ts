@@ -13,7 +13,11 @@
  * backpressure, and a single background pump that performs jobs against the port —
  * re-checking the gate as each waiting job starts, so a readiness flip after submit
  * still keeps a queued write from beginning (in-flight writes are not cancelled).
- * Slow, unreachable or saturated Opik therefore cannot delay or fail an ordinary
+ * The entry also establishes its own gate (R2-45): the first submit on an unprobed
+ * deployment triggers one background probe and waits in the queue for its verdict,
+ * so a production assembly no longer refuses every observation write from boot
+ * merely because no read route has ever asked for readiness. Slow, unreachable or
+ * saturated Opik therefore cannot delay or fail an ordinary
  * Agent result; the delay and the drops stay observable through the counters.
  *
  * Drift semantics live in the port (T08): a job that answers ownership_drift has
@@ -100,6 +104,17 @@ export type OpikHealthService = {
    * answered not-ready. The same gate is re-checked when a queued write starts, so
    * a probe that flips not-ready after submit skips the waiting write (counted as
    * `failed.unavailable`) instead of performing it. Never awaits the network.
+   *
+   * The entry also establishes its own gate (R2-45): a deployment assembled with
+   * no probe at all — production boots with no readiness caller until somebody
+   * opens a read route — used to refuse every write for the life of the process.
+   * Now the first submit that finds the gate unprobed triggers exactly one
+   * background probe; the write itself waits in the queue for that probe's
+   * verdict and faces the same re-checked gate as every write (a not-ready
+   * answer counts it `failed.unavailable`, never lets it begin). A probe that
+   * answers synchronously (disabled, unconfigured, no port) gates the submit
+   * immediately, exactly as before. Everything after the first probe answers is
+   * refused or accepted by that verdict — the bootstrap never re-arms itself.
    */
   submit(write: OpikObservationWrite): OpikWriteSubmitResult;
   /**
@@ -136,6 +151,8 @@ export function createOpikHealthService(
   const queue: OpikObservationWrite[] = [];
   let pumping = false;
   let lastProbed: OpikReadiness | null = null;
+  /** The one in-flight bootstrap probe, from the first unprobed submit (R2-45). */
+  let bootstrapProbe: Promise<OpikReadiness> | null = null;
   const stats = {
     submitted: 0,
     accepted: 0,
@@ -238,6 +255,13 @@ export function createOpikHealthService(
       while (queue.length > 0) {
         const write = queue.shift();
         if (write === undefined) continue;
+        // A write queued before the gate had any answer waits for exactly the
+        // bootstrap probe it triggered (R2-45), then faces the same re-checked
+        // gate as every write (review F1): a not-ready verdict keeps it from
+        // beginning, counted, never performed against an unproven upstream.
+        if (lastProbed === null && bootstrapProbe !== null) {
+          await bootstrapProbe;
+        }
         // The gate is checked again when a waiting write is about to start: a probe
         // that flipped not-ready after submit must keep queued writes from beginning
         // (review F1). In-flight writes are never cancelled — only waiting ones.
@@ -255,7 +279,19 @@ export function createOpikHealthService(
 
   const submit = (write: OpikObservationWrite): OpikWriteSubmitResult => {
     stats.submitted += 1;
-    if (lastProbed === null || !lastProbed.ready) {
+    if (lastProbed === null) {
+      // R2-45: the first submit an assembled deployment makes triggers the ONE
+      // probe that establishes the gate. Probes that answer synchronously
+      // (disabled / unconfigured / no port) record their verdict right here;
+      // an in-flight one leaves the gate unknown for this submit, and the
+      // write waits in the queue for the pump's post-probe re-check below.
+      if (bootstrapProbe === null) {
+        bootstrapProbe = readiness().finally(() => {
+          bootstrapProbe = null;
+        });
+      }
+    }
+    if (lastProbed !== null && !lastProbed.ready) {
       stats.refusedNotReady += 1;
       return "refused_not_ready";
     }
