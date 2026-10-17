@@ -412,6 +412,18 @@ describe("T-final M1: the boot assembly reads the ambient scope", () => {
       indexSource.match(/currentRunObservationScope\(\)/g)?.length,
     ).toBeGreaterThanOrEqual(2);
   });
+
+  test("the model-span adapter uses the scope the fact captured at entry, not the ambient read at settlement (OCR R2-58)", () => {
+    // By stream teardown the ambient context is not guaranteed (the same
+    // discipline the fact's own trace field documents), so the settlement-path
+    // adapter must read the scope the fact carried from its doStream entry.
+    expect(indexSource).toMatch(/scope: fact\.scope as ObservationScope/);
+    // The tool-step and retrieval adapters keep the ambient read: their facts
+    // settle inside the run's pipeline, where the ambient context holds.
+    expect(indexSource.match(/currentRunObservationScope\(\)/g)?.length).toBe(
+      2,
+    );
+  });
 });
 
 /**

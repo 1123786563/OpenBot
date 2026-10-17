@@ -5352,12 +5352,18 @@ if (opikBootConfig.enabled) {
       ending: fact.ending,
       input: fact.input,
       output: fact.output,
-      // The run's trusted scope (T-final M1), read from the ambient store the
-      // threading established at run start. The cast is the wiring seam's own:
-      // the ONLY writer of the store is aiObservabilityRunScope above, whose
-      // answers are scopes this process issued — or null, which keeps this
-      // observation exactly as scope-less (a no-op upstream) as it always was.
-      scope: currentRunObservationScope() as ObservationScope | undefined,
+      // The run's trusted scope (T-final M1), CAPTURED at the fact's doStream
+      // entry and carried here on the fact itself (OCR R2-58): by stream
+      // teardown — where settlement reports the fact — the ambient context is
+      // not guaranteed (the same discipline the fact's trace field documents),
+      // so reading the ambient store at THIS moment silently no-op'd the main
+      // path's success spans. A fact whose entry captured no scope — a run that
+      // started scope-less — stays exactly as scope-less as before: the record
+      // is a no-op upstream. The cast is the wiring seam's own: the ONLY writer
+      // of that captured value is copilot.ts's entry read of the store this
+      // boot's threading established — a scope this process issued (T06's
+      // WeakSet trust), never a wire value.
+      scope: fact.scope as ObservationScope | undefined,
       // The run's W3C chain captured at doStream entry (OCR h6, the tool-step
       // precedent): the model span joins the run's trace instead of rooting a
       // fresh random one — one trace per run, no orphan pseudo-runs in the

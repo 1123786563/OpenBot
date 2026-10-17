@@ -30,6 +30,10 @@ import {
   setModelUsageGate,
   setModelUsageMeter,
 } from "../src/copilot";
+import {
+  currentRunObservationScope,
+  withRunObservationScope,
+} from "../src/observation-run-scope";
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -506,6 +510,188 @@ describe("the built-in observation bypass (metered path)", () => {
     expect(facts[0].output).toBe("Sunny.");
     expect(facts[0].modelId).toBe("gpt-test");
     expect(facts[0].provider).toBe("openai");
+  });
+
+  test("a media-bearing prompt is metrics-only: no serialized input, no base64 anywhere (OCR R2-52)", async () => {
+    // The defect's shape: an attachment inlined as base64 in a non-text part, big
+    // enough to stay pinned from capture through the billing check to settlement.
+    // 1MB proves the mechanism; the production figure was ~43MB.
+    const attachment = "QUJD".repeat(349_525);
+    const { model } = scriptedModel([
+      { type: "text-delta", id: "t", delta: "described" },
+      finishPart(12, 3),
+    ]);
+    const facts: BuiltinModelSpanFact[] = [];
+    const { lifecycle } = recordingLifecycle(admittingBounds());
+    const metered: unknown[] = [];
+    try {
+      setModelUsageGate(async () => lifecycle);
+      setModelUsageMeter((usage) => metered.push(usage));
+      setBuiltinModelSpanObserver((fact) => facts.push(fact));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream({
+        prompt: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "describe this image" },
+              { type: "image", image: attachment },
+            ],
+          },
+        ],
+      });
+      await drain(result.stream);
+    } finally {
+      setModelUsageGate(undefined);
+      setModelUsageMeter(undefined);
+      setBuiltinModelSpanObserver(undefined);
+    }
+    // The call itself is untouched: settled usage, meter equality — metrics-only
+    // means the USAGE metrics survive, not the observation.
+    expect(facts).toHaveLength(1);
+    expect(facts[0].ending).toEqual({
+      kind: "succeeded",
+      inputTokens: 12,
+      outputTokens: 3,
+    });
+    expect(metered).toHaveLength(1);
+    // The capture never serialized the prompt: no base64 run exists anywhere in
+    // the fact, and the input is the explicit metrics-only null, not a cut.
+    expect(facts[0].input).toBeNull();
+    expect(JSON.stringify(facts[0])).not.toContain("QUJD");
+  });
+
+  test("a file-part prompt is metrics-only too, without serializing the data (OCR R2-52)", async () => {
+    const document = "ZGF0YQ==".repeat(100_000);
+    const { model } = scriptedModel([finishPart(1, 1)]);
+    const facts: BuiltinModelSpanFact[] = [];
+    try {
+      setBuiltinModelSpanObserver((fact) => facts.push(fact));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream({
+        prompt: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "summarise" },
+              { type: "file", data: document, mediaType: "application/pdf" },
+            ],
+          },
+        ],
+      });
+      await drain(result.stream);
+    } finally {
+      setBuiltinModelSpanObserver(undefined);
+    }
+    expect(facts[0].input).toBeNull();
+    expect(JSON.stringify(facts[0])).not.toContain("ZGF0YQ");
+  });
+
+  test("a text-only prompt larger than the cap is cut at the cap with an explicit mark (OCR R2-52)", async () => {
+    const filler = "x".repeat(50_000);
+    const { model } = scriptedModel([
+      { type: "text-delta", id: "t", delta: "ok" },
+      finishPart(1, 1),
+    ]);
+    const facts: BuiltinModelSpanFact[] = [];
+    try {
+      setBuiltinModelSpanObserver((fact) => facts.push(fact));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream({
+        prompt: [
+          { role: "system", content: "the first message survives" },
+          { role: "user", content: filler },
+          { role: "user", content: filler },
+        ],
+      });
+      await drain(result.stream);
+    } finally {
+      setBuiltinModelSpanObserver(undefined);
+    }
+    const input = facts[0].input;
+    expect(typeof input).toBe("string");
+    // The capture-side ceiling: the captured string never exceeds 64Ki characters
+    // plus its own mark, however large the prompt was (~100Ki here).
+    expect(input!.length).toBeLessThanOrEqual(64 * 1024 + 64);
+    expect(input!.length).toBeGreaterThan(60_000);
+    // Early messages survive the cut; the cut itself is declared in-band, so a
+    // bounded capture can never be read as the whole prompt.
+    expect(input).toContain("the first message survives");
+    expect(input).toContain("[observation input truncated at capture]");
+  });
+
+  test("a small text-only prompt is captured whole, as before (OCR R2-52 non-regression)", async () => {
+    const { model } = scriptedModel([finishPart(1, 1)]);
+    const facts: BuiltinModelSpanFact[] = [];
+    try {
+      setBuiltinModelSpanObserver((fact) => facts.push(fact));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream({
+        prompt: [{ role: "user", content: "What is the weather?" }],
+      });
+      await drain(result.stream);
+    } finally {
+      setBuiltinModelSpanObserver(undefined);
+    }
+    expect(facts[0].input).toBe(
+      JSON.stringify([{ role: "user", content: "What is the weather?" }]),
+    );
+  });
+
+  test("a large successful output is cut at the capture ceiling, not retained whole (OCR R2-53)", async () => {
+    const delta = "y".repeat(1_000);
+    const { model } = scriptedModel([
+      ...Array.from({ length: 10 }, () => ({
+        type: "text-delta",
+        id: "t",
+        delta,
+      })),
+      finishPart(5, 10_000),
+    ]);
+    const facts: BuiltinModelSpanFact[] = [];
+    try {
+      setBuiltinModelSpanObserver((fact) => facts.push(fact));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream({ prompt: [] });
+      await drain(result.stream);
+    } finally {
+      setBuiltinModelSpanObserver(undefined);
+    }
+    expect(facts[0].ending).toEqual({
+      kind: "succeeded",
+      inputTokens: 5,
+      outputTokens: 10_000,
+    });
+    // The settle merge keeps the same 2000-char ceiling the failure path applies
+    // to error messages — 10_000 chars of deltas must not be pinned whole.
+    expect(facts[0].output!.length).toBe(2_000);
+  });
+
+  test("the fact carries the scope captured at entry even when settlement lands after teardown (OCR R2-58)", async () => {
+    const scope = aScope();
+    const { model } = scriptedModel([
+      { type: "text-delta", id: "t", delta: "hi" },
+      finishPart(2, 1),
+    ]);
+    const facts: BuiltinModelSpanFact[] = [];
+    try {
+      setBuiltinModelSpanObserver((fact) => facts.push(fact));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      // Only doStream runs inside the run's ambient scope — capture time.
+      const streamed = await withRunObservationScope(scope, () =>
+        wrapped.doStream({ prompt: [] }),
+      );
+      // Settlement time: the ambient context is gone; an adapter that re-reads
+      // it here reads nothing.
+      await drain(streamed.stream);
+      expect(currentRunObservationScope()).toBeUndefined();
+    } finally {
+      setBuiltinModelSpanObserver(undefined);
+    }
+    expect(facts).toHaveLength(1);
+    // The fact carries the scope its doStream entry captured — the exact object
+    // the threading established — so a post-teardown settlement still lands.
+    expect(facts[0].scope).toBe(scope);
   });
 
   test("duplicate finish parts still produce exactly one fact and one meter call (acceptance 2)", async () => {
