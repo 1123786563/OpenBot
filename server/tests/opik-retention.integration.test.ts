@@ -954,6 +954,65 @@ test("expired export artifacts are deleted for real, and a canary never reaches 
   expect(JSON.stringify(await deletionsFor(scopeA))).not.toContain(canary);
 });
 
+test("failed and cancelled export jobs are reclaimable like completed ones (OCR m165)", async () => {
+  const failed = await exportStore.enqueue(scopeA, 10);
+  await database
+    .update(aiObservationExportJobs)
+    .set({
+      state: "failed",
+      errorCode: "OPIK_TIMEOUT",
+      // The table's own checks: only completed rows carry artifact/rowCount.
+      artifact: null,
+      rowCount: null,
+      settledAt: sql`now() - interval '40 days'`,
+    })
+    .where(eq(aiObservationExportJobs.id, failed.id));
+  const cancelled = await exportStore.enqueue(scopeA, 10);
+  await database
+    .update(aiObservationExportJobs)
+    .set({
+      state: "cancelled",
+      artifact: null,
+      rowCount: null,
+      settledAt: sql`now() - interval '40 days'`,
+    })
+    .where(eq(aiObservationExportJobs.id, cancelled.id));
+
+  await workerFor().sweep();
+
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_export_jobs where id in (${failed.id}, ${cancelled.id})`,
+  ).toEqual([{ n: 0 }]);
+  const records = (await deletionsFor(scopeA)).filter(
+    (r) => r.targetId === failed.id || r.targetId === cancelled.id,
+  );
+  expect(records).toHaveLength(2);
+  for (const record of records) {
+    expect(record.state).toBe("deleted");
+  }
+});
+
+test("a dataset deletion record carries the locator the retry needs (OCR m202)", async () => {
+  const { dataset } = await datasetStore.saveVersion(scopeA, {
+    datasetName: `t35-locator-${randomUUID()}`,
+    cases: [oneCase(`run-${randomUUID()}`)],
+  });
+  await database
+    .update(aiObservationDatasets)
+    .set({ createdAt: sql`now() - interval '40 days'` })
+    .where(eq(aiObservationDatasets.id, dataset.id));
+
+  await workerFor().sweep();
+
+  const record = (await deletionsFor(scopeA)).find(
+    (r) => r.kind === "dataset" && r.targetId === dataset.id,
+  );
+  expect(record).toBeDefined();
+  // The row carries everything a retry needs even after the target row is gone.
+  expect(record?.locatorWorkspace).not.toBeNull();
+  expect(record?.locatorProject).not.toBeNull();
+});
+
 test("the scope override answers before the global default, per category (AC1)", async () => {
   const held = await expiredBinding(scopeA, { opikTraceId: null, days: 10 });
   await retentionStore.setOverride(scopeA, { runs: 60 });

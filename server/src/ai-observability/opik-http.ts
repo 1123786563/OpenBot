@@ -436,10 +436,19 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
 
   const verifiedBodyLimit = (): number => {
     const cap = contract.bodyLimit?.cappedAtBytes;
-    if (typeof cap !== "number" || cap <= 0) {
-      throw new OpikPortError("BODY_LIMIT_UNVERIFIED");
+    if (typeof cap === "number" && Number.isFinite(cap) && cap > 0) {
+      return cap;
     }
-    return cap;
+    // OCR m149: the manifest says three things about the boundary. `cappedAtBytes`
+    // is a byte the upstream accepted AND the contract chose as the cap; with it
+    // absent, the largest byte PROVEN accepted is still an honest — if looser —
+    // cap. Only when even that is absent (`minRejectedBytes` alone names a byte
+    // that FAILED: a floor, not a ceiling) does the cap stay unverified.
+    const accepted = contract.bodyLimit?.maxAcceptedBytes;
+    if (typeof accepted === "number" && Number.isFinite(accepted) && accepted > 0) {
+      return accepted;
+    }
+    throw new OpikPortError("BODY_LIMIT_UNVERIFIED");
   };
 
   /** Every serialized body is measured against the verified cap before anything is sent. */
@@ -521,6 +530,12 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
 
     async createTrace(scope, input) {
       requireOperation("createTrace");
+      // OCR m154: the binding is required here — a REST creation with no binding is
+      // an unattributable write, refused like any other unverified shape (the type
+      // says so too; this is the runtime half, for callers that bypass the types).
+      if (input.binding === undefined) {
+        throw new OpikPortError("OPERATION_INPUT_INVALID");
+      }
       const refused = guardWriteScope(scope, input.binding, "createTrace");
       if (refused) return refused;
       if (!UUIDV7.test(input.traceId)) {

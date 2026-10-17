@@ -97,6 +97,13 @@ export type BasicRunOutcome = Readonly<{
   binding: { id: string; replayed: boolean };
 }>;
 
+/**
+ * A single report's event ceiling (OCR m171): a real run reports tens of events;
+ * beyond this the request is refused rather than parsed — parsing is synchronous
+ * per request, so an uncapped array is an authenticated denial-of-surface.
+ */
+const MAX_REPORT_EVENTS = 10_000;
+
 /** Reads the report by whitelist. Unknown fields — however forged — are ignored. */
 function parseReport(body: unknown): BasicRunReport {
   const invalid = () => new RunLifecycleError("LIFECYCLE_INPUT_INVALID", 400);
@@ -120,6 +127,11 @@ function parseReport(body: unknown): BasicRunReport {
   }
   const rawEvents: unknown = raw.events;
   if (!Array.isArray(rawEvents)) throw invalid();
+  // A count cap beside the per-event whitelist (OCR m171): each event parses in
+  // O(1), but millions of minimal events would parse synchronously inside one
+  // request — an authenticated denial-of-surface. A real run reports tens of
+  // events; a report beyond the cap is refused, not drained.
+  if (rawEvents.length > MAX_REPORT_EVENTS) throw invalid();
   return { ...refs, events: rawEvents.map(parseRunObservationEvent) };
 }
 

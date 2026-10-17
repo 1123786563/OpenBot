@@ -250,6 +250,47 @@ describe("the three-way execution determination", () => {
 // ---------------------------------------------------------------------------
 
 describe("the tool step recorder", () => {
+  test("unusable timestamps degrade to borrowed ones, never to 1970 (OCR m157)", async () => {
+    const badDates = await recordAndCapture({
+      toolCallId: "call-bad",
+      toolName: "host_read",
+      proposedAt: new Date("not-a-date"),
+      endedAt: new Date("not-a-date"),
+      proposalObserved: true,
+      executionObserved: true,
+      receiptObserved: true,
+      execution: { kind: "succeeded", output: "42" },
+      window: "terminal",
+      input: "{}",
+      output: "42",
+      scope: aScope(),
+    });
+    const span = badDates.writes[0]?.spans[0];
+    expect(span?.startTimeUnixNano).not.toBe("0");
+    expect(span?.endTimeUnixNano).not.toBe("0");
+    expect(span?.startTimeUnixNano).toBe(span?.endTimeUnixNano);
+
+    // A valid end with an unusable start borrows the end: zero duration, sane order.
+    const borrowed = await recordAndCapture({
+      toolCallId: "call-borrow",
+      toolName: "host_read",
+      proposedAt: new Date("not-a-date"),
+      endedAt,
+      proposalObserved: true,
+      executionObserved: true,
+      receiptObserved: true,
+      execution: { kind: "succeeded", output: "42" },
+      window: "terminal",
+      input: "{}",
+      output: "42",
+      scope: aScope(),
+    });
+    const b = borrowed.writes[0]?.spans[0];
+    expect(BigInt(b?.startTimeUnixNano ?? "0")).toBe(
+      BigInt(b?.endTimeUnixNano ?? "1"),
+    );
+  });
+
   test("the three facts are recorded separately and displayed distinctly (acceptance 1)", async () => {
     const executed = await recordAndCapture({
       toolCallId: "call-1",

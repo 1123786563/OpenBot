@@ -353,14 +353,20 @@ function baseSpan(
   | "endTimeUnixNano"
 > {
   const name = projectSafeName(label);
+  // Times degrade honestly (OCR m157): "0" would file the span in 1970, so an
+  // unusable timestamp borrows its sibling's — zero duration beats a wrong epoch —
+  // and only a span with no usable time at all lands at the write moment.
+  const nowNs = (): string => (BigInt(Date.now()) * 1_000_000n).toString();
+  const startNs = nanos(startedAt) ?? nanos(endedAt) ?? nowNs();
+  const endNs = nanos(endedAt) ?? startNs;
   return {
     ...identity,
     spanId: randomBytes(8).toString("hex"),
     // A withheld name would be refused by the port; a known-safe literal stands in.
     name:
       name.state === "omitted" ? { state: "projected", text: fallback } : name,
-    startTimeUnixNano: nanos(startedAt) ?? "0",
-    endTimeUnixNano: nanos(endedAt) ?? "0",
+    startTimeUnixNano: startNs,
+    endTimeUnixNano: endNs,
   };
 }
 

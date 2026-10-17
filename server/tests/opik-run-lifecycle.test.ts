@@ -188,6 +188,27 @@ function association(overrides: Partial<RunAssociation> = {}): RunAssociation {
   };
 }
 
+describe("run report hardening", () => {
+  test("a report with more events than the cap is refused, not drained (OCR m171)", async () => {
+    const { app } = appFor([profile()]);
+    const events = Array.from({ length: 10_001 }, () => ({
+      type: "run_started",
+    }));
+    const response = await post(app, report(events as never));
+    expect(response.status).toBe(400);
+  });
+
+  test("a report at the cap parses normally", async () => {
+    const { app, begins } = appFor([profile()]);
+    const events = Array.from({ length: 10_000 }, () => ({
+      type: "run_started",
+    }));
+    const response = await post(app, report(events as never));
+    expect(response.status).toBe(200);
+    expect(begins).toHaveLength(1);
+  });
+});
+
 describe("run attempt lifecycle — acceptance 1: terminal semantics", () => {
   test("an HTTP first frame never terminates the attempt", () => {
     const attempt = beginRunAttempt(association());

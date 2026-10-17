@@ -17,6 +17,7 @@
  * only when it is verified, never by default.
  */
 import { Hono, type MiddlewareHandler } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import type { AgentActor, AgentProfile } from "../../agents/profile-types";
 import { createAuditStore } from "../../audit";
 import type { AppVariables } from "../../auth/guards";
@@ -98,7 +99,12 @@ export function createAiObservabilityRoutes(
   deps: AiObservabilityDeps,
 ): Hono<{ Variables: AppVariables }> {
   const routes = new Hono<{ Variables: AppVariables }>();
-  routes.use("*", deps.requireUser);
+  // The house pairing (OCR m174): every authenticated route module carries a body
+  // limit beside its user guard — this module's POST faces (basic-run reports,
+  // experiment submits, case reviews) would otherwise accept arbitrary JSON bodies.
+  // 1 MiB covers any honest report: run events and experiment configs are bounded
+  // by their own parser caps, far below this transport ceiling.
+  routes.use("*", deps.requireUser, bodyLimit({ maxSize: 1024 * 1024 }));
   if (deps.healthService) {
     routes.route(
       "/health",

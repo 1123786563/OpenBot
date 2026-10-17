@@ -88,7 +88,9 @@ export type ExportJobView = Readonly<{
   rowCount: number | null;
   /** The closed-vocabulary code, exactly when the state is failed. */
   errorCode: string | null;
-  redactionPolicyVersion: number;
+  /** The redaction policy the job froze under, e.g. "opik-redaction/5" (a string —
+   *  it mirrors the server's text column, per the datasets contract's same field). */
+  redactionPolicyVersion: string;
   createdAt: string;
   settledAt: string | null;
   /** The projected rows, riding along exactly when the state is completed. */

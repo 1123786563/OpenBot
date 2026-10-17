@@ -169,6 +169,35 @@ describe("OTLP payload builder", () => {
     ).toBe("018f0000-0000-7000-8000-000000000002");
   });
 
+  test("span/parent overrides without opik.trace_id are refused, never silently derived (OCR m213)", () => {
+    expect(() =>
+      buildOtlpJsonPayload({
+        threadId: "probe-thread",
+        spans: [
+          {
+            traceHex: "a".repeat(32),
+            spanHex: "b".repeat(16),
+            name: "probe",
+            opikSpanId: "01a1405c-0000-7000-8000-000000000001",
+          },
+        ],
+      }),
+    ).toThrow(/opik.trace_id/);
+    expect(() =>
+      buildOtlpJsonPayload({
+        threadId: "probe-thread",
+        spans: [
+          {
+            traceHex: "a".repeat(32),
+            spanHex: "b".repeat(16),
+            name: "probe",
+            opikParentSpanId: "01a1405c-0000-7000-8000-000000000002",
+          },
+        ],
+      }),
+    ).toThrow(/opik.trace_id/);
+  });
+
   test("serialized payload contains no forbidden canaries", () => {
     const payload = buildOtlpJsonPayload({
       threadId: "t",

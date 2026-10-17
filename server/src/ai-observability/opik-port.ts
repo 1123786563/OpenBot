@@ -39,6 +39,7 @@ export type VerifiedOpikContract = Readonly<{
   capabilities: ReadonlyArray<Readonly<{ name: string; ok: boolean }>>;
   bodyLimit: Readonly<{
     maxAcceptedBytes: number | null;
+    minRejectedBytes: number | null;
     cappedAtBytes: number | null;
   }>;
   checks: Readonly<{ total: number; passed: number }>;
@@ -174,7 +175,12 @@ export type OpikPort = {
       traceId: string;
       threadId?: string;
       startTime: Date;
-      binding?: OpikRunBindingRef;
+      /**
+       * Required (OCR m154): the binding is what ties this creation to the run's
+       * verified identity; a creation without one is an unattributable write, and
+       * the guard refuses it before any I/O.
+       */
+      binding: OpikRunBindingRef;
     },
   ): Promise<OpikPortResult<{ traceId: string }>>;
   /**

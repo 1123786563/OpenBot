@@ -147,6 +147,28 @@ function appFor(
   return { app, bindings };
 }
 
+describe("the observation routes' transport guard", () => {
+  test("an oversized body is refused at the mount, beside the user guard (OCR m174)", async () => {
+    const { app } = appFor();
+    const oversized = "x".repeat(1024 * 1024 + 1);
+    const response = await app.request(
+      `http://openbot.test/bots/${botId}/runs`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          threadId: "t-final-thread",
+          runId: "t-final-oversize",
+          attemptId: "attempt-1",
+          traceId: "w".repeat(32),
+          events: [{ type: "run_started", note: oversized }],
+        }),
+      },
+    );
+    expect(response.status).toBe(413);
+  });
+});
+
 describe("T-final H1: the basic-run report route is mounted at the one seam", () => {
   test("POST /bots/:botId/runs begins the binding and answers the classification", async () => {
     const { app } = appFor();

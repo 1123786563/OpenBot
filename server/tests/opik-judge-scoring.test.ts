@@ -9,6 +9,7 @@ import type {
 import { freezeExperimentConfig } from "../src/ai-observability/experiments";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import {
+  createEntranceModelCall,
   createJudgeScorer,
   createJudgeScoringCaseRunner,
   JUDGE_SCORER_VERSION,
@@ -650,4 +651,106 @@ describe("the case-runner wrapper", () => {
     });
     expect(model.calls).toHaveLength(0);
   });
+});
+
+test("a verdict wrapped in a markdown fence or prose still parses (OCR m226)", async () => {
+  const fenced = scorerFor({
+    output: "```json\n" + VERDICT + "\n```",
+    inputTokens: 3,
+    outputTokens: 4,
+  });
+  expect(await fenced.judge(inputFor())).toMatchObject({
+    status: "scored",
+    score: 0.9,
+  });
+
+  const prosed = scorerFor({
+    output: "Here is my verdict:\n" + VERDICT + "\nHope that helps.",
+    inputTokens: 3,
+    outputTokens: 4,
+  });
+  expect(await prosed.judge(inputFor())).toMatchObject({
+    status: "scored",
+    score: 0.9,
+  });
+
+  // The widening never admits a NON-verdict: no score, no rationale, no pass.
+  const junk = scorerFor({
+    output: 'Sure: {"score": "high"} — good luck parsing that.',
+    inputTokens: 1,
+    outputTokens: 1,
+  });
+  expect(await junk.judge(inputFor())).toMatchObject({
+    status: "failed",
+    code: "JUDGE_VERDICT_INVALID",
+  });
+});
+
+test("the case output is projected before it joins the prompt, refused if it carries a credential (OCR m229)", async () => {
+  const clean = scorerFor({ output: VERDICT });
+  await clean.judge(inputFor());
+  const prompt = clean.model.calls[0]?.user ?? "";
+  // Free text rides (allowFreeText, like the rationale) — but through the projection.
+  expect(prompt).toContain("## Output");
+
+  const leaking = scorerFor({ output: VERDICT });
+  const record = await leaking.judge(
+    inputFor({ output: `The key is ${CANARY}, use it.` }),
+  );
+  expect(record).toMatchObject({
+    status: "failed",
+    code: "JUDGE_OUTPUT_UNSAFE",
+  });
+  // Refused before any money moved or any bytes left the process.
+  expect(leaking.model.calls).toHaveLength(0);
+  expect(leaking.billing.reserves).toHaveLength(0);
+});
+
+test("a scorer that throws leaves the case's own outcome standing (OCR m223)", async () => {
+  const inner: EvaluationCaseRunner = async () => ({
+    status: "completed",
+    output: "the answer",
+    usage: { inputTokens: 10, outputTokens: 20 },
+  });
+  const exploding = (async () => {
+    throw new Error("judge seam exploded");
+  }) as unknown as Parameters<
+    typeof createJudgeScoringCaseRunner
+  >[0]["judge"];
+  const runner = createJudgeScoringCaseRunner({
+    inner,
+    judge: exploding,
+  });
+
+  const outcome = await runner({
+    executionId: "exec-1",
+    caseIndex: 0,
+    scope,
+    config: frozenConfig(),
+    frozenCase,
+  });
+
+  expect(outcome.status).toBe("completed");
+  expect(outcome.output).toBe("the answer");
+  expect(outcome.judge).toMatchObject({
+    status: "failed",
+    code: "JUDGE_CALL_FAILED",
+    message: "judge seam exploded",
+  });
+});
+
+test("an entrance whose declared credential env is missing refuses its own calls, never borrows the deployment key (OCR m224)", async () => {
+  const call = createEntranceModelCall({
+    modelName: "third-party-model",
+    apiKeyEnv: "JUDGE_KEY_DEFINITELY_UNSET_8f3b",
+    baseURL: "https://third-party.example",
+  });
+  await expect(
+    call({
+      modelName: "third-party-model",
+      modelParameters: {},
+      system: "s",
+      user: "u",
+    }),
+  ).rejects.toThrow(/JUDGE_KEY_DEFINITELY_UNSET_8f3b/);
 });
