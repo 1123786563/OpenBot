@@ -37,6 +37,13 @@ services:
     environment:
       # The same template the server reads (#361). Empty = dev form = no pipeline.
       OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE: ${OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE:-}
+      # #404 (AC6/M-1): the main site's own host, so a template whose wildcard
+      # base swallows the app is refused here too instead of certifying
+      # `*.example.com` behind an origin the server closes. This side reads only
+      # the variable the server's appUrl chain STARTS from — unset means no
+      # judgment, and the server stays the authority (its chain continues into
+      # TRUSTED_ORIGINS and OPENBOT_PUBLIC_URL, which this side does not guess).
+      OPENBOT_APP_URL: ${OPENBOT_APP_URL:-}
       # letsencrypt (production) or letsencrypt_test (staging — dry runs, no rate limit).
       ACME_CA: ${ACME_CA:-letsencrypt}
       ACME_ACCOUNT_EMAIL: ${ACME_ACCOUNT_EMAIL:-}

@@ -144,6 +144,36 @@ dev 形态的 `127.0.0.1` 是 trust origin，不受此约束）、基座（`{ses
 单标签基座会让后缀匹配认领整个公共后缀空间、全站 404，拒绝；
 `https://{session}.localhost:3001` 本地测试形态继续放行）。
 
+### 基座必须是独立子域：主站 host 落在模板基座下即关闭准入（#404，AC6/M-1）
+
+host 形态的认领规则是「基座本身 + 基座下的一切」（`claimsPreviewHost`，端口无关），
+所以 `https://{session}.example.com` 会连 `example.com` 与 `app.example.com` 一起
+认领：主站自己的 host 落在模板基座里时，它的每个请求都走进 preview 分支并 404
+“Unknown preview host”，没有任何主站路由可达 —— 配错一行，整站下线。
+
+判据不另写一套：准入用 dispatcher 的**同一个谓词**去量 `config.appUrl` 解析出的
+host（`server/src/index.ts` 注入；`appUrl` 链路是 `OPENBOT_APP_URL` →
+`TRUSTED_ORIGINS` 首项 → `OPENBOT_PUBLIC_URL`）。重叠即 **closed**，理由可展示且
+同时命名基座、被吞掉的主站 host 与改法；`originFor` 抛错 ⇒ 不存在任何预览地址，
+绝不回退同源形态（AC6）。尾点 FQDN、大小写、userinfo、无 scheme 的写法（按 https
+默认端口读）与 dispatcher 的判定结果一致；`appUrl` 未设置或解析不出 host 时**不判
+定** —— 这道闸只拒绝「已证明的宕机」，不猜测读不懂的配置。
+
+`localhost` 基座继承 fix-ocr22 #2 的两条收窄，既不放过也不误杀：裸 apex 从不被认领
+（本地主站就住在 `localhost` 上），认领必须落在模板自己的端口上。因此
+`http://localhost:3001` 主站 + `https://{session}.localhost:3001` 仍是 open，而
+`http://app.localhost:3001` 配同一模板是 closed。
+
+ACME sidecar 做同样校验（`docker/compose/certs/lib.sh` 的 `main_site_hostport` 与
+`derive_preview_host`）：命中重叠时以 `invalid|…` 拒绝启动，理由进 `docker logs` 与
+renewal-status.json，不再为一个服务端已经拒绝的基座烧 LE 签发配额。这一侧只读链路
+的**起点** `OPENBOT_APP_URL`（由 `docker/compose/certs.yml` 透传），未设置就完全不判
+定 —— 不重新实现服务端的 fallback 链：猜错主站会把一个服务端跑得好的配置拒死，
+服务端才是唯一权威。两侧黄金用例互相指名：`server/tests/craft-preview-origin.test.ts`
+的「#404: a preview base that swallows the main site's host closes admission」与
+`scripts/tls-pipeline.test.ts` 的「derive_preview_host: a base that swallows the main
+site is refused (#404)」；改任一侧的判据必须同时改另一侧。
+
 ### 密钥轮换（运维注意）
 
 预览主机的 label 由 HMAC(HMAC(keyEncryptionKey, `"craft-preview-label"`), sessionId) 域分

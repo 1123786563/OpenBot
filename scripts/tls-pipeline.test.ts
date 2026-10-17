@@ -52,9 +52,20 @@ function run(
   ]).then(([out, err, exit]) => ({ exit, out, err }));
 }
 
-/** `lib.sh __derive <template>` → "ok|<scheme>|<baseHostname>" / "skip|<reason>" / exit 1 + "invalid|<reason>". */
-async function derive(template: string): Promise<RunResult> {
-  return run([lib, "__derive", template]);
+/** `lib.sh __derive <template>` → "ok|<scheme>|<baseHostname>" / "skip|<reason>" / exit 1 + "invalid|<reason>".
+ *
+ * OPENBOT_APP_URL is pinned empty unless the caller sets it: #404 made the
+ * derivation read it, and `run` spreads the whole process env — a developer's
+ * own `.env` must never decide whether a golden case passes.
+ */
+async function derive(
+  template: string,
+  env: Record<string, string | undefined> = {},
+): Promise<RunResult> {
+  return run([lib, "__derive", template], {
+    OPENBOT_APP_URL: "",
+    ...env,
+  });
 }
 
 async function makeCert(
@@ -260,6 +271,118 @@ describe("derive_preview_host (mirrors #361 parseTemplate)", () => {
       }
     });
   }
+});
+
+// ── #404 (AC6/M-1): a base that swallows the main site is refused ─────────────
+//
+// Cross-referenced golden set: server/tests/craft-preview-origin.test.ts,
+// "#404: a preview base that swallows the main site's host closes admission".
+// Both faces judge the ONE claim rule: the server runs claimsPreviewHost against
+// the host `config.appUrl` resolves to, this side reads `OPENBOT_APP_URL` — the
+// variable that chain starts from, and the only one it may guess at. A template
+// the server refuses must never get a wildcard certificate behind it, and a
+// template the server serves must never crash-loop this side (fix-ocr18 #9's
+// divergence class, the other direction).
+describe("derive_preview_host: a base that swallows the main site is refused (#404)", () => {
+  test.each([
+    ["https://app.example.com", "https://{session}.example.com"],
+    ["https://example.com", "https://{session}.example.com"],
+  ])(
+    "the ticket's clash cases: app %p under template %p → invalid",
+    async (appUrl, template) => {
+      const r = await derive(template, { OPENBOT_APP_URL: appUrl });
+      expect(r.exit).toBe(1);
+      expect(r.out.trim()).toMatch(/^invalid\|/);
+      expect(r.out).toContain("OPENBOT_APP_URL");
+    },
+  );
+
+  test.each([
+    ["https://app.example.com", "https://{session}.preview.example.com"],
+    ["https://example.com", "https://{session}.preview.example.com"],
+  ])(
+    "the ticket's open cases: app %p beside base %p → the derivation is unchanged",
+    async (appUrl, template) => {
+      const r = await derive(template, { OPENBOT_APP_URL: appUrl });
+      expect(r.exit).toBe(0);
+      expect(r.out.trim()).toBe("ok|https|preview.example.com");
+    },
+  );
+
+  test("no OPENBOT_APP_URL judges nothing — the server's own chain stays the authority", async () => {
+    // The server's appUrl falls through TRUSTED_ORIGINS and OPENBOT_PUBLIC_URL
+    // too; this side does not re-implement that, because a guessed main host
+    // would refuse a certificate for a deployment the app serves fine.
+    const r = await derive("https://{session}.example.com");
+    expect(r.exit).toBe(0);
+    expect(r.out.trim()).toBe("ok|https|example.com");
+  });
+
+  test("a host that merely ends with the base TEXT is not under the base", async () => {
+    // The claim is a LABEL boundary (`example.com`, `.example.com`), never a
+    // substring: `notexample.com` is somebody else's domain and must certify.
+    const r = await derive("https://{session}.example.com", {
+      OPENBOT_APP_URL: "https://notexample.com",
+    });
+    expect(r.exit).toBe(0);
+    expect(r.out.trim()).toBe("ok|https|example.com");
+  });
+
+  test.each([
+    // A schemeless value is still a host an operator really writes, and userinfo
+    // never reaches the hostname (WHATWG) — the server's mainSiteHostOf agrees.
+    ["app.example.com", "invalid"],
+    ["https://user:pw@app.example.com", "invalid"],
+    ["https://app.example.com.", "invalid"], // dotted FQDN: same host to DNS
+    ["HTTPS://APP.EXAMPLE.COM", "invalid"], // host comparison is case-folded
+    ["not a url", "ok"], // no host at all ⇒ no judgment
+    ["https://", "ok"],
+    ["https://app.example.com:abc", "ok"], // WHATWG throws ⇒ the server judges nothing
+    ["http://[::1]:3001", "ok"], // no preview base can be an IPv6 literal
+  ])("the app host read: OPENBOT_APP_URL=%p → %p", async (appUrl, verdict) => {
+    const r = await derive("https://{session}.example.com", {
+      OPENBOT_APP_URL: appUrl,
+    });
+    if (verdict === "invalid") {
+      expect(r.exit).toBe(1);
+      expect(r.out.trim()).toMatch(/^invalid\|/);
+    } else {
+      expect(r.exit).toBe(0);
+      expect(r.out.trim()).toBe("ok|https|example.com");
+    }
+  });
+
+  test("the localhost base keeps fix-ocr22 #2's narrowings", async () => {
+    // The local testing form deliberately SHARES its hostname with the main site,
+    // so the clash rule inherits both narrowings or it would refuse the very
+    // configuration the exemption exists to allow: the bare apex is never
+    // claimed, and a claim needs the template's OWN port.
+    const apex = await derive("https://{session}.localhost:3001", {
+      OPENBOT_APP_URL: "http://localhost:3001",
+    });
+    expect(apex.exit).toBe(0);
+    expect(apex.out.trim()).toMatch(/^skip\|/);
+    const samePort = await derive("https://{session}.localhost:3001", {
+      OPENBOT_APP_URL: "http://app.localhost:3001",
+    });
+    expect(samePort.exit).toBe(1);
+    expect(samePort.out.trim()).toMatch(/^invalid\|/);
+    const otherPort = await derive("https://{session}.localhost:3001", {
+      OPENBOT_APP_URL: "http://app.localhost:4000",
+    });
+    expect(otherPort.exit).toBe(0);
+    expect(otherPort.out.trim()).toMatch(/^skip\|/);
+  });
+
+  test("the port read is WHATWG-normalized on both sides", async () => {
+    // `:0443` IS 443 (leading zeros dropped), so a template declared on the
+    // scheme default still clashes with an app URL that spells it out.
+    const clash = await derive("https://{session}.localhost:0443", {
+      OPENBOT_APP_URL: "https://app.localhost",
+    });
+    expect(clash.exit).toBe(1);
+    expect(clash.out.trim()).toMatch(/^invalid\|/);
+  });
 });
 
 describe("renewal-guard health, alerts, cooldown, recovery", () => {
