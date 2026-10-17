@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import "./preload";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { LEGACY_PAGES, legacyAgentsTarget } from "@/lib/agents/legacy-routes";
 
 test("/agents?agent=<id> opens that Bot's page", () => {

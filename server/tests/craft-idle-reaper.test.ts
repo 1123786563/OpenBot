@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, jest, test } from "bun:test";
+import { afterEach, describe, expect, jest, test } from "../../tests/support/e2e-compat";
 import type { MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
 import { loadCraftConfig } from "../src/craft/config";

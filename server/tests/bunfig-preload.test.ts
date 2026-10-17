@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
@@ -16,7 +20,7 @@ import { dirname, resolve } from "node:path";
  * are meant to name the same scripts, not to contain the same strings.
  */
 
-const repositoryRoot = resolve(import.meta.dir, "..", "..");
+const repositoryRoot = resolve(hereDir, "..", "..");
 
 function preloadedScripts(bunfigPath: string): string[] {
   const parsed = Bun.TOML.parse(readFileSync(bunfigPath, "utf8")) as {

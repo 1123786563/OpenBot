@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../tests/support/e2e-compat";
 import type { ModelCredentialSecretReader } from "../../src/credentials";
 import { encryptSecret } from "../../src/credentials";
 import type { Database } from "../../src/db/client";

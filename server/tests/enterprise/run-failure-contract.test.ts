@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tests/support/e2e-compat";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type {
   PlatformScope,

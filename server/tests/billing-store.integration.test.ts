@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, test } from "../../tests/support/e2e-compat";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { DrizzleQueryError } from "drizzle-orm/errors";

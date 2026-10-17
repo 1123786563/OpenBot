@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import { slackCodeRedeemer } from "../src/identity/slack-redeem";
 import type { IdentityStore } from "../src/identity/store";

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tests/support/e2e-compat";
 import type { BaseEvent } from "@ag-ui/client";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";

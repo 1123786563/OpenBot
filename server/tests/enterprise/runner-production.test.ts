@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "../../../tests/support/e2e-compat";
 import { createHash } from "node:crypto";
 import type { AbstractAgent, BaseEvent } from "@ag-ui/client";
 import type {

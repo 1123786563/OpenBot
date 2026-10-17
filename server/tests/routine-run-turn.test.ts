@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { Message } from "@ag-ui/client";
 import { AbstractAgent, EventType } from "@ag-ui/client";
 import { EMPTY } from "rxjs";

@@ -1,4 +1,4 @@
-import { expect, mock, test } from "bun:test";
+import { expect, mock, test } from "../../tests/support/e2e-compat";
 import { createApp } from "../src/app";
 import { loadConfig } from "../src/config";
 import { githubCallbackRoutes } from "../src/identity/github-callback";

@@ -16,7 +16,7 @@
 //
 // 拒绝面不回显、不记录任何 cookie 或 ticket 值。
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../src/auth/guards";

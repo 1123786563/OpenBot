@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { ComputerGateway } from "../src/computer/gateway";
 import type { PolicyStore } from "../src/computer/policy-store";
 import { createComputerRoutes } from "../src/computer/routes";

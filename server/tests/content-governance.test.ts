@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { inspectToolArguments } from "../src/plugins/content-governance";
 
 describe("MCP tool argument content governance", () => {

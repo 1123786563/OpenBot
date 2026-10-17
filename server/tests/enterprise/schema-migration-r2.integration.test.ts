@@ -1,4 +1,8 @@
-import { afterAll, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { afterAll, expect, test } from "../../../tests/support/e2e-compat";
 import { createHash } from "node:crypto";
 import {
   cp,
@@ -416,7 +420,7 @@ test("cleanup failure fails a successful test body", async () => {
 });
 
 const enabled = process.env.ENTERPRISE_TEST_R2_MIGRATION_MODE === "fresh";
-const serverRoot = join(import.meta.dir, "../..");
+const serverRoot = join(hereDir, "../..");
 const migrationsRoot = join(serverRoot, "drizzle");
 const fixtureNames: string[] = [];
 const temporaryMigrationDirectories: string[] = [];

@@ -1,12 +1,9 @@
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  test,
-} from "bun:test";
+import "./preload";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
@@ -2662,7 +2659,7 @@ describe("the liveness probe rides the craft client, and dies with the pane (fix
     // loosened.
     const source = readFileSync(
       join(
-        import.meta.dir,
+        hereDir,
         "../src/components/craft/output-panel/preview-tab.tsx",
       ),
       "utf8",
@@ -2696,7 +2693,7 @@ describe("the liveness probe rides the craft client, and dies with the pane (fix
     // continuation kept a private copy of the trio.
     const source = readFileSync(
       join(
-        import.meta.dir,
+        hereDir,
         "../src/components/craft/output-panel/preview-tab.tsx",
       ),
       "utf8",
@@ -2718,7 +2715,7 @@ describe("the liveness probe rides the craft client, and dies with the pane (fix
 describe("a disposed pane's late frame events write nothing (fix-ocr19 #3/#4 — source pins)", () => {
   const source = readFileSync(
     join(
-      import.meta.dir,
+      hereDir,
       "../src/components/craft/output-panel/preview-tab.tsx",
     ),
     "utf8",
@@ -2756,7 +2753,7 @@ describe("a disposed pane's late frame events write nothing (fix-ocr19 #3/#4 —
 describe("the load-path streak zeroing rides ONE shared setter (fix-ocr24 #4 / fix-ocr28 #12 — source pin)", () => {
   const source = readFileSync(
     join(
-      import.meta.dir,
+      hereDir,
       "../src/components/craft/output-panel/preview-tab.tsx",
     ),
     "utf8",

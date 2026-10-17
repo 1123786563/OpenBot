@@ -1,4 +1,4 @@
-import { describe, expect, test } from "e2e";
+import { describe, expect, test } from "../tests/support/e2e-compat";
 import { Writable } from "node:stream";
 import { createLogger, getLogger, readLogLevel } from "./logger";
 

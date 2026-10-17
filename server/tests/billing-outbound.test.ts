@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { checkOutboundUrl } from "../src/billing/outbound";
 
 /** A resolver that answers one fixed address, so no test touches a real DNS server. */

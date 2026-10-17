@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { accessFor, ServerRowAmbiguousError } from "../src/plugins/access";
 import type { CatalogueEntry } from "../src/plugins/catalogue";
 import { catalogueEntry, resolveServerUrl } from "../src/plugins/catalogue";

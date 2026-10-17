@@ -1,12 +1,4 @@
-import {
-  afterAll,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  spyOn,
-  test,
-} from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import type { RunAgentInput } from "@ag-ui/client";
 import { MastraAgent } from "@ag-ui/mastra";
 import { buildAGUITextResponse, LLMock } from "@copilotkit/aimock";

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { seal } from "../src/auth/signed-value";
 import {
   exchangeGithubCode,

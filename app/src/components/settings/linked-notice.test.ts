@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import "../../../tests/preload";
+import { describe, expect, test } from "../../../../tests/support/e2e-compat";
 import { linkedNotice, visibleLinkedNotice } from "./linked-notice";
 
 describe("linkedNotice", () => {

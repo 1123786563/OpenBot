@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { defaultSourceTool } from "../src/memory/ingestion";
 
 const read = (name: string, inputSchema: Record<string, unknown> = {}) => ({

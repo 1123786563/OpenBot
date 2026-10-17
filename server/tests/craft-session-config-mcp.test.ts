@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { loadCraftConfig } from "../src/craft/config";
 import type { ResolvedCraftManagedContent } from "../src/craft/managed-content";
 import { CraftSessionManager } from "../src/craft/manager";

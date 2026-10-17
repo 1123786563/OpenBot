@@ -1,4 +1,5 @@
-import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
+import "./preload";
+import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import {
   act,

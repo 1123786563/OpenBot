@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createCodeRunGateway, TASK_PREAMBLE } from "../src/codesandbox/gateway";
 import type { SandboxClient } from "../src/codesandbox/client";
 import type { CodeRunStore } from "../src/codesandbox/store";

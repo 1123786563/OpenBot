@@ -1,7 +1,7 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { serve } from "bun";
+import { serve } from "../../tests/support/bun-compat";
 import { createBotRuntimes } from "../src/bot-runtimes";
 import { sandboxEnvFrom } from "../src/env";
 import { createProxyHandler, tokenMatches } from "../src/proxy";

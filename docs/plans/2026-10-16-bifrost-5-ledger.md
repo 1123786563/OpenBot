@@ -483,3 +483,21 @@
 - #244（05.3 每授权独立 Key 签发）集成完成（第 55 张）：直复制 key-issuance.ts/key-issuance.integration.test.ts/schema-gateway.ts（91 行）/audit.ts（12 行词条）/bot-services-auth.ts；app.ts 两块（05.3 注释改写+keys 条件传递行）+registry.ts 四步（import/接口声明/modelAccess 提升 const/keys 装配）；index.ts/credit-reserve.ts 的 wt-only 全为旧基线形态零增量不动；迁移 0140_gateway_virtual_keys→0143（journal append 时 when 沿用原值触发严格递增断言红，改 0142.when+1000 后过——**重编号 when 必须取前一条+1000，不能沿用 worktree 原值**）。
 - 集成库回归 @5594 openbot_b5_244i（144 迁移+roles）：key-issuance 5/5、bot-service-auth+binding-codes+service-credentials 12、registry 集成+binding-issuance+hardening 27，全绿 tsc 0。
 - 运行中：#228（ctx_2f7479ac3216 探活确认在读 credit-reserve 5-7 步）。
+
+## T108（2026-10-18）
+- 主仓库 HEAD 演进：用户提交 8c866ea3（#259+#292+#244 全部集成层：订阅归属续期/虚拟密钥/unknown 状态）+90ff9da4（bifrost gitlink）+344dc208（.craft gitignore 清理）——工作区转净，集成基线自此以提交为准。
+- Orca 第 12 次重启处置：三 dispatch（#228 ctx_2f7479ac3216/#293 ctx_bdb74b0950c1）探活均存活续作（228 在测试输出处理、293 在读 CONTEXT.md+定位 checkin 实现）；#228 重启余波新增一任 abandoned（ctx_47adfb156ed6，retained）。
+- #245（05.4 CredentialBundle 明文边界）派发：worktree b5-245 初建时撞上主仓库提交窗口（sync_delta 0 文件+M 复制失效），reset --hard 344dc208+bifrost rsync+gitdir 修+差集空+tsc 0 重建基线；task_f19d30e3d9d1 先置 ready 再 start（依赖 task 未完成会拒 start——恢复流程新增步骤）；ctx_02107fdd8052+简报送达。
+- 运行中 3：#228（ctx_2f7479ac3216）、#293（ctx_bdb74b0950c1）、#245（ctx_02107fdd8052）——并发满 3。
+- 教训沉淀：主仓库集成层从「未提交」转「已提交」后，新 worktree 基线法=reset --hard <新 HEAD>（不再依赖 sync_delta）；b5-293 保留 sync_delta 时代基线不动（worker 正用、内容与提交等价）。
+- 静默卡死事件（第 13 次故障）：#228（ctx_2f7479ac3216）/#245（ctx_02107fdd8052）12+ 分钟终端字节级零变化（#293 正常）。#228 前任留实质进度（catalog-freshness.ts+21 用例+plan，worktree 未提交保留）；#245 第一任零产出。
+- 重启处置：abandon 两任→task ready→worker-start。#245 第二任 ctx_464109c89dab [ready/working] live 一次成功；#228 首次 start 撞 task failed 态（failed Task 拒 start）→task-update ready→第四任 ctx_457833195f87 启动成功。两份接续简报送达（228 附前任产出清单与 isCatalogFresh seam 锚点，245 重发完整简报）。
+- #293 纠偏：复制主仓库 .env 致 TEST_DATABASE_URL 指向 5435 用户本地库——发消息钉死 5594 容器专用库口径（严禁 5432/5435）。
+- 运行中 3：#228（ctx_457833195f87 第四任）、#293（ctx_bdb74b0950c1）、#245（ctx_464109c89dab 第二任）。
+- Orca 第 14 次重启：#228 第四任/#245 第二任被 abandoned（retained）；#293（ctx_bdb74b0950c1）存活。重启前 #245 第二任已推进到实现+测试阶段（credential-bundle.ts+credential-bundle-boundary.test.ts+registry/key-issuance M+plan），#228 维持三文件产出。
+- 重启处置：双 release（archive unavailable 但终态可达）→双 task ready→#228 第五任 ctx_7cef0b177926、#245 第三任 ctx_27e7c409aa1b，接续简报均附前任产出清单与 RED/GREEN 续作指引。
+- 运行中 3：#228（ctx_7cef0b177926）、#293（ctx_bdb74b0950c1）、#245（ctx_27e7c409aa1b）。
+- 三任冻结根因查明：宿主过载（load 77-126）+OrbStack 整体重启清掉 b5-verify-pg/pg2 双容器（5590/5594 ECONNREFUSED）。#293 报告自证「共享容器间歇连接超时重跑即恢复」。容器重建：pgvector/pgvector:pg16（首建误用 postgres:16 撞 vector 扩展缺失红）。
+- #293（10.4 签到奖励进个人账户）完成并闭环前半：交付通用奖励路径 rewards.ts（resolvePersonalPayerAccount 归属+幂等键 reward:<type>:<period>:<userId>+signin 最小类型，无既有签到入口按 Resume hint 从简）+POST /credits/rewards/claim（strictObject 无归属字段）+审计 billing.credits.reward_claimed+11 真库测试。coordinator 复验 @5594 全新库 openbot_b5_293c：checkin-rewards 11/11+回归 5 文件 49 用例（admin-credit-grant.integration 21+其余 28）+worktree tsc 0（worker 被 CPU 饿死未完成的终验由 coordinator 补齐）。worker abandon+release（terminal retained identity_unproven）→checkpoint 293（52 文件/154KB）→review-293 派发（task_12cbc9016310，ctx_2f5c07069374，报告路径钉死主仓库 reviews/b5-293.md）。
+- #228 第五任/#245 第三任随容器重建自然解冻（228 在验证段、245 在 git log 调查），无需重启。
+- 运行中 3：#228（ctx_7cef0b177926）、#245（ctx_27e7c409aa1b）、review-293（ctx_2f5c07069374）。

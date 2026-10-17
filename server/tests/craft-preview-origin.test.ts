@@ -14,7 +14,7 @@
 // site redeems at the preview origin's entry and plants the preview domain's
 // OWN session cookie — session-level (no Max-Age/Expires), HttpOnly, SameSite=None; Secure (#365 F-1).
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createHmac } from "node:crypto";
 import { loadCraftConfig } from "../src/craft/config";
 import {

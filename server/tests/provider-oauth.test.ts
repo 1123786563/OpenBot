@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import * as fsPromises from "node:fs/promises";
 import {
   chmod,

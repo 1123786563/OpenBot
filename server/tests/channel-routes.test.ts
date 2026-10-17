@@ -1,11 +1,4 @@
-import {
-  afterAll,
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  test,
-} from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "../../tests/support/e2e-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { browserModeFromEnv } from "../src/browser-mode";
 
 describe("choosing the browser people take over", () => {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../../tests/support/e2e-compat";
 import type { RankResult, Reranker } from "../models/rerank/openai-compat";
 import { DEFAULT_MMR_LAMBDA } from "./mmr";
 import {

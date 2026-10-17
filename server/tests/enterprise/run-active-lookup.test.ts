@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tests/support/e2e-compat";
 import type { PlatformScope, RunDTO } from "../../src/enterprise/contracts";
 import * as runStore from "../../src/enterprise/runs/store";
 

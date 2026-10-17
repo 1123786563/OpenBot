@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import type { MiddlewareHandler } from "hono";
 import { MAX_DICTATION_BYTES } from "../../shared/dictation";
 import type { AppVariables } from "../src/auth/guards";

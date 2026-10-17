@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../../tests/support/e2e-compat";
 import { DEFAULT_MMR_LAMBDA, jaccard, selectMMR, tokenizeSimple } from "./mmr";
 
 /** MMR + 分词 + Jaccard（gojieba→Intl.Segmenter 替代的等价性验证）。 */

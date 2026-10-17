@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import { randomUUID } from "node:crypto";
 import { createAuditStore } from "../src/audit";
 import { createDatabase, type Database } from "../src/db/client";

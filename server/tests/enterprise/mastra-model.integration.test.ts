@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tests/support/e2e-compat";
 import { generateText, type LanguageModel, streamText } from "ai";
 import type { PlatformScope, RunService } from "../../src/enterprise/contracts";
 import { createRuntimeModelAdapter } from "../../src/enterprise/models/runtime-adapter";

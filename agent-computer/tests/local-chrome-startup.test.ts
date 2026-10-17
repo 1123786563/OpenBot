@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import {
@@ -82,7 +86,7 @@ describe("starting the local computer", () => {
       [
         process.execPath,
         "--no-env-file",
-        join(import.meta.dir, "../../scripts/start-local-chrome-computer.ts"),
+        join(hereDir, "../../scripts/start-local-chrome-computer.ts"),
       ],
       {
         env: { COMPUTER_TOKEN: "" },

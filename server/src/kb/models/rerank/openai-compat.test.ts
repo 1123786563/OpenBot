@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../../../tests/support/e2e-compat";
 import { createOpenAICompatReranker } from "./openai-compat";
 
 /** OpenAI 兼容 rerank 协议：relevance_score/score 双字段、60s 超时语义、错误分类。 */

@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import "../../../tests/preload";
+import { expect, test } from "../../../../tests/support/e2e-compat";
 import { splitChatOrigin } from "./chat-origin";
 
 test("a Slack participant line becomes a marker and the text stays exact", () => {

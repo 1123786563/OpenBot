@@ -1,6 +1,10 @@
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   aesGcmDecrypt,
   amountStringToCents,
@@ -18,7 +22,7 @@ import {
  * below so a re-generation of the fixture cannot silently pass; the key pair is exercised through
  * sign/verify both ways.
  */
-const fixtureDir = join(import.meta.dir, "fixtures");
+const fixtureDir = join(hereDir, "fixtures");
 const fixtureCertificate = readFileSync(
   join(fixtureDir, "payment-test-certificate.pem"),
   "utf8",

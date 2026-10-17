@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "../support/e2e-compat";
 
 /**
  * One journey through a running deployment, over HTTP.

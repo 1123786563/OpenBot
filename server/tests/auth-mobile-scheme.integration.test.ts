@@ -1,4 +1,4 @@
-import { afterAll, afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "../../tests/support/e2e-compat";
 import { type AuthBootstrapConfig, createAuth } from "../src/auth";
 import { createDatabase } from "../src/db/client";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";

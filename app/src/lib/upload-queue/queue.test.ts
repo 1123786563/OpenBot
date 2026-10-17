@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import "../../../tests/preload";
+import { afterEach, beforeEach, describe, expect, mock, test } from "../../../../tests/support/e2e-compat";
 import { type BatchEnd, createUploadQueue } from "@/lib/upload-queue/queue";
 import type { UploadPayload } from "@/lib/upload-queue/state";
 

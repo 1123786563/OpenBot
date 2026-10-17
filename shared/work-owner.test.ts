@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../tests/support/e2e-compat";
 import { workOwner } from "./work-owner";
 
 describe("who a process says it is when it takes a lease", () => {

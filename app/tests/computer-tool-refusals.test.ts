@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import "./preload";
+import { afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
 import { callComputer } from "../src/lib/copilot/computer-tools";
 
 /**

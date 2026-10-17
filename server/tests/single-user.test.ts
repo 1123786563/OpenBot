@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { singleUserEnabled } from "../src/auth/dev-actor";
 
 /**

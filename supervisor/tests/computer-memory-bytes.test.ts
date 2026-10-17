@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { computerMemoryBytes } from "../src/computer-memory-bytes";
 
 describe("supervisor computer memory bytes", () => {

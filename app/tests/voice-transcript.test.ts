@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import "./preload";
+import { expect, test } from "../../tests/support/e2e-compat";
 import type { SaveVoiceSessionInput } from "../../shared/voice-session";
 import {
   VoiceTranscript,

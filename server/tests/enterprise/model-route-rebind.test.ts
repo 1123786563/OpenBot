@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "../../../tests/support/e2e-compat";
 import type { Database } from "../../src/db/client";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {

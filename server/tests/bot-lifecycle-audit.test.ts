@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { Hono } from "hono";
 import { retireReplacedKey } from "../src/agents/auth-header";
 import { createAgentRoutes } from "../src/agents/routes";

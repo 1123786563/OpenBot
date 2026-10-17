@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { Hono } from "hono";
 import type { AuditEventInput } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";

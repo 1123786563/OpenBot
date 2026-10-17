@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { AbstractAgent, type Message, type RunAgentInput } from "@ag-ui/client";
 import { EMPTY } from "rxjs";
 import { createTurnRunner } from "../src/routines/run-turn";

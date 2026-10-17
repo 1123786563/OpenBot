@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { createHmac } from "node:crypto";
 import { createGithubResponsibilityRoutes } from "../src/responsibilities/github";
 import type { ResponsibilityEvent } from "../src/responsibilities/types";

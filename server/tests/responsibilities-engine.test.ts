@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { HeadlessToolSuspension } from "../src/computer/headless-tools";
 import { createResponsibilityEngine } from "../src/responsibilities/engine";
 import {

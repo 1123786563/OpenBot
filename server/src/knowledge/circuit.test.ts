@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../tests/support/e2e-compat";
 import { createKnowledgeCircuit } from "./circuit";
 
 /** 可拨动的假时钟：测试冷却窗口不必真等 30 秒。 */

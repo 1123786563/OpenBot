@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { fileURLToPath } from "node:url";
 import type { RunAgentInput } from "@ag-ui/client";
 import { BunSQLPreparedQuery } from "drizzle-orm/bun-sql";

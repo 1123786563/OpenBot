@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import "./preload";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { withVoiceContext } from "../src/lib/voice/agent-bridge";
 
 test("voice history reaches the run as agent-scoped application context and is removed afterwards", async () => {

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tests/support/e2e-compat";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import {

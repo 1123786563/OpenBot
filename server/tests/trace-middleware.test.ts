@@ -6,7 +6,7 @@
  * handler throws. Each case registers and shuts down its own provider, because the
  * API's global trace slot is process-wide and a shut-down provider records nothing.
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { Writable } from "node:stream";
 import { Hono } from "hono";
 import {

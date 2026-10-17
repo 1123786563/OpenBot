@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "./support/e2e-compat";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -12,7 +16,7 @@ import { join } from "node:path";
  * everybody except the person who added them, whose checkout was already configured.
  */
 
-const root = join(import.meta.dir, "..");
+const root = join(hereDir, "..");
 
 function manifest(path: string) {
   return JSON.parse(readFileSync(join(root, path, "package.json"), "utf8")) as {

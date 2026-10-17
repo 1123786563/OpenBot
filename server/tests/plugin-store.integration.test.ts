@@ -1,13 +1,8 @@
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  spyOn,
-  test,
-} from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -6470,7 +6465,7 @@ describe("a query of this deployment's own that failed", () => {
    */
   test("no recording site in the plugin store reads a caught message without asking", () => {
     const source = readFileSync(
-      join(import.meta.dir, "..", "src", "plugins", "store.ts"),
+      join(hereDir, "..", "src", "plugins", "store.ts"),
       "utf8",
     );
     /*

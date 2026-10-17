@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createWorkshopRoutes } from "../src/workshop/routes";
 import type { TurnEventBus } from "../src/workshop/bus";
 import type { WorkshopStore, WorkshopTurnRow } from "../src/workshop/store";

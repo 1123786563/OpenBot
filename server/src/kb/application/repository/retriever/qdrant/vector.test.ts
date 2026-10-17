@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../../../../../tests/support/e2e-compat";
 import type { QdrantClient } from "../../../../infrastructure/qdrant/client";
 import type {
   QueryPointsBody,

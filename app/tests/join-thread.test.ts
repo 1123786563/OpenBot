@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import "./preload";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { joinWithin } from "../src/lib/copilot/join-thread";
 
 /** Joining must be FINISHED when it resolves, not merely given up on. */

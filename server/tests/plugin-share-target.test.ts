@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { shareTargetOf } from "../src/plugins/share-target";
 
 describe("which connector writes send content to other people", () => {

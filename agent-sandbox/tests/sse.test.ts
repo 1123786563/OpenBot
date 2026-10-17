@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { serve } from "bun";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { serve } from "../../tests/support/bun-compat";
 import { forwardBlock, forwardEvents } from "../src/sse";
 
 describe("forwardBlock (the family filter)", () => {

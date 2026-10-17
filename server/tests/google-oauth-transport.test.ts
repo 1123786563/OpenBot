@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { googleRequest, googleResponse } from "../src/google-oauth-transport";
 
 test("native Gemini converts tools, screenshot input and signed tool results without losing parts", async () => {

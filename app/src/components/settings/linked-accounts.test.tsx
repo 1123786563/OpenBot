@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import "../../../tests/preload";
+import { expect, test } from "../../../../tests/support/e2e-compat";
 import { IconBrandGithub, IconBrandSlack, IconLink } from "@tabler/icons-react";
 import { unlinkOutcome } from "@/lib/identity/mutations";
 import { linksFromResponse } from "@/lib/identity/queries";

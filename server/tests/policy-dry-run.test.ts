@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { AuditEvent } from "../src/audit";
 import type { ActionPolicy } from "../src/computer/policy";
 import {

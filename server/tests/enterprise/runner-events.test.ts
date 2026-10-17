@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
 import type { BaseEvent } from "@ag-ui/client";
 import type { RunnerEventRecord } from "../../src/enterprise/contracts";

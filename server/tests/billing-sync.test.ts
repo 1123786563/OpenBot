@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createLagoClient } from "../src/billing/lago";
 import { checkOutboundUrl } from "../src/billing/outbound";
 import { createBillingService } from "../src/billing/service";

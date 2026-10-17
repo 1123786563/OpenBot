@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createMemoryIngestion } from "../src/memory/ingestion";
 
 const tool = {

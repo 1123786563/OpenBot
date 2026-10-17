@@ -8,12 +8,41 @@ if (existsSync(".env")) {
 
 // 单元与集成套件跑在 tools-only target 上：没有 engine，因此不开浏览器、不调用模型。
 // UI 套件在 e2e.config.ts（web target），两者用 --config 分开选择。
+// e2e 的 glob 不支持花括号，只能一种扩展名一条；node_modules 必须排除，否则会收集依赖包自带的测试。
+//
+// E2E_UNIT_SCOPE=app,server 只收集这些目录：整套收集一次要几分钟，改一个套件时用它把回合压到秒级。
+const ALL = [
+  "shared",
+  "supervisor",
+  "worker",
+  "deliverables",
+  "desktop",
+  "agent-bot",
+  "agent-sandbox",
+  "agent-langgraph",
+  "agent-mastra",
+  "agent-computer",
+  "app",
+  "server",
+  "tests",
+  "scripts",
+];
+const scope = (process.env.E2E_UNIT_SCOPE ?? "")
+  .split(",")
+  .map((name) => name.trim())
+  .filter(Boolean);
+const unknown = scope.filter((name) => !ALL.includes(name));
+if (unknown.length) throw new Error(`E2E_UNIT_SCOPE names no suite directory: ${unknown.join(", ")}`);
+const suites = scope.length ? scope : ALL;
+
 export default {
   projectId: "openbot-unit",
   tests: [
-    "supervisor/tests/names.test.ts",
-    "shared/logger.test.ts",
-    "worker/tests/env.test.ts",
+    ...suites.flatMap((dir) => [
+      `${dir}/**/*.test.ts`,
+      ...(dir === "app" ? ["app/**/*.test.tsx"] : []),
+    ]),
+    "!**/node_modules/**",
   ],
   targets: [{ name: "node", platform: "node" }],
   workers: 4,

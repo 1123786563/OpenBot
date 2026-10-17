@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { PAGE_LIMIT_ERROR, parsePageLimit } from "../src/paging";
 
 /**

@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { HttpAgent, type RunAgentInput } from "@ag-ui/client";
 import { of } from "rxjs";
 import { z } from "zod";

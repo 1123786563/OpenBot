@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { createHmac } from "node:crypto";
 import { createOpenTagTransport } from "../src/delivery/opentag";
 import type { ConverseResult } from "../src/delivery/router";

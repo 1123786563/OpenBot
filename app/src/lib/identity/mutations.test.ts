@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import "../../../tests/preload";
+import { describe, expect, test } from "../../../../tests/support/e2e-compat";
 import { githubAuthorizationUrl } from "./mutations";
 
 const FRIENDLY = "Could not start connecting GitHub. Try again.";

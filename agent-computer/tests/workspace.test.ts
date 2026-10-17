@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   mkdir,
   mkdtemp,

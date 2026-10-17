@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readFile } from "node:fs/promises";
 import { getTableName, is } from "drizzle-orm";
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core";

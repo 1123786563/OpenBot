@@ -1,4 +1,8 @@
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { afterAll, afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { eq, inArray, notInArray, sql } from "drizzle-orm";
@@ -427,7 +431,7 @@ test("the sweep boots with DATABASE_URL and no other configuration", () => {
       "scripts/cull-staged-attachments.ts",
       String(1_000_000),
     ],
-    cwd: join(import.meta.dir, ".."),
+    cwd: join(hereDir, ".."),
     env: { PATH: process.env.PATH ?? "", DATABASE_URL: databaseUrl },
     stdout: "pipe",
     stderr: "pipe",

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
 import { eq, sql } from "drizzle-orm";
 import { startRetentionSweeps } from "../src/audit-retention";
 import {

@@ -4,11 +4,11 @@
 
 ### Issue tracker
 
-Issues and specs for this repository are tracked in GitHub Issues at `1123786563/OpenBot`. See `docs/agents/issue-tracker.md`.
+Issues for this repository are tracked in GitHub at `1123786563/OpenBot`. Before reading, creating, or updating an Issue, read `docs/agents/issue-tracker.md`.
 
 ### Domain docs
 
-This repository uses a single domain context at the root. See `docs/agents/domain.md`.
+For OpenBot domain terms, read the root `CONTEXT.md`. Work in `apps/openmuse/` also uses its scoped `CONTEXT.md`; see `docs/agents/domain.md` for their boundaries.
 
 # Agent 开发工作流
 
@@ -17,9 +17,9 @@ This repository uses a single domain context at the root. See `docs/agents/domai
 
 ## 事实源
 
-- `docs/specs/`：已批准需求、行为、范围、非目标和验收标准。
+- `docs/specs/`：Spec 所在目录；逐份核对状态，只有明确批准的 Spec 才作为实施依据。
 - `docs/adr/`：架构决策与约束。
-- `CONTEXT.md`：统一的领域术语和领域模型。
+- 根目录 `CONTEXT.md`：OpenBot 共享领域术语；`apps/openmuse/CONTEXT.md`：子模块局部术语。
 - `docs/plans/`：Superpowers 实施计划。
 - Git + Superpowers Ledger：执行历史和已完成任务的证据。
 
@@ -63,6 +63,15 @@ This repository uses a single domain context at the root. See `docs/agents/domai
 - `finishing-a-development-branch`
 
 开始实现前先读取 `CONTEXT.md`、已批准 Spec、相关 ADR 和当前 Ticket，然后再创建 Implementation Plan。
+上述 Superpowers Skill 必须在当前会话中可调用；若未暴露，记录能力缺口并报告，不能声称已执行相应 Skill 或通过其关卡。
+
+### 测试与容器
+
+运行测试、Lint、类型检查或构建前，按变更范围选择验证命令；涉及 Docker 的测试还须遵守 `docs/agents/testing.md` 的容器归属、清理和核验流程。测试结束时确认本次新建的测试容器已关闭。
+
+### 分支与 Worktree
+
+创建、复用或清理 Orca 工作区及 Git 分支前，按 `docs/agents/worktrees.md` 检查任务归属、现有工作区、基线与收尾条件。默认复用同一 Issue 的执行 Worktree；只有隔离或并行确有需要时才新建。
 
 ### 冲突规则
 
@@ -101,6 +110,10 @@ Superpowers 负责实现阶段的 TDD 编排。
 每个任务和实现阶段最终 Review 由 Superpowers 负责。
 之后可选运行 Matt `code-review`，再做一轮 Standards + Spec Compliance 独立审查。
 Review Agent 默认应保持只读。
+
+### Open Code Review（OCR）
+
+每个产生仓库改动的 Task 完成并通过针对性验证后、标记 verified 前，由主控调用 `open-code-review` 审查该 Task 的增量：已提交改动用任务起止提交作为 `--from` / `--to`；未提交改动用 workspace 模式，并对照任务前后检查点确认本次改动全部被覆盖（若包含此前未提交改动，明确记录累计范围）。整条分支或本批次任务完成后，再从本批次原始 BASE 到当前 HEAD 审查全部已提交改动，并用 workspace 模式覆盖剩余的暂存、未暂存和未跟踪改动；不能用空的提交区间替代未提交改动审查。每次均传业务背景和 `--audience agent`，保存报告、范围、退出码、警告及跳过文件；有效的 critical/high/medium 问题修复并复审通过后才能结束任务或分支。
 
 ## 长上下文 / Context Management 策略
 

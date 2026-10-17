@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import "./preload";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   DID_NOT_HAPPEN_EVENT_TYPES,
   eventTypeFilter,

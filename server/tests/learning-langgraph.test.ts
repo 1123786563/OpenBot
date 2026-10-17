@@ -1,4 +1,8 @@
-import { expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { expect, test } from "../../tests/support/e2e-compat";
 import { HttpAgent, type RunAgentInput, type Tool } from "@ag-ui/client";
 import { lastValueFrom, toArray } from "rxjs";
 import { RemoteLearnedSkillsMiddleware } from "../src/learning/remote";
@@ -90,7 +94,7 @@ for (const framework of ["langgraph", "bot"]) {
     const child = Bun.spawn(
       [Bun.argv[0], "--no-env-file", `agent-${framework}/src/index.ts`],
       {
-        cwd: `${import.meta.dir}/../..`,
+        cwd: `${hereDir}/../..`,
         env: {
           PATH: process.env.PATH ?? "/usr/bin:/bin",
           PORT: String(port),

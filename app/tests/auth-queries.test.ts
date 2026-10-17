@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import "./preload";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { authKeys, currentUserQueryOptions } from "../src/lib/auth/queries";
 
 test("uses a stable key for the current authenticated user", () => {

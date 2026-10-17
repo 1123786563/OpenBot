@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { AgentActor, AgentProfile } from "../src/agents/profile-types";
 import { ComputerCapacityError } from "../src/computer/capacity";
 import {

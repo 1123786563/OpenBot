@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import "../../tests/preload";
+import { describe, expect, test } from "../../../tests/support/e2e-compat";
 import { readTeamBotConsent, TEAM_BOT_CONSENT_MARKER } from "./team-bots";
 
 describe("readTeamBotConsent", () => {

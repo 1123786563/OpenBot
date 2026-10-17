@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
 import { getLogger } from "../../shared/logger";
 import {

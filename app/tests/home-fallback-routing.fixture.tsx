@@ -1,4 +1,4 @@
-import { mock } from "bun:test";
+import { mock } from "../../tests/support/e2e-compat";
 import type { ReactNode } from "react";
 
 mock.module("@/components/layout/sidebar-toggle", () => ({

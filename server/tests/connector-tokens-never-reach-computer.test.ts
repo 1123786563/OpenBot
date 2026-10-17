@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { environmentFor } from "../../supervisor/src/environment";
@@ -11,7 +15,7 @@ import { environmentFor } from "../../supervisor/src/environment";
  * store. And at the one place a computer's environment is built: the supervisor forwards a fixed
  * list, so a deployment's secrets stay behind however many of them the server's own environment has.
  */
-const root = join(import.meta.dir, "..", "..");
+const root = join(hereDir, "..", "..");
 
 async function sources(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });

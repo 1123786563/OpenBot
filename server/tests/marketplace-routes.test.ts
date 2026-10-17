@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { Hono } from "hono";
 import { createMarketplaceRoutes } from "../src/marketplace/routes";
 import type { MarketplaceStore } from "../src/marketplace/store";

@@ -1,8 +1,12 @@
-import { expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { expect, test } from "./support/e2e-compat";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const fintechDirectory = join(import.meta.dir, "..", "examples", "fintech");
+const fintechDirectory = join(hereDir, "..", "examples", "fintech");
 
 test("includes the complete fintech deployment package example", () => {
   for (const fileName of [

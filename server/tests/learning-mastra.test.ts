@@ -1,13 +1,17 @@
-import { expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { expect, test } from "../../tests/support/e2e-compat";
 import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 function setupIsolatedHarnessFixture(fixtureDir: string) {
-  const serverNodeModules = resolve(import.meta.dir, "../node_modules");
-  const agentMastraSource = resolve(import.meta.dir, "../../agent-mastra");
-  const sharedSource = resolve(import.meta.dir, "../../shared");
+  const serverNodeModules = resolve(hereDir, "../node_modules");
+  const agentMastraSource = resolve(hereDir, "../../agent-mastra");
+  const sharedSource = resolve(hereDir, "../../shared");
   symlinkSync(serverNodeModules, join(fixtureDir, "node_modules"), "dir");
   cpSync(agentMastraSource, join(fixtureDir, "agent-mastra"), {
     recursive: true,
@@ -116,7 +120,7 @@ test("Mastra's maintained AG-UI bridge consumes the catalog and both learned too
     import { getLocalAgents } from "@ag-ui/mastra";
     import { lastValueFrom, toArray } from "rxjs";
     import { mastra } from "./agent-mastra/src/mastra/index.ts";
-    import { RemoteLearnedSkillsMiddleware } from "${pathToFileURL(resolve(import.meta.dir, "../src/learning/remote.ts")).href}";
+    import { RemoteLearnedSkillsMiddleware } from "${pathToFileURL(resolve(hereDir, "../src/learning/remote.ts")).href}";
     const tools = ["copilotkit_load_skill", "copilotkit_read_skill_file"].map(name => ({
       name, description: "Read learned guidance", parameters: {
         type: "object", properties: { skill_name: { type: "string" }, path: { type: "string" } }, required: ["skill_name"]
