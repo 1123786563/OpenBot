@@ -799,9 +799,11 @@ const enterpriseCapabilities = await (async () => {
         });
         return actor ? { actorId: actor.id, entrypoint: "web" } : null;
       },
-      selectTenant: (request) => request.headers.get("x-openbot-tenant-id"),
+      // MT005 ruling #1: selection headers are x-openbot-tenant and
+      // x-openbot-workspace. They only select; database membership decides.
+      selectTenant: (request) => request.headers.get("x-openbot-tenant"),
       selectWorkspace: (request) =>
-        request.headers.get("x-openbot-workspace-id"),
+        request.headers.get("x-openbot-workspace"),
     });
     return {
       data,

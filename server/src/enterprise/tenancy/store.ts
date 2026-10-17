@@ -11,6 +11,7 @@ import {
   enterpriseResourceGrants,
   enterpriseResources,
   enterpriseTenants,
+  enterpriseWorkspaceMemberships,
   enterpriseWorkspaces,
 } from "../../db/schema/enterprise-tenancy";
 import { createAuthz } from "../authz/service";
@@ -91,14 +92,19 @@ export function createScopeResolver(
       );
       const tenantId = options.selectTenant?.(request);
       const workspaceId = options.selectWorkspace?.(request);
-      if (!tenantId || !workspaceId) throw new Error("TENANT_REQUIRED");
+      // MT005 (issue #48): selectors are required and explicitly rejected when
+      // missing — never defaulted to a first team or a default company, and
+      // the two failure modes get distinct codes (was: TENANT_REQUIRED for
+      // both, the dual meaning the seam report flags).
+      if (!tenantId?.trim()) throw new Error("TENANT_REQUIRED");
+      if (!workspaceId?.trim()) throw new Error("WORKSPACE_REQUIRED");
 
       const scope = await database.transaction(async (tx) => {
         await tx.execute(sql`set transaction isolation level read committed`);
         await tx.execute(sql`set local lock_timeout = '2s'`);
         await tx.execute(sql`set local statement_timeout = '5s'`);
         await tx.execute(
-          sql`select set_config('app.user_id', ${identity.actorId}, true), set_config('app.tenant_id', ${tenantId}, true)`,
+          sql`select set_config('app.user_id', ${identity.actorId}, true), set_config('app.tenant_id', ${tenantId}, true), set_config('app.workspace_id', ${workspaceId}, true)`,
         );
         const [member] = await tx
           .select({
@@ -131,6 +137,28 @@ export function createScopeResolver(
           member.memberStatus !== "active"
         ) {
           throw new Error("TENANT_FORBIDDEN");
+        }
+        // MT005 (issue #48): team eligibility. The selected workspace must
+        // carry an active workspace-membership row for this principal — the
+        // server-side fact, not the header value, decides (acceptance 3/4/5).
+        // A missing row, a suspended row, and a nonexistent workspace are
+        // deliberately indistinguishable here: no existence leak.
+        const [teamMembership] = await tx
+          .select({ status: enterpriseWorkspaceMemberships.status })
+          .from(enterpriseWorkspaceMemberships)
+          .where(
+            and(
+              eq(enterpriseWorkspaceMemberships.tenantId, tenantId),
+              eq(enterpriseWorkspaceMemberships.workspaceId, workspaceId),
+              eq(
+                enterpriseWorkspaceMemberships.principalId,
+                member.principalId,
+              ),
+            ),
+          )
+          .limit(1);
+        if (teamMembership?.status !== "active") {
+          throw new Error("WORKSPACE_FORBIDDEN");
         }
         return Object.freeze({
           tenantId,
