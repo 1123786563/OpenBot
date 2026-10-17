@@ -13,6 +13,7 @@ export * from "./credit-reservations";
 export * from "./credits";
 export * from "./defaults";
 export * from "./delivery";
+export * from "./gateway";
 export * from "./demonstrations";
 export * from "./enterprise-conversations";
 export * from "./enterprise-expert-versions";
