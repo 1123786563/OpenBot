@@ -1,0 +1,14 @@
+--- /Users/wuyongjun/orca/workspaces/OpenBot/i6-mt003-fix2/server/tests/multitenancy/migration-tool.test.ts	2026-10-16 00:52:58
++++ server/tests/multitenancy/migration-tool.test.ts	2026-10-16 01:30:40
+@@ -341,7 +341,10 @@
+ 
+ describe("issue #46 criterion 3: deterministic names and increasing numbers", () => {
+   test("the allowlist is exactly the registry and the shipped self-check task", () => {
+-    expect(ALLOWED_TASK_IDS).toEqual(["MT000"]);
++    // MT004 裁决（coordinator，MT004 执行期窄例外）：注册表随 MT004 追加条目
++    // 是工具自身声明的契约演进（“后续 Ticket 在注册表中追加自己的任务条目”），
++    // 本穷举断言随之最小更新；除此之外本文件保持 MT003 原样只读。
++    expect(ALLOWED_TASK_IDS).toEqual(["MT000", "MT004"]);
+     expect(new Set(ALLOWED_TASK_IDS)).toEqual(new Set(TASKS.keys()));
+     const selfCheck = TASKS.get("MT000");
+     expect(selfCheck?.description).toContain("非业务迁移");
