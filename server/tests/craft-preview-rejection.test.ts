@@ -319,6 +319,36 @@ describe("逐条拒绝: every refusal answers its status with a displayable, cre
     expect(replay.headers.get("set-cookie")).toBeNull();
   });
 
+  test("fix-ocr28 #6: the redemption 401 answers the iframe's dual shape — a browser-shape caller gets the readable page, not bare JSON", async () => {
+    // The ticket-invalid 401 was this file's one refusal outside the
+    // refuseResponse family: an iframe re-navigating to the spent entry URL
+    // (the ticket already consumed by the first hop) landed on raw JSON.
+    // The dual shape is the family's discipline (fix-ocr27 #7's no-store
+    // stays: refuseResponse answers no-store in both branches).
+    const { origin, address, ticket } = entryCase();
+    // Burn the ticket once — the second redemption is the 401 under test.
+    const first = await origin.handlePreviewRequest(
+      SESSION_A,
+      redeemRequest(address, ticket),
+    );
+    expect(first.status).toBe(302);
+
+    const replay = await origin.handlePreviewRequest(
+      SESSION_A,
+      new Request(`${address}?ticket=${encodeURIComponent(ticket)}`, {
+        headers: { accept: "text/html,application/xhtml+xml" },
+      }),
+    );
+    expect(replay.status).toBe(401);
+    expect(replay.headers.get("content-type")).toContain("text/html");
+    expect(replay.headers.get("cache-control")).toBe("no-store");
+    const page = await replay.text();
+    expect(page).toContain("<!");
+    // The sentence renders on the page; the ticket never does.
+    expect(page).toContain("preview ticket is invalid");
+    expect(page).not.toContain(ticket);
+  });
+
   test("跨会话票 — session A's ticket on session B's host → 401; the attempt burns it; B's own ticket still works", async () => {
     const { tickets, origin, address, ticket } = entryCase();
     const addressB = origin.originFor(SESSION_B); // registers B's label
