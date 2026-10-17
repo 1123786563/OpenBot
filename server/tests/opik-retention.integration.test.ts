@@ -1,6 +1,6 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import postgres from "postgres";
 import { createRunBindingStore } from "../src/ai-observability/bindings";
 import type { OpikConfig } from "../src/ai-observability/config";
@@ -30,6 +30,8 @@ import {
   aiObservationDatasets,
   aiObservationDatasetVersions,
 } from "../src/db/schema/ai-observability-datasets";
+import { aiObservationExecutionCaseOutcomes } from "../src/db/schema/ai-observability-execution-case-outcomes";
+import { aiObservationExperimentExecutions } from "../src/db/schema/ai-observability-executions";
 import { aiObservationExperiments } from "../src/db/schema/ai-observability-experiments";
 import { aiObservationExportJobs } from "../src/db/schema/ai-observability-exports";
 import {
@@ -297,6 +299,18 @@ afterEach(async () => {
   await database
     .delete(aiObservationBindings)
     .where(eq(aiObservationBindings.scopeKey, scopeB.key));
+  // Executions before experiments: an execution's foreign key pins its experiment
+  // (fix2 R3), the table ships no delete guard, and the case outcomes follow by
+  // their own cascade. Without this the experiments cleanup below would refuse on
+  // exactly the pin the settled-execution test proves gone.
+  await database
+    .delete(aiObservationExperimentExecutions)
+    .where(
+      inArray(aiObservationExperimentExecutions.scopeKey, [
+        scopeA.key,
+        scopeB.key,
+      ]),
+    );
   // Experiments first (their foreign key pins versions), then datasets: the guards
   // refuse every other route, this suite's own cleanup included, so the cleanup
   // runs through the same channels the tests are about. The dataset flag's cascade
@@ -742,6 +756,134 @@ test("experiment deletion uses the 0126 experiment_cleanup channel; a live datas
       .where(eq(aiObservationExperiments.id, guardExperiment)),
   );
   expect(refused.code).toBe("23001");
+});
+
+test("an experiment with settled executions deletes cleanly: the executions and their case outcomes go with it, and the pinned version is reclaimable (OCR h2, fix2 R3)", async () => {
+  const { dataset, version } = await datasetStore.saveVersion(scopeA, {
+    datasetName: `t35-exec-ds-${randomUUID()}`,
+    cases: [oneCase(`run-${randomUUID()}`)],
+  });
+  const experimentId = randomUUID();
+  await database.insert(aiObservationExperiments).values({
+    id: experimentId,
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    name: `t35-exec-exp-${randomUUID()}`,
+    datasetVersionId: version.id,
+    datasetContentHash: version.contentHash,
+    config: {},
+    state: "draft",
+    createdAt: sql`now() - interval '40 days'`,
+  });
+  // One settled execution with two recorded case outcomes: the shape that used to
+  // pin its experiment forever, because nothing anywhere deleted execution rows.
+  const executionId = randomUUID();
+  await database.insert(aiObservationExperimentExecutions).values({
+    id: executionId,
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    experimentId,
+    experimentConfigHash: "hash-t35-exec",
+    state: "completed",
+    caseCount: 2,
+    result: { summary: "2 cases, 1 passed" },
+    startedAt: new Date(),
+    settledAt: new Date(),
+  });
+  await database.insert(aiObservationExecutionCaseOutcomes).values([
+    {
+      executionId,
+      caseIndex: 0,
+      status: "completed",
+      detail: { verdict: "pass" },
+    },
+    {
+      executionId,
+      caseIndex: 1,
+      status: "failed",
+      detail: { verdict: "fail" },
+    },
+  ]);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_experiment_executions where experiment_id = ${experimentId}`,
+  ).toEqual([{ n: 1 }]);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_execution_case_outcomes where execution_id = ${executionId}`,
+  ).toEqual([{ n: 2 }]);
+
+  await workerFor().sweep();
+
+  const record = (await deletionsFor(scopeA)).find(
+    (r) => r.kind === "experiment",
+  );
+  expect(record?.state).toBe("deleted");
+  expect(record?.lastError).toBeNull();
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_experiments where id = ${experimentId}`,
+  ).toEqual([{ n: 0 }]);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_experiment_executions where experiment_id = ${experimentId}`,
+  ).toEqual([{ n: 0 }]);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_execution_case_outcomes where execution_id = ${executionId}`,
+  ).toEqual([{ n: 0 }]);
+
+  // With the experiment gone, nothing pins the version anymore: the dataset's own
+  // 0124 channel takes the row, and the version's cascade follows it.
+  await fresh.begin(async (tx) => {
+    await tx`select set_config('ai_observation.dataset_cleanup', 'on', true)`;
+    await tx`delete from ai_observation_datasets where id = ${dataset.id}`;
+  });
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_dataset_versions where id = ${version.id}`,
+  ).toEqual([{ n: 0 }]);
+});
+
+test("a still-running execution refuses its experiment's retention deletion; the row stays with its worker (OCR h2 guard, fix2 R3)", async () => {
+  const { version } = await datasetStore.saveVersion(scopeA, {
+    datasetName: `t35-live-ds-${randomUUID()}`,
+    cases: [oneCase(`run-${randomUUID()}`)],
+  });
+  const experimentId = randomUUID();
+  await database.insert(aiObservationExperiments).values({
+    id: experimentId,
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    name: `t35-live-exp-${randomUUID()}`,
+    datasetVersionId: version.id,
+    datasetContentHash: version.contentHash,
+    config: {},
+    state: "draft",
+    createdAt: sql`now() - interval '40 days'`,
+  });
+  await database.insert(aiObservationExperimentExecutions).values({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    experimentId,
+    experimentConfigHash: "hash-t35-live",
+    state: "running",
+  });
+
+  await workerFor().sweep();
+
+  const record = (await deletionsFor(scopeA)).find(
+    (r) => r.kind === "experiment",
+  );
+  expect(record?.state).toBe("failed");
+  expect(record?.lastError).toBe("RETENTION_TARGET_PINNED");
+  // The running execution's row stays — its worker owns it — and it is exactly
+  // what keeps the experiment (and through it the version) pinned for now.
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_experiment_executions where experiment_id = ${experimentId}`,
+  ).toEqual([{ n: 1 }]);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_experiments where id = ${experimentId}`,
+  ).toEqual([{ n: 1 }]);
 });
 
 test("a binding whose lease lapsed while still running flips to unknown, never discovered mid-run (OCR m85)", async () => {
