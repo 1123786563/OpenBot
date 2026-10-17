@@ -53,6 +53,7 @@ import {
   createOpenMuseTemplateRevisionStore,
   createOpenMuseTemplateStore,
 } from "./agents/openmuse-template-store";
+import { canManageAgent } from "./agents/profile-policy";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
@@ -61,6 +62,10 @@ import {
   createWakeUpStore,
   wakeUpTools,
 } from "./agents/wake-up";
+import type { BotManagementCheck } from "./ai-observability/context";
+import { opikConfigFromEnv } from "./ai-observability/config";
+import { createOpikHealthService } from "./ai-observability/health";
+import { createAiObservabilityRoutes } from "./ai-observability/routes";
 import { createApp, createDeploymentRequireUser } from "./app";
 import { createApprovedActionExecutor } from "./approvals/execute";
 import {
@@ -4776,6 +4781,31 @@ const openMuseOpsSignals = createOpenMuseOpsSignalsRoutes({
   requireUser: openMuseGoogleGuard,
 });
 
+/**
+ * Observation authorization is the MANAGE question, not the chat question: `canAccessAgent`
+ * says yes for a public Bot, and public chat access must not become access to another
+ * creator's traces. The profile is returned rather than a boolean so readers act on the same
+ * row the decision was made on.
+ */
+const aiObservabilityCanManageBot: BotManagementCheck = async (
+  actor,
+  botId,
+) => {
+  const profile = await agentProfileStore.get(actor, botId).catch(() => null);
+  return profile && canManageAgent(actor, profile) ? profile : null;
+};
+
+const aiObservability = createAiObservabilityRoutes({
+  requireUser: createDeploymentRequireUser(config, auth, roleRepository),
+  canManageBot: aiObservabilityCanManageBot,
+  // Until a verified capability is wired by its owning task, health reports the
+  // truthful capability_missing state; it never creates an unverified HTTP path.
+  healthService: createOpikHealthService({
+    config: () => opikConfigFromEnv(process.env),
+    port: null,
+  }),
+});
+
 /*
  * The OpenMuse private Goal seam (P01, contracts §7): owner CRUD at
  * /api/mobile/openmuse-goals. The Bot-facing read-only lookup
@@ -5205,6 +5235,7 @@ const app = createApp(
     },
     activity: openMuseActivity,
     opsSignals: openMuseOpsSignals,
+    aiObservability,
   },
   identityStore,
   identityGithubCallback,
