@@ -165,8 +165,11 @@ function syncStateFromRow(row: {
   return {
     lastSuccessfulSyncAt: row.lastSuccessfulSyncAt?.toISOString() ?? null,
     consecutiveFailures: row.consecutiveFailures,
-    // The CHECK admits only the two layers' codes; anything else is a
-    // tampered row and reads as the honest null, never as a made-up reason.
+    // The reason code is stored as written and read back as the union — the
+    // column carries no enum CHECK of its own, so this cast is the reader
+    // trusting the writer: only this module's two layers' fixed codes are
+    // ever recorded, and nothing here invents a reason for one it does not
+    // recognize.
     lastFailureReasonCode:
       row.lastFailureReasonCode as CatalogSyncFailureReasonCode | null,
     lastFailureAt: row.lastFailureAt?.toISOString() ?? null,
