@@ -73,6 +73,11 @@ describe("server authorization", () => {
         // No store was passed, so this deployment tracks no onboarding and the app gates nobody.
         onboarding: null,
       },
+      /*
+       * b624ce30 taught /api/me to carry the deployment's single-user flag so the app can drop
+       * UI that presumes a session. This deployment signs real users in, so it is false.
+       */
+      singleUser: false,
     });
   });
 

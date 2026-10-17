@@ -313,6 +313,11 @@ describe("deployment configuration", () => {
       // Nothing set, so no opinion and everybody is admitted: the shape a deployment that has not
       // heard of SIGNIN_ALLOWED_EMAIL_DOMAINS has, which is every deployment running today.
       allowedEmailDomains: [],
+      /*
+       * 30a04b85 added the email-password switch to config.auth (off unless a deployment asks
+       * for it); this deployment signs in through Google, so the mobile surface stays closed.
+       */
+      emailPassword: false,
     });
   });
 

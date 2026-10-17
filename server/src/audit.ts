@@ -387,69 +387,39 @@ export const auditEventTypes = [
   /*
    * The workshop: one person's working session with a Bot, its turns, its files and its products.
    *
-   * The session and turn events are the workshop's spine, recorded the way every other family
-   * here is: both outcomes, always. `turn_stale_recovered` is the one worth its own name — a
-   * runner that died mid-turn leaves a turn that will never finish, and without this row the
-   * only trace of the recovery is a status that quietly changed while nobody was watching.
+   * The turn events are the workshop's spine, recorded the way every other family here is: both
+   * outcomes, always. `turn_stale_recovered` is the one worth its own name — a runner that died
+   * mid-turn leaves a turn that will never finish, and without this row the only trace of the
+   * recovery is a status that quietly changed while nobody was watching.
    *
-   * `file_upload_refused` and the preview refusals follow the rule the rest of this trail holds:
-   * what was refused is more worth knowing than what succeeded, because the refusals are the
-   * decisions, and the successes merely followed them.
+   * `file_upload_refused` follows the rule the rest of this trail holds: what was refused is more
+   * worth knowing than what succeeded, because the refusals are the decisions, and the successes
+   * merely followed them.
+   *
+   * B7 (e0a8192d) registered this family ahead of its writers, which broke the rule this taxonomy
+   * answers to (#540): a name here is a promise this deployment can produce that row. The names
+   * whose writers never landed — session lifecycle, snapshots, preview and dev-server rows, share
+   * access, fanout degradation — were trimmed in #399 and return with the code that writes them.
    */
-  "workshop.session_created",
-  "workshop.session_archived",
   "workshop.turn_started",
   "workshop.turn_completed",
   "workshop.turn_failed",
   "workshop.turn_cancelled",
   "workshop.turn_stale_recovered",
-  "workshop.artifact_downloaded",
   "workshop.file_uploaded",
   "workshop.file_upload_refused",
-  "workshop.sandbox_reset",
-  "workshop.preview_accessed",
-  "workshop.snapshot_created",
-  "workshop.snapshot_restored",
   /*
-   * Public shares of a workshop session (plan §3.7). The share rows answer the questions a
-   * shared URL raises: who opened this to the world, who reached it, and who was turned away.
-   *
-   * `share_accessed` and `share_access_refused` carry the token's hash prefix, never the token —
-   * the same "no plaintext" rule the credential rows hold. Refused is written for every miss,
-   * revoked link and expired link alike, and the response those callers get does not distinguish
-   * the reasons: only this row does, which is exactly why the row exists.
-   *
-   * `share_expired` is the sweep noticing time ran out on a link, so a share that stopped working
-   * yesterday is distinguishable from one that was taken away.
+   * Public shares of a workshop session (plan §3.7): who opened this to the world and who closed
+   * it. The access/refusal/expiry rows that §3.7 also planned answer questions a link nobody
+   * reaches does not raise, so they wait for the writer that records the reach.
    */
   "workshop.share_created",
   "workshop.share_revoked",
-  "workshop.share_accessed",
-  "workshop.share_access_refused",
-  "workshop.share_expired",
-  "workshop.share_reported",
-  /*
-   * Previews of what a workshop turn built: the static build, the dev server behind it, and the
-   * WebSocket an HMR connection upgrades to. Each refusal is its own row because the refusals
-   * have different authors — a policy that said no, an origin that was never allow-listed, a
-   * capacity limit that was full — and a count that merges them answers none of the three
-   * questions.
-   */
-  "workshop.preview_started",
-  "workshop.preview_refused",
-  "workshop.preview_ws_upgraded",
-  "workshop.preview_ws_refused",
-  "workshop.devserver_started",
-  "workshop.devserver_stopped",
-  "workshop.devserver_capacity_refused",
   /*
    * The workshop's own infrastructure, made audible. A lock that could not be reached means a
-   * turn was refused rather than run twice; a fan-out that degraded to polling means the page
-   * still works and the trail is the only place that says why it got slower. Neither leaves any
-   * other trace anywhere.
+   * turn was refused rather than run twice; it leaves no other trace anywhere.
    */
   "workshop.lock_unavailable",
-  "workshop.fanout_degraded",
   /*
    * Scheduled workshop turns (plan v2.1, D4). A schedule is a standing instruction to spend a
    * person's Bot on their behalf, which is precisely the kind of thing the trail exists for:
