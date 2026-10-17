@@ -12,6 +12,10 @@ import errors from "../../locales/en/errors.json";
 import knowledge from "../../locales/en/knowledge.json";
 import market from "../../locales/en/market.json";
 import nav from "../../locales/en/nav.json";
+import obsAdmin from "../../locales/en/obs-admin.json";
+import obsDatasets from "../../locales/en/obs-datasets.json";
+import obsEvaluations from "../../locales/en/obs-evaluations.json";
+import obsRuns from "../../locales/en/obs-runs.json";
 import routines from "../../locales/en/routines.json";
 import settings from "../../locales/en/settings.json";
 import skills from "../../locales/en/skills.json";
@@ -28,6 +32,10 @@ import zhErrors from "../../locales/zh-CN/errors.json";
 import zhKnowledge from "../../locales/zh-CN/knowledge.json";
 import zhMarket from "../../locales/zh-CN/market.json";
 import zhNav from "../../locales/zh-CN/nav.json";
+import zhObsAdmin from "../../locales/zh-CN/obs-admin.json";
+import zhObsDatasets from "../../locales/zh-CN/obs-datasets.json";
+import zhObsEvaluations from "../../locales/zh-CN/obs-evaluations.json";
+import zhObsRuns from "../../locales/zh-CN/obs-runs.json";
 import zhRoutines from "../../locales/zh-CN/routines.json";
 import zhSettings from "../../locales/zh-CN/settings.json";
 import zhSkills from "../../locales/zh-CN/skills.json";
@@ -57,6 +65,12 @@ export const NAMESPACES = [
   "tenant",
   "workshop",
   "craft",
+  // Observability chains, prefixed obs- so they own their files and never touch — or collide
+  // with — the shared namespaces above. See docs/plans/2026-10-15-opik-t02-observability-i18n-routes.md.
+  "obs-runs",
+  "obs-datasets",
+  "obs-evaluations",
+  "obs-admin",
 ] as const;
 
 export type Namespace = (typeof NAMESPACES)[number];
@@ -118,6 +132,10 @@ void i18next
         errors,
         tenant,
         craft,
+        "obs-runs": obsRuns,
+        "obs-datasets": obsDatasets,
+        "obs-evaluations": obsEvaluations,
+        "obs-admin": obsAdmin,
       },
       "zh-CN": {
         common: zhCommon,
@@ -136,6 +154,10 @@ void i18next
         errors: zhErrors,
         tenant: zhTenant,
         craft: zhCraft,
+        "obs-runs": zhObsRuns,
+        "obs-datasets": zhObsDatasets,
+        "obs-evaluations": zhObsEvaluations,
+        "obs-admin": zhObsAdmin,
       },
     },
     fallbackLng: FALLBACK_LANGUAGE,
