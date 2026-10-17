@@ -358,13 +358,12 @@ test("the two scopes over the SAME bot id never see each other's rows", async ()
   });
   // The window holds one trace bound under scope A, one unbound trace, and
   // one trace that belongs to scope B — which under A's key is simply another
-  // record this scope never bound.
-  expect(bot.runs.unboundUpstream).toBe(2);
-  // Missing usage is counted, never zeroed: one row reported, two did not.
-  expect(bot.runs.usage).toEqual({
-    providerReported: 1,
-    unavailable: 2,
-  });
+  // record this scope never bound. The windowed summary cannot claim those
+  // all-time counts under its filter (OCR R3-29), so the isolation semantics
+  // are read under the open window below.
+  expect(bot.runs.unboundUpstream).toBe(null);
+  expect(bot.runs.usage).toBe(null);
+  expect(bot.runs.upstreamTruncated).toBe(false);
   expect(bot.experiments).toEqual({ draft: 1, frozen: 0 });
   expect(bot.exports.byState.completed).toBe(1);
   expect(bot.collection.lastCollectedAt).not.toBe(null);
@@ -372,6 +371,14 @@ test("the two scopes over the SAME bot id never see each other's rows", async ()
   // No business content rides along: run ids and trace ids stay behind.
   expect(JSON.stringify(body)).not.toContain("run-1");
   expect(JSON.stringify(body)).not.toContain(boundA);
+
+  // The open window answers the upstream half exactly: scope B's trace is an
+  // unbound record under A's key, and missing usage is counted, never zeroed.
+  const open = await app.request(`http://openbot.test/admin/summary?botId=${botId}`);
+  expect(open.status).toBe(200);
+  const openBot = (await open.json()).bots[0];
+  expect(openBot.runs.unboundUpstream).toBe(2);
+  expect(openBot.runs.usage).toEqual({ providerReported: 1, unavailable: 2 });
 });
 
 test("the same bot id under scope B answers B's own aggregate", async () => {
@@ -387,9 +394,15 @@ test("the same bot id under scope B answers B's own aggregate", async () => {
   const bot = (await response.json()).bots[0];
   expect(bot.runs.total).toBe(2);
   expect(bot.runs.byState.completed).toBe(1);
-  // An empty upstream window is a truthful zero, not a disguise.
-  expect(bot.runs.unboundUpstream).toBe(0);
-  expect(bot.runs.usage).toEqual({ providerReported: 0, unavailable: 0 });
+  // The windowed summary cannot claim the upstream half under its filter
+  // (OCR R3-29); the open window answers it, and an empty project is a
+  // truthful zero, not a disguise.
+  expect(bot.runs.unboundUpstream).toBe(null);
+  expect(bot.runs.usage).toBe(null);
+  const open = await app.request(`http://openbot.test/admin/summary?botId=${botId}`);
+  const openBot = (await open.json()).bots[0];
+  expect(openBot.runs.unboundUpstream).toBe(0);
+  expect(openBot.runs.usage).toEqual({ providerReported: 0, unavailable: 0 });
 });
 
 test("a stranger gets the unified not-found and no aggregate", async () => {
@@ -691,6 +704,154 @@ test("upstream counts a single window cannot cover carry the truncated flag (R2-
   });
   expect(small.bots[0].runs.upstreamTruncated).toBe(false);
   expect(small.bots[0].runs.unboundUpstream).toBe(4);
+});
+
+test("a time window the upstream half cannot honor leaves its counts unknown (OCR R3-29)", async () => {
+  // The window's own contract says it is "the time filter every aggregate
+  // honors", and the local aggregates do filter by it — but the port's listing
+  // signature carries no time parameters at all, so the per-row upstream counts
+  // are all-time facts. Answering them beside window-filtered local counts
+  // would silently ignore the filter the response's `window` field announces;
+  // they stay null beside the flag false (unknown), while the listing still
+  // answers what is window-invariant: the collection freshness.
+  const scope = resolveObservationScope({
+    actorId: `t33-r329-${run}`,
+    botId,
+    ownership: "owner",
+    epoch: 1,
+  });
+  await database.insert(aiObservationBindings).values({
+    id: `t33-r329-${run}-b1`,
+    scopeKey: scope.key,
+    actorId: scope.actorId,
+    botId,
+    runId: `t33-r329-${run}-run-1`,
+    attemptId: "attempt-1",
+    traceId: `otel-r329-${run}-1`,
+    opikTraceId: `opik-r329-${run}-reconciled`,
+    locatorWorkspace: "ws",
+    locatorProject: "proj",
+    capability: "basic",
+    state: "completed",
+    expiresAt: new Date(Date.now() + 86_400_000),
+  });
+  try {
+    const rows = [
+      traceRow(`opik-r329-${run}-1`),
+      traceRow(`opik-r329-${run}-2`, { usage: undefined }),
+    ];
+    const port = fakePort(rows, true);
+    const service = createAdminSummaryService({
+      database,
+      config: () => enabledConfig,
+      port,
+      healthService: createOpikHealthService({
+        config: () => enabledConfig,
+        port,
+      }),
+    });
+    const windowed = await service.summarize({
+      scopes: [scope],
+      window: { from: new Date("2026-01-01T00:00:00.000Z"), to: null },
+      botId,
+    });
+    const bot = windowed.bots[0];
+    expect(bot.runs.unboundUpstream).toBe(null);
+    expect(bot.runs.usage).toBe(null);
+    expect(bot.runs.upstreamTruncated).toBe(false);
+    // The window-scoped evidence still answers: the local aggregates honor the
+    // window (the seeded row is in it), and the listing still backs the
+    // window-invariant collection freshness.
+    expect(bot.runs.total).toBe(1);
+    expect(bot.collection.lastCollectedAt).not.toBe(null);
+
+    // The open window keeps the exact counts: nothing is filtered, so nothing
+    // is silently ignored.
+    const open = await service.summarize({
+      scopes: [scope],
+      window: { from: null, to: null },
+      botId,
+    });
+    expect(open.bots[0].runs.unboundUpstream).toBe(2);
+    expect(open.bots[0].runs.usage).toEqual({
+      providerReported: 1,
+      unavailable: 1,
+    });
+  } finally {
+    await database
+      .delete(aiObservationBindings)
+      .where(eq(aiObservationBindings.scopeKey, scope.key));
+  }
+});
+
+test("a listing that answered but whose local read-back fails stays null beside the flag false (OCR R3-24)", async () => {
+  // The T11 flag was set the moment listTraces answered; the binding read-back
+  // that turns rows into the unbound count runs after it and can fail. The
+  // catch rolled the counts back to null but left the flag true — the
+  // "null beside the flag true" combination the field contract forbids: null
+  // already says unknown, and the app renders the flag as "a truncated
+  // partial count", which over a count that does not exist is a lie.
+  const scope = resolveObservationScope({
+    actorId: `t33-r324-${run}`,
+    botId,
+    ownership: "owner",
+    epoch: 1,
+  });
+  const base = fakePort([traceRow(`opik-r324-${run}-1`)], true);
+  // The project is bigger than the one window (R2-46), so the flag is set true
+  // the moment the listing answers — the exact state the later read-back must
+  // roll back together with the counts.
+  const port: OpikPort = {
+    ...base,
+    listTraces: async (...args: Parameters<OpikPort["listTraces"]>) => {
+      upstreamAnswered = true;
+      const page = await base.listTraces(...args);
+      if (page.outcome !== "ok") return page;
+      return {
+        outcome: "ok" as const,
+        value: { ...page.value, total: page.value.total + 8 },
+      };
+    },
+  };
+  // The breaker: once the listing has answered, the binding read-back explodes —
+  // the exact window R3-24 names (the count's own inputs fail after the listing).
+  let upstreamAnswered = false;
+  const breakingDatabase = new Proxy(database, {
+    get(target, prop, receiver) {
+      if (prop !== "select") return Reflect.get(target, prop, receiver);
+      return (...args: unknown[]) => {
+        const builder = (
+          target.select as unknown as (...a: unknown[]) => { from: (t: unknown) => unknown }
+        )(...args);
+        const originalFrom = builder.from.bind(builder);
+        builder.from = (table: unknown) => {
+          if (upstreamAnswered && table === aiObservationBindings) {
+            throw new Error("binding read-back exploded (R3-24 reproduction)");
+          }
+          return originalFrom(table);
+        };
+        return builder;
+      };
+    },
+  });
+  const service = createAdminSummaryService({
+    database: breakingDatabase as typeof database,
+    config: () => enabledConfig,
+    port,
+    healthService: createOpikHealthService({
+      config: () => enabledConfig,
+      port,
+    }),
+  });
+  const summary = await service.summarize({
+    scopes: [scope],
+    window: { from: null, to: null },
+    botId,
+  });
+  const bot = summary.bots[0];
+  expect(bot.runs.unboundUpstream).toBe(null);
+  expect(bot.runs.usage).toBe(null);
+  expect(bot.runs.upstreamTruncated).toBe(false);
 });
 
 test("scope summaries run eight at a time and ask retrieveProject once per scope (R2-47)", async () => {

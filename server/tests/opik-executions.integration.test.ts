@@ -21,6 +21,7 @@ import { createAuditStore } from "../src/audit";
 import { aiObservationExperimentExecutions } from "../src/db/schema/ai-observability-executions";
 import { aiObservationRetentionDeletions } from "../src/db/schema/ai-observability-retention";
 import { workItems } from "../src/db/schema/work";
+import { createWorkQueue, type WorkQueue } from "../src/work/queue";
 import { opikTestDatabase } from "./support/opik-test-db";
 import { rejectionOf } from "./support/pg-errors";
 
@@ -496,6 +497,60 @@ test("a case runner that fails settles failed with its code, and no result", {
     state: "failed",
     errorCode: "CASE_EXECUTION_ERROR",
   });
+});
+
+test("a renewal that cannot answer is a lost lease, never a case failure (OCR R3-27)", {
+  timeout: 30_000,
+}, async () => {
+  const { experiment } = await frozenExperiment();
+  const row = await executions.enqueue(scopeA, experiment.id);
+
+  // A renew whose ANSWER is unknown — a driver or connection blip under the
+  // bare UPDATE — is not a case failure: the old catch terminalized it as
+  // CASE_EXECUTION_ERROR, burning the run on infrastructure noise with zero
+  // log of the real cause.
+  const realQueue = createWorkQueue(database);
+  let renewBroken = true;
+  const queue: WorkQueue = {
+    ...realQueue,
+    renew: async (input) => {
+      if (renewBroken) throw new Error("connection reset during renew");
+      return realQueue.renew(input);
+    },
+  };
+  const worker = createObservationExecutionWorker({
+    database,
+    audit,
+    classify,
+    runCase: async () => ({ status: "completed", output: "ok" }),
+    queue,
+    leaseMs: 150,
+    reauthorize: async ({ actorId }) =>
+      actorId === scopeA.actorId ? scopeA : null,
+    owner: `t23-r327-${randomUUID()}`,
+  });
+  await worker.sweep();
+
+  // The transient is not a settlement: the row stays running with no error
+  // code, no settle audit row exists, and the ticket is not finished under a
+  // lease nobody verified.
+  const running = await executions.get(scopeA, row.id);
+  expect(running?.state).toBe("running");
+  expect(running?.errorCode).toBeNull();
+  expect(await auditRows(row.id)).toEqual([]);
+  const ticket = await ticketOf(row.id);
+  expect(ticket?.finishedAt).toBeNull();
+
+  // The lease expires, the next sweep reclaims the ticket, and the durable
+  // markers let the resumed pass complete the run honestly.
+  await until(async () => {
+    const current = await ticketOf(row.id);
+    return (current?.leaseUntil?.getTime() ?? 0) <= Date.now();
+  }, "the broken pass's lease to lapse");
+  renewBroken = false;
+  await worker.sweep();
+  const done = await executions.get(scopeA, row.id);
+  expect(done?.state).toBe("completed");
 });
 
 test("a refused case carries its admission reason through the settle and the read", {

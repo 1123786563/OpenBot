@@ -19,6 +19,7 @@ import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { aiObservationExperimentExecutions } from "../src/db/schema/ai-observability-executions";
 import { aiObservationExperiments } from "../src/db/schema/ai-observability-experiments";
+import { aiObservationRetentionDeletions } from "../src/db/schema/ai-observability-retention";
 import { billingCustomers } from "../src/db/schema/billing";
 import { auditEvents } from "../src/db/schema/core";
 import { workItems } from "../src/db/schema/work";
@@ -372,6 +373,44 @@ describe("POST /bots/:botId/experiments — the submit face", () => {
       error: "EXPERIMENT_STATE_INVALID",
     });
     expect(first.experiment.state).toBe("frozen");
+  });
+
+  test("a submit whose only conflict is the deletion window answers 409, never the bare 500 (OCR R3-26)", async () => {
+    const version = await frozenVersion();
+    const body = {
+      name: `${prefix}-exp-r326`,
+      datasetVersionId: version.id,
+      config: CONFIG,
+    };
+    const app = mountedApp();
+    const first = await submit(app, body);
+    expect(first.status).toBe(200);
+    const { experimentId } = (await first.json()) as { experimentId: string };
+    // Retention finds the frozen experiment: the m138 readers answer empty but
+    // the unique indexes still hold, so the retry must meet the domain 409
+    // the page can render — the bare Error fall-through rode the classify
+    // rethrow into a 500.
+    await database.insert(aiObservationRetentionDeletions).values({
+      id: randomUUID(),
+      scopeKey: scopeA.key,
+      actorId: scopeA.actorId,
+      botId: scopeA.botId,
+      kind: "experiment",
+      targetId: experimentId,
+      retentionDays: 30,
+      state: "pending",
+    });
+    try {
+      const retry = await submit(app, body);
+      expect(retry.status).toBe(409);
+      expect(((await retry.json()) as { error: string }).error).toBe(
+        "EXPERIMENT_STATE_INVALID",
+      );
+    } finally {
+      await database
+        .delete(aiObservationRetentionDeletions)
+        .where(eq(aiObservationRetentionDeletions.targetId, experimentId));
+    }
   });
 
   test("a stranger is refused at the manage gate before anything else", async () => {
