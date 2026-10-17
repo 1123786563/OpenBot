@@ -1,0 +1,56 @@
+# Self-hosted Hindsight for OpenBot personal memory — deployment recipe.
+#
+# Privacy posture (spec: Hindsight personal-memory design; ADR 0005):
+#   - Fixed, verified image tag. Never `latest`.
+#   - Model calls (LLM + embeddings) leave the host ONLY via the OpenBot-approved
+#     OpenAI-compatible gateway (HINDSIGHT_API_LLM_BASE_URL / embeddings base URL).
+#   - Content-bearing LLM tracing is disabled (HINDSIGHT_API_LLM_TRACE_ENABLED=false).
+#   - Terminal operation payloads are pruned after 1 day
+#     (HINDSIGHT_API_OPERATION_RETENTION_DAYS=1).
+#   - Controlled backups keep at most 30 days (backup.sh). The retention must be
+#     declared explicitly for backup.sh — in the process environment or in the
+#     hindsight.env next to it — while OpenBot's privacy health check reads
+#     HINDSIGHT_PRIVACY_* from the OpenBot deployment environment ONLY (it never
+#     reads hindsight.env): a declaration only in hindsight.env runs the backup
+#     job but the health check still reports noncompliant. Aligning both sides
+#     is a deployment-reconciliation task (#391).
+#   - The API is published on the loopback interface only. The control-plane Web UI
+#     port (9999) is NOT published at all: neither end users nor company admins get
+#     direct API/console access; operators reach it over an SSH tunnel if ever needed.
+#
+# All runtime values come from hindsight.env (copy from hindsight.env.example and fill in).
+# Secrets referenced there can be supplied via the shell environment when running compose.
+
+services:
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:1.0.0
+    container_name: openbot-hindsight
+    restart: unless-stopped
+    shm_size: 1g
+    env_file: hindsight.env
+    ports:
+      # Loopback only: the OpenBot server on this host is the sole client.
+      - "127.0.0.1:8888:8888"
+      # No 9999 entry on purpose — the control plane stays unpublished.
+    volumes:
+      - hindsight-data:/home/hindsight/.pg0
+    networks:
+      - openbot-hindsight
+    # Linux hosts (Docker Engine >= 20.10): pin host.docker.internal to the host-gateway
+    # address so the gateway URLs in hindsight.env resolve to the host exactly as they do
+    # on Docker Desktop (macOS/Windows), which provides the name natively.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8888/health/live')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+volumes:
+  hindsight-data:
+
+networks:
+  openbot-hindsight:
+    driver: bridge

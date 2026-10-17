@@ -1708,34 +1708,38 @@ const loadPersonalMemoryForActor = (ownerUserId: string) => (botId: string) => {
   memoryDefaults.botTurn(ownerUserId, botId);
   return memoryIngestion.contextFor(ownerUserId, botId);
 };
-const memorySweep = repeatAfterEach(async () => {
+/**
+ * One memorySweep stage, run under one uniform try/catch: a failed stage is swallowed so the
+ * next sweep retries it, and the failure is logged with the same contract as the hindsight
+ * health probes — the error's name plus its message — instead of the previous mix of log.error
+ * and a bare console.error JSON dump for the same event type.
+ */
+const sweepStep = async (operation: string, fn: () => Promise<unknown>) => {
   try {
-    await memoryIngestion.syncDue();
+    await fn();
   } catch (error) {
     log.error(
       {
         type: "memory-sweep-error",
         error: error instanceof Error ? error.name : "UnknownError",
-        context: { operation: "syncDue" },
+        detail: error instanceof Error ? error.message : String(error),
+        context: { operation },
         timestamp: new Date().toISOString(),
       },
       "memory-sweep-error",
     );
   }
+};
+const memorySweep = repeatAfterEach(async () => {
+  await sweepStep("syncDue", () => memoryIngestion.syncDue());
   // Mirror to Intelligence what is out of step: the backfill on the first passes after a deployment
   // becomes entitled, and afterwards whatever an outage left behind. A no-op without Intelligence.
-  try {
-    await personalMemoryStore.mirrorPending();
-  } catch (error) {
-    console.error(
-      JSON.stringify({
-        type: "memory-sweep-error",
-        error: error instanceof Error ? error.name : "UnknownError",
-        context: { operation: "mirrorPending" },
-        timestamp: new Date().toISOString(),
-      }),
-    );
-  }
+  await sweepStep("mirrorPending", () => personalMemoryStore.mirrorPending());
+  // Candidates nobody handled for 30 days are expired with the same tombstone forgetting uses.
+  // Idempotent, so running it this often is safe and a repeat run after a crash deletes nothing more.
+  await sweepStep("expireStaleCandidates", () =>
+    personalMemoryStore.expireStaleCandidates(),
+  );
 }, 60_000);
 // Follow-ups a Bot schedules for itself, on the shared work queue. See agents/wake-up.ts.
 const wakeUpStore = createWakeUpStore(database, { auditStore: bootAuditStore });

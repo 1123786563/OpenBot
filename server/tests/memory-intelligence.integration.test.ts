@@ -367,6 +367,19 @@ test("a memory only Intelligence holds is the person's own: recalled, edited and
   expect(fake.live(ada)).toEqual([]);
 });
 
+test("an Intelligence-only memory refuses an edit into sensitive content (ocr R7)", async () => {
+  const id = fake.seed(ada, "Uses vim keybindings");
+  await expect(
+    store.update(ada, `intelligence:${id}`, {
+      content: "Diagnosed with type 2 diabetes last spring",
+    }),
+  ).rejects.toBeInstanceOf(MemoryRefusedError);
+  // Refusal, not a supersede: the mirrored copy keeps its original content.
+  expect(fake.live(ada).map((m) => m.content)).toEqual([
+    "Uses vim keybindings",
+  ]);
+});
+
 test("a memory OpenBot describes cannot be forgotten through its Intelligence id", async () => {
   const memory = await store.create(ada, { content: "Has a dog" });
   const linked = (await rowOf(memory.id))?.intelligenceMemoryId;
