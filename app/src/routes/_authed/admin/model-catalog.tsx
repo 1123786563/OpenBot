@@ -31,7 +31,11 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { useDateTime } from "@/lib/i18n/datetime";
-import { setModelScopeMutationOptions } from "@/lib/gateway/mutations";
+import {
+  type GatewayCatalogSyncResult,
+  runCatalogSyncMutationOptions,
+  setModelScopeMutationOptions,
+} from "@/lib/gateway/mutations";
 import {
   type AdminModelCatalogModel,
   gatewayModelCatalogQueryOptions,
@@ -82,6 +86,10 @@ function ModelCatalogPage() {
   const queryClient = useQueryClient();
   const catalog = useQuery(gatewayModelCatalogQueryOptions());
   const setScope = useMutation(setModelScopeMutationOptions(queryClient));
+  // The manual trigger (03.5): the same sync the server's timer runs, fired
+  // now. The outcome displayed is the server's own answer — never a verdict
+  // the page guessed.
+  const sync = useMutation(runCatalogSyncMutationOptions(queryClient));
 
   /** The model a dialog is open for, and the state being asked for. */
   const [pending, setPending] = useState<{
@@ -135,6 +143,26 @@ function ModelCatalogPage() {
       description={t("modelCatalog.description")}
       title={t("modelCatalog.title")}
     >
+      <PageSection
+        description={t("modelCatalog.sync.description")}
+        title={t("modelCatalog.sync.title")}
+      >
+        <div className="flex items-center gap-3">
+          <Button
+            disabled={sync.isPending}
+            onClick={() => sync.mutate()}
+            size="sm"
+          >
+            {sync.isPending
+              ? t("modelCatalog.sync.running")
+              : t("modelCatalog.sync.button")}
+          </Button>
+          <span className="text-muted-foreground text-sm" data-testid="catalog-sync-result">
+            {syncLine(sync.data, sync.isError, t, formatDateTime)}
+          </span>
+        </div>
+      </PageSection>
+
       <PageSection
         description={t("modelCatalog.syncHint")}
         title={t("modelCatalog.listTitle")}
@@ -254,6 +282,36 @@ function ModelCatalogPage() {
 
 function modelKey(model: AdminModelCatalogModel): string {
   return `${model.ref.provider}|${model.ref.model}|${model.ref.capability}`;
+}
+
+/**
+ * The sentence the manual sync's outcome earns: what the server answered —
+ * the synced time and snapshot counts, the failing layer's fixed reason
+ * code, or the unavailable sentence when the trigger never ran. Nothing
+ * here is a verdict the page made up.
+ */
+function syncLine(
+  data: GatewayCatalogSyncResult | undefined,
+  errored: boolean,
+  t: TFunction<"admin">,
+  formatDateTime: (value: string) => string,
+): string {
+  if (data?.status === "ok") {
+    return t("modelCatalog.sync.resultSuccess", {
+      at: formatDateTime(data.syncedAt),
+      appended: data.appended,
+      skipped: data.skipped,
+    });
+  }
+  if (data?.status === "failed") {
+    return t("modelCatalog.sync.resultFailed", {
+      reason: data.reasonCode,
+    });
+  }
+  if (errored) {
+    return t("modelCatalog.sync.resultUnavailable");
+  }
+  return "";
 }
 
 /** The price sentence: the classification, plus what is missing when it is unknown. */
