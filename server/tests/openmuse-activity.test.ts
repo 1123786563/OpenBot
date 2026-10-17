@@ -1205,7 +1205,13 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           ownerUserId: `${prefix}-owner`,
           kind: "mail",
           canonicalPayload: { subject: "Lunch" },
-          payloadHash: "ab".repeat(32),
+          // Distinct per row: the active-send dedupe index refuses a second live
+          // mail action sharing (owner, kind, payload_hash, target) with one that
+          // stands, and this test's subject is the cursor, not the dedupe.
+          payloadHash: Buffer.from(id)
+            .toString("hex")
+            .padEnd(64, "0")
+            .slice(0, 64),
           accountEmail: "owner@example.com",
           connectionGeneration: 2,
           status: "awaiting_review",

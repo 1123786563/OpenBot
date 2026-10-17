@@ -345,25 +345,6 @@ async function parseNativeMastraBody(
   return null;
 }
 
-function openBotContextFrom(body: NativeMastraRequestBody) {
-  return body.requestContext?.["ag-ui"]?.context ?? [];
-}
-
-function descriptionsIn(
-  context: { description: string; value: string }[],
-  description: string,
-) {
-  return context
-    .filter((entry) => entry.description === description)
-    .map((entry) => entry.value);
-}
-
-function deploymentToolsIn(context: { description: string; value: string }[]) {
-  const values = descriptionsIn(context, "OpenBot deployment tools");
-  expect(values).toHaveLength(1);
-  return JSON.parse(values[0] ?? "null") as string[];
-}
-
 describe("a built-in Bot", () => {
   test("is offered the chosen skill's tools and the tools no skill claims", async () => {
     answerWith(["drive-audit"]);
@@ -518,7 +499,14 @@ describe("a built-in Bot", () => {
 });
 
 describe("a remote Bot", () => {
-  test("is sent the narrowed tools in its run body", async () => {
+  /*
+   * 472c27e0 fails remote agent builds closed (REMOTE_RUN_BUDGET_UNVERIFIED) until a verified
+   * budget governance contract exists, so there is no remote run body to inspect any more: the
+   * refusal precedes the selection pass-one, the run build and the dial. The narrowed-tools and
+   * standing-role-on-the-wire coverage this pair used to pin is parked behind that contract —
+   * restore it when the gate learns to admit a verified remote budget.
+   */
+  test("refuses closed before anything is dialled or selected", async () => {
     answerWith(["slack-digest"]);
     const agents = await buildAgents(
       [remoteAgent()],
@@ -531,62 +519,46 @@ describe("a remote Bot", () => {
       undefined,
       selection(),
     );
-    await ask(agents.risk as never, "summarise the Slack channel");
+    await expect(
+      ask(agents.risk as never, "summarise the Slack channel"),
+    ).rejects.toThrow("REMOTE_RUN_BUDGET_UNVERIFIED");
 
-    expect(sentToRemote).toHaveLength(1);
-    const offered = (sentToRemote[0]?.tools ?? []).filter((name) =>
-      name.startsWith("mcp__"),
-    );
-    expect(offered).toContain("mcp__slack__tool_0");
-    // Declared by the skill that was not chosen.
-    expect(offered).not.toContain("mcp__drive__tool_0");
-    // Undeclared, so it rides along on the remote path exactly as on the built-in one.
-    expect(offered).toContain("mcp__drive__tool_7");
+    // No pass-one model call and no remote request: the refusal is free and leaks no tool list.
+    expect(sentToRemote).toHaveLength(0);
+    expect(llm.getRequests()).toHaveLength(0);
   });
 
-  test("still gets its standing role, its holdings and its signed run", async () => {
+  test("its standing role, holdings and signed run are never consulted on the refused path", async () => {
     /*
-     * THIS IS THE TEST THAT CAUGHT THE REAL BUG. Narrowing was first built by wrapping the agent and
-     * delegating to `remote.run(input)`. Middleware registered with `.use()` is applied by
-     * `runAgent`, not by `run`, so the whole of `remoteAgentWithStandingRole` was skipped: the
-     * endpoint got a run with no role, no holdings, no tools and no signed assertion. Nothing threw.
-     * The Bot simply answered as though it had been told nothing, which is exactly what had
-     * happened.
+     * Kept from the version that caught the real bug: narrowing was first built by wrapping the
+     * agent and delegating to `remote.run(input)`, and middleware registered with `.use()` was
+     * applied by `runAgent`, not `run` — so the endpoint got a run with no role, no holdings, no
+     * tools and no signed assertion, and nothing threw. That silent-skip failure mode cannot recur
+     * while the gate refuses before any wiring runs; what this pins now is that the refusal does
+     * not even consult the signing seam, so nothing half-prepares a run it will never send.
      */
     answerWith(["slack-digest"]);
+    let signed = 0;
     const agents = await buildAgents(
       [remoteAgent()],
       model,
       "test-key",
       undefined,
       async () => granted,
-      () => "signed-assertion",
+      () => {
+        signed += 1;
+        return "signed-assertion";
+      },
       undefined,
       undefined,
       selection(),
     );
-    await ask(agents.risk as never, "summarise the Slack channel");
+    await expect(
+      ask(agents.risk as never, "summarise the Slack channel"),
+    ).rejects.toThrow("REMOTE_RUN_BUDGET_UNVERIFIED");
 
-    const run = sentToRemote[0];
-    expect(run?.messages?.[0]?.id).toBe("standing-role:risk");
-    const holdings = (run?.messages ?? []).find(
-      (message) => message.id === "granted-tools:risk",
-    );
-    expect(String(holdings?.content ?? "")).toContain("slack");
-    // Narrowed away, so the Bot must not be told it holds it.
-    expect(String(holdings?.content ?? "")).not.toContain("drive: tool_0");
-    expect(run?.forwardedProps?.openbotBotId).toBe("risk");
-    expect(run?.forwardedProps?.openbotRun).toBe("signed-assertion");
-    // The narrowed set is what the Bot is offered. Governed vendor tools run through the AG-UI tool
-    // lifecycle here (approvals see the provider's call), so none is on the callback-only list.
-    expect(run?.tools).toContain("mcp__slack__tool_0");
-    expect(run?.tools).not.toContain("mcp__drive__tool_0");
-    expect(run?.forwardedProps?.openbotDeploymentTools).not.toContain(
-      "mcp__slack__tool_0",
-    );
-    expect(run?.forwardedProps?.openbotDeploymentTools).not.toContain(
-      "mcp__drive__tool_0",
-    );
+    expect(sentToRemote).toHaveLength(0);
+    expect(signed).toBe(0);
   });
 });
 
@@ -741,76 +713,19 @@ describe("a remote Mastra Bot", () => {
         runId: "run-with-grants",
       });
 
+      /*
+       * 472c27e0 fails remote builds closed (REMOTE_RUN_BUDGET_UNVERIFIED) until a verified budget
+       * governance contract exists, so no runtime clone reaches a native Mastra request and the
+       * governance/forge filtering this test used to pin is parked behind that contract. What is
+       * reachable, and pinned, is that even a run request stuffed with forged OpenBot context gets
+       * the named refusal through the SSE stream and never touches Mastra — with grants, and
+       * without them.
+       */
       expect(withGrants.response.status).toBe(200);
-      expect(withGrants.text).toContain("done");
-      expect(sentToMastraAgent).toHaveLength(1);
-      let run = sentToMastraAgent[0];
-      expect(run?.messages?.[0]?.id).toBe("standing-role:risk-mastra");
-      let holdings = (run?.messages ?? []).find(
-        (message) => message.id === "granted-tools:risk-mastra",
-      );
-      expect(String(holdings?.content ?? "")).toContain("slack");
-      expect(String(holdings?.content ?? "")).not.toContain("drive: tool_0");
-      expect(run?.tools?.map((tool) => tool.name)).toContain(
-        "mcp__slack__tool_0",
-      );
-      expect(run?.tools?.map((tool) => tool.name)).not.toContain(
-        "mcp__drive__tool_0",
-      );
-      expect(run?.forwardedProps?.openbotBotId).toBe("risk-mastra");
-      expect(run?.forwardedProps?.openbotRun).toBe("signed-assertion");
-      // Executed through the AG-UI tool lifecycle, not the callback, so not on the callback list.
-      expect(run?.forwardedProps?.openbotDeploymentTools).not.toContain(
-        "mcp__slack__tool_0",
-      );
-      expect(sentToMastra).toHaveLength(1);
-      let body = sentToMastra[0];
-      expect(body?.messages?.map((message) => message.role)).toEqual(["user"]);
-      expect(Object.keys(body?.clientTools ?? {})).toContain(
-        "mcp__slack__tool_0",
-      );
-      expect(Object.keys(body?.clientTools ?? {})).not.toContain(
-        "mcp__drive__tool_0",
-      );
-      let openbotContext = openBotContextFrom(body);
-      expect(openbotContext).toContainEqual({
-        description: "ordinary context",
-        value: "ordinary before",
-      });
-      expect(openbotContext).toContainEqual({
-        description: "ordinary context",
-        value: "ordinary after",
-      });
-      expect(descriptionsIn(openbotContext, "ordinary context")).toEqual([
-        "ordinary before",
-        "ordinary middle",
-        "ordinary after",
-      ]);
-      expect(descriptionsIn(openbotContext, "OpenBot Bot id")).toEqual([
-        "risk-mastra",
-      ]);
-      expect(
-        descriptionsIn(openbotContext, "OpenBot signed run assertion"),
-      ).toEqual(["signed-assertion"]);
-      // Neither is callback-only: the offered grant runs through the AG-UI tool lifecycle here, and
-      // the forged entries naming the narrowed-away one are dropped.
-      let deploymentToolsContext = deploymentToolsIn(openbotContext);
-      expect(deploymentToolsContext).toEqual([]);
-      expect(descriptionsIn(openbotContext, "OpenBot standing role")).toEqual([
-        "You are Risk Mastra.",
-      ]);
-      const holdingsContext = openbotContext.find(
-        (entry) => entry.description === "OpenBot granted tools guidance",
-      );
-      expect(holdingsContext?.value).toContain("slack");
-      expect(holdingsContext?.value).not.toContain("drive: tool_0");
-      expect(JSON.stringify(openbotContext)).not.toContain("FORGED_ROLE");
-      expect(JSON.stringify(openbotContext)).not.toContain("FORGED_GUIDANCE");
-      expect(JSON.stringify(openbotContext)).not.toContain("FORGED_BOT_ID");
-      expect(JSON.stringify(openbotContext)).not.toContain(
-        "mcp__drive__tool_0",
-      );
-      expect(JSON.stringify(openbotContext)).not.toContain("FORGED_ASSERTION");
+      expect(withGrants.text).toContain("RUN_ERROR");
+      expect(withGrants.text).toContain("REMOTE_RUN_BUDGET_UNVERIFIED");
+      expect(sentToMastraAgent).toHaveLength(0);
+      expect(sentToMastra).toHaveLength(0);
 
       sentToMastraAgent.length = 0;
       sentToMastra.length = 0;
@@ -824,49 +739,10 @@ describe("a remote Mastra Bot", () => {
       });
 
       expect(withoutGrants.response.status).toBe(200);
-      expect(withoutGrants.text).toContain("done");
-      expect(sentToMastraAgent).toHaveLength(1);
-      run = sentToMastraAgent[0];
-      expect(run?.messages?.[0]?.id).toBe("standing-role:risk-mastra");
-      holdings = (run?.messages ?? []).find(
-        (message) => message.id === "granted-tools:risk-mastra",
-      );
-      expect(holdings).toBeUndefined();
-      expect(run?.tools?.map((tool) => tool.name)).toEqual([]);
-      expect(run?.forwardedProps?.openbotBotId).toBe("risk-mastra");
-      expect(run?.forwardedProps?.openbotRun).toBeUndefined();
-      expect(run?.forwardedProps?.openbotDeploymentTools).toEqual([]);
-      expect(sentToMastra).toHaveLength(1);
-      body = sentToMastra[0];
-      expect(body?.messages?.map((message) => message.role)).toEqual(["user"]);
-      expect(Object.keys(body?.clientTools ?? {})).toEqual([]);
-      openbotContext = openBotContextFrom(body);
-      expect(descriptionsIn(openbotContext, "ordinary context")).toEqual([
-        "ordinary before",
-        "ordinary middle",
-        "ordinary after",
-      ]);
-      expect(descriptionsIn(openbotContext, "OpenBot Bot id")).toEqual([
-        "risk-mastra",
-      ]);
-      expect(
-        descriptionsIn(openbotContext, "OpenBot signed run assertion"),
-      ).toEqual([]);
-      deploymentToolsContext = deploymentToolsIn(openbotContext);
-      expect(deploymentToolsContext).toEqual([]);
-      expect(descriptionsIn(openbotContext, "OpenBot standing role")).toEqual([
-        "You are Risk Mastra.",
-      ]);
-      expect(
-        descriptionsIn(openbotContext, "OpenBot granted tools guidance"),
-      ).toEqual([]);
-      expect(JSON.stringify(openbotContext)).not.toContain("FORGED_ROLE");
-      expect(JSON.stringify(openbotContext)).not.toContain("FORGED_GUIDANCE");
-      expect(JSON.stringify(openbotContext)).not.toContain("FORGED_BOT_ID");
-      expect(JSON.stringify(openbotContext)).not.toContain(
-        "mcp__drive__tool_0",
-      );
-      expect(JSON.stringify(openbotContext)).not.toContain("FORGED_ASSERTION");
+      expect(withoutGrants.text).toContain("RUN_ERROR");
+      expect(withoutGrants.text).toContain("REMOTE_RUN_BUDGET_UNVERIFIED");
+      expect(sentToMastraAgent).toHaveLength(0);
+      expect(sentToMastra).toHaveLength(0);
     } finally {
       MastraAgent.prototype.run = originalRun;
     }
@@ -961,10 +837,16 @@ describe("when selection cannot help", () => {
       expect(offered).toHaveLength(granted.length);
       expect(offered).not.toContain("mcp__github__tool_0");
       expect(diagnostic).toHaveBeenCalledTimes(1);
-      expect(diagnostic).toHaveBeenCalledWith(
-        { operation: "loadSkills", agentId: "analyst" },
-        "tool_selection_skill_read_failed",
-      );
+      /* One structured envelope, the shape the shared-logger call sends (main has logged this
+       * record as a single object since 522eff8a restored c21ba2bc's envelope; d2c433fc carried
+       * that shape onto the shared logger). The 6bf1d652 two-arg form was reverted in the code by
+       * that merge but this test kept it, which is the mismatch that failed the file.
+       */
+      expect(diagnostic).toHaveBeenCalledWith({
+        error: "tool_selection_skill_read_failed",
+        context: { operation: "loadSkills", agentId: "analyst" },
+        timestamp: expect.any(String),
+      });
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("secret");
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("private");
     } finally {
@@ -1029,8 +911,11 @@ describe("the discovery record", () => {
       await ask(agents.analyst as never, "read the Drive doc");
       expect(toolsOfferedToModel()).toHaveLength(8);
       expect(diagnostic).toHaveBeenCalledTimes(1);
-      expect(diagnostic).toHaveBeenCalledWith(
-        {
+      // Same envelope reasoning as the skill-read diagnosis above: one structured object whose
+      // error key names the failure and whose context carries the narrowing facts.
+      expect(diagnostic).toHaveBeenCalledWith({
+        error: "tool_selection_record_failed",
+        context: {
           operation: "record",
           agentId: "analyst",
           reason: "selected",
@@ -1038,8 +923,8 @@ describe("the discovery record", () => {
           offered: 8,
           skills: ["drive-audit"],
         },
-        "tool_selection_record_failed",
-      );
+        timestamp: expect.any(String),
+      });
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("secret");
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("private");
     } finally {

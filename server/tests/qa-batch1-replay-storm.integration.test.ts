@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, like } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { PaymentProvider } from "../src/billing/payments/provider";
 import { createPaymentService } from "../src/billing/payments/service";
 import { createPaymentStore } from "../src/billing/payments/store";
@@ -18,6 +18,9 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const store = createPaymentStore(database);
 const prefix = `qa2s-${randomUUID().slice(0, 8)}`;
+
+/** Every order this file opened — the teardown's exact reach. */
+const orderIds: string[] = [];
 // Per-test plan codes: two tests sharing one plan would see each other's paid orders through
 // the duplicate check — which is exactly the cross-order visibility under test, and exactly why
 // the isolation must be per-plan, not per-file.
@@ -26,12 +29,15 @@ const planRedelivery = planOf();
 const planDuplicate = planOf();
 
 afterAll(async () => {
+  // The store mints `po-…` order ids, so an id-prefix sweep matches nothing and
+  // the orders (and their anomaly rows) survived the run — stranding
+  // unknown_owner rows that broke the suite's global-count assertions.
   await database
     .delete(paymentEvents)
-    .where(like(paymentEvents.orderId, `${prefix}%`));
+    .where(inArray(paymentEvents.orderId, orderIds));
   await database
     .delete(paymentOrders)
-    .where(like(paymentOrders.id, `${prefix}%`));
+    .where(inArray(paymentOrders.id, orderIds));
   await database.$client.close();
 });
 
@@ -112,6 +118,7 @@ test("redelivering the same paid delivery 8 times writes ZERO anomalies, not 8",
     ownerPayerRef: { kind: "personal" as const, id: `${prefix}-a` },
     checkoutPayload: null,
   });
+  orderIds.push(order.id);
   const service = serviceFor(
     paidDelivery(order.id, `${prefix}-tx-a`),
     planRedelivery,
@@ -139,6 +146,7 @@ test("the fixed duplicate path fires ONCE for the one confirmation that doubled 
     ownerPayerRef: { kind: "personal" as const, id: `${prefix}-a2` },
     checkoutPayload: null,
   });
+  orderIds.push(a.id);
   await serviceFor(
     paidDelivery(a.id, `${prefix}-tx-b`),
     planDuplicate,
@@ -157,6 +165,7 @@ test("the fixed duplicate path fires ONCE for the one confirmation that doubled 
     ownerPayerRef: { kind: "personal" as const, id: `${prefix}-b2` },
     checkoutPayload: null,
   });
+  orderIds.push(b.id);
   const wechat: PaymentProvider = {
     ...paidDelivery(b.id, `${prefix}-tx-c`),
     id: "wechat",

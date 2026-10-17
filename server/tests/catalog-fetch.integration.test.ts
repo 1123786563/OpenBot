@@ -167,13 +167,26 @@ describe("the gate stands before the dial", () => {
       dialed += 1;
       throw new Error("the catalog fetch must not dial the network");
     };
-    const { assertGatewayReadyForBilling } = await import(
-      "../src/gateway/readiness"
-    );
-    const outcome = await service({
-      assertGatewayReady: () => assertGatewayReadyForBilling(undefined),
-      fetchImpl,
-    }).fetchCatalog();
+    const {
+      assertGatewayReadyForBilling,
+      gatewayReadinessControls,
+      installGatewayReadinessService,
+    } = await import("../src/gateway/readiness");
+    // The installed gate is a module singleton, and other files in the same
+    // test process may have installed one. This test's premise — no gate at
+    // all — must uninstall it for the duration and put back whatever stood,
+    // or a file that ran earlier decides this file's answer.
+    const standing = gatewayReadinessControls();
+    installGatewayReadinessService(undefined);
+    let outcome: CatalogFetchOutcome;
+    try {
+      outcome = await service({
+        assertGatewayReady: () => assertGatewayReadyForBilling(undefined),
+        fetchImpl,
+      }).fetchCatalog();
+    } finally {
+      installGatewayReadinessService(standing);
+    }
     expect(dialed).toBe(0);
     expect(outcome.status).toBe("failed");
     if (outcome.status === "failed") {

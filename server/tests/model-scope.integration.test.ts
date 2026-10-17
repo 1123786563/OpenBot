@@ -62,6 +62,10 @@ const auditStore = createAuditStore(database);
 /** Monotonic test clock so append-only rows keep a strict order. */
 let tick = Date.now();
 
+/** The locked-reservation fixture's rows, so afterAll can lift exactly them. */
+let reservationFixture: { customer: string; reservationId: string } | null =
+  null;
+
 function nextId(prefix: string): string {
   return `${prefix}-${randomUUID().slice(0, 8)}`;
 }
@@ -207,6 +211,18 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // The locked-reservation fixture leaves a customer floor and a live hold on
+  // purpose (the test asserts they survive a model close) — the teardown has to
+  // lift them again, or they survive the run as unknown_owner rows no later
+  // file owns, and the suite's global-count assertions read them as strangers.
+  if (reservationFixture) {
+    await database
+      .delete(creditReservations)
+      .where(eq(creditReservations.id, reservationFixture.reservationId));
+    await database
+      .delete(billingCustomers)
+      .where(eq(billingCustomers.externalId, reservationFixture.customer));
+  }
   await database.$client.close();
 });
 
@@ -507,6 +523,7 @@ describe("a scope change does not touch locked snapshots or existing reservation
     // A live reservation on the locked account, as the billing tables hold it.
     const customer = nextId("reservation-customer");
     const reservationId = nextId("reservation");
+    reservationFixture = { customer, reservationId };
     await database.insert(billingCustomers).values({ externalId: customer });
     await database.insert(creditReservations).values({
       id: reservationId,

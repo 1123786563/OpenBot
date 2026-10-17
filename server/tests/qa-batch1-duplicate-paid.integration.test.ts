@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, like } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { PaymentProvider } from "../src/billing/payments/provider";
 import { createPaymentService } from "../src/billing/payments/service";
 import { createPaymentStore } from "../src/billing/payments/store";
@@ -27,13 +27,20 @@ const store = createPaymentStore(database);
 const prefix = `qa1c-${randomUUID().slice(0, 8)}`;
 const planCode = `qa-plan-${randomUUID().slice(0, 8)}`;
 
+/** Every order this file opened — the teardown's exact reach. */
+const orderIds: string[] = [];
+
 afterAll(async () => {
+  // The store mints `po-…` order ids and this file's `qa-…` created-by tags are
+  // not namespaced per run, so the old id-prefix sweep matched nothing and both
+  // orders (with their anomaly rows) survived the run — stranding unknown_owner
+  // rows that broke the suite's global-count assertions downstream.
   await database
     .delete(paymentEvents)
-    .where(like(paymentEvents.orderId, `${prefix}%`));
+    .where(inArray(paymentEvents.orderId, orderIds));
   await database
     .delete(paymentOrders)
-    .where(like(paymentOrders.id, `${prefix}%`));
+    .where(inArray(paymentOrders.id, orderIds));
   await database.$client.close();
 });
 
@@ -101,6 +108,7 @@ async function openOrder(provider: "alipay" | "wechat", tag: string) {
     ownerPayerRef: { kind: "personal" as const, id: `qa-${tag}` },
     checkoutPayload: null,
   });
+  orderIds.push(order.id);
   return order;
 }
 

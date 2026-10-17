@@ -4,19 +4,21 @@ import { loadConfig } from "../src/config";
 import { testEnvironment } from "./support/environment";
 
 /*
- * createApp takes its services positionally; the readiness probe is the sixteenth-from-last of
- * them (the OpenMuse template revision, personal-files, task, Google OAuth, Mail,
- * Reviewed-action, private-Goal, Calendar, private-Idea, private-Memory, documents,
- * notification, account-deletion, activity and ops-signals seams were appended after it), so it is set by offset the same way tests/self-host-banner.test.ts sets
- * the banner, for the same reason: the optional tail only ever gains parameters appended last,
- * so a new one moves this offset by exactly one and this comment by one line.
+ * createApp takes its services positionally; the OpenMuse seam tail is ONE named object
+ * (openMuseSeams) that carries the readiness probe, so the probe is set by offset the same way
+ * tests/self-host-banner.test.ts sets the banner, for the same reason: the optional tail only
+ * ever gains parameters appended last, so a new one moves this offset by exactly one and this
+ * comment by one line. Since the seams object landed, aa0f90a5 (#763) appended identity and
+ * identityGithubCallback and 65e8d57c (bifrost-5) appended botServices after it, so it now sits
+ * fourth from the end.
  */
 function appWithProbe(probe: () => Promise<void>) {
   const args: unknown[] = new Array(createApp.length).fill(undefined);
   args[0] = loadConfig(testEnvironment());
-  // The OpenMuse seam tail is ONE named object (openMuseSeams) as the last
-  // positional parameter, so the probe reaches it by name — never by offset.
-  args[createApp.length - 1] = { readinessProbe: probe };
+  // The OpenMuse seam tail is ONE named object (openMuseSeams), fourth-from-last since the
+  // identity and botServices positionals were appended behind it, so the probe reaches it by
+  // name through that slot — never by its own offset.
+  args[createApp.length - 4] = { readinessProbe: probe };
   return (createApp as (...input: unknown[]) => ReturnType<typeof createApp>)(
     ...args,
   );
