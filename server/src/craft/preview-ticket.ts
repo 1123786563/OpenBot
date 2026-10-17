@@ -110,32 +110,92 @@ export function createPreviewTickets(deps: {
 // ── the preview-domain cookie (D9) ────────────────────────────────────────────
 //
 // Redeeming plants the preview origin's OWN session credential — HttpOnly,
-// Path=/, SameSite=Lax (the top-level 302 hop that carries the redemption), and
-// deliberately WITHOUT Max-Age/Expires: their absence is what makes it a
-// session cookie the browser drops at close (D9). The routing that sets this
-// header is #361's; this is the shape it must not get wrong.
+// path-scoped (R-9), and deliberately WITHOUT Max-Age/Expires: their absence is
+// what makes it a session cookie the browser drops at close (D9). The routing
+// that sets this header is #361's; this is the shape it must not get wrong.
+//
+// The Path is the caller's call (R-9, OCR round 2): the HOST form serves one
+// session per host, so "/" is right there; but the DEV form (D5, the default)
+// hosts EVERY session on one shared host — 127.0.0.1:<port> — where a Path=/
+// pass is a single cookie-jar slot under Set-Cookie replace semantics (same
+// name + domain + path): the LAST redeemer overwrites every earlier preview's
+// pass, and the first-in iframe's traffic and HMR upgrade then sit at 401
+// forever (preview-tab never re-redeems inside an entry's lifetime). The dev
+// form therefore plants the pass at its session's own /<label> — concurrent
+// dev previews coexist in the jar, and the browser only sends the pass whose
+// Path matches the address, which is exactly the label the request's own host
+// resolution derived anyway.
+//
+// SameSite=None; Secure, not Lax (#365's F-1): the panel embeds the preview
+// origin in an iframe that is CROSS-SITE from the main site — dev is
+// `localhost` (main) → `127.0.0.1` (preview), different sites — and a browser
+// refuses to store a Lax cookie planted by that cross-site redemption 302, so
+// the panel iframe sat at 401. None is the only attribute that crosses that
+// hop, and browsers honor None only when Secure rides with it. Secure holds in
+// both shapes we ship: dev's `127.0.0.1` is a trustworthy (secure-context)
+// origin where Chrome accepts Secure cookies, and production's named preview
+// host serves HTTPS. Production's preview domain is a subdomain of the main
+// site (same-site, first-party iframe) — Lax worked there and None works too,
+// so None is a strict widening for dev, never a regression. The cookie's
+// semantics are unchanged: session-level, HttpOnly, Path=the caller's scope
+// ("/" for the host form, "/<label>" for the dev form — D9, R-9).
 
 export const PREVIEW_SESSION_COOKIE = "openbot_preview_session";
 
-export function previewSessionCookieHeader(value: string): string {
-  return `${PREVIEW_SESSION_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax`;
+export function previewSessionCookieHeader(value: string, path = "/"): string {
+  return `${PREVIEW_SESSION_COOKIE}=${value}; Path=${path}; HttpOnly; SameSite=None; Secure`;
+}
+
+/**
+ * The dev preview origin's port, parsed with config.ts serverPort's exact rules
+ * (the #362 convergence of #360 review Nit 3/4): PORT and SERVER_PORT name one
+ * number, an empty value is absent rather than zero, a value that is not a whole
+ * port refuses with its sentence (never a truncated parse — "30o1" must not
+ * become 30), and two set values that disagree refuse together rather than one
+ * silently winning. Where serverPort throws at boot, a closed preview feature
+ * refuses with the sentence instead — a preview misconfiguration must not take
+ * the server down.
+ */
+export function previewPortFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): { port: number } | { reason: string } {
+  const read = (name: string): { port?: number; reason?: string } => {
+    const raw = env[name]?.trim();
+    if (raw === undefined || raw === "") return {};
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 1 || value > 65535) {
+      return { reason: `${name} must be a whole number between 1 and 65535.` };
+    }
+    return { port: value };
+  };
+  const port = read("PORT");
+  if (port.reason) return { reason: port.reason };
+  const serverPort = read("SERVER_PORT");
+  if (serverPort.reason) return { reason: serverPort.reason };
+  if (
+    port.port !== undefined &&
+    serverPort.port !== undefined &&
+    port.port !== serverPort.port
+  ) {
+    return {
+      reason: `PORT (${port.port}) and SERVER_PORT (${serverPort.port}) disagree: set one or set both to the same value.`,
+    };
+  }
+  return { port: port.port ?? serverPort.port ?? 3001 };
 }
 
 /**
  * D5's dev default: the preview origin is `127.0.0.1` on the API's own port —
  * a different HOST from a `localhost` login (cookie isolation holds) without
- * wildcard DNS. Production's named preview host arrives with #362; the port
- * follows the server's PORT/SERVER_PORT convention (one number, both names —
- * see config.ts's serverPort).
+ * wildcard DNS. Production's named preview host arrives with #362. The port is
+ * `previewPortFromEnv`'s (serverPort's rules — one number or a refusal with a
+ * displayable reason; #360's silent PORT preference is converged away).
  */
 export function defaultPreviewOrigin(
   env: Record<string, string | undefined> = process.env,
-): string {
-  // `PORT=""` arrives as the empty string, which is falsy-but-present — parse,
-  // never `??` (config.ts documents this exact trap).
-  const port =
-    Number.parseInt(env.PORT ?? "", 10) ||
-    Number.parseInt(env.SERVER_PORT ?? "", 10) ||
-    3001;
-  return `http://127.0.0.1:${port}`;
+): { origin: string } | { reason: string } {
+  const parsed = previewPortFromEnv(env);
+  return "reason" in parsed
+    ? { reason: parsed.reason }
+    : { origin: `http://127.0.0.1:${parsed.port}` };
 }

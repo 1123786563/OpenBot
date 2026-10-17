@@ -13,12 +13,24 @@ import { inflateRawSync } from "node:zlib";
 import type { MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
 import { loadCraftConfig } from "../src/craft/config";
+import {
+  writeWebappBootstrapScript,
+  WEBAPP_MOUNT_MARKER,
+} from "../src/craft/nextjs-dev";
+import { createPreviewOrigin } from "../src/craft/preview-origin";
+import { createPreviewTickets } from "../src/craft/preview-ticket";
 import type {
   AgentSandboxFileApi,
   SandboxGateway,
 } from "../src/craft/sandbox-gateway";
 import type { CraftSessionRow, CraftStore } from "../src/craft/store";
 import {
+  generationGatedWebappBasePathFor,
+  WEBAPP_GENERATION_CURRENT,
+  WEBAPP_GENERATION_MARKER,
+} from "../src/craft/webapp-generation";
+import {
+  createPreviewProxy,
   createWebappProxyRoutes,
   proxyWebappRequest,
 } from "../src/craft/webapp-proxy";
@@ -353,8 +365,9 @@ function memoryFileApi(initial: Record<string, string | Uint8Array> = {}) {
     async deletePath() {
       return false;
     },
-    async readFile() {
-      return null;
+    async readFile(path) {
+      const raw = files.get(path);
+      return raw === undefined ? null : new TextDecoder().decode(raw);
     },
     async readFileBytes(path) {
       return files.get(path) ?? null;
@@ -710,5 +723,816 @@ describe("webapp preview reachability dials the sandbox host (F-E)", () => {
     expect(
       dialed.every((url) => url.startsWith("http://gateway.host:3011/")),
     ).toBe(true);
+  });
+});
+
+// ── #362: createPreviewProxy — the servePreview seam's implementation ─────────
+//
+// The preview origin's routing module (preview-origin.ts) hands cookie-
+// authenticated requests to this: the session's row (by id — the preview pass
+// IS the authentication, there is no actor id to ownership-check against), the
+// sandbox connection, the ATTACH probe (never spawn), then proxyWebappRequest
+// with the full upstream path — under the dev form that INCLUDES the leading
+// label (the dev server mounts at /<label> via the start script's injected
+// ONYX_WEBAPP_BASE_PATH, F-2/#365), same shape as the host form's verbatim
+// pathname. Refusals are the surface's dual shape, and the preview pass cookie
+// must never reach the app (stripRequestHeaders already drops it — pinned here).
+
+describe("createPreviewProxy (the servePreview seam)", () => {
+  const PREVIEW_SESSION = "cs-777788889999";
+
+  /** Records every dial (probe + upstream) and answers app-shaped responses. */
+  function recordingUpstream() {
+    const dialed: string[] = [];
+    const upstreamHeaders: Headers[] = [];
+    const fetchImpl = (async (input: string | URL, init?: RequestInit) => {
+      dialed.push(String(input));
+      if (init) upstreamHeaders.push(new Headers(init.headers as HeadersInit));
+      return new Response('{"ok":true}', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    return { dialed, upstreamHeaders, fetchImpl };
+  }
+
+  function previewProxyDeps(options: {
+    sessionExists?: boolean;
+    nextjsPort?: number | null;
+    connBaseUrl?: string | null;
+    fetchImpl?: typeof fetch;
+  }) {
+    return {
+      config: loadCraftConfig({}),
+      store: {
+        async findSessionById(id: string) {
+          const port =
+            options.nextjsPort === undefined ? 3011 : options.nextjsPort;
+          return options.sessionExists === false
+            ? undefined
+            : sessionRow("app", port);
+        },
+        async getSession(id: string, userId: string) {
+          const port =
+            options.nextjsPort === undefined ? 3011 : options.nextjsPort;
+          return options.sessionExists === false
+            ? undefined
+            : sessionRow("app", port);
+        },
+        async findSession(id: string, userId: string) {
+          const port =
+            options.nextjsPort === undefined ? 3011 : options.nextjsPort;
+          return options.sessionExists === false
+            ? undefined
+            : sessionRow("app", port);
+        },
+        async updateSessionActivity() {},
+      } as unknown as CraftStore,
+      gateway: gatewayWith(
+        memoryFileApi({ [`${WEBAPP}/package.json`]: '{"name":"web"}' }),
+      ),
+      botIdFor: async () => "craft-bot",
+      sandboxConnectionFor: () =>
+        options.connBaseUrl === null
+          ? null
+          : {
+              baseUrl: options.connBaseUrl ?? "http://sbox.internal:4300",
+              token: null,
+            },
+      fetchImpl: options.fetchImpl,
+    };
+  }
+
+  test("proxies the full path the origin hands it — label mount included; method, body and query reach the dev server; CSP rides back", async () => {
+    const { dialed, upstreamHeaders, fetchImpl } = recordingUpstream();
+    const serve = createPreviewProxy(previewProxyDeps({ fetchImpl }));
+
+    // F-2 (#365): the dev form's dev server is basePath-mounted at /<label>,
+    // so the upstream-resolvable path is the label-ful one the origin derives
+    // (appPathFor no longer strips) — forwarding the port-root path would 404
+    // beside the mount.
+    const response = await serve({
+      sessionId: PREVIEW_SESSION,
+      appPath: "/abc123label/api/tasks",
+      query: "?sort=asc",
+      method: "POST",
+      request: new Request(
+        "http://127.0.0.1:3001/abc123label/api/tasks?sort=asc",
+        {
+          method: "POST",
+          headers: {
+            cookie: `openbot_preview_session=${PREVIEW_SESSION}`,
+            "content-type": "application/json",
+          },
+          body: '{"title":"ship it"}',
+        },
+      ),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(response.headers.get("content-security-policy")).toBeTruthy();
+    // The label rides to the upstream (the mount the dev server serves under),
+    // and the preview pass never reaches the app.
+    const upstream = dialed.find((url) => url.includes("/api/tasks"));
+    expect(upstream).toBe(
+      "http://sbox.internal:3011/abc123label/api/tasks?sort=asc",
+    );
+    const seen = upstreamHeaders[upstreamHeaders.length - 1];
+    expect(seen.get("cookie")).toBeNull();
+  });
+
+  test("carries all four mutating verbs (AC2: a preview that cannot POST is a screenshot)", async () => {
+    for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+      const seen: Array<{ method: string; url: string }> = [];
+      const fetchImpl = (async (input: string | URL, init?: RequestInit) => {
+        // The attach probe dials "/" with GET — only the app-path dial counts.
+        seen.push({ method: init?.method ?? "GET", url: String(input) });
+        return new Response(null, { status: 204 });
+      }) as typeof fetch;
+      const serve = createPreviewProxy(previewProxyDeps({ fetchImpl }));
+
+      const response = await serve({
+        sessionId: PREVIEW_SESSION,
+        appPath: "/api/tasks/1",
+        query: "",
+        method,
+        request: new Request("http://127.0.0.1:3001/x/api/tasks/1", {
+          method,
+          headers: { cookie: `openbot_preview_session=${PREVIEW_SESSION}` },
+        }),
+      });
+      expect(response.status).toBe(204);
+      expect(seen.filter((call) => call.url.includes("/api/tasks/1"))).toEqual([
+        { method, url: "http://sbox.internal:3011/api/tasks/1" },
+      ]);
+    }
+  });
+
+  test("a deleted session (the row is gone after redemption) is an honest 404, never dialed", async () => {
+    const { dialed } = recordingUpstream();
+    const serve = createPreviewProxy(
+      previewProxyDeps({
+        sessionExists: false,
+        fetchImpl: (async () => {
+          throw new Error("must not dial");
+        }) as typeof fetch,
+      }),
+    );
+    const response = await serve({
+      sessionId: PREVIEW_SESSION,
+      appPath: "/",
+      query: "",
+      method: "GET",
+      request: new Request("http://127.0.0.1:3001/x/", {
+        headers: { cookie: `openbot_preview_session=${PREVIEW_SESSION}` },
+      }),
+    });
+    expect(response.status).toBe(404);
+    expect(dialed).toEqual([]);
+  });
+
+  test("no sandbox connection or no reserved port answers the surface's refusal shapes", async () => {
+    const { fetchImpl } = recordingUpstream();
+    const noConn = createPreviewProxy(
+      previewProxyDeps({ connBaseUrl: null, fetchImpl }),
+    );
+    const connGone = await noConn({
+      sessionId: PREVIEW_SESSION,
+      appPath: "/",
+      query: "",
+      method: "GET",
+      request: new Request("http://127.0.0.1:3001/x/"),
+    });
+    expect(connGone.status).toBe(503);
+
+    const noPort = createPreviewProxy(
+      previewProxyDeps({ nextjsPort: null, fetchImpl }),
+    );
+    const portGone = await noPort({
+      sessionId: PREVIEW_SESSION,
+      appPath: "/",
+      query: "",
+      method: "GET",
+      request: new Request("http://127.0.0.1:3001/x/"),
+    });
+    expect(portGone.status).toBe(503);
+    expect(await portGone.json()).toEqual({ error: expect.any(String) });
+  });
+
+  test("a down dev server (attach probe fails) is the not-running refusal, HTML for a frame", async () => {
+    const down = (async () => {
+      throw new Error("ECONNREFUSED");
+    }) as typeof fetch;
+    const serve = createPreviewProxy(previewProxyDeps({ fetchImpl: down }));
+
+    const framed = await serve({
+      sessionId: PREVIEW_SESSION,
+      appPath: "/",
+      query: "",
+      method: "GET",
+      request: new Request("http://127.0.0.1:3001/x/", {
+        headers: { accept: "text/html,application/xhtml+xml" },
+      }),
+    });
+    expect(framed.status).toBe(503);
+    expect(framed.headers.get("content-type")).toContain("text/html");
+    expect(await framed.text()).toContain("<!");
+
+    const programmatic = await serve({
+      sessionId: PREVIEW_SESSION,
+      appPath: "/",
+      query: "",
+      method: "GET",
+      request: new Request("http://127.0.0.1:3001/x/"),
+    });
+    expect(programmatic.status).toBe(503);
+    expect(await programmatic.json()).toEqual({ error: expect.any(String) });
+  });
+});
+
+// ── #362: webapp-info — the absolute webapp_url (D11) + the closed reason (m-5) ─
+
+const PREVIEW_ADDRESS = "http://127.0.0.1:3001/abc123label";
+
+function infoRoutes(options: {
+  previewOriginFor?: (sessionId: string) => string;
+  previewOriginAdmission?: () => { ok: true } | { ok: false; reason: string };
+  env?: Record<string, string | undefined>;
+  ready?: boolean;
+  /** Omit to model a LEGACY session (assembled before the marker existed). */
+  currentGeneration?: boolean;
+  /**
+   * The .webapp-mount record the running script left (review-367 H's second
+   * signal). undefined → the current regime's script wrote its own label
+   * ("/abc123label", PREVIEW_ADDRESS's path); false → NO record at all (a
+   * legacy-era script: it predates the record line); a string → that value.
+   */
+  mountRecord?: string | false;
+}) {
+  const fetchImpl = (async () =>
+    options.ready === false
+      ? Promise.reject(new Error("down"))
+      : Promise.resolve(
+          new Response("x", {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+        )) as typeof fetch;
+  return createWebappProxyRoutes(fakeRequireUser(), {
+    config: loadCraftConfig({}),
+    store: storeWithSession("app", "u1", 3011),
+    gateway: gatewayWith(
+      memoryFileApi({
+        [`${WEBAPP}/package.json`]: '{"name":"web"}',
+        // A current-generation app carries the assembly marker; its absence
+        // is the legacy population D10 routes to the old path.
+        ...(options.currentGeneration === false
+          ? {}
+          : {
+              [`${DIRECTORY}/${WEBAPP_GENERATION_MARKER}`]:
+                WEBAPP_GENERATION_CURRENT,
+              // The running script's own mount record (nextjs-dev.ts writes it
+              // beside .nextjs-port): the second signal the address cross-check
+              // reads. Default — the CURRENT script's record, naming exactly
+              // the mount the preview address rides.
+              ...(options.mountRecord === false
+                ? {}
+                : {
+                    [`${DIRECTORY}/${WEBAPP_MOUNT_MARKER}`]:
+                      options.mountRecord ?? "/abc123label",
+                  }),
+            }),
+      }),
+    ),
+    botIdFor: async () => "craft-bot",
+    sandboxConnectionFor: () => ({
+      baseUrl: "http://sbox.internal:4300",
+      token: null,
+    }),
+    previewOriginFor: options.previewOriginFor,
+    previewOriginAdmission: options.previewOriginAdmission,
+    env: options.env,
+    fetchImpl,
+  });
+}
+
+describe("webapp-info: absolute webapp_url + previewOrigin + closed reason (D11/m-5)", () => {
+  test("admission open: webapp_url and previewOrigin are the absolute preview address", async () => {
+    const app = infoRoutes({ previewOriginFor: () => PREVIEW_ADDRESS });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      previewOrigin: string | null;
+      previewOriginClosedReason: string | null;
+      ready: boolean;
+      webappGeneration: string;
+    };
+    expect(body.webapp_url).toBe(PREVIEW_ADDRESS);
+    expect(body.previewOrigin).toBe(PREVIEW_ADDRESS);
+    expect(body.previewOriginClosedReason).toBeNull();
+    expect(body.ready).toBe(true);
+    expect(body.webappGeneration).toBe("current");
+  });
+
+  test("admission closed: no address exists, the reason is displayable (m-5)", async () => {
+    const app = infoRoutes({
+      previewOriginAdmission: () => ({
+        ok: false,
+        reason: "Craft is disabled on this deployment.",
+      }),
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      previewOrigin: string | null;
+      previewOriginClosedReason: string | null;
+      has_webapp: boolean;
+    };
+    expect(body.webapp_url).toBeNull();
+    expect(body.previewOrigin).toBeNull();
+    expect(body.previewOriginClosedReason).toBe(
+      "Craft is disabled on this deployment.",
+    );
+    // The inspectable facts survive the closed gate — the pane still shows why.
+    expect(body.has_webapp).toBe(true);
+  });
+
+  test("the default admission derives from PORT/SERVER_PORT (serverPort's rules): disagreement closes", async () => {
+    const app = infoRoutes({
+      previewOriginFor: undefined,
+      env: { PORT: "3001", SERVER_PORT: "3002" },
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      previewOriginClosedReason: string | null;
+    };
+    expect(body.webapp_url).toBeNull();
+    expect(body.previewOriginClosedReason).toContain("PORT");
+    expect(body.previewOriginClosedReason).toContain("SERVER_PORT");
+  });
+
+  test("the default admission open: the dev origin's own port", async () => {
+    // The default origin answers the port ROOT (no label path) — so the
+    // honest fixture is the script that carries the root mount, and the
+    // cross-check (review-367 H) passes it through.
+    const app = infoRoutes({ env: { PORT: "3005" }, mountRecord: "" });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as { webapp_url: string | null };
+    expect(body.webapp_url).toBe("http://127.0.0.1:3005");
+  });
+
+  test("no sandbox: the address fields stay null beside status no_sandbox", async () => {
+    const app = createWebappProxyRoutes(fakeRequireUser(), {
+      config: loadCraftConfig({}),
+      store: storeWithSession("app", "u1", 3011),
+      gateway: gatewayWith(
+        memoryFileApi({ [`${WEBAPP}/package.json`]: '{"name":"web"}' }),
+      ),
+      botIdFor: async () => "craft-bot",
+      sandboxConnectionFor: () => null,
+      previewOriginFor: () => PREVIEW_ADDRESS,
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      status: string;
+      webapp_url: string | null;
+      previewOrigin: string | null;
+    };
+    expect(body.status).toBe("no_sandbox");
+    expect(body.webapp_url).toBeNull();
+    expect(body.previewOrigin).toBeNull();
+  });
+});
+
+// ── #367: webapp-info — the D10 legacy branch (old sessions keep the old path) ─
+
+describe("webapp-info: legacy sessions stay on the old same-origin path (D10/#367)", () => {
+  const LEGACY_PATH = `/api/craft/sessions/${SESSION_ID}/webapp`;
+
+  test("a legacy app (no assembly marker) gets the OLD same-origin path, not the preview origin", async () => {
+    const app = infoRoutes({
+      currentGeneration: false,
+      previewOriginFor: () => PREVIEW_ADDRESS,
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      previewOrigin: string | null;
+      previewOriginClosedReason: string | null;
+      webappGeneration: string;
+      has_webapp: boolean;
+      ready: boolean;
+    };
+    // The pre-marker app self-mounts /api/craft/sessions/<id>/webapp via its
+    // cwd-fallback template — pointing it at the preview origin instead would
+    // be the silent 404 AC2 forbids.
+    expect(body.webapp_url).toBe(LEGACY_PATH);
+    expect(body.previewOrigin).toBeNull();
+    expect(body.previewOriginClosedReason).toBeNull();
+    expect(body.webappGeneration).toBe("legacy");
+    expect(body.has_webapp).toBe(true);
+    expect(body.ready).toBe(true);
+  });
+
+  test("the legacy path serves even where the preview origin is closed — no reason shown", async () => {
+    const app = infoRoutes({
+      currentGeneration: false,
+      previewOriginAdmission: () => ({
+        ok: false,
+        reason: "The preview origin is disabled on this deployment.",
+      }),
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      previewOriginClosedReason: string | null;
+    };
+    // The old path needs no preview origin (same-origin, cookie-authenticated),
+    // so a closed origin must not take a working legacy preview down with it.
+    expect(body.webapp_url).toBe(LEGACY_PATH);
+    expect(body.previewOriginClosedReason).toBeNull();
+  });
+
+  test("a legacy app whose dev server is down keeps the legacy path and the honest down state", async () => {
+    const app = infoRoutes({
+      currentGeneration: false,
+      ready: false,
+      previewOriginFor: () => PREVIEW_ADDRESS,
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      status: string;
+      ready: boolean;
+    };
+    expect(body.webapp_url).toBe(LEGACY_PATH);
+    expect(body.status).toBe("stopped");
+    expect(body.ready).toBe(false);
+  });
+
+  test("a current-generation app keeps the preview origin and says so", async () => {
+    const app = infoRoutes({ previewOriginFor: () => PREVIEW_ADDRESS });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      webappGeneration: string;
+    };
+    expect(body.webappGeneration).toBe("current");
+    expect(body.webapp_url).toBe(PREVIEW_ADDRESS);
+  });
+
+  test("an unavailable sandbox answers webappGeneration legacy (the conservative read)", async () => {
+    const app = createWebappProxyRoutes(fakeRequireUser(), {
+      config: loadCraftConfig({}),
+      store: storeWithSession("app", "u1", 3011),
+      gateway: gatewayWith(
+        memoryFileApi({ [`${WEBAPP}/package.json`]: '{"name":"web"}' }),
+      ),
+      botIdFor: async () => "craft-bot",
+      sandboxConnectionFor: () => null,
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      status: string;
+      webappGeneration: string;
+    };
+    expect(body.status).toBe("no_sandbox");
+    expect(body.webappGeneration).toBe("legacy");
+  });
+});
+
+// ── review-367 H: the mount-record cross-check — the REBUILD window ─────────
+// A legacy session's agent deletes outputs/web and runs webapp start again:
+// the OLD script's copy branch re-runs — copies the CURRENT disk template,
+// re-stamps the marker "2" — but the script itself still carries no mount env
+// (the generation judgment happened at script-WRITE time, and no script write
+// point runs on a rebuild). The dev server mounts the port root while the
+// fresh marker reads current: webapp-info handing out /<label> there is a
+// silent, non-self-healing 404 on every request. The script's own mount
+// record (.webapp-mount) is the second signal that catches it.
+
+describe("webapp-info: the mount-record cross-check (review-367 H — the rebuild window)", () => {
+  test("marker current + NO mount record (a legacy-era script re-stamped it) → no /<label> address, an explicit reason on the closed-reason channel", async () => {
+    // The rebuild window exactly: the marker says current (the old script's
+    // copy branch stamped it), but the script that stamped it predates the
+    // record line — no .webapp-mount exists, so the RUNNING server cannot be
+    // mounted where the address points. The address is withheld and the
+    // displayable needs-restart sentence rides previewOriginClosedReason.
+    const app = infoRoutes({
+      previewOriginFor: () => PREVIEW_ADDRESS,
+      mountRecord: false,
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      previewOrigin: string | null;
+      previewOriginClosedReason: string | null;
+      webappGeneration: string;
+      has_webapp: boolean;
+      ready: boolean;
+    };
+    expect(body.webapp_url).toBeNull();
+    expect(body.previewOrigin).toBeNull();
+    expect(body.previewOriginClosedReason).toContain("start script");
+    expect(body.webappGeneration).toBe("current");
+    // The inspectable facts stay honest: the app EXISTS and IS serving.
+    expect(body.has_webapp).toBe(true);
+    expect(body.ready).toBe(true);
+  });
+
+  test("marker current + a record naming a DIFFERENT mount → the same refusal", async () => {
+    // A record that names anything other than the address's path is the same
+    // broken contract: the server answers on a mount the address never hits.
+    const app = infoRoutes({
+      previewOriginFor: () => PREVIEW_ADDRESS,
+      mountRecord: "/some-other-label",
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      previewOriginClosedReason: string | null;
+    };
+    expect(body.webapp_url).toBeNull();
+    expect(body.previewOriginClosedReason).toContain("start script");
+  });
+
+  test("marker current + the record matching the address's path → the address flows (regression)", async () => {
+    const app = infoRoutes({
+      previewOriginFor: () => PREVIEW_ADDRESS,
+      mountRecord: "/abc123label",
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      previewOriginClosedReason: string | null;
+    };
+    expect(body.webapp_url).toBe(PREVIEW_ADDRESS);
+    expect(body.previewOriginClosedReason).toBeNull();
+  });
+
+  test("a closed origin skips the cross-check — its own reason already answers", async () => {
+    // With no address in play there is no mount contract to violate; the
+    // closed reason must not be overwritten by the cross-check's sentence.
+    const app = infoRoutes({
+      previewOriginFor: () => PREVIEW_ADDRESS,
+      previewOriginAdmission: () => ({
+        ok: false,
+        reason: "Craft is disabled on this deployment.",
+      }),
+      mountRecord: false,
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      previewOriginClosedReason: string | null;
+    };
+    expect(body.previewOriginClosedReason).toBe(
+      "Craft is disabled on this deployment.",
+    );
+  });
+
+  test("a root-mount address (pathname /) matches an empty record — the host-form script stays honest", async () => {
+    // The host form's script carries no mount; its record is empty, and the
+    // host-form address's pathname is "/" — normalized to the same empty
+    // mount, so a working host-form session is never flagged needs-restart.
+    const app = infoRoutes({
+      previewOriginFor: () => "https://abc123label.preview.example.com",
+      mountRecord: "",
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      previewOriginClosedReason: string | null;
+    };
+    expect(body.webapp_url).toBe("https://abc123label.preview.example.com");
+    expect(body.previewOriginClosedReason).toBeNull();
+  });
+});
+
+// ── #367 H1 fix: the first-build birth sequence — script, mount and address ──
+// decided together. review-367 H1: before this fix, a NEW session's provisioning
+// read (no marker, no app) answered legacy, so the first script shipped root-
+// path; the first `webapp start` then copied the CURRENT template, stamped the
+// marker and spawned without env — the app mounted at "/" while webapp-info
+// (reading the fresh marker) handed out /<label>: a silent, non-self-healing
+// 404 on every dev-form first build. This sequence pins the whole birth end to
+// end with the REAL dev-form derivation (a real HMAC label, real admission).
+
+/** memoryFileApi whose store stays reachable, so a test can play the app's birth. */
+function mutableFileApi(initial: Record<string, string> = {}) {
+  const files = new Map<string, string>(Object.entries(initial));
+  const api: AgentSandboxFileApi = {
+    async listFiles(path: string) {
+      const prefix = `${path}/`;
+      const children = new Set<string>();
+      for (const key of files.keys()) {
+        if (!key.startsWith(prefix)) continue;
+        const rest = key.slice(prefix.length);
+        const first = rest.split("/")[0];
+        children.add(rest.includes("/") ? `${prefix}${first}` : key);
+      }
+      if (children.size === 0) throw new Error(`not found: ${path}`);
+      return [...children];
+    },
+    async writeFile(path: string, content: string) {
+      files.set(path, content);
+    },
+    async writeFileBytes(path: string, content: Uint8Array) {
+      files.set(path, new TextDecoder().decode(content));
+    },
+    async deletePath(path: string) {
+      return files.delete(path);
+    },
+    async readFile(path: string) {
+      return files.get(path) ?? null;
+    },
+    async readFileBytes(path: string) {
+      const raw = files.get(path);
+      return raw === undefined ? null : new TextEncoder().encode(raw);
+    },
+  };
+  return { api, files };
+}
+
+describe("webapp-info: the first-build birth sequence (H1) — script, mount and address agree", () => {
+  test("a session with no app yet gets a current-form script; the first start stamps current and every surface names the same mount", async () => {
+    // The REAL dev-form origin: admission open via PORT, a real HMAC label.
+    const origin = createPreviewOrigin({
+      config: {
+        enabled: true,
+        webappProxyEnabled: true,
+        previewOriginEnabled: true,
+        previewOriginTemplate: "",
+      },
+      previewTickets: createPreviewTickets({
+        store: storeWithSession("app"),
+      }),
+      secret: "birth-sequence-secret",
+      env: { PORT: "3001" },
+      servePreview: async () => new Response("unproxied", { status: 503 }),
+    });
+    const label = origin.webappBasePathFor(SESSION_ID);
+    expect(label).toMatch(/^\/[0-9a-f]{20}$/);
+
+    // 1. Provisioning writes the start script through the D10 gate BEFORE any
+    //    app exists (no outputs/web, no marker — the exact H1 moment).
+    const sandbox = mutableFileApi();
+    const resolveBasePath = generationGatedWebappBasePathFor({
+      webappBasePathFor: (sessionId) => origin.webappBasePathFor(sessionId),
+      fileApiFor: () => sandbox.api,
+      botIdFor: async () => "craft-bot",
+      sessionDirectoryFor: () => DIRECTORY,
+    });
+    await writeWebappBootstrapScript(
+      sandbox.api,
+      SESSION_ID,
+      loadCraftConfig({}),
+      3011,
+      resolveBasePath,
+    );
+    const script = sandbox.files.get(`${DIRECTORY}/start-webapp.sh`) ?? "";
+    // THE H1 ASSERTION: the app the first start will assemble is born from the
+    // CURRENT template, so the script must already carry the mount the preview
+    // address rides — not the root-path legacy form.
+    expect(script).toContain(`export ONYX_WEBAPP_BASE_PATH='${label}'`);
+    expect(script).toContain(`export NEXT_PUBLIC_BASE_PATH='${label}'`);
+    // The mount record rides the script too (review-367 H): the pane's
+    // cross-check reads it once the server is running.
+    expect(script).toContain(
+      `printf '%s' '${label}' > "$SESSION_PATH/${WEBAPP_MOUNT_MARKER}"`,
+    );
+
+    // 2. The first `webapp start`: the copy branch copies the CURRENT template
+    //    into outputs/web and stamps the marker before the spawn (the script's
+    //    own semantics, replayed on the same workspace).
+    sandbox.files.set(`${WEBAPP}/package.json`, '{"name":"web"}');
+    sandbox.files.set(
+      `${WEBAPP}/next.config.ts`,
+      "const basePath = process.env.ONYX_WEBAPP_BASE_PATH ?? \"\";",
+    );
+    sandbox.files.set(
+      `${DIRECTORY}/${WEBAPP_GENERATION_MARKER}`,
+      `${WEBAPP_GENERATION_CURRENT}\n`,
+    );
+    // The record the (new) script writes beside the port record at spawn time —
+    // the script's own semantics, replayed.
+    sandbox.files.set(`${DIRECTORY}/${WEBAPP_MOUNT_MARKER}`, label);
+
+    // 3. webapp-info after the first start: current, and the ABSOLUTE preview
+    //    address (D11) — the same label the script mounts.
+    const fetchImpl = (async () =>
+      new Response("x", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      })) as typeof fetch;
+    const app = createWebappProxyRoutes(fakeRequireUser(), {
+      config: loadCraftConfig({}),
+      store: storeWithSession("app", "u1", 3011),
+      gateway: gatewayWith(sandbox.api),
+      botIdFor: async () => "craft-bot",
+      sandboxConnectionFor: () => ({
+        baseUrl: "http://sbox.internal:4300",
+        token: null,
+      }),
+      previewOriginFor: (sessionId) => origin.originFor(sessionId),
+      env: { PORT: "3001" },
+      fetchImpl,
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      previewOrigin: string | null;
+      webappGeneration: string;
+      ready: boolean;
+    };
+    const address = origin.originFor(SESSION_ID);
+    expect(body.webappGeneration).toBe("current");
+    expect(body.webapp_url).toBe(address);
+    expect(body.previewOrigin).toBe(address);
+    expect(body.ready).toBe(true);
+    // The address and the mount are the SAME derivation, one reading apart.
+    expect(address.startsWith(`http://127.0.0.1:3001${label}`)).toBe(true);
+
+    // 4. appPathFor forwards the label pathname VERBATIM — the env-mounted app
+    //    answers exactly the path the pane's iframe and the proxy dial. The
+    //    pre-H1 first build broke precisely this leg (app at "/", path /<label>).
+    expect(origin.appPathFor(new Request(`${address}/`))).toBe(`${label}/`);
+    expect(
+      origin.appPathFor(new Request(`${address}/_next/static/chunk.js`)),
+    ).toBe(`${label}/_next/static/chunk.js`);
+  });
+});
+
+// ── #362: the issuing route respects admission (never mint into a closed origin) ─
+
+describe("POST /sessions/:id/preview-ticket: admission gate", () => {
+  function ticketApp(
+    admission?: () => { ok: true } | { ok: false; reason: string },
+  ) {
+    return createWebappProxyRoutes(fakeRequireUser(), {
+      config: loadCraftConfig({}),
+      store: storeWithSession("app", "u1", 3011),
+      gateway: gatewayWith(
+        memoryFileApi({ [`${WEBAPP}/package.json`]: '{"name":"web"}' }),
+      ),
+      botIdFor: async () => "craft-bot",
+      sandboxConnectionFor: () => ({
+        baseUrl: "http://sbox.internal:4300",
+        token: null,
+      }),
+      previewOriginFor: () => "http://127.0.0.1:3005/label",
+      previewOriginAdmission: admission,
+      previewTickets: createPreviewTickets({ store: storeWithSession("app") }),
+    });
+  }
+
+  test("closed admission → 503 with the displayable reason, nothing minted", async () => {
+    const tickets = createPreviewTickets({ store: storeWithSession("app") });
+    const app = createWebappProxyRoutes(fakeRequireUser(), {
+      config: loadCraftConfig({}),
+      store: storeWithSession("app", "u1", 3011),
+      gateway: gatewayWith(
+        memoryFileApi({ [`${WEBAPP}/package.json`]: '{"name":"web"}' }),
+      ),
+      botIdFor: async () => "craft-bot",
+      sandboxConnectionFor: () => ({
+        baseUrl: "http://sbox.internal:4300",
+        token: null,
+      }),
+      previewOriginFor: () => "http://127.0.0.1:3005/label",
+      previewOriginAdmission: () => ({
+        ok: false,
+        reason: "The preview origin is disabled on this deployment.",
+      }),
+      previewTickets: tickets,
+    });
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/preview-ticket`,
+      {
+        method: "POST",
+      },
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "The preview origin is disabled on this deployment.",
+    });
+    expect(tickets.size()).toBe(0);
+  });
+
+  test("open admission mints bound to the injected origin (regression)", async () => {
+    const app = ticketApp();
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/preview-ticket`,
+      {
+        method: "POST",
+      },
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { origin: string; ticket: string };
+    expect(body.origin).toBe("http://127.0.0.1:3005/label");
   });
 });

@@ -42,22 +42,62 @@
  */
 
 import type { CraftConfig } from "./config";
+import {
+  WEBAPP_GENERATION_CURRENT,
+  WEBAPP_GENERATION_MARKER,
+} from "./webapp-generation";
 import { sessionDirectory } from "./workspace";
 
 /** The session-root filename of the generated script (onyx WEBAPP start script name). */
 export const WEBAPP_BOOTSTRAP_SCRIPT_NAME = "start-webapp.sh";
 
 /**
+ * The session-root file where the generated script records the mount IT carries
+ * (review-367 H): the dev form's `/<label>`, or empty for the port root. Written
+ * on every run beside the `.nextjs-port` record, it is the second signal
+ * webapp-info cross-checks the preview address against — the generation marker
+ * alone cannot catch the rebuild window (a legacy-era script re-stamping the
+ * marker without gaining the mount env), but the mount record names what the
+ * RUNNING server actually answers on.
+ */
+export const WEBAPP_MOUNT_MARKER = ".webapp-mount";
+
+/**
  * The protected, agent-facing bootstrap script. Its header (`SESSION_PATH`, `PORT`) is
  * the plugin's parsePort source; its success/failure lines are onyx byte-verbatim.
+ *
+ * `basePath` (F-2, #365) is the dev form's `/<label>` mount — the same HMAC label the
+ * session's preview address rides (preview-origin.ts's webappBasePathFor). The server
+ * cannot inject env into a process the sandbox spawns for it, so the mount travels
+ * INSIDE this script: ONYX_WEBAPP_BASE_PATH feeds the scaffold's next.config.ts
+ * (basePath/assetPrefix) and NEXT_PUBLIC_BASE_PATH feeds lib/base-path.ts, both
+ * exported before the spawn so `bun run dev` inherits them. Undefined/null/empty →
+ * no exports: the host form (and every hand-run dev server) serves at the port root.
  */
 export function buildWebappBootstrapScript(input: {
   /** The session directory the script lives in (either sessionDirectoryMode spelling). */
   sessionDirectory: string;
   /** The session's reserved port — the bind target AND the preview's routing contract. */
   port: number;
+  /** The dev form's /<label> mount (preview-origin webappBasePathFor); omit for root. */
+  basePath?: string | null;
 }): string {
   const { sessionDirectory, port } = input;
+  const basePath = (input.basePath ?? "").trim();
+  // The mount env block: only emitted when a mount exists. The value is a
+  // server-derived HMAC label (hex + slash), but the export is single-quoted
+  // anyway (review-367 L2): bash double quotes do not neutralize $, backticks
+  // or embedded double quotes, so the line must never trust its interpolation
+  // to stay inert — single quotes make the inertness the shell's, not the
+  // value discipline's.
+  const basePathEnv =
+    basePath === ""
+      ? ""
+      : `
+# The dev-form preview serves this app under its label — mount the dev server
+# there so every resource URL it emits resolves on the preview origin.
+export ONYX_WEBAPP_BASE_PATH='${basePath}'
+export NEXT_PUBLIC_BASE_PATH='${basePath}'`;
   return `#!/bin/bash
 SESSION_PATH=${sessionDirectory}
 # Normalize so bot-relative session dirs survive the script's own cd. The
@@ -69,6 +109,15 @@ PORT=${port}
 # A record of the reserved port for tooling/debugging (onyx-template parity:
 # onyx's template dev script reads it; a generic scaffold ignores it).
 echo $PORT > "$SESSION_PATH/.nextjs-port"
+
+# A record of the mount THIS script carries (review-367 H) — the dev form's
+# /<label>, or empty for the port root. Written by every run, beside the port
+# record and OUTSIDE both the copy and spawn branches, so the record always
+# mirrors the script that ran: webapp-info cross-checks the preview address it
+# hands out against this file, turning a script/assembly mismatch (a legacy-era
+# script rebuilding the app re-stamps the generation marker without gaining the
+# mount env) into a visible needs-restart state instead of a silent 404.
+printf '%s' '${basePath}' > "$SESSION_PATH/${WEBAPP_MOUNT_MARKER}"
 
 (
     set -e
@@ -86,6 +135,12 @@ echo $PORT > "$SESSION_PATH/.nextjs-port"
             echo "Copying outputs template"
             mkdir -p "$SESSION_PATH/outputs"
             cp -R "$SESSION_PATH/.openbot/web-template" "$SESSION_PATH/outputs/web"
+            # The assembly-generation marker (#367, D10): stamped ONLY here, at
+            # the one moment a current-shape app is born. An app that already
+            # exists is never re-stamped — its generation is whatever assembled
+            # it, and re-stamping a pre-marker app would flip the legacy
+            # judgment and route it to a preview address it is not mounted for.
+            echo ${WEBAPP_GENERATION_CURRENT} > "$SESSION_PATH/${WEBAPP_GENERATION_MARKER}"
         else
             echo "no web app scaffold found - build your web app under outputs/web first (outputs/web/package.json), then call webapp start again" >&2
             exit 1
@@ -121,6 +176,7 @@ echo $PORT > "$SESSION_PATH/.nextjs-port"
             bun install
         fi
         echo "Starting Next.js dev server on port $PORT..."
+${basePathEnv}
         # 9>&-: the server must not inherit the lock fd, or it would hold the
         # check-and-spawn lock for its entire lifetime. -H 0.0.0.0 is onyx's own
         # bind: the preview dials this port on the sandbox host (F-E), not the
@@ -168,13 +224,26 @@ exit 1
  * Protection is the opencode.json permission set, not chmod (the gateway's file API
  * writes bytes only): PROTECTED_FILE_RULES denies edit/write/patch on the name, and the
  * bash rules allow exactly the two documented fallback invocations.
+ *
+ * `webappBasePathFor` (F-2, #365) resolves the session's dev-form /<label> mount —
+ * the same derivation the preview origin mints its address with; unset (host
+ * form, closed origin, or a LEGACY session — #367's D10 gate,
+ * webapp-generation.ts) leaves the script root-path, which for a legacy app
+ * means its template's cwd fallback re-mounts the old same-origin prefix.
+ *
+ * The resolver may be async (the #367 generation gate reads the workspace
+ * marker through the file API); the awaited value is what the script exports.
  */
 export async function writeWebappBootstrapScript(
   api: { writeFile(path: string, content: string): Promise<void> },
   sessionId: string,
   config: CraftConfig,
   port: number,
+  webappBasePathFor?: (
+    sessionId: string,
+  ) => Promise<string | null> | string | null,
 ): Promise<void> {
+  const basePath = (await webappBasePathFor?.(sessionId)) ?? null;
   await api.writeFile(
     `${sessionDirectory(sessionId, config.sessionDirectoryMode)}/${
       WEBAPP_BOOTSTRAP_SCRIPT_NAME
@@ -185,6 +254,7 @@ export async function writeWebappBootstrapScript(
         config.sessionDirectoryMode,
       ),
       port,
+      basePath,
     }),
   );
 }
