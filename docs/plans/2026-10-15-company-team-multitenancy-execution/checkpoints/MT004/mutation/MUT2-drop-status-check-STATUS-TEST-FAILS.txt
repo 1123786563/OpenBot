@@ -1,0 +1,23 @@
+bun test v1.4.2 (50a8a8387)
+
+server/tests/multitenancy/membership-model.test.ts:
+494 |         workspaceId: fixture.workspaceA1,
+495 |         principalId: fixture.principalBMember,
+496 |         status: "revoked",
+497 |       }),
+498 |     );
+499 |     expect(rejection.code).toBe("23514");
+                                 ^
+error: expect(received).toBe(expected)
+
+Expected: "23514"
+Received: "23503"
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt004/server/tests/multitenancy/membership-model.test.ts:499:28)
+(fail) issue #47 criterion 3: status supports active/suspended and epoch is a positive monotonic version > status accepts exactly active and suspended and nothing else [7.21ms]
+
+ 0 pass
+ 14 filtered out
+ 1 fail
+ 2 expect() calls
+Ran 1 test across 1 file. [414.00ms]
