@@ -8,7 +8,12 @@
  * 覆盖：套餐与积分页、升级/购买对话框、账单管理页、URL 参数边界、API 故障态、API 入参边界。
  * 输出：逐条 PASS/FAIL/SKIP + 控制台错误/接口错误清单 + 截图（gui-test-screenshots/billing/）。
  */
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
+import {
+  chromium,
+  type Browser,
+  type BrowserContext,
+  type Page,
+} from "playwright-core";
 import { mkdirSync, existsSync } from "node:fs";
 
 const APP_URL = "http://localhost:3010";
@@ -18,16 +23,25 @@ const CASDOOR_PASSWORD = "123";
 const T = 30_000;
 const SHOT_DIR = "gui-test-screenshots/billing";
 
-type StepResult = { name: string; ok: boolean; detail: string; kind: "pass" | "fail" | "skip" };
+type StepResult = {
+  name: string;
+  ok: boolean;
+  detail: string;
+  kind: "pass" | "fail" | "skip";
+};
 const results: StepResult[] = [];
 /** 全局被动观察到的异常（控制台错误、页面异常、非预期 HTTP >=400） */
 const observedIssues: string[] = [];
 /** 故障注入声明过的预期失败（不计入异常清单） */
 let expectedFailures = new Set<string>();
 /** 当前页面 URL 是否在应用内（排除掉到 Casdoor 的意外停留） */
-function onApp(page: Page) { return page.url().startsWith(APP_URL); }
+function onApp(page: Page) {
+  return page.url().startsWith(APP_URL);
+}
 
-function log(line: string) { console.log(line); }
+function log(line: string) {
+  console.log(line);
+}
 
 class SkipSignal extends Error {}
 async function step(name: string, fn: () => Promise<string | void>) {
@@ -37,11 +51,19 @@ async function step(name: string, fn: () => Promise<string | void>) {
     log(`✅ PASS  ${name}${detail ? ` — ${detail}` : ""}`);
   } catch (error) {
     if (error instanceof SkipSignal) {
-      results.push({ name, ok: true, detail: `跳过：${error.message}`, kind: "skip" });
+      results.push({
+        name,
+        ok: true,
+        detail: `跳过：${error.message}`,
+        kind: "skip",
+      });
       log(`⏭️  SKIP  ${name} — ${error.message}`);
       return;
     }
-    const detail = error instanceof Error ? error.message.replace(/\s*\n\s*/g, " ").slice(0, 400) : String(error);
+    const detail =
+      error instanceof Error
+        ? error.message.replace(/\s*\n\s*/g, " ").slice(0, 400)
+        : String(error);
     results.push({ name, ok: false, detail, kind: "fail" });
     log(`❌ FAIL  ${name} — ${detail}`);
   }
@@ -51,8 +73,16 @@ function skip(a: string, b?: string): never {
 }
 
 async function launchBrowser(): Promise<Browser> {
-  for (const candidate of [{ channel: "chrome" as const }, { channel: "chrome-canary" as const }, { channel: "microsoft-edge" as const }]) {
-    try { return await chromium.launch({ ...candidate, headless: true }); } catch { /* next */ }
+  for (const candidate of [
+    { channel: "chrome" as const },
+    { channel: "chrome-canary" as const },
+    { channel: "microsoft-edge" as const },
+  ]) {
+    try {
+      return await chromium.launch({ ...candidate, headless: true });
+    } catch {
+      /* next */
+    }
   }
   const paths = [
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -60,7 +90,8 @@ async function launchBrowser(): Promise<Browser> {
     "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
   ];
   for (const executablePath of paths) {
-    if (existsSync(executablePath)) return await chromium.launch({ executablePath, headless: true });
+    if (existsSync(executablePath))
+      return await chromium.launch({ executablePath, headless: true });
   }
   throw new Error("找不到可用的 Chrome/Chromium");
 }
@@ -68,7 +99,9 @@ async function launchBrowser(): Promise<Browser> {
 /** 等 dev server 就绪：Vite 冷启动编译慢，先轮询到 200。 */
 async function waitAppReady() {
   for (let i = 0; i < 40; i++) {
-    const code = await fetch(`${APP_URL}/`, { redirect: "manual" }).then((r) => r.status).catch(() => 0);
+    const code = await fetch(`${APP_URL}/`, { redirect: "manual" })
+      .then((r) => r.status)
+      .catch(() => 0);
     if (code === 200) return;
     await new Promise((r) => setTimeout(r, 2000));
   }
@@ -77,8 +110,10 @@ async function waitAppReady() {
 
 async function gotoRetry(page: Page, url: string, attempts = 4) {
   for (let i = 0; i < attempts; i++) {
-    try { await page.goto(url, { timeout: 60_000, waitUntil: "domcontentloaded" }); return; }
-    catch (error) {
+    try {
+      await page.goto(url, { timeout: 60_000, waitUntil: "domcontentloaded" });
+      return;
+    } catch (error) {
       if (i === attempts - 1) throw error;
       await page.waitForTimeout(3000);
     }
@@ -93,11 +128,19 @@ async function casdoorLogin(page: Page) {
   await username.fill(CASDOOR_USER);
   await password.fill(CASDOOR_PASSWORD);
   await Promise.all([
-    page.waitForURL((url) => url.origin === APP_URL, { timeout: T }).catch(async (e) => {
-      // 停在 Casdoor 上：把页面上的错误提示带出来
-      const errText = await page.locator(".ant-message, [class*='error'], [class*='alert']").first().innerText().catch(() => "（无可见错误提示）");
-      throw new Error(`登录后未跳回应用；页面错误提示：${errText.slice(0, 120)}；当前 ${page.url()}`);
-    }),
+    page
+      .waitForURL((url) => url.origin === APP_URL, { timeout: T })
+      .catch(async (e) => {
+        // 停在 Casdoor 上：把页面上的错误提示带出来
+        const errText = await page
+          .locator(".ant-message, [class*='error'], [class*='alert']")
+          .first()
+          .innerText()
+          .catch(() => "（无可见错误提示）");
+        throw new Error(
+          `登录后未跳回应用；页面错误提示：${errText.slice(0, 120)}；当前 ${page.url()}`,
+        );
+      }),
     page.locator('button[type="submit"]:has-text("登录")').first().click(),
   ]);
 }
@@ -126,22 +169,40 @@ async function ensureOn(page: Page, path: string) {
 }
 
 /** 在已登录页面上下文里调 API（同源带 cookie），返回状态码与 JSON。 */
-async function api(page: Page, path: string, init?: { method?: string; body?: unknown }) {
+async function api(
+  page: Page,
+  path: string,
+  init?: { method?: string; body?: unknown },
+) {
   if (!onApp(page)) throw new Error(`不在应用内，拒绝把请求打到 ${page.url()}`);
-  return page.evaluate(async ({ path, init }) => {
-    const response = await fetch(path, {
-      method: init?.method ?? "GET",
-      headers: init?.body !== undefined ? { "content-type": "application/json" } : undefined,
-      body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
-    });
-    let json: unknown = null;
-    try { json = await response.json(); } catch { /* non-json */ }
-    return { status: response.status, json };
-  }, { path, init });
+  return page.evaluate(
+    async ({ path, init }) => {
+      const response = await fetch(path, {
+        method: init?.method ?? "GET",
+        headers:
+          init?.body !== undefined
+            ? { "content-type": "application/json" }
+            : undefined,
+        body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+      });
+      let json: unknown = null;
+      try {
+        json = await response.json();
+      } catch {
+        /* non-json */
+      }
+      return { status: response.status, json };
+    },
+    { path, init },
+  );
 }
 
 /** 故障注入：finally 保证解除，绝不泄漏到后续步骤。 */
-async function withAborted(page: Page, pattern: string, fn: () => Promise<string | void>) {
+async function withAborted(
+  page: Page,
+  pattern: string,
+  fn: () => Promise<string | void>,
+) {
   await page.route(pattern, (route) => route.abort("failed"));
   try {
     await fn();
@@ -155,7 +216,9 @@ function expect(cond: unknown, message: string): asserts cond {
 }
 
 async function shot(page: Page, name: string) {
-  await page.screenshot({ path: `${SHOT_DIR}/${name}.png`, fullPage: false }).catch(() => {});
+  await page
+    .screenshot({ path: `${SHOT_DIR}/${name}.png`, fullPage: false })
+    .catch(() => {});
 }
 
 /* ------------------------------------------------------------------ */
@@ -165,7 +228,10 @@ async function main() {
   await waitAppReady();
   const browser = await launchBrowser();
 
-  const context = await browser.newContext({ locale: "zh-CN", viewport: { width: 1440, height: 900 } });
+  const context = await browser.newContext({
+    locale: "zh-CN",
+    viewport: { width: 1440, height: 900 },
+  });
   const page = await context.newPage();
   page.on("console", (msg) => {
     if (msg.type() === "error") {
@@ -175,7 +241,9 @@ async function main() {
       observedIssues.push(`[console.error] ${text.slice(0, 300)}`);
     }
   });
-  page.on("pageerror", (err) => observedIssues.push(`[pageerror] ${String(err).slice(0, 300)}`));
+  page.on("pageerror", (err) =>
+    observedIssues.push(`[pageerror] ${String(err).slice(0, 300)}`),
+  );
   page.on("response", (res) => {
     if (!res.url().includes("/api/billing")) return;
     if (res.status() < 400) return;
@@ -200,28 +268,48 @@ async function main() {
         .then(() => true)
         .catch(() => false);
       if (sidebarUp) break;
-      me = await page.evaluate(async () => (await fetch("/api/me")).status).catch(() => 0);
+      me = await page
+        .evaluate(async () => (await fetch("/api/me")).status)
+        .catch(() => 0);
       if (attempt === 2) expect(false, `登录后侧栏未渲染（/api/me=${me}）`);
       await gotoRetry(page, `${APP_URL}/`);
     }
     return `已登录，落地在 ${page.url()}；/api/me=${me}`;
   });
 
-  await step("准备：清理遗留的 pending 订单（顺带验证 cancel API）", async () => {
-    await ensureOn(page, "/settings/usage");
-    const current = await api(page, "/api/billing/purchases/current");
-    const order = (current.json as { order?: { orderId?: string; status?: string } } | null)?.order;
-    if (!order || order.status !== "pending") return `无遗留 pending 订单（${JSON.stringify(current.json).slice(0, 80)}）`;
-    const cancel = await api(page, `/api/billing/purchases/${order.orderId}/cancel`, { method: "POST" });
-    expect(cancel.status === 200, `取消订单 HTTP ${cancel.status}：${JSON.stringify(cancel.json).slice(0, 120)}`);
-    return `已取消遗留订单 ${order.orderId}`;
-  });
+  await step(
+    "准备：清理遗留的 pending 订单（顺带验证 cancel API）",
+    async () => {
+      await ensureOn(page, "/settings/usage");
+      const current = await api(page, "/api/billing/purchases/current");
+      const order = (
+        current.json as { order?: { orderId?: string; status?: string } } | null
+      )?.order;
+      if (!order || order.status !== "pending")
+        return `无遗留 pending 订单（${JSON.stringify(current.json).slice(0, 80)}）`;
+      const cancel = await api(
+        page,
+        `/api/billing/purchases/${order.orderId}/cancel`,
+        { method: "POST" },
+      );
+      expect(
+        cancel.status === 200,
+        `取消订单 HTTP ${cancel.status}：${JSON.stringify(cancel.json).slice(0, 120)}`,
+      );
+      return `已取消遗留订单 ${order.orderId}`;
+    },
+  );
 
   /* ============ A. 套餐与积分页 ============ */
   log(`\n— A. 套餐与积分页 /settings/usage —`);
   await step("A1 页面加载：标题「套餐与积分」与描述渲染", async () => {
     await ensureOn(page, "/settings/usage");
-    await page.locator("h1:has-text('套餐与积分'), h2:has-text('套餐与积分'), [class*='title']:has-text('套餐与积分')").first().waitFor({ timeout: T });
+    await page
+      .locator(
+        "h1:has-text('套餐与积分'), h2:has-text('套餐与积分'), [class*='title']:has-text('套餐与积分')",
+      )
+      .first()
+      .waitFor({ timeout: T });
     await page.waitForTimeout(2500); // 等查询全部落定（Vite 按需编译 + 4 个查询）
     await shot(page, "A1-usage-page");
     return "OK";
@@ -236,7 +324,10 @@ async function main() {
     await shot(page, "A2-welcome-banner");
     // 领取写入尚未实现：按钮必须禁用并给出「即将开放」提示，而不是可点但无反应
     const disabled = await btn.isDisabled();
-    const hint = await page.locator("text=领取功能即将开放").isVisible().catch(() => false);
+    const hint = await page
+      .locator("text=领取功能即将开放")
+      .isVisible()
+      .catch(() => false);
     expect(disabled, "领取按钮未禁用（点击将是无反应的占位）");
     expect(hint, "缺少「领取功能即将开放」提示");
     return `按钮已禁用=${disabled}，提示文案=${hint}`;
@@ -246,17 +337,31 @@ async function main() {
     await ensureOn(page, "/settings/usage");
     await page.locator("text=订阅计划").first().waitFor({ timeout: 10_000 });
     await page.waitForTimeout(800);
-    const upgradeBtn = await page.locator("button:has-text('升级')").first().isVisible().catch(() => false);
-    const free = await page.locator("text=体验版").first().isVisible().catch(() => false);
+    const upgradeBtn = await page
+      .locator("button:has-text('升级')")
+      .first()
+      .isVisible()
+      .catch(() => false);
+    const free = await page
+      .locator("text=体验版")
+      .first()
+      .isVisible()
+      .catch(() => false);
     await shot(page, "A4-plan-card");
     return `升级按钮=${upgradeBtn ? "可见" : "不可见"}；体验版文案=${free}`;
   });
 
   await step("A5 奖励积分区块：grant 列表渲染（状态/到期/原因）", async () => {
     await ensureOn(page, "/settings/usage");
-    await page.locator("text=平台奖励积分").first().waitFor({ timeout: 10_000 });
+    await page
+      .locator("text=平台奖励积分")
+      .first()
+      .waitFor({ timeout: 10_000 });
     await page.waitForTimeout(1000);
-    const empty = await page.locator("text=暂无奖励积分").isVisible().catch(() => false);
+    const empty = await page
+      .locator("text=暂无奖励积分")
+      .isVisible()
+      .catch(() => false);
     if (empty) return "空态文案正常（当前无奖励积分）";
     const active = await page.locator("text=使用中").count();
     const exhausted = await page.locator("text=已用完").count();
@@ -268,83 +373,134 @@ async function main() {
 
   await step("A6 消耗明细区块：表头与数据/空态渲染", async () => {
     await ensureOn(page, "/settings/usage");
-    await page.locator("text=积分消耗明细").first().waitFor({ timeout: 10_000 });
+    await page
+      .locator("text=积分消耗明细")
+      .first()
+      .waitFor({ timeout: 10_000 });
     await page.waitForTimeout(1000);
-    const time = await page.locator("text=时间").first().isVisible().catch(() => false);
-    const empty = await page.locator("text=还没有积分消耗记录").isVisible().catch(() => false);
+    const time = await page
+      .locator("text=时间")
+      .first()
+      .isVisible()
+      .catch(() => false);
+    const empty = await page
+      .locator("text=还没有积分消耗记录")
+      .isVisible()
+      .catch(() => false);
     const rows = empty ? 0 : await page.locator("table tbody tr").count();
     await shot(page, "A6-consumption");
     return `表头时间=${time}；${empty ? "空态" : `${rows} 行数据`}`;
   });
 
-  await step("A7 消耗明细 range 切换（30天→今天→7天）：URL 与数据联动", async () => {
-    await ensureOn(page, "/settings/usage?range=7d");
-    const btn30 = page.locator("button:text-is('30天')").first();
-    await btn30.waitFor({ timeout: 10_000 });
-    await btn30.scrollIntoViewIfNeeded().catch(() => {});
-    await btn30.click({ timeout: 15_000 });
-    await page.waitForURL((u) => String(u).includes("range=30d"), { timeout: 10_000 });
-    await page.waitForTimeout(1200);
-    const today = page.locator("button:text-is('今天')").first();
-    await today.click({ timeout: 10_000 });
-    await page.waitForURL((u) => String(u).includes("range=today"), { timeout: 10_000 });
-    await page.waitForTimeout(1500);
-    // 关键验证：切到“今天”后（若该窗口无数据），切换器是否还在页面上
-    const switcherAlive = (await page.locator("button:text-is('7天')").count()) > 0;
-    await shot(page, "A7-today-window");
-    if (!switcherAlive) {
-      // 直接改 URL 恢复现场（UI 已无法切回）
-      await gotoRetry(page, `${APP_URL}/settings/usage?range=7d`);
-      throw new Error("【缺陷】切到“今天”后范围切换器整个消失（空窗口卸载了整个表格组件），用户无法用 UI 切回其他范围，只能改 URL 逃生");
-    }
-    await page.locator("button:text-is('7天')").first().click({ timeout: 10_000 });
-    await page.waitForURL((u) => String(u).includes("range=7d"), { timeout: 10_000 });
-    await shot(page, "A7-range-switch");
-    return "URL 依次变为 30d/today/7d，切换控件工作正常";
-  });
+  await step(
+    "A7 消耗明细 range 切换（30天→今天→7天）：URL 与数据联动",
+    async () => {
+      await ensureOn(page, "/settings/usage?range=7d");
+      const btn30 = page.locator("button:text-is('30天')").first();
+      await btn30.waitFor({ timeout: 10_000 });
+      await btn30.scrollIntoViewIfNeeded().catch(() => {});
+      await btn30.click({ timeout: 15_000 });
+      await page.waitForURL((u) => String(u).includes("range=30d"), {
+        timeout: 10_000,
+      });
+      await page.waitForTimeout(1200);
+      const today = page.locator("button:text-is('今天')").first();
+      await today.click({ timeout: 10_000 });
+      await page.waitForURL((u) => String(u).includes("range=today"), {
+        timeout: 10_000,
+      });
+      await page.waitForTimeout(1500);
+      // 关键验证：切到“今天”后（若该窗口无数据），切换器是否还在页面上
+      const switcherAlive =
+        (await page.locator("button:text-is('7天')").count()) > 0;
+      await shot(page, "A7-today-window");
+      if (!switcherAlive) {
+        // 直接改 URL 恢复现场（UI 已无法切回）
+        await gotoRetry(page, `${APP_URL}/settings/usage?range=7d`);
+        throw new Error(
+          "【缺陷】切到“今天”后范围切换器整个消失（空窗口卸载了整个表格组件），用户无法用 UI 切回其他范围，只能改 URL 逃生",
+        );
+      }
+      await page
+        .locator("button:text-is('7天')")
+        .first()
+        .click({ timeout: 10_000 });
+      await page.waitForURL((u) => String(u).includes("range=7d"), {
+        timeout: 10_000,
+      });
+      await shot(page, "A7-range-switch");
+      return "URL 依次变为 30d/today/7d，切换控件工作正常";
+    },
+  );
 
-  await step("A8 消耗明细分页器：有数据显示文案与翻页，空窗口隐藏分页器", async () => {
-    await ensureOn(page, "/settings/usage?range=30d");
-    await page.waitForTimeout(1500);
-    const empty = await page.locator("text=还没有积分消耗记录").isVisible().catch(() => false);
-    if (empty) {
-      // 修复后的设计：totalCount=0 时空态渲染且分页器不显示（不报「共 0 条」）
-      const pagerGone = (await page.locator("text=/第 \\d+ \\/ \\d+ 页/").count()) === 0;
-      expect(pagerGone, "空窗口下分页器不应显示（totalCount=0 隐藏分页器是修复的一部分）");
-      return "空窗口：空态文案正确，分页器按设计隐藏";
-    }
-    const status = page.locator("text=/第 \\d+ \\/ \\d+ 页/").first();
-    await status.waitFor({ timeout: 10_000 });
-    const text = (await status.innerText()).trim();
-    const prevDisabled = await page.locator("button[aria-label='上一页'], button:has-text('上一页')").first().isDisabled().catch(() => null);
-    const nextDisabled = await page.locator("button[aria-label='下一页'], button:has-text('下一页')").first().isDisabled().catch(() => null);
-    return `「${text}」；上一页禁用=${prevDisabled} 下一页禁用=${nextDisabled}`;
-  });
+  await step(
+    "A8 消耗明细分页器：有数据显示文案与翻页，空窗口隐藏分页器",
+    async () => {
+      await ensureOn(page, "/settings/usage?range=30d");
+      await page.waitForTimeout(1500);
+      const empty = await page
+        .locator("text=还没有积分消耗记录")
+        .isVisible()
+        .catch(() => false);
+      if (empty) {
+        // 修复后的设计：totalCount=0 时空态渲染且分页器不显示（不报「共 0 条」）
+        const pagerGone =
+          (await page.locator("text=/第 \\d+ \\/ \\d+ 页/").count()) === 0;
+        expect(
+          pagerGone,
+          "空窗口下分页器不应显示（totalCount=0 隐藏分页器是修复的一部分）",
+        );
+        return "空窗口：空态文案正确，分页器按设计隐藏";
+      }
+      const status = page.locator("text=/第 \\d+ \\/ \\d+ 页/").first();
+      await status.waitFor({ timeout: 10_000 });
+      const text = (await status.innerText()).trim();
+      const prevDisabled = await page
+        .locator("button[aria-label='上一页'], button:has-text('上一页')")
+        .first()
+        .isDisabled()
+        .catch(() => null);
+      const nextDisabled = await page
+        .locator("button[aria-label='下一页'], button:has-text('下一页')")
+        .first()
+        .isDisabled()
+        .catch(() => null);
+      return `「${text}」；上一页禁用=${prevDisabled} 下一页禁用=${nextDisabled}`;
+    },
+  );
 
   await step("A9 URL 参数边界：?range=bogus 回落 7d", async () => {
     await gotoRetry(page, `${APP_URL}/settings/usage?range=bogus`);
     await page.waitForTimeout(2000);
     expect(onApp(page), `不在应用内：${page.url()}`);
-    const active = await page.locator("button.bg-primary:text-is('7天')").count();
+    const active = await page
+      .locator("button.bg-primary:text-is('7天')")
+      .count();
     const anyActive = await page.locator("button.bg-primary").count();
     return `URL=${page.url().split("?")[1] ?? "（无参数）"}；7天高亮=${active}（任意高亮=${anyActive}）`;
   });
 
-  await step("A10 URL 参数边界：?page=-3 / ?page=abc / ?page=999999", async () => {
-    await gotoRetry(page, `${APP_URL}/settings/usage?range=7d&page=-3`);
-    await page.waitForTimeout(1500);
-    expect(onApp(page), `page=-3 后不在应用内：${page.url()}`);
-    const urlNeg = page.url().split("?")[1] ?? "";
-    await gotoRetry(page, `${APP_URL}/settings/usage?range=7d&page=abc`);
-    await page.waitForTimeout(1500);
-    const urlAbc = page.url().split("?")[1] ?? "";
-    await gotoRetry(page, `${APP_URL}/settings/usage?range=7d&page=999999`);
-    await page.waitForTimeout(2000);
-    const empty = await page.locator("text=还没有积分消耗记录").isVisible().catch(() => false);
-    const rows = await page.locator("table tbody tr").count();
-    await shot(page, "A10-page-999999");
-    return `page=-3→「${urlNeg}」；page=abc→「${urlAbc}」；page=999999：空态=${empty} 行数=${rows}`;
-  });
+  await step(
+    "A10 URL 参数边界：?page=-3 / ?page=abc / ?page=999999",
+    async () => {
+      await gotoRetry(page, `${APP_URL}/settings/usage?range=7d&page=-3`);
+      await page.waitForTimeout(1500);
+      expect(onApp(page), `page=-3 后不在应用内：${page.url()}`);
+      const urlNeg = page.url().split("?")[1] ?? "";
+      await gotoRetry(page, `${APP_URL}/settings/usage?range=7d&page=abc`);
+      await page.waitForTimeout(1500);
+      const urlAbc = page.url().split("?")[1] ?? "";
+      await gotoRetry(page, `${APP_URL}/settings/usage?range=7d&page=999999`);
+      await page.waitForTimeout(2000);
+      const empty = await page
+        .locator("text=还没有积分消耗记录")
+        .isVisible()
+        .catch(() => false);
+      const rows = await page.locator("table tbody tr").count();
+      await shot(page, "A10-page-999999");
+      return `page=-3→「${urlNeg}」；page=abc→「${urlAbc}」；page=999999：空态=${empty} 行数=${rows}`;
+    },
+  );
 
   await step("A11 credits/summary 接口故障 → 错误提示 + 重试恢复", async () => {
     await ensureOn(page, "/settings/usage");
@@ -361,8 +517,14 @@ async function main() {
     await page.locator("button:has-text('重试')").first().click();
     await page.waitForTimeout(3000);
     const alertCount = await page.locator("[role='alert']").count();
-    const planVisible = await page.locator("text=订阅计划").isVisible().catch(() => false);
-    expect(alertCount === 0 || planVisible, `重试后错误仍在（${alertCount} 个 alert）`);
+    const planVisible = await page
+      .locator("text=订阅计划")
+      .isVisible()
+      .catch(() => false);
+    expect(
+      alertCount === 0 || planVisible,
+      `重试后错误仍在（${alertCount} 个 alert）`,
+    );
     return `错误文案「${alertText.slice(0, 40)}」→ 重试后恢复`;
   });
 
@@ -375,9 +537,16 @@ async function main() {
     await upgrade.click();
     const dialog = page.locator("[role='dialog']");
     await dialog.waitFor({ timeout: 10_000 });
-    await dialog.locator("span.font-medium").first().waitFor({ timeout: 10_000 });
+    await dialog
+      .locator("span.font-medium")
+      .first()
+      .waitFor({ timeout: 10_000 });
     const names = await dialog.locator("span.font-medium").allInnerTexts();
-    const subtitle = await dialog.locator("[class*='description'], p").first().innerText().catch(() => "");
+    const subtitle = await dialog
+      .locator("[class*='description'], p")
+      .first()
+      .innerText()
+      .catch(() => "");
     await shot(page, "B1-upgrade-dialog");
     expect(names.length >= 3, `套餐卡片数量异常：${names.length}`);
     return `套餐：${names.join("/")}；对话框描述：${subtitle.slice(0, 40)}`;
@@ -385,11 +554,15 @@ async function main() {
 
   await step("B2 周期选择：连续包月折扣与划线原价", async () => {
     const dialog = page.locator("[role='dialog']");
-    const cycleBtn = dialog.locator("button:has-text('连续包月'), button:has-text('1个月')").first();
+    const cycleBtn = dialog
+      .locator("button:has-text('连续包月'), button:has-text('1个月')")
+      .first();
     await cycleBtn.waitFor({ timeout: 15_000 });
     const discount = await dialog.locator(".text-success").count();
     const strike = await dialog.locator(".line-through").count();
-    const cycles = await dialog.locator("button:has-text('连续包月'), button:has-text('1个月')").count();
+    const cycles = await dialog
+      .locator("button:has-text('连续包月'), button:has-text('1个月')")
+      .count();
     return `周期按钮=${cycles}，折扣标签=${discount}，划线价=${strike}`;
   });
 
@@ -397,7 +570,11 @@ async function main() {
     const dialog = page.locator("[role='dialog']");
     await dialog.locator("button:has-text('高级版')").first().click();
     await page.waitForTimeout(400);
-    const summary = await dialog.locator("p.font-medium").first().innerText().catch(() => "");
+    const summary = await dialog
+      .locator("p.font-medium")
+      .first()
+      .innerText()
+      .catch(() => "");
     expect(summary.includes("高级版"), `汇总未联动：${summary}`);
     await shot(page, "B3-select-advanced");
     return `汇总行：${summary}`;
@@ -427,8 +604,14 @@ async function main() {
     }
     const hasAlipay2 = await alipay.isVisible().catch(() => false);
     const hasWechat2 = await wechat.isVisible().catch(() => false);
-    expect(hasAlipay2 || hasWechat2, "等待 15 秒后仍未渲染任何支付渠道（购买目录 providers 为空或加载失败）");
-    if (hasAlipay2) { await alipay.click(); await page.waitForTimeout(200); }
+    expect(
+      hasAlipay2 || hasWechat2,
+      "等待 15 秒后仍未渲染任何支付渠道（购买目录 providers 为空或加载失败）",
+    );
+    if (hasAlipay2) {
+      await alipay.click();
+      await page.waitForTimeout(200);
+    }
     return `支付宝=${hasAlipay2} 微信支付=${hasWechat2}`;
   });
 
@@ -452,60 +635,101 @@ async function main() {
     if (!(await checkbox.isChecked())) await checkbox.check();
     await page.waitForTimeout(200);
     const payBtn = dialog.locator("button:text-is('同意协议并支付')").last();
-    const createResp = page.waitForResponse((r) => r.url().includes("/api/billing/purchases") && r.request().method() === "POST", { timeout: 20_000 }).catch(() => null);
+    const createResp = page
+      .waitForResponse(
+        (r) =>
+          r.url().includes("/api/billing/purchases") &&
+          r.request().method() === "POST",
+        { timeout: 20_000 },
+      )
+      .catch(() => null);
     await payBtn.click();
     const resp = await createResp;
-    if (!resp) throw new Error("点击支付后未观察到 POST /api/billing/purchases");
+    if (!resp)
+      throw new Error("点击支付后未观察到 POST /api/billing/purchases");
     if (resp.status() !== 200) {
       const body = await resp.text().catch(() => "");
       throw new Error(`创建订单 HTTP ${resp.status()}：${body.slice(0, 160)}`);
     }
-    const qr = dialog.locator("img[alt*='扫码'], img[src^='data:image']").first();
+    const qr = dialog
+      .locator("img[alt*='扫码'], img[src^='data:image']")
+      .first();
     await qr.waitFor({ timeout: 30_000 });
     const src = await qr.getAttribute("src");
     expect(src?.startsWith("data:image/png"), "QR 不是本地 data URL");
     await page.waitForTimeout(1500);
     const lines = await dialog.locator("p.text-xs").allInnerTexts();
     await shot(page, "B7-alipay-qr");
-    const orderLine = lines.find((t) => t.includes("待支付") || t.includes("等待") || t.includes("订单"));
+    const orderLine = lines.find(
+      (t) => t.includes("待支付") || t.includes("等待") || t.includes("订单"),
+    );
     return `QR 渲染成功；状态行：${orderLine ?? lines.join(" | ")}`;
   });
 
-  await step("B7b 已有 pending 单时再买另一套餐 → 服务端拒绝与文案", async () => {
-    const dialog = page.locator("[role='dialog']");
-    const advanced = dialog.locator("button:has-text('高级版')").first();
-    if (!(await advanced.isVisible().catch(() => false))) return skip("对话框已不在，跳过并发购单验证");
-    await advanced.click();
-    await page.waitForTimeout(400);
-    const payBtn = dialog.locator("button:text-is('同意协议并支付')").last();
-    const [resp] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes("/api/billing/purchases") && r.request().method() === "POST", { timeout: 15_000 }).catch(() => null),
-      payBtn.click(),
-    ]);
-    if (!resp) return skip("未发出第二次购单请求（按钮可能被禁用）");
-    const body = (await resp.json().catch(() => ({}))) as { error?: string };
-    await page.waitForTimeout(800);
-    const payError = await dialog.locator("[role='alert']").last().innerText().catch(() => "（无）");
-    await shot(page, "B7b-second-order-refused");
-    expect(payError.includes("待支付订单"), `409 文案未本地化：「${payError.slice(0, 80)}」`);
-    return `HTTP ${resp.status()}；对话框错误文案（已本地化）：「${payError.slice(0, 80)}」`;
-  });
+  await step(
+    "B7b 已有 pending 单时再买另一套餐 → 服务端拒绝与文案",
+    async () => {
+      const dialog = page.locator("[role='dialog']");
+      const advanced = dialog.locator("button:has-text('高级版')").first();
+      if (!(await advanced.isVisible().catch(() => false)))
+        return skip("对话框已不在，跳过并发购单验证");
+      await advanced.click();
+      await page.waitForTimeout(400);
+      const payBtn = dialog.locator("button:text-is('同意协议并支付')").last();
+      const [resp] = await Promise.all([
+        page
+          .waitForResponse(
+            (r) =>
+              r.url().includes("/api/billing/purchases") &&
+              r.request().method() === "POST",
+            { timeout: 15_000 },
+          )
+          .catch(() => null),
+        payBtn.click(),
+      ]);
+      if (!resp) return skip("未发出第二次购单请求（按钮可能被禁用）");
+      const body = (await resp.json().catch(() => ({}))) as { error?: string };
+      await page.waitForTimeout(800);
+      const payError = await dialog
+        .locator("[role='alert']")
+        .last()
+        .innerText()
+        .catch(() => "（无）");
+      await shot(page, "B7b-second-order-refused");
+      expect(
+        payError.includes("待支付订单"),
+        `409 文案未本地化：「${payError.slice(0, 80)}」`,
+      );
+      return `HTTP ${resp.status()}；对话框错误文案（已本地化）：「${payError.slice(0, 80)}」`;
+    },
+  );
 
   await step("B7c 通过 UI 取消待支付订单", async () => {
     const dialog = page.locator("[role='dialog']");
     if ((await dialog.count()) === 0) return skip("B7c", "对话框已关闭");
-    const statusGone = await dialog.locator("p.text-xs:has-text('订单待支付')").count();
+    const statusGone = await dialog
+      .locator("p.text-xs:has-text('订单待支付')")
+      .count();
     if (statusGone === 0) return skip("B7c", "当前无待支付订单展示");
     const cancelBtn = dialog.locator("button:text-is('取消订单')").first();
     await cancelBtn.waitFor({ timeout: 8000 });
     const [resp] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes("/cancel"), { timeout: 15_000 }).catch(() => null),
+      page
+        .waitForResponse((r) => r.url().includes("/cancel"), {
+          timeout: 15_000,
+        })
+        .catch(() => null),
       cancelBtn.click(),
     ]);
     await page.waitForTimeout(1500);
-    const stillPending = await dialog.locator("p.text-xs:has-text('订单待支付')").count();
+    const stillPending = await dialog
+      .locator("p.text-xs:has-text('订单待支付')")
+      .count();
     await shot(page, "B7c-order-cancelled");
-    expect(resp && resp.status() === 200, `取消请求失败：${resp ? resp.status() : "未发出"}`);
+    expect(
+      resp && resp.status() === 200,
+      `取消请求失败：${resp ? resp.status() : "未发出"}`,
+    );
     expect(stillPending === 0, "取消后订单状态行仍在");
     return "取消订单成功，状态行已消失，支付通道恢复";
   });
@@ -518,7 +742,9 @@ async function main() {
     await page.locator("button:has-text('升级')").first().click();
     await dialog.waitFor({ timeout: 10_000 });
     await page.waitForTimeout(800);
-    const orderLine = await dialog.locator("p.text-xs:has-text('待支付'), p.text-xs:has-text('等待支付')").count();
+    const orderLine = await dialog
+      .locator("p.text-xs:has-text('待支付'), p.text-xs:has-text('等待支付')")
+      .count();
     const checkbox = dialog.locator("input[type='checkbox']").first();
     const checked = await checkbox.isChecked().catch(() => false);
     await shot(page, "B8-reopen-dialog");
@@ -527,12 +753,16 @@ async function main() {
 
   await step("B9 微信支付下单（Pro 测试版 ¥1）", async () => {
     const dialog = page.locator("[role='dialog']");
-    const pro = dialog.locator("button:has(span.font-medium):has-text('Pro 测试版')").first();
-    if (!(await pro.isVisible().catch(() => false))) return skip("B9", "目录里没有 Pro 测试版");
+    const pro = dialog
+      .locator("button:has(span.font-medium):has-text('Pro 测试版')")
+      .first();
+    if (!(await pro.isVisible().catch(() => false)))
+      return skip("B9", "目录里没有 Pro 测试版");
     await pro.click();
     await page.waitForTimeout(300);
     const wechat = dialog.locator("button:has-text('微信支付')").first();
-    if (!(await wechat.isVisible().catch(() => false))) return skip("B9", "部署未配置微信渠道");
+    if (!(await wechat.isVisible().catch(() => false)))
+      return skip("B9", "部署未配置微信渠道");
     await wechat.click();
     await page.waitForTimeout(200);
     const checkbox = dialog.locator("input[type='checkbox']").first();
@@ -573,7 +803,10 @@ async function main() {
     await ensureOn(page, "/settings/invoices");
     await page.waitForTimeout(1500);
     const rows = await page.locator("table tbody tr").count();
-    const empty = await page.locator("text=暂无账单").isVisible().catch(() => false);
+    const empty = await page
+      .locator("text=暂无账单")
+      .isVisible()
+      .catch(() => false);
     if (rows === 0 && empty) return "空态（当前无账单）";
     expect(rows > 0, `既无行也无空态（rows=${rows}）`);
     const expired = await page.locator("text=已过期").count();
@@ -584,24 +817,35 @@ async function main() {
     return `${rows} 行；已过期标签=${expired}；金额=${moneyCells.join(",") || "无"}；订单号=${ids.join(",") || "无"}`;
   });
 
-  await step("C3 时间范围筛选：切换 3 个月 → URL ?range=3m&page=1", async () => {
-    await ensureOn(page, "/settings/invoices");
-    await page.locator("[aria-label='时间范围']").click();
-    await page.locator("[role='option']:has-text('近 3 个月')").click();
-    await page.waitForURL((u) => String(u).includes("range=3m"), { timeout: 10_000 });
-    await page.waitForTimeout(1000);
-    expect(page.url().includes("page=1"), "切换范围后页码未重置为 1");
-    await shot(page, "C3-range-3m");
-    return `URL：${page.url().split("?")[1]}`;
-  });
+  await step(
+    "C3 时间范围筛选：切换 3 个月 → URL ?range=3m&page=1",
+    async () => {
+      await ensureOn(page, "/settings/invoices");
+      await page.locator("[aria-label='时间范围']").click();
+      await page.locator("[role='option']:has-text('近 3 个月')").click();
+      await page.waitForURL((u) => String(u).includes("range=3m"), {
+        timeout: 10_000,
+      });
+      await page.waitForTimeout(1000);
+      expect(page.url().includes("page=1"), "切换范围后页码未重置为 1");
+      await shot(page, "C3-range-3m");
+      return `URL：${page.url().split("?")[1]}`;
+    },
+  );
 
   await step("C4 超页码 page=99 的表现", async () => {
     await gotoRetry(page, `${APP_URL}/settings/invoices?range=3m&page=99`);
     await page.waitForTimeout(2000);
     expect(onApp(page), `不在应用内：${page.url()}`);
-    const filtered = await page.locator("text=该时间范围内没有账单").isVisible().catch(() => false);
+    const filtered = await page
+      .locator("text=该时间范围内没有账单")
+      .isVisible()
+      .catch(() => false);
     const rows = await page.locator("table tbody tr").count();
-    const pagerText = await page.locator("text=/第 \\d+ \\/ \\d+ 页/").innerText().catch(() => "（无分页器）");
+    const pagerText = await page
+      .locator("text=/第 \\d+ \\/ \\d+ 页/")
+      .innerText()
+      .catch(() => "（无分页器）");
     await shot(page, "C4-page-99");
     if (filtered) return "空态文案正确";
     return `未出现空态：渲染 ${rows} 行，分页器「${pagerText}」（服务端/前端可能钳制了页码）`;
@@ -619,21 +863,36 @@ async function main() {
     let loaded = false;
     for (let i = 0; i < 20; i++) {
       const body = await dialog.innerText();
-      if (/po-[0-9a-f]+/.test(body) || (await dialog.locator("[role='alert']").count()) > 0) { loaded = true; break; }
+      if (
+        /po-[0-9a-f]+/.test(body) ||
+        (await dialog.locator("[role='alert']").count()) > 0
+      ) {
+        loaded = true;
+        break;
+      }
       await page.waitForTimeout(500);
     }
     const body = await dialog.innerText();
     await shot(page, "C5-invoice-detail");
-    expect(loaded, `详情 10 秒内既没加载出订单号也没有错误提示；内容：${body.slice(0, 120)}`);
-    expect(/po-[0-9a-f]+/.test(body), `详情里没有订单号；内容：${body.slice(0, 160)}`);
-    const fields = ["金额", "支付状态", "支付方式", "开具时间"].filter((f) => body.includes(f));
+    expect(
+      loaded,
+      `详情 10 秒内既没加载出订单号也没有错误提示；内容：${body.slice(0, 120)}`,
+    );
+    expect(
+      /po-[0-9a-f]+/.test(body),
+      `详情里没有订单号；内容：${body.slice(0, 160)}`,
+    );
+    const fields = ["金额", "支付状态", "支付方式", "开具时间"].filter((f) =>
+      body.includes(f),
+    );
     return `详情打开成功；字段=${fields.join("/")}`;
   });
 
   await step("C6 下载账单 CSV（详情内）", async () => {
     const dialog = page.locator("[role='dialog']");
     const downloadBtn = dialog.locator("button:has-text('下载账单')").last();
-    if (!(await downloadBtn.isVisible().catch(() => false))) return skip("C6", "详情里无下载按钮");
+    if (!(await downloadBtn.isVisible().catch(() => false)))
+      return skip("C6", "详情里无下载按钮");
     const [download] = await Promise.all([
       page.waitForEvent("download", { timeout: 10_000 }),
       downloadBtn.click(),
@@ -668,9 +927,13 @@ async function main() {
   await step("C8 刷新按钮触发重新拉取", async () => {
     await ensureOn(page, "/settings/invoices");
     let requests = 0;
-    const handler = (res: { url: () => string }) => { if (res.url().includes("/api/billing/invoices")) requests++; };
+    const handler = (res: { url: () => string }) => {
+      if (res.url().includes("/api/billing/invoices")) requests++;
+    };
     page.on("response", handler);
-    const refresh = page.locator("button[aria-label='刷新'], button:has-text('刷新')").first();
+    const refresh = page
+      .locator("button[aria-label='刷新'], button:has-text('刷新')")
+      .first();
     await refresh.click();
     await page.waitForTimeout(2500);
     page.off("response", handler);
@@ -715,52 +978,99 @@ async function main() {
     return `HTTP ${status} ${JSON.stringify(json).slice(0, 140)}`;
   });
   await step("D4 GET /api/billing/invoices?from=not-a-date", async () => {
-    const { status, json } = await api(page, "/api/billing/invoices?from=not-a-date");
+    const { status, json } = await api(
+      page,
+      "/api/billing/invoices?from=not-a-date",
+    );
     return `HTTP ${status} ${JSON.stringify(json).slice(0, 140)}`;
   });
   await step("D5 GET /api/billing/invoices/po-nonexistent", async () => {
-    const { status, json } = await api(page, "/api/billing/invoices/po-nonexistent");
+    const { status, json } = await api(
+      page,
+      "/api/billing/invoices/po-nonexistent",
+    );
     return `HTTP ${status} ${JSON.stringify(json).slice(0, 140)}`;
   });
-  await step("D6 POST /api/billing/purchases planCode=nonexistent", async () => {
-    const { status, json } = await api(page, "/api/billing/purchases", { method: "POST", body: { planCode: "nonexistent", provider: "alipay", cycle: "monthly" } });
-    return `HTTP ${status} ${JSON.stringify(json).slice(0, 160)}`;
-  });
-  await step("D7 POST /api/billing/purchases provider=paypal（未配置渠道）", async () => {
-    const { status, json } = await api(page, "/api/billing/purchases", { method: "POST", body: { planCode: "standard", provider: "paypal", cycle: "monthly" } });
-    return `HTTP ${status} ${JSON.stringify(json).slice(0, 160)}`;
-  });
-  await step("D8 POST /api/billing/purchases cycle=yearly（未提供周期）", async () => {
-    const { status, json } = await api(page, "/api/billing/purchases", { method: "POST", body: { planCode: "standard", provider: "alipay", cycle: "yearly" } });
-    return `HTTP ${status} ${JSON.stringify(json).slice(0, 160)}`;
-  });
+  await step(
+    "D6 POST /api/billing/purchases planCode=nonexistent",
+    async () => {
+      const { status, json } = await api(page, "/api/billing/purchases", {
+        method: "POST",
+        body: { planCode: "nonexistent", provider: "alipay", cycle: "monthly" },
+      });
+      return `HTTP ${status} ${JSON.stringify(json).slice(0, 160)}`;
+    },
+  );
+  await step(
+    "D7 POST /api/billing/purchases provider=paypal（未配置渠道）",
+    async () => {
+      const { status, json } = await api(page, "/api/billing/purchases", {
+        method: "POST",
+        body: { planCode: "standard", provider: "paypal", cycle: "monthly" },
+      });
+      return `HTTP ${status} ${JSON.stringify(json).slice(0, 160)}`;
+    },
+  );
+  await step(
+    "D8 POST /api/billing/purchases cycle=yearly（未提供周期）",
+    async () => {
+      const { status, json } = await api(page, "/api/billing/purchases", {
+        method: "POST",
+        body: { planCode: "standard", provider: "alipay", cycle: "yearly" },
+      });
+      return `HTTP ${status} ${JSON.stringify(json).slice(0, 160)}`;
+    },
+  );
   await step("D9 POST /api/billing/purchases 缺字段", async () => {
-    const { status, json } = await api(page, "/api/billing/purchases", { method: "POST", body: { planCode: "standard" } });
+    const { status, json } = await api(page, "/api/billing/purchases", {
+      method: "POST",
+      body: { planCode: "standard" },
+    });
     return `HTTP ${status} ${JSON.stringify(json).slice(0, 160)}`;
   });
   await step("D10 GET /api/billing/purchases/current", async () => {
     const { status, json } = await api(page, "/api/billing/purchases/current");
     return `HTTP ${status} ${JSON.stringify(json).slice(0, 200)}`;
   });
-  await step("D11 GET /api/billing/credits/consumption?from=bad&to=bad", async () => {
-    const { status, json } = await api(page, "/api/billing/credits/consumption?from=bad&to=bad&page=1");
-    return `HTTP ${status} ${JSON.stringify(json).slice(0, 140)}`;
-  });
+  await step(
+    "D11 GET /api/billing/credits/consumption?from=bad&to=bad",
+    async () => {
+      const { status, json } = await api(
+        page,
+        "/api/billing/credits/consumption?from=bad&to=bad&page=1",
+      );
+      return `HTTP ${status} ${JSON.stringify(json).slice(0, 140)}`;
+    },
+  );
   await step("D12 GET /api/billing/entitlements（结构核对）", async () => {
     const { status, json } = await api(page, "/api/billing/entitlements");
     return `HTTP ${status} ${JSON.stringify(json).slice(0, 220)}`;
   });
-  await step("D13 GET /api/billing/purchases/catalog（渠道与周期）", async () => {
-    const { status, json } = await api(page, "/api/billing/purchases/catalog");
-    return `HTTP ${status} ${JSON.stringify(json).slice(0, 260)}`;
-  });
+  await step(
+    "D13 GET /api/billing/purchases/catalog（渠道与周期）",
+    async () => {
+      const { status, json } = await api(
+        page,
+        "/api/billing/purchases/catalog",
+      );
+      return `HTTP ${status} ${JSON.stringify(json).slice(0, 260)}`;
+    },
+  );
 
   await step("收尾：清理本次测试创建的 pending 订单", async () => {
     const current = await api(page, "/api/billing/purchases/current");
-    const order = (current.json as { order?: { orderId?: string; status?: string } } | null)?.order;
+    const order = (
+      current.json as { order?: { orderId?: string; status?: string } } | null
+    )?.order;
     if (!order || order.status !== "pending") return "无待清理订单";
-    const cancel = await api(page, `/api/billing/purchases/${order.orderId}/cancel`, { method: "POST" });
-    return cancel.status === 200 ? `已取消 ${order.orderId}` : `取消失败 HTTP ${cancel.status}`;
+    const cancel = await api(
+      page,
+      `/api/billing/purchases/${order.orderId}/cancel`,
+      { method: "POST" },
+    );
+    return cancel.status === 200
+      ? `已取消 ${order.orderId}`
+      : `取消失败 HTTP ${cancel.status}`;
   });
 
   await browser.close();
@@ -768,7 +1078,9 @@ async function main() {
   /* ============ 汇总 ============ */
   const failed = results.filter((r) => r.kind === "fail");
   log(`\n========== 测试汇总 ==========`);
-  log(`通过 ${results.filter((r) => r.kind === "pass").length} / 失败 ${failed.length} / 共 ${results.length}`);
+  log(
+    `通过 ${results.filter((r) => r.kind === "pass").length} / 失败 ${failed.length} / 共 ${results.length}`,
+  );
   if (failed.length > 0) {
     log(`\n失败项：`);
     for (const f of failed) log(`  ❌ ${f.name} — ${f.detail}`);

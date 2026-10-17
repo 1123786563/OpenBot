@@ -88,7 +88,8 @@ async function waitForHealth(attempts = 60): Promise<void> {
       const res = await fetch(`http://127.0.0.1:${PORT}/health`);
       if (res.ok) {
         const body = (await res.json()) as { status: string; model: string };
-        if (body.status !== "ok" || body.model !== MODEL) fail(`health body ${JSON.stringify(body)}`);
+        if (body.status !== "ok" || body.model !== MODEL)
+          fail(`health body ${JSON.stringify(body)}`);
         return;
       }
     } catch {
@@ -112,7 +113,10 @@ function parseEvents(body: string): Record<string, unknown>[] {
 async function run(body: unknown, token = TOKEN): Promise<Response> {
   return fetch(`http://127.0.0.1:${PORT}/ag-ui`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-openbot-agent-token": token },
+    headers: {
+      "content-type": "application/json",
+      "x-openbot-agent-token": token,
+    },
     body: JSON.stringify(body),
   });
 }
@@ -131,22 +135,30 @@ try {
   console.log("[smoke] health: ok");
 
   const refused = await run(baseInput, "wrong-token");
-  if (refused.status !== 401) fail(`wrong token answered ${refused.status}, want 401`);
+  if (refused.status !== 401)
+    fail(`wrong token answered ${refused.status}, want 401`);
   console.log("[smoke] token gate: refuses strangers");
 
-  const text = await run({ ...baseInput, forwardedProps: { openbotRun: { assertion: "opaque" } } });
+  const text = await run({
+    ...baseInput,
+    forwardedProps: { openbotRun: { assertion: "opaque" } },
+  });
   if (!text.ok) fail(`text run answered ${text.status}`);
   let events = parseEvents(await text.text());
   if (events[0]?.type !== "RUN_STARTED") fail(`first event ${events[0]?.type}`);
-  if (events.at(-1)?.type !== "RUN_FINISHED") fail(`last event ${events.at(-1)?.type}`);
+  if (events.at(-1)?.type !== "RUN_FINISHED")
+    fail(`last event ${events.at(-1)?.type}`);
   const streamed = events
     .filter((e) => e.type === "TEXT_MESSAGE_CONTENT")
     .map((e) => e.delta)
     .join("");
-  if (streamed !== "smoke-ok") fail(`streamed text ${JSON.stringify(streamed)}`);
+  if (streamed !== "smoke-ok")
+    fail(`streamed text ${JSON.stringify(streamed)}`);
   if (seenBodies.some((b) => b.includes("opaque") || b.includes("openbotRun")))
     fail("forwardedProps leaked to the model");
-  console.log("[smoke] run contract: RUN_STARTED … text deltas … RUN_FINISHED, no forwardedProps leak");
+  console.log(
+    "[smoke] run contract: RUN_STARTED … text deltas … RUN_FINISHED, no forwardedProps leak",
+  );
 
   replyWith = "tool";
   const toolRun = await run({
@@ -164,10 +176,15 @@ try {
   events = parseEvents(await toolRun.text());
   const starts = events.filter((e) => e.type === "TOOL_CALL_START").length;
   const ends = events.filter((e) => e.type === "TOOL_CALL_END").length;
-  if (starts !== 1 || ends !== 1) fail(`TOOL_CALL events start=${starts} end=${ends}`);
-  if (events.at(-1)?.type !== "RUN_FINISHED") fail(`tool run ended on ${events.at(-1)?.type}`);
-  if (!seenBodies.at(-1)?.includes('"smoke_tool"')) fail("caller tool not declared to the model");
-  console.log("[smoke] caller tool: declared, its call surfaced as TOOL_CALL events");
+  if (starts !== 1 || ends !== 1)
+    fail(`TOOL_CALL events start=${starts} end=${ends}`);
+  if (events.at(-1)?.type !== "RUN_FINISHED")
+    fail(`tool run ended on ${events.at(-1)?.type}`);
+  if (!seenBodies.at(-1)?.includes('"smoke_tool"'))
+    fail("caller tool not declared to the model");
+  console.log(
+    "[smoke] caller tool: declared, its call surfaced as TOOL_CALL events",
+  );
 
   console.log("[smoke] PASS");
 } finally {

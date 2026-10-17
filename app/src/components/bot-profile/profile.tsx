@@ -166,7 +166,9 @@ export function BotProfile({
                   }}
                   value={lifecycle.data.notify}
                 >
-                  <SelectTrigger aria-label={t("botProfile.notifications.title")}>
+                  <SelectTrigger
+                    aria-label={t("botProfile.notifications.title")}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -187,7 +189,9 @@ export function BotProfile({
                     <IconBell />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle>{t("botProfile.browserNotifications.title")}</ItemTitle>
+                    <ItemTitle>
+                      {t("botProfile.browserNotifications.title")}
+                    </ItemTitle>
                     <ItemDescription>
                       {t("botProfile.browserNotifications.off")}
                     </ItemDescription>
@@ -219,7 +223,9 @@ export function BotProfile({
                 <IconMessage />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>{t("botProfile.message.title", { name: agent.name })}</ItemTitle>
+                <ItemTitle>
+                  {t("botProfile.message.title", { name: agent.name })}
+                </ItemTitle>
                 <ItemDescription>
                   {t("botProfile.message.description")}
                 </ItemDescription>

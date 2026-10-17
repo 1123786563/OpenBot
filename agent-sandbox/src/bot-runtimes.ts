@@ -78,10 +78,13 @@ export type BotRuntimes = {
    * by why — a stalled stop (silent stream past the activity budget) is a failure mode the
    * caller logs (`sandbox-runtime-stalled`), an idle stop is Tuesday.
    */
-  reapIdle(nowMs: number, options?: {
-    idleMs?: number;
-    activityTimeoutMs?: number;
-  }): { idle: string[]; stalled: string[] };
+  reapIdle(
+    nowMs: number,
+    options?: {
+      idleMs?: number;
+      activityTimeoutMs?: number;
+    },
+  ): { idle: string[]; stalled: string[] };
   stopBot(botId: string): Promise<void>;
   stopAll(): Promise<void>;
   size(): number;

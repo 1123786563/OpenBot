@@ -22,7 +22,9 @@ export type BridgeSockets = {
     send(text: string): void;
     sendBinary(bytes: Uint8Array): void;
     close(): void;
-    onMessage(handler: (kind: "text" | "binary", payload: string | Uint8Array) => void): void;
+    onMessage(
+      handler: (kind: "text" | "binary", payload: string | Uint8Array) => void,
+    ): void;
     onClose(handler: () => void): void;
   };
   /** A websocket client factory toward the dev server (Bun's `new WebSocket`, injected). */
@@ -31,7 +33,9 @@ export type BridgeSockets = {
     sendBytes(bytes: Uint8Array): void;
     close(): void;
     onOpen(handler: () => void): void;
-    onMessage(handler: (kind: "text" | "binary", payload: string | Uint8Array) => void): void;
+    onMessage(
+      handler: (kind: "text" | "binary", payload: string | Uint8Array) => void,
+    ): void;
     onClose(handler: () => void): void;
   };
 };

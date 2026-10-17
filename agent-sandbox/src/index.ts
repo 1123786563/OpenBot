@@ -85,12 +85,17 @@ const wsHandler: WebSocketHandler<{
       path,
     );
     // The handler-side wiring the shim feeds: message → bridge, close → shutdown.
-    bridged.set(ws, { onMessage: () => onCallerMessage, onClose: () => onCallerClose });
+    bridged.set(ws, {
+      onMessage: () => onCallerMessage,
+      onClose: () => onCallerClose,
+    });
   },
   message(ws, message) {
     bridged.get(ws)?.onMessage()?.(
       typeof message === "string" ? "text" : "binary",
-      typeof message === "string" ? message : new Uint8Array(message as unknown as ArrayBuffer),
+      typeof message === "string"
+        ? message
+        : new Uint8Array(message as unknown as ArrayBuffer),
     );
   },
   close(ws) {
@@ -101,11 +106,23 @@ const wsHandler: WebSocketHandler<{
 
 /** The shim's slot table: one entry per live bridge. */
 type BridgedWs = Parameters<
-  NonNullable<WebSocketHandler<{ botId: string; port: number; subprotocol: string | null; path: string }>["open"]>
+  NonNullable<
+    WebSocketHandler<{
+      botId: string;
+      port: number;
+      subprotocol: string | null;
+      path: string;
+    }>["open"]
+  >
 >[0];
 const bridged = new Map<
   BridgedWs,
-  { onMessage: () => ((kind: "text" | "binary", payload: string | Uint8Array) => void) | null; onClose: () => (() => void) | null }
+  {
+    onMessage: () =>
+      | ((kind: "text" | "binary", payload: string | Uint8Array) => void)
+      | null;
+    onClose: () => (() => void) | null;
+  }
 >();
 
 const server = serve({
@@ -115,7 +132,12 @@ const server = serve({
   websocket: wsHandler,
   idleTimeout: 0,
 });
-log("sandbox-listening", { port: env.port, mode: "per-bot", version: SANDBOX_VERSION, configPath });
+log("sandbox-listening", {
+  port: env.port,
+  mode: "per-bot",
+  version: SANDBOX_VERSION,
+  configPath,
+});
 
 // 清扫循环：空闲回收 + 可选工作区 TTL + 活动超时（静默流回收）
 const sweep = setInterval(() => {

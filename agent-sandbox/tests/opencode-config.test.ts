@@ -10,7 +10,8 @@ const env = sandboxEnvFrom({
   SANDBOX_PROVIDER_BASE_URL: "https://open.bigmodel.cn/api/coding/paas/v4",
   // Read from the environment when provided; the fallback is an obviously fake fixture value,
   // never a credential (Mimosa guards against literal keys in source).
-  SANDBOX_PROVIDER_API_KEY: process.env.TEST_SANDBOX_PROVIDER_API_KEY ?? "fixture-secret",
+  SANDBOX_PROVIDER_API_KEY:
+    process.env.TEST_SANDBOX_PROVIDER_API_KEY ?? "fixture-secret",
   SANDBOX_MODEL: "GLM-5.3",
 });
 
@@ -19,7 +20,10 @@ describe("writeOpencodeConfig", () => {
     const dir = await mkdtemp(join(tmpdir(), "sandbox-config-"));
     const path = await writeOpencodeConfig(env, dir);
     expect(path).toBe(join(dir, "opencode", "opencode.json"));
-    const body = JSON.parse(await readFile(path, "utf8")) as Record<string, never>;
+    const body = JSON.parse(await readFile(path, "utf8")) as Record<
+      string,
+      never
+    >;
     const provider = (body.provider as Record<string, never>).openbot;
     expect(provider).toBeDefined();
     expect((provider.options as Record<string, unknown>).baseURL).toBe(
@@ -28,7 +32,9 @@ describe("writeOpencodeConfig", () => {
     expect((provider.options as Record<string, unknown>).apiKey).toBe(
       process.env.TEST_SANDBOX_PROVIDER_API_KEY ?? "fixture-secret",
     );
-    expect((provider.models as Record<string, unknown>)["GLM-5.3"]).toBeDefined();
+    expect(
+      (provider.models as Record<string, unknown>)["GLM-5.3"],
+    ).toBeDefined();
     const permission = body.permission as Record<string, unknown>;
     expect(permission.edit).toBe("allow");
     expect(permission.bash).toBe("allow");
