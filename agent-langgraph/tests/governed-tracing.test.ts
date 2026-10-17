@@ -200,11 +200,19 @@ describe("the callback handler's span tree", () => {
       expect(retrieval.attributes).toMatchObject({
         "openbot.step.kind": "retrieval",
       });
+      // The terminal read key is the server projection's own (R3-06): the row the
+      // timeline renders reads `span_state` off the span's attributes — the `openbot.*`
+      // spelling had zero consumers anywhere, so every step read as unknown forever.
       for (const span of [chain, model, tool, retrieval]) {
         expect(span.attributes).toMatchObject({
-          "openbot.span.state": "completed",
+          span_state: "completed",
         });
+        expect(span.attributes).not.toHaveProperty("openbot.span.state");
       }
+      // A tool step keeps its terminal state only when the projection's OTHER read
+      // key says the execution was observed: state stays unknown unless
+      // `execution_state` reads "executed" (queries/runs.ts projectStep).
+      expect(tool.attributes).toMatchObject({ execution_state: "executed" });
     } finally {
       await recorder.stop();
     }
@@ -246,10 +254,16 @@ describe("the callback handler's span tree", () => {
       handler.handleChainError(new Error("graph failed"), "run-graph");
 
       const model = spanOf(recorder.spans, "model:unnamed");
+      // The error's shape rides the server recorder's ending vocabulary (R3-06):
+      // `ending_kind` names the ending, `ending_code` the shape token — the
+      // `openbot.error.name` spelling had zero consumers anywhere.
       expect(model.attributes).toMatchObject({
-        "openbot.span.state": "failed",
-        "openbot.error.name": "Error",
+        span_state: "failed",
+        ending_kind: "failed",
+        ending_code: "Error",
       });
+      expect(model.attributes).not.toHaveProperty("openbot.error.name");
+      expect(model.attributes).not.toHaveProperty("openbot.span.state");
       expect(model.status.code).toBe(SpanStatusCode.ERROR);
       expect(model.events).toEqual([]);
     } finally {
@@ -290,23 +304,69 @@ describe("the callback handler's span tree", () => {
       const spans = recorder.spans.filter((span) =>
         span.name.startsWith("model"),
       );
+      // Token vocabulary rides the server recorder's keys (R3-06): `usage_state`,
+      // `tokens_input`, `tokens_output` — the `openbot.model.*` spellings had zero
+      // consumers anywhere, so honest counts landed where nothing could read them.
       expect(spans[0].attributes).toMatchObject({
-        "openbot.model.usage.state": "actual",
-        "openbot.model.tokens.input": 3,
-        "openbot.model.tokens.output": 5,
+        usage_state: "actual",
+        tokens_input: 3,
+        tokens_output: 5,
       });
       expect(spans[1].attributes).toMatchObject({
-        "openbot.model.usage.state": "actual",
-        "openbot.model.tokens.input": 7,
-        "openbot.model.tokens.output": 11,
+        usage_state: "actual",
+        tokens_input: 7,
+        tokens_output: 11,
       });
       // No report is an explicit unavailable, never a silent 0 (T14's honesty rule).
       expect(spans[2].attributes).toMatchObject({
-        "openbot.model.usage.state": "unavailable",
+        usage_state: "unavailable",
       });
-      expect(spans[2].attributes).not.toHaveProperty(
-        "openbot.model.tokens.input",
+      expect(spans[2].attributes).not.toHaveProperty("tokens_input");
+    } finally {
+      await recorder.stop();
+    }
+  });
+
+  test("forged non-number token counts are unavailable, never Number()-coerced zeros (R3-09)", async () => {
+    // R3-09: `Number(null)`/`Number("")`/`Number([])` are 0 and `Number(true)` is 1,
+    // so the old coercion ran null/empty-string/array/boolean forgeries through
+    // `Number.isInteger && >= 0` and stamped `state: "actual"` onto counts nobody
+    // reported — the exact silent zero the honesty rule forbids. Every shape the
+    // framework could hand over that is not a real number must read unavailable.
+    const recorder = recordedSpans();
+    const handler = new GovernedCallbackHandler();
+    try {
+      const forgeries: Record<string, unknown>[] = [
+        { input_tokens: null, output_tokens: 5 },
+        { input_tokens: "", output_tokens: 5 },
+        { input_tokens: [], output_tokens: 5 },
+        { input_tokens: true, output_tokens: 5 },
+        { input_tokens: "12", output_tokens: 5 },
+        { input_tokens: 3, output_tokens: null },
+        { input_tokens: 3, output_tokens: false },
+      ];
+      for (const [index, usage] of forgeries.entries()) {
+        handler.handleChatModelStart(serialized("chat"), [], `forged-${index}`);
+        handler.handleLLMEnd(
+          {
+            generations: [],
+            llmOutput: { usage },
+          } as unknown as LLMResult,
+          `forged-${index}`,
+        );
+      }
+
+      const spans = recorder.spans.filter((span) =>
+        span.name.startsWith("model"),
       );
+      expect(spans.length).toBe(forgeries.length);
+      for (const span of spans) {
+        expect(span.attributes).toMatchObject({
+          usage_state: "unavailable",
+        });
+        expect(span.attributes).not.toHaveProperty("tokens_input");
+        expect(span.attributes).not.toHaveProperty("tokens_output");
+      }
     } finally {
       await recorder.stop();
     }
@@ -407,6 +467,39 @@ describe("the server stepFamily contract, driven by a real @langchain/core graph
     return null;
   }
 
+  /**
+   * Pinned copy of server/src/ai-observability/queries/runs.ts `projectStep`'s state
+   * determination (R3-06): the terminal vocabulary reads `span_state` off the span's
+   * attributes, and a tool step keeps it only when `execution_state` reads "executed" —
+   * anything else fails closed onto "unknown". This module's tests cannot depend on
+   * server/, so the contract rides here; the triage round 3 report pins the source line.
+   */
+  function projectedStepState(
+    name: unknown,
+    attributes: Record<string, unknown>,
+  ): "completed" | "failed" | "canceled" | "unknown" {
+    const kind = stepFamily(name);
+    if (kind === null) return "unknown";
+    const recorded = attributes.span_state;
+    const terminal: "completed" | "failed" | "canceled" | "unknown" =
+      recorded === "completed" ||
+      recorded === "failed" ||
+      recorded === "canceled" ||
+      recorded === "unknown"
+        ? recorded
+        : "unknown";
+    const determination = attributes.execution_state;
+    const executionState =
+      determination === "proposed" ||
+      determination === "executed" ||
+      determination === "unobserved"
+        ? determination
+        : undefined;
+    return kind === "tool" && executionState !== "executed"
+      ? "unknown"
+      : terminal;
+  }
+
   /** A real graph (real dispatch, no hand-called handlers): model -> tool -> retriever. */
   function realGraph() {
     return RunnableSequence.from([
@@ -499,6 +592,32 @@ describe("the server stepFamily contract, driven by a real @langchain/core graph
     }
   });
 
+  test("a real graph's steps project terminal states, not the constant unknown (R3-06)", async () => {
+    // The defect R3-06 names: the recorder's `openbot.*` attribute spelling matched
+    // nothing the projection reads, so every framework step's terminal state failed
+    // closed onto "unknown" no matter how honestly it ended. Under the aligned
+    // vocabulary the same real graph must project completed across all three families.
+    const recorder = await driveRealGraph();
+    try {
+      const model = recorder.spans.find(
+        (span) => stepFamily(span.name) === "model",
+      );
+      if (!model) throw new Error("no model span");
+      const tool = spanOf(recorder.spans, "tool:search_tool");
+      const retrieval = spanOf(recorder.spans, "retrieval");
+      for (const step of [model, tool, retrieval]) {
+        expect(
+          projectedStepState(
+            step.name,
+            step.attributes as Record<string, unknown>,
+          ),
+        ).toBe("completed");
+      }
+    } finally {
+      await recorder.stop();
+    }
+  });
+
   test("handleChainStart binds the runtime dispatch order, not the d.ts doc order", async () => {
     // @langchain/core's manager re-dispatches handleChainStart as
     // (chain, inputs, runId, parentRunId, tags, metadata, runType, runName, extra)
@@ -560,7 +679,8 @@ describe("the deployment tool wrapper", () => {
       expect(tool.attributes).toMatchObject({
         "openbot.step.kind": "tool",
         "openbot.tool.call_id": "call_1",
-        "openbot.span.state": "completed",
+        span_state: "completed",
+        execution_state: "executed",
       });
     } finally {
       await recorder.stop();
@@ -578,7 +698,11 @@ describe("the deployment tool wrapper", () => {
       expect(
         spanOf(recorder.spans, "tool:web_search").attributes,
       ).toMatchObject({
-        "openbot.span.state": "failed",
+        span_state: "failed",
+        ending_kind: "failed",
+        // The Error's shape (its `name`), never its message or value.
+        ending_code: "Error",
+        execution_state: "executed",
       });
       assertNoCanaries(recorder.spans);
     } finally {

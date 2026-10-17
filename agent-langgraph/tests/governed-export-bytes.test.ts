@@ -5,7 +5,8 @@
  * file asserts what actually leaves the process: shared/trace.ts's real provider
  * (BatchSpanProcessor + OTLPTraceExporter) posting to a local fake OTLP collector, with
  * canaries planted in every content channel — including the non-Error throw the review
- * proved could ride `openbot.error.name` verbatim into exported bytes — and then hunted
+ * proved could ride the error-shape attribute (now `ending_code`, R3fix-U4; formerly
+ * `openbot.error.name`) verbatim into exported bytes — and then hunted
  * through the raw POSTed bytes, not the span objects.
  */
 
