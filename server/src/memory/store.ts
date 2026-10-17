@@ -6,6 +6,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  lt,
   lte,
   ne,
   not,
@@ -13,6 +14,7 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import { memorySources, personalMemories } from "../db/schema/memory";
 import { lockDefaults, recordOptOut, sourceServerId } from "./defaults";
@@ -20,6 +22,11 @@ import type {
   IntelligenceMemory,
   IntelligenceMemoryRecord,
 } from "./intelligence";
+import {
+  CREDENTIAL_REFUSAL,
+  classifyMemorySensitivity,
+  SENSITIVE_OBSERVATION_REFUSAL,
+} from "./sensitivity";
 import {
   type FormedMemoryInput,
   formedMemorySchema,
@@ -33,12 +40,17 @@ import {
   parseMemorySourceInput,
 } from "./types";
 
+const log = getLogger("server");
+
 /**
  * The id a memory gets in OpenBot when only Intelligence holds it. Prefixed so the routes can tell
  * it from an OpenBot row id without a lookup, and so it can never collide with one.
  */
 const INTELLIGENCE_ID_PREFIX = "intelligence:";
 const INTELLIGENCE_PROVENANCE = "CopilotKit Intelligence";
+
+/** How long an unhandled candidate waits for its person before it is expired. */
+const CANDIDATE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 const digestOf = (content: string) =>
   createHash("sha256").update(content).digest("hex");
@@ -322,6 +334,10 @@ export function createMemoryStore(
           eq(personalMemories.ownerUserId, ownerUserId),
           eq(personalMemories.enabled, true),
           isNull(personalMemories.deletedAt),
+          // A candidate waits for the person's review on every Bot-side path: only a confirmed or
+          // edited memory may cross into a Bot's context, the same line Intelligence mirroring
+          // draws (`mirrorEligible`). The person's own list reads the rows without this filter.
+          inArray(personalMemories.reviewState, ["confirmed", "edited"]),
           formedByThisBot
             ? or(formedByThisBot, personOrSource)
             : personOrSource,
@@ -361,13 +377,20 @@ export function createMemoryStore(
       return [...rows, ...(await intelligenceOnly(ownerUserId, remote))];
     },
     async create(ownerUserId: string, input: unknown) {
+      const parsed = parseMemoryInput(input);
+      // A credential is refused even when the person asks for it outright. A sensitive fact the
+      // person did ask for is stored — as a candidate, shown to them with its content and source
+      // for one more confirmation, not as a memory Bots may already recall.
+      const sensitivity = classifyMemorySensitivity(parsed.content);
+      if (sensitivity === "credential")
+        throw new MemoryRefusedError(CREDENTIAL_REFUSAL);
       const [row] = await database
         .insert(personalMemories)
         .values({
           id: randomUUID(),
           ownerUserId,
-          ...parseMemoryInput(input),
-          reviewState: "confirmed",
+          ...parsed,
+          reviewState: sensitivity === "normal" ? "confirmed" : "unreviewed",
         })
         .returning();
       if (!row) throw new Error("Memory insert returned no row.");
@@ -391,6 +414,16 @@ export function createMemoryStore(
       if (!parsed.success)
         throw new MemoryRefusedError(
           parsed.error.issues[0]?.message ?? "Invalid memory.",
+        );
+      // Nothing a Bot observed becomes sensitive material, whatever it read: the person never
+      // asked for this, and a candidate is already more exposure than a refusal. Credentials go
+      // the same way, so none of it is written, even as a candidate awaiting review.
+      const sensitivity = classifyMemorySensitivity(parsed.data.content);
+      if (sensitivity !== "normal")
+        throw new MemoryRefusedError(
+          sensitivity === "credential"
+            ? CREDENTIAL_REFUSAL
+            : SENSITIVE_OBSERVATION_REFUSAL,
         );
       const digest = createHash("sha256")
         .update(parsed.data.content.toLocaleLowerCase())
@@ -466,11 +499,25 @@ export function createMemoryStore(
       input: unknown,
     ): Promise<MemoryRecord> {
       const patch = parseMemoryPatch(input);
+      // An edit may not walk a credential in through the back door; the memory keeps its content.
+      // Content edited into a sensitive class re-enters review exactly as create() would have
+      // stored it: the person confirms once more before any Bot may recall it again.
+      const sensitivity = patch.content
+        ? classifyMemorySensitivity(patch.content)
+        : "normal";
+      if (sensitivity === "credential")
+        throw new MemoryRefusedError(CREDENTIAL_REFUSAL);
       if (id.startsWith(INTELLIGENCE_ID_PREFIX)) {
         // Intelligence keeps the content and nothing else, so there is nothing to pause or review.
         if (patch.enabled !== undefined)
           throw new MemoryRefusedError(
             "A memory kept in CopilotKit Intelligence can be edited or forgotten, not paused.",
+          );
+        // An Intelligence-only line has no reviewState to return to, so an edit into sensitive
+        // content is refused outright and the mirrored copy keeps its original text (ocr R7).
+        if (patch.content && sensitivity !== "normal")
+          throw new MemoryRefusedError(
+            "A memory kept in CopilotKit Intelligence has no review step for medical, financial and customer information. Ask to remember it as a personal memory instead.",
           );
         const remoteId = id.slice(INTELLIGENCE_ID_PREFIX.length);
         if (!patch.content) {
@@ -498,7 +545,17 @@ export function createMemoryStore(
         .update(personalMemories)
         .set({
           ...patch,
-          ...(patch.content ? { reviewState: "edited" as const } : {}),
+          // A sensitive edit returns the row to the candidate pool, so recall and the Intelligence
+          // mirror both lose it until the person confirms once more; any other edit is already
+          // reviewed by having made it.
+          ...(patch.content
+            ? {
+                reviewState:
+                  sensitivity === "normal"
+                    ? ("edited" as const)
+                    : ("unreviewed" as const),
+              }
+            : {}),
           updatedAt: new Date(),
         })
         .where(
@@ -545,6 +602,35 @@ export function createMemoryStore(
         .returning({ id: personalMemories.id });
       if (!row) throw new MemoryNotFoundError();
       await mirror(ownerUserId, row.id);
+    },
+    /**
+     * Expire candidates nobody handled for 30 days: tombstoned the way a forgotten memory is
+     * (content cleared, disabled, invisible), so the person's list stops offering them and a
+     * later read of the same record cannot resurrect them. A confirmed or edited memory is never
+     * touched however long it sits; a deleted row is already gone. Idempotent: an expired row has
+     * a `deletedAt`, which no later run matches, so scheduling this as often as desired is safe.
+     */
+    async expireStaleCandidates(now = new Date()) {
+      const expired = await database
+        .update(personalMemories)
+        .set({
+          deletedAt: now,
+          enabled: false,
+          content: "",
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(personalMemories.reviewState, "unreviewed"),
+            isNull(personalMemories.deletedAt),
+            lt(
+              personalMemories.updatedAt,
+              new Date(now.getTime() - CANDIDATE_TTL_MS),
+            ),
+          ),
+        )
+        .returning({ id: personalMemories.id });
+      return expired.length;
     },
     /**
      * Mirror out-of-step memories to Intelligence, oldest owners first: the backfill on the first
@@ -718,7 +804,21 @@ export function createMemoryStore(
           )
           .for("update");
         if (!source) throw new MemoryNotFoundError();
+        // Inner layer of the two-layer sensitivity defense. The normal flow never gets here
+        // with sensitive material: ingestion filters before calling, and its
+        // memory-sync-sensitive-dropped count is the ONLY signal a healthy flow should ever
+        // produce. completeSync is still a public store method a caller can reach without that
+        // pre-filter (tests do), so the gate is repeated here — and because an inner hit means
+        // the upstream defense was bypassed, it says so at error level, with a count only,
+        // never content.
+        let droppedSensitiveInner = 0;
         for (const record of records) {
+          // A sync may not write sensitive material even as a candidate: it was read, not asked
+          // for. Dropped whole, so nothing of it reaches the person's candidates or any index.
+          if (classifyMemorySensitivity(record.content) !== "normal") {
+            droppedSensitiveInner += 1;
+            continue;
+          }
           await transaction
             .insert(personalMemories)
             .values({
@@ -745,6 +845,15 @@ export function createMemoryStore(
               setWhere: sql`${personalMemories.importDigest} IS DISTINCT FROM ${record.digest}`,
             });
         }
+        if (droppedSensitiveInner > 0)
+          log.error(
+            {
+              type: "memory-sync-sensitive-dropped-inner",
+              context: { sourceId, droppedSensitiveInner },
+              timestamp: new Date().toISOString(),
+            },
+            "memory-sync-sensitive-dropped-inner",
+          );
         await transaction
           .update(memorySources)
           .set({
