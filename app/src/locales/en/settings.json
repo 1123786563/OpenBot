@@ -450,5 +450,39 @@
     "revoking": "Revoking…",
     "aboutSection": "How this works",
     "about": "A Bot asks its server for a binding code and hands it to you out of band. The code names one Bot and one external identity, lives for a few minutes, and works exactly once. Confirming here creates the authorization; no key, balance or credits are created with it."
+  },
+  "modelPicker": {
+    "title": "Workbench model",
+    "description": "Choose the model your workbench runs on. A model that becomes unavailable is reported as it is — it is never silently replaced.",
+    "currentTitle": "Current selection",
+    "currentBadge": "Current selection",
+    "unsetTitle": "No model selected",
+    "unsetDescription": "Pick one of the models below to set your default.",
+    "source": {
+      "global": "Your global default",
+      "bot": "Workbench Bot default",
+      "conversation": "This conversation's selection"
+    },
+    "unavailableHeading": "The selected model is not available.",
+    "unavailableReasons": {
+      "model_capability_mismatch": "The model no longer matches the workbench's capabilities.",
+      "model_not_open": "The model is not open for use.",
+      "model_price_unknown": "The model's price is unknown.",
+      "model_catalog_stale": "The model catalog is out of date.",
+      "model_not_in_catalog": "The model has been removed from the catalog."
+    },
+    "reselect": "Pick one of the models below to continue.",
+    "price": {
+      "known": "Priced",
+      "free": "Free",
+      "unknown": "Price unknown",
+      "unmapped": "Price not synced"
+    },
+    "setGlobal": "Set as global default",
+    "setBot": "Set as workbench default",
+    "saving": "Saving…",
+    "emptyList": "No models are open for selection.",
+    "refusalHeading": "The model was not saved:",
+    "refusalFallback": "that model is not selectable right now."
   }
 }

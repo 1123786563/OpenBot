@@ -237,6 +237,7 @@ import {
   createGatewayAdminCredentialService,
   installGatewayAdminCredentialService,
 } from "./gateway/admin-credential";
+import { startGatewayCatalogSyncScheduler } from "./gateway/catalog-sync";
 import { createEnterpriseStore } from "./admin/settings-store";
 import { createDatabase } from "./db/client";
 import {
@@ -5585,6 +5586,23 @@ const app = createApp(
   botServiceStore,
 );
 
+/*
+ * The automatic catalog/price sync (Bifrost 03.4, #226): the cadence Q17
+ * names — one sync every five minutes, `BIFROST_CATALOG_SYNC_INTERVAL_MS` to
+ * change it. Started here, after the app exists, because the scheduler
+ * resolves the installed enterprise controls and catalog service, and both
+ * are in place only once the app is built; started any earlier it would hit
+ * the self-gating absent branch and silently schedule nothing. The same
+ * installed instance serves 03.5's administrator "sync now" route, so the
+ * timer and the manual trigger share one single-flight cell. A deployment
+ * without the gateway wired keeps booting: the scheduler answers undefined
+ * and logs, it never blocks startup. Stopped in the signal handler below,
+ * with the other sweeps.
+ */
+const catalogSyncScheduler = startGatewayCatalogSyncScheduler({
+  environmentRate: config.gateway?.creditConversionRate,
+});
+
 /**
  * The live screen, proxied.
  *
@@ -5859,6 +5877,7 @@ if (config.singleUser) {
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     responsibilitySweep.stop();
+    catalogSyncScheduler?.stop();
     wakeUpSweep.stop();
     wakeUpReaper.stop();
     openMuseTaskSweep.stop();
