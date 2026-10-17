@@ -1,5 +1,9 @@
 import type admin from "../../locales/en/admin.json";
 import type agents from "../../locales/en/agents.json";
+import type aiObservabilityAdmin from "../../locales/en/ai-observability-admin.json";
+import type aiObservabilityDatasets from "../../locales/en/ai-observability-datasets.json";
+import type aiObservabilityEvaluations from "../../locales/en/ai-observability-evaluations.json";
+import type aiObservabilityRuns from "../../locales/en/ai-observability-runs.json";
 import type approvals from "../../locales/en/approvals.json";
 import type channels from "../../locales/en/channels.json";
 import type common from "../../locales/en/common.json";
@@ -39,6 +43,10 @@ declare module "i18next" {
       tenant: typeof tenant;
       workshop: typeof workshop;
       craft: typeof craft;
+      "ai-observability-runs": typeof aiObservabilityRuns;
+      "ai-observability-datasets": typeof aiObservabilityDatasets;
+      "ai-observability-evaluations": typeof aiObservabilityEvaluations;
+      "ai-observability-admin": typeof aiObservabilityAdmin;
     };
   }
 }
