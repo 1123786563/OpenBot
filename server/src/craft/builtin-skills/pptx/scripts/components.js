@@ -17,7 +17,7 @@
 // visual per slide, and shrink/truncate guards so long content cannot
 // overflow. pptxgenjs is resolved from the sandbox's global npm root
 // (NODE_PATH is not set in the sandbox).
-"use strict";
+
 
 const { execFileSync } = require("child_process");
 
@@ -119,7 +119,7 @@ const BLACK = "000000";
 function relLuminance(hex) {
   const [r, g, b] = rgbOf(hex).map((c) => {
     const v = c / 255;
-    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
   });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }

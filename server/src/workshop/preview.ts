@@ -135,7 +135,7 @@ export function createPreviewRoutes(input: PreviewRoutesInput): Hono<{
     }
 
     const path = context.req.path.replace(
-      new RegExp(`^/api/workshop/[^/]+/preview/`),
+      /^\/api\/workshop\/[^/]+\/preview\//,
       "",
     );
 

@@ -8,7 +8,7 @@
 // Deps (lucide-static, @tabler/icons, sharp) are baked into the sandbox image
 // as global npm packages; this script resolves them from the global npm root
 // since NODE_PATH is not set in the sandbox.
-"use strict";
+
 
 const fs = require("fs");
 const path = require("path");
