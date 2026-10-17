@@ -327,7 +327,13 @@ export function createRunBindingStore(db: Database): RunBindingStore {
             notPendingDeletion("run", aiObservationBindings.id),
           ),
         )
-        .orderBy(desc(aiObservationBindings.updatedAt))
+        // Attempt order is CREATION order (OCR m104): reconcile and finish both
+        // bump updatedAt, so an old attempt refreshed by a late reconcile must
+        // never outrank the attempt that actually superseded it.
+        .orderBy(
+          desc(aiObservationBindings.createdAt),
+          desc(aiObservationBindings.updatedAt),
+        )
         .limit(1);
       return rows[0] ?? null;
     },
@@ -348,6 +354,10 @@ export function createRunBindingStore(db: Database): RunBindingStore {
             inArray(aiObservationBindings.opikTraceId, [
               ...new Set(opikTraceIds),
             ]),
+            // The M1a visibility rule, capability-shaped (OCR m105): a run whose
+            // deletion is in flight is gone to readers, its capability verdict
+            // included — same answer window as latestAttempt.
+            notPendingDeletion("run", aiObservationBindings.id),
           ),
         );
       const verdicts = new Map<string, AiObservationBindingCapability>();
@@ -383,7 +393,14 @@ export function createRunBindingStore(db: Database): RunBindingStore {
       const rows = await db
         .select()
         .from(aiObservationBindings)
-        .where(byAuthoritativeKey(scope, runId, attemptId));
+        .where(
+          and(
+            byAuthoritativeKey(scope, runId, attemptId),
+            // The M1a visibility rule, authoritative-key-shaped (OCR m105): a
+            // deletion-in-flight attempt answers not-found like any other reader.
+            notPendingDeletion("run", aiObservationBindings.id),
+          ),
+        );
       return rows[0] ?? null;
     },
 
@@ -397,6 +414,10 @@ export function createRunBindingStore(db: Database): RunBindingStore {
           and(
             eq(aiObservationBindings.scopeKey, scope.key),
             eq(aiObservationBindings.opikTraceId, opikTraceId),
+            // The M1a visibility rule, id-mapping-shaped (OCR m105): the private
+            // API's reverse lookup cannot resolve a run that is being deleted —
+            // the same answer the detail reads give, no operator-only side door.
+            notPendingDeletion("run", aiObservationBindings.id),
           ),
         )
         .limit(1);

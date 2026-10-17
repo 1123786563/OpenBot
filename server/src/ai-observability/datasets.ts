@@ -309,10 +309,30 @@ export function createObservationDatasetStore(
                 and(
                   eq(aiObservationDatasets.scopeKey, scope.key),
                   eq(aiObservationDatasets.name, name),
+                  // The conflict-reuse path is a reader too (OCR m120): a subject
+                  // under retention deletion is gone to readers, so it cannot be
+                  // silently reused as the freeze target — the answer is the same
+                  // not-found every read gives, before an immutable version lands
+                  // on a subject the cascade is about to destroy.
+                  notPendingDeletion("dataset", aiObservationDatasets.id),
                 ),
               )
           )[0];
         if (!dataset) {
+          // A genuine conflict absence is a bug; a deletion-in-flight subject is
+          // the M1a refusal, and both answer loudly rather than guessing.
+          const ghost = await tx
+            .select({ id: aiObservationDatasets.id })
+            .from(aiObservationDatasets)
+            .where(
+              and(
+                eq(aiObservationDatasets.scopeKey, scope.key),
+                eq(aiObservationDatasets.name, name),
+              ),
+            );
+          if (ghost[0]) {
+            throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
+          }
           throw new Error(
             "saveVersion conflicted but the dataset subject is absent",
           );
@@ -435,6 +455,10 @@ export function createObservationDatasetStore(
           and(
             eq(aiObservationDatasets.scopeKey, scope.key),
             eq(aiObservationDatasets.opikDatasetId, opikDatasetId),
+            // The M1a visibility rule, reverse-lookup-shaped (OCR m119): a dataset
+            // in retention deletion cannot be fetched back through the private API
+            // any more than through the reads — deletion is discovery-to-gone.
+            notPendingDeletion("dataset", aiObservationDatasets.id),
           ),
         )
         .limit(1);
@@ -509,6 +533,10 @@ export function createObservationDatasetStore(
               "syncing",
               "failed",
             ]),
+            // The sync machine is a writer, not an exemption (OCR m121): pushing
+            // a dataset that is in retention deletion would re-arm a target the
+            // discovery has already judged gone.
+            notPendingDeletion("dataset", aiObservationDatasets.id),
           ),
         )
         .returning();
@@ -529,7 +557,15 @@ export function createObservationDatasetStore(
         const found = await tx
           .select()
           .from(aiObservationDatasets)
-          .where(scopeDataset(scope, datasetId))
+          .where(
+            and(
+              scopeDataset(scope, datasetId),
+              // Same writer discipline as markSyncing (OCR m121): recording an
+              // upstream id onto a deletion-in-flight row would strand an orphan
+              // upstream copy retention can no longer see.
+              notPendingDeletion("dataset", aiObservationDatasets.id),
+            ),
+          )
           .for("update");
         const current = found[0];
         if (!current) throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
@@ -588,6 +624,19 @@ export function createObservationDatasetStore(
     async deleteDataset(scope, datasetId) {
       assertObservationScope(scope);
       reference(datasetId);
+      // This is the cleanup half of partial success, not a bypass of the sync
+      // state machine (OCR m125): a synced row is the only place the upstream
+      // dataset id lives, and deleting it here would orphan that upstream copy
+      // forever — retention's discovery scans this same table. Only a subject
+      // that has nothing pushed (pending) or a failed push may be cleaned.
+      const subject = await db
+        .select({ syncState: aiObservationDatasets.syncState })
+        .from(aiObservationDatasets)
+        .where(scopeDataset(scope, datasetId));
+      if (!subject[0]) throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
+      if (subject[0].syncState === "synced") {
+        throw new DatasetStoreError("DATASET_STATE_INVALID", 409);
+      }
       // The one sanctioned way past the versions' delete guard (migration 0124): the
       // transaction-local flag says "this is dataset cleanup", so a direct DELETE of a
       // frozen version is refused by the database while the cascade from here passes.

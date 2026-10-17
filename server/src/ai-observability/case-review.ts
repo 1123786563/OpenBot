@@ -27,6 +27,7 @@
  *   echoed.
  */
 import { type AuditStore, recordAuditEvent } from "../audit";
+import type { SafeValue } from "../../../shared/ai-observability";
 import type { RunBindingStore } from "./bindings";
 import type { ObservationScope } from "./contracts";
 import type {
@@ -141,14 +142,33 @@ function reference(value: string): string {
 
 /**
  * How many cases the deny patterns refused outright — the canary the reviewer must see.
- * The unit is the case: one with both fields refused still counts once, because the
- * number answers "how many of my cases came back damaged", not "how many fields".
+ * The unit is the case: one with any refused field still counts once, because the
+ * number answers "how many of my cases came back damaged", not "how many fields"
+ * (OCR m107: the toolFixtures projection is a SafeValue too — an omitted fixture
+ * node, top-level or deep, is exactly the damage the count exists to surface).
  */
 function countCanaryFindings(frozen: readonly FrozenDatasetCase[]): number {
+  // The fixtures tree carries SafeValue nodes at every level: an omitted leaf
+  // (deny-refused, past the depth cap) or a truncated node is the damage the
+  // count exists to surface, wherever it sits.
+  const valueHasOmission = (value: unknown): boolean => {
+    if (Array.isArray(value)) return value.some(valueHasOmission);
+    if (value && typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      if (record.state === "omitted") return true;
+      return Object.values(record).some(valueHasOmission);
+    }
+    return false;
+  };
+  const fixturesOmitted = (fixtures: SafeValue): boolean =>
+    fixtures.state === "omitted" ||
+    ((fixtures.state === "projected" || fixtures.state === "truncated") &&
+      valueHasOmission(fixtures.value));
   return frozen.filter(
     (one) =>
       one.safeInput.state === "omitted" ||
-      one.referenceOutput.state === "omitted",
+      one.referenceOutput.state === "omitted" ||
+      fixturesOmitted(one.toolFixtures),
   ).length;
 }
 

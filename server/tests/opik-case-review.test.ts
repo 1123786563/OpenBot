@@ -428,6 +428,29 @@ describe("case review — acceptance 4: the canary never survives projection", (
     );
   });
 
+  test("a credential deep inside toolFixtures counts as a finding too (OCR m107)", async () => {
+    const { service, auditFake } = serviceFor([bindingRow(scopeA)]);
+    const outcome = await service.review(scopeA, {
+      runId: "run-1",
+      decision: "approved",
+      cases: [
+        {
+          ...fragment,
+          toolFixtures: {
+            search: { apiKey: "sk-live-abc123def456ghi789jkl012" },
+          },
+        },
+      ],
+    });
+    // The fixtures node carries the refusal somewhere in its tree; the reviewer
+    // must see the case as damaged even though both text fields are clean.
+    expect(outcome.canaryFindings).toBe(1);
+    expect(auditFake.events[0]?.payload).toMatchObject({ canaryFindings: 1 });
+    expect(JSON.stringify(outcome.preview)).not.toContain(
+      "sk-live-abc123def456ghi789jkl012",
+    );
+  });
+
   test("one case refused in both fields still counts once — the unit is the case", async () => {
     const { service } = serviceFor([bindingRow(scopeA)]);
     const outcome = await service.review(scopeA, {

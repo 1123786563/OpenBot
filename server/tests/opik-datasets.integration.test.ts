@@ -18,6 +18,7 @@ import {
   aiObservationDatasets,
   aiObservationDatasetVersions,
 } from "../src/db/schema/ai-observability-datasets";
+import { aiObservationRetentionDeletions } from "../src/db/schema/ai-observability-retention";
 import { opikTestDatabase } from "./support/opik-test-db";
 import { rejectionOf } from "./support/pg-errors";
 
@@ -380,4 +381,62 @@ test("rolling the datasets migration back drops only the dataset objects", async
     SELECT to_regclass('ai_observation_dataset_versions')::text AS present
   `;
   expect(restored[0]?.present).toBe("ai_observation_dataset_versions");
+});
+
+// --- OCR round-1 fix: m119/m120/m121/m125 — the M1a rule covers every writer too ---
+
+async function deletingDataset(scope: typeof scopeA, datasetId: string) {
+  await database.insert(aiObservationRetentionDeletions).values({
+    id: randomUUID(),
+    scopeKey: scope.key,
+    actorId: scope.actorId,
+    botId: scope.botId,
+    kind: "dataset",
+    targetId: datasetId,
+    retentionDays: 30,
+    state: "pending",
+  });
+}
+
+test("a deletion-in-flight dataset is gone to the reverse lookup, the freeze target and the sync writers (OCR m119/m120/m121)", async () => {
+  const datasetName = `t19-m119-${randomUUID()}`;
+  const { dataset } = await store.saveVersion(scopeA, {
+    datasetName,
+    cases: [caseA],
+  });
+  const opikId = `opik-m119-${randomUUID()}`;
+  await store.markSynced(scopeA, dataset.id, opikId);
+  await deletingDataset(scopeA, dataset.id);
+
+  expect(await store.byOpikDatasetId(scopeA, opikId)).toBeNull();
+  // The subject is invisible to readers, so a save under the same name must not
+  // silently reuse it as the freeze target — the M1a refusal, before an immutable
+  // version lands on a row the cascade is about to destroy.
+  await expect(
+    store.saveVersion(scopeA, { datasetName, cases: [caseA] }),
+  ).rejects.toThrow(new DatasetStoreError("DATASET_NOT_FOUND", 404));
+  await expect(
+    store.markSyncing(scopeA, dataset.id),
+  ).rejects.toThrow(new DatasetStoreError("DATASET_NOT_FOUND", 404));
+  await expect(
+    store.markSynced(scopeA, dataset.id, `opik-m119b-${randomUUID()}`),
+  ).rejects.toThrow(new DatasetStoreError("DATASET_NOT_FOUND", 404));
+});
+
+test("deleteDataset refuses a synced subject: the upstream mapping must not be orphaned (OCR m125)", async () => {
+  const { dataset } = await store.saveVersion(scopeA, {
+    datasetName: `t19-m125-${randomUUID()}`,
+    cases: [caseA],
+  });
+  await store.markSynced(scopeA, dataset.id, `opik-m125-${randomUUID()}`);
+  await expect(store.deleteDataset(scopeA, dataset.id)).rejects.toThrow(
+    new DatasetStoreError("DATASET_STATE_INVALID", 409),
+  );
+  // A pending subject — nothing pushed — is still cleanable.
+  const pending = await store.saveVersion(scopeA, {
+    datasetName: `t19-m125b-${randomUUID()}`,
+    cases: [caseA],
+  });
+  await store.deleteDataset(scopeA, pending.dataset.id);
+  expect(await store.getDataset(scopeA, pending.dataset.id)).toBeNull();
 });

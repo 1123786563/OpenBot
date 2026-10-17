@@ -10,6 +10,7 @@ import { ObservationScopeError } from "../src/ai-observability/contracts";
 import { reportBasicRun } from "../src/ai-observability/routes/basic-run";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import { aiObservationBindings } from "../src/db/schema/ai-observability-bindings";
+import { aiObservationRetentionDeletions } from "../src/db/schema/ai-observability-retention";
 import {
   assertBindingsSchemaPresent,
   opikTestDatabase,
@@ -456,4 +457,62 @@ test("rolling the bindings migration back drops only the bindings objects", asyn
     SELECT to_regclass('ai_observation_bindings')::text AS present
   `;
   expect(restored[0]?.present).toBe("ai_observation_bindings");
+});
+
+// --- OCR round-1 fix: m104 (attempt order) + m105 (deletion-in-flight reads) ---
+
+test("latestAttempt answers in creation order, not last-touched order (OCR m104)", async () => {
+  const runId = `${prefix}-run-104`;
+  await store.begin(scopeA, {
+    runId,
+    attemptId: "attempt-1",
+    traceId: `trace-104-1`,
+    capability: "basic",
+    expiresAt: new Date("2026-10-22T00:00:00.000Z"),
+  });
+  await store.begin(scopeA, {
+    runId,
+    attemptId: "attempt-2",
+    traceId: `trace-104-2`,
+    capability: "basic",
+    expiresAt: new Date("2026-10-22T00:00:00.000Z"),
+  });
+  // A late reconcile refreshes the superseded attempt's updatedAt — the exact race
+  // the updatedAt-desc ordering used to lose.
+  await store.reconcile(scopeA, runId, "attempt-1", `trace-opik-104-1`);
+  const latest = await store.latestAttempt(scopeA, runId);
+  expect(latest?.attemptId).toBe("attempt-2");
+});
+
+test("a deletion-in-flight binding is gone to every read seam (OCR m105)", async () => {
+  const runId = `${prefix}-run-105`;
+  const { binding } = await store.begin(scopeA, {
+    runId,
+    attemptId: "attempt-1",
+    traceId: `trace-105-1`,
+    capability: "detailed",
+    expiresAt: new Date("2026-10-22T00:00:00.000Z"),
+  });
+  await store.reconcile(scopeA, runId, "attempt-1", `trace-opik-105-1`);
+  // The retention record, exactly as discovery writes it.
+  await database.insert(aiObservationRetentionDeletions).values({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    kind: "run",
+    targetId: binding.id,
+    upstreamKind: "trace",
+    upstreamId: `trace-opik-105-1`,
+    retentionDays: 7,
+    state: "pending",
+  });
+
+  expect(await store.latestAttempt(scopeA, runId)).toBeNull();
+  expect(await store.attempt(scopeA, runId, "attempt-1")).toBeNull();
+  expect(await store.byOpikTrace(scopeA, `trace-opik-105-1`)).toBeNull();
+  const verdicts = await store.capabilitiesByOpikTraceIds(scopeA, [
+    `trace-opik-105-1`,
+  ]);
+  expect(verdicts.has(`trace-opik-105-1`)).toBe(false);
 });
