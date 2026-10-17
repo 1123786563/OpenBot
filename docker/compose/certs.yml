@@ -1,0 +1,102 @@
+# TLS certificates for the craft preview origin (#359, spec craft-preview-origin
+# D8/AC8): an acme.sh sidecar that issues and renews the `*.<preview-host>` wildcard
+# over ACME DNS-01 and installs it into the shared TLS directory, with the renewal
+# guard alerting when anything fails. docs/tls-certs.md is the deployment guide.
+#
+# Run from the repository root, beside the main stack:
+#   docker compose --project-directory . -f docker/compose/certs.yml up -d
+#
+# The certificate only exists when OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE names an
+# https wildcard host (`https://{session}.preview.example.com`); the dev form (empty
+# template) needs no certificate and the sidecar stays up idle without one
+# (fix-ocr8 #4: residency, not exit 0 — see the restart comment below).
+name: openbot
+
+services:
+  openbot-tls:
+    image: neilpang/acme.sh:3.1.2
+    container_name: openbot-tls
+    # The sidecar replaces the image's daemon with entrypoint.sh: the loop owns
+    # renewal AND failure detection (acme.sh's cron failures are otherwise silent).
+    # The scripts are strict POSIX sh — the image is Alpine without bash.
+    entrypoint: ["/bin/sh", "/openbot-certs/entrypoint.sh"]
+    # Not root: it only needs to write the TLS directory and its acme home. Match
+    # the uid that owns the bind-mounted TLS directory (and that the preview server
+    # reads the key as) — the private key lands 600 under this uid.
+    user: "${OPENBOT_TLS_UID:-1000}:${OPENBOT_TLS_GID:-1000}"
+    # on-failure: retry real failures (invalid template, first-issuance or
+    # install crash — exit 1). The skip forms (dev/http template) no longer
+    # exit: entrypoint.sh parks in a resident sleep loop (fix-ocr8 #4), so a
+    # daemon/host reboot finds a RUNNING container to pull back and the
+    # healthcheck keeps evaluating — under on-failure an exited-0 container is
+    # never restarted, so the old skip-exit-0 left the sidecar permanently
+    # down after the first reboot (and unless-stopped would only mask the same
+    # bug, not fix it).
+    restart: on-failure
+    # No published port: DNS-01 needs no inbound reachability at all.
+    environment:
+      # The same template the server reads (#361). Empty = dev form = no pipeline.
+      OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE: ${OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE:-}
+      # letsencrypt (production) or letsencrypt_test (staging — dry runs, no rate limit).
+      ACME_CA: ${ACME_CA:-letsencrypt}
+      ACME_ACCOUNT_EMAIL: ${ACME_ACCOUNT_EMAIL:-}
+      # Health bands and alerting (docs/tls-certs.md): warn at 30 days left,
+      # critical at 14 (a healthy renewal fires ~60 days before expiry), re-page at
+      # most once per 24h while a failure persists.
+      OPENBOT_TLS_WARN_DAYS: ${OPENBOT_TLS_WARN_DAYS:-30}
+      OPENBOT_TLS_CRIT_DAYS: ${OPENBOT_TLS_CRIT_DAYS:-14}
+      OPENBOT_TLS_ALERT_COOLDOWN_SECONDS: ${OPENBOT_TLS_ALERT_COOLDOWN_SECONDS:-86400}
+      OPENBOT_TLS_ALERT_WEBHOOK: ${OPENBOT_TLS_ALERT_WEBHOOK:-}
+      # The reload seam: a stamp file (tls/reload.stamp) always; an http(s) POST to
+      # the server's reload endpoint when set. Never a container restart.
+      OPENBOT_TLS_RELOAD_URL: ${OPENBOT_TLS_RELOAD_URL:-}
+      # uid:gid to chown key/cert to when this container runs as root (default user
+      # above is not root, so this stays empty).
+      OPENBOT_TLS_OWNER: ${OPENBOT_TLS_OWNER:-}
+      OPENBOT_TLS_RENEW_INTERVAL_SECONDS: ${OPENBOT_TLS_RENEW_INTERVAL_SECONDS:-21600}
+      OPENBOT_TLS_DIR: /etc/openbot/tls
+      # acme.sh's own state root. The image defaults it to /acme-home, a root-owned
+      # directory inside the image — an unprivileged sidecar cannot even write its
+      # first log line there. Keep it under the writable tls bind instead; every
+      # acme.sh invocation also passes --home with the same value.
+      # fix-ocr17: spell the env the entrypoint/lib.sh actually read (ACME_HOME).
+      # The old CA_HOME only worked because the default value coincided.
+      ACME_HOME: /etc/openbot/tls/acme-home
+    # DNS provider credentials (CF_Token, Ali_Key, …) AND the ACME_DNS plugin name
+    # live in ./dns.env — git-ignored, chmod 600, never committed. Optional here so
+    # the dev form starts without it; the entrypoint fails loudly when the pipeline
+    # actually needs credentials that are missing. Like egress.env in the main file.
+    env_file:
+      - path: ./dns.env
+        required: false
+    volumes:
+      # Read-only scripts: lib.sh, entrypoint.sh, renewal-guard.sh, reload.sh, drill.
+      - ./docker/compose/certs:/openbot-certs:ro
+      # Everything the sidecar writes lives under this ONE bind mount (the
+      # /etc/openbot/tls convention): cert.pem, key.pem, renewal-status.json,
+      # reload.stamp, and the acme state under acme-home/ (account key, issued
+      # certificates, acme.sh.log, chmod 700). Defaults to ./tls at the repo root
+      # (git-ignored); create it owned by OPENBOT_TLS_UID before first start — no
+      # named volume, so no root-owned-volume init dance and `docker compose run`
+      # drills see exactly what a real start would.
+      - ${OPENBOT_TLS_HOST_DIR:-./tls}:/etc/openbot/tls
+    # For the reload hook to reach a server running on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      # Critical health (renewal failing, certificate expiring) must be visible in
+      # `docker ps` — the guard evaluates without delivering alerts here, so the
+      # probe cadence cannot burn the alert cooldown.
+      # fix-ocr17: invoke through sh — the CMD form depended on the script's
+      # exec bit surviving the image/build/packaging path, which nothing in the
+      # compose contract guarantees; every other invocation of this script is
+      # already `sh <path>`.
+      test: ["CMD", "sh", "/openbot-certs/renewal-guard.sh", "--healthcheck"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      # First issuance is slow: DNS-01 waits for TXT propagation — but until the
+      # first attempt resolves, the guard reports "starting" (not red; lib.sh,
+      # review F4), so start_period only needs to buffer the script's own startup.
+      start_period: 180s
+    mem_limit: ${OPENBOT_TLS_MEM_LIMIT:-128m}
