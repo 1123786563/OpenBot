@@ -12,6 +12,8 @@
 //   4. span input/output reach the write queue only through the T05 redaction projection;
 //      a canary planted in the observation cannot survive into a real span instance.
 import { describe, expect, test } from "bun:test";
+import { context, trace } from "@opentelemetry/api";
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import type { OpikObservationWrite } from "../src/ai-observability/health";
 import {
   createModelSpanRecorder,
@@ -98,6 +100,59 @@ const CANARY_GH = `ghp_${"c".repeat(24)}`;
 // ---------------------------------------------------------------------------
 
 describe("the model span recorder", () => {
+  test("a provable run chain is joined, a malformed one is never claimed (OCR h6)", async () => {
+    const runTraceId = "a".repeat(32);
+    const runSpanId = "b".repeat(16);
+    const { writes } = await recordAndCapture({
+      occurredAt,
+      endedAt,
+      provider: "openai",
+      modelId: "gpt-test",
+      ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
+      scope: aScope(),
+      trace: { traceId: runTraceId, parentSpanId: runSpanId },
+    });
+    expect(writes).toHaveLength(1);
+    const joined = writes[0].spans[0];
+    // The span joins the run's trace and parents under the run span: every model
+    // call of one run lands in one trace, no orphan per call.
+    expect(joined.traceId).toBe(runTraceId);
+    expect(joined.parentSpanId).toBe(runSpanId);
+
+    // A context that does not prove its shape is never fully claimed: a malformed
+    // trace id adopts nothing (fresh identity, no parent); a valid trace id with a
+    // malformed parent adopts the chain but refuses the parent.
+    const badTrace = await recordAndCapture({
+      occurredAt,
+      endedAt,
+      ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
+      scope: aScope(),
+      trace: { traceId: "nothex!", parentSpanId: runSpanId },
+    });
+    expect(badTrace.writes[0]?.spans[0]?.traceId).toMatch(/^[0-9a-f]{32}$/);
+    expect(badTrace.writes[0]?.spans[0]?.traceId).not.toBe(runTraceId);
+    expect(badTrace.writes[0]?.spans[0]?.parentSpanId).toBeUndefined();
+
+    const badParent = await recordAndCapture({
+      occurredAt,
+      endedAt,
+      ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
+      scope: aScope(),
+      trace: { traceId: runTraceId, parentSpanId: "short" },
+    });
+    expect(badParent.writes[0]?.spans[0]?.traceId).toBe(runTraceId);
+    expect(badParent.writes[0]?.spans[0]?.parentSpanId).toBeUndefined();
+
+    // No context at all: the pre-h6 behavior stands (fresh trace, no parent).
+    const absent = await recordAndCapture({
+      occurredAt,
+      endedAt,
+      ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
+      scope: aScope(),
+    });
+    expect(absent.writes[0]?.spans[0]?.parentSpanId).toBeUndefined();
+  });
+
   test("a settled call carries the actual provider usage (acceptance 1)", async () => {
     const { writes } = await recordAndCapture({
       occurredAt,
@@ -596,6 +651,57 @@ describe("the built-in observation bypass (metered path)", () => {
       kind: "settlement_failed",
       code: "usage_over_bound",
     });
+  });
+
+  test("the fact carries the ambient W3C context captured at entry (OCR h6)", async () => {
+    // A registered provider installs the ambient context manager the capture
+    // reads (the same footing the trace-chain suite runs on).
+    const provider = new NodeTracerProvider();
+    provider.register();
+    const { model } = scriptedModel([
+      { type: "text-delta", id: "t", delta: "hi" },
+      finishPart(1, 1),
+    ]);
+    const { lifecycle } = recordingLifecycle(admittingBounds());
+    const facts: BuiltinModelSpanFact[] = [];
+    const tracer = trace.getTracer("opik-model-span-test");
+    const runSpan = tracer.startSpan("the run");
+    try {
+      setModelUsageGate(async () => lifecycle);
+      setBuiltinModelSpanObserver((fact) => facts.push(fact));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      // The metered call runs inside the run's ambient context; the fact's trace
+      // must be captured HERE (at doStream entry), not at stream teardown.
+      await context.with(trace.setSpan(context.active(), runSpan), async () => {
+        const result = await wrapped.doStream({ prompt: [] });
+        await drain(result.stream);
+      });
+    } finally {
+      runSpan.end();
+      setModelUsageGate(undefined);
+      setBuiltinModelSpanObserver(undefined);
+      await provider.shutdown();
+      trace.disable();
+    }
+    expect(facts).toHaveLength(1);
+    expect(facts[0].trace?.traceId).toBe(runSpan.spanContext().traceId);
+    expect(facts[0].trace?.spanId).toBe(runSpan.spanContext().spanId);
+
+    // Outside any traced request the fact honestly answers null.
+    const bareFacts: BuiltinModelSpanFact[] = [];
+    const { model: bareModel } = scriptedModel([finishPart(1, 1)]);
+    const { lifecycle: bareLifecycle } = recordingLifecycle(admittingBounds());
+    try {
+      setModelUsageGate(async () => bareLifecycle);
+      setBuiltinModelSpanObserver((fact) => bareFacts.push(fact));
+      const wrapped = meteredModelForTests(bareModel) as WrappedModel;
+      const result = await wrapped.doStream({ prompt: [] });
+      await drain(result.stream);
+    } finally {
+      setModelUsageGate(undefined);
+      setBuiltinModelSpanObserver(undefined);
+    }
+    expect(bareFacts[0]?.trace).toBeNull();
   });
 
   test("a consumer cancellation is observed as canceled, once", async () => {
