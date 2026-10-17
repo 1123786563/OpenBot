@@ -259,6 +259,56 @@ describe("the gateway model call", () => {
     });
   });
 
+  test("frozen model parameters reach the gateway wire — the projected envelopes are unwrapped at the dial (R4-26)", async () => {
+    // The full production chain: the freeze wraps every leaf in a projection
+    // envelope (`projectSafeFixture`), the runner hands them to the gateway call,
+    // and the dial must see numbers — not silently completed calls with every
+    // parameter dropped (R4-26).
+    const frozenWithParameters = freezeExperimentConfig({
+      botConfig: {},
+      prompt: "Answer the support question.",
+      modelName: "gateway-model",
+      modelParameters: { temperature: 0.7, maxTokens: 512, topP: 0.9 },
+      toolFixtures: {},
+      judgeConfig: {},
+      judgeVersion: "judge/1",
+      readOnlyTools: [],
+    });
+    const runner = createProductionEvaluationCaseRunner({
+      callModel: createGatewayModelCall({
+        apiKey: "test-key",
+        baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+      }),
+    });
+
+    const outcome = await runner({
+      ...contextFor(),
+      config: frozenWithParameters,
+    });
+
+    expect(outcome.status).toBe("completed");
+    expect(seenRequests.at(-1)).toMatchObject({
+      model: "gateway-model",
+      temperature: 0.7,
+      max_tokens: 512,
+      top_p: 0.9,
+    });
+  });
+
+  test("a withheld parameter envelope is not forwarded — fail-closed at the numeric gate (R4-26)", async () => {
+    const answer = await callModel({
+      modelName: "gateway-model",
+      modelParameters: {
+        temperature: { state: "omitted", reason: "credential" },
+      },
+      system: "Answer the support question.",
+      user: "Summarize the outage.",
+    });
+
+    expect(answer.output).toBe("gateway answer");
+    expect(seenRequests.at(-1)).not.toHaveProperty("temperature");
+  });
+
   test("a hung gateway is cut off by the time bound", async () => {
     const hanging = Bun.serve({
       port: 0,
