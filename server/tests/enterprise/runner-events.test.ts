@@ -278,8 +278,10 @@ test("event_payload_canonicalization_is_key_order_independent", () => {
 });
 
 test("event_fk_requires_preexisting_owner_unique_key", () => {
+  // Anchored to this file, not to the process cwd: CI runs the suite from the repo root, so a
+  // cwd-relative path only resolves when a developer happens to run from server/.
   const migration = readFileSync(
-    "drizzle/0070_runner_event_attribution.sql",
+    new URL("../../drizzle/0070_runner_event_attribution.sql", import.meta.url),
     "utf8",
   );
   const uniqueIndex = migration.indexOf(
@@ -308,7 +310,11 @@ test("event_append_serializes_with_cancel_and_lease_takeover", async () => {
 });
 
 test("event_append_expiry_is_sampled_after_row_locks", () => {
-  const source = readFileSync("src/enterprise/runs/events.ts", "utf8");
+  // Anchored to this file, not to the process cwd (CI runs from the repo root).
+  const source = readFileSync(
+    new URL("../../src/enterprise/runs/events.ts", import.meta.url),
+    "utf8",
+  );
   expect(source).toContain("clock_timestamp()");
   expect(source.indexOf('.for("update")')).toBeLessThan(
     source.indexOf("clock_timestamp()"),

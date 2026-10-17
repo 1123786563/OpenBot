@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
 import { convertMessages, type MastraDBMessage } from "@mastra/core/agent";
 import { InMemoryStore } from "@mastra/core/storage";
 import { Memory } from "@mastra/memory";
@@ -628,6 +629,9 @@ test("Mastra adapter preserves application/pdf binary and URL files", () => {
 });
 
 test("parser rejects maximum sparse arrays promptly", async () => {
+  // The child's eval imports "./src/...", which resolves against the child's cwd. Pin the cwd to
+  // server/ so the test behaves identically whether the suite runs from server/ or, as CI does,
+  // from the repository root.
   const child = Bun.spawn(
     [
       process.execPath,
@@ -636,7 +640,11 @@ test("parser rejects maximum sparse arrays promptly", async () => {
 const result = parseMessageInput({ id: "sparse", role: "user", type: "text", content: new Array(2 ** 32 - 1) });
 console.log(JSON.stringify({ ok: result.ok, code: result.ok ? null : result.error.code }));`,
     ],
-    { stdout: "pipe", stderr: "pipe" },
+    {
+      cwd: fileURLToPath(new URL("../../", import.meta.url)),
+      stdout: "pipe",
+      stderr: "pipe",
+    },
   );
   let timedOut = false;
   const timeout = new Promise<"timeout">((resolve) => {

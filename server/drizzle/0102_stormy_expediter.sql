@@ -29,6 +29,6 @@ CREATE TABLE "openmuse_reviewed_attempts" (
 	"reconciliation" jsonb
 );
 --> statement-breakpoint
-ALTER TABLE "openmuse_reviewed_attempts" ADD CONSTRAINT "openmuse_reviewed_attempts_action_id_openmuse_reviewed_actions_id_fk" FOREIGN KEY ("action_id") REFERENCES "public"."openmuse_reviewed_actions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "openmuse_reviewed_attempts" ADD CONSTRAINT "openmuse_reviewed_attempts_action_id_fk" FOREIGN KEY ("action_id") REFERENCES "public"."openmuse_reviewed_actions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "openmuse_reviewed_actions_owner_created_idx" ON "openmuse_reviewed_actions" USING btree ("owner_user_id","created_at","id");--> statement-breakpoint
 CREATE INDEX "openmuse_reviewed_attempts_action_idx" ON "openmuse_reviewed_attempts" USING btree ("action_id");

@@ -1,6 +1,9 @@
-import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import { CreditReservationConflictError } from "../src/billing/credits-writer";
-import { startUsageDeliverySweeps } from "../src/billing/maintenance";
+import {
+  startUsageDeliverySweeps,
+  type SweepLockConnection,
+} from "../src/billing/maintenance";
 import { createBillingService } from "../src/billing/service";
 import { BillingError } from "../src/billing/types";
 import {
@@ -629,37 +632,29 @@ describe("startUsageDeliverySweeps", () => {
 });
 
 describe("a sweep pass is single-instance (audit C3)", () => {
-  // The guard's dedicated connection is faked — mock.module replaces postgres for the
-  // already-imported sweeper — so the tests pin the lock protocol without a second database: a
+  // The guard's dedicated connection is faked — injected through the sweeper's `connect`
+  // option — so the tests pin the lock protocol without a second database: a
   // pass that cannot take the advisory lock is skipped, and the connection that holds it is
   // ended (ending the connection IS the release of a session lock) after a successful pass AND
   // after a throwing one. A leaked lock silently disables every later sweep on every replica,
-  // so the throwing half is the one that matters.
+  // so the throwing half is the one that matters. Injection instead of `mock.module` is not a
+  // style choice: bun cannot undo a module mock (`mock.restore` does not), so one would leak
+  // into every later test file in the same process.
   const guard = { held: true, events: [] as string[] };
-  mock.module("postgres", () => ({
-    default: () => {
-      const connection = (() =>
-        Promise.resolve([{ held: guard.held }])) as unknown as {
-        (
-          strings: TemplateStringsArray,
-          ...values: unknown[]
-        ): Promise<{ held: boolean }[]>;
-        end: (options?: unknown) => Promise<void>;
-      };
-      connection.end = async () => {
-        guard.events.push("end");
-      };
-      return connection;
-    },
-  }));
+  const fakeConnect = () => {
+    const connection = (() =>
+      Promise.resolve([
+        { held: guard.held },
+      ])) as unknown as SweepLockConnection;
+    connection.end = async () => {
+      guard.events.push("end");
+    };
+    return connection;
+  };
 
   beforeEach(() => {
     guard.held = true;
     guard.events = [];
-  });
-  afterAll(() => {
-    // The module mock must not follow postgres into other test files.
-    mock.restore();
   });
 
   const lock = {
@@ -677,7 +672,7 @@ describe("a sweep pass is single-instance (audit C3)", () => {
           return { examined: 0, delivered: 0, failed: 0 };
         },
       },
-      { firstRunMs: 0, intervalMs: 5, lock },
+      { firstRunMs: 0, intervalMs: 5, lock, connect: fakeConnect },
     );
     await Bun.sleep(20);
     sweeps.stop();
@@ -694,7 +689,7 @@ describe("a sweep pass is single-instance (audit C3)", () => {
           return { examined: 0, delivered: 0, failed: 0 };
         },
       },
-      { firstRunMs: 0, intervalMs: 5, lock },
+      { firstRunMs: 0, intervalMs: 5, lock, connect: fakeConnect },
     );
     await Bun.sleep(20);
     sweeps.stop();
@@ -716,7 +711,13 @@ describe("a sweep pass is single-instance (audit C3)", () => {
           throw new Error("boom");
         },
       },
-      { firstRunMs: 0, intervalMs: 5, log: () => {}, lock },
+      {
+        firstRunMs: 0,
+        intervalMs: 5,
+        log: () => {},
+        lock,
+        connect: fakeConnect,
+      },
     );
     await Bun.sleep(20);
     sweeps.stop();
