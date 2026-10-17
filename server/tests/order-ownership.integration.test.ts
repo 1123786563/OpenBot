@@ -1,8 +1,9 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq, like } from "drizzle-orm";
+import { eq, inArray, like } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
 import { paymentOrders } from "../src/db/schema/payment";
+import { billingCustomers, payerAccounts } from "../src/db/schema/billing";
 import { createPayerAccount } from "../src/billing/payer";
 import { deploymentExternalCustomerId } from "../src/billing/service";
 import type { PaymentStore } from "../src/billing/payments/types";
@@ -35,10 +36,26 @@ const userB = `${prefix}-bob`;
 const scopeA = { actorPayerRef: { kind: "personal" as const, id: userA } };
 const scopeB = { actorPayerRef: { kind: "personal" as const, id: userB } };
 
+/** The tenants whose explicit mappings the attribution tests created. */
+const mappedTenants: string[] = [];
+
 afterAll(async () => {
   await database
     .delete(paymentOrders)
     .where(like(paymentOrders.createdBy, `${prefix}%`));
+  // The attribution fixtures' explicit mappings and the customer floors that
+  // came with them: without this they survive the run as legacy_deployment
+  // rows no later file owns, and the suite's global-count assertions
+  // (payer-legacy-mapping, cleanup-dry-run) read them as strangers.
+  await database
+    .delete(payerAccounts)
+    .where(inArray(payerAccounts.payerId, mappedTenants));
+  await database.delete(billingCustomers).where(
+    inArray(
+      billingCustomers.externalId,
+      mappedTenants.map((tenant) => deploymentExternalCustomerId(tenant)),
+    ),
+  );
   await database.$client.close();
 });
 
@@ -179,6 +196,7 @@ test("legacy attribution copies an explicit 02.2 mapping verbatim and is write-o
     kind: "legacy_deployment",
     id: tenantId,
   });
+  mappedTenants.push(tenantId);
   await insertRawOrder({ id: `${attrPrefix}-b`, createdBy: attrPrefix });
   const first = await attributeLegacyOrderOwnership(database, {
     legacyDeploymentId: tenantId,
@@ -213,6 +231,7 @@ test("legacy attribution copies an explicit 02.2 mapping verbatim and is write-o
     kind: "legacy_deployment",
     id: lateClaimedTenant,
   });
+  mappedTenants.push(lateClaimedTenant);
   const post = await attributeLegacyOrderOwnership(database, {
     legacyDeploymentId: lateClaimedTenant,
   });
