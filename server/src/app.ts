@@ -115,6 +115,11 @@ import { createHostAccessRoutes } from "./host-access/routes";
 import { identityRoutes } from "./identity/routes";
 import type { IdentityStore } from "./identity/store";
 import { createIntelligenceClient } from "./intelligence-client";
+import { botServiceAdminRoutes } from "./bot-services/routes";
+import type { BotServiceStore } from "./bot-services/store";
+import { botServiceCredentialRoutes } from "./bot-services/credential-routes";
+import { botServiceRoutes } from "./bot-services/auth";
+import type { BotServiceRegistry } from "./bot-services/registry";
 import { knowledgeServiceConfig } from "./knowledge/config";
 import { createKnowledgeRoutes } from "./knowledge/routes";
 import {
@@ -735,6 +740,13 @@ export function createApp(
   identity?: IdentityStore,
   /** The GitHub sign-in callback, built by the caller; mounted behind requireUser ahead of /api/identity. */
   identityGithubCallback?: Hono<{ Variables: AppVariables }>,
+  /**
+   * The Bifrost bot service registry (04.1) — and, since 04.2, its credential surface and
+   * authenticator when the deployment composed a full {@link BotServiceRegistry}. A bare 04.1
+   * store keeps every registry route working and leaves the credential surfaces answering a
+   * tagged 503; absent answers a tagged 503 on /api/admin/bot-services.
+   */
+  botServices?: BotServiceStore | BotServiceRegistry,
 ) {
   // The OpenMuse seam tail, unpacked to the local names the body below reads —
   // one named object at the call site, no seventeen positional arguments to
@@ -1145,6 +1157,46 @@ export function createApp(
             }
           : undefined,
     }),
+  );
+
+  /*
+   * The administrator's bot service registry (Bifrost #234, 04.1): which server-side Bots this
+   * deployment recognizes at all. Registration mints an identity and a declaration, never a
+   * credential or a grant — those are 04.2's and 04.5+'s, under their own triggers. Absent leaves
+   * the surface mounted but answering a tagged 503, so the Admin page can say the registry is
+   * unavailable rather than the route having vanished.
+   */
+  app.route(
+    "/api/admin/bot-services",
+    botServiceAdminRoutes(requireUser, botServices, auditStore),
+  );
+
+  /*
+   * The registry's credential surface (Bifrost #235, 04.2): issue, rotate, revoke and read the
+   * masked status of a Bot's service credential, administrator-only. This is the one place a
+   * credential's plaintext is ever handed out — once, in the issue and rotate responses. Mounted
+   * beside 04.1's routes under the same prefix; without a composed registry it answers a tagged
+   * 503 rather than vanishing.
+   */
+  app.route(
+    "/api/admin/bot-services",
+    botServiceCredentialRoutes(requireUser, botServices),
+  );
+
+  /*
+   * The Bot-facing surface (Bifrost #235, 04.2): the single authenticated door a Bot's server
+   * presents its service credential at. Today it answers only "which Bot am I"; the binding
+   * routes (04.3) mount on the same guard. Fail-closed in both directions — no registry, no
+   * door; no valid credential, one uniform refusal that says nothing about whether a botId
+   * exists.
+   */
+  app.route(
+    "/api/bot-service",
+    botServiceRoutes(
+      botServices && "authenticate" in botServices && botServices.authenticate
+        ? { authenticate: botServices.authenticate }
+        : undefined,
+    ),
   );
 
   app.get("/api/settings/instructions", requireUser, async (context) => {

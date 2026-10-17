@@ -3,6 +3,7 @@
 export * from "./admin";
 export * from "./approvals";
 export * from "./billing";
+export * from "./bot-services";
 export * from "./code-runs";
 export * from "./components";
 export * from "./computer";
