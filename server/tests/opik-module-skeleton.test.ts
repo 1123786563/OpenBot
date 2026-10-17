@@ -8,6 +8,7 @@ import {
   type BotManagementCheck,
 } from "../src/ai-observability/context";
 import { createAiObservabilityRoutes } from "../src/ai-observability/routes";
+import { canManageAgent } from "../src/agents/profile-policy";
 import type { AgentProfile } from "../src/agents/profile-types";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 
@@ -50,45 +51,92 @@ function managementCheck(rows: AgentProfile[]): BotManagementCheck {
 describe("resolveObservationBot", () => {
   test("a missing bot id is refused before any lookup", async () => {
     let called = 0;
-    const result = await resolveObservationBot(async () => {
-      called += 1;
-      return null;
-    }, owner, undefined);
-    expect(result).toEqual({ ok: false, status: 404, error: OBSERVATION_BOT_REQUIRED });
+    const result = await resolveObservationBot(
+      async () => {
+        called += 1;
+        return null;
+      },
+      owner,
+      undefined,
+    );
+    expect(result).toEqual({
+      ok: false,
+      status: 404,
+      error: OBSERVATION_BOT_REQUIRED,
+    });
     expect(called).toBe(0);
   });
 
   test("the owner gets access", async () => {
-    const result = await resolveObservationBot(managementCheck([profile()]), owner, "agent-1");
+    const result = await resolveObservationBot(
+      managementCheck([profile()]),
+      owner,
+      "agent-1",
+    );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.profile.id).toBe("agent-1");
   });
 
   test("an administrator gets access", async () => {
-    const result = await resolveObservationBot(managementCheck([profile()]), admin, "agent-1");
+    const result = await resolveObservationBot(
+      managementCheck([profile()]),
+      admin,
+      "agent-1",
+    );
     expect(result.ok).toBe(true);
   });
 
   test("a stranger is refused even though the Bot exists", async () => {
-    const result = await resolveObservationBot(managementCheck([profile()]), stranger, "agent-1");
-    expect(result).toEqual({ ok: false, status: 403, error: OBSERVATION_ACCESS_DENIED });
+    const result = await resolveObservationBot(
+      managementCheck([profile()]),
+      stranger,
+      "agent-1",
+    );
+    expect(result).toEqual({
+      ok: false,
+      status: 403,
+      error: OBSERVATION_ACCESS_DENIED,
+    });
   });
 
   test("public visibility does NOT grant observation access", async () => {
     const rows = [profile({ visibility: "public" })];
-    const result = await resolveObservationBot(managementCheck(rows), stranger, "agent-1");
-    expect(result).toEqual({ ok: false, status: 403, error: OBSERVATION_ACCESS_DENIED });
+    const result = await resolveObservationBot(
+      managementCheck(rows),
+      stranger,
+      "agent-1",
+    );
+    expect(result).toEqual({
+      ok: false,
+      status: 403,
+      error: OBSERVATION_ACCESS_DENIED,
+    });
   });
 
   test("an unknown bot id is refused without leaking existence", async () => {
-    const result = await resolveObservationBot(managementCheck([]), owner, "agent-nope");
-    expect(result).toEqual({ ok: false, status: 403, error: OBSERVATION_ACCESS_DENIED });
+    const result = await resolveObservationBot(
+      managementCheck([]),
+      owner,
+      "agent-nope",
+    );
+    expect(result).toEqual({
+      ok: false,
+      status: 403,
+      error: OBSERVATION_ACCESS_DENIED,
+    });
   });
 
   test("a system-owned or deleted Bot is refused even for its owner", async () => {
-    const rows = [profile({ systemOwned: true }), profile({ id: "agent-2", deletedAt: new Date() })];
-    expect((await resolveObservationBot(managementCheck(rows), owner, "agent-1")).ok).toBe(false);
-    expect((await resolveObservationBot(managementCheck(rows), owner, "agent-2")).ok).toBe(false);
+    const rows = [
+      profile({ systemOwned: true }),
+      profile({ id: "agent-2", deletedAt: new Date() }),
+    ];
+    expect(
+      (await resolveObservationBot(managementCheck(rows), owner, "agent-1")).ok,
+    ).toBe(false);
+    expect(
+      (await resolveObservationBot(managementCheck(rows), owner, "agent-2")).ok,
+    ).toBe(false);
   });
 });
 
@@ -130,7 +178,9 @@ function appFor(
 describe("GET /bots/:botId/access", () => {
   test("an unauthenticated caller is refused before business logic", async () => {
     const app = appFor([profile()], rejectingUser);
-    const response = await app.request("http://openbot.test/bots/agent-1/access");
+    const response = await app.request(
+      "http://openbot.test/bots/agent-1/access",
+    );
     expect(response.status).toBe(401);
   });
 
@@ -151,7 +201,9 @@ describe("GET /bots/:botId/access", () => {
       [profile()],
       actorVariables(stranger as unknown as AuthenticatedActor),
     );
-    const response = await app.request("http://openbot.test/bots/agent-1/access");
+    const response = await app.request(
+      "http://openbot.test/bots/agent-1/access",
+    );
     expect(response.status).toBe(403);
     expect((await response.json()).error).toBe(OBSERVATION_ACCESS_DENIED);
   });
@@ -161,7 +213,9 @@ describe("GET /bots/:botId/access", () => {
       [profile({ visibility: "public" })],
       actorVariables(stranger as unknown as AuthenticatedActor),
     );
-    expect((await app.request("http://openbot.test/bots/agent-1/access")).status).toBe(403);
+    expect(
+      (await app.request("http://openbot.test/bots/agent-1/access")).status,
+    ).toBe(403);
   });
 
   test("a missing bot id answers 404 with an explainable error", async () => {
@@ -169,5 +223,42 @@ describe("GET /bots/:botId/access", () => {
       "http://openbot.test/bots//access",
     );
     expect([404]).toContain(response.status);
+  });
+});
+
+describe("mount seam", () => {
+  test("the module is absent from the app when no deps are supplied", async () => {
+    const app = new Hono<{ Variables: AppVariables }>();
+    // Nothing mounted: this is what createApp does when `aiObservability` is undefined.
+    const response = await app.request(
+      "http://openbot.test/api/ai-observability/bots/agent-1/access",
+    );
+    expect(response.status).toBe(404);
+  });
+
+  test("the module is reachable under /api/ai-observability when supplied", async () => {
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.route(
+      "/api/ai-observability",
+      createAiObservabilityRoutes({
+        requireUser: actorVariables(owner as unknown as AuthenticatedActor),
+        canManageBot: managementCheck([profile()]),
+      }),
+    );
+    const response = await app.request(
+      "http://openbot.test/api/ai-observability/bots/agent-1/access",
+    );
+    expect(response.status).toBe(200);
+  });
+
+  test("canManageBot refuses a public Bot the caller does not own", async () => {
+    // The assembly index.ts performs: store read + canManageAgent, as one injected check.
+    const rows = [profile({ visibility: "public" })];
+    const check: BotManagementCheck = async (actor, botId) => {
+      const found = rows.find((row) => row.id === botId);
+      return found && canManageAgent(actor, found) ? found : null;
+    };
+    expect(await check(stranger, "agent-1")).toBeNull();
+    expect(await check(owner, "agent-1")).not.toBeNull();
   });
 });

@@ -43,8 +43,10 @@ export async function resolveObservationBot(
   actor: AgentActor,
   botId: string | undefined,
 ): Promise<ObservationBotAccess> {
-  if (!botId) return { ok: false, status: 404, error: OBSERVATION_BOT_REQUIRED };
+  if (!botId)
+    return { ok: false, status: 404, error: OBSERVATION_BOT_REQUIRED };
   const profile = await check(actor, botId);
-  if (!profile) return { ok: false, status: 403, error: OBSERVATION_ACCESS_DENIED };
+  if (!profile)
+    return { ok: false, status: 403, error: OBSERVATION_ACCESS_DENIED };
   return { ok: true, botId, profile };
 }
