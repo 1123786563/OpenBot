@@ -100,6 +100,7 @@ test("redelivering the same paid delivery 8 times writes ZERO anomalies, not 8",
     currency: "CNY",
     expiresAt: new Date(Date.now() + 15 * 60_000),
     createdBy: `${prefix}-a`,
+    ownerPayerRef: { kind: "personal" as const, id: `${prefix}-a` },
     checkoutPayload: null,
   });
   const service = serviceFor(
@@ -126,6 +127,7 @@ test("the fixed duplicate path fires ONCE for the one confirmation that doubled 
     currency: "CNY",
     expiresAt: new Date(Date.now() + 15 * 60_000),
     createdBy: `${prefix}-a2`,
+    ownerPayerRef: { kind: "personal" as const, id: `${prefix}-a2` },
     checkoutPayload: null,
   });
   await serviceFor(paidDelivery(a.id, `${prefix}-tx-b`), planDuplicate).handleCallback(
@@ -144,6 +146,7 @@ test("the fixed duplicate path fires ONCE for the one confirmation that doubled 
     currency: "CNY",
     expiresAt: new Date(Date.now() + 15 * 60_000),
     createdBy: `${prefix}-b2`,
+    ownerPayerRef: { kind: "personal" as const, id: `${prefix}-b2` },
     checkoutPayload: null,
   });
   const wechat: PaymentProvider = {
