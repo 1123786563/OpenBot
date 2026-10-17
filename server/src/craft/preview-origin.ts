@@ -103,6 +103,13 @@ function previewDevPort(
   return { port: port.port ?? serverPort.port ?? DEV_FALLBACK_PORT };
 }
 
+/** The dev form's host, shaped the way URL serialization writes it: http's
+ * default port 80 is never explicit, so minted addresses and url.host
+ * comparisons agree on it (port 80 → no ":80", any other port → ":port"). */
+function devHost(port: number): string {
+  return port === 80 ? DEV_PREVIEW_HOSTNAME : `${DEV_PREVIEW_HOSTNAME}:${port}`;
+}
+
 /** The parsed template: the wildcard-host form, the derived dev form, or the refusal. */
 type ParsedTemplate =
   | { kind: "host"; scheme: string; suffix: string; baseHostname: string }
@@ -126,15 +133,31 @@ function parseTemplate(raw: string): ParsedTemplate {
   if (probe.protocol !== "http:" && probe.protocol !== "https:") {
     return { kind: "invalid" as const, reason: usage };
   }
+  // {session} must be the hostname's LEADING label, checked on the RAW template
+  // right after the scheme's `//` — not on the replaced probe URL, where a
+  // `probe.` hostname prefix is spoofable: `https://probe.{session}.example.com`
+  // probes to probe.probe.example.com (passes) and mints undeclared
+  // *.probe.example.com hosts, while userinfo like `https://user@{session}.…`
+  // never enters the hostname and degrades the base to the apex. A mid-host or
+  // trailing {session} would derive garbage and mint addresses the wildcard
+  // never answers — requests to them would fall back onto the main site with
+  // its cookies (AC6: never same-origin).
+  if (!/^https?:\/\/\{session\}\./i.test(value)) {
+    return { kind: "invalid" as const, reason: usage };
+  }
   // The wildcard form serves the app at the origin's root (D3) — a template that
   // carries a path or query would smuggle the basePath footgun back in.
   if (probe.pathname !== "/" || probe.search !== "" || probe.hash !== "") {
     return { kind: "invalid" as const, reason: usage };
   }
   const suffix = probe.host.slice("probe".length); // ".preview.example.com[:port]"
-  const baseHostname = probe.hostname.slice("probe".length); // ".preview.example.com"
+  // The base the wildcard answers on — empty for a degenerate template like
+  // `https://{session}./`: that would mint dead `https://<label>.` addresses and,
+  // with baseHostname "", claim every trailing-dot FQDN host into the preview
+  // branch (endsWith(".")). Closed here instead — fail closed (AC6).
+  const baseHostname = probe.hostname.slice("probe.".length); // "preview.example.com"
   if (baseHostname === "") return { kind: "invalid" as const, reason: usage };
-  return { kind: "host", scheme: probe.protocol, suffix, baseHostname: baseHostname.slice(1) };
+  return { kind: "host", scheme: probe.protocol, suffix, baseHostname };
 }
 
 export function createPreviewOrigin(deps: {
@@ -205,11 +228,12 @@ export function createPreviewOrigin(deps: {
       if (template.kind === "host") {
         return `${template.scheme}//${label}${template.suffix}`;
       }
-      return `http://${DEV_PREVIEW_HOSTNAME}:${devPort.port}/${label}`;
+      return `http://${devHost(devPort.port ?? DEV_FALLBACK_PORT)}/${label}`;
     },
 
     handlesRequest(request) {
-      const hostname = new URL(request.url).hostname;
+      const url = new URL(request.url);
+      const hostname = url.hostname;
       if (template.kind === "host") {
         // The base and everything under it stay in the preview namespace —
         // fail closed inside the deployment's declared wildcard host.
@@ -219,11 +243,14 @@ export function createPreviewOrigin(deps: {
         );
       }
       if (template.kind === "dev") {
-        // The dev host is claimed by hostname; the port, when derivable, must be
-        // the server's own (an underivable port leaves admission closed anyway).
+        // The dev host is claimed by hostname; the port, when derivable, must
+        // be the server's own (an underivable port leaves admission closed
+        // anyway). The whole url.host is compared, not .port — WHATWG
+        // serialization drops http's default :80, so a String(port) comparison
+        // would never match a server genuinely listening on port 80.
         return (
           hostname === DEV_PREVIEW_HOSTNAME &&
-          (devPort.port === undefined || new URL(request.url).port === String(devPort.port))
+          (devPort.port === undefined || url.host === devHost(devPort.port))
         );
       }
       // A malformed template claims nothing — but admission is closed with the
@@ -287,11 +314,15 @@ export function createPreviewOrigin(deps: {
       // ponytail: the cookie carries the session id itself — HttpOnly on the
       // preview origin, and the proxy never forwards cookies to the app; mint an
       // opaque token + index instead only if a consumer needs rotation.
+      // A pathname leading with "//" is not a path — sent raw, Location would
+      // be protocol-relative and carry this hop off-host (an open redirect);
+      // the preview's own root answers instead.
+      const location = url.pathname.startsWith("//") ? "/" : url.pathname;
       return new Response(null, {
         status: 302,
         headers: {
           // The clean path: the ticket dies with this hop, never in the URL (D4).
-          location: url.pathname,
+          location,
           "set-cookie": previewSessionCookieHeader(sessionId),
           "cache-control": "no-store",
         },

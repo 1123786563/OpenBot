@@ -199,6 +199,22 @@ describe("resolvePreviewRequest (D5 dev form: 127.0.0.1:<SERVER_PORT>)", () => {
     }
   });
 
+  test("PORT=80 rides http's default port: the minted address stays claimed and resolves", () => {
+    const origin = originWith({}, { PORT: "80" });
+    // URL serialization drops http's default :80 — the minted address carries
+    // no explicit port, the exact shape url.host compares against.
+    const address = origin.originFor(SESSION_ID);
+    expect(address).not.toContain(":80");
+    const request = new Request(`${address}/`); // the Request URL normalizes the same way
+    expect(origin.handlesRequest(request)).toBe(true);
+    expect(origin.resolvePreviewRequest(request)).toEqual({
+      sessionId: SESSION_ID,
+    });
+    expect(origin.handlesRequest(new Request("http://127.0.0.1:3001/"))).toBe(
+      false,
+    );
+  });
+
   test("PORT/SERVER_PORT disagreement closes admission with a displayable reason", () => {
     const origin = originWith({}, { PORT: "3001", SERVER_PORT: "3002" });
     const admission = origin.admission();
@@ -256,6 +272,70 @@ describe("preview origin admission", () => {
     expect(admission.ok).toBe(false);
     if (!admission.ok) {
       expect(admission.reason).toContain("OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE");
+    }
+  });
+
+  test("{session} must be the hostname's leading label — a mid-host or trailing {session} is closed, not parsed around", () => {
+    for (const template of [
+      "https://preview.{session}.example.com",
+      "https://x.{session}",
+    ]) {
+      const broken = originWith({ previewOriginTemplate: template });
+      const admission = broken.admission();
+      expect(admission.ok).toBe(false);
+      if (!admission.ok) {
+        expect(admission.reason).toContain(
+          "OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE",
+        );
+      }
+    }
+  });
+
+  test("the leading-label check reads the RAW template — a `probe.` static prefix or a userinfo form stays closed", () => {
+    // The two probe-URL escapes: both replace into a probe hostname that DOES
+    // start "probe.", so a check on the replaced URL would accept them — the
+    // first would mint undeclared *.probe.example.com addresses, the second
+    // (userinfo never enters hostname) would claim the example.com APEX.
+    for (const template of [
+      "https://probe.{session}.example.com",
+      "https://user@{session}.example.com",
+    ]) {
+      const broken = originWith({ previewOriginTemplate: template });
+      const admission = broken.admission();
+      expect(admission.ok).toBe(false);
+      if (!admission.ok) {
+        expect(admission.reason).toContain(
+          "OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE",
+        );
+      }
+      // Closed means claiming nothing: neither *.probe.example.com nor the
+      // example.com apex may be pulled into the preview branch (AC6).
+      expect(
+        broken.handlesRequest(new Request("https://probe.example.com/")),
+      ).toBe(false);
+      expect(broken.handlesRequest(new Request("https://example.com/"))).toBe(
+        false,
+      );
+      expect(() => broken.originFor(SESSION_ID)).toThrow();
+    }
+  });
+
+  test("an empty base after {session}. (`https://{session}./`) is closed — never a wildcard claiming every trailing-dot host", () => {
+    for (const template of ["https://{session}./", "http://{session}.:3001/"]) {
+      const broken = originWith({ previewOriginTemplate: template });
+      const admission = broken.admission();
+      expect(admission.ok).toBe(false);
+      if (!admission.ok) {
+        expect(admission.reason).toContain(
+          "OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE",
+        );
+      }
+      // Closed means claiming nothing: no trailing-dot FQDN host may be pulled
+      // into the preview branch's 404, and no dead address may be minted (AC6).
+      expect(
+        broken.handlesRequest(new Request("https://app.example.com./")),
+      ).toBe(false);
+      expect(() => broken.originFor(SESSION_ID)).toThrow();
     }
   });
 
@@ -327,6 +407,21 @@ describe("the preview origin entry: ticket redemption + the D9 cookie", () => {
     );
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe(`/${label}`);
+  });
+
+  test("the 302 never leaves by a protocol-relative Location (open redirect)", async () => {
+    const { origin, address, ticket } = entryCase(
+      { previewOriginTemplate: TEMPLATE },
+      {},
+    );
+    const response = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}//evil.com?ticket=${encodeURIComponent(ticket)}`),
+    );
+    expect(response.status).toBe(302);
+    const location = response.headers.get("location") ?? "";
+    expect(location.startsWith("//")).toBe(false);
+    expect(location).not.toContain("evil.com");
   });
 
   test("an unknown or replayed ticket → 401, no cookie, and the ticket value appears nowhere", async () => {
