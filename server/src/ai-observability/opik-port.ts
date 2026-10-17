@@ -174,6 +174,14 @@ export type OpikPort = {
     input: {
       traceId: string;
       threadId?: string;
+      /**
+       * The trace name, as the T04 contract verified it (R4-16/R4-17): the
+       * creation body the runner validated against the real instance (fixture
+       * trace-b-rest-create, answered 201) carries `name`, so the wire mirrors
+       * it. A withheld projection is refused before any I/O — the same
+       * discipline as span names, which the read-back locates by.
+       */
+      name: SafeText;
       startTime: Date;
       /**
        * Required (OCR m154): the binding is what ties this creation to the run's

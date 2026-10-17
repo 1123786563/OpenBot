@@ -24,6 +24,7 @@ import {
   resolveObservationScope,
   resolveStorageLocator,
 } from "../src/ai-observability/scope";
+import { VERIFIED_TRACE_CREATE_BODY_KEYS } from "./support/opik-contract-fixtures";
 
 const manifest = (await Bun.file(
   join(
@@ -256,6 +257,9 @@ describe("serialization follows the verified T04 contract exactly", () => {
     const result = await port({ fetch: transport }).createTrace(trusted, {
       traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
       threadId: "thread-1",
+      // R4-16: the contract-verified creation body carries `name` (fixture
+      // trace-b-rest-create, 201) — the wire mirrors that evidence.
+      name: okText("agent run trace"),
       startTime: new Date("2026-10-15T03:57:39.074Z"),
       binding: ownBinding,
     });
@@ -268,10 +272,33 @@ describe("serialization follows the verified T04 contract exactly", () => {
     expect(body).toEqual({
       id: "01a13db5-220b-7681-8026-cdf30cacf2ca",
       project_name: locator.project,
+      name: "agent run trace",
       thread_id: "thread-1",
       start_time: "2026-10-15T03:57:39.074Z",
     });
     expect(Object.hasOwn(body, "project_id")).toBe(false);
+    // The serialized body is exactly the contract-verified creation shape: every
+    // key the T04 runner verified, none invented (the fixture is the pin).
+    expect(Object.keys(body).sort()).toEqual(
+      [...VERIFIED_TRACE_CREATE_BODY_KEYS].sort(),
+    );
+  });
+
+  test("a withheld trace name is refused before any I/O (R4-16/R4-17)", async () => {
+    // A name is what the contract's read-back locates; a withheld projection
+    // cannot become wire text, the same discipline as span names.
+    const { calls, transport } = recorder(
+      () => new Response("", { status: 201 }),
+    );
+    await expect(
+      port({ fetch: transport }).createTrace(trusted, {
+        traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
+        name: { state: "omitted", reason: "unhandled_free_text" },
+        startTime: new Date("2026-10-15T03:57:39.074Z"),
+        binding: ownBinding,
+      }),
+    ).rejects.toThrow(new OpikPortError("OPERATION_INPUT_INVALID"));
+    expect(calls.length).toBe(0);
   });
 
   test("derived-path spans serialize to OTLP JSON with hex ids and string nanos", async () => {
@@ -438,6 +465,7 @@ describe("serialization follows the verified T04 contract exactly", () => {
     await expect(
       p.createTrace(trusted, {
         traceId: "8ac709aae94a39a5032699e02e9475f7",
+        name: okText("agent run trace"),
         startTime: new Date("2026-10-15T03:57:39.074Z"),
         binding: ownBinding,
       }),
@@ -543,6 +571,7 @@ describe("every serialized body respects the verified cap and the projection cei
     await expect(
       port({ contract: tiny, fetch: transport }).createTrace(trusted, {
         traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
+        name: okText("agent run trace"),
         threadId: "x".repeat(200),
         startTime: new Date("2026-10-15T03:57:39.074Z"),
         binding: ownBinding,
@@ -568,6 +597,7 @@ describe("every serialized body respects the verified cap and the projection cei
     await expect(
       port({ fetch: transport }).createTrace(trusted, {
         traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
+        name: okText("agent run trace"),
         threadId: "x".repeat(MAX_SAFE_TEXT_BYTES + 1),
         startTime: new Date("2026-10-15T03:57:39.074Z"),
         binding: ownBinding,
@@ -744,6 +774,7 @@ describe("a hostile or dead upstream settles within the deadline", () => {
     const { transport } = recorder(() => new Response("", { status: 200 }));
     const result = await port({ fetch: transport }).createTrace(trusted, {
       traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
+      name: okText("agent run trace"),
       startTime: new Date("2026-10-15T03:57:39.074Z"),
       binding: ownBinding,
     });
@@ -912,6 +943,7 @@ describe("ownership drift fails closed and stops the writes behind it", () => {
     driftOf(
       await p.createTrace(trusted, {
         traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
+        name: okText("agent run trace"),
         startTime: new Date(),
         binding: ownBinding,
       }),
@@ -927,6 +959,7 @@ describe("ownership drift fails closed and stops the writes behind it", () => {
     await expect(
       p.createTrace(trusted, {
         traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
+        name: okText("agent run trace"),
         startTime: new Date(),
         binding: undefined,
       }),
@@ -949,6 +982,7 @@ describe("ownership drift fails closed and stops the writes behind it", () => {
     const drift = driftOf(
       await p.createTrace(revoked, {
         traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
+        name: okText("agent run trace"),
         startTime: new Date(),
         binding: ownBinding,
       }),
