@@ -15,6 +15,22 @@
 //     input/output, `thread_id` to thread, `opik.tags`/`opik.metadata.*` to
 //     tags/metadata; `opik.*` id attributes are dropped from storage.
 
+/**
+ * The REST trace-create request body the T04 contract runner verified against the real
+ * instance (fixture `05-trace-b-rest-create.json`, answered HTTP 201): exactly these
+ * keys, `name` included — the only creation shape the real backend was observed to
+ * accept. The HTTP adapter mirrors this evidence rather than guessing a field set
+ * (R4-16), and the port wire test pins its serialized body against this fixture so the
+ * two cannot drift.
+ */
+export const VERIFIED_TRACE_CREATE_BODY_KEYS = [
+  "id",
+  "project_name",
+  "name",
+  "start_time",
+  "thread_id",
+] as const;
+
 export type VersionsImage = {
   repository: string;
   tag: string;

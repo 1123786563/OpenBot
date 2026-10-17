@@ -17,6 +17,10 @@ runner 校验失败退出非零、不写 manifest。parser 测试（`server/test
 - API 基址是前端反代：`http://127.0.0.1:5174/api`（见 `docs/opik.md`）。后端 8080 不发布。
 - 请求/响应体都是 **snake_case** JSON；查询串也是 snake_case（`project_id`、`trace_id`、`from_time`…）。
 - 自托管默认 workspace 无需 API key；OTLP 端点与 REST 一样走 `/api` 反代。
+- **Authorization 头格式未经验证（R4-18 登记）**：全部已实测栈均为无鉴权 loopback，
+  `OPIK_API_KEY` 的线上格式（裸值还是 `Bearer ` scheme、头名大小写）零契约证据。
+  对接任何 key 鉴权部署前，必须先用 `server/scripts/opik-contract.ts` 对该部署实测
+  头格式，不得凭猜测扩展 adapter（`R3-41` 只验证了"携带"，未验证"格式"）。
 - compose 里的 `otel-collector`（宿主 5418/5417）是**栈自身遥测**管道（exporter 只有
   debug），**不是**应用数据的摄取入口。应用 OTLP 走下面的后端端点。
 - 异步性：OTLP 写入→可查询、数据集版本落库、删除→404 都可能延迟数秒；一律轮询，
@@ -28,7 +32,7 @@ runner 校验失败退出非零、不写 manifest。parser 测试（`server/test
 | --- | --- | --- | --- |
 | 健康 | `GET /health-check` | — | 200 |
 | OTLP 写入 | `POST /v1/private/otel/v1/traces`（`Content-Type: application/json`） | OTLP HTTP/JSON；`traceId` 32 hex、`spanId`/`parentSpanId` 16 hex；纳秒时间戳为字符串；**路由项目来自 `projectName` 请求头**（缺省 Default Project） | 200 空体 |
-| 建 trace（可选自选 id） | `POST /v1/private/traces` | `id` 可传 UUIDv7；**项目字段是 `project_name`（没有 `project_id`）**；`thread_id`、`start_time` ISO | 201 |
+| 建 trace（可选自选 id） | `POST /v1/private/traces` | `id` 可传 UUIDv7；**项目字段是 `project_name`（没有 `project_id`）**；验证过的创建体携带 `name`（fixture `05-trace-b-rest-create`，201）；`thread_id`、`start_time` ISO | 201 |
 | trace 列表 | `GET /v1/private/traces?project_id=&size=` | 分页 `page/size/total/content` | 200 |
 | trace 详情 | `GET /v1/private/traces/{id}?project_id=` | | 200 / 删除后 404 |
 | span 列表 | `GET /v1/private/spans?project_id=&trace_id=` | **必须 `project_id`**（不接受 project_name） | 200 |

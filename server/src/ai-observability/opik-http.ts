@@ -337,6 +337,13 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
   // and that 401 must never be the silent answer to a key the config already
   // parsed and held. Absent (or blank) means no header and byte-identical
   // behavior: the compose loopback authenticates nothing.
+  // R4-18 (registered, not fixed): the header VALUE FORMAT is unverified contract
+  // territory. docs/opik-contract.md states no Authorization semantics and every
+  // evidence stack ran the no-auth loopback, so the bare-value choice below (no
+  // `Bearer ` scheme, lowercase header name) has never been validated against a
+  // real key-authenticating deployment. Before any deployment wires OPIK_API_KEY,
+  // verify the accepted scheme/casing with server/scripts/opik-contract.ts against
+  // that deployment — do not extend this adapter on a guess.
   const authHeaders = (): Record<string, string> =>
     deps.apiKey ? { authorization: deps.apiKey } : {};
 
@@ -637,6 +644,11 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
       const body: Record<string, string> = {
         id: input.traceId,
         project_name: locator.project,
+        // R4-16: the contract-verified creation body carries `name` (T04 fixture
+        // trace-b-rest-create — the only creation shape the real instance answered
+        // 201), so the wire mirrors that evidence. requireText refuses a withheld
+        // projection before anything is sent, the same discipline as span names.
+        name: requireText(input.name),
         start_time: input.startTime.toISOString(),
       };
       if (input.threadId !== undefined) body.thread_id = input.threadId;
