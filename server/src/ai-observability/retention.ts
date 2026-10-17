@@ -609,6 +609,23 @@ export function createObservationRetentionWorker(
           await tx.execute(
             sql`select set_config('ai_observation.experiment_cleanup', 'on', true)`,
           );
+          // 0128's executions foreign key is `no action` on the experiment, and no
+          // code path anywhere deleted execution rows — a settled run pinned its
+          // experiment forever (OCR h2: permanent 23503 → RETENTION_TARGET_PINNED,
+          // and through dataset_version_id the version pinned too). The executions
+          // are the experiment's own retention subject, so the settled ones go here,
+          // before the experiment row, in the same transaction; the case outcomes
+          // follow by their own CASCADE (0129). The same-transaction ordering is the
+          // run branch's id-link precedent. A pending/running execution is NOT
+          // deleted — its worker owns the row — so its foreign key refusal surfaces
+          // as RETENTION_TARGET_PINNED and the retry returns once the run settles.
+          // Idempotent: a retried pass finds no executions and deletes nothing.
+          await tx.execute(
+            sql`delete from ai_observation_experiment_executions
+                where experiment_id = ${record.targetId}
+                  and scope_key = ${record.scopeKey}
+                  and state in ('completed', 'failed', 'cancelled')`,
+          );
           await tx.execute(
             sql`delete from ai_observation_experiments where id = ${record.targetId} and scope_key = ${record.scopeKey}`,
           );
