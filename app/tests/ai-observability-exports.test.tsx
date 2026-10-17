@@ -16,9 +16,12 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, configure, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ExportJobView } from "../../shared/ai-observability-admin";
+import type {
+  ExportJobListItem,
+  ExportJobView,
+} from "../../shared/ai-observability-admin";
 import { ObservationExportsPage } from "../src/components/ai-observability/exports-status";
 import { ObservationRunsPage } from "../src/components/ai-observability/runs-list";
 // English copy: the i18n bundles initialize on import, so assertions see real sentences.
@@ -43,6 +46,13 @@ import "@/lib/i18n";
  */
 
 beforeAll(() => GlobalRegistrator.register());
+/*
+ * The shared CI harness default (1s) flakes on a loaded host — the suite's own
+ * machine regularly carries load averages in the dozens, where a render commit
+ * can legitimately take seconds. A generous ceiling keeps these tests about
+ * behavior, not wall-clock luck; RED/GREEN assertions are unaffected.
+ */
+configure({ asyncUtilTimeout: 10_000 });
 afterEach(cleanup);
 afterAll(async () => {
   // Drain react-dom's scheduler queue before the globals go away: a commit still
@@ -56,6 +66,7 @@ const originalFetch = global.fetch;
 const requested: string[] = [];
 let exportsHandler: () => Response = () =>
   Response.json({ jobs: [job({ state: "queued" })] });
+let detailHandler: () => Response = () => new Response(null, { status: 404 });
 
 const ME = {
   id: "me",
@@ -85,6 +96,7 @@ const PROFILE = {
 beforeEach(() => {
   requested.length = 0;
   exportsHandler = () => Response.json({ jobs: [job({ state: "queued" })] });
+  detailHandler = () => new Response(null, { status: 404 });
   global.fetch = Object.assign(
     async (path: Parameters<typeof fetch>[0]) => {
       const url = String(path);
@@ -92,8 +104,12 @@ beforeEach(() => {
       if (url === "/api/me") return Response.json({ user: ME });
       if (url.startsWith("/api/agents/agent-1"))
         return Response.json({ agent: PROFILE });
-      if (url.startsWith("/api/ai-observability/bots/agent-1/exports"))
+      // The list face is the bare path; the detail face is the artifactUrl a
+      // completed row carries (R2-40's shape: the list never inlines the rows).
+      if (url === "/api/ai-observability/bots/agent-1/exports")
         return exportsHandler();
+      if (url.startsWith("/api/ai-observability/bots/agent-1/exports/"))
+        return detailHandler();
       if (url.startsWith("/api/ai-observability/bots/agent-1/runs"))
         return Response.json({
           runs: [],
@@ -116,50 +132,69 @@ afterEach(() => {
 });
 
 let jobCounter = 0;
-function job(overrides: Partial<ExportJobView> = {}): ExportJobView {
+function job(overrides: Partial<ExportJobListItem> = {}): ExportJobListItem {
   jobCounter += 1;
+  const jobId = `job-${jobCounter}`;
+  const state = overrides.state ?? "completed";
   return {
-    jobId: `job-${jobCounter}`,
-    state: "completed",
+    jobId,
+    state,
     rowLimit: 1000,
     rowCount: 2,
     errorCode: null,
     redactionPolicyVersion: "opik-redaction/1",
     createdAt: "2026-10-16T09:30:00.000Z",
     settledAt: "2026-10-16T09:31:00.000Z",
+    // The list names the artifact exactly when the job completed — R2-40's
+    // shape, the one real wire the server answers with.
+    ...(state === "completed"
+      ? { artifactUrl: `/api/ai-observability/bots/agent-1/exports/${jobId}` }
+      : {}),
     ...overrides,
   };
 }
 
-/** The artifact only rides along on a completed job — exactly what the T34 route sends. */
-function completedWithArtifact(): ExportJobView {
+/** The rows only the detail endpoint carries — what a download must fetch back. */
+const ARTIFACT_ROWS = [
+  {
+    opikTraceId: "trace-1",
+    state: "completed",
+    createdAt: "2026-10-16T09:30:00.000Z",
+    durationMs: 21_860,
+    usage: {
+      source: "provider",
+      promptTokens: 10,
+      completionTokens: 20,
+      totalTokens: 30,
+    },
+    capability: "basic",
+    metadata: {},
+  },
+  {
+    opikTraceId: "trace-2",
+    state: "failed",
+    createdAt: "2026-10-16T09:40:00.000Z",
+    durationMs: "unavailable",
+    usage: { source: "unavailable" },
+    capability: "unavailable",
+    metadata: {},
+  },
+] as const;
+
+/** The detail endpoint's answer for a completed job: the rows ride here, only here. */
+function detailAnswer(row: ExportJobListItem): { job: ExportJobView } {
   return {
-    ...job({ state: "completed", rowCount: 2 }),
-    artifact: [
-      {
-        opikTraceId: "trace-1",
-        state: "completed",
-        createdAt: "2026-10-16T09:30:00.000Z",
-        durationMs: 21_860,
-        usage: {
-          source: "provider",
-          promptTokens: 10,
-          completionTokens: 20,
-          totalTokens: 30,
-        },
-        capability: "basic",
-        metadata: {},
-      },
-      {
-        opikTraceId: "trace-2",
-        state: "failed",
-        createdAt: "2026-10-16T09:40:00.000Z",
-        durationMs: "unavailable",
-        usage: { source: "unavailable" },
-        capability: "unavailable",
-        metadata: {},
-      },
-    ],
+    job: {
+      jobId: row.jobId,
+      state: "completed",
+      rowLimit: row.rowLimit,
+      rowCount: row.rowCount,
+      errorCode: null,
+      redactionPolicyVersion: row.redactionPolicyVersion,
+      createdAt: row.createdAt,
+      settledAt: row.settledAt,
+      artifact: ARTIFACT_ROWS,
+    },
   };
 }
 
@@ -207,8 +242,13 @@ function pageText(view: { container: HTMLElement }) {
 }
 
 describe("a job answers its state, rows, times and file (acceptance 2)", () => {
-  test("a completed job offers its file, and the keyboard can take it", async () => {
-    exportsHandler = () => Response.json({ jobs: [completedWithArtifact()] });
+  test("a completed job's file downloads through the artifactUrl the list carries (R2fix F-1)", async () => {
+    // R2-40 moved the rows off the list: a completed row now names the detail
+    // endpoint in artifactUrl, and the download must fetch the bytes from there —
+    // the old `job.artifact ?? []` read downloads an empty file on the real wire.
+    const row = job();
+    exportsHandler = () => Response.json({ jobs: [row] });
+    detailHandler = () => Response.json(detailAnswer(row));
     const blobs: Blob[] = [];
     const createObjectURL = URL.createObjectURL;
     const revokeObjectURL = URL.revokeObjectURL;
@@ -226,7 +266,11 @@ describe("a job answers its state, rows, times and file (acceptance 2)", () => {
       download.focus();
       await user.keyboard("{Enter}");
       await waitFor(() => expect(blobs.length).toBe(1));
-      // The file is the artifact the route sent: the trace ids it carried, as JSON.
+      // The file went through the detail endpoint the list named — not a guess.
+      expect(requested).toContain(
+        "/api/ai-observability/bots/agent-1/exports/job-1",
+      );
+      // The file is the artifact the detail endpoint sent: the trace ids it carried.
       const text = await blobs[0].text();
       expect(text).toContain("trace-1");
       expect(text).toContain("trace-2");
@@ -234,7 +278,60 @@ describe("a job answers its state, rows, times and file (acceptance 2)", () => {
       URL.createObjectURL = createObjectURL;
       URL.revokeObjectURL = revokeObjectURL;
     }
-  });
+  }, 30_000);
+
+  test("a download the manage gate refuses flips the page to the refusal it now is", async () => {
+    const row = job();
+    exportsHandler = () => Response.json({ jobs: [row] });
+    detailHandler = () =>
+      Response.json({ error: "OWNERSHIP_REQUIRED" }, { status: 403 });
+    const view = draw();
+    await view.findByText("Ready to download");
+    // The manage right ends before the click: both faces now answer the
+    // refusal. The download hears it on the detail face, and the refetch it
+    // triggers re-asks the list — the page must not keep the download button
+    // alive beside the refusal.
+    exportsHandler = () =>
+      Response.json({ error: "OWNERSHIP_REQUIRED" }, { status: 403 });
+    const user = userEvent.setup({ document: view.container.ownerDocument });
+    await user.click(view.getByRole("button", { name: "Download JSON" }));
+    await view.findByText("Outside your scope");
+    expect(pageText(view)).not.toContain("Ready to download");
+  }, 30_000);
+
+  test("a detail answer that lost its artifact never downloads an empty file", async () => {
+    const row = job();
+    exportsHandler = () => Response.json({ jobs: [row] });
+    detailHandler = () =>
+      Response.json({ job: { ...row, artifact: undefined } });
+    const blobs: Blob[] = [];
+    const createObjectURL = URL.createObjectURL;
+    const revokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = (blob: Blob) => {
+      blobs.push(blob);
+      return "blob:mock";
+    };
+    URL.revokeObjectURL = () => {};
+    try {
+      const view = draw();
+      const user = userEvent.setup({ document: view.container.ownerDocument });
+      await user.click(
+        await view.findByRole("button", {
+          name: "Download JSON",
+        }),
+      );
+      // No file is saved: a body without the rows is not an empty export. The
+      // detail request is observable, so wait for it before judging the blobs.
+      await waitFor(() =>
+        expect(requested).toEqual(expect.arrayContaining([row.artifactUrl])),
+      );
+      await Bun.sleep(300);
+      expect(blobs).toEqual([]);
+    } finally {
+      URL.createObjectURL = createObjectURL;
+      URL.revokeObjectURL = revokeObjectURL;
+    }
+  }, 30_000);
 
   test("rows answer state, rows and times", async () => {
     exportsHandler = () =>
@@ -290,7 +387,7 @@ describe("a permission change flips the page, not the cache (acceptance 2)", () 
     // focus refetch the shipped app had turned off left the download button
     // alive indefinitely. The tab returning to the foreground now re-asks, the
     // refusal replaces the data, and the file offer goes with it.
-    exportsHandler = () => Response.json({ jobs: [completedWithArtifact()] });
+    exportsHandler = () => Response.json({ jobs: [job()] });
     const view = draw();
     await view.findByText("Ready to download");
     exportsHandler = () =>
@@ -358,6 +455,19 @@ describe("fault, in-flight and not-enabled stay three answers (acceptance 5)", (
 });
 
 describe("a body this build cannot trust is the unavailable fault (acceptance 5)", () => {
+  test("a completed row that lost its artifactUrl fails closed (R2fix F-1)", async () => {
+    // The download's only route to the rows is the URL the list named; a
+    // completed row without it is a body this page cannot act on — the
+    // unavailable fault, never a download button that saves an empty file.
+    const row = job();
+    const withoutUrl = { ...row } as Record<string, unknown>;
+    delete withoutUrl.artifactUrl;
+    exportsHandler = () => Response.json({ jobs: [withoutUrl] });
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+    expect(pageText(view)).not.toContain("Ready to download");
+  }, 30_000);
+
   test("a state word this build has never heard of fails closed", async () => {
     exportsHandler = () =>
       Response.json({ jobs: [job({ state: "exploded" as never })] });

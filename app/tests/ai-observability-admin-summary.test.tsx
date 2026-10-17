@@ -16,7 +16,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, configure, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { AdminSummaryResult } from "../../shared/ai-observability-admin";
 import { ObservationAdminSummaryPage } from "../src/components/ai-observability/admin-summary";
@@ -43,6 +43,13 @@ import "@/lib/i18n";
  */
 
 beforeAll(() => GlobalRegistrator.register());
+/*
+ * The shared CI harness default (1s) flakes on a loaded host — the suite's own
+ * machine regularly carries load averages in the dozens, where a render commit
+ * can legitimately take seconds. A generous ceiling keeps these tests about
+ * behavior, not wall-clock luck; RED/GREEN assertions are unaffected.
+ */
+configure({ asyncUtilTimeout: 10_000 });
 afterEach(cleanup);
 afterAll(async () => {
   // Drain react-dom's scheduler queue before the globals go away: a commit still
@@ -445,6 +452,47 @@ describe("fault, syncing and not-enabled stay three answers (acceptance 5)", () 
 });
 
 describe("the T33-rev3 notes are on screen", () => {
+  test("an upstream-truncated answer says so beside the counts it qualifies (R2fix F-1)", async () => {
+    // R2-46's flag is a fact the person can see: when the store's window saw
+    // only part of the project, the unbound and usage counts beside it are
+    // lower bounds — the row must say so, not masquerade them as exact.
+    summaryHandler = () =>
+      Response.json(
+        summaryBody([
+          botSummary("bot-1", {
+            runs: { ...botSummary("bot-1").runs, upstreamTruncated: true },
+          }),
+        ]),
+      );
+    const view = draw();
+    await waitFor(() => expect(pageText(view)).toContain("bot-1"));
+    expect(pageText(view)).toContain(
+      "window-truncated — counts are lower bounds",
+    );
+    // The flag false is silence: exact counts need no qualifier.
+    summaryHandler = () => Response.json(summaryBody([botSummary("bot-2")]));
+    const exact = draw();
+    await waitFor(() => expect(pageText(exact)).toContain("bot-2"));
+    expect(pageText(exact)).not.toContain("counts are lower bounds");
+  }, 30_000);
+
+  test("a bot row that lost upstreamTruncated is the unavailable fault (R2fix F-1)", async () => {
+    // The row renders the flag, so the guard must claim it: a body whose row
+    // lost the field is one this page cannot read — never an undefined guess.
+    const base = botSummary("bot-1");
+    const withoutFlag = {
+      ...base,
+      runs: { ...base.runs } as Record<string, unknown>,
+    };
+    delete (withoutFlag.runs as Record<string, unknown>).upstreamTruncated;
+    summaryHandler = () =>
+      Response.json(
+        summaryBody([withoutFlag as AdminSummaryResult["bots"][number]]),
+      );
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+  }, 30_000);
+
   test("the upstream window the unbound and usage counts cover is explained", async () => {
     summaryHandler = () => Response.json(summaryBody([botSummary("bot-1")]));
     const view = draw();

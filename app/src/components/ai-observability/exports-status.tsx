@@ -21,8 +21,9 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import {
+  downloadExportArtifact,
   EXPORT_POLL_MS,
-  type ExportJobView,
+  type ExportJobListItem,
   observationExportsQueryOptions,
 } from "@/lib/ai-observability/exports";
 import { useDateTime } from "@/lib/i18n/datetime";
@@ -30,20 +31,22 @@ import { observationScreenFault, StateNotice } from "./state-notice";
 
 /*
  * The creator's export status page (Issue #42): the Bot's export jobs and the file each
- * finished job produced. Every fact comes from the T34 job projection; nothing here can
- * start, widen or revive a job — the page is the status surface, and a permission change
+ * finished job produced. Every fact comes from the T34 job projection as the list
+ * answers it (R2-40: no rows inline — a completed row names the detail endpoint in
+ * artifactUrl, and the download fetches the bytes from there); nothing here can start,
+ * widen or revive a job — the page is the status surface, and a permission change
  * reaches it on the next poll as the refusal it now is, with no stale row surviving.
  *
  * The export states are their own vocabulary, in the T34 words verbatim: queued and
  * running are in flight, failed names its closed-vocabulary code, and a failed
  * CAPABILITY_MISSING job is the integration-off sentence — a configuration state, not a
- * fault. The artifact rides along exactly when the state is completed, and so does the
- * download.
+ * fault. The download rides along exactly when the state is completed, and it re-asks
+ * the store rather than guessing when its own fetch is refused or fails.
  */
 
 /** The state's own icon — one vocabulary, the T34 words. */
 const EXPORT_STATE_ICONS: Record<
-  ExportJobView["state"],
+  ExportJobListItem["state"],
   React.ComponentType<{ className?: string }>
 > = {
   queued: IconClock,
@@ -52,19 +55,6 @@ const EXPORT_STATE_ICONS: Record<
   failed: IconCircleX,
   cancelled: IconPlayerStop,
 };
-
-/** The one download format: the artifact rows as JSON, byte-for-byte what the route sent. */
-function downloadArtifact(job: ExportJobView): void {
-  const blob = new Blob([JSON.stringify(job.artifact ?? [], null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `runs-export-${job.jobId}.json`;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
 
 export function ObservationExportsPage({
   agentId,
@@ -124,7 +114,14 @@ function ObservationExportsList({
   return (
     <PageRows>
       {jobs.map((job, index) => (
-        <ExportJobRow job={job} key={job.jobId} showSeparator={index > 0} />
+        <ExportJobRow
+          job={job}
+          key={job.jobId}
+          showSeparator={index > 0}
+          onDownloadSettled={() => {
+            void screen.refetch();
+          }}
+        />
       ))}
     </PageRows>
   );
@@ -133,9 +130,13 @@ function ObservationExportsList({
 function ExportJobRow({
   job,
   showSeparator,
+  onDownloadSettled,
 }: {
-  job: ExportJobView;
+  job: ExportJobListItem;
   showSeparator: boolean;
+  /* A download that did not land re-asks the list: the refusal (or the store
+   * failure) it met on the detail face is the page's next answer too. */
+  onDownloadSettled: () => void;
 }) {
   const { t } = useTranslation("ai-observability-admin");
   const { formatNumber, formatTime } = useDateTime();
@@ -192,7 +193,11 @@ function ExportJobRow({
         <ItemActions>
           {job.state === "completed" ? (
             <Button
-              onClick={() => downloadArtifact(job)}
+              onClick={() => {
+                void downloadExportArtifact(job).then((outcome) => {
+                  if (outcome !== "downloaded") onDownloadSettled();
+                });
+              }}
               size="sm"
               type="button"
               variant="outline"

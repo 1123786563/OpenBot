@@ -91,6 +91,7 @@
       "neverCollected": "never collected",
       "unbound": "{{count}} unbound",
       "usage": "{{reported}} usage reported · {{unavailable}} unavailable",
+      "upstreamTruncated": "window-truncated — counts are lower bounds",
       "experiments": "{{draft}} draft · {{frozen}} frozen experiments",
       "exports": "{{completed}} completed · {{failed}} failed · {{inFlight}} in flight",
       "lastFailedCode": "last failure {{code}}"

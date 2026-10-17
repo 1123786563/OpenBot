@@ -9,11 +9,12 @@
  * frozen submission (server/src/ai-observability/experiments.ts) — so the pages the
  * experiment chain renders cannot drift from what those services answer.
  *
- * Two URL faces have no server route yet (the coordinator's recorded leftover; a
- * later wiring ticket owns their implementation): submitting an experiment starts its
- * execution in one POST, and canceling settles a not-yet-terminal execution. The
- * shapes here are what those routes will answer, pinned so the wiring lands with zero
- * frontend change — the same discipline T18 applied to the steps contract:
+ * The two write faces are mounted (server/src/ai-observability/routes/experiments.ts,
+ * inside createAiObservabilityRoutes): submitting an experiment starts its execution
+ * in one POST (the audited freeze and the billing-gated start under one request, the
+ * freeze idempotent on the frozen-configuration key), and canceling settles a
+ * not-yet-terminal execution. The shapes here are the contract those routes answer
+ * and the pages consume — the same discipline T18 applied to the steps contract:
  *
  *   POST /api/ai-observability/bots/:botId/experiments
  *     body: ExperimentSubmitInput → 200 SubmittedExperimentResult | 4xx { error }

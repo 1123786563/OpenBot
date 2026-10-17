@@ -16,14 +16,14 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import type { BaseEvent } from "@ag-ui/core";
+import type { Serialized } from "@langchain/core/load/serializable";
+import type { LLMResult } from "@langchain/core/outputs";
 import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
 import { DynamicTool } from "@langchain/core/tools";
 import {
   FakeListChatModel,
   FakeRetriever,
 } from "@langchain/core/utils/testing";
-import type { Serialized } from "@langchain/core/load/serializable";
-import type { LLMResult } from "@langchain/core/outputs";
 import { context, SpanStatusCode, trace } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
@@ -433,9 +433,12 @@ describe("the server stepFamily contract, driven by a real @langchain/core graph
       threadId: "thread_real_graph",
     });
     try {
-      await context.with(trace.setSpan(context.active(), run.span), async () => {
-        await realGraph().invoke("hello graph", { callbacks: [handler] });
-      });
+      await context.with(
+        trace.setSpan(context.active(), run.span),
+        async () => {
+          await realGraph().invoke("hello graph", { callbacks: [handler] });
+        },
+      );
       run.finish("completed");
     } catch (error) {
       await recorder.stop();

@@ -65,6 +65,11 @@ export type AdminBotSummary = Readonly<{
     /** The most recent failed job's closed-vocabulary code, if any. */
     lastFailedErrorCode: string | null;
   }>;
+  /**
+   * The last write this scope's bindings can evidence as having landed
+   * upstream (reconciled rows only, and only while the upstream listing
+   * answered); null otherwise — a local begin/finish bump is not collection.
+   */
   collection: Readonly<{ lastCollectedAt: string | null }>;
 }>;
 

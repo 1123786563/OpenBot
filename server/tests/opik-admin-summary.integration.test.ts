@@ -62,6 +62,17 @@ function canManageBot(
   id: string,
 ): Promise<AgentProfile | null> {
   if (id !== botId) return Promise.resolve(null);
+  // The R2-51/R2fix F-2 suite seeds its own scopes under a dedicated actor,
+  // admitted here so the manage gate derives that actor's own scope.
+  if (actor.id.startsWith(`t33-r51`)) {
+    return Promise.resolve({
+      id,
+      ownerUserId: actorA,
+      visibility: "private",
+      systemOwned: false,
+      deletedAt: null,
+    } as AgentProfile);
+  }
   if (actor.id === actorA || actor.id === actorB || actor.role === "admin") {
     return Promise.resolve({
       id,
@@ -432,6 +443,99 @@ test("an unhealthy Opik keeps the true collection state and fails nobody", async
     ready: false,
     reason: "unreachable",
   });
+});
+
+test("an upstream that cannot answer lends no freshness to lastCollectedAt (R2-51 / R2fix F-2)", async () => {
+  // Begin/finish advance updatedAt purely locally, so with Opik unreachable a
+  // fresh "last collected" time would masquerade local row advancement as
+  // upstream collection freshness — the honesty rule this file states at its
+  // head. An upstream that cannot answer leaves the collection time unknown.
+  const app = appFor({
+    port: fakePort([], false),
+    config: () => enabledConfig,
+    auth: authAs(actorA),
+  });
+  const response = await app.request(
+    `http://openbot.test/admin/summary?botId=${botId}&timeFrom=2026-01-01T00:00:00.000Z`,
+  );
+  expect(response.status).toBe(200);
+  const bot = (await response.json()).bots[0];
+  expect(bot.runs.total).toBe(2);
+  expect(bot.runs.pendingSync).toBe(1);
+  expect(bot.collection.lastCollectedAt).toBe(null);
+});
+
+test("rows that never reconciled claim no collection time (R2-51 / R2fix F-2)", async () => {
+  // A scope whose only in-window binding never reconciled: its updatedAt is
+  // fresh (begin/finish bumped it), but no write ever landed upstream — the
+  // pendingSync count says so, and lastCollectedAt must agree with it.
+  const actor = `t33-r51b-${run}`;
+  // The fixture admits this actor as a non-owner manager, so ownership is
+  // "admin" — the scope key must match what the route derives.
+  const scope = resolveObservationScope({
+    actorId: actor,
+    botId,
+    ownership: "admin",
+    epoch: 1,
+  });
+  await database.insert(aiObservationBindings).values({
+    id: `${run}-${actor}-b1`,
+    scopeKey: scope.key,
+    actorId: actor,
+    botId,
+    runId: `${run}-${actor}-run-1`,
+    attemptId: "attempt-1",
+    traceId: `otel-${actor}-1`,
+    opikTraceId: null,
+    locatorWorkspace: "ws",
+    locatorProject: "proj",
+    capability: "basic",
+    state: "running",
+    expiresAt: new Date(Date.now() + 86_400_000),
+  });
+  try {
+    const app = appFor({
+      port: fakePort([]),
+      config: () => enabledConfig,
+      auth: authAs(actor),
+    });
+    const response = await app.request(
+      `http://openbot.test/admin/summary?botId=${botId}&timeFrom=2026-01-01T00:00:00.000Z`,
+    );
+    expect(response.status).toBe(200);
+    const bot = (await response.json()).bots[0];
+    expect(bot.runs.total).toBe(1);
+    expect(bot.runs.pendingSync).toBe(1);
+    expect(bot.collection.lastCollectedAt).toBe(null);
+  } finally {
+    await database
+      .delete(aiObservationBindings)
+      .where(eq(aiObservationBindings.scopeKey, scope.key));
+  }
+});
+
+test("a scope whose project is gone upstream claims no collection time (R2-51 / R2fix F-2)", async () => {
+  // The verified 404 on the scope's own project: whatever a reconciled row once
+  // pointed at, the upstream this request asked says the project is not there —
+  // collection freshness for a scope the store no longer knows is unknown.
+  const base = fakePort([], true);
+  const port: OpikPort = {
+    ...base,
+    retrieveProject: async () => ({ outcome: "ok" as const, value: null }),
+  };
+  const app = appFor({
+    port,
+    config: () => enabledConfig,
+    auth: authAs(actorA),
+  });
+  const response = await app.request(
+    `http://openbot.test/admin/summary?botId=${botId}&timeFrom=2026-01-01T00:00:00.000Z`,
+  );
+  expect(response.status).toBe(200);
+  const bot = (await response.json()).bots[0];
+  expect(bot.runs.unboundUpstream).toBe(0);
+  expect(bot.runs.pendingSync).toBe(1);
+  expect(bot.collection.lastCollectedAt).toBe(null);
 });
 
 test("a disabled deployment answers capability-level honesty, not an empty page", async () => {
