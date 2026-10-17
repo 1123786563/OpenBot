@@ -1,0 +1,37 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/membership-model.test.ts:
+(pass) issue #47 criterion 4: migration previews dry-run and replays via the MT003 tool > MT004 is a registered task whose plan is deterministic [0.23ms]
+(pass) issue #47 criterion 4: migration previews dry-run and replays via the MT003 tool > dry-run previews the pending statement plan before anything is applied [0.15ms]
+(pass) issue #47 criterion 4: migration previews dry-run and replays via the MT003 tool > apply materializes the table in the dedicated test database and replays as up-to-date [28.92ms]
+342 |       relrowsecurity: boolean;
+343 |       relforcerowsecurity: boolean;
+344 |     }>;
+345 |     expect(rows).toHaveLength(1);
+346 |     expect(rows[0]?.relrowsecurity).toBe(true);
+347 |     expect(rows[0]?.relforcerowsecurity).toBe(true);
+                                               ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt004-fix/server/tests/multitenancy/membership-model.test.ts:347:42)
+(fail) issue #47 criterion 4: migration previews dry-run and replays via the MT003 tool > fresh apply forces row level security on the new table (0056 hardening pattern; review F1) [2.13ms]
+(pass) issue #47 criterion 4: migration previews dry-run and replays via the MT003 tool > the migration is expand-only: exactly one new table, no existing table or policy changed [11.04ms]
+(pass) issue #47 criterion 1: one membership per (tenant, workspace, principal) > the first membership row inserts and reads back with defaults [12.68ms]
+(pass) issue #47 criterion 1: one membership per (tenant, workspace, principal) > a duplicate (tenant, workspace, principal) insert is rejected by the database [3.42ms]
+(pass) issue #47 criterion 2: composite foreign keys prove both containment facts > a workspace from another company cannot be joined to this company's member [1.28ms]
+(pass) issue #47 criterion 2: composite foreign keys prove both containment facts > a principal who is not a member of this company is rejected [1.27ms]
+(pass) issue #47 criterion 2: composite foreign keys prove both containment facts > the same principal joins a second team of the same company without conflict [5.27ms]
+(pass) issue #47 criterion 3: status supports active/suspended and epoch is a positive monotonic version > status accepts exactly active and suspended and nothing else [8.55ms]
+(pass) issue #47 criterion 3: status supports active/suspended and epoch is a positive monotonic version > epoch must be a positive integer [3.33ms]
+(pass) issue #47 criterion 3: status supports active/suspended and epoch is a positive monotonic version > epoch strictly increases along the application write path (read current, write current + 1) [31.08ms]
+(pass) issue #47 criterion 3: status supports active/suspended and epoch is a positive monotonic version > suspending keeps the row but the stored status flips to suspended [6.90ms]
+(pass) restricted capability roles can use the new table through its minimal RLS policies > operator role can insert with its tenant context and cannot without it [23.58ms]
+(pass) restricted capability roles can use the new table through its minimal RLS policies > data role reads only its own memberships inside its tenant context [4.71ms]
+
+ 15 pass
+ 1 fail
+ 70 expect() calls
+Ran 16 tests across 1 file. [1256.00ms]

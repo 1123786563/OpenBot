@@ -1,0 +1,101 @@
+# MT008 changes.diff — before-state reconstructed and VERIFIED: each reconstructed
+# before-file SHA-256 equals the archived before-hash (prereq-manifest / before-hashes.txt):
+#   b87caeb4… scripts/multitenancy/migrate-test.ts
+#   185c1ca3… tests/multitenancy/migration-tool.test.ts
+#   f9e312a7… src/db/schema/enterprise-tenancy.ts
+
+--- a/src/db/schema/enterprise-tenancy.ts
++++ b/src/db/schema/enterprise-tenancy.ts
+@@ -188,6 +188,12 @@
+     status: text("status").notNull().default("active"),
+     revision: integer("revision").notNull().default(1),
+     aclEpoch: integer("acl_epoch").notNull().default(1),
++    // MT008（Issue #51）：资源可见性属性，expand-only 追加。NULL = 未标记
++    // （遗留资源：行为 = 既有 grant 语义，两个策略版本下都不变）；
++    // 'private' = 个人资源（显式选择，仍走 grant 授权）；
++    // 'workspace' = 团队公共（有效团队成员可读，仅 workspace-v1 生效）。
++    // 取值域由 CHECK 兑底；迁移经 migrate-test 的 MT008 任务。
++    visibility: text("visibility"),
+     createdAt: createdAt(),
+   },
+   (table) => [
+@@ -204,6 +210,10 @@
+       "enterprise_resource_versions",
+       sql`${table.revision} > 0 and ${table.aclEpoch} > 0`,
+     ),
++    check(
++      "enterprise_resource_visibility",
++      sql`${table.visibility} is null or ${table.visibility} in ('private', 'workspace')`,
++    ),
+     pgPolicy("enterprise_resource_tenant_scope", {
+       for: "select",
+       to: "ob_ent_data",
+
+--- a/scripts/multitenancy/migrate-test.ts
++++ b/scripts/multitenancy/migrate-test.ts
+@@ -278,11 +278,50 @@
+   ],
+ };
+ 
++/**
++ * MT008（Issue #51）：资源可见性属性。expand-only——仅在既有表
++ * enterprise_resources 上追加可空列 visibility（NULL=未标记/遗留，
++ * 'private'=个人，'workspace'=团队公共；CHECK 兑底取值域）并给受限
++ * operator 角色补该列的列级 UPDATE 授权。既有 UPDATE 行策略
++ * enterprise_resource_operator_update（app.tenant_id + app.resource_id
++ * 匹配行）不变；不修改任何既有列/约束/策略/授权。策略版本注册表与
++ * 判定入口在 server/src/enterprise/tenancy/resource-policy.ts；
++ * 遗留→团队公共的显式迁移入口在 resource-visibility.ts（只按显式清单
++ * 执行，无清单/空清单零写入）。
++ */
++const RESOURCE_VISIBILITY_TASK: TaskMigrationSpec = {
++  id: "MT008",
++  description:
++    "MT008（Issue #51）：enterprise_resources 追加可空列 visibility（expand-only，不改任何既有对象/策略）+ operator 列级 UPDATE 授权。",
++  steps: [
++    {
++      slug: "resource_visibility_column",
++      impact:
++        "仅为既有表 enterprise_resources 追加可空列 visibility 与取值域 CHECK（NULL/'private'/'workspace'）。既有行全部落 NULL（未标记=遗留行为不变）。不修改任何既有列/约束/策略/授权。",
++      objects: ["enterprise_resources"],
++      statements: [
++        'ALTER TABLE "enterprise_resources" ADD COLUMN "visibility" text;',
++        'ALTER TABLE "enterprise_resources" ADD CONSTRAINT "enterprise_resource_visibility" CHECK ("visibility" is null or "visibility" in (\'private\', \'workspace\'));',
++      ],
++    },
++    {
++      slug: "visibility_operator_grant",
++      impact:
++        "给受限 operator 角色补 visibility 列的列级 UPDATE 授权（配合既有 operator UPDATE 行策略：app.tenant_id + app.resource_id 匹配行）。不授予其它任何权限，不改任何策略。",
++      objects: ["enterprise_resources"],
++      statements: [
++        'GRANT UPDATE ("visibility") ON TABLE "enterprise_resources" TO ob_ent_operator;',
++      ],
++    },
++  ],
++};
++
+ /** 显式枚举的任务 allowlist；未列出的 task id 一律拒绝。 */
+ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
+   [SELF_CHECK_TASK.id, SELF_CHECK_TASK],
+   [WORKSPACE_MEMBERSHIP_TASK.id, WORKSPACE_MEMBERSHIP_TASK],
+   [LEGACY_ANCHOR_TASK.id, LEGACY_ANCHOR_TASK],
++  [RESOURCE_VISIBILITY_TASK.id, RESOURCE_VISIBILITY_TASK],
+ ]);
+ 
+ export const ALLOWED_TASK_IDS: readonly string[] = [...TASKS.keys()].sort();
+
+--- a/tests/multitenancy/migration-tool.test.ts
++++ b/tests/multitenancy/migration-tool.test.ts
+@@ -346,7 +346,10 @@
+     // 本穷举断言随之最小更新；除此之外本文件保持 MT003 原样只读。
+     // MT112 裁决（coordinator ruling #5，same narrow exception as ruling #3）：
+     // 仅本断言追加 "MT112"，文件其余内容保持只读。
+-    expect(ALLOWED_TASK_IDS).toEqual(["MT000", "MT004", "MT112"]);
++    // MT008（同 ruling #5 先例，MT008 brief 预授权）：仅本断言追加 "MT008"
++    // （enterprise_resources.visibility 列迁移注册），文件其余内容只读；
++    // diff 与哈希存档于 checkpoints/MT008/。
++    expect(ALLOWED_TASK_IDS).toEqual(["MT000", "MT004", "MT008", "MT112"]);
+     expect(new Set(ALLOWED_TASK_IDS)).toEqual(new Set(TASKS.keys()));
+     const selfCheck = TASKS.get("MT000");
+     expect(selfCheck?.description).toContain("非业务迁移");

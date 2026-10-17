@@ -1,0 +1,15 @@
+# MUT3a: resource-visibility.ts — isNull(visibility) dropped from the migration UPDATE
+# where-clause (SQL-level last-line defense removed).
+# Command: bun test tests/multitenancy/resource-policy.test.ts --timeout 30000 -t "private resources are never widened"
+# Result: SURVIVED (1 pass). The judge-level guard ("row.visibility === 'private' ->
+# privateKept, continue") independently protects private rows, so this single
+# defense removal is not observable through the suite. Recorded honestly as a
+# survivor; the redundant second defense means the behavior contract still holds.
+#
+# MUT3b (follow-up, both private defenses removed: judge guard deleted AND isNull
+# dropped): SAME command.
+# Result: KILLED.
+#   (fail) ... criterion 3 > private resources are never widened by the migration
+#   (explicit personal choice outranks the manifest) — updatesExecuted Expected: 0 /
+#   Received: 1. 0 pass / 1 fail / 28 filtered out.
+# Restore: original file copied back (diff-verified); focused suite 29/0 green.

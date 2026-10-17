@@ -1,0 +1,10 @@
+# New suite (brief verification command 1)
+# Command (server/): five env vars (TEST_DATABASE_URL, ENTERPRISE_TEST_SETUP_DATABASE_URL,
+# ENTERPRISE_TEST_{DIRECTORY,DATA,OPERATOR}_DATABASE_URL) as in file 2, then:
+#   bun test tests/multitenancy/resource-policy.test.ts --timeout 30000
+# Exit code: 0
+# Result: 29 pass / 0 fail / 0 skip, 158 expect() calls, 1 file [834.00ms]
+# Four acceptance criteria each covered by a dedicated describe block; full
+# pass/fail listing archived in red-green/GREEN-1-full-suite.txt and the takeover
+# RED evidence (as-found 26/3 state) in red-green/RED-2-takeover-repairs.md.
+# Date: 2026-10-16 (3rd takeover, ctx_3e5857d058e2)

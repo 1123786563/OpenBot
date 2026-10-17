@@ -1,0 +1,10 @@
+# MUT4: resource-policy.ts workspaceV1Decide — the explicit cross-company defense
+# (`scope.tenantId !== resource.tenantId -> DENY`) removed (comment left in place).
+# Command: bun test tests/multitenancy/resource-policy.test.ts --timeout 30000 -t "workspace-v1 denies cross-company facts"
+# Result: KILLED.
+#   (fail) ... criterion 4 > workspace-v1 denies cross-company facts even with a grant
+#   and workspace visibility (policy level) — Expected deny/RESOURCE_NOT_FOUND,
+#   Received allow. 0 pass / 1 fail / 28 filtered out.
+# Restore: original file copied back; mutation marker grep count = 0; full focused
+# suite re-run 29 pass / 0 fail / 158 expect() calls (RESTORE evidence in
+# RESTORE-green.txt).
