@@ -318,9 +318,24 @@ function stripRequestHeaders(source: Headers): Headers {
  * server's HMR channel. Nothing here may reach back to the main site's origin,
  * and nothing needs to: the platform's cookies are not in scope on this host
  * (that is the whole point of the origin split — spec F2/D1).
+ *
+ * F-1（codex 重审）closed the two reach-back channels `connect-src` does not
+ * cover. The preview iframe keeps `allow-forms` (preview-tab.tsx) and the
+ * preview host is SAME-SITE with the main site (same eTLD+1) — SameSite is
+ * judged per site, so a form POST from `<label>.preview.example.com` to
+ * `app.example.com` would carry the platform's session cookies, and no
+ * `connect-src` constrains form submissions. `form-action 'self'` walls the
+ * submission target to the preview origin itself. The same reach-back class
+ * exists through nested browsing contexts — an embedded main-site document is
+ * a live, cookie-carrying frame (and a UI-redress surface) the app chooses —
+ * so `frame-src 'self'` pins embedding to the preview origin too. What NEITHER
+ * directive covers is recorded in docs: a direct top-level self-navigation
+ * (`location.href = main-site-write-GET`) has no shipped CSP directive
+ * (`navigate-to` was dropped from CSP3) — that channel is closed by the main
+ * site never mutating on GET, not by this policy.
  */
 const WEBAPP_DEV_CSP =
-  "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self' data:; object-src 'none'; base-uri 'none'";
+  "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; form-action 'self'; frame-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'";
 
 export type ProxyWebappResult = {
   status: number;

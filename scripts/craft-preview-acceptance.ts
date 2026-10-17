@@ -1418,6 +1418,68 @@ try {
     },
   );
 
+  // F-1（codex 重审）验收面：预览 CSP 的 form-action —— 同 site 表单提交被就
+  // 地拦截，不达主站。预览 host 与主站同 eTLD+1（SameSite 按 site 判定），未
+  // 拦截的表单 POST 会携带主站会话 cookie —— connect-src 不约束表单提交，本
+  // 步骤钉住 form-action 'self' 的真实拦截。探测自包含：表单指向页内隐藏
+  // iframe（提交若未被拦截也只导航那个 iframe，观测文档存活、不污染后续步
+  // 骤）；拦截证据是文档上的 securitypolicyviolation（effectiveDirective 是
+  // "form-action"）。目标用主站根路径（POST 无副作用），证明的是「同 site
+  // 提交目标可达性」被策略本身掐断，而非某个写接口的行为。
+  await step(
+    "pass",
+    "F-1 预览 CSP form-action：指向主站同 site 目标的表单提交被拦截（securitypolicyviolation），不达主站",
+    async () => {
+      assert(previewPage, "前置失败");
+      const outcome = await previewPage.evaluate(async (target) => {
+        const frame = document.createElement("iframe");
+        frame.name = "f1-form-probe";
+        frame.style.display = "none";
+        document.body.appendChild(frame);
+        const violation = await new Promise<string | null>((resolve) => {
+          let settled = false;
+          const done = (directive: string | null) => {
+            if (settled) return;
+            settled = true;
+            document.removeEventListener(
+              "securitypolicyviolation",
+              onViolation,
+            );
+            clearTimeout(timer);
+            resolve(directive);
+          };
+          const onViolation = (event: Event) => {
+            if (
+              (event as SecurityPolicyViolationEvent).effectiveDirective ===
+              "form-action"
+            ) {
+              done((event as SecurityPolicyViolationEvent).effectiveDirective);
+            }
+          };
+          document.addEventListener("securitypolicyviolation", onViolation);
+          const timer = setTimeout(() => done(null), 5000);
+          const form = document.createElement("form");
+          form.action = target;
+          form.method = "POST";
+          form.target = "f1-form-probe";
+          document.body.appendChild(form);
+          form.submit();
+        });
+        frame.remove();
+        return { violation, host: location.host };
+      }, `${APP_ORIGIN}/`);
+      assert(
+        outcome.violation === "form-action",
+        `同 site 表单提交未被 form-action 拦截（violation=${JSON.stringify(outcome.violation)}）——若提交已发往主站 ${APP_ORIGIN}，即 F-1 洞开`,
+      );
+      assert(
+        outcome.host === new URL(PREVIEW_ORIGIN).host,
+        `观测文档离开了 preview host：${outcome.host}`,
+      );
+      return `提交 ${APP_ORIGIN}/（POST, 同 site）→ securitypolicyviolation(form-action) 就地拦截，页面仍在 preview host`;
+    },
+  );
+
   // 协议层 401（可选证据）：从 preview origin 的取证页发起凭证请求，浏览器按
   // SameSite 不携带主站 cookie；请求是否 401 由 API server 日志佐证。
   // fix-ocr24 #7/#8 事实更正：取证页与 previewPage 共享同一 context 的 cookie
