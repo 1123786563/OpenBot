@@ -151,10 +151,21 @@ export function regexHasNestedQuantifiers(pattern: string): boolean {
         if (marker === ":" || marker === "=" || marker === "!") {
           cursor += 1;
         } else if (marker === "<") {
-          // Named group or lookbehind: skip to the closing >.
-          while (cursor < pattern.length && pattern[cursor] !== ">")
+          const behind = pattern[cursor + 1];
+          if (behind === "=" || behind === "!") {
+            // (?<= (?<! — a zero-width lookbehind: no body and no `>` follows
+            // it. Advancing past the `=`/`!` (two chars from the `<`) is the
+            // whole header. Scanning for `>` here ran past the end of the
+            // pattern and silently swallowed every atom after it, so
+            // `(?<=x)(a+)+` parsed as a lone lookbehind and the gate never
+            // saw the nested quantifier (R3-30).
+            cursor += 2;
+          } else {
+            // Named group (?<name>: skip to the closing >.
+            while (cursor < pattern.length && pattern[cursor] !== ">")
+              cursor += 1;
             cursor += 1;
-          cursor += 1;
+          }
         }
       }
       at = cursor;

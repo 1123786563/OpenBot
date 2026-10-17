@@ -34,6 +34,7 @@ import {
   ExportError,
   isTerminalExportJobState,
   type ObservationExportJob,
+  type ObservationExportJobListItem,
   parseExportJobState,
   resolveExportLimits,
 } from "../exports";
@@ -89,7 +90,7 @@ const DEFAULT_EXPORTS_LIMIT = 20;
  * so the link lands wherever the coordinator mounts the routes.
  */
 export function projectJobListItem(
-  job: ObservationExportJob,
+  job: ObservationExportJobListItem,
   artifactUrlBase: string,
 ) {
   const state = parseExportJobState(job.state);
@@ -207,17 +208,24 @@ export function createExportRoutes(
       // scope filter stays the store's, so an out-of-range offset answers an
       // honest empty page and can never widen what this caller sees.
       const { limit, offset } = pageOf(new URL(context.req.url).searchParams);
-      const jobs = await store.list(resolved.scope);
-      const page = jobs.slice(offset, offset + limit);
+      // R3-33: the page and its total are answered in SQL — limit/offset in
+      // the list query, the envelope's total from a count — instead of
+      // materializing this scope's whole history (artifact column and all)
+      // to slice it in memory. The wire contract is unchanged (R2-40): same
+      // ExportJobsResult envelope, same projection, honest empty pages.
+      const [jobs, total] = await Promise.all([
+        store.list(resolved.scope, { limit, offset }),
+        store.count(resolved.scope),
+      ]);
       // The annotation is the pin: the route's list answer IS the shared
       // ExportJobsResult, so contract drift here is a compile error.
       const body: ExportJobsResult = {
-        jobs: page.map((job) => projectJobListItem(job, context.req.path)),
+        jobs: jobs.map((job) => projectJobListItem(job, context.req.path)),
         pagination: {
-          total: jobs.length,
+          total,
           offset,
           limit,
-          nextOffset: offset + limit < jobs.length ? offset + limit : null,
+          nextOffset: offset + limit < total ? offset + limit : null,
         },
       };
       return context.json(body);
