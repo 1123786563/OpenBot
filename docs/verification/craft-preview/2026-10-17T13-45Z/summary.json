@@ -114,8 +114,36 @@
   "not_archived": {
     "screenshots": "take_screenshot refused: the in-app Browser surface was hidden (NATIVE_BROWSER_VIEWPORT_UNAVAILABLE, visibilityState=hidden). Open the built-in Browser panel to capture PNGs."
   },
+  "isolated_run_2": {
+    "purpose": "remove the cross-version artefact by giving the new-code server its own database",
+    "setup": "pg_dump openbot -> openbot_preview358 (clone, because 44754feb's own migration set cannot build a bootable schema: see defect_isolation_finding), server on :3221 with DATABASE_URL swapped, IDLE_REAPER off; the :3001 old-code server can no longer see these rows",
+    "finding_migration_drift": {
+      "repro": "create database openbot_preview358; cd server && DATABASE_URL=... bun scripts/migrate.ts -> {\"type\":\"migrations-applied\",\"status\":\"ok\"}; boot -> PostgresError 42703 column \"icon\" of relation \"skills\" does not exist (server exits)",
+      "evidence": "isolated migrated DB has 11 columns on skills (no icon); shared dev DB has 12 (icon present); server/src/db/schema/plugins.ts:558 declares icon: text(\"icon\"); grep of all 140 server/drizzle/*.sql for \"icon\" returns zero hits (the string appears only in meta/*_snapshot.json)",
+      "meaning": "origin/main @ 44754feb cannot boot against a database built from its own migrations; the dev DB only works because another branch applied the column out-of-band",
+      "status": "reproducible defect"
+    },
+    "finding_mount_never_injected": {
+      "session": "cs-955f70fc27a2c5b59c6e9c6d (created and provisioned ONLY by the 44754feb server)",
+      "observed": {
+        "nextjs_log": "PUT /api/probe 200 / PATCH /api/probe 200 / DELETE /api/probe 200; Local: http://localhost:3020  (dev server ANSWERS on the origin root)",
+        "start_webapp_sh": "6193 bytes, grep -c ONYX_WEBAPP_BASE_PATH = 0 (no mount env injected)",
+        "webapp_mount_record": "empty string",
+        "webapp_generation_marker": "2 (current)",
+        "webapp_info": "ready:true status:running webappGeneration:current webapp_url:null previewOriginClosedReason=\"The web app was started by an older start script: its dev server is not mounted on the preview address...\"",
+        "minted_preview_address": "http://127.0.0.1:3221/7c255b1074f4fe780f32",
+        "browser_result_at_that_address": "Next 404 page (label path served by a root-mounted app)"
+      },
+      "wiring_checked": "index.ts:4862 injects webappBasePathFor -> routes.ts:244 wraps it in generationGatedWebappBasePathFor -> manager.ts:304 -> session-ready.ts:202 -> workspace.ts:177 -> nextjs-dev.ts:279; every hop is present, so this is not a missing-plumbing bug on inspection",
+      "leading_cause": "webapp-generation.ts:107 `if (!api || typeof api.readFile !== \"function\") return \"legacy\"` — at provisioning the gate's fileApi depends on the sandbox connection being resolvable; a null there degrades the judgment to legacy, so the gate answers null (root mount) and nothing rewrites the script afterwards",
+      "repair_attempt": "POST /sessions/:id/skills/reload -> {\"skills_stale\":false} (short-circuits, script NOT rewritten); so the remedy the message tells the user (\"refresh the start script, then start again\") is not reachable by that route for a current-generation session",
+      "status": "reproducible defect; blocks AC2 and AC5 for the default dev form",
+      "note": "the cross-check itself behaved correctly (address withheld + reason shown instead of a silent 404), but the reason text misattributes the cause to an old start script"
+    },
+    "low_severity_finding": "originFor mints the label address while webapp-info withholds it (preview-ticket POST succeeded and returned the unusable origin), so a cached or hand-typed URL still lands on a raw Next 404"
+  },
   "next_steps_to_finish_AC2_AC5": [
-    "Option 1: stop the old-code server (PID 9358) or move the new-code stack onto a dedicated database, so a session is provisioned end-to-end by 44754feb, then re-run: create session -> agent turn 'webapp action=start' -> expect webapp_url non-null with reason null -> browser probes for POST/PUT/PATCH/DELETE on /api/probe, click-driven POST, HMR websocket frames, edit->DOM hot update",
-    "Option 2: accept AC2/AC5 as unit/socket-level only and record them as partial on #416/#365"
+    "blocked until the dev-form mount actually lands in start-webapp.sh: re-run after the generation gate at provisioning is fixed (or after forcing a script rewrite that sees a resolvable fileApi)",
+    "then: mint ticket -> browser probes for POST/PUT/PATCH/DELETE on <label>/api/probe, click-driven POST, HMR websocket frames > 0, edit -> DOM hot update"
   ]
 }
