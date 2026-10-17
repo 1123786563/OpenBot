@@ -131,6 +131,12 @@ export type CraftRoutesDeps = {
    * flagged for converging on serverPort's PORT/SERVER_PORT semantics).
    */
   previewOriginFor?: (sessionId: string) => string;
+  /**
+   * The preview origin's admission (#362): webapp-info surfaces the closed
+   * reason (m-5) and the ticket route refuses to mint while it refuses — the
+   * same gate the boot file's preview-origin dispatcher branch enforces.
+   */
+  previewOriginAdmission?: () => { ok: true } | { ok: false; reason: string };
 };
 
 /**
@@ -371,6 +377,7 @@ export function createCraftRoutes(input: {
         sandboxConnectionFor: deps.sandboxConnectionFor,
         previewTickets: deps.previewTickets,
         previewOriginFor: deps.previewOriginFor,
+        previewOriginAdmission: deps.previewOriginAdmission,
       }),
     );
   }

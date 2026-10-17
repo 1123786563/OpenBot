@@ -16,6 +16,7 @@ import type { AppVariables } from "../src/auth/guards";
 import { loadCraftConfig } from "../src/craft/config";
 import {
   createPreviewTickets,
+  defaultPreviewOrigin,
   PREVIEW_SESSION_COOKIE,
   PREVIEW_TICKET_TTL_MS,
   previewSessionCookieHeader,
@@ -329,6 +330,63 @@ describe("issuePreviewTicket / redeemPreviewTicket", () => {
 // deliberately WITHOUT Max-Age/Expires: their absence is what makes it a
 // session cookie the browser drops at close (D9). The routing that actually
 // sets this header is #361's; this is the shape that routing must not get wrong.
+
+// ── defaultPreviewOrigin: the PORT/SERVER_PORT convergence (#362, #360 review Nit 3/4) ──
+//
+// config.ts's serverPort is the deployment's one port authority: PORT and
+// SERVER_PORT name one number, empty means absent, a non-whole value refuses,
+// and two that disagree refuse together. The #360 default silently preferred
+// PORT via parseInt — '3001x' parsed to 3001, and a disagreeing SERVER_PORT was
+// ignored. #362 converges the fallback on the same rules, as a refusal with a
+// displayable reason (never a silent pick, never a truncated parse).
+
+describe("defaultPreviewOrigin: PORT/SERVER_PORT semantics (serverPort convergence)", () => {
+  test("agreement and the single-name forms answer the dev origin on that port", () => {
+    expect(defaultPreviewOrigin({ PORT: "3001" })).toEqual({
+      origin: "http://127.0.0.1:3001",
+    });
+    expect(defaultPreviewOrigin({ SERVER_PORT: "3002" })).toEqual({
+      origin: "http://127.0.0.1:3002",
+    });
+    expect(defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3001" })).toEqual({
+      origin: "http://127.0.0.1:3001",
+    });
+    // Unset everywhere: the documented D5 default port.
+    expect(defaultPreviewOrigin({})).toEqual({
+      origin: "http://127.0.0.1:3001",
+    });
+  });
+
+  test("empty is absent, not zero: an empty PORT falls through to SERVER_PORT", () => {
+    expect(defaultPreviewOrigin({ PORT: "", SERVER_PORT: "3002" })).toEqual({
+      origin: "http://127.0.0.1:3002",
+    });
+    expect(defaultPreviewOrigin({ PORT: "" })).toEqual({
+      origin: "http://127.0.0.1:3001",
+    });
+  });
+
+  test("disagreement refuses with a reason naming both, never a silent PORT preference", () => {
+    expect(defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3002" })).toEqual({
+      reason: expect.stringContaining("PORT"),
+    });
+    const refused = defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3002" });
+    expect("reason" in refused && refused.reason).toContain("SERVER_PORT");
+  });
+
+  test("a value that is not a whole port refuses instead of parsing to its prefix", () => {
+    // "30o1" must NOT become 30 — the exact trap config.ts's caps document.
+    expect(defaultPreviewOrigin({ PORT: "30o1" })).toEqual({
+      reason: expect.any(String),
+    });
+    expect(defaultPreviewOrigin({ SERVER_PORT: "70000" })).toEqual({
+      reason: expect.any(String),
+    });
+    expect(defaultPreviewOrigin({ PORT: "0" })).toEqual({
+      reason: expect.any(String),
+    });
+  });
+});
 
 describe("previewSessionCookieHeader", () => {
   test("is HttpOnly, Path=/, SameSite=Lax, with NO Max-Age and NO Expires", () => {
