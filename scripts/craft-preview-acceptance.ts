@@ -600,11 +600,55 @@ async function waitPortFree(port: number, timeoutMs: number, label: string) {
   );
 }
 
+/**
+ * 杀掉占用预留端口的孤儿 dev server（#358 修复 T3 环境适配）：早前失败运行的
+ * 清理停了进程、但空闲 reaper 抢先删了行 —— DB 端口回收后，孤儿进程仍监听着
+ * 会被重新预约的端口。installProbeApp 自身的 /proc 扫描按会话目录匹配，杀不
+ * 到别人（早前会话）的孤儿；这里的匹配物是「监听中的套接字」本身：
+ * /proc/net/tcp 找到端口的 inode，再按 fd 反查 pid —— 只杀占用本会话端口的
+ * 那一个进程，其他会话（包括真实使用中的）永不受及。无占用时零副作用。
+ */
+async function killPortOccupant(port: number, tag: string): Promise<void> {
+  assertDockerExecEnvShape();
+  // 端口十六进制直接内联进 awk 正则（避免多层引号陷阱；/proc/net/tcp 的
+  // 本地地址列是大写十六进制的 host:port）。
+  const portHex = port.toString(16).toUpperCase().padStart(4, "0");
+  const script = [
+    `inode=$(awk 'NR>1 && $2 ~ /:${portHex}$/ && $4 == "0A" {print $10; exit}' /proc/net/tcp 2>/dev/null)`,
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell 参数展开必须原样进入脚本
+    `[ -n "$inode" ] || exit 0`,
+    `for fd in /proc/[0-9]*/fd/*; do`,
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell 参数展开必须原样进入脚本
+    `  [ "$(readlink "$fd" 2>/dev/null)" = "socket:[$inode]" ] && kill "$(echo "$fd" | cut -d/ -f3)" 2>/dev/null && echo killed;`,
+    `done`,
+    "true",
+  ].join("\n");
+  const proc = Bun.spawn([
+    "docker",
+    "exec",
+    SANDBOX_CONTAINER,
+    "sh",
+    "-c",
+    script,
+  ]);
+  const code = await proc.exited;
+  const killed = await new Response(proc.stdout).text().catch(() => "");
+  if (code !== 0) {
+    log(`[${tag}] 清理端口 ${port} 占用者时 docker exec 退出码 ${code}（继续：可能本就无占用）`);
+  } else if (killed.includes("killed")) {
+    log(`[${tag}] 已清理占用预留端口 ${port} 的孤儿 dev server 进程`);
+  }
+}
+
 async function installProbeApp(
   session: { id: string; port: number; label: string },
   tag: string,
 ) {
   const markerV1 = probeMarker(1, tag);
+  // 0) 清掉占用预留端口的孤儿 dev server（早前失败运行留下的、按会话目录
+  //    杀不到的进程）—— 端口已被 DB 回收重预约，孤儿不走 start-webapp.sh
+  //    的 pid 复用门，会以「别个应用」的形状骗过就绪门。无占用时零副作用。
+  await killPortOccupant(session.port, tag);
   // 1) 脚手架落地：start-webapp.sh 拷模板 → bun install → 起 dev server
   //    （附着模型：脚本是唯一进程主人，我们只触发它）
   await startWebapp(session.id);
@@ -690,8 +734,9 @@ async function installProbeApp(
       await stopSessionWebapp(session.id).catch(() => {});
       break;
     }
-    // 端口死了：清干净残留再试
+    // 端口死了：清干净残留再试（含跨会话孤儿——按端口定位）
     await stopSessionWebapp(session.id).catch(() => {});
+    await killPortOccupant(session.port, tag);
     await waitPortFree(session.port, 30_000, `${tag} 重拉前`).catch(() => {});
   }
   // fix-ocr18 #14：第二个 docker exec 拼接点，就地断言（不再依赖
@@ -919,6 +964,22 @@ try {
         ).catch(() => null);
         probeStatus = probe?.status ?? 0;
         if (probeStatus === 200) break;
+        // #358 修复 T3 环境适配（finding 同步记录）：当前沙箱镜像（opencode
+        // serve 1.18.7）的文件内容读取对一切文件路径 500（目录列表正常）——
+        // 上游回归，与预览修复无关。就绪的判定物不变（start-webapp.sh 已落
+        // 进沙箱），回退到父目录列表里找文件名：同一事实源（沙箱文件系统），
+        // 只是换了上游还能回答的读取形状。镜像修复后 200 主路直接命中。
+        if (probeStatus === 500) {
+          const listing = await fetch(
+            `${GATEWAY}/file?path=${encodeURIComponent(row.id)}`,
+            { headers: gatewayHeaders() },
+          ).catch(() => null);
+          const names = (await listing?.text().catch(() => "")) ?? "";
+          if (listing?.status === 200 && names.includes("start-webapp.sh")) {
+            probeStatus = 200;
+            break;
+          }
+        }
         await new Promise((r) => setTimeout(r, 2000));
       }
       assert(
@@ -1164,6 +1225,69 @@ try {
       );
       await shot("02-first-party-entry", previewPage);
       return `url=${url} cookie=HttpOnly;SameSite=None;Secure 同源fetch=${probed.status}/ok`;
+    },
+  );
+
+  // ── #358 修复：伪造凭据必须双面被拒（Review Focus 1）───────────────────────
+  // 修复前 preview cookie 的值就是 session id：手写 `openbot_preview_session=<sid>`
+  // 即可通过 HTTP 门与 HMR 升级，无需票据、无需兑换。修复后凭据是部署密钥签名的
+  // pass —— 本步骤在全新浏览器 context（无票据、无兑换、无主站登录）里种下明文
+  // session id，断言两个面都拒绝：HTTP 401，HMR 升级不 commit。
+  await step(
+    "pass",
+    "#358 修复：伪造明文 session-id cookie 在预览 origin 双面被拒（HTTP + HMR）",
+    async () => {
+      const forged = await browser.newContext({ locale: "en-US" });
+      try {
+        // 种伪造 cookie：值 = session id 本身（修复前的合法凭据形状），
+        // Path=/ 覆盖包括 /<label>/… 在内的全部路径，与真攻击者的最简手写一致。
+        await forged.addCookies([
+          {
+            name: PREVIEW_SESSION_COOKIE,
+            value: sessionA.id,
+            url: `${PREVIEW_ORIGIN}/`,
+          },
+        ]);
+        const fpage = await forged.newPage();
+        // HTTP 面：预览页同源 fetch 自身受保护的 API —— 必须 401（修复前 200）。
+        const httpStatus = await fpage.evaluate(async (probeUrl) => {
+          const r = await fetch(probeUrl, { credentials: "include" });
+          return r.status;
+        }, `${sessionA.origin}/api/probe`);
+        assert(
+          httpStatus === 401,
+          `伪造 cookie 的预览 HTTP 请求被放行：status=${httpStatus}（修复前此值为 200 —— 这就是要封住的旁路）`,
+        );
+        // HMR 面：WebSocket 升级 —— 必须被拒（HTTP 401 响应，socket 不 commit）。
+        const hmrOutcome = await fpage.evaluate(
+          (wsUrl) =>
+            new Promise<string>((resolve) => {
+              let settled = false;
+              const done = (v: string) => {
+                if (!settled) {
+                  settled = true;
+                  resolve(v);
+                }
+              };
+              const ws = new WebSocket(wsUrl);
+              ws.onopen = () => {
+                ws.close();
+                done("open");
+              };
+              ws.onerror = () => done("refused");
+              setTimeout(() => done("timeout"), 8_000);
+            }),
+          `${sessionA.origin.replace(/^http/, "ws")}/_next/webpack-hmr`,
+        );
+        assert(
+          hmrOutcome !== "open",
+          `伪造 cookie 的 HMR 升级被接受（outcome=${hmrOutcome}）—— CSWSH 面未封住`,
+        );
+        await shot("02b-forged-cookie-refused", fpage);
+        return `HTTP=${httpStatus}；HMR=${hmrOutcome}`;
+      } finally {
+        await forged.close();
+      }
     },
   );
 
@@ -1725,14 +1849,127 @@ try {
   }
 
   // Server Actions（#362 的 AC2 面，回归观察）：协议级断言属后续票
+  // #358 修复 T3：Server Actions 不再 SKIP —— 点击探针应用的 probe-action，
+  // 断言 probe-action-result 出现 action-ok-，并以网络层证据（Next-Action 头的
+  // POST 确实打到本会话预览 origin 且 200）确认协议级到达。不以 hydration 代替
+  // action：DOM 热更（上方 AC5 步骤）只证明页面活着，这里证明 Server Actions
+  // 这条通道在 preview origin 下可用（AC2 的明确组成部分）。
   await step(
-    "skip",
-    "Server Actions 协议级断言（属后续票；hydrate 已由 DOM 热更验证）",
+    "pass",
+    "Server Actions：probe-action 点击 → action-ok-（Next-Action POST 到达本会话 dev server）",
     async () => {
-      throw new SkipSignal(
-        "hydrate 已验证（run6 DOM 热更），此处保留 skip 仅因断言对象是 action 协议帧而非行为",
+      assert(previewPage, "前置失败（顶层预览页未建立）");
+      // 网络层记录：所有带 next-action 头的请求（Next.js Server Action 协议）
+      const actionResponses: { url: string; status: number }[] = [];
+      previewPage.on("response", (r) => {
+        if (r.request().headers()["next-action"] !== undefined) {
+          actionResponses.push({ url: r.url(), status: r.status() });
+        }
+      });
+      const before = await previewPage
+        .locator('[data-testid="probe-action-result"]')
+        .innerText()
+        .catch(() => "");
+      assert(
+        !before.includes("action-ok-"),
+        `点击前已有 action 结果（断言无基线）：${before}`,
       );
+      // UI 级点击（hydrate 完成后才有人接事件；waitForFunction 轮询结果）
+      await previewPage
+        .locator('[data-testid="probe-action"]')
+        .click({ timeout: 10_000 });
+      await previewPage.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-testid="probe-action-result"]')
+            ?.textContent?.includes("action-ok-"),
+        { timeout: 15_000 },
+      );
+      const after = await previewPage
+        .locator('[data-testid="probe-action-result"]')
+        .innerText();
+      assert(
+        after.includes("action-ok-"),
+        `action 结果未出现 action-ok-：${after}`,
+      );
+      // 协议级证据：这个 action-ok- 必须由一次真实的 Next-Action POST 产生，
+      // 且落在本会话的预览 origin 上（不是别处代答）。
+      assert(
+        actionResponses.length > 0,
+        "未观测到 next-action 协议请求 —— action-ok- 来源不明（可能被缓存或 hydration 替代）",
+      );
+      const foreign = actionResponses.filter(
+        (r) =>
+          !r.url.startsWith(sessionA.origin) ||
+          (r.status !== 200 && r.status !== 303),
+      );
+      assert(
+        foreign.length === 0,
+        `Server Action 请求未到达本会话预览 origin 或未成功：${JSON.stringify(foreign).slice(0, 200)}`,
+      );
+      await shot("09-server-action", previewPage);
+      return `result=${after.slice(0, 30)}…；next-action POST=${actionResponses.length} 次全部落在 ${sessionA.origin}`;
     },
+  );
+
+  // ── #358 修复 T3：webapp 工具 attach/restart 与预览同一进程（AC5 面）────
+  // 停掉 dev server 后预览必须是 503 not-running（附着模型：没人拉起第二个
+  // 进程），经 start-webapp.sh 重拉后同一预览地址恢复 200 —— 状态/日志/重启
+  // 与预览自始至终指向同一个 dev server，不回退、不双进程。
+  await step(
+    "pass",
+    "webapp 工具 attach：停 dev server → 预览 503 not-running → 重拉 → 同一预览地址恢复 200",
+    async () => {
+      assert(previewPage, "前置失败");
+      const probeThroughPreview = () =>
+        previewPage.evaluate(async (probeUrl) => {
+          const r = await fetch(probeUrl, { credentials: "include" });
+          return { status: r.status, body: await r.text().catch(() => "") };
+        }, `${sessionA.origin}/api/probe`);
+      // 停（webapp 工具的 stop 通道，与脚本清理同一条 docker exec 路径）
+      await stopSessionWebapp(sessionA.id);
+      // 503 面出现（就绪 memo TTL 3s 内可能仍答旧值，轮询到出现为止）
+      let sawDown = false;
+      const downDeadline = Date.now() + 20_000;
+      let lastDown: { status: number } | null = null;
+      while (Date.now() < downDeadline && !sawDown) {
+        lastDown = await probeThroughPreview();
+        if (lastDown.status === 503) sawDown = true;
+        else await new Promise((r) => setTimeout(r, 1_000));
+      }
+      assert(
+        sawDown,
+        `停服后预览未给出 503（last=${JSON.stringify(lastDown)}）——附着模型破坏或 readiness memo 泄漏`,
+      );
+      // 重拉（同一 start-webapp.sh，唯一进程主人）并等预览恢复
+      await startWebapp(sessionA.id);
+      let recovered = false;
+      const upDeadline = Date.now() + 150_000;
+      let lastUp = 0;
+      while (Date.now() < upDeadline && !recovered) {
+        const r = await probeThroughPreview();
+        lastUp = r.status;
+        if (r.status === 200) recovered = true;
+        else await new Promise((r2) => setTimeout(r2, 2_000));
+      }
+      assert(
+        recovered,
+        `重拉后预览未恢复 200（last=${lastUp}）`,
+      );
+      await shot("10-webapp-restart-attach", previewPage);
+      return "停服 503 → 重拉 → 同一预览地址 200（附着不双进程）";
+    },
+  );
+
+  // T3 记录面（明确记录、不断言 —— 已接受边界不误报为新缺陷）：
+  // - 旧会话 D10：legacy 判定与旧同源路径由本 SHA 的单元/集成套件钉住
+  //   （craft-webapp-proxy.test.ts「legacy sessions stay on the old same-origin
+  //   path」、craft-preview-rejection.test.ts）；探针应用是新代际装配，浏览器
+  //   级 legacy 流程不在本脚本范围。
+  // - registry 重启空窗（M-2）：重启后旧预览标签 404、经主站重新进入恢复 ——
+  //   docs/craft-preview-origin.md 已接受边界；本脚本不重启自身所依赖的 API server。
+  log(
+    "[边界记录] 旧会话 D10 与 M-2 重启空窗：浏览器级不重跑，行为由本 SHA 单元套件钉住 + docs 已记录，不计 FAIL。",
   );
 } catch (error) {
   record(
