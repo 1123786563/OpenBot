@@ -1,0 +1,38 @@
+# MT005 sha256 manifest — 2026-10-15T19:12:35Z — uncommitted working tree (no commits authorized)
+# BASE f0520524f0faa2b4533b9d2f1aa692c8f907ba71 (prereq verified 19/19 at task start)
+
+# --- production + test deliverables (final state) ---
+895b0e548513223e148a4a631dabe4181a0964d853ce2a099158813901d9b107  server/src/enterprise/tenancy/scope-gate.ts
+2f8cbef72f8af7c21a2687d7cd9be199e6cfc1dc6703e2d3bf8f8dfd66654c1f  server/src/enterprise/tenancy/store.ts
+8c2583847bb056bbb27ef8782542be476f87677b42619dc3a5d162dc43678c5d  server/src/index.ts
+d9a5a02d1e94eac0d463059ab66a05708bca2227b30a507111bc7d2f2d85b249  server/tests/multitenancy/scope-gate.test.ts
+7f32f54383babe7f94fca2f8c75d7422c127d2a5bdfa7d3b7e9165ae767a787d  server/tests/multitenancy/support/scope-gate.ts
+da29a2a5da604292f4ef566b841b9b443fed382536b3456bfc0dbdd69ff7dd78  server/tests/multitenancy/support/fixture.ts
+59f119626792f1d63fdc08e8e0a58999946b367675b1543fbf33f87020bfbb13  server/tests/multitenancy/fixtures.test.ts
+
+# --- MT005 checkpoints ---
+a08541ae45880ba3fd4ca5b6b0697c95f4c260df803785ab74b8d080016677df  ./before-after-hashes.txt
+b701ff69e8af44373416b8850557b7be7190b23228e08acc01ebfc0352c5de13  ./changes.diff
+8861e5b34bda9fb98e67b555630766c4c73bdf2a38b8f707562ad8163d2dac63  ./mutation/diffs.txt
+d4482e9bf20bdc8e767dbb8e40663aea10fe149a9cd00dd1d91fd3e989aa0238  ./mutation/logs-sha256.txt
+88e89a725c554c8a61c5cb31c258ebe5183f690298229ca535af8c1bdc4e466c  ./mutation/M1.log
+31150e4e46e72a3bdc336f98a0dbb4038459f0316366e42832a6ebf8755d2a8a  ./mutation/M2.log
+4afbbf6bb1d772d549d3401f7b99fab28fa9b428d7c57a8ce30ee4d3ed04ff9a  ./mutation/M2v2.log
+dd59ba1e3a3c8a26966547862e986ff946ed5a560aff1f5b7afbdf4d3528411f  ./mutation/M3.log
+8cd262514f65a4634609db60145e7c08b4bebdab8cfce52b5f9ef85aab9e756d  ./mutation/M3v2.log
+170e6096491193cee5d9349f18f45e40a0495bad602e1599ac43dba5bdaed42d  ./mutation/M4.log
+cc10e4b4a3e118bdb2501f0778773f7403be4657e9db3c52830ab5974b6b61b8  ./mutation/M4v2.log
+1fc2c7bbecb01ec6861257bfb72d5fd65540267a412390162c987bf72052f104  ./mutation/M4v3.log
+56d1329ec8c86a5d0ecb8fa3215017c355876e2e85063e4657cd178e9e590f1f  ./mutation/original-hashes.txt
+19f3e40bd63727b28fe49c14de55dbc99aabf71652231bdf5a31d315e9304b06  ./mutation/results.txt
+efeb24623dacc0311cef34846e478d7a948692ce23db090741837ec39169ba29  ./prereq-recompute.txt
+58baa5035df4c1803d03d6f0d8f6b9a45008a725198f28ef00fcda6c8f1711ce  ./red-green/green-stage4.log
+c8945d6fa6ed94340f6ea7b423c3d5e18c2fe3ae08feccabd28ad9772d3e0c89  ./red-green/green-stage5.log
+70b33f26f61a1d1c607be29c6f56d8a03e76b7de16649c3b7e1a277237b9f211  ./red-green/red-stage1.log
+1b077a62237302dc229f8e3bbc998c93e4c89a83398db1818139950ea5f09028  ./red-green/red-stage2.log
+59d8a8eb7bfca99e8e0e8dfc6ab4948234420874b68fd96f12dc341e261e2db6  ./red-green/regression-final.log
+8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92  ./red-green/typecheck-final.log
+90ae90c1f90ac7a93d9228d4572a6ff94511a65d9da650e26a2ca0925f55af98  ./review-package.json
+
+# --- report ---
+b80e2ac7deab6216a7699841364c99ee76f036db6c1e4edc6b0935a18765f070  docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT005.md

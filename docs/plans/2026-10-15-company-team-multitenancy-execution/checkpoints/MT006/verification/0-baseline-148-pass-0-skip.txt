@@ -1,0 +1,188 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/fixtures.test.ts:
+(pass) createIsolationFixture refuses to run without a dedicated test database [2.28ms]
+(pass) createIsolationFixture refuses unknown isolation domains [0.15ms]
+(pass) fixture covers every Spec §11 minimum identity matrix class [212.75ms]
+(pass) identity facts come from real database rows under the directory role [16.58ms]
+(pass) fixture data was created by the real provisioning factory, not by mocks [12.03ms]
+(pass) restricted business roles are the real restricted capabilities [5.26ms]
+(pass) data-role business transactions are tenant-scoped by RLS [5.73ms]
+(pass) worker identity runs tenant/workspace-scoped reads without principal powers [4.74ms]
+(pass) transaction context is cleared after commit and pooled reuse carries no scope [6.03ms]
+(pass) transaction context is cleared after rollback [4.49ms]
+(pass) requestAs positive control: each team member reads their own team resource [66.33ms]
+(pass) requestAs demands explicit company and team selectors [0.40ms]
+(pass) requestAs denies cross-company, cross-team and personal-resource access invisibly [29.05ms]
+(pass) machine identities have no authenticated session and unknown routes are invisible [6.27ms]
+(pass) membership status combinations: suspending one company leaves the other intact [31.93ms]
+(pass) scenario registry runs registered adapters and refuses everything else [0.56ms]
+(pass) dispose cleans up fixture rows and refuses further use [44.95ms]
+
+tests/multitenancy/inventory.test.ts:
+{"level":30,"time":1792093994786,"service":"server","type":"openmuse-mail-placeholder-action-ids","ids":["gmail.list","gmail.search","gmail.thread","gmail.attachment.get","gmail.attachment.bytes"],"msg":"openmuse-mail-placeholder-action-ids"}
+{"level":40,"time":1792093994804,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792093994808,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+[CopilotKit Runtime] telemetry enabled — see https://docs.copilotkit.ai/telemetry to opt out (set COPILOTKIT_TELEMETRY_DISABLED=true).
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+{"level":30,"time":1792093994863,"service":"server","type":"openmuse-calendar-placeholder-action-id","id":"gcalendar.list","msg":"openmuse-calendar-placeholder-action-id"}
+{"level":40,"time":1792093995001,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+(node:69706) TimeoutNaNWarning: NaN is not a number.
+Timeout duration was set to 1.
+(Use `bun --trace-warnings ...` to show where the warning was created)
+(pass) coverage inventory contract > pins the schema version and stays JSON-serializable [2.23ms]
+(pass) coverage inventory contract > every entrance carries exactly the contract fields with valid values [1.69ms]
+(pass) coverage inventory contract > summary counts agree with the entries [0.14ms]
+(pass) coverage inventory contract > digest is deterministic and excludes the timestamp [14.72ms]
+(pass) entrances come from real application assembly > assembles the deployment, enterprise and kb entrance faces [0.12ms]
+(pass) entrances come from real application assembly > always-mounted deployment routes are marked always [0.21ms]
+(pass) entrances come from real application assembly > dynamically and conditionally registered routes are captured [0.17ms]
+(pass) entrances come from real application assembly > captures the enterprise entrance in both assembly lines [0.08ms]
+(pass) entrances come from real application assembly > captures the kb service entrance [0.06ms]
+(pass) entrances come from real application assembly > classifies stream entrances and verifies serve() upgrades [0.05ms]
+(pass) entrances come from real application assembly > classification helpers stay honest about unknowns [0.05ms]
+(pass) static candidate extraction > background programs carry evidence from the deployment entry [0.09ms]
+(pass) static candidate extraction > data tables come from the real drizzle schemas [0.07ms]
+(pass) static candidate extraction > external dependencies map config keys to named systems [0.03ms]
+(pass) gap report and ownership > lists unowned entrances grouped by business closure [1.30ms]
+(pass) gap report and ownership > ownership input flips entries to owned and shrinks the gap [14.77ms]
+(pass) gap report and ownership > exact entrance ownership wins over closure ownership [13.67ms]
+{"level":40,"time":1792093995090,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792093995090,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+{"level":40,"time":1792093995092,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+(pass) drift detection > adding an entrance changes inventory, digest and gap report [19.55ms]
+(pass) drift detection > removing an entrance source changes the inventory and digest [9.67ms]
+(pass) review-fix round 1: external dependencies from real config sources > Redis appears from src/redis.ts env member access [0.17ms]
+(pass) review-fix round 1: external dependencies from real config sources > Qdrant and Ollama come from the real src/kb/config/index.ts [0.16ms]
+(pass) review-fix round 1: external dependencies from real config sources > WeChat Pay maps the real WXPAY_* keys instead of falling into unmapped [0.09ms]
+(pass) review-fix round 2: background programs from real daemon forms > registers the routines worker loop daemon from worker/src/index.ts [0.10ms]
+(pass) review-fix round 2: background programs from real daemon forms > registers the BullMQ kb worker from src/kb/worker.ts [0.06ms]
+(pass) review-fix round 2: background programs from real daemon forms > registers the cron-driven sweep scripts with file/line evidence [0.10ms]
+(pass) review-fix round 3: known deployed service surfaces > lists exactly supervisor, go-runtime, agent-computer, agent-sandbox as unassembled [0.07ms]
+(pass) review-fix round 3: known deployed service surfaces > supervisor and go-runtime carry real source/compose evidence [0.08ms]
+(pass) review-fix round 3: known deployed service surfaces > summary counts service surfaces and the gap report states them honestly [0.54ms]
+(pass) review-fix round 3: known deployed service surfaces > service surfaces affect the digest [16.23ms]
+(pass) database stages are explicit, never silent > without TEST_DATABASE_URL both stages are skipped with reasons [0.15ms]
+(pass) database stages are explicit, never silent > a DATABASE_URL is never used as a fallback [0.04ms]
+(pass) database stages are explicit, never silent > refuses a test URL that names the development database [15.89ms]
+(pass) database stages are explicit, never silent > a configured but unreachable test database fails loudly [16.73ms]
+
+tests/multitenancy/migration-tool.test.ts:
+(pass) refusal probe helper contract > expectNoSideEffects also fails when a refused path performed file reads [0.18ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > rejects an unknown command with the offending name and no side effects [0.47ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > rejects a missing command and a missing task id [0.11ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > rejects an unknown task id and is case-sensitive about known ones [0.12ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > rejects unknown flags and extra positionals [0.06ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > apply without a manifest is an argument refusal before any side effect [0.09ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > generate rejects migrate-only flags [0.05ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > migrate rejects generate-only flags [0.14ms]
+(pass) issue #46 criterion 1: only enumerated tasks and commands > migrate --manifest without --apply refuses instead of silently ignoring the manifest [0.10ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > missing TEST_DATABASE_URL refuses even when DATABASE_URL is present [0.07ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > blank TEST_DATABASE_URL refuses [0.09ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > a non-loopback host is a production target and refuses [0.13ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > the live application database name refuses [0.14ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > generic database names like postgres refuse [0.09ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > non-postgres protocols refuse [0.10ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > an unparseable URL refuses with a reason [0.12ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > a URL fragment refuses [0.07ms]
+(pass) issue #46 criterion 2: explicit test database configuration only > generate validates the same database configuration before anything else [0.12ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > the allowlist is exactly the registry and the shipped self-check task [0.04ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > plan names are fixed, numbered from 0001, and deterministic [0.11ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > buildPlan refuses unknown task ids [0.05ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > plan numbering rejects duplicates, gaps, and duplicate names [0.09ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > journal numbers must be a contiguous prefix of the plan [0.15ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > the manifest mirrors the plan with per-step digests [0.08ms]
+(pass) issue #46 criterion 4: dry-run is the default > migrate without --apply plans without executing anything [1.28ms]
+(pass) issue #46 criterion 4: dry-run is the default > dry-run reports pending steps against a partial journal [0.31ms]
+(pass) issue #46 criterion 4: dry-run is the default > a journal with gaps or duplicates refuses before executing [0.60ms]
+(pass) issue #46 criterion 4: apply requires an exact manifest > a missing manifest file refuses before connecting [0.31ms]
+(pass) issue #46 criterion 4: apply requires an exact manifest > a manifest that disagrees with the plan refuses before connecting [0.66ms]
+(pass) issue #46 criterion 4: apply requires an exact manifest > a valid manifest applies each step in its own transaction and journals it [0.51ms]
+(pass) issue #46 criterion 4: apply requires an exact manifest > an already fully applied task is an explicit no-op, not a re-run [0.18ms]
+(pass) MT003-fix2 F2: journal digests must match the current plan > a journal whose recorded digests all match the plan converges [0.07ms]
+(pass) MT003-fix2 F2: journal digests must match the current plan > a journaled digest that differs from the plan refuses with a manual-review reason [0.06ms]
+(pass) MT003-fix2 F2: journal digests must match the current plan > numbering errors still surface before digest comparison [0.04ms]
+(pass) MT003-fix2 F2: journal digests must match the current plan > migrate refuses on journal/plan digest drift before applying and never self-repairs [0.27ms]
+(pass) MT003-fix2 F2: journal digests must match the current plan > dry-run also refuses on journal/plan digest drift instead of planning past it [0.11ms]
+(pass) MT003-fix2 F2: journal digests must match the current plan > up-to-date is not reported when a journaled digest drifts from the plan [0.12ms]
+(pass) issue #46 criterion 3/4: generate materializes deterministic files > generate --out writes NNNN-named SQL files plus the manifest [3.59ms]
+(pass) issue #46 criterion 3/4: generate materializes deterministic files > regenerating the same plan verifies instead of rewriting [2.75ms]
+(pass) issue #46 criterion 3/4: generate materializes deterministic files > duplicate numbers, gaps, drift, and beyond-plan files all refuse [11.94ms]
+(pass) issue #46 criterion 3/4: generate materializes deterministic files > generate without --out has no file side effects and prints the plan [0.29ms]
+(pass) applies MT000 end-to-end on the assigned dedicated test database [56.83ms]
+
+tests/multitenancy/scope-gate.test.ts:
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 1: only the issuance entry produces a trusted Scope > a resolver-issued scope is frozen and passes assertTrustedScope [5.44ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 1: only the issuance entry produces a trusted Scope > a hand-forged scope with correct-shaped fields is rejected [0.07ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 1: only the issuance entry produces a trusted Scope > a scope deserialized from a stolen JSON payload loses the process trust mark and is rejected [2.85ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 1: only the issuance entry produces a trusted Scope > a structuredClone of an issued scope is rejected too [3.30ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 1: only the issuance entry produces a trusted Scope > the business-transaction gate rejects forged scopes before touching the database [0.29ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 2: missing company or team context is rejected explicitly, never defaulted > no tenant header at all is TENANT_REQUIRED [0.07ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 2: missing company or team context is rejected explicitly, never defaulted > tenant without a workspace header is WORKSPACE_REQUIRED, even for a member of exactly one team (no first-team fallback) [0.04ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 2: missing company or team context is rejected explicitly, never defaulted > a blank workspace header is WORKSPACE_REQUIRED, not guessed [0.04ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 2: missing company or team context is rejected explicitly, never defaulted > a blank tenant header is TENANT_REQUIRED [0.03ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 2: missing company or team context is rejected explicitly, never defaulted > a company member with no team membership row is refused even for an existing team (company-admin is not auto-admitted to team-a1) [3.49ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 2: missing company or team context is rejected explicitly, never defaulted > an unknown workspace id and a real non-member workspace are indistinguishable (no existence leak) [6.12ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 3: team removal or suspension rejects the same transaction and the next request > suspension revokes the already-issued scope inside the business transaction (operation never runs) [21.74ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 3: team removal or suspension rejects the same transaction and the next request > removal (row deleted) rejects the same transaction and the next request [13.31ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 3: team removal or suspension rejects the same transaction and the next request > a gate transaction that begins after revocation rejects before the operation, and re-granting restores eligibility with a strictly larger epoch [24.26ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 3: team removal or suspension rejects the same transaction and the next request > an in-flight gate transaction serializes team revocation: the admin write blocks (lock timeout), then applies after commit [324.11ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 4: company suspension kills that company's team eligibility only > suspending company-a revokes the member's team-a1 scope (resolve + business transaction) while company-b team-b1 keeps working [32.62ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 4: company suspension kills that company's team eligibility only > revocation is per company: suspending a company-a principal never touches company-b facts, and already-revoked company-a stays revoked [21.37ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 4: company suspension kills that company's team eligibility only > a scope issued before a company epoch bump is stale: the gate rejects it even though the membership stays active [21.51ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 5: headers select, server facts decide > truthful headers select: a1a2-member resolves into either of their two teams [6.21ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 5: headers select, server facts decide > tampering the workspace header to a same-company team the user is not in changes nothing (WORKSPACE_FORBIDDEN) [2.92ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 5: headers select, server facts decide > tampering the workspace header to another company's team changes nothing [2.72ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 5: headers select, server facts decide > tampering the tenant header to a company the user never joined changes nothing (TENANT_FORBIDDEN) [2.34ms]
+(pass) MT005 scope gate (Issue #48) > issue #48 criterion 5: headers select, server facts decide > the same headers flip from allow to deny only when server state flips: suspension, not the header, decides [12.84ms]
+
+tests/multitenancy/acceptance-harness.test.ts:
+(pass) harness isolation resolution > refuses missing and development environments, never falls back [0.48ms]
+(pass) harness isolation resolution > returns the dedicated isolation configuration from the real environment [0.32ms]
+(pass) harness loopback HTTP isolation > serves on 127.0.0.1:45435 only, refuses double bind, releases on close [5.99ms]
+(pass) unauthorized-result detector > a poisoned unauthorized observation never passes any side [0.13ms]
+(pass) unauthorized-result detector > a clean observation passes both sides; each side keeps its own failure mode [0.07ms]
+(pass) acceptance harness pipeline > hard-fails on a missing environment instead of skipping [0.74ms]
+(pass) acceptance harness pipeline > refuses a foreign adapter squatting on the harness control domain [3.79ms]
+(pass) acceptance harness pipeline > aborts before any evidence when the detector misses the poison [261.66ms]
+(pass) acceptance harness pipeline > produces machine-readable per-entrance positive/denial coverage [265.24ms]
+{"level":40,"time":1792093996607,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792093996607,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+{"level":40,"time":1792093996609,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+(pass) acceptance harness pipeline > a newly added inventory entrance appears as uncovered [339.24ms]
+(pass) acceptance harness pipeline > an evidence plan naming an entrance absent from the inventory is refused [1.26ms]
+(pass) acceptance harness pipeline > refuses harness-owned control scenarios as business evidence [2.62ms]
+(pass) acceptance harness pipeline > uses its temp directory for run-scoped metadata [345.84ms]
+(pass) acceptance harness pipeline > absent provider credentials are environment gaps, never passes [272.01ms]
+(pass) acceptance harness CLI > writes a machine-readable report and exits 0 on an honest run [2263.31ms]
+(pass) acceptance harness CLI > refuses CLI flags given without a value [3228.29ms]
+(pass) acceptance harness CLI > exits 1 with an explicit message when the environment is missing [813.04ms]
+
+tests/multitenancy/membership-model.test.ts:
+(pass) issue #47 criterion 4: migration previews dry-run and replays via the MT003 tool > MT004 is a registered task whose plan is deterministic [0.24ms]
+(pass) issue #47 criterion 4: migration previews dry-run and replays via the MT003 tool > dry-run previews the pending statement plan before anything is applied [0.09ms]
+(pass) issue #47 criterion 4: migration previews dry-run and replays via the MT003 tool > apply materializes the table in the dedicated test database and replays as up-to-date [12.43ms]
+(pass) issue #47 criterion 4: migration previews dry-run and replays via the MT003 tool > fresh apply forces row level security on the new table (0056 hardening pattern; review F1) [0.85ms]
+(pass) issue #47 criterion 4: migration previews dry-run and replays via the MT003 tool > the migration is expand-only: exactly one new table, no existing table or policy changed [4.83ms]
+(pass) issue #47 criterion 1: one membership per (tenant, workspace, principal) > the first membership row inserts and reads back with defaults [3.62ms]
+(pass) issue #47 criterion 1: one membership per (tenant, workspace, principal) > a duplicate (tenant, workspace, principal) insert is rejected by the database [1.85ms]
+(pass) issue #47 criterion 2: composite foreign keys prove both containment facts > a workspace from another company cannot be joined to this company's member [0.94ms]
+(pass) issue #47 criterion 2: composite foreign keys prove both containment facts > a principal who is not a member of this company is rejected [2.05ms]
+(pass) issue #47 criterion 2: composite foreign keys prove both containment facts > the same principal joins a second team of the same company without conflict [2.66ms]
+(pass) issue #47 criterion 3: status supports active/suspended and epoch is a positive monotonic version > status accepts exactly active and suspended and nothing else [3.57ms]
+(pass) issue #47 criterion 3: status supports active/suspended and epoch is a positive monotonic version > epoch must be a positive integer [1.70ms]
+(pass) issue #47 criterion 3: status supports active/suspended and epoch is a positive monotonic version > epoch strictly increases along the application write path (read current, write current + 1) [15.96ms]
+(pass) issue #47 criterion 3: status supports active/suspended and epoch is a positive monotonic version > suspending keeps the row but the stored status flips to suspended [4.00ms]
+(pass) restricted capability roles can use the new table through its minimal RLS policies > operator role can insert with its tenant context and cannot without it [19.54ms]
+(pass) restricted capability roles can use the new table through its minimal RLS policies > data role reads only its own memberships inside its tenant context [5.71ms]
+
+ 148 pass
+ 0 fail
+ 7313 expect() calls
+Ran 148 tests across 6 files. [11.60s]
+baseline exit=0

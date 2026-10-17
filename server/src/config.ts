@@ -238,6 +238,8 @@ export type DeploymentConfig = {
   databaseUrl: string;
   enterpriseDirectoryDatabaseUrl?: string;
   enterpriseDataDatabaseUrl?: string;
+  /** Restricted operator-channel database; unwired → workspace admin routes answer 503. */
+  enterpriseOperatorDatabaseUrl?: string;
   tenantStorageRuntimeDatabaseUrl?: string;
   keyEncryptionKey: string;
   /**
@@ -2774,6 +2776,10 @@ export function loadConfig(
     ...spreadOptional(
       "enterpriseDataDatabaseUrl",
       optional(environment, "ENTERPRISE_DATA_DATABASE_URL"),
+    ),
+    ...spreadOptional(
+      "enterpriseOperatorDatabaseUrl",
+      optional(environment, "ENTERPRISE_OPERATOR_DATABASE_URL"),
     ),
     ...spreadOptional(
       "tenantStorageRuntimeDatabaseUrl",

@@ -257,8 +257,21 @@ import { createProductionRunnerComposition } from "./enterprise/runs/runner";
 import {
   verifyDataDatabase,
   verifyDirectoryDatabase,
+  verifyOperatorDatabase,
 } from "./enterprise/tenancy/connections";
-import { createScopeResolver } from "./enterprise/tenancy/store";
+import {
+  createCompanyAdminAuthorizer,
+  createWorkspaceAdminService,
+  createWorkspaceScopeLister,
+} from "./enterprise/tenancy/workspace-admin";
+import {
+  createUnavailableWorkspaceScopeRoutes,
+  createWorkspaceScopeRoutes,
+} from "./enterprise/tenancy/workspace-scope-routes";
+import {
+  type AuthenticatedRequestIdentity,
+  createScopeResolver,
+} from "./enterprise/tenancy/store";
 import {
   createHostAccessBroker,
   HostAccessRefusedError,
@@ -799,11 +812,14 @@ const enterpriseCapabilities = await (async () => {
         });
         return actor ? { actorId: actor.id, entrypoint: "web" } : null;
       },
-      selectTenant: (request) => request.headers.get("x-openbot-tenant-id"),
+      // MT005 ruling #1: selection headers are x-openbot-tenant and
+      // x-openbot-workspace. They only select; database membership decides.
+      selectTenant: (request) => request.headers.get("x-openbot-tenant"),
       selectWorkspace: (request) =>
-        request.headers.get("x-openbot-workspace-id"),
+        request.headers.get("x-openbot-workspace"),
     });
     return {
+      directory,
       data,
       scopes,
       conversations: createConversationService({ data, mastraStorage }),
@@ -819,6 +835,52 @@ const enterpriseConversationRoutes = enterpriseCapabilities
       enterpriseCapabilities.scopes,
     )
   : createUnavailableConversationRoutes();
+// MT006 (issue #49): workspace scope listing plus company team administration.
+// The listing half runs on the directory/data channels already verified above;
+// the admin half needs the restricted operator channel, and its routes answer
+// 503 when that channel is not wired — never a permissive stand-in. Ruling #1:
+// x-openbot-tenant / x-openbot-workspace select; database membership decides.
+const authenticateWorkspaceScopeRequest = async (
+  request: Request,
+): Promise<AuthenticatedRequestIdentity | null> => {
+  // Session faults answer 401 through the routes' error map; the identical
+  // resolution beside the conversation scopes carries the structured trace.
+  const actor = await resolveRequestActor(request).catch(() => null);
+  return actor ? { actorId: actor.id, entrypoint: "web" } : null;
+};
+const enterpriseWorkspaceScopeRoutes = enterpriseCapabilities
+  ? await (async () => {
+      const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+      const operator = operatorUrl
+        ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
+            // The operator channel failing its capability check leaves the
+            // admin routes answering 503 — refused, never permissive; no
+            // console here (server/src is noConsole-enforced).
+            () => null,
+          )
+        : null;
+      return createWorkspaceScopeRoutes({
+        authenticate: authenticateWorkspaceScopeRequest,
+        lister: createWorkspaceScopeLister(
+          enterpriseCapabilities.directory,
+          enterpriseCapabilities.data,
+        ),
+        admin: operator
+          ? {
+              authorizer: createCompanyAdminAuthorizer(
+                enterpriseCapabilities.directory,
+                {
+                  authenticate: authenticateWorkspaceScopeRequest,
+                  selectTenant: (request) =>
+                    request.headers.get("x-openbot-tenant"),
+                },
+              ),
+              service: createWorkspaceAdminService(operator),
+            }
+          : undefined,
+      });
+    })()
+  : createUnavailableWorkspaceScopeRoutes();
 const identityStore = createIdentityStore(database, credentialStore);
 
 const agentVault = {
@@ -5422,6 +5484,7 @@ const app = createApp(
     groups: groupConversations,
     teamBots,
     enterpriseConversations: enterpriseConversationRoutes,
+    enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
     lifecycle: {
       lifecycle: createBotLifecycleStore(database),
       reset: createBotReset({

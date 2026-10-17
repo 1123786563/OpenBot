@@ -1,0 +1,2 @@
+任务结束 prereq 面完整性（2026-10-16）：
+19 个前置文件中 18 个与 prereq-manifest.txt 逐字节一致；唯一变更 server/src/index.ts 为本票票面授权的路由注册段追加（before/after 哈希见本目录）。store.ts/scope-gate.ts/MT001-MT005 交付测试文件全部未动。

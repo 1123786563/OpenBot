@@ -1,0 +1,14 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/workspace-scope.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '../../src/enterprise/tenancy/workspace-scope-routes' from '/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt006/server/tests/multitenancy/workspace-scope.test.ts'
+-------------------------------
+
+
+ 0 pass
+ 1 fail
+ 1 error
+Ran 1 test across 1 file. [187.00ms]
