@@ -91,14 +91,8 @@ export const paymentOrders = pgTable(
       "payment_orders_provider_check",
       sql`${table.provider} IN ('alipay', 'wechat')`,
     ),
-    check(
-      "payment_orders_amount_check",
-      sql`${table.amountCents} > 0`,
-    ),
-    check(
-      "payment_orders_currency_check",
-      sql`${table.currency} = 'CNY'`,
-    ),
+    check("payment_orders_amount_check", sql`${table.amountCents} > 0`),
+    check("payment_orders_currency_check", sql`${table.currency} = 'CNY'`),
     // The owner pair moves together: a half-written owner is a bug, not a state.
     check(
       "payment_orders_owner_pair_check",
@@ -123,9 +117,15 @@ export const paymentOrders = pgTable(
       .on(table.deploymentScope)
       .where(sql`${table.status} = 'pending'`),
     // The sweeper's query-first pass reads exactly this.
-    index("payment_orders_status_expires_idx").on(table.status, table.expiresAt),
+    index("payment_orders_status_expires_idx").on(
+      table.status,
+      table.expiresAt,
+    ),
     // The owner-scoped reads (a person's order list, the statement window) filter on exactly this.
-    index("payment_orders_owner_idx").on(table.ownerPayerId, table.ownerPayerKind),
+    index("payment_orders_owner_idx").on(
+      table.ownerPayerId,
+      table.ownerPayerKind,
+    ),
   ],
 );
 
@@ -161,7 +161,10 @@ export const paymentEvents = pgTable(
       .defaultNow(),
   },
   (table) => [
-    check("payment_events_kind_check", sql`${table.kind} IN ('fact', 'anomaly')`),
+    check(
+      "payment_events_kind_check",
+      sql`${table.kind} IN ('fact', 'anomaly')`,
+    ),
     // THE idempotency key: one paid fact per channel transaction, across all orders. `ON CONFLICT
     // DO NOTHING` against this index answers a replay, and the insert that wins the race is the
     // one whose order transition also won its CAS — the two live in one transaction.

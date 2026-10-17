@@ -66,9 +66,7 @@ export const sandboxInstances = pgTable(
      */
     index("sandbox_instances_bot_status_idx")
       .on(table.botId, table.status)
-      .where(
-        sql`${table.status} IN ('provisioning', 'ready', 'sleeping')`,
-      ),
+      .where(sql`${table.status} IN ('provisioning', 'ready', 'sleeping')`),
     index("sandbox_instances_tenant_idx").on(table.tenantId),
     check(
       "sandbox_instances_status_check",

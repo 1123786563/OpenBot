@@ -239,7 +239,9 @@ describe("shared/trace", () => {
  */
 function exportedStatusCodes(body: ArrayBuffer): number[] {
   const parsed = JSON.parse(new TextDecoder().decode(body)) as {
-    resourceSpans?: { scopeSpans?: { spans?: { status?: { code?: number } }[] }[] }[];
+    resourceSpans?: {
+      scopeSpans?: { spans?: { status?: { code?: number } }[] }[];
+    }[];
   };
   const codes: number[] = [];
   for (const resourceSpans of parsed.resourceSpans ?? [])

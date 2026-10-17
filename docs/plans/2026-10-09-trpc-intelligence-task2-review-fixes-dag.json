@@ -11,14 +11,8 @@
       "title": "Install capability boundaries and real PostgreSQL acceptance",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-05",
-        "T02-R01",
-        "T02-R02"
-      ],
-      "depends_on": [
-        "T02"
-      ],
+      "acceptance": ["AC-05", "T02-R01", "T02-R02"],
+      "depends_on": ["T02"],
       "dependency_evidence": "T02 implementation supplies the schema and resource authorization services. The accepted T1-B/T1-C role, migration and test contracts are prerequisites for a valid RLS integration test.",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -41,23 +35,15 @@
       },
       "verification": "bun --no-env-file server/scripts/enterprise-test-db.ts migrate; bun test focused tenancy/authz/RLS suites; capability catalog and SQLSTATE assertions; Drizzle check; scoped TSC/Biome/diff check",
       "status": "verified",
-      "finding_ids": [
-        "T02-R01",
-        "T02-R02"
-      ]
+      "finding_ids": ["T02-R01", "T02-R02"]
     },
     {
       "id": "R2-2",
       "title": "Make legacy channel visibility revocation-consistent",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-05",
-        "T02-R03"
-      ],
-      "depends_on": [
-        "R2-1"
-      ],
+      "acceptance": ["AC-05", "T02-R03"],
+      "depends_on": ["R2-1"],
       "dependency_evidence": "Serial repair order: complete the blocking tenancy/RLS evidence first; channel helper is another AC-05 requirement and is released only after database boundary is verified.",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -71,9 +57,7 @@
       },
       "verification": "bun test server/tests/enterprise/legacy-channel-scope.test.ts server/tests/enterprise/authz.integration.test.ts; scoped TSC/Biome/diff check",
       "status": "verified",
-      "finding_ids": [
-        "T02-R03"
-      ]
+      "finding_ids": ["T02-R03"]
     }
   ]
 }

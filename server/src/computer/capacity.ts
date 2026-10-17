@@ -212,7 +212,9 @@ export function computerCapacity(
       // visible in the list, they still count toward the cap for everyone else.
       const startingElsewhere = [...lastRunActivity.entries()].filter(
         ([id, at]) =>
-          id !== botId && !listed.has(id) && now().getTime() - at < START_GRACE_MS,
+          id !== botId &&
+          !listed.has(id) &&
+          now().getTime() - at < START_GRACE_MS,
       ).length;
       const others = fleet.filter(
         (computer) => computer.botId !== botId,

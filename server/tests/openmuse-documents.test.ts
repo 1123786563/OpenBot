@@ -650,9 +650,7 @@ describe("applyFill", () => {
     };
     expect(await applyFill(load, inspection, typed, fake)).toBe(output);
     expect(loads).toHaveLength(1);
-    expect(calls).toEqual([
-      { supported: inspection.supported, values: typed },
-    ]);
+    expect(calls).toEqual([{ supported: inspection.supported, values: typed }]);
   });
 });
 

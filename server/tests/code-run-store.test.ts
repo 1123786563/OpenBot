@@ -53,7 +53,13 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("code run store", () => {
 
   test("finish with a failure records the error text", async () => {
     const id = `${prefix}-${randomUUID().slice(0, 8)}`;
-    await store.create({ id, botId: "bot-x", ownerUserId: "user-x", task: "t", model: "GLM-5.3" });
+    await store.create({
+      id,
+      botId: "bot-x",
+      ownerUserId: "user-x",
+      task: "t",
+      model: "GLM-5.3",
+    });
     await store.finish(id, { status: "timeout", error: "exceeded 120000ms" });
     const row = await store.get(id);
     expect(row?.status).toBe("timeout");

@@ -79,9 +79,7 @@ const immutableFields = [
   "status",
 ] as const;
 
-function normalizeInput(
-  input: UsageOutboxInput,
-): UsageOutboxInput & {
+function normalizeInput(input: UsageOutboxInput): UsageOutboxInput & {
   reservationId: string | null;
   actualCostNumerator: string | null;
   actualCostDenominator: string | null;

@@ -28,15 +28,16 @@ const prefix = `qa1c-${randomUUID().slice(0, 8)}`;
 const planCode = `qa-plan-${randomUUID().slice(0, 8)}`;
 
 afterAll(async () => {
-  await database.delete(paymentEvents).where(like(paymentEvents.orderId, `${prefix}%`));
-  await database.delete(paymentOrders).where(like(paymentOrders.id, `${prefix}%`));
+  await database
+    .delete(paymentEvents)
+    .where(like(paymentEvents.orderId, `${prefix}%`));
+  await database
+    .delete(paymentOrders)
+    .where(like(paymentOrders.id, `${prefix}%`));
   await database.$client.close();
 });
 
-function paidDelivery(
-  orderId: string,
-  transactionId: string,
-): PaymentProvider {
+function paidDelivery(orderId: string, transactionId: string): PaymentProvider {
   return {
     id: "alipay",
     async createSession() {
@@ -119,7 +120,9 @@ test("sequential double payment (cross-provider): both paid, and the duplicate i
   // Order A on alipay, paid for real.
   const a = await openOrder("alipay", "a");
   const alipayService = serviceFor(paidDelivery(a.id, `${prefix}-tx-a`));
-  expect(await alipayService.handleCallback("alipay", new Headers(), "x")).toEqual({
+  expect(
+    await alipayService.handleCallback("alipay", new Headers(), "x"),
+  ).toEqual({
     kind: "success",
   });
   const paidA = await store.readOrder(a.id);
@@ -140,7 +143,9 @@ test("sequential double payment (cross-provider): both paid, and the duplicate i
     successAck: { body: '{"code":"SUCCESS"}', contentType: "text/plain" },
   };
   const wechatService = serviceFor(wechatDelivery);
-  expect(await wechatService.handleCallback("wechat", new Headers(), "x")).toEqual({
+  expect(
+    await wechatService.handleCallback("wechat", new Headers(), "x"),
+  ).toEqual({
     kind: "success",
   });
 

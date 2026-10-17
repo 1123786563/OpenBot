@@ -113,7 +113,9 @@ export function createBillingStatements(deps: {
        * ceiling for still appears — dropped, it would look like the meter is off, when the truth is
        * that it is running and uncapped. `limit: null` says exactly that.
        */
-      const byCode = new Map(ceilings.map((entry) => [entry.metricCode, entry]));
+      const byCode = new Map(
+        ceilings.map((entry) => [entry.metricCode, entry]),
+      );
       const rows: BillingQuotaEntry[] = [];
       for (const [metricCode, ceiling] of byCode) {
         const charge = usage.charges.find((c) => c.metricCode === metricCode);
@@ -121,7 +123,10 @@ export function createBillingStatements(deps: {
         rows.push({
           ...ceiling,
           used,
-          remaining: Math.max(ceiling.limit === null ? 0 : ceiling.limit - used, 0),
+          remaining: Math.max(
+            ceiling.limit === null ? 0 : ceiling.limit - used,
+            0,
+          ),
           usedCents: charge?.amountCents ?? 0,
         });
       }
@@ -144,7 +149,9 @@ export function createBillingStatements(deps: {
         ...(entitlements.planCode !== undefined
           ? { planCode: entitlements.planCode }
           : {}),
-        ...(entitlements.subscription ? { status: entitlements.subscription.status } : {}),
+        ...(entitlements.subscription
+          ? { status: entitlements.subscription.status }
+          : {}),
         ...(usage.currency !== undefined ? { currency: usage.currency } : {}),
         currentPeriodStart: subscription?.start ?? null,
         currentPeriodEnd: subscription?.end ?? null,
@@ -193,7 +200,9 @@ export function createBillingStatements(deps: {
           totalPages,
           currentPage: window.page,
           nextPage:
-            window.page * INVOICE_PAGE_SIZE < totalCount ? window.page + 1 : null,
+            window.page * INVOICE_PAGE_SIZE < totalCount
+              ? window.page + 1
+              : null,
         },
       };
     },

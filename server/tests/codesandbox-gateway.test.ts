@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createCodeRunGateway, TASK_PREAMBLE } from "../src/codesandbox/gateway";
+import {
+  createCodeRunGateway,
+  TASK_PREAMBLE,
+} from "../src/codesandbox/gateway";
 import type { SandboxClient } from "../src/codesandbox/client";
 import type { CodeRunStore } from "../src/codesandbox/store";
 
@@ -38,11 +41,15 @@ function fakeStore() {
 }
 
 function fakeAudit(log?: string[]) {
-  const events: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
+  const events: Array<{ eventType: string; payload: Record<string, unknown> }> =
+    [];
   return {
     events,
     store: {
-      async insert(event: { eventType: string; payload: Record<string, unknown> }) {
+      async insert(event: {
+        eventType: string;
+        payload: Record<string, unknown>;
+      }) {
         if (log) log.push(`audit:${event.eventType}`);
         events.push(event);
       },
@@ -66,7 +73,11 @@ describe("code run gateway", () => {
     const client = fakeClient({
       sendMessage: async (sessionId, text) => {
         seen.push(`sandbox-called:${text.includes(TASK_PREAMBLE)}`);
-        return { sessionId, text: "42", usage: { inputTokens: 9, outputTokens: 4 } };
+        return {
+          sessionId,
+          text: "42",
+          usage: { inputTokens: 9, outputTokens: 4 },
+        };
       },
     });
     const gateway = createCodeRunGateway({
@@ -80,8 +91,12 @@ describe("code run gateway", () => {
     if (outcome.kind !== "completed") return;
     expect(outcome.usage).toEqual({ inputTokens: 9, outputTokens: 4 });
     expect(seen[0]).toBe("sandbox-called:true");
-    const started = audit.events.findIndex((e) => e.eventType === "code.run_started");
-    const completed = audit.events.findIndex((e) => e.eventType === "code.run_completed");
+    const started = audit.events.findIndex(
+      (e) => e.eventType === "code.run_started",
+    );
+    const completed = audit.events.findIndex(
+      (e) => e.eventType === "code.run_completed",
+    );
     expect(started).toBeGreaterThanOrEqual(0);
     expect(completed).toBeGreaterThan(started);
     const row = [...rows.values()][0] as Record<string, unknown>;
@@ -118,7 +133,9 @@ describe("code run gateway", () => {
     });
     const outcome = await gateway.run("anything");
     expect(outcome.kind).toBe("refused");
-    expect(audit.events.some((e) => e.eventType === "code.run_refused")).toBe(true);
+    expect(audit.events.some((e) => e.eventType === "code.run_refused")).toBe(
+      true,
+    );
     const row = [...rows.values()][0] as Record<string, unknown>;
     expect(row.status).toBe("refused");
   });
@@ -149,7 +166,9 @@ describe("code run gateway", () => {
     const outcome = await gateway.run("anything");
     expect(outcome.kind).toBe("refused");
     expect(calls).toEqual([]);
-    expect(audit.events.some((e) => e.eventType === "code.run_refused")).toBe(true);
+    expect(audit.events.some((e) => e.eventType === "code.run_refused")).toBe(
+      true,
+    );
     expect([...rows.values()][0]).toMatchObject({
       status: "refused",
       error: "billing-token-budget-unavailable",
@@ -184,7 +203,9 @@ describe("code run gateway", () => {
     const audit = fakeAudit();
     const client = fakeClient({
       sendMessage: async () => {
-        throw new (await import("../src/codesandbox/client")).CodeSandboxTimeoutError(120_000);
+        throw new (
+          await import("../src/codesandbox/client")
+        ).CodeSandboxTimeoutError(120_000);
       },
     });
     const gateway = createCodeRunGateway({
@@ -199,7 +220,9 @@ describe("code run gateway", () => {
     expect(outcome.reason).toMatch(/exceeded|budget|120000/i);
     const row = [...rows.values()][0] as Record<string, unknown>;
     expect(row.status).toBe("timeout");
-    expect(audit.events.some((e) => e.eventType === "code.run_failed")).toBe(true);
+    expect(audit.events.some((e) => e.eventType === "code.run_failed")).toBe(
+      true,
+    );
   });
 
   test("artifacts are the files that appeared during the run, capped", async () => {
@@ -229,7 +252,11 @@ describe("code run gateway", () => {
     });
     const outcome = await gateway.run("生成一批文件");
     if (outcome.kind !== "completed") throw new Error("expected completed");
-    expect(outcome.artifacts.map((a) => a.path)).toEqual(["a.py", "b.csv", "c.bin"]);
+    expect(outcome.artifacts.map((a) => a.path)).toEqual([
+      "a.py",
+      "b.csv",
+      "c.bin",
+    ]);
   });
 
   test("run converts timeoutSeconds into the sandbox budget, clamped to 1-600", async () => {
@@ -259,7 +286,9 @@ describe("code run gateway", () => {
       auditStore: audit.store,
     });
     await gateway.run("慢任务", { timeoutSeconds: 90 });
-    const started = audit.events.find((e) => e.eventType === "code.run_started");
+    const started = audit.events.find(
+      (e) => e.eventType === "code.run_started",
+    );
     expect(started?.payload.timeoutMs).toBe(90_000);
   });
 
@@ -298,7 +327,9 @@ describe("code run gateway", () => {
     const result = await gateway.resetWorkspace();
     expect(result).toEqual({ ok: false, reason: "not-configured" });
     // 拒绝也是一次治理决策：留在审计里，但没有任何 sandbox 调用发生。
-    const refused = audit.events.find((e) => e.eventType === "code.workspace_reset");
+    const refused = audit.events.find(
+      (e) => e.eventType === "code.workspace_reset",
+    );
     expect(refused?.payload.reason).toBe("not-configured");
   });
 });
@@ -311,10 +342,9 @@ describe("code run gateway", () => {
  */
 describe("code run gateway: startStreaming", () => {
   /** A client whose stream produces a script of families, optionally with a silent gap. */
-  function streamingClient(script: Array<
-    | { family: string; delayMs?: number }
-    | "end"
-  >) {
+  function streamingClient(
+    script: Array<{ family: string; delayMs?: number } | "end">,
+  ) {
     const calls: string[] = [];
     const aborted: string[] = [];
     let finishScript: () => void = () => undefined;
@@ -347,7 +377,13 @@ describe("code run gateway: startStreaming", () => {
       abortSession: async (sessionId: string) => {
         aborted.push(sessionId);
       },
-      subscribeEvents: async (onEvent: (event: { family: string; eventId: string; payload: Record<string, unknown> }) => void) => {
+      subscribeEvents: async (
+        onEvent: (event: {
+          family: string;
+          eventId: string;
+          payload: Record<string, unknown>;
+        }) => void,
+      ) => {
         calls.push("subscribe");
         void (async () => {
           for (const step of script) {
@@ -355,7 +391,8 @@ describe("code run gateway: startStreaming", () => {
               finishScript();
               break;
             }
-            if (step.delayMs) await new Promise((r) => setTimeout(r, step.delayMs));
+            if (step.delayMs)
+              await new Promise((r) => setTimeout(r, step.delayMs));
             onEvent({
               family: step.family,
               eventId: `evt_${Math.random().toString(36).slice(2, 8)}`,
@@ -366,7 +403,11 @@ describe("code run gateway: startStreaming", () => {
         return { stop: () => calls.push("stop") };
       },
     };
-    return { client: client as never as SandboxClient, calls, getAborted: () => aborted };
+    return {
+      client: client as never as SandboxClient,
+      calls,
+      getAborted: () => aborted,
+    };
   }
 
   test("① unconfigured sandbox: refused audit and row BEFORE the stream answers", async () => {
@@ -435,7 +476,9 @@ describe("code run gateway: startStreaming", () => {
       store,
       auditStore: audit.store,
     });
-    const streaming = await gateway.startStreaming("可取消任务", { activityTimeoutMs: 60_000 });
+    const streaming = await gateway.startStreaming("可取消任务", {
+      activityTimeoutMs: 60_000,
+    });
     const iterate = (async () => {
       const seen: string[] = [];
       for await (const event of streaming.events) seen.push(event.family);
@@ -448,9 +491,9 @@ describe("code run gateway: startStreaming", () => {
     expect(seen).toEqual(["progress"]);
     expect(getAborted()).toEqual(["ses_s"]);
     expect(rows.get(streaming.runId)).toMatchObject({ status: "failed" });
-    expect(
-      audit.events.some((e) => e.eventType === "code.run_cancelled"),
-    ).toBe(true);
+    expect(audit.events.some((e) => e.eventType === "code.run_cancelled")).toBe(
+      true,
+    );
   });
 
   test("④ billing-enabled streaming refuses before createSession or subscribeEvents", async () => {
@@ -483,7 +526,8 @@ describe("code run gateway: startStreaming", () => {
     });
     expect(calls).toEqual([]);
     const seen: string[] = [];
-    for await (const event of streaming.events) seen.push(String(event.payload.refused));
+    for await (const event of streaming.events)
+      seen.push(String(event.payload.refused));
     expect(seen).toEqual(["billing-token-budget-unavailable"]);
   });
 });
@@ -512,6 +556,8 @@ describe("code run gateway: the artifact hook's failure containment (B4 pin)", (
     expect(rows.get((outcome as { runId: string }).runId)).toMatchObject({
       status: "completed",
     });
-    expect(audit.events.some((e) => e.eventType === "code.run_completed")).toBe(true);
+    expect(audit.events.some((e) => e.eventType === "code.run_completed")).toBe(
+      true,
+    );
   });
 });

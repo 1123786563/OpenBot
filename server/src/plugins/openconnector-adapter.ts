@@ -6,7 +6,10 @@ import {
   type ConnectedAppBroker,
 } from "./broker";
 import type { AccountRef } from "./shared-accounts";
-import type { OpenConnectorAction, OpenConnectorActions } from "./openconnector";
+import type {
+  OpenConnectorAction,
+  OpenConnectorActions,
+} from "./openconnector";
 
 /**
  * The one module that talks to OpenConnector over HTTP — the vendor as this deployment is allowed
@@ -102,7 +105,11 @@ type Vendor = {
   providerFields(service: string, authType: string): Promise<ProviderField[]>;
   putConnection(
     service: string,
-    body: { authType: string; values: Record<string, string>; connectionName: string },
+    body: {
+      authType: string;
+      values: Record<string, string>;
+      connectionName: string;
+    },
   ): Promise<void>;
   deleteConnection(service: string, connectionName: string): Promise<void>;
   listConnections(): Promise<{ service: string; connectionName: string }[]>;
@@ -155,81 +162,93 @@ export function buildOpenConnectorClient(input: { dial: WireDial }): {
   };
 
   const vendor: Vendor = {
-  async listProviders() {
-    /*
-     * THE ADMIN FACE, BECAUSE IT IS THE ONLY DIRECTORY ANSWER THAT CARRIES ACTIONS. The runtime
-     * mirror (`/v1/providers`) lists providers bare, and `/v1/actions` without a service lists
-     * 1568 provider-level rows that name no action id at all — the live E2E caught both halves of
-     * that. The admin listing embeds each provider's actions in the same answer (9 MB served off
-     * the container's local catalog in ~10 ms), so one request yields the picker's action count —
-     * the number the directory exists to show before anybody enables anything.
-     */
-    const body = await request("/api/providers", { method: "GET" });
-    return rowsOf(body, "provider directory").flatMap((row) => {
-      if (row === null || typeof row !== "object") return [];
-      const record = row as Record<string, unknown>;
-      if (typeof record.service !== "string" || record.service === "") return [];
+    async listProviders() {
       /*
-       * THE CATALOGUE PUBLISHES AUTH TYPES AS AN ARRAY (`authTypes: ["api_key"]`), not a singular
-       * `authType` — read as the singular, every provider resolved to `undefined` and the whole
-       * 1568-provider directory classified `unsupported`, which the live E2E caught within one
-       * enable press. The display name is `displayName` on the wire (`name` does not exist), so
-       * the read falls through to the service id when even that is absent.
+       * THE ADMIN FACE, BECAUSE IT IS THE ONLY DIRECTORY ANSWER THAT CARRIES ACTIONS. The runtime
+       * mirror (`/v1/providers`) lists providers bare, and `/v1/actions` without a service lists
+       * 1568 provider-level rows that name no action id at all — the live E2E caught both halves of
+       * that. The admin listing embeds each provider's actions in the same answer (9 MB served off
+       * the container's local catalog in ~10 ms), so one request yields the picker's action count —
+       * the number the directory exists to show before anybody enables anything.
        */
-      const authTypes = Array.isArray(record.authTypes)
-        ? record.authTypes.filter(
-            (candidate): candidate is string => typeof candidate === "string",
-          )
-        : [];
-      const actions = Array.isArray(record.actions) ? (record.actions as unknown[]) : [];
-      const categories = Array.isArray(record.categories)
-        ? record.categories.filter(
-            (candidate): candidate is string => typeof candidate === "string",
-          )
-        : [];
-      return [
-        {
-          service: record.service,
-          name:
-            typeof record.displayName === "string" && record.displayName !== ""
-              ? record.displayName
-              : record.service,
-          description: typeof record.description === "string" ? record.description : "",
-          categories,
-          actionCount: actions.length,
-          authType: pickAuthType(authTypes),
-        },
-      ];
-    });
-  },
-  async listServiceActions(service) {
-    const body = await request(
-      `/v1/actions?service=${encodeURIComponent(service)}`,
-      { method: "GET" },
-    );
-    return rowsOf(body, "action directory").flatMap((row) => {
-      if (row === null || typeof row !== "object") return [];
-      const record = row as Record<string, unknown>;
-      if (typeof record.id !== "string") return [];
-      return [
-        {
-          id: record.id,
-          description: typeof record.description === "string" ? record.description : "",
-          inputSchema:
-            record.inputSchema !== null && typeof record.inputSchema === "object"
-              ? record.inputSchema
-              : null,
-        },
-      ];
-    });
-  },
+      const body = await request("/api/providers", { method: "GET" });
+      return rowsOf(body, "provider directory").flatMap((row) => {
+        if (row === null || typeof row !== "object") return [];
+        const record = row as Record<string, unknown>;
+        if (typeof record.service !== "string" || record.service === "")
+          return [];
+        /*
+         * THE CATALOGUE PUBLISHES AUTH TYPES AS AN ARRAY (`authTypes: ["api_key"]`), not a singular
+         * `authType` — read as the singular, every provider resolved to `undefined` and the whole
+         * 1568-provider directory classified `unsupported`, which the live E2E caught within one
+         * enable press. The display name is `displayName` on the wire (`name` does not exist), so
+         * the read falls through to the service id when even that is absent.
+         */
+        const authTypes = Array.isArray(record.authTypes)
+          ? record.authTypes.filter(
+              (candidate): candidate is string => typeof candidate === "string",
+            )
+          : [];
+        const actions = Array.isArray(record.actions)
+          ? (record.actions as unknown[])
+          : [];
+        const categories = Array.isArray(record.categories)
+          ? record.categories.filter(
+              (candidate): candidate is string => typeof candidate === "string",
+            )
+          : [];
+        return [
+          {
+            service: record.service,
+            name:
+              typeof record.displayName === "string" &&
+              record.displayName !== ""
+                ? record.displayName
+                : record.service,
+            description:
+              typeof record.description === "string" ? record.description : "",
+            categories,
+            actionCount: actions.length,
+            authType: pickAuthType(authTypes),
+          },
+        ];
+      });
+    },
+    async listServiceActions(service) {
+      const body = await request(
+        `/v1/actions?service=${encodeURIComponent(service)}`,
+        { method: "GET" },
+      );
+      return rowsOf(body, "action directory").flatMap((row) => {
+        if (row === null || typeof row !== "object") return [];
+        const record = row as Record<string, unknown>;
+        if (typeof record.id !== "string") return [];
+        return [
+          {
+            id: record.id,
+            description:
+              typeof record.description === "string" ? record.description : "",
+            inputSchema:
+              record.inputSchema !== null &&
+              typeof record.inputSchema === "object"
+                ? record.inputSchema
+                : null,
+          },
+        ];
+      });
+    },
     async providerFields(service, authType) {
       const body = await request(
         `/api/providers/${encodeURIComponent(service)}`,
         { method: "GET" },
       );
-      const detail = body !== null && typeof body === "object" ? (body as Record<string, unknown>) : null;
-      const auth = Array.isArray(detail?.auth) ? (detail.auth as unknown[]) : null;
+      const detail =
+        body !== null && typeof body === "object"
+          ? (body as Record<string, unknown>)
+          : null;
+      const auth = Array.isArray(detail?.auth)
+        ? (detail.auth as unknown[])
+        : null;
       const entry = (auth ?? []).find(
         (candidate) =>
           candidate !== null &&
@@ -260,12 +279,17 @@ export function buildOpenConnectorClient(input: { dial: WireDial }): {
               {
                 key: "apiKey",
                 label: typeof record.label === "string" ? record.label : null,
-                description: typeof record.description === "string" ? record.description : null,
+                description:
+                  typeof record.description === "string"
+                    ? record.description
+                    : null,
                 inputType: "text",
                 required: true,
                 secret: true,
               },
-              ...(Array.isArray(record.extraFields) ? (record.extraFields as unknown[]) : []),
+              ...(Array.isArray(record.extraFields)
+                ? (record.extraFields as unknown[])
+                : []),
             ]
           : authType === "custom_credential"
             ? Array.isArray(record.fields)
@@ -290,7 +314,10 @@ export function buildOpenConnectorClient(input: { dial: WireDial }): {
             `OpenConnector's field list for ${service} has an entry whose name could not be read, so the form was refused rather than drawn with a guess.`,
           );
         }
-        if (typeof field.required !== "boolean" || typeof field.secret !== "boolean") {
+        if (
+          typeof field.required !== "boolean" ||
+          typeof field.secret !== "boolean"
+        ) {
           throw new BrokerRefusalError(
             `OpenConnector's "${field.key}" field on ${service} has a required or secret flag that could not be read, so the form was refused rather than guessed — an unreadable mask would show a credential in clear.`,
           );
@@ -305,8 +332,12 @@ export function buildOpenConnectorClient(input: { dial: WireDial }): {
         }
         fields.push({
           name: field.key,
-          label: typeof field.label === "string" && field.label !== "" ? field.label : field.key,
-          help: typeof field.description === "string" ? field.description : null,
+          label:
+            typeof field.label === "string" && field.label !== ""
+              ? field.label
+              : field.key,
+          help:
+            typeof field.description === "string" ? field.description : null,
           required: field.required,
           secret: field.secret,
         });
@@ -334,10 +365,15 @@ export function buildOpenConnectorClient(input: { dial: WireDial }): {
       return rowsOf(body, "connection list").flatMap((row) => {
         if (row === null || typeof row !== "object") return [];
         const record = row as Record<string, unknown>;
-        if (typeof record.service !== "string" || typeof record.connectionName !== "string") {
+        if (
+          typeof record.service !== "string" ||
+          typeof record.connectionName !== "string"
+        ) {
           return [];
         }
-        return [{ service: record.service, connectionName: record.connectionName }];
+        return [
+          { service: record.service, connectionName: record.connectionName },
+        ];
       });
     },
   };
@@ -430,7 +466,9 @@ export function buildOpenConnectorClient(input: { dial: WireDial }): {
        * success: the caller is taking back an account it believes it just made.
        */
       const rows = await vendor.listConnections();
-      const row = rows.find((candidate) => candidate.connectionName === accountId);
+      const row = rows.find(
+        (candidate) => candidate.connectionName === accountId,
+      );
       if (row === undefined) {
         throw new Error(
           `OpenConnector has no connection under ${accountId} — nothing was there to take back, which is a failure on an undo path rather than a quiet success.`,
@@ -504,13 +542,17 @@ export function createOpenConnectorClient(config: OpenConnectorConfig): {
      * than threading a face argument through the assembly layer — keeps the tokens entirely inside
      * this closure, which is the one place `OpenConnectorConfig` is destructured.
      */
-    const token = path.startsWith("/v1/") ? config.runtimeToken : config.adminToken;
+    const token = path.startsWith("/v1/")
+      ? config.runtimeToken
+      : config.adminToken;
     return fetch(url, {
       method: init.method,
       redirect: "manual",
       headers: {
         ...init.headers,
-        ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(init.body === undefined
+          ? {}
+          : { "Content-Type": "application/json" }),
         Authorization: `Bearer ${token}`,
       },
       ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
@@ -562,7 +604,9 @@ function outboundBase(url: string): URL {
  * {@link answerOf} reads — and as the vendor's own plain sentence otherwise.
  */
 function absentOrPlain(wire: Wire, message: string): Error {
-  return wire.status === 404 ? new OpenConnectorAbsentError(message) : new Error(message);
+  return wire.status === 404
+    ? new OpenConnectorAbsentError(message)
+    : new Error(message);
 }
 
 /**
@@ -582,10 +626,18 @@ async function answerOf(wire: Wire): Promise<unknown> {
       "OpenConnector answered with something this deployment could not be read as JSON. Check the container and the address in OPENCONNECTOR_URL.",
     );
   }
-  const record = body !== null && typeof body === "object" ? (body as Record<string, unknown>) : null;
-  const vendorMessage = (candidate: Record<string, unknown> | null): string | null => {
+  const record =
+    body !== null && typeof body === "object"
+      ? (body as Record<string, unknown>)
+      : null;
+  const vendorMessage = (
+    candidate: Record<string, unknown> | null,
+  ): string | null => {
     if (candidate === null) return null;
-    if (typeof candidate.message === "string" && candidate.message.trim() !== "") {
+    if (
+      typeof candidate.message === "string" &&
+      candidate.message.trim() !== ""
+    ) {
       return candidate.message;
     }
     const nested = candidate.error;

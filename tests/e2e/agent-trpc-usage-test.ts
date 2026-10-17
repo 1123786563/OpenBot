@@ -278,13 +278,19 @@ async function main() {
               "A workbench Bot assembled on the trpc-agent-go framework, answering through the GLM model.",
             visibility: "private",
             endpoint: "http://localhost:4204/ag-ui",
-            auth: { header: "x-openbot-agent-token", value: MANAGED_AGENT_TOKEN },
+            auth: {
+              header: "x-openbot-agent-token",
+              value: MANAGED_AGENT_TOKEN,
+            },
           },
         });
         if (created.status() !== 201) {
-          throw new Error(`注册失败 ${created.status()}：${(await created.text()).slice(0, 200)}`);
+          throw new Error(
+            `注册失败 ${created.status()}：${(await created.text()).slice(0, 200)}`,
+          );
         }
-        agentId = ((await created.json()) as { agent: { id: string } }).agent.id;
+        agentId = ((await created.json()) as { agent: { id: string } }).agent
+          .id;
       }
       await page.goto(`${APP_URL}/bots`);
       const row = page.getByText("agent-trpc", { exact: false }).first();

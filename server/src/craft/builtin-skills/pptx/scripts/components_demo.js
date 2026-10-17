@@ -21,7 +21,10 @@ async function main() {
   const outPath = process.argv[2] || "outputs/components-demo.pptx";
 
   const theme = C.defaultTheme();
-  const pres = C.createPresentation(theme, { title: "Components Demo", author: "Demo" });
+  const pres = C.createPresentation(theme, {
+    title: "Components Demo",
+    author: "Demo",
+  });
 
   C.titleSlide(pres, theme, {
     title: "Assemble decks from tested parts.",
@@ -30,7 +33,13 @@ async function main() {
   });
 
   C.agendaSlide(pres, theme, {
-    items: ["Why a component library", "Layout primitives", "Data display", "Imagery and charts", "Wrapping up"],
+    items: [
+      "Why a component library",
+      "Layout primitives",
+      "Data display",
+      "Imagery and charts",
+      "Wrapping up",
+    ],
   });
 
   C.sectionDivider(pres, theme, {
@@ -54,30 +63,60 @@ async function main() {
       "Text column takes bullets or short paragraphs",
       "Visual slot accepts an image or a chart PNG",
       "Long content shrinks within bounds instead of overflowing",
-      "Swap sides with visualSide: \"left\"",
+      'Swap sides with visualSide: "left"',
     ],
     visual: { type: "image", data: PLACEHOLDER_IMAGE },
   });
 
   C.comparisonSlide(pres, theme, {
     title: "Side-by-side comparison",
-    left: { heading: "Hand-placed", items: ["Coordinates by hand", "Drifts across slides", "Overflow is common", "Slow to build"] },
-    right: { heading: "Components", items: ["One call per slide", "Consistent geometry", "Overflow guarded", "Fast to build"] },
+    left: {
+      heading: "Hand-placed",
+      items: [
+        "Coordinates by hand",
+        "Drifts across slides",
+        "Overflow is common",
+        "Slow to build",
+      ],
+    },
+    right: {
+      heading: "Components",
+      items: [
+        "One call per slide",
+        "Consistent geometry",
+        "Overflow guarded",
+        "Fast to build",
+      ],
+    },
   });
 
   C.quadrant(pres, theme, {
     title: "Effort vs. impact",
     xAxis: { low: "LOW EFFORT", high: "HIGH EFFORT" },
     yAxis: { low: "LOW IMPACT", high: "HIGH IMPACT" },
-    cells: [{ label: "Quick wins" }, { label: "Big bets" }, { label: "Fill-ins" }, { label: "Money pits" }],
+    cells: [
+      { label: "Quick wins" },
+      { label: "Big bets" },
+      { label: "Fill-ins" },
+      { label: "Money pits" },
+    ],
   });
 
   C.iconRow(pres, theme, {
     title: "Icon row",
     items: [
-      { label: "Composable", desc: "Each component is one function call with fixed geometry" },
-      { label: "Guarded", desc: "Autoshrink and ellipsis truncation keep text inside its box" },
-      { label: "Themed", desc: "One theme object threads palette and fonts through every slide" },
+      {
+        label: "Composable",
+        desc: "Each component is one function call with fixed geometry",
+      },
+      {
+        label: "Guarded",
+        desc: "Autoshrink and ellipsis truncation keep text inside its box",
+      },
+      {
+        label: "Themed",
+        desc: "One theme object threads palette and fonts through every slide",
+      },
     ],
   });
 
@@ -104,9 +143,22 @@ async function main() {
   C.statCallouts(pres, theme, {
     title: "Stat callouts",
     stats: [
-      { value: "15 min", label: "Turn ceiling", desc: "Hand-placed geometry burns the whole turn" },
-      { value: "0", label: "Lint errors", desc: "Components are pre-tested against lint.py", hero: true },
-      { value: "23", label: "Components", desc: "Covering the layouts most decks need" },
+      {
+        value: "15 min",
+        label: "Turn ceiling",
+        desc: "Hand-placed geometry burns the whole turn",
+      },
+      {
+        value: "0",
+        label: "Lint errors",
+        desc: "Components are pre-tested against lint.py",
+        hero: true,
+      },
+      {
+        value: "23",
+        label: "Components",
+        desc: "Covering the layouts most decks need",
+      },
     ],
   });
 
@@ -116,7 +168,7 @@ async function main() {
       { value: "4.2k", label: "Decks built" },
       { value: "98%", label: "Lint pass rate" },
       { value: "23", label: "Components" },
-      { value: "0.5\"", label: "Margins" },
+      { value: '0.5"', label: "Margins" },
       { value: "2x", label: "Faster" },
       { value: "11pt", label: "Min body" },
     ],
@@ -150,7 +202,8 @@ async function main() {
   C.chartSlide(pres, theme, {
     title: "Chart with takeaway",
     chart: { data: PLACEHOLDER_CHART },
-    takeaway: "Q4 broke the trend — the ink bar is the story, the rest is context.",
+    takeaway:
+      "Q4 broke the trend — the ink bar is the story, the rest is context.",
   });
 
   C.imageSlide(pres, theme, {
@@ -158,7 +211,7 @@ async function main() {
     body: [
       "Image fills one half edge-to-edge",
       "Text stays in the safe zone with full margins",
-      "bleed: \"full\" puts text on a solid dark bottom panel instead",
+      'bleed: "full" puts text on a solid dark bottom panel instead',
     ],
     image: { data: PLACEHOLDER_IMAGE },
     bleed: "half",
@@ -187,12 +240,14 @@ async function main() {
   });
 
   C.quoteSlide(pres, theme, {
-    quote: "Agents assemble slides from tested layout functions instead of hand-writing coordinates.",
+    quote:
+      "Agents assemble slides from tested layout functions instead of hand-writing coordinates.",
     attribution: "Placeholder attribution",
   });
 
   C.testimonialSlide(pres, theme, {
-    quote: "We cut deck-building time in half and stopped fighting overflow bugs.",
+    quote:
+      "We cut deck-building time in half and stopped fighting overflow bugs.",
     name: "R. Delgado",
     company: "VP Product, example.com",
     photo: PLACEHOLDER_IMAGE,
@@ -200,7 +255,11 @@ async function main() {
 
   C.ctaSlide(pres, theme, {
     title: "Get started.",
-    actions: ["Read components.md", "Run the demo deck", "Build your first deck"],
+    actions: [
+      "Read components.md",
+      "Run the demo deck",
+      "Build your first deck",
+    ],
   });
 
   C.closingSlide(pres, theme, {

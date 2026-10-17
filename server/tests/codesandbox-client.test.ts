@@ -6,9 +6,17 @@ import {
 } from "../src/codesandbox/client";
 
 /** Records the requests and replays scripted responses, so tests never touch a real sandbox. */
-function fakeFetch(scripted: Array<{ match: (url: string, init?: RequestInit) => boolean; respond: () => Response }>) {
+function fakeFetch(
+  scripted: Array<{
+    match: (url: string, init?: RequestInit) => boolean;
+    respond: () => Response;
+  }>,
+) {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
-  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+  const fetchImpl = (async (
+    url: string | URL | Request,
+    init?: RequestInit,
+  ) => {
     const urlText = String(url);
     calls.push({ url: urlText, init });
     const entry = scripted.find((s) => s.match(urlText, init));
@@ -18,7 +26,11 @@ function fakeFetch(scripted: Array<{ match: (url: string, init?: RequestInit) =>
   return { calls, fetchImpl };
 }
 
-const base = { baseUrl: "http://127.0.0.1:4300", token: "sandbox-secret", botId: "bot-1" };
+const base = {
+  baseUrl: "http://127.0.0.1:4300",
+  token: "sandbox-secret",
+  botId: "bot-1",
+};
 
 describe("createSandboxClient", () => {
   test("createSession sends the token and bot headers and returns the id", async () => {
@@ -59,7 +71,9 @@ describe("createSandboxClient", () => {
     expect(result.text).toBe("第一段。\n第二段。");
     expect(result.usage).toEqual({ inputTokens: 120, outputTokens: 45 });
     const init = calls[0]?.init as RequestInit;
-    expect((init.headers as Record<string, string>)["x-openbot-bot-id"]).toBe("bot-1");
+    expect((init.headers as Record<string, string>)["x-openbot-bot-id"]).toBe(
+      "bot-1",
+    );
   });
 
   test("sendMessage threads a timeout budget into the fetch signal", async () => {
@@ -70,7 +84,10 @@ describe("createSandboxClient", () => {
       },
     ]);
     const client = createSandboxClient({ ...base, fetchImpl });
-    await client.sendMessage("ses_1", "慢任务", { modelId: "GLM-5.3", timeoutMs: 5000 });
+    await client.sendMessage("ses_1", "慢任务", {
+      modelId: "GLM-5.3",
+      timeoutMs: 5000,
+    });
     const init = calls[0]?.init as RequestInit;
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
@@ -87,7 +104,9 @@ describe("createSandboxClient", () => {
     const init = calls[0]?.init as RequestInit;
     expect(init.method).toBe("POST");
     expect(calls[0]?.url.endsWith("/workspace/reset")).toBe(true);
-    expect((init.headers as Record<string, string>)["x-openbot-bot-id"]).toBe("bot-1");
+    expect((init.headers as Record<string, string>)["x-openbot-bot-id"]).toBe(
+      "bot-1",
+    );
   });
 
   test("parseUsage is tolerant about where the token counts live", () => {
@@ -137,7 +156,9 @@ describe("createSandboxClient", () => {
     const files = await client.listFiles();
     expect(files).toEqual(["hello.py", "out.csv"]);
     const listed = calls[0]?.init as RequestInit;
-    expect((listed.headers as Record<string, string>)["x-openbot-bot-id"]).toBe("bot-1");
+    expect((listed.headers as Record<string, string>)["x-openbot-bot-id"]).toBe(
+      "bot-1",
+    );
     const file = await client.readFile("hello.py", 1024);
     expect(file.content).toBe("print('hi')\n");
     expect(file.truncated).toBe(false);

@@ -11,11 +11,7 @@
       "title": "冻结 SDK、wire 合同与隔离验证入口",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-03",
-        "AC-05",
-        "AC-12"
-      ],
+      "acceptance": ["AC-03", "AC-05", "AC-12"],
       "acceptance_detail": "AC-03、AC-05、AC-12；锁定客户端黄金样本齐全，敏感字段和未知字段拒绝 Runtime schemas import zod only from server/src/enterprise, where the pinned package is resolved; shared DTOs remain dependency-free. Lock-bound interaction samples include actual SDK calls/responses for tool result, approval pause/resume, reconnect and SSE events; portable JSON Schema and stable error registry are artifacts. Strict DTO negative cases first prove a valid baseline. Tool argument schema is bounded recursive JSON. Test-only direct dependencies are declared in server devDependencies; public module imports and standard package paths are used. Thread pagination, stop request semantics and cursor-bound replay are asserted through locked client callsites. Property-name length uses Unicode code points consistently.",
       "depends_on": [],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
@@ -73,13 +69,9 @@
       "title": "建立可信 Scope 与资源授权前置",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-05"
-      ],
+      "acceptance": ["AC-05"],
       "acceptance_detail": "AC-05；真实 PostgreSQL 两主体/两租户、撤权、部署 admin 无默认内容读权限、频道成员退出拒绝",
-      "depends_on": [
-        "T01"
-      ],
+      "depends_on": ["T01"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -128,16 +120,9 @@
       "title": "持久会话、消息与附件历史",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-02",
-        "AC-03",
-        "AC-05",
-        "AC-10"
-      ],
+      "acceptance": ["AC-02", "AC-03", "AC-05", "AC-10"],
       "acceptance_detail": "AC-02、AC-03、AC-05、AC-10；重开 DB 连接历史保持，附件及已删除 Bot 历史权限不变；附件发送状态与消息原子提交，在线角色仅有必要列级权限",
-      "depends_on": [
-        "T02"
-      ],
+      "depends_on": ["T02"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -191,16 +176,9 @@
       "title": "运行账本、租约、模型出口与预算",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-02",
-        "AC-05",
-        "AC-07",
-        "AC-12"
-      ],
+      "acceptance": ["AC-02", "AC-05", "AC-07", "AC-12"],
       "acceptance_detail": "AC-02、AC-05、AC-07、AC-12；并发启动只一个成功、越界路由拒绝、秘密不在响应/log/state 中",
-      "depends_on": [
-        "T03"
-      ],
+      "depends_on": ["T03"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -249,15 +227,9 @@
       "title": "工具准备、审批与持久执行回执",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-05",
-        "AC-06",
-        "AC-07"
-      ],
+      "acceptance": ["AC-05", "AC-06", "AC-07"],
       "acceptance_detail": "AC-05、AC-06、AC-07；执行中撤权、审批改参、unknown 对账、回执 ACK 丢失覆盖",
-      "depends_on": [
-        "T04"
-      ],
+      "depends_on": ["T04"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -304,15 +276,9 @@
       "title": "装配真实 tRPC-Agent-Go 服务",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-02",
-        "AC-05",
-        "AC-06"
-      ],
+      "acceptance": ["AC-02", "AC-05", "AC-06"],
       "acceptance_detail": "AC-02、AC-05、AC-06；实际进程端口由 OS 分配，无业务 DB/key 权限，关闭后资源收敛",
-      "depends_on": [
-        "T05"
-      ],
+      "depends_on": ["T05"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -361,15 +327,9 @@
       "title": "持久事件、ACK 与可重放订阅",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-04",
-        "AC-05",
-        "AC-07"
-      ],
+      "acceptance": ["AC-04", "AC-05", "AC-07"],
       "acceptance_detail": "AC-04、AC-05、AC-07；两个 TS 进程、ACK 重传、重放窗口并发追加、跨主体游标及撤权覆盖",
-      "depends_on": [
-        "T06"
-      ],
+      "depends_on": ["T06"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -402,9 +362,7 @@
           "runtime-go/internal/callback/events_test.go",
           "server/tests/enterprise/event-replay.integration.test.ts"
         ],
-        "modify_existing": [
-          "server/drizzle/"
-        ],
+        "modify_existing": ["server/drizzle/"],
         "modify_predecessor_delivery": [
           "server/src/db/schema/enterprise-runs.ts"
         ]
@@ -415,15 +373,9 @@
       "title": "自有 AgentRunner 与后端 SDK 兼容",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-02",
-        "AC-03",
-        "AC-05"
-      ],
+      "acceptance": ["AC-02", "AC-03", "AC-05"],
       "acceptance_detail": "AC-02、AC-03、AC-05；Task 1 黄金样本、清空所有线程越权、库故障不变空历史、remote adapter 覆盖",
-      "depends_on": [
-        "T07"
-      ],
+      "depends_on": ["T07"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -453,9 +405,7 @@
           "server/tests/enterprise/platform-runner.test.ts",
           "server/tests/enterprise/copilot-transport.test.ts"
         ],
-        "modify_existing": [
-          "server/src/copilot.ts"
-        ],
+        "modify_existing": ["server/src/copilot.ts"],
         "modify_predecessor_delivery": []
       }
     },
@@ -464,16 +414,9 @@
       "title": "前端聊天、工具与重连兼容",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-02",
-        "AC-03",
-        "AC-04",
-        "AC-05"
-      ],
+      "acceptance": ["AC-02", "AC-03", "AC-04", "AC-05"],
       "acceptance_detail": "AC-02、AC-03、AC-04、AC-05；真实浏览器刷新/重连/两标签/账号切换，不能只用组件 mock",
-      "depends_on": [
-        "T08"
-      ],
+      "depends_on": ["T08"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "frontend_implementer",
       "validator_role": "frontend_validator",
@@ -522,14 +465,9 @@
       "title": "平台检查点、取消与审批恢复",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-06",
-        "AC-07"
-      ],
+      "acceptance": ["AC-06", "AC-07"],
       "acceptance_detail": "AC-06、AC-07；数据库和 TS 重启、取消竞争、检查点引用伪造、不兼容版本与 double resume",
-      "depends_on": [
-        "T09"
-      ],
+      "depends_on": ["T09"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -570,14 +508,9 @@
       "title": "Go 恢复接缝及跨进程故障验证",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-06",
-        "AC-07"
-      ],
+      "acceptance": ["AC-06", "AC-07"],
       "acceptance_detail": "AC-06、AC-07；真实进程故障，报告与当前源文件 SHA256 绑定",
-      "depends_on": [
-        "T10"
-      ],
+      "depends_on": ["T10"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -618,15 +551,9 @@
       "title": "定时任务、频道、handoff 与后台入口",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-03",
-        "AC-05",
-        "AC-08"
-      ],
+      "acceptance": ["AC-03", "AC-05", "AC-08"],
       "acceptance_detail": "AC-03、AC-05、AC-08；无浏览器聊天、群聊参与者、定时任务撤权、handoff、summary/voice/demonstration 链路",
-      "depends_on": [
-        "T11"
-      ],
+      "depends_on": ["T11"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -679,14 +606,9 @@
       "title": "复用个人记忆并补齐来源与删除传播",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-05",
-        "AC-09"
-      ],
+      "acceptance": ["AC-05", "AC-09"],
       "acceptance_detail": "AC-05、AC-09；更正/删除/撤权/重新 ingestion、同文本跨用户和已遗忘内容覆盖",
-      "depends_on": [
-        "T12"
-      ],
+      "depends_on": ["T12"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -735,14 +657,9 @@
       "title": "自有学习作业、候选审核与版本发布",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-05",
-        "AC-09"
-      ],
+      "acceptance": ["AC-05", "AC-09"],
       "acceptance_detail": "AC-05、AC-09；作业重试不重复发布、设置 off、两用户作用域、已发布版本运行内稳定",
-      "depends_on": [
-        "T13"
-      ],
+      "depends_on": ["T13"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -793,15 +710,9 @@
       "title": "学习管理页面与自有能力显示",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-01",
-        "AC-05",
-        "AC-09"
-      ],
+      "acceptance": ["AC-01", "AC-05", "AC-09"],
       "acceptance_detail": "AC-01、AC-05、AC-09；真实浏览器关闭/审核/发布/失败重试/撤权与版本显示",
-      "depends_on": [
-        "T14"
-      ],
+      "depends_on": ["T14"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "frontend_implementer",
       "validator_role": "frontend_validator",
@@ -840,14 +751,9 @@
       "title": "旧历史与技能资料导入及单写切换",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-09",
-        "AC-10"
-      ],
+      "acceptance": ["AC-09", "AC-10"],
       "acceptance_detail": "AC-09、AC-10；顺序/parts/附件/grants/技能资料、重复导入、活动 Run、导入失败及后切换回退禁止",
-      "depends_on": [
-        "T15"
-      ],
+      "depends_on": ["T15"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -885,15 +791,9 @@
       "title": "自有模式默认配置、bootstrap 与部署",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-01",
-        "AC-02",
-        "AC-11"
-      ],
+      "acceptance": ["AC-01", "AC-02", "AC-11"],
       "acceptance_detail": "AC-01、AC-02、AC-11；干净部署、Helm render/network boundary、无外部 DNS 可正常运行",
-      "depends_on": [
-        "T16"
-      ],
+      "depends_on": ["T16"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -961,9 +861,7 @@
           "scripts/setup-learning.ts",
           "scripts/self-hosted-learning.ts"
         ],
-        "modify_predecessor_delivery": [
-          "server/src/runtime/bootstrap.ts"
-        ]
+        "modify_predecessor_delivery": ["server/src/runtime/bootstrap.ts"]
       }
     },
     {
@@ -971,15 +869,9 @@
       "title": "桌面原生安装与连接迁移",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-01",
-        "AC-07",
-        "AC-11"
-      ],
+      "acceptance": ["AC-01", "AC-07", "AC-11"],
       "acceptance_detail": "AC-01、AC-07、AC-11；旧保存设置、新安装、重新启动、组织模式和模型刷新独立",
-      "depends_on": [
-        "T17"
-      ],
+      "depends_on": ["T17"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -1007,9 +899,7 @@
       "checkpoint": null,
       "review": "not_started",
       "file_actions": {
-        "create": [
-          "desktop/src-tauri/src/platform_runtime.rs"
-        ],
+        "create": ["desktop/src-tauri/src/platform_runtime.rs"],
         "modify_existing": [
           "desktop/src-tauri/src/lib.rs",
           "desktop/src-tauri/src/plan.rs",
@@ -1032,15 +922,9 @@
       "title": "桌面初始化界面与各客户端验收",
       "source_issues": [],
       "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-      "acceptance": [
-        "AC-01",
-        "AC-03",
-        "AC-11"
-      ],
+      "acceptance": ["AC-01", "AC-03", "AC-11"],
       "acceptance_detail": "AC-01、AC-03、AC-11；桌面前进/返回/取消/重连、mobile client 请求与历史",
-      "depends_on": [
-        "T18"
-      ],
+      "depends_on": ["T18"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "frontend_implementer",
       "validator_role": "frontend_validator",
@@ -1100,9 +984,7 @@
         "AC-12"
       ],
       "acceptance_detail": "AC-01–AC-12；构建、依赖风险、实际外连与故障报告齐全；独立 Review/OCR 由主控另行执行",
-      "depends_on": [
-        "T19"
-      ],
+      "depends_on": ["T19"],
       "dependency_evidence": "前置任务产生本任务 Interfaces 消费的合同或已审查服务；非 Issue contains 关系。",
       "owner_role": "backend_implementer",
       "validator_role": "backend_validator",
@@ -1160,36 +1042,10 @@
     }
   ],
   "acceptance_mapping": {
-    "AC-01": [
-      "T15",
-      "T17",
-      "T18",
-      "T19",
-      "T20"
-    ],
-    "AC-02": [
-      "T03",
-      "T04",
-      "T06",
-      "T08",
-      "T09",
-      "T17",
-      "T20"
-    ],
-    "AC-03": [
-      "T01",
-      "T03",
-      "T08",
-      "T09",
-      "T12",
-      "T19",
-      "T20"
-    ],
-    "AC-04": [
-      "T07",
-      "T09",
-      "T20"
-    ],
+    "AC-01": ["T15", "T17", "T18", "T19", "T20"],
+    "AC-02": ["T03", "T04", "T06", "T08", "T09", "T17", "T20"],
+    "AC-03": ["T01", "T03", "T08", "T09", "T12", "T19", "T20"],
+    "AC-04": ["T07", "T09", "T20"],
     "AC-05": [
       "T01",
       "T02",
@@ -1206,49 +1062,13 @@
       "T15",
       "T20"
     ],
-    "AC-06": [
-      "T05",
-      "T06",
-      "T10",
-      "T11",
-      "T20"
-    ],
-    "AC-07": [
-      "T04",
-      "T05",
-      "T07",
-      "T10",
-      "T11",
-      "T18",
-      "T20"
-    ],
-    "AC-08": [
-      "T12",
-      "T20"
-    ],
-    "AC-09": [
-      "T13",
-      "T14",
-      "T15",
-      "T16",
-      "T20"
-    ],
-    "AC-10": [
-      "T03",
-      "T16",
-      "T20"
-    ],
-    "AC-11": [
-      "T17",
-      "T18",
-      "T19",
-      "T20"
-    ],
-    "AC-12": [
-      "T01",
-      "T04",
-      "T20"
-    ]
+    "AC-06": ["T05", "T06", "T10", "T11", "T20"],
+    "AC-07": ["T04", "T05", "T07", "T10", "T11", "T18", "T20"],
+    "AC-08": ["T12", "T20"],
+    "AC-09": ["T13", "T14", "T15", "T16", "T20"],
+    "AC-10": ["T03", "T16", "T20"],
+    "AC-11": ["T17", "T18", "T19", "T20"],
+    "AC-12": ["T01", "T04", "T20"]
   },
   "topological_order": [
     "T01",

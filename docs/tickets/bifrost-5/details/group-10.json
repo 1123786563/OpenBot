@@ -1,188 +1,232 @@
 {
- "group": "10",
- "context": [
-  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC14/AC19）",
-  "docs/specs/2026-10-14-bifrost-integration-design.md（Q27 发放与购买统一归个人、Q23 存量部署积分不自动分摊）",
-  "docs/adr/0004-company-team-tenancy.md（公司账务保留，个人授权走个人账户）",
-  "CONTEXT.md（订单、订阅、Grant、套餐积分、签到奖励术语）"
- ],
- "anchors": {
-  "payments": "server/src/billing/payments/*（store.ts createPaymentStore、service.ts createPaymentService / PurchaseRefusal / CallbackOutcome / PlanCreditGrantor、types.ts PaymentOrder / PaymentOrderStatus / PaymentActivationState / PaymentOrderReadScope / PaymentEventKind / PaymentAnomalyCode、alipay.ts、wechat.ts、crypto.ts、channel-http.ts、routes.ts、maintenance.ts）",
-  "webhook": "server/src/billing/webhook-signature.ts、server/src/billing/routes.ts（createBillingWebhookRoutes、billingReadScopeOf、createBillingCreditRoutes、createBillingAdminRoutes）",
-  "lago-subscriptions": "server/src/billing/lago.ts（LagoClient、LagoSubscriptionBody、LagoUsageBody）、server/src/db/schema/billing.ts（billingCustomers、billingSubscriptions、billingWebhookEvents）",
-  "credits": "server/src/billing/credits-writer.ts（grantCredits 幂等）、server/src/billing/reconcile.ts（createReconciler、ExpectedPlanCredits）",
-  "payer": "组 02 的 PayerRef / 个人账户解析 / 管理员发放",
-  "ui": "app/src/routes/_authed/settings/invoices.tsx、usage.tsx、app/src/components/billing/*（plan-card、upgrade-dialog、invoice-status、credit-grant-list）、app/src/lib/billing/*",
-  "test-harness": "server/tests/support/database.ts、server/tests/billing-webhook.test.ts 与 billing-store.integration.test.ts 的既有模式"
- },
- "verification_common": [
-  "bun run --filter server typecheck",
-  "bun run --filter app typecheck",
-  "bunx biome lint --error-on-warnings <changed files>"
- ],
- "tickets": {
-  "10.1": {
-   "slug": "order-personal-ownership",
-   "contracts": {
-    "consumes": ["02.1 的 PayerRef / PayerAccount", "现有订单模型（PaymentOrder、PaymentOrderStatus、PaymentOrderReadScope）"],
-    "produces": [
-     "订单创建即绑定明确个人归属：ownerPayerRef 必填，缺失则拒绝下单",
-     "订单读取作用域只允许本人（或管理员按既有审计路径），不接受调用方指定归属",
-     "存量订单归属按 02.2 的显式映射处理，不猜测"
-    ]
-   },
-   "steps": [
-    "在订单模型中加入归属字段与约束，下单路径从认证身份解析个人 PayerRef",
-    "移除任何由请求参数指定归属的入口，改为服务端解析",
-    "订单读取作用域按归属过滤，越权读取拒绝",
-    "存量订单按 02.2 的映射结果标注归属，无法确定的标为 unknown_owner 并隔离",
-    "先写失败测试：下单必带归属；伪造归属参数无效；越权读取被拒绝"
-   ],
-   "criteria": [
-    "每张新订单都绑定明确的个人归属，缺失归属时下单被拒绝",
-    "请求参数中的用户标识不能改变订单归属",
-    "非本人读取订单被拒绝，管理员访问走既有审计路径",
-    "存量订单归属来自显式映射，未确定者被隔离而非默认归属"
-   ],
-   "tests": ["下单归属必填与伪造拒绝测试", "读取作用域越权测试", "存量归属标注幂等测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/order-ownership.integration.test.ts"],
-   "owned_scope": ["订单模型与下单路径的归属接线", "订单读取作用域", "对应测试"],
-   "resume_hint": "现有 PaymentOrderReadScope 已有作用域概念；接手先确认它是否按归属过滤，若按部署过滤则收敛到 PayerRef。"
+  "group": "10",
+  "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC14/AC19）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q27 发放与购买统一归个人、Q23 存量部署积分不自动分摊）",
+    "docs/adr/0004-company-team-tenancy.md（公司账务保留，个人授权走个人账户）",
+    "CONTEXT.md（订单、订阅、Grant、套餐积分、签到奖励术语）"
+  ],
+  "anchors": {
+    "payments": "server/src/billing/payments/*（store.ts createPaymentStore、service.ts createPaymentService / PurchaseRefusal / CallbackOutcome / PlanCreditGrantor、types.ts PaymentOrder / PaymentOrderStatus / PaymentActivationState / PaymentOrderReadScope / PaymentEventKind / PaymentAnomalyCode、alipay.ts、wechat.ts、crypto.ts、channel-http.ts、routes.ts、maintenance.ts）",
+    "webhook": "server/src/billing/webhook-signature.ts、server/src/billing/routes.ts（createBillingWebhookRoutes、billingReadScopeOf、createBillingCreditRoutes、createBillingAdminRoutes）",
+    "lago-subscriptions": "server/src/billing/lago.ts（LagoClient、LagoSubscriptionBody、LagoUsageBody）、server/src/db/schema/billing.ts（billingCustomers、billingSubscriptions、billingWebhookEvents）",
+    "credits": "server/src/billing/credits-writer.ts（grantCredits 幂等）、server/src/billing/reconcile.ts（createReconciler、ExpectedPlanCredits）",
+    "payer": "组 02 的 PayerRef / 个人账户解析 / 管理员发放",
+    "ui": "app/src/routes/_authed/settings/invoices.tsx、usage.tsx、app/src/components/billing/*（plan-card、upgrade-dialog、invoice-status、credit-grant-list）、app/src/lib/billing/*",
+    "test-harness": "server/tests/support/database.ts、server/tests/billing-webhook.test.ts 与 billing-store.integration.test.ts 的既有模式"
   },
-  "10.2": {
-   "slug": "payment-callback-ownership",
-   "contracts": {
-    "consumes": ["10.1 的订单归属", "现有回调处理（CallbackOutcome、webhook-signature.ts、billingWebhookEvents）"],
-    "produces": [
-     "回调到账归属规则：收款用户由订单记录决定，回调负载中的用户标识不参与判定",
-     "回调幂等：同一事件重复投递只入账一次，异常回调产生 anomaly 事件而不静默丢弃",
-     "签名校验失败一律拒绝，且不写入任何账务"
-    ]
-   },
-   "steps": [
-    "在回调处理中先按订单查归属，再以该归属入账；忽略负载中的用户标识",
-    "复用既有幂等与事件记录机制，确保重复回调不重复发放",
-    "确认签名校验前不产生任何账务副作用",
-    "先写失败测试：伪造负载用户标识不改变收款人；重复回调只入账一次；签名失败拒绝"
-   ],
-   "criteria": [
-    "回调到账进入订单记录的个人账户，负载中的用户标识无效",
-    "同一回调重复投递只入账一次",
-    "签名校验失败时不产生任何账务写入，并记录异常事件",
-    "回调无法把款项重定向到他人账户"
-   ],
-   "tests": ["伪造负载归属测试", "重复回调幂等集成测试", "签名失败拒绝与异常事件断言"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/payment-callback-ownership.integration.test.ts"],
-   "owned_scope": ["回调处理路径与入账接线", "对应测试"],
-   "resume_hint": "回调是外部输入，任何“信任负载字段”的分支都要删除；接手先跑伪造负载用例。"
-  },
-  "10.3": {
-   "slug": "subscription-ownership-and-renewal",
-   "contracts": {
-    "consumes": ["10.2 的回调归属", "现有订阅模型（billingSubscriptions、LagoSubscriptionBody、reconcile.ts）"],
-    "produces": [
-     "订阅记录归属个人：订阅、续期与到期都作用于同一个人账户",
-     "续期到账幂等：同一周期重复通知只发放一次",
-     "订阅归属不可被回调或客户端改写"
-    ]
-   },
-   "steps": [
-    "为订阅记录加入归属字段并在创建时从订单/认证身份解析",
-    "续期通知按订阅归属入账，复用 grantCredits 幂等键（含周期标识）",
-    "确认对账逻辑（reconcile）按归属账户比对，不按部署聚合",
-    "先写失败测试：同周期重复续期只发放一次；归属不可被回调改写"
-   ],
-   "criteria": [
-    "订阅及其续期积分进入同一个人账户",
-    "同一续期周期重复通知只发放一次",
-    "回调或客户端无法改写订阅归属",
-    "对账按归属账户进行，不跨账户聚合"
-   ],
-   "tests": ["续期幂等集成测试", "归属改写拒绝测试", "对账按账户比对测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/subscription-ownership.integration.test.ts"],
-   "owned_scope": ["订阅模型归属字段与续期入账", "对账接线", "对应测试"],
-   "resume_hint": "幂等键必须包含周期标识，否则跨周期续期会被误判为重复；接手先检查键构成。"
-  },
-  "10.4": {
-   "slug": "checkin-rewards-personal",
-   "contracts": {
-    "consumes": ["02.8 的管理员发放与 grantCredits 幂等", "现有奖励/签到发放入口（以仓库当前实现为准，执行时先定位）"],
-    "produces": [
-     "签到与活动奖励进入明确个人账户，发放幂等（同一奖励周期只发一次）",
-     "奖励归属不可被客户端指定或重定向",
-     "奖励记录可在个人页面追溯（由 10.6 展示）"
-    ]
-   },
-   "steps": [
-    "定位现有奖励/签到发放入口，把目标账户改为从认证身份解析的个人 PayerRef",
-    "为奖励定义幂等键（用户 + 奖励类型 + 周期）",
-    "确认发放失败不产生半状态，且有审计记录",
-    "先写失败测试：重复领取只发一次；伪造他人用户标识无效"
-   ],
-   "criteria": [
-    "签到奖励进入领取者本人的个人账户",
-    "同一奖励周期重复领取只发放一次",
-    "客户端无法指定或重定向奖励归属",
-    "每次发放都有可查询记录"
-   ],
-   "tests": ["重复领取幂等测试", "伪造归属拒绝测试", "发放记录断言"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/checkin-rewards.integration.test.ts"],
-   "owned_scope": ["奖励发放路径的归属与幂等接线", "对应测试"],
-   "resume_hint": "若仓库暂无签到发放实现，本 Ticket 只交付“奖励类发放统一归个人 + 幂等”的通用路径，并用一个最小奖励类型验证，不要新建活动体系。"
-  },
-  "10.5": {
-   "slug": "plan-credits-personal",
-   "contracts": {
-    "consumes": ["10.3 的订阅归属", "现有套餐积分发放（PlanCreditGrantor、ExpectedPlanCredits）"],
-    "produces": [
-     "套餐积分进入购买者个人账户，套餐额度规则按账户独立生效",
-     "套餐变更/升降级时按归属账户结算差额，不跨账户混算",
-     "组内账务缝合点：订单 → 回调 → 订阅/套餐 → 个人账户余额"
-    ]
-   },
-   "steps": [
-    "把套餐积分发放接到订阅归属账户，复用 grantCredits 幂等",
-    "确认套餐额度与对账按账户维度计算",
-    "升降级差额只作用于同一账户，不产生跨账户转移",
-    "先写失败测试：购买套餐后本人余额增加、他人不变；升降级差额正确"
-   ],
-   "criteria": [
-    "套餐积分进入购买者个人账户",
-    "他人余额不因该购买变化",
-    "升降级差额在同一账户内结算，不跨账户混算",
-    "重复发放被幂等抑制"
-   ],
-   "tests": ["购买到账与隔离集成测试", "升降级差额测试", "重复发放幂等测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/plan-credits-personal.integration.test.ts"],
-   "owned_scope": ["套餐积分发放接线", "对账账户维度", "对应测试"],
-   "resume_hint": "ExpectedPlanCredits 现有规则可复用；本 Ticket 的重点是账户维度，不要改套餐额度数值。"
-  },
-  "10.6": {
-   "slug": "personal-orders-and-grants-ui",
-   "contracts": {
-    "consumes": ["10.1–10.5 的归属与记录", "02.7 的余额页面", "现有 billing UI（invoices.tsx、plan-card、credit-grant-list、invoice-status）"],
-    "produces": [
-     "个人页面：订单列表与状态、订阅与套餐、Grant 来源与有效期，可追溯到具体入账",
-     "严格本人可见：他人订单、订阅与 Grant 不可读取",
-     "组 10 缝合点：从购买到入账到追溯，端到端可演示"
-    ]
-   },
-   "steps": [
-    "复用现有发票与 Grant 列表组件，按归属账户展示订单、订阅与 Grant",
-    "展示 Grant 来源（购买/套餐/奖励/管理员发放）与有效期",
-    "确认接口与页面都不接受他人账户标识",
-    "先写失败的界面测试：本人数据可见、他人标识无效、来源与有效期正确展示"
-   ],
-   "criteria": [
-    "用户可追溯每笔积分的来源订单或发放动作",
-    "他人订单、订阅与 Grant 不可读取",
-    "Grant 展示包含来源与有效期，与后端一致",
-    "订单状态变化在页面正确反映"
-   ],
-   "tests": ["界面追溯渲染测试", "越权不可见断言", "来源与有效期一致性断言"],
-   "verification": ["bun test app/tests/personal-orders-ui.test.tsx", "bun run --filter app build"],
-   "owned_scope": ["个人订单与 Grant 页面及查询封装", "对应 app/tests 测试"],
-   "resume_hint": "接口若仍按部署级作用域返回数据，先接 10.1 的归属过滤再改页面，避免把他人记录渲染出来。"
+  "verification_common": [
+    "bun run --filter server typecheck",
+    "bun run --filter app typecheck",
+    "bunx biome lint --error-on-warnings <changed files>"
+  ],
+  "tickets": {
+    "10.1": {
+      "slug": "order-personal-ownership",
+      "contracts": {
+        "consumes": [
+          "02.1 的 PayerRef / PayerAccount",
+          "现有订单模型（PaymentOrder、PaymentOrderStatus、PaymentOrderReadScope）"
+        ],
+        "produces": [
+          "订单创建即绑定明确个人归属：ownerPayerRef 必填，缺失则拒绝下单",
+          "订单读取作用域只允许本人（或管理员按既有审计路径），不接受调用方指定归属",
+          "存量订单归属按 02.2 的显式映射处理，不猜测"
+        ]
+      },
+      "steps": [
+        "在订单模型中加入归属字段与约束，下单路径从认证身份解析个人 PayerRef",
+        "移除任何由请求参数指定归属的入口，改为服务端解析",
+        "订单读取作用域按归属过滤，越权读取拒绝",
+        "存量订单按 02.2 的映射结果标注归属，无法确定的标为 unknown_owner 并隔离",
+        "先写失败测试：下单必带归属；伪造归属参数无效；越权读取被拒绝"
+      ],
+      "criteria": [
+        "每张新订单都绑定明确的个人归属，缺失归属时下单被拒绝",
+        "请求参数中的用户标识不能改变订单归属",
+        "非本人读取订单被拒绝，管理员访问走既有审计路径",
+        "存量订单归属来自显式映射，未确定者被隔离而非默认归属"
+      ],
+      "tests": [
+        "下单归属必填与伪造拒绝测试",
+        "读取作用域越权测试",
+        "存量归属标注幂等测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/order-ownership.integration.test.ts"
+      ],
+      "owned_scope": [
+        "订单模型与下单路径的归属接线",
+        "订单读取作用域",
+        "对应测试"
+      ],
+      "resume_hint": "现有 PaymentOrderReadScope 已有作用域概念；接手先确认它是否按归属过滤，若按部署过滤则收敛到 PayerRef。"
+    },
+    "10.2": {
+      "slug": "payment-callback-ownership",
+      "contracts": {
+        "consumes": [
+          "10.1 的订单归属",
+          "现有回调处理（CallbackOutcome、webhook-signature.ts、billingWebhookEvents）"
+        ],
+        "produces": [
+          "回调到账归属规则：收款用户由订单记录决定，回调负载中的用户标识不参与判定",
+          "回调幂等：同一事件重复投递只入账一次，异常回调产生 anomaly 事件而不静默丢弃",
+          "签名校验失败一律拒绝，且不写入任何账务"
+        ]
+      },
+      "steps": [
+        "在回调处理中先按订单查归属，再以该归属入账；忽略负载中的用户标识",
+        "复用既有幂等与事件记录机制，确保重复回调不重复发放",
+        "确认签名校验前不产生任何账务副作用",
+        "先写失败测试：伪造负载用户标识不改变收款人；重复回调只入账一次；签名失败拒绝"
+      ],
+      "criteria": [
+        "回调到账进入订单记录的个人账户，负载中的用户标识无效",
+        "同一回调重复投递只入账一次",
+        "签名校验失败时不产生任何账务写入，并记录异常事件",
+        "回调无法把款项重定向到他人账户"
+      ],
+      "tests": [
+        "伪造负载归属测试",
+        "重复回调幂等集成测试",
+        "签名失败拒绝与异常事件断言"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/payment-callback-ownership.integration.test.ts"
+      ],
+      "owned_scope": ["回调处理路径与入账接线", "对应测试"],
+      "resume_hint": "回调是外部输入，任何“信任负载字段”的分支都要删除；接手先跑伪造负载用例。"
+    },
+    "10.3": {
+      "slug": "subscription-ownership-and-renewal",
+      "contracts": {
+        "consumes": [
+          "10.2 的回调归属",
+          "现有订阅模型（billingSubscriptions、LagoSubscriptionBody、reconcile.ts）"
+        ],
+        "produces": [
+          "订阅记录归属个人：订阅、续期与到期都作用于同一个人账户",
+          "续期到账幂等：同一周期重复通知只发放一次",
+          "订阅归属不可被回调或客户端改写"
+        ]
+      },
+      "steps": [
+        "为订阅记录加入归属字段并在创建时从订单/认证身份解析",
+        "续期通知按订阅归属入账，复用 grantCredits 幂等键（含周期标识）",
+        "确认对账逻辑（reconcile）按归属账户比对，不按部署聚合",
+        "先写失败测试：同周期重复续期只发放一次；归属不可被回调改写"
+      ],
+      "criteria": [
+        "订阅及其续期积分进入同一个人账户",
+        "同一续期周期重复通知只发放一次",
+        "回调或客户端无法改写订阅归属",
+        "对账按归属账户进行，不跨账户聚合"
+      ],
+      "tests": ["续期幂等集成测试", "归属改写拒绝测试", "对账按账户比对测试"],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/subscription-ownership.integration.test.ts"
+      ],
+      "owned_scope": ["订阅模型归属字段与续期入账", "对账接线", "对应测试"],
+      "resume_hint": "幂等键必须包含周期标识，否则跨周期续期会被误判为重复；接手先检查键构成。"
+    },
+    "10.4": {
+      "slug": "checkin-rewards-personal",
+      "contracts": {
+        "consumes": [
+          "02.8 的管理员发放与 grantCredits 幂等",
+          "现有奖励/签到发放入口（以仓库当前实现为准，执行时先定位）"
+        ],
+        "produces": [
+          "签到与活动奖励进入明确个人账户，发放幂等（同一奖励周期只发一次）",
+          "奖励归属不可被客户端指定或重定向",
+          "奖励记录可在个人页面追溯（由 10.6 展示）"
+        ]
+      },
+      "steps": [
+        "定位现有奖励/签到发放入口，把目标账户改为从认证身份解析的个人 PayerRef",
+        "为奖励定义幂等键（用户 + 奖励类型 + 周期）",
+        "确认发放失败不产生半状态，且有审计记录",
+        "先写失败测试：重复领取只发一次；伪造他人用户标识无效"
+      ],
+      "criteria": [
+        "签到奖励进入领取者本人的个人账户",
+        "同一奖励周期重复领取只发放一次",
+        "客户端无法指定或重定向奖励归属",
+        "每次发放都有可查询记录"
+      ],
+      "tests": ["重复领取幂等测试", "伪造归属拒绝测试", "发放记录断言"],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/checkin-rewards.integration.test.ts"
+      ],
+      "owned_scope": ["奖励发放路径的归属与幂等接线", "对应测试"],
+      "resume_hint": "若仓库暂无签到发放实现，本 Ticket 只交付“奖励类发放统一归个人 + 幂等”的通用路径，并用一个最小奖励类型验证，不要新建活动体系。"
+    },
+    "10.5": {
+      "slug": "plan-credits-personal",
+      "contracts": {
+        "consumes": [
+          "10.3 的订阅归属",
+          "现有套餐积分发放（PlanCreditGrantor、ExpectedPlanCredits）"
+        ],
+        "produces": [
+          "套餐积分进入购买者个人账户，套餐额度规则按账户独立生效",
+          "套餐变更/升降级时按归属账户结算差额，不跨账户混算",
+          "组内账务缝合点：订单 → 回调 → 订阅/套餐 → 个人账户余额"
+        ]
+      },
+      "steps": [
+        "把套餐积分发放接到订阅归属账户，复用 grantCredits 幂等",
+        "确认套餐额度与对账按账户维度计算",
+        "升降级差额只作用于同一账户，不产生跨账户转移",
+        "先写失败测试：购买套餐后本人余额增加、他人不变；升降级差额正确"
+      ],
+      "criteria": [
+        "套餐积分进入购买者个人账户",
+        "他人余额不因该购买变化",
+        "升降级差额在同一账户内结算，不跨账户混算",
+        "重复发放被幂等抑制"
+      ],
+      "tests": ["购买到账与隔离集成测试", "升降级差额测试", "重复发放幂等测试"],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/plan-credits-personal.integration.test.ts"
+      ],
+      "owned_scope": ["套餐积分发放接线", "对账账户维度", "对应测试"],
+      "resume_hint": "ExpectedPlanCredits 现有规则可复用；本 Ticket 的重点是账户维度，不要改套餐额度数值。"
+    },
+    "10.6": {
+      "slug": "personal-orders-and-grants-ui",
+      "contracts": {
+        "consumes": [
+          "10.1–10.5 的归属与记录",
+          "02.7 的余额页面",
+          "现有 billing UI（invoices.tsx、plan-card、credit-grant-list、invoice-status）"
+        ],
+        "produces": [
+          "个人页面：订单列表与状态、订阅与套餐、Grant 来源与有效期，可追溯到具体入账",
+          "严格本人可见：他人订单、订阅与 Grant 不可读取",
+          "组 10 缝合点：从购买到入账到追溯，端到端可演示"
+        ]
+      },
+      "steps": [
+        "复用现有发票与 Grant 列表组件，按归属账户展示订单、订阅与 Grant",
+        "展示 Grant 来源（购买/套餐/奖励/管理员发放）与有效期",
+        "确认接口与页面都不接受他人账户标识",
+        "先写失败的界面测试：本人数据可见、他人标识无效、来源与有效期正确展示"
+      ],
+      "criteria": [
+        "用户可追溯每笔积分的来源订单或发放动作",
+        "他人订单、订阅与 Grant 不可读取",
+        "Grant 展示包含来源与有效期，与后端一致",
+        "订单状态变化在页面正确反映"
+      ],
+      "tests": ["界面追溯渲染测试", "越权不可见断言", "来源与有效期一致性断言"],
+      "verification": [
+        "bun test app/tests/personal-orders-ui.test.tsx",
+        "bun run --filter app build"
+      ],
+      "owned_scope": ["个人订单与 Grant 页面及查询封装", "对应 app/tests 测试"],
+      "resume_hint": "接口若仍按部署级作用域返回数据，先接 10.1 的归属过滤再改页面，避免把他人记录渲染出来。"
+    }
   }
- }
 }

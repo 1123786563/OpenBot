@@ -83,8 +83,7 @@ function provablyNeverReached(error: unknown): boolean {
       typeof node.message === "string" ? node.message : "",
     ])
     .join(" | ");
-  if (INTERRUPTED_MID_FLIGHT.some((shape) => shape.test(signals)))
-    return false;
+  if (INTERRUPTED_MID_FLIGHT.some((shape) => shape.test(signals))) return false;
   return NEVER_REACHED.some((shape) => shape.test(signals));
 }
 

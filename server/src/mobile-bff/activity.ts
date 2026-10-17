@@ -33,12 +33,8 @@ export function createMobileBffActivity(deps: {
   return {
     async read(actor) {
       const [inbox, routines] = await Promise.all([
-        deps.approvals
-          ? deps.approvals.inbox(actor.id)
-          : Promise.resolve(null),
-        deps.routines
-          ? deps.routines.listFor(actor.id)
-          : Promise.resolve([]),
+        deps.approvals ? deps.approvals.inbox(actor.id) : Promise.resolve(null),
+        deps.routines ? deps.routines.listFor(actor.id) : Promise.resolve([]),
       ]);
       // `inbox` is the approvals surface's whole answer (requests, rules,
       // questions); the Activity list wants only the waiting requests.

@@ -1212,7 +1212,10 @@ export function createPluginRoutes(
       } catch (error) {
         // The same failure the directory route answers, in the same words, because it is the same
         // call.
-        const refusal = brokerRefusal(error, OPENCONNECTOR_DIRECTORY_UNAVAILABLE);
+        const refusal = brokerRefusal(
+          error,
+          OPENCONNECTOR_DIRECTORY_UNAVAILABLE,
+        );
         return context.json({ error: refusal.error }, refusal.status);
       }
     }
@@ -2709,7 +2712,10 @@ export function createPluginRoutes(
      * cards group by. Absent on a re-save leaves what was there, the same rule `summary` follows.
      */
     if (body.icon !== undefined && typeof body.icon !== "string") {
-      return context.json({ error: "An icon is text when it is present." }, 400);
+      return context.json(
+        { error: "An icon is text when it is present." },
+        400,
+      );
     }
     if (body.category !== undefined && typeof body.category !== "string") {
       return context.json(

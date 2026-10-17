@@ -33,7 +33,9 @@ export type OpenConnectorActions = {
 let installed: OpenConnectorActions | null = null;
 
 /** The seam `index.ts` hands this module its client through, once, at startup. `null` uninstalls. */
-export function useOpenConnectorClient(client: OpenConnectorActions | null): void {
+export function useOpenConnectorClient(
+  client: OpenConnectorActions | null,
+): void {
   installed = client;
 }
 
@@ -50,7 +52,10 @@ export function toolkitOf(url: string): string | null {
 }
 
 function segment(value: string): string {
-  return value.replace(/[^A-Za-z0-9_-]/g, (ch) => `~${ch.charCodeAt(0).toString(16)}`);
+  return value.replace(
+    /[^A-Za-z0-9_-]/g,
+    (ch) => `~${ch.charCodeAt(0).toString(16)}`,
+  );
 }
 
 /** The alias one person's connection to one service lives under at the broker. */
@@ -68,10 +73,14 @@ export function isAlias(value: string | null | undefined): boolean {
   return typeof value === "string" && /^openbot-[ud]-/.test(value);
 }
 
-export async function listTools(connection: { url: string }): Promise<ListedTool[]> {
+export async function listTools(connection: {
+  url: string;
+}): Promise<ListedTool[]> {
   const service = toolkitOf(connection.url);
   if (!service) {
-    throw new Error(`This row's url is not an OpenConnector service address, so there is nothing to list.`);
+    throw new Error(
+      `This row's url is not an OpenConnector service address, so there is nothing to list.`,
+    );
   }
   if (!installed) {
     throw new Error(
@@ -90,7 +99,9 @@ export async function listTools(connection: { url: string }): Promise<ListedTool
      * field `unknown` because the vendor's answer is the vendor's.
      */
     inputSchema:
-      action.inputSchema && typeof action.inputSchema === "object" && !Array.isArray(action.inputSchema)
+      action.inputSchema &&
+      typeof action.inputSchema === "object" &&
+      !Array.isArray(action.inputSchema)
         ? (action.inputSchema as Record<string, unknown>)
         : {},
   }));
@@ -111,7 +122,9 @@ export async function callTool(
 ): Promise<McpCallResult> {
   const service = toolkitOf(connection.url);
   if (!service) {
-    return failure(`This row's url is not an OpenConnector service address, so ${toolName} was not called.`);
+    return failure(
+      `This row's url is not an OpenConnector service address, so ${toolName} was not called.`,
+    );
   }
   if (!installed) {
     return failure(
@@ -121,7 +134,10 @@ export async function callTool(
   const handle = connection.accountHandle ?? null;
   const alias = isAlias(handle) ? handle : null;
   try {
-    const answer = await installed.execute({ service, actionId: toolName, alias }, args);
+    const answer = await installed.execute(
+      { service, actionId: toolName, alias },
+      args,
+    );
     return success(JSON.stringify(answer.data ?? null));
   } catch (error) {
     return failure(vendorSentence(error));

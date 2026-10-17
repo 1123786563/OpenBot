@@ -69,7 +69,7 @@ function requirePptxgen() {
   } catch {
     throw new Error(
       "pptxgenjs not found. It is baked into the sandbox image as a global npm package; " +
-        "do not try to npm-install it through the egress proxy."
+        "do not try to npm-install it through the egress proxy.",
     );
   }
   _pptxgen = require(resolved);
@@ -80,16 +80,30 @@ function requirePptxgen() {
 
 function normColor(raw, label) {
   const m = /^#?([0-9a-fA-F]{6})$/.exec(String(raw));
-  if (!m) throw new Error(`theme.${label}: expected a 6-digit hex color, got "${raw}"`);
+  if (!m)
+    throw new Error(
+      `theme.${label}: expected a 6-digit hex color, got "${raw}"`,
+    );
   return m[1].toUpperCase();
 }
 
 function rgbOf(hex) {
-  return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+  return [
+    parseInt(hex.slice(0, 2), 16),
+    parseInt(hex.slice(2, 4), 16),
+    parseInt(hex.slice(4, 6), 16),
+  ];
 }
 
 function hexOf(rgb) {
-  return rgb.map((c) => Math.round(Math.min(255, Math.max(0, c))).toString(16).padStart(2, "0")).join("").toUpperCase();
+  return rgb
+    .map((c) =>
+      Math.round(Math.min(255, Math.max(0, c)))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")
+    .toUpperCase();
 }
 
 // Blend a toward b by t (0..1).
@@ -167,7 +181,10 @@ function truncate(text, maxChars) {
 
 // Shrink font size (never below minSize) until the text fits the box at ~1.2
 // line spacing; if it still doesn't fit, truncate with an ellipsis.
-function fitBlock(text, { wIn, hIn, size, minSize, bold = false, maxLines = null }) {
+function fitBlock(
+  text,
+  { wIn, hIn, size, minSize, bold = false, maxLines = null },
+) {
   let s = size;
   const lineBudget = () => {
     const byHeight = Math.floor((hIn * 72) / (s * 1.2));
@@ -176,7 +193,11 @@ function fitBlock(text, { wIn, hIn, size, minSize, bold = false, maxLines = null
   let out = String(text).trim();
   while (s > minSize && estLines(out, wIn, s, bold) > lineBudget()) s -= 2;
   let guard = 40;
-  while (estLines(out, wIn, s, bold) > Math.max(lineBudget(), 1) && out.length > 8 && guard-- > 0) {
+  while (
+    estLines(out, wIn, s, bold) > Math.max(lineBudget(), 1) &&
+    out.length > 8 &&
+    guard-- > 0
+  ) {
     out = truncate(out, Math.floor(out.length * 0.85));
   }
   return { text: out, size: s };
@@ -189,9 +210,13 @@ function fitLine(text, opts) {
 // --- Theme ---------------------------------------------------------------------
 
 function makeTheme(opts) {
-  if (!opts || !opts.primary) throw new Error("makeTheme requires at least { primary }");
+  if (!opts || !opts.primary)
+    throw new Error("makeTheme requires at least { primary }");
   const primary = normColor(opts.primary, "primary");
-  const secondary = normColor(opts.secondary || mix(primary, WHITE, 0.75), "secondary");
+  const secondary = normColor(
+    opts.secondary || mix(primary, WHITE, 0.75),
+    "secondary",
+  );
   const accent = normColor(opts.accent || primary, "accent");
   const background = normColor(opts.background || WHITE, "background");
   const text = normColor(opts.text || mix(BLACK, WHITE, 0.06), "text");
@@ -199,18 +224,28 @@ function makeTheme(opts) {
   const headerFont = opts.headerFont || "Inter";
   const bodyFont = opts.bodyFont || "Inter";
   const monoFont = opts.monoFont || "Fira Code";
-  for (const [label, font] of [["headerFont", headerFont], ["bodyFont", bodyFont], ["monoFont", monoFont]]) {
+  for (const [label, font] of [
+    ["headerFont", headerFont],
+    ["bodyFont", bodyFont],
+    ["monoFont", monoFont],
+  ]) {
     if (!KNOWN_FONTS.has(font.toLowerCase())) {
       throw new Error(
         `theme.${label}: "${font}" is not installed in the sandbox and would silently ` +
-          `render as a fallback. Use one of: ${[...KNOWN_FONTS].join(", ")}`
+          `render as a fallback. Use one of: ${[...KNOWN_FONTS].join(", ")}`,
       );
     }
   }
   // Dark field for the bookend slides: the primary itself when it is dark,
   // otherwise a near-black of the palette.
-  const darkField = normColor(opts.darkField || (isDark(primary) ? primary : mix(primary, BLACK, 0.85)), "darkField");
-  const hairline = normColor(opts.hairline || mix(background, text, 0.13), "hairline");
+  const darkField = normColor(
+    opts.darkField || (isDark(primary) ? primary : mix(primary, BLACK, 0.85)),
+    "darkField",
+  );
+  const hairline = normColor(
+    opts.hairline || mix(background, text, 0.13),
+    "hairline",
+  );
   return {
     primary,
     secondary,
@@ -224,12 +259,26 @@ function makeTheme(opts) {
     darkField,
     hairline,
     // Derived, contrast-safe roles:
-    gridOnLight: normColor(opts.gridLight || mix(background, text, 0.08), "gridLight"),
-    gridOnDark: normColor(opts.gridDark || mix(darkField, WHITE, 0.1), "gridDark"),
+    gridOnLight: normColor(
+      opts.gridLight || mix(background, text, 0.08),
+      "gridLight",
+    ),
+    gridOnDark: normColor(
+      opts.gridDark || mix(darkField, WHITE, 0.1),
+      "gridDark",
+    ),
     onPrimary: pickOn(primary, [background]),
-    onPrimaryMuted: pickOn(primary, [secondary, mix(secondary, WHITE, 0.4), mix(background, primary, 0.25)]),
+    onPrimaryMuted: pickOn(primary, [
+      secondary,
+      mix(secondary, WHITE, 0.4),
+      mix(background, primary, 0.25),
+    ]),
     onDark: pickOn(darkField, [background]),
-    onDarkMuted: pickOn(darkField, [secondary, mix(secondary, WHITE, 0.4), mix(background, darkField, 0.3)]),
+    onDarkMuted: pickOn(darkField, [
+      secondary,
+      mix(secondary, WHITE, 0.4),
+      mix(background, darkField, 0.3),
+    ]),
     accentStrong: pickOn(background, [accent, primary, text]),
   };
 }
@@ -311,8 +360,20 @@ function plate(slide, theme, { x, y, w, h, text, fill, color, size = 10 }) {
   });
 }
 
-function addTitle(slide, theme, title, { color, y = MARGIN, w = CONTENT_W, x = MARGIN, align = "left" } = {}) {
-  const fitted = fitBlock(title, { wIn: w, hIn: 0.62, size: 27, minSize: 18, bold: true, maxLines: 2 });
+function addTitle(
+  slide,
+  theme,
+  title,
+  { color, y = MARGIN, w = CONTENT_W, x = MARGIN, align = "left" } = {},
+) {
+  const fitted = fitBlock(title, {
+    wIn: w,
+    hIn: 0.62,
+    size: 27,
+    minSize: 18,
+    bold: true,
+    maxLines: 2,
+  });
   slide.addText(fitted.text, {
     x,
     y,
@@ -331,7 +392,14 @@ function addTitle(slide, theme, title, { color, y = MARGIN, w = CONTENT_W, x = M
 
 // Display text for title/divider/closing slides: large, anchored low-left.
 function displayText(slide, theme, text, { x, y, w, h, size, minSize, color }) {
-  const fitted = fitBlock(text, { wIn: w, hIn: h, size, minSize, bold: true, maxLines: 2 });
+  const fitted = fitBlock(text, {
+    wIn: w,
+    hIn: h,
+    size,
+    minSize,
+    bold: true,
+    maxLines: 2,
+  });
   slide.addText(fitted.text, {
     x,
     y,
@@ -352,7 +420,11 @@ function addBodyBullets(slide, theme, items, { x, y, w, h, color, size = 14 }) {
   const kept = items.slice(0, 6).map((t) => truncate(t, 160));
   const runs = kept.map((text, i) => ({
     text,
-    options: { bullet: { indent: 12 }, breakLine: i < kept.length - 1, paraSpaceAfter: 8 },
+    options: {
+      bullet: { indent: 12 },
+      breakLine: i < kept.length - 1,
+      paraSpaceAfter: 8,
+    },
   }));
   slide.addText(runs, {
     x,
@@ -372,16 +444,23 @@ function addBodyBullets(slide, theme, items, { x, y, w, h, color, size = 14 }) {
 function placeVisual(slide, theme, visual, region) {
   if (!visual || visual.type === "none" || !visual.type) return;
   if (visual.type === "image" || visual.type === "chart") {
-    const img = { x: region.x, y: region.y, sizing: { type: "contain", w: region.w, h: region.h } };
+    const img = {
+      x: region.x,
+      y: region.y,
+      sizing: { type: "contain", w: region.w, h: region.h },
+    };
     if (visual.data) img.data = visual.data;
     else if (visual.path) img.path = visual.path;
-    else throw new Error(`visual type "${visual.type}" requires a path or data`);
+    else
+      throw new Error(`visual type "${visual.type}" requires a path or data`);
     img.w = region.w;
     img.h = region.h;
     slide.addImage(img);
     return;
   }
-  throw new Error(`unknown visual type "${visual.type}" (use "image", "chart", or "none")`);
+  throw new Error(
+    `unknown visual type "${visual.type}" (use "image", "chart", or "none")`,
+  );
 }
 
 // Normalize an image reference into pptxgenjs { path } or { data }. Accepts a
@@ -389,8 +468,11 @@ function placeVisual(slide, theme, visual, region) {
 // { path } / { data }. Returns null when nothing usable is given.
 function imgSrc(ref) {
   if (!ref) return null;
-  if (typeof ref === "object") return ref.data ? { data: ref.data } : ref.path ? { path: ref.path } : null;
-  return ref.startsWith("image/") || ref.startsWith("data:") ? { data: ref } : { path: ref };
+  if (typeof ref === "object")
+    return ref.data ? { data: ref.data } : ref.path ? { path: ref.path } : null;
+  return ref.startsWith("image/") || ref.startsWith("data:")
+    ? { data: ref }
+    : { path: ref };
 }
 
 function columnRegions(n, { top, height, gap = 0.3 }) {
@@ -511,7 +593,10 @@ function agendaSlide(pres, theme, { title = "Agenda", items = [] } = {}) {
   const kept = items.slice(0, 8).map((t) => truncate(t, 70));
   const twoCol = kept.length > 5;
   const perCol = twoCol ? Math.ceil(kept.length / 2) : kept.length;
-  const rowH = Math.min(0.72, (CONTENT_BOTTOM - BODY_TOP - 0.05) / Math.max(perCol, 1));
+  const rowH = Math.min(
+    0.72,
+    (CONTENT_BOTTOM - BODY_TOP - 0.05) / Math.max(perCol, 1),
+  );
   kept.forEach((item, i) => {
     const col = twoCol ? Math.floor(i / perCol) : 0;
     const row = twoCol ? i % perCol : i;
@@ -549,7 +634,11 @@ function agendaSlide(pres, theme, { title = "Agenda", items = [] } = {}) {
 // Text column + one visual slot (image or chart PNG). With no visual, the
 // columns separate with a single vertical hairline and whitespace.
 // visualSide: "right" (default) or "left".
-function twoColumn(pres, theme, { title, body = [], visual, visualSide = "right" } = {}) {
+function twoColumn(
+  pres,
+  theme,
+  { title, body = [], visual, visualSide = "right" } = {},
+) {
   const slide = pres.addSlide();
   slide.background = { color: theme.background };
   addTitle(slide, theme, title || "");
@@ -558,11 +647,27 @@ function twoColumn(pres, theme, { title, body = [], visual, visualSide = "right"
   const textX = visualSide === "left" ? MARGIN + visualW + 0.4 : MARGIN;
   const visualX = visualSide === "left" ? MARGIN : MARGIN + textW + 0.4;
   const h = CONTENT_BOTTOM - BODY_TOP;
-  addBodyBullets(slide, theme, body, { x: textX, y: BODY_TOP + 0.1, w: textW, h: h - 0.1 });
+  addBodyBullets(slide, theme, body, {
+    x: textX,
+    y: BODY_TOP + 0.1,
+    w: textW,
+    h: h - 0.1,
+  });
   if (!visual || visual.type === "none" || !visual.type) {
-    vr(slide, theme.hairline, visualSide === "left" ? textX - 0.2 : visualX - 0.2, BODY_TOP + 0.1, h - 0.3);
+    vr(
+      slide,
+      theme.hairline,
+      visualSide === "left" ? textX - 0.2 : visualX - 0.2,
+      BODY_TOP + 0.1,
+      h - 0.3,
+    );
   } else {
-    placeVisual(slide, theme, visual, { x: visualX, y: BODY_TOP, w: visualW, h });
+    placeVisual(slide, theme, visual, {
+      x: visualX,
+      y: BODY_TOP,
+      w: visualW,
+      h,
+    });
   }
   return slide;
 }
@@ -576,13 +681,22 @@ function iconRow(pres, theme, { title, items = [] } = {}) {
   addTitle(slide, theme, title || "");
   const kept = items.slice(0, 4);
   const top = BODY_TOP + 0.15;
-  const cols = columnRegions(kept.length || 1, { top, height: CONTENT_BOTTOM - top });
+  const cols = columnRegions(kept.length || 1, {
+    top,
+    height: CONTENT_BOTTOM - top,
+  });
   columnRules(slide, theme, cols, { y: top + 0.1, h: 3.2 });
   kept.forEach((item, i) => {
     const col = cols[i];
     if (item.iconPath) {
       const d = 0.6;
-      slide.addImage({ path: item.iconPath, x: col.x + col.w / 2 - d / 2, y: top, w: d, h: d });
+      slide.addImage({
+        path: item.iconPath,
+        x: col.x + col.w / 2 - d / 2,
+        y: top,
+        w: d,
+        h: d,
+      });
     } else {
       slide.addText(String(i + 1), {
         x: col.x,
@@ -598,7 +712,14 @@ function iconRow(pres, theme, { title, items = [] } = {}) {
         margin: 0,
       });
     }
-    const labelFit = fitBlock(item.label || "", { wIn: col.w - 0.2, hIn: 0.55, size: 14, minSize: 11, bold: true, maxLines: 2 });
+    const labelFit = fitBlock(item.label || "", {
+      wIn: col.w - 0.2,
+      hIn: 0.55,
+      size: 14,
+      minSize: 11,
+      bold: true,
+      maxLines: 2,
+    });
     slide.addText(labelFit.text, {
       x: col.x + 0.1,
       y: top + 0.85,
@@ -641,7 +762,9 @@ function statCallouts(pres, theme, { title, stats = [] } = {}) {
   addTitle(slide, theme, title || "");
   const kept = stats.slice(0, 4);
   if (kept.filter((s) => s.hero).length > 1) {
-    throw new Error("statCallouts allows at most one stat with hero: true (the slide's single emphasis element)");
+    throw new Error(
+      "statCallouts allows at most one stat with hero: true (the slide's single emphasis element)",
+    );
   }
   const cols = columnRegions(kept.length || 1, { top: 1.85, height: 2.7 });
   columnRules(slide, theme, cols, { y: 1.95, h: 2.55 });
@@ -658,7 +781,12 @@ function statCallouts(pres, theme, { title, stats = [] } = {}) {
         line: { type: "none" },
       });
     }
-    const valueFit = fitLine(stat.value || "", { wIn: col.w - 0.2, size: 66, minSize: 34, bold: true });
+    const valueFit = fitLine(stat.value || "", {
+      wIn: col.w - 0.2,
+      size: 66,
+      minSize: 34,
+      bold: true,
+    });
     slide.addText(valueFit.text, {
       x: col.x,
       y: 1.95,
@@ -712,7 +840,11 @@ function timeline(pres, theme, { title, steps = [] } = {}) {
   slide.background = { color: theme.background };
   addTitle(slide, theme, title || "");
   const kept = steps.slice(0, 5);
-  const cols = columnRegions(kept.length || 1, { top: 1.95, height: CONTENT_BOTTOM - 1.95, gap: 0.25 });
+  const cols = columnRegions(kept.length || 1, {
+    top: 1.95,
+    height: CONTENT_BOTTOM - 1.95,
+    gap: 0.25,
+  });
   const spineY = 2.05;
   const sq = 0.12;
   if (kept.length > 1) {
@@ -743,7 +875,14 @@ function timeline(pres, theme, { title, steps = [] } = {}) {
       valign: "top",
       margin: 0,
     });
-    const labelFit = fitBlock(step.label || "", { wIn: col.w - 0.1, hIn: 0.5, size: 14, minSize: 11, bold: true, maxLines: 2 });
+    const labelFit = fitBlock(step.label || "", {
+      wIn: col.w - 0.1,
+      hIn: 0.5,
+      size: 14,
+      minSize: 11,
+      bold: true,
+      maxLines: 2,
+    });
     slide.addText(labelFit.text, {
       x: col.x,
       y: spineY + 0.6,
@@ -781,14 +920,32 @@ function timeline(pres, theme, { title, steps = [] } = {}) {
 // or full-bleed (image fills the slide, text on a solid dark bottom panel).
 // image: { path } or { data }. bleed: "half" (default) or "full".
 // side (half-bleed only): "right" (default) or "left".
-function imageSlide(pres, theme, { title, body, image, bleed = "half", side = "right" } = {}) {
+function imageSlide(
+  pres,
+  theme,
+  { title, body, image, bleed = "half", side = "right" } = {},
+) {
   const slide = pres.addSlide();
-  if (bleed !== "half" && bleed !== "full") throw new Error(`imageSlide bleed must be "half" or "full" (got "${bleed}")`);
-  if (side !== "left" && side !== "right") throw new Error(`imageSlide side must be "left" or "right" (got "${side}")`);
+  if (bleed !== "half" && bleed !== "full")
+    throw new Error(
+      `imageSlide bleed must be "half" or "full" (got "${bleed}")`,
+    );
+  if (side !== "left" && side !== "right")
+    throw new Error(
+      `imageSlide side must be "left" or "right" (got "${side}")`,
+    );
   const imgRef = imgSrc(image);
-  if (!imgRef) throw new Error("imageSlide requires image { path } or { data }");
+  if (!imgRef)
+    throw new Error("imageSlide requires image { path } or { data }");
   if (bleed === "full") {
-    slide.addImage({ ...imgRef, x: 0, y: 0, w: PAGE.W, h: PAGE.H, sizing: { type: "cover", w: PAGE.W, h: PAGE.H } });
+    slide.addImage({
+      ...imgRef,
+      x: 0,
+      y: 0,
+      w: PAGE.W,
+      h: PAGE.H,
+      sizing: { type: "cover", w: PAGE.W, h: PAGE.H },
+    });
     slide.addShape("rect", {
       x: 0,
       y: 3.55,
@@ -797,7 +954,14 @@ function imageSlide(pres, theme, { title, body, image, bleed = "half", side = "r
       fill: { color: theme.darkField },
       line: { type: "none" },
     });
-    const fitted = fitBlock(title || "", { wIn: CONTENT_W, hIn: 0.6, size: 26, minSize: 18, bold: true, maxLines: 1 });
+    const fitted = fitBlock(title || "", {
+      wIn: CONTENT_W,
+      hIn: 0.6,
+      size: 26,
+      minSize: 18,
+      bold: true,
+      maxLines: 1,
+    });
     slide.addText(fitted.text, {
       x: MARGIN,
       y: 3.75,
@@ -812,18 +976,21 @@ function imageSlide(pres, theme, { title, body, image, bleed = "half", side = "r
       fit: "shrink",
     });
     if (body) {
-      slide.addText(truncate(Array.isArray(body) ? body.join(" ") : body, 160), {
-        x: MARGIN,
-        y: 4.45,
-        w: CONTENT_W,
-        h: 0.65,
-        fontSize: 13,
-        fontFace: theme.bodyFont,
-        color: theme.onDarkMuted,
-        valign: "top",
-        margin: 0,
-        fit: "shrink",
-      });
+      slide.addText(
+        truncate(Array.isArray(body) ? body.join(" ") : body, 160),
+        {
+          x: MARGIN,
+          y: 4.45,
+          w: CONTENT_W,
+          h: 0.65,
+          fontSize: 13,
+          fontFace: theme.bodyFont,
+          color: theme.onDarkMuted,
+          valign: "top",
+          margin: 0,
+          fit: "shrink",
+        },
+      );
     }
     return slide;
   }
@@ -832,11 +999,23 @@ function imageSlide(pres, theme, { title, body, image, bleed = "half", side = "r
   const textX = side === "left" ? imgW + 0.5 : MARGIN;
   const textW = PAGE.W - imgW - 1.0;
   slide.background = { color: theme.background };
-  slide.addImage({ ...imgRef, x: imgX, y: 0, w: imgW, h: PAGE.H, sizing: { type: "cover", w: imgW, h: PAGE.H } });
+  slide.addImage({
+    ...imgRef,
+    x: imgX,
+    y: 0,
+    w: imgW,
+    h: PAGE.H,
+    sizing: { type: "cover", w: imgW, h: PAGE.H },
+  });
   addTitle(slide, theme, title || "", { x: textX, w: textW, y: 0.7 });
   if (body) {
     const items = Array.isArray(body) ? body : [body];
-    addBodyBullets(slide, theme, items, { x: textX, y: 1.7, w: textW, h: CONTENT_BOTTOM - 1.7 });
+    addBodyBullets(slide, theme, items, {
+      x: textX,
+      y: 1.7,
+      w: textW,
+      h: CONTENT_BOTTOM - 1.7,
+    });
   }
   return slide;
 }
@@ -846,14 +1025,31 @@ function imageSlide(pres, theme, { title, body, image, bleed = "half", side = "r
 function chartSlide(pres, theme, { title, chart, takeaway } = {}) {
   const slide = pres.addSlide();
   slide.background = { color: theme.background };
-  if (!chart || (!chart.path && !chart.data)) throw new Error("chartSlide requires chart { path } or { data }");
+  if (!chart || (!chart.path && !chart.data))
+    throw new Error("chartSlide requires chart { path } or { data }");
   addTitle(slide, theme, title || "");
-  const chartRegion = { x: MARGIN, y: BODY_TOP, w: 6.1, h: CONTENT_BOTTOM - BODY_TOP };
-  placeVisual(slide, theme, { type: "chart", path: chart.path, data: chart.data }, chartRegion);
+  const chartRegion = {
+    x: MARGIN,
+    y: BODY_TOP,
+    w: 6.1,
+    h: CONTENT_BOTTOM - BODY_TOP,
+  };
+  placeVisual(
+    slide,
+    theme,
+    { type: "chart", path: chart.path, data: chart.data },
+    chartRegion,
+  );
   if (takeaway) {
     const tx = MARGIN + 6.1 + 0.4;
     const tw = CONTENT_W - 6.1 - 0.4;
-    vr(slide, theme.hairline, tx - 0.2, BODY_TOP + 0.15, CONTENT_BOTTOM - BODY_TOP - 0.45);
+    vr(
+      slide,
+      theme.hairline,
+      tx - 0.2,
+      BODY_TOP + 0.15,
+      CONTENT_BOTTOM - BODY_TOP - 0.45,
+    );
     slide.addText("KEY TAKEAWAY", {
       x: tx,
       y: BODY_TOP + 0.25,
@@ -895,9 +1091,18 @@ function quoteSlide(pres, theme, { quote, attribution } = {}) {
   const gapAttr = 0.16; // lower rule ↔ attribution
   const attrH = attribution ? 0.3 : 0;
 
-  const fitted = fitBlock(quote || "", { wIn: CONTENT_W, hIn: 2.4, size: 28, minSize: 18, bold: false });
+  const fitted = fitBlock(quote || "", {
+    wIn: CONTENT_W,
+    hIn: 2.4,
+    size: 28,
+    minSize: 18,
+    bold: false,
+  });
   const lines = estLines(fitted.text, CONTENT_W, fitted.size, false);
-  const quoteH = Math.min(Math.max((lines * fitted.size * 1.28) / 72, 0.5), 2.6);
+  const quoteH = Math.min(
+    Math.max((lines * fitted.size * 1.28) / 72, 0.5),
+    2.6,
+  );
 
   const areaTop = BODY_TOP;
   const areaH = CONTENT_BOTTOM - areaTop;
@@ -939,7 +1144,11 @@ function quoteSlide(pres, theme, { quote, attribution } = {}) {
 
 // Dark bookend: near-black field, white display text, faint dark grid, and an
 // inverted notched plate carrying the call-to-action / contact line.
-function closingSlide(pres, theme, { title = "Thank you.", subtitle, contact } = {}) {
+function closingSlide(
+  pres,
+  theme,
+  { title = "Thank you.", subtitle, contact } = {},
+) {
   const slide = pres.addSlide();
   slide.background = { color: theme.darkField };
   gridField(slide, theme.gridOnDark, { x0: 0, x1: PAGE.W });
@@ -992,9 +1201,19 @@ function comparisonSlide(pres, theme, { title, left, right } = {}) {
   const panelW = (CONTENT_W - 0.6) / 2;
   const rightX = MARGIN + panelW + 0.6;
   vr(slide, theme.hairline, MARGIN + panelW + 0.3, top, panelH);
-  for (const [panel, x] of [[left, MARGIN], [right, rightX]]) {
+  for (const [panel, x] of [
+    [left, MARGIN],
+    [right, rightX],
+  ]) {
     if (!panel) continue;
-    const headFit = fitBlock(panel.heading || "", { wIn: panelW, hIn: 0.4, size: 16, minSize: 13, bold: true, maxLines: 1 });
+    const headFit = fitBlock(panel.heading || "", {
+      wIn: panelW,
+      hIn: 0.4,
+      size: 16,
+      minSize: 13,
+      bold: true,
+      maxLines: 1,
+    });
     slide.addText(headFit.text, {
       x,
       y: top,
@@ -1008,14 +1227,23 @@ function comparisonSlide(pres, theme, { title, left, right } = {}) {
       margin: 0,
       fit: "shrink",
     });
-    addBodyBullets(slide, theme, panel.items || [], { x, y: top + 0.6, w: panelW, h: panelH - 0.6 });
+    addBodyBullets(slide, theme, panel.items || [], {
+      x,
+      y: top + 0.6,
+      w: panelW,
+      h: panelH - 0.6,
+    });
   }
   return slide;
 }
 
 // 2x2 matrix with hairline axes and mono axis labels, one label per cell. Use
 // for positioning / effort-impact style maps.
-function quadrant(pres, theme, { title, xAxis = {}, yAxis = {}, cells = [] } = {}) {
+function quadrant(
+  pres,
+  theme,
+  { title, xAxis = {}, yAxis = {}, cells = [] } = {},
+) {
   const slide = pres.addSlide();
   slide.background = { color: theme.background };
   addTitle(slide, theme, title || "");
@@ -1058,7 +1286,14 @@ function quadrant(pres, theme, { title, xAxis = {}, yAxis = {}, cells = [] } = {
     if (!cell || !cell.label) return;
     const [ccx, ccy] = centers[i];
     const cellW = 3.2;
-    const fit = fitBlock(cell.label, { wIn: cellW, hIn: 0.7, size: 14, minSize: 11, bold: true, maxLines: 2 });
+    const fit = fitBlock(cell.label, {
+      wIn: cellW,
+      hIn: 0.7,
+      size: 14,
+      minSize: 11,
+      bold: true,
+      maxLines: 2,
+    });
     slide.addText(fit.text, {
       x: ccx - cellW / 2,
       y: ccy - 0.35,
@@ -1085,7 +1320,11 @@ function processFlow(pres, theme, { title, steps = [] } = {}) {
   addTitle(slide, theme, title || "");
   const kept = steps.slice(0, 5);
   const gap = 0.4;
-  const cols = columnRegions(kept.length || 1, { top: BODY_TOP + 0.5, height: CONTENT_BOTTOM - BODY_TOP - 0.5, gap });
+  const cols = columnRegions(kept.length || 1, {
+    top: BODY_TOP + 0.5,
+    height: CONTENT_BOTTOM - BODY_TOP - 0.5,
+    gap,
+  });
   const midY = BODY_TOP + 0.75;
   for (let i = 0; i < cols.length - 1; i++) {
     const ax = cols[i].x + cols[i].w + 0.06;
@@ -1100,7 +1339,14 @@ function processFlow(pres, theme, { title, steps = [] } = {}) {
   }
   kept.forEach((step, i) => {
     const col = cols[i];
-    const labelFit = fitBlock(step.label || "", { wIn: col.w - 0.1, hIn: 0.55, size: 15, minSize: 12, bold: true, maxLines: 2 });
+    const labelFit = fitBlock(step.label || "", {
+      wIn: col.w - 0.1,
+      hIn: 0.55,
+      size: 15,
+      minSize: 12,
+      bold: true,
+      maxLines: 2,
+    });
     slide.addText(labelFit.text, {
       x: col.x,
       y: BODY_TOP + 0.45,
@@ -1140,7 +1386,14 @@ function bigStatement(pres, theme, { statement, support } = {}) {
   const slide = pres.addSlide();
   slide.background = { color: theme.background };
   const h = support ? 2.9 : 3.4;
-  const fit = fitBlock(statement || "", { wIn: CONTENT_W, hIn: h, size: 60, minSize: 30, bold: true, maxLines: 3 });
+  const fit = fitBlock(statement || "", {
+    wIn: CONTENT_W,
+    hIn: h,
+    size: 60,
+    minSize: 30,
+    bold: true,
+    maxLines: 3,
+  });
   slide.addText(fit.text, {
     x: MARGIN,
     y: 1.0,
@@ -1175,7 +1428,11 @@ function bigStatement(pres, theme, { statement, support } = {}) {
 // Real data table: bold header row, hairline row separators (no zebra fills),
 // mono for numeric columns. Caps ~8 rows x 5 cols with truncation. Use for
 // tabular data that must stay legible as a grid.
-function tableSlide(pres, theme, { title, headers = [], rows = [], numericCols = [] } = {}) {
+function tableSlide(
+  pres,
+  theme,
+  { title, headers = [], rows = [], numericCols = [] } = {},
+) {
   const slide = pres.addSlide();
   slide.background = { color: theme.background };
   addTitle(slide, theme, title || "");
@@ -1209,7 +1466,8 @@ function tableSlide(pres, theme, { title, headers = [], rows = [], numericCols =
   bodyRows.forEach((row, ri) => {
     const y = top + rowH * (ri + 1) + 0.04;
     cols.forEach((_, ci) => cellText(row[ci], ci, y, false));
-    if (ri < bodyRows.length - 1) hr(slide, theme.hairline, MARGIN, y + rowH - 0.04, CONTENT_W);
+    if (ri < bodyRows.length - 1)
+      hr(slide, theme.hairline, MARGIN, y + rowH - 0.04, CONTENT_W);
   });
   return slide;
 }
@@ -1227,14 +1485,20 @@ function kpiGrid(pres, theme, { title, kpis = [] } = {}) {
   const gridH = CONTENT_BOTTOM - top;
   const rowH = gridH / rows;
   const colW = CONTENT_W / perRow;
-  for (let c = 1; c < perRow; c++) vr(slide, theme.hairline, MARGIN + c * colW, top + 0.1, gridH - 0.2);
+  for (let c = 1; c < perRow; c++)
+    vr(slide, theme.hairline, MARGIN + c * colW, top + 0.1, gridH - 0.2);
   if (rows > 1) hr(slide, theme.hairline, MARGIN, top + rowH, CONTENT_W);
   kept.forEach((kpi, i) => {
     const r = Math.floor(i / perRow);
     const c = i % perRow;
     const x = MARGIN + c * colW;
     const y = top + r * rowH;
-    const valFit = fitLine(kpi.value || "", { wIn: colW - 0.3, size: 40, minSize: 22, bold: true });
+    const valFit = fitLine(kpi.value || "", {
+      wIn: colW - 0.3,
+      size: 40,
+      minSize: 22,
+      bold: true,
+    });
     slide.addText(valFit.text, {
       x: x + 0.15,
       y: y + rowH * 0.14,
@@ -1299,7 +1563,7 @@ function barCompare(pres, theme, { title, items = [] } = {}) {
       margin: 0,
       fit: "shrink",
     });
-    const w = Math.max((Number(item.value) || 0) / maxVal * barMaxW, 0.05);
+    const w = Math.max(((Number(item.value) || 0) / maxVal) * barMaxW, 0.05);
     slide.addShape("rect", {
       x: barX,
       y: barY,
@@ -1334,19 +1598,46 @@ function teamSlide(pres, theme, { title, members = [] } = {}) {
   addTitle(slide, theme, title || "");
   const kept = members.slice(0, 4);
   const top = BODY_TOP + 0.2;
-  const cols = columnRegions(kept.length || 1, { top, height: CONTENT_BOTTOM - top });
-  columnRules(slide, theme, cols, { y: top + 0.1, h: CONTENT_BOTTOM - top - 0.2 });
+  const cols = columnRegions(kept.length || 1, {
+    top,
+    height: CONTENT_BOTTOM - top,
+  });
+  columnRules(slide, theme, cols, {
+    y: top + 0.1,
+    h: CONTENT_BOTTOM - top - 0.2,
+  });
   const d = 1.3;
   kept.forEach((m, i) => {
     const col = cols[i];
     const ix = col.x + col.w / 2 - d / 2;
     const src = imgSrc(m.photo);
     if (src) {
-      slide.addImage({ ...src, x: ix, y: top, w: d, h: d, sizing: { type: "cover", w: d, h: d } });
+      slide.addImage({
+        ...src,
+        x: ix,
+        y: top,
+        w: d,
+        h: d,
+        sizing: { type: "cover", w: d, h: d },
+      });
     } else {
-      slide.addShape("rect", { x: ix, y: top, w: d, h: d, fill: { type: "none" }, line: { color: theme.hairline, width: 1 } });
+      slide.addShape("rect", {
+        x: ix,
+        y: top,
+        w: d,
+        h: d,
+        fill: { type: "none" },
+        line: { color: theme.hairline, width: 1 },
+      });
     }
-    const nameFit = fitBlock(m.name || "", { wIn: col.w - 0.2, hIn: 0.4, size: 15, minSize: 12, bold: true, maxLines: 1 });
+    const nameFit = fitBlock(m.name || "", {
+      wIn: col.w - 0.2,
+      hIn: 0.4,
+      size: 15,
+      minSize: 12,
+      bold: true,
+      maxLines: 1,
+    });
     slide.addText(nameFit.text, {
       x: col.x + 0.1,
       y: top + d + 0.2,
@@ -1401,7 +1692,15 @@ function logoWall(pres, theme, { title = "Trusted by", logos = [] } = {}) {
     const x = MARGIN + c * colW + (colW - cellW) / 2;
     const y = top + r * rowH + (rowH - cellH) / 2;
     const src = imgSrc(logo);
-    if (src) slide.addImage({ ...src, x, y, w: cellW, h: cellH, sizing: { type: "contain", w: cellW, h: cellH } });
+    if (src)
+      slide.addImage({
+        ...src,
+        x,
+        y,
+        w: cellW,
+        h: cellH,
+        sizing: { type: "contain", w: cellW, h: cellH },
+      });
   });
   return slide;
 }
@@ -1411,7 +1710,13 @@ function logoWall(pres, theme, { title = "Trusted by", logos = [] } = {}) {
 function testimonialSlide(pres, theme, { quote, name, company, photo } = {}) {
   const slide = pres.addSlide();
   slide.background = { color: theme.background };
-  const fit = fitBlock(quote || "", { wIn: CONTENT_W, hIn: 2.5, size: 26, minSize: 17, bold: false });
+  const fit = fitBlock(quote || "", {
+    wIn: CONTENT_W,
+    hIn: 2.5,
+    size: 26,
+    minSize: 17,
+    bold: false,
+  });
   slide.addText(fit.text, {
     x: MARGIN,
     y: 1.1,
@@ -1430,7 +1735,14 @@ function testimonialSlide(pres, theme, { quote, name, company, photo } = {}) {
   let textX = MARGIN;
   const psrc = imgSrc(photo);
   if (psrc) {
-    slide.addImage({ ...psrc, x: MARGIN, y: rowY, w: d, h: d, sizing: { type: "cover", w: d, h: d } });
+    slide.addImage({
+      ...psrc,
+      x: MARGIN,
+      y: rowY,
+      w: d,
+      h: d,
+      sizing: { type: "cover", w: d, h: d },
+    });
     textX = MARGIN + d + 0.25;
   }
   if (name) {
@@ -1474,7 +1786,13 @@ function contentSlide(pres, theme, { title, body = [] } = {}) {
   const w = 8.0;
   const top = BODY_TOP + 0.15;
   if (Array.isArray(body)) {
-    addBodyBullets(slide, theme, body, { x: MARGIN, y: top, w, h: CONTENT_BOTTOM - top, size: 15 });
+    addBodyBullets(slide, theme, body, {
+      x: MARGIN,
+      y: top,
+      w,
+      h: CONTENT_BOTTOM - top,
+      size: 15,
+    });
   } else {
     slide.addText(truncate(String(body), 700), {
       x: MARGIN,
@@ -1500,7 +1818,14 @@ function contentSlide(pres, theme, { title, body = [] } = {}) {
 function ctaSlide(pres, theme, { title, actions = [] } = {}) {
   const slide = pres.addSlide();
   slide.background = { color: theme.background };
-  const fit = fitBlock(title || "", { wIn: CONTENT_W, hIn: 1.4, size: 40, minSize: 26, bold: true, maxLines: 2 });
+  const fit = fitBlock(title || "", {
+    wIn: CONTENT_W,
+    hIn: 1.4,
+    size: 40,
+    minSize: 26,
+    bold: true,
+    maxLines: 2,
+  });
   slide.addText(fit.text, {
     x: MARGIN,
     y: 0.9,

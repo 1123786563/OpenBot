@@ -11,13 +11,15 @@ import {
  * The share contract: entropy, one-time plaintext, the uniform miss, the HMAC'd artifact
  * links, and the rate door. The store is a map; nothing here touches a database or a network.
  */
-function fakeStore(seed: {
-  hash: string;
-  channelId?: string;
-  scope?: "preview" | "preview_download";
-  expiresAt?: Date | null;
-  revokedAt?: Date | null;
-} | null = null) {
+function fakeStore(
+  seed: {
+    hash: string;
+    channelId?: string;
+    scope?: "preview" | "preview_download";
+    expiresAt?: Date | null;
+    revokedAt?: Date | null;
+  } | null = null,
+) {
   let saved: {
     tokenHash: string;
     channelId: string;
@@ -79,7 +81,11 @@ describe("workshop shares (B14)", () => {
     // And the actor resolves: token → scoped actor.
     await expect(
       SERVICE(store).resolveShareActor(handle.token),
-    ).resolves.toMatchObject({ channelId: "ch_1", botId: "bot_1", scope: "preview" });
+    ).resolves.toMatchObject({
+      channelId: "ch_1",
+      botId: "bot_1",
+      scope: "preview",
+    });
   });
 
   test("a wrong token, an expired link, and a revoked one answer the SAME null", async () => {
@@ -87,17 +93,25 @@ describe("workshop shares (B14)", () => {
     const hash = hashShareToken(token);
     // Wrong token: no row at all.
     const empty = fakeStore(null);
-    await expect(SERVICE(empty.store).resolveShareActor(token)).resolves.toBeNull();
+    await expect(
+      SERVICE(empty.store).resolveShareActor(token),
+    ).resolves.toBeNull();
     // Expired: row exists, expiry passed.
     const expired = fakeStore({
       hash,
       expiresAt: new Date("2026-01-01T00:00:00Z"),
     });
     await expect(
-      SERVICE(expired.store, new Date("2026-06-01T00:00:00Z")).resolveShareActor(token),
+      SERVICE(
+        expired.store,
+        new Date("2026-06-01T00:00:00Z"),
+      ).resolveShareActor(token),
     ).resolves.toBeNull();
     // Revoked: row exists, revokedAt set.
-    const revoked = fakeStore({ hash, revokedAt: new Date("2026-01-01T00:00:00Z") });
+    const revoked = fakeStore({
+      hash,
+      revokedAt: new Date("2026-01-01T00:00:00Z"),
+    });
     await expect(
       SERVICE(revoked.store).resolveShareActor(token),
     ).resolves.toBeNull();
@@ -136,12 +150,23 @@ describe("workshop shares (B14)", () => {
       service.verifyArtifactUrl("ch_1", "wa_1", "preview_download", signature),
     ).toBe(true);
     // A different artifact, a different scope, a different channel: all fail.
-    expect(service.verifyArtifactUrl("ch_1", "wa_2", "preview_download", signature)).toBe(false);
-    expect(service.verifyArtifactUrl("ch_1", "wa_1", "preview", signature)).toBe(false);
-    expect(service.verifyArtifactUrl("ch_2", "wa_1", "preview_download", signature)).toBe(false);
+    expect(
+      service.verifyArtifactUrl("ch_1", "wa_2", "preview_download", signature),
+    ).toBe(false);
+    expect(
+      service.verifyArtifactUrl("ch_1", "wa_1", "preview", signature),
+    ).toBe(false);
+    expect(
+      service.verifyArtifactUrl("ch_2", "wa_1", "preview_download", signature),
+    ).toBe(false);
     // A mangled signature fails without throwing.
     expect(
-      service.verifyArtifactUrl("ch_1", "wa_1", "preview_download", signature.slice(0, -2) + "x="),
+      service.verifyArtifactUrl(
+        "ch_1",
+        "wa_1",
+        "preview_download",
+        signature.slice(0, -2) + "x=",
+      ),
     ).toBe(false);
   });
 

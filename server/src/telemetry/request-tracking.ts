@@ -33,21 +33,19 @@ export function requestScopedLogger(root: Logger): Logger {
     : root.child({ request_id: requestId });
 }
 
-export function createRequestTracking(options: {
-  logger: Logger;
-}): {
+export function createRequestTracking(options: { logger: Logger }): {
   requestId: MiddlewareHandler<{ Variables: RequestTrackingVariables }>;
   accessLog: MiddlewareHandler<{ Variables: RequestTrackingVariables }>;
 } {
-  const requestId: MiddlewareHandler<{ Variables: RequestTrackingVariables }> =
-    async (context, next) => {
-      const inbound = context.req.header("x-request-id");
-      const id =
-        inbound && INBOUND_ID.test(inbound) ? inbound : randomUUID();
-      context.header("x-request-id", id);
-      context.set("requestId", id);
-      await requestStore.run({ requestId: id }, next);
-    };
+  const requestId: MiddlewareHandler<{
+    Variables: RequestTrackingVariables;
+  }> = async (context, next) => {
+    const inbound = context.req.header("x-request-id");
+    const id = inbound && INBOUND_ID.test(inbound) ? inbound : randomUUID();
+    context.header("x-request-id", id);
+    context.set("requestId", id);
+    await requestStore.run({ requestId: id }, next);
+  };
 
   const accessLog: MiddlewareHandler<{
     Variables: RequestTrackingVariables;

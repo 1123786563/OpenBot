@@ -46,7 +46,12 @@ export function compileInterval(input: {
   // something the composer cannot say, and guessing which side of 3.7 they meant is worse
   // than asking.
   const every = input.every;
-  if (!Number.isFinite(every) || !Number.isInteger(every) || every < 1 || every > 10_000) {
+  if (
+    !Number.isFinite(every) ||
+    !Number.isInteger(every) ||
+    every < 1 ||
+    every > 10_000
+  ) {
     throw new WorkshopScheduleRefusedError(UNREADABLE);
   }
   switch (input.unit) {
@@ -83,8 +88,7 @@ export function compileDaily(input: {
   const days = [...new Set(input.days ?? [])].sort(
     (a, b) => WEEKDAY_CRON.indexOf(a) - WEEKDAY_CRON.indexOf(b),
   );
-  const dayField =
-    days.length > 0 && days.length < 7 ? days.join(",") : "*";
+  const dayField = days.length > 0 && days.length < 7 ? days.join(",") : "*";
   return `${minutes} ${hours} * * ${dayField}`;
 }
 
@@ -124,7 +128,7 @@ export function nextRunAt(
 
   let fired: Date;
   try {
-      const expression = CronExpressionParser.parse(cron, {
+    const expression = CronExpressionParser.parse(cron, {
       tz: timezone,
       currentDate: new Date(fromMs),
     });
@@ -159,13 +163,20 @@ export type SchedulePreapproval = {
 export function parsePreapproval(raw: unknown): SchedulePreapproval {
   const source = (raw ?? {}) as Partial<SchedulePreapproval>;
   const paths = Array.isArray(source.paths)
-    ? source.paths.filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
+    ? source.paths.filter(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.length > 0,
+      )
     : [];
   const tools = Array.isArray(source.tools)
-    ? source.tools.filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
+    ? source.tools.filter(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.length > 0,
+      )
     : [];
   const maxTurnsPerRun =
-    typeof source.maxTurnsPerRun === "number" && Number.isFinite(source.maxTurnsPerRun)
+    typeof source.maxTurnsPerRun === "number" &&
+    Number.isFinite(source.maxTurnsPerRun)
       ? Math.max(1, Math.min(Math.floor(source.maxTurnsPerRun), 20))
       : 3;
   return { paths, tools, maxTurnsPerRun };
@@ -187,12 +198,17 @@ export type ScheduleDraft = {
 
 export function draftForCreate(input: {
   prompt: string;
-  mode: { kind: "interval"; every: number; unit: IntervalUnit } | { kind: "daily"; time: string; days?: WeekdayInput[] } | { kind: "advanced"; cron: string };
+  mode:
+    | { kind: "interval"; every: number; unit: IntervalUnit }
+    | { kind: "daily"; time: string; days?: WeekdayInput[] }
+    | { kind: "advanced"; cron: string };
   timezone: string;
   preapproval?: unknown;
 }): ScheduleDraft {
   if (!input.prompt.trim()) {
-    throw new WorkshopScheduleRefusedError("A schedule needs a prompt to fire.");
+    throw new WorkshopScheduleRefusedError(
+      "A schedule needs a prompt to fire.",
+    );
   }
   const rrule =
     input.mode.kind === "interval"

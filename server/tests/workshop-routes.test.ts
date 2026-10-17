@@ -173,7 +173,9 @@ const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
 };
 
 /** The route app wired with fakes; canUseBot decides per test. */
-function makeApp(canUseBot: (actor: unknown, botId: string) => Promise<boolean>) {
+function makeApp(
+  canUseBot: (actor: unknown, botId: string) => Promise<boolean>,
+) {
   const { orchestrator, enqueued, cancelled } = fakeOrchestrator();
   const app = createWorkshopRoutes({
     requireUser,
@@ -288,13 +290,23 @@ describe("workshop routes", () => {
 describe("workshop routes: the owner share endpoints", () => {
   /** A share service stub: mint answers a handle once, revoke flips the flag. */
   const fakeSharing = () => {
-    const mints: Array<{ channelId: string; scope: string; expiresInDays?: number; createdBy: string }> = [];
+    const mints: Array<{
+      channelId: string;
+      scope: string;
+      expiresInDays?: number;
+      createdBy: string;
+    }> = [];
     let revoked = 0;
     return {
       mints,
       revokes: () => revoked,
       service: {
-        createShare: async (input: { channelId: string; scope: string; expiresInDays?: number; createdBy: string }) => {
+        createShare: async (input: {
+          channelId: string;
+          scope: string;
+          expiresInDays?: number;
+          createdBy: string;
+        }) => {
           mints.push(input);
           return {
             token: "token-once",
@@ -330,7 +342,11 @@ describe("workshop routes: the owner share endpoints", () => {
       body: JSON.stringify({ scope: "preview_download", expiresInDays: 7 }),
     });
     expect(response.status).toBe(201);
-    const body = (await response.json()) as { token: string; shareUrl: string; scope: string };
+    const body = (await response.json()) as {
+      token: string;
+      shareUrl: string;
+      scope: string;
+    };
     expect(body.token).toBe("token-once");
     expect(body.shareUrl).toBe("/share/token-once");
     expect(body.scope).toBe("preview_download");
@@ -409,11 +425,19 @@ describe("workshop routes: a settled turn's history", () => {
     const app = createWorkshopRoutes({
       requireUser,
       canUseBot: (async () => true) as never,
-      deps: { store: fakeStore(), bus: fakeBus(), orchestrator, clientFor: () => fakeClient() },
+      deps: {
+        store: fakeStore(),
+        bus: fakeBus(),
+        orchestrator,
+        clientFor: () => fakeClient(),
+      },
     });
     const response = await app.request("/ch_1/turns/wt_1/events");
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { turnId: string; events: Array<{ seq: number; type: string }> };
+    const body = (await response.json()) as {
+      turnId: string;
+      events: Array<{ seq: number; type: string }>;
+    };
     expect(body.turnId).toBe("wt_1");
     expect(Array.isArray(body.events)).toBe(true);
     body.events.forEach((event) => {
@@ -427,7 +451,12 @@ describe("workshop routes: a settled turn's history", () => {
     const app = createWorkshopRoutes({
       requireUser,
       canUseBot: (async () => true) as never,
-      deps: { store: fakeStore(), bus: fakeBus(), orchestrator, clientFor: () => fakeClient() },
+      deps: {
+        store: fakeStore(),
+        bus: fakeBus(),
+        orchestrator,
+        clientFor: () => fakeClient(),
+      },
     });
     const response = await app.request("/ch_1/turns/wt_stranger/events");
     expect(response.status).toBe(404);

@@ -28,8 +28,6 @@ export type StoredOpenMuseMemory = {
   deletedAt: Date | null;
 };
 
-
-
 /** One list page, in the siblings' (createdAt desc, id desc) discipline. */
 export const OPENMUSE_MEMORY_PAGE = 50;
 

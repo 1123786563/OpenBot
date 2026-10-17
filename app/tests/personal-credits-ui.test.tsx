@@ -104,7 +104,9 @@ mock.module("@/components/ui/dialog", () => {
     DialogHeader: pass,
     DialogBody: pass,
     DialogFooter: pass,
-    DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
+    DialogTitle: ({ children }: { children?: ReactNode }) => (
+      <h2>{children}</h2>
+    ),
     DialogDescription: ({ children }: { children?: ReactNode }) => (
       <p>{children}</p>
     ),
@@ -213,9 +215,7 @@ const EMPTY_BALANCE: BalanceFixture = {
 /** Every URL the page asked for, for the no-account-identifier assertion. */
 let requestedUrls: string[] = [];
 
-type Stub =
-  | { status: number; body: unknown }
-  | undefined;
+type Stub = { status: number; body: unknown } | undefined;
 
 function installFetchStub(overrides: {
   summary?: Stub;
@@ -335,7 +335,9 @@ test("接口失败时显示错误提示，不渲染 0 余额", async () => {
   expect(view.queryByText("进行中占用")).toBeNull();
   // Every section that needed the failed read offers the way back (subscription, balance,
   // rewards each render their own LoadError); at least one retry button must exist.
-  expect(view.getAllByRole("button", { name: "重试" }).length).toBeGreaterThan(0);
+  expect(view.getAllByRole("button", { name: "重试" }).length).toBeGreaterThan(
+    0,
+  );
 });
 
 test("无发放记录时显示明确空态文案", async () => {
@@ -361,7 +363,8 @@ test("页面请求不携带任何账户标识参数", async () => {
   // Let the consumption window's request land too, then audit every URL the page asked for.
   await new Promise((resolve) => setTimeout(resolve, 50));
 
-  const identity = /userid|externalcustomerid|payerid|accountid|companyid|tenantid/i;
+  const identity =
+    /userid|externalcustomerid|payerid|accountid|companyid|tenantid/i;
   const offenders = requestedUrls.filter((url) => identity.test(url));
   expect(offenders, JSON.stringify(offenders)).toEqual([]);
   // And the page did ask for its own balance by path alone — no account naming anywhere.

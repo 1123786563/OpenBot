@@ -22,7 +22,10 @@ const JOURNAL = JSON.parse(
   readFileSync(join(import.meta.dir, "../drizzle/meta/_journal.json"), "utf8"),
 ) as { entries: Array<{ idx: number; tag: string }> };
 const SNAPSHOT = JSON.parse(
-  readFileSync(join(import.meta.dir, "../drizzle/meta/0071_snapshot.json"), "utf8"),
+  readFileSync(
+    join(import.meta.dir, "../drizzle/meta/0071_snapshot.json"),
+    "utf8",
+  ),
 );
 
 describe("probe g: 0071 SQL statements", () => {
@@ -47,7 +50,9 @@ describe("probe g: 0071 SQL statements", () => {
   });
 
   test("the journal carries 0071_billing_idempotency in order", () => {
-    const entry = JOURNAL.entries.find((e) => e.tag === "0071_billing_idempotency");
+    const entry = JOURNAL.entries.find(
+      (e) => e.tag === "0071_billing_idempotency",
+    );
     expect(entry?.idx).toBe(71);
   });
 });

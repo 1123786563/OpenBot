@@ -18,7 +18,8 @@ import { getLogger } from "../../../shared/logger";
 const log = getLogger("kb-mastra");
 
 const addr = process.env.DOCREADER_ADDR ?? "localhost:50051";
-const protoPath = new URL("../../proto/docreader.proto", import.meta.url).pathname;
+const protoPath = new URL("../../proto/docreader.proto", import.meta.url)
+  .pathname;
 
 /** loader 选项对齐 WeKnora docreader client 的加载参数。 */
 const LOADER_OPTIONS = {

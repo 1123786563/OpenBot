@@ -108,10 +108,11 @@ async function syncCatalog(
   manifests: { id: string; methods: string[] }[],
 ): Promise<CatalogEntry[]> {
   tick += 1_000;
-  const entries: CatalogEntry[] = manifests.flatMap((manifest) =>
-    normalizeGatewayModelCatalog({
-      data: [{ id: manifest.id, supported_methods: manifest.methods }],
-    }).entries,
+  const entries: CatalogEntry[] = manifests.flatMap(
+    (manifest) =>
+      normalizeGatewayModelCatalog({
+        data: [{ id: manifest.id, supported_methods: manifest.methods }],
+      }).entries,
   );
   await catalogStore.replaceCatalog({
     entries,
@@ -216,7 +217,10 @@ beforeAll(async () => {
   // snapshot then turned unknown. The filter must answer model_price_unknown for
   // it, which is the detail the preference write refuses with below.
   await priceStore.appendSnapshots([
-    appendInput(chatRef(UNPRICED_CHAT), mapPriceDims({ id: "prefco/pref-chat" })),
+    appendInput(
+      chatRef(UNPRICED_CHAT),
+      mapPriceDims({ id: "prefco/pref-chat" }),
+    ),
   ]);
 });
 
@@ -669,11 +673,7 @@ describe("形状非法的写入是调用方错误 (TypeError)", () => {
 
   test("未知 scope 无法构造", () => {
     // The scope vocabulary is closed at the type level; this pins it at runtime.
-    expect(MODEL_PREFERENCE_SCOPES).toEqual([
-      "global",
-      "bot",
-      "conversation",
-    ]);
+    expect(MODEL_PREFERENCE_SCOPES).toEqual(["global", "bot", "conversation"]);
     const scopes: readonly ModelPreferenceScope[] = MODEL_PREFERENCE_SCOPES;
     expect(scopes).not.toContain("workspace");
   });

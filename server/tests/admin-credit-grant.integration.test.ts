@@ -117,7 +117,8 @@ function appAs(
       audit: auditStore,
       externalCustomerKey: DEPLOYMENT_KEY,
       customerName: `OpenBot deployment ${DEPLOYMENT_KEY}`,
-      database: overrides && "database" in overrides ? overrides.database : database,
+      database:
+        overrides && "database" in overrides ? overrides.database : database,
       creditWriter:
         overrides && "creditWriter" in overrides
           ? overrides.creditWriter
@@ -174,9 +175,7 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM billing_customers WHERE external_id LIKE ${`%${run}%`}`,
   );
-  await database.execute(
-    sql`DELETE FROM users WHERE id LIKE ${`%${run}%`}`,
-  );
+  await database.execute(sql`DELETE FROM users WHERE id LIKE ${`%${run}%`}`);
   await database.$client.close();
 });
 
@@ -193,7 +192,12 @@ describe("an admin grant to a named personal account", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       grant: { id: string; total: number; externalCustomerId: string };
-      account: { id: string; kind: string; payerId: string; externalCustomerId: string };
+      account: {
+        id: string;
+        kind: string;
+        payerId: string;
+        externalCustomerId: string;
+      };
       inserted: boolean;
     };
     expect(body.inserted).toBe(true);
@@ -345,7 +349,9 @@ describe("input shape", () => {
     const ghost = `user-ghost-${run}`;
     const response = await grant(app, { userId: ghost, totalCents: 100 });
     expect(response.status).toBe(404);
-    expect(await grantRowsOf(payerKey({ kind: "personal", id: ghost }))).toHaveLength(0);
+    expect(
+      await grantRowsOf(payerKey({ kind: "personal", id: ghost })),
+    ).toHaveLength(0);
   });
 
   test("without a credit writer wired, the route answers 503 and grants nothing", async () => {
@@ -387,13 +393,20 @@ describe("audit", () => {
     );
     expect(explicitRows).toHaveLength(2);
     expect(
-      explicitRows.map((row) => (row.payload as Record<string, unknown>).inserted).sort(),
+      explicitRows
+        .map((row) => (row.payload as Record<string, unknown>).inserted)
+        .sort(),
     ).toEqual([false, true]);
     for (const row of explicitRows) {
-      expect(row.payload).toMatchObject({ idempotency: "explicit", userId: jia.id });
+      expect(row.payload).toMatchObject({
+        idempotency: "explicit",
+        userId: jia.id,
+      });
     }
     expect(
-      rows.some((row) => (row.payload as Record<string, unknown>).inserted === false),
+      rows.some(
+        (row) => (row.payload as Record<string, unknown>).inserted === false,
+      ),
     ).toBe(true);
   });
 });
@@ -439,7 +452,8 @@ describe("Jia and Yi isolation", () => {
     expect(reserve).toEqual({ reserved: false, availableCents: 1_000 });
     // And Jia's balance is unmoved by any of it.
     expect(
-      (await credits.personalBalance({ kind: "personal", id: jia.id })).available,
+      (await credits.personalBalance({ kind: "personal", id: jia.id }))
+        .available,
     ).toBeGreaterThan(10);
   });
 

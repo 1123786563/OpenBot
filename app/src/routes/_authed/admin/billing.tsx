@@ -1,10 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { AdminCreditGrantCard } from "@/components/billing/admin-credit-grant";
-import {
-  PageSection,
-  PageShell,
-} from "@/components/layout/page-shell";
+import { PageSection, PageShell } from "@/components/layout/page-shell";
 
 export const Route = createFileRoute("/_authed/admin/billing")({
   component: BillingAdminPage,

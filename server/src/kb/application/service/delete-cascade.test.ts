@@ -32,7 +32,9 @@ function makeStubs(rowExists = true) {
     const c = {
       where() {
         tick();
-        ops.push(`#${clock} sql ${label} ${JSON.stringify(Object.keys(state))}`);
+        ops.push(
+          `#${clock} sql ${label} ${JSON.stringify(Object.keys(state))}`,
+        );
         return Promise.resolve();
       },
       set(values: Record<string, unknown>) {
@@ -49,12 +51,20 @@ function makeStubs(rowExists = true) {
         where: () => ({
           limit: async () =>
             rowExists
-              ? [{ id: "doc-1", tenantId: "t1", knowledgeBaseId: "kb-1", deletedAt: null }]
+              ? [
+                  {
+                    id: "doc-1",
+                    tenantId: "t1",
+                    knowledgeBaseId: "kb-1",
+                    deletedAt: null,
+                  },
+                ]
               : [],
         }),
       }),
     }),
-    delete: (table: unknown) => chain(table === "chunks" ? "delete-chunks" : `delete-${String(table)}`),
+    delete: (table: unknown) =>
+      chain(table === "chunks" ? "delete-chunks" : `delete-${String(table)}`),
     update: (table: unknown) => chain(`update-${String(table)}`),
     // biome-ignore lint/suspicious/noExplicitAny: 测试桩需要覆盖 knowledges/knowledgeBases 标识
   } as any;
@@ -151,8 +161,14 @@ describe("task 投影：deleting/cancelled → failed 路径", () => {
   });
 
   test("cancelled 同样 failed；failed 带 error", () => {
-    expect(toWireTask({ ...baseDoc, parseStatus: "cancelled" }).status).toBe("failed");
-    const failed = toWireTask({ ...baseDoc, parseStatus: "failed", errorMessage: "docreader timeout" });
+    expect(toWireTask({ ...baseDoc, parseStatus: "cancelled" }).status).toBe(
+      "failed",
+    );
+    const failed = toWireTask({
+      ...baseDoc,
+      parseStatus: "failed",
+      errorMessage: "docreader timeout",
+    });
     expect(failed.status).toBe("failed");
     expect(failed.error).toBe("docreader timeout");
   });

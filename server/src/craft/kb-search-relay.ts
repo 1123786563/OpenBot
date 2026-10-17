@@ -53,8 +53,7 @@ export type CraftKbSearch = (input: {
   sourceTypes?: readonly string[];
   days?: number;
 }) => Promise<
-  | { status: "ok"; results: CraftKbSearchResult[] }
-  | { status: "unavailable" }
+  { status: "ok"; results: CraftKbSearchResult[] } | { status: "unavailable" }
 >;
 
 /** The onyx-cli result shape (the SKILL.md Output contract). */

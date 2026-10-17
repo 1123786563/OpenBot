@@ -298,7 +298,9 @@ export async function classifyCleanup(
         createdAt: payerAccounts.createdAt,
       })
       .from(payerAccounts);
-    const mappingByKey = new Map(mappings.map((m) => [m.externalCustomerId, m]));
+    const mappingByKey = new Map(
+      mappings.map((m) => [m.externalCustomerId, m]),
+    );
     const keyBySubject = new Map(
       mappings.map((m) => [`${m.kind}|${m.payerId}`, m.externalCustomerId]),
     );
@@ -774,7 +776,10 @@ export async function reclassifyFromManifest(
   }
   if (JSON.stringify(fresh.records) !== JSON.stringify(manifest.records)) {
     const freshById = new Map(
-      fresh.records.map((record) => [`${record.table}/${record.recordId}`, record]),
+      fresh.records.map((record) => [
+        `${record.table}/${record.recordId}`,
+        record,
+      ]),
     );
     const manifestById = new Map(
       manifest.records.map((record) => [

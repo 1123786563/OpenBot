@@ -38,9 +38,9 @@ export type WorkshopFileNode = {
 export type WorkshopFilesOptions = {
   store: WorkshopStore & {
     /** The session lookup by id — browsing and uploading address sessions, not channels. */
-    sessionById(id: string): Promise<
-      { id: string; botId: string; ownerUserId: string } | undefined
-    >;
+    sessionById(
+      id: string,
+    ): Promise<{ id: string; botId: string; ownerUserId: string } | undefined>;
   };
   auditStore?: AuditStore;
   /** Which Bot's sandbox this deployment talks to, or null where none is configured. */

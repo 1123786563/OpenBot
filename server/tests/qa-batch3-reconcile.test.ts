@@ -6,9 +6,7 @@ import type { AuditStore } from "../src/audit";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { requireAdmin } from "../src/auth/guards";
 import { createReconciler } from "../src/billing/reconcile";
-import {
-  createBillingAdminRoutes,
-} from "../src/billing/routes";
+import { createBillingAdminRoutes } from "../src/billing/routes";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createBillingService } from "../src/billing/service";
 import { BillingError } from "../src/billing/types";

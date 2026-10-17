@@ -26,8 +26,12 @@ const prefix = `qa2h4-${randomUUID().slice(0, 8)}`;
 const planCode = `qa-plan-${randomUUID().slice(0, 8)}`;
 
 afterAll(async () => {
-  await database.delete(paymentEvents).where(like(paymentEvents.orderId, `${prefix}%`));
-  await database.delete(paymentOrders).where(like(paymentOrders.id, `${prefix}%`));
+  await database
+    .delete(paymentEvents)
+    .where(like(paymentEvents.orderId, `${prefix}%`));
+  await database
+    .delete(paymentOrders)
+    .where(like(paymentOrders.id, `${prefix}%`));
   await database.$client.close();
 });
 
@@ -45,7 +49,11 @@ function silentDelivery(orderId: string): PaymentProvider {
       return {
         ok: true as const,
         // paid, transaction stated, NO amount — the unreadable shape.
-        fact: { outTradeNo: orderId, state: "paid" as const, channelTransactionId: `${prefix}-tx` },
+        fact: {
+          outTradeNo: orderId,
+          state: "paid" as const,
+          channelTransactionId: `${prefix}-tx`,
+        },
       };
     },
     successAck: { body: "success", contentType: "text/plain" },
@@ -56,7 +64,9 @@ function serviceFor(provider: PaymentProvider) {
   return createPaymentService({
     providers: new Map([[provider.id, provider]]),
     store,
-    catalog: new Map([[planCode, { amountCents: 8800, currency: "CNY", periodMonths: 1 }]]),
+    catalog: new Map([
+      [planCode, { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+    ]),
     notifyBaseUrl: "https://qa.example",
     orderTtlMinutes: 15,
     latePaymentWindowHours: 24,
@@ -106,7 +116,11 @@ describe("probe h-fourth: what the real store answers after the endgame", () => 
     });
 
     const deliver = () =>
-      serviceFor(silentDelivery(order.id)).handleCallback("alipay", new Headers(), "x");
+      serviceFor(silentDelivery(order.id)).handleCallback(
+        "alipay",
+        new Headers(),
+        "x",
+      );
 
     // Strikes 1 and 2: the order stays pending, each refusal accumulates its row.
     expect(await deliver()).toEqual({
@@ -147,7 +161,12 @@ describe("probe h-fourth: what the real store answers after the endgame", () => 
     const facts = await database
       .select({ id: paymentEvents.id })
       .from(paymentEvents)
-      .where(and(eq(paymentEvents.orderId, order.id), eq(paymentEvents.kind, "fact")));
+      .where(
+        and(
+          eq(paymentEvents.orderId, order.id),
+          eq(paymentEvents.kind, "fact"),
+        ),
+      );
     expect(facts).toHaveLength(0);
   });
 });

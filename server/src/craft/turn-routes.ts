@@ -193,9 +193,9 @@ export function createTurnRoutes(
               // tools config), so the drain is wired whenever the KV is.
               connectAppAnnounceDrain: deps.connectAppSignals
                 ? () =>
-                    (deps.connectAppSignals as CraftConnectAppSignals).drainAnnouncements(
-                      sessionId,
-                    )
+                    (
+                      deps.connectAppSignals as CraftConnectAppSignals
+                    ).drainAnnouncements(sessionId)
                 : null,
             });
             for await (const event of events) {

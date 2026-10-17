@@ -235,9 +235,8 @@ export function createOpenMuseDeletionManifest(deps: {
         channelRefs,
       ] = await Promise.all([
         deps.marker
-          ? attempt(
-              [OPENMUSE_ACCOUNT_DELETION_KIND],
-              () => deps.marker.enumerateOwner(userId),
+          ? attempt([OPENMUSE_ACCOUNT_DELETION_KIND], () =>
+              deps.marker.enumerateOwner(userId),
             )
           : gapRows([OPENMUSE_ACCOUNT_DELETION_KIND]),
         deps.files

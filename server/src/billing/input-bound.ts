@@ -43,9 +43,9 @@ export function countChatInputTokens(params: unknown): number {
   if (bytes === Number.MAX_SAFE_INTEGER) return Number.MAX_SAFE_INTEGER;
   const counted =
     Math.ceil(
-      (bytes / CONSERVATIVE_BYTES_PER_TOKEN_FLOOR) *
-        CONSERVATIVE_SAFETY_FACTOR,
-    ) + promptLength(params) * CONSERVATIVE_PER_MESSAGE_OVERHEAD_TOKENS;
+      (bytes / CONSERVATIVE_BYTES_PER_TOKEN_FLOOR) * CONSERVATIVE_SAFETY_FACTOR,
+    ) +
+    promptLength(params) * CONSERVATIVE_PER_MESSAGE_OVERHEAD_TOKENS;
   return Number.isSafeInteger(counted) ? counted : Number.MAX_SAFE_INTEGER;
 }
 
@@ -76,7 +76,10 @@ export function fitChatInputRequest(
     const head = leadingSystemCount(prompt);
     const last = prompt.length - 1;
     for (let drop = 1; head + drop <= last; drop += 1) {
-      const candidate = [...prompt.slice(0, head), ...prompt.slice(head + drop)];
+      const candidate = [
+        ...prompt.slice(0, head),
+        ...prompt.slice(head + drop),
+      ];
       const fitted = { ...(params as object), prompt: candidate };
       if (countChatInputTokens(fitted) <= limit) {
         log.debug(

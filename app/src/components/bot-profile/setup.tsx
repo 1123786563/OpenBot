@@ -252,9 +252,7 @@ function EditTextDialog({
   const submit = async () => {
     const parsed = schema.safeParse(draft);
     if (!parsed.success) {
-      setError(
-        parsed.error.issues[0]?.message ?? t("editable.doesNotFit"),
-      );
+      setError(parsed.error.issues[0]?.message ?? t("editable.doesNotFit"));
       return;
     }
     setSaving(true);

@@ -102,9 +102,7 @@ describe("the exclusion decision and its closed reasons", () => {
   });
 
   test("a model the freshness gate refuses is excluded as catalog stale", () => {
-    const outcome = classifyModelSelection(
-      selectableInput({ fresh: false }),
-    );
+    const outcome = classifyModelSelection(selectableInput({ fresh: false }));
     expect(outcome).toEqual({
       selectable: false,
       reasonCode: "model_catalog_stale",

@@ -26,8 +26,12 @@ const planRedelivery = planOf();
 const planDuplicate = planOf();
 
 afterAll(async () => {
-  await database.delete(paymentEvents).where(like(paymentEvents.orderId, `${prefix}%`));
-  await database.delete(paymentOrders).where(like(paymentOrders.id, `${prefix}%`));
+  await database
+    .delete(paymentEvents)
+    .where(like(paymentEvents.orderId, `${prefix}%`));
+  await database
+    .delete(paymentOrders)
+    .where(like(paymentOrders.id, `${prefix}%`));
   await database.$client.close();
 });
 
@@ -88,7 +92,12 @@ async function anomalyCount(orderId: string) {
   const rows = await database
     .select({ code: paymentEvents.code })
     .from(paymentEvents)
-    .where(and(eq(paymentEvents.orderId, orderId), eq(paymentEvents.kind, "anomaly")));
+    .where(
+      and(
+        eq(paymentEvents.orderId, orderId),
+        eq(paymentEvents.kind, "anomaly"),
+      ),
+    );
   return rows.length;
 }
 
@@ -130,11 +139,10 @@ test("the fixed duplicate path fires ONCE for the one confirmation that doubled 
     ownerPayerRef: { kind: "personal" as const, id: `${prefix}-a2` },
     checkoutPayload: null,
   });
-  await serviceFor(paidDelivery(a.id, `${prefix}-tx-b`), planDuplicate).handleCallback(
-    "alipay",
-    new Headers(),
-    "x",
-  );
+  await serviceFor(
+    paidDelivery(a.id, `${prefix}-tx-b`),
+    planDuplicate,
+  ).handleCallback("alipay", new Headers(), "x");
   expect(await anomalyCount(a.id)).toBe(0);
 
   await new Promise((resolve) => setTimeout(resolve, 1100));

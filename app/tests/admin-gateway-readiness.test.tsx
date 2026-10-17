@@ -87,7 +87,12 @@ type Deployment = {
     configVersion: number;
   } | null;
   credential:
-    | { state: "configured"; configVersion: number; fingerprint: string; updatedAt: string }
+    | {
+        state: "configured";
+        configVersion: number;
+        fingerprint: string;
+        updatedAt: string;
+      }
     | { state: "unconfigured" };
   probe: {
     status: string;
@@ -207,8 +212,7 @@ function installFetchStub() {
         baseUrl: string;
         requestTimeoutMs?: number;
       };
-      const configVersion =
-        (deployment.endpoint?.configVersion ?? 0) + 1;
+      const configVersion = (deployment.endpoint?.configVersion ?? 0) + 1;
       deployment = {
         ...deployment,
         endpoint: {
@@ -354,12 +358,15 @@ test("saving the endpoint, the rate and the credential refreshes what the page s
   // The endpoint: type the address, save, and the saved address + its version appear.
   // TYPED RATHER THAN SET — the input reads keystrokes, not dispatched change
   // events (connection-fields.test.tsx documents the same trap).
-  await userEvent.type(view.getByLabelText("Gateway address"), "https://bifrost.internal");
+  await userEvent.type(
+    view.getByLabelText("Gateway address"),
+    "https://bifrost.internal",
+  );
   fireEvent.click(view.getByRole("button", { name: "Save address" }));
   await waitFor(() =>
-    expect(
-      view.getByTestId("gateway-endpoint-saved").textContent,
-    ).toContain("https://bifrost.internal"),
+    expect(view.getByTestId("gateway-endpoint-saved").textContent).toContain(
+      "https://bifrost.internal",
+    ),
   );
   await waitFor(() =>
     expect(view.getByTestId("gateway-config-version").textContent).toContain(

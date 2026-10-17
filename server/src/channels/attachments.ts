@@ -501,7 +501,6 @@ export async function markAttachmentsSentInTransaction(
       ),
     );
 
-
   const recorded = await transaction
     .select({ id: attachments.id })
     .from(attachments)

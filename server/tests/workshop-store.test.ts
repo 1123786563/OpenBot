@@ -37,7 +37,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("workshop store", () => {
   afterAll(async () => {
     // workshop rows cascade from the session; the session row itself is deleted first so the
     // channel/bot/user deletes below cannot be blocked by a dangling reference.
-    await database.delete(workshopSessions).where(eq(workshopSessions.channelId, channelId));
+    await database
+      .delete(workshopSessions)
+      .where(eq(workshopSessions.channelId, channelId));
     await database.delete(channels).where(eq(channels.id, channelId));
     await database.delete(agents).where(eq(agents.id, botId));
     await database.delete(users).where(eq(users.id, ownerUserId));
@@ -65,8 +67,16 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("workshop store", () => {
 
   test("getOrCreateSession is idempotent per channel", async () => {
     await seedFkRows();
-    const first = await store.getOrCreateSession({ channelId, botId, ownerUserId });
-    const second = await store.getOrCreateSession({ channelId, botId, ownerUserId });
+    const first = await store.getOrCreateSession({
+      channelId,
+      botId,
+      ownerUserId,
+    });
+    const second = await store.getOrCreateSession({
+      channelId,
+      botId,
+      ownerUserId,
+    });
     expect(second.id).toBe(first.id);
     expect(second.status).toBe("active");
     expect(second.visibility).toBe("private");
@@ -99,7 +109,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("workshop store", () => {
     const ok = await store.enqueueTurn({ sessionId, prompt: "成功路径" });
     await store.markRunning(ok.id);
     expect(
-      await store.markSucceeded(ok.id, { usage: { inputTokens: 3, outputTokens: 5 } }),
+      await store.markSucceeded(ok.id, {
+        usage: { inputTokens: 3, outputTokens: 5 },
+      }),
     ).toBe(true);
     const settled = await store.getTurn(ok.id);
     expect(settled?.status).toBe("succeeded");
@@ -111,9 +123,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("workshop store", () => {
     await store.markRunning(turn.id);
     const at = new Date("2026-01-01T00:00:00Z");
     await store.heartbeat(turn.id, at);
-    expect((await store.getTurn(turn.id))?.runnerHeartbeatAt?.toISOString()).toBe(
-      at.toISOString(),
-    );
+    expect(
+      (await store.getTurn(turn.id))?.runnerHeartbeatAt?.toISOString(),
+    ).toBe(at.toISOString());
   });
 
   test("recoverStale settles only quiet running turns, exactly once", async () => {

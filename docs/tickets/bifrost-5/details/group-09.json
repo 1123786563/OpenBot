@@ -1,132 +1,173 @@
 {
- "group": "09",
- "context": [
-  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC09/AC13/AC19）",
-  "docs/adr/0004-company-team-tenancy.md（公司工作台使用公司统一余额，按团队与使用人记录用量；个人模型 Key 不授予公司内容权限）",
-  "docs/specs/2026-10-14-bifrost-integration-design.md（Q21 内置 Bot 的普通模型调用统一经过 Bifrost；订阅 harness 属另一条路径，须明确标记计费方式）",
-  "CONTEXT.md（内置工作台、公司付款账户、订阅 harness 术语）"
- ],
- "anchors": {
-  "workbench-model-path": "server/src/copilot.ts（runtimeModel、modelUsageGate 预调用积分门禁 fail-closed、model_bounds_missing 等拒绝码、meter 注入形状）",
-  "enterprise": "server/src/enterprise/*（authz/service.ts 受信 scope、models/catalog.ts、models/policy.ts、models/budget.ts、runs/*）",
-  "gateway": "组 01 的门禁与网关客户端、组 03 的目录/偏好、组 07 的端到端计费路径",
-  "payer": "组 02 的 PayerRef / PayerBinding / 不切换语义",
-  "subscription-credentials": "server/src/credentials.ts（订阅类模型凭据，如 Claude Code / Codex 之类 harness 使用的凭据）",
-  "admin-capabilities": "server/src/admin/capabilities.ts、gate.ts（能力开关与路由门禁模式）"
- },
- "verification_common": [
-  "bun run --filter server typecheck",
-  "bunx biome lint --error-on-warnings <changed files>"
- ],
- "tickets": {
-  "09.1": {
-   "slug": "workbench-calls-through-gateway",
-   "contracts": {
-    "consumes": ["07.8 的结算与 outbox 路径", "03.9 的模型偏好解析", "copilot.ts 现有模型调用与门禁注入形状"],
-    "produces": [
-     "内置工作台的普通模型 API 调用统一经过网关（Bifrost），不再直连供应商",
-     "调用仍复用现有 fail-closed 门禁语义：准入失败即拒绝，不静默降级",
-     "消费记录归属到调用发起人与所用 Bot，供 09.2 固定付款账户"
-    ]
-   },
-   "steps": [
-    "定位工作台普通模型调用的实际入口（copilot.ts 的 runtimeModel/model 包装与 agent 运行时配置），改为经网关端点调用",
-    "保留现有 fail-closed 门禁与拒绝码语义，把拒绝原因映射到网关准入结果",
-    "确认流式与非流式两条路径都改道，且用量来自网关结算而非本地估算",
-    "为订阅 harness 路径保留原样（其边界由 09.4 标记），不在本 Ticket 改道",
-    "先写失败测试：工作台调用命中网关（provider 直连 spy 计数为 0）；门禁失败时不调用供应商"
-   ],
-   "criteria": [
-    "内置工作台的普通模型调用全部经过网关，供应商直连调用数为 0",
-    "准入失败时调用被拒绝，且拒绝语义与现有 fail-closed 行为一致",
-    "消费记录包含发起人与 Bot 归因",
-    "流式与非流式路径行为一致，用量来自网关结算"
-   ],
-   "tests": ["工作台调用改道集成测试（网关 spy / provider spy）", "门禁失败拒绝测试", "流式与非流式一致性测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/workbench-gateway-routing.integration.test.ts"],
-   "owned_scope": ["工作台模型调用接线（copilot.ts 与相关运行时配置）", "对应测试"],
-   "resume_hint": "改道时不要顺手改门禁语义；若发现旧路径仍有直连分支（含 fallback base URL），逐一收敛并加断言，避免留下旁路。"
+  "group": "09",
+  "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC09/AC13/AC19）",
+    "docs/adr/0004-company-team-tenancy.md（公司工作台使用公司统一余额，按团队与使用人记录用量；个人模型 Key 不授予公司内容权限）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q21 内置 Bot 的普通模型调用统一经过 Bifrost；订阅 harness 属另一条路径，须明确标记计费方式）",
+    "CONTEXT.md（内置工作台、公司付款账户、订阅 harness 术语）"
+  ],
+  "anchors": {
+    "workbench-model-path": "server/src/copilot.ts（runtimeModel、modelUsageGate 预调用积分门禁 fail-closed、model_bounds_missing 等拒绝码、meter 注入形状）",
+    "enterprise": "server/src/enterprise/*（authz/service.ts 受信 scope、models/catalog.ts、models/policy.ts、models/budget.ts、runs/*）",
+    "gateway": "组 01 的门禁与网关客户端、组 03 的目录/偏好、组 07 的端到端计费路径",
+    "payer": "组 02 的 PayerRef / PayerBinding / 不切换语义",
+    "subscription-credentials": "server/src/credentials.ts（订阅类模型凭据，如 Claude Code / Codex 之类 harness 使用的凭据）",
+    "admin-capabilities": "server/src/admin/capabilities.ts、gate.ts（能力开关与路由门禁模式）"
   },
-  "09.2": {
-   "slug": "company-payer-end-to-end",
-   "contracts": {
-    "consumes": ["09.1 的改道结果", "02.5 的 PayerBinding 不切换语义", "02.3 的公司 scope 解析"],
-    "produces": [
-     "公司工作台调用的付款账户固定为公司：准入、用量、结算与尾差全部使用同一 PayerRef",
-     "用量按 Workspace（团队）与使用人记录，但付款账户不随团队或使用人变化",
-     "余额不足时拒绝，不回退到个人账户"
-    ]
-   },
-   "steps": [
-    "在工作台调用路径以受信 scope 解析公司 PayerRef，并绑定到整个请求生命周期",
-    "确认结算与尾差写入同一账户，用量记录附团队与使用人维度",
-    "确认余额不足只产生拒绝，不触发个人账户解析",
-    "先写失败测试：公司调用后公司账户余额变化、个人账户不变；余额不足时拒绝且 payer 不变"
-   ],
-   "criteria": [
-    "公司工作台调用只改变公司账户余额，个人账户余额不变",
-    "准入、用量、结算与尾差使用同一公司 PayerRef",
-    "用量记录包含团队与使用人维度",
-    "公司余额不足时拒绝，不回退到个人账户"
-   ],
-   "tests": ["公司/个人双账户余额变化集成测试", "payer 贯穿断言", "余额不足不切换测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/company-payer-e2e.integration.test.ts"],
-   "owned_scope": ["工作台调用的 payer 绑定接线", "用量归因维度", "对应测试"],
-   "resume_hint": "用量归因（团队/使用人）与付款账户是两件事；接手确认二者都被记录，且归因维度不会反过来改变 payer。"
-  },
-  "09.3": {
-   "slug": "personal-key-no-company-access",
-   "contracts": {
-    "consumes": ["09.2 的公司 payer 绑定", "05.4 的 CredentialBundle", "04.5 的 AccessGrant 范围"],
-    "produces": [
-     "隔离语义：外部个人 Key 不能读取公司内容（会话、知识库、团队资源），也不能使用公司工具",
-     "个人 Key 的调用只影响个人账户余额",
-     "拒绝路径清单，供 22.1 全入口核查引用"
-    ]
-   },
-   "steps": [
-    "枚举个人 Key 可达的入口，逐条加入公司内容访问拒绝",
-    "确认个人授权范围不包含公司资源，且不可通过参数提升",
-    "验证个人 Key 调用的账务只落在个人账户",
-    "先写失败测试：个人 Key 访问公司会话/知识库被拒绝；个人账户余额变化、公司账户不变"
-   ],
-   "criteria": [
-    "个人 Key 无法访问公司会话、知识库或团队资源",
-    "个人 Key 无法通过请求参数获得公司范围",
-    "个人 Key 的调用只改变个人账户余额",
-    "拒绝响应不泄露公司内容存在性"
-   ],
-   "tests": ["公司资源越权拒绝测试", "参数提升拒绝测试", "账务归属断言"],
-   "verification": ["bun test server/tests/personal-key-isolation.test.ts"],
-   "owned_scope": ["个人 Key 入口的授权校验", "对应测试"],
-   "resume_hint": "重点是“不泄露存在性”：拒绝响应不能暴露公司资源是否存在；接手用统一拒绝文案断言。"
-  },
-  "09.4": {
-   "slug": "subscription-harness-boundary",
-   "contracts": {
-    "consumes": ["09.1 的改道范围", "server/src/credentials.ts 的订阅类凭据", "admin capabilities 的能力开关模式"],
-    "produces": [
-     "订阅 harness 路径的显式标记：其计费方式（订阅凭据，不走积分预留）在配置、界面与审计中可见",
-     "硬约束：订阅路径不得成为积分余额耗尽时的兜底或降级目标",
-     "组 09 缝合点：工作台调用走网关 + 公司付款账户 + 个人 Key 隔离 + 订阅边界，端到端可演示"
-    ]
-   },
-   "steps": [
-    "枚举使用订阅凭据运行的 harness 路径，为其打上明确的计费方式标记",
-    "在能力开关与拒绝路径中确认：积分耗尽时不会自动切换到订阅路径",
-    "在管理员界面展示两类路径的计费方式差异",
-    "先写失败测试：积分耗尽时订阅路径未被启用；标记在审计与界面可见"
-   ],
-   "criteria": [
-    "订阅 harness 路径的计费方式被明确标记且可查询",
-    "积分余额耗尽时不会回退到订阅路径继续执行",
-    "管理员界面能区分积分计费与订阅计费两类路径",
-    "标记与拒绝行为写入审计"
-   ],
-   "tests": ["余额耗尽不切换测试", "标记可见性断言", "界面区分测试"],
-   "verification": ["bun test server/tests/subscription-harness-boundary.test.ts"],
-   "owned_scope": ["订阅路径标记与能力开关接线", "管理员界面展示", "对应测试"],
-   "resume_hint": "任何“积分不足就用订阅凭据继续”的隐式回退都必须删除并留回归测试；这是 AC13 的明确要求。"
+  "verification_common": [
+    "bun run --filter server typecheck",
+    "bunx biome lint --error-on-warnings <changed files>"
+  ],
+  "tickets": {
+    "09.1": {
+      "slug": "workbench-calls-through-gateway",
+      "contracts": {
+        "consumes": [
+          "07.8 的结算与 outbox 路径",
+          "03.9 的模型偏好解析",
+          "copilot.ts 现有模型调用与门禁注入形状"
+        ],
+        "produces": [
+          "内置工作台的普通模型 API 调用统一经过网关（Bifrost），不再直连供应商",
+          "调用仍复用现有 fail-closed 门禁语义：准入失败即拒绝，不静默降级",
+          "消费记录归属到调用发起人与所用 Bot，供 09.2 固定付款账户"
+        ]
+      },
+      "steps": [
+        "定位工作台普通模型调用的实际入口（copilot.ts 的 runtimeModel/model 包装与 agent 运行时配置），改为经网关端点调用",
+        "保留现有 fail-closed 门禁与拒绝码语义，把拒绝原因映射到网关准入结果",
+        "确认流式与非流式两条路径都改道，且用量来自网关结算而非本地估算",
+        "为订阅 harness 路径保留原样（其边界由 09.4 标记），不在本 Ticket 改道",
+        "先写失败测试：工作台调用命中网关（provider 直连 spy 计数为 0）；门禁失败时不调用供应商"
+      ],
+      "criteria": [
+        "内置工作台的普通模型调用全部经过网关，供应商直连调用数为 0",
+        "准入失败时调用被拒绝，且拒绝语义与现有 fail-closed 行为一致",
+        "消费记录包含发起人与 Bot 归因",
+        "流式与非流式路径行为一致，用量来自网关结算"
+      ],
+      "tests": [
+        "工作台调用改道集成测试（网关 spy / provider spy）",
+        "门禁失败拒绝测试",
+        "流式与非流式一致性测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/workbench-gateway-routing.integration.test.ts"
+      ],
+      "owned_scope": [
+        "工作台模型调用接线（copilot.ts 与相关运行时配置）",
+        "对应测试"
+      ],
+      "resume_hint": "改道时不要顺手改门禁语义；若发现旧路径仍有直连分支（含 fallback base URL），逐一收敛并加断言，避免留下旁路。"
+    },
+    "09.2": {
+      "slug": "company-payer-end-to-end",
+      "contracts": {
+        "consumes": [
+          "09.1 的改道结果",
+          "02.5 的 PayerBinding 不切换语义",
+          "02.3 的公司 scope 解析"
+        ],
+        "produces": [
+          "公司工作台调用的付款账户固定为公司：准入、用量、结算与尾差全部使用同一 PayerRef",
+          "用量按 Workspace（团队）与使用人记录，但付款账户不随团队或使用人变化",
+          "余额不足时拒绝，不回退到个人账户"
+        ]
+      },
+      "steps": [
+        "在工作台调用路径以受信 scope 解析公司 PayerRef，并绑定到整个请求生命周期",
+        "确认结算与尾差写入同一账户，用量记录附团队与使用人维度",
+        "确认余额不足只产生拒绝，不触发个人账户解析",
+        "先写失败测试：公司调用后公司账户余额变化、个人账户不变；余额不足时拒绝且 payer 不变"
+      ],
+      "criteria": [
+        "公司工作台调用只改变公司账户余额，个人账户余额不变",
+        "准入、用量、结算与尾差使用同一公司 PayerRef",
+        "用量记录包含团队与使用人维度",
+        "公司余额不足时拒绝，不回退到个人账户"
+      ],
+      "tests": [
+        "公司/个人双账户余额变化集成测试",
+        "payer 贯穿断言",
+        "余额不足不切换测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/company-payer-e2e.integration.test.ts"
+      ],
+      "owned_scope": [
+        "工作台调用的 payer 绑定接线",
+        "用量归因维度",
+        "对应测试"
+      ],
+      "resume_hint": "用量归因（团队/使用人）与付款账户是两件事；接手确认二者都被记录，且归因维度不会反过来改变 payer。"
+    },
+    "09.3": {
+      "slug": "personal-key-no-company-access",
+      "contracts": {
+        "consumes": [
+          "09.2 的公司 payer 绑定",
+          "05.4 的 CredentialBundle",
+          "04.5 的 AccessGrant 范围"
+        ],
+        "produces": [
+          "隔离语义：外部个人 Key 不能读取公司内容（会话、知识库、团队资源），也不能使用公司工具",
+          "个人 Key 的调用只影响个人账户余额",
+          "拒绝路径清单，供 22.1 全入口核查引用"
+        ]
+      },
+      "steps": [
+        "枚举个人 Key 可达的入口，逐条加入公司内容访问拒绝",
+        "确认个人授权范围不包含公司资源，且不可通过参数提升",
+        "验证个人 Key 调用的账务只落在个人账户",
+        "先写失败测试：个人 Key 访问公司会话/知识库被拒绝；个人账户余额变化、公司账户不变"
+      ],
+      "criteria": [
+        "个人 Key 无法访问公司会话、知识库或团队资源",
+        "个人 Key 无法通过请求参数获得公司范围",
+        "个人 Key 的调用只改变个人账户余额",
+        "拒绝响应不泄露公司内容存在性"
+      ],
+      "tests": ["公司资源越权拒绝测试", "参数提升拒绝测试", "账务归属断言"],
+      "verification": ["bun test server/tests/personal-key-isolation.test.ts"],
+      "owned_scope": ["个人 Key 入口的授权校验", "对应测试"],
+      "resume_hint": "重点是“不泄露存在性”：拒绝响应不能暴露公司资源是否存在；接手用统一拒绝文案断言。"
+    },
+    "09.4": {
+      "slug": "subscription-harness-boundary",
+      "contracts": {
+        "consumes": [
+          "09.1 的改道范围",
+          "server/src/credentials.ts 的订阅类凭据",
+          "admin capabilities 的能力开关模式"
+        ],
+        "produces": [
+          "订阅 harness 路径的显式标记：其计费方式（订阅凭据，不走积分预留）在配置、界面与审计中可见",
+          "硬约束：订阅路径不得成为积分余额耗尽时的兜底或降级目标",
+          "组 09 缝合点：工作台调用走网关 + 公司付款账户 + 个人 Key 隔离 + 订阅边界，端到端可演示"
+        ]
+      },
+      "steps": [
+        "枚举使用订阅凭据运行的 harness 路径，为其打上明确的计费方式标记",
+        "在能力开关与拒绝路径中确认：积分耗尽时不会自动切换到订阅路径",
+        "在管理员界面展示两类路径的计费方式差异",
+        "先写失败测试：积分耗尽时订阅路径未被启用；标记在审计与界面可见"
+      ],
+      "criteria": [
+        "订阅 harness 路径的计费方式被明确标记且可查询",
+        "积分余额耗尽时不会回退到订阅路径继续执行",
+        "管理员界面能区分积分计费与订阅计费两类路径",
+        "标记与拒绝行为写入审计"
+      ],
+      "tests": ["余额耗尽不切换测试", "标记可见性断言", "界面区分测试"],
+      "verification": [
+        "bun test server/tests/subscription-harness-boundary.test.ts"
+      ],
+      "owned_scope": [
+        "订阅路径标记与能力开关接线",
+        "管理员界面展示",
+        "对应测试"
+      ],
+      "resume_hint": "任何“积分不足就用订阅凭据继续”的隐式回退都必须删除并留回归测试；这是 AC13 的明确要求。"
+    }
   }
- }
 }

@@ -42,7 +42,9 @@ export class WorkshopTurnTimeoutError extends Error {
 
 export type HeadlessWorkshopTools = {
   /** The run_workshop_turn tool's handler, mountable by any server-side agent loop. */
-  runWorkshopTurn(input: RunWorkshopTurnInput): Promise<RunWorkshopTurnResult | string>;
+  runWorkshopTurn(
+    input: RunWorkshopTurnInput,
+  ): Promise<RunWorkshopTurnResult | string>;
 };
 
 export function createHeadlessWorkshopTools(options: {
@@ -55,7 +57,9 @@ export function createHeadlessWorkshopTools(options: {
   nowMs?: () => number;
 }): HeadlessWorkshopTools {
   const { store, orchestrator } = options;
-  const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const sleep =
+    options.sleep ??
+    ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const nowMs = options.nowMs ?? Date.now;
 
   return {
@@ -85,7 +89,11 @@ export function createHeadlessWorkshopTools(options: {
       for (;;) {
         const turn = await store.getTurn(turnId);
         const status = turn?.status;
-        if (status === "succeeded" || status === "failed" || status === "cancelled") {
+        if (
+          status === "succeeded" ||
+          status === "failed" ||
+          status === "cancelled"
+        ) {
           const artifacts = await store.listArtifacts(session.id);
           return {
             turnId,
@@ -101,7 +109,10 @@ export function createHeadlessWorkshopTools(options: {
         if (nowMs() >= deadline) {
           // Settle what can be settled (a cancel the orchestrator honours) and answer timeout.
           await orchestrator.cancel(turnId).catch(() => undefined);
-          throw new WorkshopTurnTimeoutError(turnId, input.timeoutMs ?? DEFAULT_WAIT_MS);
+          throw new WorkshopTurnTimeoutError(
+            turnId,
+            input.timeoutMs ?? DEFAULT_WAIT_MS,
+          );
         }
         await sleep(POLL_INTERVAL_MS);
       }

@@ -1,1 +1,19 @@
-{"uuid":"af310cf0-ce39-4fc3-ae1a-f41e3930b370","name":"\"before all\" hook in \"{root}\"","children":["9b25ba25-bd87-4fe4-b873-f8986aaf6d53"],"befores":[{"status":"passed","statusDetails":{},"stage":"finished","steps":[],"attachments":[],"parameters":[],"start":1791709715167,"name":"\"before all\" hook in \"{root}\"","stop":1791709715168}],"afters":[]}
+{
+  "uuid": "af310cf0-ce39-4fc3-ae1a-f41e3930b370",
+  "name": "\"before all\" hook in \"{root}\"",
+  "children": ["9b25ba25-bd87-4fe4-b873-f8986aaf6d53"],
+  "befores": [
+    {
+      "status": "passed",
+      "statusDetails": {},
+      "stage": "finished",
+      "steps": [],
+      "attachments": [],
+      "parameters": [],
+      "start": 1791709715167,
+      "name": "\"before all\" hook in \"{root}\"",
+      "stop": 1791709715168
+    }
+  ],
+  "afters": []
+}

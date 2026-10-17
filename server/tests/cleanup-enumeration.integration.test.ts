@@ -60,7 +60,13 @@ const companyKey = `b345-co-${run}`;
 const legacyKey = `b345-leg-${run}`;
 const unknownKey = `b345-unk-${run}`;
 const unmappedKey = `b345-map-${run}`;
-const fixtureKeys = [personalKey, companyKey, legacyKey, unknownKey, unmappedKey];
+const fixtureKeys = [
+  personalKey,
+  companyKey,
+  legacyKey,
+  unknownKey,
+  unmappedKey,
+];
 
 const legacySubscriptionId = `b345-sub-${run}`;
 const legacyOrderId = `b345-po-${run}`;
@@ -88,11 +94,23 @@ const expectedTables = [
 /** The keyed tables whose rows the customers list counts per external customer key. */
 const keyedTables = [
   ["billing_customers", billingCustomers, billingCustomers.externalId],
-  ["billing_subscriptions", billingSubscriptions, billingSubscriptions.externalCustomerId],
+  [
+    "billing_subscriptions",
+    billingSubscriptions,
+    billingSubscriptions.externalCustomerId,
+  ],
   ["credit_grants", creditGrants, creditGrants.externalCustomerId],
   ["credit_ledger", creditLedger, creditLedger.externalCustomerId],
-  ["credit_reservations", creditReservations, creditReservations.externalCustomerId],
-  ["credit_charge_remainders", creditChargeRemainders, creditChargeRemainders.externalCustomerId],
+  [
+    "credit_reservations",
+    creditReservations,
+    creditReservations.externalCustomerId,
+  ],
+  [
+    "credit_charge_remainders",
+    creditChargeRemainders,
+    creditChargeRemainders.externalCustomerId,
+  ],
   ["usage_outbox", usageOutbox, usageOutbox.externalCustomerId],
 ] as const;
 
@@ -130,7 +148,9 @@ afterAll(async () => {
   await database
     .delete(paymentEvents)
     .where(eq(paymentEvents.orderId, legacyOrderId));
-  await database.delete(paymentOrders).where(eq(paymentOrders.id, legacyOrderId));
+  await database
+    .delete(paymentOrders)
+    .where(eq(paymentOrders.id, legacyOrderId));
   await database
     .delete(usageOutbox)
     .where(inArray(usageOutbox.externalCustomerId, fixtureKeys));

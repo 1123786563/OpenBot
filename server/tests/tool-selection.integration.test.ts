@@ -501,7 +501,9 @@ describe("a built-in Bot", () => {
         }
       )?.messages ?? []
     )
-      .filter((message) => message.role === "system" || message.role === "developer")
+      .filter(
+        (message) => message.role === "system" || message.role === "developer",
+      )
       .map((message) => String(message.content))
       .join("\n");
     /*

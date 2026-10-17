@@ -136,7 +136,9 @@ test("an unnamed session is titled after its first message lands, ordered after 
 
   await waitFor(() => {
     const send = calls.findIndex((call) => call.url.endsWith("/send-message"));
-    const named = calls.findIndex((call) => call.url.endsWith("/generate-name"));
+    const named = calls.findIndex((call) =>
+      call.url.endsWith("/generate-name"),
+    );
     expect(send).toBeGreaterThanOrEqual(0);
     expect(named).toBeGreaterThanOrEqual(0);
     // The naming read must happen after the user row is durable.
@@ -148,7 +150,9 @@ test("an unnamed session is titled after its first message lands, ordered after 
     const roster = calls.findLastIndex(
       (call) => call.method === "GET" && call.url === "/api/craft/sessions",
     );
-    const named = calls.findIndex((call) => call.url.endsWith("/generate-name"));
+    const named = calls.findIndex((call) =>
+      call.url.endsWith("/generate-name"),
+    );
     expect(roster).toBeGreaterThan(named);
   });
 });
@@ -162,7 +166,5 @@ test("a session that already has a name is never re-titled", async () => {
     expect(calls.some((call) => call.url.endsWith("/send-message"))).toBe(true),
   );
   await settleReactWork();
-  expect(
-    calls.some((call) => call.url.endsWith("/generate-name")),
-  ).toBe(false);
+  expect(calls.some((call) => call.url.endsWith("/generate-name"))).toBe(false);
 });

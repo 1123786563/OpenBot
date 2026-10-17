@@ -333,7 +333,10 @@ describe("grants and ledger rows of one account are invisible to another", () =>
     });
     expect((await credits.summary(bob)).rewards.remaining).toBe(0);
     expect(await credits.grants(bob)).toHaveLength(0);
-    const bobPage = await credits.consumption({ from: null, to: null, page: 1 }, bob);
+    const bobPage = await credits.consumption(
+      { from: null, to: null, page: 1 },
+      bob,
+    );
     expect(bobPage.pagination.totalCount).toBe(0);
     expect(bobPage.entries).toHaveLength(0);
 

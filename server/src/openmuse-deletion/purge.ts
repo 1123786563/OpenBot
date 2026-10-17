@@ -65,7 +65,6 @@ export function createOpenMuseFileBytePurger(deps: {
   /** The one openmuse-files export D06 adds: owner-scoped hard row delete. */
   files: Pick<OpenMuseFileStore, "hardDelete">;
 }) {
-
   /**
    * One walk. `attempt` picks which not-yet-deleted rows this pass touches;
    * the metadata phase always surveys every file row, so a completed retry

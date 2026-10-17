@@ -109,10 +109,7 @@
         "uq_chunk_revisions_chunk_revision": {
           "name": "uq_chunk_revisions_chunk_revision",
           "nullsNotDistinct": false,
-          "columns": [
-            "chunk_id",
-            "revision"
-          ]
+          "columns": ["chunk_id", "revision"]
         }
       },
       "policies": {},
@@ -378,12 +375,8 @@
           "name": "chunks_knowledge_id_knowledges_id_fk",
           "tableFrom": "chunks",
           "tableTo": "knowledges",
-          "columnsFrom": [
-            "knowledge_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["knowledge_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -775,12 +768,8 @@
           "name": "knowledges_knowledge_base_id_knowledge_bases_id_fk",
           "tableFrom": "knowledges",
           "tableTo": "knowledge_bases",
-          "columnsFrom": [
-            "knowledge_base_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["knowledge_base_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }

@@ -405,15 +405,10 @@ describe("trusted Expert Run admission", () => {
     const tightened = await admissionHarness({
       routeMaximumTokens: 100,
     });
-    const tightenedRun = await tightened.runs.start(
-      scope,
-      tightened.admit(),
-    );
+    const tightenedRun = await tightened.runs.start(scope, tightened.admit());
     expect(tightenedRun).toBeDefined();
     const tightenedTx = tightened.transactions[0];
-    expect(runInserts(tightenedTx)[0].values.modelRouteMaximumTokens).toBe(
-      100,
-    );
+    expect(runInserts(tightenedTx)[0].values.modelRouteMaximumTokens).toBe(100);
     expect(budgetInserts(tightenedTx)[0].values.tokenLimit).toBe(1500);
     // A cap exactly at the ceiling is the identity case production always
     // produces.

@@ -42,10 +42,7 @@ function shapeOf(value: unknown, depth = 0): Shape {
 function normalize(value: unknown): unknown {
   return JSON.parse(
     JSON.stringify(value, (key, val) => {
-      if (
-        typeof val === "string" &&
-        /^(req-|kb-|doc-)/.test(val)
-      ) {
+      if (typeof val === "string" && /^(req-|kb-|doc-)/.test(val)) {
         return "<id>";
       }
       return val;
@@ -188,8 +185,13 @@ async function main() {
 
   // 9. 越权语义：错误 key → 401
   await compare("unauthorized 401", async (base) => {
-    const response = await fetch(`${base}/kb`, { headers: { authorization: "Bearer wrong" } });
-    return { status: response.status, json: await response.json().catch(() => null) };
+    const response = await fetch(`${base}/kb`, {
+      headers: { authorization: "Bearer wrong" },
+    });
+    return {
+      status: response.status,
+      json: await response.json().catch(() => null),
+    };
   });
 
   // 10. DELETE 文档

@@ -52,7 +52,8 @@ afterEach(() => {
 function selectorHeader(init: RequestInit | undefined): string | undefined {
   const headers = init?.headers;
   if (headers === undefined || headers === null) return undefined;
-  if (headers instanceof Headers) return headers.get("x-openbot-tenant") ?? undefined;
+  if (headers instanceof Headers)
+    return headers.get("x-openbot-tenant") ?? undefined;
   return (headers as Record<string, string>)["x-openbot-tenant"];
 }
 
@@ -72,7 +73,9 @@ test("a request without tenantId is byte-for-byte what client sent before", asyn
   expect(asked[0]?.init?.headers).toBeUndefined();
   expect(asked[2]?.init?.headers).toBeUndefined();
   // A body is JSON and only JSON, exactly as before; no selector appears anywhere.
-  expect(asked[1]?.init?.headers).toEqual({ "content-type": "application/json" });
+  expect(asked[1]?.init?.headers).toEqual({
+    "content-type": "application/json",
+  });
   expect(selectorHeader(asked[1]?.init)).toBeUndefined();
   expect(JSON.parse(String(asked[1]?.init?.body))).toEqual({ key: "value" });
 });
@@ -148,7 +151,11 @@ test("the enterprise error object answers with its readable summary", async () =
   // The field name plan §5.2 names for the same slot.
   intercept(() =>
     jsonResponse(403, {
-      error: { code: "TENANT_FORBIDDEN", message: "Not a member", retryable: false },
+      error: {
+        code: "TENANT_FORBIDDEN",
+        message: "Not a member",
+        retryable: false,
+      },
     }),
   );
   await expect(
@@ -162,7 +169,9 @@ test("an error body with no readable sentence falls back to the caller's", async
     client("/api/anything", { fallback: "Could not load it" }),
   ).rejects.toThrow("Could not load it");
 
-  intercept(() => jsonResponse(400, { error: { code: "REQUEST_BODY_INVALID" } }));
+  intercept(() =>
+    jsonResponse(400, { error: { code: "REQUEST_BODY_INVALID" } }),
+  );
   await expect(
     client("/api/anything", { fallback: "Could not load it" }),
   ).rejects.toThrow("Could not load it");
@@ -173,12 +182,17 @@ test("an error body with no readable sentence falls back to the caller's", async
 });
 
 test("success still unwraps the envelope key, and a malformed one still refuses", async () => {
-  intercept(() => jsonResponse(200, { items: [{ id: "one" }], nextCursor: null }));
+  intercept(() =>
+    jsonResponse(200, { items: [{ id: "one" }], nextCursor: null }),
+  );
   expect(await client<{ id: string }[]>("/api/somewhere", "items")).toEqual([
     { id: "one" },
   ]);
 
-  intercept(() => new Response("[]", { headers: { "content-type": "application/json" } }));
+  intercept(
+    () =>
+      new Response("[]", { headers: { "content-type": "application/json" } }),
+  );
   await expect(client("/api/somewhere", "items")).rejects.toThrow();
 });
 

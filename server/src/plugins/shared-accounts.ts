@@ -1,8 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { type Decides, type SchemeKind, schemeKind } from "./broker";
-import {
-  isBrokeredProvenance,
-} from "../../../shared/src/brokered-provenance";
+import { isBrokeredProvenance } from "../../../shared/src/brokered-provenance";
 
 /**
  * Whose account a brokered call reaches, decided in one place.

@@ -65,7 +65,9 @@ export function createWorkshopRoutes(input: {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
   /** Required: a deployment that has not answered "who may act as this Bot" cannot mount this. */
   canUseBot: BotAccessCheck;
-  deps: WorkshopRoutesDeps & { auditStore?: Parameters<typeof upload>[0]["auditStore"] };
+  deps: WorkshopRoutesDeps & {
+    auditStore?: Parameters<typeof upload>[0]["auditStore"];
+  };
 }): Hono<{ Variables: AppVariables }> {
   const { store, bus, orchestrator, clientFor, auditStore, sharing } =
     input.deps;
@@ -127,7 +129,10 @@ export function createWorkshopRoutes(input: {
     // Usage is the sum across turns — a display copy; metering reads code_runs (server-side).
     const total = turns.reduce(
       (sum, turn) => {
-        const usage = turn.usage as { inputTokens?: number; outputTokens?: number } | null;
+        const usage = turn.usage as {
+          inputTokens?: number;
+          outputTokens?: number;
+        } | null;
         return {
           inputTokens: sum.inputTokens + (usage?.inputTokens ?? 0),
           outputTokens: sum.outputTokens + (usage?.outputTokens ?? 0),
@@ -171,7 +176,8 @@ export function createWorkshopRoutes(input: {
         scope: session.shareScope,
         // The plaintext never exists after creation (only the hash is stored), so the aggregate
         // can only say a link is live — the URL itself was handed out once, at mint time.
-        shareUrl: session.shareTokenHash && !session.shareRevokedAt ? "live" : null,
+        shareUrl:
+          session.shareTokenHash && !session.shareRevokedAt ? "live" : null,
         shareExpiresAt: session.shareExpiresAt?.toISOString() ?? null,
         shareRevokedAt: session.shareRevokedAt?.toISOString() ?? null,
       },
@@ -381,15 +387,11 @@ export function createWorkshopRoutes(input: {
     const artifactId = context.req.param("id");
     const artifacts = await store.listArtifacts(gateResult.session.id);
     const artifact = artifacts.find((row) => row.id === artifactId);
-    if (!artifact)
-      return context.json({ error: "No such artifact." }, 404);
+    if (!artifact) return context.json({ error: "No such artifact." }, 404);
 
     const client = clientFor(gateResult.session.botId);
     if (!client)
-      return context.json(
-        { error: "Code execution is not configured." },
-        409,
-      );
+      return context.json({ error: "Code execution is not configured." }, 409);
     // Single-file streaming; the directory-zip form arrives with the preview batch.
     const file = await client
       .readFile(artifact.path, 10 * 1024 * 1024)
@@ -411,10 +413,7 @@ export function createWorkshopRoutes(input: {
     if (!gateResult.ok) return gateResult.response;
     const client = clientFor(gateResult.session.botId);
     if (!client)
-      return context.json(
-        { error: "Code execution is not configured." },
-        409,
-      );
+      return context.json({ error: "Code execution is not configured." }, 409);
     await client.resetWorkspace();
     return context.json({ sessionId: gateResult.session.id }, 200);
   });
@@ -504,7 +503,10 @@ export function createWorkshopRoutes(input: {
           payload: { session: gateResult.session.id, rrule: draft.rrule },
         });
       }
-      return context.json({ id, rrule: draft.rrule, status: draft.status }, 201);
+      return context.json(
+        { id, rrule: draft.rrule, status: draft.status },
+        201,
+      );
     } catch (error) {
       if (error instanceof WorkshopScheduleRefusedError) {
         return context.json({ error: error.message }, 400);
@@ -532,7 +534,12 @@ export function createWorkshopRoutes(input: {
     try {
       // The toggle alone is its own route's worth of intent: no recurrence change, no
       // preapproval change, just "stop firing" or "start again".
-      if (typeof body?.enabled === "boolean" && !body?.prompt && !body?.mode && !body?.preapproval) {
+      if (
+        typeof body?.enabled === "boolean" &&
+        !body?.prompt &&
+        !body?.mode &&
+        !body?.preapproval
+      ) {
         const status = body.enabled ? "enabled" : "paused";
         await store.updateSchedule(id, {
           status,
@@ -556,7 +563,7 @@ export function createWorkshopRoutes(input: {
       const timezone =
         typeof body?.timezone === "string" && body.timezone.trim()
           ? body.timezone.trim()
-          : existing.timezone ?? "UTC";
+          : (existing.timezone ?? "UTC");
       if (typeof body?.prompt !== "string" || !body.prompt.trim()) {
         return context.json({ error: "A schedule needs a prompt." }, 400);
       }

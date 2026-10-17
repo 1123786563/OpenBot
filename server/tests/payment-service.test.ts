@@ -567,7 +567,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "wechat",
         createdBy: "admin-1",
-      ownerPayerRef: ref("admin-1"),
+        ownerPayerRef: ref("admin-1"),
       }),
     ).rejects.toMatchObject({
       refusal: { reason: "pending-purchase", pendingPlanCode: "team" },
@@ -613,7 +613,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "wechat",
         createdBy: "admin-1",
-      ownerPayerRef: ref("admin-1"),
+        ownerPayerRef: ref("admin-1"),
       }),
     ).rejects.toMatchObject({
       refusal: { reason: "pending-purchase", pendingPlanCode: "team" },
@@ -701,7 +701,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "alipay",
         createdBy: "admin-1",
-      ownerPayerRef: ref("admin-1"),
+        ownerPayerRef: ref("admin-1"),
       }),
     ).rejects.toMatchObject({
       refusal: { reason: "active-subscription", activePlanCode: "pro" },
@@ -716,7 +716,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "alipay",
         createdBy: "a",
-      ownerPayerRef: ref("a"),
+        ownerPayerRef: ref("a"),
       }),
     ).rejects.toBeInstanceOf(PurchaseError);
   });
@@ -730,7 +730,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "wechat",
         createdBy: "a",
-      ownerPayerRef: ref("a"),
+        ownerPayerRef: ref("a"),
       }),
     ).rejects.toMatchObject({ refusal: { reason: "unknown-provider" } });
     // The refusal left no stranded order behind: nothing pending on either channel, and the
@@ -765,7 +765,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "alipay",
         createdBy: "a",
-      ownerPayerRef: ref("a"),
+        ownerPayerRef: ref("a"),
       }),
     ).rejects.toThrow(/unreachable/);
     const pending = await store.readPendingOrder("pro", "alipay");
@@ -786,7 +786,12 @@ describe("purchase ordering", () => {
 
   test("a purchase without a resolvable owner is refused before any order row exists", async () => {
     const { service, store } = buildService();
-    const missing = { planCode: "pro", cycle: "monthly" as const, provider: "alipay" as const, createdBy: "a" };
+    const missing = {
+      planCode: "pro",
+      cycle: "monthly" as const,
+      provider: "alipay" as const,
+      createdBy: "a",
+    };
     await expect(
       // The input the runtime can see when a caller forgets the resolved owner entirely.
       service.createPurchase(
@@ -876,7 +881,10 @@ describe("purchase ordering", () => {
     // The foreign order survives, untouched: still pending, still buyer-b's.
     const survived = await store.readOrder(someoneElses.id);
     expect(survived?.status).toBe("pending");
-    expect(survived?.ownerPayerRef).toEqual({ kind: "personal", id: "buyer-b" });
+    expect(survived?.ownerPayerRef).toEqual({
+      kind: "personal",
+      id: "buyer-b",
+    });
     expect(survived?.version).toBe(0);
     expect(alipay.closes).toEqual([]);
   });
@@ -2180,7 +2188,7 @@ describe("activation gate", () => {
         provider: "alipay",
         cycle: "monthly",
         createdBy: "admin-1",
-      ownerPayerRef: ref("admin-1"),
+        ownerPayerRef: ref("admin-1"),
       }),
     ).rejects.toMatchObject({
       refusal: { reason: "active-subscription", activePlanCode: "pro" },

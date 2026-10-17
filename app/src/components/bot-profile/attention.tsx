@@ -18,9 +18,12 @@ export function attentionSummary(
   t: TFunction<"agents">,
 ): string {
   const parts: string[] = [];
-  if (bot.questions) parts.push(t("attention.questions", { count: bot.questions }));
-  if (bot.approvals) parts.push(t("attention.approvals", { count: bot.approvals }));
-  if (bot.handoffs) parts.push(t("attention.handoffs", { count: bot.handoffs }));
+  if (bot.questions)
+    parts.push(t("attention.questions", { count: bot.questions }));
+  if (bot.approvals)
+    parts.push(t("attention.approvals", { count: bot.approvals }));
+  if (bot.handoffs)
+    parts.push(t("attention.handoffs", { count: bot.handoffs }));
   if (bot.unread) parts.push(t("attention.unread", { count: bot.unread }));
   return parts.join(", ");
 }

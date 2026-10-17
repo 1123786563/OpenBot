@@ -329,9 +329,7 @@ function TriggerRow({
         <ItemTitle>{t(KIND_KEYS[trigger.kind])}</ItemTitle>
         <ItemDescription className="line-clamp-none">
           {describeFilter(t, trigger.config)}
-          {trigger.enabled
-            ? ""
-            : t("responsibilities.triggers.pausedSuffix")}
+          {trigger.enabled ? "" : t("responsibilities.triggers.pausedSuffix")}
         </ItemDescription>
       </ItemContent>
       <ItemActions>
