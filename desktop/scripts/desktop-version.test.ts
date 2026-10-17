@@ -1,4 +1,8 @@
-import { afterEach, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { afterEach, expect, test } from "../../tests/support/e2e-compat";
 import {
   copyFileSync,
   mkdirSync,
@@ -32,7 +36,7 @@ function fixture() {
   write("desktop/src-tauri/Cargo.toml", cargo);
   write("desktop/src-tauri/Cargo.lock", lock);
   copyFileSync(
-    join(import.meta.dir, "desktop-version.ts"),
+    join(hereDir, "desktop-version.ts"),
     join(root, "desktop/scripts/desktop-version.ts"),
   );
   const run = (command: string) => {
@@ -61,7 +65,7 @@ afterEach(() => {
 test("the checked-in Tauri version resolves the root release number", () => {
   const config = JSON.parse(
     readFileSync(
-      resolve(import.meta.dir, "../src-tauri/tauri.conf.json"),
+      resolve(hereDir, "../src-tauri/tauri.conf.json"),
       "utf8",
     ),
   );
@@ -71,7 +75,7 @@ test("the checked-in Tauri version resolves the root release number", () => {
 test("macOS microphone capture has a nonempty system permission description", () => {
   // Tauri merges this conventional file even when a build-version plist is supplied.
   const plist = readFileSync(
-    resolve(import.meta.dir, "../src-tauri/Info.plist"),
+    resolve(hereDir, "../src-tauri/Info.plist"),
     "utf8",
   );
   expect(plist).toMatch(
@@ -80,7 +84,7 @@ test("macOS microphone capture has a nonempty system permission description", ()
 });
 
 test("macOS signing uses the audio-input entitlement for microphone capture", () => {
-  const native = resolve(import.meta.dir, "../src-tauri");
+  const native = resolve(hereDir, "../src-tauri");
   const config = JSON.parse(
     readFileSync(join(native, "tauri.conf.json"), "utf8"),
   );

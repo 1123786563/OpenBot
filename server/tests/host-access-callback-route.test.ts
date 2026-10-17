@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { mintRunAssertion } from "../src/agents/callback-token";
 import { createApp } from "../src/app";
 import { loadConfig } from "../src/config";

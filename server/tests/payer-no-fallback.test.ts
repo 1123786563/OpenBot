@@ -1,4 +1,8 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { afterAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { createCreditWriter } from "../src/billing/credits-writer";
@@ -637,7 +641,7 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
       const { readFile } = await import("node:fs/promises");
       const join = (await import("node:path")).join;
       const source = await readFile(
-        join(import.meta.dir, "..", "src", "index.ts"),
+        join(hereDir, "..", "src", "index.ts"),
         "utf8",
       );
 
@@ -945,7 +949,7 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
         else if (entry.name.endsWith(".ts")) files.push(path);
       }
     };
-    const srcRoot = join(import.meta.dir, "..", "src");
+    const srcRoot = join(hereDir, "..", "src");
     await walk(srcRoot);
 
     const referencing: string[] = [];
@@ -992,7 +996,7 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
   test("the gate body itself has no second payer resolution: one resolve, one reserve, no foreign key identifier", async () => {
     const { readFile } = await import("node:fs/promises");
     const join = (await import("node:path")).join;
-    const source = await readFile(join(import.meta.dir, "..", "src", "index.ts"), "utf8");
+    const source = await readFile(join(hereDir, "..", "src", "index.ts"), "utf8");
 
     // Anchor on the raw source first (unique), then scan ONLY from there: the scanner
     // below is string/comment aware but not regex-literal aware, and the file above the

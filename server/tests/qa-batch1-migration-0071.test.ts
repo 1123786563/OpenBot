@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHmac } from "node:crypto";
@@ -15,14 +19,14 @@ import { createHmac } from "node:crypto";
  *      shape the ON CONFLICT target cannot infer, would break the writer at the first insert.
  */
 const SQL = readFileSync(
-  join(import.meta.dir, "../drizzle/0071_billing_idempotency.sql"),
+  join(hereDir, "../drizzle/0071_billing_idempotency.sql"),
   "utf8",
 );
 const JOURNAL = JSON.parse(
-  readFileSync(join(import.meta.dir, "../drizzle/meta/_journal.json"), "utf8"),
+  readFileSync(join(hereDir, "../drizzle/meta/_journal.json"), "utf8"),
 ) as { entries: Array<{ idx: number; tag: string }> };
 const SNAPSHOT = JSON.parse(
-  readFileSync(join(import.meta.dir, "../drizzle/meta/0071_snapshot.json"), "utf8"),
+  readFileSync(join(hereDir, "../drizzle/meta/0071_snapshot.json"), "utf8"),
 );
 
 describe("probe g: 0071 SQL statements", () => {
@@ -88,7 +92,7 @@ describe("probe g: the runtime keys satisfy the index shape", () => {
     // credits-writer.ts's conflict clause names the column the plain unique index covers —
     // the one shape Postgres can infer without the WHERE spelled in-statement.
     const writer = readFileSync(
-      join(import.meta.dir, "../src/billing/credits-writer.ts"),
+      join(hereDir, "../src/billing/credits-writer.ts"),
       "utf8",
     );
     expect(writer).toContain("target: creditGrants.idempotencyKey");

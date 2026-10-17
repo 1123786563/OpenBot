@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, spyOn, test } from "../../../tests/support/e2e-compat";
 import { BunSQLPreparedQuery } from "drizzle-orm/bun-sql";
 import type { PreparedQueryConfig } from "drizzle-orm/pg-core";
 import { PROVENANCE_GUIDANCE } from "../../../shared/bot-prompt";

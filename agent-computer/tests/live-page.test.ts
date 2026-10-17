@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { chooseLivePage } from "../src/live-page";
 
 // A popup OAuth sign-in is the case this exists for: the page a Bot was pinned to at launch is not

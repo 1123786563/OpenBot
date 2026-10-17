@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { encryptSsoConfig } from "../src/auth/encrypt-sso-config";
 import { decryptSecret, encryptSecret } from "../src/credentials";
 

@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { getLogger } from "../../shared/logger";

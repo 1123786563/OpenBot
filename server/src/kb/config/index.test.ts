@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../../tests/support/e2e-compat";
 import { parseAPIKeys } from "./index";
 
 describe("parseAPIKeys", () => {

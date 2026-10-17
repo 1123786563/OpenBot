@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isPlainBotId } from "../src/bot-id";

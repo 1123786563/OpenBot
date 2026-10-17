@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createHmac } from "node:crypto";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AuditStore } from "../src/audit";

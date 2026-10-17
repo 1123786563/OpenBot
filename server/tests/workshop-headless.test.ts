@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createHeadlessWorkshopTools } from "../src/workshop/headless";
 import type { TurnOrchestrator } from "../src/workshop/orchestrator";
 import type { WorkshopStore, WorkshopTurnRow } from "../src/workshop/store";

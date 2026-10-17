@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { chooseEvictions, chooseIdle } from "../src/browser-eviction";
 import { numberFromEnv } from "../src/env";
 

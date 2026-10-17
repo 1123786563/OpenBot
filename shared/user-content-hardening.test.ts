@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../tests/support/e2e-compat";
 import { userContent } from "./user-content";
 
 const png = Buffer.from([137, 80, 78, 71]).toString("base64");

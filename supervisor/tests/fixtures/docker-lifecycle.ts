@@ -1,11 +1,8 @@
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  test,
-} from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "../../../tests/support/e2e-compat";
 import type Docker from "dockerode";
 import { namesFor, NAMESPACE } from "../../src/names";
 
@@ -113,7 +110,7 @@ beforeAll(async () => {
   }
   for (const [index, tag] of [IMAGE, OTHER].entries()) {
     const stream = await withDocker().docker.buildImage(
-      { context: import.meta.dir, src: ["Dockerfile"] },
+      { context: hereDir, src: ["Dockerfile"] },
       {
         t: tag,
         buildargs: {

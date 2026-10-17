@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "../../../tests/support/e2e-compat";
 
 /**
  * What a failure must never read like: the name of a method that was not there.

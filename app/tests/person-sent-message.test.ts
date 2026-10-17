@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import "./preload";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { frameFiring } from "../../shared/routine-firing";
 import { isPersonSentMessage } from "../src/components/channels/chat-transcript";
 

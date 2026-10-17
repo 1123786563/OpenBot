@@ -1,4 +1,9 @@
-import { expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import "./preload";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
@@ -19,7 +24,7 @@ import { BOT_CREATOR_SLUG } from "@/lib/agents/proposal";
  * along with whichever half of the coupling a later change moves.
  */
 
-const PACKAGE = join(import.meta.dir, "../../examples/fintech");
+const PACKAGE = join(hereDir, "../../examples/fintech");
 
 type SkillsFile = { skills: { slug: string; tools?: unknown }[] };
 type AgentsFile = { agents: { id: string; skills?: string[] }[] };

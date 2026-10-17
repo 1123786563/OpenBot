@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tests/support/e2e-compat";
 import { readdirSync, readFileSync } from "node:fs";
 
 const serverRoot = new URL("../..", import.meta.url);

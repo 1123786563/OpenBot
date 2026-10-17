@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { CopilotKitIntelligence } from "@copilotkit/runtime/v2";
 import { createActorAgentResolver } from "../src/agents/agent-resolver";
 import { createStallGuard } from "../src/channels/stall-guard";

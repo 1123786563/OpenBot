@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../../tests/support/e2e-compat";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -97,13 +101,13 @@ describe("enterprise wire contract v1", () => {
   test("resolves_the_pinned_direct_ajv_dev_dependency_from_public_server_node_modules", async () => {
     const metadata = JSON.parse(
       await readFile(
-        resolve(import.meta.dir, "../../node_modules/ajv/package.json"),
+        resolve(hereDir, "../../node_modules/ajv/package.json"),
         "utf8",
       ),
     ) as { name: string; version: string };
     expect(metadata).toMatchObject({ name: "ajv", version: "8.20.0" });
     const lockfile = await readFile(
-      resolve(import.meta.dir, "../../../bun.lock"),
+      resolve(hereDir, "../../../bun.lock"),
       "utf8",
     );
     expect(lockfile).toContain("ajv@8.20.0");

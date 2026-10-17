@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createHmac } from "node:crypto";
 import { DrizzleQueryError } from "drizzle-orm/errors";
 import { createLagoClient } from "../src/billing/lago";

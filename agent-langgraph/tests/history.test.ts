@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { RunAgentInput } from "@ag-ui/core";
 import { ChatAnthropic } from "@langchain/anthropic";
 import {

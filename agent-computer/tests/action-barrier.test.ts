@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { createActionBarrier } from "../src/action-barrier";
 
 test("closing admission refuses new actions and drains admitted work exactly once", async () => {

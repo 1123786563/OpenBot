@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { EventEmitter } from "node:events";
 import type { ChildProcess } from "node:child_process";
 import { createDevServers } from "../src/devserver";

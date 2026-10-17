@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { join } from "node:path";
 import { loadConfig } from "../src/config";
 
@@ -17,7 +21,7 @@ import { loadConfig } from "../src/config";
  * that authenticates against nothing, and the credential variable names are assembled at runtime
  * so no committed line pairs a secret's name with a literal.
  */
-const fixtureDir = join(import.meta.dir, "fixtures");
+const fixtureDir = join(hereDir, "fixtures");
 const fixtureKeyPath = join(fixtureDir, "payment-test-key.pem");
 const fixtureCertPath = join(fixtureDir, "payment-test-certificate.pem");
 

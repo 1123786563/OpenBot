@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { classifyChallenge } from "../src/challenge";
 
 test("Cloudflare's explicit response signal requests help, generic 403 does not", () => {

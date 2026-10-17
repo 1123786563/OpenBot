@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import "./preload";
+import { expect, test } from "../../tests/support/e2e-compat";
 import type { PluginTool } from "@/lib/plugins/queries";
 import { readOnlyRefs } from "@/routes/_authed/admin/plugins/$key_.bots.$agentId";
 

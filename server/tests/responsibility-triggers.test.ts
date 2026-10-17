@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { spawnSync } from "node:child_process";
 import { createHash, createHmac, createSign } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";

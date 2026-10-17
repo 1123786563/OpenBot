@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import "./preload";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { agentFormSchema } from "@/lib/agents/form";
 import { agentKeys } from "@/lib/agents/queries";
 import { channelKeys } from "@/lib/channels/queries";

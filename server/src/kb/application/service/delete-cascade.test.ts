@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../../../tests/support/e2e-compat";
 import { deleteKnowledge, deleteKnowledgeBase } from "./knowledge-delete";
 import { toWireTask } from "../../handler/shared";
 import type { DocRow } from "../../handler/shared";

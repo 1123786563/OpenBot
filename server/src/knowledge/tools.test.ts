@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../tests/support/e2e-compat";
 import type { AuditInitiator } from "../audit";
 import { isMarkedUntrusted } from "../untrusted-content";
 import type { KnowledgeRetriever, RetrievalOutcome } from "./retrieval";

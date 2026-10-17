@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { withoutUntrustedEnvelope } from "../../app/src/lib/plugins/tool-result";
 import { createComputerGateway } from "../src/computer/gateway";
 import type { ComputerProvider } from "../src/computer/provider";

@@ -1,4 +1,8 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { afterEach, describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -18,7 +22,7 @@ afterEach(() => {
 
 // The root CI install deliberately excludes this separately deployed package's dependencies.
 describe.skipIf(
-  !existsSync(join(import.meta.dir, "../node_modules/playwright/package.json")),
+  !existsSync(join(hereDir, "../node_modules/playwright/package.json")),
 )("persistent launch options", () => {
   test.each(["managed", "local-chrome"])(
     "%s passes the runtime to the persistent launcher",

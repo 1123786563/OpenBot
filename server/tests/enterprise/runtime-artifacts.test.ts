@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../../tests/support/e2e-compat";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -25,7 +29,7 @@ import { join } from "node:path";
  * R4-B demands ("上游API路径/依赖变动时先适配契约再验收，不复制过期测试成功记录").
  */
 
-const repoRoot = join(import.meta.dir, "../../..");
+const repoRoot = join(hereDir, "../../..");
 const runtimeGoDir = join(repoRoot, "runtime-go");
 const reportPath = join(runtimeGoDir, "testdata", "compatibility-report.json");
 const dependencyReviewPath = join(runtimeGoDir, "dependency-review.json");

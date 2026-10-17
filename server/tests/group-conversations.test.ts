@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { groupTurnMessage, mentionedPeers } from "../src/channels/group";
 
 test("group peer replies remain attributed quoted data in a genuine person turn", () => {

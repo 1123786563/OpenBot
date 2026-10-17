@@ -1,4 +1,9 @@
-import { afterEach, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import "./preload";
+import { afterEach, expect, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -622,7 +627,7 @@ test("every id these writes interpolate into a URL goes through encodeURICompone
    * assumption is itself pinned by the count below.
    */
   const source = readFileSync(
-    join(import.meta.dir, "../src/lib/plugins/mutations.ts"),
+    join(hereDir, "../src/lib/plugins/mutations.ts"),
     "utf8",
   );
   const paths = [...source.matchAll(/`(\/api\/[^`]*)`/g)].map(

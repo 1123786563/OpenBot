@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tests/support/e2e-compat";
 import { assertRunBudgetClaim } from "../../src/enterprise/models/budget";
 import { runOutputCeilingFromInput } from "../../src/enterprise/runs/output-ceiling";
 import type { RunServiceDependencies } from "../../src/enterprise/runs/service";

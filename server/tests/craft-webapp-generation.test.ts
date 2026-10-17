@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadCraftConfig } from "../src/craft/config";
@@ -447,7 +451,7 @@ describe("the start script stamps the generation at assembly time", () => {
     );
     // ...and the module sources the path from nowhere else.
     const source = await readFile(
-      join(import.meta.dir, "../src/craft/nextjs-dev.ts"),
+      join(hereDir, "../src/craft/nextjs-dev.ts"),
       "utf8",
     );
     expect(source).not.toContain("outputs/web/package.json");

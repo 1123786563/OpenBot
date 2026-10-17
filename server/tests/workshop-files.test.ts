@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { SandboxClient } from "../src/codesandbox/client";
 import type { WorkshopStore, WorkshopSessionRow } from "../src/workshop/store";
 import { UploadLimitError, listTree, upload } from "../src/workshop/files";

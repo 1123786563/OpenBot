@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import "./preload";
+import { afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
 import { QueryClient } from "@tanstack/react-query";
 import {
   cancelPurchase,

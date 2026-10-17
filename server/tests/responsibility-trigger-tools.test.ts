@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, test } from "../../tests/support/e2e-compat";
 import { callTool } from "../src/plugins/builtin-routines";
 import { catalogueEntry, classifyTool } from "../src/plugins/catalogue";
 import { createSlackTriggerIngest } from "../src/responsibilities/slack";

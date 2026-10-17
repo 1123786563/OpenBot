@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { GatewayAdminCredentialNotConfiguredError } from "../src/gateway/admin-credential";
@@ -439,7 +443,7 @@ describe("gateway readiness gate — the call-site inventory", () => {
   const CONDITION_SOURCE_PATTERN =
     /createGatewayProbeService|probeGatewayManagementEndpoint|createGatewayCapabilityNegotiationService|fetchGatewayExtensionManifest|resolveGatewayAdminCredential|createConversionRateStore|createGatewayEndpointService|gatewayEndpointControls|gatewayAdminCredentialControls|gatewayProbeControls|gatewayCapabilityControls|createEnterpriseGatewayProbeStore|createEnterpriseGatewayNegotiationStore/;
 
-  const srcRoot = join(import.meta.dir, "..", "src");
+  const srcRoot = join(hereDir, "..", "src");
 
   function listTypeScriptFiles(root: string): string[] {
     const files: string[] = [];

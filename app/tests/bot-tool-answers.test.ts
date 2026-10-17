@@ -1,4 +1,5 @@
-import { afterAll, expect, test } from "bun:test";
+import "./preload";
+import { afterAll, expect, test } from "../../tests/support/e2e-compat";
 import { QueryClient } from "@tanstack/react-query";
 import {
   answerListBotSkills,

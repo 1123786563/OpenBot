@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { RunAgentInput } from "@ag-ui/core";
 import { NO_ANSWER_CAME, toProviderMessages } from "../src/history";
 

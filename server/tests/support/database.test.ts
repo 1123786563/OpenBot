@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../tests/support/e2e-compat";
 import { testDatabaseUrlFrom } from "./database";
 
 describe("TEST_DATABASE_URL", () => {

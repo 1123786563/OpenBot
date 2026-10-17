@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readdirSync, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -51,7 +55,7 @@ const memberAuth = {
  */
 describe("the audit event taxonomy", () => {
   test("declares nothing this deployment cannot write", () => {
-    const root = join(import.meta.dir, "..", "src");
+    const root = join(hereDir, "..", "src");
     const sources: string[] = [];
     const walk = (directory: string) => {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {

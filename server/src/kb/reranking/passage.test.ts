@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../../tests/support/e2e-compat";
 import { cleanPassage, fitPassages, modelPassage } from "./passage";
 
 /** passage.go 直译验证：清洗步骤序与 ModelPassage 组装。 */

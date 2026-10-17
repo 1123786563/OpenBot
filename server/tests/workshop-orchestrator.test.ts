@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createTurnOrchestrator } from "../src/workshop/orchestrator";
 import type { WorkshopStore, WorkshopTurnRow } from "../src/workshop/store";
 import type { TurnLease, TurnLock } from "../src/workshop/locks";

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { classifyAttachment, namesNoFormat } from "../../shared/attachments";
 import { sniffMimeType } from "../src/channels/attachment-mime";
 

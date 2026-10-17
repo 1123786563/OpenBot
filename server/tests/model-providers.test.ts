@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { LLMock } from "@copilotkit/aimock";
 import { z } from "zod";
 import {

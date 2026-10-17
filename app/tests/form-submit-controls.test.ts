@@ -1,5 +1,10 @@
-import { expect, test } from "bun:test";
-import { Glob } from "bun";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import "./preload";
+import { expect, test } from "../../tests/support/e2e-compat";
+import { Glob } from "../../tests/support/bun-compat";
 import ts from "typescript";
 
 /**
@@ -47,10 +52,10 @@ function submits(node: ts.JsxOpeningLikeElement): boolean {
 test("every form with an onSubmit has a control that submits it", async () => {
   const dead: string[] = [];
   for await (const file of new Glob("src/**/*.tsx").scan(
-    `${import.meta.dir}/..`,
+    `${hereDir}/..`,
   )) {
     if (SUBMITTED_ELSEWHERE.has(file)) continue;
-    const text = await Bun.file(`${import.meta.dir}/../${file}`).text();
+    const text = await Bun.file(`${hereDir}/../${file}`).text();
     const source = ts.createSourceFile(
       file,
       text,

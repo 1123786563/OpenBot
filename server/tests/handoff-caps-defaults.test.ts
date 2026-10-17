@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { resolve } from "node:path";
 import { parse } from "yaml";
 import { loadConfig } from "../src/config";
@@ -23,7 +27,7 @@ import { testEnvironment } from "./support/environment";
  * so a relative path that misses takes the whole file's tests with it and reports nothing: the suite
  * gets smaller and stays green. That is what `bun test` from inside `server/` used to do.
  */
-const repositoryRoot = resolve(import.meta.dir, "..", "..");
+const repositoryRoot = resolve(hereDir, "..", "..");
 
 const chart = parse(
   await Bun.file(resolve(repositoryRoot, "charts/openbot/values.yaml")).text(),

@@ -13,7 +13,7 @@
 // header keeps D9's session-level shape (HttpOnly, SameSite=None; Secure, no
 // Max-Age/Expires) with the signed value in the NAME=VALUE position.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   PREVIEW_PASS_COOKIE_SHAPE,
   createPreviewPassCodec,

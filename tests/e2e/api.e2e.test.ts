@@ -17,7 +17,7 @@
  * 客户端互不复用连接与 cookie。
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../support/e2e-compat";
 
 const BASE_URL = process.env.OPENBOT_API_BASE_URL ?? "http://127.0.0.1:3001";
 

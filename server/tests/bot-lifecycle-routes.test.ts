@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { Hono } from "hono";
 import { BotPausedError } from "../src/agents/lifecycle";
 import { createBotLifecycleRoutes } from "../src/agents/lifecycle-routes";

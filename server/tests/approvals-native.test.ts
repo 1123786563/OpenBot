@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { z } from "zod";
 import { buildAgents } from "../src/copilot";
 import { currentApprovalContext } from "../src/approvals/types";

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tests/support/e2e-compat";
 import type { LanguageModelV3 } from "ai";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {

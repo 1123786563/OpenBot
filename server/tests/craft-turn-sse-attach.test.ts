@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { Hono, type MiddlewareHandler } from "hono";
 // The REAL gateway filter: the server's bus must survive exactly the bytes
 // agent-sandbox's /events forwarder emits — sourcing the stream through

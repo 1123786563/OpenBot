@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../../tests/support/e2e-compat";
 import { Hono } from "hono";
 import type { Db } from "../db/client";
 import type { DocRow, KbRow } from "../handler/shared";

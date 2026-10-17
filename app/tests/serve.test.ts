@@ -1,4 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import "./preload";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -41,7 +46,7 @@ Bun.serve = (options) => {
         preload,
         "serve.ts",
       ],
-      cwd: join(import.meta.dir, ".."),
+      cwd: join(hereDir, ".."),
       env,
       stdout: "pipe",
       stderr: "pipe",
@@ -313,7 +318,7 @@ async function startProxy(upstreamPort: number) {
   const port = await unusedPort();
   const child = Bun.spawn({
     cmd: [process.execPath, "--no-env-file", "serve.ts"],
-    cwd: join(import.meta.dir, ".."),
+    cwd: join(hereDir, ".."),
     env: { APP_PORT: String(port), SERVER_PORT: String(upstreamPort) },
     stdout: "pipe",
     stderr: "pipe",

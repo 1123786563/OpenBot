@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import type { ApprovalRecord } from "../src/approvals/types";
 import { createPrivateShareCheck } from "../src/proactive/private-share";
 

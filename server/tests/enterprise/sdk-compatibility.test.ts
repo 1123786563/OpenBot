@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../../tests/support/e2e-compat";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -21,7 +25,7 @@ import {
 } from "../../../shared/runtime-compatibility";
 import { createRuntimeTestFixture } from "./fixtures/platform";
 
-const fixturePath = resolve(import.meta.dir, "fixtures/runtime-wire.json");
+const fixturePath = resolve(hereDir, "fixtures/runtime-wire.json");
 
 describe("locked CopilotKit and AG-UI wire compatibility", () => {
   test("records_locked_versions_hashes_and_all_sdk_routes", () => {
@@ -63,13 +67,13 @@ describe("locked CopilotKit and AG-UI wire compatibility", () => {
         SDK_COMPATIBILITY.ag_ui_client.package_json_sha256,
       ],
     ]) {
-      const source = await readFile(resolve(import.meta.dir, relativePath));
+      const source = await readFile(resolve(hereDir, relativePath));
       expect(createHash("sha256").update(source).digest("hex")).toBe(
         expectedHash,
       );
     }
     const lockfile = await readFile(
-      resolve(import.meta.dir, "../../../bun.lock"),
+      resolve(hereDir, "../../../bun.lock"),
       "utf8",
     );
     expect(lockfile).toContain(SDK_COMPATIBILITY.copilotkit.integrity);

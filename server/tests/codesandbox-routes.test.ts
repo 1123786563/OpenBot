@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { Hono, type MiddlewareHandler } from "hono";
 import { createCodeSandboxRoutes } from "../src/codesandbox/routes";
 import type { AppVariables } from "../src/auth/guards";

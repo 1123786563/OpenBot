@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { emailDomainAllowed } from "../src/auth/email-domain";
 
 // Why this exists at all, and what it cannot do, is in `server/src/auth/email-domain.ts`.

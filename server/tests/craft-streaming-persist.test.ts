@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { compactionPacket, contextUsagePacket } from "../src/craft/events/packets";
 import { SSEKeepalive } from "../src/craft/events/types";
 import {

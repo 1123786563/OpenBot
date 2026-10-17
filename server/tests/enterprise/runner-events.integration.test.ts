@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tests/support/e2e-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq, like, sql } from "drizzle-orm";
 import { createDatabase, type Database } from "../../src/db/client";

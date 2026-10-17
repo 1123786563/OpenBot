@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq, like } from "drizzle-orm";
 import type { PaymentProvider } from "../src/billing/payments/provider";

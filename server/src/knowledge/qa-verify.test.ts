@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "../../../tests/support/e2e-compat";
 import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { firstValueFrom, of } from "rxjs";
 import { createKnowledgeCircuit } from "./circuit";

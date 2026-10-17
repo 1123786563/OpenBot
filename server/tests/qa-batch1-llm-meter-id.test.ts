@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -14,7 +18,7 @@ import { join } from "node:path";
  */
 
 const SOURCE = readFileSync(
-  join(import.meta.dir, "../src/index.ts"),
+  join(hereDir, "../src/index.ts"),
   "utf8",
 );
 

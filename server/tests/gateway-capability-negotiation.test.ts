@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { randomUUID } from "node:crypto";
 import pino from "pino";
 import { GatewayAdminCredentialNotConfiguredError } from "../src/gateway/admin-credential";

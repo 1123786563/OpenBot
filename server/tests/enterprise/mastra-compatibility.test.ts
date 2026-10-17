@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tests/support/e2e-compat";
 import { probeMastraCompatibility } from "../../src/mastra/compatibility";
 
 test("locked Mastra bridge emits a non-empty native AG-UI text chunk and finishes cleanly", async () => {

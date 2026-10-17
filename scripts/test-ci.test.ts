@@ -1,7 +1,11 @@
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, test } from "../tests/support/e2e-compat";
 
 const createdDirectories: string[] = [];
 const expectedTail =
@@ -90,7 +94,7 @@ test("preserves the child stderr tail before returning the child status", async 
 
   const fixedWrapper = await runBunThroughLogPipe(
     directory,
-    join(import.meta.dir, "test-ci.ts"),
+    join(hereDir, "test-ci.ts"),
   );
   expect(fixedWrapper.exitCode).toBe(7);
   expect(fixedWrapper.stderr).toBe("");

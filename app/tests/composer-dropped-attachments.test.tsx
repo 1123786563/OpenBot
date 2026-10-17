@@ -1,4 +1,5 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import "./preload";
+import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import type { Attachment } from "@copilotkit/react-core/v2";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";

@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import "../../../tests/preload";
+import { describe, expect, test } from "../../../../tests/support/e2e-compat";
 import { createStreamMachine } from "./stream-machine";
 
 /** One wire frame, as the server's sseBlock writes it: {"seq":N,"type":...}. */

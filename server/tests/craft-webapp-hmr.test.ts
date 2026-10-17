@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
@@ -973,7 +977,7 @@ describe("webappHmrSocketHandlers — the client↔upstream bridge", () => {
 // wiring is pinned at the source level — the same shape the qa-batch1 pins use.
 describe("the boot file's preview HMR wiring (fix-ocr18 #3 — source pin)", () => {
   const source = readFileSync(
-    join(import.meta.dir, "../src/index.ts"),
+    join(hereDir, "../src/index.ts"),
     "utf8",
   );
 
@@ -1130,7 +1134,7 @@ describe("the preview HMR upgrade's Origin gate (fix-ocr28 #1 — CSWSH)", () =>
 
   test("the boot file gates the upgrade on Origin inside the preview HMR branch, BEFORE the resolver (source pin)", () => {
     const source = readFileSync(
-      join(import.meta.dir, "../src/index.ts"),
+      join(hereDir, "../src/index.ts"),
       "utf8",
     );
     const branch = source.slice(

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../../tests/support/e2e-compat";
 import { type AuthBootstrapConfig, createAuth } from "../../../src/auth";
 import { loadConfig, loadIdentityConfig } from "../../../src/config";
 import type { Database } from "../../../src/db/client";

@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -14,19 +18,19 @@ import { join } from "node:path";
  *       local qrcode package is what the dialog imports.
  */
 const ROUTES = readFileSync(
-  join(import.meta.dir, "../src/billing/payments/routes.ts"),
+  join(hereDir, "../src/billing/payments/routes.ts"),
   "utf8",
 );
 const SERVICE = readFileSync(
-  join(import.meta.dir, "../src/billing/payments/service.ts"),
+  join(hereDir, "../src/billing/payments/service.ts"),
   "utf8",
 );
 const TYPES = readFileSync(
-  join(import.meta.dir, "../src/billing/payments/types.ts"),
+  join(hereDir, "../src/billing/payments/types.ts"),
   "utf8",
 );
 const CONFIG = readFileSync(
-  join(import.meta.dir, "../src/config.ts"),
+  join(hereDir, "../src/config.ts"),
   "utf8",
 );
 
@@ -82,7 +86,7 @@ describe("probe j: the QR renders locally", () => {
   test("no qrserver reference anywhere in the app source", () => {
     // The grep-equivalent, done in-test so the gate is part of the suite:
     // walk the app source for the third-party QR host.
-    const appDir = join(import.meta.dir, "../../app/src");
+    const appDir = join(hereDir, "../../app/src");
     const hits: string[] = [];
     const walk = (dir: string) => {
       for (const entry of Bun.file(join(dir, "..")).name ? [] : []) void entry;
@@ -99,7 +103,7 @@ describe("probe j: the QR renders locally", () => {
 
   test("the dialog imports the local qrcode package, not an image service", () => {
     const dialog = readFileSync(
-      join(import.meta.dir, "../../app/src/components/billing/upgrade-dialog.tsx"),
+      join(hereDir, "../../app/src/components/billing/upgrade-dialog.tsx"),
       "utf8",
     );
     expect(dialog).toMatch(/from "qrcode"|from 'qrcode'/);

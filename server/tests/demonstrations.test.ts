@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { draftDemonstration } from "../src/demonstrations/draft";
 import { createDemonstrationRecorder } from "../src/demonstrations/recording";
 import {

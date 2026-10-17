@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { getLogger } from "../../shared/logger";
 import * as network from "../src/computer/policy-network";
 import type {

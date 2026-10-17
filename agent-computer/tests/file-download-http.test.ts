@@ -1,4 +1,8 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   mkdir,
   mkdtemp,
@@ -54,7 +58,7 @@ beforeAll(async () => {
   const port = await freePort();
   base = `http://127.0.0.1:${port}`;
   child = Bun.spawn([process.execPath, "src/index.ts"], {
-    cwd: join(import.meta.dir, ".."),
+    cwd: join(hereDir, ".."),
     env: {
       ...process.env,
       COMPUTER_TOKEN: TOKEN,

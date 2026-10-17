@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -2621,7 +2625,7 @@ describe("refuseResponse — the shared HTML/JSON refusal sink (fix-ocr15)", () 
 // above; these pins hold the plumbing single-sourced.
 describe("the .webapp-mount read is single-sourced (fix-ocr28 #4 — source pins)", () => {
   const source = readFileSync(
-    join(import.meta.dir, "../src/craft/webapp-proxy.ts"),
+    join(hereDir, "../src/craft/webapp-proxy.ts"),
     "utf8",
   );
 

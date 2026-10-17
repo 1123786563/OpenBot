@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { createAgentRegistry } from "../src/agents/registry";
 
 test("reports built-in and remote agent availability without secrets", () => {

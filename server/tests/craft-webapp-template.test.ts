@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -25,7 +29,7 @@ import { join } from "node:path";
  * craft-webapp-hmr.test.ts).
  */
 
-const TEMPLATE = join(import.meta.dir, "../assets/craft/web-template");
+const TEMPLATE = join(hereDir, "../assets/craft/web-template");
 
 const read = (rel: string) => readFile(join(TEMPLATE, rel), "utf8");
 
@@ -340,7 +344,7 @@ describe("whitelist parity lock (fix-ocr22 #11): one pattern, three copies, zero
 
   test("nextjs-dev.ts, next.config.ts and lib/base-path.ts extract, and agree on every boundary", async () => {
     const serverSource = await readFile(
-      join(import.meta.dir, "../src/craft/nextjs-dev.ts"),
+      join(hereDir, "../src/craft/nextjs-dev.ts"),
       "utf8",
     );
     const nextConfigSource = await read("next.config.ts");

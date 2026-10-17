@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { PaymentProvider } from "../src/billing/payments/provider";
 import {
   createPaymentService,

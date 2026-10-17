@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createRedisPort } from "../src/redis";
 import type { RedisPort } from "../src/redis";
 

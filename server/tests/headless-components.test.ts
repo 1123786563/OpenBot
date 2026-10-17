@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { z } from "zod";
@@ -39,13 +43,13 @@ describe("headless components mirror the compiled gallery", () => {
   test("every gallery module is listed here", async () => {
     const files = [
       ...new Bun.Glob("*.tsx").scanSync(
-        join(import.meta.dir, "../../app/src/components/gallery"),
+        join(hereDir, "../../app/src/components/gallery"),
       ),
     ];
     const declaring = [];
     for (const file of files) {
       const source = await Bun.file(
-        join(import.meta.dir, "../../app/src/components/gallery", file),
+        join(hereDir, "../../app/src/components/gallery", file),
       ).text();
       if (source.includes("export const GALLERY")) declaring.push(file);
     }
@@ -110,7 +114,7 @@ describe("headless components mirror the compiled gallery", () => {
   });
 
   test("arguments a headless turn accepts draw the real chart with the app's renderer", async () => {
-    const appRequire = createRequire(join(import.meta.dir, "../../app/"));
+    const appRequire = createRequire(join(hereDir, "../../app/"));
     const { createElement } = appRequire("react") as typeof import("react");
     const { renderToStaticMarkup } = appRequire(
       "react-dom/server",

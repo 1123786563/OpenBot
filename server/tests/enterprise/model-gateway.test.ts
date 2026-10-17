@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, test } from "../../../tests/support/e2e-compat";
 import type { ModelInvocationContext } from "../../src/enterprise/contracts";
 import { createModelGateway } from "../../src/enterprise/models/gateway";
 

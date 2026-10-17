@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { oneLine } from "../src/channels/text";
 
 const SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });

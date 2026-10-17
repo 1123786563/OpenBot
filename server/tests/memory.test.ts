@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { z } from "zod";
 import type { AuthenticatedActor } from "../src/auth/guards";
 import type { MemoryIngestion } from "../src/memory/ingestion";

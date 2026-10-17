@@ -1,4 +1,4 @@
-import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq, like, sql } from "drizzle-orm";
 import * as paymentCrypto from "../src/billing/payments/crypto";

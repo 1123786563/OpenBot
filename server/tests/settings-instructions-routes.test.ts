@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createApp } from "../src/app";
 import type { AuditStore } from "../src/audit";
 import { loadConfig } from "../src/config";

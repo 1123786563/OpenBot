@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import type { Browser, Page } from "playwright";
 import { parseAriaSnapshot } from "../src/aria-snapshot";
 import {

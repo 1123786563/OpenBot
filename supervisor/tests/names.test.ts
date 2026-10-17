@@ -1,4 +1,4 @@
-import { describe, expect, test } from "e2e";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   BOT_LABEL,
   DEFAULT_NAMESPACE,

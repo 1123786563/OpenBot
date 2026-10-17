@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { harnessChoiceEvent, modelChoiceEvent } from "./telemetry";
 
 test("harness telemetry admits catalogue enums and excludes URLs and unknown IDs", () => {

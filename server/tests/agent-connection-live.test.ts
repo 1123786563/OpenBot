@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import { AGUIMock } from "@copilotkit/aimock/agui";
 import { testAgentConnection } from "../src/agents/connection-test";
 
