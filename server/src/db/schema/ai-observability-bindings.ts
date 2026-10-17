@@ -87,5 +87,18 @@ export const aiObservationBindings = pgTable(
       .where(sql`${table.opikTraceId} IS NOT NULL`),
     // The retention discovery predicate's filter column (m164): scanned every poll.
     index("ai_observation_bindings_created_at_idx").on(table.createdAt),
+    // The scope-filtered listing/window reads (R2-49): symmetric with the
+    // executions/exports scope_created_idx pair, so scope_key equality plus
+    // created_at ordering never degrades to a sort over the whole scope's history.
+    index("ai_observation_bindings_scope_created_idx").on(
+      table.scopeKey,
+      table.createdAt,
+    ),
+    // The stale-lease reclamation predicate (R2-22≡R2-50): the 5s poll updates
+    // exactly the rows still `running` past expires_at, so the partial index
+    // keeps that scan proportional to live zombies, not to binding history.
+    index("ai_observation_bindings_running_expires_idx")
+      .on(table.expiresAt)
+      .where(sql`${table.state} = 'running'`),
   ],
 );

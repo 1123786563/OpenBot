@@ -159,7 +159,13 @@ function boundedInteger(
   fallback: number,
   max: number,
 ): number {
-  const parsed = Number.parseInt((value ?? "").trim(), 10);
+  // Canonical decimal digits only, in the retentionDay Number() precedent's spirit
+  // (R2-42): Number.parseInt silently read "1e3" as 1000, "1.5" as 1, "1_000" as 1
+  // and "2500x" as 2500 — a bound the operator never wrote is a bound no one can
+  // audit, so anything that is not a plain integer literal keeps the default.
+  const raw = (value ?? "").trim();
+  if (!/^\d+$/.test(raw)) return fallback;
+  const parsed = Number(raw);
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= max
     ? parsed
     : fallback;
