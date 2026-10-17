@@ -1,16 +1,10 @@
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render } from "@testing-library/react";
-import type * as React from "react";
-import type { ReactNode } from "react";
-import { cloneElement, createContext, useContext } from "react";
 import i18n from "@/lib/i18n";
 import { settleReactWork } from "./settle-react-work";
-
-/* The close affordance is threaded through context rather than props, the way the real Dialog's
- * Close button asks the root to close — see billing-credits-ui.test.tsx, whose mock this is. */
-const CloseContext = createContext<() => void>(() => {});
+import { installDialogPassThrough } from "./dialog-pass-through";
 
 /*
  * Bifrost 02.7 (#221): the person's own balance view on the 套餐与积分 page.
@@ -32,90 +26,15 @@ const CloseContext = createContext<() => void>(() => {});
  * route contracts themselves are pinned server-side in server/tests/personal-credits-read.test.ts.
  */
 
-/* Base UI dialogs never mount under happy-dom (the portal rides browser transition APIs the DOM
- * shim does not implement), so the dialog shell is replaced with a SHAPE-COMPATIBLE passthrough —
- * the same mock billing-credits-ui.test.tsx installs, because mock.module is registry-level and
- * OUTLIVES THIS FILE: a simpler shell registered here would clobber the richer semantics later
- * files (dialog-heavy suites like bot-approval-rules) rely on — a closed dialog must mount
- * nothing, a trigger's child always renders, and DialogContent keeps a real close button.
- * Content renders inline instead of into a portal — the only part happy-dom cannot do. */
-mock.module("@/components/ui/dialog", () => {
-  const pass = ({ children }: { children?: ReactNode }) => children ?? null;
-  const DialogTriggerMock = ({
-    children,
-    render,
-  }: {
-    children?: ReactNode;
-    render?: React.ReactElement<Record<string, unknown>>;
-  }) =>
-    render
-      ? cloneElement(render, { "aria-haspopup": "dialog" }, children)
-      : (children ?? null);
-  DialogTriggerMock.displayName = "DialogTriggerMock";
-  const isTrigger = (child: React.ReactNode) =>
-    child !== null &&
-    typeof child === "object" &&
-    "type" in child &&
-    (child as { type?: { displayName?: string } }).type?.displayName ===
-      "DialogTriggerMock";
-  const Dialog = ({
-    children,
-    open = false,
-    onOpenChange,
-  }: {
-    children?: ReactNode;
-    open?: boolean;
-    onOpenChange?: (open: boolean) => void;
-  }) => {
-    const array = (Array.isArray(children) ? children : [children]).filter(
-      Boolean,
-    );
-    const triggers = array.filter(isTrigger);
-    const rest = array.filter((child) => !isTrigger(child));
-    const close = () => onOpenChange?.(false);
-    return open ? (
-      <CloseContext.Provider value={close}>
-        <div role="dialog">
-          {triggers}
-          {rest}
-        </div>
-      </CloseContext.Provider>
-    ) : (
-      <>
-        {triggers}
-        {rest.length === 0 ? null : null}
-      </>
-    );
-  };
-  const DialogContent = ({ children }: { children?: ReactNode }) => {
-    const close = useContext(CloseContext);
-    return (
-      <div>
-        {children}
-        <button onClick={close} type="button">
-          <span className="sr-only">Close</span>
-        </button>
-      </div>
-    );
-  };
-  return {
-    Dialog,
-    DialogContent,
-    DialogHeader: pass,
-    DialogBody: pass,
-    DialogFooter: pass,
-    DialogTitle: ({ children }: { children?: ReactNode }) => (
-      <h2>{children}</h2>
-    ),
-    DialogDescription: ({ children }: { children?: ReactNode }) => (
-      <p>{children}</p>
-    ),
-    DialogClose: pass,
-    DialogOverlay: pass,
-    DialogPortal: pass,
-    DialogTrigger: DialogTriggerMock,
-  };
-});
+/* The dialog shell is replaced with a SHAPE-COMPATIBLE passthrough — the one
+ * dialog-pass-through.tsx installs, as NAMESPACE SPIES rather than `mock.module`, because bun
+ * cannot take a module mock back off: a registry-level mock would stay installed for every test
+ * file walked into the same process afterwards, rendering their closed dialogs open (see
+ * composer-queue-attachments.test.tsx). A spy is restorable, and the `afterAll` below genuinely
+ * puts the real module back for the files that follow this one. The passthrough keeps the richer
+ * semantics dialog-heavy suites rely on — a closed dialog mounts nothing, a trigger's child
+ * always renders, and DialogContent keeps a real close button. */
+const restoreDialogPassThrough = installDialogPassThrough();
 
 const { UsageCreditsView } = await import(
   "@/components/billing/usage-credits-view"
@@ -136,6 +55,7 @@ afterAll(async () => {
   await settleReactWork();
   await i18n.changeLanguage("en");
   GlobalRegistrator.unregister();
+  restoreDialogPassThrough();
 });
 
 const originalFetch = global.fetch;

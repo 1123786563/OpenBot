@@ -1,34 +1,41 @@
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
+import * as Dialog from "@/components/ui/dialog";
 import i18n from "@/lib/i18n";
 import { settleReactWork } from "./settle-react-work";
 
-/* The dialogs this page does not use are mocked at the registry level the way every billing
- * suites does — a no-op shell so the module graph stays honest without Base UI's portals. */
-mock.module("@/components/ui/dialog", () => {
-  const pass = ({ children }: { children?: ReactNode }) => children ?? null;
-  return {
-    Dialog: pass,
-    DialogContent: pass,
-    DialogHeader: pass,
-    DialogBody: pass,
-    DialogFooter: pass,
-    DialogTitle: ({ children }: { children?: ReactNode }) => (
-      <h2>{children}</h2>
-    ),
-    DialogDescription: ({ children }: { children?: ReactNode }) => (
-      <p>{children}</p>
-    ),
-    DialogClose: pass,
-    DialogOverlay: pass,
-    DialogPortal: pass,
-    DialogTrigger: pass,
-  };
-});
+/* The dialogs this page does not use are replaced with a no-op shell so the module graph stays
+ * honest without Base UI's portals. The shell goes on as NAMESPACE SPIES, not `mock.module`,
+ * because bun cannot take a module mock back off: a registry-level mock would stay installed for
+ * every test file walked into the same process afterwards, rendering their closed dialogs open
+ * (see composer-queue-attachments.test.tsx). A spy is restorable, and the `afterAll` below
+ * genuinely puts the real module back for the files that follow this one. */
+const pass = ({ children }: { children?: ReactNode }) => children ?? null;
+const dialogSpies = [
+  spyOn(Dialog, "Dialog").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogContent").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogHeader").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogBody").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogFooter").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogTitle").mockImplementation((({
+    children,
+  }: {
+    children?: ReactNode;
+  }) => <h2>{children}</h2>) as never),
+  spyOn(Dialog, "DialogDescription").mockImplementation((({
+    children,
+  }: {
+    children?: ReactNode;
+  }) => <p>{children}</p>) as never),
+  spyOn(Dialog, "DialogClose").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogOverlay").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogPortal").mockImplementation(pass as never),
+  spyOn(Dialog, "DialogTrigger").mockImplementation(pass as never),
+];
 
 const { AdminCreditGrantCard } = await import(
   "@/components/billing/admin-credit-grant"
@@ -46,6 +53,7 @@ afterAll(async () => {
   await settleReactWork();
   await i18n.changeLanguage("en");
   GlobalRegistrator.unregister();
+  for (const spy of dialogSpies) spy.mockRestore();
 });
 
 const originalFetch = global.fetch;
