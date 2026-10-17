@@ -9,6 +9,7 @@ import {
   DEFAULT_EVALUATION_BUDGET,
   extractRuleSet,
   MAX_RULES_PER_SET,
+  regexHasNestedQuantifiers,
   type ScoringRule,
   scoreRunOutput,
 } from "../src/ai-observability/scoring/rules";
@@ -721,6 +722,30 @@ describe("the three failure classes are explicit, never a 0", () => {
     expect(out[3]).toMatchObject({ status: "passed" });
     expect(out[4]).toMatchObject({ status: "failed", reason: "no_match" });
     expect(out[5]).toMatchObject({ status: "failed", reason: "no_match" });
+  });
+
+  test("a quantified character class inside a group counts as nested (R2-41)", () => {
+    // The class atom's text must be sliced relative to the class's own start —
+    // slicing from the pattern start made `(?:[a-z]+)+` look like a group whose
+    // body never runs an unbounded single-char quantifier, so the classic ReDoS
+    // shapes slipped past the static gate.
+    for (const pattern of [
+      "(?:[a-z]+)+",
+      "([a-z0-9]+)*",
+      "([abc]+)+",
+      "([a-f0-9]+)+",
+      // Regression guards: the shapes the gate already caught stay caught.
+      "(\\d+)+",
+      "^(a+)+$",
+    ]) {
+      expect(regexHasNestedQuantifiers(pattern)).toBe(true);
+    }
+    // Safe shapes stay accepted — the fix only tightens, it must not miskill:
+    // a single-layer class quantifier, a group with no quantifier, a group
+    // with an unbounded inner but no outer quantifier.
+    for (const pattern of ["[a-z]+", "(?:abc)", "(a+)"]) {
+      expect(regexHasNestedQuantifiers(pattern)).toBe(false);
+    }
   });
 
   test("evaluation timeout: budget exhaustion marks the unaffordable rules, deterministically", () => {

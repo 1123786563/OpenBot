@@ -128,6 +128,11 @@ export function regexHasNestedQuantifiers(pattern: string): boolean {
       return { text: pattern.slice(at - 2, at), group: null };
     }
     if (ch === "[") {
+      // Record the class's own start: the atom's text must be the relative slice
+      // of just this class (same shape as the escape branch's slice(at-2, at)),
+      // or a quantified class inside a group reads as a non-consuming atom and
+      // `(?:[a-z]+)+` slips past the gate (R2-41).
+      const start = at;
       let cursor = at + 1;
       if (pattern[cursor] === "^") cursor += 1;
       if (pattern[cursor] === "]") cursor += 1;
@@ -135,7 +140,7 @@ export function regexHasNestedQuantifiers(pattern: string): boolean {
         cursor += pattern[cursor] === "\\" ? 2 : 1;
       }
       at = Math.min(cursor + 1, pattern.length);
-      return { text: pattern.slice(0, at), group: null };
+      return { text: pattern.slice(start, at), group: null };
     }
     if (ch === "(") {
       // (?: (?<name> (?= (?! (?<= (?<! — headers consumed to the body.
