@@ -1,0 +1,46 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/credentials-ownership.test.ts:
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC1: personal credentials are owner-only > owner can use a personal site login (allow carries no plaintext) [30.97ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC1: personal credentials are owner-only > owner can read the plaintext and the disclosure is audited once [19.52ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC1: personal credentials are owner-only > same-team other person cannot use, read, describe or list it [30.19ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC1: personal credentials are owner-only > cross-team same-company member cannot use or read it [18.08ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC1: personal credentials are owner-only > multi-team membership does not make a colleague an owner [13.11ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC1: personal credentials are owner-only > company admin has no authority over personal credentials [15.11ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC1: personal credentials are owner-only > personal connection kind is owner-only too [15.37ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC1: personal credentials are owner-only > owner-only denials are byte-identical to a nonexistent credential [18.55ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC2: team/company credentials — action grants, independent disclosure, audit > team membership alone does not authorize use [7.51ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC2: team/company credentials — action grants, independent disclosure, audit > 'use' grant authorizes use but never plaintext disclosure [17.14ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC2: team/company credentials — action grants, independent disclosure, audit > 'disclose' grant independently opens plaintext reads with audit [22.16ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC2: team/company credentials — action grants, independent disclosure, audit > revoking the disclose grant closes plaintext reads immediately [18.88ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC2: team/company credentials — action grants, independent disclosure, audit > same-team colleague with their own 'use' grant may use but not read [13.76ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC2: team/company credentials — action grants, independent disclosure, audit > an action grant never substitutes for team membership [23.48ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC2: team/company credentials — action grants, independent disclosure, audit > by-ID operations derive the workspace from the credential, not the selector [11.04ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC2: team/company credentials — action grants, independent disclosure, audit > suspending the team membership closes use immediately; restoring reopens [38.87ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC2: team/company credentials — action grants, independent disclosure, audit > revoked credentials deny everyone, including previously granted members [33.30ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC2: team/company credentials — action grants, independent disclosure, audit > company credentials serve every member holding the action grant [26.18ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC2: team/company credentials — action grants, independent disclosure, audit > company plaintext reads need their own disclosure grant and audit [19.06ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC2: team/company credentials — action grants, independent disclosure, audit > suspending the company membership denies the stale scope; a fresh scope recovers [33.00ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC3: cross-company IDs are invisible and never reach the vendor > every company-A credential denies a company-B scope byte-identically, vendor untouched [27.76ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC3: cross-company IDs are invisible and never reach the vendor > cross-company disclosure writes no audit rows [13.04ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC3: cross-company IDs are invisible and never reach the vendor > cross-company lists and details leak nothing [13.39ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC3: cross-company IDs are invisible and never reach the vendor > a cross-company ownership row is structurally impossible (23503) [3.17ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC3: cross-company IDs are invisible and never reach the vendor > a nonexistent credential behaves byte-identically to a cross-company one [13.41ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC4: redacted surfaces — responses, lists, errors carry no secrets > list and detail views are structurally redacted [27.96ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC4: redacted surfaces — responses, lists, errors carry no secrets > canary secrets never appear in any list/detail/use/deny/error output [29.28ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC4: redacted surfaces — responses, lists, errors carry no secrets > list counts never leak cross-scope existence [15.76ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > AC4: redacted surfaces — responses, lists, errors carry no secrets > the authorized disclosure is the only surface that returns plaintext [10.27ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > storage contract: FORCE RLS, least privilege, invariants > all three tables force row level security [2.18ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > storage contract: FORCE RLS, least privilege, invariants > the restricted roles hold exactly the designed grant matrix [11.30ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > storage contract: FORCE RLS, least privilege, invariants > ownership row shape is enforced by CHECK constraints [12.78ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > storage contract: FORCE RLS, least privilege, invariants > the action vocabulary is a closed set at the database too [1.93ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > storage contract: FORCE RLS, least privilege, invariants > the disclosure audit is append-only for every role [3.37ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > storage contract: FORCE RLS, least privilege, invariants > transaction-local context is gone after commit on the pooled connection [2.12ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > storage contract: FORCE RLS, least privilege, invariants > unverified database channels are refused at service construction [2.51ms]
+(pass) MT027 credentials ownership: usable is not readable (Issue #70) > storage contract: FORCE RLS, least privilege, invariants > the applied migration plan is deterministic (replay is up-to-date after apply) [11.98ms]
+
+ 37 pass
+ 0 fail
+ 226 expect() calls
+Ran 37 tests across 1 file. [1424.00ms]
+exit=0

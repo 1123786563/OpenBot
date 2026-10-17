@@ -1,0 +1,7 @@
+(pass) MT026 storage fence: the restricted roles cannot see across companies > operator role pinned to company B sees none of company A's SCIM binding rows [2.08ms]
+(pass) MT026 revalidation drift: a context issued before a membership change is refused > an in-transaction revalidation fails with SCOPE_REVOKED after the epoch moved [11.87ms]
+
+ 990 pass
+ 0 fail
+ 12084 expect() calls
+Ran 990 tests across 38 files. [38.23s]

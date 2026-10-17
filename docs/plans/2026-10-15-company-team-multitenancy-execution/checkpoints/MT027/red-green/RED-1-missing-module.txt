@@ -1,0 +1,15 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/credentials-ownership.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '../../../src/enterprise/tenancy/credential-ownership' from '/Users/wuyongjun/orca/workspaces/OpenBot/i11-mt027/server/tests/multitenancy/support/credentials-ownership.ts'
+-------------------------------
+
+
+ 0 pass
+ 1 fail
+ 1 error
+Ran 1 test across 1 file. [183.00ms]
+bun-exit=1

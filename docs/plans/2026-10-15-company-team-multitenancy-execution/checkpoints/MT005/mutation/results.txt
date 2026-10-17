@@ -1,0 +1,14 @@
+M1 exit=1  14 pass  8 fail  — resolve() drops team-membership check
+M2 exit=1  0 pass  1 fail  — missing workspace selector falls back to a guess
+M3 exit=1  0 pass  1 fail  — gate accepts suspended team rows
+M4 exit=1  0 pass  1 fail  — gate drops company epoch equality check
+M2v2 exit=1  20 pass  2 fail  — missing workspace selector falls back to a guess (assertion-level)
+M3v2 exit=1  17 pass  5 fail  — gate accepts suspended team rows (assertion-level)
+M4v2 exit=0  22 pass  0 fail  — gate drops company epoch equality check (assertion-level)
+M4v3 exit=1 — gate drops company epoch equality check → stale-scope test catches it (SCOPE_REVOKED expected, got "")
+---
+NOTE: M2/M3/M4 first attempts (see M2.log/M3.log/M4.log) are superseded:
+M2 v1 had a duplicate-declaration syntax error (caught at module load, not by assertions);
+M3/M4 v1 hit bun's default 5s hook timeout (environmental flake, see M3v2/M4v2 reruns with --timeout 60000).
+Assertion-level evidence: M1 (8 fail), M2v2 (2 fail), M3v2 (5 fail), M4v3 (1 fail — the stale-epoch pin test added precisely to catch M4; RED under mutation, GREEN without, exit 0 at green-stage5).
+All mutations reverted; production hashes restored and re-verified (see original-hashes.txt vs post-restore sha256sum in run log).

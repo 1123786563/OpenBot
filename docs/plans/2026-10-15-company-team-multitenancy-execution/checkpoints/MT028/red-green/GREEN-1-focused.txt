@@ -1,0 +1,37 @@
+# MT028 聚焦 GREEN（2026-10-17）
+command: bun test tests/multitenancy/oauth-state.test.ts --timeout 60000
+env: 专用容器 mt028-impl-pg @127.0.0.1:55530，双库，ent_mt028_{dir,data,opr} 三受限登录（MT028 迁移已 apply）
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/oauth-state.test.ts:
+(pass) MT028 initiation: the persisted row fixes the attribution > initiate mints a server-generated state whose challenge derives from the stored verifier (AC1) [20.93ms]
+(pass) MT028 initiation: the persisted row fixes the attribution > consume binds exactly the initiation-time company/team/user/purpose/target (AC1) [13.60ms]
+(pass) MT028 initiation: the persisted row fixes the attribution > the binding is byte-identical with or without claimed context — claimed never decides (AC1) [24.16ms]
+(pass) MT028 initiation: the persisted row fixes the attribution > a callback-time tenant/team/user selection never rewrites the attribution — cross-scope denies (AC1) [26.32ms]
+(pass) MT028 initiation: the persisted row fixes the attribution > a cross-scope presentation does not burn the state — the honest callback still binds (MT026 precedent) [16.46ms]
+(pass) MT028 initiation: the persisted row fixes the attribution > cross-scope rejection records a security event (AC2) [19.60ms]
+(pass) MT028 rejections: missing/expired/replayed + security events > a missing state denies without attribution and never invents a tenant row (AC2) [1.91ms]
+(pass) MT028 rejections: missing/expired/replayed + security events > a missing state records a security event only under an explicit caller attribution (AC2/D1) [5.10ms]
+(pass) MT028 rejections: missing/expired/replayed + security events > an expired state denies STATE_EXPIRED, records the event, and stays forensically expired (AC2) [1224.18ms]
+(pass) MT028 rejections: missing/expired/replayed + security events > a used state replays once and only once — the atomic arm admits exactly one consumer (AC2) [16.50ms]
+(pass) MT028 rejections: missing/expired/replayed + security events > an initiator suspended mid-flow cannot complete: INITIATOR_INELIGIBLE + event, and the flow resumes when restored (A5/AC2) [31.63ms]
+(pass) MT028 failure: no half-done connection, retry needs a new state > fail after consume is terminal — the same state can never bind again (AC3) [15.08ms]
+(pass) MT028 failure: no half-done connection, retry needs a new state > fail on a pending state (abandoned flow) also terminates it (AC3) [11.05ms]
+(pass) MT028 failure: no half-done connection, retry needs a new state > fail is idempotent and honest about unknown states (AC3) [14.19ms]
+(pass) MT028 failure: no half-done connection, retry needs a new state > a retry is a NEW state: freshly minted, independently consumable, old state stays dead (AC3) [25.24ms]
+(pass) MT028 failure: no half-done connection, retry needs a new state > the module's only writes are state rows and security events — no connection surface exists (structural, AC3) [7.20ms]
+(pass) MT028 zero-token-plaintext: responses, errors and events carry no secrets > deny surfaces and security events carry neither the state value nor the verifier nor token canaries (AC4) [27.78ms]
+(pass) MT028 zero-token-plaintext: responses, errors and events carry no secrets > security event details are a closed shape: no secret-bearing keys ever (AC4) [18.53ms]
+(pass) MT028 zero-token-plaintext: responses, errors and events carry no secrets > the allow binding carries exactly the flow material — no token fields exist on any output type (AC4) [13.71ms]
+(pass) MT028 zero-token-plaintext: responses, errors and events carry no secrets > misuse refusals stay loud and valueless: extra keys, bad ttl, empty state, unknown fail reason, forged scope [2.44ms]
+(pass) MT028 zero-token-plaintext: responses, errors and events carry no secrets > initiation requires a trusted scope — a hand-built scope is refused (MT005 seam) [0.09ms]
+(pass) MT028 storage fence: RLS, roles and enumeration > the state table is RLS-enabled and FORCEd (MT012 baseline) [1.19ms]
+(pass) MT028 storage fence: RLS, roles and enumeration > data/directory roles hold nothing on the table; operator never DELETEs (fence) [2.92ms]
+(pass) MT028 storage fence: RLS, roles and enumeration > the operator cannot enumerate flows: without the state arm the tenant pin sees nothing (MT026 fence) [13.17ms]
+(pass) MT028 storage fence: RLS, roles and enumeration > a cross-company attribution row is structurally impossible (composite FK, 23503) [2.56ms]
+
+ 25 pass
+ 0 fail
+ 146 expect() calls
+Ran 25 tests across 1 file. [1.99s]
+exit=0

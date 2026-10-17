@@ -1,0 +1,9 @@
+# MT028 修复轮全量回归（surfaceOf 死导出删除后，2026-10-17，容器 mt028-fix-pg@55540，bun test tests/multitenancy/）
+(pass) MT026 storage fence: the restricted roles cannot see across companies > operator role pinned to company B sees none of company A's SCIM binding rows [3.37ms]
+(pass) MT026 revalidation drift: a context issued before a membership change is refused > an in-transaction revalidation fails with SCOPE_REVOKED after the epoch moved [17.38ms]
+
+ 796 pass
+ 0 fail
+ 10811 expect() calls
+Ran 796 tests across 30 files. [42.82s]
+full-exit=0
