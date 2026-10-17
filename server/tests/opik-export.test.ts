@@ -80,6 +80,24 @@ describe("deployment bounds", () => {
       DEFAULT_EXPORT_MAX_ROWS,
     );
   });
+
+  test("loose numeric forms are refused, not truncated (R2-42: 1e3/1.5/1_000/2500x)", () => {
+    // Number.parseInt silently read every one of these as a different quantity
+    // ("1e3"→1000, "1.5"→1, "1_000"→1, "2500x"→2500) — the retentionDay Number()
+    // precedent refuses what it cannot read whole, and so does an export bound:
+    // a row cap the operator did not write is a cap the deployment cannot audit.
+    for (const bad of ["1e3", "1.5", "1_000", "2500x", "1e4"]) {
+      expect(resolveExportLimits({ OPIK_EXPORT_MAX_ROWS: bad }).maxRows).toBe(
+        DEFAULT_EXPORT_MAX_ROWS,
+      );
+      expect(
+        resolveExportLimits({ OPIK_EXPORT_MAX_ACTIVE: bad }).maxActive,
+      ).toBe(DEFAULT_EXPORT_MAX_ACTIVE);
+      expect(
+        resolveExportLimits({ OPIK_EXPORT_CONCURRENCY: bad }).concurrency,
+      ).toBe(DEFAULT_EXPORT_CONCURRENCY);
+    }
+  });
 });
 
 describe("folding upstream pages under a row cap", () => {

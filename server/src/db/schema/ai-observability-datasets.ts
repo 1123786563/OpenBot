@@ -122,5 +122,9 @@ export const aiObservationDatasetVersions = pgTable(
       table.datasetId,
       table.contentHash,
     ),
+    // The retention pin anti-join and the FK CASCADE backstop (R2-23≡R2-27) both
+    // reach versions by dataset_id alone; the composite uq above leads with
+    // scope_key and cannot serve that single-column path.
+    index("ai_observation_dataset_versions_dataset_id_idx").on(table.datasetId),
   ],
 );

@@ -925,6 +925,13 @@
 			"when": 1792127022978,
 			"tag": "0131_opik_retention_indexes",
 			"breakpoints": true
+		},
+		{
+			"idx": 132,
+			"version": "7",
+			"when": 1792127022979,
+			"tag": "0132_opik_binding_scope_indexes",
+			"breakpoints": true
 		}
 	]
 }
