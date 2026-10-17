@@ -154,10 +154,13 @@ const PREVIEW_TICKET_UNVERIFIABLE_ERROR =
  * webapp-info's legacy and current branches each used to spell the
  * readFile + trim + null-fold + catch verbatim, and any one site drifting
  * its fold would make the two mirrored surfaces disagree about the SAME
- * session's record. null means "cannot vouch" — no fileApi (undefined), no
- * record ever written (readFile's null), or a thrown read (a gateway
- * flake); a READ record answers its trimmed content, "" included (the
- * empty record is a real answer: the root mount). The consumers' judgments
+ * session's record. null means ONLY "cannot vouch" — no fileApi
+ * (undefined) or a thrown read (a gateway flake); readFile's null (the
+ * record was never written) folds to "" and keeps comparing as the empty
+ * mount, a real answer (the root mount), never a refusal (fix-ocr29 #3:
+ * this sentence previously counted readFile's null among the nulls —
+ * drifting from the code the comment documents). A READ record answers
+ * its trimmed content, "" included. The consumers' judgments
  * stay at their own seams on purpose: the mint needs a non-empty exact
  * match, the legacy branch reads an empty record as the true legacy
  * answer, the current branch compares against the expected mount — same
