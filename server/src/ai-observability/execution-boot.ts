@@ -193,6 +193,15 @@ export type ExperimentExecutionBootDeps = Readonly<{
  * inside, the judge outside it, live authorization around both — and nothing else
  * invented here.
  */
+/**
+ * The production execution worker's work-item lease (OCR m131): two gateway call
+ * timeouts (execution-runner.ts's GATEWAY_CALL_TIMEOUT_MS = 60s). The lease must
+ * strictly outlive the slowest single case it covers — renewal runs only before
+ * each case — so equal budgets would race at the boundary; twice the budget leaves
+ * settle and renew a full timeout of headroom.
+ */
+export const EXECUTION_WORKER_LEASE_MS = 120_000;
+
 export function createExperimentExecutionWorkerBoot(
   deps: ExperimentExecutionBootDeps,
 ) {
@@ -221,6 +230,15 @@ export function createExperimentExecutionWorkerBoot(
     ...(deps.concurrency === undefined
       ? {}
       : { concurrency: deps.concurrency }),
+    // The work-item lease must outlive the slowest single case, not equal one
+    // gateway round trip (OCR m131): the runner's per-case budget is
+    // GATEWAY_CALL_TIMEOUT_MS (60s), and renewal happens only before each case —
+    // so at the old 60s default a case at the full budget let the lease lapse at
+    // the very moment the gateway gave up. The takeover then marked the execution
+    // unknown and refused the original worker's recordCaseOutcome flip: real
+    // observation truth, thrown away. Twice the budget leaves the settle-and-renew
+    // path a full timeout of headroom.
+    leaseMs: EXECUTION_WORKER_LEASE_MS,
     ...(deps.owner === undefined ? {} : { owner: deps.owner }),
   });
 }
