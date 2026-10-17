@@ -44,6 +44,7 @@ import type {
   OpikSpanRow,
   OpikTraceRow,
 } from "../opik-port";
+import { OpikPortError } from "../opik-port";
 import { projectSafeMetadata, projectSafeText } from "../redaction";
 import type { AttemptRunState } from "../run-lifecycle";
 import { bindCursor, cacheKey, readCursor, scopeCacheKey } from "../scope";
@@ -396,8 +397,25 @@ export function createRunsQueryService(
     }
   };
 
-  /** Every port failure becomes an explainable code; none becomes an empty page. */
-  const unwrap = <T>(result: OpikPortResult<T>): T => {
+  /**
+   * Every port failure becomes an explainable code; none becomes an empty page.
+   * That includes the pre-I/O refusals (OCR R3-28): requireOperation throws
+   * OpikPortError — CONTRACT_UNVERIFIED / OPERATION_UNSUPPORTED — before any
+   * fetch, so the call rejects instead of settling into an OpikPortResult and
+   * used to escape this mapping as a code-less 500. The missing-verified-
+   * capability verdict the health seam already records (health.ts) is the
+   * honest answer here too: 503 capability_missing, never a bare rethrow.
+   */
+  const unwrap = async <T>(pending: Promise<OpikPortResult<T>>): Promise<T> => {
+    let result: OpikPortResult<T>;
+    try {
+      result = await pending;
+    } catch (error) {
+      if (error instanceof OpikPortError) {
+        throw new RunsQueryError("capability_missing", 503);
+      }
+      throw error;
+    }
     switch (result.outcome) {
       case "ok":
         return result.value;
@@ -424,15 +442,15 @@ export function createRunsQueryService(
     const port = deps.port;
     if (port === null) throw new RunsQueryError("capability_missing", 503);
 
-    const project = unwrap(await port.retrieveProject(scope));
+    const project = await unwrap(port.retrieveProject(scope));
     let fresh: CachedWindow;
     if (project === null) {
       // The verified 404 on the scope's own project: no records exist. A
       // truthful empty window — the one empty that is not a disguise.
       fresh = { at: now().getTime(), projectId: null, rows: [], total: 0 };
     } else {
-      const page = unwrap(
-        await port.listTraces(scope, {
+      const page = await unwrap(
+        port.listTraces(scope, {
           projectId: project.id,
           size: windowSize,
         }),
@@ -568,7 +586,7 @@ export function createRunsQueryService(
     }
     const port = deps.port;
     if (port === null) throw new RunsQueryError("capability_missing", 503);
-    const project = unwrap(await port.retrieveProject(scope));
+    const project = await unwrap(port.retrieveProject(scope));
     if (project === null) {
       // The verified 404 on the scope's own project: the truthful empty, the
       // one that is not a disguise.
@@ -580,8 +598,8 @@ export function createRunsQueryService(
     const rows: OpikSpanRow[] = [];
     let page = 1;
     for (;;) {
-      const result = unwrap(
-        await port.listSpans(scope, {
+      const result = await unwrap(
+        port.listSpans(scope, {
           projectId: project.id,
           traceId: binding.opikTraceId,
           size: windowSize,

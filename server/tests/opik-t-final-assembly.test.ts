@@ -404,25 +404,53 @@ describe("T-final M1: the boot assembly reads the ambient scope", () => {
     "utf8",
   );
 
-  test("both recorders' adapters carry the ambient scope into the record", () => {
-    // The model-span and tool-step adapters must read the ambient scope the
-    // threading established — a scope-less record is a silent no-op upstream.
-    expect(indexSource).toMatch(/currentRunObservationScope\(\)/);
+  test("both settlement-path adapters read the scope their fact captured, never the ambient store (OCR R2-58 + R3-39)", () => {
+    // By stream teardown the ambient context is not guaranteed (the same
+    // discipline both facts' trace fields document), so the settlement-path
+    // adapters must read the scope each fact carried from its own entry — the
+    // model span from doStream entry (R2-58), the tool step from cell open
+    // (R3-39: the finalize path settles outside the ambient context).
     expect(
-      indexSource.match(/currentRunObservationScope\(\)/g)?.length,
-    ).toBeGreaterThanOrEqual(2);
+      indexSource.match(/scope: fact\.scope as ObservationScope/g)?.length,
+    ).toBe(2);
   });
 
-  test("the model-span adapter uses the scope the fact captured at entry, not the ambient read at settlement (OCR R2-58)", () => {
-    // By stream teardown the ambient context is not guaranteed (the same
-    // discipline the fact's own trace field documents), so the settlement-path
-    // adapter must read the scope the fact carried from its doStream entry.
-    expect(indexSource).toMatch(/scope: fact\.scope as ObservationScope/);
-    // The tool-step and retrieval adapters keep the ambient read: their facts
-    // settle inside the run's pipeline, where the ambient context holds.
+  test("the one remaining ambient read is the retrieval adapter's, whose fact is emitted inline (OCR R3-39 scoping)", () => {
+    // The retrieval observation is emitted synchronously inside the run's
+    // pipeline, where the ambient context holds — the tool-step settlement's
+    // ambient read, the one R3-39 kills, is gone (zero on that path).
     expect(indexSource.match(/currentRunObservationScope\(\)/g)?.length).toBe(
-      2,
+      1,
     );
+  });
+
+  test("the run-scope resolver is constructed before the first top-level await — the boot TDZ race is dead (OCR R3-36)", () => {
+    // The resolver construction is pure and synchronous; between the first
+    // repeatAfterEach sweeps registering (each first run a setTimeout away)
+    // and the old construction site — past several top-level awaits, one of
+    // them loadVerifiedOpikPort's >5s HTTP pull — a wake-up sweep could build
+    // an agent and subscribe a run, invoking index.ts's forwarding lambda
+    // while aiObservabilityRunScope was still in its temporal dead zone. The
+    // ReferenceError inside the async lambda became an errored stream that
+    // bypassed the resolver's never-throw contract entirely. The whole block
+    // — the resolver AND the closure deps its callbacks dereference (the boot
+    // config, the manage gate, the epoch store) — now sits before the first
+    // top-level await, so no await window can catch any of them uninitialized.
+    const source = indexSource.split("\n");
+    const firstTopLevelAwait = source.findIndex((line) =>
+      /^await\s/.test(line),
+    );
+    expect(firstTopLevelAwait).toBeGreaterThan(0);
+    for (const declaration of [
+      "const opikBootConfig = opikConfigFromEnv(process.env);",
+      "const aiObservabilityCanManageBot: BotManagementCheck = async (",
+      "const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);",
+      "const aiObservabilityRunScope = createBuiltinRunScopeResolver({",
+    ]) {
+      const declared = source.findIndex((line) => line.startsWith(declaration));
+      expect(declared, declaration).toBeGreaterThanOrEqual(0);
+      expect(declared, declaration).toBeLessThan(firstTopLevelAwait);
+    }
   });
 });
 

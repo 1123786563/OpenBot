@@ -469,6 +469,38 @@ describe("case review — acceptance 4: the canary never survives projection", (
     // then compares against cases.length — not "how many fields the policy refused".
     expect(outcome.canaryFindings).toBe(1);
   });
+
+  test("a truncated text field is damage the count surfaces too, not just an omitted one (OCR R3-31)", async () => {
+    // Clean prose past the 8KiB text ceiling freezes as { state: "truncated" }:
+    // no omission anywhere, yet the reviewer's source text is not what the
+    // dataset would hold. The count exists to surface exactly this damage.
+    const { service, auditFake } = serviceFor([bindingRow(scopeA)]);
+    const outcome = await service.review(scopeA, {
+      runId: "run-1",
+      decision: "approved",
+      cases: [{ ...fragment, input: "a".repeat(10_000) }],
+    });
+    expect(outcome.preview[0]?.safeInput.state).toBe("truncated");
+    expect(outcome.canaryFindings).toBe(1);
+    expect(auditFake.events[0]?.payload).toMatchObject({ canaryFindings: 1 });
+  });
+
+  test("a truncated node deep inside toolFixtures counts as a finding too (OCR R3-31)", async () => {
+    const { service } = serviceFor([bindingRow(scopeA)]);
+    const outcome = await service.review(scopeA, {
+      runId: "run-1",
+      decision: "approved",
+      cases: [
+        {
+          ...fragment,
+          toolFixtures: {
+            search: { transcript: "b".repeat(10_000), hits: 3 },
+          },
+        },
+      ],
+    });
+    expect(outcome.canaryFindings).toBe(1);
+  });
 });
 
 describe("case review — acceptance 2: saving reaches the T19 freeze with honest provenance", () => {

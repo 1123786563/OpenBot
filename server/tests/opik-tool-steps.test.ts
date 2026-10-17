@@ -42,6 +42,7 @@ import {
   createKnowledgeRetriever,
   setKnowledgeRetrievalObserver,
 } from "../src/knowledge/retrieval";
+import { withRunObservationScope } from "../src/observation-run-scope";
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -817,6 +818,111 @@ describe("the built-in observation bypass", () => {
     expect(facts[1].execution?.output).toMatch(/^\{"blob":"w{1,}/);
   });
 
+  test("tool call arguments stop accumulating at the capture ceiling (OCR R3-37)", async () => {
+    // The args stream is the one tool-step payload with no capture bound: every
+    // delta was retained whole until settlement, pinning a large call's full
+    // arguments for as long as the cell stayed open (an approval wait, for
+    // instance). The span-input precedent (OCR R2-52) applies: accumulation
+    // stops at 64Ki characters, and the cut is declared in-band.
+    const facts: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => facts.push(fact));
+    const subject = new Subject<BaseEvent>();
+    const subscription = toolStepObservationForTests
+      .observeStream(subject)
+      .subscribe();
+    try {
+      subject.next(
+        ev({
+          type: "TOOL_CALL_START",
+          toolCallId: "args-cap-1",
+          toolCallName: "host_read",
+        }),
+      );
+      subject.next(
+        ev({
+          type: "TOOL_CALL_ARGS",
+          toolCallId: "args-cap-1",
+          delta: '{"head": "',
+        }),
+      );
+      // ~205Ki of deltas, far past the ceiling.
+      for (let i = 0; i < 200; i++) {
+        subject.next(
+          ev({
+            type: "TOOL_CALL_ARGS",
+            toolCallId: "args-cap-1",
+            delta: "x".repeat(1_024),
+          }),
+        );
+      }
+      subject.next(ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }));
+      subject.complete();
+    } finally {
+      subscription.unsubscribe();
+      setBuiltinToolStepObserver(undefined);
+    }
+    expect(facts).toHaveLength(1);
+    const input = facts[0].input;
+    expect(typeof input).toBe("string");
+    // The capture-side ceiling: never more than 64Ki characters plus the mark,
+    // however large the streamed arguments were (~205Ki here).
+    expect(input!.length).toBeLessThanOrEqual(64 * 1024 + 64);
+    expect(input!.length).toBeGreaterThan(60_000);
+    // Early deltas survive the cut; the cut itself is declared in-band.
+    expect(input).toContain('"head": "');
+    expect(input).toContain("[observation input truncated at capture]");
+  });
+
+  test("the fact carries the scope captured at cell open, even when settlement lands outside the ambient context (OCR R3-39)", async () => {
+    // The tool-step cell opens inside the run's ambient observation scope (the
+    // same discipline as its trace capture), but the settlement that reports
+    // the fact can land at stream teardown — the finalize hook runs OUTSIDE
+    // the ambient context. So the fact must carry the scope its open captured,
+    // not leave the settlement-path adapter to re-read a gone ambient store
+    // (the model-span fact's own OCR R2-58 discipline, now on the tool-step
+    // half too).
+    const scope = { key: "scope-r3-39" };
+    const facts: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => facts.push(fact));
+    const subject = new Subject<BaseEvent>();
+    let subscription: { unsubscribe(): void } | undefined;
+    withRunObservationScope(scope, () => {
+      subscription = toolStepObservationForTests
+        .observeStream(subject)
+        .subscribe();
+      subject.next(
+        ev({
+          type: "TOOL_CALL_START",
+          toolCallId: "scope-carry-1",
+          toolCallName: "host_read",
+        }),
+      );
+    });
+    try {
+      // Settlement OUTSIDE the ambient context: at this moment the ambient
+      // read answers undefined — the fact's carried scope is the only one.
+      subject.complete();
+    } finally {
+      subscription?.unsubscribe();
+      setBuiltinToolStepObserver(undefined);
+    }
+    expect(facts).toHaveLength(1);
+    expect(facts[0].scope).toBe(scope);
+  });
+
+  test("a run that started scope-less carries no scope — the record stays an honest no-op (OCR R3-39)", async () => {
+    const facts = await runStream([
+      ev({
+        type: "TOOL_CALL_START",
+        toolCallId: "scope-less-1",
+        toolCallName: "host_read",
+      }),
+      ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }),
+    ]);
+    expect(facts).toHaveLength(1);
+    expect(facts[0].scope).toBeUndefined();
+  });
+
   test("a browser proposal with no receipt is unobserved, never success (acceptance 2)", async () => {
     const facts = await runStream([
       ev({
@@ -1197,8 +1303,11 @@ describe("the observation bypass fixes (T15 review)", () => {
       expect(fact.window).toBe("terminal");
       expect(toolStepExecutionState(fact)).toBe("unobserved");
     }
-    // A settled id is a tombstone: a fresh stream reusing it can neither
-    // resurrect the stale cell nor double-settle it — it records nothing new.
+    // OCR R3-40: a proposal-only settlement — the teardown closed the cell
+    // with no execution and no receipt — does NOT tombstone the id. The stale
+    // cell is retired (never resurrected, never double-settled), but the id is
+    // legitimately reopenable: the approval resume replays the SAME toolCallId
+    // and its fresh proposal records exactly once, as a proposal.
     const resurrected = await runStream([
       ev({
         type: "TOOL_CALL_START",
@@ -1207,7 +1316,9 @@ describe("the observation bypass fixes (T15 review)", () => {
       }),
       ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }),
     ]);
-    expect(resurrected).toHaveLength(0);
+    expect(resurrected).toHaveLength(1);
+    expect(resurrected[0]?.proposalObserved).toBe(true);
+    expect(resurrected[0]?.executionObserved).toBe(false);
   });
 
   test("(b) a late proposal for an already-executed call records exactly once", async () => {
@@ -1248,6 +1359,123 @@ describe("the observation bypass fixes (T15 review)", () => {
     expect(facts).toHaveLength(1);
     expect(facts[0].executionObserved).toBe(true);
     expect(toolStepExecutionState(facts[0])).toBe("executed");
+  });
+
+  test("(b) an executed settlement still tombstones: the id records exactly once (OCR R3-40 non-regression)", async () => {
+    // The narrowing is one-directional: a settlement that carried an execution
+    // (or a receipt) keeps the tombstone — an out-of-order late proposal for a
+    // finished call must never open a second cell for it.
+    const facts: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => facts.push(fact));
+    try {
+      await toolStepObservationForTests.observeExecution(
+        "host_read",
+        "tombstone-exec-1",
+        async () => "42",
+      );
+      const after = await runStream([
+        ev({
+          type: "TOOL_CALL_START",
+          toolCallId: "tombstone-exec-1",
+          toolCallName: "host_read",
+        }),
+        ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }),
+      ]);
+      expect(after).toHaveLength(0);
+    } finally {
+      setBuiltinToolStepObserver(undefined);
+    }
+    expect(facts).toHaveLength(1);
+    expect(facts[0].executionObserved).toBe(true);
+  });
+
+  test("the approval resume replays the SAME toolCallId and its real execution is observed (OCR R3-40)", async () => {
+    // The first leg: the call is proposed, the execute suspends on approval,
+    // and the inner subscription is torn down without a terminal event — the
+    // finalize hook closes the cell. The settlement is proposal-only (nothing
+    // executed, nothing received), so it must not tombstone the id.
+    const firstLeg: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => firstLeg.push(fact));
+    const subject = new Subject<BaseEvent>();
+    const subscription = toolStepObservationForTests
+      .observeStream(subject)
+      .subscribe();
+    subject.next(
+      ev({
+        type: "TOOL_CALL_START",
+        toolCallId: "approval-resume-1",
+        toolCallName: "host_read",
+      }),
+    );
+    subscription.unsubscribe();
+    setBuiltinToolStepObserver(undefined);
+    expect(firstLeg).toHaveLength(1);
+    expect(firstLeg[0].window).toBe("terminal");
+    expect(firstLeg[0].executionObserved).toBe(false);
+
+    // The resume leg: the approval replays the SAME toolCallId through the
+    // execute wrapper. Today the tombstone returns a closed dead cell, so the
+    // real execution is swallowed — after the fix it is recorded.
+    const resumed: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => resumed.push(fact));
+    try {
+      const value = await toolStepObservationForTests.observeExecution(
+        "host_read",
+        "approval-resume-1",
+        async () => "42",
+      );
+      expect(value).toBe("42");
+    } finally {
+      setBuiltinToolStepObserver(undefined);
+    }
+    expect(resumed).toHaveLength(1);
+    expect(resumed[0].proposalObserved).toBe(false);
+    expect(resumed[0].executionObserved).toBe(true);
+    expect(resumed[0].receiptObserved).toBe(true);
+    expect(toolStepExecutionState(resumed[0])).toBe("executed");
+  });
+
+  test("an interrupted proposal-only settlement leaves the id reopenable too (OCR R3-40)", async () => {
+    const facts: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => facts.push(fact));
+    const subject = new Subject<BaseEvent>();
+    const subscription = toolStepObservationForTests
+      .observeStream(subject)
+      .subscribe();
+    subject.next(
+      ev({
+        type: "TOOL_CALL_START",
+        toolCallId: "interrupt-resume-1",
+        toolCallName: "host_read",
+      }),
+    );
+    subject.next(
+      ev({
+        type: "RUN_FINISHED",
+        threadId: "t",
+        runId: "r",
+        outcome: { type: "interrupt", interrupts: [] },
+      }),
+    );
+    subject.complete();
+    subscription.unsubscribe();
+    setBuiltinToolStepObserver(undefined);
+    expect(facts).toHaveLength(1);
+    expect(facts[0].window).toBe("interrupted");
+
+    const resumed: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => resumed.push(fact));
+    try {
+      await toolStepObservationForTests.observeExecution(
+        "host_read",
+        "interrupt-resume-1",
+        async () => "kept",
+      );
+    } finally {
+      setBuiltinToolStepObserver(undefined);
+    }
+    expect(resumed).toHaveLength(1);
+    expect(toolStepExecutionState(resumed[0])).toBe("executed");
   });
 
   test("the fact carries the run's trace coordinates captured at open time", async () => {

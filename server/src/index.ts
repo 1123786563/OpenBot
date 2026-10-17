@@ -756,6 +756,45 @@ const learningSettings = withLearningAutoAssign(
   learningAutoAssign,
 );
 learningAutoAssign.start();
+/*
+ * The boot-time Opik configuration and the builtin run's trusted scope
+ * resolver (T33 wiring's synchronous half + T-final M1), deliberately placed
+ * BEFORE the first top-level await (OCR R3-36): every piece here is a pure
+ * synchronous construction, and the file's forwarding lambdas close over
+ * them. Left below the awaits, a repeatAfterEach sweep's first run — one
+ * setTimeout away from registration, while boot was still waiting on pulls
+ * like loadVerifiedOpikPort — could build an agent and subscribe a run that
+ * invoked the lambda while these consts were still in their temporal dead
+ * zone; the ReferenceError inside the async lambda became an errored stream,
+ * bypassing the resolver's never-throw contract entirely. Before the first
+ * await, no sweep is even registered, and every await window that follows
+ * finds the whole closure graph initialized. The async half of the wiring
+ * (the binding store, the verified port, the health service) stays below,
+ * where its await belongs.
+ */
+const opikBootConfig = opikConfigFromEnv(process.env);
+const aiObservabilityCanManageBot: BotManagementCheck = async (
+  actor,
+  botId,
+) => {
+  const profile = await agentProfileStore.get(actor, botId).catch(() => null);
+  return profile && canManageAgent(actor, profile) ? profile : null;
+};
+const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);
+/*
+ * The builtin run's trusted scope resolver (T-final M1): issued per run from
+ * LIVE authorization — the same manage gate, ownership answer and live epoch
+ * the route seam answers per request. This is what the T37 review registered
+ * as M1 ("facts arrive scope-less and the recorder submits nothing upstream"):
+ * the builtin agents carry this thread, ask it at run start, and the recorders'
+ * adapters below read the scope back and submit — or read null and submit
+ * nothing, exactly as before, for a disabled deployment or a non-manager.
+ */
+const aiObservabilityRunScope = createBuiltinRunScopeResolver({
+  enabled: () => opikBootConfig.enabled,
+  canManageBot: aiObservabilityCanManageBot,
+  scopeEpoch: aiObservabilityScopeEpoch,
+});
 await initializeDevActorUser(database, config.singleUser);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
@@ -5148,14 +5187,12 @@ const openMuseOpsSignals = createOpenMuseOpsSignalsRoutes({
  * says yes for a public Bot, and public chat access must not become access to another
  * creator's traces. The profile is returned rather than a boolean so readers act on the same
  * row the decision was made on.
+ *
+ * OCR R3-36: this gate, the boot config, the epoch store and the run-scope
+ * resolver it feeds are constructed together ABOVE the first top-level await;
+ * only their synchronous selves moved — the async T33 wiring below keeps the
+ * await-bearing half.
  */
-const aiObservabilityCanManageBot: BotManagementCheck = async (
-  actor,
-  botId,
-) => {
-  const profile = await agentProfileStore.get(actor, botId).catch(() => null);
-  return profile && canManageAgent(actor, profile) ? profile : null;
-};
 
 /*
  * T33 wiring, on the inert-until-proven footing every observation seam keeps:
@@ -5164,8 +5201,9 @@ const aiObservabilityCanManageBot: BotManagementCheck = async (
  * only contract this deployment trusts — and any failure to load answers
  * null, which every consumer reads as the honest capability_missing: without
  * a verified contract there is no transport at all (the T09 assembly rule).
+ * The boot config snapshot itself is built further up, before the first
+ * top-level await (OCR R3-36).
  */
-const opikBootConfig = opikConfigFromEnv(process.env);
 const aiObservabilityBindings = createRunBindingStore(database);
 const opikObservationPort =
   opikBootConfig.enabled && opikBootConfig.baseUrl !== null
@@ -5183,21 +5221,6 @@ const opikObservationPort =
 const opikHealthService = createOpikHealthService({
   config: () => opikBootConfig,
   port: opikObservationPort,
-});
-const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);
-/*
- * The builtin run's trusted scope resolver (T-final M1): issued per run from
- * LIVE authorization — the same manage gate, ownership answer and live epoch
- * the route seam answers per request. This is what the T37 review registered
- * as M1 ("facts arrive scope-less and the recorder submits nothing upstream"):
- * the builtin agents carry this thread, ask it at run start, and the recorders'
- * adapters below read the scope back and submit — or read null and submit
- * nothing, exactly as before, for a disabled deployment or a non-manager.
- */
-const aiObservabilityRunScope = createBuiltinRunScopeResolver({
-  enabled: () => opikBootConfig.enabled,
-  canManageBot: aiObservabilityCanManageBot,
-  scopeEpoch: aiObservabilityScopeEpoch,
 });
 /*
  * The one evaluation-billing gate (T-final L3, from the final review's L3
@@ -5428,10 +5451,19 @@ if (opikBootConfig.enabled) {
       window: fact.window,
       input: fact.input,
       output: fact.output,
-      // The run's trusted scope (T-final M1) — see the model-span adapter
-      // above for the one-writer cast argument. The id-links half below was
-      // built inert for exactly this moment and activates with zero changes.
-      scope: currentRunObservationScope() as ObservationScope | undefined,
+      // The run's trusted scope (T-final M1), CAPTURED at the tool-step cell's
+      // open and carried here on the fact itself (OCR R3-39 — the model-span
+      // adapter's own OCR R2-58 discipline, now on the tool-step half): the
+      // settlement that reports the fact can land at stream teardown — the
+      // finalize hook runs OUTSIDE the run's ambient context — where reading
+      // the ambient store silently no-op'd the record. A fact whose open
+      // captured no scope — a run that started scope-less — stays exactly as
+      // scope-less as before: the record is a no-op upstream. The cast is the
+      // wiring seam's own: the ONLY writer of that captured value is
+      // copilot.ts's cell-open read of the store this boot's threading
+      // established — a scope this process issued (T06's WeakSet trust), never
+      // a wire value.
+      scope: fact.scope as ObservationScope | undefined,
       // The run's W3C chain captured at cell open (Issue #23/T17): the step span
       // joins the cross-service trace instead of rooting a fresh random one.
       ...(fact.trace

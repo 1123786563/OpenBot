@@ -571,13 +571,28 @@ export type BuiltinToolStepFact = {
   } | null;
   window: "interrupted" | "terminal";
   /**
+   * The run's observation scope, captured when the cell opened beside `trace`
+   * (OCR R3-39): by stream teardown — the finalize path settles outside the
+   * ambient context — re-reading the ambient store silently no-op'd the
+   * record, so the fact carries the scope its open saw instead (the model-span
+   * fact's own OCR R2-58 discipline, now on the tool-step half). Structural
+   * `unknown`, like every cross-module field here — the only possible writer
+   * is the boot wiring's own threading. Undefined — a run that started
+   * scope-less — keeps the record an honest no-op upstream, exactly as before.
+   */
+  scope: unknown;
+  /**
    * The run's W3C trace coordinates captured when the cell opened (Issue #23/T17) —
    * the chain a step span recorded after the fact still parents under. Null when no
    * valid span was active (no provider, outside a traced request). Structural, like
    * every field here: the adapter threads it, the recorder decides what it means.
    */
   trace: { traceId: string; spanId: string } | null;
-  /** The raw accumulated call arguments — BEFORE projection; the recorder projects. */
+  /** The raw accumulated call arguments — BEFORE projection; the recorder projects.
+   * Bounded AT CAPTURE (OCR R3-37): accumulation stops at 64Ki characters and the
+   * cut is declared in-band, so an approval wait cannot pin a large call's full
+   * arguments alive between capture and settlement.
+   */
   input: string | null;
   /**
    * The execution output or error text, BEFORE projection (the recorder
@@ -617,8 +632,14 @@ type BuiltinToolStepCell = {
   execution: BuiltinToolStepFact["execution"];
   /** The run's W3C coordinates at open time; the fact's `trace` comes from here. */
   trace: { traceId: string; spanId: string } | null;
+  /** The run's trusted scope at open time; the fact's `scope` comes from here. */
+  scope: unknown;
   /** Argument deltas, joined once at close — linear, never quadratic. */
   args: string[];
+  /** Running length of `args.join("")`, so the capture-ceiling check stays O(1). */
+  argsLength: number;
+  /** Set once deltas past the capture ceiling were dropped (OCR R3-37). */
+  argsTruncated: boolean;
   closed: boolean;
 };
 
@@ -649,7 +670,10 @@ function builtinToolStepCell(
       receiptObserved: false,
       execution: null,
       trace: null,
+      scope: undefined,
       args: [],
+      argsLength: 0,
+      argsTruncated: false,
       closed: true,
     };
   }
@@ -664,13 +688,38 @@ function builtinToolStepCell(
     receiptObserved: false,
     execution: null,
     // Captured at open, inside the request's context, because settlement can land
-    // at stream teardown where the ambient context is no longer guaranteed.
+    // at stream teardown where the ambient context is no longer guaranteed. The
+    // scope rides the same discipline (OCR R3-39): the settlement-path adapter
+    // reads what the fact carried, never an ambient store that may be gone.
     trace: currentTraceContext() ?? null,
+    scope: currentRunObservationScope(),
     args: [],
+    argsLength: 0,
+    argsTruncated: false,
     closed: false,
   };
   builtinToolStepCells.set(toolCallId, cell);
   return cell;
+}
+
+/**
+ * Bounded accumulation for one tool call's argument deltas (OCR R3-37): past
+ * the capture ceiling nothing is retained, only the fact of the cut.
+ */
+function appendToolStepArg(cell: BuiltinToolStepCell, delta: string): void {
+  const capacity = TOOL_STEP_INPUT_CAPTURE_CHARS - cell.argsLength;
+  if (capacity <= 0) {
+    cell.argsTruncated = true;
+    return;
+  }
+  if (delta.length > capacity) {
+    cell.args.push(delta.slice(0, capacity));
+    cell.argsLength = TOOL_STEP_INPUT_CAPTURE_CHARS;
+    cell.argsTruncated = true;
+    return;
+  }
+  cell.args.push(delta);
+  cell.argsLength += delta.length;
 }
 
 /** Emits one fact and retires the cell; every creation path has exactly one of these. */
@@ -681,11 +730,23 @@ function settleBuiltinToolStep(
   if (cell.closed) return;
   cell.closed = true;
   builtinToolStepCells.delete(cell.toolCallId);
-  settledToolCallIds.add(cell.toolCallId);
-  if (settledToolCallIds.size > SETTLED_ID_CAP) {
-    settledToolCallIds.delete(
-      settledToolCallIds.values().next().value as string,
-    );
+  /*
+   * The tombstone exists so an out-of-order late proposal cannot open a SECOND
+   * cell for a call that already produced its evidence. OCR R3-40: that guard
+   * only makes sense when there IS evidence — a settlement that observed an
+   * execution or a receipt. A proposal-only settlement (the approval first
+   * leg: the call hung on a person and the window closed without either) must
+   * NOT tombstone the id, because the approval resume legitimately replays the
+   * SAME toolCallId — a tombstone here swallowed the resumed leg's real
+   * execution whole. A tombstoned id stays bounded (FIFO, recency only).
+   */
+  if (cell.executionObserved || cell.receiptObserved) {
+    settledToolCallIds.add(cell.toolCallId);
+    if (settledToolCallIds.size > SETTLED_ID_CAP) {
+      settledToolCallIds.delete(
+        settledToolCallIds.values().next().value as string,
+      );
+    }
   }
   const observer = builtinToolStepObserver;
   if (observer === undefined) return;
@@ -701,7 +762,12 @@ function settleBuiltinToolStep(
       execution: cell.execution,
       window,
       trace: cell.trace,
-      input: cell.args.length > 0 ? cell.args.join("") : null,
+      scope: cell.scope,
+      input:
+        cell.args.length > 0
+          ? cell.args.join("") +
+            (cell.argsTruncated ? TOOL_STEP_INPUT_TRUNCATION_MARK : "")
+          : null,
       output: cell.execution?.output ?? null,
     });
   } catch {
@@ -747,7 +813,7 @@ function observeBuiltinToolSteps(
           case "TOOL_CALL_ARGS": {
             const cell = builtinToolStepCells.get(String(event.toolCallId));
             if (cell && !cell.closed && typeof event.delta === "string")
-              cell.args.push(event.delta);
+              appendToolStepArg(cell, event.delta);
             break;
           }
           case "TOOL_CALL_RESULT": {
@@ -786,6 +852,22 @@ function observeBuiltinToolSteps(
  * recorder's projection.
  */
 const TOOL_STEP_OUTPUT_CAPTURE_CHARS = 2_000;
+
+/**
+ * The tool-step input capture ceiling (OCR R3-37), on the span-input precedent
+ * (OCR R2-52): 64Ki UTF-16 code units. The streamed TOOL_CALL_ARGS deltas were
+ * the one tool-step payload with no capture bound — every delta was retained
+ * whole until settlement, pinning a large call's full arguments for as long as
+ * the cell stayed open (an approval wait pins it longest). Accumulation stops
+ * at the ceiling and the cut is declared in-band, so a bounded capture can
+ * never be read as the whole call; projection still happens ONLY at the
+ * recorder — this value is never trusted, never stored, never logged.
+ */
+const TOOL_STEP_INPUT_CAPTURE_CHARS = 64 * 1024;
+
+/** The in-band declaration appended to a cut tool-step input capture (OCR R3-37). */
+const TOOL_STEP_INPUT_TRUNCATION_MARK =
+  "...[observation input truncated at capture]";
 
 /**
  * Observes one REAL execute: the callback this process runs for a tool call. The
