@@ -105,6 +105,12 @@ import type { OpenBotRole } from "./auth/roles";
 import { CREDIT_SCALE, createCredits } from "./billing/credits";
 import { createCreditWriter } from "./billing/credits-writer";
 import {
+  CreditInsufficientError,
+  currentPayerBinding,
+  ensureDeploymentPayerBinding,
+  resolveConsumptionPayerBinding,
+} from "./billing/payer-binding";
+import {
   countChatInputTokens,
   fitChatInputRequest,
 } from "./billing/input-bound";
@@ -184,7 +190,6 @@ import { createSnapshotStore } from "./computer/snapshot-store";
 import { createStreamAuthorizer } from "./computer/stream-auth";
 import { loadConfig } from "./config";
 import {
-  CreditGateError,
   CreditGateFailureError,
   CreditPolicyUnconfiguredError,
   type IdentifyActor,
@@ -234,6 +239,11 @@ import {
   decryptCredentialForUse,
   resolveModelApiKey,
 } from "./credentials";
+import {
+  createGatewayAdminCredentialService,
+  installGatewayAdminCredentialService,
+} from "./gateway/admin-credential";
+import { createEnterpriseStore } from "./admin/settings-store";
 import { createDatabase } from "./db/client";
 import {
   channelAgents,
@@ -274,6 +284,7 @@ import { githubCallbackRoutes } from "./identity/github-callback";
 import { retireIdentityLinks, retireOwnedAccounts } from "./identity/retire";
 import { slackCodeRedeemer } from "./identity/slack-redeem";
 import { createIdentityStore } from "./identity/store";
+import { createBotServiceRegistry } from "./bot-services/registry";
 import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
@@ -982,6 +993,29 @@ const policyListener = await startPolicyListener(
  * unavailable, and the row is a note for a reader rather than something the server depends on.
  */
 const bootAuditStore = createAuditStore(database);
+// The Bifrost bot service registry (04.1) composed with its credential surface and
+// authenticator (04.2): the shared vault holds each Bot's service secret encrypted, and
+// authentication re-reads it on every presentation, so revocation and disabling bite at once.
+const botServiceStore = createBotServiceRegistry(database, {
+  encryptionKey: config.keyEncryptionKey,
+  credentialStore,
+  auditStore: bootAuditStore,
+});
+
+/*
+ * The Bifrost gateway's admin credential (01.2, #208): encrypted in the shared vault under its
+ * own kind, read back only as a redacted status. The routes answer writes and status; the one
+ * decryption path is installed here so server-side trusted code (01.5's probe, 07.x's admission
+ * extension) resolves it without ever holding the key itself. The writer's role is re-checked
+ * against the same `user_roles` table `requireAdmin` consults.
+ */
+const gatewayAdminCredentialService = createGatewayAdminCredentialService({
+  database,
+  encryptionKey: config.keyEncryptionKey,
+  member: (userId: string) => createEnterpriseStore(database).member(userId),
+  auditStore: bootAuditStore,
+});
+installGatewayAdminCredentialService(gatewayAdminCredentialService);
 // One store: the gateway writes through it, a route reads it, and the sweep below takes the old ones out.
 const pageFrameStore = createPageFrameStore(database);
 let deliveryNotifications: (
@@ -1680,34 +1714,38 @@ const loadPersonalMemoryForActor = (ownerUserId: string) => (botId: string) => {
   memoryDefaults.botTurn(ownerUserId, botId);
   return memoryIngestion.contextFor(ownerUserId, botId);
 };
-const memorySweep = repeatAfterEach(async () => {
+/**
+ * One memorySweep stage, run under one uniform try/catch: a failed stage is swallowed so the
+ * next sweep retries it, and the failure is logged with the same contract as the hindsight
+ * health probes — the error's name plus its message — instead of the previous mix of log.error
+ * and a bare console.error JSON dump for the same event type.
+ */
+const sweepStep = async (operation: string, fn: () => Promise<unknown>) => {
   try {
-    await memoryIngestion.syncDue();
+    await fn();
   } catch (error) {
     log.error(
       {
         type: "memory-sweep-error",
         error: error instanceof Error ? error.name : "UnknownError",
-        context: { operation: "syncDue" },
+        detail: error instanceof Error ? error.message : String(error),
+        context: { operation },
         timestamp: new Date().toISOString(),
       },
       "memory-sweep-error",
     );
   }
+};
+const memorySweep = repeatAfterEach(async () => {
+  await sweepStep("syncDue", () => memoryIngestion.syncDue());
   // Mirror to Intelligence what is out of step: the backfill on the first passes after a deployment
   // becomes entitled, and afterwards whatever an outage left behind. A no-op without Intelligence.
-  try {
-    await personalMemoryStore.mirrorPending();
-  } catch (error) {
-    console.error(
-      JSON.stringify({
-        type: "memory-sweep-error",
-        error: error instanceof Error ? error.name : "UnknownError",
-        context: { operation: "mirrorPending" },
-        timestamp: new Date().toISOString(),
-      }),
-    );
-  }
+  await sweepStep("mirrorPending", () => personalMemoryStore.mirrorPending());
+  // Candidates nobody handled for 30 days are expired with the same tombstone forgetting uses.
+  // Idempotent, so running it this often is safe and a repeat run after a crash deletes nothing more.
+  await sweepStep("expireStaleCandidates", () =>
+    personalMemoryStore.expireStaleCandidates(),
+  );
 }, 60_000);
 // Follow-ups a Bot schedules for itself, on the shared work queue. See agents/wake-up.ts.
 const wakeUpStore = createWakeUpStore(database, { auditStore: bootAuditStore });
@@ -3726,6 +3764,18 @@ const billing =
         const externalCustomerKey = deploymentExternalCustomerId(
           config.deploymentId ?? tenantPackage.tenantId,
         );
+        /*
+         * The consumption entry's payer binding (B5-219): the deployment's own account,
+         * made once at boot through the payer layer so the mapping row exists and recovery
+         * can restore it. It is the explicit default the gate below resolves to when a
+         * request carries no binding of its own — the ONE deployment-key default on the
+         * consumption path, and the branch group 09 (09.2) replaces with per-surface payer
+         * resolution. An insufficient balance on whatever binding a request resolves to is
+         * refused on that account; nothing here or downstream ever switches accounts.
+         */
+        const deploymentPayerBinding = await ensureDeploymentPayerBinding(database, {
+          id: config.deploymentId ?? tenantPackage.tenantId,
+        });
         const lagoClient = createLagoClient({
           baseUrl: settings.apiUrl,
           apiKey: settings.apiKey,
@@ -3776,9 +3826,16 @@ const billing =
           client: lagoClient,
           externalCustomerKey,
           customerName: `OpenBot deployment ${externalCustomerKey}`,
-          // The credit ledger's write side — the same writer the admin grant route and the plan
+          // The consumption entry's payer binding (B5-219): what the model gate below
+          // resolves to when the request carries no binding of its own. See the boot
+          // comment above for why this is the one explicit deployment default.
+          deploymentPayerBinding,
+          // The credit ledger's write side — the same writer the admin grant routes and the plan
           // payout below share. One writer, one set of birth invariants, every grant flows here.
           creditWriter: createCreditWriter(database),
+          // The deployment's own database, where the personal grant route (02.8) resolves the
+          // target user and their payer account. The same connection the rest of billing uses.
+          database,
         };
       })();
 const usageOutbox =
@@ -3809,12 +3866,24 @@ if (billing !== undefined && usageOutbox !== undefined) {
     const modelPolicy = creditPolicy.models.get(modelId);
     if (!modelPolicy) throw new ModelNotPricedError(modelId);
 
+    /*
+     * The request's one payer (B5-219): resolved ONCE here, from the request's own
+     * binding when the surface bound one, otherwise the deployment's boot binding — and
+     * every write below (reserve, outbox fact, unsettled evidence) names exactly this
+     * account. A refusal below never re-resolves and never switches: an insufficient
+     * balance on the bound account is the final answer for this request.
+     */
+    const payerBinding = resolveConsumptionPayerBinding({
+      requestBinding: currentPayerBinding(),
+      deploymentBinding: billing.deploymentPayerBinding,
+    });
+
     let reservation: Awaited<
       ReturnType<typeof billing.creditWriter.reserveCredits>
     >;
     try {
       reservation = await billing.creditWriter.reserveCredits({
-        externalCustomerId: billing.externalCustomerKey,
+        externalCustomerId: payerBinding.externalCustomerId,
         idempotencyKey: `${USAGE_IDEMPOTENCY_KEY_PREFIX}${input.eventId}`,
         maximumCents: Number(modelPolicy.maximumReservationUnits),
         expiresAt: new Date(
@@ -3845,12 +3914,21 @@ if (billing !== undefined && usageOutbox !== undefined) {
           type: "billing-credit-reservation-refused",
           eventId: input.eventId,
           model: modelId,
+          payerKind: payerBinding.payer.kind,
           available: reservation.availableCents,
           required: Number(modelPolicy.maximumReservationUnits),
         },
         "billing-credit-reservation-refused",
       );
-      throw new CreditGateError();
+      /*
+       * The one insufficiency semantics (B5-219 / AC13): a displayable refusal on the
+       * bound account — its type and its own available amount, no other account's data,
+       * no second resolution, no switch. The hold attempt wrote nothing.
+       */
+      throw new CreditInsufficientError({
+        payerKind: payerBinding.payer.kind,
+        availableCents: reservation.availableCents,
+      });
     }
 
     return {
@@ -3922,7 +4000,7 @@ if (billing !== undefined && usageOutbox !== undefined) {
           await recordUnsettledUsage({
             eventId: input.eventId,
             source: "llm",
-            externalCustomerId: billing.externalCustomerKey,
+            externalCustomerId: payerBinding.externalCustomerId,
             model: modelId,
             client: input.client,
             occurredAt: input.occurredAt,
@@ -3936,7 +4014,7 @@ if (billing !== undefined && usageOutbox !== undefined) {
           await usageOutbox.record({
             eventId: input.eventId,
             source: "llm",
-            externalCustomerId: billing.externalCustomerKey,
+            externalCustomerId: payerBinding.externalCustomerId,
             transactionId: input.eventId,
             inputTokens: charged.inputTokens,
             outputTokens: charged.outputTokens,
@@ -3963,7 +4041,7 @@ if (billing !== undefined && usageOutbox !== undefined) {
         await recordUnsettledUsage({
           eventId: unsettled.eventId,
           source: "llm",
-          externalCustomerId: billing.externalCustomerKey,
+          externalCustomerId: payerBinding.externalCustomerId,
           model: modelId,
           client: input.client,
           occurredAt: unsettled.occurredAt,
@@ -4003,7 +4081,7 @@ if (billing !== undefined && usageOutbox !== undefined) {
         await recordUnsettledUsage({
           eventId: input.eventId,
           source: "llm",
-          externalCustomerId: billing.externalCustomerKey,
+          externalCustomerId: payerBinding.externalCustomerId,
           model: modelId,
           client: input.client,
           occurredAt: input.occurredAt,
@@ -5623,6 +5701,7 @@ const app = createApp(
   },
   identityStore,
   identityGithubCallback,
+  botServiceStore,
 );
 
 /**

@@ -1,6 +1,7 @@
 import { and, asc, count, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { Database } from "../../db/client";
 import { paymentEvents, paymentOrders } from "../../db/schema/payment";
+import type { PayerRef } from "../payer";
 import { BillingError } from "../types";
 import { generateOutTradeNo } from "./crypto";
 import type {
@@ -36,6 +37,46 @@ import type {
 const ID_COLLISION_RETRIES = 5;
 const DEPLOYMENT_SCOPE = "default";
 
+/** The owner kinds an order may legally carry; `unknown_owner` is deliberately absent. */
+const OWNABLE_PAYER_KINDS = new Set(["personal", "company", "legacy_deployment"]);
+
+/**
+ * Validate the owner a caller binds to a NEW order, as a last line behind the service's
+ * business refusal: present, well-formed, whitespace-strict (the payer layer's own rule —
+ * a padded id would mint a second identity), and never the quarantined `unknown_owner` kind.
+ * An order is attributed or it is not created; quarantine is a legacy-row verdict.
+ */
+function assertOwnablePayerRef(ref: PayerRef | undefined): ref is PayerRef {
+  if (
+    !ref ||
+    typeof ref !== "object" ||
+    typeof ref.id !== "string" ||
+    ref.id.length === 0 ||
+    ref.id.trim() !== ref.id ||
+    typeof ref.kind !== "string" ||
+    !OWNABLE_PAYER_KINDS.has(ref.kind)
+  ) {
+    throw new TypeError(
+      "insertOrder needs a well-formed ownerPayerRef whose kind is personal, company or legacy_deployment: an order is attributed at creation, never ownerless and never quarantined.",
+    );
+  }
+  return true;
+}
+
+/** The two columns one PayerRef rides on, as the row spells them. */
+function ownerColumnsOf(ref: PayerRef) {
+  return { ownerPayerKind: ref.kind, ownerPayerId: ref.id };
+}
+
+/** The owner a row names, or null — the pre-attribution state only legacy rows sit in. */
+function ownerRefOf(row: {
+  ownerPayerKind: string | null;
+  ownerPayerId: string | null;
+}): PayerRef | null {
+  if (row.ownerPayerKind === null || row.ownerPayerId === null) return null;
+  return { kind: row.ownerPayerKind as PayerRef["kind"], id: row.ownerPayerId };
+}
+
 function rowOf(order: typeof paymentOrders.$inferSelect): PaymentOrderRecord {
   return {
     id: order.id,
@@ -53,6 +94,7 @@ function rowOf(order: typeof paymentOrders.$inferSelect): PaymentOrderRecord {
     paidAt: order.paidAt,
     terminalAt: order.terminalAt,
     createdBy: order.createdBy,
+    ownerPayerRef: ownerRefOf(order),
     createdAt: order.createdAt,
     version: order.version,
   };
@@ -75,6 +117,8 @@ type PaymentOrderLockedRow = {
   paidAt: Date | null;
   terminalAt: Date | null;
   createdBy: string | null;
+  ownerPayerKind: string | null;
+  ownerPayerId: string | null;
   createdAt: Date;
   version: number;
 };
@@ -96,6 +140,7 @@ function lockedRowOf(row: PaymentOrderLockedRow): PaymentOrderRecord {
     paidAt: row.paidAt,
     terminalAt: row.terminalAt,
     createdBy: row.createdBy,
+    ownerPayerRef: ownerRefOf(row),
     createdAt: row.createdAt,
     version: row.version,
   };
@@ -114,8 +159,18 @@ function eventInput(input: PaymentEventInput & { state?: string }) {
   };
 }
 
+/**
+ * The personal read scope's condition: the order's OWNER columns against the scope's PayerRef.
+ * Converged from the historical created_by filter (10.1): the creator is an audit identity, the
+ * owner is the payment subject — reads follow the owner, and a null or non-matching owner (a
+ * quarantined or pre-attribution legacy row) never matches any personal scope.
+ */
 function ownerScopeCondition(scope: PaymentOrderReadScope | undefined) {
-  return scope ? eq(paymentOrders.createdBy, scope.actorId) : undefined;
+  if (!scope) return undefined;
+  return and(
+    eq(paymentOrders.ownerPayerKind, scope.actorPayerRef.kind),
+    eq(paymentOrders.ownerPayerId, scope.actorPayerRef.id),
+  );
 }
 
 /**
@@ -128,17 +183,21 @@ async function readPendingRow(
   database: Database,
   planCode: string,
   provider: PaymentProviderId,
+  owner?: PayerRef,
 ): Promise<PaymentOrderRecord | null> {
+  const conditions = [
+    eq(paymentOrders.planCode, planCode),
+    eq(paymentOrders.provider, provider),
+    eq(paymentOrders.status, "pending"),
+  ];
+  if (owner) {
+    conditions.push(eq(paymentOrders.ownerPayerKind, owner.kind));
+    conditions.push(eq(paymentOrders.ownerPayerId, owner.id));
+  }
   const [row] = await database
     .select()
     .from(paymentOrders)
-    .where(
-      and(
-        eq(paymentOrders.planCode, planCode),
-        eq(paymentOrders.provider, provider),
-        eq(paymentOrders.status, "pending"),
-      ),
-    )
+    .where(and(...conditions))
     .orderBy(sql`${paymentOrders.createdAt} DESC`)
     .limit(1);
   return row ? rowOf(row) : null;
@@ -219,6 +278,8 @@ function isUniqueViolationOn(error: unknown, constraint: string): boolean {
 export function createPaymentStore(database: Database): PaymentStore {
   return {
     async insertOrder(input) {
+      assertOwnablePayerRef(input.ownerPayerRef);
+      const owner = ownerColumnsOf(input.ownerPayerRef);
       for (let attempt = 0; attempt <= ID_COLLISION_RETRIES; attempt += 1) {
         const id = generateOutTradeNo();
         let rows: (typeof paymentOrders.$inferSelect)[];
@@ -237,6 +298,7 @@ export function createPaymentStore(database: Database): PaymentStore {
               checkoutPayload: input.checkoutPayload,
               expiresAt: input.expiresAt,
               createdBy: input.createdBy,
+              ...owner,
             })
             // This conflict target names the deployment-scope partial unique index exactly. Other
             // unique violations, notably the primary-key id collision below, are not swallowed.
@@ -285,8 +347,8 @@ export function createPaymentStore(database: Database): PaymentStore {
       return readPendingPurchaseRow(database);
     },
 
-    async readPendingOrder(planCode, provider) {
-      return readPendingRow(database, planCode, provider);
+    async readPendingOrder(planCode, provider, owner) {
+      return readPendingRow(database, planCode, provider, owner);
     },
 
     async readLatestLiveOrder(scope) {
@@ -574,6 +636,8 @@ export function createPaymentStore(database: Database): PaymentStore {
             "paid_at" as "paidAt",
             "terminal_at" as "terminalAt",
             "created_by" as "createdBy",
+            "owner_payer_kind" as "ownerPayerKind",
+            "owner_payer_id" as "ownerPayerId",
             "created_at" as "createdAt",
             "version"
           from "payment_orders"
