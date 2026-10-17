@@ -428,10 +428,10 @@ describe("user routes: catalog and reads", () => {
     };
     const service = fakeService({
       readCurrentOrder: async (scope) => ({
-        order: scope?.actorId === MEMBER.id ? ownerOrder : null,
+        order: scope?.actorPayerRef?.id === MEMBER.id ? ownerOrder : null,
       }),
       readOrder: async (id, scope) => {
-        if (scope?.actorId !== MEMBER.id) return { order: null };
+        if (scope?.actorPayerRef?.id !== MEMBER.id) return { order: null };
         if (id === ownerOrder.orderId) return { order: ownerOrder };
         if (id === otherOrder.orderId) return { order: null };
         return { order: null };
@@ -529,6 +529,67 @@ describe("user routes: create and cancel", () => {
       });
       expect(response.status).toBe(400);
     }
+  });
+
+  test("a user identifier in the request body cannot choose or change the order's owner", async () => {
+    // AC14: ownership is not a request field. The body is a strict object, so ANY account
+    // identity a client sends — userId, externalCustomerId, even an ownerPayerRef-shaped field
+    // — is refused at the door with the shape refusal, and the service never runs.
+    const app = new Hono<{ Variables: AppVariables }>().route(
+      "/api/billing",
+      userApp(
+        fakeService({
+          createPurchase: async () => {
+            throw new Error("must never run");
+          },
+        }),
+      ),
+    );
+    for (const forged of [
+      { planCode: "pro", provider: "alipay", cycle: "monthly", userId: "victim-1" },
+      {
+        planCode: "pro",
+        provider: "alipay",
+        cycle: "monthly",
+        externalCustomerId: "openbot-personal-victim-1",
+      },
+      {
+        planCode: "pro",
+        provider: "alipay",
+        cycle: "monthly",
+        ownerPayerRef: { kind: "personal", id: "victim-1" },
+      },
+    ]) {
+      const response = await app.request("/api/billing/purchases", {
+        method: "POST",
+        body: JSON.stringify(forged),
+      });
+      expect(response.status).toBe(400);
+    }
+  });
+
+  test("the order's owner is resolved server-side from the session, beside the audit actor", async () => {
+    let captured: Parameters<PaymentService["createPurchase"]>[0] | null = null;
+    const app = new Hono<{ Variables: AppVariables }>().route(
+      "/api/billing",
+      userApp(
+        fakeService({
+          createPurchase: async (input) => {
+            captured = input;
+            return { order: viewFor("po-owned") };
+          },
+        }),
+      ),
+    );
+    const response = await app.request("/api/billing/purchases", {
+      method: "POST",
+      body: JSON.stringify({ planCode: "pro", provider: "alipay", cycle: "monthly" }),
+    });
+    expect(response.status).toBe(200);
+    expect(captured).not.toBeNull();
+    // The owner is the signed-in actor's own personal PayerRef — nothing the request sent.
+    expect(captured!.ownerPayerRef).toEqual({ kind: "personal", id: ADMIN.id });
+    expect(captured!.createdBy).toBe(ADMIN.id);
   });
 
   test("a cycle the server cannot collect is 400 before any order exists", async () => {
