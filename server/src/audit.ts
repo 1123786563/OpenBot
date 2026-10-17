@@ -690,6 +690,15 @@ export const auditEventTypes = [
    * decision was asked for and made.
    */
   "craft.connect_app_decided",
+  /**
+   * The admin bot-service registry (ticket 04.1, #234): a botId claimed, its editable fields
+   * changed, and a service's sticky status flipped. Registered separately from `bot.created`
+   * & co. because those are a person's Bot objects; these are the server-side service
+   * identities a botId can never be recycled from.
+   */
+  "bot_service.registered",
+  "bot_service.edited",
+  "bot_service.status_changed",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

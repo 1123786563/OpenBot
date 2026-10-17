@@ -63,6 +63,7 @@ export default defineConfig({
     "./src/db/schema/team-bots.ts",
     "./src/db/schema/shared-use.ts",
     "./src/db/schema/billing.ts",
+    "./src/db/schema/bots.ts",
     "./src/db/schema/code-runs.ts",
     "./src/db/schema/credits.ts",
     "./src/db/schema/credit-reservations.ts",
