@@ -23,6 +23,12 @@
  */
 
 import { randomBytes } from "node:crypto";
+// fix-ocr19 #11 retired the hand-synced default-port constant by importing
+// config.ts's DEFAULT_PORT; fix-ocr23 #8 goes one step further — the ENTIRE
+// PORT/SERVER_PORT parser (whose rules the default port rides inside) is now
+// imported, so the dev preview's port judgment is config.ts's own answer and
+// the two can no longer drift, not even in how they read the environment.
+import { portFromEnvironment } from "../config";
 import type { CraftStore } from "./store";
 
 /** D9, locked: 30 seconds, single use. No idle invalidation exists by design. */
@@ -110,32 +116,122 @@ export function createPreviewTickets(deps: {
 // ── the preview-domain cookie (D9) ────────────────────────────────────────────
 //
 // Redeeming plants the preview origin's OWN session credential — HttpOnly,
-// Path=/, SameSite=Lax (the top-level 302 hop that carries the redemption), and
-// deliberately WITHOUT Max-Age/Expires: their absence is what makes it a
-// session cookie the browser drops at close (D9). The routing that sets this
-// header is #361's; this is the shape it must not get wrong.
+// path-scoped (R-9), and deliberately WITHOUT Max-Age/Expires: their absence is
+// what makes it a session cookie the browser drops at close (D9). The routing
+// that sets this header is #361's; this is the shape it must not get wrong.
+//
+// The Path is the caller's call (R-9, OCR round 2): the HOST form serves one
+// session per host, so "/" is right there; but the DEV form (D5, the default)
+// hosts EVERY session on one shared host — 127.0.0.1:<port> — where a Path=/
+// pass is a single cookie-jar slot under Set-Cookie replace semantics (same
+// name + domain + path): the LAST redeemer overwrites every earlier preview's
+// pass, and the first-in iframe's traffic and HMR upgrade then sit at 401
+// forever (preview-tab never re-redeems inside an entry's lifetime). The dev
+// form therefore plants the pass at its session's own /<label> — concurrent
+// dev previews coexist in the jar, and the browser only sends the pass whose
+// Path matches the address, which is exactly the label the request's own host
+// resolution derived anyway.
+//
+// SameSite=None; Secure, not Lax (#365's F-1): the panel embeds the preview
+// origin in an iframe that is CROSS-SITE from the main site — dev is
+// `localhost` (main) → `127.0.0.1` (preview), different sites — and a browser
+// refuses to store a Lax cookie planted by that cross-site redemption 302, so
+// the panel iframe sat at 401. None is the only attribute that crosses that
+// hop, and browsers honor None only when Secure rides with it. Secure holds in
+// both shapes we ship: dev's `127.0.0.1` is a trustworthy (secure-context)
+// origin where Chrome accepts Secure cookies, and production's named preview
+// host serves HTTPS. Production's preview domain is a subdomain of the main
+// site (same-site, first-party iframe) — Lax worked there and None works too,
+// so None is a strict widening for dev, never a regression. The cookie's
+// semantics are unchanged: session-level, HttpOnly, Path=the caller's scope
+// ("/" for the host form, "/<label>" for the dev form — D9, R-9).
+//
+// ENGINE SET (fix-ocr16, recorded — behavior unchanged): the
+// Secure-on-http judgment above is per-engine, and the dev form's
+// availability rides it. Chromium and Firefox treat the loopback
+// (127.0.0.1, localhost) as a trustworthy origin and DO store a Secure
+// cookie planted there — the dev form works on those engines. WebKit/Safari
+// rejects a Secure cookie on ANY plain-http origin — loopback included — so
+// the dev form cannot plant the pass there and the preview is unavailable
+// on Safari/WebKit (the known limitation docs/craft-preview-origin.md
+// records; the acceptance evidence chain is Chromium). Production's https
+// preview hosts are unaffected: every engine stores Secure cookies on
+// https. There is no attribute combination that satisfies both engines
+// (`None` requiring `Secure` is Chromium semantics; the
+// trustworthy-loopback exception is Chromium behavior), which is why this
+// is recorded rather than "fixed". This comment documents the constraint
+// only — the refusal copy on the wire is unchanged.
 
 export const PREVIEW_SESSION_COOKIE = "openbot_preview_session";
 
-export function previewSessionCookieHeader(value: string): string {
-  return `${PREVIEW_SESSION_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax`;
+export function previewSessionCookieHeader(value: string, path = "/"): string {
+  // fix-ocr22 #3: the path lands in a Set-Cookie ATTRIBUTE position, so it is
+  // whitelisted at this export API's own boundary, never trusted: `/` or one
+  // /<label> of `0-9a-zA-Z._~-`, at most 64 chars — anything else (an
+  // injection shape like `/x; Path=/evil` above all) folds to the root scope
+  // and can never be interpolated into the attribute position. The dev
+  // form's real caller shape is 20 lowercase hex (the preview label); the
+  // whitelist is deliberately a little wider so a future caller cannot grow
+  // an injection here.
+  const safePath = /^\/[0-9a-zA-Z._~-]{0,64}$/.test(path) ? path : "/";
+  // fix-ocr23 #6: the value sits in the NAME=VALUE position of the same header
+  // — the dual of the path guard above, not its neighbor: a `;`, `,`, or
+  // control byte in the value can rewrite cookie attributes exactly the way a
+  // hostile path can. Today's only caller passes the registry-internal
+  // sessionId (controlled), but this export's stated contract is that a future
+  // caller cannot grow an injection here — so the value gets the same boundary
+  // whitelist (`[A-Za-z0-9_-]`, the sessionId alphabet, bounded at 128) and a
+  // mismatch folds it to EMPTY rather than guessing a repair. Fail-safe by
+  // construction: an empty pass can never equal a session id, so the preview
+  // gate refuses with 401 forever — a folded value can never open anything.
+  const safeValue = /^[A-Za-z0-9_-]{1,128}$/.test(value) ? value : "";
+  // fix-ocr24 #6, why the fold is SILENT: the fold itself is the rejection
+  // signal — an empty pass can never equal any session id, so the preview
+  // gate answers 401 on every request and the failure is visible at exactly
+  // the seam that matters — while this module's own contract (the header:
+  // a ticket is a bearer credential, nothing here logs) forbids the log
+  // line a drift-shaped warn would want. Observability lives at the gate,
+  // not beside the credential.
+  return `${PREVIEW_SESSION_COOKIE}=${safeValue}; Path=${safePath}; HttpOnly; SameSite=None; Secure`;
+}
+
+/**
+ * The dev preview origin's port, parsed by config.ts's ONE port parser
+ * (`portFromEnvironment`, imported — fix-ocr23 #8): PORT and SERVER_PORT name
+ * one number, an empty value is absent rather than zero, a value that is not a
+ * whole port refuses with its sentence (never a truncated parse — "30o1" must
+ * not become 30), and two set values that disagree refuse together rather than
+ * one silently winning. Before the shared parser this was a hand-synced twin
+ * of config.ts's serverPort, aligned only by this comment's claim — the same
+ * shape fix-ocr19 #11 retired for DEFAULT_PORT; now the rules literally cannot
+ * drift. Where serverPort throws the reason at boot, a closed preview feature
+ * refuses with the sentence instead — a preview misconfiguration must not take
+ * the server down.
+ */
+export function previewPortFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): { port: number } | { reason: string } {
+  return portFromEnvironment(env);
 }
 
 /**
  * D5's dev default: the preview origin is `127.0.0.1` on the API's own port —
  * a different HOST from a `localhost` login (cookie isolation holds) without
- * wildcard DNS. Production's named preview host arrives with #362; the port
- * follows the server's PORT/SERVER_PORT convention (one number, both names —
- * see config.ts's serverPort).
+ * wildcard DNS. Production's named preview host arrives with #362. The port is
+ * `previewPortFromEnv`'s (serverPort's rules — one number or a refusal with a
+ * displayable reason; #360's silent PORT preference is converged away).
  */
 export function defaultPreviewOrigin(
   env: Record<string, string | undefined> = process.env,
-): string {
-  // `PORT=""` arrives as the empty string, which is falsy-but-present — parse,
-  // never `??` (config.ts documents this exact trap).
-  const port =
-    Number.parseInt(env.PORT ?? "", 10) ||
-    Number.parseInt(env.SERVER_PORT ?? "", 10) ||
-    3001;
-  return `http://127.0.0.1:${port}`;
+): { origin: string } | { reason: string } {
+  const parsed = previewPortFromEnv(env);
+  if ("reason" in parsed) return { reason: parsed.reason };
+  // fix-ocr27 #6: the SAME spelling rule originFor mints by (preview-origin.ts
+  // portSuffix): http's scheme-default port is dropped by WHATWG URL
+  // serialization, so a listener on :80 is addressed without the suffix —
+  // this twin used to spell `:80` unconditionally, the last hand-synced
+  // spelling left in the file (the parser itself was converged in
+  // fix-ocr23 #8). One rule, both spellings.
+  const portSuffix = parsed.port === 80 ? "" : `:${parsed.port}`;
+  return { origin: `http://127.0.0.1${portSuffix}` };
 }

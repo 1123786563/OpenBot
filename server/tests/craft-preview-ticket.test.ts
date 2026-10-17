@@ -16,6 +16,7 @@ import type { AppVariables } from "../src/auth/guards";
 import { loadCraftConfig } from "../src/craft/config";
 import {
   createPreviewTickets,
+  defaultPreviewOrigin,
   PREVIEW_SESSION_COOKIE,
   PREVIEW_TICKET_TTL_MS,
   previewSessionCookieHeader,
@@ -330,19 +331,186 @@ describe("issuePreviewTicket / redeemPreviewTicket", () => {
 // session cookie the browser drops at close (D9). The routing that actually
 // sets this header is #361's; this is the shape that routing must not get wrong.
 
+// ── defaultPreviewOrigin: the PORT/SERVER_PORT convergence (#362, #360 review Nit 3/4) ──
+//
+// config.ts's serverPort is the deployment's one port authority: PORT and
+// SERVER_PORT name one number, empty means absent, a non-whole value refuses,
+// and two that disagree refuse together. The #360 default silently preferred
+// PORT via parseInt — '3001x' parsed to 3001, and a disagreeing SERVER_PORT was
+// ignored. #362 converges the fallback on the same rules, as a refusal with a
+// displayable reason (never a silent pick, never a truncated parse).
+
+describe("defaultPreviewOrigin: PORT/SERVER_PORT semantics (serverPort convergence)", () => {
+  test("agreement and the single-name forms answer the dev origin on that port", () => {
+    expect(defaultPreviewOrigin({ PORT: "3001" })).toEqual({
+      origin: "http://127.0.0.1:3001",
+    });
+    expect(defaultPreviewOrigin({ SERVER_PORT: "3002" })).toEqual({
+      origin: "http://127.0.0.1:3002",
+    });
+    expect(defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3001" })).toEqual({
+      origin: "http://127.0.0.1:3001",
+    });
+    // Unset everywhere: the documented D5 default port.
+    expect(defaultPreviewOrigin({})).toEqual({
+      origin: "http://127.0.0.1:3001",
+    });
+  });
+
+  test("fix-ocr27 #6: PORT=80 spells the origin the same way originFor does — the scheme-default port omitted", () => {
+    // originFor (preview-origin.ts) drops an http :80 portSuffix because
+    // WHATWG serialization presents no scheme-default port and the
+    // browser-presented host must match the ticket binding (#363). The
+    // hand-synced twin here still spelled `:80` unconditionally — the exact
+    // twin shape fix-ocr19 #11 / fix-ocr23 #8 retired. RED: the twin
+    // answered `http://127.0.0.1:80`.
+    expect(defaultPreviewOrigin({ PORT: "80" })).toEqual({
+      origin: "http://127.0.0.1",
+    });
+    expect(defaultPreviewOrigin({ SERVER_PORT: "80" })).toEqual({
+      origin: "http://127.0.0.1",
+    });
+  });
+
+  test("empty is absent, not zero: an empty PORT falls through to SERVER_PORT", () => {
+    expect(defaultPreviewOrigin({ PORT: "", SERVER_PORT: "3002" })).toEqual({
+      origin: "http://127.0.0.1:3002",
+    });
+    expect(defaultPreviewOrigin({ PORT: "" })).toEqual({
+      origin: "http://127.0.0.1:3001",
+    });
+  });
+
+  test("disagreement refuses with a reason naming both, never a silent PORT preference", () => {
+    expect(defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3002" })).toEqual({
+      reason: expect.stringContaining("PORT"),
+    });
+    const refused = defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3002" });
+    expect("reason" in refused && refused.reason).toContain("SERVER_PORT");
+  });
+
+  test("a value that is not a whole port refuses instead of parsing to its prefix", () => {
+    // "30o1" must NOT become 30 — the exact trap config.ts's caps document.
+    expect(defaultPreviewOrigin({ PORT: "30o1" })).toEqual({
+      reason: expect.any(String),
+    });
+    expect(defaultPreviewOrigin({ SERVER_PORT: "70000" })).toEqual({
+      reason: expect.any(String),
+    });
+    expect(defaultPreviewOrigin({ PORT: "0" })).toEqual({
+      reason: expect.any(String),
+    });
+  });
+});
+
 describe("previewSessionCookieHeader", () => {
-  test("is HttpOnly, Path=/, SameSite=Lax, with NO Max-Age and NO Expires", () => {
+  test("is HttpOnly, Path=/, SameSite=None; Secure, with NO Max-Age and NO Expires", () => {
     const header = previewSessionCookieHeader("some-session-credential");
     expect(header).toContain(
       `${PREVIEW_SESSION_COOKIE}=some-session-credential`,
     );
     expect(header).toContain("HttpOnly");
-    expect(header).toContain("Path=/");
-    expect(header).toContain("SameSite=Lax");
+    // Pinned to the exact attribute boundary: a scoped Path must never pose
+    // as the default root ("Path=/abc…" also substring-matches "Path=/").
+    expect(header).toContain("Path=/;");
+    // #365 F-1: the panel embeds the preview origin in a CROSS-SITE iframe, so
+    // the redemption 302's Set-Cookie must be SameSite=None or the browser
+    // refuses to store it at all; None is only honored with Secure, so the two
+    // attributes arrive and are asserted together.
+    expect(header).toContain("SameSite=None");
+    expect(header).toContain("Secure");
     // D9: session cookie — the absence of both is what makes the browser drop
     // it at close; either one would turn it persistent.
     expect(header).not.toContain("Max-Age");
     expect(header).not.toContain("Expires");
+  });
+
+  test("scopes to a caller-given Path (R-9): /<label> for the dev form, / by default", () => {
+    // The dev form's sessions all share ONE host (127.0.0.1:<port>, D5), so a
+    // Path=/ pass is a single cookie-jar slot the LAST redeemer overwrites —
+    // the dev form plants the pass at the session's own /<label> instead,
+    // while the host form (one host per session) keeps the root. The caller
+    // decides; the default must stay the root and never leak into a scoped
+    // header or vice versa.
+    expect(previewSessionCookieHeader("some-session-credential")).toContain(
+      "Path=/;",
+    );
+    expect(
+      previewSessionCookieHeader("some-session-credential", "/abc123def456"),
+    ).toContain("Path=/abc123def456;");
+    // F-1's semantics ride along the scoped path unchanged (#365: the iframe
+    // is cross-site; None is the only attribute that crosses the hop, Secure
+    // its escort) — and the scoping must not perturb the session-level shape.
+    const scoped = previewSessionCookieHeader(
+      "some-session-credential",
+      "/abc123def456",
+    );
+    expect(scoped).toContain("HttpOnly");
+    expect(scoped).toContain("SameSite=None");
+    expect(scoped).toContain("Secure");
+    expect(scoped).not.toContain("Max-Age");
+    expect(scoped).not.toContain("Expires");
+  });
+
+  test("fix-ocr22 #3: a path outside the /<label> whitelist folds back to '/' — never an attribute injection", () => {
+    // The path lands in a Set-Cookie ATTRIBUTE position verbatim; the only
+    // legitimate caller shapes are "/" (host form) and the dev form's
+    // /<label> (20 lowercase hex). The export API is its own last line of
+    // defense: anything outside the `^/[0-9a-zA-Z._~-]{0,64}$` whitelist —
+    // an injection shape like `/x; Path=/evil` above all — folds to the root
+    // scope instead of ever reaching the attribute position.
+    for (const hostile of [
+      "/abc; Path=/evil",
+      "/abc; HttpOnly; Domain=evil.com",
+      "/ab!c",
+      "relative",
+      "",
+      `/${"a".repeat(65)}`, // one past the length bound
+    ]) {
+      const header = previewSessionCookieHeader("cred", hostile);
+      expect(header).toContain("Path=/;");
+      expect(header).not.toContain("/evil");
+      expect(header).not.toContain("Domain=");
+      expect(header.endsWith("; Secure")).toBe(true);
+    }
+    // The legitimate dev-form label rides through untouched (20-char hex
+    // sits inside the whitelist's alphabet and length).
+    expect(
+      previewSessionCookieHeader("cred", "/abcdef0123456789abcdef"),
+    ).toContain("Path=/abcdef0123456789abcdef;");
+  });
+
+  test("fix-ocr23 #6: a value outside the [A-Za-z0-9_-] whitelist folds to empty — never a value-side attribute injection", () => {
+    // The value sits in the NAME=VALUE position of the Set-Cookie header, the
+    // same attribute-bearing position the path guards (fix-ocr22 #3, its
+    // dual): a `;` or `,` in the value can rewrite Path/Secure/etc. just as a
+    // hostile path can. The export API is its own last line of defense: a
+    // value outside the `[A-Za-z0-9_-]{1,128}` whitelist folds to EMPTY —
+    // fail-safe, because an empty pass can never equal a session id, so the
+    // preview gate refuses with 401 forever after.
+    for (const hostile of [
+      "abc; x=1",
+      "abc, sid=1",
+      "abc Path=/evil",
+      "abc\nSet-Cookie: x=1",
+      `${"a".repeat(129)}`, // one past the length bound
+      "",
+    ]) {
+      const header = previewSessionCookieHeader(
+        hostile,
+        "/abcdef0123456789abcdef",
+      );
+      expect(header).toContain(`${PREVIEW_SESSION_COOKIE}=;`);
+      expect(header).not.toContain("x=1");
+      expect(header).not.toContain("sid=1");
+      expect(header).not.toContain("/evil");
+      expect(header.endsWith("; Secure")).toBe(true);
+    }
+    // The real credential shape rides through: the caller passes the store's
+    // session id (cs-… — `-` is inside the whitelist's alphabet).
+    const ok = previewSessionCookieHeader("cs-444455556666");
+    expect(ok).toContain(`${PREVIEW_SESSION_COOKIE}=cs-444455556666;`);
+    expect(ok).toContain("Path=/;");
   });
 });
 
@@ -383,7 +551,14 @@ function ticketRoutes(options: {
   return createWebappProxyRoutes(options.requireUser, {
     config: loadCraftConfig({}),
     store: options.store,
-    gateway: {} as never,
+    // fix-ocr24 #5: the mint now reads the webapp generation (the D10 gate).
+    // This harness's workspace answers current — readWebappGeneration probes
+    // the app body first and an absent one (readFile → null) is "current" —
+    // so these tests keep exercising the ticket semantics, not the gate
+    // (the gate's own coverage lives in craft-webapp-proxy.test.ts).
+    gateway: {
+      fileApiFor: () => ({ readFile: async () => null }),
+    } as never,
     botIdFor: options.botIdFor ?? (async () => "craft-bot"),
     sandboxConnectionFor:
       options.sandboxConnectionFor ??

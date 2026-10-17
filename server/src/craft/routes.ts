@@ -8,21 +8,17 @@
  */
 
 import { Hono, type MiddlewareHandler } from "hono";
-import { createAuditStore, recordAuditEvent } from "../audit";
 import type { ApprovalStore } from "../approvals/types";
+import { createAuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import type { RedisPort } from "../redis";
 import { createCraftApprovalSignals } from "./approval-signals";
 import { createCraftApprovalRoutes } from "./approvals";
-import { createConnectAppRoutes } from "./connect-app-routes";
-import { createCraftConnectAppSignals } from "./connect-app";
-import {
-  createCraftMcpRelayApp,
-  type CraftMcpConnectionResolver,
-} from "./mcp-relay";
 import { createArtifactRoutes } from "./artifact-routes";
 import type { CraftConfig } from "./config";
+import { createCraftConnectAppSignals } from "./connect-app";
+import { createConnectAppRoutes } from "./connect-app-routes";
 import { createFileRoutes } from "./file-routes";
 import { createInterruptFence } from "./interrupt";
 import type { CraftKbSearch } from "./kb-search-relay";
@@ -30,8 +26,13 @@ import { createCraftKbSearchRelayApp } from "./kb-search-relay";
 import { createSessionFlowLocks } from "./locks";
 import type { CraftManagedContentResolver } from "./managed-content";
 import { CraftSessionManager } from "./manager";
+import {
+  type CraftMcpConnectionResolver,
+  createCraftMcpRelayApp,
+} from "./mcp-relay";
 import { createMessageRoutes } from "./message-routes";
 import type { CraftLLMProviderConfig } from "./opencode-config";
+import type { PreviewTickets } from "./preview-ticket";
 import { createSandboxGateway } from "./sandbox-gateway";
 import {
   createCraftScheduledTaskStore,
@@ -49,8 +50,9 @@ import { createSubagentRoutes } from "./subagent-routes";
 import { createTurnExecutor } from "./turn-executor";
 import { createTurnRoutes } from "./turn-routes";
 import { createTurnStateStore } from "./turn-state";
-import type { PreviewTickets } from "./preview-ticket";
+import { generationGatedWebappBasePathFor } from "./webapp-generation";
 import { createWebappProxyRoutes } from "./webapp-proxy";
+import { sessionDirectory } from "./workspace";
 
 export type CraftRoutesDeps = {
   config: CraftConfig;
@@ -131,6 +133,24 @@ export type CraftRoutesDeps = {
    * flagged for converging on serverPort's PORT/SERVER_PORT semantics).
    */
   previewOriginFor?: (sessionId: string) => string;
+  /**
+   * The preview origin's admission (#362): webapp-info surfaces the closed
+   * reason (m-5) and the ticket route refuses to mint while it refuses — the
+   * same gate the boot file's preview-origin dispatcher branch enforces.
+   */
+  previewOriginAdmission?: () => { ok: true } | { ok: false; reason: string };
+  /**
+   * The registry half of the same-origin liveness probe (fix-ocr13): the
+   * preview origin's hasSession — false is the restart verdict (M-2).
+   */
+  previewOriginHas?: (sessionId: string) => boolean;
+  /**
+   * The session's dev-form /<label> mount (F-2, #365): the preview origin's
+   * webappBasePathFor, threaded through the manager into the protected start
+   * script so the dev-form preview's resource URLs carry the label. Unset =
+   * root-path scripts (host form, closed origin — production unchanged).
+   */
+  webappBasePathFor?: (sessionId: string) => string | null;
 };
 
 /**
@@ -213,6 +233,23 @@ export function createCraftRoutes(input: {
     managedContentFor: deps.managedContentFor,
     managedContentHashesFor,
     mcpRelayBaseUrl: deps.mcpRelayBaseUrl ?? config.mcpRelayBaseUrl,
+    /*
+     * #367 (D10): the mount the start script injects is GENERATION-gated — a
+     * legacy session's script stays root-path so the app's old cwd-fallback
+     * template keeps mounting the same-origin prefix the legacy preview path
+     * serves. One gate here feeds every script write (provisioning, repair,
+     * LLM-config regenerate, skills reload), so the script and webapp-info can
+     * never disagree about where a session's app lives.
+     */
+    webappBasePathFor: deps.webappBasePathFor
+      ? generationGatedWebappBasePathFor({
+          webappBasePathFor: deps.webappBasePathFor,
+          fileApiFor: (botId) => gateway.fileApiFor(botId),
+          botIdFor: (sessionId) => deps.botIdFor(sessionId),
+          sessionDirectoryFor: (sessionId) =>
+            sessionDirectory(sessionId, config.sessionDirectoryMode),
+        })
+      : undefined,
   });
   const turnState = createTurnStateStore({ redis, config });
   const fence = createInterruptFence(redis);
@@ -371,6 +408,8 @@ export function createCraftRoutes(input: {
         sandboxConnectionFor: deps.sandboxConnectionFor,
         previewTickets: deps.previewTickets,
         previewOriginFor: deps.previewOriginFor,
+        previewOriginAdmission: deps.previewOriginAdmission,
+        previewOriginHas: deps.previewOriginHas,
       }),
     );
   }
