@@ -20,6 +20,14 @@
       "approvals": {
         "title": "Approvals",
         "description": "What every member's Bots must ask before acting."
+      },
+      "botServices": {
+        "title": "Bot services",
+        "description": "The server-side Bots approved for model access, each with a unique service identity."
+      },
+      "gateway": {
+        "title": "Model gateway",
+        "description": "The Bifrost gateway's address, credential, exchange rate and readiness."
       }
     },
     "do": {
@@ -1025,5 +1033,131 @@
   "approvals": {
     "title": "Approvals",
     "description": "What members' Bots must ask before acting, rules for everyone, and requests to use shared accounts."
+  },
+  "botServices": {
+    "title": "Bot services",
+    "description": "Register the server-side Bots this deployment recognizes. Registration establishes a unique service identity only — no credential, user authorization or credit of any kind.",
+    "add": "Register bot",
+    "cancel": "Cancel",
+    "kinds": {
+      "builtin": "Built-in",
+      "external": "External"
+    },
+    "capabilities": {
+      "chat": "Chat",
+      "image": "Image",
+      "audio": "Audio",
+      "embedding": "Embedding",
+      "realtime": "Realtime",
+      "async": "Async"
+    },
+    "fields": {
+      "botId": "Service identity (botId)",
+      "displayName": "Display name",
+      "kind": "Kind",
+      "capabilities": "Capabilities"
+    },
+    "form": {
+      "botIdInvalid": "A botId uses lowercase letters, digits and . _ : - , starts alphanumeric, is at most 128 characters, and can never be changed after registration.",
+      "displayNameRequired": "Give the bot a display name.",
+      "capabilitiesRequired": "Declare at least one capability."
+    },
+    "dialog": {
+      "title": "Register a bot service",
+      "description": "Establish a unique service identity and capability declaration for a server-side Bot.",
+      "botIdPlaceholder": "e.g. com.example.bot",
+      "displayNamePlaceholder": "e.g. Example Bot",
+      "noCredentials": "Registration mints no service credential and grants no user model access or credits; credentials are issued separately, later.",
+      "save": "Register",
+      "saving": "Registering…"
+    },
+    "edit": {
+      "title": "Edit bot service"
+    },
+    "registered": {
+      "title": "Registered bots",
+      "empty": "No bot services are registered yet.",
+      "loadError": "Could not load the registered bot services.",
+      "disabled": "disabled",
+      "edit": "Edit",
+      "disable": "Disable",
+      "enable": "Enable"
+    }
+  },
+  "gateway": {
+    "title": "Model gateway",
+    "description": "The Bifrost gateway this deployment's paid model capabilities run through: its address, credential, exchange rate, and whether everything is ready.",
+    "loadError": "The gateway status could not be loaded.",
+    "saving": "Saving…",
+    "operation": "The gateway change could not be saved.",
+    "readiness": {
+      "title": "Readiness",
+      "description": "Paid model capabilities are enabled only when every condition below holds.",
+      "ready": "Ready",
+      "notReady": "Not ready",
+      "configVersion": "Configuration version:",
+      "probe": "Run probe",
+      "probing": "Probing…",
+      "blockedIntro": "Paid model capabilities are refused until each of these is resolved:"
+    },
+    "probe": {
+      "last": "Last probe: {{status}} ({{reasonCode}})",
+      "none": "No probe has run yet"
+    },
+    "extension": {
+      "verdict": "Credit-admission extension: {{verdict}} ({{version}})",
+      "none": "The credit-admission extension has not been negotiated yet"
+    },
+    "endpoint": {
+      "title": "Gateway address",
+      "description": "Where the Bifrost gateway listens. An origin only — the paths are this server's own.",
+      "save": "Save address"
+    },
+    "rate": {
+      "title": "Exchange rate",
+      "description": "How many credits one USD costs. There is no default: billing stays disabled until a legal rate is saved. A change affects only new requests.",
+      "save": "Save rate",
+      "version": "version",
+      "notConfigured": "No rate is configured, so billing is disabled."
+    },
+    "credential": {
+      "title": "Admin credential",
+      "description": "The key this deployment uses to manage the gateway. It is write-only: save a new key to set or rotate it — it is never shown again, only its fingerprint is.",
+      "save": "Save credential",
+      "configured": "Saved",
+      "unconfigured": "No admin credential is configured."
+    },
+    "fields": {
+      "baseUrl": "Gateway address",
+      "baseUrlProblem": {
+        "required": "The gateway address is required.",
+        "invalid": "The gateway address must be a valid http or https URL.",
+        "originOnly": "The gateway address must be the origin only, without a path, query or credentials."
+      },
+      "requestTimeoutMs": "Request timeout (ms)",
+      "timeoutProblem": "The request timeout must be a whole number of milliseconds greater than zero.",
+      "numerator": "Credits per 1 USD (numerator)",
+      "numeratorProblem": "The numerator must be a whole number greater than zero.",
+      "denominator": "Credits scale (denominator)",
+      "denominatorProblem": "The denominator must be a whole number greater than zero.",
+      "adminKey": "Admin credential",
+      "adminKeyProblem": "Paste the admin credential to save."
+    },
+    "blocking": {
+      "gateway_readiness_endpoint_not_configured": "No gateway address is configured, so paid model capabilities are refused: an administrator must save the gateway endpoint (or set BIFROST_GATEWAY_URL).",
+      "gateway_readiness_endpoint_unavailable": "The gateway address could not be read, so paid model capabilities are refused until the failure is resolved.",
+      "gateway_readiness_credential_not_configured": "No gateway admin credential is configured, so paid model capabilities are refused: an administrator must save the gateway credential.",
+      "gateway_readiness_credential_unavailable": "The gateway admin credential could not be resolved, so paid model capabilities are refused until the failure is resolved.",
+      "gateway_readiness_probe_missing": "No successful gateway probe is on file for the current gateway configuration, so paid model capabilities are refused: run a probe after configuring the gateway.",
+      "gateway_readiness_probe_not_ok": "The last gateway probe did not succeed, so paid model capabilities are refused: fix what the probe reports and probe again.",
+      "gateway_readiness_probe_unavailable": "The last gateway probe result could not be read, so paid model capabilities are refused until the failure is resolved.",
+      "gateway_readiness_extension_not_negotiated": "No capability negotiation has completed for the current gateway configuration, so paid model capabilities are refused: negotiate the gateway's extensions.",
+      "gateway_readiness_extension_absent": "The gateway does not expose the OpenBot credit-admission extension, so paid model capabilities are refused: deploy the extension before enabling billing.",
+      "gateway_readiness_extension_incompatible": "The gateway's credit-admission extension is outside the supported version range, so paid model capabilities are refused: align the extension version before enabling billing.",
+      "gateway_readiness_extension_unavailable": "The extension negotiation result could not be read, so paid model capabilities are refused until the failure is resolved.",
+      "gateway_readiness_rate_not_configured": "The USD→credits conversion rate is not configured, so paid model capabilities are refused: an administrator must save a legal rate (there is no default).",
+      "gateway_readiness_rate_unavailable": "The conversion rate could not be read as a legal value, so paid model capabilities are refused: repair the stored rate before enabling billing.",
+      "gateway_readiness_gate_unavailable": "The gateway readiness gate is not installed in this process, so paid model capabilities are refused."
+    }
   }
 }
