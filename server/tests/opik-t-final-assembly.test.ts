@@ -11,18 +11,28 @@
 //        sub-router here.
 //   M1 — the ambient run-scope seam exists, the builtin threading wrapper
 //        establishes it for everything a run emits, the production scope
-//        resolver refuses honestly, and the boot assembly reads it.
+//        resolver refuses honestly, and — the fix-round-2 behavior guard —
+//        the production resolver entry (createActorAgentResolver) FORWARDS
+//        the injected run-scope resolver: a builtin agent resolved the way
+//        every production surface resolves one runs its model calls under
+//        the issued scope, read back through the recorder's own adapter read.
+//        (The source-text assertions these replaced were exactly the blind
+//        spot the incremental review caught: injection asserted, forwarding
+//        never tested.)
 //
 // Integration facts run against the dedicated Opik test database; the wiring
 // guards read the real assembly source the way opik-execution-wiring.test.ts
 // does, so the seam BETWEEN the modules and the boot file cannot silently rot.
 import { describe, expect, test } from "bun:test";
+import type { AbstractAgent, BaseEvent } from "@ag-ui/client";
+import { LLMock } from "@copilotkit/aimock";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { Observable } from "rxjs";
+import { createActorAgentResolver } from "../src/agents/agent-resolver";
 import type { AgentActor, AgentProfile } from "../src/agents/profile-types";
 import { createRunBindingStore } from "../src/ai-observability/bindings";
 import type { OpikConfig } from "../src/ai-observability/config";
@@ -36,7 +46,11 @@ import {
   loadVerifiedOpikPort,
 } from "../src/ai-observability/wiring";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
-import { builtinRunUnderObservationScope } from "../src/copilot";
+import {
+  builtinRunUnderObservationScope,
+  setBuiltinModelSpanObserver,
+  setModelUsageMeter,
+} from "../src/copilot";
 import { aiObservationBindings } from "../src/db/schema/ai-observability-bindings";
 import {
   currentRunObservationScope,
@@ -336,17 +350,188 @@ describe("T-final M1: the boot assembly reads the ambient scope", () => {
       indexSource.match(/currentRunObservationScope\(\)/g)?.length,
     ).toBeGreaterThanOrEqual(2);
   });
+});
 
-  test("the agent resolver threads the run-scope resolver", () => {
-    expect(indexSource).toMatch(/resolveRunObservationScope:/);
+/**
+ * T-final M1 fix round 2: the production resolver entry is the seam the
+ * review caught unforwarded. These tests drive a REAL builtin run — a real
+ * model conversation against a local OpenAI-compatible mock, through the same
+ * `createActorAgentResolver` construction every production surface uses — and
+ * assert what the recorder's own adapter read sees, never what a source file
+ * looks like.
+ */
+describe("T-final M1: createActorAgentResolver threads the run scope (behavior)", () => {
+  const runInput = {
+    threadId: "t-final-thread",
+    runId: "t-final-behavior-run",
+    messages: [{ id: "m1", role: "user", content: "Answer the fixture." }],
+    tools: [],
+    context: [],
+  } as const;
+
+  const runToCompletion = async (agent: AbstractAgent) => {
+    const events: BaseEvent[] = [];
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("fixture run timed out")),
+        5_000,
+      );
+      agent.run(runInput).subscribe({
+        next: (event) => events.push(event),
+        error: (error: unknown) => {
+          clearTimeout(timer);
+          reject(error instanceof Error ? error : new Error(String(error)));
+        },
+        complete: () => {
+          clearTimeout(timer);
+          resolve();
+        },
+      });
+    });
+    return events;
+  };
+
+  /**
+   * Resolve the builtin Bot the way production does — through
+   * `createActorAgentResolver` — with the model-span observation reading the
+   * ambient scope exactly as index.ts's boot adapter reads it. The meter
+   * alone engages the metered model path that carries the span observation
+   * (the gate stays unset, so no admission refuses); this is the wiring the
+   * real-stack e2e uses too.
+   */
+  async function harnessFor(
+    resolveRunObservationScope?: (
+      actor: AgentActor,
+      runBotId: string,
+    ) => Promise<unknown>,
+  ) {
+    const llm = new LLMock();
+    const originalBase = process.env.OPENAI_BASE_URL;
+    process.env.OPENAI_BASE_URL = await llm.start();
+    llm.onMessage(/.*/, { content: "Fixture completed." });
+    setModelUsageMeter(async () => {});
+    const scopesSeenByRecorder: unknown[] = [];
+    setBuiltinModelSpanObserver(() => {
+      // index.ts's adapter read, verbatim in shape: the record happens inside
+      // the run's execution tree, and the ambient scope at that moment is
+      // what the fact will carry upstream.
+      scopesSeenByRecorder.push(currentRunObservationScope());
+    });
+    const asked: { actorId: string; botId: string }[] = [];
+    const resolver = createActorAgentResolver({
+      loadAgents: async () => [
+        {
+          id: botId,
+          name: "T-Final Bot",
+          type: "built_in",
+          systemPrompt: "Answer the fixture.",
+          expertSource: "tenant_package",
+        },
+      ],
+      model: { provider: "openai", defaultModel: "gpt-5.5" },
+      resolveModelApiKey: async () => "synthetic-fixture-key",
+      loadVendors: async () => [],
+      ...(resolveRunObservationScope
+        ? {
+            resolveRunObservationScope: (actor: AgentActor, runBotId: string) => {
+              asked.push({ actorId: actor.id, botId: runBotId });
+              return resolveRunObservationScope(actor, runBotId);
+            },
+          }
+        : {}),
+    });
+    return {
+      asked,
+      async cleanup() {
+        setBuiltinModelSpanObserver(undefined);
+        setModelUsageMeter(undefined);
+        if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
+        else process.env.OPENAI_BASE_URL = originalBase;
+        await llm.stop();
+      },
+      resolver,
+      scopesSeenByRecorder,
+    };
+  }
+
+  test("a builtin run resolved through the production entry hands its issued scope to the recorder", async () => {
+    const scope = scopeFor(actorId);
+    const harness = await harnessFor(async () => scope);
+    try {
+      const agent = await harness.resolver.resolveAgentForActor(
+        { id: actorId, role: "user" },
+        botId,
+      );
+      const events = await runToCompletion(agent);
+      expect(
+        events.some((event) => event.type === "RUN_FINISHED"),
+        "the fixture run finished",
+      ).toBe(true);
+      // The resolver was asked once per run, with the run's own actor and bot.
+      expect(harness.asked).toEqual([{ actorId, botId }]);
+      // The recorder's adapter read saw the ISSUED scope object itself — the
+      // WeakSet-trusted one, not a copy — for every model call of the run.
+      expect(harness.scopesSeenByRecorder.length).toBeGreaterThanOrEqual(1);
+      for (const seen of harness.scopesSeenByRecorder) expect(seen).toBe(scope);
+    } finally {
+      await harness.cleanup();
+    }
   });
 
-  test("the builtin threading is wired into the runtime mount path", () => {
-    expect(indexSource).toMatch(
+  test("a refused resolution runs scope-less: the recorder reads no scope", async () => {
+    const harness = await harnessFor(async () => null);
+    try {
+      const agent = await harness.resolver.resolveBuiltInBotForActor(
+        { id: actorId, role: "user" },
+        botId,
+      );
+      await runToCompletion(agent.agent);
+      expect(harness.asked).toEqual([{ actorId, botId }]);
+      // The model calls still happened and were still observed — but bare.
+      expect(harness.scopesSeenByRecorder.length).toBeGreaterThanOrEqual(1);
+      for (const seen of harness.scopesSeenByRecorder)
+        expect(seen).toBeUndefined();
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
+  test("a resolver built without the injection keeps the inert footing", async () => {
+    const harness = await harnessFor(undefined);
+    try {
+      const agent = await harness.resolver.resolveAgentForActor(
+        { id: actorId, role: "user" },
+        botId,
+      );
+      await runToCompletion(agent);
+      expect(harness.asked).toEqual([]);
+      expect(harness.scopesSeenByRecorder.length).toBeGreaterThanOrEqual(1);
+      for (const seen of harness.scopesSeenByRecorder)
+        expect(seen).toBeUndefined();
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
+  test("the boot injection the resolver forwards is still assembled at the one mount (wiring guard)", () => {
+    // Narrow guard for the boot half only: WHICH name is injected into the
+    // production createActorAgentResolver call. The forwarding itself is
+    // pinned by the behavior tests above, not by this text.
+    const assemblySource = readFileSync(
+      join(import.meta.dir, "..", "src", "index.ts"),
+      "utf8",
+    );
+    expect(assemblySource).toMatch(
       /createActorAgentResolver\(\{[\s\S]*?resolveRunObservationScope/,
     );
   });
 });
+
+/*
+ * The scope-carrier resolver-refusal tests below and the recorders' adapter
+ * guard keep their original form: they pin the lower half of the thread and
+ * the boot-side read, neither of which was the review's finding.
+ */
 
 describe("T-final M2: the contract manifest is a server asset with a boot voice", () => {
   test("the trust anchor lives beside the module that verifies against it, still the verified contract", async () => {

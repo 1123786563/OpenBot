@@ -438,8 +438,12 @@ function runtimeModel(model: RuntimeModel, apiKey: string | null) {
  *
  * A module-level setter rather than an import: the billing seam is optional — a deployment without
  * a provider mounts none of it — and `copilot.ts` must not grow a dependency on a module that is
- * often absent. `index.ts` wires the billing service's meter in at assembly; the default drops
- * usage on the floor, which is exactly right for a deployment that meters nowhere.
+ * often absent. Since the reservation rework (b616ccaa) production wires the USAGE GATE at
+ * assembly (`setModelUsageGate`, server/src/index.ts), not this meter: the gate both enforces the
+ * pre-call reservation and — by riding the same metered wrapper — carries the model-span
+ * observation bypass. This meter stays a separately-injectable sink (tests, e2e, and a deployment
+ * that meters without gating); the default drops usage on the floor, which is exactly right for a
+ * deployment that meters nowhere.
  */
 let usageMeter: ((usage: ModelUsageReport) => void | Promise<void>) | undefined;
 
