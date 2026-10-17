@@ -82,6 +82,11 @@ export type EnsureSessionReadyInput = {
   config: CraftConfig;
   /** The base the sandbox dials back on (MCP relay + company-search CLI). */
   mcpRelayBaseUrl?: string | null;
+  /**
+   * The session's dev-form /<label> mount (F-2, #365), threaded to the start
+   * script — see SetupSessionWorkspaceInput.webappBasePathFor.
+   */
+  webappBasePathFor?: (sessionId: string) => string | null;
 };
 
 /**
@@ -191,6 +196,7 @@ export async function ensureSessionReady(
             session.id,
             input.config,
             session.nextjsPort,
+            input.webappBasePathFor,
           );
         }
         // The config rewrite owed any running instance a dispose: instances
@@ -236,6 +242,7 @@ export async function ensureSessionReady(
         agentsTemplate: await agentsTemplate(),
         webappPort: session.nextjsPort,
         mcpRelayBaseUrl: input.mcpRelayBaseUrl,
+        webappBasePathFor: input.webappBasePathFor,
         managedContent: managedContent
           ? {
               connectableAppsSection: managedContent.connectableAppsSection,

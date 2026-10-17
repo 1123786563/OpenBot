@@ -82,6 +82,13 @@ export type SetupSessionWorkspaceInput = {
    * the tag alone.
    */
   mcpRelayBaseUrl?: string | null;
+  /**
+   * The session's dev-form /<label> mount (F-2, #365) — the preview origin's
+   * webappBasePathFor, threaded so the protected start script injects the
+   * mount env the dev-form preview's resource URLs need. Unset (host form,
+   * closed origin) leaves the script root-path — production unchanged.
+   */
+  webappBasePathFor?: (sessionId: string) => string | null;
 };
 
 export type WorkspaceApi = {
@@ -163,6 +170,7 @@ export async function setupSessionWorkspace(
       input.sessionId,
       input.config,
       input.webappPort,
+      input.webappBasePathFor,
     );
   }
 

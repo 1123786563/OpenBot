@@ -1081,6 +1081,39 @@ describe("buildWebappBootstrapScript (F5 F)", () => {
       'SESSION_PATH="$(cd "$SESSION_PATH" 2>/dev/null && pwd || pwd)"',
     );
   });
+
+  // ── F-2 (#365): the dev form's /<label> mount, injected as spawn env ──────
+  //
+  // The dev form's preview address is http://127.0.0.1:<port>/<label> — the
+  // app's own resource URLs must carry that label to resolve on the preview
+  // origin. The server cannot inject env into a process the sandbox spawns
+  // for it, so the mount travels INSIDE the generated script: ONYX_WEBAPP_BASE_PATH
+  // feeds next.config.ts (basePath/assetPrefix), NEXT_PUBLIC_BASE_PATH feeds
+  // lib/base-path.ts — both exported before the spawn so `bun run dev`
+  // inherits them.
+  test("basePath set: the spawn env carries both mount variables before the dev server starts", () => {
+    const script = buildWebappBootstrapScript({
+      sessionDirectory: "/workspace/sessions/cs-1",
+      port: 3017,
+      basePath: "/abc123label",
+    });
+    expect(script).toContain('export ONYX_WEBAPP_BASE_PATH="/abc123label"');
+    expect(script).toContain('export NEXT_PUBLIC_BASE_PATH="/abc123label"');
+    // Exported BEFORE the spawn line — env after the spawn would reach nothing.
+    const exportAt = script.indexOf("export ONYX_WEBAPP_BASE_PATH=");
+    const spawnAt = script.indexOf("setsid nohup bun run dev");
+    expect(exportAt).toBeGreaterThan(-1);
+    expect(spawnAt).toBeGreaterThan(exportAt);
+  });
+
+  test("no basePath: no mount env — the dev server serves the app at the port root", () => {
+    const script = buildWebappBootstrapScript({
+      sessionDirectory: "/workspace/sessions/cs-1",
+      port: 3017,
+    });
+    expect(script).not.toContain("ONYX_WEBAPP_BASE_PATH");
+    expect(script).not.toContain("NEXT_PUBLIC_BASE_PATH");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1155,6 +1188,51 @@ describe("workspace wiring", () => {
       files.has("/workspace/sessions/cs-h/.opencode/plugin/webapp.ts"),
     ).toBe(true);
     expect(files.has("/workspace/sessions/cs-h/start-webapp.sh")).toBe(false);
+  });
+
+  test("webappBasePathFor threads the preview's label mount into the script (F-2)", async () => {
+    // The wiring the boot file provides in the dev form: the origin's
+    // webappBasePathFor (preview-origin.ts, the same HMAC label the minted
+    // address rides) reaches the generated script's spawn env; unset wiring
+    // (host form, closed origin, tests) keeps the root-path script.
+    const files = new Map<string, string>();
+    await setupSessionWorkspace(
+      {
+        writeFile: async (path, content) => files.set(path, content),
+        mkdir: async () => undefined,
+      },
+      {
+        sessionId: "cs-b",
+        config,
+        llmConfig: llm,
+        agentsTemplate: "",
+        webappPort: 3017,
+        webappBasePathFor: () => "/abc123label",
+      },
+    );
+    const script = files.get("/workspace/sessions/cs-b/start-webapp.sh");
+    expect(typeof script).toBe("string");
+    expect(script).toContain('export ONYX_WEBAPP_BASE_PATH="/abc123label"');
+    expect(script).toContain('export NEXT_PUBLIC_BASE_PATH="/abc123label"');
+
+    const rooted = new Map<string, string>();
+    await setupSessionWorkspace(
+      {
+        writeFile: async (path, content) => rooted.set(path, content),
+        mkdir: async () => undefined,
+      },
+      {
+        sessionId: "cs-b2",
+        config,
+        llmConfig: llm,
+        agentsTemplate: "",
+        webappPort: 3017,
+        webappBasePathFor: () => null,
+      },
+    );
+    expect(rooted.get("/workspace/sessions/cs-b2/start-webapp.sh")).not.toContain(
+      "ONYX_WEBAPP_BASE_PATH",
+    );
   });
 
   test("the script is protected content: edit/write/patch deny + the two bash fallbacks allow", async () => {
@@ -1246,6 +1324,9 @@ function proxyHarness(input: {
         baseUrl: "http://127.0.0.1:1",
         token: null,
       }),
+      // #362 (D11): the address is the preview origin's ABSOLUTE one — pinned
+      // here so the route's answer is a fact of the wiring, not of the env.
+      previewOriginFor: () => "http://127.0.0.1:3001/pinnedlabel",
     },
   );
   return { app };
@@ -1262,7 +1343,10 @@ describe("webapp preview route (reserved-port attach)", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as Record<string, unknown>;
     expect(body.has_webapp).toBe(true);
-    expect(body.webapp_url).toBe("/api/craft/sessions/cs-pv/webapp");
+    // D11 (#362): the ABSOLUTE preview address, never the same-origin proxy path.
+    expect(body.webapp_url).toBe("http://127.0.0.1:3001/pinnedlabel");
+    expect(body.previewOrigin).toBe("http://127.0.0.1:3001/pinnedlabel");
+    expect(body.previewOriginClosedReason).toBeNull();
     expect(body.ready).toBe(true);
   });
 
