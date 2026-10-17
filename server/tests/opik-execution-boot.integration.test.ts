@@ -6,6 +6,7 @@ import { createObservationDatasetStore } from "../src/ai-observability/datasets"
 import { createExecutionBudgetPrecheck } from "../src/ai-observability/execution-billing";
 import { createExperimentExecutionWorkerBoot } from "../src/ai-observability/execution-boot";
 import type { EvaluationModelCall } from "../src/ai-observability/execution-runner";
+import { GATEWAY_CALL_TIMEOUT_MS } from "../src/ai-observability/execution-runner";
 import {
   createExperimentExecutionService,
   createObservationExecutionStore,
@@ -94,16 +95,19 @@ const configInput = {
 function boot(input: {
   customer: string;
   env?: Record<string, string | undefined>;
+  callModel?: EvaluationModelCall;
 }) {
   const calls: Parameters<EvaluationModelCall>[0][] = [];
-  const callModel = (async (request) => {
-    calls.push(request);
-    return {
-      output: "the answer with outage",
-      inputTokens: 10,
-      outputTokens: 20,
-    };
-  }) satisfies EvaluationModelCall;
+  const callModel =
+    input.callModel ??
+    ((async (request) => {
+      calls.push(request);
+      return {
+        output: "the answer with outage",
+        inputTokens: 10,
+        outputTokens: 20,
+      };
+    }) satisfies EvaluationModelCall);
   const worker = createExperimentExecutionWorkerBoot({
     database,
     audit,
@@ -229,6 +233,65 @@ afterAll(async () => {
   // (every fact rides a startedExecutionIds event id), so no client-wide delete
   // here (T-routes review M1) — a shared database keeps other suites' rows.
   await database.$client.close();
+});
+
+test("the production boot's work-item lease outlives the per-case gateway budget (OCR m131, fix2 R4)", {
+  timeout: 30_000,
+}, async () => {
+  const customer = `${prefix}-lease`;
+  await grant(customer, 10_000);
+  const execution = await submittedExecution(customer);
+
+  // A case that stays in flight until the test has read the claimed work item:
+  // the lease observation must happen while the sweep holds the item, which is
+  // exactly the state m131 is about — one case sitting at the gateway budget.
+  let releaseCase!: () => void;
+  const released = new Promise<void>((resolve) => {
+    releaseCase = resolve;
+  });
+  let caseEntered!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    caseEntered = resolve;
+  });
+  const { worker } = boot({
+    customer,
+    callModel: async (_request) => {
+      caseEntered();
+      await released;
+      return {
+        output: "the answer with outage",
+        inputTokens: 10,
+        outputTokens: 20,
+      };
+    },
+  });
+
+  // Not awaited: the sweep must be observed mid-flight, with the case running.
+  const sweeping = worker.sweep();
+  await entered;
+
+  const [item] = await database
+    .select()
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.kind, EXECUTION_WORK_KIND),
+        eq(workItems.key, execution.id),
+      ),
+    );
+  // The sweep claimed the item: the lease is live and somebody owns it.
+  expect(item?.owner).not.toBeNull();
+  expect(item?.leaseUntil).not.toBeNull();
+  // The whole point (OCR m131): the production lease must outlast the runner's
+  // per-case gateway budget (execution-runner.ts's GATEWAY_CALL_TIMEOUT_MS). At
+  // the old 60s default the lease and the gateway timeout lapsed together — the
+  // taker-over marked the row unknown and refused the original worker's outcome
+  // write. Read live from the claimed row, not from a constant.
+  const remainingMs = item.leaseUntil!.getTime() - Date.now();
+  expect(remainingMs).toBeGreaterThan(GATEWAY_CALL_TIMEOUT_MS);
+
+  releaseCase();
+  await sweeping;
 });
 
 test("the production boot's sweep runs the billed runner: one reserve, one exact charge, one settled hold", {

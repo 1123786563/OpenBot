@@ -172,6 +172,14 @@ export function createProductionEvaluationCaseRunner(
 }
 
 /**
+ * The default per-call gateway budget (OCR m131's pairing constant): the time one
+ * case's model call may hold before the runner itself gives up on it. Exported so
+ * the production assembly's work-item lease (execution-boot.ts) can be held to a
+ * lifetime that provably outlives it.
+ */
+export const GATEWAY_CALL_TIMEOUT_MS = 60_000;
+
+/**
  * The production model call: one chat-completions round trip on the OpenAI-compatible
  * gateway, the same deployment shape the runtime's built-in path dials (a named
  * `OPENAI_BASE_URL`). Time-bounded so a hung gateway cannot hold a worker's lease
@@ -201,7 +209,9 @@ export function createGatewayModelCall(
       model: openai().chat(modelName),
       system,
       prompt: user,
-      abortSignal: AbortSignal.timeout(options.timeoutMs ?? 60_000),
+      abortSignal: AbortSignal.timeout(
+        options.timeoutMs ?? GATEWAY_CALL_TIMEOUT_MS,
+      ),
       ...settings,
     });
     return {
