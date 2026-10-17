@@ -85,13 +85,21 @@ dev 形态所有会话共享同一主机 `127.0.0.1:<SERVER_PORT>`：兑换种�
 两个 dev 预览时，后入场的换票抹掉先入场的通行证，先入场 iframe 的后续请求与 HMR
 upgrade 全部 401，且 preview-tab 在 entry 存活期内不重换票，**无法自愈**。因此 dev
 形态的 `Set-Cookie` 把 `Path` 挂到本会话的 `/<label>`（与 dev server 的 basePath 挂载
-同一推导）：两个会话的 cookie 按路径并存、互不覆盖；浏览器只发匹配 Path 的 cookie，
-服务端 `holdsPreviewSessionPass` 取 Cookie 头中**第一个**同名值（RFC 6265 §5.4 按
-Path 长度降序发送，第一个即最长 Path——R-9 种在 `/<label>` 的通行证；页面 JS 在父
-路径 `Path=/` 种的同名阴影恒排最后不再胜出，否则一次种阴影即跨会话 401 DoS，
-fix-ocr5）；HMR upgrade 路径
-`/<label>/_next/...` 也在 Path 覆盖内。生产 host 形态一个会话一个主机，无共享，维持
-`Path=/`。
+同一推导）：两个会话的 cookie 按路径并存、互不覆盖；浏览器只发匹配 Path 的 cookie。
+
+服务端判定（2026-10-18 按代码更正，#419）：`verifyPassWith`
+（`server/src/craft/preview-origin.ts:104`）**遍历 Cookie 头里全部同名候选，任一验签
+通过即放行**（fix-ocr20 #3）。早期写法是「取第一个同名值」并断言父路径 `Path=/` 的
+同名阴影恒排最后（fix-ocr5）——该断言不成立：RFC 6265 §5.4 按 Path 长度**降序**发送，
+而 HttpOnly 只保护通行证自己那条 name+domain+path 槽位，页面 JS 在更深路径
+（如 `Path=/<labelB>/x`）种同名候选完全合法，于是阴影排在最前，只判首值即被遮住，一次
+种阴影就能把会话 B 的整个预览打成 401（跨会话 DoS）。遍历全部候选后，阴影遮不住罐子里
+真实存在的通行证；罐子里没有通过验签的候选仍然拒绝。旧函数名
+`holdsPreviewSessionPass` 及其「cookie 值 == sessionId」的比较已随 #358 修复删除，
+通行证必须是本部署用部署密钥签发的 pass。
+
+HMR upgrade 路径 `/<label>/_next/...` 也在 Path 覆盖内。生产 host 形态一个会话一个
+主机，无共享，维持 `Path=/`。
 
 ### M-2 重启空窗（已接受，方案 a）
 
@@ -154,10 +162,20 @@ dev 形态的 `127.0.0.1` 是 trust origin，不受此约束）、基座（`{ses
 两条派生互不可逆推、不可互相伪造（用途域分离）。
 registry 不做逐出：条目数以会话数为上界，与 M-2 一并接受。
 
-### HMR（#363 的范围）
+### HMR（#363，代码已落地）
 
-preview origin 上的 HTTP 代理已就位；websocket 升级（HMR 热更新通道）在 preview
-origin 上由 #363 落地。主站同源代理的 HMR 不受影响。
+preview origin 的 HTTP 代理与 websocket 升级通道都已实现：升级判定入口
+`resolvePreviewWebappHmrUpgrade`（`server/src/craft/webapp-proxy.ts:1298`），与 HTTP 门
+共用同一个 `verifyPassWith` 验签（`server/src/craft/preview-origin.ts:104`），并额外带
+Origin 门（fix-ocr28 #1：WebSocket 握手不受 CORS 约束，而通行证 cookie 是
+`SameSite=None`，不校验 Origin 就等于把活着的 HMR 通道送给任意站点）。主站同源代理的
+HMR 不受影响。
+
+**证据边界（2026-10-18 更正，#419）**：本节只主张「接线与单测存在」，属静态核验。AC5
+要求的是真实 dev server 在新 origin 下 DOM 热更新仍然工作，这条**没有运行时证据**：
+#437（新会话 start 脚本未注入 `/<label>` mount，预览恒 404）与 #436（干净库 migrate 后
+启动即 `42703`）两张 P0 仍 OPEN，dev 形态端到端起不来，热更新无法实测。不要把本节读作
+AC5 已通过。
 
 ### CSP（`WEBAPP_DEV_CSP`）
 
@@ -216,7 +234,7 @@ unknown 的代价只是多一次重试。
 | `previewOrigin` / 换票 | null / 不换票，iframe 直连旧路径（主站 cookie 鉴权，#359 前行为） | preview 地址 / 单次票据入场 |
 | 启动脚本的 basePath 导出 | **不导出**——旧模板的 cwd 回退自动挂载旧前缀（dev/host 两形态都成立） | dev 形态导出 `/<label>`；host 形态不导出 |
 | `webappGeneration` 字段 | `"legacy"` | `"current"` |
-| HMR | 同源 HMR 分发（升级请求仍按 `/api/craft/sessions/<id>/webapp/_next/webpack-hmr` 解析） | preview origin 的 HMR（#363） |
+| HMR | 同源 HMR 分发（升级请求仍按 `/api/craft/sessions/<id>/webapp/_next/webpack-hmr` 解析） | preview origin 的 HMR（#363 代码已落地；运行时热更新仍待实测，受 #437 阻塞） |
 
 预览面板对 legacy 会话显示一行双语提示（`preview.legacyNotice`），与本文档口径一致。
 旧同源路径的 HTTP 代理与 HMR 分发在新形态下**仍然注册**，这是 D10"走旧路径"的载体；

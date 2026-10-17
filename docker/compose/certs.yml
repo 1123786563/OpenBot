@@ -21,8 +21,10 @@ services:
     # The scripts are strict POSIX sh — the image is Alpine without bash.
     entrypoint: ["/bin/sh", "/openbot-certs/entrypoint.sh"]
     # Not root: it only needs to write the TLS directory and its acme home. Match
-    # the uid that owns the bind-mounted TLS directory (and that the preview server
-    # reads the key as) — the private key lands 600 under this uid.
+    # the uid that owns the bind-mounted TLS directory — and note that the reader
+    # of key.pem is whatever terminates TLS for the preview origin (a reverse
+    # proxy), not the OpenBot server, which never opens these files. The private
+    # key lands 600 under this uid.
     user: "${OPENBOT_TLS_UID:-1000}:${OPENBOT_TLS_GID:-1000}"
     # on-failure: retry real failures (invalid template, first-issuance or
     # install crash — exit 1). The skip forms (dev/http template) no longer
@@ -48,7 +50,8 @@ services:
       OPENBOT_TLS_ALERT_COOLDOWN_SECONDS: ${OPENBOT_TLS_ALERT_COOLDOWN_SECONDS:-86400}
       OPENBOT_TLS_ALERT_WEBHOOK: ${OPENBOT_TLS_ALERT_WEBHOOK:-}
       # The reload seam: a stamp file (tls/reload.stamp) always; an http(s) POST to
-      # the server's reload endpoint when set. Never a container restart.
+      # the reload endpoint of whatever terminates TLS when set. Never a container
+      # restart. The OpenBot server is not that consumer — it has no TLS listener.
       OPENBOT_TLS_RELOAD_URL: ${OPENBOT_TLS_RELOAD_URL:-}
       # uid:gid to chown key/cert to when this container runs as root (default user
       # above is not root, so this stays empty).
