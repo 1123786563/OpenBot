@@ -1,6 +1,7 @@
 /** One import path for every table, with schema files grouped by owner. */
 
 export * from "./admin";
+export * from "./ai-observability-bindings";
 export * from "./approvals";
 export * from "./billing";
 export * from "./code-runs";
