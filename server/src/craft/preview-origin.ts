@@ -50,7 +50,9 @@
  * to the injected servePreview seam, which proxies to the session's sandbox dev
  * server with the upstream-resolvable path (the pathname verbatim in both
  * forms — the dev form's label included, since #365 mounts the dev server at
- * /<label> via injected env). HMR upgrades on preview hosts are #363's.
+ * /<label> via injected env). The pass names THIS host's session and is the one
+ * cookie the proxy keeps off the app (#405); the app's own cookies ride both
+ * ways, scoped here. HMR upgrades on preview hosts are #363's.
  */
 
 import { createHmac } from "node:crypto";
@@ -220,13 +222,36 @@ export type PreviewOrigin = {
 };
 
 /**
+ * Where the APP's own cookies live on a preview host (#405) — the one fact the
+ * serving side cannot derive and the routing side owns:
+ * - `path`: the session's own mount, which is the ONLY Path an app cookie may
+ *   carry. The host form serves at the origin's root (`/`, one host per
+ *   session); the dev form shares `127.0.0.1:<port>` across every preview, so
+ *   an app cookie left at `/` is R-9's single-jar-slot overwrite and a deeper
+ *   one is fix-ocr5's cross-session shadow.
+ * - `crossSite`: whether the preview sits in a frame that is cross-site with
+ *   the main site. The dev form's host is not the main site's host name, and
+ *   SameSite is judged per site — a default (Lax) app cookie is then never sent
+ *   back into the frame, so the proxy gives app cookies the same
+ *   `SameSite=None; Secure` combination the pass itself is minted with. The
+ *   host form is same-site with the main app (one eTLD+1) and keeps whatever
+ *   the app asked for.
+ */
+export type PreviewCookieScope = {
+  path: string;
+  crossSite: boolean;
+};
+
+/**
  * How a cookie-authenticated request on the preview origin reaches the session's
  * app (#362): the routing module hands over the session, the raw request, and
  * the upstream-resolvable path — the pathname VERBATIM in both forms (the dev
  * form's label included: the app is basePath-mounted at /<label> there, F-2/
  * #365; the host form's app lives at the origin's root) — so the serving side
- * never needs to know how a preview address is spelled. Production wires
- * webapp-proxy's `createPreviewProxy` here.
+ * never needs to know how a preview address is spelled. The cookie scope is the
+ * same gift (#405): the serving side rewrites what the app sets, but only the
+ * routing side knows which mount and which site relation it sits in.
+ * Production wires webapp-proxy's `createPreviewProxy` here.
  */
 export type ServePreview = (input: {
   sessionId: string;
@@ -235,6 +260,7 @@ export type ServePreview = (input: {
   userId: string;
   appPath: string;
   query: string;
+  cookieScope: PreviewCookieScope;
 }) => Promise<Response>;
 
 /** 20 hex chars of HMAC-SHA256 — 80 bits: unguessable, unenumerable, DNS-label safe. */
@@ -781,9 +807,11 @@ export function createPreviewOrigin(deps: {
           );
         }
         // ponytail: the cookie carries a deployment-signed pass — HttpOnly on
-        // the preview origin, and the proxy never forwards cookies to the app;
-        // mint an opaque token + index instead only if a consumer needs
-        // rotation. #358 repair: the value is the codec's signature over
+        // the preview origin, and the pass is the ONE cookie the proxy keeps to
+        // itself (#405: the app's own cookies ride both ways, scoped by
+        // previewCookieScope below); mint an opaque token + index instead only
+        // if a consumer needs rotation. #358 repair: the value is the codec's
+        // signature over
         // (sessionId, redeemed.userId) — NOT the session id the old code
         // echoed (the forgeable credential this fix removes). The userId is
         // the ticket's OWN verified claim (redemption re-checked the store
@@ -841,12 +869,23 @@ export function createPreviewOrigin(deps: {
       // The app-relative path this request addresses — the shared derivation
       // (appPathFor above), so the HMR upgrade dispatcher (#363) hands the dev
       // server the very same path this HTTP entry would.
+      //
+      // #405's gift is entryRoot's THIRD consumer — the same single read the
+      // redemption gate and the pass's own Path use (fix-ocr23 #7), so an app
+      // cookie can never be scoped to a mount the pass is not scoped to.
+      // `crossSite` is the form's own fact, not a guess from the path shape:
+      // the dev form's host is a different host name from the main site (D1),
+      // the host form shares its eTLD+1.
       return deps.servePreview({
         sessionId,
         userId: verified.userId,
         request,
         appPath: this.appPathFor(request),
         query: url.search,
+        cookieScope: {
+          path: entryRoot,
+          crossSite: template.kind === "dev",
+        },
       });
     },
 

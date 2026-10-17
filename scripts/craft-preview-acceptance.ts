@@ -253,7 +253,14 @@ async function cdpDomainCookies(
   target: Page,
   domain: string,
 ): Promise<
-  Array<{ name: string; secure: boolean; httpOnly: boolean; sameSite: string }>
+  Array<{
+    name: string;
+    domain: string;
+    path: string;
+    secure: boolean;
+    httpOnly: boolean;
+    sameSite: string;
+  }>
 > {
   // fix-ocr18 #18：自包含 —— 从 target 自己的 context 开 CDP 会话，消除对
   // 模块级 context 的 TDZ/初始化顺序依赖（函数定义在 context 之前，只是
@@ -262,6 +269,7 @@ async function cdpDomainCookies(
   const all = (await cdp.send("Network.getAllCookies")).cookies as Array<{
     domain: string;
     name: string;
+    path: string;
     secure: boolean;
     httpOnly: boolean;
     sameSite: string;
@@ -271,6 +279,10 @@ async function cdpDomainCookies(
     .filter((c) => c.domain === domain)
     .map((c) => ({
       name: c.name,
+      // #405：domain/path 一并投影 —— 「去 Domain、Path 收敛到会话挂载」这两条
+      // 重写只能在浏览器真值上验，代理侧的单测钉不住 jar 里的最终形状。
+      domain: c.domain,
+      path: c.path,
       secure: c.secure,
       httpOnly: c.httpOnly,
       sameSite: c.sameSite,
@@ -413,7 +425,32 @@ async function handle(request: Request, method: string) {
   if (method !== "GET" && method !== "DELETE") {
     echo = await request.text().catch(() => null);
   }
-  return NextResponse.json({ ok: true, method, echo, at: Date.now() });
+  // #405 验收探针：把 dev server 眼中的 Cookie 头回显出来（代理应只留下应用
+  // 自己的 cookie），并在 ?probeCookie=1 时应用一个自己的 cookie。默认响应不
+  // 带 Set-Cookie —— AC1 的「预览 jar 只有通行证」判定跑在本探针之前，不能靠
+  // 无条件种 cookie 去撞它。
+  const url = new URL(request.url);
+  // Domain=localhost 是故意的：它是「生成应用试图把 cookie 挂到主站域」的形状
+  // （dev 形态主站就在 localhost），代理必须把它抹掉。
+  const headers =
+    url.searchParams.get("probeCookie") === "1"
+      ? {
+          "set-cookie":
+            "probe_state=" +
+            method +
+            "; Domain=localhost; Path=/; HttpOnly; Max-Age=120",
+        }
+      : undefined;
+  return NextResponse.json(
+    {
+      ok: true,
+      method,
+      echo,
+      cookie: request.headers.get("cookie"),
+      at: Date.now(),
+    },
+    { headers },
+  );
 }
 
 export const GET = (r: Request) => handle(r, "GET");
@@ -1582,6 +1619,88 @@ try {
         `未全部到达自身 route handler：${JSON.stringify(verdicts)}`,
       );
       return verdicts.join(" ");
+    },
+  );
+
+  // ── #405：应用自己的 cookie 经 preview 代理往返 ─────────────────────────────
+  //
+  // AC1/AC2/AC3 的运行时同一条证据链：dev server 看得见应用种的 cookie（往返
+  // 成立）、看不见通行证（隔离成立）、浏览器 jar 里那条 cookie 是 host-only 且
+  // Path 收敛到本会话挂载（Domain 抹除与 Path 重写成立）。跑在 AC1 的 jar 真值
+  // 判定之后 —— 那一步断言「预览 jar 只有通行证」，本步会合法地往 jar 里加一条。
+  await step(
+    "pass",
+    "#405 应用 cookie 往返：dev server 收到应用 cookie、收不到通行证；应用 Set-Cookie 落回浏览器且 host-only、Path 收敛到 /<label>",
+    async () => {
+      assert(previewPage, "前置失败");
+      const readProbe = async (path: string) =>
+        previewPage.evaluate(
+          async ({ path }) => {
+            const response = await fetch(path);
+            const body = (await response.json().catch(() => ({}))) as {
+              cookie?: string | null;
+            };
+            return { status: response.status, saw: body.cookie ?? null };
+          },
+          { path },
+        );
+
+      const planted = await readProbe(
+        `/${sessionA.label}/api/probe?probeCookie=1`,
+      );
+      assert(
+        planted.status === 200,
+        `种 cookie 的请求不是 200：${planted.status}`,
+      );
+      const sawPlanted = planted.saw ?? "";
+      assert(
+        !sawPlanted.includes(PREVIEW_SESSION_COOKIE),
+        `通行证进入了应用请求：${JSON.stringify(planted.saw)}`,
+      );
+      assert(
+        !sawPlanted.includes("probe_state="),
+        `种 cookie 的那一次就带上了应用 cookie（jar 不隔离？）：${JSON.stringify(planted.saw)}`,
+      );
+
+      const again = await readProbe(`/${sessionA.label}/api/probe`);
+      assert(again.status === 200, `往返请求不是 200：${again.status}`);
+      const sawAgain = again.saw ?? "";
+      assert(
+        sawAgain.includes("probe_state=GET"),
+        `应用 cookie 没有回到 dev server：${JSON.stringify(again.saw)}`,
+      );
+      assert(
+        !sawAgain.includes(PREVIEW_SESSION_COOKIE),
+        `第二次请求把通行证交给了应用：${JSON.stringify(again.saw)}`,
+      );
+
+      const jar = await cdpDomainCookies(previewPage, "127.0.0.1");
+      const appCookie = jar.find((c) => c.name === "probe_state");
+      assert(
+        appCookie !== undefined,
+        `应用 cookie 没落进预览 jar：${JSON.stringify(jar.map((c) => c.name))}`,
+      );
+      // 应用这次写的是 Domain=localhost（dev 形态主站 host）—— 浏览器 jar 里
+      // 它必须不存在；host-only 收敛后 domain 就是预览 host 本身。
+      assert(
+        appCookie.domain === "127.0.0.1",
+        `Domain 没有被抹掉（挂到了 ${JSON.stringify(appCookie.domain)}）`,
+      );
+      assert(
+        appCookie.path === `/${sessionA.label}`,
+        `Path 没有收敛到会话挂载：${JSON.stringify(appCookie.path)}`,
+      );
+      assert(
+        appCookie.sameSite === "None" && appCookie.secure === true,
+        `dev 形态没有补 SameSite=None; Secure：${JSON.stringify(appCookie)}`,
+      );
+      const mainJar = await cdpDomainCookies(previewPage, "localhost");
+      assert(
+        !mainJar.some((c) => c.name === "probe_state"),
+        "应用 cookie 种到了主站 host",
+      );
+      await shot("03b-app-cookie-roundtrip", previewPage);
+      return `dev server 见 ${JSON.stringify(again.saw)}；jar ${JSON.stringify(appCookie)}`;
     },
   );
 

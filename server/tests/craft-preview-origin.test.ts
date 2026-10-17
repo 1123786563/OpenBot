@@ -19,6 +19,7 @@ import { createHmac } from "node:crypto";
 import { loadCraftConfig } from "../src/craft/config";
 import {
   createPreviewOrigin,
+  type PreviewCookieScope,
   type ServePreview,
 } from "../src/craft/preview-origin";
 import { createPreviewPassCodec } from "../src/craft/preview-pass";
@@ -2270,5 +2271,69 @@ describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
         appPath: `${labelB}/api/things`,
       },
     ]);
+  });
+});
+
+// ── #405: the cookie scope the origin derives for the serving seam ───────────
+//
+// The proxy rewrites what the app sets, but only the routing side knows the
+// mount and the site relation — and the mount it names must be the SAME one the
+// pass cookie rides (R-9), or two cookies the same browser treats as one jar
+// would disagree about scope. These pin the seam's input, not the proxy's
+// handling of it (craft-webapp-proxy.test.ts owns that half).
+
+describe("#405: the cookie scope the preview origin derives", () => {
+  function scopeServe() {
+    const scopes: PreviewCookieScope[] = [];
+    const servePreview: ServePreview = async ({ cookieScope }) => {
+      scopes.push(cookieScope);
+      return new Response("proxied", { status: 200 });
+    };
+    return { scopes, servePreview };
+  }
+
+  test("dev form: the app's cookies are scoped to the session's own label mount, on a cross-site host", async () => {
+    const { scopes, servePreview } = scopeServe();
+    const origin = originWith({}, { PORT: "3001" }, undefined, servePreview);
+    const address = origin.originFor(SESSION_ID);
+    const label = new URL(address).pathname;
+
+    const response = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/api/tasks`, {
+        headers: { cookie: passCookie(SESSION_ID) },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(scopes).toEqual([{ path: label, crossSite: true }]);
+    // The one read discipline (fix-ocr23 #7): the scope's path IS the entry
+    // root the pass's own Path was minted from.
+    expect(label).toBe(origin.webappBasePathFor(SESSION_ID));
+  });
+
+  test("host form: the origin's root, and NOT cross-site — nothing gets loosened", async () => {
+    const { scopes, servePreview } = scopeServe();
+    const origin = originWith(
+      { previewOriginTemplate: TEMPLATE },
+      {},
+      undefined,
+      servePreview,
+    );
+    const address = origin.originFor(SESSION_ID);
+
+    const response = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/api/tasks`, {
+        headers: { cookie: passCookie(SESSION_ID) },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    // One host per session (D3): the app's cookies are already isolated by the
+    // hostname, and the main site shares its eTLD+1 — so Path=/ and the app's
+    // own SameSite, exactly as the pass mint's null → "/" reads the same mount.
+    expect(scopes).toEqual([{ path: "/", crossSite: false }]);
+    expect(origin.webappBasePathFor(SESSION_ID)).toBeNull();
   });
 });

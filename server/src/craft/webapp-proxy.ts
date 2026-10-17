@@ -16,6 +16,13 @@
  * port by construction, and a down server is an honest 503 (onyx's webapp_proxy refuses too)
  * rather than a second spawned process beside the managed one.
  *
+ * onyx's cookie hygiene is the MAIN-SITE answer, and OpenBot now has two surfaces where the
+ * right answer differs (#405): the preview origin is not the platform's origin, so the app's
+ * own cookies are its session state and must ride both ways — the platform pass stripped by
+ * name space on the way in, the app's `Set-Cookie` rewritten host-only onto the session's
+ * mount on the way out. The legacy same-origin route keeps onyx's strip-everything semantics
+ * verbatim; `proxyWebappRequest`'s `cookieScope` is the switch between them.
+ *
  * WHERE THE PORT LIVES (finding F-E): the dev server listens INSIDE the sandbox (the
  * container the agent-sandbox gateway fronts), not on the API server's own loopback —
  * dialing `http://127.0.0.1:{port}` from the server never reached it in the host-server +
@@ -45,11 +52,13 @@ import {
 import { refuseResponse } from "./refusal";
 import {
   PREVIEW_PASS_REFUSAL,
+  type PreviewCookieScope,
   type ServePreview,
 } from "./preview-origin";
 import {
   createPreviewTickets,
   defaultPreviewOrigin,
+  safePreviewCookiePath,
   type PreviewTickets,
 } from "./preview-ticket";
 import type { AgentSandboxFileApi, SandboxGateway } from "./sandbox-gateway";
@@ -277,8 +286,10 @@ const EXCLUDED_REQUEST_HEADER_PREFIXES = [
   "x-onyx-",
 ];
 
-/** Response headers never forwarded back: hop-by-hop, and set-cookie (an app must not set
- * cookies on the parent domain). */
+/** Response headers never forwarded back: hop-by-hop, and set-cookie — which is
+ * the MAIN-SITE surface's answer (it is the platform's own origin, so an app
+ * cookie planted there lands in the platform's jar). The preview origin forwards
+ * them rewritten; see `sanitizeAppSetCookie` (#405). */
 const EXCLUDED_RESPONSE_HEADERS = new Set([
   "content-encoding",
   "content-length",
@@ -287,10 +298,164 @@ const EXCLUDED_RESPONSE_HEADERS = new Set([
   "set-cookie",
 ]);
 
-function stripRequestHeaders(source: Headers): Headers {
+/**
+ * The platform's own cookie namespace (#405). Every cookie this deployment
+ * mints is named under it — `openbot_preview_session` (the preview pass,
+ * preview-ticket.ts) and `openbot.organization-session` (the main-site session,
+ * auth/organization.ts) — and the rule here is a NAMESPACE test rather than a
+ * name list: a list is one new session cookie away from forwarding a credential
+ * it never heard of. What it costs is an app that names a cookie `openbot*`
+ * losing that cookie in transit, which is the right direction to fail.
+ */
+const PLATFORM_COOKIE_PREFIX = "openbot";
+
+function isPlatformCookieName(name: string): boolean {
+  return name.toLowerCase().startsWith(PLATFORM_COOKIE_PREFIX);
+}
+
+/** RFC 6265 `cookie-name` — the only shape a Set-Cookie line may carry. */
+const COOKIE_NAME_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+/**
+ * The app's cookies ride to the dev server; the platform's never do (#405 AC3).
+ * EVERY same-named occurrence goes, not the first: a preview page can plant a
+ * shadow of the pass's name on a deeper path (preview-origin's fix-ocr20 #3
+ * iterates all candidates for exactly that reason), and forwarding "the rest"
+ * would hand the app a credential-shaped value it did not earn.
+ *
+ * `null` is an empty jar — an empty `Cookie:` header is a header the caller
+ * never sent, and a dev server reading it as `""` versus absent is a difference
+ * a generated app can trip on.
+ */
+function forwardableRequestCookies(header: string): string | null {
+  const kept: string[] = [];
+  for (const part of header.split(";")) {
+    const pair = part.trim();
+    if (pair === "") continue;
+    const eq = pair.indexOf("=");
+    const name = (eq === -1 ? pair : pair.slice(0, eq)).trim();
+    if (isPlatformCookieName(name)) continue;
+    kept.push(pair);
+  }
+  return kept.length === 0 ? null : kept.join("; ");
+}
+
+/** SameSite is a closed set; a value no browser honors is dropped, not passed through. */
+function canonicalSameSite(value: string): string | null {
+  const lowered = value.trim().toLowerCase();
+  if (lowered === "strict") return "Strict";
+  if (lowered === "lax") return "Lax";
+  if (lowered === "none") return "None";
+  return null;
+}
+
+/**
+ * Whether a string carries a C0 control byte or DEL — the attribute- and
+ * header-smuggling channel a `Set-Cookie` line can arrive with. Walked by code
+ * point rather than matched by a character class: a control range written into
+ * a pattern is exactly the kind of thing a later edit silently breaks (and what
+ * the lint rule `noControlCharactersInRegex` exists for).
+ */
+function hasControlByte(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+}
+
+/**
+ * One upstream `Set-Cookie` line, rewritten for the preview host (#405 AC2).
+ *
+ * What an LLM-authored app does NOT get to decide:
+ * - `Domain` — dropped outright, so the cookie is host-only on the preview host
+ *   and can never widen toward the main site (the refusal the issue names);
+ * - `Path` — always the session's own mount, never the app's `/` (the dev form
+ *   shares one host across every preview: an unscoped Path is R-9's
+ *   single-jar-slot overwrite, a deeper one fix-ocr5's cross-session shadow).
+ *   The rewrite reads preview-ticket's one Path whitelist, the same guard the
+ *   pass mint uses, so the two cookie scopes cannot drift;
+ * - the platform's name space — an app cannot mint or shadow the pass;
+ * - unknown attributes (`Partitioned`, `Priority`, anything invented tomorrow) —
+ *   dropped with the line: a proxy that forwards attributes it has not read is a
+ *   proxy that forwards the next one it regrets.
+ *
+ * What survives: the name=value pair, `HttpOnly`, `Max-Age`, `Expires`, and
+ * `SameSite`/`Secure` as the app asked — except in the cross-site (dev) form,
+ * where a default Lax cookie is never sent back into the frame and the app could
+ * not read its own state, so the proxy applies the same
+ * `SameSite=None; Secure` combination the pass is minted with.
+ *
+ * `null` refuses the whole cookie rather than repairing it: a control byte
+ * anywhere in the line is an attribute- or header-smuggling channel, and a name
+ * that is not an RFC 6265 token is not a cookie. Reading the upstream list
+ * through `getSetCookie` (not the merged iteration) is what lets several
+ * `Set-Cookie` lines survive intact (AC4).
+ */
+function sanitizeAppSetCookie(
+  raw: string,
+  scope: PreviewCookieScope,
+): string | null {
+  if (hasControlByte(raw)) return null;
+  const [pair, ...parts] = raw.split(";");
+  const eq = pair === undefined ? -1 : pair.indexOf("=");
+  if (pair === undefined || eq < 1) return null;
+  const name = pair.slice(0, eq).trim();
+  const value = pair.slice(eq + 1).trim();
+  if (!COOKIE_NAME_TOKEN.test(name) || isPlatformCookieName(name)) return null;
+
+  let httpOnly = false;
+  let secure = false;
+  let sameSite: string | null = null;
+  let maxAge: string | null = null;
+  let expires: string | null = null;
+  for (const part of parts) {
+    const attribute = part.trim();
+    if (attribute === "") continue;
+    const at = attribute.indexOf("=");
+    const key = (at === -1 ? attribute : attribute.slice(0, at))
+      .trim()
+      .toLowerCase();
+    const val = at === -1 ? "" : attribute.slice(at + 1).trim();
+    if (key === "httponly") httpOnly = true;
+    else if (key === "secure") secure = true;
+    else if (key === "samesite") sameSite = canonicalSameSite(val);
+    else if (key === "max-age" && /^-?\d+$/.test(val)) maxAge = val;
+    else if (key === "expires" && /^[A-Za-z0-9:,+ ]+$/.test(val)) expires = val;
+    // `domain` and `path` are deliberately absent: rewritten, never copied.
+  }
+  if (scope.crossSite) {
+    sameSite = "None";
+    secure = true;
+  }
+
+  const attributes = [
+    `Path=${safePreviewCookiePath(scope.path)}`,
+    ...(expires === null ? [] : [`Expires=${expires}`]),
+    ...(maxAge === null ? [] : [`Max-Age=${maxAge}`]),
+    ...(httpOnly ? ["HttpOnly"] : []),
+    ...(sameSite === null ? [] : [`SameSite=${sameSite}`]),
+    ...(secure ? ["Secure"] : []),
+  ];
+  return `${name}=${value}; ${attributes.join("; ")}`;
+}
+
+function stripRequestHeaders(
+  source: Headers,
+  cookieScope: PreviewCookieScope | undefined,
+): Headers {
   const headers = new Headers();
   for (const [key, value] of source.entries()) {
     const lowered = key.toLowerCase();
+    // `cookie` is in EXCLUDED_REQUEST_HEADERS for the main-site surface, which
+    // is the platform's own origin. A preview host is not: there the app's
+    // cookies are its session state, and only the platform namespace is the
+    // proxy's to keep (#405).
+    if (cookieScope !== undefined && lowered === "cookie") {
+      const kept = forwardableRequestCookies(value);
+      if (kept !== null) headers.set("cookie", kept);
+      continue;
+    }
     if (EXCLUDED_REQUEST_HEADERS.has(lowered)) continue;
     if (
       EXCLUDED_REQUEST_HEADER_PREFIXES.some((prefix) =>
@@ -349,6 +514,11 @@ export type ProxyWebappResult = {
  *
  * `method` is required, not defaulted: a hardcoded GET here is what made the preview a
  * picture of an app rather than an app (see WEBAPP_METHODS).
+ *
+ * `cookieScope` is what separates the two preview surfaces (#405): present means
+ * "this is a preview origin" — the app's own cookies cross in both directions,
+ * the platform's never cross at all. Absent means the main-site route, which is
+ * the platform's own origin and strips every cookie both ways.
  */
 export async function proxyWebappRequest(input: {
   upstreamBaseUrl: string;
@@ -358,12 +528,14 @@ export async function proxyWebappRequest(input: {
   requestHeaders: Headers;
   /** The caller's request body, when it carried one. Omitted for a bodyless verb. */
   body?: BodyInit | null;
+  /** Where the app's cookies live on this preview host (preview-origin's scope). */
+  cookieScope?: PreviewCookieScope;
   fetchImpl?: typeof fetch;
 }): Promise<ProxyWebappResult> {
   const fetchImpl = input.fetchImpl ?? fetch;
   const path = input.path.replace(/^\/+/, "");
   const target = `${input.upstreamBaseUrl}/${path}${input.query}`;
-  const headers = stripRequestHeaders(input.requestHeaders);
+  const headers = stripRequestHeaders(input.requestHeaders, input.cookieScope);
 
   let upstream: Response;
   try {
@@ -390,6 +562,15 @@ export async function proxyWebappRequest(input: {
   for (const [key, value] of upstream.headers.entries()) {
     if (EXCLUDED_RESPONSE_HEADERS.has(key.toLowerCase())) continue;
     responseHeaders.set(key, value);
+  }
+  if (input.cookieScope !== undefined) {
+    // The list API, not the merged iteration: AC4 is "several Set-Cookie lines
+    // survive", and a value read off `get("set-cookie")` is one comma-joined
+    // string no sanitizer could split back into cookies.
+    for (const raw of upstream.headers.getSetCookie()) {
+      const cookie = sanitizeAppSetCookie(raw, input.cookieScope);
+      if (cookie !== null) responseHeaders.append("set-cookie", cookie);
+    }
   }
   responseHeaders.set(
     "content-type",
@@ -459,7 +640,14 @@ export function createPreviewProxy(deps: {
   // skips only the dial whose answer ("up") is already known.
   const READY_MEMO_TTL_MS = 3_000;
   const readyUntil = new Map<string, number>();
-  return async ({ sessionId, userId, request, appPath, query }) => {
+  return async ({
+    sessionId,
+    userId,
+    request,
+    appPath,
+    query,
+    cookieScope,
+  }) => {
     const session = await deps.store.findSession(sessionId, userId);
     if (!session) {
       // fix-ocr28 #5: the deleted session's memo entries die with the row.
@@ -520,6 +708,9 @@ export function createPreviewProxy(deps: {
       // Read AFTER the gates, so a refused request never pays for it.
       body: await rawRequestBody(request),
       requestHeaders: request.headers,
+      // The origin's scope, untouched: this surface serves a preview host, so
+      // the app's cookies are its own state (#405).
+      cookieScope,
       fetchImpl,
     });
     // A forwarded answer is itself a readiness observation: the upstream just

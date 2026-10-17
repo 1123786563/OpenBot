@@ -66,6 +66,54 @@ webapp-info 面可以给出原因）——这是预期形状，不是退化。
 受影响），不需要任何数据迁移；pass 无状态、不过期（会话级 cookie，浏览器关闭即消失），
 只有“签名密钥 ≠ 当前部署密钥”或“会话行不再属于签发 userId”两种失效方式。
 
+## 应用 cookie 分流（#405）
+
+预览代理对 cookie 的处理按**方向**和**面**分开；onyx 时代的「双向全剥」只保留在主站旧代理上。
+
+| 面 | 请求方向（浏览器 → 应用） | 响应方向（应用 → 浏览器） |
+|---|---|---|
+| preview origin（dev / host 形态） | 转发应用自己的 cookie；**平台名空间整族剥除**（见下） | 转发应用的 `Set-Cookie`，逐条重写 |
+| 主站 legacy（`/api/craft/sessions/:id/webapp/*`） | 全剥（平台自己的 origin） | 全剥 `Set-Cookie` |
+
+**请求方向**剥的是名字以 `openbot` 开头的**整个名空间**（`openbot_preview_session` 通行
+证、`openbot.organization-session` 主站会话），不是逐个名字列举——再加一个平台会话 cooki
+e 时不会因为有人忘了更新清单而把凭据交给生成代码。同名出现**全部**剥掉（页面能在更深路径
+种同名阴影，fix-ocr20 #3 的迭代是同一原因）。剥完为空则**不发** `Cookie` 头，不发空值头。
+
+**响应方向**每条 `Set-Cookie` 的重写规则：
+
+- `Domain` 一律删除 → host-only，应用永远种不出「主站域」的 cookie（AC2）；
+- `Path` 一律重写为该会话的挂载：host 形态 `/`，dev 形态 `/<label>`。dev 形态所有会话共享
+  `127.0.0.1:<port>`，未收敛的 `Path=/` 就是 R-9 的单槽覆盖，更深的 Path 就是 fix-ocr5 的跨
+  会话阴影。重写读的仍是 `safePreviewCookiePath` 那一份白名单，与通行证自己的 Path 同源，
+  两侧不可能漂移到不同的挂载；
+
+  **dev 形态放行应用 cookie 的安全前提就是这条重写**（与 #414 实测轮「dev 形态继续丢弃
+  `Set-Cookie`」的旧口径相比，这里改成按 Path 收口）：`127.0.0.1` 与平台自身可能同 host（安
+  装形态把 `/api` 转发到同一 host，cookie 又不认端口），但应用 cookie 被钉在 `/<label>` 上，
+  而平台面是 `/` 与 `/api/**`（`server/src/app.ts:2008`、`:2071` 的挂载），路径不匹配 → 它不
+  会回送到平台自身的请求；另一个会话的请求在 `/<labelB>` 下，也互不可见。label 是随机 20
+  hex，不可能与平台路由首段相撞。**唯一的例外是 M-2 重启空窗**：registry 为空时 dev 形态的
+  `/<label>` 落回主站路由（本文 M-2 一节），此时这条 cookie 会随请求进到一个平台 handler——
+  它是应用自己写的值，平台的鉴权读的是自己那份 host-only 会话 cookie，所以后果是「多一个无人
+  读的请求头」，不是权限；空窗本身已经让预览 401/落回，恢复路径不变。丢弃与按 Path 收口在这
+  里达到同样的隔离效果，差别是后者才让 AC1 在默认 dev 形态可用；
+- 平台名空间内的名字直接拒绝（应用不能铸造或遮蔽通行证）；
+- 未知属性（`Partitioned`、`Priority`…）丢弃；保留 `HttpOnly`、`Max-Age`、`Expires`；
+- 名字不是 RFC 6265 token、或整条含控制字节 → **整条拒绝**，不做修复；
+- 多条 `Set-Cookie` 经 `getSetCookie()`（列表 API）逐条保留，不合并（AC4）。
+
+`SameSite`/`Secure` 按形态分：**dev 形态强制 `SameSite=None; Secure`**——预览 host
+（`127.0.0.1`）与主站（`localhost`）是不同主机即跨站，iframe 里默认 Lax 的 cookie 不会被回
+送，应用读不到自己刚种下的状态；这与通行证自身签发用的组合一致（#365 F-1、R-9）。**host 形
+态保留应用原属性**——一个会话一个主机且与主站同 eTLD+1（同站），无需放宽。
+
+证据：`server/tests/craft-webapp-proxy.test.ts` 的 `#405` 两组（代理策略 + origin×proxy 组
+合实跑，真实 label 派生与真实签名 pass），`server/tests/craft-preview-origin.test.ts` 的
+`#405`（seam 收到的 `cookieScope` 派生），以及 `scripts/craft-preview-acceptance.ts` 的
+「#405 应用 cookie 往返」浏览器用例（dev server 回显收到的 `Cookie` 头 + CDP jar 真值验
+Domain/Path/SameSite）。
+
 ## 已知约束
 
 ### 同源防线的部署前提：平台会话 cookie 保持 host-only（fix-ocr26 #7）

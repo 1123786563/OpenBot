@@ -21,7 +21,11 @@ import {
   WEBAPP_MOUNT_MARKER,
 } from "../src/craft/nextjs-dev";
 import { createPreviewOrigin } from "../src/craft/preview-origin";
-import { createPreviewTickets } from "../src/craft/preview-ticket";
+import { createPreviewPassCodec } from "../src/craft/preview-pass";
+import {
+  createPreviewTickets,
+  PREVIEW_SESSION_COOKIE,
+} from "../src/craft/preview-ticket";
 import type {
   AgentSandboxFileApi,
   SandboxGateway,
@@ -42,6 +46,14 @@ import {
   sanitizeZipBasename,
   zipEntries,
 } from "../src/craft/zip-archive";
+
+/**
+ * The cookie scope the preview origin derives for a session (#405): the session's
+ * own mount as the Set-Cookie Path, and the dev form's cross-site frame flag.
+ * Spelled once here so every servePreview test reads the shape production passes.
+ */
+const DEV_COOKIE_SCOPE = { path: "/abc123label", crossSite: true };
+const HOST_COOKIE_SCOPE = { path: "/", crossSite: false };
 
 describe("proxyWebappRequest", () => {
   test("streams the body with a dev-road CSP and strips hop-by-hop + credential headers", async () => {
@@ -761,7 +773,8 @@ describe("webapp preview reachability dials the sandbox host (F-E)", () => {
 // label (the dev server mounts at /<label> via the start script's injected
 // ONYX_WEBAPP_BASE_PATH, F-2/#365), same shape as the host form's verbatim
 // pathname. Refusals are the surface's dual shape, and the preview pass cookie
-// must never reach the app (stripRequestHeaders already drops it — pinned here).
+// must never reach the app — #405 drops the platform name space by name here and
+// lets the app's OWN cookies ride both ways (both halves pinned in this file).
 
 describe("createPreviewProxy (the servePreview seam)", () => {
   const PREVIEW_SESSION = "cs-777788889999";
@@ -841,6 +854,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     const response = await serve({
       sessionId: PREVIEW_SESSION,
       userId: "u1",
+      cookieScope: DEV_COOKIE_SCOPE,
       appPath: "/abc123label/api/tasks",
       query: "?sort=asc",
       method: "POST",
@@ -888,6 +902,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
       const response = await serve({
         sessionId: PREVIEW_SESSION,
         userId: "u1",
+        cookieScope: DEV_COOKIE_SCOPE,
         appPath: "/api/tasks/1",
         query: "",
         method,
@@ -916,6 +931,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     const response = await serve({
       sessionId: PREVIEW_SESSION,
       userId: "u1",
+      cookieScope: DEV_COOKIE_SCOPE,
       appPath: "/",
       query: "",
       method: "GET",
@@ -935,6 +951,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     const connGone = await noConn({
       sessionId: PREVIEW_SESSION,
       userId: "u1",
+      cookieScope: DEV_COOKIE_SCOPE,
       appPath: "/",
       query: "",
       method: "GET",
@@ -948,6 +965,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     const portGone = await noPort({
       sessionId: PREVIEW_SESSION,
       userId: "u1",
+      cookieScope: DEV_COOKIE_SCOPE,
       appPath: "/",
       query: "",
       method: "GET",
@@ -970,6 +988,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
       serve({
         sessionId: PREVIEW_SESSION,
         userId: "u1",
+        cookieScope: DEV_COOKIE_SCOPE,
         appPath: "/x/api/tasks",
         query: "",
         method: "GET",
@@ -997,6 +1016,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
       serve({
         sessionId: PREVIEW_SESSION,
         userId: "u1",
+        cookieScope: DEV_COOKIE_SCOPE,
         appPath: "/x/api/tasks",
         query: "",
         method: "GET",
@@ -1022,6 +1042,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
       serve({
         sessionId: PREVIEW_SESSION,
         userId: "u1",
+        cookieScope: DEV_COOKIE_SCOPE,
         appPath: "/",
         query: "",
         method: "GET",
@@ -1057,6 +1078,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
       serve({
         sessionId: PREVIEW_SESSION,
         userId: "u1",
+        cookieScope: DEV_COOKIE_SCOPE,
         appPath: "/x/api/tasks",
         query: "",
         method: "GET",
@@ -1084,6 +1106,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     const framed = await serve({
       sessionId: PREVIEW_SESSION,
       userId: "u1",
+      cookieScope: DEV_COOKIE_SCOPE,
       appPath: "/",
       query: "",
       method: "GET",
@@ -1098,6 +1121,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     const programmatic = await serve({
       sessionId: PREVIEW_SESSION,
       userId: "u1",
+      cookieScope: DEV_COOKIE_SCOPE,
       appPath: "/",
       query: "",
       method: "GET",
@@ -1105,6 +1129,329 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     });
     expect(programmatic.status).toBe(503);
     expect(await programmatic.json()).toEqual({ error: expect.any(String) });
+  });
+
+  test("#405: the cookie scope rides the seam — the app's cookie dials the dev server, its Set-Cookie comes back rewritten", async () => {
+    const seen: Headers[] = [];
+    const fetchImpl = (async (_input: string | URL, init?: RequestInit) => {
+      if (init) seen.push(new Headers(init.headers as HeadersInit));
+      const headers = new Headers({ "content-type": "text/plain" });
+      headers.append(
+        "set-cookie",
+        "theme=dark; Domain=127.0.0.1; Path=/; SameSite=Lax",
+      );
+      return new Response("ok", { status: 200, headers });
+    }) as typeof fetch;
+    const serve = createPreviewProxy(previewProxyDeps({ fetchImpl }));
+
+    const response = await serve({
+      sessionId: PREVIEW_SESSION,
+      userId: "u1",
+      cookieScope: DEV_COOKIE_SCOPE,
+      appPath: "/abc123label/api/tasks",
+      query: "",
+      request: new Request("http://127.0.0.1:3001/abc123label/api/tasks", {
+        headers: { cookie: "openbot_preview_session=v1.a.b; theme=dark" },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const upstream = seen[seen.length - 1];
+    // AC3 through the real seam: the pass authenticated this request and is
+    // still nothing the app gets to read.
+    expect(upstream.get("cookie")).toBe("theme=dark");
+    // AC1's response half: the app's own cookie survives, host-only and scoped
+    // to the session's mount, with the dev form's cross-site attributes.
+    const [cookie] = response.headers.getSetCookie();
+    expect(cookie).toContain("theme=dark");
+    expect(cookie).toContain("Path=/abc123label");
+    expect(cookie).toContain("SameSite=None");
+    expect(cookie).not.toMatch(/domain/i);
+  });
+});
+
+// ── #405: the preview proxy's cookie split ────────────────────────────────────
+//
+// The platform pass and the app's OWN cookies are two different things, and only
+// the first is the proxy's to keep. The preview origin hands the serving seam a
+// cookie scope — the session's mount (which doubles as the Path the app's cookies
+// may have, R-9's per-label isolation) and whether the preview rides a cross-site
+// frame (the dev form's shared 127.0.0.1 host, where a Lax cookie is never sent
+// back and the app cannot see its own state). The main-site legacy route keeps
+// the old strip-everything semantics: it is the platform's own origin.
+
+describe("#405: the preview proxy's cookie split", () => {
+  /** Dials the app and answers with the given Set-Cookie lines — one header each,
+   * the shape a real dev server sends (and what Headers.getSetCookie reads back). */
+  function appAnswering(setCookie: string[] = []) {
+    const seen: Headers[] = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers as HeadersInit));
+      const headers = new Headers({ "content-type": "text/plain" });
+      for (const value of setCookie) headers.append("set-cookie", value);
+      return new Response("ok", { status: 200, headers });
+    }) as typeof fetch;
+    return { seen, fetchImpl };
+  }
+
+  async function forward(input: {
+    cookie?: string;
+    setCookie?: string[];
+    scope?: typeof DEV_COOKIE_SCOPE | typeof HOST_COOKIE_SCOPE | null;
+  }) {
+    const app = appAnswering(input.setCookie ?? []);
+    const result = await proxyWebappRequest({
+      upstreamBaseUrl: "http://127.0.0.1:3011",
+      path: "api/tasks",
+      query: "",
+      method: "GET",
+      requestHeaders: new Headers(
+        input.cookie === undefined ? {} : { cookie: input.cookie },
+      ),
+      fetchImpl: app.fetchImpl,
+      ...(input.scope === null || input.scope === undefined
+        ? {}
+        : { cookieScope: input.scope }),
+    });
+    return {
+      result,
+      upstreamCookie: app.seen[app.seen.length - 1]?.get("cookie") ?? null,
+      sentCookies: result.headers.getSetCookie(),
+    };
+  }
+
+  test("the app's own cookies ride to the dev server; every platform-named one is dropped", async () => {
+    const { upstreamCookie } = await forward({
+      scope: DEV_COOKIE_SCOPE,
+      cookie:
+        "theme=dark; openbot_preview_session=v1.a.b; openbot.organization-session=org; openbot_preview_session=deeper-shadow; sid=xyz",
+    });
+    // Both same-named pass occurrences die (a page CAN plant a same-named
+    // shadow — fix-ocr20 #3's iteration), and the platform namespace as a whole
+    // never crosses: the value the app reads is never the credential it rode in.
+    expect(upstreamCookie).toBe("theme=dark; sid=xyz");
+    expect(upstreamCookie).not.toContain("openbot");
+    expect(upstreamCookie).not.toContain("v1.a.b");
+  });
+
+  test("a jar of only platform cookies forwards no Cookie header at all", async () => {
+    const { upstreamCookie } = await forward({
+      scope: DEV_COOKIE_SCOPE,
+      cookie:
+        "openbot_preview_session=v1.a.b; openbot.organization-session=org",
+    });
+    // An empty `Cookie: ` would be a header the caller never sent.
+    expect(upstreamCookie).toBeNull();
+  });
+
+  test("without a scope the main-site legacy route still strips cookies both ways", async () => {
+    const { result, upstreamCookie, sentCookies } = await forward({
+      scope: null,
+      cookie: "theme=dark",
+      setCookie: ["theme=dark; Path=/"],
+    });
+    expect(upstreamCookie).toBeNull();
+    expect(sentCookies).toEqual([]);
+    expect(result.headers.get("set-cookie")).toBeNull();
+  });
+
+  test("the app's Set-Cookie comes back host-only, on the session's own path", async () => {
+    const { sentCookies } = await forward({
+      scope: DEV_COOKIE_SCOPE,
+      setCookie: [
+        "theme=dark; Domain=.preview.example.com; Path=/; Max-Age=3600; Expires=Wed, 21 Oct 2026 07:28:00 GMT; HttpOnly",
+      ],
+    });
+    expect(sentCookies).toHaveLength(1);
+    const [cookie] = sentCookies;
+    expect(cookie).toContain("theme=dark");
+    // AC2: no Domain, ever — host-only means the preview host and nothing else,
+    // so an app can never widen into the main site's cookie scope.
+    expect(cookie).not.toMatch(/domain/i);
+    // Path is the session's mount, never the app's `/` (the dev form shares one
+    // host across sessions — an unscoped Path is R-9's cross-session overwrite).
+    expect(cookie).toContain("Path=/abc123label");
+    expect(cookie).not.toContain("Path=/;");
+    expect(cookie).toContain("HttpOnly");
+    expect(cookie).toContain("Max-Age=3600");
+    expect(cookie).toContain("Expires=Wed, 21 Oct 2026 07:28:00 GMT");
+  });
+
+  test("a dev-form app cookie gets the pass's own attributes; the host form keeps what the app asked", async () => {
+    const dev = await forward({
+      scope: DEV_COOKIE_SCOPE,
+      setCookie: ["theme=dark"],
+    });
+    // The dev form's preview is a cross-site iframe on a shared host: a default
+    // (Lax) cookie is never sent back into it, so the app could not read its own
+    // state. SameSite=None; Secure is what the platform pass itself mints here.
+    expect(dev.sentCookies[0]).toContain("SameSite=None");
+    expect(dev.sentCookies[0]).toContain("Secure");
+
+    const host = await forward({
+      scope: HOST_COOKIE_SCOPE,
+      setCookie: ["theme=dark; SameSite=Strict; Secure"],
+    });
+    // One host per session, same-site with the main app: nothing to loosen.
+    expect(host.sentCookies[0]).toContain("SameSite=Strict");
+    expect(host.sentCookies[0]).toContain("Secure");
+    expect(host.sentCookies[0]).toContain("Path=/");
+
+    const hostDefault = await forward({
+      scope: HOST_COOKIE_SCOPE,
+      setCookie: ["theme=dark"],
+    });
+    expect(hostDefault.sentCookies[0]).not.toContain("SameSite");
+    expect(hostDefault.sentCookies[0]).not.toContain("Secure");
+  });
+
+  test("every Set-Cookie line the app sent survives the rewrite", async () => {
+    const { sentCookies } = await forward({
+      scope: HOST_COOKIE_SCOPE,
+      setCookie: [
+        "first=1; Domain=preview.example.com",
+        "second=2; HttpOnly",
+        "third=3; Path=/nested/deep",
+      ],
+    });
+    expect(sentCookies.map((cookie) => cookie.split(";")[0])).toEqual([
+      "first=1",
+      "second=2",
+      "third=3",
+    ]);
+    expect(sentCookies.every((cookie) => cookie.includes("Path=/"))).toBe(true);
+    expect(sentCookies[1]).toContain("HttpOnly");
+  });
+
+  test("an app cannot mint or shadow a platform cookie name", async () => {
+    const { sentCookies } = await forward({
+      scope: DEV_COOKIE_SCOPE,
+      setCookie: [
+        "openbot_preview_session=v1.forged.mac; Path=/",
+        "openbot.organization-session=forged",
+        "theme=dark",
+      ],
+    });
+    // The pass lives in this jar; a same-named answer from the app would be a
+    // credential the app chose, so it is refused whole — the app's real cookie
+    // still rides.
+    expect(sentCookies).toEqual([
+      "theme=dark; Path=/abc123label; SameSite=None; Secure",
+    ]);
+  });
+
+  test("malformed Set-Cookie lines are refused, not repaired", async () => {
+    const ctrl = String.fromCharCode(1);
+    const { sentCookies } = await forward({
+      scope: HOST_COOKIE_SCOPE,
+      setCookie: [
+        "no_equals_sign",
+        "=empty_name",
+        "bad name=1",
+        `ctrl${ctrl}=1; Path=/`,
+        `ctrl=1${ctrl}; Path=/`,
+      ],
+    });
+    // Names must be RFC 6265 tokens, and a control byte anywhere in the line is
+    // an attribute- or header-smuggling channel: the whole cookie is dropped
+    // rather than sanitized into something the app did not write.
+    expect(sentCookies).toEqual([]);
+  });
+
+  test("unknown attributes are dropped and the hygiene headers keep riding", async () => {
+    const { result, sentCookies } = await forward({
+      scope: DEV_COOKIE_SCOPE,
+      setCookie: [
+        "theme=dark; Partitioned; Priority=High; Secret-Attr=surprise",
+      ],
+    });
+    expect(sentCookies).toHaveLength(1);
+    expect(sentCookies[0]).not.toContain("Partitioned");
+    expect(sentCookies[0]).not.toContain("Priority");
+    expect(sentCookies[0]).not.toContain("Secret-Attr");
+    // #405 is a cookie change, not a policy change: the F-1 CSP and the
+    // hop-by-hop strips are the same headers they were.
+    expect(result.headers.get("content-security-policy")).toContain(
+      "form-action 'self'",
+    );
+    expect(result.headers.get("connection")).toBeNull();
+  });
+});
+
+// ── #405 端到端（无浏览器）：真实 dev 形态 origin × 真实 preview proxy ─────────
+//
+// The two halves are wired to each other here, not to a stub: a signed pass
+// authenticates through the real origin, the real proxy dials the app, and the
+// app's Set-Cookie comes back scoped to the mount the ORIGIN derived. That is
+// the seam #405's whole design rests on — if the two sides ever disagree about
+// the mount, the app's cookies and the pass stop sharing one jar, and only a
+// composed run says so.
+
+describe("#405: origin and proxy composed (real label, real seam, no browser)", () => {
+  test("the pass opens the gate, the app's cookie dials the dev server, and its Set-Cookie lands on the pass's own mount", async () => {
+    const secret = "cookie-split-secret";
+    const store = storeWithSession("app", "u1", 3011);
+    const dialed: string[] = [];
+    const upstream: Headers[] = [];
+    const fetchImpl = (async (input: string | URL, init?: RequestInit) => {
+      dialed.push(String(input));
+      if (init) upstream.push(new Headers(init.headers as HeadersInit));
+      const headers = new Headers({ "content-type": "application/json" });
+      headers.append(
+        "set-cookie",
+        "theme-state=1; Domain=localhost; Path=/; Max-Age=60",
+      );
+      return new Response('{"ok":true}', { status: 200, headers });
+    }) as typeof fetch;
+
+    const origin = createPreviewOrigin({
+      config: {
+        enabled: true,
+        webappProxyEnabled: true,
+        previewOriginEnabled: true,
+        previewOriginTemplate: "",
+      },
+      previewTickets: createPreviewTickets({ store }),
+      secret,
+      env: { PORT: "3001" },
+      servePreview: createPreviewProxy({
+        config: loadCraftConfig({}),
+        store,
+        botIdFor: async () => "craft-bot",
+        sandboxConnectionFor: () => ({
+          baseUrl: "http://sbox.internal:4300",
+          token: null,
+        }),
+        fetchImpl,
+      }),
+    });
+    const address = origin.originFor(SESSION_ID);
+    const mount = origin.webappBasePathFor(SESSION_ID);
+    expect(mount).toMatch(/^\/[0-9a-f]{20}$/);
+
+    const response = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`http://127.0.0.1:3001${mount}/api/tasks`, {
+        headers: {
+          cookie: `${PREVIEW_SESSION_COOKIE}=${createPreviewPassCodec(secret).issue(SESSION_ID, "u1")}; theme=dark`,
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(dialed).toContain(`http://sbox.internal:3011${mount}/api/tasks`);
+    const forwarded = upstream[upstream.length - 1];
+    // AC3 on the composed path: the pass authenticated, and the app never sees it.
+    expect(forwarded.get("cookie")).toBe("theme=dark");
+    // AC1/AC2 on the composed path: the app's cookie rides back, host-only, on
+    // the SAME mount the pass was minted for (one jar, one scope), and the dev
+    // form's cross-site attributes are what makes the browser send it again.
+    expect(response.headers.getSetCookie()).toEqual([
+      `theme-state=1; Path=${mount}; Max-Age=60; SameSite=None; Secure`,
+    ]);
+    // The address the pane points a frame at and the Path the app's cookie got
+    // are the same derivation — one jar, one scope (#405's premise).
+    expect(address).toBe(`http://127.0.0.1:3001${mount}`);
   });
 });
 

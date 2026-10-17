@@ -168,16 +168,25 @@ export function createPreviewTickets(deps: {
 
 export const PREVIEW_SESSION_COOKIE = "openbot_preview_session";
 
+/**
+ * The ONE Set-Cookie `Path` whitelist (#405). A path lands in an ATTRIBUTE
+ * position of a header line, so it is whitelisted at the boundary and never
+ * trusted — fix-ocr22 #3's rule, kept here as the single derivation the pass
+ * mint reads (below) AND the preview proxy's app-cookie rewrite reads, so the
+ * two cookie scopes cannot drift apart: `/` or one `/<label>` of
+ * `0-9a-zA-Z._~-`, at most 64 chars — anything else (an injection shape like
+ * `/x; Path=/evil` above all) folds to the root scope and can never be
+ * interpolated into the attribute position. The dev form's real caller shape is
+ * 20 lowercase hex (the preview label); the whitelist is deliberately a little
+ * wider so a future caller cannot grow an injection here.
+ */
+export function safePreviewCookiePath(path: string): string {
+  return /^\/[0-9a-zA-Z._~-]{0,64}$/.test(path) ? path : "/";
+}
+
 export function previewSessionCookieHeader(value: string, path = "/"): string {
-  // fix-ocr22 #3: the path lands in a Set-Cookie ATTRIBUTE position, so it is
-  // whitelisted at this export API's own boundary, never trusted: `/` or one
-  // /<label> of `0-9a-zA-Z._~-`, at most 64 chars — anything else (an
-  // injection shape like `/x; Path=/evil` above all) folds to the root scope
-  // and can never be interpolated into the attribute position. The dev
-  // form's real caller shape is 20 lowercase hex (the preview label); the
-  // whitelist is deliberately a little wider so a future caller cannot grow
-  // an injection here.
-  const safePath = /^\/[0-9a-zA-Z._~-]{0,64}$/.test(path) ? path : "/";
+  // fix-ocr22 #3: the guard, now shared with the preview proxy (#405).
+  const safePath = safePreviewCookiePath(path);
   // fix-ocr23 #6: the value sits in the NAME=VALUE position of the same header
   // — the dual of the path guard above, not its neighbor: a `;`, `,`, or
   // control byte in the value can rewrite cookie attributes exactly the way a
