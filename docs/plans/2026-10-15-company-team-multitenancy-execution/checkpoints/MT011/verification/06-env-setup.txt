@@ -1,0 +1,12 @@
+# Environment setup (dedicated container + databases + restricted logins)
+# docker run -d --name mt011-impl-pg -e POSTGRES_HOST_AUTH_METHOD=trust -p 127.0.0.1:55482:5432 pgvector/pgvector:pg16
+#   (55481 was already allocated on this host; moved to 55482)
+# docker exec mt011-impl-pg psql -U postgres -tc "select version()"  ->  PostgreSQL 16.15 (aarch64)
+# createdb openbot_enterprise_mt011 + openbot_enterprise_mt011_assigned (trust, loopback only)
+# cd server && TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55482/openbot_enterprise_mt011 \
+#   ENTERPRISE_TEST_{DIRECTORY,DATA,OPERATOR}_DATABASE_URL=postgresql://ent_mt011_{dir,data,opr}:...@127.0.0.1:55482/openbot_enterprise_mt011 \
+#   bun --no-env-file scripts/enterprise-test-db.ts migrate   -> {"type":"migrations-applied","status":"ok"} (ob_ent_* capability roles + ent_mt011_* logins provisioned)
+# Seven task migrations applied in dependency order via migrate-test (MT004→MT008→MT112→MT012→MT014→MT010→MT009), each dry-run + manifest + --apply.
+# Repeatable reset script: verification/reset-test-db.sh (drop + recreate + base + 7 tasks).
+# Baseline captured: 458 pass / 0 fail / 0 skip (16 files) — matches brief exactly (00-baseline).
+# No dev-database fallback anywhere; credentials inline in env (trust container), nothing persisted to disk.

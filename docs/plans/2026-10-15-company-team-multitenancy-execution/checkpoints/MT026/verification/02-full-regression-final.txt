@@ -1,0 +1,8 @@
+# $ bun --no-env-file test tests/multitenancy/   (full multitenancy suite, EXE integration state)
+  455 pass
+  0 fail
+  8999 expect() calls
+Ran 455 tests across 18 files. [15.48s]
+
+# baseline was 422 pass / 0 fail / 15 files (checkpoints/MT026/verification/00-baseline.txt)
+# delta: +33 tests, +3 files, zero skips, zero failures.

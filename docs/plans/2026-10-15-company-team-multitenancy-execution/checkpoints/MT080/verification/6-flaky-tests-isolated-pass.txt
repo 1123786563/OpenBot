@@ -1,0 +1,5 @@
+# 4 个既有抖动用例隔离单跑（本票改动在场）——全过（2026-10-16T19:47:44Z）
+ 8 pass
+ 0 fail
+Ran 8 tests across 3 files. [1225.00ms]
+exit=0

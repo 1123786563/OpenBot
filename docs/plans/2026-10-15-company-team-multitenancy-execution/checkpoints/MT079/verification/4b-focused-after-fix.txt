@@ -1,0 +1,94 @@
+# MT079 修复轮（F1 关闭）— 修复后聚焦复跑与迁移链证据
+# 日期：2026-10-16T18:31:08Z
+# 环境：专用容器 mt079-fix-pg（pgvector/pgvector:pg16，trust+随机口令，仅回环 127.0.0.1:55504，端口预检空闲）；
+# 六变量 env（TEST/SETUP/DIRECTORY/DATA/OPERATOR/MT003_ASSIGNED）0600 临时文件，用后已删；base migrate → {"type":"migrations-applied","status":"ok"} exit 0；
+# 九任务依赖序 apply：MT004→MT008→MT112→MT012→MT014→MT010→MT009→MT077→MT026（MT003 工具 generate→dry-run→--apply --manifest 逐任务，journal 留痕）。
+
+## 迁移链 apply 摘要（完整日志节选）
+=== MT004 generate ===
+=== MT004 dry-run ===
+=== MT004 apply ===
+applied: MT004 @ openbot_enterprise_mt079fix_test (127.0.0.1:55504)
+  已执行并记入 journal: 0001_mt004_create_table.sql, 0002_mt004_rls_policies.sql
+=== MT004 OK ===
+=== MT008 generate ===
+=== MT008 dry-run ===
+=== MT008 apply ===
+applied: MT008 @ openbot_enterprise_mt079fix_test (127.0.0.1:55504)
+  已执行并记入 journal: 0001_mt008_resource_visibility_column.sql, 0002_mt008_visibility_operator_grant.sql
+=== MT008 OK ===
+=== MT112 generate ===
+=== MT112 dry-run ===
+=== MT112 apply ===
+applied: MT112 @ openbot_enterprise_mt079fix_test (127.0.0.1:55504)
+  已执行并记入 journal: 0001_mt112_anchor_mapping_table.sql, 0002_mt112_anchor_rls_policies.sql, 0003_mt112_legacy_anchor_rows.sql, 0004_mt112_anchor_mapping_row.sql
+=== MT112 OK ===
+=== MT012 generate ===
+=== MT012 dry-run ===
+=== MT012 apply ===
+applied: MT012 @ openbot_enterprise_mt079fix_test (127.0.0.1:55504)
+  已执行并记入 journal: 0001_mt012_core_rls_enable.sql, 0002_mt012_context_reset_function.sql
+=== MT012 OK ===
+=== MT014 generate ===
+=== MT014 dry-run ===
+=== MT014 apply ===
+applied: MT014 @ openbot_enterprise_mt079fix_test (127.0.0.1:55504)
+  已执行并记入 journal: 0001_mt014_runtime_config_tables.sql, 0002_mt014_runtime_config_rls.sql
+=== MT014 OK ===
+=== MT010 generate ===
+=== MT010 dry-run ===
+=== MT010 apply ===
+applied: MT010 @ openbot_enterprise_mt079fix_test (127.0.0.1:55504)
+  已执行并记入 journal: 0001_mt010_create_table.sql, 0002_mt010_share_rls_policies.sql
+=== MT010 OK ===
+=== MT009 generate ===
+=== MT009 dry-run ===
+=== MT009 apply ===
+applied: MT009 @ openbot_enterprise_mt079fix_test (127.0.0.1:55504)
+  已执行并记入 journal: 0001_mt009_resource_dependency_table.sql, 0002_mt009_dependency_rls_policies.sql
+=== MT009 OK ===
+=== MT077 generate ===
+=== MT077 dry-run ===
+=== MT077 apply ===
+applied: MT077 @ openbot_enterprise_mt079fix_test (127.0.0.1:55504)
+  已执行并记入 journal: 0001_mt077_governance_policy_tables.sql, 0002_mt077_governance_policy_rls.sql
+=== MT077 OK ===
+=== MT026 generate ===
+=== MT026 dry-run ===
+=== MT026 apply ===
+applied: MT026 @ openbot_enterprise_mt079fix_test (127.0.0.1:55504)
+  已执行并记入 journal: 0001_mt026_sso_scim_tables.sql, 0002_mt026_sso_scim_rls.sql
+=== MT026 OK ===
+
+## 聚焦测试：bun --no-env-file test tests/multitenancy/preferences.test.ts --timeout 30000
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/preferences.test.ts:
+(pass) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > global classification keys are exactly the DEFAULT_USER_PREFERENCES keys [0.07ms]
+(pass) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > every global item carries a closed value shape (exact enum members or boolean) [0.11ms]
+(pass) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > the issue-named business categories are present with real authoritative storage bindings [0.12ms]
+(pass) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > classifyPreferenceKey answers for every classified item and refuses everything else [0.20ms]
+(pass) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > digest is deterministic, 64-hex, and matches the documented canonical derivation [0.19ms]
+(pass) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > module source never reads the process environment (pure seam) [0.37ms]
+(pass) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > legacy route schema keys stay inside the classified global keys (source-level sync) [0.44ms]
+(pass) MT079 验收 3 — 写入分类外的偏好项被拒绝（fail-closed，零回显） > empty and non-object patches are refused [0.14ms]
+(pass) MT079 验收 3 — 写入分类外的偏好项被拒绝（fail-closed，零回显） > unclassified keys are refused — pure UI additions and business-shaped keys alike [0.12ms]
+(pass) MT079 验收 3 — 写入分类外的偏好项被拒绝（fail-closed，零回显） > a mixed patch with one unclassified key is refused whole (all-or-nothing) [0.03ms]
+(pass) MT079 验收 3 — 写入分类外的偏好项被拒绝（fail-closed，零回显） > values outside the closed shape are refused [0.04ms]
+(pass) MT079 验收 3 — 写入分类外的偏好项被拒绝（fail-closed，零回显） > rejection messages never echo the rejected key or value (canary) [0.07ms]
+(pass) MT079 验收 3 — 写入分类外的偏好项被拒绝（fail-closed，零回显） > a valid patch passes exactly its classified keys, frozen, without mutating the input [0.10ms]
+(pass) MT079 验收 4（纯函数面） — 读取只返回分类为全局个人偏好的合法条目 > a poisoned stored document reads back as exactly the legal global items [0.06ms]
+(pass) MT079 验收 4（纯函数面） — 读取只返回分类为全局个人偏好的合法条目 > invalid-valued legal keys fall back to the default; the read always returns a complete shape [0.03ms]
+(pass) MT079 验收 4（纯函数面） — 读取只返回分类为全局个人偏好的合法条目 > non-object stored documents read back as pure defaults [0.02ms]
+(pass) MT079 验收 4（纯函数面） — 读取只返回分类为全局个人偏好的合法条目 > a hostile __proto__ key in the stored document is ignored safely [0.02ms]
+(pass) MT079 验收 4（纯函数面） — 读取只返回分类为全局个人偏好的合法条目 > the read output is a fresh frozen object and deterministic [0.03ms]
+(pass) MT079 — 数据库面：全局偏好跨公司切换保持，业务配置按归属立即变化 > the users table carries no scope column — global preferences cannot be scope-partitioned [4.04ms]
+(pass) MT079 — 数据库面：全局偏好跨公司切换保持，业务配置按归属立即变化 > global preferences survive the company A -> company B switch while business config differs per company [6.76ms]
+(pass) MT079 — 数据库面：全局偏好跨公司切换保持，业务配置按归属立即变化 > a team override changes business config immediately; global preferences stay byte-identical [19.78ms]
+(pass) MT079 — 数据库面：全局偏好跨公司切换保持，业务配置按归属立即变化 > a poisoned stored preferences document reads back through the gate with zero business leakage [0.87ms]
+(pass) MT079 — 数据库面：全局偏好跨公司切换保持，业务配置按归属立即变化 > every restricted query in this suite ran under an ob_ent_* capability role [0.06ms]
+
+ 23 pass
+ 0 fail
+ 226 expect() calls
+Ran 23 tests across 1 file. [575.00ms]

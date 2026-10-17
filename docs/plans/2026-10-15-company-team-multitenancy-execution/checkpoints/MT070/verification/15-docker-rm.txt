@@ -1,0 +1,8 @@
+# Container teardown — docker rm 真实执行并回显（2026-10-16T22:19:49Z）
+# 专用容器 mt070-impl-pg（pgvector/pgvector:pg16 @ 127.0.0.1:55528）
+$ docker ps --filter name=mt070-impl-pg --format "{{.Names}} {{.Status}}"
+mt070-impl-pg Up 27 minutes
+$ docker rm -f mt070-impl-pg
+mt070-impl-pg
+$ docker ps --filter name=mt070-impl-pg --format "{{.Names}}"
+(empty above = container gone)

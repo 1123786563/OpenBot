@@ -1,0 +1,23 @@
+MT077 对既有文件的改动 = 纯追加（0 删除 / 0 既有行修改），逐字节重建证明：
+
+方法：从当前文件剥离本票追加的块，重建文件 SHA-256 与领取时
+before-hashes.txt（= prereq-manifest 同项）比对。
+
+1. scripts/multitenancy/migrate-test.ts
+   追加块：GOVERNANCE_POLICY_TASK 常量（/** MT077（Issue #120）… */ 起）
+   + 注册表一行 [GOVERNANCE_POLICY_TASK.id, …]
+   剥离后 SHA-256 = fba7a53d57937aef09bf815f4d4da120ae66904a112ce5789ac1d0a1b9606516
+   before-hash   = fba7a53d57937aef09bf815f4d4da120ae66904a112ce5789ac1d0a1b9606516  ✅ 一致
+
+2. tests/multitenancy/migration-tool.test.ts
+   追加块：MT077 裁决注释 3 行 + 穷举断言一行 "MT077"（ruling #5 第 6 次先例，brief 预授权）
+   剥离后 SHA-256 = 97cf2a0314acf6b9d4d00a59093cb5bca2fc7293119178dcecf67894c03305e3
+   before-hash   = 97cf2a0314acf6b9d4d00a59093cb5bca2fc7293119178dcecf67894c03305e3  ✅ 一致
+
+3. src/db/schema/index.ts
+   追加块：export * from "./enterprise-governance-policy" 一行
+   剥离后 SHA-256 = 917d78fc17a61b9afc1ace87e9ee0b205af51970ff3f335d50d3e52a2c43878f
+   before-hash   = 917d78fc17a61b9afc1ace87e9ee0b205af51970ff3f335d50d3e52a2c43878f  ✅ 一致
+
+注：本工作树的 prereq 文件均为未提交（untracked）状态，无 git 基线可 diff；
+以上重建比对即逐字节等价的纯追加证明（MT014 §2 同款方法）。

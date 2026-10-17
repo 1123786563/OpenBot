@@ -1,0 +1,6 @@
+# Honest note: the FIRST full-suite run on this fresh database (right after bun install
+# materialized node_modules) showed 178 pass / 25 fail: parallel first-time application of the
+# MT004/MT008/MT012 migrations raced on the shared journal. Two immediate re-runs converged to
+# 305/0/0 (see verification/00-baseline-full-suite-raw.txt), and every later run — including all
+# GREEN/mutation/final captures — was stable. No test was weakened; no production file changed
+# because of it. Recorded because skipped-or-flaky is never counted as passing.

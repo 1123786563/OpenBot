@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "tool": "multitenancy-migrate-test",
+  "taskId": "MT004",
+  "planDigest": "39b91e0f85a6afce76fb8e56e74ac162df39e08e308d8138932747b0a3ecd8cb",
+  "steps": [
+    {
+      "number": 1,
+      "name": "0001_mt004_create_table.sql",
+      "statementDigest": "fa49756593c91ce2af6753143beff077c0eae70cc84469dd83fed7b33b83a9ea",
+      "statementCount": 4
+    },
+    {
+      "number": 2,
+      "name": "0002_mt004_rls_policies.sql",
+      "statementDigest": "d6d6750e838eebb6008f35e986b1fd6e126728e8b49d21fcb082666634087a67",
+      "statementCount": 11
+    }
+  ]
+}
