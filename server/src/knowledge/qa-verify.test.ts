@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { firstValueFrom, of } from "rxjs";
 import { createKnowledgeCircuit } from "./circuit";
@@ -18,12 +25,45 @@ import type { KnowledgeSearchResult, RetrieveResponse } from "./types";
  * middleware 空/空白/纯图片消息、工具 schema 边界长度。
  */
 
-const realFetch = globalThis.fetch;
-let fetchImpl:
-  | ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>)
-  | null = null;
+/**
+ * 回环假 KB-Service：QA 盲区用例同样走真实传输（client.ts 的 node:http 直连不读
+ * 全局 fetch，mock 住它是死缝隙，见 #399），所以与 retrieval.test.ts 同款：起一个
+ * 测试自控的 Bun.serve 回环服务，config.baseUrl 指向它；每个用例往 `behavior`
+ * 里装 handler 主体，calls 记录每次真实到达的请求。
+ */
+let behavior: ((request: Request) => Response | Promise<Response>) | null =
+  null;
 
-const calls: { url: string; init: RequestInit | undefined }[] = [];
+const calls: { method: string; url: string; headers: Headers; body: string }[] =
+  [];
+
+const server = Bun.serve({
+  hostname: "127.0.0.1",
+  port: 0,
+  fetch: async (request) => {
+    calls.push({
+      method: request.method,
+      url: request.url,
+      headers: request.headers,
+      body: await request.text(),
+    });
+    if (!behavior) throw new Error("no behaviour installed for test");
+    return behavior(request);
+  },
+});
+
+afterAll(() => server.stop(true));
+
+beforeEach(() => {
+  calls.length = 0;
+  behavior = null;
+});
+
+/** 断言用 path+query：host 是回环服务的随机端口，不属于断言对象。 */
+function requestPath(call: (typeof calls)[number]): string {
+  const url = new URL(call.url);
+  return `${url.pathname}${url.search}`;
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -45,22 +85,8 @@ function result(
   };
 }
 
-beforeEach(() => {
-  calls.length = 0;
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    calls.push({ url: String(input), init });
-    if (!fetchImpl) throw new Error("no fetch behaviour installed for test");
-    return fetchImpl(input, init);
-  }) as typeof globalThis.fetch;
-});
-
-afterEach(() => {
-  globalThis.fetch = realFetch;
-  fetchImpl = null;
-});
-
 const config = {
-  baseUrl: "http://kb.test",
+  baseUrl: `http://127.0.0.1:${server.port}`,
   apiKey: "secret",
   timeoutMs: 10_000,
 };
@@ -129,8 +155,8 @@ describe("qa: env parsing falls back on invalid values", () => {
 
 describe("qa: retriever blind spots", () => {
   test("equal scores keep a stable order (kb request order wins)", async () => {
-    fetchImpl = async (input) =>
-      String(input).endsWith("/kb/kb-a/retrieve")
+    behavior = async (request) =>
+      new URL(request.url).pathname === "/kb/kb-a/retrieve"
         ? jsonResponse({
             results: [result({ chunk_id: "a", content: "from a", score: 0.5 })],
             count: 1,
@@ -146,7 +172,7 @@ describe("qa: retriever blind spots", () => {
   });
 
   test("dedup works across kbs: identical content collapses to the first", async () => {
-    fetchImpl = async () =>
+    behavior = async () =>
       jsonResponse({
         results: [
           result({ chunk_id: "a", content: "shared text", score: 0.5 }),
@@ -161,16 +187,16 @@ describe("qa: retriever blind spots", () => {
   });
 
   test("topK override clamps at the low end too (0 and negatives → 1)", async () => {
-    fetchImpl = async () => jsonResponse({ results: [], count: 0 });
+    behavior = async () => jsonResponse({ results: [], count: 0 });
     await retriever({}).retrieve("q", { topK: 0 });
     await retriever({}).retrieve("q", { topK: -3 });
     for (const call of calls) {
-      expect(JSON.parse(String(call.init?.body)).top_k).toBe(1);
+      expect(JSON.parse(String(call.body)).top_k).toBe(1);
     }
   });
 
   test("context budget boundary: exactly 4000 keeps all five 800-char chunks", async () => {
-    fetchImpl = async () =>
+    behavior = async () =>
       jsonResponse({
         results: ["0", "1", "2", "3", "4"].map((digit, i) =>
           result({
@@ -191,7 +217,7 @@ describe("qa: retriever blind spots", () => {
   });
 
   test("context budget boundary: one char over drops the whole trailing chunk", async () => {
-    fetchImpl = async () =>
+    behavior = async () =>
       jsonResponse({
         // 6×800：前 5 条恰好 4000，第 6 条会让预算超 800 → 整条丢弃。
         results: ["0", "1", "2", "3", "4", "5"].map((digit, i) =>
@@ -211,14 +237,16 @@ describe("qa: retriever blind spots", () => {
   });
 
   test("kb id with path-ish characters is URL-encoded in the request path", async () => {
-    fetchImpl = async () => jsonResponse({ results: [], count: 0 });
+    behavior = async () => jsonResponse({ results: [], count: 0 });
     await retriever({ kbIds: ["a b/c?d"] }).retrieve("q");
-    expect(calls[0]?.url).toBe("http://kb.test/kb/a%20b%2Fc%3Fd/retrieve");
+    expect(calls.map((c) => requestPath(c))).toEqual([
+      "/kb/a%20b%2Fc%3Fd/retrieve",
+    ]);
   });
 
   test("200 with a non-JSON body degrades without tripping the circuit", async () => {
     const circuit = createKnowledgeCircuit({ failureThreshold: 1 });
-    fetchImpl = async () =>
+    behavior = async () =>
       new Response("not json at all", {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -237,7 +265,7 @@ describe("qa: retriever blind spots", () => {
     circuit.recordFailure();
     time = 31_000;
     expect(circuit.state()).toBe("half-open");
-    fetchImpl = async () => {
+    behavior = async () => {
       await new Promise((resolve) => setTimeout(resolve, 80));
       return jsonResponse({
         results: [result({ content: "back", score: 0.4 })],
@@ -257,9 +285,9 @@ describe("qa: retriever blind spots", () => {
   });
 
   test("query is capped at exactly 512 chars at the retrieval layer", async () => {
-    fetchImpl = async () => jsonResponse({ results: [], count: 0 });
+    behavior = async () => jsonResponse({ results: [], count: 0 });
     await retriever({}).retrieve("x".repeat(513));
-    expect(JSON.parse(String(calls[0]?.init?.body)).query.length).toBe(512);
+    expect(JSON.parse(String(calls[0]?.body)).query.length).toBe(512);
   });
 });
 
