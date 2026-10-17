@@ -4897,14 +4897,19 @@ const craftWebappHmrDeps =
  * preview branch off the main-site conjunction just means its wiring cannot
  * inherit a gate the preview origin's own admission story does not use.
  */
-const craftPreviewWebappHmrDeps = craftEffectiveConfig.enabled
-  ? {
-      config: craftEffectiveConfig,
-      store: createCraftStore(database),
-      botIdFor: craftSandboxBotId,
-      sandboxConnectionFor: craftSandboxConnection,
-    }
-  : undefined;
+const craftPreviewWebappHmrDeps =
+  craftEffectiveConfig.enabled && craftPreviewOrigin !== undefined
+    ? {
+        config: craftEffectiveConfig,
+        store: createCraftStore(database),
+        botIdFor: craftSandboxBotId,
+        sandboxConnectionFor: craftSandboxConnection,
+        // #358 repair: THE pass judgment — the origin's own verifyPass method,
+        // so the HMR upgrade applies exactly the acceptance the HTTP gate ran
+        // (one codec, one cookie iteration) and the two surfaces cannot drift.
+        verifyPass: craftPreviewOrigin.verifyPass,
+      }
+    : undefined;
 
 /**
  * The craft model catalog as one descriptor. The limits are honest defaults rather than
