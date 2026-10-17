@@ -138,7 +138,7 @@ describe("the cross-service chain closes (server → agent → tool receipt)", (
       // The tool receipt continued it too, parented on the tool span.
       expect(receipt).not.toBeNull();
       expect(receipt?.traceId).toBe(serverTrace);
-      const toolSpan = spans.find((span) => span.name === "tool deploy_probe");
+      const toolSpan = spans.find((span) => span.name === "tool:deploy_probe");
       expect(toolSpan).toBeDefined();
       expect(receipt?.spanId).toBe(toolSpan?.spanContext().spanId);
       // And the run span itself rode the same trace.
