@@ -1,7 +1,7 @@
-import { createOpenAI } from "@ai-sdk/openai";
 import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message, RunAgentInput } from "@ag-ui/client";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
+import { createOpenAI } from "@ai-sdk/openai";
 import type {
   AgentRunnerConnectRequest,
   AgentRunnerIsRunningRequest,
@@ -18,12 +18,12 @@ import {
   CopilotSseRuntime,
 } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
-import type { Observable } from "rxjs";
 import {
   defer,
   finalize,
   from,
   fromEvent,
+  Observable,
   switchMap,
   takeUntil,
   tap,
@@ -58,19 +58,19 @@ import {
 } from "./channels/attachment-parts";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import {
-  HeadlessToolsMiddleware,
   HeadlessToolSuspension,
+  HeadlessToolsMiddleware,
 } from "./computer/headless-tools";
 import type { DeploymentConfig } from "./config";
 import { observeModelConnection } from "./desktop-connection-failure";
 import { desktopTelemetryProperties } from "./desktop-telemetry";
 import type { GovernedModelRequest } from "./enterprise/runs/governed-execution";
-import type { LoadKnowledgeForBot } from "./knowledge/retrieval";
 import {
   currentRunnerRequest,
   withRunnerRequestContext,
 } from "./enterprise/runs/request-context";
 import { observeIntelligenceAuthentication } from "./intelligence-client";
+import type { LoadKnowledgeForBot } from "./knowledge/retrieval";
 import { RemoteLearnedSkillsMiddleware } from "./learning/remote";
 import {
   type AcquireLearnedSkills,
@@ -84,6 +84,7 @@ import {
   type LoadPersonalMemory,
   PersonalMemoryMiddleware,
 } from "./memory/tools";
+import { withRunObservationScope } from "./observation-run-scope";
 import type { SelectableSkill, Selection } from "./plugins/selection";
 import {
   latestUserText,
@@ -440,9 +441,7 @@ function runtimeModel(model: RuntimeModel, apiKey: string | null) {
  * often absent. `index.ts` wires the billing service's meter in at assembly; the default drops
  * usage on the floor, which is exactly right for a deployment that meters nowhere.
  */
-let usageMeter:
-  | ((usage: ModelUsageReport) => void | Promise<void>)
-  | undefined;
+let usageMeter: ((usage: ModelUsageReport) => void | Promise<void>) | undefined;
 
 export function setModelUsageMeter(
   meter: ((usage: ModelUsageReport) => void | Promise<void>) | undefined,
@@ -647,7 +646,9 @@ function settleBuiltinToolStep(
   builtinToolStepCells.delete(cell.toolCallId);
   settledToolCallIds.add(cell.toolCallId);
   if (settledToolCallIds.size > SETTLED_ID_CAP) {
-    settledToolCallIds.delete(settledToolCallIds.values().next().value as string);
+    settledToolCallIds.delete(
+      settledToolCallIds.values().next().value as string,
+    );
   }
   const observer = builtinToolStepObserver;
   if (observer === undefined) return;
@@ -1094,8 +1095,7 @@ function meteredModel<T>(model: T): T {
           lifecycle = await modelUsageGate({
             eventId,
             occurredAt,
-            modelId:
-              typeof inner.modelId === "string" ? inner.modelId : null,
+            modelId: typeof inner.modelId === "string" ? inner.modelId : null,
             client: currentUsageOrigin(),
           });
         } catch (error) {
@@ -1201,9 +1201,8 @@ function meteredModel<T>(model: T): T {
         if (cap > BigInt(Number.MAX_SAFE_INTEGER)) {
           return refuse("output_bound_unsupported");
         }
-        const requested = (
-          params as { maxOutputTokens?: unknown }
-        ).maxOutputTokens;
+        const requested = (params as { maxOutputTokens?: unknown })
+          .maxOutputTokens;
         const effective =
           typeof requested === "number" &&
           Number.isSafeInteger(requested) &&
@@ -1428,8 +1427,12 @@ function meteredModel<T>(model: T): T {
               // with the failure, so the evidence row records what arrived, not zeros — with
               // keys only for what did arrive, absent like every other settleFail site.
               await settleFail("usage_missing", {
-                ...(reportedInput !== undefined && { inputTokens: reportedInput }),
-                ...(reportedOutput !== undefined && { outputTokens: reportedOutput }),
+                ...(reportedInput !== undefined && {
+                  inputTokens: reportedInput,
+                }),
+                ...(reportedOutput !== undefined && {
+                  outputTokens: reportedOutput,
+                }),
               });
             }
             const validInput =
@@ -1653,15 +1656,18 @@ export function builtInAgentConfiguration(
             tools: allTools.map((tool) => ({
               ...tool,
               execute: (args: unknown, execution?: { toolCallId?: string }) =>
-                observeBuiltinToolExecution(tool.name, execution?.toolCallId, () =>
-                  executeNativeApprovalTool(
-                    tool.name,
-                    args,
-                    execution?.toolCallId,
-                    tools.find((granted) => granted.name === tool.name)
-                      ?.initiator,
-                    () => tool.execute(args),
-                  ),
+                observeBuiltinToolExecution(
+                  tool.name,
+                  execution?.toolCallId,
+                  () =>
+                    executeNativeApprovalTool(
+                      tool.name,
+                      args,
+                      execution?.toolCallId,
+                      tools.find((granted) => granted.name === tool.name)
+                        ?.initiator,
+                      () => tool.execute(args),
+                    ),
                 ),
             })),
             maxSteps: TOOL_STEPS,
@@ -1671,10 +1677,7 @@ export function builtInAgentConfiguration(
   }
 
   const resolvedModel = planModel ?? runtimeModel(model, apiKey);
-  if (
-    modelUsageGate !== undefined &&
-    typeof resolvedModel === "string"
-  ) {
+  if (modelUsageGate !== undefined && typeof resolvedModel === "string") {
     return {
       type: "custom",
       // biome-ignore lint/correctness/useYield: this agent must fail when iteration starts.
@@ -1734,14 +1737,18 @@ export function builtInAgentConfiguration(
           tools: allTools.map((tool) => ({
             ...tool,
             execute: (args: unknown, execution?: { toolCallId?: string }) =>
-              observeBuiltinToolExecution(tool.name, execution?.toolCallId, () =>
-                executeNativeApprovalTool(
-                  tool.name,
-                  args,
-                  execution?.toolCallId,
-                  tools.find((granted) => granted.name === tool.name)?.initiator,
-                  () => tool.execute(args),
-                ),
+              observeBuiltinToolExecution(
+                tool.name,
+                execution?.toolCallId,
+                () =>
+                  executeNativeApprovalTool(
+                    tool.name,
+                    args,
+                    execution?.toolCallId,
+                    tools.find((granted) => granted.name === tool.name)
+                      ?.initiator,
+                    () => tool.execute(args),
+                  ),
               ),
           })),
           maxSteps: TOOL_STEPS,
@@ -1819,6 +1826,16 @@ export async function buildAgents(
   loadKnowledge?: LoadKnowledgeForBot,
   /** Present only inside a governed admission. See {@link builtInAgentConfiguration}. */
   governedModel?: GovernedModelRequest,
+  /**
+   * The run-scope threading for the builtin path (T-final M1), at the actor
+   * level. Built per Bot below — each agent gets its own botId — and handed to
+   * every construction of that Bot, so the threading survives the per-request
+   * rebuilds and the runtime's clones. Absent means facts stay scope-less.
+   */
+  observation?: {
+    actorId: string;
+    resolveScope: (botId: string) => Promise<unknown>;
+  },
 ): Promise<Record<string, AbstractAgent>> {
   let vendors: readonly string[] = [];
   try {
@@ -1876,6 +1893,13 @@ export async function buildAgents(
           markAttachmentsSent,
           acquireLearnedSkills,
           governedModel,
+          observation && agent.type === "built_in"
+            ? {
+                actorId: observation.actorId,
+                botId: agent.id,
+                resolveScope: observation.resolveScope,
+              }
+            : undefined,
         );
         if (loadPersonalMemory && !(built instanceof UnavailableAgent))
           built.use(new PersonalMemoryMiddleware(agent.id, loadPersonalMemory));
@@ -2140,6 +2164,12 @@ async function buildAgent(
   acquireLearnedSkills?: AcquireLearnedSkills,
   /** Present only inside a governed admission. See {@link builtInAgentConfiguration}. */
   governedModel?: GovernedModelRequest,
+  /**
+   * The run-scope threading for the builtin path (T-final M1), built per Bot
+   * by {@link buildAgents} from the actor-level threading it was handed.
+   * Absent means facts stay scope-less — the recorders submit nothing.
+   */
+  observation?: BuiltinRunObservationThreading,
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
@@ -2255,6 +2285,7 @@ async function buildAgent(
       ),
       loadAttachment,
       markAttachmentsSent,
+      observation,
     );
 
   const whole = withTools(granted);
@@ -2875,6 +2906,61 @@ class CloningRemoteAgent extends AbstractAgent {
  * `interruptId` AFTER converting the messages, so a call that a resume is about to answer must
  * survive this pass or the appended result lands on nothing.
  */
+/**
+ * The trusted observation-scope threading for the builtin path (T-final M1).
+ *
+ * What the boot wiring hands each builtin agent when the deployment carries an
+ * observation face: WHOSE run this is, and how to mint the trusted scope for a
+ * bot at run start. Deliberately structural — the resolved scope stays
+ * `unknown` here because this module must not depend on the observability
+ * module a deployment may not have; the wiring that supplies the resolver is
+ * the same wiring that reads the scope back at the recorders, so the two ends
+ * agree without a type-level coupling.
+ */
+export type BuiltinRunObservationThreading = Readonly<{
+  /** The authenticated actor whose run this is (never a wire value). */
+  actorId: string;
+  /** The Bot being threaded — carried because BuiltInAgent's own agentId is unset. */
+  botId: string;
+  /**
+   * Mints the trusted scope for one bot, asked once per run so the epoch is
+   * live. MUST answer null on any refusal — disabled, non-manager, failed read
+   * — and never throw: a failed resolution is a scope-less run, not a failed
+   * one. The production resolver is `createBuiltinRunScopeResolver`.
+   */
+  resolveScope: (botId: string) => Promise<unknown>;
+}>;
+
+/**
+ * Subscribe a builtin run's event stream inside the run's ambient observation
+ * scope (T-final M1). The scope is minted per subscription — a retried run
+ * re-asks, so a transfer or revocation lands on the very next run — and every
+ * fact the run emits (model spans, tool steps, retrievals) reads it back
+ * through `currentRunObservationScope`. A null resolution subscribes bare:
+ * scope-less facts, which the recorders submit nowhere.
+ *
+ * The wrapping is at SUBSCRIBE time, not construction time, because the run
+ * only begins when somebody listens: RxJS executes the pipeline under the
+ * subscribe call's async context, so establishing the store there covers the
+ * whole execution tree — stream taps, provider doStream, tool executes.
+ */
+export function builtinRunUnderObservationScope(
+  threading: BuiltinRunObservationThreading | undefined,
+  botId: string,
+  inner: Observable<BaseEvent>,
+): Observable<BaseEvent> {
+  if (!threading) return inner;
+  return defer(() => from(threading.resolveScope(botId))).pipe(
+    switchMap((scope) =>
+      scope === null || scope === undefined
+        ? inner
+        : new Observable<BaseEvent>((subscriber) =>
+            withRunObservationScope(scope, () => inner.subscribe(subscriber)),
+          ),
+    ),
+  );
+}
+
 class BuiltInAgentWithSaneHistory extends BuiltInAgent {
   /**
    * The configuration, held a second time because the base class keeps its own copy private and
@@ -2894,16 +2980,24 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
    * of THIS class, and a seam lost in a clone is a seam that never runs.
    */
   private readonly markAttachmentsSent: MarkAttachmentsSent | undefined;
+  /**
+   * The run-scope threading (T-final M1), held for the same clone reason as
+   * everything else here: absent means facts stay scope-less, present means
+   * every run of this Bot executes under its own trusted scope.
+   */
+  private readonly observation: BuiltinRunObservationThreading | undefined;
 
   constructor(
     configuration: BuiltInAgentConfiguration,
     loadAttachment?: LoadAttachment,
     markAttachmentsSent?: MarkAttachmentsSent,
+    observation?: BuiltinRunObservationThreading,
   ) {
     super(configuration);
     this.configuration = configuration;
     this.loadAttachment = loadAttachment;
     this.markAttachmentsSent = markAttachmentsSent;
+    this.observation = observation;
   }
 
   run(input: RunAgentInput): Observable<BaseEvent> {
@@ -2912,6 +3006,11 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
     );
     const history = sanitizeSeededHistory(input.messages, answeredByResume);
     const load = this.loadAttachment;
+    const observation = this.observation;
+    const observed = (inner: Observable<BaseEvent>) =>
+      observation
+        ? builtinRunUnderObservationScope(observation, observation.botId, inner)
+        : inner;
     /*
      * ALONGSIDE THE GUARD ABOVE, NOT INSTEAD OF IT. One drops a conversation the model provider is
      * going to refuse; this replaces the stored reference a person's attachment arrives as with the
@@ -2922,9 +3021,11 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
      * this existed.
      */
     if (!load)
-      return nativeApprovalRun({ ...input, messages: history }, () =>
-        observeModelConnection(
-          observeBuiltinToolSteps(super.run({ ...input, messages: history })),
+      return observed(
+        nativeApprovalRun({ ...input, messages: history }, () =>
+          observeModelConnection(
+            observeBuiltinToolSteps(super.run({ ...input, messages: history })),
+          ),
         ),
       );
     /*
@@ -2932,20 +3033,22 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
      * database round trip. `defer` puts that read on the subscription, which is where the run
      * actually begins, so nothing is fetched until somebody is listening.
      */
-    return defer(() =>
-      from(
-        inlineAttachments(
-          history,
-          load,
-          // As above: the run's own conversation, not the actor's channels at large.
-          input.threadId,
-          this.markAttachmentsSent,
-        ),
-      ).pipe(
-        switchMap((messages) =>
-          nativeApprovalRun({ ...input, messages }, () =>
-            observeModelConnection(
-              observeBuiltinToolSteps(super.run({ ...input, messages })),
+    return observed(
+      defer(() =>
+        from(
+          inlineAttachments(
+            history,
+            load,
+            // As above: the run's own conversation, not the actor's channels at large.
+            input.threadId,
+            this.markAttachmentsSent,
+          ),
+        ).pipe(
+          switchMap((messages) =>
+            nativeApprovalRun({ ...input, messages }, () =>
+              observeModelConnection(
+                observeBuiltinToolSteps(super.run({ ...input, messages })),
+              ),
             ),
           ),
         ),
@@ -2968,6 +3071,7 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
       this.configuration,
       this.loadAttachment,
       this.markAttachmentsSent,
+      this.observation,
     );
     type WithMiddlewares = { middlewares: unknown[] };
     (cloned as unknown as WithMiddlewares).middlewares = [
@@ -3156,6 +3260,15 @@ export async function resolveRuntimeAgents(
    * SDK key, so resolving one would be a credential read nothing consumes.
    */
   governedModel?: GovernedModelRequest,
+  /**
+   * The run-scope threading for the builtin path (T-final M1), at the actor
+   * level — passed through to {@link buildAgents}, which narrows it per Bot.
+   * Appended last for the positional reason every collaborator here carries.
+   */
+  observation?: {
+    actorId: string;
+    resolveScope: (botId: string) => Promise<unknown>;
+  },
 ): Promise<Record<string, AbstractAgent>> {
   const all = await loadAgents();
   if (all.length === 0) {
@@ -3195,6 +3308,7 @@ export async function resolveRuntimeAgents(
     loadPersonalMemory,
     loadKnowledge,
     governedModel,
+    observation,
   );
 }
 

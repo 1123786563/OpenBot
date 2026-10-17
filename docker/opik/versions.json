@@ -59,7 +59,7 @@
     "status": "verified",
     "verifiedBy": "#10",
     "verifiedAt": "2026-10-15T17:17:31Z",
-    "evidence": "docs/plans/evidence/2026-10-16-issue4/T04/opik-contract/47-manifest.json, sha256 38322418ee7a412a56838f5f10799825d7c36674c768df94faab8c45eeea7bb1",
+    "evidence": "server/src/ai-observability/opik-contract/47-manifest.json, sha256 38322418ee7a412a56838f5f10799825d7c36674c768df94faab8c45eeea7bb1",
     "note": "sdk.typescript is the exact version #10 installed (npm dist-tag latest at pin time, matching the Opik 2.2.100 release)."
   }
 }

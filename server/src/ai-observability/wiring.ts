@@ -8,7 +8,9 @@
  * scope through on every execution. Nothing here answers an authorization
  * question by itself — each helper only feeds the seams T06 already owns.
  */
+import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import type { AgentActor } from "../agents/profile-types";
 import type { OpenBotRole } from "../auth/roles";
 import type { Database } from "../db/client";
@@ -104,20 +106,92 @@ export function createExportReauthorization(deps: {
  * health probe. Any failure to load answers null, which every consumer reads
  * as the honest capability_missing rather than a guess. Deployments that do
  * not ship the evidence file (or have Opik disabled) simply run portless.
+ *
+ * The manifest lives beside THIS module (server/src/ai-observability/
+ * opik-contract/47-manifest.json, T-final M2): the trust anchor ships with the
+ * code that verifies against it, so a deployment image carries its own
+ * contract instead of reaching outside the server tree for a docs file. A
+ * load is announced with the manifest's sha-256 fingerprint — boot evidence
+ * of WHICH contract went trusted — and a missing or unreadable manifest is a
+ * warned null, never the silent one the final review flagged (M2).
  */
 export async function loadVerifiedOpikPort(
   baseUrl: string,
   timeoutMs?: number,
+  /** The manifest to trust; defaults to the one beside this module. A test seam —
+   * the missing-manifest branch is only reachable with a URL that does not exist. */
+  manifestUrl?: URL,
 ): Promise<OpikPort | null> {
+  const log = getLogger("server");
+  const source =
+    manifestUrl ?? new URL("./opik-contract/47-manifest.json", import.meta.url);
   try {
-    const manifest = (await Bun.file(
-      new URL(
-        "../../../docs/plans/evidence/2026-10-16-issue4/T04/opik-contract/47-manifest.json",
-        import.meta.url,
-      ),
-    ).json()) as VerifiedOpikContract;
-    return createOpikHttpPort({ baseUrl, contract: manifest, timeoutMs });
-  } catch {
+    const bytes = new Uint8Array(await Bun.file(source).arrayBuffer());
+    const manifest = JSON.parse(
+      new TextDecoder().decode(bytes),
+    ) as VerifiedOpikContract;
+    const port = createOpikHttpPort({ baseUrl, contract: manifest, timeoutMs });
+    const fingerprint = createHash("sha256").update(bytes).digest("hex");
+    log.info(
+      { type: "opik-contract-manifest-loaded", fingerprint },
+      `opik-contract-manifest-loaded ${fingerprint}`,
+    );
+    return port;
+  } catch (error) {
+    log.warn(
+      {
+        type: "opik-contract-manifest-missing",
+        manifest: source.pathname,
+        err: error instanceof Error ? error.message : String(error),
+      },
+      "opik-contract-manifest-missing — every observation surface answers the honest capability_missing",
+    );
     return null;
   }
+}
+
+/**
+ * The builtin run's scope resolver (T-final M1): the trusted observation
+ * scope for one builtin execution, issued at run start from LIVE
+ * authorization — the same manage gate, ownership answer and live epoch the
+ * route seam answers per request, because a scope minted at boot would outlive
+ * the transfer or revocation it was minted under. The threading hands this to
+ * the builtin run entry (BuiltInAgentWithSaneHistory), which establishes it
+ * ambiently for everything the run emits; the recorders' adapters read it back
+ * and submit, or read `null` and submit nothing.
+ *
+ * Every refusal is a null, never a thrown error and never a partial scope: a
+ * disabled deployment, a non-manager, a failed epoch read — all mean the same
+ * honest thing (this run's facts stay local). Never echoes credentials or
+ * error details: the null IS the answer.
+ */
+export function createBuiltinRunScopeResolver(deps: {
+  enabled: () => boolean;
+  canManageBot: BotManagementCheck;
+  scopeEpoch: (actor: AgentActor, botId: string) => Promise<number>;
+}): (actor: AgentActor, botId: string) => Promise<unknown> {
+  return async (actor, botId) => {
+    if (!deps.enabled()) return null;
+    try {
+      const access = await resolveObservationBot(
+        deps.canManageBot,
+        actor,
+        botId,
+      );
+      if (!access.ok) return null;
+      const ownership =
+        access.profile.ownerUserId === actor.id
+          ? ("owner" as const)
+          : ("admin" as const);
+      const epoch = await deps.scopeEpoch(actor, access.botId);
+      return resolveObservationScope({
+        actorId: actor.id,
+        botId: access.botId,
+        ownership,
+        epoch,
+      });
+    } catch {
+      return null;
+    }
+  };
 }

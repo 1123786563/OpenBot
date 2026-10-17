@@ -1,0 +1,312 @@
+{
+  "manifestVersion": 1,
+  "generatedAt": "2026-10-15T16:20:23.719Z",
+  "target": {
+    "baseUrl": "http://127.0.0.1:5174/api",
+    "composeProject": "opik-issue4-validation"
+  },
+  "isolatedProject": {
+    "name": "openbot-t04-20261015161849-kjljup",
+    "id": "01a1405b-fa46-749c-9408-bf3341ef7b07",
+    "deleted": true
+  },
+  "service": {
+    "version": "2.2.100",
+    "upstreamCommit": "c8231ef8cdabb6fc5223c8dece17959e8af461ce",
+    "images": [
+      {
+        "name": "backend",
+        "repository": "ghcr.io/comet-ml/opik/opik-backend",
+        "tag": "2.2.100",
+        "pinnedDigest": "sha256:cd57f4010b2aa3327dbfd9924cb2a232f861bf183849cab709b89021c9372a5c",
+        "runningDigest": "sha256:cd57f4010b2aa3327dbfd9924cb2a232f861bf183849cab709b89021c9372a5c",
+        "match": true
+      },
+      {
+        "name": "frontend",
+        "repository": "ghcr.io/comet-ml/opik/opik-frontend",
+        "tag": "2.2.100",
+        "pinnedDigest": "sha256:7ba67f40363302a37271ba61969336359f05549e9c5096b96828beeb0c6577c4",
+        "runningDigest": "sha256:7ba67f40363302a37271ba61969336359f05549e9c5096b96828beeb0c6577c4",
+        "match": true
+      },
+      {
+        "name": "python-backend",
+        "repository": "ghcr.io/comet-ml/opik/opik-python-backend",
+        "tag": "2.2.100",
+        "pinnedDigest": "sha256:fd9af5357815bb4f3bcfba07d586fabaea7ad1a0d961728f0f00814fa9a7ebda",
+        "runningDigest": "sha256:fd9af5357815bb4f3bcfba07d586fabaea7ad1a0d961728f0f00814fa9a7ebda",
+        "match": true
+      },
+      {
+        "name": "mysql",
+        "repository": "mysql",
+        "tag": "8.4.2",
+        "pinnedDigest": "sha256:ac80b6e09e5b12b4f9d5cd4f6425e43464247aa4ba4f6169da5daf59e5877f7d",
+        "runningDigest": "sha256:ac80b6e09e5b12b4f9d5cd4f6425e43464247aa4ba4f6169da5daf59e5877f7d",
+        "match": true
+      },
+      {
+        "name": "redis",
+        "repository": "redis",
+        "tag": "7.2.4-alpine3.19",
+        "pinnedDigest": "sha256:c8bb255c3559b3e458766db810aa7b3c7af1235b204cfdb304e79ff388fe1a5a",
+        "runningDigest": "sha256:c8bb255c3559b3e458766db810aa7b3c7af1235b204cfdb304e79ff388fe1a5a",
+        "match": true
+      },
+      {
+        "name": "clickhouse",
+        "repository": "clickhouse/clickhouse-server",
+        "tag": "26.3.16.16-alpine",
+        "pinnedDigest": "sha256:b45ab149f0d331b944b4aa2ccdd47d0242238fd39e68ec524ad63338e4b9d8f8",
+        "runningDigest": "sha256:b45ab149f0d331b944b4aa2ccdd47d0242238fd39e68ec524ad63338e4b9d8f8",
+        "match": true
+      },
+      {
+        "name": "zookeeper",
+        "repository": "zookeeper",
+        "tag": "3.9.4",
+        "pinnedDigest": "sha256:dfa9ba46d14bd52bcb3c1dac3ba91f179cf4cebf7ee576e1c2df09c68fc1d30d",
+        "runningDigest": "sha256:dfa9ba46d14bd52bcb3c1dac3ba91f179cf4cebf7ee576e1c2df09c68fc1d30d",
+        "match": true
+      },
+      {
+        "name": "minio",
+        "repository": "docker.io/cloudpirates/image-minio",
+        "tag": "RELEASE.2025-10-15T17-29-55Z-hardened",
+        "pinnedDigest": "sha256:8dc02a7e509336c8bbb67962086d691bdcde20a2c9327ed68e5081a681f6dbfc",
+        "runningDigest": "sha256:8dc02a7e509336c8bbb67962086d691bdcde20a2c9327ed68e5081a681f6dbfc",
+        "match": true
+      },
+      {
+        "name": "otel-collector",
+        "repository": "otel/opentelemetry-collector-contrib",
+        "tag": "0.139.0",
+        "pinnedDigest": "sha256:faf125d656fa47cea568b2f3b4494efd2525083bc75c1e96038bc23f05cd68fd",
+        "runningDigest": "sha256:faf125d656fa47cea568b2f3b4494efd2525083bc75c1e96038bc23f05cd68fd",
+        "match": true
+      }
+    ]
+  },
+  "sdk": {
+    "typescript": "2.2.100",
+    "npmDist": {
+      "shasum": "bc0115e4b0b981da3c38f1a0662f21c7320a6d65",
+      "tarball": "https://registry.npmjs.org/opik/-/opik-2.2.100.tgz"
+    }
+  },
+  "capabilities": [
+    {
+      "name": "service-health",
+      "ok": true,
+      "evidence": "01-health-check.json"
+    },
+    {
+      "name": "image-digests-pinned",
+      "ok": true,
+      "evidence": "02-running-images.json"
+    },
+    {
+      "name": "otlp-write-parent-child",
+      "ok": true,
+      "evidence": "03-otlp-write-derived.json"
+    },
+    {
+      "name": "trace-query-id-mapping",
+      "ok": true,
+      "evidence": "07-trace-query.json"
+    },
+    {
+      "name": "parent-child-query-link",
+      "ok": true,
+      "evidence": "10-span-detail-canary.json"
+    },
+    {
+      "name": "dataset-versioned-samples",
+      "ok": true,
+      "evidence": "16-dataset-versions-v2.json"
+    },
+    {
+      "name": "experiment-create-query",
+      "ok": true,
+      "evidence": "22-experiment-get.json"
+    },
+    {
+      "name": "body-limit-boundary",
+      "ok": true,
+      "evidence": "33-body-limit-summary.json"
+    },
+    {
+      "name": "trace-span-physical-delete",
+      "ok": true,
+      "evidence": "36-trace-a-absence.json"
+    },
+    {
+      "name": "experiment-dataset-physical-delete",
+      "ok": true,
+      "evidence": "41-experiment-absence.json"
+    },
+    {
+      "name": "project-physical-delete",
+      "ok": true,
+      "evidence": "45-project-absence.json"
+    }
+  ],
+  "idMapping": {
+    "derivation": "without opik.* overrides the backend derives Opik UUIDv7 ids from the OTel ids (SHA-256 based); with opik.trace_id/opik.span_id/opik.parent_span_id overrides (UUIDv7 strings) the backend uses them verbatim",
+    "traces": [
+      {
+        "kind": "derived",
+        "otelTraceId": "2d1b983577134722af55dd05776a7fc0",
+        "opikTraceId": "01a1405b-f832-70cf-b204-f4dd51387044",
+        "source": "07-trace-query.json"
+      },
+      {
+        "kind": "explicit",
+        "otelTraceId": "f045f9d72c1be06b0cd83a122cc42d06",
+        "opikTraceId": "01a1405b-ef42-7543-850b-1c8928ada7ea",
+        "source": "07-trace-query.json"
+      }
+    ],
+    "spans": [
+      {
+        "otelSpanId": "8d4b7c04a378c505",
+        "opikSpanId": "01a1405b-f832-7861-923f-b61cf82da6f4",
+        "opikParentSpanId": null
+      },
+      {
+        "otelSpanId": "1e5906b82be03117",
+        "opikSpanId": "01a1405b-f832-700e-a795-07984c6a4807",
+        "opikParentSpanId": "01a1405b-f832-7861-923f-b61cf82da6f4"
+      },
+      {
+        "otelSpanId": "956c011bccb371f2",
+        "opikSpanId": "01a1405b-ef42-718e-8e16-c29ee69688e5",
+        "opikParentSpanId": null
+      },
+      {
+        "otelSpanId": "1a35f344b6f5b789",
+        "opikSpanId": "01a1405b-ef43-7b29-8ee6-3bb1d689cc3b",
+        "opikParentSpanId": "01a1405b-ef42-718e-8e16-c29ee69688e5"
+      }
+    ]
+  },
+  "datasets": {
+    "datasetId": "01a1405c-09c2-71bb-a219-53d843ca7d1f",
+    "versions": [
+      {
+        "versionName": "v2",
+        "versionHash": "e41a8817",
+        "itemsTotal": 2
+      },
+      {
+        "versionName": "v1",
+        "versionHash": "cbc4e78b",
+        "itemsTotal": 1
+      }
+    ],
+    "immutabilityVerified": true
+  },
+  "experiments": {
+    "experimentId": "01a1405c-0f93-71a9-b047-4e46ae0eb68b",
+    "verified": true
+  },
+  "deletion": {
+    "traces": [
+      {
+        "opikId": "01a1405b-f832-70cf-b204-f4dd51387044",
+        "absentAfterDelete": true
+      },
+      {
+        "opikId": "01a1405b-ef42-7543-850b-1c8928ada7ea",
+        "absentAfterDelete": true
+      }
+    ],
+    "spans": [
+      {
+        "opikId": "01a1405b-f832-7861-923f-b61cf82da6f4",
+        "absentAfterDelete": true
+      },
+      {
+        "opikId": "01a1405b-f832-700e-a795-07984c6a4807",
+        "absentAfterDelete": true
+      }
+    ],
+    "dataset": {
+      "id": "01a1405c-09c2-71bb-a219-53d843ca7d1f",
+      "absentAfterDelete": true
+    },
+    "experiment": {
+      "id": "01a1405c-0f93-71a9-b047-4e46ae0eb68b",
+      "absentAfterDelete": true
+    },
+    "project": {
+      "id": "01a1405b-fa46-749c-9408-bf3341ef7b07",
+      "absentAfterDelete": true
+    }
+  },
+  "bodyLimit": {
+    "maxAcceptedBytes": 67109377,
+    "minRejectedBytes": null,
+    "cappedAtBytes": 67108864
+  },
+  "canaries": {
+    "safe": {
+      "marker": "SAFE_CANARY_T04_9f9f42ee",
+      "foundInStoredSpan": true
+    },
+    "forbiddenFound": []
+  },
+  "fixtures": [
+    "01-health-check.json",
+    "02-running-images.json",
+    "03-otlp-write-derived.json",
+    "04-project-retrieve.json",
+    "05-trace-b-rest-create.json",
+    "06-otlp-write-explicit.json",
+    "07-trace-query.json",
+    "08-span-query-derived.json",
+    "09-span-query-explicit.json",
+    "10-span-detail-canary.json",
+    "11-dataset-create.json",
+    "12-dataset-items-v1.json",
+    "13-dataset-query.json",
+    "14-dataset-versions-v1.json",
+    "15-dataset-items-v2.json",
+    "16-dataset-versions-v2.json",
+    "17-dataset-v1-items-immutability.json",
+    "18-experiment-create.json",
+    "19-experiment-query.json",
+    "20-experiment-dataset-items.json",
+    "21-experiment-items-write.json",
+    "22-experiment-get.json",
+    "23-body-limit-probe-1024.json",
+    "24-body-limit-probe-65536.json",
+    "25-body-limit-probe-524288.json",
+    "26-body-limit-probe-1048576.json",
+    "27-body-limit-probe-2097152.json",
+    "28-body-limit-probe-4194304.json",
+    "29-body-limit-probe-8388608.json",
+    "30-body-limit-probe-16777216.json",
+    "31-body-limit-probe-33554432.json",
+    "32-body-limit-probe-67108864.json",
+    "33-body-limit-summary.json",
+    "34-deletion-trace-list.json",
+    "35-traces-delete.json",
+    "36-trace-a-absence.json",
+    "37-trace-b-absence.json",
+    "38-span-a1-absence.json",
+    "39-span-a2-absence.json",
+    "40-experiment-delete.json",
+    "41-experiment-absence.json",
+    "42-dataset-delete.json",
+    "43-dataset-absence.json",
+    "44-project-delete.json",
+    "45-project-absence.json",
+    "46-diagnostics.json"
+  ],
+  "checks": {
+    "total": 11,
+    "passed": 11
+  }
+}
