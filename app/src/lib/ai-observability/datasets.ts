@@ -38,6 +38,7 @@ export type {
 import type {
   CaseReviewOutcome,
   CaseReviewRequest,
+  DatasetSyncState,
   ObservationDatasetDetailResult,
   ObservationDatasetsResult,
   SaveDatasetVersionRequest,
@@ -103,6 +104,25 @@ async function classifyRead(
 /** A malformed success is the store failing to answer, never an empty page. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/*
+ * The sync vocabulary the shared DatasetSyncState closes (OCR round 3, R3-05, the
+ * R2-09 standard): the list renders `sync.<state>` as an i18n key, and a word the
+ * bundle's sentences cannot name — a newer server's state — is a missing i18n
+ * sentence, not a key to echo. The page renders such a word verbatim; this predicate
+ * is how it tells the two cases apart. The wire guard keeps claiming the field as a
+ * string: an unknown word is a fact to show, never a crash.
+ */
+const SYNC_STATES: readonly DatasetSyncState[] = [
+  "pending",
+  "syncing",
+  "synced",
+  "failed",
+];
+
+export function isKnownSyncState(state: string): boolean {
+  return (SYNC_STATES as readonly string[]).includes(state);
 }
 
 function isNullableString(value: unknown): value is string | null {
@@ -271,6 +291,16 @@ export function observationReviewCaseMutationOptions() {
       if (
         !isRecord(body) ||
         !Array.isArray(body.preview) ||
+        /*
+         * OCR round 3 (R3-08): the preview answers the cases this request sent —
+         * the dialog reads preview[0], and the canary warning rides the same
+         * block. An empty (or miscounted) preview passed the old every() check,
+         * armed the Save button against a preview block that could not render,
+         * contradicted mustReview beside an enabled Save, and took the canary
+         * warning down with the vanished block. A preview that does not answer
+         * this request's cases is the store failing to answer.
+         */
+        body.preview.length !== variables.body.cases.length ||
         !body.preview.every(isReviewPreviewEntry) ||
         // OCR round 2 (R2-10): the dialog's red-line warning reads canaryFindings —
         // a body without it would render `undefined > 0` and the refusal warning

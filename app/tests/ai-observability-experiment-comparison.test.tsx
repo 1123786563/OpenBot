@@ -752,6 +752,131 @@ describe("a side that lost a fact the page reads is the unavailable fault (OCR r
   });
 });
 
+/*
+ * OCR round 3 (R3-10/R3-01/R3-02/R3-03): the guard claims the remaining fields the page
+ * reads or renders — the comparison's compatible boolean (the only field that decides
+ * conclusion-level copy), each side's samples index consistency (the deltas section
+ * indexes samples positionally, so a carried index that disagrees with its position is
+ * misattribution, not a rendering quirk) — and the pages give the dynamic i18n
+ * vocabularies the R2-09 treatment: a word the bundle cannot name renders verbatim,
+ * never as a raw key.
+ */
+describe("the guard and the vocabularies hold (OCR round 3)", () => {
+  test("a 200 that lost compatibility.compatible is unavailable, never a bare 'not comparable' (R3-10)", async () => {
+    const body = comparisonBody();
+    const { compatible: _dropped, fields } = body.compatibility;
+    comparisonHandler = () =>
+      Response.json({ ...body, compatibility: { fields } });
+    const view = draw(ADDRESSED);
+    await view.findByText("Upstream unavailable");
+    // The conclusion sentence must not be reachable by absence: undefined used to
+    // take the falsy branch and confidently declare the pair incompatible.
+    expect(pageText(view)).not.toContain("Not comparable");
+  });
+
+  test("a sample whose carried index disagrees with its position is unavailable (R3-01)", async () => {
+    const body = comparisonBody();
+    comparisonHandler = () =>
+      Response.json({
+        ...body,
+        baseline: {
+          ...body.baseline,
+          report: reportBody("exp-1", "exec-1", {
+            samples: [
+              {
+                index: 1,
+                class: "scored",
+                score: 1,
+                reason: { class: "scored", passed: 2, failed: 0, rules: [] },
+                usage: null,
+                judge: {
+                  status: "scored",
+                  score: 0.9,
+                  rationale: "misplaced",
+                  scorerVersion: "judge/1",
+                  entranceId: "main",
+                  usage: null,
+                },
+                resultLink: RESULT_LINK_BASELINE,
+              },
+            ],
+          }),
+        },
+      });
+    const view = draw(ADDRESSED);
+    await view.findByText("Upstream unavailable");
+    expect(pageText(view)).not.toContain("misplaced");
+  });
+
+  test("a ledger field the build cannot name renders verbatim, never a raw key (R3-02)", async () => {
+    const body = comparisonBody();
+    comparisonHandler = () =>
+      Response.json({
+        ...body,
+        compatibility: {
+          compatible: true,
+          fields: [
+            {
+              field: "scoringDefinition" as never,
+              baseline: "rules/1",
+              candidate: "rules/2",
+              equal: false,
+              blocking: true,
+            },
+          ],
+        },
+      });
+    const view = draw(ADDRESSED);
+    await view.findByText("scoringDefinition");
+    expect(pageText(view)).not.toContain("comparison.fields.scoringDefinition");
+  });
+
+  test("a class word the build cannot name renders verbatim in deltas and regressions (R3-03)", async () => {
+    const body = comparisonBody();
+    comparisonHandler = () =>
+      Response.json({
+        ...body,
+        deltas: {
+          meanScore: { baseline: 1, candidate: 1, delta: 0 },
+          perSample: [
+            {
+              index: 0,
+              baseline: { class: "quarantined" as never, score: 1 },
+              candidate: { class: "quarantined" as never, score: 1 },
+              scoreDelta: 0,
+              direction: "unchanged",
+            },
+          ],
+        },
+        regressions: [
+          {
+            index: 0,
+            case: {
+              datasetVersionId: "version-1",
+              contentHash: `c${"0".repeat(63)}`,
+            },
+            baseline: {
+              class: "quarantined" as never,
+              score: 1,
+              code: null,
+              resultLink: RESULT_LINK_BASELINE,
+            },
+            candidate: {
+              class: "quarantined" as never,
+              score: 1,
+              code: null,
+              resultLink: RESULT_LINK_CANDIDATE,
+            },
+          },
+        ],
+      });
+    const view = draw(ADDRESSED);
+    await view.findByText("#0 Unchanged");
+    expect(pageText(view)).toContain("quarantined");
+    expect(pageText(view)).not.toContain("classes.quarantined");
+  });
+});
+
 describe("the machine-readable export and literal text (acceptance 4)", () => {
   test("the download carries the comparison the server answered, as JSON", async () => {
     const blobs: Blob[] = [];

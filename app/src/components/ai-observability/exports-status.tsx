@@ -83,6 +83,7 @@ function ObservationExportsList({
   pollMs: number;
 }) {
   const { t } = useTranslation("ai-observability-admin");
+  const { formatNumber } = useDateTime();
   const screen = useQuery(observationExportsQueryOptions(botId, pollMs));
 
   if (screen.isPending) return null;
@@ -99,7 +100,7 @@ function ObservationExportsList({
     );
   }
   if (screen.data === undefined || screen.data.view !== "list") return null;
-  const jobs = screen.data.jobs;
+  const { jobs, pagination } = screen.data;
 
   if (jobs.length === 0) {
     return (
@@ -112,18 +113,35 @@ function ObservationExportsList({
   }
 
   return (
-    <PageRows>
-      {jobs.map((job, index) => (
-        <ExportJobRow
-          job={job}
-          key={job.jobId}
-          showSeparator={index > 0}
-          onDownloadSettled={() => {
-            void screen.refetch();
-          }}
-        />
-      ))}
-    </PageRows>
+    <>
+      <PageRows>
+        {jobs.map((job, index) => (
+          <ExportJobRow
+            job={job}
+            key={job.jobId}
+            showSeparator={index > 0}
+            onDownloadSettled={() => {
+              void screen.refetch();
+            }}
+          />
+        ))}
+      </PageRows>
+      {pagination.nextOffset !== null ? (
+        /*
+         * The window, stated (OCR round 3, R3-07): the list is the first page of the
+         * scope's jobs, so a truncated answer says what it is not showing rather than
+         * silently standing in for the whole history. The poll still watches the
+         * off-page scope (the lib's walk), so in-flight jobs beyond this window keep
+         * the page live even though their rows are not drawn here.
+         */
+        <p aria-live="polite" className="mt-4 text-muted-foreground text-xs">
+          {t("exports.truncated", {
+            shown: formatNumber(jobs.length),
+            total: formatNumber(pagination.total),
+          })}
+        </p>
+      ) : null}
+    </>
   );
 }
 

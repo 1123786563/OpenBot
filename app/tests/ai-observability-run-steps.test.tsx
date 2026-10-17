@@ -669,4 +669,17 @@ describe("coverage gates the query, not the rendering of guesses (acceptance 6)"
     );
     expect(stepsCalls).toBe(0);
   });
+
+  test("an unadjudicated report — a run without any capability — never queries (R3-13)", async () => {
+    // The detail guard used to let a body whose run lost `capability` through, and the
+    // section's two gates only named basic and unavailable: undefined passed both and
+    // the store was asked for a timeline the coverage verdict never vouched for. The
+    // guard now refuses the body, so the page answers unavailable and asks for nothing.
+    const body = detailBody();
+    const { capability: _dropped, ...unadjudicated } = body.run;
+    detailHandler = () => Response.json({ ...body, run: unadjudicated });
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+    expect(stepsCalls).toBe(0);
+  });
 });

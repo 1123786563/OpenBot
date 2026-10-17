@@ -42,6 +42,10 @@ import type {
   ExperimentSubmitInput,
   SubmittedExperimentResult,
 } from "../../../../shared/ai-observability-experiments";
+import {
+  EXPERIMENT_COMPATIBILITY_FIELDS,
+  EXPERIMENT_SAMPLE_CLASSES,
+} from "../../../../shared/ai-observability-experiments";
 
 export const observationExperimentKeys = {
   all: ["ai-observability-experiments"] as const,
@@ -131,6 +135,21 @@ const EXECUTION_STATES: readonly ExperimentExecutionState[] = [
  */
 export function isKnownExecutionState(state: string): boolean {
   return (EXECUTION_STATES as readonly string[]).includes(state);
+}
+
+/*
+ * Two more closed vocabularies behind dynamic i18n keys (OCR round 3, R3-02/03/04,
+ * the R2-09 standard): the comparison ledger's frozen fields and the seven per-sample
+ * classes are both database-closed sets the shared contract exports as constants. A
+ * word outside them is a missing i18n sentence, not a key to echo — the pages render
+ * the word itself, and these predicates are how they tell the two cases apart.
+ */
+export function isKnownCompatibilityField(field: string): boolean {
+  return (EXPERIMENT_COMPATIBILITY_FIELDS as readonly string[]).includes(field);
+}
+
+export function isKnownSampleClass(klass: string): boolean {
+  return (EXPERIMENT_SAMPLE_CLASSES as readonly string[]).includes(klass);
 }
 
 function isExperimentResultsBody(

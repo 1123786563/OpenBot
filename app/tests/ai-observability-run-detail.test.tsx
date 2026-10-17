@@ -444,6 +444,48 @@ describe("the present branch keeps its per-value promises (OCR round 2 R2-06/R2-
   });
 });
 
+/*
+ * OCR round 3 (R3-13): the detail guard used to stop before the two fields the page
+ * actually reads for its coverage verdict — capability and opikTraceId — so a 200 that
+ * dropped them half-drew the page: `capability.${undefined}` echoed a literal i18n key
+ * and the steps section's two gates (basic / unavailable) let undefined through, firing
+ * a steps query for a report the binding never adjudicated. The guard now claims both
+ * fields, so an unadjudicated report is the unavailable fault and never asks the store
+ * for a timeline.
+ */
+describe("the detail guard claims the fields the page reads (OCR round 3, R3-13)", () => {
+  test("a run that lost its capability is unavailable, not a literal key beside a steps query", async () => {
+    const body = detailBody();
+    const { capability: _dropped, ...unadjudicated } = body.run;
+    detailHandler = () => Response.json({ ...body, run: unadjudicated });
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+    expect(view.queryByText("Detailed coverage")).toBeNull();
+    expect(pageText(view)).not.toContain("capability.");
+  });
+
+  test("a coverage word this build cannot name is not a verdict to draw", async () => {
+    detailHandler = () =>
+      Response.json({
+        ...detailBody(),
+        run: { ...detailBody().run, capability: "partial" as never },
+      });
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+    expect(pageText(view)).not.toContain("capability.partial");
+  });
+
+  test("an opikTraceId that is neither a string nor null is the store failing", async () => {
+    detailHandler = () =>
+      Response.json({
+        ...detailBody(),
+        run: { ...detailBody().run, opikTraceId: 42 as never },
+      });
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+  });
+});
+
 describe("upstream content is projected text, never code (acceptance 5)", () => {
   test("a script payload in metadata renders as literal text", async () => {
     detailHandler = () =>

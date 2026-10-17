@@ -33,6 +33,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
   type CaseReviewOutcome,
+  isKnownSyncState,
   type ObservationDatasetListItem,
   observationDatasetsQueryOptions,
   observationReviewCaseMutationOptions,
@@ -174,7 +175,14 @@ function DatasetRow({
           <ItemTitle>{dataset.name}</ItemTitle>
           <ItemDescription className="line-clamp-none">
             {[
-              t(`sync.${dataset.syncState}`),
+              /*
+               * A sync word the bundle's sync.* sentences cannot name renders
+               * verbatim (OCR round 3, R3-05, R2-09's standard) — a missing i18n
+               * sentence is not a key to echo as `sync.<word>`.
+               */
+              isKnownSyncState(dataset.syncState)
+                ? t(`sync.${dataset.syncState}`)
+                : dataset.syncState,
               t("list.versions", { count: dataset.versionCount }),
               dataset.latestVersionAt === null
                 ? t("row.noVersion")

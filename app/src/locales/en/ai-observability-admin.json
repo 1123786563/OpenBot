@@ -127,6 +127,7 @@
       "OPIK_CLIENT_ERROR": "The export request was refused by the store.",
       "OPIK_MALFORMED_RESPONSE": "The store's answer could not be trusted.",
       "OPIK_OWNERSHIP_DRIFT": "Ownership changed while the export ran."
-    }
+    },
+    "truncated": "Showing the newest {{shown}} of {{total}} export jobs."
   }
 }

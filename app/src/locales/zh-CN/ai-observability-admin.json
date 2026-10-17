@@ -127,6 +127,7 @@
       "OPIK_CLIENT_ERROR": "导出请求被存储拒绝。",
       "OPIK_MALFORMED_RESPONSE": "存储的应答无法被信任。",
       "OPIK_OWNERSHIP_DRIFT": "导出运行期间归属发生了变化。"
-    }
+    },
+    "truncated": "仅显示最新 {{shown}} / {{total}} 个导出任务，更早的任务未列入本页。"
   }
 }
