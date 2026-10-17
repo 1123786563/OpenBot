@@ -20,6 +20,10 @@
       "approvals": {
         "title": "Approvals",
         "description": "What every member's Bots must ask before acting."
+      },
+      "botServices": {
+        "title": "Bot services",
+        "description": "The server-side Bots approved for model access, each with a unique service identity."
       }
     },
     "do": {
@@ -1025,5 +1029,55 @@
   "approvals": {
     "title": "Approvals",
     "description": "What members' Bots must ask before acting, rules for everyone, and requests to use shared accounts."
+  },
+  "botServices": {
+    "title": "Bot services",
+    "description": "Register the server-side Bots this deployment recognizes. Registration establishes a unique service identity only — no credential, user authorization or credit of any kind.",
+    "add": "Register bot",
+    "cancel": "Cancel",
+    "kinds": {
+      "builtin": "Built-in",
+      "external": "External"
+    },
+    "capabilities": {
+      "chat": "Chat",
+      "image": "Image",
+      "audio": "Audio",
+      "embedding": "Embedding",
+      "realtime": "Realtime",
+      "async": "Async"
+    },
+    "fields": {
+      "botId": "Service identity (botId)",
+      "displayName": "Display name",
+      "kind": "Kind",
+      "capabilities": "Capabilities"
+    },
+    "form": {
+      "botIdInvalid": "A botId uses lowercase letters, digits and . _ : - , starts alphanumeric, is at most 128 characters, and can never be changed after registration.",
+      "displayNameRequired": "Give the bot a display name.",
+      "capabilitiesRequired": "Declare at least one capability."
+    },
+    "dialog": {
+      "title": "Register a bot service",
+      "description": "Establish a unique service identity and capability declaration for a server-side Bot.",
+      "botIdPlaceholder": "e.g. com.example.bot",
+      "displayNamePlaceholder": "e.g. Example Bot",
+      "noCredentials": "Registration mints no service credential and grants no user model access or credits; credentials are issued separately, later.",
+      "save": "Register",
+      "saving": "Registering…"
+    },
+    "edit": {
+      "title": "Edit bot service"
+    },
+    "registered": {
+      "title": "Registered bots",
+      "empty": "No bot services are registered yet.",
+      "loadError": "Could not load the registered bot services.",
+      "disabled": "disabled",
+      "edit": "Edit",
+      "disable": "Disable",
+      "enable": "Enable"
+    }
   }
 }
