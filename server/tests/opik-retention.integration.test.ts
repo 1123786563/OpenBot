@@ -331,6 +331,10 @@ afterEach(async () => {
   // Audit rows stay: the trail is append-only, and every assertion below reads back
   // only its own target's rows.
   await database.delete(workItems).where(eq(workItems.kind, "opik.retention"));
+  // This suite enqueues export jobs its retention worker never claims, so their
+  // tickets outlive the jobs (deleted above) and would crowd the export queue for
+  // any concurrent suite: sweep the orphans by key.
+  await database.$client`delete from work_items where kind = 'opik.export' and key not in (select id from ai_observation_export_jobs)`;
 });
 
 afterAll(async () => {
@@ -740,6 +744,37 @@ test("experiment deletion uses the 0126 experiment_cleanup channel; a live datas
   expect(refused.code).toBe("23001");
 });
 
+test("a binding whose lease lapsed while still running flips to unknown, never discovered mid-run (OCR m85)", async () => {
+  // A live run: running, lease still valid. The flip must not touch it.
+  const alive = await bindingStore.begin(scopeA, {
+    runId: `run-${randomUUID()}`,
+    attemptId: bindingAttemptId(),
+    traceId: `trace-${randomUUID().replaceAll("-", "")}`,
+    capability: "basic",
+    expiresAt: new Date(Date.now() + 3_600_000),
+  });
+  // A crashed reporter: running, lease long past. Nobody will ever report terminal.
+  const crashed = await bindingStore.begin(scopeA, {
+    runId: `run-${randomUUID()}`,
+    attemptId: bindingAttemptId(),
+    traceId: `trace-${randomUUID().replaceAll("-", "")}`,
+    capability: "basic",
+    expiresAt: new Date(Date.now() - 60_000),
+  });
+
+  await workerFor().sweep();
+
+  const states =
+    await fresh`select id, state from ai_observation_bindings where id in (${alive.binding.id}, ${crashed.binding.id})`;
+  const byId = new Map(states.map((row) => [row.id, row.state]));
+  expect(byId.get(alive.binding.id)).toBe("running");
+  expect(byId.get(crashed.binding.id)).toBe("unknown");
+  // The flip is not a delete: the next retention window applies from here.
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${crashed.binding.id}`,
+  ).toEqual([{ n: 1 }]);
+});
+
 test("a dataset pinned by a live experiment is refused by the foreign key, not silently deleted (AC2)", async () => {
   const { dataset, version } = await datasetStore.saveVersion(scopeA, {
     datasetName: `t35-pin-${randomUUID()}`,
@@ -838,7 +873,9 @@ test("an upstream-complete deletion is never downgraded back to failed by a loca
 
   // The upstream half ran and succeeded; the local half hit the pin.
   expect(upstream.calls.deleteDatasets).toEqual([opikDatasetId]);
-  const afterFirst = (await deletionsFor(scopeA)).find((r) => r.id === recordId);
+  const afterFirst = (await deletionsFor(scopeA)).find(
+    (r) => r.id === recordId,
+  );
   // THE FIX under test: the completed upstream fact must not be erased — the record
   // carries "upstream deleted, local pending", never a plain "failed" that would
   // order the retry to delete upstream again (an operation with no verified

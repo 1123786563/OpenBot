@@ -393,6 +393,18 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
    * a body delivered through `readBody` is read under the same deadline — a stream that
    * resolves the headers but never completes is still a slow upstream, never a hang.
    */
+  /** Fetch-network failures (OCR m152): the names the transports actually throw. */
+  const isTransportError = (error: unknown): boolean => {
+    if (error instanceof Error) {
+      return (
+        error.name === "AbortError" ||
+        error.name === "TypeError" || // fetch network failure
+        error.name === "FetchError"
+      );
+    }
+    return false;
+  };
+
   const exchange = async <T = Response>(
     operation: OpikOperation,
     path: string,
@@ -424,7 +436,19 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
       const settled = await Promise.race([readBody(raced), deadline]);
       if (settled === "deadline") return unavailable(operation, "OPIK_TIMEOUT");
       return settled;
-    } catch {
+    } catch (error) {
+      // Classification is part of the answer (OCR m152): a transport failure is a
+      // retryable unavailable — but an adapter defect (a reader's TypeError, an
+      // OpikPortError escaping its own boundary) must not wear that disguise and
+      // ride the retry lane. Transport errors carry DOMException/fetch names; the
+      // port's own errors are rethrown; anything else lands as malformed — the
+      // response-shape trouble it actually is.
+      if (error instanceof OpikPortError) {
+        throw error;
+      }
+      if (!timedOut && !isTransportError(error)) {
+        return malformed(operation, "reader_failed");
+      }
       return unavailable(
         operation,
         timedOut ? "OPIK_TIMEOUT" : "OPIK_UNREACHABLE",
@@ -445,7 +469,11 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
     // cap. Only when even that is absent (`minRejectedBytes` alone names a byte
     // that FAILED: a floor, not a ceiling) does the cap stay unverified.
     const accepted = contract.bodyLimit?.maxAcceptedBytes;
-    if (typeof accepted === "number" && Number.isFinite(accepted) && accepted > 0) {
+    if (
+      typeof accepted === "number" &&
+      Number.isFinite(accepted) &&
+      accepted > 0
+    ) {
       return accepted;
     }
     throw new OpikPortError("BODY_LIMIT_UNVERIFIED");
@@ -461,6 +489,57 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
       headers: { "content-type": "application/json" },
       body,
     });
+
+  /**
+   * One project resolution, two callers (OCR m151): retrieveProject and deleteTraces
+   * used to carry near-identical inline retrieve logic, and the embedded copy labeled
+   * every failure "retrieveProject" — misclassifying deleteTraces failures downstream.
+   * The operation name and the scope key that drift suspends against are parameters;
+   * everything else (wire shape, verified 404, name-mismatch drift) is shared.
+   */
+  const resolveProject = (
+    operation: OpikOperation,
+    scopeKey: string,
+    projectName: string,
+  ): Promise<OpikPortResult<{ id: string } | null>> => {
+    const body = JSON.stringify({ name: projectName });
+    if (!withinVerifiedCap(body)) {
+      return Promise.reject(new OpikPortError("REQUEST_BODY_TOO_LARGE"));
+    }
+    return exchange(
+      operation,
+      "/v1/private/projects/retrieve",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      },
+      async (response) => {
+        // The verified not-found answer is a fact about the project, not a transport
+        // failure.
+        if (response.status === 404) {
+          return { outcome: "ok" as const, value: null };
+        }
+        if (response.status !== VERIFIED_STATUS.retrieveProject) {
+          return statusFailure(operation, response.status);
+        }
+        const parsed = await readJsonObject(operation, response);
+        if (parsed.outcome !== "ok") return parsed;
+        const id = parsed.value.id;
+        if (typeof id !== "string" || id === "") {
+          return malformed(operation, "field:id");
+        }
+        // The name is not a verified field of this response, but when an adversary or a
+        // misrouted proxy sends it, it is checked against the authorized locator — never
+        // trusted as the answer to "whose project is this".
+        const name = parsed.value.name;
+        if (typeof name === "string" && name !== projectName) {
+          return drift(operation, scopeKey, "response_name_mismatch");
+        }
+        return { outcome: "ok" as const, value: { id } };
+      },
+    );
+  };
 
   return {
     async healthCheck() {
@@ -485,47 +564,7 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
       requireOperation("retrieveProject");
       assertObservationScope(scope);
       const locator = resolveStorageLocator(scope);
-      const body = JSON.stringify({ name: locator.project });
-      if (!withinVerifiedCap(body)) {
-        throw new OpikPortError("REQUEST_BODY_TOO_LARGE");
-      }
-      return exchange(
-        "retrieveProject",
-        "/v1/private/projects/retrieve",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body,
-        },
-        async (response) => {
-          // The verified not-found answer is a fact about the project, not a transport
-          // failure.
-          if (response.status === 404) {
-            return { outcome: "ok" as const, value: null };
-          }
-          if (response.status !== VERIFIED_STATUS.retrieveProject) {
-            return statusFailure("retrieveProject", response.status);
-          }
-          const parsed = await readJsonObject("retrieveProject", response);
-          if (parsed.outcome !== "ok") return parsed;
-          const id = parsed.value.id;
-          if (typeof id !== "string" || id === "") {
-            return malformed("retrieveProject", "field:id");
-          }
-          // The name is not a verified field of this response, but when an adversary or a
-          // misrouted proxy sends it, it is checked against the authorized locator — never
-          // trusted as the answer to "whose project is this".
-          const name = parsed.value.name;
-          if (typeof name === "string" && name !== locator.project) {
-            return drift(
-              "retrieveProject",
-              scope.key,
-              "response_name_mismatch",
-            );
-          }
-          return { outcome: "ok" as const, value: { id } };
-        },
-      );
+      return resolveProject("retrieveProject", scope.key, locator.project);
     },
 
     async createTrace(scope, input) {
@@ -701,45 +740,14 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
         throw new OpikPortError("OPERATION_INPUT_INVALID");
       }
       return (async () => {
-        // Resolve the locator's project exactly as retrieveProject does — same wire shape,
-        // same verified 404 — but keyed on the frozen locator, and with drift suspends
-        // recorded against the locator's scope key.
-        const body = JSON.stringify({ name: locator.project });
-        if (!withinVerifiedCap(body)) {
-          throw new OpikPortError("REQUEST_BODY_TOO_LARGE");
-        }
-        const resolved = await exchange(
-          "retrieveProject",
-          "/v1/private/projects/retrieve",
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body,
-          },
-          async (response) => {
-            if (response.status === 404) {
-              // The verified answer that the project is gone: so are its traces.
-              return { outcome: "ok" as const, value: null };
-            }
-            if (response.status !== VERIFIED_STATUS.retrieveProject) {
-              return statusFailure("retrieveProject", response.status);
-            }
-            const parsed = await readJsonObject("retrieveProject", response);
-            if (parsed.outcome !== "ok") return parsed;
-            const id = parsed.value.id;
-            if (typeof id !== "string" || id === "") {
-              return malformed("retrieveProject", "field:id");
-            }
-            const name = parsed.value.name;
-            if (typeof name === "string" && name !== locator.project) {
-              return drift(
-                "retrieveProject",
-                locator.scopeKey,
-                "response_name_mismatch",
-              );
-            }
-            return { outcome: "ok" as const, value: { id } };
-          },
+        // Resolve the locator's project through the one shared resolution (OCR m151) —
+        // same wire shape, same verified 404 — keyed on the frozen locator, with drift
+        // suspends recorded against the locator's scope key, and failures labeled as
+        // THIS operation so downstream classification reads the truth.
+        const resolved = await resolveProject(
+          "deleteTraces",
+          locator.scopeKey,
+          locator.project,
         );
         if (resolved.outcome !== "ok") return resolved;
         const project = resolved.value;

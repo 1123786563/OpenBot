@@ -48,7 +48,11 @@ export type ExportRouteDeps = Readonly<{
 }>;
 
 /** What a route may say about a job. The state is parsed, never echoed raw. */
-function projectJob(job: ObservationExportJob) {
+/**
+ * Exported for the m216 anti-drift test: the wire shape the route answers with,
+ * against the shared contract type in shared/ai-observability-admin.ts.
+ */
+export function projectJob(job: ObservationExportJob) {
   const state = parseExportJobState(job.state);
   return {
     jobId: job.id,

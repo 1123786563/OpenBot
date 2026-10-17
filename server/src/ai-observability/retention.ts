@@ -30,13 +30,14 @@
  *    vanish with their job row, and a fresh connection cannot read any of it back.
  */
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, ne, type SQL, sql } from "drizzle-orm";
+import { and, eq, inArray, lte, ne, type SQL, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { getLogger } from "../../../shared/logger";
 import { workOwner } from "../../../shared/work-owner";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import { workItems } from "../db/schema";
+import { aiObservationBindings } from "../db/schema/ai-observability-bindings";
 import {
   type AiObservationDeletionKind,
   type AiObservationDeletionState,
@@ -639,10 +640,7 @@ export function createObservationRetentionWorker(
       .where(
         and(
           eq(aiObservationRetentionDeletions.id, id),
-          inArray(aiObservationRetentionDeletions.state, [
-            "pending",
-            "failed",
-          ]),
+          inArray(aiObservationRetentionDeletions.state, ["pending", "failed"]),
         ),
       );
   };
@@ -778,10 +776,34 @@ export function createObservationRetentionWorker(
         kind: RETENTION_WORK_KIND,
         key: id,
         owner,
-        delayMs: Math.min(attemptBackoffMs(record.attempts + 1), MAX_RETRY_DELAY_MS),
+        delayMs: Math.min(
+          attemptBackoffMs(record.attempts + 1),
+          MAX_RETRY_DELAY_MS,
+        ),
         reason: code,
       });
     }
+  };
+
+  /**
+   * The lease the begin wrote (binding TTL) is a promise about a live reporter (OCR
+   * m85): once it lapses with the row still `running`, no process will ever report
+   * the terminal state — a crash or deploy killed the reporter. Flipped to
+   * `unknown` here, the honest state, the binding rejoins the retention window and
+   * the "still syncing" signals stop counting zombies. Skipped when disabled: a
+   * deployment with observations off never promised a sweeper.
+   */
+  const expireStaleLeases = async (): Promise<void> => {
+    if (!deps.config().enabled) return;
+    await db
+      .update(aiObservationBindings)
+      .set({ state: "unknown", updatedAt: new Date() })
+      .where(
+        and(
+          eq(aiObservationBindings.state, "running"),
+          lte(aiObservationBindings.expiresAt, new Date()),
+        ),
+      );
   };
 
   const sweep = async (): Promise<void> => {
@@ -790,6 +812,7 @@ export function createObservationRetentionWorker(
     if (sweeping) return;
     sweeping = true;
     try {
+      await expireStaleLeases();
       await discover();
       const items = await queue.claim({
         kind: RETENTION_WORK_KIND,

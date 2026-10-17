@@ -3,12 +3,14 @@ import {
   check,
   index,
   integer,
-  jsonb,
   pgTable,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
 import type { ExportedRunRow } from "../../ai-observability/exports";
+// The repo's single-serialization jsonb (m198): the artifact is the A11-verified
+// deliverable — an array column, so the array variant.
+import { jsonbArray } from "./json";
 
 /**
  * The export job table (Issue #40 / DAG T34).
@@ -65,7 +67,7 @@ export const aiObservationExportJobs = pgTable(
     /** The T05 policy the artifact was projected under, e.g. "opik-redaction/5". */
     redactionPolicyVersion: text("redaction_policy_version").notNull(),
     /** The projected rows. Non-null only on completed (check constraint). */
-    artifact: jsonb("artifact").$type<readonly ExportedRunRow[]>(),
+    artifact: jsonbArray("artifact").$type<readonly ExportedRunRow[]>(),
     /** Where this scope's records live upstream — derived from the scope, frozen at enqueue. */
     locatorWorkspace: text("locator_workspace").notNull(),
     locatorProject: text("locator_project").notNull(),
@@ -113,5 +115,8 @@ export const aiObservationExportJobs = pgTable(
     index("ai_observation_export_jobs_active_actor_idx")
       .on(table.actorId)
       .where(sql`${table.state} IN ('queued', 'running')`),
+    // The export discovery predicate filters on settled_at, not created_at (m164):
+    // the (scope_key, created_at) index does not serve it.
+    index("ai_observation_export_jobs_settled_at_idx").on(table.settledAt),
   ],
 );
