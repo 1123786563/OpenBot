@@ -115,9 +115,19 @@ async function pollUntil(
  * Reads KEY=VALUE lines and returns the secret VALUES (never printed) as
  * canaries. Only credential-shaped keys count: OPIK_VERSION and friends are
  * deployment facts, not secrets, and would make every version string in the
- * evidence a false positive.
+ * evidence a false positive. USER-shaped keys are the same class of deployment
+ * fact (R3fix R3-25): the compose file pins MYSQL_USER/CLICKHOUSE_USER to the
+ * literal `opik` and REQUIRES OPIK_MINIO_ROOT_USER, whose value shares the
+ * `opik` substring of every project/image/URL in the evidence — canarying it
+ * made the runner permanently red and [redacted] its evidence. The paired
+ * passwords/keys/tokens/secrets remain the scanned half of the credential.
  */
-async function loadSecretCanaries(path: string): Promise<Canary[]> {
+/**
+ * Exported for the parser tests (opik-contract.test.ts): the credential-shape
+ * rule decides what counts as a forbidden canary, so it is pinned against the
+ * natural compose env.
+ */
+export async function loadSecretCanaries(path: string): Promise<Canary[]> {
   const file = Bun.file(path);
   if (!(await file.exists())) {
     throw new ContractFailure(
@@ -130,7 +140,7 @@ async function loadSecretCanaries(path: string): Promise<Canary[]> {
     if (
       match &&
       match[2].length >= 4 &&
-      /PASSWORD|SECRET|TOKEN|KEY|USER/.test(match[1])
+      /PASSWORD|SECRET|TOKEN|KEY/.test(match[1])
     ) {
       canaries.push({ label: `env:${match[1]}`, value: match[2] });
     }
