@@ -34,6 +34,15 @@
  * predates the rename (its rows carry the old names; the probe's name assertions are
  * correspondingly stale until a live re-run), while its parent-child shape over the real
  * OTLP path is unaffected by the parameter-order fix that restores exactly that nesting.
+ *
+ * R3fix-U4 (round-3 triage R3-06/R3-09) aligned the ATTRIBUTE vocabulary with the server's:
+ * the state/token/error keys are now the ones the server's own recorders write and its
+ * projection actually reads (`span_state`, `execution_state`, `usage_state`, `tokens_input`/
+ * `tokens_output`, `ending_kind`/`ending_code`) instead of the `openbot.*` spellings that
+ * had zero consumers anywhere — so framework steps' terminal states, usage verdicts and
+ * error shapes finally surface in the run timeline. Like the rename above, this re-dates
+ * the T37 rows' attribute keys (the parent-child shape claim is untouched); a live re-run
+ * of the probe is the coordinator's call.
  */
 
 import type { RunAgentInput } from "@ag-ui/core";
@@ -87,6 +96,9 @@ const TRACER_NAME = "openbot.agent-langgraph";
 
 /** The state an ended span claims. Only outcomes the framework actually reported. */
 type StepState = "completed" | "failed";
+
+/** The step families this handler opens spans for — the server projection's kinds. */
+type StepKind = "model" | "tool" | "retrieval" | "chain";
 
 /**
  * Structural deny patterns for names and ids — the credential classes that also survive a
@@ -167,13 +179,18 @@ function usageOf(
   ):
     | { state: "actual"; inputTokens: number; outputTokens: number }
     | undefined => {
-    const inTokens = Number(input);
-    const outTokens = Number(outputTokens);
-    return Number.isInteger(inTokens) &&
-      inTokens >= 0 &&
-      Number.isInteger(outTokens) &&
-      outTokens >= 0
-      ? { state: "actual", inputTokens: inTokens, outputTokens: outTokens }
+    // typeof first (R3-09): `Number(null)`/`Number("")`/`Number([])` are 0 and
+    // `Number(true)` is 1, so a bare coercion stamped `actual` onto counts nobody
+    // reported — the silent zero this function's honesty rule forbids. Only a real
+    // number may claim actual; any other type is missing, whatever it coerces to.
+    if (typeof input !== "number" || typeof outputTokens !== "number") {
+      return undefined;
+    }
+    return Number.isInteger(input) &&
+      input >= 0 &&
+      Number.isInteger(outputTokens) &&
+      outputTokens >= 0
+      ? { state: "actual", inputTokens: input, outputTokens }
       : undefined;
   };
   // Anthropic's llmOutput.usage, OpenAI's llmOutput.tokenUsage, LangChain's standard
@@ -226,19 +243,18 @@ export class GovernedCallbackHandler extends BaseCallbackHandler {
   /** Names the handler in the framework's own callback dispatch. */
   name = "openbot_governed_callbacks";
 
-  /** The framework's run id -> the span this handler opened for it. */
-  private readonly spans = new Map<string, Span>();
+  /** The framework's run id -> the span this handler opened for it, with its family. */
+  private readonly spans = new Map<string, { span: Span; kind: StepKind }>();
 
   private start(
-    kind: "model" | "tool" | "retrieval" | "chain",
+    kind: StepKind,
     name: string,
     runId: string,
     parentRunId: string | undefined,
     extra: Record<string, string> = {},
   ): Span {
-    const parent =
-      (parentRunId ? this.spans.get(parentRunId) : undefined) ??
-      trace.getSpan(context.active());
+    const parentEntry = parentRunId ? this.spans.get(parentRunId) : undefined;
+    const parent = parentEntry?.span ?? trace.getSpan(context.active());
     // The span name is the projection's parse target (server stepFamily): `model:`/
     // `tool:` colon prefixes, and the bare word `retrieval` — the retriever's own
     // name rides `openbot.step.name` below. Any other spelling (e.g. a space join)
@@ -256,7 +272,7 @@ export class GovernedCallbackHandler extends BaseCallbackHandler {
       },
       parent ? trace.setSpan(context.active(), parent) : undefined,
     );
-    this.spans.set(runId, span);
+    this.spans.set(runId, { span, kind });
     return span;
   }
 
@@ -266,15 +282,27 @@ export class GovernedCallbackHandler extends BaseCallbackHandler {
     error?: unknown,
     extra: Record<string, string | number> = {},
   ): void {
-    const span = this.spans.get(runId);
-    if (!span) return; // An end for a run this handler never started is nothing to close.
+    const entry = this.spans.get(runId);
+    if (!entry) return; // An end for a run this handler never started is nothing to close.
+    const { span, kind } = entry;
     if (state === "failed") {
       span.setStatus({ code: SpanStatusCode.ERROR });
-      // The error's shape only: its message is free text and can carry anything, including
-      // the URL and credentials of the thing that failed.
-      span.setAttribute("openbot.error.name", errorNameOf(error));
+      // The error's shape only — its message is free text and can carry anything, including
+      // the URL and credentials of the thing that failed — named in the server recorder's
+      // ending vocabulary (R3-06): the kind says failed, the code carries the shape token.
+      span.setAttributes({
+        ending_kind: "failed",
+        ending_code: errorNameOf(error),
+      });
     }
-    span.setAttribute("openbot.span.state", state);
+    // The terminal state rides the key the server projection reads (R3-06) — a row's
+    // `span_state` attribute is the only spelling `projectStep` consults; any other
+    // spelling is silently dropped and the step renders unknown forever.
+    span.setAttribute("span_state", state);
+    // A tool step keeps its terminal state only when the projection's execution read
+    // key says the execution was observed. The framework's own end/error callbacks are
+    // exactly that observation: the tool ran in-process, however it settled.
+    if (kind === "tool") span.setAttribute("execution_state", "executed");
     span.setAttributes(extra);
     span.end();
     this.spans.delete(runId);
@@ -315,11 +343,13 @@ export class GovernedCallbackHandler extends BaseCallbackHandler {
       undefined,
       usage.state === "actual"
         ? {
-            "openbot.model.usage.state": "actual",
-            "openbot.model.tokens.input": usage.inputTokens,
-            "openbot.model.tokens.output": usage.outputTokens,
+            // The server recorder's usage keys (R3-06): `usage_state` plus the two
+            // token counts — the `openbot.model.*` spellings had zero consumers.
+            usage_state: "actual",
+            tokens_input: usage.inputTokens,
+            tokens_output: usage.outputTokens,
           }
-        : { "openbot.model.usage.state": "unavailable" },
+        : { usage_state: "unavailable" },
     );
   }
 
@@ -445,12 +475,20 @@ export async function traceDeploymentToolCall<T>(
       trace.setSpan(context.active(), span),
       () => exec(),
     );
-    span.setAttribute("openbot.span.state", "completed");
+    // The wrapper ran the call by hand, so the execution WAS observed by this module —
+    // the projection's execution read key, in the server recorder's spelling (R3-06).
+    span.setAttribute("execution_state", "executed");
+    span.setAttribute("span_state", "completed");
     return result;
   } catch (error) {
     span.setStatus({ code: SpanStatusCode.ERROR });
-    span.setAttribute("openbot.error.name", errorNameOf(error));
-    span.setAttribute("openbot.span.state", "failed");
+    // The error's shape only, in the server recorder's ending vocabulary (R3-06).
+    span.setAttributes({
+      ending_kind: "failed",
+      ending_code: errorNameOf(error),
+    });
+    span.setAttribute("execution_state", "executed");
+    span.setAttribute("span_state", "failed");
     throw error;
   } finally {
     span.end();
@@ -488,7 +526,9 @@ export function governedRunSpan(
     span,
     finish: (state) => {
       if (state === "failed") span.setStatus({ code: SpanStatusCode.ERROR });
-      span.setAttribute("openbot.span.state", state);
+      // The projection's terminal read key (R3-06); the run span itself is not a
+      // stepFamily row, but the vocabulary it speaks stays the server's.
+      span.setAttribute("span_state", state);
       span.end();
     },
   };
