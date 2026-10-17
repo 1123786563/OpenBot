@@ -4785,7 +4785,10 @@ const openMuseOpsSignals = createOpenMuseOpsSignalsRoutes({
  * creator's traces. The profile is returned rather than a boolean so readers act on the same
  * row the decision was made on.
  */
-const aiObservabilityCanManageBot: BotManagementCheck = async (actor, botId) => {
+const aiObservabilityCanManageBot: BotManagementCheck = async (
+  actor,
+  botId,
+) => {
   const profile = await agentProfileStore.get(actor, botId).catch(() => null);
   return profile && canManageAgent(actor, profile) ? profile : null;
 };
