@@ -1,0 +1,2 @@
+# MT028 typecheck 终态 v3（unused import 修复后）
+typecheck-exit=0

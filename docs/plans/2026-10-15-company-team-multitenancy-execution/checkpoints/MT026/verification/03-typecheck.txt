@@ -1,0 +1,2 @@
+# $ cd server && bunx tsc --noEmit
+(exit 0, no output) — 0 errors after all changes incl. biome --write/--unsafe fixes.

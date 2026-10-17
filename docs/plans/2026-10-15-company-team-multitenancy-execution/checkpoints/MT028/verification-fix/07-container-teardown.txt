@@ -1,0 +1,10 @@
+# MT028 修复轮容器拆毁（2026-10-17）
+== docker rm -f mt028-fix-pg 真实执行 ==
+mt028-fix-pg
+rm-exit=0
+== deletion check：容器名不再存在 ==
+grep-exit=1（1=不存在）
+== deletion check：端口 55540 已释放 ==
+lsof-exit=1（1=无监听）
+== 并行票容器未触碰 ==
+（无 mt021/mt037/mt028-impl 容器在本机存在）

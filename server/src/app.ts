@@ -33,10 +33,10 @@ import type { ApprovalService } from "./approvals/service";
 import {
   type AuditEventType,
   type AuditInitiator,
-  auditEventsToCsv,
   AuditQueryError,
   type AuditReader,
   type AuditStore,
+  auditEventsToCsv,
   auditQueryFromUrl,
   DEPLOYMENT_INITIATOR,
   readAuditExportRows,
@@ -137,11 +137,9 @@ import { openMuseAccountFence } from "./openmuse-deletion/fence";
 import type { OpenMuseDeletionManifest } from "./openmuse-deletion/manifest";
 import type { OpenMuseFileBytePurgeReport } from "./openmuse-deletion/purge";
 import type { OpenMuseRelationalPurgeOutcome } from "./openmuse-deletion/purge-relational";
-import { createOpenMuseDeletionAdminRoutes } from "./openmuse-deletion/restore";
-import type {
-  OpenMuseDeletionCleanupView,
-} from "./openmuse-deletion/retention";
 import type { OpenMuseDeletionRestore } from "./openmuse-deletion/restore";
+import { createOpenMuseDeletionAdminRoutes } from "./openmuse-deletion/restore";
+import type { OpenMuseDeletionCleanupView } from "./openmuse-deletion/retention";
 import { createOpenMuseAccountDeletionRoutes } from "./openmuse-deletion/routes";
 import type { OpenMuseAccountDeletionStore } from "./openmuse-deletion/store";
 import { createOpenMuseFilesRoutes } from "./openmuse-files/routes";
@@ -186,9 +184,9 @@ import type { SelfHostBanner } from "./self-host-banner";
 import { createTeamBotRoutes } from "./team-bots/routes";
 import type { TeamBots } from "./team-bots/team-bots";
 import { createRequestTracking } from "./telemetry/request-tracking";
-import { withUsageOrigin } from "./usage-origin";
 import { createTraceMiddleware } from "./telemetry/trace-middleware";
 import type { PackageStatusReader } from "./tenant-package";
+import { withUsageOrigin } from "./usage-origin";
 import {
   INSTRUCTIONS_LIMIT,
   InstructionsTooLongError,
@@ -199,12 +197,12 @@ import { userPreferencesRoutes } from "./user-preferences-routes";
 import { createVoiceProvider } from "./voice/provider";
 import { createVoiceRoutes } from "./voice/routes";
 import type { VoiceSessionServices } from "./voice/session-routes";
-import type { createWorkshopPublicRoutes } from "./workshop/public-routes";
-import type { WorkshopRoutesFactory } from "./workshop/routes";
 import {
   DIRECTORY_PATH as WEB_BOT_AUTH_DIRECTORY_PATH,
   directoryResponse as webBotAuthDirectory,
 } from "./web-bot-auth";
+import type { createWorkshopPublicRoutes } from "./workshop/public-routes";
+import type { WorkshopRoutesFactory } from "./workshop/routes";
 
 const log = getLogger("server");
 
@@ -540,6 +538,18 @@ export function createApp(
     };
     groups?: GroupConversations;
     enterpriseConversations?: Hono;
+    /** MT006 (issue #49): workspace scope listing + team administration routes. */
+    enterpriseWorkspaceScope?: Hono;
+    /**
+     * MT122 (issue #165): the deployment main entry's request-context seam.
+     * Present, the business API mounts the entry middleware after the
+     * usage-origin floor (multitenancy mode only); each request that carries
+     * the ruling #1 selection headers gets its context established here and
+     * its business dependencies built from the scope factory — never from a
+     * startup-wide single config, and never from a default scope. Absent
+     * (enterprise capabilities unwired or the switch off) the assembly is
+     * byte-for-byte what it was.
+     */
     teamBots?: TeamBots;
     /** Pause, reset, Activity and attention for a person's own Bots. See agents/lifecycle.ts. */
     lifecycle?: BotLifecycleServices;
@@ -889,6 +899,14 @@ export function createApp(
     app.route(
       "/api/enterprise/conversations",
       coworker.enterpriseConversations,
+    );
+  }
+  // MT006 (issue #49): scope listing is the login-time discovery surface; the
+  // admin half inside answers 503 itself when the operator channel is unwired.
+  if (coworker?.enterpriseWorkspaceScope) {
+    app.route(
+      "/api/enterprise/workspace-scope",
+      coworker.enterpriseWorkspaceScope,
     );
   }
   /*
@@ -2198,7 +2216,9 @@ export function createApp(
       createOpenMuseDeletionAdminRoutes({
         requireUser,
         restore: openMuseDeletionAdmin.restore,
-        ...(openMuseDeletionAdmin.purge ? { purge: openMuseDeletionAdmin.purge } : {}),
+        ...(openMuseDeletionAdmin.purge
+          ? { purge: openMuseDeletionAdmin.purge }
+          : {}),
         ...(openMuseDeletionAdmin.purgeRelational
           ? { purgeRelational: openMuseDeletionAdmin.purgeRelational }
           : {}),
