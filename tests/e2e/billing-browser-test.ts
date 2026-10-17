@@ -8,11 +8,7 @@
  * 覆盖：套餐与积分页、升级/购买对话框、账单管理页、URL 参数边界、API 故障态、API 入参边界。
  * 输出：逐条 PASS/FAIL/SKIP + 控制台错误/接口错误清单 + 截图（gui-test-screenshots/billing/）。
  */
-import {
-  chromium,
-  type Browser,
-  type Page,
-} from "playwright-core";
+import { chromium, type Browser, type Page } from "playwright-core";
 import { mkdirSync, existsSync } from "node:fs";
 
 const APP_URL = "http://localhost:3010";

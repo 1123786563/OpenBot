@@ -8,7 +8,6 @@
 // decks pass icon.js / chart.py / image-generation outputs as file paths.
 // Content is generic placeholder text — the demo is illustrative, not branded.
 
-
 const C = require("./components.js");
 
 const PLACEHOLDER_IMAGE =

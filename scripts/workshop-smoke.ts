@@ -94,17 +94,14 @@ console.log(`smoke: channel ${channelId} created`);
 //    the same Bot's workspace would find yesterday's smoke.txt already there — no diff, no
 //    artifact, a false failure. The unique name makes every run's diff non-empty by design.
 const fileName = `smoke-${Date.now().toString(36)}.txt`;
-const started = await call<TurnResponse>(
-  `/api/workshop/${channelId}/turns`,
-  {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      botId,
-      prompt: `创建文件 ${fileName}，内容只写 workshop-ok 一行，不要做别的。`,
-    }),
-  },
-);
+const started = await call<TurnResponse>(`/api/workshop/${channelId}/turns`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    botId,
+    prompt: `创建文件 ${fileName}，内容只写 workshop-ok 一行，不要做别的。`,
+  }),
+});
 console.log(`smoke: turn ${started.turnId} started`);
 
 // 2. Poll to terminal. A real model turn takes tens of seconds; the budget is ten minutes,

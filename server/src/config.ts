@@ -34,9 +34,7 @@ import {
   type ConversionRate,
   parseConversionRate,
 } from "./gateway/conversion-rate";
-import {
-  gatewayEnvDefaultConfig,
-} from "./gateway/endpoint-config";
+import { gatewayEnvDefaultConfig } from "./gateway/endpoint-config";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
 
