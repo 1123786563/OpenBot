@@ -164,6 +164,20 @@ const DEFAULT_POLL_MS = 5_000;
 const DEFAULT_CONCURRENCY = 2;
 /** Discovery stays bounded per pass: the sweep is a loop, not a lock-in. */
 const DISCOVERY_BATCH = 500;
+/**
+ * Retry backoff, tiered per attempt (OCR m163): the first two retries stay immediate —
+ * a blip the very next poll answers is the common transient — then exponential with a
+ * day-scale ceiling, so an outage that lasts minutes burns the remaining budget over
+ * minutes instead of seconds, and the ceiling parks long outages in `failed` where
+ * discovery re-offers them. The ceiling bounds the delay, never the effort.
+ */
+const RETRY_BACKOFF_BASE_MS = 30_000;
+const MAX_RETRY_DELAY_MS = 24 * 60 * 60 * 1000;
+const attemptBackoffMs = (attempts: number): number => {
+  if (attempts <= 2) return 0;
+  const shift = Math.max(0, Math.min(attempts - 3, 16));
+  return Math.min(RETRY_BACKOFF_BASE_MS * 2 ** shift, MAX_RETRY_DELAY_MS);
+};
 
 /** Governance counts answer for every kind and state, zeros included. */
 export type RetentionDeletionCounts = Readonly<
@@ -398,6 +412,7 @@ export function createObservationRetentionWorker(
 
     const datasets = await db.$client<DiscoveredTarget[]>`
       select d.id, d.scope_key, d.actor_id, d.bot_id, d.opik_dataset_id, d.sync_state,
+             d.locator_workspace, d.locator_project,
              coalesce(o.datasets_days, ${global.datasets}) as retention_days
       from ai_observation_datasets d
       left join ai_observation_retention_overrides o on o.scope_key = d.scope_key
@@ -426,7 +441,10 @@ export function createObservationRetentionWorker(
              coalesce(o.exports_days, ${global.exports}) as retention_days
       from ai_observation_export_jobs j
       left join ai_observation_retention_overrides o on o.scope_key = j.scope_key
-      where j.state = 'completed' and j.settled_at is not null
+      -- Every SETTLED terminal state is reclaimable, not only the successful ones
+      -- (OCR m165): a failed or cancelled job's artifact is empty by contract, so
+      -- the row is pure residue, and skipping it let exports grow without bound.
+      where j.state in ('completed', 'failed', 'cancelled') and j.settled_at is not null
         and j.settled_at <= now() - make_interval(days => coalesce(o.exports_days, ${global.exports}))
       limit ${DISCOVERY_BATCH}`;
 
@@ -505,6 +523,12 @@ export function createObservationRetentionWorker(
       actorId: t.actor_id,
       botId: t.bot_id,
       targetId: t.id,
+      // The locator rides the record (OCR m202): "the row carries everything a
+      // retry needs even after the target row is gone" is the deletion record's
+      // own promise, and the datasets table's locator columns are notNull, so
+      // upstream-carrying dataset records can always freeze them.
+      locatorWorkspace: t.locator_workspace ?? null,
+      locatorProject: t.locator_project ?? null,
       upstreamKind:
         t.sync_state === "synced" && t.opik_dataset_id ? "dataset" : null,
       upstreamId:
@@ -746,12 +770,15 @@ export function createObservationRetentionWorker(
               : "OPIK_UPSTREAM_ERROR";
       await markFailed(id, code);
       // The work still wants doing — just not by this pass. Released, not finished,
-      // so the next sweep retries with everything the record froze.
+      // so the next sweep retries with everything the record froze. The delay backs
+      // off per attempt (OCR m163): a transient upstream outage otherwise burns all
+      // five claims in ~one poll loop and parks the target for the reaper's purge
+      // window — days of stalled retention for seconds of outage.
       await queue.release({
         kind: RETENTION_WORK_KIND,
         key: id,
         owner,
-        delayMs: 0,
+        delayMs: Math.min(attemptBackoffMs(record.attempts + 1), MAX_RETRY_DELAY_MS),
         reason: code,
       });
     }

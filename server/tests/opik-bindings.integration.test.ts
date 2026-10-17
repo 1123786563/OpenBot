@@ -45,6 +45,11 @@ afterEach(async () => {
   await database
     .delete(aiObservationBindings)
     .where(sql`${aiObservationBindings.runId} LIKE ${`${prefix}%`}`);
+  // The m105 test plants deletion records in this scope; the governance counts
+  // downstream read every scope, so a test must leave none behind.
+  await database
+    .delete(aiObservationRetentionDeletions)
+    .where(eq(aiObservationRetentionDeletions.scopeKey, scopeA.key));
 });
 
 afterAll(async () => {
