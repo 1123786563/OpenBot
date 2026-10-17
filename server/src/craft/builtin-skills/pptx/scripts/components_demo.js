@@ -7,7 +7,7 @@
 // Uses tiny embedded placeholder PNGs so it runs with no asset setup; real
 // decks pass icon.js / chart.py / image-generation outputs as file paths.
 // Content is generic placeholder text — the demo is illustrative, not branded.
-"use strict";
+
 
 const C = require("./components.js");
 

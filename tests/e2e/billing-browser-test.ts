@@ -33,7 +33,7 @@ const results: StepResult[] = [];
 /** 全局被动观察到的异常（控制台错误、页面异常、非预期 HTTP >=400） */
 const observedIssues: string[] = [];
 /** 故障注入声明过的预期失败（不计入异常清单） */
-let expectedFailures = new Set<string>();
+const expectedFailures = new Set<string>();
 /** 当前页面 URL 是否在应用内（排除掉到 Casdoor 的意外停留） */
 function onApp(page: Page) {
   return page.url().startsWith(APP_URL);

@@ -152,7 +152,7 @@ function fakeLock(mode: "memory" | "redis" = "memory") {
     async acquire(turnId) {
       if (held.has(turnId)) return null;
       held.add(turnId);
-      let lost = false;
+      const lost = false;
       return {
         token: `lease-${turnId}`,
         get lost() {
