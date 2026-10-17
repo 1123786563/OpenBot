@@ -343,9 +343,11 @@ describe("deployment guard on the rendered Compose configuration", () => {
   }, 60_000);
 
   test("a floating tag hidden behind the minio YAML anchor is caught in the rendered config (T03-F2)", () => {
+    // R2fix-T9 (R2-13): the compose anchor is digest-pinned now, so the mutation
+    // swaps the pinned ref for a floating :latest — the guard must still catch it.
     const file = mutatedFixture(
       "anchor-floating-tag.yml",
-      "docker.io/cloudpirates/image-minio:RELEASE.2025-10-15T17-29-55Z-hardened",
+      "docker.io/cloudpirates/image-minio@sha256:8dc02a7e509336c8bbb67962086d691bdcde20a2c9327ed68e5081a681f6dbfc",
       "docker.io/cloudpirates/image-minio:latest",
     );
     const floating = floatingImageRefs(renderComposeConfig(file));
