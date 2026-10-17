@@ -127,8 +127,24 @@ export function createActorAgentResolver(
      */
     onlyAgentId?: string,
     context?: AgentResolutionContext,
-  ) =>
-    resolveRuntimeAgents(
+  ) => {
+    // The builtin run's observation-scope threading (T-final M1), forwarded
+    // AT LAST: the resolver the boot assembly injected is closed over the
+    // asking actor and handed down as the trailing observation argument, so
+    // every builtin agent this build constructs asks it once per run, at
+    // subscribe time. A refused resolution answers null and that run's facts
+    // stay scope-less — the same inert footing a build without the injection
+    // keeps. Captured in a local first so the narrowed type survives into the
+    // closure the threading carries.
+    const resolveRunObservationScope = deps.resolveRunObservationScope;
+    const observation = resolveRunObservationScope
+      ? {
+          actorId: actor.id,
+          resolveScope: (botId: string) =>
+            resolveRunObservationScope(actor, botId),
+        }
+      : undefined;
+    return resolveRuntimeAgents(
       () => Promise.resolve(registered),
       deps.model,
       deps.resolveModelApiKey,
@@ -149,7 +165,9 @@ export function createActorAgentResolver(
       deps.loadPersonalMemoryForActor?.(actor.id),
       deps.loadKnowledgeForActor?.(actor.id),
       context?.governedModel,
+      observation,
     );
+  };
 
   const resolveAgentsForActor = async (actor: AgentActor) =>
     resolveRegisteredAgents(actor, await deps.loadAgents(actor));

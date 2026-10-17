@@ -83,7 +83,6 @@ import {
   resolveRetentionDays,
 } from "./ai-observability/retention";
 import { createAiObservabilityRoutes } from "./ai-observability/routes";
-import { resolveObservationScope } from "./ai-observability/scope";
 import { createToolStepRecorder } from "./ai-observability/tool-steps";
 import {
   createActorResolver,
