@@ -61,6 +61,7 @@ import {
   previewPortFromEnv,
   previewSessionCookieHeader,
 } from "./preview-ticket";
+import { createPreviewPassCodec, type PreviewPassCodec } from "./preview-pass";
 import { refuseResponse } from "./refusal";
 
 /** The gate's answer: open, or closed with the sentence a person can read. */
@@ -82,23 +83,36 @@ export const PREVIEW_PASS_REFUSAL =
   "Open this preview from its craft session — its preview pass is missing or no longer valid.";
 
 /**
- * #363: the upgrade twin of handlePreviewRequest's cookie gate — the EXACT same
- * judgment (a pass naming THIS host's session rides the jar), extracted so the
- * HMR resolver applies it without re-deriving the cookie shape. A platform
- * session is never consulted: on these hosts it does not exist (F2/D1).
+ * #358 repair: the ONE pass judgment both preview surfaces apply — the HTTP
+ * cookie gate in handlePreviewRequest and (#363) the HMR upgrade resolver in
+ * webapp-proxy. The pre-repair judgment (holdsPreviewSessionPass) compared the
+ * cookie VALUE against the sessionId, so a request that knew both the preview
+ * address and the session id forged the credential without redeeming a ticket
+ * (the AC4 bypass). Now the cookie must be a pass this deployment SIGNED for
+ * (sessionId → userId) at ticket redemption: the codec's constant-time MAC
+ * check is the acceptance, and the verified userId rides out as the claim the
+ * store re-checks the owner with.
  *
  * The judgment iterates every same-named candidate (§5.4 wire order,
- * previewSessionCookieValues above) and passes when ANY one names this
- * session — a deeper-path shadow planted ahead of the pass on the wire
- * cannot mask it (fix-ocr20 #3); a jar where no candidate matches refuses.
+ * previewSessionCookieValues below) and passes when ANY one verifies — a
+ * deeper-path shadow planted ahead of the pass on the wire cannot mask it
+ * (fix-ocr20 #3); a jar where no candidate verifies refuses. There is no
+ * compatibility branch: the old plaintext session-id cookie is just a value
+ * no key ever signed, and verifies to null. A platform session is never
+ * consulted: on these hosts it does not exist (F2/D1).
  */
-export function holdsPreviewSessionPass(
+function verifyPassWith(
+  codec: PreviewPassCodec,
   sessionId: string,
   request: Request,
-): boolean {
-  return previewSessionCookieValues(request.headers.get("cookie")).some(
-    (candidate) => candidate === sessionId,
-  );
+): { userId: string } | null {
+  for (const candidate of previewSessionCookieValues(
+    request.headers.get("cookie"),
+  )) {
+    const verified = codec.verify(sessionId, candidate);
+    if (verified !== null) return verified;
+  }
+  return null;
 }
 
 /**
@@ -181,6 +195,13 @@ export type PreviewOrigin = {
   /** The preview origin entry: ticket redemption → D9 cookie → clean 302, and
    * (#362) every further request on the preview host, cookie-gated then proxied. */
   handlePreviewRequest(sessionId: string, request: Request): Promise<Response>;
+  /**
+   * #358 repair: THE pass judgment — the exact verify this origin's HTTP gate
+   * runs, exported as a method so the HMR upgrade resolver receives the same
+   * function (injected as its deps.verifyPass) and the two surfaces cannot
+   * drift: one codec, one cookie iteration, one acceptance.
+   */
+  verifyPass(sessionId: string, request: Request): { userId: string } | null;
 };
 
 /**
@@ -195,6 +216,8 @@ export type PreviewOrigin = {
 export type ServePreview = (input: {
   sessionId: string;
   request: Request;
+  /** The userId the verified pass carries — the ownership re-check's input. */
+  userId: string;
   appPath: string;
   query: string;
 }) => Promise<Response>;
@@ -472,6 +495,13 @@ export function createPreviewOrigin(deps: {
   const env = deps.env ?? process.env;
   const template = parseTemplate(deps.config.previewOriginTemplate);
   const devPort = previewDevPort(env);
+  // #358 repair: the pass codec derives from the SAME deployment secret the
+  // hostname labels use, under its own purpose label ("craft-preview-pass") —
+  // domain-separated by construction, so a label can never verify as a pass
+  // and vice versa. One instance here; the HMR resolver receives this
+  // origin's verifyPass method (the boot file injects it), so HTTP and HMR
+  // share ONE acceptance function.
+  const previewPass = createPreviewPassCodec(deps.secret);
   // ponytail: in-memory label→sessionId index; move to a shared store only if a
   // multi-replica deployment needs one origin answer across replicas.
   const registry = new Map<string, string>();
@@ -697,7 +727,7 @@ export function createPreviewOrigin(deps: {
       if (
         ticket !== null &&
         url.pathname === entryRoot &&
-        !holdsPreviewSessionPass(sessionId, request)
+        this.verifyPass(sessionId, request) === null
       ) {
         // The presented host must be the one the ticket was bound to (the triple's
         // host element) — the issuing side bound `new URL(origin).host`, which by
@@ -735,9 +765,14 @@ export function createPreviewOrigin(deps: {
             401,
           );
         }
-        // ponytail: the cookie carries the session id itself — HttpOnly on the
-        // preview origin, and the proxy never forwards cookies to the app; mint an
-        // opaque token + index instead only if a consumer needs rotation.
+        // ponytail: the cookie carries a deployment-signed pass — HttpOnly on
+        // the preview origin, and the proxy never forwards cookies to the app;
+        // mint an opaque token + index instead only if a consumer needs
+        // rotation. #358 repair: the value is the codec's signature over
+        // (sessionId, redeemed.userId) — NOT the session id the old code
+        // echoed (the forgeable credential this fix removes). The userId is
+        // the ticket's OWN verified claim (redemption re-checked the store
+        // for it above), so the pass binds the session to its true owner.
         return new Response(null, {
           status: 302,
           headers: {
@@ -762,7 +797,10 @@ export function createPreviewOrigin(deps: {
             // root and the pass cookie's Path scope can drift apart — exactly
             // the cross-session overwrite shape R-9 guards against. One read,
             // two consumers.
-            "set-cookie": previewSessionCookieHeader(sessionId, entryRoot),
+            "set-cookie": previewSessionCookieHeader(
+              previewPass.issue(sessionId, redeemed.userId),
+              entryRoot,
+            ),
             "cache-control": "no-store",
           },
         });
@@ -771,12 +809,18 @@ export function createPreviewOrigin(deps: {
       // ── #362: the preview's own traffic — cookie-gated proxying ─────────────
       //
       // Everything after the redemption hop rides the preview domain's session
-      // cookie (D9). The gate is exact: the cookie must be present AND name THIS
-      // host's session, so a pass minted for session A never opens session B's
-      // host, and a main-site cookie jar (never carried across hosts — F2) opens
-      // nothing. The refusal is the iframe-facing dual shape, and like every
-      // refusal on this surface it echoes neither cookie nor ticket values.
-      if (!holdsPreviewSessionPass(sessionId, request)) {
+      // cookie (D9). The gate is exact: the cookie must carry a pass this
+      // deployment SIGNED for THIS session (#358 repair — verifyPassWith, the
+      // codec's constant-time MAC check, not the old value-equality a known
+      // session id forged). The verified userId becomes the proxy's ownership
+      // input: the store re-checks the row against it, so a pass minted
+      // before a reassignment or deletion dies with the row, and a pass
+      // minted for session A never opens session B's host. A main-site cookie
+      // jar (never carried across hosts — F2) opens nothing. The refusal is
+      // the iframe-facing dual shape, and like every refusal on this surface
+      // it echoes neither cookie nor ticket values.
+      const verified = this.verifyPass(sessionId, request);
+      if (verified === null) {
         return refuseResponse(request, PREVIEW_PASS_REFUSAL, 401);
       }
       // The app-relative path this request addresses — the shared derivation
@@ -784,10 +828,15 @@ export function createPreviewOrigin(deps: {
       // server the very same path this HTTP entry would.
       return deps.servePreview({
         sessionId,
+        userId: verified.userId,
         request,
         appPath: this.appPathFor(request),
         query: url.search,
       });
+    },
+
+    verifyPass(sessionId, request) {
+      return verifyPassWith(previewPass, sessionId, request);
     },
   };
 }
