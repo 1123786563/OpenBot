@@ -105,6 +105,24 @@ export type ObservationDatasetStore = {
     id: string,
   ): Promise<ObservationDataset | null>;
   /**
+   * The datasets of one scope with their version aggregates, newest first — the list
+   * face of the dataset read API. The aggregate lives here, beside the tables it
+   * joins, so the read routes never re-derive it: `versionCount` counts the frozen
+   * versions and `latestVersionAt` is when the newest one froze (null when none).
+   * The M1a visibility rule applies: a dataset under retention deletion is absent.
+   */
+  list(scope: ObservationScope): Promise<
+    readonly {
+      id: string;
+      name: string;
+      syncState: string;
+      createdAt: Date;
+      updatedAt: Date;
+      versionCount: number;
+      latestVersionAt: Date | null;
+    }[]
+  >;
+  /**
    * The dataset an upstream id maps back to, inside the caller's scope — the reverse
    * direction of the dataset↔dataset mapping (Issue #23/T17's query seam). Another
    * scope's upstream id is simply not found.
@@ -332,6 +350,51 @@ export function createObservationDatasetStore(
         }
         return { dataset, version: replay, replayed: true };
       });
+    },
+
+    async list(scope) {
+      assertObservationScope(scope);
+      return db
+        .select({
+          id: aiObservationDatasets.id,
+          name: aiObservationDatasets.name,
+          syncState: aiObservationDatasets.syncState,
+          createdAt: aiObservationDatasets.createdAt,
+          updatedAt: aiObservationDatasets.updatedAt,
+          versionCount:
+            sql<number>`count(${aiObservationDatasetVersions.id})`.mapWith(
+              Number,
+            ),
+          latestVersionAt:
+            sql<Date | null>`max(${aiObservationDatasetVersions.createdAt})`,
+        })
+        .from(aiObservationDatasets)
+        .leftJoin(
+          aiObservationDatasetVersions,
+          and(
+            eq(
+              aiObservationDatasetVersions.scopeKey,
+              aiObservationDatasets.scopeKey,
+            ),
+            eq(
+              aiObservationDatasetVersions.datasetId,
+              aiObservationDatasets.id,
+            ),
+          ),
+        )
+        .where(
+          and(
+            eq(aiObservationDatasets.scopeKey, scope.key),
+            // The M1a visibility rule, list-shaped: a dataset under retention
+            // deletion is gone to readers from discovery on.
+            notPendingDeletion("dataset", aiObservationDatasets.id),
+          ),
+        )
+        .groupBy(aiObservationDatasets.id)
+        .orderBy(
+          desc(aiObservationDatasets.createdAt),
+          desc(aiObservationDatasets.id),
+        );
     },
 
     async getDataset(scope, id) {

@@ -1,15 +1,16 @@
 /**
  * The creator's case review and save routes (Issue #26 / DAG T20).
  *
- * Mounting contract for the coordinator (this file is deliberately NOT wired into
- * routes/index.ts — that seam is integration-owned, like T10/T11's):
+ * Mounted at routes/index.ts under the prefix below — the integration seam that T33
+ * owned and the OCR round-1 fix ticket closed:
  *
  *   routes.route("/bots/:botId/case-review", createCaseReviewRoutes({ ... }))
  *
  * inside createAiObservabilityRoutes, which puts the endpoints at
  * POST /api/ai-observability/bots/:botId/case-review/review and
  * POST /api/ai-observability/bots/:botId/case-review/save behind the root
- * requireUser.
+ * requireUser. Absent deps stay unmounted — the same "absent = not mounted"
+ * contract as every other sub-router there.
  *
  * Authorization is the management question (resolveObservationBot) and the scope is
  * derived from the authenticated context plus the injected ownership epoch, exactly
@@ -195,7 +196,23 @@ export function createCaseReviewRoutes(
         runId: raw.runId,
         cases: parseFragments(raw.cases),
       });
-      return context.json(saved);
+      // The wire answer is the shared contract's flat projection, not the service's
+      // store rows: what a person reads (ids, name, hash, policy version, counts),
+      // never the scope key, the storage locator or the actor id the full rows carry.
+      // The T21 page is the consumer of exactly this shape.
+      return context.json({
+        datasetId: saved.dataset.id,
+        datasetName: saved.dataset.name,
+        version: {
+          id: saved.version.id,
+          contentHash: saved.version.contentHash,
+          redactionPolicyVersion: saved.version.redactionPolicyVersion,
+          caseCount: saved.version.cases.length,
+          createdAt: saved.version.createdAt.toISOString(),
+        },
+        replayed: saved.replayed,
+        canaryFindings: saved.canaryFindings,
+      });
     } catch (error) {
       const failure = classify(error);
       return context.json(failure.body, failure.status);
