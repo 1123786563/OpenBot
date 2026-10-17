@@ -10,16 +10,47 @@ import { BillingUnavailableError } from "./invoices";
  * this file exists rather than `useQuery` calls in the page.
  */
 
-/** The whole "套餐与积分" answer, split the way the page splits it. */
-export type CreditSummary = {
-  plan: { total: number; used: number; remaining: number; held: number };
-  rewards: {
-    total: number;
-    used: number;
-    remaining: number;
-    held: number;
-    grantCount: number;
-  };
+/** The pending-settlement placeholders, mirroring the server's 02.6 contract (ticket 02.7).
+ *
+ * Settlement-disposition views are group 06's slice; until that group's work is delivered the
+ * fields stand in the response as a fixed shape carrying constant zeros with `enabled: false`
+ * spelled out — the 未启用 marker, so the page never has to guess whether a zero means "nothing
+ * pending" or "not a feature here". The literal types are the discipline: this client cannot
+ * put a non-zero amount behind a disabled flag, and group 06 enabling the feature MUST touch
+ * this type — the contract change is then a visible commit, not a silent drift.
+ */
+export type PendingSettlementSummary = {
+  /** The feature gate, group 06's to switch — every amount below is constant while it is false. */
+  enabled: false;
+  available: 0;
+  consumed: 0;
+  expired: 0;
+};
+
+/**
+ * The credits summary read, mirroring the server's `PersonalCreditBalance` (ticket 02.6) exactly:
+ * the signed-in user's OWN account — the account is never a parameter, the route resolves it
+ * from the authenticated identity, so the response names the account type it answers.
+ *
+ * `available` is the spendable figure admission uses, `consumed` the lifetime amount charged,
+ * `expired` the lapsed-unused part of past grants, `held` the open reservations; `grants` carries
+ * every grant with its derived life, `pendingSettlement` the group-06 placeholders.
+ */
+export type PersonalCreditBalance = {
+  /** The billing subject kind the answer names — always the authenticated user's own. */
+  accountType: "personal";
+  /** What a new draw or hold could take right now, the gate's own admission figure. */
+  available: number;
+  /** The lifetime amount the account's grants have absorbed, live and expired grants alike. */
+  consumed: number;
+  /** The lapsed-unused part of expired grants — gone from the balance, visible here. */
+  expired: number;
+  /** Active holds against live grants: reserved, still occupying the balance. */
+  held: number;
+  /** Every grant of the account, soonest expiry first, with its derived status. */
+  grants: CreditGrantEntry[];
+  /** Group 06's placeholders: constant zeros behind an explicit not-enabled marker. */
+  pendingSettlement: PendingSettlementSummary;
 };
 
 /** One credit grant as the reward list renders it. */
@@ -108,12 +139,12 @@ async function read<T>(path: string, fallback: string): Promise<T> {
   return response.json();
 }
 
-/** The plan's base allowance and the reward totals. Always fresh, like the plan usage read. */
+/** The signed-in user's own credit balance, the account read from the session. Always fresh. */
 export const creditsSummaryQueryOptions = queryOptions({
   queryKey: creditsKeys.summary,
   staleTime: 0,
   queryFn: () =>
-    read<CreditSummary>(
+    read<PersonalCreditBalance>(
       "/api/billing/credits/summary",
       "Your credits could not be loaded.",
     ),

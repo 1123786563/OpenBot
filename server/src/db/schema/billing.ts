@@ -9,6 +9,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import type { BillingSubscriptionStatus } from "../../billing/types";
+import type { PayerKind } from "../../billing/payer";
 
 /**
  * The customers the billing provider knows about, keyed by the external ID this deployment
@@ -22,6 +23,54 @@ export const billingCustomers = pgTable("billing_customers", {
     .notNull()
     .defaultNow(),
 });
+
+/*
+ * One payer account, the billing subject the whole credit stack is being keyed on: a stable
+ * { kind, payer_id } pair (a person, a company tenant, a pre-account-layer deployment) mapped
+ * to exactly one existing external customer id — the string `credit_grants` / `credit_ledger`
+ * already key on, which is why this table records the mapping instead of re-keying those tables
+ * (a one-shot re-key would migrate balances, and this layer must not).
+ *
+ * The two unique indexes ARE the mapping's bidirectional uniqueness, and the database — not a
+ * read-check —
+ * is the arbiter: one subject (kind, payer_id) can hold at most one account, and one external
+ * customer id can belong to at most one account, so concurrent `createPayerAccount` calls race
+ * into the indexes and leave exactly one valid mapping. `unknown_owner` rows are group 02.2's
+ * quarantine records: they exist for audit, and the payer module's key derivation refuses them,
+ * so no new consumption path can resolve one into a spendable account.
+ */
+export const payerAccounts = pgTable(
+  "payer_accounts",
+  {
+    id: text("id").primaryKey(),
+    /** Which kind of subject owns the account. Narrow at the database, not by convention. */
+    kind: text("kind").$type<PayerKind>().notNull(),
+    /** The subject's own stable id (a user id, a tenant id, a deployment tenant id). */
+    payerId: text("payer_id").notNull(),
+    /** The one external customer key this account bills through; never shared with another account. */
+    externalCustomerId: text("external_customer_id")
+      .notNull()
+      .references(() => billingCustomers.externalId, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "payer_accounts_kind_check",
+      sql`${table.kind} IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')`,
+    ),
+    // One account per subject.
+    uniqueIndex("payer_accounts_subject_unique_idx").on(
+      table.kind,
+      table.payerId,
+    ),
+    // One account per external customer key — the other direction of the pair.
+    uniqueIndex("payer_accounts_external_customer_unique_idx").on(
+      table.externalCustomerId,
+    ),
+  ],
+);
 
 /**
  * One subscription projection per external subscription ID. `status` is the four states the sync
