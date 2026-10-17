@@ -6,7 +6,8 @@ const valid = {
   SANDBOX_PROVIDER_BASE_URL: "https://open.bigmodel.cn/api/coding/paas/v4",
   // Read from the environment when provided; the fallback is an obviously fake fixture value,
   // never a credential (Mimosa guards against literal keys in source).
-  SANDBOX_PROVIDER_API_KEY: process.env.TEST_SANDBOX_PROVIDER_API_KEY ?? "fixture-secret",
+  SANDBOX_PROVIDER_API_KEY:
+    process.env.TEST_SANDBOX_PROVIDER_API_KEY ?? "fixture-secret",
   SANDBOX_MODEL: "GLM-5.3",
 };
 
@@ -23,7 +24,9 @@ describe("sandboxEnvFrom", () => {
   test("keeps the configured model and provider", () => {
     const env = sandboxEnvFrom(valid);
     expect(env.model).toBe("GLM-5.3");
-    expect(env.providerBaseUrl).toBe("https://open.bigmodel.cn/api/coding/paas/v4");
+    expect(env.providerBaseUrl).toBe(
+      "https://open.bigmodel.cn/api/coding/paas/v4",
+    );
   });
 
   test("throws when the token is empty", () => {

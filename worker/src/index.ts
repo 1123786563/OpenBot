@@ -162,10 +162,7 @@ async function runOneTick(): Promise<void> {
         kind: ROUTINE_FIRE_KIND,
         olderThanMs: PURGE_OLDER_THAN_MS,
       });
-      log.info(
-        { type: "routine-sweep-purge", purged },
-        "routine-sweep-purge",
-      );
+      log.info({ type: "routine-sweep-purge", purged }, "routine-sweep-purge");
     } catch (error) {
       log.warn(
         {

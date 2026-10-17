@@ -47,7 +47,11 @@ export type DevServers = {
    * The Bot's dev server for a dir, starting one if none. Same Bot+dir answers the same
    * running server (the lazy-start dedup); a different dir for the same Bot gets its own.
    */
-  start(input: { botId: string; dir: string; command?: string }): Promise<
+  start(input: {
+    botId: string;
+    dir: string;
+    command?: string;
+  }): Promise<
     | { ok: true; port: number; command: string }
     | { ok: false; reason: "capacity"; running: number; max: number }
     | { ok: false; reason: "outside-workspace"; dir: string }
@@ -132,7 +136,9 @@ export function createDevServers(options: DevServersOptions): DevServers {
       // (`a/../../..`) escapes, and so does any input whose RESOLVED path fails to sit under
       // the workspace (which also catches smuggled absolute dirs, whose segments are joined
       // as relative parts and land somewhere unrelated). Both statements below must hold.
-      const climbCount = resolvedDir.split("/").filter((part) => part === "..").length;
+      const climbCount = resolvedDir
+        .split("/")
+        .filter((part) => part === "..").length;
       const segmentCount = resolvedDir
         .split("/")
         .filter((part) => part && part !== "." && part !== "..").length;

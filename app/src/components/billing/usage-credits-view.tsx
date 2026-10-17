@@ -1,7 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { PageEmpty, PageSection, PageShell } from "@/components/layout/page-shell";
+import {
+  PageEmpty,
+  PageSection,
+  PageShell,
+} from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -10,10 +14,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  type ConsumptionRange,
-  ConsumptionTable,
-} from "./consumption-table";
+import { type ConsumptionRange, ConsumptionTable } from "./consumption-table";
 import { CreditGrantList } from "./credit-grant-list";
 import { PersonalBalanceCard } from "./personal-balance-card";
 import { PlanCard } from "./plan-card";

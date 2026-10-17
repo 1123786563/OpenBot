@@ -63,7 +63,8 @@ export async function readWebappFile(
   const target = resolve(join(root, path));
   if (target !== root && !target.startsWith(root + "/")) return null;
 
-  const candidates = path === "" ? [join(root, "index.html"), target] : [target];
+  const candidates =
+    path === "" ? [join(root, "index.html"), target] : [target];
   for (const candidate of candidates) {
     const info = await stat(candidate).catch(() => null);
     if (!info?.isFile()) continue;
