@@ -91,6 +91,7 @@
       "neverCollected": "从未采集",
       "unbound": "{{count}} 条未绑定",
       "usage": "{{reported}} 条已报 usage · {{unavailable}} 条不可用",
+      "upstreamTruncated": "窗口被截断——计数为下界",
       "experiments": "{{draft}} 个草稿 · {{frozen}} 个冻结实验",
       "exports": "{{completed}} 个完成 · {{failed}} 个失败 · {{inFlight}} 个进行中",
       "lastFailedCode": "最近失败 {{code}}"

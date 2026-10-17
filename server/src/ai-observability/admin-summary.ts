@@ -93,7 +93,14 @@ export type AdminBotSummary = Readonly<{
     lastFailedErrorCode: string | null;
   }>;
   collection: Readonly<{
-    /** Last write this scope's live bindings recorded inside the window. */
+    /**
+     * R2-51 (R2fix F-2): the last write this scope's bindings can evidence as
+     * having LANDED upstream — reconciled rows only, and only while the
+     * upstream listing this request asked actually answered. Null otherwise:
+     * begin/finish bump updatedAt purely locally, and a fresh local timestamp
+     * beside an unreachable (or unbound) upstream would masquerade row
+     * advancement as collection freshness.
+     */
     lastCollectedAt: string | null;
   }>;
 }>;
@@ -224,9 +231,15 @@ export function createAdminSummaryService(deps: {
       byState[row.state] += 1;
       capabilities[row.capability] += 1;
       if (row.opikTraceId === null) pendingSync += 1;
+      /*
+       * R2-51 (R2fix F-2): only a reconciled row ever landed upstream —
+       * begin/finish advance updatedAt without any upstream write, so an
+       * unreconciled row is pendingSync evidence, never collection evidence.
+       */
       if (
-        lastCollectedAt === null ||
-        row.updatedAt.getTime() > lastCollectedAt.getTime()
+        row.opikTraceId !== null &&
+        (lastCollectedAt === null ||
+          row.updatedAt.getTime() > lastCollectedAt.getTime())
       ) {
         lastCollectedAt = row.updatedAt;
       }
@@ -296,6 +309,12 @@ export function createAdminSummaryService(deps: {
     let unboundUpstream: number | null = null;
     let usage: { providerReported: number; unavailable: number } | null = null;
     let upstreamTruncated = false;
+    /*
+     * R2-51 (R2fix F-2): the upstream listing answering is the other half of
+     * lastCollectedAt's honesty — a scope whose project is gone (the verified
+     * 404) or whose listing failed has no upstream freshness to claim either.
+     */
+    let upstreamListed = false;
     const port = deps.port;
     const config = deps.config();
     if (
@@ -317,6 +336,7 @@ export function createAdminSummaryService(deps: {
             size: windowSize,
           });
           if (page.outcome !== "ok") throw new Error(page.outcome);
+          upstreamListed = true;
           const rows = page.value.content;
           // R2-46: one page is all this summary reads. A project bigger than the
           // window makes the per-row counts partial — say so, never let them
@@ -373,7 +393,10 @@ export function createAdminSummaryService(deps: {
         lastFailedErrorCode: lastFailed?.code ?? null,
       },
       collection: {
-        lastCollectedAt: lastCollectedAt?.toISOString() ?? null,
+        lastCollectedAt:
+          upstreamListed && lastCollectedAt !== null
+            ? lastCollectedAt.toISOString()
+            : null,
       },
     };
   };

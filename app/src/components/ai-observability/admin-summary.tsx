@@ -270,6 +270,15 @@ function AdminBotRow({
                     unavailable: formatNumber(bot.runs.usage.unavailable),
                   })}
             </span>
+            {/* R2-46, made visible (R2fix F-1): when the upstream listing covered
+                only the first window of a larger project, the unbound and usage
+                counts beside this marker are window-bounded lower bounds — the
+                flag false is silence, exact counts need no qualifier. */}
+            {bot.runs.upstreamTruncated ? (
+              <span className="text-muted-foreground text-xs">
+                {t("summary.row.upstreamTruncated")}
+              </span>
+            ) : null}
           </div>
         </ItemActions>
       </Item>

@@ -131,6 +131,9 @@ function isAdminSummaryBody(body: unknown): body is AdminSummaryResult {
     if (!isNumberRecord(runs.byState, ["failed"])) return false;
     if (typeof runs.pendingSync !== "number") return false;
     if (!isNullableNumber(runs.unboundUpstream)) return false;
+    // R2-46's flag is a fact the row renders (R2fix F-1): the guard claims it
+    // so a row that lost it is a non-answer, never an undefined guess.
+    if (typeof runs.upstreamTruncated !== "boolean") return false;
     if (runs.usage !== null) {
       if (
         !isRecord(runs.usage) ||
