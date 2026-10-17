@@ -1,0 +1,495 @@
+import { describe, expect, test } from "bun:test";
+import {
+  DEFAULT_METADATA_ALLOWLIST,
+  MAX_SAFE_RECORD_DEPTH,
+  MAX_SAFE_RECORD_KEYS,
+  MAX_SAFE_TEXT_BYTES,
+  projectSafeException,
+  projectSafeMetadata,
+  projectSafeName,
+  projectSafeRecord,
+  projectSafeText,
+  projectSafeUrl,
+} from "../src/ai-observability/redaction";
+import {
+  OMIT_COPY_KEY,
+  REDACTION_POLICY_VERSION,
+  type OmitReason,
+  type SafeText,
+  type SafeValue,
+} from "../../shared/ai-observability";
+
+/**
+ * Canary discipline: the assertion is always "the canary is NOT in the output", never "the canary
+ * was replaced by ***". A masker that only rewrites the literals it was shown passes its own test
+ * and leaks the next credential shape.
+ */
+const CANARIES = {
+  bearer: "Bearer sk-live-9f3a7c21e8b44d0f",
+  openaiStyle: "sk-proj-AbC123XyZ456LongEnoughToBeAKey",
+  awsAccessKey: "AKIAIOSFODNN7EXAMPLE",
+  awsSecret: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+  githubToken: "ghp_16C7e42F292c6912E7710c838347Ae178B4a",
+  postgresDsn: "postgresql://opik:s3cr3t@10.0.0.5:5432/openbot",
+  mysqlDsn: "mysql://root:rootpw@db.internal:3306/opik",
+  redisUrl: "redis://:redispass@cache.internal:6379/0",
+  accountId: "acct_1A2B3C4D5E6F7G8H",
+  internalCapability: "openbot.internal.capability/computer-control",
+  reasoning:
+    "<reasoning>the user probably wants to bypass the budget check</reasoning>",
+  privateFileUrl: "http://127.0.0.1:8080/files/raw/att_01HXYZ?sig=abc123def456",
+  slackToken: "xoxb-123456789012-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx",
+  pemOpenSsh: [
+    "-----BEGIN OPENSSH PRIVATE KEY-----",
+    "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW",
+    "QyNTUxOQAAACB7JkO1T0lG5f3pQd/2h0GHoB8u+0mVv2m9r5e+H0k1QAAAE",
+    "-----END OPENSSH PRIVATE KEY-----",
+  ].join("\n"),
+  awsSecretLabeled: `aws_secret_access_key=${"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}`,
+};
+
+const REASONS: OmitReason[] = [
+  "credential",
+  "connection_string",
+  "account_identifier",
+  "reasoning_content",
+  "raw_attachment",
+  "internal_capability",
+  "unhandled_free_text",
+];
+
+describe("safe content contract", () => {
+  test("the policy version is namespaced and exact", () => {
+    expect(REDACTION_POLICY_VERSION).toBe("opik-redaction/2");
+  });
+
+  test("every omit reason maps to a copy key the UI already has", () => {
+    for (const reason of REASONS) {
+      expect(OMIT_COPY_KEY[reason], reason).toMatch(/^availability\./);
+    }
+    expect(Object.keys(OMIT_COPY_KEY).sort()).toEqual([...REASONS].sort());
+  });
+
+  test("an omitted projection never carries text", () => {
+    const value: SafeText = { state: "omitted", reason: "credential" };
+    expect("text" in value).toBe(false);
+  });
+});
+
+describe("projectSafeText", () => {
+  test("ordinary prose is projected unchanged", () => {
+    // allowFreeText passed explicitly: without it even clean prose stays metrics-only (fail closed).
+    expect(
+      projectSafeText("Summarize the March invoices.", { allowFreeText: true }),
+    ).toEqual({
+      state: "projected",
+      text: "Summarize the March invoices.",
+    });
+  });
+
+  test("undefined and null are projected as empty, not omitted", () => {
+    expect(projectSafeText(undefined)).toEqual({
+      state: "projected",
+      text: "",
+    });
+    expect(projectSafeText(null)).toEqual({ state: "projected", text: "" });
+  });
+
+  test.each(Object.entries(CANARIES))(
+    "free text containing %s is omitted, not passed through",
+    (_label, canary) => {
+      const result = projectSafeText(`please call ${canary} and continue`);
+      expect(result.state).toBe("omitted");
+      expect(JSON.stringify(result)).not.toContain(canary);
+    },
+  );
+
+  test("free text is only projected when the caller proves it handled the content", () => {
+    // allowFreeText is an explicit caller assertion, not a default: an unreviewed blob stays metrics-only.
+    expect(
+      projectSafeText("some unreviewed blob", { allowFreeText: false }).state,
+    ).toBe("omitted");
+    expect(
+      projectSafeText("some reviewed sample", { allowFreeText: true }),
+    ).toEqual({
+      state: "projected",
+      text: "some reviewed sample",
+    });
+  });
+
+  test("allowFreeText does not license credentials", () => {
+    const result = projectSafeText(`key ${CANARIES.openaiStyle}`, {
+      allowFreeText: true,
+    });
+    expect(result.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain(CANARIES.openaiStyle);
+  });
+
+  test("oversized text is truncated with the original size recorded", () => {
+    const input = "a".repeat(MAX_SAFE_TEXT_BYTES + 500);
+    const result = projectSafeText(input, { allowFreeText: true });
+    expect(result.state).toBe("truncated");
+    if (result.state === "truncated") {
+      expect(result.originalBytes).toBe(input.length);
+      expect(new TextEncoder().encode(result.text).length).toBeLessThanOrEqual(
+        MAX_SAFE_TEXT_BYTES,
+      );
+    }
+  });
+
+  test("truncation never cuts a multi-byte character in half", () => {
+    const input = "账单".repeat(MAX_SAFE_TEXT_BYTES);
+    const result = projectSafeText(input, { allowFreeText: true });
+    expect(result.state).toBe("truncated");
+    if (result.state === "truncated") expect(result.text).not.toMatch(/�$/);
+  });
+});
+
+describe("projectSafeUrl", () => {
+  test("a credential-bearing URL is omitted", () => {
+    const result = projectSafeUrl(CANARIES.postgresDsn);
+    expect(result.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain("s3cr3t");
+  });
+
+  test("a private raw-file URL with a signature is omitted", () => {
+    const result = projectSafeUrl(CANARIES.privateFileUrl);
+    expect(result.state).toBe("omitted");
+    if (result.state === "omitted")
+      expect(result.reason).toBe("raw_attachment");
+  });
+
+  test("an unparseable URL is omitted rather than passed through", () => {
+    expect(projectSafeUrl("not a url at all").state).toBe("omitted");
+  });
+
+  test("a plain https URL keeps scheme, host and path but drops query and fragment", () => {
+    expect(
+      projectSafeUrl("https://api.example.com/v1/traces?sig=abc#frag"),
+    ).toEqual({
+      state: "projected",
+      text: "https://api.example.com/v1/traces",
+    });
+  });
+});
+
+describe("projectSafeName", () => {
+  test("a span name is projected", () => {
+    expect(projectSafeName("chat.completions")).toEqual({
+      state: "projected",
+      text: "chat.completions",
+    });
+  });
+
+  test("an internal capability name is omitted", () => {
+    const result = projectSafeName(CANARIES.internalCapability);
+    expect(result.state).toBe("omitted");
+    if (result.state === "omitted")
+      expect(result.reason).toBe("internal_capability");
+  });
+
+  test("a name carrying a credential is omitted", () => {
+    expect(projectSafeName(`call ${CANARIES.githubToken}`).state).toBe(
+      "omitted",
+    );
+  });
+
+  test("names are length-bounded", () => {
+    const result = projectSafeName("n".repeat(400));
+    expect(result.state).toBe("truncated");
+  });
+});
+
+function values(record: Record<string, SafeValue>): string {
+  return JSON.stringify(record);
+}
+
+describe("projectSafeRecord", () => {
+  test("only allowlisted keys survive", () => {
+    const result = projectSafeRecord(
+      {
+        model: "gpt-4o",
+        tokensInput: 12,
+        prompt: "hello",
+        apiKey: CANARIES.openaiStyle,
+      },
+      ["model", "tokensInput"],
+    );
+    expect(Object.keys(result).sort()).toEqual(["model", "tokensInput"]);
+    expect(values(result)).not.toContain(CANARIES.openaiStyle);
+  });
+
+  test("a key absent from the allowlist is dropped, not shown as omitted", () => {
+    const result = projectSafeRecord({ model: "gpt-4o" }, ["tokensInput"]);
+    expect(result).toEqual({});
+  });
+
+  test("an allowlisted key whose VALUE is a credential is omitted with a reason", () => {
+    const result = projectSafeRecord({ model: CANARIES.bearer }, ["model"]);
+    expect(result.model.state).toBe("omitted");
+    expect(values(result)).not.toContain("sk-live-9f3a7c21e8b44d0f");
+  });
+
+  test("nested objects are projected to the depth limit and then omitted", () => {
+    // Leaf string must not collide with SafeValue's own `value` key name, or the JSON
+    // serialization of any legal output would contain it regardless of the depth cut.
+    let deep: Record<string, unknown> = { leaf: "deep-secret-leaf" };
+    for (let i = 0; i < MAX_SAFE_RECORD_DEPTH + 2; i += 1)
+      deep = { nested: deep };
+    const result = projectSafeRecord(deep, ["nested"]);
+    expect(values(result)).not.toContain("deep-secret-leaf");
+  });
+
+  test("a non-object input yields an empty record rather than throwing", () => {
+    expect(projectSafeRecord("a string", ["a"])).toEqual({});
+    expect(projectSafeRecord(null, ["a"])).toEqual({});
+    expect(projectSafeRecord(undefined, ["a"])).toEqual({});
+  });
+
+  test("arrays inside an allowlisted key are projected element-wise", () => {
+    const result = projectSafeRecord(
+      { tools: ["search", CANARIES.internalCapability] },
+      ["tools"],
+    );
+    const value = result.tools;
+    expect(value.state).toBe("projected");
+    expect(values(result)).not.toContain("computer-control");
+  });
+});
+
+describe("projectSafeMetadata", () => {
+  test("the default allowlist is small and contains no free-text field", () => {
+    expect(DEFAULT_METADATA_ALLOWLIST.length).toBeLessThanOrEqual(16);
+    for (const key of [
+      "input",
+      "output",
+      "messages",
+      "content",
+      "body",
+      "prompt",
+      "text",
+    ]) {
+      expect(
+        DEFAULT_METADATA_ALLOWLIST,
+        `${key} must not be a default metadata key`,
+      ).not.toContain(key);
+    }
+  });
+
+  test("SDK auto-captured keys outside the allowlist never reach the store", () => {
+    const result = projectSafeMetadata({
+      thread_id: "thread-1",
+      bot_id: "agent-1",
+      run_id: "run-1",
+      user_email: "dana@example.com",
+      authorization: CANARIES.bearer,
+      environment: "test",
+    });
+    expect(values(result)).not.toContain("dana@example.com");
+    expect(values(result)).not.toContain("sk-live");
+    expect(Object.keys(result)).toContain("thread_id");
+  });
+});
+
+describe("projectSafeException", () => {
+  test("a message carrying a DSN is omitted", () => {
+    const error = new Error(`connection failed for ${CANARIES.mysqlDsn}`);
+    const result = projectSafeException(error);
+    expect(result.state).toBe("omitted");
+    expect(values({ m: result })).not.toContain("rootpw");
+  });
+
+  test("a clean message is projected without the stack trace", () => {
+    const result = projectSafeException(new Error("upstream returned 503"));
+    expect(result).toEqual({
+      state: "projected",
+      text: "upstream returned 503",
+    });
+  });
+
+  test("a non-Error value is projected as its class name, never as its content", () => {
+    expect(projectSafeException({ secret: CANARIES.awsSecret })).toEqual({
+      state: "projected",
+      text: "Object",
+    });
+    expect(projectSafeException("boom")).toEqual({
+      state: "projected",
+      text: "String",
+    });
+  });
+
+  test("an Error subclass keeps its name", () => {
+    class UpstreamTimeout extends Error {}
+    expect(projectSafeException(new UpstreamTimeout("timed out"))).toEqual({
+      state: "projected",
+      text: "UpstreamTimeout: timed out",
+    });
+  });
+});
+
+describe("PEM private keys are denied at every real position (T05-F1)", () => {
+  const pem = CANARIES.pemOpenSsh;
+  // A PEM block lives at the start of a field, after a newline or after a label separator —
+  // all places where a word-boundary anchor never holds. The glued form is the control that
+  // was the only detectable one before the repair.
+  const positions = {
+    "at the start of the text": pem,
+    "after a newline": `deploy key:\n${pem}`,
+    "after a colon": `deploy key:${pem}`,
+    "after a space": `deploy key ${pem}`,
+    "glued to a word character (already detected before)": `key${pem}`,
+  };
+
+  test.each(Object.entries(positions))(
+    "a PEM block %s is omitted even with allowFreeText",
+    (_label, block) => {
+      const result = projectSafeText(block, { allowFreeText: true });
+      expect(result.state).toBe("omitted");
+      expect(JSON.stringify(result)).not.toContain("BEGIN OPENSSH PRIVATE KEY");
+      expect(JSON.stringify(result)).not.toContain("b3BlbnNzaC1rZXktdjE");
+    },
+  );
+
+  test("a PEM inside an allowlisted metadata value is omitted on the default path", () => {
+    // `model` is on DEFAULT_METADATA_ALLOWLIST: this is the path that needed no caller
+    // assertion at all and still leaked the whole key before the repair.
+    const result = projectSafeMetadata({ model: pem });
+    expect(result.model.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain("BEGIN OPENSSH PRIVATE KEY");
+  });
+});
+
+describe("AWS secret context may sit on either side (T05-F2)", () => {
+  test("the label-before-value form every config file uses is omitted", () => {
+    const result = projectSafeText(CANARIES.awsSecretLabeled, {
+      allowFreeText: true,
+    });
+    expect(result.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain(CANARIES.awsSecret);
+  });
+
+  test("an uppercase env-dump label is omitted", () => {
+    const result = projectSafeText(
+      `AWS_SECRET_ACCESS_KEY=${CANARIES.awsSecret}`,
+      { allowFreeText: true },
+    );
+    expect(result.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain(CANARIES.awsSecret);
+  });
+
+  test("context after the token still denies (regression)", () => {
+    const result = projectSafeText(`${CANARIES.awsSecret} is the aws secret`, {
+      allowFreeText: true,
+    });
+    expect(result.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain(CANARIES.awsSecret);
+  });
+
+  test("a bare 40-char token without any context stays projected (accepted precision trade-off)", () => {
+    // Documented in the findings register: rejecting bare 40-char base64 runs would flag
+    // every hash, and unreviewed text is metrics-only anyway. Reviewed text carries a label.
+    const result = projectSafeText(`digest ${CANARIES.awsSecret}`, {
+      allowFreeText: true,
+    });
+    expect(result.state).toBe("projected");
+  });
+});
+
+describe("truncation never cuts an astral character in half (T05-F4)", () => {
+  test("every byte padding lands on a whole code point", () => {
+    for (let pad = 0; pad < 4; pad += 1) {
+      const input = "a".repeat(pad) + "😀".repeat(3000);
+      const result = projectSafeText(input, { allowFreeText: true });
+      expect(result.state, `pad=${pad}`).toBe("truncated");
+      if (result.state !== "truncated") continue;
+      const encoded = new TextEncoder().encode(result.text);
+      expect(encoded.length, `pad=${pad}`).toBeLessThanOrEqual(
+        MAX_SAFE_TEXT_BYTES,
+      );
+      // A lone surrogate is not U+FFFD as a character, so the old scrub never fired for it;
+      // it only becomes U+FFFD after encoding. Roundtrip stability catches that layer.
+      expect(new TextDecoder().decode(encoded), `pad=${pad}`).toBe(result.text);
+      const last = result.text.charCodeAt(result.text.length - 1);
+      expect(last >= 0xd800 && last <= 0xdbff, `pad=${pad}`).toBe(false);
+      expect(result.originalBytes).toBe(new TextEncoder().encode(input).length);
+    }
+  });
+});
+
+describe("inherited properties and __proto__ stay data, not traps (T05-F5)", () => {
+  test("an inherited property never produces a phantom entry", () => {
+    const source = Object.create({ inherited: "phantom-value" });
+    source.model = "gpt-4o";
+    const result = projectSafeRecord(source, ["inherited", "model"]);
+    expect(Object.keys(result).sort()).toEqual(["model"]);
+    expect(JSON.stringify(result)).not.toContain("phantom-value");
+  });
+
+  test("Object.prototype member names in an allowlist produce no phantom keys", () => {
+    const result = projectSafeRecord({}, [
+      "toString",
+      "constructor",
+      "valueOf",
+    ]);
+    expect(Object.keys(result)).toEqual([]);
+  });
+
+  test("an own __proto__ key becomes an own key and never touches any prototype", () => {
+    const payload = JSON.parse('{"__proto__": {"polluted": "yes"}}');
+    const result = projectSafeRecord(payload, ["__proto__"]);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.getPrototypeOf(result)).toBe(null);
+    expect(Object.hasOwn(result, "__proto__")).toBe(true);
+  });
+
+  test("a nested own __proto__ key is projected as data with a null-prototype output", () => {
+    const result = projectSafeRecord(
+      { config: JSON.parse('{"__proto__": "evil"}') },
+      ["config"],
+    );
+    const config = result.config;
+    expect(config.state).toBe("projected");
+    if (config.state !== "projected") return;
+    expect(Object.getPrototypeOf(config.value)).toBe(null);
+    expect(Object.keys(config.value as object)).toEqual(["__proto__"]);
+  });
+});
+
+describe("dropped items are marked, never silent (T05-F6)", () => {
+  test("an array cut at the item limit is truncated, not projected", () => {
+    const tools = Array.from({ length: 100 }, (_, i) => `item-${i}`);
+    const result = projectSafeRecord({ tools }, ["tools"]);
+    const value = result.tools;
+    expect(value.state).toBe("truncated");
+    if (value.state === "truncated") {
+      expect(Array.isArray(value.value)).toBe(true);
+      expect((value.value as unknown[]).length).toBe(MAX_SAFE_RECORD_KEYS);
+      // For containers originalBytes carries the original item count.
+      expect(value.originalBytes).toBe(100);
+    }
+    expect(JSON.stringify(result)).not.toContain("item-99");
+  });
+
+  test("a nested object cut at the key limit is truncated, not projected", () => {
+    const source: Record<string, string> = {};
+    for (let i = 0; i < 100; i += 1) source[`k${i}`] = `item-${i}`;
+    const result = projectSafeRecord({ config: source }, ["config"]);
+    const value = result.config;
+    expect(value.state).toBe("truncated");
+    if (value.state === "truncated") {
+      expect(Object.keys(value.value as object).length).toBe(
+        MAX_SAFE_RECORD_KEYS,
+      );
+      expect(value.originalBytes).toBe(100);
+    }
+    expect(JSON.stringify(result)).not.toContain("item-99");
+  });
+
+  test("requested allowlist keys are never silently dropped", () => {
+    const keys = Array.from({ length: 100 }, (_, i) => `k${i}`);
+    const source: Record<string, number> = {};
+    for (const key of keys) source[key] = 1;
+    const result = projectSafeRecord(source, keys);
+    expect(Object.keys(result).length).toBe(100);
+  });
+});
