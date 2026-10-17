@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "namespace": "ai-observability-evaluations",
+    "ownedBy": "#36 #37 (experiment submit/results, comparison)"
+  },
+  "availability": {
+    "disabled": {
+      "title": "评测已关闭",
+      "description": "本部署未启用可观测性，因此无法运行实验。"
+    },
+    "empty": {
+      "title": "还没有实验",
+      "description": "选择一个冻结的数据集版本和一份 Bot 配置，即可提交第一个实验。"
+    },
+    "forbidden": {
+      "title": "你无权运行这个实验",
+      "description": "实验遵循 Bot 的管理权，并且在每个样本执行前重新校验。"
+    },
+    "basic": {
+      "title": "该样本没有评分",
+      "description": "该样本未产生评分。缺失评分不是 0 分，它会被排除在平均值之外，而不是记为失败。"
+    },
+    "omitted": {
+      "title": "内容已省略",
+      "description": "该字段无法被可靠处理，因此只展示指标。省略不等于为空。"
+    },
+    "truncated": {
+      "title": "内容已截断",
+      "description": "该值超过记录长度上限并被截断。"
+    },
+    "syncing": {
+      "title": "结果仍在同步",
+      "description": "实验已结束，但评分尚未在上游确认。同步中不等于成功。"
+    },
+    "unavailable": {
+      "title": "上游不可用",
+      "description": "可观测性存储没有响应。进行中的运行仍保持预留占用，没有释放也没有重复扣费。"
+    }
+  }
+}
