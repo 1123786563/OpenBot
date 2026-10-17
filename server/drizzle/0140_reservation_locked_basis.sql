@@ -1,0 +1,6 @@
+ALTER TABLE "credit_reservations" ADD COLUMN "provider" text;--> statement-breakpoint
+ALTER TABLE "credit_reservations" ADD COLUMN "model" text;--> statement-breakpoint
+ALTER TABLE "credit_reservations" ADD COLUMN "capability" text;--> statement-breakpoint
+ALTER TABLE "credit_reservations" ADD COLUMN "snapshot_version" integer;--> statement-breakpoint
+ALTER TABLE "credit_reservations" ADD COLUMN "rate_version" integer;--> statement-breakpoint
+ALTER TABLE "credit_reservations" ADD CONSTRAINT "credit_reservations_lock_completeness_check" CHECK ((("credit_reservations"."provider" IS NULL) = ("credit_reservations"."model" IS NULL) AND ("credit_reservations"."provider" IS NULL) = ("credit_reservations"."capability" IS NULL) AND ("credit_reservations"."provider" IS NULL) = ("credit_reservations"."snapshot_version" IS NULL) AND ("credit_reservations"."provider" IS NULL) = ("credit_reservations"."rate_version" IS NULL) AND ("credit_reservations"."provider" IS NULL OR ("credit_reservations"."provider" <> '' AND "credit_reservations"."model" <> '' AND "credit_reservations"."capability" IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'realtime', 'video', 'unknown') AND "credit_reservations"."snapshot_version" >= 1 AND "credit_reservations"."rate_version" >= 0))));
