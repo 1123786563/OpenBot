@@ -314,3 +314,73 @@ export const enterpriseSecurityEvents = pgTable(
     }),
   ],
 ).enableRLS();
+
+// MT004（Issue #47）：企业团队成员关系（workspace membership），expand-only。
+// 唯一成员关系 = (tenant_id, workspace_id, principal_id)；复合外键同时证明
+// workspace 属于该公司（→ enterprise_workspaces）与 principal 是该公司成员
+// （→ enterprise_memberships）。status 沿用 active/suspended 先例，epoch 为
+// 正整数版本号（单调递增由应用写入路径保证，CHECK 兜底正整数）。
+// RLS 按同文件既有模式最小新增（全面 RLS 属 MT012）。
+export const enterpriseWorkspaceMemberships = pgTable(
+  "enterprise_workspace_memberships",
+  {
+    tenantId: text("tenant_id").notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    principalId: text("principal_id").notNull(),
+    status: text("status").notNull().default("active"),
+    epoch: integer("epoch").notNull().default(1),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.tenantId, table.workspaceId, table.principalId],
+    }),
+    uniqueIndex("enterprise_workspace_membership_principal_tenant").on(
+      table.principalId,
+      table.tenantId,
+      table.workspaceId,
+    ),
+    check(
+      "enterprise_workspace_member_status",
+      sql`${table.status} in ('active','suspended')`,
+    ),
+    check("enterprise_workspace_member_epoch", sql`${table.epoch} > 0`),
+    foreignKey({
+      columns: [table.tenantId, table.workspaceId],
+      foreignColumns: [enterpriseWorkspaces.tenantId, enterpriseWorkspaces.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.tenantId, table.principalId],
+      foreignColumns: [
+        enterpriseMemberships.tenantId,
+        enterpriseMemberships.principalId,
+      ],
+    }).onDelete("cascade"),
+    pgPolicy("enterprise_workspace_membership_self_read", {
+      for: "select",
+      to: "ob_ent_directory",
+      using: sql`exists (select 1 from enterprise_principals p where p.id = enterprise_workspace_memberships.principal_id and p.user_id = nullif(current_setting('app.user_id', true), ''))`,
+    }),
+    pgPolicy("enterprise_workspace_membership_data_read", {
+      for: "select",
+      to: "ob_ent_data",
+      using: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_workspace_memberships.principal_id = nullif(current_setting('app.principal_id', true), '')`,
+    }),
+    pgPolicy("enterprise_workspace_membership_operator_read", {
+      for: "select",
+      to: "ob_ent_operator",
+      using: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
+    }),
+    pgPolicy("enterprise_workspace_membership_operator_insert", {
+      for: "insert",
+      to: "ob_ent_operator",
+      withCheck: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
+    }),
+    pgPolicy("enterprise_workspace_membership_operator_update", {
+      for: "update",
+      to: "ob_ent_operator",
+      using: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_workspace_memberships.principal_id = nullif(current_setting('app.operator_principal_id', true), '')`,
+      withCheck: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_workspace_memberships.principal_id = nullif(current_setting('app.operator_principal_id', true), '')`,
+    }),
+  ],
+).enableRLS();
