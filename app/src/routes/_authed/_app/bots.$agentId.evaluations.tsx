@@ -1,24 +1,35 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { BotSubpage } from "@/components/bot-profile/bot-subpage";
-import { ObservabilityPlaceholder } from "@/components/ai-observability/placeholder";
+import { requireBotObservabilityAccess } from "@/lib/observability/route-guard";
 
-/**
- * Placeholder for the dataset (#27) and experiment (#36) chains: one page covering both, as the
- * route convention in `lib/i18n/index.ts` records.
- */
 export const Route = createFileRoute("/_authed/_app/bots/$agentId/evaluations")(
   {
-    component: EvaluationsPage,
+    beforeLoad: ({ context, params }) =>
+      requireBotObservabilityAccess(context.queryClient, params.agentId),
+    component: BotEvaluationsPage,
   },
 );
 
-function EvaluationsPage() {
-  const { t } = useTranslation("ai-observability-evaluations");
+/*
+ * Placeholder frame: experiment submission, per-sample results and cancellation (T30) plus the
+ * comparison page (T31) replace the body. Until Opik is configured the honest content is the
+ * disabled state, not an empty list.
+ */
+function BotEvaluationsPage() {
+  const { t } = useTranslation("obs-evaluations");
   const { agentId } = Route.useParams();
   return (
-    <BotSubpage agentId={agentId} title={t("placeholder.title")}>
-      <ObservabilityPlaceholder namespace="ai-observability-evaluations" />
+    <BotSubpage
+      agentId={agentId}
+      description={t("states.disabled.description")}
+      title={t("title")}
+    >
+      {() => (
+        <p className="mt-6 text-muted-foreground text-sm">
+          {t("states.disabled.title")}
+        </p>
+      )}
     </BotSubpage>
   );
 }
