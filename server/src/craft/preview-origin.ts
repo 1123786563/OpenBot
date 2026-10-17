@@ -117,7 +117,8 @@ function verifyPassWith(
 
 /**
  * fix-ocr28 #1 (round28 CSWSH): the preview websocket upgrade's Origin gate,
- * exported beside its sibling (holdsPreviewSessionPass) so the two manual
+ * exported beside the pass judgment (verifyPassWith — the origin's verifyPass
+ * method; #358 repair retired the value-equality sibling) so the two manual
  * disciplines the upgrade half applies — pass judgment and origin judgment —
  * live in one place. A WebSocket handshake is NOT subject to CORS, and the
  * preview pass cookie is SameSite=None: without this check, any page on the
