@@ -1,0 +1,40 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/rls-core.test.ts:
+(pass) the MT012 task migration is registered and expand-only > MT012 is a registered task whose plan is deterministic [0.17ms]
+(pass) the MT012 task migration is registered and expand-only > dry-run previews honestly and apply converges (fresh or up-to-date) [0.05ms]
+(pass) the MT012 task migration is registered and expand-only > the plan only appends: RLS re-assertions plus one new function, nothing else [0.28ms]
+(pass) the MT012 task migration is registered and expand-only > existing policies and restricted-role table grants are byte-identical before and after apply [0.01ms]
+(pass) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > cross-company SELECT sees nothing on every core tenant table (operator role) [18.20ms]
+(pass) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > cross-company SELECT sees nothing under the data role either (including self-scoped tables) [18.72ms]
+(pass) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > cross-company UPDATE touches nothing and the row survives [6.36ms]
+(pass) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > cross-company DELETE removes nothing and the row survives; the data role cannot delete at all [6.51ms]
+(pass) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > cross-company foreign-key associations are rejected by the database (23503) [6.06ms]
+(pass) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > re-pointing ownership columns needs privileges the restricted roles do not hold [5.38ms]
+(pass) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > the data and directory roles cannot write tenant rows at all [8.99ms]
+(pass) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > cross-company denial does not leak existence (same shape as nonexistent) [3.74ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > explicit sharing allows the grantee on both sides [35.67ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > personal ownership (own resource via own grant) allows on both sides [19.18ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > team-public resources allow an active member without a grant under workspace-v1 (db side agrees) [30.05ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > team-public stays hidden from another team of the same company on both sides [29.01ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > a suspended member loses the team-public path on both sides and regains it after restoration [47.05ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > private marking never widens: non-owner denied on both sides, grantee still allowed [35.52ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > unmarked resources stay grant-only on both sides (no automatic widening) [11.40ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > cross-company resources are invisible on the db side and denied on the app side, same shape as nonexistent [17.42ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > a multi-company identity is allowed from their own company scope and denied from the other, on both sides [27.29ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > explicit-sharing facts are visible only to the grantee under the data role [3.35ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > workspace-membership facts are own-principal only under the data role [4.84ms]
+(pass) issue #55 criterion 3: business context is cleared after transactions and pooled reuse carries no scope > after commit, the same pooled backend has every context key cleared and sees no rows (all three roles) [20.05ms]
+(pass) issue #55 criterion 3: business context is cleared after transactions and pooled reuse carries no scope > after rollback with a live scope in place, the next transaction on the same connection is clean [4.43ms]
+(pass) issue #55 criterion 3: business context is cleared after transactions and pooled reuse carries no scope > the MT012 context-reset function scrubs session-level leftovers (the pooled-connection fallback) [11.88ms]
+(pass) issue #55 criterion 4: no RLS-bypassing role serves normal data access; the platform machine-read role is registered separately and unusable for business interfaces > every role the application is configured with is a restricted, non-bypassing capability [3.13ms]
+(pass) issue #55 criterion 4: no RLS-bypassing role serves normal data access; the platform machine-read role is registered separately and unusable for business interfaces > every core tenant table has RLS enabled and forced (owner cannot bypass either) [2.58ms]
+(pass) issue #55 criterion 4: no RLS-bypassing role serves normal data access; the platform machine-read role is registered separately and unusable for business interfaces > ob_ent_identity_operator exists, cannot log in, and holds zero privileges on every core tenant table [14.07ms]
+(pass) issue #55 criterion 4: no RLS-bypassing role serves normal data access; the platform machine-read role is registered separately and unusable for business interfaces > restricted roles can execute the context-reset function; it stays a business-role tool [3.77ms]
+(pass) issue #55 criterion 4: no RLS-bypassing role serves normal data access; the platform machine-read role is registered separately and unusable for business interfaces > the application assembly reaches enterprise data only through the verified restricted-role URLs [0.95ms]
+(pass) closing check: restricted roles were in play > every restricted query ran as a capability role, never a superuser [4.19ms]
+
+ 32 pass
+ 0 fail
+ 310 expect() calls
+Ran 32 tests across 1 file. [907.00ms]

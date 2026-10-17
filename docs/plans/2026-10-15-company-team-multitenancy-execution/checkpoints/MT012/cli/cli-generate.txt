@@ -1,0 +1,6 @@
+generated: MT012 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT012/generated/MT012
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT012/generated/MT012/0001_mt012_core_rls_enable.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT012/generated/MT012/0002_mt012_context_reset_function.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT012/generated/MT012/manifest.json
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT012","planDigest":"dbdb978af111dd140f18722e3e4262f1b7bce9282e9461aff260506f846cdf6e","steps":[{"number":1,"name":"0001_mt012_core_rls_enable.sql","statementDigest":"bdc2ff8947e04fc1ba562725e9ce6f99fcbc562449b4a9dee591481e86c1563a","statementCount":18},{"number":2,"name":"0002_mt012_context_reset_function.sql","statementDigest":"bf6d0e3f24a48d4e8009c7de3942d42d4951935a4bfb8f8e1dc637a4af5914b0","statementCount":3}]}
