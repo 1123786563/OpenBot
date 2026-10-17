@@ -1,16 +1,15 @@
-import { and, asc, count, desc, eq, gte, lte, ne } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { creditGrants, creditLedger } from "../db/schema/credits";
-import {
-  type GrantCapacity,
-  liveGrants,
-} from "./capacity";
+import { type GrantCapacity, liveGrants, readCapacity } from "./capacity";
 import { type PayerRef, payerKey } from "./payer";
 import type {
   CreditConsumptionPage,
   CreditGrantEntry,
   CreditGrantStatus,
   CreditSummary,
+  PendingSettlementSummary,
+  PersonalCreditBalance,
   PlanCatalogEntry,
 } from "./types";
 
@@ -48,6 +47,12 @@ export type CreditConsumptionWindow = {
 export type Credits = {
   /** The plan catalog this deployment configured, for the upgrade dialog. */
   catalog: ReadonlyMap<string, PlanCatalogEntry>;
+  /**
+   * The personal read (ticket 02.6): the payer's own account type, available/consumed/expired
+   * and held, every grant with its derived life, and the pending-settlement placeholders. Reads
+   * only — no write door exists on this path.
+   */
+  personalBalance(payer: PayerRef): Promise<PersonalCreditBalance>;
   summary(payer?: PayerRef): Promise<CreditSummary>;
   grants(payer?: PayerRef): Promise<readonly CreditGrantEntry[]>;
   consumption(
@@ -55,6 +60,15 @@ export type Credits = {
     payer?: PayerRef,
   ): Promise<CreditConsumptionPage>;
 };
+
+/**
+ * The pending-settlement placeholders, the one factory the responses take their shape from:
+ * group 06 owns the enabling, and until then the amounts are constant zeros behind an explicit
+ * `enabled: false` — never a computed value that could quietly start meaning something.
+ */
+export function pendingSettlementPlaceholder(): PendingSettlementSummary {
+  return { enabled: false, available: 0, consumed: 0, expired: 0 };
+}
 
 export function createCredits(deps: {
   database: Database;
@@ -72,6 +86,53 @@ export function createCredits(deps: {
 
   return {
     catalog,
+    async personalBalance(payer) {
+      const key = payerKey(payer);
+      // One clock for the whole answer: grant liveness, the expired filter and the derived
+      // statuses bind to the same instant, so the four numbers cannot disagree about now.
+      const at = new Date();
+      // The live side from the one capacity definition admission uses (audit A1): `available` is
+      // the writer's own spendable figure, `held` the open holds, and the grants carry what the
+      // page would let you spend per grant.
+      const capacity = await readCapacity(database, key, at);
+      // The expired side, with the same clock: what lapsed grants absorbed and what they took
+      // with them unused. Consumed spans both sides — a charge stays consumed after its grant
+      // expires, so the expired figure must be the lapsed REMAINDER, never the grant total.
+      const [lapsed] = await database
+        .select({
+          used: sql<number>`coalesce(sum(${creditGrants.used}), 0)::int`,
+          unused: sql<number>`coalesce(sum(greatest(${creditGrants.total} - ${creditGrants.used}, 0)), 0)::int`,
+        })
+        .from(creditGrants)
+        .where(
+          and(
+            eq(creditGrants.externalCustomerId, key),
+            lte(creditGrants.expiresAt, at),
+          ),
+        );
+      const rows = await database
+        .select()
+        .from(creditGrants)
+        .where(eq(creditGrants.externalCustomerId, key))
+        .orderBy(asc(creditGrants.expiresAt));
+      const now = at.getTime();
+      const soon = now + 24 * 60 * 60 * 1000;
+      const liveUsed = capacity.grants.reduce(
+        (sum, grant) => sum + grant.used,
+        0,
+      );
+      const held = capacity.grants.reduce((sum, grant) => sum + grant.held, 0);
+      return {
+        accountType: "personal",
+        available: scaleDown(capacity.spendableUnits),
+        consumed: scaleDown(liveUsed + Number(lapsed?.used ?? 0)),
+        expired: scaleDown(Number(lapsed?.unused ?? 0)),
+        held: scaleDown(held),
+        grants: rows.map((row) => grantOf(row, now, soon)),
+        pendingSettlement: pendingSettlementPlaceholder(),
+      };
+    },
+
     async summary(payer) {
       // The same live-grant read admission uses, unlocked: expired grants drop out and active
       // holds are subtracted, so this answer and the gate's answer cannot disagree (audit A1).
@@ -103,10 +164,9 @@ export function createCredits(deps: {
     },
 
     async consumption(window, payer) {
-      const conditions = [
-        eq(creditLedger.externalCustomerId, keyOf(payer)),
-      ];
-      if (window.from) conditions.push(gte(creditLedger.createdAt, window.from));
+      const conditions = [eq(creditLedger.externalCustomerId, keyOf(payer))];
+      if (window.from)
+        conditions.push(gte(creditLedger.createdAt, window.from));
       if (window.to) conditions.push(lte(creditLedger.createdAt, window.to));
       const where = and(...conditions);
 

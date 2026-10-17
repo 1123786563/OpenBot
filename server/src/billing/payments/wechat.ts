@@ -294,10 +294,17 @@ export function createWechatProvider(config: WechatConfig): PaymentProvider {
       const fact = decoded as Record<string, unknown>;
 
       // The decrypted body names the parties; the deployment is the merchant, and a resource for
-      // anyone else — however correctly signed by the platform — is not ours to act on.
-      if (stringField(fact, "mchid") !== config.mchid) return { ok: false };
-      if (stringField(fact, "appid") !== config.appid) return { ok: false };
-      const outTradeNo = stringField(fact, "out_trade_no");
+      // anyone else — however correctly signed by the platform — is not ours to act on. The
+      // decrypted `out_trade_no` rides on the refusal as an audit pointer only (see the seam's
+      // docblock): the delivery is being refused either way, and nothing settles through it.
+      const referencedOutTradeNo = stringField(fact, "out_trade_no");
+      const wrongMerchant = () =>
+        referencedOutTradeNo
+          ? { ok: false as const, referencedOutTradeNo }
+          : { ok: false as const };
+      if (stringField(fact, "mchid") !== config.mchid) return wrongMerchant();
+      if (stringField(fact, "appid") !== config.appid) return wrongMerchant();
+      const outTradeNo = referencedOutTradeNo;
       if (!outTradeNo) return { ok: false };
       return { ok: true, fact: wechatFact(fact) };
     },

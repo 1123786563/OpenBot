@@ -39,6 +39,8 @@ export type FakeGateway = {
   requests: FakeGatewayRequest[];
   /** Replace the canned response for subsequent requests. */
   respondWith(plan: FakeGatewayPlan): void;
+  /** The per-path plans this gateway answers with (mutable, so a test can flip one path). */
+  routes: Record<string, FakeGatewayPlan>;
   /** Release every request a `hold` plan is keeping open. */
   release(): void;
   /** The response bodies (if any) this gateway has served, for leak assertions. */
@@ -64,8 +66,14 @@ export function upstreamSecretMarker(label = randomUUID().slice(0, 8)) {
   };
 }
 
+/**
+ * A request is answered with the plan named for its path in `routes` when there is one, and
+ * with the gateway-level plan otherwise — so one fake can serve the probe's management read
+ * and the extension manifest with different answers at the same time.
+ */
 export async function startFakeGateway(
   initialPlan: FakeGatewayPlan,
+  routes: Record<string, FakeGatewayPlan> = {},
 ): Promise<FakeGateway> {
   const requests: FakeGatewayRequest[] = [];
   const servedBodies: string[] = [];
@@ -79,22 +87,24 @@ export async function startFakeGateway(
     port: 0,
     fetch: async (request) => {
       const authorization = request.headers.get("authorization") ?? undefined;
+      const path = new URL(request.url).pathname;
       requests.push({
         method: request.method,
-        path: new URL(request.url).pathname,
+        path,
         authorization,
       });
-      if (plan.kind === "response") {
-        if (plan.body !== undefined) servedBodies.push(plan.body);
-        return new Response(plan.body ?? "", {
-          status: plan.status,
+      const planned = routes[path] ?? plan;
+      if (planned.kind === "response") {
+        if (planned.body !== undefined) servedBodies.push(planned.body);
+        return new Response(planned.body ?? "", {
+          status: planned.status,
           headers: {
             "content-type": "application/json",
-            ...(plan.headers ?? {}),
+            ...(planned.headers ?? {}),
           },
         });
       }
-      if (plan.kind === "hold") {
+      if (planned.kind === "hold") {
         await held;
         return Response.json({ released: true });
       }
@@ -111,6 +121,7 @@ export async function startFakeGateway(
     respondWith(next) {
       plan = next;
     },
+    routes,
     release() {
       release();
     },

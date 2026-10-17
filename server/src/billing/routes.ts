@@ -17,12 +17,21 @@
  */
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { createHash } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
-import type { CreditWriter } from "./credits-writer";
+import type { Database } from "../db/client";
+import { users } from "../db/schema";
 import type { Credits } from "./credits";
-import { findForeignAccountIdentity, PayerCrossAccountAccessError } from "./payer-personal";
+import type { CreditWriter } from "./credits-writer";
+import {
+  findForeignAccountIdentity,
+  PayerCrossAccountAccessError,
+  resolvePayerForPersonalUser,
+  resolvePersonalPayerAccount,
+} from "./payer-personal";
 import type { PaymentOrderReadScope } from "./payments/types";
 import type { BillingStatements } from "./statements";
 import { BillingError, type BillingService } from "./types";
@@ -35,7 +44,11 @@ type RequireAdmin = (
 export function billingReadScopeOf(
   context: Context<{ Variables: AppVariables }>,
 ): PaymentOrderReadScope {
-  return { actorId: context.var.actor.id };
+  // The reading actor's own personal PayerRef, resolved from the session — never from a
+  // request field (AC14/Q27). Order reads filter on the order's owner columns against this
+  // ref, so another person's order — and any quarantined or pre-attribution row — is simply
+  // not in the answer.
+  return { actorPayerRef: resolvePayerForPersonalUser(context.var.actor) };
 }
 
 /**
@@ -131,11 +144,14 @@ export function createBillingStatementRoutes(deps: {
       return context.json({ error: "Supply a valid request." }, 400);
     }
     return context.json(
-      await deps.statements.invoices({
-        from: parsed.data.from ? new Date(parsed.data.from) : null,
-        to: parsed.data.to ? new Date(parsed.data.to) : null,
-        page: parsed.data.page,
-      }, billingReadScopeOf(context)),
+      await deps.statements.invoices(
+        {
+          from: parsed.data.from ? new Date(parsed.data.from) : null,
+          to: parsed.data.to ? new Date(parsed.data.to) : null,
+          page: parsed.data.page,
+        },
+        billingReadScopeOf(context),
+      ),
     );
   });
 
@@ -158,16 +174,24 @@ export function createBillingStatementRoutes(deps: {
  *
  * Mounted on the same `/api/billing` prefix under the same session, in the same spirit as the
  * statement reads beside it — but from a different source: the local credit ledger, not the
- * provider's reader and not the payment order table. `summary` is the plan's base allowance plus
- * the reward totals, `grants` the reward list, `consumption` the ledger with the same window/page
- * grammar as the bill list.
+ * provider's reader and not the payment order table.
+ *
+ * Every read answers ONE account: the signed-in user's own, resolved server-side from the
+ * authenticated identity through the payer resolution module (ticket 02.6). No route below takes
+ * an account parameter and none falls back to the deployment key: `/credits/summary` is the
+ * personal balance read — account type, available/consumed/expired and held, every grant with
+ * its derived life, and the pending-settlement placeholders (constant zeros behind an explicit
+ * not-enabled marker until group 06) — while `grants` is the reward list and `consumption` the
+ * ledger with the same window/page grammar as the bill list. The path is read-only by
+ * construction: resolution is the payer module's pure function (no mapping row is opened by a
+ * read) and every query beneath it is a SELECT.
  *
  * One refusal comes before any read (ticket 02.4): a request that carries an account identity
  * (`userId`, `externalCustomerId`, `payerId`, `accountId`, `companyId`, `tenantId`, any casing)
  * is answered 400, never an empty result — the account these reads answer is decided server-side
- * (the deployment key today; the signed-in user's resolved personal account from ticket 02.6),
- * so a client naming an account is a forgery attempt, not a filter. Authentication still wins:
- * the identity check sits behind `requireUser`, so an unauthenticated caller sees 401.
+ * from the session, so a client naming an account is a forgery attempt, not a filter.
+ * Authentication still wins: the identity check sits behind `requireUser`, so an unauthenticated
+ * caller sees 401.
  */
 export function createBillingCreditRoutes(deps: {
   credits: Credits;
@@ -199,14 +223,19 @@ export function createBillingCreditRoutes(deps: {
   });
 
   routes.get("/credits/summary", async (context) => {
-    return context.json(await deps.credits.summary());
+    // The account is the session's own personal payer, resolved from the authenticated identity —
+    // pure, parameter-free, and a read that cannot open a mapping row.
+    const payer = resolvePayerForPersonalUser(context.var.actor);
+    return context.json(await deps.credits.personalBalance(payer));
   });
 
   routes.get("/credits/grants", async (context) => {
-    return context.json({ grants: await deps.credits.grants() });
+    const payer = resolvePayerForPersonalUser(context.var.actor);
+    return context.json({ grants: await deps.credits.grants(payer) });
   });
 
   routes.get("/credits/consumption", async (context) => {
+    const payer = resolvePayerForPersonalUser(context.var.actor);
     const parsed = statementQueryInput.safeParse({
       from: context.req.query("from"),
       to: context.req.query("to"),
@@ -216,11 +245,14 @@ export function createBillingCreditRoutes(deps: {
       return context.json({ error: "Supply a valid request." }, 400);
     }
     return context.json(
-      await deps.credits.consumption({
-        from: parsed.data.from ? new Date(parsed.data.from) : null,
-        to: parsed.data.to ? new Date(parsed.data.to) : null,
-        page: parsed.data.page,
-      }),
+      await deps.credits.consumption(
+        {
+          from: parsed.data.from ? new Date(parsed.data.from) : null,
+          to: parsed.data.to ? new Date(parsed.data.to) : null,
+          page: parsed.data.page,
+        },
+        payer,
+      ),
     );
   });
 
@@ -244,6 +276,57 @@ const grantInput = z.strictObject({
   expiresAt: z.string().datetime({ offset: true }).optional(),
   reason: z.string().trim().min(1).max(500).optional(),
 });
+
+/**
+ * A manual grant to a NAMED PERSONAL account (ticket 02.8): the target is a USER, and the
+ * account is whatever the payer layer resolves from that user — so a bare
+ * `externalCustomerId` has no field to arrive in and `strictObject` turns one into a 400.
+ * Everything else mirrors the deployment-level grant above; `source` defaults to `promo`
+ * because the hand that reaches for this route is handing out a reward, and an explicit key
+ * is optional because the derived rule below makes a keyless replay safe.
+ */
+const personalGrantInput = z.strictObject({
+  userId: z.string().trim().min(1).max(200),
+  source: z.enum(["promo", "signin"]).default("promo"),
+  totalCents: z.number().int().positive().max(1_000_000_000),
+  expiresAt: z.string().datetime({ offset: true }).optional(),
+  reason: z.string().trim().min(1).max(500).optional(),
+  idempotencyKey: z.string().trim().min(1).max(200).optional(),
+});
+
+/**
+ * The keyless replay's answer, derived — never random. The digest binds the operator and the
+ * request's identity fields (user, source, amount, the expiry AS THE REQUEST SPELLED IT, the
+ * reason), so resubmitting the same request converges on the first grant it produced, while two
+ * intentional grants differ in at least one field or ride explicit keys. The raw expiry string
+ * is hashed rather than the applied default, so a second request an hour later — whose default
+ * expiry would differ — still names the same occurrence, and the first grant's expiry stands.
+ */
+function personalGrantDerivedKey(
+  actorId: string,
+  input: {
+    userId: string;
+    source: "promo" | "signin";
+    totalCents: number;
+    expiresAt?: string;
+    reason?: string;
+  },
+): string {
+  const digest = createHash("sha256")
+    .update(
+      [
+        actorId,
+        input.userId,
+        input.source,
+        input.totalCents,
+        input.expiresAt ?? "none",
+        input.reason ?? "none",
+      ].join("|"),
+    )
+    .digest("hex")
+    .slice(0, 40);
+  return `admin-personal:derived:${digest}`;
+}
 
 /** The sentinel codes, as HTTP numbers: the two 503s might pass on a retry, the two 400s will not. */
 function billingStatus(error: BillingError): 503 | 400 {
@@ -283,10 +366,17 @@ export function createBillingAdminRoutes(deps: {
   /** What the provider's customer record calls this deployment. */
   customerName: string;
   /**
-   * The credit writer, when the deployment built one. Present → the grant route mounts; absent →
-   * the route answers 503 rather than pretending a ledger that was never wired accepted a grant.
+   * The credit writer, when the deployment built one. Present → the grant routes mount; absent →
+   * the routes answer 503 rather than pretending a ledger that was never wired accepted a grant.
    */
   creditWriter?: CreditWriter;
+  /**
+   * The deployment's own database, where the personal grant route resolves the target user and
+   * their payer account (ticket 02.8). Like the writer it only backs the grant surfaces: absent
+   * there too, the personal route answers 503 — resolution needs the mapping tables, and a
+   * route that cannot resolve must not fall back to a caller-named key.
+   */
+  database?: Database;
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
@@ -347,7 +437,10 @@ export function createBillingAdminRoutes(deps: {
     if (!deps.creditWriter) {
       // Configured without the writer, asked to grant: a refusal, not a silent no-op — the
       // caller is an operator who believes the credits landed, and they did not.
-      return context.json({ error: "Credits are unavailable. Try again." }, 503);
+      return context.json(
+        { error: "Credits are unavailable. Try again." },
+        503,
+      );
     }
     const expiresAt =
       input.expiresAt !== undefined
@@ -384,6 +477,105 @@ export function createBillingAdminRoutes(deps: {
       });
     }
     return context.json({ grant });
+  });
+
+  /*
+   * The personal grant (ticket 02.8): the administrator names a USER, and the account is the
+   * payer layer's answer for that user — resolved here, server-side, and nowhere else. The
+   * complement the strictness lives in is the schema: `strictObject` gives a bare
+   * `externalCustomerId` (or any other account identity) no field to arrive in, so a request
+   * that tries to name the account itself is a shape error, not a grant onto the named key.
+   *
+   * The route answers 404 for a user who does not exist: a typo'd id must not mint credits into
+   * a phantom account with an audit row praising it. Idempotency rides the writer's unique
+   * index (the ticket's rule): an explicit request key lands as `admin-personal:explicit:<key>`
+   * — the admin UI mints one per form session, so a retry re-enters nothing — and a keyless
+   * request derives `admin-personal:derived:<digest>` from the operator and the request's
+   * identity fields, which makes a replayed request converge on the first grant it produced.
+   *
+   * The audit row is answered per REQUEST, not per landed grant: a replay reads `inserted:
+   * false`, so the trail shows both the double press and the fact that the books entered it
+   * once. Every payload field names ids, amounts and reasons — never a key's plaintext (AC19).
+   */
+  routes.post("/credits/personal-grants", async (context) => {
+    const denied = deps.requireAdmin(context);
+    if (denied) return denied;
+    if (!deps.creditWriter || !deps.database) {
+      // Configured without the writer or the database the resolution needs, asked to grant:
+      // a refusal, not a silent no-op — and never a fallback to a caller-named account key.
+      return context.json(
+        { error: "Credits are unavailable. Try again." },
+        503,
+      );
+    }
+    const input = personalGrantInput.parse(await context.req.json());
+
+    // The target must be a person this deployment knows: resolution of a ghost would otherwise
+    // open a real payer account for a fiction.
+    const [user] = await deps.database
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, input.userId))
+      .limit(1);
+    if (!user) {
+      return context.json({ error: "No such user." }, 404);
+    }
+
+    // THE resolution: the account comes from the payer layer's mapping for this user id, the
+    // same branch a person's own reads resolve through (02.4). No caller-named key is read.
+    const account = await resolvePersonalPayerAccount(deps.database, {
+      id: input.userId,
+    });
+    const expiresAt =
+      input.expiresAt !== undefined
+        ? new Date(input.expiresAt)
+        : // No expiry named: the grant lives a year, the same default the deployment-level
+          // grant above applies.
+          new Date(Date.now() + 365 * 24 * 3600_000);
+    if (Number.isNaN(expiresAt.getTime())) {
+      return context.json({ error: "Supply a valid request." }, 400);
+    }
+    const source = input.source;
+    const idempotencyKey =
+      input.idempotencyKey !== undefined
+        ? `admin-personal:explicit:${input.idempotencyKey}`
+        : personalGrantDerivedKey(context.var.actor.id, {
+            userId: input.userId,
+            source,
+            totalCents: input.totalCents,
+            expiresAt: input.expiresAt,
+            reason: input.reason,
+          });
+
+    const { grant, inserted } = await deps.creditWriter.grantCredits({
+      externalCustomerId: account.externalCustomerId,
+      source,
+      totalCents: input.totalCents,
+      expiresAt,
+      reason: input.reason ?? null,
+      idempotencyKey,
+    });
+
+    if (deps.audit) {
+      await recordAuditEvent(deps.audit, {
+        eventType: "billing.credits.personal_granted",
+        targetType: "billing",
+        targetId: grant.id,
+        actorUserId: context.var.actor.id,
+        payload: {
+          userId: input.userId,
+          payerAccountId: account.id,
+          externalCustomerId: account.externalCustomerId,
+          source,
+          totalCents: input.totalCents,
+          ...(input.reason ? { reason: input.reason } : {}),
+          idempotency:
+            input.idempotencyKey !== undefined ? "explicit" : "derived",
+          inserted,
+        },
+      });
+    }
+    return context.json({ grant, account, inserted });
   });
 
   /*

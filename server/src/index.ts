@@ -105,6 +105,12 @@ import type { OpenBotRole } from "./auth/roles";
 import { CREDIT_SCALE, createCredits } from "./billing/credits";
 import { createCreditWriter } from "./billing/credits-writer";
 import {
+  CreditInsufficientError,
+  currentPayerBinding,
+  ensureDeploymentPayerBinding,
+  resolveConsumptionPayerBinding,
+} from "./billing/payer-binding";
+import {
   countChatInputTokens,
   fitChatInputRequest,
 } from "./billing/input-bound";
@@ -184,7 +190,6 @@ import { createSnapshotStore } from "./computer/snapshot-store";
 import { createStreamAuthorizer } from "./computer/stream-auth";
 import { loadConfig } from "./config";
 import {
-  CreditGateError,
   CreditGateFailureError,
   CreditPolicyUnconfiguredError,
   type IdentifyActor,
@@ -3749,6 +3754,18 @@ const billing =
         const externalCustomerKey = deploymentExternalCustomerId(
           config.deploymentId ?? tenantPackage.tenantId,
         );
+        /*
+         * The consumption entry's payer binding (B5-219): the deployment's own account,
+         * made once at boot through the payer layer so the mapping row exists and recovery
+         * can restore it. It is the explicit default the gate below resolves to when a
+         * request carries no binding of its own — the ONE deployment-key default on the
+         * consumption path, and the branch group 09 (09.2) replaces with per-surface payer
+         * resolution. An insufficient balance on whatever binding a request resolves to is
+         * refused on that account; nothing here or downstream ever switches accounts.
+         */
+        const deploymentPayerBinding = await ensureDeploymentPayerBinding(database, {
+          id: config.deploymentId ?? tenantPackage.tenantId,
+        });
         const lagoClient = createLagoClient({
           baseUrl: settings.apiUrl,
           apiKey: settings.apiKey,
@@ -3799,9 +3816,16 @@ const billing =
           client: lagoClient,
           externalCustomerKey,
           customerName: `OpenBot deployment ${externalCustomerKey}`,
-          // The credit ledger's write side — the same writer the admin grant route and the plan
+          // The consumption entry's payer binding (B5-219): what the model gate below
+          // resolves to when the request carries no binding of its own. See the boot
+          // comment above for why this is the one explicit deployment default.
+          deploymentPayerBinding,
+          // The credit ledger's write side — the same writer the admin grant routes and the plan
           // payout below share. One writer, one set of birth invariants, every grant flows here.
           creditWriter: createCreditWriter(database),
+          // The deployment's own database, where the personal grant route (02.8) resolves the
+          // target user and their payer account. The same connection the rest of billing uses.
+          database,
         };
       })();
 const usageOutbox =
@@ -3832,12 +3856,24 @@ if (billing !== undefined && usageOutbox !== undefined) {
     const modelPolicy = creditPolicy.models.get(modelId);
     if (!modelPolicy) throw new ModelNotPricedError(modelId);
 
+    /*
+     * The request's one payer (B5-219): resolved ONCE here, from the request's own
+     * binding when the surface bound one, otherwise the deployment's boot binding — and
+     * every write below (reserve, outbox fact, unsettled evidence) names exactly this
+     * account. A refusal below never re-resolves and never switches: an insufficient
+     * balance on the bound account is the final answer for this request.
+     */
+    const payerBinding = resolveConsumptionPayerBinding({
+      requestBinding: currentPayerBinding(),
+      deploymentBinding: billing.deploymentPayerBinding,
+    });
+
     let reservation: Awaited<
       ReturnType<typeof billing.creditWriter.reserveCredits>
     >;
     try {
       reservation = await billing.creditWriter.reserveCredits({
-        externalCustomerId: billing.externalCustomerKey,
+        externalCustomerId: payerBinding.externalCustomerId,
         idempotencyKey: `${USAGE_IDEMPOTENCY_KEY_PREFIX}${input.eventId}`,
         maximumCents: Number(modelPolicy.maximumReservationUnits),
         expiresAt: new Date(
@@ -3868,12 +3904,21 @@ if (billing !== undefined && usageOutbox !== undefined) {
           type: "billing-credit-reservation-refused",
           eventId: input.eventId,
           model: modelId,
+          payerKind: payerBinding.payer.kind,
           available: reservation.availableCents,
           required: Number(modelPolicy.maximumReservationUnits),
         },
         "billing-credit-reservation-refused",
       );
-      throw new CreditGateError();
+      /*
+       * The one insufficiency semantics (B5-219 / AC13): a displayable refusal on the
+       * bound account — its type and its own available amount, no other account's data,
+       * no second resolution, no switch. The hold attempt wrote nothing.
+       */
+      throw new CreditInsufficientError({
+        payerKind: payerBinding.payer.kind,
+        availableCents: reservation.availableCents,
+      });
     }
 
     return {
@@ -3945,7 +3990,7 @@ if (billing !== undefined && usageOutbox !== undefined) {
           await recordUnsettledUsage({
             eventId: input.eventId,
             source: "llm",
-            externalCustomerId: billing.externalCustomerKey,
+            externalCustomerId: payerBinding.externalCustomerId,
             model: modelId,
             client: input.client,
             occurredAt: input.occurredAt,
@@ -3959,7 +4004,7 @@ if (billing !== undefined && usageOutbox !== undefined) {
           await usageOutbox.record({
             eventId: input.eventId,
             source: "llm",
-            externalCustomerId: billing.externalCustomerKey,
+            externalCustomerId: payerBinding.externalCustomerId,
             transactionId: input.eventId,
             inputTokens: charged.inputTokens,
             outputTokens: charged.outputTokens,
@@ -3986,7 +4031,7 @@ if (billing !== undefined && usageOutbox !== undefined) {
         await recordUnsettledUsage({
           eventId: unsettled.eventId,
           source: "llm",
-          externalCustomerId: billing.externalCustomerKey,
+          externalCustomerId: payerBinding.externalCustomerId,
           model: modelId,
           client: input.client,
           occurredAt: unsettled.occurredAt,
@@ -4026,7 +4071,7 @@ if (billing !== undefined && usageOutbox !== undefined) {
         await recordUnsettledUsage({
           eventId: input.eventId,
           source: "llm",
-          externalCustomerId: billing.externalCustomerKey,
+          externalCustomerId: payerBinding.externalCustomerId,
           model: modelId,
           client: input.client,
           occurredAt: input.occurredAt,

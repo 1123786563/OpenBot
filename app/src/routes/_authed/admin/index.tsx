@@ -3,13 +3,16 @@ import {
   IconChecks,
   IconChevronRight,
   IconCode,
+  IconCoins,
   IconDeviceDesktop,
   IconFileText,
   IconKey,
   IconLayoutGrid,
   IconListDetails,
+  IconNetwork,
   IconPuzzle,
   IconRobot,
+  IconServer,
   IconShieldCheck,
   IconUsers,
 } from "@tabler/icons-react";
@@ -60,6 +63,18 @@ const SECTIONS = [
         description: "overview.reach.botServices.description",
         icon: IconRobot,
         linkOptions: { to: "/admin/bot-services" },
+      },
+      {
+        title: "overview.reach.gateway.title",
+        description: "overview.reach.gateway.description",
+        icon: IconNetwork,
+        linkOptions: { to: "/admin/gateway" },
+      },
+      {
+        title: "overview.reach.modelCatalog.title",
+        description: "overview.reach.modelCatalog.description",
+        icon: IconServer,
+        linkOptions: { to: "/admin/model-catalog" },
       },
       {
         title: "overview.reach.boundaries.title",
@@ -126,6 +141,12 @@ const SECTIONS = [
         description: "overview.access.people.description",
         icon: IconUsers,
         linkOptions: { to: "/admin/people" },
+      },
+      {
+        title: "overview.access.billing.title",
+        description: "overview.access.billing.description",
+        icon: IconCoins,
+        linkOptions: { to: "/admin/billing" },
       },
       {
         title: "overview.access.enterprise.title",

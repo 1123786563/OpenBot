@@ -54,7 +54,6 @@ export const auditEventTypes = [
   "credential.created",
   "credential.rotated",
   /**
-   /*
    * A rotation the vault refused, and why.
    *
    * Recorded because the refusals are the interesting ones. A rotation aimed at a key other than the
@@ -65,7 +64,6 @@ export const auditEventTypes = [
   "credential.rotation_refused",
   "credential.revoked",
   /**
-   /*
    * Which coworker an untagged message was routed to, and why.
    *
    * A channel is pinned to one coworker before its first turn, so when the person did not name one
@@ -80,7 +78,6 @@ export const auditEventTypes = [
   "delivery.opted_out",
   "delivery.failed",
   /**
-   /*
    * A channel was removed from every member's roster, and by whom.
    *
    * The removal is soft, so the row and its thread survive and `channels.deleted_at` records that it
@@ -90,7 +87,6 @@ export const auditEventTypes = [
    */
   "channel.deleted",
   /**
-   /*
    * An address this deployment declined to dial for a Bot, and why.
    *
    * The stored endpoint is re-checked on the way out of every run, and so is each address it
@@ -105,7 +101,6 @@ export const auditEventTypes = [
    */
   "agent.dial_refused",
   /**
-   /*
    * A Bot's stream stopped producing anything and the turn was ended for it.
    *
    * Recorded because a Bot is somebody else's infrastructure and this is the failure it has that
@@ -294,7 +289,6 @@ export const auditEventTypes = [
   // restarted, which interrupts whatever it was doing, so who asked is worth a row.
   "computer.updated",
   /**
-   /*
    * The boundary this deployment booted with.
    *
    * The live policy is held in memory, so a restart returns to the configured default unless the
@@ -307,7 +301,6 @@ export const auditEventTypes = [
    */
   "computer.policy_loaded",
   /**
-   /*
    * Whether this deployment gives each Bot a computer of its own, said out loud at boot.
    *
    * Without a supervisor every Bot shares one browser, which is a legitimate way to run on a laptop
@@ -320,7 +313,6 @@ export const auditEventTypes = [
    */
   "computer.isolation_loaded",
   /**
-   /*
    * The Bot declined something it was asked to do.
    *
    * Every event above records an action a Bot took, decided on by the gateway. A model that refuses
@@ -534,17 +526,49 @@ export const auditEventTypes = [
   "bot_service.credential_issued",
   "bot_service.credential_rotated",
   "bot_service.credential_revoked",
-   /*
-   * The Bifrost gateway admin credential (01.2, #208) was saved or its save was refused.
-   *
-   * Its own events rather than `credential.*` because the act is the deployment changing its own
-   * key for another system's control plane, and the payload is the redacted status alone — a
-   * configVersion and a fingerprint, never key material: the whole ticket is that this credential
-   * is write-only. A refused save is almost always a tampered reference row, which is exactly the
-   * row an operator needs to find.
+  /*
+   * A one-time binding offer was issued (Bifrost #236, 04.3): a Bot's authenticated server asked to
+   * start binding one external identity. The row names the offer by its sha256 digest — the
+   * plaintext code exists exactly once, in the response that minted it, and a trail reader can
+   * never redeem what they read. The offer is not a user authorization (04.5 creates that when the
+   * person confirms), so this row sits beside the bot_service.* rows rather than replacing any.
    */
+  "bot_binding.offered",
+  /*
+   * The model access grant lifecycle (Bifrost #238, 04.5+): `granted` is the confirmation itself —
+   * a signed-in person turned a one-time binding code into an authorization for one Bot to call
+   * models as them — and `reconfirmed` is the idempotent repeat, the same authorization confirmed
+   * again with a fresh code, answered with the grant that already was. Both rows name the grant
+   * and carry the offer's sha256 digest; the plaintext code is in neither, and the grant's own
+   * later acts get their own events rather than rewriting these.
+   */
+  "model_access.granted",
+  "model_access.reconfirmed",
+  /*
+   * The person's own revocation (Bifrost #240, 04.7): one event per real revocation, naming the
+   * actor and the grant. A repeated revocation is a no-op, not an event — nothing happened for it
+   * to record — and the event carries no more than the grant's own fields.
+   */
+  "model_access.revoked",
   "gateway_admin_credential.saved",
   "gateway_admin_credential.save_refused",
+  /*
+   * The billing protocol's own service identity (Bifrost #252, 06.1): the one credential the
+   * deployment's Bifrost admission extension holds to reach Reserve/Status/Settle/Release.
+   *
+   * `credential_issued` covers first issue and rotation alike (`payload.rotated` says which),
+   * because both are one act from the trail's point of view: a secret this deployment will
+   * verify against, minted once and never shown again. `called` and `refused` are the call
+   * rows, one per protocol attempt either way — the AC makes no exception for failures, and
+   * the refused ones are the rows an investigation reads first. A refusal row names no caller:
+   * whatever the presented token claimed was just proven wrong, so writing it down would
+   * record an unproven claim where belief is stored. A `called` row names the identity the
+   * credential proved, bound to the request's method and path — nothing more, and never the
+   * presented token itself.
+   */
+  "credit_service.credential_issued",
+  "credit_service.called",
+  "credit_service.refused",
   /*
    * What a Bot is and what it may reach.
    *
@@ -721,8 +745,16 @@ export const auditEventTypes = [
    * exactly why the manual grant's source is a promo or a signin and nothing else.
    */
   "billing.credits.granted",
+  /*
+   * An administrator granted credits to a NAMED PERSONAL account (Bifrost #222, 02.8): target
+   * user plus the account the server RESOLVED from that user — the resolution is the point, so
+   * the row records both and no client-named customer key ever could be one. Beside them the
+   * operator, the amount, the reason and which idempotency spelling answered; a replay that
+   * landed nothing is on the trail too, marked `inserted: false`, because a double press that
+   * entered the books once is a fact worth reading, not noise.
+   */
+  "billing.credits.personal_granted",
   /**
-   /*
    * The reconciliation pass was run (T7): an on-demand audit of the books' two invariants
    * (the payment three-way and the credit identity). Audited because it is an operator
    * action with a finding trail — the payload carries the counts and the finding codes, so
@@ -730,13 +762,23 @@ export const auditEventTypes = [
    */
   "billing.reconciled",
   /**
-   /*
    * A craft session's owner answered a connect_app card (connected/declined; the session,
    * the app id and the decision in the payload). The handshake itself rides ephemeral KV
    * (onyx parity — no approval row), so this audit row is the one durable record that a
    * decision was asked for and made.
    */
   "craft.connect_app_decided",
+  /**
+   * An administrator opened or closed a model for this deployment (Bifrost 03.7).
+   *
+   * Every successful open and close writes one row here, carrying the ModelRef triple, the
+   * previous state, the new state and the administrator's recorded reason — the history of
+   * the open scope lives in this append-only trail, while `gateway_model_open_scopes` holds
+   * only the current state. The reason is displayable by design: it is what a user-facing
+   * screen shows when a model is closed, and what an auditor reads when asking why a model
+   * stopped (or started) being selectable.
+   */
+  "gateway.model_scope_changed",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];
@@ -756,7 +798,6 @@ export const PERSON_INITIATOR: AuditInitiator = { kind: "person" };
 export const DEPLOYMENT_INITIATOR: AuditInitiator = { kind: "deployment" };
 
 /**
- /*
  * The initiator a hop from `fromBotId` runs under.
  *
  * `origin` IS ALWAYS THE ROOT — what started the first run in the chain — and never another hop, so
@@ -825,7 +866,6 @@ export type AuditEventQuery = {
   cursor?: string;
   limit: number;
   /**
-   /*
    * One event type, or several separated by commas.
    *
    * Several, because the questions people arrive with cut across the events that answer them: "was
@@ -917,7 +957,6 @@ export type AuditTap = (event: AuditTapEvent) => void;
 const auditTaps = new Set<AuditTap>();
 
 /**
- /*
  * Hear every row after it is written: the OpenTelemetry/SIEM exporter and Action Recording.
  *
  * After the insert, and only when it succeeded, so nothing is streamed that the trail does not hold.
@@ -967,7 +1006,6 @@ export class AuditQueryError extends Error {
 }
 
 /**
- /*
  * The shape `audit_events.id` is, because that is what a cursor's id is compared against.
  *
  * Not a taste in ids: `lt(auditEvents.id, cursor.id)` is the DATABASE parsing this string, and
@@ -977,7 +1015,6 @@ export class AuditQueryError extends Error {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- /*
  * A caller's page marker, read as the two values the query builder will actually bind.
  *
  * WHAT ARRIVES HERE IS A STRING SOMEBODY TYPED. The cast below used to say `AuditCursor` outright,
@@ -1029,7 +1066,6 @@ function decodeCursor(cursor: string): AuditCursor {
 }
 
 /**
- /*
  * A comma-separated filter, read as the set of values it names.
  *
  * `undefined` means the caller did not ask, and the column goes unconstrained. `[]` means the caller
@@ -1048,7 +1084,6 @@ function requestedValues(raw: string | undefined) {
 }
 
 /**
- /*
  * The condition a requested set puts on a column, including the condition that nothing satisfies.
  *
  * An asked-for set that came out empty must narrow to nothing. It used to widen instead: both
@@ -1177,7 +1212,7 @@ export function auditQueryFromUrl(url: URL): AuditEventQuery {
     throw new AuditQueryError('Query parameter "to" must be a valid date.');
   }
 
-  /*
+  /**
    * Fail fast on a stale or hand-edited bookmark. Without this the raw string travels into
    * `createAuditReader.list`, where `decodeCursor` threw a generic `Error` that escaped the
    * route's `AuditQueryError` catch as a 500. A corrupt cursor is a caller error, not a server
@@ -1202,7 +1237,6 @@ export function auditQueryFromUrl(url: URL): AuditEventQuery {
 }
 
 /**
- /*
  * CSV export for the admin audit trail.
  *
  * The table at Admin > Audit is the only read surface, so a review that needs evidence —
@@ -1232,7 +1266,6 @@ export const AUDIT_EXPORT_COLUMNS = [
 ] as const;
 
 /**
- /*
  * One CSV cell.
  *
  * A spreadsheet runs a cell that starts with `=`, `+`, `-` or `@` (or a tab or carriage return
@@ -1284,7 +1317,6 @@ export function auditEventsToCsv(events: AuditEvent[]): string {
 }
 
 /**
- /*
  * The rows behind an export, walked page by page through the same reader the JSON list
  * uses, so the CSV and the table never disagree about what a filter matches.
  *

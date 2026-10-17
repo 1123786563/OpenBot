@@ -79,6 +79,19 @@ export const credentialKind = pgEnum("credential_kind", [
    * routes — their allowlist deliberately does not widen to match this enum.
    */
   "gateway_admin",
+  /*
+   * The billing protocol's service credential (Bifrost #252, 06.1): the secret the deployment's
+   * Bifrost admission extension presents to reach Reserve/Status/Settle/Release.
+   *
+   * Its own kind because the door it opens is a different one from every other kind here, and
+   * the ticket's own warning is why: a Bot service credential and this credential both prove a
+   * service identity, but only this one may move credits. Let the two share a kind and a Bot
+   * credential reads as a billing caller; keep them apart and the vault's answer to "which
+   * secrets speak for the billing protocol" is exactly one row, `keyId` fixed to `gateway`,
+   * with `credentials_active_key_idx` making rotation race-safe the same way it does for a
+   * Bot's.
+   */
+  "credit_service",
 ]);
 
 export const users = pgTable("users", {

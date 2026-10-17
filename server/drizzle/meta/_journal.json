@@ -883,6 +883,104 @@
       "when": 1792090544120,
       "tag": "0125_gateway_admin_credential",
       "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1792090545120,
+      "tag": "0126_bot_binding_offers",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1792090546120,
+      "tag": "0127_access_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1792090546121,
+      "tag": "0128_gateway_rate_versions",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1792090547121,
+      "tag": "0129_gateway_model_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1792090548121,
+      "tag": "0130_payment_order_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1792090549121,
+      "tag": "0131_access_grant_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1792090550121,
+      "tag": "0132_gateway_customers",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1792090551121,
+      "tag": "0133_gateway_price_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1792090552121,
+      "tag": "0134_price_status_classification",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1792090553121,
+      "tag": "0135_gateway_customer_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1792090554121,
+      "tag": "0136_gateway_model_open_scopes",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1792090555121,
+      "tag": "0137_gateway_catalog_sync_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1792090556121,
+      "tag": "0138_credit_service_credential_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1792090557121,
+      "tag": "0139_gateway_model_preferences",
+      "breakpoints": true
     }
   ]
 }

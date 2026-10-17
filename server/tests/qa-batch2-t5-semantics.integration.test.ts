@@ -88,6 +88,7 @@ async function openOrder(planCode: string, provider: "alipay" | "wechat", tag: s
     currency: "CNY",
     expiresAt: new Date(Date.now() + 15 * 60_000),
     createdBy: `${prefix}-${tag}`,
+    ownerPayerRef: { kind: "personal" as const, id: `${prefix}-${tag}` },
     checkoutPayload: null,
   });
   return order;
@@ -281,6 +282,7 @@ describe("probe i: the purchase guard's uncached projection read", () => {
         provider: "alipay",
         cycle: "monthly",
         createdBy: "qa",
+        ownerPayerRef: { kind: "personal" as const, id: "qa" },
       }),
     ).rejects.toMatchObject({
       refusal: { reason: "active-subscription", activePlanCode: plan },
@@ -317,6 +319,7 @@ describe("probe i: the purchase guard's uncached projection read", () => {
       provider: "alipay",
       cycle: "monthly",
       createdBy: "qa",
+      ownerPayerRef: { kind: "personal" as const, id: "qa" },
     });
     expect(order.order.status).toBe("pending");
     // Clean up the pair so afterAll's prefix sweep finds nothing extra.

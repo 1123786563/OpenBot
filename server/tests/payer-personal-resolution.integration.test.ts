@@ -121,8 +121,9 @@ describe("a personal resolution creates the account and no balance", () => {
 });
 
 describe("the credit read routes refuse requests that name an account", () => {
-  // The deployment's own key, the one the routes read while ticket 02.6 has not switched them
-  // to personal reads — a legitimate request keeps answering THIS account.
+  // The deployment's own key, still the service layer's no-ref fallback for callers outside the
+  // person-facing routes — which since ticket 02.6 answer the signed-in user's own personal
+  // account, never this key.
   const deploymentKey = `openbot-deployment-route-${run}`;
   const credits = createCredits({
     database,

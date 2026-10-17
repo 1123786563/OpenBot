@@ -4,6 +4,7 @@ import {
   IconBuildingBank,
   IconChecks,
   IconCode,
+  IconCoins,
   IconDeviceDesktop,
   IconFileText,
   IconKey,
@@ -112,6 +113,11 @@ const GROUPS = [
         title: "sidebar.people",
         icon: IconUsers,
         linkOptions: { to: "/admin/people" },
+      },
+      {
+        title: "sidebar.billing",
+        icon: IconCoins,
+        linkOptions: { to: "/admin/billing" },
       },
       {
         title: "sidebar.identityProviders",
