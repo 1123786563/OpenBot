@@ -59,6 +59,17 @@ export const credentialKind = pgEnum("credential_kind", [
    * that speaks for the deployment, and one row per person that speaks for them.
    */
   "mcp_user_token",
+  /*
+   * The deployment's own credential for its Bifrost gateway's admin surface (Bifrost 01.2, #208).
+   *
+   * Its own kind because it is the one secret that speaks for the whole deployment at another
+   * system's control plane. It is write-only: the administrator writes and rotates it through the
+   * gateway credential routes and every read path answers a redacted status; only the server-internal
+   * resolver in `gateway/admin-credential.ts` ever decrypts it, and it never returns through an HTTP
+   * response. It must therefore never be writable through the generic `/api/admin/credentials`
+   * routes — their allowlist deliberately does not widen to match this enum.
+   */
+  "gateway_admin",
 ]);
 
 export const users = pgTable("users", {

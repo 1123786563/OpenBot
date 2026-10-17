@@ -115,6 +115,10 @@ import { createHostAccessRoutes } from "./host-access/routes";
 import { identityRoutes } from "./identity/routes";
 import type { IdentityStore } from "./identity/store";
 import { createIntelligenceClient } from "./intelligence-client";
+import { botServiceAdminRoutes } from "./bot-services/routes";
+import type { BotServiceStore } from "./bot-services/store";
+import { gatewayAdminCredentialRoutes } from "./gateway/admin-credential-routes";
+import { gatewayAdminCredentialControls } from "./gateway/admin-credential";
 import { knowledgeServiceConfig } from "./knowledge/config";
 import { createKnowledgeRoutes } from "./knowledge/routes";
 import {
@@ -735,6 +739,8 @@ export function createApp(
   identity?: IdentityStore,
   /** The GitHub sign-in callback, built by the caller; mounted behind requireUser ahead of /api/identity. */
   identityGithubCallback?: Hono<{ Variables: AppVariables }>,
+  /** The Bifrost bot service registry (04.1). Absent answers a tagged 503 on /api/admin/bot-services. */
+  botServices?: BotServiceStore,
 ) {
   // The OpenMuse seam tail, unpacked to the local names the body below reads —
   // one named object at the call site, no seventeen positional arguments to
@@ -1145,6 +1151,33 @@ export function createApp(
             }
           : undefined,
     }),
+  );
+
+  /*
+   * The administrator's bot service registry (Bifrost #234, 04.1): which server-side Bots this
+   * deployment recognizes at all. Registration mints an identity and a declaration, never a
+   * credential or a grant — those are 04.2's and 04.5+'s, under their own triggers. Absent leaves
+   * the surface mounted but answering a tagged 503, so the Admin page can say the registry is
+   * unavailable rather than the route having vanished.
+   */
+  app.route(
+    "/api/admin/bot-services",
+    botServiceAdminRoutes(requireUser, botServices, auditStore),
+  );
+
+  /*
+   * The gateway admin credential (Bifrost 01.2, #208): write and rotate the deployment's own key
+   * for the Bifrost management surface, and read its redacted status. Write-only by construction:
+   * no route here — and none may grow — returns the key; only the service's
+   * `resolveGatewayAdminCredential` decrypts, for server-side trusted code, and 01.5 mounts the
+   * probe that uses it. Resolved through the installed service rather than a createApp parameter:
+   * the wiring installs it before the app is built (index.ts), and a test that never did reads a
+   * tagged 503 — no signature seat moves, which the tail-parameter arithmetic in
+   * identity-app-wiring.test.ts depends on.
+   */
+  app.route(
+    "/api/admin/gateway/credential",
+    gatewayAdminCredentialRoutes(requireUser, gatewayAdminCredentialControls()),
   );
 
   app.get("/api/settings/instructions", requireUser, async (context) => {

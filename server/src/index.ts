@@ -228,6 +228,11 @@ import {
   decryptCredentialForUse,
   resolveModelApiKey,
 } from "./credentials";
+import {
+  createGatewayAdminCredentialService,
+  installGatewayAdminCredentialService,
+} from "./gateway/admin-credential";
+import { createEnterpriseStore } from "./admin/settings-store";
 import { createDatabase } from "./db/client";
 import {
   channelAgents,
@@ -268,6 +273,7 @@ import { githubCallbackRoutes } from "./identity/github-callback";
 import { retireIdentityLinks, retireOwnedAccounts } from "./identity/retire";
 import { slackCodeRedeemer } from "./identity/slack-redeem";
 import { createIdentityStore } from "./identity/store";
+import { createBotServiceStore } from "./bot-services/store";
 import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
@@ -820,6 +826,8 @@ const enterpriseConversationRoutes = enterpriseCapabilities
     )
   : createUnavailableConversationRoutes();
 const identityStore = createIdentityStore(database, credentialStore);
+// The Bifrost bot service registry (04.1): identities only — no credential is minted here.
+const botServiceStore = createBotServiceStore(database);
 
 const agentVault = {
   store: credentialStore,
@@ -976,6 +984,21 @@ const policyListener = await startPolicyListener(
  * unavailable, and the row is a note for a reader rather than something the server depends on.
  */
 const bootAuditStore = createAuditStore(database);
+
+/*
+ * The Bifrost gateway's admin credential (01.2, #208): encrypted in the shared vault under its
+ * own kind, read back only as a redacted status. The routes answer writes and status; the one
+ * decryption path is installed here so server-side trusted code (01.5's probe, 07.x's admission
+ * extension) resolves it without ever holding the key itself. The writer's role is re-checked
+ * against the same `user_roles` table `requireAdmin` consults.
+ */
+const gatewayAdminCredentialService = createGatewayAdminCredentialService({
+  database,
+  encryptionKey: config.keyEncryptionKey,
+  member: (userId) => createEnterpriseStore(database).member(userId),
+  auditStore: bootAuditStore,
+});
+installGatewayAdminCredentialService(gatewayAdminCredentialService);
 // One store: the gateway writes through it, a route reads it, and the sweep below takes the old ones out.
 const pageFrameStore = createPageFrameStore(database);
 let deliveryNotifications: (
@@ -5504,6 +5527,7 @@ const app = createApp(
   },
   identityStore,
   identityGithubCallback,
+  botServiceStore,
 );
 
 /**
