@@ -496,7 +496,7 @@ test("runs migrations after PostgreSQL becomes healthy", () => {
 
   expect(compose).toContain("migrate:");
   expect(compose).toContain("condition: service_healthy");
-  expect(compose).toContain('"drizzle-kit", "migrate"');
+  expect(compose).toContain('"bun", "scripts/migrate.ts"');
 });
 
 test("builds the deployment image with Playwright's Chromium payload only", () => {
