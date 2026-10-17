@@ -84,7 +84,10 @@ import {
   type LoadPersonalMemory,
   PersonalMemoryMiddleware,
 } from "./memory/tools";
-import { withRunObservationScope } from "./observation-run-scope";
+import {
+  currentRunObservationScope,
+  withRunObservationScope,
+} from "./observation-run-scope";
 import type { SelectableSkill, Selection } from "./plugins/selection";
 import {
   latestUserText,
@@ -491,16 +494,33 @@ export type BuiltinModelSpanFact = {
     | { kind: "canceled" }
     | { kind: "usage_missing" };
   /**
-   * The serialized provider request prompt, BEFORE any projection: the raw fact the
-   * observation bypass saw. Projection (deny patterns, byte caps) happens ONLY at the
-   * recorder — this value is never trusted, never stored, never logged.
+   * The serialized provider request prompt, bounded AT CAPTURE (OCR R2-52, H9):
+   * a prompt carrying media parts (images, files, inline base64 attachments) is
+   * never serialized at all — `null`, metrics-only — and a text-only prompt is
+   * serialized per message and cut at 64Ki characters with an in-band
+   * truncation mark, so no attachment can be pinned alive from capture through
+   * the billing check to settlement. Deny-pattern projection still happens ONLY
+   * at the recorder — this value is never trusted, never stored, never logged.
    */
   input: string | null;
   /**
-   * The accumulated output text, BEFORE any projection: the raw fact the observation
-   * bypass saw. Projection happens ONLY at the recorder (see `input`).
+   * The accumulated output text, bounded AT CAPTURE (OCR R2-53) to the same
+   * 2000-character ceiling the failure path applies to error messages: the
+   * provider's full answer is its product, not the observation's payload.
+   * Projection happens ONLY at the recorder (see `input`).
    */
   output: string | null;
+  /**
+   * The run's observation scope, captured at `doStream` entry beside `trace`
+   * (OCR R2-58): by stream teardown the ambient context is not guaranteed, so
+   * the fact carries the scope its entry captured instead of leaving the
+   * settlement-path adapter to re-read an ambient store that may already be
+   * gone. Structural `unknown`, like every cross-module field here — the only
+   * possible writer is the boot wiring's own threading. Undefined — a run that
+   * started scope-less — keeps the record an honest no-op upstream, exactly as
+   * before.
+   */
+  scope: unknown;
   /**
    * The run's W3C trace coordinates captured when the model call began (OCR h6, the
    * T15 tool-step precedent) — the chain the span joins instead of rooting its own.
@@ -559,7 +579,12 @@ export type BuiltinToolStepFact = {
   trace: { traceId: string; spanId: string } | null;
   /** The raw accumulated call arguments — BEFORE projection; the recorder projects. */
   input: string | null;
-  /** The raw execution output or error text — BEFORE projection; the recorder projects. */
+  /**
+   * The execution output or error text, BEFORE projection (the recorder
+   * projects) but bounded AT CAPTURE (OCR R2-53): both settlement sides keep
+   * the same 2000-character ceiling, so a large result is excerpted, never
+   * pinned whole.
+   */
   output: string | null;
 };
 
@@ -755,6 +780,14 @@ function observeBuiltinToolSteps(
 }
 
 /**
+ * The tool-step output capture ceiling (OCR R2-53): one bound, applied to BOTH
+ * sides of the execution settlement — the success result and the failure
+ * message — so a large answer cannot be pinned whole between capture and the
+ * recorder's projection.
+ */
+const TOOL_STEP_OUTPUT_CAPTURE_CHARS = 2_000;
+
+/**
  * Observes one REAL execute: the callback this process runs for a tool call. The
  * settlement IS the receipt for a server-side execution. A suspension (the tool is
  * waiting on a person or the browser) is not an ending — the cell stays open and the
@@ -770,10 +803,21 @@ async function observeBuiltinToolExecution<T>(
   const observer = builtinToolStepObserver;
   if (observer === undefined || toolCallId === undefined) return run();
   const cell = builtinToolStepCell(toolCallId, toolName);
+  /*
+   * The success path keeps the failure path's 2000-character precedent (OCR
+   * R2-53): a bounded capture, aligned on both sides of the settlement — the
+   * tool's full result is its product, not the observation's payload, and a
+   * large one must not be pinned whole until the recorder projects it.
+   */
   const outputOf = (value: unknown): string | null => {
-    if (typeof value === "string") return value;
+    if (typeof value === "string") {
+      return value.slice(0, TOOL_STEP_OUTPUT_CAPTURE_CHARS);
+    }
     try {
-      return JSON.stringify(value) ?? null;
+      const serialized = JSON.stringify(value);
+      return serialized === null
+        ? null
+        : serialized.slice(0, TOOL_STEP_OUTPUT_CAPTURE_CHARS);
     } catch {
       // A result that cannot serialize carries no observation payload.
       return null;
@@ -801,7 +845,7 @@ async function observeBuiltinToolExecution<T>(
       output: canceled
         ? null
         : error instanceof Error
-          ? error.message.slice(0, 2_000)
+          ? error.message.slice(0, TOOL_STEP_OUTPUT_CAPTURE_CHARS)
           : null,
     };
     settleBuiltinToolStep(cell, "terminal");
@@ -1026,6 +1070,135 @@ export class UnmeterableModelError extends Error {
   }
 }
 
+/*
+ * The capture-side bounds on one model span's payload (OCR R2-52/R2-53). The
+ * recorder downstream still owns redaction (deny patterns) and its own byte
+ * caps; these bounds exist so the CAPTURE itself can never pin an attachment or
+ * a whole answer alive from `doStream` entry, through the billing check, to
+ * settlement.
+ */
+
+/**
+ * The prompt capture ceiling, in UTF-16 code units (OCR R2-52): a text-only
+ * prompt is serialized per message, walk stopped at this ceiling, and the cut
+ * declared in-band. Media-bearing prompts never serialize at all.
+ */
+const SPAN_INPUT_CAPTURE_CHARS = 64 * 1024;
+
+/** The in-band declaration appended to a cut prompt capture (OCR R2-52). */
+const SPAN_INPUT_TRUNCATION_MARK =
+  "...[observation input truncated at capture]";
+
+/**
+ * The output capture ceiling (OCR R2-53): the 2000-character precedent the
+ * failure path already applies to error messages, now applied where successful
+ * output is accumulated and merged at settlement too.
+ */
+const SPAN_OUTPUT_CAPTURE_CHARS = 2_000;
+
+/**
+ * Whether one prompt message is provably text-only (OCR R2-52). A string, or an
+ * array whose every part is a plain `{ type: "text", text }` shape, is text;
+ * anything else — image, file, tool part, an unknown shape — means the prompt
+ * may carry inline attachment bytes, and the capture goes metrics-only rather
+ * than serialize what it cannot prove is text. Conservative by design: the
+ * denial is per-prompt, and a span's usage metrics never depend on it.
+ */
+function spanPromptIsTextOnly(message: unknown): boolean {
+  if (!message || typeof message !== "object") return false;
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") return true;
+  if (!Array.isArray(content)) return false;
+  return content.every(
+    (part) =>
+      part !== null &&
+      typeof part === "object" &&
+      (part as { type?: unknown }).type === "text" &&
+      typeof (part as { text?: unknown }).text === "string",
+  );
+}
+
+/**
+ * One message serialized within a character budget: the text is sliced BEFORE
+ * serialization, so no transient allocation ever exceeds what the capture keeps
+ * (OCR R2-52 — the point is that a 43MB attachment's neighbor, a 40MB single
+ * text message, never materializes as a string either). `cut.value` reports
+ * whether anything was left behind.
+ */
+function spanMessagePiece(
+  message: unknown,
+  remaining: number,
+  cut: { value: boolean },
+): string {
+  const source = message as { role?: unknown; content?: unknown };
+  if (typeof source.content === "string") {
+    const kept = source.content.slice(0, remaining);
+    if (kept.length < source.content.length) cut.value = true;
+    return JSON.stringify({ role: source.role, content: kept });
+  }
+  let budget = remaining;
+  const parts = (source.content as unknown[]).map((part) => {
+    const text = (part as { text?: unknown })?.text;
+    if (typeof text !== "string" || budget <= 0)
+      return { type: "text", text: "" };
+    const kept = text.slice(0, budget);
+    budget -= kept.length;
+    if (kept.length < text.length) cut.value = true;
+    return { type: "text", text: kept };
+  });
+  return JSON.stringify({ role: source.role, content: parts });
+}
+
+/**
+ * The capture-side view of one call's prompt (OCR R2-52): `null` for any prompt
+ * that is not provably text-only (metrics-only — attachment bytes never enter
+ * this module), and a per-message serialization cut at
+ * `SPAN_INPUT_CAPTURE_CHARS` with an in-band truncation mark otherwise. The
+ * reconstruction is bounded per message, so the walk's allocations stay within
+ * the capture ceiling no matter how large the prompt is.
+ */
+function spanInputOf(params: unknown): string | null {
+  const prompt = (params as { prompt?: unknown })?.prompt;
+  if (!Array.isArray(prompt)) {
+    // Outside the message-array shape there is nothing to walk: serialize once
+    // and cut. The bounded fallback for whatever a custom provider hands over.
+    try {
+      const serialized = JSON.stringify(prompt ?? null);
+      if (serialized === null) return null;
+      return serialized.length > SPAN_INPUT_CAPTURE_CHARS
+        ? serialized.slice(0, SPAN_INPUT_CAPTURE_CHARS) +
+            SPAN_INPUT_TRUNCATION_MARK
+        : serialized;
+    } catch {
+      // A prompt that cannot serialize is metrics-only for the span, never a failure.
+      return null;
+    }
+  }
+  const pieces: string[] = [];
+  let length = 0;
+  const cut = { value: false };
+  for (const message of prompt) {
+    if (!spanPromptIsTextOnly(message)) return null;
+    const remaining = SPAN_INPUT_CAPTURE_CHARS - length;
+    if (remaining <= 0) {
+      cut.value = true;
+      break;
+    }
+    const piece = spanMessagePiece(message, remaining, cut);
+    pieces.push(piece);
+    length += piece.length;
+  }
+  let body = `[${pieces.join(",")}]`;
+  if (body.length > SPAN_INPUT_CAPTURE_CHARS) {
+    // JSON quoting and escaping overhead can push a piece past its character
+    // budget; the ceiling is enforced on the assembled capture, so the tail is
+    // cut here and the mark declares it.
+    body = body.slice(0, SPAN_INPUT_CAPTURE_CHARS);
+    cut.value = true;
+  }
+  return cut.value ? body + SPAN_INPUT_TRUNCATION_MARK : body;
+}
+
 /**
  * A model instance carrying the billing admission and settlement, hand-rolled to the same
  * shape AI SDK's own `wrapLanguageModel` produces: `doStream` delegates to the wrapped model
@@ -1064,20 +1237,22 @@ function meteredModel<T>(model: T): T {
       // discipline): by stream teardown the ambient context is not guaranteed.
       const spanTrace =
         spanObserver !== undefined ? (currentTraceContext() ?? null) : null;
+      // Captured at entry for the same reason as the trace (OCR R2-58): the
+      // settlement that reports this fact can land after teardown, where the
+      // ambient scope is no longer guaranteed to exist — so the fact carries
+      // what its entry saw, and the adapter reads the carried value.
+      const spanScope =
+        spanObserver !== undefined ? currentRunObservationScope() : undefined;
       /*
        * Output deltas accumulate into an array joined once at report time — linear,
        * where repeated string concatenation would re-copy on every delta (T14 review
-       * minor b).
+       * minor b) — and the accumulation itself stops at the capture ceiling (OCR
+       * R2-53): deltas past it are counted by the provider, not retained by us.
        */
       const spanOutputDeltas: string[] = [];
+      let spanOutputLength = 0;
       if (spanObserver !== undefined) {
-        try {
-          spanInput = JSON.stringify(
-            (params as { prompt?: unknown })?.prompt ?? null,
-          );
-        } catch {
-          // A prompt that cannot serialize is metrics-only for the span, never a failure.
-        }
+        spanInput = spanInputOf(params);
       }
       const reportSpan = (ending: BuiltinModelSpanFact["ending"]) => {
         if (spanObserver === undefined) return;
@@ -1092,7 +1267,10 @@ function meteredModel<T>(model: T): T {
             ending,
             input: spanInput,
             output:
-              spanOutputDeltas.length === 0 ? null : spanOutputDeltas.join(""),
+              spanOutputDeltas.length === 0
+                ? null
+                : spanOutputDeltas.join("").slice(0, SPAN_OUTPUT_CAPTURE_CHARS),
+            scope: spanScope,
             trace: spanTrace,
           });
         } catch {
@@ -1359,13 +1537,17 @@ function meteredModel<T>(model: T): T {
 
           const part = chunk.value;
           // Read-only output accumulation for the observation bypass: the delta is
-          // forwarded untouched below; this only remembers what already flowed past.
+          // forwarded untouched below; this only remembers what already flowed past,
+          // up to the capture ceiling (OCR R2-53) — past it, nothing is retained.
           if (
             spanObserver !== undefined &&
+            spanOutputLength < SPAN_OUTPUT_CAPTURE_CHARS &&
             part?.type === "text-delta" &&
             typeof (part as { delta?: unknown }).delta === "string"
           ) {
-            spanOutputDeltas.push((part as { delta: string }).delta);
+            const delta = (part as { delta: string }).delta;
+            spanOutputDeltas.push(delta);
+            spanOutputLength += delta.length;
           }
           /**
            * The one settlement-failure exit: mark settled, log by eventId, tear the

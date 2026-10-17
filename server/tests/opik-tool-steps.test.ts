@@ -552,26 +552,69 @@ describe("the retrieval step recorder", () => {
       state: "projected",
       value: ["kb-1", "kb-2"],
     });
-    // Each fragment keeps its locators: which kb, which chunk, which document,
-    // where it came from and how it scored.
+    // Each fragment keeps its locators as BARE values (OCR R2-32): the read
+    // side and the wire serializer unwrap only the outermost SafeValue envelope,
+    // so per-key envelopes landed upstream verbatim and blinded every consumer
+    // that reads the locators as plain values — the same mechanism the kb_ids
+    // list's T37 G3 fix removed one attribute earlier.
     const fragmentsAttribute = span.attributes?.fragments as
       | { state: string; value: unknown }
       | undefined;
     const fragments = fragmentsAttribute?.value as Array<
-      Record<string, { value: unknown }>
+      Record<string, unknown>
     >;
     expect(fragments).toHaveLength(2);
-    expect(fragments[0].kb_id).toEqual({ state: "projected", value: "kb-1" });
-    expect(fragments[0].chunk_id).toEqual({
-      state: "projected",
-      value: "chunk-9",
+    expect(fragments[0]).toEqual({
+      kb_id: "kb-1",
+      chunk_id: "chunk-9",
+      doc_id: "doc-7",
+      source: "handbook.md",
+      score: 0.91,
     });
-    expect(fragments[0].doc_id).toEqual({ state: "projected", value: "doc-7" });
-    expect(fragments[0].source).toEqual({
-      state: "projected",
-      value: "handbook.md",
+    expect(fragments[1]).toEqual({
+      kb_id: "kb-2",
+      chunk_id: "chunk-12",
+      doc_id: "doc-3",
+      source: "https://intranet.example/policy",
+      score: 0.4,
     });
-    expect(fragments[0].score).toEqual({ state: "projected", value: 0.91 });
+  });
+
+  test("fragments beyond the cap land truncated and bare, with the truncation promoted to real attributes (OCR R2-32)", async () => {
+    // MAX_FRAGMENTS is 64 (the retriever's own top_k ceiling, defensively
+    // doubled); 69 fragments force the truncated outer state.
+    const many = Array.from({ length: 69 }, (_, i) => ({
+      kbId: `kb-${i}`,
+      chunkId: `chunk-${i}`,
+    }));
+    const { writes } = await recordRetrievalAndCapture({
+      occurredAt: startedAt,
+      endedAt,
+      query: "q",
+      outcome: { kind: "hit", fragments: many },
+      scope: aScope(),
+    });
+    const span = writes[0].spans[0];
+    const fragmentsAttribute = span.attributes?.fragments as
+      | { state: string; value: unknown }
+      | undefined;
+    expect(fragmentsAttribute?.state).toBe("truncated");
+    const fragments = fragmentsAttribute?.value as Array<
+      Record<string, unknown>
+    >;
+    expect(fragments).toHaveLength(64);
+    expect(fragments[0]).toEqual({ kb_id: "kb-0", chunk_id: "chunk-0" });
+    // attribute() reads ONLY safe.value, so the truncated envelope's own
+    // originalBytes/dropped never reached the wire; they ride as real span
+    // attributes instead of being silently dropped.
+    expect(span.attributes?.fragments_dropped).toEqual({
+      state: "projected",
+      value: 5,
+    });
+    expect(span.attributes?.fragments_original_bytes).toEqual({
+      state: "projected",
+      value: -1,
+    });
   });
 
   test("a degraded retrieval is a failed step with its reason; a miss completed", async () => {
@@ -736,6 +779,42 @@ describe("the built-in observation bypass", () => {
     expect(fact.input).toBe('{"path":"/etc/hosts"}');
     expect(fact.output).toBe("42");
     expect(toolStepExecutionState(fact)).toBe("executed");
+  });
+
+  test("a large successful execution output is captured at the failure path's cap (OCR R2-53)", async () => {
+    const facts: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => facts.push(fact));
+    try {
+      // A string result bigger than the error path's 2000-char precedent.
+      // (Fresh toolCallIds: the bypass tombstones settled ids for the whole
+      // process, so ids any other test settled would silently record nothing.)
+      const kept = await toolStepObservationForTests.observeExecution(
+        "host_read",
+        "r2-53-cap-str",
+        async () => "z".repeat(5_000),
+      );
+      expect(kept).toHaveLength(5_000); // the product result is untouched
+      // An object result whose JSON serialization exceeds the cap.
+      await toolStepObservationForTests.observeExecution(
+        "host_read",
+        "r2-53-cap-obj",
+        async () => ({
+          blob: "w".repeat(5_000),
+        }),
+      );
+    } finally {
+      setBuiltinToolStepObserver(undefined);
+    }
+    expect(facts).toHaveLength(2);
+    // The success path keeps the same bounded capture the failure path already
+    // applies to error messages — a 5000-char answer is not pinned whole.
+    expect(facts[0].execution).toEqual({
+      kind: "succeeded",
+      output: "z".repeat(2_000),
+    });
+    expect(facts[1].execution?.kind).toBe("succeeded");
+    expect(facts[1].execution?.output?.length).toBe(2_000);
+    expect(facts[1].execution?.output).toMatch(/^\{"blob":"w{1,}/);
   });
 
   test("a browser proposal with no receipt is unobserved, never success (acceptance 2)", async () => {

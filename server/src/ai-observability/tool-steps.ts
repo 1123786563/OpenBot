@@ -210,6 +210,8 @@ const SPAN_ATTRIBUTE_ALLOWLIST: readonly string[] = [
   "degraded_reason",
   "fragment_count",
   "fragments",
+  "fragments_dropped",
+  "fragments_original_bytes",
   "kb_ids",
   "origin",
 ];
@@ -309,31 +311,59 @@ function projectSpanContent(text: string | null | undefined): SafeValue | null {
   return asValue(projectSafeText(text, { allowFreeText: true }));
 }
 
-/** Fragments become one projected array of locator records; a cap that drops says so. */
-function projectFragments(
-  fragments: readonly RetrievalFragment[],
-): SafeValue | undefined {
+/** Fragments become one projected array of BARE locator records; a cap that drops says so. */
+function projectFragments(fragments: readonly RetrievalFragment[]): {
+  value: SafeValue;
+  dropped: number;
+} {
   const value = fragments.slice(0, MAX_FRAGMENTS).map((fragment) =>
-    projectSafeRecord(
-      {
-        kb_id: fragment.kbId,
-        chunk_id: fragment.chunkId,
-        doc_id: fragment.docId,
-        source: fragment.source,
-        ...(typeof fragment.score === "number"
-          ? { score: fragment.score }
-          : {}),
-      },
-      FRAGMENT_KEYS,
+    bareRecord(
+      projectSafeRecord(
+        {
+          kb_id: fragment.kbId,
+          chunk_id: fragment.chunkId,
+          doc_id: fragment.docId,
+          source: fragment.source,
+          ...(typeof fragment.score === "number"
+            ? { score: fragment.score }
+            : {}),
+        },
+        FRAGMENT_KEYS,
+      ),
     ),
   );
-  if (fragments.length <= MAX_FRAGMENTS) return { state: "projected", value };
+  if (fragments.length <= MAX_FRAGMENTS)
+    return { value: { state: "projected", value }, dropped: 0 };
+  const dropped = fragments.length - MAX_FRAGMENTS;
   return {
-    state: "truncated",
-    value,
-    originalBytes: -1,
-    dropped: fragments.length - MAX_FRAGMENTS,
+    value: {
+      state: "truncated",
+      value,
+      originalBytes: -1,
+      dropped,
+    },
+    dropped,
   };
+}
+
+/**
+ * One projected record's SafeValue envelopes unwrapped to the bare values the
+ * wire carries (OCR R2-32). The port's serializer unwraps only the OUTERMOST
+ * envelope (attribute()/plainValue, opik-http.ts), so envelopes nested inside a
+ * record's value reached the upstream row verbatim — the exact mechanism the
+ * kb_ids list's T37 G3 fix removed one attribute earlier; this is the same
+ * repair applied to the fragment records assembled into the outer array.
+ * An omitted field drops out (nothing is invented); a truncated field keeps the
+ * partial value its projection kept; null/undefined drop, as on the wire.
+ */
+function bareRecord(record: SafeRecord): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(record)) {
+    if (field.state === "omitted") continue;
+    if (field.value === null || field.value === undefined) continue;
+    out[key] = field.value;
+  }
+  return out;
 }
 
 function baseSpan(
@@ -467,7 +497,24 @@ function buildRetrievalStepSpan(
     observation.outcome.kind === "hit"
       ? projectFragments(observation.outcome.fragments)
       : undefined;
-  if (fragments) attributes.fragments = fragments;
+  if (fragments) {
+    attributes.fragments = fragments.value;
+    // OCR R2-32: attribute() reads ONLY safe.value, so the truncated
+    // envelope's own originalBytes/dropped fields never reached the wire —
+    // a cap that dropped fragments said so to no one. They are promoted into
+    // real span attributes instead of being silently dropped; the -1 is the
+    // SafeValue vocabulary's own "cannot be measured".
+    if (fragments.dropped > 0) {
+      attributes.fragments_dropped = {
+        state: "projected",
+        value: fragments.dropped,
+      };
+      attributes.fragments_original_bytes = {
+        state: "projected",
+        value: -1,
+      };
+    }
+  }
   const input = projectSpanContent(observation.query);
   if (input) attributes.input = input;
   return {
