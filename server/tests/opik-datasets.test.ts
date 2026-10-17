@@ -84,6 +84,20 @@ describe("the dataset store validates its own inputs", () => {
     ).toThrow(new DatasetStoreError("DATASET_INPUT_INVALID", 400));
   });
 
+  test("refuses a credential-shaped dataset name before anything is stored (OCR m110)", () => {
+    // The reviewer types this name in the save flow; the subject row and the
+    // append-only audit row would both carry it forever. Same discipline as the
+    // experiment name (h5): a credential-class match is refused, never stored.
+    for (const datasetName of [
+      "sk-live-abcdefghijklmnopqrst",
+      "postgres://user:hunter2@host/db",
+    ]) {
+      expect(() =>
+        store.saveVersion(trusted, { datasetName, cases: [caseInput] }),
+      ).toThrow(new DatasetStoreError("DATASET_INPUT_INVALID", 400));
+    }
+  });
+
   test("refuses zero cases and more cases than one version may freeze", () => {
     expect(() =>
       store.saveVersion(trusted, { datasetName: "eval-set", cases: [] }),

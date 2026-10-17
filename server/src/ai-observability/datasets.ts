@@ -11,7 +11,11 @@ import {
   aiObservationDatasetVersions,
 } from "../db/schema/ai-observability-datasets";
 import type { ObservationScope } from "./contracts";
-import { projectSafeFixture, projectSafeText } from "./redaction";
+import {
+  denyReason,
+  projectSafeFixture,
+  projectSafeText,
+} from "./redaction";
 import { notPendingDeletion } from "./retention";
 import { assertObservationScope, resolveStorageLocator } from "./scope";
 
@@ -229,6 +233,13 @@ export function contentHash(
 function validateSaveInput(input: SaveDatasetVersionInput) {
   const name = reference(input.datasetName);
   if (new TextEncoder().encode(name).length > MAX_DATASET_NAME_BYTES) {
+    throw new DatasetStoreError("DATASET_INPUT_INVALID", 400);
+  }
+  // The reviewer types this name; the subject row and the append-only audit row
+  // that echoes it would both carry it forever (the versions are immutable, the
+  // trail is append-only). A credential-class match is refused here — the id-links
+  // precedent — so no stored or echoed dataset name can be a credential.
+  if (denyReason(name) !== undefined) {
     throw new DatasetStoreError("DATASET_INPUT_INVALID", 400);
   }
   if (

@@ -12,6 +12,7 @@ import { aiObservationExperiments } from "../db/schema/ai-observability-experime
 import type { ObservationScope } from "./contracts";
 import { canonicalJson } from "./datasets";
 import {
+  denyReason,
   projectSafeFixture,
   projectSafeName,
   projectSafeText,
@@ -151,6 +152,15 @@ function structure(value: Record<string, unknown>): Record<string, unknown> {
 function validateInput(input: SaveExperimentInput) {
   const name = reference(input.name);
   if (new TextEncoder().encode(name).length > MAX_EXPERIMENT_NAME_BYTES) {
+    throw new ExperimentStoreError("EXPERIMENT_INPUT_INVALID", 400);
+  }
+  // The id-links precedent, applied to the one field the freeze pipeline never
+  // projected: the name is a frozen row column and an audit-payload fact, the row
+  // is immutable (no UPDATE can clean it) and the trail is append-only — so a name
+  // matching a credential class is refused before anything is stored. The audit
+  // payload below reads `result.experiment.name` from that same validated row, so
+  // this one refusal covers the trail too.
+  if (denyReason(name) !== undefined) {
     throw new ExperimentStoreError("EXPERIMENT_INPUT_INVALID", 400);
   }
   reference(input.datasetVersionId);

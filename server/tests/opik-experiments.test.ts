@@ -88,6 +88,25 @@ describe("the experiment store validates its own inputs", () => {
     expect(MAX_EXPERIMENT_NAME_BYTES).toBe(128);
   });
 
+  test("refuses a credential-shaped name before anything is stored (OCR h5)", () => {
+    // The id-links precedent: a name that matches a credential class is a refusal,
+    // not a projection — the row is frozen forever (no UPDATE), the audit trail is
+    // append-only forever, and the name rides both. Deny at the one entry.
+    for (const name of [
+      "sk-live-abcdefghijklmnopqrst",
+      "AKIAIOSFODNN7EXAMPLE",
+      "-----BEGIN RSA PRIVATE KEY-----",
+      "postgres://user:hunter2@host/db",
+    ]) {
+      expect(() => store.submit(trusted, { ...input, name })).toThrow(
+        new ExperimentStoreError("EXPERIMENT_INPUT_INVALID", 400),
+      );
+      expect(() => store.saveDraft(trusted, { ...input, name })).toThrow(
+        new ExperimentStoreError("EXPERIMENT_INPUT_INVALID", 400),
+      );
+    }
+  });
+
   test("refuses a blank dataset version id before any query", () => {
     expect(() =>
       store.submit(trusted, { ...input, datasetVersionId: "" }),
