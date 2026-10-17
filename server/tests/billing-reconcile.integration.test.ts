@@ -71,7 +71,7 @@ afterAll(async () => {
     .delete(paymentOrders)
     .where(like(paymentOrders.id, `${prefix}%`));
   await database.$client.close();
-}, 240_000);
+}, 600_000);
 
 afterEach(async () => {
   await database
@@ -834,8 +834,13 @@ describe("exact credit-identity arithmetic beyond Number.MAX_SAFE_INTEGER", () =
   const MAKE_UP = 4_194_304;
 
   // Seed and reconcile each walk millions of rows: these cases carry their own timeout
-  // (bun's default 5s is tuned for unit tests, not generate_series).
-  const SLOW = 240_000;
+  // (bun's default 5s is tuned for unit tests, not generate_series). The two
+  // generate_series inserts alone measure ~170s EACH against a dedicated
+  // container, so the old 240s budget fell over mid-seed (CI's 240000.09ms hook
+  // timeout) and never reached the assertions it exists for. 600s keeps the
+  // loud-fail property a hang guard exists for, with headroom over the measured
+  // cost instead of sitting exactly at it.
+  const SLOW = 600_000;
 
   beforeAll(async () => {
     await database
@@ -1317,8 +1322,8 @@ describe("the paged walks cross page boundaries (audit C3, final review)", () =>
   // Seeded server-side in one round trip each (generate_series, the precision suite's way): a
   // client-side row-by-row loop would turn a paging test into a load test. These cases also
   // walk the precision suite's millions of residue rows, so they carry the same slow-case
-  // timeout those do.
-  const SLOW = 240_000;
+  // timeout those do — sized by the same measurement, not the old 240s that fell over mid-seed.
+  const SLOW = 600_000;
 
   test(
     "1200 agreeing paid orders are all walked across three pages, with zero paid_without_fact",
