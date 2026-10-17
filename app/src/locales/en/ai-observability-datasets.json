@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "namespace": "ai-observability-datasets",
+    "ownedBy": "#27 (dataset review, save, versions)"
+  },
+  "availability": {
+    "disabled": {
+      "title": "Evaluation is off",
+      "description": "Observability is disabled for this deployment, so datasets cannot be built from runs."
+    },
+    "empty": {
+      "title": "No dataset versions yet",
+      "description": "Save a reviewed case from a run, or add a reviewed synthetic example, to create the first frozen version."
+    },
+    "forbidden": {
+      "title": "You cannot manage this dataset",
+      "description": "Datasets follow the Bot's management rights. Reuse across Bots needs an explicit authorized copy."
+    },
+    "basic": {
+      "title": "Metrics-only source",
+      "description": "The source run recorded metrics only. It cannot become a text sample; supply a reviewed synthetic or redacted example instead."
+    },
+    "omitted": {
+      "title": "Content omitted",
+      "description": "This field could not be handled safely, so only metrics are shown. Omitted is not the same as empty."
+    },
+    "truncated": {
+      "title": "Content truncated",
+      "description": "This value exceeds the recorded size limit and was cut. A frozen version keeps the truncated value as saved."
+    },
+    "syncing": {
+      "title": "Version still syncing",
+      "description": "The version was accepted locally but is not confirmed upstream yet. Syncing is not success."
+    },
+    "unavailable": {
+      "title": "Upstream unavailable",
+      "description": "The observability store did not answer, so this version cannot be read right now. Nothing was deleted."
+    }
+  }
+}
