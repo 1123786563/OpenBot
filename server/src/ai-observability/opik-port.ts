@@ -24,7 +24,9 @@ export type OpikOperation =
   | "retrieveProject"
   | "createTrace"
   | "writeSpans"
-  | "listTraces";
+  | "listTraces"
+  | "deleteTraces"
+  | "deleteDataset";
 
 /**
  * The structural subset of T04's VerifiedOpikContract manifest the adapter depends on. The
@@ -181,6 +183,28 @@ export type OpikPort = {
     scope: ObservationScope,
     input: { projectId: string; size?: number; page?: number },
   ): Promise<OpikPortResult<OpikTracePage>>;
+  /**
+   * Physically delete traces upstream (spans go with them), on the verified
+   * `trace-span-physical-delete` evidence. A retention path only (T35): the ids are
+   * upstream trace ids the binding table recorded at reconciliation, and the call is a
+   * write in the drift sense — a scope whose writes are suspended does not delete either.
+   * Upstream answers 204 for ids it no longer has as well, so a retry after a crash is
+   * safe to repeat.
+   */
+  deleteTraces(
+    scope: ObservationScope,
+    input: { projectId: string; traceIds: readonly string[] },
+  ): Promise<OpikPortResult<{ deleted: true }>>;
+  /**
+   * Physically delete one upstream dataset, on the verified
+   * `experiment-dataset-physical-delete` evidence. A retention path only (T35): the id is
+   * the `opik_dataset_id` the dataset row recorded when its push was acknowledged, and the
+   * same write-drift rules as `deleteTraces` apply.
+   */
+  deleteDataset(
+    scope: ObservationScope,
+    input: { datasetId: string },
+  ): Promise<OpikPortResult<{ deleted: true }>>;
 };
 
 /** Injection seams: the deployment target, the verified contract, and (for tests) transport

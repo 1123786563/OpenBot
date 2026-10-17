@@ -716,6 +716,15 @@ export const auditEventTypes = [
    * configuration as before" from the trail without reading the frozen configuration.
    */
   "opik.experiment_submitted",
+  /**
+   * One retention sweep pass ran over the observation store (Issue #41 / T35):
+   * deleted expired run records, dataset versions, experiments and export
+   * products, and deleted them for real — rows and upstream copies, upstream
+   * first. The payload carries the bucket and per-category counts
+   * (expired/deleted/skipped/failed) only: what was deleted is gone, and the
+   * trail must not become the place a copy of it survives.
+   */
+  "opik.retention_swept",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

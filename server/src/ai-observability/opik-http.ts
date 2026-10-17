@@ -52,6 +52,11 @@ const REQUIRED_CAPABILITIES: Record<OpikOperation, readonly string[]> = {
   createTrace: ["trace-query-id-mapping"],
   writeSpans: ["otlp-write-parent-child", "body-limit-boundary"],
   listTraces: ["trace-query-id-mapping"],
+  // T35: the physical-delete capabilities T04's manifest already verified (fixtures
+  // 36/41 — absence read-backs after the deletes), so a manifest that carried those
+  // checks authorizes deletion and one that did not refuses it like any other operation.
+  deleteTraces: ["trace-span-physical-delete"],
+  deleteDataset: ["experiment-dataset-physical-delete"],
 };
 
 /** The success status the contract observed for each operation. Anything else is a failure. */
@@ -61,6 +66,8 @@ const VERIFIED_STATUS: Record<OpikOperation, number> = {
   createTrace: 201,
   writeSpans: 200,
   listTraces: 200,
+  deleteTraces: 204,
+  deleteDataset: 204,
 };
 
 const DEFAULT_TIMEOUT_MS = 5_000;
@@ -599,6 +606,65 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
         },
       );
       return exchanged;
+    },
+
+    async deleteTraces(scope, input) {
+      requireOperation("deleteTraces");
+      const refused = guardWriteScope(scope, undefined, "deleteTraces");
+      if (refused) return refused;
+      if (
+        typeof input.projectId !== "string" ||
+        input.projectId === "" ||
+        !Array.isArray(input.traceIds) ||
+        input.traceIds.length === 0 ||
+        input.traceIds.some((id) => typeof id !== "string" || id === "")
+      ) {
+        throw new OpikPortError("OPERATION_INPUT_INVALID");
+      }
+      const payload = JSON.stringify({
+        ids: input.traceIds,
+        project_id: input.projectId,
+      });
+      if (!withinVerifiedCap(payload)) {
+        throw new OpikPortError("REQUEST_BODY_TOO_LARGE");
+      }
+      const exchanged = await postJson(
+        "deleteTraces",
+        "/v1/private/traces/delete",
+        payload,
+      );
+      if (exchanged.outcome !== "ok") return exchanged;
+      const response = exchanged.value;
+      if (response.status !== VERIFIED_STATUS.deleteTraces) {
+        return statusFailure("deleteTraces", response.status);
+      }
+      // Verified answer is 204 with no body; nothing is read, so nothing unverified
+      // can be mistaken for an upstream acknowledgment.
+      return { outcome: "ok", value: { deleted: true as const } };
+    },
+
+    async deleteDataset(scope, input) {
+      requireOperation("deleteDataset");
+      const refused = guardWriteScope(scope, undefined, "deleteDataset");
+      if (refused) return refused;
+      if (typeof input.datasetId !== "string" || input.datasetId === "") {
+        throw new OpikPortError("OPERATION_INPUT_INVALID");
+      }
+      const payload = JSON.stringify({ ids: [input.datasetId] });
+      if (!withinVerifiedCap(payload)) {
+        throw new OpikPortError("REQUEST_BODY_TOO_LARGE");
+      }
+      const exchanged = await postJson(
+        "deleteDataset",
+        "/v1/private/datasets/delete-batch",
+        payload,
+      );
+      if (exchanged.outcome !== "ok") return exchanged;
+      const response = exchanged.value;
+      if (response.status !== VERIFIED_STATUS.deleteDataset) {
+        return statusFailure("deleteDataset", response.status);
+      }
+      return { outcome: "ok", value: { deleted: true as const } };
     },
   };
 }
