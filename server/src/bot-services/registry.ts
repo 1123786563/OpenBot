@@ -14,6 +14,10 @@ import {
   createDeploymentKeyIssuer,
   createKeyIssuanceRoutes,
 } from "../gateway/key-issuance";
+import { gatewayEndpointControls } from "../gateway/endpoint-config";
+import { gatewayModelCapabilityFilterControls } from "../gateway/model-capability-filter";
+import { mappedModelCapabilities } from "../gateway/model-selection-routes";
+import { CredentialBundleUnavailableError } from "../gateway/credential-bundle";
 import { createBotServiceAuthenticator } from "./auth";
 import type { BotServiceCredentialService } from "./service-credentials";
 import { createBotServiceCredentialService } from "./service-credentials";
@@ -94,6 +98,35 @@ export function createBotServiceRegistry(
         modelAccess,
         auditStore: dependencies.auditStore,
       }).issueKeyForGrant,
+      // 05.4's bundle sides, read live at claim time: the endpoint this deployment answers
+      // at (01.1) and the Bot's own selectable refs — 03.11's exact mapping
+      // (mappedModelCapabilities over the live registry record, attributed to the Bot
+      // service), never a re-derivation. A missing control refuses; nothing is guessed.
+      bundle: {
+        readGatewayEndpoint: async () =>
+          (await gatewayEndpointControls()?.readGatewayEndpoint()) ?? undefined,
+        listSelectableModels: async (botId) => {
+          const filter = gatewayModelCapabilityFilterControls();
+          if (!filter) {
+            throw new CredentialBundleUnavailableError(
+              "bundle_models_unavailable",
+              "The model catalog is not available, so the credential bundle cannot be completed.",
+            );
+          }
+          const bot = await store.getBotService(botId);
+          if (bot?.status !== "active") {
+            throw new CredentialBundleUnavailableError(
+              "bundle_models_unavailable",
+              "The bot service record is not readable, so the credential bundle cannot be completed.",
+            );
+          }
+          const selection = await filter.listSelectableModels(
+            mappedModelCapabilities(bot.capabilities),
+            { kind: "bot_service", id: botId },
+          );
+          return selection.selectable;
+        },
+      },
     }),
   };
 }
