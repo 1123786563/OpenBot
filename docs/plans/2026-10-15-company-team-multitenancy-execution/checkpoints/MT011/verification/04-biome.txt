@@ -1,0 +1,10 @@
+# 04 biome own files (touched by MT011)
+Checked 4 files in 30ms. No fixes applied.
+exit=0
+
+# 04b index.ts A/B: pre-MT011 reconstruction (manifest-pinned 614a0ed4) vs post-MT011 — zero new findings
+Found 6 errors.
+Found 1 warning.
+Found 6 errors.
+Found 1 warning.
+(both 6 errors + 1 warning = MT010-disclosed pre-existing debt; MT011 appends contribute none)

@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-10-15",
+  "fix_round": "MT003-fix2 (Issue #46)",
+  "head": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+  "after": {
+    "server/scripts/multitenancy/migrate-test.ts": "330524de856c955cd99a2eebb555e15f15d7721e67f41191d8cf91dabffe498e",
+    "server/tests/multitenancy/migration-tool.test.ts": "cca6e35ccec80fe3f6f69fc14e6a9201ea1c4552b9e0d9e493f7e9f249dd6019"
+  },
+  "unchanged_verified": {
+    "server/scripts/multitenancy/inventory.ts": "e58bde59de470b816a6cacfa988b7a450d15dd7261ef2e22f6d77b034d6c05d0",
+    "server/tests/multitenancy/inventory.test.ts": "c718e8f93499a002723fb83aa80c7a11cab89f4f09c4e7a7ed35a678109f99cf",
+    "reports/MT003.md": "a334d5bf0e8d924c3de96cc31a366cfb6b1d9775d838705ce5b6c862cef192ec",
+    "reports/MT003-review2.md": "a6b97d922c98cabcac8f766c78867b493b667f58bb13a05b8bba7fb219d26078"
+  },
+  "findings_closed": {
+    "F1": "真实库集成测试专属库改由显式 env MT003_ASSIGNED_TEST_DATABASE_URL 提供；必须过 resolveTestDatabaseTarget 全部安全检查（回环/单段库名/openbot_enterprise_*/非生产），配置了但被拒绝=响亮失败；未配置=显式 skip+理由。55446 专属库上全过无 skip（42 pass），33+1skip 结构消失",
+    "F2": "新增 validateJournalAgainstPlan + readJournalEntries（SELECT number, statement_digest）；migrate 在连接后、执行前将 journal 逐步骤 digest 与当前计划比对，漂移即 refused(stage:journal) 并提示 manual review，绝不自动修复/重放；dry-run 与 apply、up-to-date 三条路径全部经过该检查",
+    "F3": "parseArgs 新增拒绝：--manifest 出现而 --apply 缺失时 refused(args)，不再静默忽略",
+    "F4": "expectNoSideEffects 追加 reads==[] 断言，并有元测试证明 helper 对 reads 报错"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "checkpoint_id": "MT103-after",
+  "task_id": "task_ff173a79a7e0",
+  "dispatch_id": "ctx_31eb8dca8b8e",
+  "captured_at_utc": "2026-10-15T04:42:21Z",
+  "worktree": "/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt103",
+  "head": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+  "branch": "1123786563/i6-mt103",
+  "gitlink_apps_openmuse": "160000 commit 46792335dfc260efa05f2185aa353093b12d9937\tapps/openmuse",
+  "task_worktree_status_porcelain": "(empty: no tracked/gitlink change; submodule init creates no diff)",
+  "submodule_in_task_worktree": {
+    "status": "46792335dfc260efa05f2185aa353093b12d9937 apps/openmuse (4679233)",
+    "head": "46792335dfc260efa05f2185aa353093b12d9937",
+    "origin_main": "81d0d3a15a27b00e24b2bed6f8b24c5b4d5330b4",
+    "checkout_clean": true
+  },
+  "external_parent_workspace_submodule_status": "-46792335dfc260efa05f2185aa353093b12d9937 apps/openmuse\n-f10954f77efa515e593f83a860cb29b88fd95c08 bifrost",
+  "deleted_old_mobile_dir_rebuilt": false,
+  "authorized_writes_outside_task_worktree": [
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT103.md",
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/mt103-canonical-mobile-baseline.md",
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT103/*"
+  ],
+  "git_operations_none_of": [
+    "commit",
+    "push",
+    "merge",
+    "tag",
+    "gitlink update"
+  ],
+  "conclusion": {
+    "pinned_gitlink": "46792335dfc260efa05f2185aa353093b12d9937",
+    "canonical_main": "81d0d3a15a27b00e24b2bed6f8b24c5b4d5330b4",
+    "missing_commits": [
+      "6e3a131558fbeaeab2564814e85f3e38467a8eb3",
+      "81d0d3a15a27b00e24b2bed6f8b24c5b4d5330b4"
+    ],
+    "missing_adapter": "apps/mobile/src/openbot (33 files) + 20 test suites absent at pin",
+    "stale_pin_confirmed": true
+  }
+}

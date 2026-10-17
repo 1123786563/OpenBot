@@ -1,0 +1,50 @@
+### CLI dry-run on fresh openbot_enterprise_mt112_cli_test
+multitenancy migrate-test — dry-run（默认；执行需 --apply --manifest <file>）
+task: MT112 — MT112（执行轮）：历史部署「原有公司 + 默认团队」锚点——expand-only 新增映射表 enterprise_deployment_anchors，并幂等写入锚点数据（原有公司租户行、默认团队 workspace 行、最早用户的成员锚点、与部署身份及计费 Customer 的唯一映射）
+database: openbot_enterprise_mt112_cli_test @ 127.0.0.1:55458
+journal: 已应用 0/4；待应用 4 步
+step 0001_mt112_anchor_mapping_table.sql — 影响: 新增 enterprise_deployment_anchors 表：tenant_id 主键（FK → enterprise_tenants，cascade）；deployment_tenant_id 与 billing_external_customer_id 两个方向唯一索引；派生 CHECK 保证计费键 = 'openbot-deployment-' || 部署身份。不修改任何既有表。
+  语句 1: CREATE TABLE "enterprise_deployment_anchors" (
+	"tenant_id" text PRIMARY KEY NOT NULL,
+	"deployment_tenant_id" text NOT NULL,
+	"billing_external_customer_id" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "enterprise_deployment_anchors_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action
+);
+  语句 2: CREATE UNIQUE INDEX "enterprise_deployment_anchor_identity" ON "enterprise_deployment_anchors" USING btree ("deployment_tenant_id");
+  语句 3: CREATE UNIQUE INDEX "enterprise_deployment_anchor_billing_customer" ON "enterprise_deployment_anchors" USING btree ("billing_external_customer_id");
+  语句 4: ALTER TABLE "enterprise_deployment_anchors" ADD CONSTRAINT "enterprise_deployment_anchor_billing_derivation" CHECK ("billing_external_customer_id" = 'openbot-deployment-' || "deployment_tenant_id");
+step 0002_mt112_anchor_rls_policies.sql — 影响: 仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增 1 条 operator 租户范围 SELECT 策略及配套 GRANT。不授予任何受限角色 INSERT/UPDATE——锚点行只能由本迁移写入。不改动任何既有表策略或既有授权。
+  语句 1: REVOKE ALL PRIVILEGES ON TABLE "enterprise_deployment_anchors" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;
+  语句 2: ALTER TABLE "enterprise_deployment_anchors" ENABLE ROW LEVEL SECURITY;
+  语句 3: ALTER TABLE "enterprise_deployment_anchors" FORCE ROW LEVEL SECURITY;
+  语句 4: CREATE POLICY "enterprise_deployment_anchor_operator_read" ON "enterprise_deployment_anchors"
+  FOR SELECT TO ob_ent_operator
+  USING ("enterprise_deployment_anchors"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 5: GRANT SELECT ON TABLE "enterprise_deployment_anchors" TO ob_ent_operator;
+step 0003_mt112_legacy_anchor_rows.sql — 影响: 幂等写入「原有公司」租户行（ent-legacy-original）、「默认团队」workspace 行（ent-legacy-default-team）与成员锚点（全库最早用户：tenant_admin 成员资格 + 默认团队 workspace 成员资格）。全部 ON CONFLICT DO NOTHING，重复执行零重复；无用户时成员锚点插入 0 行。
+  语句 1: INSERT INTO "enterprise_tenants" ("id", "name") VALUES ('ent-legacy-original', '原有公司') ON CONFLICT ("id") DO NOTHING;
+  语句 2: INSERT INTO "enterprise_workspaces" ("tenant_id", "id", "name") VALUES ('ent-legacy-original', 'ent-legacy-default-team', '默认团队') ON CONFLICT ("tenant_id", "id") DO NOTHING;
+  语句 3: INSERT INTO "enterprise_principals" ("id", "user_id")
+	SELECT 'entp-legacy-anchor-' || anchor_user."id", anchor_user."id"
+	FROM (SELECT "id" FROM "users" ORDER BY "created_at" ASC, "id" ASC LIMIT 1) AS anchor_user
+	ON CONFLICT ("id") DO NOTHING;
+  语句 4: INSERT INTO "enterprise_memberships" ("tenant_id", "principal_id", "role")
+	SELECT 'ent-legacy-original', "enterprise_principals"."id", 'tenant_admin'
+	FROM "enterprise_principals"
+	WHERE "enterprise_principals"."id" = 'entp-legacy-anchor-' || (SELECT "id" FROM "users" ORDER BY "created_at" ASC, "id" ASC LIMIT 1)
+	ON CONFLICT ("tenant_id", "principal_id") DO NOTHING;
+  语句 5: INSERT INTO "enterprise_workspace_memberships" ("tenant_id", "workspace_id", "principal_id")
+	SELECT 'ent-legacy-original', 'ent-legacy-default-team', "enterprise_principals"."id"
+	FROM "enterprise_principals"
+	WHERE "enterprise_principals"."id" = 'entp-legacy-anchor-' || (SELECT "id" FROM "users" ORDER BY "created_at" ASC, "id" ASC LIMIT 1)
+	ON CONFLICT ("tenant_id", "workspace_id", "principal_id") DO NOTHING;
+step 0004_mt112_anchor_mapping_row.sql — 影响: 幂等写入锚点映射行：原有公司租户 ↔ loaded_at 最早的 deployment_packages 身份（历史部署的原始身份）↔ 派生计费 Customer 键。tenant 主键冲突即 no-op；两个方向唯一索引拒绝第二个租户认领同一部署身份或计费 Customer。
+  语句 1: INSERT INTO "enterprise_deployment_anchors" ("tenant_id", "deployment_tenant_id", "billing_external_customer_id")
+	SELECT 'ent-legacy-original', pkg."tenant_id", 'openbot-deployment-' || pkg."tenant_id"
+	FROM (SELECT "tenant_id" FROM "deployment_packages" ORDER BY "loaded_at" ASC, "tenant_id" ASC LIMIT 1) AS pkg
+	ON CONFLICT ("tenant_id") DO NOTHING;
+summary: 待应用 4 步 / 15 条语句 / 涉及对象: enterprise_deployment_anchors, enterprise_tenants, enterprise_workspaces, enterprise_principals, enterprise_memberships, enterprise_workspace_memberships, users, deployment_packages
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT112","planDigest":"cc613382a7a9932dcbcb8aa0a180648125a10ea17fdddfd71b63789525920756","steps":[{"number":1,"name":"0001_mt112_anchor_mapping_table.sql","statementDigest":"1e28a778741c44409f1e5ac6eea8f2fa39e9a01712d59e0f2e09cae62e09c298","statementCount":4},{"number":2,"name":"0002_mt112_anchor_rls_policies.sql","statementDigest":"95e0d595659ca7ba23d778e914dc5af163ca51cf2e1da2dc594011b58a0d40bb","statementCount":5},{"number":3,"name":"0003_mt112_legacy_anchor_rows.sql","statementDigest":"d04fcdb0bb37029a1faee57667cce4bc0aa546ef14df379546b22daffa306239","statementCount":5},{"number":4,"name":"0004_mt112_anchor_mapping_row.sql","statementDigest":"da6390edc8bc50bfdefbf951a17b7db533d9b0787332218b2c7959516d87dd00","statementCount":1}]}
+DRYRUN_EXIT=0

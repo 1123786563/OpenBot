@@ -1,0 +1,35 @@
+{
+ "node": "MT131",
+ "phase": "integration",
+ "integrated_at": "2026-10-16T02:16:42",
+ "baseline_head": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+ "lineage": {
+  "impl": "task_9b95a3b8cb96/ctx_c83a96b3959d (i6-mt131)",
+  "review1": "MT131-review2.md: 4/4 AC PASS, F1/F2 medium + F3/F4 low",
+  "fix2": "task_23bb940e29e7 (i6-mt131-fix2): F1-F4 closed",
+  "fix2_review": "MT131-fix2-review.md: 修复有效性 PASS / Code PASS 0C/0H/0M/1L/2I (ctx_2b71de398106, released)",
+  "source_worktree": "i6-review2-mt131 (verified snapshot)",
+  "f3r_repair": "checkpoints/MT131/fix2-transfer-manifest.txt 原件已从 i6-mt131-fix2 补入（F3R info 断链修复）"
+ },
+ "integrated_files_sha256": {
+  "server/scripts/multitenancy/acceptance-harness.ts": "33f24c24684d25657524a2b6b911932101dbef4cb53a7b94092f2fada0d9cc49",
+  "server/tests/multitenancy/acceptance-harness.test.ts": "18717a1b08a243005128a3e1cd4ee19a93eb557d07e9e569a65d891c0fa96022"
+ },
+ "prerequisites_untouched": {
+  "inventory.ts": "e58bde59de470b816a6cacfa988b7a450d15dd7261ef2e22f6d77b034d6c05d0",
+  "inventory.test.ts": "c718e8f93499a002723fb83aa80c7a11cab89f4f09c4e7a7ed35a678109f99cf",
+  "fixtures.test.ts": "667dd64e27f9e5b9276d4a4b7d27809dd85a5ba86d8ecc2dd74fb4182ec80c43",
+  "fixture.ts": "f1112f0f8a4ee91248a84ae9e7bbaa9ef8962715de1856b38c1be7e313bca88c",
+  "scenarios.ts": "cdca14caa6faf6bf0364cfc7345486473da438058bdf2c6d41d9e0c60aa0abd0"
+ },
+ "coordinator_verification": {
+  "date": "2026-10-16",
+  "db": "pgvector/pgvector:pg16 @127.0.0.1:55456 openbot_enterprise_mt131_integration (container removed after run)",
+  "restricted_roles": "ent_intdir/ent_intdata/ent_intop (random pw, 0600 env, deleted)",
+  "migrate": "exit 0 migrations-applied",
+  "tests_full_suite": "bun test tests/multitenancy/ -> 108 pass / 0 fail / 1 explicit-skip (MT003 assigned-db integration case, no env set)",
+  "tests_migration_tool_with_env": "42 pass / 0 fail / 0 skip -> residual skips: 0",
+  "typecheck": "exit 0",
+  "biome_2_files": "exit 0 No fixes applied"
+ }
+}

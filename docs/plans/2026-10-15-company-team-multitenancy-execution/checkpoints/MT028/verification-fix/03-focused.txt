@@ -1,0 +1,10 @@
+# MT028 修复轮聚焦复跑（surfaceOf 死导出删除后，2026-10-17，容器 mt028-fix-pg@55540）
+(pass) MT028 storage fence: RLS, roles and enumeration > data/directory roles hold nothing on the table; operator never DELETEs (fence) [3.88ms]
+(pass) MT028 storage fence: RLS, roles and enumeration > the operator cannot enumerate flows: without the state arm the tenant pin sees nothing (MT026 fence) [9.91ms]
+(pass) MT028 storage fence: RLS, roles and enumeration > a cross-company attribution row is structurally impossible (composite FK, 23503) [3.11ms]
+
+ 26 pass
+ 0 fail
+ 149 expect() calls
+Ran 26 tests across 1 file. [3.64s]
+focused-exit=0

@@ -1,0 +1,14 @@
+# MT002 final checkpoint file list (post credential-redaction, repair task_a67106001ae6 / ctx_50bb55b845f0, 2026-10-15)
+# before.json preserved unchanged; environment.md redacted; after.json + this manifest added; files/ are byte-identical snapshots of the worktree sources.
+e074ba8c507cc64c67d8c4ff57ea428240726e9a9bb1a7a91665f87d0997ca13  after.json
+318ec6025d2c3c45c5fe2460ed033b247f946bed79116ebef098ca96b0405af3  before.json
+c2ce1cd67d6109f056c8319f419056e9df83208e2c502dd2c616bc2d31e9300c  delta.json
+811707dd7c6782dfcba482a846282092f455783ec750b28b13f7b8abf454f1cd  environment.md
+046a236f03599453daed84a157b8d744a208e6f40fdff9563dc3e576a14e0309  git-status.txt
+7f47f20107de4b8bd6b585613cc79dd73c60dc17459807dee14f5c8148cc2851  head.txt
+b55e7d708a7e4a9bf90692dc60448c325f901ea7ed251b3497df5649b5553ff1  manifest-sha256.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  staged-and-unstaged.diff
+e399adef59419c8012f5f860fb61b7e0b159213b937f540766471850712c8f75  verification-output.txt
+f1112f0f8a4ee91248a84ae9e7bbaa9ef8962715de1856b38c1be7e313bca88c  files/fixture.ts
+667dd64e27f9e5b9276d4a4b7d27809dd85a5ba86d8ecc2dd74fb4182ec80c43  files/fixtures.test.ts
+cdca14caa6faf6bf0364cfc7345486473da438058bdf2c6d41d9e0c60aa0abd0  files/scenarios.ts

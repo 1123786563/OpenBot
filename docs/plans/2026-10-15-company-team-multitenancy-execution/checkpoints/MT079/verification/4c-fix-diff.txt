@@ -1,0 +1,28 @@
+# MT079 修复轮（F1 关闭）— preferences.ts 格式重排 diff 自证
+# 日期：2026-10-16T18:31:01Z
+# 目标文件为 untracked 新文件（git status ??），git diff -- <path> 无输出（0 行，如下）：
+$ git diff -- server/src/enterprise/tenancy/preferences.ts
+# 前像取 checkpoints/MT079/mutation/pristine-preferences.ts（SHA-256 = 前像 6a8f2e25…，见下），等价于修复前字节：
+$ shasum -a 256 docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT079/mutation/pristine-preferences.ts
+6a8f2e25043d66a35ec142a6fba62451766ae26295ab29375ea7b255095edd4b  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT079/mutation/pristine-preferences.ts
+$ git diff --no-index <pristine> server/src/enterprise/tenancy/preferences.ts
+diff --git a/docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT079/mutation/pristine-preferences.ts b/server/src/enterprise/tenancy/preferences.ts
+index 56ff9805..53d5085c 100644
+--- a/docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT079/mutation/pristine-preferences.ts
++++ b/server/src/enterprise/tenancy/preferences.ts
+@@ -259,11 +259,7 @@ function deepFreeze<T>(value: T): T {
+ export function parseGlobalPreferencePatch(
+   patch: unknown,
+ ): Readonly<Partial<UserPreferences>> {
+-  if (
+-    !patch ||
+-    typeof patch !== "object" ||
+-    Array.isArray(patch)
+-  ) {
++  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+     throw new Error(
+       "PREFERENCE_PATCH_INVALID: the patch must be a JSON object carrying at least one classified global personal preference key",
+     );
+diff-exit=1（1 = 存在差异，即唯一 diff 如上：262–266 行多行 if 条件重排为单行，零语义变化）
+# 后像哈希：
+032ae9dea7c98cf3ac002feb31791795cd2929118390fd3d5bc9c051034563c1  server/src/enterprise/tenancy/preferences.ts

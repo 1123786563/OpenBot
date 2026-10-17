@@ -1,0 +1,3 @@
+c4fc5145536af4257e0d8e583d984440b91bd5e7ce7a31936bc7c076cf8bf68c  server/src/db/schema/enterprise-tenancy.ts
+cb0891c6dba4dcfbd476876971f97382a372fd24c6705dd601958f4f2b41fe38  server/scripts/multitenancy/migrate-test.ts
+75bd28f902ce9faed706d46a49c1b4dfc4e797c5ca79e9748b91e7d52260678d  server/tests/multitenancy/migration-tool.test.ts

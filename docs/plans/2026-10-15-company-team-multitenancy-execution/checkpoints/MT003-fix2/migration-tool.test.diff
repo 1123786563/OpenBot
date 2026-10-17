@@ -1,0 +1,345 @@
+--- /tmp/mt003fix2-before/server-tests/migration-tool.test.ts	2026-10-16 00:57:27
++++ server/tests/multitenancy/migration-tool.test.ts	2026-10-16 00:52:58
+@@ -17,16 +17,15 @@
+   manifestFor,
+   runMigrateTest,
+   TASKS,
++  validateJournalAgainstPlan,
+   validateJournalNumbers,
+   validatePlanNumbering,
+ } from "../../scripts/multitenancy/migrate-test";
+ 
+-// 本任务专属测试库（brief 指定；真实 apply 只允许打到它）。
++// 静态用例的合法环境 fixture（伪连接，永不真实连接）：故意保留 DATABASE_URL
++// 诱饵，工具只认 TEST_DATABASE_URL，任何回退都会被这些测试抓住。
+ const ASSIGNED_TEST_DATABASE_URL =
+   "postgres://postgres@127.0.0.1:55433/openbot_enterprise_mt003_test";
+-
+-// 合法环境中故意保留 DATABASE_URL 诱饵：工具只认 TEST_DATABASE_URL，
+-// 任何回退都必须被这些测试抓住。
+ const VALID_ENV: Record<string, string | undefined> = {
+   TEST_DATABASE_URL: ASSIGNED_TEST_DATABASE_URL,
+   DATABASE_URL: "postgres://openbot:openbot@localhost:5432/openbot",
+@@ -80,8 +79,25 @@
+ function expectNoSideEffects(effects: SideEffectLog) {
+   expect(effects.connectCalls).toBe(0);
+   expect(effects.writes).toEqual([]);
++  // F4：拒绝路径同样必须零文件读；否则「与预期 stage 恰好一致的读文件」
++  // 会成为盲区。
++  expect(effects.reads).toEqual([]);
+ }
+ 
++describe("refusal probe helper contract", () => {
++  test("expectNoSideEffects also fails when a refused path performed file reads", () => {
++    // F4：拒绝路径必须零读。若 helper 只断言 connect/writes，「与预期 stage
++    // 恰好一致的读文件」就是盲区；这里直接验证 helper 对 reads 报错。
++    const effects: SideEffectLog = {
++      connectCalls: 0,
++      writes: [],
++      reads: ["readFile:/tmp/tampered.json"],
++      outLines: [],
++    };
++    expect(() => expectNoSideEffects(effects)).toThrow();
++  });
++});
++
+ describe("issue #46 criterion 1: only enumerated tasks and commands", () => {
+   test("rejects an unknown command with the offending name and no side effects", async () => {
+     const { deps, effects } = refusalProbe(VALID_ENV);
+@@ -162,8 +178,24 @@
+     const outcome = await runMigrateTest(
+       ["migrate", "MT000", "--out", "/tmp/dir"],
+       refusalProbe(VALID_ENV).deps,
++    );
++    expect(outcome).toMatchObject({ kind: "refused", stage: "args" });
++  });
++
++  test("migrate --manifest without --apply refuses instead of silently ignoring the manifest", async () => {
++    // F3：manifest 只在 apply 时才有意义；不带 --apply 时必须显式拒绝，
++    // 绝不能静默忽略后照常 dry-run。
++    const { deps, effects } = refusalProbe(VALID_ENV);
++    const outcome = await runMigrateTest(
++      ["migrate", "MT000", "--manifest", "/tmp/m.json"],
++      deps,
+     );
+     expect(outcome).toMatchObject({ kind: "refused", stage: "args" });
++    if (outcome.kind === "refused") {
++      expect(outcome.reason).toContain("--manifest");
++      expect(outcome.reason).toContain("--apply");
++    }
++    expectNoSideEffects(effects);
+   });
+ });
+ 
+@@ -424,7 +456,9 @@
+   query: string;
+ }
+ 
+-function fakeConnection(journalRows: Array<{ number: number }> = []) {
++function fakeConnection(
++  journalRows: Array<{ number: number; statement_digest?: string }> = [],
++) {
+   const calls: FakeCall[] = [];
+   const conn: MigrationSql = {
+     async unsafe(query: string) {
+@@ -515,7 +549,12 @@
+   });
+ 
+   test("dry-run reports pending steps against a partial journal", async () => {
+-    const connection = fakeConnection([{ number: 1 }]);
++    const connection = fakeConnection([
++      {
++        number: 1,
++        statement_digest: buildPlan("MT000").steps[0].statementDigest,
++      },
++    ]);
+     const outcome = await runMigrateTest(["migrate", "MT000"], {
+       environment: VALID_ENV,
+       connect: () => connection.conn,
+@@ -651,9 +690,13 @@
+   });
+ 
+   test("an already fully applied task is an explicit no-op, not a re-run", async () => {
++    const plan = buildPlan("MT000");
+     const { deps, connection } = applyDeps(
+       { "/tmp/m.json": CORRECT_MANIFEST },
+-      [{ number: 1 }, { number: 2 }, { number: 3 }],
++      plan.steps.map((step, index) => ({
++        number: index + 1,
++        statement_digest: step.statementDigest,
++      })),
+     );
+     const outcome = await runMigrateTest(
+       ["migrate", "MT000", "--apply", "--manifest", "/tmp/m.json"],
+@@ -669,6 +712,110 @@
+ });
+ 
+ // ---------------------------------------------------------------------------
++// MT003-fix2 F2：journal 已记录 digest 必须与当前计划逐步骤一致；漂移即拒绝，
++// 且绝不自动修复/重放已入账步骤。
++// ---------------------------------------------------------------------------
++
++describe("MT003-fix2 F2: journal digests must match the current plan", () => {
++  const plan = buildPlan("MT000");
++  const entry = (number: number, digest?: string) => ({
++    number,
++    statementDigest: digest ?? plan.steps[number - 1].statementDigest,
++  });
++
++  test("a journal whose recorded digests all match the plan converges", () => {
++    expect(
++      validateJournalAgainstPlan([entry(1), entry(2), entry(3)], plan),
++    ).toEqual({ ok: true, appliedCount: 3 });
++    expect(validateJournalAgainstPlan([], plan)).toEqual({
++      ok: true,
++      appliedCount: 0,
++    });
++  });
++
++  test("a journaled digest that differs from the plan refuses with a manual-review reason", () => {
++    const drifted = validateJournalAgainstPlan(
++      [entry(1), entry(2, "f".repeat(64))],
++      plan,
++    );
++    expect(drifted).toMatchObject({ ok: false });
++    if (!drifted.ok) {
++      expect(drifted.reason).toContain("0002_mt000_selfcheck_assert.sql");
++      expect(drifted.reason).toContain("drifted");
++      expect(drifted.reason).toContain("manual review");
++    }
++    // 部分已应用时第一步漂移同样拒绝。
++    expect(
++      validateJournalAgainstPlan([entry(1, "0".repeat(64))], plan).ok,
++    ).toBe(false);
++  });
++
++  test("numbering errors still surface before digest comparison", () => {
++    expect(validateJournalAgainstPlan([entry(1), entry(3)], plan).ok).toBe(
++      false,
++    );
++    expect(validateJournalAgainstPlan([entry(1), entry(1)], plan).ok).toBe(
++      false,
++    );
++  });
++
++  test("migrate refuses on journal/plan digest drift before applying and never self-repairs", async () => {
++    const rows = [
++      { number: 1, statement_digest: plan.steps[0].statementDigest },
++      { number: 2, statement_digest: "f".repeat(64) },
++    ];
++    const connection = fakeConnection(rows);
++    const { deps } = applyDeps({ "/tmp/m.json": CORRECT_MANIFEST }, rows);
++    const outcome = await runMigrateTest(
++      ["migrate", "MT000", "--apply", "--manifest", "/tmp/m.json"],
++      { ...deps, connect: () => connection.conn },
++    );
++    expect(outcome).toMatchObject({ kind: "refused", stage: "journal" });
++    if (outcome.kind === "refused") {
++      expect(outcome.reason).toContain("drifted");
++      expect(outcome.reason).toContain("manual review");
++    }
++    // 拒绝即终止：无事务、无步骤语句、无任何 journal 写入/改写（不自动修复）。
++    expect(connection.begins()).toBe(0);
++    const queries = connection.queries().join("\n");
++    expect(queries).not.toContain("mt_tool_selfcheck");
++    expect(queries).not.toContain("INSERT INTO mt_task_migration_journal");
++    expect(queries).not.toContain("UPDATE mt_task_migration_journal");
++    expect(queries).not.toContain("DELETE FROM mt_task_migration_journal");
++  });
++
++  test("dry-run also refuses on journal/plan digest drift instead of planning past it", async () => {
++    const connection = fakeConnection([
++      { number: 1, statement_digest: "0".repeat(64) },
++    ]);
++    const outcome = await runMigrateTest(["migrate", "MT000"], {
++      environment: VALID_ENV,
++      connect: () => connection.conn,
++      out: () => {},
++    });
++    expect(outcome).toMatchObject({ kind: "refused", stage: "journal" });
++    expect(connection.begins()).toBe(0);
++  });
++
++  test("up-to-date is not reported when a journaled digest drifts from the plan", async () => {
++    const rows = [
++      { number: 1, statement_digest: plan.steps[0].statementDigest },
++      { number: 2, statement_digest: plan.steps[1].statementDigest },
++      { number: 3, statement_digest: "e".repeat(64) },
++    ];
++    const connection = fakeConnection(rows);
++    const { deps } = applyDeps({ "/tmp/m.json": CORRECT_MANIFEST }, rows);
++    const outcome = await runMigrateTest(
++      ["migrate", "MT000", "--apply", "--manifest", "/tmp/m.json"],
++      { ...deps, connect: () => connection.conn },
++    );
++    expect(outcome.kind).toBe("refused");
++    expect(outcome).toMatchObject({ kind: "refused", stage: "journal" });
++    expect(connection.begins()).toBe(0);
++  });
++});
++
++// ---------------------------------------------------------------------------
+ // generate：确定性文件物化与断号/重复/漂移检测（Issue #46 验收标准 3、4）
+ // ---------------------------------------------------------------------------
+ 
+@@ -832,45 +979,69 @@
+ });
+ 
+ // ---------------------------------------------------------------------------
+-// 真实 apply：只允许打到本任务专属测试库（127.0.0.1:55433/
+-// openbot_enterprise_mt003_test）；其它环境一律显式跳过，不谎称通过。
++// 真实 apply：专属测试库来自显式 env MT003_ASSIGNED_TEST_DATABASE_URL
++// （F1：不再硬编码端点/库名，任何回环 openbot_enterprise_* 专属库都可复现）。
++// 显式配置时必须通过与主路径完全相同的安全检查（回环、单段库名、
++// openbot_enterprise_* 前缀、非生产拒绝，复用 resolveTestDatabaseTarget）；
++// 配置了但被拒绝 = 整体失败，绝不静默降级为 skip。未配置时保持显式 skip。
+ // ---------------------------------------------------------------------------
+ 
+ import postgres from "postgres";
+ import { resolveTestDatabaseTarget } from "../../scripts/multitenancy/migrate-test";
+ 
+-const assignedDatabase = resolveTestDatabaseTarget(process.env);
+-const hasAssignedDatabase =
+-  assignedDatabase.ok &&
+-  assignedDatabase.target.endpoint === "127.0.0.1:55433" &&
+-  assignedDatabase.target.databaseName === "openbot_enterprise_mt003_test";
+-const dbTest = hasAssignedDatabase ? test : test.skip;
+-const skipNote = hasAssignedDatabase
++const MT003_ASSIGNED_TEST_DATABASE_URL_ENV = "MT003_ASSIGNED_TEST_DATABASE_URL";
++
++const assignedRaw = process.env[MT003_ASSIGNED_TEST_DATABASE_URL_ENV]?.trim();
++const assignedResolution = assignedRaw
++  ? resolveTestDatabaseTarget({
++      TEST_DATABASE_URL: assignedRaw,
++      DATABASE_URL: "postgres://openbot:openbot@localhost:5432/openbot",
++    })
++  : undefined;
++if (assignedResolution && !assignedResolution.ok) {
++  throw new Error(
++    `${MT003_ASSIGNED_TEST_DATABASE_URL_ENV} must pass the migration tool's full database safety checks; it was refused: ${assignedResolution.reason}`,
++  );
++}
++const assignedTarget = assignedResolution?.ok
++  ? assignedResolution.target
++  : undefined;
++const dbTest = assignedTarget ? test : test.skip;
++const skipNote = assignedTarget
+   ? ""
+-  : " [skipped: TEST_DATABASE_URL is not the assigned MT003 test database 127.0.0.1:55433/openbot_enterprise_mt003_test]";
++  : ` [skipped: ${MT003_ASSIGNED_TEST_DATABASE_URL_ENV} is not set; set it to a dedicated loopback openbot_enterprise_* test database to run the real-apply integration test]`;
+ 
+ dbTest(
+   `applies MT000 end-to-end on the assigned dedicated test database${skipNote}`,
+   async () => {
++    if (!assignedTarget) {
++      throw new Error("unreachable: dbTest guard ensures an assigned target");
++    }
++    // 工具自身只读 TEST_DATABASE_URL；这里把显式 env 的专属库映射过去，
++    // 使单一 env 即可驱动整个集成链路。
++    const toolEnvironment = {
++      ...process.env,
++      TEST_DATABASE_URL: assignedTarget.url,
++    };
+     const dir = await mkdtemp(join(tmpdir(), "mt003-real-"));
+     try {
+       // 真实工作流：generate 物化文件与 manifest → 用它门禁 apply。
+       const generated = await runMigrateTest(
+         ["generate", "MT000", "--out", dir],
+-        { environment: process.env, out: () => {} },
++        { environment: toolEnvironment, out: () => {} },
+       );
+       expect(generated.kind).toBe("generated");
+       const manifestPath = join(dir, "MT000", "manifest.json");
+ 
+       const applied = await runMigrateTest(
+         ["migrate", "MT000", "--apply", "--manifest", manifestPath],
+-        { environment: process.env, out: () => {} },
++        { environment: toolEnvironment, out: () => {} },
+       );
+       // 重放安全：全新库是 applied，已应用过则是 up-to-date；两者都算收敛。
+       expect(["applied", "up-to-date"]).toContain(applied.kind);
+       if (applied.kind === "applied") {
+-        expect(applied.databaseName).toBe("openbot_enterprise_mt003_test");
+-        expect(applied.endpoint).toBe("127.0.0.1:55433");
++        expect(applied.databaseName).toBe(assignedTarget.databaseName);
++        expect(applied.endpoint).toBe(assignedTarget.endpoint);
+         expect(applied.appliedSteps.map((step) => step.name)).toEqual([
+           "0001_mt000_selfcheck_table.sql",
+           "0002_mt000_selfcheck_assert.sql",
+@@ -878,8 +1049,8 @@
+         ]);
+       }
+ 
+-      // 独立连接验证最终状态：journal 记满 3 步、自检表已删除。
+-      const client = postgres(ASSIGNED_TEST_DATABASE_URL, { max: 1 });
++      // 独立连接验证最终状态：journal 记满 3 步、digest 与计划一致、自检表已删除。
++      const client = postgres(assignedTarget.url, { max: 1 });
+       try {
+         const journal = await client`
+           SELECT number, name, statement_digest
+@@ -909,7 +1080,7 @@
+       // 幂等：再次 apply 是显式 no-op，之后 dry-run 无待应用步骤。
+       const again = await runMigrateTest(
+         ["migrate", "MT000", "--apply", "--manifest", manifestPath],
+-        { environment: process.env, out: () => {} },
++        { environment: toolEnvironment, out: () => {} },
+       );
+       expect(again.kind).toBe("up-to-date");
+       if (again.kind === "up-to-date") {
+@@ -917,14 +1088,14 @@
+       }
+ 
+       const dryRun = await runMigrateTest(["migrate", "MT000"], {
+-        environment: process.env,
++        environment: toolEnvironment,
+         out: () => {},
+       });
+       expect(dryRun.kind).toBe("dry-run");
+       if (dryRun.kind === "dry-run") {
+         expect(dryRun.appliedCount).toBe(3);
+         expect(dryRun.pending).toHaveLength(0);
+-        expect(dryRun.databaseName).toBe("openbot_enterprise_mt003_test");
++        expect(dryRun.databaseName).toBe(assignedTarget.databaseName);
+       }
+     } finally {
+       await rm(dir, { recursive: true, force: true });

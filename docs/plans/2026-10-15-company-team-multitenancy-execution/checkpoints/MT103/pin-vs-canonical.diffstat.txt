@@ -1,0 +1,78 @@
+# MT103 pin-vs-canonical diffstat evidence — openmuse repo
+# range: 46792335dfc260efa05f2185aa353093b12d9937 (gitlink pin) .. 81d0d3a15a27b00e24b2bed6f8b24c5b4d5330b4 (origin/main)
+$ git -C apps/openmuse diff --stat HEAD..origin/main | tail -3
+ .../plans/tickets/V02-activity-notifications.md    |  34 ++
+ pnpm-lock.yaml                                     | 508 ++++++++++++++++-
+ 161 files changed, 17162 insertions(+), 28 deletions(-)
+\n$ git -C apps/openmuse diff --dirstat=files,0 HEAD..origin/main
+   4.3% .omc/reports/
+   0.6% .omc/research/
+   0.6% .omc/
+  20.4% apps/mobile/src/openbot/
+  12.4% apps/mobile/test/
+   1.2% apps/mobile/
+  59.0% docs/superpowers/plans/tickets/
+   0.6% docs/superpowers/plans/
+\n$ git -C apps/openmuse ls-tree -r --name-only origin/main -- apps/mobile/src/openbot
+apps/mobile/src/openbot/api.ts
+apps/mobile/src/openbot/auth.ts
+apps/mobile/src/openbot/calendar-view.ts
+apps/mobile/src/openbot/calendar.tsx
+apps/mobile/src/openbot/channel-actions.ts
+apps/mobile/src/openbot/channel-state.ts
+apps/mobile/src/openbot/channels.tsx
+apps/mobile/src/openbot/chat-state.ts
+apps/mobile/src/openbot/chat.tsx
+apps/mobile/src/openbot/client.ts
+apps/mobile/src/openbot/computer-state.ts
+apps/mobile/src/openbot/computer.tsx
+apps/mobile/src/openbot/config.ts
+apps/mobile/src/openbot/connection-status.ts
+apps/mobile/src/openbot/connections.tsx
+apps/mobile/src/openbot/control-state.ts
+apps/mobile/src/openbot/control.tsx
+apps/mobile/src/openbot/email-signin.tsx
+apps/mobile/src/openbot/errors.ts
+apps/mobile/src/openbot/file-cache.ts
+apps/mobile/src/openbot/files.tsx
+apps/mobile/src/openbot/gate-state.ts
+apps/mobile/src/openbot/gate.tsx
+apps/mobile/src/openbot/native-cache-adapter.ts
+apps/mobile/src/openbot/pdf-view-state.ts
+apps/mobile/src/openbot/pdf-view.tsx
+apps/mobile/src/openbot/private-state.ts
+apps/mobile/src/openbot/stop-state.ts
+apps/mobile/src/openbot/stream-resume.ts
+apps/mobile/src/openbot/task-view.ts
+apps/mobile/src/openbot/tasks.tsx
+apps/mobile/src/openbot/tool-cards.ts
+apps/mobile/src/openbot/types.ts
+\n$ git -C apps/openmuse ls-tree -r --name-only origin/main -- apps/mobile/test | grep openbot
+apps/mobile/test/openbot-android-config.test.ts
+apps/mobile/test/openbot-api.test.ts
+apps/mobile/test/openbot-calendar-view.test.ts
+apps/mobile/test/openbot-channel-actions.test.ts
+apps/mobile/test/openbot-channel-state.test.ts
+apps/mobile/test/openbot-chat-state.test.ts
+apps/mobile/test/openbot-client.test.ts
+apps/mobile/test/openbot-computer-state.test.ts
+apps/mobile/test/openbot-connection-status.test.ts
+apps/mobile/test/openbot-control-state.test.ts
+apps/mobile/test/openbot-file-cache.test.ts
+apps/mobile/test/openbot-gate.test.ts
+apps/mobile/test/openbot-native-private-state.test.ts
+apps/mobile/test/openbot-native-session.test.ts
+apps/mobile/test/openbot-pdf-view-state.test.ts
+apps/mobile/test/openbot-private-state.test.ts
+apps/mobile/test/openbot-stop-state.test.ts
+apps/mobile/test/openbot-stream-resume.test.ts
+apps/mobile/test/openbot-task-view.test.ts
+apps/mobile/test/openbot-tool-cards.test.ts
+\n$ git -C apps/openmuse diff HEAD..origin/main -- apps/mobile/package.json | grep -E '^[+-]\s+"' | grep -v '^[+-][+-]'
++    "@better-auth/expo": "1.7.1",
++    "better-auth": "1.7.1",
++    "expo-constants": "~18.0.14",
++    "expo-linking": "~8.0.12",
++    "expo-network": "~8.0.8",
++    "expo-secure-store": "~15.0.8",
++    "expo-web-browser": "~15.0.11",

@@ -1,0 +1,34 @@
+{
+  "ticket": "MT008",
+  "issue": 51,
+  "status": "verified",
+  "timestamp": "2026-10-16T13:30Z",
+  "source": "i6-mt008 实现树（复审报告 d60cbd5a6c832d12a08805564dc10ba2de24530ca21e05eb05c9921c0bf8d097，PASS 4/4，0C/0H，1M=F1 披露性覆盖缺口裁决#10接受+挂账，1L，4I）",
+  "deliverables": {
+    "server/src/db/schema/enterprise-tenancy.ts": "f4ddcd5b3e007bcd691e641d387439b9a7cc67b49999f42ece3998388c44b5d8",
+    "server/scripts/multitenancy/migrate-test.ts": "c5bfb3d4e343bbcf03e205d47977013c1565bb2780708c8bbf912382c631d756",
+    "server/tests/multitenancy/migration-tool.test.ts": "c7569901c8c032c5c8ddeda86d9427e437851162fb9cb22d1c4004b3bf482cdc",
+    "server/src/enterprise/tenancy/resource-policy.ts": "4da9c4081c7029382033f5ddc553ed402c00d64adc60b1a3000998506a5d0c5c",
+    "server/src/enterprise/tenancy/resource-visibility.ts": "3d32eb61f2b976e33072872f712a244fbf57842f030124807b1044117625785b",
+    "server/tests/multitenancy/resource-policy.test.ts": "4a0e3ddada3086ba6e64325d6ccfd89996f27a1c833cc44a4506e017f47450c8",
+    "server/tests/multitenancy/support/resource-policy.ts": "6280bae6b560a23bb0ebbc622f261c5f9db05cc59c7d04ae992ab26e311d7998"
+  },
+  "frozen_before": "checkpoints/MT008-integration/frozen-before.txt（3 M 文件 = MT006+MT112 后 EXE 状态；实现树与 EXE 仅差 MT008 纯追加，整文件替换，无手工合并）",
+  "coordinator_verification": {
+    "script": "/tmp/mt008-integ-verify-v2.zsh（v1 因 umask 177 笔误废弃）",
+    "environment": "fresh pgvector/pgvector:pg16 @127.0.0.1:55470, trust, psql 探针 + assigned 库重试断言, 五变量 env + 三随机口令登录（0600, 用后删）",
+    "results": {
+      "base_migrate": "exit 0 migrations-applied ok",
+      "mt004_apply": "exit 0 (0001+0002 记入 journal)",
+      "suite_mt008": "exit 0: 29 pass / 0 fail / 159 expect",
+      "full_regression": "exit 0: 232 pass / 0 fail / 0 skip / 9 files (= 203 基线 + 29 MT008，与复审独立复跑一致)",
+      "typecheck": "exit 0",
+      "biome_7files": "exit 0 No fixes applied"
+    }
+  },
+  "followups": [
+    "F1 medium：resource-visibility.ts isNull TOCTOU 防线补独立用例（白盒断言 UPDATE 语句含 isNull 谓词，或 MT009/MT010 写路径票内补确定性交错测试）",
+    "F2 low：resource-policy.ts 注册表两响亮拒绝分支补 2 用例",
+    "F3 info：enterprise_resources 既有表 RLS 仅 ENABLE 无 FORCE（若未来统一另立票）"
+  ]
+}

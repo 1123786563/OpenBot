@@ -1,0 +1,45 @@
+{
+  "BASE": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+  "batch": "wave10-batch1(MT076+MT079+MT069)",
+  "files": {
+    "new": {
+      "src/enterprise/tenancy/people-lifecycle.ts": "ff01c87a",
+      "tests/multitenancy/people-lifecycle.test.ts": "0fc9ccf2",
+      "tests/multitenancy/support/people-lifecycle.ts": "17e32d1b"
+    },
+    "shared": {
+      "scripts/multitenancy/migrate-test.ts": "773dc1be(独占后)",
+      "tests/multitenancy/migration-tool.test.ts": "700caff3(后被MT069叠加)"
+    }
+  },
+  "fix_round": "无",
+  "integrated_at": "2026-10-17T03:05:00+08:00",
+  "issue": 119,
+  "review": "PASS(5裁决;2文档计数误差非阻塞;ruling#5序数谱系→统一allowlist第N项口径)",
+  "ticket": "MT076",
+  "verification": {
+    "base_migrate": "exit 0",
+    "biome": "13 touched files 0 diagnostics",
+    "chain": [
+      "MT004",
+      "MT008",
+      "MT112",
+      "MT012",
+      "MT014",
+      "MT010",
+      "MT009",
+      "MT077",
+      "MT026",
+      "MT076",
+      "MT069"
+    ],
+    "container": "w10-integ-pg@127.0.0.1:55511(已删)",
+    "focused": {
+      "payer-accounts": "22/0/0",
+      "people-lifecycle": "16/0/0",
+      "preferences": "23/0/0"
+    },
+    "full": "638 pass / 0 fail / 0 skip / 25 files (=577+61)",
+    "typecheck": "exit 0"
+  }
+}

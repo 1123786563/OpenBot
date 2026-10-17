@@ -1,0 +1,7 @@
+# after state — MT011 (uncommitted worktree)
+f0520524f0faa2b4533b9d2f1aa692c8f907ba71  HEAD (unchanged; 无提交授权)
+80a832ec657ffa601d74f195aa6fea241b81415d42b023092d36d2a1040766fc  server/src/enterprise/tenancy/not-found-semantics.ts
+22b30419b10ad94f76a51b65fdb5110f234388797e96fa6952c7e146e880a090  server/tests/multitenancy/not-found-semantics.test.ts
+d50857ee731b07a5e7027cd86aeefa76c293ad74afa0c36db436147970911ed2  server/tests/multitenancy/support/not-found-semantics.ts
+1ac205baf141914eb6629521c4b8f53d521275baa5fe4809baf7822067f9c77d  server/tests/multitenancy/support/scenarios.ts
+bac27c45ae75ad57bbf7f623352a56e8d625494379ea92ee2a2d74be26cbd65a  server/src/index.ts

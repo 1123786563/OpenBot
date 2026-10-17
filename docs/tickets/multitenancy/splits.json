@@ -1,0 +1,1062 @@
+{
+ "_comment": "Split overrides: each original ticket is replaced in place by a chain of smaller tickets. '@inherit' = original deps, '@prev' = previous part of this chain. Deps written with original MT ids are remapped to the last part of that chain.",
+ "splits": [
+  {
+   "orig": "MT048",
+   "parts": [
+    {
+     "slug": "runs-protocol-ownership",
+     "title": "运行协议环节的归属：委托、能力、步骤、事件、恢复与取消",
+     "what": "运行从委托、能力协商、步骤执行、事件回传到恢复与取消的每个协议环节都携带并校验同一执行归属；恢复不能把运行漂移到别的公司或团队。",
+     "deps": "@inherit",
+     "crit": [
+      "运行创建、步骤执行与事件回传都携带并校验同一归属；缺失归属时拒绝执行。",
+      "恢复只在原归属范围内允许；用另一范围的身份恢复被拒绝。",
+      "取消传播到执行中的步骤与外部执行，且已产生事件不推送给无权订阅者。",
+      "外部线程上下文按持久记录解析归属，不接受请求体指定。"
+     ],
+     "verify": "bun test server/tests/multitenancy/runs-protocol.test.ts",
+     "scope": "运行协议环节（委托、能力、步骤、事件、恢复、取消）的归属校验；不含各框架适配器。"
+    },
+    {
+     "slug": "ts-agent-adapters-ownership",
+     "title": "TypeScript agent 适配器统一消费已验证归属",
+     "what": "各 TypeScript agent 适配器（不同框架）都消费同一个已验证的执行归属与回调解析结果，不因框架不同而跳过授权。",
+     "deps": [
+      "@prev"
+     ],
+     "crit": [
+      "逐个适配器验证：归属缺失或被篡改时拒绝执行，而不是以默认身份继续。",
+      "适配器不自行构造 Scope，只消费签发入口产生的作用域。",
+      "回调解析结果在适配器之间一致（共享测试用例覆盖全部适配器）。",
+      "适配器日志与错误包含归属标识但不含明文秘密。"
+     ],
+     "verify": "bun test server/tests/multitenancy/agent-adapters.test.ts",
+     "scope": "TypeScript agent 适配器对已验证归属的消费一致性；不含运行协议实现。"
+    }
+   ]
+  },
+  {
+   "orig": "MT063",
+   "parts": [
+    {
+     "slug": "openmuse-reviewed-actions",
+     "title": "OpenMuse 审阅动作提案与回执的归属",
+     "what": "审阅动作的提案、确认与回执都绑定公司团队用户；跨范围提案不可见也不可操作，既有精确动作行为不回退。",
+     "deps": "@inherit",
+     "crit": [
+      "提案与回执按归属授权；跨范围访问返回不可见语义。",
+      "确认与取消只对有权限的主体生效，且状态变化留审计。",
+      "既有精确动作提案/确认/取消行为回归通过。",
+      "撤权后待处理提案不可继续操作。"
+     ],
+     "verify": "bun test server/tests/multitenancy/openmuse-reviewed-actions.test.ts",
+     "scope": "OpenMuse 审阅动作提案、确认与回执的归属；不含活动流与通知。"
+    },
+    {
+     "slug": "openmuse-activity-notifications",
+     "title": "OpenMuse 活动流与通知的归属与正文过滤",
+     "what": "活动流只聚合当前范围事件，通知在投递时校验接收者权限且正文不含其无权访问的内容。",
+     "deps": [
+      "@prev"
+     ],
+     "crit": [
+      "活动流只包含当前范围条目；切换范围后不显示旧范围条目。",
+      "通知投递前校验接收者权限；无权者不收到且正文不泄露内容。",
+      "撤销权限后停止后续投递，已投递内容不可被无权者读取。",
+      "通知渠道与推送设备绑定到具体用户与范围。"
+     ],
+     "verify": "bun test server/tests/multitenancy/openmuse-activity-notifications.test.ts",
+     "scope": "OpenMuse 活动流聚合与通知投递、正文过滤；不含审阅动作实现。"
+    }
+   ]
+  },
+  {
+   "orig": "MT079",
+   "parts": [
+    {
+     "slug": "web-transport-rest-uploads",
+     "title": "Web REST 与上传下载签发统一附加当前范围",
+     "what": "REST 请求、上传通道与下载签发统一附加当前公司/团队选择，且只发送给已审核的同源业务路径。",
+     "deps": [
+      "MT078",
+      "MT055"
+     ],
+     "crit": [
+      "真实 client 调用中业务路径请求带有正确选择标识（传输层测试）。",
+      "非同源或未审核路径不附加标识（有反向测试）。",
+      "上传与下载签发走同一附加逻辑，不各自实现。",
+      "允许路径清单与例外登记可对照核对。"
+     ],
+     "verify": "bun test app/tests/multitenancy/transport-rest.test.tsx",
+     "scope": "REST 与上传下载签发的范围附加及允许路径审核；不含流式连接。"
+    },
+    {
+     "slug": "web-transport-streams",
+     "title": "Web SSE 与 WebSocket 建连、续订携带范围并终止旧连接",
+     "what": "流式连接在建连、续订与重连时携带当前范围；切换范围后旧连接被取消，不再推送旧范围事件。",
+     "deps": [
+      "@prev",
+      "MT025"
+     ],
+     "crit": [
+      "建连与重连都携带当前选择；缺失时不建立业务订阅。",
+      "切换范围后旧连接被取消，界面无旧范围事件。",
+      "断网重连后使用当前范围，不回退默认。",
+      "与客户端缓存 generation 规则一致，不产生旧响应写入。"
+     ],
+     "verify": "bun test app/tests/multitenancy/transport-streams.test.tsx",
+     "scope": "SSE/WebSocket 建连、续订、重连的范围附加与旧连接终止；不含 REST 与上传下载。"
+    }
+   ]
+  },
+  {
+   "orig": "MT081",
+   "parts": [
+    {
+     "slug": "web-bot-detail-pages",
+     "title": "Web Bot 详情与配置页接入范围",
+     "what": "Bot 详情与配置页在切换范围后只显示与保存当前范围的 Bot；残留路由对象不会复用旧范围数据。",
+     "deps": [
+      "MT080",
+      "MT017",
+      "MT019"
+     ],
+     "crit": [
+      "详情与配置查询绑定当前范围；切换后无旧范围数据。",
+      "用旧范围的 Bot 路由进入时得到明确的不可用状态，不泄露存在性。",
+      "配置保存提交当前范围，乐观更新不回滚成旧范围数据。",
+      "既有 Bot 详情业务行为回归通过。"
+     ],
+     "verify": "bun test app/tests/multitenancy/web-bot-detail.test.tsx",
+     "scope": "Bot 详情与配置页的查询/变更绑定、路由残留对象处理；不含发布与共享界面。"
+    },
+    {
+     "slug": "web-bot-share-publish-pages",
+     "title": "Web Bot 共享与发布页按服务端能力展示",
+     "what": "发布与共享界面按服务端返回的能力展示可用动作：公共 Bot 使用者看到使用入口而无编辑/发布入口，管理者相反。",
+     "deps": [
+      "@prev"
+     ],
+     "crit": [
+      "入口与按钮由服务端能力驱动，前端不用角色标记推断。",
+      "发布受众选择只允许设计规定的范围；跨公司选项不存在。",
+      "撤销发布后界面立即反映，且不残留可点击的旧动作。",
+      "无权访问发布页时得到明确拒绝状态。"
+     ],
+     "verify": "bun test app/tests/multitenancy/web-bot-publish.test.tsx",
+     "scope": "Bot 发布与共享界面的能力驱动展示、受众选择与撤销反映；不含详情页数据绑定。"
+    },
+    {
+     "slug": "web-bot-ops-pages",
+     "title": "Web Bot 职责、电脑与审批页面接入范围",
+     "what": "Bot 的职责、电脑与审批页面按范围工作，撤权后管理入口消失且直接访问路由得到明确状态。",
+     "deps": [
+      "@prev",
+      "MT046",
+      "MT034"
+     ],
+     "crit": [
+      "三类页面的查询与变更都绑定当前范围（逐页测试）。",
+      "撤权后入口消失；直接访问路由得到明确拒绝状态而非空白。",
+      "审批与电脑操作的能力展示来自服务端。",
+      "既有职责/电脑/审批交互回归通过。"
+     ],
+     "verify": "bun test app/tests/multitenancy/web-bot-ops.test.tsx",
+     "scope": "Bot 职责、电脑与审批页面的查询/变更绑定与能力展示；不含详情与发布界面。"
+    }
+   ]
+  },
+  {
+   "orig": "MT082",
+   "parts": [
+    {
+     "slug": "web-channel-group-pages",
+     "title": "Web 会话与群聊页面接入范围",
+     "what": "会话列表、详情与群聊创建/成员页面在切换范围后正确刷新，创建与操作只作用于当前范围。",
+     "deps": [
+      "MT080",
+      "MT023"
+     ],
+     "crit": [
+      "列表、详情、计数与分页在切换范围后立即反映新范围。",
+      "创建会话与群、增删成员提交当前范围；跨范围用户/Bot 不可选。",
+      "乐观更新不回滚成旧范围数据；撤权后残留路由得到明确状态。",
+      "既有会话与群聊交互回归通过。"
+     ],
+     "verify": "bun test app/tests/multitenancy/web-channels.test.tsx",
+     "scope": "会话与群聊页面（列表、详情、创建、成员）绑定；不含技能/连接账号与设置页。"
+    },
+    {
+     "slug": "web-skills-connections-pages",
+     "title": "Web 技能与连接账号页面接入范围",
+     "what": "技能与连接账号页面按范围显示与操作；凭据界面默认脱敏，明文查看需独立授权。",
+     "deps": [
+      "@prev",
+      "MT033",
+      "MT027"
+     ],
+     "crit": [
+      "技能与连接账号列表只反映当前范围。",
+      "凭据展示默认脱敏；明文查看动作需要独立授权且留审计。",
+      "安装/连接动作提交当前范围；跨范围对象不可选。",
+      "撤销连接后界面立即反映不可用状态。"
+     ],
+     "verify": "bun test app/tests/multitenancy/web-skills-connections.test.tsx",
+     "scope": "技能与连接账号页面的绑定与脱敏展示；不含会话与记忆页面。"
+    },
+    {
+     "slug": "web-memory-routines-pages",
+     "title": "Web 记忆与定时任务页面接入范围",
+     "what": "个人记忆与定时任务页面按范围与个人权限显示；任务创建与取消只作用于当前范围。",
+     "deps": [
+      "@prev",
+      "MT039",
+      "MT041"
+     ],
+     "crit": [
+      "记忆列表与来源选择只包含当前范围有权访问的内容。",
+      "定时任务的创建、编辑与取消提交当前范围；跨范围任务不可见。",
+      "切换范围后无旧范围任务或记忆残留。",
+      "既有记忆与任务交互回归通过。"
+     ],
+     "verify": "bun test app/tests/multitenancy/web-memory-routines.test.tsx",
+     "scope": "个人记忆与定时任务页面的绑定；不含通知中心与设置页。"
+    },
+    {
+     "slug": "web-notifications-settings-pages",
+     "title": "Web 通知与个人设置页面：偏好全局、业务配置按范围",
+     "what": "通知中心只显示当前范围的通知；个人设置中纯偏好保持全局，业务配置随范围变化。",
+     "deps": [
+      "@prev",
+      "MT077"
+     ],
+     "crit": [
+      "通知列表与未读状态只反映当前范围；切换后旧范围通知消失。",
+      "语言/主题等纯偏好切换范围后保持不变。",
+      "业务模型、提示词与默认资源等设置随范围变化并保存到正确范围。",
+      "设置项分类与服务端清单一致（无前端自行判断）。"
+     ],
+     "verify": "bun test app/tests/multitenancy/web-notifications-settings.test.tsx",
+     "scope": "通知中心与个人设置页面；偏好与业务配置的展示分类；不含其他工作台页面。"
+    }
+   ]
+  },
+  {
+   "orig": "MT083",
+   "parts": [
+    {
+     "slug": "web-craft-workshop-pages",
+     "title": "Web Craft 与 Workshop 页面接入范围",
+     "what": "Craft 与 Workshop 的列表、详情、产物与执行页面按范围工作；产物下载走授权签发。",
+     "deps": [
+      "MT080",
+      "MT056"
+     ],
+     "crit": [
+      "列表与详情只反映当前范围；跨范围 ID 得到不可见语义。",
+      "产物下载与预览走授权签发，撤销后界面立即反映不可用。",
+      "执行与调度动作提交当前范围。",
+      "既有创作与执行交互回归通过。"
+     ],
+     "verify": "bun test app/tests/multitenancy/web-craft-workshop.test.tsx",
+     "scope": "Craft 与 Workshop 列表、详情、产物与执行页面绑定；不含分享页受众逻辑。"
+    },
+    {
+     "slug": "web-share-page-audience",
+     "title": "Web 分享页的身份、受众与撤销状态",
+     "what": "分享页要求有效身份与受众；非同团队成员与跨公司访问者看到明确无权状态，撤销或过期后页面立即不可访问。",
+     "deps": [
+      "@prev",
+      "MT057"
+     ],
+     "crit": [
+      "同团队成员可访问；非同团队成员与跨公司访问者得到明确无权状态。",
+      "无权状态不泄露内容标题、产物名等元数据。",
+      "撤销或过期后访问立即失败，且界面说明原因。",
+      "显式跨团队分享只在受众与有效期内可访问。"
+     ],
+     "verify": "bun test app/tests/multitenancy/web-share-page.test.tsx",
+     "scope": "分享页的身份、受众、有效期与撤销状态展示；不含创作页面。"
+    }
+   ]
+  },
+  {
+   "orig": "MT084",
+   "parts": [
+    {
+     "slug": "web-knowledge-pages",
+     "title": "Web 知识管理与文档处理页面接入范围",
+     "what": "知识库与文档页面按范围显示；检索结果不含无权内容，文档处理动作只作用于当前范围。",
+     "deps": [
+      "MT080",
+      "MT038"
+     ],
+     "crit": [
+      "知识库与文档列表只反映当前范围；跨范围库不可见。",
+      "检索界面结果不含无权内容，引用可点击项都在授权范围内。",
+      "上传、删除与重解析动作提交当前范围。",
+      "公共知识库对成员只读，界面无编辑/删除入口。"
+     ],
+     "verify": "bun test app/tests/multitenancy/web-knowledge.test.tsx",
+     "scope": "知识库与文档处理页面绑定、检索结果与引用展示；不含插件与组件页面。"
+    },
+    {
+     "slug": "web-plugin-component-pages",
+     "title": "Web 插件、技能与组件页面接入范围",
+     "what": "插件与组件的目录浏览、安装、配置与发布界面按范围工作；公共目录可浏览但安装只影响当前范围。",
+     "deps": [
+      "@prev",
+      "MT033"
+     ],
+     "crit": [
+      "目录可浏览且不含公司私有配置；安装动作提交当前范围。",
+      "已安装列表与配置只反映当前范围。",
+      "发布界面按服务端能力展示可用动作。",
+      "卸载或停用后界面立即反映。"
+     ],
+     "verify": "bun test app/tests/multitenancy/web-plugins-components.test.tsx",
+     "scope": "插件、技能与组件的目录浏览、安装、配置与发布界面；不含知识管理页面。"
+    }
+   ]
+  },
+  {
+   "orig": "MT085",
+   "parts": [
+    {
+     "slug": "web-admin-people-identity",
+     "title": "Web people、身份提供方与凭据管理界面按能力开放",
+     "what": "人员、身份提供方与凭据管理界面只对具备相应公司能力的主体开放，且只显示本公司范围内容。",
+     "deps": [
+      "MT080",
+      "MT074"
+     ],
+     "crit": [
+      "入口由服务端能力决定；无能力者访问路由得到明确拒绝状态。",
+      "人员与身份提供方列表只含本公司范围；凭据界面脱敏。",
+      "管理动作（提升/降级/离职）提交本公司范围并留审计。",
+      "平台级管理入口不出现在公司管理员界面。"
+     ],
+     "verify": "bun test app/tests/multitenancy/web-admin-people.test.tsx",
+     "scope": "people、身份提供方与凭据管理界面的能力门控与脱敏；不含审计与企业设置界面。"
+    },
+    {
+     "slug": "web-admin-learning-audit",
+     "title": "Web 学习、企业与审计管理界面按能力开放",
+     "what": "学习、企业与审计管理界面按能力开放；审计查询与导出遵守范围与脱敏规则。",
+     "deps": [
+      "@prev",
+      "MT076"
+     ],
+     "crit": [
+      "审计查询只返回授权范围记录；导出遵守范围与脱敏并留审计。",
+      "企业设置界面只显示本公司配置；跨公司读取被拒绝。",
+      "学习管理界面不暴露其他范围容器或内容。",
+      "计费管理入口只对授权主体开放。"
+     ],
+     "verify": "bun test app/tests/multitenancy/web-admin-audit.test.tsx",
+     "scope": "学习、企业与审计管理界面的能力门控、审计查询与导出；不含 people 与凭据界面。"
+    }
+   ]
+  },
+  {
+   "orig": "MT087",
+   "parts": [
+    {
+     "slug": "desktop-org-context-model",
+     "title": "桌面原生组织上下文模型与命令门控",
+     "what": "桌面端为每个组织连接保存冻结的 authority/用户/公司/团队上下文，原生命令只允许当前已验证的组织连接使用。",
+     "deps": [
+      "MT028"
+     ],
+     "crit": [
+      "上下文一旦建立即冻结；命令调用携带的上下文与已验证连接不一致时被拒绝。",
+      "伪造或过期上下文的命令调用被拒绝并记录。",
+      "暴露给前端的 DTO 不含 token 或 secret。",
+      "上下文在应用重启后与已验证连接一致，不落到默认组织。"
+     ],
+     "verify": "cargo test --manifest-path desktop/src-tauri/Cargo.toml org_context",
+     "scope": "原生组织上下文模型、冻结语义与原生命令门控；不含凭据命名空间。"
+    },
+    {
+     "slug": "desktop-credential-namespace",
+     "title": "桌面凭据命名空间与 OAuth state 绑定 authority",
+     "what": "桌面凭据按组织命名空间隔离，个人 provider 连接保留独立空间；OAuth state 与恢复绑定发起 authority。",
+     "deps": [
+      "@prev",
+      "MT067"
+     ],
+     "crit": [
+      "组织凭据与个人 provider 凭据分命名空间存储，互不可读。",
+      "个人连接不会被当作公司付款方或公司业务凭据使用。",
+      "OAuth state 与恢复绑定发起 authority；回调期间切换组织不改变归属。",
+      "命名空间清理只影响目标组织（与切换清理 Ticket 一致）。"
+     ],
+     "verify": "cargo test --manifest-path desktop/src-tauri/Cargo.toml credential_namespace",
+     "scope": "凭据命名空间隔离、个人 provider 连接与 OAuth state 绑定 authority；不含上下文门控实现。"
+    }
+   ]
+  },
+  {
+   "orig": "MT094",
+   "parts": [
+    {
+     "slug": "mobile-three-client-selection",
+     "title": "Web、iOS、Android 三端选择与缓存一致性验证",
+     "what": "在同一身份矩阵下验证三端的选择、空状态、切换与撤权行为一致，缓存不跨范围污染。",
+     "deps": [
+      "MT092",
+      "MT093"
+     ],
+     "crit": [
+      "三端选择界面只列出真实有资格的公司与团队，行为一致。",
+      "无资格与撤权状态在三端都有明确界面与拒绝行为。",
+      "切换范围后三端都不显示旧范围缓存或在途响应。",
+      "发现的平台差异被记录并修复或显式标记未验证。"
+     ],
+     "verify": "bun test apps/openmuse/apps/mobile/src/openbot/three-client-selection.test.ts + 三端运行记录",
+     "scope": "三端选择、空状态、切换与撤权行为一致性及缓存隔离验证；不含聚合接口与媒体。"
+    },
+    {
+     "slug": "mobile-aggregation-verification",
+     "title": "移动聚合接口范围与三端流式/媒体一致性验证",
+     "what": "验证移动聚合接口逐子查询只返回当前范围，并在三端验证流式与媒体请求的范围一致性。",
+     "deps": [
+      "@prev",
+      "MT064"
+     ],
+     "crit": [
+      "聚合接口逐子查询验证只返回当前范围（含空范围情况）。",
+      "三端流式与媒体请求携带正确范围，旧连接被取消。",
+      "媒体缓存不跨范围展示；重连后仍用当前范围。",
+      "验证证据可被独立复核（命令、环境、结果）。"
+     ],
+     "verify": "bun test apps/openmuse/apps/mobile/src/openbot/aggregation.test.ts + 三端运行记录",
+     "scope": "移动聚合接口逐子查询范围校验与三端流式/媒体一致性验证；不含选择界面一致性。"
+    }
+   ]
+  },
+  {
+   "orig": "MT095",
+   "parts": [
+    {
+     "slug": "telemetry-attribution-fields",
+     "title": "Trace、日志与事件的归属字段注入",
+     "what": "trace、日志与业务事件携带真实公司、团队与执行归属，使共享观测后端上的记录可按范围追溯。",
+     "deps": [
+      "MT049",
+      "MT063"
+     ],
+     "crit": [
+      "每条 trace/日志/事件都能追溯到公司、团队与发起主体。",
+      "归属字段在跨语言与后台执行路径中不丢失（与运行侧契约一致）。",
+      "归属字段不含明文凭据或可反推秘密的信息。",
+      "缺失归属的记录被标记为异常，不静默归到默认范围。"
+     ],
+     "verify": "bun test server/tests/multitenancy/telemetry-attribution.test.ts",
+     "scope": "trace、日志与事件的归属字段注入与跨语言传递；不含脱敏与账户区分回归。"
+    },
+    {
+     "slug": "telemetry-redaction-usage-accounts",
+     "title": "用量事件的账户区分与脱敏回归",
+     "what": "用量事件能区分公司与个人付款账户，避免标识冲突或重放到另一账户；既有脱敏规则在新增字段后仍生效。",
+     "deps": [
+      "@prev",
+      "MT067"
+     ],
+     "crit": [
+      "用量事件携带付款账户类型与稳定标识；公司与个人事件不混淆。",
+      "重放同一事件不会记到另一账户（幂等测试）。",
+      "脱敏规则覆盖服务 token、cookie、OAuth、个人 Key 与凭据正文（含错误与异常路径）。",
+      "既有脱敏回归套件全部通过。"
+     ],
+     "verify": "bun test server/tests/multitenancy/telemetry-usage.test.ts + 既有脱敏回归套件",
+     "scope": "用量事件账户类型区分、幂等与脱敏回归；不含归属字段注入实现。"
+    }
+   ]
+  },
+  {
+   "orig": "MT098",
+   "parts": [
+    {
+     "slug": "legacy-company-creation",
+     "title": "创建原有公司与默认团队并建立映射",
+     "what": "为历史部署创建「原有公司」与默认团队，并建立与既有部署身份、计费 Customer 的明确映射，作为后续回填的锚点。",
+     "deps": [
+      "MT003",
+      "MT004"
+     ],
+     "crit": [
+      "原有公司与默认团队创建幂等；重复执行不产生重复实体。",
+      "与既有部署身份及计费 Customer 的映射唯一且可核验。",
+      "创建过程以 dry-run 预览、以 manifest 执行 apply。",
+      "创建后既有单租户行为不变（回归测试）。"
+     ],
+     "verify": "bun test server/tests/multitenancy/legacy-company.test.ts（真实 PostgreSQL）",
+     "scope": "原有公司与默认团队创建及其与部署身份、计费 Customer 的映射；不含记录回填。"
+    },
+    {
+     "slug": "root-record-backfill",
+     "title": "历史根记录归属回填并保持既有个人授权",
+     "what": "把历史业务根记录归属到原有公司与默认团队，同时保持既有个人授权不变；无法唯一归属的记录进入受控隔离清单。",
+     "deps": [
+      "@prev",
+      "MT072"
+     ],
+     "crit": [
+      "回填后历史数据可见范围与回填前一致（个人权限未被放宽为团队可见）。",
+      "无法唯一归属的记录进入隔离清单并阻断相关启用，不按猜测分配。",
+      "回填幂等可重跑，且以 dry-run 预览差异。",
+      "输出计数与抽样对照的一致性报告。"
+     ],
+     "verify": "bun test server/tests/multitenancy/root-backfill.test.ts（真实 PostgreSQL）",
+     "scope": "历史根记录归属回填、个人授权保持与隔离清单；不含子记录与外部状态。"
+    }
+   ]
+  },
+  {
+   "orig": "MT099",
+   "parts": [
+    {
+     "slug": "child-backfill-main-batch1",
+     "title": "主库子记录回填第一批：Bot、会话、凭据与插件",
+     "what": "主库中 Bot、会话与附件、凭据与插件相关子记录按复合关联回填公司/团队归属，保证不会关联到与父记录不同的公司。",
+     "deps": [
+      "MT098",
+      "MT016",
+      "MT021",
+      "MT027",
+      "MT031"
+     ],
+     "crit": [
+      "本批对象的子记录归属与父记录一致；不一致情况被检测并报告，不静默覆盖。",
+      "回填可中断续跑且不重复写入；幂等重跑结果一致。",
+      "约束与校验双重保证跨公司关联被数据库拒绝。",
+      "输出本批进度与计数校验报告，供后续批次与一致性校验消费。"
+     ],
+     "verify": "bun test server/tests/multitenancy/child-backfill-main-batch1.test.ts（真实 PostgreSQL）",
+     "scope": "主库中 Bot、会话与附件、凭据、插件相关子记录的复合关联回填与进度记录。"
+    },
+    {
+     "slug": "child-backfill-main-batch2",
+     "title": "主库子记录回填第二批：记忆、任务、Craft/Workshop、OpenMuse、账务与策略",
+     "what": "剩余主库业务对象的子记录按同一复合关联规则回填，沿用第一批的进度与校验机制，不重复实现回填框架。",
+     "deps": [
+      "@prev",
+      "MT039",
+      "MT041",
+      "MT052",
+      "MT056",
+      "MT059",
+      "MT067",
+      "MT075",
+      "MT095"
+     ],
+     "crit": [
+      "本批对象的子记录归属与父记录一致；不一致被检测并报告。",
+      "复用第一批的进度记录与幂等机制；中断后可续跑。",
+      "跨公司关联被数据库拒绝（约束 + 校验）。",
+      "输出本批进度与计数校验报告，并标记主库回填完成状态。"
+     ],
+     "verify": "bun test server/tests/multitenancy/child-backfill-main-batch2.test.ts（真实 PostgreSQL）",
+     "scope": "主库中记忆、任务、Craft/Workshop、OpenMuse、账务、策略与遥测子记录的回填；复用第一批框架。"
+    },
+    {
+     "slug": "child-backfill-kb",
+     "title": "知识库侧归属回填与独立进度记录",
+     "what": "知识库（独立数据库）中的库、文档、chunk 与 revision 归属回填，并单独记录进度，不声称与主库存在单事务。",
+     "deps": [
+      "MT098",
+      "MT036"
+     ],
+     "crit": [
+      "知识库侧回填幂等可续跑，进度独立记录。",
+      "库、文档、chunk 与 revision 的归属链一致；不一致被报告。",
+      "不假装存在跨库外键或跨库单事务（有一致性校验代替）。",
+      "回填后受限查询结果与归属一致。"
+     ],
+     "verify": "bun test server/tests/multitenancy/child-backfill-kb.test.ts（知识库测试库）",
+     "scope": "知识库侧（独立数据库）库、文档、chunk 与 revision 的归属回填与独立进度记录；不含主库回填。"
+    },
+    {
+     "slug": "backfill-consistency-report",
+     "title": "跨库一致性校验、断点续跑与回填报告",
+     "what": "把主库与知识库的回填结果做跨库一致性校验，检测一侧成功一侧失败的情况，并输出可复核的回填报告。",
+     "deps": [
+      "@prev-all"
+     ],
+     "crit": [
+      "跨库不一致被检测、报告并可从断点续跑，不被当作完成。",
+      "报告包含范围、计数、抽样对照、隔离清单与未决项。",
+      "报告可被独立验证者用记录的命令复现。",
+      "存在未决项时阻断后续启用（与就绪强制一致）。"
+     ],
+     "verify": "bun test server/tests/multitenancy/backfill-consistency.test.ts（两个测试库）",
+     "scope": "主库与知识库回填结果的跨库一致性校验、断点续跑与可复核报告；不含具体回填实现。"
+    }
+   ]
+  },
+  {
+   "orig": "MT100",
+   "parts": [
+    {
+     "slug": "external-files-migration",
+     "title": "对象存储文件与产物的归属迁移",
+     "what": "对象存储中的业务文件、附件与产物按归属迁移或建立映射，路径规则与授权一致，迁移幂等可续跑。",
+     "deps": [
+      "MT099",
+      "MT054",
+      "MT060"
+     ],
+     "crit": [
+      "每类文件都有明确归属或进入隔离清单，没有隐式默认归属。",
+      "迁移幂等可续跑；失败不留下半迁移状态被业务读取。",
+      "迁移后授权与签名下载仍正确（与既有规则一致）。",
+      "输出逐类计数与抽样校验报告。"
+     ],
+     "verify": "bun test server/tests/multitenancy/external-files-migration.test.ts",
+     "scope": "对象存储业务文件、附件与产物的归属迁移或映射；不含运行时状态与向量命名空间。"
+    },
+    {
+     "slug": "external-runtime-state-migration",
+     "title": "外部线程、浏览器状态与向量命名空间迁移",
+     "what": "外部线程映射、浏览器登录态与工作目录、向量集合命名空间按归属迁移或受控隔离，避免跨范围状态残留。",
+     "deps": [
+      "@prev",
+      "MT037",
+      "MT051"
+     ],
+     "crit": [
+      "外部线程映射迁移后归属正确，旧映射不可被其他范围复用。",
+      "浏览器状态与工作目录要么迁移到正确命名空间，要么被清理并记录。",
+      "向量集合/命名空间按归属隔离；跨范围检索返回空。",
+      "迁移过程可续跑且不破坏正在执行的运行（有失败注入测试）。"
+     ],
+     "verify": "bun test server/tests/multitenancy/external-runtime-migration.test.ts",
+     "scope": "外部线程映射、浏览器状态、工作目录与向量命名空间迁移；不含对象存储文件。"
+    },
+    {
+     "slug": "unattributable-quarantine",
+     "title": "无法归属外部状态的隔离清单与启用阻断",
+     "what": "无法唯一归属的外部状态进入可运维查看的隔离清单，并在清单非空时阻断多租户启用。",
+     "deps": [
+      "@prev"
+     ],
+     "crit": [
+      "隔离清单列出对象、原因、发现时间与建议处置，可被运维查看。",
+      "清单非空时就绪判定失败并给出具体条目（与启动就绪强制一致）。",
+      "处置（归属或销毁）后清单相应更新，且处置留审计。",
+      "不会为了清空清单而按猜测分配归属（有反向测试）。"
+     ],
+     "verify": "bun test server/tests/multitenancy/quarantine-list.test.ts + 隔离清单报告",
+     "scope": "无法归属外部状态的隔离清单、处置流程与启用阻断；不含具体迁移实现。"
+    }
+   ]
+  },
+  {
+   "orig": "MT102",
+   "parts": [
+    {
+     "slug": "entry-context-factories",
+     "title": "部署主入口按已认证身份建立上下文并使用作用域工厂",
+     "what": "部署主入口的每个 HTTP 与内部入口都从已认证身份建立请求上下文，并通过作用域工厂获取业务依赖。",
+     "deps": "@inherit",
+     "crit": [
+      "每个入口都建立上下文；缺少上下文的业务请求被拒绝而不是落到默认范围。",
+      "业务依赖来自作用域工厂，不来自启动时装配的单份配置。",
+      "上下文建立方式与企业入口、流式入口一致（共享实现）。",
+      "普通业务事务不跨外部网络等待（有测试或静态检查证据）。"
+     ],
+     "verify": "bun test server/tests/multitenancy/entry-context.test.ts",
+     "scope": "部署主入口的上下文建立与作用域工厂接入；不含启动期默认状态移除。"
+    },
+    {
+     "slug": "startup-default-removal",
+     "title": "移除启动期默认公司状态并保持 API 兼容",
+     "what": "启动流程不再保留默认公司、默认线程标识或单用户绕过；既有 API 路径与 DTO 能力保持兼容。",
+     "deps": [
+      "@prev"
+     ],
+     "crit": [
+      "启动后不存在进程级可变“当前公司/团队”状态（有测试断言）。",
+      "单用户与开发绕过在多租户模式下不可用；单租户部署行为不变（回归）。",
+      "API 路径、状态码与 DTO 能力对照测试通过。",
+      "装配缺口会被就绪校验发现（与 MT013 一致）。"
+     ],
+     "verify": "bun test server/tests/multitenancy/startup-defaults.test.ts + 既有入口回归套件",
+     "scope": "启动流程默认公司/线程标识与单用户绕过的移除及 API 兼容回归；不含上下文实现。"
+    }
+   ]
+  },
+  {
+   "orig": "MT103",
+   "parts": [
+    {
+     "slug": "enterprise-entry-assembly",
+     "title": "企业入口装配接入统一上下文与授权",
+     "what": "企业入口的每个路由都接入统一上下文建立与授权规则，不使用单独的可见性判断。",
+     "deps": [
+      "MT102"
+     ],
+     "crit": [
+      "企业入口逐路由验证：缺少上下文拒绝，越权返回不可见语义。",
+      "企业入口与部署主入口共用同一上下文与作用域工厂实现。",
+      "既有企业接口能力与 DTO 保持兼容（对照测试）。",
+      "处置结果回写入口清单。"
+     ],
+     "verify": "bun test server/tests/multitenancy/assembly-enterprise.test.ts",
+     "scope": "企业入口逐路由接入统一上下文与授权；不含旧 REST/Copilot/移动聚合入口。"
+    },
+    {
+     "slug": "legacy-entry-assembly",
+     "title": "旧 REST、Copilot 与移动聚合入口装配与兼容",
+     "what": "旧 REST、Copilot 与移动聚合入口接入同一规则，因此旧接口不能成为绕过新规则的旁路，同时保持既有兼容。",
+     "deps": [
+      "@prev",
+      "MT064"
+     ],
+     "crit": [
+      "逐入口验证旧接口对无权范围返回不可见语义，不依赖部署级默认。",
+      "路径、状态码与 DTO 能力保持兼容（对照测试）。",
+      "无法立即隔离的入口被显式关闭或登记例外，不留隐式放行。",
+      "全部入口处置结果回写清单，未分类入口为零。"
+     ],
+     "verify": "bun test server/tests/multitenancy/assembly-legacy.test.ts",
+     "scope": "旧 REST、Copilot 与移动聚合入口装配、兼容保持与旁路封闭；不含企业入口。"
+    }
+   ]
+  },
+  {
+   "orig": "MT105",
+   "parts": [
+    {
+     "slug": "global-exception-closure",
+     "title": "全局登录、健康检查与平台静态目录例外登记闭合",
+     "what": "全局登录、健康检查与平台静态目录等端点被逐项显式登记为例外并说明理由与责任人；未登记端点一律要求归属上下文。",
+     "deps": [
+      "MT103",
+      "MT030"
+     ],
+     "crit": [
+      "例外清单完整，每项有理由、责任人与验证方式。",
+      "未登记端点访问业务数据时被拒绝（有反向测试）。",
+      "全局端点不返回任何公司私有内容。",
+      "就绪校验在例外登记不完整时失败。"
+     ],
+     "verify": "bun test server/tests/multitenancy/global-exception-closure.test.ts + 登记表审阅",
+     "scope": "全局登录、健康检查与平台静态目录的例外登记闭合；不含机器回调与个人直连路径。"
+    },
+    {
+     "slug": "machine-personal-path-exceptions",
+     "title": "机器回调与个人 Bifrost 直连路径例外登记闭合",
+     "what": "机器回调与个人 Bifrost 直连路径作为独立例外登记：回调例外只覆盖回调本身，个人直连路径与公司路径的账户解析互不影响。",
+     "deps": [
+      "@prev",
+      "MT067"
+     ],
+     "crit": [
+      "机器回调例外不授予业务数据读取；越权调用被拒绝。",
+      "个人直连路径例外登记完整，且与公司路径账户解析互不干扰。",
+      "两类例外的付款账户路由与 Spec §7.1 一致（有测试）。",
+      "登记表变更会触发就绪校验重新评估。"
+     ],
+     "verify": "bun test server/tests/multitenancy/machine-personal-exceptions.test.ts",
+     "scope": "机器回调与个人 Bifrost 直连路径的例外登记闭合及其账户路由一致性。"
+    }
+   ]
+  },
+  {
+   "orig": "MT106",
+   "parts": [
+    {
+     "slug": "readiness-enforcement",
+     "title": "多租户启动就绪强制与缺口阻断",
+     "what": "多租户模式启动时强制校验入口覆盖、例外登记、隔离清单、单用户绕过与数据库角色安全；任何缺口都阻止启动并输出机器可读报告。",
+     "deps": [
+      "MT102",
+      "MT105",
+      "MT013",
+      "MT012"
+     ],
+     "crit": [
+      "存在未登记入口、隔离清单未清空、单用户绕过或不安全数据库角色时拒绝启动并列出缺口。",
+      "缺口报告机器可读，可被 CI 阻断。",
+      "单租户部署仍可按既有方式启动（回归测试）。",
+      "放宽任何一项都需要显式配置与理由，不能默认放行。"
+     ],
+     "verify": "bun test server/tests/multitenancy/readiness-enforcement.test.ts",
+     "scope": "多租户启动就绪强制、缺口报告与 CI 阻断；不含 Worker 装配。"
+    },
+    {
+     "slug": "worker-assembly-scope",
+     "title": "Worker 与后台装配去默认公司",
+     "what": "Worker 与后台程序装配不含启动期默认公司；每项执行按持久记录重建业务作用域，机器身份不获得普通用户权限。",
+     "deps": [
+      "@prev",
+      "MT042"
+     ],
+     "crit": [
+      "Worker 启动不装配默认公司/团队；缺失归属的任务被隔离而非以默认身份执行。",
+      "每项执行重建作用域并校验资格（复用扫描侧规则）。",
+      "机器身份不能读取任意公司业务数据（越权测试）。",
+      "后台程序的配置解析按记录归属，不读全局可变状态。"
+     ],
+     "verify": "bun test server/tests/multitenancy/worker-assembly.test.ts",
+     "scope": "Worker 与后台程序装配去默认公司及执行前作用域重建；不含启动就绪判定实现。"
+    }
+   ]
+  },
+  {
+   "orig": "MT107",
+   "parts": [
+    {
+     "slug": "acceptance-harness-env",
+     "title": "验收 harness 与独立测试环境",
+     "what": "交付验收 harness：使用独立测试端口、数据库与外部命名空间，可与开发环境并行运行，并能按入口清单驱动用例。",
+     "deps": [
+      "MT001",
+      "MT002"
+     ],
+     "crit": [
+      "harness 使用独立端口、测试数据库与外部命名空间，不污染开发环境。",
+      "harness 能证明自身有效：先检测到一个人为植入的越权，再用于出证据。",
+      "缺少测试环境时明确失败，不把 skipped 记为通过。",
+      "运行方式与输出格式被文档化，可被其他 agent 直接使用。"
+     ],
+     "verify": "bun test server/tests/multitenancy/acceptance-harness.test.ts",
+     "scope": "验收 harness 与独立测试端口/数据库/外部命名空间；不含身份矩阵用例本身。"
+    },
+    {
+     "slug": "identity-matrix-runner",
+     "title": "身份矩阵 runner 与逐入口覆盖状态输出",
+     "what": "用固定身份矩阵对真实注册入口逐项运行正向与越权用例，并输出机器可读的覆盖状态与缺口清单。",
+     "deps": [
+      "@prev",
+      "MT105"
+     ],
+     "crit": [
+      "身份矩阵覆盖 Spec 规定的全部 8 类身份。",
+      "逐入口输出正向与越权两类结论；缺一即标记为未覆盖。",
+      "覆盖状态机器可读，可被覆盖证据 Ticket 与上线候选包消费。",
+      "新入口出现时自动进入未覆盖清单（漂移可检测）。"
+     ],
+     "verify": "bun test server/tests/multitenancy/identity-matrix-runner.test.ts + 覆盖状态报告",
+     "scope": "身份矩阵 runner、逐入口正向/越权执行与覆盖状态输出；不含 harness 环境实现。"
+    }
+   ]
+  },
+  {
+   "orig": "MT108",
+   "parts": [
+    {
+     "slug": "coverage-bots-conversations",
+     "title": "覆盖证据：Bot、会话与附件",
+     "what": "用验收 harness 为 Bot、会话与附件闭环补齐正向与越权证据，并关闭发现的缺口。",
+     "deps": [
+      "MT107",
+      "MT019",
+      "MT024"
+     ],
+     "crit": [
+      "Bot 创建/发布/使用/生命周期与附件上传/签发/清理逐入口有正向与越权证据。",
+      "发现的缺口被修复并重跑，或明确记录为阻塞项。",
+      "证据可被独立验证者复现（命令、环境、结果）。",
+      "覆盖状态在 harness 输出中标记为已覆盖。"
+     ],
+     "verify": "bun test server/tests/multitenancy/coverage-bots-conversations.test.ts + 覆盖报告",
+     "scope": "Bot、会话与附件闭环的覆盖证据与小缺口修复。"
+    },
+    {
+     "slug": "coverage-plugins-knowledge",
+     "title": "覆盖证据：插件审批、知识与记忆",
+     "what": "为插件与审批、知识与记忆闭环补齐正向与越权证据，重点覆盖检索范围与审批归属。",
+     "deps": [
+      "@prev",
+      "MT035",
+      "MT040"
+     ],
+     "crit": [
+      "插件安装/工具调用/共享审批逐入口有正向与越权证据。",
+      "检索候选范围与个人记忆隔离有证据（不止结果过滤）。",
+      "缺口被修复并重跑，或明确记录为阻塞项。",
+      "覆盖状态标记为已覆盖。"
+     ],
+     "verify": "bun test server/tests/multitenancy/coverage-plugins-knowledge.test.ts + 覆盖报告",
+     "scope": "插件与审批、知识与记忆闭环的覆盖证据与小缺口修复。"
+    }
+   ]
+  },
+  {
+   "orig": "MT109",
+   "parts": [
+    {
+     "slug": "coverage-jobs-execution",
+     "title": "覆盖证据：后台任务与执行隔离",
+     "what": "为后台任务、电脑与沙箱、运行协议与原生适配器补齐归属与越权证据，重点覆盖状态串用风险。",
+     "deps": [
+      "MT107",
+      "MT045",
+      "MT050"
+     ],
+     "crit": [
+      "扫描、认领、重试、取消、恢复路径都有归属与越权证据。",
+      "浏览器、沙箱、工作目录与快照无跨范围串用证据。",
+      "跨语言边界（Go/原生）归属传递有证据。",
+      "缺口被修复并重跑，或明确记录为阻塞项。"
+     ],
+     "verify": "bun test server/tests/multitenancy/coverage-jobs-execution.test.ts + 覆盖报告",
+     "scope": "后台任务、电脑与沙箱、运行协议与原生适配器的覆盖证据与小缺口修复。"
+    },
+    {
+     "slug": "coverage-craft-openmuse-deletion",
+     "title": "覆盖证据：Craft/Workshop、OpenMuse 与删除恢复",
+     "what": "为 Craft/Workshop、分享、OpenMuse 全部业务与删除恢复补齐正向与越权证据。",
+     "deps": [
+      "@prev",
+      "MT057",
+      "MT066"
+     ],
+     "crit": [
+      "Craft/Workshop 会话、产物、分享与撤销逐入口有证据。",
+      "OpenMuse 个人域、连接器、通知与移动聚合接口有证据。",
+      "删除语义分离与 purge/restore manifest 校验有证据。",
+      "缺口被修复并重跑，或明确记录为阻塞项。"
+     ],
+     "verify": "bun test server/tests/multitenancy/coverage-craft-openmuse.test.ts + 覆盖报告",
+     "scope": "Craft/Workshop、分享、OpenMuse 全部业务与删除恢复的覆盖证据与小缺口修复。"
+    }
+   ]
+  },
+  {
+   "orig": "MT110",
+   "parts": [
+    {
+     "slug": "coverage-billing-accounts",
+     "title": "覆盖证据：公司/个人付款账户与账务可见性",
+     "what": "为公司与个人付款账户路由、原子预扣、结算幂等与账务可见性补齐证据，全部在真实数据库上取得。",
+     "deps": [
+      "MT107",
+      "MT071"
+     ],
+     "crit": [
+      "公司调用与个人直连分别使用固定付款账户，余额不足不切换（有证据）。",
+      "并发预扣、重试、回调与 Key 重放不改变付款方也不重复结算（真实数据库并发用例）。",
+      "账务可见性越权用例通过：普通成员看不到他人订单与支付资料。",
+      "团队用量与公司总额一致，且不含个人直连消费。"
+     ],
+     "verify": "bun test server/tests/multitenancy/coverage-billing.test.ts（真实 PostgreSQL）+ 覆盖报告",
+     "scope": "公司/个人付款账户路由、原子预扣、结算幂等与账务可见性的覆盖证据（真实数据库）。"
+    },
+    {
+     "slug": "coverage-governance-observability",
+     "title": "覆盖证据：治理、审计与观测出口",
+     "what": "为管理与治理动作、审计分域、观测查询与导出补齐正向与越权证据。",
+     "deps": [
+      "@prev",
+      "MT077",
+      "MT097"
+     ],
+     "crit": [
+      "平台管理与公司/团队管理分离有越权证据。",
+      "审计查询与导出的跨范围访问被拒绝（有证据）。",
+      "观测后端查询、导出与 trace 链接授权有证据。",
+      "已启用集成的隔离与账户路由证据齐备，未验证项被显式标记。"
+     ],
+     "verify": "bun test server/tests/multitenancy/coverage-governance.test.ts + 覆盖报告",
+     "scope": "管理与治理动作、审计分域、观测查询与导出、已启用集成的覆盖证据。"
+    }
+   ]
+  },
+  {
+   "orig": "MT111",
+   "parts": [
+    {
+     "slug": "coverage-web-clients",
+     "title": "覆盖证据：Web 客户端",
+     "what": "为 Web 端选择、缓存、在途响应、深链接与长连接补齐验收证据。",
+     "deps": [
+      "MT107",
+      "MT086"
+     ],
+     "crit": [
+      "切换公司与团队后不显示旧范围在途响应或缓存（有证据）。",
+      "新标签页、深链接与长连接遵守相同规则。",
+      "无资格与撤权状态有明确界面与拒绝行为。",
+      "缺口被修复并重跑，或明确记录为阻塞项。"
+     ],
+     "verify": "bun test app/tests/multitenancy + 覆盖报告",
+     "scope": "Web 端选择、缓存、在途响应、深链接与长连接的覆盖证据。"
+    },
+    {
+     "slug": "coverage-desktop-mobile-clients",
+     "title": "覆盖证据：桌面与移动端",
+     "what": "为桌面与移动端（Web/iOS/Android）补齐选择、本地状态、流式与媒体的验收证据。",
+     "deps": [
+      "@prev",
+      "MT090",
+      "MT094"
+     ],
+     "crit": [
+      "桌面组织切换、本地状态隔离与凭据命名空间有证据。",
+      "移动三端选择、缓存、流式与媒体一致性有证据。",
+      "真机或模拟器不可用时显式标记未验证，不计入通过。",
+      "缺口被修复并重跑，或明确记录为阻塞项。"
+     ],
+     "verify": "bun test desktop/src apps/openmuse/apps/mobile/src/openbot + cargo test + 覆盖报告",
+     "scope": "桌面与移动三端选择、本地状态、流式与媒体的覆盖证据。"
+    }
+   ]
+  },
+  {
+   "orig": "MT112",
+   "parts": [
+    {
+     "slug": "gap-closure",
+     "title": "缺口关闭与阻塞项清单",
+     "what": "汇总全部覆盖证据中的缺口与未验证项，关闭可修复缺口，并把真实阻塞项显式列出。",
+     "deps": "@inherit",
+     "crit": [
+      "缺口清单逐项有处置结论：已修复并重验、或标记为阻塞项。",
+      "存在真实阻塞项时不进入后续审查与候选包阶段。",
+      "隔离清单与未验证项被完整列出，不含隐式豁免。",
+      "处置证据可被独立复核。"
+     ],
+     "verify": "bun test server/tests/multitenancy/gap-closure.test.ts + 缺口清单文档",
+     "scope": "缺口与未验证项汇总、可修复缺口关闭与阻塞项清单；不含审查与候选包。"
+    },
+    {
+     "slug": "independent-review",
+     "title": "独立 Review 与完整范围代码审查",
+     "what": "由独立验证者与 reviewer 对完整交付范围做 Spec 合规与代码质量审查，并完成完整范围代码审查与复审。",
+     "deps": [
+      "@prev"
+     ],
+     "crit": [
+      "审查覆盖原始 BASE 到交付范围的全部差异（含未提交检查点与子模块差异）。",
+      "critical/high/medium 问题已修复并复审通过。",
+      "Spec 合规与代码质量分别报告，审查者保持只读。",
+      "审查结论与证据被记录，可被第三方复核。"
+     ],
+     "verify": "审查记录 + 完整范围代码审查报告 + 复审结论",
+     "scope": "完整交付范围的独立 Spec 合规与代码质量审查、完整范围代码审查与复审；只读。"
+    },
+    {
+     "slug": "release-candidate-package",
+     "title": "统一上线候选包与证据汇总",
+     "what": "在缺口关闭与审查通过后形成统一上线候选包：变更范围、迁移与回退程序、验证命令与结果、审查结论；生产执行仍需用户单独授权。",
+     "deps": [
+      "@prev"
+     ],
+     "crit": [
+      "全部 13 项验收都有可复核证据，且每个注册入口都有正向与越权结论。",
+      "候选包包含变更范围、迁移与回退程序、验证命令与结果、审查结论与未决项。",
+      "不自动执行生产 apply、部署或发布；授权请求被显式记录。",
+      "候选包可被另一个 agent 或运维独立复核。"
+     ],
+     "verify": "bun test server/tests/multitenancy/full-coverage.test.ts + 上线候选包文档",
+     "scope": "统一上线候选包与证据汇总；不含生产 apply、部署或发布执行。"
+    }
+   ]
+  }
+ ]
+}

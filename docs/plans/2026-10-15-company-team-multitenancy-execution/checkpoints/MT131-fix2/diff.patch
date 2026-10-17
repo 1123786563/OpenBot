@@ -1,0 +1,251 @@
+--- /tmp/mt131fix2-before/acceptance-harness.ts	2026-10-16 01:01:19
++++ server/scripts/multitenancy/acceptance-harness.ts	2026-10-16 01:04:42
+@@ -95,6 +95,7 @@
+   httpHostname: "127.0.0.1";
+   httpPort: number;
+   externalNamespace: string;
++  /** Namespaced directory that carries this run's `run-metadata.json`. */
+   tempDir: string;
+   loopbackOnly: boolean;
+ }
+@@ -372,6 +373,14 @@
+ /** Entrance id (exact "METHOD path") -> required evidence. */
+ export type EvidencePlan = Readonly<Record<string, EntranceEvidence>>;
+ 
++/**
++ * Validates a business evidence plan against the inventory. Harness-owned
++ * control evidence is refused outright: `HARNESS_CONTROL_DOMAIN` and any
++ * `harness.`-prefixed scenarioId answer from the harness itself and exist
++ * only for its internal self-checks, so citing them as business evidence
++ * would be an always-green oracle (the exact thing the "never a synthetic
++ * pass" rule forbids).
++ */
+ function validateEvidencePlan(
+   plan: EvidencePlan,
+   inventory: CoverageInventory,
+@@ -396,6 +405,16 @@
+       if (typeof ref.scenarioId !== "string" || !ref.scenarioId.trim()) {
+         throw new Error(
+           `HARNESS_EVIDENCE_PLAN_INVALID:${entranceId}:${side}:scenarioId required`,
++        );
++      }
++      if (ref.domain === HARNESS_CONTROL_DOMAIN) {
++        throw new Error(
++          `HARNESS_EVIDENCE_PLAN_INVALID:${entranceId}:${side}:harness control domain ${HARNESS_CONTROL_DOMAIN} is reserved for harness-internal self-checks`,
++        );
++      }
++      if (ref.scenarioId.startsWith("harness.")) {
++        throw new Error(
++          `HARNESS_EVIDENCE_PLAN_INVALID:${entranceId}:${side}:harness-prefixed scenarioId is reserved for harness-internal self-checks`,
+         );
+       }
+       if (
+@@ -777,6 +796,30 @@
+     throw new Error(`HARNESS_ENVIRONMENT_FAILED:${messageOf(error)}`);
+   }
+   await mkdir(isolation.tempDir, { recursive: true });
++  // The temp namespace is real run state, not an empty stub: it holds this
++  // run's metadata (URL/password-free — the isolation block carries names
++  // and ports only). A temp directory that cannot be created or written is
++  // an environment failure, never a silently degraded isolation contract.
++  try {
++    await writeFile(
++      join(isolation.tempDir, "run-metadata.json"),
++      `${JSON.stringify(
++        {
++          schemaVersion: HARNESS_SCHEMA_VERSION,
++          harness: "mt131-acceptance",
++          runId,
++          startedAt: (options.now?.() ?? new Date()).toISOString(),
++          isolation,
++        },
++        null,
++        2,
++      )}\n`,
++    );
++  } catch (error) {
++    throw new Error(
++      `HARNESS_TEMPDIR_UNAVAILABLE:${isolation.tempDir}:${messageOf(error)}`,
++    );
++  }
+ 
+   const inventory: CoverageInventory =
+     options.inventory ?? (await buildInventory({ environment }));
+@@ -884,12 +927,21 @@
+     if (arg === "--pretty") flags.pretty = true;
+     else if (arg === "--out") {
+       index += 1;
++      if (argv[index] === undefined) {
++        throw new Error(`HARNESS_FLAG_MISSING_VALUE:${arg}`);
++      }
+       flags.out = argv[index];
+     } else if (arg === "--evidence") {
+       index += 1;
++      if (argv[index] === undefined) {
++        throw new Error(`HARNESS_FLAG_MISSING_VALUE:${arg}`);
++      }
+       flags.evidence = argv[index];
+     } else if (arg === "--run-id") {
+       index += 1;
++      if (argv[index] === undefined) {
++        throw new Error(`HARNESS_FLAG_MISSING_VALUE:${arg}`);
++      }
+       flags.runId = argv[index];
+     } else {
+       throw new Error(`HARNESS_FLAG_UNKNOWN:${arg}`);
+--- /tmp/mt131fix2-before/acceptance-harness.test.ts	2026-10-16 01:01:19
++++ server/tests/multitenancy/acceptance-harness.test.ts	2026-10-16 01:03:16
+@@ -39,6 +39,31 @@
+ const REAL_ENV: Record<string, string | undefined> = { ...process.env };
+ const REPO_ROOT = resolve(import.meta.dir, "../../..");
+ 
++/**
++ * The setup URL of THIS process's environment, re-parsed here independently
++ * of the harness: assertions must be derived from the environment (any
++ * compliant dedicated environment must pass) and never hardcode one
++ * machine's database name or port.
++ */
++function realSetupDatabaseUrl(): URL {
++  const raw = REAL_ENV.ENTERPRISE_TEST_SETUP_DATABASE_URL?.trim()
++    ? REAL_ENV.ENTERPRISE_TEST_SETUP_DATABASE_URL
++    : REAL_ENV.TEST_DATABASE_URL;
++  if (!raw) {
++    throw new Error(
++      "this suite requires a dedicated ENTERPRISE_TEST_SETUP_DATABASE_URL or TEST_DATABASE_URL environment",
++    );
++  }
++  return new URL(raw);
++}
++
++/** URL semantics: the database name is the single decoded path segment. */
++function databaseNameOf(url: URL): string {
++  return decodeURIComponent(
++    url.pathname.replace(/^\//, "").replace(/\/+$/, ""),
++  );
++}
++
+ /** One shared real inventory build: the harness must consume it as-is. */
+ const inventory = await buildInventory({ environment: REAL_ENV });
+ 
+@@ -119,9 +144,15 @@
+   test("returns the dedicated isolation configuration from the real environment", () => {
+     const isolation = resolveHarnessIsolation(REAL_ENV, "run123");
+     expect(isolation.runId).toBe("run123");
+-    expect(isolation.databaseName).toBe("openbot_enterprise_mt131_test");
+-    expect(isolation.databaseHost).toBe("127.0.0.1");
+-    expect(isolation.databasePort).toBe(55434);
++    // Derived from this process's dedicated environment, not from any one
++    // machine's constants: the resolution must echo exactly what the
++    // environment points at, and the name must stay in the enterprise
++    // test-database namespace.
++    const setupUrl = realSetupDatabaseUrl();
++    expect(isolation.databaseName).toBe(databaseNameOf(setupUrl));
++    expect(isolation.databaseName).toMatch(/^openbot_enterprise_/);
++    expect(isolation.databaseHost).toBe(setupUrl.hostname);
++    expect(isolation.databasePort).toBe(Number(setupUrl.port) || 5432);
+     expect(isolation.restrictedRoles).toEqual([
+       "directory",
+       "data",
+@@ -299,7 +330,12 @@
+     expect(report.schemaVersion).toBe(HARNESS_SCHEMA_VERSION);
+     expect(HARNESS_SCHEMA_VERSION).toBe(1);
+     expect(report.harness).toBe("mt131-acceptance");
+-    expect(report.isolation.databaseName).toBe("openbot_enterprise_mt131_test");
++    // Derived from this process's dedicated environment: the report must
++    // describe the database the run actually used, whatever it is named.
++    expect(report.isolation.databaseName).toBe(
++      databaseNameOf(realSetupDatabaseUrl()),
++    );
++    expect(report.isolation.databaseName).toMatch(/^openbot_enterprise_/);
+     expect(report.isolation.httpPort).toBe(45435);
+     expect(report.isolation.externalNamespace).toMatch(
+       /^issue6_mt131_[a-z0-9-]+$/,
+@@ -406,7 +442,64 @@
+       }),
+     ).rejects.toThrow(/HARNESS_EVIDENCE_PLAN_ENTRANCE_UNKNOWN/);
+   });
++
++  test("refuses harness-owned control scenarios as business evidence", async () => {
++    const entranceId = inventory.entrances[0].id;
++    // The harness control domain and its harness.* scenario ids are
++    // reserved for the harness's own self-checks: a business evidence plan
++    // may never cite them as evidence, because a control scenario answers
++    // from the harness itself and would act as an always-green oracle.
++    await expect(
++      runAcceptanceHarness({
++        environment: REAL_ENV,
++        inventory,
++        evidencePlan: {
++          [entranceId]: {
++            positive: {
++              domain: HARNESS_CONTROL_DOMAIN,
++              scenarioId: "harness.control.clean-observation",
++            },
++          },
++        },
++      }),
++    ).rejects.toThrow(/HARNESS_EVIDENCE_PLAN_INVALID.*control domain/);
++    // A harness-prefixed scenario id is refused even on a foreign domain:
++    // the reserved namespace belongs to the harness's internal controls.
++    await expect(
++      runAcceptanceHarness({
++        environment: REAL_ENV,
++        inventory,
++        evidencePlan: {
++          [entranceId]: {
++            positive: {
++              domain: "bots",
++              scenarioId: "harness.control.identity",
++            },
++          },
++        },
++      }),
++    ).rejects.toThrow(/HARNESS_EVIDENCE_PLAN_INVALID.*harness-prefixed/);
++  }, 120_000);
+ 
++  test("uses its temp directory for run-scoped metadata", async () => {
++    const report = await runAcceptanceHarness({
++      environment: REAL_ENV,
++      inventory,
++    });
++    const metadataPath = join(report.isolation.tempDir, "run-metadata.json");
++    const raw = await Bun.file(metadataPath).text();
++    const metadata = JSON.parse(raw);
++    expect(metadata.schemaVersion).toBe(HARNESS_SCHEMA_VERSION);
++    expect(metadata.harness).toBe("mt131-acceptance");
++    expect(metadata.runId).toBe(report.runId);
++    expect(metadata.isolation.databaseName).toBe(report.isolation.databaseName);
++    expect(metadata.isolation.httpPort).toBe(HARNESS_HTTP_PORT);
++    // Run-scoped state must stay free of credentials.
++    expect(raw).not.toContain("postgres://");
++    expect(raw.toLowerCase()).not.toContain("password");
++    await rm(report.isolation.tempDir, { recursive: true, force: true });
++  }, 120_000);
++
+   test("absent provider credentials are environment gaps, never passes", async () => {
+     const gapped = inventory.entrances[3].id;
+     const configured = inventory.entrances[4].id;
+@@ -490,6 +583,23 @@
+     await rm(dir, { recursive: true, force: true });
+   }, 180_000);
+ 
++  test("refuses CLI flags given without a value", async () => {
++    for (const flag of ["--out", "--evidence", "--run-id"]) {
++      const proc = Bun.spawn(
++        [
++          process.execPath,
++          join(REPO_ROOT, "server/scripts/multitenancy/acceptance-harness.ts"),
++          flag,
++        ],
++        { cwd: REPO_ROOT, env: {}, stdout: "pipe", stderr: "pipe" },
++      );
++      const code = await proc.exited;
++      expect(code).toBe(1);
++      const stderr = await new Response(proc.stderr).text();
++      expect(stderr).toMatch(/HARNESS_FLAG_MISSING_VALUE/);
++    }
++  }, 60_000);
++
+   test("exits 1 with an explicit message when the environment is missing", async () => {
+     const proc = Bun.spawn(
+       [

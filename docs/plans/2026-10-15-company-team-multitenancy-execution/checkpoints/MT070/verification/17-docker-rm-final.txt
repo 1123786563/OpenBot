@@ -1,0 +1,16 @@
+# Container teardown (final) — docker rm 真实执行并回显（2026-10-16T22:24:49Z）
+# 注：变异重测需要活库，容器曾按 provision-db.sh 重建（16 任务 journal 全落账，
+# 见 /tmp 外的 verification/14-journal-final.txt 为首轮；重建轮 journal 见本文件末尾）；
+# 全部验证完成后真实拆除。
+$ docker ps --filter name=mt070-impl-pg --format "{{.Names}} {{.Status}}"
+mt070-impl-pg Up About a minute
+$ docker exec mt070-impl-pg psql -U postgres -d openbot_enterprise_mt070_test -c "select count(*) as journal_rows from mt_task_migration_journal"
+ journal_rows 
+--------------
+           32
+(1 row)
+
+$ docker rm -f mt070-impl-pg
+mt070-impl-pg
+$ docker ps -a --filter name=mt070-impl-pg --format "{{.Names}}"
+(empty above = container gone)

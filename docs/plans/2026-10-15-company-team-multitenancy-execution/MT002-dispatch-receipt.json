@@ -1,0 +1,85 @@
+{
+  "id": "cc41b492-3917-4728-add5-df4b4515e7a8",
+  "ok": true,
+  "result": {
+    "runId": "run_b2bd1c513221",
+    "taskId": "task_fbc7b14de451",
+    "dispatchId": "ctx_97107555809d",
+    "state": "ready",
+    "stage": "input_accepted",
+    "turnStart": "unsupported",
+    "setup": {
+      "requested": "not_applicable",
+      "effective": "not_applicable",
+      "source": "existing_worktree",
+      "hookFound": false,
+      "startupPolicy": "start-immediately",
+      "state": "not_applicable"
+    },
+    "launch": {
+      "requested": {
+        "agent": "pi",
+        "model": null,
+        "effort": null
+      },
+      "effective": {
+        "agent": "pi",
+        "model": null,
+        "effort": null
+      }
+    },
+    "mode": {
+      "mode": "terminal",
+      "preferred": "structured",
+      "reason": "agent_without_structured_session",
+      "detail": "Your default is a structured chat session, but this agent has no structured session; started a terminal agent worker instead."
+    },
+    "timeoutMs": 60000,
+    "effects": [
+      {
+        "kind": "worktree",
+        "action": "reused",
+        "id": "d6edf033-748a-4549-ae5a-e9efd34cef91::/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt002"
+      },
+      {
+        "kind": "setup",
+        "action": "not_applicable",
+        "state": "not_applicable"
+      },
+      {
+        "kind": "terminal",
+        "role": "agent",
+        "action": "created",
+        "id": "term_c5e3fe3e-fbbf-4a36-b49c-b77aef2f1cc6",
+        "surface": "visible"
+      },
+      {
+        "kind": "dispatch_input",
+        "role": "agent",
+        "id": "term_c5e3fe3e-fbbf-4a36-b49c-b77aef2f1cc6",
+        "state": "accepted"
+      }
+    ],
+    "prompt": {
+      "requestId": "967e0e3c-b8ef-41ec-b3a9-9d9d1675b7b6",
+      "stages": [
+        "input_accepted"
+      ],
+      "provider": "unsupported",
+      "observation": "unsupported",
+      "processIncarnation": "11273543-a2a3-4e59-9e87-7f28f172f145",
+      "generation": 100,
+      "baselineWorkingSequence": 0,
+      "baselineExplicitWorkingStartedAt": null,
+      "baselinePermissionSequence": 0
+    },
+    "residualResources": [],
+    "mutation": {
+      "requestId": "967e0e3c-b8ef-41ec-b3a9-9d9d1675b7b6",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "575bc003-67f6-4708-b944-1d241950da0d"
+  }
+}
