@@ -1,10 +1,11 @@
-import { client } from "@/lib/client";
+import { client, tryClient } from "@/lib/client";
 import type {
   CraftApproval,
   CraftArtifactEntry,
   CraftAttachment,
   CraftFileEntry,
   CraftMessage,
+  CraftPreviewTicket,
   CraftSandboxStatusResponse,
   CraftSession,
   CraftWebappInfo,
@@ -224,6 +225,42 @@ export function webappInfo(
     fallback: "The web app could not be inspected.",
     signal,
   }).then((r) => r.json());
+}
+
+/**
+ * Exchange the signed-in session for a single-use preview pass (#360/#362).
+ * The ticket appears in exactly one place — the one navigation to `origin` —
+ * and is consumed by the 302 that follows; it is never stored, logged, or
+ * retried with.
+ */
+export function issuePreviewTicket(id: string): Promise<CraftPreviewTicket> {
+  return client(sessionPath(id, "/preview-ticket"), {
+    method: "POST",
+    fallback: "The preview pass could not be issued.",
+  }).then((r) => r.json());
+}
+
+/**
+ * The preview pane's same-origin liveness probe (fix-ocr13/#362): one GET that
+ * answers 204 while the session's label sits registered on the preview origin,
+ * and 503 with the restart sentence once it does not. The STATUS is the
+ * answer — the probe's caller reads `ok` itself, so this rides `tryClient`
+ * (a refusal is a value here, never a throw) and never unwraps a body.
+ * `signal` is the pane's handle on the probe's lifetime: the request dies
+ * when the pane does (fix-ocr16).
+ */
+export function previewOriginLive(
+  id: string,
+  signal?: AbortSignal,
+): Promise<Response> {
+  // tryClient returns the Response verbatim — the caller reads `ok` itself —
+  // and `send` consumes no `fallback` (that is `client`'s refusal-sentence
+  // option). A dead option here read as if the probe had a fallback sentence;
+  // removed so the next reader does not have to trace why it never fires
+  // (fix-ocr18 #5).
+  return tryClient(sessionPath(id, "/preview-origin-live"), {
+    signal,
+  });
 }
 
 // ── approvals ───────────────────────────────────────────────────────────────────
