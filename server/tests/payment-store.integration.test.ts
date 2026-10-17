@@ -55,6 +55,7 @@ function orderInput() {
     currency: "CNY" as const,
     expiresAt: new Date(Date.now() + 15 * 60_000),
     createdBy: prefix,
+    ownerPayerRef: { kind: "personal" as const, id: prefix },
     checkoutPayload: "qr-payload",
   };
 }
@@ -97,6 +98,7 @@ test("insertOrder generates short ids and terminal orders leave the purchase slo
     expiresAt: new Date(Date.now() + 15 * 60_000),
     status: "canceled",
     createdBy: prefix,
+    ownerPayerRef: { kind: "personal" as const, id: prefix },
   });
   const second = await store.insertOrder(orderInput());
   expect(second.order.id).not.toBe(order.id);

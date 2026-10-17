@@ -24,6 +24,14 @@
       "botServices": {
         "title": "Bot services",
         "description": "The server-side Bots approved for model access, each with a unique service identity."
+      },
+      "gateway": {
+        "title": "Model gateway",
+        "description": "The Bifrost gateway's address, credential, exchange rate and readiness."
+      },
+      "modelCatalog": {
+        "title": "Model catalog",
+        "description": "The models the gateway lists, and which of them are open to users. A new sync never opens a model by itself."
       }
     },
     "do": {
@@ -63,6 +71,10 @@
       "identityProviders": {
         "title": "Identity providers",
         "description": "A company's own SAML or OpenID Connect provider, routed by email domain."
+      },
+      "billing": {
+        "title": "Credit grants",
+        "description": "Grant personal credits to a named user; the same request entered once, every grant audited."
       }
     },
     "history": {
@@ -93,7 +105,8 @@
     "audit": "Audit",
     "approvals": "Approvals",
     "market": "Market",
-    "knowledge": "Knowledge"
+    "knowledge": "Knowledge",
+    "billing": "Credit grants"
   },
   "audit": {
     "title": "Audit",
@@ -1079,5 +1092,147 @@
       "disable": "Disable",
       "enable": "Enable"
     }
+  },
+  "modelCatalog": {
+    "title": "Model catalog",
+    "description": "The models the gateway's last successful sync listed, and which of them an administrator has opened. A model is selectable only after it is opened here — a new sync never widens the open set by itself.",
+    "loadError": "The model catalog could not be loaded.",
+    "operation": "The model scope change could not be saved.",
+    "empty": "The gateway has not synced any models yet. Check the gateway connection and its sync status.",
+    "listTitle": "Models",
+    "syncHint": "A model an administrator opened stays open across syncs; a model the gateway stops listing is no longer selectable, and a newly listed one starts closed.",
+    "fields": {
+      "reason": "Reason"
+    },
+    "price": {
+      "known": "Priced",
+      "free": "Free",
+      "unknown": "Price unknown",
+      "unmapped": "Not priced yet",
+      "unknownDetail": "unpriced: {{dims}}"
+    },
+    "scope": {
+      "open": "Open",
+      "closed": "Closed",
+      "default": "Not opened",
+      "changedBy": "by {{by}} · {{at}}"
+    },
+    "open": "Open",
+    "close": "Close",
+    "dialog": {
+      "openTitle": "Open this model?",
+      "closeTitle": "Close this model?",
+      "description": "The change takes effect for new selections and calls immediately. Existing reservations settle on the price basis they already locked.",
+      "reasonLabel": "Reason",
+      "reasonPlaceholder": "Why this model is being opened or closed",
+      "reasonRequired": "A reason is required.",
+      "cancel": "Cancel",
+      "confirm": "Save"
+    },
+    "refusals": {
+      "model_scope_reason_required": "A reason is required.",
+      "model_scope_reason_too_long": "The reason is too long.",
+      "model_scope_ref_not_in_catalog": "This model is no longer in the catalog. Refresh the page to see the current list.",
+      "model_scope_price_missing": "No price has synced for this model yet, so it cannot be opened.",
+      "model_scope_price_unknown": "This model's price is not fully known, so it cannot be opened.",
+      "model_scope_input_invalid": "The change was missing a field.",
+      "model_scope_state_invalid": "The requested state is not one this page can ask for."
+    }
+  },
+  "gateway": {
+    "title": "Model gateway",
+    "description": "The Bifrost gateway this deployment's paid model capabilities run through: its address, credential, exchange rate, and whether everything is ready.",
+    "loadError": "The gateway status could not be loaded.",
+    "saving": "Saving…",
+    "operation": "The gateway change could not be saved.",
+    "readiness": {
+      "title": "Readiness",
+      "description": "Paid model capabilities are enabled only when every condition below holds.",
+      "ready": "Ready",
+      "notReady": "Not ready",
+      "configVersion": "Configuration version:",
+      "probe": "Run probe",
+      "probing": "Probing…",
+      "blockedIntro": "Paid model capabilities are refused until each of these is resolved:"
+    },
+    "probe": {
+      "last": "Last probe: {{status}} ({{reasonCode}})",
+      "none": "No probe has run yet"
+    },
+    "extension": {
+      "verdict": "Credit-admission extension: {{verdict}} ({{version}})",
+      "none": "The credit-admission extension has not been negotiated yet"
+    },
+    "endpoint": {
+      "title": "Gateway address",
+      "description": "Where the Bifrost gateway listens. An origin only — the paths are this server's own.",
+      "save": "Save address"
+    },
+    "rate": {
+      "title": "Exchange rate",
+      "description": "How many credits one USD costs. There is no default: billing stays disabled until a legal rate is saved. A change affects only new requests.",
+      "save": "Save rate",
+      "version": "version",
+      "notConfigured": "No rate is configured, so billing is disabled."
+    },
+    "credential": {
+      "title": "Admin credential",
+      "description": "The key this deployment uses to manage the gateway. It is write-only: save a new key to set or rotate it — it is never shown again, only its fingerprint is.",
+      "save": "Save credential",
+      "configured": "Saved",
+      "unconfigured": "No admin credential is configured."
+    },
+    "fields": {
+      "baseUrl": "Gateway address",
+      "baseUrlProblem": {
+        "required": "The gateway address is required.",
+        "invalid": "The gateway address must be a valid http or https URL.",
+        "originOnly": "The gateway address must be the origin only, without a path, query or credentials."
+      },
+      "requestTimeoutMs": "Request timeout (ms)",
+      "timeoutProblem": "The request timeout must be a whole number of milliseconds greater than zero.",
+      "numerator": "Credits per 1 USD (numerator)",
+      "numeratorProblem": "The numerator must be a whole number greater than zero.",
+      "denominator": "Credits scale (denominator)",
+      "denominatorProblem": "The denominator must be a whole number greater than zero.",
+      "adminKey": "Admin credential",
+      "adminKeyProblem": "Paste the admin credential to save."
+    },
+    "blocking": {
+      "gateway_readiness_endpoint_not_configured": "No gateway address is configured, so paid model capabilities are refused: an administrator must save the gateway endpoint (or set BIFROST_GATEWAY_URL).",
+      "gateway_readiness_endpoint_unavailable": "The gateway address could not be read, so paid model capabilities are refused until the failure is resolved.",
+      "gateway_readiness_credential_not_configured": "No gateway admin credential is configured, so paid model capabilities are refused: an administrator must save the gateway credential.",
+      "gateway_readiness_credential_unavailable": "The gateway admin credential could not be resolved, so paid model capabilities are refused until the failure is resolved.",
+      "gateway_readiness_probe_missing": "No successful gateway probe is on file for the current gateway configuration, so paid model capabilities are refused: run a probe after configuring the gateway.",
+      "gateway_readiness_probe_not_ok": "The last gateway probe did not succeed, so paid model capabilities are refused: fix what the probe reports and probe again.",
+      "gateway_readiness_probe_unavailable": "The last gateway probe result could not be read, so paid model capabilities are refused until the failure is resolved.",
+      "gateway_readiness_extension_not_negotiated": "No capability negotiation has completed for the current gateway configuration, so paid model capabilities are refused: negotiate the gateway's extensions.",
+      "gateway_readiness_extension_absent": "The gateway does not expose the OpenBot credit-admission extension, so paid model capabilities are refused: deploy the extension before enabling billing.",
+      "gateway_readiness_extension_incompatible": "The gateway's credit-admission extension is outside the supported version range, so paid model capabilities are refused: align the extension version before enabling billing.",
+      "gateway_readiness_extension_unavailable": "The extension negotiation result could not be read, so paid model capabilities are refused until the failure is resolved.",
+      "gateway_readiness_rate_not_configured": "The USD→credits conversion rate is not configured, so paid model capabilities are refused: an administrator must save a legal rate (there is no default).",
+      "gateway_readiness_rate_unavailable": "The conversion rate could not be read as a legal value, so paid model capabilities are refused: repair the stored rate before enabling billing.",
+      "gateway_readiness_gate_unavailable": "The gateway readiness gate is not installed in this process, so paid model capabilities are refused."
+    }
+  },
+  "billingPage": {
+    "title": "Credit grants",
+    "description": "Grant credits to a user's personal account. The account is resolved server-side from the user you name — enter the user's stable id; no account key is accepted, or needed.",
+    "userId": "Target user id",
+    "userIdPlaceholder": "user-… (the member's stable id)",
+    "credits": "Credits",
+    "source": "Source",
+    "sourcePromo": "Promo",
+    "sourceSignin": "Check-in",
+    "expiresAt": "Expires at (optional)",
+    "reason": "Reason (optional)",
+    "submit": "Grant",
+    "submitting": "Granting…",
+    "problem": "Enter the target user id and a credit amount greater than zero.",
+    "result.granted": "Entered {{credits}} credits",
+    "result.replayed": "This request was already granted; nothing was entered twice",
+    "result.grantLabel": "Grant",
+    "result.accountLabel": "Credit account",
+    "expiryProblem": "The expiry could not be read as a time. Use an ISO instant (2026-12-01T00:00:00Z) or leave it empty."
   }
 }

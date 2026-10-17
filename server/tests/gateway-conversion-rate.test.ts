@@ -10,6 +10,7 @@ import {
 } from "../src/gateway/conversion-rate";
 import { createConversionRateStore } from "../src/gateway/conversion-rate-store";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
+import { truncateRateVersions } from "./support/rate-version-reset";
 
 /*
  * Bifrost 01.3 — the USD→credits conversion rate is a required, exactly-rational configuration.
@@ -337,6 +338,11 @@ async function cleanupStoredRate() {
   await database
     .delete(enterpriseSettings)
     .where(eq(enterpriseSettings.key, GATEWAY_CONVERSION_RATE_KEY));
+  // 01.4 appends every save to the append-only `gateway_rate_versions` history; the test reset
+  // goes through the trigger-disable path in the shared support helper (owner-only DDL — test
+  // tooling, never a production mutation path). Version numbering below is absolute on a clean
+  // history, so a leftover from a failed earlier run must not survive.
+  await truncateRateVersions(database);
 }
 
 afterAll(async () => {

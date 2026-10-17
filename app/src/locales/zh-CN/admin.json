@@ -24,6 +24,14 @@
       "botServices": {
         "title": "Bot 服务登记",
         "description": "Bifrost 模型访问中获准接入的服务端 Bot 及其唯一服务身份。"
+      },
+      "gateway": {
+        "title": "模型网关",
+        "description": "Bifrost 网关的地址、凭据、兑换比例与就绪状态。"
+      },
+      "modelCatalog": {
+        "title": "模型目录",
+        "description": "网关列出的模型及其中哪些已对用户开放。新同步不会自行开放任何模型。"
       }
     },
     "do": {
@@ -63,6 +71,10 @@
       "identityProviders": {
         "title": "身份提供方",
         "description": "公司自己的 SAML 或 OpenID Connect 提供方，按邮箱域名路由。"
+      },
+      "billing": {
+        "title": "积分发放",
+        "description": "给指定用户发放个人积分；同一请求重复提交只入账一次，发放全程留审计。"
       }
     },
     "history": {
@@ -93,7 +105,8 @@
     "audit": "审计",
     "approvals": "批准",
     "market": "市场",
-    "knowledge": "知识库"
+    "knowledge": "知识库",
+    "billing": "积分发放"
   },
   "audit": {
     "title": "审计",
@@ -1079,5 +1092,147 @@
       "disable": "停用",
       "enable": "启用"
     }
+  },
+  "modelCatalog": {
+    "title": "模型目录",
+    "description": "网关最后一次成功同步列出的模型，以及管理员已开放的模型。模型必须先在这里开放才能被选择——新同步不会自动扩大开放范围。",
+    "loadError": "模型目录加载失败。",
+    "operation": "模型开放状态保存失败。",
+    "empty": "网关尚未同步任何模型。请检查网关连接与同步状态。",
+    "listTitle": "模型",
+    "syncHint": "管理员开放的模型在同步后保持开放；网关不再列出的模型不可再被选择，新出现的模型默认关闭。",
+    "fields": {
+      "reason": "原因"
+    },
+    "price": {
+      "known": "价格完整",
+      "free": "明确免费",
+      "unknown": "价格未知",
+      "unmapped": "价格未同步",
+      "unknownDetail": "未定价：{{dims}}"
+    },
+    "scope": {
+      "open": "已开放",
+      "closed": "已关闭",
+      "default": "未开放",
+      "changedBy": "由 {{by}} · {{at}}"
+    },
+    "open": "开放",
+    "close": "关闭",
+    "dialog": {
+      "openTitle": "开放该模型？",
+      "closeTitle": "关闭该模型？",
+      "description": "变更立即对新选择与新调用生效。既有预留仍按其已锁定的价格依据结算。",
+      "reasonLabel": "原因",
+      "reasonPlaceholder": "开放或关闭该模型的原因",
+      "reasonRequired": "必须填写原因。",
+      "cancel": "取消",
+      "confirm": "保存"
+    },
+    "refusals": {
+      "model_scope_reason_required": "必须填写原因。",
+      "model_scope_reason_too_long": "原因过长。",
+      "model_scope_ref_not_in_catalog": "该模型已不在目录中。请刷新页面查看当前列表。",
+      "model_scope_price_missing": "该模型尚未同步到任何价格，无法开放。",
+      "model_scope_price_unknown": "该模型价格不完整，无法开放。",
+      "model_scope_input_invalid": "变更缺少必要字段。",
+      "model_scope_state_invalid": "请求的状态不在本页面可选范围内。"
+    }
+  },
+  "gateway": {
+    "title": "模型网关",
+    "description": "本部署付费模型能力所经过的 Bifrost 网关：地址、凭据、兑换比例，以及各项条件是否就绪。",
+    "loadError": "网关状态加载失败。",
+    "saving": "保存中…",
+    "operation": "网关配置保存失败。",
+    "readiness": {
+      "title": "就绪状态",
+      "description": "只有下列条件全部满足时，付费模型能力才会启用。",
+      "ready": "就绪",
+      "notReady": "未就绪",
+      "configVersion": "配置版本：",
+      "probe": "立即探测",
+      "probing": "探测中…",
+      "blockedIntro": "以下各项全部解决前，付费模型能力被拒绝："
+    },
+    "probe": {
+      "last": "最近探测：{{status}}（{{reasonCode}}）",
+      "none": "尚未运行过探测"
+    },
+    "extension": {
+      "verdict": "积分准入扩展：{{verdict}}（{{version}}）",
+      "none": "积分准入扩展尚未协商"
+    },
+    "endpoint": {
+      "title": "网关地址",
+      "description": "Bifrost 网关的监听地址。只填源地址——路径由本服务自己决定。",
+      "save": "保存地址"
+    },
+    "rate": {
+      "title": "兑换比例",
+      "description": "1 USD 兑换多少积分。没有默认值：保存合法比例前计费保持停用。变更只影响新请求。",
+      "save": "保存比例",
+      "version": "版本",
+      "notConfigured": "尚未配置比例，计费处于停用状态。"
+    },
+    "credential": {
+      "title": "管理员凭据",
+      "description": "本部署用于管理网关的密钥。只写不读：保存新密钥即设置或轮换，之后不再显示，仅显示指纹。",
+      "save": "保存凭据",
+      "configured": "已保存",
+      "unconfigured": "尚未配置管理员凭据。"
+    },
+    "fields": {
+      "baseUrl": "网关地址",
+      "baseUrlProblem": {
+        "required": "请填写网关地址。",
+        "invalid": "网关地址必须是合法的 http 或 https URL。",
+        "originOnly": "网关地址只能填写源地址，不能携带路径、查询或凭据。"
+      },
+      "requestTimeoutMs": "请求超时（毫秒）",
+      "timeoutProblem": "请求超时必须是大于零的整数毫秒。",
+      "numerator": "每 1 USD 兑换积分（分子）",
+      "numeratorProblem": "分子必须是大于零的整数。",
+      "denominator": "兑换比例分母",
+      "denominatorProblem": "分母必须是大于零的整数。",
+      "adminKey": "管理员凭据",
+      "adminKeyProblem": "请粘贴要保存的管理员凭据。"
+    },
+    "blocking": {
+      "gateway_readiness_endpoint_not_configured": "尚未配置网关地址，付费模型能力被拒绝：管理员需先保存网关地址（或设置 BIFROST_GATEWAY_URL）。",
+      "gateway_readiness_endpoint_unavailable": "网关地址无法读取，问题解决前付费模型能力被拒绝。",
+      "gateway_readiness_credential_not_configured": "尚未配置网关管理员凭据，付费模型能力被拒绝：管理员需先保存网关凭据。",
+      "gateway_readiness_credential_unavailable": "网关管理员凭据无法解析，问题解决前付费模型能力被拒绝。",
+      "gateway_readiness_probe_missing": "当前网关配置没有成功的探测记录，付费模型能力被拒绝：请先配置网关再运行探测。",
+      "gateway_readiness_probe_not_ok": "最近一次网关探测未成功，付费模型能力被拒绝：请修复探测报告的问题后重新探测。",
+      "gateway_readiness_probe_unavailable": "最近一次探测结果无法读取，问题解决前付费模型能力被拒绝。",
+      "gateway_readiness_extension_not_negotiated": "当前网关配置尚未完成能力协商，付费模型能力被拒绝：请对网关扩展进行协商。",
+      "gateway_readiness_extension_absent": "网关未暴露 OpenBot 积分准入扩展，付费模型能力被拒绝：请先部署该扩展再启用计费。",
+      "gateway_readiness_extension_incompatible": "网关的积分准入扩展版本超出支持范围，付费模型能力被拒绝：请先对齐扩展版本再启用计费。",
+      "gateway_readiness_extension_unavailable": "扩展协商结果无法读取，问题解决前付费模型能力被拒绝。",
+      "gateway_readiness_rate_not_configured": "USD→积分兑换比例未配置，付费模型能力被拒绝：管理员需保存合法比例（没有默认值）。",
+      "gateway_readiness_rate_unavailable": "兑换比例无法按合法值读取，付费模型能力被拒绝：请修复已存比例后再启用计费。",
+      "gateway_readiness_gate_unavailable": "本进程未安装网关就绪门禁，付费模型能力被拒绝。"
+    }
+  },
+  "billingPage": {
+    "title": "积分发放",
+    "description": "把积分发放到指定用户的个人账户。目标账户由服务端从所选用户解析，填写用户稳定 ID 即可，不接受也不需要账户键。",
+    "userId": "目标用户 ID",
+    "userIdPlaceholder": "user-…（成员的稳定 ID）",
+    "credits": "积分额度",
+    "source": "来源",
+    "sourcePromo": "活动奖励",
+    "sourceSignin": "签到奖励",
+    "expiresAt": "过期时间（可选）",
+    "reason": "原因（可选）",
+    "submit": "发放",
+    "submitting": "发放中…",
+    "problem": "请填写目标用户 ID 和大于零的积分额度。",
+    "result.granted": "已入账 {{credits}} 积分",
+    "result.replayed": "该请求已发放过，未重复入账",
+    "result.grantLabel": "发放",
+    "result.accountLabel": "积分账户",
+    "expiryProblem": "过期时间无法解析，请用 ISO 时刻（如 2026-12-01T00:00:00Z）或留空。"
   }
 }

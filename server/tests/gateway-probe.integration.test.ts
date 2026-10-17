@@ -292,13 +292,13 @@ test("an older completion never overwrites a newer persisted result", async () =
   const newer: GatewayProbeRecord = {
     status: "ok",
     reasonCode: "gateway_probe_ok",
-    checkedAt: "2026-10-16T12:00:00.000Z",
+    checkedAt: new Date(Date.now() + 3_600_000).toISOString(),
     configVersion: 3,
     durationMs: 12,
   };
   const older: GatewayProbeRecord = {
     ...newer,
-    checkedAt: "2026-10-16T11:00:00.000Z",
+    checkedAt: new Date(Date.now() - 3_600_000).toISOString(),
     configVersion: 2,
   };
   await store.saveGatewayProbeResult(newer);

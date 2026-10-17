@@ -5,10 +5,16 @@ import { CreditBar } from "./credit-bar";
 
 /**
  * The subscription card: what plan, one line of description, the upgrade and redeem entries, and
- * the plan's own base-credit allowance drawn as a bar with its reset time.
+ * — when the deployment's ledger still answers with a plan allowance — the plan's own base-credit
+ * allowance drawn as a bar with its reset time.
  *
  * The upgrade button opens the dialog; the redeem entry is the "使用兑换卡" path. Both are handed
  * in as callbacks — this card owns the plan's face, not the actions behind it.
+ *
+ * `planCredits` is optional since the 02.6 contract (ticket 02.7): the credits summary read now
+ * answers the signed-in user's personal balance, and no endpoint carries a plan allowance figure
+ * any more. An absent figure hides the bar — drawing 0/0 would claim a spent-up plan the server
+ * never said.
  */
 export function PlanCard({
   planName,
@@ -20,7 +26,7 @@ export function PlanCard({
 }: {
   planName: string;
   planDescription?: string;
-  planCredits: { total: number; used: number; remaining: number };
+  planCredits?: { total: number; used: number; remaining: number };
   resetsAt: string | null;
   onUpgrade?: () => void;
   onRedeem?: () => void;
@@ -51,34 +57,42 @@ export function PlanCard({
         </div>
       </div>
 
-      <div className="mt-4">
-        <p className="text-muted-foreground text-sm">
-          {t("planCard.usageTitle")}
-        </p>
-        <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <span className="text-sm tabular-nums">
-            {credits(planCredits.used)}/{credits(planCredits.total)}
-            {t("creditsPage.creditUnit")}
-            <span className="text-muted-foreground">
-              （{t("planCard.baseCredits")}）
+      {planCredits ? (
+        <div className="mt-4">
+          <p className="text-muted-foreground text-sm">
+            {t("planCard.usageTitle")}
+          </p>
+          <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <span className="text-sm tabular-nums">
+              {credits(planCredits.used)}/{credits(planCredits.total)}
+              {t("creditsPage.creditUnit")}
+              <span className="text-muted-foreground">
+                （{t("planCard.baseCredits")}）
+              </span>
             </span>
-          </span>
-          <span className="text-sm tabular-nums">
-            {credits(planCredits.remaining)}
-            {t("creditsPage.remaining")}
-          </span>
+            <span className="text-sm tabular-nums">
+              {credits(planCredits.remaining)}
+              {t("creditsPage.remaining")}
+            </span>
+          </div>
+          <CreditBar
+            total={planCredits.total}
+            used={planCredits.used}
+            className="mt-2"
+          />
+          {resetsAt ? (
+            <p className="text-muted-foreground mt-2 text-xs tabular-nums">
+              {t("planCard.resetsAt", { time: dateTime(resetsAt) })}
+            </p>
+          ) : null}
         </div>
-        <CreditBar
-          total={planCredits.total}
-          used={planCredits.used}
-          className="mt-2"
-        />
-        {resetsAt ? (
-          <p className="text-muted-foreground mt-2 text-xs tabular-nums">
+      ) : (
+        resetsAt ? (
+          <p className="text-muted-foreground mt-4 text-xs tabular-nums">
             {t("planCard.resetsAt", { time: dateTime(resetsAt) })}
           </p>
-        ) : null}
-      </div>
+        ) : null
+      )}
     </div>
   );
 }

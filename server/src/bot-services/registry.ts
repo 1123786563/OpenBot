@@ -5,6 +5,11 @@ import type {
   CredentialStore,
 } from "../credentials";
 import type { Database } from "../db/client";
+import {
+  createAccessGrantService,
+  type AccessGrantService,
+} from "./access-grants";
+import { bindingCodeRoutes, createBindingOfferIssuer } from "./binding-codes";
 import { createBotServiceAuthenticator } from "./auth";
 import type { BotServiceCredentialService } from "./service-credentials";
 import { createBotServiceCredentialService } from "./service-credentials";
@@ -25,12 +30,26 @@ import type { BotServiceStore } from "./store";
 export type BotServiceRegistry = BotServiceStore & {
   credentials: BotServiceCredentialService;
   authenticate: ReturnType<typeof createBotServiceAuthenticator>;
+  /**
+   * The binding-code issuance surface (04.3), already composed against this registry's database
+   * and audit trail. The bot-facing router mounts it under the same service guard.
+   */
+  bindingCodes: ReturnType<typeof bindingCodeRoutes>;
+  /**
+   * The model access authorization service (04.5): the confirmation flow — preview then confirm —
+   * that turns a one-time binding code into a grant. Composed here because this factory is where
+   * the database, the registry and the audit trail meet; the user-facing router app.ts mounts
+   * reads it off the composed registry, the same seam `bindingCodes` rides.
+   */
+  modelAccess: AccessGrantService;
 };
 
 export type BotServiceRegistryDependencies = {
   encryptionKey: string;
   /** What `createCredentialStore` returns: the vault able to find, read and list. */
-  credentialStore: CredentialStore & CredentialSecretReader & CredentialStatusReader;
+  credentialStore: CredentialStore &
+    CredentialSecretReader &
+    CredentialStatusReader;
   auditStore: AuditStore;
 };
 
@@ -46,6 +65,17 @@ export function createBotServiceRegistry(
       encryptionKey: dependencies.encryptionKey,
       credentialStore: dependencies.credentialStore,
       botServices: store,
+    }),
+    bindingCodes: bindingCodeRoutes({
+      issuer: createBindingOfferIssuer({
+        database,
+        auditStore: dependencies.auditStore,
+      }),
+    }),
+    modelAccess: createAccessGrantService({
+      database,
+      botServices: store,
+      auditStore: dependencies.auditStore,
     }),
   };
 }

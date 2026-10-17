@@ -1,7 +1,11 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../auth/guards";
-import { type CredentialStore, type CredentialSecretReader, decryptSecret } from "../credentials";
+import {
+  type CredentialStore,
+  type CredentialSecretReader,
+  decryptSecret,
+} from "../credentials";
 import type { BotServiceStore } from "./store";
 import {
   BOT_ID_PATTERN,
@@ -39,7 +43,9 @@ const SECRET_BYTES = 32;
  */
 export function mintBotServiceSecret(botId: string): string {
   if (!BOT_ID_PATTERN.test(botId)) {
-    throw new BotServiceInputError("The botId is not a valid service identity.");
+    throw new BotServiceInputError(
+      "The botId is not a valid service identity.",
+    );
   }
   return `${SECRET_PREFIX}${botId}~${randomBytes(SECRET_BYTES).toString("base64url")}`;
 }
@@ -93,12 +99,14 @@ export type FailureLimiter = {
   record: (hint: string) => void;
 };
 
-export function createFailureLimiter(options: {
-  windowMs?: number;
-  maxFailures?: number;
-  /** Injectable for tests; defaults to the wall clock. */
-  now?: () => number;
-} = {}): FailureLimiter {
+export function createFailureLimiter(
+  options: {
+    windowMs?: number;
+    maxFailures?: number;
+    /** Injectable for tests; defaults to the wall clock. */
+    now?: () => number;
+  } = {},
+): FailureLimiter {
   const windowMs = options.windowMs ?? FAILURE_WINDOW_MS;
   const maxFailures = options.maxFailures ?? MAX_FAILURES_PER_WINDOW;
   const now = options.now ?? Date.now;
@@ -207,6 +215,11 @@ export type BotServiceVariables = AppVariables & {
 
 export type BotServiceRouteDependencies = {
   authenticate: BotServiceAuthenticator;
+  /**
+   * Optional additional bot-facing surfaces that ride the same service guard (04.3 mounts its
+   * binding-code issuance here), as routers already carrying their own routes and no-store header.
+   */
+  bindingCodes?: Hono<{ Variables: BotServiceVariables }>;
 };
 
 /**
@@ -284,5 +297,7 @@ export function botServiceRoutes(
   app.get("/", (context) =>
     context.json({ botService: context.get("botService") }),
   );
+  if (dependencies.bindingCodes)
+    app.route("/binding-codes", dependencies.bindingCodes);
   return app;
 }

@@ -32,7 +32,8 @@
     "loadEntitlements": "Your entitlements could not be loaded.",
     "loadBill": "That bill could not be loaded.",
     "loadPurchase": "That purchase could not be loaded.",
-    "loadLatestPurchase": "Your latest purchase could not be loaded."
+    "loadLatestPurchase": "Your latest purchase could not be loaded.",
+    "grantPersonal": "The grant could not be completed. Try again."
   },
   "botLifecycle": {
     "loadNeeds": "Could not load what your Bots need",
@@ -249,5 +250,15 @@
   "botServices": {
     "load": "Could not load the registered bot services.",
     "operation": "The bot service operation failed."
+  },
+  "modelAccess": {
+    "previewFailed": "That binding code could not be checked.",
+    "confirmFailed": "The model access authorization could not be created.",
+    "loadFailed": "Your model access authorizations could not be loaded.",
+    "revokeFailed": "The authorization could not be revoked. Try again."
+  },
+  "gateway": {
+    "load": "Could not load the gateway status.",
+    "operation": "The gateway operation failed."
   }
 }
