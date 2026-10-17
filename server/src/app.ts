@@ -137,6 +137,8 @@ import { botServiceAdminRoutes } from "./bot-services/routes";
 import type { BotServiceStore } from "./bot-services/store";
 import { botServiceCredentialRoutes } from "./bot-services/credential-routes";
 import { accessGrantRoutes } from "./bot-services/access-grants";
+import { createModelSelectionRoutes } from "./gateway/model-selection-routes";
+import { createModelDiscoveryRoutes } from "./gateway/model-discovery-routes";
 import { botServiceRoutes } from "./bot-services/auth";
 import type { BotServiceRegistry } from "./bot-services/registry";
 import { knowledgeServiceConfig } from "./knowledge/config";
@@ -1240,6 +1242,43 @@ export function createApp(
       requireUser,
       botServices && "modelAccess" in botServices
         ? botServices.modelAccess
+        : undefined,
+    ),
+  );
+
+  /*
+   * The workbench model picker surface (Bifrost 03.10, #232): a signed-in person's own
+   * selectable-model list with price display status, and the effective resolution naming
+   * the layer it came from — plus the one write that stores a preference layer through
+   * 03.9's validated service. The Bot context is the built-in workbench Bot (04.8),
+   * resolved live in the registry the same way the confirmation flow above resolves its
+   * seam; a deployment with no registry answers a tagged 503 rather than an empty list.
+   * No answer here ever substitutes a model: an unavailable selection rides the stored
+   * ref with its closed-vocabulary reason, and the screen prompts a re-selection.
+   */
+  app.route(
+    "/api/model-selection",
+    createModelSelectionRoutes(requireUser, botServices ?? undefined),
+  );
+
+  /*
+   * The bot-facing model discovery surface (Bifrost 03.11, #233): an
+   * authenticated Bot service's one read of the open catalog — its
+   * capability-matching, open, priced models with price display status, plus
+   * the capability-matching models not currently offered with their one
+   * closed-vocabulary reason. The door is 04.2's service guard (the same
+   * authenticate the /api/bot-service mount extracts), so an unauthenticated
+   * caller gets one uniform 401 and a deployment with no registry gets the
+   * tagged 503 door, never an empty answer. The response is the frozen
+   * downstream contract (05.3 key issuance, 07.x pre-call validation): 03.8's
+   * result named with 03.10's fields, no administrator configuration,
+   * credential or other person's preference ever in the body.
+   */
+  app.route(
+    "/api/model-discovery",
+    createModelDiscoveryRoutes(
+      botServices && "authenticate" in botServices && botServices.authenticate
+        ? { authenticate: botServices.authenticate, botServices }
         : undefined,
     ),
   );
