@@ -586,6 +586,36 @@ test("the export list paginates and never inlines the artifact (R2-40)", async (
   }
 });
 
+test("a collaborator the widened gate manages earns no export scope off the seam (OCR R4-36)", async () => {
+  // R4-36: the export route is the data-egress authorization face — the riskier
+  // twin of the summary route's inline inference (R4-35). A manage gate widened
+  // to a non-owner, plain-role collaborator must not mint that collaborator an
+  // admin scope here: the explicit seam refuses, and the route answers the
+  // unified not-found, never a guessed-about scope.
+  const app = new Hono<{ Variables: AppVariables }>();
+  app.use("*", async (context, next) => {
+    context.set("actor", {
+      id: "t36-collaborator",
+      role: "user",
+    } as AuthenticatedActor);
+    await next();
+  });
+  app.route(
+    "/bots/:botId/exports",
+    createExportRoutes({
+      database,
+      canManageBot: async (_actor, id) =>
+        id === "agent-1"
+          ? ({ id, ownerUserId: "someone-else" } as AgentProfile)
+          : null,
+      scopeEpoch: async () => 1,
+    }),
+  );
+  const response = await app.request("/bots/agent-1/exports");
+  expect(response.status).toBe(404);
+  expect(await response.json()).toEqual({ error: "Bot not found." });
+});
+
 test("the store's list face pages in SQL and never reads the artifact column (R3-33)", async () => {
   // Four jobs, three of them completed with real artifacts: the shape whose
   // product (a jsonbArray up to the row cap) used to materialize on every

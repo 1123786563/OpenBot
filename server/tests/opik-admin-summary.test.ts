@@ -257,6 +257,40 @@ describe("GET /admin/summary authorization and filters", () => {
     ).toBe(true);
   });
 
+  test("a collaborator the widened gate manages earns no scope off the seam (OCR R4-35)", async () => {
+    // The gate's reserved widening arrived: it manages for a non-owner,
+    // plain-role collaborator. The inline `owner ? "owner" : "admin"` inference
+    // minted that collaborator an ADMIN observation scope — exactly the
+    // widening the explicit seam exists to fail closed against. The filtered
+    // summary answers the unified not-found, the enumeration skips the bot,
+    // and the summary never runs on a guessed-about scope.
+    const rows = [profile({ ownerUserId: "someone-else" })];
+    const recorder = recordingSummary();
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.route(
+      "/",
+      createAiObservabilityRoutes({
+        requireUser: actorVariables(stranger as unknown as AuthenticatedActor),
+        canManageBot: async (_actor, botId) =>
+          rows.find((row) => row.id === botId) ?? null,
+        scopeEpoch: async () => 3,
+        listBots: async () => rows,
+        summary: recorder.service,
+      }),
+    );
+    const filtered = await app.request(
+      "http://openbot.test/admin/summary?botId=agent-1",
+    );
+    expect(filtered.status).toBe(404);
+    expect(await filtered.json()).toEqual({ error: "Bot not found." });
+    expect(recorder.calls).toEqual([]);
+
+    const listed = await app.request("http://openbot.test/admin/summary");
+    expect(listed.status).toBe(200);
+    expect(recorder.calls).toHaveLength(1);
+    expect(recorder.calls[0].scopes).toEqual([]);
+  });
+
   test("forged actor/scope query parameters steer nothing", async () => {
     const { app, recorder } = summaryApp([profile()]);
     const response = await app.request(

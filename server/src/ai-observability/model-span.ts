@@ -23,7 +23,6 @@
  * nothing rather than inventing an owner.
  */
 import { randomBytes } from "node:crypto";
-import type { SafeText, SafeValue } from "../../../shared/ai-observability";
 import type { ObservationScope } from "./contracts";
 import type { OpikHealthService, OpikObservationWrite } from "./health";
 import type { OpikOtlpSpan } from "./opik-port";
@@ -31,9 +30,15 @@ import {
   DEFAULT_METADATA_ALLOWLIST,
   projectSafeName,
   projectSafeRecord,
-  projectSafeText,
   type SafeRecord,
 } from "./redaction";
+import {
+  nanos,
+  nowNs,
+  projectSpanContent,
+  W3C_SPAN_ID,
+  W3C_TRACE_ID,
+} from "./span-support";
 
 /**
  * The one ending a model call's observation carries. `succeeded` is the metered path's
@@ -143,32 +148,6 @@ function usageOf(
     : { state: "unavailable" };
 }
 
-/** SafeText → SafeValue: same tri-state, `text` leaves renamed to `value`. */
-function asValue(text: SafeText): SafeValue {
-  if (text.state === "projected")
-    return { state: "projected", value: text.text };
-  if (text.state === "truncated") {
-    return {
-      state: "truncated",
-      value: text.text,
-      originalBytes: text.originalBytes,
-    };
-  }
-  return text;
-}
-
-function nanos(date: Date): string | undefined {
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return undefined;
-  return (BigInt(date.getTime()) * 1_000_000n).toString();
-}
-
-/** Span content: the recorder's own assertion that this IS the span's product — the
- * deny patterns still run first and always win. */
-function projectSpanContent(text: string | null | undefined): SafeValue | null {
-  if (text === null || text === undefined) return null;
-  return asValue(projectSafeText(text, { allowFreeText: true }));
-}
-
 function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
   const { ending } = observation;
   const usage = usageOf(ending);
@@ -179,8 +158,6 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
   // instead of minting an orphan per call. The context is adopted whole — a
   // malformed trace id claims nothing, not even a well-formed parent. Same
   // discipline as the tool-step spanIdentity.
-  const W3C_TRACE_ID = /^[0-9a-f]{32}$/;
-  const W3C_SPAN_ID = /^[0-9a-f]{16}$/;
   const proven =
     observation.trace !== undefined &&
     W3C_TRACE_ID.test(observation.trace.traceId);
@@ -229,7 +206,6 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
   const name = projectSafeName(label);
   // Times degrade honestly (OCR m157): see baseSpan in tool-steps — a borrowed
   // sibling timestamp beats filing the span in 1970 under "0".
-  const nowNs = (): string => (BigInt(Date.now()) * 1_000_000n).toString();
   const startNs =
     nanos(observation.occurredAt) ?? nanos(observation.endedAt) ?? nowNs();
   return {

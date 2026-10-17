@@ -374,7 +374,9 @@ test("the two scopes over the SAME bot id never see each other's rows", async ()
 
   // The open window answers the upstream half exactly: scope B's trace is an
   // unbound record under A's key, and missing usage is counted, never zeroed.
-  const open = await app.request(`http://openbot.test/admin/summary?botId=${botId}`);
+  const open = await app.request(
+    `http://openbot.test/admin/summary?botId=${botId}`,
+  );
   expect(open.status).toBe(200);
   const openBot = (await open.json()).bots[0];
   expect(openBot.runs.unboundUpstream).toBe(2);
@@ -385,7 +387,11 @@ test("the same bot id under scope B answers B's own aggregate", async () => {
   const app = appFor({
     port: fakePort([]),
     config: () => enabledConfig,
-    auth: authAs(actorB),
+    // Scope B is the ADMIN scope this file seeds (seedScope(actorB, "admin")),
+    // so the actor authenticates as the global admin whose ownership the seam
+    // answers "admin" (OCR R4-35: a plain-role non-owner earns no scope here
+    // anymore — the widened-gate refusal has its own pin in the unit suite).
+    auth: authAs(actorB, "admin"),
   });
   const response = await app.request(
     `http://openbot.test/admin/summary?botId=${botId}&timeFrom=2026-01-01T00:00:00.000Z`,
@@ -399,7 +405,9 @@ test("the same bot id under scope B answers B's own aggregate", async () => {
   // truthful zero, not a disguise.
   expect(bot.runs.unboundUpstream).toBe(null);
   expect(bot.runs.usage).toBe(null);
-  const open = await app.request(`http://openbot.test/admin/summary?botId=${botId}`);
+  const open = await app.request(
+    `http://openbot.test/admin/summary?botId=${botId}`,
+  );
   const openBot = (await open.json()).bots[0];
   expect(openBot.runs.unboundUpstream).toBe(0);
   expect(openBot.runs.usage).toEqual({ providerReported: 0, unavailable: 0 });
@@ -483,8 +491,10 @@ test("rows that never reconciled claim no collection time (R2-51 / R2fix F-2)", 
   // fresh (begin/finish bumped it), but no write ever landed upstream — the
   // pendingSync count says so, and lastCollectedAt must agree with it.
   const actor = `t33-r51b-${run}`;
-  // The fixture admits this actor as a non-owner manager, so ownership is
-  // "admin" — the scope key must match what the route derives.
+  // The seeded scope is the ADMIN scope (the route seam answers "admin" for a
+  // global admin — OCR R4-35: a plain-role non-owner earns no scope anymore),
+  // so the actor authenticates as that admin and the scope key matches what
+  // the route derives.
   const scope = resolveObservationScope({
     actorId: actor,
     botId,
@@ -510,7 +520,7 @@ test("rows that never reconciled claim no collection time (R2-51 / R2fix F-2)", 
     const app = appFor({
       port: fakePort([]),
       config: () => enabledConfig,
-      auth: authAs(actor),
+      auth: authAs(actor, "admin"),
     });
     const response = await app.request(
       `http://openbot.test/admin/summary?botId=${botId}&timeFrom=2026-01-01T00:00:00.000Z`,
@@ -821,7 +831,9 @@ test("a listing that answered but whose local read-back fails stays null beside 
       if (prop !== "select") return Reflect.get(target, prop, receiver);
       return (...args: unknown[]) => {
         const builder = (
-          target.select as unknown as (...a: unknown[]) => { from: (t: unknown) => unknown }
+          target.select as unknown as (...a: unknown[]) => {
+            from: (t: unknown) => unknown;
+          }
         )(...args);
         const originalFrom = builder.from.bind(builder);
         builder.from = (table: unknown) => {

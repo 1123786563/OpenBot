@@ -1179,6 +1179,31 @@ const SPAN_INPUT_TRUNCATION_MARK =
 const SPAN_OUTPUT_CAPTURE_CHARS = 2_000;
 
 /**
+ * Bounded accumulation for one model-span output delta (OCR R2-53, R4-33): the
+ * delta that crosses the capture ceiling is sliced to the REMAINING capacity —
+ * the same discipline as `appendToolStepArg` — so a whole non-streamed
+ * completion emitted as one text-delta is never retained past the ceiling until
+ * settlement's join. Past the ceiling nothing is retained at all.
+ */
+function appendSpanOutputDelta(
+  deltas: string[],
+  length: number,
+  delta: string,
+): number {
+  const capacity = SPAN_OUTPUT_CAPTURE_CHARS - length;
+  if (capacity <= 0) return length;
+  if (delta.length > capacity) {
+    deltas.push(delta.slice(0, capacity));
+    return SPAN_OUTPUT_CAPTURE_CHARS;
+  }
+  deltas.push(delta);
+  return length + delta.length;
+}
+
+/** The accumulator seam for tests, on the `meteredModelForTests` precedent. */
+export const appendSpanOutputDeltaForTests = appendSpanOutputDelta;
+
+/**
  * Whether one prompt message is provably text-only (OCR R2-52). A string, or an
  * array whose every part is a plain `{ type: "text", text }` shape, is text;
  * anything else — image, file, tool part, an unknown shape — means the prompt
@@ -1620,16 +1645,18 @@ function meteredModel<T>(model: T): T {
           const part = chunk.value;
           // Read-only output accumulation for the observation bypass: the delta is
           // forwarded untouched below; this only remembers what already flowed past,
-          // up to the capture ceiling (OCR R2-53) — past it, nothing is retained.
+          // up to the capture ceiling (OCR R2-53, R4-33) — the delta that crosses
+          // it is cut to the remaining capacity, and past it nothing is retained.
           if (
             spanObserver !== undefined &&
-            spanOutputLength < SPAN_OUTPUT_CAPTURE_CHARS &&
             part?.type === "text-delta" &&
             typeof (part as { delta?: unknown }).delta === "string"
           ) {
-            const delta = (part as { delta: string }).delta;
-            spanOutputDeltas.push(delta);
-            spanOutputLength += delta.length;
+            spanOutputLength = appendSpanOutputDelta(
+              spanOutputDeltas,
+              spanOutputLength,
+              (part as { delta: string }).delta,
+            );
           }
           /**
            * The one settlement-failure exit: mark settled, log by eventId, tear the
@@ -1641,6 +1668,15 @@ function meteredModel<T>(model: T): T {
             error: ModelUsageSettlementError,
             detail?: Record<string, unknown>,
           ) => {
+            /*
+             * Captured BEFORE claiming the flag (OCR R4-32): a settlement path
+             * that already reported this call's terminal fact — settleFinish or
+             * settleFail, both of which claim `settled` first — must not be
+             * contradicted by a second span from here. The teardown below still
+             * runs in every case: a pull that cannot settle must still tear the
+             * upstream down and error the stream.
+             */
+            const alreadyReported = settled;
             settled = true;
             log.error({ type: logType, eventId, ...detail }, logType);
             /*
@@ -1679,7 +1715,11 @@ function meteredModel<T>(model: T): T {
             });
             // A settlement failure is never a success span: the verdict this call
             // reached is a failure-terminal fact, observed after the teardown decision.
-            reportSpan({ kind: "settlement_failed", code: error.code });
+            // An already-settled call has its verdict on record (R4-32): this exit
+            // adds only the teardown, never a second, contradicting report.
+            if (!alreadyReported) {
+              reportSpan({ kind: "settlement_failed", code: error.code });
+            }
             controller.error(error);
           };
           if (part?.type === "finish" && !settled) {
@@ -3231,7 +3271,32 @@ export function builtinRunUnderObservationScope(
   inner: Observable<BaseEvent>,
 ): Observable<BaseEvent> {
   if (!threading) return inner;
-  return defer(() => from(threading.resolveScope(botId))).pipe(
+  /*
+   * OCR R4-34: the resolver's contract — "null on any refusal, never throw" —
+   * was JSDoc only; a rejection or a synchronous throw used to error the whole
+   * observable and end the builtin run, an observation failure taking the
+   * product down. Contained here as structure (A10's discipline, which every
+   * other observer call in this file already keeps): a failed resolution is a
+   * scope-less run, logged with the actor and bot, never a failed one. The
+   * async wrapper is what turns a synchronous throw into the same handled
+   * rejection — the resolver's body never gets to unwind into the stream.
+   */
+  return defer(async () => {
+    try {
+      return await threading.resolveScope(botId);
+    } catch (error) {
+      log.warn(
+        {
+          type: "builtin-run-scope-resolution-failed",
+          actorId: threading.actorId,
+          botId,
+          name: (error as Error | null | undefined)?.name,
+        },
+        "builtin-run-scope-resolution-failed",
+      );
+      return null;
+    }
+  }).pipe(
     switchMap((scope) =>
       scope === null || scope === undefined
         ? inner

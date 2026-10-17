@@ -396,6 +396,66 @@ describe("T-final M1: the ambient run-scope seam", () => {
     // Live epoch per run: two runs ask twice, each naming its own bot.
     expect(asked).toEqual([botId, botId]);
   });
+
+  /** Subscribes and answers how the stream ended, error included. */
+  const outcomeOf = (source: Observable<void>) =>
+    new Promise<{ completed: boolean; error: unknown; scope: unknown }>(
+      (resolve) => {
+        const seen: unknown[] = [];
+        source.subscribe({
+          next: () => seen.push(currentRunObservationScope()),
+          complete: () =>
+            resolve({ completed: true, error: null, scope: seen[0] }),
+          error: (error) =>
+            resolve({ completed: false, error, scope: seen[0] }),
+        });
+      },
+    );
+
+  test("a resolver that REJECTS subscribes the run bare — the observation failure never ends it (OCR R4-34)", async () => {
+    // A10's structural form (OCR R4-34): every other observer call in copilot.ts
+    // is contained; the scope resolution must be too. A resolver rejection is a
+    // scope-less run, never a failed one — the A10 comment promises it only by
+    // JSDoc today, and this pin turns it into structure.
+    const inner = new Observable<void>((subscriber) => subscriber.complete());
+    const outcome = await outcomeOf(
+      builtinRunUnderObservationScope(
+        {
+          actorId,
+          resolveScope: () => Promise.reject(new Error("db gone")),
+        },
+        botId,
+        inner,
+      ),
+    );
+    expect(outcome.error).toBeNull();
+    expect(outcome.completed).toBe(true);
+  });
+
+  test("a resolver that throws SYNCHRONOUSLY subscribes the run bare too (OCR R4-34)", async () => {
+    // The R3-36 shape: a TDZ-style throw inside the resolver itself, before any
+    // promise exists. Same containment: the run flows scope-less.
+    const seenScope: unknown[] = [];
+    const inner = new Observable<void>((subscriber) => {
+      seenScope.push(currentRunObservationScope());
+      subscriber.complete();
+    });
+    const outcome = await outcomeOf(
+      builtinRunUnderObservationScope(
+        {
+          actorId,
+          resolveScope: (() => {
+            throw new Error("wiring TDZ");
+          }) as unknown as (botId: string) => Promise<unknown>,
+        },
+        botId,
+        inner,
+      ),
+    );
+    expect(outcome.error).toBeNull();
+    expect(outcome.completed).toBe(true);
+    expect(seenScope[0]).toBeUndefined();
+  });
 });
 
 describe("T-final M1: the boot assembly reads the ambient scope", () => {

@@ -182,12 +182,54 @@ export function projectSafeUrl(input: string | null | undefined): SafeText {
   // The link-local block: 169.254.169.254 answers anyone who asks with cloud credentials, and
   // following it hands the reader exactly what this projection refuses to carry (review finding F4).
   const isLinkLocal = /^169\.254\.\d{1,3}\.\d{1,3}$/.test(hostname);
+  // The IPv6 shapes the IPv4 test above cannot see (OCR R4-19): the link-local
+  // block fe80::/10, the unique-local block fc00::/7 and the IPv4-mapped
+  // spelling of the same link-local block all reach the same metadata
+  // endpoints, and the URL parser hands each over in canonical lowercase hex —
+  // so the verdict is read off the first hextet's range and the mapped tail,
+  // never off a dotted spelling. Same bucket as the IPv4 link-local: a private
+  // infrastructure link is an attachment, not a reference.
+  const isIpv6 = hostname.startsWith("[") && hostname.endsWith("]");
+  if (isIpv6 && isSensitiveIpv6(hostname.slice(1, -1))) {
+    return { state: "omitted", reason: "raw_attachment" };
+  }
   if (isRawFile || isLoopback || isLinkLocal)
     return { state: "omitted", reason: "raw_attachment" };
   return project(
     `${url.protocol}//${url.host}${url.pathname}`,
     MAX_SAFE_TEXT_BYTES,
   );
+}
+
+/**
+ * The sensitive IPv6 shapes (OCR R4-19): link-local fe80::/10, unique-local
+ * fc00::/7, and an IPv4-mapped tail (`::ffff:h:h`) whose embedded address is
+ * itself IPv4 link-local — the endpoint the dotted spelling above already
+ * refuses, spelled the way the parser canonicalizes it.
+ */
+function isSensitiveIpv6(address: string): boolean {
+  const firstHextet = /^([0-9a-f]{1,4})/i.exec(address);
+  if (firstHextet) {
+    const value = Number.parseInt(firstHextet[1], 16);
+    // fe80::/10 spans fe80..febf; fc00::/7 spans fc00..fdff.
+    if (
+      (value >= 0xfe80 && value <= 0xfebf) ||
+      (value >= 0xfc00 && value <= 0xfdff)
+    ) {
+      return true;
+    }
+  }
+  // The IPv4-mapped form: the last 32 bits before the end are the embedded
+  // address. The parser compresses the leading zeros, so `::ffff:a9fe:a9fe` is
+  // the shape that arrives; the optional leading groups keep full spellings
+  // covered should a caller hand one over un-parsed.
+  const mapped = /(?:^|:)ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(address);
+  if (mapped) {
+    const embedded =
+      (Number.parseInt(mapped[1], 16) << 16) | Number.parseInt(mapped[2], 16);
+    if (embedded >>> 16 === 0xa9fe) return true; // 169.254/16
+  }
+  return false;
 }
 
 /** Span, tool and model names: short, structured, and a favourite hiding place for capability names. */
