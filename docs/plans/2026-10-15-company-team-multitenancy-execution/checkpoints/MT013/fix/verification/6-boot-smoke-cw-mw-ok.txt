@@ -1,0 +1,21 @@
+# MT013 fix round boot-slice smoke — 2026-10-16
+# boot-slice mirrors index.ts startup wiring (loadConfig → runMultitenancyStartupChecks → applyStartupVerdict),
+# real MT001 artifact (539 entrances, 0 unowned) + real restricted-role DB (mt013-fix-pg @127.0.0.1:55473).
+# Reproduce: /tmp/mt013fix/run-slice.sh cw|mw|ok (copied to verification/boot-slice/ for the record)
+
+=== variant cw: exit=1, stdout structured records=1, stderr lines=0 ===
+--- stdout ---
+{"level":40,"time":1792158142555,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":30,"time":1792158142594,"service":"server","type":"multitenancy-startup-validation","mode":"on","accepted":false,"timestamp":"2026-10-16T13:42:22.594Z","checks":{"coverage":{"ok":false,"reason":"coverage waiver file could not be read or parsed (/tmp/mt013fix/waivers-corrupt.json): coverage waiver file is not valid JSON: JSON Parse error: Unexpected identifier \"not\"","uncovered":[],"waivedEntrances":[]},"devBypass":{"ok":true},"databaseRoles":{"ok":true}},"msg":"multitenancy startup validation failed — refusing to boot (see the checks in this record)"}
+--- stderr ---
+=== variant mw: exit=1, stdout structured records=1, stderr lines=0 ===
+--- stdout ---
+{"level":40,"time":1792158123391,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":30,"time":1792158123432,"service":"server","type":"multitenancy-startup-validation","mode":"on","accepted":false,"timestamp":"2026-10-16T13:42:03.432Z","checks":{"coverage":{"ok":false,"reason":"coverage waiver file could not be read or parsed (/tmp/mt013fix/waivers-missing.json): ENOENT: no such file or directory, open '/tmp/mt013fix/waivers-missing.json'","uncovered":[],"waivedEntrances":[]},"devBypass":{"ok":true},"databaseRoles":{"ok":true}},"msg":"multitenancy startup validation failed — refusing to boot (see the checks in this record)"}
+--- stderr ---
+=== variant ok: exit=0, stdout structured records=1, stderr lines=0 ===
+--- stdout ---
+{"level":40,"time":1792158134569,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":30,"time":1792158134601,"service":"server","type":"multitenancy-startup-validation","mode":"on","accepted":true,"timestamp":"2026-10-16T13:42:14.601Z","checks":{"coverage":{"ok":true,"waivedEntrances":[]},"devBypass":{"ok":true},"databaseRoles":{"ok":true}},"msg":"multitenancy startup validation passed — booting in multitenancy mode"}
+BOOT_CONTINUED multitenancy=true
+--- stderr ---

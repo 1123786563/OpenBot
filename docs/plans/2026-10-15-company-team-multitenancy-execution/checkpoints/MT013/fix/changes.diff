@@ -1,0 +1,273 @@
+# MT013 fix round changes — diff vs MT013 final state (before-hashes verified: impl 7ab7275e…, test 2d030bf2… from i6-review-mt013 review snapshot)
+diff --git a/Users/wuyongjun/orca/workspaces/OpenBot/i6-review-mt013/server/src/enterprise/tenancy/startup-checks.ts b/server/src/enterprise/tenancy/startup-checks.ts
+index 6587c9d4..9e172e2e 100644
+--- a/Users/wuyongjun/orca/workspaces/OpenBot/i6-review-mt013/server/src/enterprise/tenancy/startup-checks.ts
++++ b/server/src/enterprise/tenancy/startup-checks.ts
+@@ -170,15 +170,48 @@ export function parseWaiverFile(content: string): readonly CoverageWaiver[] {
+       `coverage waiver file is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+     );
+   }
++  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
++    throw new TypeError(
++      'coverage waiver file must be {"schemaVersion":1,"waivers":[{"entrance":"METHOD /path","reason":"…","ticket":"…"}]}',
++    );
++  }
+   const file = parsed as WaiverFile;
+-  if (!Array.isArray(file?.waivers)) {
++  // 与 inventory 侧的严格 schemaVersion 拒绝对称：接口声明了 1 就检查 1，
++  // 契约漂移不许静默消费。
++  if (file.schemaVersion !== 1) {
++    throw new TypeError(
++      `coverage waiver file has schemaVersion ${String(file.schemaVersion)}, expected 1`,
++    );
++  }
++  if (!Array.isArray(file.waivers)) {
+     throw new TypeError(
+       'coverage waiver file must be {"schemaVersion":1,"waivers":[{"entrance":"METHOD /path","reason":"…","ticket":"…"}]}',
+     );
+   }
++  // 元素必须是对象：非对象元素的拒绝消息要带上索引与类型，而不是让
++  // undefined 漏到下游 evaluator 的拒绝消息里。
++  for (let index = 0; index < file.waivers.length; index += 1) {
++    const waiver = file.waivers[index] as unknown;
++    if (
++      typeof waiver !== "object" ||
++      waiver === null ||
++      Array.isArray(waiver)
++    ) {
++      throw new TypeError(
++        `coverage waiver file waivers[${index}] must be an object like {"entrance":"METHOD /path","reason":"…"}, got ${describeWaiverElement(waiver)}`,
++      );
++    }
++  }
+   return file.waivers;
+ }
+ 
++/** 拒绝消息里的元素类型描述：typeof null 是 "object"，单独点名。 */
++function describeWaiverElement(value: unknown): string {
++  if (value === null) return "null";
++  if (Array.isArray(value)) return "an array";
++  return `a ${typeof value}`;
++}
++
+ // ---------------------------------------------------------------------------
+ // 单用户/开发绕过残留
+ // ---------------------------------------------------------------------------
+@@ -487,9 +520,22 @@ async function evaluateCoverageCheck(
+       waivedEntrances: [],
+     };
+   }
+-  const waivers = waiversPath
+-    ? parseWaiverFile(await readTextFile(waiversPath))
+-    : [];
++  // 豁免清单与 inventory 同款 containment：读不了/解析不了都是带理由的
++  // 校验失败，而不是穿透模块边界的进程栈（复审 F1：waivers 的
++  // readTextFile/parseWaiverFile 异常曾裸穿到进程层——零结构化审计记录）。
++  let waivers: readonly CoverageWaiver[] = [];
++  if (waiversPath) {
++    try {
++      waivers = parseWaiverFile(await readTextFile(waiversPath));
++    } catch (error) {
++      return {
++        ok: false,
++        reason: `coverage waiver file could not be read or parsed (${waiversPath}): ${error instanceof Error ? error.message : String(error)}`,
++        uncovered: [],
++        waivedEntrances: [],
++      };
++    }
++  }
+   const evaluation = evaluateInventoryCoverage(
+     parsed as CoverageInventory,
+     waivers,
+@@ -500,7 +546,7 @@ async function evaluateCoverageCheck(
+         ok: false,
+         reason: evaluation.reason,
+         uncovered: [...evaluation.uncovered],
+-      waivedEntrances: [...evaluation.waivedEntrances],
++        waivedEntrances: [...evaluation.waivedEntrances],
+       };
+ }
+ 
+@@ -557,7 +603,19 @@ export async function runMultitenancyStartupChecks(
+       ["ob_ent_directory", inputs.directoryUrl as string],
+       ["ob_ent_data", inputs.dataUrl as string],
+     ] as const) {
+-      const database = createDatabase(url);
++      // 连接工厂本身也可能同步抛出（例如畸形 URL）——与文件层同款
++      // containment：降级为该角色的一次失败探测，而不是穿透模块边界。
++      let database: Database;
++      try {
++        database = createDatabase(url);
++      } catch (error) {
++        probes.push({
++          expectedRole: role,
++          connected: false,
++          failure: `database factory threw before connecting: ${error instanceof Error ? error.message : String(error)}`,
++        });
++        continue;
++      }
+       try {
+         probes.push(await probeRoleSafety(database, role));
+       } finally {
+diff --git a/Users/wuyongjun/orca/workspaces/OpenBot/i6-review-mt013/server/tests/multitenancy/startup-checks.test.ts b/server/tests/multitenancy/startup-checks.test.ts
+index 91830784..718c5d89 100644
+--- a/Users/wuyongjun/orca/workspaces/OpenBot/i6-review-mt013/server/tests/multitenancy/startup-checks.test.ts
++++ b/server/tests/multitenancy/startup-checks.test.ts
+@@ -28,6 +28,7 @@ import {
+   evaluateInventoryCoverage,
+   evaluateRoleSafety,
+   type MultitenancyStartupRecord,
++  parseWaiverFile,
+   probeRoleSafety,
+   type RoleSafetyProbe,
+   runMultitenancyStartupChecks,
+@@ -252,6 +253,65 @@ describe("MT013 coverage check（消费 MT001 CoverageInventory 契约）", () =
+   });
+ });
+ 
++// ---------------------------------------------------------------------------
++// 豁免清单文件解析（F3：输入硬化）——损坏/形状不对的文件响亮拒绝，
++// 拒绝消息里永远不出现 "undefined"。
++// ---------------------------------------------------------------------------
++
++describe("MT013 parseWaiverFile（豁免文件输入硬化）", () => {
++  test("非 JSON 内容 → TypeError 带 invalid JSON 理由", () => {
++    expect(() => parseWaiverFile("not json at all")).toThrow(TypeError);
++    expect(() => parseWaiverFile("not json at all")).toThrow(
++      /coverage waiver file is not valid JSON/,
++    );
++  });
++
++  test("顶层不是对象 / waivers 不是数组 → TypeError 带形状说明", () => {
++    expect(() => parseWaiverFile("[]")).toThrow(TypeError);
++    expect(() => parseWaiverFile('{"schemaVersion":1,"waivers":{}}')).toThrow(
++      /coverage waiver file must be/,
++    );
++  });
++
++  test("schemaVersion 非 1 → TypeError（与 inventory 侧严格拒绝对称）", () => {
++    expect(() => parseWaiverFile('{"schemaVersion":2,"waivers":[]}')).toThrow(
++      /schemaVersion 2, expected 1/,
++    );
++    expect(() =>
++      parseWaiverFile('{"waivers":[{"entrance":"GET /a","reason":"r"}]}'),
++    ).toThrow(/schemaVersion/);
++  });
++
++  test("数组元素非对象 → TypeError 带元素索引与类型，消息不含 undefined", () => {
++    let message = "";
++    try {
++      parseWaiverFile('{"schemaVersion":1,"waivers":["GET /x"]}');
++    } catch (error) {
++      message = error instanceof Error ? error.message : String(error);
++    }
++    expect(message).toContain("waivers[0]");
++    expect(message).toContain("string");
++    expect(message).not.toContain("undefined");
++
++    try {
++      parseWaiverFile('{"schemaVersion":1,"waivers":[{}, null, []]}');
++    } catch (error) {
++      message = error instanceof Error ? error.message : String(error);
++    }
++    expect(message).toContain("waivers[1]");
++    expect(message).toContain("null");
++    expect(message).not.toContain("undefined");
++  });
++
++  test("合法文件 → 返回豁免数组（guard：硬化不误伤正路）", () => {
++    const waivers = parseWaiverFile(
++      '{"schemaVersion":1,"waivers":[{"entrance":"GET /a","reason":"legacy","ticket":"MT099"}]}',
++    );
++    expect(waivers).toHaveLength(1);
++    expect(waivers[0]?.entrance).toBe("GET /a");
++  });
++});
++
+ // ---------------------------------------------------------------------------
+ // 单用户/开发绕过残留（拒绝路径 b）
+ // ---------------------------------------------------------------------------
+@@ -506,6 +566,83 @@ describe("MT013 startup validation orchestrator（注入假 inventory/角色状
+     expect(record.accepted).toBe(false);
+     expect(record.checks.coverage.ok).toBe(false);
+   });
++
++  // F1：waivers 的文件层失败必须被 containment 捕获降级为结构化拒绝，
++  // 绝不穿透模块边界炸进程（复审 cw/mw 变体置实证：裸栈 + 零审计记录）。
++  test("拒绝路径 a：waivers 文件损坏 → 不 reject，coverage ok:false 带理由，三校验照常评估", async () => {
++    const deps = okDeps();
++    deps.readTextFile = async (path: string) =>
++      path.endsWith("inventory.json") ? inventoryJson : "not json at all";
++    const record = await runMultitenancyStartupChecks(
++      { ...inputs, waiversPath: "/cfg/waivers.json" },
++      deps,
++    );
++    // 恰好一条结构化记录（verdict 侧消费的就是它），而不是进程栈。
++    expect(record.type).toBe("multitenancy-startup-validation");
++    expect(record.accepted).toBe(false);
++    expect(record.checks.coverage.ok).toBe(false);
++    if (!record.checks.coverage.ok) {
++      expect(record.checks.coverage.reason).toContain("waiver");
++      expect(record.checks.coverage.reason).toContain("not valid JSON");
++      expect(record.checks.coverage.waivedEntrances).toEqual([]);
++    }
++    // 其余两项不受影响地完成评估（拒绝要列全缺口，而非第一个就停）。
++    expect(record.checks.devBypass.ok).toBe(true);
++    expect(record.checks.databaseRoles.ok).toBe(true);
++    // verdict 消费该记录：恰好一条日志 + exit(1)，不向上炸进程。
++    const logged: unknown[] = [];
++    let exitCode: number | undefined;
++    applyStartupVerdict(record, {
++      log: { info: (r: unknown) => logged.push(r) },
++      exit: (code: number) => {
++        exitCode = code;
++      },
++    });
++    expect(logged).toHaveLength(1);
++    expect(exitCode).toBe(1);
++  });
++
++  test("拒绝路径 a：waivers 文件缺失（ENOENT）→ 不 reject，coverage ok:false 带理由", async () => {
++    const deps = okDeps();
++    deps.readTextFile = async (path: string) => {
++      if (path.endsWith("waivers.json"))
++        throw new Error("ENOENT: no such file or directory");
++      return inventoryJson;
++    };
++    const record = await runMultitenancyStartupChecks(
++      { ...inputs, waiversPath: "/cfg/waivers.json" },
++      deps,
++    );
++    expect(record.accepted).toBe(false);
++    expect(record.checks.coverage.ok).toBe(false);
++    if (!record.checks.coverage.ok) {
++      expect(record.checks.coverage.reason).toContain("waiver");
++      expect(record.checks.coverage.reason).toContain("ENOENT");
++    }
++    expect(record.checks.devBypass.ok).toBe(true);
++    expect(record.checks.databaseRoles.ok).toBe(true);
++  });
++
++  // F1 同族：createDatabase 同步抛出（畸形 URL 等）同样不许穿透模块边界。
++  test("拒绝路径 c：createDatabase 同步抛出 → 不 reject，databaseRoles ok:false 带角色与原因", async () => {
++    const deps = okDeps();
++    deps.createDatabase = (url: string) => {
++      if (url === inputs.directoryUrl)
++        throw new Error("malformed connection string");
++      return fakeDatabase([safeCapabilityRow("ob_ent_data")]);
++    };
++    const record = await runMultitenancyStartupChecks(inputs, deps);
++    expect(record.accepted).toBe(false);
++    expect(record.checks.coverage.ok).toBe(true);
++    expect(record.checks.devBypass.ok).toBe(true);
++    expect(record.checks.databaseRoles.ok).toBe(false);
++    if (!record.checks.databaseRoles.ok) {
++      expect(record.checks.databaseRoles.reason).toContain("ob_ent_directory");
++      expect(record.checks.databaseRoles.reason).toContain(
++        "malformed connection string",
++      );
++    }
++  });
+ });
+ 
+ // ---------------------------------------------------------------------------

@@ -1,0 +1,134 @@
+# RED-1 — first RED run (impl unfixed). 5 fails: 4 genuine defect signals + 1 test-fixture bug
+# (createDatabase case used url.includes("directory") which never matched the fixture URL postgres://ent_dir@...);
+# fixture discriminator fixed to url === inputs.directoryUrl, then re-verified as RED-2 against the original impl hash.
+# command: bun --no-env-file test tests/multitenancy/startup-checks.test.ts
+bun test v1.4.2 (50a8a8387)
+
+server/tests/multitenancy/startup-checks.test.ts:
+(pass) MT013 coverage check（消费 MT001 CoverageInventory 契约） > 完整清单（全部 owned/已分类、装配成功、serve 平衡）→ 通过 [0.13ms]
+(pass) MT013 coverage check（消费 MT001 CoverageInventory 契约） > 存在 unowned 入口 → 拒绝并列出未覆盖入口 [0.05ms]
+(pass) MT013 coverage check（消费 MT001 CoverageInventory 契约） > 存在 unclassified 入口 → 拒绝（未分类阻断统一上线） [0.02ms]
+(pass) MT013 coverage check（消费 MT001 CoverageInventory 契约） > 任一装配 failed → 拒绝 [0.07ms]
+(pass) MT013 coverage check（消费 MT001 CoverageInventory 契约） > serve() 升级分支多于已登记 stream 入口 → 拒绝 [0.03ms]
+(pass) MT013 coverage check（消费 MT001 CoverageInventory 契约） > schemaVersion 非 1 → 拒绝（契约漂移不许静默消费） [0.02ms]
+(pass) MT013 coverage check（消费 MT001 CoverageInventory 契约） > 显式豁免（带理由）→ 对应入口不再阻断，且豁免留痕 [0.05ms]
+(pass) MT013 coverage check（消费 MT001 CoverageInventory 契约） > 豁免了不存在的入口 → 拒绝（typo 防护，不许静默吞掉） [0.02ms]
+(pass) MT013 coverage check（消费 MT001 CoverageInventory 契约） > 豁免缺理由 → 拒绝（留痕要求） [0.06ms]
+(pass) MT013 coverage check（消费 MT001 CoverageInventory 契约） > 豁免只豁免列出的入口，其余 unowned 仍阻断 [0.03ms]
+(pass) MT013 parseWaiverFile（豁免文件输入硬化） > 非 JSON 内容 → TypeError 带 invalid JSON 理由 [0.26ms]
+(pass) MT013 parseWaiverFile（豁免文件输入硬化） > 顶层不是对象 / waivers 不是数组 → TypeError 带形状说明 [0.04ms]
+272 |       /coverage waiver file must be/,
+273 |     );
+274 |   });
+275 | 
+276 |   test("schemaVersion 非 1 → TypeError（与 inventory 侧严格拒绝对称）", () => {
+277 |     expect(() => parseWaiverFile('{"schemaVersion":2,"waivers":[]}')).toThrow(
+                                                                            ^
+error: expect(received).toThrow(expected)
+
+Expected pattern: /schemaVersion 2, expected 1/
+
+Received function did not throw
+Received value: []
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt013/server/tests/multitenancy/startup-checks.test.ts:277:71)
+(fail) MT013 parseWaiverFile（豁免文件输入硬化） > schemaVersion 非 1 → TypeError（与 inventory 侧严格拒绝对称） [0.17ms]
+287 |     try {
+288 |       parseWaiverFile('{"schemaVersion":1,"waivers":["GET /x"]}');
+289 |     } catch (error) {
+290 |       message = error instanceof Error ? error.message : String(error);
+291 |     }
+292 |     expect(message).toContain("waivers[0]");
+                          ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "waivers[0]"
+Received: ""
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt013/server/tests/multitenancy/startup-checks.test.ts:292:21)
+(fail) MT013 parseWaiverFile（豁免文件输入硬化） > 数组元素非对象 → TypeError 带元素索引与类型，消息不含 undefined [0.10ms]
+(pass) MT013 parseWaiverFile（豁免文件输入硬化） > 合法文件 → 返回豁免数组（guard：硬化不误伤正路） [0.01ms]
+(pass) MT013 dev-bypass residue check > singleUser=true（OPENBOT_SINGLE_USER=true 的结果）→ 拒绝 [0.06ms]
+(pass) MT013 dev-bypass residue check > 遗留名 OPENBOT_DEV_NO_AUTH=true 同样是残留 [0.01ms]
+(pass) MT013 dev-bypass residue check > 变量被设成垃圾值（被 singleUserEnabled 静默忽略的那种）→ 仍判残留
+(pass) MT013 dev-bypass residue check > 显式关闭（false/0）或未设置 → 通过 [0.02ms]
+(pass) MT013 role-safety evaluation（注入探测结果） > directory 与 data 两个连接都安全 → 通过 [0.05ms]
+(pass) MT013 role-safety evaluation（注入探测结果） > capability 角色缺失 → 拒绝 [0.01ms]
+(pass) MT013 role-safety evaluation（注入探测结果） > capability 角色带特权属性（SUPER/BYPASSRLS/CREATEDB…）→ 拒绝 [0.03ms]
+(pass) MT013 role-safety evaluation（注入探测结果） > login 未获 capability 成员资格 → 拒绝
+(pass) MT013 role-safety evaluation（注入探测结果） > login 有第二个角色成员资格（可提权）→ 拒绝 [0.01ms]
+(pass) MT013 role-safety evaluation（注入探测结果） > 连接失败 → 拒绝且带失败原因 [0.01ms]
+(pass) MT013 startup validation orchestrator（注入假 inventory/角色状态） > 三项全部通过 → accepted 记录，一条结构化形状 [0.63ms]
+(pass) MT013 startup validation orchestrator（注入假 inventory/角色状态） > 拒绝路径 a：inventory 文件缺失 → 拒绝且 coverage 带理由，其余检查照常完成 [0.16ms]
+(pass) MT013 startup validation orchestrator（注入假 inventory/角色状态） > 拒绝路径 b：singleUser 残留 → 拒绝 [0.06ms]
+(pass) MT013 startup validation orchestrator（注入假 inventory/角色状态） > 拒绝路径 c：数据库 URL 缺失 → 拒绝且指名缺的变量 [0.05ms]
+(pass) MT013 startup validation orchestrator（注入假 inventory/角色状态） > 拒绝路径 c：探测返回不安全角色 → 拒绝 [0.05ms]
+(pass) MT013 startup validation orchestrator（注入假 inventory/角色状态） > inventory JSON 损坏 → 拒绝（不许静默当作通过） [0.05ms]
+164 | export function parseWaiverFile(content: string): readonly CoverageWaiver[] {
+165 |   let parsed: unknown;
+166 |   try {
+167 |     parsed = JSON.parse(content);
+168 |   } catch (error) {
+169 |     throw new TypeError(
+                    ^
+TypeError: coverage waiver file is not valid JSON: JSON Parse error: Unexpected identifier "not"
+      at parseWaiverFile (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt013/server/src/enterprise/tenancy/startup-checks.ts:169:15)
+      at evaluateCoverageCheck (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt013/server/src/enterprise/tenancy/startup-checks.ts:491:7)
+      at async runMultitenancyStartupChecks (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt013/server/src/enterprise/tenancy/startup-checks.ts:523:33)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt013/server/tests/multitenancy/startup-checks.test.ts:576:26)
+(fail) MT013 startup validation orchestrator（注入假 inventory/角色状态） > 拒绝路径 a：waivers 文件损坏 → 不 reject，coverage ok:false 带理由，三校验照常评估 [0.20ms]
+604 | 
+605 |   test("拒绝路径 a：waivers 文件缺失（ENOENT）→ 不 reject，coverage ok:false 带理由", async () => {
+606 |     const deps = okDeps();
+607 |     deps.readTextFile = async (path: string) => {
+608 |       if (path.endsWith("waivers.json"))
+609 |         throw new Error("ENOENT: no such file or directory");
+                        ^
+error: ENOENT: no such file or directory
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt013/server/tests/multitenancy/startup-checks.test.ts:609:19)
+      at evaluateCoverageCheck (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt013/server/src/enterprise/tenancy/startup-checks.ts:491:29)
+      at async runMultitenancyStartupChecks (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt013/server/src/enterprise/tenancy/startup-checks.ts:523:33)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt013/server/tests/multitenancy/startup-checks.test.ts:612:26)
+(fail) MT013 startup validation orchestrator（注入假 inventory/角色状态） > 拒绝路径 a：waivers 文件缺失（ENOENT）→ 不 reject，coverage ok:false 带理由 [0.15ms]
+630 |       if (url.includes("directory"))
+631 |         throw new Error("malformed connection string");
+632 |       return fakeDatabase([safeCapabilityRow("ob_ent_data")]);
+633 |     };
+634 |     const record = await runMultitenancyStartupChecks(inputs, deps);
+635 |     expect(record.accepted).toBe(false);
+                                  ^
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: true
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt013/server/tests/multitenancy/startup-checks.test.ts:635:29)
+(fail) MT013 startup validation orchestrator（注入假 inventory/角色状态） > 拒绝路径 c：createDatabase 同步抛出 → 不 reject，databaseRoles ok:false 带角色与原因 [0.43ms]
+(pass) MT013 startup verdict（审计日志与拒绝启动） > accepted → 恰好一条结构化记录，不退出 [0.13ms]
+(pass) MT013 startup verdict（审计日志与拒绝启动） > refused → 同一条记录留痕后 exit(1) [0.03ms]
+(skip) MT013 role-safety probe（真实专用库） > 目录角色连接：ob_ent_directory 形态符合预期（NOLOGIN 能力 + 单一成员资格）
+(skip) MT013 role-safety probe（真实专用库） > 数据角色连接：ob_ent_data 形态符合预期
+(skip) MT013 role-safety probe（真实专用库） > 超级用户 setup 连接冒充运行时 URL → 角色安全校验拒绝（拒绝路径 c 的真实库版）
+(skip) MT013 role-safety probe（真实专用库） > 编排器（真实库 + 真 inventory 工件）→ 通过路径端到端
+(skip) MT013 role-safety probe（真实专用库） > 编排器（真实库 + 带 unowned 入口的 inventory）→ 拒绝记录端到端
+
+5 tests skipped:
+(skip) MT013 role-safety probe（真实专用库） > 目录角色连接：ob_ent_directory 形态符合预期（NOLOGIN 能力 + 单一成员资格）
+(skip) MT013 role-safety probe（真实专用库） > 数据角色连接：ob_ent_data 形态符合预期
+(skip) MT013 role-safety probe（真实专用库） > 超级用户 setup 连接冒充运行时 URL → 角色安全校验拒绝（拒绝路径 c 的真实库版）
+(skip) MT013 role-safety probe（真实专用库） > 编排器（真实库 + 真 inventory 工件）→ 通过路径端到端
+(skip) MT013 role-safety probe（真实专用库） > 编排器（真实库 + 带 unowned 入口的 inventory）→ 拒绝记录端到端
+
+
+5 tests failed:
+(fail) MT013 parseWaiverFile（豁免文件输入硬化） > schemaVersion 非 1 → TypeError（与 inventory 侧严格拒绝对称） [0.17ms]
+(fail) MT013 parseWaiverFile（豁免文件输入硬化） > 数组元素非对象 → TypeError 带元素索引与类型，消息不含 undefined [0.10ms]
+(fail) MT013 startup validation orchestrator（注入假 inventory/角色状态） > 拒绝路径 a：waivers 文件损坏 → 不 reject，coverage ok:false 带理由，三校验照常评估 [0.20ms]
+(fail) MT013 startup validation orchestrator（注入假 inventory/角色状态） > 拒绝路径 a：waivers 文件缺失（ENOENT）→ 不 reject，coverage ok:false 带理由 [0.15ms]
+(fail) MT013 startup validation orchestrator（注入假 inventory/角色状态） > 拒绝路径 c：createDatabase 同步抛出 → 不 reject，databaseRoles ok:false 带角色与原因 [0.43ms]
+
+ 31 pass
+ 5 skip
+ 5 fail
+ 79 expect() calls
+Ran 41 tests across 1 file. [327.00ms]

@@ -1,0 +1,3 @@
+# command: cd server && bun run typecheck
+$ tsc --noEmit
+EXIT=0

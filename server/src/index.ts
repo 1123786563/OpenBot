@@ -62,6 +62,10 @@ import {
   wakeUpTools,
 } from "./agents/wake-up";
 import { createApp, createDeploymentRequireUser } from "./app";
+import {
+  applyStartupVerdict,
+  runMultitenancyStartupChecks,
+} from "./enterprise/tenancy/startup-checks";
 import { createApprovedActionExecutor } from "./approvals/execute";
 import {
   PERSON_QUESTION_WAITING,
@@ -642,6 +646,29 @@ const identifyActor: IdentifyActor = async (request) => {
 };
 
 const config = loadConfig();
+/*
+ * Multitenancy mode is an explicit switch (OPENBOT_MULTITENANCY, default off — config.ts), and
+ * switching it on is a promise about who this deployment serves. The promise is checked before
+ * anything else here runs: entrance coverage against the MT001 inventory, no single-user/dev
+ * bypass residue, and the restricted ob_ent_* database roles on the production connections. Any
+ * gap and the process exits non-zero with one structured audit record naming every check —
+ * booting with a hole in tenant isolation is not a warning-and-continue situation.
+ *
+ * With the switch off nothing here runs: the legacy boot is byte-for-byte what it was.
+ */
+if (config.multitenancy.enabled) {
+  const startupRecord = await runMultitenancyStartupChecks({
+    inventoryPath: config.multitenancy.inventoryPath,
+    waiversPath: config.multitenancy.waiversPath,
+    directoryUrl: config.enterpriseDirectoryDatabaseUrl,
+    dataUrl: config.enterpriseDataDatabaseUrl,
+    tenantRuntimeUrl: config.tenantStorageRuntimeDatabaseUrl,
+    singleUser: config.singleUser,
+    singleUserEnvRaw: process.env.OPENBOT_SINGLE_USER,
+    devNoAuthEnvRaw: process.env.OPENBOT_DEV_NO_AUTH,
+  });
+  applyStartupVerdict(startupRecord, { log });
+}
 // The environment seeds local policy once. The SDK fallback must not reapply an old revision
 // after an administrator clears a pin to follow the latest published Skills.
 clearLearningRevisionFallback();
@@ -799,9 +826,11 @@ const enterpriseCapabilities = await (async () => {
         });
         return actor ? { actorId: actor.id, entrypoint: "web" } : null;
       },
-      selectTenant: (request) => request.headers.get("x-openbot-tenant-id"),
+      // MT005 ruling #1: selection headers are x-openbot-tenant and
+      // x-openbot-workspace. They only select; database membership decides.
+      selectTenant: (request) => request.headers.get("x-openbot-tenant"),
       selectWorkspace: (request) =>
-        request.headers.get("x-openbot-workspace-id"),
+        request.headers.get("x-openbot-workspace"),
     });
     return {
       data,
