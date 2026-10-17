@@ -38,6 +38,11 @@ import {
 } from "./directory-archive";
 import { webappDevServerReady, webappUpstreamHost } from "./nextjs-dev";
 import {
+  holdsPreviewSessionPass,
+  PREVIEW_PASS_REFUSAL,
+  type ServePreview,
+} from "./preview-origin";
+import {
   createPreviewTickets,
   defaultPreviewOrigin,
   type PreviewTickets,
@@ -69,6 +74,17 @@ export type WebappProxyRoutesDeps = {
   /** The preview origin a ticket's host binding is minted against (#361/#362
    * own the real host decision; D5's dev default until then). */
   previewOriginFor?: (sessionId: string) => string;
+  /**
+   * The preview origin's admission (#361/#362): closed means NO address may
+   * exist — webapp-info surfaces the reason (m-5) and the issuing route
+   * refuses to mint (503). Defaults to the dev-form PORT/SERVER_PORT judgment
+   * (preview-ticket's previewPortFromEnv — serverPort's rules).
+   */
+  previewOriginAdmission?: () => { ok: true } | { ok: false; reason: string };
+  /** The env the defaults above read; tests pin PORT/SERVER_PORT with it. */
+  env?: Record<string, string | undefined>;
+  /** The fetch behind the ready probe; tests intercept the dial. */
+  fetchImpl?: typeof fetch;
 };
 
 const WEBAPP_PROBE_TIMEOUT_MS = 10_000;
@@ -81,15 +97,22 @@ const WEBAPP_NOT_RUNNING_ERROR =
  * The caller's request body, or undefined when there is nothing to forward.
  * GET and HEAD may not carry one at all (fetch rejects it outright), and an
  * empty buffer on the remaining verbs is dropped so the proxy never invents a
- * content-length the caller did not send.
+ * content-length the caller did not send. The raw-Request form is shared by the
+ * main-site route handler and the preview proxy below (#362).
  */
+async function rawRequestBody(
+  request: Request,
+): Promise<ArrayBuffer | undefined> {
+  const method = request.method;
+  if (method === "GET" || method === "HEAD") return undefined;
+  const bytes = await request.arrayBuffer();
+  return bytes.byteLength > 0 ? bytes : undefined;
+}
+
 async function requestBody(
   context: Context<{ Variables: AppVariables }, string>,
 ): Promise<ArrayBuffer | undefined> {
-  const method = context.req.method;
-  if (method === "GET" || method === "HEAD") return undefined;
-  const bytes = await context.req.raw.arrayBuffer();
-  return bytes.byteLength > 0 ? bytes : undefined;
+  return rawRequestBody(context.req.raw);
 }
 
 /**
@@ -99,15 +122,24 @@ async function requestBody(
  * exactly the `{"error":"The web app is not running…"}` page this used to show.
  * A caller that accepts HTML gets a readable page; a programmatic caller keeps the
  * JSON shape it parses.
+ *
+ * #362: the raw-Request twin `refuseResponse` below is the exported one — the
+ * preview origin's own gates (its 401 pass refusal) land on iframes too and use
+ * the SAME dual shape.
  */
 function refuse(
   context: Context<{ Variables: AppVariables }, string>,
   message: string,
 ) {
-  const accepts = context.req.header("accept") ?? "";
+  return refuseResponse(context.req.raw, message);
+}
+
+/** The request-shaped refusal: an iframe-facing page for HTML callers, JSON otherwise. */
+export function refuseResponse(request: Request, message: string, status = 503): Response {
+  const accepts = request.headers.get("accept") ?? "";
   const wantsHtml =
     accepts.includes("text/html") || accepts.includes("application/xhtml+xml");
-  if (!wantsHtml) return context.json({ error: message }, 503);
+  if (!wantsHtml) return Response.json({ error: message }, { status });
   // Escaped, because the message is server-authored today but this is an HTML
   // sink and a caller-supplied string must never become script here.
   const safe = message
@@ -115,7 +147,7 @@ function refuse(
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-  return context.html(
+  return new Response(
     `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
       `<meta name="viewport" content="width=device-width, initial-scale=1">` +
       `<title>Web app unavailable</title>` +
@@ -125,7 +157,7 @@ function refuse(
       `p{max-width:34ch;margin:0;padding:24px;text-align:center}` +
       `@media (prefers-color-scheme:dark){body{background:#09090b;color:#fafafa}` +
       `}</style></head><body><p>${safe}</p></body></html>`,
-    503,
+    { status, headers: { "content-type": "text/html; charset=utf-8" } },
   );
 }
 
@@ -206,6 +238,14 @@ function stripRequestHeaders(source: Headers): Headers {
  * scripts (self.__next_f.push) and the refresh/turbopack runtimes need eval. A
  * dev preview of LLM-authored code is exactly the 'unsafe-inline' + 'unsafe-eval'
  * shape; everything else stays as tight as the workshop's.
+ *
+ * #362 re-derived `connect-src` for the preview origin: there `'self'` IS the
+ * preview origin itself, and that is exactly right — the app's own fetches and
+ * Server Actions (POST to its own paths) ride the same host through the proxy,
+ * same-origin under the CSP as in the browser; `ws:`/`wss:` stay for the dev
+ * server's HMR channel. Nothing here may reach back to the main site's origin,
+ * and nothing needs to: the platform's cookies are not in scope on this host
+ * (that is the whole point of the origin split — spec F2/D1).
  */
 const WEBAPP_DEV_CSP =
   "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self' data:; object-src 'none'; base-uri 'none'";
@@ -283,6 +323,75 @@ function hasWebappScaffold(paths: string[]): boolean {
 }
 
 /**
+ * The preview origin's serving half (#362, the ServePreview seam preview-origin.ts
+ * calls after its cookie gate): the request already carries the preview pass and
+ * the app-relative path — this module finds the session's row (BY ID: the pass is
+ * the authentication, there is no actor id to ownership-check against), resolves
+ * the same sandbox facts the main-site proxy uses, ATTACHES (probe, never spawn),
+ * and forwards through proxyWebappRequest with the same header hygiene, CSP and
+ * refusal shapes as the same-origin route. A restart-deleted session is an honest
+ * 404; a down dev server is the same not-running sentence the pane already shows.
+ */
+export function createPreviewProxy(deps: {
+  config: CraftConfig;
+  /** The by-id row lookup (no activity bump — routing, not use). */
+  store: Pick<CraftStore, "findSessionById">;
+  botIdFor: (sessionId: string) => Promise<string | null>;
+  sandboxConnectionFor: (
+    botId: string,
+  ) => { baseUrl: string; token: string | null } | null;
+  fetchImpl?: typeof fetch;
+}): ServePreview {
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  return async ({ sessionId, request, appPath, query }) => {
+    const session = await deps.store.findSessionById(sessionId);
+    if (!session) {
+      return refuseResponse(
+        request,
+        "This preview session no longer exists.",
+        404,
+      );
+    }
+    const botId = await deps.botIdFor(sessionId);
+    const conn = botId ? deps.sandboxConnectionFor(botId) : null;
+    if (!botId || !conn) {
+      return refuseResponse(request, "The sandbox is not available.");
+    }
+    // Attach, never spawn — the same contract as the same-origin route: the
+    // webapp tool's start-webapp.sh owns the one process per session.
+    const port = session.nextjsPort;
+    if (port === null) {
+      return refuseResponse(request, WEBAPP_NO_SUPPORT_ERROR);
+    }
+    const upstreamHost = webappUpstreamHost(
+      deps.config.sandboxGatewayBaseUrl || conn.baseUrl,
+    );
+    if (!(await webappDevServerReady({ host: upstreamHost, port }, fetchImpl))) {
+      return refuseResponse(request, WEBAPP_NOT_RUNNING_ERROR);
+    }
+    const result = await proxyWebappRequest({
+      upstreamBaseUrl: `http://${upstreamHost}:${port}`,
+      // appPath is the upstream-resolvable path as the origin derived it — the
+      // pathname verbatim in both forms: the dev form's label INCLUDED (the
+      // dev server is basePath-mounted at /<label>, F-2/#365), the host form's
+      // root-path app by definition. Same shape as the same-origin route's
+      // full-mount forward.
+      path: appPath,
+      query,
+      method: request.method,
+      // Read AFTER the gates, so a refused request never pays for it.
+      body: await rawRequestBody(request),
+      requestHeaders: request.headers,
+      fetchImpl,
+    });
+    return new Response(result.body, {
+      status: result.status,
+      headers: result.headers,
+    });
+  };
+}
+
+/**
  * Every verb the preview carries. The route used to register GET alone, and the
  * helper below hardcoded it: POST/PUT/PATCH/DELETE/OPTIONS then answered 404
  * from Hono and never reached the dev server (measured live against the route).
@@ -332,9 +441,34 @@ export function createWebappProxyRoutes(
   // outlives a dev server boot inside its 30s window by design.
   const previewTickets =
     deps.previewTickets ?? createPreviewTickets({ store: deps.store });
+  const previewOriginAdmission =
+    deps.previewOriginAdmission ??
+    (() => {
+      const parsed = defaultPreviewOrigin(deps.env ?? process.env);
+      return "reason" in parsed
+        ? { ok: false as const, reason: parsed.reason }
+        : { ok: true as const };
+    });
   const previewOriginFor =
-    deps.previewOriginFor ?? (() => defaultPreviewOrigin());
+    deps.previewOriginFor ??
+    (() => {
+      // Unreachable while admission is closed — every caller checks the gate
+      // first; a direct call still refuses loudly rather than guessing a port
+      // (the #362 convergence: serverPort's rules, never a silent preference).
+      const parsed = defaultPreviewOrigin(deps.env ?? process.env);
+      if ("reason" in parsed) {
+        throw new Error(`The preview origin is closed: ${parsed.reason}`);
+      }
+      return parsed.origin;
+    });
   app.post("/sessions/:sessionId/preview-ticket", async (context) => {
+    // Never mint into a closed origin: the ticket's host element is the very
+    // address that must not exist while the gate refuses (AC6 — a closed origin
+    // is not a fallback target, and a bound-but-dead ticket is worse than 503).
+    const admission = previewOriginAdmission();
+    if (!admission.ok) {
+      return context.json({ error: admission.reason }, 503);
+    }
     const actor = context.var.actor;
     const sessionId = context.req.param("sessionId");
     const { session, botId, conn } = await resolve(sessionId, actor.id);
@@ -365,9 +499,14 @@ export function createWebappProxyRoutes(
 
     if (!botId || !conn) {
       // Sandbox unavailable: existence cannot be inspected — onyx's `status: no_sandbox`.
+      // The address fields stay null with it: a preview with no sandbox behind it
+      // is not an addressable thing, whatever the admission gate says.
+      const closed = previewOriginAdmission();
       return context.json({
         has_webapp: null,
         webapp_url: null,
+        previewOrigin: null,
+        previewOriginClosedReason: closed.ok ? null : closed.reason,
         status: "no_sandbox",
         ready: false,
       });
@@ -392,16 +531,28 @@ export function createWebappProxyRoutes(
     const ready =
       hasWebapp &&
       session.nextjsPort !== null &&
-      (await webappDevServerReady({
-        host: webappUpstreamHost(
-          deps.config.sandboxGatewayBaseUrl || conn.baseUrl,
-        ),
-        port: session.nextjsPort as number,
-      }));
+      (await webappDevServerReady(
+        {
+          host: webappUpstreamHost(
+            deps.config.sandboxGatewayBaseUrl || conn.baseUrl,
+          ),
+          port: session.nextjsPort as number,
+        },
+        deps.fetchImpl,
+      ));
+
+    // #362 (m-5/D11): `webapp_url` is the ABSOLUTE preview address (D11 — the
+    // same-origin path is retired), mirrored as `previewOrigin`; a closed origin
+    // answers no address and the displayable reason instead. The pane gates on
+    // `ready` before ever pointing a frame at the address, unchanged.
+    const admission = previewOriginAdmission();
+    const previewAddress = admission.ok ? previewOriginFor(sessionId) : null;
 
     return context.json({
       has_webapp: hasWebapp,
-      webapp_url: `/api/craft/sessions/${sessionId}/webapp`,
+      webapp_url: previewAddress,
+      previewOrigin: previewAddress,
+      previewOriginClosedReason: admission.ok ? null : admission.reason,
       // Honest, and the distinction the preview pane gates on: `has_webapp` is
       // "a scaffold exists", `ready` is "a server is serving it". A hardcoded
       // "running" beside `ready: false` is the contradiction that let the pane
@@ -635,6 +786,98 @@ export async function resolveWebappHmrUpgrade(
   const session = await deps.store.getSession(input.sessionId, input.actor.id);
   if (!session) {
     return { ok: false, status: 404, error: "Session not found" };
+  }
+  const botId = await deps.botIdFor(input.sessionId);
+  const conn = botId ? deps.sandboxConnectionFor(botId) : null;
+  if (!botId || !conn) {
+    return { ok: false, status: 503, error: "The sandbox is not available." };
+  }
+  if (session.nextjsPort === null) {
+    return { ok: false, status: 503, error: WEBAPP_NO_SUPPORT_ERROR };
+  }
+  // The reserved port lives INSIDE the sandbox (F-E): dial the sandbox host, never loopback.
+  return {
+    ok: true,
+    upstreamUrl: webappHmrUpstreamUrl({
+      host: webappUpstreamHost(
+        deps.config.sandboxGatewayBaseUrl || conn.baseUrl,
+      ),
+      port: session.nextjsPort,
+      path: input.path,
+      query: input.query,
+    }),
+  };
+}
+
+/**
+ * The HMR endpoint as the APP itself addresses it (#363, F-2/#365): the
+ * upstream-resolvable pathname — the host form's verbatim
+ * `/_next/webpack-hmr` at the origin root, the dev form's
+ * `/<label>/_next/webpack-hmr` under the basePath mount the start script
+ * injected (the label is part of the path Next serves, exactly like the
+ * same-origin mount's own prefix). Session identity rides the HOST on a
+ * preview origin, never this path.
+ */
+const WEBAPP_HMR_APP_PATH = /^\/(?:[^/]+\/)?_next\/webpack-hmr$/;
+
+/**
+ * Whether an upstream-resolvable pathname is the HMR endpoint — the
+ * preview-origin dispatcher's branch gate (#363). One optional leading label
+ * segment (the dev form's mount) or none (the host form's root); anything
+ * deeper is not this endpoint. The same-origin mount (WEBAPP_HMR_PATH, with
+ * the session id IN the path) is the other dispatcher's shape and never
+ * matches: on a preview host the session comes from Host resolution, and a
+ * path that still names a session is not one this branch answers.
+ */
+export function webappHmrIsAppPath(appPath: string): boolean {
+  return WEBAPP_HMR_APP_PATH.test(appPath);
+}
+
+/**
+ * The preview-origin resolver's deps (#363): the by-id row the preview seam reads
+ * (the pass IS the authentication — there is no actor id to ownership-check
+ * against) plus the sandbox facts every upstream resolution shares.
+ */
+export type PreviewWebappHmrDeps = {
+  config: CraftConfig;
+  store: Pick<CraftStore, "findSessionById">;
+  botIdFor: (sessionId: string) => Promise<string | null>;
+  /** Connection facts for a Bot's sandbox gateway (baseUrl + token). */
+  sandboxConnectionFor: (
+    botId: string,
+  ) => { baseUrl: string; token: string | null } | null;
+};
+
+/**
+ * The HMR upgrade's authorization + target resolution ON A PREVIEW HOST (#363) —
+ * the host-routed twin of resolveWebappHmrUpgrade. The authorization is the
+ * preview pass (the D9 cookie the redemption hop planted): the SAME judgment the
+ * HTTP proxy applies — present, and naming THIS host's session. A platform
+ * session is never in scope on these hosts (that is the origin split's whole
+ * point), and a ticket in the query is not a credential: the redemption hop
+ * consumed it, and its only legal lifetime was that one 302. Refusals keep the
+ * proxy's 401/404/503 shapes and land BEFORE the caller commits `server.upgrade`.
+ */
+export async function resolvePreviewWebappHmrUpgrade(
+  deps: PreviewWebappHmrDeps,
+  input: {
+    sessionId: string;
+    request: Request;
+    /** The upstream-resolvable inbound pathname — label included (dev form). */
+    path: string;
+    query: string;
+  },
+): Promise<WebappHmrResolution> {
+  if (!holdsPreviewSessionPass(input.sessionId, input.request)) {
+    return { ok: false, status: 401, error: PREVIEW_PASS_REFUSAL };
+  }
+  const session = await deps.store.findSessionById(input.sessionId);
+  if (!session) {
+    return {
+      ok: false,
+      status: 404,
+      error: "This preview session no longer exists.",
+    };
   }
   const botId = await deps.botIdFor(input.sessionId);
   const conn = botId ? deps.sandboxConnectionFor(botId) : null;

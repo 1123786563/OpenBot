@@ -132,6 +132,12 @@ export type SessionManagerDeps = {
   managedContentFor?: CraftManagedContentResolver;
   /** The base the sandbox dials back on (MCP relay + company-search CLI). */
   mcpRelayBaseUrl?: string | null;
+  /**
+   * The session's dev-form /<label> mount (F-2, #365) — the preview origin's
+   * webappBasePathFor, threaded to the start script the workspace writes (and
+   * the regenerate path below refreshes). Unset = root-path script.
+   */
+  webappBasePathFor?: (sessionId: string) => string | null;
 };
 
 export class CraftSessionManager {
@@ -290,6 +296,7 @@ export class CraftSessionManager {
       organizationInstructions: this.deps.organizationInstructions ?? null,
       llmConfigFor: (s) => this.deps.llmConfigFor(s),
       mcpRelayBaseUrl: this.deps.mcpRelayBaseUrl ?? this.config.mcpRelayBaseUrl,
+      webappBasePathFor: this.deps.webappBasePathFor,
       // Managed content resolves inside the provisioning envelope: a failed
       // resolution fails the session (nothing is built off a payload the
       // deployment could not stand behind), and the push acks only on success.
@@ -494,6 +501,7 @@ export class CraftSessionManager {
           session.id,
           this.config,
           session.nextjsPort,
+          this.deps.webappBasePathFor,
         );
       }
     }

@@ -50,14 +50,36 @@ export const WEBAPP_BOOTSTRAP_SCRIPT_NAME = "start-webapp.sh";
 /**
  * The protected, agent-facing bootstrap script. Its header (`SESSION_PATH`, `PORT`) is
  * the plugin's parsePort source; its success/failure lines are onyx byte-verbatim.
+ *
+ * `basePath` (F-2, #365) is the dev form's `/<label>` mount — the same HMAC label the
+ * session's preview address rides (preview-origin.ts's webappBasePathFor). The server
+ * cannot inject env into a process the sandbox spawns for it, so the mount travels
+ * INSIDE this script: ONYX_WEBAPP_BASE_PATH feeds the scaffold's next.config.ts
+ * (basePath/assetPrefix) and NEXT_PUBLIC_BASE_PATH feeds lib/base-path.ts, both
+ * exported before the spawn so `bun run dev` inherits them. Undefined/null/empty →
+ * no exports: the host form (and every hand-run dev server) serves at the port root.
  */
 export function buildWebappBootstrapScript(input: {
   /** The session directory the script lives in (either sessionDirectoryMode spelling). */
   sessionDirectory: string;
   /** The session's reserved port — the bind target AND the preview's routing contract. */
   port: number;
+  /** The dev form's /<label> mount (preview-origin webappBasePathFor); omit for root. */
+  basePath?: string | null;
 }): string {
   const { sessionDirectory, port } = input;
+  const basePath = (input.basePath ?? "").trim();
+  // The mount env block: only emitted when a mount exists. The value is a
+  // server-derived HMAC label (hex + slash), but the export is quoted anyway —
+  // a shell-visible line must never trust its interpolation to stay inert.
+  const basePathEnv =
+    basePath === ""
+      ? ""
+      : `
+# The dev-form preview serves this app under its label — mount the dev server
+# there so every resource URL it emits resolves on the preview origin.
+export ONYX_WEBAPP_BASE_PATH="${basePath}"
+export NEXT_PUBLIC_BASE_PATH="${basePath}"`;
   return `#!/bin/bash
 SESSION_PATH=${sessionDirectory}
 # Normalize so bot-relative session dirs survive the script's own cd. The
@@ -121,6 +143,7 @@ echo $PORT > "$SESSION_PATH/.nextjs-port"
             bun install
         fi
         echo "Starting Next.js dev server on port $PORT..."
+${basePathEnv}
         # 9>&-: the server must not inherit the lock fd, or it would hold the
         # check-and-spawn lock for its entire lifetime. -H 0.0.0.0 is onyx's own
         # bind: the preview dials this port on the sandbox host (F-E), not the
@@ -168,12 +191,17 @@ exit 1
  * Protection is the opencode.json permission set, not chmod (the gateway's file API
  * writes bytes only): PROTECTED_FILE_RULES denies edit/write/patch on the name, and the
  * bash rules allow exactly the two documented fallback invocations.
+ *
+ * `webappBasePathFor` (F-2, #365) resolves the session's dev-form /<label> mount —
+ * the same derivation the preview origin mints its address with; unset (host
+ * form, closed origin) leaves the script root-path.
  */
 export async function writeWebappBootstrapScript(
   api: { writeFile(path: string, content: string): Promise<void> },
   sessionId: string,
   config: CraftConfig,
   port: number,
+  webappBasePathFor?: (sessionId: string) => string | null,
 ): Promise<void> {
   await api.writeFile(
     `${sessionDirectory(sessionId, config.sessionDirectoryMode)}/${
@@ -185,6 +213,7 @@ export async function writeWebappBootstrapScript(
         config.sessionDirectoryMode,
       ),
       port,
+      basePath: webappBasePathFor?.(sessionId) ?? null,
     }),
   );
 }

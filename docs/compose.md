@@ -15,6 +15,7 @@ file, and the 2026-10-14 move of the optional stacks under `docker/compose/`.
 | `docker/compose/services.yml` | `casdoor`, `open-connector` | When `CASDOOR_OAUTH_*` is configured, or the self-hosted OpenConnector broker should run. |
 | `docker/compose/lago.yml` | `lago-redis`, `lago-pdf`, `lago-migrate`, `lago-api`, `lago-front`, `lago-worker`, `lago-clock` | When billing talks to Lago (`LAGO_API_URL`). |
 | `docker/compose/observability.yml` | `loki`, `tempo`, `prometheus`, `alloy`, `grafana`, `glitchtip` (+ its own postgres and redis) | When local telemetry is wanted — [observability.md](observability.md) is the guide. |
+| `docker/compose/certs.yml` | `openbot-tls` | When the preview origin runs on a public wildcard host (`OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE`) — [tls-certs.md](tls-certs.md) is the guide. |
 
 ## Running them
 
@@ -27,6 +28,7 @@ docker compose --project-directory . -f docker/compose/kb.yml up -d
 docker compose --project-directory . -f docker/compose/services.yml up -d
 docker compose --project-directory . -f docker/compose/lago.yml up -d
 docker compose --project-directory . -f docker/compose/observability.yml up -d
+docker compose --project-directory . -f docker/compose/certs.yml up -d
 ```
 
 **Why `--project-directory .` is not optional.** Compose derives the project directory from the
