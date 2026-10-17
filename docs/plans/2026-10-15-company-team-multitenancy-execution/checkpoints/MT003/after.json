@@ -1,0 +1,135 @@
+{
+  "task": "MT003",
+  "issue": 46,
+  "head_before": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+  "head_after": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+  "committed": false,
+  "owned_product_files": {
+    "server/scripts/multitenancy/migrate-test.ts": {
+      "sha256": "e00f90a45edfe02c21c227ca10f42c196d57ee41e644d7eab8fcd0c979ca76bf",
+      "bytes": 33796
+    },
+    "server/tests/multitenancy/migration-tool.test.ts": {
+      "sha256": "e004868a3793aebb05fce46c5547384064bfe0ce30df5180143b4ada7794d461",
+      "bytes": 33417
+    }
+  },
+  "checkpoint_artifacts": [
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT003.md",
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/before.json",
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/after.json",
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/verification.txt",
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/cli-smoke.txt",
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/apply-lifecycle.txt",
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/review-package.json"
+  ],
+  "worktree_status_after": [
+    "?? docs/plans/2026-10-15-company-team-multitenancy-execution/",
+    "?? server/scripts/multitenancy/",
+    "?? server/tests/multitenancy/"
+  ],
+  "prerequisite_files_unchanged": true,
+  "prerequisite_verification": [
+    {
+      "path": "server/scripts/multitenancy/inventory.ts",
+      "before_sha256": "e58bde59de470b816a6cacfa988b7a450d15dd7261ef2e22f6d77b034d6c05d0",
+      "after_sha256": "e58bde59de470b816a6cacfa988b7a450d15dd7261ef2e22f6d77b034d6c05d0",
+      "unchanged": true
+    },
+    {
+      "path": "server/tests/multitenancy/inventory.test.ts",
+      "before_sha256": "c718e8f93499a002723fb83aa80c7a11cab89f4f09c4e7a7ed35a678109f99cf",
+      "after_sha256": "c718e8f93499a002723fb83aa80c7a11cab89f4f09c4e7a7ed35a678109f99cf",
+      "unchanged": true
+    },
+    {
+      "path": "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT001-fix/inventory.json",
+      "before_sha256": "9e9b533b813754196e576f6ee608f645469554ba2e1e0de79aba139e6256ffa9",
+      "after_sha256": "9e9b533b813754196e576f6ee608f645469554ba2e1e0de79aba139e6256ffa9",
+      "unchanged": true
+    },
+    {
+      "path": "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT001-fix/gap-report.md",
+      "before_sha256": "3e9b4cc2cdd160da005aea011f12d688d00d92f412444aea4f01a050901e0a6f",
+      "after_sha256": "3e9b4cc2cdd160da005aea011f12d688d00d92f412444aea4f01a050901e0a6f",
+      "unchanged": true
+    },
+    {
+      "path": "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT001/integration-fix.json",
+      "before_sha256": "7a032a9ef03b3928d1ec35a37c94fe2bfcfcbd3be5ee198c636016d7ecb7e834",
+      "after_sha256": "7a032a9ef03b3928d1ec35a37c94fe2bfcfcbd3be5ee198c636016d7ecb7e834",
+      "unchanged": true
+    },
+    {
+      "path": "docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT001.md",
+      "before_sha256": "991e742feafac5e07f02114b12e06e9664f43aeeeca2af14e59633a99323bdc8",
+      "after_sha256": "991e742feafac5e07f02114b12e06e9664f43aeeeca2af14e59633a99323bdc8",
+      "unchanged": true
+    },
+    {
+      "path": "docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT001-fix-review.md",
+      "before_sha256": "d85bc15627e369f81dcd911246dbc61efb4d18e4c0ce1115dcbfde1b3194cdd5",
+      "after_sha256": "d85bc15627e369f81dcd911246dbc61efb4d18e4c0ce1115dcbfde1b3194cdd5",
+      "unchanged": true
+    },
+    {
+      "path": "docs/plans/2026-10-15-company-team-multitenancy-execution/review-packages/MT001-fix.json",
+      "before_sha256": "ea4dd931e3ab2d50274cc0c04618755219aa741e4861b7805d8618e131dba17b",
+      "after_sha256": "ea4dd931e3ab2d50274cc0c04618755219aa741e4861b7805d8618e131dba17b",
+      "unchanged": true
+    },
+    {
+      "path": "docs/plans/2026-10-15-company-team-multitenancy-execution/dag.json",
+      "before_sha256": "092883c52a567eb188ddd63c82e5fcdca0a04c98467a757825f9979b609ac97f",
+      "after_sha256": "092883c52a567eb188ddd63c82e5fcdca0a04c98467a757825f9979b609ac97f",
+      "unchanged": true
+    },
+    {
+      "path": "docs/plans/2026-10-15-company-team-multitenancy-execution/wave-02-briefs.md",
+      "before_sha256": "5010698dbb28e2910e57e1833536181123ea0c98954c3ce2a95aae0a1392748e",
+      "after_sha256": "5010698dbb28e2910e57e1833536181123ea0c98954c3ce2a95aae0a1392748e",
+      "unchanged": true
+    }
+  ],
+  "verification": {
+    "tests": "bun test server/tests/multitenancy/migration-tool.test.ts -> 34 pass, 0 fail, 1 explicit skip when TEST_DATABASE_URL is not the assigned MT003 database (186 expect calls)",
+    "typecheck": "cd server && bun run typecheck -> clean",
+    "biome": "bunx biome check on both owned files -> clean, no fixes applied",
+    "sibling_regression": "bun test server/tests/multitenancy/inventory.test.ts -> 33 pass, 0 fail",
+    "mutation_check": "removing the journal INSERT failed both the fake-connection unit test and the real-DB integration test; reverted and re-verified green",
+    "stability": "3 consecutive full-suite runs green"
+  },
+  "final_database_state": {
+    "url": "postgres://postgres@127.0.0.1:55433/openbot_enterprise_mt003_test",
+    "mt_task_migration_journal": "3 rows (MT000, numbers 1-3, digests match plan)",
+    "mt_tool_selfcheck": "absent (dropped by step 0003)",
+    "other_relations": "none"
+  },
+  "status_note": "tool shipped with self-check task MT000 only; no business migration authored; production migrations/drizzle untouched",
+  "checkpoint_artifact_hashes": {
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT003.md": {
+      "sha256": "a334d5bf0e8d924c3de96cc31a366cfb6b1d9775d838705ce5b6c862cef192ec",
+      "bytes": 7125
+    },
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/before.json": {
+      "sha256": "a1570e6d1e8da0a92f16583ea71ba4b4cd718dfcba6f927ae86782bd3b344c10",
+      "bytes": 2568
+    },
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/verification.txt": {
+      "sha256": "3378abf1e0b6b3eaf0abd509de7712273cc7b9f6084113ddc6c04605dd70b125",
+      "bytes": 5066
+    },
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/cli-smoke.txt": {
+      "sha256": "0484ff0718aff8720887957ed5ecf00ee01fd6992dc86f4e8ff76d2661962a0a",
+      "bytes": 1422
+    },
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/apply-lifecycle.txt": {
+      "sha256": "5c6992afb918e6ed43d54ccb69e0d9005d33b6fc2175c45076db49defb0777ff",
+      "bytes": 1737
+    },
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/review-package.json": {
+      "sha256": "9e5cd88df76cf5f67c744f317bad4b9a76546ae28126e82a1933fc19ae6e3c64",
+      "bytes": 4917
+    }
+  }
+}
