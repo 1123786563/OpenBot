@@ -104,6 +104,7 @@ import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
 import { CREDIT_SCALE, createCredits } from "./billing/credits";
 import { createCreditWriter } from "./billing/credits-writer";
+import { createPlanRenewalGrantor } from "./billing/plan-renewals";
 import {
   CreditInsufficientError,
   currentPayerBinding,
@@ -115,7 +116,7 @@ import {
   fitChatInputRequest,
 } from "./billing/input-bound";
 import { createLagoClient } from "./billing/lago";
-import { startUsageDeliverySweeps } from "./billing/maintenance";
+import { startBillingRenewalSweeps, startUsageDeliverySweeps } from "./billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
 import { createAlipayProvider } from "./billing/payments/alipay";
 import { startPaymentSweeps } from "./billing/payments/maintenance";
@@ -211,11 +212,6 @@ import {
   personalUnconnectedApps,
 } from "./craft/managed-content";
 import { resolveCraftMcpServers } from "./craft/mcp-servers";
-import {
-  createPreviewOrigin,
-  samePreviewOrigin,
-} from "./craft/preview-origin";
-import { createPreviewTickets } from "./craft/preview-ticket";
 import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
@@ -227,12 +223,8 @@ import {
 } from "./craft/routes";
 import { createCraftStore } from "./craft/store";
 import {
-  createPreviewProxy,
-  type PreviewWebappHmrDeps,
-  resolvePreviewWebappHmrUpgrade,
   type WebappHmrSocketData,
   resolveWebappHmrUpgrade,
-  webappHmrIsAppPath,
   webappHmrSessionIdFromPath,
   webappHmrSocketHandlers,
 } from "./craft/webapp-proxy";
@@ -246,6 +238,7 @@ import {
   createGatewayAdminCredentialService,
   installGatewayAdminCredentialService,
 } from "./gateway/admin-credential";
+import { startGatewayCatalogSyncScheduler } from "./gateway/catalog-sync";
 import { createEnterpriseStore } from "./admin/settings-store";
 import { createDatabase } from "./db/client";
 import {
@@ -589,6 +582,26 @@ function logReservationReleaseFailure(input: {
       code: reservationReleaseFailureCode(input.error),
     },
     "billing-reservation-release-failed",
+  );
+}
+
+function logReservationUnknownMarkFailure(input: {
+  source: "llm";
+  eventId: string;
+  reservationId: string;
+  reason: string;
+  error: unknown;
+}) {
+  log.error(
+    {
+      type: "billing-reservation-unknown-mark-failed",
+      source: input.source,
+      eventId: input.eventId,
+      reservationId: input.reservationId,
+      reason: input.reason,
+      code: reservationReleaseFailureCode(input.error),
+    },
+    "billing-reservation-unknown-mark-failed",
   );
 }
 
@@ -3789,6 +3802,9 @@ const billing =
             ? { requestTimeoutMs: settings.requestTimeoutMs }
             : {}),
         });
+        // The credit ledger's write side, hoisted so the billing service's renewal payout and
+        // the assembly's creditWriter below share one writer (one set of birth invariants).
+        const billingCreditWriter = createCreditWriter(database);
         return {
           service: createBillingService({
             config: {
@@ -3822,6 +3838,20 @@ const billing =
                 }
               : {}),
             planEntitlements: settings.planEntitlements,
+            // The renewal payout (10.3): a subscription period's allowance lands in the
+            // subscription owner's account. The SERVICE derives that account from the row's own
+            // owner pair; the grantor below spells the ledger write, under the period-tagged key
+            // (composed in ./billing/plan-renewals, the one tested place) that makes a duplicate
+            // or racing delivery a no-op while the next period pays again.
+            renewals: createPlanRenewalGrantor({
+              creditsFor: (planCode) => {
+                const entry = settings.planCatalog.get(planCode);
+                return entry && entry.credits > 0
+                  ? Math.round(entry.credits * CREDIT_SCALE)
+                  : null;
+              },
+              grantCredits: billingCreditWriter.grantCredits,
+            }),
           }),
           // Exposed for the payment assembly below: its activation gate reads the plan's wire
           // facts (interval, currency) through the same client, so the two never disagree about
@@ -3835,7 +3865,7 @@ const billing =
           deploymentPayerBinding,
           // The credit ledger's write side — the same writer the admin grant routes and the plan
           // payout below share. One writer, one set of birth invariants, every grant flows here.
-          creditWriter: createCreditWriter(database),
+          creditWriter: billingCreditWriter,
           // The deployment's own database, where the personal grant route (02.8) resolves the
           // target user and their payer account. The same connection the rest of billing uses.
           database,
@@ -4081,6 +4111,24 @@ if (billing !== undefined && usageOutbox !== undefined) {
           }
           return;
         }
+        // 06.8: the hold must outlive its own expiry, so it may not stay plain-reserved —
+        // mark it unknown BEFORE the evidence write. Best-effort by the same contract as the
+        // release above: a failed mark is logged, never allowed to mask the evidence row or
+        // the stream's own failure.
+        try {
+          await billing.creditWriter.markReservationUnknown(
+            reservation.reservationId,
+            failure.reason,
+          );
+        } catch (error) {
+          logReservationUnknownMarkFailure({
+            source: "llm",
+            eventId: input.eventId,
+            reservationId: reservation.reservationId,
+            reason: failure.reason,
+            error,
+          });
+        }
         await recordUnsettledUsage({
           eventId: input.eventId,
           source: "llm",
@@ -4119,6 +4167,15 @@ if (billing !== undefined && usageOutbox !== undefined) {
     lock: { databaseUrl: config.databaseUrl, key: 4_192_005 },
   });
   billingSweepStops.push(usageSweeps.stop);
+  // The renewal sweep (10.3): every live owned subscription whose provider period moved past
+  // its allowance marker gets that period's payout into the owner's account, once — the pass
+  // backs the webhook path up and retries what it could not finish. The service no-ops when
+  // no renewal payout was wired (a deployment with no plan catalog).
+  const renewalSweeps = startBillingRenewalSweeps(billing.service, {
+    log: (message) => log.warn(message),
+    lock: { databaseUrl: config.databaseUrl, key: 4_192_007 },
+  });
+  billingSweepStops.push(renewalSweeps.stop);
 }
 
 /*
@@ -4189,6 +4246,10 @@ const payments =
 
         const externalCustomerKey = billing.externalCustomerKey;
         const paymentOrderStore = createPaymentStore(database);
+        // The subscription projection's write side, for the one write the activation path owns:
+        // stamping the paying order's ownership onto the row (10.3). The same store instance the
+        // purchase guard's uncached read below uses.
+        const billingProjectionStore = createBillingStore(database);
         const paymentService = createPaymentService({
           providers,
           store: paymentOrderStore,
@@ -4211,6 +4272,12 @@ const payments =
             },
             ensureSubscription: async (input) => {
               return billing.service.ensureSubscription(input);
+            },
+            // 10.3: the activation path stamps the order's ownership onto the subscription row
+            // (the only writer that names it); `false` keeps the order pending-activation so
+            // the sweep retries the idempotent sequence.
+            stampSubscriptionOwnership: async (input) => {
+              return billingProjectionStore.stampSubscriptionOwnership(input);
             },
           },
           externalCustomerKey,
@@ -4273,7 +4340,7 @@ const payments =
           // and the webhooks both maintain; "live" matches the entitlement read's own
           // definition (active/incomplete).
           activePlanCodeUncached: async () => {
-            const rows = await createBillingStore(database).readSubscriptions(
+            const rows = await billingProjectionStore.readSubscriptions(
               billing.externalCustomerKey,
             );
             const live = rows.find(
@@ -4728,74 +4795,8 @@ const craftManagedContentFor = createCraftManagedContentResolver({
     });
   },
 });
-/*
- * The craft preview origin (#361, spec craft-preview-origin D5/D7): hosts in the
- * preview namespace — dev: 127.0.0.1 on this server's own port beside a localhost
- * login; production: <hash-label>.<preview base> from the configured template —
- * are claimed by the dispatcher below, ahead of every main-site branch. One
- * preview-ticket table for the whole process: the issuing route and the preview
- * origin's redemption entry share this instance (#360's review constraint).
- * Undefined when craft is off: with no craft surface there is nothing to claim.
- */
-const craftPreviewTickets =
-  craftEffectiveConfig.enabled
-    ? createPreviewTickets({ store: createCraftStore(database) })
-    : undefined;
-/*
- * The deployment's sandbox identity facts, shared by EVERY craft surface that
- * routes to the sandbox (fix-ocr17): the HTTP webapp proxy, the craft routes
- * and the HMR upgrade dispatcher each used to carry their own verbatim copy
- * of these two lambdas — one missed edit would make two surfaces disagree
- * about the upstream, the exact divergence the "same facts" comments on each
- * site promise can never happen. One const each, referenced three times.
- */
-const craftSandboxBotId = async () => craftEffectiveConfig.sandboxBotId;
-const craftSandboxConnection = () =>
-  sandboxUrl && sandboxToken
-    ? { baseUrl: sandboxUrl, token: sandboxToken }
-    : null;
-
-/*
- * The preview origin's serving half (#362): a cookie-authenticated request on
- * a preview host proxies to the session's sandbox dev server — the same facts
- * the main-site webapp proxy resolves (the deployment's sandbox Bot, its
- * gateway connection), so the two surfaces can never route one session to
- * different upstreams. Attached to the origin below as its servePreview seam.
- */
-const craftPreviewProxy =
-  craftEffectiveConfig.enabled
-    ? createPreviewProxy({
-        config: craftEffectiveConfig,
-        store: createCraftStore(database),
-        botIdFor: craftSandboxBotId,
-        sandboxConnectionFor: craftSandboxConnection,
-      })
-    : undefined;
-const craftPreviewOrigin =
-  craftEffectiveConfig.enabled && craftPreviewTickets && craftPreviewProxy
-    ? createPreviewOrigin({
-        config: craftEffectiveConfig,
-        previewTickets: craftPreviewTickets,
-        secret: config.keyEncryptionKey,
-        servePreview: craftPreviewProxy,
-      })
-    : undefined;
-
-/*
- * fix-ocr20 #1: the gate is `enabled && craftPreviewOrigin !== undefined`, not
- * `enabled` alone. The two gates used to be equivalent only by COUPLING —
- * craftPreviewOrigin exists exactly when enabled && tickets && proxy — and the
- * deps below carried `craftPreviewOrigin!` assertions to bridge the gap: any
- * future divergence between the gates (a third conjunct on one side) would
- * have turned those `!` into a runtime TypeError at the first preview call,
- * defeating the optional-deps degradation design the boot file's other craft
- * surfaces follow. The `!== undefined` conjunct narrows the const into the
- * closure, so the assertions are gone and the deps type-check against the
- * real shape; tsc is the pin.
- */
-const craftRoutes: CraftRoutesFactory | undefined =
-  craftEffectiveConfig.enabled && craftPreviewOrigin !== undefined
-    ? ({ requireUser }) =>
+const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
+  ? ({ requireUser }) =>
       createCraftRoutes({
         requireUser,
         deps: {
@@ -4811,9 +4812,12 @@ const craftRoutes: CraftRoutesFactory | undefined =
           // craft_sessions rows hold no Bot relationship; every session routes to the
           // one deployment-chosen Bot workspace (validated to agent-sandbox's id rules
           // inside loadCraftConfig — an unusable configured id already fell back).
-          botIdFor: craftSandboxBotId,
+          botIdFor: async () => craftEffectiveConfig.sandboxBotId,
           llmConfigFor: async () => craftLlmConfig(),
-          sandboxConnectionFor: craftSandboxConnection,
+          sandboxConnectionFor: () =>
+            sandboxUrl && sandboxToken
+              ? { baseUrl: sandboxUrl, token: sandboxToken }
+              : null,
           userNameFor: async (userId) =>
             (await peopleStore.find(userId))?.name ?? null,
           generateName: craftGenerateName,
@@ -4829,38 +4833,6 @@ const craftRoutes: CraftRoutesFactory | undefined =
             pluginStore.mcpWireConnectionFor(userId, serverId),
           kbSearch: craftKbSearch,
           mcpRelayBaseUrl: craftMcpRelayBaseUrl,
-          /*
-           * The process's ONE preview-ticket table and the preview origin's
-           * address derivation (#360/#361): the issuing route mints through these
-           * very instances and the preview origin's entry (the dispatcher branch
-           * below) redeems against the same table — never a second instance.
-           */
-          previewTickets: craftPreviewTickets,
-          previewOriginFor: (sessionId: string) =>
-            craftPreviewOrigin.originFor(sessionId),
-          /*
-           * The admission the #362 surfaces read: webapp-info's closed reason
-           * (m-5) and the issuing route's refusal to mint into a closed origin
-           * — the same gate the preview origin's dispatcher branch enforces.
-           */
-          previewOriginAdmission: () => craftPreviewOrigin.admission(),
-          /*
-           * fix-ocr13: the registry half of the pane's same-origin liveness
-           * probe — the SAME instance whose originFor registers the label, so
-           * "has" and "mint" can never disagree about what is registered.
-           */
-          previewOriginHas: (sessionId: string) =>
-            craftPreviewOrigin.hasSession(sessionId),
-          /*
-           * F-2 (#365): the dev form's /<label> mount, threaded into the
-           * session's start script — the same HMAC label derivation the minted
-           * address rides (one derivation, preview-origin.ts), so the dev
-           * server's basePath always matches the address the pane iframes.
-           * Null for the host form and any closed origin — root path, the
-           * production behavior unchanged.
-           */
-          webappBasePathFor: (sessionId: string) =>
-            craftPreviewOrigin.webappBasePathFor(sessionId),
         },
       })
   : undefined;
@@ -4877,37 +4849,11 @@ const craftWebappHmrDeps =
     ? {
         config: craftEffectiveConfig,
         store: createCraftStore(database),
-        botIdFor: craftSandboxBotId,
-        sandboxConnectionFor: craftSandboxConnection,
-      }
-    : undefined;
-
-/*
- * fix-ocr18 #3: the preview origin's upgrade half rides its OWN deps, gated on
- * `enabled` ONLY — never the main-site conjunction with `webappProxyEnabled`
- * above. That split is DEFENSIVE, not a load-bearing admission distinction:
- * when `enabled && !webappProxyEnabled`, admission() is closed too (the same
- * config field feeds it, preview-origin.ts), so BOTH halves answer the same
- * 503 — the HTTP entry through handlePreviewRequest's gate, an upgrade through
- * resolvePreviewRequest's refusal — and no "HTTP served while HMR silently
- * dead" half-state exists for this gate to prevent. fix-ocr28 #3 corrects the
- * earlier comment, which built this deps structure on that half-dead scenario:
- * it never happens, because admission() — not these deps — is the one verdict
- * that decides whether a preview host serves anything at all. Keeping the
- * preview branch off the main-site conjunction just means its wiring cannot
- * inherit a gate the preview origin's own admission story does not use.
- */
-const craftPreviewWebappHmrDeps =
-  craftEffectiveConfig.enabled && craftPreviewOrigin !== undefined
-    ? {
-        config: craftEffectiveConfig,
-        store: createCraftStore(database),
-        botIdFor: craftSandboxBotId,
-        sandboxConnectionFor: craftSandboxConnection,
-        // #358 repair: THE pass judgment — the origin's own verifyPass method,
-        // so the HMR upgrade applies exactly the acceptance the HTTP gate ran
-        // (one codec, one cookie iteration) and the two surfaces cannot drift.
-        verifyPass: craftPreviewOrigin.verifyPass,
+        botIdFor: async () => craftEffectiveConfig.sandboxBotId,
+        sandboxConnectionFor: () =>
+          sandboxUrl && sandboxToken
+            ? { baseUrl: sandboxUrl, token: sandboxToken }
+            : null,
       }
     : undefined;
 
@@ -5715,6 +5661,23 @@ const app = createApp(
   botServiceStore,
 );
 
+/*
+ * The automatic catalog/price sync (Bifrost 03.4, #226): the cadence Q17
+ * names — one sync every five minutes, `BIFROST_CATALOG_SYNC_INTERVAL_MS` to
+ * change it. Started here, after the app exists, because the scheduler
+ * resolves the installed enterprise controls and catalog service, and both
+ * are in place only once the app is built; started any earlier it would hit
+ * the self-gating absent branch and silently schedule nothing. The same
+ * installed instance serves 03.5's administrator "sync now" route, so the
+ * timer and the manual trigger share one single-flight cell. A deployment
+ * without the gateway wired keeps booting: the scheduler answers undefined
+ * and logs, it never blocks startup. Stopped in the signal handler below,
+ * with the other sweeps.
+ */
+const catalogSyncScheduler = startGatewayCatalogSyncScheduler({
+  environmentRate: config.gateway?.creditConversionRate,
+});
+
 /**
  * The live screen, proxied.
  *
@@ -5774,91 +5737,6 @@ serve<SocketData>({
   port,
   async fetch(request, server) {
     const url = new URL(request.url);
-    // The craft preview origin (#361/#362): claimed hosts NEVER fall through to
-    // the main-site branches below — unknown preview hosts 404 right here, closed
-    // admission answers 503 with its displayable reason, and a resolved session
-    // lands on the preview entry: a `?ticket=` hop redeems and plants the D9
-    // cookie, every further request is gated on that cookie and proxied to the
-    // session's dev server (no platform session is ever in scope on these
-    // hosts — AC1). Bun derives request.url's host from the Host header on this
-    // listener for plain HTTP and websocket upgrades alike (verified against a
-    // live listener).
-    if (craftPreviewOrigin?.handlesRequest(request)) {
-      const resolved = craftPreviewOrigin.resolvePreviewRequest(request);
-      if ("sessionId" in resolved) {
-        // #363: the HMR websocket upgrade on a preview host. An upgrade is not a
-        // request/response, so the HTTP entry below cannot carry it — the session
-        // comes from the Host (never the path: host routing moved identity out of
-        // the URL), and the authorization is the preview pass the redemption hop
-        // planted, the SAME judgment the HTTP entry's cookie gate makes. Every
-        // refusal lands BEFORE `server.upgrade` commits the socket, in the
-        // proxy's own 401/404/503 shapes; the upstream path is the pathname
-        // VERBATIM (the dev form's leading label INCLUDED — the basePath-mounted
-        // dev server serves under it), exactly what the HTTP entry requests —
-        // see appPathFor and webappHmrUpstreamUrl for why forwarding the
-        // app's own path verbatim is load-bearing.
-        // fix-ocr28 #2: the app path is derived ONCE here — the branch gate and
-        // the resolver's path argument used to call appPathFor twice for one
-        // request (two URL parses for one pathname, and a silent seam if either
-        // call ever grew a judgment of its own).
-        const appPath = craftPreviewOrigin.appPathFor(request);
-        if (
-          craftPreviewWebappHmrDeps !== undefined &&
-          request.headers.get("upgrade")?.toLowerCase() === "websocket" &&
-          webappHmrIsAppPath(appPath)
-        ) {
-          // fix-ocr28 #1 (CSWSH): the Origin gate. A WS handshake is not
-          // CORS-gated and the preview pass is SameSite=None, so a malicious
-          // page's `new WebSocket("wss://<preview-host>/…")` would otherwise
-          // ride the pass cookie into the live HMR channel. Origin present →
-          // it must be the session's own preview origin; absent (a
-          // non-browser client) → the pre-existing behavior. originFor is
-          // safe here: "sessionId" in resolved means admission already
-          // answered open (resolvePreviewRequest refuses 503 when closed),
-          // and originFor throws on a closed origin.
-          const origin = request.headers.get("origin");
-          if (
-            !samePreviewOrigin(
-              origin,
-              craftPreviewOrigin.originFor(resolved.sessionId),
-            )
-          ) {
-            return new Response(
-              "Cross-origin WebSocket upgrades are refused.",
-              { status: 403 },
-            );
-          }
-          const decision = await resolvePreviewWebappHmrUpgrade(
-            craftPreviewWebappHmrDeps satisfies PreviewWebappHmrDeps,
-            {
-              sessionId: resolved.sessionId,
-              request,
-              path: appPath,
-              query: url.search,
-            },
-          );
-          if (!decision.ok) {
-            return new Response(decision.error, { status: decision.status });
-          }
-          if (
-            server.upgrade(request, {
-              data: { upstream: decision.upstreamUrl, hmr: true as const },
-            })
-          ) {
-            return undefined as unknown as Response;
-          }
-          return new Response("Expected a WebSocket upgrade.", { status: 400 });
-        }
-        return craftPreviewOrigin.handlePreviewRequest(
-          resolved.sessionId,
-          request,
-        );
-      }
-      return Response.json(
-        { error: resolved.refuse.reason },
-        { status: resolved.refuse.status },
-      );
-    }
     if (url.pathname === "/api/audio/transcriptions") {
       server.timeout(request, DICTATION_HTTP_IDLE_SECONDS);
     }
@@ -6074,6 +5952,7 @@ if (config.singleUser) {
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     responsibilitySweep.stop();
+    catalogSyncScheduler?.stop();
     wakeUpSweep.stop();
     wakeUpReaper.stop();
     openMuseTaskSweep.stop();

@@ -570,6 +570,16 @@ export const auditEventTypes = [
   "credit_service.called",
   "credit_service.refused",
   /*
+   * The Reserve admission's payer conflict (Bifrost #255, 06.4): a reserve request tried to
+   * bill an account its own authorization does not resolve to — another person's account, a
+   * company account on a personal grant, or a self-reported account key (`externalCustomerId`
+   * or any account-identity parameter, at the top level or inside `payer`). One row per
+   * refused attempt: the payload carries the request's claim beside the server's resolution,
+   * and `stage` says whether the server ever proved the grant — the claim is stored as a
+   * claim, the row exists so bypass attempts are countable, not to assert what happened.
+   */
+  "credit_reserve.payer_conflict",
+  /*
    * What a Bot is and what it may reach.
    *
    * The trail recorded every mouse movement a Bot made and could not answer "who pointed this Bot at
@@ -754,6 +764,14 @@ export const auditEventTypes = [
    * entered the books once is a fact worth reading, not noise.
    */
   "billing.credits.personal_granted",
+  /*
+   * A person claimed a reward into their OWN personal account (Bifrost 10.4, AC14): the
+   * claimer, the reward type and the server-derived period beside the account the server
+   * RESOLVED from the session — no client-named target exists anywhere on this path, and the
+   * row is the per-request receipt a replayed claim also gets, marked `inserted: false`, so a
+   * double-tapped check-in button reads as one payout with two presses.
+   */
+  "billing.credits.reward_claimed",
   /**
    * The reconciliation pass was run (T7): an on-demand audit of the books' two invariants
    * (the payment three-way and the credit identity). Audited because it is an operator
@@ -779,6 +797,29 @@ export const auditEventTypes = [
    * stopped (or started) being selectable.
    */
   "gateway.model_scope_changed",
+  /**
+   * An administrator triggered an immediate catalog/price sync (Bifrost 03.5).
+   *
+   * Every executed trigger — the manual action shares 03.4's single sync
+   * implementation, so concurrent triggers may share one run — writes one row
+   * here, carrying who triggered it, when, and the outcome: the synced time
+   * and the appended/skipped snapshot counts on success, or the failing
+   * layer's fixed reason code on failure. The trigger's result is the sync's
+   * own answer, never upstream bytes, so the trail stays displayable.
+   */
+  "gateway.catalog_sync_triggered",
+  /*
+   * A short-lived virtual key was issued for a user × Bot authorization (Bifrost 05.3).
+   *
+   * One row per issuance, because every issuance is a new key the trail must be able to name:
+   * the grant it was claimed against, the Bot whose credential claimed it, the one Customer it
+   * bills and the per-grant credentialVersion — the whole "who got a key, for which
+   * authorization, billing whom" question an incident asks first. The payload carries a
+   * four-hex fingerprint of the key value for identification; the plaintext exists only in the
+   * issuance response and only at the gateway, and neither this row nor any error path can
+   * redeem a key.
+   */
+  "gateway.key_issued",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

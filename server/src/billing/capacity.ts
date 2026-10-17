@@ -27,7 +27,7 @@ export type GrantCapacity = {
   source: CreditGrantSource;
   total: number;
   used: number;
-  /** Sum of every active (reserved, unexpired) hold allocated against this grant. */
+  /** Sum of every capacity-occupying hold allocated against this grant. */
   held: number;
   /** max(total - used - held, 0) — per grant, so a clamp on one grant never hides capacity in another. */
   free: number;
@@ -46,11 +46,15 @@ export type CapacityBreakdown = {
 };
 
 /**
- * Live grants, soonest expiry first, with capacity left after used units and active holds.
+ * Live grants, soonest expiry first, with capacity left after used units and occupying holds.
  *
- * An "active" hold is reserved AND not yet expired (audit F4 in the 2026-10-13 remediation): a
- * hold whose expiry has passed no longer occupies capacity — reconciliation reports the stuck row
- * for an operator. `lock: true` takes `FOR UPDATE` on the grant rows and is only legal inside a
+ * An "occupying" hold is one of two things (audit F4 in the 2026-10-13 remediation, amended by
+ * Bifrost 06.8): a PLAIN `reserved` hold whose expiry has not passed — one whose expiry HAS
+ * passed no longer occupies, and reconciliation reports the row for an operator — or an
+ * `unknown` hold, which occupies NO MATTER HOW FAR THE CLOCK ADVANCES past `expires_at`
+ * (Q12/AC15: a result that never arrived is not release evidence, so the expiry field fences
+ * only new requests and plain holds, never an unknown one; only recovery settles or releases
+ * it). `lock: true` takes `FOR UPDATE` on the grant rows and is only legal inside a
  * transaction that already holds the customer lock.
  */
 export async function liveGrants(
@@ -70,7 +74,8 @@ export async function liveGrants(
         select sum(a.amount)::int
         from credit_reservation_allocations a
         join credit_reservations r on r.id = a.reservation_id
-        where a.grant_id = credit_grants.id and r.status = 'reserved' and r.expires_at > ${at}
+        where a.grant_id = credit_grants.id
+          and (r.status = 'unknown' or (r.status = 'reserved' and r.expires_at > ${at}))
       ), 0)`,
     })
     .from(creditGrants)

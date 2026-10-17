@@ -32,8 +32,27 @@ export const creditReservations = pgTable(
       .references(() => billingCustomers.externalId, { onDelete: "cascade" }),
     idempotencyKey: text("idempotency_key").notNull(),
     maximum: integer("maximum").notNull(),
+    /**
+     * The locked pricing basis (Bifrost 06.5): the model cell the hold was admitted against,
+     * with the exact snapshotVersion and rateVersion it priced. Settlement resolves THIS
+     * combination, never whatever is newest. All five fields are present together or absent
+     * together (the completeness CHECK): a pre-06.5 row or a non-protocol writer carries no
+     * lock, and a half-lock is refused outright — it is not a basis anyone can price from.
+     *
+     * `unknown` is the result-unconfirmed state (Bifrost 06.8, Q12/AC15): a hold whose provider
+     * outcome never reliably arrived keeps occupying capacity FOREVER as far as the clock is
+     * concerned — `expires_at` fences only plain reserved holds and new admissions, never an
+     * unknown one. Entering the state records `unknown_at`/`unknown_reason` (the evidence 08.x's
+     * recovery and an operator's evidenced disposal stand on); only recovery settles it (the
+     * ordinary settle path, same reservation id) or the recovery release moves it.
+     */
+    provider: text("provider"),
+    model: text("model"),
+    capability: text("capability"),
+    snapshotVersion: integer("snapshot_version"),
+    rateVersion: integer("rate_version"),
     status: text("status")
-      .$type<"reserved" | "settled" | "released">()
+      .$type<"reserved" | "unknown" | "settled" | "released">()
       .notNull()
       .default("reserved"),
     /** After this instant recovery may release the hold; it does not release itself. */
@@ -57,16 +76,33 @@ export const creditReservations = pgTable(
       .notNull()
       .defaultNow(),
     terminalAt: timestamp("terminal_at", { withTimezone: true }),
+    /** When the hold entered `unknown` (set once, kept as history afterwards). */
+    unknownAt: timestamp("unknown_at", { withTimezone: true }),
+    /** Why the hold entered `unknown` (the unsettled reason), kept as history. */
+    unknownReason: text("unknown_reason"),
   },
   (table) => [
     check(
       "credit_reservations_status_check",
-      sql`${table.status} IN ('reserved', 'settled', 'released')`,
+      sql`${table.status} IN ('reserved', 'unknown', 'settled', 'released')`,
     ),
     check("credit_reservations_maximum_check", sql`${table.maximum} > 0`),
+    /*
+     * The completeness CHECK, written so PostgreSQL can never answer NULL for it: a CHECK whose
+     * expression evaluates to NULL PASSES, which is how the earlier all-or-nothing phrasing
+     * (all five NULL OR all five valid) let half-locked rows land — a partial row made the valid
+     * branch NULL, and FALSE OR NULL is NULL. Each equality below compares two booleans that are
+     * always TRUE or FALSE, so every partial shape is a hard FALSE; the value checks run only
+     * where every field is present. (Same `(x) = (y IS NOT NULL)` shape as the catalog-sync-state
+     * failure-details CHECK in db/schema/gateway.ts.)
+     */
+    check(
+      "credit_reservations_lock_completeness_check",
+      sql`(${table.provider} IS NULL) = (${table.model} IS NULL) AND (${table.provider} IS NULL) = (${table.capability} IS NULL) AND (${table.provider} IS NULL) = (${table.snapshotVersion} IS NULL) AND (${table.provider} IS NULL) = (${table.rateVersion} IS NULL) AND (${table.provider} IS NULL OR (${table.provider} <> '' AND ${table.model} <> '' AND ${table.capability} IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'realtime', 'video', 'unknown') AND ${table.snapshotVersion} >= 1 AND ${table.rateVersion} >= 0))`,
+    ),
     check(
       "credit_reservations_terminal_check",
-      sql`(${table.status} = 'reserved' AND ${table.terminalAt} IS NULL) OR (${table.status} <> 'reserved' AND ${table.terminalAt} IS NOT NULL)`,
+      sql`(${table.status} IN ('reserved', 'unknown') AND ${table.terminalAt} IS NULL) OR (${table.status} IN ('settled', 'released') AND ${table.terminalAt} IS NOT NULL)`,
     ),
     check(
       "credit_reservations_settled_check",
