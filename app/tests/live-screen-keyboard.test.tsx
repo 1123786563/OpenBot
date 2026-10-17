@@ -50,7 +50,17 @@ afterAll(() => {
 
 async function liveSocket(): Promise<SocketDouble> {
   render(<LiveScreen computerId="keyboard-test" driving />);
-  await waitFor(() => expect(SocketDouble.latest).toBeDefined());
+  /*
+   * Socket construction is not readiness: the keyboard listeners attach in an effect gated on
+   * `connected`, which flips one render after `onopen`. Waiting only for the double to exist raced
+   * that effect and flaked the shortcut tests roughly every other run. `data-connected` rides the
+   * same commit that enables the effect, and the act() flush that makes it visible runs the effect
+   * first -- so once the attribute is observable the listeners are attached.
+   */
+  await waitFor(() => {
+    expect(SocketDouble.latest).toBeDefined();
+    expect(document.querySelector("[data-connected='true']")).not.toBeNull();
+  });
   return SocketDouble.latest as SocketDouble;
 }
 
