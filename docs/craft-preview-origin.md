@@ -165,6 +165,13 @@ origin 上由 #363 落地。主站同源代理的 HMR 不受影响。
 origin 自身——应用对自己的 fetch 与 Server Actions 同源可达；`ws:`/`wss:` 保留给
 dev server 的 HMR 通道。主站 origin 不在（也不需要在）任何指令里。
 
+`form-action 'self'` 与 `frame-src 'self'`（codex 重审 F-1）把 `connect-src` 覆盖
+不到的两条 reach-back 通道一并钉住：预览 host 与主站同 eTLD+1，SameSite 按 site
+判定，未约束的表单 POST 会携带主站会话 cookie（`connect-src` 不约束表单提交）；
+嵌套主站 iframe 属同类通道（带 cookie 的活文档 + UI 遮挡面）。顶层自导航
+（`location.href` 指向主站写 GET）无已发布的 CSP 指令可约束（`navigate-to` 已从
+CSP3 移除），由「主站不在 GET 上变更状态」兜底。
+
 ## 存量会话（D10 不迁移，#367）
 
 策略已定案（spec D10）：存量 `outputs/web` 继续走旧路径直到自然结束，新会话走新形态。
