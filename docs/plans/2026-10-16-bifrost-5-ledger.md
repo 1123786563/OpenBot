@@ -344,3 +344,81 @@
 - 集成：2 测试文件 + plan 直复制（无生产代码改动）。int32 @5594：3 文件 **39/39** + tsc 0 + 跑后 0 残留。**累计集成 42 张**（迁移链 140）。
 - **#255（06.4 篡改 payer 与自报账户的冲突语义）派发**（253/254 均已集成，串行策略解除）。
 - 运行中：review-227、#292、#232、#255。
+
+## T92 — #255 验证完成；review-255 派发（2026-10-17）
+
+- #255（06.4 payer 冲突语义）：worker 完成（payer_conflict 封闭码、严格 {kind,id}、7 禁带账户键参数拒绝、审计行；修复"伪造账户得 201"缺陷）。checkpoint 260 files；coordinator 复验 @5594：5 文件 **76/76** + tsc 0。
+- review-255 派发。运行中：review-227、#292、#232、review-255。
+
+## T93（2026-10-17）
+- #255（06.4 篡改 payer 冲突语义）闭环完成：review-255 双 PASS（Spec 4/4 + 质量 A-，报告 .omc/research/bifrost5/reviews/b5-255.md）。
+- 集成：credit-reserve.ts / reserve-revalidation.integration.test.ts / reserve-payer-tampering.test.ts 直复制（哈希核验一致）；audit.ts 多行锚插入 credit_reserve.payer_conflict 词表（credit_service.refused 三词条后）；index.ts diff 确认无 #255 增量（纯基线时差，未动）。
+- 集成库回归 @5594 全新库 openbot_b5_255i（140 迁移 + roles）：tampering+revalidation 35/35、tsc 0、audit.test 7/8（唯一红=workshop.* 存量词条，reviewer 已定性基线既有）。
+- 环境事实更新：主仓库旧集成层已被用户提交（a18e2711/65e8d57c/563fe88d merge），当前未提交层仅 #255 增量 7 文件；worktree 基线=HEAD+sync_delta 增量，完整无损。
+- #256（06.5 上限取整与版本锁定）解锁并派发：worktree b5-256、task_6c752957caf9、worker ctx_a929021e5263。简报含纯函数边界、足额取整方向、版本锁定禁漂移、TEST_DATABASE_URL 与 ./ 前缀纪律。
+- 运行中：review-227（ctx_82c27b1b0c44 第二任）、#292（ctx_77b754eaf767 第五任 10.3）、#232（ctx_cdf1b0234e75 03.10）、#256（ctx_a929021e5263）。
+
+## T94（2026-10-17）
+- 502 风暴×8：review-227（第二任）与 #232（第五任）双双 "Retry failed after 3 attempts" 死锁。按探针纪律恢复：review-227 探针重启（第三任 ctx_7d9dc308c461，4 分钟 live 确认上游恢复）→ #232 批量重启（第六任 ctx_d4b84dd32455 + 接续简报：218 未提交文件盘点续作、全新库名 openbot_b5_232r2_、./ 前缀）。零工作丢失。
+- #256（06.5 上限取整与版本锁定）实施完成：reserve-bound.ts computeReservationCeiling（12 维 BigInt 精确有理数、唯一取整步=足额向上、无效量/未知维/非法比例/超 32-bit 拒绝码）；0140_reservation_locked_basis 迁移（locked basis cell+snapshotVersion+rateVersion，all-or-nothing CHECK）；resolveLockedReservationBasis 只读不可变版本化存储 + 源码扫描测试结构性禁读最新价；中途改价改比例仍按 v1 结算集成测试实证。
+- 闭环前半：release → checkpoint 256（15 文件/42KB）→ coordinator 复验 @5594 全新库 openbot_b5_256c（141 迁移）：24/24 新测试 + 35/35 回归（255 tampering+revalidation）+ tsc 0 → review-256 派发（task_849491b63218，ctx_3c3e2052ce13，重点：12 维完整性找漏维、CHECK 一致性、源码扫描测试约束力与绕过路径、legacy callers 实证、RED 日志真实性）。
+- 运行中：review-227（ctx_7d9dc308c461）、#292（ctx_77b754eaf767）、#232（ctx_d4b84dd32455）、review-256（ctx_3c3e2052ce13）。
+
+## T95（2026-10-17）
+- #227（03.5 管理员立即同步）集成完成（第 43 张）：review-227 第三任双 PASS（Spec 4/4 + 质量 A，1 LOW+4 INFO 无阻塞；报告 reviews/b5-227.md）。
+- 集成明细：直复制 catalog-sync.ts（F1 注释修正，last_failure_reason_code 无 CHECK 实证正确）/admin-routes.ts/mutations.ts/3 新增文件；audit.ts 词表 gateway.catalog_sync_triggered（model_scope_changed 后多行锚）；index.ts 三处接线（import/createApp 后 scheduler 块含防回归注释/signal handler stop，三锚 count==1 断言）；locales en+zh-CN admin.json 深合并（modelCatalog.sync.* 各 7 键，0 冲突）；routeTree difflib 合并；model-catalog.tsx 直复制（worktree 版含主仓库全部语义）。
+- 事故与修复：首轮回归 UI 0/4——model-catalog.tsx 漏合并（diff 统计时遗漏该文件），复制后 4/4；bun test 多过滤器单文件坑再现（model-scope.test.ts 实为 .integration 版），修正后 3 文件 44/44。
+- Orca 重启中断：routeTree 写入完好，app tsc 137 被 kill 后复跑 0；3 运行中 dispatch（#292/#232/review-256）全部存活无损。
+- 集成库回归 @5594 openbot_b5_227i（140 迁移+roles）：catalog manual+auto 26/26、audit 7/8（workshop.* 存量红）、scope/preference/capability integration 44/44、UI 4/4、server+app tsc 双 0。
+- #256 闭环前半已记 T94；运行中：#292（ctx_77b754eaf767）、#232（ctx_d4b84dd32455）、review-256（ctx_3c3e2052ce13）。
+- #228（03.6 目录新鲜度门禁）解锁并派发：worktree b5-228（sync_delta 17 文件）、task_03401b615293、ctx_47adfb156ed6。简报含 review-253 F3 + review-230 F1 双接入移交项（credit-reserve 准入集成点+catalogFreshnessWindowMs 装配+isCatalogFresh seam）、#256 未集成警告（勿依赖 0140）。
+
+## T96（2026-10-17）
+- review-256 结果：Spec PASS 4/4（核心换算与锁定语义无需返工）但质量 FAIL——F1 HIGH（0140 缺 meta snapshot，migration-journal.test 2 红未披露）+ F2 MEDIUM（all-or-nothing CHECK 被 SQL NULL 三值逻辑击穿，半锁行落库实证）+ F3-F6 低。→ fix-256 派发（task_71b5e5b5d2d3，ctx_d2ef9693db5b，同 worktree 续作：补 snapshot、CHECK 改 NULL 安全、DB 级拒绝测试）。
+- #292（10.3 订阅归属与续期到账）第五任完成：激活时服务端标记所有权（0134 迁移列，callbacks/clients/projection 不可重写）、plan-renewal:<subId>:<periodStart> 周期幂等键、plan_grant_owner_mismatch 对账发现；附带修复继承测试 ORDER BY 不稳定 + 清理前任 5432 测试残留 480 万行（环境操作，无生产触碰）。
+- 292 闭环前半：release → checkpoint 292（217 文件/269KB，HEAD=bab7c0b9 本地 docs commit，未提交 diff 为交付面）→ coordinator 复验 @5594 全新库 openbot_b5_292c（135 迁移+roles）：4 域测试 28/28 + billing-reconcile 28/28（232s）+ tsc 0 → review-292 派发（task_2b08609e12d3，ctx_44b7c69ebd5d）。
+- 集成预警：#292 worktree 本地迁移号 0130-0134 与集成层冲突，集成时重编号至 0141+，0132_gateway_customers 需与主仓库既有 gateway_customers 演进对齐核对。
+- 运行中：#232（ctx_d4b84dd32455）、#228（ctx_47adfb156ed6）、fix-256（ctx_d2ef9693db5b）、review-292（ctx_44b7c69ebd5d）。
+- #232（03.10 模型选择器与不可用错误）第六任完成：继承前任 server 侧（display contract GET+PUT 偏好写 18 契约+F3 no-fallthrough 25 回归，验证绿不重做）+ 本任 TDD 建 app 侧（queries 封装/model-picker 组件/i18n en+zh-CN/8 条 UI 测试：三层徽章、closed 5 码、无静默替换、unknown price 不渲染 free）。
+- 232 闭环前半：release → task completed → checkpoint 232（250 文件/257KB）→ coordinator 复验 @5594 全新库 openbot_b5_232c：UI 8/8 + server model-selection/preference 43/43 + 双 tsc 0 → review-232 派发（task_454429a9810e，ctx_7d6c6623600c）。
+- 运行中：#228（ctx_47adfb156ed6）、fix-256（ctx_d2ef9693db5b）、review-292（ctx_44b7c69ebd5d）、review-232（ctx_7d6c6623600c）。
+
+## T98（2026-10-17）
+- #232（03.10 模型选择器与不可用报错）集成完成（第 44 张）：review-232 双 PASS（Spec 4/4 + 质量 A-，1 Low+4 Info 无阻塞；突变复证 M1-M4 精确捕获无静默替换/未知≠免费不变量；报告 reviews/b5-232.md）。
+- 集成明细：直复制 9 文件（model-picker.tsx/queries.ts/UI 测试/plan/model-selection-routes.ts+测试（前任交付）/model-access.tsx/model-preference F3 测试/票面）；app.ts 双锚合并（import + /api/model-selection 挂载块）；locales settings+errors en/zh 深合并（modelPicker.*/modelSelection.*）；catalog-sync/mutations/admin-routes/model-catalog/audit/index 确认基线时差跳过。
+- 集成库回归 @5594 全新库 openbot_b5_232i（140 迁移+roles）：selection+preference 43/43、UI 8/8、scope/capability 回归 20/20、server+app tsc 双 0。
+- 事故：queries.ts cp 失败（目录不存在）→ mkdir 补齐哈希一致；app/ 下误跑 server 测试（bun 过滤器坑变体）→ server/ 重跑全绿。
+- review-232 终端 buffer 截断于中途但报告已落盘+dispatch succeeded（以 worker-show 为准推进）。
+- 运行中：#228（ctx_47adfb156ed6）、fix-256（ctx_d2ef9693db5b）、review-292（ctx_44b7c69ebd5d）。
+- #233（03.11 Bot 侧模型发现 API）解锁并派发：worktree b5-233（HEAD 9c7868e2——用户又推进了主仓库 HEAD，sync_delta 31 文件补齐）、task_503e4b72c76e、ctx_8f4108280488。简报含字段一致性强约束（白名单式构造）、复用 03.8/03.7 判定不复制。
+- #233（03.11 Bot 侧模型发现 API）实施完成：/api/model-discovery（Bearer obot_bsvc_），401 同形防枚举、503 语义链、能力匹配+开放+价格可判三重过滤、逐层键白名单、no-store；判定全复用 03.8/03.10/04.2 seam 无复制。8/8+57/57+22/22+双 tsc 0+lint 0。
+- 环境注意：worker_done 未入本 run 队列（Orca 重启余波），以 worker-show succeeded+票面 Checkpoint 填写+产出实证推进。
+- 233 闭环前半：release → task completed → checkpoint 233（34 文件/85KB）→ coordinator 复验 @5594 全新库 openbot_b5_233c：discovery+selection 26/26 + tsc 0 → review-233 派发（task_c658e3b2421a，ctx_c003a914c34c）。
+- 运行中：#228（ctx_47adfb156ed6）、fix-256（ctx_d2ef9693db5b）、review-292（ctx_44b7c69ebd5d）、review-233（ctx_c003a914c34c）。
+
+## T99（2026-10-17）
+- review-233 双 PASS（Spec 4/4 + 质量 A-；突变 M1-M3 精确捕获泄露面/收窄语义/认证门，M4 存活=Low finding 防御分支未钉；2 Low+3 Info 无阻塞）。
+- #233（03.11 Bot 侧模型发现 API）集成完成（第 45 张）：直复制 model-discovery-routes.ts+测试；app.ts 双锚追加（import + /api/model-discovery 挂载块）；集成库回归 @5594 openbot_b5_233i：discovery+selection 26/26 + tsc 0。
+- 运行中：#228（ctx_47adfb156ed6）、fix-256（ctx_d2ef9693db5b）、review-292（ctx_44b7c69ebd5d）。
+- 下一波三张派发（#233 集成解锁）：#244（05.3 每授权独立 Key，task_0aaae5b003b0/ctx_c0adf6f36336）、#258（06.7 Status 查询与同 ID 恢复，task_7817d1ef4da2/ctx_2c9018dcc7c4，注明 #256 未集成勿依赖 0140）、#264（07.1 准入扩展挂载，task_9b75614e0c45/ctx_ae410b6296e5，bifrost 主战场硬拒绝语义）。#293（10.4）就绪但与 #292 同域暂缓至 review-292 落定。
+- 运行中 6：#228、fix-256、review-292、#244、#258、#264。
+- #258（06.7 Status 查询与同 ID 恢复）完成并闭环前半：reservation-status.ts（纯函数 attemptId 映射无迁移、grant 定界越权保护一律 unknown、只读双 SELECT）、credit-reserve.ts 4 处定点（删 generateAttemptId、statusService 槽位、POST /status 挂载）；14/14+78/78+tsc 0+lint 0+九表 0 残留。release→checkpoint 258（36 文件/86KB）→复验 @5594 openbot_b5_258c：status+revalidation+tampering 49/49+tsc 0→review-258 派发（task_642bdd2e2f6a，ctx_ebdee99fd7ed）。
+- 注意：Checkpoint 有时填 '- **Checkpoint**：' 列表项而非 '### Checkpoint' 标题——核查产出时两种格式都要查。
+- 运行中 7：#228、fix-256、review-292、#244、#264、review-258。
+
+## T100（2026-10-17）
+- review-258 双 PASS（Spec 4/4 + 质量 A-，高0/中0/低3；报告 reviews/b5-258.md）。
+- #258（06.7 Status 查询与同 ID 恢复）集成完成（第 46 张）：credit-reserve.ts 4 处定点直复制（diff 逐一核对恰为本票增量）+ reservation-status.ts + 集成测试；集成库回归 @5594 openbot_b5_258i：status+revalidation+tampering 49/49 + tsc 0。
+- 运行中：#228（ctx_47adfb156ed6）、fix-256（ctx_d2ef9693db5b）、review-292（ctx_44b7c69ebd5d）、#244（ctx_c0adf6f36336）、#264（ctx_ae410b6296e5）。
+- #259（06.8 unknown hold 不超时回收）解锁并派发：worktree b5-259（HEAD 44754feb 用户又推进+sync_delta 5 文件）、task_16f16f05ba5c、ctx_79c7e15201f8。
+- 运行中 6：#228、fix-256、review-292、#244、#264、#259。
+- 429 速率限制事件（第 9 次上游故障，与 502 同构）：#228 与 fix-256 消息投递被拒。#228 数分钟自愈继续工作；fix-256 停滞 9+ 分钟 → 按失联纪律 abandon+重启（第七任 ctx_a096c6034ec8+接续简报：F2 CHECK 已落地确认、F1 snapshot 未建、DB 级实证测试待补）。
+- 运行中 6：#228（ctx_47adfb156ed6）、fix-256（ctx_a096c6034ec8）、review-292（ctx_44b7c69ebd5d）、#244（ctx_c0adf6f36336）、#264（ctx_ae410b6296e5）、#259（ctx_79c7e15201f8）。
+- #264（07.1 准入扩展挂载）实施完成：bifrost 子模块 governance 域 creditadmission（开关/版本声明/付费三态判定）、Evaluate 门装配（身份后 grant 前、keyless 同门）、credit_admission_not_enabled 503 决策、12 测试+竞态+vet 干净；server tsc 0。两项裁决请求：Q1 块缺失=硬拒绝（coordinator 裁决维持票面字面）；Q2 transports 层 version 透传 15 行越界（移交 review-264 裁定）。集成期警告：版本 bump 后 transports DK-12 测试需一行装配。
+- 264 闭环前半：release → checkpoint 264 → coordinator 复验（go test -C plugins/governance -count=1 全量 20s ok + Admission ok + vet 0；坑：bifrost 多模块根无 go.mod 必须用 -C plugins/governance）→ review-264 派发（task_58885d118a2b，ctx_d6f765f8021c）。
+- 运行中 6：#228、fix-256（ctx_a096c6034ec8）、review-292、#244、#259、review-264。
+
+## T101（2026-10-17）
+- review-264 双 PASS（Spec 4/4 + 质量 A-）：门真实性=core 装配证据链（五处 RunLLMPreHooks+tryRequest 每尝试+short-circuit 先于 provider）；裁决 Q1 维持硬拒绝（票面+父 Spec fail-closed 规范性）、Q2 移交独立票（transports /api/plugins version 透传，07.12 阻塞项，07.2 不受阻）；L1 骑 07.2 一行（负费率→pricingUnknown）；I1 部署档案不挂 semanticcache/routing。
+- #264（07.1 准入扩展挂载）集成完成（第 47 张）：bifrost 子模块 governance 5 文件直复制（creditadmission.go/测试/main.go/resolver.go/providerscopedlimits_test.go 适配）；集成复验 go test -count=1 全量 18s ok + vet 0。
+- 待立票：transports version 透传（Q2 裁决）；待 07.2：L1 一行加固。
