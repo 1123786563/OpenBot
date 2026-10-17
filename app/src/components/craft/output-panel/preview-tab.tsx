@@ -3,11 +3,14 @@ import {
   IconArrowsMinimize,
   IconExternalLink,
 } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { craftWebappQueryOptions } from "@/lib/craft/queries";
+import {
+  craftPreviewTicketMutationOptions,
+  craftWebappQueryOptions,
+} from "@/lib/craft/queries";
 import type { CraftWebappInfo } from "@/lib/craft/types";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +49,17 @@ import { cn } from "@/lib/utils";
 const NOT_READY_POLL_MS = 5000;
 
 /**
+ * The one-hop preview entry (#362, D4): the absolute preview address plus the
+ * single-use ticket, exactly once. The preview origin answers this hop with a
+ * 302 to the same address WITHOUT the query — from there the frame rides the
+ * preview domain's own cookie, and the ticket is dead (single use) and gone
+ * from every URL that follows.
+ */
+export function previewEntryUrl(origin: string, ticket: string): string {
+  return `${origin}${origin.includes("?") ? "&" : "?"}ticket=${encodeURIComponent(ticket)}`;
+}
+
+/**
  * The pane's poll decision, as a fact of its own: an app that exists but is NOT serving is a
  * transient the agent can end at any moment, so it is watched; every other state — no app yet,
  * serving, no sandbox — settles and waits to be invalidated (a turn's end does that, see
@@ -67,6 +81,69 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
     ...craftWebappQueryOptions(sessionId),
     refetchInterval: (query) => previewPollInterval(query.state.data),
   });
+
+  /*
+   * The ticket exchange (#362): the preview lives on its OWN origin now, where
+   * the platform's session cookie never arrives (that is the isolation, F2/D1),
+   * so the pane buys a single-use pass on the main site and enters the preview
+   * with it exactly once. The effect re-runs when a fresh webapp-info answer
+   * lands (dataUpdatedAt) — that is the retry path for a failed exchange — but
+   * never re-exchanges while an entry is live: a replaced `src` would reload
+   * the frame and throw away whatever the person was mid-way through testing.
+   */
+  const { mutateAsync: exchangePass } = useMutation(
+    craftPreviewTicketMutationOptions(sessionId),
+  );
+  const [entry, setEntry] = useState<{ src: string; plain: string } | null>(
+    null,
+  );
+  const hasWebapp = info.data?.has_webapp === true;
+  const serving = hasWebapp && info.data?.ready === true;
+  const webappUrl = serving ? info.data?.webapp_url : null;
+  const closedReason = info.data?.previewOriginClosedReason ?? null;
+  // #367 (D10): a legacy session's app predates the preview origin — its
+  // `webapp_url` is the OLD same-origin path, which the platform's own cookies
+  // authenticate. No pass exists for it, and none may be exchanged: the address
+  // is already the app's mount, and pointing the frame anywhere else (or
+  // buying a pass for an origin the app is not mounted on) would be the
+  // silent-404 middle state #367 exists to prevent.
+  const legacy = info.data?.webappGeneration === "legacy";
+
+  useEffect(() => {
+    if (!serving || !webappUrl) {
+      setEntry(null);
+      return;
+    }
+    if (entry !== null) return;
+    if (legacy) {
+      // The old path needs no entry hop: same-origin, cookie-authenticated,
+      // exactly what this pane served before the preview origin existed.
+      setEntry({ src: webappUrl, plain: webappUrl });
+      return;
+    }
+    let cancelled = false;
+    void exchangePass()
+      .then(({ ticket, origin }) => {
+        if (!cancelled) {
+          setEntry({ src: previewEntryUrl(origin, ticket), plain: origin });
+        }
+      })
+      .catch(() => {
+        // Stay entryless: the pass state below explains and offers the retry
+        // (its refetch bumps dataUpdatedAt, which re-runs this effect).
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    serving,
+    webappUrl,
+    entry,
+    legacy,
+    sessionId,
+    info.dataUpdatedAt,
+    exchangePass,
+  ]);
 
   /*
    * Escape is a convenience, not the contract — and the limit is worth stating because it
@@ -99,11 +176,9 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
     );
   }
 
-  const hasWebapp = info.data?.has_webapp === true;
-  const serving = hasWebapp && info.data?.ready === true;
-  const webappUrl = serving ? info.data?.webapp_url : null;
-
-  if (webappUrl) {
+  // The serving pane is entry-gated: an app that is up still needs its one-time
+  // pass before a frame may point at the preview origin.
+  if (entry) {
     return (
       <div
         // The modal contract, on the wrapper rather than on a portal: the frame
@@ -124,36 +199,32 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
       >
         <iframe
           title={t("preview.title")}
-          src={webappUrl}
+          src={entry.src}
           className="h-full w-full border-0"
-          // `allow-same-origin` is STILL HERE, and that is a known open risk, not an
-          // oversight. The preview is served from the main app's own origin
-          // (`/api/craft/sessions/<id>/webapp`, relative paths, dev proxied through
-          // vite), and auth is a COOKIE (`lib/client.ts` sends `credentials: "include"`).
-          // So LLM-authored code in this frame can `fetch("/api/bots", {credentials:
-          // "include"})` and the browser attaches the user's session — read anything the
-          // user can read, act as the user. Dropping the token is not enough to fix it.
-          //
-          // It cannot simply be removed: without it the frame gets an OPAQUE origin, its
-          // own fetches to the app's API routes and Server Actions become cross-origin
-          // and are blocked for want of CORS headers the app never sends, and
-          // localStorage/indexedDB throw — which would undo the all-methods proxy this
-          // pane depends on. The real fix is to serve the preview from a DISTINCT origin
-          // (then `allow-same-origin` means the preview's own origin: full interactivity,
-          // and the main app's cookies are never in scope). That needs a preview origin
-          // plus a scoped, short-lived ticket in place of the cookie — escalated, not
-          // smuggled in here.
+          // `allow-same-origin` is HERE ON PURPOSE, and since #362 it is safe
+          // where it used to be the leak: the frame is served from the PREVIEW
+          // ORIGIN (`webapp_url` is absolute, D11), a different HOST from the
+          // platform — the browser sends no platform cookie there (F2: cookies
+          // isolate by host, not port), and `localStorage` is the preview's own
+          // empty store (D2). `allow-same-origin` therefore names the preview's
+          // OWN origin, which is exactly what the app needs to be a running app
+          // rather than a screenshot: same-origin fetches to its API routes,
+          // Server Actions, storage. Removing it would opaque the origin and
+          // break all of that (F3) — the isolation comes from the host split,
+          // not from this attribute.
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
         />
         {/*
          * The corner cluster: expand/collapse as one button (its node identity is what keeps
          * focus and the un-remounted iframe honest), plus the same URL in a real tab for when
-         * testing wants devtools, a true viewport, or its own storage.
+         * testing wants devtools, a true viewport, or its own storage. The plain address is
+         * enough there: the entry hop already planted the preview domain's cookie, and a
+         * top-level navigation carries it (SameSite=Lax permits exactly this GET).
          */}
         <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-lg border border-border bg-background/85 p-0.5 shadow-card supports-backdrop-filter:bg-background/60 supports-backdrop-filter:backdrop-blur-sm">
           <a
             aria-label={t("preview.openInNewTab")}
-            href={webappUrl}
+            href={entry.plain}
             target="_blank"
             rel="noopener noreferrer"
             className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -175,6 +246,70 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
             )}
           </button>
         </div>
+        {/*
+         * The D10 hint (#367): a legacy preview looks different from the new
+         * shape (same-origin path, no pass), and the sentence says so in the
+         * same words the docs do — one line, muted, out of the app's way.
+         */}
+        {legacy ? (
+          <div className="absolute inset-x-0 bottom-0 z-10 flex justify-center p-2">
+            <p className="max-w-[48ch] rounded-lg border border-border bg-background/85 px-3 py-1 text-center text-xs text-muted-foreground shadow-card supports-backdrop-filter:bg-background/60 supports-backdrop-filter:backdrop-blur-sm">
+              {t("preview.legacyNotice")}
+            </p>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  // The origin gate is closed (m-5): a scaffolded app exists, but this
+  // deployment answers no preview address — the server's displayable reason is
+  // the whole point of the field. Checked BEFORE the pass state: an exchange
+  // can never succeed against a closed origin, so the pane must not sit in the
+  // pass state waiting for one.
+  if (closedReason && hasWebapp) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-5 px-8 text-center">
+        <div className="w-full max-w-[300px] overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <div className="flex min-h-[104px] items-center justify-center rounded-lg border border-dashed border-input px-4 py-8">
+            <p className="text-xs text-muted-foreground">
+              {t("preview.closedTitle")}
+            </p>
+          </div>
+        </div>
+        <p className="mx-auto max-w-[36ch] text-sm leading-relaxed text-muted-foreground">
+          {closedReason}
+        </p>
+      </div>
+    );
+  }
+
+  // The serving-but-entryless state: the exchange is in flight or failed — the
+  // pass state explains it, and its refetch (a fresh dataUpdatedAt) re-runs the
+  // exchange. A serving app must never fall into the "isn't running" state:
+  // the server IS running; only the one-time pass is missing.
+  if (serving) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-5 px-8 text-center">
+        <div className="w-full max-w-[300px] overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <div className="flex min-h-[104px] items-center justify-center rounded-lg border border-dashed border-input px-4 py-8">
+            <p className="text-xs text-muted-foreground">
+              {t("preview.passTitle")}
+            </p>
+          </div>
+        </div>
+        <p className="mx-auto max-w-[36ch] text-sm leading-relaxed text-muted-foreground">
+          {t("preview.passHint")}
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void info.refetch()}
+          disabled={info.isFetching}
+        >
+          {t("preview.downRetry")}
+        </Button>
       </div>
     );
   }

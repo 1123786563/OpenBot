@@ -2,6 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import {
   fetchSandboxStatus,
   getSession,
+  issuePreviewTicket,
   listArtifacts,
   listFiles,
   listMessages,
@@ -62,6 +63,18 @@ export const craftWebappQueryOptions = (id: string) =>
     queryKey: craftKeys.webapp(id),
     queryFn: ({ signal }) => webappInfo(id, signal),
   });
+
+/**
+ * The preview-entry hop (#362): exchange for a pass, then navigate `origin` +
+ * `?ticket=` ONCE. A mutation (not a query) on purpose — a ticket is single-use,
+ * so it must never be cached, retried on focus, or refetched on remount by a
+ * query observer; the pane calls it exactly when it is about to point the
+ * iframe at the preview origin.
+ */
+export const craftPreviewTicketMutationOptions = (id: string) => ({
+  mutationKey: [...craftKeys.webapp(id), "preview-ticket"] as const,
+  mutationFn: () => issuePreviewTicket(id),
+});
 
 /**
  * The status chip's poll. The cadence is a function of the answer (onyx's reconciler): a
