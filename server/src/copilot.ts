@@ -89,6 +89,7 @@ import type { GrantedTool } from "./plugins/tools";
 import { grantedToolGuidance, parametersFor } from "./plugins/tools";
 import { UNTRUSTED_GUIDANCE } from "./untrusted-content";
 import { currentUsageOrigin, type UsageOrigin } from "./usage-origin";
+import { CreditInsufficientError } from "./billing/payer-binding";
 
 export { currentRunnerRequest, withRunnerRequestContext };
 
@@ -720,6 +721,7 @@ function meteredModel<T>(model: T): T {
         } catch (error) {
           if (
             error instanceof CreditGateError ||
+            error instanceof CreditInsufficientError ||
             error instanceof CreditPolicyUnconfiguredError ||
             error instanceof ModelNotPricedError ||
             error instanceof CreditGateFailureError
