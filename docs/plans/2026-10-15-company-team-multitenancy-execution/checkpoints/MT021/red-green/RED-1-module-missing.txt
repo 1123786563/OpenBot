@@ -1,0 +1,14 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/conversations-list.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '../../src/enterprise/tenancy/conversations-list' from '/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts'
+-------------------------------
+
+
+ 0 pass
+ 1 fail
+ 1 error
+Ran 1 test across 1 file. [184.00ms]

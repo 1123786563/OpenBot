@@ -17,6 +17,7 @@ import type {
 import { createConversationStore } from "../conversations/store";
 import type { DataDatabase } from "../tenancy/connections";
 import { assertDataDatabase } from "../tenancy/connections";
+import type { RevocationGuard } from "../tenancy/revocation";
 import { assertTrustedScope } from "../tenancy/store";
 
 export type RunnerEventProposal = EventProposal;
@@ -287,6 +288,13 @@ export function createDrizzleRunnerEventRepository(
 export function createRunnerEventService(deps: {
   readonly repository: RunnerEventRepository;
   readonly pollMilliseconds?: number;
+  /**
+   * MT007（Issue #50）：事件流面的撤权检查点。提供时，replay（以及基于
+   * 它的 subscribe 每次轮询）在读任何事件行之前先经单一判定入口重验
+   * 两级成员资格——团队成员停用/移除后，已签发 Scope 的回放与长订阅
+   * 在下一次敏感动作处立即失效（Spec §5.2 长任务重验）。
+   */
+  readonly revocation?: RevocationGuard;
 }) {
   const pollMilliseconds = deps.pollMilliseconds ?? 200;
   if (
@@ -371,6 +379,10 @@ export function createRunnerEventService(deps: {
         limit > 500
       ) {
         throw new Error("RUNNER_EVENT_CURSOR_INVALID");
+      }
+      // MT007：事件订阅检查点——数据访问之前先判撤权（级联生效）。
+      if (deps.revocation) {
+        await deps.revocation.assert(scope, "events.subscribe");
       }
       const rows = await deps.repository.transaction(scope, (tx) =>
         tx.replay(scope, threadId, afterSeq, limit + 1),
