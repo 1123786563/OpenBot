@@ -1,0 +1,61 @@
+# Issue #5 AC01–AC19 Ticket mapping
+
+Source: approved local Spec plus all 151 GitHub Ticket bodies. This map describes declared coverage; implementation evidence stays pending until the corresponding checkpoint is validated and integrated.
+
+- **AC01** — Two users have isolated personal balances; concurrent provisioning creates one effective personal Customer mapping.
+  - Ticket declarations: #215, #218, #220, #221, #242, #243, #356
+  - Verified implementation evidence: pending.
+- **AC02** — Two Bots have distinct Keys sharing one user's credits; issuing or rotating a Key cannot multiply allowance.
+  - Ticket declarations: #244, #245, #356
+  - Verified implementation evidence: pending.
+- **AC03** — Binding requires authenticated confirmation; forged user IDs, emails, replayed binding codes and Bot authentication alone cannot claim another user's credentials.
+  - Ticket declarations: #235, #236, #237, #238, #239, #356
+  - Verified implementation evidence: pending.
+- **AC04** — With balance 10, two concurrent requests each requiring a maximum of 8 result in only one reservation and one provider dispatch.
+  - Ticket declarations: #254, #268, #275, #356
+  - Verified implementation evidence: pending.
+- **AC05** — Credit-service timeout/unavailability, missing admission enforcement and invalid grants never dispatch provider work; alternate endpoints and attempts cannot bypass admission.
+  - Ticket declarations: #211, #212, #213, #252, #253, #255, #264, #265, #266, #275, #297, #299, #301, #302, #305, #306, #308, #309, #311, #313, #316, #317, #322, #324, #326, #333, #337, #342, #344, #353, #354, #355, #356
+  - Verified implementation evidence: pending.
+- **AC06** — Missing prices, unreliable usage or unenforceable bounds reject execution with a visible reason; explicit free pricing is separate from unknown pricing.
+  - Ticket declarations: #223, #224, #225, #230, #253, #269, #270, #275, #296, #297, #298, #299, #300, #301, #302, #304, #306, #309, #310, #312, #313, #337, #338, #339, #341, #342, #354, #355, #356
+  - Verified implementation evidence: pending.
+- **AC07** — Success, streaming completion, billable failures/cancellation, duplicate events and process restarts neither lose nor duplicate charges.
+  - Ticket declarations: #258, #259, #260, #261, #267, #268, #271, #272, #273, #274, #275, #276, #277, #278, #280, #303, #304, #305, #307, #308, #311, #318, #320, #323, #327, #329, #330, #331, #334, #335, #336, #340, #356
+  - Verified implementation evidence: pending.
+- **AC08** — Default 15-minute expiry and valid-grant renewal work; revoked old Keys cannot start paid work; expiry does not erase outstanding liability.
+  - Ticket declarations: #238, #240, #241, #244, #246, #247, #248, #251, #275, #319, #356
+  - Verified implementation evidence: pending.
+- **AC09** — Bot defaults and conversation overrides take effect; unavailable selection does not silently switch model.
+  - Ticket declarations: #230, #231, #232, #233, #241, #286, #356
+  - Verified implementation evidence: pending.
+- **AC10** — Automatic/manual sync respects the default 5/15-minute timing, preserves approved scope and blocks affected stale-price calls without repricing existing reservations.
+  - Ticket declarations: #226, #227, #228, #229, #356
+  - Verified implementation evidence: pending.
+- **AC11** — Deleted/disabled/drifted Keys are identified; manually created Keys do not acquire OpenBot authorization.
+  - Ticket declarations: #249, #250, #356
+  - Verified implementation evidence: pending.
+- **AC12** — Missing conversion configuration prevents enablement; changes affect new requests only; repeated small costs accumulate the correct remainder.
+  - Ticket declarations: #209, #210, #228, #256, #257, #356
+  - Verified implementation evidence: pending.
+- **AC13** — Company-workbench calls retain the trusted company payer and personal-authorized external calls retain the personal payer through admission, usage, settlement and remainder; neither insufficient balance nor workspace switching changes the payer, and personal Keys grant no company-content access. Subscription harnesses cannot become a balance-exhaustion fallback.
+  - Ticket declarations: #215, #216, #217, #218, #219, #255, #275, #287, #288, #289, #344, #353, #356
+  - Verified implementation evidence: pending.
+- **AC14** — Personal grants, orders, subscriptions and callbacks use personal ownership; another user cannot read, mutate or redirect them.
+  - Ticket declarations: #222, #290, #291, #292, #293, #294, #295, #356
+  - Verified implementation evidence: pending.
+- **AC15** — A Grant expiring mid-request still settles the admitted work; expired unused remainder stays expired; unknown holds stay unavailable.
+  - Ticket declarations: #259, #261, #262, #274, #284, #331, #356
+  - Verified implementation evidence: pending.
+- **AC16** — Realtime units reserve before processing and stop subsequent work on exhaustion/revocation; asynchronous tasks retain full reservations and repeated retrieval does not re-charge.
+  - Ticket declarations: #314, #315, #316, #317, #318, #319, #320, #321, #322, #323, #324, #325, #326, #327, #328, #329, #332, #333, #334, #335, #336, #337, #339, #340, #355, #356
+  - Verified implementation evidence: pending.
+- **AC17** — Unknown-result recovery, alerts and audited evidence-based resolution work; disabling/deleting a user preserves necessary liability.
+  - Ticket declarations: #279, #280, #281, #282, #283, #284, #285, #321, #331, #356
+  - Verified implementation evidence: pending.
+- **AC18** — Cleanup affects only enumerated and verified obsolete test billing data; users, Bots, conversations, knowledge and company financial history remain intact. Unknown-owner records are isolated; no legacy balance is duplicated into personal and company accounts.
+  - Ticket declarations: #216, #345, #346, #347, #348, #349, #350, #351, #356
+  - Verified implementation evidence: pending.
+- **AC19** — User/admin screens enforce their respective authorization and do not expose raw Keys in frontend responses, messages or ordinary logs.
+  - Ticket declarations: #207, #208, #214, #220, #221, #222, #227, #229, #232, #233, #234, #235, #240, #245, #251, #263, #282, #283, #285, #288, #295, #321, #328, #332, #343, #348, #351, #352, #356, #357
+  - Verified implementation evidence: pending.
