@@ -297,7 +297,7 @@ CI 的 `test` job 自带两个数据库服务：`postgres`（镜像带 pgvector�
 「用独立 Postgres 复测驱动层」一节自建一个私有实例；或者接受这 14 组只在 CI 上有结论。
 判定规则不变：这些红都在 `bun test` 单文件复跑里复现，因此与运行器无关。
 
-## 驱动层在有库条件下的三档实测（结论：只能由 CI 的服务定义关门）
+## 驱动层在有库条件下的四档实测（第四档把 CI 的服务定义在本地复刻了出来）
 
 同一批驱动组，数据库条件从缺到全，结果单调变好，但**到不了全绿**：
 
@@ -306,6 +306,7 @@ CI 的 `test` job 自带两个数据库服务：`postgres`（镜像带 pgvector�
 | 无可用库（本机默认） | 13 / 30 组过 | 14 组是 `Failed query` / `PostgresError: Failed to connect`（5432 没人监听） |
 | 私有实例 + `TEST_DATABASE_URL` 单项 | 18 / 30 组过 | 见上一节；`agent-sandbox/tests` 转绿 |
 | 私有实例 + `ENTERPRISE_TEST_DATA/DIRECTORY_DATABASE_URL` 全套（22:07–22:15） | 14 / 30 组过 | 组内文件数超过 8 就直接判失败（设计上不给假绿），且暴露出夹具缺项 |
+| **CI 等价夹具**（两套私有 pgvector + 角色 + 多库，22:56–23:34） | **21 / 30 组过** | 9 组红：`app/tests/ai-observability` 与 `server/tests part 3/4/5/7/8/9/11/14`；把这 9 组直接交给 `bun test`（同一棵树同一套 env）**同样 9 组全 exit 1** |
 
 全套那一轮 14/30 反而低于 18/30，原因不是回退而是**判定收紧 + 夹具缺项**：失败文本点名
 `DATABASE_CAPABILITY_CHECK_FAILED`（`server/src/enterprise/tenancy/connections.ts:156` 的
@@ -315,8 +316,11 @@ CI 的 `test` job 自带两个数据库服务：`postgres`（镜像带 pgvector�
 
 所以第 6 条的正确口径是：**驱动层的 verdict 由 `bun test` 自己给出，迁移不改它**（每条红都能在
 单文件复跑里复现，且组内 >8 文件时不假装"独自重跑过"）；而"驱动层整体是否等于迁移前的通过集合"
-只有在 ci.yml `test` job 那套服务（postgres 带 pgvector + enterprise-postgres + 多库）里才能测出来，
-那需要往共享分支推一次 / 开一个 PR —— 这是要授权的动作，我不擅自做。
+只有在 ci.yml `test` job 那套服务（postgres 带 pgvector + enterprise-postgres + 多库）里才能测出来。
+第四档已经把这套服务在本地复刻出来了（私有端口 55433/55434，不碰 5432/5435/55432），
+测量与夹具形状见 `docs/verification/e2e-driven-tier-ci-fixture-2026-10-18.md`：
+**21 / 30 组过，红的 9 组在旧运行器上同样全红**，`DATABASE_CAPABILITY_CHECK_FAILED` 那类夹具缺项消失。
+在真 CI 上再落一次仍然没做——那需要往共享分支推 / 开 PR，是要授权的动作，我不擅自做。
 
 ## 完成度审计：每条标准对应什么证据，以及哪几条还没过
 
@@ -327,13 +331,15 @@ CI 的 `test` job 自带两个数据库服务：`postgres`（镜像带 pgvector�
 | 3 | 收集不再被单个文件拖没 | 过（当时） | 19:24 / 21:21 两轮 `0 COLLECTION_ERROR`；新加套件由 `e2e-batch-drive-bun-test` 与分区循环兜住 |
 | 4 | 全量通过率被测出来并逐条归因 | 过 | `.e2e/*/report.json` + `scripts/e2e-vs-bun.mjs` 的 `e2e-vs-bun*.json`，汇总见上；红点派单表 `archive/verification/e2e-red-dispatch.md` |
 | 5 | 原生层不存在"迁移把它改红了"的条目 | 过（最后一次判定） | 逐条 runner-difference 都已修或分流；最后一条 `proxy.test.ts` 有 25/0 对 24/1 的证据并写入 ADR 两层制 |
-| 6 | 驱动层的 verdict 等于旧运行器对同一文件的 verdict | 机制上过，整体结论待 CI | 驱动层用 `bun test` 执行并对失败文件各自重跑（>8 文件即判失败，不给假绿）；有库条件下 13/18/14 三档实测见上节，剩下的红都能点名为夹具缺项（`DATABASE_CAPABILITY_CHECK_FAILED`、多库布局）或单文件也红的真实缺陷 |
+| 6 | 驱动层的 verdict 等于旧运行器对同一文件的 verdict | 过（本地 CI 等价夹具），CI 上仍未落过 | 驱动层用 `bun test` 执行并对失败文件各自重跑（>8 文件即判失败，不给假绿）。22:56–23:34 用私有 pgvector 双库 + 角色夹具重测 30 组：**21 过 / 9 红**，且这 9 组不经 e2e 直接 `bun test` 同样 exit 1；单文件级证据由驱动的独自重跑给出（part 3 1/3、part 4 3/6、part 5 2/2、part 9 2/4、part 11 3/4、part 14 4/6、ai-observability 1/2）。夹具、结果与"blocked 标签收紧过头"的修正见 `docs/verification/e2e-driven-tier-ci-fixture-2026-10-18.md` |
 | 7 | 引擎层（`tests/e2e/*.e2e.ts`，28 条）跑通过 | **未过** | 只验到收集。需要 app 起在 3010 与 `.env` 里那个 OpenAI 兼容端点（agent 驱动、花真钱、结果不完全确定），尚未获得启动许可 |
 | 8 | `bun run test` 绿 | **未过** | 21:54 那一轮 30 个文件红 / 189 条失败：其中约 18 个文件迁移前就红、12 个用现网代码 + 迁移前套件文本在 `bun test` 上也红、其余是本机 5432/6333 依赖没起（含 14 组驱动组）。这些红在旧运行器上同样复现，不是迁移造成的，但也不该被改成绿 |
 | 9 | `bun run typecheck` 绿 | **未过（非迁移原因）** | 合并 `084642a3` 让 `server/src/config.ts` 调用未导入的帮助函数且重复声明 `gateway?:` |
 | 10 | 决策与约束进了 ADR / 文档 | 过 | ADR 0008 两节补充（标题即身份、分组不造 verdict、覆盖可对账）+ 本文 |
 
-第 6、7、8、9 条没过，所以这件事现在不能称"完成"。
+第 6 条已用 CI 等价夹具在本地关门（21/30 组过、9 组红在旧运行器上同样全红）。第 7、8、9 条没过，
+所以这件事现在不能称"完成"：引擎层没在运行时跑过一次（要授权付费端点），`bun run test` 与
+`bun run typecheck` 各有属于别的波次的红。
 
 ## 复核方式
 
