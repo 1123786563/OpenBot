@@ -827,9 +827,9 @@
         "produces": "OpikPort 接口 + 对抗性 fixture 注入方式."
       },
       "verification": "Issue acceptance plus targeted test, typecheck, lint; #43 requires real self-hosted Opik and full gates",
-      "status": "verified",
-      "checkpoint": "Integrated uncommitted checkpoint on HEAD 7c25fb4c58a885245729720e4724eb7f363a9a49. Applied original candidate patch 279ac6a3d7822e3deaa5ebc4580fc4048b90047917212965b1476c63fff84ec6 then reviewed repair delta 7d390cd5f0fec249d9fede952f8cba9b2df5bcf225c26ab3161d16ee98383f64. Final file SHA256: opik-port.ts d94bbad084ec5b3bab16dcd8412774ed681d5673e092acc94d55e7bc61136d3f; opik-http.ts 3aa3d858fe2fc31ab8615b8ab48cb54e234b480338c3738a18f52e61d9ef4e45; opik-port.test.ts 1e09154a629a48c76157880b55d8c514de96bcfc182df933f8255bf1685f594a. Integrated validation logs/manifest: docs/plans/evidence/2026-10-15-issue4/T08/integration-rerun/manifest.json (SHA256 298bcd193be76faf133c94d83e071ad62c4f934ca8703c4c98022224923335e9); opik-port 31/0/86; prerequisites 135/0/345; typecheck exit 0; Biome 3 files exit 0. No commit.",
-      "review": "Original independent review FAIL (report f120aa40ccfc0beb88de832ee283318e35414c64a9262ca7b7d9e96510226884), findings F1/F2 repaired by Claude Orca Task task_30ab7438b05b / Dispatch ctx_f17a72d19629; repair report 23c9c2ffb60ddceffaf0fba4a6d2eee95d6baa80e91c261e232d5fd5303bdf3b. Fresh independent Claude repair reviewer Task task_9ca49ac02505 / Dispatch ctx_740776c0f48f: Spec PASS / Code APPROVE, report SHA256 3c5ff4eb458489b4e6759054a113c8cc64f9dc384212fb19c34a7c0dbd6066ad; verified both patches, 43/43 inputs, test suites, typecheck, Biome and 16 adversarial checks. Residual Info F3-F6 plus healthCheck response-status observation recorded in report; T09 must source projectId from retrieveProject(scope)."
+      "status": "pending",
+      "checkpoint": null,
+      "review": null
     },
     "T09": {
       "id": "T09",
@@ -861,8 +861,8 @@
         "produces": "就绪/健康查询接口 + 有界异步写入入口约定."
       },
       "verification": "Issue acceptance plus targeted test, typecheck, lint; #43 requires real self-hosted Opik and full gates",
-      "status": "running",
-      "checkpoint": "Orca Task task_0a4e50cd6280 / Dispatch ctx_de6c1d37cd7c started as Claude in child /Users/wuyongjun/orca/workspaces/OpenBot/opik-t09-config-health, based on verified integration branch; model/effort unspecified. Exact ownership and acceptance brief: docs/plans/evidence/2026-10-15-issue4/T09/implementation-brief.md SHA256 5b52d17105bd2cd90e7a3c61bbeb017f6e2e587f28fabc964ec0ec41c7d3c48e. Before implementation, coordinator transferred 43 prerequisite files including reviewed T08/T01-T07 sources/specs/tests; source/destination hashes all match in prerequisite-transfer.json SHA256 be16d7c01d3a66baa02fb9269d72427d0ef834cb61c3fea4e7a5e9a55c2a76f5. Worker asked to recompute before editing. No code delivered yet. R-10 discovered OpikPort.healthCheck status-code defect in integrated T08; T09 will not edit T08-owned files. Separate T08 follow-up Task task_104c7bfa755f / Dispatch ctx_100481d2d3db is fixing this in parallel with T09; live adapter readiness verification is pending its independent review/integration.",
+      "status": "pending",
+      "checkpoint": null,
       "review": null
     },
     "T02": {

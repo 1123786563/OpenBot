@@ -587,6 +587,7 @@ describe("no premature tenant model", () => {
   test("an upstream workspace name is derived from the scope key, never trusted as authorization", () => {
     const locator = resolveStorageLocator(scopeAlpha);
     expect(locator.workspace).toContain(scopeAlpha.key.length.toString());
+    expect(locator.workspace).not.toBe(resolveStorageLocator(scopeBeta).workspace);
     // The locator is an output of authorization, not an input to it: re-deriving a scope from a
     // workspace name is impossible because no such function is exported.
     const names = [
@@ -609,7 +610,7 @@ import type {
   EvaluationEligibility,
   ObservationStorageLocator,
 } from "./contracts";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 /*
  * Cursor integrity key. Process-local and per-boot on purpose: a cursor is a pagination position,
@@ -688,7 +689,15 @@ export function exportKey(scope: ObservationScope, exportId: string): string {
  */
 export function resolveStorageLocator(scope: ObservationScope): ObservationStorageLocator {
   assertObservationScope(scope);
-  const fingerprint = String(scope.key.length);
+  /*
+   * Length alone is NOT a usable fingerprint: two different scope keys of equal length collide,
+   * which would put two trusted scopes in the same upstream workspace and defeat the isolation
+   * this seam exists to guarantee. Length plus a hash prefix keeps the name short and injective.
+   * (This was a defect in the first draft of this plan; the ticket's own "locators are distinct"
+   * test caught it. Do not weaken that test to accommodate a shorter fingerprint.)
+   */
+  const digest = createHash("sha256").update(scope.key).digest("hex").slice(0, 12);
+  const fingerprint = `${scope.key.length}-${digest}`;
   return Object.freeze({
     scopeKey: scope.key,
     workspace: `openbot-${scope.kind}-${fingerprint}`,
