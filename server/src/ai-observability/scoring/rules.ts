@@ -216,11 +216,22 @@ export function regexHasNestedQuantifiers(pattern: string): boolean {
     }
     if (quantifier !== null) {
       if (atom.group !== null) {
-        // Quantifier over a group: the dangerous shape is an unbounded outer
-        // quantifier whose group body itself runs an unbounded single-char
-        // quantifier — the classic `(a+)+` ambiguity.
-        if (isUnbounded(quantifier) && atom.group.unboundedSingle) {
-          dangerous.value = true;
+        // R5-37: an unboundedly quantified group tells its owner what it now
+        // is — a body that consumes unboundedly. Without this the danger
+        // stopped at one level (`((a)+)+` marked the inner `(a)` but the
+        // middle group never learned), so every grouping-chain shape —
+        // `((a)*)+`, `((a)+)+`, `((?:ab)*)+`, `(((a)*)+)+` — slipped the
+        // gate and an accepted `^((a)*)+$` measured exponential backtracking
+        // (1093ms at n=26 vs 195ms for the caught `(a+)+`).
+        if (isUnbounded(quantifier)) {
+          owner.unboundedSingle = true;
+          // The verdict condition itself is unchanged — the classic `(a+)+`
+          // ambiguity is an unbounded quantifier whose group body itself runs
+          // an unbounded single-char quantifier; the propagation above only
+          // lets an ENCLOSING unbounded quantifier see the same danger.
+          if (atom.group.unboundedSingle) {
+            dangerous.value = true;
+          }
         }
       } else if (isUnbounded(quantifier) && consumesSingleChar(atom.text)) {
         owner.unboundedSingle = true;

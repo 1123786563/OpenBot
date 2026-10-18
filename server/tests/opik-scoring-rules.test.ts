@@ -780,6 +780,39 @@ describe("the three failure classes are explicit, never a 0", () => {
     expect(regexHasNestedQuantifiers("(?<=x)y(?<!z)(\\d+)*")).toBe(true);
   });
 
+  test("a group quantified unboundedly propagates its danger to the owner (R5-37)", () => {
+    // R5-37: unboundedSingle was only recorded when the unbounded quantifier
+    // sat directly on a single-char atom, and never propagated through a
+    // quantified GROUP — so the classic grouping-chain shapes `^((a)*)+$`,
+    // `((a)+)+`, `((?:ab)*)+`, `(((a)*)+)+` all answered gate=false and ran:
+    // the accepted `^((a)*)+$` was measured hanging exponentially (1093ms at
+    // n=26, vs 195ms for the caught `(a+)+` at the same length). The verdict
+    // condition itself is unchanged — an unbounded quantifier over a group
+    // whose body contains an unbounded single-char quantifier — the group
+    // merely tells its owner what its quantified body now is, so an
+    // ENCLOSING unbounded quantifier sees the same danger the flat shapes did.
+    // Full triage shape table, bypass rows first:
+    for (const pattern of [
+      "((a)*)+",
+      "((a)+)+",
+      "((?:ab)*)+",
+      "^((a)*)+$",
+      "(((a)*)+)+",
+    ]) {
+      expect(regexHasNestedQuantifiers(pattern)).toBe(true);
+    }
+    // The shapes the gate already caught stay caught.
+    for (const pattern of ["(a+)+", "(?:[a-z]+)+", "(a*)+"]) {
+      expect(regexHasNestedQuantifiers(pattern)).toBe(true);
+    }
+    // Safe controls stay accepted — no enclosing unbounded quantifier, no
+    // verdict: a flat single-char quantifier, a class quantifier, a group
+    // quantifier over a multi-char literal.
+    for (const pattern of ["(a)+", "[a-z]+", "(?:abc)+"]) {
+      expect(regexHasNestedQuantifiers(pattern)).toBe(false);
+    }
+  });
+
   test("evaluation timeout: budget exhaustion marks the unaffordable rules, deterministically", () => {
     const rs = rules([
       { id: "cheap", kind: "exact_match", expected: "Paris" },
