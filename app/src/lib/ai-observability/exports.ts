@@ -215,7 +215,18 @@ export function observationExportsQueryOptions(
             offPageInFlight = true;
             break;
           }
-          offPageInFlight = page.jobs.some(inFlight);
+          /*
+           * R4-1: discovering in-flight work answers the walk's one question —
+           * pages beyond it have no power to un-find it, so the walk stops here.
+           * (A direct reassignment let a later settled page overwrite the
+           * discovery back to false, and a next===null exit then closed the poll
+           * over a job that was still running — R3-07 ≡ R3-14's semantics lost
+           * mid-scope.)
+           */
+          if (page.jobs.some(inFlight)) {
+            offPageInFlight = true;
+            break;
+          }
           next = page.pagination.nextOffset;
         }
         /*
