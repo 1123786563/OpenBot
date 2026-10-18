@@ -114,7 +114,17 @@ export type OpikHealthService = {
    * answer counts it `failed.unavailable`, never lets it begin). A probe that
    * answers synchronously (disabled, unconfigured, no port) gates the submit
    * immediately, exactly as before. Everything after the first probe answers is
-   * refused or accepted by that verdict — the bootstrap never re-arms itself.
+   * refused or accepted by that verdict — and, since R5-20, a not-ready verdict
+   * no longer holds for the life of the process: once the cooldown
+   * (`reArmAfterMs`, default 30s) has passed, a submit that finds the gate
+   * not-ready re-probes in the background, so a headless deployment whose first
+   * probe landed while Opik was down recovers without a restart. The cooldown
+   * lifts the LATCH, never the gate: the triggering write is still refused
+   * fail-closed, and later writes run only after a verdict that actually
+   * answers ready. The assembly-fact reasons (disabled, unconfigured,
+   * capability_missing) never re-arm — they derive from the immutable boot
+   * config/port and cannot flip without reassembly; the upstream-answered ones
+   * (unreachable, authentication_failure) are what a later probe may overturn.
    */
   submit(write: OpikObservationWrite): OpikWriteSubmitResult;
   /**
@@ -140,17 +150,30 @@ export type OpikHealthDeps = Readonly<{
   port: OpikPort | null;
   /** Fixed queue bound. Default 256; every overflow is a counted drop. */
   writeCapacity?: number;
+  /**
+   * R5-20: how long a not-ready verdict holds before a submit may re-arm the
+   * gate with a background re-probe. Default 30_000.
+   */
+  reArmAfterMs?: number;
+  /** The cooldown clock. Default Date.now; tests inject a fake. */
+  now?: () => number;
 }>;
 
 const DEFAULT_WRITE_CAPACITY = 256;
+/** R5-20: the not-ready latch's re-arm cooldown. */
+const DEFAULT_REARM_AFTER_MS = 30_000;
 
 export function createOpikHealthService(
   deps: OpikHealthDeps,
 ): OpikHealthService {
   const capacity = deps.writeCapacity ?? DEFAULT_WRITE_CAPACITY;
+  const reArmAfterMs = deps.reArmAfterMs ?? DEFAULT_REARM_AFTER_MS;
+  const now = deps.now ?? Date.now;
   const queue: OpikObservationWrite[] = [];
   let pumping = false;
   let lastProbed: OpikReadiness | null = null;
+  /** When the gate's current verdict was recorded — the cooldown's zero. */
+  let lastProbedAt = 0;
   /** The one in-flight bootstrap probe, from the first unprobed submit (R2-45). */
   let bootstrapProbe: Promise<OpikReadiness> | null = null;
   const stats = {
@@ -191,6 +214,7 @@ export function createOpikHealthService(
   /** Remembers a probe outcome as the write gate, then answers it. */
   const record = (probed: OpikReadiness): OpikReadiness => {
     lastProbed = probed;
+    lastProbedAt = now();
     return probed;
   };
 
@@ -290,6 +314,23 @@ export function createOpikHealthService(
           bootstrapProbe = null;
         });
       }
+    } else if (
+      !lastProbed.ready &&
+      bootstrapProbe === null &&
+      // R5-20: a not-ready verdict latched for the life of the process used to
+      // mean a headless deployment whose first probe hit an outage refused
+      // every write until restart. Once the cooldown has passed, this submit
+      // re-probes in the background. The latch lifts, the gate does not: this
+      // write is still refused below, and only a fresh ready verdict lets the
+      // next ones through. Assembly facts (disabled / unconfigured /
+      // capability_missing) cannot flip without reassembly and never re-arm.
+      (lastProbed.reason === "unreachable" ||
+        lastProbed.reason === "authentication_failure") &&
+      now() - lastProbedAt >= reArmAfterMs
+    ) {
+      bootstrapProbe = readiness().finally(() => {
+        bootstrapProbe = null;
+      });
     }
     if (lastProbed !== null && !lastProbed.ready) {
       stats.refusedNotReady += 1;
