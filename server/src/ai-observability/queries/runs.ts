@@ -617,8 +617,16 @@ export function createRunsQueryService(
         }),
       );
       rows.push(...result.content);
-      if (rows.length >= result.total || result.content.length === 0) {
+      if (rows.length >= result.total) {
         break;
+      }
+      if (result.content.length === 0) {
+        // R5-27: an empty page while the envelope is uncovered is the store
+        // failing to answer the whole question — inflated total or drifted
+        // pagination. Breaking here returned the partial timeline wearing a
+        // 200, exactly what the ceiling branch below refuses; the failure is
+        // disclosed as malformed instead (the R4-31 fold discipline).
+        throw new RunsQueryError("OPIK_MALFORMED_RESPONSE", 502);
       }
       if (page >= MAX_SPAN_PAGES) {
         // The ceiling is defensive, not a truncation license: a trace it cannot cover

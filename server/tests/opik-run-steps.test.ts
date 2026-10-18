@@ -779,6 +779,48 @@ describe("steps — acceptance 4: honest absence, honest failure", () => {
     expect(await response.json()).toEqual({ error: "OPIK_MALFORMED_RESPONSE" });
     expect(spanReads(port.calls)).toBe(100);
   });
+
+  test("an empty page while total is uncovered is a 502, not a silent partial timeline (R5-27)", async () => {
+    // R5-27: the walk's break condition accepted an empty page as "done", so
+    // an inflated total or a drifted pagination ended the walk mid-timeline
+    // and the partial answer wore a 200 — exactly the "shorter timeline
+    // wearing a 200" the ceiling branch refuses, and the same fold discipline
+    // exports.ts follows (R4-31). An empty page that leaves the envelope
+    // uncovered is the store failing to answer the whole question: disclosed
+    // as malformed, never returned partial.
+    let call = 0;
+    const { app, port } = appFor({
+      port: fakePort({
+        spansByCall: () => {
+          call += 1;
+          return call === 1
+            ? {
+                outcome: "ok" as const,
+                value: {
+                  page: 1,
+                  size: 2,
+                  total: 4,
+                  content: [
+                    spanRow(),
+                    spanRow({
+                      id: "span-2",
+                      start_time: "2026-10-16T09:32:00.000Z",
+                    }),
+                  ],
+                },
+              }
+            : {
+                outcome: "ok" as const,
+                value: { page: 2, size: 2, total: 4, content: [] },
+              };
+        },
+      }),
+    });
+    const response = await steps(app);
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: "OPIK_MALFORMED_RESPONSE" });
+    expect(spanReads(port.calls)).toBe(2);
+  });
 });
 
 describe("steps — the surface is read-only, never a proxy", () => {
