@@ -9,6 +9,7 @@
     "passwords": "Passwords",
     "componentsGallery": "Components gallery",
     "plansUsage": "Plans & credits",
+    "orders": "Orders & credits",
     "invoices": "Bills",
     "notifications": "Notifications",
     "approvals": "Approvals",
@@ -314,6 +315,16 @@
   "creditsPage": {
     "title": "Plans & credits",
     "description": "View your subscription plan and billing information",
+    "personalAccountTitle": "Personal credit account",
+    "personalAccountDescription": "Your own account's credit balance, recorded against your authorizations.",
+    "accountTypePersonal": "Personal account",
+    "statAvailable": "Available",
+    "statConsumed": "Consumed",
+    "statExpired": "Expired",
+    "statHeld": "In-progress holds",
+    "pendingSettlement": "Pending settlement",
+    "pendingSettlementDisabled": "Pending settlement: not enabled yet",
+    "emptyLedger": "No credit records on this account yet.",
     "creditUnit": "credits",
     "remaining": "left",
     "freePlan": "Trial",
@@ -335,6 +346,11 @@
       "exhausted": "Spent",
       "expired": "Expired"
     },
+    "grantSource": {
+      "plan": "Plan",
+      "signin": "Check-in reward",
+      "promo": "Campaign / admin"
+    },
     "expiringSoon": "Expires within 24h",
     "expiresAt": "Expires: {{time}}",
     "reason": "Granted for: {{reason}}",
@@ -355,6 +371,33 @@
     "overdrawHint": "This call cost more than the balance could fund. The ledger records the full cost; {{shortfall}} was not covered by any grant.",
     "pagerStatus": "Page {{page}} of {{totalPages}} · {{total}} entries",
     "consumptionTable": "Usage details"
+  },
+  "ordersPage": {
+    "title": "Orders & credits",
+    "description": "Your orders, your subscription, and every credit granted to you — each traceable to its source.",
+    "refresh": "Refresh",
+    "ordersTitle": "Orders",
+    "ordersEmpty": "No orders yet",
+    "ordersEmptyDescription": "Orders appear here after a plan is purchased.",
+    "ordersUnavailable": "Billing is not enabled here",
+    "ordersUnavailableDescription": "No billing provider is configured on this deployment, so there are no orders.",
+    "subscriptionTitle": "Subscription",
+    "grantsTitle": "Credit grants",
+    "grantsDescription": "Where every credit came from, and when it expires.",
+    "grantsSummary": "{{count}} grants on record",
+    "grantsEmpty": "No credit grants yet.",
+    "grantSource": {
+      "plan": "Plan",
+      "signin": "Check-in reward",
+      "promo": "Campaign / admin"
+    },
+    "traceOrder": "Funding order: {{order}}",
+    "traceNoOrder": "No funding order on record",
+    "columnPlan": "Plan",
+    "columnAmount": "Amount",
+    "columnStatus": "Status",
+    "columnNumber": "Order",
+    "columnCreated": "Created"
   },
   "welcomeBanner": {
     "badge": "Bonus until 10/31",
@@ -440,5 +483,39 @@
     "revoking": "Revoking…",
     "aboutSection": "How this works",
     "about": "A Bot asks its server for a binding code and hands it to you out of band. The code names one Bot and one external identity, lives for a few minutes, and works exactly once. Confirming here creates the authorization; no key, balance or credits are created with it."
+  },
+  "modelPicker": {
+    "title": "Workbench model",
+    "description": "Choose the model your workbench runs on. A model that becomes unavailable is reported as it is — it is never silently replaced.",
+    "currentTitle": "Current selection",
+    "currentBadge": "Current selection",
+    "unsetTitle": "No model selected",
+    "unsetDescription": "Pick one of the models below to set your default.",
+    "source": {
+      "global": "Your global default",
+      "bot": "Workbench Bot default",
+      "conversation": "This conversation's selection"
+    },
+    "unavailableHeading": "The selected model is not available.",
+    "unavailableReasons": {
+      "model_capability_mismatch": "The model no longer matches the workbench's capabilities.",
+      "model_not_open": "The model is not open for use.",
+      "model_price_unknown": "The model's price is unknown.",
+      "model_catalog_stale": "The model catalog is out of date.",
+      "model_not_in_catalog": "The model has been removed from the catalog."
+    },
+    "reselect": "Pick one of the models below to continue.",
+    "price": {
+      "known": "Priced",
+      "free": "Free",
+      "unknown": "Price unknown",
+      "unmapped": "Price not synced"
+    },
+    "setGlobal": "Set as global default",
+    "setBot": "Set as workbench default",
+    "saving": "Saving…",
+    "emptyList": "No models are open for selection.",
+    "refusalHeading": "The model was not saved:",
+    "refusalFallback": "that model is not selectable right now."
   }
 }

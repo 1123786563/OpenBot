@@ -904,6 +904,118 @@
       "when": 1792090546121,
       "tag": "0128_gateway_rate_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1792090547121,
+      "tag": "0129_gateway_model_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1792090548121,
+      "tag": "0130_payment_order_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1792090549121,
+      "tag": "0131_access_grant_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1792090550121,
+      "tag": "0132_gateway_customers",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1792090551121,
+      "tag": "0133_gateway_price_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1792090552121,
+      "tag": "0134_price_status_classification",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1792090553121,
+      "tag": "0135_gateway_customer_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1792090554121,
+      "tag": "0136_gateway_model_open_scopes",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1792090555121,
+      "tag": "0137_gateway_catalog_sync_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1792090556121,
+      "tag": "0138_credit_service_credential_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1792090557121,
+      "tag": "0139_gateway_model_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1792090558121,
+      "tag": "0140_reservation_locked_basis",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1792232049773,
+      "tag": "0141_credit_reservation_unknown_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1792232050773,
+      "tag": "0142_subscription_owner_allowance",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1792232051773,
+      "tag": "0143_gateway_virtual_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1792232052773,
+      "tag": "0144_gateway_key_sync_state",
+      "breakpoints": true
     }
   ]
 }

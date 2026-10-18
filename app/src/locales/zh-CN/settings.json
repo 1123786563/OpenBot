@@ -9,6 +9,7 @@
     "passwords": "密码",
     "componentsGallery": "组件库",
     "plansUsage": "套餐与积分",
+    "orders": "订单与积分",
     "invoices": "账单管理",
     "notifications": "通知",
     "approvals": "批准",
@@ -314,6 +315,16 @@
   "creditsPage": {
     "title": "套餐与积分",
     "description": "查看您的订阅套餐和账单信息",
+    "personalAccountTitle": "个人积分账户",
+    "personalAccountDescription": "您本人账户的积分余额，由平台按您的授权记录。",
+    "accountTypePersonal": "个人账户",
+    "statAvailable": "可用",
+    "statConsumed": "已消费",
+    "statExpired": "已过期",
+    "statHeld": "进行中占用",
+    "pendingSettlement": "待结算",
+    "pendingSettlementDisabled": "待结算：未启用",
+    "emptyLedger": "本账户还没有积分记录。",
     "creditUnit": "积分",
     "remaining": "剩余",
     "freePlan": "体验版",
@@ -335,6 +346,11 @@
       "exhausted": "已用完",
       "expired": "已过期"
     },
+    "grantSource": {
+      "plan": "套餐",
+      "signin": "签到奖励",
+      "promo": "活动/管理员发放"
+    },
     "expiringSoon": "24小时内过期",
     "expiresAt": "到期时间: {{time}}",
     "reason": "下发原因：{{reason}}",
@@ -355,6 +371,33 @@
     "overdrawHint": "本次消费超出可用余额。台账记录全部费用，其中 {{shortfall}} 无积分覆盖。",
     "pagerStatus": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条",
     "consumptionTable": "用量明细"
+  },
+  "ordersPage": {
+    "title": "订单与积分",
+    "description": "您的订单、订阅与每一笔积分入账，均可追溯到来源。",
+    "refresh": "刷新",
+    "ordersTitle": "订单记录",
+    "ordersEmpty": "暂无订单",
+    "ordersEmptyDescription": "购买套餐后，订单会出现在这里。",
+    "ordersUnavailable": "此部署未启用计费",
+    "ordersUnavailableDescription": "未配置计费服务，因此没有订单记录。",
+    "subscriptionTitle": "订阅计划",
+    "grantsTitle": "积分入账",
+    "grantsDescription": "每一笔积分的来源与有效期。",
+    "grantsSummary": "共 {{count}} 笔入账",
+    "grantsEmpty": "暂无积分入账。",
+    "grantSource": {
+      "plan": "套餐",
+      "signin": "签到奖励",
+      "promo": "活动/管理员发放"
+    },
+    "traceOrder": "来源订单：{{order}}",
+    "traceNoOrder": "来源订单未记录",
+    "columnPlan": "套餐",
+    "columnAmount": "金额",
+    "columnStatus": "支付状态",
+    "columnNumber": "订单编号",
+    "columnCreated": "创建时间"
   },
   "welcomeBanner": {
     "badge": "限时加赠 10/31截止",
@@ -440,5 +483,39 @@
     "revoking": "撤销中…",
     "aboutSection": "工作原理",
     "about": "Bot 在它的服务端申请绑定码，并通过站外渠道交给你。绑定码只对应一个 Bot 和一个外部身份，几分钟内有效，且只能使用一次。在这里确认即创建授权；确认本身不产生 Key、余额或积分。"
+  },
+  "modelPicker": {
+    "title": "工作台模型",
+    "description": "选择工作台使用的模型。所选模型不可用时会如实报错，绝不会静默换成另一个模型。",
+    "currentTitle": "当前生效选择",
+    "currentBadge": "当前生效",
+    "unsetTitle": "尚未选择模型",
+    "unsetDescription": "从下方模型中选择一个作为你的默认。",
+    "source": {
+      "global": "你的全局默认",
+      "bot": "工作台 Bot 默认",
+      "conversation": "本会话选择"
+    },
+    "unavailableHeading": "所选模型不可用。",
+    "unavailableReasons": {
+      "model_capability_mismatch": "该模型不再匹配工作台的能力。",
+      "model_not_open": "该模型未开放使用。",
+      "model_price_unknown": "该模型价格未知。",
+      "model_catalog_stale": "模型目录已过期。",
+      "model_not_in_catalog": "该模型已从目录下架。"
+    },
+    "reselect": "请从下方模型中重新选择。",
+    "price": {
+      "known": "价格完整",
+      "free": "明确免费",
+      "unknown": "价格未知",
+      "unmapped": "价格未同步"
+    },
+    "setGlobal": "设为全局默认",
+    "setBot": "设为工作台默认",
+    "saving": "保存中…",
+    "emptyList": "暂无开放可选的模型。",
+    "refusalHeading": "模型未保存：",
+    "refusalFallback": "该模型当前不可选。"
   }
 }

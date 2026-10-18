@@ -553,6 +553,33 @@ export const auditEventTypes = [
   "gateway_admin_credential.saved",
   "gateway_admin_credential.save_refused",
   /*
+   * The billing protocol's own service identity (Bifrost #252, 06.1): the one credential the
+   * deployment's Bifrost admission extension holds to reach Reserve/Status/Settle/Release.
+   *
+   * `credential_issued` covers first issue and rotation alike (`payload.rotated` says which),
+   * because both are one act from the trail's point of view: a secret this deployment will
+   * verify against, minted once and never shown again. `called` and `refused` are the call
+   * rows, one per protocol attempt either way — the AC makes no exception for failures, and
+   * the refused ones are the rows an investigation reads first. A refusal row names no caller:
+   * whatever the presented token claimed was just proven wrong, so writing it down would
+   * record an unproven claim where belief is stored. A `called` row names the identity the
+   * credential proved, bound to the request's method and path — nothing more, and never the
+   * presented token itself.
+   */
+  "credit_service.credential_issued",
+  "credit_service.called",
+  "credit_service.refused",
+  /*
+   * The Reserve admission's payer conflict (Bifrost #255, 06.4): a reserve request tried to
+   * bill an account its own authorization does not resolve to — another person's account, a
+   * company account on a personal grant, or a self-reported account key (`externalCustomerId`
+   * or any account-identity parameter, at the top level or inside `payer`). One row per
+   * refused attempt: the payload carries the request's claim beside the server's resolution,
+   * and `stage` says whether the server ever proved the grant — the claim is stored as a
+   * claim, the row exists so bypass attempts are countable, not to assert what happened.
+   */
+  "credit_reserve.payer_conflict",
+  /*
    * What a Bot is and what it may reach.
    *
    * The trail recorded every mouse movement a Bot made and could not answer "who pointed this Bot at
@@ -728,6 +755,23 @@ export const auditEventTypes = [
    * exactly why the manual grant's source is a promo or a signin and nothing else.
    */
   "billing.credits.granted",
+  /*
+   * An administrator granted credits to a NAMED PERSONAL account (Bifrost #222, 02.8): target
+   * user plus the account the server RESOLVED from that user — the resolution is the point, so
+   * the row records both and no client-named customer key ever could be one. Beside them the
+   * operator, the amount, the reason and which idempotency spelling answered; a replay that
+   * landed nothing is on the trail too, marked `inserted: false`, because a double press that
+   * entered the books once is a fact worth reading, not noise.
+   */
+  "billing.credits.personal_granted",
+  /*
+   * A person claimed a reward into their OWN personal account (Bifrost 10.4, AC14): the
+   * claimer, the reward type and the server-derived period beside the account the server
+   * RESOLVED from the session — no client-named target exists anywhere on this path, and the
+   * row is the per-request receipt a replayed claim also gets, marked `inserted: false`, so a
+   * double-tapped check-in button reads as one payout with two presses.
+   */
+  "billing.credits.reward_claimed",
   /**
    * The reconciliation pass was run (T7): an on-demand audit of the books' two invariants
    * (the payment three-way and the credit identity). Audited because it is an operator
@@ -742,6 +786,48 @@ export const auditEventTypes = [
    * decision was asked for and made.
    */
   "craft.connect_app_decided",
+  /**
+   * An administrator opened or closed a model for this deployment (Bifrost 03.7).
+   *
+   * Every successful open and close writes one row here, carrying the ModelRef triple, the
+   * previous state, the new state and the administrator's recorded reason — the history of
+   * the open scope lives in this append-only trail, while `gateway_model_open_scopes` holds
+   * only the current state. The reason is displayable by design: it is what a user-facing
+   * screen shows when a model is closed, and what an auditor reads when asking why a model
+   * stopped (or started) being selectable.
+   */
+  "gateway.model_scope_changed",
+  /**
+   * An administrator triggered an immediate catalog/price sync (Bifrost 03.5).
+   *
+   * Every executed trigger — the manual action shares 03.4's single sync
+   * implementation, so concurrent triggers may share one run — writes one row
+   * here, carrying who triggered it, when, and the outcome: the synced time
+   * and the appended/skipped snapshot counts on success, or the failing
+   * layer's fixed reason code on failure. The trigger's result is the sync's
+   * own answer, never upstream bytes, so the trail stays displayable.
+   */
+  "gateway.catalog_sync_triggered",
+  /**
+   * An administrator triggered an immediate key state sync (Bifrost 05.8).
+   *
+   * One row per manual trigger, carrying who asked and the outcome — the pass itself
+   * writes each key flip as its own drift event, so this row is the trigger, not the
+   * log. The result is the sync's own answer, never upstream bytes.
+   */
+  "gateway.key_state_sync_triggered",
+  /*
+   * A short-lived virtual key was issued for a user × Bot authorization (Bifrost 05.3).
+   *
+   * One row per issuance, because every issuance is a new key the trail must be able to name:
+   * the grant it was claimed against, the Bot whose credential claimed it, the one Customer it
+   * bills and the per-grant credentialVersion — the whole "who got a key, for which
+   * authorization, billing whom" question an incident asks first. The payload carries a
+   * four-hex fingerprint of the key value for identification; the plaintext exists only in the
+   * issuance response and only at the gateway, and neither this row nor any error path can
+   * redeem a key.
+   */
+  "gateway.key_issued",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];
@@ -1175,7 +1261,7 @@ export function auditQueryFromUrl(url: URL): AuditEventQuery {
     throw new AuditQueryError('Query parameter "to" must be a valid date.');
   }
 
-  /*
+  /**
    * Fail fast on a stale or hand-edited bookmark. Without this the raw string travels into
    * `createAuditReader.list`, where `decodeCursor` threw a generic `Error` that escaped the
    * route's `AuditQueryError` catch as a 500. A corrupt cursor is a caller error, not a server

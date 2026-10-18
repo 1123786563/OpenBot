@@ -28,14 +28,17 @@ import { Route as AuthedAppTeamBotsRouteImport } from './routes/_authed/_app/tea
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
 import { Route as AuthedAdminApprovalsRouteImport } from './routes/_authed/admin/approvals'
 import { Route as AuthedAdminAuditRouteImport } from './routes/_authed/admin/audit'
+import { Route as AuthedAdminBillingRouteImport } from './routes/_authed/admin/billing'
 import { Route as AuthedAdminBotServicesRouteImport } from './routes/_authed/admin/bot-services'
 import { Route as AuthedAdminBoundariesRouteImport } from './routes/_authed/admin/boundaries'
 import { Route as AuthedAdminComputersRouteImport } from './routes/_authed/admin/computers'
 import { Route as AuthedAdminCredentialsRouteImport } from './routes/_authed/admin/credentials'
 import { Route as AuthedAdminEnterpriseRouteImport } from './routes/_authed/admin/enterprise'
+import { Route as AuthedAdminGatewayRouteImport } from './routes/_authed/admin/gateway'
 import { Route as AuthedAdminIdentityProvidersRouteImport } from './routes/_authed/admin/identity-providers'
 import { Route as AuthedAdminLearningRouteImport } from './routes/_authed/admin/learning'
 import { Route as AuthedAdminMarketRouteImport } from './routes/_authed/admin/market'
+import { Route as AuthedAdminModelCatalogRouteImport } from './routes/_authed/admin/model-catalog'
 import { Route as AuthedAdminPeopleRouteImport } from './routes/_authed/admin/people'
 import { Route as AuthedAdminPlaygroundRouteImport } from './routes/_authed/admin/playground'
 import { Route as AuthedAdminSkillsRouteImport } from './routes/_authed/admin/skills'
@@ -45,6 +48,7 @@ import { Route as AuthedSettingsInvoicesRouteImport } from './routes/_authed/set
 import { Route as AuthedSettingsMemoryRouteImport } from './routes/_authed/settings/memory'
 import { Route as AuthedSettingsModelAccessRouteImport } from './routes/_authed/settings/model-access'
 import { Route as AuthedSettingsNotificationsRouteImport } from './routes/_authed/settings/notifications'
+import { Route as AuthedSettingsOrdersRouteImport } from './routes/_authed/settings/orders'
 import { Route as AuthedSettingsPasswordsRouteImport } from './routes/_authed/settings/passwords'
 import { Route as AuthedSettingsUsageRouteImport } from './routes/_authed/settings/usage'
 import { Route as AuthedSignInRequestIdRouteImport } from './routes/_authed/sign-in/$requestId'
@@ -176,6 +180,11 @@ const AuthedAdminAuditRoute = AuthedAdminAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => AuthedAdminRouteRoute,
 } as any)
+const AuthedAdminBillingRoute = AuthedAdminBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => AuthedAdminRouteRoute,
+} as any)
 const AuthedAdminBotServicesRoute = AuthedAdminBotServicesRouteImport.update({
   id: '/bot-services',
   path: '/bot-services',
@@ -201,6 +210,11 @@ const AuthedAdminEnterpriseRoute = AuthedAdminEnterpriseRouteImport.update({
   path: '/enterprise',
   getParentRoute: () => AuthedAdminRouteRoute,
 } as any)
+const AuthedAdminGatewayRoute = AuthedAdminGatewayRouteImport.update({
+  id: '/gateway',
+  path: '/gateway',
+  getParentRoute: () => AuthedAdminRouteRoute,
+} as any)
 const AuthedAdminIdentityProvidersRoute =
   AuthedAdminIdentityProvidersRouteImport.update({
     id: '/identity-providers',
@@ -215,6 +229,11 @@ const AuthedAdminLearningRoute = AuthedAdminLearningRouteImport.update({
 const AuthedAdminMarketRoute = AuthedAdminMarketRouteImport.update({
   id: '/market',
   path: '/market',
+  getParentRoute: () => AuthedAdminRouteRoute,
+} as any)
+const AuthedAdminModelCatalogRoute = AuthedAdminModelCatalogRouteImport.update({
+  id: '/model-catalog',
+  path: '/model-catalog',
   getParentRoute: () => AuthedAdminRouteRoute,
 } as any)
 const AuthedAdminPeopleRoute = AuthedAdminPeopleRouteImport.update({
@@ -264,6 +283,11 @@ const AuthedSettingsNotificationsRoute =
     path: '/notifications',
     getParentRoute: () => AuthedSettingsRouteRoute,
   } as any)
+const AuthedSettingsOrdersRoute = AuthedSettingsOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => AuthedSettingsRouteRoute,
+} as any)
 const AuthedSettingsPasswordsRoute = AuthedSettingsPasswordsRouteImport.update({
   id: '/passwords',
   path: '/passwords',
@@ -484,14 +508,17 @@ export interface FileRoutesByFullPath {
   '/team-bots': typeof AuthedAppTeamBotsRoute
   '/admin/approvals': typeof AuthedAdminApprovalsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
+  '/admin/billing': typeof AuthedAdminBillingRoute
   '/admin/bot-services': typeof AuthedAdminBotServicesRoute
   '/admin/boundaries': typeof AuthedAdminBoundariesRoute
   '/admin/computers': typeof AuthedAdminComputersRoute
   '/admin/credentials': typeof AuthedAdminCredentialsRoute
   '/admin/enterprise': typeof AuthedAdminEnterpriseRoute
+  '/admin/gateway': typeof AuthedAdminGatewayRoute
   '/admin/identity-providers': typeof AuthedAdminIdentityProvidersRoute
   '/admin/learning': typeof AuthedAdminLearningRoute
   '/admin/market': typeof AuthedAdminMarketRoute
+  '/admin/model-catalog': typeof AuthedAdminModelCatalogRoute
   '/admin/people': typeof AuthedAdminPeopleRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
@@ -500,6 +527,7 @@ export interface FileRoutesByFullPath {
   '/settings/memory': typeof AuthedSettingsMemoryRoute
   '/settings/model-access': typeof AuthedSettingsModelAccessRoute
   '/settings/notifications': typeof AuthedSettingsNotificationsRoute
+  '/settings/orders': typeof AuthedSettingsOrdersRoute
   '/settings/passwords': typeof AuthedSettingsPasswordsRoute
   '/settings/usage': typeof AuthedSettingsUsageRoute
   '/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
@@ -554,14 +582,17 @@ export interface FileRoutesByTo {
   '/team-bots': typeof AuthedAppTeamBotsRoute
   '/admin/approvals': typeof AuthedAdminApprovalsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
+  '/admin/billing': typeof AuthedAdminBillingRoute
   '/admin/bot-services': typeof AuthedAdminBotServicesRoute
   '/admin/boundaries': typeof AuthedAdminBoundariesRoute
   '/admin/computers': typeof AuthedAdminComputersRoute
   '/admin/credentials': typeof AuthedAdminCredentialsRoute
   '/admin/enterprise': typeof AuthedAdminEnterpriseRoute
+  '/admin/gateway': typeof AuthedAdminGatewayRoute
   '/admin/identity-providers': typeof AuthedAdminIdentityProvidersRoute
   '/admin/learning': typeof AuthedAdminLearningRoute
   '/admin/market': typeof AuthedAdminMarketRoute
+  '/admin/model-catalog': typeof AuthedAdminModelCatalogRoute
   '/admin/people': typeof AuthedAdminPeopleRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
@@ -570,6 +601,7 @@ export interface FileRoutesByTo {
   '/settings/memory': typeof AuthedSettingsMemoryRoute
   '/settings/model-access': typeof AuthedSettingsModelAccessRoute
   '/settings/notifications': typeof AuthedSettingsNotificationsRoute
+  '/settings/orders': typeof AuthedSettingsOrdersRoute
   '/settings/passwords': typeof AuthedSettingsPasswordsRoute
   '/settings/usage': typeof AuthedSettingsUsageRoute
   '/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
@@ -628,14 +660,17 @@ export interface FileRoutesById {
   '/_authed/_app/team-bots': typeof AuthedAppTeamBotsRoute
   '/_authed/admin/approvals': typeof AuthedAdminApprovalsRoute
   '/_authed/admin/audit': typeof AuthedAdminAuditRoute
+  '/_authed/admin/billing': typeof AuthedAdminBillingRoute
   '/_authed/admin/bot-services': typeof AuthedAdminBotServicesRoute
   '/_authed/admin/boundaries': typeof AuthedAdminBoundariesRoute
   '/_authed/admin/computers': typeof AuthedAdminComputersRoute
   '/_authed/admin/credentials': typeof AuthedAdminCredentialsRoute
   '/_authed/admin/enterprise': typeof AuthedAdminEnterpriseRoute
+  '/_authed/admin/gateway': typeof AuthedAdminGatewayRoute
   '/_authed/admin/identity-providers': typeof AuthedAdminIdentityProvidersRoute
   '/_authed/admin/learning': typeof AuthedAdminLearningRoute
   '/_authed/admin/market': typeof AuthedAdminMarketRoute
+  '/_authed/admin/model-catalog': typeof AuthedAdminModelCatalogRoute
   '/_authed/admin/people': typeof AuthedAdminPeopleRoute
   '/_authed/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/_authed/admin/skills': typeof AuthedAdminSkillsRoute
@@ -644,6 +679,7 @@ export interface FileRoutesById {
   '/_authed/settings/memory': typeof AuthedSettingsMemoryRoute
   '/_authed/settings/model-access': typeof AuthedSettingsModelAccessRoute
   '/_authed/settings/notifications': typeof AuthedSettingsNotificationsRoute
+  '/_authed/settings/orders': typeof AuthedSettingsOrdersRoute
   '/_authed/settings/passwords': typeof AuthedSettingsPasswordsRoute
   '/_authed/settings/usage': typeof AuthedSettingsUsageRoute
   '/_authed/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
@@ -703,14 +739,17 @@ export interface FileRouteTypes {
     | '/team-bots'
     | '/admin/approvals'
     | '/admin/audit'
+    | '/admin/billing'
     | '/admin/bot-services'
     | '/admin/boundaries'
     | '/admin/computers'
     | '/admin/credentials'
     | '/admin/enterprise'
+    | '/admin/gateway'
     | '/admin/identity-providers'
     | '/admin/learning'
     | '/admin/market'
+    | '/admin/model-catalog'
     | '/admin/people'
     | '/admin/playground'
     | '/admin/skills'
@@ -719,6 +758,7 @@ export interface FileRouteTypes {
     | '/settings/memory'
     | '/settings/model-access'
     | '/settings/notifications'
+    | '/settings/orders'
     | '/settings/passwords'
     | '/settings/usage'
     | '/sign-in/$requestId'
@@ -773,14 +813,17 @@ export interface FileRouteTypes {
     | '/team-bots'
     | '/admin/approvals'
     | '/admin/audit'
+    | '/admin/billing'
     | '/admin/bot-services'
     | '/admin/boundaries'
     | '/admin/computers'
     | '/admin/credentials'
     | '/admin/enterprise'
+    | '/admin/gateway'
     | '/admin/identity-providers'
     | '/admin/learning'
     | '/admin/market'
+    | '/admin/model-catalog'
     | '/admin/people'
     | '/admin/playground'
     | '/admin/skills'
@@ -789,6 +832,7 @@ export interface FileRouteTypes {
     | '/settings/memory'
     | '/settings/model-access'
     | '/settings/notifications'
+    | '/settings/orders'
     | '/settings/passwords'
     | '/settings/usage'
     | '/sign-in/$requestId'
@@ -846,14 +890,17 @@ export interface FileRouteTypes {
     | '/_authed/_app/team-bots'
     | '/_authed/admin/approvals'
     | '/_authed/admin/audit'
+    | '/_authed/admin/billing'
     | '/_authed/admin/bot-services'
     | '/_authed/admin/boundaries'
     | '/_authed/admin/computers'
     | '/_authed/admin/credentials'
     | '/_authed/admin/enterprise'
+    | '/_authed/admin/gateway'
     | '/_authed/admin/identity-providers'
     | '/_authed/admin/learning'
     | '/_authed/admin/market'
+    | '/_authed/admin/model-catalog'
     | '/_authed/admin/people'
     | '/_authed/admin/playground'
     | '/_authed/admin/skills'
@@ -862,6 +909,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/memory'
     | '/_authed/settings/model-access'
     | '/_authed/settings/notifications'
+    | '/_authed/settings/orders'
     | '/_authed/settings/passwords'
     | '/_authed/settings/usage'
     | '/_authed/sign-in/$requestId'
@@ -1044,6 +1092,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAdminAuditRouteImport
       parentRoute: typeof AuthedAdminRouteRoute
     }
+    '/_authed/admin/billing': {
+      id: '/_authed/admin/billing'
+      path: '/billing'
+      fullPath: '/admin/billing'
+      preLoaderRoute: typeof AuthedAdminBillingRouteImport
+      parentRoute: typeof AuthedAdminRouteRoute
+    }
     '/_authed/admin/bot-services': {
       id: '/_authed/admin/bot-services'
       path: '/bot-services'
@@ -1079,6 +1134,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAdminEnterpriseRouteImport
       parentRoute: typeof AuthedAdminRouteRoute
     }
+    '/_authed/admin/gateway': {
+      id: '/_authed/admin/gateway'
+      path: '/gateway'
+      fullPath: '/admin/gateway'
+      preLoaderRoute: typeof AuthedAdminGatewayRouteImport
+      parentRoute: typeof AuthedAdminRouteRoute
+    }
     '/_authed/admin/identity-providers': {
       id: '/_authed/admin/identity-providers'
       path: '/identity-providers'
@@ -1098,6 +1160,13 @@ declare module '@tanstack/react-router' {
       path: '/market'
       fullPath: '/admin/market'
       preLoaderRoute: typeof AuthedAdminMarketRouteImport
+      parentRoute: typeof AuthedAdminRouteRoute
+    }
+    '/_authed/admin/model-catalog': {
+      id: '/_authed/admin/model-catalog'
+      path: '/model-catalog'
+      fullPath: '/admin/model-catalog'
+      preLoaderRoute: typeof AuthedAdminModelCatalogRouteImport
       parentRoute: typeof AuthedAdminRouteRoute
     }
     '/_authed/admin/people': {
@@ -1161,6 +1230,13 @@ declare module '@tanstack/react-router' {
       path: '/notifications'
       fullPath: '/settings/notifications'
       preLoaderRoute: typeof AuthedSettingsNotificationsRouteImport
+      parentRoute: typeof AuthedSettingsRouteRoute
+    }
+    '/_authed/settings/orders': {
+      id: '/_authed/settings/orders'
+      path: '/orders'
+      fullPath: '/settings/orders'
+      preLoaderRoute: typeof AuthedSettingsOrdersRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
     }
     '/_authed/settings/passwords': {
@@ -1421,14 +1497,17 @@ declare module '@tanstack/react-router' {
 interface AuthedAdminRouteRouteChildren {
   AuthedAdminApprovalsRoute: typeof AuthedAdminApprovalsRoute
   AuthedAdminAuditRoute: typeof AuthedAdminAuditRoute
+  AuthedAdminBillingRoute: typeof AuthedAdminBillingRoute
   AuthedAdminBotServicesRoute: typeof AuthedAdminBotServicesRoute
   AuthedAdminBoundariesRoute: typeof AuthedAdminBoundariesRoute
   AuthedAdminComputersRoute: typeof AuthedAdminComputersRoute
   AuthedAdminCredentialsRoute: typeof AuthedAdminCredentialsRoute
   AuthedAdminEnterpriseRoute: typeof AuthedAdminEnterpriseRoute
+  AuthedAdminGatewayRoute: typeof AuthedAdminGatewayRoute
   AuthedAdminIdentityProvidersRoute: typeof AuthedAdminIdentityProvidersRoute
   AuthedAdminLearningRoute: typeof AuthedAdminLearningRoute
   AuthedAdminMarketRoute: typeof AuthedAdminMarketRoute
+  AuthedAdminModelCatalogRoute: typeof AuthedAdminModelCatalogRoute
   AuthedAdminPeopleRoute: typeof AuthedAdminPeopleRoute
   AuthedAdminPlaygroundRoute: typeof AuthedAdminPlaygroundRoute
   AuthedAdminSkillsRoute: typeof AuthedAdminSkillsRoute
@@ -1448,14 +1527,17 @@ interface AuthedAdminRouteRouteChildren {
 const AuthedAdminRouteRouteChildren: AuthedAdminRouteRouteChildren = {
   AuthedAdminApprovalsRoute: AuthedAdminApprovalsRoute,
   AuthedAdminAuditRoute: AuthedAdminAuditRoute,
+  AuthedAdminBillingRoute: AuthedAdminBillingRoute,
   AuthedAdminBotServicesRoute: AuthedAdminBotServicesRoute,
   AuthedAdminBoundariesRoute: AuthedAdminBoundariesRoute,
   AuthedAdminComputersRoute: AuthedAdminComputersRoute,
   AuthedAdminCredentialsRoute: AuthedAdminCredentialsRoute,
   AuthedAdminEnterpriseRoute: AuthedAdminEnterpriseRoute,
+  AuthedAdminGatewayRoute: AuthedAdminGatewayRoute,
   AuthedAdminIdentityProvidersRoute: AuthedAdminIdentityProvidersRoute,
   AuthedAdminLearningRoute: AuthedAdminLearningRoute,
   AuthedAdminMarketRoute: AuthedAdminMarketRoute,
+  AuthedAdminModelCatalogRoute: AuthedAdminModelCatalogRoute,
   AuthedAdminPeopleRoute: AuthedAdminPeopleRoute,
   AuthedAdminPlaygroundRoute: AuthedAdminPlaygroundRoute,
   AuthedAdminSkillsRoute: AuthedAdminSkillsRoute,
@@ -1481,6 +1563,7 @@ interface AuthedSettingsRouteRouteChildren {
   AuthedSettingsMemoryRoute: typeof AuthedSettingsMemoryRoute
   AuthedSettingsModelAccessRoute: typeof AuthedSettingsModelAccessRoute
   AuthedSettingsNotificationsRoute: typeof AuthedSettingsNotificationsRoute
+  AuthedSettingsOrdersRoute: typeof AuthedSettingsOrdersRoute
   AuthedSettingsPasswordsRoute: typeof AuthedSettingsPasswordsRoute
   AuthedSettingsUsageRoute: typeof AuthedSettingsUsageRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
@@ -1496,6 +1579,7 @@ const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
   AuthedSettingsMemoryRoute: AuthedSettingsMemoryRoute,
   AuthedSettingsModelAccessRoute: AuthedSettingsModelAccessRoute,
   AuthedSettingsNotificationsRoute: AuthedSettingsNotificationsRoute,
+  AuthedSettingsOrdersRoute: AuthedSettingsOrdersRoute,
   AuthedSettingsPasswordsRoute: AuthedSettingsPasswordsRoute,
   AuthedSettingsUsageRoute: AuthedSettingsUsageRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
