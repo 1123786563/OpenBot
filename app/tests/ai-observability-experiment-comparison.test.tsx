@@ -752,6 +752,61 @@ describe("a side that lost a fact the page reads is the unavailable fault (OCR r
   });
 });
 
+describe("a number the wire guard cannot tell from a real score renders as absence (OCR round 5, R5-1)", () => {
+  /*
+   * R2-08 finite-checked SideRow's own interpolations; the other numeric render
+   * points in this file — MeanRow's three mean cells, SampleDeltaRow's side scores
+   * and score delta, RegressionRowView's score — still trusted the wire guard's
+   * typeof check. JSON can carry 1e999: JSON.parse hands the page a typeof-number
+   * Infinity, `Infinity.toFixed(2)` renders the literal "Infinity", and a hostile
+   * or damaged upstream writes it into the verdict. The SideRow discipline extends
+   * to every numeric this file interpolates: a non-finite renders as its field's
+   * own absence sentence, never as a number.
+   */
+  const rawWithMean = (search: string, replace: string): Response =>
+    new Response(JSON.stringify(comparisonBody()).replace(search, replace), {
+      headers: { "content-type": "application/json" },
+    });
+
+  test("a mean the guard let through as Infinity reads the absence sentence, never Infinity", async () => {
+    comparisonHandler = () =>
+      rawWithMean(
+        '"meanScore":{"baseline":1,',
+        '"meanScore":{"baseline":1e999,',
+      );
+    const view = draw(ADDRESSED);
+    await waitFor(() =>
+      expect(pageText(view)).toContain("Mean moved by -0.50"),
+    );
+    // The candidate mean and the arithmetic delta are finite and still speak.
+    expect(pageText(view)).toContain("0.50");
+    expect(pageText(view)).not.toContain("Infinity");
+    expect(pageText(view)).toContain(
+      "No sample was scored — a missing score is not a zero.",
+    );
+  });
+
+  test("a sample score and score delta of Infinity render the class word and the absence sentence", async () => {
+    comparisonHandler = () =>
+      new Response(
+        JSON.stringify(comparisonBody())
+          .replaceAll('"score":1}', '"score":1e999}')
+          .replaceAll('"score":0.5}', '"score":1e999}')
+          .replace('"scoreDelta":-0.5}', '"scoreDelta":1e999}'),
+        { headers: { "content-type": "application/json" } },
+      );
+    const view = draw(ADDRESSED);
+    await waitFor(() => expect(pageText(view)).toContain("Regressed"));
+    expect(pageText(view)).not.toContain("Infinity");
+    expect(pageText(view)).toContain(
+      "No score delta — a missing score is not a zero.",
+    );
+    // The rows keep their remaining facts: the direction word and the regression
+    // row's code, with only the unusable score cell gone.
+    expect(pageText(view)).toContain("CASE_FAILED");
+  });
+});
+
 /*
  * OCR round 3 (R3-10/R3-01/R3-02/R3-03): the guard claims the remaining fields the page
  * reads or renders — the comparison's compatible boolean (the only field that decides

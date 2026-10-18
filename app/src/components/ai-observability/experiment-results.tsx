@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { finite } from "@/components/ai-observability/experiment-comparison";
 import {
   observationScreenFault,
   StateNotice,
@@ -120,6 +121,22 @@ export function ObservationExperimentResultsPage({
 
   const cancelable = report.state === "pending" || report.state === "running";
   const { execution, summary } = report;
+  /*
+   * The render-face finite guard (R5-2, R2-08's discipline extended to every numeric
+   * this page interpolates): JSON can carry 1e999 — a typeof-number Infinity the wire
+   * guard cannot tell from a real count — and "Infinity" is not a statistic. A
+   * non-finite number renders as its field's own absence, never as a value.
+   */
+  const caseCount =
+    execution.caseCount === null ? null : finite(execution.caseCount);
+  const toolRejections = finite(execution.toolRejections);
+  const meanScore =
+    summary.meanScore === null ? null : finite(summary.meanScore);
+  const sampleBase = finite(summary.sampleBase);
+  const classCounts = SUMMARY_CLASSES.map(
+    ([classField, countField]) =>
+      [classField, finite(summary[countField])] as const,
+  );
 
   return (
     <PageShell
@@ -154,12 +171,12 @@ export function ObservationExperimentResultsPage({
               <ItemDescription className="line-clamp-none">
                 {[
                   execution.errorCode,
-                  execution.caseCount === null
+                  caseCount === null
                     ? null
-                    : t("results.base", { count: execution.caseCount }),
-                  t("results.toolRejections", {
-                    count: execution.toolRejections,
-                  }),
+                    : t("results.base", { count: caseCount }),
+                  toolRejections === null
+                    ? null
+                    : t("results.toolRejections", { count: toolRejections }),
                   report.scorerVersion === null
                     ? t("results.scorerUnavailable")
                     : t("results.scorerVersion", {
@@ -252,18 +269,23 @@ export function ObservationExperimentResultsPage({
           <Item size="sm">
             <ItemContent>
               <ItemTitle>
-                {summary.meanScore === null
+                {meanScore === null
                   ? t("results.meanNone")
-                  : `${t("results.meanScore")} ${summary.meanScore.toFixed(2)}`}
+                  : `${t("results.meanScore")} ${meanScore.toFixed(2)}`}
               </ItemTitle>
               <ItemDescription className="line-clamp-none">
                 {[
-                  t("results.base", { count: summary.sampleBase }),
-                  ...SUMMARY_CLASSES.map(
-                    ([classField, countField]) =>
-                      `${t(`classes.${classField}`)}: ${summary[countField]}`,
+                  sampleBase === null
+                    ? null
+                    : t("results.base", { count: sampleBase }),
+                  ...classCounts.map(([classField, count]) =>
+                    count === null
+                      ? null
+                      : `${t(`classes.${classField}`)}: ${count}`,
                   ),
-                ].join(" · ")}
+                ]
+                  .filter((part) => part !== null)
+                  .join(" · ")}
               </ItemDescription>
             </ItemContent>
           </Item>
@@ -298,6 +320,9 @@ function SampleRow({
 }) {
   const { t } = useTranslation("ai-observability-evaluations");
   const reason = sample.reason;
+  // The score cell is finite-checked like every numeric this page interpolates
+  // (R5-2): a 1e999 body renders as the score's absence, never as "Infinity".
+  const score = sample.score === null ? null : finite(sample.score);
   const reasonText =
     reason.class === "scored"
       ? [
@@ -353,9 +378,9 @@ function SampleRow({
           </ItemTitle>
           <ItemDescription className="line-clamp-none">
             {/* A missing score is its own fact — unavailable, never a masked zero. */}
-            {sample.score === null
+            {score === null
               ? reasonText
-              : [sample.score.toFixed(2), reasonText].join(" · ")}
+              : [score.toFixed(2), reasonText].join(" · ")}
           </ItemDescription>
           {judgeText === null ? null : (
             <ItemDescription className="line-clamp-none">

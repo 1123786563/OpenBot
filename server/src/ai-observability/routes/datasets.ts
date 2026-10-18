@@ -13,7 +13,12 @@
 import { Hono } from "hono";
 import type { AgentActor } from "../../agents/profile-types";
 import type { AppVariables } from "../../auth/guards";
-import { type BotManagementCheck, resolveObservationBot } from "../context";
+import {
+  type BotManagementCheck,
+  explicitObservationOwnership,
+  OBSERVATION_BOT_NOT_FOUND,
+  resolveObservationBot,
+} from "../context";
 import type { ObservationScope } from "../contracts";
 import { ObservationScopeError } from "../contracts";
 import type {
@@ -75,15 +80,26 @@ export function createObservationDatasetReadRoutes(
       return Response.json({ error: access.error }, { status: access.status });
     }
     const actor = context.var.actor;
+    // Explicit, never inferred (OCR h10/m182, R5-33): the ownership comes off the
+    // seam, not off this route's own guess — this file was created after the m176
+    // registration and kept the inline `owner ? "owner" : "admin"` the seam exists
+    // to fail closed against, the same omission admin-summary and exports already
+    // shed (R4-35/R4-36). A null — a caller a future widened gate lets manage but
+    // the seam refuses to mint for — is refused with the same unified not-found
+    // the manage gate uses, never a guessed-about scope.
+    const ownership = explicitObservationOwnership(actor, access.profile);
+    if (ownership === null) {
+      return Response.json(
+        { error: OBSERVATION_BOT_NOT_FOUND },
+        { status: 404 },
+      );
+    }
     const epoch = await deps.scopeEpoch(actor, access.botId);
     return {
       scope: resolveObservationScope({
         actorId: actor.id,
         botId: access.botId,
-        ownership:
-          access.profile.ownerUserId === actor.id
-            ? ("owner" as const)
-            : ("admin" as const),
+        ownership,
         epoch,
       }),
     };

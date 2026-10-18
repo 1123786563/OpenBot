@@ -336,6 +336,48 @@ describe("the availability block states coverage, binding and freshness (accepta
   });
 });
 
+describe("the metadata section names the record it cannot see, never a fact about it (OCR round 5, R5-5)", () => {
+  /*
+   * The metadata rows are a present record's projection; when there is no record —
+   * unreconciled or outside the recent window — the page used to answer the
+   * metadata-empty sentence, asserting "No metadata was projected for this run."
+   * about a record it never saw: a fact the file-head invariant forbids (named as
+   * unavailable with its reason, never as zero). The record's own three-state words
+   * are the section's answer there; the empty sentence stays the present-but-empty
+   * record's — the one true empty.
+   */
+  test("an absent record's metadata section says the record is out of the window, never 'no metadata'", async () => {
+    detailHandler = () =>
+      Response.json(detailBody({ upstream: { status: "absent" } }));
+    const view = draw();
+    await waitFor(() =>
+      expect(pageText(view)).toContain("Record outside the recent window"),
+    );
+    expect(pageText(view)).not.toContain(
+      "No metadata was projected for this run.",
+    );
+  });
+
+  test("an unreconciled record's metadata section says still syncing, never 'no metadata'", async () => {
+    detailHandler = () =>
+      Response.json(detailBody({ upstream: { status: "unreconciled" } }));
+    const view = draw();
+    await waitFor(() => expect(pageText(view)).toContain("Still syncing"));
+    expect(pageText(view)).not.toContain(
+      "No metadata was projected for this run.",
+    );
+  });
+
+  test("a present record with no projected metadata keeps the metadata-empty sentence", async () => {
+    detailHandler = () =>
+      Response.json(
+        detailBody({ upstream: { ...presentUpstream(), metadata: {} } }),
+      );
+    const view = draw();
+    await view.findByText("No metadata was projected for this run.");
+  });
+});
+
 describe("the creator guard (acceptance 3)", () => {
   test("a management refusal says forbidden", async () => {
     detailHandler = () =>

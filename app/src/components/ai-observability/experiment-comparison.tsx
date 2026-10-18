@@ -311,6 +311,17 @@ function SelectionSection({ agentId }: { agentId: string }) {
 }
 
 /**
+ * The render-face finite guard (OCR round 2, R2-08; R5-1 extends it to every numeric
+ * this file interpolates, R5-2 shares it with the results page — the two experiment
+ * pages' one definition): JSON can carry 1e999 — a typeof-number Infinity the wire
+ * guards cannot tell from a real score — and `Infinity.toFixed(2)` is not a sentence.
+ * A non-finite number renders as its field's own absence, never as a value.
+ */
+export function finite(value: number): number | null {
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
  * One side's own facts: the execution projection and the result link, verbatim. Every
  * numeric the row interpolates is finite-checked at the seam (OCR round 2, R2-08):
  * JSON can carry 1e999 — a typeof-number Infinity the guard cannot tell from a real
@@ -333,8 +344,6 @@ function SideRow({
   const stateWord = isKnownExecutionState(execution.state)
     ? t(`states.${execution.state as ExperimentExecutionState}`)
     : execution.state;
-  const finite = (value: number): number | null =>
-    Number.isFinite(value) ? value : null;
   const completionPercent = finite(side.completionRate);
   const meanScore =
     summary.meanScore === null ? null : finite(summary.meanScore);
@@ -469,22 +478,27 @@ function MeanRow({
 }) {
   const { t } = useTranslation("ai-observability-evaluations");
   const { meanScore } = deltas;
+  const baselineMean =
+    meanScore.baseline === null ? null : finite(meanScore.baseline);
+  const candidateMean =
+    meanScore.candidate === null ? null : finite(meanScore.candidate);
+  const meanDelta = meanScore.delta === null ? null : finite(meanScore.delta);
   return (
     <Item size="sm">
       <ItemContent>
         <ItemTitle>{t("results.meanScore")}</ItemTitle>
         <ItemDescription className="line-clamp-none">
           {[
-            meanScore.baseline === null
+            baselineMean === null
               ? t("results.meanNone")
-              : meanScore.baseline.toFixed(2),
-            meanScore.candidate === null
+              : baselineMean.toFixed(2),
+            candidateMean === null
               ? t("results.meanNone")
-              : meanScore.candidate.toFixed(2),
-            meanScore.delta === null
+              : candidateMean.toFixed(2),
+            meanDelta === null
               ? t("comparison.meanDeltaNone")
               : t("comparison.meanDelta", {
-                  delta: meanScore.delta.toFixed(2),
+                  delta: meanDelta.toFixed(2),
                 }),
           ].join(" · ")}
         </ItemDescription>
@@ -513,10 +527,17 @@ function SampleDeltaRow({
    */
   const classWord = (one: { class: ExperimentSampleClass }): string =>
     isKnownSampleClass(one.class) ? t(`classes.${one.class}`) : one.class;
-  const side = (one: { class: ExperimentSampleClass; score: number | null }) =>
-    [classWord(one), one.score === null ? null : one.score.toFixed(2)]
+  const side = (one: {
+    class: ExperimentSampleClass;
+    score: number | null;
+  }) => {
+    const score = one.score === null ? null : finite(one.score);
+    return [classWord(one), score === null ? null : score.toFixed(2)]
       .filter((part) => part !== null)
       .join(" ");
+  };
+  const scoreDelta =
+    delta.scoreDelta === null ? null : finite(delta.scoreDelta);
   // Each side's judge fact, beside the classes it belongs to — its own score or its
   // own failure code, never averaged into either side's rule score (T27-rn L-3).
   const judgeSide = (label: string, record: unknown) => {
@@ -547,10 +568,10 @@ function SampleDeltaRow({
               side(delta.baseline),
               "→",
               side(delta.candidate),
-              delta.scoreDelta === null
+              scoreDelta === null
                 ? t("comparison.scoreDeltaNone")
                 : t("comparison.scoreDelta", {
-                    delta: delta.scoreDelta.toFixed(2),
+                    delta: scoreDelta.toFixed(2),
                   }),
             ].join(" · ")}
           </ItemDescription>
@@ -577,28 +598,27 @@ function RegressionRowView({
   // Same closed-set class word as the delta rows (R3-03): verbatim when unnameable.
   const classWord = (one: { class: ExperimentSampleClass }): string =>
     isKnownSampleClass(one.class) ? t(`classes.${one.class}`) : one.class;
-  const one = (one: ExperimentRegressionRow["baseline"]) => (
-    <ItemDescription className="line-clamp-none">
-      {[
-        classWord(one),
-        one.score === null ? null : one.score.toFixed(2),
-        one.code,
-      ]
-        .filter((part) => part !== null)
-        .join(" · ")}
-      {" · "}
-      {/*
-       * The T28 result link, server-minted from the row this scope just read — the
-       * adjudicated way back to the safe execution record, shown verbatim.
-       */}
-      <a
-        className="break-all font-mono text-xs underline underline-offset-4"
-        href={one.resultLink}
-      >
-        {one.resultLink}
-      </a>
-    </ItemDescription>
-  );
+  const one = (side: ExperimentRegressionRow["baseline"]) => {
+    const score = side.score === null ? null : finite(side.score);
+    return (
+      <ItemDescription className="line-clamp-none">
+        {[classWord(side), score === null ? null : score.toFixed(2), side.code]
+          .filter((part) => part !== null)
+          .join(" · ")}
+        {" · "}
+        {/*
+         * The T28 result link, server-minted from the row this scope just read — the
+         * adjudicated way back to the safe execution record, shown verbatim.
+         */}
+        <a
+          className="break-all font-mono text-xs underline underline-offset-4"
+          href={side.resultLink}
+        >
+          {side.resultLink}
+        </a>
+      </ItemDescription>
+    );
+  };
   return (
     <>
       {showSeparator ? <Separator /> : null}

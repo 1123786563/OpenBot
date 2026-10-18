@@ -296,6 +296,46 @@ describe("OCR fix: the datasets chain is mounted at the one seam", () => {
     expect(review.status).toBe(404);
   });
 
+  test("a collaborator the widened gate manages earns no scope off the seam (OCR R5-33)", async () => {
+    // The gate's reserved widening arrived on the read face too: it manages for a
+    // non-owner, plain-role collaborator. This file was created after the m176
+    // registration and kept the inline `owner ? "owner" : "admin"` the explicit
+    // seam exists to fail closed against — the same omission admin-summary and
+    // exports already shed (R4-35/R4-36). A null refusal answers the unified
+    // not-found, before any store read runs.
+    const widenedApp = new Hono<{ Variables: AppVariables }>();
+    const store = createRunBindingStore(database);
+    widenedApp.route(
+      "/",
+      createAiObservabilityRoutes({
+        requireUser: authAs("collaborator"),
+        canManageBot: async (_actor, id) =>
+          id === botId
+            ? ({
+                id,
+                ownerUserId: "someone-else",
+                visibility: "private",
+                systemOwned: false,
+                deletedAt: null,
+              } as AgentProfile)
+            : null,
+        scopeEpoch: async () => epoch,
+        database,
+        bindings: store,
+      }),
+    );
+    const list = await widenedApp.request(
+      `http://openbot.test/bots/${botId}/datasets`,
+    );
+    expect(list.status).toBe(404);
+    expect(await list.json()).toEqual({ error: "Bot not found." });
+    // The detail read shares the same authorization block, so the same refusal.
+    const detail = await widenedApp.request(
+      `http://openbot.test/bots/${botId}/datasets/whatever`,
+    );
+    expect(detail.status).toBe(404);
+  });
+
   test("a foreign dataset id is not found, not leaked", async () => {
     const { app } = appFor(true);
     const detail = await app.request(

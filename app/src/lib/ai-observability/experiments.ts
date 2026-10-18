@@ -256,8 +256,7 @@ function isExperimentResultsBody(
      * interpolates (OCR round 2, R2-09): the guard used to claim only "a record", so
      * a scored reason without its rules array reached the renderer as
      * undefined.filter. Each entry's id and status are claimed too — the row prints
-     * them; anything deeper (a failed rule's reason) is a string the page would show
-     * as text, so the claim stops where the crash stops.
+     * them beside the verdict word it reads per status (R5-7, claimed below).
      */
     if (sample.reason.class === "scored") {
       if (typeof sample.reason.passed !== "number") return false;
@@ -266,6 +265,21 @@ function isExperimentResultsBody(
       for (const rule of sample.reason.rules) {
         if (!isRecord(rule)) return false;
         if (typeof rule.id !== "string" || typeof rule.status !== "string") {
+          return false;
+        }
+        /*
+         * R5-7: the row interpolates each non-passed rule's verdict word — a failed
+         * rule's `reason`, any other status's `code` — beside its id, so the claim
+         * follows the status discrimination the render makes: the passed rules the
+         * row filters out need nothing deeper, a failed rule keeps its reason
+         * string, every other status keeps its code string. Both are string claims,
+         * not closed sets (R2-09's standard): a newer word is text the row shows,
+         * never the literal `undefined` as a verdict.
+         */
+        if (rule.status === "passed") continue;
+        if (rule.status === "failed") {
+          if (typeof rule.reason !== "string") return false;
+        } else if (typeof rule.code !== "string") {
           return false;
         }
       }
