@@ -123,6 +123,7 @@ import {
 } from "./billing/service";
 import { createBillingStatements } from "./billing/statements";
 import { createBillingStore } from "./billing/store";
+import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./billing/types";
 import {
   createCreditUsageTarget,
   createLagoUsageTarget,
@@ -132,8 +133,10 @@ import {
   createUsageEvidenceRecorder,
   isConfirmedNoCost,
 } from "./billing/usage-evidence";
-import { createUsageOutbox, UsageOutboxConflictError } from "./billing/usage-outbox";
-import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./billing/types";
+import {
+  createUsageOutbox,
+  UsageOutboxConflictError,
+} from "./billing/usage-outbox";
 import { createWebhookVerifier } from "./billing/webhook-signature";
 import {
   loadAttachmentForTurn,
@@ -197,8 +200,11 @@ import {
   setModelUsageGate,
   type ToolSelection,
 } from "./copilot";
+import {
+  buildAvailableSourcesSection,
+  builtinSkillFilesFor,
+} from "./craft/builtin-skills";
 import { loadCraftConfig } from "./craft/config";
-import { builtinSkillFilesFor, buildAvailableSourcesSection } from "./craft/builtin-skills";
 import type { CraftKbSearch } from "./craft/kb-search-relay";
 import { projectKbSearchResults } from "./craft/kb-search-relay";
 import {
@@ -217,8 +223,8 @@ import {
 } from "./craft/routes";
 import { createCraftStore } from "./craft/store";
 import {
-  type WebappHmrSocketData,
   resolveWebappHmrUpgrade,
+  type WebappHmrSocketData,
   webappHmrSessionIdFromPath,
   webappHmrSocketHandlers,
 } from "./craft/webapp-proxy";
@@ -226,6 +232,8 @@ import {
   createCredentialAdminService,
   createCredentialStore,
   decryptCredentialForUse,
+  decryptSecret,
+  encryptSecret,
   resolveModelApiKey,
 } from "./credentials";
 import { createDatabase } from "./db/client";
@@ -257,8 +265,59 @@ import { createProductionRunnerComposition } from "./enterprise/runs/runner";
 import {
   verifyDataDatabase,
   verifyDirectoryDatabase,
+  verifyOperatorDatabase,
 } from "./enterprise/tenancy/connections";
-import { createScopeResolver } from "./enterprise/tenancy/store";
+import {
+  createCredentialLeaseAdminService,
+  createCredentialLeaseService,
+} from "./enterprise/tenancy/credential-lease";
+import {
+  createCredentialOwnershipAdminService,
+  createCredentialOwnershipDecisionService,
+  type SecretVault,
+} from "./enterprise/tenancy/credential-ownership";
+import { createDeploymentEntryContextFactory } from "./enterprise/tenancy/entry-context";
+import {
+  createResourceInventoryService,
+  type ResourceInventoryService,
+} from "./enterprise/tenancy/not-found-semantics";
+import { createOAuthStateService } from "./enterprise/tenancy/oauth-state";
+import {
+  createPersonalShareAdminService,
+  createPersonalShareDecisionService,
+} from "./enterprise/tenancy/personal-share-rules";
+import {
+  createPluginCatalogAdminService,
+  createPluginCatalogDecisionService,
+} from "./enterprise/tenancy/plugin-catalog";
+import {
+  applyStartupVerdict,
+  runMultitenancyStartupChecks,
+} from "./enterprise/tenancy/startup-checks";
+import {
+  applyStartupDefaultsVerdict,
+  buildStartupDefaultsRecord,
+  evaluateStartupAssemblyReadiness,
+  mountDevBypass,
+  resolveStartupDefaults,
+} from "./enterprise/tenancy/startup-defaults";
+import {
+  type AuthenticatedRequestIdentity,
+  createScopeResolver,
+} from "./enterprise/tenancy/store";
+import {
+  createTeamResourceActionService,
+  type TeamResourceActionService,
+} from "./enterprise/tenancy/team-public-rules";
+import {
+  createCompanyAdminAuthorizer,
+  createWorkspaceAdminService,
+  createWorkspaceScopeLister,
+} from "./enterprise/tenancy/workspace-admin";
+import {
+  createUnavailableWorkspaceScopeRoutes,
+  createWorkspaceScopeRoutes,
+} from "./enterprise/tenancy/workspace-scope-routes";
 import {
   createHostAccessBroker,
   HostAccessRefusedError,
@@ -272,15 +331,14 @@ import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
 } from "./intelligence-client";
-import { knowledgeServiceConfig } from "./knowledge/config";
 import { knowledgeRequest } from "./knowledge/client";
-import type { KnowledgeSearchResult } from "./knowledge/types";
+import { knowledgeServiceConfig } from "./knowledge/config";
 import {
   createKnowledgeRuntime,
   knowledgeRetrievalOptionsFromEnv,
 } from "./knowledge/retrieval";
 import { knowledgeTools } from "./knowledge/tools";
-import { clearLearningRevisionFallback } from "./learning/runtime";
+import type { KnowledgeSearchResult } from "./knowledge/types";
 import {
   createLearningAutoAssign,
   probeLearningContainer,
@@ -293,14 +351,15 @@ import {
   keyIntelligence,
   learningSetupInstructions,
 } from "./learning/ensure-container";
+import { clearLearningRevisionFallback } from "./learning/runtime";
 import { createLearningSettingsStore } from "./learning/settings";
+import { createMarketplaceStore } from "./marketplace/store";
 import { PostgresTenantStorageRegistry } from "./mastra/postgres-registry";
 import {
   RegistryTenantStorageLookup,
   type TenantCredentialStore,
 } from "./mastra/provisioning";
 import { createTenantMastraStorage } from "./mastra/tenant-storage";
-import { createMarketplaceStore } from "./marketplace/store";
 import { createMemoryDefaults } from "./memory/defaults";
 import { createMemoryIngestion } from "./memory/ingestion";
 import { createIntelligenceMemory } from "./memory/intelligence";
@@ -325,13 +384,16 @@ import { createOpenMuseGoogleRows } from "./openmuse-connectors/store";
 import { createOpenMuseDeletionManifest } from "./openmuse-deletion/manifest";
 import { createOpenMuseFileBytePurger } from "./openmuse-deletion/purge";
 import { createOpenMuseRelationalPurger } from "./openmuse-deletion/purge-relational";
+import { createOpenMuseDeletionRestore } from "./openmuse-deletion/restore";
 import {
   createOpenMuseBackupRetention,
   createOpenMuseDeletionCleanupView,
 } from "./openmuse-deletion/retention";
-import { createOpenMuseDeletionRestore } from "./openmuse-deletion/restore";
 import { createOpenMuseExternalAccessRevoker } from "./openmuse-deletion/revoke";
-import { createOpenMuseWorkShutdown, recordWorkShutdown } from "./openmuse-deletion/shutdown";
+import {
+  createOpenMuseWorkShutdown,
+  recordWorkShutdown,
+} from "./openmuse-deletion/shutdown";
 import {
   createOpenMuseAccountDeletionStore,
   createOpenMuseDeletionResourceRows,
@@ -642,6 +704,29 @@ const identifyActor: IdentifyActor = async (request) => {
 };
 
 const config = loadConfig();
+/*
+ * Multitenancy mode is an explicit switch (OPENBOT_MULTITENANCY, default off — config.ts), and
+ * switching it on is a promise about who this deployment serves. The promise is checked before
+ * anything else here runs: entrance coverage against the MT001 inventory, no single-user/dev
+ * bypass residue, and the restricted ob_ent_* database roles on the production connections. Any
+ * gap and the process exits non-zero with one structured audit record naming every check —
+ * booting with a hole in tenant isolation is not a warning-and-continue situation.
+ *
+ * With the switch off nothing here runs: the legacy boot is byte-for-byte what it was.
+ */
+if (config.multitenancy.enabled) {
+  const startupRecord = await runMultitenancyStartupChecks({
+    inventoryPath: config.multitenancy.inventoryPath,
+    waiversPath: config.multitenancy.waiversPath,
+    directoryUrl: config.enterpriseDirectoryDatabaseUrl,
+    dataUrl: config.enterpriseDataDatabaseUrl,
+    tenantRuntimeUrl: config.tenantStorageRuntimeDatabaseUrl,
+    singleUser: config.singleUser,
+    singleUserEnvRaw: process.env.OPENBOT_SINGLE_USER,
+    devNoAuthEnvRaw: process.env.OPENBOT_DEV_NO_AUTH,
+  });
+  applyStartupVerdict(startupRecord, { log });
+}
 // The environment seeds local policy once. The SDK fallback must not reapply an old revision
 // after an administrator clears a pin to follow the latest published Skills.
 clearLearningRevisionFallback();
@@ -713,7 +798,21 @@ const learningSettings = withLearningAutoAssign(
   learningAutoAssign,
 );
 learningAutoAssign.start();
-await initializeDevActorUser(database, config.singleUser);
+/*
+ * MT123 (issue #166): the single-user bypass is ruled by the purification
+ * domain (enterprise/tenancy/startup-defaults.ts) — mounted only in
+ * single-tenant mode, never in multitenancy. The full startup defaults are
+ * resolved further below, once the tenant package is in hand; the dev-actor
+ * seeding sits earlier in the boot, so it consumes the same one-rule source
+ * (`mountDevBypass`) instead of a drifted copy.
+ */
+await initializeDevActorUser(
+  database,
+  mountDevBypass({
+    multitenancy: config.multitenancy.enabled,
+    singleUser: config.singleUser,
+  }),
+);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
 const credentialStore = createCredentialStore(database);
@@ -785,27 +884,46 @@ const enterpriseCapabilities = await (async () => {
         runtimeConnectionString: tenantRuntimeUrl,
       }),
     );
+    // MT122 (issue #165): one session resolution for both the enterprise entry's
+    // resolver and the deployment main entry's context factory — the identical
+    // closure, so the two entries answer "who is asking" from the same code.
+    const authenticateEnterpriseRequest = async (
+      request: Request,
+    ): Promise<AuthenticatedRequestIdentity | null> => {
+      const actor = await resolveRequestActor(request).catch((error) => {
+        // Session-infrastructure faults are not "unauthenticated": leave
+        // a trace so auth-store outages are diagnosable (OCR R10).
+        console.error({
+          error: "ENTERPRISE_SESSION_RESOLUTION_FAILED",
+          cause: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      });
+      return actor ? { actorId: actor.id, entrypoint: "web" } : null;
+    };
     const scopes = createScopeResolver(directory, {
       data,
-      authenticate: async (request) => {
-        const actor = await resolveRequestActor(request).catch((error) => {
-          // Session-infrastructure faults are not "unauthenticated": leave
-          // a trace so auth-store outages are diagnosable (OCR R10).
-          console.error({
-            error: "ENTERPRISE_SESSION_RESOLUTION_FAILED",
-            cause: error instanceof Error ? error.message : String(error),
-          });
-          return null;
-        });
-        return actor ? { actorId: actor.id, entrypoint: "web" } : null;
-      },
-      selectTenant: (request) => request.headers.get("x-openbot-tenant-id"),
-      selectWorkspace: (request) =>
-        request.headers.get("x-openbot-workspace-id"),
+      authenticate: authenticateEnterpriseRequest,
+      // MT005 ruling #1: selection headers are x-openbot-tenant and
+      // x-openbot-workspace. They only select; database membership decides.
+      selectTenant: (request) => request.headers.get("x-openbot-tenant"),
+      selectWorkspace: (request) => request.headers.get("x-openbot-workspace"),
+    });
+    // MT122 (issue #165): the deployment main entry's context factory. Built
+    // from the same directory/data channels and the SAME session-resolution
+    // closure the enterprise entry's scopes consume, so "who is asking" has
+    // one answer for both entries; business dependencies come from the factory
+    // per request context — never a startup-wide single config.
+    const entry = createDeploymentEntryContextFactory({
+      directory,
+      data,
+      authenticate: authenticateEnterpriseRequest,
     });
     return {
+      directory,
       data,
       scopes,
+      entry,
       conversations: createConversationService({ data, mastraStorage }),
     };
   } catch (error) {
@@ -819,6 +937,189 @@ const enterpriseConversationRoutes = enterpriseCapabilities
       enterpriseCapabilities.scopes,
     )
   : createUnavailableConversationRoutes();
+// MT006 (issue #49): workspace scope listing plus company team administration.
+// The listing half runs on the directory/data channels already verified above;
+// the admin half needs the restricted operator channel, and its routes answer
+// 503 when that channel is not wired — never a permissive stand-in. Ruling #1:
+// x-openbot-tenant / x-openbot-workspace select; database membership decides.
+const authenticateWorkspaceScopeRequest = async (
+  request: Request,
+): Promise<AuthenticatedRequestIdentity | null> => {
+  // Session faults answer 401 through the routes' error map; the identical
+  // resolution beside the conversation scopes carries the structured trace.
+  const actor = await resolveRequestActor(request).catch(() => null);
+  return actor ? { actorId: actor.id, entrypoint: "web" } : null;
+};
+const enterpriseWorkspaceScopeRoutes = enterpriseCapabilities
+  ? await (async () => {
+      const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+      const operator = operatorUrl
+        ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
+            // The operator channel failing its capability check leaves the
+            // admin routes answering 503 — refused, never permissive; no
+            // console here (server/src is noConsole-enforced).
+            () => null,
+          )
+        : null;
+      return createWorkspaceScopeRoutes({
+        authenticate: authenticateWorkspaceScopeRequest,
+        lister: createWorkspaceScopeLister(
+          enterpriseCapabilities.directory,
+          enterpriseCapabilities.data,
+        ),
+        admin: operator
+          ? {
+              authorizer: createCompanyAdminAuthorizer(
+                enterpriseCapabilities.directory,
+                {
+                  authenticate: authenticateWorkspaceScopeRequest,
+                  selectTenant: (request) =>
+                    request.headers.get("x-openbot-tenant"),
+                },
+              ),
+              service: createWorkspaceAdminService(operator),
+            }
+          : undefined,
+      });
+    })()
+  : createUnavailableWorkspaceScopeRoutes();
+// MT010 (Issue #53): personal-resource share rules. The decision half rides
+// the already-verified restricted data channel; the owner-only share/revoke
+// half needs the restricted operator channel and stays null — fail-closed,
+// no share can ever be created or revoked — when that channel is not wired.
+// Held here for the share-token and share-page entrypoints that land in
+// MT058 and MT092; nothing in this assembly serves traffic with it yet.
+export const personalShareRules = await (async () => {
+  if (!enterpriseCapabilities) return null;
+  const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+  const operator = operatorUrl
+    ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
+        // Same discipline as the workspace-admin channel above: a failing
+        // operator verification leaves the write half unavailable, never
+        // permissive; no console here (server/src is noConsole-enforced).
+        () => null,
+      )
+    : null;
+  return {
+    decisions: createPersonalShareDecisionService(enterpriseCapabilities.data),
+    admin: operator ? createPersonalShareAdminService(operator) : null,
+  };
+})();
+// MT027 (Issue #70): credential ownership — usable is not readable. The use/
+// disclose/list/describe decisions ride the already-verified restricted data
+// channel; the ownership admin (register/revoke/grant) needs the restricted
+// operator channel and stays null — fail-closed, no credential can ever be
+// registered or granted — when that channel is not wired. The vault seam is
+// the deployment's existing AES-GCM envelope (credentials.ts): plaintext is
+// sealed on registration and only ever opened inside an authorized disclosure,
+// which writes the append-only audit row in the same data transaction.
+export const credentialOwnership = await (async () => {
+  if (!enterpriseCapabilities) return null;
+  const credentialOwnershipVault: SecretVault = {
+    seal: (plaintext) => encryptSecret(config.keyEncryptionKey, plaintext),
+    open: (envelope) => decryptSecret(config.keyEncryptionKey, envelope),
+  };
+  const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+  const operator = operatorUrl
+    ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
+        // Same fail-closed discipline as the personalShareRules block above:
+        // a failing operator verification leaves the ownership admin
+        // unavailable, never permissive; no console here (server/src is
+        // noConsole-enforced).
+        () => null,
+      )
+    : null;
+  return {
+    decisions: createCredentialOwnershipDecisionService(
+      enterpriseCapabilities.data,
+      credentialOwnershipVault,
+    ),
+    admin: operator
+      ? createCredentialOwnershipAdminService(
+          operator,
+          credentialOwnershipVault,
+        )
+      : null,
+  };
+})();
+// MT031 (Issue #74): plugin catalog & install ownership — the catalog is
+// read-only, installs are not global. Catalog browsing and install/connection
+// invocation decisions ride the already-verified restricted data channel; the
+// install admin (install/uninstall/enable/bind) needs the restricted operator
+// channel and stays null — fail-closed, no plugin can ever be installed —
+// when that channel is not wired. The vault seam is the deployment's existing
+// AES-GCM envelope (same as credentialOwnership): an install secret is sealed
+// on install and never returned by any view; invocation hands the sealed
+// envelope only to the allow branch of the trusted execution plane.
+export const pluginCatalog = await (async () => {
+  if (!enterpriseCapabilities) return null;
+  const pluginCatalogVault: SecretVault = {
+    seal: (plaintext) => encryptSecret(config.keyEncryptionKey, plaintext),
+    open: (envelope) => decryptSecret(config.keyEncryptionKey, envelope),
+  };
+  const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+  const operator = operatorUrl
+    ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
+        // Same fail-closed discipline as the credentialOwnership block above:
+        // a failing operator verification leaves the install admin
+        // unavailable, never permissive; no console here (server/src is
+        // noConsole-enforced).
+        () => null,
+      )
+    : null;
+  return {
+    decisions: createPluginCatalogDecisionService(enterpriseCapabilities.data),
+    admin: operator
+      ? createPluginCatalogAdminService(operator, pluginCatalogVault)
+      : null,
+  };
+})();
+// MT028 (Issue #71): OAuth callback binding by server-held state. The whole
+// service (initiate/consume/fail) rides the verified restricted operator
+// channel: initiation happens inside a company/team session, but the callback
+// is sessionless, so the persisted row is the only attribution source. When
+// the operator channel is not wired the service stays null — fail-closed: no
+// enterprise OAuth flow can be initiated (the legacy personal connect flow is
+// unaffected), never a flow that could not be consumed or audited. Held here
+// for the connector callback wiring that lands in the downstream ticket;
+// nothing in this assembly serves traffic with it yet.
+export const oauthState = await (async () => {
+  if (!enterpriseCapabilities) return null;
+  const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+  const operator = operatorUrl
+    ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
+        // Same fail-closed discipline as the credentialOwnership block above:
+        // a failing operator verification leaves the OAuth state service
+        // unavailable, never permissive; no console here (server/src is
+        // noConsole-enforced).
+        () => null,
+      )
+    : null;
+  return operator ? createOAuthStateService(operator) : null;
+})();
+// MT029 (Issue #72): credential lease — fixed purpose, scope and revocable.
+// The decision face (issue / validate) rides the verified restricted data
+// channel; the admin face (revoke) rides the verified restricted operator
+// channel. Either channel missing stays null — fail-closed: no lease can be
+// issued or revoked, never a flow that could not be audited. Held here for
+// the execution-chain wiring (MT046 onward re-validates the lease at
+// sensitive actions); nothing in this assembly serves traffic with it yet.
+export const credentialLease = await (async () => {
+  if (!enterpriseCapabilities) return null;
+  const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+  const operator = operatorUrl
+    ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
+        // Same fail-closed discipline as the credentialOwnership block above:
+        // a failing operator verification leaves the lease admin unavailable,
+        // never permissive; no console here (server/src is noConsole-enforced).
+        () => null,
+      )
+    : null;
+  return {
+    decisions: createCredentialLeaseService(enterpriseCapabilities.data),
+    admin: operator ? createCredentialLeaseAdminService(operator) : null,
+  };
+})();
 const identityStore = createIdentityStore(database, credentialStore);
 
 const agentVault = {
@@ -837,9 +1138,44 @@ const marketplaceStore = createMarketplaceStore(database);
 // Read here rather than beside the synchronise below, because the package names the deployment and
 // the channel store needs that name before it can mint a thread id.
 const tenantPackage = await loadTenantPackage(config.tenantPackageDirectory);
-const threadIdentity = createThreadIdentity(
-  config.deploymentId ?? tenantPackage.tenantId,
-);
+/*
+ * MT123 (issue #166): the startup-assembly purification domain. In multitenancy mode the boot
+ * keeps no implicit default company (the tenant package's tenantId no longer stands in as one),
+ * no default thread identity beyond the operator's explicit DEPLOYMENT_ID fingerprint, and no
+ * single-user bypass; assembly gaps (the MT122 entry context absent, an unnamed thread seed,
+ * single-user/config or bypass env residue) are listed exhaustively and the boot refuses — the
+ * same discipline as the MT013 checks above. With the switch off nothing here changes: the
+ * legacy boot resolves to the very same defaults it always built.
+ */
+const startupDefaultFacts = {
+  multitenancy: config.multitenancy.enabled,
+  deploymentId: config.deploymentId,
+  tenantPackageTenantId: tenantPackage.tenantId,
+  singleUser: config.singleUser,
+  singleUserEnvRaw: process.env.OPENBOT_SINGLE_USER,
+  devNoAuthEnvRaw: process.env.OPENBOT_DEV_NO_AUTH,
+  entryContextWired: Boolean(enterpriseCapabilities?.entry),
+} as const;
+const startupDefaults = resolveStartupDefaults(startupDefaultFacts);
+if (config.multitenancy.enabled) {
+  applyStartupDefaultsVerdict(
+    buildStartupDefaultsRecord(
+      startupDefaults,
+      evaluateStartupAssemblyReadiness(startupDefaultFacts),
+    ),
+    { log },
+  );
+}
+const startupThreadIdentitySeed = startupDefaults.threadIdentitySeed;
+if (startupThreadIdentitySeed === null) {
+  // Unreachable: the multitenancy verdict above already refused a boot whose
+  // thread seed would fall back to the tenant package's default company, and
+  // a single-tenant package always carries a tenantId. Guarded anyway — a
+  // silent undefined fingerprint would be exactly the default the purified
+  // assembly exists to remove.
+  throw new Error("STARTUP_THREAD_IDENTITY_SEED_ABSENT");
+}
+const threadIdentity = createThreadIdentity(startupThreadIdentitySeed);
 const baseChannelStore = createChannelStore(
   database,
   agentProfileStore,
@@ -3091,7 +3427,8 @@ const openMuseTaskStore = createOpenMuseTaskStore({
  * below fences reads through its isDisabled, and the app tail's delete route and
  * /api/mobile fence answer through the same instance.
  */
-const openMuseAccountDeletionStore = createOpenMuseAccountDeletionStore(database);
+const openMuseAccountDeletionStore =
+  createOpenMuseAccountDeletionStore(database);
 /*
  * The personal-files store (F01), hoisted beside the runner it feeds: the task
  * runner reads finance CSVs and document versions through it, and the app tail
@@ -3699,7 +4036,9 @@ if (
   log.error(
     {
       type: "billing-credit-policy-unconfigured",
-      issues: billingSettings.creditPolicy.issues.map((issue) => `${issue.key}:${issue.reason}`),
+      issues: billingSettings.creditPolicy.issues.map(
+        (issue) => `${issue.key}:${issue.reason}`,
+      ),
     },
     "billing-credit-policy-unconfigured: metered work will refuse until these keys are fixed",
   );
@@ -3749,12 +4088,16 @@ const billing =
             // lookup prices each plan's expected allowance in scaled integer units (the same
             // arithmetic the grantor below uses), so the pass can audit that a paid order's
             // plan payout actually landed at the priced amount.
-            reconciler: createReconciler(database, externalCustomerKey, (planCode) => {
-              const entry = settings.planCatalog.get(planCode);
-              return entry && entry.credits > 0
-                ? Math.round(entry.credits * CREDIT_SCALE)
-                : null;
-            }),
+            reconciler: createReconciler(
+              database,
+              externalCustomerKey,
+              (planCode) => {
+                const entry = settings.planCatalog.get(planCode);
+                return entry && entry.credits > 0
+                  ? Math.round(entry.credits * CREDIT_SCALE)
+                  : null;
+              },
+            ),
             ...(settings.webhookKey
               ? {
                   verifier: createWebhookVerifier({
@@ -3787,8 +4130,9 @@ const usageOutbox =
  */
 if (billing !== undefined && usageOutbox !== undefined) {
   const creditPolicy = billingSettings?.creditPolicy;
-  const recordUnsettledUsage = createUsageEvidenceRecorder(usageOutbox, (message) =>
-    log.warn(message),
+  const recordUnsettledUsage = createUsageEvidenceRecorder(
+    usageOutbox,
+    (message) => log.warn(message),
   );
   setModelUsageGate(async (input) => {
     if (!creditPolicy?.configured) {
@@ -3896,7 +4240,9 @@ if (billing !== undefined && usageOutbox !== undefined) {
           // gets its own event and never the write-failure code a foreign error would
           // otherwise fall back to. The hold is retained either way.
           const code =
-            error instanceof UsageChargeError ? error.code : "usage_charge_failed";
+            error instanceof UsageChargeError
+              ? error.code
+              : "usage_charge_failed";
           log.error(
             {
               type: "billing-usage-charge-refused",
@@ -4268,26 +4614,34 @@ const codeRunStore = createCodeRunStore(database);
  * column is a display copy and is never read here). A deployment without billing passes
  * `billing === undefined` straight through: silent, and the run row still stands.
  */
-const codeRunUsageReporter = billing && usageOutbox
-  ? async (input: import("./workshop/metering").CodeRunUsageInput): Promise<void> => {
-      try {
-        await reportCodeRunUsage(
-          usageOutbox,
-          {
-            ...input,
-            externalCustomerId: billing.externalCustomerKey,
-            // True only when the hard-cap policy actually prices code runs; the gateway refuses
-            // billed runs until the sandbox can enforce a budget, so this stays false today and
-            // the guard inside reportCodeRunUsage is what makes flipping it safe.
-            creditMeteringEnabled: billingSettings?.creditPolicy.configured === true,
-          },
-          (message) => log.warn(message),
-        );
-      } catch (error) {
-        logUsageOutboxWriteFailure("code_run", `code-run:${input.runId}`, error);
+const codeRunUsageReporter =
+  billing && usageOutbox
+    ? async (
+        input: import("./workshop/metering").CodeRunUsageInput,
+      ): Promise<void> => {
+        try {
+          await reportCodeRunUsage(
+            usageOutbox,
+            {
+              ...input,
+              externalCustomerId: billing.externalCustomerKey,
+              // True only when the hard-cap policy actually prices code runs; the gateway refuses
+              // billed runs until the sandbox can enforce a budget, so this stays false today and
+              // the guard inside reportCodeRunUsage is what makes flipping it safe.
+              creditMeteringEnabled:
+                billingSettings?.creditPolicy.configured === true,
+            },
+            (message) => log.warn(message),
+          );
+        } catch (error) {
+          logUsageOutboxWriteFailure(
+            "code_run",
+            `code-run:${input.runId}`,
+            error,
+          );
+        }
       }
-    }
-  : undefined;
+    : undefined;
 const sandboxClientFor = (botId: string) =>
   sandboxUrl && sandboxToken
     ? createSandboxClient({
@@ -4505,9 +4859,11 @@ const craftMcpRelayBaseUrl =
  * An unwired knowledge service holds the skill back entirely (null) — the
  * AGENTS.md Company-knowledge section stays out with it.
  */
-const craftKnowledgeBases = async (): Promise<
-  Array<{ id: string; name: string; description: string | null }> | null
-> => {
+const craftKnowledgeBases = async (): Promise<Array<{
+  id: string;
+  name: string;
+  description: string | null;
+}> | null> => {
   if (!knowledgeService) return null;
   try {
     const response = await knowledgeRequest(knowledgeService, "/kb");
@@ -4611,7 +4967,9 @@ const craftManagedContentFor = createCraftManagedContentResolver({
         ...held.map((row) => row.serverId),
         ...brokered.map((row) => row.serverId),
       ]),
-      ...(sourcesSection !== null ? { companySearchSourcesSection: sourcesSection } : {}),
+      ...(sourcesSection !== null
+        ? { companySearchSourcesSection: sourcesSection }
+        : {}),
     });
   },
   /*
@@ -5043,9 +5401,8 @@ const openMuseActivity = createOpenMuseActivityRoutes({
  * above their first consumer (round 6 M3) so no reader builds its own
  * second instance of either.
  */
-const openMuseDeletionResourceRows = createOpenMuseDeletionResourceRows(
-  database,
-);
+const openMuseDeletionResourceRows =
+  createOpenMuseDeletionResourceRows(database);
 const openMuseDeletionCleanup = createOpenMuseDeletionCleanupView({
   markers: openMuseAccountDeletionStore,
   rows: openMuseDeletionResourceRows,
@@ -5422,6 +5779,13 @@ const app = createApp(
     groups: groupConversations,
     teamBots,
     enterpriseConversations: enterpriseConversationRoutes,
+    enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
+    // MT122 (issue #165): present only when enterprise capabilities are wired;
+    // multitenancy off or a missing channel leaves the assembly byte-for-byte
+    // what it was (the middleware itself is mounted in createApp, mode-gated).
+    ...(enterpriseCapabilities
+      ? { entryContext: enterpriseCapabilities.entry }
+      : {}),
     lifecycle: {
       lifecycle: createBotLifecycleStore(database),
       reset: createBotReset({
@@ -5647,7 +6011,9 @@ serve<SocketData>({
   websocket: {
     open(ws) {
       if (isHmrSocket(ws.data)) {
-        webappHmrSocketHandlers.open(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        webappHmrSocketHandlers.open(
+          ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+        );
         return;
       }
       if (!isProxiedStream(ws.data)) {
@@ -5753,7 +6119,9 @@ serve<SocketData>({
     },
     close(ws, code, reason) {
       if (isHmrSocket(ws.data)) {
-        webappHmrSocketHandlers.close(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        webappHmrSocketHandlers.close(
+          ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+        );
         return;
       }
       if (!isProxiedStream(ws.data)) {
@@ -5813,3 +6181,37 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 log.info({ port }, "OpenBot server listening on http://127.0.0.1");
 
+/*
+ * MT009 (issue #52): team-public resource action rules — assembly, pure append.
+ *
+ * The action service shares the SAME verified enterprise data channel as every
+ * other enterprise consumer (no second pool, no permissive stand-in: when the
+ * channel is absent the service is null, never a fake). Mounting it on routes
+ * is the usage-surface ticket's job; this segment only guarantees the rules
+ * exist in-process, assembled once, and reachable by that consumer.
+ */
+const teamResourceActionService: TeamResourceActionService | null =
+  enterpriseCapabilities
+    ? createTeamResourceActionService(enterpriseCapabilities.data)
+    : null;
+
+export { teamResourceActionService };
+
+/*
+ * MT011 (issue #54): centralized not-found invisibility semantics + the
+ * list/cursor/batch surface — assembly, pure append. The inventory service
+ * shares the SAME verified enterprise data channel as every other enterprise
+ * consumer (no second pool, no permissive stand-in: when the channel is
+ * absent the service is null, never a fake). It reuses the MT008 policy
+ * registry for every allow/deny decision — authorization stays defined in
+ * exactly one place. Mounting it on routes is the consumer ticket's job;
+ * this segment only guarantees the canonical not-found semantics and the
+ * list/cursor/batch surface exist in-process, assembled once, and reachable
+ * by that consumer.
+ */
+const resourceInventoryService: ResourceInventoryService | null =
+  enterpriseCapabilities
+    ? createResourceInventoryService(enterpriseCapabilities.data)
+    : null;
+
+export { resourceInventoryService };

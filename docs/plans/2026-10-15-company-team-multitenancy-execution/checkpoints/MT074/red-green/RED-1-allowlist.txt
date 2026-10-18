@@ -1,0 +1,24 @@
+(fail) issue #46 criterion 3: deterministic names and increasing numbers > the allowlist is exactly the registry and the shipped self-check task [0.12ms]
+(fail) issue #46 criterion 3: deterministic names and increasing numbers > the allowlist is exactly the registry and the shipped self-check task [0.12ms]
+ 41 pass
+ 1 fail
+(fail) issue #46 criterion 3: deterministic names and increasing numbers > the allowlist is exactly the registry and the shipped self-check task [0.12ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > plan names are fixed, numbered from 0001, and deterministic [0.05ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > buildPlan refuses unknown task ids [0.02ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > plan numbering rejects duplicates, gaps, and duplicate names [0.04ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > journal numbers must be a contiguous prefix of the plan [0.04ms]
+(pass) issue #46 criterion 3: deterministic names and increasing numbers > the manifest mirrors the plan with per-step digests [0.03ms]
+(pass) issue #46 criterion 4: dry-run is the default > migrate without --apply plans without executing anything [0.41ms]
+(pass) issue #46 criterion 4: dry-run is the default > dry-run reports pending steps against a partial journal [0.09ms]
+(pass) issue #46 criterion 4: dry-run is the default > a journal with gaps or duplicates refuses before executing [0.18ms]
+(pass) issue #46 criterion 4: apply requires an exact manifest > a missing manifest file refuses before connecting [0.13ms]
+(pass) issue #46 criterion 4: apply requires an exact manifest > a manifest that disagrees with the plan refuses before connecting [0.16ms]
+(pass) issue #46 criterion 4: apply requires an exact manifest > a valid manifest applies each step in its own transaction and journals it [0.15ms]
+(pass) issue #46 criterion 4: apply requires an exact manifest > an already fully applied task is an explicit no-op, not a re-run [0.06ms]
+--
+(fail) issue #46 criterion 3: deterministic names and increasing numbers > the allowlist is exactly the registry and the shipped self-check task [0.12ms]
+
+ 41 pass
+ 1 fail
+ 228 expect() calls
+Ran 42 tests across 1 file. [134.00ms]

@@ -1,0 +1,5 @@
+b6b51d7f9c157d3ea50b6d6a52d7ee92e50b15ae08e2dc9fdd2618bd85f415ff  scripts/multitenancy/migrate-test.ts
+ba91b012cbc40ca8f338cbf48bd0442570cb126c6338c89e7cbb2b4e31d99c20  tests/multitenancy/migration-tool.test.ts
+45d1b500f66fee054a6030b860d97799434849363a39d56dde3348c3a7acf454  src/enterprise/tenancy/job-ownership.ts
+895b0e548513223e148a4a631dabe4181a0964d853ce2a099158813901d9b107  src/enterprise/tenancy/scope-gate.ts
+ca6450f0c1c537fa68b7c12505fffd7c9d9646253660431f8b3f2879b26ba578  src/db/schema/job-ownership.ts

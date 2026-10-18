@@ -1,0 +1,43 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/bot-publish.test.ts:
+(pass) MT017 验收 1：发布后成员按 MT009 规则 read/run，非成员不可见 > publish allow：publication 回显显式受众（tenant + workspace）与注册版本号 [14.18ms]
+(pass) MT017 验收 1：发布后成员按 MT009 规则 read/run，非成员不可见 > 注册行真实落库：受限 data 角色读到 kind='bot' + visibility='workspace' + 归属团队 [4.70ms]
+(pass) MT017 验收 1：发布后成员按 MT009 规则 read/run，非成员不可见 > 发布前 delta：同团队无 grant 成员 read deny / run not-found（发布是唯一变化） [33.13ms]
+(pass) MT017 验收 1：发布后成员按 MT009 规则 read/run，非成员不可见 > 同团队无 grant 成员 read 放行（MT008 判定，无需逐人授权） [10.38ms]
+(pass) MT017 验收 1：发布后成员按 MT009 规则 read/run，非成员不可见 > 同团队无 grant 成员 run 放行（无依赖时） [21.36ms]
+(pass) MT017 验收 1：发布后成员按 MT009 规则 read/run，非成员不可见 > MT009 管理动作词表逐动作拒绝（write/upload/delete/share/manage → TEAM_PUBLIC_ACTION_FORBIDDEN） [29.60ms]
+(pass) MT017 验收 1：发布后成员按 MT009 规则 read/run，非成员不可见 > 同公司他团队成员（a2）read/run = canonical not-found（逐字节，不泄露存在性） [17.91ms]
+(pass) MT017 验收 1：发布后成员按 MT009 规则 read/run，非成员不可见 > 另一家公司成员（b1）read/run = canonical not-found（与不存在 id 逐字节同形） [23.10ms]
+(pass) MT017 验收 1：发布后成员按 MT009 规则 read/run，非成员不可见 > company-admin 无团队上下文连 scope 都无法铸造（seam 拒绝，无内容访问） [4.31ms]
+(pass) MT017 验收 1：发布后成员按 MT009 规则 read/run，非成员不可见 > 双团队成员 scope 钉死：a1a2 成员从 team-a2 scope 不可见、从 team-a1 scope 可见 [21.57ms]
+(pass) MT017 验收 1：发布后成员按 MT009 规则 read/run，非成员不可见 > MT009 依赖规则原样适用：坏依赖 run → DEPENDENCY_INVALID（read 不受影响） [23.97ms]
+(pass) MT017 验收 2：取消发布立即失去使用权，已运行会话不泄露 > unpublish allow：注册行 visibility 回 NULL（data 角色探针） [20.87ms]
+(pass) MT017 验收 2：取消发布立即失去使用权，已运行会话不泄露 > 取消后成员 read/run 立即 canonical not-found（与从未发布 Bot 逐字节同形） [13.16ms]
+(pass) MT017 验收 2：取消发布立即失去使用权，已运行会话不泄露 > 发布前签发的 scope 取消后立即失效（调用时重验，无残留使用权） [51.15ms]
+(pass) MT017 验收 2：取消发布立即失去使用权，已运行会话不泄露 > 取消发布幂等：重复取消 allow；从未发布的 Bot 取消 allow [24.73ms]
+(pass) MT017 验收 2：取消发布立即失去使用权，已运行会话不泄露 > 显式 grant 与团队公共路径独立：取消后持 grant 成员 read 仍 allow、run 仍不可见 [52.52ms]
+(pass) MT017 验收 2：取消发布立即失去使用权，已运行会话不泄露 > 同团队非 owner 发布/取消 = PUBLISH_FORBIDDEN（响亮拒绝；可见性门后不新增信息） [11.96ms]
+(pass) MT017 验收 2：取消发布立即失去使用权，已运行会话不泄露 > 非成员/跨公司取消 = canonical not-found（逐字节，不泄露存在性） [24.54ms]
+(pass) MT017 验收 2：取消发布立即失去使用权，已运行会话不泄露 > MT016 归属可见性不受发布/取消影响（对照钉死：两表面语义披露） [27.91ms]
+(pass) MT017 验收 3：旧 public 保持原暴露范围（对照测试） > MT016 createBot 不产生任何注册行：新 Bot 在显式发布前对成员 read/run 不可见 [33.00ms]
+(pass) MT017 验收 3：旧 public 保持原暴露范围（对照测试） > 旧 public 无显式迁移：无 grant 成员 read/run 不可见（暴露范围绝不自动变宽） [30.57ms]
+(pass) MT017 验收 3：旧 public 保持原暴露范围（对照测试） > 对照面：持遗留 grant 成员 read 保持 allow（原暴露范围逐字保持）、run 不可见 [19.31ms]
+(pass) MT017 验收 3：旧 public 保持原暴露范围（对照测试） > 显式迁移（真实 MT008 manifest 入口）后成员 read/run 放行：delta 只来自显式动作 [27.06ms]
+(pass) MT017 验收 3：旧 public 保持原暴露范围（对照测试） > 显式迁移不跨公司：B 公司成员对已迁移 A 公司 Bot 仍 canonical not-found [12.06ms]
+(pass) MT017 验收 4：受众校验与跨公司拒绝 > 跨公司受众 deny PUBLISH_AUDIENCE_CROSS_COMPANY + 零写入（无注册行产生） [12.32ms]
+(pass) MT017 验收 4：受众校验与跨公司拒绝 > 同公司跨团队受众 deny PUBLISH_AUDIENCE_NOT_OWNING_TEAM + 零写入 [17.39ms]
+(pass) MT017 验收 4：受众校验与跨公司拒绝 > 缺受众 throw PUBLISH_AUDIENCE_REQUIRED（票面：必须选择明确受众） [5.65ms]
+(pass) MT017 验收 4：受众校验与跨公司拒绝 > 受众形状坏 throw PUBLISH_AUDIENCE_INVALID（非对象/type 缺失/字段缺失/空串） [8.28ms]
+(pass) MT017 验收 4：受众校验与跨公司拒绝 > type='people' deny PUBLISH_AUDIENCE_UNSUPPORTED（指定范围受众是后续票语义） [12.73ms]
+(pass) MT017 验收 4：受众校验与跨公司拒绝 > 非成员用合法受众发布他人 Bot = canonical not-found（不泄露归属存在性） [24.40ms]
+(pass) MT017 验收 4：受众校验与跨公司拒绝 > forged scope UNVERIFIED_SCOPE；缺上下文 TENANT_REQUIRED / WORKSPACE_REQUIRED [5.91ms]
+(pass) MT017 验收 4：受众校验与跨公司拒绝 > 不变量守卫：注册行 kind 漂移 → BOT_PUBLISH_STATE_CONFLICT（绝不静默改写） [37.44ms]
+(pass) MT017 修复轮：owner 显式发布翻转显式 private 注册行；取消发布回 NULL > publish 翻 'private'→'workspace' 且成员 read/run 放行；unpublish 回 NULL（不回滚为 private；对照 MT010 个人标记语义边界） [84.39ms]
+(pass) MT017 存储与角色契约 > 发布/取消全程受限 operator 角色（current_user = ob_ent_operator） [37.01ms]
+(pass) MT017 存储与角色契约 > 未验证通道装配拒绝（UNVERIFIED_DATABASE_CAPABILITY） [0.25ms]
+
+ 35 pass
+ 0 fail
+ 148 expect() calls
+Ran 35 tests across 1 file. [1.78s]

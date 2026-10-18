@@ -1,0 +1,15 @@
+== step 1: dedicated container ==
+253c572fe791d9b38472116ea911d10a2d7a99d57970500f2e8181f8982380d6
+/var/run/postgresql:5432 - accepting connections
+ PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
+
+== step 2: databases + kb owner role ==
+CREATE DATABASE
+CREATE DATABASE
+CREATE DATABASE
+CREATE ROLE
+ALTER DATABASE
+== step 2b: base migration + restricted logins (seven-variable env) ==
+./provision-db.sh: line 59: 17152 Terminated: 15          bun --no-env-file scripts/enterprise-test-db.ts migrate
+== step 1: dedicated container ==
+container exists (state: exited) — starting if stopped

@@ -14,7 +14,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-const SAVED_COOKIE: &str = "OPENBOT_ORGANIZATION_SESSION";
+// MT098: pub(crate) so org_context reads the saved session and reuses the verified dial.
+pub(crate) const SAVED_COOKIE: &str = "OPENBOT_ORGANIZATION_SESSION";
 const CALLBACK: &str = "/organization-auth/callback";
 const PATIENCE: Duration = Duration::from_secs(300);
 
@@ -26,10 +27,12 @@ pub struct OrganizationUser {
     pub role: String,
 }
 
-#[derive(Serialize, Deserialize)]
-struct SavedSession {
-    authority: String,
-    cookie: String,
+// MT098: pub(crate) so org_context reuses the exact verified session shape.
+// MT099: PartialEq/Eq/Debug so tests can pin which authority holds which session.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct SavedSession {
+    pub(crate) authority: String,
+    pub(crate) cookie: String,
 }
 
 struct Pending {
@@ -56,7 +59,9 @@ fn random() -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
-fn authority(value: &str) -> Result<String, Problem> {
+// MT098: pub so the bin crate's sign-in gate compares the same normalized origin the session
+// saved (the rest of the MT098 surface stays pub(crate) inside this crate).
+pub fn authority(value: &str) -> Result<String, Problem> {
     let url = Url::parse(value.trim())
         .map_err(|_| problem("Enter your organization's OpenBot sign-in URL."))?;
     let loopback = matches!(
@@ -75,7 +80,8 @@ fn authority(value: &str) -> Result<String, Problem> {
     Ok(url.origin().ascii_serialization())
 }
 
-fn client() -> Result<Client, Problem> {
+// MT098: pub(crate) so org_context dials with the same client discipline.
+pub(crate) fn client() -> Result<Client, Problem> {
     Client::builder()
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
@@ -83,7 +89,8 @@ fn client() -> Result<Client, Problem> {
         .map_err(|_| problem("OpenBot could not prepare organization sign-in."))
 }
 
-fn verify(client: &Client, saved: &SavedSession) -> Result<OrganizationUser, Problem> {
+// MT098: pub(crate) so org_context verifies through the same tested path.
+pub(crate) fn verify(client: &Client, saved: &SavedSession) -> Result<OrganizationUser, Problem> {
     #[derive(Deserialize)]
     struct Me {
         user: OrganizationUser,
@@ -120,6 +127,24 @@ fn verify(client: &Client, saved: &SavedSession) -> Result<OrganizationUser, Pro
 }
 
 fn saved(root: &Path, expected: &str) -> Result<Option<SavedSession>, Problem> {
+    recall_session(root, expected)
+}
+
+/// The session of one organization, recovered from that organization's own credential
+/// namespace (MT099). Recovery is bound to the initiating authority: a session belongs to
+/// the authority that signed in, and no other authority ever sees it. An MT098-era flat
+/// entry migrates into the namespace the first time its own authority recovers it; a flat
+/// entry naming another authority is neither adopted nor destroyed.
+pub(crate) fn recall_session(root: &Path, expected: &str) -> Result<Option<SavedSession>, Problem> {
+    if let Some(encoded) = crate::credential_namespace::org_recall(
+        root,
+        expected,
+        crate::credential_namespace::SESSION_CREDENTIAL,
+    )? {
+        let session: SavedSession = serde_json::from_str(&encoded)
+            .map_err(|_| auth_problem("Sign in to your organization again."))?;
+        return Ok(Some(session));
+    }
     let Some(value) = crate::vault::recall(root, SAVED_COOKIE)? else {
         return Ok(None);
     };
@@ -128,7 +153,39 @@ fn saved(root: &Path, expected: &str) -> Result<Option<SavedSession>, Problem> {
     if session.authority != expected {
         return Ok(None);
     }
+    crate::credential_namespace::org_remember(
+        root,
+        expected,
+        crate::credential_namespace::SESSION_CREDENTIAL,
+        &value,
+    )?;
+    // An MT098-era installation had exactly one session — the current one. The migration
+    // restores that fact, but never overrides a current mark another sign-in already set.
+    if crate::credential_namespace::current_organization(root)?.is_none() {
+        crate::credential_namespace::set_current_organization(root, expected)?;
+    }
+    crate::vault::forget(root, SAVED_COOKIE)?;
     Ok(Some(session))
+}
+
+/// Store a finished sign-in's session inside the initiating authority's own namespace
+/// (MT099). The authority comes from the pending sign-in itself, never from a caller, so a
+/// switch during the callback cannot move another organization's ownership.
+pub(crate) fn store_session(
+    root: &Path,
+    authority: &str,
+    session: &SavedSession,
+) -> Result<(), Problem> {
+    let encoded = serde_json::to_string(session)
+        .map_err(|_| problem("OpenBot could not save organization sign-in."))?;
+    crate::credential_namespace::org_remember(
+        root,
+        authority,
+        crate::credential_namespace::SESSION_CREDENTIAL,
+        &encoded,
+    )?;
+    // The installation now acts as this organization (a finished sign-in is the switch).
+    crate::credential_namespace::set_current_organization(root, authority)
 }
 
 pub fn status(root: &Path, authority_url: &str) -> Result<Option<OrganizationUser>, Problem> {
@@ -318,12 +375,10 @@ pub fn finish(root: &Path) -> Result<OrganizationUser, Problem> {
         .ok_or_else(|| problem("Your organization did not return an OpenBot session."))?
         .to_string();
     let session = SavedSession {
-        authority: run_authority,
+        authority: run_authority.clone(),
         cookie,
     };
     let user = verify(&client, &session)?;
-    let encoded = serde_json::to_string(&session)
-        .map_err(|_| problem("OpenBot could not save organization sign-in."))?;
     let mut held = pending()
         .lock()
         .map_err(|_| problem("Restart OpenBot to finish organization sign-in."))?;
@@ -334,7 +389,10 @@ pub fn finish(root: &Path) -> Result<OrganizationUser, Problem> {
     {
         return Err(problem("Organization sign-in was cancelled or replaced."));
     }
-    crate::vault::remember(root, SAVED_COOKIE, &encoded)?;
+    // The completed session lands in the initiating authority's own namespace (MT099): the
+    // authority is the pending run's own, so a sign-in begun for another organization can
+    // never reassign this one's ownership.
+    store_session(root, &run_authority, &session)?;
     held.take();
     Ok(user)
 }
@@ -561,5 +619,128 @@ mod tests {
                 callback_code(&format!("GET {CALLBACK}?{query} HTTP/1.1\r\n"), "expected").is_err()
             );
         }
+    }
+
+    // --- MT099: the session lives in its organization's credential namespace (AC1/AC3) ---
+
+    fn saved_session(authority: &str) -> SavedSession {
+        SavedSession {
+            authority: authority.to_string(),
+            cookie: format!("better-auth.session_token=fixture-for-{authority}"),
+        }
+    }
+
+    fn encoded_session(session: &SavedSession) -> String {
+        serde_json::to_string(session).unwrap()
+    }
+
+    #[test]
+    fn credential_namespace_the_session_lives_in_its_own_organizations_namespace() {
+        let root = crate::test_support::temp_root("org-session-namespace");
+        store_session(&root, "https://company-a.example", &saved_session("https://company-a.example")).unwrap();
+        // The owning authority recovers its own session…
+        let recalled = recall_session(&root, "https://company-a.example")
+            .unwrap()
+            .expect("the session belongs to this authority");
+        assert_eq!(recalled.authority, "https://company-a.example");
+        // …another authority sees nothing (recovery is bound to the initiating authority),
+        // and nothing was ever written to the legacy flat slot.
+        assert_eq!(
+            recall_session(&root, "https://company-b.example").unwrap(),
+            None
+        );
+        assert_eq!(crate::vault::recall(&root, SAVED_COOKIE).unwrap(), None);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn credential_namespace_a_legacy_flat_session_migrates_into_its_authoritys_namespace() {
+        let root = crate::test_support::temp_root("org-session-legacy-migrate");
+        let authority = "https://company-a.example";
+        crate::vault::remember(&root, SAVED_COOKIE, &encoded_session(&saved_session(authority)))
+            .unwrap();
+        // The first recovery reads the MT098-era flat entry and moves it into the namespace.
+        let recalled = recall_session(&root, authority).unwrap().expect("legacy session recovered");
+        assert_eq!(recalled.authority, authority);
+        assert_eq!(crate::vault::recall(&root, SAVED_COOKIE).unwrap(), None, "the flat copy is retired once the namespace holds the session");
+        assert_eq!(
+            crate::credential_namespace::org_recall(
+                &root,
+                authority,
+                crate::credential_namespace::SESSION_CREDENTIAL
+            )
+            .unwrap()
+            .is_some(),
+            true
+        );
+        // The next recovery reads the namespace copy.
+        assert_eq!(
+            recall_session(&root, authority).unwrap().unwrap().authority,
+            authority
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn credential_namespace_a_legacy_session_of_another_authority_is_never_adopted() {
+        let root = crate::test_support::temp_root("org-session-legacy-foreign");
+        let stored_authority = "https://company-a.example";
+        let legacy = encoded_session(&saved_session(stored_authority));
+        crate::vault::remember(&root, SAVED_COOKIE, &legacy).unwrap();
+        // Recovery for another authority adopts nothing.
+        assert_eq!(
+            recall_session(&root, "https://company-b.example").unwrap(),
+            None
+        );
+        // The legacy record is neither adopted nor destroyed: it still belongs to A.
+        assert_eq!(
+            crate::vault::recall(&root, SAVED_COOKIE).unwrap().as_deref(),
+            Some(legacy.as_str())
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn credential_namespace_completing_one_organizations_sign_in_never_touches_another() {
+        let root = crate::test_support::temp_root("org-session-ownership");
+        let authority_a = "https://company-a.example";
+        let authority_b = "https://company-b.example";
+        store_session(&root, authority_a, &saved_session(authority_a)).unwrap();
+        // While A's session is stored, B completes its own sign-in (the callback path pins
+        // B's pending to B's authority; the storage face of that pinning is this write).
+        store_session(&root, authority_b, &saved_session(authority_b)).unwrap();
+        // Both organizations keep exactly their own session: the callback completion never
+        // overwrites another organization's ownership (spec A7).
+        assert_eq!(
+            recall_session(&root, authority_a).unwrap().unwrap().cookie,
+            saved_session(authority_a).cookie
+        );
+        assert_eq!(
+            recall_session(&root, authority_b).unwrap().unwrap().cookie,
+            saved_session(authority_b).cookie
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn credential_namespace_a_stored_session_makes_its_authority_the_installations_current() {
+        let root = crate::test_support::temp_root("org-session-current");
+        store_session(&root, "https://company-a.example", &saved_session("https://company-a.example")).unwrap();
+        assert_eq!(
+            crate::credential_namespace::current_organization(&root).unwrap().as_deref(),
+            Some("https://company-a.example")
+        );
+        // A later completion moves the current mark; the earlier session stays in its own
+        // namespace for its own organization (cleanup, not overwrite, retires it).
+        store_session(&root, "https://company-b.example", &saved_session("https://company-b.example")).unwrap();
+        assert_eq!(
+            crate::credential_namespace::current_organization(&root).unwrap().as_deref(),
+            Some("https://company-b.example")
+        );
+        assert_eq!(
+            recall_session(&root, "https://company-a.example").unwrap().unwrap().authority,
+            "https://company-a.example"
+        );
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

@@ -1,0 +1,9 @@
+== container teardown (after all DB evidence archived) ==
+command: docker rm -f w16-mt074-impl-pg
+output:  w16-mt074-impl-pg
+removal exit code: 0
+residual check: docker ps -a | grep w16-mt074-impl-pg -> 0 matches (residual=0)
+container lifetime: provisioned at ticket start (port 55596 prechecked free) ->
+base migrate + 23-task chain -> baseline/regression/mutation evidence -> removed.
+Dedicated DB openbot_enterprise_w16e_test (+_assigned, openbot_kb_w16e_test) lived
+only inside this container; removal is the designed evidence-boundary end.

@@ -1,0 +1,15 @@
+# MT041 clock-skew 环境证据 — 2026-10-17T12:49:03Z
+# MT041 两个用例断言 finishedAt(DB now) <= Date.now()(host)。Docker Desktop VM 与宿主机时钟存在 ±10-120ms 漂移（本机在 MT031 首次全量 1020/0 之后出现）；漂移为正时该断言必败——与 MT031 零面接触。
+# 同代码 12:30Z 全量 1020/0（MT041 全过）；12:44Z 起 VM 时钟漂移转正后恒败 2 例。
+# 漂移实测：
+pg= 1792241343602 host=1792241343622 skew=-20ms
+pg= 1792241345816 host=1792241345845 skew=-29ms
+pg= 1792241347978 host=1792241347997 skew=-19ms
+pg= 1792241350103 host=1792241350124 skew=-21ms
+# MT041 域文件零改动核验：
+45d1b500f66fee054a6030b860d97799434849363a39d56dde3348c3a7acf454  src/enterprise/tenancy/job-ownership.ts
+74d84d8e40160209a823a68bd9a93f7f1d4808e2a701195e515b75217702cbc4  tests/multitenancy/job-ownership.test.ts
+ca6450f0c1c537fa68b7c12505fffd7c9d9646253660431f8b3f2879b26ba578  server/src/db/schema/job-ownership.ts
+45d1b500f66fee054a6030b860d97799434849363a39d56dde3348c3a7acf454  server/src/enterprise/tenancy/job-ownership.ts
+74d84d8e40160209a823a68bd9a93f7f1d4808e2a701195e515b75217702cbc4  server/tests/multitenancy/job-ownership.test.ts
+ef3eab9a84a1d16be30aac0700927b3a01c8939bde507e54185129bbc9fa0f8c  server/tests/multitenancy/support/job-ownership.ts

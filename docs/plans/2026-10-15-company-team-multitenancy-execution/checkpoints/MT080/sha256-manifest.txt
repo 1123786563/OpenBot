@@ -1,0 +1,25 @@
+# MT080 交付物 SHA-256 清单（BASE f0520524f0faa2b4533b9d2f1aa692c8f907ba71，2026-10-16T19:49:51Z）
+# 复算: 首列哈希 逐文件 shasum -a 256 比对（本清单不含自身）
+fc7693cc2ca926495cdb8f78bb6aed28420fa11b5d6d4c40e06552bd81755021  app/src/lib/enterprise/tenant/selection.ts
+d70d958dc84c21ca829dddbaac1a29eeaca29f592011b0339ca96c60ec7908a8  app/src/routes/_authed/tenant/selection.tsx
+85f34a92fcd507c8561b374e9c39df9b38b6c4b53c8e72a027c5f3093a83c5e4  app/tests/multitenancy/selection.test.tsx
+12d206d70fc7911ad1dce92b59981c824dbdf8177ce1bc71280fe38ea10d7e69  app/src/lib/client.ts
+9d2b4b03f819162ddad1a586d9cb761aed1ac656ec4c896927e969844f3b99ee  app/src/locales/en/tenant.json
+191c1419baa968be0db2e577f7a23121ac0673deb44fe6d38e9eb60d264e7c36  app/src/locales/zh-CN/tenant.json
+92ed4ba6325352b0377218bf7c36e91fec8e8498ac9229cee0b0849057c62fd2  app/src/routeTree.gen.ts
+43c234e75b55ea7b776f22f57c243efe13220d5ed88a7da52321289d5e5fe12f  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/design.md
+8b3badb9885361232ad6dafa1ab9749dbd21b1321136b2c8f9b86cb9ed614018  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/before-after-hashes.txt
+cb3c73ae1ed0c9e3e370a98420035155a6e5f04509ab1ef5f1fecc5b212b9a8a  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/changes.diff
+b4f1312ae200cd3f163267a31a0af1829994dcb8a570c66f59773d117328c82a  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/red-green/RED-1-missing-module.txt
+950ad77369ed4515ef68b74d69602f97f8da8f4eff0e6ec1aaa18621a0d6ca1d  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/red-green/GREEN-1-first-run-20of25-full.log
+99cf6f630bd7c472e6177b162f2282598cf88fa9bd7fa129a7cb14946f77b209  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/red-green/GREEN-2-final.txt
+48abee9d7385a484e099951fd45109b9acaf78657800929b230c58cdbc3d195d  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/verification/1-verification-command-final.txt
+0efc88fbdf9b306b9c1fc82ab5a8007b75dfb78a0fd49010a50f527ec50041a6  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/verification/2-typecheck-final.txt
+986fe99448eaf012dff222c6fbc379a1269e7ab66a677af5f478a02160f1f556  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/verification/3-biome-final.txt
+dbeb7890d2d3e633b900b5616fcc1fe809403d04de0e664b441ccd0be29ce7bf  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/verification/4-build-final.txt
+88b08ab832c4e7ff82fcefab47eec24ead7841d973b94d3934b81442eaba6a0a  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/verification/5-full-app-suite-final.txt
+91bd0fe64d31b32487ed2728a3baae058cd0fb152bfe2e79e93416675c19605e  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/verification/6-flaky-tests-isolated-pass.txt
+6caf96f394373283a368e4df8ff94a5eafea4affd71773f9ef78aeea4b4b5894  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/verification/7-baseline-without-changes.md
+8a9783616fb0e723ce5715af263e2882040314cf60da0b1da7bdd7c5f617f7a5  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/verification/8-prereq-recompute-final.txt
+c8e338bad539f64dc28b68cbb01f58260b82b9d533a53fdf198b25f47d092d7e  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT080/verification/typecheck-during-transition.txt
+b6f6ea8652d2744ca355902f580af881799553c3a2e090295ff1a31f39e7b7a9  docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT080.md

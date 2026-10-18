@@ -1,0 +1,9 @@
+# MT031 终态 typecheck — 2026-10-17T12:52:49Z
+exit=0
+
+# MT031 终态 biome（触及 8 文件）
+  
+
+
+# src/index.ts 残留（先于本票存量，见 06-biome-final.txt 反向核验）
+5

@@ -1,0 +1,10 @@
+== RESTORE authoritative evidence: full unfiltered multitenancy suite (post 12x mutation/restore) ==
+(pass) MT026 storage fence: the restricted roles cannot see across companies > data role pinned to company B cannot read company A's config row [0.84ms]
+(pass) MT026 storage fence: the restricted roles cannot see across companies > operator role pinned to company B sees none of company A's SCIM binding rows [0.57ms]
+(pass) MT026 revalidation drift: a context issued before a membership change is refused > an in-transaction revalidation fails with SCOPE_REVOKED after the epoch moved [3.48ms]
+
+ 1005 pass
+ 0 fail
+ 12189 expect() calls
+Ran 1005 tests across 39 files. [21.51s]
+full-regression-exit:0

@@ -1,0 +1,42 @@
+== chain apply (corrected order, 19 prereq tasks) @ 2026-10-18T02:02:21Z ==
+container: mt060-impl-pg pgvector/pgvector:pg16 @127.0.0.1:55582 image sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
+
+== journal ==
+ task_id | steps 
+---------+-------
+ MT004   |     2
+ MT008   |     2
+ MT009   |     2
+ MT010   |     2
+ MT012   |     2
+ MT014   |     2
+ MT016   |     2
+ MT026   |     2
+ MT027   |     2
+ MT028   |     2
+ MT031   |     2
+ MT041   |     2
+ MT042   |     1
+ MT059   |     2
+ MT069   |     1
+ MT070   |     1
+ MT076   |     1
+ MT077   |     2
+ MT112   |     4
+(19 rows)
+
+== total journal steps ==
+36
+== restricted logins ==
+         rolname          | rolcanlogin | rolsuper | rolbypassrls 
+--------------------------+-------------+----------+--------------
+ ent_w15b_data            | t           | f        | f
+ ent_w15b_directory       | t           | f        | f
+ ent_w15b_kb              | t           | f        | f
+ ent_w15b_operator        | t           | f        | f
+ ob_ent_data              | f           | f        | f
+ ob_ent_directory         | f           | f        | f
+ ob_ent_identity_operator | f           | f        | f
+ ob_ent_operator          | f           | f        | f
+(8 rows)
+

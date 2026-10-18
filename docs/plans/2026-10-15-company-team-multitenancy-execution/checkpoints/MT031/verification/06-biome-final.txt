@@ -1,0 +1,17 @@
+# MT031 biome touched files — 2026-10-17T12:28:23Z
+files: 8 touched (4 new + 4 authorized edit points)
+
+== 7 files without src/index.ts ==
+Checked 7 files in 169ms. No fixes applied.
+
+== src/index.ts: 残留 = 5 处先于本票（4 noConsole + 1 noNonNull，MT027 D4 同款存量）==
+src/index.ts:4796:13 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:842:13 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:867:11 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:887:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:1931:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Found 4 errors.
+Found 1 warning.
+
+== BASE 反向核验：pre-edit 重建副本 biome 结果（/tmp/index-before-mt031.ts 复制为 src/index-before-mt031-check.ts 实测后已删）==
+4 noConsole (838/863/883/1927) + 1 noNonNull (4792) — 与当前 5 处一一对应（行号平移自本票新增行）
