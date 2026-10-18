@@ -520,7 +520,67 @@ test("the time window filters every aggregate the same way", async () => {
   expect(bot.runs.total).toBe(0);
   expect(bot.experiments).toEqual({ draft: 0, frozen: 0 });
   expect(bot.exports.byState.completed).toBe(0);
-  expect(bot.collection.lastCollectedAt).toBe(null);
+  // R5-22 (triage R5-19): collection freshness is window-invariant by
+  // contract (R3-29's fix report verbatim) — the scope's reconciled binding
+  // landed upstream, and a window that filters it from the aggregates must
+  // not read its freshness as "cannot answer". Only the aggregates filter.
+  expect(bot.collection.lastCollectedAt).not.toBe(null);
+});
+
+test("a pre-window binding that just reconciled still answers lastCollectedAt (R5-22)", async () => {
+  // R5-22 (triage R5-19): the freshness pool read the same window-filtered
+  // rows as every aggregate, so a binding created before the window but
+  // reconciled seconds ago was invisible — lastCollectedAt answered null
+  // ("cannot answer") for a scope whose collection is provably fresh, the
+  // exact masquerade R3-29's own fix report forbids: "the listing is still
+  // asked for what is window-invariant — the R2-51 collection freshness".
+  // The window keeps filtering the aggregates; freshness is window-invariant.
+  const actor = `t33-r51-r522-${randomUUID()}`;
+  const scope = resolveObservationScope({
+    actorId: actor,
+    botId,
+    ownership: "owner",
+    epoch: 1,
+  });
+  const collectedAt = new Date("2026-10-18T08:00:00.000Z");
+  await database.insert(aiObservationBindings).values({
+    id: `${run}-${actor}-old`,
+    scopeKey: scope.key,
+    actorId: actor,
+    botId,
+    runId: `${run}-${actor}-run-old`,
+    attemptId: "attempt-1",
+    traceId: `otel-${actor}-old`,
+    opikTraceId: `opik-${actor}-old`,
+    locatorWorkspace: "ws",
+    locatorProject: "proj",
+    capability: "basic",
+    state: "completed",
+    expiresAt: new Date(Date.now() + 86_400_000),
+    createdAt: new Date("2020-01-01T00:00:00.000Z"),
+    updatedAt: collectedAt,
+  });
+  try {
+    const app = appFor({
+      port: fakePort([]),
+      config: () => enabledConfig,
+      auth: authAs(actor, "admin"),
+    });
+    const response = await app.request(
+      `http://openbot.test/admin/summary?botId=${botId}&timeFrom=2026-01-01T00:00:00.000Z`,
+    );
+    expect(response.status).toBe(200);
+    const bot = (await response.json()).bots[0];
+    // The window filters the aggregates — the old binding counts nowhere…
+    expect(bot.runs.total).toBe(0);
+    // …but the write it evidences landed upstream, and the window must not
+    // read that as "cannot answer".
+    expect(bot.collection.lastCollectedAt).toBe(collectedAt.toISOString());
+  } finally {
+    await database
+      .delete(aiObservationBindings)
+      .where(eq(aiObservationBindings.scopeKey, scope.key));
+  }
 });
 
 test("an unhealthy Opik keeps the true collection state and fails nobody", async () => {
