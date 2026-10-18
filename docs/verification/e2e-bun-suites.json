@@ -51,6 +51,7 @@
     "app/tests/ai-observability-experiment-comparison.test.tsx",
     "app/tests/ai-observability-experiments.test.tsx",
     "app/tests/ai-observability-exports.test.tsx",
+    "app/tests/ai-observability-route-chain.test.tsx",
     "app/tests/approval-tools.test.tsx",
     "app/tests/approvals-rules.test.tsx",
     "app/tests/audit-dry-run-label.test.tsx",
@@ -64,13 +65,13 @@
     "app/tests/bot-profile-active.test.tsx",
     "app/tests/bot-profile-notice.test.tsx",
     "app/tests/bot-reaching-you.test.tsx",
-    "app/tests/bot-responsibilities.test.tsx",
-    "app/tests/bot-roster.test.tsx"
+    "app/tests/bot-responsibilities.test.tsx"
    ]
   },
   {
    "name": "app/tests part 2",
    "files": [
+    "app/tests/bot-roster.test.tsx",
     "app/tests/bot-route-default-agent.test.tsx",
     "app/tests/bot-settings-rows.test.tsx",
     "app/tests/bot-setup.test.tsx",
@@ -93,13 +94,13 @@
     "app/tests/composer-insecure-context.test.tsx",
     "app/tests/composer-paste.test.tsx",
     "app/tests/composer-queue-attachments.test.tsx",
-    "app/tests/composer-send-failure.test.tsx",
-    "app/tests/composer-unnamed-mime.test.tsx"
+    "app/tests/composer-send-failure.test.tsx"
    ]
   },
   {
    "name": "app/tests part 3",
    "files": [
+    "app/tests/composer-unnamed-mime.test.tsx",
     "app/tests/composer-upload-group.test.tsx",
     "app/tests/composing-enter.test.tsx",
     "app/tests/composio-picker-add-error.test.tsx",
@@ -122,13 +123,13 @@
     "app/tests/plugin-read-failure.test.tsx",
     "app/tests/proposed-bot-card.test.tsx",
     "app/tests/proposed-skill-card.test.tsx",
-    "app/tests/root-drop-guard.test.tsx",
-    "app/tests/router.test.ts"
+    "app/tests/root-drop-guard.test.tsx"
    ]
   },
   {
    "name": "app/tests part 4",
    "files": [
+    "app/tests/router.test.ts",
     "app/tests/serve.test.ts",
     "app/tests/sign-in-card.test.tsx",
     "app/tests/skills-read-failure.test.tsx",
@@ -614,6 +615,7 @@
   "app/tests/ai-observability-experiment-comparison.test.tsx",
   "app/tests/ai-observability-experiments.test.tsx",
   "app/tests/ai-observability-exports.test.tsx",
+  "app/tests/ai-observability-route-chain.test.tsx",
   "app/tests/approval-tools.test.tsx",
   "app/tests/approvals-rules.test.tsx",
   "app/tests/audit-dry-run-label.test.tsx",
@@ -1438,6 +1440,7 @@
   "server/tests/workshop-store.test.ts": "server/src/db/client.ts",
   "app/tests/observability-i18n-namespaces.test.ts": "app/tests/observability-i18n-namespaces.test.ts",
   "app/tests/ai-observability-experiments.test.tsx": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
-  "app/tests/ai-observability-exports.test.tsx": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'"
+  "app/tests/ai-observability-exports.test.tsx": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
+  "app/tests/ai-observability-route-chain.test.tsx": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'"
  }
 }
