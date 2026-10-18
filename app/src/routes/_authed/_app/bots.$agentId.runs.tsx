@@ -1,22 +1,32 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { BotSubpage } from "@/components/bot-profile/bot-subpage";
-import { ObservabilityPlaceholder } from "@/components/ai-observability/placeholder";
+import { requireBotObservabilityAccess } from "@/lib/observability/route-guard";
 
-/**
- * Placeholder for the run-list chain (#18): claims the URL, says honestly that the store is not
- * wired up yet, and is replaced — not extended — when real runs land.
- */
 export const Route = createFileRoute("/_authed/_app/bots/$agentId/runs")({
-  component: RunsPage,
+  beforeLoad: ({ context, params }) =>
+    requireBotObservabilityAccess(context.queryClient, params.agentId),
+  component: BotRunsPage,
 });
 
-function RunsPage() {
-  const { t } = useTranslation("ai-observability-runs");
+/*
+ * Placeholder frame: the runs list (T12), detail and step tree (T13/T18) replace the body.
+ * Until Opik is configured the honest content is the disabled state, not an empty list.
+ */
+function BotRunsPage() {
+  const { t } = useTranslation("obs-runs");
   const { agentId } = Route.useParams();
   return (
-    <BotSubpage agentId={agentId} title={t("placeholder.title")}>
-      <ObservabilityPlaceholder namespace="ai-observability-runs" />
+    <BotSubpage
+      agentId={agentId}
+      description={t("states.disabled.description")}
+      title={t("title")}
+    >
+      {() => (
+        <p className="mt-6 text-muted-foreground text-sm">
+          {t("states.disabled.title")}
+        </p>
+      )}
     </BotSubpage>
   );
 }

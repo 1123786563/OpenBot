@@ -2,10 +2,6 @@ import i18next from "i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 import { initReactI18next } from "react-i18next";
 import admin from "../../locales/en/admin.json";
-import aiObservabilityAdmin from "../../locales/en/ai-observability-admin.json";
-import aiObservabilityDatasets from "../../locales/en/ai-observability-datasets.json";
-import aiObservabilityEvaluations from "../../locales/en/ai-observability-evaluations.json";
-import aiObservabilityRuns from "../../locales/en/ai-observability-runs.json";
 import agents from "../../locales/en/agents.json";
 import approvals from "../../locales/en/approvals.json";
 import channels from "../../locales/en/channels.json";
@@ -16,16 +12,16 @@ import errors from "../../locales/en/errors.json";
 import knowledge from "../../locales/en/knowledge.json";
 import market from "../../locales/en/market.json";
 import nav from "../../locales/en/nav.json";
+import obsAdmin from "../../locales/en/obs-admin.json";
+import obsDatasets from "../../locales/en/obs-datasets.json";
+import obsEvaluations from "../../locales/en/obs-evaluations.json";
+import obsRuns from "../../locales/en/obs-runs.json";
 import routines from "../../locales/en/routines.json";
 import settings from "../../locales/en/settings.json";
 import skills from "../../locales/en/skills.json";
 import tenant from "../../locales/en/tenant.json";
 import workshop from "../../locales/en/workshop.json";
 import zhAdmin from "../../locales/zh-CN/admin.json";
-import zhAiObservabilityAdmin from "../../locales/zh-CN/ai-observability-admin.json";
-import zhAiObservabilityDatasets from "../../locales/zh-CN/ai-observability-datasets.json";
-import zhAiObservabilityEvaluations from "../../locales/zh-CN/ai-observability-evaluations.json";
-import zhAiObservabilityRuns from "../../locales/zh-CN/ai-observability-runs.json";
 import zhAgents from "../../locales/zh-CN/agents.json";
 import zhApprovals from "../../locales/zh-CN/approvals.json";
 import zhChannels from "../../locales/zh-CN/channels.json";
@@ -36,6 +32,10 @@ import zhErrors from "../../locales/zh-CN/errors.json";
 import zhKnowledge from "../../locales/zh-CN/knowledge.json";
 import zhMarket from "../../locales/zh-CN/market.json";
 import zhNav from "../../locales/zh-CN/nav.json";
+import zhObsAdmin from "../../locales/zh-CN/obs-admin.json";
+import zhObsDatasets from "../../locales/zh-CN/obs-datasets.json";
+import zhObsEvaluations from "../../locales/zh-CN/obs-evaluations.json";
+import zhObsRuns from "../../locales/zh-CN/obs-runs.json";
 import zhRoutines from "../../locales/zh-CN/routines.json";
 import zhSettings from "../../locales/zh-CN/settings.json";
 import zhSkills from "../../locales/zh-CN/skills.json";
@@ -65,21 +65,12 @@ export const NAMESPACES = [
   "tenant",
   "workshop",
   "craft",
-  /*
-   * Observation is split into four sub-namespaces on purpose, not one: the run chain (#18 #19 #24),
-   * the dataset chain (#27), the experiment chain (#36 #37) and the admin chain (#42) are pairwise
-   * independent in the ticket graph, so they can be dispatched in parallel. One shared bundle would
-   * put four agents in the same JSON file; four bundles give each chain a file it owns alone.
-   * Route convention these pages use:
-   *   /_authed/_app/bots/$agentId/runs              (list)
-   *   /_authed/_app/bots/$agentId/runs/$bindingId   (detail)
-   *   /_authed/_app/bots/$agentId/evaluations       (datasets + experiments)
-   *   /_authed/admin/ai-observability               (admin summary + export status)
-   */
-  "ai-observability-runs",
-  "ai-observability-datasets",
-  "ai-observability-evaluations",
-  "ai-observability-admin",
+  // Observability chains, prefixed obs- so they own their files and never touch — or collide
+  // with — the shared namespaces above. See docs/plans/2026-10-15-opik-t02-observability-i18n-routes.md.
+  "obs-runs",
+  "obs-datasets",
+  "obs-evaluations",
+  "obs-admin",
 ] as const;
 
 export type Namespace = (typeof NAMESPACES)[number];
@@ -141,10 +132,10 @@ void i18next
         errors,
         tenant,
         craft,
-        "ai-observability-runs": aiObservabilityRuns,
-        "ai-observability-datasets": aiObservabilityDatasets,
-        "ai-observability-evaluations": aiObservabilityEvaluations,
-        "ai-observability-admin": aiObservabilityAdmin,
+        "obs-runs": obsRuns,
+        "obs-datasets": obsDatasets,
+        "obs-evaluations": obsEvaluations,
+        "obs-admin": obsAdmin,
       },
       "zh-CN": {
         common: zhCommon,
@@ -163,10 +154,10 @@ void i18next
         errors: zhErrors,
         tenant: zhTenant,
         craft: zhCraft,
-        "ai-observability-runs": zhAiObservabilityRuns,
-        "ai-observability-datasets": zhAiObservabilityDatasets,
-        "ai-observability-evaluations": zhAiObservabilityEvaluations,
-        "ai-observability-admin": zhAiObservabilityAdmin,
+        "obs-runs": zhObsRuns,
+        "obs-datasets": zhObsDatasets,
+        "obs-evaluations": zhObsEvaluations,
+        "obs-admin": zhObsAdmin,
       },
     },
     fallbackLng: FALLBACK_LANGUAGE,
