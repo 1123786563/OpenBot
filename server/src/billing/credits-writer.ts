@@ -79,9 +79,17 @@ export type CreditReservationState =
 export class CreditReservationConflictError extends Error {
   /** Stable, snake_case, matched by the delivery worker's non-retryable set (audit C1). */
   readonly code = "reservation_conflict";
-  constructor(message: string) {
+  /**
+   * The stable machine-readable kind of the conflict — the discriminator 06.10's settle
+   * surface answers with in its refusal `detail`, so a caller distinguishes the classes
+   * (`no_such_reservation`, `reservation_released`, `settled_with_different_actual`, …)
+   * without parsing a message. Callers that name none get the generic kind.
+   */
+  readonly conflictKind: string;
+  constructor(message: string, conflictKind = "reservation_conflict") {
     super(message);
     this.name = "CreditReservationConflictError";
+    this.conflictKind = conflictKind;
   }
 }
 
@@ -399,6 +407,7 @@ export function createCreditWriter(database: Database): CreditWriter {
       if (!head) {
         throw new CreditReservationConflictError(
           "settleReservation: no such reservation.",
+          "no_such_reservation",
         );
       }
 
@@ -412,11 +421,16 @@ export function createCreditWriter(database: Database): CreditWriter {
         if (!reservation) {
           throw new CreditReservationConflictError(
             "settleReservation: no such reservation.",
+            "no_such_reservation",
           );
         }
         if (reservation.status === "released") {
+          // 06.10's terminal-state conflict class: the release is a terminal fact, and a
+          // settlement arriving after it is refused with its own stable kind — never a
+          // silent overwrite of the release, never a charge nobody admitted.
           throw new CreditReservationConflictError(
             "settleReservation: the reservation was already released.",
+            "reservation_released",
           );
         }
         if (reservation.status === "settled") {
@@ -424,8 +438,12 @@ export function createCreditWriter(database: Database): CreditWriter {
             reservation.actualNumerator !== actual.numerator.toString() ||
             reservation.actualDenominator !== actual.denominator.toString()
           ) {
+            // 06.10's amount conflict class: the same reservation settles ONCE, at the
+            // first actual. A different amount is a conflict with its own stable kind —
+            // never a top-up of the recorded settlement.
             throw new CreditReservationConflictError(
               "settleReservation: the reservation was settled with a different actual cost.",
+              "settled_with_different_actual",
             );
           }
           return settledResultOf(reservation);
