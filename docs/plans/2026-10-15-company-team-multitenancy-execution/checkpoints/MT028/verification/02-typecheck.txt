@@ -1,0 +1,3 @@
+# MT028 typecheck（2026-10-17）
+command: bun x tsc --noEmit (server/)
+typecheck-exit=0

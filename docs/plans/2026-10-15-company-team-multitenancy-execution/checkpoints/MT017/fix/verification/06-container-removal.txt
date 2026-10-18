@@ -1,0 +1,19 @@
+# MT017 fix-round container teardown — real execution echo (deletion check required = 0)
+# 2026-10-16T23:55:52Z
+
+== docker rm -f mt017-fix-pg ==
+mt017-fix-pg
+rm exit=0
+
+== deletion check: containers named mt017-fix-pg remaining (expect 0) ==
+0
+remaining=0 (grep -c exit 1 = no match)
+
+== env/credential file deletion (0600 files, used then deleted) ==
+-rw-------@ 1 wuyongjun  wheel  1092 Oct 17 07:50 /tmp/mt017fix-env.sh
+-rw-------@ 1 wuyongjun  wheel   191 Oct 17 07:49 /tmp/mt017fix-pw.sh
+ls: /tmp/mt017fix-env.sh: No such file or directory
+ls: /tmp/mt017fix-pw.sh: No such file or directory
+
+== port recheck 55537 (expect free) ==
+lsof exit=1 = free

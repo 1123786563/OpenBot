@@ -1,0 +1,89 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/team-public-rules.test.ts:
+(pass) the MT009 task migration is registered and expand-only > MT009 is a registered task whose plan is deterministic [0.27ms]
+(pass) the MT009 task migration is registered and expand-only > dry-run previews honestly and apply converges (fresh or up-to-date) [0.07ms]
+(pass) the MT009 task migration is registered and expand-only > the plan only appends: one new dependency table with its own RLS, nothing else touched [0.52ms]
+(pass) the MT009 task migration is registered and expand-only > the decision side runs under the restricted data capability role, never a superuser [0.82ms]
+(pass) issue #52 criterion 1: members read and run team-public bots; management actions are refused > an active team member without any grant reads and runs a team-public bot [21.54ms]
+(pass) issue #52 criterion 1: members read and run team-public bots; management actions are refused > the same member is refused config edits, deletion, sharing and management — per action [24.56ms]
+460 |           "team-a1",
+461 |           "suspended",
+462 |         );
+463 |         try {
+464 |           // 停用前合法取证的 scope：事实已变，团队公共路径按当前事实拒绝。
+465 |           expect(await service().decideAction(before, botA1, "run")).toEqual(
+                                                                           ^
+error: expect(received).toEqual(expected)
+
+  {
+-   "code": "RESOURCE_NOT_FOUND",
+-   "outcome": "deny",
++   "outcome": "allow",
+  }
+
+- Expected  - 2
++ Received  + 1
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt009/server/tests/multitenancy/team-public-rules.test.ts:465:70)
+(fail) issue #52 criterion 1: members read and run team-public bots; management actions are refused > a suspended team member loses the team-public run path; the seam refuses re-issuing a scope; restoring membership restores the path [22.20ms]
+(pass) issue #52 criterion 2: members retrieve team-public knowledge bases; uploads and scope changes are refused > an active team member without any grant retrieves a team-public knowledge base [7.02ms]
+(pass) issue #52 criterion 2: members retrieve team-public knowledge bases; uploads and scope changes are refused > upload, deletion, scope change and every other management action are refused — per action; run is not a knowledge-base action [28.52ms]
+(pass) issue #52 criterion 3: a passing read never derives run/write/delete/share/manage > a private bot with an explicit read grant: read passes via the grant path and every other action is refused per action [31.96ms]
+(pass) issue #52 criterion 3: a passing read never derives run/write/delete/share/manage > a legacy unmarked bot with an explicit read grant behaves identically: read only [27.79ms]
+(pass) issue #52 criterion 3: a passing read never derives run/write/delete/share/manage > a team-public document: read passes through the team-public path and run is still refused (no kind rule derives run from read) [10.88ms]
+(pass) issue #52 criterion 3: a passing read never derives run/write/delete/share/manage > the schema itself refuses individual run grants: the action column admits 'read' only [2.87ms]
+(pass) issue #52 criterion 4: invalid dependencies refuse the run with an explainable reason > a team-public bot whose model and knowledge dependencies are all valid runs [27.82ms]
+(pass) issue #52 criterion 4: invalid dependencies refuse the run with an explainable reason > an invalid model dependency refuses the run and names the dependency kind and reference [16.58ms]
+(pass) issue #52 criterion 4: invalid dependencies refuse the run with an explainable reason > an invalid credential dependency refuses the run the same explainable way [20.12ms]
+(pass) issue #52 criterion 4: invalid dependencies refuse the run with an explainable reason > a knowledge dependency pointing at a deleted knowledge base refuses the run and names the broken scope [34.21ms]
+(pass) issue #52 criterion 4: invalid dependencies refuse the run with an explainable reason > a knowledge dependency pointing at a nonexistent reference refuses the run without guessing [17.41ms]
+(pass) issue #52 criterion 4: invalid dependencies refuse the run with an explainable reason > a bot with no declared dependencies runs (no dependency, nothing to degrade silently) [13.18ms]
+(pass) issue #52 criterion 4: invalid dependencies refuse the run with an explainable reason > a bot whose own dependencies are broken is unaffected by another bot's dependency rows [32.16ms]
+(pass) issue #52 criterion 4: invalid dependencies refuse the run with an explainable reason > an invalid dependency never leaks to a non-member: the refusal stays RESOURCE_NOT_FOUND [16.19ms]
+(pass) issue #52 criterion 4: invalid dependencies refuse the run with an explainable reason > dependency validity gates run only: management refusals do not consult dependencies [19.49ms]
+(pass) issue #52 criterion 5: non-members are refused with no existence leak > a cross-company member holding the resource id is refused on every action, byte-identically to a nonexistent resource [55.47ms]
+(pass) issue #52 criterion 5: non-members are refused with no existence leak > a same-company member of another team is refused on run and read, byte-identically to a nonexistent resource [24.44ms]
+(pass) issue #52 criterion 5: non-members are refused with no existence leak > a company admin without team membership cannot even obtain a scope for the team (the seam refuses before any action) [3.17ms]
+(pass) the team-public usage path exists only under a policy version that carries it > under tenancy-v1 (company-b default) a team-public bot stays invisible to its own team member: read and run are RESOURCE_NOT_FOUND [10.69ms]
+(pass) the team-public usage path exists only under a policy version that carries it > after the tenant resolves workspace-v1 the same member reads and runs the same bot (default resolution, no per-call override) [22.63ms]
+(pass) the team-public usage path exists only under a policy version that carries it > an explicit tenancy-v1 override on a workspace-v1 tenant hides the team-public path identically [7.85ms]
+(pass) the team-public usage path exists only under a policy version that carries it > an unregistered policy version is refused loudly, never guessed (read and run alike) [8.14ms]
+(pass) the pure team-public action gate judged on fabricated facts > sound team-public facts: run proceeds to the dependency check, management actions are forbidden [0.14ms]
+(pass) the pure team-public action gate judged on fabricated facts > cross-tenant facts are denied even though every other gate condition holds (defense line independent of RLS) [0.04ms]
+1197 |             decideTeamPublicActionWithoutDependencies(
+1198 |               "run",
+1199 |               facts,
+1200 |               facts.tenantPolicyRevision,
+1201 |             ),
+1202 |           ).toEqual({ kind: "verdict", verdict: DENY_NOT_FOUND });
+                   ^
+error: expect(received).toEqual(expected)
+
+  {
+-   "kind": "verdict",
+-   "verdict": {
+-     "code": "RESOURCE_NOT_FOUND",
+-     "outcome": "deny",
+-   },
++   "kind": "requires-dependency-check",
+  }
+
+- Expected  - 5
++ Received  + 1
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt009/server/tests/multitenancy/team-public-rules.test.ts:1202:13)
+(fail) the pure team-public action gate judged on fabricated facts > each gate condition is individually necessary: visibility, liveness, team match, revision sanity, membership, capability version [0.42ms]
+(pass) the pure team-public action gate judged on fabricated facts > run exists only for bot kinds; an unresolvable effective version is refused loudly [0.10ms]
+(pass) trust boundary and input hygiene > a forged scope is refused on every action path [0.20ms]
+(pass) trust boundary and input hygiene > an unknown action id is refused loudly, never mapped to a deny [2.17ms]
+(pass) trust boundary and input hygiene > read verdicts pass the MT008 policy shape through unchanged (allow and deny alike) [10.88ms]
+
+2 tests failed:
+(fail) issue #52 criterion 1: members read and run team-public bots; management actions are refused > a suspended team member loses the team-public run path; the seam refuses re-issuing a scope; restoring membership restores the path [22.20ms]
+(fail) the pure team-public action gate judged on fabricated facts > each gate condition is individually necessary: visibility, liveness, team match, revision sanity, membership, capability version [0.42ms]
+
+ 34 pass
+ 2 fail
+ 162 expect() calls
+Ran 36 tests across 1 file. [1500.00ms]

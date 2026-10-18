@@ -1,0 +1,125 @@
+diff --git a/server/src/enterprise/tenancy/store.ts b/server/src/enterprise/tenancy/store.ts
+index 12814851..f7622738 100644
+--- a/server/src/enterprise/tenancy/store.ts
++++ b/server/src/enterprise/tenancy/store.ts
+@@ -11,6 +11,7 @@ import {
+   enterpriseResourceGrants,
+   enterpriseResources,
+   enterpriseTenants,
++  enterpriseWorkspaceMemberships,
+   enterpriseWorkspaces,
+ } from "../../db/schema/enterprise-tenancy";
+ import { createAuthz } from "../authz/service";
+@@ -91,14 +92,19 @@ export function createScopeResolver(
+       );
+       const tenantId = options.selectTenant?.(request);
+       const workspaceId = options.selectWorkspace?.(request);
+-      if (!tenantId || !workspaceId) throw new Error("TENANT_REQUIRED");
++      // MT005 (issue #48): selectors are required and explicitly rejected when
++      // missing — never defaulted to a first team or a default company, and
++      // the two failure modes get distinct codes (was: TENANT_REQUIRED for
++      // both, the dual meaning the seam report flags).
++      if (!tenantId?.trim()) throw new Error("TENANT_REQUIRED");
++      if (!workspaceId?.trim()) throw new Error("WORKSPACE_REQUIRED");
+ 
+       const scope = await database.transaction(async (tx) => {
+         await tx.execute(sql`set transaction isolation level read committed`);
+         await tx.execute(sql`set local lock_timeout = '2s'`);
+         await tx.execute(sql`set local statement_timeout = '5s'`);
+         await tx.execute(
+-          sql`select set_config('app.user_id', ${identity.actorId}, true), set_config('app.tenant_id', ${tenantId}, true)`,
++          sql`select set_config('app.user_id', ${identity.actorId}, true), set_config('app.tenant_id', ${tenantId}, true), set_config('app.workspace_id', ${workspaceId}, true)`,
+         );
+         const [member] = await tx
+           .select({
+@@ -132,6 +138,28 @@ export function createScopeResolver(
+         ) {
+           throw new Error("TENANT_FORBIDDEN");
+         }
++        // MT005 (issue #48): team eligibility. The selected workspace must
++        // carry an active workspace-membership row for this principal — the
++        // server-side fact, not the header value, decides (acceptance 3/4/5).
++        // A missing row, a suspended row, and a nonexistent workspace are
++        // deliberately indistinguishable here: no existence leak.
++        const [teamMembership] = await tx
++          .select({ status: enterpriseWorkspaceMemberships.status })
++          .from(enterpriseWorkspaceMemberships)
++          .where(
++            and(
++              eq(enterpriseWorkspaceMemberships.tenantId, tenantId),
++              eq(enterpriseWorkspaceMemberships.workspaceId, workspaceId),
++              eq(
++                enterpriseWorkspaceMemberships.principalId,
++                member.principalId,
++              ),
++            ),
++          )
++          .limit(1);
++        if (teamMembership?.status !== "active") {
++          throw new Error("WORKSPACE_FORBIDDEN");
++        }
+         return Object.freeze({
+           tenantId,
+           workspaceId,
+diff --git a/server/src/index.ts b/server/src/index.ts
+index 0e7387bd..15a362e2 100644
+--- a/server/src/index.ts
++++ b/server/src/index.ts
+@@ -799,9 +799,11 @@ const enterpriseCapabilities = await (async () => {
+         });
+         return actor ? { actorId: actor.id, entrypoint: "web" } : null;
+       },
+-      selectTenant: (request) => request.headers.get("x-openbot-tenant-id"),
++      // MT005 ruling #1: selection headers are x-openbot-tenant and
++      // x-openbot-workspace. They only select; database membership decides.
++      selectTenant: (request) => request.headers.get("x-openbot-tenant"),
+       selectWorkspace: (request) =>
+-        request.headers.get("x-openbot-workspace-id"),
++        request.headers.get("x-openbot-workspace"),
+     });
+     return {
+       data,
+
+# ===================================================================
+# fixture.ts (MT002 deliverable, untracked): 3 pure-append blocks
+# (1) header doc note replaced (Current-shape note -> MT005 note)
+# (2) provisioning append after the 3 provisionDeployment calls:
+508:    // MT005 (issue #48): materialize each planned team membership as a real
+509-    // enterprise_workspace_memberships row through the restricted operator
+510-    // role — RLS-checked (tenant context) and granted by the MT004 migration.
+511-    // Pure append: no existing provisioning fact or fact-reading changes.
+512-    for (const planned of HUMAN_PLAN) {
+513-      for (const plannedMembership of planned.memberships) {
+514-        for (const teamKey of plannedMembership.teams) {
+515-          const tenantId = ids[plannedMembership.companyKey];
+516-          await runRestrictedQuery(
+517-            "operator",
+518-            { tenantId },
+519-            "insert into enterprise_workspace_memberships (tenant_id, workspace_id, principal_id) values ($1, $2, $3)",
+520-            [tenantId, teamOf(teamKey), ids[`principal-${planned.identity}`]],
+521-          );
+522-        }
+523-      }
+524-    }
+525-
+526-    // ---- Identity facts read back through the real directory role. --------
+527-    const identities = {} as Record<FixtureIdentity, FixtureIdentityFact>;
+528-    for (const planned of HUMAN_PLAN) {
+# (3) ROUTE_ERROR_STATUS appends: WORKSPACE_FORBIDDEN->403, WORKSPACE_REVOKED->403
+
+# fixtures.test.ts (MT002 deliverable, untracked): 2 expectation updates to the MT005 contract
+479-  ).toEqual({ status: 404, body: { error: "RESOURCE_NOT_FOUND" } });
+480-  // Company administration is not content access: an admin without a team
+481:  // membership row is refused at the MT005 eligibility gate.
+482-  expect(
+483-    await read(
+484-      "company-admin",
+485-      ids["resource-a1"],
+486-      ids["company-a"],
+487-      ids["team-a1"],
+488-    ),
+489-  ).toEqual({ status: 403, body: { error: "WORKSPACE_FORBIDDEN" } });
+490-});
+491-
+492-test("machine identities have no authenticated session and unknown routes are invisible", async () => {
+493-  const fixture = await isolationFixture();

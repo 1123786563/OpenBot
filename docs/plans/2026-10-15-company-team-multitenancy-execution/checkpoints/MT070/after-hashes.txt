@@ -1,0 +1,36 @@
+# After-hashes of the 3 narrow-edit authorized files (delivery time) — 2026-10-16T22:18:38Z
+c062aaaed47a31e0c71efa18ba86bd08d605e6bf772c1985595592c5ecb0d505  server/scripts/multitenancy/migrate-test.ts
+3f456f8d56a5e39dec64250d602276b38882d3358ee76e088d039ccb43bfaa51  server/tests/multitenancy/migration-tool.test.ts
+43ed9be3a26e1af18715d3b90826759d36e3bb504a7ec7092020c27054765fa1  server/src/db/schema/index.ts
+
+# New-file hashes
+ea3fc1e912345ad2528dea6494a65325f5ffe09bfc546532527b752e37f0c213  server/src/billing/company-reservation.ts
+5716c2759279a117a31c646259b721b4b1b76ad1dde5aab3ea98a481c5542757  server/src/db/schema/call-attributions.ts
+7d2754150cf7d22265fe43ded8491a04b9d97948a11ddb45a3b0853055223df2  server/tests/multitenancy/company-reservation.test.ts
+858a81489cb2f883d6f56b6bad57c1b9c0bc5e77c60208a4a2b51d3ec79976e6  server/tests/multitenancy/support/company-reservation.ts
+
+# ================= FIX ROUND (2026-10-17) =================
+# 修复轮（复审 F1/F3 关闭）改动文件终态哈希；前像见 fix-round/01-before-hashes.txt。
+# 生产交付 7 文件整轮前后两次复验与本文件上方交付段逐位一致（company-reservation.ts
+# pristine = ea3fc1e9…，变异注入即时恢复）。
+ed420b17500dfbaad5bb63960e99b1d2cf6456acfe13e6ba06bb03320cc02247  mutation/MUT6b-compound-retest.txt
+4c0028d5806eed96e873a71ed8e6be0e9072f5af7b968d1d790e7767b9e8ef03  provision-db.sh
+e97e6085971da1b10f720ee1987f1b05a23f027c075a357d95aa2a52128f8089  sha256-manifest.txt
+678018a68dbd30fb1ba011ec77a41323965ede8669842a1d67ab7d21fa1a1940  ../../reports/MT070.md
+# fix-round/ 证据文件（本文件自身不列自）：
+48c124c2971446377cea8c04e3608dda078ad499b480a9fceabfb9a6745e42c7  fix-round/00-port-preflight.txt
+12b862c47676e4e1a11644e3b5acf1aa2ebe0670987a03cc1108e2b9049b426b  fix-round/01-before-hashes.txt
+0b36a6263d9634a576f8944d04c196942b35f01e7520e93725a73ea0e0b6b06d  fix-round/02-delivery-hash-verify.txt
+e54efed1e7b5f6af375b66490b133e8ec20a8c241c6dabd6a398ef6fe6101831  fix-round/03-container-up.txt
+333bf9ac9a9e72f614862026b877405ec2a625655cd34f8865a771babc573947  fix-round/04-env-evidence.txt
+6de944939048802369addfa6f92033f0b454b8462c5e21db787a060f121f1ca0  fix-round/05-base-migrate.txt
+09a7a40f28e71c0ad74960df8013823b68b5e36cbe50c0cf74b127bf3bee31ad  fix-round/06-chain.txt
+eebcfcf8d8c5c70abd10b5daf5dea168923fd1aebae617e8574ead11db1e849d  fix-round/07-run-m06b-retest.sh
+c1411edd8014cc5ba0d11fd3728ceef55aa2e4d16331e3533b3e73a4518b39ea  fix-round/07-m06b-retest-raw.txt
+73674d41da0bb144b1426a9f3b1eadae84b63a29f648c684abafb951e6cd4a7f  fix-round/08-focused-sanity.txt
+327d65fd0c0d55d68aa2399d51539bf3b38e3f73cb771090da7d86b7f7b4b783  fix-round/09-full-suite.txt
+c568559ee8309b9b13e76a47acc6125078f40c96b19462542691d40faeb2053b  fix-round/10-typecheck.txt
+e5fdc3bc68b1af5b6053b65cbf969f4307ec22afe0653f80f142ac29fd937e0b  fix-round/11-biome.txt
+309cec69ce07efb39726d06a401ccc90be3a2eba7c8b3d87e4e9dbf3d3ebdc74  fix-round/12-docker-rm.txt
+72561d78ad47189793fb770da6d4861df1aad09e069e5925922b4b4c58717912  fix-round/13-tmp-cleanup.txt
+# fix-round/migration/generated/ —— 16 任务生成 SQL，与交付存档 verification/migration/generated/ diff IDENTICAL（见 06-chain.txt 会话复核）
