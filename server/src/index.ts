@@ -342,6 +342,10 @@ import {
   createCredentialLeaseService,
 } from "./enterprise/tenancy/credential-lease";
 import {
+  createSharedApprovalAdminService,
+  createSharedApprovalService,
+} from "./enterprise/tenancy/shared-approvals";
+import {
   createCredentialOwnershipAdminService,
   createCredentialOwnershipDecisionService,
   type SecretVault,
@@ -1250,6 +1254,36 @@ export const credentialLease = await (async () => {
   return {
     decisions: createCredentialLeaseService(enterpriseCapabilities.data),
     admin: operator ? createCredentialLeaseAdminService(operator) : null,
+  };
+})();
+// MT034 (Issue #77): shared-account approvals — locked to the object pair,
+// the server-computed params digest and the owning company team. Request /
+// withdraw / use decisions ride the already-verified restricted data channel
+// (the use gate consumes the REAL MT029 lease validator — when the lease
+// channel above is not wired the validator is absent and any lease-carrying
+// use is refused, fail-closed); approve / decline rides the restricted
+// operator channel and stays null — fail-closed, no shared-account approval
+// can ever be granted — when that channel is not wired. Held here for the
+// execution-chain wiring (plugin/shared-account gates compose this at their
+// checkpoints downstream); nothing in this assembly serves traffic with it
+// yet.
+export const sharedApprovals = await (async () => {
+  if (!enterpriseCapabilities) return null;
+  const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+  const operator = operatorUrl
+    ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
+        // Same fail-closed discipline as the credentialOwnership block above:
+        // a failing operator verification leaves the approval admin
+        // unavailable, never permissive; no console here (server/src is
+        // noConsole-enforced).
+        () => null,
+      )
+    : null;
+  return {
+    decisions: createSharedApprovalService(enterpriseCapabilities.data, {
+      leaseValidator: credentialLease?.decisions,
+    }),
+    admin: operator ? createSharedApprovalAdminService(operator) : null,
   };
 })();
 const identityStore = createIdentityStore(database, credentialStore);
