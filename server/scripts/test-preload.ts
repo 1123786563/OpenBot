@@ -22,7 +22,7 @@
  * at the same preload boundary and fails loudly if a server test tries to use it.
  */
 
-import { mock } from "../../tests/support/e2e-compat";
+import { mock } from "bun:test";
 import "eventsource";
 
 mock.module("@ai-sdk/google-vertex", () => ({

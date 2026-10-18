@@ -54,6 +54,7 @@ import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import { desktopAuthPage } from "./auth/native-browser";
 import type { Credits } from "./billing/credits";
 import type { CreditWriter } from "./billing/credits-writer";
+import { createRewardGranter } from "./billing/rewards";
 import {
   createPaymentCallbackRoutes,
   createPaymentRoutes,
@@ -2937,7 +2938,23 @@ export function createApp(
   if (credits) {
     app.route(
       "/api/billing",
-      createBillingCreditRoutes({ credits, requireUser }),
+      createBillingCreditRoutes({
+        credits,
+        requireUser,
+        // The reward claim's write side (10.4): the granter resolves the claimer's own personal
+        // payer and the writer lands the grant. Mounted only where both exist — a deployment
+        // without the credit writer answers the claim route 503 instead of granting into a
+        // ledger nobody configured (the admin grant route's admission rule).
+        ...(billing?.creditWriter && billing.database
+          ? {
+              rewards: createRewardGranter({
+                database: billing.database,
+                creditWriter: billing.creditWriter,
+              }),
+            }
+          : {}),
+        audit: auditStore,
+      }),
     );
   }
 
