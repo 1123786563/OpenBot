@@ -42,6 +42,11 @@ function joinKey(segments: string[]): string {
  * Key layout: `wb` is the kind tag; a future kind gets its own tag and therefore its own key space
  * rather than sharing this one.
  */
+function injectiveKey(parts: string[]): string {
+  return parts.map((part) => `${part.length}:${part}`).join("|");
+}
+
+/** Scope key layout: `wb|actor|bot|epoch`, each component length-prefixed — see injectiveKey. */
 export function scopeKey(
   actorId: string,
   botId: string,
@@ -160,7 +165,12 @@ export function readCursor(scope: ObservationScope, cursor: string): string {
   return payload;
 }
 
-/** Cache, job and export keys all carry the scope key, so none of them can be reused across scopes. */
+/**
+ * Cache, job and export keys all carry the scope key, so none of them can be reused across scopes.
+ * Every component is length-prefixed (injectiveKey): a name or idempotency key containing the
+ * separator cannot shift fields and borrow another identity — `jobKey` is the idempotency identity
+ * of billable evaluation runs, so a collision there is a billing defect, not a cosmetic one.
+ */
 export function cacheKey(
   scope: ObservationScope,
   name: string,
