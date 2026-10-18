@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message, RunAgentInput } from "@ag-ui/client";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
@@ -641,24 +642,63 @@ type BuiltinToolStepCell = {
   /** Set once deltas past the capture ceiling were dropped (OCR R3-37). */
   argsTruncated: boolean;
   closed: boolean;
+  /** The run registry this cell belongs to (OCR R5-41); settling retires it there. */
+  registry: BuiltinToolStepCellRegistry;
 };
 
-const builtinToolStepCells = new Map<string, BuiltinToolStepCell>();
+/**
+ * One run's isolated cell registry (OCR R5-41). Cells and settled-id tombstones
+ * used to live in ONE module-level map keyed by the bare toolCallId, so two
+ * concurrent runs emitting the same id (OpenAI-compatible providers have
+ * historically handed out per-request incrementing ids) shared a single cell:
+ * the second run's arguments merged into the first's captured input, the second
+ * run's whole observation vanished, and its RUN_FINISHED settled the first
+ * run's cell early. The stream subscription owns a registry; an execute the
+ * runtime performs mid-run reaches it through the ambient carrier below.
+ */
+type BuiltinToolStepCellRegistry = {
+  cells: Map<string, BuiltinToolStepCell>;
+  /**
+   * Settled ids WITH evidence (T15 review (b)), per run: an approval resume
+   * replays the same toolCallId within ITS run, never across runs. FIFO-capped.
+   */
+  tombstones: Set<string>;
+};
+
+function newBuiltinToolStepCellRegistry(): BuiltinToolStepCellRegistry {
+  return { cells: new Map(), tombstones: new Set() };
+}
+
+/*
+ * The ambient carrier from a run's stream subscription to an execute the runtime
+ * performs inside that run (the same footing as the observation-scope store: the
+ * context is established at subscribe time and read deep inside the run, where
+ * no parameter can carry it).
+ */
+const builtinToolStepCellRegistries =
+  new AsyncLocalStorage<BuiltinToolStepCellRegistry>();
 
 /**
- * Tool call ids whose cell already settled (T15 review (b)). An out-of-order late
- * proposal for one of these must not open a SECOND cell — that would double-record
- * one call as both executed and proposed. Bounded FIFO: ids are unique per call, so
- * only recency matters, and a settled id is never legitimately reopened.
+ * Executes observed OUTSIDE any run's registry — no stream subscription is
+ * above them, so no stream can ever correlate with them either. Kept in one
+ * module-level registry with the historical shape; bounded by the stalled-cell
+ * sweep (OCR R5-43).
  */
-const settledToolCallIds = new Set<string>();
+const bareExecuteCells = newBuiltinToolStepCellRegistry();
+
+/**
+ * Settled-id tombstones are PER RUN (OCR R5-41) — each registry carries its own
+ * `tombstones` set, so a settled id can never reopen a cell within its run,
+ * while a concurrent run emitting the same provider id keeps its own cell.
+ */
 const SETTLED_ID_CAP = 4096;
 
 function builtinToolStepCell(
+  registry: BuiltinToolStepCellRegistry,
   toolCallId: string,
   toolName: string | null,
 ): BuiltinToolStepCell {
-  if (settledToolCallIds.has(toolCallId)) {
+  if (registry.tombstones.has(toolCallId)) {
     // A closed tombstone: every later event for this id is a no-op, by the same
     // `closed` check a settled-but-still-referenced cell gets.
     return {
@@ -675,9 +715,10 @@ function builtinToolStepCell(
       argsLength: 0,
       argsTruncated: false,
       closed: true,
+      registry,
     };
   }
-  const existing = builtinToolStepCells.get(toolCallId);
+  const existing = registry.cells.get(toolCallId);
   if (existing) return existing;
   const cell: BuiltinToolStepCell = {
     toolCallId,
@@ -697,8 +738,9 @@ function builtinToolStepCell(
     argsLength: 0,
     argsTruncated: false,
     closed: false,
+    registry,
   };
-  builtinToolStepCells.set(toolCallId, cell);
+  registry.cells.set(toolCallId, cell);
   return cell;
 }
 
@@ -729,7 +771,7 @@ function settleBuiltinToolStep(
 ): void {
   if (cell.closed) return;
   cell.closed = true;
-  builtinToolStepCells.delete(cell.toolCallId);
+  cell.registry.cells.delete(cell.toolCallId);
   /*
    * The tombstone exists so an out-of-order late proposal cannot open a SECOND
    * cell for a call that already produced its evidence. OCR R3-40: that guard
@@ -741,11 +783,10 @@ function settleBuiltinToolStep(
    * execution whole. A tombstoned id stays bounded (FIFO, recency only).
    */
   if (cell.executionObserved || cell.receiptObserved) {
-    settledToolCallIds.add(cell.toolCallId);
-    if (settledToolCallIds.size > SETTLED_ID_CAP) {
-      settledToolCallIds.delete(
-        settledToolCallIds.values().next().value as string,
-      );
+    const tombstones = cell.registry.tombstones;
+    tombstones.add(cell.toolCallId);
+    if (tombstones.size > SETTLED_ID_CAP) {
+      tombstones.delete(tombstones.values().next().value as string);
     }
   }
   const observer = builtinToolStepObserver;
@@ -787,62 +828,79 @@ function observeBuiltinToolSteps(
 ): Observable<BaseEvent> {
   const observer = builtinToolStepObserver;
   if (observer === undefined) return stream;
-  const owned: BuiltinToolStepCell[] = [];
-  const close = (window: "interrupted" | "terminal") => {
-    for (const cell of owned) settleBuiltinToolStep(cell, window);
-    owned.length = 0;
-  };
-  return stream.pipe(
-    tap({
-      next: (event) => {
-        switch (event.type) {
-          case "TOOL_CALL_START": {
-            const cell = builtinToolStepCell(
-              String(event.toolCallId),
-              typeof event.toolCallName === "string"
-                ? event.toolCallName
-                : null,
-            );
-            if (!cell.proposalObserved) {
-              cell.proposalObserved = true;
-              cell.proposedAt = new Date();
-            }
-            if (!owned.includes(cell)) owned.push(cell);
-            break;
-          }
-          case "TOOL_CALL_ARGS": {
-            const cell = builtinToolStepCells.get(String(event.toolCallId));
-            if (cell && !cell.closed && typeof event.delta === "string")
-              appendToolStepArg(cell, event.delta);
-            break;
-          }
-          case "TOOL_CALL_RESULT": {
-            const cell = builtinToolStepCells.get(String(event.toolCallId));
-            if (cell && !cell.closed) cell.receiptObserved = true;
-            break;
-          }
-          case "RUN_ERROR":
-            close("terminal");
-            break;
-          case "RUN_FINISHED": {
-            const outcome = (event as { outcome?: { type?: unknown } }).outcome
-              ?.type;
-            close(outcome === "interrupt" ? "interrupted" : "terminal");
-            break;
-          }
-          default:
-            break;
-        }
-      },
-      error: () => close("terminal"),
-      complete: () => close("terminal"),
-    }),
-    // T15 review (a): a teardown WITHOUT a terminal event — the consumer
-    // unsubscribed mid-run — closes every open cell too. `finalize` is the one
-    // hook that fires on unsubscribe as well as on complete and error; without
-    // it, the module-level registry keeps those cells forever.
-    finalize(() => close("terminal")),
-  );
+  return new Observable<BaseEvent>((subscriber) => {
+    /*
+     * One registry per subscription (OCR R5-41): this run's cells and settled-id
+     * tombstones live and die with it, so a concurrent run emitting the same
+     * provider toolCallId can neither merge into this run's facts nor settle
+     * them early. The subscription itself is established inside the registry's
+     * ambient carrier, so an execute the runtime performs mid-run resolves to
+     * THIS registry — the run's own execution tree carries the context, exactly
+     * like the observation-scope threading above it.
+     */
+    const registry = newBuiltinToolStepCellRegistry();
+    const owned: BuiltinToolStepCell[] = [];
+    const close = (window: "interrupted" | "terminal") => {
+      for (const cell of owned) settleBuiltinToolStep(cell, window);
+      owned.length = 0;
+    };
+    return builtinToolStepCellRegistries.run(registry, () =>
+      stream
+        .pipe(
+          tap({
+            next: (event) => {
+              switch (event.type) {
+                case "TOOL_CALL_START": {
+                  const cell = builtinToolStepCell(
+                    registry,
+                    String(event.toolCallId),
+                    typeof event.toolCallName === "string"
+                      ? event.toolCallName
+                      : null,
+                  );
+                  if (!cell.proposalObserved) {
+                    cell.proposalObserved = true;
+                    cell.proposedAt = new Date();
+                  }
+                  if (!owned.includes(cell)) owned.push(cell);
+                  break;
+                }
+                case "TOOL_CALL_ARGS": {
+                  const cell = registry.cells.get(String(event.toolCallId));
+                  if (cell && !cell.closed && typeof event.delta === "string")
+                    appendToolStepArg(cell, event.delta);
+                  break;
+                }
+                case "TOOL_CALL_RESULT": {
+                  const cell = registry.cells.get(String(event.toolCallId));
+                  if (cell && !cell.closed) cell.receiptObserved = true;
+                  break;
+                }
+                case "RUN_ERROR":
+                  close("terminal");
+                  break;
+                case "RUN_FINISHED": {
+                  const outcome = (event as { outcome?: { type?: unknown } })
+                    .outcome?.type;
+                  close(outcome === "interrupt" ? "interrupted" : "terminal");
+                  break;
+                }
+                default:
+                  break;
+              }
+            },
+            error: () => close("terminal"),
+            complete: () => close("terminal"),
+          }),
+          // T15 review (a): a teardown WITHOUT a terminal event — the consumer
+          // unsubscribed mid-run — closes every open cell too. `finalize` is the one
+          // hook that fires on unsubscribe as well as on complete and error; without
+          // it, the module-level registry keeps those cells forever.
+          finalize(() => close("terminal")),
+        )
+        .subscribe(subscriber),
+    );
+  });
 }
 
 /**
@@ -884,7 +942,11 @@ async function observeBuiltinToolExecution<T>(
 ): Promise<T> {
   const observer = builtinToolStepObserver;
   if (observer === undefined || toolCallId === undefined) return run();
-  const cell = builtinToolStepCell(toolCallId, toolName);
+  // The run this execute was performed inside owns the cell (OCR R5-41); a bare
+  // execute — no observed run above it — falls back to the module registry.
+  const registry =
+    builtinToolStepCellRegistries.getStore() ?? bareExecuteCells;
+  const cell = builtinToolStepCell(registry, toolCallId, toolName);
   /*
    * The success path keeps the failure path's 2000-character precedent (OCR
    * R2-53): a bounded capture, aligned on both sides of the settlement — the
