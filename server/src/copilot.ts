@@ -1369,19 +1369,27 @@ function spanMessagePiece(
 function spanInputOf(params: unknown): string | null {
   const prompt = (params as { prompt?: unknown })?.prompt;
   if (!Array.isArray(prompt)) {
-    // Outside the message-array shape there is nothing to walk: serialize once
-    // and cut. The bounded fallback for whatever a custom provider hands over.
-    try {
-      const serialized = JSON.stringify(prompt ?? null);
-      if (serialized === null) return null;
-      return serialized.length > SPAN_INPUT_CAPTURE_CHARS
-        ? serialized.slice(0, SPAN_INPUT_CAPTURE_CHARS) +
-            SPAN_INPUT_TRUNCATION_MARK
-        : serialized;
-    } catch {
-      // A prompt that cannot serialize is metrics-only for the span, never a failure.
-      return null;
+    /*
+     * Outside the message-array shape the only provably-text prompt is a bare
+     * string: sliced BEFORE serialization (OCR R2-52's own rule — the fallback
+     * used to stringify the whole prompt first, so a 40MB custom-provider
+     * prompt materialized whole in a transient allocation the capture never
+     * kept), then ceiling-checked against quoting overhead. Anything else —
+     * an object, a number, an absent prompt — cannot be proven text-only, so
+     * it is metrics-only null: this module never serializes what it cannot
+     * bound first, exactly like every media-carrying message-array shape.
+     */
+    if (typeof prompt !== "string") return null;
+    let body = JSON.stringify(prompt.slice(0, SPAN_INPUT_CAPTURE_CHARS));
+    const cut =
+      prompt.length > SPAN_INPUT_CAPTURE_CHARS ||
+      body.length > SPAN_INPUT_CAPTURE_CHARS;
+    if (body.length > SPAN_INPUT_CAPTURE_CHARS) {
+      // Escaping overhead can push the serialized kept text past the ceiling;
+      // the capture bound wins, and the mark declares the cut.
+      body = body.slice(0, SPAN_INPUT_CAPTURE_CHARS);
     }
+    return cut ? body + SPAN_INPUT_TRUNCATION_MARK : body;
   }
   const pieces: string[] = [];
   let length = 0;
