@@ -63,6 +63,7 @@ import {
   GATEWAY_CATALOG_SYNC_STATE_ID,
   gatewayCatalogSyncControls,
 } from "./catalog-sync";
+import { gatewayKeyStateSyncControls } from "./key-state-sync";
 import { type AuditStore, recordAuditEvent } from "../audit";
 
 /**
@@ -411,6 +412,35 @@ export function gatewayAdminRoutes(
               failedAt: outcome.failedAt,
             },
     });
+    return context.json({ result: outcome });
+  });
+
+  // The key state sync's manual trigger (Bifrost 05.8, #249): the same single-flight cell
+  // the scheduler runs on, answered here for an administrator who wants the pass now —
+  // a key the gateway just disabled stops being usable on the answer, not the next tick.
+  app.post("/keys/sync", async (context) => {
+    const controls = gatewayKeyStateSyncControls();
+    if (!controls) {
+      return unavailable(
+        context,
+        "The key state sync is not running in this deployment.",
+        "gateway_key_sync_unavailable",
+      );
+    }
+    const outcome = await controls.runSync();
+    const audit = resolved.auditStore();
+    if (audit) {
+      await recordAuditEvent(audit, {
+        eventType: "gateway.key_state_sync_triggered",
+        targetType: "gateway_key_sync",
+        targetId: "singleton",
+        actorUserId: context.var.actor.id,
+        payload: {
+          trigger: "manual",
+          outcome: outcome.status,
+        },
+      });
+    }
     return context.json({ result: outcome });
   });
 
