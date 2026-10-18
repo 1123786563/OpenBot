@@ -639,6 +639,65 @@ describe("the built-in observation bypass (metered path)", () => {
     );
   });
 
+  test("a bare-string prompt is captured sliced before serialization, within the ceiling (OCR R5-44)", async () => {
+    // The non-array fallback used to JSON.stringify the WHOLE prompt first and
+    // slice after — a 40MB custom-provider prompt materialized whole in a
+    // transient string, the exact allocation the module's own R2-52 discipline
+    // forbids ("sliced BEFORE serialization, no transient allocation ever
+    // exceeds the capture"). The only provably-text non-array shape is a bare
+    // string: sliced raw, then serialized, then ceiling-checked.
+    const { model } = scriptedModel([finishPart(1, 1)]);
+    const facts: BuiltinModelSpanFact[] = [];
+    try {
+      setBuiltinModelSpanObserver((fact) => facts.push(fact));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream({
+        prompt: `head-${"x".repeat(100_000)}-tail-never-kept`,
+      });
+      await drain(result.stream);
+    } finally {
+      setBuiltinModelSpanObserver(undefined);
+    }
+    const input = facts[0].input;
+    expect(typeof input).toBe("string");
+    expect(input!.length).toBeLessThanOrEqual(64 * 1024 + 64);
+    // The head of the RAW text is what was kept — serialized after the slice.
+    expect(input).toContain('"head-');
+    expect(input).not.toContain("tail-never-kept");
+    // The cut is declared in-band: a bounded capture is never read as the whole.
+    expect(input).toContain("[observation input truncated at capture]");
+  });
+
+  test("a non-array prompt that is not provably text is metrics-only — never serialized (OCR R5-44)", async () => {
+    // Whatever a custom provider hands over that is not a message array and
+    // not a bare string cannot be proven text-only, so serializing it — the
+    // old unbounded fallback — is exactly what the capture discipline forbids.
+    // Metrics-only null, like every media-carrying shape in this module.
+    const { model } = scriptedModel([finishPart(1, 1)]);
+    const facts: BuiltinModelSpanFact[] = [];
+    try {
+      setBuiltinModelSpanObserver((fact) => facts.push(fact));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      await drain(
+        (
+          await wrapped.doStream({
+            prompt: { custom: "shape", attachment: "z".repeat(5_000) },
+          })
+        ).stream,
+      );
+      await drain(
+        (await wrapped.doStream({ prompt: undefined })).stream,
+      );
+    } finally {
+      setBuiltinModelSpanObserver(undefined);
+    }
+    expect(facts).toHaveLength(2);
+    expect(facts[0].input).toBeNull();
+    // The old fallback serialized an absent prompt as the four characters
+    // "null" — a string that was never the prompt.
+    expect(facts[1].input).toBeNull();
+  });
+
   test("a large successful output is cut at the capture ceiling, not retained whole (OCR R2-53)", async () => {
     const delta = "y".repeat(1_000);
     const { model } = scriptedModel([
