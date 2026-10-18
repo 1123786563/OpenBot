@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { E2EConfig } from "e2e";
 
 // e2e 不读 .env；集成测试依赖 DATABASE_URL / OPENAI_* 等变量，显式加载一次。
@@ -33,9 +33,20 @@ const scope = (process.env.E2E_UNIT_SCOPE ?? "")
   .filter(Boolean);
 const unknown = scope.filter((name) => !ALL.includes(name));
 if (unknown.length) {
-  throw new Error(`E2E_UNIT_SCOPE names no suite directory: ${unknown.join(", ")}`);
+  throw new Error(
+    `E2E_UNIT_SCOPE names no suite directory: ${unknown.join(", ")}`,
+  );
 }
 const suites = scope.length ? scope : ALL;
+
+// 留在 Bun 运行时上的套件由 tests/bun-suites.test.ts 代为调度与报告，这里必须排除它们，
+// 否则同一份测试既被驱动一次又被收集一次。清单来自逐文件收集审计（scripts/e2e-bun-manifest.mjs）。
+const driven = (() => {
+  const path = "docs/verification/e2e-bun-suites.json";
+  if (!existsSync(path)) return [];
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as { files?: string[] };
+  return parsed.files ?? [];
+})();
 
 export default {
   projectId: "openbot-unit",
@@ -46,6 +57,7 @@ export default {
         : [`${dir}/**/*.test.ts`],
     ),
     "!**/node_modules/**",
+    ...driven.map((file) => `!${file}`),
   ],
   targets: [{ name: "node", platform: "node" }],
   workers: 4,

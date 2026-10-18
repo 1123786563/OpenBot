@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
 import { newId } from "../src/lib/new-id";
 

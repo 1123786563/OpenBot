@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import * as ReactCoreV2 from "@copilotkit/react-core/v2";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";

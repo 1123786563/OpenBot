@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { joinWithin } from "../src/lib/copilot/join-thread";
 

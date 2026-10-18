@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { nothingIsFiring, type SweepRecord } from "@/lib/routines/queries";
 

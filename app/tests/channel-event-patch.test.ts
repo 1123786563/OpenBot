@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { ChannelPage, ChannelSummary } from "../src/lib/channels/queries";
 import {

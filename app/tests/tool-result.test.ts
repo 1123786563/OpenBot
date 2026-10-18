@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { HANDED_OVER, PUT_TO } from "../src/lib/copilot/markers";
 import {

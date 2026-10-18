@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { afterEach, beforeEach, describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   attachmentsConfigFor,

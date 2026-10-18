@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { afterEach, expect, test } from "../../tests/support/e2e-compat";
 import { MutationObserver, QueryClient } from "@tanstack/react-query";
 import {

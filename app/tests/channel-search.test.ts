@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { expect, test } from "../../tests/support/e2e-compat";
 import { matchingChannels } from "../src/components/app-sidebar/app-sidebar";
 import type { ChannelSummary } from "../src/lib/channels/queries";

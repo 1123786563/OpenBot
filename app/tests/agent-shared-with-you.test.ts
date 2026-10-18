@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { isSharedWithYou } from "@/lib/agents/queries";

@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 // app/tests/shared-connected-accounts.test.tsx
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";

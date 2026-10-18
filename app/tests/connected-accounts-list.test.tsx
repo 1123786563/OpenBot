@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { expect, test } from "../../tests/support/e2e-compat";
 import type { PluginServer } from "@/lib/plugins/queries";
 import { brokeredAccountsListedOn } from "@/routes/_authed/settings/connected-accounts/index";

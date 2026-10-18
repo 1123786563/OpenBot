@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import type { Attachment } from "@copilotkit/react-core/v2";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { toMessageContent } from "@/components/channels/channel-chat";

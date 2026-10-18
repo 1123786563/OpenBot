@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, render, waitFor } from "@testing-library/react";

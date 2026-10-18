@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { afterEach, expect, mock, spyOn, test } from "../../tests/support/e2e-compat";
 import type { VoiceSessionRecord } from "../../shared/voice-session";
 import {

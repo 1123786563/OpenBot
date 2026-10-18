@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { expect, test } from "../../tests/support/e2e-compat";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { groupRoster } from "@/lib/agents/roster";

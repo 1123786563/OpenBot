@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "../../tests/support/e2e-compat";
 import type { Message, RunAgentInput } from "@ag-ui/core";
 import { RunAgentInputSchema } from "@ag-ui/core/schemas";

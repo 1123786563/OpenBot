@@ -1,3 +1,4 @@
+import { registerHooks } from "node:module";
 import { inspect } from "node:util";
 // Installed as a side effect: suites that probe the app the Bun way keep working on Node's runtime.
 import "./bun-compat";
@@ -512,6 +513,95 @@ export function mock(
 ): Mock {
   return makeMock(implementation);
 }
+
+/* --------------------------------------------------------- module mocking */
+
+const MOCK_REGISTRY = Symbol.for("openbot.e2e-compat.module-mocks");
+const mocks: Map<string, unknown[]> = ((globalThis as Any)[MOCK_REGISTRY] ??=
+  new Map());
+const moduleMocks: Map<string, () => Record<string, unknown>> = new Map();
+let hooksInstalled = false;
+
+/*
+ * `mock.module(specifier, factory)` over Node's loader hooks.
+ *
+ * The generated module reads the factory's exports back from a process-wide registry, so any
+ * specifier can be mocked, including the `@/...` aliases and relative paths `spyOn` cannot reach.
+ * Like Bun's it is registry level and outlives the file that set it, which is why suites import the
+ * mocked module only after calling it.
+ */
+function installMockHooks(): void {
+  if (hooksInstalled) return;
+  hooksInstalled = true;
+  registerHooks({
+    resolve: (specifier: string, _context: Any, nextResolve: Any) => {
+      if (moduleMocks.has(specifier)) {
+        return {
+          url: `e2e-mock:${encodeURIComponent(specifier)}`,
+          format: "module",
+          shortCircuit: true,
+        };
+      }
+      return nextResolve(specifier, _context);
+    },
+    load: (url: string, context: Any, nextLoad: Any) => {
+      // Stylesheets and other assets: Bun imports them as a side effect, Node has no such format.
+      if (
+        /\.(css|scss|sass|less|svg|png|jpe?g|gif|webp|woff2?|ttf|ico)(\?|$)/i.test(
+          url,
+        )
+      ) {
+        return {
+          format: "module",
+          shortCircuit: true,
+          source: 'export default "";\n',
+        };
+      }
+      if (!url.startsWith("e2e-mock:")) return nextLoad(url, context);
+      const key = decodeURIComponent(url.slice("e2e-mock:".length));
+      const names = Object.keys(moduleMocks.get(key)?.() ?? {});
+      const body = names
+        .map((name, index) =>
+          name === "default"
+            ? `export default __mocks__[${index}];`
+            : `export const ${identifier(name)} = __mocks__[${index}];`,
+        )
+        .join("\n");
+      return {
+        format: "module",
+        shortCircuit: true,
+        source:
+          `const __mocks__ = globalThis[Symbol.for("openbot.e2e-compat.module-mocks")].get(` +
+          `${JSON.stringify(key)});\n${body}\n`,
+      };
+    },
+  });
+}
+
+function identifier(name: string): string {
+  return /^[A-Za-z_$][\w$]*$/.test(name)
+    ? name
+    : `_${Math.abs([...name].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) | 0, 7))}`;
+}
+
+installMockHooks();
+
+(mock as Any).module = (
+  specifier: string,
+  factory: () => Record<string, unknown>,
+): (() => void) => {
+  installMockHooks();
+  moduleMocks.set(specifier, factory);
+  mocks.set(specifier, Object.values(factory()));
+  return () => {
+    moduleMocks.delete(specifier);
+    mocks.delete(specifier);
+  };
+};
+(mock as Any).restore = () => {
+  moduleMocks.clear();
+  mocks.clear();
+};
 
 const liveSpies = new Set<Mock>();
 

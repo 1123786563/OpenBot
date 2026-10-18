@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import { beforeEach, describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   activityFor,

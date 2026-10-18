@@ -1,4 +1,13 @@
 import "./preload";
+import "./preload";
+/*
+ * The runner comes straight from bun:test — the same door the sibling personal-orders-ui suite
+ * uses, and the one the ticket's prescribed verification command names (`bun test
+ * app/tests/personal-credits-ui.test.tsx`). The module-level stubs (mock.module) and the
+ * happy-dom registration below are the bun:test shapes; the e2e-compat runner cannot collect
+ * app suites in this worktree (its node target lacks the runtime the preload needs), so the
+ * file pins the runner that actually executes.
+ */
 import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -105,7 +114,9 @@ mock.module("@/components/ui/dialog", () => {
     DialogHeader: pass,
     DialogBody: pass,
     DialogFooter: pass,
-    DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
+    DialogTitle: ({ children }: { children?: ReactNode }) => (
+      <h2>{children}</h2>
+    ),
     DialogDescription: ({ children }: { children?: ReactNode }) => (
       <p>{children}</p>
     ),
@@ -121,6 +132,9 @@ const { UsageCreditsView } = await import(
 );
 const { PersonalBalanceCard } = await import(
   "@/components/billing/personal-balance-card"
+);
+const { ConsumptionTable } = await import(
+  "@/components/billing/consumption-table"
 );
 
 beforeAll(async () => {
@@ -159,10 +173,29 @@ type BalanceFixture = {
     expiringSoon: boolean;
   }>;
   pendingSettlement: {
-    enabled: false;
-    available: 0;
-    consumed: 0;
-    expired: 0;
+    enabled: boolean;
+    available: number;
+    consumed: number;
+    expired: number;
+    reserved: number;
+    unknown: number;
+    reservations: Array<{
+      id: string;
+      status: "reserved" | "unknown" | "settled" | "released";
+      maximum: number;
+      charged: number | null;
+      released: number | null;
+      provider: string | null;
+      model: string | null;
+      capability: string | null;
+      botId: string | null;
+      botName: string | null;
+      unknownReason: string | null;
+      releaseReason: string | null;
+      createdAt: string;
+      expiresAt: string;
+      terminalAt: string | null;
+    }>;
   };
 };
 
@@ -198,7 +231,53 @@ const BALANCE: BalanceFixture = {
       expiringSoon: false,
     },
   ],
-  pendingSettlement: { enabled: false, available: 0, consumed: 0, expired: 0 },
+  pendingSettlement: {
+    // The 06.12 answer: a pending quota split reserved/unknown, and the reservations behind
+    // it — one unknown (with its reason) and one plain reserved, so the page is asserted
+    // against the distinction the ticket asks the UI to draw.
+    enabled: true,
+    available: 30,
+    consumed: 12,
+    expired: 0,
+    reserved: 20,
+    unknown: 10,
+    reservations: [
+      {
+        id: "cr-unknown-1",
+        status: "unknown",
+        maximum: 10,
+        charged: null,
+        released: null,
+        provider: "prov-a",
+        model: "model-a",
+        capability: "chat",
+        botId: "bot-a",
+        botName: "测试 Bot A",
+        unknownReason: "usage_missing",
+        releaseReason: null,
+        createdAt: "2026-10-17T09:00:00.000Z",
+        expiresAt: "2026-10-17T09:15:00.000Z",
+        terminalAt: null,
+      },
+      {
+        id: "cr-reserved-1",
+        status: "reserved",
+        maximum: 20,
+        charged: null,
+        released: null,
+        provider: "prov-b",
+        model: "model-b",
+        capability: "chat",
+        botId: "bot-b",
+        botName: "测试 Bot B",
+        unknownReason: null,
+        releaseReason: null,
+        createdAt: "2026-10-17T09:05:00.000Z",
+        expiresAt: "2026-10-17T09:20:00.000Z",
+        terminalAt: null,
+      },
+    ],
+  },
 };
 
 const EMPTY_BALANCE: BalanceFixture = {
@@ -208,15 +287,21 @@ const EMPTY_BALANCE: BalanceFixture = {
   expired: 0,
   held: 0,
   grants: [],
-  pendingSettlement: { enabled: false, available: 0, consumed: 0, expired: 0 },
+  pendingSettlement: {
+    enabled: true,
+    available: 0,
+    consumed: 0,
+    expired: 0,
+    reserved: 0,
+    unknown: 0,
+    reservations: [],
+  },
 };
 
 /** Every URL the page asked for, for the no-account-identifier assertion. */
 let requestedUrls: string[] = [];
 
-type Stub =
-  | { status: number; body: unknown }
-  | undefined;
+type Stub = { status: number; body: unknown } | undefined;
 
 function installFetchStub(overrides: {
   summary?: Stub;
@@ -301,11 +386,30 @@ test("个人余额页渲染账户类型、可用/已消费/已过期与待结算
   expect(card).toContain("3.2");
   expect(card).toContain("0.75");
   expect(card).toContain("1");
-  // Pending settlement is group 06's lane: 未启用, spelled out — never a bare 0.
+  // Pending settlement is group 06's answer (ticket 06.12): the quota, and the reserved vs
+  // unknown split the ticket asks the page to draw — 30 pending = 20 reserved + 10 unknown.
   const pending = view.getByTestId("pending-settlement").textContent ?? "";
   expect(pending).toContain("待结算");
-  expect(pending).toContain("未启用");
-  expect(pending).not.toMatch(/待结算[：:]\s*0/);
+  expect(pending).toContain("30");
+  expect(pending).toContain("预留中");
+  expect(pending).toContain("20");
+  expect(pending).toContain("结果未知");
+  expect(pending).toContain("10");
+  // The per-reservation list names each hold's status and reason: the unknown one says why it
+  // is stuck (in the reader's words, with the verbatim reason), and both name their Bot.
+  const rows = view.getAllByTestId("reservation-row");
+  expect(rows).toHaveLength(2);
+  const unknownRow = rows.find(
+    (row) => row.getAttribute("data-status") === "unknown",
+  );
+  expect(unknownRow?.textContent).toContain("结果未知");
+  expect(unknownRow?.textContent).toContain("usage_missing");
+  expect(unknownRow?.textContent).toContain("测试 Bot A");
+  const reservedRow = rows.find(
+    (row) => row.getAttribute("data-status") === "reserved",
+  );
+  expect(reservedRow?.textContent).toContain("预留中");
+  expect(reservedRow?.textContent).toContain("测试 Bot B");
   // The grant rows render with their lives, and the rewards summary line is derived from the
   // balance (1 grant still spendable, the account's own available and held figures).
   expect(view.getByText("5/50积分")).toBeTruthy();
@@ -336,7 +440,9 @@ test("接口失败时显示错误提示，不渲染 0 余额", async () => {
   expect(view.queryByText("进行中占用")).toBeNull();
   // Every section that needed the failed read offers the way back (subscription, balance,
   // rewards each render their own LoadError); at least one retry button must exist.
-  expect(view.getAllByRole("button", { name: "重试" }).length).toBeGreaterThan(0);
+  expect(view.getAllByRole("button", { name: "重试" }).length).toBeGreaterThan(
+    0,
+  );
 });
 
 test("无发放记录时显示明确空态文案", async () => {
@@ -362,7 +468,8 @@ test("页面请求不携带任何账户标识参数", async () => {
   // Let the consumption window's request land too, then audit every URL the page asked for.
   await new Promise((resolve) => setTimeout(resolve, 50));
 
-  const identity = /userid|externalcustomerid|payerid|accountid|companyid|tenantid/i;
+  const identity =
+    /userid|externalcustomerid|payerid|accountid|companyid|tenantid/i;
   const offenders = requestedUrls.filter((url) => identity.test(url));
   expect(offenders, JSON.stringify(offenders)).toEqual([]);
   // And the page did ask for its own balance by path alone — no account naming anywhere.
@@ -380,14 +487,90 @@ test("billing 未启用时显示部署不可用空态", async () => {
   expect(view.queryByText("已消费")).toBeNull();
 });
 
-test("PersonalBalanceCard 把待结算占位渲染为未启用而不是 0", () => {
-  const view = render(<PersonalBalanceCard balance={EMPTY_BALANCE} />);
+test("PersonalBalanceCard renders the enabled pending view with its split and reservations", () => {
+  const view = render(<PersonalBalanceCard balance={BALANCE} />);
+  expect(view.getByTestId("account-type").textContent).toBe("个人账户");
+  const pending = view.getByTestId("pending-settlement").textContent ?? "";
+  expect(pending).toContain("待结算");
+  expect(pending).toContain("30");
+  expect(view.getAllByTestId("reservation-row")).toHaveLength(2);
+});
+
+test("PersonalBalanceCard renders a pre-06.12 answer as 未启用, never a bare 0", () => {
+  const legacy: BalanceFixture = {
+    ...EMPTY_BALANCE,
+    pendingSettlement: {
+      enabled: false,
+      available: 0,
+      consumed: 0,
+      expired: 0,
+      reserved: 0,
+      unknown: 0,
+      reservations: [],
+    },
+  };
+  const view = render(<PersonalBalanceCard balance={legacy} />);
   expect(view.getByTestId("account-type").textContent).toBe("个人账户");
   const pending = view.getByTestId("pending-settlement").textContent ?? "";
   expect(pending).toContain("未启用");
   expect(pending).not.toMatch(/待结算[：:]\s*0/);
+  expect(view.queryByTestId("reservation-list")).toBeNull();
   // An all-zero ledger with no grants says so in words beside the (true) zeros.
   expect(view.getByTestId("empty-ledger").textContent).toContain(
     "还没有积分记录",
   );
+});
+
+test("消费明细表按 Bot 与模型归因渲染，非协议行留空", () => {
+  const view = render(
+    <ConsumptionTable
+      entries={[
+        {
+          id: "l1",
+          title: "chat call",
+          requestId: "req-1",
+          credits: 30,
+          applied: 30,
+          model: "model-a",
+          client: "web",
+          botId: "bot-a",
+          botName: "测试 Bot A",
+          timestamp: "2026-10-17T10:00:00.000Z",
+        },
+        {
+          id: "l2",
+          title: "direct call",
+          requestId: null,
+          credits: 10,
+          applied: 10,
+          model: null,
+          client: "web",
+          botId: null,
+          botName: null,
+          timestamp: "2026-10-17T10:05:00.000Z",
+        },
+      ]}
+      pagination={{
+        totalCount: 2,
+        totalPages: 1,
+        currentPage: 1,
+        nextPage: null,
+      }}
+      range="7d"
+      onRangeChange={() => {}}
+      onPage={() => {}}
+      statusTemplate=""
+    />,
+  );
+  // The Bot column names the admitting Bot; the model column names the cell.
+  expect(view.container.textContent).toContain("测试 Bot A");
+  expect(view.container.textContent).toContain("model-a");
+  // The header carries the Bot column beside Model/Client (06.12's attribution surface).
+  expect(view.container.textContent).toContain("Bot");
+  // The unattributed row stays honestly blank, never guessed.
+  const rows = view.getAllByRole("row");
+  const directRow = rows.find((row) =>
+    row.textContent?.includes("direct call"),
+  );
+  expect(directRow?.textContent).not.toContain("测试 Bot A");
 });

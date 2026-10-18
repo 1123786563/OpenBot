@@ -1,4 +1,5 @@
 import "./preload";
+import "./preload";
 import "./home-fallback-routing.fixture";
 
 import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/e2e-compat";
