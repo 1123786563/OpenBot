@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  chunkTraceIds,
   DEFAULT_EXPORT_CONCURRENCY,
   DEFAULT_EXPORT_MAX_ACTIVE,
   DEFAULT_EXPORT_MAX_ROWS,
+  EXPORT_VERDICT_BATCH,
   ExportError,
   ExportRowLimitExceeded,
   foldExportPages,
@@ -196,6 +198,28 @@ describe("folding upstream pages under a row cap", () => {
         ),
       ),
     ).rejects.toBeInstanceOf(MalformedExportPage);
+  });
+});
+
+describe("chunking the verdict join's id list (OCR R4-38)", () => {
+  test("the batch size stays far under PG's 65,535 bind-parameter ceiling", () => {
+    expect(EXPORT_VERDICT_BATCH).toBe(1000);
+  });
+
+  test("a job-sized id list splits into ordered, cap-sized batches", () => {
+    // 2,500 ids is a legal job.rowLimit world (max 100_000) — one unchunked
+    // inArray over it is 2,500 bound parameters, and a full 100_000-trace job
+    // is a guaranteed protocol blow-up past 65,535.
+    const ids = Array.from({ length: 2_500 }, (_, i) => `t${i}`);
+    const batches = chunkTraceIds(ids);
+    expect(batches.map((batch) => batch.length)).toEqual([1000, 1000, 500]);
+    expect(batches.flat()).toEqual(ids);
+  });
+
+  test("exactly one batch stays one batch; an empty list asks for nothing", () => {
+    const ids = Array.from({ length: 1000 }, (_, i) => `t${i}`);
+    expect(chunkTraceIds(ids)).toEqual([ids]);
+    expect(chunkTraceIds([])).toEqual([]);
   });
 });
 

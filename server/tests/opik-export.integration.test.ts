@@ -217,6 +217,54 @@ test("the export artifact joins the binding's capability verdict like the query 
   expect(byTrace.get("trace-unbound")).toBe("unavailable");
 });
 
+test("a deletion-in-flight binding lends no capability verdict to the artifact (OCR R4-37)", async () => {
+  // The query surface (bindings.ts capabilitiesByOpikTraceIds) treats a
+  // deletion-in-flight binding as gone; the export worker's join claims the
+  // artifact is "projected exactly as the query surface would have" — so the
+  // same filter applies here, never a verdict from a row readers cannot see.
+  const bindingId = randomUUID();
+  await database.insert(aiObservationBindings).values({
+    id: bindingId,
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    runId: `t34-run-${randomUUID()}`,
+    attemptId: "attempt-1",
+    traceId: "w".repeat(32),
+    opikTraceId: "trace-doomed",
+    locatorWorkspace: resolveStorageLocator(scopeA).workspace,
+    locatorProject: resolveStorageLocator(scopeA).project,
+    capability: "detailed",
+    state: "completed",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+  await database.insert(aiObservationRetentionDeletions).values({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    kind: "run",
+    targetId: bindingId,
+    upstreamKind: "trace",
+    upstreamId: "trace-doomed",
+    retentionDays: 7,
+    state: "pending",
+  });
+  const upstream = fakePort({ rows: [{ id: "trace-doomed", status: "COMPLETED" }] });
+  const worker = workerFor(upstream.port);
+  const job = await store.enqueue(scopeA, 10);
+  await worker.sweep();
+  const done = await store.get(scopeA, job.id);
+  const byTrace = new Map(
+    (done?.artifact ?? []).map((row) => [row.opikTraceId, row.capability]),
+  );
+  // The binding is already gone to every reader: the trace reads as the honest
+  // "unavailable", exactly as the query surface would have answered.
+  expect(byTrace.get("trace-doomed")).toBe("unavailable");
+});
+
 test("a job with a pending deletion record is already gone to readers (OCR m140)", async () => {
   const job = await store.enqueue(scopeA, 10);
   await database.insert(aiObservationRetentionDeletions).values({

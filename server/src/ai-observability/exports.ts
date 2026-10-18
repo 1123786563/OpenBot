@@ -654,6 +654,28 @@ export type ObservationExportWorker = {
   start(): Repeating;
 };
 
+/**
+ * The largest id list one capability-verdict statement may bind (OCR R4-38):
+ * PostgreSQL's per-statement bind-parameter ceiling is 65,535, and job.rowLimit
+ * is operator-configurable up to MAX_EXPORT_MAX_ROWS — one unchunked inArray
+ * over a full job is a guaranteed protocol blow-up settling the job as a
+ * misleading OPIK_UPSTREAM_ERROR. 1000 keeps every statement at ~1.5% of the
+ * ceiling regardless of configuration.
+ */
+export const EXPORT_VERDICT_BATCH = 1000;
+
+/**
+ * Split an id list into ordered, EXPORT_VERDICT_BATCH-sized batches. An empty
+ * list splits into nothing — the caller skips the statement entirely.
+ */
+export function chunkTraceIds<T>(ids: readonly T[]): T[][] {
+  const batches: T[][] = [];
+  for (let start = 0; start < ids.length; start += EXPORT_VERDICT_BATCH) {
+    batches.push(ids.slice(start, start + EXPORT_VERDICT_BATCH));
+  }
+  return batches;
+}
+
 export type ObservationExportWorkerDeps = Readonly<{
   database: Database;
   config: () => OpikConfig;
@@ -788,10 +810,13 @@ export function createObservationExportWorker(
             });
       // The rows are projected exactly as the query surface would have (m143):
       // the capability verdict joined from this scope's own bindings — an unbound
-      // trace stays the honest "unavailable" — never a flat constant.
+      // trace stays the honest "unavailable" — never a flat constant. The join
+      // obeys the same reader contract as bindings.ts's capabilitiesByOpikTraceIds
+      // (OCR R4-37): a deletion-in-flight binding no longer answers for its
+      // trace, so the export never carries a verdict the query surface refuses.
       const ids = rows.map((row) => row.id);
       const verdicts = new Map<string, string>();
-      if (ids.length > 0) {
+      for (const batch of chunkTraceIds(ids)) {
         const bound = await deps.database
           .select({
             opikTraceId: aiObservationBindings.opikTraceId,
@@ -801,7 +826,11 @@ export function createObservationExportWorker(
           .where(
             and(
               eq(aiObservationBindings.scopeKey, scope.key),
-              inArray(aiObservationBindings.opikTraceId, ids),
+              notPendingDeletion("run", aiObservationBindings.id),
+              // R4-38: the batch stays far under PG's per-statement bind
+              // ceiling for any legal job.rowLimit, so an oversized job can no
+              // longer settle as a misleading upstream error.
+              inArray(aiObservationBindings.opikTraceId, batch),
             ),
           );
         for (const row of bound) {
