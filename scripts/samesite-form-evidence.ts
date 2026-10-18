@@ -6,13 +6,15 @@
  * 证据 B：route 改写去掉 form-action 后，同款提交携带主站 cookie 直达主站
  *         —— 证明「若 CSP 不拦，同 site 表单确实带主站 cookie」（F-1 触发条件）
  * 证据 C：CDP jar —— 主站 host-only cookie 与预览通行证并存
- * 独立微脚本；生产代码零改动。服务器需以
- * OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE=http://{session}.localhost:3221 启动。
+ * 独立微脚本；生产代码零改动。形态：默认 dev 形态即可（127.0.0.1:3221/{label}
+ * 与主站 127.0.0.1:3220 同 host 异端口 ⇒ 同 site；登录走 localhost 域后把
+ * 会话 cookie 镜像到 127.0.0.1）。证据头部写本脚本 sha256，与运行一一对应。
  */
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { type Browser, type Page, chromium } from "playwright-core";
 if (existsSync(".env")) process.loadEnvFile(".env");
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const APP_ORIGIN = process.env.CRAFT_ACCEPTANCE_APP_ORIGIN ?? "http://127.0.0.1:3220";
 const API_ORIGIN = process.env.CRAFT_ACCEPTANCE_API_ORIGIN ?? "http://localhost:3221";
@@ -284,20 +286,62 @@ export async function ping(): Promise<string> {
 `;
 
 function probePage(marker: string): string {
-  return `import { useState } from "react";
-import { apiUrl } from "../lib/base-path";
+  return `"use client";
+
+import { useState } from "react";
+import { ping } from "./actions";
+// F-2 后 dev 形态挂在 /<label> basePath 下：Next 只给 Link/router/资产加前缀，
+// 裸 fetch 必须自己带（模板 lib/base-path.ts 的 apiUrl，NEXT_PUBLIC_BASE_PATH 内联）。
+import { apiUrl } from "@/lib/base-path";
+
+const MARKER = ${JSON.stringify(marker)};
 
 export default function ProbePage() {
   const [clicks, setClicks] = useState(0);
-  const send = async (method: string) => {
-    await fetch(apiUrl("/api/probe"), { method, headers: { "content-type": "application/json" }, body: "{}" }).catch(() => {});
-  };
+  const [results, setResults] = useState<string[]>([]);
+  const [action, setAction] = useState("");
+
+  async function send(method: string) {
+    const response = await fetch(apiUrl("/api/probe"), {
+      method,
+      headers: { "content-type": "application/json" },
+      body: method === "GET" || method === "DELETE" ? undefined : JSON.stringify({ probe: 1 }),
+    });
+    const body = (await response.json().catch(() => ({}))) as { ok?: boolean };
+    setResults((prev) => [\`\${method} → \${response.status} ok=\${String(body.ok)}\`, ...prev].slice(0, 8));
+  }
+
   return (
-    <main style={{ padding: 24, fontFamily: "monospace" }}>
-      <h1>probe page ${marker}</h1>
-      <p>probe-marker: ${marker}</p>
-      <button id="probe-click" onClick={() => { setClicks((c) => c + 1); void send("POST"); }}>probe click</button>
-      <p>clicks: {clicks}</p>
+    <main style={{ fontFamily: "system-ui", padding: 24, display: "grid", gap: 12 }}>
+      <h1>#365 probe app</h1>
+      <p data-testid="probe-marker">{MARKER}</p>
+      <p>clicks: <span data-testid="probe-clicks">{clicks}</span></p>
+      <button type="button" data-testid="probe-click" onClick={() => setClicks(clicks + 1)}>
+        click me
+      </button>
+      {["POST", "PUT", "PATCH", "DELETE"].map((method) => (
+        <button
+          key={method}
+          type="button"
+          data-testid={\`probe-\${method}\`}
+          onClick={() => void send(method)}
+        >
+          {method}
+        </button>
+      ))}
+      <button
+        type="button"
+        data-testid="probe-action"
+        onClick={() => void ping().then(setAction)}
+      >
+        server action
+      </button>
+      <ul data-testid="probe-results">
+        {results.map((line, index) => (
+          <li key={index}>{line}</li>
+        ))}
+      </ul>
+      <p data-testid="probe-action-result">{action}</p>
     </main>
   );
 }
@@ -576,11 +620,10 @@ try {
   const requests: { url: string; method: string; cookieNames: string[] }[] = [];
   await context.route(`${previewUrl.replace(/\?.*/, "")}**`, async (route) => {
     const response = await route.fetch();
-    const headers = await response.allHeaders();
+    const headers = { ...response.headers() } as Record<string, string>;
     const csp = headers["content-security-policy"] ?? "";
     const stripped = csp.replace(/form-action 'self'; ?/g, "");
-    headers["content-security-policy"] = stripped;
-    await route.fulfill({ response, headers });
+    await route.fulfill({ response, headers: { ...headers, "content-security-policy": stripped } });
   });
   previewPage.on("request", (req) => {
     if (req.url().startsWith(APP_ORIGIN) && req.method() === "POST") {
@@ -591,30 +634,29 @@ try {
   const reloadUrl = previewPage.url();
   await previewPage.goto(reloadUrl, { waitUntil: "domcontentloaded", timeout: T });
   await previewPage.locator("body").innerText({ timeout: 20_000 }).catch(() => "");
-  const cspAfter = await previewPage.evaluate(() => {
-    const meta = document.querySelector("meta[http-equiv='Content-Security-Policy']");
-    return meta ? meta.getAttribute("content") : "header-only";
-  });
-  const outcomeB = await previewPage.evaluate(async (target) => {
-    const frame = document.createElement("iframe");
-    frame.name = "form-probe-b"; frame.style.display = "none";
-    document.body.appendChild(frame);
-    const violation = await new Promise<string | null>((resolve) => {
-      const onViolation = (event: Event) => resolve((event as SecurityPolicyViolationEvent).effectiveDirective);
-      document.addEventListener("securitypolicyviolation", onViolation, { once: true });
-      setTimeout(() => resolve(null), 4000);
-      const form = document.createElement("form");
-      form.action = target; form.method = "POST"; form.target = "form-probe-b";
-      document.body.appendChild(form); form.submit();
-    });
-    return { violation };
+  // fire-and-forget 顶层提交：成功=导航离开预览页（evaluate 不可 await），以
+  // 请求观测与导航结果为证。
+  await previewPage.evaluate((target) => {
+    const form = document.createElement("form");
+    form.action = target; form.method = "POST";
+    document.body.appendChild(form); form.submit();
   }, `${APP_ORIGIN}/`);
+  const navigatedOut = await previewPage
+    .waitForURL((u) => u.origin === APP_ORIGIN, { timeout: 6000 })
+    .then(() => true)
+    .catch(() => false);
   await new Promise((r) => setTimeout(r, 1500));
   await context.unrouteAll();
-  assert(outcomeB.violation === null, `去掉 form-action 后仍被拦（${outcomeB.violation}）——对照实验未成立`);
+  if (!navigatedOut && requests.length === 0) {
+    // 页面没走、请求没到——查是否被 CSP 拦（此时 previewPage 还活着）
+    const stayed = await previewPage.evaluate(() => location.host).catch(() => "gone");
+    assert(false, `去掉 form-action 后既未导航也未到达主站（host=${stayed}）——对照实验未成立`);
+  }
+  // 上一行守卫已断言「未导航且无请求」的失败面；这里再钉 B 的实质：
+  // 请求必须真的到达主站（仅导航离开不算对照成立）。
   assert(requests.length > 0, "去掉 form-action 后提交仍未到达主站——附带性对照失败");
   const withSessionCookie = requests.some((r) => r.cookieNames.some((n) => mainSiteNames.includes(n)));
-  evidence(`[B] 对照（route 改写去掉 form-action）：提交 ${outcomeB.violation === null ? "未被拦" : "?"}，到达主站的 POST = ${JSON.stringify(requests)} —— ${withSessionCookie ? "携带主站 cookie（SameSite 在同 site 放行）—— F-1 触发条件实证" : "未见主站 cookie（检查 jar）"}（CSP 检索形态：${cspAfter}）`);
+  evidence(`[B] 对照（route 改写去掉 form-action）：顶层提交 navigatedOut=${navigatedOut}，到达主站的 POST = ${JSON.stringify(requests)} —— ${withSessionCookie ? "携带主站 cookie（cookie host 不分端口、同 host 附带）—— F-1 触发条件实证" : "未见主站 cookie（检查 jar）"}`);
 
   await previewPage.screenshot({ path: `${SHOT_DIR}/samesite-final.png` });
   evidence(`=== 同 site 双 host 证据完成：A 拦截 + B 附带性对照 + C jar ===`);
@@ -626,5 +668,18 @@ try {
     evidence(`[cleanup] 会话 ${sessionId.id} 已停服删除`);
   }
   await browser.close().catch(() => {});
-  writeFileSync(".superpowers/evidence/samesite-form-evidence.txt", EVIDENCE.join("\n") + "\n");
+  // 证据与脚本版本一一对应（codex：未提交脚本与留存证据实现有漂移）：
+  // 头部写脚本自身 sha256 + 运行时间戳，证据可回溯到产出它的确切实现。
+  const scriptSha256 = createHash("sha256")
+    .update(readFileSync(import.meta.path))
+    .digest("hex");
+  writeFileSync(
+    ".superpowers/evidence/samesite-form-evidence.txt",
+    [
+      `script-sha256: ${scriptSha256}`,
+      `run-at: ${new Date().toISOString()}`,
+      ...EVIDENCE,
+      "",
+    ].join("\n"),
+  );
 }
