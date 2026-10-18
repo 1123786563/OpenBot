@@ -107,11 +107,12 @@ export function createProductionEvaluationCaseRunner(
     // stripped question still spends money on it. The case settles as the domain
     // refusal BEFORE the billing admission (zero holds, zero provider calls), and
     // the observation carries the same refused ending the admission path does.
-    // A truncation is still reviewed text (the judge's ruling) and proceeds.
+    // A truncation is still reviewed text (the judge's ruling) and proceeds — only
+    // an omitted envelope, the field withheld outright, refuses (OCR R5-18).
     if (
-      context.config.modelName.state !== "projected" ||
-      context.config.prompt.state !== "projected" ||
-      context.frozenCase.safeInput.state !== "projected"
+      context.config.modelName.state === "omitted" ||
+      context.config.prompt.state === "omitted" ||
+      context.frozenCase.safeInput.state === "omitted"
     ) {
       report({
         ...base,
