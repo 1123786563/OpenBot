@@ -381,7 +381,9 @@ test("the two scopes over the SAME bot id never see each other's rows", async ()
 
   // The open window answers the upstream half exactly: scope B's trace is an
   // unbound record under A's key, and missing usage is counted, never zeroed.
-  const open = await app.request(`http://openbot.test/admin/summary?botId=${botId}`);
+  const open = await app.request(
+    `http://openbot.test/admin/summary?botId=${botId}`,
+  );
   expect(open.status).toBe(200);
   const openBot = (await open.json()).bots[0];
   expect(openBot.runs.unboundUpstream).toBe(2);
@@ -406,7 +408,9 @@ test("the same bot id under scope B answers B's own aggregate", async () => {
   // truthful zero, not a disguise.
   expect(bot.runs.unboundUpstream).toBe(null);
   expect(bot.runs.usage).toBe(null);
-  const open = await app.request(`http://openbot.test/admin/summary?botId=${botId}`);
+  const open = await app.request(
+    `http://openbot.test/admin/summary?botId=${botId}`,
+  );
   const openBot = (await open.json()).bots[0];
   expect(openBot.runs.unboundUpstream).toBe(0);
   expect(openBot.runs.usage).toEqual({ providerReported: 0, unavailable: 0 });
@@ -429,7 +433,12 @@ test("a deletion-in-flight row is gone to every local aggregate (OCR R4-30)", as
   // this summary aggregates locally — a completed binding, the draft experiment
   // and the completed export job — all still physically present, all already
   // gone to every reader per the retention.ts reader contract.
-  const deletion = (kind: string, targetId: string, upstreamKind: string | null, upstreamId: string | null) => ({
+  const deletion = (
+    kind: string,
+    targetId: string,
+    upstreamKind: string | null,
+    upstreamId: string | null,
+  ) => ({
     id: randomUUID(),
     scopeKey: scopeKeyA,
     actorId: actorA,
@@ -441,11 +450,13 @@ test("a deletion-in-flight row is gone to every local aggregate (OCR R4-30)", as
     retentionDays: 7,
     state: "pending" as const,
   });
-  await database.insert(aiObservationRetentionDeletions).values([
-    deletion("run", `${run}-${actorA}-b1`, "trace", `opik-${actorA}-1`),
-    deletion("experiment", `${run}-${actorA}-draft`, null, null),
-    deletion("export", `${run}-${actorA}-job1`, null, null),
-  ]);
+  await database
+    .insert(aiObservationRetentionDeletions)
+    .values([
+      deletion("run", `${run}-${actorA}-b1`, "trace", `opik-${actorA}-1`),
+      deletion("experiment", `${run}-${actorA}-draft`, null, null),
+      deletion("export", `${run}-${actorA}-job1`, null, null),
+    ]);
 
   const app = appFor({
     port: fakePort([
@@ -483,7 +494,9 @@ test("a deletion-in-flight row is gone to every local aggregate (OCR R4-30)", as
 
   // The open window's bound-trace subquery obeys the same filter: A's only
   // binding row is deletion-in-flight, so its trace reads as unbound upstream.
-  const open = await app.request(`http://openbot.test/admin/summary?botId=${botId}`);
+  const open = await app.request(
+    `http://openbot.test/admin/summary?botId=${botId}`,
+  );
   expect(open.status).toBe(200);
   const openBot = (await open.json()).bots[0];
   expect(openBot.runs.unboundUpstream).toBe(2);
@@ -893,7 +906,9 @@ test("a listing that answered but whose local read-back fails stays null beside 
       if (prop !== "select") return Reflect.get(target, prop, receiver);
       return (...args: unknown[]) => {
         const builder = (
-          target.select as unknown as (...a: unknown[]) => { from: (t: unknown) => unknown }
+          target.select as unknown as (...a: unknown[]) => {
+            from: (t: unknown) => unknown;
+          }
         )(...args);
         const originalFrom = builder.from.bind(builder);
         builder.from = (table: unknown) => {

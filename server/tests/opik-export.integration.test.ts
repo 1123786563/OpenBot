@@ -252,7 +252,9 @@ test("a deletion-in-flight binding lends no capability verdict to the artifact (
     retentionDays: 7,
     state: "pending",
   });
-  const upstream = fakePort({ rows: [{ id: "trace-doomed", status: "COMPLETED" }] });
+  const upstream = fakePort({
+    rows: [{ id: "trace-doomed", status: "COMPLETED" }],
+  });
   const worker = workerFor(upstream.port);
   const job = await store.enqueue(scopeA, 10);
   await worker.sweep();
