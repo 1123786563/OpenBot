@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "../../tests/support/e2e-compat";
+import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
