@@ -63,6 +63,13 @@ import {
   GATEWAY_CATALOG_SYNC_STATE_ID,
   gatewayCatalogSyncControls,
 } from "./catalog-sync";
+import { gatewayKeyStateSyncControls } from "./key-state-sync";
+import {
+  createGatewayKeyDriftStore,
+  GATEWAY_KEY_DRIFT_DECISIONS,
+  serializeKeyDriftEvent,
+  type GatewayKeyDriftStore,
+} from "./key-drift";
 import { type AuditStore, recordAuditEvent } from "../audit";
 
 /**
@@ -88,6 +95,11 @@ export type GatewayAdminRouteDeps = {
   syncService: () => GatewayCatalogSyncService | undefined;
   /** The append-only trail every executed trigger is written to (03.5). */
   auditStore: () => AuditStore | undefined;
+  /**
+   * The key field-drift events and their dispositions (05.9). Defaults through the
+   * installed enterprise controls' database, the way the rate store does.
+   */
+  keyDriftStore: () => GatewayKeyDriftStore | undefined;
 };
 
 function defaultDeps(): GatewayAdminRouteDeps {
@@ -105,6 +117,18 @@ function defaultDeps(): GatewayAdminRouteDeps {
     modelScopeService: () => gatewayModelScopeControls(),
     syncService: () => gatewayCatalogSyncControls(),
     auditStore: () => enterpriseControls()?.deps.auditStore,
+    keyDriftStore: () => {
+      const controls = enterpriseControls();
+      if (!controls) return undefined;
+      return createGatewayKeyDriftStore(
+        controls.deps.database,
+        // The trail write lives in the store — the one writer of dispositions — so the
+        // act is audited no matter which surface triggers it.
+        controls.deps.auditStore
+          ? { auditStore: controls.deps.auditStore }
+          : {},
+      );
+    },
   };
 }
 
@@ -412,6 +436,130 @@ export function gatewayAdminRoutes(
             },
     });
     return context.json({ result: outcome });
+  });
+
+  // The key state sync's manual trigger (Bifrost 05.8, #249): the same single-flight cell
+  // the scheduler runs on, answered here for an administrator who wants the pass now —
+  // a key the gateway just disabled stops being usable on the answer, not the next tick.
+  app.post("/keys/sync", async (context) => {
+    const controls = gatewayKeyStateSyncControls();
+    if (!controls) {
+      return unavailable(
+        context,
+        "The key state sync is not running in this deployment.",
+        "gateway_key_sync_unavailable",
+      );
+    }
+    const outcome = await controls.runSync();
+    const audit = resolved.auditStore();
+    if (audit) {
+      await recordAuditEvent(audit, {
+        eventType: "gateway.key_state_sync_triggered",
+        targetType: "gateway_key_sync",
+        targetId: "singleton",
+        actorUserId: context.var.actor.id,
+        payload: {
+          trigger: "manual",
+          outcome: outcome.status,
+        },
+      });
+    }
+    return context.json({ result: outcome });
+  });
+
+  // The key drift surface (Bifrost 05.9, #250): the field-drift events the sync records,
+  // and the one human act that ends each one. A list for "what drifted and what is still
+  // outstanding", and a disposal that writes the operator's decision exactly once — the
+  // pause is the outstanding event, so disposing of it is what lifts the pause.
+  app.get("/key-drift", async (context) => {
+    const store = resolved.keyDriftStore();
+    if (!store) {
+      return unavailable(
+        context,
+        "The key drift surface is not available in this deployment.",
+        "gateway_key_drift_unavailable",
+      );
+    }
+    const grantId = context.req.query("grantId");
+    const keyId = context.req.query("keyId");
+    const outstandingOnly = context.req.query("outstanding") === "true";
+    const events = await store.listEvents({
+      ...(grantId ? { grantId } : {}),
+      ...(keyId ? { keyId } : {}),
+      ...(outstandingOnly ? { outstandingOnly: true } : {}),
+    });
+    return context.json({ events: events.map(serializeKeyDriftEvent) });
+  });
+
+  app.post("/key-drift/:eventId/dispose", async (context) => {
+    const store = resolved.keyDriftStore();
+    if (!store) {
+      return unavailable(
+        context,
+        "The key drift surface is not available in this deployment.",
+        "gateway_key_drift_unavailable",
+      );
+    }
+    const eventId = context.req.param("eventId");
+    const input = (await context.req.json().catch(() => null)) as {
+      decision?: unknown;
+      note?: unknown;
+    } | null;
+    if (
+      !input ||
+      typeof input.decision !== "string" ||
+      !GATEWAY_KEY_DRIFT_DECISIONS.includes(
+        input.decision as never,
+      )
+    ) {
+      return context.json(
+        {
+          error: `The disposal needs a decision: one of ${GATEWAY_KEY_DRIFT_DECISIONS.join(", ")}.`,
+          code: "gateway_key_drift_decision_invalid",
+        },
+        400,
+      );
+    }
+    if (input.note !== undefined && typeof input.note !== "string") {
+      return context.json(
+        {
+          error: "The disposal note, when given, must be a string.",
+          code: "gateway_key_drift_note_invalid",
+        },
+        400,
+      );
+    }
+    const existing = await store.getEvent(eventId);
+    if (!existing) {
+      return context.json(
+        { error: "No such key drift event.", code: "gateway_key_drift_event_unknown" },
+        404,
+      );
+    }
+    const result = await store.dispose({
+      eventId,
+      decision: input.decision as never,
+      disposedBy: context.var.actor.id,
+      ...(typeof input.note === "string" && input.note.trim() !== ""
+        ? { note: input.note }
+        : {}),
+    });
+    if (!result.disposed) {
+      // The decision is written exactly once: a second disposal of the same event
+      // changes nothing and says so.
+      return context.json(
+        {
+          error: "The key drift event is already disposed of.",
+          code: "gateway_key_drift_already_disposed",
+        },
+        409,
+      );
+    }
+    const disposed = await store.getEvent(eventId);
+    return context.json({
+      event: disposed ? serializeKeyDriftEvent(disposed) : null,
+      keyRevoked: result.keyRevoked,
+    });
   });
 
   return app;
