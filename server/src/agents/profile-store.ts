@@ -38,6 +38,14 @@ export type ProfileReadExecutor = DatabaseExecutor;
 
 export type AgentProfileStore = {
   list(actor: AgentActor, hidden?: boolean): Promise<AgentProfile[]>;
+  /**
+   * `list` without the caller's sidebar hidden filter (R2-59): the one read-only
+   * enumeration for administrative aggregation, where a Bot hidden from the
+   * caller's sidebar is still in scope. Access is NOT widened — the caller's
+   * access filter still applies, and every returned profile still goes through
+   * the caller's manage gate downstream.
+   */
+  listAll(actor: AgentActor): Promise<AgentProfile[]>;
   get(actor: AgentActor, id: string): Promise<AgentProfile | null>;
   /**
    * `get`, but on the caller's own transaction and holding the profile against deletion until that
@@ -452,6 +460,16 @@ export function createAgentProfileStore(
             ? isNotNull(agentPreferences.hiddenAt)
             : isNull(agentPreferences.hiddenAt),
         ),
+      );
+      return rows.map(mapProfile);
+    },
+
+    // The administrative enumeration (R2-59): identical to `list` except for
+    // the caller's sidebar preference, which is a display choice and must not
+    // silently shrink an aggregate's scope.
+    async listAll(actor) {
+      const rows = await joinedProfiles(database, actor).where(
+        and(isNull(agentProfiles.deletedAt), accessFilter(actor)),
       );
       return rows.map(mapProfile);
     },

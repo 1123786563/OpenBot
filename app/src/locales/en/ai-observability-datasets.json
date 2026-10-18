@@ -1,0 +1,111 @@
+{
+  "meta": {
+    "namespace": "ai-observability-datasets",
+    "ownedBy": "#27 (dataset review, save, versions)"
+  },
+  "availability": {
+    "disabled": {
+      "title": "Evaluation is off",
+      "description": "Observability is disabled for this deployment, so datasets cannot be built from runs."
+    },
+    "empty": {
+      "title": "No dataset versions yet",
+      "description": "Save a reviewed case from a run, or add a reviewed synthetic example, to create the first frozen version."
+    },
+    "forbidden": {
+      "title": "You cannot manage this dataset",
+      "description": "Datasets follow the Bot's management rights. Reuse across Bots needs an explicit authorized copy."
+    },
+    "basic": {
+      "title": "Metrics-only source",
+      "description": "The source run recorded metrics only. It cannot become a text sample; supply a reviewed synthetic or redacted example instead."
+    },
+    "omitted": {
+      "title": "Content omitted",
+      "description": "This field could not be handled safely, so only metrics are shown. Omitted is not the same as empty."
+    },
+    "truncated": {
+      "title": "Content truncated",
+      "description": "This value exceeds the recorded size limit and was cut. A frozen version keeps the truncated value as saved."
+    },
+    "syncing": {
+      "title": "Version still syncing",
+      "description": "The version was accepted locally but is not confirmed upstream yet. Syncing is not success."
+    },
+    "unavailable": {
+      "title": "Upstream unavailable",
+      "description": "The observability store did not answer, so this version cannot be read right now. Nothing was deleted."
+    }
+  },
+  "page": {
+    "title": "Datasets",
+    "description": "Reviewed cases from this Bot's recorded runs, frozen as immutable dataset versions."
+  },
+  "list": {
+    "title": "Datasets",
+    "description": "One row per dataset this Bot holds, with its frozen version count.",
+    "versions_one": "{{count}} version",
+    "versions_other": "{{count}} versions"
+  },
+  "row": {
+    "noVersion": "No frozen version yet"
+  },
+  "sync": {
+    "pending": "Waiting to sync",
+    "syncing": "Syncing",
+    "synced": "Synced",
+    "failed": "Sync failed"
+  },
+  "save": {
+    "rowTitle": "Save a case from a run",
+    "rowDescription": "Pick one case from this Bot's run history, review what the redaction policy will freeze, then save it as a dataset version. The run id comes from the run observability page.",
+    "dialogTitle": "Save a reviewed case",
+    "dialogDescription": "Reviewing projects the case once and shows exactly what a save would freeze. Nothing is stored until you save.",
+    "runId": "Run id",
+    "datasetName": "Dataset name",
+    "caseInput": "Case input",
+    "referenceOutput": "Reference output",
+    "toolFixtures": "Tool fixtures (JSON object)",
+    "review": "Preview the freeze",
+    "save": "Save version",
+    "close": "Close",
+    "previewTitle": "What will freeze",
+    "canary_one": "{{count}} case came back with parts the redaction policy refused. Those parts freeze as omitted, never as typed.",
+    "canary_other": "{{count}} cases came back with parts the redaction policy refused. Those parts freeze as omitted, never as typed.",
+    "fixturesInvalid": "Tool fixtures must be a JSON object.",
+    "incomplete": "The run id, dataset name, case input and reference output all need content first.",
+    "mustReview": "Preview the freeze first; editing anything afterwards clears the preview.",
+    "savedNew": "Frozen as a new version of “{{name}}”: {{hash}}",
+    "savedReplay": "This exact content was already saved. The existing version of “{{name}}” was returned unchanged: {{hash}}. Nothing new was created.",
+    "savedCases_one": "{{count}} case frozen.",
+    "savedCases_other": "{{count}} cases frozen."
+  },
+  "preview": {
+    "input": "Input",
+    "referenceOutput": "Reference output",
+    "toolFixtures": "Tool fixtures"
+  },
+  "marker": {
+    "omitted": "Omitted",
+    "truncated": "Truncated"
+  },
+  "version": {
+    "title": "Frozen versions",
+    "description": "Each version is an immutable snapshot: projected once, hashed, never editable. Saving different cases creates a new version; the previous ones stand.",
+    "cases_one": "{{count}} case",
+    "cases_other": "{{count}} cases",
+    "policy": "projected under {{policy}}"
+  },
+  "detail": {
+    "back": "Datasets",
+    "untitled": "Dataset",
+    "noVersions": "This dataset holds no frozen version yet."
+  },
+  "error": {
+    "CASE_REVIEW_RUN_NOT_FOUND": "This Bot's records hold no run with that id. Nothing was saved.",
+    "CASE_REVIEW_INPUT_INVALID": "The case is not valid: every field needs content, a given attempt id must match the run's latest attempt, and fixtures must be a JSON object.",
+    "DATASET_INPUT_INVALID": "The dataset name or the case is not valid. Nothing was saved.",
+    "DATASET_NOT_FOUND": "This dataset does not exist in this Bot's scope.",
+    "unreachable": "The observability store did not answer. Nothing was saved."
+  }
+}

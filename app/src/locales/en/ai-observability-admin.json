@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "namespace": "ai-observability-admin",
+    "ownedBy": "#42 (admin summary, ingest faults, export status)"
+  },
+  "page": {
+    "title": "AI observability",
+    "description": "The collection summary, ingest health and export status of every Bot in your management scope."
+  },
+  "availability": {
+    "disabled": {
+      "title": "Observability is off",
+      "description": "The integration is disabled, so there is nothing to collect. This is a configuration state, not a fault."
+    },
+    "empty": {
+      "title": "Nothing in scope",
+      "description": "No runs or experiments match this filter inside your authorized scope."
+    },
+    "forbidden": {
+      "title": "Outside your scope",
+      "description": "Your administrative role does not cover this data. Scope is resolved before any aggregation, never after."
+    },
+    "basic": {
+      "title": "Basic coverage only",
+      "description": "These records hold only what OpenBot observed. A basic record is not a healthy detailed record."
+    },
+    "omitted": {
+      "title": "Content omitted",
+      "description": "This field could not be handled safely, so only metrics are shown."
+    },
+    "truncated": {
+      "title": "Content truncated",
+      "description": "This value exceeds the recorded size limit and was cut."
+    },
+    "syncing": {
+      "title": "Ingest lagging",
+      "description": "Records are arriving later than the runs that produced them. Lag is visible here rather than shown as missing traffic."
+    },
+    "unavailable": {
+      "title": "Upstream unavailable",
+      "description": "The observability store did not answer. Normal Agent execution continued unaffected; drops and faults are reported here."
+    }
+  },
+  "readiness": {
+    "ready": {
+      "title": "Collection healthy",
+      "description": "The observability store is answering and accepting writes."
+    },
+    "disabled": {
+      "title": "Observability is off",
+      "description": "The integration is disabled, so nothing is being collected. This is a configuration state, not a fault."
+    },
+    "unconfigured": {
+      "title": "Observability is unconfigured",
+      "description": "No upstream location is configured, so nothing is being collected. This is a configuration state, not a fault."
+    },
+    "capability_missing": {
+      "title": "No verified upstream contract",
+      "description": "This deployment has no verified Opik contract to collect through. This is a capability gap, not a fault."
+    },
+    "authentication_failure": {
+      "title": "Upstream rejected the credentials",
+      "description": "The observability store answered but refused this deployment's credentials, so collection is failing."
+    },
+    "unreachable": {
+      "title": "Upstream unavailable",
+      "description": "The observability store did not answer. Normal Agent runs continued unaffected; the local counts below still answer."
+    }
+  },
+  "filter": {
+    "timeAll": "All time",
+    "timeDay": "Last 24 hours",
+    "timeWeek": "Last 7 days",
+    "timeMonth": "Last 30 days"
+  },
+  "summary": {
+    "healthTitle": "Collection health",
+    "botsTitle": "Bots in scope",
+    "scopeNote": "Scope is resolved one Bot at a time before anything is counted, so a full-range answer takes a moment — and never widens to Bots outside your management role.",
+    "truncatedTitle": "Scope truncated",
+    "truncatedDescription": "This answer covers the first {{count}} Bots in your management scope.",
+    "retention": "Run records are kept for 7 days, datasets and experiments for 30 days, unless your deployment configures longer retention.",
+    "upstreamWindow": "Unbound-trace and usage counts come from the store's most recent 100-trace window, not from the time filter; every local count honors the filter.",
+    "upstreamUnavailable": "Upstream counts unavailable",
+    "dropped": "Dropped writes: {{queueFull}} queue full · {{notReady}} not ready",
+    "row": {
+      "runs": "{{count}} runs",
+      "failed": "{{count}} failed",
+      "pending": "{{count}} pending sync",
+      "lastCollected": "last collected {{time}}",
+      "neverCollected": "never collected",
+      "unbound": "{{count}} unbound",
+      "usage": "{{reported}} usage reported · {{unavailable}} unavailable",
+      "upstreamTruncated": "window-truncated — counts are lower bounds",
+      "experiments": "{{draft}} draft · {{frozen}} frozen experiments",
+      "exports": "{{completed}} completed · {{failed}} failed · {{inFlight}} in flight",
+      "lastFailedCode": "last failure {{code}}"
+    }
+  },
+  "exports": {
+    "page": {
+      "title": "Run exports",
+      "description": "The export jobs of this Bot and the file each finished job produced."
+    },
+    "empty": {
+      "title": "No exports yet",
+      "description": "An export packages this Bot's recorded runs into a downloadable file; none has been requested."
+    },
+    "link": "Export status",
+    "download": "Download JSON",
+    "states": {
+      "queued": "Queued",
+      "running": "Exporting",
+      "completed": "Ready to download",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "rowCount": "{{count}} of {{limit}} rows",
+    "rowsPending": "rows pending",
+    "settled": "settled {{time}}",
+    "errorCodes": {
+      "CAPABILITY_MISSING": "The integration is not enabled for this deployment.",
+      "EXPORT_ROW_LIMIT_EXCEEDED": "The export exceeded the deployment's row limit and was refused rather than truncated.",
+      "OPIK_TIMEOUT": "The observability store was too slow to answer.",
+      "OPIK_UNREACHABLE": "The observability store did not answer.",
+      "OPIK_UPSTREAM_ERROR": "The observability store reported an upstream error.",
+      "OPIK_CLIENT_ERROR": "The export request was refused by the store.",
+      "OPIK_MALFORMED_RESPONSE": "The store's answer could not be trusted.",
+      "OPIK_OWNERSHIP_DRIFT": "Ownership changed while the export ran."
+    },
+    "truncated": "Showing the newest {{shown}} of {{total}} export jobs."
+  }
+}

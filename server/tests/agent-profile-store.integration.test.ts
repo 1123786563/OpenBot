@@ -395,6 +395,22 @@ describe("agent profile store integration", () => {
     expect(preference?.hiddenAt).toBeNull();
   });
 
+  test("listAll enumerates without the caller's sidebar hidden filter (R2-59)", async () => {
+    // The administrative enumeration (the admin summary's bot list) must not
+    // follow the caller's sidebar preference: a hidden Bot is a display choice,
+    // not an out-of-scope one.
+    const owner = await createUser();
+    const source = await createProfileFixture({ owner, visibility: "public" });
+    await store.setHidden(owner, source.agentId, true);
+    // The sidebar discipline still holds on `list` itself.
+    expectListed(await store.list(owner), source.agentId, false);
+    expectListed(await store.list(owner, true), source.agentId, true);
+    // …and the unfiltered enumeration carries the hidden Bot.
+    expectListed(await store.listAll(owner), source.agentId, true);
+    await store.setHidden(owner, source.agentId, false);
+    expectListed(await store.listAll(owner), source.agentId, true);
+  });
+
   test("stores pinning per user, independently of hiding", async () => {
     const owner = await createUser();
     const other = await createUser();

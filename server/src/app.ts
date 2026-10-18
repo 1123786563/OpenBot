@@ -765,6 +765,16 @@ export function createApp(
     };
     activity?: Hono<{ Variables: AppVariables }>;
     opsSignals?: Hono<{ Variables: AppVariables }>;
+    /** Observation surfaces (ticket #7). Absent = the integration is not mounted at all. */
+    aiObservability?: Hono<{ Variables: AppVariables }>;
+    /**
+     * T33 (T34 §6): what a user-disable/revocation path does about queued
+     * observation export work — the store's cancelForActor seam. Best-effort
+     * beside the revoke it accompanies: the export worker re-authorizes on
+     * every execution, so a cancelled-call miss is caught at the next run,
+     * never by shipping an artifact. Absent cancels nothing here.
+     */
+    aiObservabilityCancelForActor?: (actorId: string) => Promise<unknown>;
   },
   /** A person's own linked accounts. Absent answers 503 on /api/identity. */
   identity?: IdentityStore,
@@ -805,6 +815,8 @@ export function createApp(
     deletionAdmin: openMuseDeletionAdmin,
     activity: openMuseActivity,
     opsSignals: openMuseOpsSignals,
+    aiObservability,
+    aiObservabilityCancelForActor,
   } = openMuseSeams ?? {};
 
   const app = new Hono<{ Variables: AppVariables }>();
@@ -1723,6 +1735,30 @@ export function createApp(
 
     if (revoked) {
       await peopleStore.retireOwned(userId, context.var.actor.id);
+      // T33: ending a person's access ends their observation authorization
+      // too — queued export work is cancelled rather than left to fetch under
+      // an authorization that no longer exists. Best-effort by design: the
+      // worker re-authorizes per execution and drops what this call missed.
+      if (aiObservabilityCancelForActor) {
+        try {
+          await aiObservabilityCancelForActor(userId);
+        } catch (error) {
+          // T33: best-effort beside the revoke — the worker's reauthorization
+          // is the backstop that catches a missed cancellation — but not
+          // SILENT (OCR R5-40): the same operation in index.ts's
+          // deletionShutdown logs opik-export-cancel-failed with the userId,
+          // and an administrator tracing a cancellation that missed needs the
+          // same fact here. Same key, same fields, never a 500.
+          log.warn(
+            {
+              err: error,
+              type: "opik-export-cancel-failed",
+              userId,
+            },
+            "opik-export-cancel-failed",
+          );
+        }
+      }
     }
 
     return context.json({ person: await peopleStore.find(userId) });
@@ -2056,6 +2092,12 @@ export function createApp(
    */
   if (workshopRoutes)
     app.route("/api/workshop", workshopRoutes({ requireUser, canUseBot }));
+
+  /*
+   * Observation, mounted as one unit. Every later observation ticket adds a sub-router
+   * inside ai-observability/routes/index.ts, so this stays the only observation line here.
+   */
+  if (aiObservability) app.route("/api/ai-observability", aiObservability);
 
   // The anonymous sibling, beside the owner surface it shares a vocabulary with: same
   // /api/public/workshop prefix the share page fetches, no session, no canUseBot — the

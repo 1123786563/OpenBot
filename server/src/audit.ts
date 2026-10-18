@@ -911,6 +911,49 @@ n   * "which version lived when" without guessing. The payload carries a four-he
    * effect by construction: the pause IS the outstanding event, so disposing it ends it.
    */
   "gateway.key_drift_disposed",
+  /**
+   * A creator reviewed candidate cases distilled from one observed run (Issue #26 / T20):
+   * approved or rejected, with how many cases and how many the redaction policy refused.
+   *
+   * This row IS the review record — there is no separate review table to ask. Attribution and
+   * time live in the row's own columns (actor, initiator, created_at), and the payload carries
+   * references and counts, never case content: a decision is a fact about a curation, not a
+   * copy of what was curated. A reviewer's note is the one free-text corner, and it is stored
+   * only after the T05 projection, so a secret typed into a note is refused, not echoed.
+   */
+  "opik.case_reviewed",
+  /**
+   * Reviewed cases were frozen into an immutable dataset version through the T19 pipeline
+   * (Issue #26 / T20). The payload names the dataset, the version id, the content hash and
+   * whether this save replayed an existing version — enough to answer "who froze what, when,
+   * and was it the same content as before" from the trail without reading the dataset itself.
+   */
+  "opik.dataset_version_saved",
+  /**
+   * An experiment configuration was submitted and frozen: the payload names the experiment,
+   * its pinned dataset version and content hash, the canonical configuration hash, how many
+   * places the redaction policy refused (the canary), and whether this submit replayed an
+   * existing experiment — enough to answer "who submitted what, when, and was it the same
+   * configuration as before" from the trail without reading the frozen configuration.
+   */
+  "opik.experiment_submitted",
+  /**
+   * An isolated execution of a frozen experiment settled (Issue #29 / T23). The payload
+   * names the execution, the experiment and the config hash it ran under, the terminal
+   * state with its case count or error code, and — the part the governance channel is
+   * for — how many production write-tool calls the execution refused, with the distinct
+   * tool names: "the evaluation reached for the world and was stopped" is a queryable
+   * fact, not an inference from a log line.
+   */
+  "opik.experiment_execution_settled",
+  /**
+   * Retention deleted an observation record for real (Issue #41 / DAG T35). The payload
+   * names the kind, the retention policy that expired the target and how many worker
+   * passes it took — references and counts only, never content, so nothing a deleted
+   * artifact held can be read back out of the trail. Deployment-initiated: there is no
+   * actor whose authority it borrowed, which is why `actorUserId` stays null.
+   */
+  "opik.retention_deleted",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

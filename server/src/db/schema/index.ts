@@ -2,6 +2,14 @@
 
 export * from "./access-grants";
 export * from "./admin";
+export * from "./ai-observability-bindings";
+export * from "./ai-observability-datasets";
+export * from "./ai-observability-execution-case-outcomes";
+export * from "./ai-observability-executions";
+export * from "./ai-observability-experiments";
+export * from "./ai-observability-exports";
+export * from "./ai-observability-id-links";
+export * from "./ai-observability-retention";
 export * from "./approvals";
 export * from "./billing";
 export * from "./bot-binding";

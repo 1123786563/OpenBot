@@ -53,6 +53,7 @@ import {
   createOpenMuseTemplateRevisionStore,
   createOpenMuseTemplateStore,
 } from "./agents/openmuse-template-store";
+import { canManageAgent } from "./agents/profile-policy";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
@@ -61,6 +62,39 @@ import {
   createWakeUpStore,
   wakeUpTools,
 } from "./agents/wake-up";
+import { createRunBindingStore } from "./ai-observability/bindings";
+import { opikConfigFromEnv } from "./ai-observability/config";
+import type { BotManagementCheck } from "./ai-observability/context";
+import type { ObservationScope } from "./ai-observability/contracts";
+import { createExecutionBudgetPrecheck } from "./ai-observability/execution-billing";
+import { createExperimentExecutionWorkerBoot } from "./ai-observability/execution-boot";
+import {
+  cancelExecutionsForActor,
+  createObservationExecutionStore,
+} from "./ai-observability/executions";
+import {
+  createObservationExportStore,
+  createObservationExportWorker,
+  EXPORT_WORK_KIND,
+} from "./ai-observability/exports";
+import { createOpikHealthService } from "./ai-observability/health";
+import { createIdLinkStore } from "./ai-observability/id-links";
+import { createModelSpanRecorder } from "./ai-observability/model-span";
+import { createRunsQueryService } from "./ai-observability/queries/runs";
+import {
+  createObservationRetentionWorker,
+  RETENTION_WORK_KIND,
+  resolveRetentionDays,
+} from "./ai-observability/retention";
+import { createAiObservabilityRoutes } from "./ai-observability/routes";
+import { createToolStepRecorder } from "./ai-observability/tool-steps";
+import {
+  createActorResolver,
+  createAgentProfileScopeEpoch,
+  createBuiltinRunScopeResolver,
+  createExportReauthorization,
+  loadVerifiedOpikPort,
+} from "./ai-observability/wiring";
 import { createApp, createDeploymentRequireUser } from "./app";
 import { createApprovedActionExecutor } from "./approvals/execute";
 import {
@@ -131,6 +165,7 @@ import {
 } from "./billing/service";
 import { createBillingStatements } from "./billing/statements";
 import { createBillingStore } from "./billing/store";
+import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./billing/types";
 import {
   createCreditUsageTarget,
   createLagoUsageTarget,
@@ -140,8 +175,10 @@ import {
   createUsageEvidenceRecorder,
   isConfirmedNoCost,
 } from "./billing/usage-evidence";
-import { createUsageOutbox, UsageOutboxConflictError } from "./billing/usage-outbox";
-import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./billing/types";
+import {
+  createUsageOutbox,
+  UsageOutboxConflictError,
+} from "./billing/usage-outbox";
 import { createWebhookVerifier } from "./billing/webhook-signature";
 import {
   loadAttachmentForTurn,
@@ -201,6 +238,8 @@ import {
   mountCopilotRuntime,
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
+  setBuiltinModelSpanObserver,
+  setBuiltinToolStepObserver,
   setModelUsageGate,
   setWorkbenchGatewayModel,
   type ToolSelection,
@@ -208,8 +247,11 @@ import {
   type ModelBillingAuditEvent,
   billingMethodForModel,
 } from "./copilot";
+import {
+  buildAvailableSourcesSection,
+  builtinSkillFilesFor,
+} from "./craft/builtin-skills";
 import { loadCraftConfig } from "./craft/config";
-import { builtinSkillFilesFor, buildAvailableSourcesSection } from "./craft/builtin-skills";
 import type { CraftKbSearch } from "./craft/kb-search-relay";
 import { projectKbSearchResults } from "./craft/kb-search-relay";
 import {
@@ -306,15 +348,15 @@ import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
 } from "./intelligence-client";
-import { knowledgeServiceConfig } from "./knowledge/config";
 import { knowledgeRequest } from "./knowledge/client";
-import type { KnowledgeSearchResult } from "./knowledge/types";
+import { knowledgeServiceConfig } from "./knowledge/config";
 import {
   createKnowledgeRuntime,
   knowledgeRetrievalOptionsFromEnv,
+  setKnowledgeRetrievalObserver,
 } from "./knowledge/retrieval";
 import { knowledgeTools } from "./knowledge/tools";
-import { clearLearningRevisionFallback } from "./learning/runtime";
+import type { KnowledgeSearchResult } from "./knowledge/types";
 import {
   createLearningAutoAssign,
   probeLearningContainer,
@@ -327,20 +369,22 @@ import {
   keyIntelligence,
   learningSetupInstructions,
 } from "./learning/ensure-container";
+import { clearLearningRevisionFallback } from "./learning/runtime";
 import { createLearningSettingsStore } from "./learning/settings";
+import { createMarketplaceStore } from "./marketplace/store";
 import { PostgresTenantStorageRegistry } from "./mastra/postgres-registry";
 import {
   RegistryTenantStorageLookup,
   type TenantCredentialStore,
 } from "./mastra/provisioning";
 import { createTenantMastraStorage } from "./mastra/tenant-storage";
-import { createMarketplaceStore } from "./marketplace/store";
 import { createMemoryDefaults } from "./memory/defaults";
 import { createMemoryIngestion } from "./memory/ingestion";
 import { createIntelligenceMemory } from "./memory/intelligence";
 import { createMemoryStore } from "./memory/store";
 import { memoryTools } from "./memory/tools";
 import { OPENMUSE_TEMPLATE_KEY } from "./mobile-bff/openmuse-bot";
+import { currentRunObservationScope } from "./observation-run-scope";
 import { createActivityFeed } from "./openmuse-activity/feed";
 import { createOpenMuseActivityRoutes } from "./openmuse-activity/routes";
 import { createOpenMuseCalendarClient } from "./openmuse-calendar/client";
@@ -359,13 +403,16 @@ import { createOpenMuseGoogleRows } from "./openmuse-connectors/store";
 import { createOpenMuseDeletionManifest } from "./openmuse-deletion/manifest";
 import { createOpenMuseFileBytePurger } from "./openmuse-deletion/purge";
 import { createOpenMuseRelationalPurger } from "./openmuse-deletion/purge-relational";
+import { createOpenMuseDeletionRestore } from "./openmuse-deletion/restore";
 import {
   createOpenMuseBackupRetention,
   createOpenMuseDeletionCleanupView,
 } from "./openmuse-deletion/retention";
-import { createOpenMuseDeletionRestore } from "./openmuse-deletion/restore";
 import { createOpenMuseExternalAccessRevoker } from "./openmuse-deletion/revoke";
-import { createOpenMuseWorkShutdown, recordWorkShutdown } from "./openmuse-deletion/shutdown";
+import {
+  createOpenMuseWorkShutdown,
+  recordWorkShutdown,
+} from "./openmuse-deletion/shutdown";
 import {
   createOpenMuseAccountDeletionStore,
   createOpenMuseDeletionResourceRows,
@@ -510,7 +557,7 @@ import { createUserInstructionsStore } from "./user-instructions";
 import { createUserPreferencesStore } from "./user-preferences";
 import { createVoiceSessionStore } from "./voice/sessions";
 import { createVoiceSummarizer } from "./voice/summary";
-import { repeatAfterEach } from "./work/loop";
+import { type Repeating, repeatAfterEach } from "./work/loop";
 import {
   createWorkQueue,
   DEFAULT_MAX_ATTEMPTS,
@@ -767,6 +814,45 @@ const learningSettings = withLearningAutoAssign(
   learningAutoAssign,
 );
 learningAutoAssign.start();
+/*
+ * The boot-time Opik configuration and the builtin run's trusted scope
+ * resolver (T33 wiring's synchronous half + T-final M1), deliberately placed
+ * BEFORE the first top-level await (OCR R3-36): every piece here is a pure
+ * synchronous construction, and the file's forwarding lambdas close over
+ * them. Left below the awaits, a repeatAfterEach sweep's first run — one
+ * setTimeout away from registration, while boot was still waiting on pulls
+ * like loadVerifiedOpikPort — could build an agent and subscribe a run that
+ * invoked the lambda while these consts were still in their temporal dead
+ * zone; the ReferenceError inside the async lambda became an errored stream,
+ * bypassing the resolver's never-throw contract entirely. Before the first
+ * await, no sweep is even registered, and every await window that follows
+ * finds the whole closure graph initialized. The async half of the wiring
+ * (the binding store, the verified port, the health service) stays below,
+ * where its await belongs.
+ */
+const opikBootConfig = opikConfigFromEnv(process.env);
+const aiObservabilityCanManageBot: BotManagementCheck = async (
+  actor,
+  botId,
+) => {
+  const profile = await agentProfileStore.get(actor, botId).catch(() => null);
+  return profile && canManageAgent(actor, profile) ? profile : null;
+};
+const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);
+/*
+ * The builtin run's trusted scope resolver (T-final M1): issued per run from
+ * LIVE authorization — the same manage gate, ownership answer and live epoch
+ * the route seam answers per request. This is what the T37 review registered
+ * as M1 ("facts arrive scope-less and the recorder submits nothing upstream"):
+ * the builtin agents carry this thread, ask it at run start, and the recorders'
+ * adapters below read the scope back and submit — or read null and submit
+ * nothing, exactly as before, for a disabled deployment or a non-manager.
+ */
+const aiObservabilityRunScope = createBuiltinRunScopeResolver({
+  enabled: () => opikBootConfig.enabled,
+  canManageBot: aiObservabilityCanManageBot,
+  scopeEpoch: aiObservabilityScopeEpoch,
+});
 await initializeDevActorUser(database, config.singleUser);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
@@ -2460,6 +2546,14 @@ const actorAgentResolver = createActorAgentResolver({
   loadInstructionsForActor,
   loadAttachmentForActor,
   markAttachmentsSentForActor,
+  // The builtin run's observation-scope threading (T-final M1): the resolver
+  // itself is assembled further down with the rest of the observation boot —
+  // this lazy lambda only forwards, so the run path asks it per run, after
+  // boot has finished. Absent upstream (a build without the resolver) the
+  // builtin recorders simply stay silent, the same inert footing as before
+  // this thread existed.
+  resolveRunObservationScope: (actor, botId) =>
+    aiObservabilityRunScope(actor, botId),
   // The runtime owns Learning. Resolve its reader only when a turn is built, after boot wiring.
   get acquireLearnedSkills() {
     return copilotRuntime.learning?.acquire;
@@ -3172,7 +3266,8 @@ const openMuseTaskStore = createOpenMuseTaskStore({
  * below fences reads through its isDisabled, and the app tail's delete route and
  * /api/mobile fence answer through the same instance.
  */
-const openMuseAccountDeletionStore = createOpenMuseAccountDeletionStore(database);
+const openMuseAccountDeletionStore =
+  createOpenMuseAccountDeletionStore(database);
 /*
  * The personal-files store (F01), hoisted beside the runner it feeds: the task
  * runner reads finance CSVs and document versions through it, and the app tail
@@ -3783,7 +3878,9 @@ if (
   log.error(
     {
       type: "billing-credit-policy-unconfigured",
-      issues: billingSettings.creditPolicy.issues.map((issue) => `${issue.key}:${issue.reason}`),
+      issues: billingSettings.creditPolicy.issues.map(
+        (issue) => `${issue.key}:${issue.reason}`,
+      ),
     },
     "billing-credit-policy-unconfigured: metered work will refuse until these keys are fixed",
   );
@@ -3848,12 +3945,16 @@ const billing =
             // lookup prices each plan's expected allowance in scaled integer units (the same
             // arithmetic the grantor below uses), so the pass can audit that a paid order's
             // plan payout actually landed at the priced amount.
-            reconciler: createReconciler(database, externalCustomerKey, (planCode) => {
-              const entry = settings.planCatalog.get(planCode);
-              return entry && entry.credits > 0
-                ? Math.round(entry.credits * CREDIT_SCALE)
-                : null;
-            }),
+            reconciler: createReconciler(
+              database,
+              externalCustomerKey,
+              (planCode) => {
+                const entry = settings.planCatalog.get(planCode);
+                return entry && entry.credits > 0
+                  ? Math.round(entry.credits * CREDIT_SCALE)
+                  : null;
+              },
+            ),
             ...(settings.webhookKey
               ? {
                   verifier: createWebhookVerifier({
@@ -3907,8 +4008,9 @@ const usageOutbox =
  */
 if (billing !== undefined && usageOutbox !== undefined) {
   const creditPolicy = billingSettings?.creditPolicy;
-  const recordUnsettledUsage = createUsageEvidenceRecorder(usageOutbox, (message) =>
-    log.warn(message),
+  const recordUnsettledUsage = createUsageEvidenceRecorder(
+    usageOutbox,
+    (message) => log.warn(message),
   );
   setModelUsageGate(async (input) => {
     if (!creditPolicy?.configured) {
@@ -4037,7 +4139,9 @@ if (billing !== undefined && usageOutbox !== undefined) {
           // gets its own event and never the write-failure code a foreign error would
           // otherwise fall back to. The hold is retained either way.
           const code =
-            error instanceof UsageChargeError ? error.code : "usage_charge_failed";
+            error instanceof UsageChargeError
+              ? error.code
+              : "usage_charge_failed";
           log.error(
             {
               type: "billing-usage-charge-refused",
@@ -4547,26 +4651,34 @@ const codeRunStore = createCodeRunStore(database);
  * column is a display copy and is never read here). A deployment without billing passes
  * `billing === undefined` straight through: silent, and the run row still stands.
  */
-const codeRunUsageReporter = billing && usageOutbox
-  ? async (input: import("./workshop/metering").CodeRunUsageInput): Promise<void> => {
-      try {
-        await reportCodeRunUsage(
-          usageOutbox,
-          {
-            ...input,
-            externalCustomerId: billing.externalCustomerKey,
-            // True only when the hard-cap policy actually prices code runs; the gateway refuses
-            // billed runs until the sandbox can enforce a budget, so this stays false today and
-            // the guard inside reportCodeRunUsage is what makes flipping it safe.
-            creditMeteringEnabled: billingSettings?.creditPolicy.configured === true,
-          },
-          (message) => log.warn(message),
-        );
-      } catch (error) {
-        logUsageOutboxWriteFailure("code_run", `code-run:${input.runId}`, error);
+const codeRunUsageReporter =
+  billing && usageOutbox
+    ? async (
+        input: import("./workshop/metering").CodeRunUsageInput,
+      ): Promise<void> => {
+        try {
+          await reportCodeRunUsage(
+            usageOutbox,
+            {
+              ...input,
+              externalCustomerId: billing.externalCustomerKey,
+              // True only when the hard-cap policy actually prices code runs; the gateway refuses
+              // billed runs until the sandbox can enforce a budget, so this stays false today and
+              // the guard inside reportCodeRunUsage is what makes flipping it safe.
+              creditMeteringEnabled:
+                billingSettings?.creditPolicy.configured === true,
+            },
+            (message) => log.warn(message),
+          );
+        } catch (error) {
+          logUsageOutboxWriteFailure(
+            "code_run",
+            `code-run:${input.runId}`,
+            error,
+          );
+        }
       }
-    }
-  : undefined;
+    : undefined;
 const sandboxClientFor = (botId: string) =>
   sandboxUrl && sandboxToken
     ? createSandboxClient({
@@ -4784,9 +4896,11 @@ const craftMcpRelayBaseUrl =
  * An unwired knowledge service holds the skill back entirely (null) — the
  * AGENTS.md Company-knowledge section stays out with it.
  */
-const craftKnowledgeBases = async (): Promise<
-  Array<{ id: string; name: string; description: string | null }> | null
-> => {
+const craftKnowledgeBases = async (): Promise<Array<{
+  id: string;
+  name: string;
+  description: string | null;
+}> | null> => {
   if (!knowledgeService) return null;
   try {
     const response = await knowledgeRequest(knowledgeService, "/kb");
@@ -4890,7 +5004,9 @@ const craftManagedContentFor = createCraftManagedContentResolver({
         ...held.map((row) => row.serverId),
         ...brokered.map((row) => row.serverId),
       ]),
-      ...(sourcesSection !== null ? { companySearchSourcesSection: sourcesSection } : {}),
+      ...(sourcesSection !== null
+        ? { companySearchSourcesSection: sourcesSection }
+        : {}),
     });
   },
   /*
@@ -5287,7 +5403,7 @@ if (openMuseGoogleClient && openMuseGoogleCredentials && openMusePublicOrigin) {
 // twin: a second copy would age separately, and one prefix family guarded two ways is a
 // silent fork the first time either gains a check. (Unreachable-in-a-booted-deployment branch
 // included for the same reason it always was.)
-const openMuseGoogleGuard = createDeploymentRequireUser(
+const deploymentRequireUser = createDeploymentRequireUser(
   config,
   auth,
   roleRepository,
@@ -5295,7 +5411,7 @@ const openMuseGoogleGuard = createDeploymentRequireUser(
 const openMuseGoogleOAuth = {
   app: createOpenMuseGoogleRoutes({
     service: openMuseGoogleService,
-    requireUser: openMuseGoogleGuard,
+    requireUser: deploymentRequireUser,
     ...(openMusePublicOrigin
       ? { allowedHttpOrigin: openMusePublicOrigin }
       : {}),
@@ -5339,7 +5455,7 @@ const openMuseMail = createOpenMuseMailRoutes({
     ? { client: buildOpenMuseMailClient({ dial: openMuseMailDial }) }
     : {}),
   service: openMuseGoogleService,
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
   ownerDisabled: openMuseGoogleRows.ownerDisabled,
 });
 
@@ -5371,7 +5487,7 @@ const openMuseCalendarClient = (() => {
 const openMuseCalendar = createOpenMuseCalendarRoutes({
   ...(openMuseCalendarClient ? { client: openMuseCalendarClient } : {}),
   service: openMuseGoogleService,
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
   ownerDisabled: openMuseGoogleRows.ownerDisabled,
 });
 
@@ -5432,7 +5548,7 @@ void openMuseReviewedActionService
   });
 const openMuseReviewedActions = createOpenMuseReviewedActionsRoutes({
   service: openMuseReviewedActionService,
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /*
@@ -5454,7 +5570,7 @@ const openMuseActivity = createOpenMuseActivityRoutes({
     }),
     notifications: openMuseNotificationStore,
   }),
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /*
@@ -5463,9 +5579,8 @@ const openMuseActivity = createOpenMuseActivityRoutes({
  * above their first consumer (round 6 M3) so no reader builds its own
  * second instance of either.
  */
-const openMuseDeletionResourceRows = createOpenMuseDeletionResourceRows(
-  database,
-);
+const openMuseDeletionResourceRows =
+  createOpenMuseDeletionResourceRows(database);
 const openMuseDeletionCleanup = createOpenMuseDeletionCleanupView({
   markers: openMuseAccountDeletionStore,
   rows: openMuseDeletionResourceRows,
@@ -5488,8 +5603,383 @@ const openMuseOpsSignals = createOpenMuseOpsSignalsRoutes({
       cleanupView: openMuseDeletionCleanup,
     }),
   }),
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
+
+/**
+ * Observation authorization is the MANAGE question, not the chat question: `canAccessAgent`
+ * says yes for a public Bot, and public chat access must not become access to another
+ * creator's traces. The profile is returned rather than a boolean so readers act on the same
+ * row the decision was made on.
+ *
+ * OCR R3-36: this gate, the boot config, the epoch store and the run-scope
+ * resolver it feeds are constructed together ABOVE the first top-level await;
+ * only their synchronous selves moved — the async T33 wiring below keeps the
+ * await-bearing half.
+ */
+
+/*
+ * T33 wiring, on the inert-until-proven footing every observation seam keeps:
+ * one boot-time config snapshot, one T07 binding store shared by every reader,
+ * and one verified port. The port loads from the T04 evidence manifest — the
+ * only contract this deployment trusts — and any failure to load answers
+ * null, which every consumer reads as the honest capability_missing: without
+ * a verified contract there is no transport at all (the T09 assembly rule).
+ * The boot config snapshot itself is built further up, before the first
+ * top-level await (OCR R3-36).
+ */
+const aiObservabilityBindings = createRunBindingStore(database);
+const opikObservationPort =
+  opikBootConfig.enabled && opikBootConfig.baseUrl !== null
+    ? await loadVerifiedOpikPort(
+        opikBootConfig.baseUrl,
+        undefined,
+        undefined,
+        // R3-41: the parsed-and-held credential reaches the wire; a deployment
+        // pointing OPIK_BASE_URL at a key-authenticating Opik no longer 401s
+        // silently. Absent (compose loopback) sends no header at all.
+        opikBootConfig.apiKey ?? undefined,
+      )
+    : null;
+// Review F-1: without a health service the enabled state is invisible over HTTP.
+const opikHealthService = createOpikHealthService({
+  config: () => opikBootConfig,
+  port: opikObservationPort,
+});
+/*
+ * The one evaluation-billing gate (T-final L3, from the final review's L3
+ * finding): the four conditions under which evaluation calls are METERED —
+ * Opik enabled, the billing machinery composed, the usage outbox in place,
+ * and a configured credit policy. The route gate and the worker boot below
+ * both ask this one predicate; before, the same four were spelled in two
+ * places (the route's single four-condition form, the worker's outer-three
+ * + inner-one form) — semantically equivalent, but free to drift. Reading a
+ * boot snapshot is unchanged: a policy configured at runtime still needs a
+ * restart, the same as every other billing consumer on this file.
+ */
+const evaluationBillingReady = (): boolean =>
+  opikBootConfig.enabled &&
+  billing !== undefined &&
+  usageOutbox !== undefined &&
+  billingSettings?.creditPolicy.configured === true;
+/*
+ * The one runs query service, shared by the routes and the retention worker
+ * (T35's M1c wiring): the retention seam drops the cached window by scope key,
+ * and only the instance the routes actually serve from has that window to drop,
+ * so the service is built here once and injected below.
+ */
+const aiObservabilityRunsQuery = createRunsQueryService({
+  bindings: aiObservabilityBindings,
+  config: () => opikBootConfig,
+  port: opikObservationPort,
+});
+const aiObservability = createAiObservabilityRoutes({
+  // The shared guard, not a second construction (OCR m209): one deployment-level
+  // requireUser per process, or two copies age separately and fork silently.
+  requireUser: deploymentRequireUser,
+  canManageBot: aiObservabilityCanManageBot,
+  healthService: opikHealthService,
+  database,
+  scopeEpoch: aiObservabilityScopeEpoch,
+  bindings: aiObservabilityBindings,
+  config: () => opikBootConfig,
+  port: opikObservationPort,
+  runsQuery: aiObservabilityRunsQuery,
+  // The review-H1 wiring: the submit route's start seam is the SAME billing gate the
+  // worker boot below runs under — the real precheck over the deployment's credit
+  // ledger, under the one gate that says a worker exists to claim what a submit
+  // enqueues. Absent (no metering machinery, or no enabled boot) the route keeps its
+  // own fail-closed refusal; present, a funded deployment's submit actually starts.
+  // (T-final L3: the semantic gate is `evaluationBillingReady` alone; the `billing`
+  // conjunct only narrows the compiler's view of the same fact.)
+  executionBilling:
+    evaluationBillingReady() && billing
+      ? {
+          precheck: createExecutionBudgetPrecheck({
+            creditWriter: billing.creditWriter,
+            externalCustomerId: billing.externalCustomerKey,
+          }),
+        }
+      : undefined,
+  // A listing that fails propagates: a 500 the page maps to its unavailable
+  // fault, never a 200 with an empty list that reads as "nothing in scope".
+  // (The T33-rev3 listBots minor, server side.)
+  // R2-59: the enumeration is the store's unfiltered-by-sidebar listing — a
+  // Bot hidden from the caller's sidebar stays in the admin summary; the
+  // per-bot manage gate below still re-derives every scope's authorization.
+  listBots: (actor) => agentProfileStore.listAll(actor),
+});
+
+/*
+ * The T34 export worker (this ticket's boot wiring): claims tickets under
+ * lease and re-derives the scope from LIVE authorization on every execution —
+ * the same manage-gate + ownership + live-epoch seam the routes answer per
+ * request, with the actor resolved from live roles. Spec §10: a deployment
+ * that has Opik disabled starts no export task at all, so the worker boots
+ * only for an enabled configuration; queued rows simply wait, unclaimed.
+ */
+const observationExportStore = createObservationExportStore(database);
+const opikExportReauthorize = createExportReauthorization({
+  canManageBot: aiObservabilityCanManageBot,
+  scopeEpoch: aiObservabilityScopeEpoch,
+  resolveActor: createActorResolver((userId) =>
+    roleRepository.rolesForUser(userId),
+  ),
+});
+// Handles held for shutdown (OCR m204): an unheld `Repeating` keeps claiming
+// leased work through the graceful-shutdown window, then dies mid-write at
+// process.exit. Stop order below runs before the listeners go away.
+const opikExportWorker = opikBootConfig.enabled
+  ? createObservationExportWorker({
+      database,
+      config: () => opikBootConfig,
+      port: opikObservationPort,
+      reauthorize: opikExportReauthorize,
+    }).start()
+  : null;
+/*
+ * The T35 retention worker (the fix report §5 wiring): sweep the four local
+ * tables for expired targets and delete them for real. The M1c read
+ * invalidation is the shared runs query service above — a deletion drops the
+ * scope's cached window, so the next run read serves the post-deletion face
+ * rather than the page before it. Enabled-only for the same §10 reason as the
+ * export worker. No lease renewal is wired (rev2-confirmed harmless at the
+ * default lease 60s vs the 5s upstream timeout): raise the upstream timeout or
+ * concurrency and a T34-style renew belongs here.
+ */
+const opikRetentionWorker = opikBootConfig.enabled
+  ? createObservationRetentionWorker({
+      database,
+      config: () => opikBootConfig,
+      port: opikObservationPort,
+      retention: () => resolveRetentionDays(process.env),
+      audit: bootAuditStore,
+      exportStore: observationExportStore,
+      invalidateReads: ({ scopeKey }) =>
+        aiObservabilityRunsQuery.invalidateKey(scopeKey),
+    }).start()
+  : null;
+/** Held for shutdown (OCR m205); assigned in the billing-ready block below. */
+let opikExecutionWorker: Repeating | null = null;
+// The finished opik.export and opik.retention tickets ride the same work_items
+// table every bounded task does; the wake-up reaper's own cadence (a week past
+// done) keeps the table from growing without end. A purged retention ticket on
+// a non-terminal record is re-offered by discovery (retention.ts), so the reap
+// can only ever cost a retry, never a wedged target.
+const opikTicketQueue = createWorkQueue(database);
+const opikTicketReaper = repeatAfterEach(
+  async () => {
+    for (const kind of [EXPORT_WORK_KIND, RETENTION_WORK_KIND]) {
+      try {
+        await opikTicketQueue.purge({
+          kind,
+          olderThanMs: 7 * 24 * 60 * 60_000,
+        });
+      } catch (error) {
+        log.warn(
+          { err: error, kind, type: "opik-tickets-reap-failed" },
+          "opik-tickets-reap-failed",
+        );
+      }
+    }
+  },
+  24 * 60 * 60_000,
+);
+
+/*
+ * Built-in model-span recording (Issue #20 / T14), on the same inert-until-proven
+ * footing as the health service above: one recorder whose only egress is the shared
+ * bounded write queue. The observer is registered only when the boot-time config
+ * snapshot says enabled — a disabled deployment keeps the product path untouched (no
+ * prompt serialization, no delta accumulation). Since T-final M1 the facts carry the
+ * run's trusted scope: the builtin agents ask aiObservabilityRunScope at run start
+ * and hold it ambiently, the adapter reads it back, and a run whose scope resolved
+ * writes its spans upstream through the queue; a null scope (disabled, non-manager,
+ * failed read) submits nothing, exactly as before the thread existed.
+ */
+const opikModelSpans = createModelSpanRecorder({
+  healthService: opikHealthService,
+});
+if (opikBootConfig.enabled) {
+  setBuiltinModelSpanObserver((fact) =>
+    opikModelSpans.record({
+      occurredAt: fact.startedAt,
+      endedAt: fact.endedAt,
+      provider: fact.provider,
+      modelId: fact.modelId,
+      ending: fact.ending,
+      input: fact.input,
+      output: fact.output,
+      // The run's trusted scope (T-final M1), CAPTURED at the fact's doStream
+      // entry and carried here on the fact itself (OCR R2-58): by stream
+      // teardown — where settlement reports the fact — the ambient context is
+      // not guaranteed (the same discipline the fact's trace field documents),
+      // so reading the ambient store at THIS moment silently no-op'd the main
+      // path's success spans. A fact whose entry captured no scope — a run that
+      // started scope-less — stays exactly as scope-less as before: the record
+      // is a no-op upstream. The cast is the wiring seam's own: the ONLY writer
+      // of that captured value is copilot.ts's entry read of the store this
+      // boot's threading established — a scope this process issued (T06's
+      // WeakSet trust), never a wire value.
+      scope: fact.scope as ObservationScope | undefined,
+      // The run's W3C chain captured at doStream entry (OCR h6, the tool-step
+      // precedent): the model span joins the run's trace instead of rooting a
+      // fresh random one — one trace per run, no orphan pseudo-runs in the
+      // collection window.
+      ...(fact.trace
+        ? {
+            trace: {
+              traceId: fact.trace.traceId,
+              parentSpanId: fact.trace.spanId,
+            },
+          }
+        : {}),
+    }),
+  );
+}
+
+/*
+ * Tool- and retrieval-step recording (Issue #21 / T15), on the same footing as the
+ * model spans above: the built-in path's step facts (proposal / real execute / receipt,
+ * correlated by toolCallId) and the retriever's observations (query, kb list, fragments)
+ * adapt into one recorder whose only egress is the same bounded write queue. Disabled
+ * deployments register no observer, so no argument accumulation or step bookkeeping
+ * happens at all. Since T-final M1 the facts carry the run's trusted scope (the same
+ * ambient thread the model spans read), so an executed step links and lands upstream
+ * on a threaded run; a scope-less run stays local, honestly.
+ */
+const opikToolSteps = createToolStepRecorder({
+  healthService: opikHealthService,
+  /*
+   * The id-mapping half (Issue #23/T17): a tool step whose span adopted an explicit
+   * upstream id is linked after the write lands, chain-checked against the run
+   * binding's trace. Inert today for the same reason the span writes are — facts
+   * arrive scope-less until the run-association ticket threads one — and activates
+   * with zero changes when they do.
+   */
+  idLinks: createIdLinkStore(database, {
+    bindings: aiObservabilityBindings,
+  }),
+});
+if (opikBootConfig.enabled) {
+  setBuiltinToolStepObserver((fact) =>
+    opikToolSteps.record({
+      toolCallId: fact.toolCallId,
+      toolName: fact.toolName ?? undefined,
+      proposedAt: fact.proposedAt ?? undefined,
+      endedAt: fact.endedAt,
+      proposalObserved: fact.proposalObserved,
+      executionObserved: fact.executionObserved,
+      receiptObserved: fact.receiptObserved,
+      execution: fact.execution,
+      window: fact.window,
+      input: fact.input,
+      output: fact.output,
+      // The run's trusted scope (T-final M1), CAPTURED at the tool-step cell's
+      // open and carried here on the fact itself (OCR R3-39 — the model-span
+      // adapter's own OCR R2-58 discipline, now on the tool-step half): the
+      // settlement that reports the fact can land at stream teardown — the
+      // finalize hook runs OUTSIDE the run's ambient context — where reading
+      // the ambient store silently no-op'd the record. A fact whose open
+      // captured no scope — a run that started scope-less — stays exactly as
+      // scope-less as before: the record is a no-op upstream. The cast is the
+      // wiring seam's own: the ONLY writer of that captured value is
+      // copilot.ts's cell-open read of the store this boot's threading
+      // established — a scope this process issued (T06's WeakSet trust), never
+      // a wire value.
+      scope: fact.scope as ObservationScope | undefined,
+      // The run's W3C chain captured at cell open (Issue #23/T17): the step span
+      // joins the cross-service trace instead of rooting a fresh random one.
+      ...(fact.trace
+        ? {
+            trace: {
+              traceId: fact.trace.traceId,
+              parentSpanId: fact.trace.spanId,
+            },
+          }
+        : {}),
+    }),
+  );
+  setKnowledgeRetrievalObserver((observed) =>
+    opikToolSteps.recordRetrieval({
+      occurredAt: observed.startedAt,
+      endedAt: observed.endedAt,
+      query: observed.query,
+      kbIds: observed.kbIds,
+      // The run's trusted scope (T-final M1) — same one-writer cast as the
+      // span/step adapters above; retrievals run inside the run's ambient
+      // context, so a threaded run threads its retrieval steps too.
+      scope: currentRunObservationScope() as ObservationScope | undefined,
+      ...(observed.trace
+        ? {
+            trace: {
+              traceId: observed.trace.traceId,
+              parentSpanId: observed.trace.spanId,
+            },
+          }
+        : {}),
+      outcome:
+        observed.outcome.status === "hit"
+          ? {
+              kind: "hit",
+              fragments: observed.outcome.chunks.map((chunk) => ({
+                kbId: chunk.kbId,
+                chunkId: chunk.chunkId,
+                docId: chunk.docId,
+                source: chunk.source,
+                score: chunk.score,
+              })),
+            }
+          : observed.outcome.status === "miss"
+            ? { kind: "miss" }
+            : { kind: "degraded", reason: observed.outcome.reason },
+    }),
+  );
+}
+
+/*
+ * The experiment execution worker (the T-routes closure ticket's boot wiring):
+ * submissions freeze and enqueue; this worker claims them and runs every case
+ * through the billed runner (T25) with the judge (T27, entrances from env) wrapped
+ * outside it, re-deriving live authorization per case. Enabled-only, like the export
+ * and retention workers above — and only when the one billing machinery evaluation
+ * calls are metered through exists; the submit route refuses the start fail-closed
+ * otherwise, so a deployment without it never accumulates unclaimable work.
+ */
+if (
+  evaluationBillingReady() &&
+  // The predicate owns the four-condition answer (T-final L3); the conjuncts
+  // here only give the compiler the narrowed views the boot call needs —
+  // `billing` defined implies settings and outbox by their own definitions —
+  // never a second semantic gate.
+  billing !== undefined &&
+  usageOutbox !== undefined &&
+  billingSettings !== undefined
+) {
+  // `configured === true` is the predicate's own fourth condition, already
+  // answered; this cast-free narrow exists for the same compiler reason.
+  const opikEvaluationCreditPolicy = billingSettings.creditPolicy;
+  if (opikEvaluationCreditPolicy.configured) {
+    // Held for shutdown (OCR m205), like the other observation workers.
+    opikExecutionWorker = createExperimentExecutionWorkerBoot({
+      database,
+      audit: bootAuditStore,
+      billing: {
+        creditWriter: billing.creditWriter,
+        outbox: usageOutbox,
+        policy: opikEvaluationCreditPolicy.models,
+        externalCustomerId: billing.externalCustomerKey,
+      },
+      canManageBot: aiObservabilityCanManageBot,
+      scopeEpoch: aiObservabilityScopeEpoch,
+      resolveActor: createActorResolver((userId) =>
+        roleRepository.rolesForUser(userId),
+      ),
+      observe: (observation) => opikModelSpans.record(observation),
+      env: process.env,
+    }).start();
+  }
+}
 
 /*
  * The OpenMuse private Goal seam (P01, contracts §7): owner CRUD at
@@ -5502,7 +5992,7 @@ const openMuseGoals = createOpenMuseGoalsRoutes({
   store: createOpenMuseGoalStore({
     rows: createOpenMuseGoalRows(database),
   }),
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /*
@@ -5520,7 +6010,7 @@ const openMuseIdeas = createOpenMuseIdeasRoutes({
     getTask: (ownerUserId, taskId) =>
       openMuseTaskStore.get(ownerUserId, taskId),
   }),
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /*
@@ -5534,7 +6024,7 @@ const openMuseMemories = createOpenMuseMemoriesRoutes({
   store: createOpenMuseMemoryStore({
     rows: createOpenMuseMemoryRows(database),
   }),
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /*
@@ -5545,7 +6035,7 @@ const openMuseMemories = createOpenMuseMemoriesRoutes({
  */
 const openMuseNotifications = createOpenMuseNotificationRoutes({
   store: openMuseNotificationStore,
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /*
@@ -5557,7 +6047,7 @@ const openMuseNotifications = createOpenMuseNotificationRoutes({
 // openMuseFileStore is the instance hoisted beside the task runner above.
 const openMuseDocuments = createOpenMuseDocumentsRoutes({
   store: openMuseFileStore,
-  requireUser: openMuseGoogleGuard,
+  requireUser: deploymentRequireUser,
 });
 
 /*
@@ -5905,7 +6395,21 @@ const app = createApp(
     documents: openMuseDocuments,
     notifications: openMuseNotifications,
     accountDeletion: openMuseAccountDeletionStore,
-    deletionShutdown: openMuseWorkShutdown,
+    // T33: the §9 shutdown ends the deleting owner's authorization, so their
+    // queued observation exports are cancelled in the same breath (T34 §6).
+    deletionShutdown: async (userId: string) => {
+      await openMuseWorkShutdown(userId);
+      await observationExportStore.cancelForActor(userId).catch((error) => {
+        log.warn(
+          {
+            err: error,
+            type: "opik-export-cancel-failed",
+            userId,
+          },
+          "opik-export-cancel-failed",
+        );
+      });
+    },
     deletionRevoke: openMuseExternalAccessRevoker,
     deletionManifest: (userId) =>
       openMuseDeletionManifestBuilder.buildManifest(userId),
@@ -5921,6 +6425,23 @@ const app = createApp(
     },
     activity: openMuseActivity,
     opsSignals: openMuseOpsSignals,
+    aiObservability,
+    // T33: the admin people-revoke route's cancel seam (T34 §6 wiring).
+    // R5-25: the executions half of the same seam — a revoked person's pending
+    // or running executions settle cancelled with their settle audit rows,
+    // instead of running to completion under an authorization that no longer
+    // exists. Exports stay first (the T34 §6 behavior verbatim); the route's
+    // best-effort catch is the failure backstop for both halves.
+    aiObservabilityCancelForActor: async (actorId) => {
+      await observationExportStore.cancelForActor(actorId);
+      await cancelExecutionsForActor(
+        {
+          executions: createObservationExecutionStore(database),
+          audit: createAuditStore(database),
+        },
+        actorId,
+      );
+    },
   },
   identityStore,
   identityGithubCallback,
@@ -6193,7 +6714,9 @@ serve<SocketData>({
   websocket: {
     open(ws) {
       if (isHmrSocket(ws.data)) {
-        webappHmrSocketHandlers.open(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        webappHmrSocketHandlers.open(
+          ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+        );
         return;
       }
       if (!isProxiedStream(ws.data)) {
@@ -6299,7 +6822,9 @@ serve<SocketData>({
     },
     close(ws, code, reason) {
       if (isHmrSocket(ws.data)) {
-        webappHmrSocketHandlers.close(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        webappHmrSocketHandlers.close(
+          ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+        );
         return;
       }
       if (!isProxiedStream(ws.data)) {
@@ -6330,6 +6855,12 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     keyStateSyncScheduler?.stop();
     wakeUpSweep.stop();
     wakeUpReaper.stop();
+    opikTicketReaper.stop();
+    // The observation workers (OCR m204/m205): leases expire in 60s, so stop need
+    // not wait on in-flight work — it only has to stop CLAIMING new work.
+    opikExportWorker?.stop();
+    opikRetentionWorker?.stop();
+    opikExecutionWorker?.stop();
     openMuseTaskSweep.stop();
     openMuseTaskReaper.stop();
     memorySweep.stop();
@@ -6360,4 +6891,3 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 log.info({ port }, "OpenBot server listening on http://127.0.0.1");
-

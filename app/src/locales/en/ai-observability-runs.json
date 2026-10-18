@@ -1,0 +1,147 @@
+{
+  "meta": {
+    "namespace": "ai-observability-runs",
+    "ownedBy": "#18 #19 #24 (run list, run detail, step tree)"
+  },
+  "availability": {
+    "notFound": {
+      "title": "No such run",
+      "description": "This run is not recorded for a Bot you manage, or it never existed. A transferred or removed run is no longer visible here."
+    },
+    "disabled": {
+      "title": "Run tracing is off",
+      "description": "Observability is disabled for this deployment, so no runs are recorded. Existing Bot execution is unaffected."
+    },
+    "empty": {
+      "title": "No runs yet",
+      "description": "This Bot has not recorded a run. Start a conversation, then reload this page."
+    },
+    "forbidden": {
+      "title": "You cannot observe this Bot",
+      "description": "Observation needs management rights on the Bot. Being able to chat with it, or a public share link, is not enough."
+    },
+    "basic": {
+      "title": "Basic coverage only",
+      "description": "Only what OpenBot itself observed is recorded. Steps inside this remote Agent are not visible, and their absence is not evidence they did not happen."
+    },
+    "omitted": {
+      "title": "Content omitted",
+      "description": "This field could not be handled safely, so only metrics are shown. Omitted is not the same as empty."
+    },
+    "truncated": {
+      "title": "Content truncated",
+      "description": "This value exceeds the recorded size limit and was cut. The stored record is shorter than what the run actually produced."
+    },
+    "syncing": {
+      "title": "Still syncing",
+      "description": "The run finished but its record has not been confirmed upstream yet. Reload shortly."
+    },
+    "unavailable": {
+      "title": "Upstream unavailable",
+      "description": "The observability store did not answer. Your conversation result was not affected. This is a fault, not an empty list."
+    },
+    "tokenUnavailable": {
+      "title": "Token usage unavailable",
+      "description": "Token usage could not be read for this run. Unavailable is not zero — the run is not counted as 0 tokens."
+    }
+  },
+  "page": {
+    "title": "Run history",
+    "description": "Recorded runs of this Bot, as the observability store holds them."
+  },
+  "detail": {
+    "title": "Run detail",
+    "description": "One recorded run of this Bot, as the observability store holds it.",
+    "backToList": "Back to run history",
+    "section": {
+      "overview": "Overview",
+      "availability": "Availability",
+      "references": "References",
+      "metadata": "Metadata",
+      "steps": "Steps"
+    },
+    "facts": {
+      "state": "State",
+      "started": "Started",
+      "duration": "Duration",
+      "usage": "Token usage",
+      "usageDetail": "Prompt {{prompt}} · Completion {{completion}}",
+      "recorded": "Recorded",
+      "expires": "Retained until",
+      "coverage": "Coverage",
+      "upstreamLink": "Upstream record",
+      "updated": "Last update",
+      "run": "Run",
+      "attempt": "Attempt",
+      "trace": "Trace",
+      "opikTrace": "Upstream trace",
+      "notLinked": "Not linked yet"
+    },
+    "upstream": {
+      "present": "Linked — the store holds this run's upstream record.",
+      "absentTitle": "Record outside the recent window",
+      "absentDescription": "This run reconciled upstream, but the store only serves the most recent runs, so its upstream detail cannot be shown. The run itself is unaffected."
+    },
+    "metadataEmpty": "No metadata was projected for this run.",
+    "steps": {
+      "kind": {
+        "model": "Model call",
+        "tool": "Tool call",
+        "retrieval": "Knowledge retrieval"
+      },
+      "execution": {
+        "proposed": "Proposed, not executed",
+        "executed": "Executed here",
+        "unobserved": "Execution unobserved"
+      },
+      "empty": "No steps were recorded for this run.",
+      "basicNote": "This run has basic coverage: only what OpenBot itself observed is recorded. Steps inside the remote Agent are not visible, and their absence is not evidence they did not happen.",
+      "coverageNote": "Coverage is unverified for this run, so no step tree can be vouched for.",
+      "noResults": "No fragments returned",
+      "degraded": "Degraded: {{reason}}",
+      "fragments_one": "{{count}} fragment",
+      "fragments_other": "{{count}} fragments",
+      "kbs_one": "{{count}} knowledge base",
+      "kbs_other": "{{count}} knowledge bases"
+    }
+  },
+  "states": {
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed",
+    "canceled": "Canceled",
+    "interrupted": "Interrupted",
+    "unknown": "Unknown outcome"
+  },
+  "capability": {
+    "detailed": "Detailed coverage",
+    "basic": "Basic coverage",
+    "unavailable": "Coverage unavailable"
+  },
+  "row": {
+    "timeUnavailable": "Time unavailable",
+    "durationUnavailable": "Duration unavailable",
+    "tokens_one": "{{count}} token",
+    "tokens_other": "{{count}} tokens",
+    "tokensUnavailable": "Tokens unavailable"
+  },
+  "marker": {
+    "omitted": "Omitted",
+    "truncated": "Truncated"
+  },
+  "filter": {
+    "stateAll": "All states",
+    "timeAll": "Any time",
+    "timeHour": "Last hour",
+    "timeDay": "Last 24 hours",
+    "timeWeek": "Last 7 days",
+    "loadedPageOnly": "Filters apply to the loaded page.",
+    "noMatch": "No run on this page matches the filters."
+  },
+  "pagination": {
+    "previous": "Previous page",
+    "next": "Next page",
+    "range": "{{from}}–{{to}} of {{total}}",
+    "reset": "Back to the first page"
+  }
+}

@@ -44,12 +44,17 @@ export interface RunStreamEvent {
  * with RUN_FINISHED, or RUN_ERROR if anything threw. `makeEvents` is called inside the try so a
  * failure building the graph or opening the stream is reported the same way as a failure mid-stream,
  * which is the single try the inline version had.
+ *
+ * Returns the run's terminal state — `failed` when the catch below answered RUN_ERROR — because the
+ * caller's governed run span must end on the actual outcome, and a stream that swallowed its own
+ * error looked completed from the outside. A RUN_ERROR answer is the wire protocol's business; the
+ * return value is the tracing's.
  */
 export async function streamRun(
   makeEvents: () => Promise<AsyncIterable<RunStreamEvent>>,
   input: Pick<RunAgentInput, "runId" | "threadId">,
   send: (event: BaseEvent) => void,
-): Promise<void> {
+): Promise<"completed" | "failed"> {
   /*
    * One message id per stretch of prose.
    *
@@ -222,6 +227,7 @@ export async function streamRun(
       threadId: input.threadId,
       runId: input.runId,
     } as BaseEvent);
+    return "completed";
   } catch (error) {
     // A text message left open would strand the surface mid-message, so it is closed before the
     // error is reported. agent-bot has the same hazard and the same ordering.
@@ -233,5 +239,6 @@ export async function streamRun(
       message:
         error instanceof Error ? error.message : "The Bot could not answer.",
     } as BaseEvent);
+    return "failed";
   }
 }

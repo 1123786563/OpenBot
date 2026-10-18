@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "namespace": "ai-observability-admin",
+    "ownedBy": "#42 (admin summary, ingest faults, export status)"
+  },
+  "page": {
+    "title": "AI 可观测性",
+    "description": "你管理范围内每个 Bot 的采集汇总、采集健康状态与导出状态。"
+  },
+  "availability": {
+    "disabled": {
+      "title": "可观测性已关闭",
+      "description": "集成未启用，因此没有需要采集的内容。这是配置状态，不是故障。"
+    },
+    "empty": {
+      "title": "范围内没有数据",
+      "description": "在你被授权的范围里，没有符合该筛选条件的运行或实验。"
+    },
+    "forbidden": {
+      "title": "超出你的管理范围",
+      "description": "你的管理角色不覆盖这些数据。范围在任何聚合之前解析，绝不之后。"
+    },
+    "basic": {
+      "title": "仅基础覆盖",
+      "description": "这些记录只包含 OpenBot 观察到的内容。基础记录不等于健康的详细记录。"
+    },
+    "omitted": {
+      "title": "内容已省略",
+      "description": "该字段无法被可靠处理，因此只展示指标。"
+    },
+    "truncated": {
+      "title": "内容已截断",
+      "description": "该值超过记录长度上限并被截断。"
+    },
+    "syncing": {
+      "title": "采集有延迟",
+      "description": "记录到达时间晚于产生它们的运行。延迟在这里可见，而不是表现为流量缺失。"
+    },
+    "unavailable": {
+      "title": "上游不可用",
+      "description": "可观测性存储没有响应。正常 Agent 执行未受影响；丢弃与故障在此上报。"
+    }
+  },
+  "readiness": {
+    "ready": {
+      "title": "采集健康",
+      "description": "可观测性存储正在应答并接受写入。"
+    },
+    "disabled": {
+      "title": "可观测性已关闭",
+      "description": "集成未启用，因此没有在采集任何内容。这是配置状态，不是故障。"
+    },
+    "unconfigured": {
+      "title": "可观测性未配置",
+      "description": "没有配置上游地址，因此没有在采集任何内容。这是配置状态，不是故障。"
+    },
+    "capability_missing": {
+      "title": "没有已验证的上游契约",
+      "description": "本部署没有可用于采集的已验证 Opik 契约。这是能力缺口，不是故障。"
+    },
+    "authentication_failure": {
+      "title": "上游拒绝了凭据",
+      "description": "可观测性存储有应答，但拒绝了本部署的凭据，因此采集正在失败。"
+    },
+    "unreachable": {
+      "title": "上游不可用",
+      "description": "可观测性存储没有响应。正常 Agent 运行未受影响；下方本地计数仍然应答。"
+    }
+  },
+  "filter": {
+    "timeAll": "全部时间",
+    "timeDay": "最近 24 小时",
+    "timeWeek": "最近 7 天",
+    "timeMonth": "最近 30 天"
+  },
+  "summary": {
+    "healthTitle": "采集健康",
+    "botsTitle": "范围内的 Bot",
+    "scopeNote": "范围在任何计数之前逐个 Bot 解析，因此全范围应答需要一点时间——并且绝不会扩大到你管理角色之外的 Bot。",
+    "truncatedTitle": "范围已截断",
+    "truncatedDescription": "本应答只覆盖你管理范围内的前 {{count}} 个 Bot。",
+    "retention": "运行记录默认保留 7 天，数据集与实验保留 30 天，除非你的部署配置了更长的保留期。",
+    "upstreamWindow": "未绑定与 usage 计数来自存储最近 100 条 trace 的窗口，而非时间筛选；所有本地计数都遵循该筛选。",
+    "upstreamUnavailable": "上游计数不可用",
+    "dropped": "丢弃写入：{{queueFull}} 队列已满 · {{notReady}} 未就绪",
+    "row": {
+      "runs": "{{count}} 次运行",
+      "failed": "{{count}} 次失败",
+      "pending": "{{count}} 条待同步",
+      "lastCollected": "最近采集 {{time}}",
+      "neverCollected": "从未采集",
+      "unbound": "{{count}} 条未绑定",
+      "usage": "{{reported}} 条已报 usage · {{unavailable}} 条不可用",
+      "upstreamTruncated": "窗口被截断——计数为下界",
+      "experiments": "{{draft}} 个草稿 · {{frozen}} 个冻结实验",
+      "exports": "{{completed}} 个完成 · {{failed}} 个失败 · {{inFlight}} 个进行中",
+      "lastFailedCode": "最近失败 {{code}}"
+    }
+  },
+  "exports": {
+    "page": {
+      "title": "运行导出",
+      "description": "本 Bot 的导出任务，以及每个已完成任务产出的文件。"
+    },
+    "empty": {
+      "title": "还没有导出",
+      "description": "导出会把本 Bot 已记录的运行打包成可下载的文件；目前还没有请求过任何导出。"
+    },
+    "link": "导出状态",
+    "download": "下载 JSON",
+    "states": {
+      "queued": "排队中",
+      "running": "导出中",
+      "completed": "可下载",
+      "failed": "失败",
+      "cancelled": "已取消"
+    },
+    "rowCount": "{{count}} / {{limit}} 行",
+    "rowsPending": "行数待定",
+    "settled": "结束于 {{time}}",
+    "errorCodes": {
+      "CAPABILITY_MISSING": "本部署未启用该集成。",
+      "EXPORT_ROW_LIMIT_EXCEEDED": "导出超过了部署的行数上限，被拒绝而非截断。",
+      "OPIK_TIMEOUT": "可观测性存储响应过慢。",
+      "OPIK_UNREACHABLE": "可观测性存储没有响应。",
+      "OPIK_UPSTREAM_ERROR": "可观测性存储报告了上游错误。",
+      "OPIK_CLIENT_ERROR": "导出请求被存储拒绝。",
+      "OPIK_MALFORMED_RESPONSE": "存储的应答无法被信任。",
+      "OPIK_OWNERSHIP_DRIFT": "导出运行期间归属发生了变化。"
+    },
+    "truncated": "仅显示最新 {{shown}} / {{total}} 个导出任务，更早的任务未列入本页。"
+  }
+}

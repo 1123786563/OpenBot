@@ -1,6 +1,8 @@
 # The main local stack. The optional stacks live in docker/compose/ — kb.yml, services.yml,
-# lago.yml, observability.yml — beside the support files they mount. Start this file first;
-# docs/compose.md carries the map, the start order and the --project-directory . invocation.
+# lago.yml, observability.yml, opik.yml — beside the support files they mount. Start this file
+# first; docs/compose.md carries the map, the start order and the --project-directory . invocation.
+# opik.yml — optional self-hosted AI observability and evaluation; see docs/opik.md. Its OTLP
+# host ports are 5418/5417 because observability.yml already owns 4318/4317 for Tempo.
 services:
   postgres:
     # Stock PostgreSQL plus pg_partman, from docker/postgres-partman.Dockerfile — why that image
@@ -359,6 +361,10 @@ services:
       - "127.0.0.1:${LANGGRAPH_PORT:-4201}:4201"
       - "[::1]:${LANGGRAPH_PORT:-4201}:4201"
     environment:
+      # Traces flow to Tempo only when the observability stack is up and this points at it;
+      # empty keeps the service recording locally without exporting (see shared/trace.ts). The
+      # framework's callbacks ride this same path — never an Opik SDK auto-upload of their own.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${CONTAINER_OTEL_EXPORTER_OTLP_ENDPOINT:-}
       # The selected provider reads its own key. Models requiring the Responses API use
       # BOT_RESPONSES_API instead of changing the streaming loop here.
       BOT_PROVIDER: ${BOT_PROVIDER:-openai}

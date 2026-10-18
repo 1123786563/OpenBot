@@ -68,6 +68,9 @@ function boundary(id: string, refusal?: "unauthenticated" | "forbidden") {
     async list() {
       throw new Error("unexpected list");
     },
+    async listAll() {
+      throw new Error("unexpected listAll");
+    },
     async get(_actor, receivedId) {
       record("get", receivedId);
       return profile;

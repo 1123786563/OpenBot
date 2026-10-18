@@ -1,7 +1,8 @@
-import { createOpenAI } from "@ai-sdk/openai";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message, RunAgentInput } from "@ag-ui/client";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
+import { createOpenAI } from "@ai-sdk/openai";
 import type {
   AgentRunnerConnectRequest,
   AgentRunnerIsRunningRequest,
@@ -18,19 +19,21 @@ import {
   CopilotSseRuntime,
 } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
-import type { Observable } from "rxjs";
 import {
   defer,
   finalize,
   from,
   fromEvent,
+  Observable,
   switchMap,
   takeUntil,
+  tap,
   throwError,
 } from "rxjs";
 import { z } from "zod";
 import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
 import { getLogger } from "../../shared/logger";
+import { currentTraceContext } from "../../shared/trace";
 import {
   type ActorAgentResolver,
   CoworkerUnavailableError,
@@ -55,17 +58,20 @@ import {
   type StoredAttachment,
 } from "./channels/attachment-parts";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
-import { HeadlessToolsMiddleware } from "./computer/headless-tools";
+import {
+  HeadlessToolSuspension,
+  HeadlessToolsMiddleware,
+} from "./computer/headless-tools";
 import type { DeploymentConfig } from "./config";
 import { observeModelConnection } from "./desktop-connection-failure";
 import { desktopTelemetryProperties } from "./desktop-telemetry";
 import type { GovernedModelRequest } from "./enterprise/runs/governed-execution";
-import type { LoadKnowledgeForBot } from "./knowledge/retrieval";
 import {
   currentRunnerRequest,
   withRunnerRequestContext,
 } from "./enterprise/runs/request-context";
 import { observeIntelligenceAuthentication } from "./intelligence-client";
+import type { LoadKnowledgeForBot } from "./knowledge/retrieval";
 import { RemoteLearnedSkillsMiddleware } from "./learning/remote";
 import {
   type AcquireLearnedSkills,
@@ -79,6 +85,10 @@ import {
   type LoadPersonalMemory,
   PersonalMemoryMiddleware,
 } from "./memory/tools";
+import {
+  currentRunObservationScope,
+  withRunObservationScope,
+} from "./observation-run-scope";
 import type { SelectableSkill, Selection } from "./plugins/selection";
 import {
   latestUserText,
@@ -450,12 +460,14 @@ function legacyRuntimeModel(model: RuntimeModel, apiKey: string | null) {
  *
  * A module-level setter rather than an import: the billing seam is optional — a deployment without
  * a provider mounts none of it — and `copilot.ts` must not grow a dependency on a module that is
- * often absent. `index.ts` wires the billing service's meter in at assembly; the default drops
- * usage on the floor, which is exactly right for a deployment that meters nowhere.
+ * often absent. Since the reservation rework (b616ccaa) production wires the USAGE GATE at
+ * assembly (`setModelUsageGate`, server/src/index.ts), not this meter: the gate both enforces the
+ * pre-call reservation and — by riding the same metered wrapper — carries the model-span
+ * observation bypass. This meter stays a separately-injectable sink (tests, e2e, and a deployment
+ * that meters without gating); the default drops usage on the floor, which is exactly right for a
+ * deployment that meters nowhere.
  */
-let usageMeter:
-  | ((usage: ModelUsageReport) => void | Promise<void>)
-  | undefined;
+let usageMeter: ((usage: ModelUsageReport) => void | Promise<void>) | undefined;
 
 export function setModelUsageMeter(
   meter: ((usage: ModelUsageReport) => void | Promise<void>) | undefined,
@@ -522,6 +534,574 @@ export type ModelUsageReport = {
   occurredAt: Date;
   inputTokens: number | undefined;
   outputTokens: number | undefined;
+};
+
+/**
+ * What one built-in model call's observation bypass saw: the verdict the metered path
+ * already reached, read after the fact. Structural on purpose — `copilot.ts` must not
+ * depend on the observability module a deployment may not have; `index.ts` adapts this
+ * fact into the recorder's observation at assembly.
+ */
+export type BuiltinModelSpanFact = {
+  eventId: string;
+  startedAt: Date;
+  endedAt: Date;
+  provider: string | undefined;
+  modelId: string | null;
+  ending:
+    | { kind: "succeeded"; inputTokens: number; outputTokens: number }
+    | { kind: "refused"; code: string }
+    | { kind: "settlement_failed"; code: string }
+    | { kind: "failed"; code: "provider_error" | "stream_error" }
+    | { kind: "canceled" }
+    | { kind: "usage_missing" };
+  /**
+   * The serialized provider request prompt, bounded AT CAPTURE (OCR R2-52, H9):
+   * a prompt carrying media parts (images, files, inline base64 attachments) is
+   * never serialized at all — `null`, metrics-only — and a text-only prompt is
+   * serialized per message and cut at 64Ki characters with an in-band
+   * truncation mark, so no attachment can be pinned alive from capture through
+   * the billing check to settlement. Deny-pattern projection still happens ONLY
+   * at the recorder — this value is never trusted, never stored, never logged.
+   */
+  input: string | null;
+  /**
+   * The accumulated output text, bounded AT CAPTURE (OCR R2-53) to the same
+   * 2000-character ceiling the failure path applies to error messages: the
+   * provider's full answer is its product, not the observation's payload.
+   * Projection happens ONLY at the recorder (see `input`).
+   */
+  output: string | null;
+  /**
+   * The run's observation scope, captured at `doStream` entry beside `trace`
+   * (OCR R2-58): by stream teardown the ambient context is not guaranteed, so
+   * the fact carries the scope its entry captured instead of leaving the
+   * settlement-path adapter to re-read an ambient store that may already be
+   * gone. Structural `unknown`, like every cross-module field here — the only
+   * possible writer is the boot wiring's own threading. Undefined — a run that
+   * started scope-less — keeps the record an honest no-op upstream, exactly as
+   * before.
+   */
+  scope: unknown;
+  /**
+   * The run's W3C trace coordinates captured when the model call began (OCR h6, the
+   * T15 tool-step precedent) — the chain the span joins instead of rooting its own.
+   * Captured at `doStream` entry, inside the request's context, because settlement
+   * can land at stream teardown where the ambient context is no longer guaranteed.
+   * Null when no valid span was active (no provider, outside a traced request).
+   */
+  trace: { traceId: string; spanId: string } | null;
+};
+
+/**
+ * The model-span observer, wired at assembly exactly like the meter: absent means no
+ * observation happens at all — no prompt serialization, no delta accumulation, nothing.
+ */
+let builtinModelSpanObserver:
+  | ((fact: BuiltinModelSpanFact) => void)
+  | undefined;
+
+export function setBuiltinModelSpanObserver(
+  observer: ((fact: BuiltinModelSpanFact) => void) | undefined,
+) {
+  builtinModelSpanObserver = observer;
+}
+
+/**
+ * What one built-in tool step's observation bypass saw (Issue #21): the proposal the run's
+ * event stream emitted, whether an execute callback in THIS process actually ran, and
+ * whether a result receipt ever arrived — three separately observed facts, never collapsed.
+ * `window` is how the observation window closed: only an interrupted run (the answer may
+ * still arrive) may honestly leave a step merely proposed; every terminal close without a
+ * real execution is unobserved, never success. Structural on purpose — `copilot.ts` must
+ * not depend on the observability module; `index.ts` adapts this fact into the recorder's
+ * observation at assembly.
+ */
+export type BuiltinToolStepFact = {
+  toolCallId: string;
+  toolName: string | null;
+  /** When the proposal was observed; null when only the execution was. */
+  proposedAt: Date | null;
+  endedAt: Date;
+  proposalObserved: boolean;
+  executionObserved: boolean;
+  receiptObserved: boolean;
+  /** What the real execute settled to; present only when executionObserved. */
+  execution: {
+    kind: "succeeded" | "failed" | "canceled";
+    output: string | null;
+  } | null;
+  window: "interrupted" | "terminal";
+  /**
+   * The run's observation scope, captured when the cell opened beside `trace`
+   * (OCR R3-39): by stream teardown — the finalize path settles outside the
+   * ambient context — re-reading the ambient store silently no-op'd the
+   * record, so the fact carries the scope its open saw instead (the model-span
+   * fact's own OCR R2-58 discipline, now on the tool-step half). Structural
+   * `unknown`, like every cross-module field here — the only possible writer
+   * is the boot wiring's own threading. Undefined — a run that started
+   * scope-less — keeps the record an honest no-op upstream, exactly as before.
+   */
+  scope: unknown;
+  /**
+   * The run's W3C trace coordinates captured when the cell opened (Issue #23/T17) —
+   * the chain a step span recorded after the fact still parents under. Null when no
+   * valid span was active (no provider, outside a traced request). Structural, like
+   * every field here: the adapter threads it, the recorder decides what it means.
+   */
+  trace: { traceId: string; spanId: string } | null;
+  /** The raw accumulated call arguments — BEFORE projection; the recorder projects.
+   * Bounded AT CAPTURE (OCR R3-37): accumulation stops at 64Ki characters and the
+   * cut is declared in-band, so an approval wait cannot pin a large call's full
+   * arguments alive between capture and settlement.
+   */
+  input: string | null;
+  /**
+   * The execution output or error text, BEFORE projection (the recorder
+   * projects) but bounded AT CAPTURE (OCR R2-53): both settlement sides keep
+   * the same 2000-character ceiling, so a large result is excerpted, never
+   * pinned whole.
+   */
+  output: string | null;
+};
+
+/**
+ * The tool-step observer, wired at assembly exactly like the model-span one: absent means
+ * no step observation happens at all — no argument accumulation, no execute bookkeeping.
+ */
+let builtinToolStepObserver: ((fact: BuiltinToolStepFact) => void) | undefined;
+
+export function setBuiltinToolStepObserver(
+  observer: ((fact: BuiltinToolStepFact) => void) | undefined,
+) {
+  builtinToolStepObserver = observer;
+}
+
+/**
+ * One open tool step, shared by the two observation points that can see it: the run's
+ * event stream (the proposal, any receipt) and the execute wrapper (the real execution).
+ * Correlated by toolCallId in a module-level registry because the wrapper is built once
+ * per agent configuration while the stream is per run — the runtime emits the call before
+ * it executes it, which is what makes the correlation sound.
+ */
+type BuiltinToolStepCell = {
+  toolCallId: string;
+  toolName: string | null;
+  proposedAt: Date | null;
+  proposalObserved: boolean;
+  executionObserved: boolean;
+  receiptObserved: boolean;
+  execution: BuiltinToolStepFact["execution"];
+  /** The run's W3C coordinates at open time; the fact's `trace` comes from here. */
+  trace: { traceId: string; spanId: string } | null;
+  /** The run's trusted scope at open time; the fact's `scope` comes from here. */
+  scope: unknown;
+  /** Argument deltas, joined once at close — linear, never quadratic. */
+  args: string[];
+  /** Running length of `args.join("")`, so the capture-ceiling check stays O(1). */
+  argsLength: number;
+  /** Set once deltas past the capture ceiling were dropped (OCR R3-37). */
+  argsTruncated: boolean;
+  closed: boolean;
+  /** When the cell opened; the stalled-cell sweep's age input (OCR R5-43). */
+  openedAt: Date;
+  /** The run registry this cell belongs to (OCR R5-41); settling retires it there. */
+  registry: BuiltinToolStepCellRegistry;
+};
+
+/**
+ * One run's isolated cell registry (OCR R5-41). Cells and settled-id tombstones
+ * used to live in ONE module-level map keyed by the bare toolCallId, so two
+ * concurrent runs emitting the same id (OpenAI-compatible providers have
+ * historically handed out per-request incrementing ids) shared a single cell:
+ * the second run's arguments merged into the first's captured input, the second
+ * run's whole observation vanished, and its RUN_FINISHED settled the first
+ * run's cell early. The stream subscription owns a registry; an execute the
+ * runtime performs mid-run reaches it through the ambient carrier below.
+ */
+type BuiltinToolStepCellRegistry = {
+  cells: Map<string, BuiltinToolStepCell>;
+  /**
+   * Settled ids WITH evidence (T15 review (b)), per run: an approval resume
+   * replays the same toolCallId within ITS run, never across runs. FIFO-capped.
+   */
+  tombstones: Set<string>;
+};
+
+function newBuiltinToolStepCellRegistry(): BuiltinToolStepCellRegistry {
+  return { cells: new Map(), tombstones: new Set() };
+}
+
+/*
+ * The ambient carrier from a run's stream subscription to an execute the runtime
+ * performs inside that run (the same footing as the observation-scope store: the
+ * context is established at subscribe time and read deep inside the run, where
+ * no parameter can carry it).
+ */
+const builtinToolStepCellRegistries =
+  new AsyncLocalStorage<BuiltinToolStepCellRegistry>();
+
+/**
+ * Executes observed OUTSIDE any run's registry — no stream subscription is
+ * above them, so no stream can ever correlate with them either. Kept in one
+ * module-level registry with the historical shape; the only registry that can
+ * outlive its run, and the one the stalled-cell sweep bounds (OCR R5-43).
+ */
+const bareExecuteCells = newBuiltinToolStepCellRegistry();
+
+/*
+ * The stalled-cell backstop (OCR R5-43): a cell whose run() never settles —
+ * the hung-provider shape — would otherwise pin itself, its captured arguments
+ * included, for as long as the process lives. Generous enough for any
+ * human-in-the-loop wait that still has a live run above it (those cells are
+ * settled by their run's own teardown); this ceiling is for the ones nothing
+ * will ever come back for. Swept lazily on bare-registry use; per-run
+ * registries need no sweep — they die with their run's async context.
+ */
+const TOOL_STEP_CELL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function sweepStalledCells(
+  registry: BuiltinToolStepCellRegistry,
+  now: Date,
+): void {
+  for (const cell of registry.cells.values()) {
+    if (cell.closed) continue;
+    if (now.getTime() - cell.openedAt.getTime() > TOOL_STEP_CELL_MAX_AGE_MS) {
+      // A settlement with nothing observed: the honest fact is that a call
+      // happened and this process saw nothing of it. Proposal-only, so the
+      // R3-40 narrowing leaves the id reopenable for its next real call.
+      settleBuiltinToolStep(cell, "terminal");
+    }
+  }
+}
+
+/**
+ * Settled-id tombstones are PER RUN (OCR R5-41) — each registry carries its own
+ * `tombstones` set, so a settled id can never reopen a cell within its run,
+ * while a concurrent run emitting the same provider id keeps its own cell.
+ */
+const SETTLED_ID_CAP = 4096;
+
+function builtinToolStepCell(
+  registry: BuiltinToolStepCellRegistry,
+  toolCallId: string,
+  toolName: string | null,
+): BuiltinToolStepCell {
+  if (registry.tombstones.has(toolCallId)) {
+    // A closed tombstone: every later event for this id is a no-op, by the same
+    // `closed` check a settled-but-still-referenced cell gets.
+    return {
+      toolCallId,
+      toolName,
+      proposedAt: null,
+      proposalObserved: false,
+      executionObserved: false,
+      receiptObserved: false,
+      execution: null,
+      trace: null,
+      scope: undefined,
+      args: [],
+      argsLength: 0,
+      argsTruncated: false,
+      closed: true,
+      openedAt: new Date(0),
+      registry,
+    };
+  }
+  const existing = registry.cells.get(toolCallId);
+  if (existing) return existing;
+  const cell: BuiltinToolStepCell = {
+    toolCallId,
+    toolName,
+    proposedAt: null,
+    proposalObserved: false,
+    executionObserved: false,
+    receiptObserved: false,
+    execution: null,
+    // Captured at open, inside the request's context, because settlement can land
+    // at stream teardown where the ambient context is no longer guaranteed. The
+    // scope rides the same discipline (OCR R3-39): the settlement-path adapter
+    // reads what the fact carried, never an ambient store that may be gone.
+    trace: currentTraceContext() ?? null,
+    scope: currentRunObservationScope(),
+    args: [],
+    argsLength: 0,
+    argsTruncated: false,
+    closed: false,
+    openedAt: new Date(),
+    registry,
+  };
+  registry.cells.set(toolCallId, cell);
+  return cell;
+}
+
+/**
+ * Bounded accumulation for one tool call's argument deltas (OCR R3-37): past
+ * the capture ceiling nothing is retained, only the fact of the cut.
+ */
+function appendToolStepArg(cell: BuiltinToolStepCell, delta: string): void {
+  const capacity = TOOL_STEP_INPUT_CAPTURE_CHARS - cell.argsLength;
+  if (capacity <= 0) {
+    cell.argsTruncated = true;
+    return;
+  }
+  if (delta.length > capacity) {
+    cell.args.push(delta.slice(0, capacity));
+    cell.argsLength = TOOL_STEP_INPUT_CAPTURE_CHARS;
+    cell.argsTruncated = true;
+    return;
+  }
+  cell.args.push(delta);
+  cell.argsLength += delta.length;
+}
+
+/** Emits one fact and retires the cell; every creation path has exactly one of these. */
+function settleBuiltinToolStep(
+  cell: BuiltinToolStepCell,
+  window: "interrupted" | "terminal",
+): void {
+  if (cell.closed) return;
+  cell.closed = true;
+  cell.registry.cells.delete(cell.toolCallId);
+  /*
+   * The tombstone exists so an out-of-order late proposal cannot open a SECOND
+   * cell for a call that already produced its evidence. OCR R3-40: that guard
+   * only makes sense when there IS evidence — a settlement that observed an
+   * execution or a receipt. A proposal-only settlement (the approval first
+   * leg: the call hung on a person and the window closed without either) must
+   * NOT tombstone the id, because the approval resume legitimately replays the
+   * SAME toolCallId — a tombstone here swallowed the resumed leg's real
+   * execution whole. A tombstoned id stays bounded (FIFO, recency only).
+   */
+  if (cell.executionObserved || cell.receiptObserved) {
+    const tombstones = cell.registry.tombstones;
+    tombstones.add(cell.toolCallId);
+    if (tombstones.size > SETTLED_ID_CAP) {
+      tombstones.delete(tombstones.values().next().value as string);
+    }
+  }
+  const observer = builtinToolStepObserver;
+  if (observer === undefined) return;
+  try {
+    observer({
+      toolCallId: cell.toolCallId,
+      toolName: cell.toolName,
+      proposedAt: cell.proposedAt,
+      endedAt: new Date(),
+      proposalObserved: cell.proposalObserved,
+      executionObserved: cell.executionObserved,
+      receiptObserved: cell.receiptObserved,
+      execution: cell.execution,
+      window,
+      trace: cell.trace,
+      scope: cell.scope,
+      input:
+        cell.args.length > 0
+          ? cell.args.join("") +
+            (cell.argsTruncated ? TOOL_STEP_INPUT_TRUNCATION_MARK : "")
+          : null,
+      output: cell.execution?.output ?? null,
+    });
+  } catch {
+    // Observation never takes the product path down.
+  }
+}
+
+/**
+ * The tool-step observation bypass on the built-in run's event stream: reads ONLY the
+ * public event semantics (type + payload fields), never a framework internal. A proposal
+ * opens a cell; a TOOL_CALL_RESULT marks the receipt without ever impersonating an
+ * execution; the run's terminal event closes whatever is still open — an interrupt leaves
+ * steps proposed, every other ending leaves them unobserved.
+ */
+function observeBuiltinToolSteps(
+  stream: Observable<BaseEvent>,
+): Observable<BaseEvent> {
+  const observer = builtinToolStepObserver;
+  if (observer === undefined) return stream;
+  return new Observable<BaseEvent>((subscriber) => {
+    /*
+     * One registry per subscription (OCR R5-41): this run's cells and settled-id
+     * tombstones live and die with it, so a concurrent run emitting the same
+     * provider toolCallId can neither merge into this run's facts nor settle
+     * them early. The subscription itself is established inside the registry's
+     * ambient carrier, so an execute the runtime performs mid-run resolves to
+     * THIS registry — the run's own execution tree carries the context, exactly
+     * like the observation-scope threading above it.
+     */
+    const registry = newBuiltinToolStepCellRegistry();
+    const owned: BuiltinToolStepCell[] = [];
+    const close = (window: "interrupted" | "terminal") => {
+      for (const cell of owned) settleBuiltinToolStep(cell, window);
+      owned.length = 0;
+    };
+    return builtinToolStepCellRegistries.run(registry, () =>
+      stream
+        .pipe(
+          tap({
+            next: (event) => {
+              switch (event.type) {
+                case "TOOL_CALL_START": {
+                  const cell = builtinToolStepCell(
+                    registry,
+                    String(event.toolCallId),
+                    typeof event.toolCallName === "string"
+                      ? event.toolCallName
+                      : null,
+                  );
+                  if (!cell.proposalObserved) {
+                    cell.proposalObserved = true;
+                    cell.proposedAt = new Date();
+                  }
+                  if (!owned.includes(cell)) owned.push(cell);
+                  break;
+                }
+                case "TOOL_CALL_ARGS": {
+                  const cell = registry.cells.get(String(event.toolCallId));
+                  if (cell && !cell.closed && typeof event.delta === "string")
+                    appendToolStepArg(cell, event.delta);
+                  break;
+                }
+                case "TOOL_CALL_RESULT": {
+                  const cell = registry.cells.get(String(event.toolCallId));
+                  if (cell && !cell.closed) cell.receiptObserved = true;
+                  break;
+                }
+                case "RUN_ERROR":
+                  close("terminal");
+                  break;
+                case "RUN_FINISHED": {
+                  const outcome = (event as { outcome?: { type?: unknown } })
+                    .outcome?.type;
+                  close(outcome === "interrupt" ? "interrupted" : "terminal");
+                  break;
+                }
+                default:
+                  break;
+              }
+            },
+            error: () => close("terminal"),
+            complete: () => close("terminal"),
+          }),
+          // T15 review (a): a teardown WITHOUT a terminal event — the consumer
+          // unsubscribed mid-run — closes every open cell too. `finalize` is the one
+          // hook that fires on unsubscribe as well as on complete and error; without
+          // it, the module-level registry keeps those cells forever.
+          finalize(() => close("terminal")),
+        )
+        .subscribe(subscriber),
+    );
+  });
+}
+
+/**
+ * The tool-step output capture ceiling (OCR R2-53): one bound, applied to BOTH
+ * sides of the execution settlement — the success result and the failure
+ * message — so a large answer cannot be pinned whole between capture and the
+ * recorder's projection.
+ */
+const TOOL_STEP_OUTPUT_CAPTURE_CHARS = 2_000;
+
+/**
+ * The tool-step input capture ceiling (OCR R3-37), on the span-input precedent
+ * (OCR R2-52): 64Ki UTF-16 code units. The streamed TOOL_CALL_ARGS deltas were
+ * the one tool-step payload with no capture bound — every delta was retained
+ * whole until settlement, pinning a large call's full arguments for as long as
+ * the cell stayed open (an approval wait pins it longest). Accumulation stops
+ * at the ceiling and the cut is declared in-band, so a bounded capture can
+ * never be read as the whole call; projection still happens ONLY at the
+ * recorder — this value is never trusted, never stored, never logged.
+ */
+const TOOL_STEP_INPUT_CAPTURE_CHARS = 64 * 1024;
+
+/** The in-band declaration appended to a cut tool-step input capture (OCR R3-37). */
+const TOOL_STEP_INPUT_TRUNCATION_MARK =
+  "...[observation input truncated at capture]";
+
+/**
+ * Observes one REAL execute: the callback this process runs for a tool call. The
+ * settlement IS the receipt for a server-side execution. A suspension (the tool is
+ * waiting on a person or the browser) is not an ending — the cell stays open and the
+ * run's interrupt outcome settles it as proposed. An AbortError is a cancellation;
+ * anything else thrown is a failure. `toolCallId` absent (the runtime passed none) or
+ * the cell already closed means nothing is recorded — the run() always happens bare.
+ */
+async function observeBuiltinToolExecution<T>(
+  toolName: string,
+  toolCallId: string | undefined,
+  run: () => Promise<T>,
+): Promise<T> {
+  const observer = builtinToolStepObserver;
+  if (observer === undefined || toolCallId === undefined) return run();
+  // The run this execute was performed inside owns the cell (OCR R5-41); a bare
+  // execute — no observed run above it — falls back to the module registry,
+  // which is where the stalled-cell sweep earns its keep (OCR R5-43).
+  const registry =
+    builtinToolStepCellRegistries.getStore() ?? bareExecuteCells;
+  if (registry === bareExecuteCells) {
+    sweepStalledCells(registry, new Date());
+  }
+  // OCR R5-43: the stream side keys every event by String(event.toolCallId);
+  // the execute side normalizes too, so one call whose provider id is not a
+  // string opens ONE cell, never a second one the proposal can never meet.
+  const cell = builtinToolStepCell(registry, String(toolCallId), toolName);
+  /*
+   * The success path keeps the failure path's 2000-character precedent (OCR
+   * R2-53): a bounded capture, aligned on both sides of the settlement — the
+   * tool's full result is its product, not the observation's payload, and a
+   * large one must not be pinned whole until the recorder projects it.
+   */
+  const outputOf = (value: unknown): string | null => {
+    if (typeof value === "string") {
+      return value.slice(0, TOOL_STEP_OUTPUT_CAPTURE_CHARS);
+    }
+    try {
+      const serialized = JSON.stringify(value);
+      return serialized === null
+        ? null
+        : serialized.slice(0, TOOL_STEP_OUTPUT_CAPTURE_CHARS);
+    } catch {
+      // A result that cannot serialize carries no observation payload.
+      return null;
+    }
+  };
+  try {
+    const value = await run();
+    cell.executionObserved = true;
+    cell.receiptObserved = true;
+    cell.execution = { kind: "succeeded", output: outputOf(value) };
+    settleBuiltinToolStep(cell, "terminal");
+    return value;
+  } catch (error) {
+    if (error instanceof HeadlessToolSuspension) {
+      // Not an ending: the run's interrupt outcome settles this cell proposed.
+      throw error;
+    }
+    cell.executionObserved = true;
+    cell.receiptObserved = true;
+    const canceled = (error as { name?: unknown })?.name === "AbortError";
+    cell.execution = {
+      kind: canceled ? "canceled" : "failed",
+      // A cancellation needs no payload — the kind says everything. A failure keeps
+      // its bounded message for the recorder to project.
+      output: canceled
+        ? null
+        : error instanceof Error
+          ? error.message.slice(0, TOOL_STEP_OUTPUT_CAPTURE_CHARS)
+          : null,
+    };
+    settleBuiltinToolStep(cell, "terminal");
+    throw error;
+  }
+}
+
+/** Test-only surface for the T15 observation bypass, on the T14 `meteredModelForTests` pattern. */
+export const toolStepObservationForTests = {
+  observeStream: observeBuiltinToolSteps,
+  observeExecution: observeBuiltinToolExecution,
+  /** OCR R5-43 seam: runs the bare registry's stalled-cell sweep at a chosen time. */
+  sweepStalledBareCellsForTests: (now: Date) =>
+    sweepStalledCells(bareExecuteCells, now),
 };
 
 /**
@@ -781,6 +1361,168 @@ export class UnmeterableModelError extends Error {
   }
 }
 
+/*
+ * The capture-side bounds on one model span's payload (OCR R2-52/R2-53). The
+ * recorder downstream still owns redaction (deny patterns) and its own byte
+ * caps; these bounds exist so the CAPTURE itself can never pin an attachment or
+ * a whole answer alive from `doStream` entry, through the billing check, to
+ * settlement.
+ */
+
+/**
+ * The prompt capture ceiling, in UTF-16 code units (OCR R2-52): a text-only
+ * prompt is serialized per message, walk stopped at this ceiling, and the cut
+ * declared in-band. Media-bearing prompts never serialize at all.
+ */
+const SPAN_INPUT_CAPTURE_CHARS = 64 * 1024;
+
+/** The in-band declaration appended to a cut prompt capture (OCR R2-52). */
+const SPAN_INPUT_TRUNCATION_MARK =
+  "...[observation input truncated at capture]";
+
+/**
+ * The output capture ceiling (OCR R2-53): the 2000-character precedent the
+ * failure path already applies to error messages, now applied where successful
+ * output is accumulated and merged at settlement too.
+ */
+const SPAN_OUTPUT_CAPTURE_CHARS = 2_000;
+
+/**
+ * Bounded accumulation for one model-span output delta (OCR R2-53, R4-33): the
+ * delta that crosses the capture ceiling is sliced to the REMAINING capacity —
+ * the same discipline as `appendToolStepArg` — so a whole non-streamed
+ * completion emitted as one text-delta is never retained past the ceiling until
+ * settlement's join. Past the ceiling nothing is retained at all.
+ */
+function appendSpanOutputDelta(
+  deltas: string[],
+  length: number,
+  delta: string,
+): number {
+  const capacity = SPAN_OUTPUT_CAPTURE_CHARS - length;
+  if (capacity <= 0) return length;
+  if (delta.length > capacity) {
+    deltas.push(delta.slice(0, capacity));
+    return SPAN_OUTPUT_CAPTURE_CHARS;
+  }
+  deltas.push(delta);
+  return length + delta.length;
+}
+
+/** The accumulator seam for tests, on the `meteredModelForTests` precedent. */
+export const appendSpanOutputDeltaForTests = appendSpanOutputDelta;
+
+/**
+ * Whether one prompt message is provably text-only (OCR R2-52). A string, or an
+ * array whose every part is a plain `{ type: "text", text }` shape, is text;
+ * anything else — image, file, tool part, an unknown shape — means the prompt
+ * may carry inline attachment bytes, and the capture goes metrics-only rather
+ * than serialize what it cannot prove is text. Conservative by design: the
+ * denial is per-prompt, and a span's usage metrics never depend on it.
+ */
+function spanPromptIsTextOnly(message: unknown): boolean {
+  if (!message || typeof message !== "object") return false;
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") return true;
+  if (!Array.isArray(content)) return false;
+  return content.every(
+    (part) =>
+      part !== null &&
+      typeof part === "object" &&
+      (part as { type?: unknown }).type === "text" &&
+      typeof (part as { text?: unknown }).text === "string",
+  );
+}
+
+/**
+ * One message serialized within a character budget: the text is sliced BEFORE
+ * serialization, so no transient allocation ever exceeds what the capture keeps
+ * (OCR R2-52 — the point is that a 43MB attachment's neighbor, a 40MB single
+ * text message, never materializes as a string either). `cut.value` reports
+ * whether anything was left behind.
+ */
+function spanMessagePiece(
+  message: unknown,
+  remaining: number,
+  cut: { value: boolean },
+): string {
+  const source = message as { role?: unknown; content?: unknown };
+  if (typeof source.content === "string") {
+    const kept = source.content.slice(0, remaining);
+    if (kept.length < source.content.length) cut.value = true;
+    return JSON.stringify({ role: source.role, content: kept });
+  }
+  let budget = remaining;
+  const parts = (source.content as unknown[]).map((part) => {
+    const text = (part as { text?: unknown })?.text;
+    if (typeof text !== "string" || budget <= 0)
+      return { type: "text", text: "" };
+    const kept = text.slice(0, budget);
+    budget -= kept.length;
+    if (kept.length < text.length) cut.value = true;
+    return { type: "text", text: kept };
+  });
+  return JSON.stringify({ role: source.role, content: parts });
+}
+
+/**
+ * The capture-side view of one call's prompt (OCR R2-52): `null` for any prompt
+ * that is not provably text-only (metrics-only — attachment bytes never enter
+ * this module), and a per-message serialization cut at
+ * `SPAN_INPUT_CAPTURE_CHARS` with an in-band truncation mark otherwise. The
+ * reconstruction is bounded per message, so the walk's allocations stay within
+ * the capture ceiling no matter how large the prompt is.
+ */
+function spanInputOf(params: unknown): string | null {
+  const prompt = (params as { prompt?: unknown })?.prompt;
+  if (!Array.isArray(prompt)) {
+    /*
+     * Outside the message-array shape the only provably-text prompt is a bare
+     * string: sliced BEFORE serialization (OCR R2-52's own rule — the fallback
+     * used to stringify the whole prompt first, so a 40MB custom-provider
+     * prompt materialized whole in a transient allocation the capture never
+     * kept), then ceiling-checked against quoting overhead. Anything else —
+     * an object, a number, an absent prompt — cannot be proven text-only, so
+     * it is metrics-only null: this module never serializes what it cannot
+     * bound first, exactly like every media-carrying message-array shape.
+     */
+    if (typeof prompt !== "string") return null;
+    let body = JSON.stringify(prompt.slice(0, SPAN_INPUT_CAPTURE_CHARS));
+    const cut =
+      prompt.length > SPAN_INPUT_CAPTURE_CHARS ||
+      body.length > SPAN_INPUT_CAPTURE_CHARS;
+    if (body.length > SPAN_INPUT_CAPTURE_CHARS) {
+      // Escaping overhead can push the serialized kept text past the ceiling;
+      // the capture bound wins, and the mark declares the cut.
+      body = body.slice(0, SPAN_INPUT_CAPTURE_CHARS);
+    }
+    return cut ? body + SPAN_INPUT_TRUNCATION_MARK : body;
+  }
+  const pieces: string[] = [];
+  let length = 0;
+  const cut = { value: false };
+  for (const message of prompt) {
+    if (!spanPromptIsTextOnly(message)) return null;
+    const remaining = SPAN_INPUT_CAPTURE_CHARS - length;
+    if (remaining <= 0) {
+      cut.value = true;
+      break;
+    }
+    const piece = spanMessagePiece(message, remaining, cut);
+    pieces.push(piece);
+    length += piece.length;
+  }
+  let body = `[${pieces.join(",")}]`;
+  if (body.length > SPAN_INPUT_CAPTURE_CHARS) {
+    // JSON quoting and escaping overhead can push a piece past its character
+    // budget; the ceiling is enforced on the assembled capture, so the tail is
+    // cut here and the mark declares it.
+    body = body.slice(0, SPAN_INPUT_CAPTURE_CHARS);
+    cut.value = true;
+  }
+  return cut.value ? body + SPAN_INPUT_TRUNCATION_MARK : body;
+}
+
 /**
  * A model instance carrying the billing admission and settlement, hand-rolled to the same
  * shape AI SDK's own `wrapLanguageModel` produces: `doStream` delegates to the wrapped model
@@ -811,6 +1553,72 @@ function meteredModel<T>(
       const occurredAt = new Date();
       let lifecycle: ModelUsageGateLifecycle | undefined;
       /*
+       * The model-span observation bypass (Issue #20): reads this call's verdict AFTER
+       * the metered path reaches it — never in front of a settlement decision, never a
+       * second provider call. Wired at assembly like the meter; absent, none of the
+       * capture below runs at all.
+       */
+      const spanObserver = builtinModelSpanObserver;
+      let spanInput: string | null = null;
+      /*
+       * OCR R5-47: the observation side's own "verdict on record" flag, set
+       * INSIDE `reportSpan` the moment a span is actually emitted — never
+       * borrowed from `settled`, which the settlement paths claim BEFORE their
+       * awaitable work. settleFinish sets `settled`, then awaits
+       * `lifecycle.finish`; when that await rejects, the settlement-failure
+       * exit used to read the borrowed flag as "already reported" and the call
+       * produced ZERO spans (the pre-V5 single settlement_failed span was
+       * swallowed). First report wins: a second reportSpan call is the
+       * contradiction the R4-32 guard exists to prevent, and the flag now
+       * tells the truth about which one happened.
+       */
+      let spanReported = false;
+      // Captured at entry, inside the request's context (the tool-step cell's own
+      // discipline): by stream teardown the ambient context is not guaranteed.
+      const spanTrace =
+        spanObserver !== undefined ? (currentTraceContext() ?? null) : null;
+      // Captured at entry for the same reason as the trace (OCR R2-58): the
+      // settlement that reports this fact can land after teardown, where the
+      // ambient scope is no longer guaranteed to exist — so the fact carries
+      // what its entry saw, and the adapter reads the carried value.
+      const spanScope =
+        spanObserver !== undefined ? currentRunObservationScope() : undefined;
+      /*
+       * Output deltas accumulate into an array joined once at report time — linear,
+       * where repeated string concatenation would re-copy on every delta (T14 review
+       * minor b) — and the accumulation itself stops at the capture ceiling (OCR
+       * R2-53): deltas past it are counted by the provider, not retained by us.
+       */
+      const spanOutputDeltas: string[] = [];
+      let spanOutputLength = 0;
+      if (spanObserver !== undefined) {
+        spanInput = spanInputOf(params);
+      }
+      const reportSpan = (ending: BuiltinModelSpanFact["ending"]) => {
+        if (spanObserver === undefined || spanReported) return;
+        spanReported = true;
+        try {
+          spanObserver({
+            eventId,
+            startedAt: occurredAt,
+            endedAt: new Date(),
+            provider:
+              typeof inner.provider === "string" ? inner.provider : undefined,
+            modelId: typeof inner.modelId === "string" ? inner.modelId : null,
+            ending,
+            input: spanInput,
+            output:
+              spanOutputDeltas.length === 0
+                ? null
+                : spanOutputDeltas.join("").slice(0, SPAN_OUTPUT_CAPTURE_CHARS),
+            scope: spanScope,
+            trace: spanTrace,
+          });
+        } catch {
+          // Observation never takes the product path down.
+        }
+      };
+      /*
        * The credit gate, BEFORE the first token: this is the one point every built-in Bot's
        * model call passes through (the same reason the meter lives here), and "before the
        * call" is the only place a refusal saves the cost. The gate itself is index.ts's — it
@@ -823,8 +1631,7 @@ function meteredModel<T>(
           lifecycle = await modelUsageGate({
             eventId,
             occurredAt,
-            modelId:
-              typeof inner.modelId === "string" ? inner.modelId : null,
+            modelId: typeof inner.modelId === "string" ? inner.modelId : null,
             client: currentUsageOrigin(),
             attribution: {
               userId: attribution?.userId ?? null,
@@ -850,6 +1657,13 @@ function meteredModel<T>(
               userId: attribution?.userId ?? null,
               fallback: "none",
             });
+            reportSpan({
+              kind: "refused",
+              code:
+                typeof (error as { code?: unknown })?.code === "string"
+                  ? (error as { code: string }).code
+                  : "admission_refused",
+            });
             throw error;
           }
           // The gate's own failure reason stays out of the person-facing sentinel; the
@@ -862,6 +1676,7 @@ function meteredModel<T>(
             },
             "billing-model-gate-failed",
           );
+          reportSpan({ kind: "refused", code: "credit_gate_failed" });
           throw new CreditGateFailureError();
         }
       }
@@ -887,6 +1702,7 @@ function meteredModel<T>(
         } catch {
           // Admission cleanup is contained: the refusal is the product failure.
         }
+        reportSpan({ kind: "refused", code });
         throw new ModelUsageRefusalError(code);
       };
       let request = params;
@@ -937,9 +1753,8 @@ function meteredModel<T>(
         if (cap > BigInt(Number.MAX_SAFE_INTEGER)) {
           return refuse("output_bound_unsupported");
         }
-        const requested = (
-          params as { maxOutputTokens?: unknown }
-        ).maxOutputTokens;
+        const requested = (params as { maxOutputTokens?: unknown })
+          .maxOutputTokens;
         const effective =
           typeof requested === "number" &&
           Number.isSafeInteger(requested) &&
@@ -965,6 +1780,8 @@ function meteredModel<T>(
         } catch {
           // Admission cleanup is contained: the provider failure is the product failure.
         }
+        // This exit predates the stream, so settleFail never runs here.
+        reportSpan({ kind: "failed", code: "provider_error" });
         throw error;
       }
 
@@ -1008,6 +1825,13 @@ function meteredModel<T>(
         } catch {
           // A meter that throws (or rejects) must not take the run's last chunk down with it.
         }
+        // The bypass observes last: durable finish, then meter, then this fact — the
+        // usage is the settlement's own committed number, copied, never recomputed.
+        reportSpan({
+          kind: "succeeded",
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+        });
       };
       const settleFail = async (
         reason: ModelUsageFailureReason,
@@ -1024,6 +1848,28 @@ function meteredModel<T>(
           });
         } catch {
           // Release failures stay contained: the hold's own expiry is the backstop.
+        }
+        // The bypass maps the failure verdict the metered path just reached. Half-
+        // reported usage stays usage_missing — the observed half is billing evidence
+        // above, never a span usage number (a reported half is not a known whole).
+        switch (reason) {
+          case "no_usage":
+            // The provider confirmed a zero-cost completion: an actual 0/0, not missing.
+            reportSpan({ kind: "succeeded", inputTokens: 0, outputTokens: 0 });
+            break;
+          case "usage_missing":
+            reportSpan({ kind: "usage_missing" });
+            break;
+          case "cancelled":
+            reportSpan({ kind: "canceled" });
+            break;
+          case "bound_refused":
+            reportSpan({ kind: "refused", code: reason });
+            break;
+          case "provider_error":
+          case "stream_error":
+            reportSpan({ kind: "failed", code: reason });
+            break;
         }
       };
 
@@ -1047,6 +1893,21 @@ function meteredModel<T>(
           }
 
           const part = chunk.value;
+          // Read-only output accumulation for the observation bypass: the delta is
+          // forwarded untouched below; this only remembers what already flowed past,
+          // up to the capture ceiling (OCR R2-53, R4-33) — the delta that crosses
+          // it is cut to the remaining capacity, and past it nothing is retained.
+          if (
+            spanObserver !== undefined &&
+            part?.type === "text-delta" &&
+            typeof (part as { delta?: unknown }).delta === "string"
+          ) {
+            spanOutputLength = appendSpanOutputDelta(
+              spanOutputDeltas,
+              spanOutputLength,
+              (part as { delta: string }).delta,
+            );
+          }
           /**
            * The one settlement-failure exit: mark settled, log by eventId, tear the
            * upstream down, error the stream. Cancel — not just `releaseLock` — so the
@@ -1057,6 +1918,19 @@ function meteredModel<T>(
             error: ModelUsageSettlementError,
             detail?: Record<string, unknown>,
           ) => {
+            /*
+             * Captured BEFORE claiming the flag (OCR R4-32): a settlement path
+             * that already reported this call's terminal fact — settleFinish or
+             * settleFail, both of which report through `reportSpan` — must not be
+             * contradicted by a second span from here. The readout is the span
+             * flag itself (OCR R5-47), not `settled`: settleFinish claims
+             * `settled` before awaiting a finish that can REJECT, and a rejected
+             * finish has reported nothing — this exit is the only span that call
+             * will ever have. The teardown below still runs in every case: a pull
+             * that cannot settle must still tear the upstream down and error the
+             * stream.
+             */
+            const alreadyReported = spanReported;
             settled = true;
             log.error({ type: logType, eventId, ...detail }, logType);
             /*
@@ -1093,6 +1967,13 @@ function meteredModel<T>(
             reader.cancel("settlement_failed").catch(() => {
               // The upstream is already gone; nothing to recover.
             });
+            // A settlement failure is never a success span: the verdict this call
+            // reached is a failure-terminal fact, observed after the teardown decision.
+            // An already-settled call has its verdict on record (R4-32): this exit
+            // adds only the teardown, never a second, contradicting report.
+            if (!alreadyReported) {
+              reportSpan({ kind: "settlement_failed", code: error.code });
+            }
             controller.error(error);
           };
           if (part?.type === "finish" && !settled) {
@@ -1121,8 +2002,12 @@ function meteredModel<T>(
               // with the failure, so the evidence row records what arrived, not zeros — with
               // keys only for what did arrive, absent like every other settleFail site.
               await settleFail("usage_missing", {
-                ...(reportedInput !== undefined && { inputTokens: reportedInput }),
-                ...(reportedOutput !== undefined && { outputTokens: reportedOutput }),
+                ...(reportedInput !== undefined && {
+                  inputTokens: reportedInput,
+                }),
+                ...(reportedOutput !== undefined && {
+                  outputTokens: reportedOutput,
+                }),
               });
             }
             const validInput =
@@ -1363,13 +2248,18 @@ export function builtInAgentConfiguration(
             tools: allTools.map((tool) => ({
               ...tool,
               execute: (args: unknown, execution?: { toolCallId?: string }) =>
-                executeNativeApprovalTool(
+                observeBuiltinToolExecution(
                   tool.name,
-                  args,
                   execution?.toolCallId,
-                  tools.find((granted) => granted.name === tool.name)
-                    ?.initiator,
-                  () => tool.execute(args),
+                  () =>
+                    executeNativeApprovalTool(
+                      tool.name,
+                      args,
+                      execution?.toolCallId,
+                      tools.find((granted) => granted.name === tool.name)
+                        ?.initiator,
+                      () => tool.execute(args),
+                    ),
                 ),
             })),
             maxSteps: TOOL_STEPS,
@@ -1496,12 +2386,18 @@ export function builtInAgentConfiguration(
           tools: allTools.map((tool) => ({
             ...tool,
             execute: (args: unknown, execution?: { toolCallId?: string }) =>
-              executeNativeApprovalTool(
+              observeBuiltinToolExecution(
                 tool.name,
-                args,
                 execution?.toolCallId,
-                tools.find((granted) => granted.name === tool.name)?.initiator,
-                () => tool.execute(args),
+                () =>
+                  executeNativeApprovalTool(
+                    tool.name,
+                    args,
+                    execution?.toolCallId,
+                    tools.find((granted) => granted.name === tool.name)
+                      ?.initiator,
+                    () => tool.execute(args),
+                  ),
               ),
           })),
           maxSteps: TOOL_STEPS,
@@ -1583,6 +2479,16 @@ export async function buildAgents(
   attribution?: { userId: string | null },
   /** The resolved gateway dial for this build. See {@link builtInAgentConfiguration}. */
   gatewayModel?: WorkbenchGatewayModelDial | null,
+  /**
+   * The run-scope threading for the builtin path (T-final M1), at the actor
+   * level. Built per Bot below — each agent gets its own botId — and handed to
+   * every construction of that Bot, so the threading survives the per-request
+   * rebuilds and the runtime's clones. Absent means facts stay scope-less.
+   */
+  observation?: {
+    actorId: string;
+    resolveScope: (botId: string) => Promise<unknown>;
+  },
 ): Promise<Record<string, AbstractAgent>> {
   let vendors: readonly string[] = [];
   try {
@@ -1642,6 +2548,13 @@ export async function buildAgents(
           governedModel,
           attribution,
           gatewayModel,
+          observation && agent.type === "built_in"
+            ? {
+                actorId: observation.actorId,
+                botId: agent.id,
+                resolveScope: observation.resolveScope,
+              }
+            : undefined,
         );
         if (loadPersonalMemory && !(built instanceof UnavailableAgent))
           built.use(new PersonalMemoryMiddleware(agent.id, loadPersonalMemory));
@@ -1910,6 +2823,12 @@ async function buildAgent(
   attribution?: { userId: string | null },
   /** The resolved gateway dial for this build. See {@link builtInAgentConfiguration}. */
   gatewayModel?: WorkbenchGatewayModelDial | null,
+  /**
+   * The run-scope threading for the builtin path (T-final M1), built per Bot
+   * by {@link buildAgents} from the actor-level threading it was handed.
+   * Absent means facts stay scope-less — the recorders submit nothing.
+   */
+  observation?: BuiltinRunObservationThreading,
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
@@ -2028,6 +2947,7 @@ async function buildAgent(
       ),
       loadAttachment,
       markAttachmentsSent,
+      observation,
     );
 
   const whole = withTools(granted);
@@ -2648,6 +3568,129 @@ class CloningRemoteAgent extends AbstractAgent {
  * `interruptId` AFTER converting the messages, so a call that a resume is about to answer must
  * survive this pass or the appended result lands on nothing.
  */
+/**
+ * The trusted observation-scope threading for the builtin path (T-final M1).
+ *
+ * What the boot wiring hands each builtin agent when the deployment carries an
+ * observation face: WHOSE run this is, and how to mint the trusted scope for a
+ * bot at run start. Deliberately structural — the resolved scope stays
+ * `unknown` here because this module must not depend on the observability
+ * module a deployment may not have; the wiring that supplies the resolver is
+ * the same wiring that reads the scope back at the recorders, so the two ends
+ * agree without a type-level coupling.
+ */
+export type BuiltinRunObservationThreading = Readonly<{
+  /** The authenticated actor whose run this is (never a wire value). */
+  actorId: string;
+  /** The Bot being threaded — carried because BuiltInAgent's own agentId is unset. */
+  botId: string;
+  /**
+   * Mints the trusted scope for one bot, asked once per run so the epoch is
+   * live. MUST answer null on any refusal — disabled, non-manager, failed read
+   * — and never throw: a failed resolution is a scope-less run, not a failed
+   * one. The production resolver is `createBuiltinRunScopeResolver`.
+   */
+  resolveScope: (botId: string) => Promise<unknown>;
+}>;
+
+/**
+ * Subscribe a builtin run's event stream inside the run's ambient observation
+ * scope (T-final M1). The scope is minted per subscription — a retried run
+ * re-asks, so a transfer or revocation lands on the very next run — and every
+ * fact the run emits (model spans, tool steps, retrievals) reads it back
+ * through `currentRunObservationScope`. A null resolution subscribes bare:
+ * scope-less facts, which the recorders submit nowhere.
+ *
+ * The wrapping is at SUBSCRIBE time, not construction time, because the run
+ * only begins when somebody listens: RxJS executes the pipeline under the
+ * subscribe call's async context, so establishing the store there covers the
+ * whole execution tree — stream taps, provider doStream, tool executes.
+ */
+/*
+ * The structural bound on a scope resolution (OCR R5-42): a resolver that
+ * never answers cannot hold the run's subscription hostage, so the wait is
+ * raced against this ceiling and a timed-out resolution proceeds as the same
+ * scope-less run every other failed resolution produces. Generous enough for
+ * the wiring's two DB round trips; overridable for tests.
+ */
+let builtinScopeResolutionTimeoutMs = 5_000;
+
+/** Test seam for the scope-resolution timeout (OCR R5-42). */
+export function builtinScopeResolutionTimeoutForTests(ms: number): void {
+  builtinScopeResolutionTimeoutMs = ms;
+}
+
+export function builtinRunUnderObservationScope(
+  threading: BuiltinRunObservationThreading | undefined,
+  botId: string,
+  inner: Observable<BaseEvent>,
+): Observable<BaseEvent> {
+  if (!threading) return inner;
+  /*
+   * OCR R4-34: the resolver's contract — "null on any refusal, never throw" —
+   * was JSDoc only; a rejection or a synchronous throw used to error the whole
+   * observable and end the builtin run, an observation failure taking the
+   * product down. Contained here as structure (A10's discipline, which every
+   * other observer call in this file already keeps): a failed resolution is a
+   * scope-less run, logged with the actor and bot, never a failed one. The
+   * async wrapper is what turns a synchronous throw into the same handled
+   * rejection — the resolver's body never gets to unwind into the stream.
+   *
+   * OCR R5-42: rejection and null were contained, but a resolver whose promise
+   * NEVER settles still held the defer pending forever — switchMap never
+   * subscribed the inner and the run never started at all (the wiring's own
+   * resolver chains two unbounded DB round trips). A resolution that cannot
+   * answer in time is the same "failed resolution = a scope-less run" by
+   * structure: the race below bounds the wait, then proceeds bare, logged like
+   * every other resolution failure. The losing promise stays handled by the
+   * race (no unhandled rejection), and the timer is cleared the moment the
+   * race settles so a resolved scope never keeps the loop alive.
+   */
+  return defer(async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        Promise.resolve(threading.resolveScope(botId)),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => {
+            log.warn(
+              {
+                type: "builtin-run-scope-resolution-failed",
+                actorId: threading.actorId,
+                botId,
+                timedOut: true,
+              },
+              "builtin-run-scope-resolution-failed",
+            );
+            resolve(null);
+          }, builtinScopeResolutionTimeoutMs);
+        }),
+      ]);
+    } catch (error) {
+      log.warn(
+        {
+          type: "builtin-run-scope-resolution-failed",
+          actorId: threading.actorId,
+          botId,
+          name: (error as Error | null | undefined)?.name,
+        },
+        "builtin-run-scope-resolution-failed",
+      );
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }).pipe(
+    switchMap((scope) =>
+      scope === null || scope === undefined
+        ? inner
+        : new Observable<BaseEvent>((subscriber) =>
+            withRunObservationScope(scope, () => inner.subscribe(subscriber)),
+          ),
+    ),
+  );
+}
+
 class BuiltInAgentWithSaneHistory extends BuiltInAgent {
   /**
    * The configuration, held a second time because the base class keeps its own copy private and
@@ -2667,16 +3710,24 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
    * of THIS class, and a seam lost in a clone is a seam that never runs.
    */
   private readonly markAttachmentsSent: MarkAttachmentsSent | undefined;
+  /**
+   * The run-scope threading (T-final M1), held for the same clone reason as
+   * everything else here: absent means facts stay scope-less, present means
+   * every run of this Bot executes under its own trusted scope.
+   */
+  private readonly observation: BuiltinRunObservationThreading | undefined;
 
   constructor(
     configuration: BuiltInAgentConfiguration,
     loadAttachment?: LoadAttachment,
     markAttachmentsSent?: MarkAttachmentsSent,
+    observation?: BuiltinRunObservationThreading,
   ) {
     super(configuration);
     this.configuration = configuration;
     this.loadAttachment = loadAttachment;
     this.markAttachmentsSent = markAttachmentsSent;
+    this.observation = observation;
   }
 
   run(input: RunAgentInput): Observable<BaseEvent> {
@@ -2685,6 +3736,11 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
     );
     const history = sanitizeSeededHistory(input.messages, answeredByResume);
     const load = this.loadAttachment;
+    const observation = this.observation;
+    const observed = (inner: Observable<BaseEvent>) =>
+      observation
+        ? builtinRunUnderObservationScope(observation, observation.botId, inner)
+        : inner;
     /*
      * ALONGSIDE THE GUARD ABOVE, NOT INSTEAD OF IT. One drops a conversation the model provider is
      * going to refuse; this replaces the stored reference a person's attachment arrives as with the
@@ -2695,27 +3751,35 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
      * this existed.
      */
     if (!load)
-      return nativeApprovalRun({ ...input, messages: history }, () =>
-        observeModelConnection(super.run({ ...input, messages: history })),
+      return observed(
+        nativeApprovalRun({ ...input, messages: history }, () =>
+          observeModelConnection(
+            observeBuiltinToolSteps(super.run({ ...input, messages: history })),
+          ),
+        ),
       );
     /*
      * Deferred, because `run` has to answer with a stream straight away and reading the bytes is a
      * database round trip. `defer` puts that read on the subscription, which is where the run
      * actually begins, so nothing is fetched until somebody is listening.
      */
-    return defer(() =>
-      from(
-        inlineAttachments(
-          history,
-          load,
-          // As above: the run's own conversation, not the actor's channels at large.
-          input.threadId,
-          this.markAttachmentsSent,
-        ),
-      ).pipe(
-        switchMap((messages) =>
-          nativeApprovalRun({ ...input, messages }, () =>
-            observeModelConnection(super.run({ ...input, messages })),
+    return observed(
+      defer(() =>
+        from(
+          inlineAttachments(
+            history,
+            load,
+            // As above: the run's own conversation, not the actor's channels at large.
+            input.threadId,
+            this.markAttachmentsSent,
+          ),
+        ).pipe(
+          switchMap((messages) =>
+            nativeApprovalRun({ ...input, messages }, () =>
+              observeModelConnection(
+                observeBuiltinToolSteps(super.run({ ...input, messages })),
+              ),
+            ),
           ),
         ),
       ),
@@ -2737,6 +3801,7 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
       this.configuration,
       this.loadAttachment,
       this.markAttachmentsSent,
+      this.observation,
     );
     type WithMiddlewares = { middlewares: unknown[] };
     (cloned as unknown as WithMiddlewares).middlewares = [
@@ -2926,11 +3991,21 @@ export async function resolveRuntimeAgents(
    */
   governedModel?: GovernedModelRequest,
   /**
+  /**
    * Who this build's runs are for, so the consumption facts name the initiator (09.1). Handed to
    * every built-in Bot's model wrapper; absent when the caller had no actor, which the usage fact
    * then records as a named null rather than a guess.
    */
   attribution?: { userId: string | null },
+  /**
+   * The run-scope threading for the builtin path (T-final M1), at the actor
+   * level — passed through to {@link buildAgents}, which narrows it per Bot.
+   * Appended last for the positional reason every collaborator here carries.
+   */
+  observation?: {
+    actorId: string;
+    resolveScope: (botId: string) => Promise<unknown>;
+  },
 ): Promise<Record<string, AbstractAgent>> {
   const all = await loadAgents();
   if (all.length === 0) {
@@ -2985,6 +4060,7 @@ export async function resolveRuntimeAgents(
     governedModel,
     attribution,
     gatewayModelDial,
+    observation,
   );
 }
 

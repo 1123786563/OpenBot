@@ -94,6 +94,16 @@ export type ActorAgentResolverDependencies = {
   acquireLearnedSkills?: AcquireLearnedSkills;
   loadPersonalMemoryForActor?: (actorId: string) => LoadPersonalMemory;
   loadKnowledgeForActor?: (actorId: string) => LoadKnowledgeForBot;
+  /**
+   * The builtin run's trusted observation-scope resolver (T-final M1). Handed
+   * through to the builtin agents, which ask it once per run; a null answer
+   * keeps that run's facts scope-less. Absent means no threading at all — the
+   * same inert footing the observation recorders keep when unregistered.
+   */
+  resolveRunObservationScope?: (
+    actor: AgentActor,
+    botId: string,
+  ) => Promise<unknown>;
 };
 
 /**
@@ -117,8 +127,24 @@ export function createActorAgentResolver(
      */
     onlyAgentId?: string,
     context?: AgentResolutionContext,
-  ) =>
-    resolveRuntimeAgents(
+  ) => {
+    // The builtin run's observation-scope threading (T-final M1), forwarded
+    // AT LAST: the resolver the boot assembly injected is closed over the
+    // asking actor and handed down as the trailing observation argument, so
+    // every builtin agent this build constructs asks it once per run, at
+    // subscribe time. A refused resolution answers null and that run's facts
+    // stay scope-less — the same inert footing a build without the injection
+    // keeps. Captured in a local first so the narrowed type survives into the
+    // closure the threading carries.
+    const resolveRunObservationScope = deps.resolveRunObservationScope;
+    const observation = resolveRunObservationScope
+      ? {
+          actorId: actor.id,
+          resolveScope: (botId: string) =>
+            resolveRunObservationScope(actor, botId),
+        }
+      : undefined;
+    return resolveRuntimeAgents(
       () => Promise.resolve(registered),
       deps.model,
       deps.resolveModelApiKey,
@@ -142,7 +168,9 @@ export function createActorAgentResolver(
       // The consumption attribution (09.1): who this build's runs are for. The Bot half is each
       // agent's own id, known where the model wrapper is built; the person is known here.
       { userId: actor.id },
+      observation,
     );
+  };
 
   const resolveAgentsForActor = async (actor: AgentActor) =>
     resolveRegisteredAgents(actor, await deps.loadAgents(actor));

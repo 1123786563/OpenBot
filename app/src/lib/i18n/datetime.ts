@@ -30,8 +30,19 @@ export function useDateTime() {
       value: Date | string | number,
       options?: Intl.DateTimeFormatOptions,
     ) => new Date(value).toLocaleString(locale, options),
-    formatNumber: (value: number, options?: Intl.NumberFormatOptions) =>
-      value.toLocaleString(locale, options),
+    /*
+     * A count the store did not answer is the em dash, never a crash and never a
+     * disguised zero: an undefined/nan reaching this seam (a guard that missed a
+     * key, an arithmetic hole) used to throw `undefined.toLocaleString` or print
+     * "NaN" (OCR round 2, R2-05).
+     */
+    formatNumber: (
+      value: number | null | undefined,
+      options?: Intl.NumberFormatOptions,
+    ) =>
+      typeof value === "number" && Number.isFinite(value)
+        ? value.toLocaleString(locale, options)
+        : "—",
     formatRelative: (value: Date | string | number) =>
       formatRelativeTime(new Date(value), locale),
   };

@@ -13,14 +13,14 @@
  * and `OPENBOT_TRACES=off` disables the whole thing with an endpoint still set.
  */
 import {
-  diag,
-  DiagConsoleLogger,
-  DiagLogLevel,
   type Context,
   context,
+  DiagConsoleLogger,
+  DiagLogLevel,
+  diag,
   propagation,
-  trace,
   SpanStatusCode,
+  trace,
 } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
@@ -72,6 +72,21 @@ export function currentTraceId(): string | undefined {
   const spanContext = trace.getSpan(context.active())?.spanContext();
   return spanContext && trace.isSpanContextValid(spanContext)
     ? spanContext.traceId
+    : undefined;
+}
+
+/**
+ * The active span's full W3C coordinates — trace id AND span id — or undefined when
+ * nothing valid is active. The span id is what an observation captures so a step span
+ * recorded after the fact can still parent under the span whose context it ran in
+ * (the cross-service chain's server-side half, Issue #23/T17).
+ */
+export function currentTraceContext():
+  | { traceId: string; spanId: string }
+  | undefined {
+  const spanContext = trace.getSpan(context.active())?.spanContext();
+  return spanContext && trace.isSpanContextValid(spanContext)
+    ? { traceId: spanContext.traceId, spanId: spanContext.spanId }
     : undefined;
 }
 
