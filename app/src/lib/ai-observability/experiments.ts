@@ -170,6 +170,51 @@ function isExperimentResultsBody(
   // is not a fact to fall back to, so it is claimed here (OCR round 2, R2-09).
   if (typeof body.execution.state !== "string") return false;
   /*
+   * The execution projection's own record row (OCR round 4, R4-3): the page reads
+   * seven facts off it — the state above, plus the error code, the case base, the
+   * tool-rejection count, both timestamps, and the frozen-configuration hash it
+   * prints beside the result link. Each is claimed with the same null semantics
+   * the page's `=== null` checks promise: a missing errorCode/caseCount/timestamp
+   * used to slip past the null check and render `undefined` (or an invalid date)
+   * as if it were a fact. `id` and `createdAt` stay unclaimed on purpose — the
+   * page never reads them; the claims are one-to-one with the render face.
+   */
+  if (
+    body.execution.errorCode !== null &&
+    typeof body.execution.errorCode !== "string"
+  ) {
+    return false;
+  }
+  if (
+    body.execution.caseCount !== null &&
+    typeof body.execution.caseCount !== "number"
+  ) {
+    return false;
+  }
+  if (typeof body.execution.toolRejections !== "number") return false;
+  if (
+    body.execution.startedAt !== null &&
+    typeof body.execution.startedAt !== "string"
+  ) {
+    return false;
+  }
+  if (
+    body.execution.settledAt !== null &&
+    typeof body.execution.settledAt !== "string"
+  ) {
+    return false;
+  }
+  if (typeof body.execution.experimentConfigHash !== "string") return false;
+  /*
+   * The scorer version the record row names (OCR round 4, R4-5): the page's
+   * `=== null` check sends a missing version to the versioned sentence, where
+   * `undefined` would interpolate as an empty fact — the null-or-string promise
+   * is claimed, so the honest "unavailable" sentence is the only alternative.
+   */
+  if (body.scorerVersion !== null && typeof body.scorerVersion !== "string") {
+    return false;
+  }
+  /*
    * The OCR round 1 review: the page calls `.toFixed(2)` on the mean and on every
    * sample score after only a `=== null` check, so an undefined slips through to a
    * TypeError — a number-or-null promise the summary and each sample must keep. The
@@ -184,6 +229,22 @@ function isExperimentResultsBody(
     return false;
   }
   if (typeof body.summary.sampleBase !== "number") return false;
+  /*
+   * The seven class counts (OCR round 4, R4-0): the summary ledger interpolates
+   * every class's number beside its name, so a count that lost its number renders
+   * `undefined` as a statistic — each of the seven is a promise the body keeps.
+   */
+  for (const countField of [
+    "scored",
+    "inProgress",
+    "executionFailed",
+    "scoringFailed",
+    "cancelled",
+    "pendingReconciliation",
+    "syncFailure",
+  ] as const) {
+    if (typeof body.summary[countField] !== "number") return false;
+  }
   if (!Array.isArray(body.samples)) return false;
   for (const sample of body.samples) {
     if (!isRecord(sample) || !isRecord(sample.reason)) return false;
@@ -208,6 +269,17 @@ function isExperimentResultsBody(
           return false;
         }
       }
+    } else {
+      /*
+       * Every non-scored reason's sentence is its code (OCR round 4, R4-2): the
+       * page joins `reason.code` into the row text, so a reason that lost its code
+       * rendered `undefined` as a fact. The class word itself is claimed too — it
+       * is the discriminator the page branches on; a reason without one is not a
+       * branch to guess. Both are string claims, not closed sets: a newer code is
+       * text the row shows, the same discipline as the sample's class above.
+       */
+      if (typeof sample.reason.class !== "string") return false;
+      if (typeof sample.reason.code !== "string") return false;
     }
   }
   return true;

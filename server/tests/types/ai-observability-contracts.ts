@@ -19,7 +19,10 @@
  *     R2-40 list projection (projectJobListItem <-> ExportJobListItem), both directions;
  *   - the R2-56 datasets mirror, where the server now imports the shared types outright
  *     (the import IS the anti-drift; these assertions pin the alias spelling too);
- *   - the R2-57 experiments mirror's known seam: the in_progress sample reason's `state`.
+ *   - the R2-57 experiments mirror's known seam: the in_progress sample reason's `state`;
+ *   - R4-39: the experiments mirror whole — the seven-class vocabulary, the T26 rule
+ *     row and its reason words, the T28 codes and report, and the T29 compatibility
+ *     ledger, each pinned both directions between the server sources and shared.
  */
 
 import type {
@@ -31,18 +34,58 @@ import type {
   CaseFragmentInput,
   FrozenDatasetCase,
 } from "../../../shared/ai-observability-datasets";
-import type { ExperimentSampleReason } from "../../../shared/ai-observability-experiments";
+import type {
+  EXPERIMENT_COMPATIBILITY_FIELDS,
+  EXPERIMENT_SAMPLE_CLASSES,
+  ExperimentCompatibilityEntry,
+  ExperimentCompatibilityField,
+  ExperimentReconciliationCode,
+  ExperimentResultsReport,
+  ExperimentRuleErrorCode,
+  ExperimentRuleFailReason,
+  ExperimentRuleScore,
+  ExperimentSampleClass,
+  ExperimentSampleReason,
+  ExperimentScoringFailedCode,
+} from "../../../shared/ai-observability-experiments";
 import type { AdminSummary } from "../../src/ai-observability/admin-summary";
 import type { CaseFragment } from "../../src/ai-observability/case-review";
+import type {
+  COMPATIBILITY_FIELDS,
+  CompatibilityEntry,
+  CompatibilityField,
+} from "../../src/ai-observability/comparison";
 import type { FrozenDatasetCase as ServerFrozenDatasetCase } from "../../src/ai-observability/datasets";
-import type { SampleReason } from "../../src/ai-observability/results";
+import type {
+  ReconciliationCode,
+  SAMPLE_CLASSES,
+  SampleClass,
+  SampleReason,
+  ScoringFailedCode,
+  ExperimentResultsReport as ServerExperimentResultsReport,
+} from "../../src/ai-observability/results";
 import type {
   projectJob,
   projectJobListItem,
 } from "../../src/ai-observability/routes/exports";
+import type {
+  RuleScore,
+  ScoringFailReason,
+  ScoringFailureCode,
+} from "../../src/ai-observability/scoring/rules";
 
-/** True only when A and B are mutually assignable — the same shape, by either direction. */
-type Same<A, B> = A extends B ? (B extends A ? true : false) : false;
+/**
+ * True only when A and B are mutually assignable — the same shape, by either direction.
+ *
+ * The checks are tuple-wrapped on purpose: a naked `A extends B` distributes over a
+ * union A, so a pin over two vocabularies that drifted degrades to `boolean` (some
+ * members yes, some no) instead of `false` — the assignment of `true` still checks
+ * and the pin goes hollow. R4-39 proved this on the class-union pin: one changed
+ * word fired only the tuple pins until the wrap was added. Wrapping in a 1-tuple
+ * (which is covariant, so `[A] extends [B]` iff `A extends B`) pins the WHOLE union
+ * against the WHOLE union — every word, or the pin is false.
+ */
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
 // ---------------------------------------------------------------------------
 // The admin summary (m216's original seam, fixed per R2-55: the real keys).
@@ -108,6 +151,72 @@ export type InProgressStateIsPinned = Same<
 >;
 
 // ---------------------------------------------------------------------------
+// R4-39: the experiments mirror, whole. results.ts (the T28 producer),
+// scoring/rules.ts (the T26 vocabulary) and comparison.ts (the T29 ledger) each
+// hand-draw the words the shared contract names; every one is pinned here, both
+// directions, so the shared file header's "the pages cannot drift" promise is a
+// type-checked fact and not a comment. The class/field tuples pin display order
+// too — both sides declare the order is display order, so a reordering is drift.
+// ---------------------------------------------------------------------------
+
+/** The seven-class vocabulary: the tuple (order included) and the member union. */
+export type ServerSampleClassesAreShared = Same<
+  typeof SAMPLE_CLASSES,
+  typeof EXPERIMENT_SAMPLE_CLASSES
+>;
+export type ServerSampleClassIsShared = Same<
+  SampleClass,
+  ExperimentSampleClass
+>;
+
+/** T28's scoring-failed and reconciliation codes, word for word. */
+export type ServerScoringFailedCodeIsShared = Same<
+  ScoringFailedCode,
+  ExperimentScoringFailedCode
+>;
+export type ServerReconciliationCodeIsShared = Same<
+  ReconciliationCode,
+  ExperimentReconciliationCode
+>;
+
+/** T26's rule row and its two closed reason vocabularies (failed words, error codes). */
+export type ServerRuleScoreIsShared = Same<RuleScore, ExperimentRuleScore>;
+export type ServerScoringFailReasonIsShared = Same<
+  ScoringFailReason,
+  ExperimentRuleFailReason
+>;
+export type ServerScoringFailureCodeIsShared = Same<
+  ScoringFailureCode,
+  ExperimentRuleErrorCode
+>;
+
+/** The whole per-sample reason — the discriminated union the results rows speak. */
+export type ServerSampleReasonIsShared = Same<
+  SampleReason,
+  ExperimentSampleReason
+>;
+
+/** The T28 report itself, field for field — the shared header's headline promise. */
+export type ServerResultsReportIsShared = Same<
+  ServerExperimentResultsReport,
+  ExperimentResultsReport
+>;
+
+/** T29's compatibility ledger: the field tuple (order included), member type, entry. */
+export type ServerCompatibilityFieldsAreShared = Same<
+  typeof COMPATIBILITY_FIELDS,
+  typeof EXPERIMENT_COMPATIBILITY_FIELDS
+>;
+export type ServerCompatibilityFieldIsShared = Same<
+  CompatibilityField,
+  ExperimentCompatibilityField
+>;
+export type ServerCompatibilityEntryIsShared = Same<
+  CompatibilityEntry,
+  ExperimentCompatibilityEntry
+>;
+
+// ---------------------------------------------------------------------------
 // The constants the type checker (and the runtime twin) actually evaluate.
 // ---------------------------------------------------------------------------
 
@@ -119,3 +228,15 @@ export const sharedListItemIsServer: SharedListItemIsServer = true;
 export const serverFrozenCaseIsShared: ServerFrozenCaseIsShared = true;
 export const serverFragmentIsShared: ServerFragmentIsShared = true;
 export const inProgressStateIsPinned: InProgressStateIsPinned = true;
+export const serverSampleClassesAreShared: ServerSampleClassesAreShared = true;
+export const serverSampleClassIsShared: ServerSampleClassIsShared = true;
+export const serverScoringFailedCodeIsShared: ServerScoringFailedCodeIsShared = true;
+export const serverReconciliationCodeIsShared: ServerReconciliationCodeIsShared = true;
+export const serverRuleScoreIsShared: ServerRuleScoreIsShared = true;
+export const serverScoringFailReasonIsShared: ServerScoringFailReasonIsShared = true;
+export const serverScoringFailureCodeIsShared: ServerScoringFailureCodeIsShared = true;
+export const serverSampleReasonIsShared: ServerSampleReasonIsShared = true;
+export const serverResultsReportIsShared: ServerResultsReportIsShared = true;
+export const serverCompatibilityFieldsAreShared: ServerCompatibilityFieldsAreShared = true;
+export const serverCompatibilityFieldIsShared: ServerCompatibilityFieldIsShared = true;
+export const serverCompatibilityEntryIsShared: ServerCompatibilityEntryIsShared = true;

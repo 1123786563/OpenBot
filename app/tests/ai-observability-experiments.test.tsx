@@ -962,6 +962,96 @@ describe("the fault answers stay distinct, and the route is typed-address safe (
   });
 });
 
+/*
+ * R4-0/2/3/5 (OCR round 4): the guard used to claim only the crash-prone spine,
+ * while the page reads more facts than it claimed — the seven summary class counts,
+ * the execution projection's own row, the scorer version, and every non-scored
+ * reason's code. A body missing any of them rendered `undefined` as if it were a
+ * fact; each is now a promise the body must keep, and a broken promise is the same
+ * store-did-not-answer fault as any other malformed success. Each category is
+ * pinned here missing, one at a time, over an otherwise honest report.
+ */
+describe("the round-4 guard claims the page's whole render face (OCR round 4)", () => {
+  test("a summary missing one of its seven class counts says unavailable, never `undefined` as a count (R4-0)", async () => {
+    for (const countField of [
+      "scored",
+      "inProgress",
+      "executionFailed",
+      "scoringFailed",
+      "cancelled",
+      "pendingReconciliation",
+      "syncFailure",
+    ] as const) {
+      const { summary, ...rest } = reportBody();
+      resultsHandler = () =>
+        Response.json({
+          ...rest,
+          summary: { ...summary, [countField]: undefined },
+        });
+      queryClient.clear();
+      const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+      await view.findByText("Upstream unavailable");
+      view.unmount();
+    }
+  }, 30_000);
+
+  test("a report without its scorer version says unavailable, never a version of `undefined` (R4-5)", async () => {
+    const body = reportBody();
+    resultsHandler = () => Response.json({ ...body, scorerVersion: undefined });
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await view.findByText("Upstream unavailable");
+  });
+
+  test("an execution projection missing a field the record row reads says unavailable (R4-3)", async () => {
+    for (const field of [
+      "errorCode",
+      "caseCount",
+      "toolRejections",
+      "startedAt",
+      "settledAt",
+      "experimentConfigHash",
+    ] as const) {
+      const { execution, ...rest } = reportBody();
+      resultsHandler = () =>
+        Response.json({
+          ...rest,
+          execution: { ...execution, [field]: undefined },
+        });
+      queryClient.clear();
+      const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+      await view.findByText("Upstream unavailable");
+      view.unmount();
+    }
+  }, 30_000);
+
+  test("a non-scored reason without its code says unavailable, never a code of `undefined` (R4-2)", async () => {
+    const body = reportBody();
+    const samples = body.samples.map((sample, index) =>
+      index === 3
+        ? { ...sample, reason: { class: "execution_failed" } }
+        : sample,
+    );
+    resultsHandler = () => Response.json({ ...body, samples });
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await view.findByText("Upstream unavailable");
+  });
+
+  test("a reason without its class word says unavailable, never a branch guessed (R4-2)", async () => {
+    // The page picks the reason's sentence by discriminating on `class`; a body
+    // that lost the word is not a reason whose branch may be guessed — the guard
+    // claims it as a string for every class, scored or not.
+    const body = reportBody();
+    const samples = body.samples.map((sample, index) =>
+      index === 3
+        ? { ...sample, reason: { code: "CASE_EXECUTION_ERROR" } }
+        : sample,
+    );
+    resultsHandler = () => Response.json({ ...body, samples });
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await view.findByText("Upstream unavailable");
+  });
+});
+
 describe("the round-2 guard and dialog seams (OCR round 2)", () => {
   test("a scored sample without its rules array says unavailable, never a crash (R2-09)", async () => {
     // The results page filters reason.rules for the scored class; the guard used to

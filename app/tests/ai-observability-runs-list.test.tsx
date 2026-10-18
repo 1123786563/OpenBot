@@ -275,6 +275,26 @@ describe("a success body that lost its shape is the unavailable fault, never a c
     await view.findByText("Upstream unavailable");
   });
 
+  test("a row whose capability speaks an unknown verdict says the store did not answer (R4-4)", async () => {
+    // The list half of R3-13: the row's coverage cell renders `capability.<verdict>`
+    // straight off the body, so an unknown word used to echo the raw key mid-list —
+    // the exact half-drawn row the detail guard (R3-13) already refuses. The verdict
+    // vocabulary is the binding table's closed set; a body carrying any other word
+    // is contract drift, the store failing to answer, never a verdict to draw.
+    runsHandler = () =>
+      Response.json({
+        ...listBody([]),
+        runs: [
+          summary({
+            capability: "premium" as unknown as RunSummary["capability"],
+          }),
+        ],
+      });
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+    expect(view.queryByText("21.9 s")).toBeNull();
+  });
+
   test("a pagination whose range numbers are gone says the store did not answer", async () => {
     runsHandler = () =>
       Response.json({

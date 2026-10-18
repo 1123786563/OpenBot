@@ -1,10 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import {
   inProgressStateIsPinned,
+  serverCompatibilityEntryIsShared,
+  serverCompatibilityFieldIsShared,
+  serverCompatibilityFieldsAreShared,
   serverFragmentIsShared,
   serverFrozenCaseIsShared,
   serverJobIsSharedView,
   serverListItemIsShared,
+  serverReconciliationCodeIsShared,
+  serverResultsReportIsShared,
+  serverRuleScoreIsShared,
+  serverSampleClassesAreShared,
+  serverSampleClassIsShared,
+  serverSampleReasonIsShared,
+  serverScoringFailedCodeIsShared,
+  serverScoringFailReasonIsShared,
+  serverScoringFailureCodeIsShared,
   serverSummaryIsSharedView,
   sharedListItemIsServer,
   sharedViewIsServerJob,
@@ -47,5 +59,20 @@ describe("the admin contract types do not drift (m216, enforced by tsc via R2-55
 
   test("the R2-57 in_progress state stays pinned to the words the server produces", () => {
     expect(inProgressStateIsPinned).toBe(true);
+  });
+
+  test("the R4-39 experiments mirror stays one vocabulary, not two spellings", () => {
+    expect(serverSampleClassesAreShared).toBe(true);
+    expect(serverSampleClassIsShared).toBe(true);
+    expect(serverScoringFailedCodeIsShared).toBe(true);
+    expect(serverReconciliationCodeIsShared).toBe(true);
+    expect(serverRuleScoreIsShared).toBe(true);
+    expect(serverScoringFailReasonIsShared).toBe(true);
+    expect(serverScoringFailureCodeIsShared).toBe(true);
+    expect(serverSampleReasonIsShared).toBe(true);
+    expect(serverResultsReportIsShared).toBe(true);
+    expect(serverCompatibilityFieldsAreShared).toBe(true);
+    expect(serverCompatibilityFieldIsShared).toBe(true);
+    expect(serverCompatibilityEntryIsShared).toBe(true);
   });
 });
