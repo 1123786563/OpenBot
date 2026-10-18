@@ -42,7 +42,7 @@ Test Files  34 failed | 550 passed | 17 skipped (601)
 | 位置 | 数量 | 为什么不能迁 | 证据 |
 | --- | --- | --- | --- |
 | `runtime-go/**/*_test.go`、`agent-trpc/**/*_test.go` | 18 | Go 的测试由 `go test` 编译进二进制；e2e 只有 web 与移动端引擎，没有 Go 引擎，CI 里也是独立 job | `find runtime-go agent-trpc -name '*_test.go'` |
-| `bifrost/`（git submodule） | 自带 playwright/mocha 套件 | 子模块的测试属于该仓库与其工具链，主仓库既不调度也不应改写；`bun test` 时代同样不在 14 目录内 | `.gitmodules` |
+| `bifrost/`（git submodule） | 131 个测试文件：83 `vitest` + 10 `@playwright/test` + 3 `node:test` | 子模块的测试属于该仓库与其工具链，主仓库既不调度也不应改写；`bun test` 时代同样不在 14 目录内 | `.gitmodules:4-7`（`path = bifrost`）、`git ls-files -s bifrost` = 一条 mode `160000` 的 gitlink、框架计数来自本仓库内 `grep` |
 | `apps/openmuse/`（git submodule） | — | 同上；`biome.json` 也按同一理由排除该路径 | `.gitmodules`、`biome.json` |
 | `deliverables/mobile-e2e-qa/**.spec.ts` | 6 | 面向 Appium driver 与真机 bundle id，仓库里没有设备与 appium；迁移前 `bun test` 也不会通过 | 记为 artifacts，见 `docs/verification/e2e-bun-suites.json` |
 | `.worktrees/`、`.claude/worktrees/`、`.omc/` | 数百 | 是同一仓库的并行 worktree 与调研快照副本，不是额外套件；收集 glob 不匹配它们（目录名以 `.` 开头且未列入） | `find` 输出 |
@@ -327,7 +327,7 @@ CI 的 `test` job 自带两个数据库服务：`postgres`（镜像带 pgvector�
 | # | 标准 | 结论 | 证据 |
 | --- | --- | --- | --- |
 | 1 | 14 个目录里每个套件文件都由 e2e 调度或按名排除 | 过 | `node scripts/e2e-coverage-audit.mjs` → `no gaps`（合并后 main 重跑：1073 = 602 native / 455 driven / 10 engine / 6 exclusions） |
-| 2 | 没有任何测试入口还跑 `bun test` | 过 | 同一审计的 ENTRY-POINT 检查（package.json 与各 workflow），且 `bun run test:ci` 就是 ci.yml `test` job 第 443 行那一步。入口实跑过：`bun run test` → `pretest`(generate:app-config) → `e2e run --config e2e.unit.config.ts`，21:36–21:54 走完 8175 条（7912 passed / 189 failed / 4 env errors），打印汇总后**自行退出**（exit 1，`ps` 里没有残留 e2e 进程，端口释放） |
+| 2 | 没有任何测试入口还跑 `bun test` | 过（入口面按字面重查过一次） | 同一审计的 ENTRY-POINT 检查，且检查面已从"根 package.json 的 `test*` + workflow"扩到**每个 package.json 的每个脚本名**——按字面重查时抓到两处漏网：`agent-sandbox` 的 `test` 与 `server` 的 `kb:test` 还在 `bun test`。两者改为经根上新增的 `test:agent-sandbox` / `test:kb` 委派给 e2e，实测 `cd agent-sandbox && bun run test` 原生 41 条 + 驱动组 1 条全过，`bun run test:kb` **25 文件 / 319 条全过**（补齐 `KB_TEST_DATABASE_URL` 指向的 kb 库与 Qdrant 之后；那 4 条 env 错在旧入口上同样存在，CI 只声明了两个 postgres 服务）。`bun run test:ci` 仍是 ci.yml `test` job 那一步；入口实跑过：`bun run test` → `pretest` → `e2e run --config e2e.unit.config.ts`，合并后 main 走完 8175 条（7915 passed / 175 failed），打印汇总后自行退出 |
 | 3 | 收集不再被单个文件拖没 | 过（当时） | 19:24 / 21:21 两轮 `0 COLLECTION_ERROR`；新加套件由 `e2e-batch-drive-bun-test` 与分区循环兜住 |
 | 4 | 全量通过率被测出来并逐条归因 | 过（合并后又重测一次） | `.e2e/*/report.json` + `scripts/e2e-vs-bun.mjs` 的 `e2e-vs-bun*.json`，汇总见上。合并落地后的 main（10-19 00:0x）：入口 `bun run test` → **8175 条 = 7915 passed / 175 failed / 85 skipped，599 个文件里 31 红**（迁移前同入口 189 红），31 个红文件三档归因为 17 already-red-at-baseline / 12 red-on-old-runner-with-current-code / 1 runner-difference / 1 驱动层自身 |
 | 5 | 原生层不存在"迁移把它改红了"的条目 | 过（最后一次判定） | 逐条 runner-difference 都已修或分流；合并后重测出的那唯一 1 条 `server/tests/workshop-preview.test.ts` 有名字上的根因（Node 的 undici `Response` 拒绝 1xx、Bun 允许，断言的是 101 透传），已按 ADR 0008 两层制送回 Bun 运行时并在清单里写明根因；`proxy.test.ts` 有 25/0 对 24/1 的证据 |

@@ -13,7 +13,7 @@
     "kb:dev": "bun --env-file=../.env --watch src/kb/index.ts",
     "kb:start": "bun --no-env-file src/kb/index.ts",
     "kb:worker": "bun --env-file=../.env src/kb/worker.ts",
-    "kb:test": "bun test src/kb/",
+    "kb:test": "cd .. && bun run test:kb",
     "kb:grpc-smoke": "bun --env-file=../.env scripts/kb/grpc-smoke.ts",
     "kb:t03-smoke": "bun --env-file=../.env scripts/kb/t03-smoke.ts",
     "kb:t05-smoke": "bun --env-file=../.env scripts/kb/t05-smoke.ts",

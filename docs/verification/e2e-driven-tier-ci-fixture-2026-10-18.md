@@ -150,3 +150,45 @@ forwards to the sandbox passthrough (B15b)` 期望 101 拿到 500。根因**点�
 `node -e` 抛、`bun -e` 打印 101。这是 Bun 耦合的 HTTP 语义，按 ADR 0008 的两层制把这个套件
 送回 Bun 运行时、由 e2e 调度与报告（`bun test` 单文件 9 pass / 0 fail），不改生产代码、也不在
 兼容层伪造 101。分区随之变为 **455 driven / 30 组**，`e2e-coverage-audit` 仍是 `no gaps`。
+
+## 入口检查原来只看了根 package.json：两个子包还在跑 `bun test`
+
+按"每一个测试入口"逐个字面核对时（不是只信审计的输出），发现 `e2e-coverage-audit.mjs` 的入口检查只
+读了根 `package.json` 的 `test*` 脚本与各 workflow，于是漏掉两处真实入口：
+
+```
+agent-sandbox/package.json "test": bun test --isolate
+server/package.json        "kb:test": "bun test src/kb/"
+```
+
+入口扫描已改成**遍历仓库里每个 package.json 的每个脚本名**（`kb:test` 这种不叫 `test` 的名字以前根本
+不在检查范围内）。两处入口改为经 e2e：根上新增 `test:agent-sandbox`（原生目录 + 该目录的驱动组两段）
+与 `test:kb`，子包脚本 `cd .. && bun run …` 委派过去，避免复制一份配置语义。实测：
+
+| 入口 | 结果 |
+| --- | --- |
+| `cd agent-sandbox && bun run test` | 原生 6 files / 41 tests 全过，随后驱动组 `agent-sandbox/tests` 1 条过 |
+| `bun run test:kb` | **25 files / 319 tests 全过** |
+
+`test:kb` 从"4 条环境错"变成全绿需要补齐的是夹具而不是代码：`server/src/kb` 的套件取
+`KB_TEST_DATABASE_URL`（缺省硬写 `postgres://kb_mastra:kb_mastra@127.0.0.1:5432/kb_mastra`），
+所以要 ① 建 kb 库并跑 `bun src/kb/db/migrate.ts`，② 起 Qdrant（`127.0.0.1:6333`）。
+CI 的 `test` job 只声明了两个 postgres 服务，这两个依赖在 CI 里同样不存在 —— 那 4 条 env 错在迁移前
+的旧入口上也是红的，不是迁移造成的。私有夹具因此又多了一套：
+
+```bash
+docker run -d --name ob-e2e-qdrant -p 127.0.0.1:6333:6333 qdrant/qdrant:latest
+docker exec ob-e2e-pg1 psql -U openbot -d postgres -c "CREATE DATABASE kb_mastra OWNER openbot"
+cd server && KB_DATABASE_URL=postgres://openbot:openbot@127.0.0.1:55433/kb_mastra bun src/kb/db/migrate.ts
+```
+
+## 顺带把范围边界的一次实测写清：`bifrost/` 是子模块，不是漏网的套件
+
+数过才知道数量：`bifrost/` 里 131 个测试文件，框架是 **83 个 `vitest` + 10 个 `@playwright/test` +
+3 个 `node:test`**（计划文档原先按"playwright/mocha"描述，这次按实测改正）。它的身份是**子模块**：
+`.gitmodules` 第 4-7 行登记 `path = bifrost`、`url = https://github.com/1123786563/bifrost.git`，
+`git ls-files -s bifrost` 只有一条 mode `160000` 的 gitlink —— 那 1 条正是子模块的表示，不是"未跟踪"。
+它带着自己的 AGENTS.md / LICENSE / Makefile / flake.nix / Go `cmd/`，主仓库既不调度也不该改写上游的
+测试工具链，因此继续按 `范围边界` 一节排除；入口扫描现在会遍历它的 package.json，但里面没有
+`bun test`，不会被误报成缺口。
+

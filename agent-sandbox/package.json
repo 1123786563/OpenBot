@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
-    "test": "bun test --isolate",
+    "test": "cd .. && bun run test:agent-sandbox",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

@@ -13,7 +13,7 @@
 // A file that imports `bun:test` but is not driven, or imports neither layer, is a gap: it would
 // either abort collection or never run. Exits non-zero so CI can gate on it.
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const SKIP = new Set([
@@ -106,14 +106,39 @@ for (const file of files) {
  * list silently un-migrates the whole corpus while every suite file above still looks correct, so the
  * scripts and the CI workflows are read as they are rather than trusted from memory. (This happened
  * once already: an integration merge restored the old `test` script and it had to be re-pointed.)
+ *
+ * Every package.json in the tree counts as an entry point, and every script name — not just one
+ * called `test`. Two nested packages kept their own `bun test` (`agent-sandbox`'s `test`, `server`'s
+ * `kb:test`) while the root-only scan reported the corpus fully migrated, which is the difference
+ * between "the scripts I thought about" and "the scripts that exist".
  */
 function entryPointGaps() {
   const gaps = [];
-  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  for (const [name, command] of Object.entries(pkg.scripts ?? {})) {
-    if (!/^test(:|$)/.test(name)) continue;
-    if (/\bbun\s+test\b/.test(String(command)))
-      gaps.push(`package.json "${name}": ${command}`);
+  const seen = [];
+  const notCode = new Set([...SKIP, "archive", ".mimosa", "deliverables"]);
+  const walkPackages = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (notCode.has(entry.name) || entry.name.startsWith(".")) continue;
+        walkPackages(join(dir, entry.name));
+      } else if (entry.name === "package.json") {
+        seen.push(join(dir, entry.name));
+      }
+    }
+  };
+  walkPackages(root);
+  for (const file of seen) {
+    let parsed;
+    try {
+      parsed = JSON.parse(readFileSync(file, "utf8"));
+    } catch {
+      gaps.push(`${relative(root, file)}: unreadable package.json`);
+      continue;
+    }
+    for (const [name, command] of Object.entries(parsed.scripts ?? {})) {
+      if (/\bbun\s+(test|x\s+test)\b/.test(String(command)))
+        gaps.push(`${relative(root, file)} "${name}": ${command}`);
+    }
   }
   const workflows = join(root, ".github", "workflows");
   for (const file of readdirSync(workflows)) {

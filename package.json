@@ -17,6 +17,8 @@
     "format:check": "bunx biome format .",
     "lint": "bunx biome lint --error-on-warnings .",
     "test": "e2e run --config e2e.unit.config.ts",
+    "test:agent-sandbox": "e2e run --config e2e.unit.config.ts agent-sandbox/tests && E2E_BUN_ONLY=agent-sandbox/tests e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
+    "test:kb": "e2e run --config e2e.unit.config.ts server/src/kb",
     "typecheck": "bun run --filter '*' typecheck",
     "test:ci": "bun scripts/test-ci.ts",
     "pretest": "bun run generate:app-config",
