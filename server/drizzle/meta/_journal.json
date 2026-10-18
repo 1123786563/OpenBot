@@ -1128,13 +1128,6 @@
       "when": 1792313909111,
       "tag": "0160_opik_retention_work_stopped",
       "breakpoints": true
-    },
-    {
-      "idx": 110,
-      "version": "7",
-      "when": 1792034619518,
-      "tag": "0110_opik_observation_bindings",
-      "breakpoints": true
     }
   ]
 }
