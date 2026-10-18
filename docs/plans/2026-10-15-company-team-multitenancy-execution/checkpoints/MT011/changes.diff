@@ -1,0 +1,55 @@
+# MT011 changes.diff — 每个被修改文件的 before 态按 before-hashes.txt 逐字节重建（sha256 已复验一致：index 614a0ed4…、scenarios 9348db3d…），
+# diff 即本票真实增量；3 个新建文件全文件为本票增量（另行列出）。无提交授权，全部为未提交工作树。
+
+===== MODIFIED: server/src/index.ts =====
+--- a/server/src/index.ts
++++ b/server/src/index.ts
+@@ -264,6 +264,10 @@
+   verifyOperatorDatabase,
+ } from "./enterprise/tenancy/connections";
+ import {
++  createResourceInventoryService,
++  type ResourceInventoryService,
++} from "./enterprise/tenancy/not-found-semantics";
++import {
+   createPersonalShareAdminService,
+   createPersonalShareDecisionService,
+ } from "./enterprise/tenancy/personal-share-rules";
+@@ -5947,4 +5951,22 @@
+     ? createTeamResourceActionService(enterpriseCapabilities.data)
+     : null;
+ export { teamResourceActionService };
++
++/*
++ * MT011 (issue #54): centralized not-found invisibility semantics + the
++ * list/cursor/batch surface — assembly, pure append. The inventory service
++ * shares the SAME verified enterprise data channel as every other enterprise
++ * consumer (no second pool, no permissive stand-in: when the channel is
++ * absent the service is null, never a fake). It reuses the MT008 policy
++ * registry for every allow/deny decision — authorization stays defined in
++ * exactly one place. Mounting it on routes is the consumer ticket's job;
++ * this segment only guarantees the canonical not-found semantics and the
++ * list/cursor/batch surface exist in-process, assembled once, and reachable
++ * by that consumer.
++ */
++const resourceInventoryService: ResourceInventoryService | null =
++  enterpriseCapabilities
++    ? createResourceInventoryService(enterpriseCapabilities.data)
++    : null;
++export { resourceInventoryService };
+ 
+
+===== MODIFIED: server/tests/multitenancy/support/scenarios.ts =====
+--- a/server/tests/multitenancy/support/scenarios.ts
++++ b/server/tests/multitenancy/support/scenarios.ts
+@@ -45,6 +45,10 @@
+   "memberships",
+   "migration",
+   "mobile-selection",
++  // MT011 (issue #54): centralized not-found invisibility semantics + the
++  // list/cursor/batch surface. Appended per the migrate/fixture registry
++  // precedent (scenarios domain enumeration, tool-owned contract evolution).
++  "not-found-semantics",
+   "openmuse-connectors-deletion",
+   "openmuse-personal",
+   "personal-shares",

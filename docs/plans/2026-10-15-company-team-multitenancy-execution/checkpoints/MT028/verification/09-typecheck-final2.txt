@@ -1,0 +1,3 @@
+# MT028 typecheck 终态 v2（2026-10-17，全部文件终态后）
+command: bun x tsc --noEmit (server/)
+typecheck-exit=0

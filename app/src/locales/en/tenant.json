@@ -24,5 +24,36 @@
       "statusActive": "active",
       "statusArchived": "archived"
     }
+  },
+  "selection": {
+    "title": "Company & team",
+    "description": "Choose the company and team you are working in. Only memberships you actually hold are listed, and nothing is chosen for you.",
+    "company": {
+      "label": "Company",
+      "aria": "Select a company",
+      "placeholder": "Pick a company"
+    },
+    "team": {
+      "label": "Team",
+      "aria": "Select a team",
+      "placeholder": "Pick a team",
+      "none": "You have not been added to a team in this company yet. Ask your company or team administrator to add you."
+    },
+    "current": {
+      "label": "Working in"
+    },
+    "empty": {
+      "title": "No company membership yet",
+      "description": "You are not a member of any company on this deployment yet. Ask your company administrator to add you, then come back and choose where to work."
+    },
+    "error": {
+      "title": "Your companies and teams could not be loaded.",
+      "retry": "Retry"
+    },
+    "revoked": {
+      "title": "Your access to that company or team has been revoked",
+      "description": "The company or team you were working in no longer lists you as a member. Nothing was chosen for you — check again, or pick another company and team you belong to.",
+      "retry": "Check again"
+    }
   }
 }

@@ -1,0 +1,464 @@
+src/index.ts:4656:13 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    4654 │         kbs.map((kb) =>
+    4655 │           knowledgeRequest(
+  > 4656 │             knowledgeService!,
+         │             ^^^^^^^^^^^^^^^^^
+    4657 │             `/kb/${encodeURIComponent(kb.id)}/retrieve`,
+    4658 │             {
+  
+
+src/index.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Sort these imports.
+  
+    > 1 │ import { createHash, randomUUID } from "node:crypto";
+        │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    > 2 │ import { isDeepStrictEqual } from "node:util";
+    > 3 │ import type { AbstractAgent } from "@ag-ui/client";
+    > 4 │ import {
+         ...
+  > 352 │ } from "./openmuse-deletion/retention";
+  > 353 │ import { createOpenMuseDeletionRestore } from "./openmuse-deletion/restore";
+        │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    354 │ import { createOpenMuseExternalAccessRevoker } from "./openmuse-deletion/revoke";
+    355 │ import { createOpenMuseWorkShutdown, recordWorkShutdown } from "./openmuse-deletion/shutdown";
+  
+  i Safe fix: Organize imports and exports (Biome)
+  
+      63   63 │   } from "./agents/wake-up";
+      64   64 │   import { createApp, createDeploymentRequireUser } from "./app";
+      65      │ - import·{
+      66      │ - ··applyStartupVerdict,
+      67      │ - ··runMultitenancyStartupChecks,
+      68      │ - }·from·"./enterprise/tenancy/startup-checks";
+      69      │ - import·{·createApprovedActionExecutor·}·from·"./approvals/execute";
+           65 │ + import·{·createApprovedActionExecutor·}·from·"./approvals/execute";
+           66 │ + import·{
+           67 │ + ··PERSON_QUESTION_WAITING,
+           68 │ + ··resumePersonQuestion,
+           69 │ + }·from·"./approvals/question-resume";
+      70   70 │   import {
+      71      │ - ··PERSON_QUESTION_WAITING,
+      72      │ - ··resumePersonQuestion,
+      73      │ - }·from·"./approvals/question-resume";
+           71 │ + ··createApprovalQuestions,
+           72 │ + ··type·PersonQuestion,
+           73 │ + ··personQuestionSchema,
+           74 │ + ··questionConversationBot,
+           75 │ + }·from·"./approvals/questions";
+      74   76 │   import {
+      75      │ - ··createApprovalQuestions,
+      76      │ - ··type·PersonQuestion,
+      77      │ - ··personQuestionSchema,
+      78      │ - ··questionConversationBot,
+      79      │ - }·from·"./approvals/questions";
+      80      │ - import·{
+      81      │ - ··type·ApprovalResumeDependencies,
+      82      │ - ··createApprovalService,
+      83      │ - }·from·"./approvals/service";
+      84      │ - import·{·createApprovalStore·}·from·"./approvals/store";
+           77 │ + ··type·ApprovalResumeDependencies,
+           78 │ + ··createApprovalService,
+           79 │ + }·from·"./approvals/service";
+           80 │ + import·{·createApprovalStore·}·from·"./approvals/store";
+           81 │ + import·{
+           82 │ + ··ApprovalRefusedError,
+           83 │ + ··currentApprovalContext,
+           84 │ + ··parseApprovalContinuation,
+           85 │ + ··parseApprovalResult,
+           86 │ + }·from·"./approvals/types";
+      85   87 │   import {
+      86      │ - ··ApprovalRefusedError,
+      87      │ - ··currentApprovalContext,
+      88      │ - ··parseApprovalContinuation,
+      89      │ - ··parseApprovalResult,
+      90      │ - }·from·"./approvals/types";
+      91      │ - import·{
+      92      │ - ··type·AuditInitiator,
+      93      │ - ··createAuditReader,
+      94      │ - ··createAuditStore,
+      95      │ - ··DEPLOYMENT_INITIATOR,
+      96      │ - ··handoffInitiator,
+      97      │ - ··PERSON_INITIATOR,
+      98      │ - ··recordAuditEvent,
+      99      │ - }·from·"./audit";
+     100      │ - import·{·startRetentionSweeps·}·from·"./audit-retention";
+     101      │ - import·{·createAuth·}·from·"./auth";
+     102      │ - import·{·DEV_ACTOR,·initializeDevActorUser·}·from·"./auth/dev-actor";
+     103      │ - import·type·{·AuthService·}·from·"./auth/guards";
+     104      │ - import·{·createRoleRepository·}·from·"./auth/guards";
+     105      │ - import·{·createIdentityProviderStore·}·from·"./auth/identity-provider-store";
+     106      │ - import·{·createOrganizationAuth·}·from·"./auth/organization";
+     107      │ - import·{·organizationUserStore·}·from·"./auth/organization-store";
+     108      │ - import·type·{·OpenBotRole·}·from·"./auth/roles";
+     109      │ - import·{·CREDIT_SCALE,·createCredits·}·from·"./billing/credits";
+     110      │ - import·{·createCreditWriter·}·from·"./billing/credits-writer";
+     111      │ - import·{
+     112      │ - ··countChatInputTokens,
+     113      │ - ··fitChatInputRequest,
+     114      │ - }·from·"./billing/input-bound";
+     115      │ - import·{·createLagoClient·}·from·"./billing/lago";
+     116      │ - import·{·startUsageDeliverySweeps·}·from·"./billing/maintenance";
+     117      │ - import·{·checkOutboundUrl,·createOutboundGuard·}·from·"./billing/outbound";
+     118      │ - import·{·createAlipayProvider·}·from·"./billing/payments/alipay";
+     119      │ - import·{·startPaymentSweeps·}·from·"./billing/payments/maintenance";
+     120      │ - import·{·createPaymentService·}·from·"./billing/payments/service";
+     121      │ - import·{·createPaymentStore·}·from·"./billing/payments/store";
+     122      │ - import·{·createWechatProvider·}·from·"./billing/payments/wechat";
+     123      │ - import·{·createReconciler·}·from·"./billing/reconcile";
+     124      │ - import·{
+     125      │ - ··createBillingService,
+     126      │ - ··deploymentExternalCustomerId,
+     127      │ - }·from·"./billing/service";
+     128      │ - import·{·createBillingStatements·}·from·"./billing/statements";
+     129      │ - import·{·createBillingStore·}·from·"./billing/store";
+           88 │ + ··type·AuditInitiator,
+           89 │ + ··createAuditReader,
+           90 │ + ··createAuditStore,
+           91 │ + ··DEPLOYMENT_INITIATOR,
+           92 │ + ··handoffInitiator,
+           93 │ + ··PERSON_INITIATOR,
+           94 │ + ··recordAuditEvent,
+           95 │ + }·from·"./audit";
+           96 │ + import·{·startRetentionSweeps·}·from·"./audit-retention";
+           97 │ + import·{·createAuth·}·from·"./auth";
+           98 │ + import·{·DEV_ACTOR,·initializeDevActorUser·}·from·"./auth/dev-actor";
+           99 │ + import·type·{·AuthService·}·from·"./auth/guards";
+          100 │ + import·{·createRoleRepository·}·from·"./auth/guards";
+          101 │ + import·{·createIdentityProviderStore·}·from·"./auth/identity-provider-store";
+          102 │ + import·{·createOrganizationAuth·}·from·"./auth/organization";
+          103 │ + import·{·organizationUserStore·}·from·"./auth/organization-store";
+          104 │ + import·type·{·OpenBotRole·}·from·"./auth/roles";
+          105 │ + import·{·CREDIT_SCALE,·createCredits·}·from·"./billing/credits";
+          106 │ + import·{·createCreditWriter·}·from·"./billing/credits-writer";
+          107 │ + import·{
+          108 │ + ··countChatInputTokens,
+          109 │ + ··fitChatInputRequest,
+          110 │ + }·from·"./billing/input-bound";
+          111 │ + import·{·createLagoClient·}·from·"./billing/lago";
+          112 │ + import·{·startUsageDeliverySweeps·}·from·"./billing/maintenance";
+          113 │ + import·{·checkOutboundUrl,·createOutboundGuard·}·from·"./billing/outbound";
+          114 │ + import·{·createAlipayProvider·}·from·"./billing/payments/alipay";
+          115 │ + import·{·startPaymentSweeps·}·from·"./billing/payments/maintenance";
+          116 │ + import·{·createPaymentService·}·from·"./billing/payments/service";
+          117 │ + import·{·createPaymentStore·}·from·"./billing/payments/store";
+          118 │ + import·{·createWechatProvider·}·from·"./billing/payments/wechat";
+          119 │ + import·{·createReconciler·}·from·"./billing/reconcile";
+          120 │ + import·{
+          121 │ + ··createBillingService,
+          122 │ + ··deploymentExternalCustomerId,
+          123 │ + }·from·"./billing/service";
+          124 │ + import·{·createBillingStatements·}·from·"./billing/statements";
+          125 │ + import·{·createBillingStore·}·from·"./billing/store";
+          126 │ + import·{·USAGE_IDEMPOTENCY_KEY_PREFIX·}·from·"./billing/types";
+     130  127 │   import {
+     131  128 │     createCreditUsageTarget,
+    ········· │ 
+     138  135 │   } from "./billing/usage-evidence";
+     139  136 │   import { createUsageOutbox, UsageOutboxConflictError } from "./billing/usage-outbox";
+     140      │ - import·{·USAGE_IDEMPOTENCY_KEY_PREFIX·}·from·"./billing/types";
+     141      │ - import·{·createWebhookVerifier·}·from·"./billing/webhook-signature";
+          137 │ + import·{·createWebhookVerifier·}·from·"./billing/webhook-signature";
+          138 │ + import·{
+          139 │ + ··loadAttachmentForTurn,
+          140 │ + ··markAttachmentsSent,
+          141 │ + }·from·"./channels/attachments";
+     142  142 │   import {
+     143      │ - ··loadAttachmentForTurn,
+     144      │ - ··markAttachmentsSent,
+     145      │ - }·from·"./channels/attachments";
+          143 │ + ··createChannelEventHub,
+          144 │ + ··startChannelActivityListener,
+          145 │ + }·from·"./channels/events";
+     146  146 │   import {
+     147      │ - ··createChannelEventHub,
+     148      │ - ··startChannelActivityListener,
+     149      │ - }·from·"./channels/events";
+     150      │ - import·{
+     151      │ - ··createGroupConversations,
+  335 more lines truncated
+  
+
+src/index.ts:813:13 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Don't use console.
+  
+    811 │           const name = error instanceof Error ? error.name : "";
+    812 │           if (name !== "CredentialUnusableError")
+  > 813 │             console.error({
+        │             ^^^^^^^^^^^^^
+    814 │               error: "TENANT_CREDENTIAL_DECRYPT_FAILED",
+    815 │               context: { credentialRef: reference },
+  
+  i The use of console is often reserved for debugging.
+  
+  i Unsafe fix: Remove console.
+  
+     811  811 │             const name = error instanceof Error ? error.name : "";
+     812  812 │             if (name !== "CredentialUnusableError")
+     813      │ - ············console.error({
+     814      │ - ··············error:·"TENANT_CREDENTIAL_DECRYPT_FAILED",
+     815      │ - ··············context:·{·credentialRef:·reference·},
+     816      │ - ··············cause:·error·instanceof·Error·?·error.message·:·String(error),
+     817      │ - ············});
+     818  813 │             return undefined;
+     819  814 │           }
+  
+
+src/index.ts:838:11 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Don't use console.
+  
+    836 │           // Session-infrastructure faults are not "unauthenticated": leave
+    837 │           // a trace so auth-store outages are diagnosable (OCR R10).
+  > 838 │           console.error({
+        │           ^^^^^^^^^^^^^
+    839 │             error: "ENTERPRISE_SESSION_RESOLUTION_FAILED",
+    840 │             cause: error instanceof Error ? error.message : String(error),
+  
+  i The use of console is often reserved for debugging.
+  
+  i Unsafe fix: Remove console.
+  
+     834  834 │         authenticate: async (request) => {
+     835  835 │           const actor = await resolveRequestActor(request).catch((error) => {
+     836      │ - ··········//·Session-infrastructure·faults·are·not·"unauthenticated":·leave
+     837      │ - ··········//·a·trace·so·auth-store·outages·are·diagnosable·(OCR·R10).
+     838      │ - ··········console.error({
+     839      │ - ············error:·"ENTERPRISE_SESSION_RESOLUTION_FAILED",
+     840      │ - ············cause:·error·instanceof·Error·?·error.message·:·String(error),
+     841      │ - ··········});
+     842  836 │             return null;
+     843  837 │           });
+  
+
+src/index.ts:859:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Don't use console.
+  
+    857 │     };
+    858 │   } catch (error) {
+  > 859 │     console.error("Enterprise conversation service unavailable", error);
+        │     ^^^^^^^^^^^^^
+    860 │     return null;
+    861 │   }
+  
+  i The use of console is often reserved for debugging.
+  
+  i Unsafe fix: Remove console.
+  
+     857  857 │       };
+     858  858 │     } catch (error) {
+     859      │ - ····console.error("Enterprise·conversation·service·unavailable",·error);
+     860  859 │       return null;
+     861  860 │     }
+  
+
+src/index.ts:1811:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Don't use console.
+  
+    1809 │     await personalMemoryStore.mirrorPending();
+    1810 │   } catch (error) {
+  > 1811 │     console.error(
+         │     ^^^^^^^^^^^^^
+    1812 │       JSON.stringify({
+    1813 │         type: "memory-sweep-error",
+  
+  i The use of console is often reserved for debugging.
+  
+  i Unsafe fix: Remove console.
+  
+    1809 1809 │       await personalMemoryStore.mirrorPending();
+    1810 1810 │     } catch (error) {
+    1811      │ - ····console.error(
+    1812      │ - ······JSON.stringify({
+    1813      │ - ········type:·"memory-sweep-error",
+    1814      │ - ········error:·error·instanceof·Error·?·error.name·:·"UnknownError",
+    1815      │ - ········context:·{·operation:·"mirrorPending"·},
+    1816      │ - ········timestamp:·new·Date().toISOString(),
+    1817      │ - ······}),
+    1818      │ - ····);
+    1819 1811 │     }
+    1820 1812 │   }, 60_000);
+  
+
+src/index.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+     137  137 │     isConfirmedNoCost,
+     138  138 │   } from "./billing/usage-evidence";
+     139      │ - import·{·createUsageOutbox,·UsageOutboxConflictError·}·from·"./billing/usage-outbox";
+          139 │ + import·{
+          140 │ + ··createUsageOutbox,
+          141 │ + ··UsageOutboxConflictError,
+          142 │ + }·from·"./billing/usage-outbox";
+     140  143 │   import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./billing/types";
+     141  144 │   import { createWebhookVerifier } from "./billing/webhook-signature";
+    ········· │ 
+     203  206 │   } from "./copilot";
+     204  207 │   import { loadCraftConfig } from "./craft/config";
+     205      │ - import·{·builtinSkillFilesFor,·buildAvailableSourcesSection·}·from·"./craft/builtin-skills";
+          208 │ + import·{
+          209 │ + ··builtinSkillFilesFor,
+          210 │ + ··buildAvailableSourcesSection,
+          211 │ + }·from·"./craft/builtin-skills";
+     206  212 │   import type { CraftKbSearch } from "./craft/kb-search-relay";
+     207  213 │   import { projectKbSearchResults } from "./craft/kb-search-relay";
+    ········· │ 
+     353  359 │   import { createOpenMuseDeletionRestore } from "./openmuse-deletion/restore";
+     354  360 │   import { createOpenMuseExternalAccessRevoker } from "./openmuse-deletion/revoke";
+     355      │ - import·{·createOpenMuseWorkShutdown,·recordWorkShutdown·}·from·"./openmuse-deletion/shutdown";
+          361 │ + import·{
+          362 │ + ··createOpenMuseWorkShutdown,
+          363 │ + ··recordWorkShutdown,
+          364 │ + }·from·"./openmuse-deletion/shutdown";
+     356  365 │   import {
+     357  366 │     createOpenMuseAccountDeletionStore,
+    ········· │ 
+     847  856 │         // x-openbot-workspace. They only select; database membership decides.
+     848  857 │         selectTenant: (request) => request.headers.get("x-openbot-tenant"),
+     849      │ - ······selectWorkspace:·(request)·=>
+     850      │ - ········request.headers.get("x-openbot-workspace"),
+          858 │ + ······selectWorkspace:·(request)·=>·request.headers.get("x-openbot-workspace"),
+     851  859 │       });
+     852  860 │       return {
+    ········· │ 
+    3207 3215 │    * /api/mobile fence answer through the same instance.
+    3208 3216 │    */
+    3209      │ - const·openMuseAccountDeletionStore·=·createOpenMuseAccountDeletionStore(database);
+         3217 │ + const·openMuseAccountDeletionStore·=
+         3218 │ + ··createOpenMuseAccountDeletionStore(database);
+    3210 3219 │   /*
+    3211 3220 │    * The personal-files store (F01), hoisted beside the runner it feeds: the task
+    ········· │ 
+    3815 3824 │       {
+    3816 3825 │         type: "billing-credit-policy-unconfigured",
+    3817      │ - ······issues:·billingSettings.creditPolicy.issues.map((issue)·=>·`${issue.key}:${issue.reason}`),
+         3826 │ + ······issues:·billingSettings.creditPolicy.issues.map(
+         3827 │ + ········(issue)·=>·`${issue.key}:${issue.reason}`,
+         3828 │ + ······),
+    3818 3829 │       },
+    3819 3830 │       "billing-credit-policy-unconfigured: metered work will refuse until these keys are fixed",
+    ········· │ 
+    3865 3876 │               // arithmetic the grantor below uses), so the pass can audit that a paid order's
+    3866 3877 │               // plan payout actually landed at the priced amount.
+    3867      │ - ············reconciler:·createReconciler(database,·externalCustomerKey,·(planCode)·=>·{
+    3868      │ - ··············const·entry·=·settings.planCatalog.get(planCode);
+    3869      │ - ··············return·entry·&&·entry.credits·>·0
+    3870      │ - ················?·Math.round(entry.credits·*·CREDIT_SCALE)
+    3871      │ - ················:·null;
+    3872      │ - ············}),
+         3878 │ + ············reconciler:·createReconciler(
+         3879 │ + ··············database,
+         3880 │ + ··············externalCustomerKey,
+         3881 │ + ··············(planCode)·=>·{
+         3882 │ + ················const·entry·=·settings.planCatalog.get(planCode);
+         3883 │ + ················return·entry·&&·entry.credits·>·0
+         3884 │ + ··················?·Math.round(entry.credits·*·CREDIT_SCALE)
+         3885 │ + ··················:·null;
+         3886 │ + ··············},
+         3887 │ + ············),
+    3873 3888 │               ...(settings.webhookKey
+    3874 3889 │                 ? {
+    ········· │ 
+    3903 3918 │   if (billing !== undefined && usageOutbox !== undefined) {
+    3904 3919 │     const creditPolicy = billingSettings?.creditPolicy;
+    3905      │ - ··const·recordUnsettledUsage·=·createUsageEvidenceRecorder(usageOutbox,·(message)·=>
+    3906      │ - ····log.warn(message),
+         3920 │ + ··const·recordUnsettledUsage·=·createUsageEvidenceRecorder(
+         3921 │ + ····usageOutbox,
+         3922 │ + ····(message)·=>·log.warn(message),
+    3907 3923 │     );
+    3908 3924 │     setModelUsageGate(async (input) => {
+    ········· │ 
+    4012 4028 │             // otherwise fall back to. The hold is retained either way.
+    4013 4029 │             const code =
+    4014      │ - ············error·instanceof·UsageChargeError·?·error.code·:·"usage_charge_failed";
+         4030 │ + ············error·instanceof·UsageChargeError
+         4031 │ + ··············?·error.code
+         4032 │ + ··············:·"usage_charge_failed";
+    4015 4033 │             log.error(
+    4016 4034 │               {
+    ········· │ 
+    4384 4402 │    * `billing === undefined` straight through: silent, and the run row still stands.
+    4385 4403 │    */
+    4386      │ - const·codeRunUsageReporter·=·billing·&&·usageOutbox
+    4387      │ - ··?·async·(input:·import("./workshop/metering").CodeRunUsageInput):·Promise<void>·=>·{
+    4388      │ - ······try·{
+    4389      │ - ········await·reportCodeRunUsage(
+    4390      │ - ··········usageOutbox,
+    4391      │ - ··········{
+    4392      │ - ············...input,
+    4393      │ - ············externalCustomerId:·billing.externalCustomerKey,
+    4394      │ - ············//·True·only·when·the·hard-cap·policy·actually·prices·code·runs;·the·gateway·refuses
+    4395      │ - ············//·billed·runs·until·the·sandbox·can·enforce·a·budget,·so·this·stays·false·today·and
+    4396      │ - ············//·the·guard·inside·reportCodeRunUsage·is·what·makes·flipping·it·safe.
+    4397      │ - ············creditMeteringEnabled:·billingSettings?.creditPolicy.configured·===·true,
+    4398      │ - ··········},
+    4399      │ - ··········(message)·=>·log.warn(message),
+    4400      │ - ········);
+    4401      │ - ······}·catch·(error)·{
+    4402      │ - ········logUsageOutboxWriteFailure("code_run",·`code-run:${input.runId}`,·error);
+         4404 │ + const·codeRunUsageReporter·=
+         4405 │ + ··billing·&&·usageOutbox
+         4406 │ + ····?·async·(
+         4407 │ + ········input:·import("./workshop/metering").CodeRunUsageInput,
+         4408 │ + ······):·Promise<void>·=>·{
+         4409 │ + ········try·{
+         4410 │ + ··········await·reportCodeRunUsage(
+         4411 │ + ············usageOutbox,
+         4412 │ + ············{
+         4413 │ + ··············...input,
+         4414 │ + ··············externalCustomerId:·billing.externalCustomerKey,
+         4415 │ + ··············//·True·only·when·the·hard-cap·policy·actually·prices·code·runs;·the·gateway·refuses
+         4416 │ + ··············//·billed·runs·until·the·sandbox·can·enforce·a·budget,·so·this·stays·false·today·and
+         4417 │ + ··············//·the·guard·inside·reportCodeRunUsage·is·what·makes·flipping·it·safe.
+         4418 │ + ··············creditMeteringEnabled:
+         4419 │ + ················billingSettings?.creditPolicy.configured·===·true,
+         4420 │ + ············},
+         4421 │ + ············(message)·=>·log.warn(message),
+         4422 │ + ··········);
+         4423 │ + ········}·catch·(error)·{
+         4424 │ + ··········logUsageOutboxWriteFailure(
+         4425 │ + ············"code_run",
+         4426 │ + ············`code-run:${input.runId}`,
+         4427 │ + ············error,
+         4428 │ + ··········);
+         4429 │ + ········}
+    4403 4430 │         }
+    4404      │ - ····}
+    4405      │ - ··:·undefined;
+         4431 │ + ····:·undefined;
+    4406 4432 │   const sandboxClientFor = (botId: string) =>
+    4407 4433 │     sandboxUrl && sandboxToken
+    ········· │ 
+    4621 4647 │    * AGENTS.md Company-knowledge section stays out with it.
+    4622 4648 │    */
+    4623      │ - const·craftKnowledgeBases·=·async·():·Promise<
+    4624      │ - ··Array<{·id:·string;·name:·string;·description:·string·|·null·}>·|·null
+    4625      │ - >·=>·{
+         4649 │ + const·craftKnowledgeBases·=·async·():·Promise<Array<{
+         4650 │ + ··id:·string;
+         4651 │ + ··name:·string;
+         4652 │ + ··description:·string·|·null;
+         4653 │ + }>·|·null>·=>·{
+    4626 4654 │     if (!knowledgeService) return null;
+    4627 4655 │     try {
+    ········· │ 
+    4727 4755 │           ...brokered.map((row) => row.serverId),
+  36 more lines truncated
+  
+
+Checked 1 file in 52ms. No fixes applied.
+Found 6 errors.
+Found 1 warning.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+

@@ -1,0 +1,185 @@
+# MT010 changes.diff — 每个被修改文件的 before 态按 before-hashes.txt 逐字节重建（哈希已复验），
+# diff 即本票真实增量；4 个新建文件全文件为本票增量（另行列出）。无提交授权，全部为未提交工作树。
+
+===== MODIFIED: server/src/db/schema/index.ts =====
+--- a/server/src/db/schema/index.ts	2026-10-16 22:57:10
++++ b/server/src/db/schema/index.ts	2026-10-16 22:29:35
+@@ -29,6 +29,7 @@
+ export * from "./openmuse";
+ export * from "./passwords";
+ export * from "./payment";
++export * from "./personal-shares";
+ export * from "./plugins";
+ export * from "./proactive";
+ export * from "./responsibilities";
+
+===== MODIFIED: server/scripts/multitenancy/migrate-test.ts =====
+--- a/server/scripts/multitenancy/migrate-test.ts	2026-10-16 22:57:10
++++ b/server/scripts/multitenancy/migrate-test.ts	2026-10-16 22:30:04
+@@ -387,6 +387,78 @@
+   ],
+ };
+ 
++/**
++ * MT010（Issue #53）：个人资源的显式分享事实表。expand-only——纯新增
++ * enterprise_resource_shares（复合主键 = (tenant, resource, audience, action)，
++ * action 只允许 'read'；expires_at 必须晚于 created_at；三条复合外键内嵌
++ * tenant_id，分别证明资源属于该公司、受众与分享人是该公司的有效成员——
++ * 跨公司分享行在结构上不可能存在）与按既有模式的最小 RLS 策略；
++ * 不修改任何既有表/策略/角色授权。
++ *
++ * 分享语义：撤销 = 删除行（无可达中间态，立即失效）；有效期由判定入口按
++ * 数据库时钟 now() 现场核对。服务层入口在
++ * server/src/enterprise/tenancy/personal-share-rules.ts。
++ */
++const PERSONAL_SHARE_TASK: TaskMigrationSpec = {
++  id: "MT010",
++  description:
++    "MT010（Issue #53）：新增个人资源显式分享表 enterprise_resource_shares（expand-only，仅新增表与最小 RLS，不改既有对象）",
++  steps: [
++    {
++      slug: "create_table",
++      impact:
++        "新增 enterprise_resource_shares 表：复合主键 (tenant_id, resource_id, principal_id, action)；action CHECK 只允许 'read'（被分享方永远拿不到管理动作）；validity CHECK 要求 expires_at > created_at；三条复合外键分别指向 enterprise_resources 与 enterprise_memberships（受众、分享人各一条，内嵌 tenant_id——跨公司分享行结构上不可能）。不修改任何既有表。",
++      objects: ["enterprise_resource_shares"],
++      statements: [
++        'CREATE TABLE "enterprise_resource_shares" (\n' +
++          '\t"tenant_id" text NOT NULL,\n' +
++          '\t"resource_id" text NOT NULL,\n' +
++          '\t"principal_id" text NOT NULL,\n' +
++          "\t\"action\" text DEFAULT 'read' NOT NULL,\n" +
++          '\t"expires_at" timestamp with time zone NOT NULL,\n' +
++          '\t"granted_by" text NOT NULL,\n' +
++          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
++          '\tCONSTRAINT "enterprise_resource_shares_tenant_id_resource_id_principal_id_action_pk" PRIMARY KEY("tenant_id","resource_id","principal_id","action"),\n' +
++          '\tCONSTRAINT "enterprise_share_action" CHECK ("enterprise_resource_shares"."action" = \'read\'),\n' +
++          '\tCONSTRAINT "enterprise_share_validity" CHECK ("enterprise_resource_shares"."expires_at" > "enterprise_resource_shares"."created_at")\n' +
++          ");",
++        'ALTER TABLE "enterprise_resource_shares" ADD CONSTRAINT "enterprise_resource_shares_tenant_id_resource_id_enterprise_resources_tenant_id_id_fk" FOREIGN KEY ("tenant_id","resource_id") REFERENCES "public"."enterprise_resources"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_resource_shares" ADD CONSTRAINT "enterprise_resource_shares_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_resource_shares" ADD CONSTRAINT "enterprise_resource_shares_tenant_id_granted_by_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","granted_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
++      ],
++    },
++    {
++      slug: "share_rls_policies",
++      impact:
++        "仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增 4 条最小策略（data 只读本人行 / operator 租户范围 SELECT+INSERT+DELETE，DELETE 要求行内 granted_by = 操作者）及配套最小 GRANT；无 UPDATE 授权（撤销 = DELETE，分享行永不部分改写）。不改动任何既有表策略或既有授权。",
++      objects: ["enterprise_resource_shares"],
++      statements: [
++        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_resource_shares" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
++        'ALTER TABLE "enterprise_resource_shares" ENABLE ROW LEVEL SECURITY;',
++        'ALTER TABLE "enterprise_resource_shares" FORCE ROW LEVEL SECURITY;',
++        'CREATE POLICY "enterprise_share_data_read" ON "enterprise_resource_shares"\n' +
++          "  FOR SELECT TO ob_ent_data\n" +
++          "  USING (\"enterprise_resource_shares\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
++          "    AND \"enterprise_resource_shares\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
++        'CREATE POLICY "enterprise_share_operator_read" ON "enterprise_resource_shares"\n' +
++          "  FOR SELECT TO ob_ent_operator\n" +
++          "  USING (\"enterprise_resource_shares\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
++        'CREATE POLICY "enterprise_share_operator_insert" ON "enterprise_resource_shares"\n' +
++          "  FOR INSERT TO ob_ent_operator\n" +
++          "  WITH CHECK (\"enterprise_resource_shares\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
++        'CREATE POLICY "enterprise_share_operator_delete" ON "enterprise_resource_shares"\n' +
++          "  FOR DELETE TO ob_ent_operator\n" +
++          "  USING (\"enterprise_resource_shares\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
++          "    AND \"enterprise_resource_shares\".\"resource_id\" = nullif(current_setting('app.resource_id', true), '')\n" +
++          "    AND \"enterprise_resource_shares\".\"granted_by\" = nullif(current_setting('app.operator_principal_id', true), ''));",
++        'GRANT SELECT ON TABLE "enterprise_resource_shares" TO ob_ent_data, ob_ent_operator;',
++        'GRANT INSERT ON TABLE "enterprise_resource_shares" TO ob_ent_operator;',
++        'GRANT DELETE ON TABLE "enterprise_resource_shares" TO ob_ent_operator;',
++      ],
++    },
++  ],
++};
++
+ /** 显式枚举的任务 allowlist；未列出的 task id 一律拒绝。 */
+ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
+   [SELF_CHECK_TASK.id, SELF_CHECK_TASK],
+@@ -394,6 +466,7 @@
+   [LEGACY_ANCHOR_TASK.id, LEGACY_ANCHOR_TASK],
+   [RESOURCE_VISIBILITY_TASK.id, RESOURCE_VISIBILITY_TASK],
+   [CORE_RLS_TASK.id, CORE_RLS_TASK],
++  [PERSONAL_SHARE_TASK.id, PERSONAL_SHARE_TASK],
+ ]);
+ 
+ export const ALLOWED_TASK_IDS: readonly string[] = [...TASKS.keys()].sort();
+
+===== MODIFIED: server/tests/multitenancy/migration-tool.test.ts =====
+--- a/server/tests/multitenancy/migration-tool.test.ts	2026-10-16 22:57:10
++++ b/server/tests/multitenancy/migration-tool.test.ts	2026-10-16 22:30:22
+@@ -352,10 +352,14 @@
+     // MT012（同 ruling #5 先例，MT012 brief 预授权）：仅本断言追加 "MT012"
+     // （核心租户域表 RLS 再断言 + 上下文清理函数迁移注册），文件其余只读；
+     // diff 与哈希存档于 checkpoints/MT012/。
++    // MT010（同 ruling #5 先例，MT010 brief 预授权）：仅本断言追加 "MT010"
++    // （个人资源显式分享表 enterprise_resource_shares 迁移注册），文件其余
++    // 只读；diff 与哈希存档于 checkpoints/MT010/。
+     expect(ALLOWED_TASK_IDS).toEqual([
+       "MT000",
+       "MT004",
+       "MT008",
++      "MT010",
+       "MT012",
+       "MT112",
+     ]);
+
+===== MODIFIED: server/tests/multitenancy/support/scenarios.ts =====
+--- a/server/tests/multitenancy/support/scenarios.ts	2026-10-16 22:57:10
++++ b/server/tests/multitenancy/support/scenarios.ts	2026-10-16 22:30:22
+@@ -47,6 +47,7 @@
+   "mobile-selection",
+   "openmuse-connectors-deletion",
+   "openmuse-personal",
++  "personal-shares",
+   "plugins-approvals",
+   "resource-policy",
+   "runtime-config",
+
+===== MODIFIED: server/src/index.ts =====
+--- a/server/src/index.ts	2026-10-16 22:57:10
++++ b/server/src/index.ts	2026-10-16 22:44:14
+@@ -263,6 +263,10 @@
+   verifyDirectoryDatabase,
+   verifyOperatorDatabase,
+ } from "./enterprise/tenancy/connections";
++import {
++  createPersonalShareAdminService,
++  createPersonalShareDecisionService,
++} from "./enterprise/tenancy/personal-share-rules";
+ import {
+   createCompanyAdminAuthorizer,
+   createWorkspaceAdminService,
+@@ -908,6 +912,28 @@
+       });
+     })()
+   : createUnavailableWorkspaceScopeRoutes();
++// MT010 (Issue #53): personal-resource share rules. The decision half rides
++// the already-verified restricted data channel; the owner-only share/revoke
++// half needs the restricted operator channel and stays null — fail-closed,
++// no share can ever be created or revoked — when that channel is not wired.
++// Held here for the share-token and share-page entrypoints that land in
++// MT058 and MT092; nothing in this assembly serves traffic with it yet.
++export const personalShareRules = await (async () => {
++  if (!enterpriseCapabilities) return null;
++  const operatorUrl = config.enterpriseOperatorDatabaseUrl;
++  const operator = operatorUrl
++    ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
++        // Same discipline as the workspace-admin channel above: a failing
++        // operator verification leaves the write half unavailable, never
++        // permissive; no console here (server/src is noConsole-enforced).
++        () => null,
++      )
++    : null;
++  return {
++    decisions: createPersonalShareDecisionService(enterpriseCapabilities.data),
++    admin: operator ? createPersonalShareAdminService(operator) : null,
++  };
++})();
+ const identityStore = createIdentityStore(database, credentialStore);
+ 
+ const agentVault = {
+
+===== NEW: server/src/enterprise/tenancy/personal-share-rules.ts (全文件新增) =====
+===== NEW: server/src/db/schema/personal-shares.ts (全文件新增) =====
+===== NEW: server/tests/multitenancy/personal-share-rules.test.ts (全文件新增) =====
+===== NEW: server/tests/multitenancy/support/personal-share.ts (全文件新增) =====

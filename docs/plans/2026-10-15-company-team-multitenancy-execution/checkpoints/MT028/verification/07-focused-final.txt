@@ -1,0 +1,8 @@
+# MT028 聚焦 GREEN 终态（2026-10-17，26 用例含并发双消费）
+command: bun test tests/multitenancy/oauth-state.test.ts --timeout 60000
+
+ 26 pass
+ 0 fail
+ 149 expect() calls
+Ran 26 tests across 1 file. [2.27s]
+exit=0
