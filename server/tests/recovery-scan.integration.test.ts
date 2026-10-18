@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, test } from "../../tests/support/e2e-compat";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -18,6 +18,11 @@ import {
 } from "../src/db/schema/credit-reservations";
 import { creditGrants, creditLedger } from "../src/db/schema/credits";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
+
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /*
  * Bifrost #276 (08.1): the unknown-dispatch recovery scan, on a real PostgreSQL
@@ -39,7 +44,7 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  *
  * RUNNER NOTE (recorded for the reviewer): this file imports `bun:test` directly, not
  * tests/support/e2e-compat, because it tests modules whose graph reaches `import { SQL }
- * from "bun"` (src/db/client.ts) — on this branch (BASE 3e8a6072 + integration layer) that
+ * from "../../tests/support/bun-compat"` (src/db/client.ts) — on this branch (BASE 3e8a6072 + integration layer) that
  * import cannot resolve under the e2e runner's Node runtime, and e2e-compat suites cannot
  * collect under plain `bun test` (the bced6121 migration's known gap; main's cb636f02
  * schedules exactly such Bun-runtime suites via `bun test`). The ticket's Verification
@@ -57,7 +62,7 @@ const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const writer = createCreditWriter(database);
 const scanner = createRecoveryScanner({ database });
 const prefix = `b5-276-${randomUUID().slice(0, 8)}`;
-const workerScript = join(import.meta.dir, "support", "recovery-scan-worker.ts");
+const workerScript = join(hereDir, "support", "recovery-scan-worker.ts");
 
 const GRANT_TOTAL = 10_000_00; // 10_000 credits, ×100
 

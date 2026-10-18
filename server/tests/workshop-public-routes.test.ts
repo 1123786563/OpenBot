@@ -8,6 +8,10 @@ import {
   type ShareStore,
 } from "../src/workshop/sharing";
 import { STATIC_CSP } from "../src/workshop/preview";
+import { createRequire } from "node:module";
+
+const nodeRequire = createRequire(import.meta.url);
+
 
 /**
  * The public door's contract (B15b): the token is the only key, the answer is static and
@@ -64,7 +68,7 @@ function build(input?: {
   });
   // Mounted as app.ts mounts BOTH surfaces: the owner prefix the path regexes trim, and
   // the public prefix the anonymous routes answer under.
-  const { Hono } = require("hono") as typeof import("hono");
+  const { Hono } = nodeRequire("hono") as typeof import("hono");
   const mounted = new Hono();
   mounted.route("/api/workshop", app);
   mounted.route("/api/public/workshop", app);

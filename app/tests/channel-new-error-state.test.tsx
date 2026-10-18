@@ -1,3 +1,4 @@
+import "./preload";
 import "./channel-new-error-state.fixture";
 
 import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";

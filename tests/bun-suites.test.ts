@@ -8,8 +8,8 @@ import { expect, test } from "./support/e2e-compat";
  * Suites that stay on the Bun runtime, driven and reported by e2e.
  *
  * The runner only executes on Node, while the server's data layer is Bun's own SQL client
- * (`server/src/db/client.ts` imports `{ SQL } from "bun"` and `drizzle-orm/bun-sql`) and its HTTP
- * layer is `serve` from "bun". Those suites test through that layer, so their process has to be
+ * (`server/src/db/client.ts` imports `{ SQL } from "./support/bun-compat"` and `drizzle-orm/bun-sql`) and its HTTP
+ * layer is `serve` from "./support/bun-compat". Those suites test through that layer, so their process has to be
  * Bun's; the decision recorded in ADR 0008 is that e2e still owns the entry point, the schedule and
  * the report. Each group below is one result row in the run, with Bun's own counts and failure text
  * carried into the assertion message.

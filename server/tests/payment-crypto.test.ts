@@ -12,6 +12,10 @@ import {
   rsaSign,
   rsaVerify,
 } from "../src/billing/payments/crypto";
+import { createRequire } from "node:module";
+
+const nodeRequire = createRequire(import.meta.url);
+
 
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
@@ -50,7 +54,7 @@ describe("RSA-SHA256 signing and verification", () => {
   });
 
   test("a signature from another key fails verification", () => {
-    const { generateKeyPairSync } = require("node:crypto");
+    const { generateKeyPairSync } = nodeRequire("node:crypto");
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const foreign = rsaSign(
       privateKey.export({ type: "pkcs8", format: "pem" }) as string,
@@ -77,7 +81,7 @@ describe("AES-256-GCM callback decryption", () => {
   const aad = "transaction";
 
   function encrypt(plain: string, aadValue: string, keyBuffer: Buffer): string {
-    const { createCipheriv } = require("node:crypto");
+    const { createCipheriv } = nodeRequire("node:crypto");
     const cipher = createCipheriv(
       "aes-256-gcm",
       keyBuffer,

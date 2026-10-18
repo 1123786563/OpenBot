@@ -4,7 +4,7 @@
 // Native e2e files need the e2e-backed layer; the files listed in the Bun manifest are executed by
 // `bun test`, where that layer would import Node's `module.registerHooks` and fail. Both directions
 // are rewritten so re-running the partition is idempotent after the audit changes a file's bucket.
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -17,12 +17,24 @@ const E2E = "support/e2e-compat";
 const BUN = "support/bun-test-compat";
 
 /*
- * Files Bun itself loads before any suite — `bunfig.toml`'s preload. e2e never collects them, so they
- * belong to the bun:test side whatever the audit says about the suites that import them. Only that:
- * an earlier version of this rule also matched `scripts/`, which moved ordinary suites onto the Bun
- * layer without recording them in the manifest, and the runner then failed to collect them.
+ * Exactly the files `bunfig.toml` hands Bun as `[test] preload`, read from the TOML rather than
+ * guessed from a path pattern. e2e never collects them, so they belong to the bun:test side. An
+ * earlier version matched the substring `preload`, which also swept up `bunfig-preload.test.ts` — a
+ * normal suite *about* those files — onto the Bun layer without recording it in the manifest, and the
+ * runner then failed to collect it with `Received protocol 'bun:'`.
  */
-const BUN_ONLY = /preload/;
+const BUN_ONLY = new Set(
+  ["bunfig.toml", "server/bunfig.toml"]
+    .filter((file) => existsSync(join(root, file)))
+    .flatMap((file) => {
+      const toml = readFileSync(join(root, file), "utf8");
+      const block = toml.slice(toml.indexOf("[test]"));
+      const entry = block.match(/preload\s*=\s*\[([^\]]*)\]/);
+      return [...(entry?.[1]?.match(/["']([^"']+)["']/g) ?? [])].map((raw) =>
+        raw.replace(/["']/g, "").replace(/^\.\//, ""),
+      );
+    }),
+);
 
 function walk(dir, out) {
   for (const entry of readdirSync(dir)) {
@@ -58,7 +70,7 @@ for (const dir of dirs) {
   for (const file of walk(resolve(root, dir), [])) {
     const rel = file.replace(`${root}/`, "");
     const source = readFileSync(file, "utf8");
-    const want = bunFiles.has(rel) || BUN_ONLY.test(rel) ? BUN : E2E;
+    const want = bunFiles.has(rel) || BUN_ONLY.has(rel) ? BUN : E2E;
     const from = want === BUN ? E2E : BUN;
     // The specifier is relative, so only its tail is stable: `../../tests/support/e2e-compat"`.
     const tails = [`/${from}"`, `/${from}'`, `"${from}"`, `"${from}'`];

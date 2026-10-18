@@ -115,6 +115,26 @@ function withDomPreload(source, file) {
   return `import "${specifier}";\n${source}`;
 }
 
+
+/**
+ * Bun gives ESM files a `require`; Node does not. Rewrite it to a createRequire handle so the same
+ * file loads under either runner.
+ */
+function rewriteBunRequire(source, file, notes) {
+  let next = source;
+  if (/(^|[^.\w])require\(/.test(next) && !/createRequire/.test(next)) {
+    const injected =
+      'import { createRequire } from "node:module";\n\nconst nodeRequire = createRequire(import.meta.url);\n';
+    let end = 0;
+    for (const match of next.matchAll(/^import[\s\S]*?;\n/gm))
+      end = match.index + match[0].length;
+    next = `${next.slice(0, end)}${injected}\n${next.slice(end)}`;
+    next = next.replace(/(^|[^.\w])require\((["'])/g, "$1nodeRequire($2");
+    notes.push([relative(root, file), "rewrote Bun's ESM require() to createRequire"]);
+  }
+  return next;
+}
+
 for (const file of files) {
   const source = readFileSync(file, "utf8");
   // A suite file that took the runner's bare `e2e` import gets the same treatment: it needs the
@@ -135,8 +155,10 @@ for (const file of files) {
       continue;
     }
     // Already on the compat layer: still port `from "bun"` value imports and the DOM preload.
-    let ported = portBunValueImport(source, file);
-    ported = withDomPreload(ported, file);
+    let ported = withDomPreload(
+      rewriteBunRequire(portBunValueImport(source, file), file, notes),
+      file,
+    );
     if (ported !== source) {
       if (!dry) writeFileSync(file, ported);
       changed.push(relative(root, file));
@@ -184,6 +206,8 @@ for (const file of files) {
         ? block + next
         : `${next.slice(0, lineEnd + 1)}\n${block}${next.slice(lineEnd + 1)}`;
   }
+
+  next = rewriteBunRequire(next, file, notes);
 
   next = portBunValueImport(next, file);
 

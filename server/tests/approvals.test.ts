@@ -15,6 +15,10 @@ import { createComputerGateway } from "../src/computer/gateway";
 import { HeadlessToolSuspension } from "../src/computer/headless-tools";
 import { createHostAccessBroker } from "../src/host-access/broker";
 import { CatalogueEntryUnknownError } from "../src/plugins/store";
+import { createRequire } from "node:module";
+
+const nodeRequire = createRequire(import.meta.url);
+
 
 const context = {
   runId: "run",

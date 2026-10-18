@@ -5,6 +5,10 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { WechatConfig } from "../src/billing/payments/wechat";
 import { createWechatProvider } from "../src/billing/payments/wechat";
+import { createRequire } from "node:module";
+
+const nodeRequire = createRequire(import.meta.url);
+
 
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
@@ -24,7 +28,7 @@ const platformCert = readFileSync(
   "utf8",
 );
 const { rsaSign, certificateSerial } =
-  require("../src/billing/payments/crypto") as {
+  nodeRequire("../src/billing/payments/crypto") as {
     rsaSign: (key: string, canonical: string) => string;
     certificateSerial: (pem: string) => string;
   };
@@ -363,7 +367,7 @@ describe("callback verification (four headers + GCM)", () => {
     const nonce = headers.get("wechatpay-nonce") ?? "";
     const foreign = createSign("RSA-SHA256");
     foreign.update(`${timestamp}\n${nonce}\n${body}\n`);
-    const { generateKeyPairSync } = require("node:crypto");
+    const { generateKeyPairSync } = nodeRequire("node:crypto");
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const signer = createSign("RSA-SHA256");
     signer.update(`${timestamp}\n${nonce}\n${body}\n`);
