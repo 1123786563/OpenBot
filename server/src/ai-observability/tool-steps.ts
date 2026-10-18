@@ -234,7 +234,6 @@ const FRAGMENT_KEYS: readonly string[] = [
 /** Retriever options cap top_k at 10; the cap here is a defensive ceiling, not policy. */
 const MAX_FRAGMENTS = 64;
 
-/** The fragment locator keys that survive projection, in the span's own naming. */
 /** Hyphenated UUIDv7 — the explicit-id shape the verified contract adopts verbatim. */
 const UUID_V7 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
