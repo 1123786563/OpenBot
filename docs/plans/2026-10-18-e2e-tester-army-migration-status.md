@@ -249,6 +249,27 @@ Test Files  32 failed | 550 passed | 17 skipped (599)
 `docs/verification/e2e-red-inventory.md`。同一份账在数据库可达时的那轮（19:54）是
 `7931 passed / 187 failed`、驱动层 18/30 组过。
 
+## 修好挂退与墙钟之后的那一轮（21:21 CST）
+
+`E2E_UNIT_OUTPUT=.e2e/exitcheck ./node_modules/.bin/e2e run --config e2e.unit.config.ts`：
+
+```
+Test Files  31 failed | 552 passed | 17 skipped (600)
+     Tests  177 failed | 7933 passed | 90 skipped (8200)
+   Duration  1491.37s (24m 51s)   ← 汇总末尾被我中断，按打印出的汇总记录
+```
+
+两点观察：
+
+1. **退出是干净的**：进程终止后 `127.0.0.1:4600` 立刻释放、没有残留的 `e2e run` 进程，
+   `serve()` 的 `unref()` 与驱动组的 840 s 墙钟都在生效。
+2. **一轮的墙钟从 11 分钟涨到 25 分钟**，代价来自"失败文件各自重跑一次"（正确性换时间）。
+   因此在 CI 里应当按 `E2E_UNIT_SCOPE` 切目录并行跑，而不是让单个作业等整库；
+   单作业超过 40 分钟就会被 `timeout` 截断（这次 2400 s 的预算刚好卡在边界）。
+
+失败数从 192 降到 177、红文件从 32 到 31，差的就是分流掉的 `account-mode-dialog` 与
+驱动层判定收紧的结果。
+
 ## 复核方式
 
 ```bash
