@@ -4,9 +4,9 @@
 
 ## 背景与输入
 
-- 原实现（Task `task_4a94e96cd775`，已结算）+ 独立复审（Task `task_70322419a303`）报告 `reports/MT004-review.md`：Spec 4/4 PASS / Code PASS with findings —— **F1（medium）必须关闭**，F2（low）附带。
+- 原实现（Task `task_4a94e96cd775`，已结算）+ 独立复审（Task `task_70322419a303`）报告 `archive/plans/multitenancy-execution/reports/MT004-review.md`：Spec 4/4 PASS / Code PASS with findings —— **F1（medium）必须关闭**，F2（low）附带。
 - 复审报告已随快照转移到你的工作树（findings 证据见其 §4）。
-- 被修复对象修复前哈希（先复算，不符即 worker_done --outcome failed；以 `checkpoints/MT004/fix-transfer-manifest.txt` 为准）：
+- 被修复对象修复前哈希（先复算，不符即 worker_done --outcome failed；以 `archive/plans/multitenancy-execution/checkpoints/MT004/fix-transfer-manifest.txt` 为准）：
   - `server/scripts/multitenancy/migrate-test.ts`
   - `server/tests/multitenancy/membership-model.test.ts`
 - HEAD 必须 = `f0520524f0faa2b4533b9d2f1aa692c8f907ba71`（manifest 首行）。
@@ -26,8 +26,8 @@
 
 - `server/scripts/multitenancy/migrate-test.ts`
 - `server/tests/multitenancy/membership-model.test.ts`
-- `docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT004-fix.md`（新建）
-- `docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT004-fix/**`（新建）
+- `archive/plans/multitenancy-execution/reports/MT004-fix.md`（新建）
+- `archive/plans/multitenancy-execution/checkpoints/MT004-fix/**`（新建）
 
 ## 约束
 
@@ -53,6 +53,6 @@
 
 ## 产出
 
-- `reports/MT004-fix.md`：修复说明、RED/GREEN 证据、F1/F2 关闭映射、命令与退出码。
-- `checkpoints/MT004-fix/`：before/after 哈希、diff、review-package.json。
+- `archive/plans/multitenancy-execution/reports/MT004-fix.md`：修复说明、RED/GREEN 证据、F1/F2 关闭映射、命令与退出码。
+- `archive/plans/multitenancy-execution/checkpoints/MT004-fix/`：before/after 哈希、diff、review-package.json。
 - worker_done --outcome succeeded|failed，附 --report-path --files-modified。

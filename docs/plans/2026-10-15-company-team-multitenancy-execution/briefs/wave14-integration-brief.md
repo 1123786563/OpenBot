@@ -8,7 +8,7 @@
 - MT122：…/i14-mt122（增量 5 文件：tenancy/entry-context.ts、src/app.ts、src/index.ts、tests entry-context.test.ts、support/entry-context.ts）
 - MT042：…/i14-mt042（增量 5 文件：runs/scan-executor.ts、scripts/multitenancy/migrate-test.ts、tests scan-executor.test.ts、support/scan-executor.ts、tests/migration-tool.test.ts）
 - MT059：…/i14-mt059（增量 7 文件，**personal-bot.ts 用工作树态=HEAD+MUT-1 移除**：tenancy/personal-bot.ts、schema/enterprise-personal-bot.ts、schema/index.ts、scripts/multitenancy/migrate-test.ts、tests openmuse-private-bot.test.ts、support/personal-bot.ts、tests/migration-tool.test.ts）
-- 另：五票 checkpoints/MTXXX/ 与 reports/MTXXX.md 全量 cp 进本树同路径（含 mutation/、verification/）。
+- 另：五票 archive/plans/multitenancy-execution/checkpoints/MTXXX/ 与 archive/plans/multitenancy-execution/reports/MTXXX.md 全量 cp 进本树同路径（含 mutation/、verification/）。
 
 ## 2. 共享文件合并规则（均为纯追加型，按票号升序）
 - migrate-test.ts：TASKS 注册表=本树基线+MT031 块+MT042 块+MT059 块（各块互不重叠，逐块移植后以 migration-tool.test.ts 穷举断言为权威校验）。
@@ -25,8 +25,8 @@
 - app 面无增量（五票均 server 面；app/tests 无新增）——如 inventory.test 断言文件数请以实测为准。
 
 ## 4. 产出
-- checkpoints/wave14-integration/{manifest(逐文件 SHA-256 源树对照), provision, apply-chain-journal, full-suite, typecheck, biome-fix-diff(前后), 整改说明}.txt
-- reports/wave14-integration.md（合并明细+终态数字+与各票报告数字对照表）
-- checkpoints/MT{022,031,122,042,059}-integration/integration.json（{"ticket":"MTXXX","integrated":true,"full_suite":"1124/0/43","source_tree":"i14-mtXXX","hash_verified":true}）
+- archive/plans/multitenancy-execution/checkpoints/wave14-integration/{manifest(逐文件 SHA-256 源树对照), provision, apply-chain-journal, full-suite, typecheck, biome-fix-diff(前后), 整改说明}.txt
+- archive/plans/multitenancy-execution/reports/wave14-integration.md（合并明细+终态数字+与各票报告数字对照表）
+- archive/plans/multitenancy-execution/checkpoints/MT{022,031,122,042,059}-integration/integration.json（{"ticket":"MTXXX","integrated":true,"full_suite":"1124/0/43","source_tree":"i14-mtXXX","hash_verified":true}）
 - dag.json：五票节点 status→verified（coordinator 复核）
 - 结束：docker rm 容器+env 删除+worker_done。禁止：git 提交、find /、生产迁移。

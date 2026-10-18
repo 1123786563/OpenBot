@@ -1,6 +1,6 @@
 # MT008 / Issue #51 — 实现轮 Task Brief（资源可见性属性与 workspace-v1 策略版本）
 
-角色：`backend_implementer`；完成后由全新独立 Pi Reviewer 复审。前置已集成（先复算 `checkpoints/prereq-manifest.txt`，不符即 worker_done --outcome failed）。
+角色：`backend_implementer`；完成后由全新独立 Pi Reviewer 复审。前置已集成（先复算 `archive/plans/multitenancy-execution/checkpoints/prereq-manifest.txt`，不符即 worker_done --outcome failed）。
 
 ## 目标
 
@@ -32,5 +32,5 @@
 
 ## 产出
 
-- `reports/MT008.md` + `checkpoints/MT008/`（prereq 复算、before/after-hashes、changes.diff、red-green/、mutation/≥3、review-package.json、sha256-manifest.txt——**manifest 必须覆盖全部声明交付物**，含 tests/support/ 下支撑文件，吸取 MT006 F2 教训）
+- `archive/plans/multitenancy-execution/reports/MT008.md` + `archive/plans/multitenancy-execution/checkpoints/MT008/`（prereq 复算、before/after-hashes、changes.diff、red-green/、mutation/≥3、review-package.json、sha256-manifest.txt——**manifest 必须覆盖全部声明交付物**，含 tests/support/ 下支撑文件，吸取 MT006 F2 教训）
 - worker_done --outcome succeeded|failed，附 --report-path --files-modified

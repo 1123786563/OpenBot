@@ -18,5 +18,5 @@
 - 基线复现：全量 990/0/0/38；交付后聚焦新套件全绿+全量=990+新增用例数/0/0/38+（新文件数）。
 - 变异注入自证：每个新判定分支≥1 变异（注入→聚焦 fail→恢复哈希闭环→复绿）。
 - typecheck 0；biome 触及文件 clean（存量仅 BASE 既有 src/index.ts 4+1 与 app.ts/provider-oauth.test.ts——MT030 复审 F1 口径，任何新增违规=FAIL）。
-- checkpoints/MT022/（before/after-hashes、red-green、mutation、verification）；报告 reports/MT022.md。
+- archive/plans/multitenancy-execution/checkpoints/MT022/（before/after-hashes、red-green、mutation、verification）；报告 archive/plans/multitenancy-execution/reports/MT022.md。
 - 禁 find / 全盘扫描；禁本地 git commit；测毕 docker rm 回显存档。

@@ -19,7 +19,7 @@ Verification：`bun test server/tests/multitenancy/rls-core.test.ts`（新建，
 
 - 父 Spec #6、ADR 0004（accepted）/0002/0003、CONTEXT.md。覆盖 A6、A1、A2。
 - BASE `f0520524f0faa2b4533b9d2f1aa692c8f907ba71`；前置已转移（prereq-manifest.txt 29 文件）= MT001–MT006 + MT008 + MT112 verified 集合。
-- 领取时先复算哈希；重点前置：MT004（20 表 RLS 策略 + ob_ent_* 能力角色 + operator/directory/data 三登录，见 migrate-test.ts MT004 任务与 enterprise-test-db.ts）、MT008（enterprise_resources.visibility 列 + workspace-v1 判定 + resource-policy 注册表）、MT002（受限角色测试 harness，tests/support/enterprise-database.ts 的 ROLE_DATABASE_VARIABLES）。报告在 reports/。
+- 领取时先复算哈希；重点前置：MT004（20 表 RLS 策略 + ob_ent_* 能力角色 + operator/directory/data 三登录，见 migrate-test.ts MT004 任务与 enterprise-test-db.ts）、MT008（enterprise_resources.visibility 列 + workspace-v1 判定 + resource-policy 注册表）、MT002（受限角色测试 harness，tests/support/enterprise-database.ts 的 ROLE_DATABASE_VARIABLES）。报告在 archive/plans/multitenancy-execution/reports/。
 - **票据备注（必须遵守）**：其余业务闭环表的 RLS 在各自 Ticket 内启用、复用你的策略模板与测试写法——模板化交付（报告给出策略模板章节）。
 
 ## 可写文件（票面域；其余只读）
@@ -37,4 +37,4 @@ Verification：`bun test server/tests/multitenancy/rls-core.test.ts`（新建，
 
 ## 交付物（未提交检查点）
 
-reports/MT012.md + checkpoints/MT012/（同 MT007 惯例全套）+ 策略模板章节（供下游闭环 Ticket 复用）。完成后 worker_done 附 --report-path。无提交/推送/合并/生产迁移/部署授权。
+archive/plans/multitenancy-execution/reports/MT012.md + archive/plans/multitenancy-execution/checkpoints/MT012/（同 MT007 惯例全套）+ 策略模板章节（供下游闭环 Ticket 复用）。完成后 worker_done 附 --report-path。无提交/推送/合并/生产迁移/部署授权。

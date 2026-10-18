@@ -13,4 +13,4 @@
 - 冻结面：credential-ownership.ts、enterprise-credentials.ts 只消费不改。
 
 ## 验证
-- 端口 55565（库名 w14c），三步配方+七变量 env；基线 990/0/0/38；全量=990+新增；变异自证；typecheck/biome；checkpoints/MT031/、reports/MT031.md；禁 find /、禁 commit、docker rm 回显。
+- 端口 55565（库名 w14c），三步配方+七变量 env；基线 990/0/0/38；全量=990+新增；变异自证；typecheck/biome；archive/plans/multitenancy-execution/checkpoints/MT031/、archive/plans/multitenancy-execution/reports/MT031.md；禁 find /、禁 commit、docker rm 回显。

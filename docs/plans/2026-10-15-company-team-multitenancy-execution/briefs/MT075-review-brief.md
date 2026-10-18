@@ -1,6 +1,6 @@
 # MT075 / Issue #118 独立复审 Brief — coordinator 下发
 
-你是 MT075 的独立复审者（全新 Pi 会话）。只读被审文件；唯一新建 = reports/MT075-review.md；不修复；无提交/推送/合并授权；skipped 不算通过。完成 worker_done 附 --report-path。
+你是 MT075 的独立复审者（全新 Pi 会话）。只读被审文件；唯一新建 = archive/plans/multitenancy-execution/reports/MT075-review.md；不修复；无提交/推送/合并授权；skipped 不算通过。完成 worker_done 附 --report-path。
 
 ## 审阅对象（工作树 = 前置 36 项 + 本票 5 交付）
 

@@ -10,14 +10,14 @@
 
 - 本工作树 HEAD 必须是 `f0520524f0faa2b4533b9d2f1aa692c8f907ba71`…（完整值 `f0520524f0faa2b4533b9d2f1aa692c8f907ba71` 不对则以 `git rev-parse HEAD` 输出 `f0520524f0faa2b4533b9d2f1aa692c8f907ba71` 为准；正确值：`f0520524f0faa2b4533b9d2f1aa692c8f907ba71` 若不匹配请以实际命令输出为准并停止）。
   **正确 BASE：`f0520524f0faa2b4533b9d2f1aa692c8f907ba71` 以 `git rev-parse HEAD` 实际输出为准（应为 f0520524f0faa2b4533b9d2f1aa692c8f907ba71 开头）。**
-- 逐条复算 `docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/review-sha256-manifest.txt` 中每个文件的 SHA-256；任何不匹配 → 立即 worker_done --outcome failed 并报告差异，不得继续审阅。
+- 逐条复算 `archive/plans/multitenancy-execution/checkpoints/MT003/review-sha256-manifest.txt` 中每个文件的 SHA-256；任何不匹配 → 立即 worker_done --outcome failed 并报告差异，不得继续审阅。
 - `git status --porcelain` 应只含清单内 untracked 路径；出现 tracked 修改即报告。
 
 ## 审阅对象
 
 - `server/scripts/multitenancy/migrate-test.ts`（33796 bytes）
 - `server/tests/multitenancy/migration-tool.test.ts`（33417 bytes）
-- 实现报告 `docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT003.md` 与 `checkpoints/MT003/**`
+- 实现报告 `archive/plans/multitenancy-execution/reports/MT003.md` 与 `archive/plans/multitenancy-execution/checkpoints/MT003/**`
 - 前置（只读参考）：MT001 `server/scripts/multitenancy/inventory.ts`、`server/tests/multitenancy/inventory.test.ts`（已验证集成的 f0520524f0faa2b4533b9d2f1aa692c8f907ba71 快照）
 
 ## 审阅要点
@@ -42,7 +42,7 @@
 
 ## 产出
 
-写 `docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT003-review2.md`（本工作树内）：Verdicts 表（两个结论各自 PASS/FAIL）、findings（编号/级别/证据/建议）、全部复跑命令与退出码、哈希复算结果。这是你在本工作树唯一允许新建/修改的文件。
+写 `archive/plans/multitenancy-execution/reports/MT003-review2.md`（本工作树内）：Verdicts 表（两个结论各自 PASS/FAIL）、findings（编号/级别/证据/建议）、全部复跑命令与退出码、哈希复算结果。这是你在本工作树唯一允许新建/修改的文件。
 
 ## 约束
 

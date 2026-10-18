@@ -31,4 +31,4 @@ Verification：`bun test server/tests/multitenancy/personal-share-rules.test.ts`
 
 ## 交付物
 
-reports/MT010.md + checkpoints/MT010/ 全套。完成 worker_done 附 --report-path。
+archive/plans/multitenancy-execution/reports/MT010.md + archive/plans/multitenancy-execution/checkpoints/MT010/ 全套。完成 worker_done 附 --report-path。

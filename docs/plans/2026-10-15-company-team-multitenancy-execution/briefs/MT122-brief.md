@@ -14,10 +14,10 @@
 - AC4 证据：事务内无 fetch/网络调用断言（测试包装或静态扫描存档）。
 
 ## 验证
-- 端口 55567（库名 w14e），三步配方+七变量 env；基线 990/0/0/38；全量=990+新增；变异自证（默认范围 fail-closed、工厂按上下文、机器上下文拒绝各≥1）；typecheck 0；biome 触及文件 clean（存量口径同 MT030 复审 F1）；checkpoints/MT122/、reports/MT122.md；禁 find /、禁 commit、docker rm 回显。
+- 端口 55567（库名 w14e），三步配方+七变量 env；基线 990/0/0/38；全量=990+新增；变异自证（默认范围 fail-closed、工厂按上下文、机器上下文拒绝各≥1）；typecheck 0；biome 触及文件 clean（存量口径同 MT030 复审 F1）；archive/plans/multitenancy-execution/checkpoints/MT122/、archive/plans/multitenancy-execution/reports/MT122.md；禁 find /、禁 commit、docker rm 回显。
 
 ## 接管注记（第 3 任）
-第 1 任未启动即死（零产出）、第 2 任死于 Orca 重启。增量=checkpoints/MT122/（before-hashes/design.md/mutation/provision-db.sh/red-green 至 GREEN-1/verification/test-env.sh）+tests/multitenancy/entry-context.test.ts+装配面改动。从 GREEN-1 后续作（变异/全量/报告未做）。容器已清，自建（端口 55567 或披露换口）。
+第 1 任未启动即死（零产出）、第 2 任死于 Orca 重启。增量=archive/plans/multitenancy-execution/checkpoints/MT122/（before-hashes/design.md/mutation/provision-db.sh/red-green 至 GREEN-1/verification/test-env.sh）+tests/multitenancy/entry-context.test.ts+装配面改动。从 GREEN-1 后续作（变异/全量/报告未做）。容器已清，自建（端口 55567 或披露换口）。
 
 ## 接管注记（第 4 任；2026-10-18 整机重启后）
-第 3 任报告 reports/MT122.md 为**中间态**（6 处「待补」：基线 revert 复测/全量 1011 复跑/变异 MUT1-3 实跑+新增 MUT4-5/typecheck/biome——被宿主机过载阻塞）。树内交付与 checkpoints（含 mutation/run.sh 脚本就绪）已就位。本任任务=**补完 6 项待补验证并改写报告为终态**（现在宿主机负载正常）；GREEN-1/链 16/16 已存档勿重做。容器被清，自建。
+第 3 任报告 archive/plans/multitenancy-execution/reports/MT122.md 为**中间态**（6 处「待补」：基线 revert 复测/全量 1011 复跑/变异 MUT1-3 实跑+新增 MUT4-5/typecheck/biome——被宿主机过载阻塞）。树内交付与 checkpoints（含 mutation/run.sh 脚本就绪）已就位。本任任务=**补完 6 项待补验证并改写报告为终态**（现在宿主机负载正常）；GREEN-1/链 16/16 已存档勿重做。容器被清，自建。

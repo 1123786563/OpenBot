@@ -9,11 +9,11 @@
   "files": {
     "server/scripts/multitenancy/acceptance-harness.ts": "2b29aeb63be347883a997de765da75676e883b7219b8d09a5184ae75c3fa1390",
     "server/tests/multitenancy/acceptance-harness.test.ts": "df6f6f31dfa0e9b61e32ca55fee2f715917ab891281aec969b6d37eb8fd92a12",
-    "docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT131-harness.md": "0d174527373663c514058cf562cb09428bc3e6efb1319710067b7794ee8554f7",
-    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT131/before.json": "21b4a9f26df4e310a1b08cd8decd4b40dfbdc903f8c670ba3dced17104289701",
-    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT131/after.json": "f57d3b616e9466e0c9872632416943c0d3aa0702995ed8d80dc07795f1a3a0b9",
-    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT131/after-manifest-sha256.txt": "ba702b99c664ca733a8f76e286ba749bb8f9c0d45d69f661b084e7f40d341198",
-    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT131/verification-output.txt": "3e5f16f025bb09ab357967c39a5f27038d6a268d9fafd5b8d8b284f55762e80f"
+    "archive/plans/multitenancy-execution/reports/MT131-harness.md": "0d174527373663c514058cf562cb09428bc3e6efb1319710067b7794ee8554f7",
+    "archive/plans/multitenancy-execution/checkpoints/MT131/before.json": "21b4a9f26df4e310a1b08cd8decd4b40dfbdc903f8c670ba3dced17104289701",
+    "archive/plans/multitenancy-execution/checkpoints/MT131/after.json": "f57d3b616e9466e0c9872632416943c0d3aa0702995ed8d80dc07795f1a3a0b9",
+    "archive/plans/multitenancy-execution/checkpoints/MT131/after-manifest-sha256.txt": "ba702b99c664ca733a8f76e286ba749bb8f9c0d45d69f661b084e7f40d341198",
+    "archive/plans/multitenancy-execution/checkpoints/MT131/verification-output.txt": "3e5f16f025bb09ab357967c39a5f27038d6a268d9fafd5b8d8b284f55762e80f"
   },
   "consumed_readonly": {
     "MT001": [

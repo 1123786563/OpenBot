@@ -29,4 +29,4 @@ Verification：`bun test server/tests/multitenancy/runtime-config.test.ts`（新
 
 ## 交付物
 
-reports/MT014.md + checkpoints/MT014/ 全套。完成 worker_done 附 --report-path。
+archive/plans/multitenancy-execution/reports/MT014.md + archive/plans/multitenancy-execution/checkpoints/MT014/ 全套。完成 worker_done 附 --report-path。

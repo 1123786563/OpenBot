@@ -23,4 +23,4 @@
 284 项中与本票无关文件哈希不变（before/after-hashes）；变异自证每安全分支 ≥1（注入→聚焦捕获→字节复原→复绿）+RESTORE 逐位。
 
 ## 交付纪律
-checkpoints/MT039/ 全套+reports/MT039.md；零 git 提交；禁 find /；docker rm 回显；question 升级勿自设计；结论数字以本轮亲跑为准；挂死无增量时直接从头执行（前任若死于早期树为干净基线）。
+archive/plans/multitenancy-execution/checkpoints/MT039/ 全套+archive/plans/multitenancy-execution/reports/MT039.md；零 git 提交；禁 find /；docker rm 回显；question 升级勿自设计；结论数字以本轮亲跑为准；挂死无增量时直接从头执行（前任若死于早期树为干净基线）。

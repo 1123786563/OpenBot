@@ -8,7 +8,7 @@
 
 ## 快照核验（先做）
 
-- `git rev-parse HEAD` = f0520524 开头（完整值以 `checkpoints/MT005/review-sha256-manifest.txt` 首行为准）。
+- `git rev-parse HEAD` = f0520524 开头（完整值以 `archive/plans/multitenancy-execution/checkpoints/MT005/review-sha256-manifest.txt` 首行为准）。
 - 逐条复算该 manifest 每个文件 SHA-256；不匹配 → worker_done --outcome failed。
 - 预期 git 状态：`server/src/db/schema/enterprise-tenancy.ts` tracked ` M`（MT004 交付，本票零改动）；其余清单内 untracked。
 
@@ -19,11 +19,11 @@
 - `server/src/index.ts`（裁决 #1 头名 2 行改动）
 - `server/tests/multitenancy/scope-gate.test.ts`（新建 23 用例）
 - `server/tests/multitenancy/support/fixture.ts` + `fixtures.test.ts`（**D1 集成——重点**）
-- 报告 `reports/MT005.md` 与 `checkpoints/MT005/**`
+- 报告 `archive/plans/multitenancy-execution/reports/MT005.md` 与 `archive/plans/multitenancy-execution/checkpoints/MT005/**`
 
 ## 审阅要点
 
-1. **seam 落点**（对照 `reports/seam-identification-mt005.md`）：扩展确在 createScopeResolver；proactive 侧 resolveScope（index.ts:2875/2983 附近）未被触碰；裁决 #2 无 conversations-v1 常量。
+1. **seam 落点**（对照 `archive/plans/multitenancy-execution/reports/seam-identification-mt005.md`）：扩展确在 createScopeResolver；proactive 侧 resolveScope（index.ts:2875/2983 附近）未被触碰；裁决 #2 无 conversations-v1 常量。
 2. **D1 重点**（MT002 交付文件的集成是否最小且语义正确）：
    - fixture.ts：三块是否均为纯追加（头注释、经受限 operator 角色插 MT004 团队成员行、ROUTE_ERROR_STATUS 追加两映射）；无既有语句删除/改写。
    - fixtures.test.ts：diff 是否仅 2 处断言（跨团队读取、company-admin 读取：404 RESOURCE_NOT_FOUND → 403 WORKSPACE_FORBIDDEN）；该语义变化是否正确——403 对「认证身份对已知团队无资格」是否比 404 更符合「不泄露存在性」契约（对照 MT002 原断言意图与父 Spec）。
@@ -48,7 +48,7 @@
 
 ## 产出
 
-写 `reports/MT005-review.md`（本工作树唯一允许新建/修改的文件）：Verdicts、findings、命令与退出码、哈希复算、D1 集成最小性与语义正确性结论、D2/D3/D4 处置意见。
+写 `archive/plans/multitenancy-execution/reports/MT005-review.md`（本工作树唯一允许新建/修改的文件）：Verdicts、findings、命令与退出码、哈希复算、D1 集成最小性与语义正确性结论、D2/D3/D4 处置意见。
 
 ## 约束
 

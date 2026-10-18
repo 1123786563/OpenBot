@@ -1,6 +1,6 @@
 # MT005 / Issue #48 — 实现轮 Task Brief（集中授权入口）
 
-角色：`backend_implementer`；完成后由全新独立 Pi Reviewer 复审。前置：MT002+MT004 已 verified 并集成到你的工作树（以 `checkpoints/prereq-manifest.txt` 为准，先逐条复算，不符即 worker_done --outcome failed）。
+角色：`backend_implementer`；完成后由全新独立 Pi Reviewer 复审。前置：MT002+MT004 已 verified 并集成到你的工作树（以 `archive/plans/multitenancy-execution/checkpoints/prereq-manifest.txt` 为准，先逐条复算，不符即 worker_done --outcome failed）。
 
 ## 目标（Ticket 契约）
 
@@ -14,7 +14,7 @@
 4. 公司成员被暂停后，其在该公司的全部团队资格立即失效，但在其他公司的资格不受影响（跨公司隔离正反两测）。
 5. 授权判定只依赖服务端事实；请求头里的公司/团队值被篡改不改变结果（头只做选择，判定走服务端状态）。
 
-## Seam 落点（已完成独立识别，`reports/seam-identification-mt005.md` 为权威）
+## Seam 落点（已完成独立识别，`archive/plans/multitenancy-execution/reports/seam-identification-mt005.md` 为权威）
 
 - 真正的租户 seam 是 **`createScopeResolver`**（`server/src/enterprise/tenancy/store.ts:82-146`）：PlatformScope 无 role 字段、memberEpoch/aclEpoch 双 epoch、WeakSet 信任 + `assertTrustedScope`。扩展点在此，不在别处。
 - 事务等价物参照 **`server/src/conversations/store.ts:21-99` 与 `:457-580`**：`set_config('app.*', …, true)` 事务本地 + advisory locks 顺序 `tenant → principal → membership[→ resource]`。撤权即拒绝必须落在同事务内重验。
@@ -24,7 +24,7 @@
 
 ## 数据模型（MT004 交付，已集成）
 
-`enterprise_workspace_memberships`：复合 PK `(tenant_id, workspace_id, principal_id)`、双复合 FK、status `active/suspended`、epoch `>0`（read-then-increase 并发竞态已披露：串行化/重试责任归本入口——验收 3/4 的实现须在判定路径处理）。哈希以 `checkpoints/MT004/fix-review-sha256-manifest.txt` 与 `checkpoints/prereq-manifest.txt` 为准，不内联。
+`enterprise_workspace_memberships`：复合 PK `(tenant_id, workspace_id, principal_id)`、双复合 FK、status `active/suspended`、epoch `>0`（read-then-increase 并发竞态已披露：串行化/重试责任归本入口——验收 3/4 的实现须在判定路径处理）。哈希以 `archive/plans/multitenancy-execution/checkpoints/MT004/fix-review-sha256-manifest.txt` 与 `archive/plans/multitenancy-execution/checkpoints/prereq-manifest.txt` 为准，不内联。
 
 ## 约束
 
@@ -47,6 +47,6 @@
 
 ## 产出
 
-- `reports/MT005.md`：设计要点（签发入口/信任边界/事务内重验/advisory lock 顺序）、验收逐条证据映射、命令与退出码、诚实披露项。
-- `checkpoints/MT005/`：prereq 复算、before/after 哈希、diff、red-green/、mutation/（关键判定逻辑至少 3 个变异被测试捕获）、review-package.json、sha256-manifest.txt。
+- `archive/plans/multitenancy-execution/reports/MT005.md`：设计要点（签发入口/信任边界/事务内重验/advisory lock 顺序）、验收逐条证据映射、命令与退出码、诚实披露项。
+- `archive/plans/multitenancy-execution/checkpoints/MT005/`：prereq 复算、before/after 哈希、diff、red-green/、mutation/（关键判定逻辑至少 3 个变异被测试捕获）、review-package.json、sha256-manifest.txt。
 - worker_done --outcome succeeded|failed，附 --report-path --files-modified。

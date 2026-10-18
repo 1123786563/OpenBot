@@ -1,5 +1,5 @@
 # MT029 独立复审 brief
-角色：独立复审者（只读；变异重放除外）。树=r15-mt029（BASE+272+增量 8：credential-lease.ts、schema enterprise-credential-lease.ts、窄缝×3[见 changes-authorized]、测试+support）。报告：reports/MT029.md；证据：checkpoints/MT029/。
+角色：独立复审者（只读；变异重放除外）。树=r15-mt029（BASE+272+增量 8：credential-lease.ts、schema enterprise-credential-lease.ts、窄缝×3[见 changes-authorized]、测试+support）。报告：archive/plans/multitenancy-execution/reports/MT029.md；证据：archive/plans/multitenancy-execution/checkpoints/MT029/。
 ## 必做
 1. 三步配方 provision（openbot_enterprise_r15b_*，端口 55587；**基线全量须环境对齐**：实现者发现 entry-context.test.ts 令牌钉 w14int→同容器建 openbot_enterprise_w14int 库对齐[报告 §0 选项 A]，复刻该处置）。
 2. 聚焦 credential-lease.test.ts（27/0/227）+全量（1151/0/44）。
@@ -13,4 +13,4 @@
 - D2 三层冗余披露（RLS pin+谓词 pin+decideLease 比对）与 MUT-3b 证明链闭环性。
 - D4 deny 不审计口径（MT027 先例）是否与票面「每次签发、使用与撤销留审计」语义自洽。
 ## 输出
-reports/MT029-review.md+worker_done。
+archive/plans/multitenancy-execution/reports/MT029-review.md+worker_done。

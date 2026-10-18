@@ -1,6 +1,6 @@
 # MT006 / Issue #49 — 实现轮 Task Brief（工作范围选择与团队管理）
 
-角色：`backend_implementer`；完成后由全新独立 Pi Reviewer 复审。前置已集成（先复算 `checkpoints/prereq-manifest.txt`，不符即 worker_done --outcome failed）。
+角色：`backend_implementer`；完成后由全新独立 Pi Reviewer 复审。前置已集成（先复算 `archive/plans/multitenancy-execution/checkpoints/prereq-manifest.txt`，不符即 worker_done --outcome failed）。
 
 ## 目标
 
@@ -31,5 +31,5 @@
 
 ## 产出
 
-- `reports/MT006.md` + `checkpoints/MT006/`（prereq 复算、before/after、diff、red-green/、mutation/≥3、review-package.json、sha256-manifest.txt）
+- `archive/plans/multitenancy-execution/reports/MT006.md` + `archive/plans/multitenancy-execution/checkpoints/MT006/`（prereq 复算、before/after、diff、red-green/、mutation/≥3、review-package.json、sha256-manifest.txt）
 - worker_done --outcome succeeded|failed，附 --report-path --files-modified

@@ -20,8 +20,8 @@ Verification：`bun test server/tests/multitenancy/admin-separation.test.ts`（�
 - 前置 = MT001-008 + MT012 + MT013 + MT007 全部 verified 集合。重点：
   - MT006 workspace-admin.ts + MT007 修复后扩展（restore/suspendCompanyMember + 审计 + revocation.ts 六 checkpoint——公司/团队管理动作的现有实现与审计通道，复用勿重造）
   - MT013 启动校验（平台身份/机器读角色 ob_ent_identity_operator 已在 RLS/角色面单独登记——MT012 交付；管理面分类与之对齐）
-  - MT001 清单（reports/MT001.md 与其检查点——分类回写目标）
-- 报告在 reports/。
+  - MT001 清单（archive/plans/multitenancy-execution/reports/MT001.md 与其检查点——分类回写目标）
+- 报告在 archive/plans/multitenancy-execution/reports/。
 
 ## 可写文件
 
@@ -38,4 +38,4 @@ Verification：`bun test server/tests/multitenancy/admin-separation.test.ts`（�
 
 ## 交付物
 
-reports/MT075.md + checkpoints/MT075/（全套）+ 分类清单（回写 MT001 的 diff 与哈希）。完成 worker_done 附 --report-path。
+archive/plans/multitenancy-execution/reports/MT075.md + archive/plans/multitenancy-execution/checkpoints/MT075/（全套）+ 分类清单（回写 MT001 的 diff 与哈希）。完成 worker_done 附 --report-path。

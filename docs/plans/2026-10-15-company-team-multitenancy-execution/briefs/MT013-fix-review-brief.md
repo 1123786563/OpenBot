@@ -1,10 +1,10 @@
 # MT013 / Issue #57 修复轮增量复审 Brief — coordinator 下发
 
-你是 MT013 修复轮的独立复审者（全新 Pi 会话，与实现者/修复者/原复审者无共享上下文）。只读被审文件；唯一允许新建文件 = reports/MT013-fix-review.md；不修复；无提交/推送/合并授权；skipped 不算通过。完成 worker_done 附 --report-path。
+你是 MT013 修复轮的独立复审者（全新 Pi 会话，与实现者/修复者/原复审者无共享上下文）。只读被审文件；唯一允许新建文件 = archive/plans/multitenancy-execution/reports/MT013-fix-review.md；不修复；无提交/推送/合并授权；skipped 不算通过。完成 worker_done 附 --report-path。
 
 ## 背景
 
-原交付复审（`reports/MT013-review.md`，第五任，sha256 a734f15e…，保留在本树）判定 PASS 带 1 medium（F1）+ 1 low（F2）+ 1 info（F3）。coordinator 裁决 #11 触发修复轮：修复交付 = `startup-checks.ts` 7ab7275e→**59f7e658**、`startup-checks.test.ts` 2d030bf2→**f30dbc2a**（领取时先核实现树快照哈希）+ `checkpoints/MT013/fix/` 全套 + 报告修复轮章节（reports/MT013.md 尾部）。修复指令原文见 `briefs/MT013-fix-brief.md`。
+原交付复审（`archive/plans/multitenancy-execution/reports/MT013-review.md`，第五任，sha256 a734f15e…，保留在本树）判定 PASS 带 1 medium（F1）+ 1 low（F2）+ 1 info（F3）。coordinator 裁决 #11 触发修复轮：修复交付 = `startup-checks.ts` 7ab7275e→**59f7e658**、`startup-checks.test.ts` 2d030bf2→**f30dbc2a**（领取时先核实现树快照哈希）+ `archive/plans/multitenancy-execution/checkpoints/MT013/fix/` 全套 + 报告修复轮章节（archive/plans/multitenancy-execution/reports/MT013.md 尾部）。修复指令原文见 `briefs/MT013-fix-brief.md`。
 
 ## 审阅对象与重点裁决
 

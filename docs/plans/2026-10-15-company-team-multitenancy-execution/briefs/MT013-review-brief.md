@@ -4,7 +4,7 @@
 
 ## 背景（如实披露）
 
-实现者经历上游 502 中断与 Orca 重启，死于 worker_done 发出前；全部交付物已完整落盘（reports/MT013.md e552054e… + checkpoints 全套）。coordinator 已按 review-sha256-manifest 独立复算 34/34（两份 manifest 文件的自引用失配为已知形态，不计）。**manifest 格式注意**：`#` 注释分节；deliverables 路径相对 `server/`、checkpoints 相对 `checkpoints/MT013/`、报告相对仓库根——先解析再复算。
+实现者经历上游 502 中断与 Orca 重启，死于 worker_done 发出前；全部交付物已完整落盘（archive/plans/multitenancy-execution/reports/MT013.md e552054e… + checkpoints 全套）。coordinator 已按 review-sha256-manifest 独立复算 34/34（两份 manifest 文件的自引用失配为已知形态，不计）。**manifest 格式注意**：`#` 注释分节；deliverables 路径相对 `server/`、checkpoints 相对 `archive/plans/multitenancy-execution/checkpoints/MT013/`、报告相对仓库根——先解析再复算。
 
 ## 目标
 
@@ -22,7 +22,7 @@
 - `server/src/enterprise/tenancy/startup-checks.ts`（新：三 evaluator + 编排 + verdict）
 - `server/src/index.ts`（仅启动序列段接线；MT006 路由段不存在于本树——本树基线为 MT005-era，正常）
 - `server/tests/config.test.ts`（新 describe 8 用例）+ `server/tests/multitenancy/startup-checks.test.ts`（33 用例）
-- 报告 `reports/MT013.md` 与 `checkpoints/MT013/**`
+- 报告 `archive/plans/multitenancy-execution/reports/MT013.md` 与 `archive/plans/multitenancy-execution/checkpoints/MT013/**`
 
 ## 审阅要点
 
@@ -48,7 +48,7 @@
 
 ## 产出
 
-写 `reports/MT013-review.md`（唯一允许新建/修改文件）：Verdicts、findings、命令与退出码、哈希复算、增量证明结论、报告披露处置意见。
+写 `archive/plans/multitenancy-execution/reports/MT013-review.md`（唯一允许新建/修改文件）：Verdicts、findings、命令与退出码、哈希复算、增量证明结论、报告披露处置意见。
 
 ## 约束
 

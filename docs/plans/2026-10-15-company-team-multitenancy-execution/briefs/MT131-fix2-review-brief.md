@@ -4,19 +4,19 @@
 
 ## 目标
 
-两个独立结论：(1) 修复有效性——`reports/MT131-review2.md` 的 F1/F2（Medium）是否真实关闭且无回归，F3/F4（Low）处置是否得当；(2) Code quality（修复后整体）。有效新 finding 按 critical/high/medium/low/info 分级（含 file:line 证据）。
+两个独立结论：(1) 修复有效性——`archive/plans/multitenancy-execution/reports/MT131-review2.md` 的 F1/F2（Medium）是否真实关闭且无回归，F3/F4（Low）处置是否得当；(2) Code quality（修复后整体）。有效新 finding 按 critical/high/medium/low/info 分级（含 file:line 证据）。
 
 ## 快照核验（先做）
 
-- `git rev-parse HEAD` = f0520524 开头（完整值以 `checkpoints/MT131/fix2-review-sha256-manifest.txt` 首行为准）。
+- `git rev-parse HEAD` = f0520524 开头（完整值以 `archive/plans/multitenancy-execution/checkpoints/MT131/fix2-review-sha256-manifest.txt` 首行为准）。
 - 逐条复算该 manifest 每个文件 SHA-256；不匹配 → worker_done --outcome failed。
 - `git status --porcelain` 只含清单内 untracked 路径。
 
 ## 审阅对象
 
 - 修复后 `server/scripts/multitenancy/acceptance-harness.ts`、`server/tests/multitenancy/acceptance-harness.test.ts`
-- 修复报告 `reports/MT131-fix2.md` 与 `checkpoints/MT131-fix2/**`
-- 参照：原复审 `reports/MT131-review2.md`、`checkpoints/MT131/fix2-transfer-manifest.txt`（修复前哈希）
+- 修复报告 `archive/plans/multitenancy-execution/reports/MT131-fix2.md` 与 `archive/plans/multitenancy-execution/checkpoints/MT131-fix2/**`
+- 参照：原复审 `archive/plans/multitenancy-execution/reports/MT131-review2.md`、`archive/plans/multitenancy-execution/checkpoints/MT131/fix2-transfer-manifest.txt`（修复前哈希）
 
 ## 审阅要点
 
@@ -38,7 +38,7 @@
 
 ## 产出
 
-写 `reports/MT131-fix2-review.md`（本工作树唯一允许新建/修改文件）。
+写 `archive/plans/multitenancy-execution/reports/MT131-fix2-review.md`（本工作树唯一允许新建/修改文件）。
 
 ## 约束
 

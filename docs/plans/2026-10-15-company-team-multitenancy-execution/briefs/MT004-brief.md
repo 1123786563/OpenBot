@@ -27,7 +27,7 @@
 - `server/src/db/schema/enterprise-tenancy.ts`：**仅允许追加**新的 workspace membership 表定义（参考同文件 `enterprise_memberships`（:90，含 uniqueIndex 与 status/epoch 先例）与 `enterprise_workspaces`（:149）的写法与 RLS `app.tenant_id`/`app.principal_id`/`app.user_id` settings 模式；不得修改任何既有表/策略语义）。
 - `server/scripts/multitenancy/migrate-test.ts`：仅追加 MT004 的 TASKS 注册条目与其 SQL 步骤（编号续接工具既有约定；不写业务数据）。
 - `server/tests/multitenancy/membership-model.test.ts`：新建。
-- `docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT004.md` 与 `checkpoints/MT004/**`：新建。
+- `archive/plans/multitenancy-execution/reports/MT004.md` 与 `archive/plans/multitenancy-execution/checkpoints/MT004/**`：新建。
 
 其余一切文件（含 MT001/MT002/MT003 交付物、共享 test support、drizzle 配置/journal、package 清单）不得修改。
 
@@ -58,7 +58,7 @@
 
 ## 检查点与报告
 
-- before/after HEAD、owned 文件 staged/unstaged/untracked 全量内容与 SHA-256 清单、RED/GREEN 输出、Review Package（`checkpoints/MT004/review-package.json`，含 owned_product_files 哈希）。
-- 报告 `reports/MT004.md` 按仓库 Ledger 字段规范。
+- before/after HEAD、owned 文件 staged/unstaged/untracked 全量内容与 SHA-256 清单、RED/GREEN 输出、Review Package（`archive/plans/multitenancy-execution/checkpoints/MT004/review-package.json`，含 owned_product_files 哈希）。
+- 报告 `archive/plans/multitenancy-execution/reports/MT004.md` 按仓库 Ledger 字段规范。
 - 无提交/推送/合并/生产迁移/部署授权；缺环境→blocked 不算通过；skipped 不算通过。
 - 完成按 preamble `worker_done --outcome succeeded|failed`，附 `--report-path` 与 `--files-modified`。

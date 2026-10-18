@@ -1,6 +1,6 @@
 # MT013 / Issue #57 修复轮 Brief — coordinator 下发（裁决 #11）
 
-你是 MT013 的修复实现者。独立复审（第五任，reports/MT013-review.md，sha256 a734f15e…）判定 PASS 带 1 medium + 1 low + 1 info。按裁决 #11 修复以下三项，TDD（先 RED 后 GREEN），交付未提交检查点。
+你是 MT013 的修复实现者。独立复审（第五任，archive/plans/multitenancy-execution/reports/MT013-review.md，sha256 a734f15e…）判定 PASS 带 1 medium + 1 low + 1 info。按裁决 #11 修复以下三项，TDD（先 RED 后 GREEN），交付未提交检查点。
 
 ## F1（medium，必须修）— waivers 错误越过 containment 边界
 
@@ -23,4 +23,4 @@
 - 修复后全绿门槛：startup-checks 套件 33+新增全过 0 skip（五变量 env 真实库）；config 155/0；全量 `tests/multitenancy/ --timeout 30000` = 181+新增/0/0skip（本树 MT005-era 基线，勿与 EXE 232 混淆）；typecheck 0；biome 五触及文件「新增/自改 0 告警」（存量 7+1 披露维持）。
 - 专用库 pgvector/pgvector:pg16（端口 55473，容器名 mt013-fix-pg，psql 探针就绪；base migrate + MT004 apply 前置；五变量 URL 显式用户 + 随机口令 0600 env 用后删）。
 - boot-slice 冒烟重放 cw/mw 两变体证明「结构化记录一条 + exit 1 + 无栈」。
-- 交付：reports/MT013.md 追加「修复轮」章节（TDD 序列、前后哈希、证据）+ checkpoints/MT013/ 追加 fix/ 子目录（changes.diff、red-green/、verification/biome.txt 重录）。完成后 worker_done 附 --report-path。无提交/推送/合并/生产迁移/部署授权。
+- 交付：archive/plans/multitenancy-execution/reports/MT013.md 追加「修复轮」章节（TDD 序列、前后哈希、证据）+ archive/plans/multitenancy-execution/checkpoints/MT013/ 追加 fix/ 子目录（changes.diff、red-green/、verification/biome.txt 重录）。完成后 worker_done 附 --report-path。无提交/推送/合并/生产迁移/部署授权。

@@ -11,7 +11,7 @@ Run context: Orca Run `run_b2bd1c513221`; execution worktree `/Users/wuyongjun/o
 **Owned paths:**
 - Create `server/scripts/multitenancy/migrate-test.ts`.
 - Create `server/tests/multitenancy/migration-tool.test.ts`.
-- Create only task report/checkpoint paths under `docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT003.md` and `checkpoints/MT003/**`.
+- Create only task report/checkpoint paths under `archive/plans/multitenancy-execution/reports/MT003.md` and `archive/plans/multitenancy-execution/checkpoints/MT003/**`.
 - Do not alter production migrations, Drizzle config/journal, package manifests/locks, shared test support, or MT001/MT002 files.
 
 **Consumes:** Verified MT001 inventory and DAG; `server/scripts/runtime-test-environment.ts` (`runtimeTestEnvironment(environment)` reads only `TEST_DATABASE_URL`, returns `databaseUrl/databaseName`); existing `server/tests/support/enterprise-database.ts` URL validation patterns as read-only reference. Do not consume an unintegrated copy or regenerate/modify the MT001 inventory.
@@ -33,7 +33,7 @@ Run context: Orca Run `run_b2bd1c513221`; execution worktree `/Users/wuyongjun/o
 **Owned paths:**
 - Create `server/scripts/multitenancy/acceptance-harness.ts` if a runnable CLI is required by the actual repo seam.
 - Create `server/tests/multitenancy/acceptance-harness.test.ts`.
-- Create `docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT131-harness.md` and `checkpoints/MT131/**`.
+- Create `archive/plans/multitenancy-execution/reports/MT131-harness.md` and `archive/plans/multitenancy-execution/checkpoints/MT131/**`.
 - Do not modify shared MT001 inventory, MT002 fixture/scenario support, any other Ticket files, dependency manifests, or global application/server entrypoints.
 
 **Consumes:** `CoverageInventory` schema v1 from MT001, including additive `serviceSurfaces`; only `entrances` represent enumerated routes and service surfaces marked `unassembled/not_enumerated` must remain uncovered. Consumes MT002 exports `FIXTURE_IDENTITIES`, `SPEC_IDENTITY_MATRIX`, `createIsolationFixture(domain: IsolationDomain, options?: CreateIsolationFixtureOptions)`, and scenario registry `registerIsolationDomain`, `runIsolationScenario`, `registeredIsolationDomains`; preserve their exact current signatures. Unregistered/missing scenarios are uncovered, never synthetic passes.
@@ -49,5 +49,5 @@ Run context: Orca Run `run_b2bd1c513221`; execution worktree `/Users/wuyongjun/o
 ## Shared-file and resource preflight
 
 - Code ownership is disjoint: MT003 owns only `migrate-test.ts` and `migration-tool.test.ts`; MT131 owns only `acceptance-harness.ts` and `acceptance-harness.test.ts`; neither edits shared support or application entrypoints.
-- MT131 consumes `createIsolationFixture(domain: IsolationDomain, options?: CreateIsolationFixtureOptions)` exactly; the restricted role environment is task-private and is not part of reports/checkpoints. The only shared inputs are frozen/read-only prerequisites. MT003 consumes MT001; MT131 consumes MT001 and MT002. Their PostgreSQL instances (ports 55433 and 55434), local harness HTTP port (45435), temp namespaces, and child worktrees are distinct.
+- MT131 consumes `createIsolationFixture(domain: IsolationDomain, options?: CreateIsolationFixtureOptions)` exactly; the restricted role environment is task-private and is not part of archive/plans/multitenancy-execution/reports/checkpoints. The only shared inputs are frozen/read-only prerequisites. MT003 consumes MT001; MT131 consumes MT001 and MT002. Their PostgreSQL instances (ports 55433 and 55434), local harness HTTP port (45435), temp namespaces, and child worktrees are distinct.
 - Both are backend business tasks; neither is split into horizontal DB/backend/frontend tasks.

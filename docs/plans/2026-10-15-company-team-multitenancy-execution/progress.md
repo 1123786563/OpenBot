@@ -28,7 +28,7 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 - Implementation plan saved at `docs/plans/2026-10-15-company-team-multitenancy-execution.md` (45,661 bytes at dispatch; 143 Ticket task rows; standard header/global constraints/review focus present). Planning self-check: 143 nodes; 274 edges; all refs resolve; no cycles; A1–A13 and R1–R7 mapped.
 - Test DB: fresh ephemeral `openbot-issue6-tenancy-test-pg`, loopback `127.0.0.1:55432`, empty `openbot_enterprise_issue6_test`; not development service; no persistent volume.
 - Wave 1 Orca tasks/dispatched Pi workers: MT001 Task `task_4ae1247de41a` Dispatch `ctx_2e3104fdb0bd`, child `i6-mt001`; MT002 Task `task_fbc7b14de451` Dispatch `ctx_97107555809d`, child `i6-mt002`; MT103 Task `task_ff173a79a7e0` Dispatch `ctx_31eb8dca8b8e`, child `i6-mt103`. All receipts state `ready`, `input_accepted`, requested/effective `agent=pi`, each exact child worktree acknowledged.
-- Initial uncommitted checkpoint baseline for each task is stored in `checkpoints/<MT>/before.json`, HEAD `f0520524f0faa2b4533b9d2f1aa692c8f907ba71`; no owned-path changes at dispatch.
+- Initial uncommitted checkpoint baseline for each task is stored in `archive/plans/multitenancy-execution/checkpoints/<MT>/before.json`, HEAD `f0520524f0faa2b4533b9d2f1aa692c8f907ba71`; no owned-path changes at dispatch.
 - Current statuses: MT001/MT002/MT103 running. No Ticket verified yet; no integration/review results yet. All three workers have independent file/submodule ownership; MT002 alone uses the dedicated DB. No commit, push, merge, deployment, migration of production data, enablement or release.
 
 - Monitoring note: MT103 Pi transcript returned provider 429 rate-limit responses. Dispatch `ctx_31eb8dca8b8e` remains live; coordinator sent backoff guidance and did not retry/duplicate/stop it. MT001 and MT002 remain live.
@@ -36,21 +36,21 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 - MT103 implementer settlement accepted after checking active Dispatch `ctx_31eb8dca8b8e`, Task `task_ff173a79a7e0`, report/checkpoint hashes, task-private worktree cleanliness and verification transcript. Implementer terminal released; parent gitlink remains unchanged. Independent reviewer Task `task_019411171ea9` Dispatch `ctx_1cca227a5d23` started via Orca Pi on child `i6-review-mt103`; Task status remains running until review passes and report is integrated. Snapshot package SHA-256 `0c98b35aeeee87786d7e0b4206600d3f3b5979c7161a1c02ffed6115717e7327`.
 
 - `MT103: verified` after independent Pi review. Reviewer Task `task_019411171ea9` / Dispatch `ctx_1cca227a5d23` independently reproduced factual claims read-only and verified all 4 Issue #146 acceptance criteria. Spec compliance PASS; report quality/correctness PASS. Reviewer terminal released and delivery acked.
-- MT103 three Info-level notes are deferred (non-blocking): (1) a grep comment says irrelevant comment hits although actual grep is zero; conclusion is strengthened; (2) commit timestamps do not prove when commit was pushed to main, while pin/main gap is directly measured; (3) attribution of previously copied planning files in parent worktree is not proven from Git, but it does not affect verified submodule facts. No High/Medium findings. Review report: `reports/MT103-review.md`; exact task/review hashes: `checkpoints/MT103/final-hashes.sha256`.
+- MT103 three Info-level notes are deferred (non-blocking): (1) a grep comment says irrelevant comment hits although actual grep is zero; conclusion is strengthened; (2) commit timestamps do not prove when commit was pushed to main, while pin/main gap is directly measured; (3) attribution of previously copied planning files in parent worktree is not proven from Git, but it does not affect verified submodule facts. No High/Medium findings. Review report: `archive/plans/multitenancy-execution/reports/MT103-review.md`; exact task/review hashes: `archive/plans/multitenancy-execution/checkpoints/MT103/final-hashes.sha256`.
 - Next consumer MT104 remains blocked by its other prerequisite MT083, so no child was started from MT103 alone.
 
 ## MT002 settlement hold, redaction repair, provenance and worker states (2026-10-15 ~05:02 UTC)
 
 ### MT002 original worker_done — settlement held pending security-artifact correction
 
-- Implementer Task `task_fbc7b14de451` / Dispatch `ctx_97107555809d` (agent pi per `MT002-dispatch-receipt.json`; terminal `term_c5e3fe3e-fbbf-4a36-b49c-b77aef2f1cc6`; child worktree `i6-mt002`) reported worker_done, leaving `reports/MT002.md` and the `checkpoints/MT002/` package (artifact mtimes 04:55–04:56 UTC). Reported result: 17/17 tests pass, 146 expect calls, 0 skipped, untracked-only additions at BASE `f0520524`, manifest `checkpoints/MT002/manifest-sha256.txt`.
-- Coordinator review of the persisted artifacts found literal passwords for the three restricted test LOGIN roles (`ent_mt002_directory` / `ent_mt002_data` / `ent_mt002_operator`) in `checkpoints/MT002/environment.md` — a security-hygiene defect in the evidence artifact, not in code. Settlement was therefore withheld: the report's self-declared "implemented and verified" status is not accepted as Ticket verification, and MT002 remains unverified.
+- Implementer Task `task_fbc7b14de451` / Dispatch `ctx_97107555809d` (agent pi per `MT002-dispatch-receipt.json`; terminal `term_c5e3fe3e-fbbf-4a36-b49c-b77aef2f1cc6`; child worktree `i6-mt002`) reported worker_done, leaving `archive/plans/multitenancy-execution/reports/MT002.md` and the `archive/plans/multitenancy-execution/checkpoints/MT002/` package (artifact mtimes 04:55–04:56 UTC). Reported result: 17/17 tests pass, 146 expect calls, 0 skipped, untracked-only additions at BASE `f0520524`, manifest `archive/plans/multitenancy-execution/checkpoints/MT002/manifest-sha256.txt`.
+- Coordinator review of the persisted artifacts found literal passwords for the three restricted test LOGIN roles (`ent_mt002_directory` / `ent_mt002_data` / `ent_mt002_operator`) in `archive/plans/multitenancy-execution/checkpoints/MT002/environment.md` — a security-hygiene defect in the evidence artifact, not in code. Settlement was therefore withheld: the report's self-declared "implemented and verified" status is not accepted as Ticket verification, and MT002 remains unverified.
 
 ### Redaction repair task/dispatch and Pi receipt
 
 - Repair Task `task_a67106001ae6` ("MT002 redact ephemeral DB credentials from evidence artifacts") created 2026-10-15 04:58:09 UTC; Dispatch `ctx_50bb55b845f0`; receipt persisted as `MT002-redaction-dispatch.json`: requested and effective agent `pi`, terminal `term_6ce84b2c-6e6d-4351-93d5-c0557a12f46b`, stage `input_accepted`, worktree reused `i6-mt002`.
-- Repair scope (per the persisted Task spec): redact literal passwords and credential-bearing URLs only inside `checkpoints/MT002/` artifacts while retaining DB name/host, login names, exact env variable names and reproduction steps; update checkpoint metadata and SHA-256 hashes; add `after.json`; append the redaction record to `reports/MT002.md`; keep executable files byte-identical; remove `/tmp/mt002-env.sh`; no source/test/database/other-Ticket edits; no commits.
-- Observed by this ledger pass (~05:00–05:02 UTC): `checkpoints/MT002/environment.md` already rewritten (mtime 13:00 local) with `${ENT_MT002_*_PASSWORD}` placeholders replacing the three literal passwords and an explicit redaction note naming `task_a67106001ae6`; `/tmp/mt002-env.sh` absent. The report append and `after.json`/hash-manifest update were not yet present, so the repair Dispatch is still in progress at ledger time.
+- Repair scope (per the persisted Task spec): redact literal passwords and credential-bearing URLs only inside `archive/plans/multitenancy-execution/checkpoints/MT002/` artifacts while retaining DB name/host, login names, exact env variable names and reproduction steps; update checkpoint metadata and SHA-256 hashes; add `after.json`; append the redaction record to `archive/plans/multitenancy-execution/reports/MT002.md`; keep executable files byte-identical; remove `/tmp/mt002-env.sh`; no source/test/database/other-Ticket edits; no commits.
+- Observed by this ledger pass (~05:00–05:02 UTC): `archive/plans/multitenancy-execution/checkpoints/MT002/environment.md` already rewritten (mtime 13:00 local) with `${ENT_MT002_*_PASSWORD}` placeholders replacing the three literal passwords and an explicit redaction note naming `task_a67106001ae6`; `/tmp/mt002-env.sh` absent. The report append and `after.json`/hash-manifest update were not yet present, so the repair Dispatch is still in progress at ledger time.
 - Gate: MT002 must not be marked verified until (a) the redaction repair completes with hash-backed proof that no literal credentials remain in task artifacts, and (b) independent review passes.
 
 ### Discovery and provenance of the synced source plan and ticket package
@@ -76,16 +76,16 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 
 ## MT002 integration and independent review (2026-10-15)
 
-- Integrated checkpoint `MT002-integrated-01`: copied the three reviewed untracked files from Orca child `i6-mt002` into the coordinator execution worktree. Source, integrated destination, and immutable review-package hashes match for every file; no tracked source changes or commits. Integration record: `checkpoints/MT002/integration.json`.
-- Independent reviewer Task `task_256795d6159d` / Dispatch `ctx_a30408950bd3` used Orca Pi on `i6-review-mt002`; Spec compliance PASS (4/4 Issue #45 acceptance criteria) and code quality PASS. Full report: `reports/MT002-review.md`. The review package SHA-256 is `23e451200a7c5647a639d77b94da291cbce002a9f08355da706f8a6bdb38ca5a`; all 14 package files and 12 post-redaction checkpoint manifest entries verified.
+- Integrated checkpoint `MT002-integrated-01`: copied the three reviewed untracked files from Orca child `i6-mt002` into the coordinator execution worktree. Source, integrated destination, and immutable review-package hashes match for every file; no tracked source changes or commits. Integration record: `archive/plans/multitenancy-execution/checkpoints/MT002/integration.json`.
+- Independent reviewer Task `task_256795d6159d` / Dispatch `ctx_a30408950bd3` used Orca Pi on `i6-review-mt002`; Spec compliance PASS (4/4 Issue #45 acceptance criteria) and code quality PASS. Full report: `archive/plans/multitenancy-execution/reports/MT002-review.md`. The review package SHA-256 is `23e451200a7c5647a639d77b94da291cbce002a9f08355da706f8a6bdb38ca5a`; all 14 package files and 12 post-redaction checkpoint manifest entries verified.
 - Verification evidence: dedicated ephemeral PostgreSQL command recorded by implementer was `source /tmp/mt002-env.sh && bun test server/tests/multitenancy/fixtures.test.ts` (17 pass, 0 fail, 146 expectations, 0 skipped, restricted runtime roles); code hashes are unchanged through transfer. Coordinator reran `bunx biome check server/tests/multitenancy/` in the integration worktree (exit 0, no diagnostics). No DB test rerun was attempted after redaction removed the ephemeral env file.
 - Review findings: one Low (post-dispose physical emptiness is only manually verified, not asserted in-suite) and five Info; no valid Critical/High/Medium findings. Two follow-ups are preserved: the additive fixture interface (`operationId?` plus other disclosed compatible details) needs an internal interface revision before downstream consumers freeze; team membership facts must move from temporary resource-grant facts to MT004 membership rows.
 - MT002 is now `verified` and its sources are integrated. MT001 remains in review; no dependent of MT002 alone is ready until its other dependencies are verified.
 
 ## MT001 independent review and focused A11 completeness repair (2026-10-15 ~05:21 UTC)
 
-- Independent Pi reviewer Task `task_dd99d9577f09` / Dispatch `ctx_a5c5b74f62f3` completed in isolated `i6-review-mt001`; reviewer report is `reports/MT001-review.md`. Reviewer independently recomputed canonical package SHA `b5fc671702bec097c61598f1839802868aa06826d878eeeb6e8a87308bb19f24`, all eight file hashes, and reran the 23-test suite (23 pass/0 fail/4963 expectations), typecheck, and inventory CLI digest. Spec compliance PASS (all 4 ACs); code quality PASS.
-- Settlement is held: three valid Medium A11 completeness findings must be repaired before MT001 can be verified or MT003/downstream consumers can start: (1) config/source pattern misses Redis, Qdrant, Ollama, and WeChat Pay; (2) background scanner misses the routines worker loop, BullMQ KB worker, and cron scripts; (3) supervisor, go-runtime, agent-computer, and agent-sandbox service surfaces are absent from inventory/gap output. Exact evidence and citations are in `reports/MT001-review.md` findings 1–3. No finding was dismissed or downgraded.
+- Independent Pi reviewer Task `task_dd99d9577f09` / Dispatch `ctx_a5c5b74f62f3` completed in isolated `i6-review-mt001`; reviewer report is `archive/plans/multitenancy-execution/reports/MT001-review.md`. Reviewer independently recomputed canonical package SHA `b5fc671702bec097c61598f1839802868aa06826d878eeeb6e8a87308bb19f24`, all eight file hashes, and reran the 23-test suite (23 pass/0 fail/4963 expectations), typecheck, and inventory CLI digest. Spec compliance PASS (all 4 ACs); code quality PASS.
+- Settlement is held: three valid Medium A11 completeness findings must be repaired before MT001 can be verified or MT003/downstream consumers can start: (1) config/source pattern misses Redis, Qdrant, Ollama, and WeChat Pay; (2) background scanner misses the routines worker loop, BullMQ KB worker, and cron scripts; (3) supervisor, go-runtime, agent-computer, and agent-sandbox service surfaces are absent from inventory/gap output. Exact evidence and citations are in `archive/plans/multitenancy-execution/reports/MT001-review.md` findings 1–3. No finding was dismissed or downgraded.
 - Repair plan saved: `docs/plans/2026-10-15-i6-mt001-review-fixes.md`, SHA-256 `4a5b0b0692b1565797533462d10e64cfc5f76ac8f24e078685a80d91515f3cf3`. It scopes one cohesive TDD repair task, explicit files/interfaces/verification and prohibits claiming route coverage for merely listed services.
 - Repair Task `task_4f2c3bcba4f0`; Dispatch `ctx_fcebe2db6b0d`; Orca worker-start receipt confirms requested/effective agent `pi`, accepted input, active terminal `term_19393ac8-231b-4857-835d-e37c986ad86c`, exact existing child worktree `/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt001`. Visible session config: `glm-5.3 • medium` (not a strongest-model claim). An initial worker-start invocation with `--name` on an existing worktree was rejected as `invalid_argument` before dispatch; corrected invocation succeeded without creation-only options.
 - Status: MT001 remains running/settlement-held pending repair, a fresh independent Pi review, and integration. MT003 remains blocked. No implementation changes have been integrated into the execution worktree in this repair round; no commit/push/merge/deploy/migration/enablement/release.
@@ -95,16 +95,16 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 - Repair worker Task `task_4f2c3bcba4f0` / Dispatch `ctx_fcebe2db6b0d` completed successfully via Pi in `i6-mt001`; `worker_done` message `msg_9122da478250` states findings 1–3 repaired. Worker updated only the two MT001 source/test files and owned report/checkpoint paths; HEAD is still `f0520524f0faa2b4533b9d2f1aa692c8f907ba71`; no commit.
 - Coordinator independently reran `bun test server/tests/multitenancy/inventory.test.ts` → 33 pass/0 fail/5088 expectations; `cd server && bun run typecheck` → exit 0; `bunx biome check server/scripts/multitenancy/inventory.ts server/tests/multitenancy/inventory.test.ts` → no diagnostics. Correct section-aware recomputation of every before/after/checkpoint/report hash in `MT001-fix/sha256-manifest.txt` passed. An initial coordinator verifier incorrectly compared intentional BEFORE hashes to current AFTER files; that check was discarded and replaced with section-aware validation.
 - Worker evidence records deterministic regenerated digest `0965ecfa0ef5a0e6427f66796843bdcc21904d5bd7b670ac7f2b18b5a3fe30c9`, 539 entrances unchanged, external dependencies 14→22, background programs 7→13, and four additional deployed service surfaces explicitly marked unassembled/not-enumerated/unowned. DB stages remain skipped due absent TEST_DATABASE_URL; no fallback. One credential-scan match is the preserved byte-exact before-copy of a test fixture containing the existing local dummy URL `postgres://openbot:openbot@localhost:5432/openbot`; worker classified it as non-secret test placeholder, while generated inventory/report artifacts have no such hits. This disclosure is retained for independent reviewer verification.
-- Coordinator froze the exact 19-file review package `review-packages/MT001-fix.json`, canonical SHA-256 `e67e0c23d1b912721c23f54ee22d02626003b42e20838fbfa8e51c6605fa529a`; transferred all files into independent Pi reviewer worktree `i6-review-mt001` and verified package canonical hash and all 19 content hashes.
+- Coordinator froze the exact 19-file review package `archive/plans/multitenancy-execution/review-packages/MT001-fix.json`, canonical SHA-256 `e67e0c23d1b912721c23f54ee22d02626003b42e20838fbfa8e51c6605fa529a`; transferred all files into independent Pi reviewer worktree `i6-review-mt001` and verified package canonical hash and all 19 content hashes.
 - Independent reviewer Task `task_4954961364b8` / Dispatch `ctx_57996559d8ac` is active/live in `i6-review-mt001`, effective agent `pi`; visible session model `glm-5.3 • medium`. Review covers the changed snapshot and the 3 Medium findings, including additive service-surface honesty, secret/artifact concerns, tests/typecheck/Biome, and separate Spec/code-quality conclusions.
 - Settlement remains held pending the independent report. MT001 is not verified/integrated yet; MT003 remains blocked. No commit/push/merge/deploy/production migration/tenant enablement/release.
 
 
 ## MT001 集成完成与 Wave 2 并行派发（2026-10-15 ~08:49 UTC）
 
-- MT001 修复轮独立 Pi reviewer Task `task_4954961364b8` / Dispatch `ctx_57996559d8ac` 已成功结算；报告 `reports/MT001-fix-review.md`（SHA-256 `d85bc15627e369f81dcd911246dbc61efb4d18e4c0ce1115dcbfde1b3194cdd5`）。Spec PASS、代码质量 PASS；原 3 项 Medium 均确认关闭；无有效 critical/high/medium findings。记录 1 项沿袭 Minor 与 8 项 Info，详情在报告。Reviewer terminal 已释放。
-- MT001 exact reviewed snapshot 已 hash-verified 转入执行工作树。`checkpoints/MT001/integration-fix.json` 持久化了 package `e67e0c23d1b912721c23f54ee22d02626003b42e20838fbfa8e51c6605fa529a`、文件哈希与集成后验证。集成工作区完成 frozen-lockfile install（1415 packages、无 lockfile/source 修改）；测试 33/33、5088 expectations，typecheck、Biome、inventory CLI 均通过；digest `0965ecfa0ef5a0e6427f66796843bdcc21904d5bd7b670ac7f2b18b5a3fe30c9`。MT001 状态改为 verified。
-- MT003 (#46) 与 MT131 (#174) 在 MT001 verified 后成为 DAG ready。代码所有权互斥：MT003 `migrate-test.ts`/`migration-tool.test.ts`；MT131 `acceptance-harness.ts`/`acceptance-harness.test.ts`，二者均不改共享 MT001/MT002 输入或 test support。Task Brief 与接口/资源预检记录在 `wave-02-briefs.md`（SHA-256 `5010698dbb28e2910e57e1833536181123ea0c98954c3ce2a95aae0a1392748e`）。两者独立 Orca child worktree，verified prerequisite files 均逐哈希转移并记录 `checkpoints/MT003/before.json`、`checkpoints/MT131/before.json`，HEAD 均为 BASE `f0520524f0faa2b4533b9d2f1aa692c8f907ba71`。
+- MT001 修复轮独立 Pi reviewer Task `task_4954961364b8` / Dispatch `ctx_57996559d8ac` 已成功结算；报告 `archive/plans/multitenancy-execution/reports/MT001-fix-review.md`（SHA-256 `d85bc15627e369f81dcd911246dbc61efb4d18e4c0ce1115dcbfde1b3194cdd5`）。Spec PASS、代码质量 PASS；原 3 项 Medium 均确认关闭；无有效 critical/high/medium findings。记录 1 项沿袭 Minor 与 8 项 Info，详情在报告。Reviewer terminal 已释放。
+- MT001 exact reviewed snapshot 已 hash-verified 转入执行工作树。`archive/plans/multitenancy-execution/checkpoints/MT001/integration-fix.json` 持久化了 package `e67e0c23d1b912721c23f54ee22d02626003b42e20838fbfa8e51c6605fa529a`、文件哈希与集成后验证。集成工作区完成 frozen-lockfile install（1415 packages、无 lockfile/source 修改）；测试 33/33、5088 expectations，typecheck、Biome、inventory CLI 均通过；digest `0965ecfa0ef5a0e6427f66796843bdcc21904d5bd7b670ac7f2b18b5a3fe30c9`。MT001 状态改为 verified。
+- MT003 (#46) 与 MT131 (#174) 在 MT001 verified 后成为 DAG ready。代码所有权互斥：MT003 `migrate-test.ts`/`migration-tool.test.ts`；MT131 `acceptance-harness.ts`/`acceptance-harness.test.ts`，二者均不改共享 MT001/MT002 输入或 test support。Task Brief 与接口/资源预检记录在 `wave-02-briefs.md`（SHA-256 `5010698dbb28e2910e57e1833536181123ea0c98954c3ce2a95aae0a1392748e`）。两者独立 Orca child worktree，verified prerequisite files 均逐哈希转移并记录 `archive/plans/multitenancy-execution/checkpoints/MT003/before.json`、`archive/plans/multitenancy-execution/checkpoints/MT131/before.json`，HEAD 均为 BASE `f0520524f0faa2b4533b9d2f1aa692c8f907ba71`。
 - MT003：Task `task_60577e388d74` / Dispatch `ctx_a255a1e79beb` / terminal `term_6ca05f1e-c336-4a53-bfc6-80f62cdc4e47`，effective agent Pi，child `i6-mt003`。专用容器 `openbot-i6-mt003-test-pg`，loopback `55433`，DB `openbot_enterprise_mt003_test`；新鲜空库，使用 tmpfs、`--rm`，无持久卷。
 - MT131：Task `task_9b95a3b8cb96` / Dispatch `ctx_c83a96b3959d` / terminal `term_ea91ccdf-ac6d-4f2e-b593-8013a151b1e8`，effective agent Pi，child `i6-mt131`。专用容器 `openbot-i6-mt131-test-pg`，loopback `55434`，DB `openbot_enterprise_mt131_test`；新鲜库仅在此容器内运行受控 `enterprise-test-db.ts migrate` 并建立 `ob_ent_directory/data/operator` 受限角色，当前 150 张测试 schema 表。经独立连接验证三角色 current_user 分别为 capability，session_user 分别为专用 `ent_mt131_*` login。环境文件 `/tmp/mt131-env.sh` 权限 0600，密码只在本机临时文件，绝不写入 repo/Ledger；待独立复审后删除。MT131 本地端口 45435 派发前空闲。
 - 两个 dispatch 回执均为 ready/input_accepted，requested/effective `agent=pi`、路径准确，状态 running。No shared database/port/file conflict was identified. Neither task may consume any unreviewed output.
@@ -116,14 +116,14 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 - 环境核验：orca 1.4.224 runtime ready；pi 1.2.0。探针 Task `task_91854fb2ea0c` / Dispatch `ctx_b424ffa98470` worker_done succeeded（摘要 "pi 1.2.0, probe-ok"），终端已释放——Pi 注册且工具未剥离。
 - 事实源核验：Issue #6 subtree 重新枚举 = 21 个直接子 Issue（20 个 MT 分组 Epic #187–#206 + 计费支付 Epic #368）；150 张实施票 = MT001–MT143（#44–#186）+ BP01–BP07（#369–#375），与 hierarchy-report/published.json 一致。172 个 issue 的 GraphQL updatedAt 全量扫描：镜像时间（2026-10-15T12:03Z）后除 #6 外零更新 → 本地镜像 `docs/tickets/multitenancy/` 为当前事实源；#44/#45/#46/#174 正文与 GitHub 逐字一致（仅行尾空行差异）。
 - 上一代状态恢复判定（f0520524 基线，bab7c0b9 与之仅差 docs 提交，代码等价）：
-  - MT001、MT002、MT103 = verified + 已哈希集成（证据：reports/MT001*.md、MT002*.md、MT103*.md 与 checkpoints/）。
+  - MT001、MT002、MT103 = verified + 已哈希集成（证据：archive/plans/multitenancy-execution/reports/MT001*.md、MT002*.md、MT103*.md 与 archive/plans/multitenancy-execution/checkpoints/）。
   - MT003（Task `task_60577e388d74` / Dispatch `ctx_a255a1e79beb`）与 MT131（Task `task_9b95a3b8cb96` / Dispatch `ctx_c83a96b3959d`）实现完成、报告完成、独立审阅未开始 → 本波补审。
   - bab7c0b9 世代 `issue6-mt001`/`issue6-mt002` 为未审阅部分重做（MT002 卡在 RED：fixtures 模块缺失），判定为不消费检查点，原样保留不动。
   - `mt001-inventory{,-r2,-r3}`、`mt002-harness{,-r2,-r3}`、`mt103-mobile-baseline{,-r2,-r3}`、`issue6-mt103`、`i6-mt103` 等 11 个空 worktree = 历史失败探针，不派生结论。
 - BP 外部阻塞：BP01–BP07 依赖 open 状态的 Bifrost 票 #259/#284/#290/#291/#292/#294/#295 → 全部 externally blocked，如实记账。
 - 复审派发（本波）：
   - 审阅工作树 `i6-review2-mt003`、`i6-review2-mt131`（BASE `f0520524f0faa2b4533b9d2f1aa69c8f907ba71`，setup 完成后无改动）。
-  - 冻结快照按哈希转移：MT003（migrate-test.ts `e00f90a4…a76bf`、migration-tool.test.ts `e004868a…7746f`，与 after.json 一致）；MT131（acceptance-harness.ts/test 等 7 包文件 + MT001/MT002 前置）。清单：`checkpoints/MT003/review-sha256-manifest.txt`、`checkpoints/MT131/review-sha256-manifest.txt`。MT001 inventory.ts 转移哈希 `e58bde59…4d6c05d0` 与 MT001/integration-fix.json 集成记录一致（交叉验证通过）。
+  - 冻结快照按哈希转移：MT003（migrate-test.ts `e00f90a4…a76bf`、migration-tool.test.ts `e004868a…7746f`，与 after.json 一致）；MT131（acceptance-harness.ts/test 等 7 包文件 + MT001/MT002 前置）。清单：`archive/plans/multitenancy-execution/checkpoints/MT003/review-sha256-manifest.txt`、`archive/plans/multitenancy-execution/checkpoints/MT131/review-sha256-manifest.txt`。MT001 inventory.ts 转移哈希 `e58bde59…4d6c05d0` 与 MT001/integration-fix.json 集成记录一致（交叉验证通过）。
   - Brief：`briefs/MT003-review2-brief.md`、`briefs/MT131-review2-brief.md`。
   - MT003 复审 Task `task_8ae36eaedbc7` / Dispatch `ctx_fc362bdfd563`（pi，ready/input_accepted）；回执 `MT003-review2-dispatch-receipt.json`。
   - MT131 复审 Task `task_64f49f515ebb` / Dispatch `ctx_9d91497242e9`（pi，ready/input_accepted）；回执 `MT131-review2-dispatch-receipt.json`。
@@ -132,23 +132,23 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 
 ## 2026-10-16 Wave-2 复审结算（MT003）与修复轮派发
 
-- seam 识别（MT005 前置）结算：Task `task_83b1344ca338` / Dispatch `ctx_101d69cc18b1` worker_done succeeded；报告 `reports/seam-identification-mt005.md`（SHA-256 `56bda32106affa6415870582024de68bbd8c5d59cafdbee570d448948e600aa8`，已从 i6-seam-id 哈希转移）。关键结论：新栈 `resolveScope` 是 proactive 投递范围解析器的命名碰撞（index.ts:2875/2983）；真正租户 seam 为 `createScopeResolver`（tenancy/store.ts:82-146，PlatformScope 无 role、memberEpoch/aclEpoch）；事务形状等价物为 conversations/store.ts:21-99 与 store.ts:457-580；`conversations-v1` 在新栈不存在。终端已释放。
+- seam 识别（MT005 前置）结算：Task `task_83b1344ca338` / Dispatch `ctx_101d69cc18b1` worker_done succeeded；报告 `archive/plans/multitenancy-execution/reports/seam-identification-mt005.md`（SHA-256 `56bda32106affa6415870582024de68bbd8c5d59cafdbee570d448948e600aa8`，已从 i6-seam-id 哈希转移）。关键结论：新栈 `resolveScope` 是 proactive 投递范围解析器的命名碰撞（index.ts:2875/2983）；真正租户 seam 为 `createScopeResolver`（tenancy/store.ts:82-146，PlatformScope 无 role、memberEpoch/aclEpoch）；事务形状等价物为 conversations/store.ts:21-99 与 store.ts:457-580；`conversations-v1` 在新栈不存在。终端已释放。
 - **coordinator 裁决 #1（选择头命名冲突）**：以已批准 interfaces.md T02 契约为准——`x-openbot-tenant` / `x-openbot-workspace`（与 MT002 已验证夹具一致）；MT005 将 index.ts:802-804 对齐，不做双读兼容；实施前 grep 客户端旧名 `x-openbot-tenant-id`/`x-openbot-workspace-id` 的使用面并纳入改动。
 - **coordinator 裁决 #2（策略版本词汇）**：`conversations-v1` 属旧计划词汇、新栈不存在，MT005 不臆造；`tenancy-v1` 语义不变；`workspace-v1` 归 MT008。
-- MT003 复审结算：Task `task_8ae36eaedbc7` / Dispatch `ctx_fc362bdfd563` worker_done succeeded；报告 `reports/MT003-review2.md`（103 行，已转移）。**Spec compliance PASS / Code quality PASS**，但有效 findings：**2 Medium（F1 真实库集成测试硬编码实现者端点伤可复现性；F2 journal statement_digest 漂移不可检测）** + 2 Low（F3 manifest 无 --apply 被静默忽略；F4 拒绝探针未断言零读）+ 5 Info（F5-F9，其中 F9a 指出 coordinator brief 的 docker 命令缺 postgres:16 必需认证 env——已修正后续 brief 模板）。审阅者独立复跑：34 pass/0 fail（自建同端点容器）、typecheck、biome、CLI 冒烟、变异检查全部完成；快照 12/12 哈希复算一致。**结算保留（settlement held）：2 Medium 未关闭前 MT003 不得 verified、MT004/MT112 不得启动。** 审阅终端已释放。
-- 修复轮派发：Task `task_63aeeec4713d` / Dispatch `ctx_e985c1514a4a`（pi，ready/input_accepted），工作树 `i6-mt003-fix2`（BASE f0520524），快照按 `checkpoints/MT003/fix2-transfer-manifest.txt` 转移核验（13 行）；Brief `briefs/MT003-fix2-brief.md`（F1/F2 必须关闭 + F3/F4 附带；专用 PG 55446）。修复后须全新独立 Pi 复审。
+- MT003 复审结算：Task `task_8ae36eaedbc7` / Dispatch `ctx_fc362bdfd563` worker_done succeeded；报告 `archive/plans/multitenancy-execution/reports/MT003-review2.md`（103 行，已转移）。**Spec compliance PASS / Code quality PASS**，但有效 findings：**2 Medium（F1 真实库集成测试硬编码实现者端点伤可复现性；F2 journal statement_digest 漂移不可检测）** + 2 Low（F3 manifest 无 --apply 被静默忽略；F4 拒绝探针未断言零读）+ 5 Info（F5-F9，其中 F9a 指出 coordinator brief 的 docker 命令缺 postgres:16 必需认证 env——已修正后续 brief 模板）。审阅者独立复跑：34 pass/0 fail（自建同端点容器）、typecheck、biome、CLI 冒烟、变异检查全部完成；快照 12/12 哈希复算一致。**结算保留（settlement held）：2 Medium 未关闭前 MT003 不得 verified、MT004/MT112 不得启动。** 审阅终端已释放。
+- 修复轮派发：Task `task_63aeeec4713d` / Dispatch `ctx_e985c1514a4a`（pi，ready/input_accepted），工作树 `i6-mt003-fix2`（BASE f0520524），快照按 `archive/plans/multitenancy-execution/checkpoints/MT003/fix2-transfer-manifest.txt` 转移核验（13 行）；Brief `briefs/MT003-fix2-brief.md`（F1/F2 必须关闭 + F3/F4 附带；专用 PG 55446）。修复后须全新独立 Pi 复审。
 - 进行中：MT131 复审（Task `task_64f49f515ebb` / Dispatch `ctx_9d91497242e9`，心跳正常）。
 
 ## 2026-10-16 Wave-2 复审结算（MT131）与修复轮派发
 
-- MT131 复审结算：Task `task_64f49f515ebb` / Dispatch `ctx_9d91497242e9` worker_done succeeded；报告 `reports/MT131-review2.md`（162 行，SHA-256 `8a634b6e07169ad658caf60558e1c1646e60fc4ea1f9a021bc06c26c56c85503`，已转移）。**Spec compliance 4/4 PASS / Code quality PASS WITH FINDINGS：2 Medium（F1 测试硬编码实现者私有环境常量伤可复现性；F2 harness 控制域场景可作业务证据永真预言机）+ 2 Low + 4 Info**。复审者自建受限角色环境完成全部复跑（无 blocked）。**结算保留：2 Medium 未关闭前 MT131 不得 verified。** 审阅终端已释放。
+- MT131 复审结算：Task `task_64f49f515ebb` / Dispatch `ctx_9d91497242e9` worker_done succeeded；报告 `archive/plans/multitenancy-execution/reports/MT131-review2.md`（162 行，SHA-256 `8a634b6e07169ad658caf60558e1c1646e60fc4ea1f9a021bc06c26c56c85503`，已转移）。**Spec compliance 4/4 PASS / Code quality PASS WITH FINDINGS：2 Medium（F1 测试硬编码实现者私有环境常量伤可复现性；F2 harness 控制域场景可作业务证据永真预言机）+ 2 Low + 4 Info**。复审者自建受限角色环境完成全部复跑（无 blocked）。**结算保留：2 Medium 未关闭前 MT131 不得 verified。** 审阅终端已释放。
 - 复审对我方派发参数的事实纠偏（F5，非实现缺陷，已吸收）：harness HTTP 端口代码硬编码 45435、无 `OPENBOT_MT131_HARNESS_PORT` env；测试库需 vector 扩展（pgvector/pgvector:pg16），plain postgres:16 会让 enterprise migrate 失败。后续所有涉及 enterprise 测试库的 brief 统一用 pgvector 镜像 + 显式 POSTGRES_HOST_AUTH_METHOD。
-- 修复轮派发：Task `task_23bb940e29e7` / Dispatch `ctx_f2b1f182bcd7`（pi，ready/input_accepted），工作树 `i6-mt131-fix2`（BASE f0520524），快照按 `checkpoints/MT131/fix2-transfer-manifest.txt`（15 行；acceptance-harness.ts=`2b29aeb6…`、acceptance-harness.test.ts=`df6f6f31…`）；Brief `briefs/MT131-fix2-brief.md`（F1/F2 必须关闭 + F3/F4 附带；双环境验证；pgvector 镜像）。修复后须全新独立 Pi 复审。
+- 修复轮派发：Task `task_23bb940e29e7` / Dispatch `ctx_f2b1f182bcd7`（pi，ready/input_accepted），工作树 `i6-mt131-fix2`（BASE f0520524），快照按 `archive/plans/multitenancy-execution/checkpoints/MT131/fix2-transfer-manifest.txt`（15 行；acceptance-harness.ts=`2b29aeb6…`、acceptance-harness.test.ts=`df6f6f31…`）；Brief `briefs/MT131-fix2-brief.md`（F1/F2 必须关闭 + F3/F4 附带；双环境验证；pgvector 镜像）。修复后须全新独立 Pi 复审。
 - 当前运行中：MT003-fix2（Task `task_63aeeec4713d` / Dispatch `ctx_e985c1514a4a`，容器 openbot-i6-mt003fix2-pg 已起）；MT131-fix2（上述）。
 
 ## 2026-10-16 MT003 修复轮复审通过并集成 → verified
 
-- MT003-fix2 独立复审（Task `task_4d75316b5635` / Dispatch `ctx_8ee90c5fa0c3`）：**修复有效性 PASS / Code quality PASS，0C/0H/0M/2L/3I**（非阻塞，留档 reports/MT003-fix2-review.md）。F1/F2 Medium 确认关闭：专属端点显式 env + 全安全检查、journal digest 漂移三路径拒绝且不自动修复。审阅终端已释放。
+- MT003-fix2 独立复审（Task `task_4d75316b5635` / Dispatch `ctx_8ee90c5fa0c3`）：**修复有效性 PASS / Code quality PASS，0C/0H/0M/2L/3I**（非阻塞，留档 archive/plans/multitenancy-execution/reports/MT003-fix2-review.md）。F1/F2 Medium 确认关闭：专属端点显式 env + 全安全检查、journal digest 漂移三路径拒绝且不自动修复。审阅终端已释放。
 - 集成：migrate-test.ts=`330524de…ffe498e`、migration-tool.test.ts=`cca6e35c…dd6019`（与 fix2 复审清单逐字节一致）转入执行工作树；integration.json 记录完整 lineage（原实现→复审2M→修复→复审双 PASS）。
 - Coordinator 亲自复跑（执行工作树，专用 PG 55452 容器 openbot-exec-mt003-verify，用后删）：migration-tool **42 pass/0 fail/0 skip（233 expect）**；MT001 inventory 回归 33 pass/5088 expect；`server typecheck` exit 0；biome 两文件无诊断。
 - **MT003 → verified**（dag.json 已更新）。MT004（#47，deps MT003）就绪，立即派发。进行中：MT131-fix2 复审（`ctx_2b71de398106`）。
@@ -159,7 +159,7 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 
 - MT004 实现者 worker_done（delivery_aea36832c7d5 已 ack）：报告 4/4 验收全绿，披露（a）测试库镜像实际用 pgvector/pgvector:pg16（与裁决 #4 一致），（b）早前 brief BASE 哈希笔误（实现者以 brief 内 after-hashes 与本地复算为准）。检查点齐全（red-green/mutation/cli/verification/review-package）。
 - 实现者终端已释放（ctx_0d3c6dfe3dc0）。
-- 复审工作树 `i6-review2-mt004`（f0520524）建立；快照转移 40 文件（含 tracked 修改 enterprise-tenancy.ts——复审树 git status 显示 M 为预期）；`checkpoints/MT004/review-sha256-manifest.txt` 生成并经 coordinator 全量复算自校验通过（首次生成混入自引用行，已剔除后复验）。
+- 复审工作树 `i6-review2-mt004`（f0520524）建立；快照转移 40 文件（含 tracked 修改 enterprise-tenancy.ts——复审树 git status 显示 M 为预期）；`archive/plans/multitenancy-execution/checkpoints/MT004/review-sha256-manifest.txt` 生成并经 coordinator 全量复算自校验通过（首次生成混入自引用行，已剔除后复验）。
 - 复审任务 task_70322419a303 派发，worker ctx_38779f5e5c60（--agent pi，工作树 i6-review2-mt004，端口 55453）。brief：briefs/MT004-review-brief.md。
   - 教训：task-create 用 `--task-title`（非 --title）；worker-start 成功回执 jq 路径以 dispatch-show 复核为准（首次调用 ok:true 但 jq 显示 null，勿重复启动）。
 - MT131-fix2 复审（ctx_2b71de398106）存活：observation=live / liveness=live。
@@ -167,7 +167,7 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 
 ## 2026-10-16（续）MT004 独立复审结算 → 修复轮派发
 
-- MT004 复审 worker_done（delivery_bf70deb282d8 已 ack，实现者终端已释放）：**Spec 4/4 PASS / Code PASS with findings**。报告归档 `reports/MT004-review.md`（sha256 e2e4440d…）。
+- MT004 复审 worker_done（delivery_bf70deb282d8 已 ack，实现者终端已释放）：**Spec 4/4 PASS / Code PASS with findings**。报告归档 `archive/plans/multitenancy-execution/reports/MT004-review.md`（sha256 e2e4440d…）。
 - 复审要点：40/40 manifest 复算 OK；schema 纯追加 70/0；裁决 #3 窄例外独立重算 diff 逐字节一致；8 项复跑 7 项 exit 0；brief 原样组合回归命令 5000ms 超时定性为环境性 blocked（3 项对照：文件哈希未变 / 单独跑 0 fail / --timeout 30000 后 50/0）。
 - Findings：F1 medium（新表缺 FORCE ROW LEVEL SECURITY，0056 对既有 7 表全 FORCE；pg_class 实测 relforcerowsecurity=f）；F2 low（epoch 并发竞态未明示）；F3/F4 info。
 - 按先例 Medium 必须修复：修复树 `i6-mt004-fix` 建立（f0520524），11 文件 fix-transfer-manifest.txt 转移并自校验；brief `briefs/MT004-fix-brief.md`（F1 加 FORCE + pg_class 断言 TDD；F2 注释披露；端口 55454；schema 文件只读）。
@@ -184,10 +184,10 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 
 ## 2026-10-16（续）MT131 集成完成 → verified
 
-- MT131-fix2 复审结算（delivery_e7c5b2161aad 已 ack，复审者 ctx_2b71de398106 已释放）：**修复有效性 PASS / Code quality PASS WITH FINDINGS（0C/0H/0M/1L/2I）**。报告归档 `reports/MT131-fix2-review.md`。
+- MT131-fix2 复审结算（delivery_e7c5b2161aad 已 ack，复审者 ctx_2b71de398106 已释放）：**修复有效性 PASS / Code quality PASS WITH FINDINGS（0C/0H/0M/1L/2I）**。报告归档 `archive/plans/multitenancy-execution/reports/MT131-fix2-review.md`。
   - F1 环境无关性第三方直接证据（复审自建第三套环境 17/17）；F2 结构性证明（占端口实验：拒绝先于端口绑定）；F3/F4 实测关闭；MT001/MT002 双哈希链验证未动；「绝不合成通过」未放松（CLI 0/539 + acceptance-not-passed）；150 表逐表 count 零残留；凭据治理完备。
   - 残留：F1R low（CLI 旗标 tokenizer 吞下一个 --* 取值——既有语义、响亮失败、非回归）；F2R/F3R/F4R info。
-- 集成：交付从 i6-review2-mt131 冻结转移到执行工作区，三方哈希核对（fix2-review manifest / 复审树 / 集成磁盘）7 文件全 OK（首跑一例路径笔误 server/tests/.../inventory.ts 实为 scripts/，修正后全过）；F3R 断链原件 fix2-transfer-manifest.txt 已从 i6-mt131-fix2 补入 `checkpoints/MT131/`。
+- 集成：交付从 i6-review2-mt131 冻结转移到执行工作区，三方哈希核对（fix2-review manifest / 复审树 / 集成磁盘）7 文件全 OK（首跑一例路径笔误 server/tests/.../inventory.ts 实为 scripts/，修正后全过）；F3R 断链原件 fix2-transfer-manifest.txt 已从 i6-mt131-fix2 补入 `archive/plans/multitenancy-execution/checkpoints/MT131/`。
 - coordinator 亲验（pgvector/pgvector:pg16 @55456 + 受限角色 ent_int*）：migrate exit 0；`bun test tests/multitenancy/` 108 pass / 0 fail / 1 显式 skip（MT003 assigned-db 用例未设 env，非隐藏失败）；补 env 复跑 migration-tool 42/0/0 skip → 残留 skip 0；typecheck exit 0；biome exit 0。容器与 0600 env 已清理，端口复归空闲。
 - integration.json 更新（verification 结果）；dag：**MT131 → verified**。下游解锁：MT132（deps MT131 现已全满足？需核对其全部 depends_on）。
 
@@ -264,7 +264,7 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 ### 裁决 #7（MT006 复审快照修复，2026-10-16）
 
 - MT006 复审者（ctx_bb502a2b7d1c）question：`server/tests/multitenancy/support/workspace-scope.ts`（D1 operator-DELETE 替身供给，sha256-manifest 声明 hash a67cf0b8…c87d8）在 i6-review-mt006 树中缺失，34 用例套件无法加载。
-- 取证：实现树 i6-mt006 主副本存在且哈希与 checkpoints/MT006/sha256-manifest.txt 声明值一致；复审者另从 changes.diff 2095-2496 提取得同一哈希。判为 ~04:35 复审树删失（疑似平台 stop_unverified 副作用），非交付物缺陷。
+- 取证：实现树 i6-mt006 主副本存在且哈希与 archive/plans/multitenancy-execution/checkpoints/MT006/sha256-manifest.txt 声明值一致；复审者另从 changes.diff 2095-2496 提取得同一哈希。判为 ~04:35 复审树删失（疑似平台 stop_unverified 副作用），非交付物缺陷。
 - 处置：coordinator 亲自复制主副本 → 复审树（修复后复算一致，三方吻合）；授权复审者继续完整复审；要求其独立复算哈希并把删失事件以 info 级记入报告。回复 msg_31cea413eabd，question delivery_a83d0c5b769c 已 ack。
 - 与裁决 #6 同例；transfer-prereq.sh 属 prereq 转移面，MT006 交付物转移仍为手工清单——已再次暴露清单枚举风险，MT006 集成时须以 checkpoint manifest 逐文件核对（原流程已含）。
 
@@ -275,14 +275,14 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 - 复跑：34/0（105 expect）、182/0/0skip（7422 expect，313s）、typecheck 0、biome 新文件 0 findings、D5 BASE 9e+2w=CURRENT 9e+2w；planDigest 39b91e0f… 独立复算一致。
 - 串行化证据：gate 与管理写共享同一 advisory 键串（shared vs xact 排他互斥），移除/停用后 gate 立即 WORKSPACE_REVOKED/FORBIDDEN——真实库行为。
 - D1 接受（条件：生产 operator DELETE 策略须建后续票跟踪，否则 remove 在未打补丁生产库 500 fail-closed）；D2 接受。
-- 集成：i6-mt006 冻结 7/7 = checkpoints/MT006/sha256-manifest.txt；转移 EXE 后 7/7 复核一致；checkpoints/MT006、MT006-review.md、接管版 review-brief 归档。coordinator 亲验（55464）后台运行中。
+- 集成：i6-mt006 冻结 7/7 = archive/plans/multitenancy-execution/checkpoints/MT006/sha256-manifest.txt；转移 EXE 后 7/7 复核一致；archive/plans/multitenancy-execution/checkpoints/MT006、MT006-review.md、接管版 review-brief 归档。coordinator 亲验（55464）后台运行中。
 
 ### MT112 复审结算 + 集成（2026-10-16）
 
 - ctx_70187e0544da worker_done succeeded（delivery_3161499886ac 已 ack，已释放）：**Spec PASS 4/4 + 裁决#5 最小性/expand-only/RLS FORCE 全 PASS / Code 高；0C/0H/0M**（L1 复跑 runbook 缺「先 apply MT004」前置；L2 dry-run 完整断言仅 fresh 库分支；3 info）。
 - 快照：HEAD=BASE、40/40 review manifest、26/26 sha256-manifest（plan 相对路径口径）；纯追加以反向补丁重建 before 哈希密码学级核验（schema 37 行 / migrate-test 107 行 / migration-tool.test 恰 13 行）。
 - 复跑：legacy-anchor 21/0（255 expect）、全量 146/0/0skip（6 文件）、CLI 链 dry-run→generate→apply→重放 0/0/0/0、psql 实测 RLS FORCE + 三码 23505/23514/42501、typecheck/biome 0；独立 generate 与存档 manifest 逐字节一致（f65c290e…）。
-- 集成：i6-mt112 冻结 4/4 = after-hashes；转移 EXE 后 4/4 复核一致；checkpoints/MT112、MT112-review.md、brief 归档。亲验排队（MT006 亲验运行中，完成后以 55465 串行执行避免负载竞争）。
+- 集成：i6-mt112 冻结 4/4 = after-hashes；转移 EXE 后 4/4 复核一致；archive/plans/multitenancy-execution/checkpoints/MT112、MT112-review.md、brief 归档。亲验排队（MT006 亲验运行中，完成后以 55465 串行执行避免负载竞争）。
 
 ### MT006 + MT112 集成亲验通过（v4，2026-10-16）
 
@@ -380,7 +380,7 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 - **F1 medium**：waivers 损坏/缺失 → TypeError/ENOENT 穿透（startup-checks.ts:490-491）→ 进程裸栈崩溃 + 零审计记录（AC3 违反 + docstring no-crash 契约破坏）；同族 createDatabase(url) 穿透。两任（第2/第5）独立实证。F2 low：:503 缩进 format 错 + biome 证据过期。F3 info：parseWaiverFile 缺 schemaVersion 校验。
 - **裁决 #11**：F1 为实现行为缺陷（非覆盖缺口）→ 触发修复轮（对照 MT008 F1 裁决 #10 的接受依据：彼为实现正确纯覆盖缺口，此为行为违反 AC3）。复审者「不阻塞受理」意见记录，但按授权门槛 medium 修复后再集成。
 - 修复轮派发：task_d13f70a3fb3d / ctx_2b7ab79a8f9e @ i6-mt013（交付态 7ab7275e 核实未污染）。brief：F1 containment（inventory 同款 try/catch 范式 + createDatabase 同族 + 编排器级 2 用例）+ F2（format + 重录 biome.txt）+ F3（schemaVersion + 无 undefined + throw 路径单测）。
-- 复审报告归档 EXE reports/MT013-review.md（a734f15e…）。
+- 复审报告归档 EXE archive/plans/multitenancy-execution/reports/MT013-review.md（a734f15e…）。
 - 当前并行 4 worker：MT007 实现、MT012 实现、MT013 修复、（MT013 修复完成后增量复审）。
 
 ## 2026-10-16 13:44-13:52Z — MT012 实现 worker_done → 复审派发
@@ -529,7 +529,7 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 - 四复审全 PASS（MT015 A/B/C 过+D MUT5 证据缺口挂账；MT011 PASS+F1/F2 低危挂账；MT077 A-D 全过+4 观察；MT026 PASS+F1 文档计数更正）。
 - 批1（MT015+MT011）整文件集成 → 亲验 30/19/**507/0/18 文件**/typecheck/biome 全绿。
 - 批2（MT077+MT026）：difflib 自动合并曾把两个同构 TaskMigrationSpec 块逐行交错（typecheck 揭示）→ 回退改锚点整块插入 + 断言字母序修正（MT026 置 MT077 前，第一轮 577 跑出 1 fail 即此）→ 复验**577/0/22 文件**/十任务迁移全 0/typecheck 0/biome 9 文件 0。教训：同构大块禁用逐行 difflib 合并，用锚点整块插入。
-- MT026.md 计数更正（39→33）+coordinator 批注；归档全套（报告/复审/checkpoints/integration.json×4）。
+- MT026.md 计数更正（39→33）+coordinator 批注；归档全套（报告/复审/archive/plans/multitenancy-execution/checkpoints/integration.json×4）。
 - 基线链 …→458→507→577。verified=21；新解锁 MT016/027/036/041/069/076/079/080。
 - 清单第 9 次同步（+6 tenancy 模块 +2 schema +四票报告/checkpoints）。
 
@@ -580,7 +580,7 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 ### 2026-10-17 03:05 波次 10 批 1 集成完成：MT076+MT079+MT069 → verified（24）
 - **集成手法**：整文件 10（三票新文件+schema barrel 785cd7ac）+ 共享两文件两步合并——migrate-test 先落 MT076 版（其基=EXE 09bf0400 逐字节），MT069 增量（78 行 0 删除，基线取自 i10-review-mt079 未触碰树）python 锚点插入（块插 export const TASKS 前、注册行插 PEOPLE_LIFECYCLE 后）；migration-tool.test 同法（"MT069" 字母序插 MT026 与 MT076 之间+注释块）。加载自证：TASKS 12 任务、ALLOWED 排序正确；断言套件 41 pass/1 env-skip/0 fail。
 - **亲验（全新容器 w10-integ-pg@55511，六变量 env 含 ent_w10i_{directory,data,operator} 受限登录+setup=超户，0600 用后删）**：base migrate exit 0 → 十一任务依赖序 generate/migrate --apply 全落账 → 聚焦 16/0/0+23/0/0+22/0/0 → **全量 638/0/0/25 文件（=577+61 精确命中，10020 expect）** → tsc 0 → biome 13 触及文件 0 诊断 → 清理验证。坑记录：migrate-test CLI 新语法 `generate <task> --out DIR` / `migrate <task> --apply --manifest`；enterprise-test-db 守卫要求 setup URL=BYPASSRLS 超户 + 三能力 URL=ent* 前缀登录。
-- dag：verified=24，running=MT016（第 2 任实现中）。transfer-prereq.sh 第 10 次同步（+people-lifecycle/preferences/payer-accounts×2/+billing 目录/三票 reports/checkpoints；探针树自验 107 项全哈希一致）。
+- dag：verified=24，running=MT016（第 2 任实现中）。transfer-prereq.sh 第 10 次同步（+people-lifecycle/preferences/payer-accounts×2/+billing 目录/三票 archive/plans/multitenancy-execution/reports/checkpoints；探针树自验 107 项全哈希一致）。
 - integration.json：MT076/MT079/MT069-integration 三份落盘。
 
 ### 2026-10-17 03:12 波次 10：MT016 第 2 任交付完成，复审已派发
@@ -646,7 +646,7 @@ No implementation Ticket is verified. No business worker dispatched. All impleme
 
 ### 2026-10-17 04:58 波次 11：MT080 复审通过（无阻塞）
 - MT080rv（ctx_45a040b3579e，报告 89 行）：六裁决全过、票面命令 25/0/0（101 expect）逐字复现、typecheck/build/biome 复跑、后端零改动 **111/111 独立重算**再证。6 非阻塞观察（含 manifest 111 vs 实现者记 107 计数出入——并行票追加所致，结论不变）。
-- 报告位置事故：复审者写到仓库根 /reports/MT080-review.md（路径错）——coordinator 归位至 $P/reports/ 并结算；最终 OCR 时对 worker_done --report-path 一致性留一项检查。
+- 报告位置事故：复审者写到仓库根 /archive/plans/multitenancy-execution/reports/MT080-review.md（路径错）——coordinator 归位至 $P/archive/plans/multitenancy-execution/reports/ 并结算；最终 OCR 时对 worker_done --report-path 一致性留一项检查。
 - 波次 11 状态：MT036 PASS 待集成、MT080 PASS 待集成、MT041 修复轮运行中、MT027-2nd 运行中。批集成等后两票收敛后一次验证循环。
 - 当前并发 2：MT041fix（ctx_e34c1e6c4ea2）+ MT027-2nd（ctx_8bcc629b448c）。
 
@@ -804,7 +804,7 @@ MT030 #73（全局身份/刷新锁/例外端点；MT027+MT013 下游）task_4797
 
 **五票容器亲验零残留**（docker ps grep 全 exit 1）。
 
-**复审装配**：五棵复审树 i13-review-mt{018,030,038,071,098}=BASE f0520524+transfer 230 项（全部 OK）+交付整拷 20 文件哈希逐项核对 ALL MATCH（MT038 树 kb-ownership=fd0e4627 两树一致）+checkpoints/briefs/reports 转移齐。五份复审 brief 落盘（专项重点：MT018 D2 凭据窄规则/MT030 启动门语义+inventory 一致性/MT038 接管审计三分复核/MT071 零修改面哈希判定+mtime 假象/MT098 变异互证+server 零外溢基线复跑）。端口分配 55555-55559。
+**复审装配**：五棵复审树 i13-review-mt{018,030,038,071,098}=BASE f0520524+transfer 230 项（全部 OK）+交付整拷 20 文件哈希逐项核对 ALL MATCH（MT038 树 kb-ownership=fd0e4627 两树一致）+archive/plans/multitenancy-execution/checkpoints/briefs/reports 转移齐。五份复审 brief 落盘（专项重点：MT018 D2 凭据窄规则/MT030 启动门语义+inventory 一致性/MT038 接管审计三分复核/MT071 零修改面哈希判定+mtime 假象/MT098 变异互证+server 零外溢基线复跑）。端口分配 55555-55559。
 
 下一步：task-create ×5 + worker-start ×5（--agent pi）→ 监控循环。
 
@@ -870,7 +870,7 @@ MT030 #73（全局身份/刷新锁/例外端点；MT027+MT013 下游）task_4797
 ### 2026-10-18 06:3x 波次 14：MT042 结算（四任）
 
 - MT042 四任（ctx_2698ddcfc7f1，task_d086082d5f39）succeeded → stop/release/completed；容器 mt042-impl-pg 亲验 docker rm。
-- 报告 reports/MT042.md 要点：全量 **1005/0/39** exit0（1005=990+15 吻合）、聚焦 15/0、变异 **12/12 KILLED**（MUT1:2…MUT5:8…MUT8:5）、RESTORE scan-executor.ts 27d675b6 与 HEAD 逐位一致+冻结面 5 文件全等、typecheck/biome 0、journal 17 任务。
+- 报告 archive/plans/multitenancy-execution/reports/MT042.md 要点：全量 **1005/0/39** exit0（1005=990+15 吻合）、聚焦 15/0、变异 **12/12 KILLED**（MUT1:2…MUT5:8…MUT8:5）、RESTORE scan-executor.ts 27d675b6 与 HEAD 逐位一致+冻结面 5 文件全等、typecheck/biome 0、journal 17 任务。
 - 重要披露：①checkpoint 态 AC1 用例实参错位必红（历史 GREEN 存档分裂），四任最小修复 +12/−7 后全绿；②MUT11 需测试增强（越词表 offer）才可捕获；③provision-db.sh 链序修正 **MT112→MT012**（MT041 报告同序先例，配方修复）——**波次 14 后续票 provision 模板须沿用此序**；④生产者侧入队接线属下游票。
 - 旧任务 task_d3f14fcfeaf6 仍被 stop_unknown dispatch 卡死，挂账（能力已 revoke，无行为）。
 - MT059 三任继续在跑（环境重建阶段）。
@@ -906,7 +906,7 @@ MT030 #73（全局身份/刷新锁/例外端点；MT027+MT013 下游）task_4797
 - MT122/MT042 复审先完成（各 ~50 分钟，报告 PASS）；随后三票（022/031/059）worker 卡死：transcript 尾部确诊 **Pi 429 速率限制**（五并发复审挤爆账户配额），7 分钟观察窗零推进、零容器。
 - 处置：三 worker stop（closed_agent_terminal）+任务回 ready，改**串行放行**（先派 022，完成后逐票放行）以避开限流互挤。
 - 顺带清理：mt042-review-pg 复审残留容器 coordinator 亲验 docker rm。
-- 澄清误报：022 树 verification/07-teardown 等系实现者证据随增量复制而来（Oct 17 时间戳），非复审进展；复审进展判据只认 reports/MTXXX-review.md 落盘+复审者自起容器。
+- 澄清误报：022 树 verification/07-teardown 等系实现者证据随增量复制而来（Oct 17 时间戳），非复审进展；复审进展判据只认 archive/plans/multitenancy-execution/reports/MTXXX-review.md 落盘+复审者自起容器。
 
 ### 2026-10-18 09:0x 波次 14 复审收官
 

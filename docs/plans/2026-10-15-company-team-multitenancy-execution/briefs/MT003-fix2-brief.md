@@ -4,8 +4,8 @@
 
 ## 背景与输入
 
-- 原实现（Task `task_60577e388d74`，已结算）+ 独立复审 `reports/MT003-review2.md`（Task `task_8ae36eaedbc7`，Spec PASS / Code PASS，但有 2 Medium 有效 findings 必须关闭）。
-- 复审报告已随快照转移到你的工作树：`docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT003-review2.md`（F1/F2/F3/F4 定义与 file:line 证据见其 §5）。
+- 原实现（Task `task_60577e388d74`，已结算）+ 独立复审 `archive/plans/multitenancy-execution/reports/MT003-review2.md`（Task `task_8ae36eaedbc7`，Spec PASS / Code PASS，但有 2 Medium 有效 findings 必须关闭）。
+- 复审报告已随快照转移到你的工作树：`archive/plans/multitenancy-execution/reports/MT003-review2.md`（F1/F2/F3/F4 定义与 file:line 证据见其 §5）。
 - 被修复对象当前哈希（先复算，不符即 worker_done --outcome failed）：
   - `server/scripts/multitenancy/migrate-test.ts` = `e00f90a45edfe02c21c227ca10f42c196d57ee41e644d7eab8fcd0c979ca76bf`
   - `server/tests/multitenancy/migration-tool.test.ts` = `e004868a3793aebb05fce46c5547384064bfe0ce30df5180143b4ada7794d461`
@@ -25,8 +25,8 @@
 
 - `server/scripts/multitenancy/migrate-test.ts`
 - `server/tests/multitenancy/migration-tool.test.ts`
-- `docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT003-fix2.md`（新建）
-- `docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003-fix2/**`（新建）
+- `archive/plans/multitenancy-execution/reports/MT003-fix2.md`（新建）
+- `archive/plans/multitenancy-execution/checkpoints/MT003-fix2/**`（新建）
 
 ## 约束
 
@@ -51,6 +51,6 @@
 
 ## 产出
 
-- `reports/MT003-fix2.md`：修复说明、RED/GREEN 证据、四个 finding 的关闭映射、命令与退出码。
-- `checkpoints/MT003-fix2/`：before/after 哈希、diff、review-package.json（含修复后两文件哈希）。
+- `archive/plans/multitenancy-execution/reports/MT003-fix2.md`：修复说明、RED/GREEN 证据、四个 finding 的关闭映射、命令与退出码。
+- `archive/plans/multitenancy-execution/checkpoints/MT003-fix2/`：before/after 哈希、diff、review-package.json（含修复后两文件哈希）。
 - worker_done --outcome succeeded|failed，附 --report-path --files-modified。

@@ -205,11 +205,11 @@
    "owned_files": [
     "server/scripts/multitenancy/inventory.ts",
     "server/tests/multitenancy/inventory.test.ts",
-    "docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT001.md",
-    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT001/**"
+    "archive/plans/multitenancy-execution/reports/MT001.md",
+    "archive/plans/multitenancy-execution/checkpoints/MT001/**"
    ],
    "owner_role": "backend_implementer",
-   "ownership_note": "Original source/test ownership plus task-scoped report/checkpoint evidence; exact repair snapshot frozen in review-packages/MT001-fix.json. No other product paths edited.",
+   "ownership_note": "Original source/test ownership plus task-scoped report/checkpoint evidence; exact repair snapshot frozen in archive/plans/multitenancy-execution/review-packages/MT001-fix.json. No other product paths edited.",
    "source_epic": 187,
    "source_issues": [
     44,
@@ -229,7 +229,7 @@
      "blocking_findings": 0,
      "code_quality": "PASS",
      "dispatch": "ctx_57996559d8ac",
-     "report": "reports/MT001-fix-review.md",
+     "report": "archive/plans/multitenancy-execution/reports/MT001-fix-review.md",
      "review_package_sha256": "e67e0c23d1b912721c23f54ee22d02626003b42e20838fbfa8e51c6605fa529a",
      "spec_compliance": "PASS",
      "task": "task_4954961364b8"
@@ -348,12 +348,12 @@
      "migrate-test.ts": "cb0891c6dba4dcfb… (incl. FORCE RLS)",
      "migration-tool.test.ts": "75bd28f902ce9fae… (ruling #3 narrow exception)"
     },
-    "integration": "checkpoints/MT004-fix/integration.json",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT004-fix/integration.json",
     "reports": [
-     "reports/MT004.md",
-     "reports/MT004-review.md",
-     "reports/MT004-fix.md",
-     "reports/MT004-fix-review.md"
+     "archive/plans/multitenancy-execution/reports/MT004.md",
+     "archive/plans/multitenancy-execution/reports/MT004-review.md",
+     "archive/plans/multitenancy-execution/reports/MT004-fix.md",
+     "archive/plans/multitenancy-execution/reports/MT004-fix-review.md"
     ],
     "residual_findings": {
      "info": "review F3 redundant-unique-index (consistent w/ precedent), F4 combined-run --timeout note, fix-review 3 info observations"
@@ -366,7 +366,7 @@
     },
     "dispatch": "ctx_982ce0c08523",
     "released": true,
-    "report": "reports/MT004-fix.md",
+    "report": "archive/plans/multitenancy-execution/reports/MT004-fix.md",
     "result": "F1 CLOSED (FORCE RLS, RED 15/1 -> GREEN 16/0, psql cross-check) / F2 CLOSED (comments)",
     "task": "task_7c40417f32e9"
    },
@@ -391,7 +391,7 @@
      "F4_info": "combined inventory+fixtures run needs --timeout 30000 (environmental)"
     },
     "released": true,
-    "report": "reports/MT004-review.md",
+    "report": "archive/plans/multitenancy-execution/reports/MT004-review.md",
     "task": "task_70322419a303",
     "verdict": "Spec 4/4 PASS / Code PASS with findings"
    },
@@ -427,10 +427,10 @@
     "MT004"
    ],
    "final": {
-    "integration": "checkpoints/MT005/integration.json",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT005/integration.json",
     "reports": [
-     "reports/MT005.md",
-     "reports/MT005-review.md"
+     "archive/plans/multitenancy-execution/reports/MT005.md",
+     "archive/plans/multitenancy-execution/reports/MT005-review.md"
     ],
     "residual_findings": {
      "info": "I-1 legacy header names in runner-production.test (2, intentional fakes); I-2 gate vs conversations JOIN nuance; I-3 brief count 147 vs 148 clarification",
@@ -483,16 +483,16 @@
    "dispatch": null,
    "final": {
     "delivered_at": "2026-10-16T12:30:00",
-    "integration": "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT006/integration.json",
-    "report": "reports/MT006.md",
-    "review": "reports/MT006-review.md",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT006/integration.json",
+    "report": "archive/plans/multitenancy-execution/reports/MT006.md",
+    "review": "archive/plans/multitenancy-execution/reports/MT006-review.md",
     "verification": "coordinator v4: suite 34/0, full 203/0/0skip, typecheck 0, biome 0"
    },
    "id": "MT006",
    "impl": {
     "dispatch": "ctx_fcaf1191c69c",
     "released": true,
-    "report": "reports/MT006.md",
+    "report": "archive/plans/multitenancy-execution/reports/MT006.md",
     "task": "task_ce1f2edb1025"
    },
    "interfaces": {
@@ -505,7 +505,7 @@
    "owned_files": [],
    "owner_role": "backend_implementer",
    "ownership_note": "No exact file paths are assigned in the approved Ticket body. Must resolve against current HEAD code and shared interfaces before dispatch; do not assign overlapping files to parallel workers.",
-   "review": "reports/MT006-review.md: Spec PASS 4/4 / Code PASS, 0C/0H/0M (1 low F3 + 5 info); D1 accepted w/ follow-up DELETE-policy ticket condition; D2 accepted",
+   "review": "archive/plans/multitenancy-execution/reports/MT006-review.md: Spec PASS 4/4 / Code PASS, 0C/0H/0M (1 low F3 + 5 info); D1 accepted w/ follow-up DELETE-policy ticket condition; D2 accepted",
    "source_epic": 188,
    "source_issues": [
     49,
@@ -545,8 +545,8 @@
     "MT006"
    ],
    "final": {
-    "integration": "checkpoints/MT007-integration/integration.json",
-    "report": "reports/MT007-review.md",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT007-integration/integration.json",
+    "report": "archive/plans/multitenancy-execution/reports/MT007-review.md",
     "verdict": "PASS 六项裁决 A-F，0C/0H/0M",
     "verified_at": "2026-10-16T15:30Z"
    },
@@ -593,8 +593,8 @@
    ],
    "final": {
     "hash": "d60cbd5a6c832d12a08805564dc10ba2de24530ca21e05eb05c9921c0bf8d097",
-    "integration": "checkpoints/MT008-integration/integration.json",
-    "report": "reports/MT008-review.md",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT008-integration/integration.json",
+    "report": "archive/plans/multitenancy-execution/reports/MT008-review.md",
     "verdict": "PASS 4/4, 0C/0H, F1 medium 裁决#10 接受+挂账",
     "verified_at": "2026-10-16T13:30Z"
    },
@@ -645,7 +645,7 @@
    "final": {
     "full_baseline": 458,
     "integrated_at": "2026-10-16T17:10Z",
-    "integration": "checkpoints/MT009-integration/integration.json",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT009-integration/integration.json",
     "review_verdict": "PASS"
    },
    "id": "MT009",
@@ -700,7 +700,7 @@
     ],
     "full_baseline": 397,
     "integrated_at": "2026-10-16T15:55Z",
-    "integration": "checkpoints/MT010-integration/integration.json",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT010-integration/integration.json",
     "review_verdict": "PASS"
    },
    "id": "MT010",
@@ -749,7 +749,7 @@
    "dispatch": "ctx_f19be14fe040",
    "final": {
     "integrated_at": "2026-10-17T01:30Z",
-    "integration": "checkpoints/MT011-integration/integration.json",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT011-integration/integration.json",
     "review_verdict": "PASS"
    },
    "id": "MT011",
@@ -797,8 +797,8 @@
    ],
    "final": {
     "hash": "cbd0921612e942f16544115c158dff422a539a1eea6092c6630e1d5190c98fd8",
-    "integration": "checkpoints/MT012-integration/integration.json",
-    "report": "reports/MT012-review.md",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT012-integration/integration.json",
+    "report": "archive/plans/multitenancy-execution/reports/MT012-review.md",
     "verdict": "PASS 0C/0H/0M + N1/N2 info",
     "verified_at": "2026-10-16T14:05Z"
    },
@@ -845,10 +845,10 @@
     "MT005"
    ],
    "final": {
-    "integration": "checkpoints/MT013-integration/integration.json",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT013-integration/integration.json",
     "reports": [
-     "reports/MT013-review.md (a734f15e)",
-     "reports/MT013-fix-review.md (5738b51b)"
+     "archive/plans/multitenancy-execution/reports/MT013-review.md (a734f15e)",
+     "archive/plans/multitenancy-execution/reports/MT013-fix-review.md (5738b51b)"
     ],
     "verdict": "修复轮受理：F1/F2/F3 全消除 0C/0H/0M/0L",
     "verified_at": "2026-10-16T14:30Z"
@@ -906,8 +906,8 @@
     "MT006"
    ],
    "final": {
-    "integration": "checkpoints/MT014-integration/integration.json",
-    "report": "reports/MT014-review.md",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT014-integration/integration.json",
+    "report": "archive/plans/multitenancy-execution/reports/MT014-review.md",
     "verdict": "七项裁决全过 无Blocker",
     "verified_at": "2026-10-16T15:05Z"
    },
@@ -955,7 +955,7 @@
    "dispatch": "ctx_7060921ae58f",
    "final": {
     "integrated_at": "2026-10-17T01:30Z",
-    "integration": "checkpoints/MT015-integration/integration.json",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT015-integration/integration.json",
     "review_verdict": "PASS"
    },
    "id": "MT015",
@@ -1005,8 +1005,8 @@
    "final": {
     "full_suite": "682/0/0/26(批次2)",
     "integrated_at": "2026-10-17T03:40:00+08:00",
-    "report": "reports/MT016.md",
-    "review": "reports/MT016-review.md"
+    "report": "archive/plans/multitenancy-execution/reports/MT016.md",
+    "review": "archive/plans/multitenancy-execution/reports/MT016-review.md"
    },
    "id": "MT016",
    "interfaces": {
@@ -1429,7 +1429,7 @@
    "dispatch": "ctx_60e1f2927356",
    "final": {
     "integrated_at": "2026-10-17T01:50Z",
-    "integration": "checkpoints/MT026-integration/integration.json",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT026-integration/integration.json",
     "review_verdict": "PASS"
    },
    "id": "MT026",
@@ -1479,8 +1479,8 @@
    "final": {
     "full_suite": "770/0/0/29(批次)",
     "integrated_at": "2026-10-17T05:50:00+08:00",
-    "report": "reports/MT027.md",
-    "review": "reports/MT027-review.md"
+    "report": "archive/plans/multitenancy-execution/reports/MT027.md",
+    "review": "archive/plans/multitenancy-execution/reports/MT027-review.md"
    },
    "id": "MT027",
    "interfaces": {
@@ -1862,8 +1862,8 @@
    "final": {
     "full_suite": "770/0/0/29(批次)",
     "integrated_at": "2026-10-17T05:35:00+08:00",
-    "report": "reports/MT036.md",
-    "review": "reports/MT036-review.md"
+    "report": "archive/plans/multitenancy-execution/reports/MT036.md",
+    "review": "archive/plans/multitenancy-execution/reports/MT036-review.md"
    },
    "id": "MT036",
    "interfaces": {
@@ -2077,8 +2077,8 @@
    "final": {
     "full_suite": "770/0/0/29(批次)",
     "integrated_at": "2026-10-17T05:35:00+08:00",
-    "report": "reports/MT041.md",
-    "review": "reports/MT041-review.md"
+    "report": "archive/plans/multitenancy-execution/reports/MT041.md",
+    "review": "archive/plans/multitenancy-execution/reports/MT041-review.md"
    },
    "id": "MT041",
    "interfaces": {
@@ -3242,8 +3242,8 @@
    "final": {
     "full_suite": "638/0/0/25(批次合并验证)",
     "integrated_at": "2026-10-17T03:05:00+08:00",
-    "report": "reports/MT069.md",
-    "review": "reports/MT069-review.md"
+    "report": "archive/plans/multitenancy-execution/reports/MT069.md",
+    "review": "archive/plans/multitenancy-execution/reports/MT069-review.md"
    },
    "id": "MT069",
    "interfaces": {
@@ -3504,7 +3504,7 @@
     ],
     "full_baseline": 422,
     "integrated_at": "2026-10-16T16:35Z",
-    "integration": "checkpoints/MT075-integration/integration.json",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT075-integration/integration.json",
     "review_verdict": "APPROVED",
     "worker_death_note": "复审者死于报告落盘后消息发出前，按检查点受理"
    },
@@ -3557,8 +3557,8 @@
    "final": {
     "full_suite": "638/0/0/25(批次合并验证)",
     "integrated_at": "2026-10-17T03:05:00+08:00",
-    "report": "reports/MT076.md",
-    "review": "reports/MT076-review.md"
+    "report": "archive/plans/multitenancy-execution/reports/MT076.md",
+    "review": "archive/plans/multitenancy-execution/reports/MT076-review.md"
    },
    "id": "MT076",
    "interfaces": {
@@ -3606,7 +3606,7 @@
    "dispatch": "ctx_557a3c1c4573",
    "final": {
     "integrated_at": "2026-10-17T01:50Z",
-    "integration": "checkpoints/MT077-integration/integration.json",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT077-integration/integration.json",
     "review_verdict": "PASS"
    },
    "id": "MT077",
@@ -3699,8 +3699,8 @@
    "final": {
     "full_suite": "638/0/0/25(批次合并验证)",
     "integrated_at": "2026-10-17T03:05:00+08:00",
-    "report": "reports/MT079.md",
-    "review": "reports/MT079-review.md"
+    "report": "archive/plans/multitenancy-execution/reports/MT079.md",
+    "review": "archive/plans/multitenancy-execution/reports/MT079-review.md"
    },
    "id": "MT079",
    "interfaces": {
@@ -3748,8 +3748,8 @@
    "final": {
     "full_suite": "770/0/0/29(批次)",
     "integrated_at": "2026-10-17T05:35:00+08:00",
-    "report": "reports/MT080.md",
-    "review": "reports/MT080-review.md"
+    "report": "archive/plans/multitenancy-execution/reports/MT080.md",
+    "review": "archive/plans/multitenancy-execution/reports/MT080-review.md"
    },
    "id": "MT080",
    "interfaces": {
@@ -5097,16 +5097,16 @@
    "dispatch": null,
    "final": {
     "delivered_at": "2026-10-16T12:30:00",
-    "integration": "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT112/integration.json",
-    "report": "reports/MT112.md",
-    "review": "reports/MT112-review.md",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT112/integration.json",
+    "report": "archive/plans/multitenancy-execution/reports/MT112.md",
+    "review": "archive/plans/multitenancy-execution/reports/MT112-review.md",
     "verification": "coordinator v4 (同轮): full 203/0/0skip, typecheck 0, biome 0 + reviewer CLI/psql evidence"
    },
    "id": "MT112",
    "impl": {
     "dispatch": "ctx_679c87145582",
     "released": true,
-    "report": "reports/MT112.md",
+    "report": "archive/plans/multitenancy-execution/reports/MT112.md",
     "task": "task_1f45a268faf6",
     "worktree": "/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt112"
    },
@@ -5121,7 +5121,7 @@
    "owned_files": [],
    "owner_role": "backend_implementer",
    "ownership_note": "No exact file paths are assigned in the approved Ticket body. Must resolve against current HEAD code and shared interfaces before dispatch; do not assign overlapping files to parallel workers.",
-   "review": "reports/MT112-review.md: Spec PASS 4/4 + ruling5/expand-only/RLS FORCE 全 PASS / Code high; 0C/0H/0M (2 low + 3 info)",
+   "review": "archive/plans/multitenancy-execution/reports/MT112-review.md: Spec PASS 4/4 + ruling5/expand-only/RLS FORCE 全 PASS / Code high; 0C/0H/0M (2 low + 3 info)",
    "source_epic": 206,
    "source_issues": [
     155,
@@ -5944,8 +5944,8 @@
      "acceptance-harness.test.ts": "18717a1b08a24300…",
      "acceptance-harness.ts": "33f24c24684d2565…"
     },
-    "integration": "checkpoints/MT131-fix2/integration.json",
-    "report": "reports/MT131-fix2-review.md",
+    "integration": "archive/plans/multitenancy-execution/checkpoints/MT131-fix2/integration.json",
+    "report": "archive/plans/multitenancy-execution/reports/MT131-fix2-review.md",
     "residual_findings": {
      "info": "F2R run-metadata written before plan validation; F3R transfer-manifest backlink (fixed at integration); F4R inherited review2 infos",
      "low": "F1R CLI flag tokenizer swallows next --* token (pre-existing semantics, loud fail)"

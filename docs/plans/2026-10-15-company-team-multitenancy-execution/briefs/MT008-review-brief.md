@@ -4,8 +4,8 @@
 
 ## 背景与快照
 
-- 本树 = 实现树 i6-mt008 的逐文件副本；coordinator 已按 `checkpoints/MT008/sha256-manifest.txt` 复算 **29/29 一致**（产物以工作树根为路径基准、checkpoint 以 plan 目录为基准、`--` 结尾行为分节标题、`#` 为注释）。
-- 前置含裁决 #9 修复的 4 个 MT006 文件（mt008-restore-{before,after}.txt 存档）——复算其哈希与 checkpoints/MT006/sha256-manifest.txt 声明值一致。
+- 本树 = 实现树 i6-mt008 的逐文件副本；coordinator 已按 `archive/plans/multitenancy-execution/checkpoints/MT008/sha256-manifest.txt` 复算 **29/29 一致**（产物以工作树根为路径基准、checkpoint 以 plan 目录为基准、`--` 结尾行为分节标题、`#` 为注释）。
+- 前置含裁决 #9 修复的 4 个 MT006 文件（mt008-restore-{before,after}.txt 存档）——复算其哈希与 archive/plans/multitenancy-execution/checkpoints/MT006/sha256-manifest.txt 声明值一致。
 - 预期 git 状态：`M enterprise-tenancy.ts / store.ts / index.ts / config.ts / app.ts / migrate-test.ts / migration-tool.test.ts` + 清单 untracked（前五者含 MT005/MT006 前置增量 + 本票增量）。
 
 ## 目标
@@ -39,7 +39,7 @@
 
 ## 产出
 
-写 `reports/MT008-review.md`（唯一允许新建/修改文件）：Verdicts、findings、命令与退出码、哈希复算、三处测试修复的逐处判定、存活变异处置意见。
+写 `archive/plans/multitenancy-execution/reports/MT008-review.md`（唯一允许新建/修改文件）：Verdicts、findings、命令与退出码、哈希复算、三处测试修复的逐处判定、存活变异处置意见。
 
 ## 约束
 

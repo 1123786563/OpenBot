@@ -4,7 +4,7 @@
 对象：MT022 会话消息域（conversation-actions）。树=r14-mt022（BASE f0520524+240 prereq+本票增量 3 文件）。
 - 生产：server/src/enterprise/tenancy/conversation-actions.ts
 - 测试：server/tests/multitenancy/conversation-messages.test.ts、support/conversation-actions.ts
-实现报告：reports/MT022.md；证据：checkpoints/MT022/。
+实现报告：archive/plans/multitenancy-execution/reports/MT022.md；证据：archive/plans/multitenancy-execution/checkpoints/MT022/。
 
 ## 必做
 1. 环境三步配方从零 provision（库名 openbot_enterprise_r14a_*，端口 55571，七变量 env；链序用 MT004→MT008→MT112→MT012→…→MT070 修正版）。
@@ -16,4 +16,4 @@
 - **D6 保守裁定**：Q1/Q2 escalation 20 分钟未答按保守裁定——读 briefs/MT022-brief.md 中 question 存档与实现者的保守处理，判定保守方向是否安全（拒绝而非放行）。
 - RED→GREEN 链完整性：RED-0（语法修复）→RED-1→GREEN-1..5 是否真红真绿。
 ## 输出
-reports/MT022-review.md：verdict PASS/FAIL + findings（critical/high/medium/low 分级，各附证据）；结束发 worker_done。
+archive/plans/multitenancy-execution/reports/MT022-review.md：verdict PASS/FAIL + findings（critical/high/medium/low 分级，各附证据）；结束发 worker_done。

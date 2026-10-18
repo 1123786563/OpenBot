@@ -1,6 +1,6 @@
 # MT013 / Issue #57 — 实现轮 Task Brief（多租户模式显式开关与启动校验）
 
-角色：`backend_implementer`；完成后由全新独立 Pi Reviewer 复审。前置已集成（先复算 `checkpoints/prereq-manifest.txt`，不符即 worker_done --outcome failed）。
+角色：`backend_implementer`；完成后由全新独立 Pi Reviewer 复审。前置已集成（先复算 `archive/plans/multitenancy-execution/checkpoints/prereq-manifest.txt`，不符即 worker_done --outcome failed）。
 
 ## 目标
 
@@ -34,5 +34,5 @@
 
 ## 产出
 
-- `reports/MT013.md` + `checkpoints/MT013/`（同 MT006 惯例 + mutation ≥3 覆盖三拒绝路径）
+- `archive/plans/multitenancy-execution/reports/MT013.md` + `archive/plans/multitenancy-execution/checkpoints/MT013/`（同 MT006 惯例 + mutation ≥3 覆盖三拒绝路径）
 - worker_done --outcome succeeded|failed，附 --report-path --files-modified

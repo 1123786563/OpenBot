@@ -18,8 +18,8 @@ Verification：`bun test server/tests/multitenancy/revocation.test.ts`（新建�
 ## 事实源与前置契约
 
 - 父 Spec #6（R1–R7 / A1–A13 / §8）、ADR 0004（accepted）/0002/0003、CONTEXT.md「公司与团队」。覆盖 A5、A2。
-- BASE `f0520524f0faa2b4533b9d2f1aa692c8f907ba71`；前置已由 coordinator 转移（`checkpoints/prereq-manifest.txt` 29 文件自校验通过）= MT001–MT006 + MT008 + MT112 verified 集合。
-- 领取时先复算 prereq-manifest 哈希；读取实际交付契约：MT005 scope-gate（seam + 事务内重验 revalidate）、MT006 workspace-admin（停用/移除动作、advisory 锁键序、operator 通道）、MT008 resource-policy（判定注册表）。前置报告在 `reports/`（MT004/005/006/008/112 及 review）。
+- BASE `f0520524f0faa2b4533b9d2f1aa692c8f907ba71`；前置已由 coordinator 转移（`archive/plans/multitenancy-execution/checkpoints/prereq-manifest.txt` 29 文件自校验通过）= MT001–MT006 + MT008 + MT112 verified 集合。
+- 领取时先复算 prereq-manifest 哈希；读取实际交付契约：MT005 scope-gate（seam + 事务内重验 revalidate）、MT006 workspace-admin（停用/移除动作、advisory 锁键序、operator 通道）、MT008 resource-policy（判定注册表）。前置报告在 `archive/plans/multitenancy-execution/reports/`（MT004/005/006/008/112 及 review）。
 - **票据备注（必须遵守）**：你的失效点清单是下游各闭环 Ticket 的复用基础——把失效点做成可复用的单一判定入口，不要散落各处；下游不会各自实现撤权判断。
 
 ## 可写文件（票面域；其余只读）
@@ -38,4 +38,4 @@ Verification：`bun test server/tests/multitenancy/revocation.test.ts`（新建�
 
 ## 交付物（未提交检查点）
 
-reports/MT007.md + checkpoints/MT007/（sha256-manifest.txt、changes.diff、before/after-hashes、red-green/、mutation/、verification/）。全量 0-skip 证据。完成后 worker_done --outcome succeeded|failed 附 --report-path。无提交/推送/合并/生产迁移/部署授权。
+archive/plans/multitenancy-execution/reports/MT007.md + archive/plans/multitenancy-execution/checkpoints/MT007/（sha256-manifest.txt、changes.diff、before/after-hashes、red-green/、mutation/、verification/）。全量 0-skip 证据。完成后 worker_done --outcome succeeded|failed 附 --report-path。无提交/推送/合并/生产迁移/部署授权。

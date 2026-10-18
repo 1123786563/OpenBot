@@ -8,7 +8,7 @@
 
 ## 快照核验（先做）
 
-- `git rev-parse HEAD` = f0520524 开头（完整值以 `checkpoints/MT112/review-sha256-manifest.txt` 首行为准）。
+- `git rev-parse HEAD` = f0520524 开头（完整值以 `archive/plans/multitenancy-execution/checkpoints/MT112/review-sha256-manifest.txt` 首行为准）。
 - 逐条复算该 manifest 每个文件 SHA-256；不匹配 → worker_done --outcome failed。
 - 预期 git 状态：`server/src/db/schema/enterprise-tenancy.ts` 为 tracked ` M`（实现者纯追加已转移）；核验 `git diff --numstat` 为纯追加（对照实现报告：70+N 行 0 删除）；其余为清单内 untracked。
 
@@ -18,7 +18,7 @@
 - `server/scripts/multitenancy/migrate-test.ts`（追加 MT112 TASKS 4 步：DDL/RLS/锚点行/映射行）
 - `server/tests/multitenancy/migration-tool.test.ts`（裁决 #5 窄例外：:347 断言 `["MT000","MT004","MT112"]` + 3 行注释，核验 diff 仅此）
 - `server/tests/multitenancy/legacy-anchor.test.ts`（新建 21 用例）
-- 报告 `reports/MT112.md` 与 `checkpoints/MT112/**`
+- 报告 `archive/plans/multitenancy-execution/reports/MT112.md` 与 `archive/plans/multitenancy-execution/checkpoints/MT112/**`
 
 ## 审阅要点
 
@@ -27,7 +27,7 @@
 3. **映射唯一且可核验**：双唯一索引（deployment identity / billing customer）+ 派生 CHECK 焊死 `billing_external_customer_id = 'openbot-deployment-' || deployment_tenant_id`；23505/23514/42501 证据；JOIN 可核验。
 4. **dry-run + manifest 链路**：buildPlan 确定性、drift manifest 副作用前拒绝、journal digest 一致。
 5. **既有行为不变**：expand-only 断言（表清单/行数/字段逐字/pg_policies 计数）；146 pass 全量回归 0 skip。
-6. **裁决 #5 最小性**：migration-tool.test.ts diff 仅一处断言 + 注释（对照 `checkpoints/MT112/migration-tool.test.diff` 13 行存档，独立重算比对）。
+6. **裁决 #5 最小性**：migration-tool.test.ts diff 仅一处断言 + 注释（对照 `archive/plans/multitenancy-execution/checkpoints/MT112/migration-tool.test.diff` 13 行存档，独立重算比对）。
 7. **RLS**：新表 ENABLE+FORCE（吸取 MT004 F1 教训，验证本轮已含 FORCE）+ 仅 operator SELECT + 无受限角色写权限。
 8. TDD/mutation 真实性（RED 缺失导出型、GREEN 两轮、MUT2 假跑诚实披露）；已知边界 5 条合理性。
 
@@ -44,7 +44,7 @@
 
 ## 产出
 
-写 `reports/MT112-review.md`（本工作树唯一允许新建/修改的文件）：Verdicts、findings、命令与退出码、哈希复算、勘察结论核验、裁决 #5 最小性比对。
+写 `archive/plans/multitenancy-execution/reports/MT112-review.md`（本工作树唯一允许新建/修改的文件）：Verdicts、findings、命令与退出码、哈希复算、勘察结论核验、裁决 #5 最小性比对。
 
 ## 约束
 

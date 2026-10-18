@@ -8,15 +8,15 @@
 
 ## 快照核验（先做）
 
-- HEAD = manifest 首行 BASE；`checkpoints/MT006/review-sha256-manifest.txt` 逐文件复算，不匹配 → worker_done --outcome failed。
-- 预期 git 状态：`M enterprise-tenancy.ts`（MT004 交付）、`M store.ts`（MT005 交付）、`M index.ts`（MT005+MT006）、`M app.ts`、`M config.ts`（MT006 纯追加）+ 清单内 untracked。用 `git diff` 核验 app.ts/config.ts 为**纯追加**、index.ts 变化 = MT005 头名 + MT006 路由装配段（对照 `checkpoints/MT006/changes.diff`）。
+- HEAD = manifest 首行 BASE；`archive/plans/multitenancy-execution/checkpoints/MT006/review-sha256-manifest.txt` 逐文件复算，不匹配 → worker_done --outcome failed。
+- 预期 git 状态：`M enterprise-tenancy.ts`（MT004 交付）、`M store.ts`（MT005 交付）、`M index.ts`（MT005+MT006）、`M app.ts`、`M config.ts`（MT006 纯追加）+ 清单内 untracked。用 `git diff` 核验 app.ts/config.ts 为**纯追加**、index.ts 变化 = MT005 头名 + MT006 路由装配段（对照 `archive/plans/multitenancy-execution/checkpoints/MT006/changes.diff`）。
 
 ## 审阅对象
 
 - `server/src/enterprise/tenancy/workspace-admin.ts`、`workspace-scope-routes.ts`（新）
 - `server/src/index.ts` / `app.ts` / `config.ts`（追加面）
 - `server/tests/multitenancy/workspace-scope.test.ts` + `support/workspace-scope.ts`
-- 报告 `reports/MT006.md` 与 `checkpoints/MT006/**`
+- 报告 `archive/plans/multitenancy-execution/reports/MT006.md` 与 `archive/plans/multitenancy-execution/checkpoints/MT006/**`
 
 ## 审阅要点
 
@@ -39,7 +39,7 @@
 
 ## 产出
 
-写 `reports/MT006-review.md`（唯一允许新建/修改文件）：Verdicts、findings、命令与退出码、哈希复算、append-only 结论、D1/D2 处置意见。
+写 `archive/plans/multitenancy-execution/reports/MT006-review.md`（唯一允许新建/修改文件）：Verdicts、findings、命令与退出码、哈希复算、append-only 结论、D1/D2 处置意见。
 
 ## 约束
 
@@ -47,4 +47,4 @@
 
 ## 接管说明（coordinator，2026-10-16）
 
-前任 Reviewer（ctx_b5dc7c0a15fb）被平台强制终止（stop_unverified，非任务失败）。本工作树即前任所用树：prereq 快照完好（git status 与上文「预期状态」一致），`reports/MT006-review.md` 仅为占位存根——你完成审阅后**直接覆盖写入**最终报告。专用库容器 `mt006-review-pg`（127.0.0.1:55463）仍在运行，可直接复用（如状态脏可 `docker rm -f mt006-review-pg` 后按 brief 原命令重启）。其余流程按本 brief 原文执行，从快照核验开始。
+前任 Reviewer（ctx_b5dc7c0a15fb）被平台强制终止（stop_unverified，非任务失败）。本工作树即前任所用树：prereq 快照完好（git status 与上文「预期状态」一致），`archive/plans/multitenancy-execution/reports/MT006-review.md` 仅为占位存根——你完成审阅后**直接覆盖写入**最终报告。专用库容器 `mt006-review-pg`（127.0.0.1:55463）仍在运行，可直接复用（如状态脏可 `docker rm -f mt006-review-pg` 后按 brief 原命令重启）。其余流程按本 brief 原文执行，从快照核验开始。

@@ -21,9 +21,9 @@ Verification：`bun test server/tests/multitenancy/team-public-rules.test.ts`（
 - 前置 = MT001-008 + MT112 + MT012 + MT013 全部 verified 集合（EXE 快照）。重点消费：
   - MT008 `resource-policy.ts`（判定注册表 workspace-v1/tenancy-v1 + decide()）与 `resource-visibility.ts`——**只读消费，不得修改**（发现缺陷升级问 coordinator）
   - MT005 `scope-gate.ts`/`store.ts` seam、MT006 `workspace-admin.ts`（MT007 修复中的 revocation 域**不在本树**——注意本树 workspace-admin.ts 为 MT006 态）
-  - MT012 RLS 兜底 + 策略模板（报告 §7 在 reports/MT012.md）——如需新表/策略按模板
+  - MT012 RLS 兜底 + 策略模板（报告 §7 在 archive/plans/multitenancy-execution/reports/MT012.md）——如需新表/策略按模板
   - MT013 启动校验开关已在 config/index——你的装配段不得动它
-- 报告在 reports/（MT004/005/006/008/012/013 + review）。
+- 报告在 archive/plans/multitenancy-execution/reports/（MT004/005/006/008/012/013 + review）。
 
 ## 可写文件
 
@@ -40,11 +40,11 @@ Verification：`bun test server/tests/multitenancy/team-public-rules.test.ts`（
 
 ## 交付物
 
-reports/MT009.md + checkpoints/MT009/（全套：sha256-manifest、changes.diff、before/after、red-green/、mutation/、verification/）。全量 0-skip 证据。完成 worker_done 附 --report-path。
+archive/plans/multitenancy-execution/reports/MT009.md + archive/plans/multitenancy-execution/checkpoints/MT009/（全套：sha256-manifest、changes.diff、before/after、red-green/、mutation/、verification/）。全量 0-skip 证据。完成 worker_done 附 --report-path。
 
 ## 接管说明（coordinator，2026-10-16 第 2 任）
 
-- 前任实现者（ctx_c4d6f3b90d63）死于 14:28Z 后的上游 502（Retry 3 失败），死时处于**收尾阶段**：交付物已基本就位（team-public-rules.ts 8475b21a…、team-public-rules.test.ts 7087b61b…、checkpoints/MT009/ 全套：red-green 四档、verification 三档、mutation、changes.diff、after/before），**唯一缺 reports/MT009.md**。
+- 前任实现者（ctx_c4d6f3b90d63）死于 14:28Z 后的上游 502（Retry 3 失败），死时处于**收尾阶段**：交付物已基本就位（team-public-rules.ts 8475b21a…、team-public-rules.test.ts 7087b61b…、archive/plans/multitenancy-execution/checkpoints/MT009/ 全套：red-green 四档、verification 三档、mutation、changes.diff、after/before），**唯一缺 archive/plans/multitenancy-execution/reports/MT009.md**。
 - /tmp/mt009-* 有其工作文件（env.sh 0600 含库凭据可复用容器 mt009-impl-pg 仍在运行、biome-before/after、tpr-original）。
-- **你的任务**：1) 复算 checkpoints/MT009/sha256-manifest 与交付哈希；2) **查清 verification/01-full-suite-12-files.txt 的 1 fail**（340 pass/1 fail——是未修缺陷、flaky 还是已由 GREEN-2 解决？RED→GREEN 链与最终态对齐后给结论）；3) 若交付有实质缺口按原 brief 补齐（TDD 纪律）；4) 独立复跑全绿门槛（聚焦 35/0/0 + 全量 340/0/0 + typecheck + biome）；5) 写 reports/MT009.md（含接管叙事与前任增量的甄别）；6) worker_done。
+- **你的任务**：1) 复算 archive/plans/multitenancy-execution/checkpoints/MT009/sha256-manifest 与交付哈希；2) **查清 verification/01-full-suite-12-files.txt 的 1 fail**（340 pass/1 fail——是未修缺陷、flaky 还是已由 GREEN-2 解决？RED→GREEN 链与最终态对齐后给结论）；3) 若交付有实质缺口按原 brief 补齐（TDD 纪律）；4) 独立复跑全绿门槛（聚焦 35/0/0 + 全量 340/0/0 + typecheck + biome）；5) 写 archive/plans/multitenancy-execution/reports/MT009.md（含接管叙事与前任增量的甄别）；6) worker_done。
 - 不得丢弃前任交付重来——按检查点受理与补全。

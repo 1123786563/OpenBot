@@ -1,6 +1,6 @@
 # MT007 / Issue #50 独立复审 Brief — coordinator 下发
 
-你是 MT007 的独立复审者（全新 Pi 会话，与实现者无共享上下文）。只读被审文件；唯一允许新建文件 = reports/MT007-review.md；不修复；无提交/推送/合并授权；skipped 不算通过。完成 worker_done 附 --report-path。
+你是 MT007 的独立复审者（全新 Pi 会话，与实现者无共享上下文）。只读被审文件；唯一允许新建文件 = archive/plans/multitenancy-execution/reports/MT007-review.md；不修复；无提交/推送/合并授权；skipped 不算通过。完成 worker_done 附 --report-path。
 
 ## 审阅对象
 
@@ -9,7 +9,7 @@
 2. `server/src/enterprise/tenancy/workspace-admin.ts`（扩展：restoreTeamMember/suspendCompanyMember/restoreCompanyMember + 既有 suspend/remove/reactivate 补审计）
 3. `server/src/enterprise/runs/events.ts` + `runner.ts`（事件订阅入口接入 + 生产装配，16 行）
 4. `server/tests/multitenancy/revocation.test.ts`（新 29 用例）
-- checkpoints/MT007/（before/after、changes.diff、red-green/、mutation/、verification/）+ reports/MT007.md。
+- archive/plans/multitenancy-execution/checkpoints/MT007/（before/after、changes.diff、red-green/、mutation/、verification/）+ archive/plans/multitenancy-execution/reports/MT007.md。
 - **本树环境说明**：前置含全部已 verified 交付（MT001-008/112/012/013——基线全量 334 = 305 + 本票 29，与实现者环境 261 不同是实现树基线差异，非缺陷）。
 
 ## 验收（Issue #50 四条）+ 重点裁决

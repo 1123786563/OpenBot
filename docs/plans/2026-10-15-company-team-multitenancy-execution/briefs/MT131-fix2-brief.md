@@ -4,10 +4,10 @@
 
 ## 背景与输入
 
-- 原实现（Task `task_9b95a3b8cb96`，已结算）+ 独立复审 `reports/MT131-review2.md`（Spec 4/4 PASS / Code PASS WITH FINDINGS：2 Medium 必须关闭）。
+- 原实现（Task `task_9b95a3b8cb96`，已结算）+ 独立复审 `archive/plans/multitenancy-execution/reports/MT131-review2.md`（Spec 4/4 PASS / Code PASS WITH FINDINGS：2 Medium 必须关闭）。
 - 复审报告已随快照转移到你的工作树（findings 定义与 file:line 证据见其 §4；复审者自建环境的可复用做法见其 §1-§2）。
 - 被修复对象当前哈希（先复算，不符即 worker_done --outcome failed）：
-  - `server/scripts/multitenancy/acceptance-harness.ts`（以 checkpoints/MT131/review-sha256-manifest.txt 中记录值为准）
+  - `server/scripts/multitenancy/acceptance-harness.ts`（以 archive/plans/multitenancy-execution/checkpoints/MT131/review-sha256-manifest.txt 中记录值为准）
   - `server/tests/multitenancy/acceptance-harness.test.ts`（同上）
 - HEAD 必须 = `f0520524f0faa2b4533b9d2f1aa69c8f907ba71`。
 
@@ -25,8 +25,8 @@
 
 - `server/scripts/multitenancy/acceptance-harness.ts`
 - `server/tests/multitenancy/acceptance-harness.test.ts`
-- `docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT131-fix2.md`（新建）
-- `docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT131-fix2/**`（新建）
+- `archive/plans/multitenancy-execution/reports/MT131-fix2.md`（新建）
+- `archive/plans/multitenancy-execution/checkpoints/MT131-fix2/**`（新建）
 
 ## 约束
 
@@ -53,6 +53,6 @@
 
 ## 产出
 
-- `reports/MT131-fix2.md`：修复说明、RED/GREEN 证据、四个 finding 关闭映射、命令与退出码。
-- `checkpoints/MT131-fix2/`：before/after 哈希、diff、review-package.json。
+- `archive/plans/multitenancy-execution/reports/MT131-fix2.md`：修复说明、RED/GREEN 证据、四个 finding 关闭映射、命令与退出码。
+- `archive/plans/multitenancy-execution/checkpoints/MT131-fix2/`：before/after 哈希、diff、review-package.json。
 - worker_done --outcome succeeded|failed，附 --report-path --files-modified。

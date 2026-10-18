@@ -9,15 +9,15 @@
 ## 快照与完整性核验（先做）
 
 - `git rev-parse HEAD` 应为 `f0520524f0faa2b4533b9d2f1aa692c8f907ba71` 前缀（f0520524f0faa2b4533b9d2f1aa692c8f907ba71 开头）；不符即停。
-- 逐条复算 `docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT131/review-sha256-manifest.txt` 每个文件 SHA-256；不匹配 → worker_done --outcome failed。
+- 逐条复算 `archive/plans/multitenancy-execution/checkpoints/MT131/review-sha256-manifest.txt` 每个文件 SHA-256；不匹配 → worker_done --outcome failed。
 - `git status --porcelain` 只含清单内 untracked 路径。
-- 冻结包 `review-packages/MT131.json` 的 7 文件哈希与磁盘一致。
+- 冻结包 `archive/plans/multitenancy-execution/review-packages/MT131.json` 的 7 文件哈希与磁盘一致。
 
 ## 审阅对象
 
 - `server/scripts/multitenancy/acceptance-harness.ts`
 - `server/tests/multitenancy/acceptance-harness.test.ts`
-- 报告 `docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT131-harness.md` 与 `checkpoints/MT131/**`
+- 报告 `archive/plans/multitenancy-execution/reports/MT131-harness.md` 与 `archive/plans/multitenancy-execution/checkpoints/MT131/**`
 - 前置（只读）：MT001 `inventory.ts`/`inventory.test.ts`、MT002 `support/fixture.ts`、`support/scenarios.ts`、`fixtures.test.ts`（已验证集成的 f0520524f0faa2b4533b9d2f1aa692c8f907ba71 快照）
 
 ## 审阅要点
@@ -42,7 +42,7 @@
 
 ## 产出
 
-写 `docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT131-review2.md`（本工作树内唯一允许新建/修改的文件）：Verdicts、findings、命令与退出码、哈希复算。
+写 `archive/plans/multitenancy-execution/reports/MT131-review2.md`（本工作树内唯一允许新建/修改的文件）：Verdicts、findings、命令与退出码、哈希复算。
 
 ## 约束
 

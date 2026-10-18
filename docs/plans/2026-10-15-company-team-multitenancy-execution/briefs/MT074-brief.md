@@ -8,4 +8,4 @@
 ## 交付面
 billing 域：供应商计费调用面+回调归属锁定（消费 MT069 付款账户+MT003 基础）；窄缝纯追加披露。
 ## 环境与验证
-同波次 16 标配：bun install；容器 @127.0.0.1:55596（库名 openbot_enterprise_w16e_test 系）；七变量 env；链=base→19 前置修正序→MT029→MT073→MT060→本票；基线复现 **1222/0/47**；全量=基线+新增；typecheck 0；biome 触及 0；变异自证+RESTORE；checkpoints/MT074/ 全套+reports/MT074.md；零 git 提交；docker rm 回显；worker_done。令牌已根治无需微修。
+同波次 16 标配：bun install；容器 @127.0.0.1:55596（库名 openbot_enterprise_w16e_test 系）；七变量 env；链=base→19 前置修正序→MT029→MT073→MT060→本票；基线复现 **1222/0/47**；全量=基线+新增；typecheck 0；biome 触及 0；变异自证+RESTORE；archive/plans/multitenancy-execution/checkpoints/MT074/ 全套+archive/plans/multitenancy-execution/reports/MT074.md；零 git 提交；docker rm 回显；worker_done。令牌已根治无需微修。

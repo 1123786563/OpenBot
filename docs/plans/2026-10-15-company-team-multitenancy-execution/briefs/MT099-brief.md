@@ -24,7 +24,7 @@
 
 ## 交付纪律
 - 变异自证（每安全分支 ≥1：注入→聚焦捕获→字节复原→复绿），RESTORE 哈希逐位复原。
-- checkpoints/MT099/{before-hashes,after-hashes,design.md,red-green/,mutation/,verification/} + reports/MT099.md。
+- archive/plans/multitenancy-execution/checkpoints/MT099/{before-hashes,after-hashes,design.md,red-green/,mutation/,verification/} + archive/plans/multitenancy-execution/reports/MT099.md。
 - 全程**零 git 提交**；禁 find /；测试毕 docker rm 容器并回显；歧义用 question 升级勿自行重新设计；结论性数字以本轮亲跑为准。
 
 ## 二任接管注记

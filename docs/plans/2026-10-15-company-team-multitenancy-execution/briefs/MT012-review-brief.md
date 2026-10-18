@@ -1,6 +1,6 @@
 # MT012 / Issue #55 独立复审 Brief — coordinator 下发
 
-你是 MT012 的独立复审者（全新 Pi 会话，与实现者无共享上下文）。只读被审文件；唯一允许新建文件 = reports/MT012-review.md；不修复；无提交/推送/合并授权；skipped/blocked 不算通过。完成按 preamble worker_done --outcome succeeded|failed 附 --report-path。
+你是 MT012 的独立复审者（全新 Pi 会话，与实现者无共享上下文）。只读被审文件；唯一允许新建文件 = archive/plans/multitenancy-execution/reports/MT012-review.md；不修复；无提交/推送/合并授权；skipped/blocked 不算通过。完成按 preamble worker_done --outcome succeeded|failed 附 --report-path。
 
 ## 审阅对象
 
@@ -8,7 +8,7 @@
 1. `server/scripts/multitenancy/migrate-test.ts`（声称纯追加：MT012 注册 + 两步迁移——0001 九表 ENABLE+FORCE RLS 再断言、0002 ob_ent_reset_business_context() 清理函数 + REVOKE PUBLIC + 授予三业务角色）
 2. `server/tests/multitenancy/migration-tool.test.ts`（窄例外第 3 次：仅 ALLOWED_TASK_IDS 断言 + 3 行注释，声称 pristine 重建核验）
 3. `server/tests/multitenancy/rls-core.test.ts`（新 32 用例 310 断言）
-- 检查点 `checkpoints/MT012/`（before/after、changes.diff、migration-tool.test.diff、red-green/、mutation/、cli/、generated/、verification/）+ 报告 `reports/MT012.md`。
+- 检查点 `archive/plans/multitenancy-execution/checkpoints/MT012/`（before/after、changes.diff、migration-tool.test.diff、red-green/、mutation/、cli/、generated/、verification/）+ 报告 `archive/plans/multitenancy-execution/reports/MT012.md`。
 
 ## 验收（Issue #55 四条）+ 重点裁决项
 

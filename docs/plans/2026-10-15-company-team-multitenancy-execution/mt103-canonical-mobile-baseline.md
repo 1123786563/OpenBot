@@ -1,6 +1,6 @@
 # MT103 — Canonical 移动端可审查基线（openmuse submodule）
 
-> 任务：MT103 / Issue #146（Epic #204）。本文件是冻结归属下的基线说明；完整差异结论见 `reports/MT103.md`，实测命令输出见 `checkpoints/MT103/verification.txt`。
+> 任务：MT103 / Issue #146（Epic #204）。本文件是冻结归属下的基线说明；完整差异结论见 `archive/plans/multitenancy-execution/reports/MT103.md`，实测命令输出见 `archive/plans/multitenancy-execution/checkpoints/MT103/verification.txt`。
 
 ## 基线定义
 
@@ -32,7 +32,7 @@ ls apps/openmuse/apps/mobile/src/openbot           # No such file or directory�
 
 - 父仓：`f0520524f0faa2b4533b9d2f1aa692c8f907ba71`；gitlink 引入提交 `27829833c615e3170a49a60aca9e816416f00b9e`（同提交删除 `apps/openmuse-mobile/`）。
 - openmuse：pin `46792335dfc260efa05f2185aa353093b12d9937`（2026-10-12 22:15 +0800）→ `6e3a131558fbeaeab2564814e85f3e38467a8eb3`（2026-10-14 18:24 +0800，适配层）→ `81d0d3a15a27b00e24b2bed6f8b24c5b4d5330b4`（2026-10-14 18:43 +0800，review 修复；远端 `refs/heads/main` 实测值）。
-- 结论：**gitlink 固定在 pre-adapter 提交；「缺少适配层的旧 gitlink ≠ 已完成集成」。gitlink 前移到 `81d0d3a1` 是 MT104 的第一前提**（详见 `reports/MT103.md` §5）。
+- 结论：**gitlink 固定在 pre-adapter 提交；「缺少适配层的旧 gitlink ≠ 已完成集成」。gitlink 前移到 `81d0d3a1` 是 MT104 的第一前提**（详见 `archive/plans/multitenancy-execution/reports/MT103.md` §5）。
 
 ## 边界声明
 

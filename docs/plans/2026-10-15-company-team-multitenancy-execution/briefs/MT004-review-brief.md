@@ -8,7 +8,7 @@
 
 ## 快照核验（先做）
 
-- `git rev-parse HEAD` = f0520524 开头（完整值以 `checkpoints/MT004/review-sha256-manifest.txt` 首行为准）。
+- `git rev-parse HEAD` = f0520524 开头（完整值以 `archive/plans/multitenancy-execution/checkpoints/MT004/review-sha256-manifest.txt` 首行为准）。
 - 逐条复算该 manifest 每个文件 SHA-256；不匹配 → worker_done --outcome failed。
 - **预期 git 状态**：`server/src/db/schema/enterprise-tenancy.ts` 为 **tracked 修改（M）**——实现者的纯追加改动已转移到本工作树；其余为清单内 untracked。用 `git diff server/src/db/schema/enterprise-tenancy.ts` 核验修改是**纯追加**（0 删除、不改任何既有表/策略语义）；出现其它 tracked 修改即报告。
 
@@ -17,8 +17,8 @@
 - `server/src/db/schema/enterprise-tenancy.ts`（追加的 `enterprise_workspace_memberships`）
 - `server/scripts/multitenancy/migrate-test.ts`（追加的 MT004 TASKS 条目）
 - `server/tests/multitenancy/membership-model.test.ts`（新建）
-- `server/tests/multitenancy/migration-tool.test.ts`（coordinator 裁决 #3 的窄例外：仅 :344 附近穷举断言 `["MT000"]`→`["MT000","MT004"]` 及裁决注释；核验 diff 仅此一处——存档 `checkpoints/MT004/migration-tool.test.diff`）
-- 报告 `reports/MT004.md` 与 `checkpoints/MT004/**`
+- `server/tests/multitenancy/migration-tool.test.ts`（coordinator 裁决 #3 的窄例外：仅 :344 附近穷举断言 `["MT000"]`→`["MT000","MT004"]` 及裁决注释；核验 diff 仅此一处——存档 `archive/plans/multitenancy-execution/checkpoints/MT004/migration-tool.test.diff`）
+- 报告 `archive/plans/multitenancy-execution/reports/MT004.md` 与 `archive/plans/multitenancy-execution/checkpoints/MT004/**`
 
 ## 审阅要点（对照 Issue #47 四条验收 + 父 Spec §4.1/§4.2）
 
@@ -44,7 +44,7 @@
 
 ## 产出
 
-写 `reports/MT004-review.md`（本工作树唯一允许新建/修改的文件）：Verdicts、findings、命令与退出码、哈希复算、enterprise-tenancy.ts 纯追加核验结论。
+写 `archive/plans/multitenancy-execution/reports/MT004-review.md`（本工作树唯一允许新建/修改的文件）：Verdicts、findings、命令与退出码、哈希复算、enterprise-tenancy.ts 纯追加核验结论。
 
 ## 约束
 

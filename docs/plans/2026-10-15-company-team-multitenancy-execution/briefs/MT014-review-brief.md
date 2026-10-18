@@ -1,12 +1,12 @@
 # MT014 / Issue #57 独立复审 Brief — coordinator 下发
 
-你是 MT014 的独立复审者（全新 Pi 会话）。只读被审文件；唯一新建文件 = reports/MT014-review.md；不修复；无提交/推送/合并授权；skipped 不算通过。完成 worker_done 附 --report-path。
+你是 MT014 的独立复审者（全新 Pi 会话）。只读被审文件；唯一新建文件 = archive/plans/multitenancy-execution/reports/MT014-review.md；不修复；无提交/推送/合并授权；skipped 不算通过。完成 worker_done 附 --report-path。
 
 ## 审阅对象（工作树 = 前置 34 项 + 本票 7 交付）
 
 新建 4：`runtime-config.ts`（解析 seam：公司配置模型/严格文档解析/只收窄团队覆盖/纯函数+受限角色 RLS 读取）、`db/schema/enterprise-runtime-config.ts`（两张配置表）、`runtime-config.test.ts`（29 用例/100 expect）、`support/runtime-config.ts`。
 编辑 3（声称最小 + pristine 重建哈希证明）：migrate-test.ts（纯追加 MT014 任务）、migration-tool.test.ts（窄例外第 4 次 + 4 行注释）、db/schema/index.ts（+1 行 barrel export）。
-检查点 checkpoints/MT014/ + reports/MT014.md。
+检查点 archive/plans/multitenancy-execution/checkpoints/MT014/ + archive/plans/multitenancy-execution/reports/MT014.md。
 
 ## 重点裁决
 

@@ -24,7 +24,7 @@ OpenMuse 任务/计划/监控/租约归属域（消费 MT059 个人 Bot+MT041 �
 
 ## 交付纪律
 - 变异自证（每安全分支 ≥1：注入→聚焦捕获→字节复原→复绿），RESTORE 哈希逐位复原。
-- checkpoints/MT060/{before-hashes,after-hashes,design.md,red-green/,mutation/,verification/} + reports/MT060.md。
+- archive/plans/multitenancy-execution/checkpoints/MT060/{before-hashes,after-hashes,design.md,red-green/,mutation/,verification/} + archive/plans/multitenancy-execution/reports/MT060.md。
 - 全程**零 git 提交**；禁 find /；测试毕 docker rm 容器并回显；歧义用 question 升级勿自行重新设计；结论性数字以本轮亲跑为准。
 
 ## 三任接管注记（coordinator 追加）

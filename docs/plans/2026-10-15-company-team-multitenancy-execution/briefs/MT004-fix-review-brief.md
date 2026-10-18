@@ -4,11 +4,11 @@
 
 ## 目标
 
-两个独立结论：(1) 修复有效性——`reports/MT004-review.md` 的 F1（medium：新表缺 FORCE ROW LEVEL SECURITY）与 F2（low：epoch 并发竞态未明示）是否真实关闭且无回归；(2) Code quality（修复后整体）。有效新 finding 按 critical/high/medium/low/info 分级（含 file:line 证据）。
+两个独立结论：(1) 修复有效性——`archive/plans/multitenancy-execution/reports/MT004-review.md` 的 F1（medium：新表缺 FORCE ROW LEVEL SECURITY）与 F2（low：epoch 并发竞态未明示）是否真实关闭且无回归；(2) Code quality（修复后整体）。有效新 finding 按 critical/high/medium/low/info 分级（含 file:line 证据）。
 
 ## 快照核验（先做）
 
-- `git rev-parse HEAD` = f0520524 开头（完整值以 `checkpoints/MT004-fix/fix-review-sha256-manifest.txt` 首行为准）。
+- `git rev-parse HEAD` = f0520524 开头（完整值以 `archive/plans/multitenancy-execution/checkpoints/MT004-fix/fix-review-sha256-manifest.txt` 首行为准）。
 - 逐条复算该 manifest 每个文件 SHA-256；不匹配 → worker_done --outcome failed。
 - `git status --porcelain`：仅 `server/src/db/schema/enterprise-tenancy.ts` 为 tracked ` M`（原实现纯追加 70/0，本修复轮零改动——用 `git diff --numstat` 核验仍为 70/0）+ 清单内 untracked。
 
@@ -16,8 +16,8 @@
 
 - 修复后 `server/scripts/multitenancy/migrate-test.ts`（修复前 `ac0a0381…` → after 以 manifest 为准）
 - 修复后 `server/tests/multitenancy/membership-model.test.ts`（修复前 `7c86a1e6…` → after 以 manifest 为准）
-- 修复报告 `reports/MT004-fix.md` 与 `checkpoints/MT004-fix/**`（RED/GREEN 存档、fix.diff、before/ 副本、review-package.json）
-- 参照：原复审 `reports/MT004-review.md` §4（F1/F2 定义与证据）、原实现报告 `reports/MT004.md`、`checkpoints/MT004/fix-transfer-manifest.txt`（修复前哈希）
+- 修复报告 `archive/plans/multitenancy-execution/reports/MT004-fix.md` 与 `archive/plans/multitenancy-execution/checkpoints/MT004-fix/**`（RED/GREEN 存档、fix.diff、before/ 副本、review-package.json）
+- 参照：原复审 `archive/plans/multitenancy-execution/reports/MT004-review.md` §4（F1/F2 定义与证据）、原实现报告 `archive/plans/multitenancy-execution/reports/MT004.md`、`archive/plans/multitenancy-execution/checkpoints/MT004/fix-transfer-manifest.txt`（修复前哈希）
 
 ## 审阅要点
 
@@ -43,7 +43,7 @@
 
 ## 产出
 
-写 `reports/MT004-fix-review.md`（本工作树唯一允许新建/修改的文件）：Verdicts（修复有效性 + Code quality 各自 PASS/FAIL）、findings、命令与退出码、哈希复算、diff 最小性结论。
+写 `archive/plans/multitenancy-execution/reports/MT004-fix-review.md`（本工作树唯一允许新建/修改的文件）：Verdicts（修复有效性 + Code quality 各自 PASS/FAIL）、findings、命令与退出码、哈希复算、diff 最小性结论。
 
 ## 约束
 

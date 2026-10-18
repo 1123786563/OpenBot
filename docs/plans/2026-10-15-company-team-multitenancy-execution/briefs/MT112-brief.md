@@ -1,6 +1,6 @@
 # MT112 — 实现轮 Task Brief（历史部署的「原有公司 + 默认团队」锚点创建）
 
-角色：`backend_implementer`；完成后由全新独立 Pi Reviewer 复审。前置：MT003+MT004 已 verified 并集成到你的工作树（以 `checkpoints/prereq-manifest.txt` 为准，先逐条复算，不符即 worker_done --outcome failed）。
+角色：`backend_implementer`；完成后由全新独立 Pi Reviewer 复审。前置：MT003+MT004 已 verified 并集成到你的工作树（以 `archive/plans/multitenancy-execution/checkpoints/prereq-manifest.txt` 为准，先逐条复算，不符即 worker_done --outcome failed）。
 
 ## 目标（Ticket 契约）
 
@@ -37,6 +37,6 @@
 
 ## 产出
 
-- `reports/MT112.md`：勘察结论（部署身份/计费 Customer 实际落点）、设计、验收逐条映射、命令与退出码、诚实披露。
-- `checkpoints/MT112/`：prereq 复算、before/after 哈希、diff、red-green/、mutation/、review-package.json、sha256-manifest.txt。
+- `archive/plans/multitenancy-execution/reports/MT112.md`：勘察结论（部署身份/计费 Customer 实际落点）、设计、验收逐条映射、命令与退出码、诚实披露。
+- `archive/plans/multitenancy-execution/checkpoints/MT112/`：prereq 复算、before/after 哈希、diff、red-green/、mutation/、review-package.json、sha256-manifest.txt。
 - worker_done --outcome succeeded|failed，附 --report-path --files-modified。

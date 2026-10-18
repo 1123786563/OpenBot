@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Hono, Node filesystem/source scanning, existing MT001 JSON/Markdown inventory output.
 
-**Spec:** `docs/specs/2026-10-14-company-team-multitenancy-design.md` (A11 and §8 coverage matrix); source issue snapshot `docs/plans/2026-10-15-company-team-multitenancy-execution/github-intake.json` (#44, #6); original implementation plan `docs/plans/2026-10-15-company-team-multitenancy-execution.md`; independent findings `docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT001-review.md`.
+**Spec:** `docs/specs/2026-10-14-company-team-multitenancy-design.md` (A11 and §8 coverage matrix); source issue snapshot `docs/plans/2026-10-15-company-team-multitenancy-execution/github-intake.json` (#44, #6); original implementation plan `docs/plans/2026-10-15-company-team-multitenancy-execution.md`; independent findings `archive/plans/multitenancy-execution/reports/MT001-review.md`.
 
 ## Global Constraints
 
@@ -32,8 +32,8 @@
 
 - `server/scripts/multitenancy/inventory.ts`: external dependency, background program, and service-surface extraction/output.
 - `server/tests/multitenancy/inventory.test.ts`: regressions for the three review findings and contract/digest stability.
-- `docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT001.md`: append repair evidence and changed inventory digest; retain the original report history.
-- `docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT001-fix/`: complete uncommitted checkpoint and hash manifest for this review-fix round.
+- `archive/plans/multitenancy-execution/reports/MT001.md`: append repair evidence and changed inventory digest; retain the original report history.
+- `archive/plans/multitenancy-execution/checkpoints/MT001-fix/`: complete uncommitted checkpoint and hash manifest for this review-fix round.
 
 ## Task 1: Repair MT001 A11 inventory completeness gaps
 
