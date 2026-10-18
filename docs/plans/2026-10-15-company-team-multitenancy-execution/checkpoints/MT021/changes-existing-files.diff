@@ -1,0 +1,1262 @@
+diff --git a/app/src/lib/client.ts b/app/src/lib/client.ts
+index c9a43542..79a04c70 100644
+--- a/app/src/lib/client.ts
++++ b/app/src/lib/client.ts
+@@ -53,6 +53,14 @@ export type ClientOptions = {
+    * tenant identity cannot leak to an origin the app never chose.
+    */
+   tenantId?: string;
++  /**
++   * The team this request selects, sent as the scope pair's second header (`x-openbot-workspace`,
++   * read beside the tenant one — MT005 ruling #1: the headers only select; database membership
++   * decides). Same discipline as `tenantId`: an explicit per-request argument, attached only to a
++   * same-origin enterprise path, never a module-level "current team". The enterprise scope
++   * resolver refuses a workspace without a tenant, so callers select both or neither.
++   */
++  workspaceId?: string;
+ };
+ 
+ /**
+@@ -100,29 +108,34 @@ async function fallbackText(options: ClientOptions): Promise<string> {
+   return "That request failed.";
+ }
+ 
+-/** The header the enterprise scope middleware reads the tenant selector from. */
++/** The headers the enterprise scope middleware reads the selection pair from (MT005 ruling #1). */
+ const TENANT_HEADER = "x-openbot-tenant";
++const WORKSPACE_HEADER = "x-openbot-workspace";
+ 
+ /** The path prefix the enterprise API answers on; `/api/enterprise/v1` is its one mounted version. */
+ const ENTERPRISE_PATH_PREFIX = "/api/enterprise/";
+ 
+ /**
+- * The tenant selector a request carries, or nothing.
++ * The selection headers a request carries, or nothing.
+  *
+  * Same-origin here is a relative path on this app's own origin: a string that starts with exactly
+  * one slash. An absolute URL names some other origin, and a `//host/path` URL does too — the
+  * browser resolves it against a scheme, so its host is not ours. Only a relative enterprise path
+- * with a selector may carry the header, and every other combination returns `undefined`, which
+- * leaves the request's headers exactly as they were before `tenantId` existed.
++ * with a selector may carry the headers, and every other combination returns `undefined`, which
++ * leaves the request's headers exactly as they were before the selectors existed.
+  */
+-function tenantSelection(
++function scopeSelection(
+   path: string,
+-  tenantId: string | undefined,
+-): string | undefined {
+-  if (tenantId === undefined) return undefined;
++  options: ClientOptions,
++): Record<string, string> | undefined {
+   if (!path.startsWith("/") || path.startsWith("//")) return undefined;
+   if (!path.startsWith(ENTERPRISE_PATH_PREFIX)) return undefined;
+-  return tenantId;
++  const headers: Record<string, string> = {};
++  if (options.tenantId !== undefined) headers[TENANT_HEADER] = options.tenantId;
++  if (options.workspaceId !== undefined) {
++    headers[WORKSPACE_HEADER] = options.workspaceId;
++  }
++  return Object.keys(headers).length > 0 ? headers : undefined;
+ }
+ 
+ /**
+@@ -153,18 +166,11 @@ async function refusalMessage(
+ 
+ /** Every request in this app is authenticated, and every one of them is JSON or nothing. */
+ async function send(path: string, options: ClientOptions): Promise<Response> {
+-  const selection = tenantSelection(path, options.tenantId);
++  const selection = scopeSelection(path, options);
+   const headers: Record<string, string> | undefined =
+     options.body === undefined
+-      ? selection === undefined
+-        ? undefined
+-        : { [TENANT_HEADER]: selection }
+-      : selection === undefined
+-        ? { "content-type": "application/json" }
+-        : {
+-            "content-type": "application/json",
+-            [TENANT_HEADER]: selection,
+-          };
++      ? selection
++      : { "content-type": "application/json", ...selection };
+   return fetch(path, {
+     method: options.method,
+     credentials: "include",
+diff --git a/app/src/locales/en/tenant.json b/app/src/locales/en/tenant.json
+index 9f36f282..5e067a29 100644
+--- a/app/src/locales/en/tenant.json
++++ b/app/src/locales/en/tenant.json
+@@ -24,5 +24,36 @@
+       "statusActive": "active",
+       "statusArchived": "archived"
+     }
++  },
++  "selection": {
++    "title": "Company & team",
++    "description": "Choose the company and team you are working in. Only memberships you actually hold are listed, and nothing is chosen for you.",
++    "company": {
++      "label": "Company",
++      "aria": "Select a company",
++      "placeholder": "Pick a company"
++    },
++    "team": {
++      "label": "Team",
++      "aria": "Select a team",
++      "placeholder": "Pick a team",
++      "none": "You have not been added to a team in this company yet. Ask your company or team administrator to add you."
++    },
++    "current": {
++      "label": "Working in"
++    },
++    "empty": {
++      "title": "No company membership yet",
++      "description": "You are not a member of any company on this deployment yet. Ask your company administrator to add you, then come back and choose where to work."
++    },
++    "error": {
++      "title": "Your companies and teams could not be loaded.",
++      "retry": "Retry"
++    },
++    "revoked": {
++      "title": "Your access to that company or team has been revoked",
++      "description": "The company or team you were working in no longer lists you as a member. Nothing was chosen for you — check again, or pick another company and team you belong to.",
++      "retry": "Check again"
++    }
+   }
+ }
+diff --git a/app/src/locales/zh-CN/tenant.json b/app/src/locales/zh-CN/tenant.json
+index 81f7534b..35da9a0c 100644
+--- a/app/src/locales/zh-CN/tenant.json
++++ b/app/src/locales/zh-CN/tenant.json
+@@ -24,5 +24,36 @@
+       "statusActive": "活跃",
+       "statusArchived": "已归档"
+     }
++  },
++  "selection": {
++    "title": "公司与团队",
++    "description": "选择你正在工作的公司与团队。列表只包含你真实持有的成员资格，不会替你做任何默认选择。",
++    "company": {
++      "label": "公司",
++      "aria": "选择公司",
++      "placeholder": "选择一家公司"
++    },
++    "team": {
++      "label": "团队",
++      "aria": "选择团队",
++      "placeholder": "选择一个团队",
++      "none": "你尚未被加入这家公司的任何团队。请联系公司或团队管理员将你加入。"
++    },
++    "current": {
++      "label": "当前工作范围"
++    },
++    "empty": {
++      "title": "还没有任何公司成员资格",
++      "description": "你还不属于此部署上的任何公司。请联系公司管理员将你加入，之后再回来选择工作范围。"
++    },
++    "error": {
++      "title": "你的公司与团队列表加载失败。",
++      "retry": "重试"
++    },
++    "revoked": {
++      "title": "你在该公司或团队的资格已被撤销",
++      "description": "你此前工作的公司或团队已不再将你列为成员。系统没有替你做任何选择——可重新核查，或自行选择你所属的其他公司与团队。",
++      "retry": "重新核查"
++    }
+   }
+ }
+diff --git a/app/src/routeTree.gen.ts b/app/src/routeTree.gen.ts
+index da77564a..b2aa9607 100644
+--- a/app/src/routeTree.gen.ts
++++ b/app/src/routeTree.gen.ts
+@@ -47,6 +47,7 @@ import { Route as AuthedSettingsPasswordsRouteImport } from './routes/_authed/se
+ import { Route as AuthedSettingsUsageRouteImport } from './routes/_authed/settings/usage'
+ import { Route as AuthedSignInRequestIdRouteImport } from './routes/_authed/sign-in/$requestId'
+ import { Route as AuthedTenantChannelsRouteImport } from './routes/_authed/tenant/channels'
++import { Route as AuthedTenantSelectionRouteImport } from './routes/_authed/tenant/selection'
+ import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/agents/index'
+ import { Route as AuthedAppBotsIndexRouteImport } from './routes/_authed/_app/bots.index'
+ import { Route as AuthedAppChannelChannelIdRouteImport } from './routes/_authed/_app/channel/$channelId'
+@@ -271,6 +272,11 @@ const AuthedTenantChannelsRoute = AuthedTenantChannelsRouteImport.update({
+   path: '/tenant/channels',
+   getParentRoute: () => AuthedRoute,
+ } as any)
++const AuthedTenantSelectionRoute = AuthedTenantSelectionRouteImport.update({
++  id: '/tenant/selection',
++  path: '/tenant/selection',
++  getParentRoute: () => AuthedRoute,
++} as any)
+ const AuthedAppAgentsIndexRoute = AuthedAppAgentsIndexRouteImport.update({
+   id: '/agents/',
+   path: '/agents/',
+@@ -489,6 +495,7 @@ export interface FileRoutesByFullPath {
+   '/settings/usage': typeof AuthedSettingsUsageRoute
+   '/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
+   '/tenant/channels': typeof AuthedTenantChannelsRoute
++  '/tenant/selection': typeof AuthedTenantSelectionRoute
+   '/admin/': typeof AuthedAdminIndexRoute
+   '/settings/': typeof AuthedSettingsIndexRoute
+   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
+@@ -557,6 +564,7 @@ export interface FileRoutesByTo {
+   '/settings/usage': typeof AuthedSettingsUsageRoute
+   '/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
+   '/tenant/channels': typeof AuthedTenantChannelsRoute
++  '/tenant/selection': typeof AuthedTenantSelectionRoute
+   '/admin': typeof AuthedAdminIndexRoute
+   '/settings': typeof AuthedSettingsIndexRoute
+   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
+@@ -629,6 +637,7 @@ export interface FileRoutesById {
+   '/_authed/settings/usage': typeof AuthedSettingsUsageRoute
+   '/_authed/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
+   '/_authed/tenant/channels': typeof AuthedTenantChannelsRoute
++  '/_authed/tenant/selection': typeof AuthedTenantSelectionRoute
+   '/_authed/_app/': typeof AuthedAppIndexRoute
+   '/_authed/admin/': typeof AuthedAdminIndexRoute
+   '/_authed/settings/': typeof AuthedSettingsIndexRoute
+@@ -702,6 +711,7 @@ export interface FileRouteTypes {
+     | '/settings/usage'
+     | '/sign-in/$requestId'
+     | '/tenant/channels'
++    | '/tenant/selection'
+     | '/admin/'
+     | '/settings/'
+     | '/channel/$channelId'
+@@ -770,6 +780,7 @@ export interface FileRouteTypes {
+     | '/settings/usage'
+     | '/sign-in/$requestId'
+     | '/tenant/channels'
++    | '/tenant/selection'
+     | '/admin'
+     | '/settings'
+     | '/channel/$channelId'
+@@ -841,6 +852,7 @@ export interface FileRouteTypes {
+     | '/_authed/settings/usage'
+     | '/_authed/sign-in/$requestId'
+     | '/_authed/tenant/channels'
++    | '/_authed/tenant/selection'
+     | '/_authed/_app/'
+     | '/_authed/admin/'
+     | '/_authed/settings/'
+@@ -1152,6 +1164,13 @@ declare module '@tanstack/react-router' {
+       preLoaderRoute: typeof AuthedTenantChannelsRouteImport
+       parentRoute: typeof AuthedRoute
+     }
++    '/_authed/tenant/selection': {
++      id: '/_authed/tenant/selection'
++      path: '/tenant/selection'
++      fullPath: '/tenant/selection'
++      preLoaderRoute: typeof AuthedTenantSelectionRouteImport
++      parentRoute: typeof AuthedRoute
++    }
+     '/_authed/_app/agents/': {
+       id: '/_authed/_app/agents/'
+       path: '/agents'
+@@ -1541,6 +1560,7 @@ interface AuthedRouteChildren {
+   AuthedOnboardingRoute: typeof AuthedOnboardingRoute
+   AuthedSignInRequestIdRoute: typeof AuthedSignInRequestIdRoute
+   AuthedTenantChannelsRoute: typeof AuthedTenantChannelsRoute
++  AuthedTenantSelectionRoute: typeof AuthedTenantSelectionRoute
+ }
+ 
+ const AuthedRouteChildren: AuthedRouteChildren = {
+@@ -1550,6 +1570,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
+   AuthedOnboardingRoute: AuthedOnboardingRoute,
+   AuthedSignInRequestIdRoute: AuthedSignInRequestIdRoute,
+   AuthedTenantChannelsRoute: AuthedTenantChannelsRoute,
++  AuthedTenantSelectionRoute: AuthedTenantSelectionRoute,
+ }
+ 
+ const AuthedRouteWithChildren =
+diff --git a/server/drizzle-kb.config.ts b/server/drizzle-kb.config.ts
+index 329a3bb5..08753dec 100644
+--- a/server/drizzle-kb.config.ts
++++ b/server/drizzle-kb.config.ts
+@@ -25,7 +25,7 @@ if (!databaseUrl) {
+ 
+ export default defineConfig({
+   dialect: "postgresql",
+-  schema: ["./src/kb/db/schema.ts"],
++  schema: ["./src/kb/db/schema.ts", "./src/kb/db/ownership-schema.ts"],
+   out: "./drizzle-kb",
+   dbCredentials: {
+     url: databaseUrl,
+diff --git a/server/drizzle-kb/meta/_journal.json b/server/drizzle-kb/meta/_journal.json
+index 74303e62..e319f141 100644
+--- a/server/drizzle-kb/meta/_journal.json
++++ b/server/drizzle-kb/meta/_journal.json
+@@ -8,6 +8,13 @@
+       "when": 1791704440942,
+       "tag": "0000_steep_brood",
+       "breakpoints": true
++    },
++    {
++      "idx": 1,
++      "version": "7",
++      "when": 1792178727865,
++      "tag": "0001_handy_katie_power",
++      "breakpoints": true
+     }
+   ]
+ }
+\ No newline at end of file
+diff --git a/server/src/app.ts b/server/src/app.ts
+index 50a90d18..cf416830 100644
+--- a/server/src/app.ts
++++ b/server/src/app.ts
+@@ -540,6 +540,8 @@ export function createApp(
+     };
+     groups?: GroupConversations;
+     enterpriseConversations?: Hono;
++    /** MT006 (issue #49): workspace scope listing + team administration routes. */
++    enterpriseWorkspaceScope?: Hono;
+     teamBots?: TeamBots;
+     /** Pause, reset, Activity and attention for a person's own Bots. See agents/lifecycle.ts. */
+     lifecycle?: BotLifecycleServices;
+@@ -891,6 +893,14 @@ export function createApp(
+       coworker.enterpriseConversations,
+     );
+   }
++  // MT006 (issue #49): scope listing is the login-time discovery surface; the
++  // admin half inside answers 503 itself when the operator channel is unwired.
++  if (coworker?.enterpriseWorkspaceScope) {
++    app.route(
++      "/api/enterprise/workspace-scope",
++      coworker.enterpriseWorkspaceScope,
++    );
++  }
+   /*
+    * Registering an identity provider is an administrator's decision, not a signed-in one.
+    *
+diff --git a/server/src/config.ts b/server/src/config.ts
+index 3456859e..72813a6b 100644
+--- a/server/src/config.ts
++++ b/server/src/config.ts
+@@ -230,6 +230,21 @@ export type DeploymentConfig = {
+    * Switching either off stops new defaults and leaves every existing row as it is.
+    */
+   memoryDefaults: { sources: boolean; research: boolean };
++  /**
++   * The multitenancy switch and its startup-validation inputs (MT013).
++   *
++   * Off by default; the legacy single-tenant boot is byte-for-byte unchanged while it is off.
++   * On, the process runs the three startup checks in enterprise/tenancy/startup-checks.ts and
++   * refuses to boot on any gap. `inventoryPath` names the CoverageInventory JSON the MT001
++   * generator (`server/scripts/multitenancy/inventory.ts`) produced; `waiversPath` names an
++   * explicit waiver list whose every entry carries a reason, because an audited exception is
++   * the only kind this mode accepts.
++   */
++  multitenancy: {
++    enabled: boolean;
++    inventoryPath?: string;
++    waiversPath?: string;
++  };
+   /** Audio configuration is independent of agent model providers. */
+   transcription?: TranscriptionConfig;
+   voice?: VoiceConfig;
+@@ -238,6 +253,8 @@ export type DeploymentConfig = {
+   databaseUrl: string;
+   enterpriseDirectoryDatabaseUrl?: string;
+   enterpriseDataDatabaseUrl?: string;
++  /** Restricted operator-channel database; unwired → workspace admin routes answer 503. */
++  enterpriseOperatorDatabaseUrl?: string;
+   tenantStorageRuntimeDatabaseUrl?: string;
+   keyEncryptionKey: string;
+   /**
+@@ -2775,6 +2792,10 @@ export function loadConfig(
+       "enterpriseDataDatabaseUrl",
+       optional(environment, "ENTERPRISE_DATA_DATABASE_URL"),
+     ),
++    ...spreadOptional(
++      "enterpriseOperatorDatabaseUrl",
++      optional(environment, "ENTERPRISE_OPERATOR_DATABASE_URL"),
++    ),
+     ...spreadOptional(
+       "tenantStorageRuntimeDatabaseUrl",
+       optional(environment, "OPENBOT_TENANT_STORAGE_RUNTIME_DATABASE_URL"),
+@@ -2810,6 +2831,7 @@ export function loadConfig(
+       sources: switchedOn(environment, "OPENBOT_MEMORY_SOURCE_DEFAULTS"),
+       research: switchedOn(environment, "OPENBOT_PROACTIVE_DEFAULTS"),
+     },
++    multitenancy: multitenancyConfig(environment),
+     agentStallTimeoutMs: agentStallTimeoutMs(environment),
+     auditRetentionDays: auditRetentionDays(environment),
+     oauth: { google },
+@@ -2857,6 +2879,42 @@ function switchedOn(environment: Environment, name: string): boolean {
+   return value !== "false" && value !== "0";
+ }
+ 
++/**
++ * The multitenancy mode switch: an explicit opt-in, never a default (MT013).
++ *
++ * A default-on rule like {@link switchedOn} would be exactly wrong here: multitenancy changes
++ * who the deployment serves, and its boot runs startup checks that can refuse to start. A
++ * deployment must arrive at this mode by naming it, so the variable accepts an explicit value
++ * on either side and refuses everything else — a typo must not silently become an opt-in any
++ * more than a silent default may turn a single-tenant server multi-tenant.
++ */
++function multitenancyConfig(environment: Environment): {
++  enabled: boolean;
++  inventoryPath?: string;
++  waiversPath?: string;
++} {
++  const raw = optional(environment, "OPENBOT_MULTITENANCY")?.trim();
++  let enabled: boolean;
++  if (raw === undefined || raw === "") {
++    enabled = false;
++  } else if (raw === "on" || raw === "true" || raw === "1") {
++    enabled = true;
++  } else if (raw === "off" || raw === "false" || raw === "0") {
++    enabled = false;
++  } else {
++    throw new Error(
++      `OPENBOT_MULTITENANCY must be "on", "true", "1" (multitenancy mode), or "off", "false", "0" (the default single-tenant mode); got "${raw}". Leave it unset to keep the legacy boot unchanged.`,
++    );
++  }
++  const inventoryPath = optional(environment, "OPENBOT_MULTITENANCY_INVENTORY");
++  const waiversPath = optional(environment, "OPENBOT_MULTITENANCY_WAIVERS");
++  return {
++    enabled,
++    ...(inventoryPath ? { inventoryPath } : {}),
++    ...(waiversPath ? { waiversPath } : {}),
++  };
++}
++
+ /** The service token and its project, both or neither. See `DeploymentConfig.learningSetup`. */
+ function learningSetupCredential(environment: Environment): {
+   learningSetup?: { serviceToken: string; projectId: string };
+diff --git a/server/src/db/schema/enterprise-tenancy.ts b/server/src/db/schema/enterprise-tenancy.ts
+index 46516c30..7167329b 100644
+--- a/server/src/db/schema/enterprise-tenancy.ts
++++ b/server/src/db/schema/enterprise-tenancy.ts
+@@ -188,6 +188,12 @@ export const enterpriseResources = pgTable(
+     status: text("status").notNull().default("active"),
+     revision: integer("revision").notNull().default(1),
+     aclEpoch: integer("acl_epoch").notNull().default(1),
++    // MT008（Issue #51）：资源可见性属性，expand-only 追加。NULL = 未标记
++    // （遗留资源：行为 = 既有 grant 语义，两个策略版本下都不变）；
++    // 'private' = 个人资源（显式选择，仍走 grant 授权）；
++    // 'workspace' = 团队公共（有效团队成员可读，仅 workspace-v1 生效）。
++    // 取值域由 CHECK 兑底；迁移经 migrate-test 的 MT008 任务。
++    visibility: text("visibility"),
+     createdAt: createdAt(),
+   },
+   (table) => [
+@@ -204,6 +210,10 @@ export const enterpriseResources = pgTable(
+       "enterprise_resource_versions",
+       sql`${table.revision} > 0 and ${table.aclEpoch} > 0`,
+     ),
++    check(
++      "enterprise_resource_visibility",
++      sql`${table.visibility} is null or ${table.visibility} in ('private', 'workspace')`,
++    ),
+     pgPolicy("enterprise_resource_tenant_scope", {
+       for: "select",
+       to: "ob_ent_data",
+@@ -314,3 +324,110 @@ export const enterpriseSecurityEvents = pgTable(
+     }),
+   ],
+ ).enableRLS();
++
++// MT004（Issue #47）：企业团队成员关系（workspace membership），expand-only。
++// 唯一成员关系 = (tenant_id, workspace_id, principal_id)；复合外键同时证明
++// workspace 属于该公司（→ enterprise_workspaces）与 principal 是该公司成员
++// （→ enterprise_memberships）。status 沿用 active/suspended 先例，epoch 为
++// 正整数版本号（单调递增由应用写入路径保证，CHECK 兜底正整数）。
++// RLS 按同文件既有模式最小新增（全面 RLS 属 MT012）。
++export const enterpriseWorkspaceMemberships = pgTable(
++  "enterprise_workspace_memberships",
++  {
++    tenantId: text("tenant_id").notNull(),
++    workspaceId: text("workspace_id").notNull(),
++    principalId: text("principal_id").notNull(),
++    status: text("status").notNull().default("active"),
++    epoch: integer("epoch").notNull().default(1),
++    createdAt: createdAt(),
++  },
++  (table) => [
++    primaryKey({
++      columns: [table.tenantId, table.workspaceId, table.principalId],
++    }),
++    uniqueIndex("enterprise_workspace_membership_principal_tenant").on(
++      table.principalId,
++      table.tenantId,
++      table.workspaceId,
++    ),
++    check(
++      "enterprise_workspace_member_status",
++      sql`${table.status} in ('active','suspended')`,
++    ),
++    check("enterprise_workspace_member_epoch", sql`${table.epoch} > 0`),
++    foreignKey({
++      columns: [table.tenantId, table.workspaceId],
++      foreignColumns: [enterpriseWorkspaces.tenantId, enterpriseWorkspaces.id],
++    }).onDelete("cascade"),
++    foreignKey({
++      columns: [table.tenantId, table.principalId],
++      foreignColumns: [
++        enterpriseMemberships.tenantId,
++        enterpriseMemberships.principalId,
++      ],
++    }).onDelete("cascade"),
++    pgPolicy("enterprise_workspace_membership_self_read", {
++      for: "select",
++      to: "ob_ent_directory",
++      using: sql`exists (select 1 from enterprise_principals p where p.id = enterprise_workspace_memberships.principal_id and p.user_id = nullif(current_setting('app.user_id', true), ''))`,
++    }),
++    pgPolicy("enterprise_workspace_membership_data_read", {
++      for: "select",
++      to: "ob_ent_data",
++      using: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_workspace_memberships.principal_id = nullif(current_setting('app.principal_id', true), '')`,
++    }),
++    pgPolicy("enterprise_workspace_membership_operator_read", {
++      for: "select",
++      to: "ob_ent_operator",
++      using: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
++    }),
++    pgPolicy("enterprise_workspace_membership_operator_insert", {
++      for: "insert",
++      to: "ob_ent_operator",
++      withCheck: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
++    }),
++    pgPolicy("enterprise_workspace_membership_operator_update", {
++      for: "update",
++      to: "ob_ent_operator",
++      using: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_workspace_memberships.principal_id = nullif(current_setting('app.operator_principal_id', true), '')`,
++      withCheck: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_workspace_memberships.principal_id = nullif(current_setting('app.operator_principal_id', true), '')`,
++    }),
++  ],
++).enableRLS();
++
++// MT112（执行轮 Ticket）：历史部署「原有公司」锚点映射表，expand-only。
++// 一行 = 原有公司租户 ↔ 既有部署身份（deployment_packages.tenant_id，启动时
++// 由 synchronizeTenantPackage upsert 的持久化身份）↔ 计费 Customer 键
++// （deploymentExternalCustomerId 的派生规则：'openbot-deployment-' ||
++// deployment_tenant_id，见 src/billing/service.ts；派生 CHECK 让映射自证
++// 一致）。tenant 主键 + 两个方向唯一索引 = 映射在两个方向上都唯一；
++// 锚点行只能由 MT112 迁移写入（对受限角色只授予租户范围 SELECT，
++// 无 INSERT/UPDATE 授权），后续回填 Ticket（MT113/MT074）以本表为锚。
++export const enterpriseDeploymentAnchors = pgTable(
++  "enterprise_deployment_anchors",
++  {
++    tenantId: text("tenant_id")
++      .primaryKey()
++      .references(() => enterpriseTenants.id, { onDelete: "cascade" }),
++    deploymentTenantId: text("deployment_tenant_id").notNull(),
++    billingExternalCustomerId: text("billing_external_customer_id").notNull(),
++    createdAt: createdAt(),
++  },
++  (table) => [
++    uniqueIndex("enterprise_deployment_anchor_identity").on(
++      table.deploymentTenantId,
++    ),
++    uniqueIndex("enterprise_deployment_anchor_billing_customer").on(
++      table.billingExternalCustomerId,
++    ),
++    check(
++      "enterprise_deployment_anchor_billing_derivation",
++      sql`${table.billingExternalCustomerId} = 'openbot-deployment-' || ${table.deploymentTenantId}`,
++    ),
++    pgPolicy("enterprise_deployment_anchor_operator_read", {
++      for: "select",
++      to: "ob_ent_operator",
++      using: sql`enterprise_deployment_anchors.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
++    }),
++  ],
++).enableRLS();
+diff --git a/server/src/db/schema/index.ts b/server/src/db/schema/index.ts
+index 0580b018..594c379a 100644
+--- a/server/src/db/schema/index.ts
++++ b/server/src/db/schema/index.ts
+@@ -14,13 +14,19 @@ export * from "./credits";
+ export * from "./defaults";
+ export * from "./delivery";
+ export * from "./demonstrations";
++export * from "./enterprise-bot-ownership";
+ export * from "./enterprise-conversations";
++export * from "./enterprise-credentials";
+ export * from "./enterprise-expert-versions";
++export * from "./enterprise-governance-policy";
+ export * from "./enterprise-model-routes";
+ export * from "./enterprise-runs";
++export * from "./enterprise-runtime-config";
++export * from "./enterprise-sso-scim";
+ export * from "./enterprise-tenancy";
+ export * from "./group";
+ export * from "./identity";
++export * from "./job-ownership";
+ export * from "./learning";
+ export * from "./lifecycle";
+ export * from "./mastra-message-intents";
+@@ -28,7 +34,9 @@ export * from "./mastra-tenant-storage";
+ export * from "./memory";
+ export * from "./openmuse";
+ export * from "./passwords";
++export * from "./payer-accounts";
+ export * from "./payment";
++export * from "./personal-shares";
+ export * from "./plugins";
+ export * from "./proactive";
+ export * from "./responsibilities";
+diff --git a/server/src/enterprise/runs/events.ts b/server/src/enterprise/runs/events.ts
+index 63fbab2a..c431eb8e 100644
+--- a/server/src/enterprise/runs/events.ts
++++ b/server/src/enterprise/runs/events.ts
+@@ -17,6 +17,7 @@ import type {
+ import { createConversationStore } from "../conversations/store";
+ import type { DataDatabase } from "../tenancy/connections";
+ import { assertDataDatabase } from "../tenancy/connections";
++import type { RevocationGuard } from "../tenancy/revocation";
+ import { assertTrustedScope } from "../tenancy/store";
+ 
+ export type RunnerEventProposal = EventProposal;
+@@ -287,6 +288,13 @@ export function createDrizzleRunnerEventRepository(
+ export function createRunnerEventService(deps: {
+   readonly repository: RunnerEventRepository;
+   readonly pollMilliseconds?: number;
++  /**
++   * MT007（Issue #50）：事件流面的撤权检查点。提供时，replay（以及基于
++   * 它的 subscribe 每次轮询）在读任何事件行之前先经单一判定入口重验
++   * 两级成员资格——团队成员停用/移除后，已签发 Scope 的回放与长订阅
++   * 在下一次敏感动作处立即失效（Spec §5.2 长任务重验）。
++   */
++  readonly revocation?: RevocationGuard;
+ }) {
+   const pollMilliseconds = deps.pollMilliseconds ?? 200;
+   if (
+@@ -372,6 +380,10 @@ export function createRunnerEventService(deps: {
+       ) {
+         throw new Error("RUNNER_EVENT_CURSOR_INVALID");
+       }
++      // MT007：事件订阅检查点——数据访问之前先判撤权（级联生效）。
++      if (deps.revocation) {
++        await deps.revocation.assert(scope, "events.subscribe");
++      }
+       const rows = await deps.repository.transaction(scope, (tx) =>
+         tx.replay(scope, threadId, afterSeq, limit + 1),
+       );
+diff --git a/server/src/enterprise/runs/runner.ts b/server/src/enterprise/runs/runner.ts
+index 8dbe1a38..ec952a4f 100644
+--- a/server/src/enterprise/runs/runner.ts
++++ b/server/src/enterprise/runs/runner.ts
+@@ -36,6 +36,7 @@ import { messageDigest } from "../conversations/store";
+ import { ExpertVersionCatalog } from "../experts/version-catalog";
+ import type { RuntimeModelRoute } from "../models/runtime-adapter";
+ import type { DataDatabase } from "../tenancy/connections";
++import { createRevocationGuard } from "../tenancy/revocation";
+ import {
+   createDrizzleRunnerEventRepository,
+   createRunnerEventService,
+@@ -883,6 +884,9 @@ export function createProductionRunnerComposition(
+   );
+   const events = createRunnerEventService({
+     repository: createDrizzleRunnerEventRepository(deps.data),
++    // MT007（Issue #50）：生产装配总是带上撤权检查点——事件流面
++    // （replay/subscribe）对已签发 Scope 在每次读取前重验两级成员资格。
++    revocation: createRevocationGuard(deps.data),
+     ...(deps.pollMilliseconds !== undefined
+       ? { pollMilliseconds: deps.pollMilliseconds }
+       : {}),
+diff --git a/server/src/enterprise/tenancy/store.ts b/server/src/enterprise/tenancy/store.ts
+index 12814851..f7622738 100644
+--- a/server/src/enterprise/tenancy/store.ts
++++ b/server/src/enterprise/tenancy/store.ts
+@@ -11,6 +11,7 @@ import {
+   enterpriseResourceGrants,
+   enterpriseResources,
+   enterpriseTenants,
++  enterpriseWorkspaceMemberships,
+   enterpriseWorkspaces,
+ } from "../../db/schema/enterprise-tenancy";
+ import { createAuthz } from "../authz/service";
+@@ -91,14 +92,19 @@ export function createScopeResolver(
+       );
+       const tenantId = options.selectTenant?.(request);
+       const workspaceId = options.selectWorkspace?.(request);
+-      if (!tenantId || !workspaceId) throw new Error("TENANT_REQUIRED");
++      // MT005 (issue #48): selectors are required and explicitly rejected when
++      // missing — never defaulted to a first team or a default company, and
++      // the two failure modes get distinct codes (was: TENANT_REQUIRED for
++      // both, the dual meaning the seam report flags).
++      if (!tenantId?.trim()) throw new Error("TENANT_REQUIRED");
++      if (!workspaceId?.trim()) throw new Error("WORKSPACE_REQUIRED");
+ 
+       const scope = await database.transaction(async (tx) => {
+         await tx.execute(sql`set transaction isolation level read committed`);
+         await tx.execute(sql`set local lock_timeout = '2s'`);
+         await tx.execute(sql`set local statement_timeout = '5s'`);
+         await tx.execute(
+-          sql`select set_config('app.user_id', ${identity.actorId}, true), set_config('app.tenant_id', ${tenantId}, true)`,
++          sql`select set_config('app.user_id', ${identity.actorId}, true), set_config('app.tenant_id', ${tenantId}, true), set_config('app.workspace_id', ${workspaceId}, true)`,
+         );
+         const [member] = await tx
+           .select({
+@@ -132,6 +138,28 @@ export function createScopeResolver(
+         ) {
+           throw new Error("TENANT_FORBIDDEN");
+         }
++        // MT005 (issue #48): team eligibility. The selected workspace must
++        // carry an active workspace-membership row for this principal — the
++        // server-side fact, not the header value, decides (acceptance 3/4/5).
++        // A missing row, a suspended row, and a nonexistent workspace are
++        // deliberately indistinguishable here: no existence leak.
++        const [teamMembership] = await tx
++          .select({ status: enterpriseWorkspaceMemberships.status })
++          .from(enterpriseWorkspaceMemberships)
++          .where(
++            and(
++              eq(enterpriseWorkspaceMemberships.tenantId, tenantId),
++              eq(enterpriseWorkspaceMemberships.workspaceId, workspaceId),
++              eq(
++                enterpriseWorkspaceMemberships.principalId,
++                member.principalId,
++              ),
++            ),
++          )
++          .limit(1);
++        if (teamMembership?.status !== "active") {
++          throw new Error("WORKSPACE_FORBIDDEN");
++        }
+         return Object.freeze({
+           tenantId,
+           workspaceId,
+diff --git a/server/src/index.ts b/server/src/index.ts
+index 0e7387bd..7ccde76a 100644
+--- a/server/src/index.ts
++++ b/server/src/index.ts
+@@ -123,6 +123,7 @@ import {
+ } from "./billing/service";
+ import { createBillingStatements } from "./billing/statements";
+ import { createBillingStore } from "./billing/store";
++import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./billing/types";
+ import {
+   createCreditUsageTarget,
+   createLagoUsageTarget,
+@@ -132,8 +133,10 @@ import {
+   createUsageEvidenceRecorder,
+   isConfirmedNoCost,
+ } from "./billing/usage-evidence";
+-import { createUsageOutbox, UsageOutboxConflictError } from "./billing/usage-outbox";
+-import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./billing/types";
++import {
++  createUsageOutbox,
++  UsageOutboxConflictError,
++} from "./billing/usage-outbox";
+ import { createWebhookVerifier } from "./billing/webhook-signature";
+ import {
+   loadAttachmentForTurn,
+@@ -197,8 +200,11 @@ import {
+   setModelUsageGate,
+   type ToolSelection,
+ } from "./copilot";
++import {
++  buildAvailableSourcesSection,
++  builtinSkillFilesFor,
++} from "./craft/builtin-skills";
+ import { loadCraftConfig } from "./craft/config";
+-import { builtinSkillFilesFor, buildAvailableSourcesSection } from "./craft/builtin-skills";
+ import type { CraftKbSearch } from "./craft/kb-search-relay";
+ import { projectKbSearchResults } from "./craft/kb-search-relay";
+ import {
+@@ -217,8 +223,8 @@ import {
+ } from "./craft/routes";
+ import { createCraftStore } from "./craft/store";
+ import {
+-  type WebappHmrSocketData,
+   resolveWebappHmrUpgrade,
++  type WebappHmrSocketData,
+   webappHmrSessionIdFromPath,
+   webappHmrSocketHandlers,
+ } from "./craft/webapp-proxy";
+@@ -226,6 +232,8 @@ import {
+   createCredentialAdminService,
+   createCredentialStore,
+   decryptCredentialForUse,
++  decryptSecret,
++  encryptSecret,
+   resolveModelApiKey,
+ } from "./credentials";
+ import { createDatabase } from "./db/client";
+@@ -257,8 +265,42 @@ import { createProductionRunnerComposition } from "./enterprise/runs/runner";
+ import {
+   verifyDataDatabase,
+   verifyDirectoryDatabase,
++  verifyOperatorDatabase,
+ } from "./enterprise/tenancy/connections";
+-import { createScopeResolver } from "./enterprise/tenancy/store";
++import {
++  createCredentialOwnershipAdminService,
++  createCredentialOwnershipDecisionService,
++  type SecretVault,
++} from "./enterprise/tenancy/credential-ownership";
++import {
++  createResourceInventoryService,
++  type ResourceInventoryService,
++} from "./enterprise/tenancy/not-found-semantics";
++import {
++  createPersonalShareAdminService,
++  createPersonalShareDecisionService,
++} from "./enterprise/tenancy/personal-share-rules";
++import {
++  applyStartupVerdict,
++  runMultitenancyStartupChecks,
++} from "./enterprise/tenancy/startup-checks";
++import {
++  type AuthenticatedRequestIdentity,
++  createScopeResolver,
++} from "./enterprise/tenancy/store";
++import {
++  createTeamResourceActionService,
++  type TeamResourceActionService,
++} from "./enterprise/tenancy/team-public-rules";
++import {
++  createCompanyAdminAuthorizer,
++  createWorkspaceAdminService,
++  createWorkspaceScopeLister,
++} from "./enterprise/tenancy/workspace-admin";
++import {
++  createUnavailableWorkspaceScopeRoutes,
++  createWorkspaceScopeRoutes,
++} from "./enterprise/tenancy/workspace-scope-routes";
+ import {
+   createHostAccessBroker,
+   HostAccessRefusedError,
+@@ -272,15 +314,14 @@ import {
+   createIntelligenceClient,
+   observeIntelligenceAuthentication,
+ } from "./intelligence-client";
+-import { knowledgeServiceConfig } from "./knowledge/config";
+ import { knowledgeRequest } from "./knowledge/client";
+-import type { KnowledgeSearchResult } from "./knowledge/types";
++import { knowledgeServiceConfig } from "./knowledge/config";
+ import {
+   createKnowledgeRuntime,
+   knowledgeRetrievalOptionsFromEnv,
+ } from "./knowledge/retrieval";
+ import { knowledgeTools } from "./knowledge/tools";
+-import { clearLearningRevisionFallback } from "./learning/runtime";
++import type { KnowledgeSearchResult } from "./knowledge/types";
+ import {
+   createLearningAutoAssign,
+   probeLearningContainer,
+@@ -293,14 +334,15 @@ import {
+   keyIntelligence,
+   learningSetupInstructions,
+ } from "./learning/ensure-container";
++import { clearLearningRevisionFallback } from "./learning/runtime";
+ import { createLearningSettingsStore } from "./learning/settings";
++import { createMarketplaceStore } from "./marketplace/store";
+ import { PostgresTenantStorageRegistry } from "./mastra/postgres-registry";
+ import {
+   RegistryTenantStorageLookup,
+   type TenantCredentialStore,
+ } from "./mastra/provisioning";
+ import { createTenantMastraStorage } from "./mastra/tenant-storage";
+-import { createMarketplaceStore } from "./marketplace/store";
+ import { createMemoryDefaults } from "./memory/defaults";
+ import { createMemoryIngestion } from "./memory/ingestion";
+ import { createIntelligenceMemory } from "./memory/intelligence";
+@@ -325,13 +367,16 @@ import { createOpenMuseGoogleRows } from "./openmuse-connectors/store";
+ import { createOpenMuseDeletionManifest } from "./openmuse-deletion/manifest";
+ import { createOpenMuseFileBytePurger } from "./openmuse-deletion/purge";
+ import { createOpenMuseRelationalPurger } from "./openmuse-deletion/purge-relational";
++import { createOpenMuseDeletionRestore } from "./openmuse-deletion/restore";
+ import {
+   createOpenMuseBackupRetention,
+   createOpenMuseDeletionCleanupView,
+ } from "./openmuse-deletion/retention";
+-import { createOpenMuseDeletionRestore } from "./openmuse-deletion/restore";
+ import { createOpenMuseExternalAccessRevoker } from "./openmuse-deletion/revoke";
+-import { createOpenMuseWorkShutdown, recordWorkShutdown } from "./openmuse-deletion/shutdown";
++import {
++  createOpenMuseWorkShutdown,
++  recordWorkShutdown,
++} from "./openmuse-deletion/shutdown";
+ import {
+   createOpenMuseAccountDeletionStore,
+   createOpenMuseDeletionResourceRows,
+@@ -642,6 +687,29 @@ const identifyActor: IdentifyActor = async (request) => {
+ };
+ 
+ const config = loadConfig();
++/*
++ * Multitenancy mode is an explicit switch (OPENBOT_MULTITENANCY, default off — config.ts), and
++ * switching it on is a promise about who this deployment serves. The promise is checked before
++ * anything else here runs: entrance coverage against the MT001 inventory, no single-user/dev
++ * bypass residue, and the restricted ob_ent_* database roles on the production connections. Any
++ * gap and the process exits non-zero with one structured audit record naming every check —
++ * booting with a hole in tenant isolation is not a warning-and-continue situation.
++ *
++ * With the switch off nothing here runs: the legacy boot is byte-for-byte what it was.
++ */
++if (config.multitenancy.enabled) {
++  const startupRecord = await runMultitenancyStartupChecks({
++    inventoryPath: config.multitenancy.inventoryPath,
++    waiversPath: config.multitenancy.waiversPath,
++    directoryUrl: config.enterpriseDirectoryDatabaseUrl,
++    dataUrl: config.enterpriseDataDatabaseUrl,
++    tenantRuntimeUrl: config.tenantStorageRuntimeDatabaseUrl,
++    singleUser: config.singleUser,
++    singleUserEnvRaw: process.env.OPENBOT_SINGLE_USER,
++    devNoAuthEnvRaw: process.env.OPENBOT_DEV_NO_AUTH,
++  });
++  applyStartupVerdict(startupRecord, { log });
++}
+ // The environment seeds local policy once. The SDK fallback must not reapply an old revision
+ // after an administrator clears a pin to follow the latest published Skills.
+ clearLearningRevisionFallback();
+@@ -799,11 +867,13 @@ const enterpriseCapabilities = await (async () => {
+         });
+         return actor ? { actorId: actor.id, entrypoint: "web" } : null;
+       },
+-      selectTenant: (request) => request.headers.get("x-openbot-tenant-id"),
+-      selectWorkspace: (request) =>
+-        request.headers.get("x-openbot-workspace-id"),
++      // MT005 ruling #1: selection headers are x-openbot-tenant and
++      // x-openbot-workspace. They only select; database membership decides.
++      selectTenant: (request) => request.headers.get("x-openbot-tenant"),
++      selectWorkspace: (request) => request.headers.get("x-openbot-workspace"),
+     });
+     return {
++      directory,
+       data,
+       scopes,
+       conversations: createConversationService({ data, mastraStorage }),
+@@ -819,6 +889,111 @@ const enterpriseConversationRoutes = enterpriseCapabilities
+       enterpriseCapabilities.scopes,
+     )
+   : createUnavailableConversationRoutes();
++// MT006 (issue #49): workspace scope listing plus company team administration.
++// The listing half runs on the directory/data channels already verified above;
++// the admin half needs the restricted operator channel, and its routes answer
++// 503 when that channel is not wired — never a permissive stand-in. Ruling #1:
++// x-openbot-tenant / x-openbot-workspace select; database membership decides.
++const authenticateWorkspaceScopeRequest = async (
++  request: Request,
++): Promise<AuthenticatedRequestIdentity | null> => {
++  // Session faults answer 401 through the routes' error map; the identical
++  // resolution beside the conversation scopes carries the structured trace.
++  const actor = await resolveRequestActor(request).catch(() => null);
++  return actor ? { actorId: actor.id, entrypoint: "web" } : null;
++};
++const enterpriseWorkspaceScopeRoutes = enterpriseCapabilities
++  ? await (async () => {
++      const operatorUrl = config.enterpriseOperatorDatabaseUrl;
++      const operator = operatorUrl
++        ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
++            // The operator channel failing its capability check leaves the
++            // admin routes answering 503 — refused, never permissive; no
++            // console here (server/src is noConsole-enforced).
++            () => null,
++          )
++        : null;
++      return createWorkspaceScopeRoutes({
++        authenticate: authenticateWorkspaceScopeRequest,
++        lister: createWorkspaceScopeLister(
++          enterpriseCapabilities.directory,
++          enterpriseCapabilities.data,
++        ),
++        admin: operator
++          ? {
++              authorizer: createCompanyAdminAuthorizer(
++                enterpriseCapabilities.directory,
++                {
++                  authenticate: authenticateWorkspaceScopeRequest,
++                  selectTenant: (request) =>
++                    request.headers.get("x-openbot-tenant"),
++                },
++              ),
++              service: createWorkspaceAdminService(operator),
++            }
++          : undefined,
++      });
++    })()
++  : createUnavailableWorkspaceScopeRoutes();
++// MT010 (Issue #53): personal-resource share rules. The decision half rides
++// the already-verified restricted data channel; the owner-only share/revoke
++// half needs the restricted operator channel and stays null — fail-closed,
++// no share can ever be created or revoked — when that channel is not wired.
++// Held here for the share-token and share-page entrypoints that land in
++// MT058 and MT092; nothing in this assembly serves traffic with it yet.
++export const personalShareRules = await (async () => {
++  if (!enterpriseCapabilities) return null;
++  const operatorUrl = config.enterpriseOperatorDatabaseUrl;
++  const operator = operatorUrl
++    ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
++        // Same discipline as the workspace-admin channel above: a failing
++        // operator verification leaves the write half unavailable, never
++        // permissive; no console here (server/src is noConsole-enforced).
++        () => null,
++      )
++    : null;
++  return {
++    decisions: createPersonalShareDecisionService(enterpriseCapabilities.data),
++    admin: operator ? createPersonalShareAdminService(operator) : null,
++  };
++})();
++// MT027 (Issue #70): credential ownership — usable is not readable. The use/
++// disclose/list/describe decisions ride the already-verified restricted data
++// channel; the ownership admin (register/revoke/grant) needs the restricted
++// operator channel and stays null — fail-closed, no credential can ever be
++// registered or granted — when that channel is not wired. The vault seam is
++// the deployment's existing AES-GCM envelope (credentials.ts): plaintext is
++// sealed on registration and only ever opened inside an authorized disclosure,
++// which writes the append-only audit row in the same data transaction.
++export const credentialOwnership = await (async () => {
++  if (!enterpriseCapabilities) return null;
++  const credentialOwnershipVault: SecretVault = {
++    seal: (plaintext) => encryptSecret(config.keyEncryptionKey, plaintext),
++    open: (envelope) => decryptSecret(config.keyEncryptionKey, envelope),
++  };
++  const operatorUrl = config.enterpriseOperatorDatabaseUrl;
++  const operator = operatorUrl
++    ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
++        // Same fail-closed discipline as the personalShareRules block above:
++        // a failing operator verification leaves the ownership admin
++        // unavailable, never permissive; no console here (server/src is
++        // noConsole-enforced).
++        () => null,
++      )
++    : null;
++  return {
++    decisions: createCredentialOwnershipDecisionService(
++      enterpriseCapabilities.data,
++      credentialOwnershipVault,
++    ),
++    admin: operator
++      ? createCredentialOwnershipAdminService(
++          operator,
++          credentialOwnershipVault,
++        )
++      : null,
++  };
++})();
+ const identityStore = createIdentityStore(database, credentialStore);
+ 
+ const agentVault = {
+@@ -3091,7 +3266,8 @@ const openMuseTaskStore = createOpenMuseTaskStore({
+  * below fences reads through its isDisabled, and the app tail's delete route and
+  * /api/mobile fence answer through the same instance.
+  */
+-const openMuseAccountDeletionStore = createOpenMuseAccountDeletionStore(database);
++const openMuseAccountDeletionStore =
++  createOpenMuseAccountDeletionStore(database);
+ /*
+  * The personal-files store (F01), hoisted beside the runner it feeds: the task
+  * runner reads finance CSVs and document versions through it, and the app tail
+@@ -3699,7 +3875,9 @@ if (
+   log.error(
+     {
+       type: "billing-credit-policy-unconfigured",
+-      issues: billingSettings.creditPolicy.issues.map((issue) => `${issue.key}:${issue.reason}`),
++      issues: billingSettings.creditPolicy.issues.map(
++        (issue) => `${issue.key}:${issue.reason}`,
++      ),
+     },
+     "billing-credit-policy-unconfigured: metered work will refuse until these keys are fixed",
+   );
+@@ -3749,12 +3927,16 @@ const billing =
+             // lookup prices each plan's expected allowance in scaled integer units (the same
+             // arithmetic the grantor below uses), so the pass can audit that a paid order's
+             // plan payout actually landed at the priced amount.
+-            reconciler: createReconciler(database, externalCustomerKey, (planCode) => {
+-              const entry = settings.planCatalog.get(planCode);
+-              return entry && entry.credits > 0
+-                ? Math.round(entry.credits * CREDIT_SCALE)
+-                : null;
+-            }),
++            reconciler: createReconciler(
++              database,
++              externalCustomerKey,
++              (planCode) => {
++                const entry = settings.planCatalog.get(planCode);
++                return entry && entry.credits > 0
++                  ? Math.round(entry.credits * CREDIT_SCALE)
++                  : null;
++              },
++            ),
+             ...(settings.webhookKey
+               ? {
+                   verifier: createWebhookVerifier({
+@@ -3787,8 +3969,9 @@ const usageOutbox =
+  */
+ if (billing !== undefined && usageOutbox !== undefined) {
+   const creditPolicy = billingSettings?.creditPolicy;
+-  const recordUnsettledUsage = createUsageEvidenceRecorder(usageOutbox, (message) =>
+-    log.warn(message),
++  const recordUnsettledUsage = createUsageEvidenceRecorder(
++    usageOutbox,
++    (message) => log.warn(message),
+   );
+   setModelUsageGate(async (input) => {
+     if (!creditPolicy?.configured) {
+@@ -3896,7 +4079,9 @@ if (billing !== undefined && usageOutbox !== undefined) {
+           // gets its own event and never the write-failure code a foreign error would
+           // otherwise fall back to. The hold is retained either way.
+           const code =
+-            error instanceof UsageChargeError ? error.code : "usage_charge_failed";
++            error instanceof UsageChargeError
++              ? error.code
++              : "usage_charge_failed";
+           log.error(
+             {
+               type: "billing-usage-charge-refused",
+@@ -4268,26 +4453,34 @@ const codeRunStore = createCodeRunStore(database);
+  * column is a display copy and is never read here). A deployment without billing passes
+  * `billing === undefined` straight through: silent, and the run row still stands.
+  */
+-const codeRunUsageReporter = billing && usageOutbox
+-  ? async (input: import("./workshop/metering").CodeRunUsageInput): Promise<void> => {
+-      try {
+-        await reportCodeRunUsage(
+-          usageOutbox,
+-          {
+-            ...input,
+-            externalCustomerId: billing.externalCustomerKey,
+-            // True only when the hard-cap policy actually prices code runs; the gateway refuses
+-            // billed runs until the sandbox can enforce a budget, so this stays false today and
+-            // the guard inside reportCodeRunUsage is what makes flipping it safe.
+-            creditMeteringEnabled: billingSettings?.creditPolicy.configured === true,
+-          },
+-          (message) => log.warn(message),
+-        );
+-      } catch (error) {
+-        logUsageOutboxWriteFailure("code_run", `code-run:${input.runId}`, error);
++const codeRunUsageReporter =
++  billing && usageOutbox
++    ? async (
++        input: import("./workshop/metering").CodeRunUsageInput,
++      ): Promise<void> => {
++        try {
++          await reportCodeRunUsage(
++            usageOutbox,
++            {
++              ...input,
++              externalCustomerId: billing.externalCustomerKey,
++              // True only when the hard-cap policy actually prices code runs; the gateway refuses
++              // billed runs until the sandbox can enforce a budget, so this stays false today and
++              // the guard inside reportCodeRunUsage is what makes flipping it safe.
++              creditMeteringEnabled:
++                billingSettings?.creditPolicy.configured === true,
++            },
++            (message) => log.warn(message),
++          );
++        } catch (error) {
++          logUsageOutboxWriteFailure(
++            "code_run",
++            `code-run:${input.runId}`,
++            error,
++          );
++        }
+       }
+-    }
+-  : undefined;
++    : undefined;
+ const sandboxClientFor = (botId: string) =>
+   sandboxUrl && sandboxToken
+     ? createSandboxClient({
+@@ -4505,9 +4698,11 @@ const craftMcpRelayBaseUrl =
+  * An unwired knowledge service holds the skill back entirely (null) — the
+  * AGENTS.md Company-knowledge section stays out with it.
+  */
+-const craftKnowledgeBases = async (): Promise<
+-  Array<{ id: string; name: string; description: string | null }> | null
+-> => {
++const craftKnowledgeBases = async (): Promise<Array<{
++  id: string;
++  name: string;
++  description: string | null;
++}> | null> => {
+   if (!knowledgeService) return null;
+   try {
+     const response = await knowledgeRequest(knowledgeService, "/kb");
+@@ -4611,7 +4806,9 @@ const craftManagedContentFor = createCraftManagedContentResolver({
+         ...held.map((row) => row.serverId),
+         ...brokered.map((row) => row.serverId),
+       ]),
+-      ...(sourcesSection !== null ? { companySearchSourcesSection: sourcesSection } : {}),
++      ...(sourcesSection !== null
++        ? { companySearchSourcesSection: sourcesSection }
++        : {}),
+     });
+   },
+   /*
+@@ -5043,9 +5240,8 @@ const openMuseActivity = createOpenMuseActivityRoutes({
+  * above their first consumer (round 6 M3) so no reader builds its own
+  * second instance of either.
+  */
+-const openMuseDeletionResourceRows = createOpenMuseDeletionResourceRows(
+-  database,
+-);
++const openMuseDeletionResourceRows =
++  createOpenMuseDeletionResourceRows(database);
+ const openMuseDeletionCleanup = createOpenMuseDeletionCleanupView({
+   markers: openMuseAccountDeletionStore,
+   rows: openMuseDeletionResourceRows,
+@@ -5422,6 +5618,7 @@ const app = createApp(
+     groups: groupConversations,
+     teamBots,
+     enterpriseConversations: enterpriseConversationRoutes,
++    enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
+     lifecycle: {
+       lifecycle: createBotLifecycleStore(database),
+       reset: createBotReset({
+@@ -5647,7 +5844,9 @@ serve<SocketData>({
+   websocket: {
+     open(ws) {
+       if (isHmrSocket(ws.data)) {
+-        webappHmrSocketHandlers.open(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
++        webappHmrSocketHandlers.open(
++          ws as Bun.ServerWebSocket<WebappHmrSocketData>,
++        );
+         return;
+       }
+       if (!isProxiedStream(ws.data)) {
+@@ -5753,7 +5952,9 @@ serve<SocketData>({
+     },
+     close(ws, code, reason) {
+       if (isHmrSocket(ws.data)) {
+-        webappHmrSocketHandlers.close(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
++        webappHmrSocketHandlers.close(
++          ws as Bun.ServerWebSocket<WebappHmrSocketData>,
++        );
+         return;
+       }
+       if (!isProxiedStream(ws.data)) {
+@@ -5813,3 +6014,37 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
+ 
+ log.info({ port }, "OpenBot server listening on http://127.0.0.1");
+ 
++/*
++ * MT009 (issue #52): team-public resource action rules — assembly, pure append.
++ *
++ * The action service shares the SAME verified enterprise data channel as every
++ * other enterprise consumer (no second pool, no permissive stand-in: when the
++ * channel is absent the service is null, never a fake). Mounting it on routes
++ * is the usage-surface ticket's job; this segment only guarantees the rules
++ * exist in-process, assembled once, and reachable by that consumer.
++ */
++const teamResourceActionService: TeamResourceActionService | null =
++  enterpriseCapabilities
++    ? createTeamResourceActionService(enterpriseCapabilities.data)
++    : null;
++
++export { teamResourceActionService };
++
++/*
++ * MT011 (issue #54): centralized not-found invisibility semantics + the
++ * list/cursor/batch surface — assembly, pure append. The inventory service
++ * shares the SAME verified enterprise data channel as every other enterprise
++ * consumer (no second pool, no permissive stand-in: when the channel is
++ * absent the service is null, never a fake). It reuses the MT008 policy
++ * registry for every allow/deny decision — authorization stays defined in
++ * exactly one place. Mounting it on routes is the consumer ticket's job;
++ * this segment only guarantees the canonical not-found semantics and the
++ * list/cursor/batch surface exist in-process, assembled once, and reachable
++ * by that consumer.
++ */
++const resourceInventoryService: ResourceInventoryService | null =
++  enterpriseCapabilities
++    ? createResourceInventoryService(enterpriseCapabilities.data)
++    : null;
++
++export { resourceInventoryService };

@@ -1,0 +1,7 @@
+# final full regression after mutation restore — 2026-10-16T22:18:00Z
+(pass) MT026 revalidation drift: a context issued before a membership change is refused > an in-transaction revalidation fails with SCOPE_REVOKED after the epoch moved [12.90ms]
+
+ 786 pass
+ 0 fail
+ 10753 expect() calls
+Ran 786 tests across 30 files. [28.97s]

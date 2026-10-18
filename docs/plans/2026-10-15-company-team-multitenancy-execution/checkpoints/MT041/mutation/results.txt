@@ -1,0 +1,20 @@
+MUT1 | ownership mismatch guard removed (scope compare bypassed) |  20 pass  2 fail 
+MUT2 | idempotent branch re-writes creation snapshot |  22 pass  0 fail 
+MUT3 | claim workspace-equality check removed |  21 pass  1 fail 
+MUT4 | missing-pin guard removed (unpinned job claimable) |  20 pass  2 fail 
+MUT5 | live-lease-held guard removed |  22 pass  0 fail 
+MUT6 | iAmLive idempotent branch removed |  21 pass  1 fail 
+MUT7 | renew holder-match removed |  21 pass  1 fail 
+MUT8 | finish holder-match removed |  21 pass  1 fail 
+MUT9 | reclaim attempts increment removed |  20 pass  2 fail 
+MUT10 | creation snapshot write removed |  0 pass  1 fail 
+MUT11 | execution-basis pin guard removed |  21 pass  1 fail 
+MUT12 | basis digest constant (content binding broken) |  20 pass  2 fail 
+MUT13 | member list workspace filter removed |  21 pass  1 fail 
+MUT14 | member list principal filter removed |  21 pass  1 fail 
+MUT15 | admin trusted-context assertion removed |  21 pass  1 fail 
+MUT16 | readJob canonical not-found removed |  21 pass  1 fail 
+MUT17 | first-grant attempts pinned to 1 removed |  18 pass  4 fail 
+MUT18 | release holder-match removed |  22 pass  0 fail 
+6da534595a543e9e364a5df542eadfe57aafaaaed23004bd3063a7e0b5d61565  src/enterprise/tenancy/job-ownership.ts
+RESTORE-VERIFIED: byte-identical

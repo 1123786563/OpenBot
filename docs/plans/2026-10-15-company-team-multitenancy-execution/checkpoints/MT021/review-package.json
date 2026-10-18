@@ -1,0 +1,32 @@
+{
+  "round": "MT021（单任完成）",
+  "issue": "#64",
+  "epic": "#192（F 会话；父 Spec #6 公司与团队多租户整改）",
+  "date": "2026-10-17",
+  "implementer": "backend_implementer (Pi, Orca task_8f4b901251a5 / dispatch ctx_49a744438e82)",
+  "inputs": {
+    "brief": "docs/plans/2026-10-15-company-team-multitenancy-execution/briefs/MT021-brief.md（权威）",
+    "ticket": "GitHub Issue #64（1123786563/OpenBot）「MT021 频道与会话列表、计数、分页游标的作用域」，覆盖验收 A1/A2/A3；Verification＝bun test server/tests/multitenancy/conversations-list.test.ts",
+    "prereq_manifest": "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/prereq-manifest.txt（213 项领取时逐项复算 0 异常，verification/02）",
+    "head_verified": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71（BASE 行 == git rev-parse HEAD，detached worktree，全程未提交）",
+    "environment": "专用容器 mt021-impl-pg (pgvector/pgvector:pg16) @ 127.0.0.1:55529（预检空闲）；三库 openbot_enterprise_mt021_test + _assigned + openbot_kb_mt021_test（第 7 变量 KB 属主 ent_mt021_kb）；受限登录 ent_mt021_{dir,data,opr}→ob_ent_* 能力角色；迁移链十四任务 MT004→…→MT027 全 applied（本票不注册迁移任务）；八变量 env 存 0600 临时文件不入库"
+  },
+  "owned_product_files": {
+    "server/src/enterprise/tenancy/conversations-list.ts": "38fb0267e9cc3cd812e83cf12fe4cd397756108f8503287dab76ec363ebae496",
+    "server/tests/multitenancy/conversations-list.test.ts": "5a89bbb2db0e22ac8eb3f81fe6ce8db3122cce146a9eebf4487910d73d9d59db",
+    "server/tests/multitenancy/support/conversations-list.ts": "a028f79288e2f30058af399fca8cedc1632c9f0424460f493f3a7bcf3d9adee2"
+  },
+  "existing_files_modified": "无（git status before/after 对比：唯一新增行为本票模块文件；schema barrel / migrate-test.ts / migration-tool.test.ts / scenarios.ts 均零改动——无迁移任务、conversations 隔离域已注册；10 个关键只读文件 before==after 逐字节一致）",
+  "baseline": "770 pass / 0 fail / 29 文件 / 0 skip（与 brief 一致，verification/01-baseline.txt）",
+  "verdict_summary": "票面四条验收全部有真实 PostgreSQL + 受限 ob_ent_* 角色 + 真实 RLS 证据：列表/计数/游标在有权/无权混合数据下只反映可见集合（同团队他人、他团队、他公司、键最大隐藏行全部逐 id 精确排除）；他司会话 ID 详情 = MT011 canonical RESOURCE_NOT_FOUND 冻结实例逐字节同形，五类拒绝构成单元素字节集；切团队 A1→A2→A1 同一身份立即翻转无需重登（真实 resolver 按请求铸造 scope，服务无进程级缓存）；keyset (created_at, id) 全序游标只钉最后可见项（隐藏行不消耗页位、不制造末页游标，中途改名/删除不跳不重）；真实撤权（MT006 suspend + MT007 restore）后列表/计数/详情 fail-closed 且 epoch 独立防线可被变异捕获。聚焦 26/0/0；全量 796/0/0（30 文件＝基线 770+26）；typecheck 0；触及 3 文件 biome 0（--write 修复过程存档）；变异 6/6 捕获；还原后 pristine sha256 一致 + 复绿。",
+  "acceptance_criteria_mapping": "详见 reports/MT021.md §3 逐条表（票面 4 条 → describe 映射）",
+  "verification_commands": {
+    "focused": "cd server && bun test tests/multitenancy/conversations-list.test.ts → 26 pass / 0 fail / 0 skip（128 expect），exit 0",
+    "full": "cd server && bun test tests/multitenancy/ → 796 pass / 0 fail / 0 skip（30 文件），exit 0",
+    "typecheck": "cd server && bun run typecheck → exit 0",
+    "biome": "bunx biome check（3 个触及文件）→ exit 0（首跑 5 错全为本票新文件自欠，--write 修复后 clean）",
+    "mutation": "6/6 捕获（mutation/ 目录逐个日志 + results.md）"
+  },
+  "disclosures": "D1–D6 详见 reports/MT021.md §5",
+  "checkpoints": "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT021/（PLAN、before/after-hashes、red-green RED-1+GREEN-1/2、mutation 6+RESTORE-green+results、verification 00–06、sha256-manifest 自校验 26 OK）"
+}

@@ -1,0 +1,3 @@
+$ bun run --cwd .. generate:app-config
+$ bun --env-file=.env scripts/generate-app-config.ts
+$ tsc --noEmit

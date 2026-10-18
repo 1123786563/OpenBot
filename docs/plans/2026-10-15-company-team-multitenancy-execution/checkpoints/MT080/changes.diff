@@ -1,0 +1,269 @@
+diff --git a/app/src/lib/client.ts b/app/src/lib/client.ts
+index c9a43542..79a04c70 100644
+--- a/app/src/lib/client.ts
++++ b/app/src/lib/client.ts
+@@ -53,6 +53,14 @@ export type ClientOptions = {
+    * tenant identity cannot leak to an origin the app never chose.
+    */
+   tenantId?: string;
++  /**
++   * The team this request selects, sent as the scope pair's second header (`x-openbot-workspace`,
++   * read beside the tenant one — MT005 ruling #1: the headers only select; database membership
++   * decides). Same discipline as `tenantId`: an explicit per-request argument, attached only to a
++   * same-origin enterprise path, never a module-level "current team". The enterprise scope
++   * resolver refuses a workspace without a tenant, so callers select both or neither.
++   */
++  workspaceId?: string;
+ };
+ 
+ /**
+@@ -100,29 +108,34 @@ async function fallbackText(options: ClientOptions): Promise<string> {
+   return "That request failed.";
+ }
+ 
+-/** The header the enterprise scope middleware reads the tenant selector from. */
++/** The headers the enterprise scope middleware reads the selection pair from (MT005 ruling #1). */
+ const TENANT_HEADER = "x-openbot-tenant";
++const WORKSPACE_HEADER = "x-openbot-workspace";
+ 
+ /** The path prefix the enterprise API answers on; `/api/enterprise/v1` is its one mounted version. */
+ const ENTERPRISE_PATH_PREFIX = "/api/enterprise/";
+ 
+ /**
+- * The tenant selector a request carries, or nothing.
++ * The selection headers a request carries, or nothing.
+  *
+  * Same-origin here is a relative path on this app's own origin: a string that starts with exactly
+  * one slash. An absolute URL names some other origin, and a `//host/path` URL does too — the
+  * browser resolves it against a scheme, so its host is not ours. Only a relative enterprise path
+- * with a selector may carry the header, and every other combination returns `undefined`, which
+- * leaves the request's headers exactly as they were before `tenantId` existed.
++ * with a selector may carry the headers, and every other combination returns `undefined`, which
++ * leaves the request's headers exactly as they were before the selectors existed.
+  */
+-function tenantSelection(
++function scopeSelection(
+   path: string,
+-  tenantId: string | undefined,
+-): string | undefined {
+-  if (tenantId === undefined) return undefined;
++  options: ClientOptions,
++): Record<string, string> | undefined {
+   if (!path.startsWith("/") || path.startsWith("//")) return undefined;
+   if (!path.startsWith(ENTERPRISE_PATH_PREFIX)) return undefined;
+-  return tenantId;
++  const headers: Record<string, string> = {};
++  if (options.tenantId !== undefined) headers[TENANT_HEADER] = options.tenantId;
++  if (options.workspaceId !== undefined) {
++    headers[WORKSPACE_HEADER] = options.workspaceId;
++  }
++  return Object.keys(headers).length > 0 ? headers : undefined;
+ }
+ 
+ /**
+@@ -153,18 +166,11 @@ async function refusalMessage(
+ 
+ /** Every request in this app is authenticated, and every one of them is JSON or nothing. */
+ async function send(path: string, options: ClientOptions): Promise<Response> {
+-  const selection = tenantSelection(path, options.tenantId);
++  const selection = scopeSelection(path, options);
+   const headers: Record<string, string> | undefined =
+     options.body === undefined
+-      ? selection === undefined
+-        ? undefined
+-        : { [TENANT_HEADER]: selection }
+-      : selection === undefined
+-        ? { "content-type": "application/json" }
+-        : {
+-            "content-type": "application/json",
+-            [TENANT_HEADER]: selection,
+-          };
++      ? selection
++      : { "content-type": "application/json", ...selection };
+   return fetch(path, {
+     method: options.method,
+     credentials: "include",
+diff --git a/app/src/locales/en/tenant.json b/app/src/locales/en/tenant.json
+index 9f36f282..5e067a29 100644
+--- a/app/src/locales/en/tenant.json
++++ b/app/src/locales/en/tenant.json
+@@ -24,5 +24,36 @@
+       "statusActive": "active",
+       "statusArchived": "archived"
+     }
++  },
++  "selection": {
++    "title": "Company & team",
++    "description": "Choose the company and team you are working in. Only memberships you actually hold are listed, and nothing is chosen for you.",
++    "company": {
++      "label": "Company",
++      "aria": "Select a company",
++      "placeholder": "Pick a company"
++    },
++    "team": {
++      "label": "Team",
++      "aria": "Select a team",
++      "placeholder": "Pick a team",
++      "none": "You have not been added to a team in this company yet. Ask your company or team administrator to add you."
++    },
++    "current": {
++      "label": "Working in"
++    },
++    "empty": {
++      "title": "No company membership yet",
++      "description": "You are not a member of any company on this deployment yet. Ask your company administrator to add you, then come back and choose where to work."
++    },
++    "error": {
++      "title": "Your companies and teams could not be loaded.",
++      "retry": "Retry"
++    },
++    "revoked": {
++      "title": "Your access to that company or team has been revoked",
++      "description": "The company or team you were working in no longer lists you as a member. Nothing was chosen for you — check again, or pick another company and team you belong to.",
++      "retry": "Check again"
++    }
+   }
+ }
+diff --git a/app/src/locales/zh-CN/tenant.json b/app/src/locales/zh-CN/tenant.json
+index 81f7534b..35da9a0c 100644
+--- a/app/src/locales/zh-CN/tenant.json
++++ b/app/src/locales/zh-CN/tenant.json
+@@ -24,5 +24,36 @@
+       "statusActive": "活跃",
+       "statusArchived": "已归档"
+     }
++  },
++  "selection": {
++    "title": "公司与团队",
++    "description": "选择你正在工作的公司与团队。列表只包含你真实持有的成员资格，不会替你做任何默认选择。",
++    "company": {
++      "label": "公司",
++      "aria": "选择公司",
++      "placeholder": "选择一家公司"
++    },
++    "team": {
++      "label": "团队",
++      "aria": "选择团队",
++      "placeholder": "选择一个团队",
++      "none": "你尚未被加入这家公司的任何团队。请联系公司或团队管理员将你加入。"
++    },
++    "current": {
++      "label": "当前工作范围"
++    },
++    "empty": {
++      "title": "还没有任何公司成员资格",
++      "description": "你还不属于此部署上的任何公司。请联系公司管理员将你加入，之后再回来选择工作范围。"
++    },
++    "error": {
++      "title": "你的公司与团队列表加载失败。",
++      "retry": "重试"
++    },
++    "revoked": {
++      "title": "你在该公司或团队的资格已被撤销",
++      "description": "你此前工作的公司或团队已不再将你列为成员。系统没有替你做任何选择——可重新核查，或自行选择你所属的其他公司与团队。",
++      "retry": "重新核查"
++    }
+   }
+ }
+diff --git a/app/src/routeTree.gen.ts b/app/src/routeTree.gen.ts
+index da77564a..b2aa9607 100644
+--- a/app/src/routeTree.gen.ts
++++ b/app/src/routeTree.gen.ts
+@@ -47,6 +47,7 @@ import { Route as AuthedSettingsPasswordsRouteImport } from './routes/_authed/se
+ import { Route as AuthedSettingsUsageRouteImport } from './routes/_authed/settings/usage'
+ import { Route as AuthedSignInRequestIdRouteImport } from './routes/_authed/sign-in/$requestId'
+ import { Route as AuthedTenantChannelsRouteImport } from './routes/_authed/tenant/channels'
++import { Route as AuthedTenantSelectionRouteImport } from './routes/_authed/tenant/selection'
+ import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/agents/index'
+ import { Route as AuthedAppBotsIndexRouteImport } from './routes/_authed/_app/bots.index'
+ import { Route as AuthedAppChannelChannelIdRouteImport } from './routes/_authed/_app/channel/$channelId'
+@@ -271,6 +272,11 @@ const AuthedTenantChannelsRoute = AuthedTenantChannelsRouteImport.update({
+   path: '/tenant/channels',
+   getParentRoute: () => AuthedRoute,
+ } as any)
++const AuthedTenantSelectionRoute = AuthedTenantSelectionRouteImport.update({
++  id: '/tenant/selection',
++  path: '/tenant/selection',
++  getParentRoute: () => AuthedRoute,
++} as any)
+ const AuthedAppAgentsIndexRoute = AuthedAppAgentsIndexRouteImport.update({
+   id: '/agents/',
+   path: '/agents/',
+@@ -489,6 +495,7 @@ export interface FileRoutesByFullPath {
+   '/settings/usage': typeof AuthedSettingsUsageRoute
+   '/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
+   '/tenant/channels': typeof AuthedTenantChannelsRoute
++  '/tenant/selection': typeof AuthedTenantSelectionRoute
+   '/admin/': typeof AuthedAdminIndexRoute
+   '/settings/': typeof AuthedSettingsIndexRoute
+   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
+@@ -557,6 +564,7 @@ export interface FileRoutesByTo {
+   '/settings/usage': typeof AuthedSettingsUsageRoute
+   '/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
+   '/tenant/channels': typeof AuthedTenantChannelsRoute
++  '/tenant/selection': typeof AuthedTenantSelectionRoute
+   '/admin': typeof AuthedAdminIndexRoute
+   '/settings': typeof AuthedSettingsIndexRoute
+   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
+@@ -629,6 +637,7 @@ export interface FileRoutesById {
+   '/_authed/settings/usage': typeof AuthedSettingsUsageRoute
+   '/_authed/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
+   '/_authed/tenant/channels': typeof AuthedTenantChannelsRoute
++  '/_authed/tenant/selection': typeof AuthedTenantSelectionRoute
+   '/_authed/_app/': typeof AuthedAppIndexRoute
+   '/_authed/admin/': typeof AuthedAdminIndexRoute
+   '/_authed/settings/': typeof AuthedSettingsIndexRoute
+@@ -702,6 +711,7 @@ export interface FileRouteTypes {
+     | '/settings/usage'
+     | '/sign-in/$requestId'
+     | '/tenant/channels'
++    | '/tenant/selection'
+     | '/admin/'
+     | '/settings/'
+     | '/channel/$channelId'
+@@ -770,6 +780,7 @@ export interface FileRouteTypes {
+     | '/settings/usage'
+     | '/sign-in/$requestId'
+     | '/tenant/channels'
++    | '/tenant/selection'
+     | '/admin'
+     | '/settings'
+     | '/channel/$channelId'
+@@ -841,6 +852,7 @@ export interface FileRouteTypes {
+     | '/_authed/settings/usage'
+     | '/_authed/sign-in/$requestId'
+     | '/_authed/tenant/channels'
++    | '/_authed/tenant/selection'
+     | '/_authed/_app/'
+     | '/_authed/admin/'
+     | '/_authed/settings/'
+@@ -1152,6 +1164,13 @@ declare module '@tanstack/react-router' {
+       preLoaderRoute: typeof AuthedTenantChannelsRouteImport
+       parentRoute: typeof AuthedRoute
+     }
++    '/_authed/tenant/selection': {
++      id: '/_authed/tenant/selection'
++      path: '/tenant/selection'
++      fullPath: '/tenant/selection'
++      preLoaderRoute: typeof AuthedTenantSelectionRouteImport
++      parentRoute: typeof AuthedRoute
++    }
+     '/_authed/_app/agents/': {
+       id: '/_authed/_app/agents/'
+       path: '/agents'
+@@ -1541,6 +1560,7 @@ interface AuthedRouteChildren {
+   AuthedOnboardingRoute: typeof AuthedOnboardingRoute
+   AuthedSignInRequestIdRoute: typeof AuthedSignInRequestIdRoute
+   AuthedTenantChannelsRoute: typeof AuthedTenantChannelsRoute
++  AuthedTenantSelectionRoute: typeof AuthedTenantSelectionRoute
+ }
+ 
+ const AuthedRouteChildren: AuthedRouteChildren = {
+@@ -1550,6 +1570,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
+   AuthedOnboardingRoute: AuthedOnboardingRoute,
+   AuthedSignInRequestIdRoute: AuthedSignInRequestIdRoute,
+   AuthedTenantChannelsRoute: AuthedTenantChannelsRoute,
++  AuthedTenantSelectionRoute: AuthedTenantSelectionRoute,
+ }
+ 
+ const AuthedRouteWithChildren =
