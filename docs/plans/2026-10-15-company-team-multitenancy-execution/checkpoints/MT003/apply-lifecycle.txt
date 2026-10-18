@@ -1,0 +1,39 @@
+# 真实 apply 生命周期（专用测试库 127.0.0.1:55433/openbot_enterprise_mt003_test）
+
+## 0) 重置 journal 后的库内状态
+Did not find any relations.
+
+## 1) generate --out（确定性文件名 + manifest）
+generated: MT000 → /var/folders/_8/x5vdz8d97cld_s1yp0th3zr00000gn/T/tmp.tqDaw2aIo8/MT000
+  wrote /var/folders/_8/x5vdz8d97cld_s1yp0th3zr00000gn/T/tmp.tqDaw2aIo8/MT000/0001_mt000_selfcheck_table.sql
+  wrote /var/folders/_8/x5vdz8d97cld_s1yp0th3zr00000gn/T/tmp.tqDaw2aIo8/MT000/0002_mt000_selfcheck_assert.sql
+  wrote /var/folders/_8/x5vdz8d97cld_s1yp0th3zr00000gn/T/tmp.tqDaw2aIo8/MT000/0003_mt000_selfcheck_drop.sql
+  wrote /var/folders/_8/x5vdz8d97cld_s1yp0th3zr00000gn/T/tmp.tqDaw2aIo8/MT000/manifest.json
+0001_mt000_selfcheck_table.sql
+0002_mt000_selfcheck_assert.sql
+0003_mt000_selfcheck_drop.sql
+manifest.json
+
+## 2) apply（携带生成的 manifest）
+applied: MT000 @ openbot_enterprise_mt003_test (127.0.0.1:55433)
+  已执行并记入 journal: 0001_mt000_selfcheck_table.sql, 0002_mt000_selfcheck_assert.sql, 0003_mt000_selfcheck_drop.sql
+apply exit: 0
+
+## 3) 再次 apply（幂等 no-op）
+up-to-date: MT000 @ openbot_enterprise_mt003_test (127.0.0.1:55433)
+  已应用 3 步，无需执行
+exit: 0
+
+## 4) 最终库内状态：journal 记满 3 步、自检临时表已删除、无业务外残留
+ task_id | number |              name               |    digest    
+---------+--------+---------------------------------+--------------
+ MT000   |      1 | 0001_mt000_selfcheck_table.sql  | 66e51febea0a
+ MT000   |      2 | 0002_mt000_selfcheck_assert.sql | 852f77a90f22
+ MT000   |      3 | 0003_mt000_selfcheck_drop.sql   | 99e216f14bb6
+(3 rows)
+
+ scratch_table_leftover 
+------------------------
+ 
+(1 row)
+
