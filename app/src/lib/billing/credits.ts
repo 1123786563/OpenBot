@@ -10,21 +10,55 @@ import { BillingUnavailableError } from "./invoices";
  * this file exists rather than `useQuery` calls in the page.
  */
 
-/** The pending-settlement placeholders, mirroring the server's 02.6 contract (ticket 02.7).
+/** The pending-settlement answer, mirroring the server's 06.12 contract (ticket 06.12).
  *
- * Settlement-disposition views are group 06's slice; until that group's work is delivered the
- * fields stand in the response as a fixed shape carrying constant zeros with `enabled: false`
- * spelled out — the 未启用 marker, so the page never has to guess whether a zero means "nothing
- * pending" or "not a feature here". The literal types are the discipline: this client cannot
- * put a non-zero amount behind a disabled flag, and group 06 enabling the feature MUST touch
- * this type — the contract change is then a visible commit, not a silent drift.
+ * The field names are the ones 02.6 fixed; the amounts are group 06's real data now. `enabled`
+ * stays a plain boolean: a pre-06.12 server's `{ enabled: false, zeros }` remains a valid wire
+ * answer this client renders honestly (the 未启用 marker), while an enabled answer carries the
+ * pending quota — every capacity-occupying hold, unexpired `reserved` plus every `unknown` —
+ * its reserved/unknown split, the settled total, the lapsed holds, and the latest reservations
+ * with status and reason each.
  */
 export type PendingSettlementSummary = {
-  /** The feature gate, group 06's to switch — every amount below is constant while it is false. */
-  enabled: false;
-  available: 0;
-  consumed: 0;
-  expired: 0;
+  /** The gate, switched on by group 06; false remains a valid answer from a pre-06.12 server. */
+  enabled: boolean;
+  /** The pending quota: Σ maximum of unexpired `reserved` holds plus every `unknown` one. */
+  available: number;
+  /** Σ charged over settled reservations — the ledger's figure. */
+  consumed: number;
+  /** Σ maximum of plain `reserved` holds whose expiry has passed. */
+  expired: number;
+  /** The quota's `reserved` share. */
+  reserved: number;
+  /** The quota's `unknown` share — occupies until recovery disposes it. */
+  unknown: number;
+  /** The account's latest reservations, newest first. */
+  reservations: CreditReservationEntry[];
+};
+
+/** One of the account's own reservations, as the pending view itemizes it (ticket 06.12). */
+export type CreditReservationEntry = {
+  id: string;
+  status: "reserved" | "unknown" | "settled" | "released";
+  /** The hold ceiling, in credits. */
+  maximum: number;
+  /** What settlement charged, in credits — settled rows only. */
+  charged: number | null;
+  /** Held capacity handed back unused, in credits — terminal rows only. */
+  released: number | null;
+  provider: string | null;
+  model: string | null;
+  capability: string | null;
+  /** The Bot the reservation was admitted for, when the protocol recorded it. */
+  botId: string | null;
+  botName: string | null;
+  /** Why the hold entered `unknown`, verbatim. */
+  unknownReason: string | null;
+  /** Why the hold was released, verbatim. */
+  releaseReason: string | null;
+  createdAt: string;
+  expiresAt: string;
+  terminalAt: string | null;
 };
 
 /**
@@ -34,7 +68,9 @@ export type PendingSettlementSummary = {
  *
  * `available` is the spendable figure admission uses, `consumed` the lifetime amount charged,
  * `expired` the lapsed-unused part of past grants, `held` the open reservations; `grants` carries
- * every grant with its derived life, `pendingSettlement` the group-06 placeholders.
+ * every grant with its derived life, `pendingSettlement` the group-06 pending answer (ticket
+ * 06.12): the quota, its reserved/unknown split, and the latest reservations with status and
+ * reason each.
  */
 export type PersonalCreditBalance = {
   /** The billing subject kind the answer names — always the authenticated user's own. */
@@ -49,7 +85,7 @@ export type PersonalCreditBalance = {
   held: number;
   /** Every grant of the account, soonest expiry first, with its derived status. */
   grants: CreditGrantEntry[];
-  /** Group 06's placeholders: constant zeros behind an explicit not-enabled marker. */
+  /** Group 06's pending answer: the quota, its split, and the latest reservations. */
   pendingSettlement: PendingSettlementSummary;
 };
 
@@ -77,6 +113,9 @@ export type CreditConsumptionEntry = {
   applied: number;
   model: string | null;
   client: string | null;
+  /** The Bot the call was admitted for (06.12's attribution), null when not protocol-born. */
+  botId: string | null;
+  botName: string | null;
   timestamp: string;
 };
 

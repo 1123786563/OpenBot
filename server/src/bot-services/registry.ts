@@ -5,20 +5,26 @@ import type {
   CredentialStore,
 } from "../credentials";
 import type { Database } from "../db/client";
-import {
-  createAccessGrantService,
-  type AccessGrantService,
-} from "./access-grants";
-import { bindingCodeRoutes, createBindingOfferIssuer } from "./binding-codes";
+import { CredentialBundleUnavailableError } from "../gateway/credential-bundle";
+import { gatewayEndpointControls } from "../gateway/endpoint-config";
 import {
   createDeploymentKeyIssuer,
   createKeyIssuanceRoutes,
 } from "../gateway/key-issuance";
+import { createDeploymentKeyRenewalService } from "../gateway/key-renewal";
+import { createDeploymentGrantKeyRevocator } from "../gateway/key-revocation";
+import { gatewayModelCapabilityFilterControls } from "../gateway/model-capability-filter";
+import { mappedModelCapabilities } from "../gateway/model-selection-routes";
+import {
+  type AccessGrantService,
+  createAccessGrantService,
+} from "./access-grants";
 import { createBotServiceAuthenticator } from "./auth";
+import { bindingCodeRoutes, createBindingOfferIssuer } from "./binding-codes";
 import type { BotServiceCredentialService } from "./service-credentials";
 import { createBotServiceCredentialService } from "./service-credentials";
-import { createBotServiceStore } from "./store";
 import type { BotServiceStore } from "./store";
+import { createBotServiceStore } from "./store";
 
 /**
  * The bot service registry as app.ts receives it: the 04.1 store every existing reader uses,
@@ -72,6 +78,12 @@ export function createBotServiceRegistry(
     database,
     botServices: store,
     auditStore: dependencies.auditStore,
+    // 05.7's remote-key retirement: a committed revocation asks the gateway to disable every
+    // key version it retired locally — best-effort and total (failures recorded, never
+    // thrown), so a gateway that cannot be reached never softens the revocation.
+    revokeGatewayKeys: createDeploymentGrantKeyRevocator({
+      auditStore: dependencies.auditStore,
+    }),
   });
   return {
     ...store,
@@ -94,6 +106,52 @@ export function createBotServiceRegistry(
         modelAccess,
         auditStore: dependencies.auditStore,
       }).issueKeyForGrant,
+      // 05.6's renewal, composed against the same installed controls and the same grant
+      // seam the claim runs — a renewal re-runs every verdict a first issuance did, then
+      // rotates (next credentialVersion, previous versions retired per 05.7's rule).
+      renew: createDeploymentKeyRenewalService({
+        database,
+        modelAccess,
+        listSelectableModels,
+        auditStore: dependencies.auditStore,
+      }).renewKeyForGrant,
+      // 05.4's bundle sides, read live at claim time: the endpoint this deployment answers
+      // at (01.1) and the Bot's own selectable refs — 03.11's exact mapping
+      // (mappedModelCapabilities over the live registry record, attributed to the Bot
+      // service), never a re-derivation. A missing control refuses; nothing is guessed.
+      bundle: {
+        readGatewayEndpoint: async () =>
+          (await gatewayEndpointControls()?.readGatewayEndpoint()) ?? undefined,
+        listSelectableModels,
+      },
     }),
   };
+
+  /**
+   * The Bot's own selectable refs, read live (03.8's filter over the installed controls) —
+   * the ONE source both the claim/renewal answer's bundle and the renewal's re-verification
+   * consume, so the two can never disagree about what is open. A missing control refuses;
+   * nothing is guessed.
+   */
+  async function listSelectableModels(botId: string) {
+    const filter = gatewayModelCapabilityFilterControls();
+    if (!filter) {
+      throw new CredentialBundleUnavailableError(
+        "bundle_models_unavailable",
+        "The model catalog is not available, so the credential bundle cannot be completed.",
+      );
+    }
+    const bot = await store.getBotService(botId);
+    if (bot?.status !== "active") {
+      throw new CredentialBundleUnavailableError(
+        "bundle_models_unavailable",
+        "The bot service record is not readable, so the credential bundle cannot be completed.",
+      );
+    }
+    const selection = await filter.listSelectableModels(
+      mappedModelCapabilities(bot.capabilities),
+      { kind: "bot_service", id: botId },
+    );
+    return selection.selectable;
+  }
 }

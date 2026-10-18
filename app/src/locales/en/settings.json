@@ -9,6 +9,7 @@
     "passwords": "Passwords",
     "componentsGallery": "Components gallery",
     "plansUsage": "Plans & credits",
+    "orders": "Orders & credits",
     "invoices": "Bills",
     "notifications": "Notifications",
     "approvals": "Approvals",
@@ -323,6 +324,15 @@
     "statHeld": "In-progress holds",
     "pendingSettlement": "Pending settlement",
     "pendingSettlementDisabled": "Pending settlement: not enabled yet",
+    "pendingReserved": "Reserved",
+    "pendingUnknown": "Unknown result",
+    "reservationStatus": {
+      "reserved": "Reserved",
+      "unknown": "Unknown result",
+      "settled": "Settled",
+      "released": "Released"
+    },
+    "reservationReason": "Reason: ",
     "emptyLedger": "No credit records on this account yet.",
     "creditUnit": "credits",
     "remaining": "left",
@@ -345,6 +355,11 @@
       "exhausted": "Spent",
       "expired": "Expired"
     },
+    "grantSource": {
+      "plan": "Plan",
+      "signin": "Check-in reward",
+      "promo": "Campaign / admin"
+    },
     "expiringSoon": "Expires within 24h",
     "expiresAt": "Expires: {{time}}",
     "reason": "Granted for: {{reason}}",
@@ -364,7 +379,35 @@
     "overdrawBadge": "({{shortfall}} unfunded)",
     "overdrawHint": "This call cost more than the balance could fund. The ledger records the full cost; {{shortfall}} was not covered by any grant.",
     "pagerStatus": "Page {{page}} of {{totalPages}} · {{total}} entries",
-    "consumptionTable": "Usage details"
+    "consumptionTable": "Usage details",
+    "columnBot": "Bot"
+  },
+  "ordersPage": {
+    "title": "Orders & credits",
+    "description": "Your orders, your subscription, and every credit granted to you — each traceable to its source.",
+    "refresh": "Refresh",
+    "ordersTitle": "Orders",
+    "ordersEmpty": "No orders yet",
+    "ordersEmptyDescription": "Orders appear here after a plan is purchased.",
+    "ordersUnavailable": "Billing is not enabled here",
+    "ordersUnavailableDescription": "No billing provider is configured on this deployment, so there are no orders.",
+    "subscriptionTitle": "Subscription",
+    "grantsTitle": "Credit grants",
+    "grantsDescription": "Where every credit came from, and when it expires.",
+    "grantsSummary": "{{count}} grants on record",
+    "grantsEmpty": "No credit grants yet.",
+    "grantSource": {
+      "plan": "Plan",
+      "signin": "Check-in reward",
+      "promo": "Campaign / admin"
+    },
+    "traceOrder": "Funding order: {{order}}",
+    "traceNoOrder": "No funding order on record",
+    "columnPlan": "Plan",
+    "columnAmount": "Amount",
+    "columnStatus": "Status",
+    "columnNumber": "Order",
+    "columnCreated": "Created"
   },
   "welcomeBanner": {
     "badge": "Bonus until 10/31",
