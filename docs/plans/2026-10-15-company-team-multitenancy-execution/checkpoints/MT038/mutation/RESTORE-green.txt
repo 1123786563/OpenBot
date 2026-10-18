@@ -1,0 +1,54 @@
+bun test v1.4.2 (50a8a8387)
+
+server/tests/multitenancy/document-lifecycle.test.ts:
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC1: 上传归属与非成员不可见 > 上传文档归属当前范围（行、存储与任务载荷同归属） [17.71ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC1: 上传归属与非成员不可见 > 成员可读原文件事实；非成员与不存在 id 同一不可见形状 [45.70ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC1: 上传归属与非成员不可见 > 停用成员上传立即被拒且零入队；恢复成员资格后复得（A5） [29.22ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC1: 上传归属与非成员不可见 > 去重只在本租户本库命中；他司同哈希不去重 [42.88ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC2: 任务归属与执行时重建 > url 导入保存发起归属（行与载荷） [12.41ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC2: 任务归属与执行时重建 > 重解析任务保存发起归属并推进世代号 [19.88ms]
+{"level":30,"time":1792218272240,"service":"kb","type":"kb-ingest-completed","knowledgeId":"mt038-e952b8ab-rebuild-tamper","chunks":5,"msg":"kb-ingest-completed"}
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC2: 任务归属与执行时重建 > 执行重建：payload 谎报租户/库被权威行改写，产物同权威归属 [44.11ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC2: 任务归属与执行时重建 > 执行重建：镜像缺失 → skip，零 chunk 零索引 [6.79ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC2: 任务归属与执行时重建 > 执行重建：镜像租户漂移 → skip（不写入漂移范围） [12.52ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC2: 任务归属与执行时重建 > 执行重建：行缺失 → skip missing [1.03ms]
+{"level":30,"time":1792218272273,"service":"kb","type":"kb-ingest-skipped","reason":"attemptSuperseded","knowledgeId":"mt038-e952b8ab-rebuild-attempt","msg":"kb-ingest-skipped"}
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC2: 任务归属与执行时重建 > 执行重建：世代号落后照常被守卫跳过 [8.02ms]
+{"level":30,"time":1792218272307,"service":"kb","type":"kb-document-deleted","knowledgeId":"mt038-e952b8ab-del-own","msg":"kb-document-deleted"}
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC3: 删除作用域 > 范围内删除级联：Qdrant 先行、chunks 硬删、行软删 [36.39ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC3: 删除作用域 > 跨团队删除被拒且零触碰 [13.17ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC3: 删除作用域 > 跨公司删除被拒且零触碰 [8.75ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC3: 删除作用域 > 不存在与跨范围删除同一不可见形状（错误集合大小=1） [18.58ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC3: 删除作用域 > 文档不属于所传 KB（同租户跨库）→ 不可见零触碰 [11.35ms]
+{"level":30,"time":1792218272424,"service":"kb","type":"kb-ingest-completed","knowledgeId":"cc239110-5f70-4c2a-961a-ab8cfda85094","chunks":5,"msg":"kb-ingest-completed"}
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC4: 重解析产物归属一致 > 重解析后执行：file 文档真实载荷再被篡改租户，产物仍全权威归属 [64.46ms]
+{"level":30,"time":1792218272453,"service":"kb","type":"kb-ingest-completed","knowledgeId":"mt038-e952b8ab-rp-move","chunks":5,"msg":"kb-ingest-completed"}
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 AC4: 重解析产物归属一致 > KB 迁移后执行按当前镜像重建（发起归属保留为审计） [28.33ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 入口边界与拒绝面 > 内部身份形状四动作全拒 KB_REQUESTER_INVALID 且零副作用 [0.28ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 入口边界与拒绝面 > 伪造 scope（非 seam 签发）→ UNVERIFIED_SCOPE [0.04ms]
+1019 |       const stripComments = (source: string): string =>
+1020 |         source.replace(/\/\/.*$/gm, "");
+1021 |       const entrySource = stripComments(
+1022 |         await Bun.file(
+1023 |           "src/kb/application/service/kb-document-lifecycle.ts",
+1024 |         ).text(),
+                 ^
+ENOENT: no such file or directory, open 'src/kb/application/service/kb-document-lifecycle.ts'
+    path: "src/kb/application/service/kb-document-lifecycle.ts",
+ syscall: "open",
+   errno: -2,
+    code: "ENOENT"
+
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i13-mt038/server/tests/multitenancy/document-lifecycle.test.ts:1024:11)
+(fail) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 入口边界与拒绝面 > 源码级：生命周期入口不携带内部身份词汇（注释剥离后） [1.52ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 入口边界与拒绝面 > 输入卫生：空 kbId / 非法扩展名 / 坏 url / 空文本 响亮拒绝零入队 [12.50ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 入口边界与拒绝面 > 未授权 KB（不存在/他司）上传 → 不可见；零行零入队 [7.83ms]
+(pass) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 入口边界与拒绝面 > 归属不一致 KB 上传 → 确定性 KB_OWNERSHIP_* 拒绝；零写入零入队 [22.22ms]
+
+1 tests failed:
+(fail) MT038 — 文档上传、删除、导入与重解析的作用域 > MT038 入口边界与拒绝面 > 源码级：生命周期入口不携带内部身份词汇（注释剥离后） [1.52ms]
+
+ 23 pass
+ 1 fail
+ 122 expect() calls
+Ran 24 tests across 1 file. [1.76s]

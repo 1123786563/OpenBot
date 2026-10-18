@@ -1,0 +1,34 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.55s
+     Running unittests src/lib.rs (target/debug/deps/openbot_desktop_lib-ba3a74c9c406e012)
+
+running 27 tests
+test org_context::tests::org_context_admit_sign_in_admits_the_recovery_paths ... ok
+test org_context::tests::org_context_establish_without_selection_freezes_no_company_and_skips_the_listing ... ok
+test org_context::tests::org_context_establish_reports_a_dead_connection_session ... ok
+test org_context::tests::org_context_establish_needs_the_listing_only_when_a_selection_is_made ... ok
+test org_context::tests::org_context_admit_sign_in_refuses_another_authority_while_the_context_is_live ... ok
+test org_context::tests::org_context_establish_refuses_a_company_outside_the_authoritative_listing ... ok
+test org_context::tests::org_context_establish_freezes_the_connection_verified_facts ... ok
+test org_context::tests::org_context_establish_refuses_a_team_from_another_company ... ok
+test org_context::tests::org_context_establish_refuses_an_unknown_team_within_the_chosen_company ... ok
+test org_context::tests::org_context_gate_requires_an_established_context ... ok
+test org_context::tests::org_context_gate_stays_alive_across_a_transient_reverification_outage ... ok
+test org_context::tests::org_context_gate_grants_matching_claims ... ok
+test org_context::tests::org_context_load_marks_expiry_when_the_restart_verification_fails ... ok
+test org_context::tests::org_context_gate_marks_the_context_dead_when_the_session_is_gone ... ok
+test org_context::tests::org_context_gate_rejects_when_reverification_shows_a_different_person ... ok
+test org_context::tests::org_context_gate_rejects_when_the_connection_switched_underneath ... ok
+test org_context::tests::org_context_load_drifts_to_expiry_when_the_connection_now_verifies_somebody_else ... ok
+test org_context::tests::org_context_gate_refreshes_only_the_verification_time ... ok
+test org_context::tests::org_context_load_adopts_the_persisted_context_after_a_restart ... ok
+test org_context::tests::org_context_load_refuses_a_persisted_context_from_another_connection ... ok
+test org_context::tests::org_context_gate_rejects_company_claims_outside_the_frozen_company ... ok
+test org_context::tests::org_context_gate_rejects_team_claims_outside_the_frozen_team ... ok
+test org_context::tests::org_context_load_treats_a_corrupt_record_as_absent_and_records_it ... ok
+test org_context::tests::org_context_gate_rejects_a_foreign_authority_claim ... ok
+test org_context::tests::org_context_rejections_are_bounded_oldest_first_dropped ... ok
+test org_context::tests::org_context_status_dto_carries_no_token_or_secret ... ok
+test org_context::tests::org_context_persist_round_trips_through_the_vault ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 546 filtered out; finished in 0.02s
+
