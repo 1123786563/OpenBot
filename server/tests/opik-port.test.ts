@@ -1009,6 +1009,56 @@ describe("ownership drift fails closed and stops the writes behind it", () => {
     expect(calls.length).toBe(0);
   });
 
+  test("a creation whose trace id disagrees with the binding's recorded upstream id is drift (OCR R5-16)", async () => {
+    // The binding's opikTraceId is an identity field, not garnish: once the
+    // binding names an upstream trace, a creation carrying a DIFFERENT id would
+    // mint a second upstream trace for one run — exactly the silent duplication
+    // the write guard exists to refuse. The same id is an idempotent replay and
+    // passes; a null recorded id is the first creation and passes.
+    const linkedBinding = {
+      ...ownBinding,
+      opikTraceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
+    };
+    const { calls, transport } = recorder(
+      () => new Response("", { status: 201 }),
+    );
+    const drifted = driftOf(
+      await port({ fetch: transport }).createTrace(trusted, {
+        traceId: "01a13db5-220b-7681-8026-cdf30cacf2cb",
+        name: okText("agent run trace"),
+        startTime: new Date(),
+        binding: linkedBinding,
+      }),
+    );
+    expect(drifted.reason).toBe("binding_mismatch");
+    expect(drifted.scopeKey).toBe(trusted.key);
+    expect(calls.length).toBe(0);
+
+    // The matching-id replay and the first (null) creation are not drift.
+    const replayRecorder = recorder(() => new Response("", { status: 201 }));
+    const firstRecorder = recorder(() => new Response("", { status: 201 }));
+    const replay = await port({ fetch: replayRecorder.transport }).createTrace(
+      trusted,
+      {
+        traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
+        name: okText("agent run trace"),
+        startTime: new Date(),
+        binding: linkedBinding,
+      },
+    );
+    expect(replay.outcome).toBe("ok");
+    const first = await port({ fetch: firstRecorder.transport }).createTrace(
+      trusted,
+      {
+        traceId: "01a13db5-220b-7681-8026-cdf30cacf2cb",
+        name: okText("agent run trace"),
+        startTime: new Date(),
+        binding: ownBinding,
+      },
+    );
+    expect(first.outcome).toBe("ok");
+  });
+
   test("a binding that no longer matches the trusted scope is drift before any I/O", async () => {
     // An epoch bump is a transfer or revocation: the locator moved, the stale binding did not.
     const revoked = resolveObservationScope({
