@@ -1,0 +1,6 @@
+# Prerequisite recompute (MT009-brief contract: 32 hash items + BASE)
+# Command: while read -r hash path; do ... done < checkpoints/prereq-manifest.txt (sha256sum per item)
+# Result: 32/32 file hashes OK + BASE f0520524f0faa2b4533b9d2f1aa692c8f907ba71 == git rev-parse HEAD
+# (first probe script mis-parsed the BASE line's column order and printed a bogus DIFF;
+#  corrected parse: BASE and all 32 files byte-identical)
+# Date: 2026-10-16 (MT010 dispatch ctx_6444c9d633f9)

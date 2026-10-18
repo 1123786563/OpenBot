@@ -1,0 +1,59 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/scan-executor.test.ts:
+(pass) MT042 — platform scan scope rebuild (Issue #85) > AC1: the scan lists due jobs across companies as metadata, never business content > lists due jobs of two companies and never reads the payload [60.57ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > AC1: the scan lists due jobs across companies as metadata, never business content > does not offer an item before its run_at [7.80ms]
+338 |         // The lease was claimed and finished under the authoritative scope,
+339 |         // not the hints: the finished row lives in the pinned company/team and
+340 |         // the claim counted exactly one attempt (holder identity is asserted
+341 |         // mid-execution in the lease-discipline suite).
+342 |         const lease = await fixture.leaseRowOf(a1.kind, a1.objectId);
+343 |         expect(lease?.finishedAt).not.toBeNull();
+                                            ^
+error: expect(received).not.toBeNull()
+
+Received: null
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt042/server/tests/multitenancy/scan-executor.test.ts:343:39)
+(fail) MT042 — platform scan scope rebuild (Issue #85) > AC2: the scope is rebuilt from the persisted record; message fields are hints only > executes under the authoritative record's scope, ignoring wrong message hints [22.68ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > AC2: the scope is rebuilt from the persisted record; message fields are hints only > refuses an item with no authoritative record, echoing nothing from the message [21.39ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > AC3: the machine identity is type-isolated from user identities > is refused wherever a trusted user scope is required [0.25ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > AC3: the machine identity is type-isolated from user identities > is not a user login: dev-local-user and principal impersonation are refused [4.19ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > AC3: the machine identity is type-isolated from user identities > cannot be driven by a user scope [1.85ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > AC4: only the issuance entry produces a valid scope; deserialization is refused > rejects deserialized and cloned scopes and machine identities [1.87ms]
+507 |           a1.objectId,
+508 |         );
+509 |         expect(outcomes).toHaveLength(1);
+510 |         expect(outcomes[0]?.status).toBe("executed");
+511 |         const lease = await fixture.leaseRowOf(a1.kind, a1.objectId);
+512 |         expect(lease?.finishedAt).not.toBeNull();
+                                            ^
+error: expect(received).not.toBeNull()
+
+Received: null
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt042/server/tests/multitenancy/scan-executor.test.ts:512:39)
+(fail) MT042 — platform scan scope rebuild (Issue #85) > execution and lease discipline (MT041 consumption) > executes under the MT041 lease, finishes it, and never re-offers a finished item [25.09ms]
+566 |         expect(second).toHaveLength(1);
+567 |         expect(second[0]?.status).toBe("executed");
+568 |         expect(second[0]?.item.attempts).toBe(2);
+569 |         const afterRetry = await fixture.leaseRowOf(a1.kind, a1.objectId);
+570 |         expect(afterRetry?.attempts).toBe(2);
+571 |         expect(afterRetry?.finishedAt).not.toBeNull();
+                                                 ^
+error: expect(received).not.toBeNull()
+
+Received: null
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt042/server/tests/multitenancy/scan-executor.test.ts:571:44)
+(fail) MT042 — platform scan scope rebuild (Issue #85) > execution and lease discipline (MT041 consumption) > releases the lease on execution failure and the item returns as attempt 2 [47.53ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > execution and lease discipline (MT041 consumption) > skips an item whose job lease is live-held by another executor [17.41ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > execution and lease discipline (MT041 consumption) > claims the lease under the machine's worker identity, visible mid-execution [23.08ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > revocation and malformed input (machine semantics) > refuses an item whose company membership was revoked, before any execution [42.89ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > revocation and malformed input (machine semantics) > refuses an item whose team membership was revoked, before any execution [21.08ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > revocation and malformed input (machine semantics) > refuses a malformed key deterministically and never echoes it [5.71ms]
+
+ 12 pass
+ 3 fail
+ 99 expect() calls
+Ran 15 tests across 1 file. [589.00ms]

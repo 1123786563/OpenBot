@@ -1,0 +1,9 @@
+# before state — MT016 (pristine before any MT016 edit)
+f0520524f0faa2b4533b9d2f1aa692c8f907ba71  HEAD
+09bf04006ff459fecda82c882fcad492c4f45875c84948ad70d02d6ff2a6a68b  server/scripts/multitenancy/migrate-test.ts
+2a1ce227f1fdda59369bc53db2bfe974e74f982658a05c2daa98dc627dad4392  server/tests/multitenancy/migration-tool.test.ts
+e1954c8a32b11521560f5bd0f20c686c7628b37026bb4945c0dfc38a8ddc3841  server/src/db/schema/index.ts
+(新建，before 不存在)  server/src/enterprise/tenancy/bots-ownership.ts
+(新建，before 不存在)  server/src/db/schema/enterprise-bot-ownership.ts
+(新建，before 不存在)  server/tests/multitenancy/bots-ownership.test.ts
+(新建，before 不存在)  server/tests/multitenancy/support/bots-ownership.ts

@@ -1,0 +1,64 @@
+# MT005 before/after hashes.
+# before = value recorded in ../prereq-manifest.txt (for MT002-MT004 deliverables; all verified OK at task start)
+#          or HEAD blob hash (for base-stack files).
+# after  = working tree at MT005 completion.
+# Deviations from the prereq manifest: exactly 2 files (fixture.ts, fixtures.test.ts) —
+# MT005's expand-only integration appends team-membership provisioning + the two new gate
+# error-code mappings to the MT002 fixture and updates 2 assertions in its tests to the
+# MT005 contract (see reports/MT005.md, disclosure D1). All other 17 prereq files remain
+# byte-identical (prereq-recompute.txt).
+
+UNCHANGED server/src/db/schema/enterprise-tenancy.ts
+  before c4fc5145536af4257e0d8e583d984440b91bd5e7ce7a31936bc7c076cf8bf68c
+  after  c4fc5145536af4257e0d8e583d984440b91bd5e7ce7a31936bc7c076cf8bf68c
+UNCHANGED server/scripts/multitenancy/inventory.ts
+  before e58bde59de470b816a6cacfa988b7a450d15dd7261ef2e22f6d77b034d6c05d0
+  after  e58bde59de470b816a6cacfa988b7a450d15dd7261ef2e22f6d77b034d6c05d0
+UNCHANGED server/scripts/multitenancy/migrate-test.ts
+  before cb0891c6dba4dcfbd476876971f97382a372fd24c6705dd601958f4f2b41fe38
+  after  cb0891c6dba4dcfbd476876971f97382a372fd24c6705dd601958f4f2b41fe38
+UNCHANGED server/scripts/multitenancy/acceptance-harness.ts
+  before 33f24c24684d25657524a2b6b911932101dbef4cb53a7b94092f2fada0d9cc49
+  after  33f24c24684d25657524a2b6b911932101dbef4cb53a7b94092f2fada0d9cc49
+UNCHANGED server/tests/multitenancy/inventory.test.ts
+  before c718e8f93499a002723fb83aa80c7a11cab89f4f09c4e7a7ed35a678109f99cf
+  after  c718e8f93499a002723fb83aa80c7a11cab89f4f09c4e7a7ed35a678109f99cf
+UNCHANGED server/tests/multitenancy/migration-tool.test.ts
+  before 75bd28f902ce9faed706d46a49c1b4dfc4e797c5ca79e9748b91e7d52260678d
+  after  75bd28f902ce9faed706d46a49c1b4dfc4e797c5ca79e9748b91e7d52260678d
+UNCHANGED server/tests/multitenancy/membership-model.test.ts
+  before e7057686b398c93863b0515093578b79331a5de9a58598b4f12d288ff0185e3b
+  after  e7057686b398c93863b0515093578b79331a5de9a58598b4f12d288ff0185e3b
+UNCHANGED server/tests/multitenancy/acceptance-harness.test.ts
+  before 18717a1b08a243005128a3e1cd4ee19a93eb557d07e9e569a65d891c0fa96022
+  after  18717a1b08a243005128a3e1cd4ee19a93eb557d07e9e569a65d891c0fa96022
+CHANGED server/tests/multitenancy/support/fixture.ts
+  before f1112f0f8a4ee91248a84ae9e7bbaa9ef8962715de1856b38c1be7e313bca88c
+  after  da29a2a5da604292f4ef566b841b9b443fed382536b3456bfc0dbdd69ff7dd78
+CHANGED server/tests/multitenancy/fixtures.test.ts
+  before 667dd64e27f9e5b9276d4a4b7d27809dd85a5ba86d8ecc2dd74fb4182ec80c43
+  after  59f119626792f1d63fdc08e8e0a58999946b367675b1543fbf33f87020bfbb13
+UNCHANGED server/tests/multitenancy/support/scenarios.ts
+  before cdca14caa6faf6bf0364cfc7345486473da438058bdf2c6d41d9e0c60aa0abd0
+  after  cdca14caa6faf6bf0364cfc7345486473da438058bdf2c6d41d9e0c60aa0abd0
+CHANGED (vs HEAD) server/src/enterprise/tenancy/store.ts
+  before 3cf1146da379f7964145571a756de0706879080d4787bf72e9f389a102d39b96
+  after  2f8cbef72f8af7c21a2687d7cd9be199e6cfc1dc6703e2d3bf8f8dfd66654c1f
+CHANGED (vs HEAD) server/src/index.ts
+  before 83600fe64e6349fc6622c78caacfdb2c26402be19ac7853482625841ffdacbb6
+  after  8c2583847bb056bbb27ef8782542be476f87677b42619dc3a5d162dc43678c5d
+UNCHANGED (vs HEAD) server/src/enterprise/conversations/store.ts
+  before 6d3ae8179526efce3394f8889055add405a460ff4d67293e7e392951e3c1a1e4
+  after  6d3ae8179526efce3394f8889055add405a460ff4d67293e7e392951e3c1a1e4
+UNCHANGED (vs HEAD) server/src/enterprise/contracts.ts
+  before a6afa87855711441d7b136bcdcc2bf9e8af5386d9ba7db4d1cd954bc9a5e9dcd
+  after  a6afa87855711441d7b136bcdcc2bf9e8af5386d9ba7db4d1cd954bc9a5e9dcd
+UNCHANGED (vs HEAD) server/src/db/schema/enterprise-conversations.ts
+  before 21c38f04099589afb7589eb686b32edf918aeb6a7252ca25abc04014e6caa1d4
+  after  21c38f04099589afb7589eb686b32edf918aeb6a7252ca25abc04014e6caa1d4
+NEW server/src/enterprise/tenancy/scope-gate.ts
+  after  895b0e548513223e148a4a631dabe4181a0964d853ce2a099158813901d9b107
+NEW server/tests/multitenancy/scope-gate.test.ts
+  after  d9a5a02d1e94eac0d463059ab66a05708bca2227b30a507111bc7d2f2d85b249
+NEW server/tests/multitenancy/support/scope-gate.ts
+  after  7f32f54383babe7f94fca2f8c75d7422c127d2a5bdfa7d3b7e9165ae767a787d

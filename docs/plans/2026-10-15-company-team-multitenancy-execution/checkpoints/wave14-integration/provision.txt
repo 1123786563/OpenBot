@@ -1,0 +1,26 @@
+# wave14-integration provision — 三步配方 step1/2/2b（容器 w14int-pg @ 127.0.0.1:55576, loopback）
+# date: 2026-10-18 08:47:33 +0800; 库名 openbot_enterprise_w14int + _assigned + openbot_kb_w14int; 七变量 env 0600 用后删
+# chain 链序=brief 修正序（MT042 四任先例 MT112→MT012）: MT004→MT008→MT112→MT012→MT014→MT010→MT009→MT077→MT026→MT076→MT069→MT016→MT041→MT027→MT028→MT070→MT031→MT042→MT059
+# 完整日志（含逐任务 generate+apply 与 journal）见 apply-chain-journal.txt；本文件为容器/建库/基线迁移段
+== step 1: dedicated container ==
+757ff2ec1aaccc5d7570a33db30a2540d36511fb860d214e05b17e76dcbe80cf
+/var/run/postgresql:5432 - accepting connections
+ PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
+
+== step 2: databases + kb owner role (guarded) ==
+CREATE DATABASE
+CREATE DATABASE
+CREATE DATABASE
+CREATE ROLE
+ALTER DATABASE
+== step 2b: base migration (only when public schema still empty) + restricted logins ==
+{"type":"migrations-applied","status":"ok"}
+== step 3: multitenancy task chain (corrected dependency order, wave-14 tickets last) ==
+…(step 3 起转入 apply-chain-journal.txt)
+exit=0
+
+== teardown（收尾，2026-10-18 08:48:26 +0800） ==
+w14int-pg
+docker ps -a 残留检查: 0 个 w14int-pg
+/tmp/w14int-env.sh
+env 文件残留检查: ls: /tmp/w14int-env.sh: No such file or directory

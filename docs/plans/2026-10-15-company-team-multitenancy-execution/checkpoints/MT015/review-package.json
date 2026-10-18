@@ -1,0 +1,40 @@
+{
+  "round": "MT015",
+  "issue": "#58",
+  "epic": "#190（D 运行配置 MT013–MT015；父 Spec #6）",
+  "date": "2026-10-17",
+  "implementer": "backend_implementer (Pi, Orca task_8901e8f09fc0 / dispatch ctx_6c357a7d010d)",
+  "inputs": {
+    "brief": "docs/plans/2026-10-15-company-team-multitenancy-execution/briefs/MT015-brief.md",
+    "ticket": "GitHub Issue #58（1123786563/OpenBot）「缓存键与外部命名空间包含公司、团队与配置版本」，覆盖验收 A8/A10/A1",
+    "prereq_manifest": "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/prereq-manifest.txt",
+    "head_verified": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71（BASE 行 == git rev-parse HEAD，detached Orca worktree i8-mt015）",
+    "prereq_hash_check": "49/49 文件哈希逐项复算一致后才开工；收尾重放 49/49 仍逐字一致（verification/05-prereq-recompute.txt）——runtime-config.ts 只读消费，零字节改动",
+    "baseline": "458 pass / 0 fail / 0 skip（16 文件，9066 expect）——与 brief 完全一致（专用容器 mt015-impl-pg；首次 fresh-DB 跑 19 个迁移竞态失败为一次性现象，复跑全绿，NOTE 存档）"
+  },
+  "owned_product_files": {
+    "server/src/enterprise/tenancy/scoped-keys.ts": "7a0867cbedefa4c093f99d35bc86cc4ec2a167891112fec0e3b51aeaabcaef95",
+    "server/tests/multitenancy/cache-keys.test.ts": "273b2e4aff05cb977e3c31b43a1d0ab81caa863a3bf5984ca3580e757c950cdb",
+    "server/tests/multitenancy/support/cache-keys.ts": "260b9f38d8da7380b2f9ce66120af3bf546b4aaf2922b02b1fa6614ef6bcf1b3"
+  },
+  "before_hashes_note": "三个交付文件均为新建（before 不存在）；无任何既有文件被本票改动（after-hashes.txt 49 项与 before 逐字一致）",
+  "verdict_summary": "Issue #58 四条验收全部有测试证据（新套件 30 用例，其中 4 例走真实 PostgreSQL + 受限 ob_ent_* 角色 + 真实 runtime-config 服务）：(1) 同一逻辑键在 A/A1、A/A2、B/B1 三作用域下四种键（缓存/事件通道/对象前缀/向量命名空间）两两互异，keyed-cache 演示跨范围 get/has 全 miss（含真实解析产物路径）；(2) 公司 revision 3→4 与覆盖 null→2→3 改变全部四种键，旧 revision 条目在新 revision 键下结构性不可达（含真实库 upsert bump：A 变键、B 逐字节稳定；团队覆盖只动本团队键）；(3) canary 机密作逻辑键不入任何键，逻辑段/向量命名空间为固定 40 hex 单向摘要，整键形状正则钉死（归属原样寻址 + 摘要段之外什么都没有），拒绝消息零回显，模块源码无进程环境读取，污染环境不改变输出；(4) 共享基础设施显式入口 sharedInfrastructureKey 类型上不接受归属，shared/v1/<domain> 无归属段、跨作用域同键、与作用域键永不碰撞、域标签与作用域同规则。聚焦 30/0/0 skip；全量 488/0/0 skip（基线 458+30，17 文件）；typecheck exit 0；触及 3 文件 biome clean；变异 5/5 捕获（MUT1 归属剥离 14 fail、MUT2 版本冻结 8 fail、MUT3 逻辑段裸入键 4 fail、MUT4 命名空间去归属 3 fail、MUT5 共享域校验删除 2 fail；终字节 MUT3 复核仍捕获），还原后哈希一致、聚焦与全量复绿。",
+  "acceptance_criteria_mapping": {
+    "1_same_logical_key_never_hits_across_scopes": "describe 验收 1（6 用例）：三作用域×四种键 pairwise Set size 3；keyed-memory-cache put(A1)/get(A2,B1)=undefined、has=false；对象前缀路径 startsWith 隔离；事件通道同名不撞；确定性逐字节；kind 前缀互异 + 共享键共 5 串互异；数据库面 describe 验收 1（数据库面）：真实 createRuntimeConfigService 解析 A1/A2/B1 → cache 键互异 + 跨范围 miss",
+    "2_old_entries_unused_after_config_version_change": "describe 验收 2（5 用例）：公司 revision 3→4 四种键全变；覆盖 null→2→3 三态互异；旧 revision put 后新 revision get=undefined（旧条目只在自己旧地址、现版本查找永不可达）；scopedKeyOwnership 适配器携带 runtime-config revisions（纯 resolveRuntimeConfig 3 vs 4 vs override → 键变）；数据库面：writeCompanyConfig 真实 upsert revision 3→4 → A 键变、B 逐字节稳定、bump 前缓存条目 bump 后不可达；writeTeamOverride 只动 A1 键，A2/B1 稳定",
+    "3_no_plaintext_credentials_or_reversible_secrets_in_keys": "describe 验收 3（6 用例）：canary（sk-…/PEM 头）作逻辑键不入任何键；摘要段固定 40 hex、纯 ASCII 可读输入同样不可读出；整键正则精确形状（归属 ID 语法 + 版本 + 域 + 40hex，无其他内容）；拒绝消息对含 canary 的非法输入零回显；源码级断言无进程环境读取；污染三个环境变量后输出逐字节不变",
+    "4_shared_infrastructure_stays_global": "describe 验收 4（4 用例）：sharedInfrastructureKey('connection-pool')==='shared/v1/connection-pool' 精确且无 /t= /w= /c= /o= 段；连接池/模板/静态目录三域互异；共享键与同域四种作用域键永不碰撞；共享域标签与作用域同规则（非法域同码拒绝）",
+    "input_hygiene": "describe 输入卫生（6 用例）：TENANT_REQUIRED/WORKSPACE_REQUIRED（缺/空白）；ID 语法（斜杠、点段、控制字符、空格、等号、129 长度、非 ASCII）→ SCOPED_KEY_INVALID_TENANT_ID/WORKSPACE_ID；configVersion 非正整数/非整数 → SCOPED_KEY_INVALID_CONFIG_VERSION（override null 合法）；域标签大小写/下划线/斜杠/前导连字符/数字开头/65 长度 → SCOPED_KEY_INVALID_DOMAIN；logicalKey 空/4097 → SCOPED_KEY_INVALID_LOGICAL_KEY；适配器与直构入口同校验"
+  },
+  "verification_commands": {
+    "focused": "cd server && bun test tests/multitenancy/cache-keys.test.ts --timeout 60000 → 30 pass / 0 fail / 0 skip，exit 0",
+    "full": "cd server && bun test tests/multitenancy/ --timeout 60000 → 488 pass / 0 fail / 0 skip（17 文件），exit 0",
+    "typecheck": "cd server && bun run typecheck → exit 0",
+    "biome": "bunx biome check <3 触及文件> → exit 0",
+    "migration_chain": "migrate-test.ts dry-run → manifest-gated apply，MT004→MT008→MT112→MT012→MT014→MT010→MT009（brief 依赖序，applied|up-to-date 收敛）"
+  },
+  "mutation": {
+    "target_pristine_sha256": "7a0867cbedefa4c093f99d35bc86cc4ec2a167891112fec0e3b51aeaabcaef95",
+    "results": "MUT1..MUT5 全捕获（exit 1）；终字节 MUT3 复核捕获；每次还原哈希一致后复绿；详见 mutation/README.md（含一次假跑与一次无效突变体的诚实记录）"
+  }
+}

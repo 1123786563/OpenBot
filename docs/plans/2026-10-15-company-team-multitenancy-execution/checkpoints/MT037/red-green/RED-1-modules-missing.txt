@@ -1,0 +1,14 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/retrieval-restriction.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '../../src/kb/application/service/kb-restricted-retrieval' from '/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt037/server/tests/multitenancy/retrieval-restriction.test.ts'
+-------------------------------
+
+
+ 0 pass
+ 1 fail
+ 1 error
+Ran 1 test across 1 file. [131.00ms]

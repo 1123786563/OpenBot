@@ -1,0 +1,9 @@
+# MT021-fix 容器销毁（真实执行回显）
+2026-10-17T00:53:35Z
+$ docker rm -f mt021-fix-pg
+mt021-fix-pg
+deletion check exit=0
+$ docker ps --format '{{.Names}}' | grep mt021-fix
+(no mt021-fix container running)
+$ lsof -i :55539 -sTCP:LISTEN
+(no listener on 55539)

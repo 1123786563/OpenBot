@@ -1,0 +1,39 @@
+# MT009 领取时 prereq-manifest 复算（32 项）
+# BASE 行：BASE f0520524f0faa2b4533b9d2f1aa692c8f907ba71
+# 复算于 MT009 编辑后的工作树；MT009 触及的 3 个文件以「撤销本票编辑」的
+# 重建 before 态做哈希对照（重建规则内嵌于复算脚本，脚本随票存档）。
+
+OK   33f24c24684d 33f24c24684d server/scripts/multitenancy/acceptance-harness.ts
+OK   e58bde59de47 e58bde59de47 server/scripts/multitenancy/inventory.ts
+OK   8d1d6ab62947 8d1d6ab62947 server/scripts/multitenancy/migrate-test.ts
+OK   c18817e396d8 c18817e396d8 server/src/app.ts
+OK   06f86e2d8160 06f86e2d8160 server/src/config.ts
+OK   f4ddcd5b3e00 f4ddcd5b3e00 server/src/db/schema/enterprise-tenancy.ts
+OK   1077ec62bcb6 1077ec62bcb6 server/src/enterprise/tenancy/connections.ts
+OK   6f81be58aed4 6f81be58aed4 server/src/enterprise/tenancy/provision.ts
+OK   4da9c4081c70 4da9c4081c70 server/src/enterprise/tenancy/resource-policy.ts
+OK   3d32eb61f2b9 3d32eb61f2b9 server/src/enterprise/tenancy/resource-visibility.ts
+OK   895b0e548513 895b0e548513 server/src/enterprise/tenancy/scope-gate.ts
+OK   59f7e6580929 59f7e6580929 server/src/enterprise/tenancy/startup-checks.ts
+OK   2f8cbef72f8a 2f8cbef72f8a server/src/enterprise/tenancy/store.ts
+OK   07767157087d 07767157087d server/src/enterprise/tenancy/workspace-admin.ts
+OK   29299ecbead7 29299ecbead7 server/src/enterprise/tenancy/workspace-scope-routes.ts
+OK   addc265c7d53 addc265c7d53 server/src/index.ts
+OK   18717a1b08a2 18717a1b08a2 server/tests/multitenancy/acceptance-harness.test.ts
+OK   59f119626792 59f119626792 server/tests/multitenancy/fixtures.test.ts
+OK   c718e8f93499 c718e8f93499 server/tests/multitenancy/inventory.test.ts
+OK   6e206f4db9a8 6e206f4db9a8 server/tests/multitenancy/legacy-anchor.test.ts
+OK   e7057686b398 e7057686b398 server/tests/multitenancy/membership-model.test.ts
+OK   4ede3c5f6d23 4ede3c5f6d23 server/tests/multitenancy/migration-tool.test.ts
+OK   4a0e3ddada30 4a0e3ddada30 server/tests/multitenancy/resource-policy.test.ts
+OK   c25ebf15beb3 c25ebf15beb3 server/tests/multitenancy/rls-core.test.ts
+OK   d9a5a02d1e94 d9a5a02d1e94 server/tests/multitenancy/scope-gate.test.ts
+OK   f30dbc2a51b7 f30dbc2a51b7 server/tests/multitenancy/startup-checks.test.ts
+OK   da29a2a5da60 da29a2a5da60 server/tests/multitenancy/support/fixture.ts
+OK   6280bae6b560 6280bae6b560 server/tests/multitenancy/support/resource-policy.ts
+OK   cdca14caa6fa cdca14caa6fa server/tests/multitenancy/support/scenarios.ts
+OK   7f32f54383ba 7f32f54383ba server/tests/multitenancy/support/scope-gate.ts
+OK   a67cf0b8c6d8 a67cf0b8c6d8 server/tests/multitenancy/support/workspace-scope.ts
+OK   c34bf33ddb56 c34bf33ddb56 server/tests/multitenancy/workspace-scope.test.ts
+
+# 结果：32 项字节一致，0 项 DIFF = !!异常: 

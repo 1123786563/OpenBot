@@ -1,0 +1,20 @@
+# journal after all edits (migrate-test.ts final state) — 2026-10-16T22:19:32Z
+ task_id | steps 
+---------+-------
+ MT004   |     2
+ MT008   |     2
+ MT009   |     2
+ MT010   |     2
+ MT012   |     2
+ MT014   |     2
+ MT016   |     2
+ MT026   |     2
+ MT027   |     2
+ MT041   |     2
+ MT069   |     1
+ MT070   |     1
+ MT076   |     1
+ MT077   |     2
+ MT112   |     4
+(15 rows)
+

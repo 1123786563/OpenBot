@@ -1,0 +1,23 @@
+# MT080 改动面 before/after SHA-256（BASE f0520524f0faa2b4533b9d2f1aa692c8f907ba71）
+# before = git show BASE:<path>（新文件记 NEW）；after = 工作树现值
+M app/src/lib/client.ts
+  before 58a3655bfe0ee05bccb9c20f99764ee6bd1636205cd6e356fa8d97a7923a8cdf
+  after  12d206d70fc7911ad1dce92b59981c824dbdf8177ce1bc71280fe38ea10d7e69
+M app/src/locales/en/tenant.json
+  before 857a2dd1c4a150b0a57f84299011398170748882e7c636d76f348b88d97e441a
+  after  9d2b4b03f819162ddad1a586d9cb761aed1ac656ec4c896927e969844f3b99ee
+M app/src/locales/zh-CN/tenant.json
+  before e039f337e34ac64c130b82dba639205e6c17fcbdbae5a1d630643192eb75d5de
+  after  191c1419baa968be0db2e577f7a23121ac0673deb44fe6d38e9eb60d264e7c36
+M app/src/routeTree.gen.ts
+  before c89a062c67ae30e8f5773e4107f8b32efb6b3033b47fa1ea6bf485054cf428eb
+  after  92ed4ba6325352b0377218bf7c36e91fec8e8498ac9229cee0b0849057c62fd2
+N app/src/lib/enterprise/tenant/selection.ts
+  before NEW
+  after  fc7693cc2ca926495cdb8f78bb6aed28420fa11b5d6d4c40e06552bd81755021
+N app/src/routes/_authed/tenant/selection.tsx
+  before NEW
+  after  d70d958dc84c21ca829dddbaac1a29eeaca29f592011b0339ca96c60ec7908a8
+N app/tests/multitenancy/selection.test.tsx
+  before NEW
+  after  85f34a92fcd507c8561b374e9c39df9b38b6c4b53c8e72a027c5f3093a83c5e4

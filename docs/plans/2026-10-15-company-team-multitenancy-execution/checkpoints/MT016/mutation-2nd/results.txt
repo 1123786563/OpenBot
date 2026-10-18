@@ -1,0 +1,18 @@
+# MT016 变异测试结果（第 2 任）— 全捕获
+
+对象：server/src/enterprise/tenancy/bots-ownership.ts
+pristine sha256: 3bb3288b009b33bee6aa289713f71599b436a48e093f1adc971acfb36ef556b9
+每次变异后从 pristine-bots-ownership.ts 恢复并复验 sha256 一致。
+
+| 变异 | 移除的防线 | 结果 |
+| --- | --- | --- |
+| MUT1 | 可见性门的公司级成员条件（status + epoch） | 失败 ✓（撤权 fail-closed 测试捕获，1 fail） |
+| MUT2 | readMembershipFacts 的 epoch 比对（status-only 门） | 失败 ✓（epoch 策略测试捕获：暂停→恢复后旧 scope 必须仍被拒） |
+| MUT3 | updateBot 的 owner 门（BOT_EDIT_FORBIDDEN） | 失败 ✓（brief 验收 3 越权编辑 + owner revision 2 fail） |
+| MUT4 | hardDeleteOwnedBots 的 owner 钉死 | 失败 ✓（公司作用域清理测试捕获：同公司他人 Bot 被误删） |
+| MUT5 | 可见性门的团队匹配（scope.team == bot.team） | 首轮存活 → 新增「同公司双团队成员」身份/测试 → MUT5b 失败 ✓（MT010 MUT4b 先例：变异暴露测试缺口，补测后捕获） |
+| MUT6 | 23505 → BOT_ID_UNAVAILABLE 映射 | 失败 ✓（同 id 重复创建测试捕获：裸约束错误外泄） |
+
+先例：MT010 MUT4 epoch-check-FIRST-SURVIVED → 补测试 → 捕获；MT009 六变异全捕获。
+MUT5 的新测试同时绿证正向语义：双团队成员在 a1 scope 下可见 a1 Bot、在 a2 scope 下
+不可见且列表不含（44 pass / 0 fail）。

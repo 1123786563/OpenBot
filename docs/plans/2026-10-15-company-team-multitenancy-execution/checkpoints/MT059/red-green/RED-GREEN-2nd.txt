@@ -1,0 +1,11 @@
+# RED (2nd session continuation, 2026-10-18 00:19:34): 27 pass / 1 fail — AC2 cross-team byId leak
+(fail) MT059 AC2 > 同公司跨团队上下文不可见（三元组钉住团队，归属者本人也一样） at openmuse-private-bot.test.ts:528 — expected isCanonicalNotFound(byId) === true, got false
+
+# Fix (GREEN): visibleWithFacts adds row.workspaceId !== scope.workspaceId -> null (triple-pinning second defense line, MT016 same-shape)
+
+# GREEN rerun 2026-10-18 00:19:34:
+
+ 28 pass
+ 0 fail
+ 125 expect() calls
+Ran 28 tests across 1 file. [39.74s]
