@@ -48,7 +48,6 @@ export default defineConfig({
     "./src/db/schema/proactive.ts",
     "./src/db/schema/demonstrations.ts",
     "./src/db/schema/delivery.ts",
-    "./src/db/schema/gateway.ts",
     "./src/db/schema/enterprise-tenancy.ts",
     "./src/db/schema/enterprise-conversations.ts",
     "./src/db/schema/enterprise-expert-versions.ts",

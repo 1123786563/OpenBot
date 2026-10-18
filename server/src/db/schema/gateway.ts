@@ -941,3 +941,22 @@ export const gatewayKeyDriftEvents = pgTable(
     ),
   ],
 );
+
+/**
+ * The gateway connection configuration, one singleton row (`id = 'default'`).
+ *
+ * Ported from the issue5-207-2 checkpoint (b5 wave-1 gateway endpoint config, ticket #207) so the
+ * archived gateway/config-store.ts + gateway/endpoint.ts sources typecheck against the integrated
+ * tree. Not yet wired into the runtime route mounting; the `gateway_configs` table is created by a
+ * future migration when the seam is wired (see integration record 2026-10-18 round 2).
+ */
+export const gatewayConfigs = pgTable("gateway_configs", {
+  id: text("id").primaryKey(),
+  baseUrl: text("base_url").notNull(),
+  requestTimeoutMs: integer("request_timeout_ms").notNull().default(10_000),
+  configVersion: integer("config_version").notNull(),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
