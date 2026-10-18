@@ -7,7 +7,10 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { StateNotice } from "@/components/ai-observability/state-notice";
+import {
+  observationScreenFault,
+  StateNotice,
+} from "@/components/ai-observability/state-notice";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -89,12 +92,11 @@ export function ObservationDatasetsBody({ botId }: { botId: string }) {
   if (screen.isPending) return null;
 
   // A transport-level error is the store failing to answer — the unavailable sentence.
+  // The verdict is the shared derivation (R5-3): the page used to carry a private
+  // inline copy of observationScreenFault, forked from it at the answer-missing
+  // branch, and had to keep up with the helper's semantics by hand.
   const answer = screen.data;
-  const fault = screen.error
-    ? "unavailable"
-    : answer === undefined || answer.view === "fault"
-      ? (answer?.fault ?? "unavailable")
-      : null;
+  const fault = observationScreenFault(screen);
 
   if (fault !== null) {
     return (

@@ -70,6 +70,18 @@ let detailHandler: () => Response | Promise<Response> = () =>
 let submitHandler: () => Response | Promise<Response> = () =>
   Response.json(submittedBody());
 let resultsHandler: () => Response = () => Response.json(reportBody());
+
+/*
+ * Raw-JSON surgery for the 1e999 bodies (R5-2): JSON.stringify cannot emit a
+ * non-finite number (it serializes Infinity to null), and the defect is exactly a
+ * body whose JSON carries 1e999 — JSON.parse hands the page a typeof-number Infinity
+ * the wire guard's typeof check passes. The replacement strings are unique in the
+ * default report body.
+ */
+const rawResults = (replacer: (raw: string) => string): Response =>
+  new Response(replacer(JSON.stringify(reportBody())), {
+    headers: { "content-type": "application/json" },
+  });
 let cancelHandler: () => Response = () =>
   Response.json({ executionId: "exec-1", state: "cancelled" });
 
@@ -1047,6 +1059,105 @@ describe("the round-4 guard claims the page's whole render face (OCR round 4)", 
         : sample,
     );
     resultsHandler = () => Response.json({ ...body, samples });
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await view.findByText("Upstream unavailable");
+  });
+});
+
+describe("numbers the wire guard cannot tell from real scores render as absence (OCR round 5, R5-2)", () => {
+  /*
+   * R2-08's render-face discipline (SideRow on the comparison page) never reached
+   * this page: the mean cell, the sample score cell and the count statistics
+   * interpolate whatever passed the guard's typeof check — and JSON 1e999 is a
+   * typeof-number Infinity. A hostile or damaged upstream must not write
+   * "Infinity" into the verdict; a non-finite renders as its field's own absence,
+   * never as a value.
+   */
+  test("a mean of Infinity reads the absence sentence, never Infinity", async () => {
+    resultsHandler = () =>
+      rawResults((raw) =>
+        raw.replace('"meanScore":0.75}', '"meanScore":1e999}'),
+      );
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await waitFor(() => expect(pageText(view)).toContain("8 frozen cases"));
+    expect(pageText(view)).not.toContain("Infinity");
+    expect(pageText(view)).toContain(
+      "No sample was scored — a missing score is not a zero.",
+    );
+  });
+
+  test("a sample score of Infinity keeps its reason text, never Infinity", async () => {
+    resultsHandler = () =>
+      rawResults((raw) =>
+        raw.replace('"score":1,"reason"', '"score":1e999,"reason"'),
+      );
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await waitFor(() => expect(pageText(view)).toContain("comparison_false"));
+    expect(pageText(view)).not.toContain("Infinity");
+    expect(pageText(view)).toContain("0.5");
+  });
+
+  test("a class count of Infinity drops its statistic, never prints Infinity", async () => {
+    resultsHandler = () =>
+      rawResults((raw) =>
+        raw.replace(
+          '"sampleBase":8,"scored":2,',
+          '"sampleBase":8,"scored":1e999,',
+        ),
+      );
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await waitFor(() => expect(pageText(view)).toContain("8 frozen cases"));
+    expect(pageText(view)).not.toContain("Infinity");
+    expect(pageText(view)).not.toContain("Scored:");
+  });
+
+  test("execution counts of Infinity drop their statistics, the record stays alive", async () => {
+    resultsHandler = () =>
+      rawResults((raw) =>
+        raw.replace(
+          '"caseCount":8,"toolRejections":2,',
+          '"caseCount":1e999,"toolRejections":1e999,',
+        ),
+      );
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await waitFor(() => expect(pageText(view)).toContain("Completed"));
+    expect(pageText(view)).not.toContain("Infinity");
+    // Both execution statistics are gone — the base sentence the summary still
+    // answers from its own finite sampleBase, and the tool-refusal count with it.
+    expect(pageText(view)).not.toContain("tool call");
+    // The summary ledger's own finite counts still speak.
+    expect(pageText(view)).toContain("Scored: 2");
+  });
+});
+
+describe("a rule row without its verdict word renders unavailable, never undefined (OCR round 5, R5-7)", () => {
+  /*
+   * The scored reason's guard claimed only rule.id/status ("the claim stops where
+   * the crash stops"), but the row interpolates each non-passed rule's verdict
+   * word — a failed rule's reason, any other status's code — so a damaged 200 body
+   * that dropped the word rendered the literal "undefined" as the verdict. The
+   * claim follows the status discrimination the render makes.
+   */
+  test("a failed rule without its reason says unavailable", async () => {
+    resultsHandler = () =>
+      rawResults((raw) =>
+        raw.replace(
+          '"id":"length","index":1,"status":"failed","reason":"comparison_false"}',
+          '"id":"length","index":1,"status":"failed"}',
+        ),
+      );
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await view.findByText("Upstream unavailable");
+  });
+
+  test("an errored rule without its code says unavailable", async () => {
+    resultsHandler = () =>
+      rawResults((raw) =>
+        raw.replace(
+          '"id":"length","index":1,"status":"failed","reason":"comparison_false"}',
+          '"id":"length","index":1,"status":"error"}',
+        ),
+      );
     const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
     await view.findByText("Upstream unavailable");
   });

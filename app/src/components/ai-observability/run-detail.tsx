@@ -21,6 +21,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { observationRunDetailQueryOptions } from "@/lib/ai-observability/runs";
 import { useDateTime } from "@/lib/i18n/datetime";
+import type { SafeRecord } from "../../../../shared/ai-observability";
 import { ObservationRunSteps, projectedValueText } from "./run-steps";
 import { formatDuration, STATE_ICONS } from "./runs-list";
 import { observationScreenFault, StateNotice } from "./state-notice";
@@ -71,6 +72,37 @@ function upstreamStatusCopy(
         note: t("detail.upstream.absentDescription"),
       };
   }
+}
+
+/**
+ * The metadata section's answer (R5-5): the projected rows when the upstream record
+ * is present; the record's own three-state words when there is no record to project
+ * from — unknown (unreconciled) or outside the recent window (absent). "No metadata
+ * was projected" is a fact only a present record can state (the file-head invariant:
+ * named as unavailable with its reason, never as zero or a guess), so it stays the
+ * present-but-empty record's answer — the one true empty.
+ */
+function metadataSection(
+  present: { metadata: SafeRecord } | null,
+  upstreamCopy: { value: string; note: string | null },
+  t: RunTranslate,
+):
+  | { kind: "record"; note: string | null; value: string }
+  | { kind: "rows"; rows: readonly FactRowSpec[] } {
+  if (present === null)
+    return {
+      kind: "record",
+      note: upstreamCopy.note,
+      value: upstreamCopy.value,
+    };
+  return {
+    kind: "rows",
+    rows: Object.entries(present.metadata).map(([key, value]) => ({
+      label: key,
+      value:
+        projectedValueText(value, t("marker.truncated")) ?? t("marker.omitted"),
+    })),
+  };
 }
 
 export function ObservationRunDetail({
@@ -209,15 +241,7 @@ export function ObservationRunDetail({
     },
   ];
 
-  const metadata: readonly FactRowSpec[] =
-    present === null
-      ? []
-      : Object.entries(present.metadata).map(([key, value]) => ({
-          label: key,
-          value:
-            projectedValueText(value, t("marker.truncated")) ??
-            t("marker.omitted"),
-        }));
+  const metadata = metadataSection(present, upstreamCopy, t);
 
   return (
     <>
@@ -234,10 +258,18 @@ export function ObservationRunDetail({
       </PageSection>
 
       <PageSection title={t("detail.section.metadata")}>
-        {metadata.length === 0 ? (
-          <PageEmpty>{t("detail.metadataEmpty")}</PageEmpty>
+        {metadata.kind === "rows" ? (
+          metadata.rows.length === 0 ? (
+            <PageEmpty>{t("detail.metadataEmpty")}</PageEmpty>
+          ) : (
+            <FactRows rows={metadata.rows} />
+          )
         ) : (
-          <FactRows rows={metadata} />
+          <StateNotice
+            className="mt-4"
+            description={metadata.note ?? metadata.value}
+            title={metadata.value}
+          />
         )}
       </PageSection>
 

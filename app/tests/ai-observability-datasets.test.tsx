@@ -27,6 +27,7 @@ import type {
 } from "../../shared/ai-observability-datasets";
 import { ObservationDatasetDetailPage } from "../src/components/ai-observability/dataset-detail";
 import { ObservationDatasetsBody } from "../src/components/ai-observability/datasets-list";
+import { observationScreenFault } from "../src/components/ai-observability/state-notice";
 // English copy: the i18n bundles initialize on import, so assertions see real sentences.
 import "@/lib/i18n";
 import { queryClient } from "../src/query-client";
@@ -816,6 +817,39 @@ describe("the screen conditions stay distinct (acceptance 5)", () => {
     const view = draw();
     await view.findByText("Upstream unavailable");
     expect(view.queryByText("Refunds")).toBeNull();
+  });
+});
+
+describe("the screen verdict is the shared derivation (R5-3)", () => {
+  test("the page's verdict words are observationScreenFault's, word for word", () => {
+    /*
+     * R5-3: the datasets list carried a private inline copy of the shared four-word
+     * derivation — forked from observationScreenFault at the answer-missing branch
+     * (the copy said "unavailable" where the helper says null). The page now renders
+     * state-notice's verdict, so the contract it must satisfy is the helper's own:
+     * a transport error is the store failing to answer; a fault view passes through
+     * verbatim; anything else means the page has something of its own to draw. The
+     * rendered sentences themselves are pinned in "the screen conditions stay
+     * distinct" above.
+     */
+    expect(observationScreenFault({ error: new TypeError("store down") })).toBe(
+      "unavailable",
+    );
+    for (const fault of ["disabled", "forbidden", "unavailable"] as const) {
+      expect(
+        observationScreenFault<"disabled" | "forbidden" | "unavailable">({
+          error: null,
+          data: { view: "fault", fault },
+        }),
+      ).toBe(fault);
+    }
+    expect(
+      observationScreenFault({
+        error: null,
+        data: { view: "list" },
+      }),
+    ).toBeNull();
+    expect(observationScreenFault({ error: null })).toBeNull();
   });
 });
 

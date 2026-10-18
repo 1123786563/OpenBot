@@ -25,7 +25,7 @@ import {
   observationAdminSummaryQueryOptions,
 } from "@/lib/ai-observability/admin";
 import { useDateTime } from "@/lib/i18n/datetime";
-import { StateNotice } from "./state-notice";
+import { observationScreenFault, StateNotice } from "./state-notice";
 
 /*
  * The administrator's observability page (Issue #42): the scope summary, the collection
@@ -46,6 +46,11 @@ export function ObservationAdminSummaryPage() {
   const [window, setWindow] = useState<AdminTimeWindowId>("all");
 
   const screen = useQuery(observationAdminSummaryQueryOptions(window));
+  // The verdict is the shared derivation (R5-4): the page used to carry the same
+  // transport→unavailable / fault-view pass-through as a three-layer inline ternary,
+  // the last screen deriving it by hand instead of using the helper in this module.
+  const answer = screen.data;
+  const fault = observationScreenFault(screen);
 
   return (
     <PageShell title={t("page.title")} description={t("page.description")}>
@@ -67,20 +72,14 @@ export function ObservationAdminSummaryPage() {
         </p>
       </div>
 
-      {screen.isPending ? null : screen.error ? (
+      {screen.isPending ? null : fault !== null ? (
         <StateNotice
           className="mt-6"
-          description={t("availability.unavailable.description")}
-          title={t("availability.unavailable.title")}
+          description={t(`availability.${fault}.description`)}
+          title={t(`availability.${fault}.title`)}
         />
-      ) : screen.data?.view === "fault" ? (
-        <StateNotice
-          className="mt-6"
-          description={t(`availability.${screen.data.fault}.description`)}
-          title={t(`availability.${screen.data.fault}.title`)}
-        />
-      ) : screen.data === undefined ? null : (
-        <AdminSummaryBody summary={screen.data.result} />
+      ) : answer === undefined || answer.view !== "summary" ? null : (
+        <AdminSummaryBody summary={answer.result} />
       )}
     </PageShell>
   );
