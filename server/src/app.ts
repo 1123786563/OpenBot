@@ -1503,9 +1503,21 @@ export function createApp(
       if (aiObservabilityCancelForActor) {
         try {
           await aiObservabilityCancelForActor(userId);
-        } catch {
-          // The revoke itself already succeeded; the worker's reauthorization
-          // is the backstop that catches a missed cancellation.
+        } catch (error) {
+          // T33: best-effort beside the revoke — the worker's reauthorization
+          // is the backstop that catches a missed cancellation — but not
+          // SILENT (OCR R5-40): the same operation in index.ts's
+          // deletionShutdown logs opik-export-cancel-failed with the userId,
+          // and an administrator tracing a cancellation that missed needs the
+          // same fact here. Same key, same fields, never a 500.
+          log.warn(
+            {
+              err: error,
+              type: "opik-export-cancel-failed",
+              userId,
+            },
+            "opik-export-cancel-failed",
+          );
         }
       }
     }

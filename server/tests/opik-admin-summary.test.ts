@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { getLogger } from "../../shared/logger";
 import type { AgentProfile } from "../src/agents/profile-types";
 import type {
   AdminSummary,
@@ -569,5 +570,43 @@ describe("the control-plane cancel seam (T32 wiring)", () => {
     );
     expect(response.status).toBe(200);
     expect(cancelled).toEqual([]);
+  });
+
+  test("a failed cancel is logged, not swallowed — index.ts's deletionShutdown shape (OCR R5-40)", async () => {
+    // app.ts's revoke-route catch used to be EMPTY: the same operation in
+    // index.ts's deletionShutdown logs opik-export-cancel-failed with the
+    // userId, and an administrator tracing a cancellation that missed needs
+    // the same fact here. Best-effort stays best-effort — the revoke still
+    // succeeds — but the failure becomes observable instead of silent.
+    // Built before the logger is patched: config load has warnings of its own.
+    const { app } = adminApp(async () => {
+      throw new Error("cancel store gone");
+    });
+    const logger = getLogger("server");
+    const warns: Array<{ obj: Record<string, unknown>; msg: string }> = [];
+    const originalWarn = logger.warn;
+    logger.warn = ((obj: Record<string, unknown>, msg?: string) => {
+      warns.push({ obj, msg: msg ?? "" });
+    }) as typeof logger.warn;
+    let response: Response;
+    try {
+      response = await app.request(
+        "http://openbot.test/api/admin/people/user-gone/access",
+        { method: "POST", body: JSON.stringify({ revoked: true }) },
+      );
+    } finally {
+      logger.warn = originalWarn;
+    }
+    // Best-effort by contract: the revoke itself already succeeded.
+    expect(response.status).toBe(200);
+    // The failure is on the record, aligned with index.ts: same key, same
+    // userId field, the error carried for the trail.
+    expect(warns).toHaveLength(1);
+    expect(warns[0].msg).toBe("opik-export-cancel-failed");
+    expect(warns[0].obj).toMatchObject({
+      type: "opik-export-cancel-failed",
+      userId: "user-gone",
+    });
+    expect(warns[0].obj.err).toBeInstanceOf(Error);
   });
 });
