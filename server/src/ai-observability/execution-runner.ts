@@ -108,11 +108,16 @@ export function createProductionEvaluationCaseRunner(
     // refusal BEFORE the billing admission (zero holds, zero provider calls), and
     // the observation carries the same refused ending the admission path does.
     // A truncation is still reviewed text (the judge's ruling) and proceeds — only
-    // an omitted envelope, the field withheld outright, refuses (OCR R5-18).
+    // an omitted envelope, the field withheld outright, refuses (OCR R5-18). The
+    // frozen parameters are held to the projected standard (OCR R5-20): a
+    // truncated or omitted top-level envelope would dial gateway defaults while
+    // the case still costs money — the same stripped-dial judgment — so a
+    // non-projected parameters record refuses with the texts.
     if (
       context.config.modelName.state === "omitted" ||
       context.config.prompt.state === "omitted" ||
-      context.frozenCase.safeInput.state === "omitted"
+      context.frozenCase.safeInput.state === "omitted" ||
+      context.config.modelParameters.state !== "projected"
     ) {
       report({
         ...base,
