@@ -1,0 +1,3 @@
+# typecheck 终态 — bun run typecheck (server/ = tsc --noEmit)
+$ tsc --noEmit
+exit=0

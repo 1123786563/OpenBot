@@ -1,0 +1,14 @@
+# base migrate — 2026-10-18T06:37:41Z
+command: bun scripts/enterprise-test-db.ts migrate (server/), seven-var env
+{"type":"migrations-applied","status":"ok"}
+migrate-exit=0
+roles:
+ ent_mt034_data
+ ent_mt034_directory
+ ent_mt034_kb
+ ent_mt034_operator
+ ob_ent_data
+ ob_ent_directory
+ ob_ent_identity_operator
+ ob_ent_operator
+

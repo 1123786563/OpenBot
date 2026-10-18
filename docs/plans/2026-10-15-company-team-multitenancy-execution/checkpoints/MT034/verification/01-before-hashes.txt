@@ -1,0 +1,5 @@
+# MT034 before-hashes — 2026-10-18T06:39:00Z (seam files to be touched, prereq state)
+8a0b95884997ceb909200929ab5b02321d4312fb82c64040bba0eacc6d69c495  server/src/db/schema/index.ts
+e3365f7fd36117ee474ef21c36947a27c24a4cd1aa254257ed3d9847df5a2d34  server/scripts/multitenancy/migrate-test.ts
+100cdebcd5d350419e8592b8d4e5caacb4706287f1d305bac3bf933428ea7a29  server/tests/multitenancy/migration-tool.test.ts
+cdaddabc4900f97bd02d8014d8a026cdd79145e6f9447cc3c02b5d2b2ddbdbff  server/src/index.ts

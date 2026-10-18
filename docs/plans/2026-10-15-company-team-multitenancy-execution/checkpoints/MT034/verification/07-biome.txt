@@ -1,0 +1,4 @@
+# biome 终态 — 2026-10-18T06:53:07Z
+本票触及/新建文件（7）biome check：0 错误 0 警告（上方输出 No fixes applied）
+
+src/index.ts（共享窄缝）lint 残留 5 处 = 4 noConsole + 1 noNonNull；经 pre-edit 重建副本（移除本票 import 块与装配块，/tmp/index-pre-edit.ts + server/src 临时探针副本复跑）反向核验为先于本票的存量（MT031 D4 同款）：pre-edit 位置 868/896/930/2032（noConsole）+ 4897（noNonNull），post-edit 平移至 872/900/934/2066 + 4931，恰好等于本票新增行数造成的位移。本票新增 0 处 lint 发现。

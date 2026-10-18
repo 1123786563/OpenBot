@@ -1,0 +1,14 @@
+# RESTORE / frozen-surfaces — 284 项 prereq 快照 after 逐位复算
+
+逐位一致: 280 / 284
+例外（本票披露窄缝，前像见 01-before-hashes.txt）: 4
+  CHANGED: server/scripts/multitenancy/migrate-test.ts
+  CHANGED: server/src/db/schema/index.ts
+  CHANGED: server/src/index.ts
+  CHANGED: server/tests/multitenancy/migration-tool.test.ts
+
+逐文件 diff 范围核验：
+  - server/src/db/schema/index.ts：纯追加 1 行 barrel export（排序位 enterprise-runtime-config 与 enterprise-sso-scim 之间）
+  - server/scripts/multitenancy/migrate-test.ts：纯追加 MT034 任务常量 + TASKS map 尾部注册 1 行（链尾）；biome format 仅重排本票新增块引号风格
+  - server/tests/multitenancy/migration-tool.test.ts：仅穷举断言数组追加 "MT034" + 裁决注释（ruling #5 第 21 次沿用）
+  - server/src/index.ts：纯追加 import 块（4 行）+ sharedApprovals 装配块（紧随 credentialLease 之后）；无任何既有行改动

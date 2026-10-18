@@ -1,0 +1,12 @@
+# MT034 全量基线（改动前，2026-10-18T06:38:27Z）
+command: bun test tests/multitenancy/ --timeout 60000 (server/)
+env: 七变量（/tmp/mt034-env.sh，0600）；container mt034-impl-pg @ 127.0.0.1:55593，db openbot_enterprise_w16b_test；prereq chain 22 任务（19+波次15三票）已落账
+node_modules 本轮新装（bun install 1415 packages）
+brief 基线口径 1222/0/47
+
+(pass) MT059 存储契约：成员重验、受限角色、迁移确定性 > 无租户上下文 RLS fail-closed：data 角色读不到任何私有 Bot 行 [0.59ms]
+
+ 1222 pass
+ 0 fail
+ 13370 expect() calls
+Ran 1222 tests across 47 files. [27.90s]
