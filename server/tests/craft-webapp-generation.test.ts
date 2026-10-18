@@ -75,6 +75,23 @@ function fileApiWith(
   };
 }
 
+/**
+ * The agent-sandbox gateway's ACTUAL absent shape: a path that does not exist
+ * answers `200 {"type":"text","content":""}`, not 404 — so readFile sees the
+ * empty string where the "404 ⇒ null ⇒ absent" contract expects null. Every
+ * absent file in a brand-new session reads "" through this shape; a judgment
+ * that only folds null into absent misreads every unassembled session as
+ * assembled, which is the root-form first-version script bug this suite now
+ * pins (the field reproduction: appBody "" + marker "" answered "legacy").
+ */
+function fileApiWithGatewayAbsentShape(files: Record<string, string> = {}) {
+  return {
+    async readFile(path: string) {
+      return files[path] ?? "";
+    },
+  };
+}
+
 describe("readWebappGeneration — the D10 judgment signal", () => {
   test(`marker content ${WEBAPP_GENERATION_CURRENT} answers "current"`, async () => {
     const generation = await readWebappGeneration(
@@ -120,6 +137,53 @@ describe("readWebappGeneration — the D10 judgment signal", () => {
     );
     expect(generation).toBe("current");
     expect(reads).toEqual([APP_BODY]); // RED pre-fix: the marker was read first
+  });
+
+  test("an empty-string app-body read (the agent-sandbox absent shape) answers current — the unassembled population the null-only contract misses", async () => {
+    // The deployment's gateway answers 200 {"content":""} for a path that does
+    // not exist, so a brand-new session's app-body probe reads "" — not null —
+    // and the old judgment treated the empty string as an ASSEMBLED app: the
+    // marker was consulted, read "" too (≠ "2"), and the session answered
+    // "legacy". That demotion is the root-form first-version script (no
+    // ONYX_WEBAPP_BASE_PATH) and the permanent /<label>/api/probe 404 the
+    // acceptance gate kept hitting. An empty read IS the absent shape under
+    // this gateway's wording: the copy branch will run on the next start, so
+    // the answer must already be current. RED pre-fix: this read answered
+    // "legacy" for a session that has no app at all.
+    const generation = await readWebappGeneration(
+      fileApiWithGatewayAbsentShape(),
+      DIRECTORY,
+    );
+    expect(generation).toBe("current");
+  });
+
+  test("a whitespace-only app-body read answers current — the same corrupt-state arm as the empty read", async () => {
+    // Same rule, one hair wider: a package.json of pure whitespace is no more
+    // an assembled app than a 0-byte one — the trim discipline the marker
+    // branch already applies governs the probe too, so the self-healing copy
+    // branch is the answer for every contentless read.
+    const generation = await readWebappGeneration(
+      {
+        async readFile() {
+          return "   \n";
+        },
+      },
+      DIRECTORY,
+    );
+    expect(generation).toBe("current");
+  });
+
+  test("an empty marker read on an ASSEMBLED app stays legacy — under the gateway's wording an empty marker IS the missing marker (D10)", async () => {
+    // The empty-string fold must stop at the probe: an app that EXISTS with a
+    // marker that reads "" (gateway wording for the missing marker) is exactly
+    // the pre-marker population D10 protects — "not stamped" and "foreign"
+    // both answer legacy here, so the D10 verdict is unchanged. The fix may
+    // not let an empty marker read flip an assembled app to current.
+    const generation = await readWebappGeneration(
+      fileApiWithGatewayAbsentShape({ [APP_BODY]: '{"name":"web"}' }),
+      DIRECTORY,
+    );
+    expect(generation).toBe("legacy");
   });
 
   test("a marker present but the app ABSENT answers current — the next start rebuilds and re-stamps (fix-ocr17)", async () => {
@@ -253,6 +317,25 @@ describe("generationGatedWebappBasePathFor — D10 branches the dev-form mount",
     // "/" while webapp-info (reading the fresh marker) handed out /<label> —
     // a silent, non-self-healing 404 on every dev-form first build.
     const resolve = gated({}, () => LABEL);
+    expect(await resolve("cs-x")).toBe(LABEL);
+  });
+
+  test("an UNASSEMBLED session under the empty-string gateway shape still passes the dev mount through — the first-version script must carry the basePath", async () => {
+    // The field breach, end to end: the agent-sandbox gateway answers
+    // 200 {"content":""} for every path of a brand-new session, so the
+    // null-only absent contract never fired, the judgment answered "legacy",
+    // and writeWebappBootstrapScript shipped the ROOT-form first-version
+    // script (no ONYX_WEBAPP_BASE_PATH, empty .webapp-mount) — the exact
+    // sandbox evidence (cs-0c84e9f32cebee7962c2903d) behind the acceptance
+    // probe's permanent /<label>/api/probe 404. The gate must treat the
+    // empty-read session exactly like the empty-directory one above.
+    // RED pre-fix: this resolved to null and the script shipped root-form.
+    const resolve = generationGatedWebappBasePathFor({
+      webappBasePathFor: () => LABEL,
+      fileApiFor: () => fileApiWithGatewayAbsentShape() as never,
+      botIdFor: async () => "craft-bot",
+      sessionDirectoryFor: () => DIRECTORY,
+    });
     expect(await resolve("cs-x")).toBe(LABEL);
   });
 
