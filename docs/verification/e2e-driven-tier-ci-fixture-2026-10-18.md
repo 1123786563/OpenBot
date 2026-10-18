@@ -192,3 +192,28 @@ cd server && KB_DATABASE_URL=postgres://openbot:openbot@127.0.0.1:55433/kb_mastr
 测试工具链，因此继续按 `范围边界` 一节排除；入口扫描现在会遍历它的 package.json，但里面没有
 `bun test`，不会被误报成缺口。
 
+
+## 干净的一轮（无并发、夹具完整）：`runner-difference` 归零
+
+上一轮的 `.e2e/after-route` 被我自己并发起的 scoped 验证污染（两组抢 4600），已作废。等进程清空后
+重跑一次全量（`.e2e/clean-confirm`，两套 pgvector + kb 库 + Qdrant 全在）：
+
+```
+Test Files  29 failed | 555 passed | 14 skipped (598)
+Tests      180 failed | 7929 passed | 57 skipped (8166)     Duration 9m36s
+```
+
+同一份报告再过一遍三档归因（`scripts/e2e-vs-bun.mjs`，对照树 `~/.cache/openbot-e2e/live2` 是
+10-19 01:00 那份 HEAD + 迁移前套件文本）：
+
+| 归因 | 文件数 |
+| --- | --- |
+| `already-red-at-baseline` | 16 |
+| `red-on-old-runner-with-current-code` | 12 |
+| `no-pre-migration-suite`（驱动层自身） | 1 |
+| **`runner-difference`** | **0** |
+
+也就是说原生层里**没有一条红的解释是"迁移让它变红"**：29 个红文件要么在迁移前就红，要么用现网代码
+在旧运行器上同样红。剩下那一条曾经存在的运行器差异（`workshop-preview.test.ts`）已由上一轮送回
+Bun 层，本轮它作为驱动组的一部分通过。这一轮之后，`archive/` 不再入库的归因明细只作为本地证据，
+仓库里登记的是上面的数字与复现命令。
