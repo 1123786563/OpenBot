@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "tool": "multitenancy-migrate-test",
+  "taskId": "MT009",
+  "planDigest": "b7178b912e692b8cc679d87025933294a28928bc56d09e6c635fdd3ebca00f38",
+  "steps": [
+    {
+      "number": 1,
+      "name": "0001_mt009_resource_dependency_table.sql",
+      "statementDigest": "ebe63cf6d4628c09991130b5620de46001745d14776fef5ca835f055b7a700ea",
+      "statementCount": 2
+    },
+    {
+      "number": 2,
+      "name": "0002_mt009_dependency_rls_policies.sql",
+      "statementDigest": "2d6c59b91813a1e6da5a9c77162c15ab97c6b0d19ecdd67ed6f49a36f13c3473",
+      "statementCount": 8
+    }
+  ]
+}

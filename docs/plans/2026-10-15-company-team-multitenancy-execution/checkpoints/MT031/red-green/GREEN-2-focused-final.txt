@@ -1,0 +1,9 @@
+# MT031 GREEN-2 focused (post-refactor) — 2026-10-17T12:28:14Z
+command: bun test tests/multitenancy/plugin-install.test.ts --timeout 60000
+
+(pass) MT031 plugin catalog & install ownership: catalog is read-only, installs are not global (Issue #74) > storage contract for the three plugin tables > unverified database channels are fail-closed at construction [2.71ms]
+
+ 30 pass
+ 0 fail
+ 247 expect() calls
+Ran 30 tests across 1 file. [3.93s]

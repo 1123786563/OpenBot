@@ -1,0 +1,15 @@
+{
+  "ticket": "MT038",
+  "wave": 13,
+  "integratedAt": "2026-10-17T09:07:43Z",
+  "baselineBefore": "896 pass / 0 fail / 34 files / 16 tasks",
+  "baselineAfter": "990 pass / 0 fail / 38 files / 16 tasks (MT000 + 16)",
+  "deliverables": "kb-document-lifecycle 三文件（68f542d3 修复版/b88ceafc/9fc92ff6）+27 用例",
+  "chain": "MT004→MT008→MT112→MT012→MT014→MT010→MT009→MT077→MT026→MT076→MT069→MT016→MT041→MT027→MT028→MT070",
+  "typecheck": 0,
+  "biome": "new 10 files clean (BASE src/index.ts 4+1 + app.ts/provider-oauth.test.ts pre-existing per MT030 review F1)",
+  "cargo": null,
+  "container": "w13verify-pg removed, residual=0",
+  "review": "PASS (MT018: C1 502-residue closed by controlled restore; MT030: 2 low brief/env; MT038: L1 low closed via fix; MT071: F1 medium + F2 low closed via fix 12→15 用例; MT098: 3 low deferred to MT101)",
+  "fullRun": "run1 989/1 (MT041 clock-race flake, job-ownership 3x rerun 23/0 + run2 990/0 confirmed)"
+}

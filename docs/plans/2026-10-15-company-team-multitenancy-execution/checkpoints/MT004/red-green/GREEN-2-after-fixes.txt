@@ -1,0 +1,23 @@
+bun test v1.4.2 (50a8a8387)
+
+server/tests/multitenancy/membership-model.test.ts:
+(pass) issue #47 criterion 4: migration previews dry-run and replays via the MT003 tool > MT004 is a registered task whose plan is deterministic [0.22ms]
+(pass) issue #47 criterion 4: migration previews dry-run and replays via the MT003 tool > dry-run previews the pending statement plan before anything is applied [0.08ms]
+(pass) issue #47 criterion 4: migration previews dry-run and replays via the MT003 tool > apply materializes the table in the dedicated test database and replays as up-to-date [32.00ms]
+(pass) issue #47 criterion 4: migration previews dry-run and replays via the MT003 tool > the migration is expand-only: exactly one new table, no existing table or policy changed [14.35ms]
+(pass) issue #47 criterion 1: one membership per (tenant, workspace, principal) > the first membership row inserts and reads back with defaults [5.68ms]
+(pass) issue #47 criterion 1: one membership per (tenant, workspace, principal) > a duplicate (tenant, workspace, principal) insert is rejected by the database [4.98ms]
+(pass) issue #47 criterion 2: composite foreign keys prove both containment facts > a workspace from another company cannot be joined to this company's member [1.87ms]
+(pass) issue #47 criterion 2: composite foreign keys prove both containment facts > a principal who is not a member of this company is rejected [1.01ms]
+(pass) issue #47 criterion 2: composite foreign keys prove both containment facts > the same principal joins a second team of the same company without conflict [4.72ms]
+(pass) issue #47 criterion 3: status supports active/suspended and epoch is a positive monotonic version > status accepts exactly active and suspended and nothing else [4.81ms]
+(pass) issue #47 criterion 3: status supports active/suspended and epoch is a positive monotonic version > epoch must be a positive integer [1.74ms]
+(pass) issue #47 criterion 3: status supports active/suspended and epoch is a positive monotonic version > epoch strictly increases along the application write path (read current, write current + 1) [20.85ms]
+(pass) issue #47 criterion 3: status supports active/suspended and epoch is a positive monotonic version > suspending keeps the row but the stored status flips to suspended [4.17ms]
+(pass) restricted capability roles can use the new table through its minimal RLS policies > operator role can insert with its tenant context and cannot without it [48.59ms]
+(pass) restricted capability roles can use the new table through its minimal RLS policies > data role reads only its own memberships inside its tenant context [41.86ms]
+
+ 15 pass
+ 0 fail
+ 67 expect() calls
+Ran 15 tests across 1 file. [1409.00ms]

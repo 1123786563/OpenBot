@@ -1,0 +1,34 @@
+# MT027 第 2 任 biome 收尾复跑（2026-10-16T20:46:56Z）
+command: bun x biome check <8 触及文件>（src/index.ts src/db/schema/index.ts src/db/schema/enterprise-credentials.ts src/enterprise/tenancy/credential-ownership.ts scripts/multitenancy/migrate-test.ts tests/multitenancy/migration-tool.test.ts tests/multitenancy/credentials-ownership.test.ts tests/multitenancy/support/credentials-ownership.ts）
+
+发现并修复缺口：第 1 任 05-biome-final 存档后其 support 文件仍有一处 format 违规
+（setCompanyMembershipStatusWithoutEpochBump 签名超长行）。第 2 任已修（纯换行，零语义），
+修复后触及文件中 MT027 新文件 7 个全 clean。
+
+    1872      │ - ······JSON.stringify({
+    1873      │ - ········type:·"memory-sweep-error",
+    1874      │ - ········error:·error·instanceof·Error·?·error.name·:·"UnknownError",
+    1875      │ - ········context:·{·operation:·"mirrorPending"·},
+    1876      │ - ········timestamp:·new·Date().toISOString(),
+    1877      │ - ······}),
+    1878      │ - ····);
+    1879 1871 │     }
+    1880 1872 │   }, 60_000);
+  
+
+Checked 8 files in 157ms. No fixes applied.
+Found 4 errors.
+Found 1 warning.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+
+biome-exit=1
+
+# biome-exit=1 的构成（第 2 任反向核验）：唯一残留 = src/index.ts 的 5 处存量欠账
+# （4× noConsole @837/862/882/1871 + 1× noNonNullAssertion @4736）。
+# 第 2 任核验方法：5 处代码串（TENANT_CREDENTIAL_DECRYPT_FAILED / ENTERPRISE_SESSION_RESOLUTION_FAILED /
+# 'Enterprise conversation service unavailable' / memory-sweep-error / knowledgeService! 非空断言）逐一在
+# BASE（git HEAD f0520524）index.ts 中命中——先于本票存在（与第 1 任 git stash 反向验证结论一致，
+# MT010 报告 D3 记录同款存量）。本票新增/触及的其余 7 个文件 biome 全 clean。

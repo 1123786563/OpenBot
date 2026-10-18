@@ -1,0 +1,9 @@
+# RESTORE-green: after MUT5 restore — personal-share-rules.ts byte-identical to /tmp/psr-pristine.ts,
+# biome clean, focused suite 34 pass / 0 fail / 132 expect (tail below).
+# Command (server/): bun test tests/multitenancy/personal-share-rules.test.ts --timeout 30000 (six dedicated-database env vars)
+(pass) MT010 personal resource permissions and explicit cross-team shares (Issue #53) > closing check: restricted roles were in play > the schema-level membership facts the share FKs prove are real rows [2.91ms]
+
+ 34 pass
+ 0 fail
+ 132 expect() calls
+Ran 34 tests across 1 file. [1.87s]

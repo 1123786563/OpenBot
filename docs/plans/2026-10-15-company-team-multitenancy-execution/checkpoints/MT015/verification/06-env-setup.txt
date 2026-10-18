@@ -1,0 +1,12 @@
+# Environment setup (dedicated container + databases + restricted logins)
+# docker run -d --name mt015-impl-pg -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=openbot_enterprise_mt015_test -p 127.0.0.1:55491:5432 pgvector/pgvector:pg16
+# docker exec mt015-impl-pg psql -U postgres -tc "select version()"  ->  PostgreSQL 16.15 (aarch64)
+# createdb openbot_enterprise_mt015 + openbot_enterprise_mt015_assigned (trust, loopback only)
+# cd server && TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55491/openbot_enterprise_mt015_test \
+#   ENTERPRISE_TEST_{SETUP,DIRECTORY,DATA,OPERATOR}_DATABASE_URL=... MT003_ASSIGNED_TEST_DATABASE_URL=...postgresql://.../openbot_enterprise_mt015_assigned \
+#   bun --no-env-file scripts/enterprise-test-db.ts migrate  -> {"type":"migrations-applied","status":"ok"} (exit 0)
+# Role logins ent_mt015_{dir,data,opr} provisioned by the migrate command (passwords inline in a
+# 0600 env file under /tmp, deleted after the run; nothing persisted into the repo).
+# Migration chain MT004→MT008→MT112→MT012→MT014→MT010→MT009 (brief dependency order) applied
+# in-suite via the MT003 tool (dry-run → manifest-gated apply; applied|up-to-date tolerated).
+# No dev-database fallback anywhere; suites skip loudly without env (skip ≠ pass).
