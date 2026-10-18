@@ -282,6 +282,21 @@ Test Files  31 failed | 552 passed | 17 skipped (600)
 失败数从 192 降到 177、红文件从 32 到 31，差的就是分流掉的 `account-mode-dialog` 与
 驱动层判定收紧的结果。
 
+## 本地跑这件事的数据库前提（以及为什么我这台机器上少测了 14 组）
+
+CI 的 `test` job 自带两个数据库服务：`postgres`（镜像带 pgvector，因为知识 schema 用扩展）与
+`enterprise-postgres`，并把 `DATABASE_URL` 指到 `localhost:5432/openbot_test`，所以企业/多租户那批
+集成套件在 CI 里是真的有库可跑。本地不一样：
+
+- 这台机器上项目的 Postgres 容器实际发布在 **55432**（`.env` 里 `POSTGRES_PORT=55432`），
+- 而 `.env` 的 `TEST_DATABASE_URL` 指向 **5435**，那个端口现在没有任何容器在听，
+- 默认回落的 `localhost:5432` 也没人监听 → 报告里 4 个 `HOOK_FAILED` 与 14 组 `server/tests part N`
+  的红就是这么来的，不是套件坏也不是调度坏。
+
+本地要测到同一批，三选一：起项目自己的栈并把 `TEST_DATABASE_URL` 改成实际端口；照本文
+「用独立 Postgres 复测驱动层」一节自建一个私有实例；或者接受这 14 组只在 CI 上有结论。
+判定规则不变：这些红都在 `bun test` 单文件复跑里复现，因此与运行器无关。
+
 ## 完成度审计：每条标准对应什么证据，以及哪几条还没过
 
 | # | 标准 | 结论 | 证据 |
