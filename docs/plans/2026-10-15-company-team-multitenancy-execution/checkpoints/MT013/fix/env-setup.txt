@@ -1,0 +1,4 @@
+# MT013 fix round env setup — 2026-10-16 (coordinator's mt013-fix-pg absent at dispatch; created per brief spec)
+container: mt013-fix-pg pgvector/pgvector:pg16 @127.0.0.1:55473 (PostgreSQL 16.15)
+databases: openbot_enterprise_test (base migrations + ent_mt013f_{dir,data,opr} restricted logins via enterprise-test-db.ts migrate; MT004 applied), openbot_enterprise_mt013fix_assigned (fresh)
+env: /tmp/mt013fix/env.sh (0600, five URL vars + MT003_ASSIGNED; passwords deleted at task end)

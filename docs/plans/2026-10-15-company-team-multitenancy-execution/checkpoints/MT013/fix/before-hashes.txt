@@ -1,0 +1,2 @@
+7ab7275eff18fd2c38a5f38bbed3ebfaa265c6eb87b25028b6883c83e98f8a46  server/src/enterprise/tenancy/startup-checks.ts
+2d030bf23789e3c7817018375f994c33bd4467c765e20efcc2ee826621d6087a  server/tests/multitenancy/startup-checks.test.ts

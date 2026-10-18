@@ -1,0 +1,2 @@
+{"level":30,"time":1792124758049,"service":"server","type":"multitenancy-startup-validation","mode":"on","accepted":true,"timestamp":"2026-10-16T04:25:58.043Z","checks":{"coverage":{"ok":true,"waivedEntrances":[]},"devBypass":{"ok":true},"databaseRoles":{"ok":true}},"msg":"multitenancy startup validation passed — booting in multitenancy mode"}
+BOOT_CONTINUED accepted=true
