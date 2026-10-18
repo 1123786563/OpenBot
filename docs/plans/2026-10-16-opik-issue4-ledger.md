@@ -934,3 +934,153 @@ T01 T02 T03 T04 T05 T06 T07 T08 T09（9/37）。运行中: T10 移植、T32 评�
 - T11 后集成门禁:root typecheck 0/0/0;全新库 opik_r3int 全套 **1004/0/51**(首轮 1000/4 为宿主机重启后负载 flake,复跑 0 fail);langgraph 60/0。
 - 覆盖核算:R2 循环 57/57(56V+R2-36)+ 复审 F-1/F-4 全部落地;R2-18 NIT 随 T9。
 - **OCR Round 3 启动**(bab7c0b9..HEAD,background=/tmp/round3-background.md,z-ai-coding/glm-5.3)。
+
+## 2026-10-18 03:12 — OCR Round 3 首跑:2H/39M/134L,partial(14 项失败)
+
+- Round 3(session 303929dd,02:37-03:10):175 findings = **0 critical / 2 high / 39 medium / 134 low**;171 项中 **14 失败**(12 个生产文件零覆盖:config/judge/routes-results+comparison+case-review+index/opik-http/context/wiring/contracts/control-plane-auth/opik-port + 2 工件)。
+- R3-H0 = rules.ts lookbehind `(?<=` 越界绕过静态门(T4 同函数新缺口);R3-H1 = exports.ts list() 物化整行含 artifact jsonb(R2-40/T11 只裁响应体未裁查询列)。
+- 双线:OCR resume(pid 66568,OCR_LLM_TIMEOUT=900)补失败项;R3 分诊 worker 已派(41 条 c/h/m,重点甄别对刚修文件的再报告)。
+
+## 2026-10-18 03:52 — R3 分诊:V 38 / D 3 / F 0(92792eab 已集成)
+
+- 高危双证:R3-30 lookbehind 绕过(执行复现)、R3-33 exports 物化 artifact(三层读)。修复波内新暴露:R3-24(T11 回滚缺口)/R3-26(R2-37 引入 500)/R3-13(T7 残留)/R3-31(m107 半边)/R3-39(R2-58 工具步半边)。
+- resume 链:14 失败 → 首续 8 完成(+24 findings,199 总)→ 二续(pid 77193)补余 6(config/context/wiring/contracts/control-plane-auth/0130_snapshot)进行中。二续产出如含新 c/h/m,单独小分诊。
+- 处置:6 张 U 票(≤7 并发)。U1 高危双项(rules/exports 列投影+SQL 分页)/ U2 admin+experiments/executions/retention(5)/ U3 queries+case-review+boot/copilot(6)/ U4 langgraph(2)/ U5 app(10)/ U6 contract USER + evidence 脚本(12)。
+
+## 2026-10-18 04:05 — R3 修复轮派发:6 张 U 票(6 并发)
+
+brief 落盘 coordinator 工作区 `docs/plans/evidence/2026-10-16-issue4/ocr/r3fix-u{1..6}-brief.md`(内联条目号引用 worktree 内 round3-triage-report.md,不再给相对路径防 find / 冻结复发)。全部 `--worktree new-child --base-branch 1123786563/opik-integration-main`(含 dc91d584 分诊报告)。
+
+| 票 | task_id | 范围 |
+|---|---|---|
+| U1 | a6fea1ac-bb95-493e-b2a4-47db04771834 | R3-30 rules lookbehind + R3-33 exports 列投影/SQL 分页(H×2) |
+| U2 | d3613b3d-304b-49e5-9cdd-8c22a15e9b0c | R3-24/29/26/27/34 admin+experiments/executions/retention |
+| U3 | c4fcb708-4a9e-4f06-a823-a5954a0d3e11 | R3-28/31/36/37/39/40 queries+case-review+boot/copilot |
+| U4 | 9daf9ab8-b5c9-418a-a899-43e450cc56a3 | R3-06/09 langgraph |
+| U5 | 7bf909d6-aa38-4c3d-ab77-014989d7650a | R3-13/10/01/08/02-05/07≡14/00 app×10 |
+| U6 | 6f56a8a6-860b-443a-8c74-09443852bdff | R3-25 contract USER + evidence 脚本×11 |
+
+环境预检:opik-t07-pg Up(psql OK)。OCR resume2(session 303929dd,pid 77193)仍在后台,补 6 项失败文件,完成后单独核对 coverage.failed 清零与新增 c/h/m。
+轮询纪律:按 taskId 过滤 worker_done;git status/mtime 判进度;15 分钟停滞 send 探活;429 等待自愈;completed-未提交则核报告后代提交。
+
+## 2026-10-18 04:20 — OCR R3 resume2 收口 + 追加 U7 票
+
+- **resume2**(session 303929dd)完成:manifest coverage selected 171 / completed 14 / **failed 0** —— R3 覆盖缺口清零,全交付范围 100% 审阅。总 185 comments(2H/43M/140L)。
+- **c/h/m 对账**:45 = R3 首跑 41(已分诊 V38/D3/F0,见 round3-triage-report.md)+ resume 新增 4。bindings 死列条 = R3-32 已判 D,不重复计。
+- **新增 4 条分诊(全部 V,票号续编)**:
+  - R3-41(M) opik-port.ts OPIK_API_KEY 惰性接线(解析持有但适配器零 Authorization 头,key 认证部署静默 401)
+  - R3-42(M) opik-http.ts isTransportError 把 TypeError 全判传输失败进重试通道,与紧邻注释矛盾,malformed("reader_failed") 永不可达
+  - R3-43(M) opik-http.ts readJsonObject 把 response.text() 与 JSON.parse 同 try,断流固化为永久 malformed 而非可重试 unavailable
+  - R3-44(M) judge.ts 底层 error.message 原文入 judge 记录持久化+渲染,违背 usage-evidence 纪律,唯一漏点
+- **U7 派发**:task_80d978ff449a,worktree opik-r3fix-u7,票面=上述 4 条;brief 中 findings 文件路径引用失误(coordinator 工作区未入 worktree),已 msg_e90a00f69507 内联补发原文并明示勿 find /。并发 7(上限内)。
+
+## 2026-10-18 05:05 — 429 事故与止损重派(U3/U5/U6);U4/U2 完成集成
+
+- **U4 完成**(cf30ff36 → 集成 b793a612):R3-06 属性词汇对齐全部落 recorder 侧(server queries/runs.ts 零改动可证),R3-09 typeof 先行;真图钉测;62/0;biome 716≤733。集成侧快验 governed-tracing 18/0。
+- **U2 完成**(28b50704 → 集成 3469d28f):R3-24/29/26/27/34 五项,8 新测,fresh opik_r3u2_gate 1012/0;0133 迁移(work_stopped_at)hand-merge + r3fix-u2-verify.ts 双向 0 diff + SQL 语句面真读核对(吸收 R3-19/20/23 教训);touched biome 0,全仓与 HEAD 集合恒等。
+- **429 事故**:U3/U5/U6 自派发起卡死在 bootstrap(429 code 1302,transcript 止于系统指令,零文件动作 ~55 分钟);U1/U2/U4/U7 正常。教训修正:**并发 7 也不安全,该账户实际安全并发约为 4-5**。止损:worker-stop 三票(dispatch ctx_cec2f478e641/ctx_ab57bfb25506/ctx_d49f0568a6bb,worktree 均干净无损)。
+- **重派**:U3b task_be3a2d501f08、U5b task_1565d90dc479,复用现场 worktree(path: 前缀,不能带 --base-branch/--name);**U6 暂缓**,待 U1/U7/U3b/U5b 任一完成再派(保持 ≤4 活跃)。
+- 命令坑:worker-stop 用 --dispatch 不是 --task-id;复用 worktree 时 --base-branch/--name 均属 creation options 会被拒。
+- **U1 重判死重派**(05:25):运行 80 分钟零文件、transcript 停在早期读取阶段、两次探活无响应 → stop ctx_6d34d0680d9a(现场干净)→ U1b task_a1ac12be6849 复用现场重派。当前活跃:U1b/U3b/U5b/U7(4)。
+- **U1b 完成**(8a5c6051 → 集成 0cd342e4):R3-30 `(?<` 先判 =/! 再扫 `>`(lookbehind 2 字符前移),两个高危形状检出+R2-41 零回归;R3-33 15 列显式投影排除 artifact + SQL limit/offset(created_at+id 全序)+ count(scope) 信封总数;fresh opik_r3u1 1006/0×2,touched biome 0。
+- **U5b 完成**(b9b61c2b → 集成 9c0a20ce):R3-13/10/01/08/02-05/07≡14/00 十项;capability 闭集+opikTraceId、compatible boolean、samples index 一致性、preview===cases、四处 i18n 闭集守卫(R2-09 标准)、导出分页契约全消费(截断提示+轮询越过可视页)、三元抽 helper;15 新测,触及套件 145/0,app typecheck 0。
+- **U6b 派发**:task_1b039ed08a35(现场复用)。剩余活跃:U3b/U7/U6b。
+- **U7 完成**(97e5a6ca → 集成 2afbadd4):R3-41 apiKey 进 deps+exchange 级 Authorization(无 key 零变化)/ R3-42 readBody 自捕获→malformed reader_failed / R3-43 读与解析分捕→unavailable / R3-44 judge 静态文案;8 新测,fresh opik_u7 1010/0,boot 接线经 loadVerifiedOpikPort 第 4 可选参。触及 index.ts/wiring.ts——与 U3b(R3-36 也碰 index.ts)集成时注意冲突。
+- **U6b 完成**(2abe80da → 集成 5a12c379):R3-25 contract USER 部署事实半边(真栈 live RED/GREEN:11/11 VERIFIED)+ 11 项 evidence 脚本硬化全部带 RED/GREEN 原始输出(merge0129 断言先行、e2e-assembly.json 真栈重生成 26 PASS、深链改 e2e-deps.ts seam、bindingId 失败路径落证据、双 verify 脚本退出码化、0132 SQL 真读语句面集比、c-evaluation 拒绝分类、d-retention 按 targetId 差值);fresh opik_r3u6 1006/0。
+- **新登记(U6b 暴露)**:e2e-assembly 重生成暴露 T9 从未跑过的断言 "tool-span-parents trace_id==w3cTraceId" 跨 Opik-UUIDv7 vs W3C-hex ID 空间不可满足——worker 已 flag 独立票,未在本票修。记为遗留登记项(并入最终报告清单)。
+
+## 2026-10-18 05:20 — R3 修复轮全部 7 票完成并集成
+
+| 票 | worker 提交 | 集成提交 | 门禁 |
+|---|---|---|---|
+| U4 | cf30ff36 | b793a612 | 62/0 langgraph,真图钉测 |
+| U2 | 28b50704 | 3469d28f | 1012/0 fresh,0133 双向 0 diff |
+| U1b | 8a5c6051 | 0cd342e4 | 1006/0×2 |
+| U5b | b9b61c2b | 9c0a20ce | 触及 145/0,app tsc 0 |
+| U7 | 97e5a6ca | 2afbadd4 | 1010/0 fresh |
+| U6b | 2abe80da | 5a12c379 | 1006/0+真栈 live |
+| U3b | 9f2ca63c | b58a44d6(auto-merge 干净) | 1015/0 fresh,root tsc 0/0/0 |
+
+下一步:集成侧门禁(全新库全套+三端 tsc+biome+langgraph/app)→ R3 修复轮独立复审 → OCR Round 4。
+
+## 2026-10-18 05:30 — R3 修复轮独立复审通过 + 集成门禁全绿
+
+- **R3fixRev**(5f92baae → 集成):双结论 **Spec PASS + Code APPROVE**。逐票 7/7 PASS(每票 ≥2 深度核;R3-30 生产函数 10 形状 10/10;R3-19/20 沙箱断裂链自证 exit 1;U7×U3b 合并面 index.ts 逐行核)。fresh opik_r3rev 自跑 1033/0、tsc 0、biome 718≤733、langgraph 62/0。新缺陷:**0 critical/0 high/0 medium**;3 low(L-1 era 脚本 HEAD 误跑陷阱、L-2 (?P<name>) 边界多报、L-3 纯 *_USER 放行面)+ 2 info,全部登记不回拦。
+- **集成侧门禁(coordinator 自跑)**:fresh opik_r3fix_gate 1033/0(1004+29 对账闭合)、三端 tsc 0/0/0、biome 718≤733、langgraph 62/0、app ai-observability 181/0。
+- 下一步:OCR Round 4(bab7c0b9..HEAD,background 已备 /tmp/round4-background.md)。
+
+## 2026-10-18 07:00 — OCR Round 4 完成,分诊派发
+
+- **Round 4**(session 4c3730ca,耗时 ~1.5h):selected 175 / completed 174 / **failed 1**(server/drizzle/meta/0130_snapshot.json,已派 resume pid 21889 补跑)。总 175 comments(**4H/36M/135L**)。
+- 4 高危:R4 app exports offPageInFlight 逐页覆盖(疑 U5b 引入)/ opik-http createTrace 缺 name / execution-runner gatewaySettings 投影信封不解包(冻结模型参数静默丢弃)/ judge 自定义 baseURL 无 apiKeyEnv 时网关密钥外发第三方。
+- 两条 medium 为 L-1 登记项的 re-report(fix2-r1-verify/r2fix-t3b-verify HEAD 恒 FAIL,分诊应判 D)。
+- **R4Triage 派发**:task_111458b884bb,worktree opik-r4-triage,brief 内联 /tmp/round4-findings.txt 绝对路径+登记清单;V/D/F 三分类,high 执行级验证。
+- **R4 唯一失败项处置**:server/drizzle/meta/0130_snapshot.json 两次 resume 均瞬时退出(completed 0)。内容级继承覆盖成立:该文件最后一次修改在 97186f37(R3 审阅树的祖先),R3 round3c 已 selected+completed 它且 0 findings;R4 期间无任何提交再触及。OCR 对该 20k 行机械快照的反复失败为客户端侧现象(R3 也是两次 resume 后才成一次)。按"覆盖不缺失"口径记录:文件内容已有一次成功完整审阅,非跳过。
+
+## 2026-10-18 07:15 — R4 分诊集成 + 修复轮派发(7 票,4 并发)
+
+- **分诊集成**:d04b290c → 集成分支(V37/D2/F1;D=R4-14/15→L-1;F=R4-24 OTLP 子集两次 live 实证)。
+- **R4-23 裁决**(coordinator):AC1 原文(spec §12:行为保持+真实实例接数)不含入口隔离条文,分诊所指为 §3 能力等级语境;属实现质量非规范冲突 → 不升级,按"entrance 忠实溯源"修法入 V3。
+- **V 票拆分与派发**(≤4 并发教训):
+  | 票 | task | 范围 |
+  |---|---|---|
+  | V1 | task_580642234adb | R4-26 冻结参数丢弃 + R4-27 凭据外发(H×2) |
+  | V2 | task_fcd078dd3af9 | R4-16/17 createTrace name + R4-18 auth 登记 + R4-10/11/12 探针 A/B |
+  | V3 | task_c635664eb933 | R4-13/21/22/23/28 experiments-executions×5 |
+  | V4 | task_0c5ea57f9fa1 | R4-29/30/31/37+38/25 读面 store×6 |
+  | V5-V7 | 待派 | copilot/redaction/routes×7;app+shared×6;evidence 脚本×4 |
+- **V1 完成**(78595b4a → 集成):R4-26 信封解包(冻结参数真实到达 wire,omitted fail-closed)/R4-27 baseURL 无凭据声明即拒绝不回退(执行级复现:第三方 stub 曾收 Bearer 网关密钥);fresh opik_r4fixv1 1037/0。
+- **V2 完成**(9d39dbf1 → 集成 b43baeee):R4-16/17 createTrace name(port 类型+http body+fixture)/R4-18 auth 格式登记/R4-10/11 探针 A binding+领域拒绝/R4-12 探针 B 16-hex wire;RED/GREEN 原始输出齐。
+- **V5/V6 派发**:task_b3b285d180c5 / task_80985bfd1ba1(活跃:V3/V4/V5/V6 = 4)。V7 待空位。
+- **V5 完成**(8f3b2d7b → 集成):R4-32 settled 先捕获后置位/单 span;R4-33 累积器抽取 appendSpanOutputDelta+越限切片;R4-34 defer+from 内 try 兜底 scope-less 订阅(A10 结构化);R4-19 IPv6 三族拦截;R4-20 span-support.ts 抽取;R4-35/36 两路由复用 explicitObservationOwnership。fresh opik_r4fixv5 门禁。
+- **V7 派发**:task_360120f3ee4f。活跃:V3/V4/V6/V7。
+- **V4 判死重派**(08:55):~100 分钟零文件+探活无响应(与 U1 同型:transcript 停更、bootstrap 后停滞)→ stop ctx_0ff0446a419b → V4b task_a4c27fe32f34 复用现场。V3 探活后苏醒(opik_r4fix_v3 库已建,13 文件)。
+- **V6/V7 completed-未提交形态**:dispatch 已 succeeded 但未 git commit(V6 7 文件/V7 11 文件)。coordinator 快验(app tsc 0+新套件 60/0+server tsc 0;V7 e2e tsconfig tsc 0+py 语法 OK+真栈正反实证已在报告)后代提交:V6=6c8dff70(R4-0/2/3/5 守卫补齐+R4-4 闭集+R4-39 十二 Same<> 锚+Same 本身 tuple 修复[联合分布空心缺陷,漂移注入实证])、V7=9011791f(R4-6/7 断言先行+failfast 实证、R4-8 四处 writeEvidenceAndExit 真栈对照实证、R4-9 自含 tsconfig+存量类型错最小修)。集成 ef769f12/75c31077。
+- **V3 stop→V3b 重派**(ctx_23873967c1c8):13 文件现场保留,接手注记勿重写。V4b 仍在分析。
+- 新登记(V7 暴露):e2e 真栈 opik_tfinal_e2e 库缺 work_stopped_at 列(0130/0133 迁移后未重建)——下次真栈 e2e 需重建库;R2-57 Same<> 锚曾空心(已被 V6 修复激活)。
+- **V3b 完成**(bbba3b46 → 集成):接手 worker 对每项重验 RED 后交付——R4-13 UPDATE 通道 23505→409 域错(事务中止内 held 回读不可用,分类即诚实答);R4-21 omitted/refused 输入 case 在计费准入前拒拨;R4-22 MAX_SCORING_SUBJECT_BYTES=64Ki 入口上限;R4-23 entrance 忠实溯源;R4-28 被拒信封 judgeConfig 语义不等。探活唤醒模式再次有效(probe→commit)。
+- **V4 三度重派**(12:00,V4c task_3d6e35515bf9):V4b 三小时零产出+两轮探活+最后警告均无响应(zombie 态)→ stop。V4c brief 追加节奏硬性要求(15 分钟内第一个 RED、逐项阶段提交)。V4 原派/V4b 均零文件,现场干净无需接手注记。
+- **V4c 完成**(7 提交 6f8595e8..c61c8cd7 → 集成 4972d913..95e9dbca):R4-29 重复 index 即 damaged/R4-30 四处 notPendingDeletion(36/0)/R4-31 fold 终态校验拒整折/R4-37+38 verdict join 过滤+chunkTraceIds 1000 分批/R4-25 reconcile reserved-unwired 登记(不接线避免 Spec 外行为变更);fresh opik_r4fix_gate 1040/0。节奏硬性要求奏效:V4c 15 分钟内开工,逐项 5 单元各自 RED→GREEN 阶段提交。
+- **R4 修复轮 7/7 票全部完成集成**。
+
+## 2026-10-18 13:10 — R4 修复轮集成门禁全绿
+
+- coordinator 自跑:fresh opik_r4_gate 全套 **1067/0**(51 files;基线对账 1033+V1 4+V5 14+V4 7+V3 若干+V6 3 = 收敛一致)、root typecheck 0/0/0、biome 全仓 **716≤733**、agent-langgraph 62/0、app 触及七套件 173/0。
+- 下一步:R4 修复轮独立复审(R4fixRev)→ OCR Round 5。
+
+## 2026-10-18 13:40 — R4 修复轮复审:Spec FAIL(36/37)+ Code APPROVE;派单遗漏 R4-1
+
+- **R4fixRev**(383c1b5d → 集成):逐票 7/7 PASS(含 Same<> 漂移注入独立复证、wire 级测试实读、合并面 V1×V3 无覆盖/V2×V7 零交集);fresh opik_r4rev 1067/0、tsc 0、biome 716、e2e tsc 0。新缺陷 0 c/h/m(low:tool-steps 孤儿注释;info:biome 计数漂移)。
+- **Spec FAIL 根因 = coordinator 派单遗漏(第二次同类缺陷,R2 轮曾漏 R2-51/54)**:R4-1(H,app exports offPageInFlight 越页覆盖)未进任何 V 票,V1 报告明文排除且无票接手,HEAD 原样存活。分诊"高危 4 条"块在拆票时被我漏读第 4 条。
+- 处置:立即补票 V8(R4-1 单项,含 low 孤儿注释顺手修);V8 落地后小范围独立复验 → OCR Round 5。
+- **V8 完成**(2be7fa0f+c5d8231e → 集成):R4-1 发现即置位+break(RED 钉分诊复现,19/19,app tsc 0,biome 716)+孤儿注释顺手清。R4 修复轮至此 37/37 项全落地。
+- 下一步:V8 小范围独立复验(可并入 Round 5 后的复审)→ OCR Round 5。
+- **V8Rev**(66344521 → 集成):Spec PASS + Code APPROVE,RED 用基线 worktree 独立复现,有界性/fail-closed 核验未触碰,新缺陷 0。R4 修复轮闭环(37/37+复审)。
+
+## 2026-10-18 13:00(续)— OCR Round 5 完成,R5 分诊派发
+
+- **Round 5**(pid 93601,~1h):selected 179/completed 178/failed 1(仍为 0130_snapshot.json,内容自 R3 后未变,继承覆盖理由同 R4 记录)。总 185 comments(**3H/50M/132L**)。
+- 3 高危:rules.ts GroupInfo 分组链绕过(ReDoS 新面)/ copilot.ts builtinToolStepCells 跨并发 toolCallId 键冲突 / resolveScope never-settle(与 R4-34 兜底的关系待分诊)。
+- 显著面:R4-32 修复疑回归(settleFinish 抛错零 span)、5 条 routes ownership(与 m176 登记对表)、Same<> any 免疫(V6 修复再被指新绕面)、admin-summary lastCollectedAt 窗口矛盾、health 门闩不重估、R4-21 truncated 一刀切边界。
+- **R5Triage 派发**:task_ef03ab136c9f。
+- **R5 分诊集成**(ebc395ef):V44/D8/F1(D=R5-28 opik-override、30/31/32/34 m176、35 round1 已报、36 R4-25、48 setModelUsageMeter 登记;F=R5-15 快照 era 正确)。R5-47 判 V 且最高优先=V5 自身 R4-32 回归。
+- **W 票派发**(≤4 并发):W1 task_cac94ed39d9a(copilot 6,含 3H+回归)/W2 task_a2f87b35a328(ReDoS H+domain 7)/W3 task_bc1a327e9569(datasets+http 8)/W4 task_b19920caff6b(routes+app 7);W5(langgraph+锚 5)/W6(evidence 10)待空位。全部带节奏硬性要求。
+- **W2 完成**(7 提交 42da3219..6e49ce3b → 集成):R5-37 分组链 ReDoS(无界量词分组传播拒,安全对照不误报)/R5-21 viewer 契约/R5-22 lastCollectedAt 窗口不变量/R5-23 门闩冷却重估/R5-25 撤销接缝接线/R5-26 未识别词不覆盖/R5-27 空页披露。
+- **W3 完成**(10 提交 → 集成 87a099cb):R5-17/24/19 datasets 并发行锁、R5-18/20 runner truncated 语义、R5-38 envelope 整数非负、R5-16 createTrace drift 守卫补 opikTraceId(+comment-only 处置披露)。W6 派发。
+- **W1/W4 首派判死重派**(15:10):70 分钟零文件+探活无效(zombie 同型)→ W1b task_9ca213da8463 / W4b task_5497b4ae6b9d 复用现场(均干净)。
+- **W6 完成**(单提交 d4069d9e → 集成):9 项脚本/fixture 清扫(R5-8/9 e2e 断言实质化、10/11 探针结局窄化、12 断言退出码化、13 恒真断言、14 journal 校验、49/50 fixture 空放行/词汇闭集)。注:W6 分支含 W2/W3 集成前史,coordinator 区间首取错(cbc4df8f..)致一次空 cherry-pick,改单提交成功。
+- **W5 completed-未提交形态**(代提交 09edcf5d → 集成):R5-0 去锚/R5-6 langgraph 自含 devDeps+README 运行口径(ci matrix 登记后续票)/R5-51 Same IsAny 守卫(第三种空心锚模式,3 tsc 钉+runtime twin)/R5-45/46/52 十三枚新锚。coordinator 复验:langgraph 63/0+自带 tsc 0+server tsc 0。
+- **W1b 交付**(6 提交,报告待其 gate 阶段完成后再集成——dispatch 仍 active)。
+- **W1b 完成+集成**(8 提交 → 079fde4b):R5-47 回归修复(try/finally 保证至少一条 span)/R5-41 cell 按 run 隔离/R5-42 never-settle 兜底/R5-43 键归一化收口/R5-44 回退分支截取有界/R5-40 空 catch 对齐日志。
+- **W4 三度重派**(W4c task_22507b71aa07):首派/重派均 2h 级 zombie 零产出,最后警告无效 → stop;brief 前置开工顺序指令(R5-3 最简先做,禁 10 分钟以上连续阅读)。
+- **W4c 完成**(7ebad7e8 → 集成 9013a7eb):开工顺序指令奏效——R5-33 datasets seam(m176 外遗漏,真库 RED 200→404)/R5-3/4 helper 复用/R5-5 present null 语义/R5-1/2 数值有限性/R5-7 渲染面守卫。**R5 修复轮 6/6 票(W1-W6)全部完成集成**。
+
+## 2026-10-18 17:30 — R5 修复轮集成门禁全绿,复审派发
+
+- coordinator 自跑:fresh opik_r5_gate 全套 **1093/0**、root tsc 0/0/0、biome **714≤733**、langgraph 63/0、app 触及八套件 209/0。
+
+## 2026-10-18 18:10 — R5 修复轮复审通过,OCR Round 6 启动
+
+- **R5fixRev**(38d65d3f → 集成):**Spec PASS + Code APPROVE**。36 项修复全复验,6 项执行级复跑(含 12 形状 ReDoS 表、Same IsAny tsc 探针、R5-41 生产 ALS 可达性经框架源码核实);合并面文件两两交集空;门禁自跑 1093/0、tsc 0、biome 714。
+- 新发现:N1(low,先在:变长/等长 alternation 分支歧义 ReDoS 类 ^(a|a)*$ 穿闸——**登记为 ReDoS 门后续票**)/N2(info:W2 无独立报告文件,证据在提交信息,复审已补核)/N3(info:W1 报告引工作分支原 SHA,经分支名中转溯源)。
+- OCR Round 6 启动(background /tmp/round6-background.md)。
