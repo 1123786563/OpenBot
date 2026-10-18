@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun tests, PostgreSQL test database, Drizzle/Postgres, Biome.
 
-**Spec:** Parent [Issue #5 Bifrost Spec](../../specs/2026-10-14-bifrost-github-spec.md); Ticket #207 snapshot and reviewer finding in the sibling checkpoint `docs/execution-ledgers/checkpoints/207/review.md`; existing #207 plan in `docs/superpowers/plans/2026-10-15-issue5-bifrost-strict-credit-integration.md`.
+**Spec:** Parent [Issue #5 Bifrost Spec](../../specs/2026-10-14-bifrost-github-spec.md); Ticket #207 snapshot and reviewer finding in the sibling checkpoint `archive/execution-ledgers/checkpoints/207/review.md`; existing #207 plan in `docs/superpowers/plans/2026-10-15-issue5-bifrost-strict-credit-integration.md`.
 
 ## Global Constraints
 
@@ -32,7 +32,7 @@
 
 **Files:**
 - Transfer from sibling `issue5-207` to this repair child worktree only the 12 deliverable files listed in its `file-hashes.txt` plus checkpoint report and hash ledger.
-- Create `docs/execution-ledgers/checkpoints/207/f1-repair/{plan.md,red.md,green.md,report.md}` in the repair worktree.
+- Create `archive/execution-ledgers/checkpoints/207/f1-repair/{plan.md,red.md,green.md,report.md}` in the repair worktree.
 
 **Interfaces:**
 - Consumes: original checkpoint at BASE `f0520524f0faa2b4533b9d2f1aa692c8f907ba71`; reviewer report finding F1.
@@ -64,7 +64,7 @@
 ### Task 3: Checkpoint and independent review
 
 **Files:**
-- Create `docs/execution-ledgers/checkpoints/207/f1-repair/{red.md,green.md,report.md}`.
+- Create `archive/execution-ledgers/checkpoints/207/f1-repair/{red.md,green.md,report.md}`.
 
 **Interfaces:**
 - Consumes: repaired endpoint parser and test results.

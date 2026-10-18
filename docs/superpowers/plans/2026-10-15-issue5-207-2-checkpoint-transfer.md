@@ -39,7 +39,7 @@
 
 ## 交付
 
-- 未提交检查点（`git status` 即检查点）+ `docs/execution-ledgers/checkpoints/207-r2/`
+- 未提交检查点（`git status` 即检查点）+ `archive/execution-ledgers/checkpoints/207-r2/`
   下本工作树自己的 checkpoint-report.md、file-hashes.txt、verify.md（命令与输出证据）、
   review.md（本次复审结论）。
 - 票面差异沿用前次已审查决策：专用 `gateway_configs` 单行表替代 EnterpriseSettings KV 行

@@ -7,7 +7,7 @@ Issue：`1123786563/OpenBot#419`（[Craft Preview][P2] Issue/文档证据收口�
 
 - 核验代码基线：`bbea87ba`（本地 `main` == `origin/main`）。
 - 唯一归档的浏览器证据轮基线：`44754feb`
-  （`docs/verification/craft-preview/2026-10-17T13-45Z/summary.json`）。
+  （`archive/verification/craft-preview/2026-10-17T13-45Z/summary.json`）。
 - 本轮证据类型：**全部为静态核验**（读源码、读文档、`gh api` 实读票面与评论）+ 两个
   语法解析检查（`sh -n docker/compose/certs/reload.sh`、YAML 解析 `certs.yml`）。
 - **本轮没有运行任何测试**。并行会话正把工作区迁移到 e2e 框架（872 个未提交修改），

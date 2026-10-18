@@ -31,7 +31,7 @@ const live = resolve(
   root,
   arg("live", `${process.env.HOME}/.cache/openbot-e2e/live`),
 );
-const out = resolve(root, arg("out", "docs/verification/e2e-vs-bun.json"));
+const out = resolve(root, arg("out", "archive/verification/e2e-vs-bun.json"));
 const jobs = Number(arg("jobs", 4));
 const timeoutMs = Number(arg("timeout", 240_000));
 const only = (arg("only", "") || "")

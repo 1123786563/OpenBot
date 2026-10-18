@@ -70,10 +70,10 @@ for (const failure of failures) {
   grouped.set(key, (grouped.get(key) ?? 0) + 1);
 }
 
-writeFileSync(join(root, "docs/verification/e2e-collection.json"), JSON.stringify({ files: files.length, failures }, null, 1));
+writeFileSync(join(root, "archive/verification/e2e-collection.json"), JSON.stringify({ files: files.length, failures }, null, 1));
 console.log(`\n${files.length} suite files imported, ${failures.length} failed to load.`);
 console.log(`\nload errors by cause (${grouped.size} distinct):`);
 for (const [cause, count] of [...grouped].sort((a, b) => b[1] - a[1]).slice(0, 25)) {
   console.log(`  ${String(count).padStart(4)}  ${cause}`);
 }
-console.log(`\nfull ledger: docs/verification/e2e-collection.json`);
+console.log(`\nfull ledger: archive/verification/e2e-collection.json`);

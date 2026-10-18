@@ -12,9 +12,9 @@
 
 ## Sources and Constraints
 
-- Issue snapshot: `docs/issue-snapshots/2026-10-15-issue5.json` (GitHub REST/GraphQL, read 2026-10-15 UTC).
-- DAG: `docs/issue-snapshots/2026-10-15-issue5-dag.json` (151 unique tickets; formal `contains` 100; comment `index_membership` 51; dependencies from Ticket `Blocked by` sections).
-- Acceptance mapping: `docs/issue-snapshots/2026-10-15-issue5-ac-map.md`.
+- Issue snapshot: `archive/issue-snapshots/2026-10-15-issue5.json` (GitHub REST/GraphQL, read 2026-10-15 UTC).
+- DAG: `archive/issue-snapshots/2026-10-15-issue5-dag.json` (151 unique tickets; formal `contains` 100; comment `index_membership` 51; dependencies from Ticket `Blocked by` sections).
+- Acceptance mapping: `archive/issue-snapshots/2026-10-15-issue5-ac-map.md`.
 - Approved Spec: `docs/specs/2026-10-14-bifrost-integration-design.md`, `docs/specs/2026-10-14-bifrost-github-spec.md`; domain terms: `CONTEXT.md`; decisions: ADR 0002/0003/0004.
 - Cross-Spec resolution: company workbench always uses trusted company payer; external personal-authorized Bot always uses personal payer; insufficient balance never changes payer; personal Keys convey no company content/tool rights; company financial history is preserved. Issue #6 is an interface dependency only; its full multitenancy scope is excluded.
 - No local commits, push, merge, production data cleanup/migration, deployment, enabling gateway capabilities, or release/publish. Cleanup implementation may inventory, classify, dry-run, hash, and rehearse only on dedicated test data.
@@ -43,10 +43,10 @@
 ## Task 0: Worktree and source capture (Coordinator)
 
 **Files:**
-- Create: `docs/issue-snapshots/2026-10-15-issue5.json`
-- Create: `docs/issue-snapshots/2026-10-15-issue5-dag.json`
-- Create: `docs/issue-snapshots/2026-10-15-issue5-ac-map.md`
-- Create: `docs/execution-ledgers/2026-10-15-issue5-ledger.md`
+- Create: `archive/issue-snapshots/2026-10-15-issue5.json`
+- Create: `archive/issue-snapshots/2026-10-15-issue5-dag.json`
+- Create: `archive/issue-snapshots/2026-10-15-issue5-ac-map.md`
+- Create: `archive/execution-ledgers/2026-10-15-issue5-ledger.md`
 
 - [x] Verify GitHub source, parent comment pagination, official sub-issue count, index range and statuses.
 - [x] Build unique graph from 100 formal children and 51 indexed Tickets.

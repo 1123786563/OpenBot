@@ -14,11 +14,11 @@ const arg = (name, fallback) => {
 const reportPath = resolve(root, arg("report", ".e2e/final2/report.json"));
 const verdictPath = resolve(
   root,
-  arg("verdicts", "docs/verification/e2e-vs-bun-final.json"),
+  arg("verdicts", "archive/verification/e2e-vs-bun-final.json"),
 );
 const outPath = resolve(
   root,
-  arg("out", "docs/verification/e2e-red-inventory.md"),
+  arg("out", "archive/verification/e2e-red-inventory.md"),
 );
 const onlyGroups = (arg("groups", "") || "").split(",").filter(Boolean);
 const withOwners = process.argv.includes("--owners");

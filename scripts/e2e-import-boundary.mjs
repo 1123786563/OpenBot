@@ -132,7 +132,7 @@ const byCause = new Map();
 for (const entry of blocked) byCause.set(entry.cause, (byCause.get(entry.cause) ?? 0) + 1);
 
 writeFileSync(
-  join(root, "docs/verification/e2e-import-boundary.json"),
+  join(root, "archive/verification/e2e-import-boundary.json"),
   JSON.stringify({ suites: suites.length, blocked }, null, 1),
 );
 console.log(`${suites.length} suite files · ${blocked.length} reach a Bun-only module`);
@@ -140,7 +140,7 @@ console.log(`\nthe modules that decide it:`);
 for (const [cause, count] of [...byCause].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
   console.log(`  ${String(count).padStart(4)}  ${cause}`);
 }
-console.log(`\nledger: docs/verification/e2e-import-boundary.json`);
+console.log(`\nledger: archive/verification/e2e-import-boundary.json`);
 
 /*
  * `--apply` folds this verdict into the driven partition: a suite that reaches a module-level bun

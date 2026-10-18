@@ -53,7 +53,7 @@ Test Files  34 failed | 550 passed | 17 skipped (601)
 | 项 | 状态 | 证据 |
 | --- | --- | --- |
 | `bun:test` 全部退出使用 | 完成 | `grep -rl 'from "bun:test"'` 在 15 个套件目录下只剩 1 个文件，且那处 import 位于交给子 Bun 执行的模板字符串内（`agent-computer/tests/identity.test.ts`）；`support/e2e-compat` 被 908+ 文件 import |
-| 运行器能真正收集并执行 | 完成 | `scripts/e2e-file-audit.mjs` 逐文件跑 e2e：936 个套件文件中 **686 个由 e2e 原生收集，注册 9122 条用例**；清单 `docs/verification/e2e-file-audit.json` |
+| 运行器能真正收集并执行 | 完成 | `scripts/e2e-file-audit.mjs` 逐文件跑 e2e：936 个套件文件中 **686 个由 e2e 原生收集，注册 9122 条用例**；清单 `archive/verification/e2e-file-audit.json` |
 | 兼容层补齐框架不提供的单元语义 | 完成 | `tests/support/e2e-compat.ts`：`toThrow`/`rejects`/`resolves`/`toBeInstanceOf`/type matcher/mock 断言、`test.each`/`describe.each`、`mock`/`spyOn`/假时钟、`mock.module`（Node loader 钩子 + 进程级注册表）、样式与静态资源、bun 的 `test(title, fn, timeoutMs)` 位参、`{retry}`→`{retries}`、标题 512 字节钳制与重名编号、跳过改为运行期跳过（避免 NO_TESTS 让整轮不执行） |
 | Bun 运行时专属 API 的 Node 移植 | 完成 | `tests/support/bun-compat.ts` 覆盖 `file/write/spawn/sleep/which/argv/CryptoHasher/serve`；agent-computer 范围实测从「全部收集失败」变为 **393 passed / 46 failed / 48 skipped（47 文件）**，随后 32 条失败被定位为缺失 matcher 并已补齐（未复测，见下） |
 | 留在 Bun 的套件由 e2e 调度与报告 | 完成（机制） | `tests/bun-suites.test.ts` 按 `docs/verification/e2e-bun-suites.json` 注册 **229 个文件 / 11 组**，每组跑 `bun test --reporter junit` 并把用例数与失败文本折进一条 e2e 断言；0 条用例判失败 |
@@ -64,8 +64,8 @@ Test Files  34 failed | 550 passed | 17 skipped (601)
 
 ## 归因结果：这 195 条失败各自是谁的责任
 
-`node scripts/e2e-vs-bun.mjs --report=.e2e/final/report.json --out=docs/verification/e2e-vs-bun-final.json`
-对 34 个红文件逐个跑三种组合（判定明细在 `docs/verification/e2e-vs-bun-final.json`）：
+`node scripts/e2e-vs-bun.mjs --report=.e2e/final/report.json --out=archive/verification/e2e-vs-bun-final.json`
+对 34 个红文件逐个跑三种组合（判定明细在 `archive/verification/e2e-vs-bun-final.json`）：
 
 | 判定 | 文件数 | 含义 |
 | --- | --- | --- |
@@ -258,7 +258,7 @@ Test Files  32 failed | 550 passed | 17 skipped (599)
 ```
 
 关卡按设计判失败（红点存在就该失败），报告与红点归属都落在 `.e2e/cigate/report.json` 与
-`docs/verification/e2e-red-inventory.md`。同一份账在数据库可达时的那轮（19:54）是
+`archive/verification/e2e-red-inventory.md`。同一份账在数据库可达时的那轮（19:54）是
 `7931 passed / 187 failed`、驱动层 18/30 组过。
 
 ## 修好挂退与墙钟之后的那一轮（21:21 CST）
@@ -325,7 +325,7 @@ CI 的 `test` job 自带两个数据库服务：`postgres`（镜像带 pgvector�
 | 1 | 14 个目录里每个套件文件都由 e2e 调度或按名排除 | 过 | `node scripts/e2e-coverage-audit.mjs` → `no gaps`（603 native / 454 driven / 10 engine / 6 exclusions） |
 | 2 | 没有任何测试入口还跑 `bun test` | 过 | 同一审计的 ENTRY-POINT 检查（package.json 与各 workflow），且 `bun run test:ci` 就是 ci.yml `test` job 第 443 行那一步。入口实跑过：`bun run test` → `pretest`(generate:app-config) → `e2e run --config e2e.unit.config.ts`，21:36–21:54 走完 8175 条（7912 passed / 189 failed / 4 env errors），打印汇总后**自行退出**（exit 1，`ps` 里没有残留 e2e 进程，端口释放） |
 | 3 | 收集不再被单个文件拖没 | 过（当时） | 19:24 / 21:21 两轮 `0 COLLECTION_ERROR`；新加套件由 `e2e-batch-drive-bun-test` 与分区循环兜住 |
-| 4 | 全量通过率被测出来并逐条归因 | 过 | `.e2e/*/report.json` + `scripts/e2e-vs-bun.mjs` 的 `e2e-vs-bun*.json`，汇总见上；红点派单表 `docs/verification/e2e-red-dispatch.md` |
+| 4 | 全量通过率被测出来并逐条归因 | 过 | `.e2e/*/report.json` + `scripts/e2e-vs-bun.mjs` 的 `e2e-vs-bun*.json`，汇总见上；红点派单表 `archive/verification/e2e-red-dispatch.md` |
 | 5 | 原生层不存在"迁移把它改红了"的条目 | 过（最后一次判定） | 逐条 runner-difference 都已修或分流；最后一条 `proxy.test.ts` 有 25/0 对 24/1 的证据并写入 ADR 两层制 |
 | 6 | 驱动层的 verdict 等于旧运行器对同一文件的 verdict | 机制上过，整体结论待 CI | 驱动层用 `bun test` 执行并对失败文件各自重跑（>8 文件即判失败，不给假绿）；有库条件下 13/18/14 三档实测见上节，剩下的红都能点名为夹具缺项（`DATABASE_CAPABILITY_CHECK_FAILED`、多库布局）或单文件也红的真实缺陷 |
 | 7 | 引擎层（`tests/e2e/*.e2e.ts`，28 条）跑通过 | **未过** | 只验到收集。需要 app 起在 3010 与 `.env` 里那个 OpenAI 兼容端点（agent 驱动、花真钱、结果不完全确定），尚未获得启动许可 |
@@ -338,14 +338,14 @@ CI 的 `test` job 自带两个数据库服务：`postgres`（镜像带 pgvector�
 ## 复核方式
 
 ```bash
-node scripts/e2e-file-audit.mjs --jobs=8      # 逐文件收集真值 → docs/verification/e2e-file-audit.json
+node scripts/e2e-file-audit.mjs --jobs=8      # 逐文件收集真值 → archive/verification/e2e-file-audit.json
 node scripts/e2e-bun-manifest.mjs             # 分区 → docs/verification/e2e-bun-suites.json
 bun run test                                  # 原生套件 + 驱动组，一次入口
 E2E_UNIT_OUTPUT=.e2e/final ./node_modules/.bin/e2e run --config e2e.unit.config.ts
                                               # 这个 checkout 上多个会话会同时跑 e2e，
                                               # 共用输出目录会互相覆盖 report.json；测量要指名自己的目录
 node scripts/e2e-report-summary.mjs .e2e/unit/report.json   # 按失败原因分组
-node scripts/e2e-vs-bun.mjs --jobs=5          # 逐个失败文件对比旧运行器 → docs/verification/e2e-vs-bun.json
+node scripts/e2e-vs-bun.mjs --jobs=5          # 逐个失败文件对比旧运行器 → archive/verification/e2e-vs-bun.json
 node scripts/e2e-route-failures.mjs --verdict=runner-difference --apply   # 按判定分流
 E2E_UNIT_SCOPE=app bun run test               # 只收集某目录，把回合从几分钟压到秒级
 E2E_COMPAT_DEBUG=1 ...                        # 兼容层把测试体的抛错栈打到 stderr（runner 只给一行消息）

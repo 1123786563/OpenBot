@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const auditPath = process.argv[2] ?? "docs/verification/e2e-file-audit.json";
+const auditPath = process.argv[2] ?? "archive/verification/e2e-file-audit.json";
 const groupSize = Number(process.env.E2E_BUN_GROUP_SIZE ?? 24);
 
 // The mobile QA deliverable is written against an Appium driver and a device bundle: it is not

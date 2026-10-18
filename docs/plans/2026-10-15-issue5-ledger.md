@@ -8,10 +8,10 @@ BASE: `f0520524f0faa2b4533b9d2f1aa692c8f907ba71`. No commit/push/merge authorize
 
 ## Intake evidence
 
-- Parent snapshot: `docs/issue-snapshots/openbot-issue5.json`
-- Parent comments: `docs/issue-snapshots/openbot-issue5-comments.json`
-- Formal sub-issues: `docs/issue-snapshots/openbot-issue5-subissues.json` (100)
-- Indexed continuation: `docs/issue-snapshots/issue5-indexed/issue-307.json` … `issue-357.json` (51)
+- Parent snapshot: `archive/issue-snapshots/openbot-issue5.json`
+- Parent comments: `archive/issue-snapshots/openbot-issue5-comments.json`
+- Formal sub-issues: `archive/issue-snapshots/openbot-issue5-subissues.json` (100)
+- Indexed continuation: `archive/issue-snapshots/issue5-indexed/issue-307.json` … `issue-357.json` (51)
 - Intake timestamp: 2026-10-15 Asia/Shanghai.
 - Missing/duplicate check: 0 missing after re-fetch; 0 overlap between formal and indexed sets; #339 and #346 required re-fetch after empty first responses.
 - Dependency source: each ticket’s `Blocked by`/`Blocks` section and parent comments; inferred code/interface edges must be recorded with evidence before dispatch.
@@ -26,7 +26,7 @@ BASE: `f0520524f0faa2b4533b9d2f1aa692c8f907ba71`. No commit/push/merge authorize
 | #234 / `task_aa262cf5b257` | `ctx_16730c8a2768` | `issue5-234-2` | `pi` / model, effort inherited; effective agent verified | pending | pending | pending | running |
 | #209 independent review / `task_2068058195f1` | `ctx_19bc5eec8447` | exact `issue5-209-2` snapshot | `pi` / model, effort inherited; effective agent verified | checkpoint from worker | pending | pending | reviewing |
 
-#209 worker outcome: `succeeded`, report `docs/execution-ledgers/checkpoints/209/retry-2/report.md`, checkpoint retained for review. Reported verification: 45/45 unit, 13/13 integration, 3 serial integration runs, typecheck 0, Biome clean. This is worker evidence pending independent review and hash verification.
+#209 worker outcome: `succeeded`, report `archive/execution-ledgers/checkpoints/209/retry-2/report.md`, checkpoint retained for review. Reported verification: 45/45 unit, 13/13 integration, 3 serial integration runs, typecheck 0, Biome clean. This is worker evidence pending independent review and hash verification.
 
 For every settled worker, choose reuse/retain/release before acknowledging its delivery. Timeout, silence or empty result is only a checkpoint; never treat it as failure or authorize retry without positive lifecycle evidence.
 

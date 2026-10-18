@@ -92,3 +92,4 @@ gui-test-screenshots/
 .audit.*.config.ts
 
 .craft/
+archive/

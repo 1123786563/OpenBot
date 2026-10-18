@@ -23,7 +23,7 @@ const arg = (name, fallback) => {
 const report = resolve(root, arg("report", ".e2e/unit/report.json"));
 const verdicts = resolve(
   root,
-  arg("verdicts", "docs/verification/e2e-vs-bun.json"),
+  arg("verdicts", "archive/verification/e2e-vs-bun.json"),
 );
 const byVerdict = arg("verdict", "");
 const apply = process.argv.includes("--apply");

@@ -120,7 +120,7 @@ await Promise.all(Array.from({ length: concurrency }, worker));
 results.sort((a, b) => a.file.localeCompare(b.file));
 
 writeFileSync(
-  join(root, "docs/verification/e2e-file-audit.json"),
+  join(root, "archive/verification/e2e-file-audit.json"),
   JSON.stringify(results, null, 1),
 );
 const bad = results.filter((r) => r.status !== "collected");
@@ -144,4 +144,4 @@ for (const [cause, count] of [...causes]
   .slice(0, 20)) {
   console.log(`  ${String(count).padStart(4)}  ${cause}`);
 }
-console.log(`\nledger: docs/verification/e2e-file-audit.json`);
+console.log(`\nledger: archive/verification/e2e-file-audit.json`);

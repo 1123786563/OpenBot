@@ -19,7 +19,7 @@
 
 **Owner:** Pi implementation worker; independent Pi reviewer after completion.
 
-**Owned files:** Only the exact source checkpoint production/test files from #207/#209/#215/#234 plus necessary merged shared files (`server/src/config.ts`, schema exports/config, Drizzle journal and new migration SQL/meta files) and integration checkpoint documents under `docs/execution-ledgers/checkpoints/frontier-integration/`.
+**Owned files:** Only the exact source checkpoint production/test files from #207/#209/#215/#234 plus necessary merged shared files (`server/src/config.ts`, schema exports/config, Drizzle journal and new migration SQL/meta files) and integration checkpoint documents under `archive/execution-ledgers/checkpoints/frontier-integration/`.
 
 **Steps:**
 
