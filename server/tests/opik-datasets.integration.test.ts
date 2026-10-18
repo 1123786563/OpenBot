@@ -475,6 +475,66 @@ function storeWithArmedSelect(
   return createObservationDatasetStore(hooked as unknown as typeof database);
 }
 
+/**
+ * The same sub-statement window, armed on the store's Nth UPDATE: the write runs
+ * only after `armed` has committed — the moment a concurrent writer's commit
+ * (retention's deletion record) lands between the locked read and the UPDATE
+ * that must re-decide (OCR R5-24). A row-level lock covers the datasets table,
+ * never the deletions table, so this window is otherwise unreachable.
+ */
+function storeWithArmedUpdate(
+  arm: (updateIndex: number) => Promise<void> | undefined,
+) {
+  const hooked = {
+    ...database,
+    transaction: (callback: (tx: never) => unknown) =>
+      database.transaction(async (tx) => {
+        let updates = 0;
+        const originalUpdate = tx.update.bind(tx);
+        (tx as { update: unknown }).update = (...args: unknown[]) => {
+          const builder = originalUpdate(
+            ...(args as Parameters<typeof originalUpdate>),
+          );
+          const originalSet = builder.set.bind(builder);
+          builder.set = (...setArgs: unknown[]) => {
+            const setBuilder = originalSet(
+              ...(setArgs as Parameters<typeof originalSet>),
+            );
+            const originalWhere = setBuilder.where.bind(setBuilder);
+            setBuilder.where = (...whereArgs: unknown[]) => {
+              const query = originalWhere(
+                ...(whereArgs as Parameters<typeof originalWhere>),
+              );
+              const originalReturning = query.returning.bind(query);
+              query.returning = (...returningArgs: unknown[]) => {
+                const awaited = originalReturning(
+                  ...(returningArgs as Parameters<typeof originalReturning>),
+                );
+                updates += 1;
+                const armed = arm(updates);
+                if (!armed) return awaited;
+                const then = awaited.then.bind(awaited);
+                // Intentional thenable wrap (see storeWithArmedSelect): the hook
+                // point that lets the armed commit run before the UPDATE executes.
+                // biome-ignore lint/suspicious/noThenProperty: intentional test hook, see above.
+                awaited.then = (
+                  resolve: (value: never) => unknown,
+                  reject: (reason?: unknown) => unknown,
+                ) => armed.then(() => then(resolve, reject), reject);
+                return awaited;
+              };
+              return query;
+            };
+            return setBuilder;
+          };
+          return builder;
+        };
+        return callback(tx as never);
+      }),
+  };
+  return createObservationDatasetStore(hooked as unknown as typeof database);
+}
+
 /** Deletes a dataset subject the only sanctioned way: under the cleanup flag. */
 const cleanupDataset = (id: string) =>
   database.$client.begin(async (tx: TransactionSQL) => {
@@ -579,6 +639,35 @@ test("a conflict whose version vanished mid-transaction answers 404, never a bar
   ).rejects.toThrow(new DatasetStoreError("DATASET_NOT_FOUND", 404));
   expect(await store.getDataset(scopeA, dataset.id)).not.toBeNull();
 });
+
+test("the sync write re-checks deletion: a deletion record committing in the markSynced window wins the row (OCR R5-24)", async () => {
+  const { dataset } = await store.saveVersion(scopeA, {
+    datasetName: `${prefix}-r524-${randomUUID()}`,
+    cases: [caseA],
+  });
+  // The SELECT's FOR UPDATE lock covers the datasets row, never the deletions
+  // table: retention's offer commits a deletion record in the window between
+  // the locked read and the UPDATE, and an UPDATE whose WHERE carries only the
+  // id would record an upstream id onto a row retention has already judged
+  // gone — the orphaned upstream copy the m121 discipline forbids. The write
+  // must carry the same notPendingDeletion filter the read did, and a row the
+  // filter excludes answers the same 404 every reader now gets.
+  const armed = storeWithArmedUpdate(() =>
+    deletingDataset(scopeA, dataset.id),
+  );
+  await expect(
+    armed.markSynced(scopeA, dataset.id, `opik-r524-${randomUUID()}`),
+  ).rejects.toThrow(new DatasetStoreError("DATASET_NOT_FOUND", 404));
+  const rows = await database
+    .select({
+      syncState: aiObservationDatasets.syncState,
+      opikDatasetId: aiObservationDatasets.opikDatasetId,
+    })
+    .from(aiObservationDatasets)
+    .where(eq(aiObservationDatasets.id, dataset.id));
+  expect(rows).toEqual([{ syncState: "pending", opikDatasetId: null }]);
+});
+
 
 test("deleteDataset refuses a synced subject: the upstream mapping must not be orphaned (OCR m125)", async () => {
   const { dataset } = await store.saveVersion(scopeA, {
