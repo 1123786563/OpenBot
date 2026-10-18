@@ -1,0 +1,6 @@
+(pass) MT074 AC4: every attempt leaves one audited, value-free trail > restricted roles hold zero table privileges on the interaction trail (structural isolation) [2.46ms]
+
+ 22 pass
+ 0 fail
+ 414 expect() calls
+Ran 22 tests across 1 file. [290.00ms]

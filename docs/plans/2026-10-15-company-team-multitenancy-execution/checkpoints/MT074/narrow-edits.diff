@@ -1,0 +1,103 @@
+--- docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT074/narrow-before/migrate-test.ts	2026-10-18 15:01:55
++++ server/scripts/multitenancy/migrate-test.ts	2026-10-18 15:06:00
+@@ -56,6 +56,27 @@
+   readonly description: string;
+   readonly steps: readonly TaskMigrationStep[];
+ }
++
++const VENDOR_BILLING_INTERACTIONS_STATEMENTS: readonly string[] = [
++  'CREATE TABLE "billing_vendor_interactions" (\n' +
++    '\t"id" text PRIMARY KEY NOT NULL,\n' +
++    '\t"direction" text NOT NULL,\n' +
++    '\t"tenant_id" text,\n' +
++    '\t"principal_id" text,\n' +
++    '\t"external_customer_id" text,\n' +
++    '\t"operation" text NOT NULL,\n' +
++    '\t"outcome" text NOT NULL,\n' +
++    '\t"denial_code" text,\n' +
++    '\t"detail" jsonb,\n' +
++    '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
++    '\tCONSTRAINT "billing_vendor_interactions_direction" CHECK ("billing_vendor_interactions"."direction" in (\'call\',\'callback\')),\n' +
++    '\tCONSTRAINT "billing_vendor_interactions_outcome" CHECK ("billing_vendor_interactions"."outcome" in (\'applied\',\'refused\')),\n' +
++    '\tCONSTRAINT "billing_vendor_interactions_denial_pair" CHECK (("billing_vendor_interactions"."outcome" = \'applied\' AND "billing_vendor_interactions"."denial_code" IS NULL) OR ("billing_vendor_interactions"."outcome" = \'refused\' AND "billing_vendor_interactions"."denial_code" IS NOT NULL AND "billing_vendor_interactions"."denial_code" <> \'\')),\n' +
++    "\tCONSTRAINT \"billing_vendor_interactions_detail_shape\" CHECK (\"billing_vendor_interactions\".\"detail\" IS NULL OR (jsonb_typeof(\"billing_vendor_interactions\".\"detail\") = 'object' AND NOT \"billing_vendor_interactions\".\"detail\" ?| array['envelope','plaintext','secret','value','password','token','apiKey']))\n" +
++    ");",
++  'CREATE INDEX "billing_vendor_interactions_tenant_time_idx" ON "billing_vendor_interactions" ("tenant_id","created_at");',
++  'CREATE INDEX "billing_vendor_interactions_customer_time_idx" ON "billing_vendor_interactions" ("external_customer_id","created_at");',
++];
+ 
+ /**
+  * 工具自检任务：只用工具自己的临时表证明 generate/编号/dry-run/manifest/
+@@ -2053,10 +2074,40 @@
+           ")\n" +
+           'ON CONFLICT ("task_id") DO NOTHING;',
+       ],
++    },
++  ],
++};
++
++/**
++ * MT074（波次 16 补位）：供应商计费调用面与回调归属锁定的审计面（expand-only）。
++ * 新增一张账务域交互审计表（跟随 MT069/MT070/MT073 同款 billing 域访问模型：
++ * owner 通道、无 RLS；不授任何角色授权 = 结构隔离，套件以 has_table_privilege
++ * 反证钉死）：
++ *   - billing_vendor_interactions：一行 = 一次供应商计费交互尝试（call/callback
++ *     × applied/refused 都是事实）。无外键（MT069 审计先例：审计不随对象消亡；
++ *     且「成员行已删」的拒绝必须可记录——membership 外键会让拒绝本身抛 23503）；
++ *     tenant_id 可空（未映射回调不臆造归属）；direction/outcome 闭集 CHECK、
++ *     outcome/denial_code 行形配对 CHECK、detail 闭形 CHECK（object 且禁秘密
++ *     载体键）。
++ * 不修改任何既有表；供应商事件去重/重放防线仍在既有 webhook inbox（零改动）。
++ */
++const VENDOR_BILLING_INTERACTION_TASK: TaskMigrationSpec = {
++  id: "MT074",
++  description:
++    "MT074（波次 16 补位）：供应商计费调用面与回调归属锁定——新增 billing_vendor_interactions 交互审计表（expand-only，仅新增一张账务域审计表，不改既有对象）。",
++  steps: [
++    {
++      slug: "vendor_billing_interactions",
++      impact:
++        "新增 billing_vendor_interactions 表：每次供应商计费交互尝试一行（方向/公司/主体/客户键/操作/结局/拒绝码/闭形 detail）。无外键（审计不随对象消亡），direction/outcome 闭集、结局/拒绝码行形配对、detail 闭形四组 CHECK；两条查询索引。不修改任何既有表。",
++      objects: ["billing_vendor_interactions"],
++      statements: VENDOR_BILLING_INTERACTIONS_STATEMENTS,
+     },
+   ],
+ };
+ 
++/** MT074 交互审计表语句：建表 + 四组 CHECK + 两条查询索引（无外键、无 RLS、无角色授权）。 */
++
+ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
+   [SELF_CHECK_TASK.id, SELF_CHECK_TASK],
+   [WORKSPACE_MEMBERSHIP_TASK.id, WORKSPACE_MEMBERSHIP_TASK],
+@@ -2081,6 +2132,7 @@
+   [CREDENTIAL_LEASE_TASK.id, CREDENTIAL_LEASE_TASK],
+   [COMPANY_FINANCE_GRANT_TASK.id, COMPANY_FINANCE_GRANT_TASK],
+   [OPENMUSE_TASK_TENANCY_TASK.id, OPENMUSE_TASK_TENANCY_TASK],
++  [VENDOR_BILLING_INTERACTION_TASK.id, VENDOR_BILLING_INTERACTION_TASK],
+ ]);
+ 
+ export const ALLOWED_TASK_IDS: readonly string[] = [...TASKS.keys()].sort();
+--- docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT074/narrow-before/migration-tool.test.ts	2026-10-18 15:01:55
++++ server/tests/multitenancy/migration-tool.test.ts	2026-10-18 15:02:59
+@@ -433,10 +433,10 @@
+       "MT069",
+       "MT070",
+       "MT073",
++      "MT074",
+       "MT076",
+       "MT077",
+       "MT112",
+-      "MT074",
+     ]);
+     expect(new Set(ALLOWED_TASK_IDS)).toEqual(new Set(TASKS.keys()));
+     const selfCheck = TASKS.get("MT000");
+--- docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT074/narrow-before/schema-index.ts	2026-10-18 15:01:55
++++ server/src/db/schema/index.ts	2026-10-18 15:02:36
+@@ -52,6 +52,7 @@
+ export * from "./shared-use";
+ export * from "./team-bots";
+ export * from "./usage-outbox";
++export * from "./vendor-billing";
+ export * from "./voice";
+ export * from "./work";
+ export * from "./workshop";

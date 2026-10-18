@@ -1,0 +1,12 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/vendor-billing.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '../../src/billing/vendor-billing' from '/Users/wuyongjun/orca/workspaces/OpenBot/w16-mt074/server/tests/multitenancy/vendor-billing.test.ts'
+-------------------------------
+
+
+ 0 pass
+ 1 fail

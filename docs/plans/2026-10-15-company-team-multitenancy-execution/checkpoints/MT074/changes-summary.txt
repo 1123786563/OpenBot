@@ -1,0 +1,34 @@
+MT074（波次 16 补位）交付摘要 — 供应商计费调用面 + 回调归属锁定
+
+新文件（4）
+  server/src/db/schema/vendor-billing.ts          billing_vendor_interactions 交互审计表（无外键、
+                                                  direction/outcome 闭集 + 结局/拒绝码行形配对 +
+                                                  detail 闭形四组 CHECK；billing 域访问模型：owner 通道、
+                                                  无 RLS、ob_ent_* 零授权）
+  server/src/billing/vendor-billing.ts            唯一新服务面：provisionCompanyCustomer（身份门→映射→
+                                                  付款人→闭形载荷 {externalId,name}→注入的供应商客户端，
+                                                  传输结局结构化返回）；applyVendorCallback（映射归属→
+                                                  跨公司比对→存活门 fail-closed→付款人锁→锁定付款人事实）；
+                                                  listInteractions 审计读。每次尝试（applied/refused）恰一行审计，
+                                                  detail 非值事实（fields/vendorStatus）
+  server/tests/multitenancy/vendor-billing.test.ts       22 用例（AC1-AC4 + 存储形状 CHECK 反证 + 结构隔离反证）
+  server/tests/multitenancy/support/vendor-billing.ts    夹具（两公司全装+无映射/映射无账户/映射隔离账户三边缘 +
+                                                  个人账户对照；fake vendor 脚本客户端；成员停用/删除翻转；
+                                                  缺 env 显式 skip 不回退；mt074- 前缀级联清扫）
+
+授权窄追加（3，brief 预授权「窄缝纯追加披露」，diff=narrow-edits.diff 全纯追加）
+  server/scripts/multitenancy/migrate-test.ts     纯追加 MT074 任务（单步 vendor_billing_interactions，3 语句）+
+                                                  TASKS 注册表 1 行（第 23 任务）
+  server/tests/multitenancy/migration-tool.test.ts  仅穷举断言追加 "MT074"（ruling #5 第 21 次先例）
+  server/src/db/schema/index.ts                   barrel 字母序追加 1 行 export * from "./vendor-billing"
+
+零改动（只读消费）
+  payer-accounts（MT069）、credits-writer、company-reservation、webhook inbox
+  （billing/service.ts）、lago.ts、payments/*、src/index.ts、app.ts（无 HTTP 装配面——
+  库层 seam，MT069/MT070/MT073 D6 同边界）
+
+验证门槛（证据在 verification/ 与 mutation/）
+  基线 1222/0/47 复现（00）；前置链 23 任务 43 步（01）；聚焦 22/0（GREEN-2、07）；
+  全量 1244/0/48 = 1222+22（08）；typecheck 0（09）；biome 7 触及文件 0（10）；
+  变异 13：12 直接 KILLED + M05 单层等价/M05b 复合 KILLED，RESTORE 哈希逐位一致；
+  prereq 284 项 0 missing、漂移恰为 3 个授权窄缝文件。
