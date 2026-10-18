@@ -715,3 +715,116 @@ export const gatewayVirtualKeys = pgTable(
     ),
   ],
 );
+
+/**
+ * The key state sync's own state — the singleton row Bifrost 05.8 (#249) keeps between
+ * runs (AC11, design Q18: 同步失败保留上次成功状态并记录原因；最后成功同步时间可查询).
+ *
+ * The sibling of the catalog sync's row (0137), for the same reasons: every attempt's
+ * detail has its own home — each drift lands as an audit event naming the key, the flip
+ * and the fixed reason — so this row is the pointer a status read answers, not a log. A
+ * failed sync increments `consecutive_failures` in the same statement that records the
+ * reason (an atomic `+1`, so two syncs racing the row cannot lose a count), and a success
+ * zeroes it, moves `last_successful_sync_at` and clears the failure columns. The failure
+ * reason is a fixed `gateway_key_sync_*` code — never upstream bytes, never an address —
+ * displayable on any surface.
+ */
+export const gatewayKeySyncState = pgTable(
+  "gateway_key_sync_state",
+  {
+    /** The singleton row's fixed id — one key state sync per deployment. */
+    id: text("id").primaryKey(),
+    /** When the last fully successful sync completed. */
+    lastSuccessfulSyncAt: timestamp("last_successful_sync_at", {
+      withTimezone: true,
+    }),
+    /** Failures in a row since the last success; zeroed by the next success. */
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    /** Why the last attempt failed — a fixed code, present iff it failed. */
+    lastFailureReasonCode: text("last_failure_reason_code"),
+    /** When the last failure was classified. */
+    lastFailureAt: timestamp("last_failure_at", { withTimezone: true }),
+    /** When the last attempt of any outcome completed — the status read's "tried at". */
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    /** The last attempt's outcome, when there was one. */
+    lastAttemptStatus: text("last_attempt_status"),
+    /** When this row was last written. */
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "gateway_key_sync_state_failures_nonnegative",
+      sql`${table.consecutiveFailures} >= 0`,
+    ),
+    check(
+      "gateway_key_sync_state_attempt_status_allowed",
+      sql`${table.lastAttemptStatus} IS NULL OR ${table.lastAttemptStatus} IN ('ok', 'failed')`,
+    ),
+    /*
+     * A recorded failure carries exactly its reason and moment — the same
+     * consistency the catalog sync's row enforces, for the same reason.
+     */
+    check(
+      "gateway_key_sync_state_failure_details_consistent",
+      sql`(${table.lastAttemptStatus} = 'failed') = (${table.lastFailureReasonCode} IS NOT NULL) AND (${table.lastAttemptStatus} = 'failed') = (${table.lastFailureAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/**
+ * The sync's drift list — the append-only record of every key a sync flipped
+ * (Bifrost 05.8, Produces contract: 同步结果记录……差异清单).
+ *
+ * The sibling of the catalog sync's fetch log (03.1): the state row above is
+ * the pointer between runs, this table is the per-attempt detail. One row per
+ * flipped key per run, written in the SAME transaction as the flip itself, so
+ * the list and the statuses can never disagree; rows are never updated or
+ * deleted — a drift observed twice is two rows, and the history is the point.
+ * `reason_code` is one of the three fixed observation codes, `to_status` one
+ * of the two unavailability states — a sync can only move a key TOWARD
+ * unavailability (Q18: the sync direction is gateway → local, and from a
+ * gateway state change no authorization is derived), so the closed sets are
+ * the whole truth the writer can express.
+ */
+export const gatewayKeySyncDrift = pgTable(
+  "gateway_key_sync_drift",
+  {
+    /** Stable, opaque row id. */
+    id: text("id").primaryKey(),
+    /** The local key record that flipped (`gateway_virtual_keys.id`). */
+    keyId: text("key_id").notNull(),
+    /** The authorization the key was issued for, carried for the reads that ask "whose". */
+    grantId: text("grant_id").notNull(),
+    /** The Bot half of the key's identity, carried for the same reads. */
+    botId: text("bot_id").notNull(),
+    /** The gateway's own id the observation was made against. */
+    gatewayVirtualKeyId: text("gateway_virtual_key_id").notNull(),
+    /** What the local record said before the flip; always `active` — see the table comment. */
+    fromStatus: text("from_status").notNull(),
+    /** What the sync set it to; the two unavailability states, never `active`. */
+    toStatus: text("to_status").notNull(),
+    /** Why the sync flipped it — a fixed observation code, displayable anywhere. */
+    reasonCode: text("reason_code").notNull(),
+    /** When the observation was made (the sync's clock, not statement time, so a replay names the run). */
+    driftedAt: timestamp("drifted_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    // The questions "what happened to this key" and "what drifted lately" ask.
+    index("gateway_key_sync_drift_key_idx").on(table.keyId),
+    index("gateway_key_sync_drift_drifted_at_idx").on(table.driftedAt),
+    check(
+      "gateway_key_sync_drift_from_status_check",
+      sql`${table.fromStatus} = 'active'`,
+    ),
+    check(
+      "gateway_key_sync_drift_to_status_check",
+      sql`${table.toStatus} IN ('revoked', 'expired')`,
+    ),
+    check(
+      "gateway_key_sync_drift_reason_code_check",
+      sql`${table.reasonCode} IN ('gateway_key_deleted', 'gateway_key_disabled', 'gateway_key_expired')`,
+    ),
+  ],
+);
