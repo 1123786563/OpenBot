@@ -1,0 +1,37 @@
+{
+  "title": "AI observability",
+  "states": {
+    "disabled": {
+      "title": "Observability is not enabled",
+      "description": "This deployment has not switched on AI observability, so no runs are being collected."
+    },
+    "empty": {
+      "title": "No data collected yet",
+      "description": "Once collection is enabled, runs across your scope appear here."
+    },
+    "forbidden": {
+      "title": "Outside your admin scope",
+      "description": "This view covers the deployments and Bots your administration extends to."
+    },
+    "basic": {
+      "title": "Basic-level runtimes",
+      "description": "Some runtimes report at basic level: what passed through OpenBot is collected, their internal steps are not. This is a capability level, not a missing service."
+    },
+    "omitted": {
+      "title": "Content omitted",
+      "description": "Content across this view was withheld by the redaction policy before it was stored."
+    },
+    "truncated": {
+      "title": "Content truncated",
+      "description": "Content exceeding the field limits was cut short before storage; the full content was never kept."
+    },
+    "syncing": {
+      "title": "Collection is behind",
+      "description": "The export queue is still delivering records; counts catch up on their own."
+    },
+    "unavailable": {
+      "title": "Observability backend unreachable",
+      "description": "The tracking service could not be reached, so summaries cannot be shown right now. Agent runs themselves were not affected."
+    }
+  }
+}

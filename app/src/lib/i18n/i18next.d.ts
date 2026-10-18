@@ -13,6 +13,10 @@ import type errors from "../../locales/en/errors.json";
 import type knowledge from "../../locales/en/knowledge.json";
 import type market from "../../locales/en/market.json";
 import type nav from "../../locales/en/nav.json";
+import type obsAdmin from "../../locales/en/obs-admin.json";
+import type obsDatasets from "../../locales/en/obs-datasets.json";
+import type obsEvaluations from "../../locales/en/obs-evaluations.json";
+import type obsRuns from "../../locales/en/obs-runs.json";
 import type routines from "../../locales/en/routines.json";
 import type settings from "../../locales/en/settings.json";
 import type skills from "../../locales/en/skills.json";
@@ -47,6 +51,10 @@ declare module "i18next" {
       "ai-observability-datasets": typeof aiObservabilityDatasets;
       "ai-observability-evaluations": typeof aiObservabilityEvaluations;
       "ai-observability-admin": typeof aiObservabilityAdmin;
+      "obs-runs": typeof obsRuns;
+      "obs-datasets": typeof obsDatasets;
+      "obs-evaluations": typeof obsEvaluations;
+      "obs-admin": typeof obsAdmin;
     };
   }
 }

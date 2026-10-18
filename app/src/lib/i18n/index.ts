@@ -16,6 +16,10 @@ import errors from "../../locales/en/errors.json";
 import knowledge from "../../locales/en/knowledge.json";
 import market from "../../locales/en/market.json";
 import nav from "../../locales/en/nav.json";
+import obsAdmin from "../../locales/en/obs-admin.json";
+import obsDatasets from "../../locales/en/obs-datasets.json";
+import obsEvaluations from "../../locales/en/obs-evaluations.json";
+import obsRuns from "../../locales/en/obs-runs.json";
 import routines from "../../locales/en/routines.json";
 import settings from "../../locales/en/settings.json";
 import skills from "../../locales/en/skills.json";
@@ -36,6 +40,10 @@ import zhErrors from "../../locales/zh-CN/errors.json";
 import zhKnowledge from "../../locales/zh-CN/knowledge.json";
 import zhMarket from "../../locales/zh-CN/market.json";
 import zhNav from "../../locales/zh-CN/nav.json";
+import zhObsAdmin from "../../locales/zh-CN/obs-admin.json";
+import zhObsDatasets from "../../locales/zh-CN/obs-datasets.json";
+import zhObsEvaluations from "../../locales/zh-CN/obs-evaluations.json";
+import zhObsRuns from "../../locales/zh-CN/obs-runs.json";
 import zhRoutines from "../../locales/zh-CN/routines.json";
 import zhSettings from "../../locales/zh-CN/settings.json";
 import zhSkills from "../../locales/zh-CN/skills.json";
@@ -75,11 +83,18 @@ export const NAMESPACES = [
    *   /_authed/_app/bots/$agentId/runs/$bindingId   (detail)
    *   /_authed/_app/bots/$agentId/evaluations       (datasets + experiments)
    *   /_authed/admin/ai-observability               (admin summary + export status)
+   *
+   * T02 also landed a parallel obs-* naming line; keep both registrations so either front-end
+   * bundle loads while the routes above remain the one the app mounts.
    */
   "ai-observability-runs",
   "ai-observability-datasets",
   "ai-observability-evaluations",
   "ai-observability-admin",
+  "obs-runs",
+  "obs-datasets",
+  "obs-evaluations",
+  "obs-admin",
 ] as const;
 
 export type Namespace = (typeof NAMESPACES)[number];
@@ -145,6 +160,10 @@ void i18next
         "ai-observability-datasets": aiObservabilityDatasets,
         "ai-observability-evaluations": aiObservabilityEvaluations,
         "ai-observability-admin": aiObservabilityAdmin,
+        "obs-runs": obsRuns,
+        "obs-datasets": obsDatasets,
+        "obs-evaluations": obsEvaluations,
+        "obs-admin": obsAdmin,
       },
       "zh-CN": {
         common: zhCommon,
@@ -167,6 +186,10 @@ void i18next
         "ai-observability-datasets": zhAiObservabilityDatasets,
         "ai-observability-evaluations": zhAiObservabilityEvaluations,
         "ai-observability-admin": zhAiObservabilityAdmin,
+        "obs-runs": zhObsRuns,
+        "obs-datasets": zhObsDatasets,
+        "obs-evaluations": zhObsEvaluations,
+        "obs-admin": zhObsAdmin,
       },
     },
     fallbackLng: FALLBACK_LANGUAGE,

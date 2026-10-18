@@ -1,0 +1,37 @@
+{
+  "title": "AI 可观测性",
+  "states": {
+    "disabled": {
+      "title": "可观测性未开启",
+      "description": "本部署尚未开启 AI 可观测性，因此不会采集任何运行。"
+    },
+    "empty": {
+      "title": "还没有采集到数据",
+      "description": "开启采集后，你管理范围内的运行会汇总在这里。"
+    },
+    "forbidden": {
+      "title": "超出你的管理范围",
+      "description": "此视图只覆盖你的管理员权限所及的部署与 Bot。"
+    },
+    "basic": {
+      "title": "basic 级别运行时",
+      "description": "部分运行时按 basic 级别上报：只采集经过 OpenBot 的内容，不采集其内部步骤。这是能力等级，不是服务缺失。"
+    },
+    "omitted": {
+      "title": "内容已省略",
+      "description": "此视图中的内容在存储前已按脱敏策略省略。"
+    },
+    "truncated": {
+      "title": "内容已截断",
+      "description": "超出字段上限的内容在存储前已被截断；完整内容从未被保留。"
+    },
+    "syncing": {
+      "title": "采集存在积压",
+      "description": "导出队列仍在投递记录，统计数据会自行追平。"
+    },
+    "unavailable": {
+      "title": "可观测性后端不可达",
+      "description": "当前无法连接追踪服务，因此暂时无法显示汇总。Agent 运行本身未受影响。"
+    }
+  }
+}
