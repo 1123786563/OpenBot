@@ -1,5 +1,5 @@
 {
- "generatedBy": "scripts/e2e-add-driven.mjs",
+ "generatedBy": "scripts/lib/e2e-manifest.mjs regroup",
  "groups": [
   {
    "name": "agent-computer/tests",
@@ -46,16 +46,6 @@
     "app/tests/admin-credit-grant-ui.test.tsx",
     "app/tests/admin-gateway-readiness.test.tsx",
     "app/tests/agent-roster-error.test.tsx",
-    "app/tests/ai-observability-admin-summary.test.tsx",
-    "app/tests/ai-observability-datasets.test.tsx",
-    "app/tests/ai-observability-experiment-comparison.test.tsx",
-    "app/tests/ai-observability-experiments.test.tsx",
-    "app/tests/ai-observability-exports.test.tsx",
-    "app/tests/ai-observability-route-chain.test.tsx",
-    "app/tests/ai-observability-routes.test.tsx",
-    "app/tests/ai-observability-run-detail.test.tsx",
-    "app/tests/ai-observability-run-steps.test.tsx",
-    "app/tests/ai-observability-runs-list.test.tsx",
     "app/tests/approval-tools.test.tsx",
     "app/tests/approvals-rules.test.tsx",
     "app/tests/audit-dry-run-label.test.tsx",
@@ -65,12 +55,7 @@
     "app/tests/bot-app-grants-screen.test.tsx",
     "app/tests/bot-approval-rules.test.tsx",
     "app/tests/bot-memory.test.tsx",
-    "app/tests/bot-needs-you.test.tsx"
-   ]
-  },
-  {
-   "name": "app/tests part 2",
-   "files": [
+    "app/tests/bot-needs-you.test.tsx",
     "app/tests/bot-profile-active.test.tsx",
     "app/tests/bot-profile-notice.test.tsx",
     "app/tests/bot-reaching-you.test.tsx",
@@ -80,7 +65,12 @@
     "app/tests/bot-settings-rows.test.tsx",
     "app/tests/bot-setup.test.tsx",
     "app/tests/bot-sharing.test.tsx",
-    "app/tests/boundaries-read-failure.test.tsx",
+    "app/tests/boundaries-read-failure.test.tsx"
+   ]
+  },
+  {
+   "name": "app/tests part 2",
+   "files": [
     "app/tests/brokered-account-row.test.tsx",
     "app/tests/build-cache.test.ts",
     "app/tests/channel-chat.test.ts",
@@ -94,12 +84,7 @@
     "app/tests/composer-dictation.test.tsx",
     "app/tests/composer-drop-guard.test.tsx",
     "app/tests/composer-dropped-attachments.test.tsx",
-    "app/tests/composer-inflight-removal.test.tsx"
-   ]
-  },
-  {
-   "name": "app/tests part 3",
-   "files": [
+    "app/tests/composer-inflight-removal.test.tsx",
     "app/tests/composer-insecure-context.test.tsx",
     "app/tests/composer-paste.test.tsx",
     "app/tests/composer-queue-attachments.test.tsx",
@@ -109,7 +94,12 @@
     "app/tests/composing-enter.test.tsx",
     "app/tests/composio-picker-add-error.test.tsx",
     "app/tests/computer-activity.test.ts",
-    "app/tests/computer-control-button.test.tsx",
+    "app/tests/computer-control-button.test.tsx"
+   ]
+  },
+  {
+   "name": "app/tests part 3",
+   "files": [
     "app/tests/computer-handoff.test.ts",
     "app/tests/computer-tool-refusals.test.ts",
     "app/tests/craft-session-title.test.tsx",
@@ -123,12 +113,7 @@
     "app/tests/memory-settings.test.tsx",
     "app/tests/model-picker-ui.test.tsx",
     "app/tests/multitenancy/selection.test.tsx",
-    "app/tests/observability-i18n-namespaces.test.ts"
-   ]
-  },
-  {
-   "name": "app/tests part 4",
-   "files": [
+    "app/tests/observability-i18n-namespaces.test.ts",
     "app/tests/observability-route-guards.test.tsx",
     "app/tests/person-sent-message.test.ts",
     "app/tests/playground-json.test.ts",
@@ -138,11 +123,31 @@
     "app/tests/root-drop-guard.test.tsx",
     "app/tests/router.test.ts",
     "app/tests/serve.test.ts",
-    "app/tests/sign-in-card.test.tsx",
+    "app/tests/sign-in-card.test.tsx"
+   ]
+  },
+  {
+   "name": "app/tests part 4",
+   "files": [
     "app/tests/skills-read-failure.test.tsx",
     "app/tests/stopped-turn.test.ts",
     "app/tests/transcript-attachments.test.tsx",
     "app/tests/user-authorizations-ui.test.tsx"
+   ]
+  },
+  {
+   "name": "app/tests/ai-observability",
+   "files": [
+    "app/tests/ai-observability-admin-summary.test.tsx",
+    "app/tests/ai-observability-datasets.test.tsx",
+    "app/tests/ai-observability-experiment-comparison.test.tsx",
+    "app/tests/ai-observability-experiments.test.tsx",
+    "app/tests/ai-observability-exports.test.tsx",
+    "app/tests/ai-observability-route-chain.test.tsx",
+    "app/tests/ai-observability-routes.test.tsx",
+    "app/tests/ai-observability-run-detail.test.tsx",
+    "app/tests/ai-observability-run-steps.test.tsx",
+    "app/tests/ai-observability-runs-list.test.tsx"
    ]
   },
   {

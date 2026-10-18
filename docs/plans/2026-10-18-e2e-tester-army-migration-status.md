@@ -120,6 +120,16 @@ Test Files  34 failed | 550 passed | 17 skipped (601)
 6. **迁移脚本会改到自己的地基。** 它把 `tests/support/bun-test-compat.ts`（专职 re-export
    `bun:test`）和 `bunfig.toml` 的 preload 也重写了，等于让 Bun 层套件去调 e2e 注册表；现在跳过
    兼容层与 preload，`require()` 重写也只处理代码行、不再篡改注释里的说明文字。
+7. **驱动层的分组会凭空造失败。** `bun test` 把交给它的文件放进同一个进程，留下全局状态的套件
+   会把单独跑全绿的兄弟文件改红。证据：`app/tests/bot-needs-you.test.tsx` 在迁移前整树按目录跑
+   是 7 pass / 0 fail，今天单独跑仍是 7 pass / 0 fail，但在按字母切出的 24 文件组里红 18 条，
+   而排在前面的正是新合入的 `ai-observability-*` 套件。两处处理：`scripts/lib/e2e-manifest.mjs`
+   给这类套件族单独成组（`ISLANDS`），`tests/bun-suites.test.ts` 在组内出现失败时**只把失败文件
+   各自重跑一次**，以「独自也红」为真实失败、把「只在共享进程里红」打到 stderr 点名；重跑预算
+   （8 个文件 / 300 s）用完按失败处理，不给假绿。
+   复核：`PROBE_FILE=tests/bun-suites.test.ts E2E_BUN_ONLY='app/tests' ./node_modules/.bin/e2e run --config e2e.probe.config.ts`
+   → `app/tests part 1–4` 全过（其中 4 个文件被点名为进程共享所致），
+   `app/tests/ai-observability` 仍判失败（route-chain、runs-list 独自也红，是真实缺陷）。
 
 ## 尚未完成（这是"全部测试已在 e2e 上跑起来"这句话还差的部分）
 
@@ -130,6 +140,10 @@ Test Files  34 failed | 550 passed | 17 skipped (601)
 3. **`bun run test:ui` 只验到收集层**（28 条 web 用例可收集）；执行需要 dev server 与浏览器栈。
 4. **驱动组规模变大**（328 个文件 / 24 组），整组 `bun test` 的墙钟时间显著长于原生层，
    CI 里需要按 `E2E_UNIT_SCOPE` 切目录并行，否则单作业跑完整个 corpus。
+
+5. **留下全局状态的套件仍会互相污染。** 驱动层现已能把「只在共享进程里红」与「独自也红」分开报，
+   但污染源头（fetch stub / happy-dom 注册没还原）要由这些套件自己修；`bun test` 一个进程跑多个
+   文件是这个运行方式的固有属性，迁移前后都在。
 
 ## 复核方式
 

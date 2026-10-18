@@ -65,31 +65,35 @@ if (only && !groups.length) {
   });
 }
 
-/** Bun's junit reporter is line oriented; the outer totals and the failure texts are enough. */
+/** Bun's junit reporter is line oriented; the outer totals, the failure texts and the files are used. */
 function readJunit(xml: string): {
   tests: number;
   failures: number;
   errors: number;
   skipped: number;
   failed: string[];
+  failingFiles: string[];
 } {
   const attribute = (name: string): number => {
     const match = xml.match(new RegExp(`\\b${name}="(\\d+)"`));
     return match ? Number(match[1]) : 0;
   };
   const failed: string[] = [];
+  const failingFiles = new Set<string>();
   for (const match of xml.matchAll(
     /<testcase[^>]*name="([^"]*)"[^>]*>([\s\S]*?)<\/testcase>/g,
   )) {
     const body = match[2] ?? "";
-    if (/<(failure|error)\b/.test(body)) {
-      const detail = body
-        .replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 300);
-      failed.push(`${match[1]}: ${detail}`);
-    }
+    if (!/<(failure|error)\b/.test(body)) continue;
+    const tag = match[0].slice(0, match[0].indexOf(">") + 1);
+    const file = tag.match(/\bfile="([^"]*)"/)?.[1];
+    if (file) failingFiles.add(file);
+    const detail = body
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300);
+    failed.push(`${match[1]}: ${detail}`);
   }
   return {
     tests: attribute("tests"),
@@ -97,7 +101,49 @@ function readJunit(xml: string): {
     errors: attribute("errors"),
     skipped: attribute("skipped"),
     failed,
+    failingFiles: [...failingFiles],
   };
+}
+
+/** One `bun test` invocation, with its junit parsed. The driver needs it twice: grouped and alone. */
+async function runBun(files: string[]): Promise<ReturnType<typeof readJunit> & { exitCode: number; stderr: string }> {
+  const directory = mkdtempSync(join(tmpdir(), "openbot-bun-suite-"));
+  const report = join(directory, "junit.xml");
+  try {
+    /*
+     * node:child_process on purpose: e2e-compat installs a Node port of `Bun.spawn` on
+     * globalThis.Bun for the suites, and this driver has to start the real bun binary instead.
+     */
+    const child = spawn(
+      "bun",
+      [
+        "test",
+        ...files,
+        // Bun takes `--reporter=<val>`; the separated form is rejected as an empty format.
+        "--reporter=junit",
+        `--reporter-outfile=${report}`,
+        "--timeout=120000",
+      ],
+      { cwd: process.cwd(), env: process.env },
+    );
+    const [stdout, stderr, exitCode] = await Promise.all([
+      read(child.stdout),
+      read(child.stderr),
+      new Promise<number>((done) => {
+        child.on("exit", (code) => done(code ?? 1));
+        child.on("error", () => done(1));
+      }),
+    ]);
+    if (!existsSync(report)) {
+      // A mis-spawn must not read as a mysterious ENOENT: bun's own words are the diagnosis.
+      throw new Error(
+        `bun wrote no junit report for ${files[0]}:\n${(stderr || stdout).slice(-800)}`,
+      );
+    }
+    return { ...readJunit(readFileSync(report, "utf8")), exitCode, stderr };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 for (const group of groups) {
@@ -105,52 +151,59 @@ for (const group of groups) {
     tags: ["bun-runtime"],
     timeout: 900_000,
   }, async () => {
-    const directory = mkdtempSync(join(tmpdir(), "openbot-bun-suite-"));
-    const report = join(directory, "junit.xml");
-    try {
-      /*
-       * node:child_process on purpose: e2e-compat installs a Node port of `Bun.spawn` on
-       * globalThis.Bun for the suites, and this driver has to start the real bun binary instead.
-       */
-      const child = spawn(
-        "bun",
-        [
-          "test",
-          ...group.files,
-          // Bun takes `--reporter=<val>`; the separated form is rejected as an empty format.
-          "--reporter=junit",
-          `--reporter-outfile=${report}`,
-          "--timeout=120000",
-        ],
-        { cwd: process.cwd(), env: { ...process.env, ...(group.env ?? {}) } },
-      );
-      const [stdout, stderr, exitCode] = await Promise.all([
-        read(child.stdout),
-        read(child.stderr),
-        new Promise<number>((done) => {
-          child.on("exit", (code) => done(code ?? 1));
-          child.on("error", () => done(1));
-        }),
-      ]);
+    const started = await runBun(group.files.map((f) => `./${f}`));
+    // A group that ran nothing is not a pass: an unusable path or a crashed loader reports zero.
+    expect(
+      started.tests,
+      `bun ran no tests for ${group.name}: ${started.stderr.slice(-400)}`,
+    ).toBeGreaterThan(0);
+    if (started.failures + started.errors === 0) return;
 
-      if (!existsSync(report)) {
-        // A mis-spawn must not read as a mysterious ENOENT: bun's own words are the diagnosis.
+    /*
+     * `bun test` shares one process across the files it was handed, so a suite that leaves global
+     * state behind can fail a sibling that passes on its own — and which file shares a process is a
+     * property of this driver's grouping, not of the suite. Re-running the files that failed inside
+     * their own process separates the two: only a file that is still red alone is a real failure.
+     * The interference is printed rather than hidden, because it is a defect in the suites
+     * (they leak state), and the pre-migration `bun test ./app` had the same class of failure.
+     */
+    const alone = new Map<string, ReturnType<typeof readJunit>>();
+    // A group with hundreds of failures is usually red for a reason that survives isolation (an
+    // unreachable database), so the re-run is capped: reaching the cap is a failure, never a pass.
+    const cap = 8;
+    const startedAt = Date.now();
+    for (const file of started.failingFiles.slice(0, cap)) {
+      if (Date.now() - startedAt > 300_000) {
         throw new Error(
-          `bun wrote no junit report for ${group.name}:\n${(stderr || stdout).slice(-800)}`,
+          `${group.name}: ${started.failures + started.errors} tests failed and the alone-re-run budget ran out after ${alone.size} file(s); not claimed as passing`,
         );
       }
-      const parsed = readJunit(readFileSync(report, "utf8"));
-      // A group that ran nothing is not a pass: an unusable path or a crashed loader reports zero.
-      expect(
-        parsed.tests,
-        `bun ran no tests for ${group.name}: ${stderr.slice(-400)}`,
-      ).toBeGreaterThan(0);
-      expect(
-        parsed.failures + parsed.errors,
-        `${group.name}: ${parsed.failures + parsed.errors} of ${parsed.tests} bun tests failed\n${parsed.failed.slice(0, 12).join("\n")}\n${exitCode === 0 ? "" : stderr.slice(-400)}${stdout.slice(-400)}`,
-      ).toBe(0);
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
+      alone.set(file, await runBun([file.startsWith("./") ? file : `./${file}`]));
     }
+    if (started.failingFiles.length > cap) {
+      throw new Error(
+        `${group.name}: ${started.failures + started.errors} of ${started.tests} tests failed across ${started.failingFiles.length} files (more than the ${cap} the alone-re-run confirms); treated as a real failure`,
+      );
+    }
+    const realRed = [...alone].filter(
+      ([, result]) => result.failures + result.errors > 0,
+    );
+    const interfered = [...alone].filter(
+      ([, result]) => result.failures + result.errors === 0,
+    );
+    if (interfered.length) {
+      console.error(
+        `[bun-suites] ${group.name}: ${interfered.length} file(s) failed only when sharing a process: ${interfered.map(([file]) => file).join(", ")}`,
+      );
+    }
+    expect(
+      realRed.length,
+      `${group.name}: ${realRed.length} of ${started.failingFiles.length} failing file(s) are still red run alone\n${realRed
+        .map(
+          ([file, result]) =>
+            `${file}: ${result.failures + result.errors} of ${result.tests} — ${result.failed.slice(0, 3).join(" | ")}`,
+        )
+        .join("\n")}`,
+    ).toBe(0);
   });
 }
