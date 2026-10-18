@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "../../tests/support/e2e-compat";
+import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { serve } from "../../tests/support/bun-compat";

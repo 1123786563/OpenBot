@@ -28,6 +28,7 @@
   {
    "name": "agent-sandbox/tests",
    "files": [
+    "agent-sandbox/tests/proxy.test.ts",
     "agent-sandbox/tests/snapshot.test.ts",
     "agent-sandbox/tests/sse.test.ts"
    ]
@@ -615,6 +616,7 @@
   "agent-langgraph/tests/governed-tracing.test.ts",
   "agent-langgraph/tests/trace-chain.test.ts",
   "agent-mastra/src/mastra/index.test.ts",
+  "agent-sandbox/tests/proxy.test.ts",
   "agent-sandbox/tests/snapshot.test.ts",
   "agent-sandbox/tests/sse.test.ts",
   "app/src/lib/i18n/ai-observability.test.ts",
@@ -1470,6 +1472,7 @@
   "app/tests/multitenancy/selection.test.tsx": "suite still imports \"bun:test\" at column 0; e2e on Node cannot resolve the bun: specifier and aborts the whole run",
   "app/tests/github-sources-settings.test.tsx": "runner named it: attributed runner-difference by scripts/e2e-vs-bun.mjs: green on bun test with the same suite text against the same production code",
   "app/tests/memory-settings.test.tsx": "runner named it: attributed runner-difference by scripts/e2e-vs-bun.mjs: green on bun test with the same suite text against the same production code",
-  "app/tests/account-mode-dialog.test.tsx": "runner named it: attributed runner-difference by scripts/e2e-vs-bun.mjs against .e2e/final3/report.json: green on bun test with the same suite text against the same production code"
+  "app/tests/account-mode-dialog.test.tsx": "runner named it: attributed runner-difference by scripts/e2e-vs-bun.mjs against .e2e/final3/report.json: green on bun test with the same suite text against the same production code",
+  "agent-sandbox/tests/proxy.test.ts": "runner named it: attributed runner-difference with evidence: 25 pass / 0 fail under bun test on current code with the pre-migration suite text, deterministic 24 pass / 1 fail under e2e (GET /events forwards the directory scope to the upstream). forwardEvents' fetch to the fake upstream is never recorded by it under Node; unresolved why, so the suite stays on the Bun tier instead of a guessed port of the shim"
  }
 }

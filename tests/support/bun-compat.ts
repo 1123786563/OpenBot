@@ -274,11 +274,14 @@ function serve(options: {
           response.status,
           Object.fromEntries(response.headers.entries()),
         );
-        return response.body
-          ? response.arrayBuffer().then((buffer) => Buffer.from(buffer))
-          : Buffer.alloc(0);
+        if (!response.body) return res.end();
+        // Chunk by chunk, never buffered to the end first: an event-stream reply has no end, so
+        // `arrayBuffer()` would sit there until the client's own timeout and the suite would read an
+        // empty list of forwarded requests — the request reached the handler, the reply never left.
+        const stream = Readable.fromWeb(response.body as Any);
+        stream.on("error", () => res.destroy());
+        stream.pipe(res);
       })
-      .then((payload) => res.end(payload))
       .catch((error) => {
         res.writeHead(500).end(String((error as Error).message));
       });

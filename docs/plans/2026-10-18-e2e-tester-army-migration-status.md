@@ -73,7 +73,7 @@ Test Files  34 failed | 550 passed | 17 skipped (601)
 | `red-on-old-runner-with-current-code` | 12 | 现网生产代码 + 迁移前套件文本 + `bun test` 也是红的 → 换运行器没有改变结论（这 12 个几乎全是 `server/tests/enterprise/*`，本机 5432/6333 拒连正是它们的依赖） |
 | `runner-difference` | 2 | 同一份代码同一份套件文本，旧运行器绿、e2e 红：`app/tests/github-sources-settings.test.tsx`、`app/tests/memory-settings.test.tsx`，共 3 条断言。已按 ADR 0008 的两层制补进驱动层（Bun 执行、e2e 调度与报告），这是本轮唯一剩余的「运行器差异」 |
 | `no-pre-migration-suite` | 1 | `tests/bun-suites.test.ts` 本身是迁移产物（驱动层 17 组各一条断言，红的是 Bun 侧套件内部真失败） |
-| `old-runner-unreadable` | 1 | `agent-sandbox/tests/proxy.test.ts`：对照跑没读到结论 —— 它硬编码 `serve({ port: 4600 })`，那一刻 4600 被一个跑完汇总却没退出的 e2e 进程占着（下一节），旧运行器 `EADDRINUSE` 中止。它自己在 e2e 下是 24 passed / 1 failed，**那条失败是否有迁移责任仍未判定**，要在端口空闲时重跑对照 |
+| `old-runner-unreadable` | 1 | `agent-sandbox/tests/proxy.test.ts`：当时读不到结论是因为它无条件绑 4600，与同时在跑的整库运行撞端口。端口空出来后判定完成：同一份代码 + 迁移前套件文本在 `bun test` 下 **25 pass / 0 fail**，在 e2e 下稳定 **24 pass / 1 fail**（`GET /events forwards the directory scope to the upstream`）→ 是运行器差异，已按 ADR 0008 分驱动层，原因未解的地方写在下节 |
 
 也就是说：整条原生层 195 条里，能归到「迁移把它改红了」的只有 3 条，且已处理；
 其余要么迁移前就红、要么依赖没起、要么是 Bun 层内部失败被如实上报。
@@ -157,6 +157,18 @@ Test Files  34 failed | 550 passed | 17 skipped (601)
 6. **Postgres 没起的这台机器上，驱动层的 server 组无法给出结论。** 独自复跑要先确认
    `tests/bun-suites.test.ts` 的复跑上限判断顺序（现在会先复跑 8 个文件再判超限），
    然后需要一次 `127.0.0.1:5432` 在听的复测；这属于共享设施，动它之前要用户同意。
+
+## 一条已按两层制安置、但根因未定的运行器差异
+
+`agent-sandbox/tests/proxy.test.ts` 在 e2e 下 `GET /events forwards the directory scope to the
+upstream` 稳定失败（2 次运行都是 24 pass / 1 fail），而同一份生产代码 + 迁移前套件文本在 `bun test`
+下 25 pass / 0 fail。现象是：假上游（`serve({ port: 4600 })`）自己记录的 `eventUpstreamRequests`
+是空数组 —— 也就是 `forwardEvents` 那一次 `fetch` 根本没被它记到，可同文件其余 24 条都过。
+排查中顺手修掉一个确实存在的移植缺陷：`tests/support/bun-compat.ts` 的 `serve()` 原先
+`response.arrayBuffer()` 全量缓冲后再写出，事件流这类"不会结束"的响应永远刷不出来，现在逐块 pipe。
+但这条断言的根因还没定位，所以套件按 ADR 0008 留在 Bun 层（分流后 `agent-sandbox/tests` 整组通过），
+没有靠猜改生产代码。要接手的人从 `agent-sandbox/src/sse.ts:59` 的 upstream URL 与
+`serve()` 的 `Request` 构造两处看起。
 
 ## 迁移之外、但卡住 CI 关卡的 main 破损（2026-10-18 19:46 CST 核实）
 
