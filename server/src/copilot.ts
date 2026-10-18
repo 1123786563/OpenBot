@@ -3345,6 +3345,20 @@ export type BuiltinRunObservationThreading = Readonly<{
  * subscribe call's async context, so establishing the store there covers the
  * whole execution tree — stream taps, provider doStream, tool executes.
  */
+/*
+ * The structural bound on a scope resolution (OCR R5-42): a resolver that
+ * never answers cannot hold the run's subscription hostage, so the wait is
+ * raced against this ceiling and a timed-out resolution proceeds as the same
+ * scope-less run every other failed resolution produces. Generous enough for
+ * the wiring's two DB round trips; overridable for tests.
+ */
+let builtinScopeResolutionTimeoutMs = 5_000;
+
+/** Test seam for the scope-resolution timeout (OCR R5-42). */
+export function builtinScopeResolutionTimeoutForTests(ms: number): void {
+  builtinScopeResolutionTimeoutMs = ms;
+}
+
 export function builtinRunUnderObservationScope(
   threading: BuiltinRunObservationThreading | undefined,
   botId: string,
@@ -3360,10 +3374,37 @@ export function builtinRunUnderObservationScope(
    * scope-less run, logged with the actor and bot, never a failed one. The
    * async wrapper is what turns a synchronous throw into the same handled
    * rejection — the resolver's body never gets to unwind into the stream.
+   *
+   * OCR R5-42: rejection and null were contained, but a resolver whose promise
+   * NEVER settles still held the defer pending forever — switchMap never
+   * subscribed the inner and the run never started at all (the wiring's own
+   * resolver chains two unbounded DB round trips). A resolution that cannot
+   * answer in time is the same "failed resolution = a scope-less run" by
+   * structure: the race below bounds the wait, then proceeds bare, logged like
+   * every other resolution failure. The losing promise stays handled by the
+   * race (no unhandled rejection), and the timer is cleared the moment the
+   * race settles so a resolved scope never keeps the loop alive.
    */
   return defer(async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      return await threading.resolveScope(botId);
+      return await Promise.race([
+        Promise.resolve(threading.resolveScope(botId)),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => {
+            log.warn(
+              {
+                type: "builtin-run-scope-resolution-failed",
+                actorId: threading.actorId,
+                botId,
+                timedOut: true,
+              },
+              "builtin-run-scope-resolution-failed",
+            );
+            resolve(null);
+          }, builtinScopeResolutionTimeoutMs);
+        }),
+      ]);
     } catch (error) {
       log.warn(
         {
@@ -3375,6 +3416,8 @@ export function builtinRunUnderObservationScope(
         "builtin-run-scope-resolution-failed",
       );
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   }).pipe(
     switchMap((scope) =>
