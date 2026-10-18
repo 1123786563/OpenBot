@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   integer,
   pgTable,
   primaryKey,
@@ -43,11 +44,7 @@ export const aiObservationExecutionCaseOutcomes = pgTable(
   "ai_observation_execution_case_outcomes",
   {
     /** The execution this case belongs to. Rows die with it (cascade). */
-    executionId: text("execution_id")
-      .notNull()
-      .references(() => aiObservationExperimentExecutions.id, {
-        onDelete: "cascade",
-      }),
+    executionId: text("execution_id").notNull(),
     /** The case's position in the frozen dataset version. */
     caseIndex: integer("case_index").notNull(),
     /** The write-ahead marker or the final, observed status. */
@@ -62,7 +59,16 @@ export const aiObservationExecutionCaseOutcomes = pgTable(
       .defaultNow(),
   },
   (table) => [
-    primaryKey({ columns: [table.executionId, table.caseIndex] }),
+    // Explicit short names: both defaults land past Postgres' 63-byte identifier limit.
+    foreignKey({
+      name: "ai_observation_execution_case_outcomes_execution_id_fk",
+      columns: [table.executionId],
+      foreignColumns: [aiObservationExperimentExecutions.id],
+    }).onDelete("cascade"),
+    primaryKey({
+      name: "ai_observation_execution_case_outcomes_pk",
+      columns: [table.executionId, table.caseIndex],
+    }),
     check(
       "ai_observation_execution_case_outcomes_status_check",
       sql`${table.status} IN ('in_flight', 'completed', 'failed', 'unknown')`,

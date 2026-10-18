@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  foreignKey,
   index,
   pgTable,
   text,
@@ -48,14 +49,20 @@ export const payerAccounts = pgTable(
     /** The subject's own stable id (a user id, a tenant id, a deployment tenant id). */
     payerId: text("payer_id").notNull(),
     /** The one external customer key this account bills through; never shared with another account. */
-    externalCustomerId: text("external_customer_id")
-      .notNull()
-      .references(() => billingCustomers.externalId, { onDelete: "cascade" }),
+    externalCustomerId: text("external_customer_id").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (table) => [
+    // Explicit short name: the drizzle default spells both table names and lands at 68 bytes,
+    // past the 63-byte identifier limit Postgres silently truncates at
+    // (migration-runner-guard's migration_sql_identifier_names_fit_the_postgres_limit).
+    foreignKey({
+      name: "payer_accounts_external_customer_id_fk",
+      columns: [table.externalCustomerId],
+      foreignColumns: [billingCustomers.externalId],
+    }).onDelete("cascade"),
     check(
       "payer_accounts_kind_check",
       sql`${table.kind} IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')`,

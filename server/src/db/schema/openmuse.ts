@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  foreignKey,
   index,
   integer,
   pgTable,
@@ -444,9 +445,7 @@ export const openmuseReviewedAttempts = pgTable(
   "openmuse_reviewed_attempts",
   {
     attemptId: text("attempt_id").primaryKey(),
-    actionId: text("action_id")
-      .notNull()
-      .references(() => openmuseReviewedActions.id, { onDelete: "cascade" }),
+    actionId: text("action_id").notNull(),
     /** The provider request fingerprint; recorded by the executing claim. */
     fingerprint: text("fingerprint"),
     outcome: text("outcome").$type<
@@ -465,6 +464,14 @@ export const openmuseReviewedAttempts = pgTable(
     }>(),
   },
   (table) => [
+    // Explicit short name: the drizzle default spells both table names and lands at 68 bytes,
+    // past the 63-byte identifier limit Postgres silently truncates at
+    // (migration-runner-guard's migration_sql_identifier_names_fit_the_postgres_limit).
+    foreignKey({
+      name: "openmuse_reviewed_attempts_action_id_fk",
+      columns: [table.actionId],
+      foreignColumns: [openmuseReviewedActions.id],
+    }).onDelete("cascade"),
     index("openmuse_reviewed_attempts_action_idx").on(table.actionId),
   ],
 );

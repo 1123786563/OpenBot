@@ -19,7 +19,7 @@ CREATE TABLE "ai_observation_experiments" (
 	CONSTRAINT "ai_observation_experiments_state_check" CHECK ("ai_observation_experiments"."state" IN ('draft', 'frozen')),
 	CONSTRAINT "ai_observation_experiments_frozen_coherence_check" CHECK ((("ai_observation_experiments"."state" = 'draft' AND "ai_observation_experiments"."frozen_at" IS NULL AND "ai_observation_experiments"."config_hash" = '') OR ("ai_observation_experiments"."state" = 'frozen' AND "ai_observation_experiments"."frozen_at" IS NOT NULL AND "ai_observation_experiments"."config_hash" <> '')))
 );--> statement-breakpoint
-ALTER TABLE "ai_observation_experiments" ADD CONSTRAINT "ai_observation_experiments_dataset_version_id_ai_observation_dataset_versions_id_fk" FOREIGN KEY ("dataset_version_id") REFERENCES "public"."ai_observation_dataset_versions"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "ai_observation_experiments" ADD CONSTRAINT "ai_observation_experiments_dataset_version_id_fk" FOREIGN KEY ("dataset_version_id") REFERENCES "public"."ai_observation_dataset_versions"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "ai_observation_experiments_scope_name_uq" ON "ai_observation_experiments" USING btree ("scope_key","name");--> statement-breakpoint
 CREATE UNIQUE INDEX "ai_observation_experiments_scope_config_hash_frozen_uq" ON "ai_observation_experiments" USING btree ("scope_key","config_hash") WHERE "ai_observation_experiments"."state" = 'frozen';--> statement-breakpoint
 CREATE FUNCTION "ai_observation_experiments_reject_update"() RETURNS trigger LANGUAGE plpgsql AS $$

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   pgTable,
   text,
@@ -51,9 +52,7 @@ export const aiObservationExperiments = pgTable(
     botId: text("bot_id").notNull(),
     name: text("name").notNull(),
     /** The T19 frozen dataset version this experiment evaluates against. */
-    datasetVersionId: text("dataset_version_id")
-      .notNull()
-      .references(() => aiObservationDatasetVersions.id),
+    datasetVersionId: text("dataset_version_id").notNull(),
     /** That version's content hash, so the pin is traceable to concrete frozen content. */
     datasetContentHash: text("dataset_content_hash").notNull(),
     /** The frozen configuration: every field projected before it reached here. */
@@ -74,6 +73,12 @@ export const aiObservationExperiments = pgTable(
       .defaultNow(),
   },
   (table) => [
+    // Explicit short name: the drizzle default lands past Postgres' 63-byte identifier limit.
+    foreignKey({
+      name: "ai_observation_experiments_dataset_version_id_fk",
+      columns: [table.datasetVersionId],
+      foreignColumns: [aiObservationDatasetVersions.id],
+    }),
     check(
       "ai_observation_experiments_state_check",
       sql`${table.state} IN ('draft', 'frozen')`,

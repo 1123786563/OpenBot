@@ -10,6 +10,6 @@ CREATE TABLE "ai_observation_execution_case_outcomes" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "ai_observation_execution_case_outcomes_status_check" CHECK ("ai_observation_execution_case_outcomes"."status" IN ('in_flight', 'completed', 'failed', 'unknown')),
 	CONSTRAINT "ai_observation_execution_case_outcomes_detail_final_check" CHECK ("ai_observation_execution_case_outcomes"."detail" IS NULL OR "ai_observation_execution_case_outcomes"."status" <> 'in_flight'),
-	CONSTRAINT "ai_observation_execution_case_outcomes_execution_id_case_index_pk" PRIMARY KEY("execution_id","case_index")
+	CONSTRAINT "ai_observation_execution_case_outcomes_pk" PRIMARY KEY("execution_id","case_index")
 );--> statement-breakpoint
-ALTER TABLE "ai_observation_execution_case_outcomes" ADD CONSTRAINT "ai_observation_execution_case_outcomes_execution_id_ai_observation_experiment_executions_id_fk" FOREIGN KEY ("execution_id") REFERENCES "public"."ai_observation_experiment_executions"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "ai_observation_execution_case_outcomes" ADD CONSTRAINT "ai_observation_execution_case_outcomes_execution_id_fk" FOREIGN KEY ("execution_id") REFERENCES "public"."ai_observation_experiment_executions"("id") ON DELETE cascade ON UPDATE no action;

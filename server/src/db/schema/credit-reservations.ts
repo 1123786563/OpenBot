@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   pgTable,
@@ -195,12 +196,8 @@ export const creditChargeRemainders = pgTable(
 export const creditReservationAttribution = pgTable(
   "credit_reservation_attribution",
   {
-    reservationId: text("reservation_id")
-      .primaryKey()
-      .references(() => creditReservations.id, { onDelete: "cascade" }),
-    grantId: text("grant_id")
-      .notNull()
-      .references(() => accessGrants.grantId),
+    reservationId: text("reservation_id").primaryKey(),
+    grantId: text("grant_id").notNull(),
     botId: text("bot_id")
       .notNull()
       .references(() => botServices.botId),
@@ -209,6 +206,18 @@ export const creditReservationAttribution = pgTable(
       .defaultNow(),
   },
   (table) => [
+    // Explicit short names: drizzle's default spells both table names and lands past the
+    // 63-byte identifier limit Postgres silently truncates at.
+    foreignKey({
+      name: "credit_reservation_attribution_reservation_id_fk",
+      columns: [table.reservationId],
+      foreignColumns: [creditReservations.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "credit_reservation_attribution_grant_id_fk",
+      columns: [table.grantId],
+      foreignColumns: [accessGrants.grantId],
+    }),
     // The consumption read walks a customer's ledger to its reservation's Bot.
     index("credit_reservation_attribution_bot_idx").on(table.botId),
   ],

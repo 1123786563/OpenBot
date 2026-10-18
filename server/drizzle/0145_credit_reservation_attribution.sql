@@ -20,7 +20,7 @@ CREATE TABLE "credit_reservation_attribution" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "credit_reservation_attribution" ADD CONSTRAINT "credit_reservation_attribution_reservation_id_credit_reservations_id_fk" FOREIGN KEY ("reservation_id") REFERENCES "public"."credit_reservations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "credit_reservation_attribution" ADD CONSTRAINT "credit_reservation_attribution_grant_id_access_grants_grant_id_fk" FOREIGN KEY ("grant_id") REFERENCES "public"."access_grants"("grant_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "credit_reservation_attribution" ADD CONSTRAINT "credit_reservation_attribution_reservation_id_fk" FOREIGN KEY ("reservation_id") REFERENCES "public"."credit_reservations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "credit_reservation_attribution" ADD CONSTRAINT "credit_reservation_attribution_grant_id_fk" FOREIGN KEY ("grant_id") REFERENCES "public"."access_grants"("grant_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "credit_reservation_attribution" ADD CONSTRAINT "credit_reservation_attribution_bot_id_bot_services_bot_id_fk" FOREIGN KEY ("bot_id") REFERENCES "public"."bot_services"("bot_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "credit_reservation_attribution_bot_idx" ON "credit_reservation_attribution" USING btree ("bot_id");

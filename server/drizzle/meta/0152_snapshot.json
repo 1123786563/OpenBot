@@ -18304,8 +18304,8 @@
         }
       },
       "foreignKeys": {
-        "ai_observation_dataset_versions_dataset_id_ai_observation_datasets_id_fk": {
-          "name": "ai_observation_dataset_versions_dataset_id_ai_observation_datasets_id_fk",
+        "ai_observation_dataset_versions_dataset_id_fk": {
+          "name": "ai_observation_dataset_versions_dataset_id_fk",
           "tableFrom": "ai_observation_dataset_versions",
           "tableTo": "ai_observation_datasets",
           "columnsFrom": [

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   pgTable,
   text,
@@ -96,11 +97,7 @@ export const aiObservationDatasetVersions = pgTable(
   {
     id: text("id").primaryKey(),
     scopeKey: text("scope_key").notNull(),
-    datasetId: text("dataset_id")
-      .notNull()
-      .references(() => aiObservationDatasets.id, {
-        onDelete: "cascade",
-      }),
+    datasetId: text("dataset_id").notNull(),
     /** sha-256 of the canonical JSON of the frozen cases under the recorded policy version. */
     contentHash: text("content_hash").notNull(),
     /** The T05 policy the content was projected with before freezing, e.g. "opik-redaction/5". */
@@ -114,6 +111,12 @@ export const aiObservationDatasetVersions = pgTable(
       .defaultNow(),
   },
   (table) => [
+    // Explicit short name: the drizzle default lands past Postgres' 63-byte identifier limit.
+    foreignKey({
+      name: "ai_observation_dataset_versions_dataset_id_fk",
+      columns: [table.datasetId],
+      foreignColumns: [aiObservationDatasets.id],
+    }).onDelete("cascade"),
     // The idempotency key: saving the same frozen content again under the same scope and
     // dataset hits the row that already exists instead of minting a new version. Its
     // (scope, dataset) prefix also serves the version listing read for one dataset.

@@ -18304,8 +18304,8 @@
         }
       },
       "foreignKeys": {
-        "ai_observation_dataset_versions_dataset_id_ai_observation_datasets_id_fk": {
-          "name": "ai_observation_dataset_versions_dataset_id_ai_observation_datasets_id_fk",
+        "ai_observation_dataset_versions_dataset_id_fk": {
+          "name": "ai_observation_dataset_versions_dataset_id_fk",
           "tableFrom": "ai_observation_dataset_versions",
           "tableTo": "ai_observation_datasets",
           "columnsFrom": [
@@ -18457,8 +18457,8 @@
         }
       },
       "foreignKeys": {
-        "ai_observation_experiments_dataset_version_id_ai_observation_dataset_versions_id_fk": {
-          "name": "ai_observation_experiments_dataset_version_id_ai_observation_dataset_versions_id_fk",
+        "ai_observation_experiments_dataset_version_id_fk": {
+          "name": "ai_observation_experiments_dataset_version_id_fk",
           "tableFrom": "ai_observation_experiments",
           "tableTo": "ai_observation_dataset_versions",
           "columnsFrom": [
@@ -18821,8 +18821,8 @@
         }
       },
       "foreignKeys": {
-        "ai_observation_experiment_executions_experiment_id_ai_observation_experiments_id_fk": {
-          "name": "ai_observation_experiment_executions_experiment_id_ai_observation_experiments_id_fk",
+        "ai_observation_experiment_executions_experiment_id_fk": {
+          "name": "ai_observation_experiment_executions_experiment_id_fk",
           "tableFrom": "ai_observation_experiment_executions",
           "tableTo": "ai_observation_experiments",
           "columnsFrom": [

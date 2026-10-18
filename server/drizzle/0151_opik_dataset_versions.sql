@@ -28,7 +28,7 @@ CREATE TABLE "ai_observation_dataset_versions" (
 	"locator_project" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );--> statement-breakpoint
-ALTER TABLE "ai_observation_dataset_versions" ADD CONSTRAINT "ai_observation_dataset_versions_dataset_id_ai_observation_datasets_id_fk" FOREIGN KEY ("dataset_id") REFERENCES "public"."ai_observation_datasets"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "ai_observation_dataset_versions" ADD CONSTRAINT "ai_observation_dataset_versions_dataset_id_fk" FOREIGN KEY ("dataset_id") REFERENCES "public"."ai_observation_datasets"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "ai_observation_datasets_scope_name_uq" ON "ai_observation_datasets" USING btree ("scope_key","name");--> statement-breakpoint
 CREATE UNIQUE INDEX "ai_observation_datasets_scope_opik_dataset_uq" ON "ai_observation_datasets" USING btree ("scope_key","opik_dataset_id") WHERE "ai_observation_datasets"."opik_dataset_id" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "ai_observation_dataset_versions_scope_dataset_hash_uq" ON "ai_observation_dataset_versions" USING btree ("scope_key","dataset_id","content_hash");--> statement-breakpoint
