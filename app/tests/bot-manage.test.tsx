@@ -78,10 +78,10 @@ function draw(
 
 test("someone who cannot manage the Bot is not offered Delete", () => {
   const view = draw({ ...BOT, canManage: false, mine: false });
-  // The Delete item's description text is its unique fingerprint. "Delete"
-  // itself is not: on CI the accessible-name walk resolved a Pinned switch to
-  // that word and the failed toBeNull dumped the element into the job log.
-  expect(view.queryByText(/cannot be undone/i)).toBeNull();
+  // The Delete item's description opening is its unique fingerprint: "Delete"
+  // itself leaked into other controls' accessible names, and "cannot be
+  // undone" also appears inside a closed ResetDialog the DOM still carries.
+  expect(view.queryByText(/^For everyone\./)).toBeNull();
   expect(view.getByText("Duplicate")).toBeTruthy();
 });
 
