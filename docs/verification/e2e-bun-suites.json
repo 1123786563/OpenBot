@@ -1,5 +1,5 @@
 {
- "generatedBy": "scripts/e2e-import-boundary.mjs --apply",
+ "generatedBy": "scripts/e2e-add-driven.mjs",
  "groups": [
   {
    "name": "agent-computer/tests",
@@ -49,6 +49,8 @@
     "app/tests/ai-observability-admin-summary.test.tsx",
     "app/tests/ai-observability-datasets.test.tsx",
     "app/tests/ai-observability-experiment-comparison.test.tsx",
+    "app/tests/ai-observability-experiments.test.tsx",
+    "app/tests/ai-observability-exports.test.tsx",
     "app/tests/approval-tools.test.tsx",
     "app/tests/approvals-rules.test.tsx",
     "app/tests/audit-dry-run-label.test.tsx",
@@ -63,14 +65,14 @@
     "app/tests/bot-profile-notice.test.tsx",
     "app/tests/bot-reaching-you.test.tsx",
     "app/tests/bot-responsibilities.test.tsx",
-    "app/tests/bot-roster.test.tsx",
-    "app/tests/bot-route-default-agent.test.tsx",
-    "app/tests/bot-settings-rows.test.tsx"
+    "app/tests/bot-roster.test.tsx"
    ]
   },
   {
    "name": "app/tests part 2",
    "files": [
+    "app/tests/bot-route-default-agent.test.tsx",
+    "app/tests/bot-settings-rows.test.tsx",
     "app/tests/bot-setup.test.tsx",
     "app/tests/bot-sharing.test.tsx",
     "app/tests/boundaries-read-failure.test.tsx",
@@ -92,14 +94,14 @@
     "app/tests/composer-paste.test.tsx",
     "app/tests/composer-queue-attachments.test.tsx",
     "app/tests/composer-send-failure.test.tsx",
-    "app/tests/composer-unnamed-mime.test.tsx",
-    "app/tests/composer-upload-group.test.tsx",
-    "app/tests/composing-enter.test.tsx"
+    "app/tests/composer-unnamed-mime.test.tsx"
    ]
   },
   {
    "name": "app/tests part 3",
    "files": [
+    "app/tests/composer-upload-group.test.tsx",
+    "app/tests/composing-enter.test.tsx",
     "app/tests/composio-picker-add-error.test.tsx",
     "app/tests/computer-activity.test.ts",
     "app/tests/computer-control-button.test.tsx",
@@ -121,14 +123,14 @@
     "app/tests/proposed-bot-card.test.tsx",
     "app/tests/proposed-skill-card.test.tsx",
     "app/tests/root-drop-guard.test.tsx",
-    "app/tests/router.test.ts",
-    "app/tests/serve.test.ts",
-    "app/tests/sign-in-card.test.tsx"
+    "app/tests/router.test.ts"
    ]
   },
   {
    "name": "app/tests part 4",
    "files": [
+    "app/tests/serve.test.ts",
+    "app/tests/sign-in-card.test.tsx",
     "app/tests/skills-read-failure.test.tsx",
     "app/tests/stopped-turn.test.ts",
     "app/tests/transcript-attachments.test.tsx",
@@ -610,6 +612,8 @@
   "app/tests/ai-observability-admin-summary.test.tsx",
   "app/tests/ai-observability-datasets.test.tsx",
   "app/tests/ai-observability-experiment-comparison.test.tsx",
+  "app/tests/ai-observability-experiments.test.tsx",
+  "app/tests/ai-observability-exports.test.tsx",
   "app/tests/approval-tools.test.tsx",
   "app/tests/approvals-rules.test.tsx",
   "app/tests/audit-dry-run-label.test.tsx",
@@ -1432,6 +1436,8 @@
   "server/tests/workshop-artifacts.test.ts": "server/src/db/client.ts",
   "server/tests/workshop-schedule-executor.integration.test.ts": "server/src/db/client.ts",
   "server/tests/workshop-store.test.ts": "server/src/db/client.ts",
-  "app/tests/observability-i18n-namespaces.test.ts": "app/tests/observability-i18n-namespaces.test.ts"
+  "app/tests/observability-i18n-namespaces.test.ts": "app/tests/observability-i18n-namespaces.test.ts",
+  "app/tests/ai-observability-experiments.test.tsx": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
+  "app/tests/ai-observability-exports.test.tsx": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'"
  }
 }
