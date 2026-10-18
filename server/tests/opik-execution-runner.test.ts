@@ -230,6 +230,65 @@ describe("the production case runner makes one controlled, observed model call",
     });
   });
 
+  test("a truncated prompt, input or model name still proceeds — a truncation is reviewed text (OCR R5-18 / R4-21)", async () => {
+    // The R4-21 guard's own comment and the judge's ruling agree: a truncation
+    // still carries reviewed text (`textOf` returns the cut text), so it dials
+    // rather than pretending the freeze withheld the field. Only an omitted
+    // envelope — the field withheld outright — is the input_unavailable refusal.
+    const truncatedPrompt = {
+      ...frozen,
+      prompt: {
+        state: "truncated",
+        text: "Answer the support qu",
+        originalBytes: 40,
+      },
+    } as typeof frozen;
+    const truncatedInput = {
+      ...frozenCase,
+      safeInput: {
+        state: "truncated",
+        text: "Summarize the out",
+        originalBytes: 40,
+      },
+    } as typeof frozenCase;
+    const truncatedModel = {
+      ...frozen,
+      modelName: {
+        state: "truncated",
+        text: "gateway-mode",
+        originalBytes: 40,
+      },
+    } as typeof frozen;
+    const { callModel, observations, calls } = recorder();
+    let admitted = 0;
+    const runner = createProductionEvaluationCaseRunner({
+      callModel,
+      observe: (fact) => observations.push(fact),
+      admit: async () => {
+        admitted += 1;
+        return { allowed: true };
+      },
+    });
+
+    const byPrompt = await runner({ ...contextFor(), config: truncatedPrompt });
+    const byInput = await runner({
+      ...contextFor(),
+      frozenCase: truncatedInput,
+    });
+    const byModel = await runner({ ...contextFor(), config: truncatedModel });
+
+    expect(byPrompt.status).toBe("completed");
+    expect(byInput.status).toBe("completed");
+    expect(byModel.status).toBe("completed");
+    expect(calls[0]?.system).toBe("Answer the support qu");
+    expect(calls[1]?.user).toBe("Summarize the out");
+    expect(calls[2]?.modelName).toBe("gateway-mode");
+    expect(admitted).toBe(3);
+    expect(observations.every((one) => one.ending.kind === "succeeded")).toBe(
+      true,
+    );
+  });
+
   test("a failing model call is a failed case, observed failed — not a crash", async () => {
     const { observe, observations } = recorder();
     const runner = createProductionEvaluationCaseRunner({
