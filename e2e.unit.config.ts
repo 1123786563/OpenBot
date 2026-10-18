@@ -92,5 +92,7 @@ export default {
   targets: [{ name: "node", platform: "node" }],
   workers: 4,
   timeout: 60_000,
-  output: ".e2e/unit",
+  // Sessions run concurrently in this checkout, and a second `e2e run` writing the same directory
+  // overwrites the first one's report. A measurement names its own output.
+  output: process.env.E2E_UNIT_OUTPUT ?? ".e2e/unit",
 } satisfies E2EConfig;
