@@ -285,6 +285,11 @@ function serve(options: {
   });
   const port = options.port ?? 0;
   server.listen(port, options.hostname ?? "127.0.0.1");
+  // A test that forgets `stop()` must not be able to keep the process alive: e2e writes its report
+  // and then waits for the worker to exit, so a leaked listener hangs `bun run test` forever after
+  // the summary has printed. `unref` lets the loop drain; anything the test is still awaiting keeps
+  // the process up on its own, and `stop()` still works because the handle is merely non-blocking.
+  server.unref();
   // `port` must be read after the bind: a suite asks for 0 to get an ephemeral port and then builds
   // the URL it will fetch, so a snapshot of the requested value hands back `http://127.0.0.1:0`.
   const boundPort = () => {

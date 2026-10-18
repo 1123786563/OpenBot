@@ -130,6 +130,16 @@ async function runBun(
       ],
       { cwd: process.cwd(), env: process.env },
     );
+    /*
+     * `--timeout` bounds one test, not a group: 24 files each reaching for a 120 s deadline can
+     * outrun this e2e test's own timeout, and a child still running when the parent gives up keeps
+     * the report from being the last word. Kill it inside the budget and say so.
+     */
+    let timedOut = false;
+    const killAfter = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, 840_000);
     const [stdout, stderr, exitCode] = await Promise.all([
       read(child.stdout),
       read(child.stderr),
@@ -137,7 +147,12 @@ async function runBun(
         child.on("exit", (code) => done(code ?? 1));
         child.on("error", () => done(1));
       }),
-    ]);
+    ]).finally(() => clearTimeout(killAfter));
+    if (timedOut) {
+      throw new Error(
+        `${files.length} file(s) gave no verdict within 840s; killed so the run can finish. Last output:\n${stderr.slice(-600)}${stdout.slice(-600)}`,
+      );
+    }
     if (!existsSync(report)) {
       // A mis-spawn must not read as a mysterious ENOENT: bun's own words are the diagnosis.
       throw new Error(
