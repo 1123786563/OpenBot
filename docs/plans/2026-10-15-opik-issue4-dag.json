@@ -827,9 +827,9 @@
         "produces": "OpikPort 接口 + 对抗性 fixture 注入方式."
       },
       "verification": "Issue acceptance plus targeted test, typecheck, lint; #43 requires real self-hosted Opik and full gates",
-      "status": "verified",
-      "checkpoint": "Integrated uncommitted checkpoint on HEAD 7c25fb4c58a885245729720e4724eb7f363a9a49. Applied original candidate patch 279ac6a3d7822e3deaa5ebc4580fc4048b90047917212965b1476c63fff84ec6 then reviewed repair delta 7d390cd5f0fec249d9fede952f8cba9b2df5bcf225c26ab3161d16ee98383f64. Final file SHA256: opik-port.ts d94bbad084ec5b3bab16dcd8412774ed681d5673e092acc94d55e7bc61136d3f; opik-http.ts 3aa3d858fe2fc31ab8615b8ab48cb54e234b480338c3738a18f52e61d9ef4e45; opik-port.test.ts 1e09154a629a48c76157880b55d8c514de96bcfc182df933f8255bf1685f594a. Integrated validation logs/manifest: docs/plans/evidence/2026-10-15-issue4/T08/integration-rerun/manifest.json (SHA256 298bcd193be76faf133c94d83e071ad62c4f934ca8703c4c98022224923335e9); opik-port 31/0/86; prerequisites 135/0/345; typecheck exit 0; Biome 3 files exit 0. No commit. R-10 follow-up discovered healthCheck false-positive on HTTP 401/500 after integration. Status repair worker Task task_104c7bfa755f / Dispatch ctx_100481d2d3db completed with report SHA 2faee9ecd2582b7e0e22ec781ae5ad8dc519c0e51252339dfe34fa61b3f56492, patch SHA b67eb815303d5e0889344b42450147c8bce73f7e7399c4f1ace3de770adba888, manifest SHA bf73eba1100c34eb3ec7eadb90d16d2a6b0ab4f1ad87164d8d59971eb1bce760. Pending independent review and coordinator integration. Public OpikPort types unchanged; 401 => OPIK_CLIENT_ERROR/status 401, 500 => OPIK_UPSTREAM_ERROR/status 500. Fresh independent reviewer Task task_e79c300b2337 / Dispatch ctx_f3c8aafcdd17 is active after 51-file hash-verified transfer. R-10 status repair independently reviewed and integrated: final opik-http.ts 7e644c427f3b9634c63fbfa55dc2368691272382f7ad6ee67786c02e67357da5; opik-port.test.ts 007771fb22e6af55169f1f4b825d5aeb1c27cc7ace7c2da24c4fe1b7b1454670; opik-port.ts unchanged d94bbad084ec5b3bab16dcd8412774ed681d5673e092acc94d55e7bc61136d3f. Review report SHA256 74c15e89b0e2448be9a3eb19e9c3cf2a5cc16ee8bafe29a51c823e805fd29076: Spec PASS / Code APPROVE, no new findings; 51/51 reviewer inputs match; 12 adversarial probes. Coordinator applied R-10 patch b67eb815303d5e0889344b42450147c8bce73f7e7399c4f1ace3de770adba888 after git apply --check and reran T08 34/0/91; prereqs 135/0/345; typecheck 0; Biome 3 files 0. Evidence manifest SHA256 a0b45bba080322fc9ea5e70e7cb96d503fb61af2422f16c93a5723c18c08972a. No commit.",
-      "review": "Original independent review FAIL (report f120aa40ccfc0beb88de832ee283318e35414c64a9262ca7b7d9e96510226884), findings F1/F2 repaired by Claude Orca Task task_30ab7438b05b / Dispatch ctx_f17a72d19629; repair report 23c9c2ffb60ddceffaf0fba4a6d2eee95d6baa80e91c261e232d5fd5303bdf3b. Fresh independent Claude repair reviewer Task task_9ca49ac02505 / Dispatch ctx_740776c0f48f: Spec PASS / Code APPROVE, report SHA256 3c5ff4eb458489b4e6759054a113c8cc64f9dc384212fb19c34a7c0dbd6066ad; verified both patches, 43/43 inputs, test suites, typecheck, Biome and 16 adversarial checks. Residual Info F3-F6 plus healthCheck response-status observation recorded in report; T09 must source projectId from retrieveProject(scope)."
+      "status": "running",
+      "checkpoint": "Implementation completed in Task task_7c157372ed94 / Dispatch ctx_294c6fc93794 in isolated child /Users/wuyongjun/orca/workspaces/OpenBot/opik-t08-port (base 7c25fb4c58a885245729720e4724eb7f363a9a49; effective agent Claude; model/effort unspecified). Candidate T08-worktree.patch SHA256 279ac6a3d7822e3deaa5ebc4580fc4048b90047917212965b1476c63fff84ec6; manifest.json SHA256 da1909aaff00fc2d999dc113e9db662a183847c8bef1c51f9fae02b633b928b8; report SHA256 f6698731b1a0db10b7d1eb7b52536cb86dc4c707c69fe1ec4f4564b2d73929ef. Candidate files: opik-port.ts d94bbad084ec5b3bab16dcd8412774ed681d5673e092acc94d55e7bc61136d3f; opik-http.ts 40dcc5c7abb9e24aa7082ed39f31f27a9b48e1ea67c69c5787f2f3b7b287b3ef; opik-port.test.ts d94f7d2784187cd9a33706da2b78d6b555c66809346110e27fa05d50c4e78931. Target 27 tests 0 fail / 77 assertions, targeted Biome/typecheck exit 0. Read-only independent review Task task_81884bce312f / Dispatch ctx_0bda8f0e3166 started in separate Claude child; review transfer 38 files all hash-match, manifest SHA256 a59264d83b334911c5b58dca79536f04710a885983f2f5dcbde1430ae82b8026. Do not integrate until reviewer settles.",
+      "review": "Separate read-only Claude reviewer Task task_81884bce312f / Dispatch ctx_0bda8f0e3166; effective agent Claude, model/effort unspecified. Candidate patch, Spec, Issue snapshot, T04/T05/T06/T07 sources, missing integration test prerequisites (T07 migration and T03 versions file), worker logs/report/manifest transferred into a fresh child; all hashes recorded in T08/review-transfer.json. Root AGENTS.md references docs/agents/domain.md which is absent; root CONTEXT.md transferred. Verdict pending."
     },
     "T09": {
       "id": "T09",
@@ -861,9 +861,9 @@
         "produces": "就绪/健康查询接口 + 有界异步写入入口约定."
       },
       "verification": "Issue acceptance plus targeted test, typecheck, lint; #43 requires real self-hosted Opik and full gates",
-      "status": "verified",
-      "checkpoint": "Verified uncommitted integrated checkpoint at HEAD 7c25fb4c58a885245729720e4724eb7f363a9a49. T09 original+repair source is reviewer-hash-bound; final integration sources/logs: T09/integration-rerun-r2/coordinator-manifest-final.json SHA256 67d746b9dce8cba033cae0370e62993688f06e41e3fff289814977f37089678e. Full fresh independent review report T09/integration-rerun-r2/review-report.md SHA256 c64e1ca73947f1a96707e92b13cd740b8f6a16becc1f1b01bf04b97a22f9ff8d: Spec PASS, Code APPROVE, 0 C/H/M, 1 Low (stale manifest expected test count, accepted under R-13) + 5 Info. Reviewer verified 360/360 inputs and reran 217/0/600 across 7 suites; typecheck 0, changed files lint/format 0; `server/src/index.ts` and `server/src/app.ts` have only confirmed BASE-existing lint/format findings. Added unauthorized 401 regression, no service call before rejection. No commit.",
-      "review": "Spec PASS / Code APPROVE. Queue-gate repair reviewer report 48d0f1cd69607bb72b56f030f6ee336734c22666bde30478356107b581072cf1; complete integration reviewer R2 report c64e1ca73947f1a96707e92b13cd740b8f6a16becc1f1b01bf04b97a22f9ff8d. No valid C/H/M. R2-L1 stale expected test count accepted as Low under R-13; corrected derivative manifest reviewer-transfer-r2-corrected.json SHA256 260481d537613eadc2fb32d9898d8bf61cdd28dc53e5c4403cbf6703dd1acaca preserves reviewed original manifest SHA256 159a286b2790757ab77c0d97e3fdd912600badcc05bb9db2009c9f88702b32b1. R1 incomplete transfer review report preserved separately; resolved in R2."
+      "status": "pending",
+      "checkpoint": null,
+      "review": null
     },
     "T02": {
       "id": "T02",
@@ -1543,8 +1543,8 @@
         "produces": "run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口."
       },
       "verification": "Issue acceptance plus targeted test, typecheck, lint; #43 requires real self-hosted Opik and full gates",
-      "status": "running",
-      "checkpoint": "Orca Task task_2fd9d20e4d96 / Dispatch ctx_7c66ae42196f; Claude effective, model/effort unspecified; child /Users/wuyongjun/orca/workspaces/OpenBot/opik-t10-run-lifecycle; base/integration HEAD 7c25fb4c58a885245729720e4724eb7f363a9a49; predecessor-transfer.json SHA256 81bc59b757e673e973945db3b5496575e23f6a6d3b32cc495bb48ae7412e5b46 (310/310 entries exact).",
+      "status": "pending",
+      "checkpoint": null,
       "review": null
     },
     "T26": {
@@ -1818,8 +1818,8 @@
         "produces": "控制面访问规则 + 内部生产者凭据发放方式."
       },
       "verification": "Issue acceptance plus targeted test, typecheck, lint; #43 requires real self-hosted Opik and full gates",
-      "status": "running",
-      "checkpoint": "Orca Task task_f4423d1712e8 / Dispatch ctx_d2c5844cf79d; Claude effective, model/effort unspecified; child /Users/wuyongjun/orca/workspaces/OpenBot/opik-t32-control-auth; base/integration HEAD 7c25fb4c58a885245729720e4724eb7f363a9a49; predecessor-transfer.json SHA256 81bc59b757e673e973945db3b5496575e23f6a6d3b32cc495bb48ae7412e5b46 (310/310 entries exact).",
+      "status": "pending",
+      "checkpoint": null,
       "review": null
     },
     "T31": {

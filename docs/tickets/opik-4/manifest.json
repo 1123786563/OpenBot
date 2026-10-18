@@ -278,7 +278,7 @@
       "status": "published-ready-for-agent",
       "handoff": {
         "consumes": "",
-        "produces": "`projectSafeText` / `projectSafeUrl` / `projectSafeName` / `projectSafeRecord` / `projectSafeMetadata` / `projectSafeException` 六个投影函数 + `REDACTION_POLICY_VERSION` 内容策略版本号（当前 `opik-redaction/2`）",
+        "produces": "`projectSafe()` 接口 + 内容策略版本号",
         "owned_scope": "server/src/ai-observability/redaction.ts, shared/ai-observability.ts, server/tests/opik-redaction.test.ts",
         "verification": [
           "bun test server/tests/opik-redaction.test.ts",
@@ -396,7 +396,7 @@
       "what": "全部上游调用经单一 port；序列化只由 T04 manifest 驱动；对抗性故障（超时、5xx、部分成功、归属漂移）可注入且不伪装成功。",
       "status": "published-ready-for-agent",
       "handoff": {
-        "consumes": "T04(#10) 的交付契约：`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限） | T05(#11) 的交付契约：`projectSafeText` / `projectSafeUrl` / `projectSafeName` / `projectSafeRecord` / `projectSafeMetadata` / `projectSafeException` 六个投影函数 + `REDACTION_POLICY_VERSION` 内容策略版本号 | T07(#13) 的交付契约：表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证）",
+        "consumes": "T04(#10) 的交付契约：`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限） | T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T07(#13) 的交付契约：表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证）",
         "produces": "`OpikPort` 接口 + fixture 注入方式",
         "owned_scope": "server/src/ai-observability/opik-port.ts, server/src/ai-observability/opik-http.ts, server/tests/support/opik-fixtures.ts, server/tests/opik-http.test.ts",
         "verification": [
@@ -646,7 +646,7 @@
       "what": "内置路径的模型调用带实际 usage 或明确 unavailable；不重复调用 provider、不改变已有 metered finish 与 Settlement 顺序、不重复计算 usage；拒绝或结算失败不是成功 span。",
       "status": "published-ready-for-agent",
       "handoff": {
-        "consumes": "T05(#11) 的交付契约：`projectSafeText` / `projectSafeUrl` / `projectSafeName` / `projectSafeRecord` / `projectSafeMetadata` / `projectSafeException` 六个投影函数 + `REDACTION_POLICY_VERSION` 内容策略版本号 | T10(#16) 的交付契约：run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口",
+        "consumes": "T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T10(#16) 的交付契约：run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口",
         "produces": "模型 span 记录接口 + usage 缺失语义",
         "owned_scope": "server/src/ai-observability/model.ts, server/src/copilot.ts, server/tests/opik-model.test.ts",
         "verification": [
@@ -892,7 +892,7 @@
       "what": "候选只来自有权访问的安全运行；仅指标的记录不能被自动伪造为文本样本，必须提供审查后的合成或脱敏案例；拒绝原始附件与任意生产工具；跨 Bot 复用需显式授权复制。",
       "status": "published-ready-for-agent",
       "handoff": {
-        "consumes": "T05(#11) 的交付契约：`projectSafeText` / `projectSafeUrl` / `projectSafeName` / `projectSafeRecord` / `projectSafeMetadata` / `projectSafeException` 六个投影函数 + `REDACTION_POLICY_VERSION` 内容策略版本号 | T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单",
+        "consumes": "T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单",
         "produces": "案例审查/保存 REST 契约 + 脱敏语义限制说明",
         "owned_scope": "server/src/ai-observability/evaluation/cases.ts, server/src/ai-observability/routes/dataset-routes.ts, server/tests/opik-dataset-cases.test.ts",
         "verification": [
@@ -1452,7 +1452,7 @@
       "what": "有权用户请求运行/实验的机器可读导出并查看状态；导出不能改变正常 Agent 结果；无法建立可信绑定时不导出该 run 的业务内容；每次下载重新校验当前权限，移交或撤权后旧链接立即失效。",
       "status": "published-ready-for-agent",
       "handoff": {
-        "consumes": "T05(#11) 的交付契约：`projectSafeText` / `projectSafeUrl` / `projectSafeName` / `projectSafeRecord` / `projectSafeMetadata` / `projectSafeException` 六个投影函数 + `REDACTION_POLICY_VERSION` 内容策略版本号 | T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标）",
+        "consumes": "T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标）",
         "produces": "导出任务与下载鉴权契约",
         "owned_scope": "server/src/ai-observability/exports.ts, server/src/ai-observability/routes/export-routes.ts, server/tests/opik-exports.test.ts",
         "verification": [
@@ -1649,7 +1649,7 @@
       "what": "对真实自托管 Opik 跑通采集、查询、评测、ID 映射与删除的全范围验收，汇总 13 条 A 条目的证据；完成独立 Spec/代码质量 review 与全范围 OCR，无有效 critical/high/medium findings。",
       "status": "published-ready-for-agent",
       "handoff": {
-        "consumes": "T01(#7) 的交付契约：路由注册约定 + 请求上下文（认证用户、scope、bot 归属）注入方式 | T02(#8) 的交付契约：四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定 | T03(#9) 的交付契约：`versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名 | T04(#10) 的交付契约：`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限） | T05(#11) 的交付契约：`projectSafeText` / `projectSafeUrl` / `projectSafeName` / `projectSafeRecord` / `projectSafeMetadata` / `projectSafeException` 六个投影函数 + `REDACTION_POLICY_VERSION` 内容策略版本号 | T06(#12) 的交付契约：`ObservationScope` 解析接口 + 两个测试 scope 的构造方式 | T07(#13) 的交付契约：表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证） | T08(#14) 的交付契约：`OpikPort` 接口 + fixture 注入方式 | T09(#15) 的交付契约：就绪/健康查询接口 + 有界异步导出入口约定 | T10(#16) 的交付契约：run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口 | T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标） | T12(#18) 的交付契约：列表组件与查询 hook 契约 | T13(#19) 的交付契约：详情页组件契约（步骤树在 T18 扩展同一组件） | T14(#20) 的交付契约：模型 span 记录接口 + usage 缺失语义 | T15(#21) 的交付契约：步骤类型枚举与「提议/执行/回执缺失」判定 | T16(#22) 的交付契约：LangGraph 侧 tracing 接入方式与版本约束 | T17(#23) 的交付契约：传播环境变量约定 + ID 映射表位置 | T18(#24) 的交付契约：步骤树组件与只读步骤查询契约 | T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单 | T20(#26) 的交付契约：案例审查/保存 REST 契约 + 脱敏语义限制说明 | T21(#27) 的交付契约：数据集页面组件与查询 hook 契约 | T22(#28) 的交付契约：实验记录结构 + 幂等键约定 | T23(#29) 的交付契约：隔离执行入口 + 工具白名单/拒绝策略 | T24(#30) 的交付契约：任务状态机 + 取消/lease 语义 | T25(#31) 的交付契约：评测侧计费准入接口 + 预算不足时的调用前拒绝语义 | T26(#32) 的交付契约：`Scorer` 接口 + 规则版本化约定 | T27(#33) 的交付契约：Judge 准入清单 + 理由安全投影 | T28(#34) 的交付契约：结果查询 REST 契约 + 失败分类枚举 | T29(#35) 的交付契约：对比 REST 契约 + 兼容性判定规则 | T30(#36) 的交付契约：实验页面组件契约 | T31(#37) 的交付契约：对比页面组件契约 | T32(#38) 的交付契约：控制面访问规则 + 内部生产者凭据发放方式 | T33(#39) 的交付契约：管理汇总 REST 契约 + 故障分类枚举 | T34(#40) 的交付契约：导出任务与下载鉴权契约 | T35(#41) 的交付契约：清理状态机 + 删除证据格式 | T36(#42) 的交付契约：管理页面组件契约",
+        "consumes": "T01(#7) 的交付契约：路由注册约定 + 请求上下文（认证用户、scope、bot 归属）注入方式 | T02(#8) 的交付契约：四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定 | T03(#9) 的交付契约：`versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名 | T04(#10) 的交付契约：`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限） | T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T06(#12) 的交付契约：`ObservationScope` 解析接口 + 两个测试 scope 的构造方式 | T07(#13) 的交付契约：表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证） | T08(#14) 的交付契约：`OpikPort` 接口 + fixture 注入方式 | T09(#15) 的交付契约：就绪/健康查询接口 + 有界异步导出入口约定 | T10(#16) 的交付契约：run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口 | T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标） | T12(#18) 的交付契约：列表组件与查询 hook 契约 | T13(#19) 的交付契约：详情页组件契约（步骤树在 T18 扩展同一组件） | T14(#20) 的交付契约：模型 span 记录接口 + usage 缺失语义 | T15(#21) 的交付契约：步骤类型枚举与「提议/执行/回执缺失」判定 | T16(#22) 的交付契约：LangGraph 侧 tracing 接入方式与版本约束 | T17(#23) 的交付契约：传播环境变量约定 + ID 映射表位置 | T18(#24) 的交付契约：步骤树组件与只读步骤查询契约 | T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单 | T20(#26) 的交付契约：案例审查/保存 REST 契约 + 脱敏语义限制说明 | T21(#27) 的交付契约：数据集页面组件与查询 hook 契约 | T22(#28) 的交付契约：实验记录结构 + 幂等键约定 | T23(#29) 的交付契约：隔离执行入口 + 工具白名单/拒绝策略 | T24(#30) 的交付契约：任务状态机 + 取消/lease 语义 | T25(#31) 的交付契约：评测侧计费准入接口 + 预算不足时的调用前拒绝语义 | T26(#32) 的交付契约：`Scorer` 接口 + 规则版本化约定 | T27(#33) 的交付契约：Judge 准入清单 + 理由安全投影 | T28(#34) 的交付契约：结果查询 REST 契约 + 失败分类枚举 | T29(#35) 的交付契约：对比 REST 契约 + 兼容性判定规则 | T30(#36) 的交付契约：实验页面组件契约 | T31(#37) 的交付契约：对比页面组件契约 | T32(#38) 的交付契约：控制面访问规则 + 内部生产者凭据发放方式 | T33(#39) 的交付契约：管理汇总 REST 契约 + 故障分类枚举 | T34(#40) 的交付契约：导出任务与下载鉴权契约 | T35(#41) 的交付契约：清理状态机 + 删除证据格式 | T36(#42) 的交付契约：管理页面组件契约",
         "produces": "验收证据索引",
         "owned_scope": "server/scripts/opik-acceptance.ts, tests/e2e/opik-observability.e2e.ts, docs/plans/evidence/2026-10-14-opik/final/",
         "verification": [
