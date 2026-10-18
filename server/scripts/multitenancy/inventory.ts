@@ -792,6 +792,10 @@ const CLOSURE_BY_PREFIX: Array<[string, string]> = [
   ["/kb", "knowledge"],
   ["/api/billing", "billing"],
   ["/api/payments", "billing"],
+  ["/api/bot-service", "bot"],
+  ["/api/model-access", "agent-runtime"],
+  ["/api/model-discovery", "agent-runtime"],
+  ["/api/model-selection", "agent-runtime"],
   ["/api/model-provider", "agent-runtime"],
   ["/api/desktop", "platform"],
   ["/api/capabilities", "platform"],
@@ -922,6 +926,23 @@ async function serveLevelEntrances(): Promise<{
 
   // 3) 通道活动 socket 是普通 Hono 路由（GET /api/channels/events，
   //    upgradeWebSocket），在 deployment-full 的路由表里自然出现。
+
+  // 4) Craft 独立预览 Origin 的 HMR 升级（main 的 #363）：与上面的 webapp HMR
+  //    共用 WEBAPP_HMR_PATH，但走预览 host + 预览通行证的另一条 serve() 分支。
+  entrances.push({
+    id: `WS <preview-host>${hmrPattern}`,
+    entrance: `WS <preview-host>${hmrPattern}`,
+    method: "WS",
+    path: hmrPattern,
+    kind: "serve-upgrade",
+    type: "stream",
+    businessClosure: "craft",
+    ownerTicket: null,
+    status: "unowned",
+    registration: "serve-level",
+    registeredIn: ["deployment-serve"],
+    registrations: 1,
+  });
 
   return { entrances, upgradeBranches, verification };
 }
