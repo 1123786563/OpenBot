@@ -19,8 +19,12 @@
  *     the deployment never had (disabled/unconfigured/capability_missing) —
  *     the T13 readiness vocabulary verbatim, no new enumeration invented;
  *   - missing usage is counted as unavailable, never summed as zero;
- *   - an upstream trace this scope never bound is the unbound count an
- *     administrator may see and a creator may not.
+ *   - an upstream trace this scope never bound is the unbound count the
+ *     manage gate lets through — today an owner (for their own bot) or a
+ *     global admin. The manage gate is the viewer boundary — the route's,
+ *     not any filter in this service (R5-21: summarizeOne takes no viewer
+ *     eligibility input, and an owner requesting their own bot has always
+ *     received this count).
  */
 import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import type { Database } from "../db/client";

@@ -382,6 +382,29 @@ describe("the T01 mount seam (Part 2 wiring)", () => {
     expect(await detail.json()).toEqual({ error: "capability_missing" });
   });
 
+  test("the summary's honesty rule names the boundary that exists (R5-21)", () => {
+    // R5-21: the header promised "an administrator may see and a creator may
+    // not", but no link of the chain enforces it — summarizeOne takes no
+    // viewer-eligibility input and the only mount is the manage gate (an
+    // owner passes), so a creator requesting their own bot has always
+    // received the unbound count, exactly as this suite's owner-caller tests
+    // and the admin-enumeration test pin. The header now names the real
+    // boundary; this pin keeps the promise from silently returning without
+    // the filter that would enforce it.
+    const source = readFileSync(
+      join(
+        import.meta.dir,
+        "..",
+        "src",
+        "ai-observability",
+        "admin-summary.ts",
+      ),
+      "utf8",
+    );
+    expect(source).not.toMatch(/a creator may not/);
+    expect(source).toMatch(/manage gate[^\n]*is the viewer boundary/);
+  });
+
   test("the boot wires the summary's bot enumeration without the sidebar hidden filter (R2-59)", () => {
     // The assembly's listBots must use the store's unfiltered enumeration: a
     // Bot hidden from the caller's sidebar is still in the admin summary's
