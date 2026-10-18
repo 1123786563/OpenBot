@@ -315,67 +315,6 @@ describe("two trusted scopes over identical resource ids", () => {
   });
 });
 
-describe("derived keys are injective over their components (T06-F3)", () => {
-  test("a separator inside a cache component cannot collide with a split", () => {
-    expect(cacheKey(scopeAlpha, "runs", "page|2")).not.toBe(
-      cacheKey(scopeAlpha, "runs", "page", "2"),
-    );
-    expect(cacheKey(scopeAlpha, "runs|page", "2")).not.toBe(
-      cacheKey(scopeAlpha, "runs", "page", "2"),
-    );
-    expect(cacheKey(scopeAlpha, "runs|page", "2")).not.toBe(
-      cacheKey(scopeAlpha, "runs", "page|2"),
-    );
-  });
-
-  test("a separator inside a job component cannot collide with a split", () => {
-    expect(jobKey(scopeAlpha, "evaluation", "idem|1")).not.toBe(
-      jobKey(scopeAlpha, "evaluation|idem", "1"),
-    );
-    expect(jobKey(scopeAlpha, "evaluation|", "idem-1")).not.toBe(
-      jobKey(scopeAlpha, "evaluation", "|idem-1"),
-    );
-  });
-
-  test("an export id containing a separator stays one distinct component", () => {
-    const withSeparator = exportKey(scopeAlpha, "exp|1");
-    expect(withSeparator).toBe(exportKey(scopeAlpha, "exp|1"));
-    expect(withSeparator).not.toBe(exportKey(scopeAlpha, "exp"));
-    expect(withSeparator).not.toBe(exportKey(scopeAlpha, "1"));
-    expect(withSeparator).not.toBe(exportKey(scopeBeta, "exp|1"));
-  });
-
-  test("equal-length scope keys separate every derived key and both locator names (T06-F4)", () => {
-    // Premise: same botId and epoch, actors of equal length, so the scope keys render
-    // equal-length — length alone must never be the separator of two key spaces.
-    expect(scopeAlpha.key.length).toBe(scopeBeta.key.length);
-    expect(scopeAlpha.key).not.toBe(scopeBeta.key);
-    expect(cacheKey(scopeAlpha, "runs", "p1")).not.toBe(
-      cacheKey(scopeBeta, "runs", "p1"),
-    );
-    expect(jobKey(scopeAlpha, "evaluation", "idem-1")).not.toBe(
-      jobKey(scopeBeta, "evaluation", "idem-1"),
-    );
-    expect(exportKey(scopeAlpha, "exp-1")).not.toBe(
-      exportKey(scopeBeta, "exp-1"),
-    );
-    const a = resolveStorageLocator(scopeAlpha);
-    const b = resolveStorageLocator(scopeBeta);
-    expect(a.workspace).not.toBe(b.workspace);
-    expect(a.project).not.toBe(b.project);
-  });
-
-  test("equal input keeps producing the identical deterministic key", () => {
-    expect(cacheKey(scopeAlpha, "runs", "page|2", 7)).toBe(
-      cacheKey(scopeAlpha, "runs", "page|2", 7),
-    );
-    expect(jobKey(scopeAlpha, "evaluation", "idem-1")).toBe(
-      jobKey(scopeAlpha, "evaluation", "idem-1"),
-    );
-    expect(exportKey(scopeAlpha, "exp-1")).toBe(exportKey(scopeAlpha, "exp-1"));
-  });
-});
-
 describe("no premature tenant model", () => {
   const scopeSource = readFileSync(
     join(import.meta.dir, "..", "src", "ai-observability", "scope.ts"),

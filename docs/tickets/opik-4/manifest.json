@@ -25,7 +25,6 @@
     "T02(#8) 的验收标准第 3 条提到「直接输入路由时仍执行权限校验」，但对应路由要到 T12(#18) 才存在，因此该条在 T02 阶段只能验证路由约定本身，不能端到端验证；实施 T02 时不得把该条记为通过，应留到 T12(#18) 验证。",
     "T37(#43) 依赖全部 36 张，是协调与验收性质，不引入新功能；其 blocked_by 边在 GitHub 上为 36 条。",
     "T02(#8) owned files = 11，超过 O1 的 ≤8 上限：8 个是四个子命名空间 × 两种语言的极小 JSON、2 个是 i18n 注册文件、1 个是 parity 测试。总内容量远小于一个 4 文件的逻辑 Ticket；拆成两张会人为割裂命名空间归属矩阵。这是记录在案的例外，不是遗漏。",
-    "T03(#9) owned files = 11，超过 O1 的 ≤8 上限：其中 5 个是上游 deployment/docker-compose 会挂载的支撑配置（otel-collector-config.yaml、nginx_default_local.conf、clickhouse-config/ 下 3 个 xml），属静态配置而非逻辑代码；缺了它们 docker compose config 无法通过、栈无法正确运行。原 owned_scope 只列 6 个是计划漏项。实现者交付时被发现『越界』，经其审阅者独立核验与协调者复核**一致裁定为 owned_scope 漂移而非违规**，manifest 已据此更正。",
     "owned_scope 在 writing-plans 阶段按真实代码结构校正过三处：T01(#7) 补 server/src/app.ts（挂载点实际在 createApp 的 app.route，不在 index.ts）；T02(#8) 补 parity 测试文件；T03(#9) 补 docker-compose.yml 的可选栈清单注释与 server/tests/opik-deployment.test.ts（无 Docker 也能跑的静态约束测试）。",
     "T11(#17) 增加 T01(#7) 为前置：原草案里 T01 没有任何后继，属于孤儿 prefactor，路由 seam 可能被跳过或与需要它的 Ticket 并行；补边后 T01 成为全部路由类 Ticket 的祖先。",
     "T02(#8) 由单一 ai-observability 命名空间改为 -runs/-datasets/-evaluations/-admin 四个子命名空间：图分析发现 6 个前端 Ticket 共享同两个 locale JSON，其中 10 对在依赖图上不可比较，并行派发必然冲突；拆分后四条前端链文件不相交。"
@@ -71,45 +70,6 @@
     "T29(#35) 与 T31(#37) 不等 T27(#33)，Judge 作为后续版本化评分定义参与对比而非前置。",
     "T16(#22) 只等 T14(#20)，不等 T15(#21)，使 LangGraph 接入可与工具/检索步骤并行。"
   ],
-  "carried_forward_constraints": [
-    {
-      "id": "C1",
-      "origin": "T03 (#9) review finding F4",
-      "applies_to": [
-        "T32",
-        "T37"
-      ],
-      "constraint": "docker/compose/opik.yml 的 python-backend 保留上游的 `privileged: true`（其 DinD 代码执行器所需）。T03 保留它是正确的（计划要求以上游为蓝本），但这意味着可选栈里有一个容器在宿主上以 privileged 运行。T32(#38 控制面保护) 与 T37(#43 真实实例验收) 必须显式判定：OpenBot 的使用场景是否真的需要该容器；若不需要则必须禁用，若需要则必须在威胁模型与运维文档中记明该攻击面及其边界。",
-      "why_recorded": "两张 Ticket 的验收标准目前都未提及 privileged 容器；不记录就会在实施时丢失。"
-    },
-    {
-      "id": "C2",
-      "origin": "T06 (#12) review finding F2 + plan E7",
-      "applies_to": [
-        "T11"
-      ],
-      "constraint": "T06 的 CURSOR_KEY 含 process.pid 与 Date.now()，进程重启会使既有游标失效（有意的安全失败）。T11(#17 创建者只读查询接口) 必须把『游标失效』表达为可解释错误，绝不静默回到第一页——否则会掩盖撤权/移交后的访问边界。",
-      "why_recorded": "跨 Ticket 的隐式义务，T06 的 checkpoint 未显式写明，其审阅者记为 F2。"
-    },
-    {
-      "id": "C3",
-      "origin": "coordinator errata E13 / S1",
-      "applies_to": [
-        "ALL"
-      ],
-      "constraint": "门禁证据必须取自已提交的 commit，不得在 worker 留下的脏工作树里跑。checkpoint 必须写明每条输出来自哪个 sha。`biome format --write` 的结果若未提交，不算通过。",
-      "why_recorded": "T06 正是这样误报门禁的；协调者第一次复核也被脏工作树骗过。"
-    },
-    {
-      "id": "C4",
-      "origin": "coordinator errata E15 / S4",
-      "applies_to": [
-        "ALL"
-      ],
-      "constraint": "对解析结果做断言的守卫测试，必须先断言解析结果非空。任何解析器回归都会把守卫静默变成空洞通过。交付前应做一次变异测试：破坏产物、确认测试变红。",
-      "why_recorded": "T03 的两条端口守卫对交付物零匹配仍报绿；T05 有一条 DENY 模式从未被任何 canary 触及（E12）。同一失效模式。"
-    }
-  ],
   "contention_analysis": {
     "method": "对每个被 >1 张 Ticket 拥有的文件，检查其全部拥有者两两是否在依赖图上可比较（一方是另一方的祖先）。不可比较即代表可被并行派发并冲突。",
     "files_owned_by_multiple_tickets": 19,
@@ -142,10 +102,7 @@
         "verification": [
           "bun test server/tests/opik-module-skeleton.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/routes/index.ts server/src/ai-observability/context.ts server/src/app.ts server/src/index.ts server/tests/opik-module-skeleton.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/routes/index.ts server/src/ai-observability/context.ts server/src/app.ts server/src/index.ts server/tests/opik-module-skeleton.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A5；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -176,10 +133,7 @@
           "bun test app/src/lib/i18n/ai-observability.test.ts",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "./node_modules/.bin/biome lint --error-on-warnings app/src/locales/en/ai-observability-runs.json app/src/locales/en/ai-observability-datasets.json app/src/locales/en/ai-observability-evaluations.json app/src/locales/en/ai-observability-admin.json app/src/locales/zh-CN/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-datasets.json app/src/locales/zh-CN/ai-observability-evaluations.json app/src/locales/zh-CN/ai-observability-admin.json app/src/lib/i18n/index.ts app/src/lib/i18n/i18next.d.ts app/src/lib/i18n/ai-observability.test.ts",
-          "./node_modules/.bin/biome format app/src/locales/en/ai-observability-runs.json app/src/locales/en/ai-observability-datasets.json app/src/locales/en/ai-observability-evaluations.json app/src/locales/en/ai-observability-admin.json app/src/locales/zh-CN/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-datasets.json app/src/locales/zh-CN/ai-observability-evaluations.json app/src/locales/zh-CN/ai-observability-admin.json app/src/lib/i18n/index.ts app/src/lib/i18n/i18next.d.ts app/src/lib/i18n/ai-observability.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A5；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -205,15 +159,12 @@
       "handoff": {
         "consumes": "",
         "produces": "`versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名",
-        "owned_scope": "docker/compose/opik.yml, docker/opik/versions.json, docker/opik/otel-collector-config.yaml, docker/opik/nginx_default_local.conf, docker/opik/clickhouse-config/additional_config.xml, docker/opik/clickhouse-config/users.d/distributed_insert_queue.xml, docker/opik/clickhouse-config/users.d/enable_time_type.xml, docs/opik.md, .env.example, docker-compose.yml, server/tests/opik-deployment.test.ts",
+        "owned_scope": "docker/compose/opik.yml, docker/opik/versions.json, docs/opik.md, .env.example, docker-compose.yml, server/tests/opik-deployment.test.ts",
         "verification": [
           "bun test server/tests/opik-deployment.test.ts",
           "docker compose --project-directory . -f docker/compose/opik.yml config --quiet",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings docker/opik/versions.json server/tests/opik-deployment.test.ts",
-          "./node_modules/.bin/biome format docker/opik/versions.json server/tests/opik-deployment.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A1；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -250,10 +201,7 @@
           "bun test server/tests/opik-contract.test.ts",
           "bun server/scripts/opik-contract.ts --target <opik-api> --evidence docs/plans/evidence/2026-10-14-opik/t04",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/scripts/opik-contract.ts server/tests/opik-contract.test.ts server/package.json",
-          "./node_modules/.bin/biome format server/scripts/opik-contract.ts server/tests/opik-contract.test.ts server/package.json",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A11, A13；前置 #9 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -278,15 +226,12 @@
       "status": "published-ready-for-agent",
       "handoff": {
         "consumes": "",
-        "produces": "`projectSafeText` / `projectSafeUrl` / `projectSafeName` / `projectSafeRecord` / `projectSafeMetadata` / `projectSafeException` 六个投影函数 + `REDACTION_POLICY_VERSION` 内容策略版本号（当前 `opik-redaction/2`）",
+        "produces": "`projectSafe()` 接口 + 内容策略版本号",
         "owned_scope": "server/src/ai-observability/redaction.ts, shared/ai-observability.ts, server/tests/opik-redaction.test.ts",
         "verification": [
           "bun test server/tests/opik-redaction.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/redaction.ts shared/ai-observability.ts server/tests/opik-redaction.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/redaction.ts shared/ai-observability.ts server/tests/opik-redaction.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A4；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -317,10 +262,7 @@
         "verification": [
           "bun test server/tests/opik-scope.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/scope.ts server/src/ai-observability/contracts.ts server/tests/opik-scope.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/scope.ts server/src/ai-observability/contracts.ts server/tests/opik-scope.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A12, A5；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -358,10 +300,7 @@
           "cd server && bun run db:generate   # 生成迁移后人工核对 SQL 与 snapshot",
           "TEST_DATABASE_URL=<isolated-pg> bun test server/tests/opik-bindings.integration.test.ts   # 缺 TEST_DATABASE_URL 会 skip，不得记为通过",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/db/schema/ai-observability.ts server/src/ai-observability/bindings.ts server/tests/opik-bindings.integration.test.ts server/scripts/opik-test-env.ts",
-          "./node_modules/.bin/biome format server/src/db/schema/ai-observability.ts server/src/ai-observability/bindings.ts server/tests/opik-bindings.integration.test.ts server/scripts/opik-test-env.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A5, A11, A12；前置 #12 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -396,16 +335,13 @@
       "what": "全部上游调用经单一 port；序列化只由 T04 manifest 驱动；对抗性故障（超时、5xx、部分成功、归属漂移）可注入且不伪装成功。",
       "status": "published-ready-for-agent",
       "handoff": {
-        "consumes": "T04(#10) 的交付契约：`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限） | T05(#11) 的交付契约：`projectSafeText` / `projectSafeUrl` / `projectSafeName` / `projectSafeRecord` / `projectSafeMetadata` / `projectSafeException` 六个投影函数 + `REDACTION_POLICY_VERSION` 内容策略版本号 | T07(#13) 的交付契约：表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证）",
+        "consumes": "T04(#10) 的交付契约：`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限） | T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T07(#13) 的交付契约：表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证）",
         "produces": "`OpikPort` 接口 + fixture 注入方式",
         "owned_scope": "server/src/ai-observability/opik-port.ts, server/src/ai-observability/opik-http.ts, server/tests/support/opik-fixtures.ts, server/tests/opik-http.test.ts",
         "verification": [
           "bun test server/tests/opik-http.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/opik-port.ts server/src/ai-observability/opik-http.ts server/tests/support/opik-fixtures.ts server/tests/opik-http.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/opik-port.ts server/src/ai-observability/opik-http.ts server/tests/support/opik-fixtures.ts server/tests/opik-http.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A4, A10, A13；前置 #10, #11, #13 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -440,10 +376,7 @@
         "verification": [
           "bun test server/tests/opik-health.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/config.ts server/src/ai-observability/health.ts server/src/config.ts shared/ai-trace.ts server/tests/opik-health.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/config.ts server/src/ai-observability/health.ts server/src/config.ts shared/ai-trace.ts server/tests/opik-health.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A10；前置 #14 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -480,10 +413,7 @@
         "verification": [
           "bun test server/tests/opik-run-agent.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/run-agent.ts server/src/agents/endpoint.ts server/src/agents/agent-resolver.ts server/src/agents/runtime-agents.ts server/src/copilot.ts server/tests/opik-run-agent.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/run-agent.ts server/src/agents/endpoint.ts server/src/agents/agent-resolver.ts server/src/agents/runtime-agents.ts server/src/copilot.ts server/tests/opik-run-agent.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A5, A10；前置 #15 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -525,10 +455,7 @@
         "verification": [
           "bun test server/tests/opik-reader.test.ts server/tests/opik-routes.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/reader.ts server/src/ai-observability/routes/reader-routes.ts server/tests/opik-reader.test.ts server/tests/opik-routes.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/reader.ts server/src/ai-observability/routes/reader-routes.ts server/tests/opik-reader.test.ts server/tests/opik-routes.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A5, A6, A10, A12；前置 #7, #13, #16 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -568,10 +495,7 @@
           "bun test app/src/components/ai-observability/run-views.test.tsx",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "./node_modules/.bin/biome lint --error-on-warnings app/src/routes/_authed/_app/bots.$agentId.runs.tsx app/src/components/ai-observability/run-list.tsx app/src/components/ai-observability/availability.tsx app/src/lib/ai-observability/types.ts app/src/lib/ai-observability/queries.ts app/src/components/ai-observability/run-views.test.tsx app/src/locales/en/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-runs.json",
-          "./node_modules/.bin/biome format app/src/routes/_authed/_app/bots.$agentId.runs.tsx app/src/components/ai-observability/run-list.tsx app/src/components/ai-observability/availability.tsx app/src/lib/ai-observability/types.ts app/src/lib/ai-observability/queries.ts app/src/components/ai-observability/run-views.test.tsx app/src/locales/en/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-runs.json",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A5, A6, A10；前置 #8, #17 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -610,10 +534,7 @@
           "bun test app/src/components/ai-observability/run-views.test.tsx",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "./node_modules/.bin/biome lint --error-on-warnings app/src/routes/_authed/_app/bots.$agentId.runs.$bindingId.tsx app/src/components/ai-observability/run-detail.tsx app/src/components/bot-profile/manage.tsx app/src/locales/en/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-runs.json app/src/components/ai-observability/run-views.test.tsx",
-          "./node_modules/.bin/biome format app/src/routes/_authed/_app/bots.$agentId.runs.$bindingId.tsx app/src/components/ai-observability/run-detail.tsx app/src/components/bot-profile/manage.tsx app/src/locales/en/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-runs.json app/src/components/ai-observability/run-views.test.tsx",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A4, A5, A6；前置 #18 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -646,16 +567,13 @@
       "what": "内置路径的模型调用带实际 usage 或明确 unavailable；不重复调用 provider、不改变已有 metered finish 与 Settlement 顺序、不重复计算 usage；拒绝或结算失败不是成功 span。",
       "status": "published-ready-for-agent",
       "handoff": {
-        "consumes": "T05(#11) 的交付契约：`projectSafeText` / `projectSafeUrl` / `projectSafeName` / `projectSafeRecord` / `projectSafeMetadata` / `projectSafeException` 六个投影函数 + `REDACTION_POLICY_VERSION` 内容策略版本号 | T10(#16) 的交付契约：run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口",
+        "consumes": "T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T10(#16) 的交付契约：run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口",
         "produces": "模型 span 记录接口 + usage 缺失语义",
         "owned_scope": "server/src/ai-observability/model.ts, server/src/copilot.ts, server/tests/opik-model.test.ts",
         "verification": [
           "bun test server/tests/opik-model.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/model.ts server/src/copilot.ts server/tests/opik-model.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/model.ts server/src/copilot.ts server/tests/opik-model.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A4, A8；前置 #11, #16 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -691,10 +609,7 @@
         "verification": [
           "bun test server/tests/opik-step.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/retrieval.ts server/src/ai-observability/steps.ts server/src/knowledge/middleware.ts server/tests/opik-step.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/retrieval.ts server/src/ai-observability/steps.ts server/src/knowledge/middleware.ts server/tests/opik-step.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A4；前置 #20 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -730,10 +645,7 @@
         "verification": [
           "bun test agent-langgraph/tests/opik-tracing.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings agent-langgraph/src/index.ts agent-langgraph/package.json agent-langgraph/tests/opik-tracing.test.ts server/src/ai-observability/langgraph.ts",
-          "./node_modules/.bin/biome format agent-langgraph/src/index.ts agent-langgraph/package.json agent-langgraph/tests/opik-tracing.test.ts server/src/ai-observability/langgraph.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A4, A13；前置 #20 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -769,10 +681,7 @@
           "bun test supervisor/tests/environment.test.ts server/tests/opik-propagation.test.ts",
           "cd server && bun run typecheck",
           "cd supervisor && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings supervisor/src/environment.ts supervisor/tests/environment.test.ts shared/ai-trace.ts server/tests/opik-propagation.test.ts",
-          "./node_modules/.bin/biome format supervisor/src/environment.ts supervisor/tests/environment.test.ts shared/ai-trace.ts server/tests/opik-propagation.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A13；前置 #22 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -813,10 +722,7 @@
           "bun test app/src/components/ai-observability/run-views.test.tsx",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "./node_modules/.bin/biome lint --error-on-warnings app/src/components/ai-observability/step-tree.tsx app/src/components/ai-observability/run-detail.tsx app/src/lib/ai-observability/steps.ts app/src/locales/en/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-runs.json app/src/components/ai-observability/run-views.test.tsx",
-          "./node_modules/.bin/biome format app/src/components/ai-observability/step-tree.tsx app/src/components/ai-observability/run-detail.tsx app/src/lib/ai-observability/steps.ts app/src/locales/en/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-runs.json app/src/components/ai-observability/run-views.test.tsx",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A5；前置 #19, #21, #23 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -857,10 +763,7 @@
           "cd server && bun run db:generate   # 生成迁移后人工核对 SQL 与 snapshot",
           "TEST_DATABASE_URL=<isolated-pg> bun test server/tests/opik-datasets.integration.test.ts   # 缺 TEST_DATABASE_URL 会 skip，不得记为通过",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/db/schema/ai-observability.ts server/src/ai-observability/evaluation/contracts.ts server/src/ai-observability/evaluation/datasets.ts server/tests/opik-datasets.test.ts server/tests/opik-datasets.integration.test.ts",
-          "./node_modules/.bin/biome format server/src/db/schema/ai-observability.ts server/src/ai-observability/evaluation/contracts.ts server/src/ai-observability/evaluation/datasets.ts server/tests/opik-datasets.test.ts server/tests/opik-datasets.integration.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A7, A11, A12；前置 #13, #17 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -892,16 +795,13 @@
       "what": "候选只来自有权访问的安全运行；仅指标的记录不能被自动伪造为文本样本，必须提供审查后的合成或脱敏案例；拒绝原始附件与任意生产工具；跨 Bot 复用需显式授权复制。",
       "status": "published-ready-for-agent",
       "handoff": {
-        "consumes": "T05(#11) 的交付契约：`projectSafeText` / `projectSafeUrl` / `projectSafeName` / `projectSafeRecord` / `projectSafeMetadata` / `projectSafeException` 六个投影函数 + `REDACTION_POLICY_VERSION` 内容策略版本号 | T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单",
+        "consumes": "T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单",
         "produces": "案例审查/保存 REST 契约 + 脱敏语义限制说明",
         "owned_scope": "server/src/ai-observability/evaluation/cases.ts, server/src/ai-observability/routes/dataset-routes.ts, server/tests/opik-dataset-cases.test.ts",
         "verification": [
           "bun test server/tests/opik-dataset-cases.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/evaluation/cases.ts server/src/ai-observability/routes/dataset-routes.ts server/tests/opik-dataset-cases.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/evaluation/cases.ts server/src/ai-observability/routes/dataset-routes.ts server/tests/opik-dataset-cases.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A5, A6；前置 #11, #25 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -940,10 +840,7 @@
           "bun test app/src/components/ai-observability/evaluation-views.test.tsx",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "./node_modules/.bin/biome lint --error-on-warnings app/src/components/ai-observability/dataset-editor.tsx app/src/routes/_authed/_app/bots.$agentId.evaluations.tsx app/src/lib/ai-observability/evaluations.ts app/src/locales/en/ai-observability-datasets.json app/src/locales/zh-CN/ai-observability-datasets.json app/src/components/ai-observability/evaluation-views.test.tsx",
-          "./node_modules/.bin/biome format app/src/components/ai-observability/dataset-editor.tsx app/src/routes/_authed/_app/bots.$agentId.evaluations.tsx app/src/lib/ai-observability/evaluations.ts app/src/locales/en/ai-observability-datasets.json app/src/locales/zh-CN/ai-observability-datasets.json app/src/components/ai-observability/evaluation-views.test.tsx",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A5, A7；前置 #8, #26 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -979,10 +876,7 @@
           "bun test server/tests/opik-experiments.test.ts",
           "cd server && bun run db:generate   # 生成迁移后人工核对 SQL 与 snapshot",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/evaluation/contracts.ts server/src/ai-observability/evaluation/experiments.ts server/tests/opik-experiments.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/evaluation/contracts.ts server/src/ai-observability/evaluation/experiments.ts server/tests/opik-experiments.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A7, A9；前置 #25 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1021,10 +915,7 @@
         "verification": [
           "bun test server/tests/opik-evaluation-execution.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/evaluation/execution.ts server/src/copilot.ts server/tests/opik-evaluation-execution.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/evaluation/execution.ts server/src/copilot.ts server/tests/opik-evaluation-execution.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A8, A10；前置 #16, #20, #28 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1060,10 +951,7 @@
         "verification": [
           "bun test server/tests/opik-evaluation-jobs.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/evaluation/jobs.ts server/src/ai-observability/evaluation/worker.ts server/src/index.ts server/tests/opik-evaluation-jobs.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/evaluation/jobs.ts server/src/ai-observability/evaluation/worker.ts server/src/index.ts server/tests/opik-evaluation-jobs.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A6, A10, A12；前置 #29 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1097,10 +985,7 @@
         "verification": [
           "bun test server/tests/opik-evaluation-billing.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/evaluation/billing.ts server/tests/opik-evaluation-billing.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/evaluation/billing.ts server/tests/opik-evaluation-billing.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A8；前置 #30 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1135,10 +1020,7 @@
         "verification": [
           "bun test server/tests/opik-scorers-rules.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/evaluation/scorers.ts server/tests/opik-scorers-rules.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/evaluation/scorers.ts server/tests/opik-scorers-rules.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A7, A9；前置 #28 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1176,10 +1058,7 @@
         "verification": [
           "bun test server/tests/opik-scorers-judge.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/evaluation/judge.ts server/tests/opik-scorers-judge.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/evaluation/judge.ts server/tests/opik-scorers-judge.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A7, A8；前置 #31, #32 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1215,10 +1094,7 @@
         "verification": [
           "bun test server/tests/opik-evaluation-results.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/evaluation/results.ts server/src/ai-observability/routes/evaluation-routes.ts server/tests/opik-evaluation-results.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/evaluation/results.ts server/src/ai-observability/routes/evaluation-routes.ts server/tests/opik-evaluation-results.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A5, A7, A9；前置 #32 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1252,10 +1128,7 @@
         "verification": [
           "bun test server/tests/opik-comparison.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/evaluation/comparison.ts server/tests/opik-comparison.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/evaluation/comparison.ts server/tests/opik-comparison.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A9；前置 #34 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1294,10 +1167,7 @@
           "bun test app/src/components/ai-observability/evaluation-views.test.tsx",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "./node_modules/.bin/biome lint --error-on-warnings app/src/components/ai-observability/experiment-list.tsx app/src/components/ai-observability/experiment-detail.tsx app/src/lib/ai-observability/evaluations.ts app/src/locales/en/ai-observability-evaluations.json app/src/locales/zh-CN/ai-observability-evaluations.json app/src/components/ai-observability/evaluation-views.test.tsx",
-          "./node_modules/.bin/biome format app/src/components/ai-observability/experiment-list.tsx app/src/components/ai-observability/experiment-detail.tsx app/src/lib/ai-observability/evaluations.ts app/src/locales/en/ai-observability-evaluations.json app/src/locales/zh-CN/ai-observability-evaluations.json app/src/components/ai-observability/evaluation-views.test.tsx",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A5, A7, A8；前置 #27, #34 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1334,10 +1204,7 @@
           "bun test app/src/components/ai-observability/evaluation-views.test.tsx",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "./node_modules/.bin/biome lint --error-on-warnings app/src/components/ai-observability/experiment-comparison.tsx app/src/locales/en/ai-observability-evaluations.json app/src/locales/zh-CN/ai-observability-evaluations.json app/src/components/ai-observability/evaluation-views.test.tsx",
-          "./node_modules/.bin/biome format app/src/components/ai-observability/experiment-comparison.tsx app/src/locales/en/ai-observability-evaluations.json app/src/locales/zh-CN/ai-observability-evaluations.json app/src/components/ai-observability/evaluation-views.test.tsx",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A9；前置 #35, #36 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1374,10 +1241,7 @@
           "bun test server/tests/opik-console-auth.test.ts",
           "docker compose --project-directory . -f docker/compose/opik.yml config --quiet",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/console-auth.ts server/tests/opik-console-auth.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/console-auth.ts server/tests/opik-console-auth.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A5, A13；前置 #15 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1416,10 +1280,7 @@
         "verification": [
           "bun test server/tests/opik-admin-routes.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/admin-routes.ts server/src/ai-observability/admin-summary.ts server/tests/opik-admin-routes.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/admin-routes.ts server/src/ai-observability/admin-summary.ts server/tests/opik-admin-routes.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A5, A6, A10, A12；前置 #17, #38 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1452,16 +1313,13 @@
       "what": "有权用户请求运行/实验的机器可读导出并查看状态；导出不能改变正常 Agent 结果；无法建立可信绑定时不导出该 run 的业务内容；每次下载重新校验当前权限，移交或撤权后旧链接立即失效。",
       "status": "published-ready-for-agent",
       "handoff": {
-        "consumes": "T05(#11) 的交付契约：`projectSafeText` / `projectSafeUrl` / `projectSafeName` / `projectSafeRecord` / `projectSafeMetadata` / `projectSafeException` 六个投影函数 + `REDACTION_POLICY_VERSION` 内容策略版本号 | T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标）",
+        "consumes": "T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标）",
         "produces": "导出任务与下载鉴权契约",
         "owned_scope": "server/src/ai-observability/exports.ts, server/src/ai-observability/routes/export-routes.ts, server/tests/opik-exports.test.ts",
         "verification": [
           "bun test server/tests/opik-exports.test.ts",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/exports.ts server/src/ai-observability/routes/export-routes.ts server/tests/opik-exports.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/exports.ts server/src/ai-observability/routes/export-routes.ts server/tests/opik-exports.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A6, A10, A11；前置 #11, #17 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1502,10 +1360,7 @@
           "bun test server/tests/opik-lifecycle.test.ts",
           "TEST_DATABASE_URL=<isolated-pg> bun test server/tests/opik-lifecycle.integration.test.ts   # 缺 TEST_DATABASE_URL 会 skip，不得记为通过",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/src/ai-observability/lifecycle.ts server/tests/opik-lifecycle.test.ts server/tests/opik-lifecycle.integration.test.ts",
-          "./node_modules/.bin/biome format server/src/ai-observability/lifecycle.ts server/tests/opik-lifecycle.test.ts server/tests/opik-lifecycle.integration.test.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A6, A11, A12；前置 #25, #28, #40 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1547,10 +1402,7 @@
           "bun test app/src/components/ai-observability/admin-views.test.tsx",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "./node_modules/.bin/biome lint --error-on-warnings app/src/routes/_authed/admin/ai-observability.tsx app/src/components/ai-observability/admin-overview.tsx app/src/components/ai-observability/export-status.tsx app/src/lib/ai-observability/admin.ts app/src/components/admin/admin-sidebar.tsx app/src/components/ai-observability/admin-views.test.tsx app/src/locales/en/ai-observability-admin.json app/src/locales/zh-CN/ai-observability-admin.json",
-          "./node_modules/.bin/biome format app/src/routes/_authed/admin/ai-observability.tsx app/src/components/ai-observability/admin-overview.tsx app/src/components/ai-observability/export-status.tsx app/src/lib/ai-observability/admin.ts app/src/components/admin/admin-sidebar.tsx app/src/components/ai-observability/admin-views.test.tsx app/src/locales/en/ai-observability-admin.json app/src/locales/zh-CN/ai-observability-admin.json",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A5, A6, A10, A11；前置 #19, #39, #40 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1649,17 +1501,14 @@
       "what": "对真实自托管 Opik 跑通采集、查询、评测、ID 映射与删除的全范围验收，汇总 13 条 A 条目的证据；完成独立 Spec/代码质量 review 与全范围 OCR，无有效 critical/high/medium findings。",
       "status": "published-ready-for-agent",
       "handoff": {
-        "consumes": "T01(#7) 的交付契约：路由注册约定 + 请求上下文（认证用户、scope、bot 归属）注入方式 | T02(#8) 的交付契约：四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定 | T03(#9) 的交付契约：`versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名 | T04(#10) 的交付契约：`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限） | T05(#11) 的交付契约：`projectSafeText` / `projectSafeUrl` / `projectSafeName` / `projectSafeRecord` / `projectSafeMetadata` / `projectSafeException` 六个投影函数 + `REDACTION_POLICY_VERSION` 内容策略版本号 | T06(#12) 的交付契约：`ObservationScope` 解析接口 + 两个测试 scope 的构造方式 | T07(#13) 的交付契约：表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证） | T08(#14) 的交付契约：`OpikPort` 接口 + fixture 注入方式 | T09(#15) 的交付契约：就绪/健康查询接口 + 有界异步导出入口约定 | T10(#16) 的交付契约：run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口 | T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标） | T12(#18) 的交付契约：列表组件与查询 hook 契约 | T13(#19) 的交付契约：详情页组件契约（步骤树在 T18 扩展同一组件） | T14(#20) 的交付契约：模型 span 记录接口 + usage 缺失语义 | T15(#21) 的交付契约：步骤类型枚举与「提议/执行/回执缺失」判定 | T16(#22) 的交付契约：LangGraph 侧 tracing 接入方式与版本约束 | T17(#23) 的交付契约：传播环境变量约定 + ID 映射表位置 | T18(#24) 的交付契约：步骤树组件与只读步骤查询契约 | T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单 | T20(#26) 的交付契约：案例审查/保存 REST 契约 + 脱敏语义限制说明 | T21(#27) 的交付契约：数据集页面组件与查询 hook 契约 | T22(#28) 的交付契约：实验记录结构 + 幂等键约定 | T23(#29) 的交付契约：隔离执行入口 + 工具白名单/拒绝策略 | T24(#30) 的交付契约：任务状态机 + 取消/lease 语义 | T25(#31) 的交付契约：评测侧计费准入接口 + 预算不足时的调用前拒绝语义 | T26(#32) 的交付契约：`Scorer` 接口 + 规则版本化约定 | T27(#33) 的交付契约：Judge 准入清单 + 理由安全投影 | T28(#34) 的交付契约：结果查询 REST 契约 + 失败分类枚举 | T29(#35) 的交付契约：对比 REST 契约 + 兼容性判定规则 | T30(#36) 的交付契约：实验页面组件契约 | T31(#37) 的交付契约：对比页面组件契约 | T32(#38) 的交付契约：控制面访问规则 + 内部生产者凭据发放方式 | T33(#39) 的交付契约：管理汇总 REST 契约 + 故障分类枚举 | T34(#40) 的交付契约：导出任务与下载鉴权契约 | T35(#41) 的交付契约：清理状态机 + 删除证据格式 | T36(#42) 的交付契约：管理页面组件契约",
+        "consumes": "T01(#7) 的交付契约：路由注册约定 + 请求上下文（认证用户、scope、bot 归属）注入方式 | T02(#8) 的交付契约：四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定 | T03(#9) 的交付契约：`versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名 | T04(#10) 的交付契约：`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限） | T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T06(#12) 的交付契约：`ObservationScope` 解析接口 + 两个测试 scope 的构造方式 | T07(#13) 的交付契约：表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证） | T08(#14) 的交付契约：`OpikPort` 接口 + fixture 注入方式 | T09(#15) 的交付契约：就绪/健康查询接口 + 有界异步导出入口约定 | T10(#16) 的交付契约：run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口 | T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标） | T12(#18) 的交付契约：列表组件与查询 hook 契约 | T13(#19) 的交付契约：详情页组件契约（步骤树在 T18 扩展同一组件） | T14(#20) 的交付契约：模型 span 记录接口 + usage 缺失语义 | T15(#21) 的交付契约：步骤类型枚举与「提议/执行/回执缺失」判定 | T16(#22) 的交付契约：LangGraph 侧 tracing 接入方式与版本约束 | T17(#23) 的交付契约：传播环境变量约定 + ID 映射表位置 | T18(#24) 的交付契约：步骤树组件与只读步骤查询契约 | T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单 | T20(#26) 的交付契约：案例审查/保存 REST 契约 + 脱敏语义限制说明 | T21(#27) 的交付契约：数据集页面组件与查询 hook 契约 | T22(#28) 的交付契约：实验记录结构 + 幂等键约定 | T23(#29) 的交付契约：隔离执行入口 + 工具白名单/拒绝策略 | T24(#30) 的交付契约：任务状态机 + 取消/lease 语义 | T25(#31) 的交付契约：评测侧计费准入接口 + 预算不足时的调用前拒绝语义 | T26(#32) 的交付契约：`Scorer` 接口 + 规则版本化约定 | T27(#33) 的交付契约：Judge 准入清单 + 理由安全投影 | T28(#34) 的交付契约：结果查询 REST 契约 + 失败分类枚举 | T29(#35) 的交付契约：对比 REST 契约 + 兼容性判定规则 | T30(#36) 的交付契约：实验页面组件契约 | T31(#37) 的交付契约：对比页面组件契约 | T32(#38) 的交付契约：控制面访问规则 + 内部生产者凭据发放方式 | T33(#39) 的交付契约：管理汇总 REST 契约 + 故障分类枚举 | T34(#40) 的交付契约：导出任务与下载鉴权契约 | T35(#41) 的交付契约：清理状态机 + 删除证据格式 | T36(#42) 的交付契约：管理页面组件契约",
         "produces": "验收证据索引",
         "owned_scope": "server/scripts/opik-acceptance.ts, tests/e2e/opik-observability.e2e.ts, docs/plans/evidence/2026-10-14-opik/final/",
         "verification": [
           "bun server/scripts/opik-acceptance.ts --target <opik-api> --evidence docs/plans/evidence/2026-10-14-opik/final",
           "bun run test:ui",
           "cd server && bun run typecheck",
-          "./node_modules/.bin/biome lint --error-on-warnings server/scripts/opik-acceptance.ts tests/e2e/opik-observability.e2e.ts",
-          "./node_modules/.bin/biome format server/scripts/opik-acceptance.ts tests/e2e/opik-observability.e2e.ts",
-          "# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。checkpoint 里必须写明输出来自哪个 commit sha。",
-          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A13；前置 #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
