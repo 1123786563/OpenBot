@@ -879,6 +879,17 @@ n   * "which version lived when" without guessing. The payload carries a four-he
    */
   "gateway.key_renewed",
   /*
+   * A revoked authorization's remote key disable failed (Bifrost 05.7).
+   *
+   * One row per best-effort disable that did not land: the revocation itself stands — the
+   * local retirement committed and every admission path refuses from the rows — but the
+   * gateway may still honor the old key until its own short term expires or the 05.8 sync
+   * reads it. The payload names the grant and the remote key id plus the transport's fixed
+   * reason code; no secret material. The row is what an operator (or 15.6's best-effort
+   * shutdown) acts on, so a dead gateway never quietly extends a dead authorization's reach.
+   */
+  "gateway.key_revocation_deactivation_failed",
+  /*
    * A short-lived virtual key's record drifted from OpenBot's own (Bifrost 05.9).
    *
    * One row per NEWLY recorded drift event — a key whose owner (Customer), scope or term

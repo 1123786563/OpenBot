@@ -12,6 +12,7 @@ import {
   createKeyIssuanceRoutes,
 } from "../gateway/key-issuance";
 import { createDeploymentKeyRenewalService } from "../gateway/key-renewal";
+import { createDeploymentGrantKeyRevocator } from "../gateway/key-revocation";
 import { gatewayModelCapabilityFilterControls } from "../gateway/model-capability-filter";
 import { mappedModelCapabilities } from "../gateway/model-selection-routes";
 import {
@@ -77,6 +78,12 @@ export function createBotServiceRegistry(
     database,
     botServices: store,
     auditStore: dependencies.auditStore,
+    // 05.7's remote-key retirement: a committed revocation asks the gateway to disable every
+    // key version it retired locally — best-effort and total (failures recorded, never
+    // thrown), so a gateway that cannot be reached never softens the revocation.
+    revokeGatewayKeys: createDeploymentGrantKeyRevocator({
+      auditStore: dependencies.auditStore,
+    }),
   });
   return {
     ...store,

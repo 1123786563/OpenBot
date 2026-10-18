@@ -10,6 +10,7 @@ import {
   accessGrants,
   botBindingOffers,
   botServices,
+  gatewayVirtualKeys,
 } from "../db/schema";
 import { bindingCodeHash } from "./binding-codes";
 import type { BotServiceStore } from "./store";
@@ -209,6 +210,20 @@ export type AccessGrantServiceDependencies = {
   /** The registry whose live status verdict finishes the Bot check; read per call, never cached. */
   botServices: Pick<BotServiceStore, "getBotService">;
   auditStore?: AuditStore;
+  /**
+   * 05.7's remote-key retirement seam: called after a revocation has committed, with the
+   * gateway key ids the revocation retired locally, so the gateway disables them too and an
+   * old key cannot start new work there. BEST-EFFORT BY CONTRACT: the implementation must be
+   * total (resolve no matter what the transport did, failures recorded — the deployment
+   * composes {@link import("../gateway/key-revocation").createGrantKeyRevocator}), because a
+   * throw past this seam would fail the person's revocation answer after the fact, and the
+   * idempotent retry would skip the disable entirely. Absent, the local retirement still
+   * stands alone — every admission path refuses from the rows.
+   */
+  revokeGatewayKeys?: (input: {
+    grantId: string;
+    gatewayVirtualKeyIds: string[];
+  }) => Promise<void>;
 };
 
 export type AccessGrantService = ReturnType<typeof createAccessGrantService>;
@@ -321,12 +336,22 @@ export function createAccessGrantService(
      * `revoked: false`, the same grantId, the same `revokedAt` — and writes no audit event,
      * because nothing happened for it to record.
      *
-     * AND NOTHING ELSE MOVES: only this row is written. No ledger entry, reservation or credit
-     * grant is touched — consumption that already happened stays exactly as settled (the ticket's
-     * "revocation does not affect settlement responsibility for consumption that already happened").
-     * The audit event goes out after the commit, fail-closed like confirmation's: a revocation the
-     * trail cannot name is a revocation that failed, and the caller retries into the idempotent
-     * no-op rather than a second flip.
+     * AND NOTHING ELSE MOVES — EXCEPT 05.7's RETIREMENT. Only this row and the grant's own
+     * short-lived key records are written: no ledger entry, reservation or credit grant is
+     * touched — consumption that already happened stays exactly as settled (the ticket's
+     * "revocation does not affect settlement responsibility for consumption that already
+     * happened"), and a pending hold keeps occupying its capacity. The key records are the
+     * ticket's own addition: every still-`active` gateway_virtual_keys row of this grant
+     * flips to `revoked` IN THE SAME COMMIT (one conditional update — the flip is the
+     * retirement), so the old credentialVersions stop being usable here the instant the
+     * revocation lands, with no expiry grace and no "sync later". The gateway side of the
+     * retirement is the {@link AccessGrantServiceDependencies.revokeGatewayKeys} seam,
+     * called after the commit with exactly the ids this transaction retired; the admission
+     * paths never wait on it.
+     *
+     * The audit event goes out after the commit, fail-closed like confirmation's: a revocation
+     * the trail cannot name is a revocation that failed, and the caller retries into the
+     * idempotent no-op rather than a second flip.
      */
     async revokeForUser(
       grantId: string,
@@ -354,7 +379,7 @@ export function createAccessGrantService(
         // Not found and not yours are one answer (04.6's rule, kept here).
         if (!row) throw new AccessGrantUseError();
         if (row.status === "revoked")
-          return { grant: toGrant(row), revoked: false };
+          return { grant: toGrant(row), revoked: false, retiredGatewayVirtualKeyIds: [] };
 
         // The conditional update is the flip's whole guard: under a concurrent revocation of the
         // same grant the second UPDATE re-checks `status = 'active'` against the committed row,
@@ -370,12 +395,33 @@ export function createAccessGrantService(
             ),
           )
           .returning();
-        if (flipped) return { grant: toGrant(flipped), revoked: true };
+        if (flipped) {
+          // 05.7's retirement, same commit: the grant row lock this transaction holds is the
+          // one issuance (05.3) and renewal (05.6) serialize on, so no new key version can be
+          // born mid-revocation — what reads `active` here is everything the grant held. The
+          // ids the gateway seam receives are the REMOTE key ids (the column the deactivation
+          // transport and the 05.8 sync address), not this table's row ids.
+          const retired = await tx
+            .update(gatewayVirtualKeys)
+            .set({ status: "revoked" })
+            .where(
+              and(
+                eq(gatewayVirtualKeys.grantId, grantId),
+                eq(gatewayVirtualKeys.status, "active"),
+              ),
+            )
+            .returning({ id: gatewayVirtualKeys.gatewayVirtualKeyId });
+          return {
+            grant: toGrant(flipped),
+            revoked: true,
+            retiredGatewayVirtualKeyIds: retired.map((row) => row.id),
+          };
+        }
         const [winner] = await tx
           .select()
           .from(accessGrants)
           .where(eq(accessGrants.grantId, grantId));
-        return { grant: toGrant(winner), revoked: false };
+        return { grant: toGrant(winner), revoked: false, retiredGatewayVirtualKeyIds: [] };
       });
 
       if (outcome.revoked && dependencies.auditStore) {
@@ -392,6 +438,19 @@ export function createAccessGrantService(
             scope: outcome.grant.scope,
             source: outcome.grant.source,
           },
+        });
+      }
+      if (
+        outcome.revoked &&
+        outcome.retiredGatewayVirtualKeyIds.length > 0 &&
+        dependencies.revokeGatewayKeys
+      ) {
+        // After the commit, after the trail: the person's answer is already true. The seam is
+        // total by contract (failures recorded, never thrown), so a gateway that cannot be
+        // reached softens nothing — the synchronous refusal lives in the rows above.
+        await dependencies.revokeGatewayKeys({
+          grantId: outcome.grant.grantId,
+          gatewayVirtualKeyIds: outcome.retiredGatewayVirtualKeyIds,
         });
       }
       return outcome;
