@@ -1,0 +1,18 @@
+# MT028 修复轮 biome 终态（2026-10-17，surfaceOf 删除后）
+== 本票触及的 7 文件（不含 src/index.ts）逐文件 check ==
+files-check-exit=0
+Checked 7 files in 83ms. No fixes applied.
+== src/index.ts（BASE 存量对照，不改）==
+index-raw-exit=1
+src/index.ts:4760:13 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:838:13 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:863:11 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:883:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:1895:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Found 4 errors.
+Found 1 warning.
+== BASE 存量核实（git show HEAD 版本同样报这 5 处）==
+src/index.ts:4541:13 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Found 2 errors.
+Found 1 warning.

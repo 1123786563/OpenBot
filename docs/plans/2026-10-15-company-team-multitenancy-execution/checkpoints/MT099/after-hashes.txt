@@ -1,0 +1,6 @@
+063ae9c05bcdb2d0390529317f4ef547ed288bb3775f2f930aa4ca43f81c0b97  desktop/src-tauri/src/credential_namespace.rs
+3214bab3ec11068082dcec1aa0ce155055da204f681f728bb777e28424f7ac45  desktop/src-tauri/src/organization_auth.rs
+bf24c03c2ff9fa0985f37d7f73d2ed627bfab61e7230a7e020d535f47edce693  desktop/src-tauri/src/org_context.rs
+902fa8a3c90d33d2cd0b35fbfa0320799ceb497d95d1ac78ed0d48fe31b19e30  desktop/src-tauri/src/lib.rs
+f515e24ae9bd2de7e26d9dbcbe295797a4f1d5e3c0e8321e5a7b9eb6a16a6104  desktop/src-tauri/src/main.rs
+3667a2e352b72bda208a8a07217b1f4f6a2791b846b11695792fbe23e8191d9b  server/tests/multitenancy/entry-context.test.ts

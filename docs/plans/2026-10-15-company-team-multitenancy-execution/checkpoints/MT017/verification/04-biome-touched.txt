@@ -1,0 +1,3 @@
+== biome check --write applied to 3 new files (format + organizeImports); useOptionalChain fixed by hand (registration?.status) ==
+== after --write + manual fix: 0 errors, 0 warnings ==
+Checked 3 files in 46ms. No fixes applied.

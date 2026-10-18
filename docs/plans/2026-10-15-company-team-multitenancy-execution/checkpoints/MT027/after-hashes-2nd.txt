@@ -1,0 +1,10 @@
+# MT027 after-hashes（第 2 任收尾，2026-10-16T21:01:38Z）
+# 与 before-hashes.txt 对应的 4 个授权扩展点 + 本票新文件。
+1b0c6434d54c2e6d2dac998e244b574c98bfaffdbac07606bb5da691952574bc  server/src/db/schema/index.ts
+ba725403e26fc981d7e25061d67a4e5d608d56f08c60a906f9ef2b3e1174c21b  server/scripts/multitenancy/migrate-test.ts
+1a531771b1d2a48302d8d3aa34bfa31b60c41f2e8c6ed8d2156d5953a2099cae  server/tests/multitenancy/migration-tool.test.ts
+9c31684dd9e81e3215da10a65bf29c8618921412943d62af75eadb21ff96794d  server/src/index.ts
+b14a0683729523dea5c9b8b0dac5f3bf6b0e17a0e4f4f22bf60d4c8969444b6e  server/src/db/schema/enterprise-credentials.ts
+9aca25433525132bdc37da25116196fb96cef5af8614c288c3dd637dbe30df31  server/src/enterprise/tenancy/credential-ownership.ts
+121445b2b6119081401710b05f195a60f9418906db6a8c90ae71aaf5ca25bf29  server/tests/multitenancy/credentials-ownership.test.ts
+3a8252b170c0afce07a44668628b433df201cf725ad4f5ba19c6926f6dc0b7da  server/tests/multitenancy/support/credentials-ownership.ts

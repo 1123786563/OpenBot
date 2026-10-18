@@ -1,0 +1,10 @@
+# 修复轮容器拆除 — docker rm 真实执行并回显（2026-10-17T00:15:06Z）
+$ docker ps --filter name=mt070-fix-pg --format "{{.Names}} {{.Status}}"
+mt070-fix-pg Up 3 minutes
+$ docker rm -f mt070-fix-pg
+mt070-fix-pg
+$ docker ps -a --filter name=mt070-fix-pg --format "{{.Names}}"
+(empty above = container gone)
+$ docker ps -a | grep -c mt070-fix
+0
+grep exit=1 (1 = no match, deletion check=0 confirmed)

@@ -1,0 +1,6 @@
+
+# MT028 容器销毁回显（2026-10-17）
+container: mt028-impl-pg（本票专用，55530；并行票容器 mt021-impl-pg=55529 / mt037-impl-pg=55531 保留不动）
+mt028-impl-pg
+---deletion check---
+0

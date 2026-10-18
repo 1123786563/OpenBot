@@ -1,0 +1,10 @@
+
+ 762 pass
+ 8 fail
+ 8961 expect() calls
+Ran 770 tests across 29 files. [26.34s]
+
+== 补充记录 ==
+Run A（reset 后首跑）：770 pass / 0 fail / 29 文件（与 brief 全量基线 770/0/29 一致，exit 0）
+Run B（同库立即重跑，无 reset）：762/8 fail —— 并行文件锁竞争瞬态（2s lock_timeout + advisory 锁
+  同库 29 文件并发），未定位到持久脏状态；Run C/D 复跑均 770/0 自愈。本票门槛以 0 fail 干净运行为准。

@@ -1,0 +1,6 @@
+# 变异后 sanity：模块与迁移文件均恢复基线哈希后聚焦复跑
+ 26 pass
+ 0 fail
+ 149 expect() calls
+Ran 26 tests across 1 file. [2.17s]
+exit=0
