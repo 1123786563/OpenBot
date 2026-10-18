@@ -179,6 +179,21 @@ for (const group of groups) {
     if (started.failures + started.errors === 0) return;
 
     /*
+     * When most recorded failures are connection refusals the group was never judged: reporting
+     * "N tests failed" would read as a product verdict while the database was never reached. It stays
+     * a failure — an unrunnable tier must not claim success — but names what is missing.
+     */
+    const refused = started.failed.filter((text) =>
+      /ECONNREFUSED|EADDRNOTAVAIL|Failed to connect|Failed query|PostgresError|unreachable|is not available/i.test(
+        text,
+      ),
+    ).length;
+    const refusalNote =
+      refused > started.failed.length / 2
+        ? `\n  ${refused} of ${started.failed.length} recorded failures are connection refusals: with no database reachable at TEST_DATABASE_URL/DATABASE_URL this group is blocked, not judged.`
+        : "";
+
+    /*
      * `bun test` shares one process across the files it was handed, so a suite that leaves global
      * state behind can fail a sibling that passes on its own — and which file shares a process is a
      * property of this driver's grouping, not of the suite. Re-running the files that failed inside
@@ -192,7 +207,7 @@ for (const group of groups) {
     const cap = 8;
     if (started.failingFiles.length > cap) {
       throw new Error(
-        `${group.name}: ${started.failures + started.errors} of ${started.tests} tests failed across ${started.failingFiles.length} files (more than the ${cap} the alone-re-run confirms); treated as a real failure\n${started.failed.slice(0, 4).join("\n")}`,
+        `${group.name}: ${started.failures + started.errors} of ${started.tests} tests failed across ${started.failingFiles.length} files (more than the ${cap} the alone-re-run confirms); treated as a real failure\n${started.failed.slice(0, 4).join("\n")}${refusalNote}`,
       );
     }
     const startedAt = Date.now();
@@ -225,7 +240,7 @@ for (const group of groups) {
           ([file, result]) =>
             `${file}: ${result.failures + result.errors} of ${result.tests} — ${result.failed.slice(0, 3).join(" | ")}`,
         )
-        .join("\n")}`,
+        .join("\n")}${refusalNote}`,
     ).toBe(0);
   });
 }
