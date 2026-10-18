@@ -8,6 +8,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { ModelPicker } from "@/components/settings/model-picker";
 import { ModelAccessAuthorizations } from "@/components/settings/model-access-authorizations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,6 +69,7 @@ function ModelAccessPage() {
       title={t("modelAccess.title")}
       description={t("modelAccess.description")}
     >
+      <ModelPicker />
       <ModelAccessAuthorizations />
       <PageSection title={t("modelAccess.confirmSection")}>
         {grant ? (

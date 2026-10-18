@@ -450,5 +450,39 @@
     "revoking": "撤销中…",
     "aboutSection": "工作原理",
     "about": "Bot 在它的服务端申请绑定码，并通过站外渠道交给你。绑定码只对应一个 Bot 和一个外部身份，几分钟内有效，且只能使用一次。在这里确认即创建授权；确认本身不产生 Key、余额或积分。"
+  },
+  "modelPicker": {
+    "title": "工作台模型",
+    "description": "选择工作台使用的模型。所选模型不可用时会如实报错，绝不会静默换成另一个模型。",
+    "currentTitle": "当前生效选择",
+    "currentBadge": "当前生效",
+    "unsetTitle": "尚未选择模型",
+    "unsetDescription": "从下方模型中选择一个作为你的默认。",
+    "source": {
+      "global": "你的全局默认",
+      "bot": "工作台 Bot 默认",
+      "conversation": "本会话选择"
+    },
+    "unavailableHeading": "所选模型不可用。",
+    "unavailableReasons": {
+      "model_capability_mismatch": "该模型不再匹配工作台的能力。",
+      "model_not_open": "该模型未开放使用。",
+      "model_price_unknown": "该模型价格未知。",
+      "model_catalog_stale": "模型目录已过期。",
+      "model_not_in_catalog": "该模型已从目录下架。"
+    },
+    "reselect": "请从下方模型中重新选择。",
+    "price": {
+      "known": "价格完整",
+      "free": "明确免费",
+      "unknown": "价格未知",
+      "unmapped": "价格未同步"
+    },
+    "setGlobal": "设为全局默认",
+    "setBot": "设为工作台默认",
+    "saving": "保存中…",
+    "emptyList": "暂无开放可选的模型。",
+    "refusalHeading": "模型未保存：",
+    "refusalFallback": "该模型当前不可选。"
   }
 }

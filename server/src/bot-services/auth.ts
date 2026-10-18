@@ -220,6 +220,11 @@ export type BotServiceRouteDependencies = {
    * binding-code issuance here), as routers already carrying their own routes and no-store header.
    */
   bindingCodes?: Hono<{ Variables: BotServiceVariables }>;
+  /**
+   * The short-lived key issuance surface (Bifrost 05.3, #244), already composed — mounted under
+   * the same guard, so only an authenticated Bot service identity can claim a key.
+   */
+  keys?: Hono<{ Variables: BotServiceVariables }>;
 };
 
 /**
@@ -299,5 +304,6 @@ export function botServiceRoutes(
   );
   if (dependencies.bindingCodes)
     app.route("/binding-codes", dependencies.bindingCodes);
+  if (dependencies.keys) app.route("/keys", dependencies.keys);
   return app;
 }

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "e2e";
 import { loadWorkerEnv, routineRunUrl } from "../src/env";
 
 const base = () => ({
@@ -7,6 +7,9 @@ const base = () => ({
   DATABASE_URL: "postgres://localhost:5432/openbot",
   HOSTNAME: "laptop",
 });
+
+// e2e 没有 test.each：参数化用例在模块求值时用循环同步注册，标题里带上取值。
+const requiredKeys = ["WORKER_SHARED_SECRET", "SERVER_INTERNAL_URL", "DATABASE_URL"] as const;
 
 describe("worker env", () => {
   test("parses a complete environment", () => {
@@ -19,23 +22,19 @@ describe("worker env", () => {
     expect(owner).toMatch(/^routines\/laptop-[0-9a-f]{8}$/);
   });
 
-  test.each(["WORKER_SHARED_SECRET", "SERVER_INTERNAL_URL", "DATABASE_URL"])(
-    "refuses an unset %s",
-    (name) => {
+  for (const name of requiredKeys) {
+    test(`refuses an unset ${name}`, () => {
       const env = base();
-      delete env[name as keyof typeof env];
+      delete env[name];
       expect(() => loadWorkerEnv(env)).toThrow("is not set");
-    },
-  );
+    });
 
-  test.each(["WORKER_SHARED_SECRET", "SERVER_INTERNAL_URL", "DATABASE_URL"])(
-    "refuses a whitespace-only %s like an unset one",
-    (name) => {
+    test(`refuses a whitespace-only ${name} like an unset one`, () => {
       expect(() => loadWorkerEnv({ ...base(), [name]: "   " })).toThrow(
         "is not set",
       );
-    },
-  );
+    });
+  }
 
   test("trims padded values", () => {
     const env = loadWorkerEnv({
@@ -47,14 +46,16 @@ describe("worker env", () => {
     expect(env.databaseUrl).toBe("postgres://localhost:5432/openbot");
   });
 
-  test.each([
+  for (const [raw, normalised] of [
     ["http://server:3001/", "http://server:3001"],
     ["http://server:3001///", "http://server:3001"],
-  ])("strips trailing slashes from %p", (raw, normalised) => {
-    expect(
-      loadWorkerEnv({ ...base(), SERVER_INTERNAL_URL: raw }).serverInternalUrl,
-    ).toBe(normalised);
-  });
+  ]) {
+    test(`strips trailing slashes from ${JSON.stringify(raw)}`, () => {
+      expect(
+        loadWorkerEnv({ ...base(), SERVER_INTERNAL_URL: raw }).serverInternalUrl,
+      ).toBe(normalised);
+    });
+  }
 
   test("refuses a URL that is only slashes", () => {
     expect(() =>
@@ -68,11 +69,13 @@ describe("worker env", () => {
     expect(loadWorkerEnv(without).owner).toMatch(/^routines\/[0-9a-f]{8}$/);
   });
 
-  test.each(["", "   "])("does not read HOSTNAME=%p as a name", (hostname) => {
-    const owner = loadWorkerEnv({ ...base(), HOSTNAME: hostname }).owner;
-    expect(owner).not.toBe("routines/");
-    expect(owner).toMatch(/^routines\/[0-9a-f]{8}$/);
-  });
+  for (const hostname of ["", "   "]) {
+    test(`does not read HOSTNAME=${JSON.stringify(hostname)} as a name`, () => {
+      const owner = loadWorkerEnv({ ...base(), HOSTNAME: hostname }).owner;
+      expect(owner).not.toBe("routines/");
+      expect(owner).toMatch(/^routines\/[0-9a-f]{8}$/);
+    });
+  }
 
   test("trims the hostname", () => {
     expect(loadWorkerEnv({ ...base(), HOSTNAME: "  laptop  " }).owner).toMatch(

@@ -320,6 +320,77 @@ describe("三层覆盖优先级 (全局默认 → 该 Bot 默认 → 当前会�
     expect(answered.ref).toEqual(chatRef(SELECTABLE_CHAT));
   });
 
+  /*
+   * Bifrost 03.10 (#232) — the regression review-231's F3 handed here: a stored
+   * preference whose model later becomes unavailable is answered AS STORED, on
+   * the layer that holds it. Q16 is explicit that unavailability is a visible
+   * error or a re-selection — resolution falling through to a coarser layer
+   * would silently switch the person's model, the one behavior this module
+   * must not grow. The caller (03.10's picker, 06.2's admission) owns the
+   * availability verdict.
+   */
+  test("存量偏好所指模型被关闭后仍按存储回答原层级，不回落也不换模型", async () => {
+    // A dedicated model, so the shared fixture other tests read stays intact.
+    const f3Model = "pref-f3";
+    await syncCatalog([
+      { id: `prefco/${SELECTABLE_CHAT}`, methods: ["chat"] },
+      { id: `prefco/${SELECTABLE_SECOND}`, methods: ["chat"] },
+      { id: `prefco/${CLOSED_CHAT}`, methods: ["chat"] },
+      { id: `prefco/${UNPRICED_CHAT}`, methods: ["chat"] },
+      { id: `prefco/${IMAGE_ONLY}`, methods: ["image"] },
+      { id: `prefco/${f3Model}`, methods: ["chat"] },
+    ]);
+    const f3Ref = chatRef(f3Model);
+    await priceStore.appendSnapshots([appendInput(f3Ref, fullyPricedDims())]);
+    await openAll([f3Ref]);
+
+    const user = nextId("user");
+    const service = preferenceService();
+    await service.setGlobalDefault({
+      userId: user,
+      ref: chatRef(SELECTABLE_SECOND),
+      botCapabilities: CHAT_BOT_CAPABILITIES,
+    });
+    await service.setConversationSelection({
+      userId: user,
+      botId: "bot-1",
+      conversationId: "conv-1",
+      ref: f3Ref,
+      botCapabilities: CHAT_BOT_CAPABILITIES,
+    });
+
+    // The selected model becomes unavailable: the administrator closes it.
+    const closed = await scopeService().closeModel({
+      ref: f3Ref,
+      reason: "review withdrawn",
+      actor: { userId: "admin-1", email: "admin@openbot.test" },
+    });
+    expect(closed.ok).toBe(true);
+
+    // The resolution answers the stored ref and its own layer — never the
+    // coarser global default that happens to sit underneath it.
+    const resolution = await service.resolveEffectiveModel({
+      userId: user,
+      botId: "bot-1",
+      conversationId: "conv-1",
+    });
+    const answered = sourceOf(resolution);
+    expect(answered.source).toBe("conversation");
+    expect(answered.ref).toEqual(f3Ref);
+
+    // And the filter's own verdict names the reason: the model is closed.
+    const selection = await filterService().listSelectableModels(
+      CHAT_BOT_CAPABILITIES,
+      { kind: "user", id: user },
+    );
+    expect(
+      selection.excluded.find(
+        (entry) =>
+          entry.ref.model === f3Model && entry.ref.provider === "prefco",
+      )?.reasonCode,
+    ).toBe("model_not_open");
+  });
+
   test("同 user+bot 的其他会话回落到 Bot 默认", async () => {
     const user = nextId("user");
     const service = preferenceService();

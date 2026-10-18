@@ -11,6 +11,8 @@
  * status text, response body or credential can leak through a stack trace into a log. Callers that
  * need to explain themselves to a person match on `code`.
  */
+import type { PayerKind } from "./payer";
+
 export type BillingErrorCode =
   | "unconfigured"
   | "unreachable"
@@ -51,6 +53,8 @@ export type BillingPersistenceOperation =
   | "customer_upsert"
   | "customer_ensure"
   | "subscription_upsert"
+  | "subscription_stamp"
+  | "subscription_allowance"
   | "subscription_retire"
   | "subscription_read"
   | "webhook_lookup"
@@ -171,6 +175,7 @@ export type ReconcileFinding = {
     | "reservation_allocation_imbalance"
     | "plan_grant_missing"
     | "plan_grant_amount_mismatch"
+    | "plan_grant_owner_mismatch"
     | "activation_backlog"
     | "duplicate_paid_order"
     | "usage_target_pending"
@@ -536,6 +541,55 @@ export type BillingSubscriptionRow = {
 };
 
 /**
+ * The ownership write (10.3, AC14/Q27): the owner pair resolved SERVER-SIDE from the paid
+ * order at activation, plus the allowance period the order paid for. This is the ONLY input
+ * that can name the ownership columns; the projection upsert's input carries no such fields,
+ * so a webhook refresh or a sync call physically cannot move an owner.
+ */
+export type SubscriptionOwnershipStamp = {
+  externalSubscriptionId: string;
+  ownerPayerKind: PayerKind;
+  ownerPayerId: string;
+  /** The billing period whose plan allowance the order paid for — the renewal marker. */
+  allowancePeriodStart: Date;
+  allowancePeriodEnd: Date;
+};
+
+/** A live subscription row that carries its owner — the renewal pass's walk (10.3). */
+export type OwnedSubscriptionRow = {
+  externalCustomerId: string;
+  externalSubscriptionId: string;
+  planCode: string;
+  status: BillingSubscriptionStatus;
+  ownerPayerKind: PayerKind;
+  ownerPayerId: string;
+  /** The period whose allowance has been covered; null until the first payout landed. */
+  allowancePeriodStart: Date | null;
+  allowancePeriodEnd: Date | null;
+};
+
+/**
+ * The renewal payout (10.3): what the billing service needs to pay a period's allowance into
+ * the subscription owner's account, and nothing more. The account key is derived by the
+ * SERVICE from the row's own owner pair — a delivery's bytes carry no OpenBot identity — and
+ * the idempotency key (`plan-renewal:<externalSubscriptionId>:<periodStart>`) is the ledger's
+ * own fence: a duplicate or racing delivery of the same period is a no-op, while the next
+ * period's key never collides with the last one's.
+ */
+export type SubscriptionRenewalGrantor = {
+  /** Scaled credit units (×100) the plan's period allowance pays, or null when it grants none. */
+  creditsFor(planCode: string): number | null;
+  grantRenewal(input: {
+    externalCustomerId: string;
+    planCode: string;
+    externalSubscriptionId: string;
+    periodStart: Date;
+    periodEnd: Date;
+    totalCents: number;
+  }): Promise<{ inserted: boolean }>;
+};
+
+/**
  * The projections the sync keeps, and the webhook inbox.
  *
  * An inbox row means "the projections this event implies have been refreshed" — it is written after
@@ -593,6 +647,33 @@ export type BillingStore = {
    */
   ensureCustomerRow(input: { externalId: string }): Promise<void>;
   upsertSubscription(input: BillingSubscriptionRow): Promise<void>;
+  /**
+   * Stamp the ownership pair and the allowance period onto one subscription row — the write
+   * only the ACTIVATION path performs (10.3). Update-only, answered `false` when the row the
+   * activation just created through `ensureSubscription` is absent: stamping a ghost would
+   * quietly invent a subscription this deployment never projected. The conflict-free update
+   * means a stamp never touches a row's provider facts (status/plan), and — because the
+   * projection upsert names none of these columns — a delivery can never touch them either.
+   */
+  stampSubscriptionOwnership(input: SubscriptionOwnershipStamp): Promise<boolean>;
+  /**
+   * Advance the allowance marker (10.3's renewal marker), forward-only: a row whose marker
+   * already names this period — or a later one — is left untouched, so an out-of-order or
+   * racing delivery cannot walk the marker backwards. `false` means nothing moved.
+   */
+  advanceSubscriptionAllowance(input: {
+    externalSubscriptionId: string;
+    allowancePeriodStart: Date;
+    allowancePeriodEnd: Date;
+  }): Promise<boolean>;
+  /**
+   * The live, OWNED subscription rows (10.3): the renewal pass's walk, scoped to one customer
+   * when the caller is a delivery for that customer, deployment-wide for the sweep. Ownerless
+   * rows are excluded — they have no account to pay (Q23), and the pass logs their skip.
+   */
+  readLiveOwnedSubscriptions(
+    externalCustomerId?: string,
+  ): Promise<readonly OwnedSubscriptionRow[]>;
   /**
    * Retire the local rows for one customer that the provider's own list no longer contains:
    * status → `terminated`, `updatedAt` → now. Returns how many rows moved. Never deletes —
@@ -713,4 +794,12 @@ export type BillingService = {
    * absent keeps the honest refusal.
    */
   reconcile(): Promise<ReconcileReport>;
+  /**
+   * The renewal pass (10.3): every live owned subscription whose provider period has moved
+   * past its allowance marker gets that period's payout into the owner's account, once — the
+   * ledger key (`plan-renewal:<id>:<periodStart>`) is the fence. The webhook path runs it for
+   * the delivery's subscriptions; this sweep asks the provider directly, so a period whose
+   * notification never arrived still pays. Absent renewal config keeps it a no-op.
+   */
+  sweepRenewals(): Promise<void>;
 };
