@@ -70,6 +70,18 @@ export type RunBindingStore = {
    * (scope_key, opik_trace_id) unique index) refuses with 409 BINDING_TRACE_CONFLICT (R2-29):
    * the first claim stands, this row stays unreconciled, and a retry hears the same answer —
    * never the driver's constraint violation surfacing as a 500.
+   *
+   * RESERVED — NOT WIRED (OCR R4-25): no production caller exists (full-tree
+   * grep: only the test suites reach it; the run-report path stops at begin +
+   * finish, and finish never writes opikTraceId). This method is therefore the
+   * sole writer of ai_observation_bindings.opik_trace_id and every
+   * reconciliation-dependent read (unreconciled listings, countUnreconciled,
+   * the 409 conflict branch) answers its empty case until it is wired. Wiring
+   * precondition: a production call site on the run-report/acknowledgment path
+   * that can observe the upstream trace id after a lost local ack — do not
+   * fake one, and do not widen begin/finish to write the id (that would
+   * change begin/finish's recorded contract and the R2-51 pendingSync
+   * semantics) without re-approving the behavior through a Spec first.
    */
   reconcile(
     scope: ObservationScope,
@@ -253,6 +265,13 @@ export function createRunBindingStore(db: Database): RunBindingStore {
     },
 
     async reconcile(scope, runId, attemptId, opikTraceId) {
+      // OCR R4-25: RESERVED — NOT WIRED. This is opik_trace_id's only write site and
+      // has zero production callers (tests only): the production run path is begin +
+      // finish, and finish writes state only. Until a call site exists on the
+      // lost-acknowledgment path (see the interface note above), every
+      // reconciliation-dependent read answers its empty case by design. Deliberately
+      // left unwired here — wiring it is a behavior change needing its own approved
+      // Spec, not a defect fix.
       assertObservationScope(scope);
       reference(runId);
       reference(attemptId);
