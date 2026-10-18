@@ -4970,6 +4970,16 @@ const craftPreviewOrigin =
         previewTickets: craftPreviewTickets,
         secret: config.keyEncryptionKey,
         servePreview: craftPreviewProxy,
+        /*
+         * #404 (AC6/M-1): the origin judges its own template against the host the
+         * app is really served on. A wildcard base claims that host AND everything
+         * under it, so `https://{session}.example.com` with the app on
+         * `app.example.com` would take the main site down as 404 "Unknown preview
+         * host." — the deployment's own admission answer has to come from the same
+         * config the request router resolves the app's origin from, which is this
+         * `appUrl` (OPENBOT_APP_URL → first TRUSTED_ORIGINS → OPENBOT_PUBLIC_URL).
+         */
+        appUrl: config.appUrl,
       })
     : undefined;
 

@@ -34,9 +34,10 @@
  * (D4), and that hop re-mints the address.
  *
  * Admission is the gate in front of all of it: craft off, webapp proxy off,
- * preview origin off, a malformed template, or PORT/SERVER_PORT that do not name
- * one number each close the origin with a DISPLAYABLE reason — 503 on every
- * preview host, and originFor throws so no address exists to route around the
+ * preview origin off, a malformed template, a template base that claims the main
+ * site's own host (#404), or PORT/SERVER_PORT that do not name one number each
+ * close the origin with a DISPLAYABLE reason — 503 on every preview host, and
+ * originFor throws so no address exists to route around the
  * gate. The same-origin form is never a fallback (AC6). The webapp-info half of
  * the reason surface lands with #362's webapp-info rework; the text lives here.
  *
@@ -326,6 +327,79 @@ function normalizeHostname(hostname: string): string {
   return hostname.replace(/\.+$/, "");
 }
 
+/**
+ * The port a host comparison must run on. URL serialization drops http(s)'s
+ * DEFAULT port — `http://127.0.0.1/x` carries `url.port === ""` — so an empty
+ * port reads as the scheme default rather than as "no port", or a :80 listener's
+ * traffic falls through to the wrong branch (#363, #361 final review).
+ */
+function effectivePortOf(url: URL): number {
+  if (url.port === "") return url.protocol === "https:" ? 443 : 80;
+  return Number(url.port);
+}
+
+/**
+ * Whether a dot-folded hostname + effective port sits in the preview namespace.
+ * The ONE host-side claim, run by `handlesRequest` (the dispatcher's branch gate,
+ * judged on the request URL) and by #404's admission check (judged on the main
+ * site's OWN host) — the two surfaces must never disagree about what "a preview
+ * host" is, or the guard would close on a host nothing swallows while leaving
+ * open the one that takes the main site down.
+ */
+function claimsPreviewHost(
+  template: Extract<ParsedTemplate, { kind: "host" }>,
+  hostname: string,
+  effectivePort: number,
+): boolean {
+  if (template.localhostPort !== undefined) {
+    // fix-ocr22 #2: the localhost exemption (fix-ocr5 D) cannot carry the
+    // wildcard claim's "whole hostname, any port" shape — `localhost` IS the
+    // local main site's own hostname, so claiming it swallowed the main site
+    // into "Unknown preview host." 404s (the fix-ocr3 critical family,
+    // host-form twin). Two narrowings, localhost bases only: the bare apex is
+    // never claimed (its traffic falls back to the main-site routes — the
+    // fix-ocr3 lesson), and a claim needs the template's OWN port —
+    // `<label>.localhost:3001` rides the declared form, any other port on that
+    // host is somebody else's listener.
+    if (hostname === template.baseHostname) return false;
+    if (!hostname.endsWith(`.${template.baseHostname}`)) return false;
+    return effectivePort === template.localhostPort;
+  }
+  // The base and everything under it stay in the preview namespace — fail closed
+  // inside the deployment's declared wildcard host. The comparison runs on the
+  // DOT-FOLDED hostname: the trailing-dot FQDN form is the same host to DNS and
+  // must never fall to main routes.
+  return (
+    hostname === template.baseHostname ||
+    hostname.endsWith(`.${template.baseHostname}`)
+  );
+}
+
+/**
+ * #404: the main site's own host, read through the SAME parser the template uses
+ * (dot-folded, port-resolved). A value that names no host — empty, or text the
+ * URL parser throws on — answers null and the guard judges nothing: it exists to
+ * refuse a PROVEN outage, never to close a deployment it cannot read, and a
+ * single-origin deployment sets no appUrl at all. A schemeless value is still a
+ * host an operator actually writes (`TRUSTED_ORIGINS=app.example.com`), so it
+ * reads as the https default instead of slipping past the check unarmed.
+ */
+function mainSiteHostOf(
+  appUrl: string | undefined,
+): { hostname: string; port: number } | null {
+  const value = appUrl?.trim();
+  if (!value) return null;
+  let url: URL;
+  try {
+    url = new URL(value.includes("://") ? value : `https://${value}`);
+  } catch {
+    return null;
+  }
+  const hostname = normalizeHostname(url.hostname);
+  if (hostname === "") return null;
+  return { hostname, port: effectivePortOf(url) };
+}
+
 function parseTemplate(raw: string): ParsedTemplate {
   const value = raw.trim();
   if (value === "") return { kind: "dev" };
@@ -501,6 +575,15 @@ export function createPreviewOrigin(deps: {
   /** PORT/SERVER_PORT for the dev form's port; injectable so tests pin it. */
   env?: Record<string, string | undefined>;
   /**
+   * #404 (AC6/M-1): the deployment's own main-site address — the boot file
+   * injects `config.appUrl`. A wildcard base claims that host AND everything
+   * under it, so `https://{session}.example.com` with the app on
+   * `app.example.com` (or on the `example.com` apex) swallows the main site into
+   * 404 "Unknown preview host." with no route ever reached. Unset, or a value
+   * naming no host, judges nothing (mainSiteHostOf).
+   */
+  appUrl?: string;
+  /**
    * #362: serves an authenticated request on a preview host by proxying to the
    * session's sandbox dev server (attach model: probe, never spawn). Injected by
    * the boot file from webapp-proxy's createPreviewProxy; tests stub the seam.
@@ -540,6 +623,23 @@ export function createPreviewOrigin(deps: {
     }
     if (template.kind === "invalid")
       return { ok: false, reason: template.reason };
+    // #404 (AC6/M-1): a base that claims the main site's own host is a
+    // self-inflicted outage. Judged by the SAME claim the dispatcher runs
+    // (claimsPreviewHost), so this closes exactly when the app's traffic would
+    // really be swallowed — no wider, no narrower — and the answer is the AC6
+    // shape: a closed origin with a readable reason, never a quiet fallback.
+    if (template.kind === "host") {
+      const mainSite = mainSiteHostOf(deps.appUrl);
+      if (
+        mainSite !== null &&
+        claimsPreviewHost(template, mainSite.hostname, mainSite.port)
+      ) {
+        return {
+          ok: false,
+          reason: `The preview base "${template.baseHostname}" claims the main site's own host "${mainSite.hostname}" (OPENBOT_APP_URL), so every request to the app would 404 "Unknown preview host." Put the previews on a base that is its own subdomain of the app's host — e.g. https://{session}.preview.${mainSite.hostname}.`,
+        };
+      }
+    }
     if (template.kind === "dev" && devPort.invalid) {
       return {
         ok: false,
@@ -590,36 +690,11 @@ export function createPreviewOrigin(deps: {
       const url = new URL(request.url);
       const hostname = normalizeHostname(url.hostname);
       if (template.kind === "host") {
-        // fix-ocr22 #2: the localhost exemption (fix-ocr5 D) cannot carry the
-        // wildcard claim's "whole hostname, any port" shape — `localhost` IS
-        // the local main site's own hostname, so claiming it swallowed the
-        // main site into "Unknown preview host." 404s (the fix-ocr3 critical
-        // family, host-form twin). Two narrowings, localhost bases only: the
-        // bare apex is never claimed (its traffic falls back to the main-site
-        // routes — the fix-ocr3 lesson), and a claim needs the template's OWN
-        // port — `<label>.localhost:3001` rides the declared form, any other
-        // port on that host is somebody else's listener. The effective port
-        // mirrors the dev branch below: WHATWG drops scheme-default ports, so
-        // a portless URL reads as the scheme default.
-        if (template.localhostPort !== undefined) {
-          if (hostname === template.baseHostname) return false;
-          if (!hostname.endsWith(`.${template.baseHostname}`)) return false;
-          let effectivePort: number;
-          if (url.port === "") {
-            effectivePort = url.protocol === "https:" ? 443 : 80;
-          } else {
-            effectivePort = Number(url.port);
-          }
-          return effectivePort === template.localhostPort;
-        }
-        // The base and everything under it stay in the preview namespace —
-        // fail closed inside the deployment's declared wildcard host. The
-        // comparison runs on the DOT-FOLDED hostname: the trailing-dot FQDN
-        // form is the same host to DNS and must never fall to main routes.
-        return (
-          hostname === template.baseHostname ||
-          hostname.endsWith(`.${template.baseHostname}`)
-        );
+        // fix-ocr22 #2's narrowings and the wildcard claim both live in
+        // claimsPreviewHost — the SAME rule #404's admission check runs against
+        // the main site's own host, so the guard can only ever close on a claim
+        // that really takes the main site down.
+        return claimsPreviewHost(template, hostname, effectivePortOf(url));
       }
       if (template.kind === "dev") {
         // fix-ocr3 (critical): the dev form claims hostname + a REGISTERED

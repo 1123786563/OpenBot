@@ -70,6 +70,8 @@ function originWith(
   tickets: PreviewTickets = createPreviewTickets({ store: fakeStore().store }),
   servePreview: ServePreview = async () =>
     new Response("unproxied", { status: 503 }),
+  /** #404: the deployment's own main-site address (index.ts injects config.appUrl). */
+  appUrl?: string,
 ) {
   return createPreviewOrigin({
     config: {
@@ -83,8 +85,22 @@ function originWith(
     secret: SECRET,
     env,
     servePreview,
+    ...(appUrl === undefined ? {} : { appUrl }),
   });
 }
+
+/**
+ * #404: every clash case varies just the template and the app host, and the
+ * positional-args shape of originWith is noise around that pair.
+ */
+const originAt = (previewOriginTemplate: string, appUrl?: string) =>
+  originWith({ previewOriginTemplate }, {}, undefined, undefined, appUrl);
+
+/** The bases #404 pins: one swallows the app's own host, one stays beside it. */
+const SWALLOW = "https://{session}.example.com";
+const UNDER = "https://{session}.preview.example.com";
+const LOCAL = "https://{session}.localhost:3001";
+const MAIN = "http://localhost:3001";
 
 // ── config: the two admission fields ───────────────────────────────────────
 
@@ -872,6 +888,104 @@ describe("preview origin admission", () => {
       expect(address).toMatch(/^https?:\/\//);
       expect(address).not.toContain("/api/craft/");
     }
+  });
+});
+
+// ── #404 (AC6/M-1): the preview base must not swallow the main site ───────────
+//
+// `https://{session}.example.com` claims `example.com` AND every host under it,
+// so a deployment whose OWN app host sits inside that base (the apex, or any
+// subdomain) loses its main site to the preview branch. The remedy is the AC6
+// shape: admission closes with a displayable reason and no address is minted,
+// rather than a claim quietly narrowed behind the operator's back.
+
+describe("#404: a preview base that swallows the main site's host closes admission", () => {
+  // The ticket's four acceptance cases: the clash (apex and subdomain) closes,
+  // a base on its own subdomain stays open.
+  test.each([
+    ["https://app.example.com", SWALLOW, false],
+    ["https://example.com", SWALLOW, false],
+    ["https://app.example.com", UNDER, true],
+    ["https://example.com", UNDER, true],
+  ])("main site %p with template %p → open=%p", (appUrl, template, open) => {
+    expect(originAt(template, appUrl).admission().ok).toBe(open);
+  });
+
+  test("the closed reason names the base, the swallowed host, and the fix", () => {
+    const origin = originAt(SWALLOW, "https://app.example.com");
+    const admission = origin.admission();
+    expect(admission.ok).toBe(false);
+    if (!admission.ok) {
+      expect(admission.reason).toContain("example.com");
+      expect(admission.reason).toContain("app.example.com");
+      expect(admission.reason).toContain("OPENBOT_APP_URL");
+    }
+    // Fail-closed: with the gate shut no address exists to route around it (AC6).
+    expect(() => origin.originFor(SESSION_ID)).toThrow(/closed/);
+    // What the operator actually sees on the swallowed host: the dispatcher
+    // still claims it, and a closed origin answers it with the READABLE 503
+    // reason — not the silent 404 "Unknown preview host." the misconfiguration
+    // used to produce.
+    const refused = origin.resolvePreviewRequest(
+      new Request("https://app.example.com/"),
+    );
+    expect(refused.refuse?.status).toBe(503);
+    expect(refused.refuse?.reason).toContain("OPENBOT_APP_URL");
+  });
+
+  test("the clash is judged by the SAME claim the dispatcher runs", () => {
+    // A dotted FQDN app host is the same host to DNS (fix-ocr16), so it clashes
+    // too — and the trailing dot must not walk the guard out of the suffix match.
+    expect(originAt(SWALLOW, "https://app.example.com.").admission().ok).toBe(
+      false,
+    );
+    // A host that merely LOOKS like the suffix region is not under it:
+    // `notexample.com` ends with neither ".example.com" nor "example.com".
+    expect(originAt(SWALLOW, "https://notexample.com").admission().ok).toBe(
+      true,
+    );
+  });
+
+  test("no appUrl, or an appUrl with no host at all, judges nothing", () => {
+    // The guard exists to refuse a PROVEN outage. With no main-site host to
+    // compare against it must not close a deployment that may be perfectly
+    // well-configured (appUrl is unset for a single-origin deployment).
+    expect(originAt(SWALLOW).admission().ok).toBe(true);
+    for (const appUrl of ["", "   ", "not a url", "https://", "http://::1"]) {
+      expect(originAt(SWALLOW, appUrl).admission().ok).toBe(true);
+    }
+  });
+
+  test("a schemeless appUrl is still a host — the guard does not silently no-op", () => {
+    // `TRUSTED_ORIGINS=app.example.com` is a typo the operator can actually make,
+    // and the outage it hides is the ticket's whole subject: reading only a
+    // scheme-ful value would let the clash through with the guard unarmed.
+    expect(originAt(SWALLOW, "app.example.com").admission().ok).toBe(false);
+  });
+
+  test("the localhost base keeps its narrowed claim (fix-ocr22 #2 parity)", () => {
+    // The local testing form deliberately shares its hostname with the main
+    // site, so the clash rule inherits the claim's two narrowings: the bare
+    // apex is never claimed, and a claim needs the template's OWN port.
+    expect(originAt(LOCAL, "http://localhost:3001").admission().ok).toBe(true);
+    expect(originAt(LOCAL, "http://app.localhost:3001").admission().ok).toBe(
+      false,
+    );
+    expect(originAt(LOCAL, "http://app.localhost:4000").admission().ok).toBe(
+      true,
+    );
+  });
+
+  test("a closed clash does not widen what the dev form claims", () => {
+    // The dev form (empty template) rides a PATH label on 127.0.0.1; the main
+    // site lives on this very host, so the guard must never fire there.
+    const dev = originWith({}, { PORT: "3001" }, undefined, undefined, MAIN);
+    expect(dev.admission().ok).toBe(true);
+    expect(
+      dev.handlesRequest(
+        new Request("http://127.0.0.1:3001/api/craft/sessions"),
+      ),
+    ).toBe(false);
   });
 });
 

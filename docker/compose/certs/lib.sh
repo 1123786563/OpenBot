@@ -62,6 +62,87 @@ wildcard_cert_dir() {
   printf '%s/_.%s_ecc' "$1" "${2#*.}"
 }
 
+# ── the main site's own host (#404) ───────────────────────────────────────────────
+#
+# The serving side judges its preview template against `config.appUrl`
+# (server/src/craft/preview-origin.ts: mainSiteHostOf fed into claimsPreviewHost)
+# and closes admission when the wildcard base swallows the app's own host. This
+# side reads the one variable that chain STARTS from — `OPENBOT_APP_URL` — and
+# answers the same (host, effective port), or nothing at all. Pure, so
+# scripts/tls-pipeline.test.ts pins the parse without a running server.
+#
+# "Nothing to judge" is a real answer and there are four ways to get it (each
+# returns 1): the variable is unset (a single-origin deployment — and note the
+# server's chain continues into TRUSTED_ORIGINS/OPENBOT_PUBLIC_URL, which this
+# side deliberately does not re-implement: the SERVER stays the authority, and a
+# sidecar that guesses a different main host would refuse certificates for a
+# configuration the app is serving fine); the value carries no host at all; its
+# port is not a number (WHATWG throws, so the server judges nothing either); or
+# the host is an IPv6 literal, which no preview base can ever be (the server
+# refuses an IP-literal base and this side's base regex never matches one).
+#
+# Echoes "<host>|<port>" (dot-folded, lowercased, port resolved to the scheme
+# default when the value carries none) and returns 0; returns 1 to say
+# "no judgment".
+main_site_hostport() {
+  value="${OPENBOT_APP_URL:-}"
+  value="$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  [ -n "$value" ] || return 1
+  case "$value" in
+    *"://"*) : ;;
+    # A schemeless value is still a host an operator really writes (the
+    # `TRUSTED_ORIGINS=app.example.com` shape), so it reads as the https default
+    # rather than letting the clash through with the guard unarmed — the same
+    # call the server's mainSiteHostOf makes.
+    *) value="https://$value" ;;
+  esac
+  scheme="${value%%://*}"
+  scheme="$(printf '%s' "$scheme" | tr '[:upper:]' '[:lower:]')"
+  rest="${value#*://}"
+  # The authority is everything before the first path/query/fragment separator…
+  authority="${rest%%[/?#]*}"
+  # …and userinfo never reaches the hostname (WHATWG drops it the same way).
+  authority="${authority##*@}"
+  # Host comparison is case-folded: WHATWG's URL parser lowercases the hostname
+  # (the server's mainSiteHostOf sees the folded form through `new URL`), so an
+  # `HTTPS://APP.EXAMPLE.COM` appUrl clashes exactly like the lowercase spelling.
+  authority="$(printf '%s' "$authority" | tr '[:upper:]' '[:lower:]')"
+  [ -n "$authority" ] || return 1
+  case "$scheme" in
+    https) default_port=443 ;;
+    *) default_port=80 ;;
+  esac
+  host="${authority%%:*}"
+  port="$default_port"
+  if [ "$authority" != "$host" ]; then
+    portpart="${authority#"$host"}" # ":3001", ":", or "" — the same idiom as above
+    digits="${portpart#:}"
+    case "$digits" in
+      *[!0-9]*) return 1 ;;
+      # A BARE trailing colon is not a port (WHATWG normalizes it away), so the
+      # effective port stays the scheme default; the server's parse agrees.
+      "") : ;;
+      *)
+        # WHATWG drops leading zeros (`:0443` IS 443).
+        stripped="$(printf '%s' "$digits" | sed 's/^0*//')"
+        [ -n "$stripped" ] || stripped=0
+        port="$stripped"
+        ;;
+    esac
+  fi
+  case "$host" in
+    \[* | "") return 1 ;;
+  esac
+  # Fold ALL trailing dots (fix-ocr16): the fully-qualified form is the same host
+  # to DNS and to a certificate, and one-dot folding left the double-dotted form
+  # outside the suffix match.
+  while [ "${host%.}" != "$host" ]; do
+    host="${host%.}"
+  done
+  [ -n "$host" ] || return 1
+  printf '%s|%s' "$host" "$port"
+}
+
 # ── preview-host derivation ────────────────────────────────────────────────────────
 #
 # Mirrors #361's parseTemplate (server/src/craft/preview-origin.ts): the template is a
@@ -95,6 +176,10 @@ wildcard_cert_dir() {
 #     sends the userinfo, an absolute-form hostname in the config is a typo, a
 #     certificate must carry the punycode (xn--) form to ever match the wire, and
 #     public CAs (LE included) refuse underscore hostnames anyway.
+#   - a base that claims the main site's OWN host is INVALID (#404, AC6/M-1):
+#     `https://{session}.example.com` swallows `app.example.com` — and the apex —
+#     into the preview namespace, the exact shape the server closes admission on.
+#     Judged against `OPENBOT_APP_URL` by main_site_hostport above.
 derive_preview_host() {
   template="$1"
   usage='OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE must be an http(s) URL with lowercase {session} exactly once as the hostname leading label, e.g. https://{session}.preview.example.com'
@@ -160,6 +245,7 @@ derive_preview_host() {
   # agree or it would crash-loop against a template the server serves fine
   # (fix-ocr4 #5). Leading zeros are WHATWG-legal (`:0443` IS 443), so the
   # range check reads the zero-stripped VALUE, not the digit count.
+  template_port=443
   if [ -n "$port" ] && [ "$port" != ":" ]; then
     if ! printf '%s' "$port" | grep -Eq '^:[0-9]+$'; then
       printf 'invalid|%s\n' "$usage"
@@ -174,6 +260,11 @@ derive_preview_host() {
       printf 'invalid|%s\n' "$usage"
       return 1
     fi
+    # #404: the template's OWN port, which the localhost claim is narrowed to
+    # (fix-ocr22 #2 mirrors it in claimsPreviewHost). Portless is the scheme
+    # default — and by the time anything reads this, http templates are already
+    # refused above, so the default this side can ever reach is 443.
+    template_port="$portnum"
   fi
   if [ -z "$base" ] || ! printf '%s' "$base" | grep -Eq '^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$'; then
     printf 'invalid|%s\n' "$usage"
@@ -194,6 +285,44 @@ derive_preview_host() {
     # (scripts/tls-pipeline.test.ts / server/tests/craft-preview-origin.test.ts).
     printf 'invalid|OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE must be https — the preview cookie is SameSite=None; Secure, which browsers refuse on a plain-http origin (server fix-ocr4 #9)\n'
     return 1
+  fi
+  # #404 (AC6/M-1): a wildcard base claims the base ITSELF and every host under
+  # it, so a deployment whose own app host sits inside that base loses its main
+  # site to 404 "Unknown preview host." The serving side closes admission on
+  # exactly that shape; this side refuses the same one under the same rule, so
+  # the pipeline never burns Let's Encrypt quota issuing `*.example.com` behind a
+  # refused origin. No OPENBOT_APP_URL (or a value naming no host) is NOT a
+  # refusal: this side reads the one variable the server's appUrl chain STARTS
+  # from and stops there — guessing the rest (TRUSTED_ORIGINS, PUBLIC_URL) would
+  # refuse certificates for a configuration the app serves perfectly well.
+  main_site="$(main_site_hostport)"
+  if [ -n "$main_site" ]; then
+    main_host="${main_site%|*}"
+    main_port="${main_site#*|}"
+    clash=''
+    if [ "$base" = "localhost" ]; then
+      # fix-ocr22 #2's two narrowings, mirrored: the BARE APEX is not claimed —
+      # that is the local main site itself, and `https://{session}.localhost` is
+      # the supported local testing form — and a claim needs the template's OWN
+      # port. The apex branch has to come first: glob `*` matches the empty
+      # string, so `*.localhost` alone would match `localhost` too.
+      case "$main_host" in
+        localhost) : ;;
+        *.localhost)
+          if [ "$main_port" = "$template_port" ]; then
+            clash=1
+          fi
+          ;;
+      esac
+    else
+      case "$main_host" in
+        "$base"|*."$base") clash=1 ;;
+      esac
+    fi
+    if [ -n "$clash" ]; then
+      printf 'invalid|%s\n' "OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE base '$base' claims the main site's own host '$main_host' (OPENBOT_APP_URL), so the app would 404 as an unknown preview host — give the previews their own subdomain, e.g. https://{session}.preview.$main_host"
+      return 1
+    fi
   fi
   if [ "$base" = "localhost" ]; then
     # fix-ocr18 #9: the recorded divergence — the server explicitly supports
