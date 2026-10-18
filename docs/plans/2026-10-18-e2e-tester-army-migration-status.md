@@ -356,3 +356,44 @@ node scripts/e2e-route-failures.mjs --verdict=runner-difference --apply   # 按�
 E2E_UNIT_SCOPE=app bun run test               # 只收集某目录，把回合从几分钟压到秒级
 E2E_COMPAT_DEBUG=1 ...                        # 兼容层把测试体的抛错栈打到 stderr（runner 只给一行消息）
 ```
+
+## 交接（2026-10-19 01:2x，工作树干净，HEAD `7d41a788`）
+
+事实在这一行之前都还有出处；这里只写"接手时先跑什么、还差谁点头"。
+
+**当前状态一句话**：14 个目录里每个被跟踪的套件文件都由 e2e 调度（602 原生 / 455 驱动 / 10 引擎 /
+6 按名排除，`node scripts/e2e-coverage-audit.mjs` → `no gaps`），每个 package.json 的每个脚本名都不再
+跑 `bun test`；干净一轮 8166 条里 29 个红文件三档归因后 `runner-difference` 为 0。
+
+**接手先跑的三条命令**（都在仓库根，约 10 分钟）：
+
+```bash
+node scripts/e2e-coverage-audit.mjs                 # 覆盖与入口账，秒级；非零就是有文件没排或被回退
+bun scripts/e2e-batch-drive-bun-test.mjs            # 合并波次带回 bun:test 时用它重新分区
+bun run test                                        # 全量；用 E2E_UNIT_OUTPUT=.e2e/<自己的轮次> 隔开报告
+```
+
+**还差两条，都卡在授权而不是技术**：
+
+| 未过项 | 解锁它需要的东西 | 精确动作 |
+| --- | --- | --- |
+| 7 引擎层运行时（`tests/e2e/*.e2e.ts`，10 文件 / 28 条，至今只验到收集） | 付费模型端点 + 本地栈的启动许可 | 起 app 到 `:3010`（需 Casdoor 回调端口 3001/3221 与 `TRUSTED_ORIGINS`），再 `bun run test:ui`；`e2e.config.ts:25` 的 `provider.chat(E2E_MODEL ?? "glm-5.3")` 会真打智谱端点 |
+| 在真 CI 上落一次 | 往共享分支推送或开 PR 的许可 | 推送后看 ci.yml `test` job 第 443 行那一步（`bun run test:ci`）；本地已用等价夹具测过，见 `docs/verification/e2e-driven-tier-ci-fixture-2026-10-18.md` |
+
+第 8 条（180 条红）与第 9 条（`server/src/config.ts` 两处 `gateway?:`）属别的波次，红点已全部点名，
+不由我改绿。
+
+**私有夹具从零重建**（不用共享端口，绝不占 5432/5435/55432）：
+
+```bash
+docker run -d --name ob-e2e-pg1 -p 127.0.0.1:55433:5432 -e POSTGRES_DB=openbot_test \
+  -e POSTGRES_USER=openbot -e POSTGRES_PASSWORD=openbot pgvector/pgvector:pg17
+docker run -d --name ob-e2e-pg2 -p 127.0.0.1:55434:5432 \
+  -e POSTGRES_DB=openbot_enterprise_r2_codex_20261009 -e POSTGRES_USER=enterprise_setup \
+  -e POSTGRES_PASSWORD=enterprise-setup-only pgvector/pgvector:pg17
+docker run -d --name ob-e2e-qdrant -p 127.0.0.1:6333:6333 qdrant/qdrant:latest
+cd server && OPENBOT_BOOTSTRAP_ENTERPRISE_ROLES=on bun scripts/migrate.ts && bun scripts/enterprise-test-db.ts migrate
+```
+
+**两条留给下一轮的反面教材**（已写进项目记忆）：全量轮进行中不要并行起任何 scoped 验证（两组抢
+4600，那一轮 +19 条红是我自己造的）；引数字前先确认夹具还活着（这一轮我的私有容器在轮中被回收过）。
