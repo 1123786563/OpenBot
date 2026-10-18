@@ -4,6 +4,7 @@ import {
   useChildMatches,
 } from "@tanstack/react-router";
 import { ObservationRunsPage } from "@/components/ai-observability/runs-list";
+import { requireBotObservabilityAccess } from "@/lib/observability/route-guard";
 
 /**
  * The creator's run list (Issue #18): one screen of recorded runs with the filters the
@@ -19,6 +20,8 @@ import { ObservationRunsPage } from "@/components/ai-observability/runs-list";
  * screens rather than stacked ones.
  */
 export const Route = createFileRoute("/_authed/_app/bots/$agentId/runs")({
+  beforeLoad: ({ context, params }) =>
+    requireBotObservabilityAccess(context.queryClient, params.agentId),
   component: RunsPage,
 });
 

@@ -4,6 +4,7 @@ import {
   useChildMatches,
 } from "@tanstack/react-router";
 import { ObservationEvaluationsPage } from "@/components/ai-observability/evaluations-page";
+import { requireBotObservabilityAccess } from "@/lib/observability/route-guard";
 
 /**
  * The evaluations page (Issues #27/#36): the datasets section and the experiments
@@ -23,6 +24,8 @@ import { ObservationEvaluationsPage } from "@/components/ai-observability/evalua
  */
 export const Route = createFileRoute("/_authed/_app/bots/$agentId/evaluations")(
   {
+    beforeLoad: ({ context, params }) =>
+      requireBotObservabilityAccess(context.queryClient, params.agentId),
     component: EvaluationsPage,
   },
 );
