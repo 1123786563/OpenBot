@@ -1,0 +1,5 @@
+ee4bb50d93cb0e43aaca8c9f79fc51b15a12c6a9dc23ab7e48ad8bd10346f4b7  server/scripts/multitenancy/migrate-test.ts
+7e94865a2e438e3742cf1a33a6e9a495e75d3541ba845e5f0195423dddeef657  server/tests/multitenancy/migration-tool.test.ts
+dd5ac46fca0d408f6fd440010eafd9ad0a087172cce0c216a1fdfc6eb733d559  server/src/enterprise/tenancy/deletion-semantics.ts
+6662eec2c87e7cb30a01fa4687501d7e56fb949a2a59f8cf9b16a1f9fda3ff69  server/tests/multitenancy/deletion-semantics.test.ts
+7bd396f2b31fa35ba76abcfa99fcce8757d9fb0730b46fd2297cc3d26b17b4a1  server/tests/multitenancy/support/deletion-semantics.ts

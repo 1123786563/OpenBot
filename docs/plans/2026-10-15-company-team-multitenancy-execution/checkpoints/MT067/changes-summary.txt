@@ -1,0 +1,31 @@
+# MT067 变更清单（纯追加型；零 git 提交）
+
+新增（3 文件，全新 Ownership）：
+1. server/src/enterprise/tenancy/deletion-semantics.ts        —— 双轨删除语义域
+   （Track A 公司成员数据清理服务 + Track B 独立授权全局账号删除服务 + 封闭审计集合）。
+2. server/tests/multitenancy/deletion-semantics.test.ts       —— 验收套件（票面 AC1–AC4，
+   13 用例；env 缺失显式 skip）。
+3. server/tests/multitenancy/support/deletion-semantics.ts    —— 夹具（复用 MT076
+   people-lifecycle 夹具基座 + 真实 §9 store + 受限通道播种缝 + setup 通道探针）。
+
+窄缝（2 文件，纯追加，brief 预授权；逐一披露）：
+4. server/scripts/multitenancy/migrate-test.ts
+   - 追加 DELETION_SEMANTICS_TASK 常量块（MT067 任务，1 步
+     workspace_membership_cleanup_delete：enterprise_workspace_memberships 的
+     operator DELETE 行策略——pg_policies 条件幂等（MT006 workspace-scope 测试夹具
+     在测试库预置同名策略的先例；生产由本迁移创建）+ GRANT DELETE 重复授权无操作），
+     插入位：OPENMUSE_TASK_TENANCY_TASK 之后、TASKS 注册表之前。
+   - TASKS 注册表追加 1 行：[DELETION_SEMANTICS_TASK.id, DELETION_SEMANTICS_TASK]
+     （MT060 行之后）。ALLOWED_TASK_IDS 派生自动含 MT067。
+   - 其余内容零改动（before e3365f7f… → after ee4bb50d…）。
+5. server/tests/multitenancy/migration-tool.test.ts
+   - 穷举断言追加 "MT067"（排序位 MT060 < MT067 < MT069）+ 票面预授权裁决注释
+     （ruling #5 第 21 次先例）。其余内容零改动（before 100cdebc… → after 7e94865a…）。
+
+冻结面核验：prereq-manifest 284 项中，除上述 2 个披露窄缝与本票 3 个新文件外，
+其余 282 项哈希逐一复算不变（亲跑 FREEZE-VERIFY-DONE）。
+
+schema/index.ts：零改动（本票无新表/新 schema 文件）。
+scenarios.ts：零改动（夹具复用 memberships 域）。
+people-lifecycle.ts / scim-directory.ts / openmuse-task-tenancy.ts：零改动
+（只读消费其导出/类型）。
