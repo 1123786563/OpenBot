@@ -272,6 +272,7 @@ import {
   createCredentialOwnershipDecisionService,
   type SecretVault,
 } from "./enterprise/tenancy/credential-ownership";
+import { createDeploymentEntryContextFactory } from "./enterprise/tenancy/entry-context";
 import {
   createResourceInventoryService,
   type ResourceInventoryService,
@@ -879,10 +880,21 @@ const enterpriseCapabilities = await (async () => {
       selectTenant: (request) => request.headers.get("x-openbot-tenant"),
       selectWorkspace: (request) => request.headers.get("x-openbot-workspace"),
     });
+    // MT122 (issue #165): the deployment main entry's context factory. Built
+    // from the same directory/data channels and the SAME session-resolution
+    // closure the enterprise entry's scopes consume, so "who is asking" has
+    // one answer for both entries; business dependencies come from the factory
+    // per request context — never a startup-wide single config.
+    const entry = createDeploymentEntryContextFactory({
+      directory,
+      data,
+      authenticate: authenticateEnterpriseRequest,
+    });
     return {
       directory,
       data,
       scopes,
+      entry,
       conversations: createConversationService({ data, mastraStorage }),
     };
   } catch (error) {
@@ -5649,6 +5661,12 @@ const app = createApp(
     teamBots,
     enterpriseConversations: enterpriseConversationRoutes,
     enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
+    // MT122 (issue #165): present only when enterprise capabilities are wired;
+    // multitenancy off or a missing channel leaves the assembly byte-for-byte
+    // what it was (the middleware itself is mounted in createApp, mode-gated).
+    ...(enterpriseCapabilities
+      ? { entryContext: enterpriseCapabilities.entry }
+      : {}),
     lifecycle: {
       lifecycle: createBotLifecycleStore(database),
       reset: createBotReset({
