@@ -270,6 +270,8 @@ export type DeploymentConfig = {
   /** Restricted operator-channel database; unwired → workspace admin routes answer 503. */
   enterpriseOperatorDatabaseUrl?: string;
   tenantStorageRuntimeDatabaseUrl?: string;
+  /** The model gateway endpoint named in the environment, when one is named (`GATEWAY_BASE_URL`). */
+  gateway?: GatewayEnvConfig;
   keyEncryptionKey: string;
   /**
    * Authentication for the bundled Bot and/or the installed picked harness.
@@ -1598,6 +1600,37 @@ function billingConfig(
     creditPolicy,
     ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {}),
   };
+}
+
+/** The gateway endpoint a deployment names in its environment, when it names one. */
+export type GatewayEnvConfig = { baseUrl: string; requestTimeoutMs: number };
+
+/**
+ * `GATEWAY_BASE_URL` / `GATEWAY_REQUEST_TIMEOUT_MS`: a deployment-level gateway default, refused at
+ * start-up by the same rule the administrator save path applies (gateway/endpoint.ts). The runtime
+ * source of truth for the endpoint an administrator edits is the database row
+ * (gateway/config-store.ts); this is the seam downstream tickets (01.5 probe, 01.7 readiness) read
+ * first, so a deployment can name its gateway before any administrator has signed in.
+ */
+function gatewayEnvConfig(environment: Environment): GatewayEnvConfig | undefined {
+  const baseUrl = optional(environment, "GATEWAY_BASE_URL");
+  const timeoutRaw = optional(environment, "GATEWAY_REQUEST_TIMEOUT_MS");
+  if (!baseUrl && !timeoutRaw) return undefined;
+  if (!baseUrl) {
+    throw new Error(
+      "GATEWAY_REQUEST_TIMEOUT_MS is set without GATEWAY_BASE_URL: name the gateway origin (for example https://bifrost.internal) or leave both unset.",
+    );
+  }
+  const parsed = parseGatewayBaseUrl(baseUrl);
+  if (!parsed.ok) throw new Error(`GATEWAY_BASE_URL: ${parsed.error}`);
+  let requestTimeoutMs = 10_000;
+  if (timeoutRaw !== undefined) {
+    const timeout = parseRequestTimeoutMs(Number(timeoutRaw));
+    if (!timeout.ok)
+      throw new Error(`GATEWAY_REQUEST_TIMEOUT_MS: ${timeout.error}`);
+    requestTimeoutMs = timeout.requestTimeoutMs;
+  }
+  return { baseUrl: parsed.baseUrl, requestTimeoutMs };
 }
 
 function billingCreditPolicyConfig(
@@ -2939,6 +2972,7 @@ export function loadConfig(
       "tenantStorageRuntimeDatabaseUrl",
       optional(environment, "OPENBOT_TENANT_STORAGE_RUNTIME_DATABASE_URL"),
     ),
+    ...spreadOptional("gateway", gatewayEnvConfig(environment)),
     keyEncryptionKey: deploymentKey,
     ...(webBotAuth ? { webBotAuth } : {}),
     ...(managedAgent ? { managedAgent } : {}),
