@@ -472,6 +472,49 @@ describe("every unavailable state prohibits observation writes (acceptance 2)", 
     expect(second.seen).toEqual([]);
   });
 
+  test("a not-ready latch re-arms itself after the cooldown once the upstream recovers (R5-20)", async () => {
+    // R5-20: the bootstrap fired once, Opik happened to be down at that
+    // instant, and the verdict latched for the life of the process — a
+    // headless deployment (no read route, no admin page) then refused every
+    // observation write until a restart, silently losing traces. The latch
+    // now re-arms: once the configured cooldown has passed, a submit that
+    // finds the gate not-ready re-probes in the background. Fail-closed
+    // stands — the triggering write is still refused, and only a verdict
+    // that actually answers ready lets later writes through.
+    let clock = 0;
+    let healthy = false;
+    const svc = service({
+      port: fakePort(() =>
+        healthy
+          ? { outcome: "ok", value: { healthy: true } }
+          : upstreamError(500),
+      ),
+      reArmAfterMs: 100,
+      now: () => clock,
+    });
+    // First submit triggers the bootstrap; the unreachable verdict counts the
+    // queued write unavailable and latches the gate.
+    const first = probeWrite();
+    expect(svc.submit(first.write)).toBe("accepted");
+    await svc.drain();
+    expect(first.seen).toEqual([]);
+    expect(svc.submit(probeWrite().write)).toBe("refused_not_ready");
+    // Upstream recovers; once the cooldown passes, the next refused submit
+    // re-arms the gate in the background…
+    healthy = true;
+    clock += 101;
+    expect(svc.submit(probeWrite().write)).toBe("refused_not_ready");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    // …and the gate answers the recovered upstream: the next write runs.
+    const recovered = probeWrite();
+    expect(svc.submit(recovered.write)).toBe("accepted");
+    await svc.drain();
+    expect(recovered.seen).toEqual(["ran"]);
+    const stats = svc.writeStats();
+    expect(stats.refusedNotReady).toBe(2);
+    expect(stats.completed).toBe(1);
+  });
+
   test("a readiness flip gates queued writes again before they start (review F1)", async () => {
     let authFailed = false;
     let releaseFirst: () => void = () => {};
