@@ -618,7 +618,12 @@ function installMockHooks(): void {
           source: 'export default "";\n',
         };
       }
-      if (!url.startsWith("e2e-mock:")) return nextLoad(url, context);
+      if (!url.startsWith("e2e-mock:")) {
+        // A suite file re-entering the loader is the start of a fresh collection pass.
+        const suite = suiteFileOf(url);
+        if (suite) forgetTitlesOf(suite);
+        return nextLoad(url, context);
+      }
       const key = decodeURIComponent(url.slice("e2e-mock:".length));
       const names = Object.keys(moduleMocks.get(key)?.() ?? {});
       const body = names
@@ -884,10 +889,33 @@ type Register = (...args: any[]) => unknown;
  * e2e names a test by its title path and requires 1..512 UTF-8 bytes, unique inside one file;
  * Bun accepted longer and repeated titles. Titles are report labels, not assertions, so the runner's
  * rule is honoured by clamping and by numbering a repeat, never by dropping the test.
+ *
+ * The uniqueness domain is the whole title path, so `is on when nothing is set` in two different
+ * `describe` groups is not a repeat and must not be renumbered. The counters live per file and are
+ * cleared when that file is loaded: the runner imports a suite file once to list it and again to run
+ * it, and a counter that survived the two passes handed back `… [2]` the second time, which the
+ * runner reads as a test that disappeared on re-import — a collection error for every test in the
+ * file, and an abort of the whole run.
  */
-const seenTitles: Map<string, number> = ((globalThis as Any)[
-  Symbol.for("openbot.e2e-compat.seen-titles")
+const SEEN_TITLES = Symbol.for("openbot.e2e-compat.seen-titles");
+const DESCRIBE_PATH = Symbol.for("openbot.e2e-compat.describe-path");
+const seenTitles: Map<string, Map<string, number>> = ((globalThis as Any)[
+  SEEN_TITLES
 ] ??= new Map());
+const describePath: string[] = ((globalThis as Any)[DESCRIBE_PATH] ??= []);
+
+function suiteFileOf(url: string): string | null {
+  const path = url.split("?")[0];
+  const match = path.match(
+    /^(?:file:\/\/)?(.*\.(?:test|spec)\.tsx?|.*\.(?:test|spec)\.mts)$/,
+  );
+  return match ? match[1].replace(/^\//, "") : null;
+}
+
+function forgetTitlesOf(file: string): void {
+  seenTitles.delete(file);
+  describePath.length = 0;
+}
 
 function fileFromStack(): string {
   const line = (new Error().stack ?? "")
@@ -908,15 +936,28 @@ function clampTitle(title: string, kind: string): string {
       candidate = candidate.slice(0, candidate.length - 8);
     candidate += " …";
   }
-  const key = `${kind}:${fileFromStack()}:${candidate}`;
-  const seen = seenTitles.get(key);
+  const file = fileFromStack();
+  const perFile = seenTitles.get(file) ?? new Map();
+  seenTitles.set(file, perFile);
+  const key = `${kind}:${describePath.join("›")}:${candidate}`;
+  const seen = perFile.get(key);
   if (seen === undefined) {
-    seenTitles.set(key, 1);
+    perFile.set(key, 1);
     return candidate;
   }
-  seenTitles.set(key, seen + 1);
+  perFile.set(key, seen + 1);
   const suffix = ` [${seen + 1}]`;
   return candidate.slice(0, 512 - Buffer.byteLength(suffix)) + suffix;
+}
+
+/** Registers a group with its title on the path, so the tests inside it are named by their path. */
+function withinGroup(name: string, register: () => unknown): unknown {
+  describePath.push(name);
+  try {
+    return register();
+  } finally {
+    describePath.pop();
+  }
 }
 
 function registerTest(register: Register) {
@@ -1118,12 +1159,10 @@ Object.defineProperties(test, {
 
 type DescribeAPI = typeof e2eDescribe;
 
-export const describe = ((title: string, body: Any, maybeBody?: Any) =>
-  (e2eDescribe as Any)(
-    clampTitle(title, "describe"),
-    body,
-    maybeBody,
-  )) as unknown as DescribeAPI & DescribeExtras;
+export const describe = ((title: string, body: Any, maybeBody?: Any) => {
+  const name = clampTitle(title, "describe");
+  return withinGroup(name, () => (e2eDescribe as Any)(name, body, maybeBody));
+}) as unknown as DescribeAPI & DescribeExtras;
 
 Object.defineProperties(describe, {
   each: {
@@ -1134,9 +1173,11 @@ Object.defineProperties(describe, {
         const inner = (typeof body === "function" ? body : maybeBody) as Body;
         for (const row of rows) {
           const name = expand(title, [...row.args], row.named);
-          if (options)
-            (e2eDescribe as Any)(name, options, () => inner(...row.args));
-          else (e2eDescribe as Any)(name, () => inner(...row.args));
+          withinGroup(name, () =>
+            options
+              ? (e2eDescribe as Any)(name, options, () => inner(...row.args))
+              : (e2eDescribe as Any)(name, () => inner(...row.args)),
+          );
         }
       };
     },
@@ -1149,8 +1190,9 @@ Object.defineProperties(describe, {
       setSkipping(skippingOf() + 1);
       try {
         const inner = typeof body === "function" ? body : maybeBody;
-        return (e2eDescribe as Any)(clampTitle(title, "describe"), () =>
-          inner?.(),
+        const name = clampTitle(title, "describe");
+        return withinGroup(name, () =>
+          (e2eDescribe as Any)(name, () => inner?.()),
         );
       } finally {
         setSkipping(skippingOf() - 1);
@@ -1159,8 +1201,12 @@ Object.defineProperties(describe, {
     configurable: true,
   },
   only: {
-    value: (title: string, body: Any, maybeBody?: Any) =>
-      (e2eDescribe as Any)(title, body, maybeBody),
+    value: (title: string, body: Any, maybeBody?: Any) => {
+      const name = clampTitle(title, "describe");
+      return withinGroup(name, () =>
+        (e2eDescribe as Any)(name, body, maybeBody),
+      );
+    },
     configurable: true,
   },
   concurrent: { value: describe, configurable: true },
@@ -1179,7 +1225,10 @@ Object.defineProperties(describe, {
           ? { serial: true }
           : { ...body, serial: true };
       const inner = typeof body === "function" ? body : maybeBody;
-      return (e2eDescribe as Any)(title, options, inner);
+      const name = clampTitle(title, "describe");
+      return withinGroup(name, () =>
+        (e2eDescribe as Any)(name, options, inner),
+      );
     },
     configurable: true,
   },

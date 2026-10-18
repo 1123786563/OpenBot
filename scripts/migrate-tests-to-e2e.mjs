@@ -3,7 +3,13 @@
 // It swaps the runner import for tests/support/e2e-compat (which re-exports e2e and re-adds
 // Bun's spies, test.each and the value matchers e2e leaves out) and reports what it could not
 // settle mechanically, so those files get a human pass instead of a silent guess.
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -18,6 +24,25 @@ const SKIP_DIRS = new Set([
 ]);
 const TEST_FILE = /(\.test|\.spec)\.(ts|tsx|mts)$/;
 
+/*
+ * `bunfig.toml`'s `[test] preload` files are runner plumbing, not suites: e2e never collects them and
+ * `bun test` needs them on `bun:test`. Rewriting one moves the whole server package's preload onto
+ * the e2e registry, which then refuses to load.
+ */
+const PRELOAD = new Set(
+  ["bunfig.toml", "server/bunfig.toml"]
+    .filter((file) => existsSync(join(root, file)))
+    .flatMap((file) => {
+      const toml = readFileSync(join(root, file), "utf8");
+      const entry = toml
+        .slice(toml.indexOf("[test]"))
+        .match(/preload\s*=\s*\[([^\]]*)\]/);
+      return [...(entry?.[1]?.match(/["']([^"']+)["']/g) ?? [])].map((raw) =>
+        raw.replace(/["']/g, "").replace(/^\.\//, ""),
+      );
+    }),
+);
+
 const dirs = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const dry = process.argv.includes("--dry-run");
 if (!dirs.length) {
@@ -31,13 +56,18 @@ function collect(dir, out) {
   for (const entry of readdirSync(dir)) {
     if (SKIP_DIRS.has(entry)) continue;
     const full = join(dir, entry);
+    if (PRELOAD.has(full.replace(`${root}/`, ""))) continue;
     const st = statSync(full);
     if (st.isDirectory()) collect(full, out);
     else if (TEST_FILE.test(entry)) out.push(full);
     // Support, helper and fixture modules ride along: a `.fixture.tsx` that imports `bun:test`
     // breaks every suite that imports it, and that is not visible as a test file.
+    // The compat layer itself is excluded: `bun-test-compat.ts` exists to re-export `bun:test` for
+    // the groups e2e schedules but Bun executes, and rewriting that import sends them through the
+    // e2e registry, which refuses to collect outside a run.
     else if (
       /\.(ts|tsx)$/.test(entry) &&
+      !full.startsWith(`${join(root, "tests", "support")}${sep}`) &&
       readFileSync(full, "utf8").includes("bun:test")
     )
       out.push(full);
@@ -119,19 +149,34 @@ function withDomPreload(source, file) {
 /**
  * Bun gives ESM files a `require`; Node does not. Rewrite it to a createRequire handle so the same
  * file loads under either runner.
+ *
+ * Code lines only: this file's own comments quote `require("eventsource")` while explaining the MCP
+ * loader bug, and rewriting prose invents a call the suite never makes.
  */
 function rewriteBunRequire(source, file, notes) {
-  let next = source;
-  if (/(^|[^.\w])require\(/.test(next) && !/createRequire/.test(next)) {
-    const injected =
-      'import { createRequire } from "node:module";\n\nconst nodeRequire = createRequire(import.meta.url);\n';
-    let end = 0;
-    for (const match of next.matchAll(/^import[\s\S]*?;\n/gm))
-      end = match.index + match[0].length;
-    next = `${next.slice(0, end)}${injected}\n${next.slice(end)}`;
-    next = next.replace(/(^|[^.\w])require\((["'])/g, "$1nodeRequire($2");
-    notes.push([relative(root, file), "rewrote Bun's ESM require() to createRequire"]);
-  }
+  const isProse = (line) => {
+    const trimmed = line.trimStart();
+    return (
+      trimmed.startsWith("*") ||
+      trimmed.startsWith("//") ||
+      trimmed.startsWith("/*")
+    );
+  };
+  let hits = 0;
+  const lines = source.split("\n").map((line) => {
+    if (isProse(line) || !/(^|[^.\w])require\((["'])/.test(line)) return line;
+    hits++;
+    return line.replace(/(^|[^.\w])require\((["'])/g, "$1nodeRequire($2");
+  });
+  if (!hits || /createRequire/.test(source)) return source;
+  let next = lines.join("\n");
+  const injected =
+    'import { createRequire } from "node:module";\n\nconst nodeRequire = createRequire(import.meta.url);\n';
+  let end = 0;
+  for (const match of next.matchAll(/^import[\s\S]*?;\n/gm))
+    end = match.index + match[0].length;
+  next = `${next.slice(0, end)}${injected}\n${next.slice(end)}`;
+  notes.push([relative(root, file), "rewrote Bun's ESM require() to createRequire"]);
   return next;
 }
 
