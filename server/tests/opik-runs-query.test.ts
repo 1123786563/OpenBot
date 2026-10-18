@@ -975,6 +975,38 @@ describe("runs query — detail", () => {
     expect(body.upstream).toEqual({ status: "absent" });
   });
 
+  test("detail adopts only a recognizable upstream state word (R5-26)", async () => {
+    // R5-26: the present branch adopted summary.state unconditionally, but the
+    // T37 real rows answer no `status` field at all — so in real deployments
+    // every detail read erased the binding's local terminal state into
+    // "unknown", while the absent branch of the SAME run kept binding.state.
+    // Unknown is evidence absence, not an observation: only a word the build
+    // understands may overwrite the local answer.
+    const { app } = appFor({
+      bindings: [bindingRow(scopeA, { state: "completed" })],
+      port: fakePort({ rows: [traceRow({ status: undefined })] }),
+    });
+    const body = await (await detail(app)).json();
+    expect(body.upstream.status).toBe("present");
+    expect(body.run.state).toBe("completed");
+    // An unrecognized word is the same evidence absence; the local state stands.
+    const unrecognized = appFor({
+      bindings: [bindingRow(scopeA, { state: "failed" })],
+      port: fakePort({ rows: [traceRow({ status: "PENDING_REVIEW" })] }),
+    });
+    expect((await (await detail(unrecognized.app)).json()).run.state).toBe(
+      "failed",
+    );
+    // A recognized word still wins — the upstream copy is the closed one.
+    const recognized = appFor({
+      bindings: [bindingRow(scopeA, { state: "running" })],
+      port: fakePort({ rows: [traceRow({ status: "ERROR" })] }),
+    });
+    expect((await (await detail(recognized.app)).json()).run.state).toBe(
+      "failed",
+    );
+  });
+
   test("detail after a list reuses the cached window", async () => {
     const { app, port } = appFor({
       port: fakePort({ rows: [traceRow()] }),

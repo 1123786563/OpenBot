@@ -562,8 +562,18 @@ export function createRunsQueryService(
     const summary = projectRow(row, binding.capability);
     // The upstream copy is the closed one; when it is visible its observed
     // state is the actual state, and the local row keeps the refs.
+    // R5-26: but only a word this build UNDERSTANDS is an observation. The T37
+    // real rows answer no `status` field at all, so adopting summary.state
+    // unconditionally erased the binding's local terminal state into
+    // "unknown" on every detail read of a real deployment — while the absent
+    // branch above kept binding.state for the same run. Unknown is evidence
+    // absence, not a state: the local answer stands until upstream names a
+    // word the vocabulary table actually maps.
     return {
-      run: { ...run, state: summary.state },
+      run: {
+        ...run,
+        state: summary.state === "unknown" ? binding.state : summary.state,
+      },
       upstream: { status: "present", ...summary },
     };
   };
