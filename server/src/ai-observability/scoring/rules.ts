@@ -44,10 +44,13 @@ import { canonicalJson } from "../datasets";
  *   ran out. Same inputs spend it identically — the "clock" is a byte-derived cost model, not
  *   wall time, so determinism holds. A native regex call that has already been afforded cannot
  *   be interrupted; hard wall-clock kills belong to the execution orchestrator (T23/T24).
+ *   Because the budget only gates an operator's start, the subject itself is bounded at the
+ *   entrance (OCR R4-22): a canonical text over MAX_SCORING_SUBJECT_BYTES answers a run-level
+ *   `OUTPUT_MISSING` before any operator runs.
  * - `OUTPUT_MISSING` (run level or per rule): no scoreable output — absent, withheld by the
- *   redaction policy, truncated, or not a projection envelope at all. For structured outputs a
- *   `json_path` rule that resolves into a withheld leaf is a per-rule error; unaffected paths
- *   still score.
+ *   redaction policy, truncated, over the scoring subject ceiling, or not a projection
+ *   envelope at all. For structured outputs a `json_path` rule that resolves into a withheld
+ *   leaf is a per-rule error; unaffected paths still score.
  *
  * A rule that evaluates to false is `failed` with an explicit reason (not_equal, non_numeric,
  * path_missing, …) — data-shaped facts, not system failures, so 0 is truthful for them.
@@ -71,6 +74,21 @@ export const MAX_PATH_SEGMENTS = 16;
  */
 export const DEFAULT_EVALUATION_BUDGET = 1_000_000;
 export const REGEX_COST_MULTIPLIER = 8;
+
+/**
+ * The subject ceiling (OCR R4-22): the largest canonical text any rule may scan, aligned
+ * with the span-input capture ceiling (the 64Ki precedent). The byte budget is checked
+ * only BETWEEN operators — a RegExp test that has started cannot be interrupted by it, and
+ * the results read path (GET results scores every case synchronously) has no wall-clock
+ * kill at all. So the bound that holds on the read path is the entrance: a subject past
+ * the ceiling is refused as a run-level OUTPUT_MISSING before the first operator runs,
+ * and no rule — however ambiguous its alternation — ever scans it. A structured output's
+ * canonical text is the one shape the honest settle pipeline can store over this size
+ * (each leaf is truncated to 8KiB, the tree is not); text subjects are truncated at 8KiB
+ * on the way in and can only exceed the ceiling as damaged rows, which the refusal also
+ * covers.
+ */
+export const MAX_SCORING_SUBJECT_BYTES = 64 * 1024;
 
 /**
  * Static catastrophic-backtracking guard (OCR round-1 h9).
@@ -681,6 +699,17 @@ export function scoreRunOutput(
   };
   const subject = textSubject();
   const subjectBytes = subject.ok ? utf8Bytes(subject.text) : 0;
+
+  // The subject ceiling (OCR R4-22): refuse at the entrance, before any operator runs.
+  // The budget below only gates an operator's START; a scan already running is not
+  // interruptible, so a subject past the ceiling never reaches one.
+  if (subject.ok && subjectBytes > MAX_SCORING_SUBJECT_BYTES) {
+    const message = `output subject is ${subjectBytes} bytes, over the ${MAX_SCORING_SUBJECT_BYTES}-byte scoring ceiling — refused before any operator runs`;
+    return {
+      results: errorRows("OUTPUT_MISSING", message),
+      error: { code: "OUTPUT_MISSING", message },
+    };
+  }
 
   const results: RuleScore[] = [];
   let spent = 0;

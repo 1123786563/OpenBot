@@ -812,6 +812,55 @@ describe("the three failure classes are explicit, never a 0", () => {
     expect(DEFAULT_EVALUATION_BUDGET).toBeGreaterThan(100_000);
   });
 
+  test("an output subject over the scoring ceiling refuses at the entrance — no operator ever scans it (OCR R4-22)", () => {
+    // Ambiguous alternation the static detector deliberately does not flag: once a
+    // test() has started, neither this module's byte budget nor anything on the GET
+    // results read path can interrupt it — the engine's cost there is subject-size
+    // and pattern dependent (~0.3s for one 8K a-run on this engine, growing with the
+    // subject). The subject below is one the honest settle pipeline CAN store intact
+    // (a projected record of 8KiB leaves; only its canonical text is huge), so the
+    // entrance refuses any subject past the capture ceiling before the first
+    // operator runs: the read path never scans more text than the capture pipeline
+    // would keep as one span input (the 64Ki precedent).
+    expect(regexHasNestedQuantifiers('"leaf0":"(a|aa)+x')).toBe(false);
+    const overSubject: SafeValue = {
+      state: "projected",
+      value: Object.fromEntries(
+        Array.from({ length: 9 }, (_, i) => [
+          `leaf${i}`,
+          { state: "projected", value: "a".repeat(8_192) },
+        ]),
+      ),
+    };
+    const rs = rules([
+      {
+        id: "ambiguous",
+        kind: "regex",
+        pattern: '"leaf0":"(a|aa)+x',
+        flags: "",
+      },
+      { id: "plain", kind: "contains", expected: "needle" },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    const run = scoreRunOutput(rs, overSubject);
+
+    expect(run.error).toMatchObject({ code: "OUTPUT_MISSING" });
+    expect(run.results).toHaveLength(2);
+    expect(run.results.every((r) => r.status === "error")).toBe(true);
+    expect(run.results.every((r) => r.code === "OUTPUT_MISSING")).toBe(true);
+    expect(run.results[0]?.message).toContain("scoring ceiling");
+
+    // A subject inside the ceiling scores normally — the cap narrows only what the
+    // capture pipeline could never hand over as one scan.
+    const inside = scoreRunOutput(
+      rules([{ id: "plain", kind: "contains", expected: "needle" }]),
+      textOutput("the answer mentions a needle"),
+    );
+    expect(inside.error).toBeUndefined();
+    expect(inside.results[0]).toMatchObject({ status: "passed" });
+  });
+
   test("missing output: absent, withheld, truncated and unprojected are OUTPUT_MISSING for every rule", () => {
     const rs = rules([
       { id: "a", kind: "contains", expected: "x" },

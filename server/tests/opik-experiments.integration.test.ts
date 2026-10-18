@@ -243,6 +243,58 @@ test("a draft held by the deletion window refuses saveDraft with the domain 409 
   }
 });
 
+test("the draft→frozen UPDATE channel answers the deletion window with the domain 409, never a bare 23505 (OCR R4-13)", async () => {
+  // R3-26 taught the INSERT channel this answer; the UPDATE channel was left bare.
+  // A frozen holder of the configuration key sits in the deletion window: the
+  // filtered elsewhere-read cannot see it, but the partial unique index
+  // (scope, config_hash) WHERE frozen still holds — so freezing the draft that
+  // carries the same canonical configuration trips 23505 inside the UPDATE, which
+  // classify() has no answer for and the caller would read as a bare 500.
+  const { version } = await pinnedVersion(scopeA);
+  const frozenName = `${prefix}-r413-f-${randomUUID()}`;
+  const draftName = `${prefix}-r413-d-${randomUUID()}`;
+  const { experiment: holder } = await store.submit(scopeA, {
+    name: frozenName,
+    datasetVersionId: version.id,
+    config,
+  });
+  // The draft under another name, carrying the same canonical configuration.
+  await store.saveDraft(scopeA, {
+    name: draftName,
+    datasetVersionId: version.id,
+    config,
+  });
+  // Retention found the frozen holder: invisible to every m138 reader, still
+  // holding the partial unique index.
+  await database.insert(aiObservationRetentionDeletions).values({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    kind: "experiment",
+    targetId: holder.id,
+    retentionDays: 30,
+    state: "pending",
+  });
+  try {
+    const failure = await store
+      .submit(scopeA, { name: draftName, datasetVersionId: version.id, config })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(failure).toBeInstanceOf(ExperimentStoreError);
+    expect((failure as ExperimentStoreError).code).toBe(
+      "EXPERIMENT_STATE_INVALID",
+    );
+    expect((failure as ExperimentStoreError).status).toBe(409);
+  } finally {
+    await database
+      .delete(aiObservationRetentionDeletions)
+      .where(eq(aiObservationRetentionDeletions.targetId, holder.id));
+  }
+});
+
 test("the byName replay channel answers the same frozen configuration (regression anchor)", async () => {
   const { version } = await pinnedVersion(scopeA);
   const input = {

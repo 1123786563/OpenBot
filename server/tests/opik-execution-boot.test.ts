@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  createJudgeEntranceCall,
   evaluationToolClassifier,
   judgeAdmissionFromEnv,
 } from "../src/ai-observability/execution-boot";
@@ -77,6 +78,53 @@ describe("judgeAdmissionFromEnv", () => {
       OPIK_JUDGE_APPROVED_VERSIONS: " , ",
     });
     expect(empty.approvedVersions).toEqual(new Set(["judge/1"]));
+  });
+});
+
+describe("the judge entrance dispatch (OCR R4-23)", () => {
+  /** Two approved entrances sharing one model name, each with its own credential. */
+  const sharedName = () =>
+    new Map([
+      [
+        "judge-a",
+        { modelName: "shared-model", apiKeyEnv: "R423_KEY_A_DEFINITELY_UNSET" },
+      ],
+      [
+        "judge-b",
+        { modelName: "shared-model", apiKeyEnv: "R423_KEY_B_DEFINITELY_UNSET" },
+      ],
+    ]);
+  const request = {
+    modelName: "shared-model",
+    modelParameters: {},
+    system: "s",
+    user: "u",
+  };
+  const dialed = (call: unknown, entranceId?: string) =>
+    (call as (r: typeof request & { entranceId?: string }) => Promise<unknown>)(
+      { ...request, ...(entranceId === undefined ? {} : { entranceId }) },
+    ).then(
+      () => "dialed",
+      (error: unknown) => String(error),
+    );
+
+  test("a request is dialed through the entrance it names, never the first entrance that loaded its model name", async () => {
+    const call = createJudgeEntranceCall(sharedName());
+
+    // The spec names entrance-b: entrance-b's credential environment is the one that
+    // answers — provenance recorded on the judge record matches the entrance dialed.
+    expect(await dialed(call, "judge-b")).toContain(
+      "R423_KEY_B_DEFINITELY_UNSET",
+    );
+    expect(await dialed(call, "judge-a")).toContain(
+      "R423_KEY_A_DEFINITELY_UNSET",
+    );
+  });
+
+  test("a request without an entrance id keeps the legacy modelName dispatch (map order)", async () => {
+    const call = createJudgeEntranceCall(sharedName());
+
+    expect(await dialed(call)).toContain("R423_KEY_A_DEFINITELY_UNSET");
   });
 });
 

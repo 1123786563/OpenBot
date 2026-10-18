@@ -553,6 +553,10 @@ export function createJudgeScorer(
     try {
       answer = await deps.callModel({
         modelName: entrance.modelName,
+        // The entrance identity rides the request (OCR R4-23): the dispatch that
+        // turns this request into a dial must honor the same entrance this record
+        // names, even when another approved entrance carries the same model name.
+        entranceId: extracted.spec.entranceId,
         modelParameters: {},
         system: [
           extracted.spec.rubric,

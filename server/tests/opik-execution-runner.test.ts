@@ -161,6 +161,75 @@ describe("the production case runner makes one controlled, observed model call",
     });
   });
 
+  test("a withheld prompt refuses the case before admission and before any dial (OCR R4-21)", async () => {
+    // The freeze projected the prompt away: an empty string is not what the case
+    // meant to ask, and dialing it spends money on a question nobody wrote. The
+    // judge's AC3 precedent governs the evaluation call too — non-projected input
+    // is a domain refusal settled before the billing admission (zero holds), not
+    // a silent dial of "".
+    const withheldPrompt = {
+      ...frozen,
+      prompt: { state: "omitted", reason: "unhandled_free_text" },
+    } as typeof frozen;
+    const { callModel, observe, observations, calls } = recorder();
+    let admitted = 0;
+    const runner = createProductionEvaluationCaseRunner({
+      callModel,
+      observe,
+      admit: async () => {
+        admitted += 1;
+        return { allowed: true };
+      },
+    });
+
+    const outcome = await runner({ ...contextFor(), config: withheldPrompt });
+
+    expect(outcome).toEqual({ status: "failed", reason: "input_unavailable" });
+    expect(admitted).toBe(0);
+    expect(calls).toEqual([]);
+    expect(observations).toHaveLength(1);
+    expect(observations[0]?.ending).toEqual({
+      kind: "refused",
+      code: "input_unavailable",
+    });
+  });
+
+  test("a withheld case input or model name refuses the same way (OCR R4-21)", async () => {
+    const withheldInput = {
+      ...frozenCase,
+      safeInput: { state: "omitted", reason: "credential" },
+    } as typeof frozenCase;
+    const withheldModel = {
+      ...frozen,
+      modelName: { state: "omitted", reason: "credential" },
+    } as typeof frozen;
+    const { callModel, observe, observations, calls } = recorder();
+    const runner = createProductionEvaluationCaseRunner({
+      callModel,
+      observe,
+      admit: async () => ({ allowed: true }),
+    });
+
+    const byInput = await runner({
+      ...contextFor(),
+      frozenCase: withheldInput,
+    });
+    const byModel = await runner({ ...contextFor(), config: withheldModel });
+
+    expect(byInput).toEqual({ status: "failed", reason: "input_unavailable" });
+    expect(byModel).toEqual({ status: "failed", reason: "input_unavailable" });
+    expect(calls).toEqual([]);
+    expect(observations).toHaveLength(2);
+    expect(observations[0]?.ending).toEqual({
+      kind: "refused",
+      code: "input_unavailable",
+    });
+    expect(observations[1]?.ending).toEqual({
+      kind: "refused",
+      code: "input_unavailable",
+    });
+  });
+
   test("a failing model call is a failed case, observed failed — not a crash", async () => {
     const { observe, observations } = recorder();
     const runner = createProductionEvaluationCaseRunner({

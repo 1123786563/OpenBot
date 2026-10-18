@@ -139,24 +139,37 @@ export const evaluationToolClassifier: EvaluationToolClassifier = (toolName) =>
   classifyTool(null, toolName, false);
 
 /**
- * The judge's controlled model call, wired from the approved entrances: the judge
- * asks for `entrance.modelName`, and this dispatch honors the entrance that named it —
- * its own base URL and its own credential environment (T27's `createEntranceModelCall`),
- * resolved lazily and only for entrances the list approved. A model name two entrances
- * share answers the one loaded first (map order, deterministic); a name no entrance
- * carries falls to the deployment's default gateway, where it was priced anyway.
+ * The judge's controlled model call, wired from the approved entrances: the judge asks
+ * for an entrance by id, and this dispatch honors exactly that entrance — its own base
+ * URL and its own credential environment (T27's `createEntranceModelCall`), resolved
+ * lazily and only for entrances the list approved. The entrance id rides the request
+ * (OCR R4-23), so when two approved entrances share a model name, the entrance the
+ * judge's record names is the entrance actually dialed — admission, dispatch and
+ * provenance stay one fact instead of diverging on map order. A request without an
+ * entrance id keeps the legacy modelName dispatch (first entrance loaded wins); a name
+ * no entrance carries falls to the deployment's default gateway, where it was priced
+ * anyway.
  */
-function createJudgeEntranceCall(
+export function createJudgeEntranceCall(
   entrances: JudgeEntranceList,
 ): EvaluationModelCall {
-  const built = new Map<string, EvaluationModelCall>();
-  for (const entrance of entrances.values()) {
-    if (!built.has(entrance.modelName)) {
-      built.set(entrance.modelName, createEntranceModelCall(entrance));
+  const byId = new Map<string, EvaluationModelCall>();
+  const byModelName = new Map<string, EvaluationModelCall>();
+  for (const [id, entrance] of entrances) {
+    const call = createEntranceModelCall(entrance);
+    byId.set(id, call);
+    // Legacy modelName dispatch (requests without an entrance id): first loaded wins.
+    if (!byModelName.has(entrance.modelName)) {
+      byModelName.set(entrance.modelName, call);
     }
   }
   const fallback = createGatewayModelCall();
-  return (request) => (built.get(request.modelName) ?? fallback)(request);
+  return (request) => {
+    if (request.entranceId !== undefined) {
+      return (byId.get(request.entranceId) ?? fallback)(request);
+    }
+    return (byModelName.get(request.modelName) ?? fallback)(request);
+  };
 }
 
 /** The billing seam the evaluation (and judge) calls are metered through. */

@@ -225,6 +225,21 @@ function structuralEqual(
   return canonicalJson(baseline) === canonicalJson(candidate);
 }
 
+/**
+ * The blocking scoring definition compares semantically, not structurally (OCR R4-28,
+ * the textEqual discipline): a judge config either side's redaction policy refused is
+ * unknown content, and two unknowns are never assumed equal — the envelopes sharing a
+ * refusal shape (`{state:"omitted", …}` twice over) is not a claim that both sides
+ * score the same rules. Only two intact projected configs meet structurally.
+ */
+function judgeConfigEqual(baseline: SafeValue, candidate: SafeValue): boolean {
+  return (
+    baseline.state === "projected" &&
+    candidate.state === "projected" &&
+    structuralEqual(baseline, candidate)
+  );
+}
+
 function textEqual(baseline: SafeText, candidate: SafeText): boolean {
   return (
     baseline.state === "projected" &&
@@ -271,7 +286,7 @@ function compatibility(
       field: "judgeConfig",
       baseline: structureWitness(baseline.config.judgeConfig),
       candidate: structureWitness(candidate.config.judgeConfig),
-      equal: structuralEqual(
+      equal: judgeConfigEqual(
         baseline.config.judgeConfig,
         candidate.config.judgeConfig,
       ),
