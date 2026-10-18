@@ -298,6 +298,10 @@ afterAll(async () => {
 });
 
 beforeAll(async () => {
+  // The classifier counts every billing_webhook_events row, and on the shared
+  // CI test database other suites leave renewal/orphan events behind. Wipe the
+  // table so this fixture's two events are the whole domain.
+  await database.delete(billingWebhookEvents);
   // Customers and the explicit 02.2 mappings, one per key.
   for (const key of fixtureKeys) {
     await database

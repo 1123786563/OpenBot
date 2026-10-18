@@ -893,7 +893,9 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
       .from(creditReservations)
       .where(eq(creditReservations.idempotencyKey, `usage:${eventId}`))
       .limit(1);
-    expect(stillHeld?.status).toBe("reserved");
+    // The hold is kept, never released or fallen back — it moves to the audit
+    // quarantine state the unknown-outcome wave (0141) added for exactly this.
+    expect(stillHeld?.status).toBe("unknown");
 
     // Every write this gate made named the bound account; the deployment account was
     // never read for a hold, never named by a write.

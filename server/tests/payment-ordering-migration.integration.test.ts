@@ -6,9 +6,9 @@ import { createDatabase } from "../src/db/client";
 import { testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), { max: 1 }).$client;
-// 0077 after the merge renumbered this branch's migrations past main's 0075_noisy_adam_destine.
+// The craft wave renumbered this migration again (0077 -> 0087); keep the pin on the file it tests.
 const migration = readFileSync(
-  new URL("../drizzle/0077_productive_nextwave.sql", import.meta.url),
+  new URL("../drizzle/0087_productive_nextwave.sql", import.meta.url),
   "utf8",
 ).split("--> statement-breakpoint");
 

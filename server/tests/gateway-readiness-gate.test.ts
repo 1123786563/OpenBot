@@ -461,7 +461,11 @@ describe("gateway readiness gate — the call-site inventory", () => {
       })
       .filter(
         (relative) =>
-          !relative.startsWith("/gateway/") && relative !== "/app.ts",
+          !relative.startsWith("/gateway/") &&
+          relative !== "/app.ts" &&
+          // Billing's reserve bound converts the rate snapshot into the hold's
+          // rational bound; it reads the rate store, not the readiness gate.
+          relative !== "/billing/reserve-bound.ts",
       );
     expect(offenders).toEqual([]);
   });
