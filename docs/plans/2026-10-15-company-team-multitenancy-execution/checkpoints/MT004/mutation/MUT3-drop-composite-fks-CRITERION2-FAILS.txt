@@ -1,0 +1,32 @@
+bun test v1.4.2 (50a8a8387)
+
+server/tests/multitenancy/membership-model.test.ts:
+33 |     }
+34 |     throw new Error(
+35 |       `expected a PostgreSQL error with a SQLSTATE and message, got: ${String(error)}`,
+36 |     );
+37 |   }
+38 |   throw new Error("expected the statement to be rejected, but it succeeded");
+                 ^
+error: expected the statement to be rejected, but it succeeded
+      at rejectionOf (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt004/server/tests/support/pg-errors.ts:38:13)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt004/server/tests/multitenancy/membership-model.test.ts:429:29)
+(fail) issue #47 criterion 2: composite foreign keys prove both containment facts > a workspace from another company cannot be joined to this company's member [3.50ms]
+33 |     }
+34 |     throw new Error(
+35 |       `expected a PostgreSQL error with a SQLSTATE and message, got: ${String(error)}`,
+36 |     );
+37 |   }
+38 |   throw new Error("expected the statement to be rejected, but it succeeded");
+                 ^
+error: expected the statement to be rejected, but it succeeded
+      at rejectionOf (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt004/server/tests/support/pg-errors.ts:38:13)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt004/server/tests/multitenancy/membership-model.test.ts:446:29)
+(fail) issue #47 criterion 2: composite foreign keys prove both containment facts > a principal who is not a member of this company is rejected [2.41ms]
+(pass) issue #47 criterion 2: composite foreign keys prove both containment facts > the same principal joins a second team of the same company without conflict [4.49ms]
+
+ 1 pass
+ 12 filtered out
+ 2 fail
+ 1 expect() calls
+Ran 3 tests across 1 file. [419.00ms]

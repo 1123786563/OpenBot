@@ -1,0 +1,5 @@
+# bun run typecheck (pretypecheck: generate:app-config → tsc --noEmit)，终字节（2026-10-16T19:43:23Z）
+$ bun run --cwd .. generate:app-config
+$ bun --env-file=.env scripts/generate-app-config.ts
+$ tsc --noEmit
+exit=0

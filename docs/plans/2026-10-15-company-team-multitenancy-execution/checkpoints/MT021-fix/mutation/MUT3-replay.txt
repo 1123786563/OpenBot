@@ -1,0 +1,160 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/conversations-list.test.ts:
+(pass) MT021 验收 1：列表/计数/游标只反映可见集合 > 种子完整落库：RLS 下 A 公司 11 行 / B 公司 3 行；无上下文 fail-closed 0 行 [5.91ms]
+(pass) MT021 验收 1：列表/计数/游标只反映可见集合 > a1-member 的列表与计数恰为其本人 A1 会话：他人的/他团队的/他公司的都不在 [15.10ms]
+(pass) MT021 验收 1：列表/计数/游标只反映可见集合 > 同团队另一成员的列表独立：a1-other 只见自己的行（互不可见，双向） [8.07ms]
+(pass) MT021 验收 1：列表/计数/游标只反映可见集合 > 跨公司：b1-member 只见 B1 自己的行；multi-company 双公司列表互斥且并集不串 [22.28ms]
+420 |         collected.push(...page.items.map((item) => item.conversationId));
+421 |         pages.push(page.nextCursor);
+422 |         if (page.nextCursor === null) break;
+423 |         cursor = page.nextCursor;
+424 |       }
+425 |       expect(collected).toEqual([convId("c1"), convId("c3"), convId("c5")]);
+                              ^
+error: expect(received).toEqual(expected)
+
+  [
+    "1ae2ea55-0841-4faf-b6ba-86fd98da2d3f",
+    "bd170d88-16d3-4afb-8ee6-b9fc64f36829",
+-   "78645e7c-0b3f-4c7e-9885-fb55935872a2",
+  ]
+
+- Expected  - 1
++ Received  + 0
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:425:25)
+(fail) MT021 验收 1：列表/计数/游标只反映可见集合 > 分页游标只在可见流上：页并集 == 全量可见集，无重复无遗漏，收敛 null [7.47ms]
+(pass) MT021 验收 2：跨范围详情 = canonical 不可见语义 > 另一公司的会话 ID：canonical not-found，与 MT011 冻结实例逐字节同形 [6.11ms]
+(pass) MT021 验收 2：跨范围详情 = canonical 不可见语义 > 不存在 / 跨公司 / 跨团队 / 他人会话的拒绝构成单元素字节集（不泄露区别） [15.89ms]
+(pass) MT021 验收 2：跨范围详情 = canonical 不可见语义 > 正向：本人会话详情 allow，视图字段精确（含 workspace 钉死与时间往返） [6.04ms]
+(pass) MT021 验收 3：切团队立即变化（无需重登） > a1a2-member：A1 scope 见 [c6]，紧接 A2 scope 见 [d2]——同一身份无需重登 [13.49ms]
+(pass) MT021 验收 3：切团队立即变化（无需重登） > A1→A2→A1 三连切换：每次都精确反映当前 scope（无陈旧缓存） [12.58ms]
+(pass) MT021 验收 3：切团队立即变化（无需重登） > 真实撤权（MT006）后：已签发 scope 的列表空页、计数 0、详情 canonical not-found [19.32ms]
+(pass) MT021 验收 3：切团队立即变化（无需重登） > 撤权后同身份再铸造 scope 被真实资格门拒绝（不是服务层放行） [2.29ms]
+(pass) MT021 验收 3：切团队立即变化（无需重登） > 暂停→恢复（MT007 restore）后：旧 scope 仍被拒（epoch 独立防线），新 scope 正常 [19.18ms]
+682 |         });
+683 |         collected.push(...page.items.map((item) => item.conversationId));
+684 |         if (page.nextCursor === null) break;
+685 |         cursor = page.nextCursor;
+686 |       }
+687 |       expect(collected).toEqual([
+                              ^
+error: expect(received).toEqual(expected)
+
+  [
+    "1ae2ea55-0841-4faf-b6ba-86fd98da2d3f",
+-   "bd170d88-16d3-4afb-8ee6-b9fc64f36829",
+    "78645e7c-0b3f-4c7e-9885-fb55935872a2",
+-   "31a2c786-5ff7-4ca0-8595-f5e0b3753f45",
+    "3961aabc-6869-4a0e-9d68-11b20bbfd89a",
+  ]
+
+- Expected  - 2
++ Received  + 0
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:687:25)
+(fail) MT021 验收 4：游标稳定性（隐藏条目不跳不重） > limit=1 全页链：隐藏行交错期间页并集 == 精确可见序列（不跳不重） [9.06ms]
+(pass) MT021 验收 4：游标稳定性（隐藏条目不跳不重） > 计数同步反映追加后的可见集（5）——隐藏行不进计数 [4.35ms]
+722 |       );
+723 |       const secondPage = await fixture.service.listVisibleConversations(scope, {
+724 |         limit: 2,
+725 |         cursor: firstPage.nextCursor as string,
+726 |       });
+727 |       expect(secondPage.items.map((item) => item.conversationId)).toEqual([
+                                                                        ^
+error: expect(received).toEqual(expected)
+
+  [
+-   "78645e7c-0b3f-4c7e-9885-fb55935872a2",
+    "31a2c786-5ff7-4ca0-8595-f5e0b3753f45",
++   "3961aabc-6869-4a0e-9d68-11b20bbfd89a",
+  ]
+
+- Expected  - 1
++ Received  + 1
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:727:67)
+(fail) MT021 验收 4：游标稳定性（隐藏条目不跳不重） > 翻页中途改名（updated_at 语义无关——游标键不可变）：后续页原样续读 [13.74ms]
+754 |         });
+755 |         collected.push(...page.items.map((item) => item.conversationId));
+756 |         if (page.nextCursor === null) break;
+757 |         cursor = page.nextCursor;
+758 |       }
+759 |       expect(collected).toEqual([
+                              ^
+error: expect(received).toEqual(expected)
+
+  [
+    "1ae2ea55-0841-4faf-b6ba-86fd98da2d3f",
+    "bd170d88-16d3-4afb-8ee6-b9fc64f36829",
+-   "31a2c786-5ff7-4ca0-8595-f5e0b3753f45",
+    "3961aabc-6869-4a0e-9d68-11b20bbfd89a",
+  ]
+
+- Expected  - 1
++ Received  + 0
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:759:25)
+(fail) MT021 验收 4：游标稳定性（隐藏条目不跳不重） > 翻页中途删除可见项：后续页无移位、无错误、无复现，计数与游标同步收敛 [11.51ms]
+(pass) MT021 验收 4：游标稳定性（隐藏条目不跳不重） > 变异靶行存在性自查（c10/c11 是本 describe 追加的真实行） [0.06ms]
+838 |         if (page.nextCursor === null) break;
+839 |         cursor = page.nextCursor;
+840 |       }
+841 |       // 死循环守卫未耗尽（guard 余量 = 12 - 7 页）——微秒边界行 m1 不把
+842 |       // 自己重新纳入下一页（修复前此链每页都重复 m1 直至耗尽守卫）。
+843 |       expect(collected).toEqual(VISIBLE_CHAIN.map((key) => convId(key)));
+                              ^
+error: expect(received).toEqual(expected)
+
+  [
+    "1ae2ea55-0841-4faf-b6ba-86fd98da2d3f",
+-   "bd170d88-16d3-4afb-8ee6-b9fc64f36829",
+    "31a2c786-5ff7-4ca0-8595-f5e0b3753f45",
+-   "3961aabc-6869-4a0e-9d68-11b20bbfd89a",
+    "fdca6a5e-aa03-45a0-bbaf-7fcfd44d5570",
+-   "26cc4918-7896-4ea3-aa42-eaf60d716f43",
+    "b7eb4269-7aa8-4a07-ae9c-40f4b5e9ff9c",
+  ]
+
+- Expected  - 3
++ Received  + 0
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:843:25)
+(fail) MT021 修复轮 F1：微秒 created_at 下翻页收敛、不跳不重 > limit=1 全页链收敛：页并集 == 精确可见序列（含微秒边界行自身不重入），无重复，末页 null [14.31ms]
+863 |         Buffer.from(firstPage.nextCursor as string, "base64url").toString(
+864 |           "utf8",
+865 |         ),
+866 |       ) as { v: number; at: string; id: string };
+867 |       expect(payload.v).toBe(1);
+868 |       expect(payload.id).toBe(convId("m1"));
+                               ^
+error: expect(received).toBe(expected)
+
+Expected: "fdca6a5e-aa03-45a0-bbaf-7fcfd44d5570"
+Received: "26cc4918-7896-4ea3-aa42-eaf60d716f43"
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:868:26)
+(fail) MT021 修复轮 F1：微秒 created_at 下翻页收敛、不跳不重 > 游标 at 字段携带微秒精度（SQL 文本形态）：钉在微秒边界行上的游标不解为毫秒 [4.91ms]
+(pass) MT021 输入校验与信任边界 > 无效 limit 响亮拒绝（0/201/非整数） [2.15ms]
+(pass) MT021 输入校验与信任边界 > 无效游标响亮拒绝（非 base64url/坏 JSON/缺字段） [2.10ms]
+(pass) MT021 输入校验与信任边界 > 修复轮 F2：结构合法但 at 非时间戳的游标 → CONVERSATIONS_CURSOR_INVALID（不泄漏裸驱动错误） [1.94ms]
+(pass) MT021 输入校验与信任边界 > 畸形会话 ID 响亮拒绝（输入校验；不与 not-found 混同） [1.92ms]
+(pass) MT021 输入校验与信任边界 > 缺公司/团队上下文明确拒绝（先于信任判定的输入形状拒绝） [2.51ms]
+(pass) MT021 输入校验与信任边界 > forged scope 响亮拒绝（UNVERIFIED_SCOPE，信任边界不放宽） [0.14ms]
+(pass) MT021 存储契约 > 未验证通道在服务装配时拒绝（UNVERIFIED_DATABASE_CAPABILITY） [2.00ms]
+(pass) MT021 存储契约 > canonical 不可见语义只此一种：序列化字节精确且与 MT011 冻结实例一致 [0.04ms]
+(pass) MT021 存储契约 > 全部受限查询以 ob_ent_* 能力角色执行（三种角色都在场） [0.09ms]
+
+6 tests failed:
+(fail) MT021 验收 1：列表/计数/游标只反映可见集合 > 分页游标只在可见流上：页并集 == 全量可见集，无重复无遗漏，收敛 null [7.47ms]
+(fail) MT021 验收 4：游标稳定性（隐藏条目不跳不重） > limit=1 全页链：隐藏行交错期间页并集 == 精确可见序列（不跳不重） [9.06ms]
+(fail) MT021 验收 4：游标稳定性（隐藏条目不跳不重） > 翻页中途改名（updated_at 语义无关——游标键不可变）：后续页原样续读 [13.74ms]
+(fail) MT021 验收 4：游标稳定性（隐藏条目不跳不重） > 翻页中途删除可见项：后续页无移位、无错误、无复现，计数与游标同步收敛 [11.51ms]
+(fail) MT021 修复轮 F1：微秒 created_at 下翻页收敛、不跳不重 > limit=1 全页链收敛：页并集 == 精确可见序列（含微秒边界行自身不重入），无重复，末页 null [14.31ms]
+(fail) MT021 修复轮 F1：微秒 created_at 下翻页收敛、不跳不重 > 游标 at 字段携带微秒精度（SQL 文本形态）：钉在微秒边界行上的游标不解为毫秒 [4.91ms]
+
+ 23 pass
+ 6 fail
+ 131 expect() calls
+Ran 29 tests across 1 file. [644.00ms]

@@ -1,0 +1,295 @@
+src/enterprise/tenancy/conversations-list.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    255 255 │   
+    256 256 │     /** 事务开场（MT008/MT011/MT016 判定入口同一形状）。 */
+    257     │ - ··const·beginContext·=·async·(tx:·Parameters<Parameters<DataDatabase["transaction"]>[0]>[0],·scope:·PlatformScope):·Promise<void>·=>·{
+        257 │ + ··const·beginContext·=·async·(
+        258 │ + ····tx:·Parameters<Parameters<DataDatabase["transaction"]>[0]>[0],
+        259 │ + ····scope:·PlatformScope,
+        260 │ + ··):·Promise<void>·=>·{
+    258 261 │       await tx.execute(sql`set transaction isolation level read committed`);
+    259 262 │       await tx.execute(sql`set local lock_timeout = '2s'`);
+    ······· │ 
+    337 340 │             )
+    338 341 │             .limit(limit + 1);
+    339     │ - ········const·items·=·rows
+    340     │ - ··········.slice(0,·limit)
+    341     │ - ··········.map((row)·=>·rowToView(row));
+        342 │ + ········const·items·=·rows.slice(0,·limit).map((row)·=>·rowToView(row));
+    342 343 │           const nextCursor =
+    343 344 │             rows.length > limit
+  
+
+tests/multitenancy/conversations-list.test.ts:39:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × Sort the imported names.
+  
+    37 │ } from "../../src/enterprise/tenancy/not-found-semantics";
+    38 │ import { enterpriseRuntimeDatabaseUrlFrom } from "../support/enterprise-database";
+  > 39 │ import {
+       │ ^^^^^^^^
+  > 40 │   type ConversationsIdentity,
+  > 41 │   type ConversationsListFixture,
+  > 42 │   type SeededConversation,
+  > 43 │   createConversationsListFixture,
+  > 44 │ } from "./support/conversations-list";
+       │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    45 │ 
+    46 │ // ---------------------------------------------------------------------------
+  
+  i Safe fix: Organize imports and exports (Biome)
+  
+     40  40 │     type ConversationsIdentity,
+     41  41 │     type ConversationsListFixture,
+     42     │ - ··type·SeededConversation,
+     43     │ - ··createConversationsListFixture,
+         42 │ + ··createConversationsListFixture,
+         43 │ + ··type·SeededConversation,
+     44  44 │   } from "./support/conversations-list";
+     45  45 │   
+  
+
+tests/multitenancy/conversations-list.test.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    151 151 │   //   team-b1: e1(b1) e2(multi) e3(b1)
+    152 152 │   const SEED_PLAN: readonly PlannedConversation[] = [
+    153     │ - ··{·key:·"c1",·tenant:·"company-a",·team:·"team-a1",·owner:·"a1-member",·minute:·1,·title:·"alpha"·},
+    154     │ - ··{·key:·"c2",·tenant:·"company-a",·team:·"team-a1",·owner:·"a1-other",·minute:·2,·title:·"bravo"·},
+    155     │ - ··{·key:·"c3",·tenant:·"company-a",·team:·"team-a1",·owner:·"a1-member",·minute:·3,·title:·"charlie"·},
+    156     │ - ··{·key:·"c4",·tenant:·"company-a",·team:·"team-a1",·owner:·"a1-other",·minute:·4,·title:·"delta"·},
+    157     │ - ··{·key:·"c5",·tenant:·"company-a",·team:·"team-a1",·owner:·"a1-member",·minute:·5,·title:·"echo"·},
+    158     │ - ··{·key:·"c6",·tenant:·"company-a",·team:·"team-a1",·owner:·"a1a2-member",·minute:·6,·title:·"foxtrot"·},
+    159     │ - ··{·key:·"c7",·tenant:·"company-a",·team:·"team-a1",·owner:·"multi-company",·minute:·7,·title:·"golf"·},
+    160     │ - ··{·key:·"c8",·tenant:·"company-a",·team:·"team-a1",·owner:·"a1-doomed",·minute:·8,·title:·"hotel"·},
+        153 │ + ··{
+        154 │ + ····key:·"c1",
+        155 │ + ····tenant:·"company-a",
+        156 │ + ····team:·"team-a1",
+        157 │ + ····owner:·"a1-member",
+        158 │ + ····minute:·1,
+        159 │ + ····title:·"alpha",
+        160 │ + ··},
+        161 │ + ··{
+        162 │ + ····key:·"c2",
+        163 │ + ····tenant:·"company-a",
+        164 │ + ····team:·"team-a1",
+        165 │ + ····owner:·"a1-other",
+        166 │ + ····minute:·2,
+        167 │ + ····title:·"bravo",
+        168 │ + ··},
+        169 │ + ··{
+        170 │ + ····key:·"c3",
+        171 │ + ····tenant:·"company-a",
+        172 │ + ····team:·"team-a1",
+        173 │ + ····owner:·"a1-member",
+        174 │ + ····minute:·3,
+        175 │ + ····title:·"charlie",
+        176 │ + ··},
+        177 │ + ··{
+        178 │ + ····key:·"c4",
+        179 │ + ····tenant:·"company-a",
+        180 │ + ····team:·"team-a1",
+        181 │ + ····owner:·"a1-other",
+        182 │ + ····minute:·4,
+        183 │ + ····title:·"delta",
+        184 │ + ··},
+        185 │ + ··{
+        186 │ + ····key:·"c5",
+        187 │ + ····tenant:·"company-a",
+        188 │ + ····team:·"team-a1",
+        189 │ + ····owner:·"a1-member",
+        190 │ + ····minute:·5,
+        191 │ + ····title:·"echo",
+        192 │ + ··},
+        193 │ + ··{
+        194 │ + ····key:·"c6",
+        195 │ + ····tenant:·"company-a",
+        196 │ + ····team:·"team-a1",
+        197 │ + ····owner:·"a1a2-member",
+        198 │ + ····minute:·6,
+        199 │ + ····title:·"foxtrot",
+        200 │ + ··},
+        201 │ + ··{
+        202 │ + ····key:·"c7",
+        203 │ + ····tenant:·"company-a",
+        204 │ + ····team:·"team-a1",
+        205 │ + ····owner:·"multi-company",
+        206 │ + ····minute:·7,
+        207 │ + ····title:·"golf",
+        208 │ + ··},
+        209 │ + ··{
+        210 │ + ····key:·"c8",
+        211 │ + ····tenant:·"company-a",
+        212 │ + ····team:·"team-a1",
+        213 │ + ····owner:·"a1-doomed",
+        214 │ + ····minute:·8,
+        215 │ + ····title:·"hotel",
+        216 │ + ··},
+    161 217 │     // 键最大的隐藏条目（验收 4：不制造末页游标）。
+    162     │ - ··{·key:·"c9",·tenant:·"company-a",·team:·"team-a1",·owner:·"a1-other",·minute:·50,·title:·"india-key-max"·},
+    163     │ - ··{·key:·"d1",·tenant:·"company-a",·team:·"team-a2",·owner:·"a2-member",·minute:·9,·title:·"juliet"·},
+    164     │ - ··{·key:·"d2",·tenant:·"company-a",·team:·"team-a2",·owner:·"a1a2-member",·minute:·10,·title:·"kilo"·},
+    165     │ - ··{·key:·"e1",·tenant:·"company-b",·team:·"team-b1",·owner:·"b1-member",·minute:·11,·title:·"lima"·},
+    166     │ - ··{·key:·"e2",·tenant:·"company-b",·team:·"team-b1",·owner:·"multi-company",·minute:·12,·title:·"mike"·},
+    167     │ - ··{·key:·"e3",·tenant:·"company-b",·team:·"team-b1",·owner:·"b1-member",·minute:·13,·title:·"november"·},
+        218 │ + ··{
+        219 │ + ····key:·"c9",
+        220 │ + ····tenant:·"company-a",
+        221 │ + ····team:·"team-a1",
+        222 │ + ····owner:·"a1-other",
+        223 │ + ····minute:·50,
+        224 │ + ····title:·"india-key-max",
+        225 │ + ··},
+        226 │ + ··{
+        227 │ + ····key:·"d1",
+        228 │ + ····tenant:·"company-a",
+        229 │ + ····team:·"team-a2",
+        230 │ + ····owner:·"a2-member",
+        231 │ + ····minute:·9,
+        232 │ + ····title:·"juliet",
+        233 │ + ··},
+        234 │ + ··{
+        235 │ + ····key:·"d2",
+        236 │ + ····tenant:·"company-a",
+        237 │ + ····team:·"team-a2",
+        238 │ + ····owner:·"a1a2-member",
+        239 │ + ····minute:·10,
+        240 │ + ····title:·"kilo",
+        241 │ + ··},
+        242 │ + ··{
+        243 │ + ····key:·"e1",
+        244 │ + ····tenant:·"company-b",
+        245 │ + ····team:·"team-b1",
+        246 │ + ····owner:·"b1-member",
+        247 │ + ····minute:·11,
+        248 │ + ····title:·"lima",
+        249 │ + ··},
+        250 │ + ··{
+        251 │ + ····key:·"e2",
+        252 │ + ····tenant:·"company-b",
+        253 │ + ····team:·"team-b1",
+        254 │ + ····owner:·"multi-company",
+        255 │ + ····minute:·12,
+        256 │ + ····title:·"mike",
+        257 │ + ··},
+        258 │ + ··{
+        259 │ + ····key:·"e3",
+        260 │ + ····tenant:·"company-b",
+        261 │ + ····team:·"team-b1",
+        262 │ + ····owner:·"b1-member",
+        263 │ + ····minute:·13,
+        264 │ + ····title:·"november",
+        265 │ + ··},
+    168 266 │   ] as const;
+    169 267 │   
+    ······· │ 
+    325 423 │           cursor = page.nextCursor;
+    326 424 │         }
+    327     │ - ······expect(collected).toEqual([
+    328     │ - ········convId("c1"),
+    329     │ - ········convId("c3"),
+    330     │ - ········convId("c5"),
+    331     │ - ······]);
+        425 │ + ······expect(collected).toEqual([convId("c1"),·convId("c3"),·convId("c5")]);
+    332 426 │         // 末页 nextCursor 为 null——键最大的隐藏条目 c9 不制造尾随空页。
+    333 427 │         expect(pages.at(-1)).toBeNull();
+    ······· │ 
+    361 455 │         const a1a2ScopeA1 = await scopeAs("a1a2-member", companyA, teamA1);
+    362 456 │         const denials = [
+    363     │ - ········await·fixture.service.readVisibleConversation(
+    364     │ - ··········a1Scope,
+    365     │ - ··········randomUUID(),
+    366     │ - ········),
+    367     │ - ········await·fixture.service.readVisibleConversation(
+    368     │ - ··········b1Scope,
+    369     │ - ··········convId("c1"),
+  176 more lines truncated
+  
+
+tests/multitenancy/support/conversations-list.ts:23:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × Sort these imports.
+  
+    21 │ // and are disclosed in the report; the service under test never uses them.
+    22 │ 
+  > 23 │ import { randomUUID } from "node:crypto";
+       │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 24 │ import { like, sql } from "drizzle-orm";
+        ...
+  > 44 │   verifyOperatorDatabase,
+  > 45 │ } from "../../../src/enterprise/tenancy/connections";
+       │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    46 │ import {
+    47 │   provisionDeployment,
+  
+  i Safe fix: Organize imports and exports (Biome)
+  
+     33  33 │   import type { PlatformScope } from "../../../src/enterprise/contracts";
+     34  34 │   import {
+     35     │ - ··type·ConversationListService,
+     36     │ - ··createConversationListService,
+     37     │ - }·from·"../../../src/enterprise/tenancy/conversations-list";
+         35 │ + ··type·DataDatabase,
+         36 │ + ··type·DirectoryDatabase,
+         37 │ + ··type·OperatorDatabase,
+         38 │ + ··verifyDataDatabase,
+         39 │ + ··verifyDirectoryDatabase,
+         40 │ + ··verifyOperatorDatabase,
+         41 │ + }·from·"../../../src/enterprise/tenancy/connections";
+     38  42 │   import {
+     39     │ - ··type·DataDatabase,
+     40     │ - ··type·DirectoryDatabase,
+     41     │ - ··type·OperatorDatabase,
+     42     │ - ··verifyDataDatabase,
+     43     │ - ··verifyDirectoryDatabase,
+     44     │ - ··verifyOperatorDatabase,
+     45     │ - }·from·"../../../src/enterprise/tenancy/connections";
+         43 │ + ··type·ConversationListService,
+         44 │ + ··createConversationListService,
+         45 │ + }·from·"../../../src/enterprise/tenancy/conversations-list";
+     46  46 │   import {
+     47  47 │     provisionDeployment,
+  
+
+tests/multitenancy/support/conversations-list.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    103 103 │     seedConversation(conversation: SeededConversation): Promise<void>;
+    104 104 │     /** RLS probe: conversation rows visible to the data role under one tenant. */
+    105     │ - ··listConversationRowsAsData(
+    106     │ - ····tenantId:·string,
+    107     │ - ··):·Promise<
+        105 │ + ··listConversationRowsAsData(tenantId:·string):·Promise<
+    108 106 │       readonly Readonly<{
+    109 107 │         id: string;
+    ······· │ 
+    275 273 │     const principalOf = (identity: ConversationsIdentity) =>
+    276 274 │       ids[`principal-${identity}`];
+    277     │ - ··const·userOf·=·(identity:·ConversationsIdentity)·=>
+    278     │ - ····ids[`user-${identity}`];
+        275 │ + ··const·userOf·=·(identity:·ConversationsIdentity)·=>·ids[`user-${identity}`];
+    279 276 │   
+    280 277 │     const setupDatabase = createDatabase(setupUrl, { max: 2 });
+    ······· │ 
+    574 571 │             ? result
+    575 572 │             : ((result as { rows?: unknown[] })?.rows ?? []);
+    576     │ - ········return·Number(
+    577     │ - ··········(list·as·Readonly<{·count?:·unknown·}>[])[0]?.count·??·0,
+    578     │ - ········);
+        573 │ + ········return·Number((list·as·Readonly<{·count?:·unknown·}>[])[0]?.count·??·0);
+    579 574 │         },
+    580 575 │   
+  
+
+Checked 3 files in 28ms. No fixes applied.
+Found 5 errors.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+

@@ -1,0 +1,14 @@
+# Environment setup (dedicated container + databases + restricted logins)
+# docker run -d --name mt026-impl-pg -e POSTGRES_HOST_AUTH_METHOD=trust -p 55481:5432 pgvector/pgvector:pg16
+#   (port 55481 chosen after precheck: no docker publish and no lsof LISTEN on it)
+# docker exec mt026-impl-pg psql -U postgres -tc "select version()" -> PostgreSQL 16.15 (aarch64)
+# createdb openbot_enterprise_mt026 + openbot_enterprise_mt026_assigned (trust, loopback only)
+# cd server && TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55481/openbot_enterprise_mt026 \
+#   ENTERPRISE_TEST_SETUP_DATABASE_URL=$TEST_DATABASE_URL \
+#   ENTERPRISE_TEST_{DIRECTORY,DATA,OPERATOR}_DATABASE_URL=postgresql://ent_mt026_{dir,data,opr}:…@127.0.0.1:55481/openbot_enterprise_mt026?options=-c%20role%3Dob_ent_{directory,data,operator} \
+#   bun --no-env-file scripts/enterprise-test-db.ts migrate   -> {"type":"migrations-applied","status":"ok"}
+# Task migrations: migrate-test.ts generate + apply --manifest, brief order
+#   MT004 -> MT008 -> MT112 -> MT012 -> MT014 -> MT010 -> (this ticket) MT026
+#   all journaled ("applied: MT… @ openbot_enterprise_mt026 (127.0.0.1:55481)")
+# No dev-database fallback anywhere; credentials inline in env (trust container), nothing persisted.
+# bun install --frozen-lockfile was required first (workspace had no node_modules).

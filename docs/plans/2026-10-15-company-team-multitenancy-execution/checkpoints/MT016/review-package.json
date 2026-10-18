@@ -1,0 +1,41 @@
+{
+  "round": "MT016（第 2 任接管）",
+  "issue": "#59",
+  "epic": "#191（E Bot；父 Spec #6 公司与团队多租户整改）",
+  "date": "2026-10-17",
+  "implementer": "backend_implementer (Pi, Orca task_efba8c4dab4b / dispatch ctx_63d9a394c9ad)；第 1 任 ctx_6a78d3744c99 死亡于 RED 循环中段，按接管 brief 审计后接管",
+  "inputs": {
+    "brief": "docs/plans/2026-10-15-company-team-multitenancy-execution/briefs/MT016-brief.md（权威）+ briefs/MT016-brief-2nd.md（接管规则）",
+    "ticket": "GitHub Issue #59（1123786563/OpenBot）「Bot 与配置的创建、列表、详情按公司团队归属」，覆盖验收 A1/A2/A3",
+    "prereq_manifest": "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/prereq-manifest.txt",
+    "head_verified": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71（BASE 行 == git rev-parse HEAD，detached worktree）",
+    "environment": "专用容器 mt016-impl2-pg (pgvector/pgvector:pg16, PG 16.15) @ 127.0.0.1:55502（55501 被 mt069-impl-pg 占用，接管 brief +1 规则）；双库 openbot_enterprise_mt016(+_assigned)；受限登录 ent_mt016_{dir,data,opr}→ob_ent_* 能力角色；迁移链 base+MT004→MT008→MT112→MT012→MT014→MT010→MT009→MT077→MT026 全 applied，MT016 套件内 generate→apply→replay 收敛"
+  },
+  "owned_product_files_note": "第 1 任四新文件 + 两授权编辑点已有合规增量（保留）；第 2 任修复三处缺口（模块公司级成员重验、支持夹具撤权契约、migration-tool MT016 行）+ 两处测试断言修正 + MUT5 补测",
+  "owned_product_files": {
+    "server/src/db/schema/enterprise-bot-ownership.ts": "d5215a2b1536ff351806b92ed31e93c8a5643e4557300fbe94536cfc5ca556c5",
+    "server/src/enterprise/tenancy/bots-ownership.ts": "3bb3288b009b33bee6aa289713f71599b436a48e093f1adc971acfb36ef556b9",
+    "server/tests/multitenancy/bots-ownership.test.ts": "564d4d9abc5fb7b1cff1dc608b1dbb708dbc72492bf45266930161e09ab41688",
+    "server/tests/multitenancy/support/bots-ownership.ts": "ecf044e9af463a719b506e854c8a2b311ea67b01257f1c69293523c6279328d1",
+    "server/scripts/multitenancy/migrate-test.ts": "d6ab22236b9559436205ac6e27fe844ce45fb119307553a0f2e78e05a0632fbe",
+    "server/tests/multitenancy/migration-tool.test.ts": "20618042fd352921d430bbd58626c075c253b3e897d6d8673fc4762c2bcdcb1b",
+    "server/src/db/schema/index.ts": "e9bd49d2e65655047b8b8fced6bbe1d3c9afeb33eca2e9de611c10aabc609dad"
+  },
+  "takeover_disposition": "保留：schema/migrate 注册/barrel/测试主体/第 1 任 checkpoint 证据；修复：①模块公司级成员重验缺失（撤权后 fail-open 缺口，MT005 scope-gate 切片补齐）②支持夹具未 import 符号 + suspendTeamMember/suspendCompanyMembership 契约错位 + 未用 import ③migration-tool.test.ts 缺 MT016 穷举行 ④assertScopeContext 判定顺序；新增：a1a2-member 双团队身份 + scope 钉死测试（MUT5 补测）、epoch 策略测试（暂停→恢复）、reinstateCompanyMembership 真实 MT007 面。逐文件依据见 checkpoints/MT016/takeover-audit-2nd.md",
+  "baseline": "第 1 任存证 577 pass / 0 fail / 0 skip（22 文件）与 brief 一致；本任开工 RED 态 38 pass / 4 fail（red-green/RED-2-2nd-takeover-baseline.txt）",
+  "verdict_summary": "Issue #59 五条 + brief 四条验收全部有真实 PostgreSQL + 受限 ob_ent_* 角色 + 真实 RLS 证据：归属即行（默认配置同行、agent_id 全局唯一、23505→BOT_ID_UNAVAILABLE 同码不泄露占用方）；可见性门四重（行 active + scope 同团队 + 公司成员 active+epoch 钉签发时版本 + 团队成员 active）→ MT011 canonical not-found 逐字节同形；编辑门 owner-only（BOT_EDIT_FORBIDDEN，无管理隐式继承）；偏好复合 FK 同归属 + 逐主体（not-found 与 null 两态分开）；列表/计数/游标只从可见项派生；清理按 (tenant, owner, ids) 三重钉死 + 级联清偏好 + 幂等。聚焦 44/0/0；全量 621/0/0（23 文件＝基线 577+44）；typecheck 0；触及 7 文件 biome 0 新增；变异 6/6 捕获（MUT5 首轮存活→补双团队成员测试→捕获，MT010 MUT4b 先例）；还原后 pristine sha256 一致 + 复绿。",
+  "acceptance_criteria_mapping": "详见 reports/MT016.md §3 逐条表（brief 4 条 + issue 5 条 → describe 映射）",
+  "verification_commands": {
+    "focused": "cd server && bun test tests/multitenancy/bots-ownership.test.ts → 44 pass / 0 fail / 0 skip，exit 0",
+    "full": "cd server && bun test tests/multitenancy/ → 621 pass / 0 fail / 0 skip（23 文件），exit 0（含 assigned 库真实 apply 集成）",
+    "typecheck": "cd server && bun run typecheck → exit 0",
+    "biome": "bunx biome check <7 触及文件> → 0 错误",
+    "migration_chain": "enterprise-test-db.ts migrate（base+角色配给）→ migrate-test generate/apply 依序 9 前置任务 → MT016 套件内三步收敛"
+  },
+  "mutation": {
+    "target_pristine_sha256": "3bb3288b009b33bee6aa289713f71599b436a48e093f1adc971acfb36ef556b9",
+    "results": "MUT1 公司级门 / MUT2 epoch 比对 / MUT3 owner 门 / MUT4 清理 owner 钉死 / MUT6 23505 映射：均捕获；MUT5 团队匹配首轮存活 → 新增 a1a2-member 测试 → MUT5b 捕获；每次还原 sha256 一致 + 聚焦复绿；详见 mutation-2nd/results.txt"
+  },
+  "disclosures": ["D1 接管三分处置", "D2 MUT5 存活→补测", "D3 分页/枚举断言对齐作用域全集语义（非放松）", "D4 epoch 防线独立捕获测试", "D5 判定顺序（形状先于信任，两者皆响亮）", "D6 边界继承（owner-only/MT017/MT019/扫描边界/不接路由）", "D7 容器与端口 +1 记录", "D8 夹具身份先例"],
+  "report": "docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT016.md"
+}
