@@ -1,17 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { LLMock } from "@copilotkit/aimock";
 import { createOpenAI } from "@ai-sdk/openai";
+import { LLMock } from "@copilotkit/aimock";
 import {
-  builtInAgentConfiguration,
   type BuiltinModelSpanFact,
+  builtInAgentConfiguration,
   CreditGateError,
   CreditPolicyUnconfiguredError,
-  type ModelUsageGateLifecycle,
-  meteredModelForTests,
   ModelNotPricedError,
+  type ModelUsageGateLifecycle,
   ModelUsageSettlementError,
+  meteredModelForTests,
   resolveRuntimeAgents,
   runtimeModelForEnvironment,
   setBuiltinModelSpanObserver,
@@ -20,8 +20,8 @@ import {
   UnmeterableModelError,
 } from "../src/copilot";
 import { loadTenantPackage } from "../src/tenant-package";
-import { testEnvironment } from "./support/environment";
 import { withUsageOrigin } from "../src/usage-origin";
+import { testEnvironment } from "./support/environment";
 
 const packagePath = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -138,8 +138,9 @@ describe("the model usage meter", () => {
       expect(seen[0]?.outputTokens ?? 0).toBeGreaterThan(0);
       expect(seen[1]?.outputTokens ?? 0).toBeGreaterThan(0);
       expect(
-        new Set(seen.map((entry) => `${entry.inputTokens}:${entry.outputTokens}`))
-          .size,
+        new Set(
+          seen.map((entry) => `${entry.inputTokens}:${entry.outputTokens}`),
+        ).size,
       ).toBe(2);
     } finally {
       setModelUsageMeter(undefined);
@@ -271,7 +272,10 @@ describe("the model usage meter", () => {
       process.env.OPENAI_BASE_URL = await recorder.start();
       recorder.onMessage(/.*/, () => {
         providerCalls += 1;
-        return { type: "text", content: "provider should not have been called" };
+        return {
+          type: "text",
+          content: "provider should not have been called",
+        };
       });
       setModelUsageGate(async (input) => {
         seenEventId = input?.eventId;
@@ -308,7 +312,11 @@ describe("the model usage meter", () => {
   });
 
   test("a provider failure releases the admitted work instead of reporting finished usage", async () => {
-    const lifecycle: Array<{ phase: string; eventId: string; reason?: string }> = [];
+    const lifecycle: Array<{
+      phase: string;
+      eventId: string;
+      reason?: string;
+    }> = [];
     try {
       setModelUsageGate(async (input) => {
         lifecycle.push({ phase: "admit", eventId: input.eventId });
@@ -332,9 +340,11 @@ describe("the model usage meter", () => {
           throw new Error("provider exploded");
         },
       });
-      await expect((wrapped as { doStream: (params: unknown) => Promise<unknown> }).doStream({})).rejects.toThrow(
-        "provider exploded",
-      );
+      await expect(
+        (
+          wrapped as { doStream: (params: unknown) => Promise<unknown> }
+        ).doStream({}),
+      ).rejects.toThrow("provider exploded");
       expect(lifecycle[0]?.phase).toBe("admit");
       expect(lifecycle.some((entry) => entry.phase === "finish")).toBe(false);
       expect(
@@ -450,7 +460,10 @@ describe("the model usage meter", () => {
   });
 
   test("only the first finish chunk triggers metering and settlement", async () => {
-    const meter: Array<{ inputTokens: number | undefined; outputTokens: number | undefined }> = [];
+    const meter: Array<{
+      inputTokens: number | undefined;
+      outputTokens: number | undefined;
+    }> = [];
     const lifecycle: string[] = [];
     try {
       setModelUsageMeter((usage) => {
@@ -512,7 +525,10 @@ describe("the model usage meter", () => {
   });
 
   test("malformed finish usage is not charged as normal usage", async () => {
-    const meter: Array<{ inputTokens: number | undefined; outputTokens: number | undefined }> = [];
+    const meter: Array<{
+      inputTokens: number | undefined;
+      outputTokens: number | undefined;
+    }> = [];
     const lifecycle: Array<{ phase: string; reason?: string }> = [];
     try {
       setModelUsageMeter((usage) => {
@@ -598,7 +614,10 @@ describe("the model usage bound contract (pre-call admission)", () => {
   };
 
   /** An inner model that records every call and its effective request parameters. */
-  function recordingModel(finishUsage?: { inputTokens: number; outputTokens: number }) {
+  function recordingModel(finishUsage?: {
+    inputTokens: number;
+    outputTokens: number;
+  }) {
     const calls: unknown[] = [];
     const model = {
       modelId: "gpt-test",
@@ -690,7 +709,10 @@ describe("the model usage bound contract (pre-call admission)", () => {
   });
 
   test("a fit is applied before counting and the fitted request reaches the provider", async () => {
-    const { calls, model } = recordingModel({ inputTokens: 1, outputTokens: 1 });
+    const { calls, model } = recordingModel({
+      inputTokens: 1,
+      outputTokens: 1,
+    });
     const original = {
       prompt: [
         { role: "system", content: "sys" },
@@ -829,7 +851,10 @@ describe("the model usage bound contract (pre-call admission)", () => {
   });
 
   test("exactly-at-limit input is admitted and the configured cap reaches the provider request", async () => {
-    const { calls, model } = recordingModel({ inputTokens: 10, outputTokens: 7 });
+    const { calls, model } = recordingModel({
+      inputTokens: 10,
+      outputTokens: 7,
+    });
     const { phases, lifecycle } = recordingLifecycle({
       input: {
         enforced: "counted",
@@ -851,10 +876,7 @@ describe("the model usage bound contract (pre-call admission)", () => {
       expect(calls).toHaveLength(2);
       expect(calls[0]).toMatchObject({ maxOutputTokens: 7 });
       expect(calls[1]).toMatchObject({ maxOutputTokens: 3 });
-      expect(phases).toEqual([
-        { phase: "finish" },
-        { phase: "finish" },
-      ]);
+      expect(phases).toEqual([{ phase: "finish" }, { phase: "finish" }]);
     } finally {
       setModelUsageGate(undefined);
     }
@@ -862,7 +884,10 @@ describe("the model usage bound contract (pre-call admission)", () => {
 
   test("a finish above the advertised bound fails visibly and keeps the hold", async () => {
     const meter: number[] = [];
-    const { calls, model } = recordingModel({ inputTokens: 3, outputTokens: 6 });
+    const { calls, model } = recordingModel({
+      inputTokens: 3,
+      outputTokens: 6,
+    });
     const { phases, lifecycle } = recordingLifecycle({
       input: {
         enforced: "counted",
@@ -926,10 +951,7 @@ describe("the model usage bound contract (pre-call admission)", () => {
     const model = createOpenAI({
       apiKey: STUB_MODEL_KEY,
       baseURL: "http://adapter.test/v1",
-      fetch: (async (
-        _input: unknown,
-        init?: { body?: BodyInit | null },
-      ) => {
+      fetch: (async (_input: unknown, init?: { body?: BodyInit | null }) => {
         requests.push(JSON.parse(String(init?.body)));
         return new Response(sse, {
           status: 200,
@@ -973,10 +995,7 @@ describe("the model usage bound contract (pre-call admission)", () => {
     const model = createOpenAI({
       apiKey: STUB_MODEL_KEY,
       baseURL: "http://adapter.test/v1",
-      fetch: (async (
-        _input: unknown,
-        init?: { body?: BodyInit | null },
-      ) => {
+      fetch: (async (_input: unknown, init?: { body?: BodyInit | null }) => {
         requests.push(JSON.parse(String(init?.body)));
         return new Response("data: [DONE]\n\n", {
           status: 200,
@@ -1011,7 +1030,10 @@ describe("the model usage bound contract (pre-call admission)", () => {
   });
 
   test("a finish whose durable write fails rejects the stream and keeps the hold", async () => {
-    const { calls, model } = recordingModel({ inputTokens: 3, outputTokens: 2 });
+    const { calls, model } = recordingModel({
+      inputTokens: 3,
+      outputTokens: 2,
+    });
     const phases: Array<{ phase: string; reason?: string }> = [];
     try {
       setModelUsageGate(async () => ({
@@ -1052,7 +1074,10 @@ describe("the model usage bound contract (pre-call admission)", () => {
   });
 
   test("a finish whose durable write fails still reports the call's one settlement_failed span (OCR R5-47)", async () => {
-    const { calls, model } = recordingModel({ inputTokens: 3, outputTokens: 2 });
+    const { calls, model } = recordingModel({
+      inputTokens: 3,
+      outputTokens: 2,
+    });
     const spans: BuiltinModelSpanFact[] = [];
     try {
       setBuiltinModelSpanObserver((fact) => spans.push(fact));
@@ -1095,9 +1120,16 @@ describe("the model usage bound contract (pre-call admission)", () => {
   });
 
   test("a refusing finish is not re-recorded as unsettled evidence", async () => {
-    const { calls, model } = recordingModel({ inputTokens: 3, outputTokens: 2 });
+    const { calls, model } = recordingModel({
+      inputTokens: 3,
+      outputTokens: 2,
+    });
     const phases: Array<{ phase: string; reason?: string }> = [];
-    const unsettled: Array<{ inputTokens: number; outputTokens: number; reason: string }> = [];
+    const unsettled: Array<{
+      inputTokens: number;
+      outputTokens: number;
+      reason: string;
+    }> = [];
     try {
       setModelUsageGate(async () => ({
         bounds: admittingBounds(),
@@ -1224,7 +1256,8 @@ describe("the model usage bound contract (pre-call admission)", () => {
       agent.addMessage({
         id: "input-bound-refusal-request",
         role: "user",
-        content: "This request must be refused for lack of a provable input bound.",
+        content:
+          "This request must be refused for lack of a provable input bound.",
       });
       await expect(agent.runAgent()).rejects.toBeDefined();
       expect(providerCalls).toBe(0);
@@ -1344,7 +1377,13 @@ describe("an unknown usage outcome keeps the hold (audit A2)", () => {
       const model = meteredModelForTests({
         modelId: "GLM-5.3",
         async doStream() {
-          return { stream: new ReadableStream({ start(c) { c.close(); } }) };
+          return {
+            stream: new ReadableStream({
+              start(c) {
+                c.close();
+              },
+            }),
+          };
         },
       }) as WrappedModel;
       for await (const _part of (await model.doStream({})).stream) {
@@ -1385,7 +1424,10 @@ describe("an unknown usage outcome keeps the hold (audit A2)", () => {
         },
       }));
       const model = modelEmitting([
-        { type: "finish", usage: { inputTokens: { total: 12 }, outputTokens: {} } },
+        {
+          type: "finish",
+          usage: { inputTokens: { total: 12 }, outputTokens: {} },
+        },
       ]);
       for await (const _part of (await model.doStream({})).stream) {
       }
@@ -1442,7 +1484,11 @@ describe("an over-bound finish leaves its tokens behind (audit A3)", () => {
   }
 
   test("the settlement failure records the real usage before the stream errors", async () => {
-    const evidence: { inputTokens: number; outputTokens: number; reason: string }[] = [];
+    const evidence: {
+      inputTokens: number;
+      outputTokens: number;
+      reason: string;
+    }[] = [];
     try {
       setModelUsageGate(async () => ({
         bounds: {
@@ -1465,7 +1511,13 @@ describe("an over-bound finish leaves its tokens behind (audit A3)", () => {
         modelId: "GLM-5.3",
         doStream: async () => ({
           stream: streamOf([
-            { type: "finish", usage: { inputTokens: { total: 900 }, outputTokens: { total: 10 } } },
+            {
+              type: "finish",
+              usage: {
+                inputTokens: { total: 900 },
+                outputTokens: { total: 10 },
+              },
+            },
           ]),
         }),
       });
@@ -1495,11 +1547,16 @@ describe("an over-bound finish leaves its tokens behind (audit A3)", () => {
         modelId: "GLM-5.3",
         doStream: async () => ({
           stream: streamOf([
-            { type: "finish", usage: { inputTokens: { total: -1 }, outputTokens: { total: 5 } } },
+            {
+              type: "finish",
+              usage: { inputTokens: { total: -1 }, outputTokens: { total: 5 } },
+            },
           ]),
         }),
       });
-      await expect(consume((await model.doStream({} as never)).stream)).rejects.toThrow(/usage_invalid/);
+      await expect(
+        consume((await model.doStream({} as never)).stream),
+      ).rejects.toThrow(/usage_invalid/);
       expect(evidence).toEqual(["usage_invalid"]);
     } finally {
       setModelUsageGate(undefined);
@@ -1507,7 +1564,11 @@ describe("an over-bound finish leaves its tokens behind (audit A3)", () => {
   });
 
   test("a half-reported usage carries the reported half to the fail path's evidence", async () => {
-    const seen: Array<{ reason: string; inputTokens?: number; outputTokens?: number }> = [];
+    const seen: Array<{
+      reason: string;
+      inputTokens?: number;
+      outputTokens?: number;
+    }> = [];
     try {
       setModelUsageGate(async () => ({
         bounds: admittingBounds(),
@@ -1523,7 +1584,10 @@ describe("an over-bound finish leaves its tokens behind (audit A3)", () => {
         modelId: "GLM-5.3",
         doStream: async () => ({
           stream: streamOf([
-            { type: "finish", usage: { inputTokens: { total: 12 }, outputTokens: {} } },
+            {
+              type: "finish",
+              usage: { inputTokens: { total: 12 }, outputTokens: {} },
+            },
           ]),
         }),
       });
