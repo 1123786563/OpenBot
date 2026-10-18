@@ -60,6 +60,8 @@ docker compose --project-directory . -f docker/compose/observability.yml up -d -
 
 ## Logging
 
+The one-page diagram of this pipeline is [observability-architecture.html](observability-architecture.html).
+
 **Every log line goes through the logger in `shared/logger`**, which is pino ^10.4.0 underneath.
 Bare `console.*` calls are banned in new code: Biome enforces `noConsole` as an error across
 `server/src` and `worker/src`, so the linter rather than a review checklist keeps the rule. Tests
