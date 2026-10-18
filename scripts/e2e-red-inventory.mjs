@@ -21,7 +21,26 @@ const outPath = resolve(
   arg("out", "docs/verification/e2e-red-inventory.md"),
 );
 const onlyGroups = (arg("groups", "") || "").split(",").filter(Boolean);
+const withOwners = process.argv.includes("--owners");
 const DRIVER = "tests/bun-suites.test.ts";
+
+// A red suite has one owner per line of blame, and a reviewer asking "who fixes this" should get the
+// answer from git rather than from a guess.
+const owner = (file) => {
+  if (!withOwners) return "";
+  const result = spawnSync(
+    "git",
+    ["log", "-1", "--format=%an|%ad", "--date=short", "--", file],
+    {
+      cwd: root,
+      encoding: "utf8",
+    },
+  );
+  return (
+    (result.stdout ?? "").trim().replace("|", " (") +
+    (result.stdout?.trim() ? ")" : "")
+  );
+};
 
 const run = JSON.parse(readFileSync(reportPath, "utf8")).run;
 const verdicts = existsSync(verdictPath)
@@ -88,6 +107,15 @@ function attributeGroup(name) {
 
 const lines = [];
 lines.push("# 红点清单 · 由测量直接生成，不要手改");
+if (withOwners) {
+  lines.push(
+    "",
+    "> 派单口径：这个仓库的提交者 git identity 是同一个（`wuyj`），blame 只说明「谁最近改过它」，",
+    "> 不代表责任波次；按套件区域派单更准 —— `server/tests/enterprise/*` 与 `server/tests/multitenancy/*`",
+    "> （多租户执行波次）、`server/src/kb/*` 与 `server/src/knowledge/*`（知识服务）、",
+    "> `app/tests/ai-observability-*`（observability/T02）、`agent-sandbox/tests/*`（workshop 沙箱）。",
+  );
+}
 lines.push(
   "",
   `生成：\`node scripts/e2e-red-inventory.mjs\` · 报告 \`${reportPath.replace(`${root}/`, "")}\`（run ${run.id}，结束于 ${run.finishedAt}）· 判定 \`${verdictPath.replace(`${root}/`, "")}\``,
@@ -98,14 +126,14 @@ lines.push(
   "",
   "## 原生层（e2e / Node）",
   "",
-  "| 文件 | e2e 失败数 | 归因 | 第一条消息 |",
-  " | --- | --- | --- | --- |",
+  `| 文件 | e2e 失败数 | 归因 | 第一条消息 |${withOwners ? " 最后改它的人（派单用） |" : ""}`,
+  ` | --- | --- | --- | --- |${withOwners ? " --- |" : ""}`,
 );
 for (const [file, entry] of [...byFile]
   .filter(([f]) => f !== DRIVER)
   .sort((a, b) => b[1].count - a[1].count)) {
   lines.push(
-    `| \`${file}\` | ${entry.count} | ${verdictOf.get(file) ?? noVerdictNote} | ${entry.first || "—"} |`,
+    `| \`${file}\` | ${entry.count} | ${verdictOf.get(file) ?? noVerdictNote} | ${entry.first || "—"} |${withOwners ? ` ${owner(file)} |` : ""}`,
   );
 }
 lines.push(
