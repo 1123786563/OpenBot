@@ -437,7 +437,12 @@ test("a deletion-in-flight row is gone to every local aggregate (OCR R4-30)", as
   // this summary aggregates locally — a completed binding, the draft experiment
   // and the completed export job — all still physically present, all already
   // gone to every reader per the retention.ts reader contract.
-  const deletion = (kind: string, targetId: string, upstreamKind: string | null, upstreamId: string | null) => ({
+  const deletion = (
+    kind: string,
+    targetId: string,
+    upstreamKind: string | null,
+    upstreamId: string | null,
+  ) => ({
     id: randomUUID(),
     scopeKey: scopeKeyA,
     actorId: actorA,
@@ -449,11 +454,13 @@ test("a deletion-in-flight row is gone to every local aggregate (OCR R4-30)", as
     retentionDays: 7,
     state: "pending" as const,
   });
-  await database.insert(aiObservationRetentionDeletions).values([
-    deletion("run", `${run}-${actorA}-b1`, "trace", `opik-${actorA}-1`),
-    deletion("experiment", `${run}-${actorA}-draft`, null, null),
-    deletion("export", `${run}-${actorA}-job1`, null, null),
-  ]);
+  await database
+    .insert(aiObservationRetentionDeletions)
+    .values([
+      deletion("run", `${run}-${actorA}-b1`, "trace", `opik-${actorA}-1`),
+      deletion("experiment", `${run}-${actorA}-draft`, null, null),
+      deletion("export", `${run}-${actorA}-job1`, null, null),
+    ]);
 
   const app = appFor({
     port: fakePort([
@@ -491,7 +498,9 @@ test("a deletion-in-flight row is gone to every local aggregate (OCR R4-30)", as
 
   // The open window's bound-trace subquery obeys the same filter: A's only
   // binding row is deletion-in-flight, so its trace reads as unbound upstream.
-  const open = await app.request(`http://openbot.test/admin/summary?botId=${botId}`);
+  const open = await app.request(
+    `http://openbot.test/admin/summary?botId=${botId}`,
+  );
   expect(open.status).toBe(200);
   const openBot = (await open.json()).bots[0];
   expect(openBot.runs.unboundUpstream).toBe(2);

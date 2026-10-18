@@ -33,7 +33,6 @@ import { aiObservationExperiments } from "../db/schema/ai-observability-experime
 import { aiObservationExportJobs } from "../db/schema/ai-observability-exports";
 import type { OpikConfig } from "./config";
 import type { ObservationScope } from "./contracts";
-import { notPendingDeletion } from "./retention";
 import type {
   OpikHealthService,
   OpikHealthSnapshot,
@@ -42,6 +41,7 @@ import type {
 } from "./health";
 import type { OpikPort } from "./opik-port";
 import { DEFAULT_RUNS_WINDOW, projectRow } from "./queries/runs";
+import { notPendingDeletion } from "./retention";
 
 /**
  * The time filter every aggregate honors: inclusive bounds, null for open. The
