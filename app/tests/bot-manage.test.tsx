@@ -78,7 +78,9 @@ function draw(
 
 test("someone who cannot manage the Bot is not offered Delete", () => {
   const view = draw({ ...BOT, canManage: false, mine: false });
-  expect(view.queryByText("Delete")).toBeNull();
+  // ponytail: by-role + accessible name — CI's text walk matched an unrelated
+  // aria-labeled switch and dumped the whole element into the job log
+  expect(view.queryByRole("button", { name: "Delete" })).toBeNull();
   expect(view.getByText("Duplicate")).toBeTruthy();
 });
 
