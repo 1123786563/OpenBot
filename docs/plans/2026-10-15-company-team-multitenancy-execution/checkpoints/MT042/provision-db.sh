@@ -4,8 +4,11 @@
 #   step 1: dedicated container (created only if absent; started if stopped)
 #   step 2: databases + kb owner role + base drizzle migration + restricted logins (guarded)
 #   step 3: multitenancy task chain in dependency order, MT042 last (journal = idempotence)
-# Chain order replicates the archived MT042 run (generated/ mtimes 17:18–17:26):
-#   MT004→MT008→MT012→MT014→MT112→MT009→MT010→MT016→MT026→MT027→MT028→MT069→MT076→MT077→MT041→MT070→MT042.
+# Chain order = dependency order (4th-worker fix 2026-10-18): MT112 creates
+# enterprise_deployment_anchors and MT012 ALTERs it, so MT112 must precede MT012;
+# MT112's anchor backfill reads enterprise_workspace_memberships (MT004). The
+# original mtime-guessed order failed a fresh DB at MT012 (relation does not exist).
+#   MT004→MT008→MT112→MT012→MT014→MT009→MT010→MT016→MT026→MT027→MT028→MT069→MT076→MT077→MT041→MT070→MT042.
 # Seven-variable env (brief: 同 MT022, 库名 w14b) is exported once and consumed by every step.
 # NOTE (2026-10-17 continuation): the first provisioning attempt was slowed to a crawl by a
 # host-wide load spike (~150, parallel agents + OrbStack crash/recovery); this rewrite makes
@@ -77,7 +80,7 @@ fi
 
 echo "== step 3: multitenancy task chain (dependency order, MT042 last) =="
 OUT="../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT042/verification/migration/generated"
-for TASK in MT004 MT008 MT012 MT014 MT112 MT009 MT010 MT016 MT026 MT027 MT028 MT069 MT076 MT077 MT041 MT070 MT042; do
+for TASK in MT004 MT008 MT112 MT012 MT014 MT009 MT010 MT016 MT026 MT027 MT028 MT069 MT076 MT077 MT041 MT070 MT042; do
   APPLIED=$(docker exec "$CONTAINER" psql -U postgres -d openbot_enterprise_w14b -tAc "select count(*) from mt_task_migration_journal where task_id='$TASK'" 2>/dev/null || echo 0)
   if [ "$APPLIED" != "0" ]; then
     echo "-- $TASK already applied ($APPLIED journal rows) — skipping"

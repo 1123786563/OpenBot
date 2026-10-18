@@ -239,10 +239,8 @@ describeDb("MT042 — platform scan scope rebuild (Issue #85)", () => {
 
         const recorded: RecordedExecution[] = [];
         const machine = machineOf("ac1");
-        const rawOutcomes = await executorRecording(
-          machine,
-          recorded,
-        ).scanAndExecute(machine);
+        const rawOutcomes =
+          await executorRecording(recorded).scanAndExecute(machine);
         const outcomes = mine(rawOutcomes, a1.objectId).concat(
           mine(rawOutcomes, b1.objectId),
         );
@@ -731,6 +729,11 @@ describeDb("MT042 — platform scan scope rebuild (Issue #85)", () => {
         // previous run must not collide with this run's refusal.
         const malformedKey = fixture.objectId("garbage");
         await fixture.queue.offer({ kind: SCAN_WORK_KIND, key: malformedKey });
+        // Closed jobKind vocabulary: a syntactically valid key whose jobKind is
+        // outside the word list (task/run/trigger) is the same terminal format
+        // defect — the separator parse alone must not wave it through.
+        const kindlessKey = `widget:${fixture.objectId("kindless")}`;
+        await fixture.queue.offer({ kind: SCAN_WORK_KIND, key: kindlessKey });
         const machine = machineOf("malformed");
         const outcomes = (
           await executorRecording([]).scanAndExecute(machine)
@@ -739,11 +742,13 @@ describeDb("MT042 — platform scan scope rebuild (Issue #85)", () => {
             outcome.status === "refused" &&
             (outcome as { code: string }).code === SCAN_ITEM_MALFORMED,
         );
-        // Malformed rows are terminal: this run's key is finished, so exactly
-        // one refusal exists and no other item can produce this code.
-        expect(outcomes).toHaveLength(1);
+        // Malformed rows are terminal: this run's two keys are finished, so
+        // exactly two refusals exist and no other item can produce this code.
+        expect(outcomes).toHaveLength(2);
         expect(outcomes[0]?.item).toBeUndefined();
+        expect(outcomes[1]?.item).toBeUndefined();
         expect(JSON.stringify(outcomes)).not.toContain(malformedKey);
+        expect(JSON.stringify(outcomes)).not.toContain(kindlessKey);
       },
     );
   });

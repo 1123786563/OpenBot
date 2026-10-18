@@ -20,3 +20,17 @@
 
 ## 接管注记（第 2 任）
 前任死于 Orca 重启（非工作失败）。树内增量=前任交付：checkpoints/MT042/（before-hashes/design.md 方案已定稿：sweep-read 策略+权威行重建+签发入口+MT041 lease+MT005 gate、mutation/、red-green 到 GREEN-6、verification/、test-env.sh）+tests/multitenancy/scan-executor.test.ts+生产新文件。**先核对树内现态与 red-green 存档链再续作**（不重做已 GREEN 部分）；容器 mt042-impl-pg 已被 coordinator 清除，需自建（端口 55564 若被占换 55568 并在报告披露）。
+
+## 四任接管注记（2026-10-18 05:5x，coordinator 追加）
+
+三任已死于环境重建阶段（~01:56 checkpoint 提交后退出，未发 worker_done）。接手须知：
+
+1. **树上有本地 checkpoint 提交 `3ee2c549`**（含 240 项 prereq 转移+本票实现+全部 checkpoint 证据），`git status` 干净。**不要 reset/amend/revert 该提交**，直接在 HEAD 上继续。
+2. 已完成并有落盘证据（`checkpoints/MT042/verification/`）：baseline 990/0/38（01）、全量回归 **1005/0/39**（02，+15 用例）、typecheck exit:0（03）、biome exit:0（05）。冻结面 after-hashes 5 文件哈希已由 coordinator 复核**全部 OK**（无变异残留）。
+3. **未完成**（你的全部剩余工作）：
+   - mutation 自证（`checkpoints/MT042/mutation/` 目前为空）
+   - RESTORE 恢复验证（哈希字节复原）
+   - `reports/MT042.md` 报告落盘
+   - worker_done（outcome succeeded）
+4. 环境：mt042-impl-pg 容器已不存在；三任 10/11 两轮 env 重建失败（port 55564 CONNECTION_CLOSED、step 2b 被 Terminated），失败证据保留在 verification/ 勿删。按三步配方**从零 provision**（container→库→base migrate→十六任务链 apply），不要尝试复用半途状态；若再遇 CONNECTION_CLOSED，先 docker rm 容器重启再来一轮。
+5. 结论性数字以你本轮亲跑为准；mutation 结果与 RESTORE 哈希逐个写进 mutation/ 目录与报告。
