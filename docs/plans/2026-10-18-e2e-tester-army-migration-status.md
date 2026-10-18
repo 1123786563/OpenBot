@@ -3,18 +3,28 @@
 基线：会话开始时 `main` 为 `bbea87ba`；本轮迁移提交 `bced6121f`、`cb636f02`，本文与后续改动在其后。
 决策依据：[ADR 0008](../adr/0008-test-runner-tester-army-e2e.md)。运行入口：`bun run test`（= `e2e run --config e2e.unit.config.ts`）、`bun run test:ui`（web target）。
 
-## 全量测量（2026-10-18 18:22 CST，分区为 450 驱动 / 29 组）
+## 全量测量（2026-10-18 18:45 CST，分区为 452 驱动 / 29 组，收口轮）
 
 ```
-Test Files  34 failed | 551 passed | 17 skipped (602)
-     Tests  195 failed | 7931 passed | 74 skipped (8200)
-   Duration  653.31s
+Test Files  34 failed | 550 passed | 17 skipped (601)
+     Tests  195 failed | 7925 passed | 74 skipped (8194)
+   Duration  645.36s
+   Errors    4（全部点名 127.0.0.1:5432 与 127.0.0.1:6333 拒连）
 ```
 
-同一入口在 2026-10-18 15:48 的那一轮（328 驱动 / 25 组、标题与 each 缺陷尚未修完时）是
-`9030 discovered · 8521 passed · 426 failed · 10 COLLECTION_ERROR`；修掉标题去重域、`each` 尾随参数、
-`bun-compat` 递归与端口快照、`config.ts` 的 `require` 后，红文件从 107 降到 34、失败从 426 降到 195，
-并且收集错误归零（0 个 COLLECTION_ERROR，report 不再被单个文件拖没）。
+18:22 那一轮（450 驱动 / 29 组）是 `8200 · 7931 passed · 195 failed`，结论一致；两轮之间只把
+剩下 2 个运行器差异文件挪进驱动层。同一入口在 15:48 那轮（328 驱动、标题与 each 缺陷尚未修完）
+是 `9030 discovered · 8521 passed · 426 failed · 10 COLLECTION_ERROR`：修掉标题去重域、`each` 尾随参数、
+`bun-compat` 递归与端口快照、`config.ts` 的 `require` 后，失败从 426 降到 195、红文件从 107 降到 34，
+并且**收集错误归零**（0 个 COLLECTION_ERROR，report 不再被单个文件拖没）。
+
+驱动层这一轮 29 组：**12 组通过，17 组红**。其中 14 组是 `server/tests part N`，失败文本全是
+`Failed query: insert into "users" …` / `PostgresError: Failed to connect` —— 本机 5432 此刻拒连
+（`nc -z 127.0.0.1 5432` 失败，跑着的只有并行会话自己的 `*-pg` 容器），不是调度器坏了；
+另外 3 组是 Bun 侧真实断言：`app/tests part 1`（21 of 281，TestingLibrary "Found multiple elements"）、
+`agent-sandbox/tests`（2 of 17，S4 workspace snapshot 的 keepalive 断言）、以及 `old-runner-unreadable` 的
+`agent-sandbox/tests/proxy.test.ts`。也就是说**驱动层还需要一次 Postgres 在跑的复测**才能给出一句结论。
+
 
 这 195 条失败的构成（逐条判定见下节，报告本身在 `.e2e/final/report.json`）：
 
