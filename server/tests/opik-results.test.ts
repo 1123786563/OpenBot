@@ -749,6 +749,36 @@ describe("sync failure is its own class — the record did not land", () => {
     });
   });
 
+  test("a duplicated case index is damaged, never a last-wins reinterpretation", async () => {
+    // R4-29: two records claiming the same base index is corruption that reached the
+    // store; reading "the last one" would interpret content the contract never wrote.
+    // The whole duplicated case is a record gap, exactly like a broken shape.
+    const { service } = serviceFor({
+      version: version(2),
+      execution: execution({
+        caseCount: 2,
+        result: {
+          cases: [
+            {
+              index: 1,
+              status: "completed",
+              output: textOutput("A one-paragraph outage summary."),
+            },
+            { index: 1, status: "failed", reason: "upstream_timeout" },
+          ],
+        },
+      }),
+    });
+    const report = await service.query(scopeA, {
+      experimentId: "experiment-1",
+      executionId: "execution-1",
+    });
+    expect(report.samples[1].class).toBe("sync_failure");
+    expect(report.samples[1].reason).toMatchObject({
+      code: "CASE_RECORD_DAMAGED",
+    });
+  });
+
   test("a completed execution with no result at all is all record gaps", async () => {
     const { service } = serviceFor({
       version: version(1),
