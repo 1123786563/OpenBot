@@ -195,98 +195,94 @@ async function databaseUnreachable(): Promise<string | null> {
 }
 
 for (const group of groups) {
-  test(
-    `bun runtime suite ${group.name}`,
-    {
-      tags: ["bun-runtime"],
-      timeout: 900_000,
-    },
-    async () => {
-      const started = await runBun(group.files.map((f) => `./${f}`));
-      // A group that ran nothing is not a pass: an unusable path or a crashed loader reports zero.
-      expect(
-        started.tests,
-        `bun ran no tests for ${group.name}: ${started.stderr.slice(-400)}`,
-      ).toBeGreaterThan(0);
-      if (started.failures + started.errors === 0) return;
+  test(`bun runtime suite ${group.name}`, {
+    tags: ["bun-runtime"],
+    timeout: 900_000,
+  }, async () => {
+    const started = await runBun(group.files.map((f) => `./${f}`));
+    // A group that ran nothing is not a pass: an unusable path or a crashed loader reports zero.
+    expect(
+      started.tests,
+      `bun ran no tests for ${group.name}: ${started.stderr.slice(-400)}`,
+    ).toBeGreaterThan(0);
+    if (started.failures + started.errors === 0) return;
 
-      /*
-       * "Blocked, not judged" is a claim about the environment, so it needs environment evidence.
-       * Failure text alone cannot carry it: drizzle prefixes *every* statement error with
-       * `Failed query:` (a rejected insert under RLS is a product verdict) and truncates the
-       * connection cause off the end, so a real outage and a real bug look identical here. The label
-       * is therefore made only on a connect-level signature or on a direct probe that nothing is
-       * listening where TEST_DATABASE_URL/DATABASE_URL points, and it quotes the evidence it used.
-       */
-      const refusals = started.failed.filter((text) =>
-        /ECONNREFUSED|EADDRNOTAVAIL|Failed to connect|could not connect|getaddrinfo/i.test(
-          text,
-        ),
-      );
-      const statementFailures = started.failed.filter((text) =>
-        /Failed query|PostgresError/i.test(text),
-      );
-      const unreachable = await databaseUnreachable();
-      const half = started.failed.length / 2;
-      const evidence =
-        refusals.length > half
-          ? `${refusals.length}/${started.failed.length} failures quote a connect-level refusal (first: ${(refusals[0] ?? "").replace(/\s+/g, " ").slice(0, 120)})`
-          : unreachable && statementFailures.length > half
-            ? `${statementFailures.length}/${started.failed.length} failures are statement errors and the configured database is unreachable (${unreachable})`
-            : null;
-      const refusalNote = evidence
-        ? `\n  ${evidence}: this group is blocked, not judged. An unrunnable tier must not claim success, but "N tests failed" here is not a product verdict.`
-        : "";
+    /*
+     * "Blocked, not judged" is a claim about the environment, so it needs environment evidence.
+     * Failure text alone cannot carry it: drizzle prefixes *every* statement error with
+     * `Failed query:` (a rejected insert under RLS is a product verdict) and truncates the
+     * connection cause off the end, so a real outage and a real bug look identical here. The label
+     * is therefore made only on a connect-level signature or on a direct probe that nothing is
+     * listening where TEST_DATABASE_URL/DATABASE_URL points, and it quotes the evidence it used.
+     */
+    const refusals = started.failed.filter((text) =>
+      /ECONNREFUSED|EADDRNOTAVAIL|Failed to connect|could not connect|getaddrinfo/i.test(
+        text,
+      ),
+    );
+    const statementFailures = started.failed.filter((text) =>
+      /Failed query|PostgresError/i.test(text),
+    );
+    const unreachable = await databaseUnreachable();
+    const half = started.failed.length / 2;
+    const evidence =
+      refusals.length > half
+        ? `${refusals.length}/${started.failed.length} failures quote a connect-level refusal (first: ${(refusals[0] ?? "").replace(/\s+/g, " ").slice(0, 120)})`
+        : unreachable && statementFailures.length > half
+          ? `${statementFailures.length}/${started.failed.length} failures are statement errors and the configured database is unreachable (${unreachable})`
+          : null;
+    const refusalNote = evidence
+      ? `\n  ${evidence}: this group is blocked, not judged. An unrunnable tier must not claim success, but "N tests failed" here is not a product verdict.`
+      : "";
 
-      /*
-       * `bun test` shares one process across the files it was handed, so a suite that leaves global
-       * state behind can fail a sibling that passes on its own — and which file shares a process is a
-       * property of this driver's grouping, not of the suite. Re-running the files that failed inside
-       * their own process separates the two: only a file that is still red alone is a real failure.
-       * The interference is printed rather than hidden, because it is a defect in the suites
-       * (they leak state), and the pre-migration `bun test ./app` had the same class of failure.
-       */
-      const alone = new Map<string, ReturnType<typeof readJunit>>();
-      // A group with failures spread over many files is red for a reason that survives isolation
-      // (an unreachable database), so re-running eight of them buys nothing: say so and fail fast.
-      const cap = 8;
-      if (started.failingFiles.length > cap) {
+    /*
+     * `bun test` shares one process across the files it was handed, so a suite that leaves global
+     * state behind can fail a sibling that passes on its own — and which file shares a process is a
+     * property of this driver's grouping, not of the suite. Re-running the files that failed inside
+     * their own process separates the two: only a file that is still red alone is a real failure.
+     * The interference is printed rather than hidden, because it is a defect in the suites
+     * (they leak state), and the pre-migration `bun test ./app` had the same class of failure.
+     */
+    const alone = new Map<string, ReturnType<typeof readJunit>>();
+    // A group with failures spread over many files is red for a reason that survives isolation
+    // (an unreachable database), so re-running eight of them buys nothing: say so and fail fast.
+    const cap = 8;
+    if (started.failingFiles.length > cap) {
+      throw new Error(
+        `${group.name}: ${started.failures + started.errors} of ${started.tests} tests failed across ${started.failingFiles.length} files (more than the ${cap} the alone-re-run confirms); treated as a real failure\n${started.failed.slice(0, 4).join("\n")}${refusalNote}`,
+      );
+    }
+    const startedAt = Date.now();
+    for (const file of started.failingFiles) {
+      if (Date.now() - startedAt > 300_000) {
         throw new Error(
-          `${group.name}: ${started.failures + started.errors} of ${started.tests} tests failed across ${started.failingFiles.length} files (more than the ${cap} the alone-re-run confirms); treated as a real failure\n${started.failed.slice(0, 4).join("\n")}${refusalNote}`,
+          `${group.name}: ${started.failures + started.errors} tests failed and the alone-re-run budget ran out after ${alone.size} file(s); not claimed as passing`,
         );
       }
-      const startedAt = Date.now();
-      for (const file of started.failingFiles) {
-        if (Date.now() - startedAt > 300_000) {
-          throw new Error(
-            `${group.name}: ${started.failures + started.errors} tests failed and the alone-re-run budget ran out after ${alone.size} file(s); not claimed as passing`,
-          );
-        }
-        alone.set(
-          file,
-          await runBun([file.startsWith("./") ? file : `./${file}`]),
-        );
-      }
-      const realRed = [...alone].filter(
-        ([, result]) => result.failures + result.errors > 0,
+      alone.set(
+        file,
+        await runBun([file.startsWith("./") ? file : `./${file}`]),
       );
-      const interfered = [...alone].filter(
-        ([, result]) => result.failures + result.errors === 0,
+    }
+    const realRed = [...alone].filter(
+      ([, result]) => result.failures + result.errors > 0,
+    );
+    const interfered = [...alone].filter(
+      ([, result]) => result.failures + result.errors === 0,
+    );
+    if (interfered.length) {
+      console.error(
+        `[bun-suites] ${group.name}: ${interfered.length} file(s) failed only when sharing a process: ${interfered.map(([file]) => file).join(", ")}`,
       );
-      if (interfered.length) {
-        console.error(
-          `[bun-suites] ${group.name}: ${interfered.length} file(s) failed only when sharing a process: ${interfered.map(([file]) => file).join(", ")}`,
-        );
-      }
-      expect(
-        realRed.length,
-        `${group.name}: ${realRed.length} of ${started.failingFiles.length} failing file(s) are still red run alone\n${realRed
-          .map(
-            ([file, result]) =>
-              `${file}: ${result.failures + result.errors} of ${result.tests} — ${result.failed.slice(0, 3).join(" | ")}`,
-          )
-          .join("\n")}${refusalNote}`,
-      ).toBe(0);
-    },
-  );
+    }
+    expect(
+      realRed.length,
+      `${group.name}: ${realRed.length} of ${started.failingFiles.length} failing file(s) are still red run alone\n${realRed
+        .map(
+          ([file, result]) =>
+            `${file}: ${result.failures + result.errors} of ${result.tests} — ${result.failed.slice(0, 3).join(" | ")}`,
+        )
+        .join("\n")}${refusalNote}`,
+    ).toBe(0);
+  });
 }
