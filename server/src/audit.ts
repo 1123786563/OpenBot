@@ -764,6 +764,14 @@ export const auditEventTypes = [
    * entered the books once is a fact worth reading, not noise.
    */
   "billing.credits.personal_granted",
+  /*
+   * A person claimed a reward into their OWN personal account (Bifrost 10.4, AC14): the
+   * claimer, the reward type and the server-derived period beside the account the server
+   * RESOLVED from the session — no client-named target exists anywhere on this path, and the
+   * row is the per-request receipt a replayed claim also gets, marked `inserted: false`, so a
+   * double-tapped check-in button reads as one payout with two presses.
+   */
+  "billing.credits.reward_claimed",
   /**
    * The reconciliation pass was run (T7): an on-demand audit of the books' two invariants
    * (the payment three-way and the credit identity). Audited because it is an operator

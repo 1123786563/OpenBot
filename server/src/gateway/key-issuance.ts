@@ -2,14 +2,27 @@ import { createHash, randomBytes } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
+import { getLogger, type Logger } from "../../../shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
-import type { BotServiceIdentity } from "../bot-services/types";
+import type { PayerRef } from "../billing/payer";
 import {
-  AccessGrantUseError,
   type AccessGrantService,
+  AccessGrantUseError,
 } from "../bot-services/access-grants";
+import type { BotServiceVariables } from "../bot-services/auth";
+import type { BotServiceIdentity } from "../bot-services/types";
 import type { Database } from "../db/client";
 import { accessGrants, gatewayVirtualKeys } from "../db/schema";
+import {
+  GatewayAdminCredentialNotConfiguredError,
+  gatewayAdminCredentialControls,
+} from "./admin-credential";
+import {
+  buildCredentialBundle,
+  type CredentialBundleSources,
+  CredentialBundleUnavailableError,
+  scrubErrorOfCredentialSecret,
+} from "./credential-bundle";
 import {
   GatewayCustomerProvisionError,
   type GatewayCustomerProvisionResult,
@@ -20,15 +33,8 @@ import {
   GatewayProvisionRefusedError,
 } from "./customer-provision";
 import type { GatewayEndpointConfig } from "./endpoint-config";
-import {
-  GatewayAdminCredentialNotConfiguredError,
-  gatewayAdminCredentialControls,
-} from "./admin-credential";
 import { gatewayEndpointControls } from "./endpoint-config";
 import { GatewayNotReadyError } from "./readiness";
-import type { PayerRef } from "../billing/payer";
-import { getLogger, type Logger } from "../../../shared/logger";
-import type { BotServiceVariables } from "../bot-services/auth";
 
 /*
  * The short-lived virtual key issuance module (Bifrost 05.3, AC02/AC08/Q8): one independent
@@ -147,7 +153,10 @@ export type IssuedGatewayKey = GatewayKeyRecord & {
  * the orphaned remote key it follows (the orphan is inert — its plaintext was never
  * delivered — and 05.8's state sync reconciles remote-only drift).
  */
-export function gatewayVirtualKeyName(grantId: string, version: number): string {
+export function gatewayVirtualKeyName(
+  grantId: string,
+  version: number,
+): string {
   const suffix = randomBytes(4).toString("hex");
   return `openbot:${grantId}:v${version}:${suffix}`;
 }
@@ -203,113 +212,134 @@ export function createGatewayKeyIssuer(
 ): GatewayKeyIssuer {
   const log = deps.log ?? getLogger("server");
 
-  return {
-    async issueKeyForGrant(grantId, identity) {
-      // 1. The authorization-use check is 04.5's, not a re-derivation: one uniform refusal for
-      // everything a probe could distinguish, and the live registry verdict inside it.
-      const grant = await deps.resolveForBot(grantId, identity);
+  /** The whole flow, exactly as 05.3 built it; the returned wrapper adds 05.4's leash. */
+  async function issueForGrant(
+    grantId: string,
+    identity: BotServiceIdentity,
+    onMinted?: (secret: string) => void,
+  ): Promise<IssuedGatewayKey> {
+    // 1. The authorization-use check is 04.5's, not a re-derivation: one uniform refusal for
+    // everything a probe could distinguish, and the live registry verdict inside it.
+    const grant = await deps.resolveForBot(grantId, identity);
 
-      // 2. The one customer all of this user's keys bill. Idempotent, and the 01.7 readiness
-      // gate runs inside the seam before anything is dialed or stored.
-      const { customerId } = await deps.provisionCustomer({
-        kind: "personal",
-        id: grant.userId,
-      });
+    // 2. The one customer all of this user's keys bill. Idempotent, and the 01.7 readiness
+    // gate runs inside the seam before anything is dialed or stored.
+    const { customerId } = await deps.provisionCustomer({
+      kind: "personal",
+      id: grant.userId,
+    });
 
-      // 3. The issuance transaction: the grant row is locked and re-verified here, so a
-      // revocation that committed while the customer was being provisioned still wins — the
-      // key is never born for a dead authorization. The row lock also serializes the version
-      // counter per grant; the unique index is the backstop.
-      const issued = await deps.database.transaction(async (tx) => {
-        const [row] = await tx
-          .select()
-          .from(accessGrants)
-          .where(eq(accessGrants.grantId, grant.grantId))
-          .for("update");
-        if (row?.status !== "active" || row.botId !== identity.botId) {
-          throw new AccessGrantUseError();
-        }
-        const [counter] = await tx
-          .select({
-            maxVersion: sql<number>`coalesce(max(${gatewayVirtualKeys.credentialVersion}), 0)`,
-          })
-          .from(gatewayVirtualKeys)
-          .where(eq(gatewayVirtualKeys.grantId, grant.grantId));
-        const credentialVersion = Number(counter?.maxVersion ?? 0) + 1;
-
-        // 4. The remote create: ownership only — customerId, a name, and nothing governed
-        // here (no budgets, no rate limits, no provider configs; the customer owns those).
-        const created = await deps.client.createVirtualKey({
-          name: gatewayVirtualKeyName(grant.grantId, credentialVersion),
-          customerId,
-        });
-
-        // 5. The local record: no plaintext column exists; the sha256 identifies, never redeems.
-        const [inserted] = await tx
-          .insert(gatewayVirtualKeys)
-          .values({
-            id: generateKeyId(),
-            grantId: grant.grantId,
-            botId: grant.botId,
-            gatewayCustomerId: customerId,
-            gatewayVirtualKeyId: created.virtualKeyId,
-            valueHash: sha256(created.value),
-            credentialVersion,
-            status: "active",
-            expiresAt: null,
-          })
-          .returning();
-        if (!inserted) {
-          throw new GatewayVirtualKeyError(
-            "gateway_vk_invalid_response",
-            "The virtual key record could not be stored, so the issuance is refused.",
-          );
-        }
-        return { record: inserted, secret: created.value };
-      });
-
-      // 6. After the commit, fail-closed like every other issuance of a capability: an
-      // issuance the trail cannot name is an issuance that failed. The payload names the act —
-      // never the secret, never a reducible piece of one (a four-hex fingerprint at most).
-      if (deps.auditStore) {
-        await recordAuditEvent(deps.auditStore, {
-          eventType: "gateway.key_issued",
-          targetType: "gateway_virtual_key",
-          targetId: issued.record.id,
-          payload: {
-            grantId: issued.record.grantId,
-            botId: issued.record.botId,
-            customerId: issued.record.gatewayCustomerId,
-            gatewayVirtualKeyId: issued.record.gatewayVirtualKeyId,
-            credentialVersion: issued.record.credentialVersion,
-            expiresAt: issued.record.expiresAt?.toISOString() ?? null,
-            fingerprint: sha256(issued.secret).slice(-4),
-          },
-        });
+    // 3. The issuance transaction: the grant row is locked and re-verified here, so a
+    // revocation that committed while the customer was being provisioned still wins — the
+    // key is never born for a dead authorization. The row lock also serializes the version
+    // counter per grant; the unique index is the backstop.
+    const issued = await deps.database.transaction(async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(accessGrants)
+        .where(eq(accessGrants.grantId, grant.grantId))
+        .for("update");
+      if (row?.status !== "active" || row.botId !== identity.botId) {
+        throw new AccessGrantUseError();
       }
-      log.info(
-        {
-          type: "gateway-key-issued",
-          keyId: issued.record.id,
+      const [counter] = await tx
+        .select({
+          maxVersion: sql<number>`coalesce(max(${gatewayVirtualKeys.credentialVersion}), 0)`,
+        })
+        .from(gatewayVirtualKeys)
+        .where(eq(gatewayVirtualKeys.grantId, grant.grantId));
+      const credentialVersion = Number(counter?.maxVersion ?? 0) + 1;
+
+      // 4. The remote create: ownership only — customerId, a name, and nothing governed
+      // here (no budgets, no rate limits, no provider configs; the customer owns those).
+      const created = await deps.client.createVirtualKey({
+        name: gatewayVirtualKeyName(grant.grantId, credentialVersion),
+        customerId,
+      });
+      onMinted?.(created.value);
+
+      // 5. The local record: no plaintext column exists; the sha256 identifies, never redeems.
+      const [inserted] = await tx
+        .insert(gatewayVirtualKeys)
+        .values({
+          id: generateKeyId(),
+          grantId: grant.grantId,
+          botId: grant.botId,
+          gatewayCustomerId: customerId,
+          gatewayVirtualKeyId: created.virtualKeyId,
+          valueHash: sha256(created.value),
+          credentialVersion,
+          status: "active",
+          expiresAt: null,
+        })
+        .returning();
+      if (!inserted) {
+        throw new GatewayVirtualKeyError(
+          "gateway_vk_invalid_response",
+          "The virtual key record could not be stored, so the issuance is refused.",
+        );
+      }
+      return { record: inserted, secret: created.value };
+    });
+
+    // 6. After the commit, fail-closed like every other issuance of a capability: an
+    // issuance the trail cannot name is an issuance that failed. The payload names the act —
+    // never the secret, never a reducible piece of one (a four-hex fingerprint at most).
+    if (deps.auditStore) {
+      await recordAuditEvent(deps.auditStore, {
+        eventType: "gateway.key_issued",
+        targetType: "gateway_virtual_key",
+        targetId: issued.record.id,
+        payload: {
           grantId: issued.record.grantId,
           botId: issued.record.botId,
+          customerId: issued.record.gatewayCustomerId,
+          gatewayVirtualKeyId: issued.record.gatewayVirtualKeyId,
           credentialVersion: issued.record.credentialVersion,
+          expiresAt: issued.record.expiresAt?.toISOString() ?? null,
+          fingerprint: sha256(issued.secret).slice(-4),
         },
-        "Issued a short-lived virtual key for a user × Bot authorization.",
-      );
-
-      return {
+      });
+    }
+    log.info(
+      {
+        type: "gateway-key-issued",
         keyId: issued.record.id,
         grantId: issued.record.grantId,
         botId: issued.record.botId,
-        customerId: issued.record.gatewayCustomerId,
-        gatewayVirtualKeyId: issued.record.gatewayVirtualKeyId,
         credentialVersion: issued.record.credentialVersion,
-        status: issued.record.status,
-        expiresAt: issued.record.expiresAt?.toISOString() ?? null,
-        createdAt: issued.record.createdAt.toISOString(),
-        secret: issued.secret,
-      };
+      },
+      "Issued a short-lived virtual key for a user × Bot authorization.",
+    );
+
+    return {
+      keyId: issued.record.id,
+      grantId: issued.record.grantId,
+      botId: issued.record.botId,
+      customerId: issued.record.gatewayCustomerId,
+      gatewayVirtualKeyId: issued.record.gatewayVirtualKeyId,
+      credentialVersion: issued.record.credentialVersion,
+      status: issued.record.status,
+      expiresAt: issued.record.expiresAt?.toISOString() ?? null,
+      createdAt: issued.record.createdAt.toISOString(),
+      secret: issued.secret,
+    };
+  }
+
+  return {
+    async issueKeyForGrant(grantId, identity) {
+      // The plaintext's containment leash (05.4): from the moment the remote create answers,
+      // `minted` names the secret, and every failure this method lets fly is scoured of it
+      // first — an error path must never become the plaintext's second channel. Before the
+      // mint there is nothing to scrub, so the wrapper is a no-op there.
+      let minted: string | undefined;
+      try {
+        return await issueForGrant(grantId, identity, (secret) => {
+          minted = secret;
+        });
+      } catch (error) {
+        throw scrubErrorOfCredentialSecret(error, minted);
+      }
     },
   };
 }
@@ -375,10 +405,12 @@ async function discardBody(response: Response): Promise<void> {
 }
 
 /** The virtual key object a create answer carries, read strictly. */
-function createdKeyFrom(json: unknown): {
-  virtualKeyId: string;
-  value: string;
-} | undefined {
+function createdKeyFrom(json: unknown):
+  | {
+      virtualKeyId: string;
+      value: string;
+    }
+  | undefined {
   if (json === null || typeof json !== "object") return undefined;
   const key = (json as { virtual_key?: unknown }).virtual_key;
   if (key === null || typeof key !== "object") return undefined;
@@ -565,7 +597,8 @@ export function createDeploymentKeyIssuer(options: {
   });
 }
 
-/** The key as every response carries it — plaintext handled by the caller, never here twice. */
+/** The key as the issuance record half of the claim answer carries it; the bundle half (05.4)
+ * repeats the secret by construction — both fields ride the one authenticated channel. */
 function serializeKey(key: IssuedGatewayKey) {
   return {
     keyId: key.keyId,
@@ -584,6 +617,13 @@ function serializeKey(key: IssuedGatewayKey) {
 export type KeyIssuanceRoutesDeps = {
   /** The issuer's one entry point, already composed (see {@link createGatewayKeyIssuer}). */
   issue: GatewayKeyIssuer["issueKeyForGrant"];
+  /**
+   * Where the claim answer's bundle reads its non-secret sides from (05.4). A deployment
+   * that does not compose it refuses every claim BEFORE minting — a bundle nobody can
+   * complete must not become a key nobody can use — through the same tagged 503 door a
+   * missing surface takes.
+   */
+  bundle?: CredentialBundleSources;
 };
 
 /**
@@ -592,11 +632,17 @@ export type KeyIssuanceRoutesDeps = {
  * authenticated Bot service identity reaches it. One route — claim a key for a grant.
  *
  * The ANSWER carries the plaintext `secret` exactly once; that channel (an authenticated Bot
- * server) is the only one it ever travels on, and 05.4 defines the CredentialBundle boundary
- * around it. Every refusal is tagged and plaintext-free: the grant use check's uniform 403
+ * server) is the only one it ever travels on, and 05.4's CredentialBundle is the only shape
+ * it rides: the claim answer is `{ key, bundle }` — `key` the issuance record, `bundle` the
+ * frozen five-field contract ({@link CredentialBundle}) naming the endpoint to dial, the
+ * Bot's own selectable ModelRefs, the secret and the key's term. Every refusal is tagged and
+ * plaintext-free: the grant use check's uniform 403
  * (which never says whether a grantId exists, whose it is, or what state it is in), the door's
- * own 401, the gate's 503, and the classified 502s of the two remote seams. A malformed body
- * is a plain 400.
+ * own 401, the gate's 503, the classified 502s of the two remote seams, the bundle-side 503
+ * (no endpoint configured) and 502 (model refs unreadable) — both bundle failures arrive
+ * after the mint, so their orphan is inert and a retry becomes the next credentialVersion.
+ * A malformed body is a plain 400, and an unexpected failure is the fixed 500 below — never
+ * a rethrow into the framework's default error output.
  */
 export function createKeyIssuanceRoutes(
   deps: KeyIssuanceRoutesDeps | undefined,
@@ -621,6 +667,28 @@ export function createKeyIssuanceRoutes(
 
   const claimInput = z.strictObject({ grantId: z.string() });
 
+  // The bundle's own error door: a failure completing the bundle answers a fixed refusal —
+  // never the framework's default error output, which an unexpected error would otherwise
+  // reach (and a refusal after the mint names no key: the orphan is inert, the retry the
+  // next credentialVersion).
+  app.onError((error, context) => {
+    if (error instanceof CredentialBundleUnavailableError) {
+      const status =
+        error.reasonCode === "bundle_endpoint_unconfigured" ? 503 : 502;
+      return context.json(
+        { error: error.message, code: error.reasonCode },
+        status,
+      );
+    }
+    return context.json(
+      {
+        error: "The key claim failed unexpectedly, so the answer is refused.",
+        code: "key_issuance_unexpected",
+      },
+      500,
+    );
+  });
+
   app.post("/", async (context) => {
     const parsed = claimInput.safeParse(
       await context.req.json().catch(() => null),
@@ -634,10 +702,57 @@ export function createKeyIssuanceRoutes(
         400,
       );
     }
+    // Fail-closed BEFORE minting: without the bundle's sources this channel could answer a
+    // plaintext with no complete contract around it.
+    if (!deps.bundle) {
+      return context.json(
+        {
+          error:
+            "The credential bundle is not available, so key issuance is refused.",
+          code: "credential_bundle_unavailable",
+        },
+        503,
+      );
+    }
     const identity = context.get("botService");
     try {
       const key = await deps.issue(parsed.data.grantId, identity);
-      return context.json({ key: serializeKey(key) });
+      // The bundle's non-secret sides, read live: the endpoint this deployment answers at
+      // and the Bot's own selectable refs. A missing endpoint or a failed read refuses — a
+      // bundle that is not the whole contract is not the contract. Each seam's failures are
+      // translated INTO that seam's typed refusal (whatever the source threw — the sources
+      // are per-deployment composition), so an operational bundle failure is its classified
+      // 503/502 and only a genuine bug reaches the fixed 500 below.
+      const endpointConfig = await deps.bundle
+        .readGatewayEndpoint()
+        .catch((error) => {
+          if (error instanceof CredentialBundleUnavailableError) throw error;
+          throw new CredentialBundleUnavailableError(
+            "bundle_endpoint_unconfigured",
+            "No gateway address is configured, so the credential bundle cannot be completed.",
+          );
+        });
+      if (!endpointConfig) {
+        throw new CredentialBundleUnavailableError(
+          "bundle_endpoint_unconfigured",
+          "No gateway address is configured, so the credential bundle cannot be completed.",
+        );
+      }
+      const modelRefs = await deps.bundle
+        .listSelectableModels(identity.botId)
+        .catch((error) => {
+          if (error instanceof CredentialBundleUnavailableError) throw error;
+          throw new CredentialBundleUnavailableError(
+            "bundle_models_unavailable",
+            "The model catalog is not available, so the credential bundle cannot be completed.",
+          );
+        });
+      const bundle = buildCredentialBundle({
+        endpointConfig,
+        modelRefs,
+        issued: key,
+      });
+      return context.json({ key: serializeKey(key), bundle });
     } catch (error) {
       if (error instanceof AccessGrantUseError) {
         return context.json({ error: error.message, code: error.code }, 403);
@@ -653,10 +768,16 @@ export function createKeyIssuanceRoutes(
         );
       }
       if (error instanceof GatewayVirtualKeyError) {
-        return context.json({ error: error.message, code: error.reasonCode }, 502);
+        return context.json(
+          { error: error.message, code: error.reasonCode },
+          502,
+        );
       }
       if (error instanceof GatewayCustomerProvisionError) {
-        return context.json({ error: error.message, code: error.reasonCode }, 502);
+        return context.json(
+          { error: error.message, code: error.reasonCode },
+          502,
+        );
       }
       if (
         error instanceof GatewayProvisionOutcomeUnknownError ||
