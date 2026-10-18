@@ -1,10 +1,10 @@
 # 红点清单 · 由测量直接生成，不要手改
 
-生成：`node scripts/e2e-red-inventory.mjs` · 报告 `.e2e/final3/report.json`（run 01a14ec1-04f1-759e-8014-3793be016bdb，结束于 2026-10-18T11:34:50.626Z）· 判定 `docs/verification/e2e-vs-bun-final.json`
+生成：`node scripts/e2e-red-inventory.mjs` · 报告 `.e2e/drivenfull/report.json`（run 01a14edc-e637-79a6-a973-39e17bfa2797，结束于 2026-10-18T12:10:01.264Z）· 判定 `docs/verification/e2e-vs-bun-final.json`
 
 运行器：`e2e`（Node）为原生层，`bun test` 由 `tests/bun-suites.test.ts` 分组代为调度与报告（ADR 0008 的两层制）。
 
-汇总：8182 executed · 7920 passed · 201 failed · 74 skipped；收集文件 34 个红；run 级错误 4 个。
+汇总：8179 executed · 7931 passed · 187 failed · 74 skipped；收集文件 32 个红；run 级错误 4 个。
 
 ## 原生层（e2e / Node）
 
@@ -18,14 +18,12 @@
 | `server/tests/enterprise/run-execution-failure.test.ts` | 12 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
 | `server/tests/enterprise/run-success-contract.test.ts` | 9 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
 | `server/src/knowledge/qa-verify.test.ts` | 8 | already-red-at-baseline | expected "degraded" to be "hit" |
-| `app/tests/personal-orders-ui.test.tsx` | 6 | no-pre-migration-suite | Unable to find an element by: [data-testid="credit-grant-cg-plan"] Ignored nodes: comments, script, style <body> <div> <div class="min-h-0 f |
 | `server/tests/payer-company-resolution.test.ts` | 6 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
 | `server/tests/tool-selection.integration.test.ts` | 5 | already-red-at-baseline | REMOTE_RUN_BUDGET_UNVERIFIED |
 | `server/tests/enterprise/expert-version-catalog.test.ts` | 4 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
 | `server/tests/enterprise/model-route-catalog.test.ts` | 4 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
-| `app/tests/account-mode-dialog.test.tsx` | 3 | runner-difference | Unable to find an element with the text: 14 personal accounts will be disconnected.. This could be because the text is broken up by multiple |
 | `server/tests/enterprise/run-failure-contract.test.ts` | 3 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
-| `server/tests/enterprise/login-reprovision.integration.test.ts` | 2 | already-red-at-baseline | connect ECONNREFUSED 127.0.0.1:5435 |
+| `server/tests/enterprise/login-reprovision.integration.test.ts` | 2 | already-red-at-baseline | role "ent_data" does not exist |
 | `server/tests/enterprise/runner-events.test.ts` | 2 | already-red-at-baseline | ENOENT: no such file or directory, open 'drizzle/0070_runner_event_attribution.sql' |
 | `server/tests/schema.test.ts` | 2 | already-red-at-baseline | expected ["model","connector","agent","mcp","mcp_oauth_client","mcp_user_token","bot_service","gateway_admin","credit_service"] to equal ["m |
 | `server/tests/self-host-banner.test.ts` | 2 | already-red-at-baseline | Unexpected token 'I', "Internal S"... is not valid JSON |
@@ -69,18 +67,18 @@
 | bun runtime suite scripts/start-restart-guard.test.ts | passed | — |
 | bun runtime suite scripts/tls-pipeline.test.ts | passed | — |
 | bun runtime suite server/src | passed | — |
-| bun runtime suite server/tests part 1 | failed | server/tests part 1: 213 of 258 tests failed across 24 files (more than the 8 the alone-re-run confirms); treated as a real failure |
-| bun runtime suite server/tests part 2 | failed | server/tests part 2: 259 of 433 tests failed across 23 files (more than the 8 the alone-re-run confirms); treated as a real failure |
-| bun runtime suite server/tests part 3 | failed | server/tests part 3: 225 of 397 tests failed across 18 files (more than the 8 the alone-re-run confirms); treated as a real failure |
-| bun runtime suite server/tests part 4 | failed | server/tests part 4: 81 of 265 tests failed across 21 files (more than the 8 the alone-re-run confirms); treated as a real failure |
-| bun runtime suite server/tests part 5 | failed | server/tests part 5: 182 of 296 tests failed across 21 files (more than the 8 the alone-re-run confirms); treated as a real failure |
-| bun runtime suite server/tests part 6 | failed | server/tests part 6: 60 of 104 tests failed across 19 files (more than the 8 the alone-re-run confirms); treated as a real failure |
-| bun runtime suite server/tests part 7 | failed | server/tests part 7: 30 of 545 tests failed across 9 files (more than the 8 the alone-re-run confirms); treated as a real failure |
-| bun runtime suite server/tests part 8 | failed | server/tests part 8: 4 of 5 failing file(s) are still red run alone server/tests/multitenancy/payer-accounts.test.ts: 1 of 1 — : Error: Failed query: insert int |
-| bun runtime suite server/tests part 9 | failed | server/tests part 9: 97 of 407 tests failed across 20 files (more than the 8 the alone-re-run confirms); treated as a real failure |
-| bun runtime suite server/tests part 10 | failed | server/tests part 10: 134 of 550 tests failed across 15 files (more than the 8 the alone-re-run confirms); treated as a real failure |
-| bun runtime suite server/tests part 11 | failed | server/tests part 11: 90 of 390 tests failed across 15 files (more than the 8 the alone-re-run confirms); treated as a real failure |
-| bun runtime suite server/tests part 12 | failed | server/tests part 12: 88 of 151 tests failed across 22 files (more than the 8 the alone-re-run confirms); treated as a real failure |
-| bun runtime suite server/tests part 13 | failed | server/tests part 13: 238 of 297 tests failed across 24 files (more than the 8 the alone-re-run confirms); treated as a real failure |
-| bun runtime suite server/tests part 14 | failed | server/tests part 14: 146 of 191 tests failed across 22 files (more than the 8 the alone-re-run confirms); treated as a real failure |
-| bun runtime suite server/tests part 15 | failed | server/tests part 15: 63 of 124 tests failed across 11 files (more than the 8 the alone-re-run confirms); treated as a real failure |
+| bun runtime suite server/tests part 1 | passed | — |
+| bun runtime suite server/tests part 2 | passed | — |
+| bun runtime suite server/tests part 3 | failed | server/tests part 3: 2 of 4 failing file(s) are still red run alone server/tests/cleanup-dry-run.integration.test.ts: 2 of 18 — the cleanup dry-run is read-only |
+| bun runtime suite server/tests part 4 | failed | server/tests part 4: 3 of 6 failing file(s) are still red run alone server/tests/demonstrations-store.integration.test.ts: 3 of 10 — : Error: Failed query: inse |
+| bun runtime suite server/tests part 5 | failed | server/tests part 5: 2 of 2 failing file(s) are still red run alone server/tests/enterprise/tenancy-rls.integration.test.ts: 2 of 4 — : Error: ENTERPRISE_TEST_D |
+| bun runtime suite server/tests part 6 | passed | — |
+| bun runtime suite server/tests part 7 | failed | server/tests part 7: 5 of 8 failing file(s) are still red run alone server/tests/multitenancy/acceptance-harness.test.ts: 11 of 17 — harness isolation resolutio |
+| bun runtime suite server/tests part 8 | failed | server/tests part 8: 4 of 5 failing file(s) are still red run alone server/tests/multitenancy/payer-accounts.test.ts: 20 of 23 — MT069 AC1: company↔customer map |
+| bun runtime suite server/tests part 9 | failed | server/tests part 9: 1 of 3 failing file(s) are still red run alone server/tests/multitenancy/vendor-billing.test.ts: 1 of 1 — : Error: Failed query: select &qu |
+| bun runtime suite server/tests part 10 | passed | — |
+| bun runtime suite server/tests part 11 | failed | server/tests part 11: 3 of 4 failing file(s) are still red run alone server/tests/payer-company-resolution.integration.test.ts: 4 of 5 — resolveCompanyPayerAcco |
+| bun runtime suite server/tests part 12 | failed | server/tests part 12: 1 of 1 failing file(s) are still red run alone server/tests/people-paging.integration.test.ts: 1 of 9 — reading the people in a deployment |
+| bun runtime suite server/tests part 13 | failed | server/tests part 13: 2 of 3 failing file(s) are still red run alone server/tests/recovery-scan.integration.test.ts: 11 of 11 — : Error: worker exited 1: 70 | : |
+| bun runtime suite server/tests part 14 | failed | server/tests part 14: 4 of 6 failing file(s) are still red run alone server/tests/skill-tools.integration.test.ts: 10 of 11 — a skill declaring the tools it nee |
+| bun runtime suite server/tests part 15 | passed | — |

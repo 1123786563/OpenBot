@@ -164,6 +164,39 @@ Test Files  34 failed | 550 passed | 17 skipped (601)
 这不是迁移造成的（`bun test` 时代同样编译不过），但它让 `bun run typecheck` 与 `bun run test:ci`
 的关卡无法给出干净结论，所以要由该波次的 owner 修（补 import 或删重复声明），不由测试侧代劳。
 
+## 用独立 Postgres 复测驱动层（2026-10-18 19:54–20:12 CST）
+
+这台机器上 `127.0.0.1:5432` 没人监听、`.env` 的 `TEST_DATABASE_URL` 指向 5435（也没有容器发布它）、
+项目自己的 `openbot-postgres-1` 现在发布在 **55432**；而本仓库多条 brief 明确要求验证不得用
+5432/5435/55432。所以按同样的规矩起了一个自己的实例，只动自己的容器：
+
+```bash
+docker run -d --name openbot-e2e-verify-pg -p 127.0.0.1:55433:5432 \
+  -e POSTGRES_DB=openbot_enterprise_test -e POSTGRES_USER=openbot \
+  -e POSTGRES_HOST_AUTH_METHOD=trust openbot-postgres:latest
+docker exec -i openbot-e2e-verify-pg psql -U openbot -d openbot_enterprise_test -v ON_ERROR_STOP=1 \
+  < server/ops/enterprise/roles.sql            # migrate.ts 的 role 前置检查要它
+(cd server && DATABASE_URL="postgres://openbot@127.0.0.1:55433/openbot_enterprise_test" bun scripts/migrate.ts)
+TEST_DATABASE_URL="postgres://openbot@127.0.0.1:55433/openbot_enterprise_test" \
+  E2E_UNIT_OUTPUT=.e2e/drivenfull ./node_modules/.bin/e2e run --config e2e.unit.config.ts
+```
+
+结果（`.e2e/drivenfull/report.json`，15m33s）：`8192 · 7931 passed · 187 failed`，
+**驱动层 30 组从 13 过 / 17 红变成 18 过 / 12 红** —— 证实之前那批 `server/tests part N` 的红
+是数据库不在，而不是调度或套件本身。剩下 12 组每条都点名了「各自单独跑也红」的文件，
+即迁移前用 `bun test` 单跑该文件同样会红的真实条目：
+
+- `agent-sandbox/tests/sse.test.ts`（2/11，S4 keepalive 帧与 forwardEvents 计数）
+- `app/tests/ai-observability-route-chain.test.tsx`（5/5，`queryClient.ensureQueryData` 未定义）
+- `server/tests/multitenancy/*`、`server/tests/enterprise/tenancy-rls.integration.test.ts` 等：
+  部分要 `ENTERPRISE_TEST_DATA_DATABASE_URL` / `ENTERPRISE_TEST_DIRECTORY_DATABASE_URL`
+  与 setup URL 同实例同库（补齐后 part 7 从 8 个红文件降到 7 个），其余是断言本身不过
+- `server/tests/cleanup-dry-run.integration.test.ts`（期望 21 实得 29）等取决于库里有什么数据
+
+也就是说：**这 12 组里已无「e2e 或分组造成的」失败**——每条都被"单独跑该文件"复核过。
+要把它们变成绿，需要 multitenancy / observability / agent-sandbox 各波次的 owner 补夹具或修断言，
+不属于测试框架迁移能替他们决定的范围。复测用完的容器收掉：`docker rm -f openbot-e2e-verify-pg`。
+
 ## 复核方式
 
 ```bash
