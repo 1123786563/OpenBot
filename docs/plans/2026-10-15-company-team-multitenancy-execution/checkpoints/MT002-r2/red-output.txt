@@ -1,0 +1,14 @@
+bun test v1.4.2 (50a8a8387)
+
+server/tests/multitenancy/fixtures.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './support/fixture' from '/Users/wuyongjun/orca/workspaces/OpenBot/issue6-mt002/server/tests/multitenancy/fixtures.test.ts'
+-------------------------------
+
+
+ 0 pass
+ 1 fail
+ 1 error
+Ran 1 test across 1 file. [1123.00ms]
