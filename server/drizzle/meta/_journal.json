@@ -1128,6 +1128,13 @@
       "when": 1792313909111,
       "tag": "0160_opik_retention_work_stopped",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1792096768879,
+      "tag": "0129_opik_retention",
+      "breakpoints": true
     }
   ]
 }
