@@ -1,5 +1,5 @@
 {
- "generatedBy": "scripts/e2e-import-boundary.mjs --apply",
+ "generatedBy": "scripts/e2e-add-driven.mjs",
  "groups": [
   {
    "name": "app/tests part 1",
@@ -236,6 +236,7 @@
     "server/tests/qa-batch2-unreadable-fourth.integration.test.ts",
     "server/tests/qa-batch3-reconcile.test.ts",
     "server/tests/recovery-scan.integration.test.ts",
+    "server/tests/recovery-unacked-replay.integration.test.ts",
     "server/tests/release-semantics.integration.test.ts",
     "server/tests/remote-bot-handoff.integration.test.ts",
     "server/tests/remote-coordination.integration.test.ts",
@@ -250,13 +251,13 @@
     "server/tests/routine-sweep.integration.test.ts",
     "server/tests/routines-store.integration.test.ts",
     "server/tests/runtime-agents.integration.test.ts",
-    "server/tests/sandbox-state.test.ts",
-    "server/tests/sandboxed-components.integration.test.ts"
+    "server/tests/sandbox-state.test.ts"
    ]
   },
   {
    "name": "server/tests part 8",
    "files": [
+    "server/tests/sandboxed-components.integration.test.ts",
     "server/tests/sandboxed-publication.integration.test.ts",
     "server/tests/server-side-tools.integration.test.ts",
     "server/tests/settle-conflict-grant-expiry.integration.test.ts",
@@ -279,13 +280,13 @@
     "server/tests/unknown-hold-no-reclaim.integration.test.ts",
     "server/tests/usage-outbox.integration.test.ts",
     "server/tests/user-instructions.integration.test.ts",
-    "server/tests/user-preferences.integration.test.ts",
-    "server/tests/voice-session-preview.integration.test.ts"
+    "server/tests/user-preferences.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 9",
    "files": [
+    "server/tests/voice-session-preview.integration.test.ts",
     "server/tests/voice-session-store.integration.test.ts",
     "server/tests/work-queue.integration.test.ts",
     "server/tests/workbench-implicit-grant.test.ts",
@@ -483,6 +484,7 @@
   "server/tests/qa-batch2-unreadable-fourth.integration.test.ts",
   "server/tests/qa-batch3-reconcile.test.ts",
   "server/tests/recovery-scan.integration.test.ts",
+  "server/tests/recovery-unacked-replay.integration.test.ts",
   "server/tests/release-semantics.integration.test.ts",
   "server/tests/remote-bot-handoff.integration.test.ts",
   "server/tests/remote-coordination.integration.test.ts",
@@ -539,6 +541,7 @@
   "deliverables/mobile-e2e-qa/tests/e2e/specs/order.spec.ts"
  ],
  "causes": {
-  "server/tests/recovery-scan.integration.test.ts": "runner named it: Cannot find package 'bun' from server/src/db/client.ts (integration suite that also spawns a bun worker)"
+  "server/tests/recovery-scan.integration.test.ts": "runner named it: Cannot find package 'bun' from server/src/db/client.ts (integration suite that also spawns a bun worker)",
+  "server/tests/recovery-unacked-replay.integration.test.ts": "runner named it: O"
  }
 }
