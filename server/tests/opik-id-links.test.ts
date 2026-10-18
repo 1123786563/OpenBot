@@ -275,17 +275,28 @@ describe("the id-mapping query seam", () => {
     });
   });
 
-  test("an unlinked step answers null, not an error", async () => {
+  test("an unlinked step is SUBJECT_NOT_FOUND — the link table is the step's sole existence record (OCR R5-17)", async () => {
+    // The interface JSDoc promises "a subject this scope does not own is
+    // SUBJECT_NOT_FOUND, never an empty answer". For steps the id-link table is
+    // the only existence record this scope keeps (the file header says so), so a
+    // missing row is an un-owned subject, not an honestly-unlinked one — there is
+    // no state where a step exists here without its link. Answering
+    // `{upstream: null}` would hand a guessed step id the same shape as a real,
+    // linked one, which is exactly the empty answer the contract refuses.
     const service = createIdLinkQueryService({
       bindings: fakeBindings([]).bindings,
       links: fakeLinks([]),
       datasets: fakeDatasets([]),
     });
-    const answer = await service.resolveByLocal(scope, {
-      kind: "tool_step",
-      id: "call-unlinked",
-    });
-    expect(answer.upstream).toBeNull();
+    await expect(
+      service.resolveByLocal(scope, { kind: "tool_step", id: "call-unlinked" }),
+    ).rejects.toMatchObject({ code: "SUBJECT_NOT_FOUND", status: 404 });
+    await expect(
+      service.resolveByLocal(scope, {
+        kind: "retrieval_step",
+        id: "retrieve-unlinked",
+      }),
+    ).rejects.toMatchObject({ code: "SUBJECT_NOT_FOUND", status: 404 });
   });
 
   test("dataset → upstream dataset and back", async () => {
