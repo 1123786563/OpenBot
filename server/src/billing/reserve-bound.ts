@@ -38,10 +38,7 @@
 import { CREDIT_SCALE } from "./credits";
 import type { ConversionRate } from "../gateway/conversion-rate";
 import { createConversionRateStore } from "../gateway/conversion-rate-store";
-import {
-  MODEL_CAPABILITIES,
-  type ModelCapability,
-} from "../gateway/catalog";
+import { MODEL_CAPABILITIES, type ModelCapability } from "../gateway/catalog";
 import {
   assertPriceSnapshotDims,
   canonicalPriceAmount,
@@ -110,7 +107,10 @@ function gcd(a: bigint, b: bigint): bigint {
 }
 
 /** Reduce an exact rational to lowest terms; zero is carried as 0/1. */
-function reduce(numerator: bigint, denominator: bigint): {
+function reduce(
+  numerator: bigint,
+  denominator: bigint,
+): {
   numerator: bigint;
   denominator: bigint;
 } {
@@ -161,10 +161,7 @@ export function computeReservationCeiling(input: {
   }
   // A tampered dims object is a defect, not data: 03.2's checker throws rather than letting a
   // guessed price certify a hold.
-  assertPriceSnapshotDims(
-    dims,
-    "The reserve-bound ceiling basis",
-  );
+  assertPriceSnapshotDims(dims, "The reserve-bound ceiling basis");
 
   let costNumerator = 0n;
   let costDenominator = 1n;
@@ -201,8 +198,7 @@ export function computeReservationCeiling(input: {
   }
 
   // USD → credits → scaled units, still exact: cost × rate × CREDIT_SCALE.
-  const scaledNumerator =
-    costNumerator * rate.numerator * BigInt(CREDIT_SCALE);
+  const scaledNumerator = costNumerator * rate.numerator * BigInt(CREDIT_SCALE);
   const scaledDenominator = costDenominator * rate.denominator;
   const exact = reduce(scaledNumerator, scaledDenominator);
 
@@ -307,10 +303,7 @@ export type LockedBasisResolution =
     }
   | {
       resolved: false;
-      reason:
-        | "snapshot_not_found"
-        | "rate_not_found"
-        | "rate_not_configured";
+      reason: "snapshot_not_found" | "rate_not_found" | "rate_not_configured";
     };
 
 /**
@@ -334,15 +327,16 @@ export async function resolveLockedReservationBasis(
   },
   basis: ReservationLockedBasis,
 ): Promise<LockedBasisResolution> {
-  const snapshot =
-    await createEnterpriseGatewayPriceSnapshotStore(deps.database).priceSnapshot(
-      {
-        provider: basis.provider,
-        model: basis.model,
-        capability: basis.capability,
-      },
-      basis.snapshotVersion,
-    );
+  const snapshot = await createEnterpriseGatewayPriceSnapshotStore(
+    deps.database,
+  ).priceSnapshot(
+    {
+      provider: basis.provider,
+      model: basis.model,
+      capability: basis.capability,
+    },
+    basis.snapshotVersion,
+  );
   if (snapshot === undefined) {
     return { resolved: false, reason: "snapshot_not_found" };
   }

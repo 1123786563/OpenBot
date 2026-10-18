@@ -402,9 +402,8 @@ describe("逐条拒绝: every refusal answers its status with a displayable, cre
     // #358 repair: the planted value is a SIGNED pass, never the session id —
     // verify it against the codec the origin derives from the same secret.
     const ownCookie = own.headers.get("set-cookie") ?? "";
-    const ownPass = ownCookie
-      .split(";")[0]
-      ?.slice(`${PREVIEW_SESSION_COOKIE}=`.length) ?? "";
+    const ownPass =
+      ownCookie.split(";")[0]?.slice(`${PREVIEW_SESSION_COOKIE}=`.length) ?? "";
     expect(ownPass).not.toBe(SESSION_B);
     expect(passCodec.verify(SESSION_B, ownPass)).toEqual({ userId: USER_ID });
   });
@@ -782,7 +781,9 @@ describe("附着模型: upstream dev server absent → the established 503, no s
       sessionId: SESSION_A,
       userId: USER_ID,
       request: new Request(`http://127.0.0.1:3001/label/`, {
-        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${passCodec.issue(SESSION_A, USER_ID)}` },
+        headers: {
+          cookie: `${PREVIEW_SESSION_COOKIE}=${passCodec.issue(SESSION_A, USER_ID)}`,
+        },
       }),
       appPath: "/label/",
       query: "",
@@ -903,9 +904,8 @@ describe("#358 repair: a planted pass stops working when the session leaves its 
     );
     expect(redemption.status).toBe(302);
     const planted = redemption.headers.get("set-cookie") ?? "";
-    const passValue = planted
-      .split(";")[0]
-      ?.slice(`${PREVIEW_SESSION_COOKIE}=`.length) ?? "";
+    const passValue =
+      planted.split(";")[0]?.slice(`${PREVIEW_SESSION_COOKIE}=`.length) ?? "";
     expect(passCodec.verify(SESSION_A, passValue)).toEqual({ userId: USER_ID });
 
     // The session moves to another user UNDER the live pass. The signature

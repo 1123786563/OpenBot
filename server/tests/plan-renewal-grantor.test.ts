@@ -68,8 +68,7 @@ describe("createPlanRenewalGrantor", () => {
         "sub-9",
         new Date("2026-11-01T00:00:00.000Z"),
       ),
-      reason:
-        "plan renewal · pro · period 2026-11-01T00:00:00.000Z",
+      reason: "plan renewal · pro · period 2026-11-01T00:00:00.000Z",
     });
     // The reason is a human line naming the plan and period; the key above is the identity.
     expect(String(calls[0]?.reason)).toContain("pro");

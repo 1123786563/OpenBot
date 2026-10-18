@@ -269,7 +269,9 @@ describe("05.3 key issuance", () => {
         .map((vk) => vk.customerId),
     );
     expect(remoteCustomerIds).toEqual(new Set([mapping[0]!.gatewayCustomerId]));
-    expect(fake.virtualKeysForCustomer(mapping[0]!.gatewayCustomerId)).toHaveLength(2);
+    expect(
+      fake.virtualKeysForCustomer(mapping[0]!.gatewayCustomerId),
+    ).toHaveLength(2);
   });
 
   test("issuing a key adds no credit quota, no grant and no budget copy", async () => {
@@ -401,8 +403,12 @@ describe("05.3 key issuance", () => {
       expect(JSON.stringify(row)).not.toContain("sk-bf-");
       // The hash identifies the exact secret it was drawn from — sha256, not the value.
       const secret =
-        row.credentialVersion === 1 ? firstBody.key.secret : secondBody.key.secret;
-      expect(row.valueHash).toBe(createHash("sha256").update(secret).digest("hex"));
+        row.credentialVersion === 1
+          ? firstBody.key.secret
+          : secondBody.key.secret;
+      expect(row.valueHash).toBe(
+        createHash("sha256").update(secret).digest("hex"),
+      );
     }
   });
 
@@ -492,7 +498,9 @@ function startFakeBifrost() {
           return json(400, { error: "Customer name is required" });
         }
         if (customers.has(name)) {
-          return json(409, { error: "A customer with this name already exists" });
+          return json(409, {
+            error: "A customer with this name already exists",
+          });
         }
         const id = crypto.randomUUID();
         customers.set(name, { id });

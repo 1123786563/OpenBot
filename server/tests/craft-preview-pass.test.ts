@@ -123,7 +123,9 @@ describe("createPreviewPassCodec.verify", () => {
   });
 
   test("non-string and over-length candidates refuse without throwing", () => {
-    expect(codec().verify(SESSION_ID, undefined as unknown as string)).toBeNull();
+    expect(
+      codec().verify(SESSION_ID, undefined as unknown as string),
+    ).toBeNull();
     expect(codec().verify(SESSION_ID, `${"a".repeat(513)}`)).toBeNull();
     expect(codec().verify("", "v1.AAAA.AAAA")).toBeNull();
   });

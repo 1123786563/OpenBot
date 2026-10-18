@@ -251,7 +251,9 @@ async function postReserve(
   secret: string | null,
   body: unknown,
 ): Promise<{ status: number; json: Record<string, unknown> }> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
   if (secret !== null) headers.authorization = `Bearer ${secret}`;
   const response = await protocolApp.request("/api/credit-protocol/reserve", {
     method: "POST",
@@ -268,7 +270,9 @@ async function postStatus(
   secret: string | null,
   body: unknown,
 ): Promise<{ status: number; json: Record<string, unknown> }> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
   if (secret !== null) headers.authorization = `Bearer ${secret}`;
   const response = await protocolApp.request("/api/credit-protocol/status", {
     method: "POST",
@@ -286,7 +290,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
@@ -497,10 +504,18 @@ test("a status query under one grant never reveals another account's reservation
     grantId: worldB.grantId,
     attemptId: reserve.attemptId,
   });
-  expect(byReservation).toEqual({ kind: "answered", outcome: { status: "unknown" } });
-  expect(byAttempt).toEqual({ kind: "answered", outcome: { status: "unknown" } });
+  expect(byReservation).toEqual({
+    kind: "answered",
+    outcome: { status: "unknown" },
+  });
+  expect(byAttempt).toEqual({
+    kind: "answered",
+    outcome: { status: "unknown" },
+  });
   // Nothing was read into being and A's own view is untouched by B's probes.
-  expect(await worldState([worldA.customerKey, worldB.customerKey])).toEqual(before);
+  expect(await worldState([worldA.customerKey, worldB.customerKey])).toEqual(
+    before,
+  );
   const own = await statusService.queryStatus({
     grantId: worldA.grantId,
     reservationId: reserve.reservationId,
@@ -528,12 +543,18 @@ test("an unknown grant, unknown ids, and unparseable attempt ids all answer unkn
     grantId: world.grantId,
     reservationId: `cr-${"0".repeat(16)}`,
   });
-  expect(noReservation).toEqual({ kind: "answered", outcome: { status: "unknown" } });
+  expect(noReservation).toEqual({
+    kind: "answered",
+    outcome: { status: "unknown" },
+  });
   const noAttempt = await statusService.queryStatus({
     grantId: world.grantId,
     attemptId: `att-${"0".repeat(16)}`,
   });
-  expect(noAttempt).toEqual({ kind: "answered", outcome: { status: "unknown" } });
+  expect(noAttempt).toEqual({
+    kind: "answered",
+    outcome: { status: "unknown" },
+  });
 
   // A shape that cannot be an attempt id is refused, not guessed into unknown.
   const garbage = await statusService.queryStatus({
@@ -637,7 +658,7 @@ test("the guarded status surface refuses a call without the billing credential",
 // ── The two boundary lists name the same account-key fields, so neither door drifts ─
 
 test("the status boundary refuses exactly the account-key fields the reserve boundary refuses", () => {
-  expect([...STATUS_FORBIDDEN_ACCOUNT_KEY_FIELDS].sort()).toEqual([
-    ...RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS,
-  ].sort());
+  expect([...STATUS_FORBIDDEN_ACCOUNT_KEY_FIELDS].sort()).toEqual(
+    [...RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS].sort(),
+  );
 });

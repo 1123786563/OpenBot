@@ -156,7 +156,10 @@ function ModelCatalogPage() {
               ? t("modelCatalog.sync.running")
               : t("modelCatalog.sync.button")}
           </Button>
-          <span className="text-muted-foreground text-sm" data-testid="catalog-sync-result">
+          <span
+            className="text-muted-foreground text-sm"
+            data-testid="catalog-sync-result"
+          >
             {syncLine(sync.data, sync.isError, t, formatDateTime)}
           </span>
         </div>

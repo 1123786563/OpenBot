@@ -820,7 +820,9 @@ export function createBillingService(deps: {
         try {
           // The provider's own period is the fact a renewal is detected from; a subscription
           // the provider no longer answers (or no longer runs) is skipped, not guessed.
-          const remote = await client.getSubscription(row.externalSubscriptionId);
+          const remote = await client.getSubscription(
+            row.externalSubscriptionId,
+          );
           if (!remote.body) continue;
           if (
             remote.body.status !== "active" &&

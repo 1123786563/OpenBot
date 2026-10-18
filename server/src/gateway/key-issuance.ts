@@ -147,7 +147,10 @@ export type IssuedGatewayKey = GatewayKeyRecord & {
  * the orphaned remote key it follows (the orphan is inert — its plaintext was never
  * delivered — and 05.8's state sync reconciles remote-only drift).
  */
-export function gatewayVirtualKeyName(grantId: string, version: number): string {
+export function gatewayVirtualKeyName(
+  grantId: string,
+  version: number,
+): string {
   const suffix = randomBytes(4).toString("hex");
   return `openbot:${grantId}:v${version}:${suffix}`;
 }
@@ -375,10 +378,12 @@ async function discardBody(response: Response): Promise<void> {
 }
 
 /** The virtual key object a create answer carries, read strictly. */
-function createdKeyFrom(json: unknown): {
-  virtualKeyId: string;
-  value: string;
-} | undefined {
+function createdKeyFrom(json: unknown):
+  | {
+      virtualKeyId: string;
+      value: string;
+    }
+  | undefined {
   if (json === null || typeof json !== "object") return undefined;
   const key = (json as { virtual_key?: unknown }).virtual_key;
   if (key === null || typeof key !== "object") return undefined;
@@ -653,10 +658,16 @@ export function createKeyIssuanceRoutes(
         );
       }
       if (error instanceof GatewayVirtualKeyError) {
-        return context.json({ error: error.message, code: error.reasonCode }, 502);
+        return context.json(
+          { error: error.message, code: error.reasonCode },
+          502,
+        );
       }
       if (error instanceof GatewayCustomerProvisionError) {
-        return context.json({ error: error.message, code: error.reasonCode }, 502);
+        return context.json(
+          { error: error.message, code: error.reasonCode },
+          502,
+        );
       }
       if (
         error instanceof GatewayProvisionOutcomeUnknownError ||

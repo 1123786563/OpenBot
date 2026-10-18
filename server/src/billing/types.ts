@@ -655,7 +655,9 @@ export type BillingStore = {
    * means a stamp never touches a row's provider facts (status/plan), and — because the
    * projection upsert names none of these columns — a delivery can never touch them either.
    */
-  stampSubscriptionOwnership(input: SubscriptionOwnershipStamp): Promise<boolean>;
+  stampSubscriptionOwnership(
+    input: SubscriptionOwnershipStamp,
+  ): Promise<boolean>;
   /**
    * Advance the allowance marker (10.3's renewal marker), forward-only: a row whose marker
    * already names this period — or a later one — is left untouched, so an out-of-order or
