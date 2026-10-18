@@ -1,0 +1,34 @@
+MT007 checkpoint SHA-256 manifest — 2026-10-16T13:56:48Z（终版，含 reports/MT007.md）
+HEAD at completion: f0520524f0faa2b4533b9d2f1aa692c8f907ba71
+-- deliverable product files (workspace-rooted paths) --
+62464499b12d8cd3f7b700b973bf0d42e697ac5582931ad118c1d73f30d2e44c  src/enterprise/tenancy/revocation.ts
+731a30e6cf9513b028635f15378e15dffaefd86c2514eef9fd0f4be72f1f9782  src/enterprise/tenancy/workspace-admin.ts
+74432778dedd6f0814e7bf466c53acf72e417c19d1a628650a730c5e36408702  src/enterprise/runs/events.ts
+ff564d8df8b61f4f3fba72962938a7e9c5589c7470cc87205fb7266d5191e916  src/enterprise/runs/runner.ts
+bf78fb722ad00a2af8bd0e26afb273eafb6e22d3dfc4733a226b0696a69007a6  tests/multitenancy/revocation.test.ts
+-- implementation report --
+784734648373551256b9390df215a44137d3438354346eccf39a4a520d6c8c86  docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT007.md
+-- prereq drift (authorized by MT007 brief) --
+server/src/enterprise/tenancy/workspace-admin.ts: prereq 0776715780ee30 -> delivered 731a30e6cf95…（票面授权的恢复动作扩展，diff 见 changes.diff）
+-- checkpoint tree (this directory) --
+4cde5973911a671923fb06a73b9f9d4f1998f22f898b3edc0711648e86679a7c  ./after-hashes.txt
+5d44949c61c306cadf3cf8fa8e8bc0dee3d30d445077ffc5ebf20514093929ab  ./before-hashes.txt
+8f189cd4664dc10a0b6ae94d0266992f094f785d66addf04368c2a0ac97ca180  ./changes.diff
+37ee591867c663fc65e3af5fa38c74155d838f2f662afcd0fb5f35fe27af68e5  ./mutation/MUT1-team-level-deny-removed.txt
+fcfcc8cc49dee188c72a3347696196ef19e14489ebfe4ec431aa3387e0a42edf  ./mutation/MUT2-checkpoint-validation-removed.txt
+bf7d5d4c7345578bc549b498148b36d8123108abfcbd9791776d45054419a51e  ./mutation/MUT3-audit-epoch-off-by-one.txt
+f8af34dd550cac9de7a319e3faa8cc80564b2b8bd70c44381e031d14474c2193  ./mutation/MUT4-restore-epoch-not-bumped.txt
+a2566578357dc5d1ff8740efdf030c204205aced3c799bf02ec8f87e62231d2e  ./mutation/MUT5-company-suspend-noop.txt
+a18cdac746ff822e48eedfc96d2bb10754d599a829ef08d527a115459f293b5c  ./mutation/MUT6-events-checkpoint-removed.txt
+4608b79666dbb497ffba1f674af111b950f9c83e1f60e789769c46d5c6930245  ./mutation/pre-mutation-hashes.txt
+7acfe1de9ddfeab609a799993b587dbd8b6c08d3c2d4ecc75b1a8f3470c00b28  ./red-green/GREEN-2-admin-actions.txt
+ba496d8b4ccb8ad541d328ef080036ff2d2fcfb74dd3a6d26010cfb69c08c88c  ./red-green/GREEN-3-all-green.txt
+a42c1ffa76b31662b2a5406d74715d7f74f77822d32c20406fcaba154bc29487  ./red-green/RED-1-module-missing.txt
+287a62b7d6feb7f27ac93f3750620489384c4e50723ef775f57c2546f2147cb6  ./red-green/RED-2-admin-actions-missing.txt
+3a5203e0a61b519776ecdd15542caad2e826999ce91c479add3c75dd4fc8f3e6  ./red-green/RED-3-events-wiring-missing.txt
+46bfe88c959dd8272ecffcca47a153403ab304b5ef546d96476b1cf321516364  ./verification/biome.txt
+b0243bcd26bb07095c9cde2e30a4403d590574122c655cbec67e11502844a50a  ./verification/enterprise-runs-suites-preexisting.txt
+fe91bcd11a5a55adc96099865564948bc208c039b097f07f465b14af9130b64f  ./verification/regression-final.txt
+25719f2f8664e08913aea44ae87688bc9ded2f994a0d27513f58f30df0bf33cd  ./verification/regression-multitenancy.txt
+50f690ff7336be63c2601c5b59a97a065722e2e9811eaeaab64df6122c751517  ./verification/revocation-suite-final.txt
+8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92  ./verification/typecheck.txt

@@ -1,0 +1,37 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/revocation.test.ts:
+(pass) MT007 revocation (Issue #50) > criterion 0: the revocation checkpoint list is the reuse contract > exposes exactly the six ticket-named invalidation points [4.86ms]
+(pass) MT007 revocation (Issue #50) > criterion 0: the revocation checkpoint list is the reuse contract > refuses an unknown checkpoint loudly (no silent bypass) [10.62ms]
+(pass) MT007 revocation (Issue #50) > criterion 0: the revocation checkpoint list is the reuse contract > refuses a forged scope before touching the database [0.11ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > allows every checkpoint before the suspension (positive control) [23.66ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "list" denies a pre-issued scope (point-by-point) [4.45ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "detail.read" denies a pre-issued scope (point-by-point) [3.73ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "download.issue" denies a pre-issued scope (point-by-point) [3.62ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "events.subscribe" denies a pre-issued scope (point-by-point) [3.06ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "task.sensitive" denies a pre-issued scope (point-by-point) [3.64ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "credentials.access" denies a pre-issued scope (point-by-point) [3.26ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > the next request cannot even resolve a scope (WORKSPACE_FORBIDDEN) [2.94ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > list: the real lister drops the suspended team [8.88ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > detail: the real request seam refuses the resource read with 403 [5.48ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > events: the wired runner event service rejects replay for a pre-issued scope [3.37ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > events: the wired subscription aborts on its first poll [3.94ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > events: without the revocation dep the legacy seam shape is unchanged (disclosed) [9.51ms]
+(pass) MT007 revocation (Issue #50) > criterion 2: company suspension cascades; the other company is intact (AC2) > denies every checkpoint at company level after company suspension [69.03ms]
+(pass) MT007 revocation (Issue #50) > criterion 2: company suspension cascades; the other company is intact (AC2) > one company suspension invalidates every team of that company [52.61ms]
+(pass) MT007 revocation (Issue #50) > criterion 2: company suspension cascades; the other company is intact (AC2) > the same user's other company keeps eligibility, checkpoints and data [43.65ms]
+(pass) MT007 revocation (Issue #50) > criterion 2: company suspension cascades; the other company is intact (AC2) > company suspension serializes with the gate on the membership lock [2030.05ms]
+(pass) MT007 revocation (Issue #50) > criterion 3: restoration re-enables per current policy, no stale denial cache (AC3) > team restore: the very same pre-issued scope is allowed again at every checkpoint [40.94ms]
+(pass) MT007 revocation (Issue #50) > criterion 3: restoration re-enables per current policy, no stale denial cache (AC3) > team restore: a fresh request resolves and reads the granted resource (200) [18.53ms]
+(pass) MT007 revocation (Issue #50) > criterion 3: restoration re-enables per current policy, no stale denial cache (AC3) > company restore: a fresh scope works everywhere; the stale scope stays rejected by epoch policy [25.42ms]
+(pass) MT007 revocation (Issue #50) > criterion 3: restoration re-enables per current policy, no stale denial cache (AC3) > restore/suspend refuse no-op states with the established not-found codes [7.23ms]
+(pass) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > team suspension writes workspace_member.suspended [14.88ms]
+(pass) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > team restoration writes workspace_member.restored [12.88ms]
+(pass) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > team removal writes workspace_member.removed with the row's last epoch [13.91ms]
+(pass) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > re-adding a suspended member (reactivated) writes workspace_member.restored [9.68ms]
+(pass) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > company suspension and restoration write company_member.* events [13.49ms]
+
+ 29 pass
+ 0 fail
+ 158 expect() calls
+Ran 29 tests across 1 file. [3.10s]

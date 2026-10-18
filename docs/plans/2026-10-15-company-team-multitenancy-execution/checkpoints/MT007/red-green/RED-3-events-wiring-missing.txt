@@ -1,0 +1,67 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/revocation.test.ts:
+(pass) MT007 revocation (Issue #50) > criterion 0: the revocation checkpoint list is the reuse contract > exposes exactly the six ticket-named invalidation points [1.35ms]
+(pass) MT007 revocation (Issue #50) > criterion 0: the revocation checkpoint list is the reuse contract > refuses an unknown checkpoint loudly (no silent bypass) [9.26ms]
+(pass) MT007 revocation (Issue #50) > criterion 0: the revocation checkpoint list is the reuse contract > refuses a forged scope before touching the database [0.16ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > allows every checkpoint before the suspension (positive control) [23.53ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "list" denies a pre-issued scope (point-by-point) [3.53ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "detail.read" denies a pre-issued scope (point-by-point) [2.66ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "download.issue" denies a pre-issued scope (point-by-point) [2.92ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "events.subscribe" denies a pre-issued scope (point-by-point) [3.00ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "task.sensitive" denies a pre-issued scope (point-by-point) [3.28ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "credentials.access" denies a pre-issued scope (point-by-point) [4.02ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > the next request cannot even resolve a scope (WORKSPACE_FORBIDDEN) [3.58ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > list: the real lister drops the suspended team [7.80ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > detail: the real request seam refuses the resource read with 403 [5.47ms]
+265 |           repository: createDrizzleRunnerEventRepository(fixture.gate.data),
+266 |           revocation: guard,
+267 |         });
+268 |         await expect(
+269 |           events.replay(suspendedScope, { threadId: "mt007-thread", afterSeq: 0 }),
+270 |         ).rejects.toThrow("WORKSPACE_REVOKED");
+                        ^
+error: expect(received).rejects.toThrow(expected)
+
+Expected promise that rejects
+Received promise that resolved: Promise { <resolved> }
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/tests/multitenancy/revocation.test.ts:270:19)
+(fail) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > events: the wired runner event service rejects replay for a pre-issued scope [7.11ms]
+284 |           suspendedScope,
+285 |           { threadId: "mt007-thread", afterSeq: 0 },
+286 |           controller.signal,
+287 |         );
+288 |         try {
+289 |           await expect(iterator.next()).rejects.toThrow("WORKSPACE_REVOKED");
+                                                      ^
+error: expect(received).rejects.toThrow(expected)
+
+Expected promise that rejects
+Received promise that resolved: Promise { <resolved> }
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/tests/multitenancy/revocation.test.ts:289:49)
+(fail) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > events: the wired subscription aborts on its first poll [3001.85ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > events: without the revocation dep the legacy seam shape is unchanged (disclosed) [4.25ms]
+(pass) MT007 revocation (Issue #50) > criterion 2: company suspension cascades; the other company is intact (AC2) > denies every checkpoint at company level after company suspension [69.87ms]
+(pass) MT007 revocation (Issue #50) > criterion 2: company suspension cascades; the other company is intact (AC2) > one company suspension invalidates every team of that company [60.69ms]
+(pass) MT007 revocation (Issue #50) > criterion 2: company suspension cascades; the other company is intact (AC2) > the same user's other company keeps eligibility, checkpoints and data [55.81ms]
+(pass) MT007 revocation (Issue #50) > criterion 2: company suspension cascades; the other company is intact (AC2) > company suspension serializes with the gate on the membership lock [2030.79ms]
+(pass) MT007 revocation (Issue #50) > criterion 3: restoration re-enables per current policy, no stale denial cache (AC3) > team restore: the very same pre-issued scope is allowed again at every checkpoint [36.65ms]
+(pass) MT007 revocation (Issue #50) > criterion 3: restoration re-enables per current policy, no stale denial cache (AC3) > team restore: a fresh request resolves and reads the granted resource (200) [25.19ms]
+(pass) MT007 revocation (Issue #50) > criterion 3: restoration re-enables per current policy, no stale denial cache (AC3) > company restore: a fresh scope works everywhere; the stale scope stays rejected by epoch policy [36.04ms]
+(pass) MT007 revocation (Issue #50) > criterion 3: restoration re-enables per current policy, no stale denial cache (AC3) > restore/suspend refuse no-op states with the established not-found codes [7.97ms]
+(pass) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > team suspension writes workspace_member.suspended [10.01ms]
+(pass) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > team restoration writes workspace_member.restored [11.30ms]
+(pass) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > team removal writes workspace_member.removed with the row's last epoch [15.19ms]
+(pass) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > re-adding a suspended member (reactivated) writes workspace_member.restored [13.24ms]
+(pass) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > company suspension and restoration write company_member.* events [17.47ms]
+
+2 tests failed:
+(fail) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > events: the wired runner event service rejects replay for a pre-issued scope [7.11ms]
+(fail) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > events: the wired subscription aborts on its first poll [3001.85ms]
+
+ 27 pass
+ 2 fail
+ 158 expect() calls
+Ran 29 tests across 1 file. [6.28s]

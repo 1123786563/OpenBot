@@ -1,0 +1,214 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/revocation.test.ts:
+(pass) MT007 revocation (Issue #50) > criterion 0: the revocation checkpoint list is the reuse contract > exposes exactly the six ticket-named invalidation points [0.04ms]
+(pass) MT007 revocation (Issue #50) > criterion 0: the revocation checkpoint list is the reuse contract > refuses an unknown checkpoint loudly (no silent bypass) [25.23ms]
+(pass) MT007 revocation (Issue #50) > criterion 0: the revocation checkpoint list is the reuse contract > refuses a forged scope before touching the database [0.12ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > allows every checkpoint before the suspension (positive control) [57.02ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "list" denies a pre-issued scope (point-by-point) [5.21ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "detail.read" denies a pre-issued scope (point-by-point) [4.10ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "download.issue" denies a pre-issued scope (point-by-point) [5.25ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "events.subscribe" denies a pre-issued scope (point-by-point) [4.09ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "task.sensitive" denies a pre-issued scope (point-by-point) [3.90ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > checkpoint "credentials.access" denies a pre-issued scope (point-by-point) [4.05ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > the next request cannot even resolve a scope (WORKSPACE_FORBIDDEN) [3.49ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > list: the real lister drops the suspended team [8.42ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > detail: the real request seam refuses the resource read with 403 [6.27ms]
+251 |           repository: createDrizzleRunnerEventRepository(fixture.gate.data),
+252 |           revocation: guard,
+253 |         });
+254 |         await expect(
+255 |           events.replay(suspendedScope, { threadId: "mt007-thread", afterSeq: 0 }),
+256 |         ).rejects.toThrow("WORKSPACE_REVOKED");
+                        ^
+error: expect(received).rejects.toThrow(expected)
+
+Expected promise that rejects
+Received promise that resolved: Promise { <resolved> }
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/tests/multitenancy/revocation.test.ts:256:19)
+(fail) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > events: the wired runner event service rejects replay for a pre-issued scope [8.30ms]
+270 |           suspendedScope,
+271 |           { threadId: "mt007-thread", afterSeq: 0 },
+272 |           controller.signal,
+273 |         );
+274 |         try {
+275 |           await expect(iterator.next()).rejects.toThrow("WORKSPACE_REVOKED");
+                                                      ^
+error: expect(received).rejects.toThrow(expected)
+
+Expected promise that rejects
+Received promise that resolved: Promise { <resolved> }
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/tests/multitenancy/revocation.test.ts:275:49)
+(fail) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > events: the wired subscription aborts on its first poll [3001.62ms]
+(pass) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > events: without the revocation dep the legacy seam shape is unchanged (disclosed) [4.11ms]
+187 | 
+188 |       afterAll(async () => {
+189 |         const adminContext = await fixture.adminContextOf("company-admin");
+190 |         await fixture
+191 |           .adminService()
+192 |           .restoreTeamMember(adminContext, {
+                 ^
+TypeError: fixture.adminService().restoreTeamMember is not a function. (In 'fixture.adminService().restoreTeamMember(adminContext, {
+          workspaceId: fixture.ids["team-a1"],
+          principalId: fixture.principalIdOf("a1-member")
+        })', 'fixture.adminService().restoreTeamMember' is undefined)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/tests/multitenancy/revocation.test.ts:192:12)
+(fail) MT007 revocation (Issue #50) > criterion 1: team suspension denies every checkpoint (AC1) > after the company admin suspends the team member > (unnamed) [2.60ms]
+330 |           }),
+331 |         ).rejects.toThrow("TENANT_FORBIDDEN");
+332 |       } finally {
+333 |         await fixture
+334 |           .adminService()
+335 |           .restoreCompanyMember(adminContext, {
+                 ^
+TypeError: fixture.adminService().restoreCompanyMember is not a function. (In 'fixture.adminService().restoreCompanyMember(adminContext, {
+          principalId: fixture.principalIdOf("multi-company")
+        })', 'fixture.adminService().restoreCompanyMember' is undefined)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/tests/multitenancy/revocation.test.ts:335:12)
+(fail) MT007 revocation (Issue #50) > criterion 2: company suspension cascades; the other company is intact (AC2) > denies every checkpoint at company level after company suspension [23.18ms]
+367 |           });
+368 |         }
+369 |       } finally {
+370 |         await fixture
+371 |           .adminService()
+372 |           .restoreCompanyMember(adminContext, {
+                 ^
+TypeError: fixture.adminService().restoreCompanyMember is not a function. (In 'fixture.adminService().restoreCompanyMember(adminContext, {
+          principalId: fixture.principalIdOf("a1a2-member")
+        })', 'fixture.adminService().restoreCompanyMember' is undefined)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/tests/multitenancy/revocation.test.ts:372:12)
+(fail) MT007 revocation (Issue #50) > criterion 2: company suspension cascades; the other company is intact (AC2) > one company suspension invalidates every team of that company [11.31ms]
+423 |           );
+424 |         expect(suspendedRows[0]?.status).toBe("suspended");
+425 |       } finally {
+426 |         await fixture
+427 |           .adminService()
+428 |           .restoreCompanyMember(adminContext, {
+                 ^
+TypeError: fixture.adminService().restoreCompanyMember is not a function. (In 'fixture.adminService().restoreCompanyMember(adminContext, {
+          principalId: fixture.principalIdOf("multi-company")
+        })', 'fixture.adminService().restoreCompanyMember' is undefined)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/tests/multitenancy/revocation.test.ts:428:12)
+(fail) MT007 revocation (Issue #50) > criterion 2: company suspension cascades; the other company is intact (AC2) > the same user's other company keeps eligibility, checkpoints and data [3.51ms]
+440 |       const adminContext = await fixture.adminContextOf("company-admin");
+441 |       try {
+442 |         await expect(
+443 |           fixture
+444 |             .adminService()
+445 |             .suspendCompanyMember(adminContext, {
+                   ^
+TypeError: fixture.adminService().suspendCompanyMember is not a function. (In 'fixture.adminService().suspendCompanyMember(adminContext, {
+          principalId: fixture.principalIdOf("a1a2-member")
+        })', 'fixture.adminService().suspendCompanyMember' is undefined)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/tests/multitenancy/revocation.test.ts:445:14)
+(fail) MT007 revocation (Issue #50) > criterion 2: company suspension cascades; the other company is intact (AC2) > company suspension serializes with the gate on the membership lock [8.99ms]
+156 |               ),
+157 |             ),
+158 |           )
+159 |           .limit(1);
+160 |         if (teamMembership?.status !== "active") {
+161 |           throw new Error("WORKSPACE_FORBIDDEN");
+                          ^
+error: WORKSPACE_FORBIDDEN
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/src/enterprise/tenancy/store.ts:161:21)
+(fail) MT007 revocation (Issue #50) > criterion 3: restoration re-enables per current policy, no stale denial cache (AC3) > team restore: the very same pre-issued scope is allowed again at every checkpoint [3.30ms]
+640 |               eq(enterpriseWorkspaceMemberships.principalId, principalId),
+641 |               eq(enterpriseWorkspaceMemberships.status, "active"),
+642 |             ),
+643 |           )
+644 |           .returning({ epoch: enterpriseWorkspaceMemberships.epoch });
+645 |         if (!updated) throw new Error("TEAM_MEMBER_NOT_FOUND");
+                                      ^
+error: TEAM_MEMBER_NOT_FOUND
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/src/enterprise/tenancy/workspace-admin.ts:645:33)
+(fail) MT007 revocation (Issue #50) > criterion 3: restoration re-enables per current policy, no stale denial cache (AC3) > team restore: a fresh request resolves and reads the granted resource (200) [6.22ms]
+570 |         workspaceId: fixture.ids["team-a1"],
+571 |       });
+572 |       const adminContext = await fixture.adminContextOf("company-admin");
+573 |       const suspended = await fixture
+574 |         .adminService()
+575 |         .suspendCompanyMember(adminContext, {
+               ^
+TypeError: fixture.adminService().suspendCompanyMember is not a function. (In 'fixture.adminService().suspendCompanyMember(adminContext, {
+        principalId: fixture.principalIdOf("a1a2-member")
+      })', 'fixture.adminService().suspendCompanyMember' is undefined)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/tests/multitenancy/revocation.test.ts:575:10)
+(fail) MT007 revocation (Issue #50) > criterion 3: restoration re-enables per current policy, no stale denial cache (AC3) > company restore: a fresh scope works everywhere; the stale scope stays rejected by epoch policy [4.54ms]
+624 | 
+625 |     itDb("restore/suspend refuse no-op states with the established not-found codes", async () => {
+626 |       const adminContext = await fixture.adminContextOf("company-admin");
+627 |       // Active team member cannot be "restored" again.
+628 |       await expect(
+629 |         fixture.adminService().restoreTeamMember(adminContext, {
+                                     ^
+TypeError: fixture.adminService().restoreTeamMember is not a function. (In 'fixture.adminService().restoreTeamMember(adminContext, {
+        workspaceId: fixture.ids["team-a1"],
+        principalId: fixture.principalIdOf("a1-member")
+      })', 'fixture.adminService().restoreTeamMember' is undefined)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/tests/multitenancy/revocation.test.ts:629:32)
+(fail) MT007 revocation (Issue #50) > criterion 3: restoration re-enables per current policy, no stale denial cache (AC3) > restore/suspend refuse no-op states with the established not-found codes [2.43ms]
+712 |           epoch: result.membership.epoch,
+713 |         });
+714 |       } finally {
+715 |         await fixture
+716 |           .adminService()
+717 |           .restoreTeamMember(adminContext, {
+                 ^
+TypeError: fixture.adminService().restoreTeamMember is not a function. (In 'fixture.adminService().restoreTeamMember(adminContext, {
+          workspaceId: fixture.ids["team-a1"],
+          principalId: fixture.principalIdOf("a1-other")
+        })', 'fixture.adminService().restoreTeamMember' is undefined)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/tests/multitenancy/revocation.test.ts:717:12)
+(fail) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > team suspension writes workspace_member.suspended [8.21ms]
+640 |               eq(enterpriseWorkspaceMemberships.principalId, principalId),
+641 |               eq(enterpriseWorkspaceMemberships.status, "active"),
+642 |             ),
+643 |           )
+644 |           .returning({ epoch: enterpriseWorkspaceMemberships.epoch });
+645 |         if (!updated) throw new Error("TEAM_MEMBER_NOT_FOUND");
+                                      ^
+error: TEAM_MEMBER_NOT_FOUND
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/src/enterprise/tenancy/workspace-admin.ts:645:33)
+(fail) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > team restoration writes workspace_member.restored [5.75ms]
+782 |         .removeTeamMember(adminContext, {
+783 |           workspaceId: fixture.ids["team-a1"],
+784 |           principalId: fixture.principalIdOf("a1-other"),
+785 |         });
+786 |       expect(result.removed).toBe(true);
+787 |       expect(result.auditEventId).toBeTruthy();
+                                        ^
+error: expect(received).toBeTruthy()
+
+Received: undefined
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/tests/multitenancy/revocation.test.ts:787:35)
+(fail) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > team removal writes workspace_member.removed with the row's last epoch [10.63ms]
+640 |               eq(enterpriseWorkspaceMemberships.principalId, principalId),
+641 |               eq(enterpriseWorkspaceMemberships.status, "active"),
+642 |             ),
+643 |           )
+644 |           .returning({ epoch: enterpriseWorkspaceMemberships.epoch });
+645 |         if (!updated) throw new Error("TEAM_MEMBER_NOT_FOUND");
+                                      ^
+error: TEAM_MEMBER_NOT_FOUND
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/src/enterprise/tenancy/workspace-admin.ts:645:33)
+(fail) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > re-adding a suspended member (reactivated) writes workspace_member.restored [5.65ms]
+837 | 
+838 |     itDb("company suspension and restoration write company_member.* events", async () => {
+839 |       const adminContext = await fixture.adminContextOf("company-admin");
+840 |       const suspended = await fixture
+841 |         .adminService()
+842 |         .suspendCompanyMember(adminContext, {
+               ^
+TypeError: fixture.adminService().suspendCompanyMember is not a function. (In 'fixture.adminService().suspendCompanyMember(adminContext, {
+        principalId: fixture.principalIdOf("multi-company")
+      })', 'fixture.adminService().suspendCompanyMember' is undefined)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt007/server/tests/multitenancy/revocation.test.ts:842:10)
+(fail) MT007 revocation (Issue #50) > criterion 4: every suspend/restore/removal writes an audit event (AC4) > company suspension and restoration write company_member.* events [2.48ms]
+
+ 14 pass
+ 16 fail
+ 33 expect() calls
+Ran 30 tests across 1 file. [4.19s]
