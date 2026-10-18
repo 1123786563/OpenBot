@@ -875,6 +875,48 @@ describe("malformed and partial responses are never converted to success", () =>
     });
   });
 
+  test("an envelope count that is not a whole non-negative number is malformed, never a page (OCR R5-38)", async () => {
+    // page/size/total are page arithmetic, not decorative JSON numbers: a
+    // fractional total makes `rows.length >= total` never true (the steps walk
+    // burns its MAX_SPAN_PAGES budget chasing it) and a negative page is a shape
+    // the contract never verified. "Never arrives whole is malformed" — a typeof
+    // check alone lets 10.5 and -1 wear a 200.
+    const cases: readonly [
+      Record<string, unknown>,
+      string,
+    ][] = [
+      [{ page: 1.5, size: 10, total: 3, content: [] }, "field:page"],
+      [{ page: -2, size: 10, total: 3, content: [] }, "field:page"],
+      [{ page: 1, size: -1, total: 3, content: [] }, "field:size"],
+      [{ page: 1, size: 2.5, total: 3, content: [] }, "field:size"],
+      [
+        {
+          page: 1,
+          size: 10,
+          total: 10.5,
+          content: [{ id: "0192f0c0-0000-7000-8000-000000000001" }],
+        },
+        "field:total",
+      ],
+      [
+        {
+          page: 1,
+          size: 10,
+          total: -5,
+          content: [{ id: "0192f0c0-0000-7000-8000-000000000001" }],
+        },
+        "field:total",
+      ],
+    ];
+    for (const [envelope, detail] of cases) {
+      const { transport } = recorder(() => json(200, JSON.stringify(envelope)));
+      const result = await port({ fetch: transport }).listTraces(trusted, {
+        projectId: "01a13db5-256b-73a4-b213-d7b33c4fd2d4",
+      });
+      expect(result).toMatchObject({ outcome: "malformed", detail });
+    }
+  });
+
   test("content rows must each carry the id the contract reads back by", async () => {
     const { transport } = recorder(() =>
       json(

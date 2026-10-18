@@ -279,19 +279,20 @@ function makeEnvelopePageReader(
     const page = envelope.page;
     const size = envelope.size;
     const total = envelope.total;
-    if (
-      typeof page !== "number" ||
-      typeof size !== "number" ||
-      typeof total !== "number"
-    ) {
-      return malformed(
-        operation,
-        typeof page !== "number"
-          ? "field:page"
-          : typeof size !== "number"
-            ? "field:size"
-            : "field:total",
-      );
+    // Page arithmetic, not decorative numbers: a fractional total makes every
+    // `rows.length >= total` walk chase it forever and a negative page is a
+    // shape the contract never verified. A count that is not a whole
+    // non-negative number is an envelope that did not arrive whole (OCR R5-38).
+    const wholeNonNegative = (value: unknown): value is number =>
+      typeof value === "number" && Number.isInteger(value) && value >= 0;
+    if (!wholeNonNegative(page)) {
+      return malformed(operation, "field:page");
+    }
+    if (!wholeNonNegative(size)) {
+      return malformed(operation, "field:size");
+    }
+    if (!wholeNonNegative(total)) {
+      return malformed(operation, "field:total");
     }
     const content = envelope.content;
     if (!Array.isArray(content)) {
