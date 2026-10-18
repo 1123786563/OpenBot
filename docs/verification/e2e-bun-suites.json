@@ -1,5 +1,5 @@
 {
- "generatedBy": "scripts/e2e-add-driven.mjs",
+ "generatedBy": "scripts/e2e-import-boundary.mjs --apply",
  "groups": [
   {
    "name": "agent-computer/tests",
