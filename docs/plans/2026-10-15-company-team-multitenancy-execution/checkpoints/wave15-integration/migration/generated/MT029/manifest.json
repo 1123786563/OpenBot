@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "tool": "multitenancy-migrate-test",
+  "taskId": "MT029",
+  "planDigest": "4d0b7967de76d3c336c62ce346602f8d7cef177d906056199ff2e605bf82b247",
+  "steps": [
+    {
+      "number": 1,
+      "name": "0001_mt029_credential_lease_tables.sql",
+      "statementDigest": "a4f39cbf291add813eaf2929d67bad80724272b424fa116b29f6570be7555183",
+      "statementCount": 10
+    },
+    {
+      "number": 2,
+      "name": "0002_mt029_credential_lease_rls_policies.sql",
+      "statementDigest": "3f70aa4ee1b409b58e8fd2493a8e7382a62465b59ce6797315e7aa9f5607e076",
+      "statementCount": 17
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+(pass) MT059 存储契约：成员重验、受限角色、迁移确定性 > 无租户上下文 RLS fail-closed：data 角色读不到任何私有 Bot 行 [1.93ms]
+
+ 1151 pass
+ 0 fail
+ 13033 expect() calls
+Ran 1151 tests across 44 files. [50.97s]

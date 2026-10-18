@@ -1,0 +1,7 @@
+== 268 项 prereq 交付后复算（2026-10-18）==
+sha256sum: WARNING: 4 computed checksums did NOT match
+server/scripts/multitenancy/migrate-test.ts: FAILED
+server/src/db/schema/index.ts: FAILED
+server/src/index.ts: FAILED
+server/tests/multitenancy/migration-tool.test.ts: FAILED
+drifted lines:        5

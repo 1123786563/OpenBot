@@ -1,0 +1,15 @@
+# MT031 GREEN-3 focused + 全量回归 — 2026-10-17T12:43:29Z
+
+== focused (34) ==
+
+ 34 pass
+ 0 fail
+ 262 expect() calls
+Ran 34 tests across 1 file. [5.41s]
+
+== full (990 + 34 = 1024) ==
+
+ 1022 pass
+ 2 fail
+ 12352 expect() calls
+Ran 1024 tests across 39 files. [79.12s]

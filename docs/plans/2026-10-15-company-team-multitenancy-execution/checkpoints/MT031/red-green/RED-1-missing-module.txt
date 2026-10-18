@@ -1,0 +1,18 @@
+# MT031 RED-1 — 2026-10-17T12:19:21Z
+command: bun test tests/multitenancy/plugin-install.test.ts --timeout 60000
+expect: functional-missing RED (plugin-catalog module not implemented yet)
+
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/plugin-install.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '../../src/enterprise/tenancy/plugin-catalog' from '/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt031/server/tests/multitenancy/plugin-install.test.ts'
+-------------------------------
+
+
+ 0 pass
+ 1 fail
+ 1 error
+Ran 1 test across 1 file. [816.00ms]

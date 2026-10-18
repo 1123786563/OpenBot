@@ -1,0 +1,82 @@
+pristine hash: ea3fc1e912345ad2528dea6494a65325f5ffe09bfc546532527b752e37f0c213
+injected hash: a3a2edf305ee3cff01badd7848bc1228e31c05866cf1c9e52bb4d6dce942c7ca
+--- focused run under compound mutation M06b ---
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/company-reservation.test.ts:
+(pass) MT070 AC3: every reservation records the company call attribution > records company, team, user, bot authorization, and the stable call key for every reservation [37.12ms]
+(pass) MT070 AC3: every reservation records the company call attribution > summarizes held and charged usage by team and by user [44.41ms]
+(pass) MT070 AC1: concurrent holds never overdraw the shared balance > concurrent teams never overdraw the shared company balance [108.17ms]
+(pass) MT070 AC2: company A can never draw company B's balance > rejects a payer named by the caller [7.05ms]
+(pass) MT070 AC2: company A can never draw company B's balance > a principal who is not a member of the claimed company cannot draw its balance [12.33ms]
+(pass) MT070 AC2: company A can never draw company B's balance > a team from another company is refused under a valid membership [7.72ms]
+(pass) MT070 AC4: ceiling and idempotency semantics stay unchanged > refuses a hold above the ceiling and writes nothing [12.75ms]
+(pass) MT070 AC4: ceiling and idempotency semantics stay unchanged > replays the same idempotency key without double-reserving [27.31ms]
+(pass) MT070 AC4: ceiling and idempotency semantics stay unchanged > refuses an idempotency-key replay that changes the attribution [33.35ms]
+64 |   try {
+65 |     await promise;
+66 |   } catch (error) {
+67 |     expect(
+68 |       error instanceof Error && error.message.startsWith(`${code}: `),
+69 |     ).toBe(true);
+           ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at expectSentinelRejection (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt070/server/tests/multitenancy/company-reservation.test.ts:69:7)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt070/server/tests/multitenancy/company-reservation.test.ts:490:15)
+(fail) MT070 AC4: ceiling and idempotency semantics stay unchanged > refuses a second reservation for an already-used stable call key [70.57ms]
+545 |         if (admitted.length !== 1 || rejected.length !== 1) {
+546 |           throw new Error("unreachable");
+547 |         }
+548 |         // 败者的哨兵码：稳定调用标识冲突。
+549 |         const reason = (rejected[0] as PromiseRejectedResult).reason as Error;
+550 |         expect(reason.message.startsWith("CALL_KEY_CONFLICT: ")).toBe(true);
+                                                                       ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt070/server/tests/multitenancy/company-reservation.test.ts:550:66)
+(fail) MT070 AC4: ceiling and idempotency semantics stay unchanged > the call-key unique index backstops a concurrent duplicate call [29.77ms]
+(pass) MT070 account discipline and unchanged writer path > refuses a company with no billing mapping [24.02ms]
+(pass) MT070 account discipline and unchanged writer path > refuses a company whose mapped account is not an active company account [11.95ms]
+(pass) MT070 account discipline and unchanged writer path > never draws a personal account into a company call [20.41ms]
+(pass) MT070 account discipline and unchanged writer path > a company hold settles through the unchanged writer path [27.57ms]
+(pass) MT070 account discipline and unchanged writer path > keeps restricted roles outside the attribution table [5.42ms]
+
+ 14 pass
+ 2 fail
+ 94 expect() calls
+Ran 16 tests across 1 file. [1005.00ms]
+--- focused exit=1 ---
+restored hash: ea3fc1e912345ad2528dea6494a65325f5ffe09bfc546532527b752e37f0c213
+RESTORE: byte-identical to frozen value OK
+--- focused green re-run after restore ---
+
+tests/multitenancy/company-reservation.test.ts:
+(pass) MT070 AC3: every reservation records the company call attribution > records company, team, user, bot authorization, and the stable call key for every reservation [22.07ms]
+(pass) MT070 AC3: every reservation records the company call attribution > summarizes held and charged usage by team and by user [61.29ms]
+(pass) MT070 AC1: concurrent holds never overdraw the shared balance > concurrent teams never overdraw the shared company balance [100.80ms]
+(pass) MT070 AC2: company A can never draw company B's balance > rejects a payer named by the caller [10.69ms]
+(pass) MT070 AC2: company A can never draw company B's balance > a principal who is not a member of the claimed company cannot draw its balance [16.07ms]
+(pass) MT070 AC2: company A can never draw company B's balance > a team from another company is refused under a valid membership [7.50ms]
+(pass) MT070 AC4: ceiling and idempotency semantics stay unchanged > refuses a hold above the ceiling and writes nothing [30.85ms]
+(pass) MT070 AC4: ceiling and idempotency semantics stay unchanged > replays the same idempotency key without double-reserving [22.79ms]
+(pass) MT070 AC4: ceiling and idempotency semantics stay unchanged > refuses an idempotency-key replay that changes the attribution [25.45ms]
+(pass) MT070 AC4: ceiling and idempotency semantics stay unchanged > refuses a second reservation for an already-used stable call key [16.64ms]
+(pass) MT070 AC4: ceiling and idempotency semantics stay unchanged > the call-key unique index backstops a concurrent duplicate call [27.43ms]
+(pass) MT070 account discipline and unchanged writer path > refuses a company with no billing mapping [9.27ms]
+(pass) MT070 account discipline and unchanged writer path > refuses a company whose mapped account is not an active company account [11.95ms]
+(pass) MT070 account discipline and unchanged writer path > never draws a personal account into a company call [31.63ms]
+(pass) MT070 account discipline and unchanged writer path > a company hold settles through the unchanged writer path [25.50ms]
+(pass) MT070 account discipline and unchanged writer path > keeps restricted roles outside the attribution table [4.81ms]
+
+ 16 pass
+ 0 fail
+ 97 expect() calls
+Ran 16 tests across 1 file. [771.00ms]
+bun test v1.4.2 (50a8a8387)

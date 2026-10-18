@@ -1,0 +1,95 @@
+# wave15-integration manifest — 逐文件 SHA-256 对照（EXE 集成树 vs 各票源树）
+# date: 2026-10-18 14:26:52 +0800  EXE HEAD: f7e8513c4a1852944d811ab4314f429dde287e88  (零 git 提交)
+# 源树: w15-mt{123,029,073,060,099}（交付以源树内工作树文件为准）
+# 口径: DIRECT=逐字节相等; MERGED=共享文件纯追加合并(逐块对照); F2-FIXED=落位后 biome --write 纯排版微修(wave14 F-2 先例, SQL oracle 22 任务 manifest 哈希前后逐一相等); RECTIFIED=令牌根治(diff 落盘 token-refactor-diff.txt + 双哈希)
+
+== A. 直接落位文件（13 个，SHA-256 逐一相等）==
+EQUAL MT123 server/src/enterprise/tenancy/startup-defaults.ts
+      src=2c426e7071f5d06f3cc89ab230a3f0c54d70db086408ec333bc1585b10476fc8
+      exe=2c426e7071f5d06f3cc89ab230a3f0c54d70db086408ec333bc1585b10476fc8
+EQUAL MT029 server/src/db/schema/enterprise-credential-lease.ts
+      src=f6a6eaec65751ebae70ec73e1cde214b06f42c2fc7974e93688b872d7304d499
+      exe=f6a6eaec65751ebae70ec73e1cde214b06f42c2fc7974e93688b872d7304d499
+EQUAL MT029 server/src/enterprise/tenancy/credential-lease.ts
+      src=5e03b03804d62dd3f8fe97fb102ed1a5a2881881ac46bbae386537f305d21f00
+      exe=5e03b03804d62dd3f8fe97fb102ed1a5a2881881ac46bbae386537f305d21f00
+EQUAL MT029 server/tests/multitenancy/credential-lease.test.ts
+      src=330d33d34ead6302893da926a82c01a4148c77c2229145d67ec366db4ee759c1
+      exe=330d33d34ead6302893da926a82c01a4148c77c2229145d67ec366db4ee759c1
+EQUAL MT029 server/tests/multitenancy/support/credential-lease.ts
+      src=1a2f2da1f034aa1a1265efdab5943e32ecde00779a803a4b4deb688d7afcc929
+      exe=1a2f2da1f034aa1a1265efdab5943e32ecde00779a803a4b4deb688d7afcc929
+EQUAL MT073 server/src/billing/company-finance-visibility.ts
+      src=51c5aa04bf4ce9db989b9f5b6ec81c8ce998bb77d5a9822693369d9a05d7cd98
+      exe=51c5aa04bf4ce9db989b9f5b6ec81c8ce998bb77d5a9822693369d9a05d7cd98
+EQUAL MT073 server/src/db/schema/company-finance.ts
+      src=52ddbd0ed3afe7ae67a04fbb551114d1dafa94ff7467f5167c0db8340e078a12
+      exe=52ddbd0ed3afe7ae67a04fbb551114d1dafa94ff7467f5167c0db8340e078a12
+EQUAL MT073 server/tests/multitenancy/billing-visibility.test.ts
+      src=2084d02b8967fad3765fd5b7cec920e797ba62c5ef496b5cfbce307f4ce87a14
+      exe=2084d02b8967fad3765fd5b7cec920e797ba62c5ef496b5cfbce307f4ce87a14
+EQUAL MT073 server/tests/multitenancy/support/billing-visibility.ts
+      src=0737456d9fcdcdc635d266f8c82f35649568e6d2d268132e37123ade8365d7de
+      exe=0737456d9fcdcdc635d266f8c82f35649568e6d2d268132e37123ade8365d7de
+EQUAL MT099 desktop/src-tauri/src/credential_namespace.rs
+      src=063ae9c05bcdb2d0390529317f4ef547ed288bb3775f2f930aa4ca43f81c0b97
+      exe=063ae9c05bcdb2d0390529317f4ef547ed288bb3775f2f930aa4ca43f81c0b97
+EQUAL MT099 desktop/src-tauri/src/lib.rs
+      src=902fa8a3c90d33d2cd0b35fbfa0320799ceb497d95d1ac78ed0d48fe31b19e30
+      exe=902fa8a3c90d33d2cd0b35fbfa0320799ceb497d95d1ac78ed0d48fe31b19e30
+EQUAL MT099 desktop/src-tauri/src/organization_auth.rs
+      src=3214bab3ec11068082dcec1aa0ce155055da204f681f728bb777e28424f7ac45
+      exe=3214bab3ec11068082dcec1aa0ce155055da204f681f728bb777e28424f7ac45
+EQUAL MT099 desktop/src-tauri/src/org_context.rs
+      src=bf24c03c2ff9fa0985f37d7f73d2ed627bfab61e7230a7e020d535f47edce693
+      exe=bf24c03c2ff9fa0985f37d7f73d2ed627bfab61e7230a7e020d535f47edce693
+
+== A2. 落位后 biome --write 纯排版微修（5 个，源树哈希→EXE 终态哈希；语义等价）==
+F2FIX MT123 server/tests/multitenancy/startup-defaults.test.ts
+      src=06621f67fc17dbafa9b27e905906be7241293958aac3ee754c6ac207cc267ea4
+      exe=5c42670889ce77ea56ce9bcb00bcfeb4f00d3b33c26bbdd8ae6b7a04cb617a63
+      注: 含令牌根治（w15d pin → TEST_DATABASE_URL 派生）+ biome format 双重整改，中间态 19acdf6b…(令牌根治后/biome 前)
+F2FIX MT060 server/src/db/schema/openmuse-task-tenancy.ts
+      src=83f1a39bbb709ca360e03cb3711e97e09a8dc991d016e6c41fd1d6124178f953
+      exe=1c88aa9956a6eee0b5e8bacc8ebad0940bfae40803dd2f748295a8650d12d728
+F2FIX MT060 server/src/enterprise/tenancy/openmuse-task-tenancy.ts
+      src=37f817e05cba78476d983e2880c42a4202ffff5bd36e78baea196e5be7f91004
+      exe=305f75a245a389e2bb429a3810eeb8827401491bfe83a726ff4a3126e988b120
+F2FIX MT060 server/tests/multitenancy/openmuse-tasks.test.ts
+      src=63697c78c02f0ddc5f183a2d4fba9ebda106a23c84e319addb661e84b9adf017
+      exe=74d83f98e05c25a1f7c94840993051f63ef709a7fab0cef110ec66749dcd92ac
+F2FIX MT060 server/tests/multitenancy/support/openmuse-tasks.ts
+      src=3121574666aa95cb4c481a6fbfc0d35145bd0525c2dee130b34674c9ed2e3ce2
+      exe=10514058817200c3eed35e6b6ee24b4e72495df2e73b27f068c029ad3380e4b1
+
+== B. 共享文件合并（4 个，纯追加型，票号序 MT029→MT073→MT060）==
+MERGED server/scripts/multitenancy/migrate-test.ts
+      base=729fdac1f8060d7ad4377aebc1dc145290408da5a65f599522798301e75e1037
+      exe=e3365f7fd36117ee474ef21c36947a27c24a4cd1aa254257ed3d9847df5a2d34
+MERGED server/tests/multitenancy/migration-tool.test.ts
+      base=d4f1ab87db3ebb8be85ad72ed72580e655c3fe2b6cf0be4c845f9b5951503e2d
+      exe=100cdebcd5d350419e8592b8d4e5caacb4706287f1d305bac3bf933428ea7a29
+MERGED server/src/db/schema/index.ts
+      base=
+      exe=8a0b95884997ceb909200929ab5b02321d4312fb82c64040bba0eacc6d69c495
+MERGED server/src/index.ts
+      base=
+      exe=cdaddabc4900f97bd02d8014d8a026cdd79145e6f9447cc3c02b5d2b2ddbdbff
+      vs-基线 diff 删除行数: migrate-test=0 migration-tool=0 schema-index=0 src-index=4(src-index 的 4 删=MT123 两处替换表达式)
+
+== C. 令牌根治（entry-context.test.ts 集成统一 env 派生）==
+RECTIFIED server/tests/multitenancy/entry-context.test.ts
+      base=d7e4d400a5e6d270efe4eb006f7252f7cc2ae695c459f3105eb1d2b2cda1e948  (w14int pin, wave14 集成终态)
+      exe=9971404b76d04d70998b2a9bfe9cf9c6295cd2c10053210ce523a06e6a663211  (TEST_DATABASE_URL 派生)
+      四票源树各自 RECTIFIED 的钉死名: MT123=w15d_test MT073=w15e_test MT060=w15b_test MT099=w15c_test —— 集成全部统一为 env 派生, 断言语义不变
+      diff=token-refactor-diff.txt(38 行); 聚焦复跑 21 pass / 0 fail
+RECTIFIED server/tests/multitenancy/startup-defaults.test.ts（MT123 新文件自带 w15d pin，同款根治一并覆盖）
+      src=06621f67fc17dbafa9b27e905906be7241293958aac3ee754c6ac207cc267ea4
+      exe=5c42670889ce77ea56ce9bcb00bcfeb4f00d3b33c26bbdd8ae6b7a04cb617a63
+
+== D. 存档复制（checkpoints 五票目录 + reports 五票）==
+ARCHIVE MT123 checkpoints: 78/78 逐文件哈希相等; report MT123.md EQUAL
+ARCHIVE MT029 checkpoints: 32/32 逐文件哈希相等; report MT029.md EQUAL
+ARCHIVE MT073 checkpoints: 95/95 逐文件哈希相等; report MT073.md EQUAL
+ARCHIVE MT060 checkpoints: 95/95 逐文件哈希相等; report MT060.md EQUAL
+ARCHIVE MT099 checkpoints: 78/78 逐文件哈希相等; report MT099.md EQUAL

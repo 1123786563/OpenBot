@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "tool": "multitenancy-migrate-test",
+  "taskId": "MT059",
+  "planDigest": "c85957bdc2095cc8fa5a61648be654d0ae25b55969f2c440b19b77cd00428eae",
+  "steps": [
+    {
+      "number": 1,
+      "name": "0001_mt059_personal_bot_tables.sql",
+      "statementDigest": "6239a360d2f3e86b4348d286a0f0bd37078e0136ca135d213ebe642eed04aa51",
+      "statementCount": 8
+    },
+    {
+      "number": 2,
+      "name": "0002_mt059_personal_bot_rls.sql",
+      "statementDigest": "28757237e2af30bdd3cdf5948c285b5195f8cba41a1c81bb84bf42a1c9ff6157",
+      "statementCount": 26
+    }
+  ]
+}
