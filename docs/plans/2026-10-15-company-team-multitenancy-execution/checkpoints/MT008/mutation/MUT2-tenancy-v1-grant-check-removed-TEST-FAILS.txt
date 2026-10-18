@@ -1,0 +1,9 @@
+# MUT2: resource-policy.ts tenancyV1Decide — `grant.read !== true` check replaced with
+# `if (false)` (explicit read grant no longer required -> over-broad allow).
+# Command (server/, five env vars as in verification/1-*.txt):
+#   bun test tests/multitenancy/resource-policy.test.ts --timeout 30000 -t "equal the production authz decisions"
+# Result: KILLED.
+#   (fail) ... criterion 2 > tenancy-v1 registry decisions equal the production authz
+#   decisions on the same facts — Expected: false / Received: true (authz parity breaks).
+#   0 pass / 1 fail / 28 filtered out.
+# Restore: original file copied back; mutation marker grep count = 0; focused suite 29/0 green.

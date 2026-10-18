@@ -1,0 +1,14 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/resource-policy.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '../../src/enterprise/tenancy/resource-policy' from '/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt008/server/tests/multitenancy/resource-policy.test.ts'
+-------------------------------
+
+
+ 0 pass
+ 1 fail
+ 1 error
+Ran 1 test across 1 file. [554.00ms]
