@@ -191,7 +191,7 @@ export function createSessionRoutes(
         201,
       );
     } catch (error) {
-      logger.error({ error }, "[craft] session creation failed");
+      logger.error({ error: error instanceof Error ? error.stack : String(error) }, "[craft] session creation failed");
       return context.json({ error: "Session creation failed" }, 500);
     }
   });
