@@ -1654,7 +1654,7 @@ describe("the step typing depends on no framework internals (acceptance 4)", () 
 // through the run they were performed inside.
 // ---------------------------------------------------------------------------
 
-describe("per-run tool-step cell isolation (OCR R5-41)", () => {
+describe("per-run tool-step cell isolation and execute-side discipline (OCR R5-41 + R5-43)", () => {
   test("two concurrent runs sharing a toolCallId keep separate cells (triage repro shape)", async () => {
     const facts: BuiltinToolStepFact[] = [];
     setBuiltinToolStepObserver((fact) => facts.push(fact));
@@ -1719,8 +1719,7 @@ describe("per-run tool-step cell isolation (OCR R5-41)", () => {
     expect(b?.receiptObserved).toBe(false);
   });
 
-  test("an execute the run performs settles THAT run's cell, never a concurrent run's", async () => {
-    const facts: BuiltinToolStepFact[] = [];
+  test("an execute the run performs settles THAT run's cell, never a concurrent run's", async () => {    const facts: BuiltinToolStepFact[] = [];
     setBuiltinToolStepObserver((fact) => facts.push(fact));
     // Run A's source stands in for the runtime: it proposes the call, then
     // really executes it from inside the run (where the execute's ambient
@@ -1776,5 +1775,93 @@ describe("per-run tool-step cell isolation (OCR R5-41)", () => {
     // B's proposal was never executed: A's execute must not settle B's cell.
     expect(b?.toolName).toBe("host_write");
     expect(b?.executionObserved).toBe(false);
+  });
+
+  test("the execute side normalizes a non-string tool call id exactly like the stream side (OCR R5-43)", async () => {
+    // The key-normalization asymmetry: the stream tap keys cells by
+    // String(event.toolCallId) while the execute wrapper used the raw value, so
+    // ONE call whose provider id was not a string opened TWO cells — the
+    // execute-side one settling alone, its proposal half never correlated.
+    const facts: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => facts.push(fact));
+    const { stream, done } = sourceRun(async (emit) => {
+      emit(
+        ev({
+          type: "TOOL_CALL_START",
+          // The provider emitted a numeric id.
+          toolCallId: 42,
+          toolCallName: "host_read",
+        }),
+      );
+      const value = await toolStepObservationForTests.observeExecution(
+        "host_read",
+        // The runtime executes with the same numeric id.
+        42 as unknown as string,
+        async () => "ok",
+      );
+      expect(value).toBe("ok");
+      emit(
+        ev({
+          type: "TOOL_CALL_RESULT",
+          toolCallId: 42,
+        }),
+      );
+      emit(ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }));
+    });
+    const subscription = toolStepObservationForTests
+      .observeStream(stream)
+      .subscribe();
+    try {
+      await done;
+    } finally {
+      subscription.unsubscribe();
+      setBuiltinToolStepObserver(undefined);
+    }
+    // One call, one cell, one fact — proposal, execution and receipt merged.
+    expect(facts).toHaveLength(1);
+    expect(facts[0].toolCallId).toBe("42");
+    expect(facts[0].proposalObserved).toBe(true);
+    expect(facts[0].executionObserved).toBe(true);
+    expect(facts[0].receiptObserved).toBe(true);
+  });
+
+  test("a stalled execute-only cell is retired after the max age instead of pinning the registry forever (OCR R5-43)", async () => {
+    // An execute outside any observed run opens its cell in the module's bare
+    // registry; one whose run() never settles (the hung-provider shape) would
+    // otherwise pin that cell — its captured arguments included — forever. The
+    // max-age sweep is the bounded backstop.
+    const facts: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => facts.push(fact));
+    try {
+      void toolStepObservationForTests.observeExecution(
+        "host_read",
+        "stalled-r543",
+        () => new Promise<string>(() => {}),
+      );
+      // A sweep while the cell is still young must not touch it.
+      toolStepObservationForTests.sweepStalledBareCellsForTests(new Date());
+      expect(facts).toHaveLength(0);
+      // A day later the sweep retires it: one honest fact — a call happened,
+      // nothing was observed of it — and the registry stops pinning the cell.
+      toolStepObservationForTests.sweepStalledBareCellsForTests(
+        new Date(Date.now() + 25 * 60 * 60 * 1000),
+      );
+      expect(facts).toHaveLength(1);
+      expect(facts[0].toolCallId).toBe("stalled-r543");
+      expect(facts[0].executionObserved).toBe(false);
+      expect(toolStepExecutionState(facts[0])).toBe("unobserved");
+      // The retired cell never tombstoned (nothing was observed), so the id
+      // records fresh on its next real call.
+      const kept = await toolStepObservationForTests.observeExecution(
+        "host_read",
+        "stalled-r543",
+        async () => "ok",
+      );
+      expect(kept).toBe("ok");
+    } finally {
+      setBuiltinToolStepObserver(undefined);
+    }
+    expect(facts).toHaveLength(2);
+    expect(facts[1].execution).toEqual({ kind: "succeeded", output: "ok" });
   });
 });

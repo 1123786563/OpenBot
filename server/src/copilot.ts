@@ -642,6 +642,8 @@ type BuiltinToolStepCell = {
   /** Set once deltas past the capture ceiling were dropped (OCR R3-37). */
   argsTruncated: boolean;
   closed: boolean;
+  /** When the cell opened; the stalled-cell sweep's age input (OCR R5-43). */
+  openedAt: Date;
   /** The run registry this cell belongs to (OCR R5-41); settling retires it there. */
   registry: BuiltinToolStepCellRegistry;
 };
@@ -681,10 +683,36 @@ const builtinToolStepCellRegistries =
 /**
  * Executes observed OUTSIDE any run's registry — no stream subscription is
  * above them, so no stream can ever correlate with them either. Kept in one
- * module-level registry with the historical shape; bounded by the stalled-cell
- * sweep (OCR R5-43).
+ * module-level registry with the historical shape; the only registry that can
+ * outlive its run, and the one the stalled-cell sweep bounds (OCR R5-43).
  */
 const bareExecuteCells = newBuiltinToolStepCellRegistry();
+
+/*
+ * The stalled-cell backstop (OCR R5-43): a cell whose run() never settles —
+ * the hung-provider shape — would otherwise pin itself, its captured arguments
+ * included, for as long as the process lives. Generous enough for any
+ * human-in-the-loop wait that still has a live run above it (those cells are
+ * settled by their run's own teardown); this ceiling is for the ones nothing
+ * will ever come back for. Swept lazily on bare-registry use; per-run
+ * registries need no sweep — they die with their run's async context.
+ */
+const TOOL_STEP_CELL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function sweepStalledCells(
+  registry: BuiltinToolStepCellRegistry,
+  now: Date,
+): void {
+  for (const cell of registry.cells.values()) {
+    if (cell.closed) continue;
+    if (now.getTime() - cell.openedAt.getTime() > TOOL_STEP_CELL_MAX_AGE_MS) {
+      // A settlement with nothing observed: the honest fact is that a call
+      // happened and this process saw nothing of it. Proposal-only, so the
+      // R3-40 narrowing leaves the id reopenable for its next real call.
+      settleBuiltinToolStep(cell, "terminal");
+    }
+  }
+}
 
 /**
  * Settled-id tombstones are PER RUN (OCR R5-41) — each registry carries its own
@@ -715,6 +743,7 @@ function builtinToolStepCell(
       argsLength: 0,
       argsTruncated: false,
       closed: true,
+      openedAt: new Date(0),
       registry,
     };
   }
@@ -738,6 +767,7 @@ function builtinToolStepCell(
     argsLength: 0,
     argsTruncated: false,
     closed: false,
+    openedAt: new Date(),
     registry,
   };
   registry.cells.set(toolCallId, cell);
@@ -943,10 +973,17 @@ async function observeBuiltinToolExecution<T>(
   const observer = builtinToolStepObserver;
   if (observer === undefined || toolCallId === undefined) return run();
   // The run this execute was performed inside owns the cell (OCR R5-41); a bare
-  // execute — no observed run above it — falls back to the module registry.
+  // execute — no observed run above it — falls back to the module registry,
+  // which is where the stalled-cell sweep earns its keep (OCR R5-43).
   const registry =
     builtinToolStepCellRegistries.getStore() ?? bareExecuteCells;
-  const cell = builtinToolStepCell(registry, toolCallId, toolName);
+  if (registry === bareExecuteCells) {
+    sweepStalledCells(registry, new Date());
+  }
+  // OCR R5-43: the stream side keys every event by String(event.toolCallId);
+  // the execute side normalizes too, so one call whose provider id is not a
+  // string opens ONE cell, never a second one the proposal can never meet.
+  const cell = builtinToolStepCell(registry, String(toolCallId), toolName);
   /*
    * The success path keeps the failure path's 2000-character precedent (OCR
    * R2-53): a bounded capture, aligned on both sides of the settlement — the
@@ -1001,6 +1038,9 @@ async function observeBuiltinToolExecution<T>(
 export const toolStepObservationForTests = {
   observeStream: observeBuiltinToolSteps,
   observeExecution: observeBuiltinToolExecution,
+  /** OCR R5-43 seam: runs the bare registry's stalled-cell sweep at a chosen time. */
+  sweepStalledBareCellsForTests: (now: Date) =>
+    sweepStalledCells(bareExecuteCells, now),
 };
 
 /**
