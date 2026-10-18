@@ -1340,6 +1340,19 @@ function meteredModel<T>(model: T): T {
        */
       const spanObserver = builtinModelSpanObserver;
       let spanInput: string | null = null;
+      /*
+       * OCR R5-47: the observation side's own "verdict on record" flag, set
+       * INSIDE `reportSpan` the moment a span is actually emitted — never
+       * borrowed from `settled`, which the settlement paths claim BEFORE their
+       * awaitable work. settleFinish sets `settled`, then awaits
+       * `lifecycle.finish`; when that await rejects, the settlement-failure
+       * exit used to read the borrowed flag as "already reported" and the call
+       * produced ZERO spans (the pre-V5 single settlement_failed span was
+       * swallowed). First report wins: a second reportSpan call is the
+       * contradiction the R4-32 guard exists to prevent, and the flag now
+       * tells the truth about which one happened.
+       */
+      let spanReported = false;
       // Captured at entry, inside the request's context (the tool-step cell's own
       // discipline): by stream teardown the ambient context is not guaranteed.
       const spanTrace =
@@ -1362,7 +1375,8 @@ function meteredModel<T>(model: T): T {
         spanInput = spanInputOf(params);
       }
       const reportSpan = (ending: BuiltinModelSpanFact["ending"]) => {
-        if (spanObserver === undefined) return;
+        if (spanObserver === undefined || spanReported) return;
+        spanReported = true;
         try {
           spanObserver({
             eventId,
@@ -1671,12 +1685,16 @@ function meteredModel<T>(model: T): T {
             /*
              * Captured BEFORE claiming the flag (OCR R4-32): a settlement path
              * that already reported this call's terminal fact — settleFinish or
-             * settleFail, both of which claim `settled` first — must not be
-             * contradicted by a second span from here. The teardown below still
-             * runs in every case: a pull that cannot settle must still tear the
-             * upstream down and error the stream.
+             * settleFail, both of which report through `reportSpan` — must not be
+             * contradicted by a second span from here. The readout is the span
+             * flag itself (OCR R5-47), not `settled`: settleFinish claims
+             * `settled` before awaiting a finish that can REJECT, and a rejected
+             * finish has reported nothing — this exit is the only span that call
+             * will ever have. The teardown below still runs in every case: a pull
+             * that cannot settle must still tear the upstream down and error the
+             * stream.
              */
-            const alreadyReported = settled;
+            const alreadyReported = spanReported;
             settled = true;
             log.error({ type: logType, eventId, ...detail }, logType);
             /*
