@@ -2,7 +2,7 @@
 
 - **审阅人**: 独立只读 Review Agent（Orca 分派，task_d7e8a42481fa）
 - **审阅对象**: `/Users/wuyongjun/orca/workspaces/OpenBot/hs01-candidate-review` 工作区（HEAD `f0520524f0faa2b4533b9d2f1aa692c8f907ba71` + #377 已审集成 diff + 本票 7 文件，全部未提交）；被审报告 `reports/ticket-378.md`
-- **事实源**: `docs/specs/2026-10-15-hindsight-personal-memory-design.md`、`docs/adr/0005-self-hosted-hindsight-for-personal-memory.md`、`docs/superpowers/plans/2026-10-15-hindsight-personal-memory.md`、`docs/plans/.../../archive/issue-snapshots/issue-378.json`（均为只读）
+- **事实源**: `docs/specs/2026-10-15-hindsight-personal-memory-design.md`、`docs/adr/0005-self-hosted-hindsight-for-personal-memory.md`、`docs/superpowers/plans/2026-10-15-hindsight-personal-memory.md`、`docs/plans/2026-10-15-hindsight-personal-memory/issue-snapshots/issue-378.json`（均为只读）
 - **纪律**: 只读，未修改被审仓库任何文件，未 commit / push
 - **结论**: **Spec 合规 PASS · 代码质量 PASS**，findings 0 critical / 0 high / 1 medium / 3 low / 5 info。medium 一项建议 spec-owner 裁定，不阻塞本票验收。
 

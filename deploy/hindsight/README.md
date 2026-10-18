@@ -77,7 +77,7 @@ content, tokens, or endpoints.
 
 - Tag `ghcr.io/vectorize-io/hindsight:1.0.0`
 - Index digest `sha256:a88678c038b0e4340822b02a5efc566c56d8176b5bffa731bc433fd37f978e4c`
-  (verification evidence and command log: `docs/plans/2026-10-15-hindsight-personal-memory/reports/ticket-380.md`
+  (verification evidence and command log: `archive/plans/hindsight-personal-memory/reports/ticket-380.md`
   in the execution workspace).
 
 ## Explicit non-goals

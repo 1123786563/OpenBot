@@ -13,6 +13,13 @@ Start with the root [README](../README.md), then use these references:
   - [Composio](plugins/composio.md): the broker, and so the one page here that is a catalogue of apps rather than a single connector.
   - [Google Drive](plugins/google-drive.md)
   - [Notion](plugins/notion.md)
+- [Compose stacks](compose.md): which `docker compose` files exist, what each one brings up, and when to reach for it.
+- [Observability](observability.md): metrics, logs, and traces.
+- [Enterprise Go runtime](enterprise-runtime.md): the optional Go runtime candidate — 接入方式与运行手册.
+- [Opik](opik.md) and the [Opik upstream contract](opik-contract.md): optional self-hosted tracing, and the verified contract the server codes against.
+- [Workshop × CodeSandbox testing](workshop-testing-guide.md): how to test the workshop surface against CodeSandbox.
+- [Craft preview origin](craft-preview-origin.md): the preview origin's runtime behavior and known constraints.
+- [Preview-origin TLS certificates](tls-certs.md): ACME DNS-01 wildcard certificates for the preview origin.
 - [Deployment](deployment.md): the container, what is in the image, minimum sizes, and the platform notes.
 - [Kubernetes](../charts/openbot/README.md): the Helm chart, what a cluster needs before it, and the values that differ per cloud.
 - [Releasing](releasing.md): how a release is proposed, reviewed and published.

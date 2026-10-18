@@ -3,7 +3,7 @@
 - Root: `1123786563/OpenBot#4`; formal containment: #7–#43 (37 children), verified from GitHub API `sub_issues` response captured 2026-10-15 UTC.
 - Execution worktree: `/Users/wuyongjun/orca/workspaces/OpenBot/opik-issue4-coordinator`.
 - BASE: `bab7c0b9b481d6563fdacb99fddf8af21f08c729`.
-- Source snapshot: `docs/plans/issue-4-snapshot/`; source is GitHub API via `gh api --paginate`, with the complete local archive preserved because one live refresh exceeded the shell observation window.
+- Source snapshot: `archive/plans/issue-4-snapshot/`; source is GitHub API via `gh api --paginate`, with the complete local archive preserved because one live refresh exceeded the shell observation window.
 - `contains`: #4 → every #7–#43. This is aggregation, not an implementation dependency.
 - `depends_on`: explicit `Blocked by` links extracted from each child body. No cycle was found; the only terminal aggregate is #43.
 

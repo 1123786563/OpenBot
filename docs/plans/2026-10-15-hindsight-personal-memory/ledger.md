@@ -29,8 +29,8 @@ Run: run_6ec4ffc33d89（objective: Hindsight 个人记忆集成）。coordinator
 
 | Ticket | Task ID | Dispatch ID | Worktree | Agent/模型 | 状态 | 检查点 |
 | --- | --- | --- | --- | --- | --- | --- |
-| #377 | task_5ce34b97c059 | ctx_bd6cbe9d529d | /Users/wuyongjun/orca/workspaces/OpenBot/hs01-candidate-review（分支 1123786563/hs01-candidate-review，base f0520524 已核对） | pi；实际生效 glm-5.3 • medium（08:47 终端状态栏观察，非 launch receipt——worker-read fallbackReason: provider_unsupported） | dispatched 08:41:39；08:47 investigating：分析 memory-intelligence.integration.test.ts 的 unreviewed 召回 | 报告约定 reports/ticket-377.md |
-| #380 | task_f6621e94833a | ctx_4dcacc484235 | /Users/wuyongjun/orca/workspaces/OpenBot/hs03-selfhost-service（分支 1123786563/hs03-selfhost-service，base f0520524 已核对） | pi；实际生效 glm-5.3 • medium（同上来源） | dispatched 08:41:51；08:47 investigating：盘点 Hindsight 镜像 tags 固定版本 | 报告约定 reports/ticket-380.md |
+| #377 | task_5ce34b97c059 | ctx_bd6cbe9d529d | /Users/wuyongjun/orca/workspaces/OpenBot/hs01-candidate-review（分支 1123786563/hs01-candidate-review，base f0520524 已核对） | pi；实际生效 glm-5.3 • medium（08:47 终端状态栏观察，非 launch receipt——worker-read fallbackReason: provider_unsupported） | dispatched 08:41:39；08:47 investigating：分析 memory-intelligence.integration.test.ts 的 unreviewed 召回 | 报告约定 archive/plans/hindsight-personal-memory/reports/ticket-377.md |
+| #380 | task_f6621e94833a | ctx_4dcacc484235 | /Users/wuyongjun/orca/workspaces/OpenBot/hs03-selfhost-service（分支 1123786563/hs03-selfhost-service，base f0520524 已核对） | pi；实际生效 glm-5.3 • medium（同上来源） | dispatched 08:41:51；08:47 investigating：盘点 Hindsight 镜像 tags 固定版本 | 报告约定 archive/plans/hindsight-personal-memory/reports/ticket-380.md |
 | #378 | task_7e456259cba9 | （未派发） | — | — | pending，被 task_5ce34b97c059 gate | — |
 
 ## 裁决记录
@@ -132,8 +132,8 @@ Run: run_6ec4ffc33d89（objective: Hindsight 个人记忆集成）。coordinator
 
 ### #378/#380 实现完成与 coordinator 复验（2026-10-16 00:20 CST）
 
-- #378 worker_done msg_002028b7a4cb（ctx_0816613e2458，succeeded）：sensitivity.ts 保守分类器；create/formMemory/update/completeSync/sync 五路径凭据拒收+敏感降级候选；expireStaleCandidates 30 天幂等 tombstone 接入 memorySweep（授权扩展）。coordinator 亲验：7 文件 sha256 与报告一致；5573 库全套回归亲跑 102 pass/0 fail；tsc exit 0。报告 reports/ticket-378.md。
-- #380 worker_done msg_b02f44fb9b63（ctx_82a231c8e38b，succeeded）：真实实例 Hindsight 1.0.0(digest a88678c0) 端到端验证——liveness/version/401 auth 拒绝、网关路由 standin 日志证明、隐私运行值(env+features+llm_requests=0 三重证据)、健康四态+恢复、备份 29/31 天边界+真实 dump 57.9KB；修复 2 真实 bug（health.ts API 形状、backup.sh pg_dump PATH）。coordinator 亲验：11 交付文件 sha256 一致；单测亲跑 21 pass/0 fail；tsc exit 0。报告 reports/ticket-380.md。
+- #378 worker_done msg_002028b7a4cb（ctx_0816613e2458，succeeded）：sensitivity.ts 保守分类器；create/formMemory/update/completeSync/sync 五路径凭据拒收+敏感降级候选；expireStaleCandidates 30 天幂等 tombstone 接入 memorySweep（授权扩展）。coordinator 亲验：7 文件 sha256 与报告一致；5573 库全套回归亲跑 102 pass/0 fail；tsc exit 0。报告 archive/plans/hindsight-personal-memory/reports/ticket-378.md。
+- #380 worker_done msg_b02f44fb9b63（ctx_82a231c8e38b，succeeded）：真实实例 Hindsight 1.0.0(digest a88678c0) 端到端验证——liveness/version/401 auth 拒绝、网关路由 standin 日志证明、隐私运行值(env+features+llm_requests=0 三重证据)、健康四态+恢复、备份 29/31 天边界+真实 dump 57.9KB；修复 2 真实 bug（health.ts API 形状、backup.sh pg_dump PATH）。coordinator 亲验：11 交付文件 sha256 一致；单测亲跑 21 pass/0 fail；tsc exit 0。报告 archive/plans/hindsight-personal-memory/reports/ticket-380.md。
 - 审阅派发：task_d7e8a42481fa（#378，reviewer 在 hs01 只读）、task_ea8b964737e3（#380，reviewer 在 hs03 只读），agent=pi。
 
 ### 裁决 4:#378 审阅 findings 处置（2026-10-16 01:5x CST）
@@ -171,7 +171,7 @@ Run: run_6ec4ffc33d89（objective: Hindsight 个人记忆集成）。coordinator
 
 ### 裁决 8:最终交付审阅 + carried items（2026-10-16 06:3x CST）
 
-- 最终审阅（task_cddd3145312c，ctx_13a22686d0a0）：PASS，0 critical/high/medium，4 low/6 info；7 项重点全过；103/0+21/0+tsc 0 亲跑；容器实测（401/llm_trace=false/载荷 1 天/单出口/happy=service_up）；明确列出 #82/#6 阻塞范围防越权。报告 reports/final-delivery-review.md。
+- 最终审阅（task_cddd3145312c，ctx_13a22686d0a0）：PASS，0 critical/high/medium，4 low/6 info；7 项重点全过；103/0+21/0+tsc 0 亲跑；容器实测（401/llm_trace=false/载荷 1 天/单出口/happy=service_up）；明确列出 #82/#6 阻塞范围防越权。报告 archive/plans/hindsight-personal-memory/reports/final-delivery-review.md。
 - F-L2（confirmed 导入上游变化不经再审，未决 carried）：coordinator 裁决归 #384（幂等同步票）Wave 2 展开时显式决策——预存在 HEAD 行为、本 Wave 三票验收不含、修复需与 #384 的 sync 语义共同设计。
 - F-L1 双表示常量、F-L3 声明交叉核对：维持既有 Wave 2 裁决。
 - F-L4：CONTEXT.md 未提交 diff 含用户自己的 4 个 billing 术语——提交阶段须与本 Wave 交付分离说明。
@@ -203,7 +203,7 @@ Run: run_6ec4ffc33d89（objective: Hindsight 个人记忆集成）。coordinator
 ### 裁决 12:轮 3 修复复审通过 + OCR 轮 4（2026-10-16 21-22:xx CST）
 
 - 轮 3 修复（task_847fd115970f）coordinator 全量复验：104 pass（规范 12 文件）+ 26 pass（hindsight 2 文件）+ tsc 0。
-- 轮 3 修复独立复审（task_28872b2a2a1d，ctx_18c48908d5b9，报告 reports/ocr3-fix-review.md）：**PASS**。23 文件 sha256 链一致；变化集以 HEAD 真值 git diff（index.ts 单 hunk）+ 轮前副本累计 diff 分解（health/config 余量恰为轮 3 声明）+ 测试纯新增 3 用例证明零夹带；medium-1（sweepStep 三段统一+日志契约对齐 health.ts detail 形态）、medium-2（llm_trace 声明×运行值交叉核对）确认解决，并亲自对真实容器做正反例运行态复测（真实容器原样 service_up；一次性实例 llm_trace:true → config_noncompliant + [runtime_llm_trace_enabled]；探针产物全清）。findings：F-C1 low（附录"全套"清单把 bot-lifecycle.integration 换成 proactive.test，101/385 实为清单偏差，非代码回归）+ F-C2 info（backup.sh wave-2 rework 未在 ticket-380.md 补附录，文档链缺口延续）。
+- 轮 3 修复独立复审（task_28872b2a2a1d，ctx_18c48908d5b9，报告 archive/plans/hindsight-personal-memory/reports/ocr3-fix-review.md）：**PASS**。23 文件 sha256 链一致；变化集以 HEAD 真值 git diff（index.ts 单 hunk）+ 轮前副本累计 diff 分解（health/config 余量恰为轮 3 声明）+ 测试纯新增 3 用例证明零夹带；medium-1（sweepStep 三段统一+日志契约对齐 health.ts detail 形态）、medium-2（llm_trace 声明×运行值交叉核对）确认解决，并亲自对真实容器做正反例运行态复测（真实容器原样 service_up；一次性实例 llm_trace:true → config_noncompliant + [runtime_llm_trace_enabled]；探针产物全清）。findings：F-C1 low（附录"全套"清单把 bot-lifecycle.integration 换成 proactive.test，101/385 实为清单偏差，非代码回归）+ F-C2 info（backup.sh wave-2 rework 未在 ticket-380.md 补附录，文档链缺口延续）。
 - OCR 轮 4（btivb4f9c，10m47s，12 文件 996k tokens）：13 comments = **2 medium / 11 low**，0 critical/high。时间线核验：r4 起点 ~21:12 晚于轮 3 修复落盘 16:50，扫描对象确为修复后状态；两 medium 为新发现非旧账复发。
 - medium-A（backup.sh sweep 位置）：retention sweep 位于 dump/gzip/gzip -t/mv 全链后，set -euo pipefail 下任一步失败即在 find 前中止，旧副本静默停止删除、突破 ≤30 天窗口。coordinator 读码核实有效。
 - medium-B（verify-health.ts:37）：loadHindsightConfig/checkHindsightHealth 无异常处理，坏 env 直接未捕获堆栈。核实有效。
@@ -213,7 +213,7 @@ Run: run_6ec4ffc33d89（objective: Hindsight 个人记忆集成）。coordinator
 ### 裁决 13:轮 4 修复+复审通过 + OCR 轮 5（2026-10-16 22:2x–23:xx CST）
 
 - 轮 4 修复（task_448975ce2ad6，ctx_0b7dd0ddf72d）：medium-A sweep 前置（锁后、manifest 前，边界注释逐字保留+取舍注释）、medium-B try/catch 单行诊断、F-C2 wave-2 补记 + ocr4-fix 附录、F-C1 规范清单口径。coordinator 亲验全绿：sha256 恰两文件变动（backup.sh→19beb92f、verify-health.ts→590ffddf）、bash -n、/tmp 失败演练独立复现（stub dump 失败仍删 31 天留 29 天）、坏 env 单行 exit 1、规范 12 文件 104/0/408、hindsight 26/0/61、tsc 0。
-- 轮 4 复审（task_80c27c0424f0，ctx_4568550b48c7，reports/ocr4-fix-review.md）：**PASS**。23 文件哈希链零偏差；变化集恰 3 文件零夹带；medium-A 附强对照（旧版脚本同演练 31 天幸存→缺陷真实）；F-C1/F-C2 闭合，backup.sh 检查点链 538d0fc4→b7270f9d→19beb92f 三环全登记。2 info：F-D1（执行者 /tmp 探针残留——coordinator 已清）、F-D2（头部索引行，裁量）。复审者 /tmp 残留已清、standin 9100 归零。
+- 轮 4 复审（task_80c27c0424f0，ctx_4568550b48c7，archive/plans/hindsight-personal-memory/reports/ocr4-fix-review.md）：**PASS**。23 文件哈希链零偏差；变化集恰 3 文件零夹带；medium-A 附强对照（旧版脚本同演练 31 天幸存→缺陷真实）；F-C1/F-C2 闭合，backup.sh 检查点链 538d0fc4→b7270f9d→19beb92f 三环全登记。2 info：F-D1（执行者 /tmp 探针残留——coordinator 已清）、F-D2（头部索引行，裁量）。复审者 /tmp 残留已清、standin 9100 归零。
 - OCR 轮 5（7m49s，12 文件）：7 comments = **1 medium / 6 low**，0 critical/high。
 - medium-C（gateway-standin.mjs:34 + hindsight.env.example:22/30）：轮 4 standin low 升级。事实：example 两处默认值恰为 http://host.docker.internal:9100/v1（替身默认端口 + 容器可达形态），替身无鉴权、无硬性护栏，"生产禁用"仅头注释——照抄 example 即把未鉴权替身当已批准网关。核实属实。
 - 裁决修法：example 网关 URL 默认值改 change-me 占位符（与文件内 key 占位符惯例一致，照抄即 fail-loud），host.docker.internal 指引降为注释（仅隔离验证）；standin 加硬护栏（非回环 --host 需显式 --allow-non-loopback，拒绝文案说明载荷含个人记忆内容）；顺手同文件 low（--port/--host 缺参 NaN 校验、req error 处理器）与 backup.sh:55 注释失实修正（config MIN=1）。README 同步。其余 low（verify-health exitCode、startsWith 死代码、.part SIGKILL 累积、appendFileSync）记 Wave 2。
@@ -222,7 +222,7 @@ Run: run_6ec4ffc33d89（objective: Hindsight 个人记忆集成）。coordinator
 ### 裁决 14:轮 5 复审通过 + OCR 轮 6（2026-10-16 23:xx–24:xx CST）
 
 - 轮 5 修复（task_c11c6036bc85）：example 占位符 + standin 硬护栏 + 端口校验 + req error 处理器 + backup.sh 注释如实化。coordinator 亲验：行为矩阵 9 场景（护栏拒绝 exit 2 无监听/旗标可绑定往返/缺参与 abc 可读报错/默认回环可用）、example 无未注释 9100 残留、bash -n、104/0/408 + 26/0/61 + tsc 0、附录哈希与重算一致。
-- 轮 5 复审（task_fbd370058dc7，reports/ocr5-fix-review.md）：**PASS**。23 文件零偏差、零夹带（backup.sh 以 wave-2 副本累计 diff 分解）；护栏矩阵 9 场景独立复测（含 --port 70000/0/--port --host 边界）；断连进程存活实测；F-C1 闭合。findings：F-E1 low（附录"照抄即被 config.ts 拒绝"机制表述不精确——config.ts 不消费那两个键，占位符的 fail-loud 路径是 HINDSIGHT_MODEL_GATEWAY_URL/HINDSIGHT_API_URL 与 Hindsight 自身客户端）、F-E2/E3 info（ledger 不在附录变化集声明、头部索引）。遗留卫生备注：/tmp 存更早轮次旧探针残档，供统一清扫。
+- 轮 5 复审（task_fbd370058dc7，archive/plans/hindsight-personal-memory/reports/ocr5-fix-review.md）：**PASS**。23 文件零偏差、零夹带（backup.sh 以 wave-2 副本累计 diff 分解）；护栏矩阵 9 场景独立复测（含 --port 70000/0/--port --host 边界）；断连进程存活实测；F-C1 闭合。findings：F-E1 low（附录"照抄即被 config.ts 拒绝"机制表述不精确——config.ts 不消费那两个键，占位符的 fail-loud 路径是 HINDSIGHT_MODEL_GATEWAY_URL/HINDSIGHT_API_URL 与 Hindsight 自身客户端）、F-E2/E3 info（ledger 不在附录变化集声明、头部索引）。遗留卫生备注：/tmp 存更早轮次旧探针残档，供统一清扫。
 - OCR 轮 6（5m11s，12 文件）：10 comments = **3 medium / 7 low**，0 critical/high。medium 轨迹 8→5→2→2→1→3：一条为 r4 low 升级（log.info→warn），两条为我们自己前轮修复引入/暴露（r5"BOTH sides"注释承诺过头；ocr3 gateway catch 注释 token 配错→gateway_down 与真实行为不符——token 错在 /health 401 即落 service_down）。
 - medium-D（health.ts 两处探针 catch log.info→log.warn）：仓库先例（index.ts:3520、routines/sweep.ts、culler.ts:217）均 warn；真实故障需运维感知。有效，修。
 - medium-E（backup.sh 缺失/空声明静默默认 30 vs config.ts null→violation 分叉）：example 声明该键（=30）故照抄部署不触发；但键被删/留空时脚本静默 30、健康检查持续 noncompliant，与头注 keep-them-in-sync 及 r5 新注释 BOTH-sides 承诺相悖。有效，修法采 OCR 建议(a)：两层解析后仍空 → 响亮失败（与 ADR"显式声明缺失即不合规"对齐）；演练与 cron 需显式声明。
@@ -233,7 +233,7 @@ Run: run_6ec4ffc33d89（objective: Hindsight 个人记忆集成）。coordinator
 ### 裁决 15:轮 6 复审通过 + OCR 轮 7（2026-10-17 0x:xx CST）
 
 - 轮 6 修复（task_2eab9fbc6546）：log.warn×2、retention 显式声明护栏（两层后空→单行拒绝 exit 1）、401 语义注释修正+回归用例。coordinator 亲验：无声明演练 exit 1 单行报错、有声明+docker stub 演练仍删 31 留 29、gateway catch 注释与控制流一致、104/0/408 + 27/0/62 + tsc 0。
-- 轮 6 复审（task_a4120a4c3658，reports/ocr6-fix-review.md）：**PASS**（sha256 全表零偏差、三 medium 解决、Wave 2 七条 low 逐条对码核实；1 info 为 OCR 工具行号漂移备注）。
+- 轮 6 复审（task_a4120a4c3658，archive/plans/hindsight-personal-memory/reports/ocr6-fix-review.md）：**PASS**（sha256 全表零偏差、三 medium 解决、Wave 2 七条 low 逐条对码核实；1 info 为 OCR 工具行号漂移备注）。
 - OCR 轮 7：11 comments = **4 medium / 7 low**，0 critical/high。medium 轨迹 8→5→2→2→1→3→4，未收敛——构成：两条 Wave-2 low 升级（backup.sh 递归无 -maxdepth=r4 low；.part SIGKILL 残留=r6 low）、一条新观察（verify-health bad-config 场景不自足，依赖带外改 env）、一条实质安全项（sensitivity 凭据形状缺口：下划线风格密钥 sk_live_/client secret 等漏成 normal→confirmed→镜像，与 tools.ts "always refused" 承诺相悖）。
 - 裁决：四条全修（安全项必须修；两条升级项各为一词/一块的小修；场景自足化使四态矩阵可自动复现）。另并入同文件三连复现 low：verify-health process.exit→exitCode（管道截断，r5/r6/r7 三轮）、头注 Three-state→Four-state、usage 串统一。其余 low（standin 路由双维护三连、listen error、tools.ts 承诺措辞、sensitivity 死代码注释等）仍记 Wave 2。
 - 若轮 8 后仍再现新 medium：向用户呈交收敛轨迹数据（8→5→2→2→1→3→4→N）与处置选项，不再无限循环。
@@ -241,7 +241,7 @@ Run: run_6ec4ffc33d89（objective: Hindsight 个人记忆集成）。coordinator
 ### 裁决 16:轮 7 复审通过 + OCR 轮 8（2026-10-17 01:xx CST）
 
 - 轮 7 修复（task_1c35abc15ee0 + 微补充 task_2ab4043a8252，后者系 coordinator 复验发现新注释例子 password:see-the-vault-stays-normal 与顶部名称即拒 pattern 矛盾后追加）：-maxdepth 1 双清扫、.part 无条件清理、bad-config 自注入、凭据下划线/前缀形状族、exitCode 自然退出、Four-state 头注、usage 统一。coordinator 亲验：四合一演练（31 删/29 留/子目录不动/.part 清）、bad-config 死网关 URL 下 config_noncompliant exit 0、凭据形状 7 例抽查（含散文反例）、104/0/420 + 27/0/62 + tsc 0、微修后全量复跑同绿（独立跑 memory-sensitivity 缺 TEST_DATABASE_URL 会环境性失败，带库 7/0/84）。
-- 轮 7 复审（task_9fa69c6fa56f，reports/ocr7-fix-review.md）：**PASS**（19+4 文件哈希链零偏差、四 medium 与微补充全解决、Wave 2 清单逐条对码、无 critical/high/medium；1 info 行号转写漂移）。
+- 轮 7 复审（task_9fa69c6fa56f，archive/plans/hindsight-personal-memory/reports/ocr7-fix-review.md）：**PASS**（19+4 文件哈希链零偏差、四 medium 与微补充全解决、Wave 2 清单逐条对码、无 critical/high/medium；1 info 行号转写漂移）。
 - OCR 轮 8：11 comments = **3 medium / 8 low**。medium 轨迹 8→5→2→2→1→3→4→3。
 - medium-G（sensitivity 缺 recovery/seed/mnemonic phrase、2FA/MFA 备份码、OTP/验证码形状）：钱包助记词类高价值秘密可漏成 normal→confirmed→镜像。实质安全项，修。
 - medium-H（backup.sh:145 kill -0 EPERM 误判）：r4 low 升级。无 flock 回退路径把他用户存活持锁进程判 stale 偷锁。修：kill -0 失败后用 ps -p 复核，ps 可见即按存活拒绝。
@@ -268,7 +268,7 @@ Run: run_6ec4ffc33d89（objective: Hindsight 个人记忆集成）。coordinator
 ### 裁决 19:轮 10 修复复审通过 + OCR 轮 11 + 循环冻结（2026-10-17 13:xx CST）
 
 - 轮 10 修复（task_c27349378543）：flock 分支改追加打开+取锁前内容预检（与创建式同判活规则、PID 复用 fall-through、活指纹 mixed-styles 拒绝、持锁后重写两字段指纹、跨主机边界注释）+ compose 头注三层如实化。coordinator 亲验：flock-shim 活指纹拒绝/死指纹放行且重写/两 medium 全闭环、compose config -q 通过（临时 example 占位后删）、旧 agree 句式消失、105/0/439 + 27/0/62 + tsc 0。
-- 轮 10 复审（task_057bb704449e，reports/ocr10-fix-review.md）：**PASS，零 findings**（仅 1 条 Wave 2 行号观察 + 1 条审阅侧 harness 备注）——十轮复审中最干净。
+- 轮 10 复审（task_057bb704449e，archive/plans/hindsight-personal-memory/reports/ocr10-fix-review.md）：**PASS，零 findings**（仅 1 条 Wave 2 行号观察 + 1 条审阅侧 harness 备注）——十轮复审中最干净。
 - OCR 轮 11：10 comments = **4 medium / 6 low**。其中 2 条 medium 指向轮 10 修复本身（flock 指纹消息口径——行为等价的拒绝、仅文案不准；bash -x xtrace 下口令展开盲区——新观察）。**循环正式冻结**：最干净复审后仍 +2 medium 且两条自指，非收敛性（修复引入新评审面）被最终实证。
 - **最终交接清单**（Wave 2 输入，不再修复）：r11 的 4 medium（flock 消息口径、xtrace 口令盲区、sensitivity diagnos 误伤高频技术词、health.ts llm_trace 交叉核对被 gateway_down 掩盖的顺序问题）+ r11 的 6 low + 累积 Wave 2 项（r1-r10 各裁决所记）。完整索引：本 ledger 裁决 7-19 + reports/ocr-result（/tmp/ocr-result-r1..r11.json）。
 - **冻结终态**：11 轮 OCR（medium 8→5→2→2→1→3→4→3→3→2→4）、10 批修复全部独立复审 PASS、0 critical/high 存量；测试 105/0/439 + 27/0/62 + tsc 0 + bash -n/compose 校验通过。

@@ -5,7 +5,7 @@
 - 摄取：GitHub GraphQL 实读 #4 正文（0 评论）+ 37 子 Issue 正文/评论/blockedBy/blocking（快照：主 repo `.omc/state/opik-issue4/snapshots/all-subissues.json`）。37 节点、89 依赖边、无环。`contains` 与 `depends_on` 分离。
 - 事实源：`docs/specs/2026-10-14-opik-integration-design.md`（已批准，A1–A13）；`CONTEXT.md`；ADR 0001–0005（0004 企业租户与本 epic 无冲突：本 epic 仅工作台 adapter+seam 预留）；Git main=`bab7c0b9` clean。
 - 冲突/修正：2026-10-15 DAG 的 T19 依赖 "T07,T17" 有误，GitHub 实读 #25 blockedBy=#17(T11),#13(T07)，已在新 DAG 修正。GitHub #4 正文与本地 spec 文件非字节相同（前次已裁定：Issue 为发布验收权威，本地文件保留设计理由；实质一致）。
-- 前次会话状态（run_8e2edde379e8，6 dispatch 全部 terminal 失联=unverifiable，仅作历史）：T03 已验证落地 `1123786563/opik-t03`（b1a7334b，7 commits，含真实栈证据）；T01 候选=`1123786563/opik-T01-2`（5 commits clean，末次提交为评审修复）；T02 候选=opik-T02-2 未提交 17 files；T05 候选=opik-T05-2 untracked 3 paths；T06 候选=opik-T06-2 untracked 3 files+`docs/plans/issue-4-ledger/T06.md`（记录移植+复验+评审 F1/F3/F4 修复，36/36 绿）。
+- 前次会话状态（run_8e2edde379e8，6 dispatch 全部 terminal 失联=unverifiable，仅作历史）：T03 已验证落地 `1123786563/opik-t03`（b1a7334b，7 commits，含真实栈证据）；T01 候选=`1123786563/opik-T01-2`（5 commits clean，末次提交为评审修复）；T02 候选=opik-T02-2 未提交 17 files；T05 候选=opik-T05-2 untracked 3 paths；T06 候选=opik-T06-2 untracked 3 files+`archive/plans/issue-4-ledger/T06.md`（记录移植+复验+评审 F1/F3/F4 修复，36/36 绿）。
 - 旧基线（opik-integration worktree @7c25fb4c，未提交 310 文件）含 T01–T09 已验证内容+全套评审证据（`docs/plans/evidence/2026-10-15-issue4/`）；T10 实现检查点未评审；T32 部分产出。**裁定沿用：main bab7c0b9 为唯一集成基线，以上仅为候选证据，须显式移植+复验。**
 - 集成策略：integration branch `1123786563/opik-integration-main`（自 bab7c0b9）；按 DAG 顺序逐票 cherry-pick/哈希核对转移；每票门禁复跑；字节一致于已评审包的内容沿用旧评审+新增移植复核，内容有漂移的必须全新独立评审。
 
@@ -64,7 +64,7 @@
 - **T05 定稿完成**（task_3ecd22dd8351/ctx_401ca0fb871f）: 94bc0145+935ce9bf。对旧 R05 包逐项核查: 行为全保留; 补回 5 组对抗用例（PEM 位置变体、AWS 大写标签、裸 40 字符、inherited phantom、astral originalBytes）; 58/58 测试、typecheck 0、biome 0。实现者已释放。→ 派发独立评审 task_ebfe9dc57068/ctx_427e9332d515。
 - **T06 polish 完成+复审通过**: c7c07e1d（R1 严格两段校验、R2 指纹 16 hex，RED 2 fail→GREEN 38/0/84）; 增量复审 task_a9e879657783 Code APPROVE（全仓无 8 hex 遗留、门禁全绿、T06.md 一致）。
 - **T06 集成**: cherry-pick 3 提交（b38068c5/9a1d9553/3101e965）→ integration-main; 复跑 scope+deployment 56 pass / 0 fail / 246 expect。**T06 节点: 已验证并集成。** 释放 polish 实现者与复审者。
-- **T02 定稿完成**（task_bf58eb97bfa2/ctx_d2ba272c8f65）: 8bf90a02。修复 routeTree.gen 未重生成、BotSubpage 类型、路由测试依赖; 4 占位路由保留为最小可执行证据; 归属矩阵 docs/plans/issue-4-ledger/T02.md; typecheck 0、9/0 测试、biome 9 文件 0。实现者已释放。→ 派发独立评审 task_71ca70f1fa98/ctx_e49d2f22bd26。
+- **T02 定稿完成**（task_bf58eb97bfa2/ctx_d2ba272c8f65）: 8bf90a02。修复 routeTree.gen 未重生成、BotSubpage 类型、路由测试依赖; 4 占位路由保留为最小可执行证据; 归属矩阵 archive/plans/issue-4-ledger/T02.md; typecheck 0、9/0 测试、biome 9 文件 0。实现者已释放。→ 派发独立评审 task_71ca70f1fa98/ctx_e49d2f22bd26。
 - **T01 polish 完成**（task_6a1e74270832/ctx_cd9cfa08fbeb）: 460a55e6。F1 真实 createApp 正向用例、F2 organizeImports、F3 403→404 'Bot not found.' 对齐 Spec §7; typecheck 0、15/0 测试; biome 剩 10 条基线诊断零新增。附带: ready.test.ts createApp.length-1 偏移在 bab7c0b9 基线已腐烂（0 pass/3 fail），范围外既有缺陷记录未修。实现者已释放。→ 派发增量复审 task_524f097cec8e/ctx_581ecca7f9cb。
 - **T07 移植派发**（task_072cdb8ecfa3/ctx_09b3b41c8574）: 基线 integration-main（T03+T06 已入）。迁移重编号 0110→0122（当前 journal 顶 0121）; 集成测试专用 PG opik-t07-pg（127.0.0.1:5547）; 旧评审证据路径已给。
 - **T01 polish 复审通过**（task_524f097cec8e）: Code APPROVE。F1 实参精确落 openMuseSeams 第 46 参; F3 404 常量全仓无越界; biome 基线 10→8（净减即 F2 两处）。ready.test.ts 腐烂确认为 bab7c0b9 预存（aa0f90a5 追加 identity 尾参所致）。

@@ -4,7 +4,7 @@
 - Coordinator worktree: `/Users/wuyongjun/orca/workspaces/OpenBot/opik-issue4-coordinator`
 - BASE: `bab7c0b9b481d6563fdacb99fddf8af21f08c729`
 - No push/merge/release authorized.
-- Snapshot: `docs/plans/issue-4-snapshot/manifest.json`; captured 2026-10-15 UTC.
+- Snapshot: `archive/plans/issue-4-snapshot/manifest.json`; captured 2026-10-15 UTC.
 
 ## Checkpoint protocol
 

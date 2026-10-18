@@ -2,7 +2,7 @@
 
 The repository's Compose files: what each one is, how to run it, and the rationale that used to
 sit inline in `docker-compose.yml`. This page is the single index; the files themselves carry the
-operational one-liners. `docs/kb-migration-2026-10-11.md` records the split out of the old single
+operational one-liners. `archive/notes/kb-migration-2026-10-11.md` records the split out of the old single
 file, and the 2026-10-14 move of the optional stacks under `docker/compose/`.
 
 ## The files

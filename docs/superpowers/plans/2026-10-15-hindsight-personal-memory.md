@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- 事实源：`docs/specs/2026-10-15-hindsight-personal-memory-design.md`、`docs/adr/0005-self-hosted-hindsight-for-personal-memory.md`、`CONTEXT.md`「个人记忆」术语、Issue 正文（快照在 `docs/plans/2026-10-15-hindsight-personal-memory/issue-snapshots/`）。冲突时以 Spec 为准。
+- 事实源：`docs/specs/2026-10-15-hindsight-personal-memory-design.md`、`docs/adr/0005-self-hosted-hindsight-for-personal-memory.md`、`CONTEXT.md`「个人记忆」术语、Issue 正文（快照在 `archive/plans/hindsight-personal-memory/issue-snapshots/`）。冲突时以 Spec 为准。
 - 无提交授权：所有任务产出未提交检查点（HEAD + diff + 未跟踪文件 + 哈希）；禁止 commit/push/merge/部署/生产迁移。
 - 数据库测试用专用 PostgreSQL（`TEST_DATABASE_URL` 模式，参照 `server/tests/billing-store.integration.test.ts` 的 gate 写法）；skip 不算通过；不指生产数据。
 - 未审核候选（`reviewState='unreviewed'`）在任何跨会话召回路径不可见：网页/频道/定时任务/本地 SQL 降级/Hindsight 可用时全部一致。
