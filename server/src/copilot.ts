@@ -3990,7 +3990,6 @@ export async function resolveRuntimeAgents(
    */
   governedModel?: GovernedModelRequest,
   /**
-  /**
    * Who this build's runs are for, so the consumption facts name the initiator (09.1). Handed to
    * every built-in Bot's model wrapper; absent when the caller had no actor, which the usage fact
    * then records as a named null rather than a guess.
