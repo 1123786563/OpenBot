@@ -409,6 +409,33 @@
     "columnNumber": "Order",
     "columnCreated": "Created"
   },
+  "ordersPage": {
+    "title": "Orders & credits",
+    "description": "Your orders, your subscription, and every credit granted to you — each traceable to its source.",
+    "refresh": "Refresh",
+    "ordersTitle": "Orders",
+    "ordersEmpty": "No orders yet",
+    "ordersEmptyDescription": "Orders appear here after a plan is purchased.",
+    "ordersUnavailable": "Billing is not enabled here",
+    "ordersUnavailableDescription": "No billing provider is configured on this deployment, so there are no orders.",
+    "subscriptionTitle": "Subscription",
+    "grantsTitle": "Credit grants",
+    "grantsDescription": "Where every credit came from, and when it expires.",
+    "grantsSummary": "{{count}} grants on record",
+    "grantsEmpty": "No credit grants yet.",
+    "grantSource": {
+      "plan": "Plan",
+      "signin": "Check-in reward",
+      "promo": "Campaign / admin"
+    },
+    "traceOrder": "Funding order: {{order}}",
+    "traceNoOrder": "No funding order on record",
+    "columnPlan": "Plan",
+    "columnAmount": "Amount",
+    "columnStatus": "Status",
+    "columnNumber": "Order",
+    "columnCreated": "Created"
+  },
   "welcomeBanner": {
     "badge": "Bonus until 10/31",
     "message": "Welcome to WorkBuddy. Your first month includes the standard plan's base credits — claim them now!",
