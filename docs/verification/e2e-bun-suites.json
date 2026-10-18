@@ -1,5 +1,5 @@
 {
- "generatedBy": "scripts/e2e-add-driven.mjs",
+ "generatedBy": "scripts/e2e-batch-drive-bun-test.mjs",
  "groups": [
   {
    "name": "agent-computer/tests",
@@ -120,15 +120,16 @@
     "app/tests/live-screen-app-shortcuts.test.tsx",
     "app/tests/live-screen-keyboard.test.tsx",
     "app/tests/model-picker-ui.test.tsx",
+    "app/tests/multitenancy/selection.test.tsx",
     "app/tests/observability-i18n-namespaces.test.ts",
     "app/tests/observability-route-guards.test.tsx",
-    "app/tests/person-sent-message.test.ts",
-    "app/tests/playground-json.test.ts"
+    "app/tests/person-sent-message.test.ts"
    ]
   },
   {
    "name": "app/tests part 4",
    "files": [
+    "app/tests/playground-json.test.ts",
     "app/tests/plugin-read-failure.test.tsx",
     "app/tests/proposed-bot-card.test.tsx",
     "app/tests/proposed-skill-card.test.tsx",
@@ -678,6 +679,7 @@
   "app/tests/live-screen-app-shortcuts.test.tsx",
   "app/tests/live-screen-keyboard.test.tsx",
   "app/tests/model-picker-ui.test.tsx",
+  "app/tests/multitenancy/selection.test.tsx",
   "app/tests/observability-i18n-namespaces.test.ts",
   "app/tests/observability-route-guards.test.tsx",
   "app/tests/person-sent-message.test.ts",
@@ -1453,6 +1455,7 @@
   "app/tests/ai-observability-routes.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'",
   "app/tests/ai-observability-run-detail.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'",
   "app/tests/ai-observability-run-steps.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'",
-  "app/tests/ai-observability-runs-list.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'"
+  "app/tests/ai-observability-runs-list.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'",
+  "app/tests/multitenancy/selection.test.tsx": "suite still imports \"bun:test\" at column 0; e2e on Node cannot resolve the bun: specifier and aborts the whole run"
  }
 }
