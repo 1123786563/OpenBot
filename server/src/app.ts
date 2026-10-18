@@ -91,7 +91,11 @@ import type { ComputerGateway } from "./computer/gateway";
 import type { PageFrameStore } from "./computer/page-frames";
 import type { PolicyStore } from "./computer/policy-store";
 import { createComputerRoutes } from "./computer/routes";
-import { configuredAuthProviders, type DeploymentConfig } from "./config";
+import {
+  configuredAuthProviders,
+  type DeploymentConfig,
+  trustedBrowserOrigins,
+} from "./config";
 import type { CraftRoutesFactory } from "./craft/routes";
 import {
   type CredentialAdminService,
@@ -807,10 +811,9 @@ export function createApp(
   // Browser origins the deployment already trusts (TRUSTED_ORIGINS plus the app URL) get CORS
   // headers on API responses, so a bundle served from one of them can call this API. Registered
   // before any route so it covers them all; native clients never send Origin and skip this.
-  const browserOrigins = [
-    ...(config.auth?.trustedOrigins ?? []),
-    ...(config.appUrl ? [config.appUrl] : ""),
-  ].filter((origin) => /^https?:\/\//.test(origin));
+  // The SAME list answers #410's craft write guard — one source, so CORS and the write surface
+  // can never disagree about who is trusted.
+  const browserOrigins = trustedBrowserOrigins(config);
   if (browserOrigins.length > 0) {
     app.use(
       "/api/*",

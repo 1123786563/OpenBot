@@ -190,7 +190,7 @@ import {
 } from "./computer/provider";
 import { createSnapshotStore } from "./computer/snapshot-store";
 import { createStreamAuthorizer } from "./computer/stream-auth";
-import { loadConfig } from "./config";
+import { loadConfig, trustedBrowserOrigins } from "./config";
 import {
   CreditGateFailureError,
   CreditPolicyUnconfiguredError,
@@ -5053,6 +5053,16 @@ const craftRoutes: CraftRoutesFactory | undefined =
            */
           previewOriginHas: (sessionId: string) =>
             craftPreviewOrigin.hasSession(sessionId),
+          /*
+           * #410: the main site's own cookie-authenticated writes refuse a browser
+           * Origin outside the trusted list, and the preview namespace is judged by
+           * the SAME host rule the dispatcher runs on the Host header (claimsOrigin —
+           * one claim, two surfaces). The trusted list is CORS's own list, so the
+           * two answers cannot disagree about who is trusted.
+           */
+          previewOriginClaimsOrigin: (origin: string) =>
+            craftPreviewOrigin.claimsOrigin(origin),
+          previewWriteTrustedOrigins: trustedBrowserOrigins(config),
           /*
            * F-2 (#365): the dev form's /<label> mount, threaded into the
            * session's start script — the same HMAC label derivation the minted

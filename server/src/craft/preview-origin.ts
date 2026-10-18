@@ -151,19 +151,13 @@ export function samePreviewOrigin(
   sessionAddress: string,
 ): boolean {
   if (originHeader === null) return true;
-  // The origin's comparable form: scheme://host[:port], the host dot-folded
-  // and the port carried only when present (WHATWG already dropped scheme
-  // defaults, so an empty url.port means no suffix — originFor's portSuffix
-  // rule mirrored).
-  const originOf = (value: string): string => {
-    const url = new URL(value);
-    return `${url.protocol}//${normalizeHostname(url.hostname)}${url.port === "" ? "" : `:${url.port}`}`;
-  };
-  try {
-    return originOf(originHeader) === originOf(sessionAddress);
-  } catch {
-    return false;
-  }
+  // Both sides through the ONE comparable form (normalizedOriginOf): dot-folded
+  // host, port only when present, path ignored — so a dev-form address's `/<label>`
+  // never enters the comparison. An unparseable value on either side is a refusal,
+  // never a throw.
+  const presented = normalizedOriginOf(originHeader);
+  const own = normalizedOriginOf(sessionAddress);
+  return presented !== null && own !== null && presented === own;
 }
 
 export type PreviewOrigin = {
@@ -187,6 +181,28 @@ export type PreviewOrigin = {
   handlesRequest(request: Request): boolean;
   /** Host header → session id: the ONLY entry (#361's produced contract). */
   resolvePreviewRequest(request: Request): PreviewRequestResolution;
+  /**
+   * #410 — whether an ORIGIN-HEADER value sits in the preview namespace, judged
+   * by the same `claimsPreviewHost` the dispatcher's `handlesRequest` runs (one
+   * claim, two surfaces: the Host header of a request to a preview host, and the
+   * Origin header of a request that came from a preview PAGE). This is what lets
+   * the main site's cookie-authenticated write surface refuse a credentialed
+   * cross-site fetch that SameSite cannot stop — a production preview is a
+   * subdomain of the main site, so it is SAME SITE and its cookies ride along.
+   *
+   * The dev form (empty template) answers false for everything, and that is the
+   * honest limit, not an oversight: its address is
+   * `http://127.0.0.1:<server port>/<label>` — the session rides a PATH label,
+   * and an Origin header never spells a path. The dev-form preview's origin is
+   * therefore indistinguishable from the main site's own origin on this host,
+   * and refusing it would refuse the main site's own writes (the fix-ocr3
+   * paralysis family). Host isolation is a production-form property (D1/D3/D7);
+   * the dev form's protection stays the preview pass + CSP (D5).
+   *
+   * Unparseable values answer false — the caller's own untrusted/unparseable
+   * branch decides what to do with them; nothing here throws.
+   */
+  claimsOrigin(origin: string | null): boolean;
   /**
    * The upstream-resolvable path a request addresses (#363, F-2/#365): the
    * pathname VERBATIM in both forms — the dev form's label included, because
@@ -328,12 +344,44 @@ function normalizeHostname(hostname: string): string {
 }
 
 /**
+ * The ONE comparable form of an origin: `scheme://host[:port]`, host dot-folded,
+ * the port carried only when present (WHATWG serialization already dropped the
+ * scheme default, and originFor mints its address by the same rule — fix-ocr27
+ * #6). Path, query and hash are IGNORED: an Origin header never spells one, and
+ * the dev-form address is `http://127.0.0.1:<port>/<label>` — comparing whole
+ * URLs would refuse every legitimate dev-form upgrade.
+ *
+ * Null is the refusal: an unparseable value, an opaque origin ("null" — a
+ * sandboxed frame), or anything without a hostname (`javascript:` and friends
+ * parse but address no host). Callers judge null their own way; nothing throws.
+ */
+export function normalizedOriginOf(value: string): string | null {
+  const url = parseOriginUrl(value);
+  if (url === null) return null;
+  const host = normalizeHostname(url.hostname);
+  return `${url.protocol}//${host}${url.port === "" ? "" : `:${url.port}`}`;
+}
+
+/** A parseable origin (scheme + host) or null — the ONE parse every origin comparison runs. */
+function parseOriginUrl(value: string): URL | null {
+  try {
+    const url = new URL(value.trim());
+    return normalizeHostname(url.hostname) === "" ? null : url;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The port a host comparison must run on. URL serialization drops http(s)'s
  * DEFAULT port — `http://127.0.0.1/x` carries `url.port === ""` — so an empty
  * port reads as the scheme default rather than as "no port", or a :80 listener's
- * traffic falls through to the wrong branch (#363, #361 final review).
+ * preview traffic falls through to the main-site routes (#363, #361 final
+ * review).
  */
 function effectivePortOf(url: URL): number {
+  // fix-ocr19 #10: plain branches over the nested ternary (review-367 L3's
+  // direction) — same value, readable at a glance.
   if (url.port === "") return url.protocol === "https:" ? 443 : 80;
   return Number(url.port);
 }
@@ -341,10 +389,11 @@ function effectivePortOf(url: URL): number {
 /**
  * Whether a dot-folded hostname + effective port sits in the preview namespace.
  * The ONE host-side claim, run by `handlesRequest` (the dispatcher's branch gate,
- * judged on the request URL) and by #404's admission check (judged on the main
- * site's OWN host) — the two surfaces must never disagree about what "a preview
- * host" is, or the guard would close on a host nothing swallows while leaving
- * open the one that takes the main site down.
+ * judged on the request URL), by #404's admission check (judged on the main
+ * site's OWN host), and by `claimsOrigin` (#410, judged on an Origin header) —
+ * the surfaces must never disagree about what "a preview host" is, or the guard
+ * would close on a host nothing swallows while leaving open the one that takes
+ * the main site down.
  */
 function claimsPreviewHost(
   template: Extract<ParsedTemplate, { kind: "host" }>,
@@ -398,6 +447,28 @@ function mainSiteHostOf(
   const hostname = normalizeHostname(url.hostname);
   if (hostname === "") return null;
   return { hostname, port: effectivePortOf(url) };
+}
+
+/**
+ * #410: the Origin-header side of `claimsPreviewHost`. The dev form answers
+ * false for everything — its address carries the session in a PATH label and an
+ * Origin header never spells a path, so a dev-form preview is
+ * indistinguishable from this host's own main-site origin (the honest limit,
+ * documented on `PreviewOrigin.claimsOrigin`). An unparseable value is not a
+ * claim either: the caller's own untrusted branch refuses it.
+ */
+function claimsPreviewOrigin(
+  template: ParsedTemplate,
+  origin: string | null,
+): boolean {
+  if (template.kind !== "host" || origin === null) return false;
+  const url = parseOriginUrl(origin);
+  if (url === null) return false;
+  return claimsPreviewHost(
+    template,
+    normalizeHostname(url.hostname),
+    effectivePortOf(url),
+  );
 }
 
 function parseTemplate(raw: string): ParsedTemplate {
@@ -708,32 +779,27 @@ export function createPreviewOrigin(deps: {
         // host." and paralyzes the installed main site. Unregistered first
         // segments (/api, /, anything) MUST fall back to the main-site routes.
         if (hostname !== DEV_PREVIEW_HOSTNAME) return false;
-        // The port, when derivable, must be the server's own. URL
-        // serialization drops http's DEFAULT port — `http://127.0.0.1/x`
-        // carries url.port "" — so the check runs on the effective port; a raw
-        // `url.port === String(devPort.port)` would let a :80 listener's preview
-        // traffic fall through to the main-site routes (#363, #361 final
-        // review). An underivable port claims nothing either — admission is
-        // closed then anyway (originFor throws, so no label can ever register)
-        // and the claim must not widen to every port on the host.
-        if (devPort.port !== undefined) {
-          // fix-ocr19 #10: the plain branches replace the nested ternary
-          // (review-367 L3's direction) — same value, readable at a glance.
-          let effectivePort: number;
-          if (url.port === "") {
-            // URL serialization drops http's DEFAULT port, so the empty
-            // port reads as the scheme default.
-            effectivePort = url.protocol === "https:" ? 443 : 80;
-          } else {
-            effectivePort = Number(url.port);
-          }
-          if (effectivePort !== devPort.port) return false;
+        // The port, when derivable, must be the server's own — the same
+        // effective-port reading the host form runs (URL serialization drops
+        // http's default, so a :80 listener is judged on 80, not on ""). An
+        // underivable port claims nothing either — admission is closed then
+        // anyway (originFor throws, so no label can ever register) and the claim
+        // must not widen to every port on the host.
+        if (
+          devPort.port !== undefined &&
+          effectivePortOf(url) !== devPort.port
+        ) {
+          return false;
         }
         return registry.has(url.pathname.split("/")[1] ?? "");
       }
       // A malformed template claims nothing — but admission is closed with the
       // reason, and originFor throws, so no address ever pointed here.
       return false;
+    },
+
+    claimsOrigin(origin) {
+      return claimsPreviewOrigin(template, origin);
     },
 
     resolvePreviewRequest(request) {
