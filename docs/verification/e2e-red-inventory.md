@@ -1,10 +1,10 @@
 # 红点清单 · 由测量直接生成，不要手改
 
-生成：`node scripts/e2e-red-inventory.mjs` · 报告 `.e2e/final2/report.json`（run 01a14e9e-234b-78f3-b357-f55ae94404ca，结束于 2026-10-18T10:56:41.060Z）· 判定 `docs/verification/e2e-vs-bun-final.json`
+生成：`node scripts/e2e-red-inventory.mjs` · 报告 `.e2e/final3/report.json`（run 01a14ec1-04f1-759e-8014-3793be016bdb，结束于 2026-10-18T11:34:50.626Z）· 判定 `docs/verification/e2e-vs-bun-final.json`
 
 运行器：`e2e`（Node）为原生层，`bun test` 由 `tests/bun-suites.test.ts` 分组代为调度与报告（ADR 0008 的两层制）。
 
-汇总：8181 executed · 7925 passed · 195 failed · 74 skipped；收集文件 33 个红；run 级错误 4 个。
+汇总：8182 executed · 7920 passed · 201 failed · 74 skipped；收集文件 34 个红；run 级错误 4 个。
 
 ## 原生层（e2e / Node）
 
@@ -18,6 +18,7 @@
 | `server/tests/enterprise/run-execution-failure.test.ts` | 12 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
 | `server/tests/enterprise/run-success-contract.test.ts` | 9 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
 | `server/src/knowledge/qa-verify.test.ts` | 8 | already-red-at-baseline | expected "degraded" to be "hit" |
+| `app/tests/personal-orders-ui.test.tsx` | 6 | 未单独判定（本次判定集合来自上一次报告的红文件；新红文件要重跑 scripts/e2e-vs-bun.mjs） | Unable to find an element by: [data-testid="credit-grant-cg-plan"] Ignored nodes: comments, script, style <body> <div> <div class="min-h-0 f |
 | `server/tests/payer-company-resolution.test.ts` | 6 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
 | `server/tests/tool-selection.integration.test.ts` | 5 | already-red-at-baseline | REMOTE_RUN_BUDGET_UNVERIFIED |
 | `server/tests/enterprise/expert-version-catalog.test.ts` | 4 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
@@ -56,54 +57,30 @@
 | bun runtime suite agent-computer/tests | passed | — |
 | bun runtime suite agent-langgraph/tests | passed | — |
 | bun runtime suite agent-mastra/src | passed | — |
-| bun runtime suite agent-sandbox/tests | failed | agent-sandbox/tests: 2 of 17 bun tests failed workspace snapshots (S4): AssertionError: expect(received).toContain(expected)&#10;&#10;Expected to contain: &quot |
+| bun runtime suite agent-sandbox/tests | failed | agent-sandbox/tests: 1 of 2 failing file(s) are still red run alone agent-sandbox/tests/sse.test.ts: 2 of 11 — forwardBlock (the family filter): AssertionError: |
 | bun runtime suite app/src | passed | — |
-| bun runtime suite app/tests part 1 | failed | app/tests part 1: 21 of 281 bun tests failed : TestingLibraryElementError: Found multiple elements with the text: /Unpaid invoices/&#10;&#10;Here are the matchi |
+| bun runtime suite app/tests part 1 | passed | — |
 | bun runtime suite app/tests part 2 | passed | — |
 | bun runtime suite app/tests part 3 | passed | — |
 | bun runtime suite app/tests part 4 | passed | — |
+| bun runtime suite app/tests/ai-observability | failed | app/tests/ai-observability: 1 of 2 failing file(s) are still red run alone app/tests/ai-observability-route-chain.test.tsx: 5 of 5 — the runs chain mounts its d |
 | bun runtime suite desktop/scripts | passed | — |
 | bun runtime suite scripts/processes.test.ts | passed | — |
 | bun runtime suite scripts/start-restart-guard.test.ts | passed | — |
 | bun runtime suite scripts/tls-pipeline.test.ts | passed | — |
 | bun runtime suite server/src | passed | — |
-| bun runtime suite server/tests part 1 | failed | server/tests part 1: 213 of 258 bun tests failed POST /:channelId/attachments: Error: Failed query: insert into &quot;users&quot; (&quot;id&quot;, &quot;email&q |
-| bun runtime suite server/tests part 2 | failed | server/tests part 2: 259 of 433 bun tests failed : Error: Failed query: insert into &quot;bot_services&quot; (&quot;bot_id&quot;, &quot;display_name&quot;, &quo |
-| bun runtime suite server/tests part 3 | failed | server/tests part 3: 225 of 397 bun tests failed createCraftRoutes assembly: resolver-only wiring converges: Error: Failed query: insert into &quot;billing_cust |
-| bun runtime suite server/tests part 4 | failed | server/tests part 4: 81 of 265 bun tests failed : Error: Failed query: insert into &quot;bot_services&quot; (&quot;bot_id&quot;, &quot;display_name&quot;, &quot |
-| bun runtime suite server/tests part 5 | failed | server/tests part 5: 182 of 296 bun tests failed gatewayCustomerName derives the deterministic remote name from the payer ref: Error: Failed query: select &quot |
-| bun runtime suite server/tests part 6 | failed | server/tests part 6: 60 of 104 bun tests failed : Error: Failed query: insert into &quot;users&quot; (&quot;id&quot;, &quot;email&quot;, &quot;name&quot;, &quot |
-| bun runtime suite server/tests part 7 | failed | server/tests part 7: 30 of 545 bun tests failed : Error: Failed query: insert into &quot;users&quot; (&quot;id&quot;, &quot;email&quot;, &quot;name&quot;, &quot |
-| bun runtime suite server/tests part 8 | failed | server/tests part 8: 5 of 539 bun tests failed : Error: Failed query: insert into &quot;enterprise_tenants&quot; (&quot;id&quot;, &quot;name&quot;, &quot;status |
-| bun runtime suite server/tests part 9 | failed | server/tests part 9: 97 of 407 bun tests failed : Error: Failed query: insert into &quot;ai_observation_bindings&quot; (&quot;id&quot;, &quot;scope_key&quot;, & |
-| bun runtime suite server/tests part 10 | failed | server/tests part 10: 134 of 550 bun tests failed : PostgresError: Failed to connect&#10; at wrapPostgresError (internal:sql/postgres:176:10)&#10; at handleClos |
-| bun runtime suite server/tests part 11 | failed | server/tests part 11: 90 of 390 bun tests failed : Error: Failed query: insert into &quot;payment_orders&quot; (&quot;id&quot;, &quot;deployment_scope&quot;, &q |
-| bun runtime suite server/tests part 12 | failed | server/tests part 12: 88 of 151 bun tests failed : Error: Failed query: insert into &quot;payment_orders&quot; (&quot;id&quot;, &quot;deployment_scope&quot;, &q |
-| bun runtime suite server/tests part 13 | failed | server/tests part 13: 238 of 297 bun tests failed : Error: Failed query: insert into &quot;users&quot; (&quot;id&quot;, &quot;email&quot;, &quot;name&quot;, &qu |
-| bun runtime suite server/tests part 14 | failed | server/tests part 14: 146 of 191 bun tests failed : Error: Failed query: select &quot;id&quot; from &quot;credentials&quot; where (&quot;credentials&quot;.&quot |
-| bun runtime suite server/tests part 15 | failed | server/tests part 15: 63 of 124 bun tests failed : Error: Failed query: select &quot;grant_id&quot;, &quot;user_id&quot;, &quot;bot_id&quot;, &quot;external_ide |
-
-## 驱动层红组的文件级归属（重跑 bun 得到）
-
-### app/tests part 1
-- `bun test` 退出码 1
-- 8 × `app/tests/ai-observability-datasets.test.tsx`
-- 6 × `app/tests/ai-observability-experiments.test.tsx`
-- 3 × `app/tests/ai-observability-route-chain.test.tsx`
-- 1 × `app/tests/approvals-rules.test.tsx`
-- 1 × `app/tests/bot-approval-rules.test.tsx`
-- 1 × `app/tests/bot-memory.test.tsx`
-- 18 × `app/tests/bot-needs-you.test.tsx`
-
-### agent-sandbox/tests
-- `bun test` 退出码 1
-- 1 × `agent-sandbox/tests/sse.test.ts`
-
-### server/tests part 8
-- `bun test` 退出码 1
-- 1 × `server/tests/multitenancy/payer-accounts.test.ts`
-- 1 × `server/tests/multitenancy/rls-core.test.ts`
-- 1 × `server/tests/multitenancy/scan-executor.test.ts`
-- 1 × `server/tests/multitenancy/settlement-idempotency.test.ts`
-- 1 × `server/tests/multitenancy/team-public-rules.test.ts`
-
+| bun runtime suite server/tests part 1 | failed | server/tests part 1: 213 of 258 tests failed across 24 files (more than the 8 the alone-re-run confirms); treated as a real failure |
+| bun runtime suite server/tests part 2 | failed | server/tests part 2: 259 of 433 tests failed across 23 files (more than the 8 the alone-re-run confirms); treated as a real failure |
+| bun runtime suite server/tests part 3 | failed | server/tests part 3: 225 of 397 tests failed across 18 files (more than the 8 the alone-re-run confirms); treated as a real failure |
+| bun runtime suite server/tests part 4 | failed | server/tests part 4: 81 of 265 tests failed across 21 files (more than the 8 the alone-re-run confirms); treated as a real failure |
+| bun runtime suite server/tests part 5 | failed | server/tests part 5: 182 of 296 tests failed across 21 files (more than the 8 the alone-re-run confirms); treated as a real failure |
+| bun runtime suite server/tests part 6 | failed | server/tests part 6: 60 of 104 tests failed across 19 files (more than the 8 the alone-re-run confirms); treated as a real failure |
+| bun runtime suite server/tests part 7 | failed | server/tests part 7: 30 of 545 tests failed across 9 files (more than the 8 the alone-re-run confirms); treated as a real failure |
+| bun runtime suite server/tests part 8 | failed | server/tests part 8: 4 of 5 failing file(s) are still red run alone server/tests/multitenancy/payer-accounts.test.ts: 1 of 1 — : Error: Failed query: insert int |
+| bun runtime suite server/tests part 9 | failed | server/tests part 9: 97 of 407 tests failed across 20 files (more than the 8 the alone-re-run confirms); treated as a real failure |
+| bun runtime suite server/tests part 10 | failed | server/tests part 10: 134 of 550 tests failed across 15 files (more than the 8 the alone-re-run confirms); treated as a real failure |
+| bun runtime suite server/tests part 11 | failed | server/tests part 11: 90 of 390 tests failed across 15 files (more than the 8 the alone-re-run confirms); treated as a real failure |
+| bun runtime suite server/tests part 12 | failed | server/tests part 12: 88 of 151 tests failed across 22 files (more than the 8 the alone-re-run confirms); treated as a real failure |
+| bun runtime suite server/tests part 13 | failed | server/tests part 13: 238 of 297 tests failed across 24 files (more than the 8 the alone-re-run confirms); treated as a real failure |
+| bun runtime suite server/tests part 14 | failed | server/tests part 14: 146 of 191 tests failed across 22 files (more than the 8 the alone-re-run confirms); treated as a real failure |
+| bun runtime suite server/tests part 15 | failed | server/tests part 15: 63 of 124 tests failed across 11 files (more than the 8 the alone-re-run confirms); treated as a real failure |

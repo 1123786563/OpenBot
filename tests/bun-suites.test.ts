@@ -172,11 +172,16 @@ for (const group of groups) {
      * (they leak state), and the pre-migration `bun test ./app` had the same class of failure.
      */
     const alone = new Map<string, ReturnType<typeof readJunit>>();
-    // A group with hundreds of failures is usually red for a reason that survives isolation (an
-    // unreachable database), so the re-run is capped: reaching the cap is a failure, never a pass.
+    // A group with failures spread over many files is red for a reason that survives isolation
+    // (an unreachable database), so re-running eight of them buys nothing: say so and fail fast.
     const cap = 8;
+    if (started.failingFiles.length > cap) {
+      throw new Error(
+        `${group.name}: ${started.failures + started.errors} of ${started.tests} tests failed across ${started.failingFiles.length} files (more than the ${cap} the alone-re-run confirms); treated as a real failure\n${started.failed.slice(0, 4).join("\n")}`,
+      );
+    }
     const startedAt = Date.now();
-    for (const file of started.failingFiles.slice(0, cap)) {
+    for (const file of started.failingFiles) {
       if (Date.now() - startedAt > 300_000) {
         throw new Error(
           `${group.name}: ${started.failures + started.errors} tests failed and the alone-re-run budget ran out after ${alone.size} file(s); not claimed as passing`,
@@ -185,11 +190,6 @@ for (const group of groups) {
       alone.set(
         file,
         await runBun([file.startsWith("./") ? file : `./${file}`]),
-      );
-    }
-    if (started.failingFiles.length > cap) {
-      throw new Error(
-        `${group.name}: ${started.failures + started.errors} of ${started.tests} tests failed across ${started.failingFiles.length} files (more than the ${cap} the alone-re-run confirms); treated as a real failure`,
       );
     }
     const realRed = [...alone].filter(
