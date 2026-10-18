@@ -6,6 +6,7 @@ import {
   IconChecks,
   IconKey,
   IconLayoutGrid,
+  IconListDetails,
   IconPlug,
   IconReceipt,
   IconRobot,
@@ -100,6 +101,17 @@ const ITEMS = [
     icon: IconChartBar,
     exact: false,
     linkOptions: { to: "/settings/usage" },
+  },
+  {
+    /*
+     * 订单与积分追溯 (Bifrost 10.6): the orders a purchase raised, the subscription it bought,
+     * and every credit grant with its source and expiry — what the 套餐与积分 page spends its
+     * time on, read here as a trail: where each credit came from, and where the money went.
+     */
+    title: "sidebar.orders",
+    icon: IconListDetails,
+    exact: false,
+    linkOptions: { to: "/settings/orders" },
   },
   {
     /*

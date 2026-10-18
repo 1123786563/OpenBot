@@ -59,21 +59,76 @@ export function PersonalBalanceCard({
       </dl>
 
       {/*
-       * Pending settlement is group 06's lane. Until that group's work is delivered the server
-       * sends the placeholders (constant zeros behind `enabled: false`), and this page says
-       * 未启用 — not 0, because a zero would claim a settled fact about calls that have not
-       * happened. Both branches keep the same testid: group 06 flipping the server's literal
-       * `false` is the visible contract change that routes answers into the amounts branch.
+       * Pending settlement is group 06's answer (ticket 06.12): the quota, its reserved vs
+       * unknown split, and the latest reservations with status and reason each. A pre-06.12
+       * server's `enabled: false` still renders the honest 未启用 marker — never a bare 0.
+       * Both branches keep the same testid: the server's gate is the visible contract change
+       * that routes answers into the amounts branch.
        */}
-      <p
-        className="text-muted-foreground mt-4 text-sm tabular-nums"
-        data-testid="pending-settlement"
-      >
-        {balance.pendingSettlement.enabled
-          ? // Group 06 lands here: amounts once the server's gate is on.
-            `${t("creditsPage.pendingSettlement")} ${credits(balance.pendingSettlement.available)}`
-          : t("creditsPage.pendingSettlementDisabled")}
-      </p>
+      {balance.pendingSettlement.enabled ? (
+        <>
+          <p
+            className="text-muted-foreground mt-4 text-sm tabular-nums"
+            data-testid="pending-settlement"
+          >
+            {t("creditsPage.pendingSettlement")}{" "}
+            {credits(balance.pendingSettlement.available)}
+            <span className="ml-2">
+              {t("creditsPage.pendingReserved")}{" "}
+              {credits(balance.pendingSettlement.reserved)}
+            </span>
+            <span className="ml-2">
+              {t("creditsPage.pendingUnknown")}{" "}
+              {credits(balance.pendingSettlement.unknown)}
+            </span>
+          </p>
+          {balance.pendingSettlement.reservations.length > 0 ? (
+            <ul className="mt-2 space-y-1" data-testid="reservation-list">
+              {balance.pendingSettlement.reservations.map((reservation) => (
+                <li
+                  key={reservation.id}
+                  className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs"
+                  data-status={reservation.status}
+                  data-testid="reservation-row"
+                >
+                  <span
+                    className={
+                      reservation.status === "unknown"
+                        ? "font-medium text-warning"
+                        : undefined
+                    }
+                    data-testid="reservation-status"
+                  >
+                    {t(`creditsPage.reservationStatus.${reservation.status}`)}
+                  </span>
+                  <span className="tabular-nums">
+                    {credits(reservation.maximum)}
+                    {t("creditsPage.creditUnit")}
+                  </span>
+                  <span>
+                    {[reservation.botName, reservation.model]
+                      .filter(Boolean)
+                      .join(" · ") || "–"}
+                  </span>
+                  {reservation.unknownReason || reservation.releaseReason ? (
+                    <span className="truncate">
+                      {t("creditsPage.reservationReason")}
+                      {reservation.unknownReason ?? reservation.releaseReason}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ) : (
+        <p
+          className="text-muted-foreground mt-4 text-sm tabular-nums"
+          data-testid="pending-settlement"
+        >
+          {t("creditsPage.pendingSettlementDisabled")}
+        </p>
+      )}
 
       {/*
        * An account with no records yet: the zeros above are true facts (the ledger has nothing),
