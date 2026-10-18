@@ -1137,6 +1137,15 @@
       "model_scope_price_unknown": "该模型价格不完整，无法开放。",
       "model_scope_input_invalid": "变更缺少必要字段。",
       "model_scope_state_invalid": "请求的状态不在本页面可选范围内。"
+    },
+    "sync": {
+      "title": "立即同步",
+      "description": "立即从网关拉取模型目录与价格。手动同步与自动同步是同一实现：失败时保留最后成功快照并计入失败。",
+      "button": "立即同步",
+      "running": "同步中…",
+      "resultSuccess": "已于 {{at}} 同步 · 新增 {{appended}} 条价格快照，{{skipped}} 条未变化。",
+      "resultFailed": "同步失败（{{reason}}）。已保留最后成功快照。",
+      "resultUnavailable": "当前部署的同步触发不可用。"
     }
   },
   "gateway": {

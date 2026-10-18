@@ -30,6 +30,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import type { GatewayCustomerSubjectKind } from "../../gateway/customer";
+import { accessGrants } from "./access-grants";
 
 export const gatewayRateVersions = pgTable(
   "gateway_rate_versions",
@@ -618,6 +619,96 @@ export const gatewayModelPreferences = pgTable(
     check(
       "gateway_model_preferences_scope_identity_consistent",
       sql`(${table.scope} = 'global' AND ${table.botId} = '' AND ${table.conversationId} = '') OR (${table.scope} = 'bot' AND ${table.botId} <> '' AND ${table.conversationId} = '') OR (${table.scope} = 'conversation' AND ${table.botId} <> '' AND ${table.conversationId} <> '')`,
+    ),
+  ],
+);
+
+/**
+ * The key states a short-lived virtual key record can sit in (Bifrost 05.3/#244). A closed set,
+ * because status is read by revocation (05.7) and the state sync (05.8): a value nobody shipped
+ * must not be storable, so a new state arrives with its own ticket and migration — the same rule
+ * the grant's status check follows.
+ */
+export const GATEWAY_VIRTUAL_KEY_STATUSES = [
+  "active",
+  "expired",
+  "revoked",
+] as const;
+
+/** One of the closed key states; see {@link GATEWAY_VIRTUAL_KEY_STATUSES}. */
+export type GatewayVirtualKeyStatus = (typeof GATEWAY_VIRTUAL_KEY_STATUSES)[number];
+
+/**
+ * The OpenBot side of the short-lived virtual key record — Bifrost 05.3's (#244) local ledger
+ * of what was issued for which authorization (CONTEXT.md: Virtual Key, credentialVersion).
+ *
+ * ONE ROW PER ISSUANCE, NEVER A SECRET. The plaintext key value exists exactly once — in the
+ * issuance response to the authenticated Bot (the channel 05.4 wraps in the CredentialBundle) —
+ * and only at the gateway. This table holds the sha256 of that value (`value_hash`, the same
+ * no-plaintext discipline `bot_binding_offers.code_hash` keeps), so a database read can identify
+ * a key and can never redeem one. Every issuance of the same grant is a NEW credentialVersion
+ * (per-grant, starting at 1, monotonic — the unique index is the concurrency arbiter): a secret
+ * that is never stored cannot be re-served, so re-claiming is re-issuing, and the previous
+ * version's state stays as the lifecycle tickets (05.7/05.8) leave it.
+ *
+ * A RECORD, NOTHING MORE. No budget is born here and none is copied: all of a person's keys
+ * carry the SAME `gateway_customer_id` (05.1's mapping), and spending is governed by that
+ * customer at the gateway — issuing adds no credit grant, no ledger row, no payer account.
+ * The key's own provider/budget governance is deliberately absent from the create (the customer
+ * owns it); `expires_at` records the expiry the gateway was given (null until 05.5 ships the
+ * configured default), and `status` is what this deployment believes — 05.8 syncs it against
+ * the gateway's own state.
+ */
+export const gatewayVirtualKeys = pgTable(
+  "gateway_virtual_keys",
+  {
+    /** Stable, opaque, referenced by 05.8's sync and 05.10's revoke-all. */
+    id: text("id").primaryKey(),
+    /** The authorization this key was issued for (04.5's stable id); issuance verifies it active. */
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => accessGrants.grantId),
+    /** The Bot the credential proved when claiming — the "× Bot" half of the key's identity. */
+    botId: text("bot_id").notNull(),
+    /** The one customer this key bills: 05.1's mapping id, shared by all of the user's keys. */
+    gatewayCustomerId: text("gateway_customer_id").notNull(),
+    /** The gateway's own virtual key id — what 05.8's sync addresses remotely. */
+    gatewayVirtualKeyId: text("gateway_virtual_key_id").notNull(),
+    /** sha256 of the plaintext value, hex. Identification, never recovery; no plaintext column exists. */
+    valueHash: text("value_hash").notNull(),
+    /** Per-grant monotonic version, starting at 1; see the table comment. */
+    credentialVersion: integer("credential_version").notNull(),
+    /** What this deployment believes about the key; 05.8 keeps it true. */
+    status: text("status")
+      .$type<GatewayVirtualKeyStatus>()
+      .notNull()
+      .default("active"),
+    /** The expiry the gateway was given, or null while none was (05.5 owns the default). */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // The version counter's arbiter: two racing issuances of one grant cannot hold one version.
+    uniqueIndex("gateway_virtual_keys_grant_version_unique_idx").on(
+      table.grantId,
+      table.credentialVersion,
+    ),
+    // One remote key is named by at most one record — the drift 05.8 reconciles stays countable.
+    uniqueIndex("gateway_virtual_keys_remote_id_unique_idx").on(
+      table.gatewayVirtualKeyId,
+    ),
+    // The questions 05.10's revoke-all and the per-customer views ask.
+    index("gateway_virtual_keys_bot_idx").on(table.botId),
+    index("gateway_virtual_keys_customer_idx").on(table.gatewayCustomerId),
+    check(
+      "gateway_virtual_keys_status_check",
+      sql`${table.status} IN ('active', 'expired', 'revoked')`,
+    ),
+    check(
+      "gateway_virtual_keys_version_check",
+      sql`${table.credentialVersion} >= 1`,
     ),
   ],
 );

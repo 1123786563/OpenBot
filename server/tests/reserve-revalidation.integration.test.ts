@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { randomBytes, randomUUID } from "node:crypto";
-import { eq, like, sql } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { readFileSync } from "node:fs";
 import { createAuditStore } from "../src/audit";
@@ -638,15 +638,37 @@ test("a payer ref with no account mapping refuses without writing", async () => 
     ...world.request,
     payer: { kind: "personal", id: `${prefix}-nobody` },
   });
-  await expectRefusal(outcome, "payer_unresolved", world.customerKey, before);
+  // Since 06.4, a payer that differs from the grant's own server-side resolution is a
+  // CONFLICT (tampering), not a mere unresolved mapping — the nobody ref never matches
+  // the grant's user, so the conflict fires before any mapping lookup.
+  await expectRefusal(outcome, "payer_conflict", world.customerKey, before);
 });
 
-test("a quarantined unknown_owner payer ref refuses", async () => {
+test("a quarantined unknown_owner payer ref refuses as a conflict with the resolved payer", async () => {
   const world = await seedWorld();
   const outcome = await service.reserve({
     ...world.request,
     payer: { kind: "unknown_owner", id: `${prefix}-quarantined` },
   });
+  await expectRefusal(
+    outcome,
+    "payer_conflict",
+    world.customerKey,
+    await reservationCount(world.customerKey),
+  );
+});
+
+test("a matching payer whose account mapping was deleted refuses as unresolved", async () => {
+  const world = await seedWorld();
+  await database
+    .delete(payerAccounts)
+    .where(
+      and(
+        eq(payerAccounts.kind, "personal"),
+        eq(payerAccounts.payerId, world.userId),
+      ),
+    );
+  const outcome = await service.reserve(world.request);
   await expectRefusal(
     outcome,
     "payer_unresolved",

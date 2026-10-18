@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "e2e";
 import {
   BOT_LABEL,
   DEFAULT_NAMESPACE,

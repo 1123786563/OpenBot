@@ -225,3 +225,15 @@ acme.sh command surface, install/reload, failure detection, alerting, and the
 failure path itself (staging + invalid token). The first production issuance and a
 real renewal-around-day-60 remain deployment-side acceptance evidence — record them
 in the deployment's own runbook when they happen.
+
+## #358 修复期验证快照（2026-10-17，SHA 8797d2d9）
+
+- `bun test scripts/tls-pipeline.test.ts`：99/99 通过（模板派生、acme.sh 命令面、
+  install/reload、失败检测与告警、续期失败注入恢复、并发窗口）。
+- `docker compose config`：合法。
+- 准入关闭演练（真实栈，`OPENBOT_CRAFT_PREVIEW_ORIGIN_ENABLED=false`）：
+  `webapp-info.previewOriginClosedReason` 给出可展示原因；`webapp_url` 为
+  null（不存在可绕行地址）；preview host 不回退同源（dev 形态 label 未注册
+  落回主站路由 404；host 形态 503 由准入关闭套件钉住）；主站 API 不受影响。
+- **AC8 首签/续期/告警的运行证据：仍然 blocked** —— 无 staging DNS zone 与
+  专用凭据。上节"Known gaps"的边界不变；不得把测试面结果标为签发证据。

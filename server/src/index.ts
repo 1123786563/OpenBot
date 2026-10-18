@@ -104,6 +104,7 @@ import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
 import { CREDIT_SCALE, createCredits } from "./billing/credits";
 import { createCreditWriter } from "./billing/credits-writer";
+import { createPlanRenewalGrantor } from "./billing/plan-renewals";
 import {
   CreditInsufficientError,
   currentPayerBinding,
@@ -115,7 +116,7 @@ import {
   fitChatInputRequest,
 } from "./billing/input-bound";
 import { createLagoClient } from "./billing/lago";
-import { startUsageDeliverySweeps } from "./billing/maintenance";
+import { startBillingRenewalSweeps, startUsageDeliverySweeps } from "./billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
 import { createAlipayProvider } from "./billing/payments/alipay";
 import { startPaymentSweeps } from "./billing/payments/maintenance";
@@ -249,6 +250,7 @@ import {
   createGatewayAdminCredentialService,
   installGatewayAdminCredentialService,
 } from "./gateway/admin-credential";
+import { startGatewayCatalogSyncScheduler } from "./gateway/catalog-sync";
 import { createEnterpriseStore } from "./admin/settings-store";
 import { createDatabase } from "./db/client";
 import {
@@ -595,6 +597,26 @@ function logReservationReleaseFailure(input: {
       code: reservationReleaseFailureCode(input.error),
     },
     "billing-reservation-release-failed",
+  );
+}
+
+function logReservationUnknownMarkFailure(input: {
+  source: "llm";
+  eventId: string;
+  reservationId: string;
+  reason: string;
+  error: unknown;
+}) {
+  log.error(
+    {
+      type: "billing-reservation-unknown-mark-failed",
+      source: input.source,
+      eventId: input.eventId,
+      reservationId: input.reservationId,
+      reason: input.reason,
+      code: reservationReleaseFailureCode(input.error),
+    },
+    "billing-reservation-unknown-mark-failed",
   );
 }
 
@@ -3801,6 +3823,9 @@ const billing =
             ? { requestTimeoutMs: settings.requestTimeoutMs }
             : {}),
         });
+        // The credit ledger's write side, hoisted so the billing service's renewal payout and
+        // the assembly's creditWriter below share one writer (one set of birth invariants).
+        const billingCreditWriter = createCreditWriter(database);
         return {
           service: createBillingService({
             config: {
@@ -3838,6 +3863,20 @@ const billing =
                 }
               : {}),
             planEntitlements: settings.planEntitlements,
+            // The renewal payout (10.3): a subscription period's allowance lands in the
+            // subscription owner's account. The SERVICE derives that account from the row's own
+            // owner pair; the grantor below spells the ledger write, under the period-tagged key
+            // (composed in ./billing/plan-renewals, the one tested place) that makes a duplicate
+            // or racing delivery a no-op while the next period pays again.
+            renewals: createPlanRenewalGrantor({
+              creditsFor: (planCode) => {
+                const entry = settings.planCatalog.get(planCode);
+                return entry && entry.credits > 0
+                  ? Math.round(entry.credits * CREDIT_SCALE)
+                  : null;
+              },
+              grantCredits: billingCreditWriter.grantCredits,
+            }),
           }),
           // Exposed for the payment assembly below: its activation gate reads the plan's wire
           // facts (interval, currency) through the same client, so the two never disagree about
@@ -3851,7 +3890,7 @@ const billing =
           deploymentPayerBinding,
           // The credit ledger's write side — the same writer the admin grant routes and the plan
           // payout below share. One writer, one set of birth invariants, every grant flows here.
-          creditWriter: createCreditWriter(database),
+          creditWriter: billingCreditWriter,
           // The deployment's own database, where the personal grant route (02.8) resolves the
           // target user and their payer account. The same connection the rest of billing uses.
           database,
@@ -4100,6 +4139,24 @@ if (billing !== undefined && usageOutbox !== undefined) {
           }
           return;
         }
+        // 06.8: the hold must outlive its own expiry, so it may not stay plain-reserved —
+        // mark it unknown BEFORE the evidence write. Best-effort by the same contract as the
+        // release above: a failed mark is logged, never allowed to mask the evidence row or
+        // the stream's own failure.
+        try {
+          await billing.creditWriter.markReservationUnknown(
+            reservation.reservationId,
+            failure.reason,
+          );
+        } catch (error) {
+          logReservationUnknownMarkFailure({
+            source: "llm",
+            eventId: input.eventId,
+            reservationId: reservation.reservationId,
+            reason: failure.reason,
+            error,
+          });
+        }
         await recordUnsettledUsage({
           eventId: input.eventId,
           source: "llm",
@@ -4138,6 +4195,15 @@ if (billing !== undefined && usageOutbox !== undefined) {
     lock: { databaseUrl: config.databaseUrl, key: 4_192_005 },
   });
   billingSweepStops.push(usageSweeps.stop);
+  // The renewal sweep (10.3): every live owned subscription whose provider period moved past
+  // its allowance marker gets that period's payout into the owner's account, once — the pass
+  // backs the webhook path up and retries what it could not finish. The service no-ops when
+  // no renewal payout was wired (a deployment with no plan catalog).
+  const renewalSweeps = startBillingRenewalSweeps(billing.service, {
+    log: (message) => log.warn(message),
+    lock: { databaseUrl: config.databaseUrl, key: 4_192_007 },
+  });
+  billingSweepStops.push(renewalSweeps.stop);
 }
 
 /*
@@ -4208,6 +4274,10 @@ const payments =
 
         const externalCustomerKey = billing.externalCustomerKey;
         const paymentOrderStore = createPaymentStore(database);
+        // The subscription projection's write side, for the one write the activation path owns:
+        // stamping the paying order's ownership onto the row (10.3). The same store instance the
+        // purchase guard's uncached read below uses.
+        const billingProjectionStore = createBillingStore(database);
         const paymentService = createPaymentService({
           providers,
           store: paymentOrderStore,
@@ -4230,6 +4300,12 @@ const payments =
             },
             ensureSubscription: async (input) => {
               return billing.service.ensureSubscription(input);
+            },
+            // 10.3: the activation path stamps the order's ownership onto the subscription row
+            // (the only writer that names it); `false` keeps the order pending-activation so
+            // the sweep retries the idempotent sequence.
+            stampSubscriptionOwnership: async (input) => {
+              return billingProjectionStore.stampSubscriptionOwnership(input);
             },
           },
           externalCustomerKey,
@@ -4292,7 +4368,7 @@ const payments =
           // and the webhooks both maintain; "live" matches the entitlement read's own
           // definition (active/incomplete).
           activePlanCodeUncached: async () => {
-            const rows = await createBillingStore(database).readSubscriptions(
+            const rows = await billingProjectionStore.readSubscriptions(
               billing.externalCustomerKey,
             );
             const live = rows.find(
@@ -4926,14 +5002,19 @@ const craftWebappHmrDeps =
  * preview branch off the main-site conjunction just means its wiring cannot
  * inherit a gate the preview origin's own admission story does not use.
  */
-const craftPreviewWebappHmrDeps = craftEffectiveConfig.enabled
-  ? {
-      config: craftEffectiveConfig,
-      store: createCraftStore(database),
-      botIdFor: craftSandboxBotId,
-      sandboxConnectionFor: craftSandboxConnection,
-    }
-  : undefined;
+const craftPreviewWebappHmrDeps =
+  craftEffectiveConfig.enabled && craftPreviewOrigin !== undefined
+    ? {
+        config: craftEffectiveConfig,
+        store: createCraftStore(database),
+        botIdFor: craftSandboxBotId,
+        sandboxConnectionFor: craftSandboxConnection,
+        // #358 repair: THE pass judgment — the origin's own verifyPass method,
+        // so the HMR upgrade applies exactly the acceptance the HTTP gate ran
+        // (one codec, one cookie iteration) and the two surfaces cannot drift.
+        verifyPass: craftPreviewOrigin.verifyPass,
+      }
+    : undefined;
 
 /**
  * The craft model catalog as one descriptor. The limits are honest defaults rather than
@@ -5738,6 +5819,23 @@ const app = createApp(
   botServiceStore,
 );
 
+/*
+ * The automatic catalog/price sync (Bifrost 03.4, #226): the cadence Q17
+ * names — one sync every five minutes, `BIFROST_CATALOG_SYNC_INTERVAL_MS` to
+ * change it. Started here, after the app exists, because the scheduler
+ * resolves the installed enterprise controls and catalog service, and both
+ * are in place only once the app is built; started any earlier it would hit
+ * the self-gating absent branch and silently schedule nothing. The same
+ * installed instance serves 03.5's administrator "sync now" route, so the
+ * timer and the manual trigger share one single-flight cell. A deployment
+ * without the gateway wired keeps booting: the scheduler answers undefined
+ * and logs, it never blocks startup. Stopped in the signal handler below,
+ * with the other sweeps.
+ */
+const catalogSyncScheduler = startGatewayCatalogSyncScheduler({
+  environmentRate: config.gateway?.creditConversionRate,
+});
+
 /**
  * The live screen, proxied.
  *
@@ -6101,6 +6199,7 @@ if (config.singleUser) {
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     responsibilitySweep.stop();
+    catalogSyncScheduler?.stop();
     wakeUpSweep.stop();
     wakeUpReaper.stop();
     openMuseTaskSweep.stop();

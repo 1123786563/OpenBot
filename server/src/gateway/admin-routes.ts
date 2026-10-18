@@ -55,6 +55,12 @@ import {
   gatewayModelScopeControls,
   MODEL_SCOPE_REASON_MAX_LENGTH,
 } from "./model-scope";
+import {
+  type GatewayCatalogSyncService,
+  GATEWAY_CATALOG_SYNC_STATE_ID,
+  gatewayCatalogSyncControls,
+} from "./catalog-sync";
+import { type AuditStore, recordAuditEvent } from "../audit";
 
 /**
  * The services this surface drives. Defaults resolve through the installed
@@ -71,6 +77,14 @@ export type GatewayAdminRouteDeps = {
   readinessService: () => GatewayReadinessService | undefined;
   /** The administrator's model open scope (03.7): the catalog view plus open/close. */
   modelScopeService: () => GatewayModelScopeService | undefined;
+  /**
+   * The installed catalog/price sync (03.4): the manual trigger calls its
+   * `runSync()` so the click shares the timer's single-flight cell and the
+   * same failure protection — never a second, unprotected sync (03.5).
+   */
+  syncService: () => GatewayCatalogSyncService | undefined;
+  /** The append-only trail every executed trigger is written to (03.5). */
+  auditStore: () => AuditStore | undefined;
 };
 
 function defaultDeps(): GatewayAdminRouteDeps {
@@ -86,6 +100,8 @@ function defaultDeps(): GatewayAdminRouteDeps {
     negotiationService: () => gatewayCapabilityControls(),
     readinessService: () => gatewayReadinessControls(),
     modelScopeService: () => gatewayModelScopeControls(),
+    syncService: () => gatewayCatalogSyncControls(),
+    auditStore: () => enterpriseControls()?.deps.auditStore,
   };
 }
 
@@ -354,6 +370,51 @@ export function gatewayAdminRoutes(
       );
     }
     return context.json({ scope: result.record });
+  });
+
+  /**
+   * Sync now (03.5): the administrator's immediate catalog/price sync. The
+   * action is the installed sync service's own `runSync()` — the same
+   * implementation, single-flight and failure protection the timer runs —
+   * and its outcome is the answer, success or the failing layer's fixed
+   * reason code. Every executed trigger is audited before the outcome is
+   * answered: an unaudited trigger is not a success.
+   */
+  app.post("/catalog/sync", async (context) => {
+    const sync = resolved.syncService();
+    const audit = resolved.auditStore();
+    if (!sync || !audit) {
+      return unavailable(
+        context,
+        "The catalog sync service is not available.",
+        "gateway_catalog_sync_unavailable",
+      );
+    }
+    const outcome = await sync.runSync();
+    await recordAuditEvent(audit, {
+      eventType: "gateway.catalog_sync_triggered",
+      targetType: "gateway_catalog",
+      targetId: GATEWAY_CATALOG_SYNC_STATE_ID,
+      actorUserId: context.var.actor.id,
+      payload:
+        outcome.status === "ok"
+          ? {
+              trigger: "manual",
+              outcome: "ok",
+              syncedAt: outcome.syncedAt,
+              appended: outcome.appended,
+              skipped: outcome.skipped,
+              configVersion: outcome.record.configVersion,
+            }
+          : {
+              trigger: "manual",
+              outcome: "failed",
+              stage: outcome.stage,
+              reasonCode: outcome.reasonCode,
+              failedAt: outcome.failedAt,
+            },
+    });
+    return context.json({ result: outcome });
   });
 
   return app;

@@ -131,3 +131,64 @@ export function startUsageDeliverySweeps(
     },
   };
 }
+
+/**
+ * The renewal sweep (10.3), in the payment sweeper's shape: a delayed first pass, then an
+ * interval, timers unref'd so housekeeping never holds the process open. The webhook path pays
+ * a period the moment its notification arrives; this pass asks the provider directly about
+ * every live owned subscription, so a period whose notification never arrived still pays and a
+ * grant that failed after a delivery still retries — the ledger's `plan-renewal:` key and the
+ * forward-only allowance marker make every re-run a no-op.
+ *
+ * One server sweeps at a time, across replicas, under the Postgres advisory lock the other
+ * sweeps use. The key 4_192_007 is reserved for this sweep (4_192_004 audit retention,
+ * 4_192_005 usage delivery, 4_192_006 payments) and must not be reused.
+ */
+export function startBillingRenewalSweeps(
+  service: { sweepRenewals(): Promise<void> },
+  options: {
+    intervalMs?: number;
+    firstRunMs?: number;
+    log?: (message: string) => void;
+    lock?: SweepLock;
+  } = {},
+): { stop(): void } {
+  const intervalMs = options.intervalMs ?? 60_000;
+  const firstRunMs = options.firstRunMs ?? 60_000;
+  const lock = options.lock;
+  // biome-ignore lint/suspicious/noConsole: stable-code operational log
+  const log = options.log ?? ((message: string) => console.warn(message));
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  let running = false;
+
+  const run = () => {
+    if (running) return;
+    running = true;
+    void withSweepLock(lock, () => service.sweepRenewals())
+      .catch((error: unknown) => {
+        log(
+          `billing: renewal sweep pass failed error=${
+            error instanceof Error ? error.name : "unknown"
+          }`,
+        );
+      })
+      .finally(() => {
+        running = false;
+      });
+  };
+
+  const first = setTimeout(() => {
+    run();
+    const repeating = setInterval(run, intervalMs);
+    repeating.unref?.();
+    timers.push(repeating);
+  }, firstRunMs);
+  first.unref?.();
+  timers.push(first);
+
+  return {
+    stop: () => {
+      for (const timer of timers) clearTimeout(timer);
+    },
+  };
+}

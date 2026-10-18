@@ -52,6 +52,21 @@ export type PaymentLagoFacade = {
     currentPeriodStart?: string | null;
     currentPeriodEnd?: string | null;
   }>;
+  /**
+   * 10.3 (AC14/Q27): stamp the subscription's owner — the paid order's payer, resolved
+   * server-side — and the paid period onto the projection row. The activation call is the
+   * only writer that names ownership; the projection refresh's own upsert names none of the
+   * columns, so a delivery can never move an owner. Optional only so an assembly predating
+   * the seam still compiles: production wires it (index.ts), and an assembly without it
+   * logs a warning on every activation, never silently.
+   */
+  stampSubscriptionOwnership?(input: {
+    externalSubscriptionId: string;
+    ownerPayerKind: PayerRef["kind"];
+    ownerPayerId: string;
+    allowancePeriodStart: Date;
+    allowancePeriodEnd: Date;
+  }): Promise<boolean>;
 };
 
 /** Why a purchase request cannot proceed; the routes map these to 400/409. */
@@ -440,6 +455,66 @@ export function createPaymentService(deps: {
   }
 
   /**
+   * 10.3: the subscription row carries the order's owner — the pair resolved from the
+   * persisted order (already duplicate-refused by `resolveActivationOwnership`), plus the
+   * period the order paid for: the provider's exact period when it answered one, the order's
+   * own snapshot otherwise. Answers whether the stamp landed: `false` keeps the order out of
+   * `applied` so the sweep's next pass re-runs the whole idempotent sequence (the grant key
+   * and the stamp are both retry-safe); a stamp that moved nothing silently would let a
+   * paid subscription sit unattributed forever.
+   */
+  async function stampOwnershipFor(
+    order: PaymentOrderRecord,
+    subscription: {
+      currentPeriodStart?: string | null;
+      currentPeriodEnd?: string | null;
+    },
+  ): Promise<boolean> {
+    const stamp = deps.lago.stampSubscriptionOwnership;
+    if (!stamp) {
+      log.warn(
+        `payments: order ${order.id} activated without a subscription-ownership stamp seam; the projection row stays unattributed`,
+      );
+      return true;
+    }
+    // A pre-attribution legacy order names nobody (Q23): the grant upstream already withheld
+    // its payout, so its activation never reaches this branch in practice.
+    const owner = order.ownerPayerRef;
+    if (!owner) return true;
+    const period =
+      exactPeriodOf(subscription) ??
+      (order.periodStart && order.periodEnd
+        ? { start: order.periodStart, end: order.periodEnd }
+        : null);
+    if (!period) {
+      log.warn(
+        `payments: order ${order.id} answered no period for the ownership stamp; the activation retry re-runs it`,
+      );
+      return false;
+    }
+    try {
+      const stamped = await stamp({
+        externalSubscriptionId: `${deps.externalCustomerKey}-${order.planCode}`,
+        ownerPayerKind: owner.kind,
+        ownerPayerId: owner.id,
+        allowancePeriodStart: period.start,
+        allowancePeriodEnd: period.end,
+      });
+      if (!stamped) {
+        log.warn(
+          `payments: ownership stamp for order ${order.id} found no subscription row; the activation retry re-runs it`,
+        );
+      }
+      return stamped;
+    } catch {
+      log.warn(
+        `payments: ownership stamp for order ${order.id} failed; the activation retry re-runs it`,
+      );
+      return false;
+    }
+  }
+
+  /**
    * Activation: the reconciliation gate, then the subscription, then the credit payout, then the
    * cache drop. Unreachable keeps the order pending-activation for the next pass; everything
    * terminal writes `failed`. A re-run on an already-applied order writes nothing.
@@ -499,6 +574,10 @@ export function createPaymentService(deps: {
       // belongs to) and before `recordActivation(applied)` (a payout that has not landed leaves
       // the activation un-applied, so the sweep's next pass retries it).
       if (!(await grantPlanCreditsFor(order))) return "pending";
+      // The subscription row now carries the order's owner (10.3): stamped after the payout
+      // (the allowance and the row name the same account) and before `applied`, so a stamp
+      // that did not land is retried by the sweep like every other un-applied half.
+      if (!(await stampOwnershipFor(order, subscription))) return "pending";
       deps.invalidateEntitlementCache();
       await deps.store.recordActivation(
         order.id,

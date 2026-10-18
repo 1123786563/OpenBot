@@ -44,7 +44,6 @@ import {
 } from "./nextjs-dev";
 import { refuseResponse } from "./refusal";
 import {
-  holdsPreviewSessionPass,
   PREVIEW_PASS_REFUSAL,
   type ServePreview,
 } from "./preview-origin";
@@ -155,10 +154,13 @@ const PREVIEW_TICKET_UNVERIFIABLE_ERROR =
  * webapp-info's legacy and current branches each used to spell the
  * readFile + trim + null-fold + catch verbatim, and any one site drifting
  * its fold would make the two mirrored surfaces disagree about the SAME
- * session's record. null means "cannot vouch" — no fileApi (undefined), no
- * record ever written (readFile's null), or a thrown read (a gateway
- * flake); a READ record answers its trimmed content, "" included (the
- * empty record is a real answer: the root mount). The consumers' judgments
+ * session's record. null means ONLY "cannot vouch" — no fileApi
+ * (undefined) or a thrown read (a gateway flake); readFile's null (the
+ * record was never written) folds to "" and keeps comparing as the empty
+ * mount, a real answer (the root mount), never a refusal (fix-ocr29 #3:
+ * this sentence previously counted readFile's null among the nulls —
+ * drifting from the code the comment documents). A READ record answers
+ * its trimmed content, "" included. The consumers' judgments
  * stay at their own seams on purpose: the mint needs a non-empty exact
  * match, the legacy branch reads an empty record as the true legacy
  * answer, the current branch compares against the expected mount — same
@@ -316,9 +318,24 @@ function stripRequestHeaders(source: Headers): Headers {
  * server's HMR channel. Nothing here may reach back to the main site's origin,
  * and nothing needs to: the platform's cookies are not in scope on this host
  * (that is the whole point of the origin split — spec F2/D1).
+ *
+ * F-1（codex 重审）closed the two reach-back channels `connect-src` does not
+ * cover. The preview iframe keeps `allow-forms` (preview-tab.tsx) and the
+ * preview host is SAME-SITE with the main site (same eTLD+1) — SameSite is
+ * judged per site, so a form POST from `<label>.preview.example.com` to
+ * `app.example.com` would carry the platform's session cookies, and no
+ * `connect-src` constrains form submissions. `form-action 'self'` walls the
+ * submission target to the preview origin itself. The same reach-back class
+ * exists through nested browsing contexts — an embedded main-site document is
+ * a live, cookie-carrying frame (and a UI-redress surface) the app chooses —
+ * so `frame-src 'self'` pins embedding to the preview origin too. What NEITHER
+ * directive covers is recorded in docs: a direct top-level self-navigation
+ * (`location.href = main-site-write-GET`) has no shipped CSP directive
+ * (`navigate-to` was dropped from CSP3) — that channel is closed by the main
+ * site never mutating on GET, not by this policy.
  */
 const WEBAPP_DEV_CSP =
-  "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self' data:; object-src 'none'; base-uri 'none'";
+  "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; form-action 'self'; frame-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'";
 
 export type ProxyWebappResult = {
   status: number;
@@ -406,18 +423,21 @@ export const legacyWebappPreviewPath = (sessionId: string): string =>
 
 /**
  * The preview origin's serving half (#362, the ServePreview seam preview-origin.ts
- * calls after its cookie gate): the request already carries the preview pass and
- * the app-relative path — this module finds the session's row (BY ID: the pass is
- * the authentication, there is no actor id to ownership-check against), resolves
- * the same sandbox facts the main-site proxy uses, ATTACHES (probe, never spawn),
- * and forwards through proxyWebappRequest with the same header hygiene, CSP and
- * refusal shapes as the same-origin route. A restart-deleted session is an honest
- * 404; a down dev server is the same not-running sentence the pane already shows.
+ * calls after its cookie gate): the request already carries a pass the origin
+ * VERIFIED — this module receives the verified userId and finds the session's
+ * row BY (id, userId) — #358 repair: the ownership re-check. A pass is the
+ * authentication, the verified claim is the authorization: a row the userId
+ * no longer owns (reassigned / restart-deleted) is the same honest 404, and a
+ * dial never happens for it. Then the same sandbox facts the main-site proxy
+ * uses, ATTACHED (probe, never spawn), forwarded through proxyWebappRequest
+ * with the same header hygiene, CSP and refusal shapes as the same-origin
+ * route. A down dev server is the same not-running sentence the pane already
+ * shows.
  */
 export function createPreviewProxy(deps: {
   config: CraftConfig;
-  /** The by-id row lookup (no activity bump — routing, not use). */
-  store: Pick<CraftStore, "findSessionById">;
+  /** The bump-free (id, owner) row lookup (routing, not use). */
+  store: Pick<CraftStore, "findSession">;
   botIdFor: (sessionId: string) => Promise<string | null>;
   sandboxConnectionFor: (
     botId: string,
@@ -439,8 +459,8 @@ export function createPreviewProxy(deps: {
   // skips only the dial whose answer ("up") is already known.
   const READY_MEMO_TTL_MS = 3_000;
   const readyUntil = new Map<string, number>();
-  return async ({ sessionId, request, appPath, query }) => {
-    const session = await deps.store.findSessionById(sessionId);
+  return async ({ sessionId, userId, request, appPath, query }) => {
+    const session = await deps.store.findSession(sessionId, userId);
     if (!session) {
       // fix-ocr28 #5: the deleted session's memo entries die with the row.
       // The 404 branch used to leave them behind — dead-session keys whose
@@ -1236,13 +1256,25 @@ export function webappHmrIsAppPath(appPath: string): boolean {
 }
 
 /**
- * The preview-origin resolver's deps (#363): the by-id row the preview seam reads
- * (the pass IS the authentication — there is no actor id to ownership-check
- * against) plus the sandbox facts every upstream resolution shares.
+ * The preview-origin resolver's deps (#363): the (id, owner) row the preview
+ * seam reads (#358 repair — findSession with the pass's verified userId, so a
+ * reassigned/deleted row is a 404 before any upgrade commits) plus the SAME
+ * pass judgment the HTTP gate runs (verifyPass, injected from the origin — one
+ * codec, one cookie iteration, one acceptance) and the sandbox facts every
+ * upstream resolution shares.
  */
 export type PreviewWebappHmrDeps = {
   config: CraftConfig;
-  store: Pick<CraftStore, "findSessionById">;
+  store: Pick<CraftStore, "findSession">;
+  /**
+   * THE pass judgment — the origin's own verifyPass method (the boot file
+   * injects it), so the upgrade applies exactly the acceptance the HTTP gate
+   * ran, never a second derivation of it.
+   */
+  verifyPass: (
+    sessionId: string,
+    request: Request,
+  ) => { userId: string } | null;
   botIdFor: (sessionId: string) => Promise<string | null>;
   /** Connection facts for a Bot's sandbox gateway (baseUrl + token). */
   sandboxConnectionFor: (
@@ -1253,12 +1285,15 @@ export type PreviewWebappHmrDeps = {
 /**
  * The HMR upgrade's authorization + target resolution ON A PREVIEW HOST (#363) —
  * the host-routed twin of resolveWebappHmrUpgrade. The authorization is the
- * preview pass (the D9 cookie the redemption hop planted): the SAME judgment the
- * HTTP proxy applies — present, and naming THIS host's session. A platform
- * session is never in scope on these hosts (that is the origin split's whole
- * point), and a ticket in the query is not a credential: the redemption hop
- * consumed it, and its only legal lifetime was that one 302. Refusals keep the
- * proxy's 401/404/503 shapes and land BEFORE the caller commits `server.upgrade`.
+ * preview pass (#358 repair): the SAME signed-pass judgment the HTTP proxy
+ * applies — injected as deps.verifyPass, the origin's own verify — and its
+ * verified userId then re-checks the row BY (id, owner): a pass minted before
+ * a reassignment or restart-deletion dies here as the same 404 the HTTP seam
+ * answers. A platform session is never in scope on these hosts (that is the
+ * origin split's whole point), and a ticket in the query is not a credential:
+ * the redemption hop consumed it, and its only legal lifetime was that one
+ * 302. Refusals keep the proxy's 401/404/503 shapes and land BEFORE the caller
+ * commits `server.upgrade`.
  */
 export async function resolvePreviewWebappHmrUpgrade(
   deps: PreviewWebappHmrDeps,
@@ -1270,10 +1305,11 @@ export async function resolvePreviewWebappHmrUpgrade(
     query: string;
   },
 ): Promise<WebappHmrResolution> {
-  if (!holdsPreviewSessionPass(input.sessionId, input.request)) {
+  const verified = deps.verifyPass(input.sessionId, input.request);
+  if (verified === null) {
     return { ok: false, status: 401, error: PREVIEW_PASS_REFUSAL };
   }
-  const session = await deps.store.findSessionById(input.sessionId);
+  const session = await deps.store.findSession(input.sessionId, verified.userId);
   if (!session) {
     return {
       ok: false,
