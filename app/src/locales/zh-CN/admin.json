@@ -442,7 +442,13 @@
       "usageEmpty": "最近 30 天没有记录到 Bot 运行。",
       "usageLine_one": "30 天内 {{count}} 人的 {{runs}} 次运行",
       "usageLine_other": "30 天内 {{count}} 人的 {{runs}} 次运行",
-      "offAllowlist": " · {{number}} 次不在允许列表"
+      "offAllowlist": " · {{number}} 次不在允许列表",
+      "creditPathTitle": "积分计费路径",
+      "creditPathDescription": "调用经模型网关或供应商凭据发出，首字前先做积分预留，用量进入计费事实。余额不足即拒绝本次运行，不会切换路径。",
+      "subscriptionPathTitle": "订阅 harness 路径",
+      "subscriptionPathDescription": "Claude Code 或 ChatGPT 订阅凭据跑在本部署自有的 harness 上，由该订阅计费：不做积分预留，也绝不作为积分耗尽时的回退路径。",
+      "pathActive": "使用中",
+      "pathInactive": "未启用"
     },
     "recording": {
       "title": "录制与导出",
