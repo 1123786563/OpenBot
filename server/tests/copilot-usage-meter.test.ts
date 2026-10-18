@@ -5,6 +5,7 @@ import { LLMock } from "@copilotkit/aimock";
 import { createOpenAI } from "@ai-sdk/openai";
 import {
   builtInAgentConfiguration,
+  type BuiltinModelSpanFact,
   CreditGateError,
   CreditPolicyUnconfiguredError,
   type ModelUsageGateLifecycle,
@@ -13,6 +14,7 @@ import {
   ModelUsageSettlementError,
   resolveRuntimeAgents,
   runtimeModelForEnvironment,
+  setBuiltinModelSpanObserver,
   setModelUsageGate,
   setModelUsageMeter,
   UnmeterableModelError,
@@ -1045,6 +1047,49 @@ describe("the model usage bound contract (pre-call admission)", () => {
       });
       expect(phases).toEqual([{ phase: "finish" }]);
     } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a finish whose durable write fails still reports the call's one settlement_failed span (OCR R5-47)", async () => {
+    const { calls, model } = recordingModel({ inputTokens: 3, outputTokens: 2 });
+    const spans: BuiltinModelSpanFact[] = [];
+    try {
+      setBuiltinModelSpanObserver((fact) => spans.push(fact));
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        // The lifecycle owner's outbox write failed after the provider finished.
+        finish: async () => {
+          throw new ModelUsageSettlementError("usage_persistence_failed");
+        },
+      }));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream({ prompt: [] });
+      let failure: unknown;
+      try {
+        for await (const _part of result.stream) {
+        }
+      } catch (error) {
+        failure = error;
+      }
+      expect(calls).toHaveLength(1);
+      expect(failure).toMatchObject({
+        name: "ModelUsageSettlementError",
+        code: "usage_persistence_failed",
+      });
+      // OCR R5-47 regression: settleFinish claims `settled` BEFORE awaiting
+      // lifecycle.finish, so when that await rejects the settlement-failure
+      // exit read the borrowed flag as "verdict already on record" and the
+      // call produced ZERO spans (pre-V5 reported exactly one
+      // settlement_failed). What is on record is the span flag's business,
+      // not the billing flag's: exactly one span, naming the failure.
+      expect(spans).toHaveLength(1);
+      expect(spans[0].ending).toEqual({
+        kind: "settlement_failed",
+        code: "usage_persistence_failed",
+      });
+    } finally {
+      setBuiltinModelSpanObserver(undefined);
       setModelUsageGate(undefined);
     }
   });
