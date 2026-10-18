@@ -20603,8 +20603,8 @@
         }
       },
       "foreignKeys": {
-        "credit_reservation_attribution_reservation_id_credit_reservations_id_fk": {
-          "name": "credit_reservation_attribution_reservation_id_credit_reservations_id_fk",
+        "credit_reservation_attribution_reservation_id_fk": {
+          "name": "credit_reservation_attribution_reservation_id_fk",
           "tableFrom": "credit_reservation_attribution",
           "tableTo": "credit_reservations",
           "columnsFrom": [
@@ -20616,8 +20616,8 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "credit_reservation_attribution_grant_id_access_grants_grant_id_fk": {
-          "name": "credit_reservation_attribution_grant_id_access_grants_grant_id_fk",
+        "credit_reservation_attribution_grant_id_fk": {
+          "name": "credit_reservation_attribution_grant_id_fk",
           "tableFrom": "credit_reservation_attribution",
           "tableTo": "access_grants",
           "columnsFrom": [
