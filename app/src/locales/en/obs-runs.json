@@ -1,0 +1,37 @@
+{
+  "title": "Run records",
+  "states": {
+    "disabled": {
+      "title": "Run tracking is not enabled",
+      "description": "This deployment has not switched on run tracking, so no runs are being recorded for this Bot."
+    },
+    "empty": {
+      "title": "No runs yet",
+      "description": "Recorded runs of this Bot appear here once tracking has captured one."
+    },
+    "forbidden": {
+      "title": "You cannot view this Bot's runs",
+      "description": "Run records belong to the Bot's creator and administrators; access to the Bot is not enough."
+    },
+    "basic": {
+      "title": "Basic-level record",
+      "description": "This run was observed at basic level: it shows what passed through OpenBot, not the runtime's internal steps."
+    },
+    "omitted": {
+      "title": "Content omitted",
+      "description": "Part of this run was withheld by the redaction policy before it was stored."
+    },
+    "truncated": {
+      "title": "Content truncated",
+      "description": "Part of this run exceeded the field limit and was cut short; the full content was never stored."
+    },
+    "syncing": {
+      "title": "Runs are still syncing",
+      "description": "A finished run reaches this page shortly after it ends; give it a moment."
+    },
+    "unavailable": {
+      "title": "Run records are unavailable",
+      "description": "The tracking service could not be reached, so run records cannot be shown right now. The runs themselves were not affected."
+    }
+  }
+}
