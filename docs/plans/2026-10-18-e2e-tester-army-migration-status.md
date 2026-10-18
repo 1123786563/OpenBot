@@ -73,7 +73,7 @@ Test Files  34 failed | 550 passed | 17 skipped (601)
 | `red-on-old-runner-with-current-code` | 12 | 现网生产代码 + 迁移前套件文本 + `bun test` 也是红的 → 换运行器没有改变结论（这 12 个几乎全是 `server/tests/enterprise/*`，本机 5432/6333 拒连正是它们的依赖） |
 | `runner-difference` | 2 | 同一份代码同一份套件文本，旧运行器绿、e2e 红：`app/tests/github-sources-settings.test.tsx`、`app/tests/memory-settings.test.tsx`，共 3 条断言。已按 ADR 0008 的两层制补进驱动层（Bun 执行、e2e 调度与报告），这是本轮唯一剩余的「运行器差异」 |
 | `no-pre-migration-suite` | 1 | `tests/bun-suites.test.ts` 本身是迁移产物（驱动层 17 组各一条断言，红的是 Bun 侧套件内部真失败） |
-| `old-runner-unreadable` | 1 | `agent-sandbox/tests/proxy.test.ts`：旧运行器 junit 读不出计数，不当作通过 |
+| `old-runner-unreadable` | 1 | `agent-sandbox/tests/proxy.test.ts`：对照跑没读到结论 —— 它硬编码 `serve({ port: 4600 })`，那一刻 4600 被一个跑完汇总却没退出的 e2e 进程占着（下一节），旧运行器 `EADDRINUSE` 中止。它自己在 e2e 下是 24 passed / 1 failed，**那条失败是否有迁移责任仍未判定**，要在端口空闲时重跑对照 |
 
 也就是说：整条原生层 195 条里，能归到「迁移把它改红了」的只有 3 条，且已处理；
 其余要么迁移前就红、要么依赖没起、要么是 Bun 层内部失败被如实上报。
@@ -96,6 +96,16 @@ Test Files  34 failed | 550 passed | 17 skipped (601)
 （`server/tests/config|schema|copilot|audit|guards|ready`、`tests/compose`、`server/src/knowledge/*`、
 `server/tests/enterprise/*`）留在原生层如实报失败，2 个在迁移前不存在（并行会话新增），
 1 个旧运行器输出读不出。剩下的 34 个就是上表这一轮。
+
+## 固定监听端口会让 verdict 取决于谁抢到端口
+
+`agent-sandbox/tests/proxy.test.ts` 无条件 `serve({ port: 4600 })`。后果不是它自己红不红，
+而是**同一条套件在两个进程里同时跑时，谁晚到谁 EADDRINUSE**：对照跑（`bun test` 该文件）撞上正在
+进行的 `bun run test`，旧运行器就直接中止、junit 不写，于是它的归因停在"未判定"。
+迁移前后这一点没有区别（`bun test ./agent-sandbox` 时代也一样占住 4600），也不是兼容层该藏的：
+让 Node 端口悄悄回落到别的端口，会把"这个套件假设了固定端口"这一事实抹掉。
+要它稳定，应由该套件改绑 0 再读实际端口（`serve().port` 已经能读到绑定后的端口，见
+`tests/support/bun-compat.ts` 的 `boundPort()`）。
 
 ## 迁移过程中修掉的真实缺陷（不是「让测试变绿」，是原来就坏的地方）
 
