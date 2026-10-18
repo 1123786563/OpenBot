@@ -1,0 +1,44 @@
+cwd: /Users/wuyongjun/orca/workspaces/OpenBot/w15-mt123/server
+pristine sha256: 2c426e7071f5d06f3cc89ab230a3f0c54d70db086408ec333bc1585b10476fc8
+=== MUT1 inject ===
+[MUT1]  23 pass
+[MUT1]  1 fail
+[MUT1]  75 expect() calls
+[MUT1] Ran 24 tests across 1 file. [586.00ms]
+[MUT1] RESTORE-VERIFIED byte-identical (2c426e7071f5d06f3cc89ab230a3f0c54d70db086408ec333bc1585b10476fc8)
+=== MUT2 inject ===
+[MUT2]  23 pass
+[MUT2]  1 fail
+[MUT2]  75 expect() calls
+[MUT2] Ran 24 tests across 1 file. [494.00ms]
+[MUT2] RESTORE-VERIFIED byte-identical (2c426e7071f5d06f3cc89ab230a3f0c54d70db086408ec333bc1585b10476fc8)
+=== MUT3 inject ===
+[MUT3]  21 pass
+[MUT3]  3 fail
+[MUT3]  64 expect() calls
+[MUT3] Ran 24 tests across 1 file. [556.00ms]
+[MUT3] RESTORE-VERIFIED byte-identical (2c426e7071f5d06f3cc89ab230a3f0c54d70db086408ec333bc1585b10476fc8)
+=== MUT4 inject ===
+[MUT4]  23 pass
+[MUT4]  1 fail
+[MUT4]  75 expect() calls
+[MUT4] Ran 24 tests across 1 file. [524.00ms]
+[MUT4] RESTORE-VERIFIED byte-identical (2c426e7071f5d06f3cc89ab230a3f0c54d70db086408ec333bc1585b10476fc8)
+=== MUT5 inject ===
+[MUT5]  21 pass
+[MUT5]  3 fail
+[MUT5]  69 expect() calls
+[MUT5] Ran 24 tests across 1 file. [560.00ms]
+[MUT5] RESTORE-VERIFIED byte-identical (2c426e7071f5d06f3cc89ab230a3f0c54d70db086408ec333bc1585b10476fc8)
+=== MUT6 inject ===
+[MUT6]  23 pass
+[MUT6]  1 fail
+[MUT6]  74 expect() calls
+[MUT6] Ran 24 tests across 1 file. [563.00ms]
+[MUT6] RESTORE-VERIFIED byte-identical (2c426e7071f5d06f3cc89ab230a3f0c54d70db086408ec333bc1585b10476fc8)
+=== final green re-run after all mutations restored ===
+ 24 pass
+ 0 fail
+ 75 expect() calls
+Ran 24 tests across 1 file. [504.00ms]
+RESTORE-VERIFIED byte-identical (2c426e7071f5d06f3cc89ab230a3f0c54d70db086408ec333bc1585b10476fc8)

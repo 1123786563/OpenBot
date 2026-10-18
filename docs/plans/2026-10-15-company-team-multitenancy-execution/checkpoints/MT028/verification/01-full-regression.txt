@@ -1,0 +1,10 @@
+# MT028 全量回归（2026-10-17）
+command: bun test tests/multitenancy/ --timeout 120000
+expect: ≥770+25 新增 = 795 pass / 0 fail / 0 skip / 30 文件
+(pass) MT026 revalidation drift: a context issued before a membership change is refused > an in-transaction revalidation fails with SCOPE_REVOKED after the epoch moved [15.39ms]
+
+ 795 pass
+ 0 fail
+ 10805 expect() calls
+Ran 795 tests across 30 files. [39.87s]
+exit=0

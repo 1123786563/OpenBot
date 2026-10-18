@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "tool": "multitenancy-migrate-test",
+  "taskId": "MT034",
+  "planDigest": "6166500f788f86a219ec4f17452856a207fed0e7c9f4519c63ce0139352d6870",
+  "steps": [
+    {
+      "number": 1,
+      "name": "0001_mt034_shared_approval_tables.sql",
+      "statementDigest": "e74692e509421c7a9ed7441d659c331474dd650b746d066ac9c07b5132da1bf8",
+      "statementCount": 17
+    },
+    {
+      "number": 2,
+      "name": "0002_mt034_shared_approval_rls_policies.sql",
+      "statementDigest": "c8e19ef37d5cb56f0c88bf362c7f8c8e267f2c4ac7250dc6b7e2648df3da62bf",
+      "statementCount": 18
+    }
+  ]
+}

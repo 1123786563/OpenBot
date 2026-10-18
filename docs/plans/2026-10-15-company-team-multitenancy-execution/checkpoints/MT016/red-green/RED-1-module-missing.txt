@@ -1,0 +1,4 @@
+# Unhandled error between tests
+error: Cannot find module '../../src/enterprise/tenancy/bots-ownership' from '/Users/wuyongjun/orca/workspaces/OpenBot/i10-mt016/server/tests/multitenancy/bots-ownership.test.ts'
+ 1 fail
+ 1 error

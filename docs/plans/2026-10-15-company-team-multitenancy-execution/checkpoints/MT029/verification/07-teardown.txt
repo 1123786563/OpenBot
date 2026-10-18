@@ -1,0 +1,17 @@
+== MT029 teardown（2026-10-18）==
+--- docker rm -f mt029-impl-pg
+mt029-impl-pg
+rm-exit=0
+--- deletion check: container name
+0
+grep-exit=1 (1 = 不存在)
+--- deletion check: port 55581
+0
+lsof-grep-exit=1 (1 = 已释放)
+--- env deletion: /tmp/mt029-env.sh
+rm-exit=0
+ls: /tmp/mt029-env.sh: No such file or directory
+ls-exit=1 (1 = 不存在)
+--- 变异库残留检查（应无 mut 库）
+0
+grep-exit=1 (1 = 无残留)

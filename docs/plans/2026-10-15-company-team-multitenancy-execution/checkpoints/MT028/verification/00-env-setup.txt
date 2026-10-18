@@ -1,0 +1,32 @@
+# MT028 环境搭建（2026-10-17）
+container: mt028-impl-pg (pgvector/pgvector:pg16, 127.0.0.1:55530, trust, POSTGRES_DB=openbot_enterprise_mt028_test)
+port precheck: 55530 free（并行票容器 mt021-impl-pg=55529、mt037-impl-pg=55531 均不复用不触碰）
+databases: openbot_enterprise_mt028_test + openbot_enterprise_mt028_assigned (MT003_ASSIGNED 用例) + openbot_kb_mt028_test (KB 第 7 变量专用库)
+logins: ent_mt028_{dir,data,opr} 各持唯一 capability ob_ent_*；ent_mt028_kb (NOSUPERUSER NOBYPASSRLS) 为 KB 库属主通道
+
+== enterprise-test-db.ts migrate ==
+{"type":"migrations-applied","status":"ok"}（本任实测 2026-10-17）
+
+== 依赖序 apply（migrate-test.ts 实测）==
+MT004→MT008→MT112→MT012→MT014→MT010→MT009→MT077→MT026→MT076→MT069→MT016→MT041→MT027 applied ×14 + MT028 applied（planDigest=589616954be9e3799f286045f9a1d1143dbe3874df0c69011e84ade0168ac60a，steps 0001+0002，5+7 语句；开发中 row-shape CHECK 修正一次：consumed→failed 保留 consumed_at，见 migration-fix 记录）
+
+== journal 终态 ==
+ task_id | steps 
+---------+-------
+ MT004   |     2
+ MT008   |     2
+ MT009   |     2
+ MT010   |     2
+ MT012   |     2
+ MT014   |     2
+ MT016   |     2
+ MT026   |     2
+ MT027   |     2
+ MT028   |     2
+ MT041   |     2
+ MT069   |     1
+ MT076   |     1
+ MT077   |     2
+ MT112   |     4
+(15 rows)
+

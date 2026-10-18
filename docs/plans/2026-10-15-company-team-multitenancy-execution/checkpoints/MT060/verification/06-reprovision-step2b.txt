@@ -1,0 +1,2 @@
+== step 2b: base migration + restricted logins (enterprise-test-db.ts migrate) @ 2026-10-18T04:23:00Z ==
+{"type":"migrations-applied","status":"ok"}

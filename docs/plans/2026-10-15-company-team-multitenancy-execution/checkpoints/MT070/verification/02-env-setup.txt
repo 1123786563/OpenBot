@@ -1,0 +1,12 @@
+# MT070 environment setup — 2026-10-16T21:52:29Z
++ docker run -d --name mt070-impl-pg -e POSTGRES_HOST_AUTH_METHOD=trust -p 127.0.0.1:55528:5432 pgvector/pgvector:pg16
+dc4996c86567432727f77785877e611c0b2db3323ed297a7755630c2f2c158f7
++ sleep 6
++ docker exec mt070-impl-pg psql -U postgres -tc 'select version()'
+ PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
+
++ docker exec mt070-impl-pg psql -U postgres -c 'create database openbot_enterprise_mt070_test'
+CREATE DATABASE
++ docker exec mt070-impl-pg psql -U postgres -c 'create database openbot_enterprise_mt070_assigned'
+CREATE DATABASE
++ set +x

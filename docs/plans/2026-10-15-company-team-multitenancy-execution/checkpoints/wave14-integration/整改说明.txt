@@ -1,0 +1,50 @@
+# wave14-integration 整改说明
+
+日期：2026-10-18（集成执行者：Orca worker task_eb7fb755821a / ctx_139be718e791）
+范围：五票（MT022/MT031/MT122/MT042/MT059）合并进 EXE 集成树 + 批终验。零 git 提交。
+
+本次集成共两项整改、一项配方说明，全部逐字节落盘披露如下。
+
+## §1 F-2 biome 微修（MT031 复审 F-2，brief 预授权）
+
+- 对象：`server/scripts/multitenancy/migrate-test.ts`（合并态）。
+- 动作：`bunx biome check --write` 一次性收敛 6 处排版违规——
+  1) mt031 块内 1 处 `'\t"status"…'` 单引号风格行（源树 mt031 曾把 5 处历史行改为单引号，
+     与 EXE 基线双引号风格冲突；biome 对合并文件钉定基线风格，该行被归一）；
+  2) 两处块拼接产生的双空行（MT031/MT042/MT059 块间、MT059 块与 TASKS 注册表之间）。
+- 语义：运行时 SQL 字符串逐字节等价——oracle 实测 TASKS 20 任务 / 376 条 statements，
+  before/after digest 均 382e60ea152478e8，byte-diffs=0（见 biome-fix-diff.txt）。
+- 复验：biome check 同文件 exit 0；migration-tool.test 穷举断言 41/0（216 expect）全绿；
+  全量复跑 1124/0/43 exit 0。
+
+## §2 MT122 环境令牌整改（w14e → w14int）
+
+- 冲突：MT122 交付的 `server/tests/multitenancy/entry-context.test.ts:189` 将库名钉死为其
+  票面 brief 令牌 `openbot_enterprise_w14e`（原注释「库名带 brief 的 w14e 令牌」）；而本波次
+  集成 brief 规定库名 `openbot_enterprise_w14int_*`。两条规格在集成面不相交成立。
+- 实测：复跑 1 全量 1123/1/43，唯一 fail 即该用例（期望 w14e 实得 w14int）。
+- 升级：已用 `orca orchestration ask`（msg_db4ac86bd2e5，run_9b7a1f8cb8d5）向 coordinator
+  提交三选一裁定（A 令牌微修 / B 集成库改名 / C 保留偏差），等待 30 分钟无应答、run 内零消息。
+- 处置：按 brief 自身两条硬性规定的交集执行 A——库名维持 w14int、终验数字达成 1124/0/43。
+  该用例断言语义不变（专库 + 受限 ob_ent_data 角色 + 绝不回退开发库），仅环境令牌随集成
+  brief 更新，注释同步改写并注明整改来历。
+- 复验：聚焦 21/0（七变量 env 下）；全量 1124/0/43 exit 0。
+- 披露：manifest.txt §C 单列 RECTIFIED（src/exe 双哈希）；本文件为逐字说明。
+  若 coordinator 事后另裁（如改回 w14e 或换名），一行即可回退，重跑聚焦+全量即可。
+
+## §3 配方链序说明（非整改，brief 钉定项确认）
+
+- 前置链按 brief 修正链序执行：MT004→MT008→MT112→MT012→MT014→MT010→MT009→MT077→
+  MT026→MT076→MT069→MT016→MT041→MT027→MT028→MT070，随后 MT031→MT042→MT059
+  逐任务 generate+apply，共 19 任务、journal 34 步（MT112×4 + MT042/MT069/MT070/MT076 各 1
+  + 其余 14 任务各 2）。MT042 源树 provision-db.sh 中的旧链序（MT012 前 MT112 后置等）未被
+  沿用——以集成 brief 修正序为准（MT042 四任报告披露③同款修正先例）。
+
+## §4 其他核对（零整改面）
+
+- app 面：五票均 server 面，`git status` app/ 零文件（inventory.test 文件数断言以 43 实测通过）。
+- cargo：本波次无 Rust 涉及面，按 brief 跳过。
+- 变异残留：五票 personal-bot.ts（MUT-1 移除态 ba7ec225）、scan-executor.ts 等冻结面均按
+  源树工作树态哈希逐一相等落位（manifest §A），无变异体混入。
+- 终态数字：1124 pass / 0 fail / 43 文件；typecheck exit 0；biome 增量文件 0（存量 6 处按
+  MT030 复审 F1 口径披露于 biome-fix-diff.txt）。

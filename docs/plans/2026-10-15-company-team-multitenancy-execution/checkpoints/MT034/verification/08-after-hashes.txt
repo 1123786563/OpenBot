@@ -1,0 +1,9 @@
+# after-hashes — 2026-10-18T06:53:23Z（本票触及/交付文件终态哈希）
+a7d155de6028a5dbd1e7ebc1c4b2b22b200fb3e486e0ba2670d22e96caf3a31b  server/src/db/schema/enterprise-shared-approvals.ts
+b7786e0e74767e27c451c241dd105bb95716477e152d303867ed4c5e78bf011f  server/src/enterprise/tenancy/shared-approvals.ts
+8782bd81d13569464e6101414ef15dc60b0d4bd20ade131d7e73b9b5a3fdb7cd  server/tests/multitenancy/shared-approvals.test.ts
+183fd1d1ee0de5003e534d99055a83e286c3f23f5a1ce6a7d231eba7908d0323  server/tests/multitenancy/support/shared-approvals.ts
+f6d2ab4afb3abd39cfd1c9677a67ab458a13317f17e86c7a1c9757d22e1b0bbd  server/src/db/schema/index.ts
+587ad5186e3ff90b904da054f506aa5199f58f8928fb123b2b12f7f0878bf427  server/scripts/multitenancy/migrate-test.ts
+b2c8db2b66ca411cbfec3e1bb0cd91fd309dad592f669bff9d55e5376e2e10fe  server/tests/multitenancy/migration-tool.test.ts
+80074d2be69d7ae303784faca5c6945dd4c055aecf316324e676f9c2877b707a  server/src/index.ts

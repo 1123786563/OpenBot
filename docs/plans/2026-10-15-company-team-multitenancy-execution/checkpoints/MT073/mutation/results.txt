@@ -1,0 +1,11 @@
+# MT073 变异结果（二任执行版，2026-10-18 11:42:58）
+# 计划=run-mutations.sh（M01–M07 语义逐字继承）；执行版差异：\n 解码、M04 锚点对齐真实格式、逐次还原即校验
+# pristine sha256: 51c5aa04bf4ce9db989b9f5b6ec81c8ce998bb77d5a9822693369d9a05d7cd98（=after-hashes.txt company-finance-visibility.ts）
+ 8 pass  8 fail  <= M01 gate removed (grant-row/active checks bypassed)
+ 13 pass  3 fail  <= M02 live active-membership check removed
+ 15 pass  1 fail  <= M03 revocation delete matches nothing
+ 15 pass  1 fail  <= M04 account-side company total loses its customer filter
+ 15 pass  1 fail  <= M05 duplicate-grant refusal removed
+ 15 pass  1 fail  <= M06 grantor membership precheck removed
+ 15 pass  1 fail  <= M07 grantee membership precheck removed
+RESTORE-VERIFIED byte-identical (51c5aa04bf4ce9db989b9f5b6ec81c8ce998bb77d5a9822693369d9a05d7cd98)

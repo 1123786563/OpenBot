@@ -1,0 +1,5 @@
+== MT037 before-state（领取时；票为纯新增，无 before 文件）==
+# 本票 3 个交付文件全部为新建，无 before 哈希；
+# 变异测试触及的冻结面前置状态（= prereq-manifest 值，领取时复算一致）：
+5cc994ba98f652ac551c9805eda2b24ea2eed197beaf583546a74b0094cb79c2  server/src/kb/application/service/kb-restricted-query.ts   (MT036 交付，票面冻结)
+fd0e462793672ad0eacbe20cb387014c2c57689f73e994a4b75b61fc65797b94  server/src/enterprise/tenancy/kb-ownership.ts   (MT036 交付，票面冻结)

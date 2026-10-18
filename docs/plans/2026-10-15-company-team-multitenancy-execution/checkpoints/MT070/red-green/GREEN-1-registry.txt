@@ -1,0 +1,6 @@
+(pass) applies MT000 end-to-end on the assigned dedicated test database [47.85ms]
+
+ 42 pass
+ 0 fail
+ 230 expect() calls
+Ran 42 tests across 1 file. [282.00ms]

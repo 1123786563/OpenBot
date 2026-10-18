@@ -1,0 +1,6 @@
+# bun run build — 顺带再生成 routeTree.gen.ts（本票新路由，纯追加 21 行），终字节（2026-10-16T19:44:14Z）
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 24.49s
+pipe-exit=0

@@ -1,0 +1,25 @@
+1131 |           );
+1132 |           expect(badAction).toContain("23514");
+                                   ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "23514"
+Received: "sql is not defined"
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/w15-mt029/server/tests/multitenancy/credential-lease.test.ts:1132:29)
+(fail) MT029 credential lease: fixed purpose, scope, revocable (Issue #72) > MT029 storage fences > the audit vocabulary and detail shape are closed sets at the database too [0.38ms]
+1155 |           // 读写）：三条复合外键分别钉住凭据/持有人/团队必属本公司，且
+1156 |           // 删除策略为 cascade。RLS 授权矩阵内没有任何通道能插入跨公司
+1157 |           // 行（data 的 INSERT 策略 pin principal，operator 无 INSERT），
+1158 |           // 故不以外键违例探针破授权矩阵（MT027 的 23503 探针依赖
+1159 |           // operator INSERT——本表授权矩阵刻意不授予）。
+1160 |           const fks = await fixture.base.catalog.foreignKeys(
+                                                        ^
+TypeError: fixture.base.catalog.foreignKeys is not a function. (In 'fixture.base.catalog.foreignKeys("enterprise_credential_leases")', 'fixture.base.catalog.foreignKeys' is undefined)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/w15-mt029/server/tests/multitenancy/credential-lease.test.ts:1160:50)
+(fail) MT029 credential lease: fixed purpose, scope, revocable (Issue #72) > MT029 storage fences > cross-company lease rows are structurally impossible (composite FKs) [0.09ms]
+
+ 19 pass
+ 5 fail
+ 192 expect() calls
+Ran 24 tests across 1 file. [1.70s]

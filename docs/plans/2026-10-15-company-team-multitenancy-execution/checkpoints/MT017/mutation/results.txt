@@ -1,0 +1,39 @@
+== MT017 mutation results (all injected into server/src/enterprise/tenancy/bot-publish.ts; pristine sha256 9bb87d5d7e932f77cc4789544a5f2c6afab72a7972a4bf054dc6a271d1474721; each restored and hash-verified) ==
+pristine: 9bb87d5d7e932f77cc4789544a5f2c6afab72a7972a4bf054dc6a271d1474721  (post-all-mutations re-verify)
+
+MUT1 mutated: d6947a4d781264eea0449e28aa90dae377ad236ac45d402f4e41a2fa398b99cb
+MUT1 restored: 9bb87d5d7e932f77cc4789544a5f2c6afab72a7972a4bf054dc6a271d1474721
+MUT1 result:  32 pass 
+
+MUT2 mutated: 4a39b75cd6989ce1896eed5fcffdde717acd5af04c1fc468539bbf8af6219dfd
+MUT2 restored: 9bb87d5d7e932f77cc4789544a5f2c6afab72a7972a4bf054dc6a271d1474721
+MUT2 result:  33 pass 
+
+MUT3 mutated: 9de94fd56cd286fb598a7b7b16c4c656fbc6f00c545dd78fbb460bfdd535ceaf
+MUT3 restored: 9bb87d5d7e932f77cc4789544a5f2c6afab72a7972a4bf054dc6a271d1474721
+MUT3 result:  33 pass 
+
+MUT4 mutated: fe03fd723b78fc40db981835ee8cad7e98e89f86357459bdb5c33c94df313478
+MUT4 restored: 9bb87d5d7e932f77cc4789544a5f2c6afab72a7972a4bf054dc6a271d1474721
+MUT4 result:  30 pass 
+
+MUT5 mutated: eee3241b19f6d1d5d2c2cf64fc9f0464bb7939d5665c7c8c93a3cb16c9cfc6e9
+MUT5 restored: 9bb87d5d7e932f77cc4789544a5f2c6afab72a7972a4bf054dc6a271d1474721
+MUT5 result:  14 pass 
+
+MUT6 mutated: 77a8c01de766739d00b0090d380c69289e61ddf1f3dd0db0c298355191d6d332
+MUT6 restored: 9bb87d5d7e932f77cc4789544a5f2c6afab72a7972a4bf054dc6a271d1474721
+MUT6 result:  33 pass 
+
+MUT7 mutated: 6b6ffd24fa5a00388d952079b9c086437b581eaa0051dc5528e008fafa6af478
+MUT7 restored: 9bb87d5d7e932f77cc4789544a5f2c6afab72a7972a4bf054dc6a271d1474721
+MUT7 result:  31 pass 
+
+MUT1 ownership visibility gate removed -> CAPTURED (2 fail: a2/cross-company invisibility)
+MUT2 owner gate removed (publishBot) -> CAPTURED (1 fail: non-owner PUBLISH_FORBIDDEN)
+MUT3 cross-company audience rejection removed -> CAPTURED (1 fail)
+MUT4 unpublish write path removed -> CAPTURED (4 fail: unpublish visibility/idempotence/grant-independence/stale-scope)
+MUT5 registration INSERT path removed -> CAPTURED (3 fail + suite abort: publish creates row; honest abort signature)
+MUT6 required-audience loud rejection removed -> CAPTURED (1 fail)
+MUT7 not-owning-team audience rejection removed -> CAPTURED (3 fail)
+captured: 7/7, no survivors

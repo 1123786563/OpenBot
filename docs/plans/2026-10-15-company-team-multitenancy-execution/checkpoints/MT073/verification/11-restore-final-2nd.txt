@@ -1,0 +1,12 @@
+# 2nd-take RESTORE 终证 — 2026-10-18 11:44:01
+# after-hashes.txt 全部 8 文件 vs 当前树逐字节比对：
+  OK  scripts/multitenancy/migrate-test.ts
+  OK  tests/multitenancy/migration-tool.test.ts
+  OK  src/db/schema/index.ts
+  OK  src/db/schema/company-finance.ts
+  OK  src/billing/company-finance-visibility.ts
+  OK  tests/multitenancy/billing-visibility.test.ts
+  OK  tests/multitenancy/support/billing-visibility.ts
+  OK  tests/multitenancy/entry-context.test.ts
+ALL-BYTE-IDENTICAL
+# 变异残留扫描：git diff HEAD -- src/billing/ 中非本票交付的行数（公司财务面=新增文件无 diff）：

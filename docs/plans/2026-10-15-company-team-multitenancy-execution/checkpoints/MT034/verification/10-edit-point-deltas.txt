@@ -1,0 +1,7 @@
+# edit-point deltas — 纯追加核验（重建 pre-edit 副本逐字节比对 01-before-hashes）— 2026-10-18T06:53:44Z
+server/src/db/schema/index.ts: 移除本票 1 行后 sha256 == 领取态哈希 → True
+server/tests/multitenancy/migration-tool.test.ts: 移除本票注释 4 行 + 断言数组 1 行后 == 领取态哈希 → True
+server/src/index.ts: 移除本票 import 块（4 行）+ sharedApprovals 装配块后 == 领取态哈希 → True
+server/scripts/multitenancy/migrate-test.ts: 移除本票任务常量块 + TASKS 注册 1 行后 == 领取态哈希 → True（biome format 引号风格重排全部位于本票新增块内）
+
+结论：四个窄缝的改动为纯追加，既有字节零触碰；其余 280/284 prereq 文件逐位一致（09-frozen-surfaces.txt）。

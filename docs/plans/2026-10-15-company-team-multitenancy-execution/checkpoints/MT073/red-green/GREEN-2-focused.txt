@@ -1,0 +1,6 @@
+(pass) MT073 AC4: the creator-scoped order read is not widened (regression) > the store surface has no company-wide read: even the tenant admin's scope filters by creator [0.75ms]
+
+ 16 pass
+ 0 fail
+ 90 expect() calls
+Ran 16 tests across 1 file. [263.00ms]

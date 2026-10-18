@@ -1,0 +1,52 @@
+# MT041 交付变更总览（BASE f0520524，全部未提交工作树）
+
+## 新文件（4，全部新模块/测试/支撑）
+NEW ca6450f0c1c537fa68b7c12505fffd7c9d9646253660431f8b3f2879b26ba578  server/src/db/schema/job-ownership.ts
+NEW 45d1b500f66fee054a6030b860d97799434849363a39d56dde3348c3a7acf454  server/src/enterprise/tenancy/job-ownership.ts
+NEW 77a66a183fcd9245a72094111be038e8755360deebd8ecfcb61217843c6fa2c6  server/tests/multitenancy/job-ownership.test.ts
+NEW ef3eab9a84a1d16be30aac0700927b3a01c8939bde507e54185129bbc9fa0f8c  server/tests/multitenancy/support/job-ownership.ts
+
+## 授权窄例外（3，brief 预授权扩展点；哈希 before→after）
+migrate-test.ts     43210c52…→5422e902…（纯追加 MT041 任务 + 注册表 1 行）
+migration-tool.test e4354471…→27f9b8b5…（仅穷举断言 +MT041，ruling #5 第 8 次，带裁决注释）
+schema/index.ts     785cd7ac…→f81d5b64…（barrel 排序位追加 1 行 export）
+
+## 生成的迁移文件（migrate-test generate 产物，已 apply 并记 journal）
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT004/0001_mt004_create_table.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT004/0002_mt004_rls_policies.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT004/manifest.json
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT008/0001_mt008_resource_visibility_column.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT008/0002_mt008_visibility_operator_grant.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT008/manifest.json
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT009/0001_mt009_resource_dependency_table.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT009/0002_mt009_dependency_rls_policies.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT009/manifest.json
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT010/0001_mt010_create_table.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT010/0002_mt010_share_rls_policies.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT010/manifest.json
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT012/0001_mt012_core_rls_enable.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT012/0002_mt012_context_reset_function.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT012/manifest.json
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT014/0001_mt014_runtime_config_tables.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT014/0002_mt014_runtime_config_rls.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT014/manifest.json
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT026/0001_mt026_sso_scim_tables.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT026/0002_mt026_sso_scim_rls.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT026/manifest.json
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT041/0001_mt041_job_ownership_tables.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT041/0002_mt041_job_ownership_rls.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT041/manifest.json
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT069/0001_mt069_payer_accounts_tables.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT069/manifest.json
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT076/0001_mt076_membership_role_operator_grant.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT076/manifest.json
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT077/0001_mt077_governance_policy_tables.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT077/0002_mt077_governance_policy_rls.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT077/manifest.json
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT112/0001_mt112_anchor_mapping_table.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT112/0002_mt112_anchor_rls_policies.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT112/0003_mt112_legacy_anchor_rows.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT112/0004_mt112_anchor_mapping_row.sql
+GEN docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT041/verification/migration/generated/MT112/manifest.json
+
+## 其余 104 项前置交付：零触碰（verification/08-prereq-recompute.txt）
