@@ -571,15 +571,31 @@ export function createObservationDatasetStore(
           if (current.syncState === "synced") {
             return { dataset: current, adopted: false };
           }
+          // The lock covers the datasets row, never the deletions table (OCR
+          // R5-24): retention's offer can commit a deletion record between this
+          // transaction's read and its write, so the predicate rides the UPDATE
+          // itself — a row retention has judged gone is not restored to synced;
+          // it answers the same 404 every reader gets (deletion wins).
           const restored = await tx
             .update(aiObservationDatasets)
             .set({ syncState: "synced", updatedAt: new Date() })
-            .where(eq(aiObservationDatasets.id, current.id))
+            .where(
+              and(
+                eq(aiObservationDatasets.id, current.id),
+                notPendingDeletion("dataset", aiObservationDatasets.id),
+              ),
+            )
             .returning();
+          if (!restored[0]) {
+            throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
+          }
           return { dataset: restored[0], adopted: false };
         }
         // Both updates target the id this transaction holds a FOR UPDATE lock on, so the
-        // RETURNING row is a fact, not a hope — no absent-row branch to defend here.
+        // RETURNING row names a row that existed when the read locked it. The lock cannot
+        // reach the deletions table, though: the notPendingDeletion filter re-decides at
+        // the write, so a deletion record committing in the read→write window wins the
+        // row and the absent-row branch below answers the honest 404 (OCR R5-24).
         const updated = await tx
           .update(aiObservationDatasets)
           .set({
@@ -587,8 +603,19 @@ export function createObservationDatasetStore(
             opikDatasetId,
             updatedAt: new Date(),
           })
-          .where(eq(aiObservationDatasets.id, current.id))
+          .where(
+            and(
+              eq(aiObservationDatasets.id, current.id),
+              notPendingDeletion("dataset", aiObservationDatasets.id),
+            ),
+          )
           .returning();
+        if (!updated[0]) {
+          // The deletion record won the window: the row is gone to readers, and
+          // recording an upstream id onto it would strand an orphan upstream copy
+          // retention can no longer see — the answer is not-found, deletion wins.
+          throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
+        }
         return { dataset: updated[0], adopted: true };
       });
     },
