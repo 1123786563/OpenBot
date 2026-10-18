@@ -1,0 +1,79 @@
+--- /tmp/mt099-review/baseline/org_context.rs	2026-10-18 13:55:34
++++ desktop/src-tauri/src/org_context.rs	2026-10-18 12:47:13
+@@ -336,21 +336,26 @@
+     })
+ }
+ 
+-/// The production connection: the session `organization_auth` verified and saved in the vault,
+-/// dialed with the same client discipline the sign-in itself used.
++/// The production connection: the session `organization_auth` verified and saved in the
++/// organization credential namespace of the organization this installation acts as, dialed
++/// with the same client discipline the sign-in itself used.
++#[derive(Debug)]
+ pub struct VerifiedConnection {
+     session: auth::SavedSession,
+ }
+ 
+ impl VerifiedConnection {
+-    /// The saved session of this installation, or `None` before the first sign-in.
++    /// The saved session of this installation, or `None` before the first sign-in. The
++    /// session is read from the credential namespace of the organization this installation
++    /// currently acts as (MT099) — never from a personal slot, never from another
++    /// organization's namespace.
+     pub fn recall(root: &Path) -> Result<Option<Self>, Problem> {
+-        let Some(value) = crate::vault::recall(root, auth::SAVED_COOKIE)? else {
++        let Some(authority) = crate::credential_namespace::current_organization(root)? else {
+             return Ok(None);
+         };
+-        let session: auth::SavedSession = serde_json::from_str(&value).map_err(|_| {
+-            Problem::plain("Sign in to your organization again.").connection(Connection::Organization)
+-        })?;
++        let Some(session) = auth::recall_session(root, &authority)? else {
++            return Ok(None);
++        };
+         Ok(Some(Self { session }))
+     }
+ 
+@@ -1336,4 +1341,42 @@
+         assert_eq!(refreshes.borrow().len(), 2);
+         assert_eq!(refreshes.borrow()[1].verified_at_ms, STALE);
+     }
++
++    // --- T33 (MT099): the production connection's storage face follows the current organization ---
++
++    #[test]
++    fn t33_recall_reads_the_session_of_the_organization_the_installation_actually_stored() {
++        let root = temp_root("org-context-recall-current");
++        // No organization stored yet: no connection.
++        assert!(VerifiedConnection::recall(&root).unwrap().is_none());
++        // After a sign-in completes (its session lands in the namespace and the pointer
++        // moves), the production connection is the one the installation stored.
++        crate::organization_auth::store_session(
++            &root,
++            "https://company.example",
++            &crate::organization_auth::SavedSession {
++                authority: "https://company.example".to_string(),
++                cookie: "better-auth.session_token=fixture".to_string(),
++            },
++        )
++        .unwrap();
++        let connection = VerifiedConnection::recall(&root)
++            .unwrap()
++            .expect("the stored organization's session");
++        assert_eq!(connection.authority(), "https://company.example");
++        // A corrupt namespace entry is a dead sign-in, not a silent fallback.
++        crate::credential_namespace::org_remember(
++            &root,
++            "https://company.example",
++            crate::credential_namespace::SESSION_CREDENTIAL,
++            "not a session",
++        )
++        .unwrap();
++        let refused = VerifiedConnection::recall(&root).unwrap_err();
++        assert_eq!(
++            refused.connection,
++            Some(crate::problem::Connection::Organization)
++        );
++        std::fs::remove_dir_all(&root).expect("remove owned recall fixture");
++    }
+ }
