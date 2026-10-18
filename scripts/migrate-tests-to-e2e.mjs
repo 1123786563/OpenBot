@@ -65,14 +65,15 @@ const SUPPORTED = new Set([
 ]);
 
 /** Node has no `import.meta.dir`; give every converted file the same two locals Bun provided. */
-function importMetaShim(usesDir, usesPath) {
-  const lines = [
-    'import { dirname } from "node:path";',
-    'import { fileURLToPath } from "node:url";',
-  ];
+function importMetaShim(usesDir, source) {
+  const lines = [];
+  // Only what the file does not already import: a second `import { dirname }` is a redeclaration.
+  if (!/\bdirname\b.*from "node:path"|from "node:path".*\bdirname\b/.test(source))
+    lines.push('import { dirname } from "node:path";');
+  if (!/fileURLToPath.*from "node:url"|from "node:url".*fileURLToPath/.test(source))
+    lines.push('import { fileURLToPath } from "node:url";');
   lines.push("const herePath = fileURLToPath(import.meta.url);");
   if (usesDir) lines.push("const hereDir = dirname(herePath);");
-  if (!usesDir) lines.shift();
   return `${lines.join("\n")}\n`;
 }
 
@@ -164,7 +165,14 @@ for (const file of files) {
     next = next
       .replace(/import\.meta\.dir/g, "hereDir")
       .replace(/import\.meta\.path\b/g, "herePath");
-    next = importMetaShim(usesDir, true) + next;
+    // Insert after the import block, not before it: a const between imports reads as broken order.
+    const block = importMetaShim(usesDir, next);
+    const lastImport = next.lastIndexOf("\nimport ");
+    const lineEnd = next.indexOf("\n", next.indexOf(";", lastImport + 1) + 1);
+    next =
+      lastImport === -1
+        ? block + next
+        : next.slice(0, lineEnd + 1) + "\n" + block + next.slice(lineEnd + 1);
   }
 
   next = portBunValueImport(next, file);

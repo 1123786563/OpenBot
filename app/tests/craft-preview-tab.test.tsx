@@ -1,12 +1,9 @@
 import "./preload";
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import "./preload";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
@@ -26,6 +23,9 @@ import {
 import i18n from "@/lib/i18n";
 import { craftKeys } from "@/lib/craft/queries";
 import { settleReactWork } from "./settle-react-work";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /**
  * THE PREVIEW PANE NEVER RENDERS THE PROXY'S ERROR BODY.

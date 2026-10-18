@@ -1,15 +1,15 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { describe, expect, test } from "../../tests/support/e2e-compat";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createServer } from "node:net";
 import {
   localChromeConfiguration,
   requireAvailablePort,
   requireInstalledChrome,
 } from "../../scripts/start-local-chrome-computer";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 describe("starting the local computer", () => {
   test("requires the existing API token and never includes it in an error", () => {

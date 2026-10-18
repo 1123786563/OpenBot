@@ -1,7 +1,4 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { afterAll, expect, test } from "../../../tests/support/e2e-compat";
 import { createHash } from "node:crypto";
 import {
@@ -14,7 +11,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
@@ -26,6 +23,9 @@ import {
   sqlStateFromError,
 } from "../../scripts/migration-runner";
 import { enterpriseTestDatabaseUrlFrom } from "../support/enterprise-database";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 type CleanupFailure = { step: string; error: unknown };
 

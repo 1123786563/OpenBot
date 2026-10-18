@@ -1,13 +1,13 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createCipheriv, createSign } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { WechatConfig } from "../src/billing/payments/wechat";
 import { createWechatProvider } from "../src/billing/payments/wechat";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /*
  * WeChat Pay v3 against captured fetches and self-made vectors: the platform certificate role is

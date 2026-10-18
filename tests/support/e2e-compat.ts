@@ -860,20 +860,21 @@ function clampTitle(title: string, kind: string): string {
 
 function registerTest(register: Register) {
   return (title: string, second: Any, third?: Any): unknown => {
+    const named = clampTitle(title, "test");
     // Bun's `test(title, fn, timeoutMs)` puts the deadline in a third positional argument.
     if (typeof second === "function" && typeof third === "number") {
-      return register(title, { timeout: third }, second);
+      return register(named, { timeout: third }, second);
     }
     if (typeof second === "function") {
       return third === undefined
-        ? register(title, second)
-        : register(title, translate(third), second);
+        ? register(named, second)
+        : register(named, translate(third), second);
     }
     const options = translate(second);
     // e2e reads the argument count: a three-argument call whose options are undefined is a collection error.
     return options === undefined
-      ? register(title, third)
-      : register(title, options, third);
+      ? register(named, third)
+      : register(named, options, third);
   };
 }
 

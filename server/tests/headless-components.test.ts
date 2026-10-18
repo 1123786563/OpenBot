@@ -1,10 +1,7 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import { GALLERY as ACTIVITY } from "../../app/src/components/gallery/activity";
 import { GALLERY as CARDS } from "../../app/src/components/gallery/cards";
@@ -23,6 +20,9 @@ import type {
   ComponentDecision,
   ComponentStore,
 } from "../src/components/store";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /**
  * The server's copy of each chart schema must be the app's, or a headless turn would record a call

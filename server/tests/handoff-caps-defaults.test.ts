@@ -1,12 +1,12 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { describe, expect, test } from "../../tests/support/e2e-compat";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { parse } from "yaml";
 import { loadConfig } from "../src/config";
 import { testEnvironment } from "./support/environment";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /**
  * One number, written down in four places.

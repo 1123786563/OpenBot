@@ -1,7 +1,4 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   mkdir,
@@ -13,8 +10,11 @@ import {
 } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DEFAULT_WORKSPACE_LIMITS } from "../src/workspace";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 const asked = process.env.OPENBOT_FILE_DOWNLOAD_HTTP === "1";
 const TOKEN = "file-download-http-test-token";

@@ -1,12 +1,12 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ComputerControlState } from "../../shared/computer-control";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 // A real HTTP dispatcher and shell lease, without launching Chromium. Opt in like live-screen tests
 // because agent-computer's own Playwright dependency is not installed by the root unit-test lane.

@@ -28,6 +28,8 @@ const LOADER_GAP = [
 const BUN_RUNTIME = [
   /Cannot find package ['"]bun['"]/,
   /bun:sqlite/,
+  /Received protocol 'bun:'/,
+  /from ['"]bun:[a-z]+['"]/,
   /bun:ffi/,
   /drizzle-orm\/bun-/,
   /Bun is not defined/,

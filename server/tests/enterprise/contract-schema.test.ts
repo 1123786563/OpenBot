@@ -1,11 +1,8 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { describe, expect, test } from "../../../tests/support/e2e-compat";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import type { EnterpriseContractRegistry } from "../../src/enterprise/contracts";
 import {
@@ -30,6 +27,9 @@ import {
   ToolReceiptDTOZ,
   WireSchemaV1,
 } from "../../src/enterprise/wire-schema";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 const requiredRegistryNames = [
   "PlatformScope",

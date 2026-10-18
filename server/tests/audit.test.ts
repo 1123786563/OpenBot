@@ -1,11 +1,8 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readdirSync, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createApp } from "../src/app";
 import {
   auditEventTypes,
@@ -15,6 +12,9 @@ import {
 } from "../src/audit";
 import { loadConfig } from "../src/config";
 import { testEnvironment } from "./support/environment";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 const config = loadConfig({
   ...testEnvironment(),

@@ -1,14 +1,11 @@
 import "./preload";
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import "./preload";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   BunWebSocket,
   fileFor,
@@ -16,6 +13,9 @@ import {
   isClientRoute,
   upstreamWebSocketHeaders,
 } from "../serve";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 async function probeServingPorts(env: {
   APP_PORT?: string;

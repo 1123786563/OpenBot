@@ -1,10 +1,7 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { GatewayAdminCredentialNotConfiguredError } from "../src/gateway/admin-credential";
 import type { GatewayNegotiationRecord } from "../src/gateway/capability-negotiation";
 import type { GatewayProbeRecord } from "../src/gateway/probe";
@@ -18,6 +15,9 @@ import {
   type GatewayReadinessDeps,
   type GatewayReadinessService,
 } from "../src/gateway/readiness";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /*
  * Bifrost 01.7 — the consumer-entry readiness gate, at the seams that need no

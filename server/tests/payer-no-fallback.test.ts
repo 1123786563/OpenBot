@@ -1,7 +1,5 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { afterAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
@@ -44,6 +42,9 @@ import {
 import { creditLedger } from "../src/db/schema/credits";
 import { createDatabase } from "../src/db/client";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /*
  * B5-219 (Bifrost 02.5): one request, one payer. The consumption entry binds a PayerBinding

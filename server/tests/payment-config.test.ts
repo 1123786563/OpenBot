@@ -1,10 +1,10 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { dirname, join } from "node:path";
+import { loadConfig } from "../src/config";
+
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
-import { describe, expect, test } from "../../tests/support/e2e-compat";
-import { join } from "node:path";
-import { loadConfig } from "../src/config";
 
 /*
  * The payments configuration mirrors the billing block's discipline: absent outright when no

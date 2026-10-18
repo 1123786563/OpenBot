@@ -1,12 +1,13 @@
 import "./preload";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import "./preload";
 import { expect, test } from "../../tests/support/e2e-compat";
 import { Glob } from "../../tests/support/bun-compat";
 import ts from "typescript";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /**
  * Every `<form onSubmit>` has something that submits it.

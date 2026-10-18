@@ -1,10 +1,7 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { loadCraftConfig } from "../src/craft/config";
 import {
@@ -30,6 +27,9 @@ import {
   webappHmrSocketHandlers,
   webappHmrUpstreamUrl,
 } from "../src/craft/webapp-proxy";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 const SESSION_ID = "cs-aaaabbbbcccc";
 const HMR_PATH = `/api/craft/sessions/${SESSION_ID}/webapp/_next/webpack-hmr`;

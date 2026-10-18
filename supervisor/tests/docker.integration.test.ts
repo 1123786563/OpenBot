@@ -1,9 +1,10 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { expect, test } from "../../tests/support/e2e-compat";
 import { existsSync } from "node:fs";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 // Root tests can load names.ts before this file. A fresh process is necessary for the supervisor's
 // import-time namespace, and prevents these Dockerode tests from sharing a deployment's resources.

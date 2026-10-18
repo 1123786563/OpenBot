@@ -1,11 +1,12 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { expect, test } from "../../tests/support/e2e-compat";
 import { HttpAgent, type RunAgentInput, type Tool } from "@ag-ui/client";
 import { lastValueFrom, toArray } from "rxjs";
 import { RemoteLearnedSkillsMiddleware } from "../src/learning/remote";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 const catalog = "Published skill refunds: use the refund procedure.";
 const skill = "Load supporting.txt before answering.";

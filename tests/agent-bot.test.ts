@@ -1,9 +1,9 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { expect, test } from "./support/e2e-compat";
+import { dirname, join } from "node:path";
+
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
-import { expect, test } from "./support/e2e-compat";
-import { join } from "node:path";
 
 /**
  * The compose healthcheck asks `/health`, and `/health` answers without consulting the model key.

@@ -1,13 +1,13 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ComputerControlState } from "../../shared/computer-control";
 import type { StoredControl } from "../src/control-store";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /**
  * Reopening a handoff's page happens behind the answer, not in front of it.

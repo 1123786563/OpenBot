@@ -1,12 +1,9 @@
 import "./preload";
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import "./preload";
 import { afterEach, expect, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   type MutationFunctionContext,
   MutationObserver,
@@ -35,6 +32,9 @@ import {
   setPluginGrantMutationOptions,
 } from "../src/lib/plugins/mutations";
 import { pluginKeys } from "../src/lib/plugins/queries";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /**
  * What every plugin write does about the screen when the server says no.

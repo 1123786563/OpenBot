@@ -1,14 +1,14 @@
 import "./preload";
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import "./preload";
 import { expect, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import { BOT_CREATOR_SLUG } from "@/lib/agents/proposal";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /**
  * The coupling that breaks silently, in both directions.

@@ -1,12 +1,11 @@
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { expect, test } from "../../tests/support/e2e-compat";
 import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 function setupIsolatedHarnessFixture(fixtureDir: string) {
   const serverNodeModules = resolve(hereDir, "../node_modules");

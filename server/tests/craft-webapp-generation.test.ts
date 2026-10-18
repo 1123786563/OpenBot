@@ -1,10 +1,7 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { loadCraftConfig } from "../src/craft/config";
 import {
   buildWebappBootstrapScript,
@@ -18,6 +15,9 @@ import {
   WEBAPP_GENERATION_CURRENT,
   WEBAPP_GENERATION_MARKER,
 } from "../src/craft/webapp-generation";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /**
  * #367 — the legacy-session judgment (spec D10: 存量不迁移).

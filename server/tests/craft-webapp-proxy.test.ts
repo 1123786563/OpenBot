@@ -1,7 +1,4 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { spawnSync } from "node:child_process";
 import {
@@ -13,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import type { MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
@@ -46,6 +43,9 @@ import {
   sanitizeZipBasename,
   zipEntries,
 } from "../src/craft/zip-archive";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 describe("proxyWebappRequest", () => {
   test("streams the body with a dev-road CSP and strips hop-by-hop + credential headers", async () => {

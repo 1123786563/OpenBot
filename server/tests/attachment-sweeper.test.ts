@@ -1,15 +1,15 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { afterAll, afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { eq, inArray, notInArray, sql } from "drizzle-orm";
 import { cullStagedAttachments } from "../scripts/cull-staged-attachments";
 import { createDatabase, type Database } from "../src/db/client";
 import { attachments, channels, users } from "../src/db/schema";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 const databaseUrl = testDatabaseUrl();
 const database = createDatabase(databaseUrl, TEST_POOL);

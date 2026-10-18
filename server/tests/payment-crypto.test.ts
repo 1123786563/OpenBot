@@ -1,9 +1,6 @@
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-const herePath = fileURLToPath(import.meta.url);
-const hereDir = dirname(herePath);
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   aesGcmDecrypt,
@@ -15,6 +12,9 @@ import {
   rsaSign,
   rsaVerify,
 } from "../src/billing/payments/crypto";
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /*
  * Vector material lives in ./fixtures as PEM files (see ./fixtures/README.md): they are test
