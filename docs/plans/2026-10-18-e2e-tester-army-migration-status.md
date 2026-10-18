@@ -203,7 +203,7 @@ TEST_DATABASE_URL="postgres://openbot@127.0.0.1:55433/openbot_enterprise_test" \
 落在四个桶之外就报文件名并以非零退出：
 
 ```
-1073 suite files in the 14 migrated directories · 603 native e2e · 453 driven by e2e (bun runtime) · 10 engine (.e2e.ts, web/mobile) · 7 named exclusions
+1073 suite files in the 14 migrated directories · 604 native e2e · 453 driven by e2e (bun runtime) · 10 engine (.e2e.ts, web/mobile) · 6 named exclusions
 no gaps: every suite file is scheduled by e2e, or excluded by name with a reason.
 ```
 
@@ -211,8 +211,14 @@ no gaps: every suite file is scheduled by e2e, or excluded by name with a reason
 - `driven`：由 e2e 调度与报告、由 `bun test` 执行（ADR 0008 的两层制；必须指向
   `support/bun-test-compat` 或原样 import `bun:test`，否则记为 gap）。
 - `engine`：`.e2e.ts` 与 `@e2e-dev/*` 的引擎用例（web / 移动端 target）。
-- `exclusions`：按名字记录在清单里并写明原因的 —— 6 个 Appium 移动产物 + 1 个本仓库夹具坏了的
-  套件（`docs/verification/e2e-known-broken.json`，`test:ci` 会打印条数，防止悄悄长大）。
+- `exclusions`：按名字记录在清单里并写明原因的 —— 现在只剩 6 个 Appium 移动产物
+  （`deliverables/mobile-e2e-qa/**.spec.ts`，没有设备与 appium 也跑不动，迁移前一样）。
+  第 7 个已经不再需要例外：`server/tests/qa-batch1-migration-0071.test.ts` 读的是
+  `../drizzle/0071_billing_idempotency.sql`，而后一批发把 0071 占了给
+  `enterprise_model_route_catalog`、billing idempotency 挪到 **0081** —— 导入期 ENOENT 会让整轮
+  收集中止。这个探针断言的本来就是 billing idempotency 的内容（列、两条索引、快照与 journal 顺序），
+  所以把它指回它真正描述的那一支（0081）后 **8 条断言在 `e2e run` 下全过**，条目移入
+  `e2e-known-broken.json` 的 `resolved`，套件重新被收集（`E2E_UNIT_SCOPE=server e2e list` 里能看到 8 条）。
 
 gap 的两种形态正是入口坏掉的原因：写着 `bun:test` 却没被分到驱动层的文件会让**整轮收集中止**
 （一个文件就没有 report），两个 runner 都没 import 的文件会**静默不跑**。所以这一项先跑、失败即停。

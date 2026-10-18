@@ -1,35 +1,35 @@
-import { fileURLToPath } from "node:url";
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { createHmac } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
 
 /*
- * QA batch-1 probe (g): migration 0071's shape and deployability, verified three ways —
+ * QA batch-1 probe (g): migration 0081's shape (it was 0071 when this probe was written; a later wave took 0071 for the enterprise model-route catalog) and deployability, verified three ways —
  *   1. STATIC: the SQL file's statements and the journal's entry (already applied for real on
  *      the QA database `openbot_qa_batch1` — the full chain ran through drizzle-kit migrate
  *      during this verification, which is itself the executability proof);
- *   2. CONSISTENCY: the 0071 snapshot matches the schema the TS code declares, so the next
+ *   2. CONSISTENCY: the 0081 snapshot matches the schema the TS code declares, so the next
  *      generated migration will not try to re-create or drop these indexes;
  *   3. GRAMMAR: the idempotency-key format the runtime mints (`plan:<orderId>`, `auto:<hex>`)
  *      actually satisfies the index the migration creates — a key longer than the column, or a
  *      shape the ON CONFLICT target cannot infer, would break the writer at the first insert.
  */
 const SQL = readFileSync(
-  join(hereDir, "../drizzle/0071_billing_idempotency.sql"),
+  join(hereDir, "../drizzle/0081_billing_idempotency.sql"),
   "utf8",
 );
 const JOURNAL = JSON.parse(
   readFileSync(join(hereDir, "../drizzle/meta/_journal.json"), "utf8"),
 ) as { entries: Array<{ idx: number; tag: string }> };
 const SNAPSHOT = JSON.parse(
-  readFileSync(join(hereDir, "../drizzle/meta/0071_snapshot.json"), "utf8"),
+  readFileSync(join(hereDir, "../drizzle/meta/0081_snapshot.json"), "utf8"),
 );
 
-describe("probe g: 0071 SQL statements", () => {
+describe("probe g: 0081 SQL statements", () => {
   test("the credit idempotency column lands NOT NULL with a PLAIN unique index", () => {
     expect(SQL).toContain(
       'ALTER TABLE "credit_grants" ADD COLUMN "idempotency_key" text NOT NULL',
@@ -50,9 +50,11 @@ describe("probe g: 0071 SQL statements", () => {
     );
   });
 
-  test("the journal carries 0071_billing_idempotency in order", () => {
-    const entry = JOURNAL.entries.find((e) => e.tag === "0071_billing_idempotency");
-    expect(entry?.idx).toBe(71);
+  test("the journal carries 0081_billing_idempotency in order", () => {
+    const entry = JOURNAL.entries.find(
+      (e) => e.tag === "0081_billing_idempotency",
+    );
+    expect(entry?.idx).toBe(81);
   });
 });
 
