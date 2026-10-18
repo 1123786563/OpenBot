@@ -7583,8 +7583,8 @@
         }
       },
       "foreignKeys": {
-        "openmuse_reviewed_attempts_action_id_openmuse_reviewed_actions_id_fk": {
-          "name": "openmuse_reviewed_attempts_action_id_openmuse_reviewed_actions_id_fk",
+        "openmuse_reviewed_attempts_action_id_fk": {
+          "name": "openmuse_reviewed_attempts_action_id_fk",
           "tableFrom": "openmuse_reviewed_attempts",
           "tableTo": "openmuse_reviewed_actions",
           "columnsFrom": [
@@ -19189,8 +19189,8 @@
         }
       },
       "foreignKeys": {
-        "payer_accounts_external_customer_id_billing_customers_external_id_fk": {
-          "name": "payer_accounts_external_customer_id_billing_customers_external_id_fk",
+        "payer_accounts_external_customer_id_fk": {
+          "name": "payer_accounts_external_customer_id_fk",
           "tableFrom": "payer_accounts",
           "tableTo": "billing_customers",
           "columnsFrom": [

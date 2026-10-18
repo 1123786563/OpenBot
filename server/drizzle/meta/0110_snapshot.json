@@ -7019,8 +7019,8 @@
         }
       },
       "foreignKeys": {
-        "openmuse_reviewed_attempts_action_id_openmuse_reviewed_actions_id_fk": {
-          "name": "openmuse_reviewed_attempts_action_id_openmuse_reviewed_actions_id_fk",
+        "openmuse_reviewed_attempts_action_id_fk": {
+          "name": "openmuse_reviewed_attempts_action_id_fk",
           "tableFrom": "openmuse_reviewed_attempts",
           "tableTo": "openmuse_reviewed_actions",
           "columnsFrom": [
