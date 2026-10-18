@@ -1,0 +1,5 @@
+# MT027 第 2 任容器销毁回显（2026-10-16T21:02:27Z）
+container: mt027-impl2-pg（第 2 任专用，55522；第 1 任容器 mt027-impl-pg=55514 保留不动）
+mt027-impl2-pg
+---deletion check---
+0

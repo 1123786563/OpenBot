@@ -1,0 +1,8 @@
+# Environment setup (dedicated container + databases + restricted logins)
+# docker run -d --name mt010-impl-pg -e POSTGRES_HOST_AUTH_METHOD=trust -p 55480:5432 pgvector/pgvector:pg16
+# docker exec mt010-impl-pg psql -U postgres -tc "select version()"  ->  PostgreSQL 16.15 (aarch64)
+# createdb openbot_enterprise_mt010 + openbot_enterprise_mt010_assigned (trust, loopback only)
+# cd server && TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55480/openbot_enterprise_mt010 \
+#   ENTERPRISE_TEST_{DIRECTORY,DATA,OPERATOR}_DATABASE_URL=postgresql://ent_mt010_{dir,data,opr}:...@127.0.0.1:55480/openbot_enterprise_mt010?options=-c%20role%3Dob_ent_{directory,data,operator} \
+#   bun --no-env-file scripts/enterprise-test-db.ts migrate   -> {"type":"migrations-applied","status":"ok"} (150 tables; ob_ent_* capability roles + ent_mt010_* logins provisioned)
+# No dev-database fallback anywhere; credentials inline in env (trust container), nothing persisted to disk.

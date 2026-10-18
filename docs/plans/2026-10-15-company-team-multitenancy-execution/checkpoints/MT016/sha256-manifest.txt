@@ -1,0 +1,18 @@
+# MT016 touched-files sha256（after = 现工作树第 2 任收尾态；before 列见 before-hashes.txt，第 1 任开工前记录）
+# 注：before-hashes.txt 的三个既有文件 before 值 = 第 1 任领取时哈希（09bf0400…/2a1ce227…/e1954c8a…），其中 migrate-test.ts 与 index.ts 的 before 即 HEAD 态（第 1 任未动）+ 第 2 任接管时复核一致。
+
+after  d6ab22236b9559436205ac6e27fe844ce45fb119307553a0f2e78e05a0632fbe  scripts/multitenancy/migrate-test.ts
+after  20618042fd352921d430bbd58626c075c253b3e897d6d8673fc4762c2bcdcb1b  tests/multitenancy/migration-tool.test.ts
+after  e9bd49d2e65655047b8b8fced6bbe1d3c9afeb33eca2e9de611c10aabc609dad  src/db/schema/index.ts
+after  d5215a2b1536ff351806b92ed31e93c8a5643e4557300fbe94536cfc5ca556c5  src/db/schema/enterprise-bot-ownership.ts
+after  3bb3288b009b33bee6aa289713f71599b436a48e093f1adc971acfb36ef556b9  src/enterprise/tenancy/bots-ownership.ts
+after  564d4d9abc5fb7b1cff1dc608b1dbb708dbc72492bf45266930161e09ab41688  tests/multitenancy/bots-ownership.test.ts
+after  ecf044e9af463a719b506e854c8a2b311ea67b01257f1c69293523c6279328d1  tests/multitenancy/support/bots-ownership.ts
+
+before 09bf04006ff459fecda82c882fcad492c4f45875c84948ad70d02d6ff2a6a68b  scripts/multitenancy/migrate-test.ts（第 1 任 before-hashes.txt）
+before 2a1ce227f1fdda59369bc53db2bfe974e74f982658a05c2daa98dc627dad4392  tests/multitenancy/migration-tool.test.ts（第 1 任 before-hashes.txt）
+before e1954c8a32b11521560f5bd0f20c686c7628b37026bb4945c0dfc38a8ddc3841  src/db/schema/index.ts（第 1 任 before-hashes.txt）
+before （新建，before 不存在）  src/db/schema/enterprise-bot-ownership.ts
+before （新建，before 不存在）  src/enterprise/tenancy/bots-ownership.ts
+before （新建，before 不存在）  tests/multitenancy/bots-ownership.test.ts
+before （新建，before 不存在）  tests/multitenancy/support/bots-ownership.ts

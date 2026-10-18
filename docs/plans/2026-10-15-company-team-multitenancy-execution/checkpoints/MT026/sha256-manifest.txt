@@ -1,0 +1,39 @@
+BASE f0520524f0faa2b4533b9d2f1aa692c8f907ba71
+
+# BEFORE (prereq state of every file this ticket touched; prereq manifest 46/46 recomputed OK)
+fba7a53d57937aef09bf815f4d4da120ae66904a112ce5789ac1d0a1b9606516  server/scripts/multitenancy/migrate-test.ts
+97cf2a0314acf6b9d4d00a59093cb5bca2fc7293119178dcecf67894c03305e3  server/tests/multitenancy/migration-tool.test.ts
+917d78fc17a61b9afc1ace87e9ee0b205af51970ff3f335d50d3e52a2c43878f  server/src/db/schema/index.ts
+9348db3df5852170ebae594bb1a8a0d541aad93931d11f017e722e8c704042e2  server/tests/multitenancy/support/scenarios.ts
+62464499b12d8cd3f7b700b973bf0d42e697ac5582931ad118c1d73f30d2e44c  server/src/enterprise/tenancy/revocation.ts
+731a30e6cf9513b028635f15378e15dffaefd86c2514eef9fd0f4be72f1f9782  server/src/enterprise/tenancy/workspace-admin.ts
+9253bae550a983895fc79b9fc1158e6a978c20012f9ac140f33e96ead60df145  server/src/enterprise/tenancy/admin-separation.ts
+
+# AFTER (end state — hash-verified after the final biome format pass + final 455/0/18 run)
+9ebed310c45469ccd45e8ca60c1646bdb8cd552fe9dda0f60939673c5bccf4a2  server/src/db/schema/enterprise-sso-scim.ts
+94af3dbaa2239bbc219d6457923a26e9999e63a28ed2664c59647617ea2d3ef1  server/src/db/schema/index.ts
+61d43a9c523b98f929cdda02cd75b541ca96e29b05324d486299634a4dc2a8b8  server/src/enterprise/tenancy/sso-scim-config.ts
+f4e9477c1746a79378f5d8cbac8d5526db265e5ab65adcf30832d1d44b36faba  server/src/enterprise/tenancy/scim-directory.ts
+92d5e1dc143d836f492ac0aa40c435cfdc0883a8e24d7ed4fc5afe704fdc7c15  server/src/enterprise/tenancy/identity-binding.ts
+3f6be004653224661d3295cab61f719fffc213c1830dc4eb4d5318794ce8d3da  server/scripts/multitenancy/migrate-test.ts
+ed4a87b8de41361cf1a1d61354f7879deff1feae8c05c1da88aa1e4a0fbad7ff  server/tests/multitenancy/sso-scim-config.test.ts
+6443cceb624a905b48273eab493c323a19d5590056da84205e99958626da9861  server/tests/multitenancy/scim-directory.test.ts
+bce34b1b5a3df24f068854b0b7aab0e62691ca25277628f71eb11970517880e7  server/tests/multitenancy/identity-binding.test.ts
+741e49df6ccd0901b492a69bbea077964d0f168f35fc57a9e0bd097951bfe761  server/tests/multitenancy/support/sso-scim.ts
+4584329905317c710dd88e7db108271d4b03202ed1e5cc8c3e4f302571327e95  server/tests/multitenancy/migration-tool.test.ts
+
+# CHECKPOINT ARTIFACTS (self)
+2329a8f8294a9329139350acc3eb4edce89addfe2c9010e2f80734537487d600  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT026/design.md
+aacf6cdf99f820913dba6f94aa4ac4668cf85b7915994d48a278cb76e1212ccc  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT026/red-green.md
+310c428c83f4df9256ede57e657ad2a6a6d50a0f84a180459be33cc4e17d493e  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT026/changes.diff
+180d8d8736d7e2a6578238d772e8b67e7e5a602ead841c6b254e0f1f634ab74b  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT026/mutation/results.txt
+448a00f202ff955d245bbf83b7a4b3f98de52aa16b011e9a7918086d321bd5c8  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT026/verification/00-baseline.txt
+09030eab8bb43f75bd745a30e9d2b76072ec109aa1ebf4301d76f595b1fbf8d0  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT026/verification/01-new-suite-final.txt
+5386781772f18e814144c1b00b9fd7ad74655c0200196a9693d9c49950d69214  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT026/verification/02-full-regression-final.txt
+e1481fc4fdc26d780d1b58206dee3f097ae2b61ef4326df604e1adb5998644ad  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT026/verification/03-typecheck.txt
+3304de2952dfc6efc8d8a8603debdfdda41ebc6209df588bb071de6fc07f12b6  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT026/verification/04-biome.txt
+6fe3a4f679706c9280558a625509b587b81c7c1c0ed471bdcc3faa3660ce56f7  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT026/verification/05-prereq-recompute.txt
+c7cefa8706c63e89ccb2d19a451ef211784cad9831c55137c07f0e06880f27dd  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT026/verification/06-env-setup.txt
+cf07cff0f80ee3c7c7de2f234de683f0ee5ef9755fccc524d56d7c559be796fe  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT026/verification/07-narrow-edit-migrate-test.diff
+db69a40d8548ff959adba1ed1f17d029ca97900f21ac86b9d7ff40e8e0a9956e  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT026/verification/08-narrow-edit-migration-tool.diff
+c6f53eabfc3a1c6a924632209d800a6bbf2a080563046ecead565b24f1437765  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT026/verification/09-narrow-edit-schema-index.diff
