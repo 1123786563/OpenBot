@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   classifyCleanup,
+  isReservationInFlight,
   type CleanupClassification,
   type CleanupRecordClass,
 } from "./cleanup-classification";
@@ -280,6 +281,15 @@ const TABLE_SPECS: Record<string, TableSpec> = {
     idColumn: "event_id",
     columns: ["event_id", "external_customer_id", "reservation_id"],
   },
+  // One hop beyond the estate, added by migration 0145 (#263): the attribution row every
+  // protocol reserve writes under its hold. It is not a legacy billing table (the
+  // classification never names it), but its CASCADE edge into credit_reservations is an edge
+  // a candidate's deletion can travel, so the probe universe must know the child — a probe
+  // spec entry, not an estate membership (21.5's estate wall stays closed to it).
+  credit_reservation_attribution: {
+    idColumn: "reservation_id",
+    columns: ["reservation_id", "grant_id", "bot_id"],
+  },
 };
 
 /** The FK edges the drizzle schema declares among the legacy tables: the comparison basis. */
@@ -301,6 +311,7 @@ const DECLARED_EDGES: {
   { childTable: "credit_reservation_allocations", childColumn: "grant_id", parentTable: "credit_grants", parentColumn: "id", onDelete: "cascade" },
   { childTable: "credit_charge_remainders", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
   { childTable: "payment_events", childColumn: "order_id", parentTable: "payment_orders", parentColumn: "id", onDelete: "cascade" },
+  { childTable: "credit_reservation_attribution", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
 ];
 
 const ON_DELETE_BY_CODE: Record<string, RelationFkEdge["onDelete"]> = {
@@ -568,15 +579,14 @@ export async function evaluateCleanupRelations(
     const classOf = (row: ProbeRow): RowClass =>
       recordClassByKey.get(rowKey(row.table, row.recordId)) ?? "unclassified";
 
-    /** Live in-flight duty: a reserved hold, or an allocation of one. */
+    /** Live in-flight duty: a reserved or unknown-result hold (06.8), or an allocation of one. */
     const isLiveInFlight = (row: ProbeRow) => {
       if (row.table === "credit_reservations") {
-        return reservationStatus.get(row.recordId) === "reserved";
+        return isReservationInFlight(reservationStatus.get(row.recordId) ?? "");
       }
       if (row.table === "credit_reservation_allocations") {
-        return (
-          reservationStatus.get(allocationReservation.get(row.recordId) ?? "") ===
-          "reserved"
+        return isReservationInFlight(
+          reservationStatus.get(allocationReservation.get(row.recordId) ?? "") ?? "",
         );
       }
       return false;
