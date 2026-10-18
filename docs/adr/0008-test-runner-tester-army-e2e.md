@@ -53,3 +53,22 @@ status: accepted
 report），两个 runner 都没 import 的文件会**静默不跑**。并行会话会持续合入新的 `bun:test` 套件，所以
 分区不是记忆而是重扫（`scripts/e2e-batch-drive-bun-test.mjs`）。同一入口的 report 目录也要能指名
 （`E2E_UNIT_OUTPUT`），否则并发运行的后写者会覆盖前一次的 `report.json`。
+
+## 2026-10-19 补充三：「这一层没判」是环境结论，必须由环境证据支撑；1xx Response 是 Bun 耦合语义
+
+两件在这轮实测里才浮出来的约束：
+
+**一、blocked 与 judged 的区分不能用失败文本当证据。** 驱动层原先把
+`Failed query` / `is not available` 之类文本算作"没库"，于是 RLS 拒插入这种真实产品判定被贴成了
+"环境缺项"；只认连接级签名后又反向失效 —— `bun test --reporter=junit` 的失败文本以 drizzle 的
+`Failed query:` 开头，`ECONNREFUSED` 被截断在片段之外，真故障反而不标 blocked。规则定为：**标签
+要么 keyed 在不可误读的连接级签名上，要么由驱动自己探测一次环境**（取
+`TEST_DATABASE_URL`/`DATABASE_URL` 的 host:port 做 TCP 连接），并且把所用的证据原文打印进失败
+信息。贴不出证据的标签不算证据。
+
+**二、Node 的 `Response` 构造器拒绝 1xx，Bun 允许。** `new Response(null, {status: 101})` 在 Node
+抛 `RangeError: init["status"] must be in the range of 200 to 599`，在 Bun 正常构造。因此断言
+"websocket 透传返回 101"这类套件属于 Bun 耦合的 HTTP 语义，按本 ADR 的两层制送回 Bun 运行时由
+e2e 调度与报告；**不为了在 Node 上跑绿而改生产代码，也不在兼容层伪造状态码** —— 伪造出来的 101
+验证不了任何东西，等于把这条断言悄悄删掉。分区清单里这类条目必须写下点得出名字的根因，
+`runner reported` 这种只复述现象的归因不合格。

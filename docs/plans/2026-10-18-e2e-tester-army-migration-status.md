@@ -326,14 +326,14 @@ CI 的 `test` job 自带两个数据库服务：`postgres`（镜像带 pgvector�
 
 | # | 标准 | 结论 | 证据 |
 | --- | --- | --- | --- |
-| 1 | 14 个目录里每个套件文件都由 e2e 调度或按名排除 | 过 | `node scripts/e2e-coverage-audit.mjs` → `no gaps`（603 native / 454 driven / 10 engine / 6 exclusions） |
+| 1 | 14 个目录里每个套件文件都由 e2e 调度或按名排除 | 过 | `node scripts/e2e-coverage-audit.mjs` → `no gaps`（合并后 main 重跑：1073 = 602 native / 455 driven / 10 engine / 6 exclusions） |
 | 2 | 没有任何测试入口还跑 `bun test` | 过 | 同一审计的 ENTRY-POINT 检查（package.json 与各 workflow），且 `bun run test:ci` 就是 ci.yml `test` job 第 443 行那一步。入口实跑过：`bun run test` → `pretest`(generate:app-config) → `e2e run --config e2e.unit.config.ts`，21:36–21:54 走完 8175 条（7912 passed / 189 failed / 4 env errors），打印汇总后**自行退出**（exit 1，`ps` 里没有残留 e2e 进程，端口释放） |
 | 3 | 收集不再被单个文件拖没 | 过（当时） | 19:24 / 21:21 两轮 `0 COLLECTION_ERROR`；新加套件由 `e2e-batch-drive-bun-test` 与分区循环兜住 |
-| 4 | 全量通过率被测出来并逐条归因 | 过 | `.e2e/*/report.json` + `scripts/e2e-vs-bun.mjs` 的 `e2e-vs-bun*.json`，汇总见上；红点派单表 `archive/verification/e2e-red-dispatch.md` |
-| 5 | 原生层不存在"迁移把它改红了"的条目 | 过（最后一次判定） | 逐条 runner-difference 都已修或分流；最后一条 `proxy.test.ts` 有 25/0 对 24/1 的证据并写入 ADR 两层制 |
+| 4 | 全量通过率被测出来并逐条归因 | 过（合并后又重测一次） | `.e2e/*/report.json` + `scripts/e2e-vs-bun.mjs` 的 `e2e-vs-bun*.json`，汇总见上。合并落地后的 main（10-19 00:0x）：入口 `bun run test` → **8175 条 = 7915 passed / 175 failed / 85 skipped，599 个文件里 31 红**（迁移前同入口 189 红），31 个红文件三档归因为 17 already-red-at-baseline / 12 red-on-old-runner-with-current-code / 1 runner-difference / 1 驱动层自身 |
+| 5 | 原生层不存在"迁移把它改红了"的条目 | 过（最后一次判定） | 逐条 runner-difference 都已修或分流；合并后重测出的那唯一 1 条 `server/tests/workshop-preview.test.ts` 有名字上的根因（Node 的 undici `Response` 拒绝 1xx、Bun 允许，断言的是 101 透传），已按 ADR 0008 两层制送回 Bun 运行时并在清单里写明根因；`proxy.test.ts` 有 25/0 对 24/1 的证据 |
 | 6 | 驱动层的 verdict 等于旧运行器对同一文件的 verdict | 过（本地 CI 等价夹具），CI 上仍未落过 | 驱动层用 `bun test` 执行并对失败文件各自重跑（>8 文件即判失败，不给假绿）。22:56–23:34 用私有 pgvector 双库 + 角色夹具重测 30 组：**21 过 / 9 红**，且这 9 组不经 e2e 直接 `bun test` 同样 exit 1；单文件级证据由驱动的独自重跑给出（part 3 1/3、part 4 3/6、part 5 2/2、part 9 2/4、part 11 3/4、part 14 4/6、ai-observability 1/2）。夹具、结果与"blocked 标签收紧过头"的修正见 `docs/verification/e2e-driven-tier-ci-fixture-2026-10-18.md` |
 | 7 | 引擎层（`tests/e2e/*.e2e.ts`，28 条）跑通过 | **未过** | 只验到收集。需要 app 起在 3010 与 `.env` 里那个 OpenAI 兼容端点（agent 驱动、花真钱、结果不完全确定），尚未获得启动许可 |
-| 8 | `bun run test` 绿 | **未过** | 21:54 那一轮 30 个文件红 / 189 条失败：其中约 18 个文件迁移前就红、12 个用现网代码 + 迁移前套件文本在 `bun test` 上也红、其余是本机 5432/6333 依赖没起（含 14 组驱动组）。这些红在旧运行器上同样复现，不是迁移造成的，但也不该被改成绿 |
+| 8 | `bun run test` 绿 | **未过（红点已全部归因，无一条无人认领）** | 合并后 main 带 CI 等价夹具那一轮：31 个文件红 / 175 条失败（迁移前同入口 189 条）。逐条三档归因：17 个迁移前就红、12 个现网代码在旧运行器上也红（属别的波次）、1 个是点得出根因的 Bun 耦合语义（已回 Bun 层）、1 个是驱动层自身。这些红在旧运行器上同样复现，不是迁移造成的，也不该被改成绿 |
 | 9 | `bun run typecheck` 绿 | **未过（非迁移原因）** | 合并 `084642a3` 让 `server/src/config.ts` 调用未导入的帮助函数且重复声明 `gateway?:` |
 | 10 | 决策与约束进了 ADR / 文档 | 过 | ADR 0008 两节补充（标题即身份、分组不造 verdict、覆盖可对账）+ 本文 |
 
