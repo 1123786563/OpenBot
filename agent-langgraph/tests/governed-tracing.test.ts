@@ -442,6 +442,35 @@ describe("the callback handler's span tree", () => {
     }
   });
 
+  test("a credential URL inside a longer name is still withheld, not only a whole-name URL (R5-0)", async () => {
+    const recorder = recordedSpans();
+    const handler = new GovernedCallbackHandler();
+    try {
+      // The URL does not start the name: the scheme rides mid-string, exactly the
+      // shape a step name like "call <endpoint>" produces. The deny is a substring
+      // question like every other pattern in the list — the userinfo credentials
+      // must not survive because the scheme is not at position 0.
+      handler.handleToolStart(
+        serialized("x"),
+        "{}",
+        "run-tool",
+        undefined,
+        [],
+        {},
+        `call https://user:secret@db.example.com/api`,
+      );
+      handler.handleToolEnd("ok", "run-tool");
+
+      const tool = recorder.spans.find((span) => span.name.startsWith("tool"));
+      if (!tool) throw new Error("no tool span");
+      expect(tool.name).toBe("tool:unnamed");
+      expect(tool.attributes).toMatchObject({ "openbot.step.name": "unnamed" });
+      assertNoCanaries(recorder.spans);
+    } finally {
+      await recorder.stop();
+    }
+  });
+
   test("a stray end for a run this handler never started records nothing", async () => {
     const recorder = recordedSpans();
     const handler = new GovernedCallbackHandler();
