@@ -28,7 +28,6 @@ import type {
   SandboxGateway,
 } from "../src/craft/sandbox-gateway";
 import type { CraftSessionRow, CraftStore } from "../src/craft/store";
-import { createPreviewTickets } from "../src/craft/preview-ticket";
 import {
   generationGatedWebappBasePathFor,
   WEBAPP_GENERATION_CURRENT,
