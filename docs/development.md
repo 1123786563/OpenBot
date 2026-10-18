@@ -184,6 +184,10 @@ namespace）继续以 `bun test` 执行，但由 e2e 调度与报告：清单在
 新增 matcher 或运行时能力时先看 `e2e` 的文档（`node_modules/e2e/docs`），再决定是补兼容层还是改清单，
 不要静默地把本该原生跑的套件推到 Bun 侧藏问题。
 
+`tests/e2e/api.e2e.test.ts` 同样按"对着一个跑起来的服务端"来判定（`OPENBOT_API_BASE_URL`，默认
+127.0.0.1:3001），所以它不在 `bun run test` 里——没有部署在跑时会得到 43 条看着像产品回归的连接失败。
+起来之后用 `bun run test:api` 跑它。
+
 `bun run test:smoke` is separate and needs a deployment that is up, and a session on it:
 
 ```sh

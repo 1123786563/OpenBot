@@ -48,6 +48,16 @@ const driven = (() => {
   return [...(parsed.files ?? []), ...(parsed.artifacts ?? [])];
 })();
 
+/*
+ * Suites that only mean something against a running deployment. They are excluded from
+ * `bun run test` the way the smoke journey already is, because a developer or CI job without the
+ * stack up gets 43 connection failures that look like product regressions and are not. The suite
+ * keeps its assertions intact: `bun run test:api` (or OPENBOT_LIVE_API=1) runs it against
+ * OPENBOT_API_BASE_URL.
+ */
+const LIVE = ["tests/e2e/api.e2e.test.ts"];
+const liveWanted = Boolean(process.env.OPENBOT_LIVE_API);
+
 export default {
   projectId: "openbot-unit",
   tests: [
@@ -57,6 +67,7 @@ export default {
         : [`${dir}/**/*.test.ts`],
     ),
     "!**/node_modules/**",
+    ...(liveWanted ? [] : LIVE.map((file) => `!${file}`)),
     ...driven.map((file) => `!${file}`),
   ],
   targets: [{ name: "node", platform: "node" }],
