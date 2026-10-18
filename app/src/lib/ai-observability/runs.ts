@@ -126,6 +126,19 @@ function isRunSummaryRow(row: unknown): boolean {
   for (const field of ["opikTraceId", "state", "createdAt", "capability"]) {
     if (typeof record[field] !== "string") return false;
   }
+  /*
+   * R4-4, the list half of R3-13: the row's coverage cell renders
+   * `capability.<verdict>` straight off the body, so an unknown word echoes the
+   * raw key mid-list — the same half-drawn row the detail guard refuses below.
+   * The verdict vocabulary is the binding table's closed set (same words, same
+   * reason): a body carrying any other word is contract drift, the store failing
+   * to answer, never a verdict to draw.
+   */
+  if (
+    !KNOWN_CAPABILITY_LEVELS.includes(record.capability as RunCapabilityLevel)
+  ) {
+    return false;
+  }
   if (
     record.durationMs !== "unavailable" &&
     typeof record.durationMs !== "number"
@@ -163,7 +176,9 @@ function isRunSummaryRow(row: unknown): boolean {
  * and unavailable with their own sentences and only detailed coverage asks the store
  * for a timeline. Before the claim, a 200 whose run lost `capability` half-drew the
  * page — `capability.undefined` echoed literally — and undefined passed both gates,
- * firing a steps query for a report the binding never adjudicated.
+ * firing a steps query for a report the binding never adjudicated. The summary row
+ * guard reuses the same closed set (R4-4): its coverage cell speaks the identical
+ * `capability.<verdict>` face, so the list refuses the same drift the detail does.
  */
 const KNOWN_CAPABILITY_LEVELS: readonly RunCapabilityLevel[] = [
   "detailed",
