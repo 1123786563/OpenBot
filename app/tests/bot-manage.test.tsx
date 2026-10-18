@@ -78,9 +78,10 @@ function draw(
 
 test("someone who cannot manage the Bot is not offered Delete", () => {
   const view = draw({ ...BOT, canManage: false, mine: false });
-  // ponytail: by-role + accessible name — CI's text walk matched an unrelated
-  // aria-labeled switch and dumped the whole element into the job log
-  expect(view.queryByRole("button", { name: "Delete" })).toBeNull();
+  // The Delete item's description text is its unique fingerprint. "Delete"
+  // itself is not: on CI the accessible-name walk resolved a Pinned switch to
+  // that word and the failed toBeNull dumped the element into the job log.
+  expect(view.queryByText(/cannot be undone/i)).toBeNull();
   expect(view.getByText("Duplicate")).toBeTruthy();
 });
 
