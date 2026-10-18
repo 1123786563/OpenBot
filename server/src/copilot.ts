@@ -1559,10 +1559,6 @@ function meteredModel<T>(
        */
       const spanObserver = builtinModelSpanObserver;
       let spanInput: string | null = null;
-      // Captured at entry, inside the request's context (the tool-step cell's own
-      // discipline): by stream teardown the ambient context is not guaranteed.
-      const spanTrace =
-        spanObserver !== undefined ? (currentTraceContext() ?? null) : null;
       /*
        * OCR R5-47: the observation side's own "verdict on record" flag, set
        * INSIDE `reportSpan` the moment a span is actually emitted — never

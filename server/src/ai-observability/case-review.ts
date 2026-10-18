@@ -30,7 +30,6 @@
 import type { SafeValue } from "../../../shared/ai-observability";
 import type { CaseFragmentInput } from "../../../shared/ai-observability-datasets";
 import { type AuditStore, recordAuditEvent } from "../audit";
-import type { SafeValue } from "../../../shared/ai-observability";
 import type { RunBindingStore } from "./bindings";
 import type { ObservationScope } from "./contracts";
 import type {
