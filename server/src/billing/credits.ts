@@ -1,5 +1,10 @@
 import { and, asc, count, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
+import { botServices } from "../db/schema/bot-services";
+import {
+  creditReservationAttribution,
+  creditReservations,
+} from "../db/schema/credit-reservations";
 import { creditGrants, creditLedger } from "../db/schema/credits";
 import { type GrantCapacity, liveGrants, readCapacity } from "./capacity";
 import { type PayerRef, payerKey } from "./payer";
@@ -7,6 +12,7 @@ import type {
   CreditConsumptionPage,
   CreditGrantEntry,
   CreditGrantStatus,
+  CreditReservationEntry,
   CreditSummary,
   PendingSettlementSummary,
   PersonalCreditBalance,
@@ -62,13 +68,11 @@ export type Credits = {
 };
 
 /**
- * The pending-settlement placeholders, the one factory the responses take their shape from:
- * group 06 owns the enabling, and until then the amounts are constant zeros behind an explicit
- * `enabled: false` — never a computed value that could quietly start meaning something.
+ * How many reservation rows the pending view itemizes. Ours, not the caller's — the same rule
+ * as the consumption page's size: the quota stays exact over ALL rows (the aggregates below),
+ * while the list is the account's latest window.
  */
-export function pendingSettlementPlaceholder(): PendingSettlementSummary {
-  return { enabled: false, available: 0, consumed: 0, expired: 0 };
-}
+const RESERVATION_VIEW_LIMIT = 20;
 
 export function createCredits(deps: {
   database: Database;
@@ -129,7 +133,7 @@ export function createCredits(deps: {
         expired: scaleDown(Number(lapsed?.unused ?? 0)),
         held: scaleDown(held),
         grants: rows.map((row) => grantOf(row, now, soon)),
-        pendingSettlement: pendingSettlementPlaceholder(),
+        pendingSettlement: await pendingSettlementOf(database, key, at),
       };
     },
 
@@ -177,8 +181,34 @@ export function createCredits(deps: {
         .then((rows) => rows[0]?.value ?? 0);
 
       const rows = await database
-        .select()
+        .select({
+          id: creditLedger.id,
+          title: creditLedger.title,
+          requestId: creditLedger.requestId,
+          credits: creditLedger.credits,
+          applied: creditLedger.applied,
+          model: creditLedger.model,
+          client: creditLedger.client,
+          createdAt: creditLedger.createdAt,
+          botId: creditReservationAttribution.botId,
+          botName: botServices.displayName,
+        })
         .from(creditLedger)
+        // The attribution walk: a reservation-born ledger row (the writer records
+        // `credit_reservations.ledger_id`) names its reservation, the reservation's
+        // attribution names the Bot. Writer-direct rows join nothing and stay null.
+        .leftJoin(
+          creditReservations,
+          eq(creditReservations.ledgerId, creditLedger.id),
+        )
+        .leftJoin(
+          creditReservationAttribution,
+          eq(creditReservationAttribution.reservationId, creditReservations.id),
+        )
+        .leftJoin(
+          botServices,
+          eq(botServices.botId, creditReservationAttribution.botId),
+        )
         .where(where)
         .orderBy(desc(creditLedger.createdAt))
         .limit(CONSUMPTION_PAGE_SIZE)
@@ -197,6 +227,10 @@ export function createCredits(deps: {
           applied: scaleDown(row.applied),
           model: row.model,
           client: row.client,
+          // 06.12's attribution: the ledger row born of a protocol-settled reservation names
+          // the Bot the reserve ran for; every other row stays unattributed, never guessed.
+          botId: row.botId,
+          botName: row.botName,
           timestamp: row.createdAt.toISOString(),
         })),
         pagination: {
@@ -210,6 +244,95 @@ export function createCredits(deps: {
         },
       };
     },
+  };
+}
+
+/**
+ * The pending-settlement answer (ticket 06.12), computed over the account's OWN reservation
+ * rows with the SAME clock the rest of the balance binds to. The quota counts exactly the
+ * holds admission still occupies (./capacity.ts's occupying set): an unexpired plain
+ * `reserved` hold and every `unknown` one — an unknown hold occupies no matter how far the
+ * clock runs past `expires_at`, and a lapsed plain hold has stopped occupying, so it moves to
+ * `expired` (visible for reconciliation, never counted as spendable or pending). `consumed`
+ * sums what settled reservations charged — the same integer the ledger wrote — so the page's
+ * number and the ledger's can never disagree. Every amount is an aggregate over ALL of the
+ * account's rows; only the itemized list below is bounded.
+ */
+async function pendingSettlementOf(
+  database: Database,
+  key: string,
+  at: Date,
+): Promise<PendingSettlementSummary> {
+  const [buckets] = await database
+    .select({
+      reserved: sql<number>`coalesce(sum(${creditReservations.maximum}) filter (where ${creditReservations.status} = 'reserved' and ${creditReservations.expiresAt} > ${at}), 0)::int`,
+      unknown: sql<number>`coalesce(sum(${creditReservations.maximum}) filter (where ${creditReservations.status} = 'unknown'), 0)::int`,
+      consumed: sql<number>`coalesce(sum(${creditReservations.charged}) filter (where ${creditReservations.status} = 'settled'), 0)::int`,
+      expired: sql<number>`coalesce(sum(${creditReservations.maximum}) filter (where ${creditReservations.status} = 'reserved' and ${creditReservations.expiresAt} <= ${at}), 0)::int`,
+    })
+    .from(creditReservations)
+    .where(eq(creditReservations.externalCustomerId, key));
+
+  const rows = await database
+    .select({
+      id: creditReservations.id,
+      status: creditReservations.status,
+      maximum: creditReservations.maximum,
+      charged: creditReservations.charged,
+      released: creditReservations.released,
+      provider: creditReservations.provider,
+      model: creditReservations.model,
+      capability: creditReservations.capability,
+      unknownReason: creditReservations.unknownReason,
+      releaseReason: creditReservations.releaseReason,
+      createdAt: creditReservations.createdAt,
+      expiresAt: creditReservations.expiresAt,
+      terminalAt: creditReservations.terminalAt,
+      botId: creditReservationAttribution.botId,
+      botName: botServices.displayName,
+    })
+    .from(creditReservations)
+    .leftJoin(
+      creditReservationAttribution,
+      eq(creditReservationAttribution.reservationId, creditReservations.id),
+    )
+    .leftJoin(
+      botServices,
+      eq(botServices.botId, creditReservationAttribution.botId),
+    )
+    .where(eq(creditReservations.externalCustomerId, key))
+    // Newest first, id as the tiebreaker so same-instant rows still order stably.
+    .orderBy(desc(creditReservations.createdAt), desc(creditReservations.id))
+    .limit(RESERVATION_VIEW_LIMIT);
+
+  const reservations: CreditReservationEntry[] = rows.map((row) => ({
+    id: row.id,
+    status: row.status,
+    maximum: scaleDown(row.maximum),
+    charged: row.charged === null ? null : scaleDown(row.charged),
+    released: row.released === null ? null : scaleDown(row.released),
+    provider: row.provider,
+    model: row.model,
+    capability: row.capability,
+    botId: row.botId,
+    botName: row.botName,
+    unknownReason: row.unknownReason,
+    releaseReason: row.releaseReason,
+    createdAt: row.createdAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
+    terminalAt: row.terminalAt?.toISOString() ?? null,
+  }));
+
+  const reserved = Number(buckets?.reserved ?? 0);
+  const unknown = Number(buckets?.unknown ?? 0);
+  return {
+    enabled: true,
+    available: scaleDown(reserved + unknown),
+    consumed: scaleDown(Number(buckets?.consumed ?? 0)),
+    expired: scaleDown(Number(buckets?.expired ?? 0)),
+    reserved: scaleDown(reserved),
+    unknown: scaleDown(unknown),
+    reservations,
   };
 }
 

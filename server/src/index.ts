@@ -116,7 +116,7 @@ import {
   fitChatInputRequest,
 } from "./billing/input-bound";
 import { createLagoClient } from "./billing/lago";
-import { startBillingRenewalSweeps, startUsageDeliverySweeps } from "./billing/maintenance";
+import { startBillingRenewalSweeps, startRecoveryScanSweeps, startUsageDeliverySweeps } from "./billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
 import { createAlipayProvider } from "./billing/payments/alipay";
 import { startPaymentSweeps } from "./billing/payments/maintenance";
@@ -124,6 +124,7 @@ import { createPaymentService } from "./billing/payments/service";
 import { createPaymentStore } from "./billing/payments/store";
 import { createWechatProvider } from "./billing/payments/wechat";
 import { createReconciler } from "./billing/reconcile";
+import { createRecoveryScanner } from "./billing/recovery-scan";
 import {
   createBillingService,
   deploymentExternalCustomerId,
@@ -201,7 +202,11 @@ import {
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
   setModelUsageGate,
+  setWorkbenchGatewayModel,
   type ToolSelection,
+  setModelBillingAudit,
+  type ModelBillingAuditEvent,
+  billingMethodForModel,
 } from "./copilot";
 import { loadCraftConfig } from "./craft/config";
 import { builtinSkillFilesFor, buildAvailableSourcesSection } from "./craft/builtin-skills";
@@ -245,9 +250,16 @@ import {
 } from "./credentials";
 import {
   createGatewayAdminCredentialService,
+  gatewayAdminCredentialControls,
   installGatewayAdminCredentialService,
 } from "./gateway/admin-credential";
 import { startGatewayCatalogSyncScheduler } from "./gateway/catalog-sync";
+import {
+  createGatewayVirtualKeyStateClient,
+  startGatewayKeyStateSyncScheduler,
+} from "./gateway/key-state-sync";
+import { gatewayEndpointControls } from "./gateway/endpoint-config";
+import { assertGatewayReadyForBilling } from "./gateway/readiness";
 import { createEnterpriseStore } from "./admin/settings-store";
 import { createDatabase } from "./db/client";
 import {
@@ -3721,6 +3733,9 @@ await installEnterpriseControls({
   ...(config.computer?.token ? { computerToken: config.computer.token } : {}),
   ...(config.webBotAuth ? { webBotAuth: config.webBotAuth } : {}),
   builtInModel: `${runtimeModel.provider}/${runtimeModel.defaultModel}`,
+  // The billing method of that path (09.4): the admin overview reads it to name the
+  // credit and subscription billing paths apart instead of leaving one to be inferred.
+  builtInModelBilling: billingMethodForModel(runtimeModel),
   people: peopleStore,
   initialAdminEmails: config.auth?.initialAdminEmails ?? [],
 });
@@ -4066,6 +4081,11 @@ if (billing !== undefined && usageOutbox !== undefined) {
             reservationId: reservation.reservationId,
             actualCostNumerator: charged.actual.numerator.toString(),
             actualCostDenominator: charged.actual.denominator.toString(),
+            // The consumption record's attribution (09.1): the Bot that ran the call and the
+            // person it ran for, as the build knew them. Absent stays absent — a named null,
+            // never a guess.
+            botId: input.attribution.botId,
+            ownerUserId: input.attribution.userId,
           });
         } catch (error) {
           const failureCode = usageOutboxWriteFailureCode(error);
@@ -4152,9 +4172,91 @@ if (billing !== undefined && usageOutbox !== undefined) {
       },
     };
   });
+
+  /*
+   * The workbench model transport (09.1): a billed deployment's built-in Bot calls dial the model
+   * gateway, not a provider endpoint. The dial is the configured gateway endpoint (01.1) admitted
+   * by the readiness gate (01.7) — the same five conditions every other paid capability passes —
+   * and the credential presented is the deployment's own model credential, the one the legacy
+   * base-URL dial carried. A readiness refusal THROWS from this seam and fails the run with that
+   * reason; a deployment with no gateway address answers null and the run refuses fail-closed
+   * with the unmeterable sentinel. There is no provider-direct branch behind either refusal.
+   */
+  setWorkbenchGatewayModel(async (_model, apiKey) => {
+    // Reads, never dials: the gate answers from the saved rows (01.7). A gate that is not
+    // installed refuses paid work too, so the absence fails closed the same way.
+    await assertGatewayReadyForBilling();
+    const endpoint = await gatewayEndpointControls()?.readGatewayEndpoint();
+    if (!endpoint) return null;
+    return { baseURL: endpoint.baseUrl, apiKey };
+  });
+
+  /*
+   * The billing boundary's audit half (09.4): the facts copilot.ts raises — a run on the
+   * subscription harness path, a credit-admission refusal — become rows here, so the trail
+   * names both the work that no usage fact will ever carry and every refusal's finality
+   * (fallback: "none" is data, not prose). The audit store is this deployment's own; a
+   * write that fails stays a log warn, never the run's failure.
+   */
+  setModelBillingAudit((event: ModelBillingAuditEvent) => {
+    if (event.kind === "credit_refused") {
+      void recordAuditEvent(bootAuditStore, {
+        eventType: "model.credit_refused",
+        targetType: "model",
+        ...(event.modelId ? { targetId: event.modelId } : {}),
+        ...(event.userId ? { actorUserId: event.userId } : {}),
+        payload: {
+          code: event.code,
+          botId: event.botId,
+          fallback: event.fallback,
+          note: "The admission refusal is final: no subscription harness or other path was switched to.",
+        },
+      }).catch(() => undefined);
+      return;
+    }
+    void recordAuditEvent(bootAuditStore, {
+      eventType: "model.subscription_path_used",
+      targetType: "agent",
+      ...(event.botId ? { targetId: event.botId } : {}),
+      ...(event.userId ? { actorUserId: event.userId } : {}),
+      payload: {
+        billing: event.billing,
+        harness: event.provider,
+        note: "Billed by the harness's own subscription credential; no credit reservation was made.",
+      },
+    }).catch(() => undefined);
+  });
 } else {
   setModelUsageGate(undefined);
+  setWorkbenchGatewayModel(undefined);
+  setModelBillingAudit(undefined);
 }
+
+/*
+ * The subscription-harness boundary's posture row (09.4): one per boot, naming which billing
+ * method the deployment's built-in Bots run on. Recorded whether or not billing is wired —
+ * the subscription path exists (and is marked) in both shapes — because the trail should say
+ * outright where built-in work is billed by a harness subscription instead of leaving it to
+ * be inferred from the absence of credit usage facts.
+ */
+void recordAuditEvent(bootAuditStore, {
+  eventType: "model.billing_path_marked",
+  targetType: "model",
+  targetId: runtimeModel.defaultModel,
+  initiator: DEPLOYMENT_INITIATOR,
+  payload: {
+    billing: billingMethodForModel(runtimeModel),
+    provider: runtimeModel.provider,
+    model: runtimeModel.defaultModel,
+    ...(runtimeModel.plan
+      ? { harness: runtimeModel.plan.provider, harnessBilling: "subscription" }
+      : {}),
+    note:
+      "The subscription harness path never reserves credits and is never a balance-exhaustion fallback; the credit path refuses finally when the bound account is short.",
+  },
+}).catch(() => undefined);
+
+/*
 
 /*
  * The billing sweepers' stop handles (audit C3): both assemble only when their seam exists, and
@@ -4185,6 +4287,20 @@ if (billing !== undefined && usageOutbox !== undefined) {
     lock: { databaseUrl: config.databaseUrl, key: 4_192_007 },
   });
   billingSweepStops.push(renewalSweeps.stop);
+  // The recovery scan sweep (Bifrost 08.1): every interval the pass names the holds whose
+  // provider result nobody knows — 06.8's unknown marks and the expired plain holds a
+  // killed process left behind — one RecoveryItem each, into `credit_recovery_items`. The
+  // scan never releases, re-dispatches or settles; the item is a discovery the recovery
+  // handlers (08.2/08.4/08.9) consume. Assembled with the other sweeps: the same billing
+  // seam that owns the holds owns their recovery.
+  const recoverySweeps = startRecoveryScanSweeps(
+    createRecoveryScanner({ database }),
+    {
+      log: (message) => log.warn(message),
+      lock: { databaseUrl: config.databaseUrl, key: 4_192_008 },
+    },
+  );
+  billingSweepStops.push(recoverySweeps.stop);
 }
 
 /*
@@ -5808,6 +5924,29 @@ const catalogSyncScheduler = startGatewayCatalogSyncScheduler({
   environmentRate: config.gateway?.creditConversionRate,
 });
 
+/*
+ * The automatic key state sync (Bifrost 05.8, #249): one pass every minute by default,
+ * `BIFROST_KEY_STATE_SYNC_INTERVAL_MS` to change it, so a key the gateway deletes or
+ * disables stops being usable here on the next tick — the minute-scale promise the short
+ * key term (05.5) makes meaningful. Assembled here, after the app exists, because the
+ * reads need the installed endpoint and admin-credential controls. A deployment without
+ * the gateway wired keeps booting: the scheduler answers undefined and logs. Stopped in
+ * the signal handler below, with the other sweeps.
+ */
+const keyStateSyncScheduler = startGatewayKeyStateSyncScheduler({
+  database,
+  // The drift alerts (05.9) ride the boot audit trail, like every other gateway act.
+  auditStore: bootAuditStore,
+  client: createGatewayVirtualKeyStateClient({
+    readGatewayEndpoint: async () => {
+      const controls = gatewayEndpointControls();
+      return controls ? controls.readGatewayEndpoint() : undefined;
+    },
+    resolveGatewayAdminCredential: async () =>
+      gatewayAdminCredentialControls()!.resolveGatewayAdminCredential(),
+  }),
+});
+
 /**
  * The live screen, proxied.
  *
@@ -6168,6 +6307,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     responsibilitySweep.stop();
     catalogSyncScheduler?.stop();
+    keyStateSyncScheduler?.stop();
     wakeUpSweep.stop();
     wakeUpReaper.stop();
     openMuseTaskSweep.stop();

@@ -250,6 +250,27 @@ export type RuntimeModel = {
   plan?: PlanModelConfig;
 };
 
+/**
+ * The two billing methods a built-in Bot's model path can carry (09.4).
+ *
+ * `credit` is the ordinary path: gateway dial or legacy credential, admitted by the pre-call
+ * credit gate, metered, settled into the usage outbox. `subscription` is the harness path
+ * (Claude Code / Codex riding the deployment's own installed harness): billed by the
+ * subscription credential itself — no reservation, no meter, no outbox fact — and never a
+ * path a credit-exhausted call is re-resolved onto.
+ */
+export type ModelBillingMethod = "credit" | "subscription";
+
+/**
+ * The billing method of the path this model resolves to — the queryable half of the
+ * subscription-harness marker (09.4). Derived from credential presence alone: a run's path
+ * is chosen once, at build time, by which credentials the deployment carries, and never by
+ * a balance state — so there is no balance at which this answer changes mid-flight.
+ */
+export function billingMethodForModel(model: RuntimeModel): ModelBillingMethod {
+  return model.plan ? "subscription" : "credit";
+}
+
 /** Optional desktop environment values may be present but blank; SDKs treat them as URLs. */
 export function normalizeModelBaseUrls(
   environment: Record<string, string | undefined> = process.env,
@@ -408,16 +429,12 @@ export function standingInstructionsGuidance(
 const log = getLogger("server");
 
 /**
- * The model a built-in Bot runs on, as the runtime's agent config takes it.
- *
- * `OPENAI_BASE_URL` is documented as an endpoint speaking `/v1/chat/completions`, but the runtime's
- * own `openai/...` string resolution calls the Responses API on whatever base it was given, which
- * such endpoints do not implement — a gateway deployment fails every run with a 404 from
- * `/responses`. So a named base URL gets the chat-completions model instance built here (pinned to
- * the SDK version the runtime itself ships, so there is never a second AI SDK in the process);
- * official OpenAI, which has the Responses API, and Anthropic keep the runtime's string form.
+ * The legacy model dial, reached only when no gateway transport is wired: a named `OPENAI_BASE_URL`
+ * gets the chat-completions model instance built here, and everything else keeps the runtime's own
+ * string resolution (which a wired billing gate refuses — the string form is a provider endpoint
+ * the admission wrapper cannot reach).
  */
-function runtimeModel(model: RuntimeModel, apiKey: string | null) {
+function legacyRuntimeModel(model: RuntimeModel, apiKey: string | null) {
   if (model.provider !== "openai")
     return `${model.provider}/${model.defaultModel}`;
   const baseURL = process.env.OPENAI_BASE_URL?.trim();
@@ -444,6 +461,49 @@ export function setModelUsageMeter(
   meter: ((usage: ModelUsageReport) => void | Promise<void>) | undefined,
 ) {
   usageMeter = meter;
+}
+
+/**
+ * Where a built-in Bot's ordinary model call is dispatched, once this deployment has a model
+ * gateway (09.1): the seam hands the dial — an OpenAI-compatible base URL and the credential to
+ * present — and the runtime builds the model instance from it for BOTH providers, streaming and
+ * not. A gateway deployment's workbench traffic never resolves a provider endpoint itself: the
+ * provider-direct string forms and the `OPENAI_BASE_URL` dial are the legacy branches, reached
+ * only when this seam is not installed at all.
+ *
+ * Same injection shape as the meter and the gate, for the same reason: the gateway transport is
+ * optional (a deployment without one mounts none of it), and `copilot.ts` must not grow a
+ * dependency on configuration a deployment may not have. `index.ts` wires the deployment's gateway
+ * endpoint and readiness verdict in at assembly.
+ *
+ * THE REFUSAL IS FAIL-CLOSED. A wired seam that answers null — the gateway cannot serve this
+ * model — refuses the run with the same `UnmeterableModelError` sentinel the unprovable wirings
+ * raise; a wired seam that THROWS (the readiness gate's refusal, a config read that failed) fails
+ * the run with THAT reason. Neither leaves a provider-direct branch to fall back to.
+ */
+export type WorkbenchGatewayModelDial = {
+  /** The OpenAI-compatible base URL the gateway serves chat completions at. */
+  baseURL: string;
+  /** The credential presented to the gateway; null passes none. */
+  apiKey: string | null;
+};
+
+let workbenchGatewayModel:
+  | ((
+      model: RuntimeModel,
+      apiKey: string | null,
+    ) => Promise<WorkbenchGatewayModelDial | null>)
+  | undefined;
+
+export function setWorkbenchGatewayModel(
+  dial:
+    | ((
+        model: RuntimeModel,
+        apiKey: string | null,
+      ) => Promise<WorkbenchGatewayModelDial | null>)
+    | undefined,
+) {
+  workbenchGatewayModel = dial;
 }
 
 export type ModelUsageFailureReason =
@@ -574,6 +634,12 @@ type ModelUsageGateInput = {
    * attribute the usage fact to its real caller instead of a hardcoded "web".
    */
   client: UsageOrigin;
+  /**
+   * Who initiated the call and which Bot ran it (09.1's consumption attribution), read off the
+   * agent configuration the wrapper was built from. Nulls when the build did not know — a named
+   * absence, never a guess — so the usage fact can still name its real origin.
+   */
+  attribution: { userId: string | null; botId: string | null };
 };
 
 /**
@@ -597,6 +663,46 @@ export function setModelUsageGate(
     | undefined,
 ) {
   modelUsageGate = gate;
+}
+
+/**
+ * What the billing boundary (09.4) hands the audit trail, as data. `copilot.ts` knows the
+ * facts and nothing about where rows go; `index.ts` wires this to the audit store, the same
+ * injection shape as the meter and the gate.
+ *
+ * - `subscription_path_used`: a run built on the subscription harness — the marked path,
+ *   billed by the subscription credential, visible so an auditor can account for work that
+ *   no usage fact will ever name.
+ * - `credit_refused`: a credit-admission refusal, with `fallback: "none"` carried as data —
+ *   the boundary this module enforces, recorded so the trail shows the refusal was final
+ *   and no subscription path was switched to behind it.
+ */
+export type ModelBillingAuditEvent =
+  | {
+      kind: "subscription_path_used";
+      billing: "subscription";
+      /** The harness provider the run's model rode ("claude" | "chatgpt"). */
+      provider: string;
+      botId: string | null;
+      userId: string | null;
+    }
+  | {
+      kind: "credit_refused";
+      /** The admission sentinel's stable code ("credits_exhausted" and siblings). */
+      code: string;
+      modelId: string | null;
+      botId: string | null;
+      userId: string | null;
+      /** Always "none": a refusal re-resolves nothing and switches to nothing. */
+      fallback: "none";
+    };
+
+let modelBillingAudit: ((event: ModelBillingAuditEvent) => void) | undefined;
+
+export function setModelBillingAudit(
+  audit: ((event: ModelBillingAuditEvent) => void) | undefined,
+) {
+  modelBillingAudit = audit;
 }
 
 /**
@@ -670,7 +776,7 @@ export class UnmeterableModelError extends Error {
   readonly code = "model_unmeterable";
   constructor() {
     super(
-      "This model cannot be metered in its current form. Ask an administrator to configure a gateway base URL (OPENAI_BASE_URL) or a plan model so billing admission can prove its bounds.",
+      "This model cannot be metered in its current form. Ask an administrator to configure a gateway base URL (the model gateway endpoint this deployment dials, or OPENAI_BASE_URL where no gateway is wired) or a plan model so billing admission can prove its bounds.",
     );
   }
 }
@@ -687,7 +793,10 @@ export class UnmeterableModelError extends Error {
  * does not depend on directly; the runtime carries them transitively, and pinning that into
  * `package.json` to record two field names is not the trade.
  */
-function meteredModel<T>(model: T): T {
+function meteredModel<T>(
+  model: T,
+  attribution?: { userId: string | null; botId: string | null },
+): T {
   const inner = model as {
     doStream: (params: unknown) => Promise<{
       stream: ReadableStream<Record<string, unknown>>;
@@ -717,6 +826,10 @@ function meteredModel<T>(model: T): T {
             modelId:
               typeof inner.modelId === "string" ? inner.modelId : null,
             client: currentUsageOrigin(),
+            attribution: {
+              userId: attribution?.userId ?? null,
+              botId: attribution?.botId ?? null,
+            },
           });
         } catch (error) {
           if (
@@ -726,6 +839,17 @@ function meteredModel<T>(model: T): T {
             error instanceof ModelNotPricedError ||
             error instanceof CreditGateFailureError
           ) {
+            // The refusal is the boundary (09.4): recorded with `fallback: "none"` as data
+            // before it propagates, so the trail shows the admission answer was final and
+            // no subscription harness or other path was switched to behind it.
+            modelBillingAudit?.({
+              kind: "credit_refused",
+              code: error.code,
+              modelId: typeof inner.modelId === "string" ? inner.modelId : null,
+              botId: attribution?.botId ?? null,
+              userId: attribution?.userId ?? null,
+              fallback: "none",
+            });
             throw error;
           }
           // The gate's own failure reason stays out of the person-facing sentinel; the
@@ -1103,9 +1227,13 @@ export const meteredModelForTests = meteredModel;
 
 /**
  * Wrap the model instance in the usage meter when one is wired and the model is an instance (the
- * string form is resolved by the runtime itself, where this file cannot reach).
+ * string form is resolved by the runtime itself, where this file cannot reach). The build's
+ * attribution rides along, so the gate's usage fact names the Bot that ran it and who for.
  */
-function withUsageMeter<T>(model: T): T {
+function withUsageMeter<T>(
+  model: T,
+  attribution?: { userId: string | null; botId: string | null },
+): T {
   // The gate rides the same wrapper as the meter: a deployment with neither wired (no billing)
   // gets the model untouched, and a deployment with only the meter still meters — the two are
   // independent injections on purpose.
@@ -1119,7 +1247,7 @@ function withUsageMeter<T>(model: T): T {
   ) {
     return model;
   }
-  return meteredModel(model);
+  return meteredModel(model, attribution);
 }
 
 export function builtInAgentConfiguration(
@@ -1169,6 +1297,19 @@ export function builtInAgentConfiguration(
    */
   governedModel?: GovernedModelRequest,
   loadKnowledge?: LoadKnowledgeForBot,
+  /**
+   * Who this build's runs are for, so the consumption fact names the initiator (09.1). The Bot
+   * half is the agent's own id; this carries the person. Absent when the resolver had no actor —
+   * the fact then names a null, never a guess.
+   */
+  attribution?: { userId: string | null },
+  /**
+   * The resolved gateway dial for this build (09.1), when the deployment wired the workbench's
+   * gateway transport: the model instance the Bot runs on is built from it, for both providers.
+   * Null means the transport refused the model — the run fails closed. Undefined means no
+   * transport is wired, and the legacy dial below decides.
+   */
+  gatewayModel?: WorkbenchGatewayModelDial | null,
 ): BuiltInAgentConfiguration {
   if (!apiKey && !planModel && !governedModel) {
     return {
@@ -1237,7 +1378,37 @@ export function builtInAgentConfiguration(
     };
   }
 
-  const resolvedModel = planModel ?? runtimeModel(model, apiKey);
+  /*
+   * The model this Bot runs on, in order of authority: the plan model (the subscription harness's
+   * own dial), then the gateway transport (09.1 — the one surface a gateway deployment's ordinary
+   * calls take, both providers, streaming and not), then the legacy dial. The order is CREDENTIAL
+   * PRESENCE, never balance: which path runs was fixed at build time by which credentials the
+   * deployment carries, and a credit refusal below never re-reads this choice (09.4) — there is
+   * no balance at which the plan model becomes reachable, and no refusal that falls through to it.
+   *
+   * A wired transport that answered null refuses the RUN here — the same fail-closed shape
+   * the unprovable string-form wiring raises, and for the same reason: there is no provider-direct
+   * branch to fall back to.
+   */
+  const dial = gatewayModel;
+  if (dial === null && planModel === undefined) {
+    return {
+      type: "custom",
+      // biome-ignore lint/correctness/useYield: this agent must fail when iteration starts.
+      factory: async function* () {
+        throw new UnmeterableModelError();
+      },
+    };
+  }
+  // A refused dial (null) never reaches the transport branch: a plan model bypasses the
+  // transport entirely, and every other run was refused above.
+  const transportDial: WorkbenchGatewayModelDial | undefined = dial ?? undefined;
+  const resolvedModel = planModel ?? (transportDial !== undefined
+    ? createOpenAI({
+        apiKey: transportDial.apiKey ?? undefined,
+        baseURL: transportDial.baseURL,
+      }).chat(model.defaultModel)
+    : legacyRuntimeModel(model, apiKey));
   if (
     modelUsageGate !== undefined &&
     typeof resolvedModel === "string"
@@ -1253,8 +1424,32 @@ export function builtInAgentConfiguration(
     };
   }
 
+  if (planModel) {
+    // The marked path, per run (09.4): this run is billed by the subscription credential, so
+    // the trail names it here — no usage fact will ever carry it, because nothing below
+    // reserves, meters or settles credits for this call.
+    modelBillingAudit?.({
+      kind: "subscription_path_used",
+      billing: "subscription",
+      // The harness word the plan config resolved ("claude" | "chatgpt"): the instance's
+      // `provider` is the namespaced transport id, not the plan.
+      provider: planModel.modelId,
+      botId: agent.id,
+      userId: attribution?.userId ?? null,
+    });
+  }
+
   return {
-    model: withUsageMeter(resolvedModel),
+    model: planModel
+      ? // The subscription harness path (09.4): billed by the subscription credential, so it
+        // never enters credit admission — no gate read, no meter write, no outbox fact that
+        // would dress subscription work up as Bifrost credit consumption. The plan model is
+        // handed to the runtime exactly as built; the boundary is the absence of a wrapper.
+        resolvedModel
+      : withUsageMeter(resolvedModel, {
+          userId: attribution?.userId ?? null,
+          botId: agent.id,
+        }),
     /*
      * The package's role, then the person's own standing instructions, then what this Bot actually
      * holds, then the computer.
@@ -1384,6 +1579,10 @@ export async function buildAgents(
   loadKnowledge?: LoadKnowledgeForBot,
   /** Present only inside a governed admission. See {@link builtInAgentConfiguration}. */
   governedModel?: GovernedModelRequest,
+  /** Who this build's runs are for. See {@link builtInAgentConfiguration}. */
+  attribution?: { userId: string | null },
+  /** The resolved gateway dial for this build. See {@link builtInAgentConfiguration}. */
+  gatewayModel?: WorkbenchGatewayModelDial | null,
 ): Promise<Record<string, AbstractAgent>> {
   let vendors: readonly string[] = [];
   try {
@@ -1441,6 +1640,8 @@ export async function buildAgents(
           markAttachmentsSent,
           acquireLearnedSkills,
           governedModel,
+          attribution,
+          gatewayModel,
         );
         if (loadPersonalMemory && !(built instanceof UnavailableAgent))
           built.use(new PersonalMemoryMiddleware(agent.id, loadPersonalMemory));
@@ -1705,6 +1906,10 @@ async function buildAgent(
   acquireLearnedSkills?: AcquireLearnedSkills,
   /** Present only inside a governed admission. See {@link builtInAgentConfiguration}. */
   governedModel?: GovernedModelRequest,
+  /** Who this build's runs are for. See {@link builtInAgentConfiguration}. */
+  attribution?: { userId: string | null },
+  /** The resolved gateway dial for this build. See {@link builtInAgentConfiguration}. */
+  gatewayModel?: WorkbenchGatewayModelDial | null,
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
@@ -1817,6 +2022,9 @@ async function buildAgent(
           : undefined,
         learnedSkills,
         governedModel,
+        undefined,
+        attribution,
+        gatewayModel,
       ),
       loadAttachment,
       markAttachmentsSent,
@@ -2717,6 +2925,12 @@ export async function resolveRuntimeAgents(
    * SDK key, so resolving one would be a credential read nothing consumes.
    */
   governedModel?: GovernedModelRequest,
+  /**
+   * Who this build's runs are for, so the consumption facts name the initiator (09.1). Handed to
+   * every built-in Bot's model wrapper; absent when the caller had no actor, which the usage fact
+   * then records as a named null rather than a guess.
+   */
+  attribution?: { userId: string | null },
 ): Promise<Record<string, AbstractAgent>> {
   const all = await loadAgents();
   if (all.length === 0) {
@@ -2736,6 +2950,19 @@ export async function resolveRuntimeAgents(
     !governedModel && registered.some((agent) => agent.type === "built_in")
       ? await resolveModelApiKey()
       : null;
+  /*
+   * One gateway dial per build (09.1), resolved only when a built-in Bot will actually run on it:
+   * the transport is the deployment's gateway endpoint and readiness verdict, so the read is async
+   * and belongs here — once per roster, not once per Bot, and never on a build that dials nothing.
+   * A wired transport that throws (the readiness gate's refusal) fails the build; a null answer
+   * reaches each Bot as its own fail-closed refusal.
+   */
+  const gatewayModelDial =
+    workbenchGatewayModel &&
+    !governedModel &&
+    registered.some((agent) => agent.type === "built_in")
+      ? await workbenchGatewayModel(model, apiKey)
+      : undefined;
   return buildAgents(
     registered,
     model,
@@ -2756,6 +2983,8 @@ export async function resolveRuntimeAgents(
     loadPersonalMemory,
     loadKnowledge,
     governedModel,
+    attribution,
+    gatewayModelDial,
   );
 }
 

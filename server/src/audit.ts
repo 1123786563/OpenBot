@@ -764,6 +764,14 @@ export const auditEventTypes = [
    * entered the books once is a fact worth reading, not noise.
    */
   "billing.credits.personal_granted",
+  /*
+   * A person claimed a reward into their OWN personal account (Bifrost 10.4, AC14): the
+   * claimer, the reward type and the server-derived period beside the account the server
+   * RESOLVED from the session — no client-named target exists anywhere on this path, and the
+   * row is the per-request receipt a replayed claim also gets, marked `inserted: false`, so a
+   * double-tapped check-in button reads as one payout with two presses.
+   */
+  "billing.credits.reward_claimed",
   /**
    * The reconciliation pass was run (T7): an on-demand audit of the books' two invariants
    * (the payment three-way and the credit identity). Audited because it is an operator
@@ -771,6 +779,45 @@ export const auditEventTypes = [
    * "when did we last look, and did the books agree" is answerable from the trail alone.
    */
   "billing.reconciled",
+  /**
+   * The deployment's built-in Bots run on the subscription harness path (Bifrost 09.4):
+   * recorded at boot so the trail says so outright instead of leaving it to be inferred
+   * from the absence of credit usage facts. The payload carries the resolved billing
+   * method (`credit` for the ordinary gateway/credential path, `subscription` when a
+   * Claude Code / ChatGPT harness credential is configured), and, for the subscription
+   * path, the harness plan word. The row is posture, not an event: one per boot.
+   */
+  "model.billing_path_marked",
+  /**
+   * A run executed on the subscription harness path (Bifrost 09.4). This is the per-run
+   * half of the boundary: the run was billed by the harness's own subscription
+   * credential, so NO credit reservation, meter write or usage fact exists for it — this
+   * row is the only trace the books will ever see. Beside the payload's billing method
+   * and harness plan word: the Bot that ran and the person it ran for, when the build
+   * knew them. Never fired for the credit path: those runs carry their usage facts.
+   */
+  "model.subscription_path_used",
+  /**
+   * A model call refused by credit admission before the provider was dialed (Bifrost
+   * 09.4, the audit half of AC13). The payload carries the stable refusal code
+   * (`credits_exhausted` and its siblings), the model, the Bot and the person when the
+   * build knew them, and `fallback: "none"` — the boundary as data: the refusal is
+   * final, nothing was re-resolved, and the subscription harness was never reached for.
+   * A reader counting these rows is counting every place the deployment said no and
+   * meant it.
+   */
+  "model.credit_refused",
+  /**
+   * The authorized legacy-billing cleanup executed (Bifrost 21.7). Two rows per execution,
+   * keyed by the execution id in target_id: `phase: "executed"` — the deletion receipt,
+   * written in the SAME transaction as the deletions, carrying the scope binding it executed
+   * under, the per-table deleted counts and EVERY deleted row whole (the recovery source of
+   * truth — the program keeps no other copy); `phase: "post_verified"` — the post-commit
+   * verification and accounting smoke verdicts, appended once the reads finished. The receipt
+   * is what makes an execution reversible and provable; a rollback erases it together with
+   * the deletions, so the trail never describes a deletion that did not happen.
+   */
+  "billing.cleanup.executed",
   /**
    * A craft session's owner answered a connect_app card (connected/declined; the session,
    * the app id and the decision in the payload). The handshake itself rides ephemeral KV
@@ -800,6 +847,14 @@ export const auditEventTypes = [
    * own answer, never upstream bytes, so the trail stays displayable.
    */
   "gateway.catalog_sync_triggered",
+  /**
+   * An administrator triggered an immediate key state sync (Bifrost 05.8).
+   *
+   * One row per manual trigger, carrying who asked and the outcome — the pass itself
+   * writes each key flip as its own drift event, so this row is the trigger, not the
+   * log. The result is the sync's own answer, never upstream bytes.
+   */
+  "gateway.key_state_sync_triggered",
   /*
    * A short-lived virtual key was issued for a user × Bot authorization (Bifrost 05.3).
    *
@@ -812,6 +867,39 @@ export const auditEventTypes = [
    * redeem a key.
    */
   "gateway.key_issued",
+  /*
+   * A short-lived virtual key was renewed onto its next credentialVersion (Bifrost 05.6).
+   *
+   * One row per renewal, naming the same act the issuance row names — grant, Bot, Customer,
+   * version — plus the credentialVersions this renewal retired, so the trail can answer
+n   * "which version lived when" without guessing. The payload carries a four-hex fingerprint
+   * of the new key value for identification; the plaintext exists only in the renewal
+   * response and only at the gateway, and neither this row nor any error path can redeem a
+   * key. Accounting is absent by construction: a renewal moves no balance.
+   */
+  "gateway.key_renewed",
+  /*
+   * A short-lived virtual key's record drifted from OpenBot's own (Bifrost 05.9).
+   *
+   * One row per NEWLY recorded drift event — a key whose owner (Customer), scope or term
+   * at the gateway no longer matches the record this deployment issued it under. The row
+   * names both sides of the mismatched field; the event it names is OUTSTANDING, and an
+   * outstanding event pauses its authorization's issuance and renewal until an
+   * administrator disposes of it (the disposition is its own row below). The detection is
+   * written by the sync after its verdict commits — a broken trail write is logged, not a
+   * run failure, because the drift row itself is the durable record.
+   */
+  "gateway.key_drift_detected",
+  /*
+   * An administrator disposed of a recorded key drift event (Bifrost 05.9).
+   *
+   * One row per human decision: which event, which decision (`accepted` — reviewed and
+   * acknowledged; `key_revoked` — the drifted key is retired from the local record), who
+   * decided, and the optional note. The decision is written exactly once (a second
+   * disposal of the same event is a no-op), and lifting the pause is the decision's
+   * effect by construction: the pause IS the outstanding event, so disposing it ends it.
+   */
+  "gateway.key_drift_disposed",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

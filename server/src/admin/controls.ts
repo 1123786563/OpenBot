@@ -84,6 +84,13 @@ export type EnterpriseDeps = {
   webBotAuth?: WebBotAuth;
   /** `provider/model` the built-in Bot runs on, for the model allowlist and usage view. */
   builtInModel?: string;
+  /**
+   * How that model path is billed (09.4): `credit` — the ordinary gateway/credential path,
+   * admitted by the credit gate — or `subscription` when the deployment configured a Claude
+   * Code / ChatGPT harness credential, which the admin overview shows as its own, separate
+   * billing path. Absent reads as `credit`, the default every deployment has.
+   */
+  builtInModelBilling?: "credit" | "subscription";
   /** Offboarding: ends sessions and deny-lists, and retires what a person granted. */
   people?: {
     revoke: (userId: string, by: string) => Promise<void>;

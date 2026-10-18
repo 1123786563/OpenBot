@@ -17,6 +17,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { TFunction } from "i18next";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ModelBillingPaths } from "@/components/admin/model-billing-paths";
 import {
   PageEmpty,
   PageRows,
@@ -523,6 +524,10 @@ function EnterpriseSections({
             </ItemActions>
           </Item>
         </PageRows>
+        <ModelBillingPaths
+          billing={data.builtInModelBilling}
+          model={data.builtInModel}
+        />
         <ModelUsage />
       </PageSection>
 

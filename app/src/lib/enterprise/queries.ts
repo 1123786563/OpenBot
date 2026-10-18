@@ -58,6 +58,14 @@ export type EnterpriseOverview = {
   defaultDestinations: string[];
   mcpServers: { id: string; title: string; url: string }[];
   builtInModel: string | null;
+  /**
+   * How the built-in Bots' model path is billed (09.4): `credit` — the ordinary
+   * gateway/credential path, admitted by the credit gate — or `subscription` when a Claude
+   * Code / ChatGPT harness credential is configured, which the models section shows as its
+   * own separate billing path that never reserves credits and is never a balance-exhaustion
+   * fallback.
+   */
+  builtInModelBilling: "credit" | "subscription";
   scim: {
     configured: boolean;
     connectionId: string;
