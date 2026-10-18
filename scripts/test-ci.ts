@@ -44,6 +44,23 @@ async function writeStderr(text: string) {
   );
 }
 
+/*
+ * "Every suite runs under e2e" is an accounting claim, so it is checked as one before anything is
+ * executed: a file that imports `bun:test` without being on the driven tier aborts collection for
+ * the whole run, and a file that imports neither runner silently never runs. Failing here says which
+ * file and why, instead of leaving a zero-test run as the symptom.
+ */
+const coverage = Bun.spawn(["node", "scripts/e2e-coverage-audit.mjs"], {
+  stdout: "inherit",
+  stderr: "inherit",
+});
+if ((await coverage.exited) !== 0) {
+  await writeStderr(
+    "\nCoverage audit failed: some suite file is not scheduled by e2e. Repair the partition (`node scripts/e2e-batch-drive-bun-test.mjs`) before trusting a run.\n",
+  );
+  process.exit(1);
+}
+
 const proc = Bun.spawn(["./node_modules/.bin/e2e", "run", "--config", CONFIG], {
   stdout: "inherit",
   stderr: "inherit",

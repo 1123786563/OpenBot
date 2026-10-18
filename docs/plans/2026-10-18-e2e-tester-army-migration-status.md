@@ -197,6 +197,26 @@ TEST_DATABASE_URL="postgres://openbot@127.0.0.1:55433/openbot_enterprise_test" \
 要把它们变成绿，需要 multitenancy / observability / agent-sandbox 各波次的 owner 补夹具或修断言，
 不属于测试框架迁移能替他们决定的范围。复测用完的容器收掉：`docker rm -f openbot-e2e-verify-pg`。
 
+## 「所有测试都在 e2e 上」是一笔可对账的账，不是一句声明
+
+`node scripts/e2e-coverage-audit.mjs`（已接进 `bun run test:ci`，跑在 e2e 之前）逐个文件归类，
+落在四个桶之外就报文件名并以非零退出：
+
+```
+1073 suite files in the 14 migrated directories · 603 native e2e · 453 driven by e2e (bun runtime) · 10 engine (.e2e.ts, web/mobile) · 7 named exclusions
+no gaps: every suite file is scheduled by e2e, or excluded by name with a reason.
+```
+
+- `native`：被 e2e 在 Node 上收集并执行（import `support/e2e-compat`）。
+- `driven`：由 e2e 调度与报告、由 `bun test` 执行（ADR 0008 的两层制；必须指向
+  `support/bun-test-compat` 或原样 import `bun:test`，否则记为 gap）。
+- `engine`：`.e2e.ts` 与 `@e2e-dev/*` 的引擎用例（web / 移动端 target）。
+- `exclusions`：按名字记录在清单里并写明原因的 —— 6 个 Appium 移动产物 + 1 个本仓库夹具坏了的
+  套件（`docs/verification/e2e-known-broken.json`，`test:ci` 会打印条数，防止悄悄长大）。
+
+gap 的两种形态正是入口坏掉的原因：写着 `bun:test` 却没被分到驱动层的文件会让**整轮收集中止**
+（一个文件就没有 report），两个 runner 都没 import 的文件会**静默不跑**。所以这一项先跑、失败即停。
+
 ## 复核方式
 
 ```bash
