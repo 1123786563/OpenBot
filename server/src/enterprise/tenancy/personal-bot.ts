@@ -598,40 +598,8 @@ export function createPersonalBotService(channels: {
           if (templateRef && existing.templateRef !== templateRef) {
             throw new Error("PERSONAL_BOT_TEMPLATE_CONFLICT");
           }
-          // MUT-1（幂等键变异，验证后还原）：重复请求改写已有行——消费
-          // 首建后的输入、推进版本号。AC1 必须捕获此变异。
-          const document = {
-            ...(existing.document as Record<string, unknown>),
-            ...userFields,
-          };
-          await tx
-            .update(enterprisePersonalBots)
-            .set({
-              displayName,
-              document,
-              revision: sql`${enterprisePersonalBots.revision} + 1`,
-              updatedAt: sql`now()`,
-            })
-            .where(
-              and(
-                eq(enterprisePersonalBots.tenantId, scope.tenantId),
-                eq(enterprisePersonalBots.workspaceId, scope.workspaceId),
-                eq(enterprisePersonalBots.principalId, scope.principalId),
-              ),
-            );
-          const [mutated] = await tx
-            .select()
-            .from(enterprisePersonalBots)
-            .where(
-              and(
-                eq(enterprisePersonalBots.tenantId, scope.tenantId),
-                eq(enterprisePersonalBots.workspaceId, scope.workspaceId),
-                eq(enterprisePersonalBots.principalId, scope.principalId),
-              ),
-            )
-            .limit(1);
           const ownership = await readOwnershipRows(tx, scope);
-          return allowView(mutated ?? existing, ownership);
+          return allowView(existing, ownership);
         }
         // 首建：模板来源 = 团队安装副本（真实 MT077 存储）。
         let templateDocument: Record<string, unknown> | null = null;
