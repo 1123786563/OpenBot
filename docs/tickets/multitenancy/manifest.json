@@ -1,0 +1,3078 @@
+{
+  "repository": "1123786563/OpenBot",
+  "parent_spec_issue": "https://github.com/1123786563/OpenBot/issues/6",
+  "parent_spec_title": "Spec: 公司与团队多租户整改（全功能隔离后统一上线）",
+  "source_documents": [
+    "docs/specs/2026-10-14-company-team-multitenancy-design.md",
+    "docs/adr/0004-company-team-tenancy.md",
+    "docs/adr/0002-per-user-bot-model-access.md",
+    "docs/adr/0003-bifrost-openbot-credit-admission.md",
+    "CONTEXT.md",
+    "docs/plans/2026-10-15-company-team-multitenancy/00-master.md"
+  ],
+  "prepared_date": "2026-10-15",
+  "status": "published",
+  "hierarchy": "Spec #6 -> 20 group epics (native sub-issues) -> 143 tickets; blocking edges are text in each ticket body.",
+  "epics": {
+    "A 基础/前置": {
+      "issue": 187,
+      "url": "https://github.com/1123786563/OpenBot/issues/187"
+    },
+    "B 成员与作用域": {
+      "issue": 188,
+      "url": "https://github.com/1123786563/OpenBot/issues/188"
+    },
+    "C 资源授权策略": {
+      "issue": 189,
+      "url": "https://github.com/1123786563/OpenBot/issues/189"
+    },
+    "D 运行配置": {
+      "issue": 190,
+      "url": "https://github.com/1123786563/OpenBot/issues/190"
+    },
+    "E Bot": {
+      "issue": 191,
+      "url": "https://github.com/1123786563/OpenBot/issues/191"
+    },
+    "F 会话": {
+      "issue": 192,
+      "url": "https://github.com/1123786563/OpenBot/issues/192"
+    },
+    "G 身份与凭据": {
+      "issue": 193,
+      "url": "https://github.com/1123786563/OpenBot/issues/193"
+    },
+    "H 插件与审批": {
+      "issue": 194,
+      "url": "https://github.com/1123786563/OpenBot/issues/194"
+    },
+    "I 知识与记忆": {
+      "issue": 195,
+      "url": "https://github.com/1123786563/OpenBot/issues/195"
+    },
+    "J 任务与执行": {
+      "issue": 196,
+      "url": "https://github.com/1123786563/OpenBot/issues/196"
+    },
+    "K 执行隔离": {
+      "issue": 197,
+      "url": "https://github.com/1123786563/OpenBot/issues/197"
+    },
+    "L Craft/Workshop": {
+      "issue": 198,
+      "url": "https://github.com/1123786563/OpenBot/issues/198"
+    },
+    "M OpenMuse 个人域": {
+      "issue": 199,
+      "url": "https://github.com/1123786563/OpenBot/issues/199"
+    },
+    "N 账务": {
+      "issue": 200,
+      "url": "https://github.com/1123786563/OpenBot/issues/200"
+    },
+    "O 治理": {
+      "issue": 201,
+      "url": "https://github.com/1123786563/OpenBot/issues/201"
+    },
+    "P Web 客户端": {
+      "issue": 202,
+      "url": "https://github.com/1123786563/OpenBot/issues/202"
+    },
+    "Q 桌面": {
+      "issue": 203,
+      "url": "https://github.com/1123786563/OpenBot/issues/203"
+    },
+    "R Canonical 移动端": {
+      "issue": 204,
+      "url": "https://github.com/1123786563/OpenBot/issues/204"
+    },
+    "S 观测": {
+      "issue": 205,
+      "url": "https://github.com/1123786563/OpenBot/issues/205"
+    },
+    "T 迁移与收尾": {
+      "issue": 206,
+      "url": "https://github.com/1123786563/OpenBot/issues/206"
+    }
+  },
+  "granularity_rule": "每个 Ticket 必须能在单个 code agent 上下文内完成，使某个 agent 失败时另一个 agent 能很快接手；多依赖与多目标 Ticket 已进一步拆分。",
+  "sequencing": "宽范围机械重构按 expand → migrate（按 blast radius 分批）→ contract 排序；每批一个 Ticket，保持每个 Ticket 是可独立验证的业务行为切片。",
+  "ticket_count": 143,
+  "split_count": 55,
+  "frontier": [
+    "MT001",
+    "MT002",
+    "MT103"
+  ],
+  "most_dependent": [
+    {
+      "id": "MT115",
+      "deps": 9
+    },
+    {
+      "id": "MT141",
+      "deps": 6
+    },
+    {
+      "id": "MT114",
+      "deps": 5
+    },
+    {
+      "id": "MT129",
+      "deps": 4
+    },
+    {
+      "id": "MT140",
+      "deps": 3
+    }
+  ],
+  "acceptance_coverage": {
+    "A1": 55,
+    "A2": 96,
+    "A3": 36,
+    "A4": 30,
+    "A5": 40,
+    "A6": 36,
+    "A7": 19,
+    "A8": 38,
+    "A9": 19,
+    "A10": 37,
+    "A11": 33,
+    "A12": 22,
+    "A13": 22
+  },
+  "groups": {
+    "A 基础/前置": 3,
+    "B 成员与作用域": 4,
+    "C 资源授权策略": 5,
+    "D 运行配置": 3,
+    "E Bot": 5,
+    "F 会话": 5,
+    "G 身份与凭据": 5,
+    "H 插件与审批": 5,
+    "I 知识与记忆": 5,
+    "J 任务与执行": 5,
+    "K 执行隔离": 7,
+    "L Craft/Workshop": 6,
+    "M OpenMuse 个人域": 10,
+    "N 账务": 6,
+    "O 治理": 5,
+    "P Web 客户端": 18,
+    "Q 桌面": 5,
+    "R Canonical 移动端": 5,
+    "S 观测": 4,
+    "T 迁移与收尾": 32
+  },
+  "checks": {
+    "unique_slugs": true,
+    "dependencies_exist": true,
+    "deps_declared_earlier": true,
+    "no_cycles": true,
+    "declaration_order_topological": true,
+    "acceptance_coverage_13": true,
+    "no_unknown_ticket_references": true,
+    "no_unresolved_tokens": true
+  },
+  "errors": [],
+  "tickets": [
+    {
+      "id": "MT001",
+      "slug": "entry-inventory",
+      "group": "A 基础/前置",
+      "title": "从真实装配生成全入口清单与覆盖缺口报告",
+      "depends_on": [],
+      "acceptance": [
+        "A6",
+        "A11"
+      ],
+      "split_from": null,
+      "issue_number": 44,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/44",
+      "epic_issue": 187,
+      "status": "pending"
+    },
+    {
+      "id": "MT002",
+      "slug": "identity-fixtures-harness",
+      "group": "A 基础/前置",
+      "title": "多公司多团队测试身份夹具与受限角色数据库 harness",
+      "depends_on": [],
+      "acceptance": [
+        "A6"
+      ],
+      "split_from": null,
+      "issue_number": 45,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/45",
+      "epic_issue": 187,
+      "status": "pending"
+    },
+    {
+      "id": "MT003",
+      "slug": "migration-tool",
+      "group": "A 基础/前置",
+      "title": "按任务生成迁移的安全迁移工具（dry-run/apply + manifest）",
+      "depends_on": [
+        "MT001"
+      ],
+      "acceptance": [
+        "A6",
+        "A12"
+      ],
+      "split_from": null,
+      "issue_number": 46,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/46",
+      "epic_issue": 187,
+      "status": "pending"
+    },
+    {
+      "id": "MT004",
+      "slug": "workspace-membership-model",
+      "group": "B 成员与作用域",
+      "title": "团队成员关系数据模型与复合约束",
+      "depends_on": [
+        "MT003"
+      ],
+      "acceptance": [
+        "A1",
+        "A3"
+      ],
+      "split_from": null,
+      "issue_number": 47,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/47",
+      "epic_issue": 188,
+      "status": "pending"
+    },
+    {
+      "id": "MT005",
+      "slug": "team-eligibility-authz",
+      "group": "B 成员与作用域",
+      "title": "团队资格进入集中授权 seam 与事务内重验",
+      "depends_on": [
+        "MT002",
+        "MT004"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A5",
+        "A6"
+      ],
+      "split_from": null,
+      "issue_number": 48,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/48",
+      "epic_issue": 188,
+      "status": "pending"
+    },
+    {
+      "id": "MT006",
+      "slug": "company-team-selection-api",
+      "group": "B 成员与作用域",
+      "title": "公司与团队列表、选择与管理入口",
+      "depends_on": [
+        "MT005"
+      ],
+      "acceptance": [
+        "A1",
+        "A3",
+        "A6"
+      ],
+      "split_from": null,
+      "issue_number": 49,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/49",
+      "epic_issue": 188,
+      "status": "pending"
+    },
+    {
+      "id": "MT007",
+      "slug": "membership-revocation-audit",
+      "group": "B 成员与作用域",
+      "title": "成员停用与撤权的级联生效与审计留痕",
+      "depends_on": [
+        "MT005",
+        "MT006"
+      ],
+      "acceptance": [
+        "A5",
+        "A2"
+      ],
+      "split_from": null,
+      "issue_number": 50,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/50",
+      "epic_issue": 188,
+      "status": "pending"
+    },
+    {
+      "id": "MT008",
+      "slug": "resource-visibility-policy-version",
+      "group": "C 资源授权策略",
+      "title": "资源可见性属性与 workspace-v1 策略版本（expand）",
+      "depends_on": [
+        "MT005"
+      ],
+      "acceptance": [
+        "A4",
+        "A2"
+      ],
+      "split_from": null,
+      "issue_number": 51,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/51",
+      "epic_issue": 189,
+      "status": "pending"
+    },
+    {
+      "id": "MT009",
+      "slug": "team-public-resource-rules",
+      "group": "C 资源授权策略",
+      "title": "团队公共资源动作规则（可用不可改）",
+      "depends_on": [
+        "MT008"
+      ],
+      "acceptance": [
+        "A4",
+        "A2",
+        "A3"
+      ],
+      "split_from": null,
+      "issue_number": 52,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/52",
+      "epic_issue": 189,
+      "status": "pending"
+    },
+    {
+      "id": "MT010",
+      "slug": "personal-and-share-rules",
+      "group": "C 资源授权策略",
+      "title": "个人资源权限与显式跨团队分享例外",
+      "depends_on": [
+        "MT008"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A3",
+        "A4"
+      ],
+      "split_from": null,
+      "issue_number": 53,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/53",
+      "epic_issue": 189,
+      "status": "pending"
+    },
+    {
+      "id": "MT011",
+      "slug": "invisible-as-not-found",
+      "group": "C 资源授权策略",
+      "title": "无权对象按不可见处理，错误与计数不泄露存在性",
+      "depends_on": [
+        "MT009",
+        "MT010"
+      ],
+      "acceptance": [
+        "A2",
+        "A1"
+      ],
+      "split_from": null,
+      "issue_number": 54,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/54",
+      "epic_issue": 189,
+      "status": "pending"
+    },
+    {
+      "id": "MT012",
+      "slug": "rls-core-tables",
+      "group": "C 资源授权策略",
+      "title": "核心租户域表的 RLS 与受限业务角色兜底",
+      "depends_on": [
+        "MT002",
+        "MT008"
+      ],
+      "acceptance": [
+        "A6",
+        "A1",
+        "A2"
+      ],
+      "split_from": null,
+      "issue_number": 55,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/55",
+      "epic_issue": 189,
+      "status": "pending"
+    },
+    {
+      "id": "MT013",
+      "slug": "multitenant-mode-readiness",
+      "group": "D 运行配置",
+      "title": "多租户模式开关与启动就绪校验",
+      "depends_on": [
+        "MT001",
+        "MT005"
+      ],
+      "acceptance": [
+        "A6",
+        "A11"
+      ],
+      "split_from": null,
+      "issue_number": 56,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/56",
+      "epic_issue": 190,
+      "status": "pending"
+    },
+    {
+      "id": "MT014",
+      "slug": "company-runtime-config",
+      "group": "D 运行配置",
+      "title": "公司运行配置装配（替换部署级单份租户包）",
+      "depends_on": [
+        "MT013",
+        "MT006"
+      ],
+      "acceptance": [
+        "A1",
+        "A6",
+        "A8"
+      ],
+      "split_from": null,
+      "issue_number": 57,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/57",
+      "epic_issue": 190,
+      "status": "pending"
+    },
+    {
+      "id": "MT015",
+      "slug": "scoped-cache-keys",
+      "group": "D 运行配置",
+      "title": "缓存键与外部命名空间包含公司、团队与配置版本",
+      "depends_on": [
+        "MT014"
+      ],
+      "acceptance": [
+        "A8",
+        "A10",
+        "A1"
+      ],
+      "split_from": null,
+      "issue_number": 58,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/58",
+      "epic_issue": 190,
+      "status": "pending"
+    },
+    {
+      "id": "MT016",
+      "slug": "bot-ownership",
+      "group": "E Bot",
+      "title": "Bot 与配置的创建、列表、详情按公司团队归属",
+      "depends_on": [
+        "MT014",
+        "MT009"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A3"
+      ],
+      "split_from": null,
+      "issue_number": 59,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/59",
+      "epic_issue": 191,
+      "status": "pending"
+    },
+    {
+      "id": "MT017",
+      "slug": "bot-publish-audience",
+      "group": "E Bot",
+      "title": "Bot 发布受众与旧 public 语义的显式迁移",
+      "depends_on": [
+        "MT016"
+      ],
+      "acceptance": [
+        "A2",
+        "A3",
+        "A4"
+      ],
+      "split_from": null,
+      "issue_number": 60,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/60",
+      "epic_issue": 191,
+      "status": "pending"
+    },
+    {
+      "id": "MT018",
+      "slug": "public-bot-usage-identity",
+      "group": "E Bot",
+      "title": "使用团队公共 Bot 时保持使用者自己的会话与凭据",
+      "depends_on": [
+        "MT017",
+        "MT009"
+      ],
+      "acceptance": [
+        "A4",
+        "A2",
+        "A1"
+      ],
+      "split_from": null,
+      "issue_number": 61,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/61",
+      "epic_issue": 191,
+      "status": "pending"
+    },
+    {
+      "id": "MT019",
+      "slug": "bot-lifecycle-ops",
+      "group": "E Bot",
+      "title": "Bot 生命周期动作逐项授权（复制/隐藏/重置/删除/模板更新/远端回调）",
+      "depends_on": [
+        "MT016",
+        "MT017"
+      ],
+      "acceptance": [
+        "A2",
+        "A4",
+        "A5"
+      ],
+      "split_from": null,
+      "issue_number": 62,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/62",
+      "epic_issue": 191,
+      "status": "pending"
+    },
+    {
+      "id": "MT020",
+      "slug": "marketplace-install-receipts",
+      "group": "E Bot",
+      "title": "专家/模板安装与安装回执的公司团队归属",
+      "depends_on": [
+        "MT016",
+        "MT017"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A4"
+      ],
+      "split_from": null,
+      "issue_number": 63,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/63",
+      "epic_issue": 191,
+      "status": "pending"
+    },
+    {
+      "id": "MT021",
+      "slug": "conversation-list-scope",
+      "group": "F 会话",
+      "title": "频道与会话列表、计数、分页游标的作用域",
+      "depends_on": [
+        "MT016",
+        "MT014"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A3"
+      ],
+      "split_from": null,
+      "issue_number": 64,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/64",
+      "epic_issue": 192,
+      "status": "pending"
+    },
+    {
+      "id": "MT022",
+      "slug": "conversation-messages",
+      "group": "F 会话",
+      "title": "消息读写、重命名、归档与历史 replay 的授权",
+      "depends_on": [
+        "MT021"
+      ],
+      "acceptance": [
+        "A2",
+        "A3",
+        "A4"
+      ],
+      "split_from": null,
+      "issue_number": 65,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/65",
+      "epic_issue": 192,
+      "status": "pending"
+    },
+    {
+      "id": "MT023",
+      "slug": "group-membership-bot-seats",
+      "group": "F 会话",
+      "title": "群聊成员与 Bot 席位的作用域",
+      "depends_on": [
+        "MT022",
+        "MT018"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A3"
+      ],
+      "split_from": null,
+      "issue_number": 66,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/66",
+      "epic_issue": 192,
+      "status": "pending"
+    },
+    {
+      "id": "MT024",
+      "slug": "attachments-scoped",
+      "group": "F 会话",
+      "title": "附件暂存上传、绑定、下载签发与清理的归属",
+      "depends_on": [
+        "MT022"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A8"
+      ],
+      "split_from": null,
+      "issue_number": 67,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/67",
+      "epic_issue": 192,
+      "status": "pending"
+    },
+    {
+      "id": "MT025",
+      "slug": "stream-subscriptions",
+      "group": "F 会话",
+      "title": "事件流订阅授权与外部线程映射归属",
+      "depends_on": [
+        "MT022"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A10"
+      ],
+      "split_from": null,
+      "issue_number": 68,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/68",
+      "epic_issue": 192,
+      "status": "pending"
+    },
+    {
+      "id": "MT026",
+      "slug": "sso-scim-ownership",
+      "group": "G 身份与凭据",
+      "title": "公司 SSO/SCIM 配置归属与定向停用",
+      "depends_on": [
+        "MT007",
+        "MT014"
+      ],
+      "acceptance": [
+        "A1",
+        "A5",
+        "A7"
+      ],
+      "split_from": null,
+      "issue_number": 69,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/69",
+      "epic_issue": 193,
+      "status": "pending"
+    },
+    {
+      "id": "MT027",
+      "slug": "credential-ownership",
+      "group": "G 身份与凭据",
+      "title": "连接凭据与站点登录归属，可用不等于可读明文",
+      "depends_on": [
+        "MT014",
+        "MT010"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A5"
+      ],
+      "split_from": null,
+      "issue_number": 70,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/70",
+      "epic_issue": 193,
+      "status": "pending"
+    },
+    {
+      "id": "MT028",
+      "slug": "oauth-state-binding",
+      "group": "G 身份与凭据",
+      "title": "OAuth 回调按服务端 state 固定归属",
+      "depends_on": [
+        "MT027"
+      ],
+      "acceptance": [
+        "A7",
+        "A1",
+        "A5"
+      ],
+      "split_from": null,
+      "issue_number": 71,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/71",
+      "epic_issue": 193,
+      "status": "pending"
+    },
+    {
+      "id": "MT029",
+      "slug": "credential-lease",
+      "group": "G 身份与凭据",
+      "title": "凭据取用 lease：固定用途、作用域且可撤销",
+      "depends_on": [
+        "MT027",
+        "MT018"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A4"
+      ],
+      "split_from": null,
+      "issue_number": 72,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/72",
+      "epic_issue": 193,
+      "status": "pending"
+    },
+    {
+      "id": "MT030",
+      "slug": "global-identity-exceptions",
+      "group": "G 身份与凭据",
+      "title": "全局身份、刷新锁与例外端点显式登记",
+      "depends_on": [
+        "MT027",
+        "MT013"
+      ],
+      "acceptance": [
+        "A6",
+        "A11"
+      ],
+      "split_from": null,
+      "issue_number": 73,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/73",
+      "epic_issue": 193,
+      "status": "pending"
+    },
+    {
+      "id": "MT031",
+      "slug": "plugin-install-ownership",
+      "group": "H 插件与审批",
+      "title": "插件安装与连接归属（目录只读，安装不全局）",
+      "depends_on": [
+        "MT027",
+        "MT016"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A4"
+      ],
+      "split_from": null,
+      "issue_number": 74,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/74",
+      "epic_issue": 194,
+      "status": "pending"
+    },
+    {
+      "id": "MT032",
+      "slug": "tool-invocation-reverify",
+      "group": "H 插件与审批",
+      "title": "工具调用时重新校验当前用户连接与 Bot 授权",
+      "depends_on": [
+        "MT031",
+        "MT018"
+      ],
+      "acceptance": [
+        "A2",
+        "A5"
+      ],
+      "split_from": null,
+      "issue_number": 75,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/75",
+      "epic_issue": 194,
+      "status": "pending"
+    },
+    {
+      "id": "MT033",
+      "slug": "skills-components-publish",
+      "group": "H 插件与审批",
+      "title": "技能与组件发布、组件数据函数的作用域",
+      "depends_on": [
+        "MT031",
+        "MT009"
+      ],
+      "acceptance": [
+        "A2",
+        "A4",
+        "A3"
+      ],
+      "split_from": null,
+      "issue_number": 76,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/76",
+      "epic_issue": 194,
+      "status": "pending"
+    },
+    {
+      "id": "MT034",
+      "slug": "shared-account-approvals",
+      "group": "H 插件与审批",
+      "title": "共享账号审批绑定对象、参数摘要与归属",
+      "depends_on": [
+        "MT031",
+        "MT029"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A1"
+      ],
+      "split_from": null,
+      "issue_number": 77,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/77",
+      "epic_issue": 194,
+      "status": "pending"
+    },
+    {
+      "id": "MT035",
+      "slug": "host-access-dangerous-actions",
+      "group": "H 插件与审批",
+      "title": "Host Access、签入帮助与危险动作审批的归属与既有行为保持",
+      "depends_on": [
+        "MT034"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A8"
+      ],
+      "split_from": null,
+      "issue_number": 78,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/78",
+      "epic_issue": 194,
+      "status": "pending"
+    },
+    {
+      "id": "MT036",
+      "slug": "kb-workspace-ownership",
+      "group": "I 知识与记忆",
+      "title": "知识库的团队归属与受限查询（独立库，不假装跨库外键）",
+      "depends_on": [
+        "MT012",
+        "MT014"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A4"
+      ],
+      "split_from": null,
+      "issue_number": 79,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/79",
+      "epic_issue": 195,
+      "status": "pending"
+    },
+    {
+      "id": "MT037",
+      "slug": "retrieval-candidate-restriction",
+      "group": "I 知识与记忆",
+      "title": "检索在候选、重排与进入模型之前限制范围",
+      "depends_on": [
+        "MT036"
+      ],
+      "acceptance": [
+        "A2",
+        "A4",
+        "A8"
+      ],
+      "split_from": null,
+      "issue_number": 80,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/80",
+      "epic_issue": 195,
+      "status": "pending"
+    },
+    {
+      "id": "MT038",
+      "slug": "document-lifecycle-scope",
+      "group": "I 知识与记忆",
+      "title": "文档上传、删除、导入与重解析的作用域",
+      "depends_on": [
+        "MT036"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A8"
+      ],
+      "split_from": null,
+      "issue_number": 81,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/81",
+      "epic_issue": 195,
+      "status": "pending"
+    },
+    {
+      "id": "MT039",
+      "slug": "personal-memory-scope",
+      "group": "I 知识与记忆",
+      "title": "个人记忆与来源选择保持个人权限",
+      "depends_on": [
+        "MT038",
+        "MT010"
+      ],
+      "acceptance": [
+        "A4",
+        "A2",
+        "A1"
+      ],
+      "split_from": null,
+      "issue_number": 82,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/82",
+      "epic_issue": 195,
+      "status": "pending"
+    },
+    {
+      "id": "MT040",
+      "slug": "learning-demonstrations-isolation",
+      "group": "I 知识与记忆",
+      "title": "学习容器、研究与演示记录隔离",
+      "depends_on": [
+        "MT036",
+        "MT014"
+      ],
+      "acceptance": [
+        "A2",
+        "A8",
+        "A1"
+      ],
+      "split_from": null,
+      "issue_number": 83,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/83",
+      "epic_issue": 195,
+      "status": "pending"
+    },
+    {
+      "id": "MT041",
+      "slug": "job-ownership",
+      "group": "J 任务与执行",
+      "title": "任务、运行、触发与租约固定原始归属与配置版本",
+      "depends_on": [
+        "MT005",
+        "MT014"
+      ],
+      "acceptance": [
+        "A2",
+        "A8",
+        "A5"
+      ],
+      "split_from": null,
+      "issue_number": 84,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/84",
+      "epic_issue": 196,
+      "status": "pending"
+    },
+    {
+      "id": "MT042",
+      "slug": "scanner-scope-rebuild",
+      "group": "J 任务与执行",
+      "title": "全局扫描只有调度权，每项执行重建业务作用域",
+      "depends_on": [
+        "MT041"
+      ],
+      "acceptance": [
+        "A8",
+        "A6",
+        "A2"
+      ],
+      "split_from": null,
+      "issue_number": 85,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/85",
+      "epic_issue": 196,
+      "status": "pending"
+    },
+    {
+      "id": "MT043",
+      "slug": "claim-retry-cancel",
+      "group": "J 任务与执行",
+      "title": "认领、重试与人工取消保持归属",
+      "depends_on": [
+        "MT042"
+      ],
+      "acceptance": [
+        "A8",
+        "A5",
+        "A2"
+      ],
+      "split_from": null,
+      "issue_number": 86,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/86",
+      "epic_issue": 196,
+      "status": "pending"
+    },
+    {
+      "id": "MT044",
+      "slug": "inbound-attribution",
+      "group": "J 任务与执行",
+      "title": "入站邮件、GitHub 与 Webhook 的归属解析",
+      "depends_on": [
+        "MT042",
+        "MT028"
+      ],
+      "acceptance": [
+        "A7",
+        "A8",
+        "A6"
+      ],
+      "split_from": null,
+      "issue_number": 87,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/87",
+      "epic_issue": 196,
+      "status": "pending"
+    },
+    {
+      "id": "MT045",
+      "slug": "proactive-and-tx-boundaries",
+      "group": "J 任务与执行",
+      "title": "主动建议与外部调用前后的事务边界",
+      "depends_on": [
+        "MT042"
+      ],
+      "acceptance": [
+        "A8",
+        "A2"
+      ],
+      "split_from": null,
+      "issue_number": 88,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/88",
+      "epic_issue": 196,
+      "status": "pending"
+    },
+    {
+      "id": "MT046",
+      "slug": "computer-allocation-takeover",
+      "group": "K 执行隔离",
+      "title": "电脑与浏览器实例分配、远程屏幕与人工接管授权",
+      "depends_on": [
+        "MT042",
+        "MT029"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A5",
+        "A8"
+      ],
+      "split_from": null,
+      "issue_number": 89,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/89",
+      "epic_issue": 197,
+      "status": "pending"
+    },
+    {
+      "id": "MT047",
+      "slug": "execution-artifact-ops",
+      "group": "K 执行隔离",
+      "title": "快照、shell、文件、cancel/reset/cull 的归属",
+      "depends_on": [
+        "MT046"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A8",
+        "A5"
+      ],
+      "split_from": null,
+      "issue_number": 90,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/90",
+      "epic_issue": 197,
+      "status": "pending"
+    },
+    {
+      "id": "MT048",
+      "slug": "runs-protocol-ownership",
+      "group": "K 执行隔离",
+      "title": "运行协议环节的归属：委托、能力、步骤、事件、恢复与取消",
+      "depends_on": [
+        "MT042",
+        "MT046"
+      ],
+      "acceptance": [
+        "A8",
+        "A7",
+        "A2"
+      ],
+      "split_from": "MT048 企业运行与回调、TypeScript agent 适配器消费同一已验证归属",
+      "issue_number": 91,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/91",
+      "epic_issue": 197,
+      "status": "pending"
+    },
+    {
+      "id": "MT049",
+      "slug": "ts-agent-adapters-ownership",
+      "group": "K 执行隔离",
+      "title": "TypeScript agent 适配器统一消费已验证归属",
+      "depends_on": [
+        "MT048"
+      ],
+      "acceptance": [
+        "A8",
+        "A7",
+        "A2"
+      ],
+      "split_from": "MT048 企业运行与回调、TypeScript agent 适配器消费同一已验证归属",
+      "issue_number": 92,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/92",
+      "epic_issue": 197,
+      "status": "pending"
+    },
+    {
+      "id": "MT050",
+      "slug": "native-runtime-adapters",
+      "group": "K 执行隔离",
+      "title": "Go Runtime、supervisor 与原生 agent 适配器的归属传递",
+      "depends_on": [
+        "MT049"
+      ],
+      "acceptance": [
+        "A8",
+        "A1",
+        "A2"
+      ],
+      "split_from": null,
+      "issue_number": 93,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/93",
+      "epic_issue": 197,
+      "status": "pending"
+    },
+    {
+      "id": "MT051",
+      "slug": "execution-guarantees-regression",
+      "group": "K 执行隔离",
+      "title": "执行上界、审批与机密脱敏的既有保证不回退",
+      "depends_on": [
+        "MT047",
+        "MT050"
+      ],
+      "acceptance": [
+        "A8",
+        "A5"
+      ],
+      "split_from": null,
+      "issue_number": 94,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/94",
+      "epic_issue": 197,
+      "status": "pending"
+    },
+    {
+      "id": "MT052",
+      "slug": "stateful-public-bot-profiles",
+      "group": "K 执行隔离",
+      "title": "状态化公共 Bot 为不同使用者隔离浏览器与工作区",
+      "depends_on": [
+        "MT046",
+        "MT018"
+      ],
+      "acceptance": [
+        "A4",
+        "A2",
+        "A8"
+      ],
+      "split_from": null,
+      "issue_number": 95,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/95",
+      "epic_issue": 197,
+      "status": "pending"
+    },
+    {
+      "id": "MT053",
+      "slug": "craft-session-scope",
+      "group": "L Craft/Workshop",
+      "title": "Craft 会话、turn、消息与快照的作用域",
+      "depends_on": [
+        "MT022",
+        "MT046"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A4"
+      ],
+      "split_from": null,
+      "issue_number": 96,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/96",
+      "epic_issue": 198,
+      "status": "pending"
+    },
+    {
+      "id": "MT054",
+      "slug": "craft-schedules-subtasks",
+      "group": "L Craft/Workshop",
+      "title": "Craft 计划任务、子任务与应用连接的归属",
+      "depends_on": [
+        "MT053",
+        "MT041"
+      ],
+      "acceptance": [
+        "A8",
+        "A2",
+        "A5"
+      ],
+      "split_from": null,
+      "issue_number": 97,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/97",
+      "epic_issue": 198,
+      "status": "pending"
+    },
+    {
+      "id": "MT055",
+      "slug": "artifact-storage-isolation",
+      "group": "L Craft/Workshop",
+      "title": "产物与对象存储路径按归属隔离",
+      "depends_on": [
+        "MT053"
+      ],
+      "acceptance": [
+        "A2",
+        "A8",
+        "A1"
+      ],
+      "split_from": null,
+      "issue_number": 98,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/98",
+      "epic_issue": 198,
+      "status": "pending"
+    },
+    {
+      "id": "MT056",
+      "slug": "signed-download-authorization",
+      "group": "L Craft/Workshop",
+      "title": "签名下载与代理访问在签发点和访问点都授权，撤销即停止",
+      "depends_on": [
+        "MT055",
+        "MT010"
+      ],
+      "acceptance": [
+        "A5",
+        "A2",
+        "A1"
+      ],
+      "split_from": null,
+      "issue_number": 99,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/99",
+      "epic_issue": 198,
+      "status": "pending"
+    },
+    {
+      "id": "MT057",
+      "slug": "workshop-scope",
+      "group": "L Craft/Workshop",
+      "title": "Workshop 会话、执行、产物与沙箱实例关联的作用域",
+      "depends_on": [
+        "MT053",
+        "MT047"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A8"
+      ],
+      "split_from": null,
+      "issue_number": 100,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/100",
+      "epic_issue": 198,
+      "status": "pending"
+    },
+    {
+      "id": "MT058",
+      "slug": "share-token-authorization",
+      "group": "L Craft/Workshop",
+      "title": "分享令牌改为有效分享授权（受众、有效期、撤销）",
+      "depends_on": [
+        "MT056",
+        "MT010"
+      ],
+      "acceptance": [
+        "A3",
+        "A2",
+        "A5"
+      ],
+      "split_from": null,
+      "issue_number": 101,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/101",
+      "epic_issue": 198,
+      "status": "pending"
+    },
+    {
+      "id": "MT059",
+      "slug": "openmuse-private-bot",
+      "group": "M OpenMuse 个人域",
+      "title": "私有 OpenMuse Bot 按公司团队用户幂等创建",
+      "depends_on": [
+        "MT016",
+        "MT014"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A4"
+      ],
+      "split_from": null,
+      "issue_number": 102,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/102",
+      "epic_issue": 199,
+      "status": "pending"
+    },
+    {
+      "id": "MT060",
+      "slug": "openmuse-tasks-scoping",
+      "group": "M OpenMuse 个人域",
+      "title": "OpenMuse 任务、计划、监控与租约的作用域",
+      "depends_on": [
+        "MT059",
+        "MT041"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A8"
+      ],
+      "split_from": null,
+      "issue_number": 103,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/103",
+      "epic_issue": 199,
+      "status": "pending"
+    },
+    {
+      "id": "MT061",
+      "slug": "openmuse-files-scoping",
+      "group": "M OpenMuse 个人域",
+      "title": "OpenMuse 文件、PDF 检视/填写/传输与个人工作区的作用域",
+      "depends_on": [
+        "MT060",
+        "MT055"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A5"
+      ],
+      "split_from": null,
+      "issue_number": 104,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/104",
+      "epic_issue": 199,
+      "status": "pending"
+    },
+    {
+      "id": "MT062",
+      "slug": "openmuse-personal-domain",
+      "group": "M OpenMuse 个人域",
+      "title": "OpenMuse 目标、想法、记忆与财务产物的作用域",
+      "depends_on": [
+        "MT060",
+        "MT039"
+      ],
+      "acceptance": [
+        "A2",
+        "A4",
+        "A1"
+      ],
+      "split_from": null,
+      "issue_number": 105,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/105",
+      "epic_issue": 199,
+      "status": "pending"
+    },
+    {
+      "id": "MT063",
+      "slug": "openmuse-connectors-mail-calendar",
+      "group": "M OpenMuse 个人域",
+      "title": "OpenMuse 连接器、邮件与日历动作的归属",
+      "depends_on": [
+        "MT060",
+        "MT028"
+      ],
+      "acceptance": [
+        "A7",
+        "A1",
+        "A2",
+        "A5"
+      ],
+      "split_from": null,
+      "issue_number": 106,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/106",
+      "epic_issue": 199,
+      "status": "pending"
+    },
+    {
+      "id": "MT064",
+      "slug": "openmuse-reviewed-actions",
+      "group": "M OpenMuse 个人域",
+      "title": "OpenMuse 审阅动作提案与回执的归属",
+      "depends_on": [
+        "MT063",
+        "MT034"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A7"
+      ],
+      "split_from": "MT063 OpenMuse 审阅动作、活动流与通知的归属",
+      "issue_number": 107,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/107",
+      "epic_issue": 199,
+      "status": "pending"
+    },
+    {
+      "id": "MT065",
+      "slug": "openmuse-activity-notifications",
+      "group": "M OpenMuse 个人域",
+      "title": "OpenMuse 活动流与通知的归属与正文过滤",
+      "depends_on": [
+        "MT064"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A7"
+      ],
+      "split_from": "MT063 OpenMuse 审阅动作、活动流与通知的归属",
+      "issue_number": 108,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/108",
+      "epic_issue": 199,
+      "status": "pending"
+    },
+    {
+      "id": "MT066",
+      "slug": "voice-dictation-mobile-bff",
+      "group": "M OpenMuse 个人域",
+      "title": "语音、听写与移动聚合接口只返回当前范围",
+      "depends_on": [
+        "MT060",
+        "MT065"
+      ],
+      "acceptance": [
+        "A2",
+        "A10",
+        "A9"
+      ],
+      "split_from": null,
+      "issue_number": 109,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/109",
+      "epic_issue": 199,
+      "status": "pending"
+    },
+    {
+      "id": "MT067",
+      "slug": "company-exit-vs-account-deletion",
+      "group": "M OpenMuse 个人域",
+      "title": "退出公司与全局账号删除是两个不同操作",
+      "depends_on": [
+        "MT060",
+        "MT026"
+      ],
+      "acceptance": [
+        "A5",
+        "A1",
+        "A2"
+      ],
+      "split_from": null,
+      "issue_number": 110,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/110",
+      "epic_issue": 199,
+      "status": "pending"
+    },
+    {
+      "id": "MT068",
+      "slug": "purge-restore-manifest",
+      "group": "M OpenMuse 个人域",
+      "title": "清理、保留与恢复带可核验归属与不可伪造 manifest",
+      "depends_on": [
+        "MT067"
+      ],
+      "acceptance": [
+        "A5",
+        "A12",
+        "A2"
+      ],
+      "split_from": null,
+      "issue_number": 111,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/111",
+      "epic_issue": 199,
+      "status": "pending"
+    },
+    {
+      "id": "MT069",
+      "slug": "payer-account-model",
+      "group": "N 账务",
+      "title": "公司计费 Customer 映射与公司/个人账户类型（expand）",
+      "depends_on": [
+        "MT014",
+        "MT008"
+      ],
+      "acceptance": [
+        "A9",
+        "A13",
+        "A12"
+      ],
+      "split_from": null,
+      "issue_number": 112,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/112",
+      "epic_issue": 200,
+      "status": "pending"
+    },
+    {
+      "id": "MT070",
+      "slug": "company-reservation-attribution",
+      "group": "N 账务",
+      "title": "公司调用归属与同一余额的原子预扣",
+      "depends_on": [
+        "MT069",
+        "MT041"
+      ],
+      "acceptance": [
+        "A9",
+        "A13",
+        "A1"
+      ],
+      "split_from": null,
+      "issue_number": 113,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/113",
+      "epic_issue": 200,
+      "status": "pending"
+    },
+    {
+      "id": "MT071",
+      "slug": "settlement-idempotency",
+      "group": "N 账务",
+      "title": "结算、释放、尾差与重试幂等在新归属下保持",
+      "depends_on": [
+        "MT070"
+      ],
+      "acceptance": [
+        "A9",
+        "A13",
+        "A12"
+      ],
+      "split_from": null,
+      "issue_number": 114,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/114",
+      "epic_issue": 200,
+      "status": "pending"
+    },
+    {
+      "id": "MT072",
+      "slug": "payer-resolution-callbacks",
+      "group": "N 账务",
+      "title": "支付回调、订阅激活、outbox 与对账从原记录解析付款账户",
+      "depends_on": [
+        "MT070"
+      ],
+      "acceptance": [
+        "A7",
+        "A9",
+        "A13"
+      ],
+      "split_from": null,
+      "issue_number": 115,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/115",
+      "epic_issue": 200,
+      "status": "pending"
+    },
+    {
+      "id": "MT073",
+      "slug": "billing-visibility",
+      "group": "N 账务",
+      "title": "账务可见性：付款人订单、公司财务授权与团队用量视图",
+      "depends_on": [
+        "MT070",
+        "MT010"
+      ],
+      "acceptance": [
+        "A9",
+        "A13",
+        "A2"
+      ],
+      "split_from": null,
+      "issue_number": 116,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/116",
+      "epic_issue": 200,
+      "status": "pending"
+    },
+    {
+      "id": "MT074",
+      "slug": "historical-balance-migration",
+      "group": "N 账务",
+      "title": "历史余额只迁一次到原有公司，个人 Bifrost 路径不变",
+      "depends_on": [
+        "MT069",
+        "MT003"
+      ],
+      "acceptance": [
+        "A12",
+        "A13"
+      ],
+      "split_from": null,
+      "issue_number": 117,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/117",
+      "epic_issue": 200,
+      "status": "pending"
+    },
+    {
+      "id": "MT075",
+      "slug": "admin-scope-separation",
+      "group": "O 治理",
+      "title": "部署级平台管理与公司/团队管理动作分离",
+      "depends_on": [
+        "MT006",
+        "MT013"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A5"
+      ],
+      "split_from": null,
+      "issue_number": 118,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/118",
+      "epic_issue": 201,
+      "status": "pending"
+    },
+    {
+      "id": "MT076",
+      "slug": "people-lifecycle-scoped",
+      "group": "O 治理",
+      "title": "人员提升、降级与离职按公司授权",
+      "depends_on": [
+        "MT075",
+        "MT026"
+      ],
+      "acceptance": [
+        "A5",
+        "A1",
+        "A2"
+      ],
+      "split_from": null,
+      "issue_number": 119,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/119",
+      "epic_issue": 201,
+      "status": "pending"
+    },
+    {
+      "id": "MT077",
+      "slug": "routing-policy-ownership",
+      "group": "O 治理",
+      "title": "网络、能力与模型路由策略和模板按归属保存",
+      "depends_on": [
+        "MT075",
+        "MT014"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A8"
+      ],
+      "split_from": null,
+      "issue_number": 120,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/120",
+      "epic_issue": 201,
+      "status": "pending"
+    },
+    {
+      "id": "MT078",
+      "slug": "audit-domains",
+      "group": "O 治理",
+      "title": "业务审计与身份审计分域，计费管理需明确授权",
+      "depends_on": [
+        "MT075",
+        "MT073"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A9"
+      ],
+      "split_from": null,
+      "issue_number": 121,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/121",
+      "epic_issue": 201,
+      "status": "pending"
+    },
+    {
+      "id": "MT079",
+      "slug": "preferences-vs-business-config",
+      "group": "O 治理",
+      "title": "纯个人偏好保持全局，业务配置按归属保存",
+      "depends_on": [
+        "MT075",
+        "MT015"
+      ],
+      "acceptance": [
+        "A2",
+        "A10",
+        "A1"
+      ],
+      "split_from": null,
+      "issue_number": 122,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/122",
+      "epic_issue": 201,
+      "status": "pending"
+    },
+    {
+      "id": "MT080",
+      "slug": "web-selection-ui",
+      "group": "P Web 客户端",
+      "title": "Web 公司与团队选择界面及无资格空状态",
+      "depends_on": [
+        "MT006",
+        "MT009"
+      ],
+      "acceptance": [
+        "A3",
+        "A6",
+        "A10"
+      ],
+      "split_from": null,
+      "issue_number": 123,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/123",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT081",
+      "slug": "web-transport-rest-uploads",
+      "group": "P Web 客户端",
+      "title": "Web REST 与上传下载签发统一附加当前范围",
+      "depends_on": [
+        "MT080",
+        "MT056"
+      ],
+      "acceptance": [
+        "A10",
+        "A6",
+        "A3"
+      ],
+      "split_from": "MT079 REST、SSE、WebSocket 与上传下载统一附加当前范围",
+      "issue_number": 124,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/124",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT082",
+      "slug": "web-transport-streams",
+      "group": "P Web 客户端",
+      "title": "Web SSE 与 WebSocket 建连、续订携带范围并终止旧连接",
+      "depends_on": [
+        "MT081",
+        "MT025"
+      ],
+      "acceptance": [
+        "A10",
+        "A6",
+        "A3"
+      ],
+      "split_from": "MT079 REST、SSE、WebSocket 与上传下载统一附加当前范围",
+      "issue_number": 125,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/125",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT083",
+      "slug": "web-cache-generation",
+      "group": "P Web 客户端",
+      "title": "按公司团队隔离查询缓存并拒绝旧 generation 的在途响应",
+      "depends_on": [
+        "MT082"
+      ],
+      "acceptance": [
+        "A10",
+        "A3",
+        "A6"
+      ],
+      "split_from": null,
+      "issue_number": 126,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/126",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT084",
+      "slug": "web-bot-detail-pages",
+      "group": "P Web 客户端",
+      "title": "Web Bot 详情与配置页接入范围",
+      "depends_on": [
+        "MT083",
+        "MT017",
+        "MT019"
+      ],
+      "acceptance": [
+        "A2",
+        "A3",
+        "A4",
+        "A10"
+      ],
+      "split_from": "MT081 Web Bot 详情、配置、共享、职责、电脑与审批页面接入范围",
+      "issue_number": 127,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/127",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT085",
+      "slug": "web-bot-share-publish-pages",
+      "group": "P Web 客户端",
+      "title": "Web Bot 共享与发布页按服务端能力展示",
+      "depends_on": [
+        "MT084"
+      ],
+      "acceptance": [
+        "A2",
+        "A3",
+        "A4",
+        "A10"
+      ],
+      "split_from": "MT081 Web Bot 详情、配置、共享、职责、电脑与审批页面接入范围",
+      "issue_number": 128,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/128",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT086",
+      "slug": "web-bot-ops-pages",
+      "group": "P Web 客户端",
+      "title": "Web Bot 职责、电脑与审批页面接入范围",
+      "depends_on": [
+        "MT085",
+        "MT046",
+        "MT034"
+      ],
+      "acceptance": [
+        "A2",
+        "A3",
+        "A4",
+        "A10"
+      ],
+      "split_from": "MT081 Web Bot 详情、配置、共享、职责、电脑与审批页面接入范围",
+      "issue_number": 129,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/129",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT087",
+      "slug": "web-channel-group-pages",
+      "group": "P Web 客户端",
+      "title": "Web 会话与群聊页面接入范围",
+      "depends_on": [
+        "MT083",
+        "MT023"
+      ],
+      "acceptance": [
+        "A2",
+        "A3",
+        "A10",
+        "A11"
+      ],
+      "split_from": "MT082 Web 会话、群聊、技能、连接账号、记忆、定时任务、通知与设置页面接入范围",
+      "issue_number": 130,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/130",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT088",
+      "slug": "web-skills-connections-pages",
+      "group": "P Web 客户端",
+      "title": "Web 技能与连接账号页面接入范围",
+      "depends_on": [
+        "MT087",
+        "MT033",
+        "MT027"
+      ],
+      "acceptance": [
+        "A2",
+        "A3",
+        "A10",
+        "A11"
+      ],
+      "split_from": "MT082 Web 会话、群聊、技能、连接账号、记忆、定时任务、通知与设置页面接入范围",
+      "issue_number": 131,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/131",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT089",
+      "slug": "web-memory-routines-pages",
+      "group": "P Web 客户端",
+      "title": "Web 记忆与定时任务页面接入范围",
+      "depends_on": [
+        "MT088",
+        "MT039",
+        "MT041"
+      ],
+      "acceptance": [
+        "A2",
+        "A3",
+        "A10",
+        "A11"
+      ],
+      "split_from": "MT082 Web 会话、群聊、技能、连接账号、记忆、定时任务、通知与设置页面接入范围",
+      "issue_number": 132,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/132",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT090",
+      "slug": "web-notifications-settings-pages",
+      "group": "P Web 客户端",
+      "title": "Web 通知与个人设置页面：偏好全局、业务配置按范围",
+      "depends_on": [
+        "MT089",
+        "MT079"
+      ],
+      "acceptance": [
+        "A2",
+        "A3",
+        "A10",
+        "A11"
+      ],
+      "split_from": "MT082 Web 会话、群聊、技能、连接账号、记忆、定时任务、通知与设置页面接入范围",
+      "issue_number": 133,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/133",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT091",
+      "slug": "web-craft-workshop-pages",
+      "group": "P Web 客户端",
+      "title": "Web Craft 与 Workshop 页面接入范围",
+      "depends_on": [
+        "MT083",
+        "MT057"
+      ],
+      "acceptance": [
+        "A2",
+        "A3",
+        "A4",
+        "A10"
+      ],
+      "split_from": "MT083 Web Craft、Workshop 与分享页的受众与范围",
+      "issue_number": 134,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/134",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT092",
+      "slug": "web-share-page-audience",
+      "group": "P Web 客户端",
+      "title": "Web 分享页的身份、受众与撤销状态",
+      "depends_on": [
+        "MT091",
+        "MT058"
+      ],
+      "acceptance": [
+        "A2",
+        "A3",
+        "A4",
+        "A10"
+      ],
+      "split_from": "MT083 Web Craft、Workshop 与分享页的受众与范围",
+      "issue_number": 135,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/135",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT093",
+      "slug": "web-knowledge-pages",
+      "group": "P Web 客户端",
+      "title": "Web 知识管理与文档处理页面接入范围",
+      "depends_on": [
+        "MT083",
+        "MT038"
+      ],
+      "acceptance": [
+        "A2",
+        "A4",
+        "A10"
+      ],
+      "split_from": "MT084 Web 知识管理、插件、技能与组件页面接入范围",
+      "issue_number": 136,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/136",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT094",
+      "slug": "web-plugin-component-pages",
+      "group": "P Web 客户端",
+      "title": "Web 插件、技能与组件页面接入范围",
+      "depends_on": [
+        "MT093",
+        "MT033"
+      ],
+      "acceptance": [
+        "A2",
+        "A4",
+        "A10"
+      ],
+      "split_from": "MT084 Web 知识管理、插件、技能与组件页面接入范围",
+      "issue_number": 137,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/137",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT095",
+      "slug": "web-admin-people-identity",
+      "group": "P Web 客户端",
+      "title": "Web people、身份提供方与凭据管理界面按能力开放",
+      "depends_on": [
+        "MT083",
+        "MT076"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A9",
+        "A10"
+      ],
+      "split_from": "MT085 Web 管理界面按服务端能力开放（people、身份、凭据、学习、企业、审计）",
+      "issue_number": 138,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/138",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT096",
+      "slug": "web-admin-learning-audit",
+      "group": "P Web 客户端",
+      "title": "Web 学习、企业与审计管理界面按能力开放",
+      "depends_on": [
+        "MT095",
+        "MT078"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A9",
+        "A10"
+      ],
+      "split_from": "MT085 Web 管理界面按服务端能力开放（people、身份、凭据、学习、企业、审计）",
+      "issue_number": 139,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/139",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT097",
+      "slug": "web-billing-views",
+      "group": "P Web 客户端",
+      "title": "Web 账单、订单与团队用量视图",
+      "depends_on": [
+        "MT083",
+        "MT073"
+      ],
+      "acceptance": [
+        "A9",
+        "A13",
+        "A10",
+        "A2"
+      ],
+      "split_from": null,
+      "issue_number": 140,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/140",
+      "epic_issue": 202,
+      "status": "pending"
+    },
+    {
+      "id": "MT098",
+      "slug": "desktop-org-context-model",
+      "group": "Q 桌面",
+      "title": "桌面原生组织上下文模型与命令门控",
+      "depends_on": [
+        "MT028"
+      ],
+      "acceptance": [
+        "A7",
+        "A10",
+        "A13"
+      ],
+      "split_from": "MT087 桌面原生组织上下文与凭据命名空间",
+      "issue_number": 141,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/141",
+      "epic_issue": 203,
+      "status": "pending"
+    },
+    {
+      "id": "MT099",
+      "slug": "desktop-credential-namespace",
+      "group": "Q 桌面",
+      "title": "桌面凭据命名空间与 OAuth state 绑定 authority",
+      "depends_on": [
+        "MT098",
+        "MT069"
+      ],
+      "acceptance": [
+        "A7",
+        "A10",
+        "A13"
+      ],
+      "split_from": "MT087 桌面原生组织上下文与凭据命名空间",
+      "issue_number": 142,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/142",
+      "epic_issue": 203,
+      "status": "pending"
+    },
+    {
+      "id": "MT100",
+      "slug": "desktop-org-switch-cleanup",
+      "group": "Q 桌面",
+      "title": "桌面切换或退出组织时清理公司媒体与订阅状态",
+      "depends_on": [
+        "MT099"
+      ],
+      "acceptance": [
+        "A10",
+        "A7",
+        "A5"
+      ],
+      "split_from": null,
+      "issue_number": 143,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/143",
+      "epic_issue": 203,
+      "status": "pending"
+    },
+    {
+      "id": "MT101",
+      "slug": "desktop-selection-ui",
+      "group": "Q 桌面",
+      "title": "桌面组织登录、公司团队选择与嵌入工作台携带选择",
+      "depends_on": [
+        "MT099",
+        "MT082"
+      ],
+      "acceptance": [
+        "A3",
+        "A7",
+        "A10"
+      ],
+      "split_from": null,
+      "issue_number": 144,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/144",
+      "epic_issue": 203,
+      "status": "pending"
+    },
+    {
+      "id": "MT102",
+      "slug": "desktop-local-state-isolation",
+      "group": "Q 桌面",
+      "title": "桌面本地状态与业务缓存按组织隔离",
+      "depends_on": [
+        "MT100",
+        "MT101"
+      ],
+      "acceptance": [
+        "A10",
+        "A3",
+        "A13"
+      ],
+      "split_from": null,
+      "issue_number": 145,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/145",
+      "epic_issue": 203,
+      "status": "pending"
+    },
+    {
+      "id": "MT103",
+      "slug": "mobile-baseline-reconciliation",
+      "group": "R Canonical 移动端",
+      "title": "移动端 submodule 基线核对与可审查差异报告",
+      "depends_on": [],
+      "acceptance": [
+        "A11"
+      ],
+      "split_from": null,
+      "issue_number": 146,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/146",
+      "epic_issue": 204,
+      "status": "pending"
+    },
+    {
+      "id": "MT104",
+      "slug": "mobile-tenancy-adapter",
+      "group": "R Canonical 移动端",
+      "title": "移动端 tenancy 适配层：选择与缓存",
+      "depends_on": [
+        "MT103",
+        "MT083"
+      ],
+      "acceptance": [
+        "A3",
+        "A10",
+        "A2"
+      ],
+      "split_from": null,
+      "issue_number": 147,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/147",
+      "epic_issue": 204,
+      "status": "pending"
+    },
+    {
+      "id": "MT105",
+      "slug": "mobile-stream-media-transport",
+      "group": "R Canonical 移动端",
+      "title": "移动端流式与媒体传输携带当前范围",
+      "depends_on": [
+        "MT104",
+        "MT025"
+      ],
+      "acceptance": [
+        "A10",
+        "A2",
+        "A7"
+      ],
+      "split_from": null,
+      "issue_number": 148,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/148",
+      "epic_issue": 204,
+      "status": "pending"
+    },
+    {
+      "id": "MT106",
+      "slug": "mobile-three-client-selection",
+      "group": "R Canonical 移动端",
+      "title": "Web、iOS、Android 三端选择与缓存一致性验证",
+      "depends_on": [
+        "MT104",
+        "MT105"
+      ],
+      "acceptance": [
+        "A2",
+        "A3",
+        "A10",
+        "A11"
+      ],
+      "split_from": "MT094 Web、iOS、Android 三端一致性与聚合接口验证",
+      "issue_number": 149,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/149",
+      "epic_issue": 204,
+      "status": "pending"
+    },
+    {
+      "id": "MT107",
+      "slug": "mobile-aggregation-verification",
+      "group": "R Canonical 移动端",
+      "title": "移动聚合接口范围与三端流式/媒体一致性验证",
+      "depends_on": [
+        "MT106",
+        "MT066"
+      ],
+      "acceptance": [
+        "A2",
+        "A3",
+        "A10",
+        "A11"
+      ],
+      "split_from": "MT094 Web、iOS、Android 三端一致性与聚合接口验证",
+      "issue_number": 150,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/150",
+      "epic_issue": 204,
+      "status": "pending"
+    },
+    {
+      "id": "MT108",
+      "slug": "telemetry-attribution-fields",
+      "group": "S 观测",
+      "title": "Trace、日志与事件的归属字段注入",
+      "depends_on": [
+        "MT050",
+        "MT065"
+      ],
+      "acceptance": [
+        "A8",
+        "A9",
+        "A13",
+        "A2"
+      ],
+      "split_from": "MT095 Trace、日志与用量事件携带真实归属并保持脱敏",
+      "issue_number": 151,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/151",
+      "epic_issue": 205,
+      "status": "pending"
+    },
+    {
+      "id": "MT109",
+      "slug": "telemetry-redaction-usage-accounts",
+      "group": "S 观测",
+      "title": "用量事件的账户区分与脱敏回归",
+      "depends_on": [
+        "MT108",
+        "MT069"
+      ],
+      "acceptance": [
+        "A8",
+        "A9",
+        "A13",
+        "A2"
+      ],
+      "split_from": "MT095 Trace、日志与用量事件携带真实归属并保持脱敏",
+      "issue_number": 152,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/152",
+      "epic_issue": 205,
+      "status": "pending"
+    },
+    {
+      "id": "MT110",
+      "slug": "observability-backend-authorization",
+      "group": "S 观测",
+      "title": "共享观测后端的查询、导出与 trace 链接授权",
+      "depends_on": [
+        "MT109",
+        "MT078"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A9"
+      ],
+      "split_from": null,
+      "issue_number": 153,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/153",
+      "epic_issue": 205,
+      "status": "pending"
+    },
+    {
+      "id": "MT111",
+      "slug": "enabled-integration-evidence",
+      "group": "S 观测",
+      "title": "已启用集成的隔离与账户路由证据",
+      "depends_on": [
+        "MT109",
+        "MT072"
+      ],
+      "acceptance": [
+        "A13",
+        "A9",
+        "A11"
+      ],
+      "split_from": null,
+      "issue_number": 154,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/154",
+      "epic_issue": 205,
+      "status": "pending"
+    },
+    {
+      "id": "MT112",
+      "slug": "legacy-company-creation",
+      "group": "T 迁移与收尾",
+      "title": "创建原有公司与默认团队并建立映射",
+      "depends_on": [
+        "MT003",
+        "MT004"
+      ],
+      "acceptance": [
+        "A12",
+        "A1",
+        "A2"
+      ],
+      "split_from": "MT098 创建原有公司与默认团队并回填根记录归属",
+      "issue_number": 155,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/155",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT113",
+      "slug": "root-record-backfill",
+      "group": "T 迁移与收尾",
+      "title": "历史根记录归属回填并保持既有个人授权",
+      "depends_on": [
+        "MT112",
+        "MT074"
+      ],
+      "acceptance": [
+        "A12",
+        "A1",
+        "A2"
+      ],
+      "split_from": "MT098 创建原有公司与默认团队并回填根记录归属",
+      "issue_number": 156,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/156",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT114",
+      "slug": "child-backfill-main-batch1",
+      "group": "T 迁移与收尾",
+      "title": "主库子记录回填第一批：Bot、会话、凭据与插件",
+      "depends_on": [
+        "MT113",
+        "MT016",
+        "MT021",
+        "MT027",
+        "MT031"
+      ],
+      "acceptance": [
+        "A12",
+        "A1",
+        "A6"
+      ],
+      "split_from": "MT099 子记录复合关联回填与主库/知识库进度一致性",
+      "issue_number": 157,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/157",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT115",
+      "slug": "child-backfill-main-batch2",
+      "group": "T 迁移与收尾",
+      "title": "主库子记录回填第二批：记忆、任务、Craft/Workshop、OpenMuse、账务与策略",
+      "depends_on": [
+        "MT114",
+        "MT039",
+        "MT041",
+        "MT053",
+        "MT057",
+        "MT060",
+        "MT069",
+        "MT077",
+        "MT109"
+      ],
+      "acceptance": [
+        "A12",
+        "A1",
+        "A6"
+      ],
+      "split_from": "MT099 子记录复合关联回填与主库/知识库进度一致性",
+      "issue_number": 158,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/158",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT116",
+      "slug": "child-backfill-kb",
+      "group": "T 迁移与收尾",
+      "title": "知识库侧归属回填与独立进度记录",
+      "depends_on": [
+        "MT113",
+        "MT036"
+      ],
+      "acceptance": [
+        "A12",
+        "A1",
+        "A6"
+      ],
+      "split_from": "MT099 子记录复合关联回填与主库/知识库进度一致性",
+      "issue_number": 159,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/159",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT117",
+      "slug": "backfill-consistency-report",
+      "group": "T 迁移与收尾",
+      "title": "跨库一致性校验、断点续跑与回填报告",
+      "depends_on": [
+        "MT114",
+        "MT115",
+        "MT116"
+      ],
+      "acceptance": [
+        "A12",
+        "A1",
+        "A6"
+      ],
+      "split_from": "MT099 子记录复合关联回填与主库/知识库进度一致性",
+      "issue_number": 160,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/160",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT118",
+      "slug": "external-files-migration",
+      "group": "T 迁移与收尾",
+      "title": "对象存储文件与产物的归属迁移",
+      "depends_on": [
+        "MT117",
+        "MT055",
+        "MT061"
+      ],
+      "acceptance": [
+        "A12",
+        "A8",
+        "A6"
+      ],
+      "split_from": "MT100 外部状态迁移：文件、线程、浏览器、向量与无法归属隔离",
+      "issue_number": 161,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/161",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT119",
+      "slug": "external-runtime-state-migration",
+      "group": "T 迁移与收尾",
+      "title": "外部线程、浏览器状态与向量命名空间迁移",
+      "depends_on": [
+        "MT118",
+        "MT037",
+        "MT052"
+      ],
+      "acceptance": [
+        "A12",
+        "A8",
+        "A6"
+      ],
+      "split_from": "MT100 外部状态迁移：文件、线程、浏览器、向量与无法归属隔离",
+      "issue_number": 162,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/162",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT120",
+      "slug": "unattributable-quarantine",
+      "group": "T 迁移与收尾",
+      "title": "无法归属外部状态的隔离清单与启用阻断",
+      "depends_on": [
+        "MT119"
+      ],
+      "acceptance": [
+        "A12",
+        "A8",
+        "A6"
+      ],
+      "split_from": "MT100 外部状态迁移：文件、线程、浏览器、向量与无法归属隔离",
+      "issue_number": 163,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/163",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT121",
+      "slug": "freeze-backup-rollback",
+      "group": "T 迁移与收尾",
+      "title": "冻结写入、备份恢复、失败隔离与回退程序（含演练）",
+      "depends_on": [
+        "MT120"
+      ],
+      "acceptance": [
+        "A12",
+        "A11"
+      ],
+      "split_from": null,
+      "issue_number": 164,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/164",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT122",
+      "slug": "entry-context-factories",
+      "group": "T 迁移与收尾",
+      "title": "部署主入口按已认证身份建立上下文并使用作用域工厂",
+      "depends_on": [
+        "MT014",
+        "MT005",
+        "MT041"
+      ],
+      "acceptance": [
+        "A6",
+        "A1",
+        "A8",
+        "A11"
+      ],
+      "split_from": "MT102 部署主入口按已认证身份建立上下文并使用作用域工厂",
+      "issue_number": 165,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/165",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT123",
+      "slug": "startup-default-removal",
+      "group": "T 迁移与收尾",
+      "title": "移除启动期默认公司状态并保持 API 兼容",
+      "depends_on": [
+        "MT122"
+      ],
+      "acceptance": [
+        "A6",
+        "A1",
+        "A8",
+        "A11"
+      ],
+      "split_from": "MT102 部署主入口按已认证身份建立上下文并使用作用域工厂",
+      "issue_number": 166,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/166",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT124",
+      "slug": "enterprise-entry-assembly",
+      "group": "T 迁移与收尾",
+      "title": "企业入口装配接入统一上下文与授权",
+      "depends_on": [
+        "MT123"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A6",
+        "A11"
+      ],
+      "split_from": "MT103 企业入口与旧 REST/Copilot/移动聚合入口装配闭合",
+      "issue_number": 167,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/167",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT125",
+      "slug": "legacy-entry-assembly",
+      "group": "T 迁移与收尾",
+      "title": "旧 REST、Copilot 与移动聚合入口装配与兼容",
+      "depends_on": [
+        "MT124",
+        "MT066"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A6",
+        "A11"
+      ],
+      "split_from": "MT103 企业入口与旧 REST/Copilot/移动聚合入口装配闭合",
+      "issue_number": 168,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/168",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT126",
+      "slug": "stream-entries-assembly",
+      "group": "T 迁移与收尾",
+      "title": "流式与长连接入口的上下文与订阅授权装配",
+      "depends_on": [
+        "MT123",
+        "MT025"
+      ],
+      "acceptance": [
+        "A10",
+        "A2",
+        "A6"
+      ],
+      "split_from": null,
+      "issue_number": 169,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/169",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT127",
+      "slug": "global-exception-closure",
+      "group": "T 迁移与收尾",
+      "title": "全局登录、健康检查与平台静态目录例外登记闭合",
+      "depends_on": [
+        "MT125",
+        "MT030"
+      ],
+      "acceptance": [
+        "A6",
+        "A11",
+        "A13"
+      ],
+      "split_from": "MT105 全局与机器入口的例外登记闭合",
+      "issue_number": 170,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/170",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT128",
+      "slug": "machine-personal-path-exceptions",
+      "group": "T 迁移与收尾",
+      "title": "机器回调与个人 Bifrost 直连路径例外登记闭合",
+      "depends_on": [
+        "MT127",
+        "MT069"
+      ],
+      "acceptance": [
+        "A6",
+        "A11",
+        "A13"
+      ],
+      "split_from": "MT105 全局与机器入口的例外登记闭合",
+      "issue_number": 171,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/171",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT129",
+      "slug": "readiness-enforcement",
+      "group": "T 迁移与收尾",
+      "title": "多租户启动就绪强制与缺口阻断",
+      "depends_on": [
+        "MT123",
+        "MT128",
+        "MT013",
+        "MT012"
+      ],
+      "acceptance": [
+        "A6",
+        "A8",
+        "A11"
+      ],
+      "split_from": "MT106 多租户启动就绪强制与 Worker 装配去默认公司",
+      "issue_number": 172,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/172",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT130",
+      "slug": "worker-assembly-scope",
+      "group": "T 迁移与收尾",
+      "title": "Worker 与后台装配去默认公司",
+      "depends_on": [
+        "MT129",
+        "MT042"
+      ],
+      "acceptance": [
+        "A6",
+        "A8",
+        "A11"
+      ],
+      "split_from": "MT106 多租户启动就绪强制与 Worker 装配去默认公司",
+      "issue_number": 173,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/173",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT131",
+      "slug": "acceptance-harness-env",
+      "group": "T 迁移与收尾",
+      "title": "验收 harness 与独立测试环境",
+      "depends_on": [
+        "MT001",
+        "MT002"
+      ],
+      "acceptance": [
+        "A11",
+        "A1",
+        "A2",
+        "A6"
+      ],
+      "split_from": "MT107 全功能验收 harness 与身份矩阵 runner",
+      "issue_number": 174,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/174",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT132",
+      "slug": "identity-matrix-runner",
+      "group": "T 迁移与收尾",
+      "title": "身份矩阵 runner 与逐入口覆盖状态输出",
+      "depends_on": [
+        "MT131",
+        "MT128"
+      ],
+      "acceptance": [
+        "A11",
+        "A1",
+        "A2",
+        "A6"
+      ],
+      "split_from": "MT107 全功能验收 harness 与身份矩阵 runner",
+      "issue_number": 175,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/175",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT133",
+      "slug": "coverage-bots-conversations",
+      "group": "T 迁移与收尾",
+      "title": "覆盖证据：Bot、会话与附件",
+      "depends_on": [
+        "MT132",
+        "MT019",
+        "MT024"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A11"
+      ],
+      "split_from": "MT108 覆盖证据：Bot、会话、附件、插件审批与知识记忆",
+      "issue_number": 176,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/176",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT134",
+      "slug": "coverage-plugins-knowledge",
+      "group": "T 迁移与收尾",
+      "title": "覆盖证据：插件审批、知识与记忆",
+      "depends_on": [
+        "MT133",
+        "MT035",
+        "MT040"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A11"
+      ],
+      "split_from": "MT108 覆盖证据：Bot、会话、附件、插件审批与知识记忆",
+      "issue_number": 177,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/177",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT135",
+      "slug": "coverage-jobs-execution",
+      "group": "T 迁移与收尾",
+      "title": "覆盖证据：后台任务与执行隔离",
+      "depends_on": [
+        "MT132",
+        "MT045",
+        "MT051"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A8",
+        "A11",
+        "A12"
+      ],
+      "split_from": "MT109 覆盖证据：任务、电脑沙箱、Craft/Workshop、OpenMuse 与删除恢复",
+      "issue_number": 178,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/178",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT136",
+      "slug": "coverage-craft-openmuse-deletion",
+      "group": "T 迁移与收尾",
+      "title": "覆盖证据：Craft/Workshop、OpenMuse 与删除恢复",
+      "depends_on": [
+        "MT135",
+        "MT058",
+        "MT068"
+      ],
+      "acceptance": [
+        "A2",
+        "A5",
+        "A8",
+        "A11",
+        "A12"
+      ],
+      "split_from": "MT109 覆盖证据：任务、电脑沙箱、Craft/Workshop、OpenMuse 与删除恢复",
+      "issue_number": 179,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/179",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT137",
+      "slug": "coverage-billing-accounts",
+      "group": "T 迁移与收尾",
+      "title": "覆盖证据：公司/个人付款账户与账务可见性",
+      "depends_on": [
+        "MT132",
+        "MT073"
+      ],
+      "acceptance": [
+        "A7",
+        "A9",
+        "A12",
+        "A13",
+        "A11"
+      ],
+      "split_from": "MT110 覆盖证据：账务、治理与观测",
+      "issue_number": 180,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/180",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT138",
+      "slug": "coverage-governance-observability",
+      "group": "T 迁移与收尾",
+      "title": "覆盖证据：治理、审计与观测出口",
+      "depends_on": [
+        "MT137",
+        "MT079",
+        "MT111"
+      ],
+      "acceptance": [
+        "A7",
+        "A9",
+        "A12",
+        "A13",
+        "A11"
+      ],
+      "split_from": "MT110 覆盖证据：账务、治理与观测",
+      "issue_number": 181,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/181",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT139",
+      "slug": "coverage-web-clients",
+      "group": "T 迁移与收尾",
+      "title": "覆盖证据：Web 客户端",
+      "depends_on": [
+        "MT132",
+        "MT097"
+      ],
+      "acceptance": [
+        "A3",
+        "A10",
+        "A11",
+        "A13"
+      ],
+      "split_from": "MT111 覆盖证据：Web、桌面与移动端",
+      "issue_number": 182,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/182",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT140",
+      "slug": "coverage-desktop-mobile-clients",
+      "group": "T 迁移与收尾",
+      "title": "覆盖证据：桌面与移动端",
+      "depends_on": [
+        "MT139",
+        "MT102",
+        "MT107"
+      ],
+      "acceptance": [
+        "A3",
+        "A10",
+        "A11",
+        "A13"
+      ],
+      "split_from": "MT111 覆盖证据：Web、桌面与移动端",
+      "issue_number": 183,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/183",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT141",
+      "slug": "gap-closure",
+      "group": "T 迁移与收尾",
+      "title": "缺口关闭与阻塞项清单",
+      "depends_on": [
+        "MT121",
+        "MT130",
+        "MT134",
+        "MT136",
+        "MT138",
+        "MT140"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "A6",
+        "A7",
+        "A8",
+        "A9",
+        "A10",
+        "A11",
+        "A12",
+        "A13"
+      ],
+      "split_from": "MT112 缺口关闭、独立审查与统一上线候选包",
+      "issue_number": 184,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/184",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT142",
+      "slug": "independent-review",
+      "group": "T 迁移与收尾",
+      "title": "独立 Review 与完整范围代码审查",
+      "depends_on": [
+        "MT141"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "A6",
+        "A7",
+        "A8",
+        "A9",
+        "A10",
+        "A11",
+        "A12",
+        "A13"
+      ],
+      "split_from": "MT112 缺口关闭、独立审查与统一上线候选包",
+      "issue_number": 185,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/185",
+      "epic_issue": 206,
+      "status": "pending"
+    },
+    {
+      "id": "MT143",
+      "slug": "release-candidate-package",
+      "group": "T 迁移与收尾",
+      "title": "统一上线候选包与证据汇总",
+      "depends_on": [
+        "MT142"
+      ],
+      "acceptance": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "A6",
+        "A7",
+        "A8",
+        "A9",
+        "A10",
+        "A11",
+        "A12",
+        "A13"
+      ],
+      "split_from": "MT112 缺口关闭、独立审查与统一上线候选包",
+      "issue_number": 186,
+      "issue_url": "https://github.com/1123786563/OpenBot/issues/186",
+      "epic_issue": 206,
+      "status": "pending"
+    }
+  ]
+}
