@@ -1,0 +1,1527 @@
+{
+  "repository": "1123786563/OpenBot",
+  "parent": "https://github.com/1123786563/OpenBot/issues/4",
+  "source_read_date": "2026-10-15",
+  "source_state": "OPEN",
+  "source_comments": 0,
+  "status": "published-37-tickets-native-relationships-verified",
+  "issue_number_range": [
+    7,
+    43
+  ],
+  "split_policy": [
+    "O1 每张 Ticket 只引入一个可观察行为变化（一个新语义、一个新拒绝路径或一个新展示），owned files ≤ 8，验证命令可在单个 code agent 上下文内跑完。",
+    "O2 单一 owner role：backend / frontend / infra / agent-runtime 不混在同一张 Ticket，便于按稳定接口并行分派。",
+    "O3 成功路径与拒绝路径都在同一张 Ticket 的验收标准里写全，接手 agent 不会漏掉拒绝语义。",
+    "O4 界面展示单独成张，但必须自带端到端可见验证（登录→看到→操作→状态变化）。",
+    "O5 故障注入与恢复（上游超时/离线/漂移、重启、并发、取消、lease、时钟推进）写入对应 Ticket 的验收标准，不推给最后的验收张。",
+    "O6 禁止无行为 Ticket：只有迁移、只有类型定义或只有配置项而无法在公开边界观察结果的，并回上一张。T01/T02 是显式记录的例外，见 documented_deviations。",
+    "O7 每张 Ticket 必带 handoff 六件套：consumes / produces / owned_scope / verification / resume_hint / checkpoint；失败即弃，接手 agent 只读 handoff 与 checkpoint 即可续做。",
+    "O8 上游 HTTP 序列化只由 T04(#10) 的 VerifiedOpikContract manifest 驱动，任何 Ticket 不得各自发明请求格式。",
+    "O9 最后一张 T37(#43) 是全范围缝合与验收，保证结束时存在端到端可演示行为，防止细拆退化成水平切片。"
+  ],
+  "documented_deviations": [
+    "T01(#7) 与 T02(#8) 是 prefactor，按 to-tickets「Make the change easy, then make the easy change」先行，其验证以结构性回归为主而非端到端业务行为：T01 的可观察面是未认证/无归属请求在进入业务逻辑前被拒绝、且模块未启用时现有接口与 tracing 零变化；T02 的可观察面是八类可用性状态的双语文案与命名空间隔离。",
+    "T02(#8) 的验收标准第 3 条提到「直接输入路由时仍执行权限校验」，但对应路由要到 T12(#18) 才存在，因此该条在 T02 阶段只能验证路由约定本身，不能端到端验证；实施 T02 时不得把该条记为通过，应留到 T12(#18) 验证。",
+    "T37(#43) 依赖全部 36 张，是协调与验收性质，不引入新功能；其 blocked_by 边在 GitHub 上为 36 条。",
+    "T02(#8) owned files = 11，超过 O1 的 ≤8 上限：8 个是四个子命名空间 × 两种语言的极小 JSON、2 个是 i18n 注册文件、1 个是 parity 测试。总内容量远小于一个 4 文件的逻辑 Ticket；拆成两张会人为割裂命名空间归属矩阵。这是记录在案的例外，不是遗漏。",
+    "owned_scope 在 writing-plans 阶段按真实代码结构校正过三处：T01(#7) 补 server/src/app.ts（挂载点实际在 createApp 的 app.route，不在 index.ts）；T02(#8) 补 parity 测试文件；T03(#9) 补 docker-compose.yml 的可选栈清单注释与 server/tests/opik-deployment.test.ts（无 Docker 也能跑的静态约束测试）。",
+    "T11(#17) 增加 T01(#7) 为前置：原草案里 T01 没有任何后继，属于孤儿 prefactor，路由 seam 可能被跳过或与需要它的 Ticket 并行；补边后 T01 成为全部路由类 Ticket 的祖先。",
+    "T02(#8) 由单一 ai-observability 命名空间改为 -runs/-datasets/-evaluations/-admin 四个子命名空间：图分析发现 6 个前端 Ticket 共享同两个 locale JSON，其中 10 对在依赖图上不可比较，并行派发必然冲突；拆分后四条前端链文件不相交。"
+  ],
+  "global_constraints": [
+    "以父 Spec #4 为事实源：OpenBot 保留权威归属、存储定位、非敏感版本引用与持久任务状态；Opik 只保存脱敏后的追踪与评测内容，其 metadata 不能改变业务归属。",
+    "本 Ticket 是业务完整切片，接口、数据库变更、授权、必要用户/管理状态与行为测试同时完成；只改 owned_scope，不顺便实施其他 Ticket。",
+    "领取前核验 GitHub 原生 blocked_by 全部完成并已集成到当前工作区，读取其实际交付契约（handoff.produces）；依赖未完成不造假桩冒充已集成。Ticket 内的 fake 仅为测试，不得成为生产降级。",
+    "集成必须可选：关闭时现有 Agent 执行与 tracing 行为完全不变；Opik 故障、慢响应、离线或队列饱和不得改变正常 Agent 结果，观测不进入运行关键路径。",
+    "任何写入、评测或导出前完成脱敏投影：凭据、内部能力、连接串、账号标识、reasoning 内容与原始附件排除；无法可靠处理的自由文本降级为仅指标。canary 测试是必备证据，治理范围覆盖正文、metadata、异常、名称与 URL。",
+    "授权复用现有 Bot 管理与管理员权限：public 聊天权与分享权不授予观测访问；列表、聚合、详情、span、数据集、实验、评分与导出全部校验；不暴露任意上游查询代理；移交或撤权立即影响历史查询、分页、缓存、下载与排队任务。",
+    "企业租户只预留可替换 seam：不创建租户表、不伪造租户、不引入隐式租户头、不建租户角色层级、不把 workspace/project 布局当作授权；未知企业 scope 拒绝且不回退工作台 scope。",
+    "上游调用只经单一 port，序列化只由 T04(#10) 的 VerifiedOpikContract manifest 驱动；缺失 provider usage 显示 unavailable 而不当 0；Opik 侧成本只是分析用途，计费台账保持权威。",
+    "评测执行遵守适用 Credit Gate、Admission、Reservation/Settlement；每个样本执行前重新授权；取消、lease 恢复与外部未知结局不自动重复调用或重复扣费；隔离 thread 与测试工具不得写生产会话、memory、learning 或业务数据。",
+    "外部真实 Opik 缺环境时完成本地确定性测试，并把对应能力保留为未验证/不可启用，不编造上游证据；测试库、测试账户与 Opik 实例必须与应用数据隔离，缺 TEST_DATABASE_URL 不回退开发数据库、不记为通过，skipped 不等于通过。"
+  ],
+  "execution_procedure": [
+    "先读父 Spec #4 中本 Ticket 的 acceptance_ids 条目、所有前置 Ticket 的 handoff.produces 与本 Ticket 的 owned_scope；记录原始 BASE 与工作区状态。不需要读父会话或 v1/v2 全量计划。",
+    "按仓库要求建立或核验工作区（优先独立 Git Worktree），先用 Superpowers writing-plans 产出文件级实施计划与 RED/GREEN 命令，再 SDD/TDD；不重新做产品发现。",
+    "从本 Ticket 验收标准写公开边界失败测试（RED）；涉及事务或金额先建立隔离测试账户与专用 PostgreSQL（TEST_DATABASE_URL），涉及上游先准备可注入的对抗性 fixture，涉及界面先确定登录→看到→操作→状态变化的路径。",
+    "按 owned_scope 完成最小业务路径，添加必要约束/迁移、认证与状态展示；前置产出的契约不兼容时先记录并解决，禁止静默改别人的接口。",
+    "补齐故障注入与越权用例，运行 handoff.verification 全部命令，并运行受影响包 typecheck、biome lint/format 与前端 build；涉及并发时执行对应 race/双 worker 测试。",
+    "由独立验证者 review，再按仓库流程完成 OCR/修复/复审；把实际变更范围、接口请求响应与错误语义、迁移与回退说明、验证命令与结果、检查点哈希写入 handoff.checkpoint。没有提交授权时使用未提交检查点，不自动提交、推送或改父 Issue。"
+  ],
+  "failure_policy": "可修复代码问题在本 Ticket 内完成修复及相关重验；缺权限/环境/真实 Opik 实例证据或发现已批准需求冲突时，记录精确阻塞及受影响能力，不反复猜测、不静默降级、不把 skipped 当通过。",
+  "serialization_constraints": [
+    "server/src/copilot.ts 必须串行：T10(#16) -> T14(#20) -> T23(#29)，不得并行派发。",
+    "server/drizzle 迁移必须串行：T07(#13) -> T19(#25) -> T22(#28)，各自独立迁移编号。",
+    "server/src/index.ts 只由 T01(#7) 建立单行注册、T24(#30) 加 worker 启动行，其余 Ticket 不得编辑。",
+    "server/src/ai-observability/opik-http.ts 由 T08(#14) 建立，后续 Ticket 只追加自己的 endpoint 函数，且序列化由 #10 的 manifest 驱动。",
+    "app/src/routeTree.gen.ts 是生成物；冲突时以重新生成为准，不手工合并。"
+  ],
+  "parallel_opportunities": [
+    "起始 frontier（blocked_by=0，可 5 路并行）：T01(#7)、T02(#8)、T03(#9)、T05(#11)、T06(#12)。",
+    "T15(#21) 与 T16(#22) 可并行（不同模块边界）。",
+    "T26(#32) 规则评分不依赖 T23/T24/T25，可与执行编排并行。",
+    "T29(#35)/T31(#37) 对比链不依赖 T27(#33) 模型 Judge，规则评分即可成立。",
+    "T32(#38)/T33(#39) 运维链可与整个 Phase 05 并行。"
+  ],
+  "edge_relaxations": [
+    "T37(#43) 前置收敛为全部 36 张终点，因为它是全范围验收而非新功能。",
+    "T26(#32) 只等 T22(#28)，不等执行编排链 T23/T24/T25，使规则评分可提前落地。",
+    "T29(#35) 与 T31(#37) 不等 T27(#33)，Judge 作为后续版本化评分定义参与对比而非前置。",
+    "T16(#22) 只等 T14(#20)，不等 T15(#21)，使 LangGraph 接入可与工具/检索步骤并行。"
+  ],
+  "contention_analysis": {
+    "method": "对每个被 >1 张 Ticket 拥有的文件，检查其全部拥有者两两是否在依赖图上可比较（一方是另一方的祖先）。不可比较即代表可被并行派发并冲突。",
+    "files_owned_by_multiple_tickets": 19,
+    "parallel_unsafe_pairs": 0,
+    "result": "PASS — 所有共享文件的拥有者都被依赖边串行化，见 serialization_constraints",
+    "evidence": "sync-report-v2.json"
+  },
+  "tickets": [
+    {
+      "id": "T01",
+      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t01-observability-module-seam.md",
+      "group": "00",
+      "group_slug": "prefactor-seams",
+      "group_title": "Prefactor 与 seam",
+      "title": "观测后端模块骨架与路由注册 seam",
+      "github_issue": 7,
+      "url": "https://github.com/1123786563/OpenBot/issues/7",
+      "depends_on": [],
+      "depends_on_issues": [],
+      "acceptance_ids": [
+        "A5"
+      ],
+      "primary_repo": "openbot",
+      "what": "建立 `server/src/ai-observability/` 目录约定与单一 `registerAiObservabilityRoutes()`，使后续每个 Ticket 只新增自己的 route module 文件，不再编辑 `server/src/index.ts`。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "",
+        "produces": "路由注册约定 + 请求上下文（认证用户、scope、bot 归属）注入方式",
+        "owned_scope": "server/src/ai-observability/routes/index.ts, server/src/ai-observability/context.ts, server/src/app.ts, server/src/index.ts, server/tests/opik-module-skeleton.test.ts",
+        "verification": [
+          "bun test server/tests/opik-module-skeleton.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A5；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T02",
+      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t02-observability-ui-i18n-seam.md",
+      "group": "00",
+      "group_slug": "prefactor-seams",
+      "group_title": "Prefactor 与 seam",
+      "title": "观测 UI 独立 i18n 子命名空间与路由约定",
+      "github_issue": 8,
+      "url": "https://github.com/1123786563/OpenBot/issues/8",
+      "depends_on": [],
+      "depends_on_issues": [],
+      "acceptance_ids": [
+        "A5"
+      ],
+      "primary_repo": "openbot",
+      "what": "新增 `ai-observability-runs` / `-datasets` / `-evaluations` / `-admin` 四个双子语命名空间与 `bots.$agentId.runs` / `.evaluations` 路由约定，使四条前端链（运行、评测集、实验、管理）各自独占文案文件，既不争用 `agents.json`、`errors.json`，也不彼此争用。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "",
+        "produces": "四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定",
+        "owned_scope": "app/src/locales/en/ai-observability-runs.json, app/src/locales/en/ai-observability-datasets.json, app/src/locales/en/ai-observability-evaluations.json, app/src/locales/en/ai-observability-admin.json, app/src/locales/zh-CN/ai-observability-runs.json, app/src/locales/zh-CN/ai-observability-datasets.json, app/src/locales/zh-CN/ai-observability-evaluations.json, app/src/locales/zh-CN/ai-observability-admin.json, app/src/lib/i18n/index.ts, app/src/lib/i18n/i18next.d.ts, app/src/lib/i18n/ai-observability.test.ts",
+        "verification": [
+          "bun test app/src/lib/i18n/ai-observability.test.ts",
+          "cd app && bun run typecheck",
+          "cd app && bun run build",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A5；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T03",
+      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t03-opik-optional-deployment.md",
+      "group": "01",
+      "group_slug": "opik-foundation",
+      "group_title": "Opik 部署、契约与安全地基",
+      "title": "Opik 可选部署与版本锁定清单",
+      "github_issue": 9,
+      "url": "https://github.com/1123786563/OpenBot/issues/9",
+      "depends_on": [],
+      "depends_on_issues": [],
+      "acceptance_ids": [
+        "A1"
+      ],
+      "primary_repo": "openbot",
+      "what": "平台运维可用可选 compose 启动真实自托管 Opik，服务与 SDK 版本被锁定为实际验证过的值；关闭集成时现有执行与 tracing 行为不变。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "",
+        "produces": "`versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名",
+        "owned_scope": "docker/compose/opik.yml, docker/opik/versions.json, docs/opik.md, .env.example, docker-compose.yml, server/tests/opik-deployment.test.ts",
+        "verification": [
+          "bun test server/tests/opik-deployment.test.ts",
+          "docker compose --project-directory . -f docker/compose/opik.yml config --quiet",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A1；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T04",
+      "plan_file": "",
+      "group": "01",
+      "group_slug": "opik-foundation",
+      "group_title": "Opik 部署、契约与安全地基",
+      "title": "上游契约冒烟与 VerifiedOpikContract manifest",
+      "github_issue": 10,
+      "url": "https://github.com/1123786563/OpenBot/issues/10",
+      "depends_on": [
+        "T03"
+      ],
+      "depends_on_issues": [
+        9
+      ],
+      "acceptance_ids": [
+        "A1",
+        "A11",
+        "A13"
+      ],
+      "primary_repo": "openbot",
+      "what": "对真实实例跑通 OTLP 写入、查询、项目、数据集、实验与删除，产出后续所有 HTTP 序列化唯一依据的 manifest；缺环境或跳过实测不得报告成功。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T03(#9) 的交付契约：`versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名",
+        "produces": "`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限）",
+        "owned_scope": "server/scripts/opik-contract.ts, server/tests/opik-contract.test.ts, server/package.json, bun.lock",
+        "verification": [
+          "bun test server/tests/opik-contract.test.ts",
+          "bun server/scripts/opik-contract.ts --target <opik-api> --evidence docs/plans/evidence/2026-10-14-opik/t04",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A11, A13；前置 #9 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T05",
+      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t05-redaction-projection.md",
+      "group": "01",
+      "group_slug": "opik-foundation",
+      "group_title": "Opik 部署、契约与安全地基",
+      "title": "采集侧脱敏投影与安全内容策略",
+      "github_issue": 11,
+      "url": "https://github.com/1123786563/OpenBot/issues/11",
+      "depends_on": [],
+      "depends_on_issues": [],
+      "acceptance_ids": [
+        "A4"
+      ],
+      "primary_repo": "openbot",
+      "what": "任何写入或导出前的语义字段白名单投影；凭据、内部能力、连接串、账号标识、reasoning、原始附件被排除；无法可靠处理的自由文本降级为仅指标。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "",
+        "produces": "`projectSafe()` 接口 + 内容策略版本号",
+        "owned_scope": "server/src/ai-observability/redaction.ts, shared/ai-observability.ts, server/tests/opik-redaction.test.ts",
+        "verification": [
+          "bun test server/tests/opik-redaction.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A4；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T06",
+      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t06-trusted-scope-seam.md",
+      "group": "01",
+      "group_slug": "opik-foundation",
+      "group_title": "Opik 部署、契约与安全地基",
+      "title": "可信 scope seam 与企业预留拒绝",
+      "github_issue": 12,
+      "url": "https://github.com/1123786563/OpenBot/issues/12",
+      "depends_on": [],
+      "depends_on_issues": [],
+      "acceptance_ids": [
+        "A12",
+        "A5"
+      ],
+      "primary_repo": "openbot",
+      "what": "授权范围、存储定位与评测资格集中在可替换 seam；当前只实现工作台适配器；未知企业 scope 拒绝且不回退，不创建租户表、不把 workspace 当授权。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "",
+        "produces": "`ObservationScope` 解析接口 + 两个测试 scope 的构造方式",
+        "owned_scope": "server/src/ai-observability/scope.ts, server/src/ai-observability/contracts.ts, server/tests/opik-scope.test.ts",
+        "verification": [
+          "bun test server/tests/opik-scope.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A12, A5；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T07",
+      "plan_file": "",
+      "group": "01",
+      "group_slug": "opik-foundation",
+      "group_title": "Opik 部署、契约与安全地基",
+      "title": "观测归属存储 schema 与可信绑定",
+      "github_issue": 13,
+      "url": "https://github.com/1123786563/OpenBot/issues/13",
+      "depends_on": [
+        "T06"
+      ],
+      "depends_on_issues": [
+        12
+      ],
+      "acceptance_ids": [
+        "A1",
+        "A5",
+        "A11",
+        "A12"
+      ],
+      "primary_repo": "openbot",
+      "what": "OpenBot 保留权威归属、存储定位、非敏感版本引用与持久任务状态；绑定可幂等恢复；Opik metadata 不能改变业务归属。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T06(#12) 的交付契约：`ObservationScope` 解析接口 + 两个测试 scope 的构造方式",
+        "produces": "表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证）",
+        "owned_scope": "server/drizzle/00NN_opik_observability.sql, server/src/db/schema/ai-observability.ts, server/src/ai-observability/bindings.ts, server/tests/opik-bindings.integration.test.ts, server/scripts/opik-test-env.ts",
+        "verification": [
+          "cd server && bun run db:generate   # 生成迁移后人工核对 SQL 与 snapshot",
+          "TEST_DATABASE_URL=<isolated-pg> bun test server/tests/opik-bindings.integration.test.ts   # 缺 TEST_DATABASE_URL 会 skip，不得记为通过",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A5, A11, A12；前置 #12 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T08",
+      "plan_file": "",
+      "group": "01",
+      "group_slug": "opik-foundation",
+      "group_title": "Opik 部署、契约与安全地基",
+      "title": "Opik HTTP 适配器与 port 抽象",
+      "github_issue": 14,
+      "url": "https://github.com/1123786563/OpenBot/issues/14",
+      "depends_on": [
+        "T04",
+        "T05",
+        "T07"
+      ],
+      "depends_on_issues": [
+        10,
+        11,
+        13
+      ],
+      "acceptance_ids": [
+        "A1",
+        "A4",
+        "A10",
+        "A13"
+      ],
+      "primary_repo": "openbot",
+      "what": "全部上游调用经单一 port；序列化只由 T04 manifest 驱动；对抗性故障（超时、5xx、部分成功、归属漂移）可注入且不伪装成功。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T04(#10) 的交付契约：`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限） | T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T07(#13) 的交付契约：表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证）",
+        "produces": "`OpikPort` 接口 + fixture 注入方式",
+        "owned_scope": "server/src/ai-observability/opik-port.ts, server/src/ai-observability/opik-http.ts, server/tests/support/opik-fixtures.ts, server/tests/opik-http.test.ts",
+        "verification": [
+          "bun test server/tests/opik-http.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A4, A10, A13；前置 #10, #11, #13 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T09",
+      "plan_file": "",
+      "group": "01",
+      "group_slug": "opik-foundation",
+      "group_title": "Opik 部署、契约与安全地基",
+      "title": "配置开关与健康状态（禁用零影响）",
+      "github_issue": 15,
+      "url": "https://github.com/1123786563/OpenBot/issues/15",
+      "depends_on": [
+        "T08"
+      ],
+      "depends_on_issues": [
+        14
+      ],
+      "acceptance_ids": [
+        "A1",
+        "A10"
+      ],
+      "primary_repo": "openbot",
+      "what": "集成关闭时现有执行与 tracing 完全不变；启用但故障时给出可解释状态；Opik 慢响应、离线或队列饱和不改变正常 Agent 结果。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T08(#14) 的交付契约：`OpikPort` 接口 + fixture 注入方式",
+        "produces": "就绪/健康查询接口 + 有界异步导出入口约定",
+        "owned_scope": "server/src/ai-observability/config.ts, server/src/ai-observability/health.ts, server/src/config.ts, shared/ai-trace.ts, server/tests/opik-health.test.ts",
+        "verification": [
+          "bun test server/tests/opik-health.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A10；前置 #14 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T10",
+      "plan_file": "",
+      "group": "02",
+      "group_slug": "safe-run-records",
+      "group_title": "安全运行记录",
+      "title": "run 终结语义与 basic 远程路径能力标记",
+      "github_issue": 16,
+      "url": "https://github.com/1123786563/OpenBot/issues/16",
+      "depends_on": [
+        "T09"
+      ],
+      "depends_on_issues": [
+        15
+      ],
+      "acceptance_ids": [
+        "A2",
+        "A3",
+        "A5",
+        "A10"
+      ],
+      "primary_repo": "openbot",
+      "what": "HTTP 首帧不结束 run；成功、错误、重试、确认取消、断连与未知结局正确区分，每个 attempt 唯一终结；工具提议不冒充执行；经过 OpenBot 的远程 AG-UI 只记录实际观察到的事件并明确标记 basic。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T09(#15) 的交付契约：就绪/健康查询接口 + 有界异步导出入口约定",
+        "produces": "run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口",
+        "owned_scope": "server/src/ai-observability/run-agent.ts, server/src/agents/endpoint.ts, server/src/agents/agent-resolver.ts, server/src/agents/runtime-agents.ts, server/src/copilot.ts, server/tests/opik-run-agent.test.ts",
+        "verification": [
+          "bun test server/tests/opik-run-agent.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A5, A10；前置 #15 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T11",
+      "plan_file": "",
+      "group": "02",
+      "group_slug": "safe-run-records",
+      "group_title": "安全运行记录",
+      "title": "创建者只读查询接口",
+      "github_issue": 17,
+      "url": "https://github.com/1123786563/OpenBot/issues/17",
+      "depends_on": [
+        "T01",
+        "T07",
+        "T10"
+      ],
+      "depends_on_issues": [
+        7,
+        13,
+        16
+      ],
+      "acceptance_ids": [
+        "A2",
+        "A5",
+        "A6",
+        "A10",
+        "A12"
+      ],
+      "primary_repo": "openbot",
+      "what": "创建者按当前管理权查询自己 Bot 的运行列表与安全详情；public 聊天权、伪造归属、猜测 ID、跨 scope 游标不能扩大访问；移交或撤权后历史、分页与缓存立即不可读。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T01(#7) 的交付契约：路由注册约定 + 请求上下文（认证用户、scope、bot 归属）注入方式 | T07(#13) 的交付契约：表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证） | T10(#16) 的交付契约：run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口",
+        "produces": "只读查询 REST 契约（请求/响应/错误语义/游标）",
+        "owned_scope": "server/src/ai-observability/reader.ts, server/src/ai-observability/routes/reader-routes.ts, server/tests/opik-reader.test.ts, server/tests/opik-routes.test.ts",
+        "verification": [
+          "bun test server/tests/opik-reader.test.ts server/tests/opik-routes.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A5, A6, A10, A12；前置 #7, #13, #16 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T12",
+      "plan_file": "",
+      "group": "02",
+      "group_slug": "safe-run-records",
+      "group_title": "安全运行记录",
+      "title": "运行列表页",
+      "github_issue": 18,
+      "url": "https://github.com/1123786563/OpenBot/issues/18",
+      "depends_on": [
+        "T02",
+        "T11"
+      ],
+      "depends_on_issues": [
+        8,
+        17
+      ],
+      "acceptance_ids": [
+        "A2",
+        "A5",
+        "A6",
+        "A10"
+      ],
+      "primary_repo": "openbot",
+      "what": "创建者在 Bot 页面筛选并查看运行列表，看到真实状态、耗时与能力标记；覆盖空、禁用、无权限、同步中与上游不可用状态；键盘与窄屏可用。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T02(#8) 的交付契约：四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定 | T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标）",
+        "produces": "列表组件与查询 hook 契约",
+        "owned_scope": "app/src/routes/_authed/_app/bots.$agentId.runs.tsx, app/src/components/ai-observability/run-list.tsx, app/src/components/ai-observability/availability.tsx, app/src/lib/ai-observability/types.ts, app/src/lib/ai-observability/queries.ts, app/src/components/ai-observability/run-views.test.tsx, app/src/locales/en/ai-observability-runs.json, app/src/locales/zh-CN/ai-observability-runs.json",
+        "verification": [
+          "bun test app/src/components/ai-observability/run-views.test.tsx",
+          "cd app && bun run typecheck",
+          "cd app && bun run build",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A5, A6, A10；前置 #8, #17 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T13",
+      "plan_file": "",
+      "group": "02",
+      "group_slug": "safe-run-records",
+      "group_title": "安全运行记录",
+      "title": "运行详情页与可用性状态",
+      "github_issue": 19,
+      "url": "https://github.com/1123786563/OpenBot/issues/19",
+      "depends_on": [
+        "T12"
+      ],
+      "depends_on_issues": [
+        18
+      ],
+      "acceptance_ids": [
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "A6"
+      ],
+      "primary_repo": "openbot",
+      "what": "创建者查看单次运行的安全详情：实际状态与耗时、脱敏内容、版本引用、provider usage 或明确的 unavailable；恶意正文只作为文本渲染。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T12(#18) 的交付契约：列表组件与查询 hook 契约",
+        "produces": "详情页组件契约（步骤树在 T18 扩展同一组件）",
+        "owned_scope": "app/src/routes/_authed/_app/bots.$agentId.runs.$bindingId.tsx, app/src/components/ai-observability/run-detail.tsx, app/src/components/bot-profile/manage.tsx, app/src/locales/en/ai-observability-runs.json, app/src/locales/zh-CN/ai-observability-runs.json, app/src/components/ai-observability/run-views.test.tsx",
+        "verification": [
+          "bun test app/src/components/ai-observability/run-views.test.tsx",
+          "cd app && bun run typecheck",
+          "cd app && bun run build",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A4, A5, A6；前置 #18 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T14",
+      "plan_file": "",
+      "group": "03",
+      "group_slug": "detailed-steps",
+      "group_title": "详细运行步骤",
+      "title": "内置执行的模型调用记录",
+      "github_issue": 20,
+      "url": "https://github.com/1123786563/OpenBot/issues/20",
+      "depends_on": [
+        "T05",
+        "T10"
+      ],
+      "depends_on_issues": [
+        11,
+        16
+      ],
+      "acceptance_ids": [
+        "A2",
+        "A3",
+        "A4",
+        "A8"
+      ],
+      "primary_repo": "openbot",
+      "what": "内置路径的模型调用带实际 usage 或明确 unavailable；不重复调用 provider、不改变已有 metered finish 与 Settlement 顺序、不重复计算 usage；拒绝或结算失败不是成功 span。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T10(#16) 的交付契约：run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口",
+        "produces": "模型 span 记录接口 + usage 缺失语义",
+        "owned_scope": "server/src/ai-observability/model.ts, server/src/copilot.ts, server/tests/opik-model.test.ts",
+        "verification": [
+          "bun test server/tests/opik-model.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A4, A8；前置 #11, #16 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T15",
+      "plan_file": "",
+      "group": "03",
+      "group_slug": "detailed-steps",
+      "group_title": "详细运行步骤",
+      "title": "工具提议 vs 真实执行与检索步骤",
+      "github_issue": 21,
+      "url": "https://github.com/1123786563/OpenBot/issues/21",
+      "depends_on": [
+        "T14"
+      ],
+      "depends_on_issues": [
+        20
+      ],
+      "acceptance_ids": [
+        "A2",
+        "A3",
+        "A4"
+      ],
+      "primary_repo": "openbot",
+      "what": "工具提议、真实 execute 与缺少回执三者分开；未知浏览器执行不显示成功；检索步骤与片段可定位且无秘密 canary。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T14(#20) 的交付契约：模型 span 记录接口 + usage 缺失语义",
+        "produces": "步骤类型枚举与「提议/执行/回执缺失」判定",
+        "owned_scope": "server/src/ai-observability/retrieval.ts, server/src/ai-observability/steps.ts, server/src/knowledge/middleware.ts, server/tests/opik-step.test.ts",
+        "verification": [
+          "bun test server/tests/opik-step.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A4；前置 #20 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T16",
+      "plan_file": "",
+      "group": "03",
+      "group_slug": "detailed-steps",
+      "group_title": "详细运行步骤",
+      "title": "LangGraph callback 接入同一受治理 OTel 路径",
+      "github_issue": 22,
+      "url": "https://github.com/1123786563/OpenBot/issues/22",
+      "depends_on": [
+        "T14"
+      ],
+      "depends_on_issues": [
+        20
+      ],
+      "acceptance_ids": [
+        "A2",
+        "A4",
+        "A13"
+      ],
+      "primary_repo": "openbot",
+      "what": "默认 LangGraph 路径的框架 callback 进入同一受治理路径，不另开未处理的自动上传；输入输出、错误与日志无 canary。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T14(#20) 的交付契约：模型 span 记录接口 + usage 缺失语义",
+        "produces": "LangGraph 侧 tracing 接入方式与版本约束",
+        "owned_scope": "agent-langgraph/src/index.ts, agent-langgraph/package.json, agent-langgraph/bun.lock, agent-langgraph/tests/opik-tracing.test.ts, server/src/ai-observability/langgraph.ts",
+        "verification": [
+          "bun test agent-langgraph/tests/opik-tracing.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A4, A13；前置 #20 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T17",
+      "plan_file": "",
+      "group": "03",
+      "group_slug": "detailed-steps",
+      "group_title": "详细运行步骤",
+      "title": "跨服务与动态进程上下文传播与 ID 映射",
+      "github_issue": 23,
+      "url": "https://github.com/1123786563/OpenBot/issues/23",
+      "depends_on": [
+        "T16"
+      ],
+      "depends_on_issues": [
+        22
+      ],
+      "acceptance_ids": [
+        "A2",
+        "A13"
+      ],
+      "primary_repo": "openbot",
+      "what": "宿主、容器与支持动态创建的进程真实传播 W3C 上下文；OTel 与 Opik 标识使用显式映射而不假定相等；父子关系在真实实例可验证。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T16(#22) 的交付契约：LangGraph 侧 tracing 接入方式与版本约束",
+        "produces": "传播环境变量约定 + ID 映射表位置",
+        "owned_scope": "supervisor/src/environment.ts, supervisor/tests/environment.test.ts, shared/ai-trace.ts, server/tests/opik-propagation.test.ts",
+        "verification": [
+          "bun test supervisor/tests/environment.test.ts server/tests/opik-propagation.test.ts",
+          "cd server && bun run typecheck",
+          "cd supervisor && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A13；前置 #22 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T18",
+      "plan_file": "",
+      "group": "03",
+      "group_slug": "detailed-steps",
+      "group_title": "详细运行步骤",
+      "title": "详情页步骤树",
+      "github_issue": 24,
+      "url": "https://github.com/1123786563/OpenBot/issues/24",
+      "depends_on": [
+        "T13",
+        "T15",
+        "T17"
+      ],
+      "depends_on_issues": [
+        19,
+        21,
+        23
+      ],
+      "acceptance_ids": [
+        "A2",
+        "A3",
+        "A5"
+      ],
+      "primary_repo": "openbot",
+      "what": "创建者在既有详情页展开可信步骤树，定位具体模型、工具与检索操作，并关联跨服务过程；basic 路径不显示不存在的内部步骤。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T13(#19) 的交付契约：详情页组件契约（步骤树在 T18 扩展同一组件） | T15(#21) 的交付契约：步骤类型枚举与「提议/执行/回执缺失」判定 | T17(#23) 的交付契约：传播环境变量约定 + ID 映射表位置",
+        "produces": "步骤树组件与只读步骤查询契约",
+        "owned_scope": "app/src/components/ai-observability/step-tree.tsx, app/src/components/ai-observability/run-detail.tsx, app/src/lib/ai-observability/steps.ts, app/src/locales/en/ai-observability-runs.json, app/src/locales/zh-CN/ai-observability-runs.json, app/src/components/ai-observability/run-views.test.tsx",
+        "verification": [
+          "bun test app/src/components/ai-observability/run-views.test.tsx",
+          "cd app && bun run typecheck",
+          "cd app && bun run build",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A5；前置 #19, #21, #23 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T19",
+      "plan_file": "",
+      "group": "04",
+      "group_slug": "versioned-datasets",
+      "group_title": "版本化评测集",
+      "title": "数据集 schema 与不可变版本冻结",
+      "github_issue": 25,
+      "url": "https://github.com/1123786563/OpenBot/issues/25",
+      "depends_on": [
+        "T07",
+        "T11"
+      ],
+      "depends_on_issues": [
+        13,
+        17
+      ],
+      "acceptance_ids": [
+        "A4",
+        "A7",
+        "A11",
+        "A12"
+      ],
+      "primary_repo": "openbot",
+      "what": "版本冻结安全输入、参考结果、工具 fixture、hash、策略版本、来源与上游定位；候选与后续修改不改变已保存版本；上游与本地引用部分成功可恢复或清理，pending/syncing 不冒充成功。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T07(#13) 的交付契约：表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证） | T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标）",
+        "produces": "数据集版本读取 API + 冻结字段清单",
+        "owned_scope": "server/drizzle/00NN_opik_datasets.sql, server/src/db/schema/ai-observability.ts, server/src/ai-observability/evaluation/contracts.ts, server/src/ai-observability/evaluation/datasets.ts, server/tests/opik-datasets.test.ts, server/tests/opik-datasets.integration.test.ts",
+        "verification": [
+          "bun test server/tests/opik-datasets.test.ts",
+          "cd server && bun run db:generate   # 生成迁移后人工核对 SQL 与 snapshot",
+          "TEST_DATABASE_URL=<isolated-pg> bun test server/tests/opik-datasets.integration.test.ts   # 缺 TEST_DATABASE_URL 会 skip，不得记为通过",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A7, A11, A12；前置 #13, #17 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T20",
+      "plan_file": "",
+      "group": "04",
+      "group_slug": "versioned-datasets",
+      "group_title": "版本化评测集",
+      "title": "案例审查与保存接口",
+      "github_issue": 26,
+      "url": "https://github.com/1123786563/OpenBot/issues/26",
+      "depends_on": [
+        "T05",
+        "T19"
+      ],
+      "depends_on_issues": [
+        11,
+        25
+      ],
+      "acceptance_ids": [
+        "A4",
+        "A5",
+        "A6"
+      ],
+      "primary_repo": "openbot",
+      "what": "候选只来自有权访问的安全运行；仅指标的记录不能被自动伪造为文本样本，必须提供审查后的合成或脱敏案例；拒绝原始附件与任意生产工具；跨 Bot 复用需显式授权复制。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单",
+        "produces": "案例审查/保存 REST 契约 + 脱敏语义限制说明",
+        "owned_scope": "server/src/ai-observability/evaluation/cases.ts, server/src/ai-observability/routes/dataset-routes.ts, server/tests/opik-dataset-cases.test.ts",
+        "verification": [
+          "bun test server/tests/opik-dataset-cases.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A5, A6；前置 #11, #25 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T21",
+      "plan_file": "",
+      "group": "04",
+      "group_slug": "versioned-datasets",
+      "group_title": "版本化评测集",
+      "title": "数据集页面（审查 / 保存 / 版本）",
+      "github_issue": 27,
+      "url": "https://github.com/1123786563/OpenBot/issues/27",
+      "depends_on": [
+        "T02",
+        "T20"
+      ],
+      "depends_on_issues": [
+        8,
+        26
+      ],
+      "acceptance_ids": [
+        "A4",
+        "A5",
+        "A7"
+      ],
+      "primary_repo": "openbot",
+      "what": "创建者在页面检查候选输入、参考结果与工具 fixture，看到脱敏语义提示后保存，并查看冻结版本历史；覆盖空、故障、同步中与审查提示。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T02(#8) 的交付契约：四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定 | T20(#26) 的交付契约：案例审查/保存 REST 契约 + 脱敏语义限制说明",
+        "produces": "数据集页面组件与查询 hook 契约",
+        "owned_scope": "app/src/components/ai-observability/dataset-editor.tsx, app/src/routes/_authed/_app/bots.$agentId.evaluations.tsx, app/src/lib/ai-observability/evaluations.ts, app/src/locales/en/ai-observability-datasets.json, app/src/locales/zh-CN/ai-observability-datasets.json, app/src/components/ai-observability/evaluation-views.test.tsx",
+        "verification": [
+          "bun test app/src/components/ai-observability/evaluation-views.test.tsx",
+          "cd app && bun run typecheck",
+          "cd app && bun run build",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A5, A7；前置 #8, #26 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T22",
+      "plan_file": "",
+      "group": "05",
+      "group_slug": "evaluation-and-scoring",
+      "group_title": "隔离评测、评分与对比",
+      "title": "实验 schema 与冻结配置幂等提交",
+      "github_issue": 28,
+      "url": "https://github.com/1123786563/OpenBot/issues/28",
+      "depends_on": [
+        "T19"
+      ],
+      "depends_on_issues": [
+        25
+      ],
+      "acceptance_ids": [
+        "A7",
+        "A9"
+      ],
+      "primary_repo": "openbot",
+      "what": "提交冻结数据集、Bot 配置、Prompt、模型参数、fixture 与评分器版本；幂等重试不产生第二个实验。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单",
+        "produces": "实验记录结构 + 幂等键约定",
+        "owned_scope": "server/drizzle/00NN_opik_evaluations.sql, server/src/ai-observability/evaluation/contracts.ts, server/src/ai-observability/evaluation/experiments.ts, server/tests/opik-experiments.test.ts",
+        "verification": [
+          "bun test server/tests/opik-experiments.test.ts",
+          "cd server && bun run db:generate   # 生成迁移后人工核对 SQL 与 snapshot",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A7, A9；前置 #25 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T23",
+      "plan_file": "",
+      "group": "05",
+      "group_slug": "evaluation-and-scoring",
+      "group_title": "隔离评测、评分与对比",
+      "title": "隔离执行与生产写工具拒绝",
+      "github_issue": 29,
+      "url": "https://github.com/1123786563/OpenBot/issues/29",
+      "depends_on": [
+        "T10",
+        "T14",
+        "T22"
+      ],
+      "depends_on_issues": [
+        16,
+        20,
+        28
+      ],
+      "acceptance_ids": [
+        "A8",
+        "A10"
+      ],
+      "primary_repo": "openbot",
+      "what": "隔离 thread 与测试工具复用公共执行路径，不写生产会话、memory、learning 或业务数据；未知生产写工具被拒绝。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T10(#16) 的交付契约：run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口 | T14(#20) 的交付契约：模型 span 记录接口 + usage 缺失语义 | T22(#28) 的交付契约：实验记录结构 + 幂等键约定",
+        "produces": "隔离执行入口 + 工具白名单/拒绝策略",
+        "owned_scope": "server/src/ai-observability/evaluation/execution.ts, server/src/copilot.ts, server/tests/opik-evaluation-execution.test.ts",
+        "verification": [
+          "bun test server/tests/opik-evaluation-execution.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A8, A10；前置 #16, #20, #28 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T24",
+      "plan_file": "",
+      "group": "05",
+      "group_slug": "evaluation-and-scoring",
+      "group_title": "隔离评测、评分与对比",
+      "title": "持久任务编排：有界并发、每样本重授权、取消与 lease",
+      "github_issue": 30,
+      "url": "https://github.com/1123786563/OpenBot/issues/30",
+      "depends_on": [
+        "T23"
+      ],
+      "depends_on_issues": [
+        29
+      ],
+      "acceptance_ids": [
+        "A6",
+        "A10",
+        "A12"
+      ],
+      "primary_repo": "openbot",
+      "what": "复用现有 WorkQueue 的有界并发持久任务；每个样本执行前重新授权；取消停止新调度；结果未知或 lease 恢复不自动重复调用或扣费。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T23(#29) 的交付契约：隔离执行入口 + 工具白名单/拒绝策略",
+        "produces": "任务状态机 + 取消/lease 语义",
+        "owned_scope": "server/src/ai-observability/evaluation/jobs.ts, server/src/ai-observability/evaluation/worker.ts, server/src/index.ts, server/tests/opik-evaluation-jobs.test.ts",
+        "verification": [
+          "bun test server/tests/opik-evaluation-jobs.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A6, A10, A12；前置 #29 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T25",
+      "plan_file": "",
+      "group": "05",
+      "group_slug": "evaluation-and-scoring",
+      "group_title": "隔离评测、评分与对比",
+      "title": "评测调用的计费准入与结算接线",
+      "github_issue": 31,
+      "url": "https://github.com/1123786563/OpenBot/issues/31",
+      "depends_on": [
+        "T24"
+      ],
+      "depends_on_issues": [
+        30
+      ],
+      "acceptance_ids": [
+        "A8"
+      ],
+      "primary_repo": "openbot",
+      "what": "被测调用遵守适用 Credit Gate、Admission、Reservation/Settlement；缺失 usage 不当 0；计费台账保持权威。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T24(#30) 的交付契约：任务状态机 + 取消/lease 语义",
+        "produces": "评测侧计费准入接口 + 预算不足时的调用前拒绝语义",
+        "owned_scope": "server/src/ai-observability/evaluation/billing.ts, server/tests/opik-evaluation-billing.test.ts",
+        "verification": [
+          "bun test server/tests/opik-evaluation-billing.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A8；前置 #30 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T26",
+      "plan_file": "",
+      "group": "05",
+      "group_slug": "evaluation-and-scoring",
+      "group_title": "隔离评测、评分与对比",
+      "title": "规则评分器",
+      "github_issue": 32,
+      "url": "https://github.com/1123786563/OpenBot/issues/32",
+      "depends_on": [
+        "T22"
+      ],
+      "depends_on_issues": [
+        28
+      ],
+      "acceptance_ids": [
+        "A7",
+        "A9"
+      ],
+      "primary_repo": "openbot",
+      "what": "确定性检查输出格式、必需字段与工具名称/参数；结果与规则版本可追溯到安全运行；缺失评分不伪造为 0。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T22(#28) 的交付契约：实验记录结构 + 幂等键约定",
+        "produces": "`Scorer` 接口 + 规则版本化约定",
+        "owned_scope": "server/src/ai-observability/evaluation/scorers.ts, server/tests/opik-scorers-rules.test.ts",
+        "verification": [
+          "bun test server/tests/opik-scorers-rules.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A7, A9；前置 #28 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T27",
+      "plan_file": "",
+      "group": "05",
+      "group_slug": "evaluation-and-scoring",
+      "group_title": "隔离评测、评分与对比",
+      "title": "受控模型 Judge 评分",
+      "github_issue": 33,
+      "url": "https://github.com/1123786563/OpenBot/issues/33",
+      "depends_on": [
+        "T25",
+        "T26"
+      ],
+      "depends_on_issues": [
+        31,
+        32
+      ],
+      "acceptance_ids": [
+        "A4",
+        "A7",
+        "A8"
+      ],
+      "primary_repo": "openbot",
+      "what": "仅允许显式批准的模型入口、凭证与 rubric/scorer 版本；不接受任意 provider 地址，不自动使用 Opik 默认模型；预算不足或不受控时调用前拒绝而规则评测仍可用；只有已审查安全样本送给 Judge，理由经安全投影。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T25(#31) 的交付契约：评测侧计费准入接口 + 预算不足时的调用前拒绝语义 | T26(#32) 的交付契约：`Scorer` 接口 + 规则版本化约定",
+        "produces": "Judge 准入清单 + 理由安全投影",
+        "owned_scope": "server/src/ai-observability/evaluation/judge.ts, server/tests/opik-scorers-judge.test.ts",
+        "verification": [
+          "bun test server/tests/opik-scorers-judge.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A7, A8；前置 #31, #32 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T28",
+      "plan_file": "",
+      "group": "05",
+      "group_slug": "evaluation-and-scoring",
+      "group_title": "隔离评测、评分与对比",
+      "title": "实验结果查询接口与失败分类",
+      "github_issue": 34,
+      "url": "https://github.com/1123786563/OpenBot/issues/34",
+      "depends_on": [
+        "T26"
+      ],
+      "depends_on_issues": [
+        32
+      ],
+      "acceptance_ids": [
+        "A5",
+        "A7",
+        "A9"
+      ],
+      "primary_repo": "openbot",
+      "what": "逐样本分数、理由、版本、usage 与结果查询；执行失败、评分失败、取消、待协调与同步故障分别展示，平均分不掩盖缺失或失败样本。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T26(#32) 的交付契约：`Scorer` 接口 + 规则版本化约定",
+        "produces": "结果查询 REST 契约 + 失败分类枚举",
+        "owned_scope": "server/src/ai-observability/evaluation/results.ts, server/src/ai-observability/routes/evaluation-routes.ts, server/tests/opik-evaluation-results.test.ts",
+        "verification": [
+          "bun test server/tests/opik-evaluation-results.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A5, A7, A9；前置 #32 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T29",
+      "plan_file": "",
+      "group": "05",
+      "group_slug": "evaluation-and-scoring",
+      "group_title": "隔离评测、评分与对比",
+      "title": "实验对比接口与兼容性判定",
+      "github_issue": 35,
+      "url": "https://github.com/1123786563/OpenBot/issues/35",
+      "depends_on": [
+        "T28"
+      ],
+      "depends_on_issues": [
+        34
+      ],
+      "acceptance_ids": [
+        "A9"
+      ],
+      "primary_repo": "openbot",
+      "what": "仅对冻结样本集与评分定义兼容的实验给出结论，否则明确解释不兼容；输出有效样本数、逐案例分数、耗时、实际 usage、退化案例与回链安全运行。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T28(#34) 的交付契约：结果查询 REST 契约 + 失败分类枚举",
+        "produces": "对比 REST 契约 + 兼容性判定规则",
+        "owned_scope": "server/src/ai-observability/evaluation/comparison.ts, server/tests/opik-comparison.test.ts",
+        "verification": [
+          "bun test server/tests/opik-comparison.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A9；前置 #34 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T30",
+      "plan_file": "",
+      "group": "05",
+      "group_slug": "evaluation-and-scoring",
+      "group_title": "隔离评测、评分与对比",
+      "title": "实验页面（提交 / 逐样本结果 / 取消）",
+      "github_issue": 36,
+      "url": "https://github.com/1123786563/OpenBot/issues/36",
+      "depends_on": [
+        "T21",
+        "T28"
+      ],
+      "depends_on_issues": [
+        27,
+        34
+      ],
+      "acceptance_ids": [
+        "A5",
+        "A7",
+        "A8"
+      ],
+      "primary_repo": "openbot",
+      "what": "创建者在双语可访问页面提交实验、查看逐样本分数与理由、区分失败类型并取消；Judge 故障不混入成功平均分。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T21(#27) 的交付契约：数据集页面组件与查询 hook 契约 | T28(#34) 的交付契约：结果查询 REST 契约 + 失败分类枚举",
+        "produces": "实验页面组件契约",
+        "owned_scope": "app/src/components/ai-observability/experiment-list.tsx, app/src/components/ai-observability/experiment-detail.tsx, app/src/lib/ai-observability/evaluations.ts, app/src/locales/en/ai-observability-evaluations.json, app/src/locales/zh-CN/ai-observability-evaluations.json, app/src/components/ai-observability/evaluation-views.test.tsx",
+        "verification": [
+          "bun test app/src/components/ai-observability/evaluation-views.test.tsx",
+          "cd app && bun run typecheck",
+          "cd app && bun run build",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A5, A7, A8；前置 #27, #34 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T31",
+      "plan_file": "",
+      "group": "05",
+      "group_slug": "evaluation-and-scoring",
+      "group_title": "隔离评测、评分与对比",
+      "title": "对比页面",
+      "github_issue": 37,
+      "url": "https://github.com/1123786563/OpenBot/issues/37",
+      "depends_on": [
+        "T29",
+        "T30"
+      ],
+      "depends_on_issues": [
+        35,
+        36
+      ],
+      "acceptance_ids": [
+        "A9"
+      ],
+      "primary_repo": "openbot",
+      "what": "创建者比较两次实验的配置差异、有效样本与退化案例，并从退化案例回到相关安全执行详情；不兼容时不声称质量赢家。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T29(#35) 的交付契约：对比 REST 契约 + 兼容性判定规则 | T30(#36) 的交付契约：实验页面组件契约",
+        "produces": "对比页面组件契约",
+        "owned_scope": "app/src/components/ai-observability/experiment-comparison.tsx, app/src/locales/en/ai-observability-evaluations.json, app/src/locales/zh-CN/ai-observability-evaluations.json, app/src/components/ai-observability/evaluation-views.test.tsx",
+        "verification": [
+          "bun test app/src/components/ai-observability/evaluation-views.test.tsx",
+          "cd app && bun run typecheck",
+          "cd app && bun run build",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A9；前置 #35, #36 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T32",
+      "plan_file": "",
+      "group": "06",
+      "group_slug": "operations-lifecycle",
+      "group_title": "运维、导出与生命周期",
+      "title": "采集入口认证与控制台/私有 API 保护",
+      "github_issue": 38,
+      "url": "https://github.com/1123786563/OpenBot/issues/38",
+      "depends_on": [
+        "T09"
+      ],
+      "depends_on_issues": [
+        15
+      ],
+      "acceptance_ids": [
+        "A4",
+        "A5",
+        "A13"
+      ],
+      "primary_repo": "openbot",
+      "what": "采集入口要求内部生产者认证；整个 Opik 控制面（含私有 API）受保护，私有 API 不能绕过应用角色检查；使用现有身份系统而非第二套 Opik 用户库；普通用户不能读取连接配置、管理诊断或凭据。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T09(#15) 的交付契约：就绪/健康查询接口 + 有界异步导出入口约定",
+        "produces": "控制面访问规则 + 内部生产者凭据发放方式",
+        "owned_scope": "server/src/ai-observability/console-auth.ts, docker/compose/opik.yml, docker/opik/collector.yaml, server/tests/opik-console-auth.test.ts",
+        "verification": [
+          "bun test server/tests/opik-console-auth.test.ts",
+          "docker compose --project-directory . -f docker/compose/opik.yml config --quiet",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A5, A13；前置 #15 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T33",
+      "plan_file": "",
+      "group": "06",
+      "group_slug": "operations-lifecycle",
+      "group_title": "运维、导出与生命周期",
+      "title": "管理员范围汇总与采集故障排查",
+      "github_issue": 39,
+      "url": "https://github.com/1123786563/OpenBot/issues/39",
+      "depends_on": [
+        "T11",
+        "T32"
+      ],
+      "depends_on_issues": [
+        17,
+        38
+      ],
+      "acceptance_ids": [
+        "A5",
+        "A6",
+        "A10",
+        "A12"
+      ],
+      "primary_repo": "openbot",
+      "what": "管理员按授权范围汇总 Bot 运行与评测；筛选故障、丢弃、延迟与未绑定记录；区分业务失败、采集不可用与尚未具备的能力；控制台访问遵守管理员范围。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标） | T32(#38) 的交付契约：控制面访问规则 + 内部生产者凭据发放方式",
+        "produces": "管理汇总 REST 契约 + 故障分类枚举",
+        "owned_scope": "server/src/ai-observability/admin-routes.ts, server/src/ai-observability/admin-summary.ts, server/tests/opik-admin-routes.test.ts",
+        "verification": [
+          "bun test server/tests/opik-admin-routes.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A5, A6, A10, A12；前置 #17, #38 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T34",
+      "plan_file": "",
+      "group": "06",
+      "group_slug": "operations-lifecycle",
+      "group_title": "运维、导出与生命周期",
+      "title": "有界异步导出与下载即时撤权",
+      "github_issue": 40,
+      "url": "https://github.com/1123786563/OpenBot/issues/40",
+      "depends_on": [
+        "T05",
+        "T11"
+      ],
+      "depends_on_issues": [
+        11,
+        17
+      ],
+      "acceptance_ids": [
+        "A4",
+        "A6",
+        "A10",
+        "A11"
+      ],
+      "primary_repo": "openbot",
+      "what": "有权用户请求运行/实验的机器可读导出并查看状态；导出不能改变正常 Agent 结果；无法建立可信绑定时不导出该 run 的业务内容；每次下载重新校验当前权限，移交或撤权后旧链接立即失效。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标）",
+        "produces": "导出任务与下载鉴权契约",
+        "owned_scope": "server/src/ai-observability/exports.ts, server/src/ai-observability/routes/export-routes.ts, server/tests/opik-exports.test.ts",
+        "verification": [
+          "bun test server/tests/opik-exports.test.ts",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A6, A10, A11；前置 #11, #17 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T35",
+      "plan_file": "",
+      "group": "06",
+      "group_slug": "operations-lifecycle",
+      "group_title": "运维、导出与生命周期",
+      "title": "保留期与真实删除验证",
+      "github_issue": 41,
+      "url": "https://github.com/1123786563/OpenBot/issues/41",
+      "depends_on": [
+        "T19",
+        "T22",
+        "T34"
+      ],
+      "depends_on_issues": [
+        25,
+        28,
+        40
+      ],
+      "acceptance_ids": [
+        "A6",
+        "A11",
+        "A12"
+      ],
+      "primary_repo": "openbot",
+      "what": "默认 7 天 trace、30 天数据集/实验且可运维调整；到期先撤销可见性、停止受影响任务、失效缓存与下载，再按可信定位清理上游与导出；上游失败保留定位与 pending/failed，仅验证实际查不到后才报告完成；不跨项目或范围影响其他 Bot。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单 | T22(#28) 的交付契约：实验记录结构 + 幂等键约定 | T34(#40) 的交付契约：导出任务与下载鉴权契约",
+        "produces": "清理状态机 + 删除证据格式",
+        "owned_scope": "server/src/ai-observability/lifecycle.ts, server/tests/opik-lifecycle.test.ts, server/tests/opik-lifecycle.integration.test.ts, docs/opik.md",
+        "verification": [
+          "bun test server/tests/opik-lifecycle.test.ts",
+          "TEST_DATABASE_URL=<isolated-pg> bun test server/tests/opik-lifecycle.integration.test.ts   # 缺 TEST_DATABASE_URL 会 skip，不得记为通过",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A6, A11, A12；前置 #25, #28, #40 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T36",
+      "plan_file": "",
+      "group": "06",
+      "group_slug": "operations-lifecycle",
+      "group_title": "运维、导出与生命周期",
+      "title": "管理员汇总页面与创建者导出状态页",
+      "github_issue": 42,
+      "url": "https://github.com/1123786563/OpenBot/issues/42",
+      "depends_on": [
+        "T13",
+        "T33",
+        "T34"
+      ],
+      "depends_on_issues": [
+        19,
+        39,
+        40
+      ],
+      "acceptance_ids": [
+        "A5",
+        "A6",
+        "A10",
+        "A11"
+      ],
+      "primary_repo": "openbot",
+      "what": "管理员在后台查看范围内汇总、健康与故障排查；创建者查看导出状态与下载；权限变化即时反映在页面上。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T13(#19) 的交付契约：详情页组件契约（步骤树在 T18 扩展同一组件） | T33(#39) 的交付契约：管理汇总 REST 契约 + 故障分类枚举 | T34(#40) 的交付契约：导出任务与下载鉴权契约",
+        "produces": "管理页面组件契约",
+        "owned_scope": "app/src/routes/_authed/admin/ai-observability.tsx, app/src/components/ai-observability/admin-overview.tsx, app/src/components/ai-observability/export-status.tsx, app/src/lib/ai-observability/admin.ts, app/src/components/admin/admin-sidebar.tsx, app/src/components/ai-observability/admin-views.test.tsx, app/src/locales/en/ai-observability-admin.json, app/src/locales/zh-CN/ai-observability-admin.json",
+        "verification": [
+          "bun test app/src/components/ai-observability/admin-views.test.tsx",
+          "cd app && bun run typecheck",
+          "cd app && bun run build",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A5, A6, A10, A11；前置 #19, #39, #40 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    },
+    {
+      "id": "T37",
+      "plan_file": "",
+      "group": "06",
+      "group_slug": "operations-lifecycle",
+      "group_title": "运维、导出与生命周期",
+      "title": "端到端验收与真实实例证据闭环",
+      "github_issue": 43,
+      "url": "https://github.com/1123786563/OpenBot/issues/43",
+      "depends_on": [
+        "T01",
+        "T02",
+        "T03",
+        "T04",
+        "T05",
+        "T06",
+        "T07",
+        "T08",
+        "T09",
+        "T10",
+        "T11",
+        "T12",
+        "T13",
+        "T14",
+        "T15",
+        "T16",
+        "T17",
+        "T18",
+        "T19",
+        "T20",
+        "T21",
+        "T22",
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27",
+        "T28",
+        "T29",
+        "T30",
+        "T31",
+        "T32",
+        "T33",
+        "T34",
+        "T35",
+        "T36"
+      ],
+      "depends_on_issues": [
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42
+      ],
+      "acceptance_ids": [
+        "A1",
+        "A13"
+      ],
+      "primary_repo": "openbot",
+      "what": "对真实自托管 Opik 跑通采集、查询、评测、ID 映射与删除的全范围验收，汇总 13 条 A 条目的证据；完成独立 Spec/代码质量 review 与全范围 OCR，无有效 critical/high/medium findings。",
+      "status": "published-ready-for-agent",
+      "handoff": {
+        "consumes": "T01(#7) 的交付契约：路由注册约定 + 请求上下文（认证用户、scope、bot 归属）注入方式 | T02(#8) 的交付契约：四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定 | T03(#9) 的交付契约：`versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名 | T04(#10) 的交付契约：`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限） | T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T06(#12) 的交付契约：`ObservationScope` 解析接口 + 两个测试 scope 的构造方式 | T07(#13) 的交付契约：表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证） | T08(#14) 的交付契约：`OpikPort` 接口 + fixture 注入方式 | T09(#15) 的交付契约：就绪/健康查询接口 + 有界异步导出入口约定 | T10(#16) 的交付契约：run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口 | T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标） | T12(#18) 的交付契约：列表组件与查询 hook 契约 | T13(#19) 的交付契约：详情页组件契约（步骤树在 T18 扩展同一组件） | T14(#20) 的交付契约：模型 span 记录接口 + usage 缺失语义 | T15(#21) 的交付契约：步骤类型枚举与「提议/执行/回执缺失」判定 | T16(#22) 的交付契约：LangGraph 侧 tracing 接入方式与版本约束 | T17(#23) 的交付契约：传播环境变量约定 + ID 映射表位置 | T18(#24) 的交付契约：步骤树组件与只读步骤查询契约 | T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单 | T20(#26) 的交付契约：案例审查/保存 REST 契约 + 脱敏语义限制说明 | T21(#27) 的交付契约：数据集页面组件与查询 hook 契约 | T22(#28) 的交付契约：实验记录结构 + 幂等键约定 | T23(#29) 的交付契约：隔离执行入口 + 工具白名单/拒绝策略 | T24(#30) 的交付契约：任务状态机 + 取消/lease 语义 | T25(#31) 的交付契约：评测侧计费准入接口 + 预算不足时的调用前拒绝语义 | T26(#32) 的交付契约：`Scorer` 接口 + 规则版本化约定 | T27(#33) 的交付契约：Judge 准入清单 + 理由安全投影 | T28(#34) 的交付契约：结果查询 REST 契约 + 失败分类枚举 | T29(#35) 的交付契约：对比 REST 契约 + 兼容性判定规则 | T30(#36) 的交付契约：实验页面组件契约 | T31(#37) 的交付契约：对比页面组件契约 | T32(#38) 的交付契约：控制面访问规则 + 内部生产者凭据发放方式 | T33(#39) 的交付契约：管理汇总 REST 契约 + 故障分类枚举 | T34(#40) 的交付契约：导出任务与下载鉴权契约 | T35(#41) 的交付契约：清理状态机 + 删除证据格式 | T36(#42) 的交付契约：管理页面组件契约",
+        "produces": "验收证据索引",
+        "owned_scope": "server/scripts/opik-acceptance.ts, tests/e2e/opik-observability.e2e.ts, docs/plans/evidence/2026-10-14-opik/final/",
+        "verification": [
+          "bun server/scripts/opik-acceptance.ts --target <opik-api> --evidence docs/plans/evidence/2026-10-14-opik/final",
+          "bun run test:ui",
+          "cd server && bun run typecheck",
+          "bunx biome lint --error-on-warnings . && bunx biome format ."
+        ],
+        "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A13；前置 #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
+        "checkpoint": ""
+      }
+    }
+  ],
+  "publication_verification": {
+    "file": "docs/plans/evidence/2026-10-14-opik/github/publication-verification-v2.json",
+    "result": "PASS",
+    "problems": [],
+    "native_subissues_on_parent": 37,
+    "native_blocked_by_edges": 89,
+    "labels_ready_for_agent": 37,
+    "parent_body_unmodified": true
+  }
+}

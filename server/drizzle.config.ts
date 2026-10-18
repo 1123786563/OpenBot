@@ -62,7 +62,6 @@ export default defineConfig({
     "./src/db/schema/passwords.ts",
     "./src/db/schema/team-bots.ts",
     "./src/db/schema/shared-use.ts",
-<<<<<<< HEAD
     "./src/db/schema/billing.ts",
     "./src/db/schema/bot-services.ts",
     "./src/db/schema/bot-binding.ts",
