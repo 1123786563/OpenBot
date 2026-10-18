@@ -658,8 +658,9 @@ export type GatewayVirtualKeyStatus = (typeof GATEWAY_VIRTUAL_KEY_STATUSES)[numb
  * carry the SAME `gateway_customer_id` (05.1's mapping), and spending is governed by that
  * customer at the gateway — issuing adds no credit grant, no ledger row, no payer account.
  * The key's own provider/budget governance is deliberately absent from the create (the customer
- * owns it); `expires_at` records the expiry the gateway was given (null until 05.5 ships the
- * configured default), and `status` is what this deployment believes — 05.8 syncs it against
+ * owns it); `expires_at` records the expiry the key was minted under (05.5: every mint
+ * carries a term — the deployment-configured TTL, 15 minutes by default; null only on
+ * records written before 05.5 or by a composition that explicitly minted termless keys), and `status` is what this deployment believes — 05.8 syncs it against
  * the gateway's own state.
  */
 export const gatewayVirtualKeys = pgTable(
@@ -686,7 +687,7 @@ export const gatewayVirtualKeys = pgTable(
       .$type<GatewayVirtualKeyStatus>()
       .notNull()
       .default("active"),
-    /** The expiry the gateway was given, or null while none was (05.5 owns the default). */
+    /** The expiry the key was minted under (05.5's term); null only on pre-05.5 records. */
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

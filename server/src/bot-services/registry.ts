@@ -5,20 +5,24 @@ import type {
   CredentialStore,
 } from "../credentials";
 import type { Database } from "../db/client";
-import {
-  createAccessGrantService,
-  type AccessGrantService,
-} from "./access-grants";
-import { bindingCodeRoutes, createBindingOfferIssuer } from "./binding-codes";
+import { CredentialBundleUnavailableError } from "../gateway/credential-bundle";
+import { gatewayEndpointControls } from "../gateway/endpoint-config";
 import {
   createDeploymentKeyIssuer,
   createKeyIssuanceRoutes,
 } from "../gateway/key-issuance";
+import { gatewayModelCapabilityFilterControls } from "../gateway/model-capability-filter";
+import { mappedModelCapabilities } from "../gateway/model-selection-routes";
+import {
+  type AccessGrantService,
+  createAccessGrantService,
+} from "./access-grants";
 import { createBotServiceAuthenticator } from "./auth";
+import { bindingCodeRoutes, createBindingOfferIssuer } from "./binding-codes";
 import type { BotServiceCredentialService } from "./service-credentials";
 import { createBotServiceCredentialService } from "./service-credentials";
-import { createBotServiceStore } from "./store";
 import type { BotServiceStore } from "./store";
+import { createBotServiceStore } from "./store";
 
 /**
  * The bot service registry as app.ts receives it: the 04.1 store every existing reader uses,
@@ -94,6 +98,35 @@ export function createBotServiceRegistry(
         modelAccess,
         auditStore: dependencies.auditStore,
       }).issueKeyForGrant,
+      // 05.4's bundle sides, read live at claim time: the endpoint this deployment answers
+      // at (01.1) and the Bot's own selectable refs — 03.11's exact mapping
+      // (mappedModelCapabilities over the live registry record, attributed to the Bot
+      // service), never a re-derivation. A missing control refuses; nothing is guessed.
+      bundle: {
+        readGatewayEndpoint: async () =>
+          (await gatewayEndpointControls()?.readGatewayEndpoint()) ?? undefined,
+        listSelectableModels: async (botId) => {
+          const filter = gatewayModelCapabilityFilterControls();
+          if (!filter) {
+            throw new CredentialBundleUnavailableError(
+              "bundle_models_unavailable",
+              "The model catalog is not available, so the credential bundle cannot be completed.",
+            );
+          }
+          const bot = await store.getBotService(botId);
+          if (bot?.status !== "active") {
+            throw new CredentialBundleUnavailableError(
+              "bundle_models_unavailable",
+              "The bot service record is not readable, so the credential bundle cannot be completed.",
+            );
+          }
+          const selection = await filter.listSelectableModels(
+            mappedModelCapabilities(bot.capabilities),
+            { kind: "bot_service", id: botId },
+          );
+          return selection.selectable;
+        },
+      },
     }),
   };
 }
