@@ -1,5 +1,5 @@
 {
- "generatedBy": "scripts/e2e-add-driven.mjs",
+ "generatedBy": "scripts/e2e-batch-drive-bun-test.mjs",
  "groups": [
   {
    "name": "agent-computer/tests",
