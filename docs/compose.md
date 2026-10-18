@@ -230,7 +230,7 @@ forced because Django signs sessions with it; everything keeps seven days.
 ## Validating a change
 
 ```sh
-bun test tests/compose.test.ts
+bunx e2e run --config e2e.unit.config.ts tests/compose.test.ts
 docker compose config --quiet                                              # main (+ override)
 docker compose --project-directory . -f docker/compose/kb.yml config --quiet   # and the other three
 ```

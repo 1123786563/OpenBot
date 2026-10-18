@@ -24,15 +24,15 @@
 
 ```bash
 # 1. server 侧（⚠️ 必须在 server/ 目录、带 TEST_DATABASE_URL，否则 DB 用例报 error）
-cd server
 TEST_DATABASE_URL="postgres://openbot:openbot@127.0.0.1:5432/openbot_enterprise_test" \
-bun test tests/workshop-*.test.ts tests/schedule-*.test.ts tests/sandbox-*.test.ts
+E2E_UNIT_SCOPE=server bunx e2e run --config e2e.unit.config.ts \
+  server/tests/workshop-*.test.ts server/tests/schedule-*.test.ts server/tests/sandbox-*.test.ts
 
-# 2. 沙箱侧（⚠️ 只走 npm script，--isolate 已固化；裸跑 bun test 会随机挂）
-cd ../agent-sandbox && bun run test
+# 2. 沙箱侧（同样由根目录的 e2e 收集；这些套件依赖 Bun 运行时，由 e2e 调度、bun 执行）
+cd .. && E2E_UNIT_SCOPE=agent-sandbox bun run test
 
 # 3. 前端流机器
-cd ../app && bun test src/lib/workshop/
+cd .. && E2E_UNIT_SCOPE=app bunx e2e run --config e2e.unit.config.ts app/src/lib/workshop
 
 # 4. 类型门禁（可选，三侧零错）
 cd ../server && bunx tsc --noEmit -p tsconfig.json

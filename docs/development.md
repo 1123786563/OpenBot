@@ -156,6 +156,34 @@ They refuse to use the application `openbot` database. `DATABASE_URL` is still t
 
 CI uses `bun run test:ci` to verify the expected test count in addition to normal tests.
 
+### 测试运行器：tester-army `e2e`
+
+`bun run test` 就是 `e2e run --config e2e.unit.config.ts`。收集、钩子、断言、报告与退出码全部由
+[e2e](https://github.com/tester-army/e2e) 负责；浏览器套件仍是 `bun run test:ui`（`e2e.config.ts` 的
+web target），两者用 `--config` 分开选择。
+
+```sh
+bun run test                                        # 单元 + 集成（tools-only target，不开浏览器、不调用模型）
+E2E_UNIT_SCOPE=app,server bun run test              # 只收集这两个目录：整套收集一次要几分钟
+bunx e2e run --config e2e.unit.config.ts tests/compose.test.ts   # 只跑一个文件
+node scripts/e2e-report-summary.mjs .e2e/unit/report.json        # 按失败原因分组看结果
+```
+
+套件文件从 `tests/support/e2e-compat` 取 `test`/`describe`/`expect`/`mock`/`spyOn`，不要直接
+`import from "bun:test"`（那会把用例留在旧运行器里，`bun run test` 不再收集它们）。兼容层只补
+`e2e` 文档明确不提供的部分：`toThrow`/`rejects`/`resolves`/`toBeInstanceOf`/类型断言/mock 调用断言、
+`test.each`、`mock.module`、Bun 风格的 spy 与假时钟；能被 `e2e` 原生表达的绝不自己实现。
+
+依赖 Bun 运行时本身的套件（server 的 SQL/HTTP 层、`bun:` 协议、Bun 加载器行为、可写的 ESM
+namespace）继续以 `bun test` 执行，但由 e2e 调度与报告：清单在
+`docs/verification/e2e-bun-suites.json`，它们从 `tests/support/bun-test-compat` 取同样的 API，
+`tests/bun-suites.test.ts` 按组跑并把 bun 的用例数与失败文本折进一条 e2e 断言（用例数为 0 判失败）。
+清单由逐文件收集审计生成，`scripts/e2e-partition-fix-loop.mjs` 负责在依赖变化后把它收敛回干净；
+分区落定后用 `node scripts/e2e-apply-partition.mjs` 双向改写导入，可重复执行。
+
+新增 matcher 或运行时能力时先看 `e2e` 的文档（`node_modules/e2e/docs`），再决定是补兼容层还是改清单，
+不要静默地把本该原生跑的套件推到 Bun 侧藏问题。
+
 `bun run test:smoke` is separate and needs a deployment that is up, and a session on it:
 
 ```sh
