@@ -286,6 +286,15 @@ function readStoredCases(
     ) {
       continue;
     }
+    // R4-29: two records claiming the same base index is corruption that reached the
+    // store (write-side settleCompleted does not enforce uniqueness). The guard
+    // discipline holds here too — damage to report, never content to interpret — so
+    // a repeated index damages the whole case instead of the last write silently
+    // reinterpreting which record is the truth.
+    if (cases.has(record.index)) {
+      cases.set(record.index, "damaged");
+      continue;
+    }
     const status = record.status;
     if (status !== "completed" && status !== "failed" && status !== "unknown") {
       cases.set(record.index, "damaged");
