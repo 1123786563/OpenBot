@@ -1,4 +1,4 @@
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import type { ComputerCapacity } from "../src/computer/capacity";
 import { computerCapacity } from "../src/computer/capacity";

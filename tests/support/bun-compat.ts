@@ -283,15 +283,20 @@ function serve(options: {
   });
   const port = options.port ?? 0;
   server.listen(port, options.hostname ?? "127.0.0.1");
+  // `port` must be read after the bind: a suite asks for 0 to get an ephemeral port and then builds
+  // the URL it will fetch, so a snapshot of the requested value hands back `http://127.0.0.1:0`.
+  const boundPort = () => {
+    const address = server.address();
+    return typeof address === "object" && address ? address.port : port;
+  };
   const api = {
     fetch,
-    port,
+    get port() {
+      return boundPort();
+    },
     hostname: options.hostname ?? "127.0.0.1",
     get url() {
-      const address = server.address();
-      const actual =
-        typeof address === "object" && address ? address.port : port;
-      return `http://${options.hostname ?? "127.0.0.1"}:${actual}`;
+      return `http://${options.hostname ?? "127.0.0.1"}:${boundPort()}`;
     },
     stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };

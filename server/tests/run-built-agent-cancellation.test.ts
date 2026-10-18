@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "../../tests/support/e2e-compat";
+import { expect, spyOn, test } from "../../tests/support/bun-test-compat";
 import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { EventType, HttpAgent } from "@ag-ui/client";
 import { LLMock } from "@copilotkit/aimock";

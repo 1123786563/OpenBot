@@ -1,4 +1,4 @@
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { generateKeyPairSync } from "node:crypto";
 import { component, verifySignature } from "http-message-sig";
 import { signerFromJWK, verifierFromJWK } from "web-bot-auth/crypto";

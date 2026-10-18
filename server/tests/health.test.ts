@@ -1,4 +1,4 @@
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { createApp } from "../src/app";
 import { loadConfig } from "../src/config";
 import { testEnvironment } from "./support/environment";

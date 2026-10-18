@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "../../tests/support/e2e-compat";
+import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { loadCraftConfig } from "../src/craft/config";
 import { createCraftMcpRelayApp } from "../src/craft/mcp-relay";
 import { craftMcpRelayUrl } from "../src/craft/mcp-servers";

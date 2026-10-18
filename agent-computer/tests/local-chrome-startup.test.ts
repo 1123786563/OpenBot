@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { dirname, join } from "node:path";
 import { createServer } from "node:net";
 import {

@@ -1,4 +1,4 @@
-import { expect, test } from "../../tests/support/e2e-compat";
+import { expect, test } from "../../tests/support/bun-test-compat";
 import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";

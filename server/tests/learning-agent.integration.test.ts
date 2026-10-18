@@ -1,4 +1,4 @@
-import { expect, test } from "../../tests/support/e2e-compat";
+import { expect, test } from "../../tests/support/bun-test-compat";
 import { LLMock } from "@copilotkit/aimock";
 import { CopilotKitIntelligence } from "@copilotkit/runtime/v2";
 import { buildAgents, type RuntimeModel } from "../src/copilot";

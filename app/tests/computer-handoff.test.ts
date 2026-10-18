@@ -1,5 +1,5 @@
 import "./preload";
-import { afterEach, beforeEach, expect, type Mock, spyOn, test } from "../../tests/support/e2e-compat";
+import { afterEach, beforeEach, expect, type Mock, spyOn, test } from "../../tests/support/bun-test-compat";
 import type {
   ComputerControlState,
   HandoffStatus,

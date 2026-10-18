@@ -21,6 +21,8 @@ const arg = (name, fallback) => {
   return hit ? hit.slice(name.length + 3) : fallback;
 };
 const report = resolve(root, arg("report", ".e2e/unit/report.json"));
+const verdicts = resolve(root, arg("verdicts", "docs/verification/e2e-vs-bun.json"));
+const byVerdict = arg("verdict", "");
 const apply = process.argv.includes("--apply");
 
 // Bun's own bindings, loader behaviour, and the writable-module semantics Node refuses.
@@ -41,27 +43,43 @@ const RUNTIME_GAP = [
   /Cannot find package ['"]@tauri-apps/,
 ];
 
-if (!existsSync(report)) {
-  console.error(`no report at ${report}; run \`bun run test\` first`);
-  process.exit(2);
-}
-
-const run = JSON.parse(readFileSync(report, "utf8")).run;
+const run = existsSync(report)
+  ? JSON.parse(readFileSync(report, "utf8")).run
+  : null;
 const manifest = readManifest();
 // The driver is the e2e test that runs the Bun tier, so its own failures quote a driven suite's
 // message. Routing it would move the scheduler onto the runtime it schedules.
 const DRIVER = "tests/bun-suites.test.ts";
 const hits = new Map();
-for (const result of run.results ?? []) {
-  if (result.status === "passed" || result.status === "skipped") continue;
-  if (result.file === DRIVER) continue;
-  const attempt = result.attempts?.[result.attempts.length - 1];
-  const message = String(attempt?.error?.message ?? "");
-  const pattern = RUNTIME_GAP.find((candidate) => candidate.test(message));
-  if (!pattern) continue;
-  const entry = hits.get(result.file) ?? { pattern: String(pattern), count: 0, message };
-  entry.count++;
-  hits.set(result.file, entry);
+if (byVerdict) {
+  // `scripts/e2e-vs-bun.mjs` has already answered the harder question: the same suite text against
+  // the same production code, old runner green and new runner red. That verdict is the evidence.
+  const parsed = JSON.parse(readFileSync(verdicts, "utf8"));
+  for (const row of parsed.rows ?? []) {
+    if (row.verdict !== byVerdict || row.file === DRIVER) continue;
+    hits.set(row.file, {
+      pattern: `attributed ${byVerdict}`,
+      count: row.e2eFailures ?? 0,
+      message: row.e2eFirst ?? "",
+    });
+  }
+} else {
+  if (!run) {
+    console.error(`no report at ${report}; run \`bun run test\` first`);
+    process.exit(2);
+  }
+  for (const result of run.results ?? []) {
+    if (result.status === "passed" || result.status === "skipped") continue;
+    if (result.file === DRIVER) continue;
+    const attempt = result.attempts?.[result.attempts.length - 1];
+    const message = String(attempt?.error?.message ?? "");
+    const pattern = RUNTIME_GAP.find((candidate) => candidate.test(message));
+    if (!pattern) continue;
+    const entry =
+      hits.get(result.file) ?? { pattern: String(pattern), count: 0, message };
+    entry.count++;
+    hits.set(result.file, entry);
+  }
 }
 
 const fresh = [...hits].filter(

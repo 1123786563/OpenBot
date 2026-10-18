@@ -14,7 +14,7 @@
  * because the API's global trace slot is process-wide and a shut-down provider
  * records nothing — the shared/trace test suite's pattern, reused here.
  */
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { trace } from "@opentelemetry/api";
 import { createAgentFetch } from "../src/agents/endpoint";
 import { createComputerTransport } from "../src/computer/client";

@@ -1,6 +1,6 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "../../tests/support/e2e-compat";
+import { expect, test } from "../../tests/support/bun-test-compat";
 import { HttpAgent, type RunAgentInput, type Tool } from "@ag-ui/client";
 import { lastValueFrom, toArray } from "rxjs";
 import { RemoteLearnedSkillsMiddleware } from "../src/learning/remote";

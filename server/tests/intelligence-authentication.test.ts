@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "../../tests/support/e2e-compat";
+import { afterEach, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { Hono } from "hono";
 import {
   clearDesktopConnectionFailure,

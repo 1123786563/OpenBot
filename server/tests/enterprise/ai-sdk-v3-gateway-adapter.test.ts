@@ -1,4 +1,4 @@
-import { describe, expect, test } from "../../../tests/support/e2e-compat";
+import { describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { streamText, tool } from "ai";
 import { z } from "zod";
 import { createAiSdkV3GatewayAdapter } from "../../src/enterprise/models/ai-sdk-v3-gateway-adapter";
