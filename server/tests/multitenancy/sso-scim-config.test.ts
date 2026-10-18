@@ -22,7 +22,7 @@
 // 加三个受限角色 URL；缺配置时整套显式 skip（跳过原因写在用例名里），绝不
 // 回退开发库。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { createSsoScimFixture, type SsoScimFixture } from "./support/sso-scim";
 
 function probeEnvironment(): { ok: true } | { ok: false; reason: string } {

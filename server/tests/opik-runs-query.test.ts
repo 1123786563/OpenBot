@@ -18,7 +18,7 @@
 //      Opik, and two scopes holding the same resource ids stay isolated.
 //   5. an unavailable upstream answers with an explainable error code, never a
 //      disguised empty list.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AgentProfile } from "../src/agents/profile-types";

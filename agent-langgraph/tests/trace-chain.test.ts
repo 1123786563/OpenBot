@@ -12,7 +12,7 @@
  * propagation machinery, because the thing under test IS the machinery's wiring.
  */
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { readFileSync } from "node:fs";
 import { context, trace } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";

@@ -5,7 +5,7 @@
 // 变体、企业入口两条装配线、kb 服务入口），缺口报告随入口增删变化，缺
 // 少测试数据库配置时命令仍可运行且数据库阶段显式跳过。
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../tests/support/bun-test-compat";
 import {
   buildInventory,
   classifyPath,

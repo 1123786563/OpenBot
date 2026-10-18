@@ -1,6 +1,6 @@
-import { afterAll, afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
-import type { TransactionSQL } from "bun";
+import type { TransactionSQL } from "../../tests/support/bun-compat";
 import { and, eq, like } from "drizzle-orm";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";
 import { createExecutionBudgetPrecheck } from "../src/ai-observability/execution-billing";

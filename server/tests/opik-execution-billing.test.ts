@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { exactTokensOf } from "../src/ai-observability/execution-billing";
 
 /**

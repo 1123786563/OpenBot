@@ -15,7 +15,7 @@
 //     ownership seam per request): absent bindings stays unmounted while the reads
 //     still answer — "absent = not mounted" per sub-router, never a fallback guess;
 //   - a caller the manage gate refuses learns nothing, exactly like every other seam.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AgentActor, AgentProfile } from "../src/agents/profile-types";

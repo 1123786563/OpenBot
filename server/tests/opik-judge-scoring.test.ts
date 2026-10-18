@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { FrozenDatasetCase } from "../src/ai-observability/datasets";
 import type { EvaluationModelCall } from "../src/ai-observability/execution-runner";
 import type {

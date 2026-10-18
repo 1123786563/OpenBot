@@ -25,7 +25,7 @@
 // （migrate-test.ts）真实执行，本文件不自建表。夹具用固定 id/created_at，
 // 同一测试库跨套件重跑保持稳定；锚点行是交付状态，afterAll 不删除。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { like, sql } from "drizzle-orm";
 import {
   buildPlan,

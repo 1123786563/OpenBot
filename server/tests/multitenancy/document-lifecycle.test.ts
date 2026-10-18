@@ -19,7 +19,7 @@
 // 迁移链按 brief 依赖序幂等 apply（MT004→…→MT070，十六任务）；KB 库经
 // drizzle-kb journal 幂等迁移。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

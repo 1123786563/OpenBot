@@ -9,7 +9,7 @@
 //   4. an Opik failure keeps the true collection state without failing the
 //      request — the summary is a bypass query, and it never writes;
 //   5. no migration: everything reads the tables T07/T19/T22/T34 already own.
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";

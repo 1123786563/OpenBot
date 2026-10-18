@@ -23,7 +23,7 @@
 //     TEAM_PUBLIC_ACTION_FORBIDDEN，依赖无效拒绝为 DEPENDENCY_INVALID
 //     （指明依赖种类与引用）——可解释且不新增泄露。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

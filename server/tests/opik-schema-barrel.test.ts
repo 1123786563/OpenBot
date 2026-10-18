@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import * as schema from "../src/db/schema";
 
 /**

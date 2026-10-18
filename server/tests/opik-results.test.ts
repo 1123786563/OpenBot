@@ -17,7 +17,7 @@
 //      guessed experiment, dataset version or execution id is simply not found.
 //   4. the result link is unfakeable: an execution that does not name this experiment is
 //      not found, and no client input ever names a scope.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AgentProfile } from "../src/agents/profile-types";

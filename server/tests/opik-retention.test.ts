@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { join } from "node:path";
 import { createOpikHttpPort } from "../src/ai-observability/opik-http";
 import {
@@ -20,6 +20,11 @@ import {
   resolveStorageLocator,
 } from "../src/ai-observability/scope";
 
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+
 /**
  * The pure contract of the retention pipeline (Issue #41 / DAG T35), no database:
  * the deployment bounds and their fail-closed parsing, the expiry boundary
@@ -30,7 +35,7 @@ import {
 
 const manifest = (await Bun.file(
   join(
-    import.meta.dir,
+    hereDir,
     "../src/ai-observability/opik-contract/47-manifest.json",
   ),
 ).json()) as VerifiedOpikContract;

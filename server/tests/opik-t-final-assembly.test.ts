@@ -23,7 +23,7 @@
 // Integration facts run against the dedicated Opik test database; the wiring
 // guards read the real assembly source the way opik-execution-wiring.test.ts
 // does, so the seam BETWEEN the modules and the boot file cannot silently rot.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AbstractAgent, BaseEvent } from "@ag-ui/client";
@@ -58,6 +58,11 @@ import {
   withRunObservationScope,
 } from "../src/observation-run-scope";
 import { opikTestDatabase } from "./support/opik-test-db";
+
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 const database = opikTestDatabase({ max: 4 });
 
@@ -495,7 +500,7 @@ describe("T-final M1: the ambient run-scope seam", () => {
 
 describe("T-final M1: the boot assembly reads the ambient scope", () => {
   const indexSource = readFileSync(
-    join(import.meta.dir, "..", "src", "index.ts"),
+    join(hereDir, "..", "src", "index.ts"),
     "utf8",
   );
 
@@ -718,7 +723,7 @@ describe("T-final M1: createActorAgentResolver threads the run scope (behavior)"
     // production createActorAgentResolver call. The forwarding itself is
     // pinned by the behavior tests above, not by this text.
     const assemblySource = readFileSync(
-      join(import.meta.dir, "..", "src", "index.ts"),
+      join(hereDir, "..", "src", "index.ts"),
       "utf8",
     );
     expect(assemblySource).toMatch(
@@ -813,7 +818,7 @@ describe("T-final M2: the contract manifest is a server asset with a boot voice"
 
 describe("T-final L3: one billing gate, two consumers", () => {
   const indexSource = readFileSync(
-    join(import.meta.dir, "..", "src", "index.ts"),
+    join(hereDir, "..", "src", "index.ts"),
     "utf8",
   );
 

@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import "../../../tests/preload";
+import { describe, expect, test } from "../../../../tests/support/bun-test-compat";
 import enAdmin from "../../locales/en/ai-observability-admin.json";
 import enDatasets from "../../locales/en/ai-observability-datasets.json";
 import enEvaluations from "../../locales/en/ai-observability-evaluations.json";

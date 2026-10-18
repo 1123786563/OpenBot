@@ -9,7 +9,7 @@
 // summary mounts appearing only with their deps), the background reauthorization
 // seam the export worker boots with, and the control-plane cancel seam the admin
 // people-revocation route calls.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MiddlewareHandler } from "hono";
@@ -31,6 +31,11 @@ import { createApp } from "../src/app";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { loadConfig } from "../src/config";
 import { testEnvironment } from "./support/environment";
+
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 const owner = { id: "user-owner", role: "user" } as const;
 const admin = { id: "user-admin", role: "admin" } as const;
@@ -394,7 +399,7 @@ describe("the T01 mount seam (Part 2 wiring)", () => {
     // the filter that would enforce it.
     const source = readFileSync(
       join(
-        import.meta.dir,
+        hereDir,
         "..",
         "src",
         "ai-observability",
@@ -411,7 +416,7 @@ describe("the T01 mount seam (Part 2 wiring)", () => {
     // Bot hidden from the caller's sidebar is still in the admin summary's
     // scope (the per-bot manage gate downstream re-checks authorization).
     const indexSource = readFileSync(
-      join(import.meta.dir, "..", "src", "index.ts"),
+      join(hereDir, "..", "src", "index.ts"),
       "utf8",
     );
     expect(indexSource).toMatch(

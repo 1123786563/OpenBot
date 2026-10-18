@@ -15,7 +15,7 @@
 //   4. the canary: denied content is refused by the projection, never echoed — not
 //      in the preview, not in the frozen cases, not in the audit payload.
 //   5. scope discipline matches T11/T19: forged scopes and unbound runs learn nothing.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { readFile } from "node:fs/promises";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";

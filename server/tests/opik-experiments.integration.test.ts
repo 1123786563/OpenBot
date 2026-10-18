@@ -1,7 +1,7 @@
-import { afterAll, afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
-import type { TransactionSQL } from "bun";
-import { SQL } from "bun";
+import type { TransactionSQL } from "../../tests/support/bun-compat";
+import { SQL } from "../../tests/support/bun-compat";
 import { eq } from "drizzle-orm";
 import { REDACTION_POLICY_VERSION } from "../../shared/ai-observability";
 import { ObservationScopeError } from "../src/ai-observability/contracts";

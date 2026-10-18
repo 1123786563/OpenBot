@@ -14,7 +14,7 @@
 //   4. the step typing reads event/callback semantics only — the classification
 //      module imports no framework, public or private.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { readFileSync } from "node:fs";
 import type { BaseEvent } from "@ag-ui/client";
 import { context, trace } from "@opentelemetry/api";

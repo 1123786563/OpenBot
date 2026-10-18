@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -18,6 +18,15 @@ import {
   resolveStorageLocator,
   scopeKey,
 } from "../src/ai-observability/scope";
+
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
+const nodeRequire = createRequire(import.meta.url);
+
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 const STATUS: Record<ObservationScopeErrorCode, 400 | 401 | 403> = {
   AUTH_REQUIRED: 401,
@@ -188,7 +197,7 @@ describe("assertObservationScope — process-internal trust", () => {
   });
 
   test("the module exports no unsafe issuance escape hatch", () => {
-    const exports = Object.keys(require("../src/ai-observability/scope"));
+    const exports = Object.keys(nodeRequire("../src/ai-observability/scope"));
     expect(
       exports.filter((name) => /unsafe|internal|forge|bypass|raw/i.test(name)),
     ).toEqual([]);
@@ -317,11 +326,11 @@ describe("two trusted scopes over identical resource ids", () => {
 
 describe("no premature tenant model", () => {
   const scopeSource = readFileSync(
-    join(import.meta.dir, "..", "src", "ai-observability", "scope.ts"),
+    join(hereDir, "..", "src", "ai-observability", "scope.ts"),
     "utf8",
   );
   const contractsSource = readFileSync(
-    join(import.meta.dir, "..", "src", "ai-observability", "contracts.ts"),
+    join(hereDir, "..", "src", "ai-observability", "contracts.ts"),
     "utf8",
   );
 

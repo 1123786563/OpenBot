@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import "./preload";
+import { expect, test } from "../../tests/support/bun-test-compat";
 import i18next from "i18next";
 // Side effect: initializes i18next, so the assertions below run against the real registration.
 import "@/lib/i18n";

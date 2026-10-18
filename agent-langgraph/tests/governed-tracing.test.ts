@@ -13,7 +13,7 @@
  * directory, so its tests cannot depend on it either).
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { readFileSync } from "node:fs";
 import type { BaseEvent } from "@ag-ui/core";
 import type { Serialized } from "@langchain/core/load/serializable";

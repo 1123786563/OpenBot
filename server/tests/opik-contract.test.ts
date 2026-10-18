@@ -3,7 +3,7 @@
 // sanitizer against deterministic fixtures. They never touch the network: the real
 // gate is `bun server/scripts/opik-contract.ts --target ... --evidence ...` against
 // a running isolated Opik instance, whose output is preserved as evidence.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { join } from "node:path";
 import { loadSecretCanaries } from "../scripts/opik-contract";
 import {
@@ -17,8 +17,13 @@ import {
   validateContract,
 } from "./support/opik-contract-fixtures";
 
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+
 const versionsJson = await Bun.file(
-  join(import.meta.dir, "../../docker/opik/versions.json"),
+  join(hereDir, "../../docker/opik/versions.json"),
 ).json();
 
 describe("versions manifest parser", () => {

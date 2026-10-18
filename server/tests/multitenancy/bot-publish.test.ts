@@ -18,7 +18,7 @@
 // visibility 回 NULL；显式迁移复用冻结的 MT008 manifest 入口。无新表/列/
 // 授权——既有文件零改动，三个新文件（模块 + 测试 + 夹具）。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";

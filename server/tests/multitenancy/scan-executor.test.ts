@@ -21,7 +21,7 @@
 // 环境契约：专用企业测试库（w14b），缺显式 env 整套显式 skip，绝不回退开发
 // 库、skipped 不计通过。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { and, eq } from "drizzle-orm";
 import { jobLeases, jobOwnership } from "../../src/db/schema/job-ownership";
 import type { PlatformScope } from "../../src/enterprise/contracts";

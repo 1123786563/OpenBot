@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { SafeText, SafeValue } from "../../shared/ai-observability";
 import { freezeExperimentConfig } from "../src/ai-observability/experiments";
 import {

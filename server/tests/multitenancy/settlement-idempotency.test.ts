@@ -13,7 +13,7 @@
 // 归属经 MT070 的 company-reservation seam 预扣。本套件零生产代码修改：
 // 它证明带 billing_call_attributions 归属后，既有幂等与金额保证分毫未变。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { eq } from "drizzle-orm";
 import { createCompanyReservationService } from "../../src/billing/company-reservation";
 import {

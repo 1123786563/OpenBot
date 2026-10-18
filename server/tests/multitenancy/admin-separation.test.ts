@@ -18,7 +18,7 @@
 // 加三个受限角色 URL；缺配置时数据库用例显式 skip（理由写在用例名里），
 // 绝不回退开发库，skipped 不计为通过。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { sql } from "drizzle-orm";
 import type { Context } from "hono";
 import { buildInventory } from "../../scripts/multitenancy/inventory";

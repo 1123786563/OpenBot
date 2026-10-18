@@ -6,7 +6,7 @@
 // every adversarial behavior — never-resolving fetch, timeout, 5xx, malformed JSON, partial
 // envelopes, stale contract, ownership drift — is injected, never dialed. Live-instance
 // acceptance against a real self-hosted Opik belongs to #43, not this file.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { join } from "node:path";
 import type { SafeRecord, SafeText } from "../../shared/ai-observability";
 import { ObservationScopeError } from "../src/ai-observability/contracts";
@@ -26,9 +26,14 @@ import {
 } from "../src/ai-observability/scope";
 import { VERIFIED_TRACE_CREATE_BODY_KEYS } from "./support/opik-contract-fixtures";
 
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+
 const manifest = (await Bun.file(
   join(
-    import.meta.dir,
+    hereDir,
     "../src/ai-observability/opik-contract/47-manifest.json",
   ),
 ).json()) as VerifiedOpikContract;

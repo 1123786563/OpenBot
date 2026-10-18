@@ -16,7 +16,7 @@
 // 环境契约：同 sso-scim-config.test.ts——缺显式 env 整套显式 skip，绝不回退
 // 开发库。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { createSsoScimFixture, type SsoScimFixture } from "./support/sso-scim";
 
 function probeEnvironment(): { ok: true } | { ok: false; reason: string } {

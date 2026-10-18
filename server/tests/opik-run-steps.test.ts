@@ -16,7 +16,7 @@
 //      arrives claiming success;
 //   4. an unavailable or lying upstream answers with the explainable codes, never a
 //      disguised empty timeline.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AgentProfile } from "../src/agents/profile-types";

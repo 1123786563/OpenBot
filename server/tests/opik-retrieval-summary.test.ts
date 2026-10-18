@@ -14,7 +14,7 @@
 //      the way the real read-back observed it),
 //   5. the production steps projection (T18-server) over that row.
 // No database, no network; the only fakes are the HTTP transport below and the read-side port.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { join } from "node:path";
 import type { RunBinding } from "../src/ai-observability/bindings";
 import type { OpikConfig } from "../src/ai-observability/config";
@@ -28,9 +28,14 @@ import { createRunsQueryService } from "../src/ai-observability/queries/runs";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import { createToolStepRecorder } from "../src/ai-observability/tool-steps";
 
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+
 const manifest = (await Bun.file(
   join(
-    import.meta.dir,
+    hereDir,
     "../src/ai-observability/opik-contract/47-manifest.json",
   ),
 ).json()) as VerifiedOpikContract;

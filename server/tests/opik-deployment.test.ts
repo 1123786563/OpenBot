@@ -1,11 +1,16 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import versions from "../../docker/opik/versions.json";
 
-const repoRoot = join(import.meta.dir, "..", "..");
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+
+const repoRoot = join(hereDir, "..", "..");
 const compose = readFileSync(join(repoRoot, "docker/compose/opik.yml"), "utf8");
 
 const FLOATING = ["latest", "stable", "edge", "main", "master", "dev"];

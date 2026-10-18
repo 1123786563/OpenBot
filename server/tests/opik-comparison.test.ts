@@ -16,7 +16,7 @@
 //      codes stay the T28 vocabulary — unknown stays unknown, nothing is explained away.
 //   4. both sides pass the current scope/Bot authorization; rule experiments compare without
 //      any model judge.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AgentProfile } from "../src/agents/profile-types";

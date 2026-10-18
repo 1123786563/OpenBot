@@ -11,7 +11,7 @@
 //   3. a refusal or settlement failure is never recorded as a successful span.
 //   4. span input/output reach the write queue only through the T05 redaction projection;
 //      a canary planted in the observation cannot survive into a real span instance.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { context, trace } from "@opentelemetry/api";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import type { OpikObservationWrite } from "../src/ai-observability/health";

@@ -15,7 +15,7 @@
  * coverage. No identity-matrix business case lives here (that is MT132+).
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -36,8 +36,13 @@ import {
   registerIsolationDomain,
 } from "./support/scenarios";
 
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+
 const REAL_ENV: Record<string, string | undefined> = { ...process.env };
-const REPO_ROOT = resolve(import.meta.dir, "../../..");
+const REPO_ROOT = resolve(hereDir, "../../..");
 
 /**
  * The setup URL of THIS process's environment, re-parsed here independently

@@ -5,7 +5,7 @@
 // 三个受限角色 URL 缺一整套显式 skip（带理由），绝不回退开发库；
 // skipped 不计通过。全部断言跑在真实受限角色与真实 RLS 上。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import {

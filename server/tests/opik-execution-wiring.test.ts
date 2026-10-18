@@ -1,6 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /**
  * The production wiring guard (T-routes review H1): the one boot assembly in
@@ -14,7 +19,7 @@ import { join } from "node:path";
  * red before a deployment can.
  */
 const indexSource = readFileSync(
-  join(import.meta.dir, "..", "src", "index.ts"),
+  join(hereDir, "..", "src", "index.ts"),
   "utf8",
 );
 

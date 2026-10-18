@@ -18,7 +18,7 @@
 // Both the injected-port readiness mapping and the integrated HTTP adapter's 401/5xx
 // status behavior are covered below; the adapter tests exercise an injected transport,
 // never a live Opik instance or real write.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { opikConfigFromEnv } from "../src/ai-observability/config";
@@ -36,9 +36,14 @@ import type {
 import { createAiObservabilityRoutes } from "../src/ai-observability/routes";
 import { createAiObservabilityHealthRoutes } from "../src/ai-observability/routes/health";
 
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+
 const manifest = (await Bun.file(
   join(
-    import.meta.dir,
+    hereDir,
     "../src/ai-observability/opik-contract/47-manifest.json",
   ),
 ).json()) as VerifiedOpikContract;

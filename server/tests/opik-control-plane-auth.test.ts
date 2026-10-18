@@ -10,7 +10,7 @@
  *
  * These tests never touch process.env, the network, or a real Opik instance.
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { inspect } from "node:util";
@@ -20,6 +20,11 @@ import {
   type ControlPlaneResource,
   InternalProducerCredential,
 } from "../src/ai-observability/control-plane-auth";
+
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 const CODE_STATUS: Record<ControlPlaneAuthErrorCode, 401 | 403> = {
   AUTH_REQUIRED: 401,
@@ -325,7 +330,7 @@ describe("producer authentication cannot bypass application role checks", () => 
 describe("no second Opik user database", () => {
   const source = readFileSync(
     join(
-      import.meta.dir,
+      hereDir,
       "..",
       "src",
       "ai-observability",

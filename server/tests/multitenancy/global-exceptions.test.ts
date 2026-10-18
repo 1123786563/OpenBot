@@ -10,7 +10,7 @@
 // 登记表（GLOBAL_EXCEPTION_ENTRIES）是 MT128 例外登记闭合要消费的登记面：
 // 本票负责让它显式、有理由、有责任人，并与启动校验（readiness）闭环。
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -40,7 +40,12 @@ import {
 } from "../../src/provider-oauth";
 import { testEnvironment } from "../support/environment";
 
-const SERVER_ROOT = resolve(import.meta.dir, "../..");
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
+
+const SERVER_ROOT = resolve(hereDir, "../..");
 
 // ---------------------------------------------------------------------------
 // AC1 — 例外清单是显式登记而非默认放行

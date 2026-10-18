@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { FrozenDatasetCase } from "../src/ai-observability/datasets";
 import {
   createGatewayModelCall,

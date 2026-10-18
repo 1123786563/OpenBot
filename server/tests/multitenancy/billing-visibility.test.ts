@@ -13,7 +13,7 @@
 // 既有交付（payer-accounts/credits-writer/company-reservation/payment store）
 // 全部只读消费：本套件任何用例都不修改它们。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { sql } from "drizzle-orm";
 import { createCompanyFinanceVisibilityService } from "../../src/billing/company-finance-visibility";
 import { createCompanyReservationService } from "../../src/billing/company-reservation";

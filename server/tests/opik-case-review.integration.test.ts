@@ -1,6 +1,6 @@
-import { afterAll, afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
-import { SQL } from "bun";
+import { SQL } from "../../tests/support/bun-compat";
 import { eq, sql } from "drizzle-orm";
 import { REDACTION_POLICY_VERSION } from "../../shared/ai-observability";
 import {

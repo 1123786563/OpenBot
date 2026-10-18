@@ -21,7 +21,7 @@
 // 表 + FORCE RLS + 最小列授权）经 MT003 工具（migrate-test.ts）真实执行，
 // 本文件不自己 DDL。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import {

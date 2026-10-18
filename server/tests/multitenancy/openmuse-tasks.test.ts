@@ -21,7 +21,7 @@
 // migration-tool.test.ts 断言行+裁决 / schema barrel 追加 1 行；另有一处
 // RECTIFIED 冻结面微修见 checkpoints/MT060/verification/02–03 披露）。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { sql } from "drizzle-orm";

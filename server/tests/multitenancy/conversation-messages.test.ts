@@ -25,7 +25,7 @@
 // 成员事实重验 → 会话归属比对 → 执行或 canonical verdict。事实读取全部经
 // 受限 data 角色与真实 RLS。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { createDatabase } from "../../src/db/client";
 import type { PlatformScope } from "../../src/enterprise/contracts";

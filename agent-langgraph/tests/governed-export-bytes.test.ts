@@ -10,7 +10,7 @@
  * through the raw POSTed bytes, not the span objects.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { Serialized } from "@langchain/core/load/serializable";
 import type { LLMResult } from "@langchain/core/outputs";
 import { DiagConsoleLogger, DiagLogLevel, diag } from "@opentelemetry/api";

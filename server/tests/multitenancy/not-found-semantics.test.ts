@@ -26,7 +26,7 @@
 // 加三个受限角色 URL；缺配置时整套显式 skip（跳过原因写在用例名里，
 // skipped 不计为通过），绝不回退开发库。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import {
   createResourceInventoryService,
   isResourceNotFoundVerdict,

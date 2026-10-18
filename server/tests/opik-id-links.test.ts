@@ -9,7 +9,7 @@
 //   - the query seam answers both directions for runs (bindings), steps (links)
 //     and datasets, fail-closed on unknown subjects and invalid refs.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { RunBinding } from "../src/ai-observability/bindings";
 import type { ObservationDataset } from "../src/ai-observability/datasets";
 import {

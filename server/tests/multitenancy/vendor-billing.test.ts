@@ -13,7 +13,7 @@
 //       事实；canary 扫描；DB CHECK 反证）。
 // 既有交付（payer-accounts）只读消费：本套件任何用例都不修改它们。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { sql } from "drizzle-orm";
 import { createVendorBillingService } from "../../src/billing/vendor-billing";
 import { billingVendorInteractions } from "../../src/db/schema/vendor-billing";

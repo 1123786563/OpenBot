@@ -20,7 +20,7 @@
 // skipped 不计为通过），绝不回退开发库。MT077 迁移（三张策略/安装表 +
 // 最小 RLS）经 MT003 工具（migrate-test.ts）真实执行，本文件不自己 DDL。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -52,6 +52,11 @@ import {
   createRoutingPolicyFixture,
   type RoutingPolicyFixture,
 } from "./support/routing-policy";
+
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 // ---------------------------------------------------------------------------
 // 环境探针：缺 env 显式 skip（带理由），绝不静默回退
@@ -888,7 +893,7 @@ describeDb("MT077 / Issue #120 — 策略分层归属与收窄覆盖", () => {
       async () => {
         const source = readFileSync(
           join(
-            import.meta.dir,
+            hereDir,
             "../../src/enterprise/tenancy/routing-policy.ts",
           ),
           "utf8",

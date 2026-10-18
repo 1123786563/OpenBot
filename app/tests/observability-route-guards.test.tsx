@@ -1,5 +1,6 @@
+import "./preload";
 import { QueryClient } from "@tanstack/react-query";
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/bun-test-compat";
 import { agentKeys, type AgentProfile } from "@/lib/agents/queries";
 import { requireBotObservabilityAccess } from "@/lib/observability/route-guard";
 

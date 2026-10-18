@@ -17,7 +17,7 @@
 // No database and no real Opik: the W3C helpers are real, the queue and port
 // are the same fakes the T15 suite uses, and HTTP is a real loopback serve.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { context, trace } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";

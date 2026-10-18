@@ -18,7 +18,7 @@
 // 迁移链按 brief 依赖序幂等 apply（MT004→…→MT069）；KB 库经 drizzle-kb
 // journal 幂等迁移。
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { sql } from "drizzle-orm";

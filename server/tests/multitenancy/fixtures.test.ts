@@ -8,7 +8,7 @@
  * `ob_ent_*` business roles; nothing here may be skipped and counted green.
  */
 
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, test } from "../../../tests/support/bun-test-compat";
 import {
   createIsolationFixture,
   FIXTURE_IDENTITIES,

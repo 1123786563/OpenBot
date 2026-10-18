@@ -10,7 +10,7 @@
 //   (4) 默认 dry-run（展示语句与影响摘要），apply 必须携带与计划完全一致
 //       的显式 manifest；真实 apply 只允许打到本任务专属测试库。
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../../tests/support/bun-test-compat";
 import {
   ALLOWED_TASK_IDS,
   buildPlan,
