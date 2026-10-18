@@ -379,7 +379,11 @@ export function createAccessGrantService(
         // Not found and not yours are one answer (04.6's rule, kept here).
         if (!row) throw new AccessGrantUseError();
         if (row.status === "revoked")
-          return { grant: toGrant(row), revoked: false, retiredGatewayVirtualKeyIds: [] };
+          return {
+            grant: toGrant(row),
+            revoked: false,
+            retiredGatewayVirtualKeyIds: [],
+          };
 
         // The conditional update is the flip's whole guard: under a concurrent revocation of the
         // same grant the second UPDATE re-checks `status = 'active'` against the committed row,
@@ -421,7 +425,11 @@ export function createAccessGrantService(
           .select()
           .from(accessGrants)
           .where(eq(accessGrants.grantId, grantId));
-        return { grant: toGrant(winner), revoked: false, retiredGatewayVirtualKeyIds: [] };
+        return {
+          grant: toGrant(winner),
+          revoked: false,
+          retiredGatewayVirtualKeyIds: [],
+        };
       });
 
       if (outcome.revoked && dependencies.auditStore) {

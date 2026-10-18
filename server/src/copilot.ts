@@ -1036,8 +1036,7 @@ async function observeBuiltinToolExecution<T>(
   // The run this execute was performed inside owns the cell (OCR R5-41); a bare
   // execute — no observed run above it — falls back to the module registry,
   // which is where the stalled-cell sweep earns its keep (OCR R5-43).
-  const registry =
-    builtinToolStepCellRegistries.getStore() ?? bareExecuteCells;
+  const registry = builtinToolStepCellRegistries.getStore() ?? bareExecuteCells;
   if (registry === bareExecuteCells) {
     sweepStalledCells(registry, new Date());
   }
@@ -2292,17 +2291,17 @@ export function builtInAgentConfiguration(
   }
   // A refused dial (null) never reaches the transport branch: a plan model bypasses the
   // transport entirely, and every other run was refused above.
-  const transportDial: WorkbenchGatewayModelDial | undefined = dial ?? undefined;
-  const resolvedModel = planModel ?? (transportDial !== undefined
-    ? createOpenAI({
-        apiKey: transportDial.apiKey ?? undefined,
-        baseURL: transportDial.baseURL,
-      }).chat(model.defaultModel)
-    : legacyRuntimeModel(model, apiKey));
-  if (
-    modelUsageGate !== undefined &&
-    typeof resolvedModel === "string"
-  ) {
+  const transportDial: WorkbenchGatewayModelDial | undefined =
+    dial ?? undefined;
+  const resolvedModel =
+    planModel ??
+    (transportDial !== undefined
+      ? createOpenAI({
+          apiKey: transportDial.apiKey ?? undefined,
+          baseURL: transportDial.baseURL,
+        }).chat(model.defaultModel)
+      : legacyRuntimeModel(model, apiKey));
+  if (modelUsageGate !== undefined && typeof resolvedModel === "string") {
     return {
       type: "custom",
       // biome-ignore lint/correctness/useYield: this agent must fail when iteration starts.

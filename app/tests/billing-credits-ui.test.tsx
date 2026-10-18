@@ -1,5 +1,13 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, mock, test } from "../../tests/support/e2e-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  mock,
+  test,
+} from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type * as React from "react";
@@ -531,13 +539,23 @@ test("CreditGrantList renders the held figure in the rewards summary, with no ra
     expiringSoon: false,
   };
   const zh = render(
-    <CreditGrantList grants={[grant]} grantCount={2} remaining={45} held={21} />,
+    <CreditGrantList
+      grants={[grant]}
+      grantCount={2}
+      remaining={45}
+      held={21}
+    />,
   );
   expect(zh.container.textContent).toContain("（进行中调用占用 21）");
   expect(zh.container.textContent).not.toContain("{{");
   await i18n.changeLanguage("en");
   const en = render(
-    <CreditGrantList grants={[grant]} grantCount={2} remaining={45} held={21} />,
+    <CreditGrantList
+      grants={[grant]}
+      grantCount={2}
+      remaining={45}
+      held={21}
+    />,
   );
   expect(en.container.textContent).toContain("21 held by in-progress calls");
   expect(en.container.textContent).not.toContain("{{");
@@ -595,10 +613,7 @@ function installPurchaseStub(handlers: {
           headers: { "content-type": "application/json" },
         });
       }
-      if (
-        handlers.current &&
-        url.endsWith("/api/billing/purchases/current")
-      ) {
+      if (handlers.current && url.endsWith("/api/billing/purchases/current")) {
         const h = handlers.current;
         return new Response(JSON.stringify(h.body), {
           status: h.status,
@@ -782,9 +797,15 @@ test("the pay button stays inert while a cancel is in flight, and a cancel while
     ),
   );
   await openToAPayableDialog(view);
-  const pay = view.getByRole("button", { name: "同意协议并支付" }) as HTMLButtonElement;
+  const pay = view.getByRole("button", {
+    name: "同意协议并支付",
+  }) as HTMLButtonElement;
   fireEvent.click(pay);
-  await until(() => view.queryByText("订单待支付") !== null, 4000, "order pending");
+  await until(
+    () => view.queryByText("订单待支付") !== null,
+    4000,
+    "order pending",
+  );
 
   // Cancel is clicked and hangs on the wire: the pay button must disable for the whole flight.
   fireEvent.click(view.getByRole("button", { name: "取消订单" }));
@@ -793,7 +814,9 @@ test("the pay button stays inert while a cancel is in flight, and a cancel while
   // disabled button fires no handler; the guard inside startCheckout covers the rest.
   releaseCancel(
     new Response(
-      JSON.stringify({ order: { ...ORDER_VIEW, status: "canceled", checkout: null } }),
+      JSON.stringify({
+        order: { ...ORDER_VIEW, status: "canceled", checkout: null },
+      }),
       { status: 200, headers: { "content-type": "application/json" } },
     ),
   );
@@ -823,12 +846,19 @@ test("a pending-purchase 409 on a remounted dialog restores the blocking order s
   await openToAPayableDialog(view);
   fireEvent.click(view.getByRole("button", { name: "同意协议并支付" }));
   await until(
-    () => view.queryByText("已有一笔待支付订单，请先完成支付或取消该订单后再购买") !== null,
+    () =>
+      view.queryByText(
+        "已有一笔待支付订单，请先完成支付或取消该订单后再购买",
+      ) !== null,
     4000,
     "localized refusal",
   );
   // The blocking order came back with its cancel entry — the escape the message names.
-  await until(() => view.queryByText("订单待支付") !== null, 4000, "order restored");
+  await until(
+    () => view.queryByText("订单待支付") !== null,
+    4000,
+    "order restored",
+  );
   expect(view.getByRole("button", { name: "取消订单" })).toBeTruthy();
   await new Promise((resolve) => setTimeout(resolve, 0));
 });
@@ -839,7 +869,10 @@ test("a failed cancel says the failure in the reader's language", async () => {
   // to the server's raw sentence.
   installPurchaseStub({
     create: { status: 200, body: { order: ORDER_VIEW } },
-    cancel: { status: 409, body: { error: "That purchase is already settled." } },
+    cancel: {
+      status: 409,
+      body: { error: "That purchase is already settled." },
+    },
   });
   const view = render(
     withProvider(
@@ -848,7 +881,11 @@ test("a failed cancel says the failure in the reader's language", async () => {
   );
   await openToAPayableDialog(view);
   fireEvent.click(view.getByRole("button", { name: "同意协议并支付" }));
-  await until(() => view.queryByText("订单待支付") !== null, 4000, "order pending");
+  await until(
+    () => view.queryByText("订单待支付") !== null,
+    4000,
+    "order pending",
+  );
   fireEvent.click(view.getByRole("button", { name: "取消订单" }));
   await until(
     () => view.queryByText(/取消订单失败/) !== null,
@@ -865,7 +902,12 @@ test("ConsumptionTable keeps the pager for a page walked off the end", () => {
   const view = render(
     <ConsumptionTable
       entries={[]}
-      pagination={{ totalCount: 5, totalPages: 1, currentPage: 99, nextPage: null }}
+      pagination={{
+        totalCount: 5,
+        totalPages: 1,
+        currentPage: 99,
+        nextPage: null,
+      }}
       range="7d"
       onRangeChange={() => {}}
       onPage={() => {}}
@@ -896,7 +938,12 @@ test("ConsumptionTable shows the unfunded suffix only on a row the grants could 
   const view = render(
     <ConsumptionTable
       entries={[entry(true), entry(false)]}
-      pagination={{ totalCount: 2, totalPages: 1, currentPage: 1, nextPage: null }}
+      pagination={{
+        totalCount: 2,
+        totalPages: 1,
+        currentPage: 1,
+        nextPage: null,
+      }}
       range="7d"
       onRangeChange={() => {}}
       onPage={() => {}}

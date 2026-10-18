@@ -93,7 +93,12 @@ export function createGrantKeyRevocator(deps: {
           });
         } catch (error) {
           log.error(
-            { type: "gateway-key-revocation-audit-failed", grantId, gatewayVirtualKeyId, error },
+            {
+              type: "gateway-key-revocation-audit-failed",
+              grantId,
+              gatewayVirtualKeyId,
+              error,
+            },
             "The failed remote-key disable could not be recorded in the audit trail.",
           );
         }
