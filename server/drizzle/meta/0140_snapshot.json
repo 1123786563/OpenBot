@@ -44,11 +44,11 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.openmuse_deletion_resources": {
       "name": "openmuse_deletion_resources",
@@ -102,6 +102,10 @@
       },
       "indexes": {},
       "foreignKeys": {},
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "openmuse_deletion_resources_manifest_id_kind_id_external_key_pk": {
           "name": "openmuse_deletion_resources_manifest_id_kind_id_external_key_pk",
@@ -112,11 +116,7 @@
             "external_key"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.accounts": {
       "name": "accounts",
@@ -247,11 +247,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.agents": {
       "name": "agents",
@@ -325,11 +325,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.attachments": {
       "name": "attachments",
@@ -502,11 +502,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.audit_events": {
       "name": "audit_events",
@@ -702,11 +702,11 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.channel_agents": {
       "name": "channel_agents",
@@ -761,6 +761,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "channel_agents_channel_id_agent_id_pk": {
           "name": "channel_agents_channel_id_agent_id_pk",
@@ -769,11 +773,7 @@
             "agent_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.channel_memberships": {
       "name": "channel_memberships",
@@ -840,6 +840,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "channel_memberships_channel_id_user_id_pk": {
           "name": "channel_memberships_channel_id_user_id_pk",
@@ -848,11 +852,7 @@
             "user_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.channels": {
       "name": "channels",
@@ -1026,11 +1026,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.credentials": {
       "name": "credentials",
@@ -1126,11 +1126,11 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.deployment_packages": {
       "name": "deployment_packages",
@@ -1171,7 +1171,7 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {
         "deployment_packages_tenant_id_unique": {
           "name": "deployment_packages_tenant_id_unique",
@@ -1182,8 +1182,8 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.intelligence_channel_mappings": {
       "name": "intelligence_channel_mappings",
@@ -1267,6 +1267,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "intelligence_channel_mappings_user_id_channel_id_pk": {
           "name": "intelligence_channel_mappings_user_id_channel_id_pk",
@@ -1275,11 +1279,7 @@
             "channel_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.revoked_access": {
       "name": "revoked_access",
@@ -1307,11 +1307,11 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.sessions": {
       "name": "sessions",
@@ -1384,7 +1384,7 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {
         "sessions_token_unique": {
           "name": "sessions_token_unique",
@@ -1395,8 +1395,8 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.sso_providers": {
       "name": "sso_providers",
@@ -1467,7 +1467,7 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {
         "sso_providers_provider_id_unique": {
           "name": "sso_providers_provider_id_unique",
@@ -1478,8 +1478,8 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.user_instructions": {
       "name": "user_instructions",
@@ -1528,11 +1528,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.user_roles": {
       "name": "user_roles",
@@ -1575,6 +1575,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "user_roles_user_id_role_pk": {
           "name": "user_roles_user_id_role_pk",
@@ -1583,11 +1587,7 @@
             "role"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.users": {
       "name": "users",
@@ -1674,7 +1674,7 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {
         "users_email_unique": {
           "name": "users_email_unique",
@@ -1685,8 +1685,8 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.verifications": {
       "name": "verifications",
@@ -1733,11 +1733,11 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.action_policy": {
       "name": "action_policy",
@@ -1783,11 +1783,11 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.computer_page_frame": {
       "name": "computer_page_frame",
@@ -1849,6 +1849,10 @@
         }
       },
       "foreignKeys": {},
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "computer_page_frame_computer_id_tool_call_id_pk": {
           "name": "computer_page_frame_computer_id_tool_call_id_pk",
@@ -1857,11 +1861,7 @@
             "tool_call_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.computer_snapshot": {
       "name": "computer_snapshot",
@@ -1907,11 +1907,11 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.agent_preferences": {
       "name": "agent_preferences",
@@ -1971,6 +1971,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "agent_preferences_user_id_agent_id_pk": {
           "name": "agent_preferences_user_id_agent_id_pk",
@@ -1979,11 +1983,7 @@
             "agent_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.agent_profiles": {
       "name": "agent_profiles",
@@ -2138,11 +2138,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.routine_runs": {
       "name": "routine_runs",
@@ -2238,11 +2238,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.routine_sweeps": {
       "name": "routine_sweeps",
@@ -2270,11 +2270,11 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.routines": {
       "name": "routines",
@@ -2436,11 +2436,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.craft_messages": {
       "name": "craft_messages",
@@ -2528,16 +2528,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "craft_messages_type_check": {
           "name": "craft_messages_type_check",
           "value": "\"craft_messages\".\"type\" IN ('system', 'user', 'assistant', 'tool_call_response', 'user_reminder')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.craft_scheduled_task_runs": {
       "name": "craft_scheduled_task_runs",
@@ -2693,9 +2693,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "craft_scheduled_task_runs_status_check": {
           "name": "craft_scheduled_task_runs_status_check",
@@ -2706,7 +2703,10 @@
           "value": "\"craft_scheduled_task_runs\".\"trigger_source\" IN ('scheduled', 'manual_run_now')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.craft_scheduled_tasks": {
       "name": "craft_scheduled_tasks",
@@ -2848,9 +2848,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "craft_scheduled_tasks_status_check": {
           "name": "craft_scheduled_tasks_status_check",
@@ -2861,7 +2858,10 @@
           "value": "\"craft_scheduled_tasks\".\"editor_mode\" IN ('interval', 'daily_weekly', 'advanced')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.craft_sessions": {
       "name": "craft_sessions",
@@ -3038,9 +3038,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "craft_sessions_status_check": {
           "name": "craft_sessions_status_check",
@@ -3055,7 +3052,10 @@
           "value": "\"craft_sessions\".\"sharing_scope\" IN ('private', 'public_org')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.craft_snapshots": {
       "name": "craft_snapshots",
@@ -3132,11 +3132,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.component_exclusions": {
       "name": "component_exclusions",
@@ -3204,6 +3204,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "component_exclusions_component_name_agent_id_pk": {
           "name": "component_exclusions_component_name_agent_id_pk",
@@ -3212,11 +3216,7 @@
             "agent_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.component_functions": {
       "name": "component_functions",
@@ -3271,6 +3271,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "component_functions_component_name_function_name_pk": {
           "name": "component_functions_component_name_function_name_pk",
@@ -3279,11 +3283,7 @@
             "function_name"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.components": {
       "name": "components",
@@ -3355,11 +3355,11 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.brokered_connections": {
       "name": "brokered_connections",
@@ -3503,9 +3503,6 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "brokered_connections_holder_check": {
           "name": "brokered_connections_holder_check",
@@ -3516,7 +3513,10 @@
           "value": "\"brokered_connections\".\"provider\" IN ('composio', 'open-connector')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.composio_connections": {
       "name": "composio_connections",
@@ -3586,6 +3586,10 @@
         }
       },
       "foreignKeys": {},
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "composio_connections_toolkit_user_id_pk": {
           "name": "composio_connections_toolkit_user_id_pk",
@@ -3594,11 +3598,7 @@
             "user_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.mcp_servers": {
       "name": "mcp_servers",
@@ -3714,16 +3714,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "mcp_servers_account_mode_check": {
           "name": "mcp_servers_account_mode_check",
           "value": "\"mcp_servers\".\"account_mode\" IS NULL OR \"mcp_servers\".\"account_mode\" IN ('personal', 'shared')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.mcp_tools": {
       "name": "mcp_tools",
@@ -3798,6 +3798,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "mcp_tools_server_id_name_pk": {
           "name": "mcp_tools_server_id_name_pk",
@@ -3806,11 +3810,7 @@
             "name"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.mcp_user_credentials": {
       "name": "mcp_user_credentials",
@@ -3913,6 +3913,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "mcp_user_credentials_server_id_user_id_pk": {
           "name": "mcp_user_credentials_server_id_user_id_pk",
@@ -3921,11 +3925,7 @@
             "user_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.plugin_grants": {
       "name": "plugin_grants",
@@ -4002,6 +4002,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "plugin_grants_kind_ref_agent_id_pk": {
           "name": "plugin_grants_kind_ref_agent_id_pk",
@@ -4011,11 +4015,7 @@
             "agent_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.sandboxed_components": {
       "name": "sandboxed_components",
@@ -4148,11 +4148,11 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.skill_tools": {
       "name": "skill_tools",
@@ -4216,6 +4216,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "skill_tools_skill_id_ref_pk": {
           "name": "skill_tools_skill_id_ref_pk",
@@ -4224,11 +4228,7 @@
             "ref"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.skills": {
       "name": "skills",
@@ -4351,11 +4351,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.work_items": {
       "name": "work_items",
@@ -4457,6 +4457,10 @@
         }
       },
       "foreignKeys": {},
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "work_items_kind_key_pk": {
           "name": "work_items_kind_key_pk",
@@ -4465,11 +4469,7 @@
             "key"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.voice_sessions": {
       "name": "voice_sessions",
@@ -4594,9 +4594,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "voice_sessions_duration_check": {
           "name": "voice_sessions_duration_check",
@@ -4607,7 +4604,10 @@
           "value": "(\"voice_sessions\".\"summary_status\" = 'ready' AND \"voice_sessions\".\"summary\" IS NOT NULL) OR (\"voice_sessions\".\"summary_status\" = 'failed' AND \"voice_sessions\".\"summary\" IS NULL)"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.learning_settings": {
       "name": "learning_settings",
@@ -4635,11 +4635,11 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.learning_thread_bindings": {
       "name": "learning_thread_bindings",
@@ -4679,6 +4679,10 @@
       },
       "indexes": {},
       "foreignKeys": {},
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "learning_thread_bindings_user_id_thread_id_pk": {
           "name": "learning_thread_bindings_user_id_thread_id_pk",
@@ -4687,11 +4691,7 @@
             "thread_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.responsibilities": {
       "name": "responsibilities",
@@ -4845,11 +4845,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.responsibility_events": {
       "name": "responsibility_events",
@@ -4943,11 +4943,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.responsibility_runs": {
       "name": "responsibility_runs",
@@ -5095,11 +5095,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.responsibility_source_bindings": {
       "name": "responsibility_source_bindings",
@@ -5188,11 +5188,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.responsibility_triggers": {
       "name": "responsibility_triggers",
@@ -5344,11 +5344,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.approval_preferences": {
       "name": "approval_preferences",
@@ -5398,16 +5398,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "approval_preferences_host_commands_check": {
           "name": "approval_preferences_host_commands_check",
           "value": "\"approval_preferences\".\"host_commands\" IN ('ask', 'allow', 'never')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.approval_requests": {
       "name": "approval_requests",
@@ -5559,9 +5559,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "approval_status_check": {
           "name": "approval_status_check",
@@ -5572,7 +5569,10 @@
           "value": "\"approval_requests\".\"decision\" IN ('allow_once', 'allow_always', 'deny', 'handled')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.approval_rules": {
       "name": "approval_rules",
@@ -5667,16 +5667,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "approval_rules_behaviour_check": {
           "name": "approval_rules_behaviour_check",
           "value": "\"approval_rules\".\"behaviour\" IN ('allow', 'pre_approved', 'ask', 'hand_off')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.approval_team_rules": {
       "name": "approval_team_rules",
@@ -5754,16 +5754,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "approval_team_rules_behaviour_check": {
           "name": "approval_team_rules_behaviour_check",
           "value": "\"approval_team_rules\".\"behaviour\" IN ('allow', 'pre_approved', 'ask', 'hand_off')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.approval_team_settings": {
       "name": "approval_team_settings",
@@ -5826,16 +5826,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "approval_team_settings_host_commands_cap_check": {
           "name": "approval_team_settings_host_commands_cap_check",
           "value": "\"approval_team_settings\".\"host_commands_cap\" IN ('ask', 'allow', 'never')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.memory_sources": {
       "name": "memory_sources",
@@ -5992,11 +5992,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.personal_memories": {
       "name": "personal_memories",
@@ -6277,11 +6277,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.openmuse_file_owner_disables": {
       "name": "openmuse_file_owner_disables",
@@ -6317,11 +6317,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.openmuse_file_versions": {
       "name": "openmuse_file_versions",
@@ -6419,11 +6419,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.openmuse_files": {
       "name": "openmuse_files",
@@ -6551,11 +6551,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.openmuse_goals": {
       "name": "openmuse_goals",
@@ -6672,11 +6672,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.openmuse_google_connections": {
       "name": "openmuse_google_connections",
@@ -6785,11 +6785,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.openmuse_ideas": {
       "name": "openmuse_ideas",
@@ -6912,11 +6912,11 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.openmuse_memories": {
       "name": "openmuse_memories",
@@ -6991,11 +6991,11 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.openmuse_notifications": {
       "name": "openmuse_notifications",
@@ -7120,11 +7120,11 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.openmuse_oauth_pending": {
       "name": "openmuse_oauth_pending",
@@ -7232,11 +7232,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.openmuse_reviewed_actions": {
       "name": "openmuse_reviewed_actions",
@@ -7428,11 +7428,11 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.openmuse_reviewed_attempts": {
       "name": "openmuse_reviewed_attempts",
@@ -7506,8 +7506,8 @@
         }
       },
       "foreignKeys": {
-        "openmuse_reviewed_attempts_action_id_openmuse_reviewed_actions_id_fk": {
-          "name": "openmuse_reviewed_attempts_action_id_openmuse_reviewed_actions_id_fk",
+        "openmuse_reviewed_attempts_action_id_fk": {
+          "name": "openmuse_reviewed_attempts_action_id_fk",
           "tableFrom": "openmuse_reviewed_attempts",
           "tableTo": "openmuse_reviewed_actions",
           "columnsFrom": [
@@ -7520,11 +7520,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.openmuse_tasks": {
       "name": "openmuse_tasks",
@@ -7739,11 +7739,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.default_opt_outs": {
       "name": "default_opt_outs",
@@ -7811,6 +7811,15 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {
+        "default_opt_outs_feature_check": {
+          "name": "default_opt_outs_feature_check",
+          "value": "\"default_opt_outs\".\"feature\" IN ('memory_source', 'proactive_research')"
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "default_opt_outs_owner_user_id_agent_id_feature_scope_pk": {
           "name": "default_opt_outs_owner_user_id_agent_id_feature_scope_pk",
@@ -7821,16 +7830,7 @@
             "scope"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "default_opt_outs_feature_check": {
-          "name": "default_opt_outs_feature_check",
-          "value": "\"default_opt_outs\".\"feature\" IN ('memory_source', 'proactive_research')"
-        }
-      },
-      "isRLSEnabled": false
+      }
     },
     "public.proactive_settings": {
       "name": "proactive_settings",
@@ -8000,9 +8000,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "proactive_settings_interval_check": {
           "name": "proactive_settings_interval_check",
@@ -8013,7 +8010,10 @@
           "value": "\"proactive_settings\".\"last_status\" IN ('idle', 'running', 'succeeded', 'error')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.proactive_suggestions": {
       "name": "proactive_suggestions",
@@ -8191,16 +8191,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "proactive_suggestions_status_check": {
           "name": "proactive_suggestions_status_check",
           "value": "\"proactive_suggestions\".\"status\" IN ('open', 'dismissed', 'started')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.demonstrations": {
       "name": "demonstrations",
@@ -8337,11 +8337,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.delivery_bindings": {
       "name": "delivery_bindings",
@@ -8513,11 +8513,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.delivery_challenges": {
       "name": "delivery_challenges",
@@ -8627,11 +8627,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.delivery_inbox": {
       "name": "delivery_inbox",
@@ -8809,11 +8809,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.delivery_outbox": {
       "name": "delivery_outbox",
@@ -9003,7 +9003,7 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {
         "delivery_outbox_dedupe_key_unique": {
           "name": "delivery_outbox_dedupe_key_unique",
@@ -9014,8 +9014,8 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.push_devices": {
       "name": "push_devices",
@@ -9098,7 +9098,7 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {
         "push_devices_token_unique": {
           "name": "push_devices_token_unique",
@@ -9109,8 +9109,8 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.enterprise_memberships": {
       "name": "enterprise_memberships",
@@ -9190,7 +9190,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "enterprise_memberships_principal_id_enterprise_principals_id_fk": {
@@ -9203,21 +9203,10 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "enterprise_memberships_tenant_id_principal_id_pk": {
-          "name": "enterprise_memberships_tenant_id_principal_id_pk",
-          "columns": [
-            "tenant_id",
-            "principal_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "enterprise_member_role": {
           "name": "enterprise_member_role",
@@ -9232,7 +9221,65 @@
           "value": "\"enterprise_memberships\".\"epoch\" > 0"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {
+        "enterprise_membership_self_read": {
+          "name": "enterprise_membership_self_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_directory"
+          ],
+          "using": "exists (select 1 from enterprise_principals p where p.id = enterprise_memberships.principal_id and p.user_id = nullif(current_setting('app.user_id', true), ''))"
+        },
+        "enterprise_membership_data_read": {
+          "name": "enterprise_membership_data_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_data"
+          ],
+          "using": "enterprise_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_memberships.principal_id = nullif(current_setting('app.principal_id', true), '')"
+        },
+        "enterprise_membership_operator_read": {
+          "name": "enterprise_membership_operator_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "using": "enterprise_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
+        },
+        "enterprise_membership_operator_insert": {
+          "name": "enterprise_membership_operator_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "withCheck": "enterprise_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
+        },
+        "enterprise_membership_operator_update": {
+          "name": "enterprise_membership_operator_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "using": "enterprise_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_memberships.principal_id = nullif(current_setting('app.operator_principal_id', true), '')",
+          "withCheck": "enterprise_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_memberships.principal_id = nullif(current_setting('app.operator_principal_id', true), '')"
+        }
+      },
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {
+        "enterprise_memberships_tenant_id_principal_id_pk": {
+          "name": "enterprise_memberships_tenant_id_principal_id_pk",
+          "columns": [
+            "tenant_id",
+            "principal_id"
+          ]
+        }
+      }
     },
     "public.enterprise_principals": {
       "name": "enterprise_principals",
@@ -9293,20 +9340,48 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "enterprise_principal_status": {
           "name": "enterprise_principal_status",
           "value": "\"enterprise_principals\".\"status\" in ('active','suspended')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {
+        "enterprise_principal_self_read": {
+          "name": "enterprise_principal_self_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_directory"
+          ],
+          "using": "enterprise_principals.user_id = nullif(current_setting('app.user_id', true), '')"
+        },
+        "enterprise_principal_data_read": {
+          "name": "enterprise_principal_data_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_data"
+          ],
+          "using": "enterprise_principals.id = nullif(current_setting('app.principal_id', true), '') and enterprise_principals.user_id = nullif(current_setting('app.user_id', true), '')"
+        },
+        "enterprise_principal_operator_read": {
+          "name": "enterprise_principal_operator_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "using": "enterprise_principals.id = nullif(current_setting('app.operator_principal_id', true), '')"
+        }
+      },
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {}
     },
     "public.enterprise_resource_grants": {
       "name": "enterprise_resource_grants",
@@ -9334,7 +9409,8 @@
           "name": "action",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'read'"
         },
         "created_at": {
           "name": "created_at",
@@ -9358,7 +9434,7 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "enterprise_resource_grants_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk": {
@@ -9373,10 +9449,65 @@
             "tenant_id",
             "principal_id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {
+        "enterprise_grant_action": {
+          "name": "enterprise_grant_action",
+          "value": "\"enterprise_resource_grants\".\"action\" = 'read'"
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "enterprise_grant_data_tenant_read": {
+          "name": "enterprise_grant_data_tenant_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_data"
+          ],
+          "using": "enterprise_resource_grants.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
+        },
+        "enterprise_grant_self_read": {
+          "name": "enterprise_grant_self_read",
+          "as": "RESTRICTIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_data"
+          ],
+          "using": "enterprise_resource_grants.principal_id = nullif(current_setting('app.principal_id', true), '')"
+        },
+        "enterprise_grant_operator_read": {
+          "name": "enterprise_grant_operator_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "using": "enterprise_resource_grants.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
+        },
+        "enterprise_grant_operator_insert": {
+          "name": "enterprise_grant_operator_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "withCheck": "enterprise_resource_grants.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
+        },
+        "enterprise_grant_operator_delete": {
+          "name": "enterprise_grant_operator_delete",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "using": "enterprise_resource_grants.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_resource_grants.resource_id = nullif(current_setting('app.resource_id', true), '') and enterprise_resource_grants.principal_id = nullif(current_setting('app.operator_principal_id', true), '')"
+        }
+      },
+      "isRLSEnabled": true,
       "compositePrimaryKeys": {
         "enterprise_resource_grants_tenant_id_resource_id_principal_id_action_pk": {
           "name": "enterprise_resource_grants_tenant_id_resource_id_principal_id_action_pk",
@@ -9387,16 +9518,7 @@
             "action"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "enterprise_grant_action": {
-          "name": "enterprise_grant_action",
-          "value": "\"enterprise_resource_grants\".\"action\" in ('read','run')"
-        }
-      },
-      "isRLSEnabled": false
+      }
     },
     "public.enterprise_resources": {
       "name": "enterprise_resources",
@@ -9479,6 +9601,57 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {
+        "enterprise_resource_status": {
+          "name": "enterprise_resource_status",
+          "value": "\"enterprise_resources\".\"status\" in ('active','deleted')"
+        },
+        "enterprise_resource_versions": {
+          "name": "enterprise_resource_versions",
+          "value": "\"enterprise_resources\".\"revision\" > 0 and \"enterprise_resources\".\"acl_epoch\" > 0"
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "enterprise_resource_tenant_scope": {
+          "name": "enterprise_resource_tenant_scope",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_data"
+          ],
+          "using": "enterprise_resources.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
+        },
+        "enterprise_resource_operator_read": {
+          "name": "enterprise_resource_operator_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "using": "enterprise_resources.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
+        },
+        "enterprise_resource_operator_insert": {
+          "name": "enterprise_resource_operator_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "withCheck": "enterprise_resources.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
+        },
+        "enterprise_resource_operator_update": {
+          "name": "enterprise_resource_operator_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "using": "enterprise_resources.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_resources.id = nullif(current_setting('app.resource_id', true), '')",
+          "withCheck": "enterprise_resources.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_resources.id = nullif(current_setting('app.resource_id', true), '')"
+        }
+      },
+      "isRLSEnabled": true,
       "compositePrimaryKeys": {
         "enterprise_resources_tenant_id_id_pk": {
           "name": "enterprise_resources_tenant_id_id_pk",
@@ -9487,20 +9660,7 @@
             "id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "enterprise_resource_status": {
-          "name": "enterprise_resource_status",
-          "value": "\"enterprise_resources\".\"status\" in ('active','deleted')"
-        },
-        "enterprise_resource_versions": {
-          "name": "enterprise_resource_versions",
-          "value": "\"enterprise_resources\".\"revision\">0 and \"enterprise_resources\".\"acl_epoch\">0"
-        }
-      },
-      "isRLSEnabled": false
+      }
     },
     "public.enterprise_security_events": {
       "name": "enterprise_security_events",
@@ -9562,10 +9722,33 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "enterprise_security_event_tenant_scope": {
+          "name": "enterprise_security_event_tenant_scope",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "using": "enterprise_security_events.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_security_events.id = nullif(current_setting('app.operation_id', true), '')"
+        },
+        "enterprise_security_event_operator_insert": {
+          "name": "enterprise_security_event_operator_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "withCheck": "enterprise_security_events.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_security_events.id = nullif(current_setting('app.operation_id', true), '')"
+        }
+      },
+      "isRLSEnabled": true,
       "compositePrimaryKeys": {
         "enterprise_security_events_tenant_id_id_pk": {
           "name": "enterprise_security_events_tenant_id_id_pk",
@@ -9574,11 +9757,7 @@
             "id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.enterprise_tenants": {
       "name": "enterprise_tenants",
@@ -9620,16 +9799,53 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "enterprise_tenant_status": {
           "name": "enterprise_tenant_status",
           "value": "\"enterprise_tenants\".\"status\" in ('active','suspended')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {
+        "enterprise_tenant_member_read": {
+          "name": "enterprise_tenant_member_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_directory"
+          ],
+          "using": "exists (select 1 from enterprise_memberships m join enterprise_principals p on p.id = m.principal_id where m.tenant_id = enterprise_tenants.id and p.user_id = nullif(current_setting('app.user_id', true), ''))"
+        },
+        "enterprise_tenant_data_read": {
+          "name": "enterprise_tenant_data_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_data"
+          ],
+          "using": "enterprise_tenants.id = nullif(current_setting('app.tenant_id', true), '')"
+        },
+        "enterprise_tenant_operator_read": {
+          "name": "enterprise_tenant_operator_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "using": "enterprise_tenants.id = nullif(current_setting('app.tenant_id', true), '')"
+        },
+        "enterprise_tenant_context_write": {
+          "name": "enterprise_tenant_context_write",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "withCheck": "enterprise_tenants.id = nullif(current_setting('app.tenant_id', true), '')"
+        }
+      },
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {}
     },
     "public.enterprise_workspaces": {
       "name": "enterprise_workspaces",
@@ -9673,10 +9889,42 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "enterprise_workspace_tenant_scope": {
+          "name": "enterprise_workspace_tenant_scope",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_data"
+          ],
+          "using": "enterprise_workspaces.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
+        },
+        "enterprise_workspace_operator_read": {
+          "name": "enterprise_workspace_operator_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "using": "enterprise_workspaces.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
+        },
+        "enterprise_workspace_operator_insert": {
+          "name": "enterprise_workspace_operator_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "ob_ent_operator"
+          ],
+          "withCheck": "enterprise_workspaces.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
+        }
+      },
+      "isRLSEnabled": true,
       "compositePrimaryKeys": {
         "enterprise_workspaces_tenant_id_id_pk": {
           "name": "enterprise_workspaces_tenant_id_id_pk",
@@ -9685,11 +9933,7 @@
             "id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.enterprise_conversations": {
       "name": "enterprise_conversations",
@@ -9863,20 +10107,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "enterprise_conversations_data_scope": {
-          "name": "enterprise_conversations_data_scope",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "ob_ent_data"
-          ],
-          "using": "enterprise_conversations.tenant_id = nullif(current_setting('app.tenant_id', true), '')",
-          "withCheck": "enterprise_conversations.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        }
-      },
       "checkConstraints": {
         "enterprise_conversations_backend_check": {
           "name": "enterprise_conversations_backend_check",
@@ -9891,7 +10121,21 @@
           "value": "\"enterprise_conversations\".\"last_seq\" >= 0"
         }
       },
-      "isRLSEnabled": true
+      "uniqueConstraints": {},
+      "policies": {
+        "enterprise_conversations_data_scope": {
+          "name": "enterprise_conversations_data_scope",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "ob_ent_data"
+          ],
+          "using": "enterprise_conversations.tenant_id = nullif(current_setting('app.tenant_id', true), '')",
+          "withCheck": "enterprise_conversations.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
+        }
+      },
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {}
     },
     "public.enterprise_message_parts": {
       "name": "enterprise_message_parts",
@@ -9953,14 +10197,14 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "enterprise_message_parts_tenant_id_message_id_ordinal_pk": {
-          "name": "enterprise_message_parts_tenant_id_message_id_ordinal_pk",
-          "columns": [
-            "tenant_id",
-            "message_id",
-            "ordinal"
-          ]
+      "checkConstraints": {
+        "enterprise_message_parts_ordinal_check": {
+          "name": "enterprise_message_parts_ordinal_check",
+          "value": "\"enterprise_message_parts\".\"ordinal\" >= 0"
+        },
+        "enterprise_message_parts_kind_check": {
+          "name": "enterprise_message_parts_kind_check",
+          "value": "\"enterprise_message_parts\".\"kind\" in ('text', 'attachment')"
         }
       },
       "uniqueConstraints": {},
@@ -9976,17 +10220,17 @@
           "withCheck": "enterprise_message_parts.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
         }
       },
-      "checkConstraints": {
-        "enterprise_message_parts_ordinal_check": {
-          "name": "enterprise_message_parts_ordinal_check",
-          "value": "\"enterprise_message_parts\".\"ordinal\" >= 0"
-        },
-        "enterprise_message_parts_kind_check": {
-          "name": "enterprise_message_parts_kind_check",
-          "value": "\"enterprise_message_parts\".\"kind\" in ('text', 'attachment')"
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {
+        "enterprise_message_parts_tenant_id_message_id_ordinal_pk": {
+          "name": "enterprise_message_parts_tenant_id_message_id_ordinal_pk",
+          "columns": [
+            "tenant_id",
+            "message_id",
+            "ordinal"
+          ]
         }
-      },
-      "isRLSEnabled": true
+      }
     },
     "public.enterprise_messages": {
       "name": "enterprise_messages",
@@ -10130,13 +10374,14 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "enterprise_messages_tenant_id_id_pk": {
-          "name": "enterprise_messages_tenant_id_id_pk",
-          "columns": [
-            "tenant_id",
-            "id"
-          ]
+      "checkConstraints": {
+        "enterprise_messages_seq_check": {
+          "name": "enterprise_messages_seq_check",
+          "value": "\"enterprise_messages\".\"seq\" > 0"
+        },
+        "enterprise_messages_role_check": {
+          "name": "enterprise_messages_role_check",
+          "value": "\"enterprise_messages\".\"role\" in ('user', 'assistant', 'tool')"
         }
       },
       "uniqueConstraints": {},
@@ -10152,17 +10397,16 @@
           "withCheck": "enterprise_messages.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
         }
       },
-      "checkConstraints": {
-        "enterprise_messages_seq_check": {
-          "name": "enterprise_messages_seq_check",
-          "value": "\"enterprise_messages\".\"seq\" > 0"
-        },
-        "enterprise_messages_role_check": {
-          "name": "enterprise_messages_role_check",
-          "value": "\"enterprise_messages\".\"role\" in ('user', 'assistant', 'tool')"
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {
+        "enterprise_messages_tenant_id_id_pk": {
+          "name": "enterprise_messages_tenant_id_id_pk",
+          "columns": [
+            "tenant_id",
+            "id"
+          ]
         }
-      },
-      "isRLSEnabled": true
+      }
     },
     "public.enterprise_expert_versions": {
       "name": "enterprise_expert_versions",
@@ -10222,13 +10466,10 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "enterprise_expert_versions_tenant_id_expert_version_ref_pk": {
-          "name": "enterprise_expert_versions_tenant_id_expert_version_ref_pk",
-          "columns": [
-            "tenant_id",
-            "expert_version_ref"
-          ]
+      "checkConstraints": {
+        "enterprise_expert_versions_schema_version_check": {
+          "name": "enterprise_expert_versions_schema_version_check",
+          "value": "\"enterprise_expert_versions\".\"schema_version\" > 0"
         }
       },
       "uniqueConstraints": {},
@@ -10244,13 +10485,16 @@
           "withCheck": "enterprise_expert_versions.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
         }
       },
-      "checkConstraints": {
-        "enterprise_expert_versions_schema_version_check": {
-          "name": "enterprise_expert_versions_schema_version_check",
-          "value": "\"enterprise_expert_versions\".\"schema_version\" > 0"
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {
+        "enterprise_expert_versions_tenant_id_expert_version_ref_pk": {
+          "name": "enterprise_expert_versions_tenant_id_expert_version_ref_pk",
+          "columns": [
+            "tenant_id",
+            "expert_version_ref"
+          ]
         }
-      },
-      "isRLSEnabled": true
+      }
     },
     "public.enterprise_model_routes": {
       "name": "enterprise_model_routes",
@@ -10296,40 +10540,49 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "enterprise_model_routes_tenant_id_resource_id_enterprise_resources_tenant_id_id_fk": {
-          "name": "enterprise_model_routes_tenant_id_resource_id_enterprise_resources_tenant_id_id_fk",
+        "enterprise_model_routes_tenant_id_enterprise_tenants_id_fk": {
+          "name": "enterprise_model_routes_tenant_id_enterprise_tenants_id_fk",
           "tableFrom": "enterprise_model_routes",
-          "tableTo": "enterprise_resources",
+          "tableTo": "enterprise_tenants",
           "columnsFrom": [
-            "tenant_id",
-            "resource_id"
+            "tenant_id"
           ],
           "columnsTo": [
-            "tenant_id",
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "enterprise_model_routes_tenant_id_id_pk": {
-          "name": "enterprise_model_routes_tenant_id_id_pk",
-          "columns": [
-            "tenant_id",
-            "id"
-          ]
+      "checkConstraints": {
+        "enterprise_model_routes_schema_version_check": {
+          "name": "enterprise_model_routes_schema_version_check",
+          "value": "\"enterprise_model_routes\".\"schema_version\" > 0"
         }
       },
       "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "enterprise_route_status": {
-          "name": "enterprise_route_status",
-          "value": "\"enterprise_model_routes\".\"status\" in ('active','disabled')"
+      "policies": {
+        "enterprise_model_routes_data_scope": {
+          "name": "enterprise_model_routes_data_scope",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "ob_ent_data"
+          ],
+          "using": "enterprise_model_routes.tenant_id = nullif(current_setting('app.tenant_id', true), '')",
+          "withCheck": "enterprise_model_routes.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {
+        "enterprise_model_routes_tenant_id_route_ref_pk": {
+          "name": "enterprise_model_routes_tenant_id_route_ref_pk",
+          "columns": [
+            "tenant_id",
+            "route_ref"
+          ]
+        }
+      }
     },
     "public.enterprise_model_budget_reservations": {
       "name": "enterprise_model_budget_reservations",
@@ -10514,7 +10767,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {
+        "enterprise_budget_reservation_tokens_check": {
+          "name": "enterprise_budget_reservation_tokens_check",
+          "value": "\"enterprise_model_budget_reservations\".\"token_limit\" > 0 and \"enterprise_model_budget_reservations\".\"confirmed_tokens\" >= 0 and \"enterprise_model_budget_reservations\".\"confirmed_tokens\" <= \"enterprise_model_budget_reservations\".\"token_limit\""
+        },
+        "enterprise_budget_reservation_status_check": {
+          "name": "enterprise_budget_reservation_status_check",
+          "value": "\"enterprise_model_budget_reservations\".\"status\" in ('reserved', 'confirmed', 'released')"
+        }
+      },
       "uniqueConstraints": {},
       "policies": {
         "enterprise_model_budget_reservations_data_scope": {
@@ -10528,17 +10790,8 @@
           "withCheck": "enterprise_model_budget_reservations.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
         }
       },
-      "checkConstraints": {
-        "enterprise_budget_reservation_tokens_check": {
-          "name": "enterprise_budget_reservation_tokens_check",
-          "value": "\"enterprise_model_budget_reservations\".\"token_limit\" > 0 and \"enterprise_model_budget_reservations\".\"confirmed_tokens\" >= 0 and \"enterprise_model_budget_reservations\".\"confirmed_tokens\" <= \"enterprise_model_budget_reservations\".\"token_limit\""
-        },
-        "enterprise_budget_reservation_status_check": {
-          "name": "enterprise_budget_reservation_status_check",
-          "value": "\"enterprise_model_budget_reservations\".\"status\" in ('reserved', 'confirmed', 'released')"
-        }
-      },
-      "isRLSEnabled": true
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {}
     },
     "public.enterprise_model_invocation_capabilities": {
       "name": "enterprise_model_invocation_capabilities",
@@ -10780,7 +11033,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {
+        "enterprise_model_invocation_tokens_check": {
+          "name": "enterprise_model_invocation_tokens_check",
+          "value": "\"enterprise_model_invocation_capabilities\".\"generation\" > 0 and \"enterprise_model_invocation_capabilities\".\"maximum_tokens\" > 0 and \"enterprise_model_invocation_capabilities\".\"used_tokens\" >= 0 and \"enterprise_model_invocation_capabilities\".\"used_tokens\" <= \"enterprise_model_invocation_capabilities\".\"maximum_tokens\""
+        },
+        "enterprise_model_invocation_status_check": {
+          "name": "enterprise_model_invocation_status_check",
+          "value": "\"enterprise_model_invocation_capabilities\".\"status\" in ('reserved', 'consumed', 'confirmed', 'unknown', 'released')"
+        }
+      },
       "uniqueConstraints": {},
       "policies": {
         "enterprise_model_invocation_capabilities_data_scope": {
@@ -10794,17 +11056,8 @@
           "withCheck": "enterprise_model_invocation_capabilities.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
         }
       },
-      "checkConstraints": {
-        "enterprise_model_invocation_tokens_check": {
-          "name": "enterprise_model_invocation_tokens_check",
-          "value": "\"enterprise_model_invocation_capabilities\".\"generation\" > 0 and \"enterprise_model_invocation_capabilities\".\"maximum_tokens\" > 0 and \"enterprise_model_invocation_capabilities\".\"used_tokens\" >= 0 and \"enterprise_model_invocation_capabilities\".\"used_tokens\" <= \"enterprise_model_invocation_capabilities\".\"maximum_tokens\""
-        },
-        "enterprise_model_invocation_status_check": {
-          "name": "enterprise_model_invocation_status_check",
-          "value": "\"enterprise_model_invocation_capabilities\".\"status\" in ('reserved', 'consumed', 'confirmed', 'unknown', 'released')"
-        }
-      },
-      "isRLSEnabled": true
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {}
     },
     "public.enterprise_run_attempts": {
       "name": "enterprise_run_attempts",
@@ -10814,7 +11067,8 @@
           "name": "id",
           "type": "uuid",
           "primaryKey": true,
-          "notNull": true
+          "notNull": true,
+          "default": "gen_random_uuid()"
         },
         "tenant_id": {
           "name": "tenant_id",
@@ -10838,13 +11092,15 @@
           "name": "turn_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "gen_random_uuid()"
         },
         "status": {
           "name": "status",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'active'"
         },
         "fencing_token": {
           "name": "fencing_token",
@@ -10959,33 +11215,35 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "enterprise_run_attempts_tenant_id_run_id_id_pk": {
-          "name": "enterprise_run_attempts_tenant_id_run_id_id_pk",
-          "columns": [
-            "tenant_id",
-            "run_id",
-            "id"
-          ]
+      "checkConstraints": {
+        "enterprise_run_attempts_generation_check": {
+          "name": "enterprise_run_attempts_generation_check",
+          "value": "\"enterprise_run_attempts\".\"generation\" > 0 and \"enterprise_run_attempts\".\"fencing_token\" > 0"
+        },
+        "enterprise_run_attempts_request_owner_check": {
+          "name": "enterprise_run_attempts_request_owner_check",
+          "value": "(\"enterprise_run_attempts\".\"request_owner_token\" is null and \"enterprise_run_attempts\".\"request_owner_expires_at\" is null) or (\"enterprise_run_attempts\".\"request_owner_token\" is not null and \"enterprise_run_attempts\".\"request_owner_expires_at\" is not null)"
         }
       },
       "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "enterprise_attempt_status": {
-          "name": "enterprise_attempt_status",
-          "value": "\"enterprise_run_attempts\".\"status\" in ('allocated','active','exited','lost')"
-        },
-        "enterprise_attempt_fence": {
-          "name": "enterprise_attempt_fence",
-          "value": "\"enterprise_run_attempts\".\"fencing_token\" > 0"
+      "policies": {
+        "enterprise_run_attempts_data_scope": {
+          "name": "enterprise_run_attempts_data_scope",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "ob_ent_data"
+          ],
+          "using": "enterprise_run_attempts.tenant_id = nullif(current_setting('app.tenant_id', true), '')",
+          "withCheck": "enterprise_run_attempts.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {}
     },
     "public.enterprise_run_outbox": {
       "name": "enterprise_run_outbox",
@@ -10995,7 +11253,8 @@
           "name": "id",
           "type": "uuid",
           "primaryKey": true,
-          "notNull": true
+          "notNull": true,
+          "default": "gen_random_uuid()"
         },
         "tenant_id": {
           "name": "tenant_id",
@@ -11019,7 +11278,8 @@
           "name": "payload",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'{}'::jsonb"
         },
         "created_at": {
           "name": "created_at",
@@ -11113,28 +11373,35 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "enterprise_run_outbox_tenant_id_id_pk": {
-          "name": "enterprise_run_outbox_tenant_id_id_pk",
-          "columns": [
-            "tenant_id",
-            "id"
-          ]
+      "checkConstraints": {
+        "enterprise_run_outbox_attempts_check": {
+          "name": "enterprise_run_outbox_attempts_check",
+          "value": "\"enterprise_run_outbox\".\"delivery_attempts\" >= 0"
+        },
+        "enterprise_run_outbox_claim_check": {
+          "name": "enterprise_run_outbox_claim_check",
+          "value": "(\"enterprise_run_outbox\".\"claim_id\" is null and \"enterprise_run_outbox\".\"claim_owner_id\" is null and \"enterprise_run_outbox\".\"claim_expires_at\" is null) or (\"enterprise_run_outbox\".\"claim_id\" is not null and \"enterprise_run_outbox\".\"claim_owner_id\" is not null and \"enterprise_run_outbox\".\"claim_expires_at\" is not null)"
         }
       },
       "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "enterprise_outbox_status": {
-          "name": "enterprise_outbox_status",
-          "value": "\"enterprise_run_outbox\".\"status\" in ('pending','claimed','delivered','unknown','rejected')"
+      "policies": {
+        "enterprise_run_outbox_data_scope": {
+          "name": "enterprise_run_outbox_data_scope",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "ob_ent_data"
+          ],
+          "using": "enterprise_run_outbox.tenant_id = nullif(current_setting('app.tenant_id', true), '')",
+          "withCheck": "enterprise_run_outbox.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {}
     },
     "public.enterprise_runner_events": {
       "name": "enterprise_runner_events",
@@ -11352,7 +11619,12 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {
+        "enterprise_runner_events_cursor_check": {
+          "name": "enterprise_runner_events_cursor_check",
+          "value": "\"enterprise_runner_events\".\"seq\" > 0 and \"enterprise_runner_events\".\"generation\" > 0 and \"enterprise_runner_events\".\"schema_version\" > 0"
+        }
+      },
       "uniqueConstraints": {},
       "policies": {
         "enterprise_runner_events_data_scope": {
@@ -11366,13 +11638,8 @@
           "withCheck": "enterprise_runner_events.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
         }
       },
-      "checkConstraints": {
-        "enterprise_runner_events_cursor_check": {
-          "name": "enterprise_runner_events_cursor_check",
-          "value": "\"enterprise_runner_events\".\"seq\" > 0 and \"enterprise_runner_events\".\"generation\" > 0 and \"enterprise_runner_events\".\"schema_version\" > 0"
-        }
-      },
-      "isRLSEnabled": true
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {}
     },
     "public.enterprise_runs": {
       "name": "enterprise_runs",
@@ -11382,7 +11649,8 @@
           "name": "id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "gen_random_uuid()"
         },
         "tenant_id": {
           "name": "tenant_id",
@@ -11436,7 +11704,8 @@
           "name": "status",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'queued'"
         },
         "attempt_generation": {
           "name": "attempt_generation",
@@ -11602,19 +11871,17 @@
         }
       },
       "foreignKeys": {
-        "enterprise_runs_tenant_id_owner_principal_id_enterprise_memberships_tenant_id_principal_id_fk": {
-          "name": "enterprise_runs_tenant_id_owner_principal_id_enterprise_memberships_tenant_id_principal_id_fk",
+        "enterprise_runs_tenant_id_enterprise_tenants_id_fk": {
+          "name": "enterprise_runs_tenant_id_enterprise_tenants_id_fk",
           "tableFrom": "enterprise_runs",
-          "tableTo": "enterprise_memberships",
+          "tableTo": "enterprise_tenants",
           "columnsFrom": [
-            "tenant_id",
-            "owner_principal_id"
+            "tenant_id"
           ],
           "columnsTo": [
-            "tenant_id",
-            "principal_id"
+            "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "enterprise_runs_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk": {
@@ -11629,40 +11896,38 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "enterprise_runs_tenant_id_thread_id_enterprise_threads_tenant_id_id_fk": {
-          "name": "enterprise_runs_tenant_id_thread_id_enterprise_threads_tenant_id_id_fk",
-          "tableFrom": "enterprise_runs",
-          "tableTo": "enterprise_threads",
-          "columnsFrom": [
-            "tenant_id",
-            "thread_id"
-          ],
-          "columnsTo": [
-            "tenant_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "enterprise_runs_tenant_id_release_id_enterprise_run_releases_tenant_id_id_fk": {
-          "name": "enterprise_runs_tenant_id_release_id_enterprise_run_releases_tenant_id_id_fk",
-          "tableFrom": "enterprise_runs",
-          "tableTo": "enterprise_run_releases",
-          "columnsFrom": [
-            "tenant_id",
-            "release_id"
-          ],
-          "columnsTo": [
-            "tenant_id",
-            "id"
-          ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {
+        "enterprise_runs_generation_check": {
+          "name": "enterprise_runs_generation_check",
+          "value": "\"enterprise_runs\".\"attempt_generation\" > 0"
+        },
+        "enterprise_runs_model_route_maximum_tokens_check": {
+          "name": "enterprise_runs_model_route_maximum_tokens_check",
+          "value": "\"enterprise_runs\".\"model_route_maximum_tokens\" > 0"
+        },
+        "enterprise_runs_status_check": {
+          "name": "enterprise_runs_status_check",
+          "value": "\"enterprise_runs\".\"status\" in ('queued', 'running', 'waiting_approval', 'suspended', 'succeeded', 'failed', 'cancelled')"
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "enterprise_runs_data_scope": {
+          "name": "enterprise_runs_data_scope",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "ob_ent_data"
+          ],
+          "using": "enterprise_runs.tenant_id = nullif(current_setting('app.tenant_id', true), '')",
+          "withCheck": "enterprise_runs.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
+        }
+      },
+      "isRLSEnabled": true,
       "compositePrimaryKeys": {
         "enterprise_runs_tenant_id_id_pk": {
           "name": "enterprise_runs_tenant_id_id_pk",
@@ -11671,20 +11936,7 @@
             "id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "enterprise_run_status": {
-          "name": "enterprise_run_status",
-          "value": "\"enterprise_runs\".\"status\" in ('queued','running','waiting_input','waiting_approval',\n        'suspended','cancel_requested','succeeded','failed','cancelled','expired')"
-        },
-        "enterprise_run_initiator": {
-          "name": "enterprise_run_initiator",
-          "value": "\"enterprise_runs\".\"initiator_kind\" in ('user','schedule')"
-        }
-      },
-      "isRLSEnabled": false
+      }
     },
     "public.mastra_tenant_storage_registry": {
       "name": "mastra_tenant_storage_registry",
@@ -11785,9 +12037,6 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "mastra_tenant_storage_role_version": {
           "name": "mastra_tenant_storage_role_version",
@@ -11802,7 +12051,10 @@
           "value": "(\"mastra_tenant_storage_registry\".\"status\" = 'provisioning' and \"mastra_tenant_storage_registry\".\"claim_token\" is not null and \"mastra_tenant_storage_registry\".\"credential_ref\" is null and \"mastra_tenant_storage_registry\".\"runtime_role\" is null and \"mastra_tenant_storage_registry\".\"ready_at\" is null) or (\"mastra_tenant_storage_registry\".\"status\" = 'ready' and \"mastra_tenant_storage_registry\".\"claim_token\" is null and \"mastra_tenant_storage_registry\".\"credential_ref\" is not null and \"mastra_tenant_storage_registry\".\"runtime_role\" is not null and \"mastra_tenant_storage_registry\".\"ready_at\" is not null)"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.mastra_message_intent_attachments": {
       "name": "mastra_message_intent_attachments",
@@ -11866,17 +12118,7 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "mastra_msg_intent_attachments_pk": {
-          "name": "mastra_msg_intent_attachments_pk",
-          "columns": [
-            "tenant_id",
-            "thread_id",
-            "client_message_key",
-            "attachment_id"
-          ]
-        }
-      },
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {
         "mastra_message_intent_attachments_data_scope": {
@@ -11890,8 +12132,18 @@
           "withCheck": "mastra_message_intent_attachments.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
         }
       },
-      "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {
+        "mastra_msg_intent_attachments_pk": {
+          "name": "mastra_msg_intent_attachments_pk",
+          "columns": [
+            "tenant_id",
+            "thread_id",
+            "client_message_key",
+            "attachment_id"
+          ]
+        }
+      }
     },
     "public.mastra_message_intents": {
       "name": "mastra_message_intents",
@@ -12102,29 +12354,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "mastra_message_intents_pk": {
-          "name": "mastra_message_intents_pk",
-          "columns": [
-            "tenant_id",
-            "thread_id",
-            "client_message_key"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {
-        "mastra_message_intents_data_scope": {
-          "name": "mastra_message_intents_data_scope",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "ob_ent_data"
-          ],
-          "using": "mastra_message_intents.tenant_id = nullif(current_setting('app.tenant_id', true), '')",
-          "withCheck": "mastra_message_intents.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        }
-      },
       "checkConstraints": {
         "mastra_message_intents_seq_check": {
           "name": "mastra_message_intents_seq_check",
@@ -12143,7 +12372,30 @@
           "value": "\"mastra_message_intents\".\"state\" in ('pending', 'finalized')"
         }
       },
-      "isRLSEnabled": true
+      "uniqueConstraints": {},
+      "policies": {
+        "mastra_message_intents_data_scope": {
+          "name": "mastra_message_intents_data_scope",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "ob_ent_data"
+          ],
+          "using": "mastra_message_intents.tenant_id = nullif(current_setting('app.tenant_id', true), '')",
+          "withCheck": "mastra_message_intents.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
+        }
+      },
+      "isRLSEnabled": true,
+      "compositePrimaryKeys": {
+        "mastra_message_intents_pk": {
+          "name": "mastra_message_intents_pk",
+          "columns": [
+            "tenant_id",
+            "thread_id",
+            "client_message_key"
+          ]
+        }
+      }
     },
     "public.group_bot_threads": {
       "name": "group_bot_threads",
@@ -12226,6 +12478,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "group_bot_threads_owner_user_id_channel_id_agent_id_pk": {
           "name": "group_bot_threads_owner_user_id_channel_id_agent_id_pk",
@@ -12235,11 +12491,7 @@
             "agent_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.group_messages": {
       "name": "group_messages",
@@ -12360,16 +12612,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "group_messages_status_check": {
           "name": "group_messages_status_check",
           "value": "\"group_messages\".\"status\" IN ('queued', 'running', 'waiting', 'completed', 'failed')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.action_records": {
       "name": "action_records",
@@ -12465,16 +12717,16 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "action_records_surface_check": {
           "name": "action_records_surface_check",
           "value": "\"action_records\".\"surface\" IN ('cloud', 'local')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.capability_settings": {
       "name": "capability_settings",
@@ -12521,6 +12773,15 @@
       },
       "indexes": {},
       "foreignKeys": {},
+      "checkConstraints": {
+        "capability_settings_scope_kind_check": {
+          "name": "capability_settings_scope_kind_check",
+          "value": "\"capability_settings\".\"scope_kind\" IN ('organization', 'role', 'group')"
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "capability_settings_scope_kind_scope_id_capability_pk": {
           "name": "capability_settings_scope_kind_scope_id_capability_pk",
@@ -12530,16 +12791,7 @@
             "capability"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "capability_settings_scope_kind_check": {
-          "name": "capability_settings_scope_kind_check",
-          "value": "\"capability_settings\".\"scope_kind\" IN ('organization', 'role', 'group')"
-        }
-      },
-      "isRLSEnabled": false
+      }
     },
     "public.enterprise_settings": {
       "name": "enterprise_settings",
@@ -12573,11 +12825,11 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.model_usage": {
       "name": "model_usage",
@@ -12679,16 +12931,16 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "model_usage_source_check": {
           "name": "model_usage_source_check",
           "value": "\"model_usage\".\"source\" IN ('configured', 'observed', 'unknown')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.network_policies": {
       "name": "network_policies",
@@ -12743,17 +12995,6 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "network_policies_scope_kind_scope_id_pk": {
-          "name": "network_policies_scope_kind_scope_id_pk",
-          "columns": [
-            "scope_kind",
-            "scope_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "network_policies_scope_kind_check": {
           "name": "network_policies_scope_kind_check",
@@ -12764,7 +13005,18 @@
           "value": "\"network_policies\".\"mode\" IN ('allow_all', 'defaults_plus_allowlist', 'allowlist_only')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {
+        "network_policies_scope_kind_scope_id_pk": {
+          "name": "network_policies_scope_kind_scope_id_pk",
+          "columns": [
+            "scope_kind",
+            "scope_id"
+          ]
+        }
+      }
     },
     "public.scim_connection_bindings": {
       "name": "scim_connection_bindings",
@@ -12877,7 +13129,7 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {
         "scim_connection_bindings_connection_key_unique": {
           "name": "scim_connection_bindings_connection_key_unique",
@@ -12888,8 +13140,8 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.scim_group_members": {
       "name": "scim_group_members",
@@ -13007,7 +13259,7 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {
         "scim_group_members_membership_key_unique": {
           "name": "scim_group_members_membership_key_unique",
@@ -13018,8 +13270,8 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.scim_groups": {
       "name": "scim_groups",
@@ -13126,7 +13378,7 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {
         "scim_groups_display_name_key_unique": {
           "name": "scim_groups_display_name_key_unique",
@@ -13151,8 +13403,8 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.scim_identity_tombstones": {
       "name": "scim_identity_tombstones",
@@ -13269,7 +13521,7 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {
         "scim_identity_tombstones_external_id_key_unique": {
           "name": "scim_identity_tombstones_external_id_key_unique",
@@ -13280,8 +13532,8 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.scim_projection_grants": {
       "name": "scim_projection_grants",
@@ -13450,7 +13702,7 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {
         "scim_projection_grants_grant_key_unique": {
           "name": "scim_projection_grants_grant_key_unique",
@@ -13461,8 +13713,8 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.scim_subjects": {
       "name": "scim_subjects",
@@ -13537,7 +13789,7 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {
         "scim_subjects_user_id_unique": {
           "name": "scim_subjects_user_id_unique",
@@ -13548,8 +13800,8 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.scim_users": {
       "name": "scim_users",
@@ -13750,7 +14002,7 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {
         "scim_users_connection_user_key_unique": {
           "name": "scim_users_connection_user_key_unique",
@@ -13782,8 +14034,8 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.bot_lifecycle": {
       "name": "bot_lifecycle",
@@ -13851,6 +14103,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "bot_lifecycle_owner_user_id_agent_id_pk": {
           "name": "bot_lifecycle_owner_user_id_agent_id_pk",
@@ -13859,11 +14115,7 @@
             "agent_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.update_routing_preferences": {
       "name": "update_routing_preferences",
@@ -13912,6 +14164,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "update_routing_preferences_owner_user_id_kind_pk": {
           "name": "update_routing_preferences_owner_user_id_kind_pk",
@@ -13920,11 +14176,7 @@
             "kind"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.saved_logins": {
       "name": "saved_logins",
@@ -14040,11 +14292,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.sign_in_requests": {
       "name": "sign_in_requests",
@@ -14187,9 +14439,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "sign_in_requests_status_check": {
           "name": "sign_in_requests_status_check",
@@ -14200,7 +14449,10 @@
           "value": "\"sign_in_requests\".\"method\" IS NULL OR \"sign_in_requests\".\"method\" IN ('typed', 'saved', 'takeover')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.team_bot_assignments": {
       "name": "team_bot_assignments",
@@ -14261,6 +14513,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "team_bot_assignments_agent_id_group_name_pk": {
           "name": "team_bot_assignments_agent_id_group_name_pk",
@@ -14269,11 +14525,7 @@
             "group_name"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.team_bot_audience": {
       "name": "team_bot_audience",
@@ -14321,6 +14573,15 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {
+        "team_bot_audience_kind_check": {
+          "name": "team_bot_audience_kind_check",
+          "value": "\"team_bot_audience\".\"kind\" IN ('user', 'group')"
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "team_bot_audience_agent_id_kind_value_pk": {
           "name": "team_bot_audience_agent_id_kind_value_pk",
@@ -14330,16 +14591,7 @@
             "value"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "team_bot_audience_kind_check": {
-          "name": "team_bot_audience_kind_check",
-          "value": "\"team_bot_audience\".\"kind\" IN ('user', 'group')"
-        }
-      },
-      "isRLSEnabled": false
+      }
     },
     "public.team_bot_consent_defaults": {
       "name": "team_bot_consent_defaults",
@@ -14381,6 +14633,10 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "team_bot_consent_defaults_user_id_server_id_pk": {
           "name": "team_bot_consent_defaults_user_id_server_id_pk",
@@ -14389,11 +14645,7 @@
             "server_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      }
     },
     "public.team_bot_consents": {
       "name": "team_bot_consents",
@@ -14460,6 +14712,15 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {
+        "team_bot_consents_decision_check": {
+          "name": "team_bot_consents_decision_check",
+          "value": "\"team_bot_consents\".\"decision\" IN ('always', 'once')"
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "team_bot_consents_user_id_agent_id_server_id_pk": {
           "name": "team_bot_consents_user_id_agent_id_server_id_pk",
@@ -14469,16 +14730,7 @@
             "server_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "team_bot_consents_decision_check": {
-          "name": "team_bot_consents_decision_check",
-          "value": "\"team_bot_consents\".\"decision\" IN ('always', 'once')"
-        }
-      },
-      "isRLSEnabled": false
+      }
     },
     "public.team_bot_publications": {
       "name": "team_bot_publications",
@@ -14539,16 +14791,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "team_bot_publications_audience_check": {
           "name": "team_bot_publications_audience_check",
           "value": "\"team_bot_publications\".\"audience\" IN ('team', 'people')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.shared_use_approval_members": {
       "name": "shared_use_approval_members",
@@ -14597,6 +14849,15 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {
+        "shared_use_approval_members_kind_check": {
+          "name": "shared_use_approval_members_kind_check",
+          "value": "\"shared_use_approval_members\".\"kind\" IN ('user', 'group')"
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "shared_use_approval_members_agent_id_server_id_kind_value_pk": {
           "name": "shared_use_approval_members_agent_id_server_id_kind_value_pk",
@@ -14607,16 +14868,7 @@
             "value"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "shared_use_approval_members_kind_check": {
-          "name": "shared_use_approval_members_kind_check",
-          "value": "\"shared_use_approval_members\".\"kind\" IN ('user', 'group')"
-        }
-      },
-      "isRLSEnabled": false
+      }
     },
     "public.shared_use_approvals": {
       "name": "shared_use_approvals",
@@ -14689,6 +14941,15 @@
           "onUpdate": "no action"
         }
       },
+      "checkConstraints": {
+        "shared_use_approvals_audience_check": {
+          "name": "shared_use_approvals_audience_check",
+          "value": "\"shared_use_approvals\".\"audience\" IN ('owner', 'people', 'team')"
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
       "compositePrimaryKeys": {
         "shared_use_approvals_agent_id_server_id_pk": {
           "name": "shared_use_approvals_agent_id_server_id_pk",
@@ -14697,16 +14958,7 @@
             "server_id"
           ]
         }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "shared_use_approvals_audience_check": {
-          "name": "shared_use_approvals_audience_check",
-          "value": "\"shared_use_approvals\".\"audience\" IN ('owner', 'people', 'team')"
-        }
-      },
-      "isRLSEnabled": false
+      }
     },
     "public.shared_use_requests": {
       "name": "shared_use_requests",
@@ -14855,9 +15107,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "shared_use_requests_audience_check": {
           "name": "shared_use_requests_audience_check",
@@ -14872,7 +15121,10 @@
           "value": "\"shared_use_requests\".\"status\" IN ('pending', 'approved', 'declined', 'superseded')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.billing_customers": {
       "name": "billing_customers",
@@ -14900,11 +15152,11 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.billing_subscriptions": {
       "name": "billing_subscriptions",
@@ -14974,16 +15226,28 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "billing_subscriptions_status_check": {
           "name": "billing_subscriptions_status_check",
           "value": "\"billing_subscriptions\".\"status\" IN ('active', 'incomplete', 'canceled', 'terminated')"
+        },
+        "billing_subscriptions_owner_pair_check": {
+          "name": "billing_subscriptions_owner_pair_check",
+          "value": "(\"billing_subscriptions\".\"owner_payer_kind\" IS NULL) = (\"billing_subscriptions\".\"owner_payer_id\" IS NULL)"
+        },
+        "billing_subscriptions_owner_kind_check": {
+          "name": "billing_subscriptions_owner_kind_check",
+          "value": "\"billing_subscriptions\".\"owner_payer_kind\" IS NULL OR \"billing_subscriptions\".\"owner_payer_kind\" IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')"
+        },
+        "billing_subscriptions_allowance_pair_check": {
+          "name": "billing_subscriptions_allowance_pair_check",
+          "value": "(\"billing_subscriptions\".\"allowance_period_start\" IS NULL) = (\"billing_subscriptions\".\"allowance_period_end\" IS NULL)"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.billing_webhook_events": {
       "name": "billing_webhook_events",
@@ -15094,11 +15358,11 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.payer_accounts": {
       "name": "payer_accounts",
@@ -15175,8 +15439,8 @@
         }
       },
       "foreignKeys": {
-        "payer_accounts_external_customer_id_billing_customers_external_id_fk": {
-          "name": "payer_accounts_external_customer_id_billing_customers_external_id_fk",
+        "payer_accounts_external_customer_id_fk": {
+          "name": "payer_accounts_external_customer_id_fk",
           "tableFrom": "payer_accounts",
           "tableTo": "billing_customers",
           "columnsFrom": [
@@ -15189,16 +15453,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "payer_accounts_kind_check": {
           "name": "payer_accounts_kind_check",
           "value": "\"payer_accounts\".\"kind\" IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.bot_services": {
       "name": "bot_services",
@@ -15252,9 +15516,6 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "bot_services_kind_check": {
           "name": "bot_services_kind_check",
@@ -15269,7 +15530,10 @@
           "value": "\"bot_services\".\"capabilities\" <@ ARRAY['chat','image','audio','embedding','realtime','async']::text[]"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.bot_binding_offers": {
       "name": "bot_binding_offers",
@@ -15368,16 +15632,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "bot_binding_offers_status_check": {
           "name": "bot_binding_offers_status_check",
           "value": "\"bot_binding_offers\".\"status\" IN ('pending', 'redeemed', 'revoked')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.access_grants": {
       "name": "access_grants",
@@ -15465,10 +15729,10 @@
             }
           ],
           "isUnique": true,
+          "where": "status = 'active'",
           "concurrently": false,
           "method": "btree",
-          "with": {},
-          "where": "status = 'active'"
+          "with": {}
         },
         "access_grants_user_idx": {
           "name": "access_grants_user_idx",
@@ -15516,13 +15780,14 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "access_grants_scope_check": {
           "name": "access_grants_scope_check",
           "value": "\"access_grants\".\"scope\" IN ('model-access')"
+        },
+        "access_grants_source_check": {
+          "name": "access_grants_source_check",
+          "value": "\"access_grants\".\"source\" IN ('binding-code', 'workbench-implicit')"
         },
         "access_grants_status_check": {
           "name": "access_grants_status_check",
@@ -15530,10 +15795,13 @@
         },
         "access_grants_revoked_at_check": {
           "name": "access_grants_revoked_at_check",
-          "value": "((\"access_grants\".\"status\" = 'active' AND \"access_grants\".\"revoked_at\" IS NULL) OR (\"access_grants\".\"status\" = 'revoked' AND \"access_grants\".\"revoked_at\" IS NOT NULL))"
+          "value": "(\"access_grants\".\"status\" = 'active' AND \"access_grants\".\"revoked_at\" IS NULL) OR (\"access_grants\".\"status\" = 'revoked' AND \"access_grants\".\"revoked_at\" IS NOT NULL)"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.gateway_catalog_fetches": {
       "name": "gateway_catalog_fetches",
@@ -15613,16 +15881,16 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "gateway_catalog_fetches_status_allowed": {
           "name": "gateway_catalog_fetches_status_allowed",
           "value": "\"gateway_catalog_fetches\".\"status\" IN ('ok', 'failed')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.gateway_catalog_sync_state": {
       "name": "gateway_catalog_sync_state",
@@ -15681,9 +15949,6 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "gateway_catalog_sync_state_failures_nonnegative": {
           "name": "gateway_catalog_sync_state_failures_nonnegative",
@@ -15698,7 +15963,10 @@
           "value": "(\"gateway_catalog_sync_state\".\"last_attempt_status\" = 'failed') = (\"gateway_catalog_sync_state\".\"last_failure_reason_code\" IS NOT NULL) AND (\"gateway_catalog_sync_state\".\"last_attempt_status\" = 'failed') = (\"gateway_catalog_sync_state\".\"last_failure_at\" IS NOT NULL)"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.gateway_customers": {
       "name": "gateway_customers",
@@ -15740,8 +16008,8 @@
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "type": "stored",
-            "as": "gateway_customer_name"
+            "as": "gateway_customer_name",
+            "type": "stored"
           }
         },
         "provision_state": {
@@ -15828,9 +16096,6 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "gateway_customers_kind_check": {
           "name": "gateway_customers_kind_check",
@@ -15841,7 +16106,10 @@
           "value": "\"gateway_customers\".\"provision_state\" IN ('pending', 'confirmed', 'recoverable', 'active')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.gateway_model_catalog_refs": {
       "name": "gateway_model_catalog_refs",
@@ -15926,9 +16194,6 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "gateway_model_catalog_refs_capability_allowed": {
           "name": "gateway_model_catalog_refs_capability_allowed",
@@ -15939,7 +16204,10 @@
           "value": "\"gateway_model_catalog_refs\".\"capability_source\" IN ('supported_methods', 'none')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.gateway_model_open_scopes": {
       "name": "gateway_model_open_scopes",
@@ -15998,18 +16266,6 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "gateway_model_open_scopes_identity_pk": {
-          "name": "gateway_model_open_scopes_identity_pk",
-          "columns": [
-            "provider",
-            "model",
-            "capability"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "gateway_model_open_scopes_state_allowed": {
           "name": "gateway_model_open_scopes_state_allowed",
@@ -16020,7 +16276,19 @@
           "value": "\"gateway_model_open_scopes\".\"capability\" IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'realtime', 'video', 'unknown')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {
+        "gateway_model_open_scopes_identity_pk": {
+          "name": "gateway_model_open_scopes_identity_pk",
+          "columns": [
+            "provider",
+            "model",
+            "capability"
+          ]
+        }
+      }
     },
     "public.gateway_model_preferences": {
       "name": "gateway_model_preferences",
@@ -16085,19 +16353,6 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "gateway_model_preferences_identity_pk": {
-          "name": "gateway_model_preferences_identity_pk",
-          "columns": [
-            "user_id",
-            "scope",
-            "bot_id",
-            "conversation_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "gateway_model_preferences_scope_allowed": {
           "name": "gateway_model_preferences_scope_allowed",
@@ -16112,7 +16367,20 @@
           "value": "(\"gateway_model_preferences\".\"scope\" = 'global' AND \"gateway_model_preferences\".\"bot_id\" = '' AND \"gateway_model_preferences\".\"conversation_id\" = '') OR (\"gateway_model_preferences\".\"scope\" = 'bot' AND \"gateway_model_preferences\".\"bot_id\" <> '' AND \"gateway_model_preferences\".\"conversation_id\" = '') OR (\"gateway_model_preferences\".\"scope\" = 'conversation' AND \"gateway_model_preferences\".\"bot_id\" <> '' AND \"gateway_model_preferences\".\"conversation_id\" <> '')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {
+        "gateway_model_preferences_identity_pk": {
+          "name": "gateway_model_preferences_identity_pk",
+          "columns": [
+            "user_id",
+            "scope",
+            "bot_id",
+            "conversation_id"
+          ]
+        }
+      }
     },
     "public.gateway_price_snapshots": {
       "name": "gateway_price_snapshots",
@@ -16200,19 +16468,6 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "gateway_price_snapshots_identity_version_pk": {
-          "name": "gateway_price_snapshots_identity_version_pk",
-          "columns": [
-            "provider",
-            "model",
-            "capability",
-            "snapshot_version"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "gateway_price_snapshots_capability_allowed": {
           "name": "gateway_price_snapshots_capability_allowed",
@@ -16251,7 +16506,20 @@
           "value": "\"gateway_price_snapshots\".\"price_status\" = classify_gateway_price_status(\"gateway_price_snapshots\".\"dims\")"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {
+        "gateway_price_snapshots_identity_version_pk": {
+          "name": "gateway_price_snapshots_identity_version_pk",
+          "columns": [
+            "provider",
+            "model",
+            "capability",
+            "snapshot_version"
+          ]
+        }
+      }
     },
     "public.gateway_rate_versions": {
       "name": "gateway_rate_versions",
@@ -16320,11 +16588,11 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.code_runs": {
       "name": "code_runs",
@@ -16429,11 +16697,11 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.credit_grants": {
       "name": "credit_grants",
@@ -16578,9 +16846,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "credit_grants_source_check": {
           "name": "credit_grants_source_check",
@@ -16599,7 +16864,10 @@
           "value": "\"credit_grants\".\"used\" >= 0 AND \"credit_grants\".\"used\" <= \"credit_grants\".\"total\""
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.credit_ledger": {
       "name": "credit_ledger",
@@ -16755,9 +17023,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "credit_ledger_credits_check": {
           "name": "credit_ledger_credits_check",
@@ -16768,7 +17033,10 @@
           "value": "\"credit_ledger\".\"applied\" >= 0 AND \"credit_ledger\".\"applied\" <= \"credit_ledger\".\"credits\""
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.credit_charge_remainders": {
       "name": "credit_charge_remainders",
@@ -16816,16 +17084,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "credit_charge_remainders_shape_check": {
           "name": "credit_charge_remainders_shape_check",
           "value": "\"credit_charge_remainders\".\"numerator\" ~ '^[0-9]+$' AND \"credit_charge_remainders\".\"denominator\" ~ '^[1-9][0-9]*$'"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.credit_reservation_allocations": {
       "name": "credit_reservation_allocations",
@@ -16929,9 +17197,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "credit_reservation_allocations_amount_check": {
           "name": "credit_reservation_allocations_amount_check",
@@ -16942,7 +17207,10 @@
           "value": "\"credit_reservation_allocations\".\"consumed\" >= 0 AND \"credit_reservation_allocations\".\"consumed\" <= \"credit_reservation_allocations\".\"amount\""
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.credit_reservations": {
       "name": "credit_reservations",
@@ -17170,32 +17438,32 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "credit_reservations_status_check": {
           "name": "credit_reservations_status_check",
-          "value": "\"credit_reservations\".\"status\" IN ('reserved', 'settled', 'released')"
+          "value": "\"credit_reservations\".\"status\" IN ('reserved', 'unknown', 'settled', 'released')"
         },
         "credit_reservations_maximum_check": {
           "name": "credit_reservations_maximum_check",
           "value": "\"credit_reservations\".\"maximum\" > 0"
         },
+        "credit_reservations_lock_completeness_check": {
+          "name": "credit_reservations_lock_completeness_check",
+          "value": "(\"credit_reservations\".\"provider\" IS NULL) = (\"credit_reservations\".\"model\" IS NULL) AND (\"credit_reservations\".\"provider\" IS NULL) = (\"credit_reservations\".\"capability\" IS NULL) AND (\"credit_reservations\".\"provider\" IS NULL) = (\"credit_reservations\".\"snapshot_version\" IS NULL) AND (\"credit_reservations\".\"provider\" IS NULL) = (\"credit_reservations\".\"rate_version\" IS NULL) AND (\"credit_reservations\".\"provider\" IS NULL OR (\"credit_reservations\".\"provider\" <> '' AND \"credit_reservations\".\"model\" <> '' AND \"credit_reservations\".\"capability\" IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'realtime', 'video', 'unknown') AND \"credit_reservations\".\"snapshot_version\" >= 1 AND \"credit_reservations\".\"rate_version\" >= 0))"
+        },
         "credit_reservations_terminal_check": {
           "name": "credit_reservations_terminal_check",
-          "value": "(\"credit_reservations\".\"status\" = 'reserved' AND \"credit_reservations\".\"terminal_at\" IS NULL) OR (\"credit_reservations\".\"status\" <> 'reserved' AND \"credit_reservations\".\"terminal_at\" IS NOT NULL)"
+          "value": "(\"credit_reservations\".\"status\" IN ('reserved', 'unknown') AND \"credit_reservations\".\"terminal_at\" IS NULL) OR (\"credit_reservations\".\"status\" IN ('settled', 'released') AND \"credit_reservations\".\"terminal_at\" IS NOT NULL)"
         },
         "credit_reservations_settled_check": {
           "name": "credit_reservations_settled_check",
           "value": "\"credit_reservations\".\"status\" <> 'settled' OR (\"credit_reservations\".\"actual_numerator\" ~ '^[0-9]+$' AND \"credit_reservations\".\"actual_denominator\" ~ '^[0-9]+$' AND \"credit_reservations\".\"actual_denominator\" !~ '^0+$' AND \"credit_reservations\".\"charged\" >= 0 AND \"credit_reservations\".\"applied\" >= 0 AND \"credit_reservations\".\"applied\" <= \"credit_reservations\".\"maximum\" AND \"credit_reservations\".\"released\" = \"credit_reservations\".\"maximum\" - \"credit_reservations\".\"applied\")"
-        },
-        "credit_reservations_lock_completeness_check": {
-          "name": "credit_reservations_lock_completeness_check",
-          "value": "(\"credit_reservations\".\"provider\" IS NULL) = (\"credit_reservations\".\"model\" IS NULL) AND (\"credit_reservations\".\"provider\" IS NULL) = (\"credit_reservations\".\"capability\" IS NULL) AND (\"credit_reservations\".\"provider\" IS NULL) = (\"credit_reservations\".\"snapshot_version\" IS NULL) AND (\"credit_reservations\".\"provider\" IS NULL) = (\"credit_reservations\".\"rate_version\" IS NULL) AND (\"credit_reservations\".\"provider\" IS NULL OR (\"credit_reservations\".\"provider\" <> '' AND \"credit_reservations\".\"model\" <> '' AND \"credit_reservations\".\"capability\" IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'realtime', 'video', 'unknown') AND \"credit_reservations\".\"snapshot_version\" >= 1 AND \"credit_reservations\".\"rate_version\" >= 0))"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.sandbox_instances": {
       "name": "sandbox_instances",
@@ -17358,16 +17626,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "sandbox_instances_status_check": {
           "name": "sandbox_instances_status_check",
           "value": "\"sandbox_instances\".\"status\" IN ('provisioning', 'ready', 'sleeping', 'terminated', 'failed')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.workshop_artifacts": {
       "name": "workshop_artifacts",
@@ -17468,9 +17736,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "workshop_artifacts_type_check": {
           "name": "workshop_artifacts_type_check",
@@ -17481,7 +17746,10 @@
           "value": "\"workshop_artifacts\".\"visibility\" IN ('private', 'public')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.workshop_schedule_runs": {
       "name": "workshop_schedule_runs",
@@ -17610,11 +17878,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.workshop_schedules": {
       "name": "workshop_schedules",
@@ -17757,11 +18025,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.workshop_sessions": {
       "name": "workshop_sessions",
@@ -17971,9 +18239,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "workshop_sessions_status_check": {
           "name": "workshop_sessions_status_check",
@@ -17988,7 +18253,10 @@
           "value": "\"workshop_sessions\".\"share_scope\" IN ('preview', 'preview_download')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.workshop_turn_events": {
       "name": "workshop_turn_events",
@@ -18070,11 +18338,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.workshop_turns": {
       "name": "workshop_turns",
@@ -18245,9 +18513,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "workshop_turns_status_check": {
           "name": "workshop_turns_status_check",
@@ -18258,7 +18523,10 @@
           "value": "\"workshop_turns\".\"initiator\" IN ('person', 'headless', 'schedule')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.payment_events": {
       "name": "payment_events",
@@ -18391,16 +18659,16 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "payment_events_kind_check": {
           "name": "payment_events_kind_check",
           "value": "\"payment_events\".\"kind\" IN ('fact', 'anomaly')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.payment_orders": {
       "name": "payment_orders",
@@ -18620,9 +18888,6 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "payment_orders_status_check": {
           "name": "payment_orders_status_check",
@@ -18643,9 +18908,20 @@
         "payment_orders_currency_check": {
           "name": "payment_orders_currency_check",
           "value": "\"payment_orders\".\"currency\" = 'CNY'"
+        },
+        "payment_orders_owner_pair_check": {
+          "name": "payment_orders_owner_pair_check",
+          "value": "(\"payment_orders\".\"owner_payer_kind\" IS NULL) = (\"payment_orders\".\"owner_payer_id\" IS NULL)"
+        },
+        "payment_orders_owner_kind_check": {
+          "name": "payment_orders_owner_kind_check",
+          "value": "\"payment_orders\".\"owner_payer_kind\" IS NULL OR \"payment_orders\".\"owner_payer_kind\" IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.usage_outbox": {
       "name": "usage_outbox",
@@ -18868,9 +19144,6 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "usage_outbox_source_check": {
           "name": "usage_outbox_source_check",
@@ -18905,7 +19178,10 @@
           "value": "\"usage_outbox\".\"credits_attempts\" >= 0"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.expert_installs": {
       "name": "expert_installs",
@@ -19009,11 +19285,11 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.identity_link_challenges": {
       "name": "identity_link_challenges",
@@ -19083,11 +19359,11 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "checkConstraints": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     },
     "public.identity_links": {
       "name": "identity_links",
@@ -19250,9 +19526,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {
         "identity_links_verified_by_check": {
           "name": "identity_links_verified_by_check",
@@ -19263,7 +19536,10 @@
           "value": "\"identity_links\".\"status\" IN ('active', 'needs_reconnect')"
         }
       },
-      "isRLSEnabled": false
+      "uniqueConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false,
+      "compositePrimaryKeys": {}
     }
   },
   "enums": {
@@ -19286,8 +19562,8 @@
         "mcp",
         "mcp_oauth_client",
         "mcp_user_token",
-        "gateway_admin",
         "bot_service",
+        "gateway_admin",
         "credit_service"
       ]
     },
