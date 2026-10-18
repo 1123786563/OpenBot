@@ -442,6 +442,51 @@ describe("compatibility: the frozen fields decide, item by item (AC1)", () => {
     ).toMatchObject({ candidate: null, equal: false, blocking: true });
   });
 
+  test("two sides both refused by the redaction policy are never assumed equal (OCR R4-28)", async () => {
+    // Both freezes collapsed the same way: the judge config the redaction policy
+    // refused on each side. A structural comparison of the envelope shapes would
+    // read the two omitted states as "the same scoring definition" and release
+    // the blocking field; the textEqual discipline says a refused value is
+    // unknown, and unknown is never assumed equal.
+    const refused = (source: typeof baseConfig): typeof source => {
+      const copy = { ...source } as typeof source;
+      (copy as { judgeConfig: unknown }).judgeConfig = {
+        state: "omitted",
+        reason: "unhandled_free_text",
+      };
+      return copy;
+    };
+    const { service } = serviceFor({
+      experiments: [
+        experiment({ id: "experiment-base", config: refused(baseConfig) }),
+        experiment({
+          id: "experiment-cand",
+          config: refused(candidateConfig),
+          configHash: "e".repeat(64),
+        }),
+      ],
+      executions: [
+        execution({ id: "execution-base", caseCount: 1 }),
+        execution({
+          id: "execution-cand",
+          experimentId: "experiment-cand",
+          experimentConfigHash: "e".repeat(64),
+          caseCount: 1,
+        }),
+      ],
+    });
+
+    const comparison = await service.compare(scopeA, bothSides);
+
+    expect(comparison.compatibility.compatible).toBe(false);
+    expect(
+      comparison.compatibility.fields.find(
+        (one) => one.field === "judgeConfig",
+      ),
+    ).toMatchObject({ equal: false, blocking: true });
+    expect(comparison.deltas).toBeNull();
+  });
+
   test("a different judgeConfig (one rule changed) is not comparable", async () => {
     const otherRules = experiment({
       id: "experiment-cand",

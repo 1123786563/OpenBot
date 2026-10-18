@@ -141,6 +141,20 @@ function reference(value: string): string {
   return value;
 }
 
+/**
+ * Whether `error` is a Postgres unique_violation (SQLSTATE 23505). Bun's driver puts the
+ * SQLSTATE in `errno`; drizzle wraps the driver error as `cause` — the same shape
+ * bindings.ts classifies.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  type Driver = { errno?: unknown };
+  const candidates = [
+    error as Driver | null | undefined,
+    (error as { cause?: Driver } | null | undefined)?.cause,
+  ];
+  return candidates.some((candidate) => candidate?.errno === "23505");
+}
+
 /** A structured field: an object, never null and never an array pretending to be one. */
 function structure(value: Record<string, unknown>): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -481,6 +495,17 @@ export function createObservationExperimentStore(
           }
           // The one legal transition, guarded on the UPDATE itself: only a draft row may
           // enter frozen, so a submit racing another submit freezes the row exactly once.
+          // The (scope, config_hash) partial index can still refuse the freeze itself
+          // (OCR R4-13): a frozen holder of this hash may sit in the deletion window —
+          // invisible to the filtered elsewhere-read above yet still holding the index
+          // — or freeze between that read and this UPDATE. The refusal is the same
+          // domain 409 the replay channels answer: this UPDATE cannot violate the
+          // (scope, name) index (it changes neither column), so a 23505 here names
+          // exactly the condition EXPERIMENT_STATE_INVALID words — this scope already
+          // holds this canonical configuration frozen. The R3-26 held read-back is not
+          // available here: a raised 23505 aborts the transaction, so any in-transaction
+          // recheck would answer 25P02, not the holder — the classification itself is
+          // the honest answer.
           const frozen = await tx
             .update(aiObservationExperiments)
             .set({
@@ -498,7 +523,11 @@ export function createObservationExperimentStore(
                 eq(aiObservationExperiments.state, "draft"),
               ),
             )
-            .returning();
+            .returning()
+            .catch((error: unknown) => {
+              if (!isUniqueViolation(error)) throw error;
+              throw new ExperimentStoreError("EXPERIMENT_STATE_INVALID", 409);
+            });
           if (frozen[0]) {
             return { experiment: frozen[0], replayed: false, canaryFindings };
           }

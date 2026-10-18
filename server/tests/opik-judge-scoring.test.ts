@@ -211,8 +211,10 @@ test("the judge scores a case through the approved entrance and settles its own 
 
   // One controlled call: the approved entrance's model — never the evaluated model, never
   // an Opik default — with the rubric in the system message and only reviewed sample,
-  // reference and output in the user message.
+  // reference and output in the user message. The request carries the entrance id the
+  // record will name (OCR R4-23): dispatch and provenance stay the same fact.
   expect(model.calls).toHaveLength(1);
+  expect(model.calls[0]?.entranceId).toBe("approved");
   expect(model.calls[0]?.modelName).toBe("judge-model");
   expect(model.calls[0]?.system).toContain(
     "Score the answer's agreement with the reference",

@@ -31,6 +31,12 @@ export type EvaluationModelCall = (input: {
   modelParameters: Record<string, unknown>;
   system: string;
   user: string;
+  /**
+   * The approved entrance the caller resolved this request through, when one exists
+   * (OCR R4-23): the dispatch key that keeps admission and dialing the same fact even
+   * when two entrances share a model name. Absent on plain gateway calls.
+   */
+  entranceId?: string;
 }) => Promise<{
   output: string;
   /** The provider's settled usage; missing means unknown, never zero. */
@@ -88,13 +94,33 @@ export function createProductionEvaluationCaseRunner(
     const modelName = textOf(context.config.modelName);
     const system = textOf(context.config.prompt);
     const user = textOf(context.frozenCase.safeInput);
-    const input = `${system}\n\n${user}`;
     const startedAt = new Date();
     const base = {
       modelId: modelName,
       scope: context.scope,
-      input,
+      input: `${system}\n\n${user}`,
     };
+
+    // Fail-closed at the projection boundary (OCR R4-21, the judge's AC3 precedent):
+    // a prompt, case input or model name the redaction policy withheld is not an
+    // empty string to dial with — there is nothing safe to evaluate, and dialing a
+    // stripped question still spends money on it. The case settles as the domain
+    // refusal BEFORE the billing admission (zero holds, zero provider calls), and
+    // the observation carries the same refused ending the admission path does.
+    // A truncation is still reviewed text (the judge's ruling) and proceeds.
+    if (
+      context.config.modelName.state !== "projected" ||
+      context.config.prompt.state !== "projected" ||
+      context.frozenCase.safeInput.state !== "projected"
+    ) {
+      report({
+        ...base,
+        occurredAt: startedAt,
+        endedAt: new Date(),
+        ending: { kind: "refused", code: "input_unavailable" },
+      });
+      return { status: "failed", reason: "input_unavailable" };
+    }
 
     const admission = await deps.admit?.({
       executionId: context.executionId,
