@@ -1763,7 +1763,9 @@ describe("the preview origin's proxied traffic (cookie gate + servePreview seam)
     const response = await origin.handlePreviewRequest(
       SESSION_ID,
       new Request(`${address}/`, {
-        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${passFor(OTHER_SESSION_ID)}` },
+        headers: {
+          cookie: `${PREVIEW_SESSION_COOKIE}=${passFor(OTHER_SESSION_ID)}`,
+        },
       }),
     );
     expect(response.status).toBe(401);
@@ -2059,11 +2061,7 @@ describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
     );
     expect(redemption.status).toBe(302);
     const cookie = redemption.headers.get("set-cookie") ?? "";
-    const planted = cookie
-      .split(";")[0]
-      ?.split("=")
-      .slice(1)
-      .join("=") ?? "";
+    const planted = cookie.split(";")[0]?.split("=").slice(1).join("=") ?? "";
     // The repair's core: the planted value is a deployment-signed pass bound
     // to (SESSION_ID, USER_ID) — not the raw session id the old code echoed.
     expect(planted).not.toBe(SESSION_ID);
@@ -2177,7 +2175,9 @@ describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
 
     const before = await origin.handlePreviewRequest(
       SESSION_ID,
-      new Request(`${address}/`, { headers: { cookie: passCookie(SESSION_ID) } }),
+      new Request(`${address}/`, {
+        headers: { cookie: passCookie(SESSION_ID) },
+      }),
     );
     expect(before.status).toBe(200);
 
@@ -2185,7 +2185,9 @@ describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
     owners.set(SESSION_ID, "u2");
     const after = await origin.handlePreviewRequest(
       SESSION_ID,
-      new Request(`${address}/`, { headers: { cookie: passCookie(SESSION_ID) } }),
+      new Request(`${address}/`, {
+        headers: { cookie: passCookie(SESSION_ID) },
+      }),
     );
     expect(after.status).toBe(404);
     // The verified claim (the ORIGINAL owner) is what the seam saw both times.
@@ -2249,7 +2251,11 @@ describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
     expect(okA.status).toBe(200);
     expect(okB.status).toBe(200);
     expect(calls).toEqual([
-      { sessionId: SESSION_ID, userId: USER_ID, appPath: `${labelA}/api/things` },
+      {
+        sessionId: SESSION_ID,
+        userId: USER_ID,
+        appPath: `${labelA}/api/things`,
+      },
       {
         sessionId: OTHER_SESSION_ID,
         userId: USER_ID,

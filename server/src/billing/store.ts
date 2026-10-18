@@ -288,8 +288,7 @@ export function createBillingStore(
         database
           .select({
             externalCustomerId: billingSubscriptions.externalCustomerId,
-            externalSubscriptionId:
-              billingSubscriptions.externalSubscriptionId,
+            externalSubscriptionId: billingSubscriptions.externalSubscriptionId,
             planCode: billingSubscriptions.planCode,
             status: billingSubscriptions.status,
             ownerPayerKind: billingSubscriptions.ownerPayerKind,

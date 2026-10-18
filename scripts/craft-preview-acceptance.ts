@@ -639,7 +639,9 @@ async function killPortOccupant(port: number, tag: string): Promise<void> {
   const code = await proc.exited;
   const killed = await new Response(proc.stdout).text().catch(() => "");
   if (code !== 0) {
-    log(`[${tag}] 清理端口 ${port} 占用者时 docker exec 退出码 ${code}（继续：可能本就无占用）`);
+    log(
+      `[${tag}] 清理端口 ${port} 占用者时 docker exec 退出码 ${code}（继续：可能本就无占用）`,
+    );
   } else if (killed.includes("killed")) {
     log(`[${tag}] 已清理占用预留端口 ${port} 的孤儿 dev server 进程`);
   }
@@ -2019,10 +2021,7 @@ try {
         if (r.status === 200) recovered = true;
         else await new Promise((r2) => setTimeout(r2, 2_000));
       }
-      assert(
-        recovered,
-        `重拉后预览未恢复 200（last=${lastUp}）`,
-      );
+      assert(recovered, `重拉后预览未恢复 200（last=${lastUp}）`);
       await shot("10-webapp-restart-attach", previewPage);
       return "停服 503 → 重拉 → 同一预览地址 200（附着不双进程）";
     },

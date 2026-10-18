@@ -118,7 +118,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
@@ -170,7 +173,7 @@ test("an unknown-result hold enters the unknown state, recording why and when, a
 
 test("the clock advancing past expiresAt leaves an unknown hold occupying its full capacity", async () => {
   const world = await seedWorld();
-  const withoutHold = (await writer.availableBalance(world.customerKey));
+  const withoutHold = await writer.availableBalance(world.customerKey);
   const reservationId = await reserve(world, 500);
   expect(await writer.availableBalance(world.customerKey)).toBe(
     withoutHold - 500,
@@ -261,7 +264,10 @@ test("the recovery release door takes an unknown hold with its evidence; the res
   const reservedId = await reserve(world, 300);
   let wrongDoor: unknown;
   try {
-    await writer.releaseUnknownReservation(reservedId, "recovery without cause");
+    await writer.releaseUnknownReservation(
+      reservedId,
+      "recovery without cause",
+    );
   } catch (error) {
     wrongDoor = error;
   }
@@ -273,7 +279,10 @@ test("the recovery release door takes an unknown hold with its evidence; the res
   const unknownId = await reserve(world, 500);
   await writer.markReservationUnknown(unknownId, "usage_missing");
   await expireReservation(unknownId);
-  await writer.releaseUnknownReservation(unknownId, "provider confirmed no cost");
+  await writer.releaseUnknownReservation(
+    unknownId,
+    "provider confirmed no cost",
+  );
   const released = await reservationRow(unknownId);
   expect(released.status).toBe("released");
   expect(released.releaseReason).toBe("provider confirmed no cost");
@@ -283,7 +292,9 @@ test("the recovery release door takes an unknown hold with its evidence; the res
   // The unknown entry evidence survives as history, whatever became of the hold.
   expect(released.unknownReason).toBe("usage_missing");
   expect(released.unknownAt).not.toBeNull();
-  expect(await writer.availableBalance(world.customerKey)).toBe(withoutHold - 300);
+  expect(await writer.availableBalance(world.customerKey)).toBe(
+    withoutHold - 300,
+  );
 });
 
 // ── Recovery settlement: the same attempt id settles, once ────────────────────────
@@ -358,7 +369,10 @@ test("the status query answers an unknown-result hold with its evidence, and not
   expect(answer.kind).toBe("answered");
   if (answer.kind !== "answered") return;
   expect(answer.outcome.status).toBe("unknown");
-  if (answer.outcome.status === "unknown" && !("reservationId" in answer.outcome))
+  if (
+    answer.outcome.status === "unknown" &&
+    !("reservationId" in answer.outcome)
+  )
     return;
   expect(answer.outcome.reservationId).toBe(reservationId);
   expect(answer.outcome.unknownReason).toBe("usage_missing");

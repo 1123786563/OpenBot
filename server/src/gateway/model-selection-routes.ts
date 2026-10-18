@@ -124,7 +124,9 @@ export type ModelSelectionRouteDeps = {
   selectable: () =>
     | Pick<GatewayModelCapabilityFilterService, "listSelectableModels">
     | undefined;
-  priceSnapshots: () => Pick<GatewayPriceSnapshotStore, "listLatestPriceSnapshots"> | undefined;
+  priceSnapshots: () =>
+    | Pick<GatewayPriceSnapshotStore, "listLatestPriceSnapshots">
+    | undefined;
 };
 
 function defaultDeps(): ModelSelectionRouteDeps {
@@ -301,7 +303,10 @@ export function createModelSelectionRoutes(
 
     const body = await context.req.json().catch(() => undefined);
     if (typeof body !== "object" || body === null) {
-      return context.json({ error: "A preference write names a scope and a model ref." }, 400);
+      return context.json(
+        { error: "A preference write names a scope and a model ref." },
+        400,
+      );
     }
     const payload = body as Record<string, unknown>;
 
@@ -319,7 +324,9 @@ export function createModelSelectionRoutes(
       !MODEL_PREFERENCE_SCOPES.includes(scope as ModelPreferenceScope)
     ) {
       return context.json(
-        { error: `A preference write names one of the scopes ${MODEL_PREFERENCE_SCOPES.join(", ")}.` },
+        {
+          error: `A preference write names one of the scopes ${MODEL_PREFERENCE_SCOPES.join(", ")}.`,
+        },
         400,
       );
     }
@@ -328,7 +335,10 @@ export function createModelSelectionRoutes(
     // that names a user is.
     if (payload.botId !== undefined) {
       return context.json(
-        { error: "The Bot context is the workbench bot and is never a body field." },
+        {
+          error:
+            "The Bot context is the workbench bot and is never a body field.",
+        },
         400,
       );
     }
@@ -354,7 +364,10 @@ export function createModelSelectionRoutes(
       !MODEL_CAPABILITIES.includes(ref.capability as never)
     ) {
       return context.json(
-        { error: "A preference write names a complete model ref: provider, model, capability." },
+        {
+          error:
+            "A preference write names a complete model ref: provider, model, capability.",
+        },
         400,
       );
     }
@@ -394,7 +407,10 @@ export function createModelSelectionRoutes(
 /** Attach the availability verdict to 03.9's answer — the ref is never changed. */
 function effectiveView(
   effective: EffectiveModelResolution,
-  selection: { selectable: ModelRef[]; excluded: { ref: ModelRef; reasonCode: ModelExclusionReason }[] },
+  selection: {
+    selectable: ModelRef[];
+    excluded: { ref: ModelRef; reasonCode: ModelExclusionReason }[];
+  },
 ): EffectiveModelView {
   if (effective.status === "unset") return { status: "unset" };
   const key = modelRefKey(effective.ref);

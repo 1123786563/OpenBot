@@ -18,7 +18,10 @@ import type {
   ModelSelectionResult,
 } from "../src/gateway/model-capability-filter";
 import type { GatewayPriceSnapshotStore } from "../src/gateway/price-snapshot";
-import type { BotServiceRecord, BotServiceStore } from "../src/bot-services/store";
+import type {
+  BotServiceRecord,
+  BotServiceStore,
+} from "../src/bot-services/store";
 
 /*
  * Bifrost 03.10 (#232, AC09/AC19) — the user-facing workbench model picker's
@@ -79,50 +82,69 @@ const OTHER_CHAT_REF = {
   model: "pref-chat-mini",
   capability: "chat",
 };
-const IMAGE_REF = { provider: "prefco", model: "pref-draw", capability: "image" };
+const IMAGE_REF = {
+  provider: "prefco",
+  model: "pref-draw",
+  capability: "image",
+};
 
 /** A preference service whose answers the test pins per case. */
-function fakePreferences(overrides: {
-  resolve?: (input: {
-    userId: string;
-    botId: string;
-    conversationId: string;
-  }) => Promise<EffectiveModelResolution>;
-  write?: (
-    input: ModelPreferenceWriteInput & {
-      scope: "global" | "bot" | "conversation";
-      botId?: string;
-      conversationId?: string;
-    },
-  ) => Promise<ModelPreferenceWriteResult>;
-} = {}): GatewayModelPreferenceService {
+function fakePreferences(
+  overrides: {
+    resolve?: (input: {
+      userId: string;
+      botId: string;
+      conversationId: string;
+    }) => Promise<EffectiveModelResolution>;
+    write?: (
+      input: ModelPreferenceWriteInput & {
+        scope: "global" | "bot" | "conversation";
+        botId?: string;
+        conversationId?: string;
+      },
+    ) => Promise<ModelPreferenceWriteResult>;
+  } = {},
+): GatewayModelPreferenceService {
   return {
     setGlobalDefault: (input) =>
-      (overrides.write ?? (async () => {
-        throw new Error("unexpected write");
-      }))({ ...input, scope: "global" }),
+      (
+        overrides.write ??
+        (async () => {
+          throw new Error("unexpected write");
+        })
+      )({ ...input, scope: "global" }),
     setBotDefault: (input) =>
-      (overrides.write ?? (async () => {
-        throw new Error("unexpected write");
-      }))({ ...input, scope: "bot", botId: input.botId }),
+      (
+        overrides.write ??
+        (async () => {
+          throw new Error("unexpected write");
+        })
+      )({ ...input, scope: "bot", botId: input.botId }),
     setConversationSelection: (input) =>
-      (overrides.write ?? (async () => {
-        throw new Error("unexpected write");
-      }))({
+      (
+        overrides.write ??
+        (async () => {
+          throw new Error("unexpected write");
+        })
+      )({
         ...input,
         scope: "conversation",
         botId: input.botId,
         conversationId: input.conversationId,
       }),
     resolveEffectiveModel:
-      overrides.resolve ??
-      (async () => ({ status: "unset" as const })),
+      overrides.resolve ?? (async () => ({ status: "unset" as const })),
   };
 }
 
 function fakeFilter(
   result: ModelSelectionResult = { selectable: [], excluded: [] },
-  spy?: { calls: { capabilities: readonly string[]; requester: ModelSelectionRequester }[] },
+  spy?: {
+    calls: {
+      capabilities: readonly string[];
+      requester: ModelSelectionRequester;
+    }[];
+  },
 ): Pick<GatewayModelCapabilityFilterService, "listSelectableModels"> {
   return {
     async listSelectableModels(botCapabilities, requester) {
@@ -154,20 +176,24 @@ function fakeBots(
   return { getBotService: async () => record };
 }
 
-function fixture(overrides: {
-  requireUser?: MiddlewareHandler<{ Variables: AppVariables }>;
-  preferences?: GatewayModelPreferenceService;
-  filter?: Pick<GatewayModelCapabilityFilterService, "listSelectableModels">;
-  prices?: Pick<GatewayPriceSnapshotStore, "listLatestPriceSnapshots">;
-  bots?: Pick<BotServiceStore, "getBotService">;
-  omit?: ("preferences" | "filter" | "prices" | "bots")[];
-} = {}) {
+function fixture(
+  overrides: {
+    requireUser?: MiddlewareHandler<{ Variables: AppVariables }>;
+    preferences?: GatewayModelPreferenceService;
+    filter?: Pick<GatewayModelCapabilityFilterService, "listSelectableModels">;
+    prices?: Pick<GatewayPriceSnapshotStore, "listLatestPriceSnapshots">;
+    bots?: Pick<BotServiceStore, "getBotService">;
+    omit?: ("preferences" | "filter" | "prices" | "bots")[];
+  } = {},
+) {
   // Deps are factories, the admin-routes pattern: the real mount resolves the
   // running controls lazily per request, tests answer per case. The registry
   // rides its own argument, the way every sibling route takes it.
   const app = createModelSelectionRoutes(
     overrides.requireUser ?? USER,
-    overrides.omit?.includes("bots") ? undefined : overrides.bots ?? fakeBots(),
+    overrides.omit?.includes("bots")
+      ? undefined
+      : (overrides.bots ?? fakeBots()),
     {
       ...(overrides.omit?.includes("preferences")
         ? {}
@@ -421,18 +447,14 @@ describe("model selection routes — the preference write", () => {
         excluded: [],
       }),
     });
-    const { response, body } = await callJson(
-      app,
-      "/preference",
-      {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          scope: "global",
-          ref: CHAT_REF,
-        }),
-      },
-    );
+    const { response, body } = await callJson(app, "/preference", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        scope: "global",
+        ref: CHAT_REF,
+      }),
+    });
     expect(response.status).toBe(200);
     expect(body).toEqual({
       ok: true,
@@ -490,15 +512,11 @@ describe("model selection routes — the preference write", () => {
         }),
       }),
     });
-    const { response, body } = await callJson(
-      app,
-      "/preference",
-      {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ scope: "global", ref: CHAT_REF }),
-      },
-    );
+    const { response, body } = await callJson(app, "/preference", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scope: "global", ref: CHAT_REF }),
+    });
     expect(response.status).toBe(200);
     expect(body).toEqual({
       ok: false,
@@ -510,28 +528,39 @@ describe("model selection routes — the preference write", () => {
   test("a body that names a user, a malformed scope or an incomplete ref is a 400, never a silent fix", async () => {
     const app = fixture();
     const cases: [string, unknown][] = [
-      ["userId in body", { scope: "global", userId: "someone-else", ref: CHAT_REF }],
+      [
+        "userId in body",
+        { scope: "global", userId: "someone-else", ref: CHAT_REF },
+      ],
       ["unknown scope", { scope: "workspace", ref: CHAT_REF }],
-      ["global naming a bot", { scope: "global", botId: "other-bot", ref: CHAT_REF }],
-      ["bot scope naming a bot", { scope: "bot", botId: "other-bot", ref: CHAT_REF }],
+      [
+        "global naming a bot",
+        { scope: "global", botId: "other-bot", ref: CHAT_REF },
+      ],
+      [
+        "bot scope naming a bot",
+        { scope: "bot", botId: "other-bot", ref: CHAT_REF },
+      ],
       [
         "conversation scope without session",
         { scope: "conversation", ref: CHAT_REF },
       ],
       ["incomplete ref", { scope: "global", ref: { provider: "prefco" } }],
-      ["unknown capability", { scope: "global", ref: { provider: "prefco", model: "m", capability: "telepathy" } }],
+      [
+        "unknown capability",
+        {
+          scope: "global",
+          ref: { provider: "prefco", model: "m", capability: "telepathy" },
+        },
+      ],
       ["missing ref", { scope: "global" }],
     ];
     for (const [name, payload] of cases) {
-      const { response } = await callJson(
-        app,
-        "/preference",
-        {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
+      const { response } = await callJson(app, "/preference", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
       expect(response.status, name).toBe(400);
     }
     // A body that is not JSON at all is the same refusal.

@@ -131,7 +131,9 @@ function previewHmrDeps(
     ),
     store: {
       async findSession(id: string, userId: string) {
-        return id === SESSION_ID && userId === owner && input.sessionExists !== false
+        return id === SESSION_ID &&
+          userId === owner &&
+          input.sessionExists !== false
           ? sessionRow(port)
           : undefined;
       },

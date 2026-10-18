@@ -43,10 +43,7 @@ import {
   WEBAPP_MOUNT_MARKER,
 } from "./nextjs-dev";
 import { refuseResponse } from "./refusal";
-import {
-  PREVIEW_PASS_REFUSAL,
-  type ServePreview,
-} from "./preview-origin";
+import { PREVIEW_PASS_REFUSAL, type ServePreview } from "./preview-origin";
 import {
   createPreviewTickets,
   defaultPreviewOrigin,
@@ -1309,7 +1306,10 @@ export async function resolvePreviewWebappHmrUpgrade(
   if (verified === null) {
     return { ok: false, status: 401, error: PREVIEW_PASS_REFUSAL };
   }
-  const session = await deps.store.findSession(input.sessionId, verified.userId);
+  const session = await deps.store.findSession(
+    input.sessionId,
+    verified.userId,
+  );
   if (!session) {
     return {
       ok: false,

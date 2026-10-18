@@ -636,7 +636,8 @@ export const GATEWAY_VIRTUAL_KEY_STATUSES = [
 ] as const;
 
 /** One of the closed key states; see {@link GATEWAY_VIRTUAL_KEY_STATUSES}. */
-export type GatewayVirtualKeyStatus = (typeof GATEWAY_VIRTUAL_KEY_STATUSES)[number];
+export type GatewayVirtualKeyStatus =
+  (typeof GATEWAY_VIRTUAL_KEY_STATUSES)[number];
 
 /**
  * The OpenBot side of the short-lived virtual key record — Bifrost 05.3's (#244) local ledger

@@ -219,7 +219,10 @@ function actorAs(
  * asserts exact counts against that actor alone.
  */
 function testAdmin(suffix: string) {
-  return { userId: `${admin.userId}-${suffix}`, email: `${admin.userId}-${suffix}@openbot.test` };
+  return {
+    userId: `${admin.userId}-${suffix}`,
+    email: `${admin.userId}-${suffix}@openbot.test`,
+  };
 }
 
 function appAs(
@@ -230,7 +233,10 @@ function appAs(
     identity?: { userId: string; email: string };
   },
 ) {
-  return gatewayAdminRoutes(actorAs(role, overrides?.identity), depsFor(overrides));
+  return gatewayAdminRoutes(
+    actorAs(role, overrides?.identity),
+    depsFor(overrides),
+  );
 }
 
 async function syncAttempts(): Promise<number> {
@@ -416,7 +422,12 @@ describe("an administrator's trigger runs the same sync and answers the outcome"
     const body = (await response.json()) as {
       result:
         | { status: "ok" }
-        | { status: "failed"; stage: string; reasonCode: string; failedAt: string };
+        | {
+            status: "failed";
+            stage: string;
+            reasonCode: string;
+            failedAt: string;
+          };
     };
     expect(body.result.status).toBe("failed");
     if (body.result.status !== "failed") throw new Error("expected failed");
@@ -490,8 +501,12 @@ describe("repeated triggers share one sync", () => {
     const [r1, r2] = await Promise.all([first, second]);
     expect(r1.status).toBe(200);
     expect(r2.status).toBe(200);
-    const b1 = (await r1.json()) as { result: { status: string; syncedAt?: string } };
-    const b2 = (await r2.json()) as { result: { status: string; syncedAt?: string } };
+    const b1 = (await r1.json()) as {
+      result: { status: string; syncedAt?: string };
+    };
+    const b2 = (await r2.json()) as {
+      result: { status: string; syncedAt?: string };
+    };
     expect(b1.result.status).toBe("ok");
     expect(b2.result.status).toBe("ok");
     expect(b2.result.syncedAt).toBe(b1.result.syncedAt);

@@ -91,13 +91,16 @@ function lagoFetchStub() {
     init?: RequestInit,
   ) => {
     const url = input instanceof URL ? input : new URL(String(input));
-    const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+    const method =
+      init?.method ?? (input instanceof Request ? input.method : "GET");
 
     if (method === "GET" && url.pathname === "/api/v1/subscriptions") {
       state.subscriptionReads += 1;
-      const externalCustomerId = url.searchParams.get("external_customer_id") ?? "";
+      const externalCustomerId =
+        url.searchParams.get("external_customer_id") ?? "";
       const rows = state.list.filter(
-        (subscription) => subscription.externalCustomerId === externalCustomerId,
+        (subscription) =>
+          subscription.externalCustomerId === externalCustomerId,
       );
       return json(200, {
         subscriptions: rows.map((subscription) => ({
@@ -111,10 +114,7 @@ function lagoFetchStub() {
         })),
       });
     }
-    if (
-      method === "GET" &&
-      url.pathname.startsWith("/api/v1/subscriptions/")
-    ) {
+    if (method === "GET" && url.pathname.startsWith("/api/v1/subscriptions/")) {
       state.subscriptionReads += 1;
       const externalId = decodeURIComponent(
         url.pathname.slice("/api/v1/subscriptions/".length),
@@ -137,7 +137,11 @@ function lagoFetchStub() {
     }
     if (method === "POST" && url.pathname === "/api/v1/subscriptions") {
       const body = JSON.parse(String(init?.body)) as {
-        subscription: { external_customer_id: string; external_id: string; plan_code: string };
+        subscription: {
+          external_customer_id: string;
+          external_id: string;
+          plan_code: string;
+        };
       };
       const created: StubSubscription = {
         externalCustomerId: body.subscription.external_customer_id,
@@ -163,7 +167,11 @@ function lagoFetchStub() {
     }
     if (method === "GET" && url.pathname.startsWith("/api/v1/plans/")) {
       return json(200, {
-        plan: { interval: "monthly", amount_cents: 8800, amount_currency: "CNY" },
+        plan: {
+          interval: "monthly",
+          amount_cents: 8800,
+          amount_currency: "CNY",
+        },
       });
     }
     if (method === "GET" && url.pathname.startsWith("/api/v1/customers/")) {
@@ -234,13 +242,19 @@ const grantor = {
   readCurrentPeriodEnd: async () => new Date(periods.current.end),
 };
 
-function fakePaidProvider(id: PaymentProviderId, fact: PaymentFact): PaymentProvider {
+function fakePaidProvider(
+  id: PaymentProviderId,
+  fact: PaymentFact,
+): PaymentProvider {
   return {
     id,
     createSession: async () => ({
       checkout: { kind: "qrcode", payload: `qr-${id}` },
     }),
-    queryPayment: async (outTradeNo: string) => ({ outTradeNo, state: "pending" as const }),
+    queryPayment: async (outTradeNo: string) => ({
+      outTradeNo,
+      state: "pending" as const,
+    }),
     closePayment: async () => {},
     verifyNotification: async () => ({ ok: true as const, fact }),
     successAck: { body: "success", contentType: "text/plain" },
@@ -277,18 +291,25 @@ async function purchaseAndPay(user: PayerRef, tag: string, planCode = "pro") {
       getPlan: async (planCode) => {
         const result = await lagoClient.getPlan(planCode);
         return result.status === 200 && result.body
-          ? { found: true, interval: result.body.interval, currency: result.body.currency ?? undefined }
+          ? {
+              found: true,
+              interval: result.body.interval,
+              currency: result.body.currency ?? undefined,
+            }
           : { found: false };
       },
-      ensureSubscription: async (input) => billingService.ensureSubscription(input),
+      ensureSubscription: async (input) =>
+        billingService.ensureSubscription(input),
       // 10.3: the activation path stamps ownership; wired by the assembly like index.ts.
-      stampSubscriptionOwnership: (input) => billingStore.stampSubscriptionOwnership(input),
+      stampSubscriptionOwnership: (input) =>
+        billingStore.stampSubscriptionOwnership(input),
     },
     externalCustomerKey: deploymentKey,
     // The single-subscription guard is 10.2's subject; these tests share one deployment key,
     // so the rig answers "not active" the same way the 10.2 rig does.
     activePlanCode: async () => null,
-    invalidateEntitlementCache: () => billingService.invalidateEntitlementCache(deploymentKey),
+    invalidateEntitlementCache: () =>
+      billingService.invalidateEntitlementCache(deploymentKey),
     grantor,
     renewals,
     log: { warn: (message) => console.log(`[payments] ${message}`) },
@@ -322,31 +343,42 @@ async function subscriptionRow(externalSubscriptionId: string) {
   const [row] = await database
     .select()
     .from(billingSubscriptions)
-    .where(eq(billingSubscriptions.externalSubscriptionId, externalSubscriptionId))
+    .where(
+      eq(billingSubscriptions.externalSubscriptionId, externalSubscriptionId),
+    )
     .limit(1);
   return row;
 }
 
 async function planGrantsFor(accountKey: string) {
-  return database
-    .select({
-      idempotencyKey: creditGrants.idempotencyKey,
-      total: creditGrants.total,
-      externalCustomerId: creditGrants.externalCustomerId,
-    })
-    .from(creditGrants)
-    .where(
-      and(eq(creditGrants.source, "plan"), eq(creditGrants.externalCustomerId, accountKey)),
-    )
-    // PostgreSQL promises no row order without one, and the exact-array assertions below read
-    // the account's grant history in payout order: the purchase first, then each period's
-    // renewal. Granted-at carries that order (ties, two grants in the same microsecond, fall
-    // to the unique key), so the assertion reads the timeline, not the heap's mood.
-    .orderBy(creditGrants.grantedAt, creditGrants.idempotencyKey);
+  return (
+    database
+      .select({
+        idempotencyKey: creditGrants.idempotencyKey,
+        total: creditGrants.total,
+        externalCustomerId: creditGrants.externalCustomerId,
+      })
+      .from(creditGrants)
+      .where(
+        and(
+          eq(creditGrants.source, "plan"),
+          eq(creditGrants.externalCustomerId, accountKey),
+        ),
+      )
+      // PostgreSQL promises no row order without one, and the exact-array assertions below read
+      // the account's grant history in payout order: the purchase first, then each period's
+      // renewal. Granted-at carries that order (ties, two grants in the same microsecond, fall
+      // to the unique key), so the assertion reads the timeline, not the heap's mood.
+      .orderBy(creditGrants.grantedAt, creditGrants.idempotencyKey)
+  );
 }
 
 /** A signed subscription.* delivery in the provider's own wire shape. */
-function signedDelivery(eventId: string, webhookType: string, object: Record<string, unknown>) {
+function signedDelivery(
+  eventId: string,
+  webhookType: string,
+  object: Record<string, unknown>,
+) {
   const body = JSON.stringify({
     webhook_type: webhookType,
     object_type: "subscription",
@@ -391,19 +423,28 @@ afterEach(async () => {
 
 /** Production boot syncs the deployment customer before any purchase; tests seed the same floor. */
 async function seedDeploymentCustomer() {
-  await billingStore.upsertCustomer({ externalId: deploymentKey, name: "OpenBot deployment test" });
+  await billingStore.upsertCustomer({
+    externalId: deploymentKey,
+    name: "OpenBot deployment test",
+  });
 }
 
 afterAll(async () => {
   // Every account key and order carries the prefix, so one test's leftovers never answer another's.
-  await database.delete(creditGrants).where(like(creditGrants.externalCustomerId, `%${prefix}%`));
+  await database
+    .delete(creditGrants)
+    .where(like(creditGrants.externalCustomerId, `%${prefix}%`));
   await database
     .delete(billingSubscriptions)
     .where(like(billingSubscriptions.externalCustomerId, `%${prefix}%`));
   await database
     .delete(billingSubscriptions)
-    .where(like(billingSubscriptions.externalSubscriptionId, `${deploymentKey}-%`));
-  await database.delete(paymentOrders).where(like(paymentOrders.createdBy, `${prefix}%`));
+    .where(
+      like(billingSubscriptions.externalSubscriptionId, `${deploymentKey}-%`),
+    );
+  await database
+    .delete(paymentOrders)
+    .where(like(paymentOrders.createdBy, `${prefix}%`));
   // The customer rows the rig's floors and grants implied, last: credit_grants cascades on the
   // customer, and the deployment/stranger keys all carry the prefix. A shared test database
   // stays as clean as this file found it — whole-table scans in other files must not count us.
@@ -434,11 +475,15 @@ describe("10.3 subscription ownership", () => {
     expect(row).toBeDefined();
     expect(row?.ownerPayerKind).toBe("personal");
     expect(row?.ownerPayerId).toBe(userA);
-    expect(row?.allowancePeriodStart?.toISOString()).toBe(periods.current.start);
+    expect(row?.allowancePeriodStart?.toISOString()).toBe(
+      periods.current.start,
+    );
     expect(row?.allowancePeriodEnd?.toISOString()).toBe(periods.current.end);
 
     // The purchase allowance landed in the SAME account the subscription belongs to.
-    const grants = await planGrantsFor(payerKey({ kind: "personal", id: userA }));
+    const grants = await planGrantsFor(
+      payerKey({ kind: "personal", id: userA }),
+    );
     expect(grants).toHaveLength(1);
     expect(grants[0]?.idempotencyKey).toBe(`plan:${orderId}`);
   });
@@ -446,7 +491,11 @@ describe("10.3 subscription ownership", () => {
   test("a renewal notification pays the owner once per period; the next period pays again", async () => {
     await seedDeploymentCustomer();
     const userB = `${prefix}-user-b`;
-    const { orderId } = await purchaseAndPay({ kind: "personal", id: userB }, "b", "pro-b");
+    const { orderId } = await purchaseAndPay(
+      { kind: "personal", id: userB },
+      "b",
+      "pro-b",
+    );
     const subscriptionId = `${deploymentKey}-pro-b`;
     const ownerKey = payerKey({ kind: "personal", id: userB });
 
@@ -473,7 +522,9 @@ describe("10.3 subscription ownership", () => {
       renewalKey,
     ]);
     const row = await subscriptionRow(subscriptionId);
-    expect(row?.allowancePeriodStart?.toISOString()).toBe(periods.current.start);
+    expect(row?.allowancePeriodStart?.toISOString()).toBe(
+      periods.current.start,
+    );
     expect(row?.allowancePeriodEnd?.toISOString()).toBe(periods.current.end);
 
     // A repeated notification of the SAME period (fresh event identity, same facts) is a no-op:
@@ -525,7 +576,9 @@ describe("10.3 subscription ownership", () => {
     const renewalGrants = await database
       .select({ id: creditGrants.id })
       .from(creditGrants)
-      .where(like(creditGrants.idempotencyKey, `plan-renewal:${subscriptionId}:%`));
+      .where(
+        like(creditGrants.idempotencyKey, `plan-renewal:${subscriptionId}:%`),
+      );
     expect(renewalGrants).toHaveLength(0);
     // The marker did not advance either: the period stays uncovered, not silently consumed.
     const row = await subscriptionRow(subscriptionId);
@@ -553,7 +606,9 @@ describe("10.3 subscription ownership", () => {
       `plan-renewal:${subscriptionId}:${periods.current.start}`,
     ]);
     const row = await subscriptionRow(subscriptionId);
-    expect(row?.allowancePeriodStart?.toISOString()).toBe(periods.current.start);
+    expect(row?.allowancePeriodStart?.toISOString()).toBe(
+      periods.current.start,
+    );
   });
 
   test("a webhook refresh and an owner-less sync cannot rewrite the subscription's ownership", async () => {
@@ -659,10 +714,8 @@ describe("10.3 subscription ownership", () => {
       .set({ externalCustomerId: strangerKey })
       .where(eq(creditGrants.idempotencyKey, `plan:${orderB}`));
 
-    const reconciler = createReconciler(
-      database,
-      deploymentKey,
-      (planCode) => (planCode.startsWith("pro") ? PLAN_CREDIT_UNITS : null),
+    const reconciler = createReconciler(database, deploymentKey, (planCode) =>
+      planCode.startsWith("pro") ? PLAN_CREDIT_UNITS : null,
     );
     const report = await reconciler.reconcile();
     const codesFor = (orderId: string) =>
@@ -702,10 +755,8 @@ describe("10.3 subscription ownership", () => {
     const userRf = `${prefix}-user-rf`;
     await purchaseAndPay({ kind: "personal", id: userRf }, "rf", "pro-e");
 
-    const reconciler = createReconciler(
-      database,
-      deploymentKey,
-      (planCode) => (planCode.startsWith("pro") ? PLAN_CREDIT_UNITS : null),
+    const reconciler = createReconciler(database, deploymentKey, (planCode) =>
+      planCode.startsWith("pro") ? PLAN_CREDIT_UNITS : null,
     );
     const report = await reconciler.reconcile();
     const codesFor = (orderId: string) =>

@@ -16,8 +16,10 @@ import { type Browser, type Page, chromium } from "playwright-core";
 if (existsSync(".env")) process.loadEnvFile(".env");
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
-const APP_ORIGIN = process.env.CRAFT_ACCEPTANCE_APP_ORIGIN ?? "http://127.0.0.1:3220";
-const API_ORIGIN = process.env.CRAFT_ACCEPTANCE_API_ORIGIN ?? "http://localhost:3221";
+const APP_ORIGIN =
+  process.env.CRAFT_ACCEPTANCE_APP_ORIGIN ?? "http://127.0.0.1:3220";
+const API_ORIGIN =
+  process.env.CRAFT_ACCEPTANCE_API_ORIGIN ?? "http://localhost:3221";
 const CASDOOR_USER = process.env.CRAFT_ACCEPTANCE_CASDOOR_USER ?? "admin";
 const CASDOOR_PASSWORD = process.env.CRAFT_ACCEPTANCE_CASDOOR_PASSWORD ?? "123";
 const GATEWAY =
@@ -42,7 +44,6 @@ const SANDBOX_CONTAINER =
 const T = 45_000;
 const RUN_STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
-
 /**
  * AC5 两处 HMR socket 的完整地址（fix-ocr25 #5）：模块级收敛 —— 脚本侧已知
  * PREVIEW_ORIGIN 与 label，由脚本派生完整 ws 地址作为 evaluate 实参传入，
@@ -50,7 +51,9 @@ const RUN_STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
  * 打了两遍补丁，正是该重复的实证风险（http→ws 只换首处 scheme：https
  * 形态自然落成 wss）。
  */
-function assert(condition: unknown, message: string): void { if (!condition) throw new Error(message); }
+function assert(condition: unknown, message: string): void {
+  if (!condition) throw new Error(message);
+}
 async function launchBrowser(): Promise<Browser> {
   for (const candidate of [
     { channel: "chrome" as const },
@@ -399,7 +402,9 @@ async function killPortOccupant(port: number, tag: string): Promise<void> {
   const code = await proc.exited;
   const killed = await new Response(proc.stdout).text().catch(() => "");
   if (code !== 0) {
-    log(`[${tag}] 清理端口 ${port} 占用者时 docker exec 退出码 ${code}（继续：可能本就无占用）`);
+    log(
+      `[${tag}] 清理端口 ${port} 占用者时 docker exec 退出码 ${code}（继续：可能本就无占用）`,
+    );
   } else if (killed.includes("killed")) {
     log(`[${tag}] 已清理占用预留端口 ${port} 的孤儿 dev server 进程`);
   }
@@ -442,7 +447,10 @@ let page: Page;
 let browser: Browser;
 const EVIDENCE: string[] = [];
 mkdirSync(SHOT_DIR, { recursive: true });
-function evidence(line: string) { EVIDENCE.push(line); console.log(line); }
+function evidence(line: string) {
+  EVIDENCE.push(line);
+  console.log(line);
+}
 
 type Row = { id: string; nextjs_port: number; name: string };
 // playwright 的 APIRequestContext 在 bun 下对 POST 间歇 socket hang up（传输层
@@ -455,9 +463,14 @@ const api = {
       ...init,
       headers: { ...(init.headers ?? {}), cookie: cookieHeader },
       redirect: "manual",
-    }).catch((e) => { throw new Error(`native fetch ${path}: ${(e as Error).message}`); });
+    }).catch((e) => {
+      throw new Error(`native fetch ${path}: ${(e as Error).message}`);
+    });
     const body = await response.json().catch(() => null);
-    return { status: response.status, body: body as Record<string, unknown> | null };
+    return {
+      status: response.status,
+      body: body as Record<string, unknown> | null,
+    };
   },
 };
 
@@ -468,29 +481,47 @@ const context = await browser.newContext();
 page = await context.newPage();
 try {
   // 1) Casdoor 登录
-  await page.goto("http://localhost:3220", { waitUntil: "domcontentloaded", timeout: T });
-  try { await page.getByRole("button", { name: "Continue with Casdoor" }).click({ timeout: 10_000 }); } catch { /* 自动进入 */ }
+  await page.goto("http://localhost:3220", {
+    waitUntil: "domcontentloaded",
+    timeout: T,
+  });
+  try {
+    await page
+      .getByRole("button", { name: "Continue with Casdoor" })
+      .click({ timeout: 10_000 });
+  } catch {
+    /* 自动进入 */
+  }
   await page.locator("#username").waitFor({ state: "visible", timeout: T });
   await page.fill("#username", CASDOOR_USER);
   await page.fill("#password", CASDOOR_PASSWORD);
   await page.click("button[type=submit]");
-  await page.waitForURL((url) => url.origin === "http://localhost:3220", { timeout: T });
+  await page.waitForURL((url) => url.origin === "http://localhost:3220", {
+    timeout: T,
+  });
   const listed = await api.craft("sessions");
   assert(listed.status === 200, `GET /sessions -> ${listed.status}`);
   evidence(`[1] Casdoor 登录 OK`);
   // 登录域是 localhost（better-auth state 绑发起域），把会话 cookie 镜像到
   // 127.0.0.1：与预览 127.0.0.1:3221 同 host ⇒ 同 site（端口不参与 site/cookie 判定）。
-  const session = (await context.cookies(["http://localhost:3220"])).find(
-    (c) => c.name.startsWith("better-auth.session_token"),
+  const session = (await context.cookies(["http://localhost:3220"])).find((c) =>
+    c.name.startsWith("better-auth.session_token"),
   );
   assert(session, "登录后未找到 better-auth.session_token cookie");
-  await context.addCookies([{
-    name: session.name, value: session.value,
-    domain: "127.0.0.1", path: "/", httpOnly: session.httpOnly, secure: false,
-    sameSite: "Lax",
-  }]);
-  evidence(`[1b] 会话 cookie 已镜像到 127.0.0.1（cookie host 不分端口 ⇒ 3220/3221 同带）`);
-
+  await context.addCookies([
+    {
+      name: session.name,
+      value: session.value,
+      domain: "127.0.0.1",
+      path: "/",
+      httpOnly: session.httpOnly,
+      secure: false,
+      sameSite: "Lax",
+    },
+  ]);
+  evidence(
+    `[1b] 会话 cookie 已镜像到 127.0.0.1（cookie host 不分端口 ⇒ 3220/3221 同带）`,
+  );
 
   // 2) 建会话 + 探针（host 形态：就绪门探端口根，无 /<label> 前缀）
   const created = await api.craft("sessions", {
@@ -506,13 +537,22 @@ try {
   await markSessionNonEmpty(row.id, "S");
   let probeStatus = 0;
   for (let i = 0; i < 30; i++) {
-    const probe = await fetch(`${GATEWAY}/file?path=${encodeURIComponent(`${row.id}/start-webapp.sh`)}`, { headers: gatewayHeaders() }).catch(() => null);
+    const probe = await fetch(
+      `${GATEWAY}/file?path=${encodeURIComponent(`${row.id}/start-webapp.sh`)}`,
+      { headers: gatewayHeaders() },
+    ).catch(() => null);
     probeStatus = probe?.status ?? 0;
     if (probeStatus === 200) break;
     if (probeStatus === 500) {
-      const listing = await fetch(`${GATEWAY}/file?path=${encodeURIComponent(row.id)}`, { headers: gatewayHeaders() }).catch(() => null);
+      const listing = await fetch(
+        `${GATEWAY}/file?path=${encodeURIComponent(row.id)}`,
+        { headers: gatewayHeaders() },
+      ).catch(() => null);
       const names = (await listing?.text().catch(() => "")) ?? "";
-      if (listing?.status === 200 && names.includes("start-webapp.sh")) { probeStatus = 200; break; }
+      if (listing?.status === 200 && names.includes("start-webapp.sh")) {
+        probeStatus = 200;
+        break;
+      }
     }
     await new Promise((r) => setTimeout(r, 2000));
   }
@@ -520,82 +560,153 @@ try {
   // 预览地址（host 形态：{label}.localhost:3221）
   const early = await api.craft(`sessions/${row.id}/webapp-info`);
   console.log("[diag] webapp-info =", JSON.stringify(early.body).slice(0, 400));
-  const previewUrl = String((early.body as Record<string, unknown>)?.webapp_url ?? "");
+  const previewUrl = String(
+    (early.body as Record<string, unknown>)?.webapp_url ?? "",
+  );
   const basePath = `/${new URL(previewUrl).pathname.split("/").filter(Boolean)[0] ?? ""}`;
-  assert(previewUrl.startsWith("http://127.0.0.1:3221/"), `webapp_url=${previewUrl} 非 dev 形态 127.0.0.1:3221/{label}`);
-  evidence(`[2] 会话 ${row.id} port=${row.nextjs_port} 预览地址= ${previewUrl}（与主站 ${APP_ORIGIN} 同 host 异端口 ⇒ 同 site）`);
+  assert(
+    previewUrl.startsWith("http://127.0.0.1:3221/"),
+    `webapp_url=${previewUrl} 非 dev 形态 127.0.0.1:3221/{label}`,
+  );
+  evidence(
+    `[2] 会话 ${row.id} port=${row.nextjs_port} 预览地址= ${previewUrl}（与主站 ${APP_ORIGIN} 同 host 异端口 ⇒ 同 site）`,
+  );
   // 脚手架 + 探针三文件（host 形态 dev server 挂根：就绪门 /api/probe、页面含 marker）
   await killPortOccupant(row.nextjs_port, "S");
   await startWebapp(row.id);
-  await waitReachable(`http://127.0.0.1:${row.nextjs_port}${basePath}/`, 300_000, "S 脚手架");
+  await waitReachable(
+    `http://127.0.0.1:${row.nextjs_port}${basePath}/`,
+    300_000,
+    "S 脚手架",
+  );
   await stopSessionWebapp(row.id);
   await waitPortFree(row.nextjs_port, 30_000, "S 停服后");
   const markerV1 = probeMarker(1, "S");
-  await gatewayWriteFile(row.id, "outputs/web/app/page.tsx", probePage(markerV1));
+  await gatewayWriteFile(
+    row.id,
+    "outputs/web/app/page.tsx",
+    probePage(markerV1),
+  );
   await gatewayWriteFile(row.id, "outputs/web/app/actions.ts", PROBE_ACTION);
-  await gatewayWriteFile(row.id, "outputs/web/app/api/probe/route.ts", PROBE_ROUTE);
-  let ready = false; let lastSeen = "";
+  await gatewayWriteFile(
+    row.id,
+    "outputs/web/app/api/probe/route.ts",
+    PROBE_ROUTE,
+  );
+  let ready = false;
+  let lastSeen = "";
   for (let attempt = 0; attempt < 5 && !ready; attempt++) {
     await startWebapp(row.id);
     const deadline = Date.now() + 60_000;
     while (Date.now() < deadline) {
-      const probe = await fetch(`http://127.0.0.1:${row.nextjs_port}${basePath}/api/probe`).catch(() => null);
+      const probe = await fetch(
+        `http://127.0.0.1:${row.nextjs_port}${basePath}/api/probe`,
+      ).catch(() => null);
       const probeBody = probe?.ok ? await probe.json().catch(() => null) : null;
-      const pageHtml = await fetch(`http://127.0.0.1:${row.nextjs_port}${basePath}/`).then((r) => r.text()).catch(() => "");
+      const pageHtml = await fetch(
+        `http://127.0.0.1:${row.nextjs_port}${basePath}/`,
+      )
+        .then((r) => r.text())
+        .catch(() => "");
       lastSeen = `probe=${probe?.status ?? "err"} page=${pageHtml.slice(0, 260).replace(/\s+/g, " ")}`;
-      if (probeBody && (probeBody as { method?: string }).method === "GET" && pageHtml.includes(markerV1)) { ready = true; break; }
+      if (
+        probeBody &&
+        (probeBody as { method?: string }).method === "GET" &&
+        pageHtml.includes(markerV1)
+      ) {
+        ready = true;
+        break;
+      }
       await new Promise((r) => setTimeout(r, 2000));
     }
-    if (!ready) { await stopSessionWebapp(row.id).catch(() => {}); await killPortOccupant(row.nextjs_port, "S"); await waitPortFree(row.nextjs_port, 30_000, "S 重拉前").catch(() => {}); }
+    if (!ready) {
+      await stopSessionWebapp(row.id).catch(() => {});
+      await killPortOccupant(row.nextjs_port, "S");
+      await waitPortFree(row.nextjs_port, 30_000, "S 重拉前").catch(() => {});
+    }
   }
   assert(ready, `S 探针未就绪。marker=${markerV1} 最后观测：${lastSeen}`);
   evidence(`[3] 探针 dev server 就绪（host 形态根挂载）`);
 
   // 3) 签票 → 顶层第一方进入预览页
-  const minted = await api.craft(`sessions/${row.id}/preview-ticket`, { method: "POST" });
+  const minted = await api.craft(`sessions/${row.id}/preview-ticket`, {
+    method: "POST",
+  });
   assert(minted.status === 200, `签票 -> ${minted.status}`);
   assert(minted.body !== null, "签票响应体为空");
   const ticket = String((minted.body as Record<string, unknown>).ticket);
   const previewPage = await context.newPage();
-  await previewPage.goto(`${previewUrl}?ticket=${encodeURIComponent(ticket)}`, { waitUntil: "domcontentloaded", timeout: T });
-  await previewPage.waitForURL((url) => !url.search.includes("ticket="), { timeout: T }).catch(() => {});
-  const bodyText = await previewPage.locator("body").innerText({ timeout: 20_000 }).catch(() => "");
-  assert(bodyText.includes("probe"), `预览页未进入应用：${JSON.stringify(bodyText.slice(0, 100))}`);
-  evidence(`[4] 顶层进入预览页 OK：host=${new URL(previewPage.url()).host}（票据已兑换/透传）`);
+  await previewPage.goto(`${previewUrl}?ticket=${encodeURIComponent(ticket)}`, {
+    waitUntil: "domcontentloaded",
+    timeout: T,
+  });
+  await previewPage
+    .waitForURL((url) => !url.search.includes("ticket="), { timeout: T })
+    .catch(() => {});
+  const bodyText = await previewPage
+    .locator("body")
+    .innerText({ timeout: 20_000 })
+    .catch(() => "");
+  assert(
+    bodyText.includes("probe"),
+    `预览页未进入应用：${JSON.stringify(bodyText.slice(0, 100))}`,
+  );
+  evidence(
+    `[4] 顶层进入预览页 OK：host=${new URL(previewPage.url()).host}（票据已兑换/透传）`,
+  );
 
   // 4) 证据 C：CDP jar —— 同 site 双 host 的 cookie 并存
   const mainCookies = await cdpDomainCookies(previewPage, "localhost");
   const mainSiteNames = mainCookies.map((c) => c.name);
-  evidence(`[C] localhost:3220 主站 cookie（jar）：${JSON.stringify(mainSiteNames)} —— 主站会话 cookie 存在于 jar`);
+  evidence(
+    `[C] localhost:3220 主站 cookie（jar）：${JSON.stringify(mainSiteNames)} —— 主站会话 cookie 存在于 jar`,
+  );
 
   // 5) 证据 A：form POST → 主站（同 site）被 form-action 就地拦截
   const outcomeA = await previewPage.evaluate(async (target) => {
     const frame = document.createElement("iframe");
-    frame.name = "form-probe"; frame.style.display = "none";
+    frame.name = "form-probe";
+    frame.style.display = "none";
     document.body.appendChild(frame);
     const violation = await new Promise<string | null>((resolve) => {
       let settled = false;
       const done = (directive: string | null) => {
-        if (settled) return; settled = true;
+        if (settled) return;
+        settled = true;
         document.removeEventListener("securitypolicyviolation", onViolation);
-        clearTimeout(timer); resolve(directive);
+        clearTimeout(timer);
+        resolve(directive);
       };
       const onViolation = (event: Event) => {
-        if ((event as SecurityPolicyViolationEvent).effectiveDirective === "form-action")
+        if (
+          (event as SecurityPolicyViolationEvent).effectiveDirective ===
+          "form-action"
+        )
           done((event as SecurityPolicyViolationEvent).effectiveDirective);
       };
       document.addEventListener("securitypolicyviolation", onViolation);
       const timer = setTimeout(() => done(null), 5000);
       const form = document.createElement("form");
-      form.action = target; form.method = "POST"; form.target = "form-probe";
-      document.body.appendChild(form); form.submit();
+      form.action = target;
+      form.method = "POST";
+      form.target = "form-probe";
+      document.body.appendChild(form);
+      form.submit();
     });
     frame.remove();
     return { violation, host: location.host };
   }, `${APP_ORIGIN}/`);
-  assert(outcomeA.violation === "form-action", `同 site 表单提交未被拦截（violation=${JSON.stringify(outcomeA.violation)}）——F-1 洞开`);
-  assert(outcomeA.host === new URL(previewUrl).host, `观测文档离开了预览 host：${outcomeA.host}`);
-  evidence(`[A] 同 site 表单 POST ${APP_ORIGIN}/ → securitypolicyviolation(form-action) 就地拦截；文档仍在 ${outcomeA.host}（未达主站）`);
+  assert(
+    outcomeA.violation === "form-action",
+    `同 site 表单提交未被拦截（violation=${JSON.stringify(outcomeA.violation)}）——F-1 洞开`,
+  );
+  assert(
+    outcomeA.host === new URL(previewUrl).host,
+    `观测文档离开了预览 host：${outcomeA.host}`,
+  );
+  evidence(
+    `[A] 同 site 表单 POST ${APP_ORIGIN}/ → securitypolicyviolation(form-action) 就地拦截；文档仍在 ${outcomeA.host}（未达主站）`,
+  );
 
   // 6) 证据 B（附带性对照）：route 改写去掉 form-action → 同款提交带主站 cookie 直达主站
   const requests: { url: string; method: string; cookieNames: string[] }[] = [];
@@ -604,23 +715,41 @@ try {
     const headers = { ...response.headers() } as Record<string, string>;
     const csp = headers["content-security-policy"] ?? "";
     const stripped = csp.replace(/form-action 'self'; ?/g, "");
-    await route.fulfill({ response, headers: { ...headers, "content-security-policy": stripped } });
+    await route.fulfill({
+      response,
+      headers: { ...headers, "content-security-policy": stripped },
+    });
   });
   previewPage.on("request", (req) => {
     if (req.url().startsWith(APP_ORIGIN) && req.method() === "POST") {
       const cookieHeader = req.headers().cookie ?? "";
-      requests.push({ url: req.url(), method: req.method(), cookieNames: cookieHeader.split(";").map((s) => s.trim().split("=")[0]).filter(Boolean) });
+      requests.push({
+        url: req.url(),
+        method: req.method(),
+        cookieNames: cookieHeader
+          .split(";")
+          .map((s) => s.trim().split("=")[0])
+          .filter(Boolean),
+      });
     }
   });
   const reloadUrl = previewPage.url();
-  await previewPage.goto(reloadUrl, { waitUntil: "domcontentloaded", timeout: T });
-  await previewPage.locator("body").innerText({ timeout: 20_000 }).catch(() => "");
+  await previewPage.goto(reloadUrl, {
+    waitUntil: "domcontentloaded",
+    timeout: T,
+  });
+  await previewPage
+    .locator("body")
+    .innerText({ timeout: 20_000 })
+    .catch(() => "");
   // fire-and-forget 顶层提交：成功=导航离开预览页（evaluate 不可 await），以
   // 请求观测与导航结果为证。
   await previewPage.evaluate((target) => {
     const form = document.createElement("form");
-    form.action = target; form.method = "POST";
-    document.body.appendChild(form); form.submit();
+    form.action = target;
+    form.method = "POST";
+    document.body.appendChild(form);
+    form.submit();
   }, `${APP_ORIGIN}/`);
   const navigatedOut = await previewPage
     .waitForURL((u) => u.origin === APP_ORIGIN, { timeout: 6000 })
@@ -630,14 +759,26 @@ try {
   await context.unrouteAll();
   if (!navigatedOut && requests.length === 0) {
     // 页面没走、请求没到——查是否被 CSP 拦（此时 previewPage 还活着）
-    const stayed = await previewPage.evaluate(() => location.host).catch(() => "gone");
-    assert(false, `去掉 form-action 后既未导航也未到达主站（host=${stayed}）——对照实验未成立`);
+    const stayed = await previewPage
+      .evaluate(() => location.host)
+      .catch(() => "gone");
+    assert(
+      false,
+      `去掉 form-action 后既未导航也未到达主站（host=${stayed}）——对照实验未成立`,
+    );
   }
   // 上一行守卫已断言「未导航且无请求」的失败面；这里再钉 B 的实质：
   // 请求必须真的到达主站（仅导航离开不算对照成立）。
-  assert(requests.length > 0, "去掉 form-action 后提交仍未到达主站——附带性对照失败");
-  const withSessionCookie = requests.some((r) => r.cookieNames.some((n) => mainSiteNames.includes(n)));
-  evidence(`[B] 对照（route 改写去掉 form-action）：顶层提交 navigatedOut=${navigatedOut}，到达主站的 POST = ${JSON.stringify(requests)} —— ${withSessionCookie ? "携带主站 cookie（cookie host 不分端口、同 host 附带）—— F-1 触发条件实证" : "未见主站 cookie（检查 jar）"}`);
+  assert(
+    requests.length > 0,
+    "去掉 form-action 后提交仍未到达主站——附带性对照失败",
+  );
+  const withSessionCookie = requests.some((r) =>
+    r.cookieNames.some((n) => mainSiteNames.includes(n)),
+  );
+  evidence(
+    `[B] 对照（route 改写去掉 form-action）：顶层提交 navigatedOut=${navigatedOut}，到达主站的 POST = ${JSON.stringify(requests)} —— ${withSessionCookie ? "携带主站 cookie（cookie host 不分端口、同 host 附带）—— F-1 触发条件实证" : "未见主站 cookie（检查 jar）"}`,
+  );
 
   await previewPage.screenshot({ path: `${SHOT_DIR}/samesite-final.png` });
   evidence(`=== 同 site 双 host 证据完成：A 拦截 + B 附带性对照 + C jar ===`);
@@ -645,7 +786,9 @@ try {
   // 清理：停服 + 删行
   if (sessionId.id) {
     await stopSessionWebapp(sessionId.id).catch(() => {});
-    await api.craft(`sessions/${sessionId.id}`, { method: "DELETE" }).catch(() => {});
+    await api
+      .craft(`sessions/${sessionId.id}`, { method: "DELETE" })
+      .catch(() => {});
     evidence(`[cleanup] 会话 ${sessionId.id} 已停服删除`);
   }
   await browser.close().catch(() => {});

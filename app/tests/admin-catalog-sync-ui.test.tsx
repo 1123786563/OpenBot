@@ -209,13 +209,9 @@ test("the sync button fires the manual route, reports the outcome and re-reads t
   await waitFor(() => expect(syncPosts).toBe(1));
   // The outcome is displayed with the synced time and the snapshot counts.
   await waitFor(() =>
-    expect(view.getByTestId("catalog-sync-result").textContent).toContain(
-      "2",
-    ),
+    expect(view.getByTestId("catalog-sync-result").textContent).toContain("2"),
   );
-  expect(
-    view.getByTestId("catalog-sync-result").textContent,
-  ).toContain("2026");
+  expect(view.getByTestId("catalog-sync-result").textContent).toContain("2026");
   // The catalog was re-read: what the server now holds is what is listed.
   await waitFor(() =>
     expect(view.queryByText(/has not synced any models yet/)).toBeNull(),
@@ -240,7 +236,9 @@ test("a failed sync shows the server's fixed reason, never a success sentence", 
 
   await waitFor(() => expect(syncPosts).toBe(1));
   const result = view.getByTestId("catalog-sync-result");
-  await waitFor(() => expect(result.textContent).toContain("catalog_fetch_unreachable"));
+  await waitFor(() =>
+    expect(result.textContent).toContain("catalog_fetch_unreachable"),
+  );
   expect(result.textContent).not.toContain("Synced");
 });
 
@@ -266,7 +264,12 @@ test("a running sync disables the button, so double-clicking fires no second req
   const release = holdSync as unknown as () => void;
   holdSync = null;
   release();
-  await waitFor(() => expect((view.getByRole("button", { name: "Sync now" }) as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() =>
+    expect(
+      (view.getByRole("button", { name: "Sync now" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
 });
 
 test("a process without the sync service says the trigger is unavailable", async () => {
@@ -281,7 +284,5 @@ test("a process without the sync service says the trigger is unavailable", async
 
   await waitFor(() => expect(syncPosts).toBe(1));
   const result = view.getByTestId("catalog-sync-result");
-  await waitFor(() =>
-    expect(result.textContent).toContain("unavailable"),
-  );
+  await waitFor(() => expect(result.textContent).toContain("unavailable"));
 });

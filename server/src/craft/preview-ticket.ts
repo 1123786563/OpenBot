@@ -201,8 +201,8 @@ export function previewSessionCookieHeader(value: string, path = "/"): string {
   // codec's signature check alone, and the old plaintext session-id cookie is
   // rejected THERE (verify), never waved through here.
   const safeValue =
-    (/^[A-Za-z0-9_-]{1,128}$/.test(value) ||
-      (PREVIEW_PASS_COOKIE_SHAPE.test(value) && value.length <= 512))
+    /^[A-Za-z0-9_-]{1,128}$/.test(value) ||
+    (PREVIEW_PASS_COOKIE_SHAPE.test(value) && value.length <= 512)
       ? value
       : "";
   // fix-ocr24 #6, why the fold is SILENT: the fold itself is the rejection
