@@ -1,5 +1,5 @@
 {
- "suites": 1062,
+ "suites": 1063,
  "blocked": [
   {
    "file": "agent-langgraph/tests/governed-export-bytes.test.ts",
@@ -20,6 +20,10 @@
   {
    "file": "app/src/lib/i18n/ai-observability.test.ts",
    "cause": "app/src/lib/i18n/ai-observability.test.ts"
+  },
+  {
+   "file": "app/tests/observability-i18n-namespaces.test.ts",
+   "cause": "app/tests/observability-i18n-namespaces.test.ts"
   },
   {
    "file": "app/tests/observability-route-guards.test.tsx",

@@ -113,6 +113,7 @@
     "app/tests/live-screen-app-shortcuts.test.tsx",
     "app/tests/live-screen-keyboard.test.tsx",
     "app/tests/model-picker-ui.test.tsx",
+    "app/tests/observability-i18n-namespaces.test.ts",
     "app/tests/observability-route-guards.test.tsx",
     "app/tests/person-sent-message.test.ts",
     "app/tests/playground-json.test.ts",
@@ -122,13 +123,13 @@
     "app/tests/root-drop-guard.test.tsx",
     "app/tests/router.test.ts",
     "app/tests/serve.test.ts",
-    "app/tests/sign-in-card.test.tsx",
-    "app/tests/skills-read-failure.test.tsx"
+    "app/tests/sign-in-card.test.tsx"
    ]
   },
   {
    "name": "app/tests part 4",
    "files": [
+    "app/tests/skills-read-failure.test.tsx",
     "app/tests/stopped-turn.test.ts",
     "app/tests/transcript-attachments.test.tsx",
     "app/tests/user-authorizations-ui.test.tsx"
@@ -663,6 +664,7 @@
   "app/tests/live-screen-app-shortcuts.test.tsx",
   "app/tests/live-screen-keyboard.test.tsx",
   "app/tests/model-picker-ui.test.tsx",
+  "app/tests/observability-i18n-namespaces.test.ts",
   "app/tests/observability-route-guards.test.tsx",
   "app/tests/person-sent-message.test.ts",
   "app/tests/playground-json.test.ts",
@@ -1429,6 +1431,7 @@
   "server/tests/workbench-implicit-grant.test.ts": "server/src/db/client.ts",
   "server/tests/workshop-artifacts.test.ts": "server/src/db/client.ts",
   "server/tests/workshop-schedule-executor.integration.test.ts": "server/src/db/client.ts",
-  "server/tests/workshop-store.test.ts": "server/src/db/client.ts"
+  "server/tests/workshop-store.test.ts": "server/src/db/client.ts",
+  "app/tests/observability-i18n-namespaces.test.ts": "app/tests/observability-i18n-namespaces.test.ts"
  }
 }

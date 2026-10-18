@@ -1,10 +1,10 @@
 # Orca DAG Orchestration Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Execution, validation, and review MUST be delegated through Orca to Pi subagents; implementation and independent review require separate agents. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 从用户指定的根 Issue 开始，递归扫描完整子 Issue 树、核验依赖并生成执行 DAG，通过 Orca 持续调度，在依赖、文件所有权和资源容量允许时取得当前就绪集合的最大并行数，并保留验收、审查、集成及恢复证据。
 
-**Architecture:** 单一主协调器拥有派发权；确定性的本地工具负责摄取、图校验、资源选择和执行 Ledger，Orca 负责 Task、Dispatch、Worker 和消息生命周期。业务验收状态与 Orca 执行状态分离；业务任务间依赖仅在产物已审查、验证并进入下游实际工作区后释放；任务内部阶段按明确的证据条件推进。
+**Architecture:** 单一主协调器拥有派发权；确定性的本地工具负责摄取、图校验、资源选择和执行 Ledger，Orca 负责 Task、Dispatch、Worker 和消息生命周期，任务执行、验证与审核由其派发的 Pi 子 Agent 承担。业务验收状态与 Orca 执行状态分离；业务任务间依赖仅在产物已审查、验证并进入下游实际工作区后释放；任务内部阶段按明确的证据条件推进。
 
 **Tech Stack:** 现有 Node.js / TypeScript / Bun 工具链；新增运行工具使用 Node ESM `.mjs`，测试使用仓库 e2e tools-only target 及 `tests/support/e2e-compat.ts`；外部能力经已认证 `gh` 与当前 Orca CLI 调用。
 
@@ -15,7 +15,7 @@
 - Issue tracker 为 `1123786563/OpenBot`；遵守 `docs/agents/issue-tracker.md`、根 `AGENTS.md`、`CONTEXT.md` 和 `docs/adr/0008-test-runner-tester-army-e2e.md`。
 - 本轮只交付计划，不启动 Worker、不创建 GitHub Issue、不提交、推送、合并或关闭 Issue。后续默认使用未提交检查点；没有已有提交授权不得自动提交。
 - 整理时主工作区存在无关未提交修改。计划文档保存在当前目录供审阅；实施前必须使用 using-git-worktrees + Orca 建立隔离执行工作区，显式复制本计划并核对 SHA-256，记录原始 BASE 和相关未提交事实源。不得假定新工作区带入本目录未提交改动。
-- 一个协调器负责整个 Run；Worker 只接收单个 Brief，不递归派发。使用 Orca orchestration，不以非 Orca 子 Agent 替代实际执行。
+- 一个主协调器负责整个 Run；使用 Orca orchestration 派发 Pi 子 Agent 执行任务、验证、独立审核及修复复审。主协调器负责计划、派发、对账、集成和门禁裁决，不代替子 Agent 实现或审核。每个 Pi 子 Agent 只接收单个 Brief，不递归派发；不得以非 Pi Worker、内置子 Agent 或主协调器内联执行替代。
 - 并行实施必须独立 Worktree、写权限不相交、接口稳定；共享数据库、端口、缓存、迁移和产物目录均进入资源模型。
 - 只读默认：摄取、规划、dry-run 不启动 Worker。实际 start/resume 的范围和并发预算必须来自已授权运行配置。
 - CLI 可执行路径按技能解析一次并持久化；原计划记录的核验路径为 `/Applications/Orca.app/Contents/Resources/bin/orca`。执行时重新读取该版本技能，禁止假设未来版本仍使用相同参数。
@@ -116,6 +116,16 @@ F1–F6 是工具运行时的故障验收要求。协议见附录 B、C，行为
 
 工具开发默认按仓库规则串行派发；仅有明确并行实施授权时采用以下并行关系。工具运行时最大并行策略也必须服从已授权预算。理论开发并行宽度为 4：T1 后可同时执行 T2/T3/T4/T5；T2 完成即可启动 T6，T3/T4 完成即可启动 T7，不等整批结束。实际同时启动数仍取决于已配置预算和运行中任务。不存在前端交付，不派发前端角色。
 
+### 2.3 Pi 子 Agent 强制派发规则
+
+本规则适用于 T1–T10 中的执行、验证与审核工作，以及工具投入运行后的业务任务和全部修复轮次。T10 的运行计划编写也由主协调器派发 Pi 子 Agent 完成；主协调器保留授权核对与交接责任。
+
+- **执行后端：** 所有任务 Worker 必须由 Orca 启动为 Pi 子 Agent。Pi 是执行后端；`backend_implementer`、`backend_validator`、`reviewer` 是职责角色，两者分别核验，不能互相替代。
+- **独立审核：** 实现者、验证者和审核者使用不同的 Pi 子 Agent 身份。审核者只读检查任务增量及其证据，分别给出 Spec compliance 和 code quality 结论；实现者自查不能代替独立审核。
+- **启动核验：** preflight 核验当前 Orca 版本支持的 Pi 启动方式、角色配置及实际运行身份。命令参数以版本匹配的技能和 help 为准，不凭空假定某个 CLI 参数。缺少 Pi 能力、角色映射不成立或启动回执无法核实时，记录 blocked/unverifiable 并保留恢复条件，不自动换用其他后端。
+- **派发证据：** Brief、启动配置和 Ledger 记录预期后端 `pi`、实际后端、角色、Worker 身份、Orca Task/Dispatch、工作区、检查点及报告路径。任务门禁同时核验代码证据和派发身份。
+- **外层 OCR：** 主协调器继续按 open-code-review Skill 调用 OCR，作为 Pi 独立审核之外的额外关卡。OCR 使用自身 provider；不把 OCR 报告当作已派发 Pi reviewer 的证据。有效问题返回 Pi 实现者修复，再交独立 Pi 验证者和审核者复审。
+
 <a id="tasks"></a>
 
 ## 3. 实施任务
@@ -124,7 +134,7 @@ F1–F6 是工具运行时的故障验收要求。协议见附录 B、C，行为
 
 以下步骤适用于 T1–T8，每个 Task 的断言和实现接口见专属条目：
 
-- [ ] 读取本 Task Brief、事实源和前置接口；核对当前 BASE、工作区、写权限与资源预留。
+- [ ] 主协调器通过 Orca 派发对应角色的 Pi 子 Agent，核验实际后端、身份和角色并记录回执；子 Agent 读取本 Task Brief、事实源和前置接口，核对当前 BASE、工作区、写权限与资源预留。
 - [ ] 在指定测试文件写明专属行为断言；运行 `E2E_UNIT_SCOPE=scripts bun run test -- scripts/orca-dag-<name>.test.ts`，确认新行为缺失导致失败，不接受收集失败代替 RED。
 - [ ] 在 owned_files 实现指定接口；只修改本 Task 文件。运行相同命令，期望新用例全部通过、无 collection error、无意外 skip、用例数大于 0。
 - [ ] 针对本 Task 新文件执行 `bunx biome check <owned_files>`；不对仓库无关文件自动修复。
@@ -148,7 +158,7 @@ F1–F6 是工具运行时的故障验收要求。协议见附录 B、C，行为
 
 **实施要求:**
 
-- schemaVersion 固定为 1；配置要求 repo、root_issue、scope、capacity、roleRouting、executionMode、runDir，另含 resourceCatalog 和 searchBudget（sliceNodes/sliceMs/maxNodes 均为正整数）。
+- schemaVersion 固定为 1；配置要求 repo、root_issue、scope、capacity、roleRouting、executionMode、runDir，另含 workerBackend（固定为 `pi`）、resourceCatalog 和 searchBudget（sliceNodes/sliceMs/maxNodes 均为正整数）。
 - 调度策略固定为 strict-max-cardinality，登记本地主机、操作系统用户及 Git common dir 身份。
 - scope.mode 固定为 root-tree，快照包含 scope_revision 和树指纹。
 - executionMode 支持 dry-run/start/resume；capacity 无值或 root_issue 缺失时禁止 start。
@@ -160,6 +170,7 @@ F1–F6 是工具运行时的故障验收要求。协议见附录 B、C，行为
 
 - [ ] 缺少 owner_role 拒绝。
 - [ ] 容量 0 拒绝。
+- [ ] workerBackend 缺失或不为 `pi` 时拒绝实际启动；角色配置不能覆盖该后端要求。
 - [ ] 根 Issue URL 与 owner/repo#number 规范化到相同身份。
 - [ ] 缺根 Issue 或指向其他仓库/PR 拒绝。
 - [ ] 非法状态跳转拒绝。
@@ -283,6 +294,7 @@ F1–F6 是工具运行时的故障验收要求。协议见附录 B、C，行为
 - [ ] 非零退出保留残留资源信息。
 - [ ] settlement 未接受不能 release。
 - [ ] 请求模型与实际模型不一致显式阻塞或纠正。
+- [ ] 预期后端为 Pi 而实际后端不符、无法核验或 Pi 不可用时阻塞，不回退到其他 Worker；实现者与审核者身份相同时拒绝审核门禁。
 - [ ] 无用户请求不得 retain。
 - [ ] 无退出证据不得 stop/abandon。
 - [ ] 未知恢复能力阻塞。
@@ -360,7 +372,7 @@ search_checkpoint 包含待搜索 frontier、当前最优集合、上下界、�
 - 检查唯一 ID、依赖引用、自环、环路路径、验收覆盖、文件所有权和接口消费者/生产者；按附录 B.1 阶段门禁表生成 implement/validate/review/integrate 节点及带 condition 的边，业务 Task 只作聚合，不形成自等待。
 - 聚合父 Issue 不重复实现。
 - 推断边带证据；未解决冲突节点不 ready。
-- Brief 含单任务上下文、报告路径、前置产物、角色、检查点策略、禁止再派发及失败处置。
+- Brief 含单任务上下文、报告路径、前置产物、Pi 执行后端、职责角色、检查点策略、禁止再派发及失败处置；角色与后端核验遵循 2.3。
 
 **测试断言:**
 
@@ -504,7 +516,7 @@ searchBudget 提高通过 resume 记录为控制事件，保留历史预算和 f
 - [ ] 运行 `E2E_UNIT_SCOPE=scripts bun run test -- scripts/orca-dag-*.test.ts`，确认测试选择参数按实际 runner 使用文件列表传入；报告逐套件用例数，不接受零用例通过。
 - [ ] 使用假的 GitHub/Orca transport、临时真实 Git 仓库，演练分页失败、重复消息、崩溃恢复、资源冲突、过期尝试和证据失效；不启动真实收费模型调用。
 - [ ] 对 F1–F6 各保存一条完整行为轨迹：失败修复闭环、集成回归资源争用、在途范围承接、双进程跨 Run 互斥、无实施父节点同步、求解期间消息响应及预算恢复。记录测试名称、检查点哈希和结果；缺任一轨迹不得以其他测试通过替代。
-- [ ] 独立 reviewer 只读审查完整工具改动，输出 Spec compliance 与 code quality。
+- [ ] 主协调器通过 Orca 派发独立 Pi reviewer，只读审查完整工具改动，输出 Spec compliance 与 code quality；核验其身份与实现者不同。
 - [ ] 主协调器按 open-code-review Skill 直接运行 workspace OCR，覆盖全部未提交交付；若同时存在已提交交付，再覆盖原始 BASE..HEAD。保存 exit code、覆盖和失败文件，不能将 exit 0 视为自动通过。
 - [ ] 有效 critical/high/medium finding 进入编号修复 DAG，由对应实现者修复、验证者验证、reviewer 复审，再完整 OCR；provider/凭据故障记录为阻塞。
 
@@ -546,7 +558,8 @@ searchBudget 提高通过 resume 记录为控制事件，保留历史预算和 f
 ### 4.2 工具交付条件
 
 - [ ] T1–T9 均 verified，交付范围内验收、适用测试和静态检查通过。
-- [ ] 独立 reviewer 的 Spec compliance 与 code quality 均通过。
+- [ ] 任务执行、验证、独立审核及修复复审均有 Orca 派发 Pi 子 Agent 的回执与实际身份记录，符合 2.3。
+- [ ] 独立 Pi reviewer 的 Spec compliance 与 code quality 均通过。
 - [ ] OCR 覆盖全部交付改动，所有有效 critical/high/medium 问题已修复并复审；低风险延期项有明确记录。
 - [ ] T9 保存 F1–F6 的实际行为轨迹、检查点哈希和报告路径。
 - [ ] Issue/DAG、验证、Review/OCR、finding 裁决与风险均保存为持久证据，最终 Diff 仅含授权范围。
@@ -561,7 +574,7 @@ T10 为条件交接阶段，不阻塞 T1–T9 工具交付。真实试点、全�
 | 工具任务状态 | T1–T10 均 pending，见 2.2 |
 | 执行工作区与 BASE | 实施前建立隔离工作区后记录；不能直接沿用历史 HEAD |
 | 计划副本与事实源 | 显式复制并核对 SHA-256，记录相关未提交基线 |
-| Orca Run ID、有效角色配置、预算 | 启动前核实并写入 Ledger |
+| Orca Run ID、Pi 后端与实际 Worker 身份、有效角色配置、预算 | 启动前核实并写入 Ledger；实现、验证与审核身份分别记录 |
 | 每 Task 检查点、验证与审查 | 随任务推进追加；证据绑定同一检查点哈希 |
 | 真实 root_issue 与运行授权 | T10 的独立运行计划记录 |
 
@@ -643,7 +656,7 @@ T1 负责冻结 `contracts.schema.json`；所有消费者使用同一契约。�
 | review | validation_passed | review_passed：独立 Spec 与质量结论 |
 | integrate | review_passed | integration_validated：应用回执和集成代码树验证 |
 
-下游业务边等待 integration_validated 汇总为 business_verified；不得把内部 validate 的前置写成同一业务 Task verified。集成由协调器串行执行，不启动实现 Worker。验证和 Review 各占真实 Worker 槽位，复用终端不得复用实现者身份批准自己的实现。实现 settlement 后释放其计算槽位，保留不可变产物；验证/Review 对同一快照只读，后续修复须等待读者结束再生成新 attempt。
+下游业务边等待 integration_validated 汇总为 business_verified；不得把内部 validate 的前置写成同一业务 Task verified。集成由协调器串行执行，不启动实现 Worker。实现、验证和 Review 均派发 Pi 子 Agent；验证和 Review 各占真实 Worker 槽位，三者身份相互独立，复用终端不得复用实现者身份批准自己的实现。实现 settlement 后释放其计算槽位，保留不可变产物；验证/Review 对同一快照只读，后续修复须等待读者结束再生成新 attempt。
 
 ### B.2 失败分类与运行时修复（F1；T1/T4/T6/T7/T8）
 
