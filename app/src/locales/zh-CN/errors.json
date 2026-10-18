@@ -260,5 +260,9 @@
   "gateway": {
     "load": "网关状态加载失败。",
     "operation": "网关操作失败。"
+  },
+  "modelSelection": {
+    "loadFailed": "无法加载你的模型选择。",
+    "writeFailed": "无法保存你的模型选择。"
   }
 }
