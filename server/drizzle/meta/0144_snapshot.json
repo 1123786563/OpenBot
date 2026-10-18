@@ -15235,11 +15235,12 @@
           "name": "payer_accounts_kind_check",
           "value": "\"payer_accounts\".\"kind\" IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')"
         }
-      }
+      },
+      "isRLSEnabled": false
     },
     "public.bot_services": {
       "name": "bot_services",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "bot_id": {
           "name": "bot_id",
@@ -15310,7 +15311,7 @@
     },
     "public.bot_binding_offers": {
       "name": "bot_binding_offers",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "code_hash": {
           "name": "code_hash",
@@ -15418,7 +15419,7 @@
     },
     "public.access_grants": {
       "name": "access_grants",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "grant_id": {
           "name": "grant_id",
@@ -15574,7 +15575,7 @@
     },
     "public.gateway_catalog_fetches": {
       "name": "gateway_catalog_fetches",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "fetch_id": {
           "name": "fetch_id",
@@ -15658,11 +15659,12 @@
           "name": "gateway_catalog_fetches_status_allowed",
           "value": "\"gateway_catalog_fetches\".\"status\" IN ('ok', 'failed')"
         }
-      }
+      },
+      "isRLSEnabled": false
     },
     "public.gateway_catalog_sync_state": {
       "name": "gateway_catalog_sync_state",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "id": {
           "name": "id",
@@ -15733,7 +15735,8 @@
           "name": "gateway_catalog_sync_state_failure_details_consistent",
           "value": "(\"gateway_catalog_sync_state\".\"last_attempt_status\" = 'failed') = (\"gateway_catalog_sync_state\".\"last_failure_reason_code\" IS NOT NULL) AND (\"gateway_catalog_sync_state\".\"last_attempt_status\" = 'failed') = (\"gateway_catalog_sync_state\".\"last_failure_at\" IS NOT NULL)"
         }
-      }
+      },
+      "isRLSEnabled": false
     },
     "public.gateway_customers": {
       "name": "gateway_customers",
@@ -15875,11 +15878,12 @@
           "name": "gateway_customers_provision_state_check",
           "value": "\"gateway_customers\".\"provision_state\" IN ('pending', 'confirmed', 'recoverable', 'active')"
         }
-      }
+      },
+      "isRLSEnabled": false
     },
     "public.gateway_model_catalog_refs": {
       "name": "gateway_model_catalog_refs",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "provider": {
           "name": "provider",
@@ -15972,11 +15976,12 @@
           "name": "gateway_model_catalog_refs_source_allowed",
           "value": "\"gateway_model_catalog_refs\".\"capability_source\" IN ('supported_methods', 'none')"
         }
-      }
+      },
+      "isRLSEnabled": false
     },
     "public.gateway_model_open_scopes": {
       "name": "gateway_model_open_scopes",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "provider": {
           "name": "provider",
@@ -16057,7 +16062,7 @@
     },
     "public.gateway_model_preferences": {
       "name": "gateway_model_preferences",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "user_id": {
           "name": "user_id",
@@ -16149,7 +16154,7 @@
     },
     "public.gateway_price_snapshots": {
       "name": "gateway_price_snapshots",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "provider": {
           "name": "provider",
@@ -16283,11 +16288,12 @@
           "name": "gateway_price_snapshots_status_matches_dims",
           "value": "\"gateway_price_snapshots\".\"price_status\" = classify_gateway_price_status(\"gateway_price_snapshots\".\"dims\")"
         }
-      }
+      },
+      "isRLSEnabled": false
     },
     "public.gateway_rate_versions": {
       "name": "gateway_rate_versions",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "rate_version": {
           "name": "rate_version",
@@ -16355,7 +16361,8 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {}
+      "checkConstraints": {},
+      "isRLSEnabled": false
     },
     "public.code_runs": {
       "name": "code_runs",
@@ -19306,7 +19313,7 @@
     },
     "public.gateway_virtual_keys": {
       "name": "gateway_virtual_keys",
-      "schema": "public",
+      "schema": "",
       "columns": {
         "id": {
           "name": "id",

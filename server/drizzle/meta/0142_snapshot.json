@@ -7506,8 +7506,8 @@
         }
       },
       "foreignKeys": {
-        "openmuse_reviewed_attempts_action_id_fk": {
-          "name": "openmuse_reviewed_attempts_action_id_fk",
+        "openmuse_reviewed_attempts_action_id_openmuse_reviewed_actions_id_fk": {
+          "name": "openmuse_reviewed_attempts_action_id_openmuse_reviewed_actions_id_fk",
           "tableFrom": "openmuse_reviewed_attempts",
           "tableTo": "openmuse_reviewed_actions",
           "columnsFrom": [
@@ -9190,7 +9190,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "enterprise_memberships_principal_id_enterprise_principals_id_fk": {
@@ -9203,7 +9203,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -9217,54 +9217,7 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "enterprise_membership_self_read": {
-          "name": "enterprise_membership_self_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_directory"
-          ],
-          "using": "exists (select 1 from enterprise_principals p where p.id = enterprise_memberships.principal_id and p.user_id = nullif(current_setting('app.user_id', true), ''))"
-        },
-        "enterprise_membership_data_read": {
-          "name": "enterprise_membership_data_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_data"
-          ],
-          "using": "enterprise_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_memberships.principal_id = nullif(current_setting('app.principal_id', true), '')"
-        },
-        "enterprise_membership_operator_read": {
-          "name": "enterprise_membership_operator_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "using": "enterprise_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        },
-        "enterprise_membership_operator_insert": {
-          "name": "enterprise_membership_operator_insert",
-          "as": "PERMISSIVE",
-          "for": "INSERT",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "withCheck": "enterprise_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        },
-        "enterprise_membership_operator_update": {
-          "name": "enterprise_membership_operator_update",
-          "as": "PERMISSIVE",
-          "for": "UPDATE",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "using": "enterprise_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_memberships.principal_id = nullif(current_setting('app.operator_principal_id', true), '')",
-          "withCheck": "enterprise_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_memberships.principal_id = nullif(current_setting('app.operator_principal_id', true), '')"
-        }
-      },
+      "policies": {},
       "checkConstraints": {
         "enterprise_member_role": {
           "name": "enterprise_member_role",
@@ -9279,7 +9232,7 @@
           "value": "\"enterprise_memberships\".\"epoch\" > 0"
         }
       },
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.enterprise_principals": {
       "name": "enterprise_principals",
@@ -9340,48 +9293,20 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "enterprise_principal_self_read": {
-          "name": "enterprise_principal_self_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_directory"
-          ],
-          "using": "enterprise_principals.user_id = nullif(current_setting('app.user_id', true), '')"
-        },
-        "enterprise_principal_data_read": {
-          "name": "enterprise_principal_data_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_data"
-          ],
-          "using": "enterprise_principals.id = nullif(current_setting('app.principal_id', true), '') and enterprise_principals.user_id = nullif(current_setting('app.user_id', true), '')"
-        },
-        "enterprise_principal_operator_read": {
-          "name": "enterprise_principal_operator_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "using": "enterprise_principals.id = nullif(current_setting('app.operator_principal_id', true), '')"
-        }
-      },
+      "policies": {},
       "checkConstraints": {
         "enterprise_principal_status": {
           "name": "enterprise_principal_status",
           "value": "\"enterprise_principals\".\"status\" in ('active','suspended')"
         }
       },
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.enterprise_resource_grants": {
       "name": "enterprise_resource_grants",
@@ -9409,8 +9334,7 @@
           "name": "action",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'read'"
+          "notNull": true
         },
         "created_at": {
           "name": "created_at",
@@ -9434,7 +9358,7 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "enterprise_resource_grants_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk": {
@@ -9449,7 +9373,7 @@
             "tenant_id",
             "principal_id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -9465,60 +9389,14 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "enterprise_grant_data_tenant_read": {
-          "name": "enterprise_grant_data_tenant_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_data"
-          ],
-          "using": "enterprise_resource_grants.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        },
-        "enterprise_grant_self_read": {
-          "name": "enterprise_grant_self_read",
-          "as": "RESTRICTIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_data"
-          ],
-          "using": "enterprise_resource_grants.principal_id = nullif(current_setting('app.principal_id', true), '')"
-        },
-        "enterprise_grant_operator_read": {
-          "name": "enterprise_grant_operator_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "using": "enterprise_resource_grants.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        },
-        "enterprise_grant_operator_insert": {
-          "name": "enterprise_grant_operator_insert",
-          "as": "PERMISSIVE",
-          "for": "INSERT",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "withCheck": "enterprise_resource_grants.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        },
-        "enterprise_grant_operator_delete": {
-          "name": "enterprise_grant_operator_delete",
-          "as": "PERMISSIVE",
-          "for": "DELETE",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "using": "enterprise_resource_grants.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_resource_grants.resource_id = nullif(current_setting('app.resource_id', true), '') and enterprise_resource_grants.principal_id = nullif(current_setting('app.operator_principal_id', true), '')"
-        }
-      },
+      "policies": {},
       "checkConstraints": {
         "enterprise_grant_action": {
           "name": "enterprise_grant_action",
-          "value": "\"enterprise_resource_grants\".\"action\" = 'read'"
+          "value": "\"enterprise_resource_grants\".\"action\" in ('read','run')"
         }
       },
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.enterprise_resources": {
       "name": "enterprise_resources",
@@ -9611,45 +9489,7 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "enterprise_resource_tenant_scope": {
-          "name": "enterprise_resource_tenant_scope",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_data"
-          ],
-          "using": "enterprise_resources.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        },
-        "enterprise_resource_operator_read": {
-          "name": "enterprise_resource_operator_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "using": "enterprise_resources.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        },
-        "enterprise_resource_operator_insert": {
-          "name": "enterprise_resource_operator_insert",
-          "as": "PERMISSIVE",
-          "for": "INSERT",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "withCheck": "enterprise_resources.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        },
-        "enterprise_resource_operator_update": {
-          "name": "enterprise_resource_operator_update",
-          "as": "PERMISSIVE",
-          "for": "UPDATE",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "using": "enterprise_resources.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_resources.id = nullif(current_setting('app.resource_id', true), '')",
-          "withCheck": "enterprise_resources.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_resources.id = nullif(current_setting('app.resource_id', true), '')"
-        }
-      },
+      "policies": {},
       "checkConstraints": {
         "enterprise_resource_status": {
           "name": "enterprise_resource_status",
@@ -9657,10 +9497,10 @@
         },
         "enterprise_resource_versions": {
           "name": "enterprise_resource_versions",
-          "value": "\"enterprise_resources\".\"revision\" > 0 and \"enterprise_resources\".\"acl_epoch\" > 0"
+          "value": "\"enterprise_resources\".\"revision\">0 and \"enterprise_resources\".\"acl_epoch\">0"
         }
       },
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.enterprise_security_events": {
       "name": "enterprise_security_events",
@@ -9722,7 +9562,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -9736,28 +9576,9 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "enterprise_security_event_tenant_scope": {
-          "name": "enterprise_security_event_tenant_scope",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "using": "enterprise_security_events.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_security_events.id = nullif(current_setting('app.operation_id', true), '')"
-        },
-        "enterprise_security_event_operator_insert": {
-          "name": "enterprise_security_event_operator_insert",
-          "as": "PERMISSIVE",
-          "for": "INSERT",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "withCheck": "enterprise_security_events.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_security_events.id = nullif(current_setting('app.operation_id', true), '')"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.enterprise_tenants": {
       "name": "enterprise_tenants",
@@ -9801,51 +9622,14 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "enterprise_tenant_member_read": {
-          "name": "enterprise_tenant_member_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_directory"
-          ],
-          "using": "exists (select 1 from enterprise_memberships m join enterprise_principals p on p.id = m.principal_id where m.tenant_id = enterprise_tenants.id and p.user_id = nullif(current_setting('app.user_id', true), ''))"
-        },
-        "enterprise_tenant_data_read": {
-          "name": "enterprise_tenant_data_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_data"
-          ],
-          "using": "enterprise_tenants.id = nullif(current_setting('app.tenant_id', true), '')"
-        },
-        "enterprise_tenant_operator_read": {
-          "name": "enterprise_tenant_operator_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "using": "enterprise_tenants.id = nullif(current_setting('app.tenant_id', true), '')"
-        },
-        "enterprise_tenant_context_write": {
-          "name": "enterprise_tenant_context_write",
-          "as": "PERMISSIVE",
-          "for": "INSERT",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "withCheck": "enterprise_tenants.id = nullif(current_setting('app.tenant_id', true), '')"
-        }
-      },
+      "policies": {},
       "checkConstraints": {
         "enterprise_tenant_status": {
           "name": "enterprise_tenant_status",
           "value": "\"enterprise_tenants\".\"status\" in ('active','suspended')"
         }
       },
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.enterprise_workspaces": {
       "name": "enterprise_workspaces",
@@ -9889,7 +9673,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -9903,37 +9687,9 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "enterprise_workspace_tenant_scope": {
-          "name": "enterprise_workspace_tenant_scope",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_data"
-          ],
-          "using": "enterprise_workspaces.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        },
-        "enterprise_workspace_operator_read": {
-          "name": "enterprise_workspace_operator_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "using": "enterprise_workspaces.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        },
-        "enterprise_workspace_operator_insert": {
-          "name": "enterprise_workspace_operator_insert",
-          "as": "PERMISSIVE",
-          "for": "INSERT",
-          "to": [
-            "ob_ent_operator"
-          ],
-          "withCheck": "enterprise_workspaces.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.enterprise_conversations": {
       "name": "enterprise_conversations",
@@ -10540,49 +10296,40 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "enterprise_model_routes_tenant_id_enterprise_tenants_id_fk": {
-          "name": "enterprise_model_routes_tenant_id_enterprise_tenants_id_fk",
+        "enterprise_model_routes_tenant_id_resource_id_enterprise_resources_tenant_id_id_fk": {
+          "name": "enterprise_model_routes_tenant_id_resource_id_enterprise_resources_tenant_id_id_fk",
           "tableFrom": "enterprise_model_routes",
-          "tableTo": "enterprise_tenants",
+          "tableTo": "enterprise_resources",
           "columnsFrom": [
-            "tenant_id"
+            "tenant_id",
+            "resource_id"
           ],
           "columnsTo": [
+            "tenant_id",
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
-        "enterprise_model_routes_tenant_id_route_ref_pk": {
-          "name": "enterprise_model_routes_tenant_id_route_ref_pk",
+        "enterprise_model_routes_tenant_id_id_pk": {
+          "name": "enterprise_model_routes_tenant_id_id_pk",
           "columns": [
             "tenant_id",
-            "route_ref"
+            "id"
           ]
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "enterprise_model_routes_data_scope": {
-          "name": "enterprise_model_routes_data_scope",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "ob_ent_data"
-          ],
-          "using": "enterprise_model_routes.tenant_id = nullif(current_setting('app.tenant_id', true), '')",
-          "withCheck": "enterprise_model_routes.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        }
-      },
+      "policies": {},
       "checkConstraints": {
-        "enterprise_model_routes_schema_version_check": {
-          "name": "enterprise_model_routes_schema_version_check",
-          "value": "\"enterprise_model_routes\".\"schema_version\" > 0"
+        "enterprise_route_status": {
+          "name": "enterprise_route_status",
+          "value": "\"enterprise_model_routes\".\"status\" in ('active','disabled')"
         }
       },
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.enterprise_model_budget_reservations": {
       "name": "enterprise_model_budget_reservations",
@@ -11067,8 +10814,7 @@
           "name": "id",
           "type": "uuid",
           "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
+          "notNull": true
         },
         "tenant_id": {
           "name": "tenant_id",
@@ -11092,15 +10838,13 @@
           "name": "turn_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
+          "notNull": true
         },
         "status": {
           "name": "status",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
+          "notNull": true
         },
         "fencing_token": {
           "name": "fencing_token",
@@ -11215,35 +10959,33 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "enterprise_run_attempts_tenant_id_run_id_id_pk": {
+          "name": "enterprise_run_attempts_tenant_id_run_id_id_pk",
+          "columns": [
+            "tenant_id",
+            "run_id",
+            "id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
-      "policies": {
-        "enterprise_run_attempts_data_scope": {
-          "name": "enterprise_run_attempts_data_scope",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "ob_ent_data"
-          ],
-          "using": "enterprise_run_attempts.tenant_id = nullif(current_setting('app.tenant_id', true), '')",
-          "withCheck": "enterprise_run_attempts.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        }
-      },
+      "policies": {},
       "checkConstraints": {
-        "enterprise_run_attempts_generation_check": {
-          "name": "enterprise_run_attempts_generation_check",
-          "value": "\"enterprise_run_attempts\".\"generation\" > 0 and \"enterprise_run_attempts\".\"fencing_token\" > 0"
+        "enterprise_attempt_status": {
+          "name": "enterprise_attempt_status",
+          "value": "\"enterprise_run_attempts\".\"status\" in ('allocated','active','exited','lost')"
         },
-        "enterprise_run_attempts_request_owner_check": {
-          "name": "enterprise_run_attempts_request_owner_check",
-          "value": "(\"enterprise_run_attempts\".\"request_owner_token\" is null and \"enterprise_run_attempts\".\"request_owner_expires_at\" is null) or (\"enterprise_run_attempts\".\"request_owner_token\" is not null and \"enterprise_run_attempts\".\"request_owner_expires_at\" is not null)"
+        "enterprise_attempt_fence": {
+          "name": "enterprise_attempt_fence",
+          "value": "\"enterprise_run_attempts\".\"fencing_token\" > 0"
         }
       },
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.enterprise_run_outbox": {
       "name": "enterprise_run_outbox",
@@ -11253,8 +10995,7 @@
           "name": "id",
           "type": "uuid",
           "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
+          "notNull": true
         },
         "tenant_id": {
           "name": "tenant_id",
@@ -11278,8 +11019,7 @@
           "name": "payload",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
+          "notNull": true
         },
         "created_at": {
           "name": "created_at",
@@ -11373,35 +11113,28 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "enterprise_run_outbox_tenant_id_id_pk": {
+          "name": "enterprise_run_outbox_tenant_id_id_pk",
+          "columns": [
+            "tenant_id",
+            "id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
-      "policies": {
-        "enterprise_run_outbox_data_scope": {
-          "name": "enterprise_run_outbox_data_scope",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "ob_ent_data"
-          ],
-          "using": "enterprise_run_outbox.tenant_id = nullif(current_setting('app.tenant_id', true), '')",
-          "withCheck": "enterprise_run_outbox.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        }
-      },
+      "policies": {},
       "checkConstraints": {
-        "enterprise_run_outbox_attempts_check": {
-          "name": "enterprise_run_outbox_attempts_check",
-          "value": "\"enterprise_run_outbox\".\"delivery_attempts\" >= 0"
-        },
-        "enterprise_run_outbox_claim_check": {
-          "name": "enterprise_run_outbox_claim_check",
-          "value": "(\"enterprise_run_outbox\".\"claim_id\" is null and \"enterprise_run_outbox\".\"claim_owner_id\" is null and \"enterprise_run_outbox\".\"claim_expires_at\" is null) or (\"enterprise_run_outbox\".\"claim_id\" is not null and \"enterprise_run_outbox\".\"claim_owner_id\" is not null and \"enterprise_run_outbox\".\"claim_expires_at\" is not null)"
+        "enterprise_outbox_status": {
+          "name": "enterprise_outbox_status",
+          "value": "\"enterprise_run_outbox\".\"status\" in ('pending','claimed','delivered','unknown','rejected')"
         }
       },
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.enterprise_runner_events": {
       "name": "enterprise_runner_events",
@@ -11649,8 +11382,7 @@
           "name": "id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
+          "notNull": true
         },
         "tenant_id": {
           "name": "tenant_id",
@@ -11704,8 +11436,7 @@
           "name": "status",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'queued'"
+          "notNull": true
         },
         "attempt_generation": {
           "name": "attempt_generation",
@@ -11871,17 +11602,19 @@
         }
       },
       "foreignKeys": {
-        "enterprise_runs_tenant_id_enterprise_tenants_id_fk": {
-          "name": "enterprise_runs_tenant_id_enterprise_tenants_id_fk",
+        "enterprise_runs_tenant_id_owner_principal_id_enterprise_memberships_tenant_id_principal_id_fk": {
+          "name": "enterprise_runs_tenant_id_owner_principal_id_enterprise_memberships_tenant_id_principal_id_fk",
           "tableFrom": "enterprise_runs",
-          "tableTo": "enterprise_tenants",
+          "tableTo": "enterprise_memberships",
           "columnsFrom": [
-            "tenant_id"
+            "tenant_id",
+            "owner_principal_id"
           ],
           "columnsTo": [
-            "id"
+            "tenant_id",
+            "principal_id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "enterprise_runs_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk": {
@@ -11896,7 +11629,37 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "enterprise_runs_tenant_id_thread_id_enterprise_threads_tenant_id_id_fk": {
+          "name": "enterprise_runs_tenant_id_thread_id_enterprise_threads_tenant_id_id_fk",
+          "tableFrom": "enterprise_runs",
+          "tableTo": "enterprise_threads",
+          "columnsFrom": [
+            "tenant_id",
+            "thread_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "enterprise_runs_tenant_id_release_id_enterprise_run_releases_tenant_id_id_fk": {
+          "name": "enterprise_runs_tenant_id_release_id_enterprise_run_releases_tenant_id_id_fk",
+          "tableFrom": "enterprise_runs",
+          "tableTo": "enterprise_run_releases",
+          "columnsFrom": [
+            "tenant_id",
+            "release_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -11910,33 +11673,18 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "enterprise_runs_data_scope": {
-          "name": "enterprise_runs_data_scope",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "ob_ent_data"
-          ],
-          "using": "enterprise_runs.tenant_id = nullif(current_setting('app.tenant_id', true), '')",
-          "withCheck": "enterprise_runs.tenant_id = nullif(current_setting('app.tenant_id', true), '')"
-        }
-      },
+      "policies": {},
       "checkConstraints": {
-        "enterprise_runs_generation_check": {
-          "name": "enterprise_runs_generation_check",
-          "value": "\"enterprise_runs\".\"attempt_generation\" > 0"
+        "enterprise_run_status": {
+          "name": "enterprise_run_status",
+          "value": "\"enterprise_runs\".\"status\" in ('queued','running','waiting_input','waiting_approval',\n        'suspended','cancel_requested','succeeded','failed','cancelled','expired')"
         },
-        "enterprise_runs_model_route_maximum_tokens_check": {
-          "name": "enterprise_runs_model_route_maximum_tokens_check",
-          "value": "\"enterprise_runs\".\"model_route_maximum_tokens\" > 0"
-        },
-        "enterprise_runs_status_check": {
-          "name": "enterprise_runs_status_check",
-          "value": "\"enterprise_runs\".\"status\" in ('queued', 'running', 'waiting_approval', 'suspended', 'succeeded', 'failed', 'cancelled')"
+        "enterprise_run_initiator": {
+          "name": "enterprise_run_initiator",
+          "value": "\"enterprise_runs\".\"initiator_kind\" in ('user','schedule')"
         }
       },
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.mastra_tenant_storage_registry": {
       "name": "mastra_tenant_storage_registry",
@@ -15236,7 +14984,20 @@
         },
         "billing_subscriptions_owner_idx": {
           "name": "billing_subscriptions_owner_idx",
-          "columns": [],
+          "columns": [
+            {
+              "expression": "owner_payer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "owner_payer_kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
           "isUnique": false,
           "concurrently": false,
           "method": "btree",
@@ -15265,6 +15026,18 @@
         "billing_subscriptions_status_check": {
           "name": "billing_subscriptions_status_check",
           "value": "\"billing_subscriptions\".\"status\" IN ('active', 'incomplete', 'canceled', 'terminated')"
+        },
+        "billing_subscriptions_owner_pair_check": {
+          "name": "billing_subscriptions_owner_pair_check",
+          "value": "(\"billing_subscriptions\".\"owner_payer_kind\" IS NULL) = (\"billing_subscriptions\".\"owner_payer_id\" IS NULL)"
+        },
+        "billing_subscriptions_owner_kind_check": {
+          "name": "billing_subscriptions_owner_kind_check",
+          "value": "\"billing_subscriptions\".\"owner_payer_kind\" IS NULL OR \"billing_subscriptions\".\"owner_payer_kind\" IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')"
+        },
+        "billing_subscriptions_allowance_pair_check": {
+          "name": "billing_subscriptions_allowance_pair_check",
+          "value": "(\"billing_subscriptions\".\"allowance_period_start\" IS NULL) = (\"billing_subscriptions\".\"allowance_period_end\" IS NULL)"
         }
       },
       "isRLSEnabled": false
@@ -15459,8 +15232,8 @@
         }
       },
       "foreignKeys": {
-        "payer_accounts_external_customer_id_fk": {
-          "name": "payer_accounts_external_customer_id_fk",
+        "payer_accounts_external_customer_id_billing_customers_external_id_fk": {
+          "name": "payer_accounts_external_customer_id_billing_customers_external_id_fk",
           "tableFrom": "payer_accounts",
           "tableTo": "billing_customers",
           "columnsFrom": [
@@ -15749,10 +15522,10 @@
             }
           ],
           "isUnique": true,
-          "where": "status = 'active'",
           "concurrently": false,
           "method": "btree",
-          "with": {}
+          "with": {},
+          "where": "status = 'active'"
         },
         "access_grants_user_idx": {
           "name": "access_grants_user_idx",
@@ -15808,17 +15581,13 @@
           "name": "access_grants_scope_check",
           "value": "\"access_grants\".\"scope\" IN ('model-access')"
         },
-        "access_grants_source_check": {
-          "name": "access_grants_source_check",
-          "value": "\"access_grants\".\"source\" IN ('binding-code', 'workbench-implicit')"
-        },
         "access_grants_status_check": {
           "name": "access_grants_status_check",
           "value": "\"access_grants\".\"status\" IN ('active', 'revoked')"
         },
         "access_grants_revoked_at_check": {
           "name": "access_grants_revoked_at_check",
-          "value": "(\"access_grants\".\"status\" = 'active' AND \"access_grants\".\"revoked_at\" IS NULL) OR (\"access_grants\".\"status\" = 'revoked' AND \"access_grants\".\"revoked_at\" IS NOT NULL)"
+          "value": "((\"access_grants\".\"status\" = 'active' AND \"access_grants\".\"revoked_at\" IS NULL) OR (\"access_grants\".\"status\" = 'revoked' AND \"access_grants\".\"revoked_at\" IS NOT NULL))"
         }
       },
       "isRLSEnabled": false
@@ -16517,26 +16286,6 @@
         "gateway_price_snapshots_dims_valid": {
           "name": "gateway_price_snapshots_dims_valid",
           "value": "valid_gateway_price_dims(\"gateway_price_snapshots\".\"dims\")"
-        },
-        "gateway_price_snapshots_status_allowed": {
-          "name": "gateway_price_snapshots_status_allowed",
-          "value": "\"gateway_price_snapshots\".\"price_status\" IN ('known', 'free', 'unknown')"
-        },
-        "gateway_price_snapshots_status_reason_allowed": {
-          "name": "gateway_price_snapshots_status_reason_allowed",
-          "value": "\"gateway_price_snapshots\".\"price_status_reason\" IS NULL OR \"gateway_price_snapshots\".\"price_status_reason\" IN ('price_status_dims_missing', 'price_status_dims_unreadable')"
-        },
-        "gateway_price_snapshots_status_details_consistent": {
-          "name": "gateway_price_snapshots_status_details_consistent",
-          "value": "(\"gateway_price_snapshots\".\"price_status\" = 'unknown') = (\"gateway_price_snapshots\".\"price_status_reason\" IS NOT NULL) AND (\"gateway_price_snapshots\".\"price_status\" = 'unknown') = (\"gateway_price_snapshots\".\"price_status_missing_dims\" IS NOT NULL)"
-        },
-        "gateway_price_snapshots_status_missing_dims_valid": {
-          "name": "gateway_price_snapshots_status_missing_dims_valid",
-          "value": "\"gateway_price_snapshots\".\"price_status_missing_dims\" IS NULL OR valid_gateway_price_missing_dims(\"gateway_price_snapshots\".\"price_status_missing_dims\")"
-        },
-        "gateway_price_snapshots_status_matches_dims": {
-          "name": "gateway_price_snapshots_status_matches_dims",
-          "value": "\"gateway_price_snapshots\".\"price_status\" = classify_gateway_price_status(\"gateway_price_snapshots\".\"dims\")"
         }
       },
       "isRLSEnabled": false
@@ -18939,14 +18688,6 @@
         "payment_orders_currency_check": {
           "name": "payment_orders_currency_check",
           "value": "\"payment_orders\".\"currency\" = 'CNY'"
-        },
-        "payment_orders_owner_pair_check": {
-          "name": "payment_orders_owner_pair_check",
-          "value": "(\"payment_orders\".\"owner_payer_kind\" IS NULL) = (\"payment_orders\".\"owner_payer_id\" IS NULL)"
-        },
-        "payment_orders_owner_kind_check": {
-          "name": "payment_orders_owner_kind_check",
-          "value": "\"payment_orders\".\"owner_payer_kind\" IS NULL OR \"payment_orders\".\"owner_payer_kind\" IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')"
         }
       },
       "isRLSEnabled": false
