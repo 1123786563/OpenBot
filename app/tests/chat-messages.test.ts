@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 import type { Message, ToolCall } from "@ag-ui/core";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { toVisibleChatItems } from "../src/components/channels/chat-messages";

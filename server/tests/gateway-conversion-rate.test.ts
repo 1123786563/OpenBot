@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "../../tests/support/e2e-compat";
+import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { eq } from "drizzle-orm";
 import { loadConfig } from "../src/config";
 import { createDatabase } from "../src/db/client";

@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { conversationLabel } from "../src/lib/channels/label";
 

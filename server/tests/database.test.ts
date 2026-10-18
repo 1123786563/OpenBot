@@ -1,4 +1,4 @@
-import { expect, test } from "../../tests/support/e2e-compat";
+import { expect, test } from "../../tests/support/bun-test-compat";
 import { createDatabase } from "../src/db/client";
 import { TEST_POOL } from "./support/database";
 

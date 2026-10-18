@@ -1,6 +1,5 @@
 import "./preload";
-import "./preload";
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { stoppedReason } from "../src/lib/copilot/stopped-turn";
 
 /**

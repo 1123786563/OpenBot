@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "../../tests/support/e2e-compat";
+import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { createCreditWriter } from "../src/billing/credits-writer";

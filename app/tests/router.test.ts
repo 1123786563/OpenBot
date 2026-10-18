@@ -1,6 +1,5 @@
 import "./preload";
-import "./preload";
-import { expect, test } from "../../tests/support/e2e-compat";
+import { expect, test } from "../../tests/support/bun-test-compat";
 import { router } from "../src/router";
 import {
   routeBuildRollupOutputOptions,

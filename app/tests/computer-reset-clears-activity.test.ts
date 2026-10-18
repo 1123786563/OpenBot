@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 import { afterEach, beforeEach, expect, test } from "../../tests/support/e2e-compat";
 import type { QueryClient } from "@tanstack/react-query";
 import {

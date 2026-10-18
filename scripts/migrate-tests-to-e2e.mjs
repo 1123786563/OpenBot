@@ -106,7 +106,7 @@ function portBunValueImport(source, file) {
 function withDomPreload(source, file) {
   if (!file.startsWith(join(root, "app")) || !TEST_FILE.test(file))
     return source;
-  if (/tests\/preload/.test(source)) return source;
+  if (/^import\s+"[^"]*preload";/m.test(source)) return source;
   const target = relative(dirname(file), join(root, "app/tests/preload.ts"))
     .replace(/\.ts$/, "")
     .split(sep)

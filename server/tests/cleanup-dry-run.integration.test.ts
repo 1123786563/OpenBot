@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
+import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { eq, inArray, sql } from "drizzle-orm";
 import {
   classifyCleanup,

@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 import { expect, test } from "../../tests/support/e2e-compat";
 import { DictationSession } from "@/lib/dictation/session";
 import type { Recording } from "@/lib/dictation/recording";

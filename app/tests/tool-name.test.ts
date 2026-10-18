@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readToolName } from "../src/lib/plugins/tool-name";
 

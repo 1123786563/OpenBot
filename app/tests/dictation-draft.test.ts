@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 import { expect, test } from "../../tests/support/e2e-compat";
 import type { Segment } from "prompt-area/helpers";
 import { appendDictation } from "@/components/channels/composer/dictation-draft";

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
+import { afterAll, afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { createHmac, randomUUID } from "node:crypto";
 import { and, eq, like } from "drizzle-orm";
 import { createLagoClient } from "../src/billing/lago";

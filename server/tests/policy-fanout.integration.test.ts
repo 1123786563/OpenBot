@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
+import { afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { eq } from "drizzle-orm";
 import { startPolicyListener } from "../src/computer/policy-listener";
 import {

@@ -1,6 +1,5 @@
 import "./preload";
-import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/e2e-compat";
+import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
 import type { Message, RunAgentInput } from "@ag-ui/core";
 import { RunAgentInputSchema } from "@ag-ui/core/schemas";
 import { CopilotKitProvider, useCopilotKit } from "@copilotkit/react-core/v2";

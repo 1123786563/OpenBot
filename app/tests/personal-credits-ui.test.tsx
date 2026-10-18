@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 /*
  * The runner comes straight from bun:test — the same door the sibling personal-orders-ui suite
  * uses, and the one the ticket's prescribed verification command names (`bun test

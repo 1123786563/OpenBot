@@ -101,12 +101,13 @@
     "server/tests/cleanup-dry-run.integration.test.ts",
     "server/tests/cleanup-enumeration.integration.test.ts",
     "server/tests/cleanup-guards.integration.test.ts",
-    "server/tests/cleanup-relations.integration.test.ts"
+    "server/tests/cleanup-rehearsal.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 3",
    "files": [
+    "server/tests/cleanup-relations.integration.test.ts",
     "server/tests/code-run-store.test.ts",
     "server/tests/component-store.integration.test.ts",
     "server/tests/composio-connection-kinds.test.ts",
@@ -129,13 +130,13 @@
     "server/tests/dev-actor.integration.test.ts",
     "server/tests/enterprise-controls.integration.test.ts",
     "server/tests/enterprise/conversations.integration.test.ts",
-    "server/tests/enterprise/mastra-storage.integration.test.ts",
-    "server/tests/enterprise/runner-events.integration.test.ts"
+    "server/tests/enterprise/mastra-storage.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 4",
    "files": [
+    "server/tests/enterprise/runner-events.integration.test.ts",
     "server/tests/enterprise/runs.integration.test.ts",
     "server/tests/enterprise/tenancy-rls.integration.test.ts",
     "server/tests/enterprise/tenancy.integration.test.ts",
@@ -158,13 +159,13 @@
     "server/tests/jsonb-encoding.integration.test.ts",
     "server/tests/key-drift-handling.test.ts",
     "server/tests/key-expiry.test.ts",
-    "server/tests/key-issuance.integration.test.ts",
-    "server/tests/key-renewal.test.ts"
+    "server/tests/key-issuance.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 5",
    "files": [
+    "server/tests/key-renewal.test.ts",
     "server/tests/key-state-sync.test.ts",
     "server/tests/last-sign-in-backfill.integration.test.ts",
     "server/tests/learning-settings.integration.test.ts",
@@ -187,13 +188,13 @@
     "server/tests/page-frame-retention.integration.test.ts",
     "server/tests/passwords-store.integration.test.ts",
     "server/tests/payer-account.integration.test.ts",
-    "server/tests/payer-company-resolution.integration.test.ts",
-    "server/tests/payer-legacy-mapping.integration.test.ts"
+    "server/tests/payer-company-resolution.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 6",
    "files": [
+    "server/tests/payer-legacy-mapping.integration.test.ts",
     "server/tests/payer-no-fallback.test.ts",
     "server/tests/payer-personal-resolution.integration.test.ts",
     "server/tests/payment-callback-ownership.integration.test.ts",
@@ -216,13 +217,13 @@
     "server/tests/price-snapshot.integration.test.ts",
     "server/tests/price-status-classification.integration.test.ts",
     "server/tests/proactive-store.integration.test.ts",
-    "server/tests/qa-batch1-credits-writer.integration.test.ts",
-    "server/tests/qa-batch1-duplicate-paid.integration.test.ts"
+    "server/tests/qa-batch1-credits-writer.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 7",
    "files": [
+    "server/tests/qa-batch1-duplicate-paid.integration.test.ts",
     "server/tests/qa-batch1-payment-store.integration.test.ts",
     "server/tests/qa-batch1-replay-storm.integration.test.ts",
     "server/tests/qa-batch2-t5-semantics.integration.test.ts",
@@ -245,13 +246,13 @@
     "server/tests/sandbox-state.test.ts",
     "server/tests/sandboxed-components.integration.test.ts",
     "server/tests/sandboxed-publication.integration.test.ts",
-    "server/tests/server-side-tools.integration.test.ts",
-    "server/tests/settle-conflict-grant-expiry.integration.test.ts"
+    "server/tests/server-side-tools.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 8",
    "files": [
+    "server/tests/settle-conflict-grant-expiry.integration.test.ts",
     "server/tests/settle-idempotency.integration.test.ts",
     "server/tests/shared-brokered-routes.test.ts",
     "server/tests/shared-brokered-schema.integration.test.ts",
@@ -274,13 +275,13 @@
     "server/tests/user-preferences.integration.test.ts",
     "server/tests/voice-session-preview.integration.test.ts",
     "server/tests/voice-session-store.integration.test.ts",
-    "server/tests/work-queue.integration.test.ts",
-    "server/tests/workbench-implicit-grant.test.ts"
+    "server/tests/work-queue.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 9",
    "files": [
+    "server/tests/workbench-implicit-grant.test.ts",
     "server/tests/workshop-artifacts.test.ts",
     "server/tests/workshop-schedule-executor.integration.test.ts",
     "server/tests/workshop-store.test.ts"
@@ -369,6 +370,7 @@
   "server/tests/cleanup-dry-run.integration.test.ts",
   "server/tests/cleanup-enumeration.integration.test.ts",
   "server/tests/cleanup-guards.integration.test.ts",
+  "server/tests/cleanup-rehearsal.integration.test.ts",
   "server/tests/cleanup-relations.integration.test.ts",
   "server/tests/code-run-store.test.ts",
   "server/tests/component-store.integration.test.ts",

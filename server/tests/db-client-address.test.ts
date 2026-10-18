@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
+import { afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

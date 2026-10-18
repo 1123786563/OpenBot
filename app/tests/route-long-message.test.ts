@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 import { afterEach, expect, test } from "../../tests/support/e2e-compat";
 import type { AgentProfileStore } from "../../server/src/agents/profile-store";
 import type { AgentProfile } from "../../server/src/agents/profile-types";

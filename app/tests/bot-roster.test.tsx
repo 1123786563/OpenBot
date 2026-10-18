@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

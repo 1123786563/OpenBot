@@ -7,7 +7,7 @@ import {
   describe,
   expect,
   test,
-} from "../../tests/support/e2e-compat";
+} from "../../tests/support/bun-test-compat";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { createCredits } from "../src/billing/credits";
 import { createCreditWriter } from "../src/billing/credits-writer";

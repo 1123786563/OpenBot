@@ -1,4 +1,4 @@
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { inArray, sql } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";

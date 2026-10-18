@@ -1,8 +1,7 @@
 import "./preload";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import "./preload";
-import { expect, test } from "../../tests/support/e2e-compat";
+import { expect, test } from "../../tests/support/bun-test-compat";
 import { Glob } from "../../tests/support/bun-compat";
 import ts from "typescript";
 

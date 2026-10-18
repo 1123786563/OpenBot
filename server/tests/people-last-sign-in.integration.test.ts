@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
+import { afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { eq, inArray } from "drizzle-orm";
 import { stampSignIn } from "../src/auth";
 import { createDatabase } from "../src/db/client";

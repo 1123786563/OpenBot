@@ -561,7 +561,14 @@ const MOCK_REGISTRY = Symbol.for("openbot.e2e-compat.module-mocks");
 const mocks: Map<string, unknown[]> = ((globalThis as Any)[MOCK_REGISTRY] ??=
   new Map());
 const moduleMocks: Map<string, () => Record<string, unknown>> = new Map();
-let hooksInstalled = false;
+/*
+ * The runner imports a suite file more than once per run (to list it, then to execute it), and a
+ * second `module.registerHooks()` call or a second copy of the mock registry would make the two
+ * passes disagree about what was registered. Both flags therefore live on globalThis, keyed by
+ * symbol, so they survive re-evaluation of this module in the same process.
+ */
+const HOOKS_INSTALLED = Symbol.for("openbot.e2e-compat.hooks-installed");
+const SKIPPING = Symbol.for("openbot.e2e-compat.skipping-depth");
 
 /*
  * `mock.module(specifier, factory)` over Node's loader hooks.
@@ -572,8 +579,8 @@ let hooksInstalled = false;
  * mocked module only after calling it.
  */
 function installMockHooks(): void {
-  if (hooksInstalled) return;
-  hooksInstalled = true;
+  if ((globalThis as Any)[HOOKS_INSTALLED]) return;
+  (globalThis as Any)[HOOKS_INSTALLED] = true;
   registerHooks({
     resolve: (specifier: string, _context: Any, nextResolve: Any) => {
       // Stylesheets and other assets: Bun imports them for their side effect, Node has no such
@@ -878,7 +885,9 @@ type Register = (...args: any[]) => unknown;
  * Bun accepted longer and repeated titles. Titles are report labels, not assertions, so the runner's
  * rule is honoured by clamping and by numbering a repeat, never by dropping the test.
  */
-const seenTitles = new Map<string, number>();
+const seenTitles: Map<string, number> = ((globalThis as Any)[
+  Symbol.for("openbot.e2e-compat.seen-titles")
+] ??= new Map());
 
 function fileFromStack(): string {
   const line = (new Error().stack ?? "")
@@ -955,7 +964,10 @@ const trace = (label: string, args: unknown[]) => {
   );
 };
 
-let skipping = 0;
+const skippingOf = (): number => Number((globalThis as Any)[SKIPPING] ?? 0);
+const setSkipping = (value: number): void => {
+  (globalThis as Any)[SKIPPING] = value;
+};
 
 const e2eRegister: Register = (...args) => {
   trace("test", args);
@@ -963,7 +975,7 @@ const e2eRegister: Register = (...args) => {
   const bodyIndex = typeof second === "function" ? 1 : 2;
   const body = bodyIndex === 1 ? second : third;
   const call = [...args];
-  if (skipping > 0 && typeof body === "function") {
+  if (skippingOf() > 0 && typeof body === "function") {
     // A skipped group stays registered and skips in its body: e2e refuses a file that has collected
     // nothing runnable, which is what registering the whole group as skipped would leave behind.
     call[bodyIndex] = (...callArgs: Any[]) => {
@@ -1134,14 +1146,14 @@ Object.defineProperties(describe, {
     value: (title: string, body: Any, maybeBody?: Any) => {
       // e2e would call a whole skipped group "no runnable test"; skipping inside each body keeps the
       // file executable and the verdict the same.
-      skipping += 1;
+      setSkipping(skippingOf() + 1);
       try {
         const inner = typeof body === "function" ? body : maybeBody;
         return (e2eDescribe as Any)(clampTitle(title, "describe"), () =>
           inner?.(),
         );
       } finally {
-        skipping -= 1;
+        setSkipping(skippingOf() - 1);
       }
     },
     configurable: true,

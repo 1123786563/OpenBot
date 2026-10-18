@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 import { afterEach, beforeEach, expect, type Mock, spyOn, test } from "../../tests/support/e2e-compat";
 import type { Message } from "@ag-ui/core";
 import {

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
 import type { ContainerProbe } from "../server/src/learning/auto-assign";
-import { afterEach, expect, test } from "../tests/support/e2e-compat";
+import { afterEach, expect, test } from "../tests/support/bun-test-compat";
 import { setupLearning } from "./setup-learning";
 
 const directories: string[] = [];

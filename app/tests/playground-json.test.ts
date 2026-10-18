@@ -1,6 +1,5 @@
 import "./preload";
-import "./preload";
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import i18n from "../src/lib/i18n";
 import {
   parseJsonObject,

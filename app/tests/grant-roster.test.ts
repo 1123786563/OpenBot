@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { grantRoster } from "../src/lib/agents/grant-roster";
 

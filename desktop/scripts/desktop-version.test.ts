@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { afterEach, expect, test } from "../../tests/support/e2e-compat";
+import { afterEach, expect, test } from "../../tests/support/bun-test-compat";
 import {
   copyFileSync,
   mkdirSync,

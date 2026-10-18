@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { PluginServer, PluginSkill } from "@/lib/plugins/queries";
 import {

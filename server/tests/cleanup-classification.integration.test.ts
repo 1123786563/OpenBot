@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { afterAll, describe, expect, test } from "../../tests/support/e2e-compat";
+import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { eq, inArray } from "drizzle-orm";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import {

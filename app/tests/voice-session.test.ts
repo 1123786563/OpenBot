@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 import { expect, test } from "../../tests/support/e2e-compat";
 import type { Message } from "@ag-ui/core";
 import { askChannelAgent, voiceContext } from "../src/lib/voice/agent-bridge";

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { sql } from "drizzle-orm";
 import { createApp } from "../src/app";
 import { createAuditReader } from "../src/audit";

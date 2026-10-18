@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 import { expect, test } from "../../tests/support/e2e-compat";
 import type { ComposioApp } from "@/lib/plugins/queries";
 import { matchingApps } from "@/routes/_authed/admin/plugins/composio";

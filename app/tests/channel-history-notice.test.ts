@@ -1,6 +1,5 @@
 import "./preload";
-import "./preload";
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, render } from "@testing-library/react";
 import { createElement, useEffect, useState } from "react";

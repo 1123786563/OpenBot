@@ -1,5 +1,4 @@
 import "./preload";
-import "./preload";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { Message } from "@ag-ui/core";
 import { repairUnansweredToolCalls } from "../src/lib/copilot/repair-history";

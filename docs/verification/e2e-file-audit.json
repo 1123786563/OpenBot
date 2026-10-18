@@ -1141,9 +1141,9 @@
  },
  {
   "file": "app/tests/form-submit-controls.test.ts",
-  "status": "collect_error",
-  "tests": 0,
-  "error": "COLLECTION_ERROR: failed to collect app/tests/form-submit-controls.test.ts: The requested module '../../tests/support/bun-compat' does not provide an export named 'Glob' (/Users/wuyongjun/trea/OpenBot/app/tests/form-submit-controls.test.ts:"
+  "status": "collected",
+  "tests": 1,
+  "error": ""
  },
  {
   "file": "app/tests/gallery-components.test.tsx",
@@ -2023,9 +2023,9 @@
  },
  {
   "file": "server/tests/agent-routes.test.ts",
-  "status": "collect_error",
-  "tests": 0,
-  "error": "COLLECTION_ERROR: server/tests/agent-routes.test.ts: title must be 1 through 512 UTF-8 bytes after NFC, got 1105 "
+  "status": "collected",
+  "tests": 50,
+  "error": ""
  },
  {
   "file": "server/tests/agent-test-connection-headers.test.ts",
@@ -2035,9 +2035,9 @@
  },
  {
   "file": "server/tests/agent-tool-call-input.test.ts",
-  "status": "collect_error",
-  "tests": 0,
-  "error": "COLLECTION_ERROR: duplicate title path parseAgentToolCallInput > refuses a non-object body: undefined in server/tests/agent-tool-call-input.test.ts "
+  "status": "collected",
+  "tests": 26,
+  "error": ""
  },
  {
   "file": "server/tests/agents/expert-descriptor.test.ts",
@@ -2407,9 +2407,9 @@
  },
  {
   "file": "server/tests/bunfig-preload.test.ts",
-  "status": "collect_error",
-  "tests": 0,
-  "error": "COLLECTION_ERROR: failed to collect server/tests/bunfig-preload.test.ts: /Users/wuyongjun/trea/OpenBot/server/tests/bunfig-preload.test.ts:1:10: Identifier `dirname` has already been declared "
+  "status": "collected",
+  "tests": 2,
+  "error": ""
  },
  {
   "file": "server/tests/catalog-auto-sync.test.ts",
@@ -2518,6 +2518,12 @@
   "status": "collect_error",
   "tests": 0,
   "error": "COLLECTION_ERROR: failed to collect server/tests/cleanup-guards.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/cleanup-rehearsal.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/cleanup-rehearsal.integration.test.ts: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:' "
  },
  {
   "file": "server/tests/cleanup-relations.integration.test.ts",
@@ -2839,9 +2845,9 @@
  },
  {
   "file": "server/tests/copilot.test.ts",
-  "status": "collect_error",
-  "tests": 0,
-  "error": "COLLECTION_ERROR: duplicate title path a person's standing instructions > adds nothing at all when there are none: undefined in server/tests/copilot.test.ts "
+  "status": "collected",
+  "tests": 73,
+  "error": ""
  },
  {
   "file": "server/tests/craft-agents-template.test.ts",
@@ -3205,9 +3211,9 @@
  },
  {
   "file": "server/tests/desktop-connection-failure.test.ts",
-  "status": "collect_error",
-  "tests": 0,
-  "error": "COLLECTION_ERROR: server/tests/desktop-connection-failure.test.ts: title must be 1 through 512 UTF-8 bytes after NFC, got 1471 "
+  "status": "collected",
+  "tests": 8,
+  "error": ""
  },
  {
   "file": "server/tests/dev-actor.integration.test.ts",
@@ -4153,9 +4159,9 @@
  },
  {
   "file": "server/tests/openmuse-goals.test.ts",
-  "status": "collect_error",
-  "tests": 0,
-  "error": "COLLECTION_ERROR: server/tests/openmuse-goals.test.ts: title must be 1 through 512 UTF-8 bytes after NFC, got 2532 "
+  "status": "collected",
+  "tests": 29,
+  "error": ""
  },
  {
   "file": "server/tests/openmuse-google-oauth.test.ts",
@@ -4165,9 +4171,9 @@
  },
  {
   "file": "server/tests/openmuse-ideas.test.ts",
-  "status": "collect_error",
-  "tests": 0,
-  "error": "COLLECTION_ERROR: server/tests/openmuse-ideas.test.ts: title must be 1 through 512 UTF-8 bytes after NFC, got 1172 "
+  "status": "collected",
+  "tests": 38,
+  "error": ""
  },
  {
   "file": "server/tests/openmuse-mail.test.ts",
@@ -4177,9 +4183,9 @@
  },
  {
   "file": "server/tests/openmuse-memories.test.ts",
-  "status": "collect_error",
-  "tests": 0,
-  "error": "COLLECTION_ERROR: server/tests/openmuse-memories.test.ts: title must be 1 through 512 UTF-8 bytes after NFC, got 10093 "
+  "status": "collected",
+  "tests": 31,
+  "error": ""
  },
  {
   "file": "server/tests/openmuse-notifications.test.ts",
@@ -4708,6 +4714,12 @@
   "status": "collected",
   "tests": 3,
   "error": ""
+ },
+ {
+  "file": "server/tests/recovery-scan.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/recovery-scan.integration.test.ts: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:' "
  },
  {
   "file": "server/tests/redis-port.test.ts",

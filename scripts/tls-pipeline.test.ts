@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, test } from "../tests/support/e2e-compat";
+import { describe, expect, test } from "../tests/support/bun-test-compat";
 
 /**
  * The TLS certificate pipeline behind `docker/compose/certs.yml` (#359, spec

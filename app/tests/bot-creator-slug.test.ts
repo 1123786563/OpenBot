@@ -1,6 +1,5 @@
 import "./preload";
 import { fileURLToPath } from "node:url";
-import "./preload";
 import { expect, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

@@ -1,4 +1,4 @@
-import { expect, test } from "../tests/support/e2e-compat";
+import { expect, test } from "../tests/support/bun-test-compat";
 import {
   intelligenceApiOrigin,
   type SetupBrowser,
