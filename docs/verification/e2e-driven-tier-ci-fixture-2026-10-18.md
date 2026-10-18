@@ -116,3 +116,37 @@ docker rm -f ob-e2e-pg1 ob-e2e-pg2       # 不需要时收回；库是一次性�
 仍未在 CI 上落过一次，是因为那需要往共享分支推 / 开 PR——尚未获授权。
 
 
+
+## 合并落地后的 main：全量入口重测 + 逐条归因（10-19 00:0x–00:3x）
+
+merge 结束后在同一套私有夹具上重跑入口（`bun run test`，私有输出目录 `.e2e/post-merge`）：
+
+```
+Test Files  31 failed | 551 passed | 17 skipped (599)
+Tests      175 failed | 7915 passed | 85 skipped (8175)     Duration 10m39s
+```
+
+对照迁移前那轮同入口的 `8175 / 7912 passed / 189 failed`：**红点从 189 降到 175**，总数一字不差。
+再用 `scripts/e2e-vs-bun.mjs`（三档对照：e2e 报告 / 现网代码 + 迁移前套件文本的 `bun test` / 迁移前整棵树）
+把 31 个红文件逐条归因。逐条结果写在本地证据文件 `archive/verification/e2e-vs-bun-postmerge.json`
+（`archive/` 自 .gitignore:95 起不再入库，所以这里只登记结论与复现命令）：
+
+```bash
+node scripts/e2e-vs-bun.mjs --report=.e2e/post-merge/report.json \
+  --live=$HOME/.cache/openbot-e2e/live2 --out=archive/verification/e2e-vs-bun-postmerge.json
+```
+
+| 归因 | 文件数 | 含义 |
+| --- | --- | --- |
+| `already-red-at-baseline` | 17 | 迁移前就红 |
+| `red-on-old-runner-with-current-code` | 12 | 现网代码在旧运行器上也红（别的波次带来的红） |
+| `runner-difference` | 1 | 旧运行器绿、e2e 红 —— 见下 |
+| `no-pre-migration-suite` | 1 | 驱动层文件本身 |
+
+唯一的运行器差异是 `server/tests/workshop-preview.test.ts`：`a websocket upgrade on the dev road
+forwards to the sandbox passthrough (B15b)` 期望 101 拿到 500。根因**点得出名字**：假的上游返回
+`{status: 101}`，生产代码把那个 Response 原样透出，而 Node 的 undici `Response` 构造器拒绝 1xx
+（`RangeError: init["status"] must be in the range of 200 to 599`），Bun 照建不误——并排验过
+`node -e` 抛、`bun -e` 打印 101。这是 Bun 耦合的 HTTP 语义，按 ADR 0008 的两层制把这个套件
+送回 Bun 运行时、由 e2e 调度与报告（`bun test` 单文件 9 pass / 0 fail），不改生产代码、也不在
+兼容层伪造 101。分区随之变为 **455 driven / 30 组**，`e2e-coverage-audit` 仍是 `no gaps`。
