@@ -57,7 +57,11 @@ export type IdLinkQueryService = {
   /**
    * The upstream reference one local subject maps to, or an explicit null when the
    * subject exists but has no upstream copy claimed. A subject this scope does not
-   * own is SUBJECT_NOT_FOUND, never an empty answer.
+   * own is SUBJECT_NOT_FOUND, never an empty answer. What "exists" means is per
+   * home: a run attempt is its binding row, a dataset is its dataset row (a
+   * pending/failed sync answers null), and a step is its id-link row — a step
+   * without a link row was never bound here, so it is SUBJECT_NOT_FOUND, and a
+   * linked step's upstream copy is guaranteed to have landed.
    */
   resolveByLocal(
     scope: ObservationScope,
@@ -123,15 +127,21 @@ export function createIdLinkQueryService(
       case "retrieval_step": {
         const id = localId(ref.id);
         const link = await deps.links.byLocal(scope, ref.kind, id);
+        if (link === null) {
+          // The id-link row is the step's sole existence record (header): a step
+          // this scope never linked has no subject to answer about, so the
+          // contract's SUBJECT_NOT_FOUND is the honest shape. `upstream: null` is
+          // reserved for a subject that exists but has not landed upstream — a
+          // state the link table cannot represent for steps, since a row exists
+          // only after the upstream write actually landed (OCR R5-17).
+          throw new IdLinkQueryError("SUBJECT_NOT_FOUND", 404);
+        }
         return {
-          upstream:
-            link === null
-              ? null
-              : {
-                  kind: link.upstreamKind,
-                  id: link.upstreamId,
-                  recordedAt: link.createdAt.toISOString(),
-                },
+          upstream: {
+            kind: link.upstreamKind,
+            id: link.upstreamId,
+            recordedAt: link.createdAt.toISOString(),
+          },
         };
       }
       case "dataset": {
