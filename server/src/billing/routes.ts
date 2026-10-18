@@ -33,6 +33,12 @@ import {
   resolvePersonalPayerAccount,
 } from "./payer-personal";
 import type { PaymentOrderReadScope } from "./payments/types";
+import {
+  REWARD_TYPES,
+  rewardDefinitions,
+  rewardPeriodOfDay,
+  type RewardGranter,
+} from "./rewards";
 import type { BillingStatements } from "./statements";
 import { BillingError, type BillingService } from "./types";
 
@@ -196,6 +202,11 @@ export function createBillingStatementRoutes(deps: {
 export function createBillingCreditRoutes(deps: {
   credits: Credits;
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
+  /** The reward claim's write side (10.4): absent answers 503, never a fallback. */
+  rewards?: RewardGranter;
+  audit?: AuditStore;
+  /** The claim clock — the period is this answer, never a client field. */
+  now?: () => Date;
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
@@ -256,12 +267,81 @@ export function createBillingCreditRoutes(deps: {
     );
   });
 
+  /*
+   * The reward claim (ticket 10.4, AC14): the session user claims a reward into THEIR OWN
+   * personal account, once per reward period. The attribution is structural, the same shape the
+   * reads above keep: the account is `grantReward`'s resolution of `context.var.actor` — the
+   * claim body has no account field to abuse, and `strictObject` turns a smuggled one into the
+   * 400 the query middleware already hands a forged parameter. The period is the deployment
+   * clock's answer (`now`), so "same period" in the once-per-period rule is never a client
+   * choice; the amount and lifetime come from the server's reward definition, never the
+   * request. A replay answers the original grant (`inserted: false`) — the ledger's unique
+   * `reward:<type>:<period>:<user>` key is the fence, so a double-tapped check-in button is a
+   * no-op rather than a second allowance.
+   */
+  routes.post("/credits/rewards/claim", async (context) => {
+    if (!deps.rewards) {
+      // Configured without the granter, asked to claim: a refusal, not a silent no-op — the
+      // caller believes a reward landed, and it did not (the admin grant route's rule).
+      return context.json(
+        { error: "Rewards are unavailable. Try again." },
+        503,
+      );
+    }
+    const input = rewardClaimInput.parse(await context.req.json());
+    const now = (deps.now ?? (() => new Date()))();
+    const period = rewardPeriodOfDay(now);
+    const definition = rewardDefinitions[input.rewardType];
+    const claim = await deps.rewards.grantReward({
+      // THE only attribution input: the authenticated identity. Everything else is policy.
+      user: context.var.actor,
+      rewardType: input.rewardType,
+      period,
+      totalCents: definition.totalCents,
+      expiresAt: new Date(now.getTime() + definition.ttlDays * 86_400_000),
+      reason: definition.reason,
+    });
+    if (deps.audit) {
+      await recordAuditEvent(deps.audit, {
+        eventType: "billing.credits.reward_claimed",
+        targetType: "billing",
+        targetId: claim.grant.id,
+        actorUserId: context.var.actor.id,
+        payload: {
+          userId: context.var.actor.id,
+          rewardType: input.rewardType,
+          period,
+          totalCents: definition.totalCents,
+          payerAccountId: claim.account.id,
+          externalCustomerId: claim.account.externalCustomerId,
+          inserted: claim.inserted,
+        },
+      });
+    }
+    return context.json({
+      inserted: claim.inserted,
+      period,
+      grant: claim.grant,
+      account: claim.account,
+    });
+  });
+
   return routes;
 }
 
 /** A sync request: one field, spelled the way the plan was spelled at the provider. */
 const syncInput = z.strictObject({
   planCode: z.string().trim().min(1).max(200),
+});
+
+/**
+ * A reward claim (ticket 10.4): the ONE field a claim names is the reward type. No user id, no
+ * customer key, no period, no amount — each of those is either the session's own identity or a
+ * server-owned policy value, and `strictObject` is what makes a client attempt to supply any of
+ * them a shape error instead of a redirect.
+ */
+const rewardClaimInput = z.strictObject({
+  rewardType: z.enum(REWARD_TYPES),
 });
 
 /**

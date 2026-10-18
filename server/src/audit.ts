@@ -764,6 +764,14 @@ export const auditEventTypes = [
    * entered the books once is a fact worth reading, not noise.
    */
   "billing.credits.personal_granted",
+  /*
+   * A person claimed a reward into their OWN personal account (Bifrost 10.4, AC14): the
+   * claimer, the reward type and the server-derived period beside the account the server
+   * RESOLVED from the session — no client-named target exists anywhere on this path, and the
+   * row is the per-request receipt a replayed claim also gets, marked `inserted: false`, so a
+   * double-tapped check-in button reads as one payout with two presses.
+   */
+  "billing.credits.reward_claimed",
   /**
    * The reconciliation pass was run (T7): an on-demand audit of the books' two invariants
    * (the payment three-way and the credit identity). Audited because it is an operator
@@ -800,6 +808,14 @@ export const auditEventTypes = [
    * own answer, never upstream bytes, so the trail stays displayable.
    */
   "gateway.catalog_sync_triggered",
+  /**
+   * An administrator triggered an immediate key state sync (Bifrost 05.8).
+   *
+   * One row per manual trigger, carrying who asked and the outcome — the pass itself
+   * writes each key flip as its own drift event, so this row is the trigger, not the
+   * log. The result is the sync's own answer, never upstream bytes.
+   */
+  "gateway.key_state_sync_triggered",
   /*
    * A short-lived virtual key was issued for a user × Bot authorization (Bifrost 05.3).
    *
@@ -812,6 +828,17 @@ export const auditEventTypes = [
    * redeem a key.
    */
   "gateway.key_issued",
+  /*
+   * A short-lived virtual key was renewed onto its next credentialVersion (Bifrost 05.6).
+   *
+   * One row per renewal, naming the same act the issuance row names — grant, Bot, Customer,
+   * version — plus the credentialVersions this renewal retired, so the trail can answer
+n   * "which version lived when" without guessing. The payload carries a four-hex fingerprint
+   * of the new key value for identification; the plaintext exists only in the renewal
+   * response and only at the gateway, and neither this row nor any error path can redeem a
+   * key. Accounting is absent by construction: a renewal moves no balance.
+   */
+  "gateway.key_renewed",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

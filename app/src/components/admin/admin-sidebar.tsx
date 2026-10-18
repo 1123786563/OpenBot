@@ -10,7 +10,10 @@ import {
   IconKey,
   IconLayoutGrid,
   IconListDetails,
+  IconNetwork,
   IconPuzzle,
+  IconRobot,
+  IconServer,
   IconShieldCheck,
   IconShoppingBag,
   IconUsers,
@@ -48,6 +51,21 @@ const GROUPS = [
         title: "sidebar.credentials",
         icon: IconKey,
         linkOptions: { to: "/admin/credentials" },
+      },
+      {
+        title: "sidebar.botServices",
+        icon: IconRobot,
+        linkOptions: { to: "/admin/bot-services" },
+      },
+      {
+        title: "sidebar.gateway",
+        icon: IconNetwork,
+        linkOptions: { to: "/admin/gateway" },
+      },
+      {
+        title: "sidebar.modelCatalog",
+        icon: IconServer,
+        linkOptions: { to: "/admin/model-catalog" },
       },
       {
         title: "sidebar.boundaries",
