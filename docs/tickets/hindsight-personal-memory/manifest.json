@@ -1,0 +1,255 @@
+{
+  "repo": "1123786563/OpenBot",
+  "parent": 376,
+  "tickets": {
+    "1": {
+      "number": 377,
+      "url": "https://github.com/1123786563/OpenBot/issues/377",
+      "title": "[Hindsight 01] 候选记忆审核与召回门槛",
+      "body_sha256": "8e609a4c4392eff704c2e0acc4a5a6a4f3cbff3ae41de0998d6229be77aa5857"
+    },
+    "2": {
+      "number": 378,
+      "url": "https://github.com/1123786563/OpenBot/issues/378",
+      "title": "[Hindsight 02] 敏感候选与过期清理",
+      "body_sha256": "cea1c78a9391e6b88ac670dd4d3bef59f1453ff786cd8d2ce1bcc33c269390ab"
+    },
+    "3": {
+      "number": 380,
+      "url": "https://github.com/1123786563/OpenBot/issues/380",
+      "title": "[Hindsight 03] 自托管 Hindsight 服务与隐私配置",
+      "body_sha256": "3c834737f564f89b5df0e31bd107059ba8e7899c4625a6c23b76413f11e93f60"
+    },
+    "4": {
+      "number": 381,
+      "url": "https://github.com/1123786563/OpenBot/issues/381",
+      "title": "[Hindsight 04] 租户身份与 Hindsight bank 隔离",
+      "body_sha256": "f102011e900015e172f82a0df4fe9f10f32dc3ba3b08825da745e28baddcdad8"
+    },
+    "5": {
+      "number": 382,
+      "url": "https://github.com/1123786563/OpenBot/issues/382",
+      "title": "[Hindsight 05] 通用个人偏好的跨 Bot 语义召回",
+      "body_sha256": "3f3cbd85f4859bbfa61d082a717303085a50a24ed946b3c7e11f8525a9fccf88"
+    },
+    "6": {
+      "number": 383,
+      "url": "https://github.com/1123786563/OpenBot/issues/383",
+      "title": "[Hindsight 06] 来源受限个人记忆的授权召回",
+      "body_sha256": "9242297f9816cbfafa35a736c975fc5db9b0fb2f38507aa7ce7859096d233937"
+    },
+    "7": {
+      "number": 384,
+      "url": "https://github.com/1123786563/OpenBot/issues/384",
+      "title": "[Hindsight 07] 已确认个人记忆的幂等同步与重试",
+      "body_sha256": "b3727f9326986903ff56fc7df49e1085612113dc17d5cecab3f7ab7d218a2410"
+    },
+    "8": {
+      "number": 385,
+      "url": "https://github.com/1123786563/OpenBot/issues/385",
+      "title": "[Hindsight 08] Hindsight 故障时的安全降级召回",
+      "body_sha256": "9d590d57a0da7903add91268bf583c6a38dff92601029f51d45c1f31d4473171"
+    },
+    "9": {
+      "number": 386,
+      "url": "https://github.com/1123786563/OpenBot/issues/386",
+      "title": "[Hindsight 09] 个人记忆生效时间与历史更正",
+      "body_sha256": "acd7bfd0c4cae8caf5e6b2769764fa7d9bc91f65dc4313ccbe7b8b43b2bd661b"
+    },
+    "10": {
+      "number": 387,
+      "url": "https://github.com/1123786563/OpenBot/issues/387",
+      "title": "[Hindsight 10] 个人记忆回答的可展开依据",
+      "body_sha256": "bb702096661430714f51d07a6e38caa1f769e2f5528d53df113bf385b83312cd"
+    },
+    "11": {
+      "number": 388,
+      "url": "https://github.com/1123786563/OpenBot/issues/388",
+      "title": "[Hindsight 11] 同一授权来源内的派生判断候选",
+      "body_sha256": "dc628b9d4ef29f4a51122f0eb8bcf361bfc0081adca0e3f971e2b6264018f2f3"
+    },
+    "12": {
+      "number": 389,
+      "url": "https://github.com/1123786563/OpenBot/issues/389",
+      "title": "[Hindsight 12] 派生判断的本人审核与使用",
+      "body_sha256": "ecc802943551d7564282561df4926713e551c19aff04803028b9c8c58864a0d5"
+    },
+    "13": {
+      "number": 390,
+      "url": "https://github.com/1123786563/OpenBot/issues/390",
+      "title": "[Hindsight 13] 遗忘与来源撤销的即时阻断",
+      "body_sha256": "49bcf9b45e4889028e05a983455abf6108eb122d09a93d1a64cf7f7d5fb78a01"
+    },
+    "14": {
+      "number": 391,
+      "url": "https://github.com/1123786563/OpenBot/issues/391",
+      "title": "[Hindsight 14] 远端删除、备份恢复与清理证据",
+      "body_sha256": "46f6e742b12a9d259b086e79929596f0114a9805458820eaf54289984edf6800"
+    },
+    "15": {
+      "number": 392,
+      "url": "https://github.com/1123786563/OpenBot/issues/392",
+      "title": "[Hindsight 15] 暂停学习与暂停使用个人记忆",
+      "body_sha256": "e56cac5e5288fdbe1c4f974dfb5e1bcd70747ef663a3815552034d2f638310f1"
+    },
+    "16": {
+      "number": 393,
+      "url": "https://github.com/1123786563/OpenBot/issues/393",
+      "title": "[Hindsight 16] 个人记忆后台预算与运营积压",
+      "body_sha256": "9662c8eb4452d14f47ec23dbd3527dbe5cea39bb7c0844d10e9acaff03e017ba"
+    },
+    "17": {
+      "number": 394,
+      "url": "https://github.com/1123786563/OpenBot/issues/394",
+      "title": "[Hindsight 17] 历史已确认 OpenBot 记忆迁移",
+      "body_sha256": "73b1368cb4fa7ef065c42bb6d1cce0c21f24edbb91ef89aa90d99fd965ffe194"
+    },
+    "18": {
+      "number": 395,
+      "url": "https://github.com/1123786563/OpenBot/issues/395",
+      "title": "[Hindsight 18] Intelligence 个人记忆路径退出",
+      "body_sha256": "f1f94c51e3de294072a9d112ba183e28df2b6b67790673ff866c069013de5cb1"
+    },
+    "19": {
+      "number": 396,
+      "url": "https://github.com/1123786563/OpenBot/issues/396",
+      "title": "[Hindsight 19] 跨入口验收与全员启用",
+      "body_sha256": "92b401580e57491ba4c212637376cb201e2d0b35fdfe2045417b34dd995839ad"
+    }
+  },
+  "relations": {
+    "1": {
+      "sub_issue": true,
+      "blocked_by": []
+    },
+    "2": {
+      "sub_issue": true,
+      "blocked_by": [
+        377
+      ]
+    },
+    "3": {
+      "sub_issue": true,
+      "blocked_by": []
+    },
+    "4": {
+      "sub_issue": true,
+      "blocked_by": [
+        380,
+        82
+      ]
+    },
+    "5": {
+      "sub_issue": true,
+      "blocked_by": [
+        377,
+        381
+      ]
+    },
+    "6": {
+      "sub_issue": true,
+      "blocked_by": [
+        382,
+        82
+      ]
+    },
+    "7": {
+      "sub_issue": true,
+      "blocked_by": [
+        382
+      ]
+    },
+    "8": {
+      "sub_issue": true,
+      "blocked_by": [
+        383,
+        384
+      ]
+    },
+    "9": {
+      "sub_issue": true,
+      "blocked_by": [
+        382
+      ]
+    },
+    "10": {
+      "sub_issue": true,
+      "blocked_by": [
+        383,
+        386
+      ]
+    },
+    "11": {
+      "sub_issue": true,
+      "blocked_by": [
+        378,
+        383,
+        387
+      ]
+    },
+    "12": {
+      "sub_issue": true,
+      "blocked_by": [
+        388
+      ]
+    },
+    "13": {
+      "sub_issue": true,
+      "blocked_by": [
+        383,
+        389
+      ]
+    },
+    "14": {
+      "sub_issue": true,
+      "blocked_by": [
+        384,
+        390
+      ]
+    },
+    "15": {
+      "sub_issue": true,
+      "blocked_by": [
+        377,
+        382
+      ]
+    },
+    "16": {
+      "sub_issue": true,
+      "blocked_by": [
+        380,
+        384
+      ]
+    },
+    "17": {
+      "sub_issue": true,
+      "blocked_by": [
+        384,
+        385,
+        82
+      ]
+    },
+    "18": {
+      "sub_issue": true,
+      "blocked_by": [
+        389,
+        391,
+        394
+      ]
+    },
+    "19": {
+      "sub_issue": true,
+      "blocked_by": [
+        387,
+        389,
+        391,
+        392,
+        393,
+        395,
+        6
+      ]
+    }
+  },
+  "verified_native_relations": true,
+  "closed_duplicate_issue": 379
+}
