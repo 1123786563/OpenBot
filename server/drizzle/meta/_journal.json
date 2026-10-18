@@ -1046,13 +1046,6 @@
       "breakpoints": true
     },
     {
-      "idx": 149,
-      "version": "7",
-      "when": 1792311674305,
-      "tag": "0149_restore_skills_icon",
-      "breakpoints": true
-    },
-    {
       "idx": 150,
       "version": "7",
       "when": 1792311947577,
