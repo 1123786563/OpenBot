@@ -48,6 +48,7 @@ import {
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import {
   builtinRunUnderObservationScope,
+  builtinScopeResolutionTimeoutForTests,
   setBuiltinModelSpanObserver,
   setModelUsageMeter,
 } from "../src/copilot";
@@ -455,6 +456,40 @@ describe("T-final M1: the ambient run-scope seam", () => {
     expect(outcome.error).toBeNull();
     expect(outcome.completed).toBe(true);
     expect(seenScope[0]).toBeUndefined();
+  });
+
+  test("a resolver that NEVER settles cannot hold the run hostage — the structural timeout proceeds scope-less (OCR R5-42)", async () => {
+    // R5-42: rejection (above) and null both proceed, but a resolver whose
+    // promise never settles left the defer pending forever — switchMap never
+    // subscribed the inner and the run NEVER STARTED (triage executed repro:
+    // no event past 350ms). A resolution that cannot answer is the same
+    // "failed resolution = a scope-less run" R4-34 already made structural:
+    // bounded, then proceed bare.
+    const seenScope: unknown[] = [];
+    const inner = new Observable<void>((subscriber) => {
+      seenScope.push(currentRunObservationScope());
+      subscriber.complete();
+    });
+    builtinScopeResolutionTimeoutForTests(20);
+    try {
+      const outcome = await outcomeOf(
+        builtinRunUnderObservationScope(
+          {
+            actorId,
+            resolveScope: () => new Promise<unknown>(() => {}),
+          },
+          botId,
+          inner,
+        ),
+      );
+      expect(outcome.error).toBeNull();
+      expect(outcome.completed).toBe(true);
+      // Proceeded, scope-less — never subscribed under a minted scope, and
+      // never not at all.
+      expect(seenScope[0]).toBeUndefined();
+    } finally {
+      builtinScopeResolutionTimeoutForTests(5_000);
+    }
   });
 });
 
