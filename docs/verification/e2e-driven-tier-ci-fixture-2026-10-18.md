@@ -86,3 +86,33 @@ outbox_write_failed`、RLS 下 `insert into "enterprise_resources"` 被拒、
 已收紧为只认连接级签名，并把据以判定的那条失败原文打印进失败信息（贴不出证据的标签不是证据）。
 反例验证：把 `DATABASE_URL/TEST_DATABASE_URL` 指向死端口 55499 跑 `server/tests part 3` 应当仍
 标 blocked；库在时跑 `server/tests part 5` 应当不再标 blocked。
+
+第一次收紧**矫枉过正**：死端口那一轮的 `server/tests part 3`（225 条失败 / 18 个文件）不再标
+blocked，因为 bun 的 junit 里失败文本以 `Failed query:` 开头，`ECONNREFUSED` 这类连接级原因被
+截断在片段之外——只看文本签名会把真故障误判成产品红。最终形状是**双证据**：
+文本里有连接级签名，或者驱动自己做一次 TCP 探测（`databaseUnreachable()`，取
+TEST_DATABASE_URL/DATABASE_URL 的 host:port，1.5s 超时，URL 里的凭据不回显）确认无人应答、
+且失败以语句错误为主；两条都不满足就不贴标签。失败信息里打印用的是哪一条证据。
+
+双向验证都跑过了（同一棵副本树，每组单独一轮）：
+
+| 条件 | 组 | 结果 |
+| --- | --- | --- |
+| `DATABASE_URL/TEST_DATABASE_URL` 指向死端口 55499 | `server/tests part 3` | 贴出 `218/225 failures are statement errors and the configured database is unreachable (127.0.0.1:55499 answered nothing): this group is blocked, not judged.`，仍然 exit 1（没判的层不许报成功） |
+| 私有夹具在跑（55433/55434） | `server/tests part 5` | **不再**贴 blocked：那 2 条是 `Failed query: insert into "enterprise_resources"` 被 RLS 拒，判成产品红 |
+
+## 这两套私有容器现在还在跑
+
+```bash
+docker ps --filter name=ob-e2e-pg        # ob-e2e-pg1 127.0.0.1:55433 / ob-e2e-pg2 127.0.0.1:55434
+docker rm -f ob-e2e-pg1 ob-e2e-pg2       # 不需要时收回；库是一次性的，随时可重建
+```
+
+## 第 6 条现在的口径
+
+机制与整体结论都已有证据：驱动层 30 组在 CI 等价夹具下 21 过 / 9 红，这 9 组在旧运行器上同样全红
+（组这一级 verdict 一致），红的每一条要么是单文件也红的真实缺陷、要么是 >8 文件超预算不给假绿。
+`DATABASE_CAPABILITY_CHECK_FAILED` 那类"夹具缺项"已被这套多库 + 角色布局消掉。
+仍未在 CI 上落过一次，是因为那需要往共享分支推 / 开 PR——尚未获授权。
+
+
