@@ -540,6 +540,8 @@ export function createApp(
     };
     groups?: GroupConversations;
     enterpriseConversations?: Hono;
+    /** MT006 (issue #49): workspace scope listing + team administration routes. */
+    enterpriseWorkspaceScope?: Hono;
     teamBots?: TeamBots;
     /** Pause, reset, Activity and attention for a person's own Bots. See agents/lifecycle.ts. */
     lifecycle?: BotLifecycleServices;
@@ -889,6 +891,14 @@ export function createApp(
     app.route(
       "/api/enterprise/conversations",
       coworker.enterpriseConversations,
+    );
+  }
+  // MT006 (issue #49): scope listing is the login-time discovery surface; the
+  // admin half inside answers 503 itself when the operator channel is unwired.
+  if (coworker?.enterpriseWorkspaceScope) {
+    app.route(
+      "/api/enterprise/workspace-scope",
+      coworker.enterpriseWorkspaceScope,
     );
   }
   /*

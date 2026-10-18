@@ -1,0 +1,2 @@
+== MT037 前置 manifest 终扫描（收尾复算）==
+DONE: 213 items rechecked, 0 drift expected above

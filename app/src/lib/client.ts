@@ -53,6 +53,14 @@ export type ClientOptions = {
    * tenant identity cannot leak to an origin the app never chose.
    */
   tenantId?: string;
+  /**
+   * The team this request selects, sent as the scope pair's second header (`x-openbot-workspace`,
+   * read beside the tenant one — MT005 ruling #1: the headers only select; database membership
+   * decides). Same discipline as `tenantId`: an explicit per-request argument, attached only to a
+   * same-origin enterprise path, never a module-level "current team". The enterprise scope
+   * resolver refuses a workspace without a tenant, so callers select both or neither.
+   */
+  workspaceId?: string;
 };
 
 /**
@@ -100,29 +108,34 @@ async function fallbackText(options: ClientOptions): Promise<string> {
   return "That request failed.";
 }
 
-/** The header the enterprise scope middleware reads the tenant selector from. */
+/** The headers the enterprise scope middleware reads the selection pair from (MT005 ruling #1). */
 const TENANT_HEADER = "x-openbot-tenant";
+const WORKSPACE_HEADER = "x-openbot-workspace";
 
 /** The path prefix the enterprise API answers on; `/api/enterprise/v1` is its one mounted version. */
 const ENTERPRISE_PATH_PREFIX = "/api/enterprise/";
 
 /**
- * The tenant selector a request carries, or nothing.
+ * The selection headers a request carries, or nothing.
  *
  * Same-origin here is a relative path on this app's own origin: a string that starts with exactly
  * one slash. An absolute URL names some other origin, and a `//host/path` URL does too — the
  * browser resolves it against a scheme, so its host is not ours. Only a relative enterprise path
- * with a selector may carry the header, and every other combination returns `undefined`, which
- * leaves the request's headers exactly as they were before `tenantId` existed.
+ * with a selector may carry the headers, and every other combination returns `undefined`, which
+ * leaves the request's headers exactly as they were before the selectors existed.
  */
-function tenantSelection(
+function scopeSelection(
   path: string,
-  tenantId: string | undefined,
-): string | undefined {
-  if (tenantId === undefined) return undefined;
+  options: ClientOptions,
+): Record<string, string> | undefined {
   if (!path.startsWith("/") || path.startsWith("//")) return undefined;
   if (!path.startsWith(ENTERPRISE_PATH_PREFIX)) return undefined;
-  return tenantId;
+  const headers: Record<string, string> = {};
+  if (options.tenantId !== undefined) headers[TENANT_HEADER] = options.tenantId;
+  if (options.workspaceId !== undefined) {
+    headers[WORKSPACE_HEADER] = options.workspaceId;
+  }
+  return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
 /**
@@ -153,18 +166,11 @@ async function refusalMessage(
 
 /** Every request in this app is authenticated, and every one of them is JSON or nothing. */
 async function send(path: string, options: ClientOptions): Promise<Response> {
-  const selection = tenantSelection(path, options.tenantId);
+  const selection = scopeSelection(path, options);
   const headers: Record<string, string> | undefined =
     options.body === undefined
-      ? selection === undefined
-        ? undefined
-        : { [TENANT_HEADER]: selection }
-      : selection === undefined
-        ? { "content-type": "application/json" }
-        : {
-            "content-type": "application/json",
-            [TENANT_HEADER]: selection,
-          };
+      ? selection
+      : { "content-type": "application/json", ...selection };
   return fetch(path, {
     method: options.method,
     credentials: "include",

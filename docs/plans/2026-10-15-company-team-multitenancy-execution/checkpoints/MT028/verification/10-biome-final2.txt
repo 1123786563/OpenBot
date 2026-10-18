@@ -1,0 +1,12 @@
+# MT028 biome 终态复跑 v2（2026-10-17，触及 8 文件）
+本票新文件 7 个全 clean；src/index.ts 残留 4×noConsole + 1×noNonNullAssertion 为 git show HEAD 比对核实的 BASE 存量（与 MT027 报告 D4 同一处欠账），零新增：
+src/index.ts:4760:13 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+tests/multitenancy/support/oauth-state.ts:30:3 lint/correctness/noUnusedImports  FIXABLE  ━━━━━━━━━━
+src/index.ts:838:13 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:863:11 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:883:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:1895:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+tests/multitenancy/support/oauth-state.ts:28:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━━━━
+Found 5 errors.
+Found 2 warnings.
+biome-exit=0

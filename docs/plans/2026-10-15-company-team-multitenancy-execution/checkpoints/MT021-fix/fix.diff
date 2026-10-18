@@ -1,0 +1,257 @@
+--- /Users/wuyongjun/orca/workspaces/OpenBot/i12-review-mt021/server/src/enterprise/tenancy/conversations-list.ts	2026-10-17 07:23:24
++++ server/src/enterprise/tenancy/conversations-list.ts	2026-10-17 08:52:10
+@@ -17,9 +17,11 @@
+ //   2. 列表/计数/游标只从可见项派生：候选行按 (created_at, id) 全序读取
+ //      （不可变键——updated_at 随消息追加前进，不入游标键），keyset 游标
+ //      {v:1, at, id} 只钉在最后一个可见项上；第 limit+1 个可见项只用来签发
+-//      下一页游标。隐藏条目不消耗页位、不偏移游标；键大于全部可见项的隐藏
+-//      条目不制造末页游标（nextCursor=null）。中途改名/删除不引起跳过或
+-//      重复（已见页不受影响，未读页原样续读）。
++//      下一页游标。游标 `at` 取 SQL 侧 created_at::text（PG 文本保微秒，
++//      MT016 同款；修复轮 F1——JS Date 序列化只到毫秒，微秒边界行会被下一
++//      页谓词重新纳入导致翻页死循环/重复）。隐藏条目不消耗页位、不偏移游
++//      标；键大于全部可见项的隐藏条目不制造末页游标（nextCursor=null）。
++//      中途改名/删除不引起跳过或重复（已见页不受影响，未读页原样续读）。
+ //   3. 详情 = canonical 不可见语义：readVisibleConversation 的一切拒绝
+ //      （不存在/跨公司/跨团队/他人会话/被撤权）返回 MT011 的冻结实例
+ //      notFoundVerdict()——逐字节同形，不泄露任何区别（票注：复用 MT011，
+@@ -53,7 +55,7 @@
+ //     同例）；列表展示排序（如 updated_at 倒序）属路由/前端职责，视图
+ //     已携带 created_at/updated_at。
+ 
+-import { and, asc, eq, sql } from "drizzle-orm";
++import { and, asc, eq, getTableColumns, sql } from "drizzle-orm";
+ import { enterpriseConversations } from "../../db/schema/enterprise-conversations";
+ import {
+   enterpriseMemberships,
+@@ -127,6 +129,14 @@
+ const UUID_PATTERN =
+   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+ 
++/**
++ * 游标 `at` 的时间戳形状：PG `timestamptz::text`（ISO DateStyle，空格分隔，
++ * 数字时区偏移如 +00 / +05:30）与 ISO-8601（T 分隔，Z 或偏移）都接受。服务
++ * 只消费自己签发的令牌，两种形态都能安全 ::timestamptz。
++ */
++const CURSOR_TIMESTAMP_PATTERN =
++  /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}(:?\d{2})?)$/;
++
+ function assertScopeContext(scope: PlatformScope): void {
+   if (!scope.tenantId?.trim()) throw new Error("TENANT_REQUIRED");
+   if (!scope.workspaceId?.trim()) throw new Error("WORKSPACE_REQUIRED");
+@@ -183,6 +193,13 @@
+   ) {
+     throw new Error("CONVERSATIONS_CURSOR_INVALID");
+   }
++  // 修复轮 F2：`at` 必须是可被 ::timestamptz 解析的时间戳文本（服务自发签的
++  // 是 PG created_at::text 形态；ISO-8601 也接受）。结构合法但非时间戳的令
++  // 牌在 decode 时就落入既定拒绝码，绝不把裸驱动错误（PG 22007）泄漏给调
++  // 用方。
++  if (!CURSOR_TIMESTAMP_PATTERN.test((parsed as CursorPayload).at)) {
++    throw new Error("CONVERSATIONS_CURSOR_INVALID");
++  }
+   return parsed as CursorPayload;
+ }
+ 
+@@ -320,9 +337,17 @@
+         }
+         // keyset 读取：谓词含全部归属条件（租户 RLS 先行 + 团队 + 本人），
+         // (created_at, id) 全序；取 limit+1 行——第 limit+1 个可见项只用来
+-        // 判断「还有下一页」，游标钉在最后一个可见项的键上。
++        // 判断「还有下一页」，游标钉在最后一个可见项的键上。键源是 SQL 侧
++        // created_at::text（保微秒；修复轮 F1，MT016 bots-ownership 同款）：
++        // JS Date/toISOString 只到毫秒，微秒行会被下一页谓词重新纳入。
+         const rows = await tx
+-          .select()
++          .select({
++            ...getTableColumns(enterpriseConversations),
++            createdAtText:
++              sql<string>`${enterpriseConversations.createdAt}::text`.as(
++                "created_at_text",
++              ),
++          })
+           .from(enterpriseConversations)
+           .where(
+             and(
+@@ -344,7 +369,7 @@
+           rows.length > limit
+             ? encodeCursor({
+                 v: 1,
+-                at: rows[limit - 1].createdAt.toISOString(),
++                at: rows[limit - 1].createdAtText,
+                 id: rows[limit - 1].id,
+               })
+             : null;
+--- /Users/wuyongjun/orca/workspaces/OpenBot/i12-review-mt021/server/tests/multitenancy/conversations-list.test.ts	2026-10-17 06:43:30
++++ server/tests/multitenancy/conversations-list.test.ts	2026-10-17 08:49:43
+@@ -777,6 +777,112 @@
+ });
+ 
+ // ---------------------------------------------------------------------------
++// 修复轮 F1：微秒 created_at 形态下翻页收敛（生产写路径 defaultNow() 带微秒，
++// JS Date 只到毫秒——游标键若经 JS 序列化会把边界行重新纳入，翻页死循环）。
++// 种子经夹具显式 ::timestamptz 字面量通道注入微秒（夹具唯一新增通道，实现轮
++// 的 toISOString 通道无法表达亚毫秒精度）。
++// ---------------------------------------------------------------------------
++
++describeDb("MT021 修复轮 F1：微秒 created_at 下翻页收敛、不跳不重", () => {
++  // 同秒内两行可见微秒行（.123456 / .123999，间隔亚毫秒）+ 一行隔秒微秒行；
++  // 另有一行同键微秒隐藏行（a1-other）与可见行同秒交错。追加于 c11(min 15)
++  // 之后、c9(min 50) 之前——a1-member 的当前可见全序为：
++  //   c1, c3, c10, c11, m1, m2, m3（验收 4 已删 c5；隐藏：c2, c4, mh, c9）。
++  const MICRO_M1 = "2026-01-01 00:20:00.123456+00";
++  const MICRO_M2 = "2026-01-01 00:20:00.123999+00";
++  const MICRO_M3 = "2026-01-01 00:21:00.654321+00";
++  const VISIBLE_CHAIN = ["c1", "c3", "c10", "c11", "m1", "m2", "m3"] as const;
++
++  beforeAll(async () => {
++    if (!ENV.ok) return;
++    const microSeed = (
++      key: string,
++      owner: ConversationsIdentity,
++      createdAtText: string,
++    ): SeededConversation => ({
++      conversationId: randomUUID(),
++      tenantId: companyA,
++      workspaceId: teamA1,
++      principalId: principalOf(owner),
++      threadId: `thr-${fixture.idPrefix}-${key}`,
++      title: `micro-${key}`,
++      // Date 字段仍必填（类型上），但 createdAtText 优先于其序列化。
++      createdAt: at(20),
++      createdAtText,
++    });
++    for (const [key, owner, text] of [
++      ["m1", "a1-member", MICRO_M1],
++      ["m2", "a1-member", MICRO_M2],
++      ["m3", "a1-member", MICRO_M3],
++      // 隐藏行（同团队他人）与 m3 同微秒键：隐藏行不得偏移游标或消耗页位。
++      ["mh", "a1-other", MICRO_M3],
++    ] as const) {
++      const seed = microSeed(key, owner, text);
++      conversationIds[key] = seed.conversationId;
++      await fixture.seedConversation(seed);
++    }
++  }, 30000);
++
++  itDb(
++    "limit=1 全页链收敛：页并集 == 精确可见序列（含微秒边界行自身不重入），无重复，末页 null",
++    async () => {
++      const scope = await scopeAs("a1-member", companyA, teamA1);
++      const collected: string[] = [];
++      let cursor: string | null = null;
++      for (let guard = 0; guard < 12; guard += 1) {
++        const page = await fixture.service.listVisibleConversations(scope, {
++          limit: 1,
++          ...(cursor ? { cursor } : {}),
++        });
++        collected.push(...page.items.map((item) => item.conversationId));
++        if (page.nextCursor === null) break;
++        cursor = page.nextCursor;
++      }
++      // 死循环守卫未耗尽（guard 余量 = 12 - 7 页）——微秒边界行 m1 不把
++      // 自己重新纳入下一页（修复前此链每页都重复 m1 直至耗尽守卫）。
++      expect(collected).toEqual(VISIBLE_CHAIN.map((key) => convId(key)));
++      expect(new Set(collected).size).toBe(collected.length);
++      // 隐藏微秒行 mh（与 m3 同键）不出现在任何页。
++      expect(collected).not.toContain(convId("mh"));
++    },
++  );
++
++  itDb(
++    "游标 at 字段携带微秒精度（SQL 文本形态）：钉在微秒边界行上的游标不解为毫秒",
++    async () => {
++      const scope = await scopeAs("a1-member", companyA, teamA1);
++      // limit=5：首页恰终止于微秒行 m1（可见序 c1,c3,c10,c11,m1）。
++      const firstPage = await fixture.service.listVisibleConversations(scope, {
++        limit: 5,
++      });
++      expect(firstPage.items.map((item) => item.conversationId)).toEqual(
++        VISIBLE_CHAIN.slice(0, 5).map((key) => convId(key)),
++      );
++      expect(firstPage.nextCursor).not.toBeNull();
++      const payload = JSON.parse(
++        Buffer.from(firstPage.nextCursor as string, "base64url").toString(
++          "utf8",
++        ),
++      ) as { v: number; at: string; id: string };
++      expect(payload.v).toBe(1);
++      expect(payload.id).toBe(convId("m1"));
++      // 微秒在场：at 是 created_at 的 SQL 文本形态（非 JS toISOString 的
++      // 毫秒截断形态）——本断言在修复前必失败（.123Z 形态无 .123456）。
++      expect(payload.at).toContain(".123456");
++      // 该游标能真实续读下一页并收敛（m2, m3），隐藏行 mh 不插入。
++      const secondPage = await fixture.service.listVisibleConversations(scope, {
++        limit: 5,
++        cursor: firstPage.nextCursor as string,
++      });
++      expect(secondPage.items.map((item) => item.conversationId)).toEqual(
++        VISIBLE_CHAIN.slice(5).map((key) => convId(key)),
++      );
++      expect(secondPage.nextCursor).toBeNull();
++    },
++  );
++});
++
++// ---------------------------------------------------------------------------
+ // 输入校验与信任边界（响亮拒绝；不可见语义只有 canonical 一种）
+ // ---------------------------------------------------------------------------
+ 
+@@ -813,6 +919,23 @@
+     expect(message).toContain("CONVERSATIONS_CURSOR_INVALID");
+   });
+ 
++  itDb(
++    "修复轮 F2：结构合法但 at 非时间戳的游标 → CONVERSATIONS_CURSOR_INVALID（不泄漏裸驱动错误）",
++    async () => {
++      const scope = await scopeAs("a1-member", companyA, teamA1);
++      const garbageAt = Buffer.from(
++        JSON.stringify({ v: 1, at: "garbage", id: randomUUID() }),
++      ).toString("base64url");
++      const message = await thrownMessage(() =>
++        fixture.service.listVisibleConversations(scope, {
++          limit: 5,
++          cursor: garbageAt,
++        }),
++      );
++      expect(message).toContain("CONVERSATIONS_CURSOR_INVALID");
++    },
++  );
++
+   itDb("畸形会话 ID 响亮拒绝（输入校验；不与 not-found 混同）", async () => {
+     const scope = await scopeAs("a1-member", companyA, teamA1);
+     for (const bad of ["", "   ", "not-a-uuid"]) {
+--- /Users/wuyongjun/orca/workspaces/OpenBot/i12-review-mt021/server/tests/multitenancy/support/conversations-list.ts	2026-10-17 06:43:30
++++ server/tests/multitenancy/support/conversations-list.ts	2026-10-17 08:49:13
+@@ -82,6 +82,15 @@
+   title: string | null;
+   /** Explicit creation timestamp; the keyset order follows (created_at, id). */
+   createdAt: Date;
++  /**
++   * Optional raw timestamp text injected verbatim as `::timestamptz` for BOTH
++   * columns (fix-round F1): JS Date only carries milliseconds, while PG
++   * `timestamptz` keeps microseconds — seeding sub-millisecond precision (the
++   * production `defaultNow()` shape) requires this literal channel. When set
++   * it overrides `createdAt`/`updatedAt` serialization; `updatedAt` (if
++   * provided as a Date) still wins for its own column.
++   */
++  createdAtText?: string;
+   updatedAt?: Date;
+ }>;
+ 
+@@ -489,10 +498,13 @@
+       },
+ 
+       async seedConversation(conversation) {
+-        const updatedAt = conversation.updatedAt ?? conversation.createdAt;
++        const createdAtText =
++          conversation.createdAtText ?? conversation.createdAt.toISOString();
++        const updatedAtText =
++          conversation.updatedAt?.toISOString() ?? createdAtText;
+         await seedViaData(
+           conversation,
+-          sql`insert into enterprise_conversations (id, tenant_id, workspace_id, principal_id, thread_id, title, storage_backend, created_at, updated_at) values (${conversation.conversationId}::uuid, ${conversation.tenantId}, ${conversation.workspaceId}, ${conversation.principalId}, ${conversation.threadId}, ${conversation.title}, 'platform', ${conversation.createdAt.toISOString()}::timestamptz, ${updatedAt.toISOString()}::timestamptz)`,
++          sql`insert into enterprise_conversations (id, tenant_id, workspace_id, principal_id, thread_id, title, storage_backend, created_at, updated_at) values (${conversation.conversationId}::uuid, ${conversation.tenantId}, ${conversation.workspaceId}, ${conversation.principalId}, ${conversation.threadId}, ${conversation.title}, 'platform', ${createdAtText}::timestamptz, ${updatedAtText}::timestamptz)`,
+         );
+       },
+ 

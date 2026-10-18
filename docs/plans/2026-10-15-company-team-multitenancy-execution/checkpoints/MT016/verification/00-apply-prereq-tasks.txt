@@ -1,0 +1,579 @@
+=== MT004 ===
+generated: MT004 → /tmp/mt016-mig/MT004
+  wrote /tmp/mt016-mig/MT004/0001_mt004_create_table.sql
+  wrote /tmp/mt016-mig/MT004/0002_mt004_rls_policies.sql
+  wrote /tmp/mt016-mig/MT004/manifest.json
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT004","planDigest":"39b91e0f85a6afce76fb8e56e74ac162df39e08e308d8138932747b0a3ecd8cb","steps":[{"number":1,"name":"0001_mt004_create_table.sql","statementDigest":"fa49756593c91ce2af6753143beff077c0eae70cc84469dd83fed7b33b83a9ea","statementCount":4},{"number":2,"name":"0002_mt004_rls_policies.sql","statementDigest":"d6d6750e838eebb6008f35e986b1fd6e126728e8b49d21fcb082666634087a67","statementCount":11}]}
+multitenancy migrate-test — dry-run（默认；执行需 --apply --manifest <file>）
+task: MT004 — MT004（Issue #47）：新增企业团队成员关系表 enterprise_workspace_memberships（expand-only，仅新增表与最小 RLS，不改既有对象）。
+database: openbot_enterprise_mt016 @ 127.0.0.1:55491
+journal: 已应用 0/2；待应用 2 步
+step 0001_mt004_create_table.sql — 影响: 新增 enterprise_workspace_memberships 表：复合主键 (tenant_id, workspace_id, principal_id) 即唯一成员关系；principal 侧唯一索引；status/epoch CHECK；两条复合外键分别指向 enterprise_workspaces 与 enterprise_memberships（同时证明 workspace 属该公司、principal 是该公司成员）。不修改任何既有表。
+  语句 1: CREATE TABLE "enterprise_workspace_memberships" (
+	"tenant_id" text NOT NULL,
+	"workspace_id" text NOT NULL,
+	"principal_id" text NOT NULL,
+	"status" text DEFAULT 'active' NOT NULL,
+	"epoch" integer DEFAULT 1 NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "enterprise_workspace_memberships_tenant_id_workspace_id_principal_id_pk" PRIMARY KEY("tenant_id","workspace_id","principal_id"),
+	CONSTRAINT "enterprise_workspace_member_status" CHECK ("enterprise_workspace_memberships"."status" in ('active','suspended')),
+	CONSTRAINT "enterprise_workspace_member_epoch" CHECK ("enterprise_workspace_memberships"."epoch" > 0)
+);
+  语句 2: ALTER TABLE "enterprise_workspace_memberships" ADD CONSTRAINT "enterprise_workspace_memberships_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;
+  语句 3: ALTER TABLE "enterprise_workspace_memberships" ADD CONSTRAINT "enterprise_workspace_memberships_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;
+  语句 4: CREATE UNIQUE INDEX "enterprise_workspace_membership_principal_tenant" ON "enterprise_workspace_memberships" USING btree ("principal_id","tenant_id","workspace_id");
+step 0002_mt004_rls_policies.sql — 影响: 仅对新表：REVOKE PUBLIC、启用 RLS、按既有模式新增 5 条最小策略（directory self-read / data read / operator read+insert+update）及配套最小 GRANT（SELECT、operator INSERT、operator UPDATE(status, epoch)）；不改动任何既有表策略或既有授权。
+  语句 1: REVOKE ALL PRIVILEGES ON TABLE "enterprise_workspace_memberships" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;
+  语句 2: ALTER TABLE "enterprise_workspace_memberships" ENABLE ROW LEVEL SECURITY;
+  语句 3: ALTER TABLE "enterprise_workspace_memberships" FORCE ROW LEVEL SECURITY;
+  语句 4: CREATE POLICY "enterprise_workspace_membership_self_read" ON "enterprise_workspace_memberships"
+  FOR SELECT TO ob_ent_directory
+  USING (EXISTS (
+    SELECT 1 FROM "enterprise_principals" p
+    WHERE p."id" = "enterprise_workspace_memberships"."principal_id"
+      AND p."user_id" = nullif(current_setting('app.user_id', true), '')
+  ));
+  语句 5: CREATE POLICY "enterprise_workspace_membership_data_read" ON "enterprise_workspace_memberships"
+  FOR SELECT TO ob_ent_data
+  USING ("enterprise_workspace_memberships"."tenant_id" = nullif(current_setting('app.tenant_id', true), '')
+    AND "enterprise_workspace_memberships"."principal_id" = nullif(current_setting('app.principal_id', true), ''));
+  语句 6: CREATE POLICY "enterprise_workspace_membership_operator_read" ON "enterprise_workspace_memberships"
+  FOR SELECT TO ob_ent_operator
+  USING ("enterprise_workspace_memberships"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 7: CREATE POLICY "enterprise_workspace_membership_operator_insert" ON "enterprise_workspace_memberships"
+  FOR INSERT TO ob_ent_operator
+  WITH CHECK ("enterprise_workspace_memberships"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 8: CREATE POLICY "enterprise_workspace_membership_operator_update" ON "enterprise_workspace_memberships"
+  FOR UPDATE TO ob_ent_operator
+  USING ("enterprise_workspace_memberships"."tenant_id" = nullif(current_setting('app.tenant_id', true), '')
+    AND "enterprise_workspace_memberships"."principal_id" = nullif(current_setting('app.operator_principal_id', true), ''))
+  WITH CHECK ("enterprise_workspace_memberships"."tenant_id" = nullif(current_setting('app.tenant_id', true), '')
+    AND "enterprise_workspace_memberships"."principal_id" = nullif(current_setting('app.operator_principal_id', true), ''));
+  语句 9: GRANT SELECT ON TABLE "enterprise_workspace_memberships" TO ob_ent_directory, ob_ent_data, ob_ent_operator;
+  语句 10: GRANT INSERT ON TABLE "enterprise_workspace_memberships" TO ob_ent_operator;
+  语句 11: GRANT UPDATE ("status", "epoch") ON TABLE "enterprise_workspace_memberships" TO ob_ent_operator;
+summary: 待应用 2 步 / 15 条语句 / 涉及对象: enterprise_workspace_memberships
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT004","planDigest":"39b91e0f85a6afce76fb8e56e74ac162df39e08e308d8138932747b0a3ecd8cb","steps":[{"number":1,"name":"0001_mt004_create_table.sql","statementDigest":"fa49756593c91ce2af6753143beff077c0eae70cc84469dd83fed7b33b83a9ea","statementCount":4},{"number":2,"name":"0002_mt004_rls_policies.sql","statementDigest":"d6d6750e838eebb6008f35e986b1fd6e126728e8b49d21fcb082666634087a67","statementCount":11}]}
+applied: MT004 @ openbot_enterprise_mt016 (127.0.0.1:55491)
+  已执行并记入 journal: 0001_mt004_create_table.sql, 0002_mt004_rls_policies.sql
+=== MT008 ===
+generated: MT008 → /tmp/mt016-mig/MT008
+  wrote /tmp/mt016-mig/MT008/0001_mt008_resource_visibility_column.sql
+  wrote /tmp/mt016-mig/MT008/0002_mt008_visibility_operator_grant.sql
+  wrote /tmp/mt016-mig/MT008/manifest.json
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT008","planDigest":"a3c77887973b51fb633caa3d0dc54ae48e482995f916a66cd5eedab2f4e14408","steps":[{"number":1,"name":"0001_mt008_resource_visibility_column.sql","statementDigest":"89049ffde64e8885ba2fd0d0b66dbd10a07c0649811a14ee917bc0c3a9d12d24","statementCount":2},{"number":2,"name":"0002_mt008_visibility_operator_grant.sql","statementDigest":"6dbb5d622721968a533a0d87e4a329d38e76470413ce4cc4aff0aa9baca3b991","statementCount":1}]}
+multitenancy migrate-test — dry-run（默认；执行需 --apply --manifest <file>）
+task: MT008 — MT008（Issue #51）：enterprise_resources 追加可空列 visibility（expand-only，不改任何既有对象/策略）+ operator 列级 UPDATE 授权。
+database: openbot_enterprise_mt016 @ 127.0.0.1:55491
+journal: 已应用 0/2；待应用 2 步
+step 0001_mt008_resource_visibility_column.sql — 影响: 仅为既有表 enterprise_resources 追加可空列 visibility 与取值域 CHECK（NULL/'private'/'workspace'）。既有行全部落 NULL（未标记=遗留行为不变）。不修改任何既有列/约束/策略/授权。
+  语句 1: ALTER TABLE "enterprise_resources" ADD COLUMN "visibility" text;
+  语句 2: ALTER TABLE "enterprise_resources" ADD CONSTRAINT "enterprise_resource_visibility" CHECK ("visibility" is null or "visibility" in ('private', 'workspace'));
+step 0002_mt008_visibility_operator_grant.sql — 影响: 给受限 operator 角色补 visibility 列的列级 UPDATE 授权（配合既有 operator UPDATE 行策略：app.tenant_id + app.resource_id 匹配行）。不授予其它任何权限，不改任何策略。
+  语句 1: GRANT UPDATE ("visibility") ON TABLE "enterprise_resources" TO ob_ent_operator;
+summary: 待应用 2 步 / 3 条语句 / 涉及对象: enterprise_resources
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT008","planDigest":"a3c77887973b51fb633caa3d0dc54ae48e482995f916a66cd5eedab2f4e14408","steps":[{"number":1,"name":"0001_mt008_resource_visibility_column.sql","statementDigest":"89049ffde64e8885ba2fd0d0b66dbd10a07c0649811a14ee917bc0c3a9d12d24","statementCount":2},{"number":2,"name":"0002_mt008_visibility_operator_grant.sql","statementDigest":"6dbb5d622721968a533a0d87e4a329d38e76470413ce4cc4aff0aa9baca3b991","statementCount":1}]}
+applied: MT008 @ openbot_enterprise_mt016 (127.0.0.1:55491)
+  已执行并记入 journal: 0001_mt008_resource_visibility_column.sql, 0002_mt008_visibility_operator_grant.sql
+=== MT112 ===
+generated: MT112 → /tmp/mt016-mig/MT112
+  wrote /tmp/mt016-mig/MT112/0001_mt112_anchor_mapping_table.sql
+  wrote /tmp/mt016-mig/MT112/0002_mt112_anchor_rls_policies.sql
+  wrote /tmp/mt016-mig/MT112/0003_mt112_legacy_anchor_rows.sql
+  wrote /tmp/mt016-mig/MT112/0004_mt112_anchor_mapping_row.sql
+  wrote /tmp/mt016-mig/MT112/manifest.json
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT112","planDigest":"cc613382a7a9932dcbcb8aa0a180648125a10ea17fdddfd71b63789525920756","steps":[{"number":1,"name":"0001_mt112_anchor_mapping_table.sql","statementDigest":"1e28a778741c44409f1e5ac6eea8f2fa39e9a01712d59e0f2e09cae62e09c298","statementCount":4},{"number":2,"name":"0002_mt112_anchor_rls_policies.sql","statementDigest":"95e0d595659ca7ba23d778e914dc5af163ca51cf2e1da2dc594011b58a0d40bb","statementCount":5},{"number":3,"name":"0003_mt112_legacy_anchor_rows.sql","statementDigest":"d04fcdb0bb37029a1faee57667cce4bc0aa546ef14df379546b22daffa306239","statementCount":5},{"number":4,"name":"0004_mt112_anchor_mapping_row.sql","statementDigest":"da6390edc8bc50bfdefbf951a17b7db533d9b0787332218b2c7959516d87dd00","statementCount":1}]}
+multitenancy migrate-test — dry-run（默认；执行需 --apply --manifest <file>）
+task: MT112 — MT112（执行轮）：历史部署「原有公司 + 默认团队」锚点——expand-only 新增映射表 enterprise_deployment_anchors，并幂等写入锚点数据（原有公司租户行、默认团队 workspace 行、最早用户的成员锚点、与部署身份及计费 Customer 的唯一映射）
+database: openbot_enterprise_mt016 @ 127.0.0.1:55491
+journal: 已应用 0/4；待应用 4 步
+step 0001_mt112_anchor_mapping_table.sql — 影响: 新增 enterprise_deployment_anchors 表：tenant_id 主键（FK → enterprise_tenants，cascade）；deployment_tenant_id 与 billing_external_customer_id 两个方向唯一索引；派生 CHECK 保证计费键 = 'openbot-deployment-' || 部署身份。不修改任何既有表。
+  语句 1: CREATE TABLE "enterprise_deployment_anchors" (
+	"tenant_id" text PRIMARY KEY NOT NULL,
+	"deployment_tenant_id" text NOT NULL,
+	"billing_external_customer_id" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "enterprise_deployment_anchors_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action
+);
+  语句 2: CREATE UNIQUE INDEX "enterprise_deployment_anchor_identity" ON "enterprise_deployment_anchors" USING btree ("deployment_tenant_id");
+  语句 3: CREATE UNIQUE INDEX "enterprise_deployment_anchor_billing_customer" ON "enterprise_deployment_anchors" USING btree ("billing_external_customer_id");
+  语句 4: ALTER TABLE "enterprise_deployment_anchors" ADD CONSTRAINT "enterprise_deployment_anchor_billing_derivation" CHECK ("billing_external_customer_id" = 'openbot-deployment-' || "deployment_tenant_id");
+step 0002_mt112_anchor_rls_policies.sql — 影响: 仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增 1 条 operator 租户范围 SELECT 策略及配套 GRANT。不授予任何受限角色 INSERT/UPDATE——锚点行只能由本迁移写入。不改动任何既有表策略或既有授权。
+  语句 1: REVOKE ALL PRIVILEGES ON TABLE "enterprise_deployment_anchors" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;
+  语句 2: ALTER TABLE "enterprise_deployment_anchors" ENABLE ROW LEVEL SECURITY;
+  语句 3: ALTER TABLE "enterprise_deployment_anchors" FORCE ROW LEVEL SECURITY;
+  语句 4: CREATE POLICY "enterprise_deployment_anchor_operator_read" ON "enterprise_deployment_anchors"
+  FOR SELECT TO ob_ent_operator
+  USING ("enterprise_deployment_anchors"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 5: GRANT SELECT ON TABLE "enterprise_deployment_anchors" TO ob_ent_operator;
+step 0003_mt112_legacy_anchor_rows.sql — 影响: 幂等写入「原有公司」租户行（ent-legacy-original）、「默认团队」workspace 行（ent-legacy-default-team）与成员锚点（全库最早用户：tenant_admin 成员资格 + 默认团队 workspace 成员资格）。全部 ON CONFLICT DO NOTHING，重复执行零重复；无用户时成员锚点插入 0 行。
+  语句 1: INSERT INTO "enterprise_tenants" ("id", "name") VALUES ('ent-legacy-original', '原有公司') ON CONFLICT ("id") DO NOTHING;
+  语句 2: INSERT INTO "enterprise_workspaces" ("tenant_id", "id", "name") VALUES ('ent-legacy-original', 'ent-legacy-default-team', '默认团队') ON CONFLICT ("tenant_id", "id") DO NOTHING;
+  语句 3: INSERT INTO "enterprise_principals" ("id", "user_id")
+	SELECT 'entp-legacy-anchor-' || anchor_user."id", anchor_user."id"
+	FROM (SELECT "id" FROM "users" ORDER BY "created_at" ASC, "id" ASC LIMIT 1) AS anchor_user
+	ON CONFLICT ("id") DO NOTHING;
+  语句 4: INSERT INTO "enterprise_memberships" ("tenant_id", "principal_id", "role")
+	SELECT 'ent-legacy-original', "enterprise_principals"."id", 'tenant_admin'
+	FROM "enterprise_principals"
+	WHERE "enterprise_principals"."id" = 'entp-legacy-anchor-' || (SELECT "id" FROM "users" ORDER BY "created_at" ASC, "id" ASC LIMIT 1)
+	ON CONFLICT ("tenant_id", "principal_id") DO NOTHING;
+  语句 5: INSERT INTO "enterprise_workspace_memberships" ("tenant_id", "workspace_id", "principal_id")
+	SELECT 'ent-legacy-original', 'ent-legacy-default-team', "enterprise_principals"."id"
+	FROM "enterprise_principals"
+	WHERE "enterprise_principals"."id" = 'entp-legacy-anchor-' || (SELECT "id" FROM "users" ORDER BY "created_at" ASC, "id" ASC LIMIT 1)
+	ON CONFLICT ("tenant_id", "workspace_id", "principal_id") DO NOTHING;
+step 0004_mt112_anchor_mapping_row.sql — 影响: 幂等写入锚点映射行：原有公司租户 ↔ loaded_at 最早的 deployment_packages 身份（历史部署的原始身份）↔ 派生计费 Customer 键。tenant 主键冲突即 no-op；两个方向唯一索引拒绝第二个租户认领同一部署身份或计费 Customer。
+  语句 1: INSERT INTO "enterprise_deployment_anchors" ("tenant_id", "deployment_tenant_id", "billing_external_customer_id")
+	SELECT 'ent-legacy-original', pkg."tenant_id", 'openbot-deployment-' || pkg."tenant_id"
+	FROM (SELECT "tenant_id" FROM "deployment_packages" ORDER BY "loaded_at" ASC, "tenant_id" ASC LIMIT 1) AS pkg
+	ON CONFLICT ("tenant_id") DO NOTHING;
+summary: 待应用 4 步 / 15 条语句 / 涉及对象: enterprise_deployment_anchors, enterprise_tenants, enterprise_workspaces, enterprise_principals, enterprise_memberships, enterprise_workspace_memberships, users, deployment_packages
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT112","planDigest":"cc613382a7a9932dcbcb8aa0a180648125a10ea17fdddfd71b63789525920756","steps":[{"number":1,"name":"0001_mt112_anchor_mapping_table.sql","statementDigest":"1e28a778741c44409f1e5ac6eea8f2fa39e9a01712d59e0f2e09cae62e09c298","statementCount":4},{"number":2,"name":"0002_mt112_anchor_rls_policies.sql","statementDigest":"95e0d595659ca7ba23d778e914dc5af163ca51cf2e1da2dc594011b58a0d40bb","statementCount":5},{"number":3,"name":"0003_mt112_legacy_anchor_rows.sql","statementDigest":"d04fcdb0bb37029a1faee57667cce4bc0aa546ef14df379546b22daffa306239","statementCount":5},{"number":4,"name":"0004_mt112_anchor_mapping_row.sql","statementDigest":"da6390edc8bc50bfdefbf951a17b7db533d9b0787332218b2c7959516d87dd00","statementCount":1}]}
+applied: MT112 @ openbot_enterprise_mt016 (127.0.0.1:55491)
+  已执行并记入 journal: 0001_mt112_anchor_mapping_table.sql, 0002_mt112_anchor_rls_policies.sql, 0003_mt112_legacy_anchor_rows.sql, 0004_mt112_anchor_mapping_row.sql
+=== MT012 ===
+generated: MT012 → /tmp/mt016-mig/MT012
+  wrote /tmp/mt016-mig/MT012/0001_mt012_core_rls_enable.sql
+  wrote /tmp/mt016-mig/MT012/0002_mt012_context_reset_function.sql
+  wrote /tmp/mt016-mig/MT012/manifest.json
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT012","planDigest":"dbdb978af111dd140f18722e3e4262f1b7bce9282e9461aff260506f846cdf6e","steps":[{"number":1,"name":"0001_mt012_core_rls_enable.sql","statementDigest":"bdc2ff8947e04fc1ba562725e9ce6f99fcbc562449b4a9dee591481e86c1563a","statementCount":18},{"number":2,"name":"0002_mt012_context_reset_function.sql","statementDigest":"bf6d0e3f24a48d4e8009c7de3942d42d4951935a4bfb8f8e1dc637a4af5914b0","statementCount":3}]}
+multitenancy migrate-test — dry-run（默认；执行需 --apply --manifest <file>）
+task: MT012 — MT012（Issue #55）：核心租户域表 RLS 再断言（ENABLE+FORCE）+ 会话级上下文清理函数（expand-only，不改任何既有对象/策略/授权）。
+database: openbot_enterprise_mt016 @ 127.0.0.1:55491
+journal: 已应用 0/2；待应用 2 步
+step 0001_mt012_core_rls_enable.sql — 影响: 对九张核心租户域表（tenants/principals/memberships/workspaces/resources/grants/security_events/workspace_memberships/deployment_anchors）幂等再断言 ENABLE + FORCE ROW LEVEL SECURITY。不新增/删除/改写任何策略或授权。
+  语句 1: ALTER TABLE "enterprise_tenants" ENABLE ROW LEVEL SECURITY;
+  语句 2: ALTER TABLE "enterprise_tenants" FORCE ROW LEVEL SECURITY;
+  语句 3: ALTER TABLE "enterprise_principals" ENABLE ROW LEVEL SECURITY;
+  语句 4: ALTER TABLE "enterprise_principals" FORCE ROW LEVEL SECURITY;
+  语句 5: ALTER TABLE "enterprise_memberships" ENABLE ROW LEVEL SECURITY;
+  语句 6: ALTER TABLE "enterprise_memberships" FORCE ROW LEVEL SECURITY;
+  语句 7: ALTER TABLE "enterprise_workspaces" ENABLE ROW LEVEL SECURITY;
+  语句 8: ALTER TABLE "enterprise_workspaces" FORCE ROW LEVEL SECURITY;
+  语句 9: ALTER TABLE "enterprise_resources" ENABLE ROW LEVEL SECURITY;
+  语句 10: ALTER TABLE "enterprise_resources" FORCE ROW LEVEL SECURITY;
+  语句 11: ALTER TABLE "enterprise_resource_grants" ENABLE ROW LEVEL SECURITY;
+  语句 12: ALTER TABLE "enterprise_resource_grants" FORCE ROW LEVEL SECURITY;
+  语句 13: ALTER TABLE "enterprise_security_events" ENABLE ROW LEVEL SECURITY;
+  语句 14: ALTER TABLE "enterprise_security_events" FORCE ROW LEVEL SECURITY;
+  语句 15: ALTER TABLE "enterprise_workspace_memberships" ENABLE ROW LEVEL SECURITY;
+  语句 16: ALTER TABLE "enterprise_workspace_memberships" FORCE ROW LEVEL SECURITY;
+  语句 17: ALTER TABLE "enterprise_deployment_anchors" ENABLE ROW LEVEL SECURITY;
+  语句 18: ALTER TABLE "enterprise_deployment_anchors" FORCE ROW LEVEL SECURITY;
+step 0002_mt012_context_reset_function.sql — 影响: 新增函数 ob_ent_reset_business_context()：把策略消费的七个 app.* 上下文键会话级写回空串（池回收前的兜底清理）。REVOKE EXECUTE FROM PUBLIC 只收窄新函数的默认 PUBLIC 执行权；EXECUTE 只授予三个受限业务角色（不授予平台机器读角色 ob_ent_identity_operator）。
+  语句 1: CREATE OR REPLACE FUNCTION "public"."ob_ent_reset_business_context"() RETURNS void LANGUAGE sql AS $func$ SELECT set_config('app.tenant_id', '', false), set_config('app.principal_id', '', false), set_config('app.user_id', '', false), set_config('app.workspace_id', '', false), set_config('app.operation_id', '', false), set_config('app.resource_id', '', false), set_config('app.operator_principal_id', '', false) $func$;
+  语句 2: REVOKE EXECUTE ON FUNCTION "public"."ob_ent_reset_business_context"() FROM PUBLIC;
+  语句 3: GRANT EXECUTE ON FUNCTION "public"."ob_ent_reset_business_context"() TO ob_ent_directory, ob_ent_data, ob_ent_operator;
+summary: 待应用 2 步 / 21 条语句 / 涉及对象: enterprise_tenants, enterprise_principals, enterprise_memberships, enterprise_workspaces, enterprise_resources, enterprise_resource_grants, enterprise_security_events, enterprise_workspace_memberships, enterprise_deployment_anchors, ob_ent_reset_business_context
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT012","planDigest":"dbdb978af111dd140f18722e3e4262f1b7bce9282e9461aff260506f846cdf6e","steps":[{"number":1,"name":"0001_mt012_core_rls_enable.sql","statementDigest":"bdc2ff8947e04fc1ba562725e9ce6f99fcbc562449b4a9dee591481e86c1563a","statementCount":18},{"number":2,"name":"0002_mt012_context_reset_function.sql","statementDigest":"bf6d0e3f24a48d4e8009c7de3942d42d4951935a4bfb8f8e1dc637a4af5914b0","statementCount":3}]}
+applied: MT012 @ openbot_enterprise_mt016 (127.0.0.1:55491)
+  已执行并记入 journal: 0001_mt012_core_rls_enable.sql, 0002_mt012_context_reset_function.sql
+=== MT014 ===
+generated: MT014 → /tmp/mt016-mig/MT014
+  wrote /tmp/mt016-mig/MT014/0001_mt014_runtime_config_tables.sql
+  wrote /tmp/mt016-mig/MT014/0002_mt014_runtime_config_rls.sql
+  wrote /tmp/mt016-mig/MT014/manifest.json
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT014","planDigest":"f1882005120c8334e137748dc7d0e836f007818b6ed29c871007d953c001c53c","steps":[{"number":1,"name":"0001_mt014_runtime_config_tables.sql","statementDigest":"ebce5e3c6887a272bd7b237106b1ac6475802cdaaba3468b82d7a8362c6db6c6","statementCount":4},{"number":2,"name":"0002_mt014_runtime_config_rls.sql","statementDigest":"be76e1fec80b70f7297369763da468dfb80c11f0fdd86d2990529d32e05c28e4","statementCount":20}]}
+multitenancy migrate-test — dry-run（默认；执行需 --apply --manifest <file>）
+task: MT014 — MT014（Issue #57）：公司运行配置装配——新增 enterprise_runtime_configs 与 enterprise_runtime_config_overrides（expand-only，仅新增表与最小 RLS，不改既有对象）。
+database: openbot_enterprise_mt016 @ 127.0.0.1:55491
+journal: 已应用 0/2；待应用 2 步
+step 0001_mt014_runtime_config_tables.sql — 影响: 新增两张表：enterprise_runtime_configs（一行 = 一家公司的运行配置文档 + 版本号，FK → enterprise_tenants cascade）与 enterprise_runtime_config_overrides（一行 = 一个团队对公司配置的收窄覆盖 + 版本号，复合 FK → enterprise_workspaces）。文档列为 jsonb 且只存引用。不修改任何既有表。
+  语句 1: CREATE TABLE "enterprise_runtime_configs" (
+	"tenant_id" text PRIMARY KEY NOT NULL,
+	"document" jsonb NOT NULL,
+	"revision" integer DEFAULT 1 NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "enterprise_runtime_config_revision" CHECK ("enterprise_runtime_configs"."revision" > 0)
+);
+  语句 2: ALTER TABLE "enterprise_runtime_configs" ADD CONSTRAINT "enterprise_runtime_configs_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;
+  语句 3: CREATE TABLE "enterprise_runtime_config_overrides" (
+	"tenant_id" text NOT NULL,
+	"workspace_id" text NOT NULL,
+	"document" jsonb NOT NULL,
+	"revision" integer DEFAULT 1 NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "enterprise_runtime_config_overrides_tenant_id_workspace_id_pk" PRIMARY KEY("tenant_id","workspace_id"),
+	CONSTRAINT "enterprise_runtime_config_override_revision" CHECK ("enterprise_runtime_config_overrides"."revision" > 0)
+);
+  语句 4: ALTER TABLE "enterprise_runtime_config_overrides" ADD CONSTRAINT "enterprise_runtime_config_overrides_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;
+step 0002_mt014_runtime_config_rls.sql — 影响: 仅对两张新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 角色租户范围 SELECT；operator 角色租户范围读 + INSERT/UPDATE，override 的 UPDATE 另要求 workspace 上下文）及配套最小 GRANT；不改动任何既有表策略或既有授权。目录角色无任何策略与授权（配置不是逐主体目录数据）。
+  语句 1: REVOKE ALL PRIVILEGES ON TABLE "enterprise_runtime_configs" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;
+  语句 2: ALTER TABLE "enterprise_runtime_configs" ENABLE ROW LEVEL SECURITY;
+  语句 3: ALTER TABLE "enterprise_runtime_configs" FORCE ROW LEVEL SECURITY;
+  语句 4: CREATE POLICY "enterprise_runtime_config_data_read" ON "enterprise_runtime_configs"
+  FOR SELECT TO ob_ent_data
+  USING ("enterprise_runtime_configs"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 5: CREATE POLICY "enterprise_runtime_config_operator_read" ON "enterprise_runtime_configs"
+  FOR SELECT TO ob_ent_operator
+  USING ("enterprise_runtime_configs"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 6: CREATE POLICY "enterprise_runtime_config_operator_insert" ON "enterprise_runtime_configs"
+  FOR INSERT TO ob_ent_operator
+  WITH CHECK ("enterprise_runtime_configs"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 7: CREATE POLICY "enterprise_runtime_config_operator_update" ON "enterprise_runtime_configs"
+  FOR UPDATE TO ob_ent_operator
+  USING ("enterprise_runtime_configs"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''))
+  WITH CHECK ("enterprise_runtime_configs"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 8: GRANT SELECT ON TABLE "enterprise_runtime_configs" TO ob_ent_data, ob_ent_operator;
+  语句 9: GRANT INSERT ON TABLE "enterprise_runtime_configs" TO ob_ent_operator;
+  语句 10: GRANT UPDATE ("document", "revision", "updated_at") ON TABLE "enterprise_runtime_configs" TO ob_ent_operator;
+  语句 11: REVOKE ALL PRIVILEGES ON TABLE "enterprise_runtime_config_overrides" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;
+  语句 12: ALTER TABLE "enterprise_runtime_config_overrides" ENABLE ROW LEVEL SECURITY;
+  语句 13: ALTER TABLE "enterprise_runtime_config_overrides" FORCE ROW LEVEL SECURITY;
+  语句 14: CREATE POLICY "enterprise_runtime_config_override_data_read" ON "enterprise_runtime_config_overrides"
+  FOR SELECT TO ob_ent_data
+  USING ("enterprise_runtime_config_overrides"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 15: CREATE POLICY "enterprise_runtime_config_override_operator_read" ON "enterprise_runtime_config_overrides"
+  FOR SELECT TO ob_ent_operator
+  USING ("enterprise_runtime_config_overrides"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 16: CREATE POLICY "enterprise_runtime_config_override_operator_insert" ON "enterprise_runtime_config_overrides"
+  FOR INSERT TO ob_ent_operator
+  WITH CHECK ("enterprise_runtime_config_overrides"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 17: CREATE POLICY "enterprise_runtime_config_override_operator_update" ON "enterprise_runtime_config_overrides"
+  FOR UPDATE TO ob_ent_operator
+  USING ("enterprise_runtime_config_overrides"."tenant_id" = nullif(current_setting('app.tenant_id', true), '')
+    AND "enterprise_runtime_config_overrides"."workspace_id" = nullif(current_setting('app.workspace_id', true), ''))
+  WITH CHECK ("enterprise_runtime_config_overrides"."tenant_id" = nullif(current_setting('app.tenant_id', true), '')
+    AND "enterprise_runtime_config_overrides"."workspace_id" = nullif(current_setting('app.workspace_id', true), ''));
+  语句 18: GRANT SELECT ON TABLE "enterprise_runtime_config_overrides" TO ob_ent_data, ob_ent_operator;
+  语句 19: GRANT INSERT ON TABLE "enterprise_runtime_config_overrides" TO ob_ent_operator;
+  语句 20: GRANT UPDATE ("document", "revision", "updated_at") ON TABLE "enterprise_runtime_config_overrides" TO ob_ent_operator;
+summary: 待应用 2 步 / 24 条语句 / 涉及对象: enterprise_runtime_configs, enterprise_runtime_config_overrides
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT014","planDigest":"f1882005120c8334e137748dc7d0e836f007818b6ed29c871007d953c001c53c","steps":[{"number":1,"name":"0001_mt014_runtime_config_tables.sql","statementDigest":"ebce5e3c6887a272bd7b237106b1ac6475802cdaaba3468b82d7a8362c6db6c6","statementCount":4},{"number":2,"name":"0002_mt014_runtime_config_rls.sql","statementDigest":"be76e1fec80b70f7297369763da468dfb80c11f0fdd86d2990529d32e05c28e4","statementCount":20}]}
+applied: MT014 @ openbot_enterprise_mt016 (127.0.0.1:55491)
+  已执行并记入 journal: 0001_mt014_runtime_config_tables.sql, 0002_mt014_runtime_config_rls.sql
+=== MT010 ===
+generated: MT010 → /tmp/mt016-mig/MT010
+  wrote /tmp/mt016-mig/MT010/0001_mt010_create_table.sql
+  wrote /tmp/mt016-mig/MT010/0002_mt010_share_rls_policies.sql
+  wrote /tmp/mt016-mig/MT010/manifest.json
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT010","planDigest":"63f010a03243f6386558828406e3d82f5da18efa9bd2867d5cfae4b9526d4104","steps":[{"number":1,"name":"0001_mt010_create_table.sql","statementDigest":"e0df46f93835bc22f49281660f083a9d1deb53e1fb0abe21599d65cb4d4d80a7","statementCount":4},{"number":2,"name":"0002_mt010_share_rls_policies.sql","statementDigest":"77dd66ce7c4129728589f54ea2b840dc6cbd7d2d1d2b691ac9e3f6a286931b3b","statementCount":10}]}
+multitenancy migrate-test — dry-run（默认；执行需 --apply --manifest <file>）
+task: MT010 — MT010（Issue #53）：新增个人资源显式分享表 enterprise_resource_shares（expand-only，仅新增表与最小 RLS，不改既有对象）
+database: openbot_enterprise_mt016 @ 127.0.0.1:55491
+journal: 已应用 0/2；待应用 2 步
+step 0001_mt010_create_table.sql — 影响: 新增 enterprise_resource_shares 表：复合主键 (tenant_id, resource_id, principal_id, action)；action CHECK 只允许 'read'（被分享方永远拿不到管理动作）；validity CHECK 要求 expires_at > created_at；三条复合外键分别指向 enterprise_resources 与 enterprise_memberships（受众、分享人各一条，内嵌 tenant_id——跨公司分享行结构上不可能）。不修改任何既有表。
+  语句 1: CREATE TABLE "enterprise_resource_shares" (
+	"tenant_id" text NOT NULL,
+	"resource_id" text NOT NULL,
+	"principal_id" text NOT NULL,
+	"action" text DEFAULT 'read' NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"granted_by" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "enterprise_resource_shares_tenant_id_resource_id_principal_id_action_pk" PRIMARY KEY("tenant_id","resource_id","principal_id","action"),
+	CONSTRAINT "enterprise_share_action" CHECK ("enterprise_resource_shares"."action" = 'read'),
+	CONSTRAINT "enterprise_share_validity" CHECK ("enterprise_resource_shares"."expires_at" > "enterprise_resource_shares"."created_at")
+);
+  语句 2: ALTER TABLE "enterprise_resource_shares" ADD CONSTRAINT "enterprise_resource_shares_tenant_id_resource_id_enterprise_resources_tenant_id_id_fk" FOREIGN KEY ("tenant_id","resource_id") REFERENCES "public"."enterprise_resources"("tenant_id","id") ON DELETE cascade ON UPDATE no action;
+  语句 3: ALTER TABLE "enterprise_resource_shares" ADD CONSTRAINT "enterprise_resource_shares_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;
+  语句 4: ALTER TABLE "enterprise_resource_shares" ADD CONSTRAINT "enterprise_resource_shares_tenant_id_granted_by_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","granted_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;
+step 0002_mt010_share_rls_policies.sql — 影响: 仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增 4 条最小策略（data 只读本人行 / operator 租户范围 SELECT+INSERT+DELETE，DELETE 要求行内 granted_by = 操作者）及配套最小 GRANT；无 UPDATE 授权（撤销 = DELETE，分享行永不部分改写）。不改动任何既有表策略或既有授权。
+  语句 1: REVOKE ALL PRIVILEGES ON TABLE "enterprise_resource_shares" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;
+  语句 2: ALTER TABLE "enterprise_resource_shares" ENABLE ROW LEVEL SECURITY;
+  语句 3: ALTER TABLE "enterprise_resource_shares" FORCE ROW LEVEL SECURITY;
+  语句 4: CREATE POLICY "enterprise_share_data_read" ON "enterprise_resource_shares"
+  FOR SELECT TO ob_ent_data
+  USING ("enterprise_resource_shares"."tenant_id" = nullif(current_setting('app.tenant_id', true), '')
+    AND "enterprise_resource_shares"."principal_id" = nullif(current_setting('app.principal_id', true), ''));
+  语句 5: CREATE POLICY "enterprise_share_operator_read" ON "enterprise_resource_shares"
+  FOR SELECT TO ob_ent_operator
+  USING ("enterprise_resource_shares"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 6: CREATE POLICY "enterprise_share_operator_insert" ON "enterprise_resource_shares"
+  FOR INSERT TO ob_ent_operator
+  WITH CHECK ("enterprise_resource_shares"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 7: CREATE POLICY "enterprise_share_operator_delete" ON "enterprise_resource_shares"
+  FOR DELETE TO ob_ent_operator
+  USING ("enterprise_resource_shares"."tenant_id" = nullif(current_setting('app.tenant_id', true), '')
+    AND "enterprise_resource_shares"."resource_id" = nullif(current_setting('app.resource_id', true), '')
+    AND "enterprise_resource_shares"."granted_by" = nullif(current_setting('app.operator_principal_id', true), ''));
+  语句 8: GRANT SELECT ON TABLE "enterprise_resource_shares" TO ob_ent_data, ob_ent_operator;
+  语句 9: GRANT INSERT ON TABLE "enterprise_resource_shares" TO ob_ent_operator;
+  语句 10: GRANT DELETE ON TABLE "enterprise_resource_shares" TO ob_ent_operator;
+summary: 待应用 2 步 / 14 条语句 / 涉及对象: enterprise_resource_shares
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT010","planDigest":"63f010a03243f6386558828406e3d82f5da18efa9bd2867d5cfae4b9526d4104","steps":[{"number":1,"name":"0001_mt010_create_table.sql","statementDigest":"e0df46f93835bc22f49281660f083a9d1deb53e1fb0abe21599d65cb4d4d80a7","statementCount":4},{"number":2,"name":"0002_mt010_share_rls_policies.sql","statementDigest":"77dd66ce7c4129728589f54ea2b840dc6cbd7d2d1d2b691ac9e3f6a286931b3b","statementCount":10}]}
+applied: MT010 @ openbot_enterprise_mt016 (127.0.0.1:55491)
+  已执行并记入 journal: 0001_mt010_create_table.sql, 0002_mt010_share_rls_policies.sql
+=== MT009 ===
+generated: MT009 → /tmp/mt016-mig/MT009
+  wrote /tmp/mt016-mig/MT009/0001_mt009_resource_dependency_table.sql
+  wrote /tmp/mt016-mig/MT009/0002_mt009_dependency_rls_policies.sql
+  wrote /tmp/mt016-mig/MT009/manifest.json
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT009","planDigest":"b7178b912e692b8cc679d87025933294a28928bc56d09e6c635fdd3ebca00f38","steps":[{"number":1,"name":"0001_mt009_resource_dependency_table.sql","statementDigest":"ebe63cf6d4628c09991130b5620de46001745d14776fef5ca835f055b7a700ea","statementCount":2},{"number":2,"name":"0002_mt009_dependency_rls_policies.sql","statementDigest":"2d6c59b91813a1e6da5a9c77162c15ab97c6b0d19ecdd67ed6f49a36f13c3473","statementCount":8}]}
+multitenancy migrate-test — dry-run（默认；执行需 --apply --manifest <file>）
+task: MT009 — MT009（Issue #52）：新增企业资源依赖表 enterprise_resource_dependencies（expand-only，仅新增表与最小 RLS，不改既有对象）。
+database: openbot_enterprise_mt016 @ 127.0.0.1:55491
+journal: 已应用 0/2；待应用 2 步
+step 0001_mt009_resource_dependency_table.sql — 影响: 新增 enterprise_resource_dependencies 表：复合主键 (tenant_id, resource_id, dependency_kind, dependency_ref)；dependency_kind 限 model/credential/knowledge，status 限 active/invalid，dependency_ref 非空；复合外键指向 enterprise_resources(tenant_id, id) ON DELETE cascade。不修改任何既有表。
+  语句 1: CREATE TABLE "enterprise_resource_dependencies" (
+	"tenant_id" text NOT NULL,
+	"resource_id" text NOT NULL,
+	"dependency_kind" text NOT NULL,
+	"dependency_ref" text NOT NULL,
+	"status" text DEFAULT 'active' NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "enterprise_resource_dependencies_tenant_id_resource_id_dependency_kind_dependency_ref_pk" PRIMARY KEY("tenant_id","resource_id","dependency_kind","dependency_ref"),
+	CONSTRAINT "enterprise_resource_dependency_kind" CHECK ("enterprise_resource_dependencies"."dependency_kind" in ('model','credential','knowledge')),
+	CONSTRAINT "enterprise_resource_dependency_status" CHECK ("enterprise_resource_dependencies"."status" in ('active','invalid')),
+	CONSTRAINT "enterprise_resource_dependency_ref_present" CHECK ("enterprise_resource_dependencies"."dependency_ref" <> '')
+);
+  语句 2: ALTER TABLE "enterprise_resource_dependencies" ADD CONSTRAINT "enterprise_resource_dependencies_tenant_id_resource_id_enterprise_resources_tenant_id_id_fk" FOREIGN KEY ("tenant_id","resource_id") REFERENCES "public"."enterprise_resources"("tenant_id","id") ON DELETE cascade ON UPDATE no action;
+step 0002_mt009_dependency_rls_policies.sql — 影响: 仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增 3 条最小策略（data 租户范围读 / operator 租户范围读+插）及配套最小 GRANT（SELECT 给 data+operator，INSERT 给 operator；不授予 UPDATE/DELETE）。不改动任何既有表策略或既有授权。
+  语句 1: REVOKE ALL PRIVILEGES ON TABLE "enterprise_resource_dependencies" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;
+  语句 2: ALTER TABLE "enterprise_resource_dependencies" ENABLE ROW LEVEL SECURITY;
+  语句 3: ALTER TABLE "enterprise_resource_dependencies" FORCE ROW LEVEL SECURITY;
+  语句 4: CREATE POLICY "enterprise_resource_dependency_data_read" ON "enterprise_resource_dependencies"
+  FOR SELECT TO ob_ent_data
+  USING ("enterprise_resource_dependencies"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 5: CREATE POLICY "enterprise_resource_dependency_operator_read" ON "enterprise_resource_dependencies"
+  FOR SELECT TO ob_ent_operator
+  USING ("enterprise_resource_dependencies"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 6: CREATE POLICY "enterprise_resource_dependency_operator_insert" ON "enterprise_resource_dependencies"
+  FOR INSERT TO ob_ent_operator
+  WITH CHECK ("enterprise_resource_dependencies"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 7: GRANT SELECT ON TABLE "enterprise_resource_dependencies" TO ob_ent_data, ob_ent_operator;
+  语句 8: GRANT INSERT ON TABLE "enterprise_resource_dependencies" TO ob_ent_operator;
+summary: 待应用 2 步 / 10 条语句 / 涉及对象: enterprise_resource_dependencies
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT009","planDigest":"b7178b912e692b8cc679d87025933294a28928bc56d09e6c635fdd3ebca00f38","steps":[{"number":1,"name":"0001_mt009_resource_dependency_table.sql","statementDigest":"ebe63cf6d4628c09991130b5620de46001745d14776fef5ca835f055b7a700ea","statementCount":2},{"number":2,"name":"0002_mt009_dependency_rls_policies.sql","statementDigest":"2d6c59b91813a1e6da5a9c77162c15ab97c6b0d19ecdd67ed6f49a36f13c3473","statementCount":8}]}
+applied: MT009 @ openbot_enterprise_mt016 (127.0.0.1:55491)
+  已执行并记入 journal: 0001_mt009_resource_dependency_table.sql, 0002_mt009_dependency_rls_policies.sql
+=== MT077 ===
+generated: MT077 → /tmp/mt016-mig/MT077
+  wrote /tmp/mt016-mig/MT077/0001_mt077_governance_policy_tables.sql
+  wrote /tmp/mt016-mig/MT077/0002_mt077_governance_policy_rls.sql
+  wrote /tmp/mt016-mig/MT077/manifest.json
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT077","planDigest":"b6690cb2d17d97817fed7b4a0d91bca106baac79e1a824a09a0f54351e41b2f4","steps":[{"number":1,"name":"0001_mt077_governance_policy_tables.sql","statementDigest":"4dafaec991752cc01156496cd75f30d243c59fd270ac2c2924253328f9080262","statementCount":6},{"number":2,"name":"0002_mt077_governance_policy_rls.sql","statementDigest":"1e5cb539e679c3785759b9fedfb0982c3fbf3beda8eeff593763526909d5504e","statementCount":30}]}
+multitenancy migrate-test — dry-run（默认；执行需 --apply --manifest <file>）
+task: MT077 — MT077（Issue #120）：新增 enterprise_governance_policies、enterprise_governance_overrides 与 enterprise_template_installs（expand-only，仅新增表与最小 RLS，不改既有对象）。
+database: openbot_enterprise_mt016 @ 127.0.0.1:55491
+journal: 已应用 0/2；待应用 2 步
+step 0001_mt077_governance_policy_tables.sql — 影响: 新增三张表：enterprise_governance_policies（一行 = 一家公司的治理策略文档 + 版本号，FK → enterprise_tenants cascade）、enterprise_governance_overrides（一行 = 一个团队对公司策略的收窄覆盖 + 版本号，复合 FK → enterprise_workspaces）与 enterprise_template_installs（一行 = 一个团队对平台模板的安装副本 + 目录版本/安装版本号，复合 FK → enterprise_workspaces）。不修改任何既有表。
+  语句 1: CREATE TABLE "enterprise_governance_policies" (
+	"tenant_id" text PRIMARY KEY NOT NULL,
+	"document" jsonb NOT NULL,
+	"revision" integer DEFAULT 1 NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "enterprise_governance_policy_revision" CHECK ("enterprise_governance_policies"."revision" > 0)
+);
+  语句 2: ALTER TABLE "enterprise_governance_policies" ADD CONSTRAINT "enterprise_governance_policies_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;
+  语句 3: CREATE TABLE "enterprise_governance_overrides" (
+	"tenant_id" text NOT NULL,
+	"workspace_id" text NOT NULL,
+	"document" jsonb NOT NULL,
+	"revision" integer DEFAULT 1 NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "enterprise_governance_overrides_tenant_id_workspace_id_pk" PRIMARY KEY("tenant_id","workspace_id"),
+	CONSTRAINT "enterprise_governance_override_revision" CHECK ("enterprise_governance_overrides"."revision" > 0)
+);
+  语句 4: ALTER TABLE "enterprise_governance_overrides" ADD CONSTRAINT "enterprise_governance_overrides_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;
+  语句 5: CREATE TABLE "enterprise_template_installs" (
+	"tenant_id" text NOT NULL,
+	"workspace_id" text NOT NULL,
+	"template_ref" text NOT NULL,
+	"source_revision" integer NOT NULL,
+	"document" jsonb NOT NULL,
+	"revision" integer DEFAULT 1 NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "enterprise_template_installs_tenant_id_workspace_id_template_ref_pk" PRIMARY KEY("tenant_id","workspace_id","template_ref"),
+	CONSTRAINT "enterprise_template_install_source_revision" CHECK ("enterprise_template_installs"."source_revision" > 0),
+	CONSTRAINT "enterprise_template_install_revision" CHECK ("enterprise_template_installs"."revision" > 0)
+);
+  语句 6: ALTER TABLE "enterprise_template_installs" ADD CONSTRAINT "enterprise_template_installs_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;
+step 0002_mt077_governance_policy_rls.sql — 影响: 仅对三张新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 角色租户范围 SELECT；operator 角色租户范围读 + INSERT/UPDATE，override 与 install 的 UPDATE 另要求 workspace 上下文）及配套最小 GRANT；不改动任何既有表策略或既有授权。目录角色无任何策略与授权（策略/安装不是逐主体目录数据）。
+  语句 1: REVOKE ALL PRIVILEGES ON TABLE "enterprise_governance_policies" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;
+  语句 2: ALTER TABLE "enterprise_governance_policies" ENABLE ROW LEVEL SECURITY;
+  语句 3: ALTER TABLE "enterprise_governance_policies" FORCE ROW LEVEL SECURITY;
+  语句 4: CREATE POLICY "enterprise_governance_policy_data_read" ON "enterprise_governance_policies"
+  FOR SELECT TO ob_ent_data
+  USING ("enterprise_governance_policies"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 5: CREATE POLICY "enterprise_governance_policy_operator_read" ON "enterprise_governance_policies"
+  FOR SELECT TO ob_ent_operator
+  USING ("enterprise_governance_policies"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 6: CREATE POLICY "enterprise_governance_policy_operator_insert" ON "enterprise_governance_policies"
+  FOR INSERT TO ob_ent_operator
+  WITH CHECK ("enterprise_governance_policies"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 7: CREATE POLICY "enterprise_governance_policy_operator_update" ON "enterprise_governance_policies"
+  FOR UPDATE TO ob_ent_operator
+  USING ("enterprise_governance_policies"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''))
+  WITH CHECK ("enterprise_governance_policies"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 8: GRANT SELECT ON TABLE "enterprise_governance_policies" TO ob_ent_data, ob_ent_operator;
+  语句 9: GRANT INSERT ON TABLE "enterprise_governance_policies" TO ob_ent_operator;
+  语句 10: GRANT UPDATE ("document", "revision", "updated_at") ON TABLE "enterprise_governance_policies" TO ob_ent_operator;
+  语句 11: REVOKE ALL PRIVILEGES ON TABLE "enterprise_governance_overrides" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;
+  语句 12: ALTER TABLE "enterprise_governance_overrides" ENABLE ROW LEVEL SECURITY;
+  语句 13: ALTER TABLE "enterprise_governance_overrides" FORCE ROW LEVEL SECURITY;
+  语句 14: CREATE POLICY "enterprise_governance_override_data_read" ON "enterprise_governance_overrides"
+  FOR SELECT TO ob_ent_data
+  USING ("enterprise_governance_overrides"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 15: CREATE POLICY "enterprise_governance_override_operator_read" ON "enterprise_governance_overrides"
+  FOR SELECT TO ob_ent_operator
+  USING ("enterprise_governance_overrides"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 16: CREATE POLICY "enterprise_governance_override_operator_insert" ON "enterprise_governance_overrides"
+  FOR INSERT TO ob_ent_operator
+  WITH CHECK ("enterprise_governance_overrides"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 17: CREATE POLICY "enterprise_governance_override_operator_update" ON "enterprise_governance_overrides"
+  FOR UPDATE TO ob_ent_operator
+  USING ("enterprise_governance_overrides"."tenant_id" = nullif(current_setting('app.tenant_id', true), '')
+    AND "enterprise_governance_overrides"."workspace_id" = nullif(current_setting('app.workspace_id', true), ''))
+  WITH CHECK ("enterprise_governance_overrides"."tenant_id" = nullif(current_setting('app.tenant_id', true), '')
+    AND "enterprise_governance_overrides"."workspace_id" = nullif(current_setting('app.workspace_id', true), ''));
+  语句 18: GRANT SELECT ON TABLE "enterprise_governance_overrides" TO ob_ent_data, ob_ent_operator;
+  语句 19: GRANT INSERT ON TABLE "enterprise_governance_overrides" TO ob_ent_operator;
+  语句 20: GRANT UPDATE ("document", "revision", "updated_at") ON TABLE "enterprise_governance_overrides" TO ob_ent_operator;
+  语句 21: REVOKE ALL PRIVILEGES ON TABLE "enterprise_template_installs" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;
+  语句 22: ALTER TABLE "enterprise_template_installs" ENABLE ROW LEVEL SECURITY;
+  语句 23: ALTER TABLE "enterprise_template_installs" FORCE ROW LEVEL SECURITY;
+  语句 24: CREATE POLICY "enterprise_template_install_data_read" ON "enterprise_template_installs"
+  FOR SELECT TO ob_ent_data
+  USING ("enterprise_template_installs"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 25: CREATE POLICY "enterprise_template_install_operator_read" ON "enterprise_template_installs"
+  FOR SELECT TO ob_ent_operator
+  USING ("enterprise_template_installs"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 26: CREATE POLICY "enterprise_template_install_operator_insert" ON "enterprise_template_installs"
+  FOR INSERT TO ob_ent_operator
+  WITH CHECK ("enterprise_template_installs"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 27: CREATE POLICY "enterprise_template_install_operator_update" ON "enterprise_template_installs"
+  FOR UPDATE TO ob_ent_operator
+  USING ("enterprise_template_installs"."tenant_id" = nullif(current_setting('app.tenant_id', true), '')
+    AND "enterprise_template_installs"."workspace_id" = nullif(current_setting('app.workspace_id', true), ''))
+  WITH CHECK ("enterprise_template_installs"."tenant_id" = nullif(current_setting('app.tenant_id', true), '')
+    AND "enterprise_template_installs"."workspace_id" = nullif(current_setting('app.workspace_id', true), ''));
+  语句 28: GRANT SELECT ON TABLE "enterprise_template_installs" TO ob_ent_data, ob_ent_operator;
+  语句 29: GRANT INSERT ON TABLE "enterprise_template_installs" TO ob_ent_operator;
+  语句 30: GRANT UPDATE ("document", "revision", "source_revision", "updated_at") ON TABLE "enterprise_template_installs" TO ob_ent_operator;
+summary: 待应用 2 步 / 36 条语句 / 涉及对象: enterprise_governance_policies, enterprise_governance_overrides, enterprise_template_installs
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT077","planDigest":"b6690cb2d17d97817fed7b4a0d91bca106baac79e1a824a09a0f54351e41b2f4","steps":[{"number":1,"name":"0001_mt077_governance_policy_tables.sql","statementDigest":"4dafaec991752cc01156496cd75f30d243c59fd270ac2c2924253328f9080262","statementCount":6},{"number":2,"name":"0002_mt077_governance_policy_rls.sql","statementDigest":"1e5cb539e679c3785759b9fedfb0982c3fbf3beda8eeff593763526909d5504e","statementCount":30}]}
+applied: MT077 @ openbot_enterprise_mt016 (127.0.0.1:55491)
+  已执行并记入 journal: 0001_mt077_governance_policy_tables.sql, 0002_mt077_governance_policy_rls.sql
+=== MT026 ===
+generated: MT026 → /tmp/mt016-mig/MT026
+  wrote /tmp/mt016-mig/MT026/0001_mt026_sso_scim_tables.sql
+  wrote /tmp/mt016-mig/MT026/0002_mt026_sso_scim_rls.sql
+  wrote /tmp/mt016-mig/MT026/manifest.json
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT026","planDigest":"0100b13fbeffc17667016ec307475bd7dd2b85913a74639794328394811948fa","steps":[{"number":1,"name":"0001_mt026_sso_scim_tables.sql","statementDigest":"63cf672da8142350cbe54056349b10b3958314557121ad34c124ff7f101b012c","statementCount":8},{"number":2,"name":"0002_mt026_sso_scim_rls.sql","statementDigest":"590754934a4829c0612aab44cde693f465affb45c08c1cd1dde6504d8e288c0b","statementCount":29}]}
+multitenancy migrate-test — dry-run（默认；执行需 --apply --manifest <file>）
+task: MT026 — MT026（Issue #69）：每公司 SSO/SCIM 隔离——新增 enterprise_sso_configs、enterprise_scim_directory_bindings、enterprise_identity_binding_intents（expand-only，仅新增表与最小 RLS，不改既有对象）。
+database: openbot_enterprise_mt016 @ 127.0.0.1:55491
+journal: 已应用 0/2；待应用 2 步
+step 0001_mt026_sso_scim_tables.sql — 影响: 新增三张表：enterprise_sso_configs（一行 = 一家公司 SSO 配置文档 + 修订号，FK → enterprise_tenants cascade）；enterprise_scim_directory_bindings（一行 = 一家公司 SCIM 目录绑定，connection_key 全局唯一，含最后一次 SCIM 停用事实列）；enterprise_identity_binding_intents（一行 = 一次身份绑定意图，state 主键 + 过期/消费时间）。不修改任何既有表。
+  语句 1: CREATE TABLE "enterprise_sso_configs" (
+	"tenant_id" text PRIMARY KEY NOT NULL,
+	"document" jsonb NOT NULL,
+	"revision" integer DEFAULT 1 NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "enterprise_sso_config_revision" CHECK ("enterprise_sso_configs"."revision" > 0)
+);
+  语句 2: ALTER TABLE "enterprise_sso_configs" ADD CONSTRAINT "enterprise_sso_configs_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;
+  语句 3: CREATE TABLE "enterprise_scim_directory_bindings" (
+	"id" text PRIMARY KEY NOT NULL,
+	"tenant_id" text NOT NULL,
+	"connection_key" text NOT NULL,
+	"credential_ref" text NOT NULL,
+	"status" text DEFAULT 'active' NOT NULL,
+	"last_deprovision_principal_id" text,
+	"last_deprovision_epoch" integer,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"deactivated_at" timestamp with time zone,
+	CONSTRAINT "enterprise_scim_binding_status" CHECK ("enterprise_scim_directory_bindings"."status" in ('active','deactivated')),
+	CONSTRAINT "enterprise_scim_binding_deprovision_fact" CHECK (("last_deprovision_principal_id" is null) = ("last_deprovision_epoch" is null))
+);
+  语句 4: ALTER TABLE "enterprise_scim_directory_bindings" ADD CONSTRAINT "enterprise_scim_binding_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;
+  语句 5: CREATE UNIQUE INDEX "enterprise_scim_binding_connection_key" ON "enterprise_scim_directory_bindings" ("connection_key");
+  语句 6: CREATE TABLE "enterprise_identity_binding_intents" (
+	"id" text PRIMARY KEY NOT NULL,
+	"tenant_id" text NOT NULL,
+	"user_id" text NOT NULL,
+	"kind" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"consumed_at" timestamp with time zone,
+	CONSTRAINT "enterprise_identity_binding_kind" CHECK ("enterprise_identity_binding_intents"."kind" in ('sso','scim')),
+	CONSTRAINT "enterprise_identity_binding_window" CHECK ("enterprise_identity_binding_intents"."expires_at" > "enterprise_identity_binding_intents"."created_at")
+);
+  语句 7: ALTER TABLE "enterprise_identity_binding_intents" ADD CONSTRAINT "enterprise_identity_binding_intents_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;
+  语句 8: ALTER TABLE "enterprise_identity_binding_intents" ADD CONSTRAINT "enterprise_identity_binding_intents_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
+step 0002_mt026_sso_scim_rls.sql — 影响: 仅对三张新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（sso_configs：data/operator 租户范围 SELECT + operator 租户范围 INSERT/UPDATE；bindings：operator 租户范围读/写 + 连接键臂 SELECT（pin app.scim_connection_key，SCIM 面解析）；intents：operator 租户范围 INSERT + state 臂 SELECT/UPDATE（pin app.identity_binding_state））及配套最小 GRANT；不改动任何既有表策略或既有授权。目录角色无任何策略与授权。
+  语句 1: REVOKE ALL PRIVILEGES ON TABLE "enterprise_sso_configs" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;
+  语句 2: ALTER TABLE "enterprise_sso_configs" ENABLE ROW LEVEL SECURITY;
+  语句 3: ALTER TABLE "enterprise_sso_configs" FORCE ROW LEVEL SECURITY;
+  语句 4: CREATE POLICY "enterprise_sso_config_data_read" ON "enterprise_sso_configs"
+  FOR SELECT TO ob_ent_data
+  USING ("enterprise_sso_configs"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 5: CREATE POLICY "enterprise_sso_config_operator_read" ON "enterprise_sso_configs"
+  FOR SELECT TO ob_ent_operator
+  USING ("enterprise_sso_configs"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 6: CREATE POLICY "enterprise_sso_config_operator_insert" ON "enterprise_sso_configs"
+  FOR INSERT TO ob_ent_operator
+  WITH CHECK ("enterprise_sso_configs"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 7: CREATE POLICY "enterprise_sso_config_operator_update" ON "enterprise_sso_configs"
+  FOR UPDATE TO ob_ent_operator
+  USING ("enterprise_sso_configs"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''))
+  WITH CHECK ("enterprise_sso_configs"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 8: GRANT SELECT ON TABLE "enterprise_sso_configs" TO ob_ent_data, ob_ent_operator;
+  语句 9: GRANT INSERT ON TABLE "enterprise_sso_configs" TO ob_ent_operator;
+  语句 10: GRANT UPDATE ("document", "revision", "updated_at") ON TABLE "enterprise_sso_configs" TO ob_ent_operator;
+  语句 11: REVOKE ALL PRIVILEGES ON TABLE "enterprise_scim_directory_bindings" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;
+  语句 12: ALTER TABLE "enterprise_scim_directory_bindings" ENABLE ROW LEVEL SECURITY;
+  语句 13: ALTER TABLE "enterprise_scim_directory_bindings" FORCE ROW LEVEL SECURITY;
+  语句 14: CREATE POLICY "enterprise_scim_binding_operator_read" ON "enterprise_scim_directory_bindings"
+  FOR SELECT TO ob_ent_operator
+  USING ("enterprise_scim_directory_bindings"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 15: CREATE POLICY "enterprise_scim_binding_connection_read" ON "enterprise_scim_directory_bindings"
+  FOR SELECT TO ob_ent_operator
+  USING ("enterprise_scim_directory_bindings"."connection_key" = nullif(current_setting('app.scim_connection_key', true), ''));
+  语句 16: CREATE POLICY "enterprise_scim_binding_operator_insert" ON "enterprise_scim_directory_bindings"
+  FOR INSERT TO ob_ent_operator
+  WITH CHECK ("enterprise_scim_directory_bindings"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 17: CREATE POLICY "enterprise_scim_binding_operator_update" ON "enterprise_scim_directory_bindings"
+  FOR UPDATE TO ob_ent_operator
+  USING ("enterprise_scim_directory_bindings"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''))
+  WITH CHECK ("enterprise_scim_directory_bindings"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 18: GRANT SELECT ON TABLE "enterprise_scim_directory_bindings" TO ob_ent_operator;
+  语句 19: GRANT INSERT ON TABLE "enterprise_scim_directory_bindings" TO ob_ent_operator;
+  语句 20: GRANT UPDATE ("credential_ref", "status", "last_deprovision_principal_id", "last_deprovision_epoch", "deactivated_at") ON TABLE "enterprise_scim_directory_bindings" TO ob_ent_operator;
+  语句 21: REVOKE ALL PRIVILEGES ON TABLE "enterprise_identity_binding_intents" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;
+  语句 22: ALTER TABLE "enterprise_identity_binding_intents" ENABLE ROW LEVEL SECURITY;
+  语句 23: ALTER TABLE "enterprise_identity_binding_intents" FORCE ROW LEVEL SECURITY;
+  语句 24: CREATE POLICY "enterprise_identity_binding_operator_insert" ON "enterprise_identity_binding_intents"
+  FOR INSERT TO ob_ent_operator
+  WITH CHECK ("enterprise_identity_binding_intents"."tenant_id" = nullif(current_setting('app.tenant_id', true), ''));
+  语句 25: CREATE POLICY "enterprise_identity_binding_state_read" ON "enterprise_identity_binding_intents"
+  FOR SELECT TO ob_ent_operator
+  USING ("enterprise_identity_binding_intents"."id" = nullif(current_setting('app.identity_binding_state', true), ''));
+  语句 26: CREATE POLICY "enterprise_identity_binding_state_consume" ON "enterprise_identity_binding_intents"
+  FOR UPDATE TO ob_ent_operator
+  USING ("enterprise_identity_binding_intents"."id" = nullif(current_setting('app.identity_binding_state', true), ''))
+  WITH CHECK ("enterprise_identity_binding_intents"."id" = nullif(current_setting('app.identity_binding_state', true), ''));
+  语句 27: GRANT INSERT ON TABLE "enterprise_identity_binding_intents" TO ob_ent_operator;
+  语句 28: GRANT SELECT ON TABLE "enterprise_identity_binding_intents" TO ob_ent_operator;
+  语句 29: GRANT UPDATE ("consumed_at") ON TABLE "enterprise_identity_binding_intents" TO ob_ent_operator;
+summary: 待应用 2 步 / 37 条语句 / 涉及对象: enterprise_sso_configs, enterprise_scim_directory_bindings, enterprise_identity_binding_intents
+manifest:
+{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT026","planDigest":"0100b13fbeffc17667016ec307475bd7dd2b85913a74639794328394811948fa","steps":[{"number":1,"name":"0001_mt026_sso_scim_tables.sql","statementDigest":"63cf672da8142350cbe54056349b10b3958314557121ad34c124ff7f101b012c","statementCount":8},{"number":2,"name":"0002_mt026_sso_scim_rls.sql","statementDigest":"590754934a4829c0612aab44cde693f465affb45c08c1cd1dde6504d8e288c0b","statementCount":29}]}
+applied: MT026 @ openbot_enterprise_mt016 (127.0.0.1:55491)
+  已执行并记入 journal: 0001_mt026_sso_scim_tables.sql, 0002_mt026_sso_scim_rls.sql

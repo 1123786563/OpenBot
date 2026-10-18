@@ -1,0 +1,14 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/preferences.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '../../src/enterprise/tenancy/preferences' from '/Users/wuyongjun/orca/workspaces/OpenBot/i10-mt079/server/tests/multitenancy/preferences.test.ts'
+-------------------------------
+
+
+ 0 pass
+ 1 fail
+ 1 error
+Ran 1 test across 1 file. [97.00ms]
