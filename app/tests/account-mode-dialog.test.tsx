@@ -1,6 +1,6 @@
 import "./preload";
 // app/tests/account-mode-dialog.test.tsx
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "../../tests/support/e2e-compat";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render } from "@testing-library/react";

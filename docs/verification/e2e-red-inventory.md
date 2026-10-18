@@ -18,12 +18,12 @@
 | `server/tests/enterprise/run-execution-failure.test.ts` | 12 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
 | `server/tests/enterprise/run-success-contract.test.ts` | 9 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
 | `server/src/knowledge/qa-verify.test.ts` | 8 | already-red-at-baseline | expected "degraded" to be "hit" |
-| `app/tests/personal-orders-ui.test.tsx` | 6 | 未单独判定（本次判定集合来自上一次报告的红文件；新红文件要重跑 scripts/e2e-vs-bun.mjs） | Unable to find an element by: [data-testid="credit-grant-cg-plan"] Ignored nodes: comments, script, style <body> <div> <div class="min-h-0 f |
+| `app/tests/personal-orders-ui.test.tsx` | 6 | no-pre-migration-suite | Unable to find an element by: [data-testid="credit-grant-cg-plan"] Ignored nodes: comments, script, style <body> <div> <div class="min-h-0 f |
 | `server/tests/payer-company-resolution.test.ts` | 6 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
 | `server/tests/tool-selection.integration.test.ts` | 5 | already-red-at-baseline | REMOTE_RUN_BUDGET_UNVERIFIED |
 | `server/tests/enterprise/expert-version-catalog.test.ts` | 4 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
 | `server/tests/enterprise/model-route-catalog.test.ts` | 4 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
-| `app/tests/account-mode-dialog.test.tsx` | 3 | 未单独判定（本次判定集合来自上一次报告的红文件；新红文件要重跑 scripts/e2e-vs-bun.mjs） | Unable to find an element with the text: 14 personal accounts will be disconnected.. This could be because the text is broken up by multiple |
+| `app/tests/account-mode-dialog.test.tsx` | 3 | runner-difference | Unable to find an element with the text: 14 personal accounts will be disconnected.. This could be because the text is broken up by multiple |
 | `server/tests/enterprise/run-failure-contract.test.ts` | 3 | red-on-old-runner-with-current-code | WORKSPACE_FORBIDDEN |
 | `server/tests/enterprise/login-reprovision.integration.test.ts` | 2 | already-red-at-baseline | connect ECONNREFUSED 127.0.0.1:5435 |
 | `server/tests/enterprise/runner-events.test.ts` | 2 | already-red-at-baseline | ENOENT: no such file or directory, open 'drizzle/0070_runner_event_attribution.sql' |

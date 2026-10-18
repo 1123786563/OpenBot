@@ -1,5 +1,5 @@
 {
- "generatedBy": "scripts/e2e-batch-drive-bun-test.mjs",
+ "generatedBy": "scripts/e2e-add-driven.mjs",
  "groups": [
   {
    "name": "agent-computer/tests",
@@ -42,6 +42,7 @@
   {
    "name": "app/tests part 1",
    "files": [
+    "app/tests/account-mode-dialog.test.tsx",
     "app/tests/admin-catalog-sync-ui.test.tsx",
     "app/tests/admin-credit-grant-ui.test.tsx",
     "app/tests/admin-gateway-readiness.test.tsx",
@@ -64,13 +65,13 @@
     "app/tests/bot-route-default-agent.test.tsx",
     "app/tests/bot-settings-rows.test.tsx",
     "app/tests/bot-setup.test.tsx",
-    "app/tests/bot-sharing.test.tsx",
-    "app/tests/boundaries-read-failure.test.tsx"
+    "app/tests/bot-sharing.test.tsx"
    ]
   },
   {
    "name": "app/tests part 2",
    "files": [
+    "app/tests/boundaries-read-failure.test.tsx",
     "app/tests/brokered-account-row.test.tsx",
     "app/tests/build-cache.test.ts",
     "app/tests/channel-chat.test.ts",
@@ -93,13 +94,13 @@
     "app/tests/composer-upload-group.test.tsx",
     "app/tests/composing-enter.test.tsx",
     "app/tests/composio-picker-add-error.test.tsx",
-    "app/tests/computer-activity.test.ts",
-    "app/tests/computer-control-button.test.tsx"
+    "app/tests/computer-activity.test.ts"
    ]
   },
   {
    "name": "app/tests part 3",
    "files": [
+    "app/tests/computer-control-button.test.tsx",
     "app/tests/computer-handoff.test.ts",
     "app/tests/computer-tool-refusals.test.ts",
     "app/tests/craft-session-title.test.tsx",
@@ -122,13 +123,13 @@
     "app/tests/proposed-skill-card.test.tsx",
     "app/tests/root-drop-guard.test.tsx",
     "app/tests/router.test.ts",
-    "app/tests/serve.test.ts",
-    "app/tests/sign-in-card.test.tsx"
+    "app/tests/serve.test.ts"
    ]
   },
   {
    "name": "app/tests part 4",
    "files": [
+    "app/tests/sign-in-card.test.tsx",
     "app/tests/skills-read-failure.test.tsx",
     "app/tests/stopped-turn.test.ts",
     "app/tests/transcript-attachments.test.tsx",
@@ -618,6 +619,7 @@
   "agent-sandbox/tests/sse.test.ts",
   "app/src/lib/i18n/ai-observability.test.ts",
   "app/src/lib/upload-queue/queue.test.ts",
+  "app/tests/account-mode-dialog.test.tsx",
   "app/tests/admin-catalog-sync-ui.test.tsx",
   "app/tests/admin-credit-grant-ui.test.tsx",
   "app/tests/admin-gateway-readiness.test.tsx",
@@ -1467,6 +1469,7 @@
   "app/tests/ai-observability-runs-list.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'",
   "app/tests/multitenancy/selection.test.tsx": "suite still imports \"bun:test\" at column 0; e2e on Node cannot resolve the bun: specifier and aborts the whole run",
   "app/tests/github-sources-settings.test.tsx": "runner named it: attributed runner-difference by scripts/e2e-vs-bun.mjs: green on bun test with the same suite text against the same production code",
-  "app/tests/memory-settings.test.tsx": "runner named it: attributed runner-difference by scripts/e2e-vs-bun.mjs: green on bun test with the same suite text against the same production code"
+  "app/tests/memory-settings.test.tsx": "runner named it: attributed runner-difference by scripts/e2e-vs-bun.mjs: green on bun test with the same suite text against the same production code",
+  "app/tests/account-mode-dialog.test.tsx": "runner named it: attributed runner-difference by scripts/e2e-vs-bun.mjs against .e2e/final3/report.json: green on bun test with the same suite text against the same production code"
  }
 }
