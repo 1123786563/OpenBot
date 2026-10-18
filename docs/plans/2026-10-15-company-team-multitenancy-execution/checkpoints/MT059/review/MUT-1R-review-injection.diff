@@ -1,0 +1,43 @@
+--- docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/review/personal-bot.pristine.ts	2026-10-18 07:52:54
++++ server/src/enterprise/tenancy/personal-bot.ts	2026-10-18 07:52:57
+@@ -598,8 +598,39 @@
+           if (templateRef && existing.templateRef !== templateRef) {
+             throw new Error("PERSONAL_BOT_TEMPLATE_CONFLICT");
+           }
++          // MUT-1R（复审自注入，同形于 7a46db20 残留变异；验证后字节复原）：
++          const document = {
++            ...(existing.document as Record<string, unknown>),
++            ...userFields,
++          };
++          await tx
++            .update(enterprisePersonalBots)
++            .set({
++              displayName,
++              document,
++              revision: sql`${enterprisePersonalBots.revision} + 1`,
++              updatedAt: sql`now()`,
++            })
++            .where(
++              and(
++                eq(enterprisePersonalBots.tenantId, scope.tenantId),
++                eq(enterprisePersonalBots.workspaceId, scope.workspaceId),
++                eq(enterprisePersonalBots.principalId, scope.principalId),
++              ),
++            );
++          const [mutated] = await tx
++            .select()
++            .from(enterprisePersonalBots)
++            .where(
++              and(
++                eq(enterprisePersonalBots.tenantId, scope.tenantId),
++                eq(enterprisePersonalBots.workspaceId, scope.workspaceId),
++                eq(enterprisePersonalBots.principalId, scope.principalId),
++              ),
++            )
++            .limit(1);
+           const ownership = await readOwnershipRows(tx, scope);
+-          return allowView(existing, ownership);
++          return allowView(mutated ?? existing, ownership);
+         }
+         // 首建：模板来源 = 团队安装副本（真实 MT077 存储）。
+         let templateDocument: Record<string, unknown> | null = null;

@@ -1,0 +1,5 @@
+# MUT-1R review-side replay (independent reviewer, 2026-10-17T23:53:09Z)
+injection: idempotent branch rewritten to consume repeat-request input + revision+1 (same shape as 7a46db20 MUT-1); diff archived at MUT-1R-review-injection.diff (43 lines, +34/-1 vs pristine)
+focused result: 27 pass / 1 fail / 122 expect(); sole failure = AC1 '重复请求返回同一 Bot：agentId/revision/字段全同，不产生第二行'
+restore: byte-identical (sha256 ba7ec225a7c7d3590abb9cc6874aa2b4abec66130e4921a2d6f9de5e4c0a1318 = pristine)
+post-restore focused re-run: 28 pass / 0 fail / 125 expect()

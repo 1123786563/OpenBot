@@ -1,0 +1,26 @@
+# MT059 review provision evidence (reviewer session, 2026-10-17T23:51:58Z)
+container=mt059-review-pg port=55575 dbs=openbot_enterprise_r14e|openbot_enterprise_r14e_assigned|openbot_kb_r14e kb_owner=ent_r14e_kb(NOSUPERUSER NOBYPASSRLS, DB OWNER, REVOKE PUBLIC)
+base-migrate={"type":"migrations-applied","status":"ok"}
+chain: 16/16 generate+apply ok, corrected order MT004→MT008→MT112→MT012→MT014→MT010→MT009→MT077→MT026→MT076→MT069→MT016→MT041→MT027→MT028→MT070
+journal: 16 tasks / 31 steps (MT059's own 2 steps apply via focused suite by design)
+kb: runMigrations(KB_TEST_DATABASE_URL) → kb-migrations-ok
+ task_id | steps 
+---------+-------
+ MT004   |     2
+ MT008   |     2
+ MT009   |     2
+ MT010   |     2
+ MT012   |     2
+ MT014   |     2
+ MT016   |     2
+ MT026   |     2
+ MT027   |     2
+ MT028   |     2
+ MT041   |     2
+ MT069   |     1
+ MT070   |     1
+ MT076   |     1
+ MT077   |     2
+ MT112   |     4
+(16 rows)
+
