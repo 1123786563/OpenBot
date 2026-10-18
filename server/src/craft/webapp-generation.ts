@@ -47,6 +47,18 @@
  *   an app that exists was assembled before/outside the marker regime, the
  *   population D10 protects.
  *
+ * In this deployment, however, "absent" can also arrive as a CONTENTLESS
+ * read: the agent-sandbox gateway answers a missing path with
+ * `200 {"content":""}` rather than 404, so readFile surfaces "" where the
+ * 404⇒null contract expects null. The probe therefore folds a contentless
+ * read (empty or whitespace-only) into absent — a 0-byte package.json is a
+ * corrupt state whose copy-branch rebuild is the correct self-healing arm,
+ * and a brand-new session (the first-version script's reader) reads "" on
+ * every path. The marker branch needs no symmetric change: an empty or
+ * whitespace marker read already fails the `=== "2"` test, and for the
+ * assembled population an empty marker belongs to, "not stamped" and
+ * "foreign" answer identically — legacy, D10's pre-marker verdict.
+ *
  * Every degraded read splits by KIND (fix-ocr26 #8): a missing file API is a
  * PERMANENT fact (no sandbox — there is nothing to retry) and answers
  * "legacy"; a read that THREW is a transient flake and answers "unknown", a
@@ -122,6 +134,16 @@ export async function readWebappGeneration(
     return "unknown";
   }
   if (appBody === null) return "current";
+  // A CONTENTLESS read is the same absent answer under this deployment's
+  // gateway wording: a missing path returns 200 {"content":""}, not 404, so
+  // a brand-new session's probe surfaces "" and the null-only check above
+  // never fires — the session was misjudged "legacy" (marker read "" ≠ "2"
+  // too) and the first-version script shipped root-form. Empty or
+  // whitespace-only is no app: the copy branch rebuilds such a package.json
+  // (corrupt state) anyway, so "current" is the self-healing arm. The marker
+  // branch below needs no mirror — its empty read already fails `=== "2"`,
+  // and on an ASSEMBLED app "not stamped" and "foreign" both answer legacy.
+  if (appBody.trim() === "") return "current";
   try {
     const content = await api.readFile(
       `${sessionRoot}/${WEBAPP_GENERATION_MARKER}`,
