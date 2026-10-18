@@ -338,6 +338,84 @@ describe("resolvePreviewRequest (wildcard-host form)", () => {
       );
     }
   });
+
+  // ── M-1 (#362): the deployment's main host can NEVER be claimed as preview ──
+  //
+  // AC1's isolation rests on this: if a main-site hostname could ever satisfy
+  // the suffix match, preview traffic (cookie-gated, no platform session) would
+  // land on the host that DOES carry the platform session — the exact crossing
+  // the origin split exists to prevent. Near-miss hosts pin the boundary.
+  test("M-1: suffix near-misses and the main host itself are never preview (AC1's premise)", () => {
+    const origin = originWith({ previewOriginTemplate: TEMPLATE });
+    for (const hostname of [
+      "example.com", // the deployment's registrable domain, not the preview base
+      "app.example.com", // a sibling subdomain of the main site
+      "notpreview.example.com", // ends with "preview.example.com"'s tail, no dot boundary
+      "preview.example.com.evil.com", // the base as a substring of an attacker host
+      "xn--preview.example.com", // not the base, however it is spelled
+    ]) {
+      expect(origin.handlesRequest(new Request(`https://${hostname}/`))).toBe(
+        false,
+      );
+    }
+    // The base and its subdomains ARE claimed (fail closed inside the wildcard).
+    for (const hostname of ["preview.example.com", "x.preview.example.com"]) {
+      expect(origin.handlesRequest(new Request(`https://${hostname}/`))).toBe(
+        true,
+      );
+    }
+  });
+
+  test("M-1 (dev form): only the exact 127.0.0.1 host is preview — every neighbour is main", () => {
+    const origin = originWith({}, { PORT: "3001" });
+    for (const hostname of [
+      "localhost",
+      "127.0.0.2",
+      "0.0.0.0",
+      "[::1]",
+      "127.0.0.1.example.com",
+    ]) {
+      const request = new Request(`http://${hostname}:3001/`);
+      expect(origin.handlesRequest(request)).toBe(false);
+    }
+  });
+
+  // ── M-1 (#361 Pi 终审)：尾点 FQDN 绝不逃逸 ──────────────────────────────
+  //
+  // WHATWG URL 对非 IPv4 主机保留尾点（`x.preview.example.com.` 与
+  // `x.preview.example.com` 是同一台主机），裸 endsWith 会漏判 → 已打开的预览
+  // 页里相对跳到尾点形态的请求会落进主站路由——主站 cookie 就在那里。匹配前
+  // 必须折叠尾点；主站主机的尾点形态照样不被 claim。
+  test("M-1: a trailing-dot preview host is claimed and resolves the same session", () => {
+    const origin = originWith({ previewOriginTemplate: TEMPLATE });
+    const address = origin.originFor(SESSION_ID);
+    const label = new URL(address).hostname.split(".")[0];
+
+    const dotted = new Request(`https://${label}.preview.example.com./`);
+    expect(origin.handlesRequest(dotted)).toBe(true);
+    expect(origin.resolvePreviewRequest(dotted)).toEqual({
+      sessionId: SESSION_ID,
+    });
+
+    // The apex's dotted form stays inside the namespace (404), never main.
+    const apex = new Request("https://preview.example.com./");
+    expect(origin.handlesRequest(apex)).toBe(true);
+    expect(origin.resolvePreviewRequest(apex).refuse?.status).toBe(404);
+  });
+
+  test("M-1: a main-site host's trailing-dot form is still never preview", () => {
+    const origin = originWith({ previewOriginTemplate: TEMPLATE });
+    for (const hostname of [
+      "app.example.com.",
+      "example.com.",
+      "notpreview.example.com.",
+      "preview.example.com.evil.com.",
+    ]) {
+      expect(origin.handlesRequest(new Request(`https://${hostname}/`))).toBe(
+        false,
+      );
+    }
+  });
 });
 
 describe("resolvePreviewRequest (D5 dev form: 127.0.0.1:<SERVER_PORT>)", () => {
@@ -2384,5 +2462,343 @@ describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
         appPath: `${labelB}/api/things`,
       },
     ]);
+  });
+});
+
+// ── M-2 (#362): the restart gap, accepted and pinned ──────────────────────────
+//
+// The label→session registry is in-memory by design (a restart-tolerant reverse
+// index would be a store/DB column — deferred until a deployment needs it). What
+// that means for a person: after a server restart, an already-open preview tab's
+// reload answers 404 "Unknown preview host" until the main site re-enters (the
+// webapp-info poll / a fresh ticket both re-mint the address, which re-registers
+// the label). These tests pin BOTH halves so the behavior is a contract, not an
+// accident.
+
+describe("the restart gap (M-2, documented in docs/craft-preview-origin.md)", () => {
+  test("a restarted registry 404s a previously-registered host (the reload answer)", () => {
+    const before = originWith({ previewOriginTemplate: TEMPLATE });
+    const address = before.originFor(SESSION_ID); // registers the label
+
+    // A fresh instance with the SAME deployment secret: labels re-derive, the
+    // reverse index does not survive.
+    const after = originWith({ previewOriginTemplate: TEMPLATE });
+    expect(
+      after.resolvePreviewRequest(new Request(`${address}/`)),
+    ).toEqual({ refuse: { status: 404, reason: expect.any(String) } });
+  });
+
+  test("recovery is the main-site hop: re-minting the address re-registers it", () => {
+    const before = originWith({ previewOriginTemplate: TEMPLATE });
+    const address = before.originFor(SESSION_ID);
+    const after = originWith({ previewOriginTemplate: TEMPLATE });
+
+    // The main-site re-entry (webapp-info's originFor, or a fresh ticket) — the
+    // re-derived address is identical (stability) and now resolves again.
+    expect(after.originFor(SESSION_ID)).toBe(address);
+    expect(after.resolvePreviewRequest(new Request(`${address}/`))).toEqual({
+      sessionId: SESSION_ID,
+    });
+  });
+
+  test("the dev form restarts the same way: the path label forgets, re-minting restores", () => {
+    const before = originWith({}, { PORT: "3001" });
+    const address = before.originFor(SESSION_ID);
+    const after = originWith({}, { PORT: "3001" });
+    expect(
+      after.resolvePreviewRequest(new Request(`${address}/some/path`)),
+    ).toEqual({ refuse: { status: 404, reason: expect.any(String) } });
+    expect(after.originFor(SESSION_ID)).toBe(address);
+    expect(
+      after.resolvePreviewRequest(new Request(`${address}/some/path`)),
+    ).toEqual({ sessionId: SESSION_ID });
+  });
+});
+
+// ── the preview's traffic: cookie-gated proxying (#362, AC1/AC2) ─────────────
+//
+// The redemption entry plants the preview domain's own cookie; every further
+// request on the preview host — the app document, its API calls, Server Actions
+// — is gated on THAT cookie and then handed to the session's dev server via the
+// injected servePreview seam (webapp-proxy's createPreviewProxy in production).
+// The gate is exact: the cookie must exist AND name THIS host's session, so a
+// pass for session A never opens session B's host (and vice versa).
+
+describe("appPathFor — the shared app-relative derivation (#363's HMR consumer)", () => {
+  test("dev form: the pathname rides in full — the label included (F-2, #365)", () => {
+    // The dev form's dev server mounts the app UNDER the label (its start
+    // script injects ONYX_WEBAPP_BASE_PATH=/<label> — webappBasePathFor below),
+    // so the upstream-resolvable path is the browser's pathname verbatim:
+    // stripping the label here would dial the port root, where a basePath-
+    //mounted Next answers 404 for everything (the F-2 gap: asset URLs 404ed
+    // and the preview never hydrated).
+    const origin = originWith({}, { PORT: "3001" });
+    const address = origin.originFor(SESSION_ID);
+    const label = new URL(address).pathname.replace(/^\//, "");
+    expect(origin.appPathFor(new Request(`${address}/_next/webpack-hmr`))).toBe(
+      `/${label}/_next/webpack-hmr`,
+    );
+    expect(origin.appPathFor(new Request(`${address}/`))).toBe(`/${label}/`);
+    expect(origin.appPathFor(new Request(address))).toBe(`/${label}`);
+  });
+
+  test("host form: the pathname rides verbatim (the app lives at the origin root)", () => {
+    const origin = originWith({ previewOriginTemplate: TEMPLATE });
+    const address = origin.originFor(SESSION_ID);
+    expect(origin.appPathFor(new Request(`${address}/_next/webpack-hmr`))).toBe(
+      "/_next/webpack-hmr",
+    );
+    expect(origin.appPathFor(new Request(`${address}/deep/nested/path`))).toBe(
+      "/deep/nested/path",
+    );
+  });
+});
+
+// ── F-2 (#365): the basePath the session's dev server must mount ──────────────
+//
+// The dev form's preview address is http://127.0.0.1:<port>/<label> — a PATH
+// label, not a host label — so the app's own resource URLs must carry that
+// label to resolve on the preview origin. The app cannot guess it: the start
+// script's generated env injection is what mounts the dev server at /<label>,
+// and THIS method is the one derivation both sides share (the same HMAC label
+// originFor mints). The host form and any closed origin answer null — root
+// path, the production behavior, unchanged (spec D3/D7; #364's retirement of
+// the cwd-guessed basePath stays retired: env comes from the controlled start
+// side, never a cwd sniff).
+
+describe("webappBasePathFor — the dev server's mount for the preview's URL shape (F-2)", () => {
+  test("dev form: /<label> — the same label the minted address rides", () => {
+    const origin = originWith({}, { PORT: "3001" });
+    const address = origin.originFor(SESSION_ID);
+    const label = new URL(address).pathname.replace(/^\//, "");
+    expect(origin.webappBasePathFor(SESSION_ID)).toBe(`/${label}`);
+    // Stable like the address itself (AC6), and per-session distinct (AC9) —
+    // never the session id, never another session's label.
+    expect(origin.webappBasePathFor(SESSION_ID)).toBe(`/${label}`);
+    expect(origin.webappBasePathFor(OTHER_SESSION_ID)).not.toBe(`/${label}`);
+    // The F-2 invariant: every path the proxy forwards (appPathFor) is
+    // addressable under the mount this method hands the start script —
+    // prefix + the app-relative remainder, one derivation both sides share.
+    expect(origin.appPathFor(new Request(`${address}/api/x`))).toBe(
+      `${origin.webappBasePathFor(SESSION_ID)}/api/x`,
+    );
+  });
+
+  test("host form: null — the app lives at the origin's root", () => {
+    const origin = originWith({ previewOriginTemplate: TEMPLATE });
+    expect(origin.webappBasePathFor(SESSION_ID)).toBeNull();
+  });
+
+  test("closed admission: null — a closed origin has no address shape to mirror", () => {
+    const disabled = originWith(
+      { previewOriginEnabled: false },
+      { PORT: "3001" },
+    );
+    expect(disabled.webappBasePathFor(SESSION_ID)).toBeNull();
+    const malformed = originWith({ previewOriginTemplate: "not a url" });
+    expect(malformed.webappBasePathFor(SESSION_ID)).toBeNull();
+  });
+});
+
+describe("the preview origin's proxied traffic (cookie gate + servePreview seam)", () => {
+  type RecordedCall = {
+    sessionId: string;
+    appPath: string;
+    query: string;
+    method: string;
+    cookie: string | null;
+  };
+
+  function recordingServe() {
+    const calls: RecordedCall[] = [];
+    const servePreview: ServePreview = async ({
+      sessionId,
+      request,
+      appPath,
+      query,
+    }) => {
+      calls.push({
+        sessionId,
+        appPath,
+        query,
+        method: request.method,
+        cookie: request.headers.get("cookie"),
+      });
+      return new Response("proxied-body", { status: 200 });
+    };
+    return { calls, servePreview };
+  }
+
+  test("dev form: a valid cookie proxies the pathname in full — label included; method, query and cookie preserved", async () => {
+    const { calls, servePreview } = recordingServe();
+    const origin = originWith({}, { PORT: "3001" }, undefined, servePreview);
+    const address = origin.originFor(SESSION_ID);
+    const label = new URL(address).pathname.replace(/^\//, "");
+
+    const response = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/api/probe?x=1&y=2`, {
+        method: "POST",
+        headers: {
+          cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}; other=irrelevant`,
+          "content-type": "application/json",
+        },
+        body: "{}",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("proxied-body");
+    expect(calls).toEqual([
+      {
+        sessionId: SESSION_ID,
+        appPath: `/${label}/api/probe`,
+        query: "?x=1&y=2",
+        method: "POST",
+        cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}; other=irrelevant`,
+      },
+    ]);
+  });
+
+  test("dev form: the bare label address proxies to the mount root, trailing slash or not", async () => {
+    const { calls, servePreview } = recordingServe();
+    const origin = originWith({}, { PORT: "3001" }, undefined, servePreview);
+    const address = origin.originFor(SESSION_ID);
+    const label = new URL(address).pathname.replace(/^\//, "");
+
+    for (const suffix of ["", "/"]) {
+      const response = await origin.handlePreviewRequest(
+        SESSION_ID,
+        new Request(`${address}${suffix}`, {
+          headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+        }),
+      );
+      expect(response.status).toBe(200);
+    }
+    expect(calls.map((call) => call.appPath)).toEqual([
+      `/${label}`,
+      `/${label}/`,
+    ]);
+  });
+
+  test("host form: a valid cookie proxies the pathname verbatim (the app lives at the origin root)", async () => {
+    const { calls, servePreview } = recordingServe();
+    const origin = originWith(
+      { previewOriginTemplate: TEMPLATE },
+      {},
+      undefined,
+      servePreview,
+    );
+    const address = origin.originFor(SESSION_ID);
+
+    const response = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/dashboard/settings?tab=2`, {
+        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(calls[0]?.appPath).toBe("/dashboard/settings");
+    expect(calls[0]?.query).toBe("?tab=2");
+  });
+
+  test("no cookie → 401 for a programmatic caller, never proxied", async () => {
+    const { calls, servePreview } = recordingServe();
+    const origin = originWith(
+      { previewOriginTemplate: TEMPLATE },
+      {},
+      undefined,
+      servePreview,
+    );
+    const address = origin.originFor(SESSION_ID);
+
+    const response = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/api/probe`, { method: "POST", body: "{}" }),
+    );
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: expect.any(String) });
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  test("a browser-shaped refusal is a readable HTML page (the iframe lands on it)", async () => {
+    const origin = originWith({ previewOriginTemplate: TEMPLATE });
+    const address = origin.originFor(SESSION_ID);
+
+    const response = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(address, {
+        headers: { accept: "text/html,application/xhtml+xml" },
+      }),
+    );
+    expect(response.status).toBe(401);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    const body = await response.text();
+    expect(body).toContain("<!"); // an actual page, not raw JSON in a frame
+    // The cookie never echoes into the refusal.
+    expect(body).not.toContain(PREVIEW_SESSION_COOKIE);
+  });
+
+  test("another session's pass on this host is refused — the cookie names THIS host's session", async () => {
+    const { calls, servePreview } = recordingServe();
+    const origin = originWith(
+      { previewOriginTemplate: TEMPLATE },
+      {},
+      undefined,
+      servePreview,
+    );
+    const address = origin.originFor(SESSION_ID);
+
+    const response = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/`, {
+        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${OTHER_SESSION_ID}` },
+      }),
+    );
+    expect(response.status).toBe(401);
+    expect(calls).toEqual([]);
+  });
+
+  test("a cookie jar without the preview pass is refused", async () => {
+    const origin = originWith({}, { PORT: "3001" });
+    const address = origin.originFor(SESSION_ID);
+
+    const response = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/`, {
+        headers: { cookie: "session=platform-cookie-value; theme=dark" },
+      }),
+    );
+    expect(response.status).toBe(401);
+    expect((await response.json()) as { error: string }).toEqual({
+      error: expect.any(String),
+    });
+  });
+
+  test("admission closed → 503 with the reason before any cookie judgment", async () => {
+    const { calls, servePreview } = recordingServe();
+    const open = originWith(
+      { previewOriginTemplate: TEMPLATE },
+      {},
+      undefined,
+      servePreview,
+    );
+    const address = open.originFor(SESSION_ID);
+    const closed = originWith(
+      { previewOriginTemplate: TEMPLATE, previewOriginEnabled: false },
+      {},
+      undefined,
+      servePreview,
+    );
+
+    const response = await closed.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/`, {
+        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+      }),
+    );
+    expect(response.status).toBe(503);
+    expect(calls).toEqual([]);
   });
 });
