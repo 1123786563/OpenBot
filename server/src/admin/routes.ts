@@ -179,6 +179,9 @@ export function createEnterpriseAdminRoutes(
       defaultDestinations: DEFAULT_EGRESS_DESTINATIONS,
       mcpServers: servers,
       builtInModel: controls.deps.builtInModel ?? null,
+      // The billing method of that model path (09.4), so the screen can name the two
+      // billing paths apart instead of leaving the subscription harness to be inferred.
+      builtInModelBilling: controls.deps.builtInModelBilling ?? "credit",
       scim: scimStatus(controls.deps.env ?? process.env),
       otel: { configured: otelConfigured(controls.deps.env ?? process.env) },
       actionRecordRetentionDays: ACTION_RECORD_RETENTION_DAYS,

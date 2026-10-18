@@ -8,7 +8,9 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { accessGrants } from "./access-grants";
 import { billingCustomers } from "./billing";
+import { botServices } from "./bot-services";
 import { creditGrants, creditLedger } from "./credits";
 
 /**
@@ -175,5 +177,39 @@ export const creditChargeRemainders = pgTable(
       "credit_charge_remainders_shape_check",
       sql`${table.numerator} ~ '^[0-9]+$' AND ${table.denominator} ~ '^[1-9][0-9]*$'`,
     ),
+  ],
+);
+
+/**
+ * Who a reservation was admitted FOR (06.12's consumption attribution): the model access grant
+ * the protocol reserve ran under and the registered Bot that grant belongs to. The credit
+ * writer owns `credit_reservations` and is deliberately unchanged by this slice — attribution
+ * is written beside the hold by the protocol reserve (../billing/credit-reserve.ts), inside
+ * the SAME transaction, from the grant row revalidation already proved. A reservation without
+ * a row here was not admitted through the protocol (a writer-direct hold, or a row from before
+ * the migration) and the user view answers "unattributed" for it — never a guess.
+ *
+ * One row per reservation (the primary key IS the reservation id) and it never changes: which
+ * grant admitted a hold is a fact of the admission, not a mutable label.
+ */
+export const creditReservationAttribution = pgTable(
+  "credit_reservation_attribution",
+  {
+    reservationId: text("reservation_id")
+      .primaryKey()
+      .references(() => creditReservations.id, { onDelete: "cascade" }),
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => accessGrants.grantId),
+    botId: text("bot_id")
+      .notNull()
+      .references(() => botServices.botId),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // The consumption read walks a customer's ledger to its reservation's Bot.
+    index("credit_reservation_attribution_bot_idx").on(table.botId),
   ],
 );

@@ -93,6 +93,9 @@
     "access": "Who can get in",
     "history": "What happened",
     "credentials": "Credentials",
+    "botServices": "Bot Services",
+    "gateway": "Gateway",
+    "modelCatalog": "Model Catalog",
     "boundaries": "Boundaries",
     "computers": "Computers",
     "plugins": "Plugins",
@@ -439,7 +442,13 @@
       "usageEmpty": "No Bot runs have been recorded in the last 30 days.",
       "usageLine_one": "{{runs}} runs by {{count}} person in 30 days",
       "usageLine_other": "{{runs}} runs by {{count}} people in 30 days",
-      "offAllowlist": " · {{number}} off the allowlist"
+      "offAllowlist": " · {{number}} off the allowlist",
+      "creditPathTitle": "Credit-billed path",
+      "creditPathDescription": "Calls dial the model gateway or provider credential, reserved against credits before the first token and settled into the usage facts. A short balance refuses the run; nothing is switched.",
+      "subscriptionPathTitle": "Subscription harness path",
+      "subscriptionPathDescription": "A Claude Code or ChatGPT subscription credential riding this deployment's own harness. Billed by that subscription: no credit reservation, and never a path a credit-exhausted call falls back to.",
+      "pathActive": "Active",
+      "pathInactive": "Not in use"
     },
     "recording": {
       "title": "Recording and export",

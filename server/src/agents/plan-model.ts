@@ -22,6 +22,15 @@ type GenerateResult = Awaited<ReturnType<PlanLanguageModel["doGenerate"]>>;
 
 export type PlanModelConfig = {
   provider: "chatgpt" | "claude";
+  /**
+   * This path's billing method, as data (09.4). The harness rides the deployment's own
+   * subscription credential — a Claude Code or ChatGPT plan — so the work it does is billed
+   * by that subscription: it never enters credit admission, never reserves or settles
+   * credits, and is never a path a credit-exhausted call is re-resolved onto. The marker
+   * lives on the type so a config that reaches any surface (admin readout, audit, screen)
+   * carries the same word the runtime built from.
+   */
+  billing: "subscription";
   /** Resolved from the deployment's installed harness, never an agent registration. */
   endpoint: URL;
   token: string;
@@ -65,7 +74,12 @@ export function planModelForEnvironment(
   }
   if (claude)
     endpoint.pathname = `${endpoint.pathname.replace(/\/$/, "")}/model`;
-  return { provider: claude ? "claude" : "chatgpt", endpoint, token };
+  return {
+    provider: claude ? "claude" : "chatgpt",
+    billing: "subscription",
+    endpoint,
+    token,
+  };
 }
 
 const UNKNOWN_USAGE: GenerateResult["usage"] = {
