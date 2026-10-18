@@ -20,7 +20,7 @@ import type { BaseEvent } from "@ag-ui/client";
 import { context, trace } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
-import { Subject } from "rxjs";
+import { Observable, Subject } from "rxjs";
 import type { OpikObservationWrite } from "../src/ai-observability/health";
 import type { OpikOtlpSpan, OpikPort } from "../src/ai-observability/opik-port";
 import { resolveObservationScope } from "../src/ai-observability/scope";
@@ -729,41 +729,57 @@ async function runStream(events: BaseEvent[]): Promise<BuiltinToolStepFact[]> {
   }
 }
 
+/**
+ * Drives one run's stream whose SOURCE performs the work the runtime would —
+ * proposals, then the real execute from inside the run's own context, where the
+ * execute correlates with the run's cells (OCR R5-41: executes are per-run).
+ */
+function sourceRun(
+  build: (emit: (event: BaseEvent) => void) => Promise<void>,
+): { stream: Observable<BaseEvent>; done: Promise<void> } {
+  let doneResolve: () => void = () => {};
+  const done = new Promise<void>((resolve) => {
+    doneResolve = resolve;
+  });
+  const stream = new Observable<BaseEvent>((subscriber) => {
+    void build((event) => subscriber.next(event)).then(() => {
+      subscriber.complete();
+      doneResolve();
+    });
+  });
+  return { stream, done };
+}
+
 describe("the built-in observation bypass", () => {
   test("a proposal that really executes records one executed fact (acceptance 1)", async () => {
     const facts: BuiltinToolStepFact[] = [];
     setBuiltinToolStepObserver((fact) => facts.push(fact));
-    const subject = new Subject<BaseEvent>();
-    const subscription = toolStepObservationForTests
-      .observeStream(subject)
-      .subscribe();
-    try {
-      subject.next(
+    const { stream, done } = sourceRun(async (emit) => {
+      emit(
         ev({
           type: "TOOL_CALL_START",
           toolCallId: "c1",
           toolCallName: "host_read",
         }),
       );
-      subject.next(
-        ev({ type: "TOOL_CALL_ARGS", toolCallId: "c1", delta: '{"path":' }),
+      emit(ev({ type: "TOOL_CALL_ARGS", toolCallId: "c1", delta: '{"path":' }));
+      emit(
+        ev({ type: "TOOL_CALL_ARGS", toolCallId: "c1", delta: '"/etc/hosts"}' }),
       );
-      subject.next(
-        ev({
-          type: "TOOL_CALL_ARGS",
-          toolCallId: "c1",
-          delta: '"/etc/hosts"}',
-        }),
-      );
-      subject.next(ev({ type: "TOOL_CALL_END", toolCallId: "c1" }));
+      emit(ev({ type: "TOOL_CALL_END", toolCallId: "c1" }));
       const value = await toolStepObservationForTests.observeExecution(
         "host_read",
         "c1",
         async () => "42",
       );
       expect(value).toBe("42");
-      subject.next(ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }));
-      subject.complete();
+      emit(ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }));
+    });
+    const subscription = toolStepObservationForTests
+      .observeStream(stream)
+      .subscribe();
+    try {
+      await done;
     } finally {
       subscription.unsubscribe();
       setBuiltinToolStepObserver(undefined);
@@ -1000,12 +1016,9 @@ describe("the built-in observation bypass", () => {
   test("a failed execute is a failed fact; an abort is canceled; a suspension stays pending", async () => {
     const facts: BuiltinToolStepFact[] = [];
     setBuiltinToolStepObserver((fact) => facts.push(fact));
-    const subject = new Subject<BaseEvent>();
-    const subscription = toolStepObservationForTests
-      .observeStream(subject)
-      .subscribe();
-    try {
-      subject.next(
+    // The runtime performs each execute inside the run (OCR R5-41 shape).
+    const { stream, done } = sourceRun(async (emit) => {
+      emit(
         ev({
           type: "TOOL_CALL_START",
           toolCallId: "f1",
@@ -1021,7 +1034,7 @@ describe("the built-in observation bypass", () => {
           },
         ),
       ).rejects.toThrow("connector refused");
-      subject.next(
+      emit(
         ev({
           type: "TOOL_CALL_START",
           toolCallId: "f2",
@@ -1039,7 +1052,7 @@ describe("the built-in observation bypass", () => {
           },
         ),
       ).rejects.toThrow("aborted");
-      subject.next(
+      emit(
         ev({
           type: "TOOL_CALL_START",
           toolCallId: "f3",
@@ -1058,7 +1071,7 @@ describe("the built-in observation bypass", () => {
         ),
       ).rejects.toThrow("waiting for approval");
       // The suspended call is still open; the interrupt outcome settles it proposed.
-      subject.next(
+      emit(
         ev({
           type: "RUN_FINISHED",
           threadId: "t",
@@ -1066,6 +1079,12 @@ describe("the built-in observation bypass", () => {
           outcome: { type: "interrupt", interrupts: [] },
         }),
       );
+    });
+    const subscription = toolStepObservationForTests
+      .observeStream(stream)
+      .subscribe();
+    try {
+      await done;
     } finally {
       subscription.unsubscribe();
       setBuiltinToolStepObserver(undefined);
@@ -1324,12 +1343,10 @@ describe("the observation bypass fixes (T15 review)", () => {
   test("(b) a late proposal for an already-executed call records exactly once", async () => {
     const facts: BuiltinToolStepFact[] = [];
     setBuiltinToolStepObserver((fact) => facts.push(fact));
-    const subject = new Subject<BaseEvent>();
-    const subscription = toolStepObservationForTests
-      .observeStream(subject)
-      .subscribe();
-    try {
-      subject.next(
+    // The runtime proposes, executes inside the run, then the out-of-order
+    // proposal event arrives — the tombstone must keep it to one cell.
+    const { stream, done } = sourceRun(async (emit) => {
+      emit(
         ev({
           type: "TOOL_CALL_START",
           toolCallId: "ooo-1",
@@ -1343,15 +1360,20 @@ describe("the observation bypass fixes (T15 review)", () => {
       );
       // The out-of-order window: the proposal event arrives AFTER the execution
       // settled. It must not open a second cell for the same call.
-      subject.next(
+      emit(
         ev({
           type: "TOOL_CALL_START",
           toolCallId: "ooo-1",
           toolCallName: "host_read",
         }),
       );
-      subject.next(ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }));
-      subject.complete();
+      emit(ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }));
+    });
+    const subscription = toolStepObservationForTests
+      .observeStream(stream)
+      .subscribe();
+    try {
+      await done;
     } finally {
       subscription.unsubscribe();
       setBuiltinToolStepObserver(undefined);
@@ -1362,31 +1384,59 @@ describe("the observation bypass fixes (T15 review)", () => {
   });
 
   test("(b) an executed settlement still tombstones: the id records exactly once (OCR R3-40 non-regression)", async () => {
-    // The narrowing is one-directional: a settlement that carried an execution
-    // (or a receipt) keeps the tombstone — an out-of-order late proposal for a
-    // finished call must never open a second cell for it.
+    // The narrowing is one-directional and PER RUN (OCR R5-41): a settlement
+    // that carried an execution (or a receipt) keeps the tombstone — an
+    // out-of-order late proposal for a finished call must never open a second
+    // cell for it within that run. A DIFFERENT run proposing the same provider
+    // id records its own fact: the ids are only unique per run.
     const facts: BuiltinToolStepFact[] = [];
     setBuiltinToolStepObserver((fact) => facts.push(fact));
-    try {
-      await toolStepObservationForTests.observeExecution(
-        "host_read",
-        "tombstone-exec-1",
-        async () => "42",
-      );
-      const after = await runStream([
+    const { stream, done } = sourceRun(async (emit) => {
+      emit(
         ev({
           type: "TOOL_CALL_START",
           toolCallId: "tombstone-exec-1",
           toolCallName: "host_read",
         }),
-        ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }),
-      ]);
-      expect(after).toHaveLength(0);
+      );
+      await toolStepObservationForTests.observeExecution(
+        "host_read",
+        "tombstone-exec-1",
+        async () => "42",
+      );
+      emit(
+        ev({
+          type: "TOOL_CALL_START",
+          toolCallId: "tombstone-exec-1",
+          toolCallName: "host_read",
+        }),
+      );
+      emit(ev({ type: "RUN_FINISHED", threadId: "t", runId: "rA" }));
+    });
+    const subscription = toolStepObservationForTests
+      .observeStream(stream)
+      .subscribe();
+    try {
+      await done;
     } finally {
-      setBuiltinToolStepObserver(undefined);
+      subscription.unsubscribe();
     }
+    // The executed settlement, then the late proposal: still exactly one fact.
     expect(facts).toHaveLength(1);
     expect(facts[0].executionObserved).toBe(true);
+    // A fresh run is a fresh registry: the same provider id records there.
+    const after = await runStream([
+      ev({
+        type: "TOOL_CALL_START",
+        toolCallId: "tombstone-exec-1",
+        toolCallName: "host_read",
+      }),
+      ev({ type: "RUN_FINISHED", threadId: "t", runId: "rB" }),
+    ]);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.proposalObserved).toBe(true);
+    expect(after[0]?.executionObserved).toBe(false);
+    setBuiltinToolStepObserver(undefined);
   });
 
   test("the approval resume replays the SAME toolCallId and its real execution is observed (OCR R3-40)", async () => {
@@ -1591,5 +1641,140 @@ describe("the step typing depends on no framework internals (acceptance 4)", () 
     expect(source).not.toMatch(/from\s+["']@copilotkit\//);
     // The determination vocabulary is structural, not a re-export of framework types.
     expect(source).not.toMatch(/from\s+["']@ag-ui\/core/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OCR R5-41: per-run cell isolation. The module-level registry used to key
+// cells by the bare toolCallId, so two concurrent runs emitting the same id
+// (OpenAI-compatible providers have historically handed out per-request
+// incrementing ids) shared ONE cell: B's arguments merged into A's captured
+// input, B's observation vanished whole, and B's RUN_FINISHED settled A's cell
+// early. Each subscription now owns its own registry; executes correlate
+// through the run they were performed inside.
+// ---------------------------------------------------------------------------
+
+describe("per-run tool-step cell isolation (OCR R5-41)", () => {
+  test("two concurrent runs sharing a toolCallId keep separate cells (triage repro shape)", async () => {
+    const facts: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => facts.push(fact));
+    const runA = new Subject<BaseEvent>();
+    const runB = new Subject<BaseEvent>();
+    const subA = toolStepObservationForTests.observeStream(runA).subscribe();
+    const subB = toolStepObservationForTests.observeStream(runB).subscribe();
+    try {
+      // Both runs propose the SAME tool call id, interleaved.
+      runA.next(
+        ev({
+          type: "TOOL_CALL_START",
+          toolCallId: "call_0",
+          toolCallName: "host_read",
+        }),
+      );
+      runB.next(
+        ev({
+          type: "TOOL_CALL_START",
+          toolCallId: "call_0",
+          toolCallName: "host_write",
+        }),
+      );
+      runA.next(
+        ev({
+          type: "TOOL_CALL_ARGS",
+          toolCallId: "call_0",
+          delta: '{"path":"/etc/hosts"}',
+        }),
+      );
+      runB.next(
+        ev({
+          type: "TOOL_CALL_ARGS",
+          toolCallId: "call_0",
+          delta: '{"to":"bob@example.com"}',
+        }),
+      );
+      // B's run ends first: only B's cell may settle, with only B's facts.
+      runB.next(ev({ type: "RUN_FINISHED", threadId: "t", runId: "rB" }));
+      runB.complete();
+      // A keeps flowing after B ended: its receipt must still land.
+      runA.next(ev({ type: "TOOL_CALL_RESULT", toolCallId: "call_0" }));
+      runA.next(ev({ type: "RUN_FINISHED", threadId: "t", runId: "rA" }));
+      runA.complete();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      subA.unsubscribe();
+      subB.unsubscribe();
+      setBuiltinToolStepObserver(undefined);
+    }
+    // One fact per run — B's whole observation is not swallowed by the share.
+    expect(facts).toHaveLength(2);
+    const a = facts.find((fact) => fact.toolName === "host_read");
+    const b = facts.find((fact) => fact.toolName === "host_write");
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+    // B's arguments never merge into A's captured input and vice versa.
+    expect(a?.input).toBe('{"path":"/etc/hosts"}');
+    expect(b?.input).toBe('{"to":"bob@example.com"}');
+    // B's finish settles B's cell, not A's: A's receipt still arrives after.
+    expect(a?.receiptObserved).toBe(true);
+    expect(b?.receiptObserved).toBe(false);
+  });
+
+  test("an execute the run performs settles THAT run's cell, never a concurrent run's", async () => {
+    const facts: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => facts.push(fact));
+    // Run A's source stands in for the runtime: it proposes the call, then
+    // really executes it from inside the run (where the execute's ambient
+    // context is the run's own), then finishes.
+    const runA = toolStepObservationForTests.observeStream(
+      new Observable<BaseEvent>((subscriber) => {
+        subscriber.next(
+          ev({
+            type: "TOOL_CALL_START",
+            toolCallId: "call_0",
+            toolCallName: "host_read",
+          }),
+        );
+        void toolStepObservationForTests
+          .observeExecution("host_read", "call_0", async () => "42")
+          .then(() => {
+            subscriber.next(
+              ev({ type: "TOOL_CALL_RESULT", toolCallId: "call_0" }),
+            );
+            subscriber.next(
+              ev({ type: "RUN_FINISHED", threadId: "t", runId: "rA" }),
+            );
+            subscriber.complete();
+          });
+      }),
+    );
+    // Run B, concurrent, proposes the SAME id and ends without executing.
+    const runB = new Subject<BaseEvent>();
+    const subB = toolStepObservationForTests.observeStream(runB).subscribe();
+    const subA = runA.subscribe();
+    try {
+      runB.next(
+        ev({
+          type: "TOOL_CALL_START",
+          toolCallId: "call_0",
+          toolCallName: "host_write",
+        }),
+      );
+      runB.next(ev({ type: "RUN_FINISHED", threadId: "t", runId: "rB" }));
+      runB.complete();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      subA.unsubscribe();
+      subB.unsubscribe();
+      setBuiltinToolStepObserver(undefined);
+    }
+    const a = facts.find((fact) => fact.toolName === "host_read");
+    const b = facts.find((fact) => fact.toolName === "host_write");
+    // A's real execute lands on A's cell: proposed AND executed.
+    expect(a?.proposalObserved).toBe(true);
+    expect(a?.executionObserved).toBe(true);
+    expect(a?.execution).toEqual({ kind: "succeeded", output: "42" });
+    // B's proposal was never executed: A's execute must not settle B's cell.
+    expect(b?.toolName).toBe("host_write");
+    expect(b?.executionObserved).toBe(false);
   });
 });
