@@ -1280,7 +1280,7 @@
     6,
     192
    ],
-   "status": "blocked",
+   "status": "verified",
    "validator_role": "backend_validator",
    "verification": {
     "commands": "derive from exact current files and Ticket verification section before dispatch; DB tickets require dedicated TEST_DATABASE_URL and restricted role",
@@ -1583,7 +1583,7 @@
     6,
     193
    ],
-   "status": "blocked",
+   "status": "verified",
    "validator_role": "backend_validator",
    "verification": {
     "commands": "derive from exact current files and Ticket verification section before dispatch; DB tickets require dedicated TEST_DATABASE_URL and restricted role",
@@ -1669,7 +1669,7 @@
     6,
     194
    ],
-   "status": "blocked",
+   "status": "verified",
    "validator_role": "backend_validator",
    "verification": {
     "commands": "derive from exact current files and Ticket verification section before dispatch; DB tickets require dedicated TEST_DATABASE_URL and restricted role",
@@ -2138,7 +2138,7 @@
     6,
     196
    ],
-   "status": "blocked",
+   "status": "verified",
    "validator_role": "backend_validator",
    "verification": {
     "commands": "derive from exact current files and Ticket verification section before dispatch; DB tickets require dedicated TEST_DATABASE_URL and restricted role",
@@ -2840,7 +2840,7 @@
     6,
     199
    ],
-   "status": "blocked",
+   "status": "verified",
    "validator_role": "backend_validator",
    "verification": {
     "commands": "derive from exact current files and Ticket verification section before dispatch; DB tickets require dedicated TEST_DATABASE_URL and restricted role",
@@ -2882,7 +2882,7 @@
     6,
     199
    ],
-   "status": "blocked",
+   "status": "verified",
    "validator_role": "backend_validator",
    "verification": {
     "commands": "derive from exact current files and Ticket verification section before dispatch; DB tickets require dedicated TEST_DATABASE_URL and restricted role",
@@ -3431,7 +3431,7 @@
     6,
     200
    ],
-   "status": "blocked",
+   "status": "verified",
    "validator_role": "backend_validator",
    "verification": {
     "commands": "derive from exact current files and Ticket verification section before dispatch; DB tickets require dedicated TEST_DATABASE_URL and restricted role",
@@ -4571,7 +4571,7 @@
     6,
     203
    ],
-   "status": "blocked",
+   "status": "verified",
    "validator_role": "frontend_validator",
    "verification": {
     "commands": "derive from exact current files and Ticket verification section before dispatch; DB tickets require dedicated TEST_DATABASE_URL and restricted role",
@@ -5579,7 +5579,7 @@
     6,
     206
    ],
-   "status": "blocked",
+   "status": "verified",
    "validator_role": "backend_validator",
    "verification": {
     "commands": "derive from exact current files and Ticket verification section before dispatch; DB tickets require dedicated TEST_DATABASE_URL and restricted role",
@@ -5619,7 +5619,7 @@
     6,
     206
    ],
-   "status": "blocked",
+   "status": "verified",
    "validator_role": "backend_validator",
    "verification": {
     "commands": "derive from exact current files and Ticket verification section before dispatch; DB tickets require dedicated TEST_DATABASE_URL and restricted role",

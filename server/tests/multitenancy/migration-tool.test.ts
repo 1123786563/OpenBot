@@ -387,6 +387,28 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
     // MT070（同 ruling #5 先例，第 13 次沿用，MT070 brief 预授权）：仅本
     // 断言追加 "MT070"（公司调用归属表迁移注册，迁移链第十五任务），文件
     // 其余内容只读；diff 与哈希存档于 checkpoints/MT070/。
+    // MT031（同 ruling #5 先例，第 14 次沿用，MT031 brief 预授权）：仅本
+    // 断言追加 "MT031"（插件目录与安装归属三表迁移注册，迁移链第十七
+    // 任务），文件其余内容只读；diff 与哈希存档于 checkpoints/MT031/。
+    // MT042（同 ruling #5 先例，MT042 brief 预授权）：仅本断言追加 "MT042"
+    // （平台扫描作用域重建——job_ownership 扫描臂读策略迁移注册），文件
+    // 其余内容只读；diff 与哈希存档于 checkpoints/MT042/。
+    // MT059（同 ruling #5 先例，第 18 次沿用，MT059 brief 预授权）：仅本
+    // 断言追加 "MT059"（用户私有 OpenMuse Bot 两表迁移注册，迁移链第十八
+    // 任务），文件其余内容只读；diff 与哈希存档于 checkpoints/MT059/。
+    // MT029（同 ruling #5 先例，第 19 次沿用，MT029 brief 预授权）：仅本
+    // 断言追加 "MT029"（凭据取用 lease 两表迁移注册，迁移链第二十任务），
+    // 文件其余内容只读；diff 与哈希存档于 checkpoints/MT029/。
+    // MT073（同 ruling #5 先例，第 20 次沿用，MT073 brief 预授权）：仅本
+    // 断言追加 "MT073"（公司财务读取授权表迁移注册，迁移链第二十任务），
+    // 文件其余内容只读；diff 与哈希存档于 checkpoints/MT073/。
+    // MT060（同 ruling #5 先例，第 19 次沿用，MT060 brief 预授权窄缝）：仅
+    // 本断言追加 "MT060"（OpenMuse 任务/计划/监控归属协会表 + 回填迁移注
+    // 册，迁移链第十九任务），文件其余内容只读；diff 与哈希存档于
+    // checkpoints/MT060/。
+    // 波次 15 集成（brief 预授权）：三票任务块并入迁移链 MT029→MT073→MT060，
+    // 穷举断言三 ID 并入排序位（MT028<MT029<MT031、MT059<MT060<MT069、
+    // MT070<MT073<MT076），其余内容只读。
     expect(ALLOWED_TASK_IDS).toEqual([
       "MT000",
       "MT004",
@@ -399,9 +421,15 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
       "MT026",
       "MT027",
       "MT028",
+      "MT029",
+      "MT031",
       "MT041",
+      "MT042",
+      "MT059",
+      "MT060",
       "MT069",
       "MT070",
+      "MT073",
       "MT076",
       "MT077",
       "MT112",

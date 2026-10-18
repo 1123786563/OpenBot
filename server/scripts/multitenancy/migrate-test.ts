@@ -1495,6 +1495,568 @@ const COMPANY_CALL_ATTRIBUTION_TASK: TaskMigrationSpec = {
   ],
 };
 
+/**
+ * MT031（Issue #74）：插件目录与安装归属（expand-only）。三张新表：
+ *   - enterprise_plugin_catalog：公共目录，全局共享——没有 tenant_id 列，
+ *     对受限业务角色只读（仅 SELECT 策略/授权，零写面）；metadata 闭形
+ *     CHECK 拒绝秘密载体键与公司私有面（目录从结构上不含公司私有配置）。
+ *   - enterprise_plugin_installs：安装固定公司与团队（tenant_id +
+ *     workspace_id 双 NOT NULL，复合外键内嵌 tenant_id，跨公司安装行结构性
+ *     不可能）；config 闭形 CHECK 拒绝秘密载体键，秘密只走 envelope 密封
+ *     通道；status ∈ ('active','disabled')。
+ *   - enterprise_plugin_connections：安装上的连接绑定，复合外键
+ *     (tenant_id, install_id) 随安装级联消亡，bound_by 复合外键证明本公司
+ *     成员；vendor_ref 非机密别名。
+ * 不修改任何既有表/策略/角色授权。
+ */
+const PLUGIN_CATALOG_TASK: TaskMigrationSpec = {
+  id: "MT031",
+  description:
+    "MT031（Issue #74）：新增 enterprise_plugin_catalog、enterprise_plugin_installs 与 enterprise_plugin_connections（expand-only，仅新增表与最小 RLS，不改既有对象）。",
+  steps: [
+    {
+      slug: "plugin_tables",
+      impact:
+        "新增三张插件归属表：enterprise_plugin_catalog（全局只读目录，无 tenant 列，metadata 闭形 CHECK）、enterprise_plugin_installs（安装固定公司与团队，复合外键内嵌 tenant_id，config 闭形 CHECK）、enterprise_plugin_connections（安装上的连接绑定，随安装级联消亡）。不修改任何既有表。",
+      objects: [
+        "enterprise_plugin_catalog",
+        "enterprise_plugin_installs",
+        "enterprise_plugin_connections",
+      ],
+      statements: [
+        'CREATE TABLE "enterprise_plugin_catalog" (\n' +
+          '\t"id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"kind" text NOT NULL,\n' +
+          '\t"title" text NOT NULL,\n' +
+          '\t"vendor" text NOT NULL,\n' +
+          '\t"source" text NOT NULL,\n' +
+          '\t"metadata" jsonb NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          "\tCONSTRAINT \"enterprise_plugin_catalog_kind\" CHECK (\"enterprise_plugin_catalog\".\"kind\" in ('mcp','composio','open-connector')),\n" +
+          '\tCONSTRAINT "enterprise_plugin_catalog_source" CHECK ("enterprise_plugin_catalog"."source" in (\'first-party\',\'custom\')),\n' +
+          "\tCONSTRAINT \"enterprise_plugin_catalog_metadata_shape\" CHECK (\"enterprise_plugin_catalog\".\"metadata\" ? 'summary' and not \"enterprise_plugin_catalog\".\"metadata\" ?| array['envelope','plaintext','secret','value','password','token','config','apiKey','api_key','secretRef','encryptedValue','encrypted_value'])\n" +
+          ");",
+        'CREATE TABLE "enterprise_plugin_installs" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"catalog_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"installed_by" text NOT NULL,\n' +
+          '\t"config" jsonb NOT NULL,\n' +
+          '\t"envelope" text,\n' +
+          "\t\"status\" text DEFAULT 'active' NOT NULL,\n" +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_plugin_installs_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          '\tCONSTRAINT "enterprise_plugin_install_status" CHECK ("enterprise_plugin_installs"."status" in (\'active\',\'disabled\')),\n' +
+          "\tCONSTRAINT \"enterprise_plugin_install_config_shape\" CHECK (not \"enterprise_plugin_installs\".\"config\" ?| array['envelope','plaintext','secret','value','password','token','config','apiKey','api_key','secretRef','encryptedValue','encrypted_value'])\n" +
+          ");",
+        'ALTER TABLE "enterprise_plugin_installs" ADD CONSTRAINT "enterprise_plugin_installs_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_plugin_installs" ADD CONSTRAINT "enterprise_plugin_installs_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_plugin_installs" ADD CONSTRAINT "enterprise_plugin_installs_tenant_id_installed_by_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","installed_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_plugin_installs" ADD CONSTRAINT "enterprise_plugin_installs_catalog_id_enterprise_plugin_catalog_id_fk" FOREIGN KEY ("catalog_id") REFERENCES "public"."enterprise_plugin_catalog"("id") ON DELETE no action ON UPDATE no action;',
+        'CREATE INDEX "enterprise_plugin_install_tenant_created_idx" ON "enterprise_plugin_installs" ("tenant_id","created_at","id");',
+        'CREATE INDEX "enterprise_plugin_install_catalog_idx" ON "enterprise_plugin_installs" ("catalog_id");',
+        'CREATE TABLE "enterprise_plugin_connections" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"install_id" text NOT NULL,\n' +
+          '\t"bound_by" text NOT NULL,\n' +
+          '\t"vendor_ref" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_plugin_connections_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          '\tCONSTRAINT "enterprise_plugin_connection_vendor_ref" CHECK (char_length("enterprise_plugin_connections"."vendor_ref") between 1 and 512)\n' +
+          ");",
+        'ALTER TABLE "enterprise_plugin_connections" ADD CONSTRAINT "enterprise_plugin_connections_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_plugin_connections" ADD CONSTRAINT "enterprise_plugin_connections_tenant_id_install_id_enterprise_plugin_installs_tenant_id_id_fk" FOREIGN KEY ("tenant_id","install_id") REFERENCES "public"."enterprise_plugin_installs"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_plugin_connections" ADD CONSTRAINT "enterprise_plugin_connections_tenant_id_bound_by_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","bound_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE INDEX "enterprise_plugin_connection_install_idx" ON "enterprise_plugin_connections" ("tenant_id","install_id");',
+      ],
+    },
+    {
+      slug: "plugin_rls_policies",
+      impact:
+        "三张新表的 FORCE RLS 与最小授权：目录对 data/operator 全局只读（仅 SELECT，零写策略零写授权）、安装/连接租户臂（data 仅 SELECT；operator 安装全管、连接无 UPDATE——解绑 = 删行）；directory 三表零授权。",
+      objects: [
+        "enterprise_plugin_catalog",
+        "enterprise_plugin_installs",
+        "enterprise_plugin_connections",
+      ],
+      statements: [
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_plugin_catalog" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_plugin_catalog" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_plugin_catalog" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_plugin_catalog_data_read" ON "enterprise_plugin_catalog"\n  FOR SELECT TO ob_ent_data\n  USING (true);',
+        'CREATE POLICY "enterprise_plugin_catalog_operator_read" ON "enterprise_plugin_catalog"\n  FOR SELECT TO ob_ent_operator\n  USING (true);',
+        'GRANT SELECT ON TABLE "enterprise_plugin_catalog" TO ob_ent_data, ob_ent_operator;',
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_plugin_installs" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_plugin_installs" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_plugin_installs" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_plugin_install_data_read" ON "enterprise_plugin_installs"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_plugin_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_plugin_install_operator_read" ON "enterprise_plugin_installs"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_plugin_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_plugin_install_operator_insert" ON "enterprise_plugin_installs"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_plugin_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_plugin_install_operator_update" ON "enterprise_plugin_installs"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_plugin_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'))\n  WITH CHECK ("enterprise_plugin_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_plugin_install_operator_delete" ON "enterprise_plugin_installs"\n  FOR DELETE TO ob_ent_operator\n  USING ("enterprise_plugin_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT ON TABLE "enterprise_plugin_installs" TO ob_ent_data, ob_ent_operator;',
+        'GRANT INSERT, UPDATE, DELETE ON TABLE "enterprise_plugin_installs" TO ob_ent_operator;',
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_plugin_connections" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_plugin_connections" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_plugin_connections" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_plugin_connection_data_read" ON "enterprise_plugin_connections"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_plugin_connections"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_plugin_connection_operator_read" ON "enterprise_plugin_connections"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_plugin_connections"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_plugin_connection_operator_insert" ON "enterprise_plugin_connections"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_plugin_connections"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_plugin_connection_operator_delete" ON "enterprise_plugin_connections"\n  FOR DELETE TO ob_ent_operator\n  USING ("enterprise_plugin_connections"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT ON TABLE "enterprise_plugin_connections" TO ob_ent_data, ob_ent_operator;',
+        'GRANT INSERT, DELETE ON TABLE "enterprise_plugin_connections" TO ob_ent_operator;',
+      ],
+    },
+  ],
+};
+
+/**
+ * MT042（Issue #85）：平台扫描作用域重建。expand-only——为 MT041 的
+ * job_ownership 表追加一条 ob_ent_operator SELECT 策略臂：仅当事务本地上下文
+ * app.scan_sweep='on' 时允许跨租户读（平台扫描专用；普通业务事务不设该上
+ * 下文，租户臂语义不变，MT041 既有行为零变化）。不改任何既有表/策略/授权；
+ * 不新增表、不新增登录角色（七变量 env 约束）。关闭 MT041 D6（「平台扫描
+ * 可发现所有公司到期任务」的受控平台读）：跨公司元数据读仅存在于本策略臂
+ * 后面，且只被 scan-executor 的机器身份断言后的重建事务设置。
+ */
+const SCAN_SCOPE_REBUILD_TASK: TaskMigrationSpec = {
+  id: "MT042",
+  description:
+    "MT042（Issue #85）：平台扫描作用域重建——job_ownership 补 operator 扫描臂读策略（app.scan_sweep 上下文门控，expand-only，零既有对象改动）。",
+  steps: [
+    {
+      slug: "job_scan_sweep_policy",
+      impact:
+        "为 job_ownership 新增一条 ob_ent_operator SELECT 策略臂：仅当事务本地上下文 app.scan_sweep='on' 时允许跨租户读（平台扫描专用）。不改任何既有策略/授权/表；无新表。",
+      objects: ["job_ownership"],
+      statements: [
+        'CREATE POLICY "job_ownership_operator_sweep_read" ON "job_ownership" AS PERMISSIVE FOR SELECT TO ob_ent_operator\n' +
+          "  USING (current_setting('app.scan_sweep', true) = 'on');",
+      ],
+    },
+  ],
+};
+
+/** MT059 第二步的 RLS 语句（独立常量，保持任务声明可读）。 */
+const PERSONAL_BOT_RLS_STATEMENTS = [
+  'REVOKE ALL PRIVILEGES ON TABLE "enterprise_personal_bots" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "enterprise_personal_bots" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "enterprise_personal_bots" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "enterprise_personal_bot_data_tenant_read" ON "enterprise_personal_bots"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_personal_bots\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "enterprise_personal_bot_data_self_read" ON "enterprise_personal_bots"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_personal_bots\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_personal_bot_operator_read" ON "enterprise_personal_bots"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"enterprise_personal_bots\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_personal_bots\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_personal_bot_operator_insert" ON "enterprise_personal_bots"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"enterprise_personal_bots\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_personal_bots\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_personal_bot_operator_update" ON "enterprise_personal_bots"\n' +
+    "  FOR UPDATE TO ob_ent_operator\n" +
+    "  USING (\"enterprise_personal_bots\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_personal_bots\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''))\n" +
+    "  WITH CHECK (\"enterprise_personal_bots\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_personal_bots\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_personal_bot_operator_delete" ON "enterprise_personal_bots"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"enterprise_personal_bots\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_personal_bots\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'GRANT SELECT ON TABLE "enterprise_personal_bots" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "enterprise_personal_bots" TO ob_ent_operator;',
+  'GRANT UPDATE ("display_name", "template_ref", "template_source_revision", "document", "revision", "updated_at") ON TABLE "enterprise_personal_bots" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "enterprise_personal_bots" TO ob_ent_operator;',
+  'REVOKE ALL PRIVILEGES ON TABLE "enterprise_personal_bot_field_ownership" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "enterprise_personal_bot_field_ownership" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "enterprise_personal_bot_field_ownership" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "enterprise_personal_bot_field_data_tenant_read" ON "enterprise_personal_bot_field_ownership"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_personal_bot_field_ownership\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "enterprise_personal_bot_field_data_self_read" ON "enterprise_personal_bot_field_ownership"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_personal_bot_field_ownership\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_personal_bot_field_operator_read" ON "enterprise_personal_bot_field_ownership"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"enterprise_personal_bot_field_ownership\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_personal_bot_field_ownership\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_personal_bot_field_operator_insert" ON "enterprise_personal_bot_field_ownership"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"enterprise_personal_bot_field_ownership\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_personal_bot_field_ownership\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_personal_bot_field_operator_update" ON "enterprise_personal_bot_field_ownership"\n' +
+    "  FOR UPDATE TO ob_ent_operator\n" +
+    "  USING (\"enterprise_personal_bot_field_ownership\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_personal_bot_field_ownership\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''))\n" +
+    "  WITH CHECK (\"enterprise_personal_bot_field_ownership\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_personal_bot_field_ownership\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_personal_bot_field_operator_delete" ON "enterprise_personal_bot_field_ownership"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"enterprise_personal_bot_field_ownership\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_personal_bot_field_ownership\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'GRANT SELECT ON TABLE "enterprise_personal_bot_field_ownership" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "enterprise_personal_bot_field_ownership" TO ob_ent_operator;',
+  'GRANT UPDATE ("managed_by", "updated_at") ON TABLE "enterprise_personal_bot_field_ownership" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "enterprise_personal_bot_field_ownership" TO ob_ent_operator;',
+];
+
+/**
+ * MT059（Issue #102）：用户私有 OpenMuse Bot 的存储面。expand-only——两张
+ * 新表与按既有模式的最小 RLS；不修改任何既有表/策略/角色授权。
+ *
+ *   1. enterprise_personal_bots：一行 = 一位用户在一个公司一个团队内的私
+ *      有 Bot。复合主键 (tenant_id, workspace_id, principal_id) 就是幂等键
+ *      本身——票面「幂等键 = (公司, 团队, 用户) 三元组」是数据库结构而非服
+ *      务层约定：同一三元组物理上至多一行，重复请求在服务层读回同一行，绝
+ *      不产生重复记录。agent_id 服务端生成（专属 pbot- 命名空间 + 全局唯
+ *      一索引），不接受客户端指定。document 为扁平字段文档；template_ref
+ *      + template_source_revision 同空同非空（CHECK 配对）。复合外键钉到
+ *      enterprise_workspaces 与 enterprise_memberships，均 cascade。
+ *   2. enterprise_personal_bot_field_ownership：字段级所有权表——一行 = 一
+ *      个字段名在一个私有 Bot 上的所有权（managed_by ∈ {'template','user'}
+ *      CHECK）。模板管理字段集合与用户字段集合都是显式行，不是命名约定。
+ *      复合外键钉到私有 Bot 行与公司成员关系，均 cascade。
+ *
+ * RLS 沿既有模式：REVOKE PUBLIC + 四能力角色 → ENABLE + FORCE → data 角色
+ * 租户范围 SELECT + restrictive 主体自读（私有 Bot 是逐主体事实，与
+ * enterprise_bot_preferences 的 self-read 同款）→ operator 角色租户 + 主
+ * 体上下文范围读/写。目录角色无任何策略与授权。
+ */
+const PERSONAL_BOT_TASK: TaskMigrationSpec = {
+  id: "MT059",
+  description:
+    "MT059（Issue #102）：用户私有 OpenMuse Bot——新增 enterprise_personal_bots 与 enterprise_personal_bot_field_ownership（expand-only，仅新增表与最小 RLS，不改既有对象）。",
+  steps: [
+    {
+      slug: "personal_bot_tables",
+      impact:
+        "新增两张表：enterprise_personal_bots（一行 = 一位用户在一个公司一个团队内的私有 Bot；复合主键 (tenant_id, workspace_id, principal_id) 即幂等三元组；agent_id 全局唯一索引；template_ref + template_source_revision 配对可空；document 扁平字段文档；复合 FK → enterprise_workspaces 与 enterprise_memberships 均 cascade）与 enterprise_personal_bot_field_ownership（字段级所有权表：managed_by ∈ {'template','user'} CHECK；复合主键含字段名；复合 FK 钉到私有 Bot 行与公司成员关系，均 cascade）。不修改任何既有表。",
+      objects: [
+        "enterprise_personal_bots",
+        "enterprise_personal_bot_field_ownership",
+      ],
+      statements: [
+        'CREATE TABLE "enterprise_personal_bots" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"agent_id" text NOT NULL,\n' +
+          '\t"display_name" text NOT NULL,\n' +
+          '\t"template_ref" text,\n' +
+          '\t"template_source_revision" integer,\n' +
+          '\t"document" jsonb NOT NULL,\n' +
+          '\t"revision" integer DEFAULT 1 NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_personal_bots_tenant_id_workspace_id_principal_id_pk" PRIMARY KEY("tenant_id","workspace_id","principal_id"),\n' +
+          '\tCONSTRAINT "enterprise_personal_bots_revision" CHECK ("enterprise_personal_bots"."revision" > 0),\n' +
+          '\tCONSTRAINT "enterprise_personal_bots_template_pairing" CHECK (("enterprise_personal_bots"."template_ref" IS NULL) = ("enterprise_personal_bots"."template_source_revision" IS NULL)),\n' +
+          '\tCONSTRAINT "enterprise_personal_bots_template_source_revision" CHECK ("enterprise_personal_bots"."template_source_revision" IS NULL OR "enterprise_personal_bots"."template_source_revision" > 0)\n' +
+          ");",
+        'CREATE UNIQUE INDEX "enterprise_personal_bots_agent_id_global_uq" ON "enterprise_personal_bots" USING btree ("agent_id");',
+        'ALTER TABLE "enterprise_personal_bots" ADD CONSTRAINT "enterprise_personal_bots_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_personal_bots" ADD CONSTRAINT "enterprise_personal_bots_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE TABLE "enterprise_personal_bot_field_ownership" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"field_name" text NOT NULL,\n' +
+          '\t"managed_by" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_personal_bot_field_ownership_tenant_id_workspace_id_principal_id_field_name_pk" PRIMARY KEY("tenant_id","workspace_id","principal_id","field_name")\n' +
+          ");",
+        'ALTER TABLE "enterprise_personal_bot_field_ownership" ADD CONSTRAINT "enterprise_personal_bot_field_ownership_personal_bot_fk" FOREIGN KEY ("tenant_id","workspace_id","principal_id") REFERENCES "public"."enterprise_personal_bots"("tenant_id","workspace_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_personal_bot_field_ownership" ADD CONSTRAINT "enterprise_personal_bot_field_ownership_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_personal_bot_field_ownership" ADD CONSTRAINT "enterprise_personal_bot_field_ownership_managed_by" CHECK ("enterprise_personal_bot_field_ownership"."managed_by" in (\'template\',\'user\'));',
+      ],
+    },
+    {
+      slug: "personal_bot_rls",
+      impact:
+        "仅对两张新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 角色租户范围 SELECT + restrictive 主体自读；operator 角色租户 + 主体上下文范围读 + 写）及配套最小 GRANT；不改动任何既有表策略或既有授权。目录角色无任何策略与授权（私有 Bot 内容不是目录数据）。",
+      objects: [
+        "enterprise_personal_bots",
+        "enterprise_personal_bot_field_ownership",
+      ],
+      statements: PERSONAL_BOT_RLS_STATEMENTS,
+    },
+  ],
+};
+
+/**
+ * MT029（Issue #72）：凭据取用 lease——固定用途、作用域且可撤销。expand-only
+ * ——仅新增两张表，不修改任何既有表/策略/角色授权：
+ *
+ *   - enterprise_credential_leases：一行 = 一条固定 (凭据, 持有人, 团队上下文,
+ *     用途, 有效期) 的可撤销取用授权。id = 服务端生成的不透明 lease 令牌；
+ *     三条复合外键全部内嵌 tenant_id（跨公司 lease 行结构性不可能）；
+ *     purpose 闭集 CHECK；status 两态 + revoked_at 行形 CHECK；窗口 CHECK
+ *     （expires_at > created_at）。data 角色只在 (tenant, principal) 双
+ *     pin 下 SELECT/INSERT（持有人只见本人 lease，判定服务经受限 data
+ *     通道签发）；operator 角色租户范围 SELECT+UPDATE（撤销走 MT027
+ *     revoke 同款管理通道）；data 零 UPDATE/DELETE；directory 零授权。
+ *   - enterprise_credential_lease_audit：签发/校验点取用/撤销各恰一行
+ *     append-only 审计（issued/validated/revoked 闭集 CHECK）；
+ *     lease_id/credential_id 无外键（MT069 先例：审计不随对象消亡）；
+ *     detail 闭形 CHECK 禁止秘密载体键。data 只插不读（MT027 审计先例：
+ *     成员不能互相侦察）；operator 读+插；任何角色无 UPDATE/DELETE。
+ *
+ * 判定/管理服务在 server/src/enterprise/tenancy/credential-lease.ts。
+ */
+const CREDENTIAL_LEASE_TASK: TaskMigrationSpec = {
+  id: "MT029",
+  description:
+    "MT029（Issue #72）：新增 enterprise_credential_leases 与 enterprise_credential_lease_audit（expand-only，仅新增表与最小 RLS，不改既有对象）。",
+  steps: [
+    {
+      slug: "credential_lease_tables",
+      impact:
+        "新增两张凭据 lease 表：enterprise_credential_leases（不透明 lease 令牌主键 + 三条复合外键内嵌 tenant_id——凭据/持有人/团队必属本公司，均 cascade + purpose/status/窗口/行形 CHECK）与 enterprise_credential_lease_audit（append-only 审计，无 lease/凭据外键，action 闭集与 detail 闭形 CHECK）。不修改任何既有表。",
+      objects: [
+        "enterprise_credential_leases",
+        "enterprise_credential_lease_audit",
+      ],
+      statements: [
+        'CREATE TABLE "enterprise_credential_leases" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"credential_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"purpose" text NOT NULL,\n' +
+          "\t\"status\" text DEFAULT 'active' NOT NULL,\n" +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"expires_at" timestamp with time zone NOT NULL,\n' +
+          '\t"revoked_at" timestamp with time zone,\n' +
+          '\tCONSTRAINT "enterprise_credential_leases_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          "\tCONSTRAINT \"enterprise_credential_lease_purpose\" CHECK (\"enterprise_credential_leases\".\"purpose\" in ('bot-run','connector-call','site-access')),\n" +
+          '\tCONSTRAINT "enterprise_credential_lease_status" CHECK ("enterprise_credential_leases"."status" in (\'active\',\'revoked\')),\n' +
+          '\tCONSTRAINT "enterprise_credential_lease_window" CHECK ("enterprise_credential_leases"."expires_at" > "enterprise_credential_leases"."created_at"),\n' +
+          '\tCONSTRAINT "enterprise_credential_lease_row_shape" CHECK (("enterprise_credential_leases"."status" = \'revoked\') = ("enterprise_credential_leases"."revoked_at" is not null))\n' +
+          ");",
+        'ALTER TABLE "enterprise_credential_leases" ADD CONSTRAINT "enterprise_credential_leases_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_credential_leases" ADD CONSTRAINT "enterprise_credential_leases_tenant_id_credential_id_enterprise_credentials_tenant_id_id_fk" FOREIGN KEY ("tenant_id","credential_id") REFERENCES "public"."enterprise_credentials"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_credential_leases" ADD CONSTRAINT "enterprise_credential_leases_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_credential_leases" ADD CONSTRAINT "enterprise_credential_leases_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE INDEX "enterprise_credential_lease_tenant_created_idx" ON "enterprise_credential_leases" ("tenant_id","created_at","id");',
+        'CREATE INDEX "enterprise_credential_lease_credential_idx" ON "enterprise_credential_leases" ("tenant_id","credential_id");',
+        'CREATE TABLE "enterprise_credential_lease_audit" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"lease_id" text NOT NULL,\n' +
+          '\t"credential_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"action" text NOT NULL,\n' +
+          '\t"detail" jsonb NOT NULL,\n' +
+          '\t"occurred_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_credential_lease_audit_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          "\tCONSTRAINT \"enterprise_credential_lease_audit_action\" CHECK (\"enterprise_credential_lease_audit\".\"action\" in ('issued','validated','revoked')),\n" +
+          "\tCONSTRAINT \"enterprise_credential_lease_audit_detail_shape\" CHECK (not \"enterprise_credential_lease_audit\".\"detail\" ?| array['envelope','plaintext','secret','value','password','token'])\n" +
+          ");",
+        'ALTER TABLE "enterprise_credential_lease_audit" ADD CONSTRAINT "enterprise_credential_lease_audit_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE INDEX "enterprise_credential_lease_audit_tenant_time_idx" ON "enterprise_credential_lease_audit" ("tenant_id","occurred_at");',
+      ],
+    },
+    {
+      slug: "credential_lease_rls_policies",
+      impact:
+        "两张新表的 FORCE RLS 与最小授权：lease 行 data 角色只在 (tenant, principal) 双 pin 下 SELECT/INSERT、operator 角色租户范围 SELECT+UPDATE（撤销），data 零 UPDATE/DELETE；audit 表 data 只插不读、operator 读+插；任何角色无 UPDATE/DELETE；directory 角色两表零授权。不改动任何既有表策略或既有授权。",
+      objects: [
+        "enterprise_credential_leases",
+        "enterprise_credential_lease_audit",
+      ],
+      statements: [
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_credential_leases" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_credential_leases" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_credential_leases" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_credential_lease_data_read" ON "enterprise_credential_leases"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_credential_leases"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_credential_leases"."principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_credential_lease_data_insert" ON "enterprise_credential_leases"\n  FOR INSERT TO ob_ent_data\n  WITH CHECK ("enterprise_credential_leases"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_credential_leases"."principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_credential_lease_operator_read" ON "enterprise_credential_leases"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_credential_leases"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_credential_lease_operator_update" ON "enterprise_credential_leases"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_credential_leases"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'))\n  WITH CHECK ("enterprise_credential_leases"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT, INSERT ON TABLE "enterprise_credential_leases" TO ob_ent_data;',
+        'GRANT SELECT, UPDATE ON TABLE "enterprise_credential_leases" TO ob_ent_operator;',
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_credential_lease_audit" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_credential_lease_audit" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_credential_lease_audit" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_credential_lease_audit_data_insert" ON "enterprise_credential_lease_audit"\n  FOR INSERT TO ob_ent_data\n  WITH CHECK ("enterprise_credential_lease_audit"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_credential_lease_audit_operator_read" ON "enterprise_credential_lease_audit"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_credential_lease_audit"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_credential_lease_audit_operator_insert" ON "enterprise_credential_lease_audit"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_credential_lease_audit"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT INSERT ON TABLE "enterprise_credential_lease_audit" TO ob_ent_data;',
+        'GRANT SELECT, INSERT ON TABLE "enterprise_credential_lease_audit" TO ob_ent_operator;',
+      ],
+    },
+  ],
+};
+
+/**
+ * MT073（Issue #116）：账务可见性——公司财务读取授权（expand-only）。仅新增
+ * billing_company_finance_grants（授权事实表）：PK(tenant_id, principal_id)，
+ * grantee 与 granted_by 两侧都是复合外键→enterprise_memberships（非成员行
+ * 结构上不可能，MT010 granted_by 同款纪律）；撤销=删行（无可达中间态）。
+ * 跟随 MT069/MT070 D2 裁决的 billing 域访问模型（owner 通道、无 RLS、受限
+ * ob_ent_* 零授权=结构隔离）。不修改任何既有表/策略/角色授权。
+ */
+const COMPANY_FINANCE_GRANT_TASK: TaskMigrationSpec = {
+  id: "MT073",
+  description:
+    "MT073（Issue #116）：公司财务读取授权——新增 billing_company_finance_grants（expand-only，仅新增一张账务域授权事实表，不改既有对象）。",
+  steps: [
+    {
+      slug: "company_finance_grants",
+      impact:
+        "新增 billing_company_finance_grants 表：公司财务读取授权事实（tenant+principal 主键，granted_by 记录管理动作）。两条复合外键证明 grantee 与 granted_by 都是该公司成员；撤销=删行。不修改任何既有表。",
+      objects: ["billing_company_finance_grants"],
+      statements: [
+        'CREATE TABLE "billing_company_finance_grants" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"granted_by" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "billing_company_finance_grants_tenant_id_principal_id_pk" PRIMARY KEY("tenant_id","principal_id"),\n' +
+          '\tCONSTRAINT "billing_company_finance_grants_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action,\n' +
+          '\tCONSTRAINT "billing_company_finance_grants_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action,\n' +
+          '\tCONSTRAINT "billing_company_finance_grants_tenant_id_granted_by_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","granted_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action\n' +
+          ");",
+        'CREATE INDEX "billing_company_finance_grants_tenant_idx" ON "billing_company_finance_grants" ("tenant_id");',
+      ],
+    },
+  ],
+};
+
+/**
+ * MT060（Issue #103）：OpenMuse 任务/计划/监控根记录的归属域。expand-only——
+ * 一张新协会表与按既有模式的最小 RLS + 幂等回填语句；不修改任何既有表/策略/
+ * 角色授权。
+ *
+ *   1. openmuse_task_scopes：一行 = 一个只有 owner_user_id 的旧根记录在一个
+ *      (公司, 团队, 主体) 三元组上的归属关联（Spec §4.2「根对象的子记录包
+ *      含 tenant_id 并通过复合关联保持公司一致」逐字形状）。task_id 主键
+ *      FK → openmuse_tasks(id) cascade；复合外键钉到 enterprise_workspaces
+ *      与 enterprise_memberships（同时证明 workspace 属该公司、principal 是
+ *      该公司成员）与 users，均 cascade；attribution ∈ {'created','backfill'}
+ *      CHECK 区分新路径 pin 与回填来源。
+ *   2. RLS 沿 MT059 既有模式 + MT042 扫描臂：REVOKE PUBLIC + 四能力角色 →
+ *      ENABLE + FORCE → data 租户臂 + restrictive 主体自读 → operator 租户
+ *      +主体上下文读/插/删 → operator app.scan_sweep='on' 跨租户读臂（平
+ *      台触发重建专用）。目录角色无任何策略与授权。零 UPDATE 授权——归属
+ *      不可改写是结构不是纪律。
+ *   3. legacy_task_backfill：幂等回填——只为 owner principal 恰有唯一一条
+ *      workspace membership 的旧根行补归属（attribution='backfill'）；零条
+ *      或多条保持无行 = 受控隔离（Spec §9.2「无法唯一归属的历史对象进入
+ *      受控隔离清单，不按猜测分配」）。执行权在 MT117；本语句是可重放的
+ *      幂等本体（NOT EXISTS + ON CONFLICT DO NOTHING），服务面
+ *      previewLegacyBackfill 与其逐行可对照（dry-run 预览）。
+ */
+const OPENMUSE_TASK_SCOPES_RLS_STATEMENTS = [
+  'REVOKE ALL PRIVILEGES ON TABLE "openmuse_task_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "openmuse_task_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "openmuse_task_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "openmuse_task_scope_data_tenant_read" ON "openmuse_task_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_task_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "openmuse_task_scope_data_self_read" ON "openmuse_task_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_task_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_task_scope_operator_read" ON "openmuse_task_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"openmuse_task_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_task_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_task_scope_operator_insert" ON "openmuse_task_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"openmuse_task_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_task_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_task_scope_operator_delete" ON "openmuse_task_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"openmuse_task_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_task_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_task_scope_operator_sweep_read" ON "openmuse_task_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (current_setting('app.scan_sweep', true) = 'on');",
+  'GRANT SELECT ON TABLE "openmuse_task_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "openmuse_task_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "openmuse_task_scopes" TO ob_ent_operator;',
+];
+
+const OPENMUSE_TASK_TENANCY_TASK: TaskMigrationSpec = {
+  id: "MT060",
+  description:
+    "MT060（Issue #103）：OpenMuse 任务/计划/监控归属域——新增 openmuse_task_scopes 协会表（表 + RLS + 幂等回填三步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "task_scope_tables",
+      impact:
+        "新增 openmuse_task_scopes 表：task_id 主键（FK → openmuse_tasks cascade）；复合外键钉到 enterprise_workspaces、enterprise_memberships 与 users（均 cascade）；attribution ∈ {'created','backfill'} CHECK；范围列表索引。不修改任何既有表。",
+      objects: ["openmuse_task_scopes"],
+      statements: [
+        'CREATE TABLE "openmuse_task_scopes" (\n' +
+          '\t"task_id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          '\t"bot_id" text NOT NULL,\n' +
+          "\t\"attribution\" text DEFAULT 'created' NOT NULL,\n" +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "openmuse_task_scopes_attribution" CHECK ("openmuse_task_scopes"."attribution" in (\'created\',\'backfill\'))\n' +
+          ");",
+        'CREATE INDEX "openmuse_task_scopes_scope_list_idx" ON "openmuse_task_scopes" USING btree ("tenant_id","workspace_id","principal_id","created_at","task_id");',
+        'ALTER TABLE "openmuse_task_scopes" ADD CONSTRAINT "openmuse_task_scopes_task_fk" FOREIGN KEY ("task_id") REFERENCES "public"."openmuse_tasks"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_task_scopes" ADD CONSTRAINT "openmuse_task_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_task_scopes" ADD CONSTRAINT "openmuse_task_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_task_scopes" ADD CONSTRAINT "openmuse_task_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "task_scope_rls",
+      impact:
+        "仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 租户范围 SELECT + restrictive 主体自读；operator 租户+主体上下文读/插/删 + app.scan_sweep 扫描臂）及配套最小 GRANT；零 UPDATE 授权。不改动任何既有表策略或既有授权。目录角色无任何策略与授权。",
+      objects: ["openmuse_task_scopes"],
+      statements: OPENMUSE_TASK_SCOPES_RLS_STATEMENTS,
+    },
+    {
+      slug: "legacy_task_backfill",
+      impact:
+        "幂等回填：仅为 owner principal 恰有唯一一条 workspace membership 的旧根行补归属（attribution='backfill'）；零条或多条保持无行 = 受控隔离清单（不按猜测分配）；NOT EXISTS + ON CONFLICT DO NOTHING 保证可重放零重复。执行权在 MT117（生产），本语句是幂等本体。",
+      objects: [
+        "openmuse_task_scopes",
+        "openmuse_tasks",
+        "enterprise_principals",
+        "enterprise_workspace_memberships",
+      ],
+      statements: [
+        'INSERT INTO "openmuse_task_scopes" ("task_id", "tenant_id", "workspace_id", "principal_id", "user_id", "bot_id", "attribution")\n' +
+          'SELECT t."id", unique_membership."tenant_id", unique_membership."workspace_id", p."id", p."user_id", t."bot_id", \'backfill\'\n' +
+          'FROM "openmuse_tasks" t\n' +
+          'JOIN "enterprise_principals" p ON p."user_id" = t."owner_user_id"\n' +
+          "JOIN (\n" +
+          '\tSELECT wm."principal_id",\n' +
+          '\t\tmin(wm."tenant_id") AS "tenant_id",\n' +
+          '\t\tmin(wm."workspace_id") AS "workspace_id",\n' +
+          '\t\tcount(*) AS "membership_count"\n' +
+          '\tFROM "enterprise_workspace_memberships" wm\n' +
+          '\tGROUP BY wm."principal_id"\n' +
+          "\tHAVING count(*) = 1\n" +
+          ') unique_membership ON unique_membership."principal_id" = p."id"\n' +
+          "WHERE NOT EXISTS (\n" +
+          '\tSELECT 1 FROM "openmuse_task_scopes" s WHERE s."task_id" = t."id"\n' +
+          ")\n" +
+          'ON CONFLICT ("task_id") DO NOTHING;',
+      ],
+    },
+  ],
+};
+
 export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [SELF_CHECK_TASK.id, SELF_CHECK_TASK],
   [WORKSPACE_MEMBERSHIP_TASK.id, WORKSPACE_MEMBERSHIP_TASK],
@@ -1513,6 +2075,12 @@ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [CREDENTIAL_OWNERSHIP_TASK.id, CREDENTIAL_OWNERSHIP_TASK],
   [OAUTH_STATE_TASK.id, OAUTH_STATE_TASK],
   [COMPANY_CALL_ATTRIBUTION_TASK.id, COMPANY_CALL_ATTRIBUTION_TASK],
+  [PLUGIN_CATALOG_TASK.id, PLUGIN_CATALOG_TASK],
+  [SCAN_SCOPE_REBUILD_TASK.id, SCAN_SCOPE_REBUILD_TASK],
+  [PERSONAL_BOT_TASK.id, PERSONAL_BOT_TASK],
+  [CREDENTIAL_LEASE_TASK.id, CREDENTIAL_LEASE_TASK],
+  [COMPANY_FINANCE_GRANT_TASK.id, COMPANY_FINANCE_GRANT_TASK],
+  [OPENMUSE_TASK_TENANCY_TASK.id, OPENMUSE_TASK_TENANCY_TASK],
 ]);
 
 export const ALLOWED_TASK_IDS: readonly string[] = [...TASKS.keys()].sort();

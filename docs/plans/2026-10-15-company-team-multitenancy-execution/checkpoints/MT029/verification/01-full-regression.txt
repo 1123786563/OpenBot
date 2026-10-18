@@ -1,0 +1,8 @@
+(pass) MT059 存储契约：成员重验、受限角色、迁移确定性 > 套件全部受限查询以 ob_ent_* 能力角色执行（current_user 断言） [0.04ms]
+(pass) MT059 存储契约：成员重验、受限角色、迁移确定性 > MT059 迁移计划确定性：两次 buildPlan 全等、步骤名固定 [0.07ms]
+(pass) MT059 存储契约：成员重验、受限角色、迁移确定性 > 无租户上下文 RLS fail-closed：data 角色读不到任何私有 Bot 行 [0.74ms]
+
+ 1148 pass
+ 0 fail
+ 13008 expect() calls
+Ran 1148 tests across 44 files. [29.73s]

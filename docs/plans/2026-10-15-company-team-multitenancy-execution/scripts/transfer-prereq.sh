@@ -20,18 +20,24 @@ for f in server/src/enterprise/runs/events.ts server/src/enterprise/runs/runner.
          server/src/billing/payer-accounts.ts server/src/billing/company-reservation.ts server/src/kb/db/ownership-schema.ts server/src/kb/application/service/kb-restricted-query.ts server/src/kb/application/service/kb-restricted-retrieval.ts server/src/kb/application/service/kb-document-lifecycle.ts server/drizzle-kb.config.ts server/drizzle-kb/0001_handy_katie_power.sql server/drizzle-kb/meta/_journal.json server/drizzle-kb/meta/0001_snapshot.json \
          app/src/lib/enterprise/tenant/selection.ts app/src/routes/_authed/tenant/selection.tsx app/tests/multitenancy/selection.test.tsx app/src/lib/client.ts app/src/locales/en/tenant.json app/src/locales/zh-CN/tenant.json app/src/routeTree.gen.ts \
          server/src/db/schema/enterprise-tenancy.ts server/src/db/schema/enterprise-runtime-config.ts \
-         server/src/db/schema/personal-shares.ts server/src/db/schema/enterprise-governance-policy.ts server/src/db/schema/enterprise-sso-scim.ts server/src/db/schema/payer-accounts.ts server/src/db/schema/enterprise-bot-ownership.ts server/src/db/schema/job-ownership.ts server/src/db/schema/enterprise-credentials.ts server/src/db/schema/call-attributions.ts server/src/db/schema/enterprise-oauth-state.ts server/src/db/schema/index.ts \
-         server/src/index.ts server/src/config.ts server/src/app.ts; do
+         server/src/db/schema/personal-shares.ts server/src/db/schema/enterprise-governance-policy.ts server/src/db/schema/enterprise-sso-scim.ts server/src/db/schema/payer-accounts.ts server/src/db/schema/enterprise-bot-ownership.ts server/src/db/schema/job-ownership.ts server/src/db/schema/enterprise-credentials.ts server/src/db/schema/call-attributions.ts server/src/db/schema/enterprise-oauth-state.ts server/src/db/schema/enterprise-plugins.ts server/src/db/schema/enterprise-personal-bot.ts server/src/db/schema/index.ts \
+         server/src/index.ts server/src/config.ts server/src/app.ts \
+         server/src/enterprise/runs/scan-executor.ts server/src/enterprise/tenancy/conversation-actions.ts server/src/enterprise/tenancy/plugin-catalog.ts server/src/enterprise/tenancy/entry-context.ts server/src/enterprise/tenancy/personal-bot.ts server/src/db/schema/enterprise-plugins.ts server/src/db/schema/enterprise-personal-bot.ts \
+         desktop/src-tauri/src/lib.rs desktop/src-tauri/src/main.rs desktop/src-tauri/src/organization_auth.rs desktop/src-tauri/src/org_context.rs desktop/src-tauri/src/credential_namespace.rs \
+         server/src/enterprise/tenancy/startup-defaults.ts server/src/enterprise/tenancy/credential-lease.ts server/src/billing/company-finance-visibility.ts server/src/enterprise/tenancy/openmuse-task-tenancy.ts \
+         server/src/db/schema/enterprise-credential-lease.ts server/src/db/schema/company-finance.ts server/src/db/schema/openmuse-task-tenancy.ts; do
   cp "$EXE/$f" "$DST/$f"
 done
 mkdir -p "$DST/$P/reports" "$DST/$P/checkpoints" "$DST/$P/briefs"
 for r in MT001.md MT002.md MT003-fix2.md MT003-review2.md MT003-fix2-review.md \
          MT004.md MT004-review.md MT004-fix.md MT004-fix-review.md \
          MT005.md MT005-review.md MT006.md MT006-review.md \
-         MT112.md MT112-review.md MT008.md MT008-review.md MT012.md MT012-review.md MT013-review.md MT013-fix-review.md MT007.md MT007-review.md MT013.md MT014.md MT014-review.md MT010.md MT010-review.md MT075.md MT075-review.md MT009.md MT009-review.md MT015.md MT015-review.md MT011.md MT011-review.md MT077.md MT077-review.md MT026.md MT026-review.md MT076.md MT076-review.md MT079.md MT079-review.md MT069.md MT069-review.md MT016.md MT016-review.md MT036.md MT036-review.md MT080.md MT080-review.md MT041.md MT041-review.md MT027.md MT027-review.md MT017.md MT017-review.md MT070.md MT070-review.md MT021.md MT021-review.md MT021-fix-review.md MT028.md MT028-review.md MT037.md MT037-review.md MT018.md MT018-review.md MT030.md MT030-review.md MT038.md MT038-review.md MT038-fix.md MT071.md MT071-review.md MT071-fix.md MT098.md MT098-review.md seam-identification-mt005.md; do
+         MT112.md MT112-review.md MT008.md MT008-review.md MT012.md MT012-review.md MT013-review.md MT013-fix-review.md MT007.md MT007-review.md MT013.md MT014.md MT014-review.md MT010.md MT010-review.md MT075.md MT075-review.md MT009.md MT009-review.md MT015.md MT015-review.md MT011.md MT011-review.md MT077.md MT077-review.md MT026.md MT026-review.md MT076.md MT076-review.md MT079.md MT079-review.md MT069.md MT069-review.md MT016.md MT016-review.md MT036.md MT036-review.md MT080.md MT080-review.md MT041.md MT041-review.md MT027.md MT027-review.md MT017.md MT017-review.md MT070.md MT070-review.md MT021.md MT021-review.md MT021-fix-review.md MT028.md MT028-review.md MT037.md MT037-review.md MT018.md MT018-review.md MT030.md MT030-review.md MT038.md MT038-review.md MT038-fix.md MT071.md MT071-review.md MT071-fix.md MT098.md MT098-review.md seam-identification-mt005.md \
+         MT022.md MT022-review.md MT031.md MT031-review.md MT122.md MT122-review.md MT042.md MT042-review.md MT059.md MT059-review.md wave14-integration.md \
+         MT123-review.md MT029-review.md MT073-review.md MT060-review.md MT099-review.md wave15-integration.md; do
   [ -f "$EXE/$P/reports/$r" ] && cp "$EXE/$P/reports/$r" "$DST/$P/reports/$r"
 done
-for c in MT004 MT004-fix MT005 MT010 MT075 MT009 MT015 MT011 MT077 MT026 MT076 MT079 MT069 MT016 MT036 MT080 MT041 MT041-fix MT027 MT017 MT070 MT021 MT021-fix MT028 MT037 MT037-fix MT017-integration MT070-integration MT021-integration MT028-integration MT037-integration MT018 MT030 MT038 MT038-fix MT071 MT071-fix MT098 MT018-integration MT030-integration MT038-integration MT071-integration MT098-integration; do
+for c in MT004 MT004-fix MT005 MT010 MT075 MT009 MT015 MT011 MT077 MT026 MT076 MT079 MT069 MT016 MT036 MT080 MT041 MT041-fix MT027 MT017 MT070 MT021 MT021-fix MT028 MT037 MT037-fix MT017-integration MT070-integration MT021-integration MT028-integration MT037-integration MT018 MT030 MT038 MT038-fix MT071 MT071-fix MT098 MT018-integration MT030-integration MT038-integration MT071-integration MT098-integration MT022 MT031 MT122 MT042 MT059 MT022-integration MT031-integration MT122-integration MT042-integration MT059-integration wave14-integration MT123 MT029 MT073 MT060 MT099 MT123-integration MT029-integration MT073-integration MT060-integration MT099-integration wave15-integration; do
   [ -d "$EXE/$P/checkpoints/$c" ] && { mkdir -p "$DST/$P/checkpoints/$c"; rsync -a --delete "$EXE/$P/checkpoints/$c/" "$DST/$P/checkpoints/$c/"; }
 done
 
@@ -39,11 +45,12 @@ cd "$DST"
 MANIFEST="$P/checkpoints/prereq-manifest.txt"
 {
   echo "BASE f0520524f0faa2b4533b9d2f1aa692c8f907ba71"
-  find server/scripts/multitenancy server/tests/multitenancy server/src/enterprise/tenancy server/src/billing server/src/kb \
+  find server/scripts/multitenancy server/tests/multitenancy server/src/enterprise/tenancy server/src/enterprise/runs server/src/billing server/src/kb \
        server/drizzle-kb app/tests/multitenancy \
        server/src/db/schema/enterprise-tenancy.ts server/src/db/schema/enterprise-runtime-config.ts \
-       server/src/db/schema/personal-shares.ts server/src/db/schema/enterprise-governance-policy.ts server/src/db/schema/enterprise-sso-scim.ts server/src/db/schema/payer-accounts.ts server/src/db/schema/enterprise-bot-ownership.ts server/src/db/schema/job-ownership.ts server/src/db/schema/enterprise-credentials.ts server/src/db/schema/call-attributions.ts server/src/db/schema/enterprise-oauth-state.ts server/src/db/schema/index.ts \
-       server/src/index.ts server/src/config.ts server/src/app.ts -type f | sort | xargs shasum -a 256
+       server/src/db/schema/personal-shares.ts server/src/db/schema/enterprise-governance-policy.ts server/src/db/schema/enterprise-sso-scim.ts server/src/db/schema/payer-accounts.ts server/src/db/schema/enterprise-bot-ownership.ts server/src/db/schema/job-ownership.ts server/src/db/schema/enterprise-credentials.ts server/src/db/schema/call-attributions.ts server/src/db/schema/enterprise-oauth-state.ts server/src/db/schema/enterprise-plugins.ts server/src/db/schema/enterprise-personal-bot.ts server/src/db/schema/index.ts \
+       server/src/index.ts server/src/config.ts server/src/app.ts \
+       desktop/src-tauri/src/lib.rs desktop/src-tauri/src/main.rs desktop/src-tauri/src/organization_auth.rs desktop/src-tauri/src/org_context.rs desktop/src-tauri/src/credential_namespace.rs -type f | sort | xargs shasum -a 256
 } > "$MANIFEST"
 
 n=0

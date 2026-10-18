@@ -1,0 +1,40 @@
+# wave15-integration biome — 触及 19 文件（18 个 server TS + 共享装配面）
+# date: 2026-10-18 14:26:38 +0800; biome 2.5.10
+
+== 1) F-2 微修（wave14 先例；MT060 交付文件在源树即带同款残留，其票面 biome 证据仅覆盖 8 个窄缝文件）==
+# bunx biome check --write 六文件（format + organizeImports，纯排版）：
+before fe962228445071767f711f8242406f33e7264543a0b633c57123e2c048b90265  server/scripts/multitenancy/migrate-test.ts
+before 83f1a39bbb709ca360e03cb3711e97e09a8dc991d016e6c41fd1d6124178f953  server/src/db/schema/openmuse-task-tenancy.ts
+before 37f817e05cba78476d983e2880c42a4202ffff5bd36e78baea196e5be7f91004  server/src/enterprise/tenancy/openmuse-task-tenancy.ts
+before 63697c78c02f0ddc5f183a2d4fba9ebda106a23c84e319addb661e84b9adf017  server/tests/multitenancy/openmuse-tasks.test.ts
+before 3121574666aa95cb4c481a6fbfc0d35145bd0525c2dee130b34674c9ed2e3ce2  server/tests/multitenancy/support/openmuse-tasks.ts
+before 19acdf6b616072c4a702b9b3dbf6738aec0d704466c9191804343577e01c4a41  server/tests/multitenancy/startup-defaults.test.ts
+after  e3365f7fd36117ee474ef21c36947a27c24a4cd1aa254257ed3d9847df5a2d34  server/scripts/multitenancy/migrate-test.ts
+after  1c88aa9956a6eee0b5e8bacc8ebad0940bfae40803dd2f748295a8650d12d728  server/src/db/schema/openmuse-task-tenancy.ts
+after  305f75a245a389e2bb429a3810eeb8827401491bfe83a726ff4a3126e988b120  server/src/enterprise/tenancy/openmuse-task-tenancy.ts
+after  74d83f98e05c25a1f7c94840993051f63ef709a7fab0cef110ec66749dcd92ac  server/tests/multitenancy/openmuse-tasks.test.ts
+after  10514058817200c3eed35e6b6ee24b4e72495df2e73b27f068c029ad3380e4b1  server/tests/multitenancy/support/openmuse-tasks.ts
+after  5c42670889ce77ea56ce9bcb00bcfeb4f00d3b33c26bbdd8ae6b7a04cb617a63  server/tests/multitenancy/startup-defaults.test.ts
+
+# migrate-test.ts --write 语义等价证明：22 任务 plan manifest 哈希 --write 前后逐一相等
+# （before 生成于 --write 之前=apply 链所用 oracle；after 生成于微修后复跑 generate）
+
+== 2) 微修后触及文件复查（index.ts 5 处为 prereq 存量，见 3）==
+server/src/index.ts:4897:13 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+server/src/index.ts:868:13 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+server/src/index.ts:896:9 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+server/src/index.ts:930:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+server/src/index.ts:2032:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Checked 19 files in 88ms. No fixes applied.
+Found 4 errors.
+Found 1 warning.
+exit=0
+
+== 3) index.ts 存量口径（零增量证明）==
+# 合并后：5 处 = 4 noConsole(868/896/930/2032) + 1 noNonNullAssertion(4897)
+# 基线(HEAD)同文件：5 处 = 4 noConsole(838/863/883/1895) + 1 noNonNullAssertion(4760)
+# 同款同数，行号位移=本波装配插入；处置同 MT123 R-MT123-3 / MT030 复审 F1：存量披露不修
+
+== 4) 微修后复跑 ==
+# 全量 1222 pass / 0 fail / 47 文件 / exit 0（full-suite.txt 终版）；
+# migration-tool.test.ts 穷举断言 45 任务 ID 全绿（见 full-suite 同轮）

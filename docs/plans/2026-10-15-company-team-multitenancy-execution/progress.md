@@ -858,3 +858,170 @@ MT030 #73（全局身份/刷新锁/例外端点；MT027+MT013 下游）task_4797
 - **MT031 三任达标结算**（ctx_d3b466d1ebb5 succeeded，容器零残留）：聚焦 35/0/0、全量 **1025/0/0/39**、变异 7/8 KILLED+1 掩蔽披露（MUT-all-final+MANIFEST，掩蔽定性待复审核对）、RED→GREEN（0 pass 模块缺失→30/0→35/0）、typecheck 0。
 - **Orca 二次重启**（~00:1x）：杀 MT042 原任（GREEN-6 收敛中）/MT059 原任（RED-1 后）/MT122 二任（GREEN-1 后）。处置：dispatch 状态残留 dispatched 但进程死→stop 三任 closed_agent_terminal→容器亲删零残留→三票树内增量完好（测试文件 scan-executor.test.ts/openmuse-private-bot.test.ts/entry-context.test.ts+checkpoints 存档链）→同树重派 MT042 二任 ctx_046c819a50db/MT059 二任 ctx_5e4d7d9d3cdc/MT122 三任 ctx_7acbf086d5bb+brief 追加接管注记（从 red-green 链续作、不重做已 GREEN 部分）→探针 transcript 544-658 行全部真启动。
 - 波次 14 死亡任次累计：MT022×1（规划冻结）+MT031×2（停摆/零启动）+MT122×1（零启动）+重启×3=7 任次，零工作丢失。
+
+### 2026-10-18 05:5x 波次 14 中程：MT042 三任死亡处置与四任派发
+
+- MT059 三任（ctx_467ecbfa8e91）存活：全量 attempt2 载荷失败后在从零重建环境（fresh 容器+七变量），transcript 持续有实质动作，继续监控。
+- MT042 三任（ctx_2b6e52f501ac）死于环境重建阶段：证据链完整（baseline 990/0/38 → 全量 **1005/0/39** → typecheck:0 → biome:0），01:56 打 checkpoint 提交 3ee2c549 后退出，**未完成** mutation/报告/worker_done。10/11 两轮 env 重建失败（55564 CONNECTION_CLOSED、step 2b Terminated）。
+- 哈希复核：MT042 冻结面 5 文件（after-hashes.txt）coordinator 亲验**全部 OK**，无变异残留（MT018 纪律执行）。
+- 派发死锁：ctx_2b6e52f501ac 终端 user_owned → worker-stop=stop_unknown 卡死，release/ready/failed/retry-of 全被拒。capability 已 revoke（21:44:22Z）不会再生效。**处置**：新建任务 task_d086082d5f39 承接四任（同 worktree i14-mt042），brief 追加四任接管注记（勿动 3ee2c549、剩余四件事、环境从零 provision）。ctx_2698ddcfc7f1 [ready] 已派。
+- 旧任务 task_d3f14fcfeaf6 挂账：dispatch 若未来 settle 则置 failed --result "superseded by task_d086082d5f39"。
+
+### 2026-10-18 06:3x 波次 14：MT042 结算（四任）
+
+- MT042 四任（ctx_2698ddcfc7f1，task_d086082d5f39）succeeded → stop/release/completed；容器 mt042-impl-pg 亲验 docker rm。
+- 报告 reports/MT042.md 要点：全量 **1005/0/39** exit0（1005=990+15 吻合）、聚焦 15/0、变异 **12/12 KILLED**（MUT1:2…MUT5:8…MUT8:5）、RESTORE scan-executor.ts 27d675b6 与 HEAD 逐位一致+冻结面 5 文件全等、typecheck/biome 0、journal 17 任务。
+- 重要披露：①checkpoint 态 AC1 用例实参错位必红（历史 GREEN 存档分裂），四任最小修复 +12/−7 后全绿；②MUT11 需测试增强（越词表 offer）才可捕获；③provision-db.sh 链序修正 **MT112→MT012**（MT041 报告同序先例，配方修复）——**波次 14 后续票 provision 模板须沿用此序**；④生产者侧入队接线属下游票。
+- 旧任务 task_d3f14fcfeaf6 仍被 stop_unknown dispatch 卡死，挂账（能力已 revoke，无行为）。
+- MT059 三任继续在跑（环境重建阶段）。
+
+### 2026-10-18 06:5x 波次 14：MT059 三任挂死处置与四任派发
+
+- 三任 transcript 冻结 6h（停在「研究 migrate-test CLI」），stop=closed_agent_terminal 真死；01:56 checkpoint 提交 7a46db20（与 MT042 三任同分钟，疑似同一外部事件触发）保全实现+baseline 990/0（03）+聚焦 28/0（RED-GREEN-2nd）。
+- 全量 attempt1/2（20、21）定性**负载超时**：5000ms 用例超时、attempt2 仅 277/39 文件 898s——同机双票全量+33 常驻容器。非代码缺陷。
+- 处置：容器亲清、brief 追加四任注记（含 MT112→MT012 链序修正先例、期望全量 1018/0/39）、新任务 task_5f58a22142d0 派四任（旧任务 task id 因 release 后 dispatch-show --json KeyError 未取得，挂账同 MT042 模式）。
+
+### 2026-10-18 07:1x 波次 14：复审树预建完成
+
+- 四棵复审树就绪：r14-mt{022,031,122,042}=BASE f0520524+240 prereq（manifest 自校验）+本票增量 cp（逐文件 SHA-256 核对通过）。
+- 增量面：MT022=3 文件（conversation-actions 域）；MT031=8 文件（plugin-catalog/install/schema/migrate-test 窄缝）；MT122=5 文件（entry-context+app/index 装配）；MT042=5 文件（scan-executor+migrate-test 窄缝，含四任测试修复）。
+- 四份复审 brief 落盘（各含三步配方、复跑数字、变异抽验、专项核对：MT022 D8/D6、MT031 掩蔽披露、MT122 fail-closed/AC4、MT042 机器身份/反序列化/披露①③复核）。
+- **派发策略**：MT059 四任全量对负载敏感（三任两次超时翻车先例），复审派发推迟至 MT059 结算后一波推 5 个（含届时新建的 MT059 复审树）。
+- MT059 四任 ctx_96fe1fab9e17 已起容器在 provision。
+
+### 2026-10-18 07:4x 波次 14：实现面全部收官+复审波派发
+
+- **MT059 结算**（ctx_96fe1fab9e17 succeeded，task_5f58a22142d0 completed）：四任发现 checkpoint 7a46db20 内 personal-bot.ts **残留活体变异 MUT-1**（三任注入后死于执行前，MT018 C1 同款模式再现于实现面）→移除（−33/+1）后聚焦 28/0（125 expect 与前任 GREEN 逐字一致）；MUT-2 字段所有权/MUT-3 跨团队隔离捕获还原；全量 **1018/0/39 21.43s**；RESTORE 冻结面（bots-ownership 3bb3288b/runtime-config 0a8bc3cd）逐字节一致；typecheck/biome 0；容器/env 亲清。MUT-2 首选变异不可捕获（字段名空间不相交）披露在案。
+- **波次 14 五票实现全部结算**：MT022（1025/0/39）、MT031（1025/0/39）、MT122（1011/0/39）、MT042（1005/0/39）、MT059（1018/0/39）。
+- 复审波派发（5 worker 并行）：r14-mt{022,031,122,042,059} 树=BASE+240+增量（哈希核对过）+各自复审 brief（MT059 专项含 MUT-1 移除干净度+变异重放授权）。任务 task_{0ff7df9f8631,f36c0c724d4f,3db71e42a0df,6803b08fa497,433cbe31f952}；ctx_{16a126cd3da5,5fdcd083c80c,2259542ba98e,a35cfc0b4002,eae9222e9c0e}。
+
+### 2026-10-18 08:2x 波次 14 复审中程：F1 转移缺口根因与补档
+
+- MT122 复审 **PASS**（1 low=环境令牌硬编码归因、3 info）；MT042 复审 **PASS**（Major F1=mutation/ 存档在复审树缺失+Minor+2 info；复审者独立重放 5/12 含必含 MUT10/12 全 KILLED，Major 已缓解）。
+- **F1 根因（coordinator 转移脚本缺陷，非实现缺陷）**：增量 cp 脚本解析 `git status --porcelain` 未用 `-uall`，纯新 untracked 目录（`?? .../mutation/`）以目录条目出现被 isdir 跳过。缺口：mt042 13 文件、mt059 4+46 文件（含 verification/migration/generated/）、mt031 2 文件；mt022/mt122 完整（在 checkpoint 提交内走 diff 路径）。已全部补齐+SHA-256 核对+全目录完整性复扫（五票 missing=NONE）。
+- 裁定：MT042 Major F1 以「补档+复审独立重放记录」双重处置关闭，不翻 PASS，不重开复审（复审者已重放必含项）；后续波次转移脚本固定用 `status --porcelain -uall`。
+
+### 2026-10-18 08:0x 波次 14 复审中程：429 限流与串行化处置
+
+- MT122/MT042 复审先完成（各 ~50 分钟，报告 PASS）；随后三票（022/031/059）worker 卡死：transcript 尾部确诊 **Pi 429 速率限制**（五并发复审挤爆账户配额），7 分钟观察窗零推进、零容器。
+- 处置：三 worker stop（closed_agent_terminal）+任务回 ready，改**串行放行**（先派 022，完成后逐票放行）以避开限流互挤。
+- 顺带清理：mt042-review-pg 复审残留容器 coordinator 亲验 docker rm。
+- 澄清误报：022 树 verification/07-teardown 等系实现者证据随增量复制而来（Oct 17 时间戳），非复审进展；复审进展判据只认 reports/MTXXX-review.md 落盘+复审者自起容器。
+
+### 2026-10-18 09:0x 波次 14 复审收官
+
+- **五票复审全 PASS**：MT022（3 low：L1 fail 计数口径/L2 措辞+绝对路径/L3 配方补 bun install）；MT031（F-2 Medium=migrate-test.ts 6 处 biome format 零语义+F-1 Low 引注笔误+2 info；掩蔽定性成立+活库 RLS 实证）；MT122（1 low+3 info）；MT042（Major F1 已由 coordinator 补档关闭+Minor+2 info；5/12 重放全 KILLED）；MT059（P0-P2 无+3 P3；MUT-1 移除干净度干净，注入重放 ba7ec225 复原）。
+- 串行放行节奏确认有效（022 二任 10 分钟/031 ~10 分钟/059 ~10 分钟出报告）。
+- 复审收尾核验：各复审者容器自清（mt022-review-pg/mt059-review-pg 回显在案；mt042-review-pg 由 coordinator 亲清）。
+- F-2 处置裁定：波次 14 集成完成后在 EXE 面做 biome --write 微修（digest oracle 17/17 不受影响），第 15 版转移清单携带修复后哈希。
+- 下一步：批集成五票进 EXE（MT059 携带 MUT-1 移除工作树态）→ 批终验（预期 **1124/0/43**=990+35+35+21+15+28）→ integration.json×5 → dag verified 39→44。
+
+### 2026-10-18 10:0x 波次 14 收官（批集成+终验+清单 v15）
+
+- **批集成**（ctx_139be718e791 succeeded）：22 唯一代码文件（16 直接落位 SHA-256 相等+4 共享文件纯追加合并[票号升序：migrate-test/migration-tool/schema index/src index]）+361 存档；MT059 携带 MUT-1 移除工作树态。
+- **批终验**：journal 19 任务/34 步；全量 **1124 pass / 0 fail / 43 文件**（=990+35+35+21+15+28 精确达成，26.53s）；typecheck 0。
+- **两项整改**：①F-2 biome 微修（migrate-test.ts 6 处排版，digest 382e60ea152478e8 前后一致、穷举断言 41/0、全量复跑 1124/0/43）；②MT122 环境令牌 w14e→w14int（msg_db4ac86bd2e5 升级 30 分钟无应答按 brief 交集保守执行，断言语义不变+RECTIFIED 双哈希披露+聚焦 21/0+全量复跑）——**coordinator 追认**该裁定（与 MT122 复审 F1「令牌硬编码」归因一致）。
+- integration.json×5 全部有效（1124/0/43, hash_verified=true）；dag verified 39→**44**（集成 worker 已置，coordinator 复核确认）。
+- 转移清单第 **15 版=268 项**（干跑树自校验 OK，r15-dryrun 已删）。
+- 容器/env/临时文件亲验清理（w14int-pg 无、/tmp 草稿删）。
+- **解锁 19 票**：MT019/020/023/024/025/029/032/033/039/040/043/044/045/060/072/073/074/099/123。
+
+## 波次 14 状态总结
+已验证 Ticket：MT022、MT031、MT122、MT042、MT059（累计 44/143）。
+运行中的 Dispatch：无。
+下一波就绪：19 票（见上；建议波次 15 选票避开同域聚簇+注意 429 限流→单波 ≤5 票）。
+阻塞和裁决：MT042 旧 task_d3f14fcfeaf6 stop_unknown 挂账（能力已 revoke）；MT059 旧任务同；F-1/F-2 已闭环；挂账清单新增 MT022 L1-L3（计数口径/措辞/配方 bun install）、MT031 F-1（引注笔误）、MT059 P3-1（AC3 ownership-wins 正向用例待补）。
+
+### 2026-10-18 10:3x 波次 15 派发
+
+- 选票（贡献排序+域错开+429 教训≤4 派）：MT029（+2 解 MT034/046）、MT060（+2 解 6 下游）、MT099（+1 解 MT100/101）、MT123（+1 解 MT124/126/129）；MT073（+1）补位待首票结算后放行。
+- 四树=BASE+268 项 v15 清单；brief 含基线 1124/0/43、十九任务链修正序、bun install 前置、库名 w15a-d、端口 55581-55584。
+- 任务 task_{56d683e2165c,95057a10bd56,544af569d8f9,0a531f9c521f}；ctx_{cb660f96a2dc,0455a4ad96fc,fb90313340af,e2f8e90d8852}。
+
+### 2026-10-18 11:0x 波次 15 中程
+
+- **MT123 结算**（ctx_e2f8e90d8852 succeeded）：基线 1124/0/43、聚焦 24/0/75、全量 **1148/0/44**、变异 6/6 KILLED、RESTORE 2c426e70 逐位、typecheck 0、biome 增量 0（存量 5 处同位披露）；R1 令牌微修（w14int→w15d，msg_aaf2dbd7e6bf 升级无应答按交集执行+双哈希披露）——coordinator 追认；R3 存量口径、R4 dev-actor 装配点处置在案。容器亲验无残留。
+- **挂账（系统性）**：entry-context.test.ts:191 环境令牌硬编码每波必撞（wave14 集成/MT123/MT073 三处同款 RECTIFIED）——波次 15 集成时根治为 env 派生断言。
+- 补位放行 MT073（w15e @55585，brief 预警令牌坑）；四票在跑：MT029/060/099（早期）+MT073。
+
+### 2026-10-18 11:4x 波次 15 中程：两零启动处置
+
+- MT123 已结算（见前）。MT073 到 GREEN-2-post-biome。
+- **MT029/MT060 一任零启动**（transcript 34 行 0 tool，~110 分钟；liveness live 是假象）——stop（closed_agent_terminal）+ready+同树重派二任（ctx_7d0876176885 / ctx_6e25cb7b360b）。
+- MT099 一任正常（257 行 16 tool）继续。零启动检测判据固化：transcript 行数<100 且 [tool 计数=0。
+
+### 2026-10-18 12:5x 波次 15 中程：MT099 一任挂死重派
+
+- MT099 一任（ctx_fb90313340af）挂死：257 行/16 tool 后停滞（60s 窗口零增长）、~4h 零本票增量——stop+ready+同树二任（ctx_b1fb28c4c74c，brief 加零增量注记）。
+- 其余：MT029（mutation 11 文件+全量落盘，收尾中）、MT060（GREEN-1 后推进）、MT073（mutation 中）。
+
+### 2026-10-18 13:2x 波次 15：MT029 结算
+
+- MT029 二任（ctx_7d0876176885）succeeded：基线 1124/0/43、聚焦 27/0/227、全量 **1151/0/44**、变异 **12/12 KILLED**（MUT-12 迁移授权变异库真实 apply；MUT-3 单层注入被 RLS 纵深持有→MUT-3b 三层全移变异库证明）、RESTORE 逐位（5e03b038/5f8493de）、typecheck 0、biome 增量 0（src/index.ts 5 处=BASE 存量核验）。
+- **库名歧义处置追认**：entry-context.test.ts:191 钉 w14int 再度撞票面库名（w15a），二任按 wave14 先例选环境对齐（同容器建 w14int 库、五变量 env 对齐、w15a 库保留可切换）——比改断言更保守（交付面零令牌修改）。**令牌硬编码系统性危害第三例，集成时根治**。
+- D2 三层纵深冗余（刻意防御非冗余）、D4 deny 不审计（MT027 先例口径）披露在案。
+- 在跑：MT060（二任 GREEN-1 后）、MT073（mutation 中）、MT099（二任 766 行真启动）。
+
+### 2026-10-18 14:0x 波次 15 中程：MT060/MT073 挂死重派
+
+- MT060 二任（953 行）死于 GREEN-1 后；MT073 一任（687 行）死于 mutation 早期（run-mutations.sh 已落盘、注入态未知）。均 3 分钟双窗口停滞+12 分钟零文件确诊。
+- 处置：stop+容器亲清+接管注记（**接任首步=聚焦自证防活体变异残留**，MT059 先例）+重派（MT060 三任 ctx_5b8f57fb0e95 / MT073 二任 ctx_5c0dee846983）。
+- 在跑：MT099 二任。
+
+### 2026-10-18 14:3x 波次 15：MT073 结算
+
+- MT073 二任（ctx_5c0dee846983）succeeded：**首步自证双证**（after-hashes 8 文件逐字节一致+聚焦 16/0 与一任逐字同）→无活体变异（一任死于注入前）；一任 run-mutations.sh 三处 bug（含 M04 锚点排版假设）修正+逐项披露；接管全量 **1140/0/44** 一次过；变异 7/7 捕获+每项独立证据（注入 diff+失败用例名+还原哈希即时比对）；RESTORE ALL-BYTE-IDENTICAL；typecheck/biome 0。
+- 波次 15 进度：MT123/MT029/MT073 已结算（3/5）；在跑：MT060 三任、MT099 二任。
+
+### 2026-10-18 15:0x 波次 15 中程：双 766 挂死+MT099 域缺口修复
+
+- MT099 二任死于域考古：发现 **MT098 rust 交付（四文件）不在 268 项转移清单**（清单缺口——rust 面从波次 13 起就没进清单，MT098 集成时进 EXE 但转移脚本漏列）。修复：清单 v15.1（+4 rust 文件=272 项）、w15-mt099 树同步四文件（哈希=b75f3e6f/f515e24a/25042fca/8ec7e2cd 全 OK）、brief 三任注记。三任 ctx_9a8bef28bc7e 已派。
+- MT060 三任同 766 行挂死（无域障碍）——stop+四任重派 ctx_d8e32c2c...（见输出）。
+- 本会话挂死累计 7 任（042 三任/059 三任/099 一二任/060 二三任/073 一任），模式统一：transcript 停滞+liveness live+零文件。
+- 更正：MT060 四任实际 ctx_f7ab6383189a（上行占位符笔误）。MT099 三任 980 行已超挂死点真启动。
+
+### 2026-10-18 15:4x 波次 15：MT060 结算
+
+- MT060 四任（ctx_f7ab6383189a）succeeded：**接管首步自证实测不符注记**（GREEN-1 存档自带 7 fail=三处 GREEN 中断缺陷，非变异残留）——修复后 GREEN-2 全绿；聚焦 31/0、接管全量 1154/0/44+终跑 **1155/0/44**、变异自证+RESTORE、typecheck 0。容器亲验无残留。
+- 波次 15 进度：4/5 结算（MT123/MT029/MT073/MT060）；MT099 三任 checkpoint 全套目录已建（在正轨）。
+
+### 2026-10-18 16:0x 波次 15 实现收官+复审派发
+
+- **MT099 结算**（ctx_9a8bef28bc7e 三任）：bun 基线/全量 1124/0/43（零新增 bun）、cargo 票面 21/0+全量 **741/0**（=719+22）、变异 5/5 KILLED、冻结面 267/272+4（唯一差异=令牌整改已披露）、typecheck/biome 0。
+- **波次 15 五票实现全部结算**：MT123（1148/0/44）、MT029（1151/0/44）、MT073（1140/0/44）、MT060（1155/0/44）、MT099（1124/0/43 bun+741 cargo）。
+- 复审树×5=BASE+272（v15.1）+增量 cp（-uall 修正版脚本；代码增量 4/8/8/8/5，哈希核对全过）。五份复审 brief（专项：MT123 R1 令牌+AC1 断言真实性、MT029 MUT-3b/12+AC2 校验点语义+D4 口径、MT073 授权矩阵+脚本 3bug、MT060 AC2 隔离证明力+回填 dry-run、MT099 闭集拒绝+回调时序）。
+- **串行派发**（429 教训）：MT123 复审先发（ctx_04f17f4f3e25），完成逐票放行。
+
+### 2026-10-18 17:0x 波次 15 复审中程（串行）
+
+- MT123 复审 **PASS**（无 c/h/m；2 low=探针 5/7 变量+expect 数写死、4 info）。
+- MT029 复审一任秒死零产物（895 行在读环境脚本即终态）→二任（ctx_f32474145350）**PASS**（3 low 档案口径；变异 4/4 含 2 真实变异库；AC3 跨公司 deny 与不存在逐字节同形、AC4 零明文+deny 零审计前后计数钉死、签发=取用权威单份实现）。
+- 串行节奏：073 复审已派（ctx_4cddf128473f）→060→099。
+
+### 2026-10-18 18:0x 波次 15 复审收官
+
+- **五票复审全 PASS**：MT123（无 c/h/m，2 low：探针 5/7 变量、expect 数写死；4 info）；MT029（3 low 档案口径；变异 4/4 含 2 真实变异库；AC3 deny 与不存在逐字节同形）；MT073（四 AC 钉死+一任双证复核成立；2 非阻塞观察）；MT060（AC2 真并发证明力充分；1 low biome 钉版口径）；MT099（diff 密码学级无夹带；3 记录级备注）。
+- 复审波零修复轮需求（无 critical/high/medium）。
+- 进入波次 15 批集成：预期全量 **1222/0/47**（=1124+24+27+16+31；文件 43+4）+cargo 741；**entry-context.test.ts 令牌四版本统一+根治为 env 派生**（挂账系统性危害第四例收口）。
+
+### 2026-10-18 18:4x 波次 15 收官
+
+- **批集成**（ctx_632af451aaaa succeeded）：bun **1222/0/47**（=1124+24+27+16+31 精确）+cargo **741/0**（=719+22）+typecheck 0+biome 零增量（6 文件 F-2 微修+存量披露）；**entry-context.test.ts+startup-defaults.test.ts 令牌根治为 TEST_DATABASE_URL 派生**（四版本统一+延伸披露+聚焦 21/0 复跑；MT029 环境歧义 msg_9adf8abcfaaf 实质闭合）；journal 22 任务/42 步；integration.json×5；容器/env 亲清。
+- **dag 异常修复**：波次 15 集成后核对发现波次 14 五票（MT022/031/122/042/059）被回退 blocked（元凶疑似集成 worker dag 基线漂移）——以五份 integration.json 证据为准 re-verified，**verified=49**。
+- 转移清单 **v16=284 项**（干跑 OK）。
+- **波次 15 状态总结**：已验证 Ticket：MT123/029/073/060/099（累计 **49/143**）。运行中 Dispatch：无。下一波就绪 21 票（MT019/020/023/024/025/032/033/034/039/040/043/044/045/046/063/067/072/074/078/100/124）。阻塞和裁决：stop_unknown 挂账 2（MT042/MT059 旧任务）；挂账新增 MT123 复审 2 low（探针 5/7 变量、expect 数写死）、MT029 3 low、MT073 2 观察、MT060 1 low（biome 钉版）、MT099 3 备注、MT060 复审 R-1。
+- 本会话累计：波次 14（五票+复审+集成）与波次 15（五票+复审+集成）双双收官；挂死死亡任次 8（全部按恢复纪律处置零工作丢失）；清单 v14→v16（240→284）；verified 39→49。
+- 勘误：本文件 06:3x 起各节时间标记为编写时估计，实际 wall clock 约早 3-4 小时（实际收官时刻 Oct 18 14:33 CST）；相对顺序与内容不受影响。
+
+### 2026-10-18 14:4x 波次 16 派发（实际 wall clock）
+
+- 选票（贡献排序+域错开+≤4）：MT046（**+4** 解四下游；实例回收/屏幕接管域）、MT034（+1 共享账号批准锁定域）、MT039（+1 个人记忆隔离域）、MT067（+1 成员清理/全局删除双轨域）；MT074（+1 billing）补位。
+- 四树=BASE+284 v16；brief 基线 **1222/0/47**、链序=19 前置+MT029→MT073→MT060+本票、令牌已根治（无需微修）。
+- 任务 task_{30d6324c5445,5ca25b872dec,6d38da0472d8,6eb60233ba50}；ctx_{14d9d461ccfd,015f36f93ef5,b1b66bbb4bfd,bf8b12a93b70}。
+
+### 2026-10-18 15:0x-15:2x 波次 16 中程
+
+- **MT067 结算**：基线 1222/0/47、聚焦 13/0、全量 **1235/0/48**、变异 4/4；容器亲验无残留。
+- 补位 MT074 派发（w16e @55596，供应商计费回调域）。
+- **MT034 结算**：基线 1222/0/47、聚焦 24/0、全量 **1246/0/48**（=1222+24 精确）、变异 8 KILLED+**3 单点掩蔽披露**（MUT-3/4/6，复审核对项）、批准行存储形状不可变（零 UPDATE/DELETE 授权）+params_digest 四元组锁定；284/284 领取哈希复算。
+- **MT074 结算**：基线 1222/0/47、聚焦 22/0、全量 **1244/0/48**、变异 12+M05b 复合 KILLED（M05 单层等价 SURVIVED→复合捕获，MT070 先例）；**D0 票号映射分歧**：epic #200 表 MT074=#117（历史余额迁移）≠ dag/brief 面（供应商计费回调）——按 brief 执行+不冲突披露，coordinator 追认，**映射差异挂最终终审与 Issue 树核对**。

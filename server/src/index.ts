@@ -268,10 +268,15 @@ import {
   verifyOperatorDatabase,
 } from "./enterprise/tenancy/connections";
 import {
+  createCredentialLeaseAdminService,
+  createCredentialLeaseService,
+} from "./enterprise/tenancy/credential-lease";
+import {
   createCredentialOwnershipAdminService,
   createCredentialOwnershipDecisionService,
   type SecretVault,
 } from "./enterprise/tenancy/credential-ownership";
+import { createDeploymentEntryContextFactory } from "./enterprise/tenancy/entry-context";
 import {
   createResourceInventoryService,
   type ResourceInventoryService,
@@ -282,9 +287,20 @@ import {
   createPersonalShareDecisionService,
 } from "./enterprise/tenancy/personal-share-rules";
 import {
+  createPluginCatalogAdminService,
+  createPluginCatalogDecisionService,
+} from "./enterprise/tenancy/plugin-catalog";
+import {
   applyStartupVerdict,
   runMultitenancyStartupChecks,
 } from "./enterprise/tenancy/startup-checks";
+import {
+  applyStartupDefaultsVerdict,
+  buildStartupDefaultsRecord,
+  evaluateStartupAssemblyReadiness,
+  mountDevBypass,
+  resolveStartupDefaults,
+} from "./enterprise/tenancy/startup-defaults";
 import {
   type AuthenticatedRequestIdentity,
   createScopeResolver,
@@ -782,7 +798,21 @@ const learningSettings = withLearningAutoAssign(
   learningAutoAssign,
 );
 learningAutoAssign.start();
-await initializeDevActorUser(database, config.singleUser);
+/*
+ * MT123 (issue #166): the single-user bypass is ruled by the purification
+ * domain (enterprise/tenancy/startup-defaults.ts) — mounted only in
+ * single-tenant mode, never in multitenancy. The full startup defaults are
+ * resolved further below, once the tenant package is in hand; the dev-actor
+ * seeding sits earlier in the boot, so it consumes the same one-rule source
+ * (`mountDevBypass`) instead of a drifted copy.
+ */
+await initializeDevActorUser(
+  database,
+  mountDevBypass({
+    multitenancy: config.multitenancy.enabled,
+    singleUser: config.singleUser,
+  }),
+);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
 const credentialStore = createCredentialStore(database);
@@ -854,29 +884,46 @@ const enterpriseCapabilities = await (async () => {
         runtimeConnectionString: tenantRuntimeUrl,
       }),
     );
+    // MT122 (issue #165): one session resolution for both the enterprise entry's
+    // resolver and the deployment main entry's context factory — the identical
+    // closure, so the two entries answer "who is asking" from the same code.
+    const authenticateEnterpriseRequest = async (
+      request: Request,
+    ): Promise<AuthenticatedRequestIdentity | null> => {
+      const actor = await resolveRequestActor(request).catch((error) => {
+        // Session-infrastructure faults are not "unauthenticated": leave
+        // a trace so auth-store outages are diagnosable (OCR R10).
+        console.error({
+          error: "ENTERPRISE_SESSION_RESOLUTION_FAILED",
+          cause: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      });
+      return actor ? { actorId: actor.id, entrypoint: "web" } : null;
+    };
     const scopes = createScopeResolver(directory, {
       data,
-      authenticate: async (request) => {
-        const actor = await resolveRequestActor(request).catch((error) => {
-          // Session-infrastructure faults are not "unauthenticated": leave
-          // a trace so auth-store outages are diagnosable (OCR R10).
-          console.error({
-            error: "ENTERPRISE_SESSION_RESOLUTION_FAILED",
-            cause: error instanceof Error ? error.message : String(error),
-          });
-          return null;
-        });
-        return actor ? { actorId: actor.id, entrypoint: "web" } : null;
-      },
+      authenticate: authenticateEnterpriseRequest,
       // MT005 ruling #1: selection headers are x-openbot-tenant and
       // x-openbot-workspace. They only select; database membership decides.
       selectTenant: (request) => request.headers.get("x-openbot-tenant"),
       selectWorkspace: (request) => request.headers.get("x-openbot-workspace"),
     });
+    // MT122 (issue #165): the deployment main entry's context factory. Built
+    // from the same directory/data channels and the SAME session-resolution
+    // closure the enterprise entry's scopes consume, so "who is asking" has
+    // one answer for both entries; business dependencies come from the factory
+    // per request context — never a startup-wide single config.
+    const entry = createDeploymentEntryContextFactory({
+      directory,
+      data,
+      authenticate: authenticateEnterpriseRequest,
+    });
     return {
       directory,
       data,
       scopes,
+      entry,
       conversations: createConversationService({ data, mastraStorage }),
     };
   } catch (error) {
@@ -995,6 +1042,38 @@ export const credentialOwnership = await (async () => {
       : null,
   };
 })();
+// MT031 (Issue #74): plugin catalog & install ownership — the catalog is
+// read-only, installs are not global. Catalog browsing and install/connection
+// invocation decisions ride the already-verified restricted data channel; the
+// install admin (install/uninstall/enable/bind) needs the restricted operator
+// channel and stays null — fail-closed, no plugin can ever be installed —
+// when that channel is not wired. The vault seam is the deployment's existing
+// AES-GCM envelope (same as credentialOwnership): an install secret is sealed
+// on install and never returned by any view; invocation hands the sealed
+// envelope only to the allow branch of the trusted execution plane.
+export const pluginCatalog = await (async () => {
+  if (!enterpriseCapabilities) return null;
+  const pluginCatalogVault: SecretVault = {
+    seal: (plaintext) => encryptSecret(config.keyEncryptionKey, plaintext),
+    open: (envelope) => decryptSecret(config.keyEncryptionKey, envelope),
+  };
+  const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+  const operator = operatorUrl
+    ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
+        // Same fail-closed discipline as the credentialOwnership block above:
+        // a failing operator verification leaves the install admin
+        // unavailable, never permissive; no console here (server/src is
+        // noConsole-enforced).
+        () => null,
+      )
+    : null;
+  return {
+    decisions: createPluginCatalogDecisionService(enterpriseCapabilities.data),
+    admin: operator
+      ? createPluginCatalogAdminService(operator, pluginCatalogVault)
+      : null,
+  };
+})();
 // MT028 (Issue #71): OAuth callback binding by server-held state. The whole
 // service (initiate/consume/fail) rides the verified restricted operator
 // channel: initiation happens inside a company/team session, but the callback
@@ -1018,6 +1097,29 @@ export const oauthState = await (async () => {
     : null;
   return operator ? createOAuthStateService(operator) : null;
 })();
+// MT029 (Issue #72): credential lease — fixed purpose, scope and revocable.
+// The decision face (issue / validate) rides the verified restricted data
+// channel; the admin face (revoke) rides the verified restricted operator
+// channel. Either channel missing stays null — fail-closed: no lease can be
+// issued or revoked, never a flow that could not be audited. Held here for
+// the execution-chain wiring (MT046 onward re-validates the lease at
+// sensitive actions); nothing in this assembly serves traffic with it yet.
+export const credentialLease = await (async () => {
+  if (!enterpriseCapabilities) return null;
+  const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+  const operator = operatorUrl
+    ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
+        // Same fail-closed discipline as the credentialOwnership block above:
+        // a failing operator verification leaves the lease admin unavailable,
+        // never permissive; no console here (server/src is noConsole-enforced).
+        () => null,
+      )
+    : null;
+  return {
+    decisions: createCredentialLeaseService(enterpriseCapabilities.data),
+    admin: operator ? createCredentialLeaseAdminService(operator) : null,
+  };
+})();
 const identityStore = createIdentityStore(database, credentialStore);
 
 const agentVault = {
@@ -1036,9 +1138,44 @@ const marketplaceStore = createMarketplaceStore(database);
 // Read here rather than beside the synchronise below, because the package names the deployment and
 // the channel store needs that name before it can mint a thread id.
 const tenantPackage = await loadTenantPackage(config.tenantPackageDirectory);
-const threadIdentity = createThreadIdentity(
-  config.deploymentId ?? tenantPackage.tenantId,
-);
+/*
+ * MT123 (issue #166): the startup-assembly purification domain. In multitenancy mode the boot
+ * keeps no implicit default company (the tenant package's tenantId no longer stands in as one),
+ * no default thread identity beyond the operator's explicit DEPLOYMENT_ID fingerprint, and no
+ * single-user bypass; assembly gaps (the MT122 entry context absent, an unnamed thread seed,
+ * single-user/config or bypass env residue) are listed exhaustively and the boot refuses — the
+ * same discipline as the MT013 checks above. With the switch off nothing here changes: the
+ * legacy boot resolves to the very same defaults it always built.
+ */
+const startupDefaultFacts = {
+  multitenancy: config.multitenancy.enabled,
+  deploymentId: config.deploymentId,
+  tenantPackageTenantId: tenantPackage.tenantId,
+  singleUser: config.singleUser,
+  singleUserEnvRaw: process.env.OPENBOT_SINGLE_USER,
+  devNoAuthEnvRaw: process.env.OPENBOT_DEV_NO_AUTH,
+  entryContextWired: Boolean(enterpriseCapabilities?.entry),
+} as const;
+const startupDefaults = resolveStartupDefaults(startupDefaultFacts);
+if (config.multitenancy.enabled) {
+  applyStartupDefaultsVerdict(
+    buildStartupDefaultsRecord(
+      startupDefaults,
+      evaluateStartupAssemblyReadiness(startupDefaultFacts),
+    ),
+    { log },
+  );
+}
+const startupThreadIdentitySeed = startupDefaults.threadIdentitySeed;
+if (startupThreadIdentitySeed === null) {
+  // Unreachable: the multitenancy verdict above already refused a boot whose
+  // thread seed would fall back to the tenant package's default company, and
+  // a single-tenant package always carries a tenantId. Guarded anyway — a
+  // silent undefined fingerprint would be exactly the default the purified
+  // assembly exists to remove.
+  throw new Error("STARTUP_THREAD_IDENTITY_SEED_ABSENT");
+}
+const threadIdentity = createThreadIdentity(startupThreadIdentitySeed);
 const baseChannelStore = createChannelStore(
   database,
   agentProfileStore,
@@ -5643,6 +5780,12 @@ const app = createApp(
     teamBots,
     enterpriseConversations: enterpriseConversationRoutes,
     enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
+    // MT122 (issue #165): present only when enterprise capabilities are wired;
+    // multitenancy off or a missing channel leaves the assembly byte-for-byte
+    // what it was (the middleware itself is mounted in createApp, mode-gated).
+    ...(enterpriseCapabilities
+      ? { entryContext: enterpriseCapabilities.entry }
+      : {}),
     lifecycle: {
       lifecycle: createBotLifecycleStore(database),
       reset: createBotReset({
