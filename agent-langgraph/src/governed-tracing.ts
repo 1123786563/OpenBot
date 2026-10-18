@@ -112,8 +112,11 @@ const STRUCTURAL_DENY: readonly RegExp[] = [
   /\bgh[pousr]_[A-Za-z0-9]{20,}/,
   /\bAKIA[0-9A-Z]{16}/,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/i,
-  // Any URL scheme: names are names, not endpoints, and userinfo credentials ride this shape.
-  /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//,
+  // Any URL scheme, anywhere in the name (R5-0: the `^` anchor used to let a URL that did
+  // not START the name — "call https://user:pass@host/api" — ride through, while every other
+  // pattern here is an unanchored substring match). Names are names, not endpoints, and
+  // userinfo credentials ride this shape wherever it sits in the string.
+  /[a-zA-Z][a-zA-Z0-9+.-]*:\/\//,
 ];
 
 /**

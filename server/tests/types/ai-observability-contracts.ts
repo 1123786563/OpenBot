@@ -22,7 +22,15 @@
  *   - the R2-57 experiments mirror's known seam: the in_progress sample reason's `state`;
  *   - R4-39: the experiments mirror whole — the seven-class vocabulary, the T26 rule
  *     row and its reason words, the T28 codes and report, and the T29 compatibility
- *     ledger, each pinned both directions between the server sources and shared.
+ *     ledger, each pinned both directions between the server sources and shared;
+ *   - R5-45: the case-review faces — the T20 review outcome both directions, the save
+ *     answer and the dataset read projections against the shared wire shapes;
+ *   - R5-46: the experiment write faces — the T22 submit body both directions, the
+ *     submit and cancel answers against the shared result shapes;
+ *   - R5-51: the Same<> helper itself — an `any` on either side is drift, never
+ *     agreement, so no anchor can go hollow the way R2-55's and R4-39's did;
+ *   - R5-52: the T29 comparison shapes whole — side, delta, regression row and the
+ *     top-level comparison, not only the compatibility ledger.
  */
 
 import type {
@@ -32,30 +40,60 @@ import type {
 } from "../../../shared/ai-observability-admin";
 import type {
   CaseFragmentInput,
+  CaseReviewOutcome,
   FrozenDatasetCase,
+  ObservationDatasetDetailResult,
+  ObservationDatasetListItem,
+  ObservationDatasetVersionItem,
+  SavedDatasetVersionResult,
 } from "../../../shared/ai-observability-datasets";
 import type {
+  CancelledExecutionResult,
   EXPERIMENT_COMPATIBILITY_FIELDS,
   EXPERIMENT_SAMPLE_CLASSES,
+  ExperimentComparison,
+  ExperimentComparisonSide,
   ExperimentCompatibilityEntry,
   ExperimentCompatibilityField,
   ExperimentReconciliationCode,
+  ExperimentRegressionRow,
   ExperimentResultsReport,
   ExperimentRuleErrorCode,
   ExperimentRuleFailReason,
   ExperimentRuleScore,
   ExperimentSampleClass,
+  ExperimentSampleDelta,
   ExperimentSampleReason,
   ExperimentScoringFailedCode,
+  ExperimentSubmitConfigInput,
+  ExperimentSubmitInput,
+  SubmittedExperimentResult,
 } from "../../../shared/ai-observability-experiments";
 import type { AdminSummary } from "../../src/ai-observability/admin-summary";
-import type { CaseFragment } from "../../src/ai-observability/case-review";
+import type {
+  CaseFragment,
+  CaseReviewOutcome as ServerCaseReviewOutcome,
+} from "../../src/ai-observability/case-review";
 import type {
   COMPATIBILITY_FIELDS,
+  ComparisonSide,
   CompatibilityEntry,
   CompatibilityField,
+  RegressionRow,
+  SampleDelta,
+  ExperimentComparison as ServerExperimentComparison,
 } from "../../src/ai-observability/comparison";
-import type { FrozenDatasetCase as ServerFrozenDatasetCase } from "../../src/ai-observability/datasets";
+import type {
+  ObservationDataset,
+  ObservationDatasetVersion,
+  FrozenDatasetCase as ServerFrozenDatasetCase,
+} from "../../src/ai-observability/datasets";
+import type { ObservationExecution } from "../../src/ai-observability/executions";
+import type {
+  ExperimentConfigInput,
+  ObservationExperiment,
+  SaveExperimentInput,
+} from "../../src/ai-observability/experiments";
 import type {
   ReconciliationCode,
   SAMPLE_CLASSES,
@@ -75,7 +113,17 @@ import type {
 } from "../../src/ai-observability/scoring/rules";
 
 /**
- * True only when A and B are mutually assignable — the same shape, by either direction.
+ * True only when A is the `any` type. `1 & any` is `any`, and everything extends
+ * `any`, so the probe `0 extends 1 & A` fires exactly for `any` — for every other
+ * type `1 & A` is a concrete intersection `0` does not extend. This is the guard
+ * that keeps the anchor below from going hollow (R5-51).
+ */
+type IsAny<A> = 0 extends 1 & A ? true : false;
+
+/**
+ * True only when A and B are mutually assignable — the same shape, by either direction
+ * — AND neither side is `any`. An `any` on either side is drift by definition: it can
+ * absorb every shape, so mutual assignability proves nothing (R5-51).
  *
  * The checks are tuple-wrapped on purpose: a naked `A extends B` distributes over a
  * union A, so a pin over two vocabularies that drifted degrades to `boolean` (some
@@ -85,7 +133,32 @@ import type {
  * (which is covariant, so `[A] extends [B]` iff `A extends B`) pins the WHOLE union
  * against the WHOLE union — every word, or the pin is false.
  */
-type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type Same<A, B> =
+  IsAny<A> extends true
+    ? false
+    : IsAny<B> extends true
+      ? false
+      : [A] extends [B]
+        ? [B] extends [A]
+          ? true
+          : false
+        : false;
+
+// ---------------------------------------------------------------------------
+// R5-51: `any` is drift, never agreement. `[any] extends [B]` and
+// `[B] extends [any]` are BOTH true for every B, so the tuple-wrapped Same above
+// answers `true` the moment either side degenerates to `any` — an anchor written
+// against an `any`-typed source was vacuously green (R2-55's broken assertion and
+// R4-39's union wrap were the earlier two hollow-anchor modes; this is the third).
+// These pins say what the honest answer is: any on either side is `false`.
+// ---------------------------------------------------------------------------
+
+// biome-ignore lint/suspicious/noExplicitAny: the probe IS any — the pin exists to prove Same reads it as drift
+export type SameRejectsAnyOnLeft = Same<any, { readonly pinned: "word" }>;
+// biome-ignore lint/suspicious/noExplicitAny: the probe IS any — the pin exists to prove Same reads it as drift
+export type SameRejectsAnyOnRight = Same<{ readonly pinned: "word" }, any>;
+// biome-ignore lint/suspicious/noExplicitAny: the probes ARE any — the pin exists to prove Same reads them as drift
+export type SameRejectsAnyOnBothSides = Same<any, any>;
 
 // ---------------------------------------------------------------------------
 // The admin summary (m216's original seam, fixed per R2-55: the real keys).
@@ -217,6 +290,168 @@ export type ServerCompatibilityEntryIsShared = Same<
 >;
 
 // ---------------------------------------------------------------------------
+// R5-45: the case-review and dataset-read faces. The T20 service's review
+// outcome is a named server type, pinned both directions outright. The save
+// answer and the read projections are inline literals in
+// server/src/ai-observability/routes/{case-review,datasets}.ts, so their
+// mirrors here are drawn field-by-field from the T19/T20 store row types those
+// literals read: the row supplies each carried field's type, the mirror fixes
+// the shape, and shared must stay that shape or the pin goes false. The
+// derived fields (timestamps, the case count) are marked — a route that stops
+// deriving them the same way needs this mirror re-checked by hand. Annotating
+// the routes themselves (the R2-56 import closure) stays a server-src ticket.
+// ---------------------------------------------------------------------------
+
+/** The T20 review outcome: the service's own answer IS the shared contract. */
+export type ServerCaseReviewOutcomeIsShared = Same<
+  ServerCaseReviewOutcome,
+  CaseReviewOutcome
+>;
+
+/** The save answer's flat projection, field for field as routes/case-review.ts builds it. */
+type ServerSavedVersionAnswer = {
+  datasetId: ObservationDataset["id"];
+  datasetName: ObservationDataset["name"];
+  version: {
+    id: ObservationDatasetVersion["id"];
+    contentHash: ObservationDatasetVersion["contentHash"];
+    redactionPolicyVersion: ObservationDatasetVersion["redactionPolicyVersion"];
+    /** Derived: `version.cases.length`. */
+    caseCount: number;
+    /** Derived: `version.createdAt.toISOString()`. */
+    createdAt: string;
+  };
+  replayed: boolean;
+  canaryFindings: number;
+};
+export type ServerSavedVersionAnswerIsShared = Same<
+  ServerSavedVersionAnswer,
+  SavedDatasetVersionResult
+>;
+
+/** `projectDatasetSubject` — the detail page's dataset sub-shape, field for field. */
+type ServerDatasetSubjectProjection = {
+  id: ObservationDataset["id"];
+  name: ObservationDataset["name"];
+  syncState: ObservationDataset["syncState"];
+  /** Derived: `createdAt.toISOString()`. */
+  createdAt: string;
+  /** Derived: `updatedAt.toISOString()`. */
+  updatedAt: string;
+};
+export type ServerDatasetSubjectProjectionIsShared = Same<
+  ServerDatasetSubjectProjection,
+  ObservationDatasetDetailResult["dataset"]
+>;
+
+/** `projectDatasetVersion` — one history row, field for field. */
+type ServerDatasetVersionProjection = {
+  id: ObservationDatasetVersion["id"];
+  datasetId: ObservationDatasetVersion["datasetId"];
+  contentHash: ObservationDatasetVersion["contentHash"];
+  redactionPolicyVersion: ObservationDatasetVersion["redactionPolicyVersion"];
+  /** Derived: `version.cases.length`. */
+  caseCount: number;
+  /** Derived: `version.createdAt.toISOString()`. */
+  createdAt: string;
+};
+export type ServerDatasetVersionProjectionIsShared = Same<
+  ServerDatasetVersionProjection,
+  ObservationDatasetVersionItem
+>;
+
+/** The list face's row projection (routes/datasets.ts GET /), field for field. */
+type ServerDatasetListItemProjection = {
+  id: ObservationDataset["id"];
+  name: ObservationDataset["name"];
+  syncState: ObservationDataset["syncState"];
+  /** Derived: `createdAt.toISOString()`. */
+  createdAt: string;
+  /** Derived: `updatedAt.toISOString()`. */
+  updatedAt: string;
+  /** The store's aggregate, passed through. */
+  versionCount: number;
+  /** Derived: `latestVersionAt?.toISOString() ?? null`. */
+  latestVersionAt: string | null;
+};
+export type ServerDatasetListItemProjectionIsShared = Same<
+  ServerDatasetListItemProjection,
+  ObservationDatasetListItem
+>;
+
+// ---------------------------------------------------------------------------
+// R5-46: the experiment write faces. The T22 frozen submission's input types
+// are pinned against the shared submit body, both directions; the submit and
+// cancel answers are inline literals in routes/experiments.ts, mirrored
+// field-by-field from the row types those literals read (same discipline and
+// same caveats as the R5-45 block above).
+// ---------------------------------------------------------------------------
+
+/** The configuration a freeze pins: the server's input IS the shared body. */
+export type ServerExperimentConfigIsShared = Same<
+  ExperimentConfigInput,
+  ExperimentSubmitConfigInput
+>;
+export type ServerExperimentSubmitInputIsShared = Same<
+  SaveExperimentInput,
+  ExperimentSubmitInput
+>;
+
+/** The submit answer, field for field as routes/experiments.ts builds it. */
+type ServerSubmittedExperimentAnswer = {
+  experimentId: ObservationExperiment["id"];
+  executionId: ObservationExecution["id"];
+  name: ObservationExperiment["name"];
+  datasetVersionId: ObservationExperiment["datasetVersionId"];
+  datasetContentHash: ObservationExperiment["datasetContentHash"];
+  configHash: ObservationExperiment["configHash"];
+  /** The submit service's idempotency verdict, passed through. */
+  replayed: boolean;
+  /** The freeze pipeline's canary count, passed through. */
+  canaryFindings: number;
+};
+export type ServerSubmittedExperimentIsShared = Same<
+  ServerSubmittedExperimentAnswer,
+  SubmittedExperimentResult
+>;
+
+/** The cancel answer, field for field. */
+type ServerCancelledExecutionAnswer = {
+  executionId: ObservationExecution["id"];
+  state: "cancelled";
+};
+export type ServerCancelledExecutionIsShared = Same<
+  ServerCancelledExecutionAnswer,
+  CancelledExecutionResult
+>;
+
+// ---------------------------------------------------------------------------
+// R5-52: the T29 comparison shapes, whole. comparison.ts hand-draws four shapes
+// the shared contract names — side, per-sample delta, regression row and the
+// top-level comparison — and only the ledger entry was anchored before, so a
+// drift in the other three degraded the page to its unavailable state silently
+// (the runtime guard catches bad VALUES, never a renamed or reshaped wire field).
+// Each is pinned both directions here.
+// ---------------------------------------------------------------------------
+
+export type ServerComparisonSideIsShared = Same<
+  ComparisonSide,
+  ExperimentComparisonSide
+>;
+export type ServerSampleDeltaIsShared = Same<
+  SampleDelta,
+  ExperimentSampleDelta
+>;
+export type ServerRegressionRowIsShared = Same<
+  RegressionRow,
+  ExperimentRegressionRow
+>;
+export type ServerExperimentComparisonIsShared = Same<
+  ServerExperimentComparison,
+  ExperimentComparison
+>;
+
+// ---------------------------------------------------------------------------
 // The constants the type checker (and the runtime twin) actually evaluate.
 // ---------------------------------------------------------------------------
 
@@ -240,3 +475,19 @@ export const serverResultsReportIsShared: ServerResultsReportIsShared = true;
 export const serverCompatibilityFieldsAreShared: ServerCompatibilityFieldsAreShared = true;
 export const serverCompatibilityFieldIsShared: ServerCompatibilityFieldIsShared = true;
 export const serverCompatibilityEntryIsShared: ServerCompatibilityEntryIsShared = true;
+export const sameRejectsAnyOnLeft: SameRejectsAnyOnLeft = false;
+export const sameRejectsAnyOnRight: SameRejectsAnyOnRight = false;
+export const sameRejectsAnyOnBothSides: SameRejectsAnyOnBothSides = false;
+export const serverCaseReviewOutcomeIsShared: ServerCaseReviewOutcomeIsShared = true;
+export const serverSavedVersionAnswerIsShared: ServerSavedVersionAnswerIsShared = true;
+export const serverDatasetSubjectProjectionIsShared: ServerDatasetSubjectProjectionIsShared = true;
+export const serverDatasetVersionProjectionIsShared: ServerDatasetVersionProjectionIsShared = true;
+export const serverDatasetListItemProjectionIsShared: ServerDatasetListItemProjectionIsShared = true;
+export const serverExperimentConfigIsShared: ServerExperimentConfigIsShared = true;
+export const serverExperimentSubmitInputIsShared: ServerExperimentSubmitInputIsShared = true;
+export const serverSubmittedExperimentIsShared: ServerSubmittedExperimentIsShared = true;
+export const serverCancelledExecutionIsShared: ServerCancelledExecutionIsShared = true;
+export const serverComparisonSideIsShared: ServerComparisonSideIsShared = true;
+export const serverSampleDeltaIsShared: ServerSampleDeltaIsShared = true;
+export const serverRegressionRowIsShared: ServerRegressionRowIsShared = true;
+export const serverExperimentComparisonIsShared: ServerExperimentComparisonIsShared = true;
