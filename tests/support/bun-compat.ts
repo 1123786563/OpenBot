@@ -62,11 +62,12 @@ class NodeBunFile {
       return 0;
     }
   }
-  get exists(): boolean {
-    return existsSync(this.__bunPath);
+  /** Bun's is a method returning a promise, not a property: `await Bun.file(p).exists()`. */
+  exists(): Promise<boolean> {
+    return Promise.resolve(existsSync(this.__bunPath));
   }
   existsSync(): boolean {
-    return this.exists;
+    return existsSync(this.__bunPath);
   }
   text(): Promise<string> {
     return Promise.resolve(this.textSync());
@@ -205,14 +206,19 @@ function run(command: readonly string[], options: SpawnOptions = {}): Any {
     });
     child.on("error", () => resolve(1));
   });
+  // Bound before the assignment below: `Object.assign(child, …)` replaces these very methods on the
+  // object they were read from, so a wrapper that calls `child.kill()` calls itself forever.
+  const nativeKill = child.kill.bind(child);
+  const nativeRef = child.ref.bind(child);
+  const nativeUnref = child.unref.bind(child);
   return Object.assign(child, {
     exited,
     text: () => stdout,
     stdout,
     stderr,
-    kill: (signal?: string) => child.kill(signal as NodeJS.Signals),
-    ref: () => child.ref(),
-    unref: () => child.unref(),
+    kill: (signal?: string) => nativeKill(signal as NodeJS.Signals),
+    ref: () => nativeRef(),
+    unref: () => nativeUnref(),
   });
 }
 
@@ -319,19 +325,29 @@ export const Bun: Any = {
   mkdir: (path: string, options?: { recursive?: boolean }) =>
     mkdirSync(path, { recursive: options?.recursive ?? false }),
   read: (path: string) => readFileSync(path),
-  CryptoHasher: class {
-    private inner: Any;
-    constructor(algorithm: string) {
-      this.inner = createHash(algorithm);
-    }
-    update(value: string | Uint8Array) {
-      this.inner.update(value);
-      return this;
-    }
-    digest(encoding?: string) {
-      return this.inner.digest(encoding as Any);
-    }
-  },
+  CryptoHasher: Object.assign(
+    class {
+      private inner: Any;
+      constructor(algorithm: string) {
+        this.inner = createHash(algorithm);
+      }
+      update(value: string | Uint8Array) {
+        this.inner.update(value);
+        return this;
+      }
+      digest(encoding?: string) {
+        return this.inner.digest(encoding as Any);
+      }
+    },
+    {
+      // `Bun.CryptoHasher.hash("sha256", data)` is the one-call form the suites use.
+      hash(algorithm: string, value: string | Uint8Array, encoding?: string) {
+        return createHash(algorithm)
+          .update(value)
+          .digest(encoding as Any);
+      },
+    },
+  ),
   serve,
   // Bun parses YAML natively; the repository already carries `yaml` as a dev dependency.
   YAML: {

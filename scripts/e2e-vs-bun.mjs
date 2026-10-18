@@ -82,12 +82,21 @@ function bunTest(cwd, file) {
     const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
     child.on("close", () => {
       clearTimeout(timer);
+      // Bun writes `tests assertions failures skipped time` on the root element and no `errors`
+      // attribute at all; reading a fixed attribute order reported every file as unreadable.
       let counts = null;
       try {
-        const m = readFileSync(junit, "utf8").match(
-          /<testsuite[^>]*\stests="(\d+)"[^>]*\sfailures="(\d+)"[^>]*\serrors="(\d+)"/,
-        );
-        counts = m ? { tests: +m[1], failures: +m[2] + +m[3] } : null;
+        const xml = readFileSync(junit, "utf8");
+        const head = xml.match(/<testsuites\b[^>]*>/)?.[0] ?? "";
+        const num = (attr) => {
+          const hit = head.match(new RegExp(`\\b${attr}="(\\d+(?:\\.\\d+)?)"`));
+          return hit ? Number(hit[1]) : null;
+        };
+        const tests = num("tests");
+        const failures = num("failures");
+        if (tests !== null && failures !== null) {
+          counts = { tests, failures: failures + (num("errors") ?? 0) };
+        }
       } catch {
         counts = null;
       }

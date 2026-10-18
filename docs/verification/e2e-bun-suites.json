@@ -1,5 +1,5 @@
 {
- "generatedBy": "scripts/e2e-add-driven.mjs",
+ "generatedBy": "scripts/e2e-route-failures.mjs",
  "groups": [
   {
    "name": "app/tests part 1",
@@ -8,6 +8,7 @@
     "app/tests/approval-tools.test.tsx",
     "app/tests/authoring-tool-cards.test.tsx",
     "app/tests/bot-route-default-agent.test.tsx",
+    "app/tests/build-cache.test.ts",
     "app/tests/channel-chat.test.ts",
     "app/tests/channel-history-notice.test.ts",
     "app/tests/channel-history-refresh.test.tsx",
@@ -26,13 +27,13 @@
     "app/tests/composer-unnamed-mime.test.tsx",
     "app/tests/composer-upload-group.test.tsx",
     "app/tests/computer-activity.test.ts",
-    "app/tests/computer-tool-refusals.test.ts",
-    "app/tests/failed-send-attachments.test.tsx"
+    "app/tests/computer-tool-refusals.test.ts"
    ]
   },
   {
    "name": "app/tests part 2",
    "files": [
+    "app/tests/failed-send-attachments.test.tsx",
     "app/tests/form-submit-controls.test.ts",
     "app/tests/home-fallback-routing.test.tsx",
     "app/tests/person-sent-message.test.ts",
@@ -49,6 +50,24 @@
    "name": "desktop/scripts",
    "files": [
     "desktop/scripts/desktop-version.test.ts"
+   ]
+  },
+  {
+   "name": "scripts/processes.test.ts",
+   "files": [
+    "scripts/processes.test.ts"
+   ]
+  },
+  {
+   "name": "scripts/start-restart-guard.test.ts",
+   "files": [
+    "scripts/start-restart-guard.test.ts"
+   ]
+  },
+  {
+   "name": "scripts/tls-pipeline.test.ts",
+   "files": [
+    "scripts/tls-pipeline.test.ts"
    ]
   },
   {
@@ -86,13 +105,16 @@
     "server/tests/billing-credits-writer.integration.test.ts",
     "server/tests/billing-reconcile.integration.test.ts",
     "server/tests/billing-store.integration.test.ts",
+    "server/tests/billing-store.test.ts",
     "server/tests/billing-usage-outbox.integration.test.ts",
+    "server/tests/billing-webhook.test.ts",
     "server/tests/binding-code-hardening.integration.test.ts",
     "server/tests/binding-code-issuance.test.ts",
     "server/tests/bot-lifecycle.integration.test.ts",
     "server/tests/bot-service-auth.test.ts",
     "server/tests/bot-service-credential-routes.test.ts",
     "server/tests/bot-service-registry.integration.test.ts",
+    "server/tests/bunfig-preload.test.ts",
     "server/tests/catalog-auto-sync.test.ts",
     "server/tests/catalog-fetch.integration.test.ts",
     "server/tests/catalog-freshness-gate.test.ts",
@@ -103,15 +125,15 @@
     "server/tests/channel-summary.integration.test.ts",
     "server/tests/checkin-rewards.integration.test.ts",
     "server/tests/cleanup-classification.integration.test.ts",
-    "server/tests/cleanup-dry-run.integration.test.ts",
-    "server/tests/cleanup-enumeration.integration.test.ts",
-    "server/tests/cleanup-execution.integration.test.ts",
-    "server/tests/cleanup-guards.integration.test.ts"
+    "server/tests/cleanup-dry-run.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 3",
    "files": [
+    "server/tests/cleanup-enumeration.integration.test.ts",
+    "server/tests/cleanup-execution.integration.test.ts",
+    "server/tests/cleanup-guards.integration.test.ts",
     "server/tests/cleanup-rehearsal.integration.test.ts",
     "server/tests/cleanup-relations.integration.test.ts",
     "server/tests/code-run-store.test.ts",
@@ -132,15 +154,15 @@
     "server/tests/database.test.ts",
     "server/tests/db-client-address.test.ts",
     "server/tests/delivery-store.integration.test.ts",
-    "server/tests/demonstrations-store.integration.test.ts",
-    "server/tests/dev-actor.integration.test.ts",
-    "server/tests/enterprise-controls.integration.test.ts",
-    "server/tests/enterprise/conversations.integration.test.ts"
+    "server/tests/demonstrations-store.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 4",
    "files": [
+    "server/tests/dev-actor.integration.test.ts",
+    "server/tests/enterprise-controls.integration.test.ts",
+    "server/tests/enterprise/conversations.integration.test.ts",
     "server/tests/enterprise/mastra-storage.integration.test.ts",
     "server/tests/enterprise/runner-events.integration.test.ts",
     "server/tests/enterprise/runs.integration.test.ts",
@@ -161,15 +183,15 @@
     "server/tests/identity-github-callback.integration.test.ts",
     "server/tests/identity-retire.integration.test.ts",
     "server/tests/identity-schema.integration.test.ts",
-    "server/tests/identity-store.integration.test.ts",
-    "server/tests/jsonb-encoding.integration.test.ts",
-    "server/tests/key-drift-handling.test.ts",
-    "server/tests/key-expiry.test.ts"
+    "server/tests/identity-store.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 5",
    "files": [
+    "server/tests/jsonb-encoding.integration.test.ts",
+    "server/tests/key-drift-handling.test.ts",
+    "server/tests/key-expiry.test.ts",
     "server/tests/key-issuance.integration.test.ts",
     "server/tests/key-renewal.test.ts",
     "server/tests/key-state-sync.test.ts",
@@ -190,15 +212,15 @@
     "server/tests/openmuse-deletion.test.ts",
     "server/tests/openmuse-reviewed-actions-store.integration.test.ts",
     "server/tests/order-ownership.integration.test.ts",
-    "server/tests/organization-store.integration.test.ts",
-    "server/tests/page-frame-retention.integration.test.ts",
-    "server/tests/passwords-store.integration.test.ts",
-    "server/tests/payer-account.integration.test.ts"
+    "server/tests/organization-store.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 6",
    "files": [
+    "server/tests/page-frame-retention.integration.test.ts",
+    "server/tests/passwords-store.integration.test.ts",
+    "server/tests/payer-account.integration.test.ts",
     "server/tests/payer-company-resolution.integration.test.ts",
     "server/tests/payer-legacy-mapping.integration.test.ts",
     "server/tests/payer-no-fallback.test.ts",
@@ -219,15 +241,17 @@
     "server/tests/plugin-store.integration.test.ts",
     "server/tests/plugin-user-credential.integration.test.ts",
     "server/tests/policy-durability.integration.test.ts",
-    "server/tests/policy-fanout.integration.test.ts",
-    "server/tests/price-snapshot.integration.test.ts",
-    "server/tests/price-status-classification.integration.test.ts",
-    "server/tests/proactive-store.integration.test.ts"
+    "server/tests/policy-fanout.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 7",
    "files": [
+    "server/tests/price-snapshot.integration.test.ts",
+    "server/tests/price-status-classification.integration.test.ts",
+    "server/tests/proactive-store.integration.test.ts",
+    "server/tests/production-loader-boundary.test.ts",
+    "server/tests/provider-oauth.test.ts",
     "server/tests/qa-batch1-credits-writer.integration.test.ts",
     "server/tests/qa-batch1-duplicate-paid.integration.test.ts",
     "server/tests/qa-batch1-payment-store.integration.test.ts",
@@ -246,17 +270,17 @@
     "server/tests/reserve-revalidation.integration.test.ts",
     "server/tests/reserve-version-locking.integration.test.ts",
     "server/tests/responsibilities-store.integration.test.ts",
-    "server/tests/responsibility-triggers.integration.test.ts",
-    "server/tests/routine-run-now.integration.test.ts",
-    "server/tests/routine-sweep.integration.test.ts",
-    "server/tests/routines-store.integration.test.ts",
-    "server/tests/runtime-agents.integration.test.ts",
-    "server/tests/sandbox-state.test.ts"
+    "server/tests/responsibility-triggers.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 8",
    "files": [
+    "server/tests/routine-run-now.integration.test.ts",
+    "server/tests/routine-sweep.integration.test.ts",
+    "server/tests/routines-store.integration.test.ts",
+    "server/tests/runtime-agents.integration.test.ts",
+    "server/tests/sandbox-state.test.ts",
     "server/tests/sandboxed-components.integration.test.ts",
     "server/tests/sandboxed-publication.integration.test.ts",
     "server/tests/server-side-tools.integration.test.ts",
@@ -275,17 +299,18 @@
     "server/tests/sso-required-sessions.integration.test.ts",
     "server/tests/subscription-ownership.integration.test.ts",
     "server/tests/team-bots.integration.test.ts",
-    "server/tests/tenant-package.test.ts",
-    "server/tests/test-database-url.integration.test.ts",
-    "server/tests/unknown-hold-no-reclaim.integration.test.ts",
-    "server/tests/usage-outbox.integration.test.ts",
-    "server/tests/user-instructions.integration.test.ts",
-    "server/tests/user-preferences.integration.test.ts"
+    "server/tests/tenant-package.test.ts"
    ]
   },
   {
    "name": "server/tests part 9",
    "files": [
+    "server/tests/test-database-url.integration.test.ts",
+    "server/tests/tool-selection-environment-restoration.test.ts",
+    "server/tests/unknown-hold-no-reclaim.integration.test.ts",
+    "server/tests/usage-outbox.integration.test.ts",
+    "server/tests/user-instructions.integration.test.ts",
+    "server/tests/user-preferences.integration.test.ts",
     "server/tests/voice-session-preview.integration.test.ts",
     "server/tests/voice-session-store.integration.test.ts",
     "server/tests/work-queue.integration.test.ts",
@@ -301,6 +326,7 @@
   "app/tests/approval-tools.test.tsx",
   "app/tests/authoring-tool-cards.test.tsx",
   "app/tests/bot-route-default-agent.test.tsx",
+  "app/tests/build-cache.test.ts",
   "app/tests/channel-chat.test.ts",
   "app/tests/channel-history-notice.test.ts",
   "app/tests/channel-history-refresh.test.tsx",
@@ -332,6 +358,9 @@
   "app/tests/stopped-turn.test.ts",
   "app/tests/transcript-attachments.test.tsx",
   "desktop/scripts/desktop-version.test.ts",
+  "scripts/processes.test.ts",
+  "scripts/start-restart-guard.test.ts",
+  "scripts/tls-pipeline.test.ts",
   "server/tests/access-grant-revoke.test.ts",
   "server/tests/access-grant.integration.test.ts",
   "server/tests/account-mode.integration.test.ts",
@@ -359,13 +388,16 @@
   "server/tests/billing-credits-writer.integration.test.ts",
   "server/tests/billing-reconcile.integration.test.ts",
   "server/tests/billing-store.integration.test.ts",
+  "server/tests/billing-store.test.ts",
   "server/tests/billing-usage-outbox.integration.test.ts",
+  "server/tests/billing-webhook.test.ts",
   "server/tests/binding-code-hardening.integration.test.ts",
   "server/tests/binding-code-issuance.test.ts",
   "server/tests/bot-lifecycle.integration.test.ts",
   "server/tests/bot-service-auth.test.ts",
   "server/tests/bot-service-credential-routes.test.ts",
   "server/tests/bot-service-registry.integration.test.ts",
+  "server/tests/bunfig-preload.test.ts",
   "server/tests/catalog-auto-sync.test.ts",
   "server/tests/catalog-fetch.integration.test.ts",
   "server/tests/catalog-freshness-gate.test.ts",
@@ -476,6 +508,8 @@
   "server/tests/price-snapshot.integration.test.ts",
   "server/tests/price-status-classification.integration.test.ts",
   "server/tests/proactive-store.integration.test.ts",
+  "server/tests/production-loader-boundary.test.ts",
+  "server/tests/provider-oauth.test.ts",
   "server/tests/qa-batch1-credits-writer.integration.test.ts",
   "server/tests/qa-batch1-duplicate-paid.integration.test.ts",
   "server/tests/qa-batch1-payment-store.integration.test.ts",
@@ -520,6 +554,7 @@
   "server/tests/team-bots.integration.test.ts",
   "server/tests/tenant-package.test.ts",
   "server/tests/test-database-url.integration.test.ts",
+  "server/tests/tool-selection-environment-restoration.test.ts",
   "server/tests/unknown-hold-no-reclaim.integration.test.ts",
   "server/tests/usage-outbox.integration.test.ts",
   "server/tests/user-instructions.integration.test.ts",
@@ -542,6 +577,16 @@
  ],
  "causes": {
   "server/tests/recovery-scan.integration.test.ts": "runner named it: Cannot find package 'bun' from server/src/db/client.ts (integration suite that also spawns a bun worker)",
-  "server/tests/recovery-unacked-replay.integration.test.ts": "runner named it: O"
+  "server/tests/recovery-unacked-replay.integration.test.ts": "runner named it: O",
+  "scripts/tls-pipeline.test.ts": "runner named it: uses Bun's own subprocess/shell API ($ , spawn, file, CryptoHasher) that Node does not provide",
+  "scripts/start-restart-guard.test.ts": "runner named it: uses Bun's own subprocess/shell API ($ , spawn, file, CryptoHasher) that Node does not provide",
+  "scripts/processes.test.ts": "runner named it: uses Bun's own subprocess/shell API ($ , spawn, file, CryptoHasher) that Node does not provide",
+  "app/tests/build-cache.test.ts": "runner named it: uses Bun's own subprocess/shell API ($ , spawn, file, CryptoHasher) that Node does not provide",
+  "server/tests/tool-selection-environment-restoration.test.ts": "runner named it: uses Bun's own subprocess/shell API ($ , spawn, file, CryptoHasher) that Node does not provide",
+  "server/tests/production-loader-boundary.test.ts": "runner named it: uses Bun's own subprocess/shell API ($ , spawn, file, CryptoHasher) that Node does not provide",
+  "server/tests/bunfig-preload.test.ts": "runner named it: uses Bun's own subprocess/shell API ($ , spawn, file, CryptoHasher) that Node does not provide",
+  "server/tests/billing-store.test.ts": "runner reported: Cannot read properties of undefined (reading 'PostgresError')",
+  "server/tests/billing-webhook.test.ts": "runner reported: Cannot read properties of undefined (reading 'PostgresError')",
+  "server/tests/provider-oauth.test.ts": "runner reported: Cannot assign to property 'lstat' of [object Module]"
  }
 }

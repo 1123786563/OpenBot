@@ -890,12 +890,17 @@ type Register = (...args: any[]) => unknown;
  * Bun accepted longer and repeated titles. Titles are report labels, not assertions, so the runner's
  * rule is honoured by clamping and by numbering a repeat, never by dropping the test.
  *
- * The uniqueness domain is the whole title path, so `is on when nothing is set` in two different
- * `describe` groups is not a repeat and must not be renumbered. The counters live per file and are
- * cleared when that file is loaded: the runner imports a suite file once to list it and again to run
- * it, and a counter that survived the two passes handed back `… [2]` the second time, which the
- * runner reads as a test that disappeared on re-import — a collection error for every test in the
- * file, and an abort of the whole run.
+ * The runner imports every suite file more than once (to list it, then to execute it) and requires the
+ * two passes to register the same set, so a title has to be a function of the declaration alone:
+ *
+ *  - the uniqueness domain is the whole title path, so `is on when nothing is set` inside two
+ *    different `describe` groups is not a repeat and must not be renumbered;
+ *  - the repeat counter is per file and resets when that file enters the loader again, so a second
+ *    pass does not hand back `… [2]` for what the first pass called `… [1]`;
+ *  - a title must be a function of the declaration, not of data generated at import. Three suites
+ *    spelled an Ed25519 JWK or a random id into their `each` titles, so no two imports could agree —
+ *    the runner's list pass and execute pass are separate processes — and those fixtures are fixed
+ *    values now, because the runner has no channel for a per-run label.
  */
 const SEEN_TITLES = Symbol.for("openbot.e2e-compat.seen-titles");
 const DESCRIBE_PATH = Symbol.for("openbot.e2e-compat.describe-path");
@@ -940,13 +945,10 @@ function clampTitle(title: string, kind: string): string {
   const perFile = seenTitles.get(file) ?? new Map();
   seenTitles.set(file, perFile);
   const key = `${kind}:${describePath.join("›")}:${candidate}`;
-  const seen = perFile.get(key);
-  if (seen === undefined) {
-    perFile.set(key, 1);
-    return candidate;
-  }
-  perFile.set(key, seen + 1);
-  const suffix = ` [${seen + 1}]`;
+  const seen = (perFile.get(key) ?? 0) + 1;
+  perFile.set(key, seen);
+  if (seen === 1) return candidate;
+  const suffix = ` [${seen}]`;
   return candidate.slice(0, 512 - Buffer.byteLength(suffix)) + suffix;
 }
 
@@ -1022,6 +1024,20 @@ const e2eRegister: Register = (...args) => {
     call[bodyIndex] = (...callArgs: Any[]) => {
       (e2eTest.skip as Any)(true, "group skipped");
       return body(...callArgs);
+    };
+  } else if (process.env.E2E_COMPAT_DEBUG && typeof body === "function") {
+    // The report and the trace page carry the message only — no stack — which is enough to triage an
+    // assertion diff and nowhere near enough for `Cannot read properties of undefined`. Under the
+    // debug flag the body is wrapped so the throwing frame reaches stderr.
+    call[bodyIndex] = async (...callArgs: Any[]) => {
+      try {
+        return await body(...callArgs);
+      } catch (error) {
+        console.error(
+          `[e2e-compat] body threw: ${(error as Any)?.stack ?? error}`,
+        );
+        throw error;
+      }
     };
   }
   try {

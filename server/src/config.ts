@@ -40,6 +40,12 @@ import {
 } from "./gateway/endpoint-config";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
+// Bun gives an ESM module a global `require`, which is how `pemOrFile` below reaches `node:fs`
+// without putting it in this module's eager import graph. Node has no such global, so the same
+// laziness needs a handle.
+import { createRequire } from "node:module";
+
+const nodeRequire = createRequire(import.meta.url);
 
 /** The ledger's scale, restated as a config-layer constant: config must not import the read module. */
 const CREDIT_SCALE_FOR_CONFIG = 100;
@@ -2294,7 +2300,7 @@ function pemOrFile(value: string, variable: string): string {
   if (value.includes("-----BEGIN")) {
     return value;
   }
-  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  const { readFileSync } = nodeRequire("node:fs") as typeof import("node:fs");
   try {
     const contents = readFileSync(value, "utf8");
     if (!contents.includes("-----BEGIN")) {

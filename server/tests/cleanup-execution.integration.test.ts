@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
+import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { inArray, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import { createAuditStore } from "../src/audit";

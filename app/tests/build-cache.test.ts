@@ -1,5 +1,5 @@
 import "./preload";
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

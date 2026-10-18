@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
-import { generateKeyPairSync } from "node:crypto";
+import { createPrivateKey } from "node:crypto";
 import { verify } from "web-bot-auth";
 import { verifierFromJWK } from "web-bot-auth/crypto";
 import {
@@ -10,9 +10,23 @@ import {
 } from "../src/web-bot-auth";
 
 const AGENT = "https://openbot.example.com";
-const jwk = generateKeyPairSync("ed25519").privateKey.export({
-  format: "jwk",
-});
+/*
+ * The `each` rows below print this key into their test titles, and e2e identifies a test by its
+ * title — its list pass and its execute pass are separate processes that must agree on the name. So
+ * the fixture is a fixed seed rather than a fresh keypair per import: same usable Ed25519 pair,
+ * deterministic labels.
+ */
+const jwk = createPrivateKey({
+  key: Buffer.concat([
+    Buffer.from("302e020100300506032b657004220420", "hex"),
+    Buffer.from(
+      "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "hex",
+    ),
+  ]),
+  format: "der",
+  type: "pkcs8",
+}).export({ format: "jwk" });
 const publicJwk = { kty: "OKP", crv: "Ed25519", x: jwk.x };
 
 afterEach(async () => {

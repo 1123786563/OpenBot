@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -16,6 +16,11 @@ import {
 } from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
+
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const herePath = fileURLToPath(import.meta.url);
+const hereDir = dirname(herePath);
 
 /*
  * Bifrost #277 (08.2): the recovery branch for a result that was PERSISTED but whose
@@ -56,7 +61,7 @@ const writer = createCreditWriter(database);
 const outbox = createUsageOutbox(database);
 const scanner = createRecoveryScanner({ database });
 const prefix = `b5-277-${randomUUID().slice(0, 8)}`;
-const workerScript = join(import.meta.dir, "support", "recovery-replay-worker.ts");
+const workerScript = join(hereDir, "support", "recovery-replay-worker.ts");
 
 const GRANT_TOTAL = 10_000_00; // 10_000 credits, ×100
 
@@ -229,7 +234,7 @@ async function parkRetainedItem(reservationId: string, owner: string) {
 function runWorkerInSubprocess(...args: string[]): Promise<string> {
   const script =
     args[0] === "scan"
-      ? join(import.meta.dir, "support", "recovery-scan-worker.ts")
+      ? join(hereDir, "support", "recovery-scan-worker.ts")
       : workerScript;
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [script, ...args], {
