@@ -245,9 +245,15 @@ import {
 } from "./credentials";
 import {
   createGatewayAdminCredentialService,
+  gatewayAdminCredentialControls,
   installGatewayAdminCredentialService,
 } from "./gateway/admin-credential";
 import { startGatewayCatalogSyncScheduler } from "./gateway/catalog-sync";
+import {
+  createGatewayVirtualKeyStateClient,
+  startGatewayKeyStateSyncScheduler,
+} from "./gateway/key-state-sync";
+import { gatewayEndpointControls } from "./gateway/endpoint-config";
 import { createEnterpriseStore } from "./admin/settings-store";
 import { createDatabase } from "./db/client";
 import {
@@ -5808,6 +5814,27 @@ const catalogSyncScheduler = startGatewayCatalogSyncScheduler({
   environmentRate: config.gateway?.creditConversionRate,
 });
 
+/*
+ * The automatic key state sync (Bifrost 05.8, #249): one pass every minute by default,
+ * `BIFROST_KEY_STATE_SYNC_INTERVAL_MS` to change it, so a key the gateway deletes or
+ * disables stops being usable here on the next tick — the minute-scale promise the short
+ * key term (05.5) makes meaningful. Assembled here, after the app exists, because the
+ * reads need the installed endpoint and admin-credential controls. A deployment without
+ * the gateway wired keeps booting: the scheduler answers undefined and logs. Stopped in
+ * the signal handler below, with the other sweeps.
+ */
+const keyStateSyncScheduler = startGatewayKeyStateSyncScheduler({
+  database,
+  client: createGatewayVirtualKeyStateClient({
+    readGatewayEndpoint: async () => {
+      const controls = gatewayEndpointControls();
+      return controls ? controls.readGatewayEndpoint() : undefined;
+    },
+    resolveGatewayAdminCredential: async () =>
+      gatewayAdminCredentialControls()!.resolveGatewayAdminCredential(),
+  }),
+});
+
 /**
  * The live screen, proxied.
  *
@@ -6168,6 +6195,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     responsibilitySweep.stop();
     catalogSyncScheduler?.stop();
+    keyStateSyncScheduler?.stop();
     wakeUpSweep.stop();
     wakeUpReaper.stop();
     openMuseTaskSweep.stop();
