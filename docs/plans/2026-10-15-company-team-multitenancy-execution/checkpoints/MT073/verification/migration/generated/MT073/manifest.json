@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "tool": "multitenancy-migrate-test",
+  "taskId": "MT073",
+  "planDigest": "ef3f853513534f86bd841b521e553581ede8532a0bc42c1b3a537988acbe160d",
+  "steps": [
+    {
+      "number": 1,
+      "name": "0001_mt073_company_finance_grants.sql",
+      "statementDigest": "e4937e22eb121e8503f120867aeabcd671ecf8c0b073bb6104aa46eff37b6e50",
+      "statementCount": 2
+    }
+  ]
+}

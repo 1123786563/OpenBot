@@ -1,0 +1,111 @@
+=== MT004 ===
+generated: MT004 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT004
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT004/0001_mt004_create_table.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT004/0002_mt004_rls_policies.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT004/manifest.json
+applied: MT004 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt004_create_table.sql, 0002_mt004_rls_policies.sql
+=== MT008 ===
+generated: MT008 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT008
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT008/0001_mt008_resource_visibility_column.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT008/0002_mt008_visibility_operator_grant.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT008/manifest.json
+applied: MT008 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt008_resource_visibility_column.sql, 0002_mt008_visibility_operator_grant.sql
+=== MT112 ===
+generated: MT112 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT112
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT112/0001_mt112_anchor_mapping_table.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT112/0002_mt112_anchor_rls_policies.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT112/0003_mt112_legacy_anchor_rows.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT112/0004_mt112_anchor_mapping_row.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT112/manifest.json
+applied: MT112 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt112_anchor_mapping_table.sql, 0002_mt112_anchor_rls_policies.sql, 0003_mt112_legacy_anchor_rows.sql, 0004_mt112_anchor_mapping_row.sql
+=== MT012 ===
+generated: MT012 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT012
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT012/0001_mt012_core_rls_enable.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT012/0002_mt012_context_reset_function.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT012/manifest.json
+applied: MT012 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt012_core_rls_enable.sql, 0002_mt012_context_reset_function.sql
+=== MT014 ===
+generated: MT014 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT014
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT014/0001_mt014_runtime_config_tables.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT014/0002_mt014_runtime_config_rls.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT014/manifest.json
+applied: MT014 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt014_runtime_config_tables.sql, 0002_mt014_runtime_config_rls.sql
+=== MT010 ===
+generated: MT010 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT010
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT010/0001_mt010_create_table.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT010/0002_mt010_share_rls_policies.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT010/manifest.json
+applied: MT010 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt010_create_table.sql, 0002_mt010_share_rls_policies.sql
+=== MT009 ===
+generated: MT009 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT009
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT009/0001_mt009_resource_dependency_table.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT009/0002_mt009_dependency_rls_policies.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT009/manifest.json
+applied: MT009 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt009_resource_dependency_table.sql, 0002_mt009_dependency_rls_policies.sql
+=== MT077 ===
+generated: MT077 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT077
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT077/0001_mt077_governance_policy_tables.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT077/0002_mt077_governance_policy_rls.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT077/manifest.json
+applied: MT077 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt077_governance_policy_tables.sql, 0002_mt077_governance_policy_rls.sql
+=== MT026 ===
+generated: MT026 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT026
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT026/0001_mt026_sso_scim_tables.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT026/0002_mt026_sso_scim_rls.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT026/manifest.json
+applied: MT026 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt026_sso_scim_tables.sql, 0002_mt026_sso_scim_rls.sql
+=== MT076 ===
+generated: MT076 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT076
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT076/0001_mt076_membership_role_operator_grant.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT076/manifest.json
+applied: MT076 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt076_membership_role_operator_grant.sql
+=== MT069 ===
+generated: MT069 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT069
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT069/0001_mt069_payer_accounts_tables.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT069/manifest.json
+applied: MT069 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt069_payer_accounts_tables.sql
+=== MT016 ===
+generated: MT016 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT016
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT016/0001_mt016_bot_ownership_tables.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT016/0002_mt016_bot_ownership_rls.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT016/manifest.json
+applied: MT016 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt016_bot_ownership_tables.sql, 0002_mt016_bot_ownership_rls.sql
+=== MT041 ===
+generated: MT041 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT041
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT041/0001_mt041_job_ownership_tables.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT041/0002_mt041_job_ownership_rls.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT041/manifest.json
+applied: MT041 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt041_job_ownership_tables.sql, 0002_mt041_job_ownership_rls.sql
+=== MT027 ===
+generated: MT027 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT027
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT027/0001_mt027_credential_ownership_tables.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT027/0002_mt027_credential_rls_policies.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT027/manifest.json
+applied: MT027 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt027_credential_ownership_tables.sql, 0002_mt027_credential_rls_policies.sql
+=== MT028 ===
+generated: MT028 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT028
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT028/0001_mt028_oauth_state_table.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT028/0002_mt028_oauth_state_rls_policies.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT028/manifest.json
+applied: MT028 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt028_oauth_state_table.sql, 0002_mt028_oauth_state_rls_policies.sql
+=== MT070 ===
+generated: MT070 → ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT070
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT070/0001_mt070_company_call_attributions.sql
+  wrote ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT059/verification/migration/generated/MT070/manifest.json
+applied: MT070 @ openbot_enterprise_w14d (127.0.0.1:55566)
+  已执行并记入 journal: 0001_mt070_company_call_attributions.sql

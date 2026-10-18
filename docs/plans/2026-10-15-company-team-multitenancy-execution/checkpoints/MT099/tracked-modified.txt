@@ -1,0 +1,17 @@
+ M app/src/lib/client.ts
+ M app/src/locales/en/tenant.json
+ M app/src/locales/zh-CN/tenant.json
+ M app/src/routeTree.gen.ts
+ M desktop/src-tauri/src/lib.rs
+ M desktop/src-tauri/src/main.rs
+ M desktop/src-tauri/src/organization_auth.rs
+ M server/drizzle-kb.config.ts
+ M server/drizzle-kb/meta/_journal.json
+ M server/src/app.ts
+ M server/src/config.ts
+ M server/src/db/schema/enterprise-tenancy.ts
+ M server/src/db/schema/index.ts
+ M server/src/enterprise/runs/events.ts
+ M server/src/enterprise/runs/runner.ts
+ M server/src/enterprise/tenancy/store.ts
+ M server/src/index.ts

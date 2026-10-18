@@ -1,0 +1,7 @@
+# Focused suite (MT041-fix): job-ownership.test.ts — expected 23 pass / 0 fail / 0 skip (= 22 + F1 new case)
+# F1 new case + F2 rewritten case must appear by name
+(pass) MT041 AC1: creation-time ownership is persisted and immutable > structurally forbids rewriting a pin (exact ACL matrix: no UPDATE/DELETE anywhere) [10.19ms]
+(pass) MT041 AC2: leases are held only by same-ownership executors > refuses a release by another executor or with no holder, writing nothing [59.73ms]
+ 23 pass
+ 0 fail
+Ran 23 tests across 1 file. [1.54s]

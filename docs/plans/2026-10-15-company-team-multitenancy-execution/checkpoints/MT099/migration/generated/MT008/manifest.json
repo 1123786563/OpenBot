@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "tool": "multitenancy-migrate-test",
+  "taskId": "MT008",
+  "planDigest": "a3c77887973b51fb633caa3d0dc54ae48e482995f916a66cd5eedab2f4e14408",
+  "steps": [
+    {
+      "number": 1,
+      "name": "0001_mt008_resource_visibility_column.sql",
+      "statementDigest": "89049ffde64e8885ba2fd0d0b66dbd10a07c0649811a14ee917bc0c3a9d12d24",
+      "statementCount": 2
+    },
+    {
+      "number": 2,
+      "name": "0002_mt008_visibility_operator_grant.sql",
+      "statementDigest": "6dbb5d622721968a533a0d87e4a329d38e76470413ce4cc4aff0aa9baca3b991",
+      "statementCount": 1
+    }
+  ]
+}

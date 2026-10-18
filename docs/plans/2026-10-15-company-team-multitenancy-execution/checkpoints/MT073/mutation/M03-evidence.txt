@@ -1,0 +1,18 @@
+# M03: revocation delete matches nothing
+# 锚点（解码后）：            eq(billingCompanyFinanceGrants.principalId, input.principalId),\n          ),\n        )\n        .returning();
+# 注入 diff（pristine -> mutated）：
+--- /tmp/mt073-mutation-pristine-2nd.ts	2026-10-18 11:42:58
++++ src/billing/company-finance-visibility.ts	2026-10-18 11:42:58
+@@ -240,6 +240,7 @@
+           and(
+             eq(billingCompanyFinanceGrants.tenantId, input.tenantId),
+             eq(billingCompanyFinanceGrants.principalId, input.principalId),
++            sql`false`,
+           ),
+         )
+         .returning();
+# 聚焦套件 tests/multitenancy/billing-visibility.test.ts：
+ 15 pass  1 fail 
+# 捕获者（失败用例）：
+(fail) MT073 AC2: company finance read is an explicit authorization > revocation ends the authorization immediately and is idempotent [0.60ms]
+# 还原：sha256 与 pristine 逐位一致（51c5aa04bf4ce9db989b9f5b6ec81c8ce998bb77d5a9822693369d9a05d7cd98）

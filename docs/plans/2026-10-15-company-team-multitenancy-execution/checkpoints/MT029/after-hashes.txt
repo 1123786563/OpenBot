@@ -1,0 +1,11 @@
+== 授权扩展点后像（本轮实测 sha256，纯追加）==
+269fe8d01117929f4c4ba3b6639467bdd1b999a1aeca99db41d24e72cbbbe6cc  server/src/db/schema/index.ts
+5f8493de1e19eed2b187c2c64c7f234911f1fc4f3cd71214c8ec81f870db78de  server/scripts/multitenancy/migrate-test.ts
+7829f0ad782974b7a052279401f29ef77206201ce07e8bea36cdb5de217fae5b  server/tests/multitenancy/migration-tool.test.ts
+84ecf83c99672442b1da76297974241d78c5c00b947f2ce5b36bed2a324062dc  server/src/index.ts
+
+== 本票新文件（终态）==
+f6a6eaec65751ebae70ec73e1cde214b06f42c2fc7974e93688b872d7304d499  server/src/db/schema/enterprise-credential-lease.ts
+5e03b03804d62dd3f8fe97fb102ed1a5a2881881ac46bbae386537f305d21f00  server/src/enterprise/tenancy/credential-lease.ts
+330d33d34ead6302893da926a82c01a4148c77c2229145d67ec366db4ee759c1  server/tests/multitenancy/credential-lease.test.ts
+1a2f2da1f034aa1a1265efdab5943e32ecde00779a803a4b4deb688d7afcc929  server/tests/multitenancy/support/credential-lease.ts
