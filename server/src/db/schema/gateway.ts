@@ -658,8 +658,9 @@ export type GatewayVirtualKeyStatus = (typeof GATEWAY_VIRTUAL_KEY_STATUSES)[numb
  * carry the SAME `gateway_customer_id` (05.1's mapping), and spending is governed by that
  * customer at the gateway — issuing adds no credit grant, no ledger row, no payer account.
  * The key's own provider/budget governance is deliberately absent from the create (the customer
- * owns it); `expires_at` records the expiry the gateway was given (null until 05.5 ships the
- * configured default), and `status` is what this deployment believes — 05.8 syncs it against
+ * owns it); `expires_at` records the expiry the key was minted under (05.5: every mint
+ * carries a term — the deployment-configured TTL, 15 minutes by default; null only on
+ * records written before 05.5 or by a composition that explicitly minted termless keys), and `status` is what this deployment believes — 05.8 syncs it against
  * the gateway's own state.
  */
 export const gatewayVirtualKeys = pgTable(
@@ -686,7 +687,7 @@ export const gatewayVirtualKeys = pgTable(
       .$type<GatewayVirtualKeyStatus>()
       .notNull()
       .default("active"),
-    /** The expiry the gateway was given, or null while none was (05.5 owns the default). */
+    /** The expiry the key was minted under (05.5's term); null only on pre-05.5 records. */
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -712,6 +713,231 @@ export const gatewayVirtualKeys = pgTable(
     check(
       "gateway_virtual_keys_version_check",
       sql`${table.credentialVersion} >= 1`,
+    ),
+  ],
+);
+
+/**
+ * The key state sync's own state — the singleton row Bifrost 05.8 (#249) keeps between
+ * runs (AC11, design Q18: 同步失败保留上次成功状态并记录原因；最后成功同步时间可查询).
+ *
+ * The sibling of the catalog sync's row (0137), for the same reasons: every attempt's
+ * detail has its own home — each drift lands as an audit event naming the key, the flip
+ * and the fixed reason — so this row is the pointer a status read answers, not a log. A
+ * failed sync increments `consecutive_failures` in the same statement that records the
+ * reason (an atomic `+1`, so two syncs racing the row cannot lose a count), and a success
+ * zeroes it, moves `last_successful_sync_at` and clears the failure columns. The failure
+ * reason is a fixed `gateway_key_sync_*` code — never upstream bytes, never an address —
+ * displayable on any surface.
+ */
+export const gatewayKeySyncState = pgTable(
+  "gateway_key_sync_state",
+  {
+    /** The singleton row's fixed id — one key state sync per deployment. */
+    id: text("id").primaryKey(),
+    /** When the last fully successful sync completed. */
+    lastSuccessfulSyncAt: timestamp("last_successful_sync_at", {
+      withTimezone: true,
+    }),
+    /** Failures in a row since the last success; zeroed by the next success. */
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    /** Why the last attempt failed — a fixed code, present iff it failed. */
+    lastFailureReasonCode: text("last_failure_reason_code"),
+    /** When the last failure was classified. */
+    lastFailureAt: timestamp("last_failure_at", { withTimezone: true }),
+    /** When the last attempt of any outcome completed — the status read's "tried at". */
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    /** The last attempt's outcome, when there was one. */
+    lastAttemptStatus: text("last_attempt_status"),
+    /** When this row was last written. */
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "gateway_key_sync_state_failures_nonnegative",
+      sql`${table.consecutiveFailures} >= 0`,
+    ),
+    check(
+      "gateway_key_sync_state_attempt_status_allowed",
+      sql`${table.lastAttemptStatus} IS NULL OR ${table.lastAttemptStatus} IN ('ok', 'failed')`,
+    ),
+    /*
+     * A recorded failure carries exactly its reason and moment — the same
+     * consistency the catalog sync's row enforces, for the same reason.
+     */
+    check(
+      "gateway_key_sync_state_failure_details_consistent",
+      sql`(${table.lastAttemptStatus} = 'failed') = (${table.lastFailureReasonCode} IS NOT NULL) AND (${table.lastAttemptStatus} = 'failed') = (${table.lastFailureAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/**
+ * The sync's drift list — the append-only record of every key a sync flipped
+ * (Bifrost 05.8, Produces contract: 同步结果记录……差异清单).
+ *
+ * The sibling of the catalog sync's fetch log (03.1): the state row above is
+ * the pointer between runs, this table is the per-attempt detail. One row per
+ * flipped key per run, written in the SAME transaction as the flip itself, so
+ * the list and the statuses can never disagree; rows are never updated or
+ * deleted — a drift observed twice is two rows, and the history is the point.
+ * `reason_code` is one of the three fixed observation codes, `to_status` one
+ * of the two unavailability states — a sync can only move a key TOWARD
+ * unavailability (Q18: the sync direction is gateway → local, and from a
+ * gateway state change no authorization is derived), so the closed sets are
+ * the whole truth the writer can express.
+ */
+export const gatewayKeySyncDrift = pgTable(
+  "gateway_key_sync_drift",
+  {
+    /** Stable, opaque row id. */
+    id: text("id").primaryKey(),
+    /** The local key record that flipped (`gateway_virtual_keys.id`). */
+    keyId: text("key_id").notNull(),
+    /** The authorization the key was issued for, carried for the reads that ask "whose". */
+    grantId: text("grant_id").notNull(),
+    /** The Bot half of the key's identity, carried for the same reads. */
+    botId: text("bot_id").notNull(),
+    /** The gateway's own id the observation was made against. */
+    gatewayVirtualKeyId: text("gateway_virtual_key_id").notNull(),
+    /** What the local record said before the flip; always `active` — see the table comment. */
+    fromStatus: text("from_status").notNull(),
+    /** What the sync set it to; the two unavailability states, never `active`. */
+    toStatus: text("to_status").notNull(),
+    /** Why the sync flipped it — a fixed observation code, displayable anywhere. */
+    reasonCode: text("reason_code").notNull(),
+    /** When the observation was made (the sync's clock, not statement time, so a replay names the run). */
+    driftedAt: timestamp("drifted_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    // The questions "what happened to this key" and "what drifted lately" ask.
+    index("gateway_key_sync_drift_key_idx").on(table.keyId),
+    index("gateway_key_sync_drift_drifted_at_idx").on(table.driftedAt),
+    check(
+      "gateway_key_sync_drift_from_status_check",
+      sql`${table.fromStatus} = 'active'`,
+    ),
+    check(
+      "gateway_key_sync_drift_to_status_check",
+      sql`${table.toStatus} IN ('revoked', 'expired')`,
+    ),
+    check(
+      "gateway_key_sync_drift_reason_code_check",
+      sql`${table.reasonCode} IN ('gateway_key_deleted', 'gateway_key_disabled', 'gateway_key_expired')`,
+    ),
+  ],
+);
+
+/**
+ * Which key field drifted, as the sync observed it (Bifrost 05.9): the owner the key
+ * bills (customer), the access scope it answers to, or the term it lives under. A closed
+ * set — the whole truth the detector can express; a new field arrives with its own
+ * comparison and its own code, never a widening of these.
+ */
+export const GATEWAY_KEY_FIELD_DRIFT_REASON_CODES = [
+  "gateway_key_owner_changed",
+  "gateway_key_scope_changed",
+  "gateway_key_term_changed",
+] as const;
+
+/** One of the closed field-drift codes; see {@link GATEWAY_KEY_FIELD_DRIFT_REASON_CODES}. */
+export type GatewayKeyFieldDriftReasonCode =
+  (typeof GATEWAY_KEY_FIELD_DRIFT_REASON_CODES)[number];
+
+/**
+ * The human decisions a drift disposition can carry (Bifrost 05.9): `accepted` — the
+ * operator reviewed the mismatch and the grant resumes; `key_revoked` — the operator
+ * declares the drifted key dead, and the local record retires it. A closed set: a new
+ * decision arrives with its own semantics, never a reinterpretation of these.
+ */
+export const GATEWAY_KEY_DRIFT_DECISIONS = [
+  "accepted",
+  "key_revoked",
+] as const;
+
+/** One of the closed disposition decisions; see {@link GATEWAY_KEY_DRIFT_DECISIONS}. */
+export type GatewayKeyDriftDecision = (typeof GATEWAY_KEY_DRIFT_DECISIONS)[number];
+
+/**
+ * The field-drift events (Bifrost 05.9, #250): the record of every key whose OWNER, SCOPE
+ * or TERM at the gateway no longer matches the local record, and the human disposition of
+ * each. The sibling of 05.8's availability list (`gateway_key_sync_drift`), for the drifts
+ * that are NOT unavailability: a key moved to another Customer still works — it just bills
+ * someone else, which is worse.
+ *
+ * THE ROW IS THE VERDICT AND ITS ANSWER. The observation columns (which key, whose grant,
+ * both sides of every mismatched field) are written once when the sync detects the drift
+ * and never change. The disposition columns start null and are filled exactly once by a
+ * human decision (see {@link gatewayKeyDriftEvents}' checks): while `disposed_at` is null
+ * the event is OUTSTANDING, and an outstanding event on a grant pauses that grant's
+ * issuance and renewal — the pause is not a flag anywhere else, it IS the absence of a
+ * disposition. The partial unique index on `(key_id, reason_code) WHERE disposed_at IS
+ * NULL` is the one-outstanding-event rule: re-observations of the same mismatch do not
+ * stack rows, and after a disposition a persisting mismatch re-detects on the next sync —
+ * the verdict re-arms against a truth that did not change.
+ */
+export const gatewayKeyDriftEvents = pgTable(
+  "gateway_key_drift_events",
+  {
+    /** Stable, opaque row id. */
+    id: text("id").primaryKey(),
+    /** The local key record the mismatch was observed on (`gateway_virtual_keys.id`). */
+    keyId: text("key_id").notNull(),
+    /** The authorization the key was issued for — the unit the pause applies to. */
+    grantId: text("grant_id").notNull(),
+    /** The Bot half of the key's identity, carried for the reads that ask "whose". */
+    botId: text("bot_id").notNull(),
+    /** The gateway's own id the observation was made against. */
+    gatewayVirtualKeyId: text("gateway_virtual_key_id").notNull(),
+    /** The owner the local record believes this key bills (05.1's mapping id). */
+    localCustomerId: text("local_customer_id").notNull(),
+    /** Which field drifted — one of the three fixed codes below. */
+    reasonCode: text("reason_code")
+      .$type<GatewayKeyFieldDriftReasonCode>()
+      .notNull(),
+    /** The owner the gateway answered with, when the drift is about ownership. */
+    remoteCustomerId: text("remote_customer_id"),
+    /** The term the local record carries (null on pre-05.5 records). */
+    localExpiresAt: timestamp("local_expires_at", { withTimezone: true }),
+    /** The term the gateway answered with, when the drift is about the term. */
+    remoteExpiresAt: timestamp("remote_expires_at", { withTimezone: true }),
+    /** When the sync observed the mismatch (the sync's clock, not statement time). */
+    detectedAt: timestamp("detected_at", { withTimezone: true }).notNull(),
+    /** The human decision, once made: acknowledge, or retire the drifted key. */
+    disposition: text("disposition").$type<GatewayKeyDriftDecision>(),
+    /** When the decision was recorded; null exactly while the event is outstanding. */
+    disposedAt: timestamp("disposed_at", { withTimezone: true }),
+    /** Who disposed of the event (the administrator actor id). */
+    disposedBy: text("disposed_by"),
+    /** The operator's optional note, carried with the decision. */
+    dispositionNote: text("disposition_note"),
+  },
+  (table) => [
+    // The questions "what drifted for this key/grant" and "what is still outstanding" ask.
+    index("gateway_key_drift_events_key_idx").on(table.keyId),
+    index("gateway_key_drift_events_grant_idx").on(table.grantId),
+    index("gateway_key_drift_events_detected_at_idx").on(table.detectedAt),
+    // The one-outstanding-event rule: a key carries at most one undisposed event per
+    // reason, so re-syncs cannot stack rows and a post-disposition re-detection is a
+    // NEW verdict, not an edit of the old one.
+    uniqueIndex("gateway_key_drift_events_outstanding_unique_idx")
+      .on(table.keyId, table.reasonCode)
+      .where(sql`${table.disposedAt} IS NULL`),
+    check(
+      "gateway_key_drift_events_reason_code_check",
+      sql`${table.reasonCode} IN ('gateway_key_owner_changed', 'gateway_key_scope_changed', 'gateway_key_term_changed')`,
+    ),
+    check(
+      "gateway_key_drift_events_disposition_check",
+      sql`${table.disposition} IS NULL OR ${table.disposition} IN ('accepted', 'key_revoked')`,
+    ),
+    // A disposed event carries exactly its decision, its moment and its actor; an
+    // outstanding one carries none of them.
+    check(
+      "gateway_key_drift_events_disposition_consistent",
+      sql`(${table.disposition} IS NULL) = (${table.disposedAt} IS NULL) AND (${table.disposition} IS NULL) = (${table.disposedBy} IS NULL)`,
     ),
   ],
 );
