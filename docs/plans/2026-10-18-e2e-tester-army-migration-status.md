@@ -3,6 +3,28 @@
 基线：会话开始时 `main` 为 `bbea87ba`；本轮迁移提交 `bced6121f`、`cb636f02`，本文与后续改动在其后。
 决策依据：[ADR 0008](../adr/0008-test-runner-tester-army-e2e.md)。运行入口：`bun run test`（= `e2e run --config e2e.unit.config.ts`）、`bun run test:ui`（web target）。
 
+## 全量测量（2026-10-18 18:22 CST，分区为 450 驱动 / 29 组）
+
+```
+Test Files  34 failed | 551 passed | 17 skipped (602)
+     Tests  195 failed | 7931 passed | 74 skipped (8200)
+   Duration  653.31s
+```
+
+同一入口在 2026-10-18 15:48 的那一轮（328 驱动 / 25 组、标题与 each 缺陷尚未修完时）是
+`9030 discovered · 8521 passed · 426 failed · 10 COLLECTION_ERROR`；修掉标题去重域、`each` 尾随参数、
+`bun-compat` 递归与端口快照、`config.ts` 的 `require` 后，红文件从 107 降到 34、失败从 426 降到 195，
+并且收集错误归零（0 个 COLLECTION_ERROR，report 不再被单个文件拖没）。
+
+这 195 条失败的构成（逐条判定见下节，报告本身在 `.e2e/final/report.json`）：
+
+- **17 条是驱动组自己的失败**：`tests/bun-suites.test.ts` 里每组一条断言，红的是 Bun 层内部
+  真实失败的套件（如 `agent-sandbox/tests: 2 of 17 bun tests failed`）——不是调度器坏了。
+- **本机依赖没起**：Postgres `127.0.0.1:5432` 与 Qdrant `127.0.0.1:6333` 此刻 ECONNREFUSED，
+  4 条 `HOOK_FAILED` 点名这两个地址；`server/tests/enterprise/*` 与 `server/src/knowledge/*`
+  的多数断言失败（`WORKSPACE_FORBIDDEN`、`expected "degraded" to be "hit"`）是这套环境的形状。
+- **迁移前就红的套件**仍然红着，这是有意保留的如实结果，不是回归。
+
 ## 范围边界（"所有的测试"具体指哪些）
 
 本次覆盖的是 `package.json` 原 `test` 脚本列出的 14 个目录：`app server shared supervisor worker tests scripts deliverables desktop agent-bot agent-sandbox agent-langgraph agent-mastra agent-computer`（937 个 `.test.ts(x)` / `.spec.ts` 文件）。此外三类测试**不在** e2e 框架能承载的范围内，逐项说明而非静默跳过：
@@ -30,10 +52,23 @@
 | 运行时边界可用导入图判定 | 完成 | `scripts/e2e-import-boundary.mjs`：183 个套件在导入期就需要 Bun（176 个经由 `server/src/db/client.ts` 的 `import { SQL } from "bun"`），与运行器逐文件审计比对，695 个可收集文件里仅 1 个判断不一致；`--apply` 可把结论并入分区 |
 | CI 与本地入口切到 e2e | 完成 | `package.json` 的 `test`/`test:smoke`/`test:live-screen`/`test:live-composio`；`scripts/test-ci.ts` 改读 `report.json`，对「有文件没被收集」直接判失败；`.github/workflows/ci.yml`、`desktop.yml` 中 8 处 `bun test` 全部替换（两个 YAML 均通过解析校验） |
 
-## 归因方法：一个失败是不是迁移造成的
+## 归因结果：这 195 条失败各自是谁的责任
 
-`node scripts/e2e-vs-bun.mjs` 对每个失败文件跑三遍再比对，判定落
-`docs/verification/e2e-vs-bun.json`：
+`node scripts/e2e-vs-bun.mjs --report=.e2e/final/report.json --out=docs/verification/e2e-vs-bun-final.json`
+对 34 个红文件逐个跑三种组合（判定明细在 `docs/verification/e2e-vs-bun-final.json`）：
+
+| 判定 | 文件数 | 含义 |
+| --- | --- | --- |
+| `already-red-at-baseline` | 18 | 迁移前整树 + 迁移前套件 + `bun test` 也是红的 → 与本次迁移无关的既有失败 |
+| `red-on-old-runner-with-current-code` | 12 | 现网生产代码 + 迁移前套件文本 + `bun test` 也是红的 → 换运行器没有改变结论（这 12 个几乎全是 `server/tests/enterprise/*`，本机 5432/6333 拒连正是它们的依赖） |
+| `runner-difference` | 2 | 同一份代码同一份套件文本，旧运行器绿、e2e 红：`app/tests/github-sources-settings.test.tsx`、`app/tests/memory-settings.test.tsx`，共 3 条断言。已按 ADR 0008 的两层制补进驱动层（Bun 执行、e2e 调度与报告），这是本轮唯一剩余的「运行器差异」 |
+| `no-pre-migration-suite` | 1 | `tests/bun-suites.test.ts` 本身是迁移产物（驱动层 17 组各一条断言，红的是 Bun 侧套件内部真失败） |
+| `old-runner-unreadable` | 1 | `agent-sandbox/tests/proxy.test.ts`：旧运行器 junit 读不出计数，不当作通过 |
+
+也就是说：整条原生层 195 条里，能归到「迁移把它改红了」的只有 3 条，且已处理；
+其余要么迁移前就红、要么依赖没起、要么是 Bun 层内部失败被如实上报。
+
+`node scripts/e2e-vs-bun.mjs` 把每个失败文件跑三遍再比对：
 
 | 组合 | 树 | 套件文本 | 运行器 |
 | --- | --- | --- | --- |
@@ -46,10 +81,11 @@
 共享工作树。旧运行器绿的判为 `runner-difference`，由 `scripts/e2e-route-failures.mjs --verdict=`
 分到 Bun 层；旧运行器也红的判为 `already-red-at-baseline`，留在原生层如实报失败。
 
-2026-10-18 这一轮的判定：107 个红文件中 **84 个 runner-difference**、**19 个 already-red-at-baseline**
-（`server/tests/config|schema|copilot|audit|guards|ready`、`tests/compose`、
-`server/src/knowledge/*`、`server/tests/enterprise/*` 等，迁移前就是红的，不是本次改动造成）、
-2 个在迁移前不存在（并行会话新增）、1 个旧运行器输出读不出。
+再往前一轮（15:48，分区 328 驱动时）判出 107 个红文件：其中 **84 个 `runner-difference`** 已由
+`--verdict=runner-difference --apply` 全部补进驱动层，**19 个 `already-red-at-baseline`**
+（`server/tests/config|schema|copilot|audit|guards|ready`、`tests/compose`、`server/src/knowledge/*`、
+`server/tests/enterprise/*`）留在原生层如实报失败，2 个在迁移前不存在（并行会话新增），
+1 个旧运行器输出读不出。剩下的 34 个就是上表这一轮。
 
 ## 迁移过程中修掉的真实缺陷（不是「让测试变绿」，是原来就坏的地方）
 
