@@ -1044,6 +1044,13 @@
       "when": 1792278712985,
       "tag": "0148_credit_recovery_items_resolved_state",
       "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1792311674305,
+      "tag": "0149_restore_skills_icon",
+      "breakpoints": true
     }
   ]
 }
