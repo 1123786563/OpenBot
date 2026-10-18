@@ -32,6 +32,7 @@ import {
 } from "../src/db/schema/ai-observability-datasets";
 import { aiObservationExperiments } from "../src/db/schema/ai-observability-experiments";
 import { aiObservationExportJobs } from "../src/db/schema/ai-observability-exports";
+import { aiObservationRetentionDeletions } from "../src/db/schema/ai-observability-retention";
 import { workItems } from "../src/db/schema/work";
 import { opikTestDatabase } from "./support/opik-test-db";
 
@@ -295,6 +296,12 @@ beforeAll(async () => {
 afterEach(async () => {
   // The work-item tickets the export-route test enqueues.
   await database.delete(workItems).where(eq(workItems.kind, "opik.export"));
+  // The deletion records the OCR-R4-30 read-face tests plant.
+  await database
+    .delete(aiObservationRetentionDeletions)
+    .where(
+      inArray(aiObservationRetentionDeletions.scopeKey, [scopeKeyA, scopeKeyB]),
+    );
 });
 
 afterAll(async () => {
@@ -415,6 +422,71 @@ test("a stranger gets the unified not-found and no aggregate", async () => {
     `http://openbot.test/admin/summary?botId=${botId}`,
   );
   expect(response.status).toBe(404);
+});
+
+test("a deletion-in-flight row is gone to every local aggregate (OCR R4-30)", async () => {
+  // The retention records, exactly as discovery writes them: one per read face
+  // this summary aggregates locally — a completed binding, the draft experiment
+  // and the completed export job — all still physically present, all already
+  // gone to every reader per the retention.ts reader contract.
+  const deletion = (kind: string, targetId: string, upstreamKind: string | null, upstreamId: string | null) => ({
+    id: randomUUID(),
+    scopeKey: scopeKeyA,
+    actorId: actorA,
+    botId,
+    kind,
+    targetId,
+    upstreamKind,
+    upstreamId,
+    retentionDays: 7,
+    state: "pending" as const,
+  });
+  await database.insert(aiObservationRetentionDeletions).values([
+    deletion("run", `${run}-${actorA}-b1`, "trace", `opik-${actorA}-1`),
+    deletion("experiment", `${run}-${actorA}-draft`, null, null),
+    deletion("export", `${run}-${actorA}-job1`, null, null),
+  ]);
+
+  const app = appFor({
+    port: fakePort([
+      traceRow(`opik-${actorA}-1`),
+      traceRow(`opik-unbound-${randomUUID()}`, { usage: undefined }),
+    ]),
+    config: () => enabledConfig,
+    auth: authAs(actorA),
+  });
+  const response = await app.request(
+    `http://openbot.test/admin/summary?botId=${botId}&timeFrom=2026-01-01T00:00:00.000Z`,
+  );
+  expect(response.status).toBe(200);
+  const bot = (await response.json()).bots[0];
+  // The deleted binding (the scope's only completed one) is not counted; the
+  // surviving failed row is.
+  expect(bot.runs.total).toBe(1);
+  expect(bot.runs.byState).toEqual({
+    running: 0,
+    completed: 0,
+    failed: 1,
+    canceled: 0,
+    interrupted: 0,
+    unknown: 0,
+  });
+  expect(bot.runs.capabilities).toEqual({
+    basic: 0,
+    detailed: 1,
+    unavailable: 0,
+  });
+  // The deleted draft experiment and the deleted completed export job are not
+  // counted either.
+  expect(bot.experiments).toEqual({ draft: 0, frozen: 0 });
+  expect(bot.exports.byState.completed).toBe(0);
+
+  // The open window's bound-trace subquery obeys the same filter: A's only
+  // binding row is deletion-in-flight, so its trace reads as unbound upstream.
+  const open = await app.request(`http://openbot.test/admin/summary?botId=${botId}`);
+  expect(open.status).toBe(200);
+  const openBot = (await open.json()).bots[0];
+  expect(openBot.runs.unboundUpstream).toBe(2);
 });
 
 test("the time window filters every aggregate the same way", async () => {

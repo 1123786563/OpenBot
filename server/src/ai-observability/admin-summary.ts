@@ -33,6 +33,7 @@ import { aiObservationExperiments } from "../db/schema/ai-observability-experime
 import { aiObservationExportJobs } from "../db/schema/ai-observability-exports";
 import type { OpikConfig } from "./config";
 import type { ObservationScope } from "./contracts";
+import { notPendingDeletion } from "./retention";
 import type {
   OpikHealthService,
   OpikHealthSnapshot,
@@ -210,6 +211,9 @@ export function createAdminSummaryService(deps: {
         and(
           eq(aiObservationBindings.scopeKey, scope.key),
           isNull(aiObservationBindings.deletedAt),
+          // The M1a reader contract (retention.ts): a deletion-in-flight binding
+          // is already gone to every reader — this aggregate included (OCR R4-30).
+          notPendingDeletion("run", aiObservationBindings.id),
           ...(window.from
             ? [gte(aiObservationBindings.createdAt, window.from)]
             : []),
@@ -258,6 +262,9 @@ export function createAdminSummaryService(deps: {
       .where(
         and(
           eq(aiObservationExperiments.scopeKey, scope.key),
+          // Same reader contract: deletion-in-flight experiments do not count
+          // here any more than they do on the creator face (OCR R4-30).
+          notPendingDeletion("experiment", aiObservationExperiments.id),
           ...(window.from
             ? [gte(aiObservationExperiments.createdAt, window.from)]
             : []),
@@ -279,6 +286,8 @@ export function createAdminSummaryService(deps: {
       .where(
         and(
           eq(aiObservationExportJobs.scopeKey, scope.key),
+          // Same reader contract for export jobs (OCR R4-30).
+          notPendingDeletion("export", aiObservationExportJobs.id),
           ...(window.from
             ? [gte(aiObservationExportJobs.createdAt, window.from)]
             : []),
@@ -376,6 +385,10 @@ export function createAdminSummaryService(deps: {
                       .where(
                         and(
                           eq(aiObservationBindings.scopeKey, scope.key),
+                          // The bound/unbound split obeys the same reader
+                          // contract: a deletion-in-flight binding no longer
+                          // answers for its trace (OCR R4-30).
+                          notPendingDeletion("run", aiObservationBindings.id),
                           inArray(aiObservationBindings.opikTraceId, ids),
                         ),
                       )
