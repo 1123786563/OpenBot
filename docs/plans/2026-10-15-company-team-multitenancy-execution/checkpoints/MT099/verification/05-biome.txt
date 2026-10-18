@@ -1,0 +1,3 @@
+# biome 触及文件（entry-context.test.ts 环境令牌整改一处）
+Checked 1 file in 42ms. No fixes applied.
+exit=0

@@ -1,0 +1,13 @@
+# MT122 biome — 共享装配面存量披露（4th takeover, 2026-10-18 02:31:01)
+# command: bunx biome check server/src/app.ts server/src/index.ts
+# 口径同 R-MT122-2/MT030 复审 F1：下列 6 处（4 err + 2 warn）全为存量代码行，
+# 与第 3 任存档 04-biome-final.txt 逐行同码同位（1026/4778/839/867/901/1913），MT122 增量行零违规，不修存量。
+server/src/app.ts:1026:22 lint/correctness/noUnusedFunctionParameters  FIXABLE  ━━━━━━━━━━━━━━━━━━━━
+server/src/index.ts:4778:13 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+server/src/index.ts:839:13 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+server/src/index.ts:867:9 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+server/src/index.ts:901:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+server/src/index.ts:1913:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Checked 2 files in 44ms. No fixes applied.
+Found 4 errors.
+Found 2 warnings.

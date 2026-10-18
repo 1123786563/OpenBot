@@ -1,0 +1,1006 @@
+// server/tests/multitenancy/retrieval-restriction.test.ts
+// MT037（Issue #80）：检索在候选、重排与进入模型之前限制范围。
+//
+// 验收事实源（Issue #80 验收 1–4，逐条对应 describe；覆盖父 Spec A2/A4/A8）：
+//   (1) 无权文档既不出现在结果，也不参与重排（候选集合断言）。
+//   (2) 向量集合/命名空间按归属隔离；跨范围检索返回空而不是他人内容。
+//   (3) 引用只包含调用者有权访问的文档；引用文本不泄露无权内容片段。
+//   (4) 公司范围 Key 不被当作团队授权使用（专门测试）。
+//
+// 票注铁律：「检索后过滤」不算隔离；测试必须断言候选集合本身——引擎边界
+// 探针（内存向量库逐字段捕获 queryPoints 请求体）+ 检索端/重排端零调用计数。
+//
+// 机制：MT036 受限查询入口的 narrowRetrievalScope 先把请求 KB 集合收窄到
+// 「授权 + 跨库一致」（Spec §6：先定允许集合，再在检索端限制返回范围）；
+// 收窄集合是 hybridSearch/向量引擎收到的唯一候选（payload filter =
+// tenant_id + kb_id any(候选) + enabled——向量命名空间按归属隔离）；空候选
+// 时检索端一次都不被调用（跨范围返回空而不是他人内容）；citations 只从受
+// 限结果行投影（有界 snippet）。检索后按候选集合再过滤只是纵深防御，不是
+// 隔离机制（变异 MUT-D 如实验证其非主机制地位）。
+//
+// 环境契约：ENTERPRISE_TEST_SETUP_DATABASE_URL（或 TEST_DATABASE_URL）+
+// KB_TEST_DATABASE_URL 缺一整套显式 skip，绝不回退开发库、skipped 不计通过。
+// 迁移链按 brief 依赖序幂等 apply（十四任务 MT004→…→MT027）；KB 库经
+// drizzle-kb journal 幂等迁移。
+
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
+import { rm } from "node:fs/promises";
+import {
+  buildPlan,
+  manifestFor,
+  type RunOutcome,
+  resolveTestDatabaseTarget,
+  runMigrateTest,
+} from "../../scripts/multitenancy/migrate-test";
+import type { PlatformScope } from "../../src/enterprise/contracts";
+import { createKbOwnershipAuthority } from "../../src/enterprise/tenancy/kb-ownership";
+import { createRestrictedKbQueryService } from "../../src/kb/application/service/kb-restricted-query";
+import {
+  createRestrictedRetrievalService,
+  DEFAULT_CITATION_SNIPPET_RUNES,
+  restrictedCitationOf,
+} from "../../src/kb/application/service/kb-restricted-retrieval";
+import {
+  hybridSearch,
+  type SearchOutcome,
+  type SearchRequest,
+} from "../../src/kb/application/service/kb-search";
+import { createCompositeRetrieveEngine } from "../../src/kb/application/service/retriever/composite";
+import { createDefaultRegistry } from "../../src/kb/application/service/retriever/registry";
+import { collectionName } from "../../src/kb/infrastructure/qdrant/collections";
+import {
+  applyKbOwnershipMigrations,
+  createKbOwnershipFixture,
+  type KbOwnershipFixture,
+} from "./support/kb-ownership";
+import {
+  createInMemoryVectorStore,
+  createRecordingEmbedder,
+  createRecordingReranker,
+  type InMemoryVectorStore,
+  probeRetrievalRestrictionEnvironment,
+  type RecordingEmbedder,
+  type RecordingReranker,
+  seedRetrievalContent,
+} from "./support/retrieval-restriction";
+
+const ENV = probeRetrievalRestrictionEnvironment();
+const itDb = ((name: string, fn: () => void | Promise<void>) =>
+  ENV.ok
+    ? test(name, fn)
+    : test.skip(`${name} [skipped: ${ENV.reason}]`, fn)) as typeof test;
+const describeDb = ENV.ok ? describe : describe.skip;
+
+/** 主库迁移链（brief 依赖序十四任务；幂等：applied | up-to-date）。 */
+const MIGRATION_CHAIN = [
+  "MT004",
+  "MT008",
+  "MT112",
+  "MT012",
+  "MT014",
+  "MT010",
+  "MT009",
+  "MT077",
+  "MT026",
+  "MT076",
+  "MT069",
+  "MT016",
+  "MT041",
+  "MT027",
+] as const;
+
+/** 无权内容的金丝雀标记（绝不允许出现在任何响应/重排/引用文本里）。 */
+const CANARY = {
+  a2: "MT037-CANARY-A2-QQ71",
+  b1: "MT037-CANARY-B1-QQ72",
+  stale: "MT037-CANARY-STALE-QQ73",
+  disabled: "MT037-CANARY-DISABLED-QQ74",
+} as const;
+
+/** 有权内容的标记（正向对照必须出现）。 */
+const MARK = {
+  pub1: "MT037-A1PUB-C1-OK81",
+  pub2: "MT037-A1PUB-C2-OK82",
+  pub3: "MT037-A1PUB-C3-OK83",
+  grant1: "MT037-A1GRANT-C1-OK84",
+  b1: "MT037-B1DOC-C1-OK85",
+  a2: "MT037-A2DOC-C1-OK86",
+} as const;
+
+/** 断言 promise 以指定哨兵码拒绝（纯码形态，零值回显）。 */
+async function expectSentinelRejection(
+  promise: Promise<unknown>,
+  code: string,
+): Promise<void> {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error instanceof Error && error.message === code).toBe(true);
+    return;
+  }
+  throw new Error(`expected rejection with sentinel code ${code}, got resolve`);
+}
+
+describeDb("MT037 — 检索候选/重排/引用的归属限制", () => {
+  let fixture: KbOwnershipFixture;
+  let store: InMemoryVectorStore;
+  let embedder: RecordingEmbedder;
+  let reranker: RecordingReranker;
+  let retrieval: ReturnType<typeof createRestrictedRetrievalService>;
+  let queryService: ReturnType<typeof createRestrictedKbQueryService>;
+  let tenantA = "";
+  let tenantB = "";
+  let teamA1 = "";
+  let teamA2 = "";
+  let teamB1 = "";
+  let kbA1Pub = "";
+  let kbA1Grant = "";
+  let kbA2Pub = "";
+  let kbB1Grant = "";
+  let kbA1Stale = "";
+  /** 内容种子的稳定 id 面（按 chunkId 精确定位结果行用）。 */
+  let pubChunkIds: ReadonlyMap<string, string> = new Map();
+
+  beforeAll(async () => {
+    if (!ENV.ok) return;
+
+    // 主库迁移链按 brief 依赖序经 MT003 工具真实执行（幂等）。
+    const resolved = resolveTestDatabaseTarget(process.env);
+    if (!resolved.ok) {
+      throw new Error(`MT037 migration target refused: ${resolved.reason}`);
+    }
+    const migrationEnv = { TEST_DATABASE_URL: resolved.target.url };
+    for (const task of MIGRATION_CHAIN) {
+      const dryRun: RunOutcome = await runMigrateTest(["migrate", task], {
+        environment: migrationEnv,
+        out: () => {},
+      });
+      if (dryRun.kind !== "dry-run") {
+        throw new Error(`${task} dry-run failed: ${JSON.stringify(dryRun)}`);
+      }
+      const manifestPath = `/tmp/mt037-manifest-${task}-${randomUUID()}.json`;
+      await Bun.write(
+        manifestPath,
+        `${JSON.stringify(manifestFor(buildPlan(task)), null, 2)}\n`,
+      );
+      try {
+        const applied: RunOutcome = await runMigrateTest(
+          ["migrate", task, "--apply", "--manifest", manifestPath],
+          { environment: migrationEnv, out: () => {} },
+        );
+        if (!["applied", "up-to-date"].includes(applied.kind)) {
+          throw new Error(`${task} apply failed: ${JSON.stringify(applied)}`);
+        }
+      } finally {
+        await rm(manifestPath, { force: true });
+      }
+    }
+
+    // KB 专用测试库迁移（drizzle-kb journal，幂等）。
+    await applyKbOwnershipMigrations();
+
+    fixture = await createKbOwnershipFixture();
+    const ids = fixture.ent.isolation.ids;
+    tenantA = ids["company-a"];
+    tenantB = ids["company-b"];
+    teamA1 = ids["team-a1"];
+    teamA2 = ids["team-a2"];
+    teamB1 = ids["team-b1"];
+
+    // 公司 A 翻到 workspace-v1（团队公共语义）；公司 B 保持 tenancy-v1（授权语义）。
+    await fixture.setTenantPolicyRevision(tenantA, "workspace-v1");
+
+    kbA1Pub = await fixture.seedKnowledgeBase({
+      key: "kb-a1-pub",
+      tenantId: tenantA,
+      workspaceId: teamA1,
+      name: "A1 team-public KB",
+      visibility: "workspace",
+    });
+    kbA1Grant = await fixture.seedKnowledgeBase({
+      key: "kb-a1-grant",
+      tenantId: tenantA,
+      workspaceId: teamA1,
+      name: "A1 grant-only KB",
+      readers: [{ identity: "a1-member", teamKey: "team-a1" }],
+    });
+    kbA2Pub = await fixture.seedKnowledgeBase({
+      key: "kb-a2-pub",
+      tenantId: tenantA,
+      workspaceId: teamA2,
+      name: "A2 team-public KB",
+      visibility: "workspace",
+    });
+    kbB1Grant = await fixture.seedKnowledgeBase({
+      key: "kb-b1-grant",
+      tenantId: tenantB,
+      workspaceId: teamB1,
+      name: "B1 grant-only KB",
+      readers: [{ identity: "b1-member", teamKey: "team-b1" }],
+    });
+    kbA1Stale = await fixture.seedKnowledgeBase({
+      key: "kb-a1-stale",
+      tenantId: tenantA,
+      workspaceId: teamA1,
+      name: "A1 stale-mirror KB",
+      visibility: "workspace",
+    });
+    // 刻意不同步镜像：制造跨库不一致（候选集合必须排除它）。
+    await fixture.bumpRegistrationRevision({
+      tenantId: tenantA,
+      kbId: kbA1Stale,
+      syncKbSide: false,
+    });
+
+    // 内存向量库 + 记录型 embedder/reranker + 真实检索管线（真实 hybridSearch
+    // + 真实 qdrant 检索引擎，只有 QdrantClient 是内存替身）。
+    const dimension = 8;
+    store = createInMemoryVectorStore(collectionName(dimension));
+    embedder = createRecordingEmbedder(dimension);
+    reranker = createRecordingReranker();
+    const registry = createDefaultRegistry({
+      client: store.client,
+      collection: store.collection,
+    });
+    const composite = createCompositeRetrieveEngine(registry.engines());
+    const search = (request: SearchRequest): Promise<SearchOutcome> =>
+      hybridSearch(
+        {
+          embedder: embedder.embedder,
+          composite,
+          db: fixture.kbDb,
+          reranker: reranker.reranker,
+          rerankDefaults: { enabled: true, threshold: 0, topK: 10 },
+        },
+        request,
+      );
+
+    const authority = createKbOwnershipAuthority(fixture.ent.data);
+    queryService = createRestrictedKbQueryService({
+      authority,
+      kbDb: fixture.kbDb,
+    });
+    retrieval = createRestrictedRetrievalService({
+      authority,
+      kbDb: fixture.kbDb,
+      search,
+    });
+
+    // 内容种子：授权库（A1 团队公共三块链 + A1 授权库一块 + 禁用块反例）、
+    // 未授权库（A2 团队公共 / B1 授权 / A1 stale 镜像）。
+    const pubSeed = await seedRetrievalContent({
+      kbDb: fixture.kbDb,
+      store,
+      dimension,
+      tenantId: tenantA,
+      kbId: kbA1Pub,
+      docs: [
+        {
+          docKey: "pub-doc",
+          title: "A1 pub doc",
+          chunks: [
+            {
+              key: "c1",
+              content: `${MARK.pub1} first chunk of the public doc`,
+            },
+            {
+              key: "c2",
+              content: `${MARK.pub2} middle chunk of the public doc`,
+            },
+            { key: "c3", content: `${MARK.pub3} last chunk of the public doc` },
+          ],
+        },
+        {
+          docKey: "disabled-doc",
+          title: "A1 disabled doc",
+          chunks: [
+            {
+              key: "off",
+              content: `${CANARY.disabled} disabled chunk must not be retrievable`,
+              enabled: false,
+            },
+          ],
+        },
+      ],
+    });
+    pubChunkIds = pubSeed.chunkIds;
+    await seedRetrievalContent({
+      kbDb: fixture.kbDb,
+      store,
+      dimension,
+      tenantId: tenantA,
+      kbId: kbA1Grant,
+      docs: [
+        {
+          docKey: "grant-doc",
+          title: "A1 grant doc",
+          chunks: [
+            { key: "c1", content: `${MARK.grant1} grant-only doc chunk` },
+          ],
+        },
+      ],
+    });
+    await seedRetrievalContent({
+      kbDb: fixture.kbDb,
+      store,
+      dimension,
+      tenantId: tenantA,
+      kbId: kbA2Pub,
+      docs: [
+        {
+          docKey: "a2-doc",
+          title: "A2 doc",
+          chunks: [
+            {
+              key: "c1",
+              content: `${CANARY.a2} / ${MARK.a2} other team content`,
+            },
+          ],
+        },
+      ],
+    });
+    await seedRetrievalContent({
+      kbDb: fixture.kbDb,
+      store,
+      dimension,
+      tenantId: tenantB,
+      kbId: kbB1Grant,
+      docs: [
+        {
+          docKey: "b1-doc",
+          title: "B1 doc",
+          chunks: [
+            {
+              key: "c1",
+              content: `${CANARY.b1} / ${MARK.b1} other company content`,
+            },
+          ],
+        },
+      ],
+    });
+    await seedRetrievalContent({
+      kbDb: fixture.kbDb,
+      store,
+      dimension,
+      tenantId: tenantA,
+      kbId: kbA1Stale,
+      docs: [
+        {
+          docKey: "stale-doc",
+          title: "A1 stale doc",
+          chunks: [
+            {
+              key: "c1",
+              content: `${CANARY.stale} stale mirror content`,
+            },
+          ],
+        },
+      ],
+    });
+  }, 120000);
+
+  afterAll(async () => {
+    await fixture?.dispose();
+  });
+
+  // -----------------------------------------------------------------
+  // AC1：无权文档既不出现在结果，也不参与重排（候选集合断言）。
+  // -----------------------------------------------------------------
+  describeDb("MT037 AC1: 候选集合先于检索与重排", () => {
+    itDb(
+      "候选集合断言：混合请求只把授权子集交给检索引擎（顺序保持）",
+      async () => {
+        const scope = await fixture.ent.scopeFor("a1-member", {
+          tenantId: tenantA,
+          workspaceId: teamA1,
+        });
+        store.resetCalls();
+        embedder.resetCalls();
+        const outcome = await retrieval.retrieve(
+          { scope },
+          {
+            kbIds: [kbA1Pub, kbA2Pub, kbA1Grant, kbB1Grant],
+            query: "MT037 candidate set probe",
+            topK: 5,
+            scoreThreshold: 0,
+            hybrid: true,
+          },
+        );
+        expect(outcome.ok).toBe(true);
+        // 候选集合 = 请求中「授权 + 一致」的子集，保持首现顺序。
+        expect(outcome.candidateKbIds).toEqual([kbA1Pub, kbA1Grant]);
+        // 引擎边界探针：向量引擎恰好被调用一次，kb_id any 逐字节等于候选集合。
+        expect(store.calls.length).toBe(1);
+        const call = store.calls[0];
+        expect(call.collection).toBe(collectionName(8));
+        const kbCondition = call.body.filter.must.find(
+          (condition) => condition.key === "kb_id",
+        );
+        expect(kbCondition).toBeDefined();
+        expect(kbCondition?.match.any).toEqual([kbA1Pub, kbA1Grant]);
+        // 结果只来自候选集合（无权内容不出现在结果）。
+        for (const row of outcome.results) {
+          expect([kbA1Pub, kbA1Grant]).toContain(row.kbId);
+        }
+        expect(outcome.count).toBe(outcome.results.length);
+      },
+    );
+
+    itDb("重排只见到候选文本：无权 canary 不进重排器", async () => {
+      const scope = await fixture.ent.scopeFor("a1-member", {
+        tenantId: tenantA,
+        workspaceId: teamA1,
+      });
+      reranker.resetCalls();
+      const outcome = await retrieval.retrieve(
+        { scope },
+        {
+          kbIds: [kbA1Pub, kbA1Grant, kbA2Pub, kbB1Grant, kbA1Stale],
+          query: "MT037 rerank candidate probe",
+          topK: 5,
+          scoreThreshold: 0,
+          hybrid: true,
+          rerank: true,
+        },
+      );
+      expect(outcome.ok).toBe(true);
+      expect(outcome.candidateKbIds).toEqual([kbA1Pub, kbA1Grant]);
+      // 重排器被真实调用（rerank: true），且收到的文本里没有任何无权 canary。
+      expect(reranker.documentsPerCall.length).toBeGreaterThanOrEqual(1);
+      const seenText = reranker.documentsPerCall.flat().join("\n");
+      expect(seenText).not.toContain(CANARY.a2);
+      expect(seenText).not.toContain(CANARY.b1);
+      expect(seenText).not.toContain(CANARY.stale);
+      expect(seenText).not.toContain(CANARY.disabled);
+      // 正向对照：授权标记确实进入了重排候选。
+      expect(
+        seenText.includes(MARK.pub1) ||
+          seenText.includes(MARK.pub2) ||
+          seenText.includes(MARK.pub3) ||
+          seenText.includes(MARK.grant1),
+      ).toBe(true);
+    });
+
+    itDb("全未授权请求：检索端零调用，返回空而不是他人内容", async () => {
+      const scope = await fixture.ent.scopeFor("a1-member", {
+        tenantId: tenantA,
+        workspaceId: teamA1,
+      });
+      store.resetCalls();
+      embedder.resetCalls();
+      reranker.resetCalls();
+      const outcome = await retrieval.retrieve(
+        { scope },
+        {
+          kbIds: [kbB1Grant, kbA2Pub],
+          query: "MT037 zero-call probe",
+          topK: 5,
+          scoreThreshold: 0,
+          hybrid: true,
+          rerank: true,
+        },
+      );
+      expect(outcome.ok).toBe(true);
+      expect(outcome.candidateKbIds).toEqual([]);
+      expect(outcome.results).toEqual([]);
+      expect(outcome.citations).toEqual([]);
+      expect(outcome.count).toBe(0);
+      // 检索端与重排端一次都不被调用：跨范围检索返回空，绝不触碰他人命名空间。
+      expect(embedder.embedCalls()).toBe(0);
+      expect(store.calls.length).toBe(0);
+      expect(reranker.documentsPerCall.length).toBe(0);
+    });
+
+    itDb("一致性门先于候选：stale 镜像库不进候选集合", async () => {
+      const scope = await fixture.ent.scopeFor("a1-member", {
+        tenantId: tenantA,
+        workspaceId: teamA1,
+      });
+      // 交叉验证：同一库经 MT036 单库入口得到确定性不一致码。
+      const got = await queryService.getKnowledgeBase({ scope }, kbA1Stale);
+      expect(got.ok).toBe(false);
+      if (!got.ok && got.kind === "ownership-inconsistent") {
+        expect(got.code).toBe("KB_SYNC_VERSION_STALE");
+      }
+      store.resetCalls();
+      const outcome = await retrieval.retrieve(
+        { scope },
+        {
+          kbIds: [kbA1Stale, kbA1Grant],
+          query: "MT037 stale mirror probe",
+          topK: 5,
+          scoreThreshold: 0,
+          hybrid: true,
+        },
+      );
+      expect(outcome.ok).toBe(true);
+      expect(outcome.candidateKbIds).toEqual([kbA1Grant]);
+      const kbCondition = store.calls[0].body.filter.must.find(
+        (condition) => condition.key === "kb_id",
+      );
+      expect(kbCondition?.match.any).toEqual([kbA1Grant]);
+      for (const row of outcome.results) {
+        expect(row.kbId).toBe(kbA1Grant);
+      }
+    });
+
+    itDb("输入卫生继承：越界/非串/空串 id 响亮拒绝", async () => {
+      const scope = await fixture.ent.scopeFor("a1-member", {
+        tenantId: tenantA,
+        workspaceId: teamA1,
+      });
+      const tooMany = Array.from({ length: 101 }, (_, i) => `kb-${i}`);
+      await expectSentinelRejection(
+        retrieval.retrieve(
+          { scope },
+          {
+            kbIds: tooMany,
+            query: "MT037 hygiene probe",
+            topK: 5,
+            scoreThreshold: 0,
+            hybrid: true,
+          },
+        ),
+        "KB_RETRIEVAL_INPUT_INVALID",
+      );
+      await expectSentinelRejection(
+        retrieval.retrieve(
+          { scope },
+          {
+            kbIds: [kbA1Pub, 42 as unknown as string],
+            query: "MT037 hygiene probe",
+            topK: 5,
+            scoreThreshold: 0,
+            hybrid: true,
+          },
+        ),
+        "KB_RETRIEVAL_INPUT_INVALID",
+      );
+      await expectSentinelRejection(
+        retrieval.retrieve(
+          { scope },
+          {
+            kbIds: ["   "],
+            query: "MT037 hygiene probe",
+            topK: 5,
+            scoreThreshold: 0,
+            hybrid: true,
+          },
+        ),
+        "KB_RETRIEVAL_INPUT_INVALID",
+      );
+    });
+  });
+
+  // -----------------------------------------------------------------
+  // AC2：向量集合/命名空间按归属隔离；跨范围检索返回空而不是他人内容。
+  // -----------------------------------------------------------------
+  describeDb("MT037 AC2: 向量命名空间按归属隔离", () => {
+    itDb(
+      "命名空间隔离：a1 只见 A1 启用内容（禁用块与他域不可达）",
+      async () => {
+        const scope = await fixture.ent.scopeFor("a1-member", {
+          tenantId: tenantA,
+          workspaceId: teamA1,
+        });
+        const outcome = await retrieval.retrieve(
+          { scope },
+          {
+            kbIds: [kbA1Pub],
+            query: "MT037 namespace probe",
+            topK: 5,
+            scoreThreshold: 0,
+            hybrid: true,
+          },
+        );
+        expect(outcome.ok).toBe(true);
+        expect(outcome.candidateKbIds).toEqual([kbA1Pub]);
+        const text = outcome.results.map((row) => row.content).join("\n");
+        expect(text).toContain(MARK.pub1);
+        expect(text).toContain(MARK.pub2);
+        expect(text).toContain(MARK.pub3);
+        // 命名空间内的禁用 chunk 不可检索（enabled filter）；他团队/他公司/stale
+        // 内容全部不可达。
+        expect(text).not.toContain(CANARY.disabled);
+        expect(text).not.toContain(CANARY.a2);
+        expect(text).not.toContain(CANARY.b1);
+        expect(text).not.toContain(CANARY.stale);
+        for (const row of outcome.results) {
+          expect(row.kbId).toBe(kbA1Pub);
+          expect(row.score).toBeGreaterThanOrEqual(0);
+        }
+      },
+    );
+
+    itDb("跨团队：a2-member 请求 A2+A1 库只见 A2", async () => {
+      const scope = await fixture.ent.scopeFor("a2-member", {
+        tenantId: tenantA,
+        workspaceId: teamA2,
+      });
+      const outcome = await retrieval.retrieve(
+        { scope },
+        {
+          kbIds: [kbA2Pub, kbA1Pub],
+          query: "MT037 cross-team probe",
+          topK: 5,
+          scoreThreshold: 0,
+          hybrid: true,
+        },
+      );
+      expect(outcome.ok).toBe(true);
+      expect(outcome.candidateKbIds).toEqual([kbA2Pub]);
+      const text = outcome.results.map((row) => row.content).join("\n");
+      expect(text).toContain(MARK.a2);
+      expect(text).not.toContain(MARK.pub1);
+      expect(text).not.toContain(MARK.pub2);
+      expect(text).not.toContain(MARK.pub3);
+      for (const row of outcome.results) {
+        expect(row.kbId).toBe(kbA2Pub);
+      }
+    });
+
+    itDb("跨公司：b1-member 请求 B1+A1 库只见 B1", async () => {
+      const scope = await fixture.ent.scopeFor("b1-member", {
+        tenantId: tenantB,
+        workspaceId: teamB1,
+      });
+      const outcome = await retrieval.retrieve(
+        { scope },
+        {
+          kbIds: [kbB1Grant, kbA1Pub],
+          query: "MT037 cross-company probe",
+          topK: 5,
+          scoreThreshold: 0,
+          hybrid: true,
+        },
+      );
+      expect(outcome.ok).toBe(true);
+      expect(outcome.candidateKbIds).toEqual([kbB1Grant]);
+      const text = outcome.results.map((row) => row.content).join("\n");
+      expect(text).toContain(MARK.b1);
+      expect(text).not.toContain(MARK.pub1);
+      expect(text).not.toContain(CANARY.a2);
+      for (const row of outcome.results) {
+        expect(row.kbId).toBe(kbB1Grant);
+      }
+    });
+
+    itDb(
+      "wire 层命名空间断言：filter 携带 scope 租户 + 候选集合 + enabled",
+      async () => {
+        const scope = await fixture.ent.scopeFor("a1-member", {
+          tenantId: tenantA,
+          workspaceId: teamA1,
+        });
+        store.resetCalls();
+        await retrieval.retrieve(
+          { scope },
+          {
+            kbIds: [kbA1Pub, kbA1Grant],
+            query: "MT037 wire probe",
+            topK: 5,
+            scoreThreshold: 0,
+            hybrid: true,
+          },
+        );
+        expect(store.calls.length).toBe(1);
+        const must = store.calls[0].body.filter.must;
+        const tenantCondition = must.find(
+          (condition) => condition.key === "tenant_id",
+        );
+        expect(tenantCondition?.match.value).toBe(tenantA);
+        const kbCondition = must.find((condition) => condition.key === "kb_id");
+        expect(kbCondition?.match.any).toEqual([kbA1Pub, kbA1Grant]);
+        const enabledCondition = must.find(
+          (condition) => condition.key === "enabled",
+        );
+        expect(enabledCondition?.match.value).toBe(true);
+      },
+    );
+  });
+
+  // -----------------------------------------------------------------
+  // AC3：引用只包含调用者有权访问的文档；引用文本不泄露无权内容片段。
+  // -----------------------------------------------------------------
+  describeDb("MT037 AC3: 引用面只含有权文档", () => {
+    itDb("引用与结果 1:1，全部落在候选集合内", async () => {
+      const scope = await fixture.ent.scopeFor("a1-member", {
+        tenantId: tenantA,
+        workspaceId: teamA1,
+      });
+      const outcome = await retrieval.retrieve(
+        { scope },
+        {
+          kbIds: [kbA1Pub, kbA1Grant, kbA2Pub, kbB1Grant],
+          query: "MT037 citation probe",
+          topK: 5,
+          scoreThreshold: 0,
+          hybrid: true,
+        },
+      );
+      expect(outcome.ok).toBe(true);
+      expect(outcome.citations.length).toBe(outcome.results.length);
+      const candidates = new Set(outcome.candidateKbIds);
+      const resultByChunk = new Map(
+        outcome.results.map((row) => [row.chunkId, row]),
+      );
+      for (const citation of outcome.citations) {
+        expect(candidates.has(citation.kbId)).toBe(true);
+        const row = resultByChunk.get(citation.chunkId);
+        expect(row).toBeDefined();
+        expect(citation.docId).toBe(row?.docId);
+        expect(citation.title.length).toBeGreaterThan(0);
+        // snippet 来自对应结果行的有界前缀（引用文本源头是受限结果行）。
+        expect(row?.content.startsWith(citation.snippet)).toBe(true);
+      }
+    });
+
+    itDb("全响应 canary 扫描：无权片段不出现在任何字段", async () => {
+      const scope = await fixture.ent.scopeFor("a1-member", {
+        tenantId: tenantA,
+        workspaceId: teamA1,
+      });
+      const outcome = await retrieval.retrieve(
+        { scope },
+        {
+          kbIds: [kbA1Pub, kbA1Grant, kbA2Pub, kbB1Grant, kbA1Stale],
+          query: "MT037 canary sweep probe",
+          topK: 5,
+          scoreThreshold: 0,
+          hybrid: true,
+          rerank: true,
+        },
+      );
+      expect(outcome.ok).toBe(true);
+      const serialized = JSON.stringify(outcome);
+      expect(serialized).not.toContain(CANARY.a2);
+      expect(serialized).not.toContain(CANARY.b1);
+      expect(serialized).not.toContain(CANARY.stale);
+      expect(serialized).not.toContain(CANARY.disabled);
+      // 正向对照：授权标记在响应里可见。
+      const authorizedSeen =
+        serialized.includes(MARK.pub1) ||
+        serialized.includes(MARK.pub2) ||
+        serialized.includes(MARK.pub3) ||
+        serialized.includes(MARK.grant1);
+      expect(authorizedSeen).toBe(true);
+    });
+
+    itDb("相邻链表扩展不出命名空间：扩展内容全部来自同文档", async () => {
+      const scope = await fixture.ent.scopeFor("a1-member", {
+        tenantId: tenantA,
+        workspaceId: teamA1,
+      });
+      const outcome = await retrieval.retrieve(
+        { scope },
+        {
+          kbIds: [kbA1Pub],
+          query: "MT037 neighbor probe",
+          topK: 5,
+          scoreThreshold: 0,
+          hybrid: true,
+        },
+      );
+      expect(outcome.ok).toBe(true);
+      // 中间块（按 chunkId 精确定位）的行应同时含 pre（c1）与 next（c3）
+      // 内容——扩展只发生在文档链内，且只有一跳。
+      const middleChunkId = pubChunkIds.get("pub-doc/c2");
+      expect(middleChunkId).toBeDefined();
+      const middle = outcome.results.find(
+        (row) => row.chunkId === middleChunkId,
+      );
+      expect(middle).toBeDefined();
+      expect(middle?.content).toContain(MARK.pub1);
+      expect(middle?.content).toContain(MARK.pub3);
+      // 任何结果行都不携带他域内容。
+      for (const row of outcome.results) {
+        expect(row.content).not.toContain(CANARY.a2);
+        expect(row.content).not.toContain(CANARY.b1);
+        expect(row.content).not.toContain(CANARY.stale);
+        expect(row.content).not.toContain(CANARY.disabled);
+      }
+    });
+
+    itDb("stale 镜像库不进引用：不一致库的 canary 零出现", async () => {
+      const scope = await fixture.ent.scopeFor("a1-member", {
+        tenantId: tenantA,
+        workspaceId: teamA1,
+      });
+      const outcome = await retrieval.retrieve(
+        { scope },
+        {
+          kbIds: [kbA1Stale, kbA1Grant],
+          query: "MT037 stale citation probe",
+          topK: 5,
+          scoreThreshold: 0,
+          hybrid: true,
+        },
+      );
+      expect(outcome.ok).toBe(true);
+      expect(outcome.candidateKbIds).toEqual([kbA1Grant]);
+      for (const citation of outcome.citations) {
+        expect(citation.kbId).toBe(kbA1Grant);
+      }
+      const serialized = JSON.stringify(outcome);
+      expect(serialized).not.toContain(CANARY.stale);
+      expect(serialized).toContain(MARK.grant1);
+    });
+
+    itDb("citation 投影纯函数：snippet 有界且为内容前缀（冻结）", () => {
+      const longContent = "甲乙丙丁".repeat(200);
+      const citation = restrictedCitationOf(
+        {
+          chunkId: "chunk-1",
+          docId: "doc-1",
+          kbId: "kb-1",
+          content: longContent,
+          score: 0.87,
+          source: "manual",
+          title: "t",
+          metadata: {},
+        },
+        64,
+      );
+      expect(citation.chunkId).toBe("chunk-1");
+      expect(citation.docId).toBe("doc-1");
+      expect(citation.kbId).toBe("kb-1");
+      expect(citation.score).toBe(0.87);
+      expect(citation.snippet.length).toBe(64);
+      expect(longContent.startsWith(citation.snippet)).toBe(true);
+      // 默认有界常量存在且为正（生产投影走该默认）；精确值钉死（复审 L2）。
+      expect(DEFAULT_CITATION_SNIPPET_RUNES).toBeGreaterThan(0);
+      expect(DEFAULT_CITATION_SNIPPET_RUNES).toBe(280);
+      const defaulted = restrictedCitationOf({
+        chunkId: "chunk-2",
+        docId: "doc-2",
+        kbId: "kb-2",
+        content: "短内容",
+        score: 0.5,
+        source: "manual",
+        title: "t",
+        metadata: {},
+      });
+      expect(defaulted.snippet).toBe("短内容");
+      expect(defaulted.snippet.length).toBeLessThanOrEqual(
+        DEFAULT_CITATION_SNIPPET_RUNES,
+      );
+    });
+  });
+
+  // -----------------------------------------------------------------
+  // AC4：公司范围 Key 不被当作团队授权使用（专门测试）。
+  // -----------------------------------------------------------------
+  describeDb("MT037 AC4: 公司范围 Key 不被当作团队授权", () => {
+    itDb(
+      "内部公司范围 Key（空 kbScope=公司内全库）结构性拒绝且检索端零调用",
+      async () => {
+        store.resetCalls();
+        embedder.resetCalls();
+        reranker.resetCalls();
+        // KB 内部服务身份形状（middleware/auth Identity）：tenantId+role+kbScope，
+        // 空 kbScope = 公司内全库。它没有 principal/团队事实，结构上进不了受限
+        // 检索入口——得到的是 KB_REQUESTER_INVALID，不是公司全域检索。
+        const companyWideKey = {
+          tenantId: tenantA,
+          role: "admin",
+          kbScope: new Set<string>(),
+        } as unknown as { scope: PlatformScope };
+        await expectSentinelRejection(
+          retrieval.retrieve(companyWideKey, {
+            kbIds: [kbA1Pub, kbA1Grant, kbA2Pub, kbB1Grant],
+            query: "MT037 company key probe",
+            topK: 5,
+            scoreThreshold: 0,
+            hybrid: true,
+          }),
+          "KB_REQUESTER_INVALID",
+        );
+        expect(embedder.embedCalls()).toBe(0);
+        expect(store.calls.length).toBe(0);
+        expect(reranker.documentsPerCall.length).toBe(0);
+      },
+    );
+
+    itDb(
+      "Key 自带 kbScope 白名单不构成授权（入口从不读取该字段）",
+      async () => {
+        // 即使内部 Key 的白名单把目标库都列进去，也只是寻址不是授权——
+        // 受限检索入口的请求者类型只有受信 PlatformScope。
+        const keyedIdentity = {
+          tenantId: tenantA,
+          role: "admin",
+          kbScope: new Set([kbA1Pub, kbA1Grant, kbB1Grant]),
+        } as unknown as { scope: PlatformScope };
+        await expectSentinelRejection(
+          retrieval.retrieve(keyedIdentity, {
+            kbIds: [kbA1Pub, kbA1Grant, kbB1Grant],
+            query: "MT037 keyed whitelist probe",
+            topK: 5,
+            scoreThreshold: 0,
+            hybrid: true,
+          }),
+          "KB_REQUESTER_INVALID",
+        );
+      },
+    );
+
+    itDb("伪造 scope（非 seam 签发）拒绝", async () => {
+      const forged = {
+        tenantId: tenantA,
+        workspaceId: teamA1,
+        principalId: "forged-principal",
+        actorId: "forged-actor",
+        memberEpoch: 1,
+        aclEpoch: 1,
+        entrypoint: "web",
+      } as unknown as PlatformScope;
+      await expectSentinelRejection(
+        retrieval.retrieve(
+          { scope: forged },
+          {
+            kbIds: [kbA1Pub],
+            query: "MT037 forged scope probe",
+            topK: 5,
+            scoreThreshold: 0,
+            hybrid: true,
+          },
+        ),
+        "UNVERIFIED_SCOPE",
+      );
+    });
+
+    itDb(
+      "公司管理员身份不等于团队授权：无团队成员资格连团队 scope 都签发不出",
+      async () => {
+        // company-admin 是公司成员（tenant_admin）但没有任何团队成员关系：真实
+        // seam 在签发时就拒绝（WORKSPACE_FORBIDDEN）——公司角色不 confer 团队
+        // 资格，更不存在可用的团队范围 scope 去检索团队公共库。
+        await expect(
+          fixture.ent.scopeFor("company-admin", {
+            tenantId: tenantA,
+            workspaceId: teamA1,
+          }),
+        ).rejects.toThrow("WORKSPACE_FORBIDDEN");
+      },
+    );
+
+    itDb("源码级：受限检索入口不携带内部身份词汇（注释剥离后）", async () => {
+      // 与 MT036 入口同款纪律：授权只读主库权威的判定事实，本模块源码
+      //（剥除注释后）不出现内部身份词汇——Key 自带白名单字段在类型与逻辑
+      // 两个层面上都不存在。
+      const stripComments = (source: string): string =>
+        source.replace(/\/\/.*$/gm, "");
+      const entrySource = stripComments(
+        await Bun.file(
+          "src/kb/application/service/kb-restricted-retrieval.ts",
+        ).text(),
+      );
+      expect(entrySource).not.toContain("kbScope");
+      expect(entrySource).not.toContain("APIKeyEntry");
+    });
+
+    itDb("正向对照：团队成员 scope 正常检索授权内容", async () => {
+      const scope = await fixture.ent.scopeFor("a1-member", {
+        tenantId: tenantA,
+        workspaceId: teamA1,
+      });
+      const outcome = await retrieval.retrieve(
+        { scope },
+        {
+          kbIds: [kbA1Grant],
+          query: "MT037 positive control probe",
+          topK: 5,
+          scoreThreshold: 0,
+          hybrid: true,
+        },
+      );
+      expect(outcome.ok).toBe(true);
+      expect(outcome.candidateKbIds).toEqual([kbA1Grant]);
+      expect(outcome.results.length).toBeGreaterThan(0);
+      expect(
+        outcome.results.some((row) => row.content.includes(MARK.grant1)),
+      ).toBe(true);
+    });
+  });
+});

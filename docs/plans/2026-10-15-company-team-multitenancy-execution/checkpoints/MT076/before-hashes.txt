@@ -1,0 +1,5 @@
+09bf04006ff459fecda82c882fcad492c4f45875c84948ad70d02d6ff2a6a68b  server/scripts/multitenancy/migrate-test.ts  (pre-MT076 state; per prereq-manifest)
+2a1ce227f1fdda59369bc53db2bfe974e74f982658a05c2daa98dc627dad4392  server/tests/multitenancy/migration-tool.test.ts  (pre-MT076 state; per prereq-manifest)
+----------------------------------------------------------------  server/src/enterprise/tenancy/people-lifecycle.ts  (did not exist before MT076)
+----------------------------------------------------------------  server/tests/multitenancy/people-lifecycle.test.ts  (did not exist before MT076)
+----------------------------------------------------------------  server/tests/multitenancy/support/people-lifecycle.ts  (did not exist before MT076)

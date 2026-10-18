@@ -1,0 +1,33 @@
+{
+ "node": "MT005",
+ "phase": "integration",
+ "integrated_at": "2026-10-16T03:38:29",
+ "baseline_head": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+ "lineage": {
+  "impl": "task_70d54b54ba2e/ctx_2a8e4c341143 (i6-mt005)",
+  "review1": "reports/MT005-review.md: Spec PASS (5/5) / Code PASS, 0C/0H/0M-code; F-1 medium=process(snapshot gap, fixed via ruling #6), F-2 low=stale MT004-era artifact, 3 info (ctx_517f20b7c300, released)",
+  "ruling6_snapshot_repair": "support/scope-gate.ts copied hash-verified 7f32f543…",
+  "f2_remediation": "MT004 generated/ re-generated with current tool: planDigest 39b91e0f… (matches reviewer independent computation); old artifacts preserved at generated-mt004-era/",
+  "source_worktrees": "i6-mt005 (deliverables) + i6-review-mt005 (verified snapshot incl. repaired file)"
+ },
+ "integrated_files_sha256": {
+  "server/src/enterprise/tenancy/store.ts": "2f8cbef72f8af7c21a2687d7cd9be199e6cfc1dc6703e2d3bf8f8dfd66654c1f",
+  "server/src/enterprise/tenancy/scope-gate.ts": "895b0e548513223e148a4a631dabe4181a0964d853ce2a099158813901d9b107",
+  "server/src/index.ts": "8c2583847bb056bbb27ef8782542be476f87677b42619dc3a5d162dc43678c5d",
+  "server/tests/multitenancy/scope-gate.test.ts": "d9a5a02d1e94eac0d463059ab66a05708bca2227b30a507111bc7d2f2d85b249",
+  "server/tests/multitenancy/fixtures.test.ts": "59f119626792f1d63fdc08e8e0a58999946b367675b1543fbf33f87020bfbb13",
+  "server/tests/multitenancy/support/fixture.ts": "da29a2a5da604292f4ef566b841b9b443fed382536b3456bfc0dbdd69ff7dd78",
+  "server/tests/multitenancy/support/scope-gate.ts": "7f32f54383babe7f94fca2f8c75d7422c127d2a5bdfa7d3b7e9165ae767a787d"
+ },
+ "coordinator_verification": {
+  "date": "2026-10-16",
+  "db": "pgvector/pgvector:pg16 @55456 openbot_enterprise_mt005_integration (removed after run)",
+  "restricted_roles": "ent_m5dir/ent_m5data/ent_m5op (random pw, 0600 env, deleted)",
+  "baseline_migrate": "exit 0",
+  "mt004_apply": "exit 0 (fresh manifest 39b91e0f…)",
+  "scope_gate_suite": "23 pass / 0 fail exit 0",
+  "full_suite": "148 pass / 0 fail / 0 skip across 6 files (with MT003 assigned-db env)",
+  "typecheck": "exit 0",
+  "biome": "exit 1 = sole noConsole store.ts:70 verified pre-existing at BASE via git show f0520524 (D5 accurate); zero findings on new files"
+ }
+}
