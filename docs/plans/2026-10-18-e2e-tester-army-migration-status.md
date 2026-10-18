@@ -148,6 +148,22 @@ Test Files  34 failed | 550 passed | 17 skipped (601)
    `tests/bun-suites.test.ts` 的复跑上限判断顺序（现在会先复跑 8 个文件再判超限），
    然后需要一次 `127.0.0.1:5432` 在听的复测；这属于共享设施，动它之前要用户同意。
 
+## 迁移之外、但卡住 CI 关卡的 main 破损（2026-10-18 19:46 CST 核实）
+
+`cd app && bunx tsc --noEmit` 在 `HEAD=6e024bce`（工作树对 `server/src/config.ts` 无改动）报 6 个错，
+全部落在 `server/src/config.ts`，来源是合并 `084642a3 Merge commit '1c2a8413…' into integration/consolidate-all-20261018`：
+
+- 1624 行调用 `parseGatewayBaseUrl(baseUrl)`、1628 行调用 `parseRequestTimeoutMs(...)`，
+  但这两个函数在本文件里既没定义也没导入 —— 它们在 `server/src/gateway/endpoint.ts` 里
+  （`git grep -c 'function parseGatewayBaseUrl' HEAD -- server/src` → 只有 endpoint.ts 命中）。
+  本机 `.env` 没有 `GATEWAY_BASE_URL`，所以测试里看不到它炸；**一旦部署设了这个变量，读配置就会
+  ReferenceError**。
+- 接口里 `gateway?:` 被声明两次且类型不同（274 行 `GatewayEnvConfig`、466 行 `Config`），
+  TS2300/TS2717，连带 2954 行的返回对象不再满足 `DeploymentConfig`。
+
+这不是迁移造成的（`bun test` 时代同样编译不过），但它让 `bun run typecheck` 与 `bun run test:ci`
+的关卡无法给出干净结论，所以要由该波次的 owner 修（补 import 或删重复声明），不由测试侧代劳。
+
 ## 复核方式
 
 ```bash

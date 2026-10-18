@@ -177,7 +177,9 @@ function collect(stream: Readable | null): Any {
   const web = Readable.toWeb((stream ?? Readable.from([])) as Readable) as Any;
   web.text = () => chunks.then((value: Buffer) => value.toString("utf8"));
   web.bytes = () => chunks.then((value: Buffer) => new Uint8Array(value));
-  web.blob = () => chunks.then((value: Buffer) => new Blob([value]));
+  // Node's Buffer satisfies ArrayBufferView<ArrayBuffer> only loosely; the view over it does not lie.
+  web.blob = () =>
+    chunks.then((value: Buffer) => new Blob([new Uint8Array(value)]));
   web.json = () =>
     web.text().then((value: string) => JSON.parse(value)) as Promise<Any>;
   return web;
