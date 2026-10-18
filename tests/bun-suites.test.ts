@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "./support/e2e-compat";
@@ -165,6 +166,34 @@ async function runBun(
   }
 }
 
+/*
+ * One TCP probe against the database the suites are pointed at. Returns a description of why it is
+ * unreachable, or null when something answers. The credential in the URL is never echoed.
+ */
+async function databaseUnreachable(): Promise<string | null> {
+  const url = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
+  if (!url) return "no TEST_DATABASE_URL/DATABASE_URL in the environment";
+  const target = /\/\/[^@/]*@?([^:/?]+):(\d{2,5})\//.exec(url);
+  if (!target) return `${url.replace(/:[^:@/]*@/, ":***@")} names no host:port`;
+  const answered = await new Promise<boolean>((resolve) => {
+    const socket = connect({ host: target[1], port: Number(target[2]) });
+    socket.setTimeout(1500);
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("timeout", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once("error", () => {
+      socket.destroy();
+      resolve(false);
+    });
+  });
+  return answered ? null : `${target[1]}:${target[2]} answered nothing`;
+}
+
 for (const group of groups) {
   test(`bun runtime suite ${group.name}`, {
     tags: ["bun-runtime"],
@@ -179,19 +208,32 @@ for (const group of groups) {
     if (started.failures + started.errors === 0) return;
 
     /*
-     * When most recorded failures are connection refusals the group was never judged: reporting
-     * "N tests failed" would read as a product verdict while the database was never reached. It stays
-     * a failure — an unrunnable tier must not claim success — but names what is missing.
+     * "Blocked, not judged" is a claim about the environment, so it needs environment evidence.
+     * Failure text alone cannot carry it: drizzle prefixes *every* statement error with
+     * `Failed query:` (a rejected insert under RLS is a product verdict) and truncates the
+     * connection cause off the end, so a real outage and a real bug look identical here. The label
+     * is therefore made only on a connect-level signature or on a direct probe that nothing is
+     * listening where TEST_DATABASE_URL/DATABASE_URL points, and it quotes the evidence it used.
      */
-    const refused = started.failed.filter((text) =>
-      /ECONNREFUSED|EADDRNOTAVAIL|Failed to connect|Failed query|PostgresError|unreachable|is not available/i.test(
+    const refusals = started.failed.filter((text) =>
+      /ECONNREFUSED|EADDRNOTAVAIL|Failed to connect|could not connect|getaddrinfo/i.test(
         text,
       ),
-    ).length;
-    const refusalNote =
-      refused > started.failed.length / 2
-        ? `\n  ${refused} of ${started.failed.length} recorded failures are connection refusals: with no database reachable at TEST_DATABASE_URL/DATABASE_URL this group is blocked, not judged.`
-        : "";
+    );
+    const statementFailures = started.failed.filter((text) =>
+      /Failed query|PostgresError/i.test(text),
+    );
+    const unreachable = await databaseUnreachable();
+    const half = started.failed.length / 2;
+    const evidence =
+      refusals.length > half
+        ? `${refusals.length}/${started.failed.length} failures quote a connect-level refusal (first: ${(refusals[0] ?? "").replace(/\s+/g, " ").slice(0, 120)})`
+        : unreachable && statementFailures.length > half
+          ? `${statementFailures.length}/${started.failed.length} failures are statement errors and the configured database is unreachable (${unreachable})`
+          : null;
+    const refusalNote = evidence
+      ? `\n  ${evidence}: this group is blocked, not judged. An unrunnable tier must not claim success, but "N tests failed" here is not a product verdict.`
+      : "";
 
     /*
      * `bun test` shares one process across the files it was handed, so a suite that leaves global
