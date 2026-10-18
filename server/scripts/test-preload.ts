@@ -22,7 +22,10 @@
  * at the same preload boundary and fails loudly if a server test tries to use it.
  */
 
-import { mock } from "../../tests/support/e2e-compat";
+/* Bun ships `mock` natively on bun:test; this branch's bced6121 test-runner migration
+ * removed ../../tests/support/bun-test-compat, and the preload only ever needed `mock`
+ * (same one-line repair #276/b5-276 recorded for its suites). */
+import { mock } from "bun:test";
 import "eventsource";
 
 mock.module("@ai-sdk/google-vertex", () => ({

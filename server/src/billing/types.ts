@@ -436,6 +436,9 @@ export type CreditConsumptionEntry = {
   model: string | null;
   /** The surface that made the call (web/api/cli). */
   client: string | null;
+  /** The Bot the call was admitted for (06.12's attribution), null when not protocol-born. */
+  botId: string | null;
+  botName: string | null;
   /** ISO-8601 of when it happened. */
   timestamp: string;
 };
@@ -479,20 +482,60 @@ export type CreditSummary = {
 /**
  * The personal read's pending-settlement placeholders (ticket 02.6).
  *
- * Settlement-disposition views are group 06's slice; until that group's work is delivered the
- * feature does not exist on a deployment, and the fields stand in the response as a fixed shape
- * carrying constant zeros with `enabled: false` spelled out — the 未启用 marker the contract
- * asks for, so a client never has to guess whether a zero means "nothing pending" or "not a
- * feature here". The literal types are the discipline: this module cannot put a non-zero
- * amount behind a disabled flag, and group 06 enabling the feature MUST touch this type —
- * the contract change is then a visible commit, not a silent drift.
+ * Settlement-disposition views are group 06's slice, and group 06 has landed (ticket 06.12):
+ * the fields 02.6 reserved now carry the real answer behind the SAME names — the pending
+ * quota (every capacity-occupying hold: unexpired `reserved` plus every `unknown`), its
+ * reserved/unknown split, the settled total, the lapsed holds, and the per-reservation
+ * status-and-reason list. The quota is computed from the same occupying definition admission
+ * uses (./capacity.ts), so the page and the gate cannot disagree; `consumed` is the ledger's
+ * own figure, never a parallel truth.
  */
 export type PendingSettlementSummary = {
-  /** The feature gate, group 06's to switch — every amount below is constant while it is false. */
-  enabled: false;
-  available: 0;
-  consumed: 0;
-  expired: 0;
+  /** The gate, switched on by group 06: every amount below is computed, never a constant. */
+  enabled: true;
+  /** The pending quota: Σ maximum of unexpired `reserved` holds plus every `unknown` one. */
+  available: number;
+  /** Σ charged over settled reservations — the ledger's figure, not a parallel truth. */
+  consumed: number;
+  /** Σ maximum of plain `reserved` holds whose expiry has passed (no longer occupying). */
+  expired: number;
+  /** The quota's `reserved` share (unexpired plain holds). */
+  reserved: number;
+  /** The quota's `unknown` share — occupies no matter how far the clock runs (Q12). */
+  unknown: number;
+  /** The account's latest reservations, newest first, bounded at twenty. */
+  reservations: readonly CreditReservationEntry[];
+};
+
+/**
+ * One of the account's own reservations, as the user view answers it (ticket 06.12): the
+ * hold's status and reason, in credits (×100 scaled units, scaled down for the wire).
+ * `status` and the reason fields are the row's persisted state — the view never derives or
+ * guesses one.
+ */
+export type CreditReservationEntry = {
+  id: string;
+  status: "reserved" | "unknown" | "settled" | "released";
+  /** The hold ceiling, in credits. */
+  maximum: number;
+  /** What settlement charged, in credits — settled rows only, else null. */
+  charged: number | null;
+  /** Held capacity handed back unused, in credits — terminal rows only, else null. */
+  released: number | null;
+  /** The locked price basis the hold was admitted against, when the protocol wrote one. */
+  provider: string | null;
+  model: string | null;
+  capability: string | null;
+  /** The Bot the reservation was admitted for (06.12's attribution table), when known. */
+  botId: string | null;
+  botName: string | null;
+  /** Why the hold entered `unknown` (06.8's evidence), verbatim — unknown rows carry it. */
+  unknownReason: string | null;
+  /** Why the hold was released, verbatim — released rows carry it. */
+  releaseReason: string | null;
+  createdAt: string;
+  expiresAt: string;
+  terminalAt: string | null;
 };
 
 /**
@@ -521,7 +564,7 @@ export type PersonalCreditBalance = {
   held: number;
   /** Every grant of the account, soonest expiry first, with its derived status. */
   grants: readonly CreditGrantEntry[];
-  /** Group 06's placeholders: constant zeros behind an explicit not-enabled marker. */
+  /** Group 06's pending answer: the quota, its reserved/unknown split, and every reservation. */
   pendingSettlement: PendingSettlementSummary;
 };
 
@@ -655,7 +698,9 @@ export type BillingStore = {
    * means a stamp never touches a row's provider facts (status/plan), and — because the
    * projection upsert names none of these columns — a delivery can never touch them either.
    */
-  stampSubscriptionOwnership(input: SubscriptionOwnershipStamp): Promise<boolean>;
+  stampSubscriptionOwnership(
+    input: SubscriptionOwnershipStamp,
+  ): Promise<boolean>;
   /**
    * Advance the allowance marker (10.3's renewal marker), forward-only: a row whose marker
    * already names this period — or a later one — is left untouched, so an out-of-order or

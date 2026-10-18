@@ -139,6 +139,9 @@ export function createActorAgentResolver(
       deps.loadPersonalMemoryForActor?.(actor.id),
       deps.loadKnowledgeForActor?.(actor.id),
       context?.governedModel,
+      // The consumption attribution (09.1): who this build's runs are for. The Bot half is each
+      // agent's own id, known where the model wrapper is built; the person is known here.
+      { userId: actor.id },
     );
 
   const resolveAgentsForActor = async (actor: AgentActor) =>
