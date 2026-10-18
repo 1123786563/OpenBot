@@ -1,5 +1,5 @@
 {
- "generatedBy": "scripts/e2e-route-failures.mjs",
+ "generatedBy": "scripts/e2e-add-driven.mjs",
  "groups": [
   {
    "name": "agent-computer/tests",
@@ -12,7 +12,9 @@
   {
    "name": "agent-langgraph/tests",
    "files": [
-    "agent-langgraph/tests/google-oauth-proxy.test.ts"
+    "agent-langgraph/tests/google-oauth-proxy.test.ts",
+    "agent-langgraph/tests/governed-export-bytes.test.ts",
+    "agent-langgraph/tests/governed-tracing.test.ts"
    ]
   },
   {
@@ -455,6 +457,8 @@
   "agent-computer/tests/local-chrome-startup.test.ts",
   "agent-computer/tests/workspace-download.test.ts",
   "agent-langgraph/tests/google-oauth-proxy.test.ts",
+  "agent-langgraph/tests/governed-export-bytes.test.ts",
+  "agent-langgraph/tests/governed-tracing.test.ts",
   "agent-mastra/src/mastra/index.test.ts",
   "agent-sandbox/tests/snapshot.test.ts",
   "agent-sandbox/tests/sse.test.ts",
@@ -884,6 +888,8 @@
   "server/tests/trace-outbound.test.ts": "runner reported: an agent POST inside an active span carries that span's trace: fetch failed: connect EADDRNOTAVAIL 127.0.0.1 - Local (0.",
   "server/tests/voice-summary-model.test.ts": "runner reported: voice summaries use the selected openai API credential and protocol, including rotation: Failed to parse URL from undefi",
   "server/tests/web-bot-auth.test.ts": "runner reported: refuses a key whose public half does not match its private half: expect(...).toThrow failed: threw Invalid JWK OKP key",
-  "server/tests/workshop-metering.test.ts": "runner reported: refuses usage that exceeds the configured token ceiling: expect(...).toThrow failed: threw Usage charge failed (usage_ov"
+  "server/tests/workshop-metering.test.ts": "runner reported: refuses usage that exceeds the configured token ceiling: expect(...).toThrow failed: threw Usage charge failed (usage_ov",
+  "agent-langgraph/tests/governed-export-bytes.test.ts": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
+  "agent-langgraph/tests/governed-tracing.test.ts": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'"
  }
 }
