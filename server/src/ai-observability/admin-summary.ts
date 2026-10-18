@@ -26,7 +26,16 @@
  *     eligibility input, and an owner requesting their own bot has always
  *     received this count).
  */
-import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+} from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   type AiObservationBindingCapability,
@@ -208,7 +217,6 @@ export function createAdminSummaryService(deps: {
         state: aiObservationBindings.state,
         capability: aiObservationBindings.capability,
         opikTraceId: aiObservationBindings.opikTraceId,
-        updatedAt: aiObservationBindings.updatedAt,
       })
       .from(aiObservationBindings)
       .where(
@@ -241,24 +249,38 @@ export function createAdminSummaryService(deps: {
       unavailable: 0,
     };
     let pendingSync = 0;
-    let lastCollectedAt: Date | null = null;
     for (const row of bindingRows) {
       byState[row.state] += 1;
       capabilities[row.capability] += 1;
       if (row.opikTraceId === null) pendingSync += 1;
-      /*
-       * R2-51 (R2fix F-2): only a reconciled row ever landed upstream —
-       * begin/finish advance updatedAt without any upstream write, so an
-       * unreconciled row is pendingSync evidence, never collection evidence.
-       */
-      if (
-        row.opikTraceId !== null &&
-        (lastCollectedAt === null ||
-          row.updatedAt.getTime() > lastCollectedAt.getTime())
-      ) {
-        lastCollectedAt = row.updatedAt;
-      }
     }
+
+    /*
+     * R5-22 (triage R5-19): collection freshness is window-invariant by
+     * contract — R3-29's own fix report: "the listing is still asked for what
+     * is window-invariant — the R2-51 collection freshness". Reading it from
+     * the window-filtered aggregate rows made a binding created before the
+     * window but reconciled seconds ago invisible: null ("cannot answer")
+     * masqueraded a provably fresh collection. This pool asks the same
+     * reader-contract rows WITHOUT the window — reconciled rows only, soft-
+     * deletion and deletion-in-flight excluded — and every aggregate above
+     * stays window-filtered. The R2-51/R2-62 gate below (upstreamListed) is
+     * untouched: a listing that never answered still lends no freshness.
+     */
+    const [freshness] = await deps.database
+      .select({ updatedAt: aiObservationBindings.updatedAt })
+      .from(aiObservationBindings)
+      .where(
+        and(
+          eq(aiObservationBindings.scopeKey, scope.key),
+          isNull(aiObservationBindings.deletedAt),
+          notPendingDeletion("run", aiObservationBindings.id),
+          isNotNull(aiObservationBindings.opikTraceId),
+        ),
+      )
+      .orderBy(desc(aiObservationBindings.updatedAt))
+      .limit(1);
+    const lastCollectedAt: Date | null = freshness?.updatedAt ?? null;
 
     const experimentRows = await deps.database
       .select({ state: aiObservationExperiments.state })
