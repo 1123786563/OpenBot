@@ -101,6 +101,34 @@ for (const file of files) {
   else buckets.gap.push(`${rel} (no runner import and no registrations)`);
 }
 
+/*
+ * The entry points are part of the claim. A session that reverts `bun run test` back to a `bun test`
+ * list silently un-migrates the whole corpus while every suite file above still looks correct, so the
+ * scripts and the CI workflows are read as they are rather than trusted from memory. (This happened
+ * once already: an integration merge restored the old `test` script and it had to be re-pointed.)
+ */
+function entryPointGaps() {
+  const gaps = [];
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  for (const [name, command] of Object.entries(pkg.scripts ?? {})) {
+    if (!/^test(:|$)/.test(name)) continue;
+    if (/\bbun\s+test\b/.test(String(command)))
+      gaps.push(`package.json "${name}": ${command}`);
+  }
+  const workflows = join(root, ".github", "workflows");
+  for (const file of readdirSync(workflows)) {
+    if (!/\.ya?ml$/.test(file)) continue;
+    for (const line of readFileSync(join(workflows, file), "utf8").split(
+      "\n",
+    )) {
+      if (/\bbun\s+(test|x\s+test)\b/.test(line) && !/^\s*[#-]*\s*#/.test(line))
+        gaps.push(`${file}: ${line.trim().slice(0, 130)}`);
+    }
+  }
+  return gaps;
+}
+
+const entries = entryPointGaps();
 console.log(
   `${files.length} suite files in the 14 migrated directories · ${buckets.native.length} native e2e · ${buckets.driven.length} driven by e2e (bun runtime) · ${buckets.engine.length} engine (.e2e.ts, web/mobile) · ${buckets.excluded.length} named exclusions`,
 );
@@ -111,6 +139,13 @@ if (buckets.gap.length) {
   for (const gap of buckets.gap.slice(0, 40)) console.log(`  ${gap}`);
   process.exit(1);
 }
+if (entries.length) {
+  console.log(
+    `\nENTRY-POINT GAPS (${entries.length}) — every suite may be scheduled by e2e while the command that runs it is not:`,
+  );
+  for (const gap of entries) console.log(`  ${gap}`);
+  process.exit(1);
+}
 console.log(
-  "\nno gaps: every suite file is scheduled by e2e, or excluded by name with a reason.",
+  "\nno gaps: every suite file is scheduled by e2e, every test entry point runs e2e, and exclusions are named with a reason.",
 );
