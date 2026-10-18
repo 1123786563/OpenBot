@@ -186,7 +186,10 @@ export type OpikPort = {
       /**
        * Required (OCR m154): the binding is what ties this creation to the run's
        * verified identity; a creation without one is an unattributable write, and
-       * the guard refuses it before any I/O.
+       * the guard refuses it before any I/O. The binding is cross-checked whole
+       * (OCR R5-16): scope/locator agreement, and a recorded `opikTraceId` must
+       * equal the created trace id — a different id is ownership drift, never a
+       * second upstream trace for one run.
        */
       binding: OpikRunBindingRef;
     },

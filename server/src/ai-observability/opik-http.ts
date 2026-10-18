@@ -623,6 +623,18 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
       if (!UUIDV7.test(input.traceId)) {
         throw new OpikPortError("OPERATION_INPUT_INVALID");
       }
+      // The binding's recorded upstream id is an identity field (OCR R5-16), the
+      // last member of the binding the write guard cross-checks: a creation whose
+      // trace id disagrees with the id the binding already names would mint a
+      // second upstream trace for one run — the silent duplication drift exists
+      // to refuse. The same id is an idempotent replay; a null recorded id is the
+      // first creation and passes.
+      if (
+        input.binding.opikTraceId !== null &&
+        input.binding.opikTraceId !== input.traceId
+      ) {
+        return drift("createTrace", scope.key, "binding_mismatch");
+      }
       if (input.threadId !== undefined && input.threadId.trim() === "") {
         throw new OpikPortError("OPERATION_INPUT_INVALID");
       }
