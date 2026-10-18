@@ -1,0 +1,33 @@
+# MT067 变异自证结果（每安全分支 ≥1：注入 → 聚焦捕获 → 字节复原 → 复绿）
+
+pristine sha256: dd5ac46fca0d408f6fd440010eafd9ad0a087172cce0c216a1fdfc6eb733d559  src/enterprise/tenancy/deletion-semantics.ts
+
+MUT-1 范围 pin 指错主体（任务协会第二道防线倒置）
+  注入：pinTarget 的 app.principal_id 改设为 context.principalId（管理员）而非目标
+  捕获：MUT1-scope-pin-swapped.txt — 2 fail（AC1 主用例 taskScopesRemoved=1 断言 +
+        AC3 任务失效用例）；11 pass / 2 fail
+  复原：MUT1-restored-sha256.txt = pristine（逐位）
+  复绿：MUT1-restore-regreen.txt — 13 pass / 0 fail
+
+MUT-2 确认弱化（全局删除显式授权比对放宽为大小写不敏感）
+  注入：confirmation 比对改 toLowerCase
+  捕获：MUT2-confirmation-loosened.txt — 3 fail（AC2 零写入拒绝 + AC2 fence 用例 +
+        AC4 审计链）；10 pass / 3 fail
+  复原：MUT2-restored-sha256.txt = pristine（逐位）
+  复绿：MUT2-restore-regreen.txt — 13 pass / 0 fail
+
+MUT-3 审计合流（Track B 每公司审计事件类型改写为 Track A 的 data_cleaned）
+  注入：global_account.membership_revoked → company_member.data_cleaned
+  捕获：MUT3-audit-merged.txt — 1 fail（AC4 审计互斥断言）；12 pass / 1 fail
+  复原：MUT3-restored-sha256.txt = pristine（逐位）
+  复绿：MUT3-restore-regreen.txt — 13 pass / 0 fail
+
+MUT-4 越权资格（事务内管理员重验整行拔除）
+  注入：删除 await revalidateAdmin(tx, context) 调用
+  捕获：MUT4-admin-revalidation-stripped.txt — 5 fail（AC1 漂移管理员 SCOPE_REVOKED
+        用例 + 连带状态污染的 AC2/AC3/AC4 用例）；8 pass / 5 fail
+  复原：MUT4-restored-sha256.txt = pristine（逐位）
+  复绿：MUT4-restore-regreen.txt — 13 pass / 0 fail
+
+结论：4/4 安全分支均被聚焦套件捕获，注入后文件逐位复原（sha256 与 pristine 相等），
+复绿全绿。

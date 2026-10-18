@@ -1,0 +1,28 @@
+# MT060 变异自证结果索引（每安全分支 ≥1：注入→聚焦捕获→字节复原→复绿）
+
+运行面：`bun --no-env-file test tests/multitenancy/openmuse-tasks.test.ts`（31 用例）。
+每轮均：注入前 sha256 存档 → 注入 → 聚焦捕获（记录 pass/fail）→ 复原 →
+sha256 逐位对照 → 聚焦复绿 31/0。复原哈希证据在各自 *-restored-sha256.txt。
+
+| 变异 | 注入点 | 捕获者（唯一失败用例） | 证据 | 复原 |
+| --- | --- | --- | --- | --- |
+| MUT-1 范围判定：authorizeTask/gatedControl 三元组第二道防线拔掉 | openmuse-task-tenancy.ts | AC1「同一人的跨团队上下文不可见：A1 pin 的任务从 A2 读取/取消零触达」（30 pass/1 fail） | MUT1-triple-check-removed.txt | 37f817e0… ✓ 逐位复原；复绿 31/0（MUT1-restore-regreen.txt） |
+| MUT-2 租约隔离：MT041 claim 的 workspace 逐字比对放宽（tenant-only） | job-ownership.ts:576（claim 第二道比对） | AC2「同公司跨团队认领被拒（workspace 逐字比对）」（30 pass/1 fail） | MUT2-lease-workspace-relaxed.txt | 45d1b500… ✓ 与 before-hashes 逐位一致；复绿 31/0（MUT2-restore-regreen.txt） |
+| MUT-3 重建信任 hint：resolveForExecution 让 payload hint 覆盖权威协会行事实 | openmuse-task-tenancy.ts | AC4「重建按权威协会行执行：伪造 hint 全部不采纳（canary 零出现）」（30 pass/1 fail） | MUT3-hint-trusted.txt | 37f817e0… ✓ 逐位复原；复绿 31/0（MUT3-restore-regreen.txt） |
+| MUT-4 回填猜测：preview 唯一性判定放宽（歧义按第一行 membership 猜测归属） | openmuse-task-tenancy.ts previewLegacyBackfill | AC3「preview 只读分类：唯一归属可回填；歧义与无归属进隔离清单」（30 pass/1 fail） | MUT4-backfill-ambiguity-guessed.txt | 37f817e0… ✓ 逐位复原；复绿 31/0（MUT4-restore-regreen.txt） |
+
+## MUT-1 设计注记（为何新增 1 条 AC1 用例）
+
+RLS 数据通道 = 租户臂（permissive）+ 主体自读臂（restrictive）：跨人/跨公司
+行在第一道防线已被隐藏；但**同一人跨团队**的行两臂全匹配、只有协会行三元组
+比对能隔离——原套件对这一形态只有列表面（空列表，两道防线都可"通过"）覆盖，
+详情/控制面零覆盖，MUT-1 将无法被捕获。新增用例钉死该缺口后再注入，MUT-1
+恰好、且仅被该用例捕获（其余 30 用例全绿，证明变异面收敛）。
+
+## RESTORE 总声明
+
+4 轮变异全部字节复原：MUT-2 复原哈希与 before-hashes.txt 中
+`server/src/enterprise/tenancy/job-ownership.ts` 完全一致（45d1b500…）；
+MUT-1/3/4 复原哈希与本票服务文件注入前快照一致（37f817e0…）。
+收尾 after-hashes.txt 复核：17 项 before-hash 中 15 项逐字节不变，
+仅 3 处预授权窄缝 DIFF（changes-summary.txt 披露）。

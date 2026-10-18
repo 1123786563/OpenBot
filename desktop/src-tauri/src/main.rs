@@ -3257,6 +3257,20 @@ async fn begin_organization_sign_in(
                 "Save this organization's OpenBot URL before signing in.",
             ));
         }
+        // A verified connection is not to be walked into another organization's sign-in by a
+        // client selector (MT098, spec A7). A context fresh on disk pins this installation to
+        // its authority; nothing established, corrupt, or stale is the ordinary recovery path.
+        let declared = openbot_desktop_lib::organization_auth::authority(&authority_url)?;
+        let gate = openbot_desktop_lib::org_context::Gate::from_persisted(
+            openbot_desktop_lib::org_context::load_persisted(&root)?,
+        );
+        gate.admit_sign_in(&declared, org_context_now_ms())
+            .map_err(|refusal| {
+                Problem::plain(format!(
+                    "This installation already belongs to another organization. ({})",
+                    refusal.code()
+                ))
+            })?;
         openbot_desktop_lib::organization_auth::begin(&root, &authority_url, &provider)
     })
     .await
@@ -3290,6 +3304,26 @@ async fn finish_organization_sign_in(
                 "That sign-in belongs to a previous OpenBot run. Open this installation again.",
             ));
         }
+        // The verified session freezes this installation's organization context (MT098). No
+        // company or team is chosen yet — establishing is the only way a scope comes to exist —
+        // and a failure here fails the sign-in rather than running context-free.
+        let connection = openbot_desktop_lib::org_context::VerifiedConnection::recall(&root)?
+            .ok_or_else(|| {
+                Problem::plain("Sign in to your organization again.")
+                    .connection(openbot_desktop_lib::problem::Connection::Organization)
+            })?;
+        let context = openbot_desktop_lib::org_context::establish(
+            &connection,
+            None,
+            org_context_now_ms(),
+        )
+        .map_err(|refusal| {
+            Problem::plain(format!(
+                "OpenBot could not freeze its organization context. ({})",
+                refusal.code()
+            ))
+        })?;
+        openbot_desktop_lib::org_context::persist(&root, &context)?;
         Ok(user)
     })
     .await
@@ -3299,6 +3333,97 @@ async fn finish_organization_sign_in(
 #[tauri::command]
 fn cancel_organization_sign_in(root: String) {
     openbot_desktop_lib::organization_auth::cancel(&stack::root_from(&root));
+}
+
+/// Milliseconds on this machine's clock; the gate's timestamps are ordering guarantees, not
+/// attestations.
+fn org_context_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_millis() as u64)
+        .unwrap_or_default()
+}
+
+/// The frozen context as the renderer may read it, or `None` — there is no default
+/// organization to report instead (MT098; consumed by MT101).
+#[tauri::command]
+async fn org_context_status(
+    root: String,
+) -> Result<Option<openbot_desktop_lib::org_context::ContextStatus>, Problem> {
+    let root = stack::root_from(&root);
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(connection) = openbot_desktop_lib::org_context::VerifiedConnection::recall(&root)?
+        else {
+            return Ok(None);
+        };
+        let persisted = openbot_desktop_lib::org_context::load_persisted(&root)?;
+        let persist_root = root.clone();
+        let gate = openbot_desktop_lib::org_context::Gate::load(
+            &connection,
+            persisted,
+            Some(Box::new(move |context| {
+                // Best-effort: an unwritable refresh only means the next restart re-verifies,
+                // which it always does anyway.
+                let _ = openbot_desktop_lib::org_context::persist(&persist_root, context);
+            })),
+            org_context_now_ms(),
+        );
+        Ok(gate
+            .context()
+            .as_ref()
+            .map(openbot_desktop_lib::org_context::ContextStatus::from))
+    })
+    .await
+    .map_err(|_| {
+        Problem::plain("OpenBot could not read its organization context. Restart OpenBot and try again.")
+    })?
+}
+
+/// Choose the company (and optionally one team inside it) this installation acts under. The
+/// choice is validated against the organization authority's own listing before anything
+/// freezes; an unknown company or team is refused, never defaulted (MT098, spec §5.2).
+#[tauri::command]
+async fn establish_org_context(
+    root: String,
+    tenant_id: Option<String>,
+    workspace_id: Option<String>,
+) -> Result<openbot_desktop_lib::org_context::ContextStatus, Problem> {
+    if tenant_id.is_none() && workspace_id.is_some() {
+        return Err(Problem::plain("Choose a company before choosing a team."));
+    }
+    let root = stack::root_from(&root);
+    tauri::async_runtime::spawn_blocking(move || {
+        let connection = openbot_desktop_lib::org_context::VerifiedConnection::recall(&root)?
+            .ok_or_else(|| {
+                Problem::plain("Sign in to your organization first.")
+                    .connection(openbot_desktop_lib::problem::Connection::Organization)
+            })?;
+        let selection = tenant_id.map(|tenant_id| {
+            openbot_desktop_lib::org_context::Selection {
+                tenant_id,
+                workspace_id,
+            }
+        });
+        let context = openbot_desktop_lib::org_context::establish(
+            &connection,
+            selection.as_ref(),
+            org_context_now_ms(),
+        )
+        .map_err(|refusal| {
+            Problem::plain(format!(
+                "OpenBot could not freeze that organization context. ({})",
+                refusal.code()
+            ))
+        })?;
+        openbot_desktop_lib::org_context::persist(&root, &context)?;
+        Ok(openbot_desktop_lib::org_context::ContextStatus::from(
+            &context,
+        ))
+    })
+    .await
+    .map_err(|_| {
+        Problem::plain("OpenBot could not set its organization context. Restart OpenBot and try again.")
+    })?
 }
 
 /// The model screen's rows. Independent of the picker above, and required to stay that way: no
@@ -3789,6 +3914,8 @@ fn main() {
             begin_organization_sign_in,
             finish_organization_sign_in,
             cancel_organization_sign_in,
+            org_context_status,
+            establish_org_context,
             ask_the_bot,
         ])
         // A packaged application is not a browser tab. Left alone, WebView2 answers a right-click

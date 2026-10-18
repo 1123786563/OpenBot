@@ -1,0 +1,22 @@
+# M04: account-side company total loses its customer filter
+# 锚点（解码后）：            .where(\n              eq(\n                creditReservations.externalCustomerId,\n                mapping.externalCustomerId,\n              ),\n            )
+# 注入 diff（pristine -> mutated）：
+--- /tmp/mt073-mutation-pristine-2nd.ts	2026-10-18 11:42:58
++++ src/billing/company-finance-visibility.ts	2026-10-18 11:42:59
+@@ -308,10 +308,7 @@
+             .select({ heldUnits, chargedUnits })
+             .from(creditReservations)
+             .where(
+-              eq(
+-                creditReservations.externalCustomerId,
+-                mapping.externalCustomerId,
+-              ),
++              sql`true or ${creditReservations.externalCustomerId} = ${mapping.externalCustomerId}`,
+             )
+         : [{ heldUnits: 0, chargedUnits: 0 }];
+ 
+# 聚焦套件 tests/multitenancy/billing-visibility.test.ts：
+ 15 pass  1 fail 
+# 捕获者（失败用例）：
+(fail) MT073 AC3: team usage reconciles with the company total and excludes personal direct spend > personal Bifrost direct spend never enters the company books [11.24ms]
+# 还原：sha256 与 pristine 逐位一致（51c5aa04bf4ce9db989b9f5b6ec81c8ce998bb77d5a9822693369d9a05d7cd98）

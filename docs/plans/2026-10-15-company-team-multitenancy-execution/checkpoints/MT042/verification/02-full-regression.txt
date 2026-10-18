@@ -1,0 +1,6 @@
+(pass) MT026 revalidation drift: a context issued before a membership change is refused > an in-transaction revalidation fails with SCOPE_REVOKED after the epoch moved [12.45ms]
+
+ 1005 pass
+ 0 fail
+ 12187 expect() calls
+Ran 1005 tests across 39 files. [34.52s]

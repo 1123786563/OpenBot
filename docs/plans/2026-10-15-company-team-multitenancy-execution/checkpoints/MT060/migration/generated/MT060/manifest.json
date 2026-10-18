@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "tool": "multitenancy-migrate-test",
+  "taskId": "MT060",
+  "planDigest": "1c934766ef72a45d712d89bc693ab66b18ed3d4181a3b8976c4d2f0c827b81ed",
+  "steps": [
+    {
+      "number": 1,
+      "name": "0001_mt060_task_scope_tables.sql",
+      "statementDigest": "eb8bb8eeb3b0f08399c9617755cea627c09450b0572076b4b2229f46ac1937d5",
+      "statementCount": 6
+    },
+    {
+      "number": 2,
+      "name": "0002_mt060_task_scope_rls.sql",
+      "statementDigest": "cc3d9030be686f3b286ada112deda8ea35173814e9f45acb785a234396946e2a",
+      "statementCount": 12
+    },
+    {
+      "number": 3,
+      "name": "0003_mt060_legacy_task_backfill.sql",
+      "statementDigest": "403dfa7834ff334f1ab15d70826ece0323c8a9a30f0e7b8e93e542e47ef94563",
+      "statementCount": 1
+    }
+  ]
+}

@@ -1,0 +1,173 @@
+# MT017 fix-round diff (finding 1 closure) — before-images reconstructed by inverse edit and SHA-256-verified against fix/before-hashes.txt (both lines byte-exact).
+# Production file src/enterprise/tenancy/bot-publish.ts: ZERO diff (restored after MUT-F1; hash 9bb87d5d... == pristine).
+
+--- server/tests/multitenancy/support/bot-publish.ts	2026-10-17 07:54:34
++++ ../mt017fix-after/server/tests/multitenancy/support/bot-publish.ts	2026-10-17 07:54:25
+@@ -111,9 +111,12 @@
+    */
+   setTenantPolicyRevision(tenantId: string, revision: string): Promise<void>;
+   /**
+-   * Seeds one resource registration row (visibility NULL = legacy/unmarked)
+-   * through the real operator INSERT policy — the "old public" comparison
+-   * state, keyed by agentId so publish-state guards can be exercised.
++   * Seeds one resource registration row through the real operator INSERT
++   * policy — the legacy/unmarked comparison state (visibility defaults to
++   * NULL = legacy/unmarked, MT008 frozen semantics), keyed by agentId so
++   * publish-state guards can be exercised. An explicit `visibility` seeds
++   * the marked states the CHECK domain allows ('private' = MT010
++   * personal-marking semantics; 'workspace' = already team public).
+    */
+   seedResourceRow(input: {
+     tenantId: string;
+@@ -121,6 +124,8 @@
+     id: string;
+     kind: SeedResourceKind;
+     displayName: string;
++    /** Absent/undefined keeps the delivered behavior: NULL (legacy/unmarked). */
++    visibility?: "private" | "workspace";
+   }): Promise<void>;
+   /** Inserts one explicit read grant through the real operator INSERT policy. */
+   addReadGrant(input: {
+@@ -515,9 +520,13 @@
+         id: resourceId,
+         kind,
+         displayName,
++        visibility,
+       }) {
+         // The operator role's INSERT policy on enterprise_resources requires
+         // app.tenant_id to match the row — arrangement stays policy-legal.
++        // visibility ?? null keeps the delivered default (NULL = legacy); an
++        // explicit value seeds the CHECK-domain states ('private' is the
++        // MT010 personal marking, 'workspace' the team-public fact).
+         await recordRole(operator, "operator");
+         await operator.transaction(async (tx) => {
+           await tx.execute(sql`set local lock_timeout = '2s'`);
+@@ -531,6 +540,7 @@
+             id: resourceId,
+             kind,
+             displayName,
++            visibility: visibility ?? null,
+           });
+         });
+       },
+--- server/tests/multitenancy/bot-publish.test.ts	2026-10-17 07:54:50
++++ ../mt017fix-after/server/tests/multitenancy/bot-publish.test.ts	2026-10-17 07:54:25
+@@ -1073,6 +1073,118 @@
+     },
+   );
+ });
++
++// ---------------------------------------------------------------------------
++// 修复轮（复审 finding 1，关闭 D3 披露的最小缺口）：显式 private 注册行的
++// 发布翻转。D3 曾披露该路径仅由 INSERT/UPDATE 结构保证 + 代码审查覆盖，
++// 无直接用例——本用例补齐：属主显式发布把 'private' 翻成 'workspace'
++// （属主本人动作，与 MT008 清单驱动批量迁移「绝不翻转 private」的第三方
++// 语义不同源）；取消发布回 NULL（既定语义：只撤销团队公共事实，绝不重建
++// 「个人」标记——「个人」只能由属主重新显式声明，MT010 语义边界）。
++// ---------------------------------------------------------------------------
++
++describeDb(
++  "MT017 修复轮：owner 显式发布翻转显式 private 注册行；取消发布回 NULL",
++  () => {
++    itDb(
++      "publish 翻 'private'→'workspace' 且成员 read/run 放行；unpublish 回 NULL（不回滚为 private；对照 MT010 个人标记语义边界）",
++      async () => {
++        const ownerScope = await scopeAs("a1-owner", companyA, teamA1);
++        const marked = nextBot("private-marked");
++        await fixture.ownership.createBot(ownerScope, {
++          agentId: marked.agentId,
++          displayName: marked.displayName,
++          defaultConfig: { model: "gpt-4o" },
++        });
++        // MT010 语义边界：「个人」由注册行 visibility='private' 显式标记。
++        await fixture.seedResourceRow({
++          tenantId: companyA,
++          workspaceId: teamA1,
++          id: marked.agentId,
++          kind: "bot",
++          displayName: marked.displayName,
++          visibility: "private",
++        });
++        // 发布前：private 注册行 + 无 grant → 成员不可见（个人标记绝不
++        // 派生团队公共；与验收 3 的 NULL 遗留行同一拒绝形状）。
++        const memberScope = await scopeAs("a1-member", companyA, teamA1);
++        const readBefore = await fixture.actions.decideAction(
++          memberScope,
++          marked.agentId,
++          "read",
++        );
++        expect(readBefore).toEqual({
++          outcome: "deny",
++          code: "RESOURCE_NOT_FOUND",
++        });
++        const runBefore = await fixture.actions.decideAction(
++          memberScope,
++          marked.agentId,
++          "run",
++        );
++        expect(isCanonicalNotFound(runBefore)).toBe(true);
++        // owner 显式发布：'private' → 'workspace'（原行 UPDATE 翻转，
++        // 绝非删旧插新；发布回显与既有验收同形）。
++        const publish = await fixture.publish.publishBot(
++          ownerScope,
++          marked.agentId,
++          teamAudience(companyA, teamA1),
++        );
++        expect(publish.outcome).toBe("allow");
++        if (publish.outcome !== "allow") throw new Error("unreachable");
++        expect(publish.publication.agentId).toBe(marked.agentId);
++        expect(publish.publication.audience.workspaceId).toBe(teamA1);
++        const flippedRows = (
++          await fixture.readResourceRowsAsData(companyA)
++        ).filter((candidate) => candidate.id === marked.agentId);
++        expect(flippedRows).toHaveLength(1);
++        expect(flippedRows[0]?.visibility).toBe("workspace");
++        expect(flippedRows[0]?.kind).toBe("bot");
++        expect(flippedRows[0]?.status).toBe("active");
++        // 团队成员按 MT009 规则获得 read/run（与验收 1 同一使用路径）。
++        const readAfter = await fixture.actions.decideAction(
++          memberScope,
++          marked.agentId,
++          "read",
++        );
++        expect(readAfter).toEqual({ outcome: "allow" });
++        const runAfter = await fixture.actions.decideAction(
++          memberScope,
++          marked.agentId,
++          "run",
++        );
++        expect(runAfter).toEqual({ outcome: "allow" });
++        // 取消发布：visibility 回 NULL——断言既定语义：取消发布只撤销
++        // 团队公共事实，**不**回滚为 'private'（个人标记只能由属主显式
++        // 重新声明，发布/取消发布都不代属主重建「个人」态）。
++        const unpublish = await fixture.publish.unpublishBot(
++          ownerScope,
++          marked.agentId,
++        );
++        expect(unpublish).toEqual({ outcome: "allow" });
++        const revertedRows = await fixture.readResourceRowsAsData(companyA);
++        const reverted = revertedRows.find(
++          (candidate) => candidate.id === marked.agentId,
++        );
++        expect(reverted).toBeDefined();
++        expect(reverted?.visibility).toBeNull();
++        // 成员立即回到不可见（调用时重验，与验收 2 同一语义）。
++        const readReverted = await fixture.actions.decideAction(
++          memberScope,
++          marked.agentId,
++          "read",
++        );
++        expect(isCanonicalNotFound(readReverted)).toBe(true);
++        const runReverted = await fixture.actions.decideAction(
++          memberScope,
++          marked.agentId,
++          "run",
++        );
++        expect(isCanonicalNotFound(runReverted)).toBe(true);
++      },
++    );
++  },
++);
+ 
+ // ---------------------------------------------------------------------------
+ // 存储与角色契约：受限角色在 play、判断全程真实 RLS

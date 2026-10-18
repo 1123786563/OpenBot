@@ -1,0 +1,26 @@
+# biome check — touched files, first run — 2026-10-16T22:13:29Z
+    266     │ - ················?·"customerD"
+    267     │ - ················:·"customerS"
+    268     │ - ······];
+        259 │ + ··········companyKey·===·"company-a"
+        260 │ + ············?·"customerA"
+        261 │ + ············:·companyKey·===·"company-b"
+        262 │ + ··············?·"customerB"
+        263 │ + ··············:·companyKey·===·"company-c"
+        264 │ + ················?·"customerC"
+        265 │ + ················:·companyKey·===·"company-d"
+        266 │ + ··················?·"customerD"
+        267 │ + ··················:·"customerS"
+        268 │ + ········];
+    269 269 │   
+    270 270 │     return {
+  
+
+Checked 7 files in 28ms. No fixes applied.
+Found 6 errors.
+Found 2 warnings.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+

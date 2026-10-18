@@ -1,0 +1,9 @@
+# MT099 基线复现（bun，专用容器 w15c-pg @ 127.0.0.1:55583，七变量 env 0600）
+# 命令：cd server && bun --no-env-file test tests/multitenancy
+# 前置：19 任务迁移链 generate+apply 全部落 journal（34 步，见 migration/chain-journal.txt）
+
+ 1124 pass
+ 0 fail
+ 12799 expect() calls
+Ran 1124 tests across 43 files. [22.61s]
+exit=0

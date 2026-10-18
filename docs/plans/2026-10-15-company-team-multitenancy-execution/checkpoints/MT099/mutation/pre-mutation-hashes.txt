@@ -1,0 +1,3 @@
+063ae9c05bcdb2d0390529317f4ef547ed288bb3775f2f930aa4ca43f81c0b97  desktop/src-tauri/src/credential_namespace.rs
+3214bab3ec11068082dcec1aa0ce155055da204f681f728bb777e28424f7ac45  desktop/src-tauri/src/organization_auth.rs
+bf24c03c2ff9fa0985f37d7f73d2ed627bfab61e7230a7e020d535f47edce693  desktop/src-tauri/src/org_context.rs

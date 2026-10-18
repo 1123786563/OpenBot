@@ -1,0 +1,38 @@
+--- /tmp/before-entry-context.test.ts	2026-10-18 14:16:20
++++ server/tests/multitenancy/entry-context.test.ts	2026-10-18 14:17:53
+@@ -56,6 +56,20 @@
+ }
+ 
+ const ENV = probeEnvironment();
++
++/**
++ * 集成库名从 TEST_DATABASE_URL 派生（波次 15 集成整改：取代逐波次钉死的集
++ * 成库名令牌——四票各自 RECTIFIED 的 w15d/w15e/w15b/w15c 在集成统一改为
++ * env 解析后断言，专库+受限 data 角色+绝不回退开发库的断言语义不变，跨
++ * 环境自适应）。仅在 ENV.ok 分支调用，此时 TEST_DATABASE_URL 必在。
++ */
++function testDatabaseName(): string {
++  return new URL(process.env.TEST_DATABASE_URL ?? "").pathname.replace(
++    /^\//,
++    "",
++  );
++}
++
+ const itDb = ((name: string, fn: () => void | Promise<void>) =>
+   ENV.ok
+     ? test(name, fn)
+@@ -185,10 +199,10 @@
+ 
+   itDb("environment is the dedicated enterprise test database", async () => {
+     const identity = await fixture.probeIdentity();
+-    // 库名带集成 brief 的 w14int 令牌（波次 14 集成整改：MT122 票面令牌
+-    // w14e → w14int，环境令牌语义不变——专库+受限 data 角色+绝不回退开
+-    // 发库）；读取走受限 data 角色，绝不回退开发库。
+-    expect(identity.database).toBe("openbot_enterprise_w14int");
++    // 库名 = TEST_DATABASE_URL 派生（波次 15 集成令牌根治：专库+受限 data
++    // 角色+绝不回退开发库的断言语义不变，跨环境自适应——见 testDatabaseName）。
++    // 读取走受限 data 角色，绝不回退开发库。
++    expect(identity.database).toBe(testDatabaseName());
+     expect(identity.currentUser).toBe("ob_ent_data");
+   });
+ 

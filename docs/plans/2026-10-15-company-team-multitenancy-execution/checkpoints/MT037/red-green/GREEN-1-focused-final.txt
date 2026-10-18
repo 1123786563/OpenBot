@@ -1,0 +1,46 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/retrieval-restriction.test.ts:
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42P06",
+  message: "schema \"drizzle\" already exists, skipping",
+  file: "schemacmds.c",
+  line: "132",
+  routine: "CreateSchemaCommand",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42P07",
+  message: "relation \"__drizzle_migrations\" already exists, skipping",
+  file: "parse_utilcmd.c",
+  line: "207",
+  routine: "transformCreateStmt",
+}
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC1: 候选集合先于检索与重排 > 候选集合断言：混合请求只把授权子集交给检索引擎（顺序保持） [38.26ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC1: 候选集合先于检索与重排 > 重排只见到候选文本：无权 canary 不进重排器 [10.33ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC1: 候选集合先于检索与重排 > 全未授权请求：检索端零调用，返回空而不是他人内容 [5.03ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC1: 候选集合先于检索与重排 > 一致性门先于候选：stale 镜像库不进候选集合 [12.22ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC1: 候选集合先于检索与重排 > 输入卫生继承：越界/非串/空串 id 响亮拒绝 [3.24ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC2: 向量命名空间按归属隔离 > 命名空间隔离：a1 只见 A1 启用内容（禁用块与他域不可达） [8.34ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC2: 向量命名空间按归属隔离 > 跨团队：a2-member 请求 A2+A1 库只见 A2 [6.23ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC2: 向量命名空间按归属隔离 > 跨公司：b1-member 请求 B1+A1 库只见 B1 [6.24ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC2: 向量命名空间按归属隔离 > wire 层命名空间断言：filter 携带 scope 租户 + 候选集合 + enabled [6.89ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC3: 引用面只含有权文档 > 引用与结果 1:1，全部落在候选集合内 [6.07ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC3: 引用面只含有权文档 > 全响应 canary 扫描：无权片段不出现在任何字段 [6.45ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC3: 引用面只含有权文档 > 相邻链表扩展不出命名空间：扩展内容全部来自同文档 [5.82ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC3: 引用面只含有权文档 > stale 镜像库不进引用：不一致库的 canary 零出现 [6.59ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC3: 引用面只含有权文档 > citation 投影纯函数：snippet 有界且为内容前缀（冻结） [0.12ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC4: 公司范围 Key 不被当作团队授权 > 内部公司范围 Key（空 kbScope=公司内全库）结构性拒绝且检索端零调用 [0.11ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC4: 公司范围 Key 不被当作团队授权 > Key 自带 kbScope 白名单不构成授权（入口从不读取该字段） [0.04ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC4: 公司范围 Key 不被当作团队授权 > 伪造 scope（非 seam 签发）拒绝 [0.04ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC4: 公司范围 Key 不被当作团队授权 > 公司管理员身份不等于团队授权：无团队成员资格连团队 scope 都签发不出 [2.06ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC4: 公司范围 Key 不被当作团队授权 > 源码级：受限检索入口不携带内部身份词汇（注释剥离后） [1.09ms]
+(pass) MT037 — 检索候选/重排/引用的归属限制 > MT037 AC4: 公司范围 Key 不被当作团队授权 > 正向对照：团队成员 scope 正常检索授权内容 [6.40ms]
+
+ 20 pass
+ 0 fail
+ 140 expect() calls
+Ran 20 tests across 1 file. [948.00ms]

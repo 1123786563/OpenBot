@@ -1,0 +1,11 @@
+== MT037 库与受限角色创建（setup=postgres 超户）==
+CREATE DATABASE
+CREATE ROLE
+GRANT
+ALTER DATABASE
+CREATE DATABASE
+== 验证 ==
+ent_mt037_kb|f|f
+openbot_enterprise_mt037_test
+openbot_enterprise_mt037_test_assigned
+openbot_kb_mt037_test

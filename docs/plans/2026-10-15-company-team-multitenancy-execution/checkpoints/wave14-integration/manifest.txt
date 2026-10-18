@@ -1,0 +1,94 @@
+# wave14-integration manifest — 逐文件 SHA-256 对照（EXE 集成树 vs 各票源树）
+# date: 2026-10-18 08:47:20 +0800  EXE HEAD: f7e8513c4a1852944d811ab4314f429dde287e88  (零 git 提交)
+# 源树: i14-mt{022,031,122,042,059}（交付以源树内工作树文件为准）
+# 口径: DIRECT=逐字节相等; MERGED=共享文件纯追加合并(非逐文件相等,逐块对照见下); RECTIFIED=集成整改(差异逐行披露)
+
+== A. 直接落位文件（16 个，SHA-256 逐一对照） ==
+EQUAL MT022 server/src/enterprise/tenancy/conversation-actions.ts
+      src=0c2d917d904ab1836f4148e8d8651a4cda75b50d83c702e875d13aca6bfb1996
+      exe=0c2d917d904ab1836f4148e8d8651a4cda75b50d83c702e875d13aca6bfb1996
+EQUAL MT022 server/tests/multitenancy/conversation-messages.test.ts
+      src=eb650a388947a95ffc85e7d1cb2bd867796bda6e8b4656937c0a1298baa9cb08
+      exe=eb650a388947a95ffc85e7d1cb2bd867796bda6e8b4656937c0a1298baa9cb08
+EQUAL MT022 server/tests/multitenancy/support/conversation-actions.ts
+      src=672773c864cdce36d316c0b56a2b9ac57b01c09c8642daf13c23500b78c59d8d
+      exe=672773c864cdce36d316c0b56a2b9ac57b01c09c8642daf13c23500b78c59d8d
+EQUAL MT031 server/src/enterprise/tenancy/plugin-catalog.ts
+      src=60528cb3d795ff729fcfcb9cee977e8e2e49ed3cd5c1003a12e0ed7644691a9d
+      exe=60528cb3d795ff729fcfcb9cee977e8e2e49ed3cd5c1003a12e0ed7644691a9d
+EQUAL MT031 server/src/db/schema/enterprise-plugins.ts
+      src=027af1d6dd4a0d4aa62391a8989044d78513a9e4c9ff16f27b384aff6039a915
+      exe=027af1d6dd4a0d4aa62391a8989044d78513a9e4c9ff16f27b384aff6039a915
+EQUAL MT031 server/tests/multitenancy/plugin-install.test.ts
+      src=f7eb95b9c707f45144008dc8d316b7cdcdc333aab117f153d7e084d693938791
+      exe=f7eb95b9c707f45144008dc8d316b7cdcdc333aab117f153d7e084d693938791
+EQUAL MT031 server/tests/multitenancy/support/plugin-install.ts
+      src=d356aaf916db225da9d49b25fed91a068e4073339ba5a33d7a335d52a64f4101
+      exe=d356aaf916db225da9d49b25fed91a068e4073339ba5a33d7a335d52a64f4101
+EQUAL MT122 server/src/enterprise/tenancy/entry-context.ts
+      src=4d33cc1f3518e4616a3a26cc1ec7cf991e473165e2a20aeade34bef7deec9566
+      exe=4d33cc1f3518e4616a3a26cc1ec7cf991e473165e2a20aeade34bef7deec9566
+EQUAL MT122 server/src/app.ts
+      src=2692ea0d4372dba599fe46769854c0d7ab5c0e84a70473cf3cf5a935cd1601a9
+      exe=2692ea0d4372dba599fe46769854c0d7ab5c0e84a70473cf3cf5a935cd1601a9
+EQUAL MT122 server/tests/multitenancy/support/entry-context.ts
+      src=4acf144c6e665509b5ce9c836396d9483fe26d3703f07546bc3a961187e24dae
+      exe=4acf144c6e665509b5ce9c836396d9483fe26d3703f07546bc3a961187e24dae
+EQUAL MT042 server/src/enterprise/runs/scan-executor.ts
+      src=27d675b619b3c16355702e2982d90bd75acc1c95c32043f0866558b36e20f57d
+      exe=27d675b619b3c16355702e2982d90bd75acc1c95c32043f0866558b36e20f57d
+EQUAL MT042 server/tests/multitenancy/scan-executor.test.ts
+      src=b8f8ae1893caed7aa0b7636055f6c8fd88f6838d6d3c0e4fdb48270671d0c720
+      exe=b8f8ae1893caed7aa0b7636055f6c8fd88f6838d6d3c0e4fdb48270671d0c720
+EQUAL MT042 server/tests/multitenancy/support/scan-executor.ts
+      src=0dabb70fc85aab16ca9a49156df32ece5914407711b261eaf373c70591c2923a
+      exe=0dabb70fc85aab16ca9a49156df32ece5914407711b261eaf373c70591c2923a
+EQUAL MT059 server/src/enterprise/tenancy/personal-bot.ts
+      src=ba7ec225a7c7d3590abb9cc6874aa2b4abec66130e4921a2d6f9de5e4c0a1318
+      exe=ba7ec225a7c7d3590abb9cc6874aa2b4abec66130e4921a2d6f9de5e4c0a1318
+EQUAL MT059 server/src/db/schema/enterprise-personal-bot.ts
+      src=f66bf1e0fdd3b7997eadcb6039bbdc56aaece1da73f8c2fea7956ce61839f95d
+      exe=f66bf1e0fdd3b7997eadcb6039bbdc56aaece1da73f8c2fea7956ce61839f95d
+EQUAL MT059 server/tests/multitenancy/openmuse-private-bot.test.ts
+      src=0ff13b38647852d9849256bbe9354038d96de7bf78bfa3ff58db236a16a5208b
+      exe=0ff13b38647852d9849256bbe9354038d96de7bf78bfa3ff58db236a16a5208b
+EQUAL MT059 server/tests/multitenancy/support/personal-bot.ts
+      src=d49dcb1c292c8f11385072445f741072e5752ccf5f1fed56666d54c3c27b171c
+      exe=d49dcb1c292c8f11385072445f741072e5752ccf5f1fed56666d54c3c27b171c
+
+注1: MT059 personal-bot.ts 为工作树态=HEAD+MUT-1 移除（brief 钉定；src 哈希 ba7ec225… 即移除后还原态，coordinator 复审 MUT-1 移除干净度已在案）。
+注2: MT042 scan-executor.test.ts 为四任工作树态（AC1 最小修复 +12/−7 后全绿态）。
+
+== B. 共享合并文件（4 个，纯追加型，diff 方向=源树→EXE 合并态仅含他票增量） ==
+MERGED server/scripts/multitenancy/migrate-test.ts  (基线+MT031块+MT042块+MT059块, 注册表按票号升序)
+      exe=729fdac1f8060d7ad4377aebc1dc145290408da5a65f599522798301e75e1037
+      块对照: mt031=756f131fbcd3e0221ac7fbb6f00cda7835448589f7c18cd51af52cf501e1c9bb
+              mt042=03fb260895fb538407eefcad6e4e112a25f2efa723df06e0c54193d7405b16ee
+              mt059=f6866ad306fbbd67f62eca55ef94b3b7d6d4423926e27d5bc10eae34ead24015
+      diff 断言: 合并态 vs 各源树 = 仅其余两票块 + 注册表行(mt042/mt059) + 5 处历史排版行(留待 F-2); vs EXE 基线 = 纯增量(a)无改(c)/无删(d)
+MERGED server/tests/multitenancy/migration-tool.test.ts  (allowlist += MT031/MT042/MT059 + 注释块, 排序位 MT028<MT031<MT041<MT042<MT059<MT069)
+      exe=d4f1ab87db3ebb8be85ad72ed72580e655c3fe2b6cf0be4c845f9b5951503e2d
+      diff 断言: 合并态 vs 各源树 = 仅其余两票注释+条目; 穷举断言 41 pass/0 fail(216 expect)
+MERGED server/src/db/schema/index.ts  (barrel += ./enterprise-personal-bot + ./enterprise-plugins, 字母序 oauth-state<personal-bot<plugins<runs)
+      exe=711344630fa2ec86fd49a48cb58fff4396e5a093f03fecc4f4710867a49ba93f
+      diff 断言: vs mt031 仅 +personal-bot 行; vs mt059 仅 +plugins 行
+MERGED server/src/index.ts  (MT031 pluginCatalog 装配段 + MT122 entry-context 装配段并存, git merge-file 三方零冲突)
+      exe=f921e0899dbbfe47aa681f3d2daabec8255504034e502ccc227d978f1fdc6cd5
+      diff 断言: vs mt031 仅 MT122 增量; vs mt122 仅 MT031 增量; 既有段零重排
+
+== C. 集成整改文件（1 个，差异逐行披露见 biome-fix-diff/整改说明） ==
+RECTIFIED server/tests/multitenancy/entry-context.test.ts  (环境令牌 w14e→w14int, 1 处断言+注释, 见整改说明 §2)
+      src(mt122)=efc7d602b499189ce904137a5e1ce79a65be6e5e8b234667742baece65a94401
+      exe        =d7e4d400a5e6d270efe4eb006f7252f7cc2ae695c459f3105eb1d2b2cda1e948
+
+== D. checkpoints/ + reports/ 全量复制对照（含 mutation/、verification/） ==
+EQUAL checkpoints/MT022: files src=45 exe=45  aggregate=751240f12ac21953560a49bb6181d91ce513170d399932a674638dc98d8c5e74
+EQUAL reports/MT022.md
+EQUAL checkpoints/MT031: files src=82 exe=82  aggregate=009d307fff0e097296966b549c3eb8448b866c85524841cd8bfdb6a1f4f52f8d
+EQUAL reports/MT031.md
+EQUAL checkpoints/MT122: files src=66 exe=66  aggregate=00b18db962ae249add82376c84f3bbe25ebcec50edc452e15e81bfa53ff7faba
+EQUAL reports/MT122.md
+EQUAL checkpoints/MT042: files src=96 exe=96  aggregate=a8d18d54df7b6c17e0bc725d79aa05888b501fec73fe47fa24ce45865de81672
+EQUAL reports/MT042.md
+EQUAL checkpoints/MT059: files src=73 exe=73  aggregate=c88bea2c23e92910761dd212eaadc5b0aed46e906b7aeb3a623a5419683a861d
+EQUAL reports/MT059.md

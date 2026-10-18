@@ -1,0 +1,5 @@
+# pre-image (captured before any fix-round modification, 2026-10-16)
+77a66a183fcd9245a72094111be038e8755360deebd8ecfcb61217843c6fa2c6  server/tests/multitenancy/job-ownership.test.ts
+45d1b500f66fee054a6030b860d97799434849363a39d56dde3348c3a7acf454  server/src/enterprise/tenancy/job-ownership.ts  (not touched by fix; mutation-retest verified byte-identical)
+ca6450f0c1c537fa68b7c12505fffd7c9d9646253660431f8b3f2879b26ba578  server/src/db/schema/job-ownership.ts  (not touched by fix)
+5422e902a84690c16f264166bd314ba9fb5dcf0dea70772ebcde5880d157c3a1  server/scripts/multitenancy/migrate-test.ts

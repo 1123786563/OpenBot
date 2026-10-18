@@ -1,0 +1,2326 @@
+# MT009 (Issue #52) changes.diff — 生成于 2026-10-16T14:43:31Z
+# 三个既有文件的 before 态 = 撤销 MT009 编辑的重建（已对照 prereq-manifest 逐字节哈希验证，见 prereq-recompute.txt）。
+# 四个新文件以 /dev/null 为基。
+
+--- a/server/scripts/multitenancy/migrate-test.ts
++++ b/server/scripts/multitenancy/migrate-test.ts
+@@ -382,6 +382,67 @@
+         "CREATE OR REPLACE FUNCTION \"public\".\"ob_ent_reset_business_context\"() RETURNS void LANGUAGE sql AS $func$ SELECT set_config('app.tenant_id', '', false), set_config('app.principal_id', '', false), set_config('app.user_id', '', false), set_config('app.workspace_id', '', false), set_config('app.operation_id', '', false), set_config('app.resource_id', '', false), set_config('app.operator_principal_id', '', false) $func$;",
+         'REVOKE EXECUTE ON FUNCTION "public"."ob_ent_reset_business_context"() FROM PUBLIC;',
+         'GRANT EXECUTE ON FUNCTION "public"."ob_ent_reset_business_context"() TO ob_ent_directory, ob_ent_data, ob_ent_operator;',
++      ],
++    },
++  ],
++};
++
++/**
++ * MT009（Issue #52）：团队公共资源依赖表。expand-only——仅新增
++ * enterprise_resource_dependencies（资源 → 声明依赖的引用行：模型/凭据/
++ * 知识范围；CHECK 兑底取值域与非空引用；复合外键指向 enterprise_resources，
++ * 资源删除时依赖行级联）与按既有模式的最小 RLS 策略与授权（data 只读、
++ * operator 读+插，无 UPDATE/DELETE——依赖失效以新状态行/软删除表达）。
++ * 不修改任何既有表/策略/角色授权。动作规则模块在
++ * server/src/enterprise/tenancy/team-public-rules.ts：run 动作要求全部
++ * 依赖有效（status='active'，知识范围引用还必须在同租户内存活着）。
++ */
++const RESOURCE_DEPENDENCY_TASK: TaskMigrationSpec = {
++  id: "MT009",
++  description:
++    "MT009（Issue #52）：新增企业资源依赖表 enterprise_resource_dependencies（expand-only，仅新增表与最小 RLS，不改既有对象）。",
++  steps: [
++    {
++      slug: "resource_dependency_table",
++      impact:
++        "新增 enterprise_resource_dependencies 表：复合主键 (tenant_id, resource_id, dependency_kind, dependency_ref)；dependency_kind 限 model/credential/knowledge，status 限 active/invalid，dependency_ref 非空；复合外键指向 enterprise_resources(tenant_id, id) ON DELETE cascade。不修改任何既有表。",
++      objects: ["enterprise_resource_dependencies"],
++      statements: [
++        'CREATE TABLE "enterprise_resource_dependencies" (\n' +
++          '\t"tenant_id" text NOT NULL,\n' +
++          '\t"resource_id" text NOT NULL,\n' +
++          '	"dependency_kind" text NOT NULL,\n' +
++          '	"dependency_ref" text NOT NULL,\n' +
++          "\t\"status\" text DEFAULT 'active' NOT NULL,\n" +
++          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
++          '\tCONSTRAINT "enterprise_resource_dependencies_tenant_id_resource_id_dependency_kind_dependency_ref_pk" PRIMARY KEY("tenant_id","resource_id","dependency_kind","dependency_ref"),\n' +
++          "	CONSTRAINT \"enterprise_resource_dependency_kind\" CHECK (\"enterprise_resource_dependencies\".\"dependency_kind\" in ('model','credential','knowledge')),\n" +
++          '	CONSTRAINT "enterprise_resource_dependency_status" CHECK ("enterprise_resource_dependencies"."status" in (\'active\',\'invalid\')),\n' +
++          '	CONSTRAINT "enterprise_resource_dependency_ref_present" CHECK ("enterprise_resource_dependencies"."dependency_ref" <> \'\')\n' +
++          ");",
++        'ALTER TABLE "enterprise_resource_dependencies" ADD CONSTRAINT "enterprise_resource_dependencies_tenant_id_resource_id_enterprise_resources_tenant_id_id_fk" FOREIGN KEY ("tenant_id","resource_id") REFERENCES "public"."enterprise_resources"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
++      ],
++    },
++    {
++      slug: "dependency_rls_policies",
++      impact:
++        "仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增 3 条最小策略（data 租户范围读 / operator 租户范围读+插）及配套最小 GRANT（SELECT 给 data+operator，INSERT 给 operator；不授予 UPDATE/DELETE）。不改动任何既有表策略或既有授权。",
++      objects: ["enterprise_resource_dependencies"],
++      statements: [
++        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_resource_dependencies" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
++        'ALTER TABLE "enterprise_resource_dependencies" ENABLE ROW LEVEL SECURITY;',
++        'ALTER TABLE "enterprise_resource_dependencies" FORCE ROW LEVEL SECURITY;',
++        'CREATE POLICY "enterprise_resource_dependency_data_read" ON "enterprise_resource_dependencies"\n' +
++          "  FOR SELECT TO ob_ent_data\n" +
++          "  USING (\"enterprise_resource_dependencies\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
++        'CREATE POLICY "enterprise_resource_dependency_operator_read" ON "enterprise_resource_dependencies"\n' +
++          "  FOR SELECT TO ob_ent_operator\n" +
++          "  USING (\"enterprise_resource_dependencies\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
++        'CREATE POLICY "enterprise_resource_dependency_operator_insert" ON "enterprise_resource_dependencies"\n' +
++          "  FOR INSERT TO ob_ent_operator\n" +
++          "  WITH CHECK (\"enterprise_resource_dependencies\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
++        'GRANT SELECT ON TABLE "enterprise_resource_dependencies" TO ob_ent_data, ob_ent_operator;',
++        'GRANT INSERT ON TABLE "enterprise_resource_dependencies" TO ob_ent_operator;',
+       ],
+     },
+   ],
+@@ -394,6 +455,7 @@
+   [LEGACY_ANCHOR_TASK.id, LEGACY_ANCHOR_TASK],
+   [RESOURCE_VISIBILITY_TASK.id, RESOURCE_VISIBILITY_TASK],
+   [CORE_RLS_TASK.id, CORE_RLS_TASK],
++  [RESOURCE_DEPENDENCY_TASK.id, RESOURCE_DEPENDENCY_TASK],
+ ]);
+ 
+ export const ALLOWED_TASK_IDS: readonly string[] = [...TASKS.keys()].sort();
+--- a/server/tests/multitenancy/migration-tool.test.ts
++++ b/server/tests/multitenancy/migration-tool.test.ts
+@@ -352,10 +352,14 @@
+     // MT012（同 ruling #5 先例，MT012 brief 预授权）：仅本断言追加 "MT012"
+     // （核心租户域表 RLS 再断言 + 上下文清理函数迁移注册），文件其余只读；
+     // diff 与哈希存档于 checkpoints/MT012/。
++    // MT009（同 ruling #5 先例，第 4 次，MT009 brief 预授权）：仅本断言追加
++    // "MT009"（资源依赖表迁移注册），文件其余内容只读；diff 与哈希存档于
++    // checkpoints/MT009/。
+     expect(ALLOWED_TASK_IDS).toEqual([
+       "MT000",
+       "MT004",
+       "MT008",
++      "MT009",
+       "MT012",
+       "MT112",
+     ]);
+--- a/server/src/index.ts
++++ b/server/src/index.ts
+@@ -276,6 +276,10 @@
+   type AuthenticatedRequestIdentity,
+   createScopeResolver,
+ } from "./enterprise/tenancy/store";
++import {
++  createTeamResourceActionService,
++  type TeamResourceActionService,
++} from "./enterprise/tenancy/team-public-rules";
+ import {
+   createHostAccessBroker,
+   HostAccessRefusedError,
+@@ -5903,3 +5907,18 @@
+ 
+ log.info({ port }, "OpenBot server listening on http://127.0.0.1");
+ 
++/*
++ * MT009 (issue #52): team-public resource action rules — assembly, pure append.
++ *
++ * The action service shares the SAME verified enterprise data channel as every
++ * other enterprise consumer (no second pool, no permissive stand-in: when the
++ * channel is absent the service is null, never a fake). Mounting it on routes
++ * is the usage-surface ticket's job; this segment only guarantees the rules
++ * exist in-process, assembled once, and reachable by that consumer.
++ */
++const teamResourceActionService: TeamResourceActionService | null =
++  enterpriseCapabilities
++    ? createTeamResourceActionService(enterpriseCapabilities.data)
++    : null;
++export { teamResourceActionService };
++
+--- /dev/null
++++ b/server/src/enterprise/tenancy/team-public-rules.ts
+@@ -0,0 +1,467 @@
++// server/src/enterprise/tenancy/team-public-rules.ts
++// MT009（Issue #52）：团队公共资源动作规则。
++//
++// 票面语义：团队成员无需逐人授权即可**使用**明确发布为团队公共的
++// Bot（read/run）与公共知识库（read），但不能编辑其配置、上传或删除
++// 内容；管理动作与内容读取分别判定。
++//
++// 结构（纯新增，只读消费 MT008 既有出口，不改任何既有文件语义）：
++//
++//   1. 动作词表（TeamResourceAction）：read/run/upload/write/delete/
++//      share/manage 七个显式动作 id；未知动作响亮拒绝
++//      （ACTION_UNSUPPORTED），绝不映射成 deny。
++//   2. 内容读取（read）委托 MT008 的 createResourcePolicyService.decide：
++//      默认按资源所属租户的 policy_revision 解析（可显式覆盖）——内容
++//      读取的放行语义只有一处定义（tenancy-v1 / workspace-v1 注册表），
++//      本文件不复制它。
++//   3. 其余动作（run/upload/write/delete/share/manage）走本模块的判定
++//      事务（受限 data 角色 + 真实 RLS，事务形状与 MT008 判定入口一致：
++//      read committed + lock/statement timeout → 事务本地 app.* 上下文 →
++//      advisory 共享锁，键序与键形 = resource-policy 判定入口同族）。
++//      团队公共使用路径的四个必要条件全部显式：
++//        a. 生效策略版本（显式覆盖或租户 policy_revision）属于团队公共
++//           能力集（workspace-v1，且必须在该注册表内可解析——版本缺失
++//           一律 POLICY_REVISION_UNSUPPORTED 响亮拒绝，绝不猜测）；
++//        b. 资源显式标记 visibility='workspace' 且 status='active'；
++//        c. scope 与资源同公司同团队（跨公司引用永远拒绝）+ 版本号健全；
++//        d. 请求者在资源所属团队持有 active 成员关系。
++//      任一条件不成立 → { outcome: "deny", code: "RESOURCE_NOT_FOUND" }：
++//      与 MT008 同款唯一拒绝形状，不泄露存在性（不存在/跨公司/跨团队/
++//      未发布/版本不含团队公共路径在对外语义上不可区分）。
++//   4. run 的附加规则：仅 bot 类资源可运行（read 放行绝不派生 run——
++//      知识库/文档没有 run 规则，显式 read 授权更不派生 run；grants 表
++//      的 CHECK 本来就只允许 'read' 授权，run 不存在逐人授权形态）。
++//      通过后校验资源声明的依赖（enterprise_resource_dependencies，
++//      MT009 迁移新增表）：每一行必须 status='active'；知识范围依赖的
++//      引用必须解析到同租户内一个 status='active' 的资源行（RLS 过滤使
++//      跨租户引用不可见＝无效）。任一依赖无效 → DEPENDENCY_INVALID 并
++//      指明 dependencyKind + dependencyRef（可解释、不静默降级）；该
++//      解释只发给已通过可见性门的成员——非成员在门处就得到
++//      RESOURCE_NOT_FOUND，依赖的存在性与状态对其不可见。
++//   5. 管理动作（upload/write/delete/share/manage）在团队公共路径上
++//      一律拒绝：对已通过可见性门的成员拒绝形状是
++//      TEAM_PUBLIC_ACTION_FORBIDDEN（指明动作；成员本来就能读到资源，
++//      该拒绝不新增任何信息）；依赖校验不参与管理动作判定。
++//
++// 边界（诚实披露）：依赖有效性只回答「声明的依赖是否存活」，不做传递
++// 授权重判（例如知识范围引用的资源对运行者本人是否可见）——那属于
++// 后续票据的传递授权语义；本模块把这条边界钉在类型与文档上。
++
++import { and, eq, sql } from "drizzle-orm";
++import {
++  enterpriseResources,
++  enterpriseTenants,
++  enterpriseWorkspaceMemberships,
++} from "../../db/schema/enterprise-tenancy";
++import type { PlatformScope } from "../contracts";
++import { assertDataDatabase, type DataDatabase } from "./connections";
++import {
++  createResourcePolicyService,
++  createShippedResourcePolicyRegistry,
++  parseResourceVisibility,
++  type ResourcePolicyRegistry,
++  type ResourcePolicyVerdict,
++  WORKSPACE_V1_POLICY_ID,
++} from "./resource-policy";
++import { workspaceMembershipLockKey } from "./scope-gate";
++import { assertTrustedScope } from "./store";
++
++// ---------------------------------------------------------------------------
++// 动作词表与判定形状
++// ---------------------------------------------------------------------------
++
++/** 团队公共资源动作词表：显式枚举，未知动作一律 ACTION_UNSUPPORTED。 */
++export const TEAM_PUBLIC_ACTION_IDS = [
++  "read",
++  "run",
++  "upload",
++  "write",
++  "delete",
++  "share",
++  "manage",
++] as const;
++
++export type TeamResourceAction = (typeof TEAM_PUBLIC_ACTION_IDS)[number];
++
++/** 依赖种类：与 MT009 迁移的 CHECK 同域。 */
++export type ResourceDependencyKind = "model" | "credential" | "knowledge";
++
++/**
++ * 动作判定结果。
++ *
++ *   - allow：动作放行（read 形状原样透传 MT008；run 形状 = 纯 allow）。
++ *   - deny + RESOURCE_NOT_FOUND：唯一的存在性隐藏拒绝——对不可见者
++ *     （非成员/跨公司/未发布/版本不含团队公共路径/不存在）一切动作
++ *     不可区分，绝不泄露存在性。
++ *   - deny + TEAM_PUBLIC_ACTION_FORBIDDEN：已通过可见性门（必然知道
++ *     资源存在）的成员请求团队公共路径不提供的动作。
++ *   - deny + DEPENDENCY_INVALID：已通过可见性门的成员请求 run 而资源
++ *     依赖无效——指明第一个失效依赖的种类与引用（确定性排序）。
++ */
++export type TeamResourceActionVerdict =
++  | { readonly outcome: "allow" }
++  | { readonly outcome: "deny"; readonly code: "RESOURCE_NOT_FOUND" }
++  | {
++      readonly outcome: "deny";
++      readonly code: "TEAM_PUBLIC_ACTION_FORBIDDEN";
++      readonly action: TeamResourceAction;
++    }
++  | {
++      readonly outcome: "deny";
++      readonly code: "DEPENDENCY_INVALID";
++      readonly dependencyKind: ResourceDependencyKind;
++      readonly dependencyRef: string;
++    };
++
++const DENY_NOT_FOUND: TeamResourceActionVerdict = Object.freeze({
++  outcome: "deny",
++  code: "RESOURCE_NOT_FOUND",
++});
++
++const forbidden = (action: TeamResourceAction): TeamResourceActionVerdict =>
++  Object.freeze({
++    outcome: "deny",
++    code: "TEAM_PUBLIC_ACTION_FORBIDDEN",
++    action,
++  });
++
++/**
++ * 团队公共能力集：哪些已注册策略版本携带「团队公共使用路径」。workspace-v1
++ * 是 Issue #51/52 授权的第一个版本；未来版本在此显式追加，绝不隐式放宽。
++ */
++const TEAM_PUBLIC_CAPABLE_POLICY_VERSIONS: readonly string[] = [
++  WORKSPACE_V1_POLICY_ID,
++];
++
++/** run 动作只对 bot 类资源存在；知识库与文档没有 run 规则。 */
++const RUNNABLE_RESOURCE_KINDS: readonly string[] = ["bot"];
++
++interface TeamResourceFacts {
++  readonly scope: {
++    readonly tenantId: string;
++    readonly workspaceId: string;
++    readonly principalId: string;
++  };
++  readonly tenantPolicyRevision: string;
++  readonly resource: {
++    readonly tenantId: string | null;
++    readonly workspaceId: string | null;
++    readonly kind: string | null;
++    readonly visibility: ReturnType<typeof parseResourceVisibility>;
++    readonly status: "active" | "deleted" | null;
++    readonly revision: number | null;
++    readonly aclEpoch: number | null;
++  };
++  readonly workspaceMembership: {
++    readonly status: "active" | "suspended" | null;
++  };
++}
++
++/** 事务句柄类型（与 resource-policy 判定入口同一形状的本地别名）。 */
++type DataTx = Parameters<Parameters<DataDatabase["transaction"]>[0]>[0];
++
++/** 版本号健全性（与 MT008 判定入口同一不变量的本地镜像）。 */
++function revisionsAreSane(facts: TeamResourceFacts): boolean {
++  return (
++    Number.isSafeInteger(facts.resource.revision) &&
++    facts.resource.revision !== null &&
++    facts.resource.revision >= 1 &&
++    Number.isSafeInteger(facts.resource.aclEpoch) &&
++    facts.resource.aclEpoch !== null &&
++    facts.resource.aclEpoch >= 1
++  );
++}
++
++/**
++ * 纯判定（依赖检查之前的部分）：输入事实 + 生效策略版本，输出要么是
++ * 终局判定，要么是「需要依赖检查」（run 的剩余规则）。与数据库完全
++ * 解耦，可被测试在伪造事实层面逐条件钉死（跨租户防线因此有独立于
++ * RLS 的用例）。
++ */
++export type TeamPublicActionDecision =
++  | { readonly kind: "verdict"; readonly verdict: TeamResourceActionVerdict }
++  | { readonly kind: "requires-dependency-check" };
++
++export function decideTeamPublicActionWithoutDependencies(
++  action: TeamResourceAction,
++  facts: TeamResourceFacts,
++  effectiveVersion: string,
++  registry: Pick<
++    ResourcePolicyRegistry,
++    "has"
++  > = createShippedResourcePolicyRegistry(),
++): TeamPublicActionDecision {
++  // (a) 版本门：生效版本必须属于团队公共能力集且在注册表内可解析。
++  if (!registry.has(effectiveVersion)) {
++    throw new Error("POLICY_REVISION_UNSUPPORTED");
++  }
++  if (!TEAM_PUBLIC_CAPABLE_POLICY_VERSIONS.includes(effectiveVersion)) {
++    return { kind: "verdict", verdict: DENY_NOT_FOUND };
++  }
++
++  // (b)-(d) 团队公共可见性门：显式发布、活跃、同公司同团队、版本健全、
++  // 成员有效。任一不成立即不可见（不泄露存在性）。显式 read 授权绝不
++  // 参与这道门——授权路径不派生团队公共使用路径。
++  if (
++    facts.resource.visibility !== "workspace" ||
++    facts.resource.status !== "active" ||
++    facts.resource.tenantId !== facts.scope.tenantId ||
++    facts.resource.workspaceId !== facts.scope.workspaceId ||
++    !revisionsAreSane(facts) ||
++    facts.workspaceMembership.status !== "active"
++  ) {
++    return { kind: "verdict", verdict: DENY_NOT_FOUND };
++  }
++
++  // 管理动作：团队公共使用路径一律不提供（编辑配置、上传、删除、分享、
++  // 管理范围都不是成员使用路径的一部分）。
++  if (action !== "run") {
++    return { kind: "verdict", verdict: forbidden(action) };
++  }
++
++  // run：仅 bot 类；依赖有效性由调用方在事实源内继续校验。
++  if (
++    facts.resource.kind === null ||
++    !RUNNABLE_RESOURCE_KINDS.includes(facts.resource.kind)
++  ) {
++    return { kind: "verdict", verdict: forbidden(action) };
++  }
++  return { kind: "requires-dependency-check" };
++}
++
++// ---------------------------------------------------------------------------
++// 判定服务
++// ---------------------------------------------------------------------------
++
++export interface TeamResourceActionService {
++  /**
++   * 逐动作判定。`options.policyVersion` 缺省时按资源所属租户的
++   * policy_revision 解析（read 的委托与此处使用同一解析规则）。
++   */
++  decideAction(
++    scope: PlatformScope,
++    resourceId: string,
++    action: TeamResourceAction,
++    options?: { readonly policyVersion?: string },
++  ): Promise<TeamResourceActionVerdict>;
++}
++
++/**
++ * 装配入口。`registry` 缺省用已发布注册表（tenancy-v1 + workspace-v1）；
++ * read 委托与团队公共能力集解析共用同一个注册表实例，测试注入受限
++ * 注册表时两条路径的版本视野保持一致。
++ */
++export function createTeamResourceActionService(
++  data: DataDatabase,
++  registry: ResourcePolicyRegistry = createShippedResourcePolicyRegistry(),
++): TeamResourceActionService {
++  assertDataDatabase(data);
++  const policy = createResourcePolicyService(data, registry);
++  return {
++    async decideAction(scope, resourceId, action, options) {
++      // 信任边界：只有签发入口产出的 Scope 能进入判定。
++      assertTrustedScope(scope);
++      if (!TEAM_PUBLIC_ACTION_IDS.includes(action)) {
++        throw new Error("ACTION_UNSUPPORTED");
++      }
++
++      // 内容读取与管理动作分别判定：read 的放行语义只有 MT008 注册表
++      // 一处定义，这里原样透传（含其唯一拒绝形状与版本解析规则）。
++      if (action === "read") {
++        const verdict: ResourcePolicyVerdict = await policy.decide(
++          scope,
++          resourceId,
++          options?.policyVersion
++            ? { policyVersion: options.policyVersion }
++            : undefined,
++        );
++        return verdict;
++      }
++
++      return actionRulesTransaction(data, scope, resourceId, async (tx) => {
++        // 判定事实全部经受限 data 角色与真实 RLS 读取：跨公司资源行对
++        // 本事务不可见（事实即为「不存在」），随后的租户/团队比对是
++        // 第二道独立防线（纵深防御）。
++        const [row] = await tx
++          .select({
++            policyRevision: enterpriseTenants.policyRevision,
++            resourceTenantId: enterpriseResources.tenantId,
++            resourceWorkspaceId: enterpriseResources.workspaceId,
++            resourceKind: enterpriseResources.kind,
++            visibility: enterpriseResources.visibility,
++            status: enterpriseResources.status,
++            revision: enterpriseResources.revision,
++            aclEpoch: enterpriseResources.aclEpoch,
++            membershipStatus: enterpriseWorkspaceMemberships.status,
++          })
++          .from(enterpriseTenants)
++          .leftJoin(
++            enterpriseResources,
++            and(
++              eq(enterpriseResources.tenantId, enterpriseTenants.id),
++              eq(enterpriseResources.id, resourceId),
++            ),
++          )
++          .leftJoin(
++            enterpriseWorkspaceMemberships,
++            and(
++              eq(enterpriseWorkspaceMemberships.tenantId, enterpriseTenants.id),
++              eq(enterpriseWorkspaceMemberships.workspaceId, scope.workspaceId),
++              eq(enterpriseWorkspaceMemberships.principalId, scope.principalId),
++            ),
++          )
++          .where(eq(enterpriseTenants.id, scope.tenantId))
++          .limit(1);
++        // 受信 Scope 必然对应一家存在且活跃过的租户；租户行缺失（撤权
++        // 竞态）按拒绝处理——绝不放宽。判定事实全部经受限 data 角色与
++        // 真实 RLS 读取：跨公司资源行对本事务不可见（事实即为「不存在」），
++        // 纯判定内的租户/团队比对是第二道独立防线（纵深防御）。
++        if (!row) return DENY_NOT_FOUND;
++        const facts: TeamResourceFacts = {
++          scope: {
++            tenantId: scope.tenantId,
++            workspaceId: scope.workspaceId,
++            principalId: scope.principalId,
++          },
++          tenantPolicyRevision: row.policyRevision,
++          resource: {
++            tenantId: row.resourceTenantId ?? null,
++            workspaceId: row.resourceWorkspaceId ?? null,
++            kind: row.resourceKind ?? null,
++            visibility: parseResourceVisibility(row.visibility),
++            status:
++              (row.status as TeamResourceFacts["resource"]["status"]) ?? null,
++            revision: row.revision ?? null,
++            aclEpoch: row.aclEpoch ?? null,
++          },
++          workspaceMembership: {
++            status: (row.membershipStatus ??
++              null) as TeamResourceFacts["workspaceMembership"]["status"],
++          },
++        };
++
++        // 生效版本 = 显式覆盖 ?? 租户 policy_revision（read 的委托与此
++        // 使用同一解析规则）。门规则在纯函数中，可独立于 RLS 被伪造
++        // 事实逐条件钉死。
++        const effectiveVersion =
++          options?.policyVersion ?? facts.tenantPolicyRevision;
++        const decision = decideTeamPublicActionWithoutDependencies(
++          action,
++          facts,
++          effectiveVersion,
++          registry,
++        );
++        if (decision.kind === "verdict") {
++          return decision.verdict;
++        }
++
++        // run 的剩余规则：全部依赖必须有效（不静默降级）。
++        const invalid = await firstInvalidDependency(
++          tx,
++          scope.tenantId,
++          resourceId,
++        );
++        if (invalid) {
++          return Object.freeze({
++            outcome: "deny",
++            code: "DEPENDENCY_INVALID",
++            dependencyKind: invalid.kind,
++            dependencyRef: invalid.ref,
++          });
++        }
++        return Object.freeze({ outcome: "allow" });
++      });
++    },
++  };
++}
++
++// ---------------------------------------------------------------------------
++// 依赖有效性（MT009 迁移新增表；schema 文件本票不动，raw SQL 读取）
++// ---------------------------------------------------------------------------
++
++interface DependencyRow {
++  readonly dependency_kind: string;
++  readonly dependency_ref: string;
++  readonly status: string;
++}
++
++/**
++ * 返回第一条失效依赖（kind/ref 确定性排序），全部有效时返回 null。
++ * 知识范围依赖的引用必须解析到同租户内一个活跃资源行——RLS 使跨租户
++ * 引用不可见（＝无效），软删除（status='deleted'）同样无效。
++ */
++async function firstInvalidDependency(
++  tx: DataTx,
++  tenantId: string,
++  resourceId: string,
++): Promise<{ kind: ResourceDependencyKind; ref: string } | null> {
++  const result = (await tx.execute(sql`
++    select dependency_kind, dependency_ref, status
++    from enterprise_resource_dependencies
++    where tenant_id = ${tenantId} and resource_id = ${resourceId}
++    order by dependency_kind asc, dependency_ref asc
++  `)) as unknown as DependencyRow[];
++  for (const row of result ?? []) {
++    if (row.status !== "active") {
++      return {
++        kind: row.dependency_kind as ResourceDependencyKind,
++        ref: row.dependency_ref,
++      };
++    }
++    if (row.dependency_kind === "knowledge") {
++      const [target] = (await tx.execute(sql`
++        select status from enterprise_resources
++        where tenant_id = ${tenantId} and id = ${row.dependency_ref}
++        limit 1
++      `)) as unknown as { status: string }[];
++      if (target?.status !== "active") {
++        return { kind: "knowledge", ref: row.dependency_ref };
++      }
++    }
++  }
++  return null;
++}
++
++// ---------------------------------------------------------------------------
++// 判定事务：形状与 MT008 判定入口一致（纵深防御的同一键族）
++// ---------------------------------------------------------------------------
++
++async function actionRulesTransaction<T>(
++  data: DataDatabase,
++  scope: PlatformScope,
++  resourceId: string,
++  operation: (tx: DataTx) => Promise<T>,
++): Promise<T> {
++  return data.transaction(async (tx) => {
++    await tx.execute(sql`set transaction isolation level read committed`);
++    await tx.execute(sql`set local lock_timeout = '2s'`);
++    await tx.execute(sql`set local statement_timeout = '5s'`);
++    /* Transaction-local settings are defense in depth for RLS and are cleared on commit. */
++    await tx.execute(
++      sql`select set_config('app.tenant_id', ${scope.tenantId}, true), set_config('app.principal_id', ${scope.principalId}, true), set_config('app.user_id', ${scope.actorId}, true), set_config('app.workspace_id', ${scope.workspaceId}, true)`,
++    );
++    // 锁序：tenant → principal → membership → workspace-membership →
++    // resource（与 resource-policy 判定入口同一键序与键形，共享锁）。
++    for (const key of [
++      JSON.stringify(["enterprise", "tenant", scope.tenantId]),
++      JSON.stringify(["enterprise", "principal", scope.principalId]),
++      JSON.stringify([
++        "enterprise",
++        "membership",
++        scope.tenantId,
++        scope.principalId,
++      ]),
++      workspaceMembershipLockKey(
++        scope.tenantId,
++        scope.workspaceId,
++        scope.principalId,
++      ),
++      JSON.stringify(["enterprise", "resource", scope.tenantId, resourceId]),
++    ]) {
++      await tx.execute(
++        sql`select pg_advisory_xact_lock_shared(hashtextextended(${key}, 0))`,
++      );
++    }
++    return operation(tx);
++  });
++}
+--- /dev/null
++++ b/server/tests/multitenancy/team-public-rules.test.ts
+@@ -0,0 +1,1288 @@
++// server/tests/multitenancy/team-public-rules.test.ts
++// MT009（Issue #52）：团队公共资源动作规则。
++//
++// 验收事实源（Issue #52 五条，逐条对应 describe；真实 PostgreSQL，全程
++// 受限 ob_ent_* 角色 + 真实 RLS，绝不回退开发库、缺 env 显式 skip）：
++//   (1) 团队成员可读取并运行团队公共 Bot；不能修改其配置、不能删除。
++//   (2) 团队成员可检索团队公共知识库；不能上传、删除或改变其范围。
++//   (3) read 通过不派生 run/write/delete/share/manage（逐动作测试）。
++//   (4) 资源依赖（模型、凭据、知识范围）无效时拒绝并给出可解释原因，
++//       不静默降级。
++//   (5) 非团队成员即使拿到资源 ID 也被拒绝，且响应不泄露其存在性。
++//
++// 判定语义（与实现一一对应，见 server/src/enterprise/tenancy/
++// team-public-rules.ts）：
++//   - read 委托 MT008 的策略注册表（默认按租户 policy_revision 解析）——
++//     内容读取与管理动作分别判定；
++//   - 其余动作走本票的动作规则：团队公共使用路径 = 显式 'workspace'
++//     可见性 + 同公司同团队 + 有效成员 + 生效策略版本属团队公共能力集
++//     （workspace-v1）；run 仅限 bot 类且全部依赖有效；
++//   - 对不可见者（非成员/跨公司/未发布/版本不含团队公共路径）一切动作
++//     的拒绝都只有 RESOURCE_NOT_FOUND 一种形状——不泄露存在性；
++//   - 对已通过可见性门（因此必然知道资源存在）的成员，管理动作拒绝为
++//     TEAM_PUBLIC_ACTION_FORBIDDEN，依赖无效拒绝为 DEPENDENCY_INVALID
++//     （指明依赖种类与引用）——可解释且不新增泄露。
++
++import { afterAll, beforeAll, describe, expect, test } from "bun:test";
++import { randomUUID } from "node:crypto";
++import { rm, writeFile } from "node:fs/promises";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { sql } from "drizzle-orm";
++import {
++  buildPlan,
++  manifestFor,
++  type RunOutcome,
++  resolveTestDatabaseTarget,
++  runMigrateTest,
++} from "../../scripts/multitenancy/migrate-test";
++import {
++  createTeamResourceActionService,
++  decideTeamPublicActionWithoutDependencies,
++  TEAM_PUBLIC_ACTION_IDS,
++  type TeamResourceAction,
++  type TeamResourceActionVerdict,
++} from "../../src/enterprise/tenancy/team-public-rules";
++import { rejectionOf } from "../support/pg-errors";
++import type { FixtureIdentity } from "./support/fixture";
++import {
++  createTeamPublicRulesFixture,
++  type TeamPublicRulesFixture,
++} from "./support/team-public-rules";
++
++// ---------------------------------------------------------------------------
++// 环境探针：缺 env 显式 skip（带理由），绝不静默回退
++// ---------------------------------------------------------------------------
++
++function probeEnvironment(): { ok: true } | { ok: false; reason: string } {
++  const required = [
++    "TEST_DATABASE_URL",
++    "ENTERPRISE_TEST_SETUP_DATABASE_URL",
++    "ENTERPRISE_TEST_DIRECTORY_DATABASE_URL",
++    "ENTERPRISE_TEST_DATA_DATABASE_URL",
++    "ENTERPRISE_TEST_OPERATOR_DATABASE_URL",
++  ] as const;
++  const missing = required.filter((key) => !process.env[key]?.trim());
++  if (missing.length > 0) {
++    return {
++      ok: false,
++      reason: `MT009 requires the dedicated enterprise test database env (${missing.join(", ")}) — no dev-database fallback`,
++    };
++  }
++  return { ok: true };
++}
++
++const ENV = probeEnvironment();
++const itDb = ((name, fn) =>
++  ENV.ok
++    ? test(name, fn)
++    : test.skip(`${name} [skipped: ${ENV.reason}]`, fn)) as typeof test;
++const describeDb = ENV.ok ? describe : describe.skip;
++
++// ---------------------------------------------------------------------------
++// 判定形状
++// ---------------------------------------------------------------------------
++
++const ALLOW: TeamResourceActionVerdict = Object.freeze({ outcome: "allow" });
++const DENY_NOT_FOUND: TeamResourceActionVerdict = Object.freeze({
++  outcome: "deny",
++  code: "RESOURCE_NOT_FOUND",
++});
++
++const forbidden = (action: TeamResourceAction): TeamResourceActionVerdict =>
++  Object.freeze({
++    outcome: "deny",
++    code: "TEAM_PUBLIC_ACTION_FORBIDDEN",
++    action,
++  });
++
++const verdictJson = (verdict: TeamResourceActionVerdict): string =>
++  JSON.stringify(verdict);
++
++/**
++ * Plain (non-SQLSTATE) business rejections — UNVERIFIED_SCOPE,
++ * WORKSPACE_FORBIDDEN, POLICY_REVISION_UNSUPPORTED, ACTION_UNSUPPORTED —
++ * surface as bare Errors; assert on their message without the SQLSTATE
++ * walk that `rejectionOf` exists for.
++ */
++async function errorMessageOf(run: () => Promise<unknown>): Promise<string> {
++  try {
++    await run();
++  } catch (error) {
++    return error instanceof Error ? error.message : String(error);
++  }
++  throw new Error("expected the call to be refused, but it succeeded");
++}
++
++/** MT009 prerequisite task migrations, dependency order (brief-pinned). */
++const PREREQUISITE_TASKS = ["MT004", "MT008", "MT112", "MT012"] as const;
++
++// ---------------------------------------------------------------------------
++// 套件级装配：前置迁移 + MT009 迁移 + 真实 fixture + 常设编排
++// ---------------------------------------------------------------------------
++
++let fixture: TeamPublicRulesFixture | undefined;
++let dryRunOutcome: RunOutcome | undefined;
++let applyOutcome: RunOutcome | undefined;
++
++/** Standing arrangement ids (created once in beforeAll). */
++let botA1: string;
++let kbA1: string;
++let docA1: string;
++let privateBotA1: string;
++let legacyBotA1: string;
++let botA2: string;
++let botB1: string;
++
++async function applyTaskMigration(
++  url: string,
++  taskId: string,
++): Promise<RunOutcome> {
++  const manifestPath = join(
++    tmpdir(),
++    `mt009-manifest-${taskId}-${process.pid}-${randomUUID().slice(0, 8)}.json`,
++  );
++  await writeFile(
++    manifestPath,
++    `${JSON.stringify(manifestFor(buildPlan(taskId)), null, 2)}\n`,
++  );
++  try {
++    return await runMigrateTest(
++      ["migrate", taskId, "--apply", "--manifest", manifestPath],
++      { environment: { TEST_DATABASE_URL: url }, out: () => {} },
++    );
++  } finally {
++    await rm(manifestPath, { force: true });
++  }
++}
++
++beforeAll(async () => {
++  const resolved = resolveTestDatabaseTarget(process.env);
++  if (!resolved.ok) throw new Error(resolved.reason);
++  const url = resolved.target.url;
++
++  // 前置任务迁移（journal 幂等：fresh 库应用、已应用库 up-to-date），
++  // 依赖序按 brief：MT004 → MT008 → MT112 → MT012。
++  for (const taskId of PREREQUISITE_TASKS) {
++    const outcome = await applyTaskMigration(url, taskId);
++    if (outcome.kind === "refused") {
++      throw new Error(`prerequisite ${taskId} refused: ${outcome.reason}`);
++    }
++  }
++
++  // MT009：先 dry-run（诚实预览），再 apply。
++  dryRunOutcome = await runMigrateTest(["migrate", "MT009"], {
++    environment: { TEST_DATABASE_URL: url },
++    out: () => {},
++  });
++  applyOutcome = await applyTaskMigration(url, "MT009");
++
++  fixture = await createTeamPublicRulesFixture();
++
++  // ---- 常设编排 ----------------------------------------------------------
++  // company-a 生效版本 = workspace-v1（团队公共路径在该公司可用）；
++  // company-b 保持 tenancy-v1（版本门用例的事实源）。
++  const companyA = fixture.isolation.ids["company-a"];
++  const companyB = fixture.isolation.ids["company-b"];
++  await fixture.setTenantPolicyRevision(companyA, "workspace-v1");
++
++  const teamA1 = fixture.teamOf("a1-other", "team-a1");
++  const teamA2 = fixture.teamOf("a2-member", "team-a2");
++  const teamB1 = fixture.teamOf("b1-member", "team-b1");
++
++  botA1 = await fixture.createResource({
++    tenantId: companyA,
++    workspaceId: teamA1.workspaceId,
++    kind: "bot",
++    displayName: "Team A1 public bot",
++  });
++  kbA1 = await fixture.createResource({
++    tenantId: companyA,
++    workspaceId: teamA1.workspaceId,
++    kind: "knowledge_base",
++    displayName: "Team A1 public knowledge base",
++  });
++  docA1 = await fixture.createResource({
++    tenantId: companyA,
++    workspaceId: teamA1.workspaceId,
++    kind: "document",
++    displayName: "Team A1 public document",
++  });
++  privateBotA1 = await fixture.createResource({
++    tenantId: companyA,
++    workspaceId: teamA1.workspaceId,
++    kind: "bot",
++    displayName: "A1 member's private bot",
++  });
++  legacyBotA1 = await fixture.createResource({
++    tenantId: companyA,
++    workspaceId: teamA1.workspaceId,
++    kind: "bot",
++    displayName: "A1 legacy unmarked bot",
++  });
++  botA2 = await fixture.createResource({
++    tenantId: companyA,
++    workspaceId: teamA2.workspaceId,
++    kind: "bot",
++    displayName: "Team A2 public bot",
++  });
++  botB1 = await fixture.createResource({
++    tenantId: companyB,
++    workspaceId: teamB1.workspaceId,
++    kind: "bot",
++    displayName: "Team B1 public bot",
++  });
++
++  for (const id of [botA1, kbA1, docA1, botA2, botB1]) {
++    const tenantId = id === botB1 ? companyB : companyA;
++    await fixture.markVisibility({
++      tenantId,
++      resourceId: id,
++      visibility: "workspace",
++    });
++  }
++  await fixture.markVisibility({
++    tenantId: companyA,
++    resourceId: privateBotA1,
++    visibility: "private",
++  });
++  // legacyBotA1 保持未标记（NULL）。
++
++  // private/legacy bot 的显式 read 授权（验收 3 的事实源）。
++  const a1OtherPrincipal = fixture.teamOf("a1-other", "team-a1").principalId;
++  await fixture.addReadGrant({
++    tenantId: companyA,
++    resourceId: privateBotA1,
++    principalId: a1OtherPrincipal,
++  });
++  await fixture.addReadGrant({
++    tenantId: companyA,
++    resourceId: legacyBotA1,
++    principalId: a1OtherPrincipal,
++  });
++
++  // bot-a1 的有效依赖：一个模型 + 一个知识范围（指向团队公共知识库）。
++  await fixture.addDependency({
++    tenantId: companyA,
++    resourceId: botA1,
++    kind: "model",
++    ref: "model-alpha",
++  });
++  await fixture.addDependency({
++    tenantId: companyA,
++    resourceId: botA1,
++    kind: "knowledge",
++    ref: kbA1,
++  });
++});
++
++afterAll(async () => {
++  await fixture?.dispose();
++});
++
++const service = () => createTeamResourceActionService(fixture!.data);
++
++const scopeOf = async (
++  identity: FixtureIdentity,
++  teamKey: "team-a1" | "team-a2" | "team-b1",
++) => {
++  const team = fixture!.teamOf(identity, teamKey);
++  return fixture!.scopeFor(identity, {
++    tenantId: team.tenantId,
++    workspaceId: team.workspaceId,
++  });
++};
++
++// ---------------------------------------------------------------------------
++// 迁移注册与 expand-only（票面约束：MT004/MT008/MT112/MT012 惯例）
++// ---------------------------------------------------------------------------
++
++describeDb("the MT009 task migration is registered and expand-only", () => {
++  itDb("MT009 is a registered task whose plan is deterministic", () => {
++    const plan = buildPlan("MT009");
++    expect(plan.taskId).toBe("MT009");
++    expect(plan.steps.map((step) => step.name)).toEqual([
++      "0001_mt009_resource_dependency_table.sql",
++      "0002_mt009_dependency_rls_policies.sql",
++    ]);
++    expect(manifestFor(plan)).toEqual(manifestFor(buildPlan("MT009")));
++  });
++
++  itDb(
++    "dry-run previews honestly and apply converges (fresh or up-to-date)",
++    () => {
++      expect(dryRunOutcome).toMatchObject({
++        kind: "dry-run",
++        taskId: "MT009",
++      });
++      expect(["applied", "up-to-date"]).toContain(applyOutcome?.kind);
++      if (
++        dryRunOutcome?.kind === "dry-run" &&
++        applyOutcome?.kind === "applied"
++      ) {
++        expect(dryRunOutcome.pending.map((step) => step.name)).toEqual([
++          "0001_mt009_resource_dependency_table.sql",
++          "0002_mt009_dependency_rls_policies.sql",
++        ]);
++      }
++    },
++  );
++
++  itDb(
++    "the plan only appends: one new dependency table with its own RLS, nothing else touched",
++    () => {
++      const statements = buildPlan("MT009").steps.flatMap(
++        (step) => step.statements,
++      );
++      expect(statements.length).toBeGreaterThan(0);
++      const touched = new Set<string>();
++      for (const statement of statements) {
++        // 逐语句动词锚定：每条语句都是完整字符串，禁令看语句首词，
++        // 避免误伤子句（如 FK 的 ON UPDATE no action）。
++        expect(statement).not.toMatch(/^\s*DROP\b/i);
++        expect(statement).not.toMatch(/^\s*DELETE\b/i);
++        expect(statement).not.toMatch(/^\s*UPDATE\b/i);
++        expect(statement).not.toMatch(/^\s*TRUNCATE\b/i);
++        expect(statement).not.toMatch(
++          /^\s*ALTER TABLE "enterprise_resources"/i,
++        );
++        const created = /^CREATE TABLE "([a-z_]+)"/i.exec(statement);
++        if (created) {
++          touched.add(created[1]);
++          expect(created[1]).toBe("enterprise_resource_dependencies");
++          continue;
++        }
++        const altered = /^ALTER TABLE "([a-z_]+)"/i.exec(statement);
++        if (altered) {
++          touched.add(altered[1]);
++          // 只允许新表自身的 FK 约束追加与 RLS 启用。
++          expect(altered[1]).toBe("enterprise_resource_dependencies");
++          expect(statement).toMatch(
++            /^(ALTER TABLE "enterprise_resource_dependencies" (ADD CONSTRAINT|ENABLE ROW LEVEL SECURITY|FORCE ROW LEVEL SECURITY))/i,
++          );
++          continue;
++        }
++        const policy = /^CREATE POLICY "([a-z_]+)" ON "([a-z_]+)"/i.exec(
++          statement,
++        );
++        if (policy) {
++          touched.add(policy[2]);
++          expect(policy[2]).toBe("enterprise_resource_dependencies");
++          continue;
++        }
++        const revoked = /^REVOKE ALL PRIVILEGES ON TABLE "([a-z_]+)"/i.exec(
++          statement,
++        );
++        if (revoked) {
++          touched.add(revoked[1]);
++          expect(revoked[1]).toBe("enterprise_resource_dependencies");
++          continue;
++        }
++        const granted =
++          /^GRANT (SELECT|INSERT) ON TABLE "([a-z_]+)" TO (.+);?$/i.exec(
++            statement,
++          );
++        if (granted) {
++          touched.add(granted[2]);
++          expect(granted[2]).toBe("enterprise_resource_dependencies");
++          continue;
++        }
++        throw new Error(
++          `MT009 plan statement outside the append shape: ${statement.slice(0, 120)}`,
++        );
++      }
++      // 唯一被触碰的既有对象是 FK 引用目标 enterprise_resources（引用，
++      // 不是修改）——断言里它只允许出现在 REFERENCES 子句中。
++      expect([...touched].sort()).toEqual(["enterprise_resource_dependencies"]);
++      const fk = statements.find((statement) => /REFERENCES/i.test(statement));
++      expect(fk).toMatch(
++        /REFERENCES "public"\."enterprise_resources"\("tenant_id","id"\) ON DELETE cascade/i,
++      );
++    },
++  );
++
++  itDb(
++    "the decision side runs under the restricted data capability role, never a superuser",
++    async () => {
++      expect(await fixture!.dataCurrentUser()).toBe("ob_ent_data");
++    },
++  );
++});
++
++// ---------------------------------------------------------------------------
++// 验收 (1)：团队成员可读取并运行团队公共 Bot；不能修改配置、不能删除
++// ---------------------------------------------------------------------------
++
++describeDb(
++  "issue #52 criterion 1: members read and run team-public bots; management actions are refused",
++  () => {
++    itDb(
++      "an active team member without any grant reads and runs a team-public bot",
++      async () => {
++        const scope = await scopeOf("a1-other", "team-a1");
++        expect(await service().decideAction(scope, botA1, "read")).toEqual(
++          ALLOW,
++        );
++        expect(await service().decideAction(scope, botA1, "run")).toEqual(
++          ALLOW,
++        );
++      },
++    );
++
++    itDb(
++      "the same member is refused config edits, deletion, sharing and management — per action",
++      async () => {
++        const scope = await scopeOf("a1-other", "team-a1");
++        for (const action of [
++          "write",
++          "delete",
++          "share",
++          "manage",
++          "upload",
++        ] as const) {
++          expect(await service().decideAction(scope, botA1, action)).toEqual(
++            forbidden(action),
++          );
++        }
++      },
++    );
++
++    itDb(
++      "a suspended team member loses the team-public run path; the seam refuses re-issuing a scope; restoring membership restores the path",
++      async () => {
++        const before = await scopeOf("a1-other", "team-a1");
++        expect(await service().decideAction(before, botA1, "run")).toEqual(
++          ALLOW,
++        );
++
++        await fixture!.setTeamMembershipStatus(
++          "a1-other",
++          "team-a1",
++          "suspended",
++        );
++        try {
++          // 停用前合法取证的 scope：事实已变，团队公共路径按当前事实拒绝。
++          expect(await service().decideAction(before, botA1, "run")).toEqual(
++            DENY_NOT_FOUND,
++          );
++          expect(await service().decideAction(before, botA1, "read")).toEqual(
++            DENY_NOT_FOUND,
++          );
++          // 停用后新取证被 MT005 seam 直接拒绝（无存在性泄露的同一语义）。
++          const refusal = await errorMessageOf(() =>
++            scopeOf("a1-other", "team-a1"),
++          );
++          expect(refusal).toContain("WORKSPACE_FORBIDDEN");
++        } finally {
++          await fixture!.setTeamMembershipStatus(
++            "a1-other",
++            "team-a1",
++            "active",
++          );
++        }
++
++        const restored = await scopeOf("a1-other", "team-a1");
++        expect(await service().decideAction(restored, botA1, "run")).toEqual(
++          ALLOW,
++        );
++      },
++    );
++  },
++);
++
++// ---------------------------------------------------------------------------
++// 验收 (2)：团队成员可检索团队公共知识库；不能上传、删除或改变其范围
++// ---------------------------------------------------------------------------
++
++describeDb(
++  "issue #52 criterion 2: members retrieve team-public knowledge bases; uploads and scope changes are refused",
++  () => {
++    itDb(
++      "an active team member without any grant retrieves a team-public knowledge base",
++      async () => {
++        const scope = await scopeOf("a1-other", "team-a1");
++        expect(await service().decideAction(scope, kbA1, "read")).toEqual(
++          ALLOW,
++        );
++      },
++    );
++
++    itDb(
++      "upload, deletion, scope change and every other management action are refused — per action; run is not a knowledge-base action",
++      async () => {
++        const scope = await scopeOf("a1-other", "team-a1");
++        for (const action of [
++          "upload",
++          "delete",
++          "manage",
++          "write",
++          "share",
++        ] as const) {
++          expect(await service().decideAction(scope, kbA1, action)).toEqual(
++            forbidden(action),
++          );
++        }
++        // 知识库没有运行规则：read 放行绝不派生 run（逐动作钉死）。
++        expect(await service().decideAction(scope, kbA1, "run")).toEqual(
++          forbidden("run"),
++        );
++      },
++    );
++  },
++);
++
++// ---------------------------------------------------------------------------
++// 验收 (3)：read 通过不派生 run/write/delete/share/manage（逐动作测试）
++// ---------------------------------------------------------------------------
++
++describeDb(
++  "issue #52 criterion 3: a passing read never derives run/write/delete/share/manage",
++  () => {
++    itDb(
++      "a private bot with an explicit read grant: read passes via the grant path and every other action is refused per action",
++      async () => {
++        const scope = await scopeOf("a1-other", "team-a1");
++        expect(
++          await service().decideAction(scope, privateBotA1, "read"),
++        ).toEqual(ALLOW);
++        expect(
++          await service().decideAction(scope, privateBotA1, "run"),
++        ).toEqual(DENY_NOT_FOUND);
++        for (const action of [
++          "write",
++          "delete",
++          "share",
++          "manage",
++          "upload",
++        ] as const) {
++          expect(
++            await service().decideAction(scope, privateBotA1, action),
++          ).toEqual(DENY_NOT_FOUND);
++        }
++      },
++    );
++
++    itDb(
++      "a legacy unmarked bot with an explicit read grant behaves identically: read only",
++      async () => {
++        const scope = await scopeOf("a1-other", "team-a1");
++        expect(
++          await service().decideAction(scope, legacyBotA1, "read"),
++        ).toEqual(ALLOW);
++        expect(await service().decideAction(scope, legacyBotA1, "run")).toEqual(
++          DENY_NOT_FOUND,
++        );
++        for (const action of [
++          "write",
++          "delete",
++          "share",
++          "manage",
++          "upload",
++        ] as const) {
++          expect(
++            await service().decideAction(scope, legacyBotA1, action),
++          ).toEqual(DENY_NOT_FOUND);
++        }
++      },
++    );
++
++    itDb(
++      "a team-public document: read passes through the team-public path and run is still refused (no kind rule derives run from read)",
++      async () => {
++        const scope = await scopeOf("a1-other", "team-a1");
++        expect(await service().decideAction(scope, docA1, "read")).toEqual(
++          ALLOW,
++        );
++        expect(await service().decideAction(scope, docA1, "run")).toEqual(
++          forbidden("run"),
++        );
++      },
++    );
++
++    itDb(
++      "the schema itself refuses individual run grants: the action column admits 'read' only",
++      async () => {
++        const team = fixture!.teamOf("a1-other", "team-a1");
++        const rejection = await rejectionOf(() =>
++          fixture!.operator.transaction(async (tx) => {
++            await tx.execute(
++              sql`select set_config('app.tenant_id', ${team.tenantId}, true)`,
++            );
++            await tx.execute(sql`
++              insert into enterprise_resource_grants
++                (tenant_id, resource_id, principal_id, action)
++              values (${team.tenantId}, ${botA1}, ${team.principalId}, 'run')
++            `);
++          }),
++        );
++        expect(rejection.code).toBe("23514");
++        expect(rejection.message).toContain("enterprise_grant_action");
++      },
++    );
++  },
++);
++
++// ---------------------------------------------------------------------------
++// 验收 (4)：依赖无效时拒绝并给出可解释原因，不静默降级
++// ---------------------------------------------------------------------------
++
++describeDb(
++  "issue #52 criterion 4: invalid dependencies refuse the run with an explainable reason",
++  () => {
++    itDb(
++      "a team-public bot whose model and knowledge dependencies are all valid runs",
++      async () => {
++        const companyA = fixture!.isolation.ids["company-a"];
++        const team = fixture!.teamOf("a1-other", "team-a1");
++        const bot = await fixture!.createResource({
++          tenantId: companyA,
++          workspaceId: team.workspaceId,
++          kind: "bot",
++          displayName: "fully wired bot",
++        });
++        await fixture!.markVisibility({
++          tenantId: companyA,
++          resourceId: bot,
++          visibility: "workspace",
++        });
++        await fixture!.addDependency({
++          tenantId: companyA,
++          resourceId: bot,
++          kind: "model",
++          ref: "model-ok",
++        });
++        await fixture!.addDependency({
++          tenantId: companyA,
++          resourceId: bot,
++          kind: "credential",
++          ref: "cred-ok",
++        });
++        await fixture!.addDependency({
++          tenantId: companyA,
++          resourceId: bot,
++          kind: "knowledge",
++          ref: kbA1,
++        });
++        const scope = await scopeOf("a1-other", "team-a1");
++        expect(await service().decideAction(scope, bot, "run")).toEqual(ALLOW);
++      },
++    );
++
++    itDb(
++      "an invalid model dependency refuses the run and names the dependency kind and reference",
++      async () => {
++        const companyA = fixture!.isolation.ids["company-a"];
++        const team = fixture!.teamOf("a1-other", "team-a1");
++        const bot = await fixture!.createResource({
++          tenantId: companyA,
++          workspaceId: team.workspaceId,
++          kind: "bot",
++          displayName: "bot with broken model",
++        });
++        await fixture!.markVisibility({
++          tenantId: companyA,
++          resourceId: bot,
++          visibility: "workspace",
++        });
++        await fixture!.addDependency({
++          tenantId: companyA,
++          resourceId: bot,
++          kind: "model",
++          ref: "model-decommissioned",
++          status: "invalid",
++        });
++        const scope = await scopeOf("a1-other", "team-a1");
++        expect(await service().decideAction(scope, bot, "run")).toEqual({
++          outcome: "deny",
++          code: "DEPENDENCY_INVALID",
++          dependencyKind: "model",
++          dependencyRef: "model-decommissioned",
++        });
++      },
++    );
++
++    itDb(
++      "an invalid credential dependency refuses the run the same explainable way",
++      async () => {
++        const companyA = fixture!.isolation.ids["company-a"];
++        const team = fixture!.teamOf("a1-other", "team-a1");
++        const bot = await fixture!.createResource({
++          tenantId: companyA,
++          workspaceId: team.workspaceId,
++          kind: "bot",
++          displayName: "bot with broken credential",
++        });
++        await fixture!.markVisibility({
++          tenantId: companyA,
++          resourceId: bot,
++          visibility: "workspace",
++        });
++        await fixture!.addDependency({
++          tenantId: companyA,
++          resourceId: bot,
++          kind: "credential",
++          ref: "cred-revoked",
++          status: "invalid",
++        });
++        const scope = await scopeOf("a1-other", "team-a1");
++        expect(await service().decideAction(scope, bot, "run")).toEqual({
++          outcome: "deny",
++          code: "DEPENDENCY_INVALID",
++          dependencyKind: "credential",
++          dependencyRef: "cred-revoked",
++        });
++      },
++    );
++
++    itDb(
++      "a knowledge dependency pointing at a deleted knowledge base refuses the run and names the broken scope",
++      async () => {
++        const companyA = fixture!.isolation.ids["company-a"];
++        const team = fixture!.teamOf("a1-other", "team-a1");
++        const deadKb = await fixture!.createResource({
++          tenantId: companyA,
++          workspaceId: team.workspaceId,
++          kind: "knowledge_base",
++          displayName: "deleted knowledge base",
++        });
++        await fixture!.markVisibility({
++          tenantId: companyA,
++          resourceId: deadKb,
++          visibility: "workspace",
++        });
++        // 软删除（域内唯一的删除形态）：status='deleted'。受限角色没有
++        // status 列的 UPDATE 授权（operator 只有 MT008 的 visibility 列），
++        // 这里用披露的 setup 替身安排事实；判定侧照旧走受限 data 角色。
++        await fixture!.softDeleteResource({
++          tenantId: companyA,
++          resourceId: deadKb,
++        });
++        const bot = await fixture!.createResource({
++          tenantId: companyA,
++          workspaceId: team.workspaceId,
++          kind: "bot",
++          displayName: "bot with broken knowledge scope",
++        });
++        await fixture!.markVisibility({
++          tenantId: companyA,
++          resourceId: bot,
++          visibility: "workspace",
++        });
++        await fixture!.addDependency({
++          tenantId: companyA,
++          resourceId: bot,
++          kind: "knowledge",
++          ref: deadKb,
++        });
++        const scope = await scopeOf("a1-other", "team-a1");
++        expect(await service().decideAction(scope, bot, "run")).toEqual({
++          outcome: "deny",
++          code: "DEPENDENCY_INVALID",
++          dependencyKind: "knowledge",
++          dependencyRef: deadKb,
++        });
++      },
++    );
++
++    itDb(
++      "a knowledge dependency pointing at a nonexistent reference refuses the run without guessing",
++      async () => {
++        const companyA = fixture!.isolation.ids["company-a"];
++        const team = fixture!.teamOf("a1-other", "team-a1");
++        const bot = await fixture!.createResource({
++          tenantId: companyA,
++          workspaceId: team.workspaceId,
++          kind: "bot",
++          displayName: "bot with dangling knowledge scope",
++        });
++        await fixture!.markVisibility({
++          tenantId: companyA,
++          resourceId: bot,
++          visibility: "workspace",
++        });
++        await fixture!.addDependency({
++          tenantId: companyA,
++          resourceId: bot,
++          kind: "knowledge",
++          ref: `${companyA}-kb-never-existed`,
++        });
++        const scope = await scopeOf("a1-other", "team-a1");
++        expect(await service().decideAction(scope, bot, "run")).toEqual({
++          outcome: "deny",
++          code: "DEPENDENCY_INVALID",
++          dependencyKind: "knowledge",
++          dependencyRef: `${companyA}-kb-never-existed`,
++        });
++      },
++    );
++
++    itDb(
++      "a bot with no declared dependencies runs (no dependency, nothing to degrade silently)",
++      async () => {
++        const companyA = fixture!.isolation.ids["company-a"];
++        const team = fixture!.teamOf("a1-other", "team-a1");
++        const bot = await fixture!.createResource({
++          tenantId: companyA,
++          workspaceId: team.workspaceId,
++          kind: "bot",
++          displayName: "dependency-free bot",
++        });
++        await fixture!.markVisibility({
++          tenantId: companyA,
++          resourceId: bot,
++          visibility: "workspace",
++        });
++        const scope = await scopeOf("a1-other", "team-a1");
++        expect(await service().decideAction(scope, bot, "run")).toEqual(ALLOW);
++      },
++    );
++
++    itDb(
++      "a bot whose own dependencies are broken is unaffected by another bot's dependency rows",
++      async () => {
++        const companyA = fixture!.isolation.ids["company-a"];
++        const team = fixture!.teamOf("a1-other", "team-a1");
++        const broken = await fixture!.createResource({
++          tenantId: companyA,
++          workspaceId: team.workspaceId,
++          kind: "bot",
++          displayName: "broken bot",
++        });
++        const healthy = await fixture!.createResource({
++          tenantId: companyA,
++          workspaceId: team.workspaceId,
++          kind: "bot",
++          displayName: "healthy bot",
++        });
++        for (const bot of [broken, healthy]) {
++          await fixture!.markVisibility({
++            tenantId: companyA,
++            resourceId: bot,
++            visibility: "workspace",
++          });
++        }
++        await fixture!.addDependency({
++          tenantId: companyA,
++          resourceId: broken,
++          kind: "model",
++          ref: "model-broken",
++          status: "invalid",
++        });
++        await fixture!.addDependency({
++          tenantId: companyA,
++          resourceId: healthy,
++          kind: "model",
++          ref: "model-fine",
++        });
++        const scope = await scopeOf("a1-other", "team-a1");
++        expect(await service().decideAction(scope, healthy, "run")).toEqual(
++          ALLOW,
++        );
++        expect(await service().decideAction(scope, broken, "run")).toEqual({
++          outcome: "deny",
++          code: "DEPENDENCY_INVALID",
++          dependencyKind: "model",
++          dependencyRef: "model-broken",
++        });
++      },
++    );
++
++    itDb(
++      "an invalid dependency never leaks to a non-member: the refusal stays RESOURCE_NOT_FOUND",
++      async () => {
++        const companyA = fixture!.isolation.ids["company-a"];
++        const team = fixture!.teamOf("a1-other", "team-a1");
++        const bot = await fixture!.createResource({
++          tenantId: companyA,
++          workspaceId: team.workspaceId,
++          kind: "bot",
++          displayName: "broken bot behind the gate",
++        });
++        await fixture!.markVisibility({
++          tenantId: companyA,
++          resourceId: bot,
++          visibility: "workspace",
++        });
++        await fixture!.addDependency({
++          tenantId: companyA,
++          resourceId: bot,
++          kind: "model",
++          ref: "model-hidden-broken",
++          status: "invalid",
++        });
++        // a1a2-member 以 team-a2 身份提问：不是该团队成员。
++        const outsider = await scopeOf("a1a2-member", "team-a2");
++        expect(await service().decideAction(outsider, bot, "run")).toEqual(
++          DENY_NOT_FOUND,
++        );
++      },
++    );
++
++    itDb(
++      "dependency validity gates run only: management refusals do not consult dependencies",
++      async () => {
++        const companyA = fixture!.isolation.ids["company-a"];
++        const team = fixture!.teamOf("a1-other", "team-a1");
++        const bot = await fixture!.createResource({
++          tenantId: companyA,
++          workspaceId: team.workspaceId,
++          kind: "bot",
++          displayName: "broken bot, managed anyway",
++        });
++        await fixture!.markVisibility({
++          tenantId: companyA,
++          resourceId: bot,
++          visibility: "workspace",
++        });
++        await fixture!.addDependency({
++          tenantId: companyA,
++          resourceId: bot,
++          kind: "model",
++          ref: "model-irrelevant",
++          status: "invalid",
++        });
++        const scope = await scopeOf("a1-other", "team-a1");
++        expect(await service().decideAction(scope, bot, "delete")).toEqual(
++          forbidden("delete"),
++        );
++      },
++    );
++  },
++);
++
++// ---------------------------------------------------------------------------
++// 验收 (5)：非团队成员即使拿到资源 ID 也被拒绝，且响应不泄露存在性
++// ---------------------------------------------------------------------------
++
++describeDb(
++  "issue #52 criterion 5: non-members are refused with no existence leak",
++  () => {
++    itDb(
++      "a cross-company member holding the resource id is refused on every action, byte-identically to a nonexistent resource",
++      async () => {
++        const scope = await scopeOf("b1-member", "team-b1");
++        const ghost = `${fixture!.isolation.idPrefix}-ghost-${randomUUID().slice(0, 8)}`;
++        for (const action of TEAM_PUBLIC_ACTION_IDS) {
++          const againstReal = await service().decideAction(
++            scope,
++            botA1,
++            action,
++          );
++          const againstGhost = await service().decideAction(
++            scope,
++            ghost,
++            action,
++          );
++          expect(againstReal).toEqual(DENY_NOT_FOUND);
++          // 不泄露存在性：对真实资源与对不存在资源的拒绝逐字节相同。
++          expect(verdictJson(againstReal)).toBe(verdictJson(againstGhost));
++        }
++      },
++    );
++
++    itDb(
++      "a same-company member of another team is refused on run and read, byte-identically to a nonexistent resource",
++      async () => {
++        const outsider = await scopeOf("a1a2-member", "team-a2");
++        const ghost = `${fixture!.isolation.idPrefix}-ghost-${randomUUID().slice(0, 8)}`;
++        for (const action of ["read", "run", "delete"] as const) {
++          const againstReal = await service().decideAction(
++            outsider,
++            botA1,
++            action,
++          );
++          const againstGhost = await service().decideAction(
++            outsider,
++            ghost,
++            action,
++          );
++          expect(againstReal).toEqual(DENY_NOT_FOUND);
++          expect(verdictJson(againstReal)).toBe(verdictJson(againstGhost));
++        }
++      },
++    );
++
++    itDb(
++      "a company admin without team membership cannot even obtain a scope for the team (the seam refuses before any action)",
++      async () => {
++        const companyA = fixture!.isolation.ids["company-a"];
++        const teamA1 = fixture!.teamOf("a1-other", "team-a1");
++        const refusal = await errorMessageOf(() =>
++          fixture!.scopeFor("company-admin", {
++            tenantId: companyA,
++            workspaceId: teamA1.workspaceId,
++          }),
++        );
++        expect(refusal).toContain("WORKSPACE_FORBIDDEN");
++      },
++    );
++  },
++);
++
++// ---------------------------------------------------------------------------
++// 策略版本门：团队公共路径只在含该能力的生效版本下存在
++// ---------------------------------------------------------------------------
++
++describeDb(
++  "the team-public usage path exists only under a policy version that carries it",
++  () => {
++    itDb(
++      "under tenancy-v1 (company-b default) a team-public bot stays invisible to its own team member: read and run are RESOURCE_NOT_FOUND",
++      async () => {
++        const scope = await scopeOf("b1-member", "team-b1");
++        expect(await service().decideAction(scope, botB1, "read")).toEqual(
++          DENY_NOT_FOUND,
++        );
++        expect(await service().decideAction(scope, botB1, "run")).toEqual(
++          DENY_NOT_FOUND,
++        );
++      },
++    );
++
++    itDb(
++      "after the tenant resolves workspace-v1 the same member reads and runs the same bot (default resolution, no per-call override)",
++      async () => {
++        const companyB = fixture!.isolation.ids["company-b"];
++        await fixture!.setTenantPolicyRevision(companyB, "workspace-v1");
++        try {
++          const scope = await scopeOf("b1-member", "team-b1");
++          expect(await service().decideAction(scope, botB1, "read")).toEqual(
++            ALLOW,
++          );
++          expect(await service().decideAction(scope, botB1, "run")).toEqual(
++            ALLOW,
++          );
++        } finally {
++          await fixture!.setTenantPolicyRevision(companyB, "tenancy-v1");
++        }
++        const scope = await scopeOf("b1-member", "team-b1");
++        expect(await service().decideAction(scope, botB1, "run")).toEqual(
++          DENY_NOT_FOUND,
++        );
++      },
++    );
++
++    itDb(
++      "an explicit tenancy-v1 override on a workspace-v1 tenant hides the team-public path identically",
++      async () => {
++        const scope = await scopeOf("a1-other", "team-a1");
++        expect(
++          await service().decideAction(scope, botA1, "read", {
++            policyVersion: "tenancy-v1",
++          }),
++        ).toEqual(DENY_NOT_FOUND);
++        expect(
++          await service().decideAction(scope, botA1, "run", {
++            policyVersion: "tenancy-v1",
++          }),
++        ).toEqual(DENY_NOT_FOUND);
++      },
++    );
++
++    itDb(
++      "an unregistered policy version is refused loudly, never guessed (read and run alike)",
++      async () => {
++        const scope = await scopeOf("a1-other", "team-a1");
++        for (const action of ["read", "run"] as const) {
++          const refusal = await errorMessageOf(() =>
++            service().decideAction(scope, botA1, action, {
++              policyVersion: "workspace-v0-does-not-exist",
++            }),
++          );
++          expect(refusal).toContain("POLICY_REVISION_UNSUPPORTED");
++        }
++      },
++    );
++  },
++);
++
++// ---------------------------------------------------------------------------
++// 纯判定矩阵：在伪造事实层面逐条件钉死门规则（与 RLS 解耦的独立防线）
++// ---------------------------------------------------------------------------
++
++describeDb(
++  "the pure team-public action gate judged on fabricated facts",
++  () => {
++    /** 合法团队公共事实基线（全部门条件成立，run 待依赖检查）。 */
++    const soundFacts = () => ({
++      scope: {
++        tenantId: "tenant-a",
++        workspaceId: "team-a1",
++        principalId: "principal-1",
++      },
++      tenantPolicyRevision: "workspace-v1",
++      resource: {
++        tenantId: "tenant-a",
++        workspaceId: "team-a1",
++        kind: "bot",
++        visibility: "workspace" as const,
++        status: "active" as const,
++        revision: 1,
++        aclEpoch: 1,
++      },
++      workspaceMembership: { status: "active" as const },
++    });
++
++    itDb(
++      "sound team-public facts: run proceeds to the dependency check, management actions are forbidden",
++      () => {
++        const run = decideTeamPublicActionWithoutDependencies(
++          "run",
++          soundFacts(),
++          "workspace-v1",
++        );
++        expect(run).toEqual({ kind: "requires-dependency-check" });
++        expect(
++          decideTeamPublicActionWithoutDependencies(
++            "delete",
++            soundFacts(),
++            "workspace-v1",
++          ),
++        ).toEqual({ kind: "verdict", verdict: forbidden("delete") });
++      },
++    );
++
++    itDb(
++      "cross-tenant facts are denied even though every other gate condition holds (defense line independent of RLS)",
++      () => {
++        const facts = soundFacts();
++        const crossed = {
++          ...facts,
++          resource: { ...facts.resource, tenantId: "tenant-other" },
++        };
++        expect(
++          decideTeamPublicActionWithoutDependencies(
++            "run",
++            crossed,
++            "workspace-v1",
++          ),
++        ).toEqual({ kind: "verdict", verdict: DENY_NOT_FOUND });
++      },
++    );
++
++    itDb(
++      "each gate condition is individually necessary: visibility, liveness, team match, revision sanity, membership, capability version",
++      () => {
++        const base = soundFacts();
++        const cases: readonly [string, object][] = [
++          [
++            "visibility not workspace",
++            { resource: { ...base.resource, visibility: null } },
++          ],
++          [
++            "resource deleted",
++            { resource: { ...base.resource, status: "deleted" as const } },
++          ],
++          [
++            "team mismatch",
++            { resource: { ...base.resource, workspaceId: "team-a2" } },
++          ],
++          [
++            "non-positive revision",
++            { resource: { ...base.resource, revision: 0 } },
++          ],
++          [
++            "membership suspended",
++            { workspaceMembership: { status: "suspended" as const } },
++          ],
++          ["membership missing", { workspaceMembership: { status: null } }],
++          [
++            "tenancy-v1 lacks the capability",
++            { tenantPolicyRevision: "tenancy-v1" },
++          ],
++        ];
++        for (const [name, patch] of cases) {
++          const facts = { ...base, ...patch } as typeof base;
++          expect(
++            decideTeamPublicActionWithoutDependencies(
++              "run",
++              facts,
++              facts.tenantPolicyRevision,
++            ),
++            `gate case must deny: ${name}`,
++          ).toEqual({ kind: "verdict", verdict: DENY_NOT_FOUND });
++        }
++      },
++    );
++
++    itDb(
++      "run exists only for bot kinds; an unresolvable effective version is refused loudly",
++      () => {
++        const facts = soundFacts();
++        expect(
++          decideTeamPublicActionWithoutDependencies(
++            "run",
++            {
++              ...facts,
++              resource: { ...facts.resource, kind: "knowledge_base" },
++            },
++            "workspace-v1",
++          ),
++        ).toEqual({ kind: "verdict", verdict: forbidden("run") });
++        const refusal = (() => {
++          try {
++            decideTeamPublicActionWithoutDependencies(
++              "run",
++              soundFacts(),
++              "workspace-v0-does-not-exist",
++            );
++            return "no-refusal";
++          } catch (error) {
++            return error instanceof Error ? error.message : String(error);
++          }
++        })();
++        expect(refusal).toContain("POLICY_REVISION_UNSUPPORTED");
++      },
++    );
++  },
++);
++
++// ---------------------------------------------------------------------------
++// 信任边界与输入卫生
++// ---------------------------------------------------------------------------
++
++describeDb("trust boundary and input hygiene", () => {
++  itDb("a forged scope is refused on every action path", async () => {
++    const forged = {
++      tenantId: fixture!.isolation.ids["company-a"],
++      workspaceId: fixture!.teamOf("a1-other", "team-a1").workspaceId,
++      principalId: fixture!.teamOf("a1-other", "team-a1").principalId,
++      actorId: fixture!.isolation.ids["user-a1-other"],
++      memberEpoch: 1,
++      aclEpoch: 1,
++      entrypoint: "web",
++    } as never;
++    for (const action of ["read", "run", "delete"] as const) {
++      const refusal = await errorMessageOf(() =>
++        service().decideAction(forged, botA1, action),
++      );
++      expect(refusal).toContain("UNVERIFIED_SCOPE");
++    }
++  });
++
++  itDb(
++    "an unknown action id is refused loudly, never mapped to a deny",
++    async () => {
++      const scope = await scopeOf("a1-other", "team-a1");
++      const refusal = await errorMessageOf(() =>
++        service().decideAction(scope, botA1, "deploy" as never),
++      );
++      expect(refusal).toContain("ACTION_UNSUPPORTED");
++    },
++  );
++
++  itDb(
++    "read verdicts pass the MT008 policy shape through unchanged (allow and deny alike)",
++    async () => {
++      const member = await scopeOf("a1-other", "team-a1");
++      expect(await service().decideAction(member, botA1, "read")).toEqual({
++        outcome: "allow",
++      });
++      const outsider = await scopeOf("a1a2-member", "team-a2");
++      expect(await service().decideAction(outsider, botA1, "read")).toEqual({
++        outcome: "deny",
++        code: "RESOURCE_NOT_FOUND",
++      });
++    },
++  );
++});
+--- /dev/null
++++ b/server/tests/multitenancy/support/team-public-rules.ts
+@@ -0,0 +1,431 @@
++/**
++ * MT009 (Issue #52) team-public action-rules fixture support.
++ *
++ * Builds on the MT002 isolation fixture (two companies, three teams, real
++ * grant rows) exactly like the MT008 support does, and adds only what this
++ * ticket's tests need:
++ *
++ *   - bot / knowledge-base resource rows inserted through the restricted
++ *     operator role (the table's real INSERT policy: tenant context must
++ *     match) — resource creation here is arrangement, and it stays
++ *     policy-legal rather than superuser-bypassed;
++ *   - visibility marking through the real operator UPDATE policy (the MT008
++ *     migration's column-level grant);
++ *   - resource-dependency rows inserted through the restricted operator role
++ *     under the MT009 migration's INSERT policy — the same write surface a
++ *     future dependency-management ticket would use;
++ *   - trusted PlatformScope issuance through the REAL `createScopeResolver`;
++ *
++ * Two offline arrangement stand-ins run over the dedicated setup (superuser)
++ * connection and are disclosed here and in the report, the same honest
++ * stand-in MT005/MT008 used: flipping a team-membership status (the operator
++ * role has no UPDATE policy for other principals' membership rows until a
++ * team-administration write path lands) and setting a tenant's
++ * policy_revision (the tenants table ships no UPDATE policy for restricted
++ * roles at all — version selection is a provisioning-time fact in this
++ * tree). The DECISION side never uses the stand-ins: every
++ * decideAction()/decide() runs through the restricted data role under real
++ * RLS, pinned by a current_user probe in the suite.
++ */
++
++import { and, eq, sql } from "drizzle-orm";
++import { createDatabase, type Database } from "../../../src/db/client";
++import { enterpriseResources } from "../../../src/db/schema";
++import type { PlatformScope } from "../../../src/enterprise/contracts";
++import {
++  type DataDatabase,
++  type DirectoryDatabase,
++  type OperatorDatabase,
++  verifyDataDatabase,
++  verifyDirectoryDatabase,
++  verifyOperatorDatabase,
++} from "../../../src/enterprise/tenancy/connections";
++import {
++  createScopeResolver,
++  type ScopeResolver,
++} from "../../../src/enterprise/tenancy/store";
++import {
++  enterpriseRuntimeDatabaseUrlFrom,
++  enterpriseTestDatabaseUrlFrom,
++} from "../../support/enterprise-database";
++import {
++  createIsolationFixture,
++  type FixtureIdentity,
++  type IsolationFixture,
++} from "./fixture";
++
++/** Stable `ids` keys of the fixture's teams (same shape as MT008's support). */
++export type TeamKey = "team-a1" | "team-a2" | "team-b1";
++
++/** Resource kinds MT009's action rules distinguish. */
++export type TeamResourceKind = "bot" | "knowledge_base" | "document";
++
++/** Dependency kinds the MT009 migration's CHECK admits. */
++export type DependencyKind = "model" | "credential" | "knowledge";
++
++export interface TeamPublicRulesFixture {
++  readonly isolation: IsolationFixture;
++  readonly directory: DirectoryDatabase;
++  readonly data: DataDatabase;
++  readonly operator: OperatorDatabase;
++  readonly resolver: ScopeResolver;
++  /** Issues a real trusted scope for one identity in one (company, team). */
++  scopeFor(
++    identity: FixtureIdentity,
++    selectors: { tenantId: string; workspaceId: string },
++  ): Promise<PlatformScope>;
++  /** Resolves the (tenant, workspace, principal) triple behind one team fact. */
++  teamOf(
++    identity: FixtureIdentity,
++    teamKey: TeamKey,
++  ): { tenantId: string; workspaceId: string; principalId: string };
++  /** Inserts one resource row through the real operator INSERT policy. */
++  createResource(input: {
++    tenantId: string;
++    workspaceId: string;
++    kind: TeamResourceKind;
++    displayName: string;
++  }): Promise<string>;
++  /** Marks one resource's visibility through the real operator UPDATE policy. */
++  markVisibility(input: {
++    tenantId: string;
++    resourceId: string;
++    visibility: "private" | "workspace" | null;
++  }): Promise<void>;
++  /** Inserts one dependency row through the real operator INSERT policy. */
++  addDependency(input: {
++    tenantId: string;
++    resourceId: string;
++    kind: DependencyKind;
++    ref: string;
++    status?: "active" | "invalid";
++  }): Promise<void>;
++  /** Inserts one explicit read grant through the real operator INSERT policy. */
++  addReadGrant(input: {
++    tenantId: string;
++    resourceId: string;
++    principalId: string;
++  }): Promise<void>;
++  /** Reads a resource row's status through the restricted data role. */
++  resourceStatusOf(
++    tenantId: string,
++    resourceId: string,
++  ): Promise<string | null>;
++  /**
++   * Offline arrangement stand-in (superuser, disclosed): soft-deletes one
++   * resource (status='deleted', the domain's only delete form). The operator
++   * role's column-level UPDATE covers visibility (MT008) only — there is no
++   * policy-legal restricted-role path to flip status in this tree. The
++   * DECISION side never uses it: run/read still flow through the restricted
++   * data role under real RLS.
++   */
++  softDeleteResource(input: {
++    tenantId: string;
++    resourceId: string;
++  }): Promise<void>;
++  /**
++   * Offline arrangement stand-in (superuser, disclosed): sets one tenant's
++   * policy_revision. Tenants ship no restricted-role UPDATE policy — version
++   * selection is provisioning-time in this tree.
++   */
++  setTenantPolicyRevision(
++    tenantId: string,
++    revision: "tenancy-v1" | "workspace-v1",
++  ): Promise<void>;
++  /**
++   * Offline arrangement stand-in (superuser, disclosed): flips one team
++   * membership to the requested status, bumping epoch like the MT005/MT008
++   * support.
++   */
++  setTeamMembershipStatus(
++    identity: FixtureIdentity,
++    teamKey: TeamKey,
++    status: "active" | "suspended",
++  ): Promise<void>;
++  /** Pins the connection identity the decision side really runs under. */
++  dataCurrentUser(): Promise<string>;
++  dispose(): Promise<void>;
++}
++
++/**
++ * Creates the MT009 fixture. URLs are resolved up front and refused (never a
++ * development-database fallback) exactly like the MT002/MT008 supports do.
++ */
++export async function createTeamPublicRulesFixture(): Promise<TeamPublicRulesFixture> {
++  const isolation = await createIsolationFixture("bots");
++
++  const directory = await openVerified(
++    enterpriseRuntimeDatabaseUrlFrom("directory"),
++    verifyDirectoryDatabase,
++  );
++  const data = await openVerified(
++    enterpriseRuntimeDatabaseUrlFrom("data"),
++    verifyDataDatabase,
++  );
++  const operator = await openVerified(
++    enterpriseRuntimeDatabaseUrlFrom("operator"),
++    verifyOperatorDatabase,
++  );
++  const setup: Database = createDatabase(enterpriseTestDatabaseUrlFrom(), {
++    max: 1,
++  });
++
++  const sessions = new WeakMap<Request, FixtureIdentity>();
++  const resolver: ScopeResolver = createScopeResolver(directory, {
++    authenticate: async (request) => {
++      const identity = sessions.get(request);
++      if (!identity) return null;
++      const fact = isolation.identities[identity];
++      if (fact.kind !== "human" || !fact.userId) return null;
++      return { actorId: fact.userId, entrypoint: "web" };
++    },
++    selectTenant: (request) => request.headers.get("x-openbot-tenant"),
++    selectWorkspace: (request) => request.headers.get("x-openbot-workspace"),
++  });
++
++  const teamOf = (
++    identity: FixtureIdentity,
++    teamKey: TeamKey,
++  ): { tenantId: string; workspaceId: string; principalId: string } => {
++    for (const company of isolation.identities[identity].companies) {
++      const team = company.teams.find((entry) => entry.teamKey === teamKey);
++      if (team) {
++        return {
++          tenantId: company.tenantId,
++          workspaceId: team.workspaceId,
++          principalId: company.principalId,
++        };
++      }
++    }
++    throw new Error(`TEAM_FACT_MISSING:${identity}:${teamKey}`);
++  };
++
++  let resourceCounter = 0;
++  let disposed = false;
++  const fixture: TeamPublicRulesFixture = {
++    isolation,
++    directory,
++    data,
++    operator,
++    resolver,
++
++    async scopeFor(identity, selectors) {
++      const request = new Request("https://mt009-team-public.invalid/", {
++        headers: {
++          "x-openbot-tenant": selectors.tenantId,
++          "x-openbot-workspace": selectors.workspaceId,
++        },
++      });
++      sessions.set(request, identity);
++      return resolver.resolve(request);
++    },
++
++    teamOf,
++
++    async createResource({ tenantId, workspaceId, kind, displayName }) {
++      // The operator role's INSERT policy on enterprise_resources requires
++      // app.tenant_id to match the row — arrangement stays policy-legal.
++      const resourceId = `${isolation.idPrefix}-res-${resourceCounter++}`;
++      await operator.transaction(async (tx) => {
++        await tx.execute(sql`set local lock_timeout = '2s'`);
++        await tx.execute(sql`set local statement_timeout = '5s'`);
++        await tx.execute(
++          sql`select set_config('app.tenant_id', ${tenantId}, true)`,
++        );
++        await tx
++          .insert(enterpriseResources)
++          .values({ tenantId, workspaceId, id: resourceId, kind, displayName });
++      });
++      return resourceId;
++    },
++
++    async markVisibility({ tenantId, resourceId, visibility }) {
++      // Same policy-legal write path the MT008 support uses: the operator
++      // UPDATE policy pins app.tenant_id AND app.resource_id to the row.
++      await operator.transaction(async (tx) => {
++        await tx.execute(sql`set local lock_timeout = '2s'`);
++        await tx.execute(sql`set local statement_timeout = '5s'`);
++        await tx.execute(
++          sql`select set_config('app.tenant_id', ${tenantId}, true), set_config('app.resource_id', ${resourceId}, true)`,
++        );
++        const rows = await tx
++          .update(enterpriseResources)
++          .set({ visibility })
++          .where(
++            and(
++              eq(enterpriseResources.tenantId, tenantId),
++              eq(enterpriseResources.id, resourceId),
++            ),
++          )
++          .returning({ id: enterpriseResources.id });
++        if (rows.length !== 1) {
++          throw new Error(
++            `VISIBILITY_MARK_FAILED:${tenantId}:${resourceId}:${rows.length}`,
++          );
++        }
++      });
++    },
++
++    async addDependency({ tenantId, resourceId, kind, ref, status }) {
++      // The MT009 migration grants operator INSERT on the dependency table
++      // (tenant-scoped policy) — the same surface a management write path
++      // would use; no superuser bypass here either. Raw SQL because the
++      // drizzle schema file is deliberately untouched by this ticket
++      // (the table arrives through the MT009 migration task only).
++      await operator.transaction(async (tx) => {
++        await tx.execute(sql`set local lock_timeout = '2s'`);
++        await tx.execute(sql`set local statement_timeout = '5s'`);
++        await tx.execute(
++          sql`select set_config('app.tenant_id', ${tenantId}, true)`,
++        );
++        await tx.execute(sql`
++          insert into enterprise_resource_dependencies
++            (tenant_id, resource_id, dependency_kind, dependency_ref, status)
++          values (${tenantId}, ${resourceId}, ${kind}, ${ref}, ${status ?? "active"})
++        `);
++      });
++    },
++
++    async addReadGrant({ tenantId, resourceId, principalId }) {
++      // The grants table's INSERT policy is tenant-scoped; the action column
++      // is pinned to 'read' by the enterprise_grant_action CHECK — which is
++      // exactly the fact acceptance 3 pins at the schema level.
++      await operator.transaction(async (tx) => {
++        await tx.execute(sql`set local lock_timeout = '2s'`);
++        await tx.execute(sql`set local statement_timeout = '5s'`);
++        await tx.execute(
++          sql`select set_config('app.tenant_id', ${tenantId}, true)`,
++        );
++        await tx.execute(sql`
++          insert into enterprise_resource_grants
++            (tenant_id, resource_id, principal_id, action)
++          values (${tenantId}, ${resourceId}, ${principalId}, 'read')
++        `);
++      });
++    },
++
++    async resourceStatusOf(tenantId, resourceId) {
++      const rows = await data.transaction(async (tx) => {
++        await tx.execute(
++          sql`select set_config('app.tenant_id', ${tenantId}, true)`,
++        );
++        return tx
++          .select({ status: enterpriseResources.status })
++          .from(enterpriseResources)
++          .where(
++            and(
++              eq(enterpriseResources.tenantId, tenantId),
++              eq(enterpriseResources.id, resourceId),
++            ),
++          )
++          .limit(1);
++      });
++      return rows[0]?.status ?? null;
++    },
++
++    async softDeleteResource({ tenantId, resourceId }) {
++      await setup.transaction(async (tx) => {
++        await tx.execute(sql`set local lock_timeout = '2s'`);
++        await tx.execute(sql`set local statement_timeout = '5s'`);
++        await tx.execute(
++          sql`select set_config('app.tenant_id', ${tenantId}, true), set_config('app.resource_id', ${resourceId}, true)`,
++        );
++        const updated = await tx.execute(sql`
++          update enterprise_resources set status = 'deleted'
++          where tenant_id = ${tenantId} and id = ${resourceId}
++        `);
++        const changed = Number(
++          (updated as unknown as { count?: number }).count ?? 0,
++        );
++        if (changed !== 1) {
++          throw new Error(
++            `RESOURCE_SOFT_DELETE_FAILED:${tenantId}:${resourceId}:${changed}`,
++          );
++        }
++      });
++    },
++
++    async setTenantPolicyRevision(tenantId, revision) {
++      // Disclosed superuser stand-in: enterprise_tenants ships no UPDATE
++      // policy for any restricted role; policy_revision is chosen at
++      // provisioning time in this tree. Never used on the decision side.
++      await setup.transaction(async (tx) => {
++        await tx.execute(sql`set local lock_timeout = '2s'`);
++        await tx.execute(sql`set local statement_timeout = '5s'`);
++        const updated = await tx.execute(sql`
++          update enterprise_tenants
++          set policy_revision = ${revision}
++          where id = ${tenantId}
++        `);
++        const changed = Number(
++          (updated as unknown as { count?: number }).count ?? 0,
++        );
++        if (changed !== 1) {
++          throw new Error(
++            `TENANT_POLICY_REVISION_FAILED:${tenantId}:${revision}:${changed}`,
++          );
++        }
++      });
++    },
++
++    async setTeamMembershipStatus(identity, teamKey, status) {
++      const team = teamOf(identity, teamKey);
++      await setup.transaction(async (tx) => {
++        await tx.execute(
++          sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify([
++            "enterprise",
++            "workspace-membership",
++            team.tenantId,
++            team.workspaceId,
++            team.principalId,
++          ])}, 0))`,
++        );
++        await tx.execute(sql`
++          update enterprise_workspace_memberships
++          set status = ${status},
++            epoch = (select coalesce(max(epoch), 0) + 1
++                     from enterprise_workspace_memberships
++                     where tenant_id = ${team.tenantId}
++                       and workspace_id = ${team.workspaceId}
++                       and principal_id = ${team.principalId})
++          where tenant_id = ${team.tenantId}
++            and workspace_id = ${team.workspaceId}
++            and principal_id = ${team.principalId}
++        `);
++      });
++    },
++
++    async dataCurrentUser() {
++      const rows = (await data.execute(
++        sql`select current_user as current_user`,
++      )) as unknown as Record<string, unknown>[];
++      return String(rows[0]?.current_user ?? "");
++    },
++
++    async dispose() {
++      if (disposed) return;
++      disposed = true;
++      // Dependency rows cascade with their resource rows (MT009 FK ON DELETE
++      // cascade) — nothing extra to clean beyond the isolation fixture.
++      await setup.$client.close().catch(() => {});
++      await operator.$client.close().catch(() => {});
++      await data.$client.close().catch(() => {});
++      await directory.$client.close().catch(() => {});
++      await isolation.dispose();
++    },
++  };
++  return fixture;
++}
++
++async function openVerified<T extends Database>(
++  url: string,
++  verify: (database: Database) => Promise<T>,
++): Promise<T> {
++  const candidate = createDatabase(url, { max: 1 });
++  try {
++    return await verify(candidate);
++  } catch (error) {
++    await candidate.$client.close();
++    throw error;
++  }
++}

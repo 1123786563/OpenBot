@@ -1,0 +1,19 @@
+bun test v1.4.2 (50a8a8387)
+
+server/tests/multitenancy/membership-model.test.ts:
+33 |     }
+34 |     throw new Error(
+35 |       `expected a PostgreSQL error with a SQLSTATE and message, got: ${String(error)}`,
+36 |     );
+37 |   }
+38 |   throw new Error("expected the statement to be rejected, but it succeeded");
+                 ^
+error: expected the statement to be rejected, but it succeeded
+      at rejectionOf (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt004/server/tests/support/pg-errors.ts:38:13)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt004/server/tests/multitenancy/membership-model.test.ts:411:29)
+(fail) issue #47 criterion 1: one membership per (tenant, workspace, principal) > a duplicate (tenant, workspace, principal) insert is rejected by the database [3.48ms]
+
+ 0 pass
+ 14 filtered out
+ 1 fail
+Ran 1 test across 1 file. [696.00ms]

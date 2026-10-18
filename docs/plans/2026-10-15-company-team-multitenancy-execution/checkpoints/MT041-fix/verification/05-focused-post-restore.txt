@@ -1,0 +1,5 @@
+# Post-restore focused re-run (proves mutation restore): must be 23/0 again
+ 23 pass
+ 0 fail
+ 137 expect() calls
+Ran 23 tests across 1 file. [2.77s]

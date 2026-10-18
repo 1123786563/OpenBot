@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "tool": "multitenancy-migrate-test",
+  "taskId": "MT076",
+  "planDigest": "2bb77ef4d1805a927228fb049156788fc180d81ed43ca8e571bb73a3b46426f7",
+  "steps": [
+    {
+      "number": 1,
+      "name": "0001_mt076_membership_role_operator_grant.sql",
+      "statementDigest": "391b48dbea4b62a7683b20a0c6708b267a2c3404a054c9aa7652703cc5fb99d3",
+      "statementCount": 1
+    }
+  ]
+}

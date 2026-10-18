@@ -1,0 +1,14 @@
+# MUT18 retest (F1): release holder-match removed -> new 23-case suite must FAIL (mutation killed)
+# mutation: WHERE drops eq(claimedByKind)+eq(claimedBy)+finishedAt-is-null, leaving only kind+object_id
+# pre-mutation service hash: 45d1b500f66fee054a6030b860d97799434849363a39d56dde3348c3a7acf454  src/enterprise/tenancy/job-ownership.ts
+error: expected rejection with sentinel code JOB_LEASE_NOT_HELD, got resolve
+(fail) MT041 AC2: leases are held only by same-ownership executors > refuses a release by another executor or with no holder, writing nothing [43.63ms]
+(fail) MT041 AC2: leases are held only by same-ownership executors > refuses a release by another executor or with no holder, writing nothing [43.63ms]
+ 22 pass
+ 1 fail
+Ran 23 tests across 1 file. [2.15s]
+# post-restore service hash (must equal pre-mutation hash):
+45d1b500f66fee054a6030b860d97799434849363a39d56dde3348c3a7acf454  src/enterprise/tenancy/job-ownership.ts
+# RESTORE-VERIFIED if the two sha lines below match:
+45d1b500f66fee054a6030b860d97799434849363a39d56dde3348c3a7acf454  src/enterprise/tenancy/job-ownership.ts
+45d1b500f66fee054a6030b860d97799434849363a39d56dde3348c3a7acf454  src/enterprise/tenancy/job-ownership.ts

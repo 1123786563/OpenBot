@@ -1,0 +1,7 @@
+(pass) MT042 — platform scan scope rebuild (Issue #85) > revocation and malformed input (machine semantics) > refuses a malformed key deterministically and never echoes it [2.75ms]
+
+ 15 pass
+ 0 fail
+ 105 expect() calls
+Ran 15 tests across 1 file. [412.00ms]
+focused-exit:0

@@ -1,0 +1,3 @@
+# MT122 typecheck (4th takeover, 2026-10-18 02:31:56, final bytes)
+# command: cd server && bun run typecheck (tsc --noEmit)
+tsc-exit=0
