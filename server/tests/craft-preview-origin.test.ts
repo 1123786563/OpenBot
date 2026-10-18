@@ -21,6 +21,7 @@ import {
   createPreviewOrigin,
   type ServePreview,
 } from "../src/craft/preview-origin";
+import { createPreviewPassCodec } from "../src/craft/preview-pass";
 import {
   createPreviewTickets,
   PREVIEW_SESSION_COOKIE,
@@ -53,6 +54,15 @@ type OriginOverrides = Partial<{
   previewOriginEnabled: boolean;
   previewOriginTemplate: string;
 }>;
+
+/** The pass codec the suite's origins derive from the SAME deps.secret — the
+ * fixtures plant THIS shape as the preview pass, the signed value the gate now
+ * verifies (the pre-repair fixtures planted the bare session id). */
+const passCodec = createPreviewPassCodec(SECRET);
+const passFor = (sessionId: string, userId = USER_ID) =>
+  passCodec.issue(sessionId, userId);
+const passCookie = (sessionId: string, userId = USER_ID) =>
+  `${PREVIEW_SESSION_COOKIE}=${passFor(sessionId, userId)}`;
 
 function originWith(
   overrides: OriginOverrides = {},
@@ -1130,7 +1140,7 @@ describe("the preview origin entry: ticket redemption + the D9 cookie", () => {
       const response = await origin.handlePreviewRequest(
         SESSION_ID,
         new Request(`${address}/detail?ticket=5`, {
-          headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+          headers: { cookie: passCookie(SESSION_ID) },
         }),
       );
       expect(response.status).toBe(200);
@@ -1156,7 +1166,7 @@ describe("the preview origin entry: ticket redemption + the D9 cookie", () => {
       const response = await origin.handlePreviewRequest(
         SESSION_ID,
         new Request(`${address}/detail?ticket=5`, {
-          headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+          headers: { cookie: passCookie(SESSION_ID) },
         }),
       );
       expect(response.status).toBe(200);
@@ -1248,7 +1258,7 @@ describe("fix-ocr22 #1: a pass-holder's entry-root ?ticket= is a business parame
     const response = await origin.handlePreviewRequest(
       SESSION_ID,
       new Request(`${address}/?ticket=5`, {
-        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+        headers: { cookie: passCookie(SESSION_ID) },
       }),
     );
     expect(response.status).toBe(200);
@@ -1266,7 +1276,7 @@ describe("fix-ocr22 #1: a pass-holder's entry-root ?ticket= is a business parame
     const response = await origin.handlePreviewRequest(
       SESSION_ID,
       new Request(`${address}?ticket=5`, {
-        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+        headers: { cookie: passCookie(SESSION_ID) },
       }),
     );
     expect(response.status).toBe(200);
@@ -1311,7 +1321,7 @@ describe("fix-ocr22 #1: a pass-holder's entry-root ?ticket= is a business parame
     const response = await origin.handlePreviewRequest(
       SESSION_ID,
       new Request(`${address}/`, {
-        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+        headers: { cookie: passCookie(SESSION_ID) },
       }),
     );
     expect(response.status).toBe(200);
@@ -1640,7 +1650,7 @@ describe("the preview origin's proxied traffic (cookie gate + servePreview seam)
       new Request(`${address}/api/probe?x=1&y=2`, {
         method: "POST",
         headers: {
-          cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}; other=irrelevant`,
+          cookie: `${PREVIEW_SESSION_COOKIE}=${passFor(SESSION_ID)}; other=irrelevant`,
           "content-type": "application/json",
         },
         body: "{}",
@@ -1655,7 +1665,7 @@ describe("the preview origin's proxied traffic (cookie gate + servePreview seam)
         appPath: `/${label}/api/probe`,
         query: "?x=1&y=2",
         method: "POST",
-        cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}; other=irrelevant`,
+        cookie: `${passCookie(SESSION_ID)}; other=irrelevant`,
       },
     ]);
   });
@@ -1670,7 +1680,7 @@ describe("the preview origin's proxied traffic (cookie gate + servePreview seam)
       const response = await origin.handlePreviewRequest(
         SESSION_ID,
         new Request(`${address}${suffix}`, {
-          headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+          headers: { cookie: passCookie(SESSION_ID) },
         }),
       );
       expect(response.status).toBe(200);
@@ -1694,7 +1704,7 @@ describe("the preview origin's proxied traffic (cookie gate + servePreview seam)
     const response = await origin.handlePreviewRequest(
       SESSION_ID,
       new Request(`${address}/dashboard/settings?tab=2`, {
-        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+        headers: { cookie: passCookie(SESSION_ID) },
       }),
     );
     expect(response.status).toBe(200);
@@ -1753,7 +1763,7 @@ describe("the preview origin's proxied traffic (cookie gate + servePreview seam)
     const response = await origin.handlePreviewRequest(
       SESSION_ID,
       new Request(`${address}/`, {
-        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${OTHER_SESSION_ID}` },
+        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${passFor(OTHER_SESSION_ID)}` },
       }),
     );
     expect(response.status).toBe(401);
@@ -1795,7 +1805,7 @@ describe("the preview origin's proxied traffic (cookie gate + servePreview seam)
     const response = await closed.handlePreviewRequest(
       SESSION_ID,
       new Request(`${address}/`, {
-        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+        headers: { cookie: passCookie(SESSION_ID) },
       }),
     );
     expect(response.status).toBe(503);
@@ -1856,7 +1866,7 @@ describe("fix-ocr20 #3: the cookie gate accepts the pass wherever it rides in th
       SESSION_ID,
       new Request(`${address}/`, {
         headers: {
-          cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}; ${PREVIEW_SESSION_COOKIE}=shadow-garbage`,
+          cookie: `${PREVIEW_SESSION_COOKIE}=${passFor(SESSION_ID)}; ${PREVIEW_SESSION_COOKIE}=shadow-garbage`,
         },
       }),
     );
@@ -1884,7 +1894,7 @@ describe("fix-ocr20 #3: the cookie gate accepts the pass wherever it rides in th
       SESSION_ID,
       new Request(`${address}/`, {
         headers: {
-          cookie: `${PREVIEW_SESSION_COOKIE}=${OTHER_SESSION_ID}; ${PREVIEW_SESSION_COOKIE}=${SESSION_ID}`,
+          cookie: `${PREVIEW_SESSION_COOKIE}=${passFor(OTHER_SESSION_ID)}; ${PREVIEW_SESSION_COOKIE}=${passFor(SESSION_ID)}`,
         },
       }),
     );
@@ -1905,8 +1915,8 @@ describe("fix-ocr20 #3: the cookie gate accepts the pass wherever it rides in th
       OTHER_SESSION_ID,
       new Request(`${addressB}/api/things`, {
         headers: {
-          // A's deep shadow (value = A's id) first, B's pass after.
-          cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}; ${PREVIEW_SESSION_COOKIE}=${OTHER_SESSION_ID}`,
+          // A's deep shadow (A's own signed pass) first, B's pass after.
+          cookie: `${PREVIEW_SESSION_COOKIE}=${passFor(SESSION_ID)}; ${PREVIEW_SESSION_COOKIE}=${passFor(OTHER_SESSION_ID)}`,
         },
       }),
     );
@@ -1928,7 +1938,7 @@ describe("fix-ocr20 #3: the cookie gate accepts the pass wherever it rides in th
       SESSION_ID,
       new Request(`${address}/`, {
         headers: {
-          cookie: `${PREVIEW_SESSION_COOKIE}=${OTHER_SESSION_ID}; ${PREVIEW_SESSION_COOKIE}=shadow-garbage; theme=dark`,
+          cookie: `${PREVIEW_SESSION_COOKIE}=${passFor(OTHER_SESSION_ID)}; ${PREVIEW_SESSION_COOKIE}=shadow-garbage; theme=dark`,
         },
       }),
     );
@@ -1955,5 +1965,296 @@ describe("hasSession (fix-ocr13: the same-origin probe's registry half)", () => 
     // row survives (durable); its label does not — exactly the verdict the
     // pane's probe exists to read.
     expect(originWith().hasSession(SESSION_ID)).toBe(false);
+  });
+});
+
+// ── #358 repair Task 2: the gate verifies a SIGNED pass, never a bare id ────
+//
+// Before the repair the pass WAS the session id: a request that knew the
+// preview address and the session id presented `openbot_preview_session=<id>`
+// and the gate compared it equal — no ticket redeemed, no signature, AC4
+// bypassed. The gate now runs the pass codec: the cookie must be a pass the
+// deployment signed for (sessionId, userId) at ticket redemption, the userId
+// rides the verified claim to the proxy, and the store re-checks the owner.
+// The forged shapes below are exactly the Review Focus inputs 1–3.
+describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
+  /** The codec the origin derives from the SAME deployment secret (deps.secret). */
+  const passCodec = createPreviewPassCodec(SECRET);
+  const passFor = (sessionId: string, userId = USER_ID) =>
+    passCodec.issue(sessionId, userId);
+  const passCookie = (sessionId: string, userId = USER_ID) =>
+    `${PREVIEW_SESSION_COOKIE}=${passFor(sessionId, userId)}`;
+
+  function recordingServe() {
+    const calls: { sessionId: string; userId: string; appPath: string }[] = [];
+    const servePreview: ServePreview = async ({
+      sessionId,
+      userId,
+      appPath,
+    }) => {
+      calls.push({ sessionId, userId, appPath });
+      return new Response("proxied-body", { status: 200 });
+    };
+    return { calls, servePreview };
+  }
+
+  test("Review Focus 1: a forged plaintext session-id cookie is 401 on GET and POST, and servePreview is never reached", async () => {
+    const { calls, servePreview } = recordingServe();
+    const origin = originWith(
+      { previewOriginTemplate: TEMPLATE },
+      {},
+      undefined,
+      servePreview,
+    );
+    const address = origin.originFor(SESSION_ID);
+
+    for (const method of ["GET", "POST"]) {
+      const response = await origin.handlePreviewRequest(
+        SESSION_ID,
+        new Request(`${address}/api/things`, {
+          method,
+          headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+          body: method === "POST" ? "{}" : undefined,
+        }),
+      );
+      expect(`${method}: ${response.status}`).toBe(`${method}: 401`);
+    }
+    // The bypass is closed at the seam that matters: zero proxy dials.
+    expect(calls).toEqual([]);
+  });
+
+  test("Review Focus 1 (dev form): the same forged cookie on 127.0.0.1/<label> is 401", async () => {
+    const { calls, servePreview } = recordingServe();
+    const origin = originWith({}, { PORT: "3001" }, undefined, servePreview);
+    const address = origin.originFor(SESSION_ID);
+
+    const response = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/api/things`, {
+        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+      }),
+    );
+    expect(response.status).toBe(401);
+    expect(calls).toEqual([]);
+  });
+
+  test("redemption plants a SIGNED pass — the cookie value is verifiable and is NOT the session id", async () => {
+    const { store } = fakeStore();
+    const previewTickets = createPreviewTickets({ store });
+    const origin = originWith(
+      { previewOriginTemplate: TEMPLATE },
+      {},
+      previewTickets,
+    );
+    const address = origin.originFor(SESSION_ID);
+    const { ticket } = previewTickets.issuePreviewTicket({
+      sessionId: SESSION_ID,
+      userId: USER_ID,
+      previewHost: new URL(address).host,
+    });
+
+    const redemption = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/?ticket=${encodeURIComponent(ticket)}`),
+    );
+    expect(redemption.status).toBe(302);
+    const cookie = redemption.headers.get("set-cookie") ?? "";
+    const planted = cookie
+      .split(";")[0]
+      ?.split("=")
+      .slice(1)
+      .join("=") ?? "";
+    // The repair's core: the planted value is a deployment-signed pass bound
+    // to (SESSION_ID, USER_ID) — not the raw session id the old code echoed.
+    expect(planted).not.toBe(SESSION_ID);
+    expect(passCodec.verify(SESSION_ID, planted)).toEqual({ userId: USER_ID });
+
+    // And the planted pass opens the gate it was minted for.
+    const { calls, servePreview } = recordingServe();
+    const gated = originWith(
+      { previewOriginTemplate: TEMPLATE },
+      {},
+      undefined,
+      servePreview,
+    );
+    const gatedResponse = await gated.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/api/things`, {
+        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${planted}` },
+      }),
+    );
+    expect(gatedResponse.status).toBe(200);
+    // The verified userId claim rides to the proxy — the ownership re-check's input.
+    expect(calls).toEqual([
+      { sessionId: SESSION_ID, userId: USER_ID, appPath: "/api/things" },
+    ]);
+  });
+
+  test("Review Focus 2: a valid pass with one flipped MAC byte is 401 on the HTTP gate and verifyPass both", async () => {
+    const { calls, servePreview } = recordingServe();
+    const origin = originWith(
+      { previewOriginTemplate: TEMPLATE },
+      {},
+      undefined,
+      servePreview,
+    );
+    const address = origin.originFor(SESSION_ID);
+
+    const parts = passFor(SESSION_ID).split(".");
+    const mac = parts[2] ?? "";
+    const flipped = `${mac[0] === "A" ? "B" : "A"}${mac.slice(1)}`;
+    const tampered = `${parts[0]}.${parts[1]}.${flipped}`;
+
+    const response = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/`, {
+        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${tampered}` },
+      }),
+    );
+    expect(response.status).toBe(401);
+    expect(calls).toEqual([]);
+    // The same judgment the HMR twin consumes (#363's seam): one verifyPass,
+    // both surfaces.
+    expect(
+      origin.verifyPass(
+        SESSION_ID,
+        new Request(`${address}/`, {
+          headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${tampered}` },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  test("Review Focus 2: a pass minted under another deployment key is 401 (cross-key replay)", async () => {
+    const { calls, servePreview } = recordingServe();
+    const origin = originWith(
+      { previewOriginTemplate: TEMPLATE },
+      {},
+      undefined,
+      servePreview,
+    );
+    const address = origin.originFor(SESSION_ID);
+    const foreign = createPreviewPassCodec("another-deployment-key").issue(
+      SESSION_ID,
+      USER_ID,
+    );
+
+    const response = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/`, {
+        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${foreign}` },
+      }),
+    );
+    expect(response.status).toBe(401);
+    expect(calls).toEqual([]);
+  });
+
+  test("Review Focus 3: the verified userId rides to the seam — ownership is the SEAM's re-check, and its refusal propagates", async () => {
+    // Where the owner re-check lives is the seam contract: the origin's gate
+    // verifies the signature and hands the verified claim to servePreview
+    // (the real one is createPreviewProxy, whose findSession(sessionId,
+    // userId) miss is a 404 — pinned at the proxy seam in the rejection
+    // suite). This test pins the GLUE: a seam doing the real seam's re-check
+    // answers 404 through the origin, for a pass whose signature is still
+    // perfectly valid.
+    const owners = new Map([[SESSION_ID, USER_ID]]);
+    const calls: { sessionId: string; userId: string; status: number }[] = [];
+    const servePreview: ServePreview = async ({ sessionId, userId }) => {
+      const status = owners.get(sessionId) === userId ? 200 : 404;
+      calls.push({ sessionId, userId, status });
+      return new Response(
+        JSON.stringify({ error: "This preview session no longer exists." }),
+        { status },
+      );
+    };
+    const origin = originWith(
+      { previewOriginTemplate: TEMPLATE },
+      {},
+      undefined,
+      servePreview,
+    );
+    const address = origin.originFor(SESSION_ID);
+
+    const before = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/`, { headers: { cookie: passCookie(SESSION_ID) } }),
+    );
+    expect(before.status).toBe(200);
+
+    // Reassigned after issue: the signature still verifies, the owner does not.
+    owners.set(SESSION_ID, "u2");
+    const after = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/`, { headers: { cookie: passCookie(SESSION_ID) } }),
+    );
+    expect(after.status).toBe(404);
+    // The verified claim (the ORIGINAL owner) is what the seam saw both times.
+    expect(calls).toEqual([
+      { sessionId: SESSION_ID, userId: USER_ID, status: 200 },
+      { sessionId: SESSION_ID, userId: USER_ID, status: 404 },
+    ]);
+  });
+
+  test("verifyPass accepts the valid candidate among same-named shadows and refuses a jar without one", () => {
+    const origin = originWith({ previewOriginTemplate: TEMPLATE });
+    const address = origin.originFor(SESSION_ID);
+    const withShadow = new Request(`${address}/`, {
+      headers: {
+        // RFC 6265 §5.4 wire order: the deep-path shadow rides FIRST — the
+        // valid pass behind it must still be found (fix-ocr20 #3's jar rule,
+        // now signature-shaped).
+        cookie: `${PREVIEW_SESSION_COOKIE}=planted-shadow; ${passCookie(SESSION_ID)}`,
+      },
+    });
+    expect(origin.verifyPass(SESSION_ID, withShadow)).toEqual({
+      userId: USER_ID,
+    });
+
+    const shadowOnly = new Request(`${address}/`, {
+      headers: { cookie: `${PREVIEW_SESSION_COOKIE}=planted-shadow` },
+    });
+    expect(origin.verifyPass(SESSION_ID, shadowOnly)).toBeNull();
+  });
+
+  test("Review Focus 4: two dev /<label> passes coexist — each serves its own session, and cross-session passes are refused", async () => {
+    const calls: { sessionId: string; userId: string; appPath: string }[] = [];
+    const servePreview: ServePreview = async ({
+      sessionId,
+      userId,
+      appPath,
+    }) => {
+      calls.push({ sessionId, userId, appPath });
+      return new Response("proxied-body", { status: 200 });
+    };
+    const origin = originWith({}, { PORT: "3001" }, undefined, servePreview);
+    const addressA = origin.originFor(SESSION_ID);
+    const addressB = origin.originFor(OTHER_SESSION_ID);
+    const labelA = new URL(addressA).pathname;
+    const labelB = new URL(addressB).pathname;
+
+    // Both jars ride together (the dev form's scoped-path coexistence, R-9).
+    const bothCookies = `${passCookie(SESSION_ID)}; ${passCookie(OTHER_SESSION_ID)}`;
+    const okA = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`http://127.0.0.1:3001${labelA}/api/things`, {
+        headers: { cookie: bothCookies },
+      }),
+    );
+    const okB = await origin.handlePreviewRequest(
+      OTHER_SESSION_ID,
+      new Request(`http://127.0.0.1:3001${labelB}/api/things`, {
+        headers: { cookie: bothCookies },
+      }),
+    );
+    expect(okA.status).toBe(200);
+    expect(okB.status).toBe(200);
+    expect(calls).toEqual([
+      { sessionId: SESSION_ID, userId: USER_ID, appPath: `${labelA}/api/things` },
+      {
+        sessionId: OTHER_SESSION_ID,
+        userId: USER_ID,
+        appPath: `${labelB}/api/things`,
+      },
+    ]);
   });
 });

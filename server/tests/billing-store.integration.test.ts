@@ -14,6 +14,18 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  * Every statement is parameter-bound through drizzle's `sql` template.
  */
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
+/**
+ * The projection fold's ownership shape (10.3): a webhook/sync write names no owner and no
+ * allowance period — the four columns stay NULL on this path, because only the activation's
+ * stamp may decide ownership. Spelled into every exact-row assertion below.
+ */
+const UNOWNED_PROJECTION = {
+  ownerPayerKind: null,
+  ownerPayerId: null,
+  allowancePeriodStart: null,
+  allowancePeriodEnd: null,
+} as const;
+
 const store = createBillingStore(database);
 const prefix = `billing-${randomUUID().slice(0, 8)}`;
 
@@ -54,7 +66,12 @@ test("subscription upserts converge and the status check holds", async () => {
   await store.upsertSubscription({ ...row, status: "terminated" });
 
   expect(await store.readSubscriptions(externalId)).toEqual([
-    { ...row, status: "terminated", updatedAt: expect.any(Date) },
+    {
+      ...row,
+      status: "terminated",
+      updatedAt: expect.any(Date),
+      ...UNOWNED_PROJECTION,
+    },
   ]);
 
   // A status outside the four the sync reads is the database's problem to refuse. The check fires
@@ -224,7 +241,7 @@ test("a final inbox failure rolls back staged customer and subscription projecti
   expect(await store.applyWebhookProjection(input)).toBe("processed");
   expect(await store.applyWebhookProjection(input)).toBe("duplicate");
   expect(await store.readSubscriptions(externalId)).toEqual([
-    { ...subscription, updatedAt: expect.any(Date) },
+    { ...subscription, updatedAt: expect.any(Date), ...UNOWNED_PROJECTION },
   ]);
   expect(await store.hasWebhookEvent(event.provider, event.eventId)).toBe(true);
 });
@@ -307,7 +324,11 @@ test("concurrent duplicate deliveries retain only the durable winner's projectio
   expect([...results].sort()).toEqual(["duplicate", "processed"]);
   const winner = deliveries[results.indexOf("processed")]!;
   expect(await store.readSubscriptions(externalId)).toEqual([
-    { ...winner.subscriptions[0], updatedAt: expect.any(Date) },
+    {
+      ...winner.subscriptions[0],
+      updatedAt: expect.any(Date),
+      ...UNOWNED_PROJECTION,
+    },
   ]);
   const customers = await database
     .select({ name: billingCustomers.name })

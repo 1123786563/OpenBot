@@ -1,5 +1,5 @@
 {
-  "id": "b99a758f-9126-4226-9750-3bc77175903d",
+  "id": "f4ce9a49-4684-4419-a0e5-eac8f3512064",
   "prevId": "2f1298f0-539d-4864-a4cd-2763cb225613",
   "version": "7",
   "dialect": "postgresql",
@@ -4276,12 +4276,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'yours'"
-        },
-        "icon": {
-          "name": "icon",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "category": {
           "name": "category",
@@ -17313,6 +17307,36 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capability": {
+          "name": "capability",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "snapshot_version": {
+          "name": "snapshot_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rate_version": {
+          "name": "rate_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -19522,8 +19546,8 @@
         "mcp",
         "mcp_oauth_client",
         "mcp_user_token",
-        "bot_service",
         "gateway_admin",
+        "bot_service",
         "credit_service"
       ]
     },

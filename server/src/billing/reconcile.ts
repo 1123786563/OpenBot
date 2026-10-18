@@ -7,6 +7,7 @@ import {
 } from "../db/schema/credit-reservations";
 import { creditGrants, creditLedger } from "../db/schema/credits";
 import { paymentEvents, paymentOrders } from "../db/schema/payment";
+import { payerKey, type PayerKind } from "./payer";
 import type { PaymentOrderRecord } from "./payments/types";
 import type { ReconcileFinding, ReconcileReport } from "./types";
 import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./types";
@@ -27,8 +28,13 @@ import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./types";
  *    only a half-committed past or manual surgery breaks the pair); the fact's channel
  *    transaction must be the one the order names (a swapped id is double-payment evidence);
  *    and every order whose activation APPLIED must have a live subscription row in the
- *    projection (an applied order with no live row means entitlement was granted and then the
- *    projection lost it — the exact drift a person experiences as "paid but shown as free").
+ *    projection ATTRIBUTED TO THE ORDER'S OWN ACCOUNT (10.3, AC14): an applied order whose
+ *    owner pair holds no live row means its entitlement was granted and then lost or taken
+ *    over by another account's row — the exact drift a person experiences as "paid but shown
+ *    as free". An order whose paid period has already ended is history, not drift (a later
+ *    repurchase legitimately re-stamps the one subscription row to the new owner); orders
+ *    written before ownership existed are matched the old deployment-wide way (Q23 forbids
+ *    guessing their owner).
  *
  * 2. The credit identity, per customer:
  *
@@ -88,6 +94,11 @@ type PaidOrderRow = {
   activationState: PaymentOrderRecord["activationState"];
   paidAt: Date | null;
   terminalAt: Date | null;
+  /** The account the order belongs to (10.3); null for rows written before ownership existed. */
+  ownerPayerKind: PayerKind | null;
+  ownerPayerId: string | null;
+  /** The paid window's end: an order inside it is "paid-up", and its account must show it. */
+  periodEnd: Date | null;
 };
 type PaidFactRow = {
   id: string;
@@ -186,6 +197,9 @@ export function createReconciler(
             activationState: paymentOrders.activationState,
             paidAt: paymentOrders.paidAt,
             terminalAt: paymentOrders.terminalAt,
+            ownerPayerKind: paymentOrders.ownerPayerKind,
+            ownerPayerId: paymentOrders.ownerPayerId,
+            periodEnd: paymentOrders.periodEnd,
           })
           .from(paymentOrders)
           .where(
@@ -284,30 +298,59 @@ export function createReconciler(
           .select({
             idempotencyKey: creditGrants.idempotencyKey,
             total: creditGrants.total,
+            externalCustomerId: creditGrants.externalCustomerId,
           })
           .from(creditGrants)
           .where(eq(creditGrants.source, "plan"));
-        const planGrantTotalByKey = new Map(
-          planGrants.map((grant) => [grant.idempotencyKey, grant.total]),
+        const planGrantByKey = new Map(
+          planGrants.map((grant) => [grant.idempotencyKey, grant]),
         );
         for (const order of paidOrders) {
           const expected = expectedPlanCredits(order.planCode);
           if (expected === null || expected <= 0) continue;
           const key = `plan:${order.id}`;
-          const actual = planGrantTotalByKey.get(key);
-          if (actual === undefined) {
+          const grant = planGrantByKey.get(key);
+          if (!grant) {
             findings.push({
               category: "payment",
               code: "plan_grant_missing",
               subject: order.id,
               detail: `the order is paid but no plan grant carries idempotency_key=${key} — the allowance payout never landed; expected=${expected} scaled units`,
             });
-          } else if (actual !== expected) {
+            continue;
+          }
+          // The payout's ACCOUNT is part of the invariant (10.3, AC14): the grant belongs in
+          // the order owner's account, and a grant sitting in a stranger's account is drift
+          // no aggregate can hide. Ownerless orders carry no account to compare against (Q23).
+          if (order.ownerPayerKind && order.ownerPayerId) {
+            let accountKey: string | null = null;
+            try {
+              accountKey = payerKey({
+                kind: order.ownerPayerKind,
+                id: order.ownerPayerId,
+              });
+            } catch {
+              // A quarantined owner resolves to no billable account; the amount check below
+              // still applies, the account check cannot.
+            }
+            if (
+              accountKey !== null &&
+              grant.externalCustomerId !== accountKey
+            ) {
+              findings.push({
+                category: "payment",
+                code: "plan_grant_owner_mismatch",
+                subject: order.id,
+                detail: `grant ${key} sits in account ${grant.externalCustomerId} but the order's owner resolves to ${accountKey} — the allowance payout landed cross-account; needs an operator`,
+              });
+            }
+          }
+          if (grant.total !== expected) {
             findings.push({
               category: "payment",
               code: "plan_grant_amount_mismatch",
               subject: order.id,
-              detail: `grant ${key} totals actual=${actual} but the catalog prices plan ${order.planCode} at expected=${expected} scaled units — payout drift, needs an operator`,
+              detail: `grant ${key} totals actual=${grant.total} but the catalog prices plan ${order.planCode} at expected=${expected} scaled units — payout drift, needs an operator`,
             });
           }
         }
@@ -391,7 +434,11 @@ export function createReconciler(
        *    key.
        */
       const liveSubscriptions = await database
-        .select({ externalCustomerId: billingSubscriptions.externalCustomerId })
+        .select({
+          externalCustomerId: billingSubscriptions.externalCustomerId,
+          ownerPayerKind: billingSubscriptions.ownerPayerKind,
+          ownerPayerId: billingSubscriptions.ownerPayerId,
+        })
         .from(billingSubscriptions)
         // "Live" matches the guard's own definition (active/incomplete): a canceled or
         // expired row is not the entitlement an applied order bought. Scoped to THIS
@@ -407,14 +454,38 @@ export function createReconciler(
         (order) => order.activationState === "applied",
       );
       /*
-       * v1's single-customer membership: payment_orders carries no customer column (one
-       * deployment, one customer key — the orders ARE that customer's), so the projection
-       * ask is scoped to the reconciler's key above. No live row for THIS customer while
-       * applied orders exist is the drift this finding names, reported once per applied
-       * order so the report can be worked row by row.
+       * The projection ask is PER OWNER ACCOUNT (10.3, AC14): one account's live row must not
+       * mask another account's lost entitlement, so an owned order is satisfied only by a live
+ *    row carrying its own owner pair — and only while its paid window is still running (an
+ *    expired order is history; a later repurchase legitimately re-stamps the one row to the
+ *    new owner). Orders written before ownership existed have no account to compare against
+ *    (Q23 forbids guessing one): they keep the deployment-wide membership the check was
+ *    born with, reported once per order so the report can be worked row by row.
        */
-      if (appliedOrders.length > 0 && liveSubscriptions.length === 0) {
-        for (const order of appliedOrders) {
+      const liveOwnerPairs = new Set<string>();
+      for (const row of liveSubscriptions) {
+        if (row.ownerPayerKind && row.ownerPayerId) {
+          liveOwnerPairs.add(`${row.ownerPayerKind}:${row.ownerPayerId}`);
+        }
+      }
+      for (const order of appliedOrders) {
+        if (order.ownerPayerKind && order.ownerPayerId) {
+          const withinPaidPeriod =
+            order.periodEnd !== null && order.periodEnd.getTime() > nowMs;
+          if (!withinPaidPeriod) continue;
+          if (
+            !liveOwnerPairs.has(
+              `${order.ownerPayerKind}:${order.ownerPayerId}`,
+            )
+          ) {
+            findings.push({
+              category: "payment",
+              code: "applied_without_subscription",
+              subject: order.id,
+              detail: `the order's activation is applied for owner ${order.ownerPayerKind}:${order.ownerPayerId} but the projection holds no live subscription owned by that account — entitlement was granted and then lost or taken over by another account's row; the person is paid-up but shown as free`,
+            });
+          }
+        } else if (liveSubscriptions.length === 0) {
           findings.push({
             category: "payment",
             code: "applied_without_subscription",

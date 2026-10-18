@@ -33,7 +33,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent / "drizzle"
-FIRST, LAST = 73, 138
+FIRST, LAST = 140, 144
 
 
 def declared(tail: str):
@@ -221,7 +221,7 @@ def main():
     journal = json.loads((ROOT / "meta" / "_journal.json").read_text())
     entries = {e["idx"]: e for e in journal["entries"]}
 
-    state = json.loads((ROOT / "meta" / "0072_snapshot.json").read_text())
+    state = json.loads((ROOT / "meta" / "0139_snapshot.json").read_text())
     for idx in range(FIRST, LAST + 1):
         entry = entries[idx]
         tag = entry["tag"]
@@ -240,36 +240,8 @@ def main():
         )
         print(f"rebuilt {idx:04d}_{tag}")
 
-    # Junction check: reconstructed 0138 must equal 0139's snapshot minus what
-    # 0139's SQL creates (gateway_model_preferences) minus 0140's skills.icon,
-    # because 0139 was rebuilt from the declared schema (which carries both).
-    s138 = names_of(json.loads((ROOT / "meta" / "0138_snapshot.json").read_text()))
-    s139 = names_of(json.loads((ROOT / "meta" / "0139_snapshot.json").read_text()))
-    drift = []
-    for table in sorted(set(s138) | set(s139)):
-        a, b = s138.get(table), s139.get(table)
-        if table == "gateway_model_preferences":
-            if a is not None:
-                drift.append(f"0138 has {table}, expected absent")
-            continue
-        if a is None or b is None:
-            drift.append(f"table presence differs: {table} (0138={a is not None}, 0139={b is not None})")
-            continue
-        acols, bcols = set(a["columns"]), set(b["columns"])
-        for col in sorted(acols ^ bcols):
-            if table == "skills" and col == "icon" and col in bcols:
-                continue  # 0140 adds it; 0139 must not have it
-            drift.append(f"{table}.{col} differs (0138={col in acols}, 0139={col in bcols})")
-        if set(a["indexes"]) != set(b["indexes"]):
-            drift.append(
-                f"{table} indexes differ: {sorted(set(a['indexes']) ^ set(b['indexes']))}"
-            )
-    if drift:
-        print("JUNCTION DRIFT 0138/0139:")
-        for d in drift:
-            print(" ", d)
-    else:
-        print("junction 0138 -> 0139 clean (minus gateway_model_preferences, skills.icon)")
+    # (junction check for the 0073-0138 window removed; this run covers 0140-0144)
+
 
 
 if __name__ == "__main__":

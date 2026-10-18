@@ -12,6 +12,7 @@ import {
   createPreviewTickets,
   PREVIEW_SESSION_COOKIE,
 } from "../src/craft/preview-ticket";
+import { createPreviewPassCodec } from "../src/craft/preview-pass";
 import type { CraftSessionRow, CraftStore } from "../src/craft/store";
 import {
   type PreviewWebappHmrDeps,
@@ -81,17 +82,47 @@ function hmrDeps(input: {
   };
 }
 
-/** The preview-origin twin of hmrDeps (#363): the by-id row the preview seam
- * reads (the cookie pass IS the auth — there is no actor to ownership-check). */
+/** The preview-origin twin of hmrDeps (#363): the (id,userId) row lookup the
+ * preview seam reads plus the SAME verifyPass judgment the HTTP gate applies —
+ * one codec instance per test file, keyed by the file's own secret. Flipping
+ * `owner` simulates a reassignment AFTER the pass was issued: the signature
+ * still verifies, the row lookup must not. */
+const HMR_PASS_SECRET = "test-preview-hmr-secret";
+const hmrPassCodec = createPreviewPassCodec(HMR_PASS_SECRET);
+
+/** The (sessionId, request) → claim judgment the origin's verifyPass method
+ * provides — the fixture's stand-in for the injected method, iterating the
+ * same-named candidates exactly like the origin's gate (fix-ocr20 #3's jar
+ * rule). The resolver's deps receive THE origin's method in production; this
+ * is its faithful test twin, not a second implementation of the crypto. */
+function testVerifyPass(
+  sessionId: string,
+  request: Request,
+): { userId: string } | null {
+  for (const part of request.headers.get("cookie")?.split(";") ?? []) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(`${PREVIEW_SESSION_COOKIE}=`)) {
+      const verified = hmrPassCodec.verify(
+        sessionId,
+        trimmed.slice(PREVIEW_SESSION_COOKIE.length + 1),
+      );
+      if (verified !== null) return verified;
+    }
+  }
+  return null;
+}
+
 function previewHmrDeps(
   input: {
     sessionExists?: boolean;
+    ownerUserId?: string;
     nextjsPort?: number | null;
     connBaseUrl?: string | null;
     gatewayBaseUrl?: string;
   } = {},
 ): PreviewWebappHmrDeps {
   const port = input.nextjsPort === undefined ? 3011 : input.nextjsPort;
+  const owner = input.ownerUserId ?? "u1";
   return {
     config: loadCraftConfig(
       input.gatewayBaseUrl
@@ -99,8 +130,8 @@ function previewHmrDeps(
         : {},
     ),
     store: {
-      async findSessionById(id: string) {
-        return id === SESSION_ID && input.sessionExists !== false
+      async findSession(id: string, userId: string) {
+        return id === SESSION_ID && userId === owner && input.sessionExists !== false
           ? sessionRow(port)
           : undefined;
       },
@@ -113,17 +144,18 @@ function previewHmrDeps(
             baseUrl: input.connBaseUrl ?? "http://sbox.internal:4300",
             token: null,
           },
+    verifyPass: testVerifyPass,
   };
 }
 
 /** An upgrade request the way a browser sends it to the preview origin —
- * optionally carrying the preview pass the redemption hop planted. */
-function previewHmrRequest(url: string, passFor?: string) {
+ * carrying the preview pass value the redemption hop planted. */
+function previewHmrRequest(url: string, passValue?: string) {
   return new Request(url, {
     headers:
-      passFor === undefined
+      passValue === undefined
         ? {}
-        : { cookie: `${PREVIEW_SESSION_COOKIE}=${passFor}` },
+        : { cookie: `${PREVIEW_SESSION_COOKIE}=${passValue}` },
   });
 }
 
@@ -317,7 +349,7 @@ describe("resolvePreviewWebappHmrUpgrade — the preview origin's upgrade gate (
       sessionId: SESSION_ID,
       request: previewHmrRequest(
         `http://127.0.0.1:3001${LABEL}${APP_HMR}?id=hmr-1&junk=drop`,
-        SESSION_ID,
+        hmrPassCodec.issue(SESSION_ID, "u1"),
       ),
       path: `${LABEL}${APP_HMR}`,
       query: "?id=hmr-1&junk=drop",
@@ -333,7 +365,7 @@ describe("resolvePreviewWebappHmrUpgrade — the preview origin's upgrade gate (
       sessionId: SESSION_ID,
       request: previewHmrRequest(
         `https://abc123.preview.example.com${APP_HMR}`,
-        SESSION_ID,
+        hmrPassCodec.issue(SESSION_ID, "u1"),
       ),
       path: APP_HMR,
       query: "",
@@ -341,6 +373,87 @@ describe("resolvePreviewWebappHmrUpgrade — the preview origin's upgrade gate (
     expect(decision).toEqual({
       ok: true,
       upstreamUrl: `ws://sbox.internal:3011${APP_HMR}`,
+    });
+  });
+
+  test("#358 repair: a pass signed by the deps' own codec opens the upgrade", async () => {
+    const decision = await resolvePreviewWebappHmrUpgrade(previewHmrDeps({}), {
+      sessionId: SESSION_ID,
+      request: previewHmrRequest(
+        `https://abc123.preview.example.com${APP_HMR}`,
+        hmrPassCodec.issue(SESSION_ID, "u1"),
+      ),
+      path: APP_HMR,
+      query: "",
+    });
+    expect(decision).toEqual({
+      ok: true,
+      upstreamUrl: `ws://sbox.internal:3011${APP_HMR}`,
+    });
+  });
+
+  test("#358 repair Review Focus 1: a forged plaintext session-id cookie is 401 — the upgrade never commits", async () => {
+    // Pre-repair this cookie WAS the credential (value-equality with the id);
+    // now it is an unsigned forgery. The store must not even be consulted:
+    // a 401 at the pass gate, before any row lookup.
+    let storeConsults = 0;
+    const deps = previewHmrDeps({});
+    const consultingStore = {
+      ...deps,
+      store: {
+        async findSession() {
+          storeConsults += 1;
+          return undefined;
+        },
+      },
+    } as unknown as typeof deps;
+    const decision = await resolvePreviewWebappHmrUpgrade(consultingStore, {
+      sessionId: SESSION_ID,
+      request: previewHmrRequest(
+        `https://abc123.preview.example.com${APP_HMR}`,
+        SESSION_ID, // the forgery: the bare session id, unsigned
+      ),
+      path: APP_HMR,
+      query: "",
+    });
+    expect(decision).toMatchObject({ ok: false, status: 401 });
+    expect(storeConsults).toBe(0);
+  });
+
+  test("#358 repair Review Focus 2: a one-byte MAC flip is 401 on the upgrade too", async () => {
+    const pass = hmrPassCodec.issue(SESSION_ID, "u1");
+    const parts = pass.split(".");
+    const mac = parts[2] ?? "";
+    const flipped = `${mac[0] === "A" ? "B" : "A"}${mac.slice(1)}`;
+    const decision = await resolvePreviewWebappHmrUpgrade(previewHmrDeps({}), {
+      sessionId: SESSION_ID,
+      request: previewHmrRequest(
+        `https://abc123.preview.example.com${APP_HMR}`,
+        `${parts[0]}.${parts[1]}.${flipped}`,
+      ),
+      path: APP_HMR,
+      query: "",
+    });
+    expect(decision).toMatchObject({ ok: false, status: 401 });
+  });
+
+  test("#358 repair Review Focus 3: a valid pass for a session reassigned after issue is the row miss — 404", async () => {
+    const decision = await resolvePreviewWebappHmrUpgrade(
+      previewHmrDeps({ ownerUserId: "u2" }),
+      {
+        sessionId: SESSION_ID,
+        request: previewHmrRequest(
+          `https://abc123.preview.example.com${APP_HMR}`,
+          hmrPassCodec.issue(SESSION_ID, "u1"),
+        ),
+        path: APP_HMR,
+        query: "",
+      },
+    );
+    expect(decision).toMatchObject({
+      ok: false,
+      status: 404,
+      error: "This preview session no longer exists.",
     });
   });
 
@@ -360,7 +473,7 @@ describe("resolvePreviewWebappHmrUpgrade — the preview origin's upgrade gate (
       sessionId: SESSION_ID,
       request: previewHmrRequest(
         `https://abc123.preview.example.com${APP_HMR}`,
-        "cs-somebody-else",
+        hmrPassCodec.issue("cs-somebody-else", "u1"),
       ),
       path: APP_HMR,
       query: "",
@@ -390,7 +503,7 @@ describe("resolvePreviewWebappHmrUpgrade — the preview origin's upgrade gate (
         sessionId: SESSION_ID,
         request: previewHmrRequest(
           `https://abc123.preview.example.com${APP_HMR}`,
-          SESSION_ID,
+          hmrPassCodec.issue(SESSION_ID, "u1"),
         ),
         path: APP_HMR,
         query: "",
@@ -410,7 +523,7 @@ describe("resolvePreviewWebappHmrUpgrade — the preview origin's upgrade gate (
         sessionId: SESSION_ID,
         request: previewHmrRequest(
           `https://abc123.preview.example.com${APP_HMR}`,
-          SESSION_ID,
+          hmrPassCodec.issue(SESSION_ID, "u1"),
         ),
         path: APP_HMR,
         query: "",
@@ -424,7 +537,7 @@ describe("resolvePreviewWebappHmrUpgrade — the preview origin's upgrade gate (
         sessionId: SESSION_ID,
         request: previewHmrRequest(
           `https://abc123.preview.example.com${APP_HMR}`,
-          SESSION_ID,
+          hmrPassCodec.issue(SESSION_ID, "u1"),
         ),
         path: APP_HMR,
         query: "",
@@ -440,7 +553,7 @@ describe("resolvePreviewWebappHmrUpgrade — the preview origin's upgrade gate (
         sessionId: SESSION_ID,
         request: previewHmrRequest(
           `https://abc123.preview.example.com${APP_HMR}`,
-          SESSION_ID,
+          hmrPassCodec.issue(SESSION_ID, "u1"),
         ),
         path: APP_HMR,
         query: "",
@@ -473,9 +586,11 @@ describe("the preview upgrade behind a boot-file-shaped dispatcher (#363)", () =
       port: number;
       label: string;
       upstreamPaths: string[];
+      upgradeAttempts: () => number;
     }) => Promise<void>,
   ) {
     const upstreamPaths: string[] = [];
+    let upgradeAttempts = 0;
     const upstream = Bun.serve({
       port: 0,
       fetch(req, server) {
@@ -523,6 +638,7 @@ describe("the preview upgrade behind a boot-file-shaped dispatcher (#363)", () =
                   status: decision.status,
                 });
               }
+              upgradeAttempts += 1;
               if (
                 server.upgrade(req, {
                   data: { upstream: decision.upstreamUrl, hmr: true as const },
@@ -563,14 +679,19 @@ describe("the preview upgrade behind a boot-file-shaped dispatcher (#363)", () =
           typeof createPreviewTickets
         >[0]["store"],
       }),
-      secret: "test-preview-origin-secret",
+      secret: HMR_PASS_SECRET,
       env: { PORT: String(front.port) },
       servePreview: servePreviewStub(),
     });
     const address = origin.originFor(SESSION_ID);
     const label = new URL(address).pathname.replace(/^\//, "");
     try {
-      await run({ port: front.port, label, upstreamPaths });
+      await run({
+        port: front.port,
+        label,
+        upstreamPaths,
+        upgradeAttempts: () => upgradeAttempts,
+      });
     } finally {
       front.stop(true);
       upstream.stop(true);
@@ -582,7 +703,9 @@ describe("the preview upgrade behind a boot-file-shaped dispatcher (#363)", () =
       const client = new WebSocket(
         `ws://127.0.0.1:${port}/${label}/_next/webpack-hmr?id=1`,
         {
-          headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+          headers: {
+            cookie: `${PREVIEW_SESSION_COOKIE}=${hmrPassCodec.issue(SESSION_ID, "u1")}`,
+          },
         } as never,
       );
       const received: string[] = [];
@@ -602,6 +725,30 @@ describe("the preview upgrade behind a boot-file-shaped dispatcher (#363)", () =
       // label included (the dev server's basePath mount), exactly like the
       // HTTP seam's appPath (F-2/#365).
       expect(upstreamPaths).toEqual([`/${label}/_next/webpack-hmr`]);
+    });
+  });
+
+  test("#358 repair Review Focus 1: a forged plaintext session-id cookie never commits an upgrade", async () => {
+    await withPreviewFront(async ({ port, label, upgradeAttempts }) => {
+      const client = new WebSocket(
+        `ws://127.0.0.1:${port}/${label}/_next/webpack-hmr`,
+        {
+          headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` },
+        } as never,
+      );
+      await new Promise<void>((resolve) => {
+        // Either the handshake errors or it times out — a forgery must never
+        // see onopen.
+        client.onerror = () => resolve();
+        setTimeout(() => resolve(), 2500);
+        client.onopen = () => {
+          client.close();
+          resolve();
+        };
+      });
+      // The commitment counter is the proof: zero upgrades behind a forged
+      // cookie, whatever the socket surfaced.
+      expect(upgradeAttempts()).toBe(0);
     });
   });
 
@@ -627,7 +774,11 @@ describe("the preview upgrade behind a boot-file-shaped dispatcher (#363)", () =
     await withPreviewFront(async ({ port, label }) => {
       const response = await fetch(
         `http://127.0.0.1:${port}/${label}/some/app/path?q=1`,
-        { headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${SESSION_ID}` } },
+        {
+          headers: {
+            cookie: `${PREVIEW_SESSION_COOKIE}=${hmrPassCodec.issue(SESSION_ID, "u1")}`,
+          },
+        },
       );
       expect(response.status).toBe(503);
       // The appPath the HTTP entry receives carries the label (F-2: the dev
@@ -839,10 +990,15 @@ describe("the boot file's preview HMR wiring (fix-ocr18 #3 — source pin)", () 
   test("the preview deps are gated on craft being enabled — NOT on webappProxyEnabled", () => {
     // The whole point: the preview origin's HTTP half lives on `enabled`
     // alone, so its upgrade half must too — or the combination above dies.
+    // (#358 repair adds the fix-ocr20 #1 narrowing conjunct — the deps exist
+    // exactly when the origin they borrow verifyPass from exists — but the
+    // gate must still not widen to webappProxyEnabled.)
     const declaration = source.match(
-      /const craftPreviewWebappHmrDeps =\s*craftEffectiveConfig\.enabled\s*\?[\S\s]*?:\s*undefined;/,
+      /const craftPreviewWebappHmrDeps =[\S\s]*?:\s*undefined;/,
     );
     expect(declaration).not.toBeNull();
+    expect(declaration?.[0]).toContain("craftEffectiveConfig.enabled");
+    expect(declaration?.[0]).toContain("craftPreviewOrigin !== undefined");
     expect(declaration?.[0]).not.toContain("webappProxyEnabled");
   });
 
@@ -933,6 +1089,39 @@ describe("the preview HMR upgrade's Origin gate (fix-ocr28 #1 — CSWSH)", () =>
     // through the HMR channel stops here.
     expect(
       samePreviewOrigin("https://deadbeef.preview.example.com", hostAddress),
+    ).toBe(false);
+  });
+
+  test("a trailing-dot FQDN Origin of the session's own host passes — the dotted page IS this host (fix-ocr29 #1)", () => {
+    // WHATWG KEEPS a hostname's trailing dot when serializing an origin: a
+    // page loaded from the dotted FQDN form (`https://<label>.<base>.`)
+    // sends an Origin header THAT CARRIES THE DOT, while originFor mints
+    // from the template — which refuses a trailing dot, so its address
+    // never has one. The strict `new URL(x).origin` comparison therefore
+    // 403s a legitimate page's HMR upgrade and live reload silently dies.
+    // Every host-side comparison in this module (handlesRequest,
+    // resolvePreviewRequest, the ticket binding) dot-folds through
+    // normalizeHostname (fix-ocr22); the origin gate folds the same way.
+    const hostForm = createPreviewOrigin({
+      config: {
+        enabled: true,
+        webappProxyEnabled: true,
+        previewOriginEnabled: true,
+        previewOriginTemplate: "https://{session}.preview.example.com",
+      },
+      previewTickets: createPreviewTickets({ store: {} as never }),
+      secret: "same-origin-suite-secret",
+      env: {},
+      servePreview: async () => new Response("unused"),
+    });
+    const hostAddress = hostForm.originFor(SESSION_ID);
+    // The dotted spelling of the session's own host is the SAME host to
+    // DNS and to certificates — the gate must admit it.
+    expect(samePreviewOrigin(`${hostAddress}.`, hostAddress)).toBe(true);
+    // The fold is host-scoped, not dot-blind: a sibling label in the
+    // dotted form is still a different host and still refused.
+    expect(
+      samePreviewOrigin("https://deadbeef.preview.example.com.", hostAddress),
     ).toBe(false);
   });
 

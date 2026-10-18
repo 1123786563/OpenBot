@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "e2e";
 import { Writable } from "node:stream";
 import { createLogger, getLogger, readLogLevel } from "./logger";
 

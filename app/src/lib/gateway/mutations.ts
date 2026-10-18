@@ -155,3 +155,54 @@ export function setModelScopeMutationOptions(queryClient: QueryClient) {
       queryClient.invalidateQueries({ queryKey: gatewayKeys.all }),
   });
 }
+
+/**
+ * The result the manual sync route answers (Bifrost 03.5): the outcome of the
+ * same sync the timer runs — what landed on success, or the failing layer's
+ * fixed reason code. There is no field here a secret could arrive in.
+ */
+export type GatewayCatalogSyncResult =
+  | {
+      status: "ok";
+      syncedAt: string;
+      appended: number;
+      skipped: number;
+      record: {
+        fetchedAt: string;
+        source: string;
+        rawItemCount: number;
+        configVersion: number;
+      };
+    }
+  | {
+      status: "failed";
+      stage: "catalog" | "prices";
+      reasonCode: string;
+      failedAt: string;
+    };
+
+/**
+ * The administrator's "sync now" action (Bifrost 03.5): the manual trigger
+ * rides the same server-side sync implementation and single-flight the
+ * automatic cadence uses. A failed sync is still an answered result (the
+ * route answers 200 with the failure), so it lands here as data and the page
+ * shows the server's own reason code; only a route-level refusal (the sync
+ * service absent) rejects and reads as an operation error. Either way the
+ * catalog is re-read, so the page lists what the server now holds.
+ */
+export function runCatalogSyncMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: async (): Promise<GatewayCatalogSyncResult> => {
+      const response = await client("/api/admin/gateway/catalog/sync", {
+        method: "POST",
+        fallbackKey: "gateway.operation",
+      });
+      const body = (await response.json()) as {
+        result: GatewayCatalogSyncResult;
+      };
+      return body.result;
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: gatewayKeys.all }),
+  });
+}
