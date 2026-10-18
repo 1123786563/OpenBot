@@ -31,6 +31,8 @@ const DIRS = process.argv.slice(2).length
  */
 const BUN_ONLY = [
   /^import\s[^\n]*?from\s+["']bun["']/m,
+  // A suite that asks for `bun:test` by name has already decided its runner: only Bun collects it.
+  /^import\s[^\n]*?from\s+["']bun:test["']/m,
   /^import\s[^\n]*?from\s+["']bun:[a-z/]+["']/m,
   /^export\s[^\n]*?from\s+["']bun[:"']/m,
   /^import\s[^\n]*?from\s+["']drizzle-orm\/bun-[a-z]+["']/m,

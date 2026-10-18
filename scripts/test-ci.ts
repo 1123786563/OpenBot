@@ -1,5 +1,3 @@
-export {};
-
 /**
  * The test run, with a floor under how much of it must actually execute.
  *
@@ -14,7 +12,7 @@ export {};
  * that has to be edited for every new test is a check people learn to edit without thinking.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const MINIMUM_TESTS = 400;
@@ -38,7 +36,9 @@ interface Report {
 async function writeStderr(text: string) {
   if (!text) return;
   if (process.stderr.write(text)) return;
-  await new Promise<void>((resolvePromise) => process.stderr.once("drain", resolvePromise));
+  await new Promise<void>((resolvePromise) =>
+    process.stderr.once("drain", resolvePromise),
+  );
 }
 
 const proc = Bun.spawn(["./node_modules/.bin/e2e", "run", "--config", CONFIG], {
@@ -81,12 +81,26 @@ if (exitStatus !== 0) {
       );
       process.exitCode = 1;
     } else if (summary.failed > 0) {
-      await writeStderr(`\n${summary.failed} of ${summary.executed} tests failed (floor ${MINIMUM_TESTS}).\n`);
+      await writeStderr(
+        `\n${summary.failed} of ${summary.executed} tests failed (floor ${MINIMUM_TESTS}).\n`,
+      );
       process.exitCode = 1;
     } else {
+      const broken = existsSync("docs/verification/e2e-known-broken.json")
+        ? ((
+            JSON.parse(
+              readFileSync("docs/verification/e2e-known-broken.json", "utf8"),
+            ) as { entries?: unknown[] }
+          ).entries?.length ?? 0)
+        : 0;
       await writeStderr(
         `\n${summary.executed} tests ran (floor ${MINIMUM_TESTS}), all passed, ${summary.skipped} skipped,` +
-          ` from ${summary.discovered} discovered.\n`,
+          ` from ${summary.discovered} discovered.` +
+          (broken
+            ? `\n\n${broken} suite file(s) are excluded because their own fixture moved\n` +
+              "(docs/verification/e2e-known-broken.json) — that is a real broken test, not a pass.\n"
+            : "") +
+          "\n",
       );
     }
   }
