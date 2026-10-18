@@ -310,6 +310,14 @@ export function createObservationDatasetStore(
                   notPendingDeletion("dataset", aiObservationDatasets.id),
                 ),
               )
+              // Lock discipline shared with markSynced (OCR R5-19): the reuse
+              // read-back is the freeze's floor — from here to the version INSERT
+              // the subject must not be deletable out from under it, or the INSERT
+              // dies as a bare FK violation when deleteDataset's cascade commits
+              // in the window. FOR UPDATE makes the cleanup wait out the freeze;
+              // a subject a deletion record already claimed is excluded by the
+              // filter above, not by luck.
+              .for("update")
           )[0];
         if (!dataset) {
           // A genuine conflict absence is a bug; a deletion-in-flight subject is

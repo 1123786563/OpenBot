@@ -535,6 +535,67 @@ function storeWithArmedUpdate(
   return createObservationDatasetStore(hooked as unknown as typeof database);
 }
 
+/**
+ * The window armed on the store's Nth INSERT: the insert runs only after `armed`
+ * has settled — the moment a concurrent deleteDataset lands between the
+ * conflict-reuse read-back and the version INSERT that must not find its subject
+ * cascaded away (OCR R5-19).
+ */
+function storeWithArmedInsert(
+  arm: (insertIndex: number) => Promise<void> | undefined,
+) {
+  const hooked = {
+    ...database,
+    transaction: (callback: (tx: never) => unknown) =>
+      database.transaction(async (tx) => {
+        let inserts = 0;
+        const originalInsert = tx.insert.bind(tx);
+        (tx as { insert: unknown }).insert = (...args: unknown[]) => {
+          const builder = originalInsert(
+            ...(args as Parameters<typeof originalInsert>),
+          );
+          const originalValues = builder.values.bind(builder);
+          builder.values = (...valuesArgs: unknown[]) => {
+            const valueBuilder = originalValues(
+              ...(valuesArgs as Parameters<typeof originalValues>),
+            );
+            const originalConflict =
+              valueBuilder.onConflictDoNothing.bind(valueBuilder);
+            valueBuilder.onConflictDoNothing = (...conflictArgs: unknown[]) => {
+              const conflictBuilder = originalConflict(
+                ...(conflictArgs as Parameters<typeof originalConflict>),
+              );
+              const originalReturning = conflictBuilder.returning.bind(
+                conflictBuilder,
+              );
+              conflictBuilder.returning = (...returningArgs: unknown[]) => {
+                const awaited = originalReturning(
+                  ...(returningArgs as Parameters<typeof originalReturning>),
+                );
+                inserts += 1;
+                const armed = arm(inserts);
+                if (!armed) return awaited;
+                const then = awaited.then.bind(awaited);
+                // Intentional thenable wrap (see storeWithArmedSelect).
+                // biome-ignore lint/suspicious/noThenProperty: intentional test hook, see above.
+                awaited.then = (
+                  resolve: (value: never) => unknown,
+                  reject: (reason?: unknown) => unknown,
+                ) => armed.then(() => then(resolve, reject), reject);
+                return awaited;
+              };
+              return conflictBuilder;
+            };
+            return valueBuilder;
+          };
+          return builder;
+        };
+        return callback(tx as never);
+      }),
+  };
+  return createObservationDatasetStore(hooked as unknown as typeof database);
+}
+
 /** Deletes a dataset subject the only sanctioned way: under the cleanup flag. */
 const cleanupDataset = (id: string) =>
   database.$client.begin(async (tx: TransactionSQL) => {
@@ -666,6 +727,48 @@ test("the sync write re-checks deletion: a deletion record committing in the mar
     .from(aiObservationDatasets)
     .where(eq(aiObservationDatasets.id, dataset.id));
   expect(rows).toEqual([{ syncState: "pending", opikDatasetId: null }]);
+});
+
+test("the conflict-reuse read-back holds the row's lock: the racing cleanup cannot slip between it and the version INSERT (OCR R5-19)", async () => {
+  const datasetName = `${prefix}-r519-${randomUUID()}`;
+  const saved = await store.saveVersion(scopeA, {
+    datasetName,
+    cases: [caseA],
+  });
+  // The reuse SELECT reads the committed subject; a deleteDataset committing in
+  // the window before the version INSERT cascades the subject away and the
+  // INSERT dies as a bare FK violation — the raw 500 R2-35 promised never to
+  // answer. With the read-back taken FOR UPDATE (markSynced's lock discipline),
+  // the cleanup blocks until the freeze commits: the save wins the window, the
+  // delete lands after — and the subject is still cleanable then.
+  let racing = "unrun";
+  const armed = storeWithArmedInsert(async (index) => {
+    if (index !== 2) return; // the version INSERT, after the reuse read-back
+    try {
+      await database.$client.begin(async (tx: TransactionSQL) => {
+        await tx`select set_config('ai_observation.dataset_cleanup', 'on', true)`;
+        await tx`set local lock_timeout = '300ms'`;
+        await tx`delete from ai_observation_datasets where id = ${saved.dataset.id}`;
+      });
+      racing = "deleted";
+    } catch (error) {
+      const state = error as { errno?: string; code?: string };
+      if (state.errno === "55P03" || state.code === "55P03") {
+        racing = "blocked"; // the freeze's lock held the window: save wins
+        return;
+      }
+      throw error;
+    }
+  });
+  const outcome = await armed.saveVersion(scopeA, {
+    datasetName,
+    cases: [{ ...caseA, input: "A different reviewed input." }],
+  });
+  expect(outcome.replayed).toBe(false);
+  expect(racing).toBe("blocked");
+  expect(await store.getDataset(scopeA, saved.dataset.id)).not.toBeNull();
+  await store.deleteDataset(scopeA, saved.dataset.id);
+  expect(await store.getDataset(scopeA, saved.dataset.id)).toBeNull();
 });
 
 
