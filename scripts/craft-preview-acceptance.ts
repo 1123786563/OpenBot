@@ -32,8 +32,13 @@
  *    容器名用 CRAFT_ACCEPTANCE_SANDBOX_CONTAINER 覆盖（默认
  *    openbot-agent-sandbox-1）。
  *
- * 运行：bun scripts/craft-preview-acceptance.ts
- * 退出码：全部通过 0；任何 FAIL 1。
+ * 运行：bun run test:live-craft-preview（= bun scripts/craft-preview-acceptance.ts）
+ * 退出码：全部通过 0；任何 FAIL（含 preflight 探测失败 —— 每条失败消息
+ * 指名缺哪个前置）1。绝不静默 skip 后返回 0。
+ * 产物归档（T3 第 3 项）：截图、summary.json（逐条 AC →
+ * PASS/FAIL/SKIP/finding + 每步断言细节 + 截图清单 + server 日志切片路径）、
+ * server 日志切片，全落 `docs/verification/craft-preview/<UTC 时间戳>/`
+ * （不在 .gitignore，可提交复核）。票面 AC 回勾只认这里归档的产物。
  *
  * 环境变量（默认值适合上面的 3220/3221 布局）：
  *   CRAFT_ACCEPTANCE_APP_ORIGIN / _API_ORIGIN / _CASDOOR_USER / _CASDOOR_PASSWORD
@@ -56,7 +61,14 @@
  * 断言一律走 CDP Network.getAllCookies（浏览器真实 jar）+ 预览页同源 fetch 行为学
  * 双证。
  */
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import {
   type Browser,
   type BrowserContext,
@@ -98,9 +110,17 @@ const GATEWAY_TOKEN =
   process.env.CRAFT_ACCEPTANCE_SANDBOX_TOKEN ?? "openbot-dev-sandbox-token";
 const SANDBOX_BOT = process.env.CRAFT_ACCEPTANCE_SANDBOX_BOT ?? "craft";
 const SERVER_LOG = process.env.CRAFT_ACCEPTANCE_SERVER_LOG ?? "";
+/**
+ * 产物归档目录（整改方案 T3 第 3 项）：截图、summary.json、server 日志切片
+ * 全部落 `docs/verification/craft-preview/<UTC 时间戳>/` —— 该路径**不在
+ * .gitignore**（与 gui-test-screenshots/ 相反），证据因此可提交、可复核；
+ * 「票面 AC 回勾」只认这里归档的产物。CRAFT_ACCEPTANCE_SHOT_DIR 仍可覆盖
+ * （本地调试想落到别处时用）。
+ */
+const VERIFICATION_STAMP = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
 const SHOT_DIR =
   process.env.CRAFT_ACCEPTANCE_SHOT_DIR ??
-  "gui-test-screenshots/craft-preview-365";
+  `docs/verification/craft-preview/${VERIFICATION_STAMP}`;
 const CLEANUP = process.env.CRAFT_ACCEPTANCE_CLEANUP_SESSIONS === "1";
 /**
  * 本地沙箱容器名（stopSessionWebapp 的 docker exec 通道）。fix-ocr25 #11：
@@ -149,6 +169,127 @@ type StepResult = {
   detail: string;
 };
 const results: StepResult[] = [];
+
+/**
+ * 步骤 → AC 的归属表（整改方案 T3 第 3 项：summary.json 逐条
+ * `AC → PASS/FAIL/SKIP + 断言细节`）。匹配用「步骤名前缀」——步骤改名时
+ * 这里会静默落进 unmapped 桶，summary.json 里一眼可见，不会静默丢 AC。
+ * 未列入的步骤（preflight / 登录 / 清理 / 会话创建）是前置面，不归属任何
+ * 单条 AC，但同样逐条进 summary（"setup" 桶）。
+ */
+const AC_OF_STEP: ReadonlyArray<{ match: string; acs: readonly string[] }> = [
+  { match: "预览地址的 host/label 不泄露会话 id", acs: ["AC9"] },
+  { match: "预览面板：换票", acs: ["AC4", "AC1"] },
+  { match: "顶层第一方进入", acs: ["AC4"] },
+  { match: "#358 修复：伪造明文 session-id cookie", acs: ["AC4"] },
+  { match: "AC1 document.cookie", acs: ["AC1"] },
+  { match: "AC1 cookie jar 真值", acs: ["AC1"] },
+  { match: "AC1 localStorage", acs: ["AC1"] },
+  { match: "AC1 生成代码跨 origin 调主站 API", acs: ["AC1"] },
+  { match: "F-1 预览 CSP form-action", acs: ["AC1"] },
+  { match: "AC1 协议层", acs: ["AC1"] },
+  { match: "可交互：应用自身 API", acs: ["AC2"] },
+  { match: "点击 → POST → 200", acs: ["AC2"] },
+  { match: "Server Actions", acs: ["AC2"] },
+  { match: "AC3 会话 A 的预览内 fetch 会话 B", acs: ["AC3"] },
+  { match: "AC5 HMR", acs: ["AC5"] },
+  { match: "AC5 文件改动", acs: ["AC5"] },
+  { match: "AC5 热更新生效", acs: ["AC5"] },
+  { match: "全屏放大", acs: ["AC5"] },
+  { match: "点击结果跨放大保留", acs: ["AC5"] },
+  { match: "webapp 工具 attach", acs: ["AC5"] },
+];
+
+/** 步骤的 AC 归属；无命中即 unmapped（绝不静默）。 */
+function acsOfStep(name: string): readonly string[] {
+  return AC_OF_STEP.find((rule) => name.startsWith(rule.match))?.acs ?? [];
+}
+
+/**
+ * 归档目录里的 summary.json（T3 第 3 项）：逐条 AC 聚合 + 每步断言细节 +
+ * 截图清单 + server 日志切片路径。AC 聚合的优先级：任一 fail → fail；
+ * 否则任一 finding → finding（F-1/F-2 哨兵触发即回归信号）；否则全 skip →
+ * skip；否则 pass。写盘放在 finally 尾部 —— preflight 崩溃的那次运行也
+ * 留下完整 FAIL 证据，不留「无产物的一次声称」。
+ */
+function writeSummary(verdictNotes: string): void {
+  const byBucket = new Map<string, StepResult[]>();
+  for (const r of results) {
+    const keys = acsOfStep(r.name);
+    const bucket = keys.length === 0 ? "setup/unmapped" : "acs";
+    if (!byBucket.has(bucket)) byBucket.set(bucket, []);
+    byBucket.get(bucket)?.push(r);
+  }
+
+  const acResults: Record<
+    string,
+    {
+      status: "pass" | "fail" | "skip" | "finding";
+      steps: { name: string; kind: string; detail: string }[];
+    }
+  > = {};
+  const acNames = [
+    ...new Set(AC_OF_STEP.flatMap((rule) => rule.acs as readonly string[])),
+  ];
+  for (const ac of acNames) {
+    const steps = results.filter((r) => acsOfStep(r.name).includes(ac));
+    if (steps.length === 0) continue; // 本轮没跑到这条 AC 的面，就不冒领状态
+    const status = steps.some((s) => s.kind === "fail")
+      ? "fail"
+      : steps.some((s) => s.kind === "finding")
+        ? "finding"
+        : steps.every((s) => s.kind === "skip")
+          ? "skip"
+          : "pass";
+    acResults[ac] = {
+      status,
+      steps: steps.map((s) => ({ name: s.name, kind: s.kind, detail: s.detail })),
+    };
+  }
+  const setupSteps = results
+    .filter((r) => acsOfStep(r.name).length === 0)
+    .map((s) => ({ name: s.name, kind: s.kind, detail: s.detail }));
+
+  let codeCommit: string | null = null;
+  try {
+    codeCommit =
+      Bun.spawnSync(["git", "rev-parse", "HEAD"])
+        .stdout.toString()
+        .trim() || null;
+  } catch {
+    codeCommit = null;
+  }
+
+  let serverLogSlice: string | null = null;
+  if (SERVER_LOG && existsSync(SERVER_LOG)) {
+    try {
+      const lines = readFileSync(SERVER_LOG, "utf8").split("\n");
+      const tail = lines.slice(-2000).join("\n");
+      serverLogSlice = "server-log.slice";
+      writeFileSync(`${SHOT_DIR}/${serverLogSlice}`, tail);
+    } catch {
+      serverLogSlice = null;
+    }
+  }
+
+  const counts = { pass: 0, fail: 0, skip: 0, finding: 0 } as Record<string, number>;
+  for (const r of results) counts[r.kind] += 1;
+
+  const screenshots = readdirSync(SHOT_DIR).filter((f) => f.endsWith(".png"));
+  const summary = {
+    run: `craft-preview-origin-browser-${VERIFICATION_STAMP}`,
+    generated_at: new Date().toISOString(),
+    code_commit: codeCommit,
+    verdict_notes: redactTicket(verdictNotes),
+    counts,
+    ac_results: acResults,
+    setup_steps: setupSteps,
+    screenshots,
+    server_log_slice: serverLogSlice,
+  };
+  writeFileSync(`${SHOT_DIR}/summary.json`, `${JSON.stringify(summary, null, 1)}\n`);
+  log(`summary.json → ${SHOT_DIR}/summary.json`);
+}
 
 /**
  * 票据脱敏（fix-ocr5 A）：断言失败消息（iframe src、最终 URL、goto 错误）
@@ -2091,6 +2232,16 @@ try {
     `会话：${sessions.map((s) => `${s.name}(${s.id}, :${s.port}, label=${s.label})`).join(" ; ") || "（未建立）"}`,
   );
   log(`截图目录：${SHOT_DIR}/`);
+  // T3 第 3 项：产物归档 —— preflight 崩溃的运行也走到这里（finally），
+  // summary.json 如实记录每一步的 FAIL 细节，不留「无产物的一次声称」。写盘
+  // 失败只落一行日志，绝不掩蔽退出码 —— 归档是证据，不是验收本身。
+  try {
+    writeSummary("run completed");
+  } catch (error) {
+    log(
+      `[archive] summary.json 写盘失败（不影响退出码）：${(error instanceof Error ? error.message : String(error)).slice(0, 160)}`,
+    );
+  }
   await browser.close();
   process.exit(counts.fail > 0 ? 1 : 0);
 }
