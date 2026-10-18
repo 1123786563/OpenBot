@@ -9,14 +9,16 @@ import type { Database } from "../db/client";
 import {
   accessGrants,
   botServices,
-  gatewayCatalogSyncState,
   gatewayModelCatalogRefs,
   gatewayModelOpenScopes,
   payerAccounts,
 } from "../db/schema";
 import { gatewayPriceSnapshots } from "../db/schema";
-import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../gateway/catalog-sync";
 import { MODEL_CAPABILITIES, type ModelRef } from "../gateway/catalog";
+import {
+  DEFAULT_CATALOG_FRESHNESS_WINDOW_MS,
+  assertCatalogFresh,
+} from "../gateway/catalog-freshness";
 import { assertPriceSnapshotDims } from "../gateway/price-snapshot";
 import { classifyPriceDims } from "../gateway/price-status";
 import type { Tx } from "./capacity";
@@ -180,9 +182,9 @@ export type CreditReserveEnvironment = {
   now?: () => Date;
   /**
    * How long since the last fully successful sync a new admission may still trust the
-   * catalog. Default 15 minutes (the parent spec's freshness cap). 03.6's dedicated
-   * freshness gate was not in this worktree's baseline; this module reads the delivered
-   * 03.4 sync state directly and its window here is the seam that gate plugs into.
+   * catalog. Default 15 minutes (the parent spec's freshness cap). 03.6's freshness gate
+   * (gateway/catalog-freshness.ts) owns the verdict; this is where a deployment's
+   * `catalogFreshnessWindowConfig(process.env)` answer is injected.
    */
   catalogFreshnessWindowMs?: number;
 };
@@ -237,9 +239,6 @@ function findForbiddenAccountKeyField(
   }
   return null;
 }
-
-/** The parent spec's default catalog freshness cap. */
-export const DEFAULT_CATALOG_FRESHNESS_WINDOW_MS = 15 * 60 * 1000;
 
 /** The one displayable sentence per refusal code — the same words on every surface. */
 const REFUSAL_SENTENCES: Record<CreditReserveRefusalReasonCode, string> = {
@@ -598,29 +597,19 @@ export async function reserveCreditInTransaction(
     });
   }
 
-  // 5. The catalog's freshness: the last FULLY successful sync must be inside the window.
-  //    The reason codes say freshness, never model-not-found — the model may be perfectly
-  //    open and priced; what expired is the evidence both stand on.
-  const [syncState] = await tx
-    .select({
-      lastSuccessfulSyncAt: gatewayCatalogSyncState.lastSuccessfulSyncAt,
-    })
-    .from(gatewayCatalogSyncState)
-    .where(eq(gatewayCatalogSyncState.id, GATEWAY_CATALOG_SYNC_STATE_ID))
-    .limit(1);
-  const lastSuccessfulSyncAt = syncState?.lastSuccessfulSyncAt ?? null;
-  if (lastSuccessfulSyncAt === null) {
-    return refused("catalog_never_synced", {
-      freshnessWindowMs,
-    });
-  }
-  const ageMs = now.getTime() - lastSuccessfulSyncAt.getTime();
-  if (ageMs > freshnessWindowMs) {
-    return refused("catalog_stale", {
-      lastSuccessfulSyncAt: lastSuccessfulSyncAt.toISOString(),
-      ageMs,
-      freshnessWindowMs,
-    });
+  // 5. The catalog's freshness — 03.6's gate, not a local predicate (review-253 F3 made
+  //    gateway/catalog-freshness.ts the single source of truth): the gate reads the 03.4
+  //    sync state INSIDE this admission transaction, so a sync either commits before the
+  //    gate reads it or waits until after the reservation commits. The verdict names
+  //    freshness, never model-not-found — the model may be perfectly open and priced;
+  //    what expired is the evidence both stand on.
+  const freshness = await assertCatalogFresh(tx, {
+    modelRef: request.model,
+    now,
+    windowMs: freshnessWindowMs,
+  });
+  if (!freshness.fresh) {
+    return refused(freshness.reasonCode, freshness.detail);
   }
 
   // 6. The locked price basis: the exact version the request names must still resolve,

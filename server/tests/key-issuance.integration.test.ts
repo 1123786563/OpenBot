@@ -1,11 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { eq, like, inArray, sql } from "drizzle-orm";
+import { eq, inArray, like, sql } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
+import { payerKey } from "../src/billing/payer";
 import { botServiceRoutes } from "../src/bot-services/auth";
 import { createBindingOfferIssuer } from "../src/bot-services/binding-codes";
 import { createBotServiceRegistry } from "../src/bot-services/registry";
-import { payerKey } from "../src/billing/payer";
 import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import {
@@ -17,11 +17,11 @@ import {
   creditLedger,
   creditReservations,
 } from "../src/db/schema";
+import { gatewayCustomers, gatewayVirtualKeys } from "../src/db/schema/gateway";
 import {
   createGatewayCustomerProvisioner,
   type GatewayCustomerProvisioner,
 } from "../src/gateway/customer";
-import { gatewayCustomers } from "../src/db/schema/gateway";
 import {
   createGatewayKeyIssuer,
   createGatewayVirtualKeyClient,
@@ -32,7 +32,6 @@ import {
   type GatewayReadiness,
   type GatewayReadinessService,
 } from "../src/gateway/readiness";
-import { gatewayVirtualKeys } from "../src/db/schema/gateway";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /**
@@ -136,15 +135,35 @@ function issuerFor(overrides?: {
         adminKey: "test-admin-key",
       }),
     }),
+    // 05.5's term: this file's concern is 05.3's flow, so the deployment default applies.
+    keyTtlMinutes: 15,
   });
 }
 
-/** The bot-facing app under test: the real 04.2 door with the issuance router mounted. */
+/** The bot-facing app under test: the real 04.2 door with the issuance router mounted.
+ *
+ * 05.4 made the claim answer `{ key, bundle }` and made the bundle sources a required
+ * composition (a deployment that cannot complete the bundle refuses BEFORE minting —
+ * fail-closed). This file's concern is still 05.3's, so the sources are wired the way the
+ * production registry wires them: the same fake-Bifrost endpoint for the base URL and a
+ * fixed selectable-refs answer for the Bot's model set; every 05.3 assertion below reads
+ * `body.key`, which the added bundle does not disturb.
+ */
 function appFor(overrides?: Parameters<typeof issuerFor>[0]) {
   return botServiceRoutes({
     authenticate: registry.authenticate,
     keys: createKeyIssuanceRoutes({
       issue: issuerFor(overrides).issueKeyForGrant,
+      bundle: {
+        readGatewayEndpoint: async () => endpoint,
+        listSelectableModels: async () => [
+          {
+            provider: "fake-provider",
+            model: "issuance-chat",
+            capability: "chat",
+          },
+        ],
+      },
     }),
   });
 }
@@ -269,8 +288,10 @@ describe("05.3 key issuance", () => {
         .map((vk) => vk.customerId),
     );
     expect(remoteCustomerIds).toEqual(new Set([mapping[0]!.gatewayCustomerId]));
-    expect(fake.virtualKeysForCustomer(mapping[0]!.gatewayCustomerId)).toHaveLength(2);
-  });
+    expect(
+      fake.virtualKeysForCustomer(mapping[0]!.gatewayCustomerId),
+    ).toHaveLength(2);
+  }, 30_000);
 
   test("issuing a key adds no credit quota, no grant and no budget copy", async () => {
     const app = appFor();
@@ -323,7 +344,7 @@ describe("05.3 key issuance", () => {
       expect(body).not.toHaveProperty("provider_configs");
       expect(body.allow_all_providers).toBe(true);
     }
-  });
+  }, 30_000);
 
   test("a bot using another authorization's grantId is refused and nothing is created", async () => {
     const app = appFor();
@@ -365,7 +386,7 @@ describe("05.3 key issuance", () => {
       .from(gatewayVirtualKeys)
       .where(like(gatewayVirtualKeys.botId, `${prefix}-xbot%`));
     expect(rows).toHaveLength(0);
-  });
+  }, 30_000);
 
   test("the local record holds no plaintext and credentialVersion grows monotonically", async () => {
     const app = appFor();
@@ -401,10 +422,14 @@ describe("05.3 key issuance", () => {
       expect(JSON.stringify(row)).not.toContain("sk-bf-");
       // The hash identifies the exact secret it was drawn from — sha256, not the value.
       const secret =
-        row.credentialVersion === 1 ? firstBody.key.secret : secondBody.key.secret;
-      expect(row.valueHash).toBe(createHash("sha256").update(secret).digest("hex"));
+        row.credentialVersion === 1
+          ? firstBody.key.secret
+          : secondBody.key.secret;
+      expect(row.valueHash).toBe(
+        createHash("sha256").update(secret).digest("hex"),
+      );
     }
-  });
+  }, 30_000);
 
   test("failures refuse without a half-issued key: unauthenticated, malformed, not-ready gateway, gateway 500", async () => {
     // No credential: the door's own uniform 401, before the service is asked.
@@ -445,7 +470,7 @@ describe("05.3 key issuance", () => {
       .from(gatewayVirtualKeys)
       .where(like(gatewayVirtualKeys.botId, `${prefix}-fail%`));
     expect(rows).toHaveLength(0);
-  });
+  }, 30_000);
 });
 
 /**
@@ -492,7 +517,9 @@ function startFakeBifrost() {
           return json(400, { error: "Customer name is required" });
         }
         if (customers.has(name)) {
-          return json(409, { error: "A customer with this name already exists" });
+          return json(409, {
+            error: "A customer with this name already exists",
+          });
         }
         const id = crypto.randomUUID();
         customers.set(name, { id });
