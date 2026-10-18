@@ -75,7 +75,7 @@ export function ConsumptionTable({
         </p>
       ) : (
         <>
-          {/* Five columns, the request one widest; a phone gives up the model and client first. */}
+          {/* Six columns, the request one widest; a phone gives up the bot and model first. */}
           <section
             aria-label={t("creditsPage.consumptionTable")}
             className="mt-3 overflow-x-auto rounded-lg border border-border bg-card focus-visible:outline-2 focus-visible:outline-ring"
@@ -93,6 +93,9 @@ export function ConsumptionTable({
                   </th>
                   <th className="px-4 py-2 text-right font-medium">
                     {t("creditsPage.columnCredits")}
+                  </th>
+                  <th className="hidden px-4 py-2 font-medium sm:table-cell">
+                    {t("creditsPage.columnBot")}
                   </th>
                   <th className="hidden px-4 py-2 font-medium sm:table-cell">
                     {t("creditsPage.columnModel")}
@@ -137,6 +140,14 @@ export function ConsumptionTable({
                           })}
                         </span>
                       ) : null}
+                    </td>
+                    <td className="text-muted-foreground hidden px-4 py-2 sm:table-cell">
+                      {/*
+                       * 06.12's Bot attribution: the Bot the call was admitted for, from the
+                       * reservation's own record; a row without one (writer-direct, or a row
+                       * from before attribution existed) stays honestly blank — never guessed.
+                       */}
+                      {entry.botName ?? "–"}
                     </td>
                     <td className="text-muted-foreground hidden px-4 py-2 sm:table-cell">
                       {entry.model ?? "–"}

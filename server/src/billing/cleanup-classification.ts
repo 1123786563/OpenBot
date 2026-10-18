@@ -28,10 +28,11 @@ import type { CleanupManifest } from "./cleanup-manifest";
  * - `personal_records` kept (migration is a later, separate decision). Never a candidate.
  * - `confirmed_obsolete_test` the ONLY cleanup-candidate class. Requires all three of:
  *                      a `legacy_deployment` mapping (02.2's explicit attribution), explicit
- *                      test evidence for the key, and no in-flight responsibility on the record.
+ *                      test evidence for the key, and no in-flight responsibility on the record
+ *                      (a reserved or unknown-result hold — 06.8 — or an allocation of one).
  * - `unknown_owner`    isolated keep. Every record the rules cannot prove cleanable: no mapping
  *                      or 02.2's quarantine, a legacy key without test evidence, or in-flight
- *                      responsibility (a still-reserved reservation and its allocations — Q29:
+ *                      responsibility (a reserved or unknown hold and its allocations — Q29:
  *                      open settlement responsibility is never cleanable, whatever its key).
  *
  * The evidence discipline is the ticket's, made mechanical:
@@ -105,12 +106,12 @@ export const CLASSIFICATION_RULES: ClassificationRule[] = [
   {
     id: "R3-confirmed-obsolete-test",
     description:
-      "A record whose key maps to kind=legacy_deployment, whose key carries explicit test evidence — an exact test_order_number or test_user_marker match from the recorded registries, never a name-shape guess — and that is not in-flight responsibility is confirmed_obsolete_test: the only cleanup-candidate class.",
+      "A record whose key maps to kind=legacy_deployment, whose key carries explicit test evidence — an exact test_order_number or test_user_marker match from the recorded registries, never a name-shape guess — and that carries no in-flight responsibility is confirmed_obsolete_test: the only cleanup-candidate class.",
   },
   {
     id: "R4-unknown-owner-isolated",
     description:
-      "Everything else is unknown_owner and stays isolated: no payer mapping or the explicit unknown_owner quarantine (unknown_attribution), a legacy_deployment key without test evidence (insufficient_test_evidence), or in-flight responsibility — a still-reserved reservation or its allocation — of an otherwise evidenced legacy key (in_flight_reservation).",
+      "Everything else is unknown_owner and stays isolated: no payer mapping or the explicit unknown_owner quarantine (unknown_attribution), a legacy_deployment key without test evidence (insufficient_test_evidence), or in-flight responsibility — a still-reserved reservation, an unknown-result hold (06.8: the clock is never release evidence) or an allocation of either — of an otherwise evidenced legacy key (in_flight_reservation).",
   },
 ];
 
@@ -177,6 +178,21 @@ export type ReclassificationVerdict = {
   differences: string[];
 };
 
+/**
+ * The reservation statuses that carry open settlement responsibility: a plain hold
+ * (`reserved`) and — 06.8 — an `unknown` hold whose provider result never arrived, whose
+ * clock passage is NOT release evidence. `settled`/`released` are terminal. Every in-flight
+ * check in the cleanup group (classification verdicts here, live protection in the
+ * relations evaluation, the 21.5 deletion guard's fresh probe) reads this one list, so the
+ * three cannot drift apart.
+ */
+export const IN_FLIGHT_RESERVATION_STATUSES = ["reserved", "unknown"] as const;
+
+/** Whether a reservation status carries open settlement responsibility (never cleanable). */
+export function isReservationInFlight(status: string): boolean {
+  return (IN_FLIGHT_RESERVATION_STATUSES as readonly string[]).includes(status);
+}
+
 /** The legacy tables the classification queries, in its fixed (enumeration-aligned) order. */
 const TABLE_ORDER = [
   "billing_customers",
@@ -192,6 +208,15 @@ const TABLE_ORDER = [
   "payment_events",
   "usage_outbox",
 ] as const;
+
+/**
+ * The legacy billing estate (21.5): the only tables the cleanup program may ever name for
+ * deletion. Everything else — users, bots, sessions, knowledge-base objects, every other
+ * application table — is outside the program's reach by construction (the 21.5 estate wall
+ * reads this list; it is the classification's own table universe under its guard name, so
+ * the two cannot drift apart).
+ */
+export const CLEANUP_ESTATE_TABLES: readonly string[] = TABLE_ORDER;
 
 /**
  * Normalize one registry: exact non-empty ids only (a padded id would silently never match),
@@ -518,7 +543,8 @@ export async function classifyCleanup(
       });
     }
 
-    // credit_reservations: their own customer key; a still-reserved hold is in-flight duty.
+    // credit_reservations: their own customer key; a reserved or unknown hold (06.8) is
+    // in-flight duty — open settlement responsibility, never release evidence by the clock.
     const reservations = await tx
       .select({
         id: creditReservations.id,
@@ -536,7 +562,7 @@ export async function classifyCleanup(
           reservation.externalCustomerId,
           mappingByKey.get(reservation.externalCustomerId),
         ),
-        inFlight: reservation.status === "reserved",
+        inFlight: isReservationInFlight(reservation.status),
         observedAt: reservation.createdAt,
       });
     }
@@ -560,7 +586,7 @@ export async function classifyCleanup(
         recordId: allocation.id,
         key: allocation.customerKey,
         attributionSource: `credit_reservations ${allocation.reservationId} (status=${allocation.reservationStatus}) → its external_customer_id ${allocation.customerKey}`,
-        inFlight: allocation.reservationStatus === "reserved",
+        inFlight: isReservationInFlight(allocation.reservationStatus),
         observedAt: null,
       });
     }
