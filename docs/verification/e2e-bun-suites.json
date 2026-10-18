@@ -14,7 +14,8 @@
    "files": [
     "agent-langgraph/tests/google-oauth-proxy.test.ts",
     "agent-langgraph/tests/governed-export-bytes.test.ts",
-    "agent-langgraph/tests/governed-tracing.test.ts"
+    "agent-langgraph/tests/governed-tracing.test.ts",
+    "agent-langgraph/tests/trace-chain.test.ts"
    ]
   },
   {
@@ -33,6 +34,7 @@
   {
    "name": "app/src",
    "files": [
+    "app/src/lib/i18n/ai-observability.test.ts",
     "app/src/lib/upload-queue/queue.test.ts"
    ]
   },
@@ -459,9 +461,11 @@
   "agent-langgraph/tests/google-oauth-proxy.test.ts",
   "agent-langgraph/tests/governed-export-bytes.test.ts",
   "agent-langgraph/tests/governed-tracing.test.ts",
+  "agent-langgraph/tests/trace-chain.test.ts",
   "agent-mastra/src/mastra/index.test.ts",
   "agent-sandbox/tests/snapshot.test.ts",
   "agent-sandbox/tests/sse.test.ts",
+  "app/src/lib/i18n/ai-observability.test.ts",
   "app/src/lib/upload-queue/queue.test.ts",
   "app/tests/admin-catalog-sync-ui.test.tsx",
   "app/tests/admin-credit-grant-ui.test.tsx",
@@ -890,6 +894,8 @@
   "server/tests/web-bot-auth.test.ts": "runner reported: refuses a key whose public half does not match its private half: expect(...).toThrow failed: threw Invalid JWK OKP key",
   "server/tests/workshop-metering.test.ts": "runner reported: refuses usage that exceeds the configured token ceiling: expect(...).toThrow failed: threw Usage charge failed (usage_ov",
   "agent-langgraph/tests/governed-export-bytes.test.ts": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
-  "agent-langgraph/tests/governed-tracing.test.ts": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'"
+  "agent-langgraph/tests/governed-tracing.test.ts": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
+  "agent-langgraph/tests/trace-chain.test.ts": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
+  "app/src/lib/i18n/ai-observability.test.ts": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'"
  }
 }
