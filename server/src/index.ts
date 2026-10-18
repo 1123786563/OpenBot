@@ -69,6 +69,10 @@ import type { ObservationScope } from "./ai-observability/contracts";
 import { createExecutionBudgetPrecheck } from "./ai-observability/execution-billing";
 import { createExperimentExecutionWorkerBoot } from "./ai-observability/execution-boot";
 import {
+  cancelExecutionsForActor,
+  createObservationExecutionStore,
+} from "./ai-observability/executions";
+import {
   createObservationExportStore,
   createObservationExportWorker,
   EXPORT_WORK_KIND,
@@ -6003,8 +6007,21 @@ const app = createApp(
     opsSignals: openMuseOpsSignals,
     aiObservability,
     // T33: the admin people-revoke route's cancel seam (T34 §6 wiring).
-    aiObservabilityCancelForActor: (actorId) =>
-      observationExportStore.cancelForActor(actorId),
+    // R5-25: the executions half of the same seam — a revoked person's pending
+    // or running executions settle cancelled with their settle audit rows,
+    // instead of running to completion under an authorization that no longer
+    // exists. Exports stay first (the T34 §6 behavior verbatim); the route's
+    // best-effort catch is the failure backstop for both halves.
+    aiObservabilityCancelForActor: async (actorId) => {
+      await observationExportStore.cancelForActor(actorId);
+      await cancelExecutionsForActor(
+        {
+          executions: createObservationExecutionStore(database),
+          audit: createAuditStore(database),
+        },
+        actorId,
+      );
+    },
   },
   identityStore,
   identityGithubCallback,
