@@ -1,0 +1,73 @@
+# MT131 final verification — 2026-10-15T09:16:27Z
+# HEAD: f0520524f0faa2b4533b9d2f1aa692c8f907ba71
+
+## 1. bun test server/tests/multitenancy/acceptance-harness.test.ts
+bun test v1.4.2 (50a8a8387)
+
+server/tests/multitenancy/acceptance-harness.test.ts:
+Timeout duration was set to 1.
+(pass) harness isolation resolution > refuses missing and development environments, never falls back [0.34ms]
+(pass) harness isolation resolution > returns the dedicated isolation configuration from the real environment [0.14ms]
+(pass) harness loopback HTTP isolation > serves on 127.0.0.1:45435 only, refuses double bind, releases on close [1.41ms]
+(pass) unauthorized-result detector > a poisoned unauthorized observation never passes any side [0.11ms]
+(pass) unauthorized-result detector > a clean observation passes both sides; each side keeps its own failure mode [0.05ms]
+(pass) acceptance harness pipeline > hard-fails on a missing environment instead of skipping [0.52ms]
+(pass) acceptance harness pipeline > refuses a foreign adapter squatting on the harness control domain [4.12ms]
+(pass) acceptance harness pipeline > aborts before any evidence when the detector misses the poison [102.18ms]
+(pass) acceptance harness pipeline > produces machine-readable per-entrance positive/denial coverage [71.72ms]
+(pass) acceptance harness pipeline > a newly added inventory entrance appears as uncovered [77.14ms]
+(pass) acceptance harness pipeline > an evidence plan naming an entrance absent from the inventory is refused [0.48ms]
+(pass) acceptance harness pipeline > absent provider credentials are environment gaps, never passes [61.08ms]
+(pass) acceptance harness CLI > writes a machine-readable report and exits 0 on an honest run [3494.31ms]
+(pass) acceptance harness CLI > exits 1 with an explicit message when the environment is missing [561.23ms]
+
+ 14 pass
+ 0 fail
+ 1713 expect() calls
+Ran 14 tests across 1 file. [5.21s]
+EXIT: 0
+
+## 2. bun test server/tests/multitenancy/ (all suites)
+(pass) database stages are explicit, never silent > without TEST_DATABASE_URL both stages are skipped with reasons [0.06ms]
+(pass) database stages are explicit, never silent > a DATABASE_URL is never used as a fallback [0.02ms]
+(pass) database stages are explicit, never silent > refuses a test URL that names the development database [6.59ms]
+(pass) database stages are explicit, never silent > a configured but unreachable test database fails loudly [7.07ms]
+
+server/tests/multitenancy/acceptance-harness.test.ts:
+(pass) harness isolation resolution > refuses missing and development environments, never falls back [0.25ms]
+(pass) harness isolation resolution > returns the dedicated isolation configuration from the real environment [0.15ms]
+(pass) harness loopback HTTP isolation > serves on 127.0.0.1:45435 only, refuses double bind, releases on close [4.16ms]
+(pass) unauthorized-result detector > a poisoned unauthorized observation never passes any side [0.07ms]
+(pass) unauthorized-result detector > a clean observation passes both sides; each side keeps its own failure mode [0.03ms]
+(pass) acceptance harness pipeline > hard-fails on a missing environment instead of skipping [0.30ms]
+(pass) acceptance harness pipeline > refuses a foreign adapter squatting on the harness control domain [1.48ms]
+(pass) acceptance harness pipeline > aborts before any evidence when the detector misses the poison [95.84ms]
+(pass) acceptance harness pipeline > produces machine-readable per-entrance positive/denial coverage [79.14ms]
+(pass) acceptance harness pipeline > a newly added inventory entrance appears as uncovered [86.61ms]
+(pass) acceptance harness pipeline > an evidence plan naming an entrance absent from the inventory is refused [0.42ms]
+(pass) acceptance harness pipeline > absent provider credentials are environment gaps, never passes [58.96ms]
+(pass) acceptance harness CLI > writes a machine-readable report and exits 0 on an honest run [3612.12ms]
+(pass) acceptance harness CLI > exits 1 with an explicit message when the environment is missing [467.27ms]
+
+ 64 pass
+ 0 fail
+ 6947 expect() calls
+Ran 64 tests across 3 files. [5.16s]
+EXIT: 0
+
+## 3. cd server && bun run typecheck
+$ tsc --noEmit
+EXIT: 0
+
+## 4. bunx biome check (targeted)
+Checked 2 files in 32ms. No fixes applied.
+EXIT: 0
+
+## 5. CLI honest run (dedicated env, no evidence plan)
+{"level":30,"time":1792055818413,"service":"server","type":"openmuse-mail-placeholder-action-ids","ids":["gmail.list","gmail.search","gmail.thread","gmail.attachment.get","gmail.attachment.bytes"],"msg":"openmuse-mail-placeholder-action-ids"}
+EXIT: 0
+overall: acceptance-not-passed | self-check: passed | seedPoison detected: True | covered: 0 / 539 | surfaces as route coverage: 0
+
+## 6. CLI missing-environment run (must exit 1, explicit message)
+HARNESS_RUN_FAILED:HARNESS_ENVIRONMENT_FAILED:ENTERPRISE_TEST_SETUP_DATABASE_URL or TEST_DATABASE_URL is required for enterprise tests.
+EXIT: 1

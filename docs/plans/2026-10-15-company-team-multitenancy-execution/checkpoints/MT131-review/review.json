@@ -1,0 +1,52 @@
+{
+  "task": "MT131-review",
+  "issue": 174,
+  "reviewer": "independent Pi reviewer (Orca child worktree i6-review-mt131, term_816bb349-9edf-47fe-91c4-3692f9aa4f55)",
+  "review_dispatch": { "task_id": "task_ec3b94bcc847", "dispatch_id": "ctx_3f0e940cf23b" },
+  "reviewed_worktree_head": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+  "snapshot_hashes_verified": {
+    "server/scripts/multitenancy/acceptance-harness.ts": "2b29aeb63be347883a997de765da75676e883b7219b8d09a5184ae75c3fa1390",
+    "server/tests/multitenancy/acceptance-harness.test.ts": "df6f6f31dfa0e9b61e32ca55fee2f715917ab891281aec969b6d37eb8fd92a12",
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT131-harness.md": "0d174527373663c514058cf562cb09428bc3e6efb1319710067b7794ee8554f7",
+    "checkpoints/before.json (= checkpoints/MT131/before.json)": "21b4a9f26df4e310a1b08cd8decd4b40dfbdc903f8c670ba3dced17104289701",
+    "checkpoints/after.json (= checkpoints/MT131/after.json)": "f57d3b616e9466e0c9872632416943c0d3aa0702995ed8d80dc07795f1a3a0b9",
+    "checkpoints/after-manifest-sha256.txt": "ba702b99c664ca733a8f76e286ba749bb8f9c0d45d69f661b084e7f40d341198",
+    "checkpoints/verification-output.txt": "3e5f16f025bb09ab357967c39a5f27038d6a268d9fafd5b8d8b284f55762e80f"
+  },
+  "prerequisites_verified_unchanged_in_source_worktree_i6-mt131": {
+    "server/scripts/multitenancy/inventory.ts": "e58bde59de470b816a6cacfa988b7a450d15dd7261ef2e22f6d77b034d6c05d0",
+    "server/tests/multitenancy/inventory.test.ts": "c718e8f93499a002723fb83aa80c7a11cab89f4f09c4e7a7ed35a678109f99cf",
+    "server/tests/multitenancy/support/fixture.ts": "f1112f0f8a4ee91248a84ae9e7bbaa9ef8962715de1856b38c1be7e313bca88c",
+    "server/tests/multitenancy/support/scenarios.ts": "cdca14caa6faf6bf0364cfc7345486473da438058bdf2c6d41d9e0c60aa0abd0",
+    "server/tests/multitenancy/fixtures.test.ts": "667dd64e27f9e5b9276d4a4b7d27809dd85a5ba86d8ecc2dd74fb4182ec80c43",
+    "server/tests/support/enterprise-database.ts": "d9e652799493f1492c86949db3c636b055305c7aec947da7b30185d9a8e49077"
+  },
+  "verdicts": { "spec_compliance": "PASS", "code_quality": "PASS" },
+  "findings": [
+    { "id": "F1", "severity": "Medium", "summary": "default stdout mode has a 243-byte module-init pino line before the report JSON; --out mode is clean" },
+    { "id": "F2", "severity": "Medium", "summary": "MT131-harness.md §5 claims both MT001 DB stages ran for digest 2f5093ef…; actual stages are live-table-crosscheck=ok, enterprise-capability-assembly=skipped (digest includes stages, so the prose is inconsistent with the digest)" },
+    { "id": "F3", "severity": "Low", "summary": "repeated in-process runAcceptanceHarness calls leak one full-coverage fixture's rows/connections (empirically 2 tenant rows after 2 runs); CLI and suite unaffected" },
+    { "id": "F4", "severity": "Info", "summary": "value-less --out/--evidence/--run-id flags degrade silently" },
+    { "id": "F5", "severity": "Info", "summary": "scenario-error reasons keep only the ISOLATION_SCENARIO_FAILED wrapper, losing the cause" },
+    { "id": "F6", "severity": "Info", "summary": "empty inventory would yield a vacuous acceptance-passed (0/0)" },
+    { "id": "F7", "severity": "Info", "summary": "external namespace is pinned in config but not enforced for adapters" }
+  ],
+  "verification_rerun": {
+    "note": "review snapshot worktree lacks MT001/MT002 prerequisite sources, so commands ran in source worktree /Users/wuyongjun/orca/workspaces/OpenBot/i6-mt131 after byte-identical hash verification of all owned and prerequisite files",
+    "targeted_suite": "bun test server/tests/multitenancy/acceptance-harness.test.ts -> 14 pass / 0 fail / 1713 expect()",
+    "all_multitenancy": "bun test server/tests/multitenancy/ -> 64 pass / 0 fail / 6947 expect()",
+    "typecheck": "cd server && bun run typecheck -> exit 0",
+    "biome": "bunx biome check <2 owned files> -> exit 0",
+    "cli_honest": "--out /tmp/mt131-review-report.json --run-id reviewmt131 -> exit 0; overall acceptance-not-passed; seedPoison detected; 0/539; digest 2f5093ef127a5fd463c00a370fe67d4bfadec48f2ba9356aa1fe83abfb326e93",
+    "cli_missing_env": "env -i ... -> exit 1 HARNESS_RUN_FAILED:HARNESS_ENVIRONMENT_FAILED:ENTERPRISE_TEST_SETUP_DATABASE_URL or TEST_DATABASE_URL is required",
+    "cli_stdout_mode": "exit 0 but stdout = pino init line + report JSON (F1); two runs identical entrance vectors and digest (determinism verified)",
+    "db_residue": "mt002-% rows in enterprise_tenants/users/principals = 0 after CLI + suites; F3 experiment residue cleaned by reviewer, re-verified 0",
+    "port_release": "127.0.0.1:45435 unbound after CLI exit",
+    "secret_scan": "no URLs/credentials in report; password/secret substrings are inventory route paths only"
+  },
+  "artifacts_written": [
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT131-review.md",
+    "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT131-review/review.json"
+  ],
+  "controls": "no source/test files modified; nothing committed; no push/merge/deploy; only review artifacts written"
+}
