@@ -12,8 +12,14 @@ const arg = (name, fallback) => {
   return hit ? hit.slice(name.length + 3) : fallback;
 };
 const reportPath = resolve(root, arg("report", ".e2e/final2/report.json"));
-const verdictPath = resolve(root, arg("verdicts", "docs/verification/e2e-vs-bun-final.json"));
-const outPath = resolve(root, arg("out", "docs/verification/e2e-red-inventory.md"));
+const verdictPath = resolve(
+  root,
+  arg("verdicts", "docs/verification/e2e-vs-bun-final.json"),
+);
+const outPath = resolve(
+  root,
+  arg("out", "docs/verification/e2e-red-inventory.md"),
+);
 const onlyGroups = (arg("groups", "") || "").split(",").filter(Boolean);
 const DRIVER = "tests/bun-suites.test.ts";
 
@@ -26,11 +32,16 @@ for (const result of run.results ?? []) {
   if (result.status === "passed" || result.status === "skipped") continue;
   const entry = byFile.get(result.file) ?? { count: 0, first: "" };
   entry.count++;
-  const message = String(result.attempts?.at(-1)?.error?.message ?? "").replace(/\s+/g, " ");
+  const message = String(result.attempts?.at(-1)?.error?.message ?? "").replace(
+    /\s+/g,
+    " ",
+  );
   if (!entry.first && message) entry.first = message.slice(0, 140);
   byFile.set(result.file, entry);
 }
-const verdictOf = new Map((verdicts.rows ?? []).map((r) => [r.file, r.verdict]));
+const verdictOf = new Map(
+  (verdicts.rows ?? []).map((r) => [r.file, r.verdict]),
+);
 const noVerdictNote =
   "未单独判定（本次判定集合来自上一次报告的红文件；新红文件要重跑 scripts/e2e-vs-bun.mjs）";
 
@@ -42,12 +53,16 @@ function attributeGroup(name) {
   );
   const group = (manifest.groups ?? []).find((g) => g.name === name);
   if (!group) return { name, error: "no such group in the manifest" };
-  const result = spawnSync("bun", ["test", ...group.files.map((f) => `./${f}`)], {
-    cwd: root,
-    encoding: "utf8",
-    maxBuffer: 1e8,
-    timeout: 900_000,
-  });
+  const result = spawnSync(
+    "bun",
+    ["test", ...group.files.map((f) => `./${f}`)],
+    {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 1e8,
+      timeout: 900_000,
+    },
+  );
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
   let current = null;
   const files = new Map();
@@ -57,13 +72,17 @@ function attributeGroup(name) {
       current = header[1];
       continue;
     }
-    if (/^\(fail\)/.test(line) && current) files.set(current, (files.get(current) ?? 0) + 1);
+    if (/^\(fail\)/.test(line) && current)
+      files.set(current, (files.get(current) ?? 0) + 1);
   }
   // bun prints each failure twice (inline and in the trailing list), so halve the tally.
   return {
     name,
     exit: result.status,
-    files: [...files].map(([file, count]) => ({ file, fails: Math.round(count / 2) })),
+    files: [...files].map(([file, count]) => ({
+      file,
+      fails: Math.round(count / 2),
+    })),
   };
 }
 
@@ -103,7 +122,10 @@ lines.push(
   " | --- | --- | --- |",
 );
 for (const result of (run.results ?? []).filter((x) => x.file === DRIVER)) {
-  const message = String(result.attempts?.at(-1)?.error?.message ?? "").replace(/\s+/g, " ");
+  const message = String(result.attempts?.at(-1)?.error?.message ?? "").replace(
+    /\s+/g,
+    " ",
+  );
   lines.push(
     `| ${result.titlePath?.at(-1) ?? "?"} | ${result.status} | ${result.status === "passed" ? "—" : message.slice(0, 160)} |`,
   );

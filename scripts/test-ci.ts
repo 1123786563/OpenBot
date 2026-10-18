@@ -17,7 +17,10 @@ import { resolve } from "node:path";
 
 const MINIMUM_TESTS = 400;
 const CONFIG = "e2e.unit.config.ts";
-const REPORT = ".e2e/unit/report.json";
+// Sessions run `e2e` concurrently in this checkout and a shared output directory means the last
+// writer's report wins; the run and its reader must agree on one place.
+const OUTPUT = process.env.E2E_UNIT_OUTPUT ?? ".e2e/unit";
+const REPORT = `${OUTPUT}/report.json`;
 
 interface Report {
   run: {

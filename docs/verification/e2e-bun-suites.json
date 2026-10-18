@@ -1,5 +1,5 @@
 {
- "generatedBy": "scripts/lib/e2e-manifest.mjs regroup",
+ "generatedBy": "scripts/e2e-batch-drive-bun-test.mjs",
  "groups": [
   {
    "name": "agent-computer/tests",

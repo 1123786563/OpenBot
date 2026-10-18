@@ -106,7 +106,11 @@ function readJunit(xml: string): {
 }
 
 /** One `bun test` invocation, with its junit parsed. The driver needs it twice: grouped and alone. */
-async function runBun(files: string[]): Promise<ReturnType<typeof readJunit> & { exitCode: number; stderr: string }> {
+async function runBun(
+  files: string[],
+): Promise<
+  ReturnType<typeof readJunit> & { exitCode: number; stderr: string }
+> {
   const directory = mkdtempSync(join(tmpdir(), "openbot-bun-suite-"));
   const report = join(directory, "junit.xml");
   try {
@@ -178,7 +182,10 @@ for (const group of groups) {
           `${group.name}: ${started.failures + started.errors} tests failed and the alone-re-run budget ran out after ${alone.size} file(s); not claimed as passing`,
         );
       }
-      alone.set(file, await runBun([file.startsWith("./") ? file : `./${file}`]));
+      alone.set(
+        file,
+        await runBun([file.startsWith("./") ? file : `./${file}`]),
+      );
     }
     if (started.failingFiles.length > cap) {
       throw new Error(

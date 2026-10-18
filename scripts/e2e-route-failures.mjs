@@ -21,7 +21,10 @@ const arg = (name, fallback) => {
   return hit ? hit.slice(name.length + 3) : fallback;
 };
 const report = resolve(root, arg("report", ".e2e/unit/report.json"));
-const verdicts = resolve(root, arg("verdicts", "docs/verification/e2e-vs-bun.json"));
+const verdicts = resolve(
+  root,
+  arg("verdicts", "docs/verification/e2e-vs-bun.json"),
+);
 const byVerdict = arg("verdict", "");
 const apply = process.argv.includes("--apply");
 
@@ -75,15 +78,18 @@ if (byVerdict) {
     const message = String(attempt?.error?.message ?? "");
     const pattern = RUNTIME_GAP.find((candidate) => candidate.test(message));
     if (!pattern) continue;
-    const entry =
-      hits.get(result.file) ?? { pattern: String(pattern), count: 0, message };
+    const entry = hits.get(result.file) ?? {
+      pattern: String(pattern),
+      count: 0,
+      message,
+    };
     entry.count++;
     hits.set(result.file, entry);
   }
 }
 
 const fresh = [...hits].filter(
-  ([file, entry]) => !manifest.files.has(file) && !manifest.artifacts.has(file),
+  ([file]) => !manifest.files.has(file) && !manifest.artifacts.has(file),
 );
 console.log(
   `${hits.size} file(s) failed on a Bun runtime boundary, ${fresh.length} not yet driven:`,
@@ -95,7 +101,9 @@ for (const [file, entry] of [...hits].sort((a, b) => b[1].count - a[1].count)) {
 }
 
 if (!apply) {
-  console.log(`\ndry run; --apply records them in docs/verification/e2e-bun-suites.json`);
+  console.log(
+    `\ndry run; --apply records them in docs/verification/e2e-bun-suites.json`,
+  );
   process.exit(0);
 }
 for (const [file, entry] of fresh) {

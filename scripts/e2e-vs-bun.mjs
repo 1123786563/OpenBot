@@ -27,7 +27,10 @@ const baseline = resolve(
   root,
   arg("baseline", `${process.env.HOME}/.cache/openbot-e2e/baseline`),
 );
-const live = resolve(root, arg("live", `${process.env.HOME}/.cache/openbot-e2e/live`));
+const live = resolve(
+  root,
+  arg("live", `${process.env.HOME}/.cache/openbot-e2e/live`),
+);
 const out = resolve(root, arg("out", "docs/verification/e2e-vs-bun.json"));
 const jobs = Number(arg("jobs", 4));
 const timeoutMs = Number(arg("timeout", 240_000));
@@ -141,15 +144,21 @@ const rows = await pool(files, jobs, async (file) => {
     old = await bunTest(live, file);
     base = await bunTest(baseline, file);
   }
-  const oldRed = old.counts ? old.counts.failures > 0 || old.counts.tests === 0 : null;
-  const baseRed = base.counts ? base.counts.failures > 0 || base.counts.tests === 0 : null;
+  const oldRed = old.counts
+    ? old.counts.failures > 0 || old.counts.tests === 0
+    : null;
+  const baseRed = base.counts
+    ? base.counts.failures > 0 || base.counts.tests === 0
+    : null;
   let verdict;
   if (before === null || !existsSync(target)) {
     verdict = "no-pre-migration-suite";
   } else if (old.counts === null) {
     verdict = old.signal ? "old-runner-timeout" : "old-runner-unreadable";
   } else if (oldRed) {
-    verdict = baseRed ? "already-red-at-baseline" : "red-on-old-runner-with-current-code";
+    verdict = baseRed
+      ? "already-red-at-baseline"
+      : "red-on-old-runner-with-current-code";
   } else {
     verdict = "runner-difference";
   }
@@ -190,7 +199,11 @@ console.log(
 for (const [verdict, count] of [...byVerdict].sort((a, b) => b[1] - a[1])) {
   console.log(`  ${String(count).padStart(4)}  ${verdict}`);
 }
-console.log(`\nrunner-difference — the old runner is green on the same code and suite text:`);
-for (const row of rows.filter((r) => r.verdict === "runner-difference").slice(0, 60)) {
+console.log(
+  `\nrunner-difference — the old runner is green on the same code and suite text:`,
+);
+for (const row of rows
+  .filter((r) => r.verdict === "runner-difference")
+  .slice(0, 60)) {
   console.log(`  ${row.file}  (${row.e2eFailures})  ${row.e2eFirst ?? ""}`);
 }
