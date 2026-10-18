@@ -169,6 +169,24 @@ describe("folding upstream pages under a row cap", () => {
     ).rejects.toBeInstanceOf(MalformedExportPage);
   });
 
+  test("overshooting the total under the cap is malformed, never a truncated success (OCR R4-31)", async () => {
+    // The loop exits when accumulation crosses total, not when it lands on it:
+    // a hostile upstream over-shipping its pages (3 promised, 3+3 delivered,
+    // all unique ids, all under the cap) used to sail through as 6 honest rows.
+    // The terminal state must be exact — refuse the whole fold, never trim to
+    // the promised total and call it done.
+    await expect(
+      foldExportPages(10, async (n) =>
+        page(
+          4,
+          n === 0
+            ? [{ id: "a" }, { id: "b" }, { id: "c" }]
+            : [{ id: "d" }, { id: "e" }, { id: "f" }],
+        ),
+      ),
+    ).rejects.toBeInstanceOf(MalformedExportPage);
+  });
+
   test("the same trace id twice is malformed, not two observations", async () => {
     await expect(
       foldExportPages(10, async (n) =>

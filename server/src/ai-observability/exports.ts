@@ -623,6 +623,15 @@ export async function foldExportPages<T>(
       throw new ExportRowLimitExceeded();
     }
   }
+  // R4-31: the loop exits when accumulation CROSSES total, not when it lands on
+  // it — an upstream that over-ships its pages (unique ids, still under the cap)
+  // used to walk out of the loop with more rows than the envelope promised and
+  // no malformed signal at all. The terminal state is exact: over- or under-
+  // shipped totals are a domain error, and the fold is refused whole — never
+  // trimmed to the promised count and delivered as a success.
+  if (rows.length !== first.total) {
+    throw new MalformedExportPage();
+  }
   const ids = new Set(rows.map((row) => (row as { id?: unknown }).id ?? null));
   if (ids.size !== rows.length) {
     // The same trace twice is not two observations; an export that counted it
