@@ -1,0 +1,34 @@
+{
+ "node": "MT006",
+ "phase": "integration",
+ "integrated_at": "2026-10-16T12:30:00",
+ "baseline_head": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+ "lineage": {
+  "impl": "task_ce1f2edb1025/ctx_fcaf1191c69c (i6-mt006；前任被 stop_unverified 后磁盘增量完整保留)",
+  "review1": "reports/MT006-review.md: Spec PASS 4/4 / Code PASS, 0C/0H/0M (F3 low + 5 info)；ctx_bb502a2b7d1c（接管复审，已释放）",
+  "ruling7_snapshot_repair": "support/workspace-scope.ts 从 i6-mt006 主副本恢复，三方哈希 a67cf0b8…c87d8 一致",
+  "source_worktrees": "i6-mt006 (deliverables) + i6-review-mt006 (verified snapshot incl. repaired file)"
+ },
+ "integrated_files_sha256": {
+  "server/src/enterprise/tenancy/workspace-admin.ts": "07767157087d132fb9613219b413d3d7c2f09a20fbd8c1caecaf17b02480ee30",
+  "server/src/enterprise/tenancy/workspace-scope-routes.ts": "29299ecbead7abcf5eb447eaa4cbbb028971a86b44a4fe45e3f4e02d1def474a",
+  "server/tests/multitenancy/workspace-scope.test.ts": "c34bf33ddb566c59e5c7b810dff5c17caf8e215d13535540cc781e65a1a50b57",
+  "server/tests/multitenancy/support/workspace-scope.ts": "a67cf0b8c6d854c315b158d78224fa878ef720186fba0011c1a01905928c87d8",
+  "server/src/index.ts": "ab32a9b170389f23c74809c64b41263eacd3653211b927010321ad43c880c9a9",
+  "server/src/config.ts": "98cd90b8e363833959e375b5ea83447f69cbb7a8ba4ba328fd3d6a488924194b",
+  "server/src/app.ts": "c18817e396d8059503e5ba4041628ec6d70470bd0565b46fe8d2016841652cb1"
+ },
+ "coordinator_verification": {
+  "date": "2026-10-16",
+  "db": "pgvector/pgvector:pg16 @55464 openbot_enterprise_mt006_integration + _mt003_assigned (removed after run)",
+  "restricted_roles": "ent_m6dir/ent_m6data/ent_m6op (random pw, 0600 env, deleted after run)",
+  "attempts": "v1/v2 无用户名 URL(role wuyongjun does not exist) + ENTERPRISE_TEST_SETUP_DATABASE_URL 缺失致 61 skip + PG 初始化竞态静默吞掉 CREATE DATABASE —— v4 修正后全绿（过程见 progress.md）",
+  "baseline_migrate": "exit 0",
+  "mt004_apply": "exit 0 (planDigest 39b91e0f…)",
+  "workspace_scope_suite": "34 pass / 0 fail exit 0 (105 expect，与复审一致)",
+  "full_suite": "203 pass / 0 fail / 0 skip across 8 files (7678 expect；= 182 MT006 基线 + 21 MT112 legacy-anchor，首次两票共树全量)",
+  "typecheck": "exit 0",
+  "biome": "4 新文件 0 findings (exit 0)"
+ },
+ "residual_findings": "F3 low（空 workspaceId 路由/服务端口径不对称，死分支）；F1/F2/F4/F5/F6 info；D1 条件：生产 operator DELETE 策略须建后续票（否则 remove 在未打补丁生产库 500 fail-closed）"
+}

@@ -244,6 +244,21 @@ export type DeploymentConfig = {
    * Switching either off stops new defaults and leaves every existing row as it is.
    */
   memoryDefaults: { sources: boolean; research: boolean };
+  /**
+   * The multitenancy switch and its startup-validation inputs (MT013).
+   *
+   * Off by default; the legacy single-tenant boot is byte-for-byte unchanged while it is off.
+   * On, the process runs the three startup checks in enterprise/tenancy/startup-checks.ts and
+   * refuses to boot on any gap. `inventoryPath` names the CoverageInventory JSON the MT001
+   * generator (`server/scripts/multitenancy/inventory.ts`) produced; `waiversPath` names an
+   * explicit waiver list whose every entry carries a reason, because an audited exception is
+   * the only kind this mode accepts.
+   */
+  multitenancy: {
+    enabled: boolean;
+    inventoryPath?: string;
+    waiversPath?: string;
+  };
   /** Audio configuration is independent of agent model providers. */
   transcription?: TranscriptionConfig;
   voice?: VoiceConfig;
@@ -252,6 +267,8 @@ export type DeploymentConfig = {
   databaseUrl: string;
   enterpriseDirectoryDatabaseUrl?: string;
   enterpriseDataDatabaseUrl?: string;
+  /** Restricted operator-channel database; unwired → workspace admin routes answer 503. */
+  enterpriseOperatorDatabaseUrl?: string;
   tenantStorageRuntimeDatabaseUrl?: string;
   keyEncryptionKey: string;
   /**
@@ -2915,6 +2932,10 @@ export function loadConfig(
       optional(environment, "ENTERPRISE_DATA_DATABASE_URL"),
     ),
     ...spreadOptional(
+      "enterpriseOperatorDatabaseUrl",
+      optional(environment, "ENTERPRISE_OPERATOR_DATABASE_URL"),
+    ),
+    ...spreadOptional(
       "tenantStorageRuntimeDatabaseUrl",
       optional(environment, "OPENBOT_TENANT_STORAGE_RUNTIME_DATABASE_URL"),
     ),
@@ -2949,6 +2970,7 @@ export function loadConfig(
       sources: switchedOn(environment, "OPENBOT_MEMORY_SOURCE_DEFAULTS"),
       research: switchedOn(environment, "OPENBOT_PROACTIVE_DEFAULTS"),
     },
+    multitenancy: multitenancyConfig(environment),
     agentStallTimeoutMs: agentStallTimeoutMs(environment),
     auditRetentionDays: auditRetentionDays(environment),
     oauth: { google },
@@ -2996,6 +3018,42 @@ function learningAutoAssignEnabled(environment: Environment): boolean {
 function switchedOn(environment: Environment, name: string): boolean {
   const value = optional(environment, name);
   return value !== "false" && value !== "0";
+}
+
+/**
+ * The multitenancy mode switch: an explicit opt-in, never a default (MT013).
+ *
+ * A default-on rule like {@link switchedOn} would be exactly wrong here: multitenancy changes
+ * who the deployment serves, and its boot runs startup checks that can refuse to start. A
+ * deployment must arrive at this mode by naming it, so the variable accepts an explicit value
+ * on either side and refuses everything else — a typo must not silently become an opt-in any
+ * more than a silent default may turn a single-tenant server multi-tenant.
+ */
+function multitenancyConfig(environment: Environment): {
+  enabled: boolean;
+  inventoryPath?: string;
+  waiversPath?: string;
+} {
+  const raw = optional(environment, "OPENBOT_MULTITENANCY")?.trim();
+  let enabled: boolean;
+  if (raw === undefined || raw === "") {
+    enabled = false;
+  } else if (raw === "on" || raw === "true" || raw === "1") {
+    enabled = true;
+  } else if (raw === "off" || raw === "false" || raw === "0") {
+    enabled = false;
+  } else {
+    throw new Error(
+      `OPENBOT_MULTITENANCY must be "on", "true", "1" (multitenancy mode), or "off", "false", "0" (the default single-tenant mode); got "${raw}". Leave it unset to keep the legacy boot unchanged.`,
+    );
+  }
+  const inventoryPath = optional(environment, "OPENBOT_MULTITENANCY_INVENTORY");
+  const waiversPath = optional(environment, "OPENBOT_MULTITENANCY_WAIVERS");
+  return {
+    enabled,
+    ...(inventoryPath ? { inventoryPath } : {}),
+    ...(waiversPath ? { waiversPath } : {}),
+  };
 }
 
 /** The service token and its project, both or neither. See `DeploymentConfig.learningSetup`. */

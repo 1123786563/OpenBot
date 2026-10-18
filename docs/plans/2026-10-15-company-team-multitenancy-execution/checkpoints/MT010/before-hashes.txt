@@ -1,0 +1,11 @@
+# before state — MT010 (pristine before any MT010 edit)
+f0520524f0faa2b4533b9d2f1aa692c8f907ba71  HEAD
+8d1d6ab62947d10c9ca636ce93725422fe671570740fa6dc357b11d188cd9bda  server/scripts/multitenancy/migrate-test.ts  (prereq-manifest)
+4ede3c5f6d237576f388d97889717c595e6e57340214f1b4f7982f13f0979c82  server/tests/multitenancy/migration-tool.test.ts  (prereq-manifest)
+cdca14caa6faf6bf0364cfc7345486473da438058bdf2c6d41d9e0c60aa0abd0  server/tests/multitenancy/support/scenarios.ts  (prereq-manifest)
+29299ecbead7abcf5eb447eaa4cbbb028971a86b44a4fe45e3f4e02d1def474a  server/src/index.ts  (prereq-manifest)
+7d38d054b53fc397acabe7c66dcb614b2cbc5aef14fcfdf868a18553ac5e7b32  server/src/db/schema/index.ts  (git HEAD — tracked and unmodified before MT010)
+(新建，before 不存在)  server/src/enterprise/tenancy/personal-share-rules.ts
+(新建，before 不存在)  server/src/db/schema/personal-shares.ts
+(新建，before 不存在)  server/tests/multitenancy/personal-share-rules.test.ts
+(新建，before 不存在)  server/tests/multitenancy/support/personal-share.ts

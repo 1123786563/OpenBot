@@ -1,0 +1,30 @@
+# wave15-integration full-suite 首轮输出 — 记录性重构存档（非原始字节流）
+# 说明：首轮 bun test 输出原写本文件名，终版复跑时按同名落盘覆盖了原始字节流；
+# 本文件为首轮可考事实的记录性重构（数字与失败用例名取自当轮终端回显，
+# 与 reports/wave15-integration.md §3.2 一致），供归因审计；权威终态见 full-suite.txt。
+#
+# date: 2026-10-18 ~14:20 +0800（终版复跑前）
+# 命令: bun test tests/multitenancy/（env=/tmp/w15int-env.sh，w15int @55591）
+# 整改前状态：entry-context.test.ts 已根治 + startup-defaults.test.ts 未根治；
+# KB 角色未补 LOGIN；VM 时钟未步回。
+#
+# ---- 首轮尾部汇总（原文）----
+  1145 pass
+  6 fail
+  12990 expect() calls
+Ran 1151 tests across 47 files. [29.17s]
+exit=1
+#
+# ---- 首轮 (fail) 用例清单（原文，六条；去重前原文含 bun 摘要段重复回显）----
+(fail) MT123 运行时装配（专用库 + 受限角色 + RLS） > 环境是专用企业测试库（w15d 令牌 + 受限 data 角色） [0.45ms]
+(fail) MT036 — 知识库团队归属与受限查询 > (unnamed) [121.17ms]
+(fail) MT037 — 检索候选/重排/引用的归属限制 > (unnamed) [157.21ms]
+(fail) MT038 — 文档上传、删除、导入与重解析的作用域 > (unnamed) [177.29ms]
+(fail) MT041 AC2: leases are held only by same-ownership executors > renews and finishes only for the current holder [9.13ms]
+(fail) MT041 AC2: leases are held only by same-ownership executors > lets the holder finish; the finished job can be leased again as a new attempt [5.33ms]
+#
+# ---- 归因（详见 reports/wave15-integration.md §3.2）----
+# 1  MT123 w15d 库名 pin        → 同款 env 派生根治（token-refactor-diff 同类授权）
+# 3  MT036/037/038 KB 登录拒绝   → 集成 provision 漏 KB 属主角色 LOGIN 属性 → ALTER ROLE ... LOGIN
+# 2  MT041 finishedAt 时序断言   → Docker VM 钟超前宿主 ~8ms（环境漂移）→ 特权容器步回 VM 钟
+# 六项全部消除后终版复跑：1222 pass / 0 fail / 47 文件 / exit 0（full-suite.txt）

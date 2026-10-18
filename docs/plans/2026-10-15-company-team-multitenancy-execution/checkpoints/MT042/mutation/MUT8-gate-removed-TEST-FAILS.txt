@@ -1,0 +1,95 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/scan-executor.test.ts:
+248 |         const items = outcomes.map((outcome) => outcome.item);
+249 |         expect(
+250 |           items.map((item) => `${item.jobKind}:${item.objectId}`).sort(),
+251 |         ).toEqual([`task:${a1.objectId}`, `task:${b1.objectId}`].sort());
+252 |         // Cross-company listing: both companies' due jobs were executed.
+253 |         expect(outcomes.map((outcome) => outcome.status).sort()).toEqual([
+                                                                       ^
+error: expect(received).toEqual(expected)
+
+  [
+-   "executed",
+-   "executed",
++   "released",
++   "released",
+  ]
+
+- Expected  - 2
++ Received  + 2
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt042/server/tests/multitenancy/scan-executor.test.ts:253:66)
+(fail) MT042 — platform scan scope rebuild (Issue #85) > AC1: the scan lists due jobs across companies as metadata, never business content > lists due jobs of two companies and never reads the payload [44.23ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > AC1: the scan lists due jobs across companies as metadata, never business content > does not offer an item before its run_at [7.52ms]
+320 |           await executorRecording(recorded).scanAndExecute(machine),
+321 |           a1.objectId,
+322 |         );
+323 | 
+324 |         expect(outcomes).toHaveLength(1);
+325 |         expect(outcomes[0]?.status).toBe("executed");
+                                          ^
+error: expect(received).toBe(expected)
+
+Expected: "executed"
+Received: "released"
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt042/server/tests/multitenancy/scan-executor.test.ts:325:37)
+(fail) MT042 — platform scan scope rebuild (Issue #85) > AC2: the scope is rebuilt from the persisted record; message fields are hints only > executes under the authoritative record's scope, ignoring wrong message hints [20.31ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > AC2: the scope is rebuilt from the persisted record; message fields are hints only > refuses an item with no authoritative record, echoing nothing from the message [9.46ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > AC3: the machine identity is type-isolated from user identities > is refused wherever a trusted user scope is required [0.19ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > AC3: the machine identity is type-isolated from user identities > is not a user login: dev-local-user and principal impersonation are refused [2.44ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > AC3: the machine identity is type-isolated from user identities > cannot be driven by a user scope [1.20ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > AC4: only the issuance entry produces a valid scope; deserialization is refused > rejects deserialized and cloned scopes and machine identities [1.35ms]
+505 |         const outcomes = mine(
+506 |           await executorRecording([]).scanAndExecute(machine),
+507 |           a1.objectId,
+508 |         );
+509 |         expect(outcomes).toHaveLength(1);
+510 |         expect(outcomes[0]?.status).toBe("executed");
+                                          ^
+error: expect(received).toBe(expected)
+
+Expected: "executed"
+Received: "released"
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt042/server/tests/multitenancy/scan-executor.test.ts:510:37)
+(fail) MT042 — platform scan scope rebuild (Issue #85) > execution and lease discipline (MT041 consumption) > executes under the MT041 lease, finishes it, and never re-offers a finished item [13.07ms]
+562 |             retryDelayMs: 0,
+563 |           }),
+564 |           a1.objectId,
+565 |         );
+566 |         expect(second).toHaveLength(1);
+567 |         expect(second[0]?.status).toBe("executed");
+                                        ^
+error: expect(received).toBe(expected)
+
+Expected: "executed"
+Received: "released"
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt042/server/tests/multitenancy/scan-executor.test.ts:567:35)
+(fail) MT042 — platform scan scope rebuild (Issue #85) > execution and lease discipline (MT041 consumption) > releases the lease on execution failure and the item returns as attempt 2 [24.29ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > execution and lease discipline (MT041 consumption) > skips an item whose job lease is live-held by another executor [20.93ms]
+651 |         const outcomes = mine(
+652 |           await probing.scanAndExecute(machine),
+653 |           a1.objectId,
+654 |         );
+655 |         expect(outcomes).toHaveLength(1);
+656 |         expect(outcomes[0]?.status).toBe("executed");
+                                          ^
+error: expect(received).toBe(expected)
+
+Expected: "executed"
+Received: "released"
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt042/server/tests/multitenancy/scan-executor.test.ts:656:37)
+(fail) MT042 — platform scan scope rebuild (Issue #85) > execution and lease discipline (MT041 consumption) > claims the lease under the machine's worker identity, visible mid-execution [12.86ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > revocation and malformed input (machine semantics) > refuses an item whose company membership was revoked, before any execution [11.42ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > revocation and malformed input (machine semantics) > refuses an item whose team membership was revoked, before any execution [13.03ms]
+(pass) MT042 — platform scan scope rebuild (Issue #85) > revocation and malformed input (machine semantics) > refuses a malformed key deterministically and never echoes it [2.98ms]
+
+ 10 pass
+ 5 fail
+ 76 expect() calls
+Ran 15 tests across 1 file. [410.00ms]

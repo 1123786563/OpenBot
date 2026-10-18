@@ -1,0 +1,77 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/workspace-scope.test.ts:
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 1: a signed-in user lists eligible companies and teams from membership facts > a member of both teams of one company lists that company with exactly those teams [56.68ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 1: a signed-in user lists eligible companies and teams from membership facts > a multi-company member lists each company with only that company's teams [49.94ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 1: a signed-in user lists eligible companies and teams from membership facts > a company admin lists their company with an explicit empty teams array [19.22ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 1: a signed-in user lists eligible companies and teams from membership facts > a user with no company memberships gets an explicit empty listing, not a default [8.10ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 1: a signed-in user lists eligible companies and teams from membership facts > an unauthenticated request is refused, not listed [0.34ms]
+222 |             method: "GET",
+223 |             path: "/",
+224 |           });
+225 |           expect(response.status).toBe(200);
+226 |           const [company] = companiesOf(await bodyOf(response));
+227 |           expect(company?.teams.map((team) => team.workspaceId)).toEqual([
+                                                                       ^
+error: expect(received).toEqual(expected)
+
+  [
+    "mt002-memberships-93fa474b-team-a1",
++   "mt002-memberships-93fa474b-team-a2",
+  ]
+
+- Expected  - 0
++ Received  + 1
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt006/server/tests/multitenancy/workspace-scope.test.ts:227:66)
+(fail) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 1: a signed-in user lists eligible companies and teams from membership facts > a suspended team membership disappears from the listing while other teams stay [68.44ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 1: a signed-in user lists eligible companies and teams from membership facts > a suspended company membership hides the whole company from the listing [54.27ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 1: a signed-in user lists eligible companies and teams from membership facts > the listing never carries a server-chosen current or default scope field [21.38ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 2: scope selection goes through the ruling #1 headers; no default fallback, explicit empty state > every listed team admits scope selection through the ruling #1 headers [39.19ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 2: scope selection goes through the ruling #1 headers; no default fallback, explicit empty state > a team that is not listed is not selectable (WORKSPACE_FORBIDDEN) [26.52ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 2: scope selection goes through the ruling #1 headers; no default fallback, explicit empty state > a user with no teams still gets WORKSPACE_REQUIRED without a header — no only-team or first-team default [0.31ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 2: scope selection goes through the ruling #1 headers; no default fallback, explicit empty state > a user with no companies selecting any company is TENANT_FORBIDDEN (empty state has no hidden default) [14.20ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 2: scope selection goes through the ruling #1 headers; no default fallback, explicit empty state > blank selector headers are refused like missing ones [0.19ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry > the admin creates a team; the row exists and the team appears in listings after membership [94.05ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry > creating a team with an existing workspace id is a 409, not a silent overwrite [72.87ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry > a plain member is refused team creation (TENANT_ADMIN_REQUIRED), and so is a non-member [49.35ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry > the admin of company-a cannot administer company-b (company boundary holds) [10.45ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry > the admin adds a company member to a team; the same membership fact feeds the MT005 gate [199.71ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry > adding a principal who is not an active company member is refused without leaking existence [112.14ms]
+596 |         );
+597 |         expect(
+598 |           listing
+599 |             .find((company) => company.tenantId === fixture.ids["company-a"])
+600 |             ?.teams.some((team) => team.workspaceId === workspaceId),
+601 |         ).toBe(false);
+                ^
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: true
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt006/server/tests/multitenancy/workspace-scope.test.ts:601:11)
+(fail) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry > the admin suspends a member; the MT005 gate revokes the very next selection [88.34ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry > the admin removes a member; the row is gone and re-adding restores eligibility with a larger epoch [244.57ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry > another company's team is invisible to the admin: removal answers 404 and writes nothing [50.72ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry > a stale admin context (company epoch bumped after issuance) is refused by the in-transaction revalidation [92.21ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry > a forged or deserialized admin context is rejected like a forged scope [7.86ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry > an in-flight MT005 gate transaction serializes the admin membership write (same advisory key) [2249.53ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry > admin routes answer 503 unavailable when the operator channel is not wired [0.67ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 4: admin power implies no business-content read authorization > a company admin with no team membership cannot resolve into a team to read anything [7.03ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 4: admin power implies no business-content read authorization > even an admin who explicitly adds themselves to a team cannot read a resource without a grant [109.73ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 4: admin power implies no business-content read authorization > the admin surface exposes no resource-read path: every management DTO carries membership facts only [43.91ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 4: admin power implies no business-content read authorization > the admin service cannot list or read enterprise resources at all (no such method) [0.15ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > input validation precedes authorization on every management route > team creation without a name is INVALID_REQUEST [5.55ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > input validation precedes authorization on every management route > member addition without a principalId is INVALID_REQUEST [6.27ms]
+(pass) MT006 workspace scope and team administration (Issue #49) > input validation precedes authorization on every management route > admin routes without a tenant header are TENANT_REQUIRED [0.32ms]
+
+2 tests failed:
+(fail) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 1: a signed-in user lists eligible companies and teams from membership facts > a suspended team membership disappears from the listing while other teams stay [68.44ms]
+(fail) MT006 workspace scope and team administration (Issue #49) > issue #49 criterion 3: a company admin manages the company's teams and roster through the centralized admin entry > the admin suspends a member; the MT005 gate revokes the very next selection [88.34ms]
+
+ 31 pass
+ 2 fail
+ 101 expect() calls
+Ran 33 tests across 1 file. [5.39s]
+exit=1

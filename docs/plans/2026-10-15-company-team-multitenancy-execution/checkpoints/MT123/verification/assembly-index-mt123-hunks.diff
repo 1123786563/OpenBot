@@ -1,0 +1,87 @@
+--- /tmp/mt123-index-prereq.ts	2026-10-18 09:18:03
++++ src/index.ts	2026-10-18 09:13:52
+@@ -290,6 +290,13 @@
+   applyStartupVerdict,
+   runMultitenancyStartupChecks,
+ } from "./enterprise/tenancy/startup-checks";
++import {
++  applyStartupDefaultsVerdict,
++  buildStartupDefaultsRecord,
++  evaluateStartupAssemblyReadiness,
++  mountDevBypass,
++  resolveStartupDefaults,
++} from "./enterprise/tenancy/startup-defaults";
+ import {
+   type AuthenticatedRequestIdentity,
+   createScopeResolver,
+@@ -787,7 +794,21 @@
+   learningAutoAssign,
+ );
+ learningAutoAssign.start();
+-await initializeDevActorUser(database, config.singleUser);
++/*
++ * MT123 (issue #166): the single-user bypass is ruled by the purification
++ * domain (enterprise/tenancy/startup-defaults.ts) — mounted only in
++ * single-tenant mode, never in multitenancy. The full startup defaults are
++ * resolved further below, once the tenant package is in hand; the dev-actor
++ * seeding sits earlier in the boot, so it consumes the same one-rule source
++ * (`mountDevBypass`) instead of a drifted copy.
++ */
++await initializeDevActorUser(
++  database,
++  mountDevBypass({
++    multitenancy: config.multitenancy.enabled,
++    singleUser: config.singleUser,
++  }),
++);
+ // The vault, built before the agent store because a customer's agent may sit behind a key and that
+ // key belongs here rather than on the agent row. See agents/auth-header.ts.
+ const credentialStore = createCredentialStore(database);
+@@ -1090,9 +1111,44 @@
+ // Read here rather than beside the synchronise below, because the package names the deployment and
+ // the channel store needs that name before it can mint a thread id.
+ const tenantPackage = await loadTenantPackage(config.tenantPackageDirectory);
+-const threadIdentity = createThreadIdentity(
+-  config.deploymentId ?? tenantPackage.tenantId,
+-);
++/*
++ * MT123 (issue #166): the startup-assembly purification domain. In multitenancy mode the boot
++ * keeps no implicit default company (the tenant package's tenantId no longer stands in as one),
++ * no default thread identity beyond the operator's explicit DEPLOYMENT_ID fingerprint, and no
++ * single-user bypass; assembly gaps (the MT122 entry context absent, an unnamed thread seed,
++ * single-user/config or bypass env residue) are listed exhaustively and the boot refuses — the
++ * same discipline as the MT013 checks above. With the switch off nothing here changes: the
++ * legacy boot resolves to the very same defaults it always built.
++ */
++const startupDefaultFacts = {
++  multitenancy: config.multitenancy.enabled,
++  deploymentId: config.deploymentId,
++  tenantPackageTenantId: tenantPackage.tenantId,
++  singleUser: config.singleUser,
++  singleUserEnvRaw: process.env.OPENBOT_SINGLE_USER,
++  devNoAuthEnvRaw: process.env.OPENBOT_DEV_NO_AUTH,
++  entryContextWired: Boolean(enterpriseCapabilities?.entry),
++} as const;
++const startupDefaults = resolveStartupDefaults(startupDefaultFacts);
++if (config.multitenancy.enabled) {
++  applyStartupDefaultsVerdict(
++    buildStartupDefaultsRecord(
++      startupDefaults,
++      evaluateStartupAssemblyReadiness(startupDefaultFacts),
++    ),
++    { log },
++  );
++}
++const startupThreadIdentitySeed = startupDefaults.threadIdentitySeed;
++if (startupThreadIdentitySeed === null) {
++  // Unreachable: the multitenancy verdict above already refused a boot whose
++  // thread seed would fall back to the tenant package's default company, and
++  // a single-tenant package always carries a tenantId. Guarded anyway — a
++  // silent undefined fingerprint would be exactly the default the purified
++  // assembly exists to remove.
++  throw new Error("STARTUP_THREAD_IDENTITY_SEED_ABSENT");
++}
++const threadIdentity = createThreadIdentity(startupThreadIdentitySeed);
+ const baseChannelStore = createChannelStore(
+   database,
+   agentProfileStore,

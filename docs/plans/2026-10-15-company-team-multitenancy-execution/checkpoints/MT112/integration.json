@@ -1,0 +1,27 @@
+{
+ "node": "MT112",
+ "phase": "integration",
+ "integrated_at": "2026-10-16T12:30:00",
+ "baseline_head": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+ "lineage": {
+  "impl": "task_1f45a268faf6 (i6-mt112)",
+  "review1": "reports/MT112-review.md: Spec PASS 4/4 + 裁决#5 最小性/expand-only/RLS FORCE 密码学核验 / Code 高; 0C/0H/0M (2 low + 3 info)；ctx_70187e0544da（接管复审，已释放）",
+  "source_worktrees": "i6-mt112 (deliverables) + i6-review-mt112"
+ },
+ "integrated_files_sha256": {
+  "server/src/db/schema/enterprise-tenancy.ts": "f9e312a72fe2c7ddc7d3370be2c76ccb74c8fabd8b25c10d301568aa2aee0f0e",
+  "server/scripts/multitenancy/migrate-test.ts": "b87caeb457ddca70c3826703161d5ea524b3ff73aace58b6e814c5480b4ad83a",
+  "server/tests/multitenancy/migration-tool.test.ts": "185c1ca33e2f1fc924a1674039eed4820403fd9940c097df4aa8b35bbab0f1e7",
+  "server/tests/multitenancy/legacy-anchor.test.ts": "6e206f4db9a8b28f55928cab05e306f68632ce7806f0ee4339eaf5e237377e99"
+ },
+ "coordinator_verification": {
+  "date": "2026-10-16",
+  "note": "与 MT006 亲验同轮（v4）在集成树执行：freeze 4/4 = after-hashes、转移后 4/4 复核一致",
+  "legacy_anchor_suite": "含于 full：21 用例全绿（203/0/0skip 的一部分）",
+  "full_suite": "203 pass / 0 fail / 0 skip across 8 files exit 0",
+  "typecheck": "exit 0",
+  "biome": "exit 0（新文件无 findings）",
+  "reviewer_independent_evidence": "CLI 链 dry-run→generate→apply→重放 0/0/0/0；psql 实测 relrowsecurity/relforcerowsecurity=t、23505/23514/42501 三码复现、独立 generate 与存档 manifest 逐字节一致 f65c290e…"
+ },
+ "residual_findings": "L1 low（复跑 runbook 缺「先 apply MT004」前置——本 integration.json 已记录该前置）；L2 low（dry-run 完整断言仅 fresh 分支）；3 info"
+}

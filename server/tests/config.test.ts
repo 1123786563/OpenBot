@@ -313,6 +313,10 @@ describe("deployment configuration", () => {
       // Nothing set, so no opinion and everybody is admitted: the shape a deployment that has not
       // heard of SIGNIN_ALLOWED_EMAIL_DOMAINS has, which is every deployment running today.
       allowedEmailDomains: [],
+      // MT013 disclosure: this assertion went stale at mainline commit 30a04b85, which added
+      // AuthConfig.emailPassword (off unless OPENBOT_EMAIL_PASSWORD=true) without updating this
+      // exhaustive shape — the test failed at BASE f0520524 before any MT013 change.
+      emailPassword: false,
     });
   });
 
@@ -1174,6 +1178,75 @@ describe("memory sources and background research", () => {
       loadConfig({ ...baseEnvironment, OPENBOT_PROACTIVE_DEFAULTS: value })
         .memoryDefaults,
     ).toEqual({ sources: true, research: false });
+  });
+});
+
+/**
+ * The multitenancy switch (MT013): an explicit opt-in, default off.
+ *
+ * Unlike the default-on switches above, this one answers a question about who the deployment
+ * serves, and booting multi-tenant while believing you are single-tenant (or the reverse) is not
+ * a spelling mistake the server should forgive — so an unrecognised value is refused at boot,
+ * not coerced.
+ */
+describe("OPENBOT_MULTITENANCY", () => {
+  test("is off when the variable is absent (byte-identical legacy boot)", () => {
+    expect(loadConfig(baseEnvironment).multitenancy.enabled).toBe(false);
+  });
+
+  test.each(["on", "true", "1"])("switches on explicitly with %p", (value) => {
+    expect(
+      loadConfig({ ...baseEnvironment, OPENBOT_MULTITENANCY: value })
+        .multitenancy.enabled,
+    ).toBe(true);
+  });
+
+  test.each(["off", "false", "0"])(
+    "switches off explicitly with %p",
+    (value) => {
+      expect(
+        loadConfig({ ...baseEnvironment, OPENBOT_MULTITENANCY: value })
+          .multitenancy.enabled,
+      ).toBe(false);
+    },
+  );
+
+  // "" reads as absent (the trim `optional` applies everywhere in this file), so it keeps the
+  // default-off rather than being a refusal.
+  test.each(["ON", "yes", "enabled", "maybe"])(
+    "refuses an unrecognised value (%p) instead of guessing",
+    (value) => {
+      expect(() =>
+        loadConfig({ ...baseEnvironment, OPENBOT_MULTITENANCY: value }),
+      ).toThrow(/OPENBOT_MULTITENANCY/);
+    },
+  );
+
+  test("an empty value reads as absent and stays off", () => {
+    expect(
+      loadConfig({ ...baseEnvironment, OPENBOT_MULTITENANCY: "" }).multitenancy
+        .enabled,
+    ).toBe(false);
+  });
+
+  test("carries the inventory and waiver paths through to the startup checks", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      OPENBOT_MULTITENANCY: "on",
+      OPENBOT_MULTITENANCY_INVENTORY: "/etc/openbot/inventory.json",
+      OPENBOT_MULTITENANCY_WAIVERS: "/etc/openbot/waivers.json",
+    });
+    expect(config.multitenancy).toEqual({
+      enabled: true,
+      inventoryPath: "/etc/openbot/inventory.json",
+      waiversPath: "/etc/openbot/waivers.json",
+    });
+  });
+
+  test("paths stay optional; an off switch carries no path state", () => {
+    expect(loadConfig(baseEnvironment).multitenancy).toEqual({
+      enabled: false,
+    });
   });
 });
 

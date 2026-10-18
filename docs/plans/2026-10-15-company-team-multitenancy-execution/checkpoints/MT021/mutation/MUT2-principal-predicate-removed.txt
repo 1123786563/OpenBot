@@ -1,0 +1,307 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/conversations-list.test.ts:
+(pass) MT021 验收 1：列表/计数/游标只反映可见集合 > 种子完整落库：RLS 下 A 公司 11 行 / B 公司 3 行；无上下文 fail-closed 0 行 [10.01ms]
+224 |     async () => {
+225 |       const scope = await scopeAs("a1-member", companyA, teamA1);
+226 |       const page = await fixture.service.listVisibleConversations(scope, {
+227 |         limit: 200,
+228 |       });
+229 |       expect(page.items.map((item) => item.conversationId)).toEqual([
+                                                                  ^
+error: expect(received).toEqual(expected)
+
+  [
+    "fce33b01-ae3c-4b3f-8c2d-6672550eab0c",
++   "a9985134-99ef-44de-95cb-b1ee51c2a237",
+    "e557d1f7-f5f3-4ebd-8be2-ab4494e4d39a",
++   "3259804a-d7b9-4312-9435-be5d3c033068",
+    "f80f15a5-072d-4e8e-88a9-40b2e5109cee",
++   "ecb27dfe-be02-4d6d-b104-6e0ba03eafad",
++   "518dbdd4-574c-4a2b-8e21-2f819edac076",
++   "5fe354ec-6bc5-4b74-84ad-c61c201f3fc2",
++   "74b8b597-5dcb-424e-9371-5c7761678679",
+  ]
+
+- Expected  - 0
++ Received  + 6
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:229:61)
+(fail) MT021 验收 1：列表/计数/游标只反映可见集合 > a1-member 的列表与计数恰为其本人 A1 会话：他人的/他团队的/他公司的都不在 [23.31ms]
+247 |     async () => {
+248 |       const scope = await scopeAs("a1-other", companyA, teamA1);
+249 |       const page = await fixture.service.listVisibleConversations(scope, {
+250 |         limit: 200,
+251 |       });
+252 |       expect(page.items.map((item) => item.conversationId)).toEqual([
+                                                                  ^
+error: expect(received).toEqual(expected)
+
+  [
++   "fce33b01-ae3c-4b3f-8c2d-6672550eab0c",
+    "a9985134-99ef-44de-95cb-b1ee51c2a237",
++   "e557d1f7-f5f3-4ebd-8be2-ab4494e4d39a",
+    "3259804a-d7b9-4312-9435-be5d3c033068",
++   "f80f15a5-072d-4e8e-88a9-40b2e5109cee",
++   "ecb27dfe-be02-4d6d-b104-6e0ba03eafad",
++   "518dbdd4-574c-4a2b-8e21-2f819edac076",
++   "5fe354ec-6bc5-4b74-84ad-c61c201f3fc2",
+    "74b8b597-5dcb-424e-9371-5c7761678679",
+  ]
+
+- Expected  - 0
++ Received  + 6
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:252:61)
+(fail) MT021 验收 1：列表/计数/游标只反映可见集合 > 同团队另一成员的列表独立：a1-other 只见自己的行（互不可见，双向） [14.64ms]
+269 |     async () => {
+270 |       const bScope = await scopeAs("b1-member", companyB, teamB1);
+271 |       const bPage = await fixture.service.listVisibleConversations(bScope, {
+272 |         limit: 200,
+273 |       });
+274 |       expect(bPage.items.map((item) => item.conversationId)).toEqual([
+                                                                   ^
+error: expect(received).toEqual(expected)
+
+  [
+    "8bf4a925-275b-4e32-8562-d739e4cbe068",
++   "eaaa7021-9f7f-4f88-be4c-7908995ab9a3",
+    "c2839702-55b6-46da-b20c-a5bf7665f3cb",
+  ]
+
+- Expected  - 0
++ Received  + 1
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:274:62)
+(fail) MT021 验收 1：列表/计数/游标只反映可见集合 > 跨公司：b1-member 只见 B1 自己的行；multi-company 双公司列表互斥且并集不串 [11.82ms]
+322 |         collected.push(...page.items.map((item) => item.conversationId));
+323 |         pages.push(page.nextCursor);
+324 |         if (page.nextCursor === null) break;
+325 |         cursor = page.nextCursor;
+326 |       }
+327 |       expect(collected).toEqual([
+                              ^
+error: expect(received).toEqual(expected)
+
+  [
+    "fce33b01-ae3c-4b3f-8c2d-6672550eab0c",
++   "a9985134-99ef-44de-95cb-b1ee51c2a237",
+    "e557d1f7-f5f3-4ebd-8be2-ab4494e4d39a",
++   "3259804a-d7b9-4312-9435-be5d3c033068",
+    "f80f15a5-072d-4e8e-88a9-40b2e5109cee",
++   "ecb27dfe-be02-4d6d-b104-6e0ba03eafad",
++   "518dbdd4-574c-4a2b-8e21-2f819edac076",
++   "5fe354ec-6bc5-4b74-84ad-c61c201f3fc2",
++   "74b8b597-5dcb-424e-9371-5c7761678679",
+  ]
+
+- Expected  - 0
++ Received  + 6
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:327:25)
+(fail) MT021 验收 1：列表/计数/游标只反映可见集合 > 分页游标只在可见流上：页并集 == 全量可见集，无重复无遗漏，收敛 null [35.04ms]
+(pass) MT021 验收 2：跨范围详情 = canonical 不可见语义 > 另一公司的会话 ID：canonical not-found，与 MT011 冻结实例逐字节同形 [13.89ms]
+(pass) MT021 验收 2：跨范围详情 = canonical 不可见语义 > 不存在 / 跨公司 / 跨团队 / 他人会话的拒绝构成单元素字节集（不泄露区别） [30.70ms]
+(pass) MT021 验收 2：跨范围详情 = canonical 不可见语义 > 正向：本人会话详情 allow，视图字段精确（含 workspace 钉死与时间往返） [9.30ms]
+426 |     async () => {
+427 |       const scopeA1 = await scopeAs("a1a2-member", companyA, teamA1);
+428 |       const pageA1 = await fixture.service.listVisibleConversations(scopeA1, {
+429 |         limit: 200,
+430 |       });
+431 |       expect(pageA1.items.map((item) => item.conversationId)).toEqual([
+                                                                    ^
+error: expect(received).toEqual(expected)
+
+  [
++   "fce33b01-ae3c-4b3f-8c2d-6672550eab0c",
++   "a9985134-99ef-44de-95cb-b1ee51c2a237",
++   "e557d1f7-f5f3-4ebd-8be2-ab4494e4d39a",
++   "3259804a-d7b9-4312-9435-be5d3c033068",
++   "f80f15a5-072d-4e8e-88a9-40b2e5109cee",
+    "ecb27dfe-be02-4d6d-b104-6e0ba03eafad",
++   "518dbdd4-574c-4a2b-8e21-2f819edac076",
++   "5fe354ec-6bc5-4b74-84ad-c61c201f3fc2",
++   "74b8b597-5dcb-424e-9371-5c7761678679",
+  ]
+
+- Expected  - 0
++ Received  + 8
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:431:63)
+(fail) MT021 验收 3：切团队立即变化（无需重登） > a1a2-member：A1 scope 见 [c6]，紧接 A2 scope 见 [d2]——同一身份无需重登 [11.23ms]
+458 |           await fixture.service.listVisibleConversations(
+459 |             await scopeAs("a1a2-member", companyA, workspaceId),
+460 |             { limit: 200 },
+461 |           )
+462 |         ).items.map((item) => item.conversationId);
+463 |       expect(await read(teamA1)).toEqual([convId("c6")]);
+                                       ^
+error: expect(received).toEqual(expected)
+
+  [
++   "fce33b01-ae3c-4b3f-8c2d-6672550eab0c",
++   "a9985134-99ef-44de-95cb-b1ee51c2a237",
++   "e557d1f7-f5f3-4ebd-8be2-ab4494e4d39a",
++   "3259804a-d7b9-4312-9435-be5d3c033068",
++   "f80f15a5-072d-4e8e-88a9-40b2e5109cee",
+    "ecb27dfe-be02-4d6d-b104-6e0ba03eafad",
++   "518dbdd4-574c-4a2b-8e21-2f819edac076",
++   "5fe354ec-6bc5-4b74-84ad-c61c201f3fc2",
++   "74b8b597-5dcb-424e-9371-5c7761678679",
+  ]
+
+- Expected  - 0
++ Received  + 8
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:463:34)
+(fail) MT021 验收 3：切团队立即变化（无需重登） > A1→A2→A1 三连切换：每次都精确反映当前 scope（无陈旧缓存） [15.03ms]
+473 |       // 撤权前正向可见（positive control）。
+474 |       const before = await fixture.service.listVisibleConversations(
+475 |         doomedScope,
+476 |         { limit: 200 },
+477 |       );
+478 |       expect(before.items.map((item) => item.conversationId)).toEqual([
+                                                                    ^
+error: expect(received).toEqual(expected)
+
+  [
++   "fce33b01-ae3c-4b3f-8c2d-6672550eab0c",
++   "a9985134-99ef-44de-95cb-b1ee51c2a237",
++   "e557d1f7-f5f3-4ebd-8be2-ab4494e4d39a",
++   "3259804a-d7b9-4312-9435-be5d3c033068",
++   "f80f15a5-072d-4e8e-88a9-40b2e5109cee",
++   "ecb27dfe-be02-4d6d-b104-6e0ba03eafad",
++   "518dbdd4-574c-4a2b-8e21-2f819edac076",
+    "5fe354ec-6bc5-4b74-84ad-c61c201f3fc2",
++   "74b8b597-5dcb-424e-9371-5c7761678679",
+  ]
+
+- Expected  - 0
++ Received  + 8
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:478:63)
+(fail) MT021 验收 3：切团队立即变化（无需重登） > 真实撤权（MT006）后：已签发 scope 的列表空页、计数 0、详情 canonical not-found [15.67ms]
+ 96 |   try {
+ 97 |     await run();
+ 98 |   } catch (error) {
+ 99 |     return error instanceof Error ? error.message : String(error);
+100 |   }
+101 |   throw new Error("expected the call to be rejected, but it succeeded");
+                  ^
+error: expected the call to be rejected, but it succeeded
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:101:13)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:505:29)
+(fail) MT021 验收 3：切团队立即变化（无需重登） > 撤权后同身份再铸造 scope 被真实资格门拒绝（不是服务层放行） [4.13ms]
+915 |               eq(enterpriseMemberships.principalId, principalId),
+916 |               eq(enterpriseMemberships.status, "suspended"),
+917 |             ),
+918 |           )
+919 |           .returning({ epoch: enterpriseMemberships.epoch });
+920 |         if (!updated) throw new Error("COMPANY_MEMBER_NOT_FOUND");
+                                      ^
+error: COMPANY_MEMBER_NOT_FOUND
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/src/enterprise/tenancy/workspace-admin.ts:920:33)
+(fail) MT021 验收 3：切团队立即变化（无需重登） > 暂停→恢复（MT007 restore）后：旧 scope 仍被拒（epoch 独立防线），新 scope 正常 [16.62ms]
+583 |         });
+584 |         collected.push(...page.items.map((item) => item.conversationId));
+585 |         if (page.nextCursor === null) break;
+586 |         cursor = page.nextCursor;
+587 |       }
+588 |       expect(collected).toEqual([
+                              ^
+error: expect(received).toEqual(expected)
+
+  [
+    "fce33b01-ae3c-4b3f-8c2d-6672550eab0c",
++   "a9985134-99ef-44de-95cb-b1ee51c2a237",
+    "e557d1f7-f5f3-4ebd-8be2-ab4494e4d39a",
++   "3259804a-d7b9-4312-9435-be5d3c033068",
+    "f80f15a5-072d-4e8e-88a9-40b2e5109cee",
++   "ecb27dfe-be02-4d6d-b104-6e0ba03eafad",
++   "518dbdd4-574c-4a2b-8e21-2f819edac076",
++   "5fe354ec-6bc5-4b74-84ad-c61c201f3fc2",
+    "c5341556-f41d-43aa-aee1-57ed2ec0dd46",
+    "ef056637-5b89-45e9-ad18-2389f5b3c727",
++   "74b8b597-5dcb-424e-9371-5c7761678679",
+  ]
+
+- Expected  - 0
++ Received  + 6
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:588:25)
+(fail) MT021 验收 4：游标稳定性（隐藏条目不跳不重） > limit=1 全页链：隐藏行交错期间页并集 == 精确可见序列（不跳不重） [65.81ms]
+600 |     "计数同步反映追加后的可见集（5）——隐藏行不进计数",
+601 |     async () => {
+602 |       const scope = await scopeAs("a1-member", companyA, teamA1);
+603 |       expect(
+604 |         (await fixture.service.countVisibleConversations(scope)).total,
+605 |       ).toBe(5);
+              ^
+error: expect(received).toBe(expected)
+
+Expected: 5
+Received: 11
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:605:9)
+(fail) MT021 验收 4：游标稳定性（隐藏条目不跳不重） > 计数同步反映追加后的可见集（5）——隐藏行不进计数 [15.79ms]
+611 |     async () => {
+612 |       const scope = await scopeAs("a1-member", companyA, teamA1);
+613 |       const firstPage = await fixture.service.listVisibleConversations(scope, {
+614 |         limit: 2,
+615 |       });
+616 |       expect(firstPage.items.map((item) => item.conversationId)).toEqual([
+                                                                       ^
+error: expect(received).toEqual(expected)
+
+  [
+    "fce33b01-ae3c-4b3f-8c2d-6672550eab0c",
+-   "e557d1f7-f5f3-4ebd-8be2-ab4494e4d39a",
++   "a9985134-99ef-44de-95cb-b1ee51c2a237",
+  ]
+
+- Expected  - 1
++ Received  + 1
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:616:66)
+(fail) MT021 验收 4：游标稳定性（隐藏条目不跳不重） > 翻页中途改名（updated_at 语义无关——游标键不可变）：后续页原样续读 [11.34ms]
+658 |         });
+659 |         collected.push(...page.items.map((item) => item.conversationId));
+660 |         if (page.nextCursor === null) break;
+661 |         cursor = page.nextCursor;
+662 |       }
+663 |       expect(collected).toEqual([
+                              ^
+error: expect(received).toEqual(expected)
+
+  [
+    "fce33b01-ae3c-4b3f-8c2d-6672550eab0c",
++   "a9985134-99ef-44de-95cb-b1ee51c2a237",
+    "e557d1f7-f5f3-4ebd-8be2-ab4494e4d39a",
++   "3259804a-d7b9-4312-9435-be5d3c033068",
++   "ecb27dfe-be02-4d6d-b104-6e0ba03eafad",
++   "518dbdd4-574c-4a2b-8e21-2f819edac076",
++   "5fe354ec-6bc5-4b74-84ad-c61c201f3fc2",
+    "c5341556-f41d-43aa-aee1-57ed2ec0dd46",
+    "ef056637-5b89-45e9-ad18-2389f5b3c727",
++   "74b8b597-5dcb-424e-9371-5c7761678679",
+  ]
+
+- Expected  - 0
++ Received  + 6
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i12-mt021/server/tests/multitenancy/conversations-list.test.ts:663:25)
+(fail) MT021 验收 4：游标稳定性（隐藏条目不跳不重） > 翻页中途删除可见项：后续页无移位、无错误、无复现，计数与游标同步收敛 [44.48ms]
+(pass) MT021 验收 4：游标稳定性（隐藏条目不跳不重） > 变异靶行存在性自查（c10/c11 是本 describe 追加的真实行） [0.17ms]
+(pass) MT021 输入校验与信任边界 > 无效 limit 响亮拒绝（0/201/非整数） [3.65ms]
+(pass) MT021 输入校验与信任边界 > 无效游标响亮拒绝（非 base64url/坏 JSON/缺字段） [3.70ms]
+(pass) MT021 输入校验与信任边界 > 畸形会话 ID 响亮拒绝（输入校验；不与 not-found 混同） [3.13ms]
+(pass) MT021 输入校验与信任边界 > 缺公司/团队上下文明确拒绝（先于信任判定的输入形状拒绝） [3.58ms]
+(pass) MT021 输入校验与信任边界 > forged scope 响亮拒绝（UNVERIFIED_SCOPE，信任边界不放宽） [0.22ms]
+(pass) MT021 存储契约 > 未验证通道在服务装配时拒绝（UNVERIFIED_DATABASE_CAPABILITY） [2.58ms]
+(pass) MT021 存储契约 > canonical 不可见语义只此一种：序列化字节精确且与 MT011 冻结实例一致 [0.03ms]
+(pass) MT021 存储契约 > 全部受限查询以 ob_ent_* 能力角色执行（三种角色都在场） [0.08ms]
+
+ 13 pass
+ 13 fail
+ 77 expect() calls
+Ran 26 tests across 1 file. [1372.00ms]

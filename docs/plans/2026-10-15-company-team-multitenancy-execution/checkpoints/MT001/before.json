@@ -1,0 +1,16 @@
+{
+  "checkpoint_id": "MT001-before",
+  "task_id": "task_4ae1247de41a",
+  "dispatch_id": "ctx_2e3104fdb0bd",
+  "worktree": "/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt001",
+  "base_head": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+  "status_scoped_before": "",
+  "staged_diff": "",
+  "unstaged_diff": "",
+  "untracked_files": [],
+  "owned_paths": [
+    "server/scripts/multitenancy/inventory.ts",
+    "server/tests/multitenancy/inventory.test.ts"
+  ],
+  "captured_from_clean_child_worktree": true
+}

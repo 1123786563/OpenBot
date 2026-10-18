@@ -1,0 +1,25 @@
+{
+  "ticket": "MT001",
+  "created_at_utc": "2026-10-15T05:04Z",
+  "execution_base": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+  "source_worktree": "/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt001",
+  "source_head": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+  "scope": "read-only independent per-ticket review snapshot",
+  "files": {
+    "/Users/wuyongjun/orca/workspaces/OpenBot/company-team-multitenancy-execution/docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT001/before.json": "e15091d8d8a751857f2c6ce84c96fdc9c98755825c5cc2dbbbff47c22f75b246",
+    "/Users/wuyongjun/orca/workspaces/OpenBot/company-team-multitenancy-execution/docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT001/gap-report.md": "97d61dab081da88474ff513c8db357ab142ce9e813a4032922cd8f0c56167419",
+    "/Users/wuyongjun/orca/workspaces/OpenBot/company-team-multitenancy-execution/docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT001/inventory.json": "ee7351c0a96871bfd3f893d31cc6b8c1b52c27d541d7dbc3f46a9fa1f96ac728",
+    "/Users/wuyongjun/orca/workspaces/OpenBot/company-team-multitenancy-execution/docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT001/sha256-manifest.txt": "8e18cf9dc671fa056b42f9ba3dce56a9bcf63242dcba62d64baf1c5750ac2068",
+    "/Users/wuyongjun/orca/workspaces/OpenBot/company-team-multitenancy-execution/docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT001/verification.txt": "5b0d46ea97810507985c78c178f71df4ab9f153d14d5c84ef99f7cda37e92d7f",
+    "/Users/wuyongjun/orca/workspaces/OpenBot/company-team-multitenancy-execution/docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT001.md": "56a8b073e629c6280e1e52d138e4b9d406531866162e267d2de93f023c1d21a3",
+    "/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt001/server/scripts/multitenancy/inventory.ts": "8f4566f0240651613144421a15396def251a31fe347de14b93a496ea78facc4d",
+    "/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt001/server/tests/multitenancy/inventory.test.ts": "a41f47d74876d56640d78981df832effbba753bc5d35317ad5ad8b2c1d810ca1"
+  },
+  "checkpoint_artifacts": [
+    "inventory.json",
+    "gap-report.md",
+    "verification.txt",
+    "sha256-manifest.txt"
+  ],
+  "package_sha256": "b5fc671702bec097c61598f1839802868aa06826d878eeeb6e8a87308bb19f24"
+}

@@ -54,6 +54,7 @@ import { Route as AuthedSettingsPasswordsRouteImport } from './routes/_authed/se
 import { Route as AuthedSettingsUsageRouteImport } from './routes/_authed/settings/usage'
 import { Route as AuthedSignInRequestIdRouteImport } from './routes/_authed/sign-in/$requestId'
 import { Route as AuthedTenantChannelsRouteImport } from './routes/_authed/tenant/channels'
+import { Route as AuthedTenantSelectionRouteImport } from './routes/_authed/tenant/selection'
 import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/agents/index'
 import { Route as AuthedAppBotsIndexRouteImport } from './routes/_authed/_app/bots.index'
 import { Route as AuthedAppChannelChannelIdRouteImport } from './routes/_authed/_app/channel/$channelId'
@@ -320,6 +321,11 @@ const AuthedSignInRequestIdRoute = AuthedSignInRequestIdRouteImport.update({
 const AuthedTenantChannelsRoute = AuthedTenantChannelsRouteImport.update({
   id: '/tenant/channels',
   path: '/tenant/channels',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedTenantSelectionRoute = AuthedTenantSelectionRouteImport.update({
+  id: '/tenant/selection',
+  path: '/tenant/selection',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedAppAgentsIndexRoute = AuthedAppAgentsIndexRouteImport.update({
@@ -591,6 +597,7 @@ export interface FileRoutesByFullPath {
   '/settings/usage': typeof AuthedSettingsUsageRoute
   '/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
   '/tenant/channels': typeof AuthedTenantChannelsRoute
+  '/tenant/selection': typeof AuthedTenantSelectionRoute
   '/admin/': typeof AuthedAdminIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
@@ -673,6 +680,7 @@ export interface FileRoutesByTo {
   '/settings/usage': typeof AuthedSettingsUsageRoute
   '/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
   '/tenant/channels': typeof AuthedTenantChannelsRoute
+  '/tenant/selection': typeof AuthedTenantSelectionRoute
   '/admin': typeof AuthedAdminIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
@@ -759,6 +767,7 @@ export interface FileRoutesById {
   '/_authed/settings/usage': typeof AuthedSettingsUsageRoute
   '/_authed/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
   '/_authed/tenant/channels': typeof AuthedTenantChannelsRoute
+  '/_authed/tenant/selection': typeof AuthedTenantSelectionRoute
   '/_authed/_app/': typeof AuthedAppIndexRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
@@ -846,6 +855,7 @@ export interface FileRouteTypes {
     | '/settings/usage'
     | '/sign-in/$requestId'
     | '/tenant/channels'
+    | '/tenant/selection'
     | '/admin/'
     | '/settings/'
     | '/channel/$channelId'
@@ -928,6 +938,7 @@ export interface FileRouteTypes {
     | '/settings/usage'
     | '/sign-in/$requestId'
     | '/tenant/channels'
+    | '/tenant/selection'
     | '/admin'
     | '/settings'
     | '/channel/$channelId'
@@ -1013,6 +1024,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/usage'
     | '/_authed/sign-in/$requestId'
     | '/_authed/tenant/channels'
+    | '/_authed/tenant/selection'
     | '/_authed/_app/'
     | '/_authed/admin/'
     | '/_authed/settings/'
@@ -1378,6 +1390,13 @@ declare module '@tanstack/react-router' {
       path: '/tenant/channels'
       fullPath: '/tenant/channels'
       preLoaderRoute: typeof AuthedTenantChannelsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/tenant/selection': {
+      id: '/_authed/tenant/selection'
+      path: '/tenant/selection'
+      fullPath: '/tenant/selection'
+      preLoaderRoute: typeof AuthedTenantSelectionRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/_app/agents/': {
@@ -1875,6 +1894,7 @@ interface AuthedRouteChildren {
   AuthedOnboardingRoute: typeof AuthedOnboardingRoute
   AuthedSignInRequestIdRoute: typeof AuthedSignInRequestIdRoute
   AuthedTenantChannelsRoute: typeof AuthedTenantChannelsRoute
+  AuthedTenantSelectionRoute: typeof AuthedTenantSelectionRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
@@ -1884,6 +1904,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedOnboardingRoute: AuthedOnboardingRoute,
   AuthedSignInRequestIdRoute: AuthedSignInRequestIdRoute,
   AuthedTenantChannelsRoute: AuthedTenantChannelsRoute,
+  AuthedTenantSelectionRoute: AuthedTenantSelectionRoute,
 }
 
 const AuthedRouteWithChildren =

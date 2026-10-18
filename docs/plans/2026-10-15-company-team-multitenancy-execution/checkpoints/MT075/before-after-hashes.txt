@@ -1,0 +1,13 @@
+# MT075 触及文件的 before/after SHA-256
+
+## before（领取时 prereq-manifest 复算一致，34/34 OK）
+e58bde59de470b816a6cacfa988b7a450d15dd7261ef2e22f6d77b034d6c05d0  server/scripts/multitenancy/inventory.ts
+731a30e6cf9513b028635f15378e15dffaefd86c2514eef9fd0f4be72f1f9782  server/src/enterprise/tenancy/workspace-admin.ts
+29299ecbead7abcf5eb447eaa4cbbb028971a86b44a4fe45e3f4e02d1def474a  server/src/enterprise/tenancy/workspace-scope-routes.ts
+
+## after（本票收尾实测）
+4f1ec9f8f3c26e4e3cca66ec7559297b07a42d606dbfcd2bb4eaf0d57bed37f2  server/scripts/multitenancy/inventory.ts
+19f2084dadac47923a3a5e809105e03804698517562e62cc639879719c14447b  server/src/enterprise/tenancy/workspace-scope-routes.ts
+9253bae550a983895fc79b9fc1158e6a978c20012f9ac140f33e96ead60df145  server/src/enterprise/tenancy/admin-separation.ts
+cd140fe169a362b6165b36b594ee14b95bf099551bc209191caa6e8352af9ebb  server/tests/multitenancy/admin-separation.test.ts
+98b4fbc82f263b99705f6f2f638a6f1e866bbe73f450faa7330e3d1d5b09ed9f  server/tests/multitenancy/support/admin-separation.ts

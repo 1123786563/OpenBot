@@ -33,10 +33,10 @@ import type { ApprovalService } from "./approvals/service";
 import {
   type AuditEventType,
   type AuditInitiator,
-  auditEventsToCsv,
   AuditQueryError,
   type AuditReader,
   type AuditStore,
+  auditEventsToCsv,
   auditQueryFromUrl,
   DEPLOYMENT_INITIATOR,
   readAuditExportRows,
@@ -115,6 +115,10 @@ import { mountDesktopConnectionFailure } from "./desktop-connection-failure";
 import { createTranscriptionProvider } from "./dictation/provider";
 import { createDictationRoutes } from "./dictation/routes";
 import { withRunnerRequestContext } from "./enterprise/runs/request-context";
+import {
+  createDeploymentEntryContextMiddleware,
+  type DeploymentEntryContextFactory,
+} from "./enterprise/tenancy/entry-context";
 import type { HostAccessBroker } from "./host-access/broker";
 import { createHostAccessRoutes } from "./host-access/routes";
 import { identityRoutes } from "./identity/routes";
@@ -168,9 +172,9 @@ import { openMuseAccountFence } from "./openmuse-deletion/fence";
 import type { OpenMuseDeletionManifest } from "./openmuse-deletion/manifest";
 import type { OpenMuseFileBytePurgeReport } from "./openmuse-deletion/purge";
 import type { OpenMuseRelationalPurgeOutcome } from "./openmuse-deletion/purge-relational";
+import type { OpenMuseDeletionRestore } from "./openmuse-deletion/restore";
 import { createOpenMuseDeletionAdminRoutes } from "./openmuse-deletion/restore";
 import type { OpenMuseDeletionCleanupView } from "./openmuse-deletion/retention";
-import type { OpenMuseDeletionRestore } from "./openmuse-deletion/restore";
 import { createOpenMuseAccountDeletionRoutes } from "./openmuse-deletion/routes";
 import type { OpenMuseAccountDeletionStore } from "./openmuse-deletion/store";
 import { createOpenMuseFilesRoutes } from "./openmuse-files/routes";
@@ -215,9 +219,9 @@ import type { SelfHostBanner } from "./self-host-banner";
 import { createTeamBotRoutes } from "./team-bots/routes";
 import type { TeamBots } from "./team-bots/team-bots";
 import { createRequestTracking } from "./telemetry/request-tracking";
-import { withUsageOrigin } from "./usage-origin";
 import { createTraceMiddleware } from "./telemetry/trace-middleware";
 import type { PackageStatusReader } from "./tenant-package";
+import { withUsageOrigin } from "./usage-origin";
 import {
   INSTRUCTIONS_LIMIT,
   InstructionsTooLongError,
@@ -228,12 +232,12 @@ import { userPreferencesRoutes } from "./user-preferences-routes";
 import { createVoiceProvider } from "./voice/provider";
 import { createVoiceRoutes } from "./voice/routes";
 import type { VoiceSessionServices } from "./voice/session-routes";
-import type { createWorkshopPublicRoutes } from "./workshop/public-routes";
-import type { WorkshopRoutesFactory } from "./workshop/routes";
 import {
   DIRECTORY_PATH as WEB_BOT_AUTH_DIRECTORY_PATH,
   directoryResponse as webBotAuthDirectory,
 } from "./web-bot-auth";
+import type { createWorkshopPublicRoutes } from "./workshop/public-routes";
+import type { WorkshopRoutesFactory } from "./workshop/routes";
 
 const log = getLogger("server");
 
@@ -569,6 +573,19 @@ export function createApp(
     };
     groups?: GroupConversations;
     enterpriseConversations?: Hono;
+    /** MT006 (issue #49): workspace scope listing + team administration routes. */
+    enterpriseWorkspaceScope?: Hono;
+    /**
+     * MT122 (issue #165): the deployment main entry's request-context seam.
+     * Present, the business API mounts the entry middleware after the
+     * usage-origin floor (multitenancy mode only); each request that carries
+     * the ruling #1 selection headers gets its context established here and
+     * its business dependencies built from the scope factory — never from a
+     * startup-wide single config, and never from a default scope. Absent
+     * (enterprise capabilities unwired or the switch off) the assembly is
+     * byte-for-byte what it was.
+     */
+    entryContext?: DeploymentEntryContextFactory;
     teamBots?: TeamBots;
     /** Pause, reset, Activity and attention for a person's own Bots. See agents/lifecycle.ts. */
     lifecycle?: BotLifecycleServices;
@@ -944,6 +961,14 @@ export function createApp(
       coworker.enterpriseConversations,
     );
   }
+  // MT006 (issue #49): scope listing is the login-time discovery surface; the
+  // admin half inside answers 503 itself when the operator channel is unwired.
+  if (coworker?.enterpriseWorkspaceScope) {
+    app.route(
+      "/api/enterprise/workspace-scope",
+      coworker.enterpriseWorkspaceScope,
+    );
+  }
   /*
    * Registering an identity provider is an administrator's decision, not a signed-in one.
    *
@@ -1053,7 +1078,23 @@ export function createApp(
    * provider-proxy surfaces never pass through here, record no usage today, and any future
    * usage-bearing surface must mount below this line or name its own origin.
    */
-  app.use("/api/*", (_context, next) => withUsageOrigin("web", next));
+  app.use("/api/*", (context, next) => withUsageOrigin("web", next));
+  /*
+   * MT122 (issue #165): the deployment main entry's request-context floor,
+   * mounted only in multitenancy mode beside a wired entry factory. Every
+   * business route registered BELOW this line passes through it: a request
+   * carrying the ruling #1 selection headers gets its context established
+   * here and its business dependencies built from the scope factory — never
+   * a default scope. The capabilities/auth/enterprise surfaces registered
+   * above keep their own context establishment, and selection-header-less
+   * requests pass untouched (the legacy migration is MT125's scope).
+   */
+  if (coworker?.entryContext && config.multitenancy.enabled) {
+    app.use(
+      "/api/*",
+      createDeploymentEntryContextMiddleware(coworker.entryContext),
+    );
+  }
   app.route("/api/admin/enterprise", createEnterpriseAdminRoutes(requireUser));
   if (openMuseTemplateRevisions) {
     /*

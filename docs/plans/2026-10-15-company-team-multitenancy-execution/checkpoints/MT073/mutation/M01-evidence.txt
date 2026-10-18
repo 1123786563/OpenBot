@@ -1,0 +1,26 @@
+# M01: gate removed (grant-row/active checks bypassed)
+# 锚点（解码后）：      if (!row || !memberActive) {
+# 注入 diff（pristine -> mutated）：
+--- /tmp/mt073-mutation-pristine-2nd.ts	2026-10-18 11:42:58
++++ src/billing/company-finance-visibility.ts	2026-10-18 11:42:58
+@@ -274,7 +274,7 @@
+       );
+       // 单一拒绝形状：授权行缺失、成员停用、公司不存在彼此不可区分
+       // （错误不泄露存在性）；固定句子保证跨形状逐字节相同。
+-      if (!row || !memberActive) {
++      if (false && (!row || !memberActive)) {
+         throw new Error(
+           "COMPANY_FINANCE_REQUIRED: company billing books are readable only by an explicitly authorized company finance reader",
+         );
+# 聚焦套件 tests/multitenancy/billing-visibility.test.ts：
+ 8 pass  8 fail 
+# 捕获者（失败用例）：
+(fail) MT073 AC2: company finance read is an explicit authorization > a member without the grant, an admin without the grant, a non-member, and an unknown company are refused identically [2.36ms]
+(fail) MT073 AC2: company finance read is an explicit authorization > the grant is a company fact: the same principal's other company does not inherit it [4.90ms]
+(fail) MT073 AC2: company finance read is an explicit authorization > revocation ends the authorization immediately and is idempotent [2.71ms]
+(fail) MT073 AC2: company finance read is an explicit authorization > suspending the grantee's membership closes the books even with the grant row intact [3.15ms]
+(fail) MT073 AC2: company finance read is an explicit authorization > a duplicate active grant is an explicit refusal, not a silent refresh [0.56ms]
+(fail) MT073 AC3: team usage reconciles with the company total and excludes personal direct spend > team usage sums to the independently computed company total [3.39ms]
+(fail) MT073 AC3: team usage reconciles with the company total and excludes personal direct spend > personal Bifrost direct spend never enters the company books [0.45ms]
+(fail) MT073 AC4: the creator-scoped order read is not widened (regression) > finance authorization does not widen the order read: the grant holder still sees only their own orders [0.38ms]
+# 还原：sha256 与 pristine 逐位一致（51c5aa04bf4ce9db989b9f5b6ec81c8ce998bb77d5a9822693369d9a05d7cd98）

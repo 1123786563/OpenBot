@@ -1,0 +1,40 @@
+{
+  "BASE": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71",
+  "batch": "wave11(MT036+MT080+MT041+MT027)",
+  "integrated_at": "2026-10-17T05:35:00+08:00",
+  "issue": 123,
+  "note": "前端 7 文件整复制(app/tests 目录 mkdir 补拷);后端零改动 111/111",
+  "review": "PASS(票面命令 25/0/0 逐字;6 观察非阻塞;报告曾误写仓库根已归位)",
+  "ticket": "MT080",
+  "verification": {
+    "base_migrate": "exit 0",
+    "biome": "server 14 文件 0",
+    "build": "app 成功(routeTree 稳定 92ed4ba6)",
+    "chain": [
+      "MT004",
+      "MT008",
+      "MT112",
+      "MT012",
+      "MT014",
+      "MT010",
+      "MT009",
+      "MT077",
+      "MT026",
+      "MT076",
+      "MT069",
+      "MT016",
+      "MT041",
+      "MT027"
+    ],
+    "container": "w11i2-pg@55525(已删,含第7库 _kb)",
+    "focused": {
+      "credentials-ownership": "38/0/0",
+      "job-ownership": "23/0/0",
+      "kb-ownership": "27/0/0",
+      "selection(app)": "25/0/0(101 expect)"
+    },
+    "full": "770/0/0/29 文件(10658 expect)=682+27+23+38",
+    "kb_side": "318 pass/11 既有skip/0 fail",
+    "typecheck": "server 0 + app 0"
+  }
+}

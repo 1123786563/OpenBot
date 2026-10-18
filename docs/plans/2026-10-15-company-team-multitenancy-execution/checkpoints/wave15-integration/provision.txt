@@ -1,0 +1,20 @@
+# wave15-integration provision — 三步配方 step1/2/2b（容器 w15int-pg @ 127.0.0.1:55591, loopback）
+# date: 2026-10-18 14:18:56 +0800; 库名 openbot_enterprise_w15int_test + _assigned + openbot_kb_w15int_test; 七变量 env 0600 用后删
+# chain 链序=brief 修正序: 19 前置(MT004→MT008→MT112→MT012→MT014→MT010→MT009→MT077→MT026→MT076→MT069→MT016→MT041→MT027→MT028→MT070→MT031→MT042→MT059)→MT029→MT073→MT060
+== step 1: dedicated container ==
+acfe5619e8b541c4fc34b4c52190b884cae75ea9b6fc1d3e8c2128661da86f89
+/var/run/postgresql:5432 - accepting connections
+PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
+== step 2: databases + kb owner role (guarded) ==
+CREATE DATABASE
+CREATE DATABASE
+CREATE ROLE
+CREATE DATABASE
+== step 2b: base migration (only when public schema still empty) + restricted logins ==
+migrate-exit=0
+{"type":"migrations-applied","status":"ok"}
+
+== teardown（收尾，2026-10-18 14:28:20 +0800） ==
+w15int-pg
+docker ps -a 残留检查: 0 个 w15int-pg
+env 文件残留检查: ls: /tmp/w15int-env.sh: No such file or directory

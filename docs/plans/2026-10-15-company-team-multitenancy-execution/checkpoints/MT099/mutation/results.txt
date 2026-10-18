@@ -1,0 +1,15 @@
+# MT099 变异自证（注入→聚焦捕获→字节复原→复绿）
+
+平台：macOS aarch64，cargo test --lib（本树）。每次注入前先备份源文件，捕获后 cp 复原，
+复原后 sha256 逐位核对（见 pre-mutation-hashes.txt）+ 聚焦复绿。
+
+| # | 注入点 | 变异 | 聚焦捕获 | 结果 | 复原哈希核对 |
+|---|---|---|---|---|---|
+| MUT-1 | credential_namespace.rs `organization_vault_name` | 个人凭据名拒绝分支短路（`if false &&`） | ns6（组织命名空间无个人槽位） | KILLED（ns6 FAILED → 复原 ok） | 063ae9c0… 一致 |
+| MUT-2 | credential_namespace.rs `namespace_hash` | 命名空间哈希改常量（跨组织隔离失效） | ns2（两组织互不可见） | KILLED（ns2 FAILED → 复原 ok） | 063ae9c0… 一致 |
+| MUT-3 | credential_namespace.rs `forget_organization` | 清理越界：抹掉全部组织前缀条目（去掉哈希范围） | ns9（只清目标组织）+ ns16（指针清理范围） | KILLED（双双 FAILED → 复原 ok） | 063ae9c0… 一致 |
+| MUT-4 | organization_auth.rs `recall_session` | legacy 平铺条目恢复不核对 authority（`if false &&`） | credential_namespace_a_legacy_session_of_another_authority_is_never_adopted | KILLED（FAILED → 复原 ok） | 3214bab3… 一致 |
+| MUT-5 | organization_auth.rs `store_session` | 完成会话不落「当前组织」指针 | credential_namespace_a_stored_session_makes_its_authority_the_installations_current + org_context t33 | KILLED（双双 FAILED → 复原 ok） | 3214bab3… 一致 |
+
+5/5 KILLED。变异体零残留：收尾 after-hashes 复核 credential_namespace.rs=063ae9c0…、
+organization_auth.rs=3214bab3…、org_context.rs=bf24c03c…（与 pre-mutation-hashes.txt 逐位一致）。

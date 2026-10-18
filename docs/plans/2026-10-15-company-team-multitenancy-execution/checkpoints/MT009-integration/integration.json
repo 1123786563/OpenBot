@@ -1,0 +1,26 @@
+{
+  "ticket": "MT009",
+  "issue": 52,
+  "integrated_at": "2026-10-16T17:10Z",
+  "review": {
+    "task": "task_cd056c9acf8c",
+    "dispatch": "ctx_ffef911f5ec7",
+    "verdict": "PASS",
+    "findings": {
+      "critical": 0, "high": 0, "medium": 0,
+      "trivial": ["4.1 注释笔误（兑底→兜底）", "4.2 第2任 biome 披露清单缺 format 项（存量欠账非增量）"],
+      "highlights": "瞬态失败排除法独立复验采信；三方合并逐字节核验未动 MT009 增量；活库 RLS 过滤+级联探针；MUT 6/6"
+    }
+  },
+  "integration_method": "6 文件整复制自复审树（复审树已装配并验证 EXE+MT009+MT014+MT010 共存态：index 614a0ed4 / migrate-test 9a495430 / migration-tool.test；3 新文件 = 第1任交付 8475b21a/7087b61b/78d4aa4e）",
+  "verification": {
+    "migrations": "base + MT004→MT008→MT112→MT012→MT014→MT010→MT009 七任务全 exit 0",
+    "suite_focus": "36 pass / 0 fail / 0 skip",
+    "full": "458 pass / 0 fail / 16 files = 422+36 [16.44s]",
+    "typecheck": 0,
+    "biome5": 0,
+    "biome_index": "存量 6+1（复审批证零新增）",
+    "container": "mt009f-integ-pg @55495 已清理"
+  },
+  "baseline_chain": "…→397→422→458（+MT009 36）"
+}
