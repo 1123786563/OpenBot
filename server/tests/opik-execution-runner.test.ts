@@ -289,6 +289,64 @@ describe("the production case runner makes one controlled, observed model call",
     );
   });
 
+  test("a non-projected modelParameters envelope refuses before admission — the dial is never priced on stripped parameters (OCR R5-20)", async () => {
+    // The parameters are the frozen configuration, not garnish: a top-level
+    // envelope the projection did not keep whole (omitted outright, or
+    // truncated past the record cap) would dial gateway defaults while the
+    // case still costs money — R4-21's stripped-dial judgment applies to it
+    // exactly as to a stripped prompt. The refusal settles before the billing
+    // admission, the same as the text fields' guard.
+    const omittedParameters = {
+      ...frozen,
+      modelParameters: { state: "omitted", reason: "unhandled_free_text" },
+    } as typeof frozen;
+    const truncatedParameters = {
+      ...frozen,
+      modelParameters: {
+        state: "truncated",
+        value: { temperature: { state: "projected", value: 0.7 } },
+        originalBytes: 4096,
+        dropped: 3,
+      },
+    } as typeof frozen;
+    const { callModel, observations, calls } = recorder();
+    let admitted = 0;
+    const runner = createProductionEvaluationCaseRunner({
+      callModel,
+      observe: (fact) => observations.push(fact),
+      admit: async () => {
+        admitted += 1;
+        return { allowed: true };
+      },
+    });
+
+    const byOmitted = await runner({
+      ...contextFor(),
+      config: omittedParameters,
+    });
+    const byTruncated = await runner({
+      ...contextFor(),
+      config: truncatedParameters,
+    });
+
+    expect(byOmitted).toEqual({ status: "failed", reason: "input_unavailable" });
+    expect(byTruncated).toEqual({
+      status: "failed",
+      reason: "input_unavailable",
+    });
+    expect(admitted).toBe(0);
+    expect(calls).toEqual([]);
+    expect(observations).toHaveLength(2);
+    expect(observations[0]?.ending).toEqual({
+      kind: "refused",
+      code: "input_unavailable",
+    });
+    expect(observations[1]?.ending).toEqual({
+      kind: "refused",
+      code: "input_unavailable",
+    });
+  });
+
   test("a failing model call is a failed case, observed failed — not a crash", async () => {
     const { observe, observations } = recorder();
     const runner = createProductionEvaluationCaseRunner({
