@@ -839,13 +839,15 @@ function expand(title: string, args: unknown[], named: Any): string {
   const out = title.replace(/%[sdifojp%]/g, (token) =>
     token === "%%" ? "%" : formatToken(token[1], args[index++] ?? named),
   );
-  const withNames = out.replace(/\$(\w+)/g, (_m, key: string) =>
+  // Bun's formatter appends the arguments a template did not consume, and the suites lean on that:
+  // `refuses %s before dispatch` with a row of [label, token, jwt] ends up naming the token too. e2e
+  // identifies a test by its title in both of its processes, so a leftover `exp` timestamp or an
+  // Error's creation stack (which records how the file was imported) makes the two passes disagree,
+  // and the runner reports the row as a test that disappeared. Consumed specifiers only: the label is
+  // the title, and the body still receives every argument.
+  return out.replace(/\$(\w+)/g, (_m, key: string) =>
     named && typeof named === "object" ? String(named[key]) : `$${key}`,
   );
-  const rest = args.slice(index);
-  return rest.length
-    ? `${withNames} ${rest.map((v) => formatToken("p", v)).join(" ")}`
-    : withNames;
 }
 
 interface Case {
