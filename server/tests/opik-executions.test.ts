@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { REDACTION_POLICY_VERSION } from "../../shared/ai-observability";
 import { ObservationScopeError } from "../src/ai-observability/contracts";
 import {
@@ -273,5 +275,27 @@ describe("the budget precheck gates the start, not the settle", () => {
       new ObservationScopeError("OWNERSHIP_REQUIRED", 403),
     );
     expect(asked).toBe(0);
+  });
+});
+
+describe("the revocation seam composition (R5-25)", () => {
+  test("the boot composes the audited executions cancel into the revoke seam", () => {
+    // R5-25: cancelExecutionsForActor's docblock promised "the audited
+    // revocation seam", but the boot's aiObservabilityCancelForActor composed
+    // only the export store's cancelForActor (T34 §6) — a revoked person's
+    // pending/running executions kept running under an authorization that no
+    // longer exists, and the settle audit rows the seam exists to leave were
+    // unreachable from production. The boot now composes both halves of the
+    // same seam. The pin reads index.ts because the composition exists in
+    // exactly one place and no injected fake can observe it (the R2-59
+    // precedent); the export half stays first so the T34 §6 behavior and its
+    // ordering are unchanged.
+    const source = readFileSync(
+      join(import.meta.dir, "..", "src", "index.ts"),
+      "utf8",
+    );
+    expect(source).toMatch(
+      /aiObservabilityCancelForActor:\s*async\s*\(actorId\)\s*=>\s*\{[\s\S]*?observationExportStore\.cancelForActor\(actorId\)[\s\S]*?cancelExecutionsForActor\(/,
+    );
   });
 });
