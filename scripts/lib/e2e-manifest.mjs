@@ -8,6 +8,31 @@ export const MANIFEST = join(root, "docs/verification/e2e-bun-suites.json");
 export const GROUP_SIZE = 24;
 
 /*
+ * The corpus scope, stated once. `e2e.unit.config.ts` collects exactly these top-level directories and
+ * `scripts/e2e-coverage-audit.mjs` reconciles against the same list; when they were two hand-written
+ * copies, adding a directory to one side silently changed what "every test is on e2e" means — the
+ * runner would collect files the audit never looked at, or the audit would claim coverage the runner
+ * doesn't have. Anything outside this list (the `bifrost` submodule, `archive/**` evidence snapshots,
+ * Go tests) is excluded by name in docs/plans, not by silence.
+ */
+export const SUITE_DIRS = [
+  "shared",
+  "supervisor",
+  "worker",
+  "deliverables",
+  "desktop",
+  "agent-bot",
+  "agent-sandbox",
+  "agent-langgraph",
+  "agent-mastra",
+  "agent-computer",
+  "app",
+  "server",
+  "tests",
+  "scripts",
+];
+
+/*
  * `bun test` runs every selected file in one process, so a suite that leaves global state behind
  * (a fetch stub, a happy-dom registration) can turn a sibling that passes alone into a failure.
  * That is not a verdict the pre-migration invocation would have given:

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { SUITE_DIRS } from "./scripts/lib/e2e-manifest.mjs";
 import type { E2EConfig } from "e2e";
 
 // e2e 不读 .env；集成测试依赖 DATABASE_URL / OPENAI_* 等变量，显式加载一次。
@@ -11,22 +12,8 @@ if (existsSync(".env")) {
 // e2e 的 glob 不支持花括号，只能一种扩展名一条；node_modules 必须排除，否则会收集依赖包自带的测试。
 //
 // E2E_UNIT_SCOPE=app,server 只收集这些目录：整套收集一次要几分钟，改一个套件时用它把回合压到秒级。
-const ALL = [
-  "shared",
-  "supervisor",
-  "worker",
-  "deliverables",
-  "desktop",
-  "agent-bot",
-  "agent-sandbox",
-  "agent-langgraph",
-  "agent-mastra",
-  "agent-computer",
-  "app",
-  "server",
-  "tests",
-  "scripts",
-];
+// 目录清单与 scripts/e2e-coverage-audit.mjs 的核对面共用一个事实源，两侧不可能各跑各的。
+const ALL = SUITE_DIRS;
 const scope = (process.env.E2E_UNIT_SCOPE ?? "")
   .split(",")
   .map((name) => name.trim())

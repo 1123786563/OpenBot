@@ -326,7 +326,7 @@ CI 的 `test` job 自带两个数据库服务：`postgres`（镜像带 pgvector�
 
 | # | 标准 | 结论 | 证据 |
 | --- | --- | --- | --- |
-| 1 | 14 个目录里每个套件文件都由 e2e 调度或按名排除 | 过 | `node scripts/e2e-coverage-audit.mjs` → `no gaps`（合并后 main 重跑：1073 = 602 native / 455 driven / 10 engine / 6 exclusions） |
+| 1 | 14 个目录里每个套件文件都由 e2e 调度或按名排除 | 过 | `node scripts/e2e-coverage-audit.mjs` → `no gaps`（合并后 main 重跑：1073 = 602 native / 455 driven / 10 engine / 6 exclusions）。核对面与运行器收集面共用 `scripts/lib/e2e-manifest.mjs` 导出的 `SUITE_DIRS`（此前是两份手写的同名清单，谁改谁漂移）；`git ls-files` 交叉核对：跟踪中的套件文件 1072 个，1062 在这 14 个目录内，剩下 10 个是 `archive/plans/multitenancy-execution/checkpoints/**` 的 before/after 证据副本（按定义不参与收集） |
 | 2 | 没有任何测试入口还跑 `bun test` | 过（入口面按字面重查过一次） | 同一审计的 ENTRY-POINT 检查，且检查面已从"根 package.json 的 `test*` + workflow"扩到**每个 package.json 的每个脚本名**——按字面重查时抓到两处漏网：`agent-sandbox` 的 `test` 与 `server` 的 `kb:test` 还在 `bun test`。两者改为经根上新增的 `test:agent-sandbox` / `test:kb` 委派给 e2e，实测 `cd agent-sandbox && bun run test` 原生 41 条 + 驱动组 1 条全过，`bun run test:kb` **25 文件 / 319 条全过**（补齐 `KB_TEST_DATABASE_URL` 指向的 kb 库与 Qdrant 之后；那 4 条 env 错在旧入口上同样存在，CI 只声明了两个 postgres 服务）。`bun run test:ci` 仍是 ci.yml `test` job 那一步；入口实跑过：`bun run test` → `pretest` → `e2e run --config e2e.unit.config.ts`，合并后 main 走完 8175 条（7915 passed / 175 failed），打印汇总后自行退出 |
 | 3 | 收集不再被单个文件拖没 | 过（当时） | 19:24 / 21:21 两轮 `0 COLLECTION_ERROR`；新加套件由 `e2e-batch-drive-bun-test` 与分区循环兜住 |
 | 4 | 全量通过率被测出来并逐条归因 | 过（合并后又重测一次） | `.e2e/*/report.json` + `scripts/e2e-vs-bun.mjs` 的 `e2e-vs-bun*.json`，汇总见上。合并落地后的 main（10-19 00:0x）：入口 `bun run test` → **8175 条 = 7915 passed / 175 failed / 85 skipped，599 个文件里 31 红**（迁移前同入口 189 红），31 个红文件三档归因为 17 already-red-at-baseline / 12 red-on-old-runner-with-current-code / 1 runner-difference / 1 驱动层自身 |

@@ -14,6 +14,7 @@
 // either abort collection or never run. Exits non-zero so CI can gate on it.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { SUITE_DIRS } from "./lib/e2e-manifest.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const SKIP = new Set([
@@ -24,22 +25,7 @@ const SKIP = new Set([
   ".next",
   "coverage",
 ]);
-const dirs = [
-  "shared",
-  "supervisor",
-  "worker",
-  "deliverables",
-  "desktop",
-  "agent-bot",
-  "agent-sandbox",
-  "agent-langgraph",
-  "agent-mastra",
-  "agent-computer",
-  "app",
-  "server",
-  "tests",
-  "scripts",
-];
+const dirs = SUITE_DIRS;
 const files = [];
 function walk(dir) {
   for (const entry of readdirSync(dir)) {
