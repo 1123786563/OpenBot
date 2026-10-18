@@ -1,0 +1,2 @@
+$ tsc --noEmit
+error: script "typecheck" was terminated by signal SIGTERM (Polite quit request)

@@ -1,0 +1,7 @@
+# MT069-specific additions in migrate-test.ts (before-claim hash 09bf0400..., pure append)
+899: * MT069（Issue #112）：公司计费 Customer 映射与公司/个人账户类型（expand-only）。
+911:const PAYER_ACCOUNT_TASK: TaskMigrationSpec = {
+912:  id: "MT069",
+914:    "MT069（Issue #112）：公司计费 Customer 映射与公司/个人账户类型（expand-only，仅新增三张账务域表，不改既有对象）。",
+986:  [PAYER_ACCOUNT_TASK.id, PAYER_ACCOUNT_TASK],
+--- added line count vs HEAD: 1953  added / 0 removed

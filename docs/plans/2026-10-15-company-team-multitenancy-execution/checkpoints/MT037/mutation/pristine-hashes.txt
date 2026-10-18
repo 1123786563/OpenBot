@@ -1,0 +1,3 @@
+8d1775071a7a4c85b8d55bb38870b6a02b2db13a79cd950af65ff96e317c6acf  /Users/wuyongjun/orca/workspaces/OpenBot/i12-mt037/server/src/kb/application/service/kb-restricted-retrieval.ts
+5cc994ba98f652ac551c9805eda2b24ea2eed197beaf583546a74b0094cb79c2  /Users/wuyongjun/orca/workspaces/OpenBot/i12-mt037/server/src/kb/application/service/kb-restricted-query.ts
+fd0e462793672ad0eacbe20cb387014c2c57689f73e994a4b75b61fc65797b94  server/src/enterprise/tenancy/kb-ownership.ts

@@ -1,0 +1,45 @@
+# MT069 fix round (F1) — focused payer-accounts suite on a fresh dedicated database
+# Post-fix re-run after `bunx biome check --write tests/multitenancy/payer-accounts.test.ts`
+# (format-only; see 4c-fix-diff.txt). Same contract as the implementation round (06-env-setup):
+# dedicated container, loopback-only publish, no dev-database fallback, skipped ≠ pass.
+
+# Port precheck: lsof -nP -iTCP:55505 -sTCP:LISTEN → empty (free; used as-is, no +1 needed)
+# Container: docker run -d --name mt069-fix-pg -e POSTGRES_HOST_AUTH_METHOD=trust \
+#   -p 127.0.0.1:55505:5432 pgvector/pgvector:pg16
+#   (trust auth for the setup superuser; restricted role logins carry random per-run passwords)
+# docker exec mt069-fix-pg psql -U postgres -tc "select version()"
+#   → PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on aarch64-unknown-linux-gnu
+# createdb openbot_enterprise_mt069 + openbot_enterprise_mt069_assigned (loopback-only publish)
+#
+# Six-variable env file (chmod 0600, /tmp, deleted after the run; passwords random per run,
+# nothing persisted to the repo):
+#   TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55505/openbot_enterprise_mt069
+#   ENTERPRISE_TEST_SETUP_DATABASE_URL=<same as TEST_DATABASE_URL>
+#   ENTERPRISE_TEST_DIRECTORY_DATABASE_URL=postgresql://ent_mt069fix_dir:<pw>@127.0.0.1:55505/openbot_enterprise_mt069?options=-c%20role%3Dob_ent_directory
+#   ENTERPRISE_TEST_DATA_DATABASE_URL=postgresql://ent_mt069fix_data:<pw>@127.0.0.1:55505/openbot_enterprise_mt069?options=-c%20role%3Dob_ent_data
+#   ENTERPRISE_TEST_OPERATOR_DATABASE_URL=postgresql://ent_mt069fix_opr:<pw>@127.0.0.1:55505/openbot_enterprise_mt069?options=-c%20role%3Dob_ent_operator
+#   MT003_ASSIGNED_TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55505/openbot_enterprise_mt069_assigned
+#
+# Base migrate (also provisions restricted runtime logins):
+#   bun --no-env-file scripts/enterprise-test-db.ts migrate
+#   → {"type":"migrations-applied","status":"ok"}
+#
+# Task migrations in brief dependency order (dry-run → generate --out → apply --manifest),
+# base + ten tasks = eleven-task chain; every task reported "applied: MT… @
+# openbot_enterprise_mt069 (127.0.0.1:55505)" with journal lines "已执行并记入 journal"
+# (10/10), final journal state "已应用 1/1；待应用 0 步" for MT069:
+#   MT004 → MT008 → MT112 → MT012 → MT014 → MT010 → MT009 → MT077 → MT026 → MT069
+#
+# Focused run (server/):
+#   bun --no-env-file test tests/multitenancy/payer-accounts.test.ts --timeout 30000
+
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/payer-accounts.test.ts:
+ 22 pass
+ 0 fail
+ 57 expect() calls
+Ran 22 tests across 1 file. [442.00ms]
+
+# Cross-check: 22 "(pass)" lines, 0 "(skip)" lines in the full transcript → 22/0/0
+# (22 pass / 0 fail / 0 skipped) — matches the implementation-round focused result (01).

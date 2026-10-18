@@ -1,0 +1,8 @@
+error: Cannot find module '../../../src/enterprise/tenancy/personal-bot' from '/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt059/server/tests/multitenancy/support/personal-bot.ts'
+-------------------------------
+
+
+ 0 pass
+ 1 fail
+ 1 error
+Ran 1 test across 1 file. [176.00ms]

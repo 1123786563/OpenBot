@@ -1,0 +1,600 @@
+server/src/app.ts:1028:22 lint/correctness/noUnusedFunctionParameters  FIXABLE  ━━━━━━━━━━━━━━━━━━━━
+
+  ! This parameter context is unused.
+  
+    1026 │    * usage-bearing surface must mount below this line or name its own origin.
+    1027 │    */
+  > 1028 │   app.use("/api/*", (context, next) => withUsageOrigin("web", next));
+         │                      ^^^^^^^
+    1029 │   /*
+    1030 │    * MT122 (issue #165): the deployment main entry establishes each request's
+  
+  i Unused parameters might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: If this is intentional, prepend context with an underscore.
+  
+    1026 1026 │      * usage-bearing surface must mount below this line or name its own origin.
+    1027 1027 │      */
+    1028      │ - ··app.use("/api/*",·(context,·next)·=>·withUsageOrigin("web",·next));
+         1028 │ + ··app.use("/api/*",·(_context,·next)·=>·withUsageOrigin("web",·next));
+    1029 1029 │     /*
+    1030 1030 │      * MT122 (issue #165): the deployment main entry establishes each request's
+  
+
+server/src/index.ts:4778:13 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    4776 │         kbs.map((kb) =>
+    4777 │           knowledgeRequest(
+  > 4778 │             knowledgeService!,
+         │             ^^^^^^^^^^^^^^^^^
+    4779 │             `/kb/${encodeURIComponent(kb.id)}/retrieve`,
+    4780 │             {
+  
+
+server/tests/multitenancy/entry-context.test.ts:34:8 lint/style/useImportType  FIXABLE  ━━━━━━━━━━━━
+
+  ! All these imports are only used as types.
+  
+    32 │  */
+    33 │ 
+  > 34 │ import { type Hono } from "hono";
+       │        ^^^^^^^^^^^^^^^^^^^^^^^^^
+    35 │ import { Hono as HonoApp } from "hono";
+    36 │ import { sql } from "drizzle-orm";
+  
+  i Importing the types with import type ensures that they are removed by the compilers and avoids loading unnecessary modules.
+  
+  i Safe fix: Use import type.
+  
+     32  32 │    */
+     33  33 │   
+     34     │ - import·{·type·Hono·}·from·"hono";
+         34 │ + import·type·{·Hono·}·from·"hono";
+     35  35 │   import { Hono as HonoApp } from "hono";
+     36  36 │   import { sql } from "drizzle-orm";
+  
+
+server/src/app.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Sort these imports.
+  
+    > 1 │ import { sql } from "drizzle-orm";
+        │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    > 2 │ import type { Hono as HonoApp, MiddlewareHandler } from "hono";
+    > 3 │ import { Hono } from "hono";
+    > 4 │ import { bodyLimit } from "hono/body-limit";
+         ...
+  > 210 │   directoryResponse as webBotAuthDirectory,
+  > 211 │ } from "./web-bot-auth";
+        │ ^^^^^^^^^^^^^^^^^^^^^^^^
+    212 │ 
+    213 │ const log = getLogger("server");
+  
+  i Safe fix: Organize imports and exports (Biome)
+  
+     142  142 │   import type { OpenMuseFileBytePurgeReport } from "./openmuse-deletion/purge";
+     143  143 │   import type { OpenMuseRelationalPurgeOutcome } from "./openmuse-deletion/purge-relational";
+     144      │ - import·{·createOpenMuseDeletionAdminRoutes·}·from·"./openmuse-deletion/restore";
+     145      │ - import·type·{
+     146      │ - ··OpenMuseDeletionCleanupView,
+     147      │ - }·from·"./openmuse-deletion/retention";
+     148      │ - import·type·{·OpenMuseDeletionRestore·}·from·"./openmuse-deletion/restore";
+          144 │ + import·type·{·OpenMuseDeletionRestore·}·from·"./openmuse-deletion/restore";
+          145 │ + import·{·createOpenMuseDeletionAdminRoutes·}·from·"./openmuse-deletion/restore";
+          146 │ + import·type·{
+          147 │ + ··OpenMuseDeletionCleanupView,
+          148 │ + }·from·"./openmuse-deletion/retention";
+     149  149 │   import { createOpenMuseAccountDeletionRoutes } from "./openmuse-deletion/routes";
+     150  150 │   import type { OpenMuseAccountDeletionStore } from "./openmuse-deletion/store";
+    ········· │ 
+     191  191 │   import type { TeamBots } from "./team-bots/team-bots";
+     192  192 │   import { createRequestTracking } from "./telemetry/request-tracking";
+     193      │ - import·{·withUsageOrigin·}·from·"./usage-origin";
+     194      │ - import·{·createTraceMiddleware·}·from·"./telemetry/trace-middleware";
+     195      │ - import·type·{·PackageStatusReader·}·from·"./tenant-package";
+          193 │ + import·{·createTraceMiddleware·}·from·"./telemetry/trace-middleware";
+          194 │ + import·type·{·PackageStatusReader·}·from·"./tenant-package";
+          195 │ + import·{·withUsageOrigin·}·from·"./usage-origin";
+     196  196 │   import {
+     197  197 │     INSTRUCTIONS_LIMIT,
+    ········· │ 
+     204  204 │   import { createVoiceRoutes } from "./voice/routes";
+     205  205 │   import type { VoiceSessionServices } from "./voice/session-routes";
+     206      │ - import·type·{·createWorkshopPublicRoutes·}·from·"./workshop/public-routes";
+     207      │ - import·type·{·WorkshopRoutesFactory·}·from·"./workshop/routes";
+     208      │ - import·{
+     209      │ - ··DIRECTORY_PATH·as·WEB_BOT_AUTH_DIRECTORY_PATH,
+     210      │ - ··directoryResponse·as·webBotAuthDirectory,
+     211      │ - }·from·"./web-bot-auth";
+          206 │ + import·{
+          207 │ + ··DIRECTORY_PATH·as·WEB_BOT_AUTH_DIRECTORY_PATH,
+          208 │ + ··directoryResponse·as·webBotAuthDirectory,
+          209 │ + }·from·"./web-bot-auth";
+          210 │ + import·type·{·createWorkshopPublicRoutes·}·from·"./workshop/public-routes";
+          211 │ + import·type·{·WorkshopRoutesFactory·}·from·"./workshop/routes";
+     212  212 │   
+     213  213 │   const log = getLogger("server");
+  
+
+server/src/app.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+     143  143 │   import type { OpenMuseRelationalPurgeOutcome } from "./openmuse-deletion/purge-relational";
+     144  144 │   import { createOpenMuseDeletionAdminRoutes } from "./openmuse-deletion/restore";
+     145      │ - import·type·{
+     146      │ - ··OpenMuseDeletionCleanupView,
+     147      │ - }·from·"./openmuse-deletion/retention";
+          145 │ + import·type·{·OpenMuseDeletionCleanupView·}·from·"./openmuse-deletion/retention";
+     148  146 │   import type { OpenMuseDeletionRestore } from "./openmuse-deletion/restore";
+     149  147 │   import { createOpenMuseAccountDeletionRoutes } from "./openmuse-deletion/routes";
+    ········· │ 
+    1038 1036 │       app.use(
+    1039 1037 │         "/api/*",
+    1040      │ - ······createDeploymentEntryContextMiddleware({·factory:·coworker.entryContext·}),
+         1038 │ + ······createDeploymentEntryContextMiddleware({
+         1039 │ + ········factory:·coworker.entryContext,
+         1040 │ + ······}),
+    1041 1041 │       );
+    1042 1042 │     }
+    ········· │ 
+    2238 2238 │           requireUser,
+    2239 2239 │           restore: openMuseDeletionAdmin.restore,
+    2240      │ - ········...(openMuseDeletionAdmin.purge·?·{·purge:·openMuseDeletionAdmin.purge·}·:·{}),
+         2240 │ + ········...(openMuseDeletionAdmin.purge
+         2241 │ + ··········?·{·purge:·openMuseDeletionAdmin.purge·}
+         2242 │ + ··········:·{}),
+    2241 2243 │           ...(openMuseDeletionAdmin.purgeRelational
+    2242 2244 │             ? { purgeRelational: openMuseDeletionAdmin.purgeRelational }
+  
+
+server/src/enterprise/tenancy/entry-context.ts:37:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × Sort these imports.
+  
+    35 │ // 本模块不改 startup-checks.ts / global-exceptions.ts（未新增全局端点）。
+    36 │ 
+  > 37 │ import type { MiddlewareHandler } from "hono";
+       │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 38 │ import type { PlatformScope, ScopeResolver } from "../contracts";
+        ...
+  > 53 │   type RuntimeConfigService,
+  > 54 │ } from "./runtime-config";
+       │ ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    55 │ import {
+    56 │   type AuthenticatedRequestIdentity,
+  
+  i Safe fix: Organize imports and exports (Biome)
+  
+     37  37 │   import type { MiddlewareHandler } from "hono";
+     38  38 │   import type { PlatformScope, ScopeResolver } from "../contracts";
+     39     │ - import·{
+     40     │ - ··matchGlobalException,
+     41     │ - }·from·"./global-exceptions";
+     42     │ - import·type·{
+     43     │ - ··DataDatabase,
+     44     │ - ··DirectoryDatabase,
+     45     │ - }·from·"./connections";
+         39 │ + import·type·{
+         40 │ + ··DataDatabase,
+         41 │ + ··DirectoryDatabase,
+         42 │ + }·from·"./connections";
+         43 │ + import·{
+         44 │ + ··matchGlobalException,
+         45 │ + }·from·"./global-exceptions";
+     46  46 │   import {
+     47     │ - ··createWorkspaceGate,
+     48     │ - ··type·WorkspaceGate,
+     49     │ - }·from·"./scope-gate";
+         47 │ + ··createRuntimeConfigService,
+         48 │ + ··type·ResolvedRuntimeConfig,
+         49 │ + ··type·RuntimeConfigService,
+         50 │ + }·from·"./runtime-config";
+     50  51 │   import {
+     51     │ - ··createRuntimeConfigService,
+     52     │ - ··type·ResolvedRuntimeConfig,
+     53     │ - ··type·RuntimeConfigService,
+     54     │ - }·from·"./runtime-config";
+         52 │ + ··createWorkspaceGate,
+         53 │ + ··type·WorkspaceGate,
+         54 │ + }·from·"./scope-gate";
+     55  55 │   import {
+     56  56 │     type AuthenticatedRequestIdentity,
+  
+
+server/src/enterprise/tenancy/entry-context.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+     37  37 │   import type { MiddlewareHandler } from "hono";
+     38  38 │   import type { PlatformScope, ScopeResolver } from "../contracts";
+     39     │ - import·{
+     40     │ - ··matchGlobalException,
+     41     │ - }·from·"./global-exceptions";
+     42     │ - import·type·{
+     43     │ - ··DataDatabase,
+     44     │ - ··DirectoryDatabase,
+     45     │ - }·from·"./connections";
+     46     │ - import·{
+     47     │ - ··createWorkspaceGate,
+     48     │ - ··type·WorkspaceGate,
+     49     │ - }·from·"./scope-gate";
+         39 │ + import·{·matchGlobalException·}·from·"./global-exceptions";
+         40 │ + import·type·{·DataDatabase,·DirectoryDatabase·}·from·"./connections";
+         41 │ + import·{·createWorkspaceGate,·type·WorkspaceGate·}·from·"./scope-gate";
+     50  42 │   import {
+     51  43 │     createRuntimeConfigService,
+    ······· │ 
+     99  91 │      * createScopeResolver 的同一闭包）。
+    100  92 │      */
+    101     │ - ··authenticate(
+    102     │ - ····request:·Request,
+    103     │ - ··):·Promise<AuthenticatedRequestIdentity·|·null>;
+         93 │ + ··authenticate(request:·Request):·Promise<AuthenticatedRequestIdentity·|·null>;
+    104  94 │   }
+    105  95 │   
+    ······· │ 
+    129 119 │       authenticate: async (request) => {
+    130 120 │         const actorId = request.headers.get(INTERNAL_ACTOR_HEADER);
+    131     │ - ······return·actorId?.trim()
+    132     │ - ········?·{·actorId,·entrypoint:·"schedule"·}
+    133     │ - ········:·null;
+        121 │ + ······return·actorId?.trim()·?·{·actorId,·entrypoint:·"schedule"·}·:·null;
+    134 122 │       },
+    135 123 │       selectTenant: (request) => request.headers.get("x-openbot-tenant"),
+    ······· │ 
+    176 164 │    * （或挂载次序错了）时一律拒绝——不存在绕过接缝的默认依赖。
+    177 165 │    */
+    178     │ - export·function·requireEntryBusiness(
+    179     │ - ··context:·{·var:·unknown·},
+    180     │ - ):·DeploymentEntryBusiness·{
+    181     │ - ··const·business·=·(
+    182     │ - ····context.var·as·{·entryBusiness?:·DeploymentEntryBusiness·}
+    183     │ - ··).entryBusiness;
+        166 │ + export·function·requireEntryBusiness(context:·{
+        167 │ + ··var:·unknown;
+        168 │ + }):·DeploymentEntryBusiness·{
+        169 │ + ··const·business·=·(context.var·as·{·entryBusiness?:·DeploymentEntryBusiness·})
+        170 │ + ····.entryBusiness;
+    184 171 │     if (!business) throw new Error(ENTRY_CONTEXT_REQUIRED);
+    185 172 │     return business;
+    ······· │ 
+    187 174 │   
+    188 175 │   /** 建立失败的 canonical HTTP 映射（与企业入口的错误语义同码同族）。 */
+    189     │ - function·refusalStatus(error:·unknown):·{·status:·401·|·400·|·403;·code:·string·}·{
+        176 │ + function·refusalStatus(error:·unknown):·{
+        177 │ + ··status:·401·|·400·|·403;
+        178 │ + ··code:·string;
+        179 │ + }·{
+    190 180 │     const code = error instanceof Error ? error.message : "INTERNAL";
+    191 181 │     if (code === "AUTH_REQUIRED") return { status: 401, code };
+    ······· │ 
+    233 223 │       }
+    234 224 │       try {
+    235     │ - ······context.set(
+    236     │ - ········"entryBusiness",
+    237     │ - ········await·input.factory.fromRequest(request),
+    238     │ - ······);
+        225 │ + ······context.set("entryBusiness",·await·input.factory.fromRequest(request));
+    239 226 │       } catch (error) {
+    240 227 │         const refusal = refusalStatus(error);
+  
+
+server/src/index.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Sort these imports.
+  
+    > 1 │ import { createHash, randomUUID } from "node:crypto";
+        │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    > 2 │ import { isDeepStrictEqual } from "node:util";
+    > 3 │ import type { AbstractAgent } from "@ag-ui/client";
+    > 4 │ import {
+         ...
+  > 291 │ } from "./enterprise/tenancy/store";
+  > 292 │ import { createDeploymentEntryContextFactory } from "./enterprise/tenancy/entry-context";
+        │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    293 │ import {
+    294 │   createTeamResourceActionService,
+  
+  i Safe fix: Organize imports and exports (Biome)
+  
+     273  273 │     type SecretVault,
+     274  274 │   } from "./enterprise/tenancy/credential-ownership";
+     275      │ - import·{
+     276      │ - ··createResourceInventoryService,
+     277      │ - ··type·ResourceInventoryService,
+     278      │ - }·from·"./enterprise/tenancy/not-found-semantics";
+     279      │ - import·{·createOAuthStateService·}·from·"./enterprise/tenancy/oauth-state";
+     280      │ - import·{
+     281      │ - ··createPersonalShareAdminService,
+     282      │ - ··createPersonalShareDecisionService,
+     283      │ - }·from·"./enterprise/tenancy/personal-share-rules";
+          275 │ + import·{·createDeploymentEntryContextFactory·}·from·"./enterprise/tenancy/entry-context";
+          276 │ + import·{
+          277 │ + ··createResourceInventoryService,
+          278 │ + ··type·ResourceInventoryService,
+          279 │ + }·from·"./enterprise/tenancy/not-found-semantics";
+          280 │ + import·{·createOAuthStateService·}·from·"./enterprise/tenancy/oauth-state";
+     284  281 │   import {
+     285      │ - ··applyStartupVerdict,
+     286      │ - ··runMultitenancyStartupChecks,
+     287      │ - }·from·"./enterprise/tenancy/startup-checks";
+          282 │ + ··createPersonalShareAdminService,
+          283 │ + ··createPersonalShareDecisionService,
+          284 │ + }·from·"./enterprise/tenancy/personal-share-rules";
+     288  285 │   import {
+     289      │ - ··type·AuthenticatedRequestIdentity,
+     290      │ - ··createScopeResolver,
+     291      │ - }·from·"./enterprise/tenancy/store";
+     292      │ - import·{·createDeploymentEntryContextFactory·}·from·"./enterprise/tenancy/entry-context";
+          286 │ + ··applyStartupVerdict,
+          287 │ + ··runMultitenancyStartupChecks,
+          288 │ + }·from·"./enterprise/tenancy/startup-checks";
+          289 │ + import·{
+          290 │ + ··type·AuthenticatedRequestIdentity,
+          291 │ + ··createScopeResolver,
+          292 │ + }·from·"./enterprise/tenancy/store";
+     293  293 │   import {
+     294  294 │     createTeamResourceActionService,
+  
+
+server/src/index.ts:839:13 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Don't use console.
+  
+    837 │           const name = error instanceof Error ? error.name : "";
+    838 │           if (name !== "CredentialUnusableError")
+  > 839 │             console.error({
+        │             ^^^^^^^^^^^^^
+    840 │               error: "TENANT_CREDENTIAL_DECRYPT_FAILED",
+    841 │               context: { credentialRef: reference },
+  
+  i The use of console is often reserved for debugging.
+  
+  i Unsafe fix: Remove console.
+  
+     837  837 │             const name = error instanceof Error ? error.name : "";
+     838  838 │             if (name !== "CredentialUnusableError")
+     839      │ - ············console.error({
+     840      │ - ··············error:·"TENANT_CREDENTIAL_DECRYPT_FAILED",
+     841      │ - ··············context:·{·credentialRef:·reference·},
+     842      │ - ··············cause:·error·instanceof·Error·?·error.message·:·String(error),
+     843      │ - ············});
+     844  839 │             return undefined;
+     845  840 │           }
+  
+
+server/src/index.ts:867:9 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Don't use console.
+  
+    865 │         // Session-infrastructure faults are not "unauthenticated": leave
+    866 │         // a trace so auth-store outages are diagnosable (OCR R10).
+  > 867 │         console.error({
+        │         ^^^^^^^^^^^^^
+    868 │           error: "ENTERPRISE_SESSION_RESOLUTION_FAILED",
+    869 │           cause: error instanceof Error ? error.message : String(error),
+  
+  i The use of console is often reserved for debugging.
+  
+  i Unsafe fix: Remove console.
+  
+     863  863 │       ): Promise<AuthenticatedRequestIdentity | null> => {
+     864  864 │         const actor = await resolveRequestActor(request).catch((error) => {
+     865      │ - ········//·Session-infrastructure·faults·are·not·"unauthenticated":·leave
+     866      │ - ········//·a·trace·so·auth-store·outages·are·diagnosable·(OCR·R10).
+     867      │ - ········console.error({
+     868      │ - ··········error:·"ENTERPRISE_SESSION_RESOLUTION_FAILED",
+     869      │ - ··········cause:·error·instanceof·Error·?·error.message·:·String(error),
+     870      │ - ········});
+     871  865 │           return null;
+     872  866 │         });
+  
+
+server/src/index.ts:901:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Don't use console.
+  
+    899 │     };
+    900 │   } catch (error) {
+  > 901 │     console.error("Enterprise conversation service unavailable", error);
+        │     ^^^^^^^^^^^^^
+    902 │     return null;
+    903 │   }
+  
+  i The use of console is often reserved for debugging.
+  
+  i Unsafe fix: Remove console.
+  
+     899  899 │       };
+     900  900 │     } catch (error) {
+     901      │ - ····console.error("Enterprise·conversation·service·unavailable",·error);
+     902  901 │       return null;
+     903  902 │     }
+  
+
+server/src/index.ts:1913:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Don't use console.
+  
+    1911 │     await personalMemoryStore.mirrorPending();
+    1912 │   } catch (error) {
+  > 1913 │     console.error(
+         │     ^^^^^^^^^^^^^
+    1914 │       JSON.stringify({
+    1915 │         type: "memory-sweep-error",
+  
+  i The use of console is often reserved for debugging.
+  
+  i Unsafe fix: Remove console.
+  
+    1911 1911 │       await personalMemoryStore.mirrorPending();
+    1912 1912 │     } catch (error) {
+    1913      │ - ····console.error(
+    1914      │ - ······JSON.stringify({
+    1915      │ - ········type:·"memory-sweep-error",
+    1916      │ - ········error:·error·instanceof·Error·?·error.name·:·"UnknownError",
+    1917      │ - ········context:·{·operation:·"mirrorPending"·},
+    1918      │ - ········timestamp:·new·Date().toISOString(),
+    1919      │ - ······}),
+    1920      │ - ····);
+    1921 1913 │     }
+    1922 1914 │   }, 60_000);
+  
+
+server/tests/multitenancy/entry-context.test.ts:34:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × Sort these imports.
+  
+    32 │  */
+    33 │ 
+  > 34 │ import { type Hono } from "hono";
+       │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 35 │ import { Hono as HonoApp } from "hono";
+        ...
+  > 53 │ } from "../../src/enterprise/tenancy/entry-context";
+  > 54 │ import { assertTrustedScope } from "../../src/enterprise/tenancy/store";
+       │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    55 │ 
+    56 │ const envReady =
+  
+  i Safe fix: Organize imports and exports (Biome)
+  
+     32  32 │    */
+     33  33 │   
+     34     │ - import·{·type·Hono·}·from·"hono";
+     35     │ - import·{·Hono·as·HonoApp·}·from·"hono";
+     36     │ - import·{·sql·}·from·"drizzle-orm";
+     37     │ - import·{·describe,·expect,·test·}·from·"bun:test";
+         34 │ + import·{·describe,·expect,·test·}·from·"bun:test";
+         35 │ + import·{·sql·}·from·"drizzle-orm";
+         36 │ + import·{·type·Hono,·Hono·as·HonoApp·}·from·"hono";
+     38  37 │   import {
+     39     │ - ··companyConfigDocument,
+     40     │ - ··createEntryContextFixture,
+     41     │ - ··teamOverrideDocument,
+     42     │ - ··type·EntryContextFixture,
+     43     │ - }·from·"./support/entry-context";
+     44     │ - import·{
+     45     │ - ··enterpriseRuntimeDatabaseUrlFrom,
+     46     │ - ··enterpriseTestDatabaseUrlFrom,
+     47     │ - }·from·"../support/enterprise-database";
+         38 │ + ··createDeploymentEntryContextFactory,
+         39 │ + ··createDeploymentEntryContextMiddleware,
+         40 │ + ··type·DeploymentEntryContextFactory,
+         41 │ + ··requireEntryBusiness,
+         42 │ + }·from·"../../src/enterprise/tenancy/entry-context";
+         43 │ + import·{·assertTrustedScope·}·from·"../../src/enterprise/tenancy/store";
+     48  44 │   import {
+     49     │ - ··createDeploymentEntryContextFactory,
+     50     │ - ··createDeploymentEntryContextMiddleware,
+     51     │ - ··requireEntryBusiness,
+     52     │ - ··type·DeploymentEntryContextFactory,
+     53     │ - }·from·"../../src/enterprise/tenancy/entry-context";
+     54     │ - import·{·assertTrustedScope·}·from·"../../src/enterprise/tenancy/store";
+         45 │ + ··enterpriseRuntimeDatabaseUrlFrom,
+         46 │ + ··enterpriseTestDatabaseUrlFrom,
+         47 │ + }·from·"../support/enterprise-database";
+         48 │ + import·{
+         49 │ + ··companyConfigDocument,
+         50 │ + ··createEntryContextFixture,
+         51 │ + ··type·EntryContextFixture,
+         52 │ + ··teamOverrideDocument,
+         53 │ + }·from·"./support/entry-context";
+     55  54 │   
+     56  55 │   const envReady =
+  
+
+server/tests/multitenancy/entry-context.test.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    111 111 │       const { factory, session } = buildEntrySeam(fx);
+    112 112 │       expect(
+    113     │ - ······factory
+    114     │ - ········.fromRequest(session("member",·{}))
+    115     │ - ········.then((b)·=>·b.scope.tenantId),
+        113 │ + ······factory.fromRequest(session("member",·{})).then((b)·=>·b.scope.tenantId),
+    116 114 │       ).rejects.toThrow("TENANT_REQUIRED");
+    117 115 │     });
+    ······· │ 
+    123 121 │         factory
+    124 122 │           .fromRequest(
+    125     │ - ··········session("member",·{·"x-openbot-tenant":·fx.runtime.ids["company-a"]·}),
+        123 │ + ··········session("member",·{
+        124 │ + ············"x-openbot-tenant":·fx.runtime.ids["company-a"],
+        125 │ + ··········}),
+    126 126 │           )
+    127 127 │           .then((b) => b.scope.workspaceId),
+    ······· │ 
+    280 280 │         }),
+    281 281 │       );
+    282     │ - ····expect(business.runtimeConfig()).rejects.toThrow("RUNTIME_CONFIG_NOT_FOUND");
+        282 │ + ····expect(business.runtimeConfig()).rejects.toThrow(
+        283 │ + ······"RUNTIME_CONFIG_NOT_FOUND",
+        284 │ + ····);
+    283 285 │     });
+    284 286 │   
+    ······· │ 
+    568 570 │       }),
+    569 571 │       session: (identity, headers) => {
+    570     │ - ······const·request·=·new·Request("https://entry.invalid/api/probe",·{·headers·});
+        572 │ + ······const·request·=·new·Request("https://entry.invalid/api/probe",·{
+        573 │ + ········headers,
+        574 │ + ······});
+    571 575 │         sessions.set(request, userIds.get(identity) ?? "");
+    572 576 │         return request;
+    ······· │ 
+    584 588 │     app: Hono;
+    585 589 │     /** A business-path request bound to the named identity's session. */
+    586     │ - ··session:·(
+    587     │ - ····identity:·"member",
+    588     │ - ····headers:·Record<string,·string>,
+    589     │ - ··)·=>·Request;
+        590 │ + ··session:·(identity:·"member",·headers:·Record<string,·string>)·=>·Request;
+    590 591 │     /** An enterprise-path request bound to the same session seam. */
+    591 592 │     enterpriseSession: (headers: Record<string, string>) => Request;
+    ······· │ 
+    612 613 │       } catch (error) {
+    613 614 │         return context.json(
+    614     │ - ········{·error:·{·code:·error·instanceof·Error·?·error.message·:·"INTERNAL"·}·},
+        615 │ + ········{
+        616 │ + ··········error:·{·code:·error·instanceof·Error·?·error.message·:·"INTERNAL"·},
+        617 │ + ········},
+    615 618 │           412,
+    616 619 │         );
+    ······· │ 
+    624 627 │   
+    625 628 │     let counter = 0;
+    626     │ - ··const·requestOf·=·(path:·string,·method:·string,·actorId:·string,·headers:·Record<string,·string>)·=>·{
+    627     │ - ····const·request·=·new·Request(`https://entry.invalid${path}?probe=${counter++}`,·{
+    628     │ - ······method,
+    629     │ - ······headers:·new·Headers(headers),
+    630     │ - ····});
+        629 │ + ··const·requestOf·=·(
+        630 │ + ····path:·string,
+        631 │ + ····method:·string,
+        632 │ + ····actorId:·string,
+        633 │ + ····headers:·Record<string,·string>,
+        634 │ + ··)·=>·{
+        635 │ + ····const·request·=·new·Request(
+        636 │ + ······`https://entry.invalid${path}?probe=${counter++}`,
+        637 │ + ······{
+        638 │ + ········method,
+        639 │ + ········headers:·new·Headers(headers),
+        640 │ + ······},
+        641 │ + ····);
+    631 642 │       sessions.set(request, actorId);
+    632 643 │       return request;
+  
+
+Checked 5 files in 818ms. No fixes applied.
+Found 11 errors.
+Found 3 warnings.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+

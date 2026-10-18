@@ -1,0 +1,8 @@
+# before state — MT011 (pristine before any MT011 edit)
+f0520524f0faa2b4533b9d2f1aa692c8f907ba71  HEAD
+614a0ed4b57784d3e07b8cd98b68db383d3a85281dc4461f62bda79af76474ea  server/src/index.ts  (prereq-manifest; 重建自当前文件移除 MT011 两处编辑，sha256 复验一致)
+9348db3df5852170ebae594bb1a8a0d541aad93931d11f017e722e8c704042e2  server/tests/multitenancy/support/scenarios.ts  (prereq-manifest; 重建自当前文件移除 MT011 追加块，sha256 复验一致)
+(新建，before 不存在)  server/src/enterprise/tenancy/not-found-semantics.ts
+(新建，before 不存在)  server/tests/multitenancy/not-found-semantics.test.ts
+(新建，before 不存在)  server/tests/multitenancy/support/not-found-semantics.ts
+# 三个判定模块（resource-policy.ts / team-public-rules.ts / personal-share-rules.ts）及其测试：票面禁改，逐哈希只读消费，零改动（manifest 47/49 复验中全部仍 OK）

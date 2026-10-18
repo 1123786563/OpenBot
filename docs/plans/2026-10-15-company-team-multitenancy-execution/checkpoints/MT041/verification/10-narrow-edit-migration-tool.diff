@@ -1,0 +1,18 @@
+== server/tests/multitenancy/migration-tool.test.ts (仅穷举断言 + 裁决注释, ruling #5 第 8 次) ==
+    // MT041（同 ruling #5 先例，MT041 brief 预授权）：仅本断言追加 "MT041"
+    // （任务/运行/触发归属与配置版本快照、租约模型三表迁移注册），文件
+    // 其余内容只读；diff 与哈希存档于 checkpoints/MT041/。
+    expect(ALLOWED_TASK_IDS).toEqual([
+      "MT000",
+      "MT004",
+      "MT008",
+      "MT009",
+      "MT010",
+      "MT012",
+      "MT014",
+      "MT026",
+      "MT041",
+      "MT069",
+      "MT076",
+      "MT077",
+      "MT112",

@@ -25,7 +25,7 @@ if (!databaseUrl) {
 
 export default defineConfig({
   dialect: "postgresql",
-  schema: ["./src/kb/db/schema.ts"],
+  schema: ["./src/kb/db/schema.ts", "./src/kb/db/ownership-schema.ts"],
   out: "./drizzle-kb",
   dbCredentials: {
     url: databaseUrl,

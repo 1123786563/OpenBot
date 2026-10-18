@@ -1,0 +1,6 @@
+# MT021 fix-round before-hashes（改动前逐文件 SHA-256，冻结）
+# frozen at 2026-10-17T00:48:05Z, BASE f0520524f0faa2b4533b9d2f1aa692c8f907ba71
+38fb0267e9cc3cd812e83cf12fe4cd397756108f8503287dab76ec363ebae496  server/src/enterprise/tenancy/conversations-list.ts
+5a89bbb2db0e22ac8eb3f81fe6ce8db3122cce146a9eebf4487910d73d9d59db  server/tests/multitenancy/conversations-list.test.ts
+a028f79288e2f30058af399fca8cedc1632c9f0424460f493f3a7bcf3d9adee2  server/tests/multitenancy/support/conversations-list.ts
+179201768e043df3f5c7dace7f9b20c64d265c750b9624071f8b44570f681493  docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT021.md
