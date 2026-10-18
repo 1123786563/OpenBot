@@ -223,6 +223,22 @@ no gaps: every suite file is scheduled by e2e, or excluded by name with a reason
 gap 的两种形态正是入口坏掉的原因：写着 `bun:test` 却没被分到驱动层的文件会让**整轮收集中止**
 （一个文件就没有 report），两个 runner 都没 import 的文件会**静默不跑**。所以这一项先跑、失败即停。
 
+## CI 入口那一轮（`bun scripts/test-ci.ts`，20:22–20:44 CST）
+
+先跑覆盖对账（`no gaps · 604 native / 453 driven / 10 engine / 6 exclusions`，含入口检查：
+`package.json` 与各 workflow 里没有任何 `bun test`），再跑 e2e：
+
+```
+Test Files  32 failed | 550 passed | 17 skipped (599)
+     Tests  192 failed | 7926 passed | 74 skipped (8192)
+   Duration  1319.85s (22m 0s)
+   Errors  4  ← 全部点名 127.0.0.1:5432 / 6333 拒连（这台机器上项目的 Postgres 实际发布在 55432）
+```
+
+关卡按设计判失败（红点存在就该失败），报告与红点归属都落在 `.e2e/cigate/report.json` 与
+`docs/verification/e2e-red-inventory.md`。同一份账在数据库可达时的那轮（19:54）是
+`7931 passed / 187 failed`、驱动层 18/30 组过。
+
 ## 复核方式
 
 ```bash
