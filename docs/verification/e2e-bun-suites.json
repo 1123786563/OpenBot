@@ -52,6 +52,10 @@
     "app/tests/ai-observability-experiments.test.tsx",
     "app/tests/ai-observability-exports.test.tsx",
     "app/tests/ai-observability-route-chain.test.tsx",
+    "app/tests/ai-observability-routes.test.tsx",
+    "app/tests/ai-observability-run-detail.test.tsx",
+    "app/tests/ai-observability-run-steps.test.tsx",
+    "app/tests/ai-observability-runs-list.test.tsx",
     "app/tests/approval-tools.test.tsx",
     "app/tests/approvals-rules.test.tsx",
     "app/tests/audit-dry-run-label.test.tsx",
@@ -61,16 +65,16 @@
     "app/tests/bot-app-grants-screen.test.tsx",
     "app/tests/bot-approval-rules.test.tsx",
     "app/tests/bot-memory.test.tsx",
-    "app/tests/bot-needs-you.test.tsx",
-    "app/tests/bot-profile-active.test.tsx",
-    "app/tests/bot-profile-notice.test.tsx",
-    "app/tests/bot-reaching-you.test.tsx",
-    "app/tests/bot-responsibilities.test.tsx"
+    "app/tests/bot-needs-you.test.tsx"
    ]
   },
   {
    "name": "app/tests part 2",
    "files": [
+    "app/tests/bot-profile-active.test.tsx",
+    "app/tests/bot-profile-notice.test.tsx",
+    "app/tests/bot-reaching-you.test.tsx",
+    "app/tests/bot-responsibilities.test.tsx",
     "app/tests/bot-roster.test.tsx",
     "app/tests/bot-route-default-agent.test.tsx",
     "app/tests/bot-settings-rows.test.tsx",
@@ -90,16 +94,16 @@
     "app/tests/composer-dictation.test.tsx",
     "app/tests/composer-drop-guard.test.tsx",
     "app/tests/composer-dropped-attachments.test.tsx",
-    "app/tests/composer-inflight-removal.test.tsx",
-    "app/tests/composer-insecure-context.test.tsx",
-    "app/tests/composer-paste.test.tsx",
-    "app/tests/composer-queue-attachments.test.tsx",
-    "app/tests/composer-send-failure.test.tsx"
+    "app/tests/composer-inflight-removal.test.tsx"
    ]
   },
   {
    "name": "app/tests part 3",
    "files": [
+    "app/tests/composer-insecure-context.test.tsx",
+    "app/tests/composer-paste.test.tsx",
+    "app/tests/composer-queue-attachments.test.tsx",
+    "app/tests/composer-send-failure.test.tsx",
     "app/tests/composer-unnamed-mime.test.tsx",
     "app/tests/composer-upload-group.test.tsx",
     "app/tests/composing-enter.test.tsx",
@@ -119,16 +123,16 @@
     "app/tests/observability-i18n-namespaces.test.ts",
     "app/tests/observability-route-guards.test.tsx",
     "app/tests/person-sent-message.test.ts",
-    "app/tests/playground-json.test.ts",
-    "app/tests/plugin-read-failure.test.tsx",
-    "app/tests/proposed-bot-card.test.tsx",
-    "app/tests/proposed-skill-card.test.tsx",
-    "app/tests/root-drop-guard.test.tsx"
+    "app/tests/playground-json.test.ts"
    ]
   },
   {
    "name": "app/tests part 4",
    "files": [
+    "app/tests/plugin-read-failure.test.tsx",
+    "app/tests/proposed-bot-card.test.tsx",
+    "app/tests/proposed-skill-card.test.tsx",
+    "app/tests/root-drop-guard.test.tsx",
     "app/tests/router.test.ts",
     "app/tests/serve.test.ts",
     "app/tests/sign-in-card.test.tsx",
@@ -616,6 +620,10 @@
   "app/tests/ai-observability-experiments.test.tsx",
   "app/tests/ai-observability-exports.test.tsx",
   "app/tests/ai-observability-route-chain.test.tsx",
+  "app/tests/ai-observability-routes.test.tsx",
+  "app/tests/ai-observability-run-detail.test.tsx",
+  "app/tests/ai-observability-run-steps.test.tsx",
+  "app/tests/ai-observability-runs-list.test.tsx",
   "app/tests/approval-tools.test.tsx",
   "app/tests/approvals-rules.test.tsx",
   "app/tests/audit-dry-run-label.test.tsx",
@@ -1148,9 +1156,9 @@
   "agent-langgraph/tests/governed-tracing.test.ts": "agent-langgraph/tests/governed-tracing.test.ts",
   "agent-langgraph/tests/trace-chain.test.ts": "agent-langgraph/tests/trace-chain.test.ts",
   "app/src/lib/i18n/ai-observability.test.ts": "app/src/lib/i18n/ai-observability.test.ts",
-  "app/tests/ai-observability-admin-summary.test.tsx": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
-  "app/tests/ai-observability-datasets.test.tsx": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
-  "app/tests/ai-observability-experiment-comparison.test.tsx": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
+  "app/tests/ai-observability-admin-summary.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'",
+  "app/tests/ai-observability-datasets.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'",
+  "app/tests/ai-observability-experiment-comparison.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'",
   "agent-computer/tests/live-screen.test.ts": "agent-computer/src/index.ts",
   "app/tests/observability-route-guards.test.tsx": "app/tests/observability-route-guards.test.tsx",
   "app/tests/serve.test.ts": "app/serve.ts",
@@ -1439,8 +1447,12 @@
   "server/tests/workshop-schedule-executor.integration.test.ts": "server/src/db/client.ts",
   "server/tests/workshop-store.test.ts": "server/src/db/client.ts",
   "app/tests/observability-i18n-namespaces.test.ts": "app/tests/observability-i18n-namespaces.test.ts",
-  "app/tests/ai-observability-experiments.test.tsx": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
-  "app/tests/ai-observability-exports.test.tsx": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
-  "app/tests/ai-observability-route-chain.test.tsx": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'"
+  "app/tests/ai-observability-experiments.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'",
+  "app/tests/ai-observability-exports.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'",
+  "app/tests/ai-observability-route-chain.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'",
+  "app/tests/ai-observability-routes.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'",
+  "app/tests/ai-observability-run-detail.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'",
+  "app/tests/ai-observability-run-steps.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'",
+  "app/tests/ai-observability-runs-list.test.tsx": "runner named it: same root cause as app/tests/ai-observability-run-steps.test.tsx: runner aborts collection with Received protocol 'bun:'"
  }
 }
