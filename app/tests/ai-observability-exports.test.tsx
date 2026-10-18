@@ -620,6 +620,60 @@ describe("the list consumes the pagination contract (R3-07 ≡ R3-14)", () => {
     );
     expect(decide(settled)).toBe(false);
   });
+
+  test("an in-flight job on a middle page keeps the poll open even when later pages settle (R4-1)", async () => {
+    /*
+     * R4-1's execution-level reproduction (round4 triage): page order 0 settled →
+     * 20 running → 40 settled. The walk discovers in-flight work at offset=20,
+     * but a direct `offPageInFlight = page.jobs.some(inFlight)` lets the final
+     * settled page overwrite the discovery back to false, and the next===null
+     * exit never re-arms the fail-closed catch — the poll would close over a
+     * running job, losing R3-07 ≡ R3-14's keep-asking semantics mid-scope.
+     */
+    exportsHandler = (url) => {
+      if (url.includes("offset=20"))
+        return Response.json(
+          listBody(
+            [job({ state: "running", rowCount: null, settledAt: null })],
+            { total: 60, offset: 20, nextOffset: 40 },
+          ),
+        );
+      if (url.includes("offset=40"))
+        return Response.json(
+          listBody([job()], { total: 60, offset: 40, nextOffset: null }),
+        );
+      return Response.json(listBody([job()], { total: 60, nextOffset: 20 }));
+    };
+    const options = observationExportsQueryOptions("agent-1", 40);
+    const refetchIntervalFn = options.refetchInterval;
+    const decide = (
+      data: ObservationExportsScreen,
+    ): number | false | undefined => {
+      if (typeof refetchIntervalFn !== "function") return refetchIntervalFn;
+      const query = { state: { data } } as unknown as Parameters<
+        typeof refetchIntervalFn
+      >[0];
+      return refetchIntervalFn(query);
+    };
+    const run = async (): Promise<ObservationExportsScreen> => {
+      const queryFn = options.queryFn;
+      if (!queryFn) throw new Error("the read defines its queryFn");
+      const context = {
+        queryKey: options.queryKey,
+        signal: new AbortController().signal,
+        meta: undefined,
+      } as unknown as Parameters<typeof queryFn>[0];
+      return (await queryFn(context)) as ObservationExportsScreen;
+    };
+    const walked = await run();
+    expect(walked.view).toBe("list");
+    // The middle page's running job was found — and must survive the settled
+    // pages walked after it, not be overwritten back to quiet.
+    expect(walked.view === "list" ? walked.offPageInFlight : false).toBe(true);
+    // A discovered off-page in-flight job keeps the poll asking, exactly as an
+    // on-page one would.
+    expect(decide(walked)).toBe(40);
+  });
 });
 
 describe("the runs page links here", () => {
