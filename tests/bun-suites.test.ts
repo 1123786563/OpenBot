@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "./support/e2e-compat";
@@ -66,7 +66,7 @@ function readJunit(xml: string): {
   };
 }
 
-for (const group of manifest.groups) {
+for (const group of groups) {
   test(`bun runtime suite ${group.name}`, {
     tags: ["bun-runtime"],
     timeout: 900_000,

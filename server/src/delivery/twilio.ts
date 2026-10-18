@@ -1,4 +1,9 @@
-import { validateRequest } from "twilio";
+// Default import rather than a named one: `twilio` is CommonJS and Node's named-export detection
+// does not find `validateRequest` on it, so a named import throws at link time under the e2e runner.
+import twilio from "twilio";
+
+const { validateRequest } = twilio;
+
 import {
   DeliveryProviderError,
   type ProviderFetch,

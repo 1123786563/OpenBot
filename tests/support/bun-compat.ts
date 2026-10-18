@@ -14,6 +14,7 @@ import {
 import http from "node:http";
 import { dirname } from "node:path";
 import { Readable } from "node:stream";
+import YAML from "yaml";
 
 /*
  * The slice of the Bun runtime these suites use, on Node.
@@ -280,6 +281,12 @@ export const Bun: Any = {
     }
   },
   serve,
+  // Bun parses YAML natively; the repository already carries `yaml` as a dev dependency.
+  YAML: {
+    parse: (text: string) => YAML.parse(text),
+    stringify: (value: unknown) => YAML.stringify(value),
+    Schema: YAML.Schema,
+  },
 };
 
 export { serve };

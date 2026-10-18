@@ -44,6 +44,21 @@
     },
     {
       "includes": [
+        "**/tests/support/**",
+        "**/support/e2e-compat.ts",
+        "**/support/bun-compat.ts"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "off",
+            "noAssignInExpressions": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
         "server/src/**",
         "worker/src/**",
         "!server/src/billing/service.ts"

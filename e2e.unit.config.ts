@@ -44,8 +44,8 @@ const suites = scope.length ? scope : ALL;
 const driven = (() => {
   const path = "docs/verification/e2e-bun-suites.json";
   if (!existsSync(path)) return [];
-  const parsed = JSON.parse(readFileSync(path, "utf8")) as { files?: string[] };
-  return parsed.files ?? [];
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as { files?: string[]; artifacts?: string[] };
+  return [...(parsed.files ?? []), ...(parsed.artifacts ?? [])];
 })();
 
 export default {

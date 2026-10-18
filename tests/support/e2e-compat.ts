@@ -535,6 +535,19 @@ function installMockHooks(): void {
   hooksInstalled = true;
   registerHooks({
     resolve: (specifier: string, _context: Any, nextResolve: Any) => {
+      // Stylesheets and other assets: Bun imports them for their side effect, Node has no such
+      // format and refuses on the extension, so the specifier never reaches the extension check.
+      if (
+        /\.(css|scss|sass|less|svg|png|jpe?g|gif|webp|woff2?|ttf|ico)$/i.test(
+          specifier,
+        )
+      ) {
+        return {
+          url: "data:text/javascript,export%20default%20%22%22;",
+          format: "module",
+          shortCircuit: true,
+        };
+      }
       if (moduleMocks.has(specifier)) {
         return {
           url: `e2e-mock:${encodeURIComponent(specifier)}`,
@@ -808,6 +821,43 @@ function translate(options: Any): Any {
 type Body = (...args: any[]) => unknown;
 type Register = (...args: any[]) => unknown;
 
+/*
+ * e2e names a test by its title path and requires 1..512 UTF-8 bytes, unique inside one file;
+ * Bun accepted longer and repeated titles. Titles are report labels, not assertions, so the runner's
+ * rule is honoured by clamping and by numbering a repeat, never by dropping the test.
+ */
+const seenTitles = new Map<string, number>();
+
+function fileFromStack(): string {
+  const line = (new Error().stack ?? "")
+    .split("\n")
+    .find(
+      (entry) =>
+        /\.test\.tsx?|\.spec\.tsx?/.test(entry) &&
+        !entry.includes("e2e-compat"),
+    );
+  const match = line?.match(/\/((?:[^/\s]+\/)+[^/\s]+\.(?:test|spec)\.tsx?)/);
+  return match ? match[1] : "unknown";
+}
+
+function clampTitle(title: string, kind: string): string {
+  let candidate = title;
+  if (Buffer.byteLength(candidate) > 512) {
+    while (Buffer.byteLength(candidate) > 500)
+      candidate = candidate.slice(0, candidate.length - 8);
+    candidate += " …";
+  }
+  const key = `${kind}:${fileFromStack()}:${candidate}`;
+  const seen = seenTitles.get(key);
+  if (seen === undefined) {
+    seenTitles.set(key, 1);
+    return candidate;
+  }
+  seenTitles.set(key, seen + 1);
+  const suffix = ` [${seen + 1}]`;
+  return candidate.slice(0, 512 - Buffer.byteLength(suffix)) + suffix;
+}
+
 function registerTest(register: Register) {
   return (title: string, second: Any, third?: Any): unknown => {
     // Bun's `test(title, fn, timeoutMs)` puts the deadline in a third positional argument.
@@ -852,21 +902,46 @@ const trace = (label: string, args: unknown[]) => {
   );
 };
 
+let skipping = 0;
+
 const e2eRegister: Register = (...args) => {
   trace("test", args);
+  const [, second, third] = args;
+  const bodyIndex = typeof second === "function" ? 1 : 2;
+  const body = bodyIndex === 1 ? second : third;
+  const call = [...args];
+  if (skipping > 0 && typeof body === "function") {
+    // A skipped group stays registered and skips in its body: e2e refuses a file that has collected
+    // nothing runnable, which is what registering the whole group as skipped would leave behind.
+    call[bodyIndex] = (...callArgs: Any[]) => {
+      (e2eTest.skip as Any)(true, "group skipped");
+      return body(...callArgs);
+    };
+  }
   try {
-    return (e2eTest as Any)(...args);
+    return (e2eTest as Any)(...call);
   } catch (error) {
     if (process.env.E2E_COMPAT_DEBUG) console.error((error as Error).stack);
     throw error;
   }
 };
-const onlyRegister: Register = (...args) => (e2eTest.only as Any)(...args);
+const onlyRegister: Register = (title, second, third) =>
+  registerTest((...args) => (e2eTest.only as Any)(...args))(
+    title,
+    second,
+    third,
+  );
 // `test.skip(title, options, fn)` is not a call shape e2e takes: skipping at collection is an option.
-const skipRegister: Register = (title, second, third) =>
-  typeof second === "function"
-    ? (e2eTest as Any)(title, { skip: true }, second)
-    : (e2eTest as Any)(title, { ...(second ?? {}), skip: true }, third);
+const skipRegister: Register = (title, second) => {
+  const options = typeof second === "function" ? undefined : translate(second);
+  const reason = typeof options?.skip === "string" ? options.skip : "skipped";
+  // A runtime skip, not a collection skip: the attempt reports skipped with its reason, and the
+  // file still has something runnable, which is what e2e requires of a collected suite file.
+  const body = () => (e2eTest.skip as Any)(true, reason);
+  return options?.timeout
+    ? (e2eTest as Any)(title, { timeout: options.timeout }, body)
+    : (e2eTest as Any)(title, body);
+};
 
 type TestAPI = typeof e2eTest;
 
@@ -921,8 +996,11 @@ Object.defineProperties(test, {
 type DescribeAPI = typeof e2eDescribe;
 
 export const describe = ((title: string, body: Any, maybeBody?: Any) =>
-  (e2eDescribe as Any)(title, body, maybeBody)) as DescribeAPI &
-  Record<string, unknown>;
+  (e2eDescribe as Any)(
+    clampTitle(title, "describe"),
+    body,
+    maybeBody,
+  )) as DescribeAPI & Record<string, unknown>;
 
 Object.defineProperties(describe, {
   each: {
@@ -943,10 +1021,17 @@ Object.defineProperties(describe, {
   },
   skip: {
     value: (title: string, body: Any, maybeBody?: Any) => {
-      const options =
-        typeof body === "function" ? { skip: true } : { ...body, skip: true };
-      const inner = typeof body === "function" ? body : maybeBody;
-      return (e2eDescribe as Any)(title, options, inner);
+      // e2e would call a whole skipped group "no runnable test"; skipping inside each body keeps the
+      // file executable and the verdict the same.
+      skipping += 1;
+      try {
+        const inner = typeof body === "function" ? body : maybeBody;
+        return (e2eDescribe as Any)(clampTitle(title, "describe"), () =>
+          inner?.(),
+        );
+      } finally {
+        skipping -= 1;
+      }
     },
     configurable: true,
   },
