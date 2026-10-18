@@ -329,7 +329,10 @@ describe("the production case runner makes one controlled, observed model call",
       config: truncatedParameters,
     });
 
-    expect(byOmitted).toEqual({ status: "failed", reason: "input_unavailable" });
+    expect(byOmitted).toEqual({
+      status: "failed",
+      reason: "input_unavailable",
+    });
     expect(byTruncated).toEqual({
       status: "failed",
       reason: "input_unavailable",

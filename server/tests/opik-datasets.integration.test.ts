@@ -565,9 +565,8 @@ function storeWithArmedInsert(
               const conflictBuilder = originalConflict(
                 ...(conflictArgs as Parameters<typeof originalConflict>),
               );
-              const originalReturning = conflictBuilder.returning.bind(
-                conflictBuilder,
-              );
+              const originalReturning =
+                conflictBuilder.returning.bind(conflictBuilder);
               conflictBuilder.returning = (...returningArgs: unknown[]) => {
                 const awaited = originalReturning(
                   ...(returningArgs as Parameters<typeof originalReturning>),
@@ -713,9 +712,7 @@ test("the sync write re-checks deletion: a deletion record committing in the mar
   // gone — the orphaned upstream copy the m121 discipline forbids. The write
   // must carry the same notPendingDeletion filter the read did, and a row the
   // filter excludes answers the same 404 every reader now gets.
-  const armed = storeWithArmedUpdate(() =>
-    deletingDataset(scopeA, dataset.id),
-  );
+  const armed = storeWithArmedUpdate(() => deletingDataset(scopeA, dataset.id));
   await expect(
     armed.markSynced(scopeA, dataset.id, `opik-r524-${randomUUID()}`),
   ).rejects.toThrow(new DatasetStoreError("DATASET_NOT_FOUND", 404));
@@ -770,7 +767,6 @@ test("the conflict-reuse read-back holds the row's lock: the racing cleanup cann
   await store.deleteDataset(scopeA, saved.dataset.id);
   expect(await store.getDataset(scopeA, saved.dataset.id)).toBeNull();
 });
-
 
 test("deleteDataset refuses a synced subject: the upstream mapping must not be orphaned (OCR m125)", async () => {
   const { dataset } = await store.saveVersion(scopeA, {

@@ -881,10 +881,7 @@ describe("malformed and partial responses are never converted to success", () =>
     // burns its MAX_SPAN_PAGES budget chasing it) and a negative page is a shape
     // the contract never verified. "Never arrives whole is malformed" — a typeof
     // check alone lets 10.5 and -1 wear a 200.
-    const cases: readonly [
-      Record<string, unknown>,
-      string,
-    ][] = [
+    const cases: readonly [Record<string, unknown>, string][] = [
       [{ page: 1.5, size: 10, total: 3, content: [] }, "field:page"],
       [{ page: -2, size: 10, total: 3, content: [] }, "field:page"],
       [{ page: 1, size: -1, total: 3, content: [] }, "field:size"],
