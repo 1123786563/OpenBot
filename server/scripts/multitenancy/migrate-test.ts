@@ -2057,6 +2057,224 @@ const OPENMUSE_TASK_TENANCY_TASK: TaskMigrationSpec = {
   ],
 };
 
+const VENDOR_BILLING_INTERACTIONS_STATEMENTS: readonly string[] = [
+  'CREATE TABLE "billing_vendor_interactions" (\n' +
+    '\t"id" text PRIMARY KEY NOT NULL,\n' +
+    '\t"direction" text NOT NULL,\n' +
+    '\t"tenant_id" text,\n' +
+    '\t"principal_id" text,\n' +
+    '\t"external_customer_id" text,\n' +
+    '\t"operation" text NOT NULL,\n' +
+    '\t"outcome" text NOT NULL,\n' +
+    '\t"denial_code" text,\n' +
+    '\t"detail" jsonb,\n' +
+    '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+    '\tCONSTRAINT "billing_vendor_interactions_direction" CHECK ("billing_vendor_interactions"."direction" in (\'call\',\'callback\')),\n' +
+    '\tCONSTRAINT "billing_vendor_interactions_outcome" CHECK ("billing_vendor_interactions"."outcome" in (\'applied\',\'refused\')),\n' +
+    '\tCONSTRAINT "billing_vendor_interactions_denial_pair" CHECK (("billing_vendor_interactions"."outcome" = \'applied\' AND "billing_vendor_interactions"."denial_code" IS NULL) OR ("billing_vendor_interactions"."outcome" = \'refused\' AND "billing_vendor_interactions"."denial_code" IS NOT NULL AND "billing_vendor_interactions"."denial_code" <> \'\')),\n' +
+    "\tCONSTRAINT \"billing_vendor_interactions_detail_shape\" CHECK (\"billing_vendor_interactions\".\"detail\" IS NULL OR (jsonb_typeof(\"billing_vendor_interactions\".\"detail\") = 'object' AND NOT \"billing_vendor_interactions\".\"detail\" ?| array['envelope','plaintext','secret','value','password','token','apiKey']))\n" +
+    ");",
+  'CREATE INDEX "billing_vendor_interactions_tenant_time_idx" ON "billing_vendor_interactions" ("tenant_id","created_at");',
+  'CREATE INDEX "billing_vendor_interactions_customer_time_idx" ON "billing_vendor_interactions" ("external_customer_id","created_at");',
+];
+
+/**
+ * MT034（Issue #77）：共享账号审批——绑定对象、参数摘要与归属。expand-only
+ * ——仅新增两张表，不修改任何既有表/策略/角色授权：
+ *
+ *   - enterprise_shared_use_requests：一行 = 一条锁定
+ *     (tenant, workspace, bot, install) 的审批申请。五条复合外键全部内嵌
+ *     tenant_id（跨公司申请行结构性不可能）；提议参数摘要为服务端规范
+ *     序列化 sha256（64 位十六进制 CHECK）；受众/理由/状态闭集 CHECK；
+ *     行形 CHECK 强制决定动作配对。data 角色读全部 + 插自己 + 只能撤回
+ *     本人 pending 行；operator 角色租户范围读 + 改；data 零 DELETE；
+ *     directory 零授权。
+ *   - enterprise_shared_use_approvals：批准行是只追加的不可变授予——
+ *     锁定同一四元组 + 摘要 + 批准人 + 溯源申请行（request_id 复合外
+ *     键）。零 UPDATE/DELETE 授权（改参数 = 重新审批，换团队 = 不复用）；
+ *     data 只读；operator 读 + 插；directory 零授权。
+ *
+ * 判定/管理服务在 server/src/enterprise/tenancy/shared-approvals.ts。
+ */
+const SHARED_APPROVAL_TASK: TaskMigrationSpec = {
+  id: "MT034",
+  description:
+    "MT034（Issue #77）：新增 enterprise_shared_use_requests 与 enterprise_shared_use_approvals（expand-only，仅新增表与最小 RLS，不改既有对象）。",
+  steps: [
+    {
+      slug: "shared_approval_tables",
+      impact:
+        "新增两张共享账号审批表：enterprise_shared_use_requests（锁定 (tenant, workspace, bot, install) 的申请行，五条复合外键内嵌 tenant_id、摘要/受众/理由/状态闭集 CHECK、行形 CHECK、对象索引）与 enterprise_shared_use_approvals（不可变批准行，同一四元组 + 摘要 + 批准人 + 溯源申请复合外键）。不修改任何既有表。",
+      objects: [
+        "enterprise_shared_use_requests",
+        "enterprise_shared_use_approvals",
+      ],
+      statements: [
+        'CREATE TABLE "enterprise_shared_use_requests" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"agent_id" text NOT NULL,\n' +
+          '\t"install_id" text NOT NULL,\n' +
+          '\t"requested_by" text NOT NULL,\n' +
+          '\t"proposed_audience" text NOT NULL,\n' +
+          '\t"proposed_outside_input" boolean NOT NULL,\n' +
+          '\t"proposed_members" jsonb NOT NULL,\n' +
+          '\t"proposed_params_digest" text NOT NULL,\n' +
+          '\t"reason" text NOT NULL,\n' +
+          "\t\"status\" text DEFAULT 'pending' NOT NULL,\n" +
+          '\t"decided_by" text,\n' +
+          '\t"decided_at" timestamp with time zone,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_shared_use_requests_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          "\tCONSTRAINT \"enterprise_shared_use_request_audience\" CHECK (\"enterprise_shared_use_requests\".\"proposed_audience\" in ('owner','people','team')),\n" +
+          "\tCONSTRAINT \"enterprise_shared_use_request_reason\" CHECK (\"enterprise_shared_use_requests\".\"reason\" in ('publish','trigger','grant','refused_call')),\n" +
+          "\tCONSTRAINT \"enterprise_shared_use_request_status\" CHECK (\"enterprise_shared_use_requests\".\"status\" in ('pending','approved','declined','withdrawn','superseded')),\n" +
+          '\tCONSTRAINT "enterprise_shared_use_request_digest_shape" CHECK ("enterprise_shared_use_requests"."proposed_params_digest" ~ \'^[0-9a-f]{64}$\'),\n' +
+          '\tCONSTRAINT "enterprise_shared_use_request_members_shape" CHECK (jsonb_typeof("enterprise_shared_use_requests"."proposed_members") = \'array\'),\n' +
+          '\tCONSTRAINT "enterprise_shared_use_request_decision_shape" CHECK (("enterprise_shared_use_requests"."status" in (\'approved\',\'declined\')) = ("enterprise_shared_use_requests"."decided_by" is not null and "enterprise_shared_use_requests"."decided_at" is not null))\n' +
+          ");",
+        'ALTER TABLE "enterprise_shared_use_requests" ADD CONSTRAINT "enterprise_shared_use_requests_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_shared_use_requests" ADD CONSTRAINT "enterprise_shared_use_requests_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_shared_use_requests" ADD CONSTRAINT "enterprise_shared_use_requests_tenant_id_agent_id_enterprise_bot_ownership_tenant_id_agent_id_fk" FOREIGN KEY ("tenant_id","agent_id") REFERENCES "public"."enterprise_bot_ownership"("tenant_id","agent_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_shared_use_requests" ADD CONSTRAINT "enterprise_shared_use_requests_tenant_id_install_id_enterprise_plugin_installs_tenant_id_id_fk" FOREIGN KEY ("tenant_id","install_id") REFERENCES "public"."enterprise_plugin_installs"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_shared_use_requests" ADD CONSTRAINT "enterprise_shared_use_requests_tenant_id_requested_by_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","requested_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_shared_use_requests" ADD CONSTRAINT "enterprise_shared_use_requests_tenant_id_decided_by_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","decided_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE INDEX "enterprise_shared_use_request_tenant_created_idx" ON "enterprise_shared_use_requests" ("tenant_id","created_at","id");',
+        'CREATE INDEX "enterprise_shared_use_request_object_idx" ON "enterprise_shared_use_requests" ("tenant_id","agent_id","install_id","workspace_id");',
+        'CREATE TABLE "enterprise_shared_use_approvals" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"agent_id" text NOT NULL,\n' +
+          '\t"install_id" text NOT NULL,\n' +
+          '\t"request_id" text NOT NULL,\n' +
+          '\t"params_digest" text NOT NULL,\n' +
+          '\t"audience" text NOT NULL,\n' +
+          '\t"outside_input" boolean NOT NULL,\n' +
+          '\t"members" jsonb NOT NULL,\n' +
+          '\t"approved_by" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_shared_use_approvals_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          "\tCONSTRAINT \"enterprise_shared_use_approval_audience\" CHECK (\"enterprise_shared_use_approvals\".\"audience\" in ('owner','people','team')),\n" +
+          '\tCONSTRAINT "enterprise_shared_use_approval_digest_shape" CHECK ("enterprise_shared_use_approvals"."params_digest" ~ \'^[0-9a-f]{64}$\'),\n' +
+          '\tCONSTRAINT "enterprise_shared_use_approval_members_shape" CHECK (jsonb_typeof("enterprise_shared_use_approvals"."members") = \'array\')\n' +
+          ");",
+        'ALTER TABLE "enterprise_shared_use_approvals" ADD CONSTRAINT "enterprise_shared_use_approvals_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_shared_use_approvals" ADD CONSTRAINT "enterprise_shared_use_approvals_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_shared_use_approvals" ADD CONSTRAINT "enterprise_shared_use_approvals_tenant_id_agent_id_enterprise_bot_ownership_tenant_id_agent_id_fk" FOREIGN KEY ("tenant_id","agent_id") REFERENCES "public"."enterprise_bot_ownership"("tenant_id","agent_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_shared_use_approvals" ADD CONSTRAINT "enterprise_shared_use_approvals_tenant_id_install_id_enterprise_plugin_installs_tenant_id_id_fk" FOREIGN KEY ("tenant_id","install_id") REFERENCES "public"."enterprise_plugin_installs"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_shared_use_approvals" ADD CONSTRAINT "enterprise_shared_use_approvals_tenant_id_request_id_enterprise_shared_use_requests_tenant_id_id_fk" FOREIGN KEY ("tenant_id","request_id") REFERENCES "public"."enterprise_shared_use_requests"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_shared_use_approvals" ADD CONSTRAINT "enterprise_shared_use_approvals_tenant_id_approved_by_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","approved_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE INDEX "enterprise_shared_use_approval_object_idx" ON "enterprise_shared_use_approvals" ("tenant_id","agent_id","install_id","workspace_id","params_digest");',
+      ],
+    },
+    {
+      slug: "shared_approval_rls_policies",
+      impact:
+        "两张新表的 FORCE RLS 与最小授权：申请行 data 角色读全部 + 插自己（tenant+requested_by pin）+ 只能撤回本人 pending 行（同一谓词 UPDATE 策略），operator 角色租户范围读 + 改；批准行 data 只读、operator 读 + 插；任何角色零 DELETE，批准行零 UPDATE；directory 角色两表零授权。不改动任何既有表策略或既有授权。",
+      objects: [
+        "enterprise_shared_use_requests",
+        "enterprise_shared_use_approvals",
+      ],
+      statements: [
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_shared_use_requests" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_shared_use_requests" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_shared_use_requests" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_shared_use_request_data_read" ON "enterprise_shared_use_requests"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_shared_use_requests"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_shared_use_request_data_insert" ON "enterprise_shared_use_requests"\n  FOR INSERT TO ob_ent_data\n  WITH CHECK ("enterprise_shared_use_requests"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_shared_use_requests"."requested_by" = nullif(current_setting(\'app.principal_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_shared_use_request_data_withdraw" ON "enterprise_shared_use_requests"\n  FOR UPDATE TO ob_ent_data\n  USING ("enterprise_shared_use_requests"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_shared_use_requests"."requested_by" = nullif(current_setting(\'app.principal_id\', true), \'\') AND "enterprise_shared_use_requests"."status" = \'pending\')\n  WITH CHECK ("enterprise_shared_use_requests"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_shared_use_requests"."requested_by" = nullif(current_setting(\'app.principal_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_shared_use_request_operator_read" ON "enterprise_shared_use_requests"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_shared_use_requests"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_shared_use_request_operator_update" ON "enterprise_shared_use_requests"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_shared_use_requests"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'))\n  WITH CHECK ("enterprise_shared_use_requests"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT, INSERT, UPDATE ON TABLE "enterprise_shared_use_requests" TO ob_ent_data;',
+        'GRANT SELECT, UPDATE ON TABLE "enterprise_shared_use_requests" TO ob_ent_operator;',
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_shared_use_approvals" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_shared_use_approvals" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_shared_use_approvals" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_shared_use_approval_data_read" ON "enterprise_shared_use_approvals"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_shared_use_approvals"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_shared_use_approval_operator_read" ON "enterprise_shared_use_approvals"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_shared_use_approvals"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_shared_use_approval_operator_insert" ON "enterprise_shared_use_approvals"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_shared_use_approvals"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT ON TABLE "enterprise_shared_use_approvals" TO ob_ent_data;',
+        'GRANT SELECT, INSERT ON TABLE "enterprise_shared_use_approvals" TO ob_ent_operator;',
+      ],
+    },
+  ],
+};
+
+/**
+ * MT074（波次 16 补位）：供应商计费调用面与回调归属锁定的审计面（expand-only）。
+ * 新增一张账务域交互审计表（跟随 MT069/MT070/MT073 同款 billing 域访问模型：
+ * owner 通道、无 RLS；不授任何角色授权 = 结构隔离，套件以 has_table_privilege
+ * 反证钉死）：
+ *   - billing_vendor_interactions：一行 = 一次供应商计费交互尝试（call/callback
+ *     × applied/refused 都是事实）。无外键（MT069 审计先例：审计不随对象消亡；
+ *     且「成员行已删」的拒绝必须可记录——membership 外键会让拒绝本身抛 23503）；
+ *     tenant_id 可空（未映射回调不臆造归属）；direction/outcome 闭集 CHECK、
+ *     outcome/denial_code 行形配对 CHECK、detail 闭形 CHECK（object 且禁秘密
+ *     载体键）。
+ * 不修改任何既有表；供应商事件去重/重放防线仍在既有 webhook inbox（零改动）。
+ */
+const VENDOR_BILLING_INTERACTION_TASK: TaskMigrationSpec = {
+  id: "MT074",
+  description:
+    "MT074（波次 16 补位）：供应商计费调用面与回调归属锁定——新增 billing_vendor_interactions 交互审计表（expand-only，仅新增一张账务域审计表，不改既有对象）。",
+  steps: [
+    {
+      slug: "vendor_billing_interactions",
+      impact:
+        "新增 billing_vendor_interactions 表：每次供应商计费交互尝试一行（方向/公司/主体/客户键/操作/结局/拒绝码/闭形 detail）。无外键（审计不随对象消亡），direction/outcome 闭集、结局/拒绝码行形配对、detail 闭形四组 CHECK；两条查询索引。不修改任何既有表。",
+      objects: ["billing_vendor_interactions"],
+      statements: VENDOR_BILLING_INTERACTIONS_STATEMENTS,
+    },
+  ],
+};
+
+/**
+ * MT067（Issue #110）：退出/清理与全局删除双轨域的存储面授权。expand-only——
+ * 仅给受限 operator 角色补 enterprise_workspace_memberships 的 DELETE 行策略
+ * 与授权。背景：公司成员数据清理（Track A）要摘除本公司范围内该成员的团队
+ * 成员资格行；MT004/MT012 只给了 INSERT/UPDATE(status,epoch)，没有 DELETE。
+ * 新策略与同表既有 operator UPDATE 行策略同形（app.tenant_id +
+ * app.operator_principal_id 双 pin——清理事务把 operator pin 切到被清理成员
+ * 后，只有该成员在本公司的团队行可达）。不修改任何既有表/列/约束/策略/授权。
+ *
+ * 幂等再断言（MT012 同款纪律）：MT006 的 workspace-scope 测试夹具
+ * （tests/multitenancy/support/workspace-scope.ts）在测试库上以夹具侧幂等
+ * 预置过同名策略——生产环境由本迁移创建（生产唯一权威写入方），测试库
+ * 上遇已存在策略时按条件块跳过创建，GRANT 重复执行为无操作。
+ */
+const DELETION_SEMANTICS_TASK: TaskMigrationSpec = {
+  id: "MT067",
+  description:
+    "MT067（Issue #110）：公司成员清理——enterprise_workspace_memberships 的 operator DELETE 行策略与授权（expand-only，不改任何既有对象/策略/授权；幂等再断言）。",
+  steps: [
+    {
+      slug: "workspace_membership_cleanup_delete",
+      impact:
+        "给受限 operator 角色补 enterprise_workspace_memberships 的 DELETE 行策略（app.tenant_id + app.operator_principal_id 双 pin，与同表既有 operator UPDATE 行策略同形；pg_policies 目录已存在同名策略时条件跳过——MT006 测试夹具预置先例）及配套 GRANT DELETE（重复授权为无操作）。不授予其它任何权限，不改任何既有策略。",
+      objects: ["enterprise_workspace_memberships"],
+      statements: [
+        "DO $mt067$\n" +
+          "BEGIN\n" +
+          "  IF NOT EXISTS (\n" +
+          "    SELECT 1 FROM pg_policies\n" +
+          "    WHERE schemaname = 'public'\n" +
+          "      AND tablename = 'enterprise_workspace_memberships'\n" +
+          "      AND policyname = 'enterprise_workspace_membership_operator_delete'\n" +
+          "  ) THEN\n" +
+          '    CREATE POLICY "enterprise_workspace_membership_operator_delete" ON "enterprise_workspace_memberships"\n' +
+          "      FOR DELETE TO ob_ent_operator\n" +
+          "      USING (\"enterprise_workspace_memberships\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+          "        AND \"enterprise_workspace_memberships\".\"principal_id\" = nullif(current_setting('app.operator_principal_id', true), ''));\n" +
+          "  END IF;\n" +
+          "END\n" +
+          "$mt067$;",
+        'GRANT DELETE ON TABLE "enterprise_workspace_memberships" TO ob_ent_operator;',
+      ],
+    },
+  ],
+};
+
 export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [SELF_CHECK_TASK.id, SELF_CHECK_TASK],
   [WORKSPACE_MEMBERSHIP_TASK.id, WORKSPACE_MEMBERSHIP_TASK],
@@ -2081,6 +2299,9 @@ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [CREDENTIAL_LEASE_TASK.id, CREDENTIAL_LEASE_TASK],
   [COMPANY_FINANCE_GRANT_TASK.id, COMPANY_FINANCE_GRANT_TASK],
   [OPENMUSE_TASK_TENANCY_TASK.id, OPENMUSE_TASK_TENANCY_TASK],
+  [SHARED_APPROVAL_TASK.id, SHARED_APPROVAL_TASK],
+  [DELETION_SEMANTICS_TASK.id, DELETION_SEMANTICS_TASK],
+  [VENDOR_BILLING_INTERACTION_TASK.id, VENDOR_BILLING_INTERACTION_TASK],
 ]);
 
 export const ALLOWED_TASK_IDS: readonly string[] = [...TASKS.keys()].sort();
