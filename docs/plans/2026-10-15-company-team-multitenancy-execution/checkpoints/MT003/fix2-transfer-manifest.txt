@@ -1,0 +1,13 @@
+f0520524f0faa2b4533b9d2f1aa692c8f907ba71
+--
+e58bde59de470b816a6cacfa988b7a450d15dd7261ef2e22f6d77b034d6c05d0  server/scripts/multitenancy/inventory.ts
+e00f90a45edfe02c21c227ca10f42c196d57ee41e644d7eab8fcd0c979ca76bf  server/scripts/multitenancy/migrate-test.ts
+c718e8f93499a002723fb83aa80c7a11cab89f4f09c4e7a7ed35a678109f99cf  server/tests/multitenancy/inventory.test.ts
+e004868a3793aebb05fce46c5547384064bfe0ce30df5180143b4ada7794d461  server/tests/multitenancy/migration-tool.test.ts
+a334d5bf0e8d924c3de96cc31a366cfb6b1d9775d838705ce5b6c862cef192ec  docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT003.md
+a6b97d922c98cabcac8f766c78867b493b667f58bb13a05b8bba7fb219d26078  docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT003-review2.md
+c55b6b98ff5385f8e5ecee6686109eb309bdbf8575f1253caa334e7131aec2dc  docs/plans/2026-10-15-company-team-multitenancy-execution/briefs/MT003-fix2-brief.md
+a1570e6d1e8da0a92f16583ea71ba4b4cd718dfcba6f927ae86782bd3b344c10  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/before.json
+ddbd81c0056574e804aae24266330413ab1f26e56e5110cdedfa2e5fbcdb6b40  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/after.json
+9e5cd88df76cf5f67c744f317bad4b9a76546ae28126e82a1933fc19ae6e3c64  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/review-package.json
+3378abf1e0b6b3eaf0abd509de7712273cc7b9f6084113ddc6c04605dd70b125  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT003/verification.txt
