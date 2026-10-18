@@ -1,0 +1,19 @@
+# M06: grantor membership precheck removed
+# 锚点（解码后）：      if (!(await activeMembership(input.tenantId, input.grantedBy))) {
+# 注入 diff（pristine -> mutated）：
+--- /tmp/mt073-mutation-pristine-2nd.ts	2026-10-18 11:42:58
++++ src/billing/company-finance-visibility.ts	2026-10-18 11:42:59
+@@ -198,7 +198,7 @@
+           `FINANCE_GRANT_INVALID: grantee ${input.principalId} is not an active member of company ${input.tenantId}`,
+         );
+       }
+-      if (!(await activeMembership(input.tenantId, input.grantedBy))) {
++      if (false && !(await activeMembership(input.tenantId, input.grantedBy))) {
+         throw new Error(
+           `FINANCE_GRANT_INVALID: grantor ${input.grantedBy} is not an active member of company ${input.tenantId}`,
+         );
+# 聚焦套件 tests/multitenancy/billing-visibility.test.ts：
+ 15 pass  1 fail 
+# 捕获者（失败用例）：
+(fail) MT073 AC2: company finance read is an explicit authorization > a grant names two members of the same company: outsiders and suspended members are refused [1.04ms]
+# 还原：sha256 与 pristine 逐位一致（51c5aa04bf4ce9db989b9f5b6ec81c8ce998bb77d5a9822693369d9a05d7cd98）

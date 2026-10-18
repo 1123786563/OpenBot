@@ -1,0 +1,6 @@
+# MT021 fix-round after-hashes（改动后终态 SHA-256）
+# frozen at 2026-10-17T00:52:27Z
+a7d5820b2d3fea40cfabc4b623729af7865da8b960cdc3d4d7774fffc98a8f51  server/src/enterprise/tenancy/conversations-list.ts
+64c0688c139b075bec5f14c1fefbef8ed135a790d669eb37e8ab8d96207127e7  server/tests/multitenancy/conversations-list.test.ts
+a490a04f105ff6d807ce5f5de7e9a191d9e3a968c4fd0562ad3396ee0722aec9  server/tests/multitenancy/support/conversations-list.ts
+179201768e043df3f5c7dace7f9b20c64d265c750b9624071f8b44570f681493  docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT021.md

@@ -1,0 +1,131 @@
+src/index.ts:4736:13 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    4734 │         kbs.map((kb) =>
+    4735 │           knowledgeRequest(
+  > 4736 │             knowledgeService!,
+         │             ^^^^^^^^^^^^^^^^^
+    4737 │             `/kb/${encodeURIComponent(kb.id)}/retrieve`,
+    4738 │             {
+  
+
+src/index.ts:837:13 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Don't use console.
+  
+    835 │           const name = error instanceof Error ? error.name : "";
+    836 │           if (name !== "CredentialUnusableError")
+  > 837 │             console.error({
+        │             ^^^^^^^^^^^^^
+    838 │               error: "TENANT_CREDENTIAL_DECRYPT_FAILED",
+    839 │               context: { credentialRef: reference },
+  
+  i The use of console is often reserved for debugging.
+  
+  i Unsafe fix: Remove console.
+  
+     835  835 │             const name = error instanceof Error ? error.name : "";
+     836  836 │             if (name !== "CredentialUnusableError")
+     837      │ - ············console.error({
+     838      │ - ··············error:·"TENANT_CREDENTIAL_DECRYPT_FAILED",
+     839      │ - ··············context:·{·credentialRef:·reference·},
+     840      │ - ··············cause:·error·instanceof·Error·?·error.message·:·String(error),
+     841      │ - ············});
+     842  837 │             return undefined;
+     843  838 │           }
+  
+
+src/index.ts:862:11 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Don't use console.
+  
+    860 │           // Session-infrastructure faults are not "unauthenticated": leave
+    861 │           // a trace so auth-store outages are diagnosable (OCR R10).
+  > 862 │           console.error({
+        │           ^^^^^^^^^^^^^
+    863 │             error: "ENTERPRISE_SESSION_RESOLUTION_FAILED",
+    864 │             cause: error instanceof Error ? error.message : String(error),
+  
+  i The use of console is often reserved for debugging.
+  
+  i Unsafe fix: Remove console.
+  
+     858  858 │         authenticate: async (request) => {
+     859  859 │           const actor = await resolveRequestActor(request).catch((error) => {
+     860      │ - ··········//·Session-infrastructure·faults·are·not·"unauthenticated":·leave
+     861      │ - ··········//·a·trace·so·auth-store·outages·are·diagnosable·(OCR·R10).
+     862      │ - ··········console.error({
+     863      │ - ············error:·"ENTERPRISE_SESSION_RESOLUTION_FAILED",
+     864      │ - ············cause:·error·instanceof·Error·?·error.message·:·String(error),
+     865      │ - ··········});
+     866  860 │             return null;
+     867  861 │           });
+  
+
+src/index.ts:882:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Don't use console.
+  
+    880 │     };
+    881 │   } catch (error) {
+  > 882 │     console.error("Enterprise conversation service unavailable", error);
+        │     ^^^^^^^^^^^^^
+    883 │     return null;
+    884 │   }
+  
+  i The use of console is often reserved for debugging.
+  
+  i Unsafe fix: Remove console.
+  
+     880  880 │       };
+     881  881 │     } catch (error) {
+     882      │ - ····console.error("Enterprise·conversation·service·unavailable",·error);
+     883  882 │       return null;
+     884  883 │     }
+  
+
+src/index.ts:1871:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Don't use console.
+  
+    1869 │     await personalMemoryStore.mirrorPending();
+    1870 │   } catch (error) {
+  > 1871 │     console.error(
+         │     ^^^^^^^^^^^^^
+    1872 │       JSON.stringify({
+    1873 │         type: "memory-sweep-error",
+  
+  i The use of console is often reserved for debugging.
+  
+  i Unsafe fix: Remove console.
+  
+    1869 1869 │       await personalMemoryStore.mirrorPending();
+    1870 1870 │     } catch (error) {
+    1871      │ - ····console.error(
+    1872      │ - ······JSON.stringify({
+    1873      │ - ········type:·"memory-sweep-error",
+    1874      │ - ········error:·error·instanceof·Error·?·error.name·:·"UnknownError",
+    1875      │ - ········context:·{·operation:·"mirrorPending"·},
+    1876      │ - ········timestamp:·new·Date().toISOString(),
+    1877      │ - ······}),
+    1878      │ - ····);
+    1879 1871 │     }
+    1880 1872 │   }, 60_000);
+  
+
+Checked 8 files in 216ms. No fixes applied.
+Found 4 errors.
+Found 1 warning.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+
+biome-exit=1
+
+# biome-exit=1 的构成（诚实披露）：唯一残留 = src/index.ts 的 5 处存量欠账
+# （4× noConsole @837/862/882/1871 + 1× noNonNullAssertion @4736）。
+# 反向撤销验证：git stash 重建 pre-MT027 index.ts，5 处违规逐一对应（行号平移），
+# 全部先于本票存在（MT010 报告 D3 已记录同款存量）。本票新增/触及的其余
+# 7 个文件 biome 全 clean；organizeImports/format 对本票行零要求。

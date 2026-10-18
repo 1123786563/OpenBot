@@ -1,0 +1,11 @@
+# Container teardown — docker rm 真实执行并回显（2026-10-17T12:54:01Z）
+# 专用容器 mt031-impl-pg（pgvector/pgvector:pg16 @ 127.0.0.1:55565）
+$ docker ps --filter name=mt031-impl-pg --format "{{.Names}} {{.Status}}"
+mt031-impl-pg Up 5 minutes
+$ docker rm -f mt031-impl-pg
+mt031-impl-pg
+$ docker ps --filter name=mt031-impl-pg --format "{{.Names}}"
+(empty above = container gone)
+
+# 测毕销毁，回显存档。七变量 env 副本 /tmp/mt031-env.sh（0600）同步删除：
+/tmp/mt031-env.sh

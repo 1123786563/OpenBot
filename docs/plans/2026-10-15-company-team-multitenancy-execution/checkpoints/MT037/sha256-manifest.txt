@@ -1,0 +1,4 @@
+== MT037 交付 manifest（修复轮后更新；after 段自校验）==
+8d1775071a7a4c85b8d55bb38870b6a02b2db13a79cd950af65ff96e317c6acf  server/src/kb/application/service/kb-restricted-retrieval.ts
+55bdfa08e1fede66490cc974a11d0e6bf642e280aa10ccbc02dcddcd48de2e6b  server/tests/multitenancy/retrieval-restriction.test.ts
+8ad90b67b3cccc00d7702ea47d0a3c3c392daef4be4d42ecd83f9249aa1f8b0f  server/tests/multitenancy/support/retrieval-restriction.ts

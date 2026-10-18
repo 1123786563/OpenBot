@@ -1,0 +1,14 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/team-public-rules.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+SyntaxError: Export named 'decideTeamPublicActionWithoutDependencies' not found in module '/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt009/server/src/enterprise/tenancy/team-public-rules.ts'.
+-------------------------------
+
+
+ 0 pass
+ 1 fail
+ 1 error
+Ran 1 test across 1 file. [193.00ms]

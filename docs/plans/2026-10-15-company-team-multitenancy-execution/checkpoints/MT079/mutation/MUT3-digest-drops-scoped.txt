@@ -1,0 +1,47 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/preferences.test.ts:
+(pass) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > global classification keys are exactly the DEFAULT_USER_PREFERENCES keys [0.05ms]
+(pass) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > every global item carries a closed value shape (exact enum members or boolean) [0.06ms]
+(pass) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > the issue-named business categories are present with real authoritative storage bindings [0.09ms]
+(pass) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > classifyPreferenceKey answers for every classified item and refuses everything else [0.18ms]
+244 |           [...category.documentPaths],
+245 |         ]),
+246 |       ],
+247 |     ]);
+248 |     const recomputed = createHash("sha256").update(canonical).digest("hex");
+249 |     expect(PREFERENCE_CLASSIFICATION_DIGEST).toBe(recomputed);
+                                                   ^
+error: expect(received).toBe(expected)
+
+Expected: "0f5d77abed56c850cd5cb9f8cfcfbdb0431e44ee4402b90aa58cb9da0a153ed0"
+Received: "3907bdee98a1d1781750c72e2783d6416f17941c10ad5d8a0a77da73a77e8542"
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i10-mt079/server/tests/multitenancy/preferences.test.ts:249:46)
+(fail) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > digest is deterministic, 64-hex, and matches the documented canonical derivation [0.30ms]
+(pass) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > module source never reads the process environment (pure seam) [0.27ms]
+(pass) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > legacy route schema keys stay inside the classified global keys (source-level sync) [0.25ms]
+(pass) MT079 验收 3 — 写入分类外的偏好项被拒绝（fail-closed，零回显） > empty and non-object patches are refused [0.10ms]
+(pass) MT079 验收 3 — 写入分类外的偏好项被拒绝（fail-closed，零回显） > unclassified keys are refused — pure UI additions and business-shaped keys alike [0.11ms]
+(pass) MT079 验收 3 — 写入分类外的偏好项被拒绝（fail-closed，零回显） > a mixed patch with one unclassified key is refused whole (all-or-nothing) [0.03ms]
+(pass) MT079 验收 3 — 写入分类外的偏好项被拒绝（fail-closed，零回显） > values outside the closed shape are refused [0.04ms]
+(pass) MT079 验收 3 — 写入分类外的偏好项被拒绝（fail-closed，零回显） > rejection messages never echo the rejected key or value (canary) [0.06ms]
+(pass) MT079 验收 3 — 写入分类外的偏好项被拒绝（fail-closed，零回显） > a valid patch passes exactly its classified keys, frozen, without mutating the input [0.09ms]
+(pass) MT079 验收 4（纯函数面） — 读取只返回分类为全局个人偏好的合法条目 > a poisoned stored document reads back as exactly the legal global items [0.05ms]
+(pass) MT079 验收 4（纯函数面） — 读取只返回分类为全局个人偏好的合法条目 > invalid-valued legal keys fall back to the default; the read always returns a complete shape [0.02ms]
+(pass) MT079 验收 4（纯函数面） — 读取只返回分类为全局个人偏好的合法条目 > non-object stored documents read back as pure defaults [0.02ms]
+(pass) MT079 验收 4（纯函数面） — 读取只返回分类为全局个人偏好的合法条目 > a hostile __proto__ key in the stored document is ignored safely [0.02ms]
+(pass) MT079 验收 4（纯函数面） — 读取只返回分类为全局个人偏好的合法条目 > the read output is a fresh frozen object and deterministic [0.02ms]
+(pass) MT079 — 数据库面：全局偏好跨公司切换保持，业务配置按归属立即变化 > the users table carries no scope column — global preferences cannot be scope-partitioned [3.54ms]
+(pass) MT079 — 数据库面：全局偏好跨公司切换保持，业务配置按归属立即变化 > global preferences survive the company A -> company B switch while business config differs per company [11.26ms]
+(pass) MT079 — 数据库面：全局偏好跨公司切换保持，业务配置按归属立即变化 > a team override changes business config immediately; global preferences stay byte-identical [28.22ms]
+(pass) MT079 — 数据库面：全局偏好跨公司切换保持，业务配置按归属立即变化 > a poisoned stored preferences document reads back through the gate with zero business leakage [1.10ms]
+(pass) MT079 — 数据库面：全局偏好跨公司切换保持，业务配置按归属立即变化 > every restricted query in this suite ran under an ob_ent_* capability role [0.09ms]
+
+1 tests failed:
+(fail) MT079 验收 1 — 偏好项分类清单完整、可核对、带摘要 > digest is deterministic, 64-hex, and matches the documented canonical derivation [0.30ms]
+
+ 22 pass
+ 1 fail
+ 223 expect() calls
+Ran 23 tests across 1 file. [550.00ms]

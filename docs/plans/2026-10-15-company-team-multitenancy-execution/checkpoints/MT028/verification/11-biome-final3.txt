@@ -1,0 +1,10 @@
+# MT028 biome 终态 v3（2026-10-17，unused import 修复后）
+触及 8 文件：本票 7 个新文件全 clean；src/index.ts 5 处为 git show HEAD 核实的 BASE 存量（4×noConsole @838/863/883/1895 + 1×noNonNullAssertion @4760，与 MT027 报告 D4 同款欠账），本票零新增：
+src/index.ts:4760:13 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:838:13 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:863:11 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:883:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+src/index.ts:1895:5 lint/suspicious/noConsole  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Found 4 errors.
+Found 1 warning.
+biome-exit=0

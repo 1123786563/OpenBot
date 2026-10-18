@@ -1,0 +1,5 @@
+# MT022 worktree state after (task 2) — 2026-10-17T10:54:16Z
+# 交付面 = 恰好 3 个新文件（MT022 票自有，含前任 RED 遗产 + 本任修复）；既有文件零改动
+# 撤权链唯一既有接触点 = 无（16 冻结文件 before==after，见 after-hashes.txt）
+# 容器 mt022-impl-pg @ 127.0.0.1:55563（测毕 docker rm，回显见 07-container-teardown.txt）
+# env 七变量临时文件 0600 于 /tmp，测毕删除
