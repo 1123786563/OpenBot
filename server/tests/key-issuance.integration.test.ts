@@ -135,6 +135,8 @@ function issuerFor(overrides?: {
         adminKey: "test-admin-key",
       }),
     }),
+    // 05.5's term: this file's concern is 05.3's flow, so the deployment default applies.
+    keyTtlMinutes: 15,
   });
 }
 

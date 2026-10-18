@@ -232,6 +232,9 @@ function issuerFor(overrides?: {
   return createGatewayKeyIssuer({
     database,
     resolveForBot: registry.modelAccess.resolveForBot,
+    // 05.5 made the TTL explicit at the seam; this 05.4 harness predates it and needs the same
+    // short-lived default the newer suites pass.
+    keyTtlMinutes: 15,
     provisionCustomer: provisionerFor(overrides?.gate).provisionCustomer,
     client: createGatewayVirtualKeyClient({
       readGatewayEndpoint: async () => endpoint,

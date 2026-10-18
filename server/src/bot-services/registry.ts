@@ -11,6 +11,7 @@ import {
   createDeploymentKeyIssuer,
   createKeyIssuanceRoutes,
 } from "../gateway/key-issuance";
+import { createDeploymentKeyRenewalService } from "../gateway/key-renewal";
 import { gatewayModelCapabilityFilterControls } from "../gateway/model-capability-filter";
 import { mappedModelCapabilities } from "../gateway/model-selection-routes";
 import {
@@ -98,6 +99,15 @@ export function createBotServiceRegistry(
         modelAccess,
         auditStore: dependencies.auditStore,
       }).issueKeyForGrant,
+      // 05.6's renewal, composed against the same installed controls and the same grant
+      // seam the claim runs — a renewal re-runs every verdict a first issuance did, then
+      // rotates (next credentialVersion, previous versions retired per 05.7's rule).
+      renew: createDeploymentKeyRenewalService({
+        database,
+        modelAccess,
+        listSelectableModels,
+        auditStore: dependencies.auditStore,
+      }).renewKeyForGrant,
       // 05.4's bundle sides, read live at claim time: the endpoint this deployment answers
       // at (01.1) and the Bot's own selectable refs — 03.11's exact mapping
       // (mappedModelCapabilities over the live registry record, attributed to the Bot
@@ -105,28 +115,36 @@ export function createBotServiceRegistry(
       bundle: {
         readGatewayEndpoint: async () =>
           (await gatewayEndpointControls()?.readGatewayEndpoint()) ?? undefined,
-        listSelectableModels: async (botId) => {
-          const filter = gatewayModelCapabilityFilterControls();
-          if (!filter) {
-            throw new CredentialBundleUnavailableError(
-              "bundle_models_unavailable",
-              "The model catalog is not available, so the credential bundle cannot be completed.",
-            );
-          }
-          const bot = await store.getBotService(botId);
-          if (bot?.status !== "active") {
-            throw new CredentialBundleUnavailableError(
-              "bundle_models_unavailable",
-              "The bot service record is not readable, so the credential bundle cannot be completed.",
-            );
-          }
-          const selection = await filter.listSelectableModels(
-            mappedModelCapabilities(bot.capabilities),
-            { kind: "bot_service", id: botId },
-          );
-          return selection.selectable;
-        },
+        listSelectableModels,
       },
     }),
   };
+
+  /**
+   * The Bot's own selectable refs, read live (03.8's filter over the installed controls) —
+   * the ONE source both the claim/renewal answer's bundle and the renewal's re-verification
+   * consume, so the two can never disagree about what is open. A missing control refuses;
+   * nothing is guessed.
+   */
+  async function listSelectableModels(botId: string) {
+    const filter = gatewayModelCapabilityFilterControls();
+    if (!filter) {
+      throw new CredentialBundleUnavailableError(
+        "bundle_models_unavailable",
+        "The model catalog is not available, so the credential bundle cannot be completed.",
+      );
+    }
+    const bot = await store.getBotService(botId);
+    if (bot?.status !== "active") {
+      throw new CredentialBundleUnavailableError(
+        "bundle_models_unavailable",
+        "The bot service record is not readable, so the credential bundle cannot be completed.",
+      );
+    }
+    const selection = await filter.listSelectableModels(
+      mappedModelCapabilities(bot.capabilities),
+      { kind: "bot_service", id: botId },
+    );
+    return selection.selectable;
+  }
 }

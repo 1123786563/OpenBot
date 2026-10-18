@@ -34,6 +34,15 @@ import {
 } from "./customer-provision";
 import type { GatewayEndpointConfig } from "./endpoint-config";
 import { gatewayEndpointControls } from "./endpoint-config";
+import {
+  resolveVirtualKeyTtlMinutes,
+  virtualKeyTtlMinutesProblem,
+} from "./key-expiry";
+import { outstandingGatewayKeyDriftReasons } from "./key-drift";
+import {
+  GatewayKeyRenewalError,
+  type RenewedGatewayKey,
+} from "./key-renewal";
 import { GatewayNotReadyError } from "./readiness";
 
 /*
@@ -97,7 +106,8 @@ export type GatewayVirtualKeyReasonCode =
   | "gateway_vk_unauthenticated"
   | "gateway_vk_invalid_response"
   | "gateway_vk_unexpected_status"
-  | "gateway_vk_conflict";
+  | "gateway_vk_conflict"
+  | "gateway_vk_grant_drift_paused";
 
 export class GatewayVirtualKeyError extends Error {
   readonly reasonCode: GatewayVirtualKeyReasonCode;
@@ -120,6 +130,9 @@ export type GatewayVirtualKeyClient = {
     name: string;
     /** The customer the key bills — the ONLY governance the create carries. */
     customerId: string;
+    /** RFC3339: the instant the key stops being usable for new requests (05.5's term).
+     * The gateway refuses an expired key on the request path from this instant on. */
+    expiresAt: string;
   }) => Promise<{ virtualKeyId: string; value: string }>;
 };
 
@@ -165,6 +178,11 @@ function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+/** The wall clock, the term's default measure. */
+function defaultNow(): Date {
+  return new Date();
+}
+
 /** A `gvk-` record id: 8 random bytes as hex, the draw size the other gateway ids use. */
 function generateKeyId(): string {
   return `gvk-${randomBytes(8).toString("hex")}`;
@@ -184,6 +202,14 @@ export type GatewayKeyIssuerDeps = {
   provisionCustomer: (ref: PayerRef) => Promise<GatewayCustomerProvisionResult>;
   /** The virtual key create transport (see {@link GatewayVirtualKeyClient}). */
   client: GatewayVirtualKeyClient;
+  /**
+   * The key's term in minutes (05.5): every minted key expires this long after its mint.
+   * The composition states the policy explicitly — the deployment issuer resolves it from
+   * the configured environment, so a deployment never silently mints keys with no term.
+   */
+  keyTtlMinutes: number;
+  /** The clock the term is measured on; the wall clock unless a test injects another. */
+  now?: () => Date;
   auditStore?: AuditStore;
   log?: Logger;
 };
@@ -210,6 +236,15 @@ export type GatewayKeyIssuer = {
 export function createGatewayKeyIssuer(
   deps: GatewayKeyIssuerDeps,
 ): GatewayKeyIssuer {
+  // The term is policy, not a suggestion: a composition handing the issuer an illegal
+  // TTL (zero, negative, fractional, past the ceiling) is refused here rather than left
+  // to mint keys that are born expired — the same fail-closed answer the deployment's
+  // own configuration check gives, one layer down.
+  const ttlProblem = virtualKeyTtlMinutesProblem(
+    "keyTtlMinutes",
+    deps.keyTtlMinutes,
+  );
+  if (ttlProblem) throw new Error(ttlProblem);
   const log = deps.log ?? getLogger("server");
 
   /** The whole flow, exactly as 05.3 built it; the returned wrapper adds 05.4's leash. */
@@ -222,6 +257,23 @@ export function createGatewayKeyIssuer(
     // everything a probe could distinguish, and the live registry verdict inside it.
     const grant = await deps.resolveForBot(grantId, identity);
 
+    // 1.5. The 05.9 drift pause: an authorization whose key's owner, scope or term at the
+    // gateway no longer matches what this deployment recorded issues nothing until a human
+    // disposes of the drift — a new key would extend a disagreement about WHO it bills and
+    // WHAT it may call. The check is a read against the drift table, before anything is
+    // dialed or provisioned; the outstanding set is empty for every healthy grant, so the
+    // fast path is one indexed query.
+    const driftReasons = await outstandingGatewayKeyDriftReasons(
+      deps.database,
+      grant.grantId,
+    );
+    if (driftReasons.length > 0) {
+      throw new GatewayVirtualKeyError(
+        "gateway_vk_grant_drift_paused",
+        `The authorization has an unresolved key drift (${driftReasons.join(", ")}), so issuance is paused until an administrator disposes of the drift event.`,
+      );
+    }
+
     // 2. The one customer all of this user's keys bill. Idempotent, and the 01.7 readiness
     // gate runs inside the seam before anything is dialed or stored.
     const { customerId } = await deps.provisionCustomer({
@@ -232,7 +284,11 @@ export function createGatewayKeyIssuer(
     // 3. The issuance transaction: the grant row is locked and re-verified here, so a
     // revocation that committed while the customer was being provisioned still wins — the
     // key is never born for a dead authorization. The row lock also serializes the version
-    // counter per grant; the unique index is the backstop.
+    // counter per grant; the unique index is the backstop. The term (05.5) is measured from
+    // one clock reading taken before the create, so the remote key, the local record, the
+    // answer and the audit all name the same instant.
+    const issuedAt = (deps.now ?? defaultNow)();
+    const expiresAt = new Date(issuedAt.getTime() + deps.keyTtlMinutes * 60_000);
     const issued = await deps.database.transaction(async (tx) => {
       const [row] = await tx
         .select()
@@ -250,15 +306,22 @@ export function createGatewayKeyIssuer(
         .where(eq(gatewayVirtualKeys.grantId, grant.grantId));
       const credentialVersion = Number(counter?.maxVersion ?? 0) + 1;
 
-      // 4. The remote create: ownership only — customerId, a name, and nothing governed
-      // here (no budgets, no rate limits, no provider configs; the customer owns those).
+      // 4. The remote create: ownership and the term — customerId, a name, the expiry, and
+      // nothing else governed here (no budgets, no rate limits, no provider configs; the
+      // customer owns those). `delete_after_expire: false` keeps the gateway's cleanup job
+      // from deleting the record once the term passes: the expired key is the settlement
+      // and state-sync side's name for what happened here, not litter (05.5/06.8/08.x).
       const created = await deps.client.createVirtualKey({
         name: gatewayVirtualKeyName(grant.grantId, credentialVersion),
         customerId,
+        expiresAt: expiresAt.toISOString(),
       });
       onMinted?.(created.value);
 
       // 5. The local record: no plaintext column exists; the sha256 identifies, never redeems.
+      // `expires_at` records the term the key was minted under — the same instant the remote
+      // key was given — so every local reader (bundle, status views, the expiry verdict) and
+      // the gateway agree on when the key stops starting new requests.
       const [inserted] = await tx
         .insert(gatewayVirtualKeys)
         .values({
@@ -270,7 +333,7 @@ export function createGatewayKeyIssuer(
           valueHash: sha256(created.value),
           credentialVersion,
           status: "active",
-          expiresAt: null,
+          expiresAt,
         })
         .returning();
       if (!inserted) {
@@ -447,7 +510,7 @@ export function createGatewayVirtualKeyClient(
   const fetchImpl = deps.fetchImpl ?? fetch;
 
   return {
-    async createVirtualKey({ name, customerId }) {
+    async createVirtualKey({ name, customerId, expiresAt }) {
       const config = await deps.readGatewayEndpoint();
       if (!config) {
         throw new GatewayVirtualKeyError(
@@ -479,6 +542,8 @@ export function createGatewayVirtualKeyClient(
             name,
             customer_id: customerId,
             allow_all_providers: true,
+            expires_at: expiresAt,
+            delete_after_expire: false,
           }),
           signal: AbortSignal.timeout(config.requestTimeoutMs),
         });
@@ -568,12 +633,20 @@ export function createGatewayVirtualKeyClient(
  * The deployment-composed issuer: zero configuration, the installed controls answer (endpoint
  * 01.1, credential 01.2, gate 01.7 through the provisioner, the production grant service).
  * Missing pieces refuse — the same fail-closed discipline the zero-arg customer entry keeps.
+ * The key's term (05.5) resolves from the environment here — an illegal configured term
+ * throws at composition, refusing the boot with its reason, so a deployment never runs
+ * half-configured while minting termless keys.
  */
 export function createDeploymentKeyIssuer(options: {
   database: Database;
   modelAccess: AccessGrantService;
   auditStore?: AuditStore;
+  /** The environment the term resolves from; `process.env` unless a test injects another. */
+  environment?: Record<string, string | undefined>;
 }): GatewayKeyIssuer {
+  const keyTtlMinutes = resolveVirtualKeyTtlMinutes(
+    options.environment ?? process.env,
+  );
   const endpointControls = gatewayEndpointControls();
   const credentialControls = gatewayAdminCredentialControls();
   return createGatewayKeyIssuer({
@@ -581,6 +654,7 @@ export function createDeploymentKeyIssuer(options: {
     resolveForBot: options.modelAccess.resolveForBot,
     provisionCustomer: (ref) =>
       provisionCustomerForDeployment(options.database, ref),
+    keyTtlMinutes,
     client: createGatewayVirtualKeyClient({
       readGatewayEndpoint: async () =>
         endpointControls ? endpointControls.readGatewayEndpoint() : undefined,
@@ -598,8 +672,9 @@ export function createDeploymentKeyIssuer(options: {
 }
 
 /** The key as the issuance record half of the claim answer carries it; the bundle half (05.4)
- * repeats the secret by construction — both fields ride the one authenticated channel. */
-function serializeKey(key: IssuedGatewayKey) {
+ * repeats the secret by construction — both fields ride the one authenticated channel. The
+ * renewal route answers the same record shape (its caller may add the retired versions). */
+export function serializeKey(key: IssuedGatewayKey) {
   return {
     keyId: key.keyId,
     grantId: key.grantId,
@@ -617,6 +692,15 @@ function serializeKey(key: IssuedGatewayKey) {
 export type KeyIssuanceRoutesDeps = {
   /** The issuer's one entry point, already composed (see {@link createGatewayKeyIssuer}). */
   issue: GatewayKeyIssuer["issueKeyForGrant"];
+  /**
+   * The renewal service's one entry point (Bifrost 05.6, see {@link createGatewayKeyRenewalService}),
+   * already composed. A deployment that does not compose it answers `renewal_unavailable` —
+   * the same tagged 503 a missing issuer takes, never a silent absence.
+   */
+  renew?: (
+    grantId: string,
+    identity: BotServiceIdentity,
+  ) => Promise<RenewedGatewayKey>;
   /**
    * Where the claim answer's bundle reads its non-secret sides from (05.4). A deployment
    * that does not compose it refuses every claim BEFORE minting — a bundle nobody can
@@ -768,6 +852,152 @@ export function createKeyIssuanceRoutes(
         );
       }
       if (error instanceof GatewayVirtualKeyError) {
+        // The drift pause is a conflict between the gateway's record and OpenBot's own,
+        // pending a human decision — a 409 an operator acts on, not a gateway failure.
+        return context.json(
+          { error: error.message, code: error.reasonCode },
+          error.reasonCode === "gateway_vk_grant_drift_paused" ? 409 : 502,
+        );
+      }
+      if (error instanceof GatewayCustomerProvisionError) {
+        return context.json(
+          { error: error.message, code: error.reasonCode },
+          502,
+        );
+      }
+      if (
+        error instanceof GatewayProvisionOutcomeUnknownError ||
+        error instanceof GatewayProvisionRefusedError
+      ) {
+        return context.json({ error: error.message, code: error.code }, 502);
+      }
+      throw error;
+    }
+  });
+
+  /*
+   * THE RENEWAL ROUTE (Bifrost 05.6): `POST /keys/renew` with `{ grantId }`, under the same
+   * service guard, answering the same `{ key, bundle }` shape plus `supersededVersions` —
+   * the retired credentialVersions. The plaintext rides the same one channel under the
+   * same leash; every refusal is tagged and plaintext-free: the grant seam's uniform 403
+   * (revocation included — a revoked grant renews nothing), the gate's 503, the models
+   * verdict's 403, the freshness verdict's 503 with its facts, the transport 502s, and the
+   * fixed 500 for the genuinely unexpected — never the framework's default error output.
+   */
+  app.post("/renew", async (context) => {
+    const parsed = claimInput.safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!parsed.success) {
+      return context.json(
+        {
+          error: "Send the grantId of the authorization to renew a key for.",
+          code: "key_renewal_invalid_request",
+        },
+        400,
+      );
+    }
+    if (!deps.renew) {
+      return context.json(
+        {
+          error: "Key renewal is not available.",
+          code: "renewal_unavailable",
+        },
+        503,
+      );
+    }
+    // Fail-closed BEFORE minting: without the bundle's sources this channel could answer a
+    // plaintext with no complete contract around it.
+    if (!deps.bundle) {
+      return context.json(
+        {
+          error:
+            "The credential bundle is not available, so key renewal is refused.",
+          code: "credential_bundle_unavailable",
+        },
+        503,
+      );
+    }
+    const identity = context.get("botService");
+    try {
+      const renewed = await deps.renew(parsed.data.grantId, identity);
+      // The bundle's non-secret sides, read live — the same reads the claim answer makes,
+      // so a renewal and a claim name the same endpoint and the same open set.
+      const endpointConfig = await deps.bundle
+        .readGatewayEndpoint()
+        .catch((error) => {
+          if (error instanceof CredentialBundleUnavailableError) throw error;
+          throw new CredentialBundleUnavailableError(
+            "bundle_endpoint_unconfigured",
+            "No gateway address is configured, so the credential bundle cannot be completed.",
+          );
+        });
+      if (!endpointConfig) {
+        throw new CredentialBundleUnavailableError(
+          "bundle_endpoint_unconfigured",
+          "No gateway address is configured, so the credential bundle cannot be completed.",
+        );
+      }
+      const modelRefs = await deps.bundle
+        .listSelectableModels(identity.botId)
+        .catch((error) => {
+          if (error instanceof CredentialBundleUnavailableError) throw error;
+          throw new CredentialBundleUnavailableError(
+            "bundle_models_unavailable",
+            "The model catalog is not available, so the credential bundle cannot be completed.",
+          );
+        });
+      const bundle = buildCredentialBundle({
+        endpointConfig,
+        modelRefs,
+        issued: renewed,
+      });
+      return context.json({
+        key: serializeKey(renewed),
+        bundle,
+        supersededVersions: renewed.supersededVersions,
+      });
+    } catch (error) {
+      if (error instanceof AccessGrantUseError) {
+        return context.json({ error: error.message, code: error.code }, 403);
+      }
+      if (error instanceof GatewayNotReadyError) {
+        return context.json(
+          {
+            error:
+              "The model gateway is not ready, so key renewal is refused.",
+            code: "gateway_not_ready",
+          },
+          503,
+        );
+      }
+      if (error instanceof GatewayKeyRenewalError) {
+        if (error.reasonCode === "renewal_models_not_available") {
+          return context.json(
+            { error: error.message, code: error.reasonCode },
+            403,
+          );
+        }
+        if (error.reasonCode === "renewal_grant_drift_paused") {
+          // A conflict pending a human decision — the same 409 the issuance pause takes.
+          return context.json(
+            { error: error.message, code: error.reasonCode },
+            409,
+          );
+        }
+        if (
+          error.reasonCode === "renewal_catalog_stale" ||
+          error.reasonCode === "renewal_catalog_never_synced"
+        ) {
+          return context.json(
+            {
+              error: error.message,
+              code: error.reasonCode,
+              ...(error.detail === undefined ? {} : { detail: error.detail }),
+            },
+            503,
+          );
+        }
         return context.json(
           { error: error.message, code: error.reasonCode },
           502,

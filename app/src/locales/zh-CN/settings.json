@@ -9,6 +9,7 @@
     "passwords": "密码",
     "componentsGallery": "组件库",
     "plansUsage": "套餐与积分",
+    "orders": "订单与积分",
     "invoices": "账单管理",
     "notifications": "通知",
     "approvals": "批准",
@@ -323,6 +324,15 @@
     "statHeld": "进行中占用",
     "pendingSettlement": "待结算",
     "pendingSettlementDisabled": "待结算：未启用",
+    "pendingReserved": "预留中",
+    "pendingUnknown": "结果未知",
+    "reservationStatus": {
+      "reserved": "预留中",
+      "unknown": "结果未知",
+      "settled": "已结算",
+      "released": "已释放"
+    },
+    "reservationReason": "原因：",
     "emptyLedger": "本账户还没有积分记录。",
     "creditUnit": "积分",
     "remaining": "剩余",
@@ -345,6 +355,11 @@
       "exhausted": "已用完",
       "expired": "已过期"
     },
+    "grantSource": {
+      "plan": "套餐",
+      "signin": "签到奖励",
+      "promo": "活动/管理员发放"
+    },
     "expiringSoon": "24小时内过期",
     "expiresAt": "到期时间: {{time}}",
     "reason": "下发原因：{{reason}}",
@@ -364,7 +379,35 @@
     "overdrawBadge": "（未覆盖 {{shortfall}}）",
     "overdrawHint": "本次消费超出可用余额。台账记录全部费用，其中 {{shortfall}} 无积分覆盖。",
     "pagerStatus": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条",
-    "consumptionTable": "用量明细"
+    "consumptionTable": "用量明细",
+    "columnBot": "Bot"
+  },
+  "ordersPage": {
+    "title": "订单与积分",
+    "description": "您的订单、订阅与每一笔积分入账，均可追溯到来源。",
+    "refresh": "刷新",
+    "ordersTitle": "订单记录",
+    "ordersEmpty": "暂无订单",
+    "ordersEmptyDescription": "购买套餐后，订单会出现在这里。",
+    "ordersUnavailable": "此部署未启用计费",
+    "ordersUnavailableDescription": "未配置计费服务，因此没有订单记录。",
+    "subscriptionTitle": "订阅计划",
+    "grantsTitle": "积分入账",
+    "grantsDescription": "每一笔积分的来源与有效期。",
+    "grantsSummary": "共 {{count}} 笔入账",
+    "grantsEmpty": "暂无积分入账。",
+    "grantSource": {
+      "plan": "套餐",
+      "signin": "签到奖励",
+      "promo": "活动/管理员发放"
+    },
+    "traceOrder": "来源订单：{{order}}",
+    "traceNoOrder": "来源订单未记录",
+    "columnPlan": "套餐",
+    "columnAmount": "金额",
+    "columnStatus": "支付状态",
+    "columnNumber": "订单编号",
+    "columnCreated": "创建时间"
   },
   "welcomeBanner": {
     "badge": "限时加赠 10/31截止",

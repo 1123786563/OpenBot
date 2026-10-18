@@ -1,7 +1,13 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { createCredits } from "../src/billing/credits";
 import { createCreditWriter } from "../src/billing/credits-writer";
@@ -273,6 +279,25 @@ type PersonalBalanceResponse = {
     available: number;
     consumed: number;
     expired: number;
+    reserved: number;
+    unknown: number;
+    reservations: Array<{
+      id: string;
+      status: string;
+      maximum: number;
+      charged: number | null;
+      released: number | null;
+      provider: string | null;
+      model: string | null;
+      capability: string | null;
+      botId: string | null;
+      botName: string | null;
+      unknownReason: string | null;
+      releaseReason: string | null;
+      createdAt: string;
+      expiresAt: string;
+      terminalAt: string | null;
+    }>;
   };
 };
 
@@ -325,15 +350,27 @@ describe("GET /api/billing/credits/summary answers the signed-in user's own acco
     );
   });
 
-  test("the pending-settlement placeholders are present, zero and marked not enabled", async () => {
+  test("the pending-settlement answer is live: the open hold pending, the settled one consumed", async () => {
     const response = await app(SELF).request("/api/billing/credits/summary");
     const body = (await response.json()) as PersonalBalanceResponse;
-    expect(body.pendingSettlement).toEqual({
-      enabled: false,
-      available: 0,
-      consumed: 0,
+    // Group 06's gate is on (06.12): the field names 02.6 fixed now carry real data. The
+    // fixture's open 20.00 hold is the pending quota (plain reserved, nothing unknown), and
+    // the 23.63 settlement is the consumed figure — the ledger's own number.
+    expect(body.pendingSettlement).toMatchObject({
+      enabled: true,
+      available: 20,
+      consumed: 23.63,
       expired: 0,
+      reserved: 20,
+      unknown: 0,
     });
+    expect(body.pendingSettlement.reservations).toHaveLength(2);
+    const statuses = Object.fromEntries(
+      body.pendingSettlement.reservations.map((row) => [row.status, row]),
+    );
+    expect(statuses.reserved?.maximum).toBe(20);
+    expect(statuses.reserved?.charged).toBeNull();
+    expect(statuses.settled?.charged).toBeCloseTo(23.63, 2);
   });
 
   test("the response structure is exactly the ticket's contract — key sets and types", async () => {
@@ -353,6 +390,9 @@ describe("GET /api/billing/credits/summary answers the signed-in user's own acco
       "consumed",
       "enabled",
       "expired",
+      "reserved",
+      "reservations",
+      "unknown",
     ]);
     expect(Object.keys(body.grants as object[])).toHaveLength(3);
     expect(
@@ -473,10 +513,13 @@ describe("the read path writes nothing", () => {
     expect(body.held).toBe(0);
     expect(body.grants).toEqual([]);
     expect(body.pendingSettlement).toEqual({
-      enabled: false,
+      enabled: true,
       available: 0,
       consumed: 0,
       expired: 0,
+      reserved: 0,
+      unknown: 0,
+      reservations: [],
     });
     expect(writes).toEqual([]);
 
