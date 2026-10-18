@@ -491,6 +491,12 @@ export function validateContract(manifest: VerifiedOpikContract): {
     fail("sdk.typescript is an unknown or non-exact version");
   }
   if (manifest.fixtures.length === 0) fail("fixture list is empty");
+  // R5-49 (r5fix): the per-check loop runs zero times on an empty list, so a
+  // manifest that never verified ANY capability validated green — the gate must
+  // refuse an empty capability list outright (an unverified manifest is never
+  // emitted, and "no checks" is not a verification).
+  if (manifest.capabilities.length === 0)
+    fail("capability list is empty — no verified surface recorded");
   for (const check of manifest.capabilities) {
     if (!check.ok) fail(`capability not verified: ${check.name}`);
   }
@@ -500,7 +506,21 @@ export function validateContract(manifest: VerifiedOpikContract): {
 
   if (manifest.idMapping.traces.length === 0)
     fail("no OTel-to-Opik trace id mapping");
+  // R5-50 (r5fix): the kind vocabulary is a closed set and BOTH faces of the
+  // mapping are mandatory — the runner derives one trace and overrides one
+  // trace (kind "derived" + "explicit"), so a manifest attesting only one face
+  // (or carrying a word outside the set — possible at runtime, where the
+  // manifest is parsed JSON and the TS union guarantees nothing) does not
+  // attest that both derivation paths were verified.
+  const ID_MAPPING_KINDS = ["derived", "explicit"] as const;
+  const seenKinds = new Set<string>();
   for (const trace of manifest.idMapping.traces) {
+    if (!(ID_MAPPING_KINDS as readonly string[]).includes(trace.kind)) {
+      fail(
+        `id mapping trace kind must be one of ${ID_MAPPING_KINDS.join(" | ")}, got: ${String(trace.kind)}`,
+      );
+    }
+    seenKinds.add(trace.kind);
     if (!HEX_TRACE_ID.test(trace.otelTraceId))
       fail("id mapping: OTel trace id side missing");
     if (!isUuidV7(trace.opikTraceId))
@@ -511,6 +531,11 @@ export function validateContract(manifest: VerifiedOpikContract): {
       );
     }
     if (!trace.source) fail("id mapping has no query evidence");
+  }
+  if (!(seenKinds.has("derived") && seenKinds.has("explicit"))) {
+    fail(
+      `id mapping must attest BOTH faces — derived AND explicit (saw: ${[...seenKinds].join(", ") || "none"})`,
+    );
   }
   if (manifest.idMapping.spans.length < 2)
     fail("id mapping needs at least a parent and a child span");
@@ -566,6 +591,10 @@ export function validateContract(manifest: VerifiedOpikContract): {
     );
   }
 
+  // R5-49 (r5fix): a zero total means no contract check ran — "0/0 passed" is
+  // not a verification, it is an unrun gate answering green.
+  if (!(manifest.checks.total > 0))
+    fail("checks.total is zero — no checks ran");
   if (manifest.checks.passed !== manifest.checks.total) {
     fail(
       `checks incomplete: ${manifest.checks.passed}/${manifest.checks.total} passed`,
