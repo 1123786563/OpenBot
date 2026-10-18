@@ -1,0 +1,83 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/conversation-messages.test.ts:
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > same-team member: sendMessage is canonical not-found with zero writes [18.17ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > same-team member: readMessages is canonical not-found [8.55ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > cross-team member: send and read are canonical not-found [10.43ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > cross-company member: send and read are byte-identical canonical not-found [12.82ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > nonexistent thread: the same canonical shape (single-element byte set) [13.77ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > owner: sendMessage allow — seq continues after seeds, content round-trips [11.77ms]
+415 |         threadId: convMainThread,
+416 |         limit: 2,
+417 |       });
+418 |       if (page.outcome !== "allow") throw new Error("owner read must allow");
+419 |       expect(page.page.items.map((m) => m.seq)).toEqual([2, 3]);
+420 |       expect(page.page.nextBeforeSeq).toBe(2);
+                                            ^
+error: expect(received).toBe(expected)
+
+Expected: 2
+Received: 3
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt022/server/tests/multitenancy/conversation-messages.test.ts:420:39)
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > owner: readMessages pages ascending with keyset nextBeforeSeq [12.64ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > idempotent resend with the same key returns the same message without a new seq [15.64ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > same key with different content is message_conflict (409 shape), zero writes [30.80ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > RLS fail-closed: no-context restricted reads see zero rows [4.27ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > restricted role invariant: every restricted query ran as ob_ent_* [0.12ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: history replay is an independent authorization surface > owner replay returns the full thread ascending [6.88ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: history replay is an independent authorization surface > same-team member replay is canonical not-found (replay does not ride on read) [5.22ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: history replay is an independent authorization surface > cross-company replay is byte-identical canonical not-found [8.85ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC2: rename and archive are separately authorized > owner rename allow — title changes, messages untouched, MT021 detail agrees [23.68ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC2: rename and archive are separately authorized > same-team member rename is canonical not-found; title unchanged; zero writes [15.45ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC2: rename and archive are separately authorized > cross-company rename is canonical not-found [5.34ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC2: rename and archive are separately authorized > nonexistent conversation id rename is the same canonical shape [7.85ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC2: rename and archive are separately authorized > owner archive decision allow — zero side effects in this ticket (decision surface) [8.34ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC2: rename and archive are separately authorized > same-team member archive decision is canonical not-found [7.51ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC2: rename and archive are separately authorized > read allow does not derive write: after revocation a prior read grants nothing [57.71ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC4: revocation kills send/read/replay/rename/archive immediately > control: the doomed scope works before suspension [11.73ms]
+628 |       doomedPreSuspensionScope = await scopeAs("a1-doomed", companyA, teamA1);
+629 |       await fixture.suspendCompanyMembership(companyA, principalOf("a1-doomed"));
+630 |       const before = await fixture.rawMessageCount();
+631 |       const denies = await fiveDenyActions(doomedPreSuspensionScope, convDoomedThread, convDoomedId);
+632 |       for (const deny of denies) {
+633 |         expect(JSON.stringify(deny)).toBe(canonicalNotFoundJson);
+                                           ^
+error: expect(received).toBe(expected)
+
+Expected: "{"outcome":"deny","code":"RESOURCE_NOT_FOUND"}"
+Received: "{"outcome":"allow","message":{"messageId":"65a689b4-0a31-40ce-97c3-ce2aefcb42d7","threadId":"conv-doomed-72fe1c30","seq":3,"role":"user","content":"probe","attachments":[],"createdAt":"2026-10-17T10:48:30.485Z"}}"
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt022/server/tests/multitenancy/conversation-messages.test.ts:633:38)
+(fail) MT022 conversation message/action scoping (Issue #65) > AC4: revocation kills send/read/replay/rename/archive immediately > real MT006 suspension: all five actions fail canonical on the old scope, zero writes [36.33ms]
+915 |               eq(enterpriseMemberships.principalId, principalId),
+916 |               eq(enterpriseMemberships.status, "suspended"),
+917 |             ),
+918 |           )
+919 |           .returning({ epoch: enterpriseMemberships.epoch });
+920 |         if (!updated) throw new Error("COMPANY_MEMBER_NOT_FOUND");
+                                      ^
+error: COMPANY_MEMBER_NOT_FOUND
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt022/server/src/enterprise/tenancy/workspace-admin.ts:920:33)
+(fail) MT022 conversation message/action scoping (Issue #65) > AC4: revocation kills send/read/replay/rename/archive immediately > MT007 restore: the old scope stays denied (epoch arm), a fresh scope works [7.49ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC4: revocation kills send/read/replay/rename/archive immediately > no epoch-bump dependency: suspended status alone denies with the epoch still equal [53.77ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC4: revocation kills send/read/replay/rename/archive immediately > team-level MT007 suspension denies the conversation in that team; restore re-allows [47.60ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC3: public-bot sessions stay the user's own private conversations > team list/count/detail (frozen MT021 surface) never surface the public-bot session [16.26ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC3: public-bot sessions stay the user's own private conversations > the bot publisher (same team) gets canonical not-found on all five actions [30.12ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC3: public-bot sessions stay the user's own private conversations > the end user keeps full access — public bot usage keeps the user's own private session [23.64ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > input validation and trust boundary > forged scope is refused before any database work [4.28ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > input validation and trust boundary > missing company/team context gets its own loud refusal [8.67ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > input validation and trust boundary > input shapes refuse loudly [4.49ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > input validation and trust boundary > unverified channel assembly refuses loudly [3.20ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > input validation and trust boundary > backend gate: platform-only message plane; management actions are backend-agnostic [29.45ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > canonical verdict serialization > every denial across every action serializes to one byte string [28.31ms]
+
+3 tests failed:
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > owner: readMessages pages ascending with keyset nextBeforeSeq [12.64ms]
+(fail) MT022 conversation message/action scoping (Issue #65) > AC4: revocation kills send/read/replay/rename/archive immediately > real MT006 suspension: all five actions fail canonical on the old scope, zero writes [36.33ms]
+(fail) MT022 conversation message/action scoping (Issue #65) > AC4: revocation kills send/read/replay/rename/archive immediately > MT007 restore: the old scope stays denied (epoch arm), a fresh scope works [7.49ms]
+
+ 32 pass
+ 3 fail
+ 130 expect() calls
+Ran 35 tests across 1 file. [1433.00ms]

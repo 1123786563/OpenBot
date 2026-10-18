@@ -1,0 +1,3 @@
+  routine: "truncate_identifier",
+}
+kb-migrations-ok

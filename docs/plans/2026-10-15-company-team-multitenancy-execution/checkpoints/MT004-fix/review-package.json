@@ -1,0 +1,57 @@
+{
+  "round": "MT004-fix",
+  "issue": "#47",
+  "date": "2026-10-16",
+  "implementer": "backend_implementer 修复轮（Pi, Orca task_7c40417f32e9 / dispatch ctx_982ce0c08523）；全新会话，非原实现者（task_4a94e96cd775）、非复审者（task_70322419a303）",
+  "inputs": {
+    "brief": "docs/plans/2026-10-15-company-team-multitenancy-execution/briefs/MT004-fix-brief.md（绝对权威）",
+    "review_report": "docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT004-review.md（F1 medium 必须关闭；F2 low 附带）",
+    "transfer_manifest": "docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT004/fix-transfer-manifest.txt",
+    "head_verified": "f0520524f0faa2b4533b9d2f1aa692c8f907ba71（与 manifest 首行 BASE 一致）",
+    "transfer_hash_check": "manifest 全部 11 项 SHA-256 从仓库根逐文件复算 OK，exit 0；复算通过后才开工"
+  },
+  "owned_files_after_fix": {
+    "server/scripts/multitenancy/migrate-test.ts": "cb0891c6dba4dcfbd476876971f97382a372fd24c6705dd601958f4f2b41fe38",
+    "server/tests/multitenancy/membership-model.test.ts": "e7057686b398c93863b0515093578b79331a5de9a58598b4f12d288ff0185e3b"
+  },
+  "before_hashes": {
+    "server/scripts/multitenancy/migrate-test.ts": "ac0a0381f05253d6a99fd4e66b079f54c2932e727b699c11317b3e505e71f058（= transfer manifest，逐字一致）",
+    "server/tests/multitenancy/membership-model.test.ts": "7c86a1e6b6f6c3736f6d738fb62d6b9b9393eb3cd474ac61bf31b7890abbfa17（= transfer manifest，逐字一致）"
+  },
+  "diff": "checkpoints/MT004-fix/fix.diff（before 副本由修复后文件做逆编辑重建，重建件 SHA-256 与 transfer manifest 两行完全一致 → diff 逐字精确可证）",
+  "findings_closed": {
+    "F1_medium": "migrate-test.ts rls_policies 步骤在 ENABLE 之后按 0056:137-143 同模式追加 ALTER TABLE \"enterprise_workspace_memberships\" FORCE ROW LEVEL SECURITY;（rls_policies 步骤 10→11 条语句）；membership-model.test.ts 新增用例断言 fresh apply 后 pg_class.relforcerowsecurity = true。RED 先行：修复前该断言 expected true / received false，15 pass / 1 fail / exit 1（RED-f1-relforcerowsecurity.txt）；修复后在全新库复跑 16 pass / 0 fail / exit 0（GREEN-f1-relforcerowsecurity.txt）。psql 独立复核：relrowsecurity=t, relforcerowsecurity=t，与 0056 既有企业表一致",
+    "F2_low": "纯注释两处：membership-model.test.ts 头注验收 (3) 追加并发局限明示（read-then-increase 非原子、并发写者可读到同一 current epoch 并写出重复值、串行化/重试责任归应用写入路径、MT005 消费契约将接管）；migrate-test.ts WORKSPACE_MEMBERSHIP_TASK 文档注释追加同义说明。零行为改动"
+  },
+  "verification_commands": [
+    { "name": "transfer-manifest 哈希复算（仓库根）", "exit": 0, "result": "11/11 OK" },
+    { "name": "RED：bun test server/tests/multitenancy/membership-model.test.ts（修复前，全新库）", "exit": 1, "result": "15 pass / 1 fail（仅新增 F1 用例失败：relforcerowsecurity expected true / received false）" },
+    { "name": "GREEN：bun test server/tests/multitenancy/membership-model.test.ts（修复后，全新库）", "exit": 0, "result": "16 pass / 0 fail（旧 15 用例零回退 + F1 新断言）；brief 预期 16/0 吻合" },
+    { "name": "MT003_ASSIGNED_TEST_DATABASE_URL=同库 TEST_DATABASE_URL=同库 bun test server/tests/multitenancy/migration-tool.test.ts server/tests/multitenancy/inventory.test.ts", "exit": 0, "result": "75 pass / 0 fail / 0 skip（42+33 与复审一致）" },
+    { "name": "TEST_DATABASE_URL + 三个 ENTERPRISE_TEST_*_DATABASE_URL bun test server/tests/multitenancy/fixtures.test.ts（单独）", "exit": 0, "result": "17 pass / 0 fail" },
+    { "name": "附带 F4 复证：bun test inventory.test.ts fixtures.test.ts --timeout 30000（brief 原样组合 + 已知超时对策）", "exit": 0, "result": "50 pass / 0 fail（复审 §3 第 6 行同绿）" },
+    { "name": "cd server && bun run typecheck", "exit": 0, "result": "tsc --noEmit 无输出" },
+    { "name": "bunx biome check 两份拥有文件", "exit": 0, "result": "Checked 2 files, No fixes applied" },
+    { "name": "docker rm -f openbot-i6-mt004fix-pg；删除 0600 env 文件；lsof -i :55454", "exit": 0, "result": "容器已删、凭据文件已删、端口空闲（lsof exit 1）" }
+  ],
+  "test_environment": {
+    "image": "pgvector/pgvector:pg16（本地既有镜像；brief 指定镜像即此）",
+    "container": "openbot-i6-mt004fix-pg（--rm -d，POSTGRES_HOST_AUTH_METHOD=trust，127.0.0.1:55454→5432）",
+    "database": "openbot_enterprise_mt004fix_test（openbot_enterprise_* 命名，回环主机）",
+    "enterprise_baseline": "bun scripts/enterprise-test-db.ts migrate → {\"type\":\"migrations-applied\",\"status\":\"ok\"}，exit 0；受限登录 ent_mt004fix_dir/data/op 由 0600 临时 env 文件提供（用后即删，密码未入库未入报告）",
+    "freshness": "RED 与 GREEN 各用一个全新库：RED 用容器初建库；修复改动 rls_policies 语句 digest 后，按工具设计旧 journal 必然拒绝（expand-only 不重放），故 GREEN 前 DROP/CREATE DATABASE 并重跑 enterprise-test-db migrate——与 brief「用 fresh 库验证」一致"
+  },
+  "honest_disclosures": [
+    "RED/GREEN 均在全新库上运行（见 freshness）；未在任何已应用旧版 MT004 的库上验证修复 SQL 的重放行为——brief 明确该场景不重放，不在本修复轮范围",
+    "regression #2/#3/typecheck/biome 首跑即绿，无迭代；这些不是 RED/GREEN 项，按「首跑即绿诚实披露」记录",
+    "ENTERPRISE_TEST_*_DATABASE_URL 的 options 参数（options=-c role=ob_ent_*）由 enterpriseRuntimeDatabaseUrlFrom 自动追加，env 文件只写裸登录 URL；三次定向复验（validateEnterpriseUrl）均通过",
+    "F2 注释措辞按 brief 原文（并发写者可读到同一 current epoch 并写出重复值；串行化/重试责任归应用写入路径；MT005 消费契约将接管），未引入新行为语义",
+    "未提交/未推送/未合并；本修复轮无生产迁移、无部署动作；schema 文件 enterprise-tenancy.ts 零改动（git status 仍为唯一 tracked M，70/0 纯追加未触碰）"
+  ],
+  "constraints_check": {
+    "owned_files_only": "git status --porcelain：仅原有 M enterprise-tenancy.ts + 原有三处 untracked；修复只写两份拥有文件 + 本 checkpoint/report 产出",
+    "no_security_rollback": "无既有拒绝被放宽；TASKS 注册仍只含 MT000/MT004；migration-tool.test.ts/fixtures/inventory/inventory.ts/support/* 只读未动",
+    "no_regressions": "既有 15 用例全部保持 pass（GREEN 16/0 含之）；migration-tool+inventory 75/0/0 skip；fixtures 17/0",
+    "no_commit": "git HEAD 仍为 f0520524…，无新提交"
+  }
+}

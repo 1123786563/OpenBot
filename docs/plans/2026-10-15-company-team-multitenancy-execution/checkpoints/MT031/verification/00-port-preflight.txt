@@ -1,0 +1,19 @@
+# MT031 port preflight — 2026-10-17T12:10:01Z
+port 55565: free
+
+docker:
+Docker version 29.8.2, build 7fc2dff
+
+running pg containers:
+ci399ent-pg 127.0.0.1:5595->5432/tcp
+ci399srv-pg 127.0.0.1:5593->5432/tcp
+mt122-impl-pg 127.0.0.1:55567->5432/tcp
+mt042-impl-pg 127.0.0.1:55564->5432/tcp
+mt059-impl-pg 127.0.0.1:55566->5432/tcp
+mt012-int-pg 127.0.0.1:55543->5432/tcp
+b5-verify-pg2 0.0.0.0:5594->5432/tcp, [::]:5594->5432/tcp
+b5-240-pg 127.0.0.1:5592->5432/tcp
+b5-239-pg 127.0.0.1:5591->5432/tcp
+b5-verify-pg 127.0.0.1:5590->5432/tcp
+opik-t35-pg 0.0.0.0:5549->5432/tcp, [::]:5549->5432/tcp
+opik-t07-pg 127.0.0.1:5547->5432/tcp

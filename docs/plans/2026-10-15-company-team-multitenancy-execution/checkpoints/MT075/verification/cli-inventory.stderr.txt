@@ -1,0 +1,11 @@
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+(node:21694) TimeoutNaNWarning: NaN is not a number.
+Timeout duration was set to 1.
+(Use `bun --trace-warnings ...` to show where the warning was created)
+{"level":40,"time":1792162716485,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792162716488,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":30,"time":1792162716513,"service":"server","type":"openmuse-calendar-placeholder-action-id","id":"gcalendar.list","msg":"openmuse-calendar-placeholder-action-id"}
+{"level":40,"time":1792162716567,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+JSON 已写入 ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT075/inventory-after.json
+缺口报告已写入 ../docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT075/gap-report-after.md

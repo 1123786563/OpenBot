@@ -1,0 +1,16 @@
+# MT026 baseline (prereq receipt recompute + full suite)
+# BASE f0520524 == HEAD; prereq-manifest.txt: 46/46 file hashes recomputed OK.
+# Dedicated container: mt026-impl-pg (pgvector/pgvector:pg16) on 127.0.0.1:55481 (port prechecked free).
+# Databases: openbot_enterprise_mt026 (suite) + openbot_enterprise_mt026_assigned (MT003 real-apply).
+# Base migrate: scripts/enterprise-test-db.ts migrate -> {"type":"migrations-applied","status":"ok"}
+# Task migrations applied in brief order via migrate-test.ts generate+apply:
+#   MT004 -> MT008 -> MT112 -> MT012 -> MT014 -> MT010  (all journaled OK)
+# First run: 421 pass / 1 skip -> added MT003_ASSIGNED_TEST_DATABASE_URL -> EXE integration state:
+#
+# $ bun --no-env-file test tests/multitenancy/
+#  422 pass
+#  0 fail
+#  8899 expect() calls
+# Ran 422 tests across 15 files. [17.63s]
+#
+# matches brief baseline exactly (422 pass / 0 fail / 15 files).

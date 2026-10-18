@@ -1,0 +1,23 @@
+# MT059 provision (4th takeover, 2026-10-18) — container mt059-impl-pg @ 127.0.0.1:55566 (pgvector/pgvector:pg16, POSTGRES_PASSWORD=mt059)
+port 55566 precheck: free (lsof -sTCP:LISTEN empty)
+docker run -d --name mt059-impl-pg -e POSTGRES_PASSWORD=mt059 -p 127.0.0.1:55566:5432 pgvector/pgvector:pg16
+7421f9f4251008a2fe5852642e9b229dbe8cac651a8b691e7e2337e6cb6883a2
+
+== databases + kb owner role (setup=postgres superuser) ==
+CREATE DATABASE openbot_enterprise_w14d / openbot_enterprise_w14d_assigned / openbot_kb_w14d
+CREATE ROLE ent_w14d_kb LOGIN PASSWORD '***' NOSUPERUSER NOBYPASSRLS
+ALTER DATABASE openbot_kb_w14d OWNER TO ent_w14d_kb; REVOKE ALL ON DATABASE openbot_kb_w14d FROM PUBLIC
+
+== role/db verification ==
+ ent_w14d_kb   | f        | f
+ ent_w14d_dir  | f        | f
+ ent_w14d_data | f        | f
+ ent_w14d_opr  | f        | f
+
+ openbot_enterprise_w14d
+ openbot_enterprise_w14d_assigned
+ openbot_kb_w14d
+
+
+== base drizzle migration + restricted login roles ==
+{"type":"migrations-applied","status":"ok"}  (bun --no-env-file scripts/enterprise-test-db.ts migrate, seven-variable env /tmp/mt059-env.sh 0600)

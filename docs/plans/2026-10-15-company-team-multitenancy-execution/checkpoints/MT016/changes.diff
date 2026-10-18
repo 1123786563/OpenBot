@@ -1,0 +1,3001 @@
+# MT016 (Issue #59) changes.diff — 第 2 任接管收尾生成（2026-10-16T18:51:53Z）
+# 既有文件三处授权编辑（migrate-test.ts 任务注册 / migration-tool.test.ts 断言行+裁决 / schema barrel 追加）相对 HEAD；
+# 四个新文件以 /dev/null 为基。第 2 任在模块/支持/测试上的修复详见 takeover-audit-2nd.md。
+
+diff --git a/server/src/db/schema/index.ts b/server/src/db/schema/index.ts
+index 0580b018..faeacc01 100644
+--- a/server/src/db/schema/index.ts
++++ b/server/src/db/schema/index.ts
+@@ -14,10 +14,14 @@ export * from "./credits";
+ export * from "./defaults";
+ export * from "./delivery";
+ export * from "./demonstrations";
++export * from "./enterprise-bot-ownership";
+ export * from "./enterprise-conversations";
+ export * from "./enterprise-expert-versions";
++export * from "./enterprise-governance-policy";
+ export * from "./enterprise-model-routes";
+ export * from "./enterprise-runs";
++export * from "./enterprise-runtime-config";
++export * from "./enterprise-sso-scim";
+ export * from "./enterprise-tenancy";
+ export * from "./group";
+ export * from "./identity";
+@@ -29,6 +33,7 @@ export * from "./memory";
+ export * from "./openmuse";
+ export * from "./passwords";
+ export * from "./payment";
++export * from "./personal-shares";
+ export * from "./plugins";
+ export * from "./proactive";
+ export * from "./responsibilities";
+diff --git a/src/db/schema/enterprise-bot-ownership.ts b/src/db/schema/enterprise-bot-ownership.ts
+new file mode 100644
+index 00000000..9d600186
+--- /dev/null
++++ b/src/db/schema/enterprise-bot-ownership.ts
+@@ -0,0 +1,184 @@
++import { sql } from "drizzle-orm";
++import {
++  check,
++  foreignKey,
++  integer,
++  jsonb,
++  pgPolicy,
++  pgTable,
++  primaryKey,
++  text,
++  timestamp,
++  uniqueIndex,
++} from "drizzle-orm/pg-core";
++import {
++  enterpriseMemberships,
++  enterpriseWorkspaces,
++} from "./enterprise-tenancy";
++
++const createdAt = () =>
++  timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
++const updatedAt = () =>
++  timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
++
++// MT016（Issue #59）：Bot 归属固定的存储面。expand-only——两张新表，不修改
++// 任何既有表/策略/授权。
++//
++//   1. enterprise_bot_ownership：一行 = 一个 Bot 在一家公司一个团队内的归属
++//      （tenant_id + workspace_id + owner_principal_id + 状态与版本号），
++//      默认配置文档（default_config jsonb）就在归属行内——配置与 Bot 结构上
++//      同一行，归属不可分离（brief 验收 4 的结构实现）。
++//   2. enterprise_bot_preferences：一行 = 一个主体对一个 Bot 的偏好文档，
++//      复合外键钉到归属行（(tenant_id, agent_id)）与公司成员关系
++//      （(tenant_id, principal_id)）——Spec §4.2「根对象的子记录包含
++//      tenant_id 并通过复合关联保持公司一致」的逐字实现：偏好行无法在
++//      Bot 之外的公司存在。
++//
++// RLS 沿 enterprise-tenancy.ts / enterprise-runtime-config.ts 既有模式：
++// REVOKE PUBLIC + 四个能力角色 → ENABLE + FORCE RLS → data 角色租户范围
++// SELECT（偏好表另加 restrictive 主体自读，与 enterprise_resource_grants
++// 的 self-read 同款）→ operator 角色租户范围读 + 写（偏好写另钉主体上下
++// 文）。目录角色无任何策略与授权（Bot 内容不是逐主体目录数据）。
++// 归属表的 UPDATE/DELETE 不钉 workspace 上下文：账号清理/删除清单是公司
++// 作用域动作（验收 5），团队级编辑门在服务层判定（bots-ownership.ts）。
++
++/** 一个 Bot 的公司/团队归属与默认配置；一行 = 一个归属事实。 */
++export const enterpriseBotOwnership = pgTable(
++  "enterprise_bot_ownership",
++  {
++    tenantId: text("tenant_id").notNull(),
++    agentId: text("agent_id").notNull(),
++    workspaceId: text("workspace_id").notNull(),
++    ownerPrincipalId: text("owner_principal_id").notNull(),
++    displayName: text("display_name").notNull(),
++    defaultConfig: jsonb("default_config").notNull(),
++    status: text("status").notNull().default("active"),
++    revision: integer("revision").notNull().default(1),
++    aclEpoch: integer("acl_epoch").notNull().default(1),
++    createdAt: createdAt(),
++    updatedAt: updatedAt(),
++  },
++  (table) => [
++    primaryKey({ columns: [table.tenantId, table.agentId] }),
++    // 全局唯一：旧工作台 agents 表是 Bot 业务对象的唯一权威存储且主键全局
++    // （Spec §4.2），两家公司不得认领同一底层 Bot。约束在 INSERT 处收口，
++    // 是唯一不需要 RLS 豁免的跨公司检查点（同公司重复与跨公司占用对外
++    // 同一代码 BOT_ID_UNAVAILABLE，不泄露占用发生在哪家）。
++    uniqueIndex("enterprise_bot_ownership_agent_id_global_uq").on(
++      table.agentId,
++    ),
++    foreignKey({
++      columns: [table.tenantId, table.workspaceId],
++      foreignColumns: [enterpriseWorkspaces.tenantId, enterpriseWorkspaces.id],
++    }).onDelete("cascade"),
++    foreignKey({
++      columns: [table.tenantId, table.ownerPrincipalId],
++      foreignColumns: [
++        enterpriseMemberships.tenantId,
++        enterpriseMemberships.principalId,
++      ],
++    }).onDelete("cascade"),
++    check(
++      "enterprise_bot_ownership_status",
++      sql`${table.status} in ('active','deleted')`,
++    ),
++    check(
++      "enterprise_bot_ownership_versions",
++      sql`${table.revision} > 0 and ${table.aclEpoch} > 0`,
++    ),
++    pgPolicy("enterprise_bot_ownership_data_read", {
++      for: "select",
++      to: "ob_ent_data",
++      using: sql`enterprise_bot_ownership.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
++    }),
++    pgPolicy("enterprise_bot_ownership_operator_read", {
++      for: "select",
++      to: "ob_ent_operator",
++      using: sql`enterprise_bot_ownership.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
++    }),
++    pgPolicy("enterprise_bot_ownership_operator_insert", {
++      for: "insert",
++      to: "ob_ent_operator",
++      withCheck: sql`enterprise_bot_ownership.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
++    }),
++    pgPolicy("enterprise_bot_ownership_operator_update", {
++      for: "update",
++      to: "ob_ent_operator",
++      using: sql`enterprise_bot_ownership.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
++      withCheck: sql`enterprise_bot_ownership.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
++    }),
++    pgPolicy("enterprise_bot_ownership_operator_delete", {
++      for: "delete",
++      to: "ob_ent_operator",
++      using: sql`enterprise_bot_ownership.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
++    }),
++  ],
++).enableRLS();
++
++/** 一个主体对一个 Bot 的偏好；一行 = 一条逐主体偏好事实（复合 FK 同归属）。 */
++export const enterpriseBotPreferences = pgTable(
++  "enterprise_bot_preferences",
++  {
++    tenantId: text("tenant_id").notNull(),
++    agentId: text("agent_id").notNull(),
++    principalId: text("principal_id").notNull(),
++    preferences: jsonb("preferences").notNull(),
++    createdAt: createdAt(),
++    updatedAt: updatedAt(),
++  },
++  (table) => [
++    primaryKey({
++      columns: [table.tenantId, table.agentId, table.principalId],
++    }),
++    foreignKey({
++      columns: [table.tenantId, table.agentId],
++      foreignColumns: [
++        enterpriseBotOwnership.tenantId,
++        enterpriseBotOwnership.agentId,
++      ],
++    }).onDelete("cascade"),
++    foreignKey({
++      columns: [table.tenantId, table.principalId],
++      foreignColumns: [
++        enterpriseMemberships.tenantId,
++        enterpriseMemberships.principalId,
++      ],
++    }).onDelete("cascade"),
++    // 文档列不设 jsonb_typeof 存储检查：drizzle+bun-sql 的 jsonb 写入把
++    // JSON.stringify 的产物（JSON 字符串）存为 jsonb 标量（与 MT014/MT026
++    // 文档列同款仓库约定），存储层类型检查会拦下全部合法写入；文档必须为
++    // JSON object 的校验在服务层写入前完成（assertDocument）。
++    pgPolicy("enterprise_bot_preference_data_tenant_read", {
++      for: "select",
++      to: "ob_ent_data",
++      using: sql`enterprise_bot_preferences.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
++    }),
++    pgPolicy("enterprise_bot_preference_data_self_read", {
++      as: "restrictive",
++      for: "select",
++      to: "ob_ent_data",
++      using: sql`enterprise_bot_preferences.principal_id = nullif(current_setting('app.principal_id', true), '')`,
++    }),
++    pgPolicy("enterprise_bot_preference_operator_read", {
++      for: "select",
++      to: "ob_ent_operator",
++      using: sql`enterprise_bot_preferences.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_bot_preferences.principal_id = nullif(current_setting('app.principal_id', true), '')`,
++    }),
++    pgPolicy("enterprise_bot_preference_operator_insert", {
++      for: "insert",
++      to: "ob_ent_operator",
++      withCheck: sql`enterprise_bot_preferences.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_bot_preferences.principal_id = nullif(current_setting('app.principal_id', true), '')`,
++    }),
++    pgPolicy("enterprise_bot_preference_operator_update", {
++      for: "update",
++      to: "ob_ent_operator",
++      using: sql`enterprise_bot_preferences.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_bot_preferences.principal_id = nullif(current_setting('app.principal_id', true), '')`,
++      withCheck: sql`enterprise_bot_preferences.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_bot_preferences.principal_id = nullif(current_setting('app.principal_id', true), '')`,
++    }),
++    pgPolicy("enterprise_bot_preference_operator_delete", {
++      for: "delete",
++      to: "ob_ent_operator",
++      using: sql`enterprise_bot_preferences.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_bot_preferences.principal_id = nullif(current_setting('app.principal_id', true), '')`,
++    }),
++  ],
++).enableRLS();
+diff --git a/src/enterprise/tenancy/bots-ownership.ts b/src/enterprise/tenancy/bots-ownership.ts
+new file mode 100644
+index 00000000..2be08539
+--- /dev/null
++++ b/src/enterprise/tenancy/bots-ownership.ts
+@@ -0,0 +1,976 @@
++// server/src/enterprise/tenancy/bots-ownership.ts
++// MT016（Issue #59）：Bot 归属固定。
++//
++// 票面语义：用户创建、查看和编辑 Bot 时，Bot、其偏好与默认配置都固定在
++// 当前公司与团队；另一家公司或非团队成员看不到也改不了它。
++//
++// 结构（纯新增，只读消费 MT011 既有出口，不改任何既有文件语义）：
++//
++//   1. 归属即行：enterprise_bot_ownership 一行 = 一个 Bot 在一家公司一个
++//      团队内的归属（tenant_id + workspace_id + owner_principal_id），默认
++//      配置文档（default_config）就在归属行内——配置与 Bot 结构上不可分离
++//      （brief 验收 4 的结构实现）。agent_id 上有全局唯一索引：旧工作台的
++//      agents 表是 Bot 业务对象的唯一权威存储且主键全局（Spec §4.2「保留
++//      旧业务表为其业务对象的唯一权威存储」），归属层因此不允许两家公司
++//      认领同一底层 Bot——冲突在 INSERT 处由约束本身拒绝（BOT_ID_UNAVAILABLE），
++//      同公司重复与跨公司占用同一代码，不泄露占用发生在哪家。
++//   2. 可见性门 = 生效的团队事实：行存在（RLS 租户过滤后）+ status='active'
++//      + 行的 workspace 与受信 scope 同团队 + 调用者在该团队持有 active
++//      成员关系（每次事务内重验，撤权即失效）。任一不成立 → MT011 的
++//      canonical { outcome: "deny", code: "RESOURCE_NOT_FOUND" }（复用其
++//      冻结实例——逐字节同形，不存在/跨公司/跨团队/已删除对外不可区分）。
++//      列表/计数/游标只从可见项派生：非成员的列表为空、计数为 0、游标不
++//      偏移（issue 验收 3：不能通过搜索或计数发现它）。
++//   2b. 公司级重验（MT005 scope-gate 同款）：scope 只在签发时验证，业务
++//      事务内在同一事务里重验公司成员资格 status='active' 且
++//      epoch === scope.memberEpoch（epoch 由 MT006 撤权递增）——公司成员
++//      资格被暂停后的下一个事务立即失效：create 响亮拒绝，读取 fail-closed
++//      到 not-found / 空页 / 0（Spec §5.2 撤权后失效）。
++//   3. 编辑门 = 可见性门内的 owner 判定：update/delete 仅限归属行
++//      owner_principal_id === scope.principalId 的成员（brief 验收 3）。
++//      同团队非 owner 成员能读但不能改/删 → BOT_EDIT_FORBIDDEN（已过可见
++//      性门，该拒绝不新增任何信息）；公司/团队管理身份不隐式继承内容编辑
++//      权（Spec §4.1：管理权限与内容访问分别判断）。
++//   4. 偏好是逐主体事实：enterprise_bot_preferences 经复合外键钉到归属行
++//      与公司成员关系（Spec §4.2 子记录规则），行内 tenant_id + 主体上下
++//      文 + RLS restrictive 自读共同保证「偏好与 Bot 同归属、且只属于本人」。
++//      未见过 Bot 读偏好 = canonical not-found；见过但没设置 = null——两种
++//      状态严格分开，不泄露存在性。
++//   5. 公司作用域清理：enumeratePrincipalBots / hardDeleteOwnedBots 按
++//      (tenant_id, owner_principal_id, agent_id) 三重钉死——账号清理/删除
++//      清单是公司作用域动作（issue 验收 5），仅凭用户 id 在错公司上下文
++//      删不掉任何行；重复执行幂等删 0 行。被硬删 Bot 的偏好行经外键级联
++//      同时消失（不留可访问的悬挂引用）。
++//
++// 事务纪律与 MT008/MT009/MT011 判定入口完全一致：受信 Scope
++// （assertTrustedScope）→ read committed + lock/statement timeout →
++// set_config('app.*', …, true) 事务本地 → advisory 锁（键序 tenant →
++// principal → membership → workspace-membership → bot；读持共享锁、
++// 归属写持排他锁，同键串行化）。读路径走受限 data 角色，写路径走受限
++// operator 角色（MT006 管理写同款）；事实读取全部经真实 RLS：跨公司行对
++// 本事务不可见（事实即为「不存在」），纯判定内的租户/团队比对是第二道
++// 独立防线（纵深防御）。
++//
++// 归属声明不可由客户端表达：默认配置/偏好文档的顶层键携带
++// tenant/workspace/owner 归属键一律 ATTRIBUTION_NOT_CLIENT_DECLARABLE——
++// 归属只来自服务端受信 scope 与事务内事实（与 MT028 回调归属规则同源：
++// 服务端持久状态优先于客户端选择）。
++//
++// 边界（诚实披露）：
++//   - 编辑授权只认「归属行 owner」这一种授权成员形态；团队管理者代编辑、
++//     发布受众（MT017）与逐动作生命周期授权（MT019）是后续票据的语义，
++//     本模块不预支。
++//   - 列表/计数的候选读取一次性扫过 scope 团队内的候选行（与 MT011 同一
++//     边界）；团队规模超出此模型时属后续分页架构票。
++//   - 本票不接路由：服务面供下游接线票复用（与 MT009/MT011/MT014 装配
++//     同例）。
++
++import { and, asc, eq, inArray, sql } from "drizzle-orm";
++import {
++  enterpriseBotOwnership,
++  enterpriseBotPreferences,
++} from "../../db/schema/enterprise-bot-ownership";
++import {
++  enterpriseMemberships,
++  enterpriseWorkspaceMemberships,
++  enterpriseWorkspaces,
++} from "../../db/schema/enterprise-tenancy";
++import type { PlatformScope } from "../contracts";
++import {
++  assertDataDatabase,
++  assertOperatorDatabase,
++  type DataDatabase,
++  type OperatorDatabase,
++} from "./connections";
++import {
++  notFoundVerdict,
++  type ResourceNotFoundVerdict,
++} from "./not-found-semantics";
++import { workspaceMembershipLockKey } from "./scope-gate";
++import { assertTrustedScope } from "./store";
++
++// ---------------------------------------------------------------------------
++// 视图与判定形状
++// ---------------------------------------------------------------------------
++
++/** 归属视图：可见成员可读的全部事实（默认配置深冻结，缓存/复用安全）。 */
++export interface BotOwnershipView {
++  readonly agentId: string;
++  readonly workspaceId: string;
++  readonly ownerPrincipalId: string;
++  readonly displayName: string;
++  readonly defaultConfig: Readonly<Record<string, unknown>>;
++  readonly revision: number;
++  readonly aclEpoch: number;
++}
++
++/** 清理面使用的摘要（无配置文档——清理判定不需要内容）。 */
++export interface BotOwnershipSummary {
++  readonly agentId: string;
++  readonly workspaceId: string;
++  readonly displayName: string;
++}
++
++/**
++ * 单对象判定结果。allow 携带视图；一切不可见 = MT011 canonical not-found
++ * （逐字节同形）；可见成员的非 owner 编辑/删除 = BOT_EDIT_FORBIDDEN。
++ */
++export type BotOwnershipOutcome =
++  | { readonly outcome: "allow"; readonly bot: BotOwnershipView }
++  | ResourceNotFoundVerdict
++  | { readonly outcome: "deny"; readonly code: "BOT_EDIT_FORBIDDEN" };
++
++export type BotMutationOutcome =
++  | { readonly outcome: "allow" }
++  | ResourceNotFoundVerdict
++  | { readonly outcome: "deny"; readonly code: "BOT_EDIT_FORBIDDEN" };
++
++/** 偏好判定：allow 携带本人偏好（未设置 = null）；不可见 = canonical not-found。 */
++export type BotPreferenceReadOutcome =
++  | {
++      readonly outcome: "allow";
++      readonly preference: Readonly<Record<string, unknown>> | null;
++    }
++  | ResourceNotFoundVerdict;
++
++export type BotPreferenceWriteOutcome =
++  | { readonly outcome: "allow" }
++  | ResourceNotFoundVerdict;
++
++/** 一页可见 Bot；nextCursor 为 null 表示可见流结束。 */
++export interface BotListPage {
++  readonly items: readonly BotOwnershipSummary[];
++  readonly nextCursor: string | null;
++}
++
++export interface CreateBotInput {
++  readonly agentId: string;
++  readonly displayName: string;
++  readonly defaultConfig: Record<string, unknown>;
++}
++
++export interface UpdateBotInput {
++  readonly displayName: string;
++  readonly defaultConfig: Record<string, unknown>;
++}
++
++// ---------------------------------------------------------------------------
++// 输入与文档校验（响亮拒绝；错误只含代码，绝不回显值）
++// ---------------------------------------------------------------------------
++
++const MAX_ID_LENGTH = 256;
++const MAX_DOCUMENT_BYTES = 65_536;
++const MAX_PAGE_LIMIT = 200;
++const DEFAULT_PAGE_LIMIT = 50;
++const MAX_CLEANUP_IDS = 100;
++
++/**
++ * 归属键：客户端文档里表达归属的形状不存在——归属只来自服务端受信 scope
++ * 与事务内事实（驼峰与下划线两种拼写都挡）。
++ */
++const ATTRIBUTION_KEYS: readonly string[] = [
++  "tenantId",
++  "workspaceId",
++  "ownerPrincipalId",
++  "tenant_id",
++  "workspace_id",
++  "owner_principal_id",
++];
++
++function assertBotIdentity(agentId: string): string {
++  if (
++    typeof agentId !== "string" ||
++    agentId.trim().length === 0 ||
++    agentId.length > MAX_ID_LENGTH
++  ) {
++    throw new Error("BOT_INPUT_INVALID");
++  }
++  return agentId;
++}
++
++function assertDisplayName(displayName: string): string {
++  if (
++    typeof displayName !== "string" ||
++    displayName.trim().length === 0 ||
++    displayName.length > MAX_ID_LENGTH
++  ) {
++    throw new Error("BOT_INPUT_INVALID");
++  }
++  return displayName;
++}
++
++function assertDocument(document: Record<string, unknown>): void {
++  if (
++    document === null ||
++    typeof document !== "object" ||
++    Array.isArray(document)
++  ) {
++    throw new Error("BOT_DOCUMENT_INVALID");
++  }
++  for (const key of Object.keys(document)) {
++    if (ATTRIBUTION_KEYS.includes(key)) {
++      throw new Error("ATTRIBUTION_NOT_CLIENT_DECLARABLE");
++    }
++  }
++  if (JSON.stringify(document).length > MAX_DOCUMENT_BYTES) {
++    throw new Error("BOT_DOCUMENT_TOO_LARGE");
++  }
++}
++
++function assertScopeContext(scope: PlatformScope): void {
++  if (!scope.tenantId?.trim()) throw new Error("TENANT_REQUIRED");
++  if (!scope.workspaceId?.trim()) throw new Error("WORKSPACE_REQUIRED");
++}
++
++function assertPageLimit(limit: number | undefined): number {
++  if (limit === undefined) return DEFAULT_PAGE_LIMIT;
++  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_PAGE_LIMIT) {
++    throw new Error("BOTS_LIMIT_INVALID");
++  }
++  return limit;
++}
++
++function assertCleanupIds(agentIds: readonly string[]): readonly string[] {
++  if (!Array.isArray(agentIds) || agentIds.length > MAX_CLEANUP_IDS) {
++    throw new Error("BOT_CLEANUP_INPUT_INVALID");
++  }
++  for (const id of agentIds) assertBotIdentity(id);
++  return agentIds;
++}
++
++/** 深冻结：调用方拿到不可变快照（与 MT014 解析输出同一纪律）。 */
++function deepFreeze<T>(value: T): T {
++  if (value !== null && typeof value === "object") {
++    for (const entry of Object.values(value as Record<string, unknown>)) {
++      deepFreeze(entry);
++    }
++    Object.freeze(value);
++  }
++  return value;
++}
++
++// ---------------------------------------------------------------------------
++// 游标：服务自发的 opaque 令牌，只含调用方已见项的键
++// ---------------------------------------------------------------------------
++
++interface CursorPayload {
++  readonly v: 1;
++  readonly at: string;
++  readonly id: string;
++}
++
++function encodeCursor(payload: CursorPayload): string {
++  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
++}
++
++function decodeCursor(token: string): CursorPayload {
++  let parsed: unknown;
++  try {
++    const json = Buffer.from(token, "base64url").toString("utf8");
++    parsed = JSON.parse(json);
++  } catch {
++    throw new Error("BOTS_CURSOR_INVALID");
++  }
++  if (
++    parsed === null ||
++    typeof parsed !== "object" ||
++    (parsed as CursorPayload).v !== 1 ||
++    typeof (parsed as CursorPayload).at !== "string" ||
++    (parsed as CursorPayload).at.trim() === "" ||
++    typeof (parsed as CursorPayload).id !== "string" ||
++    (parsed as CursorPayload).id.trim() === ""
++  ) {
++    throw new Error("BOTS_CURSOR_INVALID");
++  }
++  return parsed as CursorPayload;
++}
++
++// ---------------------------------------------------------------------------
++// 服务
++// ---------------------------------------------------------------------------
++
++export interface BotOwnershipService {
++  /** 在受信 scope 的公司 + 团队内创建归属（默认配置同行落库）。 */
++  createBot(
++    scope: PlatformScope,
++    input: CreateBotInput,
++  ): Promise<BotOwnershipOutcome>;
++  /** 详情/配置读取；不可见 = canonical not-found。 */
++  getBot(scope: PlatformScope, agentId: string): Promise<BotOwnershipOutcome>;
++  /** 团队内可见 Bot 列表；非成员 = 空页（不泄露）。 */
++  listBots(
++    scope: PlatformScope,
++    options?: { readonly limit?: number; readonly cursor?: string },
++  ): Promise<BotListPage>;
++  /** 团队内可见 Bot 计数；非成员 = 0（不泄露）。 */
++  countBots(scope: PlatformScope): Promise<{ readonly total: number }>;
++  /** 默认配置/名称编辑；可见性门 → owner 门。 */
++  updateBot(
++    scope: PlatformScope,
++    agentId: string,
++    input: UpdateBotInput,
++  ): Promise<BotOwnershipOutcome>;
++  /** 软删除（读面立即回到 not-found）；可见性门 → owner 门。 */
++  deleteBot(scope: PlatformScope, agentId: string): Promise<BotMutationOutcome>;
++  /** 写/覆盖本人对该 Bot 的偏好；不可见 = canonical not-found。 */
++  setBotPreference(
++    scope: PlatformScope,
++    agentId: string,
++    preferences: Record<string, unknown>,
++  ): Promise<BotPreferenceWriteOutcome>;
++  /** 读本人对该 Bot 的偏好；未设置 = null，不可见 = canonical not-found。 */
++  getBotPreference(
++    scope: PlatformScope,
++    agentId: string,
++  ): Promise<BotPreferenceReadOutcome>;
++  /** 清除本人对该 Bot 的偏好；幂等。 */
++  clearBotPreference(
++    scope: PlatformScope,
++    agentId: string,
++  ): Promise<BotPreferenceWriteOutcome>;
++  /**
++   * 公司作用域枚举：某主体在某公司名下的全部活跃归属（删除清单的事实源）。
++   * 服务器侧清理流程调用（无 scope——与 profile-store.hardDelete 同位）。
++   */
++  enumeratePrincipalBots(
++    tenantId: string,
++    ownerPrincipalId: string,
++  ): Promise<readonly BotOwnershipSummary[]>;
++  /**
++   * 公司作用域硬删除：按 (tenant, owner, ids) 三重钉死；错公司/非本人/
++   * 未知 id 一律不命中；返回实际删除的输入 id（输入序）。偏好行经外键
++   * 级联同时消失。
++   */
++  hardDeleteOwnedBots(
++    tenantId: string,
++    ownerPrincipalId: string,
++    agentIds: readonly string[],
++  ): Promise<readonly string[]>;
++}
++
++/**
++ * 装配入口。读路径走已验证 data 通道，写路径走已验证 operator 通道；
++ * 未验证通道在装配时拒绝（UNVERIFIED_DATABASE_CAPABILITY）。
++ */
++export function createBotOwnershipService(channels: {
++  readonly data: DataDatabase;
++  readonly operator: OperatorDatabase;
++}): BotOwnershipService {
++  assertDataDatabase(channels.data);
++  assertOperatorDatabase(channels.operator);
++  const { data, operator } = channels;
++
++  /** 事务句柄类型（两个通道同一形状的本地别名）。 */
++  type Tx =
++    | Parameters<Parameters<DataDatabase["transaction"]>[0]>[0]
++    | Parameters<Parameters<OperatorDatabase["transaction"]>[0]>[0];
++
++  const beginContext = async (
++    tx: Tx,
++    scope: {
++      readonly tenantId: string;
++      readonly workspaceId?: string;
++      readonly principalId?: string;
++      readonly actorId?: string;
++    },
++  ): Promise<void> => {
++    await tx.execute(sql`set transaction isolation level read committed`);
++    await tx.execute(sql`set local lock_timeout = '2s'`);
++    await tx.execute(sql`set local statement_timeout = '5s'`);
++    /* Transaction-local settings are defense in depth for RLS and are cleared on commit. */
++    await tx.execute(
++      sql`select set_config('app.tenant_id', ${scope.tenantId}, true), set_config('app.workspace_id', ${scope.workspaceId ?? ""}, true), set_config('app.principal_id', ${scope.principalId ?? ""}, true), set_config('app.user_id', ${scope.actorId ?? ""}, true)`,
++    );
++  };
++
++  /** 锁序：tenant → principal → membership → workspace-membership → bot。 */
++  const baseLockKeys = (scope: {
++    readonly tenantId: string;
++    readonly principalId?: string;
++    readonly workspaceId?: string;
++  }): readonly string[] => [
++    JSON.stringify(["enterprise", "tenant", scope.tenantId]),
++    ...(scope.principalId
++      ? [
++          JSON.stringify(["enterprise", "principal", scope.principalId]),
++          JSON.stringify([
++            "enterprise",
++            "membership",
++            scope.tenantId,
++            scope.principalId,
++          ]),
++        ]
++      : []),
++    ...(scope.principalId && scope.workspaceId
++      ? [
++          workspaceMembershipLockKey(
++            scope.tenantId,
++            scope.workspaceId,
++            scope.principalId,
++          ),
++        ]
++      : []),
++  ];
++
++  const takeLocks = async (
++    tx: Tx,
++    keys: readonly { readonly key: string; readonly exclusive: boolean }[],
++  ): Promise<void> => {
++    for (const { key, exclusive } of keys) {
++      await tx.execute(
++        exclusive
++          ? sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`
++          : sql`select pg_advisory_xact_lock_shared(hashtextextended(${key}, 0))`,
++      );
++    }
++  };
++
++  const botLockKey = (tenantId: string, agentId: string): string =>
++    JSON.stringify(["enterprise", "bot", tenantId, agentId]);
++
++  /**
++   * 事务内成员事实重验（MT005 scope-gate 事务等价物的本模块切片）：公司级
++   * = active 且 epoch === scope.memberEpoch（MT006 撤权递增 epoch，已签发
++   * scope 立即失效）；团队级 = 行存在且 status='active'。
++   */
++  const readMembershipFacts = async (
++    tx: Tx,
++    scope: PlatformScope,
++  ): Promise<{
++    readonly companyActive: boolean;
++    readonly teamActive: boolean;
++  }> => {
++    const [company] = await tx
++      .select({
++        status: enterpriseMemberships.status,
++        epoch: enterpriseMemberships.epoch,
++      })
++      .from(enterpriseMemberships)
++      .where(
++        and(
++          eq(enterpriseMemberships.tenantId, scope.tenantId),
++          eq(enterpriseMemberships.principalId, scope.principalId),
++        ),
++      )
++      .limit(1);
++    const [team] = await tx
++      .select({ status: enterpriseWorkspaceMemberships.status })
++      .from(enterpriseWorkspaceMemberships)
++      .where(
++        and(
++          eq(enterpriseWorkspaceMemberships.tenantId, scope.tenantId),
++          eq(enterpriseWorkspaceMemberships.workspaceId, scope.workspaceId),
++          eq(enterpriseWorkspaceMemberships.principalId, scope.principalId),
++        ),
++      )
++      .limit(1);
++    return {
++      companyActive:
++        company?.status === "active" && company.epoch === scope.memberEpoch,
++      teamActive: team?.status === "active",
++    };
++  };
++
++  /**
++   * 可见性事实（事务内一次受限读取）：行经 RLS 租户过滤后，再验团队匹配
++   * + active + 调用者的公司成员资格（active + epoch 钉住签发时版本）与
++   * 团队成员关系（重验）。返回 null = 不可见。
++   */
++  const readVisibleOwnership = async (
++    tx: Tx,
++    scope: PlatformScope,
++    agentId: string,
++  ): Promise<BotOwnershipView | null> => {
++    const [row] = await tx
++      .select({
++        agentId: enterpriseBotOwnership.agentId,
++        workspaceId: enterpriseBotOwnership.workspaceId,
++        ownerPrincipalId: enterpriseBotOwnership.ownerPrincipalId,
++        displayName: enterpriseBotOwnership.displayName,
++        defaultConfig: enterpriseBotOwnership.defaultConfig,
++        status: enterpriseBotOwnership.status,
++        revision: enterpriseBotOwnership.revision,
++        aclEpoch: enterpriseBotOwnership.aclEpoch,
++        membershipStatus: enterpriseWorkspaceMemberships.status,
++        companyMemberStatus: enterpriseMemberships.status,
++        companyMemberEpoch: enterpriseMemberships.epoch,
++      })
++      .from(enterpriseBotOwnership)
++      .leftJoin(
++        enterpriseWorkspaceMemberships,
++        and(
++          eq(
++            enterpriseWorkspaceMemberships.tenantId,
++            enterpriseBotOwnership.tenantId,
++          ),
++          eq(
++            enterpriseWorkspaceMemberships.workspaceId,
++            enterpriseBotOwnership.workspaceId,
++          ),
++          eq(enterpriseWorkspaceMemberships.principalId, scope.principalId),
++        ),
++      )
++      .leftJoin(
++        enterpriseMemberships,
++        and(
++          eq(enterpriseMemberships.tenantId, enterpriseBotOwnership.tenantId),
++          eq(enterpriseMemberships.principalId, scope.principalId),
++        ),
++      )
++      .where(
++        and(
++          eq(enterpriseBotOwnership.tenantId, scope.tenantId),
++          eq(enterpriseBotOwnership.agentId, agentId),
++        ),
++      )
++      .limit(1);
++    if (!row) return null;
++    // 可见性门：同团队 + active + 公司成员（active + epoch 匹配签发时
++    // 版本）+ 团队成员 active。任一不成立 = 不可见（不存在/跨公司/跨团队/
++    // 已删除/被撤权者对外不可区分）。
++    if (
++      row.status !== "active" ||
++      row.workspaceId !== scope.workspaceId ||
++      row.membershipStatus !== "active" ||
++      row.companyMemberStatus !== "active" ||
++      row.companyMemberEpoch !== scope.memberEpoch
++    ) {
++      return null;
++    }
++    return deepFreeze({
++      agentId: row.agentId,
++      workspaceId: row.workspaceId,
++      ownerPrincipalId: row.ownerPrincipalId,
++      displayName: row.displayName,
++      defaultConfig: deepFreeze(row.defaultConfig as Record<string, unknown>),
++      revision: row.revision,
++      aclEpoch: row.aclEpoch,
++    });
++  };
++
++  /** 列表候选读取：租户 + 团队 + active（RLS 先行），(created_at, id) 全序。 */
++  const readCandidateRows = async (
++    tx: Tx,
++    scope: PlatformScope,
++    cursor: CursorPayload | null,
++  ) =>
++    tx
++      .select({
++        agentId: enterpriseBotOwnership.agentId,
++        workspaceId: enterpriseBotOwnership.workspaceId,
++        displayName: enterpriseBotOwnership.displayName,
++        createdAtText:
++          sql<string>`${enterpriseBotOwnership.createdAt}::text`.as(
++            "created_at_text",
++          ),
++      })
++      .from(enterpriseBotOwnership)
++      .where(
++        and(
++          eq(enterpriseBotOwnership.tenantId, scope.tenantId),
++          eq(enterpriseBotOwnership.workspaceId, scope.workspaceId),
++          eq(enterpriseBotOwnership.status, "active"),
++          cursor
++            ? sql`(${enterpriseBotOwnership.createdAt}, ${enterpriseBotOwnership.agentId}) > (${cursor.at}::timestamptz, ${cursor.id})`
++            : undefined,
++        ),
++      )
++      .orderBy(
++        asc(enterpriseBotOwnership.createdAt),
++        asc(enterpriseBotOwnership.agentId),
++      );
++
++  return {
++    async createBot(scope, input) {
++      // 输入形状先于信任判定：缺公司/团队上下文与未签发 scope 得到各自的
++      // 明确拒绝码（两者都是响亮拒绝，顺序不泄露任何信息）。
++      assertScopeContext(scope);
++      assertTrustedScope(scope);
++      const agentId = assertBotIdentity(input.agentId);
++      const displayName = assertDisplayName(input.displayName);
++      assertDocument(input.defaultConfig);
++      return operator.transaction(async (tx) => {
++        await beginContext(tx, scope);
++        // 锁序：基础键共享 → bot 排他（同 id 创建串行化）。
++        await takeLocks(tx, [
++          ...baseLockKeys(scope).map((key) => ({ key, exclusive: false })),
++          { key: botLockKey(scope.tenantId, agentId), exclusive: true },
++        ]);
++        // 事务内重验：目标团队必须存在（归属同一租户）且调用者的公司成员
++        // 资格（active + epoch 匹配签发时版本）与团队成员关系都是当前事实
++        // ——scope 只在签发时验证，这里钉住当前事实（撤权后下一事务拒绝）。
++        const [team] = await tx
++          .select({ workspaceId: enterpriseWorkspaces.id })
++          .from(enterpriseWorkspaces)
++          .where(
++            and(
++              eq(enterpriseWorkspaces.tenantId, scope.tenantId),
++              eq(enterpriseWorkspaces.id, scope.workspaceId),
++            ),
++          )
++          .limit(1);
++        const facts = await readMembershipFacts(tx, scope);
++        if (!team || !facts.companyActive || !facts.teamActive) {
++          throw new Error("WORKSPACE_MEMBERSHIP_REQUIRED");
++        }
++        try {
++          await tx.insert(enterpriseBotOwnership).values({
++            tenantId: scope.tenantId,
++            agentId,
++            workspaceId: scope.workspaceId,
++            ownerPrincipalId: scope.principalId,
++            displayName,
++            defaultConfig: input.defaultConfig,
++          });
++        } catch (error) {
++          // 全局唯一索引（agent_id）+ 复合主键都在 INSERT 处收口：同公司
++          // 重复与跨公司占用同一代码——不泄露占用发生在哪家。（bun 的
++          // PostgresError 把 SQLSTATE 暴露在 errno；drizzle 包装层在同源
++          // cause 链上。）
++          let candidate: unknown = error;
++          for (
++            let depth = 0;
++            candidate !== undefined && depth < 5;
++            depth += 1
++          ) {
++            const shaped = candidate as { code?: string; errno?: string };
++            if (shaped.code === "23505" || shaped.errno === "23505") {
++              throw new Error("BOT_ID_UNAVAILABLE");
++            }
++            candidate = (candidate as { cause?: unknown }).cause;
++          }
++          throw error;
++        }
++        const view = await readVisibleOwnership(tx, scope, agentId);
++        if (!view) throw new Error("BOT_CREATE_READBACK_FAILED");
++        return Object.freeze({ outcome: "allow", bot: view });
++      });
++    },
++
++    async getBot(scope, agentId) {
++      assertScopeContext(scope);
++      assertTrustedScope(scope);
++      return data.transaction(async (tx) => {
++        await beginContext(tx, scope);
++        await takeLocks(tx, [
++          ...baseLockKeys(scope).map((key) => ({ key, exclusive: false })),
++          {
++            key: botLockKey(scope.tenantId, agentId),
++            exclusive: false,
++          },
++        ]);
++        const view = await readVisibleOwnership(tx, scope, agentId);
++        if (!view) return notFoundVerdict();
++        return Object.freeze({ outcome: "allow", bot: view });
++      });
++    },
++
++    async listBots(scope, options) {
++      assertScopeContext(scope);
++      assertTrustedScope(scope);
++      const limit = assertPageLimit(options?.limit);
++      const cursor = options?.cursor ? decodeCursor(options.cursor) : null;
++      return data.transaction(async (tx) => {
++        await beginContext(tx, scope);
++        // 列表不持逐 Bot 锁（候选集无界，与 MT011 同一边界）；成员关系
++        // 事实经下述 join 重验。
++        await takeLocks(tx, [
++          ...baseLockKeys(scope).map((key) => ({ key, exclusive: false })),
++        ]);
++        // 成员事实重验（公司级 + 团队级）：被撤权者/非成员的列表为空页
++        // （不泄露任何存在性）。
++        const facts = await readMembershipFacts(tx, scope);
++        if (!facts.companyActive || !facts.teamActive) {
++          return Object.freeze({
++            items: Object.freeze([]),
++            nextCursor: null,
++          });
++        }
++        const rows = (await readCandidateRows(tx, scope, cursor)) as readonly {
++          agentId: string;
++          workspaceId: string;
++          displayName: string;
++          createdAtText: string;
++        }[];
++        const items: BotOwnershipSummary[] = [];
++        let nextCursor: string | null = null;
++        let boundary: { at: string; id: string } | null = null;
++        for (const row of rows) {
++          if (items.length === limit) {
++            nextCursor = encodeCursor({
++              v: 1,
++              at: boundary?.at ?? "",
++              id: boundary?.id ?? "",
++            });
++            break;
++          }
++          items.push(
++            Object.freeze({
++              agentId: row.agentId,
++              workspaceId: row.workspaceId,
++              displayName: row.displayName,
++            }),
++          );
++          boundary = { at: row.createdAtText, id: row.agentId };
++        }
++        return Object.freeze({
++          items: Object.freeze(items),
++          nextCursor,
++        });
++      });
++    },
++
++    async countBots(scope) {
++      assertScopeContext(scope);
++      assertTrustedScope(scope);
++      return data.transaction(async (tx) => {
++        await beginContext(tx, scope);
++        await takeLocks(tx, [
++          ...baseLockKeys(scope).map((key) => ({ key, exclusive: false })),
++        ]);
++        const facts = await readMembershipFacts(tx, scope);
++        if (!facts.companyActive || !facts.teamActive) return { total: 0 };
++        const rows = await tx
++          .select({ agentId: enterpriseBotOwnership.agentId })
++          .from(enterpriseBotOwnership)
++          .where(
++            and(
++              eq(enterpriseBotOwnership.tenantId, scope.tenantId),
++              eq(enterpriseBotOwnership.workspaceId, scope.workspaceId),
++              eq(enterpriseBotOwnership.status, "active"),
++            ),
++          );
++        return { total: rows.length };
++      });
++    },
++
++    async updateBot(scope, agentId, input) {
++      assertScopeContext(scope);
++      assertTrustedScope(scope);
++      const displayName = assertDisplayName(input.displayName);
++      assertDocument(input.defaultConfig);
++      return operator.transaction(async (tx) => {
++        await beginContext(tx, scope);
++        await takeLocks(tx, [
++          ...baseLockKeys(scope).map((key) => ({ key, exclusive: false })),
++          { key: botLockKey(scope.tenantId, agentId), exclusive: true },
++        ]);
++        const view = await readVisibleOwnership(tx, scope, agentId);
++        if (!view) return notFoundVerdict();
++        if (view.ownerPrincipalId !== scope.principalId) {
++          return Object.freeze({
++            outcome: "deny",
++            code: "BOT_EDIT_FORBIDDEN",
++          });
++        }
++        await tx
++          .update(enterpriseBotOwnership)
++          .set({
++            displayName,
++            defaultConfig: input.defaultConfig,
++            revision: sql`${enterpriseBotOwnership.revision} + 1`,
++            updatedAt: sql`now()`,
++          })
++          .where(
++            and(
++              eq(enterpriseBotOwnership.tenantId, scope.tenantId),
++              eq(enterpriseBotOwnership.agentId, agentId),
++            ),
++          );
++        const updated = await readVisibleOwnership(tx, scope, agentId);
++        if (!updated) return notFoundVerdict();
++        return Object.freeze({ outcome: "allow", bot: updated });
++      });
++    },
++
++    async deleteBot(scope, agentId) {
++      assertScopeContext(scope);
++      assertTrustedScope(scope);
++      return operator.transaction(async (tx) => {
++        await beginContext(tx, scope);
++        await takeLocks(tx, [
++          ...baseLockKeys(scope).map((key) => ({ key, exclusive: false })),
++          { key: botLockKey(scope.tenantId, agentId), exclusive: true },
++        ]);
++        const view = await readVisibleOwnership(tx, scope, agentId);
++        if (!view) return notFoundVerdict();
++        if (view.ownerPrincipalId !== scope.principalId) {
++          return Object.freeze({
++            outcome: "deny",
++            code: "BOT_EDIT_FORBIDDEN",
++          });
++        }
++        await tx
++          .update(enterpriseBotOwnership)
++          .set({
++            status: "deleted",
++            aclEpoch: sql`${enterpriseBotOwnership.aclEpoch} + 1`,
++            updatedAt: sql`now()`,
++          })
++          .where(
++            and(
++              eq(enterpriseBotOwnership.tenantId, scope.tenantId),
++              eq(enterpriseBotOwnership.agentId, agentId),
++            ),
++          );
++        return Object.freeze({ outcome: "allow" });
++      });
++    },
++
++    async setBotPreference(scope, agentId, preferences) {
++      assertScopeContext(scope);
++      assertTrustedScope(scope);
++      assertDocument(preferences);
++      return operator.transaction(async (tx) => {
++        await beginContext(tx, scope);
++        await takeLocks(tx, [
++          ...baseLockKeys(scope).map((key) => ({ key, exclusive: false })),
++          { key: botLockKey(scope.tenantId, agentId), exclusive: true },
++        ]);
++        const view = await readVisibleOwnership(tx, scope, agentId);
++        if (!view) return notFoundVerdict();
++        await tx
++          .insert(enterpriseBotPreferences)
++          .values({
++            tenantId: scope.tenantId,
++            agentId,
++            principalId: scope.principalId,
++            preferences,
++          })
++          .onConflictDoUpdate({
++            target: [
++              enterpriseBotPreferences.tenantId,
++              enterpriseBotPreferences.agentId,
++              enterpriseBotPreferences.principalId,
++            ],
++            set: { preferences: preferences, updatedAt: sql`now()` },
++          });
++        return Object.freeze({ outcome: "allow" });
++      });
++    },
++
++    async getBotPreference(scope, agentId) {
++      assertScopeContext(scope);
++      assertTrustedScope(scope);
++      return data.transaction(async (tx) => {
++        await beginContext(tx, scope);
++        await takeLocks(tx, [
++          ...baseLockKeys(scope).map((key) => ({ key, exclusive: false })),
++          {
++            key: botLockKey(scope.tenantId, agentId),
++            exclusive: false,
++          },
++        ]);
++        const view = await readVisibleOwnership(tx, scope, agentId);
++        if (!view) return notFoundVerdict();
++        const [row] = await tx
++          .select({ preferences: enterpriseBotPreferences.preferences })
++          .from(enterpriseBotPreferences)
++          .where(
++            and(
++              eq(enterpriseBotPreferences.tenantId, scope.tenantId),
++              eq(enterpriseBotPreferences.agentId, agentId),
++              eq(enterpriseBotPreferences.principalId, scope.principalId),
++            ),
++          )
++          .limit(1);
++        return Object.freeze({
++          outcome: "allow",
++          preference: row
++            ? deepFreeze(row.preferences as Record<string, unknown>)
++            : null,
++        });
++      });
++    },
++
++    async clearBotPreference(scope, agentId) {
++      assertScopeContext(scope);
++      assertTrustedScope(scope);
++      return operator.transaction(async (tx) => {
++        await beginContext(tx, scope);
++        await takeLocks(tx, [
++          ...baseLockKeys(scope).map((key) => ({ key, exclusive: false })),
++          { key: botLockKey(scope.tenantId, agentId), exclusive: true },
++        ]);
++        const view = await readVisibleOwnership(tx, scope, agentId);
++        if (!view) return notFoundVerdict();
++        await tx
++          .delete(enterpriseBotPreferences)
++          .where(
++            and(
++              eq(enterpriseBotPreferences.tenantId, scope.tenantId),
++              eq(enterpriseBotPreferences.agentId, agentId),
++              eq(enterpriseBotPreferences.principalId, scope.principalId),
++            ),
++          );
++        return Object.freeze({ outcome: "allow" });
++      });
++    },
++
++    async enumeratePrincipalBots(tenantId, ownerPrincipalId) {
++      if (!tenantId?.trim()) throw new Error("TENANT_REQUIRED");
++      if (!ownerPrincipalId?.trim()) throw new Error("PRINCIPAL_REQUIRED");
++      return operator.transaction(async (tx) => {
++        await beginContext(tx, { tenantId });
++        await takeLocks(tx, [
++          {
++            key: JSON.stringify(["enterprise", "tenant", tenantId]),
++            exclusive: false,
++          },
++        ]);
++        const rows = await tx
++          .select({
++            agentId: enterpriseBotOwnership.agentId,
++            workspaceId: enterpriseBotOwnership.workspaceId,
++            displayName: enterpriseBotOwnership.displayName,
++          })
++          .from(enterpriseBotOwnership)
++          .where(
++            and(
++              eq(enterpriseBotOwnership.tenantId, tenantId),
++              eq(enterpriseBotOwnership.ownerPrincipalId, ownerPrincipalId),
++              eq(enterpriseBotOwnership.status, "active"),
++            ),
++          )
++          .orderBy(asc(enterpriseBotOwnership.agentId));
++        return Object.freeze(rows.map((row) => Object.freeze({ ...row })));
++      });
++    },
++
++    async hardDeleteOwnedBots(tenantId, ownerPrincipalId, agentIds) {
++      if (!tenantId?.trim()) throw new Error("TENANT_REQUIRED");
++      if (!ownerPrincipalId?.trim()) throw new Error("PRINCIPAL_REQUIRED");
++      const ids = assertCleanupIds(agentIds);
++      if (ids.length === 0) return Object.freeze([]);
++      return operator.transaction(async (tx) => {
++        await beginContext(tx, { tenantId });
++        // 锁序：tenant → bot（去重 + 字典序，保持全局键序；排他——这是
++        // 归属行的删除动作）。
++        await takeLocks(tx, [
++          {
++            key: JSON.stringify(["enterprise", "tenant", tenantId]),
++            exclusive: false,
++          },
++          ...[...new Set(ids)].sort().map((agentId) => ({
++            key: botLockKey(tenantId, agentId),
++            exclusive: true,
++          })),
++        ]);
++        // 三重钉死：公司 + owner + id。外键级联在同一语句内清掉该 Bot 的
++        // 全部偏好行（级联不经过逐行 RLS——PostgreSQL 语义），不留悬挂引用。
++        const deleted = await tx
++          .delete(enterpriseBotOwnership)
++          .where(
++            and(
++              eq(enterpriseBotOwnership.tenantId, tenantId),
++              eq(enterpriseBotOwnership.ownerPrincipalId, ownerPrincipalId),
++              inArray(enterpriseBotOwnership.agentId, [...ids]),
++            ),
++          )
++          .returning({ agentId: enterpriseBotOwnership.agentId });
++        const deletedIds = new Set(deleted.map((row) => row.agentId));
++        return Object.freeze(ids.filter((id) => deletedIds.has(id)));
++      });
++    },
++  };
++}
+diff --git a/tests/multitenancy/bots-ownership.test.ts b/tests/multitenancy/bots-ownership.test.ts
+new file mode 100644
+index 00000000..ffab3c4d
+--- /dev/null
++++ b/tests/multitenancy/bots-ownership.test.ts
+@@ -0,0 +1,1210 @@
++// server/tests/multitenancy/bots-ownership.test.ts
++// MT016（Issue #59）：Bot 归属固定——Bot、其偏好与默认配置都固定在当前
++// 公司与团队；另一家公司或非团队成员看不到也改不了它。
++//
++// 验收事实源（brief 票面 4 条 + Issue #59 五条，逐条对应 describe；真实
++// PostgreSQL，全程受限 ob_ent_* 角色 + 真实 RLS，绝不回退开发库、缺 env
++// 显式 skip）：
++//   验收 1（brief/issue）：创建的 Bot 记录公司与团队归属；列表只返回当前
++//     范围内可见的 Bot。
++//   验收 2（brief/issue）：跨公司或非团队成员访问详情/配置返回不可见语义
++//     ——MT011 canonical { outcome: "deny", code: "RESOURCE_NOT_FOUND" }，
++//     逐字节同形，不泄露存在性（不存在/跨公司/跨团队对外不可区分）。
++//   验收 3（issue）：非团队成员看不到该团队的 Bot，也不能通过搜索或计数
++//     发现它（列表/计数/游标全零）。
++//   验收 4（issue）：同一用户在两个公司分别创建的 Bot 互不干扰（含同名）。
++//   验收 5（issue）：删除或账号清理使用公司作用域，不会仅凭用户 ID 删掉
++//     他在其他公司的 Bot。
++//   brief 验收 3：编辑仅限归属范围内的授权成员（owner）；越权编辑被拒
++//     （同团队非 owner = BOT_EDIT_FORBIDDEN；不可见者 = canonical
++//     not-found；公司管理员无团队上下文，连 scope 都无法铸造）。
++//   brief 验收 4：Bot 偏好与默认配置与 Bot 同归属（默认配置在归属行内；
++//     偏好行复合 FK → 归属行 + 公司成员，结构上不可跨公司存在）。
++//
++// 结构（新文件优先；既有文件只动三处授权点：migrate-test.ts 追加任务 /
++// migration-tool.test.ts 断言行+裁决 / schema barrel 追加 1 行）。
++
++import { afterAll, beforeAll, describe, expect, test } from "bun:test";
++import { randomUUID } from "node:crypto";
++import { rm } from "node:fs/promises";
++import { join } from "node:path";
++import {
++  buildPlan,
++  type RunOutcome,
++  resolveTestDatabaseTarget,
++  runMigrateTest,
++} from "../../scripts/multitenancy/migrate-test";
++import { createDatabase } from "../../src/db/client";
++import type { PlatformScope } from "../../src/enterprise/contracts";
++import { createBotOwnershipService } from "../../src/enterprise/tenancy/bots-ownership";
++import {
++  isResourceNotFoundVerdict,
++  notFoundVerdict,
++  serializeNotFoundVerdict,
++} from "../../src/enterprise/tenancy/not-found-semantics";
++import { enterpriseRuntimeDatabaseUrlFrom } from "../support/enterprise-database";
++import {
++  type BotsIdentity,
++  type BotsOwnershipFixture,
++  createBotsOwnershipFixture,
++} from "./support/bots-ownership";
++
++// ---------------------------------------------------------------------------
++// 环境探针：缺 env 显式 skip（带理由），绝不静默回退
++// ---------------------------------------------------------------------------
++
++function probeEnvironment(): { ok: true } | { ok: false; reason: string } {
++  const required = [
++    "TEST_DATABASE_URL",
++    "ENTERPRISE_TEST_SETUP_DATABASE_URL",
++    "ENTERPRISE_TEST_DIRECTORY_DATABASE_URL",
++    "ENTERPRISE_TEST_DATA_DATABASE_URL",
++    "ENTERPRISE_TEST_OPERATOR_DATABASE_URL",
++  ] as const;
++  const missing = required.filter((key) => !process.env[key]?.trim());
++  if (missing.length > 0) {
++    return {
++      ok: false,
++      reason: `MT016 requires the dedicated enterprise test database env (${missing.join(", ")}) — no dev-database fallback`,
++    };
++  }
++  try {
++    enterpriseRuntimeDatabaseUrlFrom("directory", process.env);
++    enterpriseRuntimeDatabaseUrlFrom("data", process.env);
++    enterpriseRuntimeDatabaseUrlFrom("operator", process.env);
++    return { ok: true };
++  } catch (error) {
++    return {
++      ok: false,
++      reason: error instanceof Error ? error.message : String(error),
++    };
++  }
++}
++
++const ENV = probeEnvironment();
++const itDb = ((name, fn) =>
++  ENV.ok
++    ? test(name, fn)
++    : test.skip(`${name} [skipped: ${ENV.reason}]`, fn)) as typeof test;
++const describeDb = ENV.ok ? describe : describe.skip;
++
++// ---------------------------------------------------------------------------
++// 断言形状助手
++// ---------------------------------------------------------------------------
++
++const canonicalNotFoundJson = serializeNotFoundVerdict(notFoundVerdict());
++
++const isCanonicalNotFound = (value: unknown): boolean =>
++  isResourceNotFoundVerdict(value) &&
++  JSON.stringify(value) === canonicalNotFoundJson;
++
++const thrownMessage = async (run: () => Promise<unknown>): Promise<string> => {
++  try {
++    await run();
++  } catch (error) {
++    return error instanceof Error ? error.message : String(error);
++  }
++  throw new Error("expected the call to be rejected, but it succeeded");
++};
++
++const thrownMessageSync = (run: () => unknown): string => {
++  try {
++    run();
++  } catch (error) {
++    return error instanceof Error ? error.message : String(error);
++  }
++  throw new Error("expected the call to be rejected, but it succeeded");
++};
++
++/** 非归属键的合法默认配置文档（同归属断言用它做逐字节往返比较）。 */
++const BASE_CONFIG = Object.freeze({
++  model: "gpt-4o",
++  systemPrompt: "You are the research assistant of this team.",
++  temperature: 0.2,
++});
++
++// ---------------------------------------------------------------------------
++// 套件状态
++// ---------------------------------------------------------------------------
++
++let fixture: BotsOwnershipFixture;
++let companyA = "";
++let companyB = "";
++let teamA1 = "";
++let teamA2 = "";
++let teamB1 = "";
++/** 验收 4 双公司同名 Bot 的句柄，提升到套件层供验收 5 的枚举全集断言复用。 */
++let dualA = { agentId: "", displayName: "" };
++let dualB = { agentId: "", displayName: "" };
++const generatedDirs: string[] = [];
++let botCounter = 0;
++
++/** 确定性的测试 Bot id/displayName 生成（避免用例间相互依赖具体值）。 */
++const nextBot = (tag: string) => {
++  botCounter += 1;
++  return {
++    agentId: `mt016-bot-${String(botCounter).padStart(3, "0")}-${tag}`,
++    displayName: `MT016 Bot ${String(botCounter).padStart(3, "0")} ${tag}`,
++  };
++};
++
++const principalOf = (identity: BotsIdentity) =>
++  fixture.ids[`principal-${identity}`];
++
++const scopeAs = (
++  identity: BotsIdentity,
++  tenantId: string,
++  workspaceId: string,
++): Promise<PlatformScope> => fixture.scopeAs(identity, tenantId, workspaceId);
++
++beforeAll(async () => {
++  if (!ENV.ok) return;
++
++  // MT016 migration through the real MT003 tool: generate → apply → replay
++  // is convergent (applied on a fresh database, up-to-date on replay).
++  if (!resolveTestDatabaseTarget(process.env).ok) {
++    throw new Error(
++      "MT016 migration target refused: TEST_DATABASE_URL invalid",
++    );
++  }
++  const dir = join("/tmp", `mt016-migration-${randomUUID().slice(0, 8)}`);
++  generatedDirs.push(dir);
++  const generation = await runMigrateTest(["generate", "MT016", "--out", dir], {
++    environment: process.env,
++    out: () => {},
++  });
++  if (generation.kind !== "generated") {
++    throw new Error(`MT016 generate failed: ${JSON.stringify(generation)}`);
++  }
++  const manifestPath = join(dir, "MT016", "manifest.json");
++  const applied: RunOutcome = await runMigrateTest(
++    ["migrate", "MT016", "--apply", "--manifest", manifestPath],
++    { environment: process.env, out: () => {} },
++  );
++  if (!["applied", "up-to-date"].includes(applied.kind)) {
++    throw new Error(`MT016 apply failed: ${JSON.stringify(applied)}`);
++  }
++  const replay = await runMigrateTest(
++    ["migrate", "MT016", "--apply", "--manifest", manifestPath],
++    { environment: process.env, out: () => {} },
++  );
++  if (replay.kind !== "up-to-date") {
++    throw new Error(`MT016 replay not convergent: ${JSON.stringify(replay)}`);
++  }
++
++  fixture = await createBotsOwnershipFixture();
++  companyA = fixture.ids["company-a"];
++  companyB = fixture.ids["company-b"];
++  teamA1 = fixture.ids["team-a1"];
++  teamA2 = fixture.ids["team-a2"];
++  teamB1 = fixture.ids["team-b1"];
++}, 60000);
++
++afterAll(async () => {
++  for (const dir of generatedDirs) {
++    await rm(dir, { recursive: true, force: true });
++  }
++  if (fixture) {
++    await fixture.dispose();
++  }
++}, 60000);
++
++// ---------------------------------------------------------------------------
++// 验收 1：创建的 Bot 记录公司与团队归属；列表只返回当前范围内可见的 Bot
++// ---------------------------------------------------------------------------
++
++describeDb("MT016 验收 1：创建记录归属，列表只返回当前范围", () => {
++  let owned = { agentId: "", displayName: "" };
++
++  itDb(
++    "create 在受信 scope 内落归属行：公司 + 团队 + owner + 默认配置（深冻结）",
++    async () => {
++      const scope = await scopeAs("a1-member", companyA, teamA1);
++      owned = nextBot("owned");
++      const outcome = await fixture.service.createBot(scope, {
++        agentId: owned.agentId,
++        displayName: owned.displayName,
++        defaultConfig: BASE_CONFIG,
++      });
++      expect(outcome.outcome).toBe("allow");
++      if (outcome.outcome !== "allow") throw new Error("unreachable");
++      expect(outcome.bot.agentId).toBe(owned.agentId);
++      expect(outcome.bot.workspaceId).toBe(teamA1);
++      expect(outcome.bot.ownerPrincipalId).toBe(principalOf("a1-member"));
++      expect(outcome.bot.revision).toBe(1);
++      expect(outcome.bot.aclEpoch).toBe(1);
++      expect(outcome.bot.defaultConfig).toEqual(BASE_CONFIG);
++      // 输出深冻结：调用方拿到的是不可变快照（缓存/复用安全）。
++      expect(Object.isFrozen(outcome.bot)).toBe(true);
++      expect(Object.isFrozen(outcome.bot.defaultConfig)).toBe(true);
++    },
++  );
++
++  itDb("归属行真实落库：受限 data 角色在 A 公司上下文读到该行", async () => {
++    const rows = await fixture.readOwnershipRowsAsData(companyA);
++    const row = rows.find((candidate) => candidate.agentId === owned.agentId);
++    expect(row).toBeDefined();
++    expect(row?.workspaceId).toBe(teamA1);
++  });
++
++  itDb("owner 与同团队另一成员的列表都含该 Bot（团队内可见）", async () => {
++    const ownerScope = await scopeAs("a1-member", companyA, teamA1);
++    const otherScope = await scopeAs("a1-other", companyA, teamA1);
++    for (const scope of [ownerScope, otherScope]) {
++      const page = await fixture.service.listBots(scope, { limit: 200 });
++      expect(page.items.some((item) => item.agentId === owned.agentId)).toBe(
++        true,
++      );
++    }
++  });
++
++  itDb(
++    "同公司其他团队与另一家公司的列表都不含该 Bot（列表即作用域）",
++    async () => {
++      const a2Scope = await scopeAs("a2-member", companyA, teamA2);
++      const b1Scope = await scopeAs("b1-member", companyB, teamB1);
++      for (const scope of [a2Scope, b1Scope]) {
++        const page = await fixture.service.listBots(scope, { limit: 200 });
++        expect(page.items.some((item) => item.agentId === owned.agentId)).toBe(
++          false,
++        );
++      }
++    },
++  );
++
++  itDb("create 拒绝未经签发的 scope（信任边界不放宽）", async () => {
++    const forged = {
++      tenantId: companyA,
++      workspaceId: teamA1,
++      principalId: principalOf("a1-member"),
++      actorId: fixture.ids["user-a1-member"],
++      memberEpoch: 1,
++      aclEpoch: 1,
++      entrypoint: "web",
++    } as PlatformScope;
++    const bot = nextBot("forged");
++    const message = await thrownMessage(() =>
++      fixture.service.createBot(forged, {
++        agentId: bot.agentId,
++        displayName: bot.displayName,
++        defaultConfig: BASE_CONFIG,
++      }),
++    );
++    expect(message).toContain("UNVERIFIED_SCOPE");
++  });
++
++  itDb(
++    "create 在缺公司/团队上下文时明确拒绝（TENANT/WORKSPACE_REQUIRED）",
++    async () => {
++      const scope = await scopeAs("a1-member", companyA, teamA1);
++      const bot = nextBot("noctx");
++      const withoutTenant = await thrownMessage(() =>
++        fixture.service.createBot(
++          { ...scope, tenantId: "   " } as PlatformScope,
++          {
++            agentId: bot.agentId,
++            displayName: bot.displayName,
++            defaultConfig: BASE_CONFIG,
++          },
++        ),
++      );
++      expect(withoutTenant).toContain("TENANT_REQUIRED");
++      const withoutWorkspace = await thrownMessage(() =>
++        fixture.service.createBot(
++          { ...scope, workspaceId: "" } as PlatformScope,
++          {
++            agentId: bot.agentId,
++            displayName: bot.displayName,
++            defaultConfig: BASE_CONFIG,
++          },
++        ),
++      );
++      expect(withoutWorkspace).toContain("WORKSPACE_REQUIRED");
++    },
++  );
++
++  itDb(
++    "create 输入校验：空 id/名称、非对象配置、超大文档一律响亮拒绝",
++    async () => {
++      const scope = await scopeAs("a1-member", companyA, teamA1);
++      const bot = nextBot("invalid");
++      expect(
++        await thrownMessage(() =>
++          fixture.service.createBot(scope, {
++            agentId: "   ",
++            displayName: bot.displayName,
++            defaultConfig: BASE_CONFIG,
++          }),
++        ),
++      ).toContain("BOT_INPUT_INVALID");
++      expect(
++        await thrownMessage(() =>
++          fixture.service.createBot(scope, {
++            agentId: bot.agentId,
++            displayName: "",
++            defaultConfig: BASE_CONFIG,
++          }),
++        ),
++      ).toContain("BOT_INPUT_INVALID");
++      expect(
++        await thrownMessage(() =>
++          fixture.service.createBot(scope, {
++            agentId: bot.agentId,
++            displayName: bot.displayName,
++            defaultConfig: [1, 2, 3] as unknown as Record<string, unknown>,
++          }),
++        ),
++      ).toContain("BOT_DOCUMENT_INVALID");
++      expect(
++        await thrownMessage(() =>
++          fixture.service.createBot(scope, {
++            agentId: bot.agentId,
++            displayName: bot.displayName,
++            defaultConfig: { payload: "x".repeat(70_000) },
++          }),
++        ),
++      ).toContain("BOT_DOCUMENT_TOO_LARGE");
++    },
++  );
++
++  itDb(
++    "客户端不能声明归属：配置顶层携带归属键被拒（ATTRIBUTION_NOT_CLIENT_DECLARABLE）",
++    async () => {
++      const scope = await scopeAs("a1-member", companyA, teamA1);
++      const bot = nextBot("attrib");
++      for (const key of [
++        "tenantId",
++        "workspaceId",
++        "ownerPrincipalId",
++        "tenant_id",
++        "workspace_id",
++        "owner_principal_id",
++      ]) {
++        const message = await thrownMessage(() =>
++          fixture.service.createBot(scope, {
++            agentId: bot.agentId,
++            displayName: bot.displayName,
++            defaultConfig: { [key]: companyB },
++          }),
++        );
++        expect(message).toContain("ATTRIBUTION_NOT_CLIENT_DECLARABLE");
++      }
++      // 归属只能来自受信 scope：即使指向「正确」的公司也拒绝——形状不存在。
++      const message = await thrownMessage(() =>
++        fixture.service.createBot(scope, {
++          agentId: bot.agentId,
++          displayName: bot.displayName,
++          defaultConfig: { tenantId: companyA },
++        }),
++      );
++      expect(message).toContain("ATTRIBUTION_NOT_CLIENT_DECLARABLE");
++    },
++  );
++
++  itDb(
++    "同 id 重复创建被拒（BOT_ID_UNAVAILABLE），且跨公司已占用与同公司已占用不可区分",
++    async () => {
++      const scope = await scopeAs("a1-member", companyA, teamA1);
++      const clash = nextBot("clash");
++      const first = await fixture.service.createBot(scope, {
++        agentId: clash.agentId,
++        displayName: clash.displayName,
++        defaultConfig: BASE_CONFIG,
++      });
++      expect(first.outcome).toBe("allow");
++      // 同公司重复。
++      const sameCompany = await thrownMessage(() =>
++        fixture.service.createBot(scope, {
++          agentId: clash.agentId,
++          displayName: clash.displayName,
++          defaultConfig: BASE_CONFIG,
++        }),
++      );
++      expect(sameCompany).toContain("BOT_ID_UNAVAILABLE");
++      // 另一家公司拿同一 id：同样拒绝、同一代码——不泄露占用发生在哪家。
++      const b1Scope = await scopeAs("b1-member", companyB, teamB1);
++      const crossCompany = await thrownMessage(() =>
++        fixture.service.createBot(b1Scope, {
++          agentId: clash.agentId,
++          displayName: clash.displayName,
++          defaultConfig: BASE_CONFIG,
++        }),
++      );
++      expect(crossCompany).toContain("BOT_ID_UNAVAILABLE");
++      expect(crossCompany).not.toContain(companyA);
++    },
++  );
++});
++
++// ---------------------------------------------------------------------------
++// 验收 2：跨公司或非团队成员访问返回不可见语义（canonical not-found）
++// ---------------------------------------------------------------------------
++
++describeDb("MT016 验收 2：跨公司/跨团队访问 = canonical not-found", () => {
++  let hidden = { agentId: "", displayName: "" };
++
++  beforeAll(async () => {
++    if (!ENV.ok) return;
++    const scope = await scopeAs("a1-member", companyA, teamA1);
++    hidden = nextBot("hidden");
++    const outcome = await fixture.service.createBot(scope, {
++      agentId: hidden.agentId,
++      displayName: hidden.displayName,
++      defaultConfig: BASE_CONFIG,
++    });
++    if (outcome.outcome !== "allow") throw new Error("fixture bot missing");
++  });
++
++  itDb(
++    "另一家公司成员 getBot → canonical RESOURCE_NOT_FOUND（逐字节同形）",
++    async () => {
++      const b1Scope = await scopeAs("b1-member", companyB, teamB1);
++      const verdict = await fixture.service.getBot(b1Scope, hidden.agentId);
++      expect(isCanonicalNotFound(verdict)).toBe(true);
++    },
++  );
++
++  itDb("不存在的 id 与跨公司 id 的拒绝逐字节相同（不泄露存在性）", async () => {
++    const b1Scope = await scopeAs("b1-member", companyB, teamB1);
++    const missing = await fixture.service.getBot(
++      b1Scope,
++      "mt016-bot-never-created",
++    );
++    const crossCompany = await fixture.service.getBot(b1Scope, hidden.agentId);
++    expect(JSON.stringify(missing)).toBe(JSON.stringify(crossCompany));
++    expect(JSON.stringify(missing)).toBe(canonicalNotFoundJson);
++  });
++
++  itDb(
++    "同公司非团队成员 getBot → 同一 canonical 形状（跨团队不可见）",
++    async () => {
++      const a2Scope = await scopeAs("a2-member", companyA, teamA2);
++      const verdict = await fixture.service.getBot(a2Scope, hidden.agentId);
++      expect(isCanonicalNotFound(verdict)).toBe(true);
++    },
++  );
++
++  itDb(
++    "同公司双团队成员：scope 钉在哪个团队就只见哪个团队的 Bot（a1 Bot 对 a2 scope 不可见）",
++    async () => {
++      // 同一人在同公司两个团队都持有 active 成员关系：可见性门钉的是
++      // 「受信 scope 的团队」，不是「调用者在任意团队的成员资格」——从
++      // team-a2 scope 读 team-a1 的 Bot = canonical not-found；切回 team-a1
++      // scope 则可见。归属固定在当前公司与团队，不随跨团队成员资格扩大。
++      const asA2 = await scopeAs("a1a2-member", companyA, teamA2);
++      const fromA2 = await fixture.service.getBot(asA2, hidden.agentId);
++      expect(isCanonicalNotFound(fromA2)).toBe(true);
++      const asA1 = await scopeAs("a1a2-member", companyA, teamA1);
++      const fromA1 = await fixture.service.getBot(asA1, hidden.agentId);
++      expect(fromA1.outcome).toBe("allow");
++      // 列表同样钉在 scope 团队：a2 scope 的列表不含 a1 团队的 Bot。
++      const listFromA2 = await fixture.service.listBots(asA2, { limit: 200 });
++      expect(
++        listFromA2.items.some((item) => item.agentId === hidden.agentId),
++      ).toBe(false);
++    },
++  );
++
++  itDb(
++    "跨公司成员的更新/删除/偏好写入全部是 canonical not-found（不是 forbidden）",
++    async () => {
++      const b1Scope = await scopeAs("b1-member", companyB, teamB1);
++      const updated = await fixture.service.updateBot(b1Scope, hidden.agentId, {
++        displayName: "hijacked",
++        defaultConfig: { model: "stolen" },
++      });
++      expect(isCanonicalNotFound(updated)).toBe(true);
++      const deleted = await fixture.service.deleteBot(b1Scope, hidden.agentId);
++      expect(isCanonicalNotFound(deleted)).toBe(true);
++      const preference = await fixture.service.setBotPreference(
++        b1Scope,
++        hidden.agentId,
++        { pinned: true },
++      );
++      expect(isCanonicalNotFound(preference)).toBe(true);
++      const read = await fixture.service.getBotPreference(
++        b1Scope,
++        hidden.agentId,
++      );
++      expect(isCanonicalNotFound(read)).toBe(true);
++    },
++  );
++
++  itDb(" Bot 删除后（软删）对同团队也回到 canonical not-found", async () => {
++    const scope = await scopeAs("a1-member", companyA, teamA1);
++    const doomed = nextBot("doomed");
++    await fixture.service.createBot(scope, {
++      agentId: doomed.agentId,
++      displayName: doomed.displayName,
++      defaultConfig: BASE_CONFIG,
++    });
++    const deleted = await fixture.service.deleteBot(scope, doomed.agentId);
++    expect(deleted.outcome).toBe("allow");
++    const gone = await fixture.service.getBot(scope, doomed.agentId);
++    expect(isCanonicalNotFound(gone)).toBe(true);
++    const updated = await fixture.service.updateBot(scope, doomed.agentId, {
++      displayName: "zombie",
++      defaultConfig: BASE_CONFIG,
++    });
++    expect(isCanonicalNotFound(updated)).toBe(true);
++  });
++});
++
++// ---------------------------------------------------------------------------
++// 验收 3（issue）：非团队成员不能通过搜索或计数发现团队 Bot
++// ---------------------------------------------------------------------------
++
++describeDb("MT016 验收 3：列表/计数/游标对非成员全零，不泄露存在性", () => {
++  let first = { agentId: "", displayName: "" };
++  let second = { agentId: "", displayName: "" };
++  let third = { agentId: "", displayName: "" };
++
++  beforeAll(async () => {
++    if (!ENV.ok) return;
++    const scope = await scopeAs("a1-member", companyA, teamA1);
++    first = nextBot("page-1");
++    second = nextBot("page-2");
++    third = nextBot("page-3");
++    for (const bot of [first, second, third]) {
++      const outcome = await fixture.service.createBot(scope, {
++        agentId: bot.agentId,
++        displayName: bot.displayName,
++        defaultConfig: BASE_CONFIG,
++      });
++      if (outcome.outcome !== "allow") throw new Error("fixture bot missing");
++    }
++  });
++
++  itDb(
++    "A1 持有 3 个 Bot 时，a2-member 的计数为 0、列表为空、游标为 null",
++    async () => {
++      const a2Scope = await scopeAs("a2-member", companyA, teamA2);
++      expect(await fixture.service.countBots(a2Scope)).toEqual({ total: 0 });
++      const page = await fixture.service.listBots(a2Scope, { limit: 200 });
++      expect(page.items).toEqual([]);
++      expect(page.nextCursor).toBeNull();
++    },
++  );
++
++  itDb("另一家公司成员的计数同样为 0（跨公司不泄露计数）", async () => {
++    const b1Scope = await scopeAs("b1-member", companyB, teamB1);
++    expect(await fixture.service.countBots(b1Scope)).toEqual({ total: 0 });
++  });
++
++  itDb("成员侧分页：keyset 游标只从可见项派生，翻页完整且收敛", async () => {
++    const scope = await scopeAs("a1-member", companyA, teamA1);
++    // 全量可见集 = 分页的收敛目标。前序用例在同一团队留下了其他活跃 Bot：
++    // 列表即作用域，它们必须出现在页流并集里；本 describe 的 3 个 Bot 也
++    // 不可缺席。
++    const full = await fixture.service.listBots(scope, { limit: 200 });
++    expect(full.nextCursor).toBeNull();
++    const allIds = full.items.map((item) => item.agentId);
++    for (const bot of [first, second, third]) {
++      expect(allIds).toContain(bot.agentId);
++    }
++    // keyset 翻页：limit=2 走完整条流，页并集 == 全量集（无重复无遗漏），
++    // 流末尾 nextCursor 为 null。
++    const seen: string[] = [];
++    let cursor: string | null = null;
++    do {
++      const page = await fixture.service.listBots(scope, {
++        limit: 2,
++        cursor: cursor ?? undefined,
++      });
++      seen.push(...page.items.map((item) => item.agentId));
++      expect(seen.length).toBeLessThanOrEqual(allIds.length);
++      cursor = page.nextCursor;
++    } while (cursor);
++    expect(new Set(seen)).toEqual(new Set(allIds));
++    expect(seen.length).toBe(allIds.length);
++  });
++
++  itDb("游标/limit 输入校验响亮拒绝（输入错误不是存在性信号）", async () => {
++    const scope = await scopeAs("a1-member", companyA, teamA1);
++    expect(
++      await thrownMessage(() => fixture.service.listBots(scope, { limit: 0 })),
++    ).toContain("BOTS_LIMIT_INVALID");
++    expect(
++      await thrownMessage(() =>
++        fixture.service.listBots(scope, { cursor: "not-a-cursor" }),
++      ),
++    ).toContain("BOTS_CURSOR_INVALID");
++  });
++});
++
++// ---------------------------------------------------------------------------
++// 验收 4（issue）：同一用户在两个公司分别创建的 Bot 互不干扰（含同名）
++// ---------------------------------------------------------------------------
++
++describeDb("MT016 验收 4：双公司同名 Bot 互不干扰", () => {
++  const sameName = "同名研究助手";
++  let botA = { agentId: "", displayName: "" };
++  let botB = { agentId: "", displayName: "" };
++
++  beforeAll(async () => {
++    if (!ENV.ok) return;
++    const scopeA = await scopeAs("multi-company", companyA, teamA1);
++    const scopeB = await scopeAs("multi-company", companyB, teamB1);
++    botA = nextBot("dual-a");
++    botB = nextBot("dual-b");
++    dualA = botA;
++    dualB = botB;
++    for (const [scope, bot] of [
++      [scopeA, botA],
++      [scopeB, botB],
++    ] as const) {
++      const outcome = await fixture.service.createBot(scope, {
++        agentId: bot.agentId,
++        displayName: sameName,
++        defaultConfig: { model: "gpt-4o", company: scope.tenantId },
++      });
++      if (outcome.outcome !== "allow") throw new Error("fixture bot missing");
++    }
++  });
++
++  itDb("同名 Bot 各自存在、各自归属，列表按公司/团队分开", async () => {
++    const scopeA = await scopeAs("multi-company", companyA, teamA1);
++    const scopeB = await scopeAs("multi-company", companyB, teamB1);
++    const listA = await fixture.service.listBots(scopeA, { limit: 200 });
++    const listB = await fixture.service.listBots(scopeB, { limit: 200 });
++    expect(listA.items.some((item) => item.agentId === botA.agentId)).toBe(
++      true,
++    );
++    expect(listA.items.some((item) => item.agentId === botB.agentId)).toBe(
++      false,
++    );
++    expect(listB.items.some((item) => item.agentId === botB.agentId)).toBe(
++      true,
++    );
++    expect(listB.items.some((item) => item.agentId === botA.agentId)).toBe(
++      false,
++    );
++  });
++
++  itDb("更新 A 的默认配置不影响 B 的同名 Bot（配置逐字节比较）", async () => {
++    const scopeA = await scopeAs("multi-company", companyA, teamA1);
++    const scopeB = await scopeAs("multi-company", companyB, teamB1);
++    const beforeB = await fixture.service.getBot(scopeB, botB.agentId);
++    if (beforeB.outcome !== "allow") throw new Error("unreachable");
++    const updatedA = await fixture.service.updateBot(scopeA, botA.agentId, {
++      displayName: sameName,
++      defaultConfig: { model: "claude-sonnet", company: companyA },
++    });
++    expect(updatedA.outcome).toBe("allow");
++    if (updatedA.outcome !== "allow") throw new Error("unreachable");
++    expect(updatedA.bot.revision).toBe(2);
++    const afterB = await fixture.service.getBot(scopeB, botB.agentId);
++    if (afterB.outcome !== "allow") throw new Error("unreachable");
++    expect(afterB.bot.defaultConfig).toEqual(beforeB.bot.defaultConfig);
++    expect(afterB.bot.revision).toBe(1);
++  });
++
++  itDb(
++    "跨公司读对方的 Bot 仍不可见：B 上下文读 A 的 id = canonical not-found",
++    async () => {
++      const scopeB = await scopeAs("multi-company", companyB, teamB1);
++      const verdict = await fixture.service.getBot(scopeB, botA.agentId);
++      expect(isCanonicalNotFound(verdict)).toBe(true);
++    },
++  );
++
++  itDb("偏好互不串扰：A/B 各自的偏好行独立存在与读取", async () => {
++    const scopeA = await scopeAs("multi-company", companyA, teamA1);
++    const scopeB = await scopeAs("multi-company", companyB, teamB1);
++    const prefA = await fixture.service.setBotPreference(scopeA, botA.agentId, {
++      pinned: true,
++      note: "company A",
++    });
++    expect(prefA.outcome).toBe("allow");
++    const prefB = await fixture.service.setBotPreference(scopeB, botB.agentId, {
++      pinned: false,
++      note: "company B",
++    });
++    expect(prefB.outcome).toBe("allow");
++    const readA = await fixture.service.getBotPreference(scopeA, botA.agentId);
++    if (readA.outcome !== "allow") throw new Error("unreachable");
++    expect(readA.preference).toEqual({ pinned: true, note: "company A" });
++    const readB = await fixture.service.getBotPreference(scopeB, botB.agentId);
++    if (readB.outcome !== "allow") throw new Error("unreachable");
++    expect(readB.preference).toEqual({ pinned: false, note: "company B" });
++    // A 上下文读 B 的 Bot 偏好 = canonical not-found。
++    const cross = await fixture.service.getBotPreference(scopeA, botB.agentId);
++    expect(isCanonicalNotFound(cross)).toBe(true);
++  });
++});
++
++// ---------------------------------------------------------------------------
++// 验收 5（issue）：删除或账号清理使用公司作用域
++// ---------------------------------------------------------------------------
++
++describeDb("MT016 验收 5：删除/账号清理按公司作用域", () => {
++  let keepA = { agentId: "", displayName: "" };
++  let dropA = { agentId: "", displayName: "" };
++  let keepB = { agentId: "", displayName: "" };
++  let strangers = { agentId: "", displayName: "" };
++
++  beforeAll(async () => {
++    if (!ENV.ok) return;
++    const scopeMultiA = await scopeAs("multi-company", companyA, teamA1);
++    const scopeMultiB = await scopeAs("multi-company", companyB, teamB1);
++    const scopeOwner = await scopeAs("a1-member", companyA, teamA1);
++    keepA = nextBot("cleanup-keep-a");
++    dropA = nextBot("cleanup-drop-a");
++    keepB = nextBot("cleanup-keep-b");
++    strangers = nextBot("cleanup-stranger");
++    for (const [scope, bot] of [
++      [scopeMultiA, keepA],
++      [scopeMultiA, dropA],
++      [scopeMultiB, keepB],
++      [scopeOwner, strangers],
++    ] as const) {
++      const outcome = await fixture.service.createBot(scope, {
++        agentId: bot.agentId,
++        displayName: bot.displayName,
++        defaultConfig: BASE_CONFIG,
++      });
++      if (outcome.outcome !== "allow") throw new Error("fixture bot missing");
++    }
++    // 给 dropA 留一条偏好行，硬删后应级联消失。
++    const preference = await fixture.service.setBotPreference(
++      scopeMultiA,
++      dropA.agentId,
++      { pinned: true },
++    );
++    if (preference.outcome !== "allow") throw new Error("fixture pref missing");
++  });
++
++  itDb(
++    "枚举按公司作用域：A 公司只返回 A 的全部归属，B 公司只返回 B 的",
++    async () => {
++      const multi = principalOf("multi-company");
++      // 验收 4 的双公司同名 Bot（dualA/dualB）也是 multi 的真实归属——
++      // 枚举的是事实全集，跨 describe 累积同样在作用域内。
++      const inA = await fixture.service.enumeratePrincipalBots(companyA, multi);
++      expect(inA.map((item) => item.agentId).sort()).toEqual(
++        [keepA.agentId, dropA.agentId, dualA.agentId].sort(),
++      );
++      const inB = await fixture.service.enumeratePrincipalBots(companyB, multi);
++      expect(inB.map((item) => item.agentId).sort()).toEqual(
++        [keepB.agentId, dualB.agentId].sort(),
++      );
++    },
++  );
++
++  itDb(
++    "硬删除按 (公司, owner, id) 三重钉死：清理 A 时不碰同一用户在 B 的 Bot，也不碰同公司其他人的 Bot",
++    async () => {
++      const multi = principalOf("multi-company");
++      // 输入故意混入 B 公司的 id 与同公司其他成员的 id：只有 (companyA, multi,
++      // dropA) 精确命中。
++      const deleted = await fixture.service.hardDeleteOwnedBots(
++        companyA,
++        multi,
++        [dropA.agentId, keepB.agentId, strangers.agentId],
++      );
++      expect(deleted).toEqual([dropA.agentId]);
++
++      const scopeB = await scopeAs("multi-company", companyB, teamB1);
++      const bStillThere = await fixture.service.getBot(scopeB, keepB.agentId);
++      expect(bStillThere.outcome).toBe("allow");
++
++      const ownerScope = await scopeAs("a1-member", companyA, teamA1);
++      const strangerStillThere = await fixture.service.getBot(
++        ownerScope,
++        strangers.agentId,
++      );
++      expect(strangerStillThere.outcome).toBe("allow");
++
++      const gone = await fixture.service.getBot(
++        await scopeAs("multi-company", companyA, teamA1),
++        dropA.agentId,
++      );
++      expect(isCanonicalNotFound(gone)).toBe(true);
++    },
++  );
++
++  itDb("级联：被硬删 Bot 的偏好行同时消失（不留可访问悬挂引用）", async () => {
++    const counts = await fixture.rawCounts();
++    expect(counts.preferences).toBeGreaterThanOrEqual(0);
++    const multi = principalOf("multi-company");
++    const rows = await fixture.readPreferenceRowsAsData(companyA, multi);
++    expect(rows.some((row) => row.agentId === dropA.agentId)).toBe(false);
++  });
++
++  itDb("幂等重放：再次清理同一批 id 删除 0 行", async () => {
++    const multi = principalOf("multi-company");
++    const replay = await fixture.service.hardDeleteOwnedBots(companyA, multi, [
++      dropA.agentId,
++    ]);
++    expect(replay).toEqual([]);
++  });
++
++  itDb("仅凭用户 id（错公司上下文）删不掉他在其他公司的 Bot", async () => {
++    const multi = principalOf("multi-company");
++    const wrongTenant = await fixture.service.hardDeleteOwnedBots(
++      companyB === companyA ? companyA : "mt016-company-that-does-not-exist",
++      multi,
++      [keepB.agentId, keepA.agentId],
++    );
++    expect(wrongTenant).toEqual([]);
++    const scopeB = await scopeAs("multi-company", companyB, teamB1);
++    expect((await fixture.service.getBot(scopeB, keepB.agentId)).outcome).toBe(
++      "allow",
++    );
++    const scopeA = await scopeAs("multi-company", companyA, teamA1);
++    expect((await fixture.service.getBot(scopeA, keepA.agentId)).outcome).toBe(
++      "allow",
++    );
++  });
++});
++
++// ---------------------------------------------------------------------------
++// brief 验收 3：编辑仅限归属范围内的授权成员；越权编辑被拒
++// ---------------------------------------------------------------------------
++
++describeDb("MT016 brief 验收 3：编辑授权（owner-only，无隐式管理继承）", () => {
++  let editable = { agentId: "", displayName: "" };
++  /** 暂停前签发的 scope：跨用例复用，验证撤权/恢复后的实时事实重验。 */
++  let doomedScope: PlatformScope | null = null;
++
++  beforeAll(async () => {
++    if (!ENV.ok) return;
++    const scope = await scopeAs("a1-member", companyA, teamA1);
++    editable = nextBot("editable");
++    const outcome = await fixture.service.createBot(scope, {
++      agentId: editable.agentId,
++      displayName: editable.displayName,
++      defaultConfig: BASE_CONFIG,
++    });
++    if (outcome.outcome !== "allow") throw new Error("fixture bot missing");
++  });
++
++  itDb(
++    "同团队非 owner 成员能读（团队可见性门通过）但不能改/删：BOT_EDIT_FORBIDDEN",
++    async () => {
++      const otherScope = await scopeAs("a1-other", companyA, teamA1);
++      const visible = await fixture.service.getBot(
++        otherScope,
++        editable.agentId,
++      );
++      expect(visible.outcome).toBe("allow");
++      const updated = await fixture.service.updateBot(
++        otherScope,
++        editable.agentId,
++        { displayName: "hijacked", defaultConfig: { model: "hijack" } },
++      );
++      expect(updated).toEqual({
++        outcome: "deny",
++        code: "BOT_EDIT_FORBIDDEN",
++      });
++      const deleted = await fixture.service.deleteBot(
++        otherScope,
++        editable.agentId,
++      );
++      expect(deleted).toEqual({ outcome: "deny", code: "BOT_EDIT_FORBIDDEN" });
++    },
++  );
++
++  itDb(
++    "owner 更新成功：revision 前进，配置/名称生效，aclEpoch 不动",
++    async () => {
++      const scope = await scopeAs("a1-member", companyA, teamA1);
++      const updated = await fixture.service.updateBot(scope, editable.agentId, {
++        displayName: "MT016 renamed bot",
++        defaultConfig: { model: "claude-sonnet", notes: "renamed" },
++      });
++      expect(updated.outcome).toBe("allow");
++      if (updated.outcome !== "allow") throw new Error("unreachable");
++      expect(updated.bot.revision).toBe(2);
++      expect(updated.bot.aclEpoch).toBe(1);
++      expect(updated.bot.displayName).toBe("MT016 renamed bot");
++      expect(updated.bot.defaultConfig).toEqual({
++        model: "claude-sonnet",
++        notes: "renamed",
++      });
++    },
++  );
++
++  itDb("更新路径同样拒绝客户端声明归属", async () => {
++    const scope = await scopeAs("a1-member", companyA, teamA1);
++    const message = await thrownMessage(() =>
++      fixture.service.updateBot(scope, editable.agentId, {
++        displayName: "x",
++        defaultConfig: { workspaceId: teamA2 },
++      }),
++    );
++    expect(message).toContain("ATTRIBUTION_NOT_CLIENT_DECLARABLE");
++  });
++
++  itDb(
++    "公司管理员没有隐式内容访问：非团队成员上下文连受信 scope 都无法铸造（WORKSPACE_FORBIDDEN）",
++    async () => {
++      const message = await thrownMessage(() =>
++        scopeAs("company-admin", companyA, teamA1),
++      );
++      expect(message).toContain("WORKSPACE_FORBIDDEN");
++    },
++  );
++
++  itDb(
++    "成员资格撤销后（公司成员资格暂停）：已签发 scope 在事务内重验被拒——创建响亮拒绝，读取 fail-closed 到 not-found",
++    async () => {
++      // 真实撤权路径：a1-doomed 是真实的 team-a1 成员；先签发 scope，再经
++      // provision.suspendMembership 真实暂停公司成员资格，然后验证服务在
++      // 同一业务事务内的成员重验拒绝后续动作（Spec §5.2：撤权后失效）。
++      const scope = await scopeAs("a1-doomed", companyA, teamA1);
++      doomedScope = scope;
++      await fixture.suspendCompanyMembership(
++        companyA,
++        principalOf("a1-doomed"),
++      );
++      const bot = nextBot("revoked");
++      const message = await thrownMessage(() =>
++        fixture.service.createBot(scope, {
++          agentId: bot.agentId,
++          displayName: bot.displayName,
++          defaultConfig: BASE_CONFIG,
++        }),
++      );
++      expect(message).toContain("WORKSPACE_MEMBERSHIP_REQUIRED");
++      // 读取对被撤权者 fail-closed 到 canonical not-found（不泄露存在性）。
++      const ownerScope = await scopeAs("a1-member", companyA, teamA1);
++      const seeded = nextBot("revoked-visible");
++      const seededOutcome = await fixture.service.createBot(ownerScope, {
++        agentId: seeded.agentId,
++        displayName: seeded.displayName,
++        defaultConfig: BASE_CONFIG,
++      });
++      expect(seededOutcome.outcome).toBe("allow");
++      const read = await fixture.service.getBot(doomedScope, seeded.agentId);
++      expect(isCanonicalNotFound(read)).toBe(true);
++      const listed = await fixture.service.listBots(doomedScope, {
++        limit: 200,
++      });
++      expect(listed.items).toEqual([]);
++    },
++  );
++
++  itDb(
++    "epoch 策略：暂停→恢复（MT007 restore，epoch+1）后旧 scope 仍被拒——拒绝来自实时 epoch 事实",
++    async () => {
++      if (!doomedScope) throw new Error("doomed scope missing");
++      // 真实 MT007 恢复路径：status 回 active 且 epoch 再 +1。暂停前签发
++      // 的 scope 的 memberEpoch 已落后两拍——拒绝必须来自 epoch 不匹配
++      // （实时事实），而不是 status 缓存（status-only 门在此处会误放行）。
++      const restored = await fixture.reinstateCompanyMembership(
++        companyA,
++        principalOf("a1-doomed"),
++      );
++      expect(
++        (restored as { membership: { status: string; epoch: number } })
++          .membership.status,
++      ).toBe("active");
++      const bot = nextBot("reinstated");
++      const message = await thrownMessage(() =>
++        fixture.service.createBot(doomedScope, {
++          agentId: bot.agentId,
++          displayName: bot.displayName,
++          defaultConfig: BASE_CONFIG,
++        }),
++      );
++      expect(message).toContain("WORKSPACE_MEMBERSHIP_REQUIRED");
++      // 恢复后的成员签发新 scope：一切恢复正常（epoch 对齐，新事实生效）。
++      const freshScope = await scopeAs("a1-doomed", companyA, teamA1);
++      const freshOutcome = await fixture.service.createBot(freshScope, {
++        agentId: bot.agentId,
++        displayName: bot.displayName,
++        defaultConfig: BASE_CONFIG,
++      });
++      expect(freshOutcome.outcome).toBe("allow");
++    },
++  );
++});
++
++// ---------------------------------------------------------------------------
++// brief 验收 4：Bot 偏好与默认配置与 Bot 同归属
++// ---------------------------------------------------------------------------
++
++describeDb("MT016 brief 验收 4：偏好与默认配置同归属", () => {
++  let bot = { agentId: "", displayName: "" };
++
++  beforeAll(async () => {
++    if (!ENV.ok) return;
++    const scope = await scopeAs("a1-member", companyA, teamA1);
++    bot = nextBot("prefs");
++    const outcome = await fixture.service.createBot(scope, {
++      agentId: bot.agentId,
++      displayName: bot.displayName,
++      defaultConfig: BASE_CONFIG,
++    });
++    if (outcome.outcome !== "allow") throw new Error("fixture bot missing");
++  });
++
++  itDb("偏好是逐主体事实：成员写自己的偏好，读到的也只是自己的", async () => {
++    const ownerScope = await scopeAs("a1-member", companyA, teamA1);
++    const otherScope = await scopeAs("a1-other", companyA, teamA1);
++    const ownerPref = await fixture.service.setBotPreference(
++      ownerScope,
++      bot.agentId,
++      { pinned: true },
++    );
++    expect(ownerPref.outcome).toBe("allow");
++    const otherPref = await fixture.service.setBotPreference(
++      otherScope,
++      bot.agentId,
++      { pinned: false },
++    );
++    expect(otherPref.outcome).toBe("allow");
++    const ownerRead = await fixture.service.getBotPreference(
++      ownerScope,
++      bot.agentId,
++    );
++    if (ownerRead.outcome !== "allow") throw new Error("unreachable");
++    expect(ownerRead.preference).toEqual({ pinned: true });
++    const otherRead = await fixture.service.getBotPreference(
++      otherScope,
++      bot.agentId,
++    );
++    if (otherRead.outcome !== "allow") throw new Error("unreachable");
++    expect(otherRead.preference).toEqual({ pinned: false });
++  });
++
++  itDb(
++    "未见过的 Bot 读偏好 = canonical not-found（不是 null，不泄露存在性）",
++    async () => {
++      const a2Scope = await scopeAs("a2-member", companyA, teamA2);
++      const verdict = await fixture.service.getBotPreference(
++        a2Scope,
++        bot.agentId,
++      );
++      expect(isCanonicalNotFound(verdict)).toBe(true);
++    },
++  );
++
++  itDb(
++    "可见但尚未设置偏好 = allow + null（与不可见语义严格分开）",
++    async () => {
++      const ownerScope = await scopeAs("a1-member", companyA, teamA1);
++      const fresh = nextBot("prefless");
++      await fixture.service.createBot(ownerScope, {
++        agentId: fresh.agentId,
++        displayName: fresh.displayName,
++        defaultConfig: BASE_CONFIG,
++      });
++      const read = await fixture.service.getBotPreference(
++        ownerScope,
++        fresh.agentId,
++      );
++      expect(read).toEqual({ outcome: "allow", preference: null });
++    },
++  );
++
++  itDb("偏好文档校验：非对象/归属键/超大文档一律响亮拒绝", async () => {
++    const scope = await scopeAs("a1-member", companyA, teamA1);
++    expect(
++      await thrownMessage(() =>
++        fixture.service.setBotPreference(scope, bot.agentId, [
++          1,
++        ] as unknown as Record<string, unknown>),
++      ),
++    ).toContain("BOT_DOCUMENT_INVALID");
++    expect(
++      await thrownMessage(() =>
++        fixture.service.setBotPreference(scope, bot.agentId, {
++          ownerPrincipalId: principalOf("a1-member"),
++        }),
++      ),
++    ).toContain("ATTRIBUTION_NOT_CLIENT_DECLARABLE");
++    expect(
++      await thrownMessage(() =>
++        fixture.service.setBotPreference(scope, bot.agentId, {
++          blob: "x".repeat(70_000),
++        }),
++      ),
++    ).toContain("BOT_DOCUMENT_TOO_LARGE");
++  });
++
++  itDb("清除偏好幂等：allow + 行消失；重复清除仍 allow", async () => {
++    const scope = await scopeAs("a1-member", companyA, teamA1);
++    const cleared = await fixture.service.clearBotPreference(
++      scope,
++      bot.agentId,
++    );
++    expect(cleared.outcome).toBe("allow");
++    const read = await fixture.service.getBotPreference(scope, bot.agentId);
++    expect(read).toEqual({ outcome: "allow", preference: null });
++    const again = await fixture.service.clearBotPreference(scope, bot.agentId);
++    expect(again.outcome).toBe("allow");
++  });
++
++  itDb("RLS 结构钉死：偏好行只在本公司 + 本主体上下文可见", async () => {
++    const multi = principalOf("multi-company");
++    const other = principalOf("a1-other");
++    // multi 在 A 公司（自己是 a1 成员）只看到自己的偏好行，看不到 a1-other 的。
++    const asMulti = await fixture.readPreferenceRowsAsData(companyA, multi);
++    expect(asMulti.some((row) => row.principalId === other)).toBe(false);
++    // a2-member 的上下文里看不到 a1 团队 Bot 的任何偏好行存在性之外的行——
++    // RLS 限制在租户 + 主体，行对其他主体不可见。
++    const asA2 = await fixture.readPreferenceRowsAsData(
++      companyA,
++      principalOf("a2-member"),
++    );
++    expect(asA2.some((row) => row.agentId === bot.agentId)).toBe(false);
++  });
++});
++
++// ---------------------------------------------------------------------------
++// 存储与迁移契约（RLS / 受限角色 / 工具确定性）
++// ---------------------------------------------------------------------------
++
++describeDb("MT016 存储与迁移契约", () => {
++  itDb(
++    "未验证通道在服务装配时拒绝（UNVERIFIED_DATABASE_CAPABILITY）",
++    async () => {
++      const rawSetup = createDatabase(
++        "postgres://postgres@127.0.0.1:55491/openbot_enterprise_mt016",
++        { max: 1 },
++      );
++      try {
++        const message = thrownMessageSync(() =>
++          createBotOwnershipService({
++            data: rawSetup as never,
++            operator: rawSetup as never,
++          }),
++        );
++        expect(message).toContain("UNVERIFIED_DATABASE_CAPABILITY");
++      } finally {
++        await rawSetup.$client.close();
++      }
++    },
++  );
++
++  itDb("RLS fail-closed：无租户上下文时 data 角色读归属行为 0 行", async () => {
++    // 直接用已验证 data 通道开事务但不设置 app.tenant_id——FORCE RLS 应把
++    // 全部行藏起来（0 行），即使表里已有本前缀的归属行。
++    const rows = await fixture.readOwnershipRowsAsData("");
++    expect(rows).toEqual([]);
++  });
++
++  itDb("本套件每一次受限查询都以 ob_ent_* 能力角色执行", async () => {
++    const calls = fixture.restrictedCalls();
++    expect(calls.length).toBeGreaterThan(0);
++    for (const call of calls) {
++      expect(call.currentUser.startsWith("ob_ent_")).toBe(true);
++    }
++  });
++
++  itDb("MT016 迁移计划确定性：2 步、固定名、digest 稳定", async () => {
++    const first = buildPlan("MT016");
++    const second = buildPlan("MT016");
++    expect(first.steps.map((step) => step.name)).toEqual([
++      "0001_mt016_bot_ownership_tables.sql",
++      "0002_mt016_bot_ownership_rls.sql",
++    ]);
++    expect(first).toEqual(second);
++    expect(first.planDigest).toBe(second.planDigest);
++    for (const step of first.steps) {
++      expect(step.statements.length).toBeGreaterThan(0);
++    }
++  });
++});
+diff --git a/tests/multitenancy/support/bots-ownership.ts b/tests/multitenancy/support/bots-ownership.ts
+new file mode 100644
+index 00000000..c5b91890
+--- /dev/null
++++ b/tests/multitenancy/support/bots-ownership.ts
+@@ -0,0 +1,576 @@
++/**
++ * Bots-ownership fixture (MT016 / Issue #59).
++ *
++ * Provisions two real companies (A with teams A1/A2, B with team B1) through
++ * the real offline provisioning factory on the dedicated enterprise test
++ * database, materializes real `enterprise_workspace_memberships` rows for each
++ * planned (company, team, principal), and hands the real
++ * `createBotOwnershipService` the verified data + operator channels. Trusted
++ * scopes come from the REAL `createScopeResolver` over the directory channel —
++ * the same eligibility gate production requests pass — so an identity without
++ * a team membership (the company admin) cannot even mint a scope for that
++ * team. Nothing here mocks the authorization path: scope issuance, membership
++ * checks, RLS and the restricted `ob_ent_*` roles all execute for real, and
++ * the fixture records `current_user` for every restricted query so the suite
++ * can prove restricted roles were in play.
++ *
++ * The two MT016 tables (`enterprise_bot_ownership`,
++ * `enterprise_bot_preferences`) are touched through raw SQL under the
++ * restricted roles (the MT009 precedent: the schema file belongs to the
++ * producing ticket, the fixture reads facts through the database, not through
++ * a barrel import).
++ */
++
++import { randomUUID } from "node:crypto";
++import { like, sql } from "drizzle-orm";
++import { createDatabase, type Database } from "../../../src/db/client";
++import {
++  enterpriseMemberships,
++  enterprisePrincipals,
++  enterpriseTenants,
++  enterpriseWorkspaces,
++} from "../../../src/db/schema";
++import { users } from "../../../src/db/schema/core";
++import {
++  type BotOwnershipService,
++  createBotOwnershipService,
++} from "../../../src/enterprise/tenancy/bots-ownership";
++import {
++  type DataDatabase,
++  type DirectoryDatabase,
++  type OperatorDatabase,
++  verifyDataDatabase,
++  verifyDirectoryDatabase,
++  verifyOperatorDatabase,
++} from "../../../src/enterprise/tenancy/connections";
++import {
++  provisionDeployment,
++  suspendMembership,
++} from "../../../src/enterprise/tenancy/provision";
++import { createScopeResolver } from "../../../src/enterprise/tenancy/store";
++import {
++  createCompanyAdminAuthorizer,
++  createWorkspaceAdminService,
++} from "../../../src/enterprise/tenancy/workspace-admin";
++import {
++  enterpriseRuntimeDatabaseUrlFrom,
++  enterpriseTestDatabaseUrlFrom,
++} from "../../support/enterprise-database";
++
++/** The named human identities the MT016 suite shares. */
++export type BotsIdentity =
++  | "a1-member"
++  | "a1-other"
++  | "a1-doomed"
++  | "a2-member"
++  | "a1a2-member"
++  | "b1-member"
++  | "multi-company"
++  | "company-admin";
++
++export type RestrictedCall = Readonly<{
++  role: "data" | "operator" | "directory";
++  currentUser: string;
++}>;
++
++export interface BotsOwnershipFixture {
++  readonly idPrefix: string;
++  readonly ids: Readonly<Record<string, string>>;
++  readonly service: BotOwnershipService;
++  /** Real scope issuance through the real resolver (the production gate). */
++  scopeAs(
++    identity: BotsIdentity,
++    tenantId: string,
++    workspaceId: string,
++  ): Promise<import("../../../src/enterprise/contracts").PlatformScope>;
++  /** RLS probe: ownership rows visible to the data role under one tenant. */
++  readOwnershipRowsAsData(
++    tenantId: string,
++  ): Promise<readonly Readonly<{ agentId: string; workspaceId: string }>[]>;
++  /**
++   * RLS probe: preference rows visible to the data role under one tenant AND
++   * one principal (the restrictive self-read policy is part of the probe).
++   */
++  readPreferenceRowsAsData(
++    tenantId: string,
++    principalId: string,
++  ): Promise<readonly Readonly<{ agentId: string; principalId: string }[]>>;
++  /** Scaffold probe via the setup channel (superuser, no RLS): full table counts. */
++  rawCounts(): Promise<{
++    ownership: number;
++    preferences: number;
++  }>;
++  restrictedCalls(): readonly RestrictedCall[];
++  /**
++   * Real MT006 revocation: suspend a company membership through the real
++   * `provision.suspendMembership` on the operator channel (support/fixture.ts
++   * precedent). The suspension writes a real security event and increments
++   * the membership epoch, so already-issued scopes carry a stale epoch and
++   * fail the service's in-transaction revalidation.
++   */
++  suspendCompanyMembership(
++    tenantId: string,
++    principalId: string,
++  ): Promise<unknown>;
++  /**
++   * Real MT007 restore: reinstate a suspended company membership through the
++   * real company-admin surface (support/workspace-scope.ts precedent — the
++   * authorizer mints the trusted context from a real tenant_admin). Restore
++   * flips status back to active AND increments the epoch, so a pre-suspension
++   * scope stays rejected by epoch policy even after restoration.
++   */
++  reinstateCompanyMembership(
++    tenantId: string,
++    principalId: string,
++  ): Promise<unknown>;
++  dispose(): Promise<void>;
++}
++
++const PLANNED_COMPANIES = [
++  {
++    companyKey: "company-a",
++    companyName: "MT016 Company A",
++    teams: [
++      { teamKey: "team-a1", teamName: "Company A / Team A1" },
++      { teamKey: "team-a2", teamName: "Company A / Team A2" },
++    ],
++  },
++  {
++    companyKey: "company-b",
++    companyName: "MT016 Company B",
++    teams: [{ teamKey: "team-b1", teamName: "Company B / Team B1" }],
++  },
++] as const;
++
++/**
++ * Planned human identities. `teams` lists are materialized as real workspace
++ * membership rows; an empty list (company-admin) means a real company
++ * membership WITHOUT any team — the Spec §4.1 rule that management identity
++ * never implies content access.
++ */
++const HUMAN_PLAN: readonly {
++  identity: BotsIdentity;
++  memberships: readonly {
++    companyKey: "company-a" | "company-b";
++    role: "member" | "tenant_admin";
++    teams: readonly string[];
++  }[];
++}[] = [
++  {
++    identity: "a1-member",
++    memberships: [
++      { companyKey: "company-a", role: "member", teams: ["team-a1"] },
++    ],
++  },
++  {
++    identity: "a1-other",
++    memberships: [
++      { companyKey: "company-a", role: "member", teams: ["team-a1"] },
++    ],
++  },
++  {
++    // Throwaway identity used only by the revocation test: a real team-a1
++    // member whose company membership gets suspended mid-suite.
++    identity: "a1-doomed",
++    memberships: [
++      { companyKey: "company-a", role: "member", teams: ["team-a1"] },
++    ],
++  },
++  {
++    identity: "a2-member",
++    memberships: [
++      { companyKey: "company-a", role: "member", teams: ["team-a2"] },
++    ],
++  },
++  {
++    // Same person in TWO teams of the SAME company: the scope's team pins
++    // visibility — a team-a1 bot is invisible from a team-a2 scope even for
++    // an a1 member (acceptance 2; the mutation harness caught this gap).
++    identity: "a1a2-member",
++    memberships: [
++      {
++        companyKey: "company-a",
++        role: "member",
++        teams: ["team-a1", "team-a2"],
++      },
++    ],
++  },
++  {
++    identity: "b1-member",
++    memberships: [
++      { companyKey: "company-b", role: "member", teams: ["team-b1"] },
++    ],
++  },
++  {
++    identity: "multi-company",
++    memberships: [
++      { companyKey: "company-a", role: "member", teams: ["team-a1"] },
++      { companyKey: "company-b", role: "member", teams: ["team-b1"] },
++    ],
++  },
++  {
++    identity: "company-admin",
++    memberships: [{ companyKey: "company-a", role: "tenant_admin", teams: [] }],
++  },
++];
++
++export async function createBotsOwnershipFixture(): Promise<BotsOwnershipFixture> {
++  const environment = process.env;
++  const setupUrl = enterpriseTestDatabaseUrlFrom(environment);
++  const directoryUrl = enterpriseRuntimeDatabaseUrlFrom(
++    "directory",
++    environment,
++  );
++  const operatorUrl = enterpriseRuntimeDatabaseUrlFrom("operator", environment);
++  const dataUrl = enterpriseRuntimeDatabaseUrlFrom("data", environment);
++
++  const prefix = `mt016-${randomUUID().slice(0, 8)}`;
++  const id = (suffix: string) => `${prefix}-${suffix}`;
++  const ids: Record<string, string> = {};
++  for (const company of PLANNED_COMPANIES) {
++    ids[company.companyKey] = id(company.companyKey);
++    for (const team of company.teams) ids[team.teamKey] = id(team.teamKey);
++    ids[`provision-${company.companyKey}`] = id(
++      `provision-${company.companyKey}`,
++    );
++  }
++  for (const planned of HUMAN_PLAN) {
++    ids[`user-${planned.identity}`] = id(`user-${planned.identity}`);
++    ids[`principal-${planned.identity}`] = id(`principal-${planned.identity}`);
++  }
++  const principalOf = (identity: BotsIdentity) => ids[`principal-${identity}`];
++  const userOf = (identity: BotsIdentity) => ids[`user-${identity}`];
++
++  const setupDatabase = createDatabase(setupUrl, { max: 2 });
++  const closeables: Array<{ close(): void | Promise<void> }> = [
++    setupDatabase.$client,
++  ];
++  const restricted: RestrictedCall[] = [];
++  const recordRole = async (
++    connection: Database,
++    role: RestrictedCall["role"],
++  ) => {
++    const result = (await connection.execute(
++      sql`select current_user as current_user`,
++    )) as unknown;
++    const rows = Array.isArray(result)
++      ? result
++      : ((result as { rows?: unknown[] })?.rows ?? []);
++    const first = (rows as Readonly<{ current_user?: unknown }>[])[0];
++    restricted.push({
++      role,
++      currentUser:
++        typeof first?.current_user === "string" ? first.current_user : "",
++    });
++  };
++
++  const dispose = async (created: boolean) => {
++    const failures: unknown[] = [];
++    if (created) {
++      try {
++        // Children first (preferences → ownership), then the tenancy scaffold.
++        await setupDatabase.execute(
++          sql`delete from enterprise_bot_preferences where tenant_id like ${`${prefix}%`}`,
++        );
++        await setupDatabase.execute(
++          sql`delete from enterprise_bot_ownership where tenant_id like ${`${prefix}%`}`,
++        );
++        await setupDatabase
++          .delete(enterpriseWorkspaces)
++          .where(like(enterpriseWorkspaces.tenantId, `${prefix}%`));
++        await setupDatabase
++          .delete(enterpriseMemberships)
++          .where(like(enterpriseMemberships.tenantId, `${prefix}%`));
++        await setupDatabase
++          .delete(enterpriseTenants)
++          .where(like(enterpriseTenants.id, `${prefix}%`));
++        await setupDatabase
++          .delete(enterprisePrincipals)
++          .where(like(enterprisePrincipals.id, `${prefix}%`));
++        await setupDatabase.delete(users).where(like(users.id, `${prefix}%`));
++      } catch (error) {
++        failures.push(error);
++      }
++    }
++    for (const closeable of closeables.reverse()) {
++      try {
++        await closeable.close();
++      } catch (error) {
++        failures.push(error);
++      }
++    }
++    if (failures.length) {
++      throw new AggregateError(
++        failures,
++        "Bots ownership fixture disposal failed.",
++      );
++    }
++  };
++
++  try {
++    // Global identity scaffolding (same order as support/fixture.ts): users,
++    // then principals bound to them — the provisioning factory refuses
++    // unbound principals.
++    await setupDatabase.insert(users).values(
++      HUMAN_PLAN.map((planned) => ({
++        id: userOf(planned.identity),
++        email: `${userOf(planned.identity)}@example.invalid`,
++        name: `MT016 ${planned.identity}`,
++      })),
++    );
++    await setupDatabase.insert(enterprisePrincipals).values(
++      HUMAN_PLAN.map((planned) => ({
++        id: principalOf(planned.identity),
++        userId: userOf(planned.identity),
++      })),
++    );
++
++    const directory = (await verifyDirectoryDatabase(
++      createDatabase(directoryUrl, { max: 1 }),
++    )) as DirectoryDatabase;
++    const operator = (await verifyOperatorDatabase(
++      createDatabase(operatorUrl, { max: 1 }),
++    )) as OperatorDatabase;
++    const data = (await verifyDataDatabase(
++      createDatabase(dataUrl, { max: 1 }),
++    )) as DataDatabase;
++    closeables.push(directory.$client, operator.$client, data.$client);
++
++    // Real provisioning path: one provisionDeployment call per (company,
++    // team). The company admin joins only the company's FIRST provisioning
++    // call as tenant_admin (a real company membership and a real operator
++    // identity for provisioning) and materializes no workspace membership.
++    const operatorPrincipalFor = (companyKey: string) =>
++      companyKey === "company-a"
++        ? principalOf("company-admin")
++        : principalOf("b1-member");
++    for (const company of PLANNED_COMPANIES) {
++      for (const team of company.teams) {
++        const isFirstTeamOfCompany =
++          company.teams.findIndex(
++            (candidate) => candidate.teamKey === team.teamKey,
++          ) === 0;
++        const members = HUMAN_PLAN.flatMap((planned) =>
++          planned.memberships
++            .filter(
++              (membership) =>
++                membership.companyKey === company.companyKey &&
++                (membership.teams.includes(team.teamKey) ||
++                  (planned.identity === "company-admin" &&
++                    isFirstTeamOfCompany)),
++            )
++            .map((membership) => ({
++              principalId: principalOf(planned.identity),
++              userId: userOf(planned.identity),
++              role: membership.role,
++            })),
++        );
++        await provisionDeployment(operator, {
++          operationId: id(`provision-${company.companyKey}-${team.teamKey}`),
++          operator: operatorPrincipalFor(company.companyKey),
++          tenant: { id: ids[company.companyKey], name: company.companyName },
++          workspace: { id: ids[team.teamKey], name: team.teamName },
++          members,
++        });
++      }
++    }
++
++    // MT005 precedent: materialize each planned team membership as a real
++    // workspace-membership row through the restricted operator role
++    // (RLS-checked). Company-admin is deliberately absent.
++    const materializeTeamMembership = async (
++      tenantId: string,
++      workspaceId: string,
++      principalId: string,
++    ) => {
++      await recordRole(operator, "operator");
++      await operator.transaction(async (tx) => {
++        await tx.execute(sql`set transaction isolation level read committed`);
++        await tx.execute(sql`set local lock_timeout = '2s'`);
++        await tx.execute(sql`set local statement_timeout = '10s'`);
++        await tx.execute(
++          sql`select set_config('app.tenant_id', ${tenantId}, true), set_config('app.operator_principal_id', ${principalOf("company-admin")}, true)`,
++        );
++        await tx.execute(
++          sql`insert into enterprise_workspace_memberships (tenant_id, workspace_id, principal_id) values (${tenantId}, ${workspaceId}, ${principalId})`,
++        );
++      });
++    };
++    for (const planned of HUMAN_PLAN) {
++      for (const membership of planned.memberships) {
++        for (const teamKey of membership.teams) {
++          await materializeTeamMembership(
++            ids[membership.companyKey],
++            ids[teamKey],
++            principalOf(planned.identity),
++          );
++        }
++      }
++    }
++
++    // The real request path: session seam → trusted scope. authenticate maps
++    // the fixture identity to its real user id; selectors come from the same
++    // headers production reads.
++    const resolver = createScopeResolver(directory, {
++      authenticate: async (request) => {
++        const identity = request.headers.get("x-mt016-identity");
++        const planned = HUMAN_PLAN.find(
++          (candidate) => candidate.identity === identity,
++        );
++        if (!planned) return null;
++        return { actorId: userOf(planned.identity), entrypoint: "web" };
++      },
++      selectTenant: (request) => request.headers.get("x-openbot-tenant"),
++      selectWorkspace: (request) => request.headers.get("x-openbot-workspace"),
++    });
++
++    let disposed = false;
++    const fixture: BotsOwnershipFixture = {
++      idPrefix: prefix,
++      ids: Object.freeze({ ...ids }),
++      service: createBotOwnershipService({ data, operator }),
++
++      async scopeAs(identity, tenantId, workspaceId) {
++        if (disposed) throw new Error("FIXTURE_DISPOSED");
++        const request = new Request("https://mt016-fixture.invalid/scope", {
++          headers: {
++            "x-mt016-identity": identity,
++            "x-openbot-tenant": tenantId,
++            "x-openbot-workspace": workspaceId,
++          },
++        });
++        return resolver.resolve(request);
++      },
++
++      async readOwnershipRowsAsData(tenantId) {
++        await recordRole(data, "data");
++        return data.transaction(async (tx) => {
++          await tx.execute(sql`set transaction isolation level read committed`);
++          await tx.execute(
++            sql`select set_config('app.tenant_id', ${tenantId}, true)`,
++          );
++          const rows = (await tx.execute(
++            sql`select agent_id, workspace_id from enterprise_bot_ownership order by agent_id asc`,
++          )) as unknown;
++          const list = Array.isArray(rows)
++            ? rows
++            : ((rows as { rows?: unknown[] })?.rows ?? []);
++          return (
++            list as Readonly<{ agent_id: string; workspace_id: string }>[]
++          ).map((row) =>
++            Object.freeze({
++              agentId: row.agent_id,
++              workspaceId: row.workspace_id,
++            }),
++          );
++        });
++      },
++
++      async readPreferenceRowsAsData(tenantId, principalId) {
++        await recordRole(data, "data");
++        return data.transaction(async (tx) => {
++          await tx.execute(sql`set transaction isolation level read committed`);
++          await tx.execute(
++            sql`select set_config('app.tenant_id', ${tenantId}, true), set_config('app.principal_id', ${principalId}, true)`,
++          );
++          const rows = (await tx.execute(
++            sql`select agent_id, principal_id from enterprise_bot_preferences order by agent_id asc`,
++          )) as unknown;
++          const list = Array.isArray(rows)
++            ? rows
++            : ((rows as { rows?: unknown[] })?.rows ?? []);
++          return (
++            list as Readonly<{ agent_id: string; principal_id: string }>[]
++          ).map((row) =>
++            Object.freeze({
++              agentId: row.agent_id,
++              principalId: row.principal_id,
++            }),
++          );
++        });
++      },
++
++      async rawCounts() {
++        const ownership = (await setupDatabase.execute(
++          sql`select count(*)::int as count from enterprise_bot_ownership where tenant_id like ${`${prefix}%`}`,
++        )) as unknown;
++        const preferences = (await setupDatabase.execute(
++          sql`select count(*)::int as count from enterprise_bot_preferences where tenant_id like ${`${prefix}%`}`,
++        )) as unknown;
++        const firstCount = (value: unknown) => {
++          const list = Array.isArray(value)
++            ? value
++            : ((value as { rows?: unknown[] })?.rows ?? []);
++          return Number(
++            (list as Readonly<{ count?: unknown }>[])[0]?.count ?? 0,
++          );
++        };
++        return {
++          ownership: firstCount(ownership),
++          preferences: firstCount(preferences),
++        };
++      },
++
++      restrictedCalls() {
++        return [...restricted];
++      },
++
++      async suspendCompanyMembership(tenantId, principalId) {
++        await recordRole(operator, "operator");
++        // Real MT006 revocation path (support/fixture.ts precedent): the
++        // security event + epoch bump happen for real on the restricted
++        // operator role — a test double can never mint this. The suspended
++        // principal's already-issued scopes fail in-transaction revalidation
++        // (status flips to suspended AND the epoch no longer matches).
++        return suspendMembership(operator, {
++          operationId: id(`suspend-${principalId}`),
++          operator: principalId,
++          tenantId,
++          principalId,
++        });
++      },
++
++      async reinstateCompanyMembership(tenantId, principalId) {
++        await recordRole(operator, "operator");
++        // Real MT007 restore path (support/workspace-scope.ts precedent): the
++        // company-admin is a real tenant_admin; the authorizer re-verifies
++        // that fact against the directory before minting the trusted context
++        // (a test double can never mint one). Sessions are bound server-side
++        // via WeakMap; the header only selects the company.
++        const sessions = new WeakMap<Request, { userId?: string }>();
++        const authorizer = createCompanyAdminAuthorizer(directory, {
++          authenticate: async (request) => {
++            const session = sessions.get(request);
++            if (!session?.userId) return null;
++            return { actorId: session.userId, entrypoint: "web" };
++          },
++          selectTenant: (request) => request.headers.get("x-openbot-tenant"),
++        });
++        const request = new Request("https://mt016.invalid/admin-context", {
++          headers: { "x-openbot-tenant": tenantId },
++        });
++        sessions.set(request, { userId: userOf("company-admin") });
++        const context = await authorizer.resolveAdminContext(request);
++        const admin = createWorkspaceAdminService(operator);
++        return admin.restoreCompanyMember(context, { principalId });
++      },
++
++      async dispose() {
++        disposed = true;
++        await dispose(true);
++      },
++    };
++    return fixture;
++  } catch (error) {
++    const cleanupFailures: unknown[] = [error];
++    try {
++      await dispose(false);
++    } catch (disposeError) {
++      cleanupFailures.push(disposeError);
++    }
++    throw new AggregateError(
++      cleanupFailures,
++      "Bots ownership fixture creation failed.",
++    );
++  }
++}

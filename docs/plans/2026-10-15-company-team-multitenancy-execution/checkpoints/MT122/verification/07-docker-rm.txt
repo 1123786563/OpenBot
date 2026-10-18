@@ -1,0 +1,5 @@
+# MT122 container teardown (2026-10-18 02:32:31)
+$ docker rm -f mt122-impl-pg
+mt122-impl-pg
+$ docker ps -a --filter name=mt122-impl-pg --format '{{.Names}}'
+(empty = removed)

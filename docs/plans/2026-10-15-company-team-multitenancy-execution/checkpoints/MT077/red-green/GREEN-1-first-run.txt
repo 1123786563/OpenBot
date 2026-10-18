@@ -1,0 +1,284 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/routing-policy.test.ts:
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 1 — 策略只对归属范围生效，跨范围不可见 > company A resolves its own network, capability and routing policy end to end [4.86ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 1 — 策略只对归属范围生效，跨范围不可见 > company B resolves its own — different end to end from company A [2.25ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 1 — 策略只对归属范围生效，跨范围不可见 > switching scopes back and forth never cross-contaminates (A1 → B1 → A1 identical) [5.91ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 1 — 策略只对归属范围生效，跨范围不可见 > a resolution never carries another company's routes or teams' overrides (negative containment) [5.40ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 1 — 策略只对归属范围生效，跨范围不可见 > the policy layer is tenant-scoped at the database: RLS hides other companies' rows under the restricted data role [3.83ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 1 — 策略只对归属范围生效，跨范围不可见 > a company with no policy row resolves to GOVERNANCE_POLICY_NOT_FOUND — indistinguishable from a cross-company read, no fallback [2.14ms]
+36 |   async queryWithCache(queryString, params, query) {
+37 |     if (this.cache === void 0 || is(this.cache, NoopCache) || this.queryMetadata === void 0) {
+38 |       try {
+39 |         return await query();
+40 |       } catch (e) {
+41 |         throw new DrizzleQueryError(queryString, params, e);
+                   ^
+error: Failed query: insert into "enterprise_template_installs" ("tenant_id", "workspace_id", "template_ref", "source_revision", "document", "revision", "created_at", "created_at") values ($1, $2, $3, $4, $5, $6, default, default) on conflict do nothing returning "tenant_id", "workspace_id", "template_ref", "source_revision", "document", "revision", "created_at", "created_at"
+params: mt077-bc4888bc-company-a,mt077-bc4888bc-team-a2,platform/research-daily,1,{"version":1,"sections":["scan","digest"],"schedule":"daily"},1
+  query: "insert into \"enterprise_template_installs\" (\"tenant_id\", \"workspace_id\", \"template_ref\", \"source_revision\", \"document\", \"revision\", \"created_at\", \"created_at\") values ($1, $2, $3, $4, $5, $6, default, default) on conflict do nothing returning \"tenant_id\", \"workspace_id\", \"template_ref\", \"source_revision\", \"document\", \"revision\", \"created_at\", \"created_at\"",
+ params: [
+  "mt077-bc4888bc-company-a", "mt077-bc4888bc-team-a2", "platform/research-daily", 1, "{\"version\":1,\"sections\":[\"scan\",\"digest\"],\"schedule\":\"daily\"}",
+  1
+],
+
+      at queryWithCache (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/pg-core/session.js:41:15)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/bun-sql/session.js:42:27)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/bun-sql/session.js:37:33)
+
+PostgresError: column "created_at" specified more than once
+    errno: "42701",
+ severity: "ERROR",
+ position: "147",
+     file: "parse_target.c",
+  routine: "checkInsertTargets",
+     code: "ERR_POSTGRES_SERVER_ERROR"
+
+      at wrapPostgresError (internal:sql/postgres:176:27)
+      at onRejectPostgresQuery (internal:sql/postgres:204:33)
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 1 — 策略只对归属范围生效，跨范围不可见 > install reads are team-scoped: team A1 sees neither team A2's nor company B's installs [3.75ms]
+421 |         const before = await fixture.installReader.read(
+422 |           tenantB,
+423 |           teamB1,
+424 |           "platform/research-daily",
+425 |         );
+426 |         expect(before).not.toBeNull();
+                                 ^
+error: expect(received).not.toBeNull()
+
+Received: null
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/server/tests/multitenancy/routing-policy.test.ts:426:28)
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 1 — 策略只对归属范围生效，跨范围不可见 > install writes cannot cross scopes: company A's writer cannot touch company B's install row [2.80ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 2 — 团队覆盖只收窄，不放大 > a narrowing override takes effect end to end: capability off, network tightened, routes narrowed [2.85ms]
+175 | function failInvalid(path: string, rule: string): never {
+176 |   throw new Error(`GOVERNANCE_POLICY_INVALID: ${path} ${rule}`);
+177 | }
+178 | 
+179 | function failOverrideInvalid(path: string, rule: string): never {
+180 |   throw new Error(`GOVERNANCE_OVERRIDE_INVALID: ${path} ${rule}`);
+                  ^
+error: GOVERNANCE_OVERRIDE_INVALID: override.capabilities.cloudComputer must be false — a team override can only switch a capability off
+      at failOverrideInvalid (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/server/src/enterprise/tenancy/routing-policy.ts:180:13)
+      at parseTeamGovernanceOverridesDocument (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/server/src/enterprise/tenancy/routing-policy.ts:438:9)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/server/tests/multitenancy/routing-policy.test.ts:477:26)
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 2 — 团队覆盖只收窄，不放大 > override.capabilities true on a company-off capability is rejected (CAPABILITY_OVERRIDE_WIDENS_POLICY) [0.47ms]
+175 | function failInvalid(path: string, rule: string): never {
+176 |   throw new Error(`GOVERNANCE_POLICY_INVALID: ${path} ${rule}`);
+177 | }
+178 | 
+179 | function failOverrideInvalid(path: string, rule: string): never {
+180 |   throw new Error(`GOVERNANCE_OVERRIDE_INVALID: ${path} ${rule}`);
+                  ^
+error: GOVERNANCE_OVERRIDE_INVALID: override.capabilities.useBots must be false — a team override can only switch a capability off
+      at failOverrideInvalid (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/server/src/enterprise/tenancy/routing-policy.ts:180:13)
+      at parseTeamGovernanceOverridesDocument (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/server/src/enterprise/tenancy/routing-policy.ts:438:9)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/server/tests/multitenancy/routing-policy.test.ts:500:26)
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 2 — 团队覆盖只收窄，不放大 > override.capabilities true is rejected even when the company already allows it — an override has no widening expression at all [0.29ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 2 — 团队覆盖只收窄，不放大 > override.network.mode weaker than the company egress mode is rejected (NETWORK_OVERRIDE_WIDENS_POLICY) [0.18ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 2 — 团队覆盖只收窄，不放大 > override.network.rules outside the company egress rules are rejected with an index, never the value [0.12ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 2 — 团队覆盖只收窄，不放大 > override.modelRouting routes outside the company allowlist are rejected (OVERRIDE_WIDENS_POLICY) [0.05ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 2 — 团队覆盖只收窄，不放大 > an override that narrows routes past the company default must supply its own default within the effective set [0.04ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 2 — 团队覆盖只收窄，不放大 > company-off capabilities stay off in every team resolution, even with an unrelated override present [7.91ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 2 — 团队覆盖只收窄，不放大 > writing team A1's override never changes company B's resolution (no cross-scope effect) [16.60ms]
+36 |   async queryWithCache(queryString, params, query) {
+37 |     if (this.cache === void 0 || is(this.cache, NoopCache) || this.queryMetadata === void 0) {
+38 |       try {
+39 |         return await query();
+40 |       } catch (e) {
+41 |         throw new DrizzleQueryError(queryString, params, e);
+                   ^
+error: Failed query: insert into "enterprise_template_installs" ("tenant_id", "workspace_id", "template_ref", "source_revision", "document", "revision", "created_at", "created_at") values ($1, $2, $3, $4, $5, $6, default, default) on conflict do nothing returning "tenant_id", "workspace_id", "template_ref", "source_revision", "document", "revision", "created_at", "created_at"
+params: mt077-bc4888bc-company-a,mt077-bc4888bc-team-a1,platform/welcome-playbook,3,{"version":3,"sections":["first-day","tools","escalation"],"checklist":["badge","laptop","accounts"]},1
+  query: "insert into \"enterprise_template_installs\" (\"tenant_id\", \"workspace_id\", \"template_ref\", \"source_revision\", \"document\", \"revision\", \"created_at\", \"created_at\") values ($1, $2, $3, $4, $5, $6, default, default) on conflict do nothing returning \"tenant_id\", \"workspace_id\", \"template_ref\", \"source_revision\", \"document\", \"revision\", \"created_at\", \"created_at\"",
+ params: [
+  "mt077-bc4888bc-company-a", "mt077-bc4888bc-team-a1", "platform/welcome-playbook", 3,
+  "{\"version\":3,\"sections\":[\"first-day\",\"tools\",\"escalation\"],\"checklist\":[\"badge\",\"laptop\",\"accounts\"]}",
+  1
+],
+
+      at queryWithCache (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/pg-core/session.js:41:15)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/bun-sql/session.js:42:27)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/bun-sql/session.js:37:33)
+
+PostgresError: column "created_at" specified more than once
+    errno: "42701",
+ severity: "ERROR",
+ position: "147",
+     file: "parse_target.c",
+  routine: "checkInsertTargets",
+     code: "ERR_POSTGRES_SERVER_ERROR"
+
+      at wrapPostgresError (internal:sql/postgres:176:27)
+      at onRejectPostgresQuery (internal:sql/postgres:204:33)
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > install copies the platform template into the owning scope with its source revision [2.98ms]
+677 |             tenantId: tenantA,
+678 |             workspaceId: teamA1,
+679 |             templateRef: "platform/welcome-playbook",
+680 |           }),
+681 |         );
+682 |         expect(message).toBe("TEMPLATE_INSTALL_ALREADY_EXISTS");
+                              ^
+error: expect(received).toBe(expected)
+
+- "TEMPLATE_INSTALL_ALREADY_EXISTS"
++ "Failed query: insert into "enterprise_template_installs" ("tenant_id", "workspace_id", "template_ref", "source_revision", "document", "revision", "created_at", "created_at") values ($1, $2, $3, $4, $5, $6, default, default) on conflict do nothing returning "tenant_id", "workspace_id", "template_ref", "source_revision", "document", "revision", "created_at", "created_at"
++ params: mt077-bc4888bc-company-a,mt077-bc4888bc-team-a1,platform/welcome-playbook,3,{"version":3,"sections":["first-day","tools","escalation"],"checklist":["badge","laptop","accounts"]},1 | column "created_at" specified more than once"
+
+- Expected  - 1
++ Received  + 2
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/server/tests/multitenancy/routing-policy.test.ts:682:25)
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > a second install of the same template in the same scope is refused (TEMPLATE_INSTALL_ALREADY_EXISTS) [2.12ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > an unknown template ref is refused at install and sync (TEMPLATE_UNKNOWN) [0.18ms]
+717 |         const b1Before = await fixture.installReader.read(
+718 |           tenantB,
+719 |           teamB1,
+720 |           "platform/research-daily",
+721 |         );
+722 |         expect(a2Before).not.toBeNull();
+                                   ^
+error: expect(received).not.toBeNull()
+
+Received: null
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/server/tests/multitenancy/routing-policy.test.ts:722:30)
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > updating an install changes only its own (tenant, workspace, ref) row — sibling team and other company byte-unchanged [3.83ms]
+761 |             templateRef: "platform/welcome-playbook",
+762 |             document: { stale: true },
+763 |             expectedRevision: 1,
+764 |           }),
+765 |         );
+766 |         expect(message).toBe("TEMPLATE_INSTALL_REVISION_CONFLICT");
+                              ^
+error: expect(received).toBe(expected)
+
+- "TEMPLATE_INSTALL_REVISION_CONFLICT"
++ "Failed query: update "enterprise_template_installs" set "document" = $1, "revision" = $2, "created_at" = $3 where ("enterprise_template_installs"."tenant_id" = $4 and "enterprise_template_installs"."workspace_id" = $5 and "enterprise_template_installs"."template_ref" = $6 and "enterprise_template_installs"."revision" = $7) returning "tenant_id", "workspace_id", "template_ref", "source_revision", "document", "revision", "created_at", "created_at"
++ params: {"stale":true},2,2026-10-16T16:10:07.228Z,mt077-bc4888bc-company-a,mt077-bc4888bc-team-a1,platform/welcome-playbook,1 | permission denied for table enterprise_template_installs"
+
+- Expected  - 1
++ Received  + 2
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/server/tests/multitenancy/routing-policy.test.ts:766:25)
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > a stale expectedRevision is a conflict, never a lost update (TEMPLATE_INSTALL_REVISION_CONFLICT) [4.86ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > a non-object install document is refused (TEMPLATE_INSTALL_DOCUMENT_INVALID) [0.10ms]
+36 |   async queryWithCache(queryString, params, query) {
+37 |     if (this.cache === void 0 || is(this.cache, NoopCache) || this.queryMetadata === void 0) {
+38 |       try {
+39 |         return await query();
+40 |       } catch (e) {
+41 |         throw new DrizzleQueryError(queryString, params, e);
+                   ^
+error: Failed query: update "enterprise_template_installs" set "source_revision" = $1, "document" = $2, "revision" = $3, "created_at" = $4 where ("enterprise_template_installs"."tenant_id" = $5 and "enterprise_template_installs"."workspace_id" = $6 and "enterprise_template_installs"."template_ref" = $7 and "enterprise_template_installs"."revision" = $8 and "enterprise_template_installs"."source_revision" <> $9) returning "tenant_id", "workspace_id", "template_ref", "source_revision", "document", "revision", "created_at", "created_at"
+params: 3,{"version":3,"sections":["first-day","tools","escalation"],"checklist":["badge","laptop","accounts"]},5,2026-10-16T16:10:07.238Z,mt077-bc4888bc-company-a,mt077-bc4888bc-team-a2,platform/welcome-playbook,4,3
+  query: "update \"enterprise_template_installs\" set \"source_revision\" = $1, \"document\" = $2, \"revision\" = $3, \"created_at\" = $4 where (\"enterprise_template_installs\".\"tenant_id\" = $5 and \"enterprise_template_installs\".\"workspace_id\" = $6 and \"enterprise_template_installs\".\"template_ref\" = $7 and \"enterprise_template_installs\".\"revision\" = $8 and \"enterprise_template_installs\".\"source_revision\" <> $9) returning \"tenant_id\", \"workspace_id\", \"template_ref\", \"source_revision\", \"document\", \"revision\", \"created_at\", \"created_at\"",
+ params: [
+  3, "{\"version\":3,\"sections\":[\"first-day\",\"tools\",\"escalation\"],\"checklist\":[\"badge\",\"laptop\",\"accounts\"]}",
+  5, "2026-10-16T16:10:07.238Z", "mt077-bc4888bc-company-a", "mt077-bc4888bc-team-a2", "platform/welcome-playbook",
+  4, 3
+],
+
+      at queryWithCache (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/pg-core/session.js:41:15)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/bun-sql/session.js:42:27)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/bun-sql/session.js:37:33)
+
+PostgresError: permission denied for table enterprise_template_installs
+    errno: "42501",
+ severity: "ERROR",
+     file: "aclchk.c",
+  routine: "aclcheck_error",
+     code: "ERR_POSTGRES_SERVER_ERROR"
+
+      at wrapPostgresError (internal:sql/postgres:176:27)
+      at onRejectPostgresQuery (internal:sql/postgres:204:33)
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > syncToCatalogRevision refreshes a stale install from the catalog, only for its own scope [7.86ms]
+831 |             workspaceId: teamA1,
+832 |             templateRef: "platform/welcome-playbook",
+833 |             expectedRevision: 2,
+834 |           }),
+835 |         );
+836 |         expect(message).toBe("TEMPLATE_INSTALL_ALREADY_CURRENT");
+                              ^
+error: expect(received).toBe(expected)
+
+- "TEMPLATE_INSTALL_ALREADY_CURRENT"
++ "Failed query: update "enterprise_template_installs" set "source_revision" = $1, "document" = $2, "revision" = $3, "created_at" = $4 where ("enterprise_template_installs"."tenant_id" = $5 and "enterprise_template_installs"."workspace_id" = $6 and "enterprise_template_installs"."template_ref" = $7 and "enterprise_template_installs"."revision" = $8 and "enterprise_template_installs"."source_revision" <> $9) returning "tenant_id", "workspace_id", "template_ref", "source_revision", "document", "revision", "created_at", "created_at"
++ params: 3,{"version":3,"sections":["first-day","tools","escalation"],"checklist":["badge","laptop","accounts"]},3,2026-10-16T16:10:07.252Z,mt077-bc4888bc-company-a,mt077-bc4888bc-team-a1,platform/welcome-playbook,2,3 | permission denied for table enterprise_template_installs"
+
+- Expected  - 1
++ Received  + 2
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/server/tests/multitenancy/routing-policy.test.ts:836:25)
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > syncing an install already at the catalog revision is refused (TEMPLATE_INSTALL_ALREADY_CURRENT) [14.46ms]
+846 |             workspaceId: teamA2,
+847 |             templateRef: "platform/welcome-playbook",
+848 |             expectedRevision: 1,
+849 |           }),
+850 |         );
+851 |         expect(message).toBe("TEMPLATE_INSTALL_REVISION_CONFLICT");
+                              ^
+error: expect(received).toBe(expected)
+
+- "TEMPLATE_INSTALL_REVISION_CONFLICT"
++ "Failed query: update "enterprise_template_installs" set "source_revision" = $1, "document" = $2, "revision" = $3, "created_at" = $4 where ("enterprise_template_installs"."tenant_id" = $5 and "enterprise_template_installs"."workspace_id" = $6 and "enterprise_template_installs"."template_ref" = $7 and "enterprise_template_installs"."revision" = $8 and "enterprise_template_installs"."source_revision" <> $9) returning "tenant_id", "workspace_id", "template_ref", "source_revision", "document", "revision", "created_at", "created_at"
++ params: 3,{"version":3,"sections":["first-day","tools","escalation"],"checklist":["badge","laptop","accounts"]},2,2026-10-16T16:10:07.255Z,mt077-bc4888bc-company-a,mt077-bc4888bc-team-a2,platform/welcome-playbook,1,3 | permission denied for table enterprise_template_installs"
+
+- Expected  - 1
++ Received  + 2
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/server/tests/multitenancy/routing-policy.test.ts:851:25)
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > a stale expectedRevision on sync is a conflict (TEMPLATE_INSTALL_REVISION_CONFLICT) [4.22ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > the platform template catalog is deep-frozen and byte-identical after every install, update and sync [0.12ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > module source hygiene: no environment inputs, catalog freezing is structural, install writes never name the catalog [0.26ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 4 — 生效点即时性与缓存键 > a company policy revision bump is visible at the very next resolve and moves the cache key [12.54ms]
+930 |       async () => {
+931 |         const before = await fixture.policyService.resolve({
+932 |           tenantId: tenantA,
+933 |           workspaceId: teamA1,
+934 |         });
+935 |         expect(before.cacheKey).toContain("/o=1/");
+                                      ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "/o=1/"
+Received: "routing-policy/v1/t=mt077-bc4888bc-company-a/w=mt077-bc4888bc-team-a1/c=3/o=1"
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/server/tests/multitenancy/routing-policy.test.ts:935:33)
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 4 — 生效点即时性与缓存键 > a team override revision bump is visible at the very next resolve and moves the cache key [2.65ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 4 — 生效点即时性与缓存键 > company A's revisions never move company B's cache key or resolution (no cross-scope cache pollution) [18.84ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 4 — 生效点即时性与缓存键 > the cache key is a pure function of ownership and revisions; resolution output is deep-frozen and inputs are never mutated [0.40ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 4 — 生效点即时性与缓存键 > two independent services (separate verified channels) resolve identically — no process-level policy state [15.57ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 存储与迁移契约 > missing selectors are refused before any database read (TENANT_REQUIRED / WORKSPACE_REQUIRED) [0.23ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 存储与迁移契约 > an unverified database channel is refused at service creation [0.09ms]
+(pass) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 存储与迁移契约 > every restricted query in this suite ran as an ob_ent_* capability role [0.13ms]
+1100 |     );
+1101 | 
+1102 |     test("the MT077 plan is deterministic: fixed slugs, numbered from 0001, stable digests", () => {
+1103 |       const first = buildPlan("MT077");
+1104 |       const second = buildPlan("MT077");
+1105 |       expect(first.map((step) => step.name)).toEqual([
+                          ^
+TypeError: first.map is not a function. (In 'first.map((step) => step.name)', 'first.map' is undefined)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i8-mt077/server/tests/multitenancy/routing-policy.test.ts:1105:20)
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 存储与迁移契约 > the MT077 plan is deterministic: fixed slugs, numbered from 0001, stable digests [0.34ms]
+
+13 tests failed:
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 1 — 策略只对归属范围生效，跨范围不可见 > install reads are team-scoped: team A1 sees neither team A2's nor company B's installs [3.75ms]
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 1 — 策略只对归属范围生效，跨范围不可见 > install writes cannot cross scopes: company A's writer cannot touch company B's install row [2.80ms]
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 2 — 团队覆盖只收窄，不放大 > override.capabilities true on a company-off capability is rejected (CAPABILITY_OVERRIDE_WIDENS_POLICY) [0.47ms]
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 2 — 团队覆盖只收窄，不放大 > override.capabilities true is rejected even when the company already allows it — an override has no widening expression at all [0.29ms]
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > install copies the platform template into the owning scope with its source revision [2.98ms]
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > a second install of the same template in the same scope is refused (TEMPLATE_INSTALL_ALREADY_EXISTS) [2.12ms]
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > updating an install changes only its own (tenant, workspace, ref) row — sibling team and other company byte-unchanged [3.83ms]
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > a stale expectedRevision is a conflict, never a lost update (TEMPLATE_INSTALL_REVISION_CONFLICT) [4.86ms]
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > syncToCatalogRevision refreshes a stale install from the catalog, only for its own scope [7.86ms]
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > syncing an install already at the catalog revision is refused (TEMPLATE_INSTALL_ALREADY_CURRENT) [14.46ms]
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 3 — 模板作用域：更新只落本范围安装，平台目录不可回写 > a stale expectedRevision on sync is a conflict (TEMPLATE_INSTALL_REVISION_CONFLICT) [4.22ms]
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 验收 4 — 生效点即时性与缓存键 > a team override revision bump is visible at the very next resolve and moves the cache key [2.65ms]
+(fail) MT077 / Issue #120 — 策略分层归属与收窄覆盖 > 存储与迁移契约 > the MT077 plan is deterministic: fixed slugs, numbered from 0001, stable digests [0.34ms]
+
+ 24 pass
+ 13 fail
+ 103 expect() calls
+Ran 37 tests across 1 file. [586.00ms]

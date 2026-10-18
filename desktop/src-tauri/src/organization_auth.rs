@@ -14,7 +14,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-const SAVED_COOKIE: &str = "OPENBOT_ORGANIZATION_SESSION";
+// MT098: pub(crate) so org_context reads the saved session and reuses the verified dial.
+pub(crate) const SAVED_COOKIE: &str = "OPENBOT_ORGANIZATION_SESSION";
 const CALLBACK: &str = "/organization-auth/callback";
 const PATIENCE: Duration = Duration::from_secs(300);
 
@@ -26,10 +27,11 @@ pub struct OrganizationUser {
     pub role: String,
 }
 
+// MT098: pub(crate) so org_context reuses the exact verified session shape.
 #[derive(Serialize, Deserialize)]
-struct SavedSession {
-    authority: String,
-    cookie: String,
+pub(crate) struct SavedSession {
+    pub(crate) authority: String,
+    pub(crate) cookie: String,
 }
 
 struct Pending {
@@ -56,7 +58,9 @@ fn random() -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
-fn authority(value: &str) -> Result<String, Problem> {
+// MT098: pub so the bin crate's sign-in gate compares the same normalized origin the session
+// saved (the rest of the MT098 surface stays pub(crate) inside this crate).
+pub fn authority(value: &str) -> Result<String, Problem> {
     let url = Url::parse(value.trim())
         .map_err(|_| problem("Enter your organization's OpenBot sign-in URL."))?;
     let loopback = matches!(
@@ -75,7 +79,8 @@ fn authority(value: &str) -> Result<String, Problem> {
     Ok(url.origin().ascii_serialization())
 }
 
-fn client() -> Result<Client, Problem> {
+// MT098: pub(crate) so org_context dials with the same client discipline.
+pub(crate) fn client() -> Result<Client, Problem> {
     Client::builder()
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
@@ -83,7 +88,8 @@ fn client() -> Result<Client, Problem> {
         .map_err(|_| problem("OpenBot could not prepare organization sign-in."))
 }
 
-fn verify(client: &Client, saved: &SavedSession) -> Result<OrganizationUser, Problem> {
+// MT098: pub(crate) so org_context verifies through the same tested path.
+pub(crate) fn verify(client: &Client, saved: &SavedSession) -> Result<OrganizationUser, Problem> {
     #[derive(Deserialize)]
     struct Me {
         user: OrganizationUser,
