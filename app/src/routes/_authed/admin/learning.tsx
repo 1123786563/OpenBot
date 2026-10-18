@@ -210,8 +210,8 @@ export function LearningPage() {
       description={t("learning.description")}
     >
       <PageSection
-        title={t("learning.participation.title")}
-        description={t("learning.participation.description")}
+        title="Participation"
+        description="Changes to container assignments apply to new threads. Existing threads keep their first assignment. Containers must already exist in the same Intelligence project. Until anything is saved here, OpenBot assigns that project's openbot container automatically."
       >
         {settingsQuery.isPending && (
           <p role="status">{t("learning.loading")}</p>

@@ -21,12 +21,13 @@ import {
   sharedUseRequestsQueryOptions,
 } from "@/lib/plugins/shared-use";
 
-const WHY = {
-  refused_call: "sharedUse.why.refusedCall",
-  publish: "sharedUse.why.publish",
-  trigger: "sharedUse.why.trigger",
-  grant: "sharedUse.why.grant",
-} as const satisfies Record<SharedUseRequestReason, string>;
+const WHY: Record<SharedUseRequestReason, string> = {
+  refused_call:
+    "A call was refused because this Bot reaches more people than approved.",
+  publish: "Its owner widened who can reach it.",
+  trigger: "Its owner added a trigger that lets outside input steer it.",
+  grant: "It was granted the app's actions.",
+};
 
 /**
  * Requests to use a shared account, for an administrator to approve or decline: one row each,
@@ -34,7 +35,6 @@ const WHY = {
  * for anyone else, or when nothing is waiting.
  */
 export function SharedUseRequests() {
-  const { t } = useTranslation("approvals");
   const queryClient = useQueryClient();
   const me = useQuery(currentUserQueryOptions()).data;
   const isAdmin = me?.role === "admin";

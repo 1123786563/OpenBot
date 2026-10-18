@@ -60,10 +60,7 @@ import { queryClient } from "@/query-client";
  * right now" — which is also what a run stuck open after repeated dispatch failures looks like from
  * here. Neither is a failure, so neither gets the destructive tone; only `status: "failed"` does.
  */
-function lastRunLabel(
-  t: TFunction<"routines">,
-  lastRun: RoutineRecord["lastRun"],
-): {
+function lastRunLabel(lastRun: RoutineRecord["lastRun"]): {
   text: string;
   className: string;
   /** The chip's dot, which carries the tone so the text can stay readable. */
@@ -71,36 +68,36 @@ function lastRunLabel(
 } {
   if (lastRun === null) {
     return {
-      text: t("lastRun.never"),
+      text: "Never run yet",
       className: "text-muted-foreground",
       dot: "bg-muted-foreground/40",
     };
   }
   if (lastRun.status === null) {
     return {
-      text: t("lastRun.running"),
+      text: "Running…",
       className: "text-muted-foreground",
       dot: "animate-pulse bg-muted-foreground",
     };
   }
-  const when = lastRun.at ? relativeTime(lastRun.at) : t("lastRun.recently");
+  const when = lastRun.at ? relativeTime(lastRun.at) : "recently";
   if (lastRun.status === "failed") {
     return {
-      text: t("lastRun.failed", { when }),
+      text: `Failed ${when}`,
       className: "text-destructive",
       dot: "bg-destructive",
     };
   }
   if (lastRun.status === "skipped") {
     return {
-      text: t("lastRun.skipped", { when }),
+      text: `Skipped ${when}`,
       className: "text-amber-600 dark:text-amber-500",
       dot: "bg-amber-500",
     };
   }
   if (lastRun.status === "succeeded") {
     return {
-      text: t("lastRun.ran", { when }),
+      text: `Ran ${when}`,
       className: "text-muted-foreground",
       dot: "bg-emerald-500",
     };
@@ -109,7 +106,7 @@ function lastRunLabel(
   // success — the contract typing (`RoutineRunOutcome | null`) makes a fourth outcome a build-time
   // error, but this is the runtime fallback if that ever slips through.
   return {
-    text: t("lastRun.finished", { when }),
+    text: `Finished ${when}`,
     className: "text-muted-foreground",
     dot: "bg-muted-foreground/40",
   };
@@ -138,32 +135,31 @@ function Chip({
   );
 }
 
-const RUN_STATUS = {
+const RUN_STATUS: Record<
+  RoutineRunRecord["status"],
+  { text: string; dot: string; className: string }
+> = {
   running: {
-    key: "runs.running",
+    text: "Running",
     dot: "animate-pulse bg-muted-foreground",
     className: "",
   },
-  succeeded: { key: "runs.succeeded", dot: "bg-emerald-500", className: "" },
+  succeeded: { text: "Succeeded", dot: "bg-emerald-500", className: "" },
   failed: {
-    key: "runs.failed",
+    text: "Failed",
     dot: "bg-destructive",
     className: "text-destructive",
   },
   skipped: {
-    key: "runs.skipped",
+    text: "Skipped",
     dot: "bg-amber-500",
     className: "text-amber-600 dark:text-amber-500",
   },
-  waiting: { key: "runs.waiting", dot: "bg-sky-500", className: "" },
-} as const satisfies Record<
-  RoutineRunRecord["status"],
-  { key: string; dot: string; className: string }
->;
+  waiting: { text: "Waiting for you", dot: "bg-sky-500", className: "" },
+};
 
 /** Every firing of one routine, newest first, each linking to the thread it ran in. */
 function RoutineRuns({ routine }: { routine: RoutineRecord }) {
-  const { t } = useTranslation("routines");
   const runs = useQuery(routineRunsQueryOptions(routine.id));
   // Pending renders nothing: "No runs yet." would otherwise flash for the fetch.
   if (runs.isPending) return null;
@@ -174,7 +170,7 @@ function RoutineRuns({ routine }: { routine: RoutineRecord }) {
       </p>
     );
   if (!runs.data?.length)
-    return <p className="text-muted-foreground text-xs">{t("runs.none")}</p>;
+    return <p className="text-muted-foreground text-xs">No runs yet.</p>;
   return (
     <ul className="flex w-full flex-col gap-1.5">
       {runs.data.map((run) => {
@@ -191,14 +187,14 @@ function RoutineRuns({ routine }: { routine: RoutineRecord }) {
               )}
             >
               <span className={cn("size-1.5 rounded-full", status.dot)} />
-              {t(status.key)}
+              {status.text}
             </span>
             <span className="text-muted-foreground">
               {run.source === "run_now"
-                ? t("runs.source.runNow")
+                ? "Run now"
                 : run.source === "trigger"
-                  ? t("runs.source.triggered")
-                  : t("runs.source.scheduled")}{" "}
+                  ? "Triggered"
+                  : "Scheduled"}{" "}
               · {relativeTime(run.startedAt)}
             </span>
             {routine.channel.gone ? null : (
@@ -207,7 +203,7 @@ function RoutineRuns({ routine }: { routine: RoutineRecord }) {
                 params={{ channelId: routine.channel.id }}
                 to="/channel/$channelId"
               >
-                {t("runs.openThread")}
+                Open thread
               </Link>
             )}
             {run.error ? (
@@ -238,7 +234,6 @@ export function RoutinesList({
   /** Where the page section's own top margin is somebody else's spacing. */
   embedded?: boolean;
 } = {}) {
-  const { t } = useTranslation("routines");
   const routines = useQuery(routinesQueryOptions());
   const setEnabled = useMutation(setRoutineEnabledMutationOptions(queryClient));
   const deleteRoutine = useMutation(deleteRoutineMutationOptions(queryClient));
@@ -279,7 +274,7 @@ export function RoutinesList({
       {/* Pending renders nothing: the empty-state sentence would otherwise flash for the fetch. */}
       {routines.isPending ? null : routines.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
-          {t("loadError")}
+          Your routines could not be loaded.
         </p>
       ) : rows.length === 0 ? (
         <PageEmpty>
@@ -346,7 +341,7 @@ export function RoutinesList({
                     >
                       {routine.channel.gone ? (
                         <Chip className="border-destructive/40 text-destructive">
-                          {t("channelGone")}
+                          This channel is gone
                         </Chip>
                       ) : (
                         // Where it posts is a place, so the chip goes there.
@@ -355,7 +350,7 @@ export function RoutinesList({
                           to="/channel/$channelId"
                         >
                           <Chip className="text-muted-foreground transition-colors hover:text-foreground">
-                            {routine.channel.name ?? t("unnamedChannel")}
+                            {routine.channel.name ?? "Unnamed channel"}
                           </Chip>
                         </Link>
                       )}
@@ -372,9 +367,7 @@ export function RoutinesList({
                        * takes its place, so the switch's state has a word as well as a position.
                        */}
                       {!routine.enabled ? (
-                        <Chip className="text-muted-foreground">
-                          {t("paused")}
-                        </Chip>
+                        <Chip className="text-muted-foreground">Paused</Chip>
                       ) : new Date(routine.nextRunAt).getTime() <=
                         Date.now() ? (
                         /*
@@ -383,11 +376,11 @@ export function RoutinesList({
                          */
                         <Chip className="text-amber-600 dark:text-amber-500">
                           <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
-                          {t("due")}
+                          Due
                         </Chip>
                       ) : (
                         <Chip className="text-muted-foreground">
-                          {t("next", { when: relativeTime(routine.nextRunAt) })}
+                          Next {relativeTime(routine.nextRunAt)}
                         </Chip>
                       )}
                     </div>
@@ -484,10 +477,11 @@ export function RoutinesList({
             UI would otherwise render a nested dialog with no backdrop at all. */}
         <DialogContent overlayClassName="bg-black/20 supports-backdrop-filter:backdrop-blur-sm">
           <DialogHeader>
-            <DialogTitle>
-              {t("delete.title", { schedule: confirming?.schedule ?? "" })}
-            </DialogTitle>
-            <DialogDescription>{t("delete.description")}</DialogDescription>
+            <DialogTitle>Delete "{confirming?.schedule}"?</DialogTitle>
+            <DialogDescription>
+              This standing instruction stops for good. Nothing further runs on
+              this schedule, and there is no undo.
+            </DialogDescription>
           </DialogHeader>
           {deleteRoutine.error ? (
             <DialogBody className="mt-4">
@@ -503,7 +497,7 @@ export function RoutinesList({
               type="button"
               variant="outline"
             >
-              {t("delete.cancel")}
+              Cancel
             </Button>
             <Button
               disabled={deleteRoutine.isPending}
@@ -517,9 +511,7 @@ export function RoutinesList({
               type="button"
               variant="destructive"
             >
-              {deleteRoutine.isPending
-                ? t("delete.deleting")
-                : t("delete.confirm")}
+              {deleteRoutine.isPending ? "Deleting…" : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

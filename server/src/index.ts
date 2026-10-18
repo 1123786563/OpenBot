@@ -428,6 +428,18 @@ import {
   learningSetupInstructions,
 } from "./learning/ensure-container";
 import { clearLearningRevisionFallback } from "./learning/runtime";
+import {
+  createLearningAutoAssign,
+  probeLearningContainer,
+  withLearningAutoAssign,
+} from "./learning/auto-assign";
+import {
+  cliLoginPresent,
+  ensureLearningContainer,
+  intelligenceApiOrigin,
+  keyIntelligence,
+  learningSetupInstructions,
+} from "./learning/ensure-container";
 import { createLearningSettingsStore } from "./learning/settings";
 import { createMarketplaceStore } from "./marketplace/store";
 import { PostgresTenantStorageRegistry } from "./mastra/postgres-registry";

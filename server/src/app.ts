@@ -33,6 +33,7 @@ import type { ApprovalService } from "./approvals/service";
 import {
   type AuditEventType,
   type AuditInitiator,
+  auditEventsToCsv,
   AuditQueryError,
   type AuditReader,
   type AuditStore,
@@ -238,6 +239,10 @@ import {
 } from "./web-bot-auth";
 import type { createWorkshopPublicRoutes } from "./workshop/public-routes";
 import type { WorkshopRoutesFactory } from "./workshop/routes";
+import {
+  DIRECTORY_PATH as WEB_BOT_AUTH_DIRECTORY_PATH,
+  directoryResponse as webBotAuthDirectory,
+} from "./web-bot-auth";
 
 const log = getLogger("server");
 
