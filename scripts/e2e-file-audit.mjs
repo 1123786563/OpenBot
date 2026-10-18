@@ -6,24 +6,42 @@
 // is one short runner pass per file. The result partitions the corpus into suites the runner loads
 // natively and suites that are stuck on the Bun runtime.
 import { spawn } from "node:child_process";
-import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync, existsSync } from "node:fs";
+import { readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const auditDir = root;
-const SKIP = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage", ".audit"]);
+const SKIP = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  ".next",
+  "coverage",
+  ".audit",
+]);
 const TEST_FILE = /(\.test|\.spec)\.(ts|tsx|mts)$/;
 const dirs = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const list = dirs.length
   ? dirs
   : [
-      "shared", "supervisor", "worker", "deliverables", "desktop", "agent-bot", "agent-sandbox",
-      "agent-langgraph", "agent-mastra", "agent-computer", "app", "server", "tests", "scripts",
+      "shared",
+      "supervisor",
+      "worker",
+      "deliverables",
+      "desktop",
+      "agent-bot",
+      "agent-sandbox",
+      "agent-langgraph",
+      "agent-mastra",
+      "agent-computer",
+      "app",
+      "server",
+      "tests",
+      "scripts",
     ];
 const jobs = process.argv.find((a) => a.startsWith("--jobs="));
 const concurrency = jobs ? Number(jobs.split("=")[1]) : 6;
-
-
 
 function walk(dir, out) {
   for (const entry of readdirSync(dir)) {
@@ -53,9 +71,13 @@ export default {
 `;
   writeFileSync(config, source);
   return new Promise((done) => {
-    const child = spawn("./node_modules/.bin/e2e", ["list", "--config", config.replace(`${root}/`, "")], {
-      cwd: root,
-    });
+    const child = spawn(
+      "./node_modules/.bin/e2e",
+      ["list", "--config", config.replace(`${root}/`, "")],
+      {
+        cwd: root,
+      },
+    );
     let output = "";
     child.stdout.on("data", (chunk) => (output += chunk));
     child.stderr.on("data", (chunk) => (output += chunk));
@@ -69,7 +91,11 @@ export default {
         file: rel,
         status: failed ? "collect_error" : code === 0 ? "collected" : "error",
         tests: count.length,
-        error: failed ? failed[0].replace(/\s+/g, " ").slice(0, 240) : code === 0 ? "" : output.slice(-240),
+        error: failed
+          ? failed[0].replace(/\s+/g, " ").slice(0, 240)
+          : code === 0
+            ? ""
+            : output.slice(-240),
       });
     });
   });
@@ -93,17 +119,29 @@ async function worker() {
 await Promise.all(Array.from({ length: concurrency }, worker));
 results.sort((a, b) => a.file.localeCompare(b.file));
 
-writeFileSync(join(root, "docs/verification/e2e-file-audit.json"), JSON.stringify(results, null, 1));
+writeFileSync(
+  join(root, "docs/verification/e2e-file-audit.json"),
+  JSON.stringify(results, null, 1),
+);
 const bad = results.filter((r) => r.status !== "collected");
 const causes = new Map();
 for (const entry of bad) {
-  const key = entry.error.replace(/["'`].{0,60}["'`]/g, "…").replace(/\d+/g, "N").slice(0, 90);
+  const key = entry.error
+    .replace(/["'`].{0,60}["'`]/g, "…")
+    .replace(/\d+/g, "N")
+    .slice(0, 90);
   causes.set(key, (causes.get(key) ?? 0) + 1);
 }
-console.log(`\n${results.length} files · ${results.length - bad.length} collect under e2e · ${bad.length} do not`);
-console.log(`tests registered by the collectable files: ${results.reduce((n, r) => n + r.tests, 0)}`);
+console.log(
+  `\n${results.length} files · ${results.length - bad.length} collect under e2e · ${bad.length} do not`,
+);
+console.log(
+  `tests registered by the collectable files: ${results.reduce((n, r) => n + r.tests, 0)}`,
+);
 console.log(`\nwhy the rest do not (${causes.size} distinct):`);
-for (const [cause, count] of [...causes].sort((a, b) => b[1] - a[1]).slice(0, 20)) {
+for (const [cause, count] of [...causes]
+  .sort((a, b) => b[1] - a[1])
+  .slice(0, 20)) {
   console.log(`  ${String(count).padStart(4)}  ${cause}`);
 }
 console.log(`\nledger: docs/verification/e2e-file-audit.json`);

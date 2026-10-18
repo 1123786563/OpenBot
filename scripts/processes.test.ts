@@ -1,7 +1,13 @@
-import { afterEach, beforeEach, describe, expect, test } from "../tests/support/e2e-compat";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../tests/support/e2e-compat";
 
 /**
  * `scripts/processes.sh` on a Windows host that has no `lsof`, `pgrep` or `pkill`, run anywhere.

@@ -39,7 +39,9 @@ const BUN_RUNTIME = [
 const audit = JSON.parse(readFileSync(resolve(root, auditPath), "utf8"));
 
 const artifacts = audit.filter(
-  (entry) => entry.status !== "collected" && ARTIFACTS.some((pattern) => pattern.test(entry.file)),
+  (entry) =>
+    entry.status !== "collected" &&
+    ARTIFACTS.some((pattern) => pattern.test(entry.file)),
 );
 const driven = audit.filter(
   (entry) =>
@@ -49,7 +51,10 @@ const driven = audit.filter(
       LOADER_GAP.some((pattern) => pattern.test(entry.error ?? ""))),
 );
 const todo = audit.filter(
-  (entry) => entry.status !== "collected" && !driven.includes(entry) && !artifacts.includes(entry),
+  (entry) =>
+    entry.status !== "collected" &&
+    !driven.includes(entry) &&
+    !artifacts.includes(entry),
 );
 
 const byDirectory = new Map();
@@ -72,19 +77,37 @@ for (const [directory, files] of byDirectory) {
 
 writeFileSync(
   resolve(root, "docs/verification/e2e-bun-suites.json"),
-  `${JSON.stringify({ generatedBy: "scripts/e2e-bun-manifest.mjs", audit: auditPath, groups, files: driven.map((d) => d.file),
-      artifacts: artifacts.map((a) => a.file) }, null, 1)}\n`,
+  `${JSON.stringify(
+    {
+      generatedBy: "scripts/e2e-bun-manifest.mjs",
+      audit: auditPath,
+      groups,
+      files: driven.map((d) => d.file),
+      artifacts: artifacts.map((a) => a.file),
+    },
+    null,
+    1,
+  )}\n`,
 );
 
 console.log(`${audit.length} files audited`);
-console.log(`${driven.length} kept on the Bun runtime, in ${groups.length} driven group(s)`);
-console.log(`${artifacts.length} deliverable artifacts, not executable here: ${artifacts.map((a) => a.file).join(", ")}`);
+console.log(
+  `${driven.length} kept on the Bun runtime, in ${groups.length} driven group(s)`,
+);
+console.log(
+  `${artifacts.length} deliverable artifacts, not executable here: ${artifacts.map((a) => a.file).join(", ")}`,
+);
 console.log(`${todo.length} still ours to fix:`);
 const causes = new Map();
 for (const entry of todo) {
-  const key = (entry.error ?? "").replace(/["'`].{0,60}["'`]/g, "…").replace(/\d+/g, "N").slice(0, 96);
+  const key = (entry.error ?? "")
+    .replace(/["'`].{0,60}["'`]/g, "…")
+    .replace(/\d+/g, "N")
+    .slice(0, 96);
   causes.set(key, (causes.get(key) ?? 0) + 1);
 }
-for (const [cause, count] of [...causes].sort((a, b) => b[1] - a[1]).slice(0, 20)) {
+for (const [cause, count] of [...causes]
+  .sort((a, b) => b[1] - a[1])
+  .slice(0, 20)) {
   console.log(`  ${String(count).padStart(4)}  ${cause}`);
 }

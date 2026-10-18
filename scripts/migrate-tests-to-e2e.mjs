@@ -36,7 +36,10 @@ function collect(dir, out) {
     else if (TEST_FILE.test(entry)) out.push(full);
     // Support, helper and fixture modules ride along: a `.fixture.tsx` that imports `bun:test`
     // breaks every suite that imports it, and that is not visible as a test file.
-    else if (/\.(ts|tsx)$/.test(entry) && readFileSync(full, "utf8").includes("bun:test"))
+    else if (
+      /\.(ts|tsx)$/.test(entry) &&
+      readFileSync(full, "utf8").includes("bun:test")
+    )
       out.push(full);
   }
   return out;
@@ -68,9 +71,15 @@ const SUPPORTED = new Set([
 function importMetaShim(usesDir, source) {
   const lines = [];
   // Only what the file does not already import: a second `import { dirname }` is a redeclaration.
-  if (!/\bdirname\b.*from "node:path"|from "node:path".*\bdirname\b/.test(source))
+  if (
+    !/\bdirname\b.*from "node:path"|from "node:path".*\bdirname\b/.test(source)
+  )
     lines.push('import { dirname } from "node:path";');
-  if (!/fileURLToPath.*from "node:url"|from "node:url".*fileURLToPath/.test(source))
+  if (
+    !/fileURLToPath.*from "node:url"|from "node:url".*fileURLToPath/.test(
+      source,
+    )
+  )
     lines.push('import { fileURLToPath } from "node:url";');
   lines.push("const herePath = fileURLToPath(import.meta.url);");
   if (usesDir) lines.push("const hereDir = dirname(herePath);");
@@ -95,7 +104,8 @@ function portBunValueImport(source, file) {
  * and every portal renders into an empty body.
  */
 function withDomPreload(source, file) {
-  if (!file.startsWith(join(root, "app")) || !TEST_FILE.test(file)) return source;
+  if (!file.startsWith(join(root, "app")) || !TEST_FILE.test(file))
+    return source;
   if (/tests\/preload/.test(source)) return source;
   const target = relative(dirname(file), join(root, "app/tests/preload.ts"))
     .replace(/\.ts$/, "")
@@ -172,7 +182,7 @@ for (const file of files) {
     next =
       lastImport === -1
         ? block + next
-        : next.slice(0, lineEnd + 1) + "\n" + block + next.slice(lineEnd + 1);
+        : `${next.slice(0, lineEnd + 1)}\n${block}${next.slice(lineEnd + 1)}`;
   }
 
   next = portBunValueImport(next, file);

@@ -11,8 +11,9 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { readdir } from "node:fs/promises";
 import http from "node:http";
-import { dirname } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import YAML from "yaml";
 
@@ -77,8 +78,12 @@ class NodeBunFile {
     return Promise.resolve(readFileSync(this.__bunPath));
   }
   arrayBuffer(): Promise<ArrayBuffer> {
-    return this.bytes().then((value) =>
-      value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength),
+    return this.bytes().then(
+      (value) =>
+        value.buffer.slice(
+          value.byteOffset,
+          value.byteOffset + value.byteLength,
+        ) as ArrayBuffer,
     );
   }
   json(): Promise<Any> {
@@ -86,6 +91,44 @@ class NodeBunFile {
   }
   stream(): Readable {
     return createReadStream(this.__bunPath);
+  }
+}
+
+/**
+ * `Bun.Glob(pattern).scan(dir)` walks a directory for the pattern. Only the forms the suites use
+ * are supported: `**` across directories, `*` within one name, and a trailing extension.
+ */
+export class Glob {
+  readonly pattern: string;
+  private matcher: RegExp;
+  constructor(pattern: string) {
+    this.pattern = pattern;
+    // `**` may cross directories and also match none, `*` stops at a separator.
+    const source = pattern
+      .split("**")
+      .map((part) =>
+        part.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*"),
+      )
+      .join("(?:.*/)?");
+    this.matcher = new RegExp(`^${source}$`);
+  }
+  async *scan(root: string): AsyncGenerator<string> {
+    const walk = async function* (dir: string): AsyncGenerator<string> {
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) yield* walk(full);
+        else yield full;
+      }
+    };
+    const base = resolve(root);
+    for await (const path of walk(base)) {
+      if (this.matcher.test(path.replace(`${base}/`, ""))) yield path;
+    }
+  }
+  match(path: string, cwd = "."): boolean {
+    return this.matcher.test(
+      isAbsolute(path) ? path.replace(`${resolve(cwd)}/`, "") : path,
+    );
   }
 }
 
@@ -258,6 +301,7 @@ export const Bun: Any = {
     run(command, options),
   sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
   which: (name: string) => whichBun(name),
+  Glob,
   exist: (path: string) => existsSync(path),
   rm: (path: string, options?: { recursive?: boolean; force?: boolean }) =>
     rmSync(path, {

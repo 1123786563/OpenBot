@@ -1,9 +1,9 @@
-import { afterEach, expect, test } from "../tests/support/e2e-compat";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
 import type { ContainerProbe } from "../server/src/learning/auto-assign";
+import { afterEach, expect, test } from "../tests/support/e2e-compat";
 import { setupLearning } from "./setup-learning";
 
 const directories: string[] = [];

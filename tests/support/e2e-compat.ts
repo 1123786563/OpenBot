@@ -119,14 +119,17 @@ function callsE2e(
   args: unknown[],
   negate: boolean,
   label: string,
+  message?: string,
 ): void {
   if (!DELEGATED.has(matcher)) {
     throw new Error(
       `expect(...).${label}${matcher}() is not a matcher of this runner`,
     );
   }
-  const base = e2eExpect(actual);
-  (negate ? base.not : base)[matcher](...args);
+  const base: Any = negate
+    ? e2eExpect(actual, message).not
+    : e2eExpect(actual, message);
+  base[matcher](...args);
 }
 
 function check(
@@ -336,9 +339,10 @@ function applyMatcher(
   args: unknown[],
   negate: boolean,
   label: string,
+  message?: string,
 ): void {
   if (ADDED.has(name)) expectAdded(name, actual, args, negate, label);
-  else callsE2e(actual, name, args, negate, label);
+  else callsE2e(actual, name, args, negate, label, message);
 }
 
 /** `.resolves` / `.rejects`: every matcher method returns a promise, so `await` settles it. */
@@ -346,6 +350,7 @@ function asyncChain(
   actual: Any,
   kind: "resolves" | "rejects",
   negate: boolean,
+  message?: string,
 ): Any {
   const run = async (name: string, args: unknown[]): Promise<void> => {
     let value: Any;
@@ -377,11 +382,11 @@ function asyncChain(
       }
       value = caught;
     }
-    applyMatcher(name, value, args, negate, `${kind}.`);
+    applyMatcher(name, value, args, negate, `${kind}.`, message);
   };
   return new Proxy({} as Any, {
     get: (_target, key: string) => {
-      if (key === "not") return asyncChain(actual, kind, !negate);
+      if (key === "not") return asyncChain(actual, kind, !negate, message);
       if (typeof key === "string" && (key === "then" || key === "catch")) {
         return (...args: unknown[]) =>
           Promise.resolve().then(...(args as [Any]));
@@ -391,10 +396,16 @@ function asyncChain(
   });
 }
 
-function buildExpectation(actual: Any, negate: boolean, label: string): Any {
+function buildExpectation(
+  actual: Any,
+  negate: boolean,
+  label: string,
+  message?: string,
+): Any {
   return new Proxy({} as Any, {
     get: (_target, key: string) => {
-      if (key === "not") return buildExpectation(actual, !negate, "not.");
+      if (key === "not")
+        return buildExpectation(actual, !negate, "not.", message);
       if (key === "resolves") return asyncChain(actual, "resolves", negate);
       if (key === "rejects") return asyncChain(actual, "rejects", negate);
       if (
@@ -405,35 +416,62 @@ function buildExpectation(actual: Any, negate: boolean, label: string): Any {
       )
         return undefined;
       return (...args: unknown[]) => {
-        applyMatcher(key, actual, args, negate, label);
+        applyMatcher(key, actual, args, negate, label, message);
       };
     },
   });
 }
 
-export const expect: Any = (actual: Any, _message?: string) =>
-  buildExpectation(actual, false, "");
-for (const name of [
-  "any",
-  "anything",
-  "arrayContaining",
-  "objectContaining",
-  "stringContaining",
-  "stringMatching",
-] as const) {
-  expect[name] = (e2eExpect as Any)[name];
+/**
+ * Generic so `expect(value).toBe<Kind>(other)` keeps working: e2e's own `expect` has no type
+ * parameters and neither does Bun's, but the suites were written against the one that does.
+ */
+export interface ExpectFn {
+  <T = Any>(actual: T, message?: string): SuiteExpectation;
+  any: Any;
+  anything: () => Any;
+  arrayContaining: (sample: readonly unknown[]) => Any;
+  objectContaining: (sample: Record<string, unknown>) => Any;
+  stringContaining: (text: string) => Any;
+  stringMatching: (pattern: string | RegExp) => Any;
+  soft: <T = Any>(actual: T, message?: string) => SuiteExpectation;
+  fail: (message?: string) => never;
+  unreachable: (message?: string) => never;
+  /**
+   * Left open on purpose: the compat layer grows matchers as suites ask for them, and a test that
+   * reaches one first must fail at runtime with a clear message, not silently at type-check time in
+   * whichever workspace happens to include it.
+   */
+  [member: string]: Any;
 }
-expect.soft = (actual: Any) => buildExpectation(actual, false, "soft.");
-expect.assertions = () => undefined;
-expect.hasAssertions = () => undefined;
-expect.fail = (message?: string) => {
-  throw new Error(message ?? "expect.fail()");
-};
+
+export const expect: ExpectFn = Object.assign(
+  <T = Any>(actual: T, message?: string): SuiteExpectation =>
+    buildExpectation(actual, false, "", message) as SuiteExpectation,
+  {
+    any: (e2eExpect as Any).any,
+    anything: (e2eExpect as Any).anything,
+    arrayContaining: (e2eExpect as Any).arrayContaining,
+    objectContaining: (e2eExpect as Any).objectContaining,
+    stringContaining: (e2eExpect as Any).stringContaining,
+    stringMatching: (e2eExpect as Any).stringMatching,
+    soft: (actual: Any, message?: string) =>
+      buildExpectation(actual, false, "soft.", message) as SuiteExpectation,
+    fail: (message?: string) => {
+      throw new Error(message ?? "expect.fail()");
+    },
+    unreachable: (message?: string) => {
+      throw new Error(message ?? "Reached code marked unreachable");
+    },
+  },
+);
 
 /* --------------------------------------------------------------------- spies */
 
-export interface Mock {
-  (...args: any[]): any;
+export interface Mock<
+  T extends (...args: any[]) => any = (...args: any[]) => any,
+> {
+  (...args: Parameters<T>): ReturnType<T>;
   mock: {
     calls: any[][];
     results: { type: string; value: unknown }[];
@@ -441,7 +479,7 @@ export interface Mock {
     lastCall?: any[];
   };
   _isMockFunction: true;
-  mockImplementation(next: (...args: any[]) => unknown): Mock;
+  mockImplementation(next: T): Mock<T>;
   mockReturnValue(value: unknown): Mock;
   mockReturnValueOnce(value: unknown): Mock;
   mockResolvedValue(value: unknown): Mock;
@@ -452,6 +490,9 @@ export interface Mock {
   mockReset(): Mock;
   mockRestore(): void;
   mockName(name: string): Mock;
+  /** Bun's module mock: replaces a specifier for every importer that loads it afterwards. */
+  module(specifier: string, factory: () => Record<string, unknown>): () => void;
+  restore(): void;
   getMockImplementation(): ((...args: any[]) => unknown) | undefined;
 }
 
@@ -508,10 +549,10 @@ function makeMock(
   return self;
 }
 
-export function mock(
-  implementation: (...args: any[]) => unknown = () => undefined,
-): Mock {
-  return makeMock(implementation);
+export interface MockFactory {
+  (implementation?: (...args: any[]) => unknown): Mock;
+  module(specifier: string, factory: () => Record<string, unknown>): () => void;
+  restore(): void;
 }
 
 /* --------------------------------------------------------- module mocking */
@@ -599,22 +640,27 @@ function identifier(name: string): string {
 
 installMockHooks();
 
-(mock as Any).module = (
-  specifier: string,
-  factory: () => Record<string, unknown>,
-): (() => void) => {
-  installMockHooks();
-  moduleMocks.set(specifier, factory);
-  mocks.set(specifier, Object.values(factory()));
-  return () => {
-    moduleMocks.delete(specifier);
-    mocks.delete(specifier);
-  };
-};
-(mock as Any).restore = () => {
-  moduleMocks.clear();
-  mocks.clear();
-};
+const makeSpy = (implementation?: (...args: any[]) => unknown): Mock =>
+  makeMock(implementation ?? (() => undefined));
+
+export const mock: MockFactory = Object.assign(makeSpy, {
+  module(
+    specifier: string,
+    factory: () => Record<string, unknown>,
+  ): () => void {
+    installMockHooks();
+    moduleMocks.set(specifier, factory);
+    mocks.set(specifier, Object.values(factory()));
+    return () => {
+      moduleMocks.delete(specifier);
+      mocks.delete(specifier);
+    };
+  },
+  restore(): void {
+    moduleMocks.clear();
+    mocks.clear();
+  },
+});
 
 const liveSpies = new Set<Mock>();
 
@@ -653,6 +699,8 @@ interface FakeTimer {
 const real = {
   setTimeout: globalThis.setTimeout,
   setInterval: globalThis.setInterval,
+  clearTimeout: globalThis.clearTimeout,
+  clearInterval: globalThis.clearInterval,
   Date: globalThis.Date,
 };
 let clock = false;
@@ -662,19 +710,23 @@ let timers: FakeTimer[] = [];
 
 class FakeDate extends real.Date {
   constructor(...args: any[]) {
-    super(...(args.length === 0 ? [now] : args));
+    super(...((args.length === 0 ? [now] : args) as [number]));
   }
   static now(): number {
     return now;
   }
 }
 
+/*
+ * A hand-pushed clock. Each global is reassigned through `Any` on purpose: Node's and Bun's timer
+ * signatures disagree on the handle type, and the point here is the queue, not the overload.
+ */
 export function useFakeTimers(): void {
   if (clock) return;
   clock = true;
   now = real.Date.now();
   timers = [];
-  const schedule = (every: 0 | 1) =>
+  const schedule = (every: number) =>
     ((
       fn: (...args: unknown[]) => unknown,
       ms: number = 0,
@@ -689,10 +741,10 @@ export function useFakeTimers(): void {
         cancelled: false,
       };
       timers.push(timer);
-      return timer.id as any;
+      return timer.id as Any;
     }) as Any;
-  globalThis.setTimeout = schedule(0);
-  globalThis.setInterval = schedule(1);
+  globalThis.setTimeout = schedule(0) as Any;
+  globalThis.setInterval = schedule(1) as Any;
   const clear = ((id: unknown) => {
     const timer = timers.find((entry) => entry.id === Number(id));
     if (timer) timer.cancelled = true;
@@ -705,11 +757,11 @@ export function useFakeTimers(): void {
 export function useRealTimers(): void {
   if (!clock) return;
   clock = false;
-  globalThis.setTimeout = real.setTimeout;
-  globalThis.setInterval = real.setInterval;
-  globalThis.clearTimeout = real.setTimeout;
-  globalThis.clearInterval = real.setInterval;
-  globalThis.Date = real.Date;
+  globalThis.setTimeout = real.setTimeout as Any;
+  globalThis.setInterval = real.setInterval as Any;
+  globalThis.clearTimeout = real.clearTimeout as Any;
+  globalThis.clearInterval = real.clearInterval as Any;
+  globalThis.Date = real.Date as Any;
   timers = [];
 }
 
@@ -944,11 +996,69 @@ const skipRegister: Register = (title, second) => {
     : (e2eTest as Any)(title, body);
 };
 
-type TestAPI = typeof e2eTest;
+// Callbacks arrive positionally, so the signature has to leave their parameters `any`:
+// a `(title, fn)`-shaped type would give every `each` case body implicit-`any` errors under tsc.
+interface RegisterCall {
+  (title: string, body: (...args: any[]) => unknown): unknown;
+  (title: string, options: object, body: (...args: any[]) => unknown): unknown;
+  // Bun's deadline-as-third-argument form, which `test.each` rows use for slow live probes.
+  (
+    title: string,
+    body: (...args: any[]) => unknown,
+    timeoutMs: number,
+  ): unknown;
+}
+interface Parameterised extends RegisterCall {
+  each: (table: readonly unknown[]) => RegisterCall;
+}
+interface TestExtras {
+  each: (table: readonly unknown[]) => RegisterCall;
+  skip: Parameterised;
+  only: Parameterised;
+  todo: (title: string) => unknown;
+  fails: RegisterCall;
+  skipIf: (condition: boolean) => RegisterCall;
+  runIf: (condition: boolean) => RegisterCall;
+  concurrent: RegisterCall;
+  sequential: RegisterCall;
+}
+interface DescribeExtras {
+  each: (table: readonly unknown[]) => RegisterCall;
+  skip: RegisterCall;
+  only: RegisterCall;
+  serial: RegisterCall;
+  concurrent: RegisterCall;
+  skipIf: (condition: boolean) => RegisterCall;
+  runIf: (condition: boolean) => RegisterCall;
+}
+
+/**
+ * The chain an `expect(value)` answers with. Only the matchers the suites pass type arguments to are
+ * generic (`expect(x).toBe<ItemPhase>(y)`); the rest take anything, because this layer is where the
+ * runner's own matcher set is extended, not where its arguments are re-typed.
+ */
+export interface SuiteExpectation {
+  toBe<T = Any>(expected: T): void;
+  toEqual<T = Any>(expected: T): void;
+  toThrow<T = Any>(expected?: T): void;
+  toBeInstanceOf<T = Any>(expected?: T): void;
+  not: SuiteExpectation;
+  resolves: SuiteExpectation;
+  rejects: SuiteExpectation;
+  [matcher: string]: Any;
+}
 
 export const test = ((title: string, second: Any, third?: Any) =>
-  registerTest(e2eRegister)(title, second, third)) as TestAPI &
-  Record<string, unknown>;
+  registerTest(e2eRegister)(title, second, third)) as unknown as TestExtras & {
+  (title: string, body: (...args: any[]) => unknown): unknown;
+  (title: string, options: object, body: (...args: any[]) => unknown): unknown;
+  // Bun's deadline-as-third-argument form, which the suites use for slow live probes.
+  (
+    title: string,
+    body: (...args: any[]) => unknown,
+    timeoutMs: number,
+  ): unknown;
+};
 
 Object.defineProperties(test, {
   each: {
@@ -1001,7 +1111,7 @@ export const describe = ((title: string, body: Any, maybeBody?: Any) =>
     clampTitle(title, "describe"),
     body,
     maybeBody,
-  )) as DescribeAPI & Record<string, unknown>;
+  )) as unknown as DescribeAPI & DescribeExtras;
 
 Object.defineProperties(describe, {
   each: {

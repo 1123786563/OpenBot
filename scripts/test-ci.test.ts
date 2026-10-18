@@ -1,7 +1,7 @@
-import { fileURLToPath } from "node:url";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, expect, test } from "../tests/support/e2e-compat";
 
 const herePath = fileURLToPath(import.meta.url);
