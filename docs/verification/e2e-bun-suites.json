@@ -45,6 +45,7 @@
     "app/tests/admin-credit-grant-ui.test.tsx",
     "app/tests/admin-gateway-readiness.test.tsx",
     "app/tests/agent-roster-error.test.tsx",
+    "app/tests/ai-observability-admin-summary.test.tsx",
     "app/tests/approval-tools.test.tsx",
     "app/tests/approvals-rules.test.tsx",
     "app/tests/audit-dry-run-label.test.tsx",
@@ -63,13 +64,13 @@
     "app/tests/bot-route-default-agent.test.tsx",
     "app/tests/bot-settings-rows.test.tsx",
     "app/tests/bot-setup.test.tsx",
-    "app/tests/bot-sharing.test.tsx",
-    "app/tests/boundaries-read-failure.test.tsx"
+    "app/tests/bot-sharing.test.tsx"
    ]
   },
   {
    "name": "app/tests part 2",
    "files": [
+    "app/tests/boundaries-read-failure.test.tsx",
     "app/tests/brokered-account-row.test.tsx",
     "app/tests/build-cache.test.ts",
     "app/tests/channel-chat.test.ts",
@@ -92,13 +93,13 @@
     "app/tests/composer-upload-group.test.tsx",
     "app/tests/composing-enter.test.tsx",
     "app/tests/composio-picker-add-error.test.tsx",
-    "app/tests/computer-activity.test.ts",
-    "app/tests/computer-control-button.test.tsx"
+    "app/tests/computer-activity.test.ts"
    ]
   },
   {
    "name": "app/tests part 3",
    "files": [
+    "app/tests/computer-control-button.test.tsx",
     "app/tests/computer-handoff.test.ts",
     "app/tests/computer-tool-refusals.test.ts",
     "app/tests/craft-session-title.test.tsx",
@@ -471,6 +472,7 @@
   "app/tests/admin-credit-grant-ui.test.tsx",
   "app/tests/admin-gateway-readiness.test.tsx",
   "app/tests/agent-roster-error.test.tsx",
+  "app/tests/ai-observability-admin-summary.test.tsx",
   "app/tests/approval-tools.test.tsx",
   "app/tests/approvals-rules.test.tsx",
   "app/tests/audit-dry-run-label.test.tsx",
@@ -896,6 +898,7 @@
   "agent-langgraph/tests/governed-export-bytes.test.ts": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
   "agent-langgraph/tests/governed-tracing.test.ts": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
   "agent-langgraph/tests/trace-chain.test.ts": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
-  "app/src/lib/i18n/ai-observability.test.ts": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'"
+  "app/src/lib/i18n/ai-observability.test.ts": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'",
+  "app/tests/ai-observability-admin-summary.test.tsx": "runner named it: runner cannot collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'"
  }
 }
