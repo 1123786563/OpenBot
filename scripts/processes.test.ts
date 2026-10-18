@@ -7,7 +7,7 @@ import {
   describe,
   expect,
   test,
-} from "../tests/support/bun-test-compat";
+} from "../tests/support/e2e-compat";
 
 /**
  * `scripts/processes.sh` on a Windows host that has no `lsof`, `pgrep` or `pkill`, run anywhere.

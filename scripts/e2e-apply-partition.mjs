@@ -17,11 +17,12 @@ const E2E = "support/e2e-compat";
 const BUN = "support/bun-test-compat";
 
 /*
- * Files Bun loads on its own before any suite: `bunfig.toml`'s preload and the fixtures it pulls in.
- * They are never collected by e2e, so they belong to the bun:test side whatever the audit says about
- * the suites that import them.
+ * Files Bun itself loads before any suite — `bunfig.toml`'s preload. e2e never collects them, so they
+ * belong to the bun:test side whatever the audit says about the suites that import them. Only that:
+ * an earlier version of this rule also matched `scripts/`, which moved ordinary suites onto the Bun
+ * layer without recording them in the manifest, and the runner then failed to collect them.
  */
-const BUN_ONLY = /(^|\/)(scripts\/|preload)/;
+const BUN_ONLY = /preload/;
 
 function walk(dir, out) {
   for (const entry of readdirSync(dir)) {

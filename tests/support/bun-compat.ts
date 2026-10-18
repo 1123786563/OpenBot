@@ -160,18 +160,26 @@ function target(target: StdioTarget): "pipe" | "ignore" | number {
   return "ignore";
 }
 
-function collect(
-  stream: Readable | null,
-): Promise<string> & { __stream: Readable | null } {
-  const chunks: Buffer[] = [];
-  const promise = new Promise<string>((resolve, reject) => {
-    if (!stream) return resolve("");
-    stream.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-    stream.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+/**
+ * Bun answers a piped child stream as a web `ReadableStream` carrying `text()`/`bytes()`. Suites do
+ * `await new Response(child.stdout).text()` and `await child.stdout.text()`, so both forms have to
+ * work; a bare promise stringifies to "[object Promise]" and silently corrupts the assertion.
+ */
+function collect(stream: Readable | null): Any {
+  const chunks: Promise<Buffer> = new Promise((resolve, reject) => {
+    if (!stream) return resolve(Buffer.alloc(0));
+    const parts: Buffer[] = [];
+    stream.on("data", (chunk) => parts.push(Buffer.from(chunk)));
+    stream.on("end", () => resolve(Buffer.concat(parts)));
     stream.on("error", reject);
-  }) as Promise<string> & { __stream: Readable | null };
-  promise.__stream = stream;
-  return promise;
+  });
+  const web = Readable.toWeb((stream ?? Readable.from([])) as Readable) as Any;
+  web.text = () => chunks.then((value: Buffer) => value.toString("utf8"));
+  web.bytes = () => chunks.then((value: Buffer) => new Uint8Array(value));
+  web.blob = () => chunks.then((value: Buffer) => new Blob([value]));
+  web.json = () =>
+    web.text().then((value: string) => JSON.parse(value)) as Promise<Any>;
+  return web;
 }
 
 function run(command: readonly string[], options: SpawnOptions = {}): Any {
