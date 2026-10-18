@@ -1,0 +1,4 @@
+# MT122 biome — MT122 增量文件（4th takeover, 2026-10-18 02:31:00)
+# command: bunx biome check <3 new/touched files> — MT122 增量零违规
+Checked 3 files in 32ms. No fixes applied.
+increment-exit=0

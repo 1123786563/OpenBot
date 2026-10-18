@@ -1,0 +1,9 @@
+# MT070 baseline re-run (port-collision retrace: acceptance-harness binds fixed 127.0.0.1:45435;
+# first archived run 770/0 clean, second run hit 1 fail on that fixed-port bind —
+# same-process immediate re-run of the file passes; full suite re-run below)
+(pass) MT026 revalidation drift: a context issued before a membership change is refused > an in-transaction revalidation fails with SCOPE_REVOKED after the epoch moved [13.96ms]
+
+ 770 pass
+ 0 fail
+ 10655 expect() calls
+Ran 770 tests across 29 files. [26.18s]

@@ -1,0 +1,215 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/conversation-messages.test.ts:
+333 |             threadId: convMainThread,
+334 |             clientMessageKey: "intrude-1",
+335 |             content: "i am on the team too",
+336 |           },
+337 |         );
+338 |         expect(isCanonicalNotFound(outcome)).toBe(true);
+                                                   ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt022/server/tests/multitenancy/conversation-messages.test.ts:338:46)
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > same-team member: sendMessage is canonical not-found with zero writes [16.21ms]
+343 |     itDb("same-team member: readMessages is canonical not-found", async () => {
+344 |       const outcome = await service.readMessages(
+345 |         await scopeAs("a1-other", companyA, teamA1),
+346 |         { threadId: convMainThread },
+347 |       );
+348 |       expect(isCanonicalNotFound(outcome)).toBe(true);
+                                                 ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt022/server/tests/multitenancy/conversation-messages.test.ts:348:44)
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > same-team member: readMessages is canonical not-found [6.07ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > cross-team member: send and read are canonical not-found [11.38ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > cross-company member: send and read are byte-identical canonical not-found [10.10ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > nonexistent thread: the same canonical shape (single-element byte set) [10.75ms]
+415 |           clientMessageKey: "owner-live-1",
+416 |           content: "owner live message",
+417 |         });
+418 |         if (outcome.outcome !== "allow")
+419 |           throw new Error("owner send must allow");
+420 |         expect(outcome.message.seq).toBe(3);
+                                          ^
+error: expect(received).toBe(expected)
+
+Expected: 3
+Received: 4
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt022/server/tests/multitenancy/conversation-messages.test.ts:420:37)
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > owner: sendMessage allow — seq continues after seeds, content round-trips [9.60ms]
+432 |         const scope = await scopeAs("a1-member", companyA, teamA1);
+433 |         const full = await service.readMessages(scope, {
+434 |           threadId: convMainThread,
+435 |         });
+436 |         if (full.outcome !== "allow") throw new Error("owner read must allow");
+437 |         expect(full.page.items.map((m) => m.seq)).toEqual([1, 2, 3]);
+                                                        ^
+error: expect(received).toEqual(expected)
+
+  [
+    1,
+    2,
+    3,
++   4,
+  ]
+
+- Expected  - 0
++ Received  + 1
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt022/server/tests/multitenancy/conversation-messages.test.ts:437:51)
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > owner: readMessages pages ascending with keyset nextBeforeSeq [5.40ms]
+463 |           clientMessageKey: "owner-live-1",
+464 |           content: "owner live message",
+465 |         });
+466 |         if (first.outcome !== "allow")
+467 |           throw new Error("idempotent send must allow");
+468 |         expect(first.message.seq).toBe(3);
+                                        ^
+error: expect(received).toBe(expected)
+
+Expected: 3
+Received: 4
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt022/server/tests/multitenancy/conversation-messages.test.ts:468:35)
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > idempotent resend with the same key returns the same message without a new seq [5.40ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > same key with different content is message_conflict (409 shape), zero writes [6.71ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > RLS fail-closed: no-context restricted reads see zero rows [2.56ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > restricted role invariant: every restricted query ran as ob_ent_* [0.17ms]
+531 |         const outcome = await service.replayHistory(scope, {
+532 |           threadId: convMainThread,
+533 |         });
+534 |         if (outcome.outcome !== "allow")
+535 |           throw new Error("owner replay must allow");
+536 |         expect(outcome.messages.map((m) => m.seq)).toEqual([1, 2, 3]);
+                                                         ^
+error: expect(received).toEqual(expected)
+
+  [
+    1,
+    2,
+    3,
++   4,
+  ]
+
+- Expected  - 0
++ Received  + 1
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt022/server/tests/multitenancy/conversation-messages.test.ts:536:52)
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: history replay is an independent authorization surface > owner replay returns the full thread ascending [19.71ms]
+543 |         async () => {
+544 |           const outcome = await service.replayHistory(
+545 |             await scopeAs("a1-other", companyA, teamA1),
+546 |             { threadId: convMainThread },
+547 |           );
+548 |           expect(isCanonicalNotFound(outcome)).toBe(true);
+                                                     ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt022/server/tests/multitenancy/conversation-messages.test.ts:548:48)
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: history replay is an independent authorization surface > same-team member replay is canonical not-found (replay does not ride on read) [18.13ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC1: history replay is an independent authorization surface > cross-company replay is byte-identical canonical not-found [5.98ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC2: rename and archive are separately authorized > owner rename allow — title changes, messages untouched, MT021 detail agrees [12.59ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC2: rename and archive are separately authorized > same-team member rename is canonical not-found; title unchanged; zero writes [11.13ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC2: rename and archive are separately authorized > cross-company rename is canonical not-found [7.30ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC2: rename and archive are separately authorized > nonexistent conversation id rename is the same canonical shape [5.66ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC2: rename and archive are separately authorized > owner archive decision allow — zero side effects in this ticket (decision surface) [6.90ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC2: rename and archive are separately authorized > same-team member archive decision is canonical not-found [5.26ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC2: rename and archive are separately authorized > read allow does not derive write: after revocation a prior read grants nothing [27.55ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC4: revocation kills send/read/replay/rename/archive immediately > control: the doomed scope works before suspension [8.44ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC4: revocation kills send/read/replay/rename/archive immediately > real MT006 suspension: all five actions fail canonical on the old scope, zero writes [20.80ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC4: revocation kills send/read/replay/rename/archive immediately > MT007 restore: the old scope stays denied (epoch arm), a fresh scope works [17.81ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC4: revocation kills send/read/replay/rename/archive immediately > no epoch-bump dependency: suspended status alone denies with the epoch still equal [35.03ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC4: revocation kills send/read/replay/rename/archive immediately > team-level MT007 suspension denies the conversation in that team; restore re-allows [42.00ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > AC3: public-bot sessions stay the user's own private conversations > team list/count/detail (frozen MT021 surface) never surface the public-bot session [16.22ms]
+871 |             publisherScope,
+872 |             convPubBotThread,
+873 |             convPubBotId,
+874 |           );
+875 |           for (const deny of denies) {
+876 |             expect(JSON.stringify(deny)).toBe(canonicalNotFoundJson);
+                                               ^
+error: expect(received).toBe(expected)
+
+Expected: "{"outcome":"deny","code":"RESOURCE_NOT_FOUND"}"
+Received: "{"outcome":"allow","message":{"messageId":"cfaa9a79-d332-484e-a607-63606b7b6a84","threadId":"pubbot/bot-res-mt022/mt022-0b9ef906-principal-a1-member/thread-abc","seq":2,"role":"user","content":"probe","attachments":[],"createdAt":"2026-10-17T10:53:18.600Z"}}"
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt022/server/tests/multitenancy/conversation-messages.test.ts:876:42)
+(fail) MT022 conversation message/action scoping (Issue #65) > AC3: public-bot sessions stay the user's own private conversations > the bot publisher (same team) gets canonical not-found on all five actions [30.78ms]
+895 |           const replay = await service.replayHistory(userScope, {
+896 |             threadId: convPubBotThread,
+897 |           });
+898 |           if (replay.outcome !== "allow")
+899 |             throw new Error("owner replay must allow");
+900 |           expect(replay.messages.map((m) => m.seq)).toEqual([1, 2]);
+                                                          ^
+error: expect(received).toEqual(expected)
+
+  [
+    1,
+    2,
++   3,
+  ]
+
+- Expected  - 0
++ Received  + 1
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt022/server/tests/multitenancy/conversation-messages.test.ts:900:53)
+(fail) MT022 conversation message/action scoping (Issue #65) > AC3: public-bot sessions stay the user's own private conversations > the end user keeps full access — public bot usage keeps the user's own private session [34.85ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > input validation and trust boundary > forged scope is refused before any database work [3.50ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > input validation and trust boundary > missing company/team context gets its own loud refusal [7.25ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > input validation and trust boundary > input shapes refuse loudly [3.96ms]
+(pass) MT022 conversation message/action scoping (Issue #65) > input validation and trust boundary > unverified channel assembly refuses loudly [2.65ms]
+573 |       return data.transaction(async (tx) => {
+574 |         await beginContext(tx, scope);
+575 |         const conversation = await authorizeByThread(tx, scope, threadId);
+576 |         if (!conversation) return notFoundVerdict();
+577 |         if (conversation.storageBackend !== "platform") {
+578 |           throw new Error("CONVERSATION_BACKEND_UNSUPPORTED");
+                          ^
+error: CONVERSATION_BACKEND_UNSUPPORTED
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt022/server/src/enterprise/tenancy/conversation-actions.ts:578:21)
+(fail) MT022 conversation message/action scoping (Issue #65) > input validation and trust boundary > backend gate: platform-only message plane; management actions are backend-agnostic [27.08ms]
+1139 |           }),
+1140 |         ];
+1141 |         const bytes = new Set(
+1142 |           verdicts.map((verdict) => JSON.stringify(verdict)),
+1143 |         );
+1144 |         expect(bytes.size).toBe(1);
+                                  ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 2
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i14-mt022/server/tests/multitenancy/conversation-messages.test.ts:1144:28)
+(fail) MT022 conversation message/action scoping (Issue #65) > canonical verdict serialization > every denial across every action serializes to one byte string [39.88ms]
+
+11 tests failed:
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > same-team member: sendMessage is canonical not-found with zero writes [16.21ms]
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > same-team member: readMessages is canonical not-found [6.07ms]
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > owner: sendMessage allow — seq continues after seeds, content round-trips [9.60ms]
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > owner: readMessages pages ascending with keyset nextBeforeSeq [5.40ms]
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: non-members cannot read or write messages > idempotent resend with the same key returns the same message without a new seq [5.40ms]
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: history replay is an independent authorization surface > owner replay returns the full thread ascending [19.71ms]
+(fail) MT022 conversation message/action scoping (Issue #65) > AC1: history replay is an independent authorization surface > same-team member replay is canonical not-found (replay does not ride on read) [18.13ms]
+(fail) MT022 conversation message/action scoping (Issue #65) > AC3: public-bot sessions stay the user's own private conversations > the bot publisher (same team) gets canonical not-found on all five actions [30.78ms]
+(fail) MT022 conversation message/action scoping (Issue #65) > AC3: public-bot sessions stay the user's own private conversations > the end user keeps full access — public bot usage keeps the user's own private session [34.85ms]
+(fail) MT022 conversation message/action scoping (Issue #65) > input validation and trust boundary > backend gate: platform-only message plane; management actions are backend-agnostic [27.08ms]
+(fail) MT022 conversation message/action scoping (Issue #65) > canonical verdict serialization > every denial across every action serializes to one byte string [39.88ms]
+
+ 24 pass
+ 11 fail
+ 116 expect() calls
+Ran 35 tests across 1 file. [913.00ms]

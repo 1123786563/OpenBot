@@ -1,0 +1,6 @@
+export TEST_DATABASE_URL="postgres://postgres:mt076@127.0.0.1:55493/openbot_enterprise_mt076_test"
+export ENTERPRISE_TEST_SETUP_DATABASE_URL="$TEST_DATABASE_URL"
+export ENTERPRISE_TEST_DIRECTORY_DATABASE_URL="postgres://ent_mt076_directory:entpw.dir01@127.0.0.1:55493/openbot_enterprise_mt076_test"
+export ENTERPRISE_TEST_DATA_DATABASE_URL="postgres://ent_mt076_data:entpw.data01@127.0.0.1:55493/openbot_enterprise_mt076_test"
+export ENTERPRISE_TEST_OPERATOR_DATABASE_URL="postgres://ent_mt076_operator:entpw.operator01@127.0.0.1:55493/openbot_enterprise_mt076_test"
+export MT003_ASSIGNED_TEST_DATABASE_URL="postgres://postgres:mt076@127.0.0.1:55493/openbot_enterprise_mt003_assigned"

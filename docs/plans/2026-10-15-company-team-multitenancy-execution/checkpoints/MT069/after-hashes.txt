@@ -1,0 +1,15 @@
+# After-hash of the 3 narrow-edit files + all new/changed files (delivery time)
+# note: payer-accounts.test.ts hash refreshed after the conflict-message assertion
+#       strengthening (pre-mutation final state; suite re-verified 22/0 + 599/0/23 after)
+# note (fix round, F1 closed): payer-accounts.test.ts re-hashed after biome 2.5.10 format
+#       --write (2 same-pattern expect(...startsWith(...)).toBe( rewraps; diff + pre/post
+#       hashes in verification/4c-fix-diff.txt); focused suite re-verified 22/0/0 on a
+#       fresh dedicated database (verification/04b-focused-after-fix.txt). All other
+#       entries below re-verified byte-identical at fix time (zero drift).
+aa1ce426f5967e3d586b762a23829ec4d03475fb8e1bf6c8c6d0c631f4f54213  scripts/multitenancy/migrate-test.ts
+1ed8771e242cf54c0ce516c1a0e09a982e339835f3222f13c61c9cd28acb9272  tests/multitenancy/migration-tool.test.ts
+785cd7ac175a50f943264e5fd01a4bd3a717bedaa19476155aab497334ecde95  src/db/schema/index.ts
+e3042dbc3df9ab0f8f0b508bc57c2044363107719ab34ffedfa8b812c55b8c23  src/billing/payer-accounts.ts
+6194230a7b680558d7bec83015967454db90e036294e17feeef6439ef357f924  src/db/schema/payer-accounts.ts
+077cf413edf353c814b74a1fbf526491f8aa7dac75aa074d0343d41e5dc31f32  tests/multitenancy/payer-accounts.test.ts
+056f6c7ec924fc8bfdce3a1a2712c505e8bc091ab95fe70ff88e3ca23694ddae  tests/multitenancy/support/payer-accounts.ts
