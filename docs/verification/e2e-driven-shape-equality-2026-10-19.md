@@ -90,3 +90,31 @@ TEST_DATABASE_URL=… DATABASE_URL=… <企业四库 URL>… \
 
 一条测量事实值得记住：**bun 在文件级错误时不写 junit 文件**，所以"junit 里没有这个文件"既可能是
 没跑也可能是致命错误，成因必须回到控制台输出——上一版把这两种混成了"unmeasured"。
+
+## 分流 composio-adapter 之后的全量复测（03:05，`.e2e/final-pass`）
+
+```
+Test Files  29 failed | 554 passed | 14 skipped (597)
+Tests      180 failed | 7688 passed | 57 skipped (7925)     Duration 10m21s
+```
+
+`discovered` 从 8166 到 7925 的差是**一个文件**：`server/tests/composio-adapter.test.ts`（241 条）
+现在由 Bun 执行、e2e 调度，所以不再计入原生声明数。逐文件比对两轮报告，变化只有这一条，别处没有
+悄悄少跑。这 241 条确实被执行且全过：单跑 `bun test ./server/tests/composio-adapter.test.ts`
+→ **241 pass / 0 fail**；失败总数保持 180，说明分流没有把任何红点藏起来。
+
+### 本轮我自己造成的一次损坏（以及它怎么暴露的）
+
+`e2e-apply-partition` 在加分流守卫**之前**的那一次运行，把 `server/tests/helpers/refusals.ts` 里
+动态说明符的 false 分支字符串也一并改写成了 `e2e-compat`，于是"按运行器解析 expect"的 seam 两边同指
+一处：Bun 加载它即 `registerHooks` 致命，composio 与两个 `shared-*` 套件在驱动组里整体消失，
+表现就是上面那次 `-241`。main 上的版本是对的（`09196211`），工作树从 HEAD 还原；防复发的守卫是
+`163811dc`（只改套件与 bunfig 声明的 preload，辅助文件由消费者决定层级）。
+
+### 一条如实记录的未解项
+
+同一文件在 01:03 那轮能被 Node 收集（原生 241 条），02:36 起却以
+`Only URLs with a scheme in: file, data, and node are supported by the default ESM loader.
+Received protocol 'bun:'` 中止整轮收集。**分流的决定性证据是运行器当下实测**（连续两次整轮中止），
+但"Node 侧为什么从可收集变成不可收集"我没有结论——候选是 `@composio/core` 的 exports 条件在
+不同调用路径下被解析成 Bun 专用入口。这条留在未解清单里，不当已解释。
