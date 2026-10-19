@@ -112,6 +112,35 @@ type ExecuteMastra = (request: ExecutionRequest) => Observable<BaseEvent>;
 
 恢复数据存储采用 OpenBot 控制的 continuation envelope，包含 `schemaVersion=1`、engine、锁定包版本指纹、binding、toolCallId、参数摘要、快照/受保护引用、revision、claim 与终态。不得保存 AbortSignal、函数或明文 provider key；实际 Mastra 恢复载荷按 T1 验证的版本序列化，无法跨进程重建时不得放行 T6。
 
+T6 在同一 contracts 文件追加以下 Interface；所有身份仍须在 store 内复核，类型不是授权证明：
+
+```ts
+interface ContinuationPayload {
+  readonly schemaVersion: 1;
+  readonly engine: "mastra";
+  readonly packageFingerprint: string;
+  readonly kind: "approval" | "question" | "frontend_tool";
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly argsDigest: string;
+  readonly snapshotRef: string; // 仅服务端受保护存储中的不透明引用
+}
+type ResumeDecision =
+  | { kind: "approved"; approvalId: string; argsDigest: string }
+  | { kind: "declined"; approvalId: string; reason: string }
+  | { kind: "answered"; responseId: string }
+  | { kind: "tool_result"; receiptId: string };
+interface ClaimedContinuation {
+  readonly ref: ResumeRef;
+  readonly binding: ExecutionBinding;
+  readonly payload: ContinuationPayload;
+  readonly claimToken: string; // 不出服务端，不写日志
+}
+type ContinuationOutcome = "resumed" | "declined" | "failed_unknown";
+```
+
+`responseId`/`receiptId` 必须解析到已认证参与人提交的持久记录；不接受客户端直接填可信结果。claim 采用 CAS 且带有效期；崩溃后是否允许重新 claim 取决于工具 receipt 的已执行/未执行/未知证据，未知状态不得自动重放。
+
 ## 4. 验证命令与证据规范
 
 以下命令均从执行工作区根目录运行，`<task-id>` 在执行 Brief 中替换成实际编号；每轮 RED/GREEN 使用不同输出目录。
@@ -240,7 +269,7 @@ git diff --check
 
 **Files:** Create `mastra/continuation-store.ts`、`mastra/approvals.ts`、`server/src/db/schema/mastra-execution-continuations.ts`；Modify `mastra/execution.ts`、`approvals/native-context.ts`、`approvals/question-resume.ts`、`approvals/execute.ts`、schema 导出。Create `server/tests/mastra-approvals.test.ts`、`enterprise/mastra-continuations.integration.test.ts`。Drizzle SQL/journal 用实际生成的下一个编号，生成文件名记录在 Brief，不预占当前多人修改的编号。
 
-**Consumes:** T1 可跨进程恢复 API、T3 waiting 事件、既有 ApprovalService/政策、ExecutionBinding/ResumeRef。**Produces:** `saveContinuation(binding, payload): Promise<ResumeRef>`、`claimContinuation(scope, ref, decision): Promise<ClaimedContinuation>`、`finishContinuation(claim, outcome): Promise<void>`；payload/decision/claim 类型定义在 execution-contracts.ts，JSON schema v1 校验，claim 为服务端不可伪造对象。
+**Consumes:** T1 可跨进程恢复 API、T3 waiting 事件、既有 ApprovalService/政策、ExecutionBinding/ResumeRef。**Produces:** `saveContinuation(binding: ExecutionBinding, payload: ContinuationPayload): Promise<ResumeRef>`、`claimContinuation(scope: PlatformScope, ref: ResumeRef, decision: ResumeDecision): Promise<ClaimedContinuation>`、`finishContinuation(claim: ClaimedContinuation, outcome: ContinuationOutcome): Promise<void>`；类型定义见 §3，JSON schema v1 校验，claim 为服务端不可伪造对象。
 
 - [ ] RED：`approval_matches_exact_tool_and_args`、`two_resumers_only_one_claim`、`revoked_source_blocks_resume`、`new_process_can_resume`、`frontend_tool_waits_without_fake_result`、`unknown_external_effect_is_not_replayed`。
 - [ ] 测 RED；确认当前只有 Checkpoint 类型声明时明确失败，不用内存 Map 伪造 durable。
