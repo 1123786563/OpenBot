@@ -1142,6 +1142,13 @@
       "when": 1792411529857,
       "tag": "0162_skills_icon",
       "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1792419123140,
+      "tag": "0163_restore_drifted_tables",
+      "breakpoints": true
     }
   ]
 }

@@ -20879,22 +20879,38 @@
         "credit_recovery_items_attempt_unique_idx": {
           "name": "credit_recovery_items_attempt_unique_idx",
           "columns": [
-            "attempt_id"
+            {
+              "expression": "attempt_id",
+              "isExpression": false,
+              "asc": true
+            }
           ],
           "isUnique": true
         },
         "credit_recovery_items_reservation_unique_idx": {
           "name": "credit_recovery_items_reservation_unique_idx",
           "columns": [
-            "reservation_id"
+            {
+              "expression": "reservation_id",
+              "isExpression": false,
+              "asc": true
+            }
           ],
           "isUnique": true
         },
         "credit_recovery_items_state_detected_idx": {
           "name": "credit_recovery_items_state_detected_idx",
           "columns": [
-            "state",
-            "detected_at"
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true
+            },
+            {
+              "expression": "detected_at",
+              "isExpression": false,
+              "asc": true
+            }
           ],
           "isUnique": false
         }

@@ -20597,7 +20597,11 @@
         "credit_reservation_attribution_bot_idx": {
           "name": "credit_reservation_attribution_bot_idx",
           "columns": [
-            "bot_id"
+            {
+              "expression": "bot_id",
+              "isExpression": false,
+              "asc": true
+            }
           ],
           "isUnique": false
         }
