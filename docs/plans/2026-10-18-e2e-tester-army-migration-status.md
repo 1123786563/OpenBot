@@ -463,3 +463,25 @@ native files that contributed NO test: 4
 
 我一度把这个差集做成审计里的告警，实现取扩展名的正则写错（把 `test` 当扩展名，虚报 473 条），
 已回退——留在这里是因为它说明了另一件事：把新判据加进 CI 关卡之前，得先证伪它自己。
+
+### 那 102 条失败的根因已经定出来（10-19 04:09）
+
+单文件跑（临时放宽 glob）给出的是同一个信号：
+
+```
+ERROR: Cannot read properties of undefined (reading 'VITE_OPENBOT_SUPPORT_URL')
+× problem_ui_has_no_credential_restore_action · × Failure offers external setup help without including error data · …
+```
+
+`desktop/src/*.test.tsx` 渲染的是 desktop 的生产模块，而那些模块读 `import.meta.env`。Node 侧没有这个
+属性，Bun 的加载器会填它——于是**每一条用例在任何一个断言执行之前就以同一个 undefined 读属性死掉**。
+`grep -rl "import\.meta\.env" …\.test.tsx` 在整个语料里只命中 4 个套件文件，且 4 个都已在驱动层，
+进一步说明来源是生产代码而不是套件本身。这正是 ADR 0008 两层制里"Bun 加载器特有行为"那一类。
+
+修法形状因此是两步一起、不是只改 glob：① 每个目录都出 `.test.ts/.test.tsx/.test.mts/.spec.ts/.spec.tsx`；
+② 把这三个 desktop 套件加进 `e2e-bun-suites.json`（附上面这条根因作 cause）、`e2e-apply-partition` 改写它们的
+runner import、`groupsOf` 重算分组，然后按组验证。我本轮试着做这件事，但第一次写清单用的脚本里塞了个
+占位函数、实际什么都没写（`apply-partition` 报 "0 moved" 就是证据），而 glob 改动已经落进工作树——
+那一刻配置与清单不一致，入口会凭空多出 102 条无解释的红。我选择把 glob 还原、把根因与两步修法留在这里，
+而不是把半成品留在共用入口上；审计仍 `no gaps`、跟踪文件零改动，`scripts/e2e-collection-reconcile.mjs`
+仍然每天能把这 4 个零贡献文件指出来。
