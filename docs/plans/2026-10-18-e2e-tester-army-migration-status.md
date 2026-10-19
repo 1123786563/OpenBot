@@ -621,3 +621,12 @@ Test Files  27 failed | 553 passed | 17 skipped (597)
 
 未定项照旧：第 7 条（引擎层 10 文件 / 28 条的运行时，需要起一次本地栈）；`+2` 原生层红点的
 Qdrant 残留状态解释还没做那一轮复现（方法在 `~/.cache/openbot-e2e/parked/plan-rows-2026-10-19.md`）。
+
+同一轮本机 `bun run test:ci`（合并 `295c0b89` 之后、私有 pgvector :55433 + MT 岛 :55434）跑出
+**7936 条 = 7686 passed / 178 failed / 72 skipped**，与 CI 的 **7936 = 7686 passed / 176 failed / 74 skipped**
+只差 2 条——passed 数完全相同，这 2 条就是先前登记的 `+2` 未定项（`qdrant/collections` 对共享 Qdrant 残留
+状态的依赖），它现在有了配对证据：**同一份代码、同一套用例，环境不同差 2 条，运行器不参与**。
+`node scripts/e2e-collection-reconcile.mjs .e2e/unit/report.json` 在同一份报告上给出
+**native bucket 597 · 实际执行 597 · 贡献为零的文件 0 · 执行了但不属于任何桶 0**，
+审计桶与 runner 报告第一次做到逐文件相等（这个对账本身此前被 `ALLOWED_MISSING` 里手抄的一行拖成
+598 vs 597，已改为共用 `LIVE_SUITES`）。
