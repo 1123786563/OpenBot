@@ -772,6 +772,7 @@
     "server/tests/cleanup-relations.integration.test.ts",
     "server/tests/code-run-store.test.ts",
     "server/tests/component-store.integration.test.ts",
+    "server/tests/composio-adapter.test.ts",
     "server/tests/composio-connection-kinds.test.ts",
     "server/tests/composio-connections.test.ts",
     "server/tests/computer-culler.integration.test.ts",
@@ -1476,6 +1477,7 @@
     "app/tests/memory-settings.test.tsx": "runner named it: attributed runner-difference by scripts/e2e-vs-bun.mjs: green on bun test with the same suite text against the same production code",
     "app/tests/account-mode-dialog.test.tsx": "runner named it: attributed runner-difference by scripts/e2e-vs-bun.mjs against .e2e/final3/report.json: green on bun test with the same suite text against the same production code",
     "agent-sandbox/tests/proxy.test.ts": "runner named it: attributed runner-difference with evidence: 25 pass / 0 fail under bun test on current code with the pre-migration suite text, deterministic 24 pass / 1 fail under e2e (GET /events forwards the directory scope to the upstream). forwardEvents' fetch to the fake upstream is never recorded by it under Node; unresolved why, so the suite stays on the Bun tier instead of a guessed port of the shim",
-    "server/tests/workshop-preview.test.ts": "root cause named, not guessed: the fake forwarder answers {status:101} and production passes that Response straight through, but Node's undici Response constructor throws RangeError: init[\"status\"] must be in the range of 200 to 599 while Bun builds 1xx fine (verified side by side: node -e new Response(null,{status:101}) throws, bun -e prints 101). The assertion is Bun-coupled HTTP semantics, so the suite stays on the Bun tier under e2e scheduling; 9 pass / 0 fail under bun test in one file."
+    "server/tests/workshop-preview.test.ts": "root cause named, not guessed: the fake forwarder answers {status:101} and production passes that Response straight through, but Node's undici Response constructor throws RangeError: init[\"status\"] must be in the range of 200 to 599 while Bun builds 1xx fine (verified side by side: node -e new Response(null,{status:101}) throws, bun -e prints 101). The assertion is Bun-coupled HTTP semantics, so the suite stays on the Bun tier under e2e scheduling; 9 pass / 0 fail under bun test in one file.",
+    "server/tests/composio-adapter.test.ts": "runner proved it, not a guess: `e2e run … server/tests/composio-adapter.test.ts` aborts collection with \"Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'\". The specifier comes from the @composio/core graph, so the static boundary tool (which follows repository modules) cannot see it — the suite therefore stays on the Bun runtime, scheduled and reported by e2e."
   }
 }

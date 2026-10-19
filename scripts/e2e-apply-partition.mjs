@@ -69,6 +69,15 @@ let movedToE2e = 0;
 for (const dir of dirs) {
   for (const file of walk(resolve(root, dir), [])) {
     const rel = file.replace(`${root}/`, "");
+    /*
+     * Only suites and the declared preloads have a tier of their own. A `*.fixture.tsx` or
+     * `helpers/*.ts` is loaded by whoever imports it, so its correct compat layer is its consumers'
+     * tier — and a helper shared by a native suite and a driven one needs the runtime-resolved seam
+     * (see server/tests/helpers/refusals.ts), not a rewrite by membership in a manifest that never
+     * lists it. Rewriting those was what pushed `app/tests/home-fallback-routing.fixture.tsx` back to
+     * the e2e layer and re-killed three driven suites with Node's `registerHooks`.
+     */
+    if (!TEST_FILE.test(rel) && !BUN_ONLY.has(rel)) continue;
     const source = readFileSync(file, "utf8");
     const want = bunFiles.has(rel) || BUN_ONLY.has(rel) ? BUN : E2E;
     const from = want === BUN ? E2E : BUN;
