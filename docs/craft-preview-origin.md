@@ -56,6 +56,11 @@ webapp-info 面可以给出原因）——这是预期形状，不是退化。
    A 会话的通行证打不开 B 会话的 host；明文 session id 不是通行证，一律 401。
 
 票据值不出现在任何日志、错误响应或重定向后的 URL（唯一合法出现位置是签发响应体）。
+签发响应与兑换 302 均带 `Cache-Control: no-store` + `Referrer-Policy: no-referrer`（#406）。
+**部署注意（#406）**：票据唯一出现在浏览器进入 `origin?ticket=<t>` 那一次跳转的 query 里，
+而这一跳经过反向代理（含 TLS 终结者）——默认访问日志按原样记录完整 query，票据值会落盘。
+反代必须对 `?ticket=` 脱敏（nginx：`log_format` 用 `$uri` 代替 `$request`，或 map 掩码
+该 query），否则上句「不出现在任何日志」在部署层不成立。
 
 ### #358 修复的升级语义（pass 从明文 id 换为签名值）
 

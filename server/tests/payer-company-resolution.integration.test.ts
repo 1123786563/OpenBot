@@ -101,6 +101,9 @@ async function mintTrustedScope(input: {
         principalStatus: "active",
         memberStatus: "active",
         memberEpoch: 3,
+        // MT005: resolve() also checks workspace membership — the same controlled row
+        // answers it (the unit fixture's twin fix, status rides along).
+        status: "active",
       },
     ]),
   );

@@ -1,0 +1,68 @@
+{
+  "id": "10b636ce-593c-4ab8-b43a-87a8fe82ff58",
+  "ok": true,
+  "result": {
+    "runId": "run_68e96a7ff1c9",
+    "deliveryId": "delivery_6a6fd81caf8d",
+    "messages": [
+      {
+        "id": "msg_7646d510b37c",
+        "run_id": "run_68e96a7ff1c9",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_2b27a09c-055a-4bcb-ab48-37462f551fce",
+        "to_handle": "run:run_68e96a7ff1c9",
+        "subject": "alive",
+        "body": "",
+        "type": "heartbeat",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_df3500f8d1cb\",\"dispatchId\":\"ctx_2c24dc49f30d\",\"phase\":\"investigating\"}",
+        "created_at": "2026-10-19T09:11:15Z",
+        "delivered_at": null
+      },
+      {
+        "id": "msg_5ad3c26c0024",
+        "run_id": "run_68e96a7ff1c9",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_ef1840c2-2239-45dc-b8c2-089bf4558a69",
+        "to_handle": "run:run_68e96a7ff1c9",
+        "subject": "alive",
+        "body": "",
+        "type": "heartbeat",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_3de756816e0f\",\"dispatchId\":\"ctx_ba5fd8b28cc0\",\"phase\":\"investigating\"}",
+        "created_at": "2026-10-19T09:12:13Z",
+        "delivered_at": null
+      },
+      {
+        "id": "msg_44263c26888c",
+        "run_id": "run_68e96a7ff1c9",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_c496f98b-e4d1-4001-a6cb-e3584aca9789",
+        "to_handle": "run:run_68e96a7ff1c9",
+        "subject": "mt-M2: #69 SATISFIED, #75/#76/#78/#82 BLOCKED-GAP",
+        "body": "逐票核验五张：#69 MT026 零改动 SATISFIED——落地在 sso-scim-config/scim-directory/identity-binding 三套件（票面路径漂移已校正），33/33 用例绿 0 skip，AC1-AC4 在 describe 标题逐条点名实证；期间用容器超户重设三个 ent_mt011_*_login 密码并经 migrate-test 应用 MT026 迁移（journal+2）。#75/#76/#78/#82 全部 BLOCKED-GAP：server/ 零命中、无迁移计划、host-access 与 memory 既有模块零租户引用，属整票未实施（各数百行，超 IMPLEMENTED 门槛），依赖（MT031/MT018/MT009/MT034/MT038/MT010）均已就位；#78 顺带取了既有审批回归基线 16/16 绿（两个套件须原生层 e2e 跑）。详证见 worktree 根 ORCA-REPORT.md；零代码改动、无提交推送，容器保留。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_e16d9b93a3c0\",\"dispatchId\":\"ctx_06c92a1b3ef5\",\"outcome\":\"succeeded\",\"reportPath\":\"ORCA-REPORT.md\"}",
+        "created_at": "2026-10-19T09:12:19Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 3,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "923bd2c0-586a-4bec-add0-c08c85f1b64d",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

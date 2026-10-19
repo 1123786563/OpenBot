@@ -1,0 +1,38 @@
+{
+  "id": "e3fbc59e-f385-4cb2-b186-2d34f94a8c5b",
+  "ok": true,
+  "result": {
+    "runId": "run_68e96a7ff1c9",
+    "deliveryId": "delivery_63ad4b335535",
+    "messages": [
+      {
+        "id": "msg_d83e6f14a36c",
+        "run_id": "run_68e96a7ff1c9",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_f8b226b1-70c6-4e54-8b04-761501baae46",
+        "to_handle": "run:run_68e96a7ff1c9",
+        "subject": "closeout 三票复验全 SATISFIED",
+        "body": "零改动复验 #48/#214/#371 于 main HEAD 3ca32d49，三票均 SATISFIED：#48 scope-gate.test.ts 23/23 绿（mt048 库，login 密码已重置）；#214 gateway-admin-routes 9 + admin-gateway-readiness 4 = 13/13 绿；#371 payment-service 70（e2e 运行器）+ fulfillment 3（bun）+ typecheck exit 0。两项范围外发现已记录在报告：F1 迁移链落后代码 schema（enterprise_resources.visibility 等 38 表不在任何迁移，全新库无法复现 multitenancy 域）；F2 #371 票面 bun test 一条龙与两层制运行器错配须拆两条命令。证据与库清单见 ORCA-REPORT.md；容器 orca-all-cl01-pg（5563）按纪律保留，未提交任何改动。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_75558dade276\",\"dispatchId\":\"ctx_2f47713e12da\",\"outcome\":\"succeeded\",\"reportPath\":\"ORCA-REPORT.md\"}",
+        "created_at": "2026-10-19T08:41:15Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "b146675b-4755-44fe-b3a5-ebf9fcac732d",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

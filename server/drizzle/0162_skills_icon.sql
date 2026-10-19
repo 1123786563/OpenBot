@@ -1,0 +1,12 @@
+-- Restore the skills marketplace `icon` column.
+--
+-- The marketplace commit (a200eafe) shipped this column inside `0061_narrow_vulture.sql`, but a
+-- later migration renumbering replaced that file: `0061_absent_phil_sheldon` took the 0061 slot
+-- and only the `category` half came back in `0073_narrow_vulture`. The code schema kept
+-- `icon: text("icon")` (db/schema/plugins.ts), so every fresh deployment since then has a
+-- `skills` table without the column, and the catalogue seed crashes the server at start-up with
+-- `column "icon" of relation "skills" does not exist`.
+--
+-- This restores the lost `ALTER TABLE` verbatim. Nullable, like the original: rows that predate
+-- the marketplace have no icon, and a skill somebody wrote here never needs one.
+ALTER TABLE "skills" ADD COLUMN "icon" text;

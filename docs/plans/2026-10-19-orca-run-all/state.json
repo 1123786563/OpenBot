@@ -1,13 +1,435 @@
 {
- "run": {"short": "run_68e96a7ff1c9", "objective": "orca-run-all 试点波次", "base": "2b41017c", "scope_revision": 1},
+ "run": {
+  "short": "run_68e96a7ff1c9",
+  "objective": "orca-run-all 试点波次",
+  "base": "2b41017c",
+  "scope_revision": 1
+ },
  "wave1": [
-  {"issue": 410, "domain": "craft", "task": "task_c9310e834e9d", "dispatch": "ctx_57c400a455ea", "worktree": "craft410", "mode": "先核验再实施"},
-  {"issue": 377, "domain": "hs", "task": "task_c1732314a33c", "dispatch": "ctx_1d5781dd2b51", "worktree": "hs001", "mode": "实施", "db": "orca-all-hs001-pg@5560"},
-  {"issue": 221, "domain": "bf", "task": "task_c383cc36123d", "dispatch": "ctx_5cbc94e4eaa2", "worktree": "bf027", "mode": "B类先核验", "db": "orca-all-bf027-pg@5561"},
-  {"issue": 54, "domain": "mt", "task": "task_bba30e0de8fc", "dispatch": "ctx_ec7692f23e67", "worktree": "mt011", "mode": "C类实施", "db": "orca-all-mt011-pg@5562"},
-  {"issue": "48+214+371", "domain": "closeout", "task": "task_75558dade276", "dispatch": "ctx_2f47713e12da", "worktree": "verify-closeout", "mode": "复验零改动", "db": "orca-all-cl01-pg@5563"}
+  {
+   "issue": 410,
+   "domain": "craft",
+   "task": "task_c9310e834e9d",
+   "dispatch": "ctx_57c400a455ea",
+   "worktree": "craft410",
+   "mode": "先核验再实施",
+   "state": "verified+released",
+   "result": "零改动收尾：AC5/5 实证；guard 26/26 主工作区复跑绿；e2e 层 275/275"
+  },
+  {
+   "issue": 377,
+   "domain": "hs",
+   "task": "task_c1732314a33c",
+   "dispatch": "ctx_1d5781dd2b51",
+   "worktree": "hs001",
+   "mode": "实施",
+   "db": "orca-all-hs001-pg@5560",
+   "state": "verified+integrated+released",
+   "result": "主体在 main(a891698f)；tools.ts +1 行描述已集成(patch d46d5bab83d8b6ef，typecheck 绿)；独立验证 PASS(56+90 复跑一致)；AC1 公司维度归前置 #381/#382"
+  },
+  {
+   "issue": 221,
+   "domain": "bf",
+   "task": "task_c383cc36123d",
+   "dispatch": "ctx_5cbc94e4eaa2",
+   "worktree": "bf027",
+   "mode": "B类先核验",
+   "db": "orca-all-bf027-pg@5561",
+   "state": "verified+integrated+released",
+   "result": "main 已含全部 AC(5192c33c)；1 行测试断言排序修正已集成主工作区(patch f11cee1054d48ce7，集成后 10/10 绿)；协调器复验"
+  },
+  {
+   "issue": 54,
+   "domain": "mt",
+   "task": "task_bba30e0de8fc",
+   "dispatch": "ctx_ec7692f23e67",
+   "worktree": "mt011",
+   "mode": "C类实施",
+   "db": "orca-all-mt011-pg@5562",
+   "state": "verified+released",
+   "result": "零改动收尾：落地文件 not-found-semantics.test.ts（票面路径漂移）；协调器复跑 21/21 绿（worker 报 19，0 fail）"
+  },
+  {
+   "issue": "48+214+371",
+   "domain": "closeout",
+   "task": "task_75558dade276",
+   "dispatch": "ctx_2f47713e12da",
+   "worktree": "verify-closeout",
+   "mode": "复验零改动",
+   "db": "orca-all-cl01-pg@5563",
+   "state": "verified+released",
+   "result": "三票 SATISFIED 于 main 3ca32d49：#48 23/23（enterprise 栈 5435，复现配方在报告）；#214 9+4 复跑一致；#371 payment 70+fulfillment 3+typecheck 0。范围外发现 F1（38 表不在迁移链）/F2（#371 票面命令与两层制错配）已记录"
+  }
  ],
- "pending_user": ["#106/#133/#162 裁决", "Opik 树外 37 张", "body-link 52 张补挂(非阻塞)"],
+ "pending_user": [
+  "#106/#133/#162 裁决",
+  "Opik 树外 37 张",
+  "body-link 52 张补挂(非阻塞)"
+ ],
  "integration_mode": "未提交检查点（无提交授权）",
- "updated_at": "2026-10-19T16:26"
+ "updated_at": "2026-10-19T16:00",
+ "wave1_result": "5/5 settle：零改动收尾 3（#410/#54/#221 测试侧 1 行）+ 实施 1（#377 产品侧 1 行）+ 复验 3（#48/#214/#371）；2 patch 已集成主工作区未提交区（f11cee1054d48ce7 / d46d5bab83d8b6ef）；R7 已同步 6 张",
+ "scale_up": {
+  "authorized": "2026-10-19 用户选 1（放量）",
+  "batches": {
+   "C": {
+    "queue": [
+     [
+      436,
+      437,
+      433,
+      404,
+      408
+     ],
+     [
+      409,
+      411,
+      412,
+      413,
+      414
+     ],
+     [
+      415,
+      416,
+      405,
+      425,
+      427
+     ],
+     [
+      406,
+      407,
+      417,
+      418,
+      419
+     ],
+     [
+      431
+     ]
+    ],
+    "worktree": "craft410",
+    "db": "5564"
+   },
+   "M": {
+    "queue": [
+     [
+      62,
+      63,
+      66,
+      67,
+      68
+     ],
+     [
+      69,
+      75,
+      76,
+      78,
+      82
+     ],
+     [
+      83,
+      85,
+      111,
+      115,
+      117
+     ],
+     [
+      121,
+      143,
+      146,
+      155,
+      167
+     ]
+    ],
+    "worktree": "mt011",
+    "db": "5562"
+   },
+   "B": {
+    "queue": [
+     [
+      227,
+      232,
+      240,
+      242,
+      251
+     ],
+     [
+      264,
+      270,
+      272,
+      273,
+      278
+     ],
+     [
+      279,
+      287,
+      295,
+      325,
+      341
+     ]
+    ],
+    "worktree": "bf027",
+    "db": "5561"
+   },
+   "H": {
+    "queue": [
+     [
+      380,
+      398
+     ]
+    ],
+    "worktree": "hs001",
+    "db": "5560"
+   }
+  },
+  "active": {}
+ },
+ "batch_results": {
+  "B1": {
+   "settled": "4 SATISFIED(#227/#232/#240/#242) + 1 BLOCKED-GAP(#251)",
+   "r7": "4 张已同步"
+  },
+  "C1": {
+   "settled": "1 SATISFIED(#404) + 4 BLOCKED-GAP(#436/#437/#433/#408)",
+   "r7": "#404 已同步"
+  },
+  "M1": {
+   "settled": "5/5 BLOCKED-GAP(#62/#63/#66/#67/#68 = MT019/20/23/24/25 全未实施)",
+   "extra": "发现 main 缺陷：MT112 锚点种子 ON CONFLICT(id) 撞 user_id 唯一索引致 corpus 顺序耦合 133 fail（单文件复测全绿）→ 建议并入 #399/#402 CI 线"
+  },
+  "B2": {
+   "settled": "4 SATISFIED(#264/#270/#272/#273) + 1 SATISFIED+FIX(#278 spy 4 行)",
+   "r7": "5 张已同步",
+   "patch": "d8b704b6a4e28e39"
+  },
+  "M2": {
+   "settled": "1 SATISFIED(#69) + 4 BLOCKED-GAP(#75/#76/#78/#82)",
+   "r7": "#69 已同步（2026-10-19 GraphQL 实证）"
+  },
+  "H1": {
+   "settled": "#380 SATISFIED + #398 IMPLEMENTED(独立验证 PASS，已集成)",
+   "r7": "2 张已同步",
+   "patch": "9228de43193b4299"
+  },
+  "C2": {
+   "settled": "#409 SATISFIED(AC6 语义差异留档) + #413 SATISFIED+FIX(+5 行) + #411/#412/#414 BLOCKED-GAP",
+   "r7": "2 张已同步",
+   "patch": "1dcc7603e90b9dda"
+  },
+  "B3": {
+   "settled": "4 SATISFIED(#279/#295/#325/#341) + 1 BLOCKED-GAP(#287) + 测试漂移修正(+6 行)",
+   "r7": "4 张已同步（2026-10-19 GraphQL 实证）",
+   "patch": "ec9c8a9bfcc2b09f"
+  },
+  "M3": {
+   "settled": "3 SATISFIED(#85/#115/#117) + 2 BLOCKED-GAP(#83/#111)",
+   "r7": "3 张已同步（2026-10-19 GraphQL 实证）",
+   "notes": "#111 实际为 MT068 内容（manifest 签名+审计接线）；迁移注册表 MT074 与票 #117 撞码；环境侧已幂等补齐 MT012–MT074 迁移"
+  },
+  "C3": {
+   "settled": "#427 SATISFIED(#431 线等价更强) + #415 IMPLEMENTED(TDD 待验) + #416/#405/#425 BLOCKED-GAP",
+   "r7": "2 张已同步(#427/#415)",
+   "patch": "fb074778786a9989(#415 部分)+1dcc7603e90b9dda(#413 部分)"
+  },
+  "M4": {
+   "settled": "#146/#155 SATISFIED + #121/#143/#167 BLOCKED-GAP",
+   "r7": "2 张已同步（2026-10-19 GraphQL 实证）",
+   "notes": "M4 曾因 API ECONNRESET 中断 2.5h，send 恢复后收官"
+  },
+  "C4": {
+   "settled": "#406 IMPLEMENTED(独立验证 PASS) + #407 SATISFIED+FIX + #417/#419 零改动 + #418 docs-only",
+   "r7": "5 张已同步",
+   "patch": "c03c10702c08d7d0"
+  },
+  "C5": {
+   "settled": "#431 T1/T2 SATISFIED 零改动；T3/T4 运行态缺口并入 #358 收尾（不贴标）"
+  }
+ },
+ "gap_tickets": [
+  {
+   "issue": 251,
+   "domain": "bf",
+   "gap": "服务层 revokeForUser 已在 05.7 交付；缺用户侧 Key 状态查询路由、撤销全部端点、UI 组件与 user-key-status-ui.test.tsx",
+   "status": "待专项派发"
+  },
+  {
+   "issue": 436,
+   "domain": "craft",
+   "gap": "迁移链不自洽：fresh 库 migrate 成功但启动 42703（skills.icon）；schema↔实库漂移 291 列/39 表；drizzle.config 缺 19 个 schema 文件；与 closeout F1 同根",
+   "priority": "P0-最高（阻塞 fresh-DB CI）"
+  },
+  {
+   "issue": 437,
+   "domain": "craft",
+   "gap": "三缺口：repair 强制重写 / 错误文案 / 抑制态仍出票；现有 32+109 测试零覆盖",
+   "priority": "P0"
+  },
+  {
+   "issue": 433,
+   "domain": "craft",
+   "gap": "/file/content 仍上游透传无 stat 分支，absent→404 契约缺失（契约测试仅 413 一条）",
+   "priority": "P0"
+  },
+  {
+   "issue": 408,
+   "domain": "craft",
+   "gap": "admission 空模板/生产恒 ok、无 dev 开关，6 条 AC 全未实施（AC6）",
+   "priority": "P0"
+  },
+  {
+   "issue": 62,
+   "domain": "mt",
+   "tid": "MT019",
+   "gap": "目标表面仍是 pre-MT per-person/channel 旧面；需迁移+判定+接线+测试（详见 workers/M1 报告）",
+   "priority": "待实施"
+  },
+  {
+   "issue": 63,
+   "domain": "mt",
+   "tid": "MT020",
+   "gap": "目标表面仍是 pre-MT per-person/channel 旧面；需迁移+判定+接线+测试（详见 workers/M1 报告）",
+   "priority": "待实施"
+  },
+  {
+   "issue": 66,
+   "domain": "mt",
+   "tid": "MT023",
+   "gap": "目标表面仍是 pre-MT per-person/channel 旧面；需迁移+判定+接线+测试（详见 workers/M1 报告）",
+   "priority": "待实施"
+  },
+  {
+   "issue": 67,
+   "domain": "mt",
+   "tid": "MT024",
+   "gap": "目标表面仍是 pre-MT per-person/channel 旧面；需迁移+判定+接线+测试（详见 workers/M1 报告）",
+   "priority": "待实施"
+  },
+  {
+   "issue": 68,
+   "domain": "mt",
+   "tid": "MT025",
+   "gap": "目标表面仍是 pre-MT per-person/channel 旧面；需迁移+判定+接线+测试（详见 workers/M1 报告）",
+   "priority": "待实施"
+  },
+  {
+   "issue": 75,
+   "domain": "mt",
+   "tid": "MT032",
+   "gap": "整票未实施（server/ 零命中、无迁移、模块零租户引用）；依赖已就位；详见 workers/M2 报告",
+   "priority": "待实施"
+  },
+  {
+   "issue": 76,
+   "domain": "mt",
+   "tid": "MT033",
+   "gap": "整票未实施（server/ 零命中、无迁移、模块零租户引用）；依赖已就位；详见 workers/M2 报告",
+   "priority": "待实施"
+  },
+  {
+   "issue": 78,
+   "domain": "mt",
+   "tid": "MT035",
+   "gap": "整票未实施（server/ 零命中、无迁移、模块零租户引用）；依赖已就位；详见 workers/M2 报告",
+   "priority": "待实施"
+  },
+  {
+   "issue": 82,
+   "domain": "mt",
+   "tid": "MT039",
+   "gap": "整票未实施（server/ 零命中、无迁移、模块零租户引用）；依赖已就位；详见 workers/M2 报告",
+   "priority": "待实施"
+  },
+  {
+   "issue": 411,
+   "domain": "craft",
+   "gap": "server 读 renewal-status 证书不可用关 admission——整链无实现（reload.sh 自认 pending batch）",
+   "note": "与 #412 同根，建议合并实施+验收"
+  },
+  {
+   "issue": 412,
+   "domain": "craft",
+   "gap": "preview 域名 TLS 终结交付与续期热加载——整链无实现",
+   "note": "与 #411 同根"
+  },
+  {
+   "issue": 414,
+   "domain": "craft",
+   "gap": "preview origin 下 Server Actions 的 set-cookie/错误面 action 缺失"
+  },
+  {
+   "issue": 287,
+   "domain": "bf",
+   "tid": "B09.2",
+   "gap": "工作台面级公司 payer 绑定未实施（resolvePayerForCompanyContext/withPayerBinding 零生产调用方，代码注释明记 09.2 待办）"
+  },
+  {
+   "issue": 83,
+   "domain": "mt",
+   "tid": "MT040",
+   "gap": "学习容器/演示记录多租户隔离完全未实施"
+  },
+  {
+   "issue": 111,
+   "domain": "mt",
+   "tid": "MT068",
+   "gap": "对象存储归属迁移缺 manifest 签名与审计接线（§9 单用户轨道已在，purge 面划给 MT068 未做）"
+  },
+  {
+   "issue": 416,
+   "domain": "craft",
+   "gap": "缺 same-site 拓扑 profile 与 nightly 接入（验收脚本 Server Actions/HMR 已真实执行）"
+  },
+  {
+   "issue": 405,
+   "domain": "craft",
+   "gap": "全剥离语义与放宽诉求冲突——安全边界变更（>20 行）需产品裁决后实施"
+  },
+  {
+   "issue": 425,
+   "domain": "craft",
+   "gap": "legacyPreviewEnabled 开关/风险文案/文档全缺（R06）"
+  },
+  {
+   "issue": 121,
+   "domain": "mt",
+   "tid": "MT078",
+   "gap": "业务审计与身份审计分域整票未实施"
+  },
+  {
+   "issue": 143,
+   "domain": "mt",
+   "tid": "MT100",
+   "gap": "桌面组织登录/公司团队选择整票未实施（desktop）"
+  },
+  {
+   "issue": 167,
+   "domain": "mt",
+   "tid": "MT124",
+   "gap": "企业入口装配整票未实施"
+  },
+  {
+   "issue": 431,
+   "domain": "craft",
+   "gap": "T3 真实浏览器验收（sandbox 上游回归阻塞）+ T4 生产准入/ACME staging 演练/AC1-AC9 证据表",
+   "note": "并入母票 #358 收尾排期"
+  }
+ ],
+ "hs_stream": "done",
+ "bf_stream": "done",
+ "cross_findings": [
+  {
+   "id": "X1",
+   "finding": "billing-visibility(MT073 验证件)在 HEAD 红：5192c33c 引入 insertOrder ownerPayerRef 后 fixture 未跟上（#116 域）"
+  },
+  {
+   "id": "X2",
+   "finding": "openmuse gitlink 491d621 在 canonical 本地历史不存在且 github 不可达，MT104(#147) 派发前需确认"
+  },
+  {
+   "id": "X3",
+   "finding": "MT112 锚点种子 ON CONFLICT 撞 user_id 唯一索引（M1 报告，并入 #399/#402 CI 线）"
+  }
+ ],
+ "mt_stream": "done",
+ "craft_stream": "done",
+ "phase": "58/58 就绪票处理完毕（放量 31 贴标 + 26 gap + #431 部分覆盖）；全 run 累计 R7 38 张（已 GraphQL 实证标签+OPEN）"
 }

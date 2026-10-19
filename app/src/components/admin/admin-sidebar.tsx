@@ -1,6 +1,6 @@
 import {
   IconArrowLeft,
-  IconBook2,
+  
   IconBuildingBank,
   IconChecks,
   IconCode,
@@ -101,11 +101,6 @@ const GROUPS = [
         title: "sidebar.market",
         icon: IconShoppingBag,
         linkOptions: { to: "/admin/market" },
-      },
-      {
-        title: "sidebar.knowledge",
-        icon: IconBook2,
-        linkOptions: { to: "/admin/knowledge" },
       },
       {
         title: "sidebar.learning",

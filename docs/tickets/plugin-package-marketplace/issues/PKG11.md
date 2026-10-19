@@ -1,0 +1,51 @@
+<!-- openbot-plugin-packages:PKG11:v1 -->
+## Parent
+
+https://github.com/1123786563/OpenBot/issues/459
+
+## What to build
+
+部署者能先预演旧目录/安装映射，确认后对指定团队开启包市场；私人改动和无法证明范围的旧记录保留原状，并能安全关闭新入口。
+
+## Scope boundary
+
+真实内置包、镜像制品、迁移 dry-run/manifest/apply、影子读取、pilot 与回退演练。
+
+## Acceptance criteria
+
+- [ ] 迁移默认 dry-run，输出源 ID/内容哈希、映射、unresolved；apply 显式绑定同一 manifest 并 CAS 重验。
+- [ ] 只映射内容和范围均可证的旧记录；不覆盖私人编辑，不根据全局 Bot owner 猜公司团队，不把 legacy 当真实 Personal Space。
+- [ ] 先 expand 再同范围影子读取，保持单一写入方，无新旧安装双写。
+- [ ] 默认 OPENBOT_PACKAGE_MARKETPLACE_ENABLED=false；pilot 为精确 tenant/workspace 元组，拒绝通配符。
+- [ ] 真实制品随构建进入镜像，缺制品/写通道/迁移时展示真实不可用。
+- [ ] 关新入口后既有包 Run 继续受原 pin 治理或安全暂停，不降级 legacy；不执行删表回退。
+- [ ] 两团队切换与迟到请求不污染已安装视图；legacy 专家/Skill 原有行为有回归证据。
+
+## Blocked by
+
+- https://github.com/1123786563/OpenBot/issues/463
+- https://github.com/1123786563/OpenBot/issues/465
+- https://github.com/1123786563/OpenBot/issues/466
+- https://github.com/1123786563/OpenBot/issues/467
+- https://github.com/1123786563/OpenBot/issues/469
+
+GitHub 同步建立正式 blocked-by；本节保留可读备份。前置状态关闭也须核验其交付已审查并集成，不能用假桩代替。
+
+## Verification
+
+迁移 dry-run→源并发变更拒绝→apply 演练及启用→Run→关入口回退，记录镜像与数据库版本。
+
+新增套件按 ADR 0008 分为 native 或 Bun-driven，由 tester-army e2e 统一调度/报告；targeted Bun 可定位行为，但不能代替统一入口证据。E2E_BUN_ONLY 按真实 group.name 筛选；真实角色/测试库缺失须标 blocked，不能将 skipped 或零测试当通过。
+
+## Handoff
+
+- source_issues：父 Issue 完整方案快照；本票覆盖 A08, A09, A11, A12。
+- consumes：已完成的安装/授权/版本/卸载/撤回/核对行为；旧专家安装回执、Skill 内容哈希和企业范围权威。
+- produces：旧 ID/slug→包资源的可审计映射，unresolved 报告，只读制品镜像及精确团队 allowlist。
+- owned_scope：真实内置包、镜像制品、迁移 dry-run/manifest/apply、影子读取、pilot 与回退演练。 不修改其他业务领域的权威数据或既有 Issue 范围。
+- owner_role：主控拆 Task；后端归 backend_implementer，前端归 frontend_implementer，按稳定接口串行；验证对应 backend_validator/frontend_validator；独立 reviewer 给 Spec 与质量结论。
+- 详细实现映射：本地实施计划 T9；该计划按技术 Task 编排，本票按完整业务结果验收。执行前读取父方案并生成本票自己的单个 Task Brief。
+- checkpoint：记录执行工作区、BASE/HEAD、已审查提交或未提交快照哈希、实际测试输出与 Review/OCR 轮次。
+- resume_hint：先读 Ledger/Git/前置接口，仅恢复未 verified 的 Task；不要重做已有连接器安装系统。
+- 约束：包不是授权；成员、Bot、账号、范围和动作分别检查；不能回退其他范围/账号或 legacy；不得保存 token 到包配置、日志、预览或模型。
+- 本票的发布和 ready-for-agent 标签不是代码提交、推送、合并、生产执行授权；用户尚未要求开始实施。

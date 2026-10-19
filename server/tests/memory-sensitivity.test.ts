@@ -1,6 +1,11 @@
-import { afterAll, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
+import {
+  afterAll,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createAuditStore } from "../src/audit";
 import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
@@ -260,6 +265,13 @@ test("classification is conservative: only explicit triggers are sensitive", () 
   expect(
     classifyMemorySensitivity("Diagnosed with type 2 diabetes last spring"),
   ).toBe("medical");
+  // ...while the -tics/-tic technical sense is not a medical claim (#398 m3).
+  expect(
+    classifyMemorySensitivity("Works on the diagnostics team at the bank"),
+  ).toBe("normal");
+  expect(
+    classifyMemorySensitivity("Diagnostic logs go to the observability bucket"),
+  ).toBe("normal");
   expect(
     classifyMemorySensitivity("Chemotherapy schedule is Tuesday mornings"),
   ).toBe("medical");

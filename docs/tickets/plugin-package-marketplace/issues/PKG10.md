@@ -1,0 +1,47 @@
+<!-- openbot-plugin-packages:PKG10:v1 -->
+## Parent
+
+https://github.com/1123786563/OpenBot/issues/459
+
+## What to build
+
+用户能看到超时或崩溃后尚未确定效果的包调用，查看已有回执或重新连接；系统只在效果与权限可证时恢复，不重复执行可能已发生的写动作。
+
+## Scope boundary
+
+unknown 调用查询、脱敏 Activity/安装详情状态、核对结果回填和受控恢复。
+
+## Acceptance criteria
+
+- [ ] 在 dispatched 后收回执前崩溃和供应商写超时两种情况，重启后均可看到同 operation 的 unknown。
+- [ ] 无已验证幂等/供应商查询协议时不自动重发；不提供会重复外发的通用一键重试。
+- [ ] 支持协议存在时只按原 operation/query identity 核对，证据绑定原账号、目标和参数摘要。
+- [ ] 效果核对不因用户切团队改挂范围；失权用户不能查看或继续执行，必要事实由有资格处理人保留。
+- [ ] 连接恢复后重验 grant、scope、版本、预算/审批及 generation；核对结果写回不丢弃撤权前已发生的事实。
+- [ ] 安装停用、卸载、版本撤回或入口关闭后，未知效果和历史回执仍按权限保留。
+- [ ] 不伪造通用任务完成/失败；用现有 Activity/Run/receipt 反映实际进度。
+
+## Blocked by
+
+- https://github.com/1123786563/OpenBot/issues/468
+
+GitHub 同步建立正式 blocked-by；本节保留可读备份。前置状态关闭也须核验其交付已审查并集成，不能用假桩代替。
+
+## Verification
+
+持久化崩溃注入、重启核对与断连恢复测试；浏览器展示 unknown、不可重试原因及确定回执。
+
+新增套件按 ADR 0008 分为 native 或 Bun-driven，由 tester-army e2e 统一调度/报告；targeted Bun 可定位行为，但不能代替统一入口证据。E2E_BUN_ONLY 按真实 group.name 筛选；真实角色/测试库缺失须标 blocked，不能将 skipped 或零测试当通过。
+
+## Handoff
+
+- source_issues：父 Issue 完整方案快照；本票覆盖 A05, A07, A08, A12。
+- consumes：PKG05 dispatch 状态、PKG09 原范围 Run 恢复；现有 Activity/审批/工具回执权威。
+- produces：unknown→有证据的确定结果关联，以及仍未知/需重新授权的用户状态；不新增任务状态机。
+- owned_scope：unknown 调用查询、脱敏 Activity/安装详情状态、核对结果回填和受控恢复。 不修改其他业务领域的权威数据或既有 Issue 范围。
+- owner_role：主控拆 Task；后端归 backend_implementer，前端归 frontend_implementer，按稳定接口串行；验证对应 backend_validator/frontend_validator；独立 reviewer 给 Spec 与质量结论。
+- 详细实现映射：本地实施计划 T6, T7, T8, T9；该计划按技术 Task 编排，本票按完整业务结果验收。执行前读取父方案并生成本票自己的单个 Task Brief。
+- checkpoint：记录执行工作区、BASE/HEAD、已审查提交或未提交快照哈希、实际测试输出与 Review/OCR 轮次。
+- resume_hint：先读 Ledger/Git/前置接口，仅恢复未 verified 的 Task；不要重做已有连接器安装系统。
+- 约束：包不是授权；成员、Bot、账号、范围和动作分别检查；不能回退其他范围/账号或 legacy；不得保存 token 到包配置、日志、预览或模型。
+- 本票的发布和 ready-for-agent 标签不是代码提交、推送、合并、生产执行授权；用户尚未要求开始实施。

@@ -16,8 +16,8 @@
  *
  * Beyond the declared posture, the one privacy knob the service itself exposes — the version
  * endpoint's llm_trace feature flag — is cross-checked against this deployment's declaration
- * on the service_up path, so a declaration of "not traced" that the running service contradicts
- * is reported as config_noncompliant with a runtime violation, not swallowed as service_up.
+ * before the gateway probe, so a declaration of "not traced" that the running service contradicts
+ * is reported as config_noncompliant with a runtime violation, never masked by gateway_down.
  */
 import { getLogger } from "../../../shared/logger";
 import {
@@ -193,6 +193,24 @@ export async function checkHindsightHealth(
   const runtime = await readVersion(resolved, config);
   const version = runtime.version;
 
+  // Runtime cross-check of the one privacy knob the API does expose: the version endpoint's
+  // llm_trace feature flag against this deployment's own declaration. A service that reports
+  // llm_trace enabled while the declaration says false is noncompliant no matter what the
+  // deployment claims, so the verdict escalates to config_noncompliant with a violation that
+  // names the runtime evidence. It runs BEFORE the gateway probe — after it, a gateway outage
+  // would swallow the signal into gateway_down (#398 m4). Honest scope: the operation/backup
+  // retention windows have no readable runtime values in the API, so they remain a
+  // deployment-reconciliation matter (the #391 cleanup-evidence ticket keeps tracking that);
+  // a missing or unreadable flag is not evidence of anything and stays service_up.
+  if (config.privacy.llmTraceEnabled === false && runtime.llmTrace === true) {
+    return {
+      state: "config_noncompliant",
+      checkedAt,
+      violations: ["runtime_llm_trace_enabled"],
+      ...(version !== undefined ? { version } : {}),
+    };
+  }
+
   try {
     const probe = (await requestJson(
       resolved,
@@ -206,22 +224,6 @@ export async function checkHindsightHealth(
       return {
         state: "gateway_down",
         checkedAt,
-        ...(version !== undefined ? { version } : {}),
-      };
-    }
-    // Runtime cross-check of the one privacy knob the API does expose: the version endpoint's
-    // llm_trace feature flag against this deployment's own declaration. A service that reports
-    // llm_trace enabled while the declaration says false is noncompliant no matter what the
-    // deployment claims, so the verdict escalates to config_noncompliant with a violation that
-    // names the runtime evidence. Honest scope: the operation/backup retention windows have no
-    // readable runtime values in the API, so they remain a deployment-reconciliation matter
-    // (the #391 cleanup-evidence ticket keeps tracking that); a missing or unreadable flag is
-    // not evidence of anything and stays service_up.
-    if (config.privacy.llmTraceEnabled === false && runtime.llmTrace === true) {
-      return {
-        state: "config_noncompliant",
-        checkedAt,
-        violations: ["runtime_llm_trace_enabled"],
         ...(version !== undefined ? { version } : {}),
       };
     }

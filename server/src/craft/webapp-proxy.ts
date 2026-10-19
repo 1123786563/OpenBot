@@ -679,11 +679,19 @@ export function createWebappProxyRoutes(
       previewHost: new URL(origin).host,
     });
     // A bearer credential's only appearance: this response, never a log line.
-    return context.json({
-      ticket,
-      expiresAt: expiresAt.toISOString(),
-      origin,
-    });
+    // #406: and not a cacheable or referable thing either — no-store keeps
+    // the 30s credential out of shared caches, no-referrer keeps the pane's
+    // next navigation from naming this URL (the response that minted the
+    // ticket) to the preview origin's proxy.
+    return context.json(
+      {
+        ticket,
+        expiresAt: expiresAt.toISOString(),
+        origin,
+      },
+      200,
+      { "cache-control": "no-store", "referrer-policy": "no-referrer" },
+    );
   });
 
   // ── GET /sessions/:id/preview-origin-live — the pane's same-origin probe ──

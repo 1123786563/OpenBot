@@ -1,0 +1,38 @@
+{
+  "id": "a17bc571-1eb6-4b9e-b0d5-51bb58e52148",
+  "ok": true,
+  "result": {
+    "runId": "run_68e96a7ff1c9",
+    "deliveryId": "delivery_470b4218ae82",
+    "messages": [
+      {
+        "id": "msg_bc66a2ecc6b3",
+        "run_id": "run_68e96a7ff1c9",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_24478cfd-7ada-4122-8ba8-1a5898d26ab1",
+        "to_handle": "run:run_68e96a7ff1c9",
+        "subject": "[hs001] #377 候选审核门槛验证通过+收紧1行",
+        "body": "审计确认 #377 主体已在祖先提交 a891698f 落地：全部 Bot 侧召回收敛到 eligibleRows 单一 SQL seam（reviewState IN confirmed/edited），注入与 recall 工具两入口同走它，Intelligence 派生侧由 mirrorEligible 同门槛挡住。在专用库 orca-all-hs001-pg(5560, pgvector/pg16 替换无 vector 的 postgres:16)跑迁移后全量复验 13 个记忆/hindsight 测试文件 146 用例全绿 0 跳过（Bun 5 文件 56 pass + e2e 原生 8 文件 90 pass），server tsc --noEmit 通过。补上唯一残余缺口：remember_personal_fact 工具描述加「逐字、不扩写」一行（tools.ts），三 AC 逐条实证见 worktree 根 ORCA-REPORT.md；遗留仅公司归属列迁移（#382/#392 范围）。改动未提交：M server/src/memory/tools.ts + ORCA-REPORT.md，容器按要求保留。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_c1732314a33c\",\"dispatchId\":\"ctx_1d5781dd2b51\",\"outcome\":\"succeeded\",\"filesModified\":[\"server/src/memory/tools.ts\",\"ORCA-REPORT.md\"],\"reportPath\":\"ORCA-REPORT.md\"}",
+        "created_at": "2026-10-19T08:36:33Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "c8f5b795-f8c0-4c21-af77-485603461458",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

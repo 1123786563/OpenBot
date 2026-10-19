@@ -236,33 +236,10 @@ test("provides PostgreSQL for local development", () => {
 
   expect(compose).toContain("postgres:");
   expect(compose).toContain("postgres-partman.Dockerfile");
-  // The pgvector base is gone with the vector columns: embeddings live in Qdrant now, so a
-  // pgvector image creeping back into the compose file would be a vector store regressing.
-  expect(compose).not.toContain("pgvector/pgvector:");
   // biome-ignore lint/suspicious/noTemplateCurlyInString: the literal `${...}` is the fixture — this asserts on unexpanded placeholder text, so a real template would break the test.
   expect(compose).toContain("${POSTGRES_PORT:-5432}:5432");
 });
 
-/**
- * Qdrant is the one vector store. Every embedding write, update, delete and similarity
- * search goes through it; PostgreSQL has had no vector column since migration 0010 dropped
- * the document index. The property under test is that the service exists, is pinned to a
- * version (not `latest`), keeps its storage on a named volume, and is published on loopback
- * only — the same rules every other stateful service in these files answers to.
- *
- * It reads docker/compose/kb.yml, where the service lives since the 2026-10-11 split out of
- * the main file; reading the main file is what left this test red across that change.
- */
-test("provides Qdrant as the only vector store", () => {
-  const compose = optionalComposeFile("kb");
-
-  expect(compose).toContain("qdrant:");
-  expect(compose).toContain("qdrant/qdrant:");
-  // A floating tag would make every fresh `up` a different engine version.
-  expect(compose).not.toContain("qdrant/qdrant:latest");
-  expect(compose).toContain("qdrant-data:/qdrant/storage");
-  expect(compose).toMatch(/\$\{QDRANT_PORT:-6333\}:6333/);
-});
 
 /**
  * Every published port is settable, and defaults to the number the documentation gives.
@@ -615,7 +592,6 @@ test("gives the selected harness the same governed callback as the framework Bot
 const optionalStacks = [
   // certs: the #359 TLS sidecar (openbot-tls) — same `--project-directory .` contract.
   { name: "certs", services: ["openbot-tls"] },
-  { name: "kb", services: ["qdrant", "kb-redis", "docreader"] },
   { name: "services", services: ["casdoor", "open-connector"] },
   { name: "lago", services: ["lago-api", "lago-front", "lago-worker"] },
   {
@@ -676,8 +652,8 @@ function runOptionalComposeConfig(name: string) {
 
 /**
  * Every optional stack parses under the documented invocation. That exact form is the contract:
- * drop the flag and the root `.env` stops being read — Lago and GlitchTip fail loudly on that,
- * the kb stack fails quietly. The project name is shared with the main file on purpose, so
+ * drop the flag and the root `.env` stops being read — Lago and GlitchTip fail loudly on that.
+ * The project name is shared with the main file on purpose, so
  * volumes keep their `openbot_*` names and a stack keeps its data across layout changes.
  */
 for (const { name, services } of optionalStacks) {

@@ -1,5 +1,5 @@
 {
- "generatedBy": "scripts/lib/e2e-manifest.mjs groupsOf() — regenerated so ISLANDS take effect for the driver",
+ "generatedBy": "scripts/lib/e2e-manifest.mjs",
  "groups": [
   {
    "name": "agent-computer/tests",
@@ -36,8 +36,7 @@
   {
    "name": "app/src",
    "files": [
-    "app/src/lib/i18n/ai-observability.test.ts",
-    "app/src/lib/upload-queue/queue.test.ts"
+    "app/src/lib/i18n/ai-observability.test.ts"
    ]
   },
   {
@@ -187,12 +186,6 @@
    "name": "scripts/tls-pipeline.test.ts",
    "files": [
     "scripts/tls-pipeline.test.ts"
-   ]
-  },
-  {
-   "name": "server/src",
-   "files": [
-    "server/src/kb/infrastructure/qdrant/client.test.ts"
    ]
   },
   {
@@ -586,25 +579,23 @@
     "server/tests/multitenancy/credential-lease.test.ts",
     "server/tests/multitenancy/credentials-ownership.test.ts",
     "server/tests/multitenancy/deletion-semantics.test.ts",
-    "server/tests/multitenancy/document-lifecycle.test.ts",
     "server/tests/multitenancy/entry-context.test.ts",
     "server/tests/multitenancy/fixtures.test.ts",
     "server/tests/multitenancy/global-exceptions.test.ts",
     "server/tests/multitenancy/identity-binding.test.ts",
     "server/tests/multitenancy/inventory.test.ts",
     "server/tests/multitenancy/job-ownership.test.ts",
-    "server/tests/multitenancy/kb-ownership.test.ts",
     "server/tests/multitenancy/legacy-anchor.test.ts",
     "server/tests/multitenancy/membership-model.test.ts",
     "server/tests/multitenancy/migration-tool.test.ts",
-    "server/tests/multitenancy/not-found-semantics.test.ts"
+    "server/tests/multitenancy/not-found-semantics.test.ts",
+    "server/tests/multitenancy/oauth-state.test.ts",
+    "server/tests/multitenancy/openmuse-private-bot.test.ts"
    ]
   },
   {
    "name": "server/tests/multitenancy part 2",
    "files": [
-    "server/tests/multitenancy/oauth-state.test.ts",
-    "server/tests/multitenancy/openmuse-private-bot.test.ts",
     "server/tests/multitenancy/openmuse-tasks.test.ts",
     "server/tests/multitenancy/payer-accounts.test.ts",
     "server/tests/multitenancy/people-lifecycle.test.ts",
@@ -613,7 +604,6 @@
     "server/tests/multitenancy/preferences.test.ts",
     "server/tests/multitenancy/public-bot-usage.test.ts",
     "server/tests/multitenancy/resource-policy.test.ts",
-    "server/tests/multitenancy/retrieval-restriction.test.ts",
     "server/tests/multitenancy/revocation.test.ts",
     "server/tests/multitenancy/rls-core.test.ts",
     "server/tests/multitenancy/routing-policy.test.ts",
@@ -626,12 +616,7 @@
     "server/tests/multitenancy/sso-scim-config.test.ts",
     "server/tests/multitenancy/startup-checks.test.ts",
     "server/tests/multitenancy/startup-defaults.test.ts",
-    "server/tests/multitenancy/team-public-rules.test.ts"
-   ]
-  },
-  {
-   "name": "server/tests/multitenancy part 3",
-   "files": [
+    "server/tests/multitenancy/team-public-rules.test.ts",
     "server/tests/multitenancy/vendor-billing.test.ts",
     "server/tests/multitenancy/workspace-scope.test.ts"
    ]
@@ -651,7 +636,6 @@
   "agent-sandbox/tests/snapshot.test.ts",
   "agent-sandbox/tests/sse.test.ts",
   "app/src/lib/i18n/ai-observability.test.ts",
-  "app/src/lib/upload-queue/queue.test.ts",
   "app/tests/account-mode-dialog.test.tsx",
   "app/tests/admin-catalog-sync-ui.test.tsx",
   "app/tests/admin-credit-grant-ui.test.tsx",
@@ -746,7 +730,6 @@
   "scripts/processes.test.ts",
   "scripts/start-restart-guard.test.ts",
   "scripts/tls-pipeline.test.ts",
-  "server/src/kb/infrastructure/qdrant/client.test.ts",
   "server/tests/access-grant-revoke.test.ts",
   "server/tests/access-grant.integration.test.ts",
   "server/tests/account-mode.integration.test.ts",
@@ -905,14 +888,12 @@
   "server/tests/multitenancy/credential-lease.test.ts",
   "server/tests/multitenancy/credentials-ownership.test.ts",
   "server/tests/multitenancy/deletion-semantics.test.ts",
-  "server/tests/multitenancy/document-lifecycle.test.ts",
   "server/tests/multitenancy/entry-context.test.ts",
   "server/tests/multitenancy/fixtures.test.ts",
   "server/tests/multitenancy/global-exceptions.test.ts",
   "server/tests/multitenancy/identity-binding.test.ts",
   "server/tests/multitenancy/inventory.test.ts",
   "server/tests/multitenancy/job-ownership.test.ts",
-  "server/tests/multitenancy/kb-ownership.test.ts",
   "server/tests/multitenancy/legacy-anchor.test.ts",
   "server/tests/multitenancy/membership-model.test.ts",
   "server/tests/multitenancy/migration-tool.test.ts",
@@ -927,7 +908,6 @@
   "server/tests/multitenancy/preferences.test.ts",
   "server/tests/multitenancy/public-bot-usage.test.ts",
   "server/tests/multitenancy/resource-policy.test.ts",
-  "server/tests/multitenancy/retrieval-restriction.test.ts",
   "server/tests/multitenancy/revocation.test.ts",
   "server/tests/multitenancy/rls-core.test.ts",
   "server/tests/multitenancy/routing-policy.test.ts",
@@ -1101,7 +1081,6 @@
  ],
  "artifacts": [
   "deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts",
-  "deliverables/mobile-e2e-qa/tests/e2e/specs/env.smoke.ios.spec.ts",
   "deliverables/mobile-e2e-qa/tests/e2e/specs/env.smoke.spec.ts",
   "deliverables/mobile-e2e-qa/tests/e2e/specs/interruption.spec.ts",
   "deliverables/mobile-e2e-qa/tests/e2e/specs/offline.spec.ts",
@@ -1127,7 +1106,6 @@
   "agent-mastra/src/mastra/index.test.ts": "runner reported: uses the default endpoint with test-anthropic API key: provider probe exited 1 No `storage` configured on Mastra — falli",
   "agent-sandbox/tests/snapshot.test.ts": "runner reported: the pruned bytes never enter the archive — the point is memory, not tidiness: The requested length exceeds 65,536 bytes",
   "agent-sandbox/tests/sse.test.ts": "runner reported: forwards families, drops noise, closes when the upstream closes: expected 503 to be 200",
-  "app/src/lib/upload-queue/queue.test.ts": "runner reported: bounded concurrency: 5 queued, only 3 in flight at once: expected 0 to be 3",
   "app/tests/admin-catalog-sync-ui.test.tsx": "runner reported: the sync button fires the manual route, reports the outcome and re-reads the catalog: Cannot read properties of undefine",
   "app/tests/admin-credit-grant-ui.test.tsx": "runner reported: 提交体只含目标用户与额度等字段：积分×100、ISO 过期时间、幂等键，绝无账户键: Unable to find an element by: [data-testid=\"grant-result\"] Ignored nodes: com",
   "app/tests/admin-gateway-readiness.test.tsx": "runner reported: a not-ready gateway names every blocking reason, not a blur: Cannot read properties of undefined (reading '0')",
@@ -1164,7 +1142,6 @@
   "app/tests/proposed-skill-card.test.tsx": "runner reported: a refusal from the server stays on the card and leaves the run suspended: Unable to find an element with the text: weekl",
   "app/tests/skills-read-failure.test.tsx": "runner reported: a person's skills page says the skills failed to load, not that they have none: Cannot read properties of undefined (rea",
   "app/tests/user-authorizations-ui.test.tsx": "runner reported: each Bot's authorization is listed with its identity, status and created time: Unable to find an element with the text: ",
-  "server/src/kb/infrastructure/qdrant/client.test.ts": "runner reported: happy path: JSON parsed, ok/status shape, api-key + content-type headers sent: Qdrant POST /collections/c/points/query i",
   "server/tests/agent-connection-live.test.ts": "runner reported: a redirect cannot carry the request somewhere the check refuses: expected \"This server could not reach that address. If ",
   "server/tests/auth-localhost-fetch.test.ts": "runner reported: multi-byte POST body does not poison the keep-alive connection for the next request: connect EADDRNOTAVAIL 127.0.0.1 - L",
   "server/tests/billing-usage-delivery.test.ts": "runner reported: a successful pass runs and ends the connection that holds the lock: expected 0 to be greater than or equal to 1",
@@ -1328,14 +1305,12 @@
   "server/tests/multitenancy/credential-lease.test.ts": "server/tests/multitenancy/credential-lease.test.ts",
   "server/tests/multitenancy/credentials-ownership.test.ts": "server/tests/multitenancy/credentials-ownership.test.ts",
   "server/tests/multitenancy/deletion-semantics.test.ts": "server/tests/multitenancy/deletion-semantics.test.ts",
-  "server/tests/multitenancy/document-lifecycle.test.ts": "server/tests/multitenancy/document-lifecycle.test.ts",
   "server/tests/multitenancy/entry-context.test.ts": "server/tests/multitenancy/entry-context.test.ts",
   "server/tests/multitenancy/fixtures.test.ts": "server/tests/multitenancy/fixtures.test.ts",
   "server/tests/multitenancy/global-exceptions.test.ts": "server/tests/multitenancy/global-exceptions.test.ts",
   "server/tests/multitenancy/identity-binding.test.ts": "server/tests/multitenancy/identity-binding.test.ts",
   "server/tests/multitenancy/inventory.test.ts": "server/tests/multitenancy/inventory.test.ts",
   "server/tests/multitenancy/job-ownership.test.ts": "server/tests/multitenancy/job-ownership.test.ts",
-  "server/tests/multitenancy/kb-ownership.test.ts": "server/tests/multitenancy/kb-ownership.test.ts",
   "server/tests/multitenancy/legacy-anchor.test.ts": "server/tests/multitenancy/legacy-anchor.test.ts",
   "server/tests/multitenancy/membership-model.test.ts": "server/tests/multitenancy/membership-model.test.ts",
   "server/tests/multitenancy/migration-tool.test.ts": "server/tests/multitenancy/migration-tool.test.ts",
@@ -1350,7 +1325,6 @@
   "server/tests/multitenancy/preferences.test.ts": "server/tests/multitenancy/preferences.test.ts",
   "server/tests/multitenancy/public-bot-usage.test.ts": "server/tests/multitenancy/public-bot-usage.test.ts",
   "server/tests/multitenancy/resource-policy.test.ts": "server/tests/multitenancy/resource-policy.test.ts",
-  "server/tests/multitenancy/retrieval-restriction.test.ts": "server/tests/multitenancy/retrieval-restriction.test.ts",
   "server/tests/multitenancy/revocation.test.ts": "server/tests/multitenancy/revocation.test.ts",
   "server/tests/multitenancy/rls-core.test.ts": "server/tests/multitenancy/rls-core.test.ts",
   "server/tests/multitenancy/routing-policy.test.ts": "server/tests/multitenancy/routing-policy.test.ts",

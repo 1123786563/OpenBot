@@ -37,11 +37,6 @@ import {
   setBuiltinToolStepObserver,
   toolStepObservationForTests,
 } from "../src/copilot";
-import { createKnowledgeCircuit } from "../src/knowledge/circuit";
-import {
-  createKnowledgeRetriever,
-  setKnowledgeRetrievalObserver,
-} from "../src/knowledge/retrieval";
 import { withRunObservationScope } from "../src/observation-run-scope";
 
 // ---------------------------------------------------------------------------
@@ -1141,96 +1136,6 @@ describe("the built-in observation bypass", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The retrieval seam: the retriever reports what it actually retrieved
-// ---------------------------------------------------------------------------
-
-describe("the knowledge retrieval observation seam", () => {
-  /**
-   * A real local upstream: the retriever dials with node:http (no proxy interference),
-   * so an ephemeral Bun.serve is the honest fake — no global fetch mock to go stale.
-   */
-  function kbUpstream(results: unknown[]) {
-    const server = Bun.serve({
-      port: 0,
-      fetch: () =>
-        new Response(JSON.stringify({ results, count: results.length }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-    });
-    return {
-      server,
-      config: {
-        baseUrl: `http://127.0.0.1:${server.port}`,
-        apiKey: "secret",
-        timeoutMs: 10_000,
-      },
-    };
-  }
-
-  test("a retrieval reports the sanitized query, the kb list and the fragments", async () => {
-    const { server, config } = kbUpstream([
-      {
-        chunk_id: "chunk-9",
-        doc_id: "doc-7",
-        content: "the policy",
-        score: 0.9,
-        source: "handbook.md",
-      },
-    ]);
-    const observations: unknown[] = [];
-    setKnowledgeRetrievalObserver((observation) =>
-      observations.push(observation),
-    );
-    const retriever = createKnowledgeRetriever(
-      config,
-      { kbIds: ["kb1"], topK: 5, timeoutMs: 1500, scoreThreshold: 0 },
-      createKnowledgeCircuit(),
-    );
-    try {
-      const outcome = await retriever.retrieve("  vacation   policy ");
-      expect(outcome.status).toBe("hit");
-      expect(observations).toHaveLength(1);
-      const observed = observations[0] as {
-        query: string;
-        kbIds: readonly string[];
-        outcome: { status: string; chunks?: Array<{ chunkId: string }> };
-        startedAt: Date;
-        endedAt: Date;
-      };
-      expect(observed.query).toBe("vacation policy");
-      expect(observed.kbIds).toEqual(["kb1"]);
-      expect(observed.outcome.chunks?.[0].chunkId).toBe("chunk-9");
-      expect(observed.endedAt.getTime()).toBeGreaterThanOrEqual(
-        observed.startedAt.getTime(),
-      );
-    } finally {
-      setKnowledgeRetrievalObserver(undefined);
-      server.stop(true);
-    }
-  });
-
-  test("an observer that throws never breaks the retrieval", async () => {
-    const { server, config } = kbUpstream([]);
-    setKnowledgeRetrievalObserver(() => {
-      throw new Error("observation must not take the product path down");
-    });
-    const retriever = createKnowledgeRetriever(
-      config,
-      { kbIds: ["kb1"], topK: 5, timeoutMs: 1500, scoreThreshold: 0 },
-      createKnowledgeCircuit(),
-    );
-    try {
-      const outcome = await retriever.retrieve("anything");
-      expect(outcome.status).toBe("miss");
-    } finally {
-      setKnowledgeRetrievalObserver(undefined);
-      server.stop(true);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
 // T15 review (a)–(d), folded into this ticket: teardown leak, out-of-order
 // double record, the tap error path, and the duplicated kbIds extraction.
 // ---------------------------------------------------------------------------
@@ -1568,61 +1473,6 @@ describe("the observation bypass fixes (T15 review)", () => {
       });
     } finally {
       await stop();
-    }
-  });
-
-  test("(d) the observer reads the same effective kb list the retrieval used", async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch: () =>
-        new Response(
-          JSON.stringify({
-            results: [
-              {
-                chunk_id: "chunk-1",
-                doc_id: "doc-1",
-                content: "c",
-                score: 0.9,
-                source: "s.md",
-              },
-            ],
-            count: 1,
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-    });
-    const config = {
-      baseUrl: `http://127.0.0.1:${server.port}`,
-      apiKey: "secret",
-      timeoutMs: 10_000,
-    };
-    const observations: KnowledgeRetrievalObservation[] = [];
-    setKnowledgeRetrievalObserver((observation) =>
-      observations.push(observation),
-    );
-    const options = {
-      kbIds: ["configured"],
-      topK: 5,
-      timeoutMs: 1500,
-      scoreThreshold: 0,
-    };
-    const retriever = createKnowledgeRetriever(
-      config,
-      options,
-      createKnowledgeCircuit(),
-    );
-    try {
-      await retriever.retrieve("q", { kbIds: ["overridden"] });
-      await retriever.retrieve("q", { kbIds: [] });
-      await retriever.retrieve("q");
-      expect(observations.map((observation) => observation.kbIds)).toEqual([
-        ["overridden"],
-        ["configured"],
-        ["configured"],
-      ]);
-    } finally {
-      setKnowledgeRetrievalObserver(undefined);
-      server.stop(true);
     }
   });
 });

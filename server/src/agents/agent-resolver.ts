@@ -15,7 +15,6 @@ import {
   type ToolSelection,
 } from "../copilot";
 import type { GovernedModelRequest } from "../enterprise/runs/governed-execution";
-import type { LoadKnowledgeForBot } from "../knowledge/retrieval";
 import type { AcquireLearnedSkills } from "../learning/runtime";
 import type { LoadPersonalMemory } from "../memory/tools";
 import type { AgentActor } from "./profile-types";
@@ -93,7 +92,6 @@ export type ActorAgentResolverDependencies = {
   markAttachmentsSentForActor?: (actorId: string) => MarkAttachmentsSent;
   acquireLearnedSkills?: AcquireLearnedSkills;
   loadPersonalMemoryForActor?: (actorId: string) => LoadPersonalMemory;
-  loadKnowledgeForActor?: (actorId: string) => LoadKnowledgeForBot;
   /**
    * The builtin run's trusted observation-scope resolver (T-final M1). Handed
    * through to the builtin agents, which ask it once per run; a null answer
@@ -163,7 +161,6 @@ export function createActorAgentResolver(
       deps.markAttachmentsSentForActor?.(actor.id),
       deps.acquireLearnedSkills,
       deps.loadPersonalMemoryForActor?.(actor.id),
-      deps.loadKnowledgeForActor?.(actor.id),
       context?.governedModel,
       // The consumption attribution (09.1): who this build's runs are for. The Bot half is each
       // agent's own id, known where the model wrapper is built; the person is known here.

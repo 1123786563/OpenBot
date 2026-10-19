@@ -58,7 +58,7 @@ import { createCreditWriter } from "./credits-writer";
  * so the trail never describes a deletion that did not happen and a rollback erases both.
  * After the commit, the post-verification re-derives the classification and re-hashes the
  * protected surfaces (company history, personal records, the unknown_owner quarantine, and
- * the application objects — users, sessions, agents, knowledge bases and their documents),
+ * the application objects — users, sessions, agents),
  * and the accounting smoke proves the old balances moved nowhere (company and personal
  * credit footprints byte-identical) while the new credit system still grants, reserves and
  * settles. Its verdict rides a second audit row, appended, never rewritten.
@@ -69,8 +69,8 @@ export const CLEANUP_EXECUTION_VERSION = 1;
 
 /**
  * The protected application surfaces, hashed before and after execution (AC: company
- * history and the users/Bots/sessions/knowledge-base objects are unchanged). Absent tables
- * (a deployment without the KB module) are named in the report rather than silently
+ * history and the users/Bots/sessions objects are unchanged). Absent tables
+ * are named in the report rather than silently
  * skipped, and everything outside the estate is unreachable by construction — 21.5's wall 1
  * refuses any target the estate does not name — so the hash is proof, not decoration.
  */
@@ -78,8 +78,6 @@ const PROTECTED_TABLES = [
   "users",
   "sessions",
   "agents",
-  "knowledge_bases",
-  "knowledges",
 ] as const;
 
 /** The audit event type this program writes; one row per phase, keyed by execution id. */

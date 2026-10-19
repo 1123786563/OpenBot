@@ -390,8 +390,8 @@ describe("GET /api/billing/credits/summary answers the signed-in user's own acco
       "consumed",
       "enabled",
       "expired",
-      "reserved",
       "reservations",
+      "reserved",
       "unknown",
     ]);
     expect(Object.keys(body.grants as object[])).toHaveLength(3);

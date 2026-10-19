@@ -71,7 +71,6 @@ import {
   withRunnerRequestContext,
 } from "./enterprise/runs/request-context";
 import { observeIntelligenceAuthentication } from "./intelligence-client";
-import type { LoadKnowledgeForBot } from "./knowledge/retrieval";
 import { RemoteLearnedSkillsMiddleware } from "./learning/remote";
 import {
   type AcquireLearnedSkills,
@@ -2180,7 +2179,6 @@ export function builtInAgentConfiguration(
    * the wire input can select the route, the credential, or the run identity.
    */
   governedModel?: GovernedModelRequest,
-  loadKnowledge?: LoadKnowledgeForBot,
   /**
    * Who this build's runs are for, so the consumption fact names the initiator (09.1). The Bot
    * half is the agent's own id; this carries the person. Absent when the resolver had no actor —
@@ -2470,8 +2468,6 @@ export async function buildAgents(
   markAttachmentsSent?: MarkAttachmentsSent,
   acquireLearnedSkills?: AcquireLearnedSkills,
   loadPersonalMemory?: LoadPersonalMemory,
-  /** Appended after `loadPersonalMemory`, for the positional reason it gives. */
-  loadKnowledge?: LoadKnowledgeForBot,
   /** Present only inside a governed admission. See {@link builtInAgentConfiguration}. */
   governedModel?: GovernedModelRequest,
   /** Who this build's runs are for. See {@link builtInAgentConfiguration}. */
@@ -2940,7 +2936,6 @@ async function buildAgent(
           : undefined,
         learnedSkills,
         governedModel,
-        undefined,
         attribution,
         gatewayModel,
       ),
@@ -3978,8 +3973,6 @@ export async function resolveRuntimeAgents(
   markAttachmentsSent?: MarkAttachmentsSent,
   acquireLearnedSkills?: AcquireLearnedSkills,
   loadPersonalMemory?: LoadPersonalMemory,
-  /** Appended after `loadPersonalMemory`, for the positional reason it gives. */
-  loadKnowledge?: LoadKnowledgeForBot,
   /**
    * The server-only governed model collaborator, present only inside a
    * governed admission.
@@ -4054,7 +4047,6 @@ export async function resolveRuntimeAgents(
     markAttachmentsSent,
     acquireLearnedSkills,
     loadPersonalMemory,
-    loadKnowledge,
     governedModel,
     attribution,
     gatewayModelDial,

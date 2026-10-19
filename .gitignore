@@ -93,3 +93,4 @@ gui-test-screenshots/
 
 .craft/
 archive/
+.local-gateway/

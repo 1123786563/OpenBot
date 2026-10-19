@@ -1,0 +1,38 @@
+{
+  "id": "aff836da-5de6-4a6f-b273-281e59965f1f",
+  "ok": true,
+  "result": {
+    "runId": "run_68e96a7ff1c9",
+    "deliveryId": "delivery_f174c1b67865",
+    "messages": [
+      {
+        "id": "msg_74000035362e",
+        "run_id": "run_68e96a7ff1c9",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_27bc070a-3139-46ba-bd98-e58cabce8efa",
+        "to_handle": "run:run_68e96a7ff1c9",
+        "subject": "craft-C3 批次收尾：#427 SATISFIED、#415 IMPLEMENTED、#416/#405/#425 BLOCKED-GAP",
+        "body": "逐票核验了 #415/#416/#405/#425/#427 并实证：#427 已由 #431 的签名 pass（b12a0840+70924c42，HEAD 祖先实证）等价且更强地满足全部 AC（291 测试全绿，含并发兑换与跨会话拒绝），零改动 SATISFIED；#415 发现两处真实缺口——server 对  模板 admission ok（探针实测）铸非法 host、 两侧漂移（fix-ocr27 #2 只收了 server）——按 TDD 修复（parseTemplate 拒 、lib.sh 拒空 label、双侧 pin 更新），RED→GREEN 全程实证，回归 281+53+117 全绿、typecheck 0、biome 零新增，IMPLEMENTED（改动留未提交区）。#416 缺 same-site 拓扑 profile 与 nightly 接入（验收脚本 Server Actions/HMR 已真实执行），#405 全剥离语义与放宽诉求冲突属安全边界变更（>20 行），#425 legacyPreviewEnabled 开关/风险文案/文档全缺（>20 行且 IMPLEMENTED 槽已用）——三者 BLOCKED-GAP 留专项，缺口与建议已写入报告。完整 AC 逐条实证、命令与输出摘要在 ORCA-REPORT.md。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_dfdbe53fbfd1\",\"dispatchId\":\"ctx_511250b34ab8\",\"outcome\":\"succeeded\",\"filesModified\":[\"server/src/craft/preview-origin.ts\",\"server/tests/craft-preview-origin.test.ts\",\"docker/compose/certs/lib.sh\",\"scripts/tls-pipeline.test.ts\",\"ORCA-REPORT.md\"],\"reportPath\":\"ORCA-REPORT.md\"}",
+        "created_at": "2026-10-19T09:44:43Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "a95bbdbb-97f7-4f6e-8f5f-fdcb2ee4bcb9",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

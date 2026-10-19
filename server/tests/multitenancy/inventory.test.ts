@@ -2,7 +2,7 @@
 // MT001（Issue #44）：入口清单生成器的契约、真实装配、漂移与数据库跳过行为。
 //
 // 这些测试同时是验收事实源：清单来自真实应用装配（createApp 的 bare/full
-// 变体、企业入口两条装配线、kb 服务入口），缺口报告随入口增删变化，缺
+// 变体、企业入口两条装配线），缺口报告随入口增删变化，缺
 // 少测试数据库配置时命令仍可运行且数据库阶段显式跳过。
 
 import { describe, expect, test } from "../../../tests/support/bun-test-compat";
@@ -102,13 +102,12 @@ describe("coverage inventory contract", () => {
 });
 
 describe("entrances come from real application assembly", () => {
-  test("assembles the deployment, enterprise and kb entrance faces", () => {
+  test("assembles the deployment and enterprise entrance faces", () => {
     const names = inventory.assemblies.map((assembly) => assembly.name);
     expect(names).toEqual([
       "deployment-bare",
       "deployment-full",
       "deployment-enterprise-unavailable",
-      "kb-service",
     ]);
     for (const assembly of inventory.assemblies) {
       expect(assembly.status).toBe("assembled");
@@ -181,14 +180,6 @@ describe("entrances come from real application assembly", () => {
     ]);
   });
 
-  test("captures the kb service entrance", () => {
-    const retrieve = entrance("POST /kb/:kbId/retrieve");
-    expect(retrieve).toBeDefined();
-    expect(retrieve?.registeredIn).toEqual(["kb-service"]);
-    expect(retrieve?.businessClosure).toBe("knowledge");
-    expect(retrieve?.registration).toBe("always");
-  });
-
   test("classifies stream entrances and verifies serve() upgrades", () => {
     const events = entrance("GET /api/channels/events");
     expect(events?.type).toBe("stream");
@@ -232,9 +223,6 @@ describe("static candidate extraction", () => {
     expect(inventory.dataTables.length).toBeGreaterThan(140);
     expect(inventory.dataTables.map((table) => table.id)).toContain(
       "server.users",
-    );
-    expect(inventory.dataTables.some((table) => table.schema === "kb")).toBe(
-      true,
     );
   });
 
@@ -355,25 +343,6 @@ describe("review-fix round 1: external dependencies from real config sources", (
     );
     expect(workshopRedis?.id).toContain("Redis");
     expect(workshopRedis?.configKeys).toContain("WORKSHOP_REQUIRE_REDIS");
-    const kbRedis = inventory.externalDependencies.find((dependency) =>
-      dependency.configKeys.includes("KB_REDIS_URL"),
-    );
-    expect(kbRedis?.id).toContain("Redis");
-    expect(kbRedis?.businessClosure).toBe("knowledge");
-  });
-
-  test("Qdrant and Ollama come from the real src/kb/config/index.ts", () => {
-    const qdrant = inventory.externalDependencies.find(
-      (dependency) => dependency.id === "Qdrant 向量库",
-    );
-    expect(qdrant?.configKeys).toContain("QDRANT_URL");
-    expect(qdrant?.configKeys).toContain("QDRANT_API_KEY");
-    expect(qdrant?.configKeys).toContain("KB_QDRANT_BATCH");
-    expect(qdrant?.businessClosure).toBe("knowledge");
-    const ollama = inventory.externalDependencies.find(
-      (dependency) => dependency.id === "Ollama 嵌入",
-    );
-    expect(ollama?.configKeys).toContain("OLLAMA_BASE_URL");
   });
 
   test("WeChat Pay maps the real WXPAY_* keys instead of falling into unmapped", () => {
@@ -399,16 +368,6 @@ describe("review-fix round 2: background programs from real daemon forms", () =>
       /^\.\.\/worker\/src\/index\.ts:\d+: void main\(\);/,
     );
     expect(daemon?.businessClosure).toBe("responsibilities");
-  });
-
-  test("registers the BullMQ kb worker from src/kb/worker.ts", () => {
-    const kbWorker = inventory.backgroundPrograms.find(
-      (program) => program.source === "src/kb/worker.ts",
-    );
-    expect(kbWorker?.evidence).toMatch(
-      /^src\/kb\/worker\.ts:\d+: .*new Worker\(/,
-    );
-    expect(kbWorker?.businessClosure).toBe("knowledge");
   });
 
   test("registers the cron-driven sweep scripts with file/line evidence", () => {

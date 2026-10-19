@@ -806,6 +806,36 @@ describe("preview origin admission", () => {
     }
   });
 
+  // ── #415: a wildcard `*` in the base is refused on both faces ────────────
+  //
+  // WHATWG's URL parser parses `*` into a hostname happily (it is not a
+  // forbidden domain code point), so before this pin parseTemplate served
+  // `https://{session}.*.example.com` and originFor minted
+  // `<label>.*.example.com` — a host no DNS zone spells and no certificate
+  // pipeline answers for, while the sidecar's derive_preview_host refuses
+  // the same template (its base charset never admits `*`) and crash-loops
+  // against an origin the server keeps serving (the fix-ocr18 #9 divergence
+  // class, the serving direction). The two faces now refuse it together.
+  test("#415: a wildcard `*` label in the base is refused — both faces, same verdict", () => {
+    for (const template of [
+      "https://{session}.*.example.com",
+      "https://{session}.x.*.example.com",
+    ]) {
+      const broken = originWith({ previewOriginTemplate: template });
+      const admission = broken.admission();
+      // RED: admission held ok before — `*` parsed and only the dot-count
+      // checks ran on the base.
+      expect(admission.ok).toBe(false);
+      if (!admission.ok) {
+        expect(admission.reason).toContain(
+          "OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE",
+        );
+      }
+      expect(() => broken.originFor(SESSION_ID)).toThrow();
+      expect(broken.handlesRequest(new Request("https://x.*.example.com/"))).toBe(false);
+    }
+  });
+
   test("fix-ocr5 D: multi-label bases and exactly localhost stay ok", () => {
     for (const template of [
       "https://{session}.example.com",
@@ -827,14 +857,11 @@ describe("preview origin admission", () => {
     // new URL serves that template and the wildcard derivation in
     // scripts/tls-pipeline.test.ts pins the SAME base as ok — the two faces
     // agree on it. Empty interior labels (`a..b`) were pinned ok on both
-    // faces by the same round; fix-ocr27 #2 tightens the SERVER side — they
+    // faces by the same round; fix-ocr27 #2 tightened the SERVER side — they
     // mint degenerate wildcards and (for a `..localhost` base) bypass the
-    // localhost claim narrowing — so the server now refuses what the sidecar
-    // still accepts. That is a RECORDED lockstep deviation in the sidecar's
-    // laxer direction, the same category as fix-ocr5 D's single-label base:
-    // harmless because the server's gate refuses first (no address, no
-    // serving origin exists to certify for), and LE would refuse an empty
-    // label on its own terms anyway.
+    // localhost claim narrowing — and #415 closed that recorded deviation
+    // by refusing them on the sidecar too (a doomed LE issuance was all the
+    // laxer face ever bought).
     const ok = originWith({ previewOriginTemplate: "https://{session}.a-.b" });
     expect(ok.admission().ok).toBe(true);
     expect(ok.originFor(SESSION_ID)).toMatch(/^https?:\/\/[0-9a-f]{20}\./);

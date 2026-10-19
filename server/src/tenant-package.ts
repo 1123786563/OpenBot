@@ -111,9 +111,8 @@ type PackageFiles = {
   agents: string;
   channels: string;
   model: string;
-  knowledge: string;
   /**
-   * Optional, unlike the five above, because packages written before skills shipped do not have it
+   * Optional, unlike the four above, because packages written before skills shipped do not have it
    * and must keep loading. Absent means a deployment with no skills of its own, which is what every
    * package had until now.
    */
@@ -218,20 +217,6 @@ export type TenantPackage = {
     credentialSecretRef: string;
     defaultModel: string;
   };
-  /**
-   * What `knowledge.yaml` says this deployment may connect to.
-   *
-   * Parsed and validated, and currently read by nothing. The connector that consumed it synced a
-   * customer's Drive into a local index using a service account, so every person's answer came back
-   * as the deployment rather than as themselves; it was removed rather than fixed. The file stays
-   * part of the package contract because shipped packages carry it and validation should keep
-   * refusing a malformed one, but a reader should not take the presence of this field as evidence
-   * that anything acts on it.
-   */
-  knowledgeSources: {
-    type: "google-drive" | "microsoft-onedrive";
-    roots: string[];
-  }[];
   /** What `skills.yaml` ships, or empty for a package that has none. */
   skills: TenantSkill[];
   themeCss: string;
@@ -509,7 +494,6 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
   const agentsYaml = yaml(files.agents, "agents.yaml");
   const channelsYaml = yaml(files.channels, "channels.yaml");
   const modelYaml = yaml(files.model, "model.yaml");
-  const knowledgeYaml = yaml(files.knowledge, "knowledge.yaml");
   // Absent is a package with no skills, not a malformed one. A file that is present and wrong is
   // still refused, the way every other file here is.
   const skillsYaml = files.skills?.trim()
@@ -599,22 +583,6 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
   if (model.provider !== "openai" && model.provider !== "anthropic") {
     throw new Error("model.provider must be openai or anthropic");
   }
-  const sources = asList(knowledgeYaml.sources, "knowledge.yaml sources").map(
-    (value) => {
-      const source = asRecord(value, "knowledge source");
-      if (
-        source.type !== "google-drive" &&
-        source.type !== "microsoft-onedrive"
-      ) {
-        throw new Error("knowledge source type is not supported");
-      }
-      return {
-        type: source.type,
-        roots: stringArray(source.roots, "source.roots"),
-      } as { type: "google-drive" | "microsoft-onedrive"; roots: string[] };
-    },
-  );
-
   return {
     tenantId: requiredString(tenant.id, "tenant.id"),
     productName: requiredString(tenant.product_name, "tenant.product_name"),
@@ -632,7 +600,6 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
       ),
       defaultModel: requiredString(model.default_model, "model.default_model"),
     },
-    knowledgeSources: sources,
     skills: packageSkills,
     themeCss: files.themeCss,
   };
@@ -732,7 +699,6 @@ export async function loadTenantPackage(
     "agents.yaml",
     "channels.yaml",
     "model.yaml",
-    "knowledge.yaml",
   ] as const;
   const contents = await Promise.all(
     filenames.map(async (filename) =>
@@ -742,7 +708,7 @@ export async function loadTenantPackage(
       ),
     ),
   );
-  const [brand, agents, channels, model, knowledge] = contents;
+  const [brand, agents, channels, model] = contents;
   const themeCss = await readFile(join(sourcePath, "theme.css"), "utf8").catch(
     (error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return "";
@@ -768,7 +734,6 @@ export async function loadTenantPackage(
     agents,
     channels,
     model,
-    knowledge,
     skills,
     agentFiles,
     themeCss,

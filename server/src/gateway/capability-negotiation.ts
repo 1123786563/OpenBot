@@ -59,7 +59,13 @@ import {
  * The endpoint configuration is an origin only (01.1 refuses paths); this module owns the
  * paths it calls, and this one is the extension manifest's.
  */
-export const GATEWAY_EXTENSIONS_MANAGEMENT_PATH = "/api/plugins";
+/**
+ * The gateway path the extension manifest is read from. The dashboard's /api/plugins carries
+ * management metadata its entries do not reduce to the identity pairs this module parses, so
+ * the gateway serves the negotiation's manifest at its own path (/api/extensions, the
+ * bifrost-http route that lists exactly the declared extensions with their versions).
+ */
+export const GATEWAY_EXTENSIONS_MANAGEMENT_PATH = "/api/extensions";
 
 /** The extension this deployment cannot go live without: the strict credit admission gate. */
 export const CREDIT_ADMISSION_EXTENSION_NAME = "openbot-credit-admission";

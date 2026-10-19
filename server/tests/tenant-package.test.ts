@@ -93,7 +93,6 @@ function loadedPackage(
       credentialSecretRef: "openai-key",
       defaultModel: "gpt-5.6-terra",
     },
-    knowledgeSources: [],
     skills: [],
     themeCss: "",
     sourcePath: `/test/${randomUUID()}`,
@@ -210,7 +209,6 @@ describe("a seeded Mastra Bot", () => {
       channels: "channels: []",
       model:
         "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-      knowledge: "sources: []",
       themeCss: "",
     });
 
@@ -262,8 +260,7 @@ describe("tenant YAML validation", () => {
         channels: "channels: []",
         model:
           "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-        knowledge: "sources: []",
-        themeCss: "",
+          themeCss: "",
       }),
     ).toThrow("agent.title must be a non-empty string");
   });
@@ -277,8 +274,7 @@ describe("tenant YAML validation", () => {
         channels: "channels: []",
         model:
           "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-        knowledge: "sources: []",
-        themeCss: "",
+          themeCss: "",
       }),
     ).toThrow("agent.role_description must be a non-empty string");
   });
@@ -306,8 +302,7 @@ describe("tenant YAML validation", () => {
           channels: "channels: []",
           model:
             "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-          knowledge: "sources: []",
-          themeCss: "",
+              themeCss: "",
         }),
       ).toThrow(/reserved/i);
     });
@@ -322,7 +317,6 @@ describe("tenant YAML validation", () => {
       channels: "channels: []",
       model:
         "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-      knowledge: "sources: []",
       themeCss: "",
     });
     expect(tenantPackage.agents.map((agent) => agent.id)).toEqual([
@@ -350,7 +344,6 @@ describe("tenant YAML validation", () => {
       channels: "channels: []",
       model:
         "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-      knowledge: "sources: []",
       themeCss: "",
     });
 
@@ -367,8 +360,7 @@ describe("tenant YAML validation", () => {
         channels: "channels: []",
         model:
           "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-        knowledge: "sources: []",
-        themeCss: "",
+          themeCss: "",
       }),
     ).toThrow("agent.avatar_seed must be a non-empty string");
   });
@@ -382,8 +374,7 @@ describe("tenant YAML validation", () => {
         channels: "channels: []",
         model:
           "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-        knowledge: "sources: []",
-        themeCss: ":root { --primary: oklch(0.32 0.09 250); }",
+          themeCss: ":root { --primary: oklch(0.32 0.09 250); }",
       }),
     );
 
@@ -512,8 +503,7 @@ describe("tenant YAML validation", () => {
           "channels: [{ id: company, name: Company, description: Test, permitted_agents: [missing], allowed_groups: [all] }]",
         model:
           "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-        knowledge: "sources: []",
-        themeCss: ":root { --primary: black; }",
+          themeCss: ":root { --primary: black; }",
       }),
     ).toThrow('references unknown agent "missing"');
   });
@@ -542,7 +532,6 @@ describe("tenant YAML validation", () => {
     allowed_groups: [all]`,
       model:
         "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-      knowledge: "sources: []",
       themeCss: "",
     });
 
@@ -1567,8 +1556,7 @@ describe("pairing a package's coworkers with its skills", () => {
         channels: "channels: []",
         model:
           "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-        knowledge: "sources: []",
-        skills: `skills:
+          skills: `skills:
   - slug: find-a-document
     title: Find a document
     summary: Search.

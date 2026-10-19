@@ -7,12 +7,7 @@
  * the ported infrastructure wording (egress-proxy Hard rules, the webapp tool entry — Task 4's
  * restore) and the one environment fact that cannot be true in OpenBot (the "numeric" app-id
  * qualifier: OpenBot connector ids are string keys).
- *
- * The company-knowledge section is the one deliberate cut that remains: onyx backs its
- * `company-search` skill with an in-sandbox CLI over the permissioned corpus, and OpenBot has
- * no backed delivery path from the craft sandbox to its knowledge domain yet — a prompt must
- * not promise a missing tool. `companySearchSkillAvailable` splices the pinned, byte-exact
- * onyx section back in the day the managed-content seam delivers the skill.
+
  */
 
 import { getLogger } from "../../../shared/logger";
@@ -150,24 +145,6 @@ export function buildConnectableAppsList(
     .join("\n");
 }
 
-/**
- * onyx's Company knowledge section, byte-exact (`AGENTS.template.md:81-88`) —
- * spliced in at onyx's position only when the managed-content seam delivers a
- * backed company-search skill. Note the single leading space on " or label…"
- * (onyx verbatim).
- */
-export const COMPANY_KNOWLEDGE_SECTION =
-  "## Company knowledge\n\n" +
-  "When the request relates to the user's work, use the `company-search` skill to search their\n" +
-  "permissioned company corpus. Reformulate and re-search if results are weak, and stop once you\n" +
-  "can answer. Cite every source by title and URL.\n" +
-  "\n" +
-  "If results are empty or weak, say so and name what you searched. Then ask the user for guidance,\n" +
-  " or label any non-grounded content as general knowledge.";
-
-/** Where the company-knowledge section sits in onyx's template: before Files. */
-const COMPANY_KNOWLEDGE_ANCHOR = "## Files & attachments";
-
 function buildOrganizationInstructionsSection(
   instructions: string | null,
 ): string {
@@ -193,11 +170,6 @@ export type GenerateAgentInstructionsInput = {
    * output; the default answers for a deployment whose app source is empty).
    */
   connectableAppsSection?: string | null;
-  /**
-   * Whether a backed company-search skill ships in the managed fileset — gates the
-   * Company knowledge section. False while that skill has no backed implementation.
-   */
-  companySearchSkillAvailable?: boolean;
 };
 
 /**
@@ -222,24 +194,7 @@ export function generateAgentInstructions(
     disabledToolsSection = `\n**Disabled Tools**: ${input.disabledTools.join(", ")}\n`;
   }
 
-  let template = input.template;
-  if (input.companySearchSkillAvailable) {
-    const at = template.indexOf(COMPANY_KNOWLEDGE_ANCHOR);
-    if (at >= 0) {
-      template =
-        template.slice(0, at) +
-        COMPANY_KNOWLEDGE_SECTION +
-        "\n\n" +
-        template.slice(at);
-    } else {
-      // The skill ships but the anchor is gone: the splice silently no-ops and the
-      // agent would be told about a section its prompt never shows. Observable,
-      // not swallowed (the template is deployment-controlled bytes).
-      logger.warn(
-        "[craft] AGENTS template lacks the '## Files & attachments' anchor; the Company knowledge section is not rendered",
-      );
-    }
-  }
+  const template = input.template;
 
   const connectableAppsSection =
     input.connectableAppsSection ?? "No connectable apps available.";

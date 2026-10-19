@@ -31,8 +31,8 @@
  *   任务（默认 null，通过 --ownership 输入）；`status`：owned | unowned。
  * - 入口清单来自真实应用装配而非手写常量：部署入口 createApp（src/app.ts，
  *   即 src/index.ts 的装配工厂）的 bare / full 两个变体，企业入口
- *   src/enterprise/conversations 的真实与降级（unavailable）装配线，以及
- *   kb 服务入口（src/kb/router）。动态与条件注册的路由由此自然进入清单
+ *   src/enterprise/conversations 的真实与降级（unavailable）装配线。动态与
+ *   条件注册的路由由此自然进入清单
  *   （registration=conditional 表示仅出现在全量装配）。
  * - serve() 层的 WebSocket 升级入口（电脑流、Craft webapp HMR）不在 Hono
  *   路由表里，以静态提取 + 真实纯函数/源码校验登记；src/index.ts 中的
@@ -40,8 +40,8 @@
  * - 后台程序 / 数据表 / 外部依赖为静态候选提取（Scope boundary），均带
  *   证据（文件:行）。数据表来自 drizzle schema 的真实导入。后台程序覆盖
  *   常驻 daemon 的实际形态：顶层 `void main()` 守护启动（worker 循环）、
- *   BullMQ `new Worker(`（kb worker）、`start*()`/`.start()`/`setInterval`
- *   （部署入口），以及文档声明的 CronJob 驱动脚本（scripts/fire-*、cull-*）。
+ *   `start*()`/`.start()`/`setInterval`（部署入口），以及文档声明的 CronJob
+ *   驱动脚本（scripts/fire-*、cull-*）。
  * - serviceSurfaces：已知部署但不在四个应用装配内的服务面（supervisor、
  *   go-runtime、agent-computer、agent-sandbox）。它们只被登记
  *   （assemblyStatus=unassembled、routeEnumeration=not_enumerated），
@@ -167,7 +167,7 @@ export interface StageRecord {
 
 export interface AssemblyInfo {
   name: string;
-  /** 该装配对应的入口面（deployment / enterprise / kb-service）。 */
+  /** 该装配对应的入口面（deployment / enterprise）。 */
   entrance: string;
   status: "assembled" | "failed";
   routeEntries: number;
@@ -625,11 +625,10 @@ async function cacheOrBuild(
 }
 
 /**
- * 真实装配四个入口面：
+ * 真实装配三个入口面：
  *  - deployment-bare：createApp 最小装配（无条件路由基线）。
  *  - deployment-full：全量位置参数 + 特性配置（条件路由）+ 企业真实路由。
  *  - deployment-enterprise-unavailable：企业降级装配线（unavailable 路由）。
- *  - kb-service：kb 服务入口（src/kb/router 的 createApp + buildRoutes）。
  */
 export async function assembleInventoryApps(
   mutate?: (name: string, app: RouteApp) => void,
@@ -673,18 +672,6 @@ export async function assembleInventoryApps(
     ),
   });
 
-  const kbNotes: string[] = [];
-  result.push({
-    name: "kb-service",
-    entrance: "kb-service",
-    notes: kbNotes,
-    app: await cacheOrBuild(
-      "kb-service",
-      () => buildKbService(kbNotes),
-      bypass,
-    ),
-  });
-
   for (const assembled of result) {
     mutate?.(assembled.name, assembled.app);
   }
@@ -700,19 +687,6 @@ async function buildFullDeployment(
   return createApp(
     ...(args as unknown as Parameters<typeof createApp>),
   ) as unknown as RouteApp;
-}
-
-async function buildKbService(notes: string[]): Promise<RouteApp> {
-  const built = await attempt("kb-service", async () => {
-    const { createApp: createKbApp } = await import("../../src/kb/router/app");
-    const { buildRoutes } = await import("../../src/kb/router/routes");
-    const app = createKbApp();
-    buildRoutes(app, P());
-    return app as unknown as RouteApp;
-  });
-  if (built.value) return built.value as RouteApp;
-  if (built.note) notes.push(built.note);
-  return new Hono() as unknown as RouteApp;
 }
 
 // ---------------------------------------------------------------------------
@@ -788,8 +762,6 @@ const CLOSURE_BY_PREFIX: Array<[string, string]> = [
   ["/api/components", "plugins"],
   ["/api/agent-tools", "plugins"],
   ["/api/memory", "memory"],
-  ["/api/knowledge", "knowledge"],
-  ["/kb", "knowledge"],
   ["/api/billing", "billing"],
   ["/api/payments", "billing"],
   ["/api/bot-service", "bot"],
@@ -815,7 +787,6 @@ const CLOSURE_LABELS: Record<string, string> = {
   "agent-runtime": "Agent 运行时",
   computer: "电脑与实例",
   codesandbox: "代码沙箱",
-  knowledge: "知识库",
   memory: "记忆",
   plugins: "插件与组件",
   approvals: "审批",
@@ -953,7 +924,6 @@ async function serveLevelEntrances(): Promise<{
 
 const BACKGROUND_SOURCES = [
   "src/index.ts",
-  "src/kb/worker.ts",
   "../worker/src/index.ts",
   "scripts/fire-routines.ts",
   "scripts/fire-workshop-schedules.ts",
@@ -983,7 +953,6 @@ const PROGRAM_CLOSURES: Array<[RegExp, string]> = [
 /** 已知常驻 worker 的源级归属（名字本身过泛，不足以分类）。 */
 const PROGRAM_CLOSURES_BY_SOURCE: Array<[string, string]> = [
   ["../worker/src/index.ts", "responsibilities"],
-  ["src/kb/worker.ts", "knowledge"],
 ];
 
 function classifyProgram(name: string, source: string): string {
@@ -1066,10 +1035,6 @@ const TABLE_CLOSURES: Array<[string, string]> = [
   ["group", "conversation"],
   ["mastra", "conversation"],
   ["enterprise", "conversation"],
-  ["knowledge", "knowledge"],
-  ["kb_", "knowledge"],
-  ["chunk", "knowledge"],
-  ["document", "knowledge"],
   ["memory", "memory"],
   ["mcp", "plugins"],
   ["plugin", "plugins"],
@@ -1114,11 +1079,6 @@ export async function extractDataTables(): Promise<DataTableEntry[]> {
     () => import("../../src/db/schema"),
   );
   if (server.value) schemas.push({ schema: "server", module: server.value });
-  const kb = await attempt(
-    "kb-drizzle-schema",
-    () => import("../../src/kb/db/schema"),
-  );
-  if (kb.value) schemas.push({ schema: "kb", module: kb.value });
   for (const { schema, module } of schemas) {
     for (const value of Object.values(module)) {
       let table: string | undefined;
@@ -1144,7 +1104,6 @@ export async function extractDataTables(): Promise<DataTableEntry[]> {
 const CONFIG_SOURCES = [
   "src/config.ts",
   "src/redis.ts",
-  "src/kb/config/index.ts",
 ];
 
 const EXTERNAL_DEPS: Array<[string, string, string]> = [
@@ -1157,10 +1116,8 @@ const EXTERNAL_DEPS: Array<[string, string, string]> = [
     "PostgreSQL（租户运行时库）",
     "conversation",
   ],
-  ["KB_DATABASE_URL", "PostgreSQL（KB 服务库）", "knowledge"],
   ["OPENBOT_REDIS_URL", "Redis（workshop 总线与锁）", "workshop"],
   ["WORKSHOP_REQUIRE_REDIS", "Redis（workshop 总线与锁）", "workshop"],
-  ["KB_REDIS_URL", "Redis（KB BullMQ 队列）", "knowledge"],
   ["INTELLIGENCE_", "Intelligence 运行时", "agent-runtime"],
   ["COPILOTKIT_", "CopilotKit Runtime", "agent-runtime"],
   ["MANAGED_AGENT_", "受管 Agent（AG-UI）", "agent-runtime"],
@@ -1174,11 +1131,6 @@ const EXTERNAL_DEPS: Array<[string, string, string]> = [
   ["AGENT_COMPUTER_", "agent-computer 服务", "computer"],
   ["COMPUTER_SANDBOX_", "代码沙箱", "codesandbox"],
   ["COMPUTER_", "computer 基础设施", "computer"],
-  ["QDRANT_", "Qdrant 向量库", "knowledge"],
-  ["KB_QDRANT_BATCH", "Qdrant 向量库", "knowledge"],
-  ["OLLAMA_", "Ollama 嵌入", "knowledge"],
-  ["DOCREADER_", "Docreader 文档解析服务", "knowledge"],
-  ["KB_RERANK_URL", "Reranker 服务", "knowledge"],
   ["SMTP", "SMTP 邮件", "responsibilities"],
   ["SES_", "AWS SES", "responsibilities"],
   ["SNS_", "AWS SNS", "responsibilities"],
@@ -1197,8 +1149,7 @@ export function extractExternalDependencies(): {
     lines.forEach((line, index) => {
       // 三种真实配置面形态：src/config.ts 的 optional(environment, "KEY")、
       // 参数名不为 environment 的直接成员访问（如 src/redis.ts 的
-      // env.OPENBOT_REDIS_URL）、src/kb/config/index.ts 的 env/envInt/
-      // envFloat/envBool("KEY") 辅助函数。
+      // env.OPENBOT_REDIS_URL）。
       const match = line.match(
         /(?:optional|required)\(\s*environment,\s*"([A-Z0-9_]+)"\s*\)/,
       );
@@ -1251,7 +1202,7 @@ interface SurfaceSpec {
 }
 
 /**
- * 四个应用装配（deployment-bare/full、enterprise 降级、kb-service）之外的
+ * 三个应用装配（deployment-bare/full、enterprise 降级）之外的
  * 已知部署服务面。无法安全导入装配（supervisor 顶层 serve() 自启动、
  * go-runtime 是 Go 进程、两个 agent-* 是 compose 镜像），因此只登记为
  * unassembled / not_enumerated：登记不构成路由覆盖。
@@ -1604,11 +1555,8 @@ function mergeEntrances(
     }
   }
   for (const entry of merged.values()) {
-    // bare 装配里出现 = 无条件注册；kb-service 独有 = kb 服务自身的固定面。
-    if (
-      entry.registeredIn.includes("deployment-bare") ||
-      entry.registeredIn.every((name) => name === "kb-service")
-    ) {
+    // bare 装配里出现 = 无条件注册。
+    if (entry.registeredIn.includes("deployment-bare")) {
       entry.registration = "always";
     }
   }

@@ -1,0 +1,38 @@
+{
+  "id": "df234898-20aa-434a-826b-b60f851f79ca",
+  "ok": true,
+  "result": {
+    "runId": "run_68e96a7ff1c9",
+    "deliveryId": "delivery_bfd087f31d25",
+    "messages": [
+      {
+        "id": "msg_0f9860570169",
+        "run_id": "run_68e96a7ff1c9",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_4b68dcf4-dbb7-46a4-984b-4ed6b878e2f1",
+        "to_handle": "run:run_68e96a7ff1c9",
+        "subject": "craft-C2 五票核验完成：#409 SATISFIED、#413 SATISFIED+FIX、#411/#412/#414 BLOCKED-GAP",
+        "body": "逐张核验 #409/#411/#412/#413/#414 并实证：#409 六条 AC 全过（CSP form-action 三处单测 VERBATIM 钉住、origin-guard 26/26、proxy+origin 196/196、HMR 39/39、preview-tab 整组 79/79），AC6 按你裁定采纳 hostname 语义并已在报告标注票面措辞差异，connect-src ws 收敛未做记为 AC 外遗留；#413 R-6 已在 Spec/#364/实现三方落地，模板测试 15/15 绿，本批补 +5 行断言把裸 fetch 教学钉进测试（SATISFIED+FIX），#358 正文 D6 旧文待票主同步；#411（server 读 renewal-status 关 admission）与 #412（TLS 终结交付）整链无实现（reload.sh 自认 pending batch），#414 的 set-cookie/错误面 action 缺失，三票按分级 BLOCKED-GAP 留专项，#411+#412 同根建议合并验收。未提交改动仅 craft-webapp-template.test.ts（+5 行），报告在 worktree 根 ORCA-REPORT.md，容器 orca-all-craft-pg 保留。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_18ff217e3bff\",\"dispatchId\":\"ctx_70a48b8b2ff0\",\"outcome\":\"succeeded\",\"filesModified\":[\"server/tests/craft-webapp-template.test.ts\"],\"reportPath\":\"ORCA-REPORT.md\"}",
+        "created_at": "2026-10-19T09:25:53Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "1d3ab1cd-7817-464c-8375-85b1b8f03ea9",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}
