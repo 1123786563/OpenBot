@@ -7,16 +7,42 @@
 // answer is reachability, and it can be computed in seconds for the whole repository. The runner
 // stays the judge — scripts/e2e-partition-fix-loop.mjs verifies against it — but this turns that
 // loop from discovery into confirmation.
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const SKIP = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage", ".audit-out"]);
+const SKIP = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  ".next",
+  "coverage",
+  ".audit-out",
+]);
 const DIRS = process.argv.slice(2).length
   ? process.argv.slice(2)
   : [
-      "shared", "supervisor", "worker", "deliverables", "desktop", "agent-bot", "agent-sandbox",
-      "agent-langgraph", "agent-mastra", "agent-computer", "app", "server", "tests", "scripts",
+      "shared",
+      "supervisor",
+      "worker",
+      "deliverables",
+      "desktop",
+      "agent-bot",
+      "agent-sandbox",
+      "agent-langgraph",
+      "agent-mastra",
+      "agent-computer",
+      "app",
+      "server",
+      "tests",
+      "scripts",
     ];
 
 /* Modules whose mere evaluation needs the Bun runtime. Matched on the source, not the file name:
@@ -76,26 +102,107 @@ function resolveSpecifier(from, specifier) {
       ? join(root, "app", "src", specifier.slice(2))
       : null;
   if (!base) return null;
-  for (const candidate of [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, base]) {
+  for (const candidate of [
+    `${base}.ts`,
+    `${base}.tsx`,
+    `${base}/index.ts`,
+    base,
+  ]) {
     if (candidate.endsWith("/")) continue;
-    const hit = sources.has(candidate) ? candidate : existsSync(candidate) && statSync(candidate).isFile() ? candidate : null;
+    const hit = sources.has(candidate)
+      ? candidate
+      : existsSync(candidate) && statSync(candidate).isFile()
+        ? candidate
+        : null;
     if (hit) return hit;
   }
   return null;
 }
 
 const edges = new Map();
+/*
+ * Third-party packages are a second way a suite reaches Bun: the suite's own source is clean, but the
+ * package it imports evaluates `bun:` or `"bun"` at module scope. `@composio/core` is exactly that
+ * case — `server/tests/composio-adapter.test.ts` collected fine, then aborted the whole e2e run with
+ * `Received protocol 'bun:'`, and this tool could not see why because it only followed repository
+ * files. So a bare specifier now resolves to the package's declared entry modules and those are
+ * matched against the same BUN_ONLY patterns.
+ *
+ * This is a deliberate over-approximation: a package with conditional exports may serve Node a clean
+ * entry while the file read here is the Bun one. The cost of guessing wrong is one suite running
+ * under Bun instead of Node — never a hidden failure — and the runner's collection pass stays the
+ * authority, exactly as it was for this file.
+ */
+const packageCache = new Map();
+function externalBunReferrer(specifier) {
+  if (packageCache.has(specifier)) return packageCache.get(specifier);
+  const name = specifier.startsWith("@")
+    ? specifier.split("/").slice(0, 2).join("/")
+    : specifier.split("/")[0];
+  let hit = null;
+  const dir = join(root, "node_modules", name);
+  if (existsSync(join(dir, "package.json"))) {
+    let pkg;
+    try {
+      pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    } catch {
+      pkg = {};
+    }
+    const entries = new Set(
+      [pkg.main, pkg.module, pkg.browser]
+        .concat(
+          typeof pkg.exports === "string"
+            ? [pkg.exports]
+            : Object.values(pkg.exports ?? {}).flatMap((condition) =>
+                typeof condition === "string"
+                  ? [condition]
+                  : Object.values(condition ?? {}).flatMap((nested) =>
+                      typeof nested === "string" ? [nested] : [],
+                    ),
+              ),
+        )
+        .filter((entry) => typeof entry === "string"),
+    );
+    for (const entry of entries) {
+      const file = join(dir, entry.replace(/^\.\//, ""));
+      if (!existsSync(file) || !statSync(file).isFile()) continue;
+      if (
+        BUN_ONLY.some((pattern) => pattern.test(readFileSync(file, "utf8")))
+      ) {
+        hit = `node_modules/${name}/${entry.replace(/^\.\//, "")}`;
+        break;
+      }
+    }
+  }
+  packageCache.set(specifier, hit);
+  return hit;
+}
+
 function outgoing(file) {
   if (edges.has(file)) return edges.get(file);
-  const source = sources.get(file) ?? (existsSync(file) ? readFileSync(file, "utf8") : "");
+  const source =
+    sources.get(file) ?? (existsSync(file) ? readFileSync(file, "utf8") : "");
   const found = [];
-  for (const match of source.matchAll(/(?:from|import\()\s*["']([^"']+)["']/g)) {
+  for (const match of source.matchAll(
+    /(?:from|import\()\s*["']([^"']+)["']/g,
+  )) {
     const statement = source.slice(Math.max(0, match.index - 40), match.index);
     // `import type` is erased, so it creates no runtime edge: treating it as one would park every
     // suite that merely mentions a Bun-boundary type.
-    if (/\btype\s+[A-Za-z_{]/.test(statement) || /\bexport\s+type\b/.test(statement)) continue;
+    if (
+      /\btype\s+[A-Za-z_{]/.test(statement) ||
+      /\bexport\s+type\b/.test(statement)
+    )
+      continue;
     const target = resolveSpecifier(file, match[1]);
     if (target) found.push(target);
+    else if (!match[1].startsWith(".") && !match[1].startsWith("@/")) {
+      const external = externalBunReferrer(match[1]);
+      if (external) {
+        bunOnly.add(external);
+        found.push(external);
+      }
+    }
   }
   edges.set(file, found);
   return found;
@@ -125,19 +232,28 @@ const suites = files.filter((file) => TEST_FILE.test(file));
 const blocked = [];
 for (const file of suites) {
   const cause = reachable(file, new Set());
-  if (cause) blocked.push({ file: file.replace(`${root}/`, ""), cause: cause.replace(`${root}/`, "") });
+  if (cause)
+    blocked.push({
+      file: file.replace(`${root}/`, ""),
+      cause: cause.replace(`${root}/`, ""),
+    });
 }
 
 const byCause = new Map();
-for (const entry of blocked) byCause.set(entry.cause, (byCause.get(entry.cause) ?? 0) + 1);
+for (const entry of blocked)
+  byCause.set(entry.cause, (byCause.get(entry.cause) ?? 0) + 1);
 
 writeFileSync(
   join(root, "archive/verification/e2e-import-boundary.json"),
   JSON.stringify({ suites: suites.length, blocked }, null, 1),
 );
-console.log(`${suites.length} suite files · ${blocked.length} reach a Bun-only module`);
+console.log(
+  `${suites.length} suite files · ${blocked.length} reach a Bun-only module`,
+);
 console.log(`\nthe modules that decide it:`);
-for (const [cause, count] of [...byCause].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+for (const [cause, count] of [...byCause]
+  .sort((a, b) => b[1] - a[1])
+  .slice(0, 12)) {
   console.log(`  ${String(count).padStart(4)}  ${cause}`);
 }
 console.log(`\nledger: archive/verification/e2e-import-boundary.json`);
@@ -182,6 +298,12 @@ if (process.argv.includes("--apply")) {
     manifestPath,
     `${JSON.stringify({ ...manifest, generatedBy: "scripts/e2e-import-boundary.mjs --apply", groups, files: [...files].sort(), causes }, null, 1)}\n`,
   );
-  spawnSync("node", ["scripts/e2e-apply-partition.mjs"], { cwd: root, encoding: "utf8", stdio: "inherit" });
-  console.log(`applied: ${added} newly driven, ${files.size} driven in total, ${groups.length} groups`);
+  spawnSync("node", ["scripts/e2e-apply-partition.mjs"], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: "inherit",
+  });
+  console.log(
+    `applied: ${added} newly driven, ${files.size} driven in total, ${groups.length} groups`,
+  );
 }

@@ -118,3 +118,16 @@ Tests      180 failed | 7688 passed | 57 skipped (7925)     Duration 10m21s
 Received protocol 'bun:'` 中止整轮收集。**分流的决定性证据是运行器当下实测**（连续两次整轮中止），
 但"Node 侧为什么从可收集变成不可收集"我没有结论——候选是 `@composio/core` 的 exports 条件在
 不同调用路径下被解析成 Bun 专用入口。这条留在未解清单里，不当已解释。
+
+## 静态边界工具的一条已声明局限（composio-adapter 就是反例）
+
+`scripts/e2e-import-boundary.mjs` 现在会额外读**第三方包的入口文件**（`main`/`module`/`exports`）并按
+同一组 `BUN_ONLY` 规则匹配，但 composio-adapter 这一例它**仍然判不出来**：
+`@composio/core` 整个包里没有一处 `bun:` 文本，它的 `server/node_modules/` 入口是 `dist/index.mjs`，
+套件直接依赖的 `server/src/plugins/{broker,composio,composio-adapter}.ts` 也没有 Bun 专用 import。
+说明符来自更深处——入口之外的某个依赖文件——而这版工具只看入口，不做整包递归。
+
+因此口径固定为：**静态边界是前置筛查，运行器的收集结果才是判定**。这一例的分流理由写进分区清单的
+cause 字段时，引的就是运行器原文（`Received protocol 'bun:'` 两次中止整轮），不是静态推断。
+过度近似的代价只是把一个套件多留一层 Bun 执行，不会把真失败藏起来；反过来漏判的代价是整轮收集中止，
+所以入口跑（`bun run test` / `bun run test:ci`）本身就是这道盲区的兜底关卡。
