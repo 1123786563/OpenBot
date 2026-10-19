@@ -66,11 +66,21 @@ const liveWanted = Boolean(process.env.OPENBOT_LIVE_API);
 export default {
   projectId: "openbot-unit",
   tests: [
-    ...suites.flatMap((dir) =>
-      dir === "app"
-        ? ["app/**/*.test.ts", "app/**/*.test.tsx"]
-        : [`${dir}/**/*.test.ts`],
-    ),
+    /*
+     * Every directory gets every suite extension. `app` used to be the only one with a `.test.tsx`
+     * glob, which meant three desktop React suites — 85 registered tests — were collected by no entry
+     * at all while the file-walking coverage audit still reported them as "native, covered by e2e".
+     * scripts/e2e-collection-reconcile.mjs is what found it, by comparing the audit's bucket against
+     * the files the report shows actually contributed tests; the same script now proves the widening
+     * collects what it claims.
+     */
+    ...suites.flatMap((dir) => [
+      `${dir}/**/*.test.ts`,
+      `${dir}/**/*.test.tsx`,
+      `${dir}/**/*.test.mts`,
+      `${dir}/**/*.spec.ts`,
+      `${dir}/**/*.spec.tsx`,
+    ]),
     "!**/node_modules/**",
     ...(liveWanted ? [] : LIVE.map((file) => `!${file}`)),
     ...driven.map((file) => `!${file}`),

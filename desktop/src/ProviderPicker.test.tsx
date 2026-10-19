@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/e2e-compat";
+import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

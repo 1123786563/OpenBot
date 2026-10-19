@@ -164,6 +164,14 @@
       ]
     },
     {
+      "name": "desktop/src",
+      "files": [
+        "desktop/src/App.test.tsx",
+        "desktop/src/Problem.test.tsx",
+        "desktop/src/ProviderPicker.test.tsx"
+      ]
+    },
+    {
       "name": "scripts/processes.test.ts",
       "files": [
         "scripts/processes.test.ts"
@@ -731,6 +739,9 @@
     "app/tests/transcript-attachments.test.tsx",
     "app/tests/user-authorizations-ui.test.tsx",
     "desktop/scripts/desktop-version.test.ts",
+    "desktop/src/App.test.tsx",
+    "desktop/src/Problem.test.tsx",
+    "desktop/src/ProviderPicker.test.tsx",
     "scripts/processes.test.ts",
     "scripts/start-restart-guard.test.ts",
     "scripts/tls-pipeline.test.ts",
@@ -1499,7 +1510,10 @@
     "app/tests/account-mode-dialog.test.tsx": "runner named it: attributed runner-difference by scripts/e2e-vs-bun.mjs against .e2e/final3/report.json: green on bun test with the same suite text against the same production code",
     "agent-sandbox/tests/proxy.test.ts": "runner named it: attributed runner-difference with evidence: 25 pass / 0 fail under bun test on current code with the pre-migration suite text, deterministic 24 pass / 1 fail under e2e (GET /events forwards the directory scope to the upstream). forwardEvents' fetch to the fake upstream is never recorded by it under Node; unresolved why, so the suite stays on the Bun tier instead of a guessed port of the shim",
     "server/tests/workshop-preview.test.ts": "root cause named, not guessed: the fake forwarder answers {status:101} and production passes that Response straight through, but Node's undici Response constructor throws RangeError: init[\"status\"] must be in the range of 200 to 599 while Bun builds 1xx fine (verified side by side: node -e new Response(null,{status:101}) throws, bun -e prints 101). The assertion is Bun-coupled HTTP semantics, so the suite stays on the Bun tier under e2e scheduling; 9 pass / 0 fail under bun test in one file.",
-    "server/tests/composio-adapter.test.ts": "runner proved it, not a guess: `e2e run … server/tests/composio-adapter.test.ts` aborts collection with \"Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'\". The specifier comes from the @composio/core graph, so the static boundary tool (which follows repository modules) cannot see it — the suite therefore stays on the Bun runtime, scheduled and reported by e2e."
+    "server/tests/composio-adapter.test.ts": "runner proved it, not a guess: `e2e run … server/tests/composio-adapter.test.ts` aborts collection with \"Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'\". The specifier comes from the @composio/core graph, so the static boundary tool (which follows repository modules) cannot see it — the suite therefore stays on the Bun runtime, scheduled and reported by e2e.",
+    "desktop/src/App.test.tsx": "Bun loader behaviour, not a bun:test import: these desktop React suites render production modules that read import.meta.env (VITE_OPENBOT_SUPPORT_URL and friends). Under the Node runner that property is undefined, so every case dies with `Cannot read properties of undefined (reading 'VITE_OPENBOT_SUPPORT_URL')` before a single assertion runs; Bun's loader fills it, so the suites execute there. Found by scripts/e2e-collection-reconcile.mjs: e2e.unit.config.ts only globbed .test.tsx for app, which left 85 registered tests collected by no entry while the file-walking audit still counted them as covered.",
+    "desktop/src/Problem.test.tsx": "Bun loader behaviour, not a bun:test import: these desktop React suites render production modules that read import.meta.env (VITE_OPENBOT_SUPPORT_URL and friends). Under the Node runner that property is undefined, so every case dies with `Cannot read properties of undefined (reading 'VITE_OPENBOT_SUPPORT_URL')` before a single assertion runs; Bun's loader fills it, so the suites execute there. Found by scripts/e2e-collection-reconcile.mjs: e2e.unit.config.ts only globbed .test.tsx for app, which left 85 registered tests collected by no entry while the file-walking audit still counted them as covered.",
+    "desktop/src/ProviderPicker.test.tsx": "Bun loader behaviour, not a bun:test import: these desktop React suites render production modules that read import.meta.env (VITE_OPENBOT_SUPPORT_URL and friends). Under the Node runner that property is undefined, so every case dies with `Cannot read properties of undefined (reading 'VITE_OPENBOT_SUPPORT_URL')` before a single assertion runs; Bun's loader fills it, so the suites execute there. Found by scripts/e2e-collection-reconcile.mjs: e2e.unit.config.ts only globbed .test.tsx for app, which left 85 registered tests collected by no entry while the file-walking audit still counted them as covered."
   },
   "directoryIslands": [
     "server/tests/multitenancy",
