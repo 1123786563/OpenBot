@@ -789,3 +789,19 @@ app 留在 `:3010`，于是 `e2e.config.ts` 一个字都不用改。
 清理核对过：容器 `ob-e2e-eng-casdoor` 已删、`casdoor` / `openbot_app` 两库与 `casdoor` 角色已 DROP、
 我起的 server/app 进程按 `lsof -a -p PID -d cwd` 确认归属后才杀、工作树 `.env` 已删除；
 另一个会话的 `:3001` 服务全程未受影响（结束时 `health=200`）。
+
+## 2026-10-19 13:00 引擎层夹具做成可复用脚本，并修正一处我说过头的结论
+
+新增 `scripts/engine-tier-stack.sh`（`TEARDOWN=1` 对称拆除，杀进程前先 `lsof -a -p PID -d cwd` 验归属）。
+它把这一整天的坑编码成脚本，另外补两条新踩到的：
+
+- **Casdoor 端口必须可配**：`:8000` 现在被主仓的一套 compose 占着（`openbot-casdoor-1`）。
+  顺带**修正我上一条结论**——我说过"casdoor 不在 compose 里"，准确说法是：它不在**被跟踪的**
+  `docker-compose.yml` 里，而在这台机器上**未跟踪的** `docker-compose.override.yml` 里。
+- **每次运行都必须重写 `.env`**：脚本原先"复用上一轮的 .env"，于是 `CASDOOR_OAUTH_ISSUER` 还指着 `:8000`，
+  浏览器被送进**别人的 Casdoor**、用我的 client_id 去换授权，页面上自然没有 `Username` 输入框。
+  这一条直接解释了 12:58 那轮的 `auth.setup` 失败——**它不是产品缺陷，是我的夹具串台**。
+
+所以第 7 条的状态要说清楚：28 条**依然一条都没判定**（`Test Files 1 failed | 9 skipped (10)`），
+但失败原因已经从"起不来/环境缺失"收敛成" issuer 串台"这一类可控配置错误，且现在有一条不会串台的重跑路径。
+本轮另一处必须交代的代价：拆除后 `:3001`（别的会话的 server）掉过一次，我按原命令重启并核对 `health=200`。
