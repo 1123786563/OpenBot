@@ -519,3 +519,6 @@ failed to collect app/tests/channel-order.test.ts: Cannot find package '@/lib' i
 修法是把"缺就生成"放进 `e2e.unit.config.ts`（运行器必经的咽喉点，同时覆盖 tests 与 startup 两个作业），
 并让生成脚本自己按需 `process.loadEnvFile()`。修复与验证在 **PR #442**（只含这 3 个文件，落在 origin/main
 之上——本地 main 还压着别的会话未推送的提交，我不代他们发布）。
+
+- 停放补充：`5d046147` 的 run 39262778990 被我自己的下一次推送取消，已用 `gh run rerun` 重启（不再追加推送），
+  恢复后直接看该作业的 `Test Files / Tests / native bucket == files e2e executed` 三行即可。
