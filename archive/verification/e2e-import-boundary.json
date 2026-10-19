@@ -2,32 +2,8 @@
  "suites": 1063,
  "blocked": [
   {
-   "file": "agent-langgraph/tests/governed-export-bytes.test.ts",
-   "cause": "agent-langgraph/tests/governed-export-bytes.test.ts"
-  },
-  {
-   "file": "agent-langgraph/tests/governed-tracing.test.ts",
-   "cause": "agent-langgraph/tests/governed-tracing.test.ts"
-  },
-  {
-   "file": "agent-langgraph/tests/trace-chain.test.ts",
-   "cause": "agent-langgraph/tests/trace-chain.test.ts"
-  },
-  {
    "file": "agent-computer/tests/live-screen.test.ts",
    "cause": "agent-computer/src/index.ts"
-  },
-  {
-   "file": "app/src/lib/i18n/ai-observability.test.ts",
-   "cause": "app/src/lib/i18n/ai-observability.test.ts"
-  },
-  {
-   "file": "app/tests/observability-i18n-namespaces.test.ts",
-   "cause": "app/tests/observability-i18n-namespaces.test.ts"
-  },
-  {
-   "file": "app/tests/observability-route-guards.test.tsx",
-   "cause": "app/tests/observability-route-guards.test.tsx"
   },
   {
    "file": "app/tests/serve.test.ts",
@@ -262,14 +238,6 @@
    "cause": "server/src/db/client.ts"
   },
   {
-   "file": "server/tests/craft-preview-origin-guard.test.ts",
-   "cause": "server/tests/craft-preview-origin-guard.test.ts"
-  },
-  {
-   "file": "server/tests/craft-preview-socket.test.ts",
-   "cause": "server/tests/craft-preview-socket.test.ts"
-  },
-  {
    "file": "server/tests/credential-bundle-boundary.test.ts",
    "cause": "server/src/db/client.ts"
   },
@@ -403,7 +371,7 @@
   },
   {
    "file": "server/tests/key-revocation.test.ts",
-   "cause": "server/tests/key-revocation.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/key-state-sync.test.ts",
@@ -443,203 +411,59 @@
   },
   {
    "file": "server/tests/multitenancy/acceptance-harness.test.ts",
-   "cause": "server/tests/multitenancy/acceptance-harness.test.ts"
+   "cause": "server/scripts/multitenancy/inventory.ts"
   },
   {
    "file": "server/tests/multitenancy/admin-separation.test.ts",
-   "cause": "server/tests/multitenancy/admin-separation.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/billing-visibility.test.ts",
-   "cause": "server/tests/multitenancy/billing-visibility.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/bot-publish.test.ts",
-   "cause": "server/tests/multitenancy/bot-publish.test.ts"
+   "cause": "server/scripts/multitenancy/inventory.ts"
   },
   {
    "file": "server/tests/multitenancy/bots-ownership.test.ts",
-   "cause": "server/tests/multitenancy/bots-ownership.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/cache-keys.test.ts",
-   "cause": "server/tests/multitenancy/cache-keys.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/company-reservation.test.ts",
-   "cause": "server/tests/multitenancy/company-reservation.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/multitenancy/conversation-messages.test.ts",
-   "cause": "server/tests/multitenancy/conversation-messages.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/multitenancy/conversations-list.test.ts",
-   "cause": "server/tests/multitenancy/conversations-list.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/credential-lease.test.ts",
-   "cause": "server/tests/multitenancy/credential-lease.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/multitenancy/credentials-ownership.test.ts",
-   "cause": "server/tests/multitenancy/credentials-ownership.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/deletion-semantics.test.ts",
-   "cause": "server/tests/multitenancy/deletion-semantics.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/document-lifecycle.test.ts",
-   "cause": "server/tests/multitenancy/document-lifecycle.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/entry-context.test.ts",
-   "cause": "server/tests/multitenancy/entry-context.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/fixtures.test.ts",
-   "cause": "server/tests/multitenancy/fixtures.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/global-exceptions.test.ts",
-   "cause": "server/tests/multitenancy/global-exceptions.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/identity-binding.test.ts",
-   "cause": "server/tests/multitenancy/identity-binding.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/multitenancy/inventory.test.ts",
-   "cause": "server/tests/multitenancy/inventory.test.ts"
+   "cause": "server/scripts/multitenancy/inventory.ts"
   },
   {
    "file": "server/tests/multitenancy/job-ownership.test.ts",
-   "cause": "server/tests/multitenancy/job-ownership.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/kb-ownership.test.ts",
-   "cause": "server/tests/multitenancy/kb-ownership.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/legacy-anchor.test.ts",
-   "cause": "server/tests/multitenancy/legacy-anchor.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/membership-model.test.ts",
-   "cause": "server/tests/multitenancy/membership-model.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/migration-tool.test.ts",
-   "cause": "server/tests/multitenancy/migration-tool.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/not-found-semantics.test.ts",
-   "cause": "server/tests/multitenancy/not-found-semantics.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/oauth-state.test.ts",
-   "cause": "server/tests/multitenancy/oauth-state.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/openmuse-private-bot.test.ts",
-   "cause": "server/tests/multitenancy/openmuse-private-bot.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/openmuse-tasks.test.ts",
-   "cause": "server/tests/multitenancy/openmuse-tasks.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/payer-accounts.test.ts",
-   "cause": "server/tests/multitenancy/payer-accounts.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/people-lifecycle.test.ts",
-   "cause": "server/tests/multitenancy/people-lifecycle.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/personal-share-rules.test.ts",
-   "cause": "server/tests/multitenancy/personal-share-rules.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/multitenancy/plugin-install.test.ts",
-   "cause": "server/tests/multitenancy/plugin-install.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/preferences.test.ts",
-   "cause": "server/tests/multitenancy/preferences.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/multitenancy/public-bot-usage.test.ts",
-   "cause": "server/tests/multitenancy/public-bot-usage.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/resource-policy.test.ts",
-   "cause": "server/tests/multitenancy/resource-policy.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/retrieval-restriction.test.ts",
-   "cause": "server/tests/multitenancy/retrieval-restriction.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/revocation.test.ts",
-   "cause": "server/tests/multitenancy/revocation.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/multitenancy/rls-core.test.ts",
-   "cause": "server/tests/multitenancy/rls-core.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/multitenancy/routing-policy.test.ts",
-   "cause": "server/tests/multitenancy/routing-policy.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/multitenancy/runtime-config.test.ts",
-   "cause": "server/tests/multitenancy/runtime-config.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/scan-executor.test.ts",
-   "cause": "server/tests/multitenancy/scan-executor.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/scim-directory.test.ts",
-   "cause": "server/tests/multitenancy/scim-directory.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/scope-gate.test.ts",
-   "cause": "server/tests/multitenancy/scope-gate.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/settlement-idempotency.test.ts",
-   "cause": "server/tests/multitenancy/settlement-idempotency.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/shared-approvals.test.ts",
-   "cause": "server/tests/multitenancy/shared-approvals.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/sso-scim-config.test.ts",
-   "cause": "server/tests/multitenancy/sso-scim-config.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/multitenancy/startup-checks.test.ts",
-   "cause": "server/tests/multitenancy/startup-checks.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/startup-defaults.test.ts",
-   "cause": "server/tests/multitenancy/startup-defaults.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/team-public-rules.test.ts",
-   "cause": "server/tests/multitenancy/team-public-rules.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/vendor-billing.test.ts",
-   "cause": "server/tests/multitenancy/vendor-billing.test.ts"
-  },
-  {
-   "file": "server/tests/multitenancy/workspace-scope.test.ts",
-   "cause": "server/tests/multitenancy/workspace-scope.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/offboarding-retirement.integration.test.ts",
@@ -658,208 +482,24 @@
    "cause": "server/src/db/client.ts"
   },
   {
-   "file": "server/tests/opik-admin-contract.test.ts",
-   "cause": "server/tests/opik-admin-contract.test.ts"
-  },
-  {
-   "file": "server/tests/opik-admin-summary.integration.test.ts",
-   "cause": "server/tests/opik-admin-summary.integration.test.ts"
-  },
-  {
-   "file": "server/tests/opik-admin-summary.test.ts",
-   "cause": "server/tests/opik-admin-summary.test.ts"
-  },
-  {
-   "file": "server/tests/opik-bindings.integration.test.ts",
-   "cause": "server/tests/opik-bindings.integration.test.ts"
-  },
-  {
-   "file": "server/tests/opik-bindings.test.ts",
-   "cause": "server/tests/opik-bindings.test.ts"
-  },
-  {
    "file": "server/tests/opik-case-review.integration.test.ts",
    "cause": "server/tests/opik-case-review.integration.test.ts"
   },
   {
-   "file": "server/tests/opik-case-review.test.ts",
-   "cause": "server/tests/opik-case-review.test.ts"
-  },
-  {
-   "file": "server/tests/opik-comparison.integration.test.ts",
-   "cause": "server/tests/opik-comparison.integration.test.ts"
-  },
-  {
-   "file": "server/tests/opik-comparison.test.ts",
-   "cause": "server/tests/opik-comparison.test.ts"
-  },
-  {
-   "file": "server/tests/opik-contract.test.ts",
-   "cause": "server/tests/opik-contract.test.ts"
-  },
-  {
-   "file": "server/tests/opik-control-plane-auth.test.ts",
-   "cause": "server/tests/opik-control-plane-auth.test.ts"
-  },
-  {
-   "file": "server/tests/opik-datasets-routes.integration.test.ts",
-   "cause": "server/tests/opik-datasets-routes.integration.test.ts"
-  },
-  {
-   "file": "server/tests/opik-datasets.integration.test.ts",
-   "cause": "server/tests/opik-datasets.integration.test.ts"
-  },
-  {
-   "file": "server/tests/opik-datasets.test.ts",
-   "cause": "server/tests/opik-datasets.test.ts"
-  },
-  {
-   "file": "server/tests/opik-deployment.test.ts",
-   "cause": "server/tests/opik-deployment.test.ts"
-  },
-  {
    "file": "server/tests/opik-execution-billing.integration.test.ts",
-   "cause": "server/tests/opik-execution-billing.integration.test.ts"
-  },
-  {
-   "file": "server/tests/opik-execution-billing.test.ts",
-   "cause": "server/tests/opik-execution-billing.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/opik-execution-boot.integration.test.ts",
-   "cause": "server/tests/opik-execution-boot.integration.test.ts"
-  },
-  {
-   "file": "server/tests/opik-execution-boot.test.ts",
-   "cause": "server/tests/opik-execution-boot.test.ts"
-  },
-  {
-   "file": "server/tests/opik-execution-runner.test.ts",
-   "cause": "server/tests/opik-execution-runner.test.ts"
-  },
-  {
-   "file": "server/tests/opik-execution-wiring.test.ts",
-   "cause": "server/tests/opik-execution-wiring.test.ts"
-  },
-  {
-   "file": "server/tests/opik-executions.integration.test.ts",
-   "cause": "server/tests/opik-executions.integration.test.ts"
-  },
-  {
-   "file": "server/tests/opik-executions.test.ts",
-   "cause": "server/tests/opik-executions.test.ts"
-  },
-  {
-   "file": "server/tests/opik-experiment-routes.integration.test.ts",
-   "cause": "server/tests/opik-experiment-routes.integration.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/opik-experiments.integration.test.ts",
    "cause": "server/tests/opik-experiments.integration.test.ts"
   },
   {
-   "file": "server/tests/opik-experiments.test.ts",
-   "cause": "server/tests/opik-experiments.test.ts"
-  },
-  {
-   "file": "server/tests/opik-export.integration.test.ts",
-   "cause": "server/tests/opik-export.integration.test.ts"
-  },
-  {
-   "file": "server/tests/opik-export.test.ts",
-   "cause": "server/tests/opik-export.test.ts"
-  },
-  {
-   "file": "server/tests/opik-health.test.ts",
-   "cause": "server/tests/opik-health.test.ts"
-  },
-  {
-   "file": "server/tests/opik-id-links.integration.test.ts",
-   "cause": "server/tests/opik-id-links.integration.test.ts"
-  },
-  {
-   "file": "server/tests/opik-id-links.test.ts",
-   "cause": "server/tests/opik-id-links.test.ts"
-  },
-  {
    "file": "server/tests/opik-judge-scoring.integration.test.ts",
-   "cause": "server/tests/opik-judge-scoring.integration.test.ts"
-  },
-  {
-   "file": "server/tests/opik-judge-scoring.test.ts",
-   "cause": "server/tests/opik-judge-scoring.test.ts"
-  },
-  {
-   "file": "server/tests/opik-model-span.test.ts",
-   "cause": "server/tests/opik-model-span.test.ts"
-  },
-  {
-   "file": "server/tests/opik-module-skeleton.test.ts",
-   "cause": "server/tests/opik-module-skeleton.test.ts"
-  },
-  {
-   "file": "server/tests/opik-port.test.ts",
-   "cause": "server/tests/opik-port.test.ts"
-  },
-  {
-   "file": "server/tests/opik-redaction.test.ts",
-   "cause": "server/tests/opik-redaction.test.ts"
-  },
-  {
-   "file": "server/tests/opik-results.integration.test.ts",
-   "cause": "server/tests/opik-results.integration.test.ts"
-  },
-  {
-   "file": "server/tests/opik-results.test.ts",
-   "cause": "server/tests/opik-results.test.ts"
-  },
-  {
-   "file": "server/tests/opik-retention.integration.test.ts",
-   "cause": "server/tests/opik-retention.integration.test.ts"
-  },
-  {
-   "file": "server/tests/opik-retention.test.ts",
-   "cause": "server/tests/opik-retention.test.ts"
-  },
-  {
-   "file": "server/tests/opik-retrieval-summary.test.ts",
-   "cause": "server/tests/opik-retrieval-summary.test.ts"
-  },
-  {
-   "file": "server/tests/opik-run-lifecycle.test.ts",
-   "cause": "server/tests/opik-run-lifecycle.test.ts"
-  },
-  {
-   "file": "server/tests/opik-run-steps.test.ts",
-   "cause": "server/tests/opik-run-steps.test.ts"
-  },
-  {
-   "file": "server/tests/opik-runs-query.test.ts",
-   "cause": "server/tests/opik-runs-query.test.ts"
-  },
-  {
-   "file": "server/tests/opik-schema-barrel.test.ts",
-   "cause": "server/tests/opik-schema-barrel.test.ts"
-  },
-  {
-   "file": "server/tests/opik-scope.test.ts",
-   "cause": "server/tests/opik-scope.test.ts"
-  },
-  {
-   "file": "server/tests/opik-scoring-rules.test.ts",
-   "cause": "server/tests/opik-scoring-rules.test.ts"
-  },
-  {
-   "file": "server/tests/opik-t-final-assembly.test.ts",
-   "cause": "server/tests/opik-t-final-assembly.test.ts"
-  },
-  {
-   "file": "server/tests/opik-tool-steps.test.ts",
-   "cause": "server/tests/opik-tool-steps.test.ts"
-  },
-  {
-   "file": "server/tests/opik-trace-chain.test.ts",
-   "cause": "server/tests/opik-trace-chain.test.ts"
+   "cause": "server/src/db/client.ts"
   },
   {
    "file": "server/tests/order-ownership.integration.test.ts",
