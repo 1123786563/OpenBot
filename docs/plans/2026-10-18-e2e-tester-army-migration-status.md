@@ -914,3 +914,6 @@ COLLECTION_ERROR=0  failed to collect=0  14:06:14→14:26:3x（约 20 分钟）
 并且 native 桶与实际执行逐文件相等（563 = 563，零贡献 0）——这是本目标一直要求的那两条判据，
 第一次在 main 上同时成立。作业结论仍是 `failure`，因为 156 条既有红（KB 移除后从 176 降下来的那批，
 归属其它波次），这正是第 8 条"不该由我改绿"的那部分。
+
+- 停放补充：`5d046147` 的 run 39262778990 被我自己的下一次推送取消，已用 `gh run rerun` 重启（不再追加推送），
+  恢复后直接看该作业的 `Test Files / Tests / native bucket == files e2e executed` 三行即可。
