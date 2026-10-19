@@ -147,3 +147,26 @@ cause 字段时，引的就是运行器原文（`Received protocol 'bun:'` 两�
   没有邻居——即该套件对数据库返回顺序有隐式依赖，属计费那一波要修的测试缺陷，不由我改绿。
 
 分组数因此从 30 变 32。
+
+## 让 multitenancy 一族在驱动层真正被执行（03:47，实测 0 → 293 条）
+
+那 51 个文件在任何形状下都读不出 junit 的根因是环境门禁，不是套件坏：`server/tests/multitenancy/*`
+通过 `migrate-test.ts` 自建 schema，而它要求 `TEST_DATABASE_URL` 的库名匹配 `openbot_enterprise_*`
+且主机回环；共享的 `openbot_test` 让整族在收集期抛 `relation … does not exist`。
+
+改动（都在本仓库，不碰共享设施）：
+1. `scripts/lib/e2e-manifest.mjs` 增加 `DIRECTORY_ISLANDS`，让这两个目录各自成组（分组 32 → 34），
+   并把清单写回 `e2e-bun-suites.json.groups` + `directoryIslands`——**驱动层读的是存储的分组**，
+   不重新生成就没有效果，这是本轮第二次踩到的同一机制事实。
+2. `tests/bun-suites.test.ts` 的 `runBun` 接受按组 env；`bunEnv()` 只对 island 组生效，且
+   **仅在环境提供 `MT_TEST_DATABASE_URL` 时**覆盖 `TEST_DATABASE_URL/DATABASE_URL`。变量缺省时行为
+   与改动前逐字一致（实测无覆盖路径仍是原判定）。
+
+本地实测（私有实例里的 `openbot_enterprise_mt_test`，`migrations-applied ok`）：
+`E2E_BUN_ONLY='server/tests/multitenancy part 1'` 一组从**零读数**变成
+**293 条用例 / 24 个文件执行**，其中 38 条失败——失败集中在该族自己的 harness 正控
+（`ISOLATION_SCENARIO_FAILED:…:harness.environment.positive-control`、期望
+`HARNESS_SELF_CHECK_FAILED` 的断言），说明还差的是它期望的那套预留库身份：
+`bun scripts/enterprise-test-db.ts migrate` 在这里拒绝我建的库
+（`the enterprise setup URL is not the fresh setup-only database reserved for this run`）。
+这条留作下一步，属多租户那一波定义的预留命名规则，不由我猜。

@@ -40,10 +40,35 @@ const manifestPath = join(
   import.meta.dirname,
   "../docs/verification/e2e-bun-suites.json",
 );
-const all: Group[] = existsSync(manifestPath)
-  ? (JSON.parse(readFileSync(manifestPath, "utf8")) as { groups: Group[] })
-      .groups
-  : [];
+const manifestJson = existsSync(manifestPath)
+  ? (JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      groups: Group[];
+      directoryIslands?: string[];
+    })
+  : { groups: [] as Group[] };
+const all: Group[] = manifestJson.groups;
+/*
+ * The `multitenancy` suites create their own schema through
+ * `server/scripts/multitenancy/migrate-test.ts`, which refuses a `TEST_DATABASE_URL` whose database is
+ * not named `openbot_enterprise_*` on loopback — under the shared URL all 51 of them abort at
+ * collection, which reads as "no tests" rather than as a defect. Those groups get their own group
+ * (`DIRECTORY_ISLANDS` in scripts/lib/e2e-manifest.mjs, recorded here when the grouping is generated)
+ * and, only when the environment offers one, `MT_TEST_DATABASE_URL` as their database. Every other
+ * group keeps the URL the rest of the corpus expects, and with the variable unset the driver behaves
+ * exactly as it did before.
+ */
+const directoryIslands = manifestJson.directoryIslands ?? [];
+function bunEnv(groupName: string): Record<string, string | undefined> {
+  const override = process.env.MT_TEST_DATABASE_URL;
+  if (!override) return process.env;
+  if (!directoryIslands.some((dir) => groupName.startsWith(dir)))
+    return process.env;
+  return {
+    ...process.env,
+    TEST_DATABASE_URL: override,
+    DATABASE_URL: override,
+  };
+}
 // E2E_BUN_ONLY=agent-computer runs one group: enough to prove the driver without spending an hour
 // on the server groups, which need the shared Postgres.
 const only = (process.env.E2E_BUN_ONLY ?? "").trim();
@@ -109,6 +134,7 @@ function readJunit(xml: string): {
 /** One `bun test` invocation, with its junit parsed. The driver needs it twice: grouped and alone. */
 async function runBun(
   files: string[],
+  env: Record<string, string | undefined> = process.env,
 ): Promise<
   ReturnType<typeof readJunit> & { exitCode: number; stderr: string }
 > {
@@ -129,7 +155,7 @@ async function runBun(
         `--reporter-outfile=${report}`,
         "--timeout=120000",
       ],
-      { cwd: process.cwd(), env: process.env },
+      { cwd: process.cwd(), env: env as NodeJS.ProcessEnv },
     );
     /*
      * `--timeout` bounds one test, not a group: 24 files each reaching for a 120 s deadline can
@@ -199,7 +225,10 @@ for (const group of groups) {
     tags: ["bun-runtime"],
     timeout: 900_000,
   }, async () => {
-    const started = await runBun(group.files.map((f) => `./${f}`));
+    const started = await runBun(
+      group.files.map((f) => `./${f}`),
+      bunEnv(group.name),
+    );
     // A group that ran nothing is not a pass: an unusable path or a crashed loader reports zero.
     expect(
       started.tests,
@@ -261,7 +290,10 @@ for (const group of groups) {
       }
       alone.set(
         file,
-        await runBun([file.startsWith("./") ? file : `./${file}`]),
+        await runBun(
+          [file.startsWith("./") ? file : `./${file}`],
+          bunEnv(group.name),
+        ),
       );
     }
     const realRed = [...alone].filter(

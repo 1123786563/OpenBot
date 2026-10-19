@@ -52,6 +52,21 @@ export const ISLANDS = [
   "gateway-probe",
 ];
 
+/*
+ * Whole directories that need their own group because their *environment* differs from the rest of
+ * the directory: the `multitenancy` suites build their own schema in-process through
+ * `server/scripts/multitenancy/migrate-test.ts`, which refuses any `TEST_DATABASE_URL` whose database
+ * is not named `openbot_enterprise_*` on a loopback host. Under the shared `openbot_test` URL every
+ * one of them aborts at collection with `relation … does not exist`, which is why 51 files showed up
+ * as "no junit" rather than red. Their own group is what lets the driver hand them a different
+ * `TEST_DATABASE_URL` (from `MT_TEST_DATABASE_URL`) without moving 400 other suites off the URL they
+ * expect.
+ */
+export const DIRECTORY_ISLANDS = [
+  "server/tests/multitenancy",
+  "app/tests/multitenancy",
+];
+
 export function readManifest() {
   const parsed = JSON.parse(readFileSync(MANIFEST, "utf8"));
   return {
@@ -68,7 +83,16 @@ export function groupsOf(files) {
     const segments = file.split("/");
     const directory = segments.slice(0, 2).join("/");
     const island = ISLANDS.find((prefix) => segments.at(-1).startsWith(prefix));
-    const key = island ? `${directory}/${island.replace(/-$/, "")}` : directory;
+    // A directory island keeps its full path as the key, because what separates it from the other
+    // suites in the directory is the environment the group runs with, not the file name.
+    const dirIsland = DIRECTORY_ISLANDS.find((dir) =>
+      file.startsWith(`${dir}/`),
+    );
+    const key = dirIsland
+      ? dirIsland
+      : island
+        ? `${directory}/${island.replace(/-$/, "")}`
+        : directory;
     if (!byDirectory.has(key)) byDirectory.set(key, []);
     byDirectory.get(key).push(file);
   }
