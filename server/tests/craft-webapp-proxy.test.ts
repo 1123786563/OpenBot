@@ -2200,6 +2200,23 @@ describe("POST /sessions/:id/preview-ticket: admission gate", () => {
     expect(body.origin).toBe("http://127.0.0.1:3005/label");
   });
 
+  test("#406: the mint answers no-store and no-referrer — a bearer credential never caches and never names its referrer", async () => {
+    const app = ticketApp();
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/preview-ticket`,
+      {
+        method: "POST",
+      },
+    );
+    expect(response.status).toBe(200);
+    // The body IS the credential: its 30s life must not survive in any
+    // shared cache, and the pane's navigation to the origin (the one hop
+    // where the ticket rides a query) must not carry this URL onward as a
+    // Referer the preview origin's proxy could forward or log.
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
   test("fix-ocr20 #4: no injected previewOriginFor — the minting leg refuses fail-loud, it never guesses an address", async () => {
     // The old default fallback answered the port root (`http://127.0.0.1:3005`)
     // when the port parsed — an address with no session label on it that no

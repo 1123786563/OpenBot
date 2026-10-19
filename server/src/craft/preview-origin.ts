@@ -568,6 +568,17 @@ function parseTemplate(raw: string): ParsedTemplate {
       "must not contain underscores (they are not DNS label characters).",
     );
   }
+  // #415: a wildcard `*` parses into a WHATWG hostname (it is not a
+  // forbidden domain code point), so the probe alone never catches it — but
+  // `<label>.*.example.com` is a host no DNS zone spells, and the sidecar's
+  // derive_preview_host refuses the same template (its base charset never
+  // admits `*`), which is the fix-ocr18 #9 crash-loop divergence class in
+  // the serving direction. Neither face serves it.
+  if (probe.hostname.includes("*")) {
+    return refuse(
+      "must not contain a wildcard `*` label (e.g. {session}.*.example.com) — it is not a DNS name, and the certificate sidecar refuses it too.",
+    );
+  }
   // The wildcard form serves the app at the origin's root (D3) — a template that
   // carries a path or query would smuggle the basePath footgun back in.
   if (probe.pathname !== "/" || probe.search !== "" || probe.hash !== "") {
@@ -958,6 +969,10 @@ export function createPreviewOrigin(deps: {
               entryRoot,
             ),
             "cache-control": "no-store",
+            // #406: the entry URL (the ticket's one appearance) must not
+            // ride a Referer onto the clean path, where the app or its
+            // access logs would keep the spent credential.
+            "referrer-policy": "no-referrer",
           },
         });
       }
