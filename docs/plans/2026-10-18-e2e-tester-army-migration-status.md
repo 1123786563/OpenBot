@@ -883,3 +883,16 @@ Test Files  3 failed | 6 passed | 1 skipped (10)
 plugins(3)/routines-approvals(3+1 skip)），4 条红各有代码级原因，其中 2 条纯粹是我自己的端口挪动。
 若要把这 4 条也变成绿，需要的是：让夹具独占 `:8000`（或改断言的端口为配置项——那是改测试语义，得由归属波次定）、
 起 kb 服务、以及允许一次真模型调用。
+
+### 停放（17:52，轮次将尽）：合并是唯一剩余动作
+
+- 分支 `5d046147`（含最新 main，冲突已按层规则解决）= `fix/generate-app-config-before-collect`，PR #442 `MERGEABLE`；
+  CI run 39262778990 的 `tests` 第 15 步 `Run bun run test:ci` 在第 5 分钟仍 in_progress —— 与 main 上"约 1 分钟中止、
+  零条执行"形成对照，说明收集与守门已过、语料正在跑。恢复后第一件事就是取回那个作业的 
+`Test Files / Tests` 与 `Collection reconcile` 三行。
+- 剩余动作只有：`gh pr merge 442`（共享主干，我未擅自执行）。合并后需复核：main 的 `tests` 作业是否真的执行整个语料、
+  `native bucket == files e2e executed`、engine 桶仍 9 文件（KB 移除后）。
+- 已停放的其它词：Go 18 个 `_test.go` 无人执行（具名缺口，留归属波次）；引擎层 4 条红需要独占 `:8000`、
+  起 kb 服务、或允许一次真模型调用（`scripts/engine-tier-stack.sh` + `TEARDOWN=1` 是可复现入口）。
+- 本机无残留：容器 0、私有实例只剩原有 `openbot_test`（`casdoor`/`openbot_app`/`casdoor` 角色已 DROP）、
+  工作树 `.env` 已删、我起的进程按 cwd 归属确认后全部停止。
