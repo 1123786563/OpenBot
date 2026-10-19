@@ -841,3 +841,28 @@ better-auth 跟随 discovery 给出的 `authorization_endpoint`，所以浏览�
 ② 直接复用主仓 override 那套 `openbot-casdoor-1`，在它自己的库里注册一个属于本次运行的 application ——
 这要动别的会话的 Casdoor 数据，需要该会话或你点头。
 两条路之外没有第三条不串台的路，这也是为什么我停在这里而不是再试第四次。
+
+## 2026-10-19 13:39 第 7 条第一次有运行时判定（18 passed / 4 failed / 6 skipped）
+
+两步修完夹具后真跑通：① `origin = http://localhost:$CASDOOR_PORT` 写进我自己的 app.conf —— Casdoor 的
+discovery 用它自报端点，不写就会把浏览器送去 `:8000`（那是主仓 override 的 `openbot-casdoor-1`），表现为
+`Invalid client_id`；② 数据侧补 `update users set onboarding_completed_at = now()` —— 全新库第一次登录会落在
+`/onboarding`（`Welcome to OpenBot`），侧栏自然没有 `Bots`，这不是产品缺陷而是未初始化的状态。
+
+两条都只动我自己的实例与自己的数据库，没碰别的会话的服务。结果（`bunx e2e run --config e2e.config.ts`，
+`workers: 1`，模型端点被故意指到死端口以保证零付费调用）：
+
+```
+Test Files  3 failed | 6 passed | 1 skipped (10)
+     Tests  4 failed | 18 passed | 6 skipped (28)
+✓ auth.setup（1）  ✓ admin（4）  ✓ billing（3）  ✓ bot-lifecycle（5）  ✓ plugins（3）  ✓ routines-approvals（3，1 skipped）
+× auth.e2e.ts: signing out lands on the Casdoor sign-in form / a cleared session redirects back to Casdoor
+× bot-chat: bot session > replies to a sent message
+× knowledge > creates a knowledge base through the form
+```
+
+4 条红的归因（都不是"迁移把用例改红了"）：两条 auth 重定向断言的是 `:8000` 那台 Casdoor 的登录页形状，
+我的实例按上面的办法挪到 `:8100`；`replies to a sent message` 需要活的模型端点，而我为了零调用把它指到死端口，
+这条在本夹具下**不可能**过；`knowledge …` 需要 kb 服务，本栈没起（引擎层夹具目前只含 postgres/casdoor/api/app）。
+所以第 7 条从"从未执行"变成"已执行且有逐文件判定"，剩余 4 条属于夹具范围与外部依赖，不是框架缺口。
+拆栈核对：容器 0、库只剩原有 openbot_test、我的进程按 cwd 归属确认后才停。

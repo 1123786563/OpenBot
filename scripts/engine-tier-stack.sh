@@ -62,6 +62,13 @@ mkdir -p "$CASDOOR_CONF_DIR"
     "$WT/casdoor/app.conf" > "$CASDOOR_CONF_DIR/app.conf"
 grep -q initAdminPassword "$CASDOOR_CONF_DIR/app.conf" ||
   printf '\ninitAdminPassword = 123\n' >> "$CASDOOR_CONF_DIR/app.conf"
+# Casdoor builds its OAuth endpoints from its own `origin`, and discovery is what the server follows
+# (server/src/auth/index.ts casdoor() -> issuer/.well-known/openid-configuration). Publishing the
+# container on another host port does NOT change what it advertises, so the browser kept getting sent
+# to :8000 - which on this machine belongs to the main repo's own casdoor service. Rewriting origin to
+# the host port we actually use keeps this instance self-consistent and off everyone else's stack.
+sed -i.bak -E "s|^origin = .*|origin = http://localhost:$CASDOOR_PORT|" "$CASDOOR_CONF_DIR/app.conf"
+rm -f "$CASDOOR_CONF_DIR/app.conf.bak"
 
 psql_pg -c "CREATE ROLE casdoor LOGIN PASSWORD 'casdoor';" >/dev/null 2>&1
 docker exec -i "$PG_CONTAINER" psql -U openbot -d postgres -v ON_ERROR_STOP=0 < "$WT/casdoor/init-db.sql" >/dev/null 2>&1
