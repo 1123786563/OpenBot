@@ -969,6 +969,10 @@ export function createPreviewOrigin(deps: {
               entryRoot,
             ),
             "cache-control": "no-store",
+            // #406: the entry URL (the ticket's one appearance) must not
+            // ride a Referer onto the clean path, where the app or its
+            // access logs would keep the spent credential.
+            "referrer-policy": "no-referrer",
           },
         });
       }

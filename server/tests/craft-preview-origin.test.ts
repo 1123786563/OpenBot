@@ -1066,6 +1066,24 @@ describe("the preview origin entry: ticket redemption + the D9 cookie", () => {
     expect(cookie).not.toContain("Expires");
   });
 
+  test("#406: the redemption 302 answers no-store and no-referrer", async () => {
+    const { origin, address, ticket } = entryCase(
+      { previewOriginTemplate: TEMPLATE },
+      {},
+    );
+    const response = await origin.handlePreviewRequest(
+      SESSION_ID,
+      new Request(`${address}/?ticket=${encodeURIComponent(ticket)}`),
+    );
+    expect(response.status).toBe(302);
+    // The hop that erases the ticket is itself never cached, and never
+    // names the entry URL (the ticket's one appearance) to whatever serves
+    // the clean path — the app must not receive the spent ticket as a
+    // Referer its access logs would keep.
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
   test("the dev form redeems the same way and redirects to the session's own path", async () => {
     const { origin, address, ticket } = entryCase({}, { PORT: "3001" });
     const label = new URL(address).pathname.replace(/^\//, "");
