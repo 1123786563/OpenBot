@@ -204,6 +204,13 @@ The page snapshot a Bot resolves element references against lives in Postgres, s
 can answer a click the first one snapshotted. Run more than one if the platform wants it. The
 supervisor is still not in this image, so every replica shares the one browser inside it.
 
+The craft preview origin (`*.preview` hostnames) does not follow: its label registry and preview
+tickets live in process memory (#418, the accepted M-2 trade-off), so a ticket minted on one
+replica redeems only on that replica and a preview hostname answers only where its label was
+registered. Keep the preview origin single-replica (or pin its hostnames to one instance) until
+that state moves to Postgres; a restart already recovers with one re-entry through the main site,
+which is the same path a second replica would send the person down.
+
 ## Platform notes
 
 **Google Cloud Run.** Set memory to at least 2 GB. More than one instance is fine (see Replicas

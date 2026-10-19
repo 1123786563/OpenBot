@@ -181,28 +181,7 @@
     "db": "5560"
    }
   },
-  "active": {
-   "C2": [
-    "task_18ff217e3bff",
-    "ctx_70a48b8b2ff0"
-   ],
-   "M2": [
-    "task_e16d9b93a3c0",
-    "ctx_06c92a1b3ef5"
-   ],
-   "M3": [
-    "task_pending",
-    "见 receipts-M3.json"
-   ],
-   "C3": [
-    "task_dfdbe53fbfd1",
-    "ctx_511250b34ab8"
-   ],
-   "C4": [
-    "task_pending",
-    "见 receipts-C4.json"
-   ]
-  }
+  "active": {}
  },
  "batch_results": {
   "B1": {
@@ -255,6 +234,14 @@
    "settled": "#146/#155 SATISFIED + #121/#143/#167 BLOCKED-GAP",
    "r7": "2 张待同步",
    "notes": "M4 曾因 API ECONNRESET 中断 2.5h，send 恢复后收官"
+  },
+  "C4": {
+   "settled": "#406 IMPLEMENTED(独立验证 PASS) + #407 SATISFIED+FIX + #417/#419 零改动 + #418 docs-only",
+   "r7": "5 张已同步",
+   "patch": "c03c10702c08d7d0"
+  },
+  "C5": {
+   "settled": "#431 T1/T2 SATISFIED 零改动；T3/T4 运行态缺口并入 #358 收尾（不贴标）"
   }
  },
  "gap_tickets": [
@@ -418,6 +405,12 @@
    "domain": "mt",
    "tid": "MT124",
    "gap": "企业入口装配整票未实施"
+  },
+  {
+   "issue": 431,
+   "domain": "craft",
+   "gap": "T3 真实浏览器验收（sandbox 上游回归阻塞）+ T4 生产准入/ACME staging 演练/AC1-AC9 证据表",
+   "note": "并入母票 #358 收尾排期"
   }
  ],
  "hs_stream": "done",
@@ -436,5 +429,7 @@
    "finding": "MT112 锚点种子 ON CONFLICT 撞 user_id 唯一索引（M1 报告，并入 #399/#402 CI 线）"
   }
  ],
- "mt_stream": "done"
+ "mt_stream": "done",
+ "craft_stream": "done",
+ "phase": "58/58 就绪票处理完毕（verified 33 + gap 26 + #431 部分覆盖）"
 }

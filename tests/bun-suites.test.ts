@@ -121,18 +121,34 @@ function readJunit(xml: string): {
   const failed: string[] = [];
   const failingFiles = new Set<string>();
   for (const match of xml.matchAll(
-    /<testcase[^>]*name="([^"]*)"[^>]*>([\s\S]*?)<\/testcase>/g,
+    // #407: `\b` + lazy — a greedy `[^>]*name=` backtracks into
+    // `classname=""` (always empty in bun's junit) and captures "" as the
+    // test name, so every failure line read ": detail" with no name.
+    /<testcase[^>]*?\bname="([^"]*)"[^>]*>([\s\S]*?)<\/testcase>/g,
   )) {
     const body = match[2] ?? "";
     if (!/<(failure|error)\b/.test(body)) continue;
     const tag = match[0].slice(0, match[0].indexOf(">") + 1);
     const file = tag.match(/\bfile="([^"]*)"/)?.[1];
     if (file) failingFiles.add(file);
-    const detail = body
+    const text = body
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 300);
+    let detail = text;
+    if (!detail) {
+      // #407: bun writes a timeout's verdict into the failure tag's
+      // attributes, not its body — without this fallback the summary line
+      // reads "name: " and a timeout is indistinguishable from a product
+      // failure until someone re-runs the file by hand.
+      const failureTag = /<(?:failure|error)\b[^>]*>/.exec(body)?.[0] ?? "";
+      const kind = /\btype="([^"]*)"/.exec(failureTag)?.[1] ?? "";
+      const message = (
+        /\bmessage="([^"]*)"/.exec(failureTag)?.[1] ?? ""
+      ).replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)));
+      detail = `${kind}${message ? `: ${message}` : ""}`.trim();
+    }
     failed.push(`${match[1]}: ${detail}`);
   }
   return {
