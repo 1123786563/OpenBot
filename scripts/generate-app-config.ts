@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import {
@@ -6,6 +7,10 @@ import {
 } from "../server/src/tenant-package";
 
 const projectRoot = resolve(import.meta.dir, "..");
+// Read .env here rather than through `bun --env-file=.env`: that flag aborts when the file is absent,
+// and a CI checkout has none — which is how this generator silently never ran in CI while every local
+// `bun run test` did, via `pretest`.
+if (existsSync(resolve(projectRoot, ".env"))) process.loadEnvFile();
 const configuredTenantPackageDirectory = process.env.TENANT_PACKAGE_DIR;
 const tenantPackageDirectory = configuredTenantPackageDirectory
   ? isAbsolute(configuredTenantPackageDirectory)
