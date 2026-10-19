@@ -896,3 +896,21 @@ plugins(3)/routines-approvals(3+1 skip)），4 条红各有代码级原因，其
   起 kb 服务、或允许一次真模型调用（`scripts/engine-tier-stack.sh` + `TEARDOWN=1` 是可复现入口）。
 - 本机无残留：容器 0、私有实例只剩原有 `openbot_test`（`casdoor`/`openbot_app`/`casdoor` 角色已 DROP）、
   工作树 `.env` 已删、我起的进程按 cwd 归属确认后全部停止。
+
+## 2026-10-19 14:22 main 上第一次真跑语料（合并后 run 39265893663，`753c4ddf`）
+
+```
+14:07:08  no gaps: every suite file is scheduled by e2e …        # 1033 = 563 native / 455 driven / 9 engine / 6 具名排除
+14:21:38  Test Files  28 failed | 521 passed | 14 skipped (563)
+14:21:38       Tests  156 failed | 7282 passed | 57 skipped (7495)
+14:21:39  native bucket 563 · files e2e executed 563 · engine 9
+14:21:39  native files that contributed NO test: 0
+COLLECTION_ERROR=0  failed to collect=0  14:06:14→14:26:3x（约 20 分钟）
+```
+
+对照合并前的同一作业（run 39260945705 @ `375d3f29`）：审计打印 `GAPS (1) desktop/src/telemetry.test.ts 
+(driven but not on the bun:test layer)` 后 `test:ci` 直接 exit 1，**零条执行**。
+现在总数 **7495** 与本机 `bunx e2e list --config e2e.unit.config.ts` 的 7495 条**逐一对齐**，
+并且 native 桶与实际执行逐文件相等（563 = 563，零贡献 0）——这是本目标一直要求的那两条判据，
+第一次在 main 上同时成立。作业结论仍是 `failure`，因为 156 条既有红（KB 移除后从 176 降下来的那批，
+归属其它波次），这正是第 8 条"不该由我改绿"的那部分。
