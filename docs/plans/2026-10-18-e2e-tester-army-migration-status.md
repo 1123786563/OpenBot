@@ -678,3 +678,30 @@ Go 那 18 个文件是尚未处理的缺口。三条都没被"绿"掩盖：关�
 （若 `package.json` 里再也没有不带 `--config …unit` 的 `e2e run`，引擎层就退化成无人收集的孤儿 → exit 1）。
 证伪做过：把 `test:ui` 两条命令都改成带 unit 配置 →
 `ENTRY-POINT GAPS (1) … no script invokes 'e2e run' without --config`、exit 1；还原 → exit 0。
+
+### CI 在 `929d1ef5` 上把这三件事一次验完（10-19 17:5x，run 39231751141）
+
+时间戳就是顺序证据（同一 job `tests`，09:41:26 → 10:00 后结束）：
+
+```
+09:42:27  1073 suite files … 597 native e2e · 460 driven · 10 engine …        # 审计过，FOREIGN 关卡没报缺口
+09:42:27  engine tier entry: bun run test:ui · scheduled by CI: no — …        # 引擎层"被收集 ≠ 被执行"落到 CI 日志上
+10:00:17  Test Files  27 failed | 553 passed | 17 skipped (597)
+10:00:17  ERROR: server/tests/multitenancy part 1: 37 of 293 tests failed across 16 files
+          ERROR: server/tests/multitenancy part 2: 45 of 149 tests failed across 22 files
+10:00:17  `e2e run --config e2e.unit.config.ts` exited 1.
+10:00:17  native bucket 597 · files e2e executed 597 · engine 10
+          native files that contributed NO test: 0
+          executed but in no bucket (expect the driver file): 0
+```
+
+三条结论各自对上一条此前只是推断的说法：
+
+1. **守门顺序修好了，而且是在真 runner 上看到的**：`exited 1` 之后紧接着就是三行 reconcile 输出。
+   上一轮（run 39222407160）这里是直接退出、一行不印；本机那次我用桩运行器（exit 1）证明了同一控制流，
+   现在 CI 自己复现了。**语料红着的时候也在做"审计桶 vs 实际执行"的逐文件对账。**
+2. **桶与执行逐文件相等**：597 = 597，零贡献 0，桶外执行 0（`engine 10` 由默认配置收集，但没有作业跑它——
+   就是第 7 条缺口的原话，现在印在 CI 日志里而不是只写在文档里）。
+3. **驱动层的红在 CI 上有名字**：multitenancy 两个组分别 37/293（16 文件）与 45/149（22 文件），
+   超过"独自重跑后仍红 >8 文件"的阈值而判组失败——这正是产品侧库名/预留库门禁那一族（多租户波次所有），
+   不是调度器的发明。`runner-difference` 仍为 0。
