@@ -1,4 +1,17 @@
-import { expect } from "../../../tests/support/e2e-compat";
+/*
+ * A tier-neutral seam. This helper serves suites e2e collects on Node *and* suites e2e schedules
+ * onto Bun, and importing either registry statically breaks the other tier: Node has no `bun:test`,
+ * while Bun cannot load `registerHooks` from `node:module` (the e2e layer imports it at the top
+ * level, so merely importing that module is a fatal load error under Bun). `expect` is resolved from
+ * the runner actually executing the file, and typed against the e2e layer's matcher surface, which
+ * the Bun registry satisfies.
+ */
+type ExpectFn = typeof import("../../../tests/support/e2e-compat")["expect"];
+const { expect: resolvedExpect } =
+  typeof globalThis.Bun === "undefined"
+    ? await import("../../../tests/support/e2e-compat")
+    : await import("../../../tests/support/bun-test-compat");
+export const expect = resolvedExpect as ExpectFn;
 
 /**
  * What a failure must never read like: the name of a method that was not there.

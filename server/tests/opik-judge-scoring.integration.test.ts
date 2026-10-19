@@ -1,6 +1,5 @@
 import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
-import type { TransactionSQL } from "../../tests/support/bun-compat";
 import { eq, like } from "drizzle-orm";
 import type { FrozenDatasetCase } from "../src/ai-observability/datasets";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";

@@ -1,7 +1,6 @@
 import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import type { TransactionSQL } from "../../tests/support/bun-compat";
 import { createDatabase } from "../src/db/client";
 import { testDatabaseUrl } from "./support/database";
 
