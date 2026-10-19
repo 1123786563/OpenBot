@@ -123,9 +123,6 @@
   "identityProviders": {
     "load": "Could not load identity providers"
   },
-  "knowledge": {
-    "service": "The knowledge service failed."
-  },
   "learning": {
     "loadSettings": "Learning settings could not be loaded.",
     "loadStatus": "Learning status could not be loaded.",

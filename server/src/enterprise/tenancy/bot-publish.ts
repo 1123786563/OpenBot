@@ -6,9 +6,8 @@
 // 全平台公开。取消发布后团队成员立即失去使用权；发布受众不能跨公司。
 //
 // 结构（纯新增三文件之一；既有文件零改动——发布状态落在 enterprise_resources
-// 注册行（kind='bot'，visibility='workspace'），与 MT036 知识库注册（kind=
-// 'knowledge'）同构，不写第二份权威（Spec §4.2「不能通过新旧各写一份完成
-// 迁移」）。MT009 的团队公共动作规则（read 经 MT008 判定、run 带依赖校验、
+// 注册行（kind='bot'，visibility='workspace'），不写第二份权威（Spec §4.2
+// 「不能通过新旧各写一份完成迁移」）。MT009 的团队公共动作规则（read 经 MT008 判定、run 带依赖校验、
 // 管理动作拒绝、非成员 canonical not-found）因此原样适用于已发布 Bot：
 // 本模块只做「发布/取消发布」两个 owner 动作与受众校验，绝不复刻判定）：
 //

@@ -140,10 +140,10 @@ COPY agent-computer/package.json agent-computer/package.json
 # which is already in the image, so the file itself was the only thing missing and the entry was an
 # instruction that could not be followed where it shipped.
 #
-# ONE FILE, NOT `scripts/`. The others there are the laptop's. `diagram` and `mock:knowledge` reach
-# for `roughjs` and `@copilotkit/aimock`, which the prune above removes; `test:ci` runs a suite that
+# ONE FILE, NOT `scripts/`. The others there are the laptop's. `diagram` reaches for `roughjs`,
+# which the prune above removes; `test:ci` runs a suite that
 # is not in the image; `generate:app-config` writes a file the build has already baked into
-# `app/dist`. Copying the directory ships four more entries with nothing to do here, to fix one that
+# `app/dist`. Copying the directory ships three more entries with nothing to do here, to fix one that
 # has something to do.
 COPY scripts/composio-smoke.ts scripts/composio-smoke.ts
 

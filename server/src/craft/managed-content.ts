@@ -1,7 +1,7 @@
 /**
  * The craft managed-content layer — ported from onyx's
  * `session/sandbox_lifecycle.py` (`build_managed_content_payload` /
- * `push_managed_content`) over OpenBot's own app and knowledge sources.
+ * `push_managed_content`) over OpenBot's own app sources.
  *
  * onyx resolves the skills payload and app guidance once per session-create /
  * reload, pushes the files into the sandbox, and only records `skills_hash`
@@ -13,11 +13,7 @@
  * rulings): the connectable-apps list answers from the plugins domain (enabled
  * connector rows that act in the person's own account), the skill fileset from
  * this deployment's managed-skill seam, the per-user craft MCP set from Task
- * 3's seam. The company-search skill is BLOCKED — onyx backs it with an
- * in-sandbox CLI over the permissioned corpus, and no backed path from the
- * craft sandbox to OpenBot's knowledge domain exists yet, so the adapter ships
- * no such file and the AGENTS.md Company-knowledge section stays out until one
- * does.
+ * 3's seam.
  */
 
 import { getLogger } from "../../../shared/logger";
@@ -81,8 +77,7 @@ export type CraftManagedContentSources = {
   connectableAppsFor(userId: string): Promise<readonly ConnectableApp[]>;
   /**
    * The managed skill fileset for the user (onyx: built-in + custom skills).
-   * Default: none. The company-search skill stays unbacked (BLOCKED) until a
-   * real delivery path to the craft sandbox exists.
+   * Default: none.
    */
   skillFilesFor?(userId: string): Promise<ReadonlyMap<string, Uint8Array>>;
   /** The user's library files. Default: none. */
@@ -173,19 +168,6 @@ async function defaultWebTemplateFiles(): Promise<
   await walk(root, "").catch(() => undefined);
   webTemplateFilesCache = files;
   return files;
-}
-
-/** The skill path that gates the AGENTS.md Company-knowledge section. */
-const COMPANY_SEARCH_SKILL_PATH = "company-search/SKILL.md";
-
-/**
- * Whether the managed fileset carries a backed company-search skill — the gate
- * for the AGENTS.md section (a prompt must not promise a missing tool).
- */
-export function companySearchSkillAvailable(
-  content: Pick<CraftManagedContent, "skillFiles">,
-): boolean {
-  return content.skillFiles.has(COMPANY_SEARCH_SKILL_PATH);
 }
 
 /** One connector server row as the production app-list filter reads it. */

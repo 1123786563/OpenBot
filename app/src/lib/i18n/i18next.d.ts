@@ -10,7 +10,6 @@ import type common from "../../locales/en/common.json";
 import type computer from "../../locales/en/computer.json";
 import type craft from "../../locales/en/craft.json";
 import type errors from "../../locales/en/errors.json";
-import type knowledge from "../../locales/en/knowledge.json";
 import type market from "../../locales/en/market.json";
 import type nav from "../../locales/en/nav.json";
 import type obsAdmin from "../../locales/en/obs-admin.json";
@@ -41,7 +40,6 @@ declare module "i18next" {
       approvals: typeof approvals;
       routines: typeof routines;
       skills: typeof skills;
-      knowledge: typeof knowledge;
       market: typeof market;
       errors: typeof errors;
       tenant: typeof tenant;

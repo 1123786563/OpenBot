@@ -21,8 +21,6 @@ import { createCraftConnectAppSignals } from "./connect-app";
 import { createConnectAppRoutes } from "./connect-app-routes";
 import { createFileRoutes } from "./file-routes";
 import { createInterruptFence } from "./interrupt";
-import type { CraftKbSearch } from "./kb-search-relay";
-import { createCraftKbSearchRelayApp } from "./kb-search-relay";
 import { createSessionFlowLocks } from "./locks";
 import type { CraftManagedContentResolver } from "./managed-content";
 import { CraftSessionManager } from "./manager";
@@ -106,14 +104,7 @@ export type CraftRoutesDeps = {
    * (fail closed — the mcp set stays empty in that wiring anyway).
    */
   mcpConnectionFor?: CraftMcpConnectionResolver | null;
-  /**
-   * The owner-scoped knowledge search for the company-search relay (the kb-search
-   * shape): one query in, the merged onyx-cli result projection out. Unset = the
-   * relay answers 503 (knowledge unavailable — the skill does not ship in that
-   * wiring anyway).
-   */
-  kbSearch?: CraftKbSearch | null;
-  /** The base the sandbox dials back on (MCP relay + company-search CLI files). */
+  /** The base the sandbox dials back on (the MCP relay). */
   mcpRelayBaseUrl?: string | null;
   /**
    * The store override: production leaves it unset and the assembly derives the standard
@@ -299,16 +290,6 @@ export function createCraftRoutes(input: {
       resolveConnection: deps.mcpConnectionFor ?? (async () => null),
     }),
   );
-
-  // The company-search relay mounts on the same pre-guard tier: its caller is
-  // the session's onyx-cli, authenticating with the same session-tag header.
-  // Unset wiring = 503 for everything (the skill never shipped in that build).
-  if (deps.kbSearch) {
-    app.route(
-      "/",
-      createCraftKbSearchRelayApp({ store, search: deps.kbSearch }),
-    );
-  }
 
   // #410: the cookie-authenticated write surface refuses a foreign browser Origin
   // — a production preview is a subdomain of the main site, so SameSite never

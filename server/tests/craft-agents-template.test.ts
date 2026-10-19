@@ -14,11 +14,6 @@ import { loadCraftConfig } from "../src/craft/config";
  * restore) and the environment facts that cannot be true in OpenBot (the
  * "numeric" app-id qualifier: OpenBot connector ids are string keys).
  *
- * The company-knowledge section is the one deliberate cut that remains: onyx
- * backs its `company-search` skill with an in-sandbox CLI over the permissioned
- * corpus, and OpenBot has no backed delivery path to the craft sandbox yet — a
- * prompt must not promise a missing tool. The section renders (byte-exact, from
- * the pinned constant) the day the managed-content seam delivers the skill.
  */
 const template = readFileSync(
   new URL("../src/craft/AGENTS.template.md", import.meta.url),
@@ -51,20 +46,6 @@ const CONNECTABLE_PROSE =
 function connectableSection(list: string): string {
   return `## Connectable apps\n\n${CONNECTABLE_PROSE}\n\n${list}`;
 }
-
-/**
- * onyx's Company knowledge section, byte-exact (`AGENTS.template.md:81-88`) —
- * the pinned constant the renderer splices in once a backed company-search
- * skill ships. Note the single leading space on " or label…" (onyx verbatim).
- */
-const COMPANY_KNOWLEDGE_SECTION =
-  "## Company knowledge\n\n" +
-  "When the request relates to the user's work, use the `company-search` skill to search their\n" +
-  "permissioned company corpus. Reformulate and re-search if results are weak, and stop once you\n" +
-  "can answer. Cite every source by title and URL.\n" +
-  "\n" +
-  "If results are empty or weak, say so and name what you searched. Then ask the user for guidance,\n" +
-  " or label any non-grounded content as general knowledge.";
 
 function render(
   overrides: Partial<GenerateAgentInstructionsInput> = {},
@@ -258,43 +239,6 @@ describe("AGENTS.template.md calibration", () => {
     expect(rendered).toContain(
       "call the `connect_app` tool with its external app ID from the list below",
     );
-  });
-
-  // ── company knowledge (gated on the backed company-search skill) ────────────
-
-  test("the company-knowledge section stays out while no backed skill ships", () => {
-    const rendered = render({
-      connectableAppsSection: buildConnectableAppsList([]),
-    });
-    expect(rendered).not.toContain("## Company knowledge");
-    expect(rendered).not.toContain("company-search");
-  });
-
-  test("a delivered company-search skill renders onyx's section byte-exact, in onyx's position", () => {
-    const rendered = render({
-      connectableAppsSection: buildConnectableAppsList([]),
-      companySearchSkillAvailable: true,
-    });
-    expect(rendered).toContain(COMPANY_KNOWLEDGE_SECTION);
-    // onyx's position: directly between the credentials tail and Files.
-    expect(rendered).toContain(
-      "`error` of `user_rejected`, `not_authorized`, or `policy_denied`. Surface the issue and don't retry.\n\n" +
-        COMPANY_KNOWLEDGE_SECTION +
-        "\n\n## Files & attachments",
-    );
-  });
-
-  test("a template missing the Files anchor splices nothing and says so (the no-op is observable)", () => {
-    // The skill ships but the anchor is gone: the splice must not crash or
-    // half-render, and the renderer warns (one logger line) so the missing
-    // anchor is a diagnosable template drift, not a silent no-op.
-    const rendered = render({
-      template: "# Bare template\n\n{{CONNECTABLE_APPS_LIST}}\n",
-      connectableAppsSection: buildConnectableAppsList([]),
-      companySearchSkillAvailable: true,
-    });
-    expect(rendered).toContain("No connectable apps available.");
-    expect(rendered).not.toContain("## Company knowledge");
   });
 });
 

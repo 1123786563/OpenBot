@@ -150,8 +150,6 @@ import { createModelSelectionRoutes } from "./gateway/model-selection-routes";
 import { createModelDiscoveryRoutes } from "./gateway/model-discovery-routes";
 import { botServiceRoutes } from "./bot-services/auth";
 import type { BotServiceRegistry } from "./bot-services/registry";
-import { knowledgeServiceConfig } from "./knowledge/config";
-import { createKnowledgeRoutes } from "./knowledge/routes";
 import {
   createLearningRoutes,
   type LearningAdminDependencies,
@@ -2688,11 +2686,6 @@ export function createApp(
         requireUser,
       ),
     );
-  // 知识库是独立的外部服务（KB-Service），不依赖 coworker 装配；未配置时端点以 503 应答。
-  app.route(
-    "/api/knowledge",
-    createKnowledgeRoutes(knowledgeServiceConfig(), requireUser),
-  );
   if (coworker?.responsibilities) {
     const { store, engine, bindings } = coworker.responsibilities;
     app.route(

@@ -9,7 +9,6 @@ import { loadCraftConfig } from "../src/craft/config";
 import {
   type ConnectableAppServerRow,
   type CraftManagedContentSources,
-  companySearchSkillAvailable,
   createCraftManagedContentResolver,
   materializeManagedContent,
   personalUnconnectedApps,
@@ -227,28 +226,6 @@ describe("createCraftManagedContentResolver", () => {
       }),
     );
     await expect(resolver(session())).rejects.toThrow("app store down");
-  });
-});
-
-// ── companySearchSkillAvailable ───────────────────────────────────────────────
-
-describe("companySearchSkillAvailable", () => {
-  test("false without the skill file, true with it", async () => {
-    const bare = await createCraftManagedContentResolver(sources())(session());
-    expect(companySearchSkillAvailable(bare!)).toBe(false);
-
-    const withSkill = await createCraftManagedContentResolver(
-      sources({
-        skillFilesFor: async () =>
-          new Map([
-            [
-              "company-search/SKILL.md",
-              encoder.encode("---\nname: company-search\n"),
-            ],
-          ]),
-      }),
-    )(session());
-    expect(companySearchSkillAvailable(withSkill!)).toBe(true);
   });
 });
 

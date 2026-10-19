@@ -61,7 +61,6 @@ import {
 import { isKeepalive, isSandboxError, type SandboxEvent } from "./events/types";
 import {
   type CraftManagedContentResolver,
-  companySearchSkillAvailable,
   materializeManagedContent,
   type ResolvedCraftManagedContent,
 } from "./managed-content";
@@ -486,9 +485,6 @@ export class CraftSessionManager {
         userName,
         organizationInstructions: this.deps.organizationInstructions ?? null,
         connectableAppsSection: managedContent?.connectableAppsSection ?? null,
-        companySearchSkillAvailable: managedContent
-          ? companySearchSkillAvailable(managedContent)
-          : false,
       });
       await workspaceApi.writeFile(`${directory}/AGENTS.md`, agentsMd);
       // The plugins the config now references must be present for sessions

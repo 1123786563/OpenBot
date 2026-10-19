@@ -1,13 +1,9 @@
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import {
-  buildAvailableSourcesSection,
   builtinSkillFilesFor,
-  NO_SOURCES_SECTION,
-  renderCompanySearchSkill,
   renderConnectorSkillTemplate,
   serverBacksConnectorSkill,
 } from "../src/craft/builtin-skills/index";
-import { companySearchSkillAvailable } from "../src/craft/managed-content";
 import {
   createCraftManagedContentResolver,
   type CraftManagedContentSources,
@@ -113,56 +109,6 @@ describe("builtinSkillFilesFor", () => {
       expect(rendered).toContain("Ported from onyx");
     }
   });
-
-  test("company-search ships only with a sources section, CLI riding along", async () => {
-    // No knowledge wiring: the skill is held back entirely.
-    const without = await builtinSkillFilesFor({ connectedServerIds: new Set() });
-    expect(without.has("company-search/SKILL.md")).toBe(false);
-    expect(without.has("company-search/onyx-cli")).toBe(false);
-
-    const files = await builtinSkillFilesFor({
-      connectedServerIds: new Set(),
-      companySearchSourcesSection: NO_SOURCES_SECTION,
-    });
-    const rendered = new TextDecoder().decode(files.get("company-search/SKILL.md"));
-    expect(rendered).not.toContain("{{");
-    expect(rendered).toContain("## Sources Available in This Session");
-    expect(rendered).toContain(NO_SOURCES_SECTION);
-    // The CLI ships beside the skill (onyx's bundled onyx-cli).
-    expect(files.has("company-search/onyx-cli")).toBe(true);
-    const cli = new TextDecoder().decode(files.get("company-search/onyx-cli"));
-    expect(cli).toContain("/api/craft/kb-search");
-    expect(cli).toContain("X-Onyx-Mcp-Session");
-  });
-});
-
-// ── company-search rendering ────────────────────────────────────────────────
-
-describe("buildAvailableSourcesSection / renderCompanySearchSkill", () => {
-  test("onyx's no-sources line when the deployment has no KBs", () => {
-    expect(buildAvailableSourcesSection([])).toBe(NO_SOURCES_SECTION);
-  });
-
-  test("KB list → onyx's `- \\`name\\` — description` lines", () => {
-    expect(
-      buildAvailableSourcesSection([
-        { name: "Marketing wiki", description: "launch copy" },
-        { name: "Runbooks", description: null },
-      ]),
-    ).toBe("- `Marketing wiki` — launch copy\n- `Runbooks`");
-  });
-
-  test("rendering replaces the placeholder; unresolved markup fails loudly", () => {
-    const rendered = renderCompanySearchSkill(
-      "## Sources\n\n{{AVAILABLE_SOURCES_SECTION}}\n\n## Usage\n",
-      "- `kb` — things",
-    );
-    expect(rendered).toContain("- `kb` — things");
-    expect(rendered).not.toContain("{{");
-    expect(() =>
-      renderCompanySearchSkill("{{OTHER_PLACEHOLDER}}", "x"),
-    ).toThrow(/Unresolved skill-template markup/);
-  });
 });
 
 // ── the gating seam ─────────────────────────────────────────────────────────
@@ -226,29 +172,5 @@ describe("managed-content skills leg integration", () => {
       }),
     )(session());
     expect(after?.skillsHash).not.toBe(before?.skillsHash);
-  });
-
-  test("shipping company-search flips the Company-knowledge gate green (D1 closeout)", async () => {
-    const without = await createCraftManagedContentResolver(
-      sources({
-        skillFilesFor: () =>
-          builtinSkillFilesFor({
-            connectedServerIds: new Set(),
-          }),
-      }),
-    )(session());
-    expect(companySearchSkillAvailable(without!)).toBe(false);
-
-    const withSkill = await createCraftManagedContentResolver(
-      sources({
-        skillFilesFor: () =>
-          builtinSkillFilesFor({
-            connectedServerIds: new Set(),
-            companySearchSourcesSection: NO_SOURCES_SECTION,
-          }),
-      }),
-    )(session());
-    expect(withSkill?.skillFiles.has("company-search/SKILL.md")).toBe(true);
-    expect(companySearchSkillAvailable(withSkill!)).toBe(true);
   });
 });

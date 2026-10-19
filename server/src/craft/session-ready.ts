@@ -17,7 +17,6 @@ import { writeConnectAppPlugin } from "./connect-app-plugin";
 import { StaleProvisioningAttemptError } from "./errors";
 import {
   type CraftManagedContentResolver,
-  companySearchSkillAvailable,
   materializeManagedContent,
 } from "./managed-content";
 import { writeWebappBootstrapScript } from "./nextjs-dev";
@@ -156,8 +155,6 @@ export async function ensureSessionReady(
           userName: input.userName,
           organizationInstructions: input.organizationInstructions,
           connectableAppsSection: managedContent.connectableAppsSection,
-          companySearchSkillAvailable:
-            companySearchSkillAvailable(managedContent),
         });
         await fileApi.writeFile(`${directory}/AGENTS.md`, agentsMd);
         // opencode.json rides along on the light path too: the workspace is
@@ -249,8 +246,6 @@ export async function ensureSessionReady(
         managedContent: managedContent
           ? {
               connectableAppsSection: managedContent.connectableAppsSection,
-              companySearchSkillAvailable:
-                companySearchSkillAvailable(managedContent),
               mcpServers: managedContent.mcpServers,
             }
           : null,

@@ -251,13 +251,8 @@ import {
   type ModelBillingAuditEvent,
   billingMethodForModel,
 } from "./copilot";
-import {
-  buildAvailableSourcesSection,
-  builtinSkillFilesFor,
-} from "./craft/builtin-skills";
+import { builtinSkillFilesFor } from "./craft/builtin-skills";
 import { loadCraftConfig } from "./craft/config";
-import type { CraftKbSearch } from "./craft/kb-search-relay";
-import { projectKbSearchResults } from "./craft/kb-search-relay";
 import {
   createCraftManagedContentResolver,
   personalUnconnectedApps,
@@ -406,15 +401,6 @@ import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
 } from "./intelligence-client";
-import { knowledgeRequest } from "./knowledge/client";
-import { knowledgeServiceConfig } from "./knowledge/config";
-import {
-  createKnowledgeRuntime,
-  knowledgeRetrievalOptionsFromEnv,
-  setKnowledgeRetrievalObserver,
-} from "./knowledge/retrieval";
-import { knowledgeTools } from "./knowledge/tools";
-import type { KnowledgeSearchResult } from "./knowledge/types";
 import {
   createLearningAutoAssign,
   probeLearningContainer,
@@ -2156,23 +2142,6 @@ const memoryIngestion = createMemoryIngestion({
 });
 // Proactive research may only read; see proactive/restriction.ts. Read from the catalogue per call.
 const proactiveReadOnlyRefs = createReadOnlyClassifier(pluginStore);
-// Conversation-side knowledge retrieval (P1): middleware injects reference material into every
-// run and the search_knowledge tool re-queries on demand. Both come from one runtime, so the
-// circuit breaker and the merge/dedup/format logic are shared. Built only when the service URL
-// AND the kb list are configured: an unset URL is the feature off entirely (no log), while a set
-// URL with no KB_RETRIEVAL_KB_IDS is half-configured and gets one boot-time warn naming it.
-const knowledgeRetrievalOptions = knowledgeRetrievalOptionsFromEnv();
-const knowledgeService = knowledgeServiceConfig();
-const knowledgeRuntime =
-  knowledgeService && knowledgeRetrievalOptions
-    ? createKnowledgeRuntime(knowledgeService, knowledgeRetrievalOptions)
-    : null;
-if (!knowledgeRuntime && knowledgeService) {
-  log.warn(
-    { type: "knowledge-retrieval-unconfigured" },
-    "knowledge-retrieval-unconfigured",
-  );
-}
 /*
  * Memory sources and background research, on by default for each person and Bot, and never switched
  * back on once the person turns one down. See memory/defaults.ts.
@@ -2276,17 +2245,6 @@ const loadToolsForActor =
       auditStore: bootAuditStore,
       initiator,
     }),
-    // Knowledge search appended last: same grant model as memory tools (every Bot holds it in
-    // P1, A2), and the spread keeps the array literal append-only as the wiring grows.
-    ...(knowledgeRuntime
-      ? knowledgeTools({
-          retriever: knowledgeRuntime.retriever,
-          initiator,
-          kbIds: knowledgeRetrievalOptions?.kbIds,
-          // 工具路径的超时档：KB_SERVICE_TIMEOUT_MS（config.timeoutMs，默认 10s）。
-          timeoutMs: knowledgeService?.timeoutMs,
-        })
-      : []),
     /*
      * C07 (contracts §7): the private OpenMuse Bot's own context — the P trio's
      * goal/idea/memory reads plus one-durable-Task delegation — bound to the
@@ -2921,9 +2879,6 @@ const actorAgentResolver = createActorAgentResolver({
     return copilotRuntime.learning?.acquire;
   },
   loadPersonalMemoryForActor,
-  // Undefined when retrieval is off: the resolver forwards it as an absent optional, which is
-  // exactly "no middleware mounted" — the same shape as an unconfigured personal memory.
-  loadKnowledgeForActor: knowledgeRuntime?.loadKnowledgeForActor,
 });
 
 /**
@@ -5260,78 +5215,6 @@ const craftMcpRelayBaseUrl =
  * An unwired knowledge service holds the skill back entirely (null) — the
  * AGENTS.md Company-knowledge section stays out with it.
  */
-const craftKnowledgeBases = async (): Promise<Array<{
-  id: string;
-  name: string;
-  description: string | null;
-}> | null> => {
-  if (!knowledgeService) return null;
-  try {
-    const response = await knowledgeRequest(knowledgeService, "/kb");
-    const body = (await response.json()) as {
-      items?: Array<{
-        id: string;
-        name: string;
-        description?: string | null;
-      }>;
-    };
-    return (body.items ?? []).map((kb) => ({
-      id: kb.id,
-      name: kb.name,
-      description: kb.description ?? null,
-    }));
-  } catch {
-    return null;
-  }
-};
-const craftCompanySearchSourcesSection = async (): Promise<string | null> => {
-  const kbs = await craftKnowledgeBases();
-  return kbs === null ? null : buildAvailableSourcesSection(kbs);
-};
-const craftKbSearch: CraftKbSearch | null = knowledgeService
-  ? async ({ query, sourceTypes, days }) => {
-      const kbs = (await craftKnowledgeBases()) ?? [];
-      if (kbs.length === 0) return { status: "ok", results: [] };
-      const settled = await Promise.allSettled(
-        kbs.map((kb) =>
-          knowledgeRequest(
-            knowledgeService!,
-            `/kb/${encodeURIComponent(kb.id)}/retrieve`,
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                query,
-                top_k: 20,
-                score_threshold: 0,
-                hybrid: true,
-              }),
-            },
-          ).then(
-            (response) =>
-              response.json() as Promise<{
-                results: KnowledgeSearchResult[];
-              }>,
-          ),
-        ),
-      );
-      // A KB domain that answers nothing at all is "unavailable" (the relay's
-      // 503 shape); per-KB failures degrade to that KB contributing nothing.
-      const perKb = settled.flatMap((entry) =>
-        entry.status === "fulfilled" ? entry.value.results : [],
-      );
-      if (
-        perKb.length === 0 &&
-        settled.every((entry) => entry.status === "rejected")
-      ) {
-        return { status: "unavailable" };
-      }
-      return {
-        status: "ok",
-        results: projectKbSearchResults(perKb, { days, sourceTypes }),
-      };
-    }
-  : null;
 const craftManagedContentFor = createCraftManagedContentResolver({
   connectableAppsFor: async (userId) => {
     const [servers, held, brokered] = await Promise.all([
@@ -5358,19 +5241,15 @@ const craftManagedContentFor = createCraftManagedContentResolver({
    * domain is deployment-tenant — the ruled D1 shape).
    */
   skillFilesFor: async (userId) => {
-    const [held, brokered, sourcesSection] = await Promise.all([
+    const [held, brokered] = await Promise.all([
       pluginStore.connectionsFor(userId),
       pluginStore.brokeredConnectionsFor(userId),
-      craftCompanySearchSourcesSection(),
     ]);
     return builtinSkillFilesFor({
       connectedServerIds: new Set([
         ...held.map((row) => row.serverId),
         ...brokered.map((row) => row.serverId),
       ]),
-      ...(sourcesSection !== null
-        ? { companySearchSourcesSection: sourcesSection }
-        : {}),
     });
   },
   /*
@@ -5507,7 +5386,6 @@ const craftRoutes: CraftRoutesFactory | undefined =
             // per forwarded call and never written anywhere the agent reads.
             mcpConnectionFor: (userId, serverId) =>
               pluginStore.mcpWireConnectionFor(userId, serverId),
-            kbSearch: craftKbSearch,
             mcpRelayBaseUrl: craftMcpRelayBaseUrl,
             /*
              * The process's ONE preview-ticket table and the preview origin's
@@ -6260,41 +6138,6 @@ if (opikBootConfig.enabled) {
             },
           }
         : {}),
-    }),
-  );
-  setKnowledgeRetrievalObserver((observed) =>
-    opikToolSteps.recordRetrieval({
-      occurredAt: observed.startedAt,
-      endedAt: observed.endedAt,
-      query: observed.query,
-      kbIds: observed.kbIds,
-      // The run's trusted scope (T-final M1) — same one-writer cast as the
-      // span/step adapters above; retrievals run inside the run's ambient
-      // context, so a threaded run threads its retrieval steps too.
-      scope: currentRunObservationScope() as ObservationScope | undefined,
-      ...(observed.trace
-        ? {
-            trace: {
-              traceId: observed.trace.traceId,
-              parentSpanId: observed.trace.spanId,
-            },
-          }
-        : {}),
-      outcome:
-        observed.outcome.status === "hit"
-          ? {
-              kind: "hit",
-              fragments: observed.outcome.chunks.map((chunk) => ({
-                kbId: chunk.kbId,
-                chunkId: chunk.chunkId,
-                docId: chunk.docId,
-                source: chunk.source,
-                score: chunk.score,
-              })),
-            }
-          : observed.outcome.status === "miss"
-            ? { kind: "miss" }
-            : { kind: "degraded", reason: observed.outcome.reason },
     }),
   );
 }

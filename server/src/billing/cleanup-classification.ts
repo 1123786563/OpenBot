@@ -211,7 +211,7 @@ const TABLE_ORDER = [
 
 /**
  * The legacy billing estate (21.5): the only tables the cleanup program may ever name for
- * deletion. Everything else — users, bots, sessions, knowledge-base objects, every other
+ * deletion. Everything else — users, bots, sessions, every other
  * application table — is outside the program's reach by construction (the 21.5 estate wall
  * reads this list; it is the classification's own table universe under its guard name, so
  * the two cannot drift apart).
