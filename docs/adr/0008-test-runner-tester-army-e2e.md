@@ -23,7 +23,14 @@ status: accepted
 `e2e.unit.config.ts` 读同一份清单排除这些文件，因此一份测试要么被 e2e 原生收集，要么由 e2e 驱动到 Bun，不会两边都不管，也不会重复计数。清单是快照而非长期方案：随着兼容层补齐，条目应当只减不增。
 
 
-单元与集成套件在 `e2e.unit.config.ts` 的 tools-only target（无 engine，因此不开浏览器、不调用模型）上运行，UI 套件留在 `e2e.config.ts` 的 web target，两者用 `--config` 选择；`bunfig` 预加载与 `bun test` 不再是测试入口。
+单元与集成套件在 `e2e.unit.config.ts` 的 tools-only target（无 engine，因此不开浏览器、不调用模型）上运行，UI 套件留在 `e2e.config.ts` 的 web target，两者用 `--config` 选择。
+
+一句话不要把两层说反：**`bun test` 不再是入口，但它仍然是 455 个文件的执行器** —— 驱动层就是 e2e 调度一次、
+Bun 执行一组，所以根 `bunfig.toml` 的 `[test] preload` 依旧生效（Bun 只按 cwd 读 bunfig，`server/bunfig.toml`
+是它的副本，`server/tests/bunfig-preload.test.ts` 守住两份一致）。收集范围也不再由 `package.json` 的过滤器
+决定，而是 `SUITE_DIRS` 那 14 个目录的 `dir/**` glob；这条 glob 不能写成 `dir*` 前缀，否则 `apps/openmuse`
+子模块自带的 49 个套件会被本仓库的安装拖进来跑。全量一轮报的是 598 个文件而不是 ~650，就是这个边界真的
+停在子模块之外的证据。
 
 ## 2026-10-18 补充二：标题是身份、分组不是证据、覆盖要能对账
 

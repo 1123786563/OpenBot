@@ -8,12 +8,19 @@
 # working directory only, so server/bunfig.toml repeats the declaration for `bun test` run from
 # inside server/, and server/tests/bunfig-preload.test.ts keeps the two in agreement.
 #
-# Test DISCOVERY is scoped in package.json's `test` script (path-anchored "./dir" filters, not
-# bare directory names — a bare name is a substring match over full test paths, so "app" also hit
-# "apps/openmuse/…" and "tests"/"shared" hit the submodule's nested paths once it was initialized;
-# the leading "./" makes each filter a path prefix, verified locally against an initialized
-# submodule: ./app runs 158 files where the bare "app" pulled in 240), not
-# here: apps/openmuse is a git submodule whose 60+ own-suite test files would otherwise be
-# discovered and run under this repo's root install — their toolchain is the submodule's, not
-# ours, and biome already excludes the path for the same reason.
+# Test DISCOVERY is not scoped here and no longer by package.json either: `bun run test` hands the
+# corpus to e2e (`e2e.unit.config.ts`), whose globs come from the 14 directories in
+# `scripts/lib/e2e-manifest.mjs` SUITE_DIRS — the same list the coverage audit reconciles against, so
+# neither side can quietly widen or narrow what "every test is on e2e" means. Those globs are of the
+# form `app/**`, never `app*`: apps/openmuse is a git submodule with 49 of its own suite files at
+# depth ≤ 3 (verified against an initialized checkout — 60+ before), and a prefix that also matched
+# `apps/` would run the submodule's tests under this repo's install, with the submodule's toolchain
+# missing. biome excludes the path for the same reason. The old `bun test` entry needed path-anchored
+# "./dir" filters because a bare name is a substring match over full test paths; that trap is gone
+# with the entry, and the whole-corpus run now reporting 598 files rather than ~650 is the check that
+# the glob really stops at the submodule.
+#
+# These preloads still apply, because e2e schedules 455 of those files onto `bun test` itself
+# (tests/bun-suites.test.ts, ADR 0008's second tier) and Bun reads this file for that process.
+preload = ["./server/scripts/test-preload.ts", "./app/tests/preload.ts"]
 preload = ["./server/scripts/test-preload.ts", "./app/tests/preload.ts"]
