@@ -1,15 +1,13 @@
 {
-  "generatedAt": "2026-10-19T02:13:56.163Z",
+  "generatedAt": "2026-10-19T03:28:26.824Z",
   "shapes": [
     "group",
-    "directory",
     "corpus"
   ],
-  "manifestFiles": 455,
+  "manifestFiles": 456,
   "judged": {
-    "group": 445,
-    "directory": 445,
-    "corpus": 445
+    "group": 453,
+    "corpus": 453
   },
   "runs": {
     "group": [
@@ -51,22 +49,22 @@
       {
         "batch": "app/tests part 1",
         "files": 24,
-        "judged": 23,
+        "judged": 24,
         "exit": 1,
         "note": ""
       },
       {
         "batch": "app/tests part 2",
         "files": 24,
-        "judged": 23,
-        "exit": 1,
+        "judged": 24,
+        "exit": 0,
         "note": ""
       },
       {
         "batch": "app/tests part 3",
         "files": 24,
-        "judged": 23,
-        "exit": 1,
+        "judged": 24,
+        "exit": 0,
         "note": ""
       },
       {
@@ -177,14 +175,14 @@
       {
         "batch": "server/tests part 9",
         "files": 24,
-        "judged": 23,
+        "judged": 24,
         "exit": 1,
         "note": ""
       },
       {
         "batch": "server/tests part 10",
         "files": 24,
-        "judged": 23,
+        "judged": 24,
         "exit": 1,
         "note": ""
       },
@@ -212,95 +210,23 @@
       {
         "batch": "server/tests part 14",
         "files": 24,
-        "judged": 22,
+        "judged": 24,
         "exit": 1,
         "note": ""
       },
       {
         "batch": "server/tests part 15",
-        "files": 13,
-        "judged": 13,
+        "files": 14,
+        "judged": 14,
         "exit": 0,
-        "note": ""
-      }
-    ],
-    "directory": [
-      {
-        "batch": "agent-computer/tests",
-        "files": 4,
-        "judged": 4,
-        "exit": 0,
-        "note": ""
-      },
-      {
-        "batch": "agent-langgraph/tests",
-        "files": 4,
-        "judged": 4,
-        "exit": 0,
-        "note": ""
-      },
-      {
-        "batch": "agent-mastra/src",
-        "files": 1,
-        "judged": 1,
-        "exit": 0,
-        "note": ""
-      },
-      {
-        "batch": "agent-sandbox/tests",
-        "files": 3,
-        "judged": 3,
-        "exit": 0,
-        "note": ""
-      },
-      {
-        "batch": "app/src",
-        "files": 2,
-        "judged": 2,
-        "exit": 0,
-        "note": ""
-      },
-      {
-        "batch": "app/tests",
-        "files": 87,
-        "judged": 84,
-        "exit": 1,
-        "note": ""
-      },
-      {
-        "batch": "desktop/scripts",
-        "files": 1,
-        "judged": 1,
-        "exit": 0,
-        "note": ""
-      },
-      {
-        "batch": "scripts",
-        "files": 3,
-        "judged": 3,
-        "exit": 0,
-        "note": ""
-      },
-      {
-        "batch": "server/src",
-        "files": 1,
-        "judged": 1,
-        "exit": 0,
-        "note": ""
-      },
-      {
-        "batch": "server/tests",
-        "files": 349,
-        "judged": 342,
-        "exit": 1,
         "note": ""
       }
     ],
     "corpus": [
       {
         "batch": "all-driven",
-        "files": 455,
-        "judged": 445,
+        "files": 456,
+        "judged": 453,
         "exit": 1,
         "note": ""
       }
@@ -310,24 +236,21 @@
     {
       "file": "app/tests/ai-observability-datasets.test.tsx",
       "readings": {
-        "group": "green (28)",
-        "directory": "red (15/28)",
-        "corpus": "red (15/28)"
+        "group": "green (53)",
+        "corpus": "red (30/53)"
       }
     },
     {
       "file": "app/tests/ai-observability-experiments.test.tsx",
       "readings": {
-        "group": "green (43)",
-        "directory": "red (11/43)",
-        "corpus": "red (11/43)"
+        "group": "green (78)",
+        "corpus": "red (15/78)"
       }
     },
     {
       "file": "app/tests/brokered-account-row.test.tsx",
       "readings": {
         "group": "green (43)",
-        "directory": "red (8/43)",
         "corpus": "red (8/43)"
       }
     },
@@ -335,64 +258,168 @@
       "file": "app/tests/transcript-attachments.test.tsx",
       "readings": {
         "group": "green (40)",
-        "directory": "red (1/40)",
         "corpus": "red (1/40)"
       }
     },
     {
-      "file": "server/tests/cleanup-rehearsal.integration.test.ts",
+      "file": "server/tests/billing-credits-writer.integration.test.ts",
       "readings": {
-        "group": "red (1/6)",
-        "directory": "green (6)",
-        "corpus": "red (1/6)"
+        "group": "red (2/27)",
+        "corpus": "green (27)"
       }
     },
     {
       "file": "server/tests/enterprise-controls.integration.test.ts",
       "readings": {
-        "group": "green (20)",
-        "directory": "red (1/1)",
+        "group": "green (36)",
         "corpus": "red (1/1)"
+      }
+    },
+    {
+      "file": "server/tests/gateway-probe.integration.test.ts",
+      "readings": {
+        "group": "red (1/9)",
+        "corpus": "green (9)"
       }
     },
     {
       "file": "server/tests/opik-retention.integration.test.ts",
       "readings": {
         "group": "green (33)",
-        "directory": "red (15/33)",
         "corpus": "red (15/33)"
       }
     },
     {
       "file": "server/tests/policy-fanout.integration.test.ts",
       "readings": {
-        "group": "green (7)",
-        "directory": "red (5/7)",
-        "corpus": "red (5/7)"
+        "group": "green (10)",
+        "corpus": "red (7/10)"
       }
     },
     {
       "file": "server/tests/run-built-agent-cancellation.test.ts",
       "readings": {
         "group": "green (8)",
-        "directory": "red (1/8)",
         "corpus": "red (1/8)"
+      }
+    },
+    {
+      "file": "server/tests/sso-required-sessions.integration.test.ts",
+      "readings": {
+        "group": "green (2)",
+        "corpus": "red (2/2)"
+      }
+    },
+    {
+      "file": "server/tests/subscription-ownership.integration.test.ts",
+      "readings": {
+        "group": "green (7)",
+        "corpus": "red (8/8)"
+      }
+    },
+    {
+      "file": "server/tests/team-bots.integration.test.ts",
+      "readings": {
+        "group": "green (6)",
+        "corpus": "red (6/6)"
+      }
+    },
+    {
+      "file": "server/tests/tenant-package.test.ts",
+      "readings": {
+        "group": "red (18/109)",
+        "corpus": "red (41/109)"
+      }
+    },
+    {
+      "file": "server/tests/test-database-url.integration.test.ts",
+      "readings": {
+        "group": "green (1)",
+        "corpus": "red (1/1)"
+      }
+    },
+    {
+      "file": "server/tests/unknown-hold-no-reclaim.integration.test.ts",
+      "readings": {
+        "group": "green (7)",
+        "corpus": "red (8/8)"
+      }
+    },
+    {
+      "file": "server/tests/usage-outbox.integration.test.ts",
+      "readings": {
+        "group": "green (6)",
+        "corpus": "red (7/7)"
+      }
+    },
+    {
+      "file": "server/tests/user-instructions.integration.test.ts",
+      "readings": {
+        "group": "green (9)",
+        "corpus": "red (9/9)"
+      }
+    },
+    {
+      "file": "server/tests/user-preferences.integration.test.ts",
+      "readings": {
+        "group": "green (3)",
+        "corpus": "red (3/3)"
       }
     },
     {
       "file": "server/tests/voice-session-preview.integration.test.ts",
       "readings": {
         "group": "green (3)",
-        "directory": "red (1/1)",
-        "corpus": "red (1/1)"
+        "corpus": "red (2/2)"
+      }
+    },
+    {
+      "file": "server/tests/voice-session-store.integration.test.ts",
+      "readings": {
+        "group": "green (3)",
+        "corpus": "red (2/2)"
       }
     },
     {
       "file": "server/tests/voice-summary-model.test.ts",
       "readings": {
         "group": "green (8)",
-        "directory": "red (2/8)",
         "corpus": "red (2/8)"
+      }
+    },
+    {
+      "file": "server/tests/work-queue.integration.test.ts",
+      "readings": {
+        "group": "green (21)",
+        "corpus": "red (22/22)"
+      }
+    },
+    {
+      "file": "server/tests/workbench-implicit-grant.test.ts",
+      "readings": {
+        "group": "green (11)",
+        "corpus": "red (12/12)"
+      }
+    },
+    {
+      "file": "server/tests/workshop-artifacts.test.ts",
+      "readings": {
+        "group": "green (14)",
+        "corpus": "red (4/16)"
+      }
+    },
+    {
+      "file": "server/tests/workshop-schedule-executor.integration.test.ts",
+      "readings": {
+        "group": "green (5)",
+        "corpus": "red (6/6)"
+      }
+    },
+    {
+      "file": "server/tests/workshop-store.test.ts",
+      "readings": {
+        "group": "green (15)",
+        "corpus": "red (16/17)"
       }
     }
   ]
