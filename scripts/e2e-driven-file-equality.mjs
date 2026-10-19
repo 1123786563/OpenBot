@@ -67,18 +67,26 @@ function runShape(files) {
   const perFile = new Map();
   if (existsSync(junit)) {
     const xml = readFileSync(junit, "utf8");
+    /*
+     * Attribution is read from `<testsuite … file="…">`, which is where bun puts the path and the
+     * counts. Reading `<testcase file="…">` instead silently drops every file that died at load time:
+     * bun records that as an "Unhandled error between tests" whose testcase carries no `file`, so ten
+     * driven files looked "unmeasured" when they were actually red.
+     */
     for (const block of xml.matchAll(
-      /<testcase\b[\s\S]*?(?:\/>|<\/testcase>)/g,
+      /<testsuite\b[^>]*>[\s\S]*?(?:<\/testsuite>|\/>)/g,
     )) {
-      const tag = /<testcase\b[^>]*>/.exec(block[0])?.[0];
-      const attribute = tag ? /file="([^"]+)"/.exec(tag)?.[1] : undefined;
+      const head = /<testsuite\b[^>]*>/.exec(block[0])?.[0] ?? "";
+      const attribute = /file="([^"]+)"/.exec(head)?.[1];
       if (!attribute) continue;
       const rel = attribute.replace(`${root}/`, "");
+      const num = (name) => {
+        const hit = new RegExp(`\\b${name}="(\\d+(?:\\.\\d+)?)"`).exec(head);
+        return hit ? Number(hit[1]) : 0;
+      };
       const entry = perFile.get(rel) ?? { tests: 0, failures: 0 };
-      entry.tests++;
-      // A self-closed case passed; a body carries `<failure>` or `<skipped/>`, and counting a
-      // skipped case as red would invent disagreements.
-      if (/<failure\b/.test(block[0])) entry.failures++;
+      entry.tests += num("tests");
+      entry.failures += num("failures") + num("errors");
       perFile.set(rel, entry);
     }
   }

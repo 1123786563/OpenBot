@@ -1,4 +1,4 @@
-import { mock } from "../../tests/support/e2e-compat";
+import { mock } from "../../tests/support/bun-test-compat";
 import { useState } from "react";
 
 mock.module("@copilotkit/react-core/v2", () => ({
