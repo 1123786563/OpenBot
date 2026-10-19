@@ -21,6 +21,7 @@ This repository uses a single domain context at the root. See `docs/agents/domai
 - `docs/adr/`：架构决策与约束。
 - `CONTEXT.md`：统一的领域术语和领域模型。
 - `docs/plans/`：Superpowers 实施计划。
+- 跑测试或验证前先读 `docs/adr/0008-test-runner-tester-army-e2e.md`：native 与 driven 两层制、各层运行命令（`bunx e2e run --config e2e.unit.config.ts` vs `bun test ./<file>`）及已知坑。
 - Git + Superpowers Ledger：执行历史和已完成任务的证据。
 
 如果实施 Plan 与已批准 Spec 冲突，以 Spec 为准。

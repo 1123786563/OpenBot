@@ -485,3 +485,13 @@ runner import、`groupsOf` 重算分组，然后按组验证。我本轮试着�
 那一刻配置与清单不一致，入口会凭空多出 102 条无解释的红。我选择把 glob 还原、把根因与两步修法留在这里，
 而不是把半成品留在共用入口上；审计仍 `no gaps`、跟踪文件零改动，`scripts/e2e-collection-reconcile.mjs`
 仍然每天能把这 4 个零贡献文件指出来。
+
+### 多租户岛的完整形状已实测钉死（10-19 04:4x，retro 增补）
+
+上面 04:02 段说 CI 缺"一步迁移 + 导出 `MT_TEST_DATABASE_URL`"。实测比这多两层，全部已在一次性 PG（127.0.0.1:5439）上验证：
+
+1. **岛必须自洽**：家族的 fixture 还要求成套 ENTERPRISE 拓扑（同实例同库 + 专属 `ent*` 登录 + `options=-c role=…`；超级用户身份会被 `DATABASE_CAPABILITY_MISMATCH` 拒绝）。因此 `tests/bun-suites.test.ts` 的 `bunEnv` 现在还认三个 `MT_TEST_DIRECTORY/DATA/OPERATOR_DATABASE_URL`，岛组连角色 URL 一起接管——作业级 `ENTERPRISE_TEST_*` 仍归 enterprise 套件的 5434 所有。setup URL 无需变量：它回落 `TEST_DATABASE_URL`，而岛组的它已被覆盖成岛。
+2. **岛的制备**：`CREATE DATABASE openbot_enterprise_*` → `DATABASE_URL=<岛> OPENBOT_BOOTSTRAP_ENTERPRISE_ROLES=on bun scripts/migrate.ts`（能力角色 + 完整 schema，含 `visibility`）→ `bun scripts/enterprise-test-db.ts provision` 建三个运行时登录（roles.sql 明确不含登录身份；provision 已实测可修复被删的登录）。注意：`enterprise-test-db.ts migrate` 走的制备路径产出的 schema 缺 `enterprise_resources.visibility`（账本同 161 条、哈希一致而库不同），别用它制备岛。
+3. **机制验证**：`E2E_BUN_ONLY=multitenancy` + 四个 `MT_TEST_*` 走驱动层 → 家族从零读数变为真跑；`fixtures.test.ts` 17/17 全绿。
+
+**为什么还没接进 ci.yml**：新鲜岛上有 6 个文件红——`billing-visibility`/`company-reservation`/`job-ownership`/`payer-accounts`/`scan-executor` 查询的 `billing_customer_mappings`、`job_ownership` 表只由 `runMigrateTest` 任务引导创建，而这 6 个文件一个都不调用（只有 fixtures/preferences/runtime-config 等 8 个文件自举）；字母序排组时它们跑在 fixtures 之前，历史"绿"靠的是库上残留的旧引导。这是家族内的顺序依赖缺陷（B 类整改域），先修自举再接线，接线时作业级 env 加四个 `MT_TEST_*` 指向岛即可，`bunEnv` 侧已就位。

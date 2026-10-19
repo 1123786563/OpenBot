@@ -53,21 +53,35 @@ const all: Group[] = manifestJson.groups;
  * not named `openbot_enterprise_*` on loopback — under the shared URL all 51 of them abort at
  * collection, which reads as "no tests" rather than as a defect. Those groups get their own group
  * (`DIRECTORY_ISLANDS` in scripts/lib/e2e-manifest.mjs, recorded here when the grouping is generated)
- * and, only when the environment offers one, `MT_TEST_DATABASE_URL` as their database. Every other
- * group keeps the URL the rest of the corpus expects, and with the variable unset the driver behaves
- * exactly as it did before.
+ * and, only when the environment offers one, `MT_TEST_DATABASE_URL` as their database. The family's
+ * fixture also demands a coherent enterprise topology, so the island carries its own: the setup URL
+ * falls back to `TEST_DATABASE_URL` (which the override just set), and each capability role comes
+ * from its `MT_TEST_*` counterpart — the island is self-contained and the job-level
+ * `ENTERPRISE_TEST_*` URLs stay owned by the enterprise suites. Every other group keeps the URLs the
+ * rest of the corpus expects, and with `MT_TEST_DATABASE_URL` unset the driver behaves exactly as it
+ * did before.
  */
 const directoryIslands = manifestJson.directoryIslands ?? [];
+const MT_ROLE_URLS: Record<string, string> = {
+  ENTERPRISE_TEST_DIRECTORY_DATABASE_URL: "MT_TEST_DIRECTORY_DATABASE_URL",
+  ENTERPRISE_TEST_DATA_DATABASE_URL: "MT_TEST_DATA_DATABASE_URL",
+  ENTERPRISE_TEST_OPERATOR_DATABASE_URL: "MT_TEST_OPERATOR_DATABASE_URL",
+};
 function bunEnv(groupName: string): Record<string, string | undefined> {
   const override = process.env.MT_TEST_DATABASE_URL;
   if (!override) return process.env;
   if (!directoryIslands.some((dir) => groupName.startsWith(dir)))
     return process.env;
-  return {
+  const env: Record<string, string | undefined> = {
     ...process.env,
     TEST_DATABASE_URL: override,
     DATABASE_URL: override,
   };
+  for (const [target, source] of Object.entries(MT_ROLE_URLS)) {
+    const url = process.env[source];
+    if (url) env[target] = url;
+  }
+  return env;
 }
 // E2E_BUN_ONLY=agent-computer runs one group: enough to prove the driver without spending an hour
 // on the server groups, which need the shared Postgres.
