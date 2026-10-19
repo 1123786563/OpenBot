@@ -1,0 +1,38 @@
+{
+  "id": "6d2c6489-7f9c-4bd1-9229-e62bd4c3c1c7",
+  "ok": true,
+  "result": {
+    "runId": "run_7176face537b",
+    "deliveryId": "delivery_ea9c11ad77c4",
+    "messages": [
+      {
+        "id": "msg_f4a171bf9658",
+        "run_id": "run_7176face537b",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_ac9f24cf-fc7d-47d1-858d-db12f05eab0f",
+        "to_handle": "run:run_7176face537b",
+        "subject": "Bifrost 6 票批量验收完成：全部 SATISFIED",
+        "body": "6 票（#271/#276/#277/#286/#289/#290）逐票读票面 AC 并在干净 main 重跑验证，结论全部 SATISFIED：Bun 套件 46 pass（usage-outbox+billing-usage-outbox 18、recovery-scan 11、recovery-unacked-replay 7、order-ownership 10）、e2e 套件 11 pass（workbench-gateway-routing 7、subscription-harness-boundary 4）、Go 侧 SettlementOutbox 与 governance 全量均 ok，每票 AC 均有对应用例名逐条对上（含 #289 AC3 的 admin 界面消费链 server/src/index.ts:4195 → admin/enterprise.tsx → model-billing-paths.tsx）。测试库为专用 openbot_verify_bfrest（单次 migrate 收敛），源文件零修改零提交；跨票环境发现两条只报告不修：main 全局 typecheck 红根因仍是 server/src/config.ts 合并残留（#207 patch 未进 main，非本批票引入），bifrost submodule 上游克隆慢需用主仓库本地 clone 绕行。完整结论表与逐票 AC 对照见报告文件。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_79b47bbef22c\",\"dispatchId\":\"ctx_fa14f382c31e\",\"outcome\":\"succeeded\",\"reportPath\":\"/Users/wuyongjun/Library/Application Support/orca/chat-scratch/02447e883b2c649d7ce2c22925bcc1ea/verify-bfrest-report.md\"}",
+        "created_at": "2026-10-19T02:38:39Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "175d0553-00a1-4b20-91e3-3a94e8933679",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

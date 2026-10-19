@@ -1,0 +1,1715 @@
+diff --git a/server/drizzle/0161_payment_activation_needs_resolution.sql b/server/drizzle/0161_payment_activation_needs_resolution.sql
+new file mode 100644
+index 00000000..78750bd0
+--- /dev/null
++++ b/server/drizzle/0161_payment_activation_needs_resolution.sql
+@@ -0,0 +1,19 @@
++-- Billing payment BP03 (#371): 已收款订单的订阅与积分交付恢复.
++--
++-- The activation state gains `needs_resolution`: a paid order whose entitlement is owned by
++-- another overlapping order (duplicate_paid) is a deterministic conflict no retry can settle.
++-- It leaves the sweep's retry list and is never `applied`, while the money facts and the
++-- anomaly evidence stay untouched for the operator's resolution queue (BP05/#373).
++--
++-- `activation_failure_reason` and `activation_next_retry_at` retain, per failed attempt, why
++-- the activation did not land (one stable word: grant_write_failed, provider_unreachable,
++-- duplicate_paid, the refusal rule's name, …) and when the sweep's next pass runs. The sweep
++-- interval is the scheduler; the columns are the recorded fact, rewritten per failure and
++-- cleared the moment activation lands (recordActivation applied).
++ALTER TABLE "payment_orders" DROP CONSTRAINT "payment_orders_activation_state_check";
++--> statement-breakpoint
++ALTER TABLE "payment_orders" ADD CONSTRAINT "payment_orders_activation_state_check" CHECK ("payment_orders"."activation_state" IN ('pending', 'applied', 'failed', 'needs_resolution'));
++--> statement-breakpoint
++ALTER TABLE "payment_orders" ADD COLUMN "activation_failure_reason" text;
++--> statement-breakpoint
++ALTER TABLE "payment_orders" ADD COLUMN "activation_next_retry_at" timestamp with time zone;
+diff --git a/server/drizzle/meta/_journal.json b/server/drizzle/meta/_journal.json
+index e7cf79eb..723d5276 100644
+--- a/server/drizzle/meta/_journal.json
++++ b/server/drizzle/meta/_journal.json
+@@ -1128,6 +1128,13 @@
+       "when": 1792313909111,
+       "tag": "0160_opik_retention_work_stopped",
+       "breakpoints": true
++    },
++    {
++      "idx": 161,
++      "version": "7",
++      "when": 1792384653135,
++      "tag": "0161_payment_activation_needs_resolution",
++      "breakpoints": true
+     }
+   ]
+-}
++}
+\ No newline at end of file
+diff --git a/server/src/billing/payments/service.ts b/server/src/billing/payments/service.ts
+index d4bfbf9e..357c4dbe 100644
+--- a/server/src/billing/payments/service.ts
++++ b/server/src/billing/payments/service.ts
+@@ -140,7 +140,11 @@ export type PlanCreditGrantor = {
+ };
+ 
+ /** The owner kinds a NEW order may carry; `unknown_owner` is a legacy-row verdict, not a buyer. */
+-const OWNABLE_PAYER_KINDS = new Set(["personal", "company", "legacy_deployment"]);
++const OWNABLE_PAYER_KINDS = new Set([
++  "personal",
++  "company",
++  "legacy_deployment",
++]);
+ 
+ /**
+  * The owner a purchase binds, as the seam demands it: present, well-formed, whitespace-strict,
+@@ -251,10 +255,19 @@ export function createPaymentService(deps: {
+    * testing payments before the ledger is on) still activates, just without granting.
+    */
+   grantor?: PlanCreditGrantor;
++  /**
++   * The cadence the activation sweep re-asks a paid order at (BP03/#371). The sweep interval IS
++   * the scheduler — this value only computes the `activationNextRetryAt` fact a failed attempt
++   * retains, so the recorded schedule and the real cadence cannot drift apart.
++   */
++  activationRetryDelayMs?: number;
+   now?: () => Date;
+   log?: { warn(message: string): void };
+ }): PaymentService {
+   const now = deps.now ?? (() => new Date());
++  // The sweep's pass cadence, as the retained-retry-schedule arithmetic (default 60s, the
++  // maintenance sweep's own default — see ../payments/maintenance.ts).
++  const activationRetryDelayMs = deps.activationRetryDelayMs ?? 60_000;
+   // The shared server logger satisfies the narrow `{ warn }` shape, so the fallback is a
+   // plain injection default — warnings route through the one logger, never bare stdout.
+   const log = deps.log ?? getLogger("server");
+@@ -294,6 +307,19 @@ export function createPaymentService(deps: {
+       currency: order.currency,
+       status: order.status,
+       activationState: order.activationState,
++      // "已付款，权益处理中" is a sentence about DELIVERY, not about money (BP03/#371: the two
++      // states are independent). Only a paid order owes one: applied answers "delivered", a
++      // deterministic conflict answers "needs_resolution", everything the sweep is still
++      // converging — pending AND failed, a rule verdict being the last pass's fact — answers
++      // "processing". No money, no fulfillment to report.
++      fulfillmentState:
++        order.status === "paid"
++          ? order.activationState === "applied"
++            ? "delivered"
++            : order.activationState === "needs_resolution"
++              ? "needs_resolution"
++              : "processing"
++          : null,
+       // The QR exists to be paid once: a paid (or terminal) order stops showing it.
+       checkout:
+         order.status === "pending" && order.checkoutPayload
+@@ -305,6 +331,32 @@ export function createPaymentService(deps: {
+     };
+   }
+ 
++  /**
++   * Retain one activation attempt's failure (BP03/#371): the reason word and, unless the verdict
++   * is a `needs_resolution` conflict (no retry is coming), the next pass's schedule. Best-effort
++   * on purpose — a store that cannot take this write is the same store the sweep's next pass
++   * reads through, and the retry itself is the recovery.
++   */
++  async function recordActivationFailureQuietly(
++    id: string,
++    reason: string,
++    activationState?: "failed" | "needs_resolution",
++  ): Promise<void> {
++    try {
++      await deps.store.recordActivationFailure({
++        id,
++        reason,
++        nextRetryAt:
++          activationState === "needs_resolution"
++            ? null
++            : new Date(now().getTime() + activationRetryDelayMs),
++        ...(activationState ? { activationState } : {}),
++      });
++    } catch {
++      // The order stays listed for the sweep; the next attempt rewrites the fact.
++    }
++  }
++
+   function withinLateWindow(order: PaymentOrderRecord, at: Date): boolean {
+     if (!order.terminalAt) return false;
+     return (
+@@ -362,21 +414,22 @@ export function createPaymentService(deps: {
+    * exactly once — the credit writer's insert-or-nothing against the unique index is the
+    * guarantee, the same shape the paid fact uses.
+    *
+-   * Answers whether the allowance is settled (granted, or rightly absent). `false` means the
+-   * payout has not landed, so the caller does NOT write `applied` and the sweep's next pass
+-   * re-runs the whole sequence — the subscription half is idempotent (read-before-create), the
+-   * grant half is idempotent (the key), so the retry converges. Writing `applied` over a failed
+-   * payout would strand the allowance with no sweeper ever looking at the order again.
++   * Answers why the allowance has NOT settled, or null when it has (granted, or rightly absent).
++   * A reason means the payout has not landed, so the caller does NOT write `applied` and the
++   * sweep's next pass re-runs the whole sequence — the subscription half is idempotent
++   * (read-before-create), the grant half is idempotent (the key), so the retry converges. Writing
++   * `applied` over a failed payout would strand the allowance with no sweeper ever looking at
++   * the order again.
+    */
+   async function grantPlanCreditsFor(
+     order: PaymentOrderRecord,
+-  ): Promise<boolean> {
++  ): Promise<string | null> {
+     const grantor = deps.grantor;
+-    if (!grantor) return true;
++    if (!grantor) return null;
+     const totalCents = grantor.creditsFor(order.planCode);
+     // A plan the catalog grants no credits to (or a zero allowance) grants nothing — not an
+     // error, not a warning: "this plan has no credit component" is a configured fact.
+-    if (totalCents === null || totalCents <= 0) return true;
++    if (totalCents === null || totalCents <= 0) return null;
+     /*
+      * THE recipient is the order's own owner (10.2/Q27/AC14): the payout lands in the account
+      * the order bound at creation, and nothing else names it — the delivery's bytes carry no
+@@ -408,7 +461,7 @@ export function createPaymentService(deps: {
+       log.warn(
+         `payments: plan credit payout for order ${order.id} withheld — the order has no billable owner (Q23); the sweep retries after attribution`,
+       );
+-      return false;
++      return "unowned_payout";
+     }
+     try {
+       // The expiry aligns to the provider's period end. Unknown period (provider refused the
+@@ -422,7 +475,7 @@ export function createPaymentService(deps: {
+         log.warn(
+           `payments: plan ${order.planCode} credits withheld on order ${order.id} — neither the provider's period nor the order's own period answered an expiry`,
+         );
+-        return false;
++        return "grant_no_period";
+       }
+       const { inserted } = await grantor.grantPlanCredits({
+         externalCustomerId: recipientKey,
+@@ -438,15 +491,15 @@ export function createPaymentService(deps: {
+           `payments: plan credit grant for order ${order.id} already recorded; nothing added`,
+         );
+       }
+-      return true;
++      return null;
+     } catch {
+       // The ledger refused: the subscription stands, but the allowance is not yet paid out.
+-      // `false` keeps the order out of `applied` so the sweep retries — the idempotency key is
+-      // what makes that retry safe.
++      // The reason keeps the order out of `applied` so the sweep retries — the idempotency key
++      // is what makes that retry safe.
+       log.warn(
+         `payments: plan credit grant for order ${order.id} failed; the activation retry re-runs it`,
+       );
+-      return false;
++      return "grant_write_failed";
+     }
+   }
+ 
+@@ -454,10 +507,10 @@ export function createPaymentService(deps: {
+    * 10.3: the subscription row carries the order's owner — the pair resolved from the
+    * persisted order (already duplicate-refused by `resolveActivationOwnership`), plus the
+    * period the order paid for: the provider's exact period when it answered one, the order's
+-   * own snapshot otherwise. Answers whether the stamp landed: `false` keeps the order out of
+-   * `applied` so the sweep's next pass re-runs the whole idempotent sequence (the grant key
+-   * and the stamp are both retry-safe); a stamp that moved nothing silently would let a
+-   * paid subscription sit unattributed forever.
++   * own snapshot otherwise. Answers why the stamp has NOT landed, or null when it has (or is
++   * rightly absent): a reason keeps the order out of `applied` so the sweep's next pass re-runs
++   * the whole idempotent sequence (the grant key and the stamp are both retry-safe); a stamp
++   * that moved nothing silently would let a paid subscription sit unattributed forever.
+    */
+   async function stampOwnershipFor(
+     order: PaymentOrderRecord,
+@@ -465,18 +518,18 @@ export function createPaymentService(deps: {
+       currentPeriodStart?: string | null;
+       currentPeriodEnd?: string | null;
+     },
+-  ): Promise<boolean> {
++  ): Promise<string | null> {
+     const stamp = deps.lago.stampSubscriptionOwnership;
+     if (!stamp) {
+       log.warn(
+         `payments: order ${order.id} activated without a subscription-ownership stamp seam; the projection row stays unattributed`,
+       );
+-      return true;
++      return null;
+     }
+     // A pre-attribution legacy order names nobody (Q23): the grant upstream already withheld
+     // its payout, so its activation never reaches this branch in practice.
+     const owner = order.ownerPayerRef;
+-    if (!owner) return true;
++    if (!owner) return null;
+     const period =
+       exactPeriodOf(subscription) ??
+       (order.periodStart && order.periodEnd
+@@ -486,7 +539,7 @@ export function createPaymentService(deps: {
+       log.warn(
+         `payments: order ${order.id} answered no period for the ownership stamp; the activation retry re-runs it`,
+       );
+-      return false;
++      return "stamp_no_period";
+     }
+     try {
+       const stamped = await stamp({
+@@ -500,31 +553,38 @@ export function createPaymentService(deps: {
+         log.warn(
+           `payments: ownership stamp for order ${order.id} found no subscription row; the activation retry re-runs it`,
+         );
++        return "stamp_missing";
+       }
+-      return stamped;
++      return null;
+     } catch {
+       log.warn(
+         `payments: ownership stamp for order ${order.id} failed; the activation retry re-runs it`,
+       );
+-      return false;
++      return "stamp_failed";
+     }
+   }
+ 
+   /**
+    * Activation: the reconciliation gate, then the subscription, then the credit payout, then the
+-   * cache drop. Unreachable keeps the order pending-activation for the next pass; everything
+-   * terminal writes `failed`. A re-run on an already-applied order writes nothing.
++   * cache drop. Unreachable keeps the order pending-activation for the next pass; every verdict
++   * that does not land retains its reason and next-retry schedule (BP03/#371). A DETERMINISTIC
++   * conflict — an entitlement another order already owns — lands in `needs_resolution` instead of
++   * an endless retry: the sweep stops listing it, the reader sees it unresolved, and the money
++   * facts and anomaly evidence stay untouched for the operator. A re-run on an already-applied
++   * order writes nothing.
+    */
+   async function activateOrder(
+     order: PaymentOrderRecord,
+-  ): Promise<"applied" | "failed" | "pending" | "duplicate"> {
++  ): Promise<"applied" | "failed" | "pending" | "needs_resolution"> {
+     if (order.activationState === "applied") return "applied";
++    if (order.activationState === "needs_resolution") return "needs_resolution";
+     let ownership: Awaited<
+       ReturnType<PaymentStore["resolveActivationOwnership"]>
+     >;
+     try {
+       ownership = await deps.store.resolveActivationOwnership(order.id);
+     } catch {
++      await recordActivationFailureQuietly(order.id, "ownership_unresolved");
+       return "pending";
+     }
+     if (ownership.outcome === "duplicate") {
+@@ -534,26 +594,49 @@ export function createPaymentService(deps: {
+         order.channelTransactionId ?? order.id,
+         order.amountCents,
+       );
+-      return "duplicate";
++      // The conflict is a fact about the data, not about a retry that has not happened yet:
++      // needs_resolution is the operator's queue (the anomaly above is its evidence), and no
++      // number of passes can make a second transaction the owner of a period already owned.
++      await recordActivationFailureQuietly(
++        order.id,
++        "duplicate_paid",
++        "needs_resolution",
++      );
++      return "needs_resolution";
++    }
++    if (ownership.outcome !== "owner") {
++      await recordActivationFailureQuietly(order.id, "ownership_unresolved");
++      return "pending";
+     }
+-    if (ownership.outcome !== "owner") return "pending";
+     order = ownership.order;
+     try {
+       const plan = await deps.lago.getPlan(order.planCode);
+       if (!plan.found) {
+-        await deps.store.recordActivation(order.id, "failed");
++        await recordActivationFailureQuietly(
++          order.id,
++          "plan_not_found",
++          "failed",
++        );
+         return "failed";
+       }
+       // The interval is the wire's word, compared as a string: the activation below creates a
+       // monthly subscription, and a plan billed any other way is a mismatch worth refusing —
+       // with no override, ever.
+       if (plan.interval !== "monthly") {
+-        await deps.store.recordActivation(order.id, "failed");
++        await recordActivationFailureQuietly(
++          order.id,
++          "plan_interval_mismatch",
++          "failed",
++        );
+         return "failed";
+       }
+       if (plan.currency !== "CNY") {
+         if (!deps.acceptForeignCurrency) {
+-          await deps.store.recordActivation(order.id, "failed");
++          await recordActivationFailureQuietly(
++            order.id,
++            "plan_currency_mismatch",
++            "failed",
++          );
+           return "failed";
+         }
+         log.warn(
+@@ -569,11 +652,19 @@ export function createPaymentService(deps: {
+       // Granted here — after `ensureSubscription` (no allowance without the entitlement it
+       // belongs to) and before `recordActivation(applied)` (a payout that has not landed leaves
+       // the activation un-applied, so the sweep's next pass retries it).
+-      if (!(await grantPlanCreditsFor(order))) return "pending";
++      const grantFailure = await grantPlanCreditsFor(order);
++      if (grantFailure) {
++        await recordActivationFailureQuietly(order.id, grantFailure);
++        return "pending";
++      }
+       // The subscription row now carries the order's owner (10.3): stamped after the payout
+       // (the allowance and the row name the same account) and before `applied`, so a stamp
+       // that did not land is retried by the sweep like every other un-applied half.
+-      if (!(await stampOwnershipFor(order, subscription))) return "pending";
++      const stampFailure = await stampOwnershipFor(order, subscription);
++      if (stampFailure) {
++        await recordActivationFailureQuietly(order.id, stampFailure);
++        return "pending";
++      }
+       deps.invalidateEntitlementCache();
+       await deps.store.recordActivation(
+         order.id,
+@@ -585,9 +676,14 @@ export function createPaymentService(deps: {
+       if (error instanceof BillingError && error.retryable) {
+         // The provider could not be reached: activation stays pending and the next pass (poll,
+         // callback replay, sweep) retries it. Writing `failed` here would strand a paid order.
++        await recordActivationFailureQuietly(order.id, "provider_unreachable");
+         return "pending";
+       }
+-      await deps.store.recordActivation(order.id, "failed").catch(() => {});
++      await recordActivationFailureQuietly(
++        order.id,
++        "activation_error",
++        "failed",
++      );
+       return "failed";
+     }
+   }
+@@ -1177,14 +1273,17 @@ export function createPaymentService(deps: {
+         try {
+           const outcome = await activateOrder(order);
+           /*
+-           * The exhaustion alarm (T5-2): a `failed` verdict is no longer terminal (the store
+-           * pass retries both pending AND failed — P1-4), but a paid order failing the SAME
+-           * gate for days is a fact an operator needs to see. After ACTIVATION_ALARM_AFTER
+-           * consecutive failed verdicts, one anomaly row names the order; the (order_id,
+-           * code) business key keeps it one row however long the order stays stuck, and a
+-           * success clears the counter.
++           * The exhaustion alarm (T5-2, widened by BP03/#371): a paid order whose activation
++           * has not LANDED — a rule refusal (`failed`, retried per P1-4 because the rule can
++           * change) or a transient verdict (`pending`: provider unreachable, ledger refusing)
++           * — pass after pass is a fact an operator needs to see. After ACTIVATION_ALARM_AFTER
++           * consecutive not-landed verdicts, one anomaly row names the order; the (order_id,
++           * code) business key keeps it one row however long the order stays stuck, and any
++           * settled or escalated verdict clears the counter. `needs_resolution` orders never
++           * reach here at all — the store pass no longer lists them, and their conflict
++           * already wrote its own evidence.
+            */
+-          if (outcome === "failed") {
++          if (outcome === "failed" || outcome === "pending") {
+             const strikes = activationStrikes.get(order.id) ?? 0;
+             const next = strikes + 1;
+             activationStrikes.set(order.id, next);
+@@ -1194,7 +1293,7 @@ export function createPaymentService(deps: {
+                 code: "activation_retry_exhausted",
+                 channelTransactionId: order.channelTransactionId,
+                 amountCents: order.amountCents,
+-                detail: `activation refused ${next} passes in a row (plan ${order.planCode}); money collected, entitlement not landing — needs an operator`,
++                detail: `activation has not landed in ${next} passes in a row (plan ${order.planCode}, last reason ${order.activationFailureReason ?? "unknown"}); money collected, entitlement not landing — needs an operator`,
+               });
+             }
+           } else {
+diff --git a/server/src/billing/payments/store.ts b/server/src/billing/payments/store.ts
+index e9572544..6848f295 100644
+--- a/server/src/billing/payments/store.ts
++++ b/server/src/billing/payments/store.ts
+@@ -38,7 +38,11 @@ const ID_COLLISION_RETRIES = 5;
+ const DEPLOYMENT_SCOPE = "default";
+ 
+ /** The owner kinds an order may legally carry; `unknown_owner` is deliberately absent. */
+-const OWNABLE_PAYER_KINDS = new Set(["personal", "company", "legacy_deployment"]);
++const OWNABLE_PAYER_KINDS = new Set([
++  "personal",
++  "company",
++  "legacy_deployment",
++]);
+ 
+ /**
+  * Validate the owner a caller binds to a NEW order, as a last line behind the service's
+@@ -86,6 +90,8 @@ function rowOf(order: typeof paymentOrders.$inferSelect): PaymentOrderRecord {
+     currency: order.currency,
+     status: order.status,
+     activationState: order.activationState,
++    activationFailureReason: order.activationFailureReason,
++    activationNextRetryAt: order.activationNextRetryAt,
+     channelTransactionId: order.channelTransactionId,
+     checkoutPayload: order.checkoutPayload,
+     expiresAt: order.expiresAt,
+@@ -109,6 +115,8 @@ type PaymentOrderLockedRow = {
+   currency: string;
+   status: PaymentOrderStatus;
+   activationState: PaymentOrderRecord["activationState"];
++  activationFailureReason: string | null;
++  activationNextRetryAt: Date | null;
+   channelTransactionId: string | null;
+   checkoutPayload: string | null;
+   expiresAt: Date;
+@@ -132,6 +140,8 @@ function lockedRowOf(row: PaymentOrderLockedRow): PaymentOrderRecord {
+     currency: row.currency,
+     status: row.status,
+     activationState: row.activationState,
++    activationFailureReason: row.activationFailureReason,
++    activationNextRetryAt: row.activationNextRetryAt,
+     channelTransactionId: row.channelTransactionId,
+     checkoutPayload: row.checkoutPayload,
+     expiresAt: row.expiresAt,
+@@ -598,6 +608,11 @@ export function createPaymentStore(database: Database): PaymentStore {
+         .update(paymentOrders)
+         .set({
+           activationState,
++          // A landed activation has no outstanding failure: the retained reason and retry
++          // schedule clear with the verdict that settles them (BP03/#371).
++          ...(activationState === "applied"
++            ? { activationFailureReason: null, activationNextRetryAt: null }
++            : {}),
+           ...(period
+             ? { periodStart: period.start, periodEnd: period.end }
+             : {}),
+@@ -605,6 +620,19 @@ export function createPaymentStore(database: Database): PaymentStore {
+         .where(eq(paymentOrders.id, id));
+     },
+ 
++    async recordActivationFailure(input) {
++      await database
++        .update(paymentOrders)
++        .set({
++          activationFailureReason: input.reason,
++          activationNextRetryAt: input.nextRetryAt,
++          ...(input.activationState
++            ? { activationState: input.activationState }
++            : {}),
++        })
++        .where(eq(paymentOrders.id, input.id));
++    },
++
+     async resolveActivationOwnership(orderId) {
+       return database.transaction(async (tx) => {
+         const [anchor] = await tx
+@@ -628,6 +656,8 @@ export function createPaymentStore(database: Database): PaymentStore {
+             "currency",
+             "status",
+             "activation_state" as "activationState",
++            "activation_failure_reason" as "activationFailureReason",
++            "activation_next_retry_at" as "activationNextRetryAt",
+             "channel_transaction_id" as "channelTransactionId",
+             "checkout_payload" as "checkoutPayload",
+             "expires_at" as "expiresAt",
+@@ -661,7 +691,15 @@ export function createPaymentStore(database: Database): PaymentStore {
+         if (!current) return { outcome: "unknown" as const };
+ 
+         const existingOwner = [...lockedOrders]
+-          .filter((row) => row.activationState !== "pending")
++          .filter(
++            // An owner is a row that CLAIMED the period (`failed` — claimed, landing — or
++            // `applied` — landed). A `needs_resolution` row is a resolved DUPLICATE, never an
++            // owner: counting it here would hand a second transaction the entitlement it was
++            // refused (BP03/#371).
++            (row) =>
++              row.activationState === "applied" ||
++              row.activationState === "failed",
++          )
+           .sort(byClaimedOwner)[0];
+         if (existingOwner) {
+           if (existingOwner.id === current.id) {
+@@ -706,6 +744,12 @@ export function createPaymentStore(database: Database): PaymentStore {
+         if (fresh?.status !== "paid") {
+           return { outcome: "unknown" as const };
+         }
++        // A needs_resolution row reading as the overlap winner is a stale-read artifact (another
++        // pass already resolved this order as a duplicate): it is not an owner, and "unknown"
++        // leaves it exactly where the verdict put it.
++        if (fresh.activationState === "needs_resolution") {
++          return { outcome: "unknown" as const };
++        }
+         return { outcome: "owner" as const, order: rowOf(fresh) };
+       });
+     },
+diff --git a/server/src/billing/payments/types.ts b/server/src/billing/payments/types.ts
+index 6c1bacb6..5e6551cf 100644
+--- a/server/src/billing/payments/types.ts
++++ b/server/src/billing/payments/types.ts
+@@ -28,8 +28,32 @@ export type PaymentOrderStatus =
+  * `failed` is the durable "owner claimed, not yet landed" state as well as "last activation
+  * attempt failed": once a paid order wins an overlapping entitlement period, it leaves `pending`
+  * before any external side effect so later overlapping collections can no longer steal ownership.
++ *
++ * `needs_resolution` (BP03/#371) is the deterministic-conflict verdict: an overlapping
++ * entitlement another order already owns, or any conflict retrying cannot resolve. It is the
++ * operator's queue, not the sweep's — the activation pass no longer lists it, and it is never
++ * "delivered". Money facts and anomalies stay untouched underneath it.
++ */
++export type PaymentActivationState =
++  | "pending"
++  | "applied"
++  | "failed"
++  | "needs_resolution";
++
++/**
++ * The fulfillment progress a PAID order shows its reader (spec: 收款状态与交付状态独立 —
++ * "已付款，权益处理中" is a different sentence from "支付成功"). Null while no money landed:
++ * a pending, blocked, expired or canceled order owes no delivery and says so by absence.
++ *
++ * `processing` covers everything the sweep is still converging (`pending`/`failed` activation —
++ * a failed rule verdict is the last pass's fact, not a terminal one); `delivered` means the
++ * subscription AND the period's grant both landed; `needs_resolution` is the deterministic
++ * conflict waiting for an operator.
+  */
+-export type PaymentActivationState = "pending" | "applied" | "failed";
++export type PaymentFulfillmentState =
++  | "processing"
++  | "delivered"
++  | "needs_resolution";
+ 
+ /** The two channels v1 collects through. */
+ export type PaymentProviderId = "alipay" | "wechat";
+@@ -68,6 +92,20 @@ export type PaymentOrder = {
+   currency: string;
+   status: PaymentOrderStatus;
+   activationState: PaymentActivationState;
++  /**
++   * Why the last activation attempt did not land, in one stable word (BP03/#371: 每次失败保留
++   * 原因) — `grant_write_failed`, `provider_unreachable`, `duplicate_paid`, the refusal rule's
++   * name, … Null on an order that never failed or whose activation has since landed.
++   */
++  activationFailureReason: string | null;
++  /**
++   * When the sweep's next activation pass runs for this order: the failure's retained retry
++   * schedule (spec: 每次失败保留…下一次重试时间). The sweep's fixed interval IS the scheduler —
++   * this column is the recorded fact of when that next pass lands, rewritten on every failed
++   * attempt and cleared when activation lands. Null on `needs_resolution` (no retry is coming)
++   * and on applied orders.
++   */
++  activationNextRetryAt: Date | null;
+   /** The channel's transaction id, once seen; the idempotency key across replays. */
+   channelTransactionId: string | null;
+   /** When the QR code stops being payable. */
+@@ -116,6 +154,8 @@ export type PaymentOrderView = {
+   currency: string;
+   status: PaymentOrderStatus;
+   activationState: PaymentActivationState;
++  /** The user-facing delivery progress — null unless money landed (see PaymentFulfillmentState). */
++  fulfillmentState: PaymentFulfillmentState | null;
+   checkout: PaymentCheckout | null;
+   expiresAt: string;
+   periodEnd: string | null;
+@@ -307,12 +347,30 @@ export type PaymentStore = {
+     channelTransactionId: string;
+     amountCents: number;
+   }): Promise<boolean>;
+-  /** Record an activation outcome on a paid order (applied / failed). */
++  /**
++   * Record the activation's landing: `applied` plus the provider's exact period, which also
++   * CLEARS the retained failure columns — a landed activation has no outstanding failure.
++   */
+   recordActivation(
+     id: string,
+-    activationState: PaymentActivationState,
++    activationState: "applied",
+     period?: { start: Date; end: Date } | null,
+   ): Promise<void>;
++  /**
++   * Record one activation attempt that did not land (BP03/#371). The failure `reason` (one
++   * stable word) and the `nextRetryAt` schedule persist on the order row so a paid-but-undelivered
++   * order can say why it is processing and when the next pass runs. `activationState` moves the
++   * state only for verdicts that own it: `"failed"` (a rule refusal the sweep will retry — P1-4)
++   * or `"needs_resolution"` (a deterministic conflict no retry can settle, e.g. an entitlement
++   * another order already owns); omitted leaves the state as it stands, which is the transient
++   * verdict's contract.
++   */
++  recordActivationFailure(input: {
++    id: string;
++    reason: string;
++    nextRetryAt: Date | null;
++    activationState?: "failed" | "needs_resolution";
++  }): Promise<void>;
+   /**
+    * Resolve and DURABLY claim which overlapping paid order owns the entitlement period, under row
+    * locks at the database boundary. When no owner exists yet, the deterministic winner leaves
+diff --git a/server/src/billing/reconcile.ts b/server/src/billing/reconcile.ts
+index 65cc7787..8dc1b7c9 100644
+--- a/server/src/billing/reconcile.ts
++++ b/server/src/billing/reconcile.ts
+@@ -7,7 +7,7 @@ import {
+ } from "../db/schema/credit-reservations";
+ import { creditGrants, creditLedger } from "../db/schema/credits";
+ import { paymentEvents, paymentOrders } from "../db/schema/payment";
+-import { payerKey, type PayerKind } from "./payer";
++import { type PayerKind, payerKey } from "./payer";
+ import type { PaymentOrderRecord } from "./payments/types";
+ import type { ReconcileFinding, ReconcileReport } from "./types";
+ import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./types";
+@@ -306,6 +306,12 @@ export function createReconciler(
+           planGrants.map((grant) => [grant.idempotencyKey, grant]),
+         );
+         for (const order of paidOrders) {
++          // A `needs_resolution` order (BP03/#371) is an escalated deterministic conflict —
++          // an entitlement another order already owns. It must NOT carry a grant (paying the
++          // allowance twice is exactly what the conflict means), and it already has its own
++          // finding below (duplicate_paid_order). Auditing it here would flag the correct
++          // state as drift.
++          if (order.activationState === "needs_resolution") continue;
+           const expected = expectedPlanCredits(order.planCode);
+           if (expected === null || expected <= 0) continue;
+           const key = `plan:${order.id}`;
+@@ -456,11 +462,11 @@ export function createReconciler(
+       /*
+        * The projection ask is PER OWNER ACCOUNT (10.3, AC14): one account's live row must not
+        * mask another account's lost entitlement, so an owned order is satisfied only by a live
+- *    row carrying its own owner pair — and only while its paid window is still running (an
+- *    expired order is history; a later repurchase legitimately re-stamps the one row to the
+- *    new owner). Orders written before ownership existed have no account to compare against
+- *    (Q23 forbids guessing one): they keep the deployment-wide membership the check was
+- *    born with, reported once per order so the report can be worked row by row.
++       *    row carrying its own owner pair — and only while its paid window is still running (an
++       *    expired order is history; a later repurchase legitimately re-stamps the one row to the
++       *    new owner). Orders written before ownership existed have no account to compare against
++       *    (Q23 forbids guessing one): they keep the deployment-wide membership the check was
++       *    born with, reported once per order so the report can be worked row by row.
+        */
+       const liveOwnerPairs = new Set<string>();
+       for (const row of liveSubscriptions) {
+@@ -474,9 +480,7 @@ export function createReconciler(
+             order.periodEnd !== null && order.periodEnd.getTime() > nowMs;
+           if (!withinPaidPeriod) continue;
+           if (
+-            !liveOwnerPairs.has(
+-              `${order.ownerPayerKind}:${order.ownerPayerId}`,
+-            )
++            !liveOwnerPairs.has(`${order.ownerPayerKind}:${order.ownerPayerId}`)
+           ) {
+             findings.push({
+               category: "payment",
+diff --git a/server/src/db/schema/payment.ts b/server/src/db/schema/payment.ts
+index ac4a2b34..4e806036 100644
+--- a/server/src/db/schema/payment.ts
++++ b/server/src/db/schema/payment.ts
+@@ -8,12 +8,12 @@ import {
+   timestamp,
+   uniqueIndex,
+ } from "drizzle-orm/pg-core";
++import type { PayerKind } from "../../billing/payer";
+ import type {
+   PaymentActivationState,
+   PaymentOrderStatus,
+   PaymentProviderId,
+ } from "../../billing/payments/types";
+-import type { PayerKind } from "../../billing/payer";
+ 
+ /**
+  * One local payment order, keyed by the out-trade number this deployment generated (`po-` plus
+@@ -54,6 +54,21 @@ export const paymentOrders = pgTable(
+       .$type<PaymentActivationState>()
+       .notNull()
+       .default("pending"),
++    /**
++     * Why the last activation attempt did not land, one stable word (BP03/#371: 每次失败保留
++     * 原因) — `grant_write_failed`, `provider_unreachable`, `duplicate_paid`, the refusal rule's
++     * name. Cleared when activation lands; never overwritten by a money transition.
++     */
++    activationFailureReason: text("activation_failure_reason"),
++    /**
++     * The retained next-retry schedule (spec: …和下一次重试时间): when the sweep's next
++     * activation pass runs. The sweep interval is the scheduler — this column is the recorded
++     * fact, rewritten per failed attempt, null when no retry is coming (needs_resolution) or
++     * the activation landed.
++     */
++    activationNextRetryAt: timestamp("activation_next_retry_at", {
++      withTimezone: true,
++    }),
+     channelTransactionId: text("channel_transaction_id"),
+     /** The checkout artifact (QR payload), echoed only to the order's creator. */
+     checkoutPayload: text("checkout_payload"),
+@@ -85,20 +100,14 @@ export const paymentOrders = pgTable(
+     ),
+     check(
+       "payment_orders_activation_state_check",
+-      sql`${table.activationState} IN ('pending', 'applied', 'failed')`,
++      sql`${table.activationState} IN ('pending', 'applied', 'failed', 'needs_resolution')`,
+     ),
+     check(
+       "payment_orders_provider_check",
+       sql`${table.provider} IN ('alipay', 'wechat')`,
+     ),
+-    check(
+-      "payment_orders_amount_check",
+-      sql`${table.amountCents} > 0`,
+-    ),
+-    check(
+-      "payment_orders_currency_check",
+-      sql`${table.currency} = 'CNY'`,
+-    ),
++    check("payment_orders_amount_check", sql`${table.amountCents} > 0`),
++    check("payment_orders_currency_check", sql`${table.currency} = 'CNY'`),
+     // The owner pair moves together: a half-written owner is a bug, not a state.
+     check(
+       "payment_orders_owner_pair_check",
+@@ -123,9 +132,15 @@ export const paymentOrders = pgTable(
+       .on(table.deploymentScope)
+       .where(sql`${table.status} = 'pending'`),
+     // The sweeper's query-first pass reads exactly this.
+-    index("payment_orders_status_expires_idx").on(table.status, table.expiresAt),
++    index("payment_orders_status_expires_idx").on(
++      table.status,
++      table.expiresAt,
++    ),
+     // The owner-scoped reads (a person's order list, the statement window) filter on exactly this.
+-    index("payment_orders_owner_idx").on(table.ownerPayerId, table.ownerPayerKind),
++    index("payment_orders_owner_idx").on(
++      table.ownerPayerId,
++      table.ownerPayerKind,
++    ),
+   ],
+ );
+ 
+@@ -161,7 +176,10 @@ export const paymentEvents = pgTable(
+       .defaultNow(),
+   },
+   (table) => [
+-    check("payment_events_kind_check", sql`${table.kind} IN ('fact', 'anomaly')`),
++    check(
++      "payment_events_kind_check",
++      sql`${table.kind} IN ('fact', 'anomaly')`,
++    ),
+     // THE idempotency key: one paid fact per channel transaction, across all orders. `ON CONFLICT
+     // DO NOTHING` against this index answers a replay, and the insert that wins the race is the
+     // one whose order transition also won its CAS — the two live in one transaction.
+diff --git a/server/tests/billing-period-fulfillment.integration.test.ts b/server/tests/billing-period-fulfillment.integration.test.ts
+new file mode 100644
+index 00000000..e672c715
+--- /dev/null
++++ b/server/tests/billing-period-fulfillment.integration.test.ts
+@@ -0,0 +1,349 @@
++import { randomUUID } from "node:crypto";
++import { eq, like } from "drizzle-orm";
++import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
++import { createCreditWriter } from "../src/billing/credits-writer";
++import { createPayerAccount, payerKey } from "../src/billing/payer";
++import { createPaymentService } from "../src/billing/payments/service";
++import { createPaymentStore } from "../src/billing/payments/store";
++import { createReconciler } from "../src/billing/reconcile";
++import { createBillingStore } from "../src/billing/store";
++import { createDatabase } from "../src/db/client";
++import {
++  billingCustomers,
++  billingSubscriptions,
++  payerAccounts,
++} from "../src/db/schema/billing";
++import { creditGrants } from "../src/db/schema/credits";
++import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
++import { TEST_POOL, testDatabaseUrl } from "./support/database";
++
++/*
++ * BP03 (#371) against a real PostgreSQL: the paid order's fulfillment — subscription activation
++ * and the period's credit grant — split into idempotent halves that survive a partial failure
++ * and recover by patching only what is missing. The store, the credit writer, the ownership
++ * stamp and the reconciler are the production objects; only the provider (Lago) is a facade
++ * double, because the period facts it answers are this test's inputs, not its subject.
++ *
++ * The delivery-complete verdict is then audited from the durable rows themselves (grant keyed
++ * `plan:<orderId>`, subscription stamped with the order's owner), and a deterministic conflict
++ * (a second paid order overlapping an owned entitlement) lands in `needs_resolution` with its
++ * duplicate evidence — out of the sweep's retry list, never marked delivered.
++ */
++
++const database = createDatabase(testDatabaseUrl(), TEST_POOL);
++const paymentStore = createPaymentStore(database);
++const creditWriter = createCreditWriter(database);
++const billingStore = createBillingStore(database);
++
++const prefix = `bp371-${randomUUID().slice(0, 8)}`;
++/** This run's deployment identity: the customer/subscription/grant keys all derive from it. */
++const deploymentKey = `openbot-deployment-${prefix}`;
++/** The payer the orders bind: a personal account created through the real payer module. */
++const payer = { kind: "personal" as const, id: prefix };
++const ownerKey = payerKey(payer);
++
++const PERIOD_START = new Date("2026-10-01T00:00:00.000Z");
++const PERIOD_END = new Date("2026-11-01T00:00:00.000Z");
++const PLAN_CREDITS_SCALED = 900_000; // 900 credits × CREDIT_SCALE
++
++/** The Lago facade double: the plan gates pass, the provider answers an exact period — the
++ * scenario's own, one deployment one current period, exactly the shape a real subscription
++ * answers — and the ownership stamp is the REAL projection write (the thing being recovered
++ * idempotently). */
++function fakeLago(period: { start: Date; end: Date }) {
++  const subscriptionId = `${deploymentKey}-pro`;
++  return {
++    subscriptionId,
++    async getPlan() {
++      return { found: true, interval: "monthly", currency: "CNY" };
++    },
++    async ensureSubscription() {
++      return {
++        currentPeriodStart: period.start.toISOString(),
++        currentPeriodEnd: period.end.toISOString(),
++      };
++    },
++    stampSubscriptionOwnership:
++      billingStore.stampSubscriptionOwnership.bind(billingStore),
++  };
++}
++
++/** The plan allowance's payout over the real credit writer, keyed `plan:<orderId>` exactly the
++ * way the production assembly in src/index.ts wires it. */
++function grantor(options: { failFirstGrant?: boolean; periodEnd?: Date } = {}) {
++  const state = { failedOnce: false, grants: 0 };
++  return {
++    state,
++    creditsFor: (planCode: string) =>
++      planCode === "pro" ? PLAN_CREDITS_SCALED : null,
++    async grantPlanCredits(input: {
++      externalCustomerId: string;
++      planCode: string;
++      orderId: string;
++      totalCents: number;
++      expiresAt: Date | null;
++    }) {
++      if (options.failFirstGrant && !state.failedOnce) {
++        state.failedOnce = true;
++        throw new Error("ledger down (first attempt)");
++      }
++      if (input.expiresAt === null) return { inserted: false };
++      const result = await creditWriter.grantCredits({
++        externalCustomerId: input.externalCustomerId,
++        source: "plan",
++        totalCents: input.totalCents,
++        expiresAt: input.expiresAt,
++        reason: `plan allowance · ${input.planCode} · order ${input.orderId}`,
++        idempotencyKey: `plan:${input.orderId}`,
++      });
++      state.grants += 1;
++      return { inserted: result.inserted };
++    },
++    async readCurrentPeriodEnd() {
++      return options.periodEnd ?? PERIOD_END;
++    },
++  };
++}
++
++function buildService(deps: {
++  grantor: ReturnType<typeof grantor>;
++  period: { start: Date; end: Date };
++}) {
++  return createPaymentService({
++    providers: new Map(),
++    store: paymentStore,
++    catalog: new Map([
++      ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
++    ]),
++    notifyBaseUrl: "https://payments.openbot.example",
++    orderTtlMinutes: 15,
++    latePaymentWindowHours: 24,
++    acceptForeignCurrency: false,
++    lago: fakeLago(deps.period),
++    externalCustomerKey: deploymentKey,
++    activePlanCode: async () => null,
++    invalidateEntitlementCache: () => undefined,
++    grantor: deps.grantor,
++  });
++}
++
++/** One paid order on the personal payer, through the real store's confirm transaction. The
++ * period is the caller's: sequential repurchases (the reconcile test's backdrop) and an
++ * overlapping challenger (the conflict test's subject) differ only in this. */
++async function paidOrder(
++  transactionId: string,
++  period: { start: Date; end: Date } = {
++    start: PERIOD_START,
++    end: PERIOD_END,
++  },
++) {
++  const { order } = await paymentStore.insertOrder({
++    planCode: "pro",
++    provider: "alipay",
++    amountCents: 8800,
++    currency: "CNY",
++    expiresAt: new Date(Date.now() + 15 * 60_000),
++    createdBy: prefix,
++    ownerPayerRef: payer,
++    checkoutPayload: null,
++  });
++  const confirmed = await paymentStore.confirmPaid({
++    id: order.id,
++    expectedVersion: order.version,
++    fromStatuses: ["pending"],
++    channelTransactionId: transactionId,
++    amountCents: 8800,
++    periodStart: period.start,
++    periodEnd: period.end,
++  });
++  expect(confirmed.claimed).toBe(true);
++  return order.id;
++}
++
++const MONTH = 30 * 24 * 3600_000;
++
++afterAll(async () => {
++  await database
++    .delete(paymentOrders)
++    .where(eq(paymentOrders.createdBy, prefix));
++  await database.delete(payerAccounts).where(eq(payerAccounts.payerId, prefix));
++  await database
++    .delete(creditGrants)
++    .where(like(creditGrants.externalCustomerId, `%${prefix}%`));
++  await database
++    .delete(billingSubscriptions)
++    .where(like(billingSubscriptions.externalCustomerId, `%${prefix}%`));
++  await database
++    .delete(billingCustomers)
++    .where(like(billingCustomers.externalId, `%${prefix}%`));
++  await database.$client.close();
++});
++
++test("AC1: Lago landed, the grant write failed — the retry patches only the grant half", async () => {
++  await createPayerAccount(database, payer);
++  await billingStore.ensureCustomerRow({ externalId: deploymentKey });
++  await billingStore.upsertSubscription({
++    externalCustomerId: deploymentKey,
++    externalSubscriptionId: `${deploymentKey}-pro`,
++    planCode: "pro",
++    status: "active",
++  });
++  const orderId = await paidOrder(`tx-${prefix}-1`);
++
++  // First pass: the ledger refuses. The order stays paid-but-not-delivered, and the failure
++  // is retained on the row — the reason word and the next pass's schedule.
++  const interrupted = buildService({
++    grantor: grantor({ failFirstGrant: true }),
++    period: { start: PERIOD_START, end: PERIOD_END },
++  });
++  await interrupted.sweepActivations();
++  const stuck = await paymentStore.readOrder(orderId);
++  expect(stuck?.status).toBe("paid");
++  expect(stuck?.activationState).not.toBe("applied");
++  expect(stuck?.activationFailureReason).toBe("grant_write_failed");
++  expect(stuck?.activationNextRetryAt).not.toBeNull();
++
++  // What the user reads meanwhile: money landed, the entitlement is still processing.
++  const view = await interrupted.readOrder(orderId, { actorPayerRef: payer });
++  expect(view.order?.fulfillmentState).toBe("processing");
++
++  // The paid fact is already durable — the recovery never re-confirms money.
++  const facts = await database
++    .select()
++    .from(paymentEvents)
++    .where(eq(paymentEvents.orderId, orderId));
++  expect(facts.filter((row) => row.kind === "fact")).toHaveLength(1);
++
++  // Second pass: only the missing half is patched. Exactly one grant row exists afterwards,
++  // in the order owner's account, expiring with the provider's period — never indefinite.
++  const recovering = buildService({
++    grantor: grantor(),
++    period: { start: PERIOD_START, end: PERIOD_END },
++  });
++  await recovering.sweepActivations();
++  const settled = await paymentStore.readOrder(orderId);
++  expect(settled?.activationState).toBe("applied");
++  expect(settled?.activationFailureReason).toBeNull();
++  expect(settled?.activationNextRetryAt).toBeNull();
++
++  const grants = await database
++    .select()
++    .from(creditGrants)
++    .where(eq(creditGrants.idempotencyKey, `plan:${orderId}`));
++  expect(grants).toHaveLength(1);
++  expect(grants[0]?.externalCustomerId).toBe(ownerKey);
++  expect(grants[0]?.total).toBe(PLAN_CREDITS_SCALED);
++  expect(grants[0]?.source).toBe("plan");
++  expect(grants[0]?.expiresAt.getTime()).toBe(PERIOD_END.getTime());
++
++  // The subscription projection carries the order's owner and the paid period (10.3): the
++  // delivery's other half, stamped durably.
++  const [subscription] = await database
++    .select()
++    .from(billingSubscriptions)
++    .where(
++      eq(billingSubscriptions.externalSubscriptionId, `${deploymentKey}-pro`),
++    );
++  expect(subscription?.ownerPayerKind).toBe("personal");
++  expect(subscription?.ownerPayerId).toBe(prefix);
++  expect(subscription?.allowancePeriodStart?.getTime()).toBe(
++    PERIOD_START.getTime(),
++  );
++  expect(subscription?.allowancePeriodEnd?.getTime()).toBe(
++    PERIOD_END.getTime(),
++  );
++
++  // A third pass and a replayed settle change nothing: one grant, one paid fact, delivered.
++  await recovering.sweepActivations();
++  const after = await database
++    .select()
++    .from(creditGrants)
++    .where(eq(creditGrants.idempotencyKey, `plan:${orderId}`));
++  expect(after).toHaveLength(1);
++  const finalView = await recovering.readOrder(orderId, {
++    actorPayerRef: payer,
++  });
++  expect(finalView.order?.fulfillmentState).toBe("delivered");
++});
++
++test("AC2: a second paid order overlapping the owned entitlement lands in needs_resolution, with evidence and no retry", async () => {
++  // A LATER billing period than AC1's order (sequential repurchases are legitimate), with the
++  // challenger starting one day into it: the two overlap each other, and only each other.
++  const later = {
++    start: new Date(PERIOD_START.getTime() + 2 * MONTH),
++    end: new Date(PERIOD_END.getTime() + 2 * MONTH),
++  };
++  const ownerOrderId = await paidOrder(`tx-${prefix}-owner`, later);
++  const challengerOrderId = await paidOrder(`tx-${prefix}-challenger`, {
++    start: new Date(later.start.getTime() + 24 * 3600_000),
++    end: later.end,
++  });
++
++  const service = buildService({
++    grantor: grantor({ periodEnd: later.end }),
++    period: later,
++  });
++  await service.sweepActivations();
++  await service.sweepActivations();
++
++  const owner = await paymentStore.readOrder(ownerOrderId);
++  expect(owner?.activationState).toBe("applied");
++
++  const challenger = await paymentStore.readOrder(challengerOrderId);
++  expect(challenger?.status).toBe("paid");
++  expect(challenger?.activationState).toBe("needs_resolution");
++  expect(challenger?.activationFailureReason).toBe("duplicate_paid");
++  expect(challenger?.activationNextRetryAt).toBeNull();
++  // The conflict's money facts stay: the challenger's paid fact was never undone.
++  const challengerFacts = await database
++    .select()
++    .from(paymentEvents)
++    .where(eq(paymentEvents.orderId, challengerOrderId));
++  expect(challengerFacts.filter((row) => row.kind === "fact")).toHaveLength(1);
++  // And no allowance was minted for a period another order owns.
++  const challengerGrants = await database
++    .select()
++    .from(creditGrants)
++    .where(eq(creditGrants.idempotencyKey, `plan:${challengerOrderId}`));
++  expect(challengerGrants).toHaveLength(0);
++  // The user-facing state says unresolved, not processing and never delivered.
++  const view = await service.readOrder(challengerOrderId, {
++    actorPayerRef: payer,
++  });
++  expect(view.order?.fulfillmentState).toBe("needs_resolution");
++
++  // The sweep's retry list no longer holds it (the store's list is the contract).
++  const listed = await paymentStore.listPaidPendingActivationOrders(100);
++  expect(listed.some((row) => row.id === challengerOrderId)).toBe(false);
++});
++
++test("AC2/对账: the reconciler's evidence covers both halves and the conflict", async () => {
++  const reconciler = createReconciler(database, deploymentKey, (planCode) =>
++    planCode === "pro" ? PLAN_CREDITS_SCALED : null,
++  );
++  const report = await reconciler.reconcile();
++  // Only this run's rows are this test's subject; other runs' leftovers clean up after
++  // themselves the same way this one does.
++  const mine = report.findings.filter((finding) =>
++    `${finding.subject} ${finding.detail}`.includes(prefix),
++  );
++  // Both halves of every applied order are present (no plan_grant_missing, no
++  // applied_without_subscription, no activation_backlog for THIS run's orders) — the
++  // delivered verdict stands on durable evidence, not on a function's return.
++  const halfFindings = mine.filter((finding) =>
++    [
++      "plan_grant_missing",
++      "plan_grant_owner_mismatch",
++      "plan_grant_amount_mismatch",
++      "applied_without_subscription",
++      "activation_backlog",
++    ].includes(finding.code),
++  );
++  expect(halfFindings).toHaveLength(0);
++  // The deterministic conflict is the one finding this scenario is expected to leave: the
++  // duplicate paid order, named, for the operator's queue.
++  const duplicates = mine.filter(
++    (finding) => finding.code === "duplicate_paid_order",
++  );
++  expect(duplicates).toHaveLength(1);
++});
+diff --git a/server/tests/payment-service.test.ts b/server/tests/payment-service.test.ts
+index 4693a9ea..bff6a529 100644
+--- a/server/tests/payment-service.test.ts
++++ b/server/tests/payment-service.test.ts
+@@ -1,5 +1,5 @@
+-import { describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
+ import { getLogger } from "../../shared/logger";
++import { describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
+ import type { PaymentProvider } from "../src/billing/payments/provider";
+ import {
+   createPaymentService,
+@@ -51,6 +51,8 @@ function memoryStore(): PaymentStore {
+     currency: "CNY",
+     status: "pending",
+     activationState: "pending",
++    activationFailureReason: null,
++    activationNextRetryAt: null,
+     channelTransactionId: null,
+     checkoutPayload: null,
+     expiresAt: new Date(clockMs + 15 * 60_000),
+@@ -249,12 +251,29 @@ function memoryStore(): PaymentStore {
+         orders.set(id, {
+           ...order,
+           activationState,
++          // A landed activation has no outstanding failure — the real store clears the columns.
++          ...(activationState === "applied"
++            ? { activationFailureReason: null, activationNextRetryAt: null }
++            : {}),
+           ...(period
+             ? { periodStart: period.start, periodEnd: period.end }
+             : {}),
+         });
+       }
+     },
++    async recordActivationFailure(input) {
++      const order = orders.get(input.id);
++      if (order) {
++        orders.set(input.id, {
++          ...order,
++          activationFailureReason: input.reason,
++          activationNextRetryAt: input.nextRetryAt,
++          ...(input.activationState
++            ? { activationState: input.activationState }
++            : {}),
++        });
++      }
++    },
+     async resolveActivationOwnership(orderId) {
+       const current = orders.get(orderId);
+       if (!current) return { outcome: "unknown" as const };
+@@ -275,7 +294,13 @@ function memoryStore(): PaymentStore {
+           order.periodEnd.getTime() > current.periodStart.getTime(),
+       );
+       const claimed = overlapping
+-        .filter((order) => order.activationState !== "pending")
++        .filter(
++          // Mirrors the real store (BP03/#371): an owner CLAIMED or LANDED the period; a
++          // needs_resolution row is a resolved duplicate and never an owner.
++          (order) =>
++            order.activationState === "applied" ||
++            order.activationState === "failed",
++        )
+         .sort((a, b) => {
+           const byApplied =
+             Number(b.activationState === "applied") -
+@@ -314,6 +339,11 @@ function memoryStore(): PaymentStore {
+           orders.set(current.id, claimedOwner);
+           return { outcome: "owner" as const, order: claimedOwner };
+         }
++        // The real store answers unknown for a needs_resolution winner (a stale read): the
++        // order stays where the duplicate verdict put it.
++        if (current.activationState === "needs_resolution") {
++          return { outcome: "unknown" as const };
++        }
+         return { outcome: "owner" as const, order: current };
+       }
+       return {
+@@ -567,7 +597,7 @@ describe("purchase ordering", () => {
+         cycle: "monthly",
+         provider: "wechat",
+         createdBy: "admin-1",
+-      ownerPayerRef: ref("admin-1"),
++        ownerPayerRef: ref("admin-1"),
+       }),
+     ).rejects.toMatchObject({
+       refusal: { reason: "pending-purchase", pendingPlanCode: "team" },
+@@ -613,7 +643,7 @@ describe("purchase ordering", () => {
+         cycle: "monthly",
+         provider: "wechat",
+         createdBy: "admin-1",
+-      ownerPayerRef: ref("admin-1"),
++        ownerPayerRef: ref("admin-1"),
+       }),
+     ).rejects.toMatchObject({
+       refusal: { reason: "pending-purchase", pendingPlanCode: "team" },
+@@ -701,7 +731,7 @@ describe("purchase ordering", () => {
+         cycle: "monthly",
+         provider: "alipay",
+         createdBy: "admin-1",
+-      ownerPayerRef: ref("admin-1"),
++        ownerPayerRef: ref("admin-1"),
+       }),
+     ).rejects.toMatchObject({
+       refusal: { reason: "active-subscription", activePlanCode: "pro" },
+@@ -716,7 +746,7 @@ describe("purchase ordering", () => {
+         cycle: "monthly",
+         provider: "alipay",
+         createdBy: "a",
+-      ownerPayerRef: ref("a"),
++        ownerPayerRef: ref("a"),
+       }),
+     ).rejects.toBeInstanceOf(PurchaseError);
+   });
+@@ -730,7 +760,7 @@ describe("purchase ordering", () => {
+         cycle: "monthly",
+         provider: "wechat",
+         createdBy: "a",
+-      ownerPayerRef: ref("a"),
++        ownerPayerRef: ref("a"),
+       }),
+     ).rejects.toMatchObject({ refusal: { reason: "unknown-provider" } });
+     // The refusal left no stranded order behind: nothing pending on either channel, and the
+@@ -765,7 +795,7 @@ describe("purchase ordering", () => {
+         cycle: "monthly",
+         provider: "alipay",
+         createdBy: "a",
+-      ownerPayerRef: ref("a"),
++        ownerPayerRef: ref("a"),
+       }),
+     ).rejects.toThrow(/unreachable/);
+     const pending = await store.readPendingOrder("pro", "alipay");
+@@ -786,7 +816,12 @@ describe("purchase ordering", () => {
+ 
+   test("a purchase without a resolvable owner is refused before any order row exists", async () => {
+     const { service, store } = buildService();
+-    const missing = { planCode: "pro", cycle: "monthly" as const, provider: "alipay" as const, createdBy: "a" };
++    const missing = {
++      planCode: "pro",
++      cycle: "monthly" as const,
++      provider: "alipay" as const,
++      createdBy: "a",
++    };
+     await expect(
+       // The input the runtime can see when a caller forgets the resolved owner entirely.
+       service.createPurchase(
+@@ -876,7 +911,10 @@ describe("purchase ordering", () => {
+     // The foreign order survives, untouched: still pending, still buyer-b's.
+     const survived = await store.readOrder(someoneElses.id);
+     expect(survived?.status).toBe("pending");
+-    expect(survived?.ownerPayerRef).toEqual({ kind: "personal", id: "buyer-b" });
++    expect(survived?.ownerPayerRef).toEqual({
++      kind: "personal",
++      id: "buyer-b",
++    });
+     expect(survived?.version).toBe(0);
+     expect(alipay.closes).toEqual([]);
+   });
+@@ -1827,7 +1865,10 @@ describe("callback triage", () => {
+     });
+     const settled = await store.readOrder(second.id);
+     expect(settled?.status).toBe("paid");
+-    expect(settled?.activationState).toBe("pending");
++    // BP03 (#371): a deterministic entitlement conflict is the operator's queue, not an
++    // endless retry — the loser lands in needs_resolution with its duplicate evidence kept.
++    expect(settled?.activationState).toBe("needs_resolution");
++    expect(settled?.activationFailureReason).toBe("duplicate_paid");
+     expect(payouts).toEqual([first.id]);
+     expect(
+       store.anomalies.some(
+@@ -2180,7 +2221,7 @@ describe("activation gate", () => {
+         provider: "alipay",
+         cycle: "monthly",
+         createdBy: "admin-1",
+-      ownerPayerRef: ref("admin-1"),
++        ownerPayerRef: ref("admin-1"),
+       }),
+     ).rejects.toMatchObject({
+       refusal: { reason: "active-subscription", activePlanCode: "pro" },
+@@ -2470,6 +2511,321 @@ describe("the plan allowance payout", () => {
+   });
+ });
+ 
++describe("BP03 delivery recovery (#371)", () => {
++  /**
++   * A grantor double that behaves like the real writer on replay: the first call inserts, every
++   * later call with the same order answers `inserted: false` — the unique-key no-op the retry
++   * converges through. Records every attempt so the tests can assert what was ASKED, beside what
++   * landed.
++   */
++  function replaySafeGrantor(overrides: Partial<PlanCreditGrantor> = {}) {
++    const attempts: Array<{
++      orderId: string;
++      externalCustomerId: string;
++      totalCents: number;
++      expiresAt: Date | null;
++      inserted: boolean;
++    }> = [];
++    const seen = new Set<string>();
++    const grantor: PlanCreditGrantor = {
++      creditsFor: (planCode) => (planCode === "pro" ? 900_000 : null),
++      async grantPlanCredits(input) {
++        const inserted = !seen.has(input.orderId);
++        seen.add(input.orderId);
++        attempts.push({
++          orderId: input.orderId,
++          externalCustomerId: input.externalCustomerId,
++          totalCents: input.totalCents,
++          expiresAt: input.expiresAt,
++          inserted,
++        });
++        return { inserted };
++      },
++      readCurrentPeriodEnd: async () => new Date("2026-11-01T00:00:00Z"),
++      ...overrides,
++    };
++    return { grantor, attempts };
++  }
++
++  /** One paid order settled through the callback path. */
++  async function paidOrder(store: PaymentStore = memoryStore()) {
++    const { order } = await store.insertOrder({
++      planCode: "pro",
++      provider: "alipay",
++      amountCents: 8800,
++      currency: "CNY",
++      expiresAt: new Date(clockMs + 60_000),
++      createdBy: "a",
++      ownerPayerRef: ref("a"),
++      checkoutPayload: null,
++    });
++    const alipay = fakeProvider("alipay", {
++      verifyNotification: async () => ({
++        ok: true,
++        fact: {
++          outTradeNo: order.id,
++          state: "paid" as const,
++          channelTransactionId: `tx-${order.id}`,
++          amountCents: 8800,
++        },
++      }),
++    });
++    return { order, store, alipay };
++  }
++
++  test("AC1: Lago landed but the grant refused — the retry patches only the missing half", async () => {
++    const { grantor, attempts } = replaySafeGrantor();
++    const failing = { current: true };
++    const broken: PlanCreditGrantor = {
++      creditsFor: grantor.creditsFor,
++      async grantPlanCredits(input) {
++        if (failing.current) throw new Error("ledger down");
++        return grantor.grantPlanCredits(input);
++      },
++      readCurrentPeriodEnd: grantor.readCurrentPeriodEnd,
++    };
++    const { order, store, alipay } = await paidOrder();
++    const lago = fakeLago({
++      ensureSubscription: async () => ({
++        currentPeriodStart: "2026-10-01T00:00:00Z",
++        currentPeriodEnd: "2026-11-01T00:00:00Z",
++      }),
++    });
++    const first = buildService({
++      store,
++      providers: [alipay],
++      grantor: broken,
++      lago,
++    });
++
++    await first.service.handleCallback("alipay", new Headers(), "x");
++    const interrupted = await store.readOrder(order.id);
++    expect(interrupted?.status).toBe("paid");
++    expect(interrupted?.activationState).not.toBe("applied");
++    // The interruption is retained, not guessed: the reason word and the next pass's schedule.
++    expect(interrupted?.activationFailureReason).toBe("grant_write_failed");
++    expect(interrupted?.activationNextRetryAt).toEqual(
++      new Date(clockMs + 60_000),
++    );
++    // What the user reads while the halves disagree: money landed, entitlement still processing.
++    expect(
++      (await first.service.readOrder(order.id, { actorPayerRef: ref("a") }))
++        .order?.fulfillmentState,
++    ).toBe("processing");
++
++    failing.current = false;
++    const second = buildService({ store, providers: [alipay], grantor, lago });
++    await second.service.sweepActivations();
++    const settled = await store.readOrder(order.id);
++    expect(settled?.activationState).toBe("applied");
++    expect(settled?.activationFailureReason).toBeNull();
++    expect(settled?.activationNextRetryAt).toBeNull();
++    // The subscription seam was asked again (read-before-create) but the payout only ever
++    // inserted once — the retry patched the missing half, not both halves.
++    expect(attempts.filter((attempt) => attempt.inserted)).toHaveLength(1);
++    expect(
++      (await second.service.readOrder(order.id, { actorPayerRef: ref("a") }))
++        .order?.fulfillmentState,
++    ).toBe("delivered");
++  });
++
++  test("AC1 (reverse): the grant landed but the stamp refused — a replayed notification adds no second payout", async () => {
++    const { grantor, attempts } = replaySafeGrantor();
++    const { order, store, alipay } = await paidOrder();
++    let stampFails = true;
++    const lago = fakeLago({
++      ensureSubscription: async () => ({
++        currentPeriodStart: "2026-10-01T00:00:00Z",
++        currentPeriodEnd: "2026-11-01T00:00:00Z",
++      }),
++      stampSubscriptionOwnership: async () => !stampFails,
++    });
++    const first = buildService({ store, providers: [alipay], grantor, lago });
++    await first.service.handleCallback("alipay", new Headers(), "x");
++    expect((await store.readOrder(order.id))?.activationState).not.toBe(
++      "applied",
++    );
++    expect(attempts.filter((attempt) => attempt.inserted)).toHaveLength(1);
++
++    // The stamp heals; the SAME delivery arrives again (the channel redelivered) and the sweep
++    // runs too. The grant half is already durable — every re-ask answers inserted:false.
++    stampFails = false;
++    const second = buildService({ store, providers: [alipay], grantor, lago });
++    expect(
++      await second.service.handleCallback("alipay", new Headers(), "x"),
++    ).toEqual({ kind: "success" });
++    await second.service.sweepActivations();
++    expect((await store.readOrder(order.id))?.activationState).toBe("applied");
++    expect(attempts.filter((attempt) => attempt.inserted)).toHaveLength(1);
++    expect(attempts.length).toBeGreaterThan(1);
++  });
++
++  test("AC2: a deterministic entitlement conflict lands in needs_resolution and the sweep stops asking", async () => {
++    const { grantor, attempts } = replaySafeGrantor();
++    const store = memoryStore();
++    // The owner: paid, activated.
++    const { order: owner } = await paidOrder(store);
++    const ownerService = buildService({ store, providers: [], grantor });
++    await store.confirmPaid({
++      id: owner.id,
++      expectedVersion: owner.version,
++      fromStatuses: ["pending"],
++      channelTransactionId: "tx-owner",
++      amountCents: 8800,
++      periodStart: tick(),
++      periodEnd: addMonths(tick(), 1),
++    });
++    await ownerService.service.sweepActivations();
++    expect((await store.readOrder(owner.id))?.activationState).toBe("applied");
++
++    // The overlapping challenger: same plan, same period window, different transaction.
++    const { order: challenger } = await store.insertOrder({
++      planCode: "pro",
++      provider: "wechat",
++      amountCents: 8800,
++      currency: "CNY",
++      expiresAt: new Date(clockMs + 60_000),
++      createdBy: "a",
++      ownerPayerRef: ref("a"),
++      checkoutPayload: null,
++    });
++    await store.confirmPaid({
++      id: challenger.id,
++      expectedVersion: challenger.version,
++      fromStatuses: ["pending"],
++      channelTransactionId: "tx-challenger",
++      amountCents: 8800,
++      periodStart: tick(),
++      periodEnd: addMonths(tick(), 1),
++    });
++
++    const alipay = fakeProvider("alipay");
++    const { service } = buildService({ store, providers: [alipay], grantor });
++    // However many passes run, the challenger never becomes the owner and never grants.
++    await service.sweepActivations();
++    await service.sweepActivations();
++    await service.sweepActivations();
++    const settled = await store.readOrder(challenger.id);
++    expect(settled?.activationState).toBe("needs_resolution");
++    expect(settled?.activationFailureReason).toBe("duplicate_paid");
++    expect(settled?.activationNextRetryAt).toBeNull();
++    expect(
++      attempts
++        .filter((attempt) => attempt.inserted)
++        .map((attempt) => attempt.orderId),
++    ).toEqual([owner.id]);
++    expect(
++      store.anomalies.some(
++        (anomaly) =>
++          anomaly.orderId === challenger.id &&
++          anomaly.code === "duplicate_paid",
++      ),
++    ).toBe(true);
++    // needs_resolution is not "delivered": the read says so.
++    const view = await service.readOrder(challenger.id, {
++      actorPayerRef: ref("a"),
++    });
++    expect(view.order?.fulfillmentState).toBe("needs_resolution");
++  });
++
++  test("AC2: a paid order stuck processing for pass after pass raises the alarm", async () => {
++    const { grantor } = replaySafeGrantor();
++    const broken: PlanCreditGrantor = {
++      ...grantor,
++      grantPlanCredits: async () => {
++        throw new Error("ledger down");
++      },
++    };
++    const { order, store, alipay } = await paidOrder();
++    const { service } = buildService({
++      store,
++      providers: [alipay],
++      grantor: broken,
++    });
++    await service.handleCallback("alipay", new Headers(), "x");
++    const alarms = () =>
++      store.anomalies.filter(
++        (anomaly) =>
++          anomaly.orderId === order.id &&
++          anomaly.code === "activation_retry_exhausted",
++      );
++    await service.sweepActivations();
++    await service.sweepActivations();
++    expect(alarms()).toHaveLength(0);
++    await service.sweepActivations();
++    expect(alarms()).toHaveLength(1);
++    await service.sweepActivations();
++    expect(alarms()).toHaveLength(1);
++  });
++
++  test("AC3: the payout lands in the order owner's account key, not the deployment's", async () => {
++    const { grantor, attempts } = replaySafeGrantor();
++    const { store, alipay } = await paidOrder();
++    const { service } = buildService({ store, providers: [alipay], grantor });
++    await service.handleCallback("alipay", new Headers(), "x");
++    expect(attempts).toHaveLength(1);
++    expect(attempts[0]?.externalCustomerId).toBe("openbot-personal-a");
++  });
++
++  test("AC3: neither the provider nor the order answers a period end — the allowance is withheld, never indefinite", async () => {
++    const { grantor, attempts } = replaySafeGrantor({
++      readCurrentPeriodEnd: async () => null,
++    });
++    const inner = memoryStore();
++    // The double's read strips the order's own period snapshot, so the expiry fallback chain
++    // has nothing left to answer — the one shape that must never mint a no-expiry allowance.
++    const store: PaymentStore = {
++      ...inner,
++      async readOrder(id, scope) {
++        const order = await inner.readOrder(id, scope);
++        return order ? { ...order, periodEnd: null } : null;
++      },
++      async listPaidPendingActivationOrders(limit) {
++        const rows = await inner.listPaidPendingActivationOrders(limit);
++        return rows.map((row) => ({ ...row, periodEnd: null }));
++      },
++      async resolveActivationOwnership(orderId) {
++        const outcome = await inner.resolveActivationOwnership(orderId);
++        const strip = (order: PaymentOrderRecord) => ({
++          ...order,
++          periodEnd: null,
++        });
++        if (outcome.outcome === "owner") {
++          return { ...outcome, order: strip(outcome.order) };
++        }
++        return outcome;
++      },
++    };
++    const { order } = await inner.insertOrder({
++      planCode: "pro",
++      provider: "alipay",
++      amountCents: 8800,
++      currency: "CNY",
++      expiresAt: new Date(clockMs + 60_000),
++      createdBy: "a",
++      ownerPayerRef: ref("a"),
++      checkoutPayload: null,
++    });
++    await inner.confirmPaid({
++      id: order.id,
++      expectedVersion: order.version,
++      fromStatuses: ["pending"],
++      channelTransactionId: "tx-no-period",
++      amountCents: 8800,
++      periodStart: tick(),
++      periodEnd: addMonths(tick(), 1),
++    });
++
++    const alipay = fakeProvider("alipay");
++    const { service } = buildService({ store, providers: [alipay], grantor });
++    await service.sweepActivations();
++    const settled = await store.readOrder(order.id);
++    expect(settled?.activationState).not.toBe("applied");
++    expect(settled?.activationFailureReason).toBe("grant_no_period");
++    expect(attempts).toHaveLength(0);
++  });
++});
++
+ describe("the expiry sweep", () => {
+   test("query-first: a channel that says paid settles; one that says pending expires then closes", async () => {
+     const store = memoryStore();
+diff --git a/server/tests/qa-batch1-duplicate-paid.integration.test.ts b/server/tests/qa-batch1-duplicate-paid.integration.test.ts
+index 9e7f0240..b3ac41eb 100644
+--- a/server/tests/qa-batch1-duplicate-paid.integration.test.ts
++++ b/server/tests/qa-batch1-duplicate-paid.integration.test.ts
+@@ -1,6 +1,6 @@
+-import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
+ import { randomUUID } from "node:crypto";
+ import { and, eq, like } from "drizzle-orm";
++import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
+ import type { PaymentProvider } from "../src/billing/payments/provider";
+ import { createPaymentService } from "../src/billing/payments/service";
+ import { createPaymentStore } from "../src/billing/payments/store";
+@@ -28,15 +28,16 @@ const prefix = `qa1c-${randomUUID().slice(0, 8)}`;
+ const planCode = `qa-plan-${randomUUID().slice(0, 8)}`;
+ 
+ afterAll(async () => {
+-  await database.delete(paymentEvents).where(like(paymentEvents.orderId, `${prefix}%`));
+-  await database.delete(paymentOrders).where(like(paymentOrders.id, `${prefix}%`));
++  await database
++    .delete(paymentEvents)
++    .where(like(paymentEvents.orderId, `${prefix}%`));
++  await database
++    .delete(paymentOrders)
++    .where(like(paymentOrders.id, `${prefix}%`));
+   await database.$client.close();
+ });
+ 
+-function paidDelivery(
+-  orderId: string,
+-  transactionId: string,
+-): PaymentProvider {
++function paidDelivery(orderId: string, transactionId: string): PaymentProvider {
+   return {
+     id: "alipay",
+     async createSession() {
+@@ -119,7 +120,9 @@ test("sequential double payment (cross-provider): both paid, and the duplicate i
+   // Order A on alipay, paid for real.
+   const a = await openOrder("alipay", "a");
+   const alipayService = serviceFor(paidDelivery(a.id, `${prefix}-tx-a`));
+-  expect(await alipayService.handleCallback("alipay", new Headers(), "x")).toEqual({
++  expect(
++    await alipayService.handleCallback("alipay", new Headers(), "x"),
++  ).toEqual({
+     kind: "success",
+   });
+   const paidA = await store.readOrder(a.id);
+@@ -140,7 +143,9 @@ test("sequential double payment (cross-provider): both paid, and the duplicate i
+     successAck: { body: '{"code":"SUCCESS"}', contentType: "text/plain" },
+   };
+   const wechatService = serviceFor(wechatDelivery);
+-  expect(await wechatService.handleCallback("wechat", new Headers(), "x")).toEqual({
++  expect(
++    await wechatService.handleCallback("wechat", new Headers(), "x"),
++  ).toEqual({
+     kind: "success",
+   });
+ 
+@@ -159,10 +164,14 @@ test("sequential double payment (cross-provider): both paid, and the duplicate i
+   expect(duplicate.length).toBeGreaterThanOrEqual(1);
+   expect(duplicate[0]?.detail).toContain(a.id);
+ 
+-  // And the recovery seam stays open: a held duplicate is still visible to the activation
+-  // sweep's retry list, while the owner is not.
++  // And the recovery seam changed shape with BP03 (#371): a deterministic conflict is no longer
++  // an endless retry. B lands in `needs_resolution` — out of the activation sweep's list (no
++  // infinite re-asking), never `applied` — with the duplicate evidence above as the operator's
++  // queue entry, while the owner A stays settled.
++  expect(paidB?.activationState).toBe("needs_resolution");
++  expect(paidB?.activationFailureReason).toBe("duplicate_paid");
+   const pendingActivation = await store.listPaidPendingActivationOrders(100);
+   const pendingIds = pendingActivation.map((order) => order.id);
+-  expect(pendingIds).toContain(b.id);
++  expect(pendingIds).not.toContain(b.id);
+   expect(pendingIds).not.toContain(a.id);
+ });

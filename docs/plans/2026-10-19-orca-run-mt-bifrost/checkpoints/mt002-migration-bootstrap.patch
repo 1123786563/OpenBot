@@ -1,0 +1,64 @@
+diff --git a/server/tests/multitenancy/fixtures.test.ts b/server/tests/multitenancy/fixtures.test.ts
+index db18aeb3..ab734937 100644
+--- a/server/tests/multitenancy/fixtures.test.ts
++++ b/server/tests/multitenancy/fixtures.test.ts
+@@ -8,7 +8,14 @@
+  * `ob_ent_*` business roles; nothing here may be skipped and counted green.
+  */
+ 
+-import { afterAll, expect, test } from "../../../tests/support/bun-test-compat";
++import { randomUUID } from "node:crypto";
++import { rm } from "node:fs/promises";
++import { join } from "node:path";
++import { afterAll, beforeAll, expect, test } from "../../../tests/support/bun-test-compat";
++import {
++  runMigrateTest,
++  resolveTestDatabaseTarget,
++} from "../../scripts/multitenancy/migrate-test";
+ import {
+   createIsolationFixture,
+   FIXTURE_IDENTITIES,
+@@ -29,7 +36,43 @@ function isolationFixture(): Promise<IsolationFixture> {
+   return fixturePromise;
+ }
+ 
++// The shared fixture reads tables later tickets migrate in: team membership
++// rows live in the MT004 table and resource inserts carry MT008's visibility
++// column. Bootstrap both through the real MT003 tool so the ticket's
++// verification command passes on any dedicated database that has only the
++// main journal, not just one pre-warmed by other tickets' suites
++// (generate → apply → replay is convergent, like every MT ticket's own test).
++const generatedMigrationDirs: string[] = [];
++beforeAll(async () => {
++  if (!resolveTestDatabaseTarget(process.env).ok) {
++    // No dedicated test database: keep the per-test behavior — the database
++    // cases fail loudly below instead of being skipped or counted green.
++    return;
++  }
++  for (const taskId of ["MT004", "MT008"]) {
++    const dir = join("/tmp", `mt002-migration-${randomUUID().slice(0, 8)}`);
++    generatedMigrationDirs.push(dir);
++    const generation = await runMigrateTest(
++      ["generate", taskId, "--out", dir],
++      { environment: process.env, out: () => {} },
++    );
++    if (generation.kind !== "generated") {
++      throw new Error(`MT002 bootstrap generate failed: ${JSON.stringify(generation)}`);
++    }
++    const applied = await runMigrateTest(
++      ["migrate", taskId, "--apply", "--manifest", join(dir, taskId, "manifest.json")],
++      { environment: process.env, out: () => {} },
++    );
++    if (!["applied", "up-to-date"].includes(applied.kind)) {
++      throw new Error(`MT002 bootstrap apply failed: ${JSON.stringify(applied)}`);
++    }
++  }
++}, 60000);
++
+ afterAll(async () => {
++  for (const dir of generatedMigrationDirs) {
++    await rm(dir, { recursive: true, force: true });
++  }
+   try {
+     await (await fixturePromise)?.dispose();
+   } catch {

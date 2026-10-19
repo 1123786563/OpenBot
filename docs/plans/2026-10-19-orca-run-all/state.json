@@ -1,0 +1,13 @@
+{
+ "run": {"short": "run_68e96a7ff1c9", "objective": "orca-run-all 试点波次", "base": "2b41017c", "scope_revision": 1},
+ "wave1": [
+  {"issue": 410, "domain": "craft", "task": "task_c9310e834e9d", "dispatch": "ctx_57c400a455ea", "worktree": "craft410", "mode": "先核验再实施"},
+  {"issue": 377, "domain": "hs", "task": "task_c1732314a33c", "dispatch": "ctx_1d5781dd2b51", "worktree": "hs001", "mode": "实施", "db": "orca-all-hs001-pg@5560"},
+  {"issue": 221, "domain": "bf", "task": "task_c383cc36123d", "dispatch": "ctx_5cbc94e4eaa2", "worktree": "bf027", "mode": "B类先核验", "db": "orca-all-bf027-pg@5561"},
+  {"issue": 54, "domain": "mt", "task": "task_bba30e0de8fc", "dispatch": "ctx_ec7692f23e67", "worktree": "mt011", "mode": "C类实施", "db": "orca-all-mt011-pg@5562"},
+  {"issue": "48+214+371", "domain": "closeout", "task": "task_75558dade276", "dispatch": "ctx_2f47713e12da", "worktree": "verify-closeout", "mode": "复验零改动", "db": "orca-all-cl01-pg@5563"}
+ ],
+ "pending_user": ["#106/#133/#162 裁决", "Opik 树外 37 张", "body-link 52 张补挂(非阻塞)"],
+ "integration_mode": "未提交检查点（无提交授权）",
+ "updated_at": "2026-10-19T16:26"
+}

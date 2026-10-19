@@ -82,6 +82,23 @@ if (exitStatus !== 0) {
   }
 
   if (report) {
+    /*
+     * The coverage audit above is a claim; this closes the loop against what the runner actually
+     * collected. A native-bucket file that contributed no test is the two disagreeing — the shape
+     * that once left 85 desktop tests "covered" while no entry ran them.
+     */
+    const reconcile = Bun.spawn(
+      ["node", "scripts/e2e-collection-reconcile.mjs", REPORT],
+      { stdout: "inherit", stderr: "inherit" },
+    );
+    if ((await reconcile.exited) !== 0) {
+      await writeStderr(
+        "\nCollection reconcile failed: see the files listed above. The audit's bucket and the\n" +
+          "runner's report disagree; a green exit code over a file nothing collected is not coverage.\n",
+      );
+      process.exitCode = 1;
+    }
+
     const summary = report.run.summary;
     const errors = report.run.errors ?? [];
 

@@ -1,0 +1,86 @@
+{
+  "id": "309415ec-9dce-4428-8507-32929971ef89",
+  "ok": true,
+  "result": {
+    "runId": "run_68e96a7ff1c9",
+    "taskId": "task_bba30e0de8fc",
+    "dispatchId": "ctx_ec7692f23e67",
+    "state": "ready",
+    "stage": "input_accepted",
+    "turnStart": "observed",
+    "setup": {
+      "requested": "run",
+      "effective": "run",
+      "source": "explicit_request",
+      "hookFound": true,
+      "startupPolicy": "wait-for-setup",
+      "state": "succeeded"
+    },
+    "launch": {
+      "requested": {
+        "agent": "claude",
+        "model": null,
+        "effort": null
+      },
+      "effective": {
+        "agent": "claude",
+        "model": null,
+        "effort": null
+      }
+    },
+    "mode": {
+      "mode": "structured",
+      "preferred": "structured",
+      "reason": "user_default",
+      "detail": "Started a structured chat session worker, the default for new agent tabs in your settings."
+    },
+    "timeoutMs": 60000,
+    "effects": [
+      {
+        "kind": "worktree",
+        "action": "created_child",
+        "id": "d6edf033-748a-4549-ae5a-e9efd34cef91::/Users/wuyongjun/orca/workspaces/OpenBot/mt011"
+      },
+      {
+        "kind": "terminal",
+        "role": "setup",
+        "action": "created",
+        "id": "term_f3764fea-5181-42e4-8e2b-f4039871730a",
+        "tabId": "f6cf5308-7aa3-4757-8d27-aced069f6ef6",
+        "leafId": "fb97f682-137b-45bb-852d-1ebb1cb62c8c"
+      },
+      {
+        "kind": "setup",
+        "action": "run",
+        "requested": "run",
+        "effective": "run",
+        "source": "explicit_request",
+        "hookFound": true,
+        "startupPolicy": "wait-for-setup",
+        "state": "succeeded",
+        "terminalId": "term_f3764fea-5181-42e4-8e2b-f4039871730a"
+      },
+      {
+        "kind": "terminal",
+        "role": "agent",
+        "action": "created",
+        "id": "structworker_717849cb-9142-479a-84f3-f55106a0fcb3",
+        "surface": "background"
+      },
+      {
+        "kind": "dispatch_input",
+        "role": "agent",
+        "id": "structworker_717849cb-9142-479a-84f3-f55106a0fcb3",
+        "state": "accepted"
+      }
+    ],
+    "residualResources": [],
+    "mutation": {
+      "requestId": "7f53bf04-d39b-4d7e-a230-b7fc0a14ea7a",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

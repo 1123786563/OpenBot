@@ -1,0 +1,45 @@
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":15003,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":30005,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":45006,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":60008,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":75008,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":90009,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":105011,"deadlineMs":900000}
+{
+  "id": "a86a071e-7c25-4865-b636-7da1bcf2ab4c",
+  "ok": true,
+  "result": {
+    "runId": "run_68e96a7ff1c9",
+    "deliveryId": "delivery_d0878e3b006b",
+    "messages": [
+      {
+        "id": "msg_d81378c7b69a",
+        "run_id": "run_68e96a7ff1c9",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_1ca70d58-e604-4a75-af8f-0bbf37c9692b",
+        "to_handle": "run:run_68e96a7ff1c9",
+        "subject": "#410 零改动收尾：AC 全满足",
+        "body": "核验了 main 已有的 82676669（write-origin-guard.ts + routes.ts 装配 + index.ts 注入 + 436 行测试），逐条 AC 实证全满足：preview Origin credentialed POST→403（含四方法与 requireUser 之前）、主站/Host 同源/无 Origin 原行为、日志无 cookie/ticket、Origin 缺失/伪造/子域形状全覆盖。Observable bun test craft-preview-origin-guard.test.ts 26 pass/0 fail；craft 相关 9 个 bun 层假失败实为 ADR 0008 Node 层套件跑错运行器，用 e2e run 复跑 275/275 全绿。零改动，报告在 ORCA-REPORT.md。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_c9310e834e9d\",\"dispatchId\":\"ctx_57c400a455ea\",\"outcome\":\"succeeded\",\"reportPath\":\"ORCA-REPORT.md\"}",
+        "created_at": "2026-10-19T08:28:46Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "29f3f5a4-6a57-45f4-a439-833b632c8821",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

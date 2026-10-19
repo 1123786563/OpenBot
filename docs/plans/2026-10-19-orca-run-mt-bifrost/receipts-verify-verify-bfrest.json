@@ -1,0 +1,86 @@
+{
+  "id": "407b24fe-c70d-4135-92a6-18bfe71bcb45",
+  "ok": true,
+  "result": {
+    "runId": "run_7176face537b",
+    "taskId": "task_79b47bbef22c",
+    "dispatchId": "ctx_fa14f382c31e",
+    "state": "ready",
+    "stage": "input_accepted",
+    "turnStart": "observed",
+    "setup": {
+      "requested": "run",
+      "effective": "run",
+      "source": "explicit_request",
+      "hookFound": true,
+      "startupPolicy": "wait-for-setup",
+      "state": "succeeded"
+    },
+    "launch": {
+      "requested": {
+        "agent": "claude",
+        "model": null,
+        "effort": null
+      },
+      "effective": {
+        "agent": "claude",
+        "model": null,
+        "effort": null
+      }
+    },
+    "mode": {
+      "mode": "structured",
+      "preferred": "structured",
+      "reason": "user_default",
+      "detail": "Started a structured chat session worker, the default for new agent tabs in your settings."
+    },
+    "timeoutMs": 60000,
+    "effects": [
+      {
+        "kind": "worktree",
+        "action": "created_top_level",
+        "id": "d6edf033-748a-4549-ae5a-e9efd34cef91::/Users/wuyongjun/orca/workspaces/OpenBot/verify-bfrest"
+      },
+      {
+        "kind": "terminal",
+        "role": "setup",
+        "action": "created",
+        "id": "term_e3306297-2d7c-408c-a9fb-109c87c811fc",
+        "tabId": "2c58c8e4-da39-4574-b7d4-74bce789a2c9",
+        "leafId": "a3d5eff4-4dc7-4835-97f7-ea11dbd8412c"
+      },
+      {
+        "kind": "setup",
+        "action": "run",
+        "requested": "run",
+        "effective": "run",
+        "source": "explicit_request",
+        "hookFound": true,
+        "startupPolicy": "wait-for-setup",
+        "state": "succeeded",
+        "terminalId": "term_e3306297-2d7c-408c-a9fb-109c87c811fc"
+      },
+      {
+        "kind": "terminal",
+        "role": "agent",
+        "action": "created",
+        "id": "structworker_ac9f24cf-fc7d-47d1-858d-db12f05eab0f",
+        "surface": "background"
+      },
+      {
+        "kind": "dispatch_input",
+        "role": "agent",
+        "id": "structworker_ac9f24cf-fc7d-47d1-858d-db12f05eab0f",
+        "state": "accepted"
+      }
+    ],
+    "residualResources": [],
+    "mutation": {
+      "requestId": "ca0c49db-55ce-4363-826f-aed89fc2b8db",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

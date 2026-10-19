@@ -1,0 +1,53 @@
+{
+  "id": "03eb55cc-2de3-4a22-a871-6c4d266f831b",
+  "ok": true,
+  "result": {
+    "runId": "run_7176face537b",
+    "deliveryId": "delivery_2aa834703da8",
+    "messages": [
+      {
+        "id": "msg_a7d50a232a90",
+        "run_id": "run_7176face537b",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_1f89734a-3809-4dda-af3e-ce4b7a82732e",
+        "to_handle": "run:run_7176face537b",
+        "subject": "alive",
+        "body": "",
+        "type": "heartbeat",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_d4fcf9ae45b5\",\"dispatchId\":\"ctx_f2aa40619aa9\",\"phase\":\"implementing\"}",
+        "created_at": "2026-10-19T01:40:00Z",
+        "delivered_at": null
+      },
+      {
+        "id": "msg_c781df3153bb",
+        "run_id": "run_7176face537b",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_8037dd78-ca4f-47f2-bf41-88a01a069437",
+        "to_handle": "run:run_7176face537b",
+        "subject": "BF36 #252-#257 六票验收全通过（78/78），typecheck 红归因为 bifrost-5 集成残留",
+        "body": "只读验收 #252-#257（Bifrost 06.1-06.6）：gh issue view 读全六票票面后，在专用库 openbot_bf036@bf011-pg:5432（schema 齐、solo 逐文件）跑完票面全部 7 个 Verification 测试文件，78 pass / 0 fail，逐条核对票面 AC 均有对应用例覆盖。跨票残留（MT005 membership fixture、09.1 attribution、#248 revoke 退役 key）本批未触发、无影响；唯一不满足票面 Verification 的是 server typecheck 红——config.ts:2954 TS2322 与 index.ts:6834 TS2339（GatewayEnvConfig 窄化形态缺 creditConversionRate、baseUrl 必填），归因为 bifrost-5 集成提交（0d6bb19b 起）的类型缝合残留、main 既有、非本批引入，建议另开修复票。六票均可按测试证据验收通过，无未完成事项。\n\n| 票 | 标题 | 测试结果 | AC 覆盖证据 | 结论 |\n|---|---|---|---|---|\n| #252 (06.1) | Reserve 服务身份认证 | credit-service-auth 8/8 | 四类调用方拒绝、受信网关唯一通过、轮换即吊销、审计 credit_service.refused 断言、拒绝语汇不含账户 | 通过 |\n| #253 (06.2) | 事务内重验授权与价格 | reserve-revalidation.integration 27/27 | 撤销/未开放/unknown/目录过期/缺上限证据五类拒绝、新鲜度 reason 非 not-found、估算非证据、撤销竞态事务内、拒绝零写入 | 通过 |\n| #254 (06.3) | 原子预留与账户行锁 | reserve-concurrency.integration 5/5 | 余额10两8并发一胜一余2、确定性+自然跨 Key 竞争同账户、失败方零写入、真实 PG 证明 | 通过 |\n| #255 (06.4) | 篡改 payer 冲突语义 | reserve-payer-tampering 8/8 | 伪造公司/他人/裸 externalCustomerId 三类 422 payer_conflict、参数不存在性、匹配 payer 无冲突审计 | 通过 |\n| #256 (06.5) | 上限取整与版本锁定 | bound-rounding 15/15 + version-locking.integration 10/10 | 足额向上取整（exact≤ceiling<exact+1）、全维度计价、锁定 snapshot+rate 版本跨价格变更结算、DB CHECK 拒半锁行 | 通过 |\n| #257 (06.6) | 每账户尾差累计 | credit-remainder.integration 5/5 | 十次0.001→恰0.01、两次0.005→0.01、双账户隔离、Key轮换/续期不丢失不重复、尾差占用与 availableBalance 一致 | 通过 |",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_2df9c36a7a2b\",\"dispatchId\":\"ctx_985455d4df73\",\"outcome\":\"succeeded\"}",
+        "created_at": "2026-10-19T01:41:07Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 2,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "68e1d4cb-f858-4fb6-a592-af9079a4abd5",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

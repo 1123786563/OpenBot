@@ -31,10 +31,10 @@ const arg = (name, fallback) => {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : fallback;
 };
-const out = resolve(
-  root,
-  arg("out", "docs/verification/e2e-driven-file-equality.json"),
-);
+// Defaults to the untracked .e2e/ so a verification run cannot dirty the tree: the copy under
+// docs/verification/ is evidence someone chose to publish, so regenerating it is an explicit
+// `--out=docs/verification/e2e-driven-file-equality.json` in a command a reviewer can see.
+const out = resolve(root, arg("out", ".e2e/driven-file-equality.json"));
 const timeoutMs = Number(arg("timeout", 900_000));
 const shapes = (arg("shapes", "group,directory,corpus") || "")
   .split(",")
@@ -153,7 +153,7 @@ for (const file of [...every].sort()) {
 
 writeFileSync(
   out,
-  JSON.stringify(
+  `${JSON.stringify(
     {
       generatedAt: new Date().toISOString(),
       shapes,
@@ -166,7 +166,7 @@ writeFileSync(
     },
     null,
     2,
-  ) + "\n",
+  )}\n`,
 );
 
 console.log(
