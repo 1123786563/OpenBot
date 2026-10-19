@@ -663,3 +663,18 @@ Qdrant 残留状态解释还没做那一轮复现（方法在 `~/.cache/openbot-
 （逐文件对账：597 个桶文件 = 597 个实际执行文件，0 零贡献），**在 JS/TS 之外不成立**——
 pytest 与 Rust 是运行器限制导致的具名排除（e2e 没有 Python/ crates 引擎），
 Go 那 18 个文件是尚未处理的缺口。三条都没被"绿"掩盖：关卡会持续要求它们保持具名。
+
+### 引擎层的"被调度"也要有入口证据（10-19 17:3x）
+
+`tests/e2e/*.e2e.ts` 这 10 个文件 / 28 条一直记在 `engine` 桶里，读起来像"e2e 已经管着它们"。实测两件事：
+
+- `bunx e2e list`（**不带** `--config`）选出的就是这 10 个文件 / 28 条，与 `--config e2e.config.ts` 完全一致，
+  所以引擎层确实归 e2e 的默认配置管；
+- 但**没有任何 workflow 调用默认配置**：`.github/workflows/` 里 `e2e run` 的调用全部带
+  `--config e2e.unit.config.ts`，唯一的入口是 `bun run test:ui`（人跑，需活的部署）。
+
+也就是说第 7 条"未过"的真正含义不是"e2e 不会跑它们"，而是**没有作业调度它们**。审计因此新增
+`engine tier entry: … · scheduled by CI: no …` 一行，把"被收集"与"被执行"分开打印；并加了缺口规则
+（若 `package.json` 里再也没有不带 `--config …unit` 的 `e2e run`，引擎层就退化成无人收集的孤儿 → exit 1）。
+证伪做过：把 `test:ui` 两条命令都改成带 unit 配置 →
+`ENTRY-POINT GAPS (1) … no script invokes 'e2e run' without --config`、exit 1；还原 → exit 0。

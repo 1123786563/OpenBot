@@ -206,8 +206,48 @@ function foreignGaps() {
   return gaps;
 }
 
+/*
+ * The engine tier needs its own entry check. `tests/e2e/*.e2e.ts` is collected by e2e's *default*
+ * config (measured: `bunx e2e list` with no `--config` selects exactly those 10 files / 28 tests, the
+ * same set `--config e2e.config.ts` gives), so counting them as "scheduled by e2e" is only honest if
+ * some entry point actually invokes that default. It also must not be read as CI coverage: the only
+ * entry is a human-run script, and the job list says no workflow runs it.
+ */
+function engineEntry() {
+  const scripts = Object.entries(
+    JSON.parse(
+      readFileSync(join(root, "package.json"), "utf8"),
+    ).scripts ?? {},
+  );
+  const entry = scripts.find(
+    ([, command]) =>
+      /\be2e\s+run\b/.test(String(command)) &&
+      !/--config\s+\S*unit\.config/.test(String(command)),
+  );
+  const inCI = [];
+  const workflows = join(root, ".github", "workflows");
+  for (const file of readdirSync(workflows)) {
+    if (!/\.ya?ml$/.test(file)) continue;
+    for (const line of readFileSync(join(workflows, file), "utf8").split(
+      "\n",
+    )) {
+      if (!/\be2e run\b/.test(line) || /unit\.config/.test(line)) continue;
+      if (/\.e2e\.(ts|tsx)/.test(line) || /run test:ui/.test(line)) inCI.push(file);
+    }
+  }
+  return {
+    name: entry ? `bun run ${entry[0]}` : null,
+    scheduledInCI: [...new Set(inCI)],
+  };
+}
+
+const engineEntryInfo = engineEntry();
 const foreign = foreignGaps();
 const entries = entryPointGaps();
+if (buckets.engine.length && !engineEntryInfo.name)
+  entries.push(
+    `engine tier: ${buckets.engine.length} .e2e.ts files are collected only by e2e's default config, and no script invokes \`e2e run\` without --config`,
+  );
 console.log(
   `${files.length} suite files in the 14 migrated directories · ${buckets.native.length} native e2e · ${buckets.driven.length} driven by e2e (bun runtime) · ${buckets.engine.length} engine (.e2e.ts, web/mobile) · ${buckets.excluded.length} named exclusions`,
 );
@@ -234,4 +274,11 @@ if (entries.length) {
 }
 console.log(
   "\nno gaps: every suite file is scheduled by e2e, every test entry point runs e2e, and exclusions are named with a reason.",
+);
+console.log(
+  `engine tier entry: ${engineEntryInfo.name ?? "none"} · scheduled by CI: ${
+    engineEntryInfo.scheduledInCI.length
+      ? engineEntryInfo.scheduledInCI.join(", ")
+      : "no — nothing in .github/workflows runs it, so those tests are collected and reported by e2e but never executed there (audit item 7)"
+  }`,
 );
