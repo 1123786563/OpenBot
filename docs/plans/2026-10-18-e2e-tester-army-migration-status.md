@@ -820,3 +820,24 @@ app 留在 `:3010`，于是 `e2e.config.ts` 一个字都不用改。
 这**不是我的拆除造成的**——脚本只杀 cwd 属于本工作树的 PID（本轮只停了 97513，`alias-repro/server`），
 而且我全程用 `:3221`。那套栈在 12:47 前后正被他们自己用 compose 反复起停（`openbot-casdoor-1` 就是那时出现的）。
 我先前两次替他们重启是在确认自己杀错之后的补救；这次没有证据指向我，**擅自重启别人的服务反而是干扰**，所以只如实记录，交还给该会话或用户处置。
+
+## 2026-10-19 13:21 第 7 条的完整因果链拿到了（仍未判定，但不再是未知）
+
+一个后台任务把"起栈 → 跑 28 条 → 拆栈"放进同一进程组跑完（13:13:35 起、13:14:05 开跑、13:14:43 拆完，容器 0、
+库只剩 openbot_test、工作树 .env 已删）。`auth.setup` 仍失败，但这次原因**被钉死**，而且不是产品缺陷：
+
+- `.env` 里 `CASDOOR_OAUTH_ISSUER=http://localhost:8100`（脚本每次都重写，日志有 `wrote run-only .env`），
+  我的 Casdoor 也在 `:8100` 健康；
+- 但 trace 里浏览器被送去 **`http://localhost:8000/login/oauth/authorize?…&client_id=336b37e…`** ——
+  用的是**我的** client_id，端口却是 **8000**，于是那边回 `Invalid client_id`，页面上自然没有 `Username`。
+
+机制：`server/src/auth/index.ts:321` 的 `casdoor()` 不是写死端点，而是走 `discoveryUrl = issuer/.well-known/openid-configuration`。
+Casdoor 的 discovery 文档自报 issuer 是它自己配置里的 origin（本机镜像内 `httpport = 8000`），**不受我把宿主端口映射到 8100 的影响**，
+better-auth 跟随 discovery 给出的 `authorization_endpoint`，所以浏览器被送到 8000。而 8000 此刻被主仓 override 起的
+`openbot-casdoor-1` 占着 —— 那不是我的实例，也不该由我去改它的库/应用行。
+
+**所以第 7 条要跑通，必须二选一（都不是我能在共享机器上擅自做的）**：
+① 让 Casdoor 以 `:8000` 自报并可用（要么独占 8000，要么改它自报 origin 的配置后重启）；
+② 直接复用主仓 override 那套 `openbot-casdoor-1`，在它自己的库里注册一个属于本次运行的 application ——
+这要动别的会话的 Casdoor 数据，需要该会话或你点头。
+两条路之外没有第三条不串台的路，这也是为什么我停在这里而不是再试第四次。
