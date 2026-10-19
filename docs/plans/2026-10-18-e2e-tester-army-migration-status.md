@@ -485,3 +485,63 @@ runner import、`groupsOf` 重算分组，然后按组验证。我本轮试着�
 那一刻配置与清单不一致，入口会凭空多出 102 条无解释的红。我选择把 glob 还原、把根因与两步修法留在这里，
 而不是把半成品留在共用入口上；审计仍 `no gaps`、跟踪文件零改动，`scripts/e2e-collection-reconcile.mjs`
 仍然每天能把这 4 个零贡献文件指出来。
+
+## 2026-10-19 补充：分层一致性守门——导入层必须和驱动清单对齐
+
+CI `tests` job 的报错是入口证据：
+
+```
+failed to collect server/tests/billing-period-fulfillment.integration.test.ts: Only URLs with a scheme in: file, data, and node … 'bun:'
+```
+
+`3ca32d49`（BP03 交付恢复）新增的这个套件本身写得很规矩——它 import 的是
+`tests/support/bun-test-compat`，也就是 Bun 层；但它没进 `docs/verification/e2e-bun-suites.json`。
+`e2e.unit.config.ts` 是**按清单成员**把驱动层文件从 native 收集里排除的，所以不在清单 = Node 收集它 =
+一条不可收集文件让整轮中止且一份报告都不出（ADR 0008 记过的那条硬约束）。
+
+审计为什么没拦住：它把 `support/(e2e-compat|bun-test-compat)` 合并成一个 `importsCompat` 判据，
+只有字面 `bun:test` 才算缺口——于是 Bun 层文件被算进 native 计数，`no gaps` 照样打印。
+这就是"覆盖要用实际执行对账"漏掉的那一类：静态扫描认了一个层名，没认清单。
+
+修法是把两层拆成 `bunLayer` / `e2eLayer` 并让清单参与判决，三条都进 `buckets.gap`：
+bun 层但不在清单（Node 收集会中止）、清单里却没有 bun 层（Bun 侧跑不起来）、
+清单里且 import 了 e2e 层（Bun 侧会撞 Node-only 的 `module.registerHooks`）。
+拆完第一轮它就精准命中那一个文件：
+
+```
+GAPS (1) — each one means the corpus is not fully accounted:
+  server/tests/billing-period-fulfillment.integration.test.ts (imports the bun:test layer, not driven → Node collection aborts the whole run)
+```
+
+然后把该文件制备进清单：`files` + `causes`（cause 记 `server/src/db/client.ts`，与同目录其余
+billing 集成套件同一个 Bun-only 来源——`server/src/db/client.ts` 才是 `import { SQL } from "bun"` 的那一个），
+用 `scripts/lib/e2e-manifest.mjs` 的 `writeManifest` 重算分组：459 → 460 个驱动文件、仍是 35 组、
+`server/tests part 2`–`part 13` 之间 11 个成员按字母序重新切片（分组是确定性的，不是随机重排）。
+清单差异经脚本核对：新增文件 1 个、移除 0 个、`files` 与 `groups` 并集仍相等。
+
+顺手补掉两个同源契约洞（都在同一批文件里，不是扩大范围）：
+
+1. `writeManifest` 以前不写 `directoryIslands`。驱动 `tests/bun-suites.test.ts` 读这个键决定给哪些组
+   下发 `MT_TEST_DATABASE_URL`；谁下一次重跑清单生成，多租户那一族就会静默回到共享 URL，
+   51 个套件在收集期全体 `relation … does not exist`。现在 `DIRECTORY_ISLANDS` 由 lib 直接落盘。
+2. `LIVE` 名单原来是 `e2e.unit.config.ts` 里的手写字面量。审计只读清单，于是
+   `tests/e2e/api.e2e.test.ts` 被记成 native 覆盖，而实际两个 config 都不收集它——它有自己的入口
+   `bun run test:api`（需活的部署）。现在 `LIVE_SUITES` 单源在 lib 里，config 与审计共用，
+   审计把它归入"具名排除"。
+
+本轮执行的度量（不是声明）：
+
+- `bunx e2e list --config e2e.unit.config.ts` → exit 0，597 个文件 / 7936 条用例，
+  `failed to collect` 0 条、`Only URLs with a scheme` 0 条。
+- `bunx e2e list --config e2e.config.ts`（engine 层）→ 10 个文件 / 28 条用例。
+- `node scripts/e2e-coverage-audit.mjs` → exit 0，
+  总账 1073 = 597 native + 460 driven + 10 engine + 6 具名排除；native 与 engine 两个数字
+  都和上面两次实际收集对得上。
+
+本轮两次自伤，留档免得再来一次：`join(root, rel)` 对已经是绝对路径的元素二次拼接，把审计跑崩在
+`ENOENT`（判据本来就该住在主分类循环里，不必重读文件）；数文件时用了
+`grep ' › ' | awk -F' › '{print $1}'`，把 e2e 折行的长标题数成 598 个"文件"——换成严格
+`^<path>\.(test|spec|e2e)\.(tsx|ts|mjs) › ` 复数仍是 597，两次 7936 一致。
+
+还没验证的一项，不记成绿：新落进 `server/tests part 2` 的那个 billing 套件在 Bun 运行时下的实际结果
+（需要活的 PG fixture），本轮把证据交给 PR #442 的 CI `tests` job。

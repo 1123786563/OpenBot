@@ -67,6 +67,15 @@ export const DIRECTORY_ISLANDS = [
   "app/tests/multitenancy",
 ];
 
+/*
+ * Suites that only mean something against a running deployment, so `e2e.unit.config.ts` keeps them out
+ * of the default corpus and `bun run test:api` runs them on demand. The list lives here because the
+ * audit has to know they are *named exclusions with their own entry point*: while it read only the
+ * manifest, `tests/e2e/api.e2e.test.ts` was counted as native coverage the corpus never executes, and
+ * "every suite is scheduled by e2e" was quietly one file less true than the printout.
+ */
+export const LIVE_SUITES = ["tests/e2e/api.e2e.test.ts"];
+
 export function readManifest() {
   const parsed = JSON.parse(readFileSync(MANIFEST, "utf8"));
   return {
@@ -110,12 +119,19 @@ export function groupsOf(files) {
 
 export function writeManifest({ files, artifacts, causes }, generatedBy) {
   const list = [...files].sort();
+  /*
+   * `directoryIslands` is part of the contract, not a comment: tests/bun-suites.test.ts reads it to
+   * decide which groups get `MT_TEST_DATABASE_URL`. The key was added to the manifest by hand after
+   * this writer existed, so a re-run of `writeManifest` would have silently dropped it and sent the
+   * multitenancy groups back to the shared URL, where every one of them aborts at collection.
+   */
   const payload = {
     generatedBy,
     groups: groupsOf(list),
     files: list,
     artifacts: [...artifacts].sort(),
     causes,
+    directoryIslands: [...DIRECTORY_ISLANDS],
   };
   writeFileSync(MANIFEST, `${JSON.stringify(payload, null, 1)}\n`);
   return payload.groups.length;

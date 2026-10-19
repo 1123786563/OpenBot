@@ -10,11 +10,13 @@
 //            repository's own fixture broke — `bun run test:ci` prints the count so it cannot grow
 //            silently
 //
-// A file that imports `bun:test` but is not driven, or imports neither layer, is a gap: it would
-// either abort collection or never run. Exits non-zero so CI can gate on it.
+// A file on the bun:test layer — `bun:test` or `support/bun-test-compat` — that is not driven, a file
+// that imports neither layer, or a driven file that still imports the e2e layer, is a gap: the first
+// aborts collection, the second never runs, the third hits Node-only code under Bun. Exits non-zero so
+// CI can gate on it.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { SUITE_DIRS } from "./lib/e2e-manifest.mjs";
+import { LIVE_SUITES, SUITE_DIRS } from "./lib/e2e-manifest.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const SKIP = new Set([
@@ -49,6 +51,7 @@ const artifacts = new Set(
     readFileSync(join(root, "docs/verification/e2e-bun-suites.json"), "utf8"),
   ).artifacts ?? [],
 );
+const live = new Set(LIVE_SUITES);
 const broken = new Set(
   (
     JSON.parse(
@@ -67,21 +70,21 @@ for (const file of files) {
   const importsBunTest = /^import[\s\S]{0,400}?from ["']bun:test["'];/m.test(
     source,
   );
-  const importsCompat = /support\/(e2e-compat|bun-test-compat)["']/.test(
-    source,
-  );
+  const bunLayer = /support\/bun-test-compat["']/.test(source);
+  const e2eLayer = /support\/e2e-compat["']/.test(source);
   const engine = /\.e2e\.tsx?$/.test(rel) || /from "@e2e-dev\//.test(source);
-  if (artifacts.has(rel) || broken.has(rel)) buckets.excluded.push(rel);
+  if (artifacts.has(rel) || broken.has(rel) || live.has(rel))
+    buckets.excluded.push(rel);
   else if (engine) buckets.engine.push(rel);
   else if (driven.has(rel)) {
-    if (!importsBunTest && !/bun-test-compat/.test(source))
+    if (!importsBunTest && !bunLayer)
       buckets.gap.push(`${rel} (driven but not on the bun:test layer)`);
     else buckets.driven.push(rel);
-  } else if (importsBunTest)
+  } else if (importsBunTest || bunLayer)
     buckets.gap.push(
-      `${rel} (imports bun:test, not driven → aborts collection)`,
+      `${rel} (imports the bun:test layer, not driven → Node collection aborts the whole run)`,
     );
-  else if (importsCompat) buckets.native.push(rel);
+  else if (e2eLayer) buckets.native.push(rel);
   else if (/^\s*(test|describe)\s*\(/m.test(source))
     buckets.gap.push(`${rel} (registers tests, imports no runner)`);
   else buckets.gap.push(`${rel} (no runner import and no registrations)`);
@@ -139,6 +142,15 @@ function entryPointGaps() {
   return gaps;
 }
 
+/*
+ * Tier agreement. A suite that imports `support/bun-test-compat` is written for the Bun runtime, and
+ * e2e.unit.config.ts excludes files from native collection *by manifest membership* — so such a file
+ * missing from the manifest is collected on Node and aborts the whole run with
+ * `Only URLs with a scheme in: file, data, and node … 'bun:'`. That is how a billing commit on main
+ * broke CI's tests job while this audit still printed `no gaps`: it accepted any `support/*-compat`
+ * import as native and never compared the imported layer against the manifest. The check lives in the
+ * classification loop above, so a mis-tiered file is a gap rather than a native count.
+ */
 const entries = entryPointGaps();
 console.log(
   `${files.length} suite files in the 14 migrated directories · ${buckets.native.length} native e2e · ${buckets.driven.length} driven by e2e (bun runtime) · ${buckets.engine.length} engine (.e2e.ts, web/mobile) · ${buckets.excluded.length} named exclusions`,

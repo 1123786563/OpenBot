@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { SUITE_DIRS } from "./scripts/lib/e2e-manifest.mjs";
+import { LIVE_SUITES, SUITE_DIRS } from "./scripts/lib/e2e-manifest.mjs";
 import type { E2EConfig } from "e2e";
 
 // e2e 不读 .env；集成测试依赖 DATABASE_URL / OPENAI_* 等变量，显式加载一次。
@@ -88,7 +88,7 @@ const driven = (() => {
  * keeps its assertions intact: `bun run test:api` (or OPENBOT_LIVE_API=1) runs it against
  * OPENBOT_API_BASE_URL.
  */
-const LIVE = ["tests/e2e/api.e2e.test.ts"];
+const LIVE = LIVE_SUITES;
 const liveWanted = Boolean(process.env.OPENBOT_LIVE_API);
 
 export default {
