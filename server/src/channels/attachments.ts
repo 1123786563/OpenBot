@@ -11,14 +11,7 @@ import {
 } from "drizzle-orm";
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import {
-  classifyAttachment,
-  MAX_ATTACHMENTS_PER_MESSAGE,
-  MAX_FILE_BYTES,
-  MAX_IMAGE_BYTES,
-  namesNoFormat,
-} from "../../../shared/attachments";
-import { getLogger } from "../../../shared/logger";
+import { getLogger } from "@openbot/shared/logger";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import {
@@ -28,8 +21,15 @@ import {
   intelligenceChannelMappings,
 } from "../db/schema";
 import { mastraMessageIntentAttachments } from "../db/schema/mastra-message-intents";
-import { sniffMimeType } from "./attachment-mime";
+import {
+  classifyAttachment,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+  MAX_FILE_BYTES,
+  MAX_IMAGE_BYTES,
+  namesNoFormat,
+} from "@openbot/shared/attachments";
 import type { StoredAttachment } from "./attachment-parts";
+import { sniffMimeType } from "./attachment-mime";
 const log = getLogger("server");
 
 function megabytes(bytes: number): string {

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, type Mock, spyOn, test } from "../../tes
 import type {
   ComputerControlState,
   HandoffStatus,
-} from "../../shared/computer-control";
+} from "@openbot/shared/computer-control";
 import {
   awaitHandoff,
   runHelpRequest,

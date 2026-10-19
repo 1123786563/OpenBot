@@ -9,11 +9,5 @@
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "resolveJsonModule": true
   },
-  "include": [
-    "src",
-    "tests",
-    "vite.config.ts",
-    "../shared/handoff-markers.ts",
-    "../shared/listen-port.ts"
-  ]
+  "include": ["src", "tests", "vite.config.ts"]
 }

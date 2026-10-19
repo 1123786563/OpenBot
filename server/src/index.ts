@@ -1,19 +1,17 @@
-import { createHash, randomUUID } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
 import type { AbstractAgent } from "@ag-ui/client";
 import {
   CopilotKitIntelligence,
   IntelligenceAgentRunner,
 } from "@copilotkit/runtime/v2";
+import { COMPUTER_GUIDANCE } from "@openbot/shared/bot-prompt";
+import { DICTATION_HTTP_IDLE_SECONDS } from "@openbot/shared/dictation";
+import { getLogger } from "@openbot/shared/logger";
+import { initProcessTracing } from "@openbot/shared/trace";
+import { workOwner } from "@openbot/shared/work-owner";
+import { createTurnRunner } from "@openbot/toolkit/run-turn";
 import { serve } from "bun";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { COMPUTER_GUIDANCE } from "../../shared/bot-prompt";
-import { DICTATION_HTTP_IDLE_SECONDS } from "../../shared/dictation";
-import { getLogger } from "../../shared/logger";
-import { buildResponsibilityTurn } from "../../shared/responsibility-turn";
-import { initProcessTracing } from "../../shared/trace";
-import { workOwner } from "../../shared/work-owner";
 import { createActivityStore } from "./activity/activity";
 import {
   auditRoutineStore,
@@ -23,6 +21,7 @@ import {
   headlessTurnRefusal,
   installEnterpriseControls,
 } from "./admin/controls";
+import { createEnterpriseStore } from "./admin/settings-store";
 import {
   CoworkerUnavailableError,
   createActorAgentResolver,
@@ -34,16 +33,11 @@ import {
   readRunAssertion,
 } from "./agents/callback-token";
 import { canUseComputer } from "./agents/computer-access";
+import { wireCoordination } from "./agents/coordination-wiring";
 import { createAgentFetch } from "./agents/endpoint";
-import { createHandoffDesk, HANDOFF_KIND } from "./agents/handoff";
-import { createHandoffDelivery } from "./agents/handoff-delivery";
+import { createHandoffDesk } from "./agents/handoff";
 import { createHandoffRunner } from "./agents/handoff-runner";
-import { signHandoffDeliveryRun } from "./agents/handoff-signing";
-import {
-  authoriseCoordinationRun,
-  createCoordinationTools,
-  readCoordinationHandoffClaim,
-} from "./agents/handoff-tool";
+import { startHandoffDelivery } from "./agents/handoff-wiring";
 import {
   configureBotLifecycle,
   createBotLifecycleStore,
@@ -57,6 +51,7 @@ import { canManageAgent } from "./agents/profile-policy";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
+import { serverTurnAdmission } from "./agents/turn-admission";
 import {
   createWakeUpRunner,
   createWakeUpStore,
@@ -97,33 +92,22 @@ import {
 } from "./ai-observability/wiring";
 import { createApp, createDeploymentRequireUser } from "./app";
 import { createApprovedActionExecutor } from "./approvals/execute";
+import { resumePersonQuestion } from "./approvals/question-resume";
 import {
-  PERSON_QUESTION_WAITING,
-  resumePersonQuestion,
-} from "./approvals/question-resume";
-import {
-  createApprovalQuestions,
   type PersonQuestion,
   personQuestionSchema,
   questionConversationBot,
 } from "./approvals/questions";
-import {
-  type ApprovalResumeDependencies,
-  createApprovalService,
-} from "./approvals/service";
+import type { ApprovalResumeDependencies } from "./approvals/service";
 import { createApprovalStore } from "./approvals/store";
-import {
-  ApprovalRefusedError,
-  currentApprovalContext,
-  parseApprovalContinuation,
-  parseApprovalResult,
-} from "./approvals/types";
+import { ApprovalRefusedError } from "./approvals/types";
+import { createServerApprovalService } from "./approvals/wiring";
 import {
   type AuditInitiator,
+  auditSink,
   createAuditReader,
   createAuditStore,
   DEPLOYMENT_INITIATOR,
-  handoffInitiator,
   PERSON_INITIATOR,
   recordAuditEvent,
 } from "./audit";
@@ -138,13 +122,6 @@ import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
 import { CREDIT_SCALE, createCredits } from "./billing/credits";
 import { createCreditWriter } from "./billing/credits-writer";
-import { createPlanRenewalGrantor } from "./billing/plan-renewals";
-import {
-  CreditInsufficientError,
-  currentPayerBinding,
-  ensureDeploymentPayerBinding,
-  resolveConsumptionPayerBinding,
-} from "./billing/payer-binding";
 import {
   countChatInputTokens,
   fitChatInputRequest,
@@ -156,11 +133,18 @@ import {
   startUsageDeliverySweeps,
 } from "./billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
+import {
+  CreditInsufficientError,
+  currentPayerBinding,
+  ensureDeploymentPayerBinding,
+  resolveConsumptionPayerBinding,
+} from "./billing/payer-binding";
 import { createAlipayProvider } from "./billing/payments/alipay";
 import { startPaymentSweeps } from "./billing/payments/maintenance";
 import { createPaymentService } from "./billing/payments/service";
 import { createPaymentStore } from "./billing/payments/store";
 import { createWechatProvider } from "./billing/payments/wechat";
+import { createPlanRenewalGrantor } from "./billing/plan-renewals";
 import { createReconciler } from "./billing/reconcile";
 import { createRecoveryScanner } from "./billing/recovery-scan";
 import {
@@ -184,6 +168,7 @@ import {
   UsageOutboxConflictError,
 } from "./billing/usage-outbox";
 import { createWebhookVerifier } from "./billing/webhook-signature";
+import { createBotServiceRegistry } from "./bot-services/registry";
 import {
   loadAttachmentForTurn,
   markAttachmentsSent,
@@ -211,13 +196,11 @@ import { createSandboxClient } from "./codesandbox/client";
 import { createCodeRunGateway } from "./codesandbox/gateway";
 import type { CodeRunGatewayFactory } from "./codesandbox/routes";
 import { createCodeRunStore } from "./codesandbox/store";
+import { headlessComponentCatalog } from "./components/headless";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createComputerGateway } from "./computer/gateway";
-import {
-  createHeadlessComputerTools,
-  HeadlessToolSuspension,
-} from "./computer/headless-tools";
+import { createHeadlessComputerTools } from "./computer/headless-tools";
 import { createPageFrameStore } from "./computer/page-frames";
 import { startPolicyListener } from "./computer/policy-listener";
 import { withPolicyPushOnWake } from "./computer/policy-network";
@@ -233,10 +216,12 @@ import { createSnapshotStore } from "./computer/snapshot-store";
 import { createStreamAuthorizer } from "./computer/stream-auth";
 import { loadConfig, trustedBrowserOrigins } from "./config";
 import {
+  billingMethodForModel,
   CreditGateFailureError,
   CreditPolicyUnconfiguredError,
   type IdentifyActor,
   type IdentifyUser,
+  type ModelBillingAuditEvent,
   ModelNotPricedError,
   ModelUsageSettlementError,
   mountCopilotRuntime,
@@ -244,12 +229,10 @@ import {
   runtimeModelForEnvironment,
   setBuiltinModelSpanObserver,
   setBuiltinToolStepObserver,
+  setModelBillingAudit,
   setModelUsageGate,
   setWorkbenchGatewayModel,
   type ToolSelection,
-  setModelBillingAudit,
-  type ModelBillingAuditEvent,
-  billingMethodForModel,
 } from "./copilot";
 import {
   buildAvailableSourcesSection,
@@ -263,12 +246,12 @@ import {
   personalUnconnectedApps,
 } from "./craft/managed-content";
 import { resolveCraftMcpServers } from "./craft/mcp-servers";
-import { createPreviewOrigin, samePreviewOrigin } from "./craft/preview-origin";
-import { createPreviewTickets } from "./craft/preview-ticket";
 import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
 } from "./craft/opencode-config";
+import { createPreviewOrigin, samePreviewOrigin } from "./craft/preview-origin";
+import { createPreviewTickets } from "./craft/preview-ticket";
 import {
   type CraftRoutesFactory,
   createCraftRoutes,
@@ -279,8 +262,8 @@ import {
   createPreviewProxy,
   type PreviewWebappHmrDeps,
   resolvePreviewWebappHmrUpgrade,
-  type WebappHmrSocketData,
   resolveWebappHmrUpgrade,
+  type WebappHmrSocketData,
   webappHmrIsAppPath,
   webappHmrSessionIdFromPath,
   webappHmrSocketHandlers,
@@ -293,19 +276,6 @@ import {
   encryptSecret,
   resolveModelApiKey,
 } from "./credentials";
-import {
-  createGatewayAdminCredentialService,
-  gatewayAdminCredentialControls,
-  installGatewayAdminCredentialService,
-} from "./gateway/admin-credential";
-import { startGatewayCatalogSyncScheduler } from "./gateway/catalog-sync";
-import {
-  createGatewayVirtualKeyStateClient,
-  startGatewayKeyStateSyncScheduler,
-} from "./gateway/key-state-sync";
-import { gatewayEndpointControls } from "./gateway/endpoint-config";
-import { assertGatewayReadyForBilling } from "./gateway/readiness";
-import { createEnterpriseStore } from "./admin/settings-store";
 import { createDatabase } from "./db/client";
 import {
   channelAgents,
@@ -342,10 +312,6 @@ import {
   createCredentialLeaseService,
 } from "./enterprise/tenancy/credential-lease";
 import {
-  createSharedApprovalAdminService,
-  createSharedApprovalService,
-} from "./enterprise/tenancy/shared-approvals";
-import {
   createCredentialOwnershipAdminService,
   createCredentialOwnershipDecisionService,
   type SecretVault,
@@ -364,6 +330,10 @@ import {
   createPluginCatalogAdminService,
   createPluginCatalogDecisionService,
 } from "./enterprise/tenancy/plugin-catalog";
+import {
+  createSharedApprovalAdminService,
+  createSharedApprovalService,
+} from "./enterprise/tenancy/shared-approvals";
 import {
   applyStartupVerdict,
   runMultitenancyStartupChecks,
@@ -393,19 +363,32 @@ import {
   createWorkspaceScopeRoutes,
 } from "./enterprise/tenancy/workspace-scope-routes";
 import {
+  createGatewayAdminCredentialService,
+  gatewayAdminCredentialControls,
+  installGatewayAdminCredentialService,
+} from "./gateway/admin-credential";
+import { startGatewayCatalogSyncScheduler } from "./gateway/catalog-sync";
+import { gatewayEndpointControls } from "./gateway/endpoint-config";
+import {
+  createGatewayVirtualKeyStateClient,
+  startGatewayKeyStateSyncScheduler,
+} from "./gateway/key-state-sync";
+import { assertGatewayReadyForBilling } from "./gateway/readiness";
+import {
   createHostAccessBroker,
   HostAccessRefusedError,
 } from "./host-access/broker";
 import { hostAccessTools } from "./host-access/tools";
+import { startHttpServer } from "./http-server";
 import { githubCallbackRoutes } from "./identity/github-callback";
 import { retireIdentityLinks, retireOwnedAccounts } from "./identity/retire";
 import { slackCodeRedeemer } from "./identity/slack-redeem";
 import { createIdentityStore } from "./identity/store";
-import { createBotServiceRegistry } from "./bot-services/registry";
 import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
 } from "./intelligence-client";
+import { reportIntelligenceEntitlement } from "./intelligence-entitlement-check";
 import { knowledgeRequest } from "./knowledge/client";
 import { knowledgeServiceConfig } from "./knowledge/config";
 import {
@@ -440,9 +423,9 @@ import { createMemoryDefaults } from "./memory/defaults";
 import { createMemoryIngestion } from "./memory/ingestion";
 import { createIntelligenceMemory } from "./memory/intelligence";
 import { createMemoryStore } from "./memory/store";
-import { reportModelAvailability } from "./model-availability-check";
 import { memoryTools } from "./memory/tools";
 import { OPENMUSE_TEMPLATE_KEY } from "./mobile-bff/openmuse-bot";
+import { reportModelAvailability } from "./model-availability-check";
 import { currentRunObservationScope } from "./observation-run-scope";
 import { createActivityFeed } from "./openmuse-activity/feed";
 import { createOpenMuseActivityRoutes } from "./openmuse-activity/routes";
@@ -580,10 +563,6 @@ import {
   inboundEmailConfigFromEnv,
 } from "./responsibilities/email";
 import {
-  createResponsibilityEngine,
-  type ResponsibilityEngine,
-} from "./responsibilities/engine";
-import {
   createSlackTriggerIngest,
   slackAccessFrom,
   useSlackChannelMembership,
@@ -595,7 +574,7 @@ import { createTriggerIngressRoutes } from "./responsibilities/trigger-routes";
 import { useTriggerTools } from "./responsibilities/trigger-tools";
 import { createTriggerStore } from "./responsibilities/triggers";
 import type { Responsibility } from "./responsibilities/types";
-import { createTurnRunner } from "./routines/run-turn";
+import { createServerResponsibilityEngine } from "./responsibilities/wiring";
 import { createRoutineRunner } from "./routines/runner";
 import { createRoutineStore } from "./routines/store";
 import { createIntentRouter } from "./routing/classify";
@@ -604,7 +583,6 @@ import {
   chatCompletionsUrl,
   createModelCompleter,
 } from "./routing/model";
-import { reportIntelligenceEntitlement } from "./intelligence-entitlement-check";
 import { createSelfHostBanner } from "./self-host-banner";
 import { createTeamBots } from "./team-bots/team-bots";
 import {
@@ -612,7 +590,6 @@ import {
   loadTenantPackage,
   synchronizeTenantPackage,
 } from "./tenant-package";
-import { markUntrusted } from "./untrusted-content";
 import { createUserInstructionsStore } from "./user-instructions";
 import { createUserPreferencesStore } from "./user-preferences";
 import { createVoiceSessionStore } from "./voice/sessions";
@@ -621,7 +598,6 @@ import { type Repeating, repeatAfterEach } from "./work/loop";
 import {
   createWorkQueue,
   DEFAULT_MAX_ATTEMPTS,
-  startWorkOfferedListener,
   type WorkOfferedListener,
 } from "./work/queue";
 import { indexArtifacts } from "./workshop/artifacts";
@@ -1002,13 +978,7 @@ const enterpriseCapabilities = await (async () => {
           // misconfigured key is indistinguishable from an unprovisioned
           // tenant (OCR R10).
           const name = error instanceof Error ? error.name : "";
-          if (name !== "CredentialUnusableError")
-            console.error({
-              error: "TENANT_CREDENTIAL_DECRYPT_FAILED",
-              context: { credentialRef: reference },
-              cause: error instanceof Error ? error.message : String(error),
-            });
-          return undefined;
+          if (name !== "CredentialUnusableError") return undefined;
         }
       },
       delete: async () => {
@@ -1028,13 +998,7 @@ const enterpriseCapabilities = await (async () => {
     const authenticateEnterpriseRequest = async (
       request: Request,
     ): Promise<AuthenticatedRequestIdentity | null> => {
-      const actor = await resolveRequestActor(request).catch((error) => {
-        // Session-infrastructure faults are not "unauthenticated": leave
-        // a trace so auth-store outages are diagnosable (OCR R10).
-        console.error({
-          error: "ENTERPRISE_SESSION_RESOLUTION_FAILED",
-          cause: error instanceof Error ? error.message : String(error),
-        });
+      const actor = await resolveRequestActor(request).catch((_error) => {
         return null;
       });
       return actor ? { actorId: actor.id, entrypoint: "web" } : null;
@@ -1064,8 +1028,7 @@ const enterpriseCapabilities = await (async () => {
       entry,
       conversations: createConversationService({ data, mastraStorage }),
     };
-  } catch (error) {
-    console.error("Enterprise conversation service unavailable", error);
+  } catch (_error) {
     return null;
   }
 })();
@@ -1503,6 +1466,11 @@ const gatewayAdminCredentialService = createGatewayAdminCredentialService({
   auditStore: bootAuditStore,
 });
 installGatewayAdminCredentialService(gatewayAdminCredentialService);
+// The gallery every headless turn offers its Bot, refusals written to the same trail.
+const componentCatalog = headlessComponentCatalog({
+  store: componentStore,
+  audit: auditSink(bootAuditStore),
+});
 // One store: the gateway writes through it, a route reads it, and the sweep below takes the old ones out.
 const pageFrameStore = createPageFrameStore(database);
 let deliveryNotifications: (
@@ -1516,6 +1484,64 @@ let deliveryNotifications: (
 ) => Promise<void> = async () => {
   throw new Error("Delivery is not initialized.");
 };
+
+/**
+ * Who a routine acts as, resolved the way {@link resolveRequestActor} resolves it.
+ *
+ * THE ROLE IS READ, NOT ASSUMED. Which coworkers exist is decided per person and an administrator
+ * sees Bots a user does not, so hardcoding `role: "user"` here would hide an administrator's own Bots
+ * from their own routine — the routine would fail with "that Bot is no longer registered" for a Bot
+ * sitting in front of them in chat. This asks the same repository the request path asks, so a routine
+ * sees exactly the coworkers its owner sees.
+ */
+const actorFor = async (ownerUserId: string): Promise<AgentActor> => {
+  // One person, and they are an administrator. The id stays the routine owner's rather than being
+  // rewritten to DEV_ACTOR's: in this mode they are the same person, and if they ever were not,
+  // silently borrowing the dev actor's identity would be worse than finding nothing.
+  if (config.singleUser) return { id: ownerUserId, role: DEV_ACTOR.role };
+  const roles = await roleRepository.rolesForUser(ownerUserId);
+  if (!roles.includes("admin") && !roles.includes("user")) {
+    throw new Error("A routine requires an authorized owner.");
+  }
+  return {
+    id: ownerUserId,
+    role: roles.includes("admin") ? "admin" : "user",
+  };
+};
+const channelSourceForRun = async (run: RunAssertion) => {
+  if (!run.threadId) return null;
+  const sources = await database
+    .select({ channelId: channels.id, botId: channelAgents.agentId })
+    .from(intelligenceChannelMappings)
+    .innerJoin(channels, eq(channels.id, intelligenceChannelMappings.channelId))
+    .innerJoin(
+      channelMemberships,
+      and(
+        eq(channelMemberships.channelId, channels.id),
+        eq(channelMemberships.userId, run.actorId),
+      ),
+    )
+    .innerJoin(channelAgents, eq(channelAgents.channelId, channels.id))
+    .where(
+      and(
+        eq(intelligenceChannelMappings.threadId, run.threadId),
+        eq(intelligenceChannelMappings.userId, run.actorId),
+        isNull(channels.deletedAt),
+      ),
+    );
+  return (
+    sources.find((source) => source.botId === run.botId) ??
+    (run.handoff ? (sources[0] ?? null) : null)
+  );
+};
+
+/*
+ * A run's source conversation: a channel's own thread, or a Bot's thread in a group conversation.
+ * The group lookup applies the same live-membership and own-Bot checks. See channels/group.ts.
+ */
+const sourceForCoordinationRun = async (run: RunAssertion) =>
+  (await channelSourceForRun(run)) ?? groupSourceForRun(database, run);
+
 const authoriseQuestion = async (question: PersonQuestion) => {
   const source = await sourceForCoordinationRun({
     ...question,
@@ -1537,120 +1563,85 @@ const authoriseQuestion = async (question: PersonQuestion) => {
     throw new ApprovalRefusedError("That Bot is no longer available to you.");
 };
 const storedApprovals = createApprovalStore(database);
-const approvalService = createApprovalService(
-  {
-    ...storedApprovals,
-    open: async (action) => {
-      const request = await storedApprovals.open(action);
-      if (request.status === "pending") {
-        const forwarded = action.continuation?.forwardedProps;
-        const signed =
-          forwarded &&
-          typeof forwarded === "object" &&
-          "openbotRun" in forwarded
-            ? readRunAssertion(forwarded.openbotRun, config.keyEncryptionKey)
-            : null;
-        const run =
-          signed &&
-          signed.actorId === action.actorId &&
-          signed.botId === action.botId
-            ? signed
-            : {
-                actorId: action.actorId,
-                botId: action.botId,
-                runId: action.runId,
-                threadId: action.threadId,
-                depth: 0,
-              };
-        const source = await sourceForCoordinationRun(run);
-        const botName = source
-          ? ((
-              await agentProfileStore
-                .get(await actorFor(action.actorId), action.botId)
-                .catch(() => null)
-            )?.name ?? action.botId)
-          : action.botId;
-        if (source && run.threadId)
-          await deliveryNotifications(
-            {
-              ownerUserId: action.actorId,
-              channelId: source.channelId,
-              agentId: source.botId,
-              threadId: run.threadId,
-            },
-            {
-              id: request.id,
-              kind: "approval",
-              requestId: request.id,
-              text: `${botName} asks for approval to use ${action.toolRef}. Open the Bot's page in OpenBot to review this action.`,
-            },
-          );
-      }
-      return request;
-    },
-  },
-  createApprovalQuestions(database, authoriseQuestion),
-  async (ownerUserId, botId, snapshot) => {
-    const source = await sourceForCoordinationRun({
-      actorId: ownerUserId,
-      botId,
-      threadId: snapshot.threadId,
-      runId: snapshot.runId,
-      depth: 0,
-      initiator: PERSON_INITIATOR,
-    });
-    if (!source)
-      throw new ApprovalRefusedError(
-        "That conversation is no longer available to this Bot and person.",
-      );
-    // Intelligence saves a streaming run's messages a moment behind the stream, and the browser runs
-    // the tool as soon as the call arrives. A call that is not saved yet is waited for briefly; one
-    // that never appears is refused below.
-    let history = await routineIntelligence.getThreadMessages({
-      threadId: snapshot.threadId,
-      userId: ownerUserId,
-    });
-    const findCall = () =>
-      history.messages
-        .flatMap((message) => message.toolCalls ?? [])
-        .find((call) => call.id === snapshot.toolCallId);
-    for (let attempt = 0; !findCall() && attempt < 10; attempt++) {
-      await Bun.sleep(500);
-      history = await routineIntelligence.getThreadMessages({
-        threadId: snapshot.threadId,
-        userId: ownerUserId,
-      });
-    }
-    const canonicalCall = findCall();
-    if (
-      !canonicalCall ||
-      canonicalCall.name !== snapshot.toolName ||
-      !isDeepStrictEqual(JSON.parse(canonicalCall.args), snapshot.args) ||
-      history.messages.some(
-        (message) =>
-          message.role === "tool" && message.toolCallId === snapshot.toolCallId,
-      )
-    )
-      throw new ApprovalRefusedError(
-        "That unanswered tool call is not saved in this conversation.",
-      );
-    const tools = await approvalComputerTools(
-      ownerUserId,
-      botId,
-      PERSON_INITIATOR,
-    );
-    const tool = tools.find(
-      (tool) => tool.definition.name === snapshot.toolName,
-    );
-    if (!tool)
-      throw new ApprovalRefusedError("That computer tool is not available.");
-    return tool.execute(snapshot.args, {
-      toolCallId: snapshot.toolCallId,
-      signal: new AbortController().signal,
-    });
-  },
-  { review: (prompt, signal) => chooseSkills(prompt, signal) },
+// Before anything reads the model environment: blank base URLs removed, Anthropic given its `/v1`.
+normalizeModelBaseUrls();
+const runtimeModel = runtimeModelForEnvironment(tenantPackage.model);
+
+/**
+ * Pass one of tool selection: which skills a message needs, on the deployment's own model.
+ *
+ * Built once rather than per request, because it holds nothing about a person: the key is resolved
+ * on every call, so a credential rotated a moment ago is used by the next run.
+ */
+const chooseSkills = createModelCompleter({
+  model: runtimeModel,
+  resolveApiKey: () =>
+    resolveModelApiKey({
+      encryptionKey: config.keyEncryptionKey,
+      reader: credentialStore,
+      provider: runtimeModel.provider,
+      keyId: tenantPackage.model.credentialSecretRef,
+      environment: process.env,
+    }),
+});
+
+/*
+ * The pair a headless turn is driven through, built ONCE.
+ *
+ * Not the runtime's own pair: `mountCopilotRuntime` keeps its client and its runner inside
+ * `CopilotRuntime` and hands neither back, and reaching into that object would be a worse seam than
+ * building our own from the same three settings. Built from `config.runtime.intelligence`, which is
+ * required and not optional — `RuntimeCapabilities` has exactly one mode and every Intelligence field
+ * with it (`config.ts:10-22`), and `loadConfig` refuses to boot without them — so there is no
+ * not-in-Intelligence-mode branch to write here. If a second mode is ever added, THIS is the line that
+ * has to grow a guard, and the routine runner must then be left off `createApp` entirely.
+ *
+ * One runner for the process, reused across firings: it opens a socket per run and holds no idle
+ * connection, but its `threads` map is per instance, and a runner per turn would fragment the
+ * already-running check that keeps two turns off one thread. See `toolkit/run-turn.ts`.
+ */
+const routineIntelligence = observeIntelligenceAuthentication(
+  new CopilotKitIntelligence({
+    apiUrl: config.runtime.intelligence.apiUrl,
+    wsUrl: config.runtime.intelligence.gatewayWsUrl,
+    apiKey: config.runtime.intelligence.apiKey,
+  }),
 );
+const approvalComputerTools = async (
+  ownerUserId: string,
+  agentId: string,
+  initiator: AuditInitiator,
+) => {
+  const actor = await actorFor(ownerUserId);
+  const profile = await agentProfileStore.get(actor, agentId);
+  if (!profile)
+    throw new ApprovalRefusedError("That Bot is no longer available to you.");
+  // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
+  return computerGateway && canUseComputer(profile, actor)
+    ? createHeadlessComputerTools({
+        gateway: computerGateway,
+        botId: agentId,
+        actor: { id: actor.id, userId: actor.id, initiator },
+        auditStore: bootAuditStore,
+        ...(signInService ? { signIn: signInService } : {}),
+      })
+    : [];
+};
+
+const approvalService = createServerApprovalService({
+  storedApprovals,
+  config,
+  sourceForCoordinationRun,
+  agentProfileStore,
+  actorFor,
+  database,
+  authoriseQuestion,
+  routineIntelligence,
+  approvalComputerTools,
+  review: (prompt, signal) => chooseSkills(prompt, signal),
+  // Assigned further down, once delivery is wired.
+  notify: (scope, input) => deliveryNotifications(scope, input),
+});
 // Housekeeping on a schedule: audit rows when asked for, screenshots always, one timer. See audit-retention.ts.
 const retentionSweeps = startRetentionSweeps(
   config.databaseUrl,
@@ -1886,6 +1877,8 @@ const responsibilityBindings = createResponsibilityBindingStore(database, {
   reader: credentialStore,
   encryptionKey: config.keyEncryptionKey,
 });
+const deliveryStore = createDeliveryStore(database);
+
 /*
  * Event triggers. Every kind authenticates with its vendor's own scheme and then goes through the
  * responsibility engine's one ingest (event + run + queue in one transaction), so dispatch is the
@@ -2074,9 +2067,6 @@ const stallGuard = createStallGuard({
   auditStore: bootAuditStore,
 });
 
-normalizeModelBaseUrls();
-const runtimeModel = runtimeModelForEnvironment(tenantPackage.model);
-
 const intentRouter = createIntentRouter({
   complete: createModelCompleter({
     model: runtimeModel,
@@ -2097,24 +2087,6 @@ void reportModelAvailability({
   provider: runtimeModel.provider,
   model: runtimeModel.defaultModel,
   apiKey: () =>
-    resolveModelApiKey({
-      encryptionKey: config.keyEncryptionKey,
-      reader: credentialStore,
-      provider: runtimeModel.provider,
-      keyId: tenantPackage.model.credentialSecretRef,
-      environment: process.env,
-    }),
-});
-
-/**
- * Pass one of tool selection: which skills a message needs, on the deployment's own model.
- *
- * Built once rather than per request, because it holds nothing about a person: the key is resolved
- * on every call, so a credential rotated a moment ago is used by the next run.
- */
-const chooseSkills = createModelCompleter({
-  model: runtimeModel,
-  resolveApiKey: () =>
     resolveModelApiKey({
       encryptionKey: config.keyEncryptionKey,
       reader: credentialStore,
@@ -2190,6 +2162,34 @@ if (!knowledgeRuntime && knowledgeService) {
     "knowledge-retrieval-unconfigured",
   );
 }
+/** Team Bots: published Bots, their audiences, and teammates' consent to their own accounts. */
+const teamBots = createTeamBots({
+  database,
+  connectedServers: async (userId) =>
+    new Set(
+      [
+        ...(await pluginStore.connectionsFor(userId)),
+        ...(await pluginStore.brokeredConnectionsFor(userId)),
+      ].map((connection) => connection.serverId),
+    ),
+});
+const deliveryScopeFor: DeliveryScopeResolver = async (
+  ownerUserId,
+  channelId,
+  agentId,
+) => {
+  const person = await peopleStore.find(ownerUserId);
+  if (!person || person.revoked) return null;
+  const actor = await actorFor(ownerUserId);
+  const [channel, bot] = await Promise.all([
+    channelStore.get(actor, channelId),
+    agentProfileStore.get(actor, agentId),
+  ]);
+  return channel?.active && bot && channel.agentIds.includes(agentId)
+    ? { ownerUserId, channelId, agentId, threadId: channel.threadId }
+    : null;
+};
+
 /*
  * Memory sources and background research, on by default for each person and Bot, and never switched
  * back on once the person turns one down. See memory/defaults.ts.
@@ -2251,17 +2251,6 @@ const memorySweep = repeatAfterEach(async () => {
 }, 60_000);
 // Follow-ups a Bot schedules for itself, on the shared work queue. See agents/wake-up.ts.
 const wakeUpStore = createWakeUpStore(database, { auditStore: bootAuditStore });
-/** Team Bots: published Bots, their audiences, and teammates' consent to their own accounts. */
-const teamBots = createTeamBots({
-  database,
-  connectedServers: async (userId) =>
-    new Set(
-      [
-        ...(await pluginStore.connectionsFor(userId)),
-        ...(await pluginStore.brokeredConnectionsFor(userId)),
-      ].map((connection) => connection.serverId),
-    ),
-});
 
 const loadToolsForActor =
   (actorId: string, initiator: AuditInitiator = PERSON_INITIATOR) =>
@@ -2504,274 +2493,22 @@ const agentFetch = createAgentFetch({
     });
   },
 });
-
-/**
- * Who a routine acts as, resolved the way {@link resolveRequestActor} resolves it.
- *
- * THE ROLE IS READ, NOT ASSUMED. Which coworkers exist is decided per person and an administrator
- * sees Bots a user does not, so hardcoding `role: "user"` here would hide an administrator's own Bots
- * from their own routine — the routine would fail with "that Bot is no longer registered" for a Bot
- * sitting in front of them in chat. This asks the same repository the request path asks, so a routine
- * sees exactly the coworkers its owner sees.
- */
-const actorFor = async (ownerUserId: string): Promise<AgentActor> => {
-  // One person, and they are an administrator. The id stays the routine owner's rather than being
-  // rewritten to DEV_ACTOR's: in this mode they are the same person, and if they ever were not,
-  // silently borrowing the dev actor's identity would be worse than finding nothing.
-  if (config.singleUser) return { id: ownerUserId, role: DEV_ACTOR.role };
-  const roles = await roleRepository.rolesForUser(ownerUserId);
-  if (!roles.includes("admin") && !roles.includes("user")) {
-    throw new Error("A routine requires an authorized owner.");
-  }
-  return {
-    id: ownerUserId,
-    role: roles.includes("admin") ? "admin" : "user",
-  };
-};
-
-/*
- * A run's source conversation: a channel's own thread, or a Bot's thread in a group conversation.
- * The group lookup applies the same live-membership and own-Bot checks. See channels/group.ts.
- */
-const sourceForCoordinationRun = async (run: RunAssertion) =>
-  (await channelSourceForRun(run)) ?? groupSourceForRun(database, run);
-const channelSourceForRun = async (run: RunAssertion) => {
-  if (!run.threadId) return null;
-  const sources = await database
-    .select({ channelId: channels.id, botId: channelAgents.agentId })
-    .from(intelligenceChannelMappings)
-    .innerJoin(channels, eq(channels.id, intelligenceChannelMappings.channelId))
-    .innerJoin(
-      channelMemberships,
-      and(
-        eq(channelMemberships.channelId, channels.id),
-        eq(channelMemberships.userId, run.actorId),
-      ),
-    )
-    .innerJoin(channelAgents, eq(channelAgents.channelId, channels.id))
-    .where(
-      and(
-        eq(intelligenceChannelMappings.threadId, run.threadId),
-        eq(intelligenceChannelMappings.userId, run.actorId),
-        isNull(channels.deletedAt),
-      ),
-    );
-  return (
-    sources.find((source) => source.botId === run.botId) ??
-    (run.handoff ? (sources[0] ?? null) : null)
-  );
-};
-const personQuestions = createWorkQueue(database);
-const coordination = createCoordinationTools({
-  desk: handoffDesk,
-  caps: config.handoff,
-  approvalGate: approvalService.gate,
-  privateShare: {
-    check: createPrivateShareCheck({ approvals: approvalService.store }),
-    // Resolved the way the desk resolves it: an id wins, then a single visible name. Null for the
-    // owner's own Bot or a deployment Bot, since nobody else reads that work.
-    audienceFor: async (from, target) => {
-      const roster = await agentProfileStore.list(await actorFor(from.actorId));
-      const wanted = target.trim().toLowerCase();
-      const found =
-        roster.find((candidate) => candidate.id.toLowerCase() === wanted) ??
-        roster.find(
-          (candidate) =>
-            !candidate.hidden &&
-            candidate.deletedAt === null &&
-            candidate.name.toLowerCase() === wanted,
-        );
-      if (!found?.ownerUserId || found.ownerUserId === from.actorId)
-        return null;
-      return {
-        kind: "handoff",
-        id: found.ownerUserId,
-        recipientUserIds: [found.ownerUserId],
-        label: found.name,
-      };
-    },
-    // A question from a conversation other people are in reaches them too, so it is held like a
-    // handoff to another person. Only the owner reading it is the ordinary, unheld case.
-    questionAudience: async (from) => {
-      const channel = await channelSourceForRun(from);
-      const group = channel ? null : await groupSourceForRun(database, from);
-      const source = channel ?? group;
-      if (!source) return null;
-      const members = (
-        await database
-          .select({ userId: channelMemberships.userId })
-          .from(channelMemberships)
-          .where(eq(channelMemberships.channelId, source.channelId))
-      ).map((row) => row.userId);
-      if (members.every((userId) => userId === from.actorId)) return null;
-      return {
-        audience: {
-          kind: group ? "group" : "channel",
-          id: source.channelId,
-          recipientUserIds: members,
-        },
-        // A channel thread is the conversation itself; a group Bot's own thread also holds context
-        // only its owner has seen.
-        origin: channel
-          ? { kind: "shared_conversation", sharedWithUserIds: members }
-          : { kind: "private_conversation" },
-      };
-    },
-  },
-  botsReachableFrom: (botId) => pluginStore.botsReachableFrom(botId),
-  auditStore: bootAuditStore,
-  authoriseRun: (run) =>
-    authoriseCoordinationRun(run, {
-      canUseBot: async (scope) => {
-        const person = await peopleStore.find(scope.actorId);
-        if (!person || person.revoked) return false;
-        return (
-          (await agentProfileStore.get(
-            await actorFor(scope.actorId),
-            scope.botId,
-          )) !== null
-        );
-      },
-      sourceThread: sourceForCoordinationRun,
-      delegationFor: (claim) => readCoordinationHandoffClaim(database, claim),
-    }),
-  route: async (question) => {
-    const source = await sourceForCoordinationRun(question);
-    if (!source)
-      return {
-        refusal: "That question could not reach its source conversation.",
-      };
-    const key = createHash("sha256")
-      .update(
-        JSON.stringify([
-          question.actorId,
-          question.botId,
-          question.runId,
-          question.question,
-        ]),
-      )
-      .digest("hex");
-    const queued = await personQuestions.offer({
-      kind: "person.question",
-      key,
-      payload: {
-        ...question,
-        sourceBotId: source.botId,
-        channelId: source.channelId,
-        mode: "completed_question",
-        toolName: "ask_person",
-        args: {
-          question: question.question,
-          ...(question.why ? { why: question.why } : {}),
-        },
-      },
-    });
-    if (queued === "refused")
-      return { refusal: "The question could not be saved for its person." };
-    await channelStore.recordActivity(
-      await actorFor(question.actorId),
-      source.channelId,
-      {
-        text: `A question needs your answer: ${question.question}`,
-        agentId: source.botId,
-        at: new Date(),
-      },
-      { id: `question:${key}` },
-    );
-    if (question.threadId) {
-      // A person reads this in Slack or on their phone, where "general-assistant" is an id, not a name.
-      const botName =
-        (
-          await agentProfileStore
-            .get(await actorFor(question.actorId), question.botId)
-            .catch(() => null)
-        )?.name ?? question.botId;
-      await deliveryNotifications(
-        {
-          ownerUserId: question.actorId,
-          channelId: source.channelId,
-          agentId: source.botId,
-          threadId: question.threadId,
-        },
-        {
-          id: key,
-          text: `${botName} asks: ${question.question}`,
-          kind: "question",
-          requestId: key,
-        },
-      );
-    }
-    return {
-      reached:
-        "the person in the source conversation; the question is saved awaiting their reply",
-    };
-  },
+const { coordination, coordinationForActor } = wireCoordination({
+  handoffDesk,
+  config,
+  approvalService,
+  agentProfileStore,
+  actorFor,
+  channelSourceForRun,
+  database,
+  pluginStore,
+  bootAuditStore,
+  peopleStore,
+  sourceForCoordinationRun,
+  channelStore,
+  // Assigned further down, once delivery is wired.
+  notify: (scope, input) => deliveryNotifications(scope, input),
 });
-const coordinationForActor =
-  (
-    actorId: string,
-    initiator: AuditInitiator = PERSON_INITIATOR,
-    baseDepth = 0,
-  ) =>
-  async (botId: string, input: import("@ag-ui/client").RunAgentInput) => {
-    const assertion = readRunAssertion(
-      input.forwardedProps?.openbotRun,
-      config.keyEncryptionKey,
-    );
-    if (
-      assertion &&
-      (assertion.botId !== botId || assertion.actorId !== actorId)
-    )
-      throw new Error("The run assertion does not match this Bot and owner.");
-    const run: RunAssertion = assertion?.handoff
-      ? assertion
-      : {
-          botId,
-          actorId,
-          runId: input.runId,
-          threadId: input.threadId,
-          depth: assertion?.depth ?? baseDepth,
-          initiator: assertion?.initiator ?? initiator,
-        };
-    const tools = await coordination.toolsForRun(run);
-    return tools.map((tool) => ({
-      ...tool,
-      execute: async (args: unknown) => {
-        if (!args || typeof args !== "object" || Array.isArray(args))
-          return `${REFUSAL_MARKER} Tool arguments must be an object.`;
-        const result = await coordination.call({
-          name: tool.name,
-          args: args as Record<string, unknown>,
-          run,
-        });
-        if (!result) throw new Error("A coordination tool was not dispatched.");
-        /*
-         * A responsibility's question pauses its run, the way an approval does.
-         *
-         * Left running, the run ended "succeeded" the moment the question was saved, and the answer
-         * came back to a run that was already over: the Bot read it, and then the store refused its
-         * progress because it was not from the responsibility's current run, so the goal stayed
-         * open for ever. Suspended, the run waits, and the answer resumes that same run as this
-         * tool's result, with the right to record progress and finish.
-         */
-        const snapshot = currentApprovalContext();
-        if (
-          tool.name === "ask_person" &&
-          run.initiator?.kind === "responsibility" &&
-          snapshot &&
-          !result.text.startsWith(REFUSAL_MARKER)
-        )
-          throw new HeadlessToolSuspension(
-            "This responsibility is waiting for the person's answer.",
-            {
-              kind: PERSON_QUESTION_WAITING,
-              continuation: snapshot,
-            },
-          );
-        return result.text;
-      },
-    }));
-  };
 
 /**
  * One Bot, built for a routine's turn, as its owner.
@@ -2819,29 +2556,6 @@ const buildAgentFor = async ({
   }
   return agent;
 };
-
-/*
- * The pair a headless turn is driven through, built ONCE.
- *
- * Not the runtime's own pair: `mountCopilotRuntime` keeps its client and its runner inside
- * `CopilotRuntime` and hands neither back, and reaching into that object would be a worse seam than
- * building our own from the same three settings. Built from `config.runtime.intelligence`, which is
- * required and not optional — `RuntimeCapabilities` has exactly one mode and every Intelligence field
- * with it (`config.ts:10-22`), and `loadConfig` refuses to boot without them — so there is no
- * not-in-Intelligence-mode branch to write here. If a second mode is ever added, THIS is the line that
- * has to grow a guard, and the routine runner must then be left off `createApp` entirely.
- *
- * One runner for the process, reused across firings: it opens a socket per run and holds no idle
- * connection, but its `threads` map is per instance, and a runner per turn would fragment the
- * already-running check that keeps two turns off one thread. See `routines/run-turn.ts`.
- */
-const routineIntelligence = observeIntelligenceAuthentication(
-  new CopilotKitIntelligence({
-    apiUrl: config.runtime.intelligence.apiUrl,
-    wsUrl: config.runtime.intelligence.gatewayWsUrl,
-    apiKey: config.runtime.intelligence.apiKey,
-  }),
-);
 const routineAgentRunner = new IntelligenceAgentRunner({
   url: routineIntelligence.ɵgetRunnerWsUrl(),
   authToken: routineIntelligence.ɵgetRunnerAuthToken(),
@@ -2881,9 +2595,10 @@ const routineRunner = createRoutineRunner({
   routineStore,
   channelStore,
   runTurn: createTurnRunner({
+    admission: serverTurnAdmission,
     intelligence: routineIntelligence,
     runner: routineAgentRunner,
-    components: { store: componentStore, auditStore: bootAuditStore },
+    components: componentCatalog,
     buildAgentFor,
     toolsForTurn: computerToolsForTurn,
     learningContainerForThread: (input) =>
@@ -2991,114 +2706,22 @@ const copilotRuntime = mountCopilotRuntime(
   },
 );
 
-const responsibilityQueue = createWorkQueue(database);
-const responsibilityEngine: ResponsibilityEngine = createResponsibilityEngine({
-  store: responsibilityStore,
-  queue: responsibilityQueue,
-  runTurn: async (context) => {
-    const initiator: AuditInitiator = {
-      kind: "responsibility",
-      id: context.responsibilityId,
-    };
-    const tools = responsibilityTools({
-      store: responsibilityStore,
-      engine: responsibilityEngine,
-      ownerUserId: context.ownerUserId,
-      agentId: context.agentId,
-      channelId: context.channelId,
-      responsibilityRunId: context.runId,
-    });
-    const runner = createTurnRunner({
-      intelligence: routineIntelligence,
-      runner: routineAgentRunner,
-      components: { store: componentStore, auditStore: bootAuditStore },
-      buildAgentFor: (input) => buildAgentFor({ ...input, initiator }),
-      toolsForTurn: async () => {
-        const actor = await actorFor(context.ownerUserId);
-        // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
-        const computer =
-          computerGateway &&
-          canUseComputer(
-            await agentProfileStore
-              .get(actor, context.agentId)
-              .catch(() => null),
-            actor,
-          )
-            ? createHeadlessComputerTools({
-                gateway: computerGateway,
-                botId: context.agentId,
-                actor: { id: actor.id, userId: actor.id, initiator },
-                auditStore: bootAuditStore,
-                ...(signInService ? { signIn: signInService } : {}),
-              })
-            : [];
-        return [
-          ...computer,
-          ...tools.map((tool) => ({
-            definition: {
-              name: tool.name,
-              description: tool.description,
-              parameters: z.toJSONSchema(tool.parameters),
-            },
-            execute: (args: unknown) => tool.execute(args),
-          })),
-        ];
-      },
-      learningContainerForThread: (input) =>
-        copilotRuntime.learning?.containerForThread(input) ??
-        Promise.resolve(undefined),
-    });
-    const saved = context.continuation;
-    const snapshot = saved
-      ? parseApprovalContinuation(saved.waiting.continuation)
-      : undefined;
-    const toolResult = saved ? parseApprovalResult(saved.response) : undefined;
-    return runner({
-      ownerUserId: context.ownerUserId,
-      routineId: context.responsibilityId,
-      agentId: context.agentId,
-      threadId: context.threadId,
-      initiator,
-      signal: context.signal,
-      ...(snapshot && toolResult
-        ? {
-            continuation: {
-              snapshot,
-              result: toolResult,
-              messageId: `responsibility-result:${context.runId}:${snapshot.toolCallId}`,
-            },
-          }
-        : {}),
-      instruction: buildResponsibilityTurn({
-        instruction: context.instruction,
-        successCriteria: context.successCriteria,
-        progress: context.progress,
-        trigger: context.event,
-        eventData: markUntrusted(
-          JSON.stringify(context.event.payload),
-          `${context.event.source} event`,
-        ),
-        responsibilityId: context.responsibilityId,
-      }),
-    });
-  },
-  onReply: async (context, text) => {
-    await channelStore.recordActivity(
-      await actorFor(context.ownerUserId),
-      context.channelId,
-      { text, agentId: context.agentId, at: new Date() },
-      { id: `responsibility:${context.runId}` },
-    );
-    await deliveryNotifications(
-      {
-        ownerUserId: context.ownerUserId,
-        channelId: context.channelId,
-        agentId: context.agentId,
-        threadId: context.threadId,
-      },
-      { id: `responsibility:${context.runId}`, kind: "reply", text },
-    );
-  },
+const responsibilityEngine = createServerResponsibilityEngine({
+  database,
+  responsibilityStore,
+  routineIntelligence,
+  routineAgentRunner,
+  componentCatalog,
+  buildAgentFor,
+  actorFor,
+  computerGateway,
+  agentProfileStore,
+  bootAuditStore,
+  signInService,
+  copilotRuntime,
+  channelStore,
+  // Assigned further down, once delivery is wired.
+  notify: (scope, input) => deliveryNotifications(scope, input),
 });
 /**
  * A turn for a responsibility that is not one of the engine's own firings: a person answering the
@@ -3125,9 +2748,10 @@ const responsibilityAnswerTurn = ({
     ...(responsibilityRunId ? { responsibilityRunId } : {}),
   });
   return createTurnRunner({
+    admission: serverTurnAdmission,
     intelligence: routineIntelligence,
     runner: routineAgentRunner,
-    components: { store: componentStore, auditStore: bootAuditStore },
+    components: componentCatalog,
     buildAgentFor: (input) => buildAgentFor({ ...input, initiator }),
     toolsForTurn: async () => [
       ...(await approvalComputerTools(
@@ -3178,26 +2802,6 @@ const responsibilitySweep = repeatAfterEach(async () => {
 
 const approvalQueue = createWorkQueue(database);
 const approvalOwner = workOwner("approval");
-const approvalComputerTools = async (
-  ownerUserId: string,
-  agentId: string,
-  initiator: AuditInitiator,
-) => {
-  const actor = await actorFor(ownerUserId);
-  const profile = await agentProfileStore.get(actor, agentId);
-  if (!profile)
-    throw new ApprovalRefusedError("That Bot is no longer available to you.");
-  // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
-  return computerGateway && canUseComputer(profile, actor)
-    ? createHeadlessComputerTools({
-        gateway: computerGateway,
-        botId: agentId,
-        actor: { id: actor.id, userId: actor.id, initiator },
-        auditStore: bootAuditStore,
-        ...(signInService ? { signIn: signInService } : {}),
-      })
-    : [];
-};
 const executeApprovedAction = createApprovedActionExecutor({
   sourceFor: sourceForCoordinationRun,
   gate: approvalService.gate,
@@ -3221,9 +2825,10 @@ const executeApprovedAction = createApprovedActionExecutor({
   personInitiator: PERSON_INITIATOR,
 });
 const approvalContinuationRunner = createTurnRunner({
+  admission: serverTurnAdmission,
   intelligence: routineIntelligence,
   runner: routineAgentRunner,
-  components: { store: componentStore, auditStore: bootAuditStore },
+  components: componentCatalog,
   buildAgentFor,
   toolsForTurn: async ({ ownerUserId, agentId, initiator }) =>
     approvalComputerTools(ownerUserId, agentId, initiator),
@@ -3416,7 +3021,6 @@ const approvalSweep = repeatAfterEach(async () => {
     );
   }
 }, 2_000);
-const deliveryStore = createDeliveryStore(database);
 const deliveryProviders = configuredDeliveryProviders(
   config.publicUrl ?? config.auth?.baseUrl ?? `http://localhost:${config.port}`,
 );
@@ -3426,22 +3030,6 @@ useSlackChannelMembership((input) =>
     ? deliveryProviders.slack.isMember(input)
     : Promise.resolve(false),
 );
-const deliveryScopeFor: DeliveryScopeResolver = async (
-  ownerUserId,
-  channelId,
-  agentId,
-) => {
-  const person = await peopleStore.find(ownerUserId);
-  if (!person || person.revoked) return null;
-  const actor = await actorFor(ownerUserId);
-  const [channel, bot] = await Promise.all([
-    channelStore.get(actor, channelId),
-    agentProfileStore.get(actor, agentId),
-  ]);
-  return channel?.active && bot && channel.agentIds.includes(agentId)
-    ? { ownerUserId, channelId, agentId, threadId: channel.threadId }
-    : null;
-};
 const authoriseDeliveryScope = async (scope: DeliveryScope) =>
   (await deliveryScopeFor(scope.ownerUserId, scope.channelId, scope.agentId))
     ?.threadId === scope.threadId;
@@ -3524,6 +3112,7 @@ const proactiveEngine = createProactiveEngine({
   queue: createWorkQueue(database),
   owner: workOwner("proactive"),
   runTurn: createTurnRunner({
+    admission: serverTurnAdmission,
     intelligence: routineIntelligence,
     runner: routineAgentRunner,
     buildAgentFor,
@@ -3598,9 +3187,10 @@ const wakeUpRunner = createWakeUpRunner({
   actorFor,
   channels: channelStore,
   runTurn: createTurnRunner({
+    admission: serverTurnAdmission,
     intelligence: routineIntelligence,
     runner: routineAgentRunner,
-    components: { store: componentStore, auditStore: bootAuditStore },
+    components: componentCatalog,
     buildAgentFor,
     toolsForTurn: computerToolsForTurn,
     learningContainerForThread: (input) =>
@@ -3742,7 +3332,8 @@ const openMuseTaskRunner = createOpenMuseTaskRunner({
   runTurn: createTurnRunner({
     intelligence: routineIntelligence,
     runner: routineAgentRunner,
-    components: { store: componentStore, auditStore: bootAuditStore },
+    admission: serverTurnAdmission,
+    components: componentCatalog,
     buildAgentFor,
     toolsForTurn: computerToolsForTurn,
     learningContainerForThread: (input) =>
@@ -3810,7 +3401,8 @@ const groupConversations = createGroupConversations({
   runTurn: createTurnRunner({
     intelligence: routineIntelligence,
     runner: routineAgentRunner,
-    components: { store: componentStore, auditStore: bootAuditStore },
+    admission: serverTurnAdmission,
+    components: componentCatalog,
     buildAgentFor,
     toolsForTurn: computerToolsForTurn,
     learningContainerForThread: (input) =>
@@ -3982,135 +3574,16 @@ const personResponseSweep = repeatAfterEach(async () => {
 let workOfferedListener: WorkOfferedListener | undefined;
 
 if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
-  const runner = createHandoffRunner({
-    queue: createWorkQueue(database),
-    owner: workOwner("handoff"),
-    auditStore: bootAuditStore,
-    /*
-     * The signed statement of the run the addressed Bot is about to start, carrying how deep the
-     * chain has gone. Minted here, where the key lives, and one deeper than the run that asked.
-     */
-    sign: (work, claim) =>
-      signHandoffDeliveryRun(work, config.keyEncryptionKey, undefined, claim),
-    delivery: createHandoffDelivery({
-      /*
-       * Built as the person, WITH THEIR ROLE. The desk resolved it to decide the hop was allowed; a
-       * delivery that then rebuilt them as an ordinary user could not find the Bot the desk had just
-       * agreed to, and the person was told it never answered.
-       */
-      agentFor: async ({ actorId, botId, fromBotId, initiator }) => {
-        const actor = await actorFor(actorId).catch(() => null);
-        if (!actor) {
-          throw new Error(
-            "who this is for could not be confirmed, so the Bot was not run",
-          );
-        }
-        return copilotRuntime.agentFor({
-          actor,
-          botId,
-          initiator: handoffInitiator(fromBotId, initiator),
-        });
-      },
-      history: copilotRuntime.history,
-      lock: copilotRuntime.threadLock,
-      /*
-       * A scratch thread of the addressed Bot's own, one per hop.
-       *
-       * An Intelligence thread has exactly one agent, so a second Bot cannot answer inside the first
-       * Bot's conversation however it asks. Its turn runs here instead, unmapped to any channel, and
-       * what it said comes back to the conversation that asked through the relay — in the asking
-       * Bot's voice, which is the only voice that thread admits. Minted with the deployment's own
-       * identity, like every thread this deployment starts.
-       */
-      mintThreadId: () => threadIdentity.mint(),
-      /*
-       * The roster, told that a relayed answer landed. The delivery knows only the thread it ran
-       * in; this resolves which channel shows that thread — a scratch thread maps to nothing and
-       * announces nowhere, which is the point of a scratch thread.
-       */
-      announce: async (input) => {
-        const [mapped] = await database
-          .select({ channelId: intelligenceChannelMappings.channelId })
-          .from(intelligenceChannelMappings)
-          .where(eq(intelligenceChannelMappings.threadId, input.threadId))
-          .limit(1);
-        // A Bot's group thread maps to no channel; its answer goes to the shared transcript.
-        if (!mapped) {
-          await groupConversations.announceHandoff(input);
-          return;
-        }
-        const actor = await actorFor(input.actorId).catch(() => null);
-        if (!actor) return;
-        await channelStore.recordActivity(actor, mapped.channelId, {
-          text: input.text,
-          agentId: input.agentId,
-          at: new Date(),
-        });
-      },
-      // The asking conversation shown as working while a hop runs in it. Keyed by thread, resolved
-      // to its channel by the store; a scratch thread maps to none and signals nowhere.
-      setBusy: (input) => channelStore.signalBusy(input.threadId, input.busy),
-      newRunId: () => randomUUID(),
-      // The same address and the same token the runtime uses. Assembling either from configuration
-      // produced a runner every join was refused for, because the thread's active run is a lock the
-      // platform issues rather than something an API key can claim.
-      runner: new IntelligenceAgentRunner(
-        copilotRuntime.runnerConnection(),
-      ) as never,
-    }),
+  workOfferedListener = await startHandoffDelivery({
+    config,
+    database,
+    bootAuditStore,
+    actorFor,
+    copilotRuntime,
+    threadIdentity,
+    groupConversations,
+    channelStore,
   });
-
-  const sweep = async () => {
-    try {
-      const report = await runner.sweep();
-      if (report.delivered.length > 0 || report.skipped.length > 0) {
-        log.info({ type: "bot-handoff", ...report }, "bot-handoff");
-      }
-    } catch (error) {
-      // A sweep that failed must not take the loop with it: the next one may find the database back.
-      log.warn({ err: error }, "[handoff] a sweep could not run");
-    }
-  };
-
-  /*
-   * ONE SWEEP AT A TIME ON THIS REPLICA, from both callers below. A sweep poked while one is
-   * running is remembered rather than started, and runs once the current one ends — a wake-up
-   * that arrived mid-sweep may be for a hop the running sweep's claim already missed.
-   */
-  let sweeping = false;
-  let sweepAgain = false;
-  const kick = async () => {
-    if (sweeping) {
-      sweepAgain = true;
-      return;
-    }
-    sweeping = true;
-    try {
-      do {
-        sweepAgain = false;
-        await sweep();
-      } while (sweepAgain);
-    } finally {
-      sweeping = false;
-    }
-  };
-
-  /*
-   * Woken by the queue itself, from any replica: a person is waiting through every hop, and the
-   * poll below would spend up to two seconds per leg doing nothing. The poll stays as the
-   * backstop — a notification is a latency optimisation, and one lost in transit costs one
-   * interval, never the work. See repeatAfterEach for why an interval must not be used: an
-   * interval would start another sweep every two seconds while a five-minute delivery runs, each
-   * claiming a different batch, and this replica's concurrent agent runs would grow with the
-   * backlog rather than stopping at the limit it was asked for.
-   */
-  workOfferedListener = await startWorkOfferedListener(
-    config.databaseUrl,
-    (kind) => {
-      if (kind === HANDOFF_KIND) void kick();
-    },
-  );
-  repeatAfterEach(kick, 2_000);
 }
 
 /*
@@ -6877,6 +6350,8 @@ const keyStateSyncScheduler = startGatewayKeyStateSyncScheduler({
       return controls ? controls.readGatewayEndpoint() : undefined;
     },
     resolveGatewayAdminCredential: async () =>
+      // ponytail: non-null by construction — the controls exist whenever the gateway is wired;
+      // a null assert is cheaper than widening the whole seam for a state boot already refuses.
       gatewayAdminCredentialControls()!.resolveGatewayAdminCredential(),
   }),
 });
@@ -7227,6 +6702,17 @@ serve<SocketData>({
       ws.data.inward?.close();
     },
   },
+});
+
+startHttpServer({
+  port,
+  config,
+  resolveRequestActor,
+  agentProfileStore,
+  computerGateway,
+  demonstrationStore,
+  demonstrationRecorder,
+  app,
 });
 
 if (config.singleUser) {

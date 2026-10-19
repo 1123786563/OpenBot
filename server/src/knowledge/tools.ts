@@ -11,9 +11,9 @@
  */
 
 import { z } from "zod";
-import { getLogger } from "../../../shared/logger";
+import { getLogger } from "@openbot/shared/logger";
 import type { AuditInitiator } from "../audit";
-import type { GrantedTool } from "../plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { markUntrusted } from "../untrusted-content";
 import type { KnowledgeRetriever, RetrievalOutcome } from "./retrieval";
 

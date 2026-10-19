@@ -1,6 +1,5 @@
-import "./preload";
-import { expect, test } from "../../tests/support/e2e-compat";
-import type { SaveVoiceSessionInput } from "../../shared/voice-session";
+import { expect, test } from "bun:test";
+import type { SaveVoiceSessionInput } from "@openbot/shared/voice-session";
 import {
   VoiceTranscript,
   VOICE_CONTEXT_ITEM_ID,

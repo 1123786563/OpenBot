@@ -24,6 +24,7 @@ import {
   type AuditStore,
   recordAuditEvent,
 } from "../audit";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { withUntrustedNotice } from "../untrusted-content";
 import { type ComputerCapacity, computerCapacity } from "./capacity";
 import {
@@ -38,7 +39,6 @@ import {
   WorkspaceRequestError,
   WorkspaceTooLargeError,
 } from "./client";
-import { HeadlessToolSuspension } from "./headless-tools";
 import { checkComputerAddress } from "./target";
 
 export {

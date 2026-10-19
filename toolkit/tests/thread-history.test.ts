@@ -1,5 +1,5 @@
-import { describe, expect, test } from "../../tests/support/e2e-compat";
-import { historyOrEmpty, isMissingThread } from "../src/copilot";
+import { describe, expect, test } from "bun:test";
+import { historyOrEmpty, isMissingThread } from "../src/thread-history";
 
 /**
  * Reading history on a thread the platform has never seen.

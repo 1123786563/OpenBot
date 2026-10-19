@@ -1,7 +1,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { downloadHeaders } from "../../../shared/file-download";
-import { getLogger } from "../../../shared/logger";
+import { downloadHeaders } from "@openbot/shared/file-download";
+import { getLogger } from "@openbot/shared/logger";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import type { AuditReader } from "../audit";
 import type { AppVariables } from "../auth/guards";

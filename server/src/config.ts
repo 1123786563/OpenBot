@@ -13,8 +13,8 @@ function spreadOptional<K extends string, V>(
 import {
   isLearningContainerId,
   type LearningTarget,
-} from "../../shared/learning";
-import { getLogger } from "../../shared/logger";
+} from "@openbot/shared/learning";
+import { getLogger } from "@openbot/shared/logger";
 import { singleUserEnabled } from "./auth/dev-actor";
 import { normalizeDomain } from "./auth/email-domain";
 import { organizationAuthority } from "./auth/organization";

@@ -1,6 +1,5 @@
-import "./preload";
-import { describe, expect, test } from "../../tests/support/bun-test-compat";
-import { frameFiring } from "../../shared/routine-firing";
+import { describe, expect, test } from "bun:test";
+import { frameFiring } from "@openbot/shared/routine-firing";
 import { isPersonSentMessage } from "../src/components/channels/chat-transcript";
 
 /**
