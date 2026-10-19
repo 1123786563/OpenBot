@@ -515,13 +515,14 @@ describe("T-final M1: the boot assembly reads the ambient scope", () => {
     ).toBe(2);
   });
 
-  test("the one remaining ambient read is the retrieval adapter's, whose fact is emitted inline (OCR R3-39 scoping)", () => {
-    // The retrieval observation is emitted synchronously inside the run's
-    // pipeline, where the ambient context holds — the tool-step settlement's
-    // ambient read, the one R3-39 kills, is gone (zero on that path).
-    expect(indexSource.match(/currentRunObservationScope\(\)/g)?.length).toBe(
-      1,
-    );
+  test("no ambient read remains — the retrieval adapter's was the last (OCR R3-39 scoping, ADR 0009)", () => {
+    // The retrieval observation — the one ambient read R3-39 still allowed —
+    // went with the knowledge domain (ADR 0009). Zero is the budget: any new
+    // observation path must read the scope its fact carried, never the
+    // ambient store.
+    expect(
+      indexSource.match(/currentRunObservationScope\(\)/g)?.length ?? 0,
+    ).toBe(0);
   });
 
   test("the run-scope resolver is constructed before the first top-level await — the boot TDZ race is dead (OCR R3-36)", () => {

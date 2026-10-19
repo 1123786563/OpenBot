@@ -418,16 +418,6 @@ describe("tenant YAML validation", () => {
        */
       skills: ["bot-creator", "skill-creator"],
     });
-    // The pairing the shipped package makes, which is the whole reason Knowledge narrows to document
-    // tools rather than being offered everything its grants hold.
-    expect(
-      tenantPackage.agents.find((agent) => agent.id === "knowledge")?.skills,
-    ).toEqual([
-      "find-a-document",
-      "check-a-claim",
-      "whats-changed",
-      "who-owns-this",
-    ]);
     /*
      * The skill that writes skills, shipped with no declared tools on purpose. Its tools are the app's
      * own rather than a connector's, so they are not `serverId/toolName` refs; a declaration here would
@@ -450,7 +440,7 @@ describe("tenant YAML validation", () => {
     });
   });
 
-  test("starts a deployment with two coworkers, not the whole catalog", async () => {
+  test("starts a deployment with one coworker, not the whole catalog", async () => {
     /*
      * The roster a fresh deployment opens on. The ten in `catalog/` used to load from `agents/`, so
      * every new deployment met a dozen Bots at once. Risk Analyst and the picked harness only register
@@ -468,7 +458,6 @@ describe("tenant YAML validation", () => {
       );
       expect(tenantPackage.agents.map((agent) => agent.id)).toEqual([
         "general-assistant",
-        "knowledge",
       ]);
     } finally {
       if (saved.managed === undefined)
