@@ -23,4 +23,3 @@
 # These preloads still apply, because e2e schedules 455 of those files onto `bun test` itself
 # (tests/bun-suites.test.ts, ADR 0008's second tier) and Bun reads this file for that process.
 preload = ["./server/scripts/test-preload.ts", "./app/tests/preload.ts"]
-preload = ["./server/scripts/test-preload.ts", "./app/tests/preload.ts"]
