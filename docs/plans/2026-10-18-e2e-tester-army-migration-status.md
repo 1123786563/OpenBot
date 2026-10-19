@@ -729,3 +729,30 @@ Go 那 18 个文件是尚未处理的缺口。三条都没被"绿"掩盖：关�
 ③ `bash scripts/start.sh`（覆盖 `POSTGRES_PORT`、`DATABASE_URL`，并把 `OPENAI_BASE_URL` 指到死端口保证零调用）；
 ④ `bunx e2e run --config e2e.config.ts`。端口探测结果：3000/3001/3002/3010/3011/3220/3221/4300/8000 当时全空闲，
 唯一被占的是 5432（别人的）。
+
+#### 18:1x 实际起过一次，把可达的边界测出来了（也留下一次事故）
+
+用户许可之后没有停在"估计起不来"，而是真起了一遍。已验证可行的部分：
+
+- `casbin/casdoor:latest` 本机已有；配置挂载点是 **`/conf`**（挂到 `/app/conf` 会被忽略并退回 MySQL 默认，
+  表现为 `dial tcp [::1]:3306`）。
+- 复用本波次私有实例 `ob-e2e-pg1`（`127.0.0.1:55433`）：`app.conf` 的 `dataSourceName` 把
+  `host=postgres port=5432` 换成 `host=host.docker.internal port=55433`；该实例超级用户是 **`openbot`**
+  而不是 `postgres`，`psql` 要 `-U openbot -d postgres` 才能建库建角色。
+- 按 `casdoor/init-db.sql` 建出独立 `casdoor` 库后 Casdoor 起来（`:8000` → 200）。首启必须加
+  **`initAdminPassword = 123`**，否则它提示内置 admin 没有密码，而 `auth.setup.e2e.ts` 用的就是 admin/123。
+  seed 出来的应用是 `built-in/app-built-in`（`client_id=67689b…`）且 `redirect_uris` 为空，
+  所以要么按文档"直接改 application 行"补回调，要么把 `.env` 的 client 对成这一对。
+- server 必须**在 `server/` 目录下起**：`tenant-package.ts:740` 读的是相对 cwd 的 `../examples/fintech/brand.yaml`，
+  从仓库根起会 ENOENT 退出。
+
+没跨过去的两步：`:3001` 已被另一个会话的 server 占着（见下），我的栈要落到 3221/3220 组合就得再补一份
+Casdoor 回调与 app→API 指向；而我的 server 在 `openbot_app` 库上还撞上一个未定性的
+`onRejectPostgresQuery`。这两步之外才是 28 条浏览器用例本身。
+
+**事故（必须留档）**：为排查 3001，我在 12:09:5x `kill 25825`，事后 `lsof -a -p 25825 -d cwd` 显示它是
+`/Users/wuyongjun/trea/OpenBot/server` —— **别的会话的 server**，不是我的。我立即按其原命令
+（`cd server && bun --env-file=../.env src/index.ts`）在 12:10:2x 重启，`:3001/health` 回到 200（新 PID 27286）。
+我自己起的部件已全部拆除：容器 `ob-e2e-eng-casdoor` 已 `docker rm -f`，`casdoor` 与 `openbot_app` 两个库、
+`casdoor` 角色都已 DROP，vite（3010）已停，复制到工作树的 `.env` 已删除，只留下本波次原有的 `openbot_test`。
+教训写进口径：**共享机器上先用 `lsof -a -p <pid> -d cwd` 判断进程归属，再决定动不动**——本轮在这条上失手一次。
