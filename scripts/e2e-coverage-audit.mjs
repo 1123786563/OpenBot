@@ -14,7 +14,7 @@
 // that imports neither layer, or a driven file that still imports the e2e layer, is a gap: the first
 // aborts collection, the second never runs, the third hits Node-only code under Bun. Exits non-zero so
 // CI can gate on it.
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { LIVE_SUITES, SUITE_DIRS } from "./lib/e2e-manifest.mjs";
 
@@ -151,6 +151,62 @@ function entryPointGaps() {
  * import as native and never compared the imported layer against the manifest. The check lives in the
  * classification loop above, so a mis-tiered file is a gap rather than a native count.
  */
+/*
+ * Foreign runners. The claim "every test runs under tester-army e2e" is only honest if the corpora
+ * e2e cannot execute are *named* — and naming them once is not enough, because the boundary moves:
+ * a new `python -m pytest agent-new/tests` job or a deleted Go job both leave the registry, and the
+ * audit, lying quietly. So every workflow line that invokes a non-e2e runner must match an entry, and
+ * every entry must still match something in the tree.
+ */
+const FOREIGN_TRIGGER = /(python -m pytest .*|cargo test .*|\bgo test .*)$/;
+function foreignGaps() {
+  const gaps = [];
+  const registryPath = join(
+    root,
+    "docs/verification/e2e-foreign-suites.json",
+  );
+  if (!existsSync(registryPath))
+    return [
+      "docs/verification/e2e-foreign-suites.json is missing: a corpus e2e cannot execute must be migrated or named there, not left out of the walk.",
+    ];
+  const entries =
+    JSON.parse(readFileSync(registryPath, "utf8")).entries ?? [];
+  const seen = new Set();
+  const workflows = join(root, ".github", "workflows");
+  for (const file of readdirSync(workflows)) {
+    if (!/\.ya?ml$/.test(file)) continue;
+    for (const line of readFileSync(join(workflows, file), "utf8").split("\n")) {
+      const trimmed = line.trim().replace(/^-\s*/, "").replace(/^run:\s*/, "");
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const hit = trimmed.match(FOREIGN_TRIGGER);
+      if (!hit) continue;
+      const command = hit[1].trim();
+      const named = entries.some((entry) =>
+        new RegExp(entry.pattern).test(command),
+      );
+      if (!named)
+        gaps.push(
+          `${file}: \`${command}\` runs a non-e2e test corpus that no entry in docs/verification/e2e-foreign-suites.json names`,
+        );
+      entries.forEach((entry, index) => {
+        if (new RegExp(entry.pattern).test(command))
+          seen.add(index);
+      });
+    }
+  }
+  entries.forEach((entry, index) => {
+    // `invoked: false` is the shape of a named hole: the corpus exists and nothing runs it. Requiring
+    // it to be invoked would turn the finding back into a green check, which is the opposite of why
+    // the Go row is here.
+    if (!seen.has(index) && entry.invoked !== false)
+      gaps.push(
+        `${entry.runner}: named in the registry but invoked by no workflow any more — the boundary moved, so either the corpus came back to e2e or the job was dropped; say which and delete the entry`,
+      );
+  });
+  return gaps;
+}
+
+const foreign = foreignGaps();
 const entries = entryPointGaps();
 console.log(
   `${files.length} suite files in the 14 migrated directories · ${buckets.native.length} native e2e · ${buckets.driven.length} driven by e2e (bun runtime) · ${buckets.engine.length} engine (.e2e.ts, web/mobile) · ${buckets.excluded.length} named exclusions`,
@@ -160,6 +216,13 @@ if (buckets.gap.length) {
     `\nGAPS (${buckets.gap.length}) — each one means the corpus is not fully accounted:`,
   );
   for (const gap of buckets.gap.slice(0, 40)) console.log(`  ${gap}`);
+  process.exit(1);
+}
+if (foreign.length) {
+  console.log(
+    `\nFOREIGN RUNNERS (${foreign.length}) — the boundary between e2e and the runners e2e cannot execute must stay named:`,
+  );
+  for (const gap of foreign) console.log(`  ${gap}`);
   process.exit(1);
 }
 if (entries.length) {

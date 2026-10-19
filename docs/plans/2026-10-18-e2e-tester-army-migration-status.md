@@ -630,3 +630,36 @@ Qdrant 残留状态解释还没做那一轮复现（方法在 `~/.cache/openbot-
 **native bucket 597 · 实际执行 597 · 贡献为零的文件 0 · 执行了但不属于任何桶 0**，
 审计桶与 runner 报告第一次做到逐文件相等（这个对账本身此前被 `ALLOWED_MISSING` 里手抄的一行拖成
 598 vs 597，已改为共用 `LIVE_SUITES`）。
+
+## 2026-10-19 17:3x 补充：e2e 跑不了的语料要具名，具名还得能被证伪
+
+按文件清点 `git grep -lE 'from "bun:test"' HEAD -- '*.test.ts*'`：HEAD 里只剩 **11 个**文件还直接写
+`bun:test`，其中 1 个已在驱动清单，另外 10 个全是 `archive/plans/multitenancy-execution/checkpoints/**`
+的证据副本（在 14 个目录之外，任何入口都不收集）。**14 个目录内"未被任何桶认领"的套件文件是 0 个**——
+这一节要说的不是 JS 侧，而是 JS 之外。
+
+清点 CI 实际执行了什么，发现三个 e2e 之外的语料，并且**计划文档自己有一行是假的**：
+
+| 语料 | 文件数 | 谁在跑 | 事实 |
+|---|---|---|---|
+| `agent-*/tests`（pytest） | 38 | ci.yml `python harness regressions`，11 条 `python -m pytest … -q` | 跑，但不经 e2e |
+| desktop 的 Rust | 40 个 .rs | desktop.yml 两条 `cargo test --locked --lib …` | 跑，但不经 e2e |
+| `runtime-go` / `agent-trpc` | 18 个 `_test.go` | **没有任何 job 跑它们** | 本文第 44 行原写"CI 里也是独立 job"，`grep -rn 'go test' .github/workflows/` 零命中；ci.yml 只对 `go.mod`/`go.sum` 做哈希复核 |
+
+所以 Go 那一行**不能算"具名排除"，要算"具名缺口"**：这些测试既没迁移也没人执行。
+新增 `docs/verification/e2e-foreign-suites.json` 把三类都登记，字段 `invoked` 区分两种身份——
+`true` 是"跑但不经 e2e"，`false` 是"登记就是为了说没人跑"。
+
+审计加了一道 `FOREIGN RUNNERS` 关卡：扫每个 workflow 的每一行，凡命中
+`python -m pytest …` / `cargo test …` / `go test …` 都必须匹配清单里某条 `pattern`；
+反过来每条 `invoked: true` 的项若在 workflow 里再也匹配不到，也算缺口（边界动了要重新记账）。
+`invoked: false` 免除"必须被调用"这一半，否则 Go 那一条会被反向洗成绿。
+
+证伪过才敢用：把 pytest 那一条从清单里删掉再跑审计 →
+`FOREIGN RUNNERS (11)`、exit 1；还原 → exit 0。当前审计出口 0，四桶账不变
+（1073 = 597 native / 460 driven / 10 engine / 6 具名排除）。
+
+对目标口径的影响，说清楚不粉饰：**"所有的测试改成 tester-army / e2e"在 JS/TS 语料内成立**
+（逐文件对账：597 个桶文件 = 597 个实际执行文件，0 零贡献），**在 JS/TS 之外不成立**——
+pytest 与 Rust 是运行器限制导致的具名排除（e2e 没有 Python/ crates 引擎），
+Go 那 18 个文件是尚未处理的缺口。三条都没被"绿"掩盖：关卡会持续要求它们保持具名。
