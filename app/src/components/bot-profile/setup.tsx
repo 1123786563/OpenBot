@@ -9,7 +9,6 @@ import {
 } from "@tabler/icons-react";
 import { useMutation } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
-import { useTranslation } from "react-i18next";
 import type { ZodType } from "zod";
 import { CallbackTokenPanel } from "@/components/agents/callback-token-panel";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
@@ -52,26 +51,26 @@ import { queryClient } from "@/query-client";
 
 type TextField = "name" | "title" | "roleDescription";
 
-/* Key literals stay literal so `t(...)` sees a known key, not `string`. */
-const TEXT_FIELDS = [
-  { field: "name", label: "fields.name", icon: IconId, multiline: false },
-  { field: "title", label: "fields.title", icon: IconTag, multiline: false },
-  {
-    field: "roleDescription",
-    label: "fields.role",
-    icon: IconTextCaption,
-    multiline: true,
-  },
-] as const satisfies readonly {
+const TEXT_FIELDS: {
   field: TextField;
   label: string;
   icon: typeof IconId;
   multiline?: boolean;
-}[];
+}[] = [
+  { field: "name", label: "Name", icon: IconId },
+  { field: "title", label: "Title", icon: IconTag },
+  {
+    field: "roleDescription",
+    // Not "Role": beside "Title" it read as a second job title, when it is the standing
+    // instruction the Bot carries into every channel. The create dialog says the same.
+    label: "What it does",
+    icon: IconTextCaption,
+    multiline: true,
+  },
+];
 
 /** Who a Bot is and where it runs. Editable by whoever may manage it; read-only for everyone else. */
 export function SetupSections({ agent }: { agent: AgentProfile }) {
-  const { t } = useTranslation("agents");
   const update = useMutation(updateAgentMutationOptions(queryClient));
   const [editing, setEditing] = useState<TextField | null>(null);
   const save = (patch: Partial<AgentFormValues>) =>
@@ -83,7 +82,7 @@ export function SetupSections({ agent }: { agent: AgentProfile }) {
 
   return (
     <>
-      <PageSection title={t("setup.identity")}>
+      <PageSection title="Identity">
         <PageRows>
           {TEXT_FIELDS.map(({ field, label, icon: Icon }, index) => (
             <Fragment key={field}>
@@ -100,7 +99,7 @@ export function SetupSections({ agent }: { agent: AgentProfile }) {
                   <Icon />
                 </ItemMedia>
                 <ItemContent>
-                  <ItemTitle>{t(label)}</ItemTitle>
+                  <ItemTitle>{label}</ItemTitle>
                   <ItemDescription>{agent[field]}</ItemDescription>
                 </ItemContent>
                 {agent.canManage ? (
@@ -124,9 +123,10 @@ export function SetupSections({ agent }: { agent: AgentProfile }) {
                   <IconShieldCheck />
                 </ItemMedia>
                 <ItemContent>
-                  <ItemTitle>{t("setup.systemOwned")}</ItemTitle>
+                  <ItemTitle>System owned</ItemTitle>
                   <ItemDescription>
-                    {t("setup.systemOwnedDescription")}
+                    Ships with this deployment rather than belonging to a
+                    person.
                   </ItemDescription>
                 </ItemContent>
               </Item>
@@ -137,7 +137,7 @@ export function SetupSections({ agent }: { agent: AgentProfile }) {
       <ConnectionSection agent={agent} />
       {open ? (
         <EditTextDialog
-          label={t(open.label)}
+          label={open.label}
           multiline={open.multiline ?? false}
           onClose={() => setEditing(null)}
           onSave={(value) => save({ [open.field]: value })}
@@ -157,7 +157,6 @@ function VisibilityRow({
   agent: AgentProfile;
   onSave: (visibility: AgentProfile["visibility"]) => Promise<unknown>;
 }) {
-  const { t } = useTranslation("agents");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
@@ -166,12 +165,12 @@ function VisibilityRow({
         <IconEye />
       </ItemMedia>
       <ItemContent>
-        <ItemTitle>{t("setup.visibility")}</ItemTitle>
+        <ItemTitle>Visibility</ItemTitle>
         <ItemDescription>
           {error ??
             (agent.visibility === "private"
-              ? t("setup.privateHint")
-              : t("setup.publicHint"))}
+              ? "Only you can see it and start conversations with it."
+              : "Everyone in the deployment can find and use it.")}
         </ItemDescription>
       </ItemContent>
       <ItemActions>
@@ -179,10 +178,7 @@ function VisibilityRow({
           <Select
             disabled={saving}
             // The label map, so the closed trigger says "Private" rather than the raw value.
-            items={{
-              private: t("visibility.optionPrivate"),
-              public: t("visibility.optionPublic"),
-            }}
+            items={{ private: "Private", public: "Public" }}
             onValueChange={async (next) => {
               if (next === agent.visibility) return;
               setError(null);
@@ -193,7 +189,7 @@ function VisibilityRow({
                 setError(
                   failure instanceof Error
                     ? failure.message
-                    : t("editable.couldNotSave"),
+                    : "Could not save.",
                 );
               } finally {
                 setSaving(false);
@@ -205,19 +201,13 @@ function VisibilityRow({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="private">
-                {t("visibility.optionPrivate")}
-              </SelectItem>
-              <SelectItem value="public">
-                {t("visibility.optionPublic")}
-              </SelectItem>
+              <SelectItem value="private">Private</SelectItem>
+              <SelectItem value="public">Public</SelectItem>
             </SelectContent>
           </Select>
         ) : (
           <span className="text-muted-foreground text-sm">
-            {agent.visibility === "private"
-              ? t("visibility.optionPrivate")
-              : t("visibility.optionPublic")}
+            {agent.visibility === "private" ? "Private" : "Public"}
           </span>
         )}
       </ItemActions>
@@ -245,16 +235,13 @@ function EditTextDialog({
   onSave: (value: string) => Promise<unknown>;
   onClose: () => void;
 }) {
-  const { t } = useTranslation("agents");
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submit = async () => {
     const parsed = schema.safeParse(draft);
     if (!parsed.success) {
-      setError(
-        parsed.error.issues[0]?.message ?? t("editable.doesNotFit"),
-      );
+      setError(parsed.error.issues[0]?.message ?? "That value does not fit.");
       return;
     }
     setSaving(true);
@@ -262,9 +249,7 @@ function EditTextDialog({
       await onSave(parsed.data);
       onClose();
     } catch (failure) {
-      setError(
-        failure instanceof Error ? failure.message : t("editable.couldNotSave"),
-      );
+      setError(failure instanceof Error ? failure.message : "Could not save.");
     } finally {
       setSaving(false);
     }
@@ -311,10 +296,10 @@ function EditTextDialog({
             size="sm"
             variant="outline"
           >
-            {t("editable.cancel")}
+            Cancel
           </Button>
           <Button disabled={saving} onClick={() => void submit()} size="sm">
-            {saving ? t("editable.saving") : t("editable.save")}
+            {saving ? "Saving…" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -327,25 +312,24 @@ function EditTextDialog({
  * deployment's tool credential, so there is nothing to show but that sentence.
  */
 function ConnectionSection({ agent }: { agent: AgentProfile }) {
-  const { t } = useTranslation("agents");
   const builtIn = !agent.endpoint || agent.builtIn;
   return (
-    <PageSection title={t("setup.connection")}>
+    <PageSection title="Connection">
       <PageRows>
         <Item size="sm">
           <ItemMedia variant="icon">
             <IconPlugConnected />
           </ItemMedia>
           <ItemContent>
-            <ItemTitle>
-              {builtIn ? t("setup.builtIn") : t("setup.endpoint")}
-            </ItemTitle>
+            <ItemTitle>{builtIn ? "Built in" : "Endpoint"}</ItemTitle>
             <ItemDescription
               className={
                 builtIn ? undefined : "line-clamp-none break-all font-mono"
               }
             >
-              {builtIn ? t("setup.builtInDescription") : agent.endpoint}
+              {builtIn
+                ? "Runs on this deployment's own Bot. Nothing to connect and nothing to authenticate."
+                : agent.endpoint}
             </ItemDescription>
           </ItemContent>
         </Item>

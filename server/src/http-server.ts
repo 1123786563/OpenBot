@@ -1,25 +1,37 @@
 import { DICTATION_HTTP_IDLE_SECONDS } from "@openbot/shared/dictation";
+import { getLogger } from "@openbot/shared/logger";
 import { serve } from "bun";
-import { computerAccessCheck } from "./agents/computer-access";
-import type { AgentProfileStore } from "./agents/profile-store";
 import type { OpenBotRole } from "./auth/roles";
 import { websocket as channelSocket } from "./channels/socket";
-import type { ComputerGateway } from "./computer/gateway";
-import { streamPathBotId } from "./computer/stream-path";
-import type { DeploymentConfig } from "./config";
+import type { StreamDecision } from "./computer/stream-auth";
+import { type PreviewOrigin, samePreviewOrigin } from "./craft/preview-origin";
+import {
+  type PreviewWebappHmrDeps,
+  resolvePreviewWebappHmrUpgrade,
+  resolveWebappHmrUpgrade,
+  type WebappHmrDeps,
+  type WebappHmrSocketData,
+  webappHmrIsAppPath,
+  webappHmrSessionIdFromPath,
+  webappHmrSocketHandlers,
+} from "./craft/webapp-proxy";
 import type { DemonstrationRecorder } from "./demonstrations/recording";
 import type { DemonstrationStore } from "./demonstrations/store";
 
 /**
- * The server's front door: one Bun server that hands ordinary requests to the Hono app, proxies the
- * computer's live stream, and carries channel activity over websockets.
+ * The server's front door: one Bun server that hands ordinary requests to the Hono app, serves the
+ * craft preview origins, proxies the computer's live stream and the craft webapp's HMR socket, and
+ * carries channel activity over websockets.
  *
- * Moved out of index.ts verbatim, with what it reads passed in.
+ * Upstream extracted this out of index.ts (#798); the fork's front door grew three duties upstream's
+ * version never saw — the craft preview origin gate, the webapp HMR proxy, and authorizeStream's
+ * token-header stream decisions — so they all live here now, passed in as deps.
  */
 
-/** What each proxied socket carries: where to connect inward, and the socket once opened. */
 type StreamData = {
   upstream: string;
+  /** The computer token, handed to the inward socket as a header, never on the URL. */
+  token: string;
   ownerUserId: string;
   botId: string;
   recordingId?: string;
@@ -27,144 +39,219 @@ type StreamData = {
 };
 
 /**
- * Bun takes exactly one WebSocket handler for the server, and two features need one: the app proxies
- * the computer stream, and it pushes channel activity through Hono's adapter. So this one
- * dispatches on what the upgrade attached, a proxy socket carries `upstream`, a Hono socket does
- * not, rather than either feature quietly taking the slot and breaking the other on connect.
+ * Bun takes exactly one WebSocket handler for the server, and three features need one: the app
+ * proxies the computer stream and the craft webapp's HMR socket, and it pushes channel activity
+ * through Hono's adapter. So this one dispatches on what the upgrade attached — an HMR socket
+ * carries `hmr`, a stream proxy socket carries `upstream` without it, a Hono socket carries
+ * neither — rather than any feature quietly taking the slot and breaking the others on connect.
  */
 type ChannelSocket = Parameters<typeof channelSocket.open>[0];
-type SocketData = StreamData | ChannelSocket["data"];
+type SocketData = StreamData | WebappHmrSocketData | ChannelSocket["data"];
+
+const isProxiedStream = (data: SocketData): data is StreamData =>
+  typeof (data as StreamData).upstream === "string" &&
+  (data as WebappHmrSocketData).hmr !== true;
+
+const isHmrSocket = (data: SocketData): data is WebappHmrSocketData =>
+  (data as WebappHmrSocketData).hmr === true;
+
+// Hono owns the socket's data once it has upgraded it; this hands its own back to it.
+const asChannelSocket = (ws: { data: SocketData }) =>
+  ws as unknown as ChannelSocket;
 
 export function startHttpServer(deps: {
   port: number;
-  config: DeploymentConfig;
-  resolveRequestActor: (
-    request: Request,
-  ) => Promise<{ id: string; name: string; role: OpenBotRole }>;
-  agentProfileStore: AgentProfileStore;
-  computerGateway: ComputerGateway | undefined;
-  demonstrationStore: DemonstrationStore;
-  demonstrationRecorder: DemonstrationRecorder;
   app: {
     fetch: (
       request: Request,
       env: { server: unknown },
     ) => Response | Promise<Response>;
   };
+  authorizeStream: (request: Request) => Promise<StreamDecision>;
+  resolveRequestActor: (
+    request: Request,
+  ) => Promise<{ id: string; name: string; role: OpenBotRole }>;
+  demonstrationStore: DemonstrationStore;
+  demonstrationRecorder: DemonstrationRecorder;
+  craftPreviewOrigin: PreviewOrigin | undefined;
+  craftWebappHmrDeps: WebappHmrDeps | undefined;
+  craftPreviewWebappHmrDeps: PreviewWebappHmrDeps | undefined;
 }): void {
   const {
     port,
-    config,
+    app,
+    authorizeStream,
     resolveRequestActor,
-    agentProfileStore,
-    computerGateway,
     demonstrationStore,
     demonstrationRecorder,
-    app,
+    craftPreviewOrigin,
+    craftWebappHmrDeps,
+    craftPreviewWebappHmrDeps,
   } = deps;
-
-  /**
-   * The live screen, proxied.
-   *
-   * Proxied rather than connected directly. `agent-computer` authenticates its callers with a
-   * shared token, not with a person's session, and it must never be reachable from a browser. So the
-   * socket terminates here, behind the same session guard as every other route, and this process opens
-   * a second socket inward carrying the token.
-   *
-   * Not a Hono route because an upgrade is not a request/response: Bun hands it over before Hono sees a
-   * body, so it is handled in `fetch` ahead of the app.
-   */
-  const toStreamUrl = (baseUrl: string, botId: string) =>
-    // The Bot travels in the query, because a websocket upgrade carries no custom header for the
-    // computer to read and every call it serves is per Bot. The secret travels the same way and for the
-    // same reason, this socket is the one a person can type into, so it is the last thing that should
-    // be reachable without it.
-    `${baseUrl.replace(/^http/, "ws").replace(/\/$/, "")}/stream?bot=${encodeURIComponent(botId)}&token=${encodeURIComponent(config.computer?.token ?? "")}`;
-
-  const isProxiedStream = (data: SocketData): data is StreamData =>
-    typeof (data as StreamData).upstream === "string";
-
-  // Hono owns the socket's data once it has upgraded it; this hands its own back to it.
-  const asChannelSocket = (ws: { data: SocketData }) =>
-    ws as unknown as ChannelSocket;
+  const log = getLogger("server");
 
   serve<SocketData>({
     port,
     async fetch(request, server) {
       const url = new URL(request.url);
+      // The craft preview origin (#361/#362): claimed hosts NEVER fall through to
+      // the main-site branches below — unknown preview hosts 404 right here, closed
+      // admission answers 503 with its displayable reason, and a resolved session
+      // lands on the preview entry: a `?ticket=` hop redeems and plants the D9
+      // cookie, every further request is gated on that cookie and proxied to the
+      // session's dev server (no platform session is ever in scope on these
+      // hosts — AC1). Bun derives request.url's host from the Host header on this
+      // listener for plain HTTP and websocket upgrades alike (verified against a
+      // live listener).
+      if (craftPreviewOrigin?.handlesRequest(request)) {
+        const resolved = craftPreviewOrigin.resolvePreviewRequest(request);
+        if ("sessionId" in resolved) {
+          // #363: the HMR websocket upgrade on a preview host. An upgrade is not a
+          // request/response, so the HTTP entry below cannot carry it — the session
+          // comes from the Host (never the path: host routing moved identity out of
+          // the URL), and the authorization is the preview pass the redemption hop
+          // planted, the SAME judgment the HTTP entry's cookie gate makes. Every
+          // refusal lands BEFORE `server.upgrade` commits the socket, in the
+          // proxy's own 401/404/503 shapes; the upstream path is the pathname
+          // VERBATIM (the dev form's leading label INCLUDED — the basePath-mounted
+          // dev server serves under it), exactly what the HTTP entry requests —
+          // see appPathFor and webappHmrUpstreamUrl for why forwarding the
+          // app's own path verbatim is load-bearing.
+          // fix-ocr28 #2: the app path is derived ONCE here — the branch gate and
+          // the resolver's path argument used to call appPathFor twice for one
+          // request (two URL parses for one pathname, and a silent seam if either
+          // call ever grew a judgment of its own).
+          const appPath = craftPreviewOrigin.appPathFor(request);
+          if (
+            craftPreviewWebappHmrDeps !== undefined &&
+            request.headers.get("upgrade")?.toLowerCase() === "websocket" &&
+            webappHmrIsAppPath(appPath)
+          ) {
+            // fix-ocr28 #1 (CSWSH): the Origin gate. A WS handshake is not
+            // CORS-gated and the preview pass is SameSite=None, so a malicious
+            // page's `new WebSocket("wss://<preview-host>/…")` would otherwise
+            // ride the pass cookie into the live HMR channel. Origin present →
+            // it must be the session's own preview origin; absent (a
+            // non-browser client) → the pre-existing behavior. originFor is
+            // safe here: "sessionId" in resolved means admission already
+            // answered open (resolvePreviewRequest refuses 503 when closed),
+            // and originFor throws on a closed origin.
+            const origin = request.headers.get("origin");
+            if (
+              !samePreviewOrigin(
+                origin,
+                craftPreviewOrigin.originFor(resolved.sessionId),
+              )
+            ) {
+              return new Response(
+                "Cross-origin WebSocket upgrades are refused.",
+                { status: 403 },
+              );
+            }
+            const decision = await resolvePreviewWebappHmrUpgrade(
+              craftPreviewWebappHmrDeps satisfies PreviewWebappHmrDeps,
+              {
+                sessionId: resolved.sessionId,
+                request,
+                path: appPath,
+                query: url.search,
+              },
+            );
+            if (!decision.ok) {
+              return new Response(decision.error, { status: decision.status });
+            }
+            if (
+              server.upgrade(request, {
+                data: { upstream: decision.upstreamUrl, hmr: true as const },
+              })
+            ) {
+              return undefined as unknown as Response;
+            }
+            return new Response("Expected a WebSocket upgrade.", {
+              status: 400,
+            });
+          }
+          return craftPreviewOrigin.handlePreviewRequest(
+            resolved.sessionId,
+            request,
+          );
+        }
+        return Response.json(
+          { error: resolved.refuse.reason },
+          { status: resolved.refuse.status },
+        );
+      }
       if (url.pathname === "/api/audio/transcriptions") {
         server.timeout(request, DICTATION_HTTP_IDLE_SECONDS);
       }
+      // The workshop's and craft's event streams outlive the default request timeout by design:
+      // their connection is the subscription, held open by a 15s keepalive against Bun's 10s idle
+      // default — without this raise, every quiet stream is cut before its first keepalive
+      // (craft's turn attach, parked on a connect_app ask, is exactly that quiet stream).
+      if (
+        (url.pathname.startsWith("/api/workshop/") ||
+          url.pathname.startsWith("/api/craft/")) &&
+        url.pathname.endsWith("/events")
+      ) {
+        server.timeout(request, 255);
+      }
       if (url.pathname === "/api/voice/calls") server.timeout(request, 30);
       if (url.pathname === "/api/voice/sessions") server.timeout(request, 30);
-      const streamBotId = streamPathBotId(url.pathname);
-      if (
-        streamBotId !== null &&
-        request.headers.get("upgrade")?.toLowerCase() === "websocket"
-      ) {
-        if (!config.computer) {
-          return new Response("No computer is configured.", { status: 503 });
-        }
-        // The session guard, applied by hand because middleware does not run on an upgrade. An
-        // unauthenticated socket here would be the whole point of the proxy defeated.
-        const actor = await resolveRequestActor(request).catch(() => null);
-        if (!actor) {
-          return new Response("Sign in first.", { status: 401 });
-        }
-        // And which Bot, which the guard above does not answer. This socket carries that Bot's screen,
-        // so signing in is not enough: without this, anybody signed in watches anybody's Bot work. And
-        // seeing a Team Bot is not enough either: its screen is its owner's signed-in browser.
-        if (
-          !(await computerAccessCheck(agentProfileStore)(
-            { id: actor.id, role: actor.role },
-            streamBotId,
-          ))
-        ) {
-          return new Response("There is no such Bot.", { status: 404 });
-        }
-        /*
-         * Through the gateway, not the provider.
-         *
-         * `gateway.locate` runs checkComputerAddress; `provider.locate` does not, and the URL built
-         * below carries COMPUTER_TOKEN in its query string. A provider that answered with a foreign
-         * host was handed the deployment's computer token, which is the case that check was written
-         * for. Every acting path already went through the gateway; this one did not.
-         */
-        let upstream: string;
-        try {
-          const streamBase = computerGateway
-            ? await computerGateway.locate(streamBotId)
-            : undefined;
-          if (!streamBase) {
-            return new Response("No computer address is configured.", {
-              status: 503,
-            });
-          }
-          upstream = toStreamUrl(streamBase, streamBotId);
-        } catch (error) {
-          // Said out loud rather than falling back to another Bot's computer, which is the failure this
-          // whole path exists to prevent.
-          return new Response(
-            error instanceof Error
-              ? error.message
-              : "That Bot's computer could not be reached.",
-            { status: 502 },
-          );
-        }
+      const decision = await authorizeStream(request);
+      if (decision.kind === "refuse") {
+        return new Response(decision.message, { status: decision.status });
+      }
+      if (decision.kind === "proxy") {
         const recording = await demonstrationStore.active(
-          actor.id,
-          streamBotId,
+          decision.actorId,
+          decision.botId,
         );
-        if (recording)
-          upstream += `&recording=${encodeURIComponent(recording.id)}`;
+        const upstream = recording
+          ? `${decision.upstream}&recording=${encodeURIComponent(recording.id)}`
+          : decision.upstream;
         if (
           server.upgrade(request, {
             data: {
               upstream,
-              ownerUserId: actor.id,
-              botId: streamBotId,
+              token: decision.token,
+              ownerUserId: decision.actorId,
+              botId: decision.botId,
               ...(recording ? { recordingId: recording.id } : {}),
             },
+          })
+        ) {
+          return undefined as unknown as Response;
+        }
+        return new Response("Expected a WebSocket upgrade.", { status: 400 });
+      }
+      const hmrSessionId =
+        craftWebappHmrDeps !== undefined
+          ? webappHmrSessionIdFromPath(url.pathname)
+          : null;
+      if (
+        hmrSessionId !== null &&
+        craftWebappHmrDeps !== undefined &&
+        request.headers.get("upgrade")?.toLowerCase() === "websocket"
+      ) {
+        // The webapp proxy's own auth, applied by hand because middleware does not run on an
+        // upgrade (the stream branch above sets the precedent). Every refusal lands BEFORE the
+        // upgrade commits — onyx's `_check_webapp_access` → WebSocketException(1008), answered
+        // here as plain HTTP statuses while the request is still a request.
+        const actor = await resolveRequestActor(request).catch(() => null);
+        const decision = await resolveWebappHmrUpgrade(craftWebappHmrDeps, {
+          sessionId: hmrSessionId,
+          actor,
+          // Verbatim, not a rebuilt "/_next/webpack-hmr": the scaffold's basePath IS
+          // this mount, so the dev server serves HMR under it. See webappHmrUpstreamUrl.
+          path: url.pathname,
+          query: url.search,
+        });
+        if (!decision.ok) {
+          return new Response(decision.error, { status: decision.status });
+        }
+        if (
+          server.upgrade(request, {
+            data: { upstream: decision.upstreamUrl, hmr: true as const },
           })
         ) {
           return undefined as unknown as Response;
@@ -175,12 +262,26 @@ export function startHttpServer(deps: {
     },
     websocket: {
       open(ws) {
+        if (isHmrSocket(ws.data)) {
+          webappHmrSocketHandlers.open(
+            ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+          );
+          return;
+        }
         if (!isProxiedStream(ws.data)) {
           channelSocket.open(asChannelSocket(ws));
           return;
         }
         const stream = ws.data;
-        const inward = new WebSocket(stream.upstream);
+        /*
+         * The token rides the upgrade's headers (Bun's options form — the DOM
+         * types only know the protocols argument, hence the cast), matching
+         * every HTTP call the transport makes to the computer, so it stays out
+         * of any proxy or computer access log the URL would land in.
+         */
+        const inward = new WebSocket(stream.upstream, {
+          headers: { "x-openbot-computer-token": stream.token },
+        } as unknown as string | string[]);
         stream.inward = inward;
         // Frames outward, input inward. Buffered by neither side: a frame the browser is too slow for
         // should be dropped, not queued, because a stale frame is worse than a missing one.
@@ -221,14 +322,15 @@ export function startHttpServer(deps: {
                   message.action,
                 )
                 .catch((error) => {
-                  console.error(
-                    JSON.stringify({
+                  log.error(
+                    {
                       type: "demonstration-capture-error",
                       error:
                         error instanceof Error ? error.name : "UnknownError",
                       context: { recordingId: data.recordingId },
                       timestamp: new Date().toISOString(),
-                    }),
+                    },
+                    "demonstration-capture-error",
                   );
                   try {
                     ws.send(
@@ -255,6 +357,13 @@ export function startHttpServer(deps: {
         inward.onerror = () => ws.close();
       },
       message(ws, raw) {
+        if (isHmrSocket(ws.data)) {
+          webappHmrSocketHandlers.message(
+            ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+            raw,
+          );
+          return;
+        }
         if (!isProxiedStream(ws.data)) {
           channelSocket.message(asChannelSocket(ws), raw);
           return;
@@ -262,6 +371,12 @@ export function startHttpServer(deps: {
         if (ws.data.inward?.readyState === 1) ws.data.inward.send(String(raw));
       },
       close(ws, code, reason) {
+        if (isHmrSocket(ws.data)) {
+          webappHmrSocketHandlers.close(
+            ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+          );
+          return;
+        }
         if (!isProxiedStream(ws.data)) {
           channelSocket.close(asChannelSocket(ws), code, reason);
           return;

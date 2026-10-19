@@ -23,6 +23,7 @@ function state(status: HandoffStatus, id = "request-1"): ComputerControlState {
     requested: status === "waiting",
     transitioning: false,
     resumeSnapshotRequired: status === "completed",
+    recoveryRequired: false,
     request: {
       id,
       status,

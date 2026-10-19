@@ -30,6 +30,7 @@ function server(initial: "bot" | "human" = "bot") {
     requested: false,
     transitioning: false,
     resumeSnapshotRequired: false,
+    recoveryRequired: false,
     ...(initial === "human"
       ? {
           request: {

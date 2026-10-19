@@ -64,7 +64,7 @@ export function ComputerChatControls({
     control &&
       (control.requested ||
         control.holder === "human" ||
-        control.request?.status === "interrupted" ||
+        control.recoveryRequired ||
         control.secretWanted !== undefined),
   );
   const promptKey = needsYou

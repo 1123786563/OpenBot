@@ -1,36 +1,25 @@
-import { IconCode, IconSettings } from "@tabler/icons-react";
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { IconSettings } from "@tabler/icons-react";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef } from "react";
-import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
-import { hasUnseenActivity } from "@/components/app-sidebar/app-sidebar";
 import { BotPausedBanner } from "@/components/bot-profile/pause-banner";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { ChannelChat } from "@/components/channels/channel-chat";
-import { WorkshopPanel } from "@/components/channels/workshop-panel";
 import { ComputerChatControls } from "@/components/computer/computer-controls";
 import { ComputerViewPanel } from "@/components/computer/computer-panel";
+import { useAutoWatchScreen } from "@/components/computer/use-auto-watch-screen";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";
 import { useMarkOpenChannelRead } from "@/lib/channels/mark-read";
 import { type AgentChannel, channelQueryOptions } from "@/lib/channels/queries";
-import { onComputerActivity } from "@/lib/copilot/computer-activity";
 
 const chatSearchSchema = z.object({
   settings: z.boolean().optional(),
   /** Opens the Bot's screen in the shared detail pane. */
   watch: z.boolean().optional(),
-  /** Opens the Bot's workshop (files, artifacts, the live turn) in the same pane. */
-  workshop: z.boolean().optional(),
 });
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
@@ -41,22 +30,17 @@ const HEADING_ENTRANCE_OFFSET = "translateY(4px)";
 /** Shared detail pane width for the live screen view. */
 const SCREEN_PANEL_WIDTH = 400;
 
-/** The workshop pane is wider: it carries the turn's stream beside the file tree. */
-const WORKSHOP_PANEL_WIDTH = 480;
-
 export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
   validateSearch: chatSearchSchema,
   component: RouteComponent,
 });
 
 function RouteComponent() {
-  const { t } = useTranslation("channels");
   const { channelId } = Route.useParams();
-  const { settings, watch, workshop } = Route.useSearch();
+  const { settings, watch } = Route.useSearch();
   const channel = useQuery(channelQueryOptions(channelId));
   const navigate = Route.useNavigate();
   const isSettingsOpen = settings === true;
-  const isWorkshopOpen = workshop === true;
   const prefersReducedMotion = useReducedMotion();
   const isWatching = watch === true;
   /** Channel routing currently supports one coworker. */
@@ -65,34 +49,31 @@ function RouteComponent() {
   useMarkOpenChannelRead(channelId);
 
   // Browser activity may auto-open the screen once per run unless this run was dismissed.
-  const dismissedEpoch = useRef<number | null>(null);
-  const runEpoch = useRef<number | null>(null);
-  useEffect(() => {
-    if (!agentId) return;
-    return onComputerActivity((activity) => {
-      if (activity.botId !== agentId) return;
-      runEpoch.current = activity.epoch;
-      if (dismissedEpoch.current === activity.epoch) return;
+  const autoWatch = useAutoWatchScreen({
+    botId: agentId,
+    watching: isWatching,
+    busy: isSettingsOpen,
+    open: () =>
       navigate({
-        search: (previous) =>
-          previous.watch === true || previous.settings === true
-            ? previous
-            : { ...previous, settings: undefined, watch: true },
-      });
-    });
-  }, [agentId, navigate]);
+        search: (previous) => ({
+          ...previous,
+          settings: undefined,
+          watch: true,
+        }),
+      }),
+    close: () =>
+      navigate({ search: (previous) => ({ ...previous, watch: undefined }) }),
+  });
 
-  // Settings, watch, and the workshop share one pane; opening one clears the others' flags.
-  const show = (next: "settings" | "watch" | "workshop" | null) => {
+  // Settings and watch share one pane; opening either clears the other URL flag.
+  const show = (next: "settings" | "watch" | null) => {
     // Dismissal applies only to the current browser-activity run.
-    if (next !== "watch" && isWatching)
-      dismissedEpoch.current = runEpoch.current;
+    if (next !== "watch" && isWatching) autoWatch.dismiss();
     return navigate({
       search: (previous) => ({
         ...previous,
         settings: next === "settings" ? true : undefined,
         watch: next === "watch" ? true : undefined,
-        workshop: next === "workshop" ? true : undefined,
       }),
     });
   };
@@ -100,26 +81,13 @@ function RouteComponent() {
   return (
     <DetailPanel
       onClose={() => show(null)}
-      open={
-        (isSettingsOpen || isWatching || isWorkshopOpen) &&
-        agentId !== undefined
-      }
-      detailWidth={
-        isWatching || isWorkshopOpen ? WORKSHOP_PANEL_WIDTH : undefined
-      }
-      title={
-        isWatching
-          ? t("channelDetail.computer")
-          : isWorkshopOpen
-            ? t("channelDetail.workshop")
-            : undefined
-      }
+      open={(isSettingsOpen || isWatching) && agentId !== undefined}
+      detailWidth={isWatching ? SCREEN_PANEL_WIDTH : undefined}
+      title={isWatching ? "Computer" : undefined}
       detail={
         agentId === undefined ? null : isWatching ? (
           // Manual watch remains active even when there is no current browser action.
           <ComputerViewPanel agentId={agentId} name={channel?.data?.name} />
-        ) : isWorkshopOpen ? (
-          <WorkshopPanel channelId={channelId} botId={agentId} />
         ) : (
           <AgentProfile agentId={agentId} />
         )
@@ -163,7 +131,7 @@ function RouteComponent() {
                 ease: EASE_OUT,
               }}
             >
-              {channel.data?.name ?? t("channelDetail.channelFallback")}
+              {channel.data?.name ?? "Channel"}
             </motion.span>
           </div>
           <div className="flex flex-row gap-1.5">
@@ -173,18 +141,7 @@ function RouteComponent() {
               onOpenChange={(open) => show(open ? "watch" : null)}
             />
             <Button
-              aria-label={t("channelDetail.workshop")}
-              aria-pressed={isWorkshopOpen}
-              className={isWorkshopOpen ? "bg-foreground/5" : undefined}
-              disabled={agentId === undefined}
-              onClick={() => show(isWorkshopOpen ? null : "workshop")}
-              variant="ghost"
-              size="icon"
-            >
-              <IconCode className="size-4.5" />
-            </Button>
-            <Button
-              aria-label={t("channelDetail.coworkerAria")}
+              aria-label="Channel coworker"
               aria-pressed={isSettingsOpen}
               className={isSettingsOpen ? "bg-foreground/5" : undefined}
               disabled={agentId === undefined}
@@ -222,13 +179,12 @@ function ChannelBody({
   isPending: boolean;
   hasError: boolean;
 }) {
-  const { t } = useTranslation("channels");
   // Nothing while the channel loads: a placeholder inside a local round-trip is a flicker.
   if (isPending) return null;
   if (hasError || !channel) {
     return (
       <p className="p-8 text-sm text-destructive" role="alert">
-        {t("channelDetail.loadError")}
+        Could not load this channel.
       </p>
     );
   }
