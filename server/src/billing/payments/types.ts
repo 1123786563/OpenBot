@@ -28,8 +28,32 @@ export type PaymentOrderStatus =
  * `failed` is the durable "owner claimed, not yet landed" state as well as "last activation
  * attempt failed": once a paid order wins an overlapping entitlement period, it leaves `pending`
  * before any external side effect so later overlapping collections can no longer steal ownership.
+ *
+ * `needs_resolution` (BP03/#371) is the deterministic-conflict verdict: an overlapping
+ * entitlement another order already owns, or any conflict retrying cannot resolve. It is the
+ * operator's queue, not the sweep's — the activation pass no longer lists it, and it is never
+ * "delivered". Money facts and anomalies stay untouched underneath it.
  */
-export type PaymentActivationState = "pending" | "applied" | "failed";
+export type PaymentActivationState =
+  | "pending"
+  | "applied"
+  | "failed"
+  | "needs_resolution";
+
+/**
+ * The fulfillment progress a PAID order shows its reader (spec: 收款状态与交付状态独立 —
+ * "已付款，权益处理中" is a different sentence from "支付成功"). Null while no money landed:
+ * a pending, blocked, expired or canceled order owes no delivery and says so by absence.
+ *
+ * `processing` covers everything the sweep is still converging (`pending`/`failed` activation —
+ * a failed rule verdict is the last pass's fact, not a terminal one); `delivered` means the
+ * subscription AND the period's grant both landed; `needs_resolution` is the deterministic
+ * conflict waiting for an operator.
+ */
+export type PaymentFulfillmentState =
+  | "processing"
+  | "delivered"
+  | "needs_resolution";
 
 /** The two channels v1 collects through. */
 export type PaymentProviderId = "alipay" | "wechat";
@@ -68,6 +92,20 @@ export type PaymentOrder = {
   currency: string;
   status: PaymentOrderStatus;
   activationState: PaymentActivationState;
+  /**
+   * Why the last activation attempt did not land, in one stable word (BP03/#371: 每次失败保留
+   * 原因) — `grant_write_failed`, `provider_unreachable`, `duplicate_paid`, the refusal rule's
+   * name, … Null on an order that never failed or whose activation has since landed.
+   */
+  activationFailureReason: string | null;
+  /**
+   * When the sweep's next activation pass runs for this order: the failure's retained retry
+   * schedule (spec: 每次失败保留…下一次重试时间). The sweep's fixed interval IS the scheduler —
+   * this column is the recorded fact of when that next pass lands, rewritten on every failed
+   * attempt and cleared when activation lands. Null on `needs_resolution` (no retry is coming)
+   * and on applied orders.
+   */
+  activationNextRetryAt: Date | null;
   /** The channel's transaction id, once seen; the idempotency key across replays. */
   channelTransactionId: string | null;
   /** When the QR code stops being payable. */
@@ -116,6 +154,8 @@ export type PaymentOrderView = {
   currency: string;
   status: PaymentOrderStatus;
   activationState: PaymentActivationState;
+  /** The user-facing delivery progress — null unless money landed (see PaymentFulfillmentState). */
+  fulfillmentState: PaymentFulfillmentState | null;
   checkout: PaymentCheckout | null;
   expiresAt: string;
   periodEnd: string | null;
@@ -307,12 +347,30 @@ export type PaymentStore = {
     channelTransactionId: string;
     amountCents: number;
   }): Promise<boolean>;
-  /** Record an activation outcome on a paid order (applied / failed). */
+  /**
+   * Record the activation's landing: `applied` plus the provider's exact period, which also
+   * CLEARS the retained failure columns — a landed activation has no outstanding failure.
+   */
   recordActivation(
     id: string,
-    activationState: PaymentActivationState,
+    activationState: "applied",
     period?: { start: Date; end: Date } | null,
   ): Promise<void>;
+  /**
+   * Record one activation attempt that did not land (BP03/#371). The failure `reason` (one
+   * stable word) and the `nextRetryAt` schedule persist on the order row so a paid-but-undelivered
+   * order can say why it is processing and when the next pass runs. `activationState` moves the
+   * state only for verdicts that own it: `"failed"` (a rule refusal the sweep will retry — P1-4)
+   * or `"needs_resolution"` (a deterministic conflict no retry can settle, e.g. an entitlement
+   * another order already owns); omitted leaves the state as it stands, which is the transient
+   * verdict's contract.
+   */
+  recordActivationFailure(input: {
+    id: string;
+    reason: string;
+    nextRetryAt: Date | null;
+    activationState?: "failed" | "needs_resolution";
+  }): Promise<void>;
   /**
    * Resolve and DURABLY claim which overlapping paid order owns the entitlement period, under row
    * locks at the database boundary. When no owner exists yet, the deterministic winner leaves

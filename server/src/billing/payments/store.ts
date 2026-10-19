@@ -38,7 +38,11 @@ const ID_COLLISION_RETRIES = 5;
 const DEPLOYMENT_SCOPE = "default";
 
 /** The owner kinds an order may legally carry; `unknown_owner` is deliberately absent. */
-const OWNABLE_PAYER_KINDS = new Set(["personal", "company", "legacy_deployment"]);
+const OWNABLE_PAYER_KINDS = new Set([
+  "personal",
+  "company",
+  "legacy_deployment",
+]);
 
 /**
  * Validate the owner a caller binds to a NEW order, as a last line behind the service's
@@ -86,6 +90,8 @@ function rowOf(order: typeof paymentOrders.$inferSelect): PaymentOrderRecord {
     currency: order.currency,
     status: order.status,
     activationState: order.activationState,
+    activationFailureReason: order.activationFailureReason,
+    activationNextRetryAt: order.activationNextRetryAt,
     channelTransactionId: order.channelTransactionId,
     checkoutPayload: order.checkoutPayload,
     expiresAt: order.expiresAt,
@@ -109,6 +115,8 @@ type PaymentOrderLockedRow = {
   currency: string;
   status: PaymentOrderStatus;
   activationState: PaymentOrderRecord["activationState"];
+  activationFailureReason: string | null;
+  activationNextRetryAt: Date | null;
   channelTransactionId: string | null;
   checkoutPayload: string | null;
   expiresAt: Date;
@@ -132,6 +140,8 @@ function lockedRowOf(row: PaymentOrderLockedRow): PaymentOrderRecord {
     currency: row.currency,
     status: row.status,
     activationState: row.activationState,
+    activationFailureReason: row.activationFailureReason,
+    activationNextRetryAt: row.activationNextRetryAt,
     channelTransactionId: row.channelTransactionId,
     checkoutPayload: row.checkoutPayload,
     expiresAt: row.expiresAt,
@@ -598,11 +608,29 @@ export function createPaymentStore(database: Database): PaymentStore {
         .update(paymentOrders)
         .set({
           activationState,
+          // A landed activation has no outstanding failure: the retained reason and retry
+          // schedule clear with the verdict that settles them (BP03/#371).
+          ...(activationState === "applied"
+            ? { activationFailureReason: null, activationNextRetryAt: null }
+            : {}),
           ...(period
             ? { periodStart: period.start, periodEnd: period.end }
             : {}),
         })
         .where(eq(paymentOrders.id, id));
+    },
+
+    async recordActivationFailure(input) {
+      await database
+        .update(paymentOrders)
+        .set({
+          activationFailureReason: input.reason,
+          activationNextRetryAt: input.nextRetryAt,
+          ...(input.activationState
+            ? { activationState: input.activationState }
+            : {}),
+        })
+        .where(eq(paymentOrders.id, input.id));
     },
 
     async resolveActivationOwnership(orderId) {
@@ -628,6 +656,8 @@ export function createPaymentStore(database: Database): PaymentStore {
             "currency",
             "status",
             "activation_state" as "activationState",
+            "activation_failure_reason" as "activationFailureReason",
+            "activation_next_retry_at" as "activationNextRetryAt",
             "channel_transaction_id" as "channelTransactionId",
             "checkout_payload" as "checkoutPayload",
             "expires_at" as "expiresAt",
@@ -661,7 +691,15 @@ export function createPaymentStore(database: Database): PaymentStore {
         if (!current) return { outcome: "unknown" as const };
 
         const existingOwner = [...lockedOrders]
-          .filter((row) => row.activationState !== "pending")
+          .filter(
+            // An owner is a row that CLAIMED the period (`failed` — claimed, landing — or
+            // `applied` — landed). A `needs_resolution` row is a resolved DUPLICATE, never an
+            // owner: counting it here would hand a second transaction the entitlement it was
+            // refused (BP03/#371).
+            (row) =>
+              row.activationState === "applied" ||
+              row.activationState === "failed",
+          )
           .sort(byClaimedOwner)[0];
         if (existingOwner) {
           if (existingOwner.id === current.id) {
@@ -704,6 +742,12 @@ export function createPaymentStore(database: Database): PaymentStore {
           .where(eq(paymentOrders.id, current.id))
           .limit(1);
         if (fresh?.status !== "paid") {
+          return { outcome: "unknown" as const };
+        }
+        // A needs_resolution row reading as the overlap winner is a stale-read artifact (another
+        // pass already resolved this order as a duplicate): it is not an owner, and "unknown"
+        // leaves it exactly where the verdict put it.
+        if (fresh.activationState === "needs_resolution") {
           return { outcome: "unknown" as const };
         }
         return { outcome: "owner" as const, order: rowOf(fresh) };

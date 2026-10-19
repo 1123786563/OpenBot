@@ -8,12 +8,12 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import type { PayerKind } from "../../billing/payer";
 import type {
   PaymentActivationState,
   PaymentOrderStatus,
   PaymentProviderId,
 } from "../../billing/payments/types";
-import type { PayerKind } from "../../billing/payer";
 
 /**
  * One local payment order, keyed by the out-trade number this deployment generated (`po-` plus
@@ -54,6 +54,21 @@ export const paymentOrders = pgTable(
       .$type<PaymentActivationState>()
       .notNull()
       .default("pending"),
+    /**
+     * Why the last activation attempt did not land, one stable word (BP03/#371: 每次失败保留
+     * 原因) — `grant_write_failed`, `provider_unreachable`, `duplicate_paid`, the refusal rule's
+     * name. Cleared when activation lands; never overwritten by a money transition.
+     */
+    activationFailureReason: text("activation_failure_reason"),
+    /**
+     * The retained next-retry schedule (spec: …和下一次重试时间): when the sweep's next
+     * activation pass runs. The sweep interval is the scheduler — this column is the recorded
+     * fact, rewritten per failed attempt, null when no retry is coming (needs_resolution) or
+     * the activation landed.
+     */
+    activationNextRetryAt: timestamp("activation_next_retry_at", {
+      withTimezone: true,
+    }),
     channelTransactionId: text("channel_transaction_id"),
     /** The checkout artifact (QR payload), echoed only to the order's creator. */
     checkoutPayload: text("checkout_payload"),
@@ -85,20 +100,14 @@ export const paymentOrders = pgTable(
     ),
     check(
       "payment_orders_activation_state_check",
-      sql`${table.activationState} IN ('pending', 'applied', 'failed')`,
+      sql`${table.activationState} IN ('pending', 'applied', 'failed', 'needs_resolution')`,
     ),
     check(
       "payment_orders_provider_check",
       sql`${table.provider} IN ('alipay', 'wechat')`,
     ),
-    check(
-      "payment_orders_amount_check",
-      sql`${table.amountCents} > 0`,
-    ),
-    check(
-      "payment_orders_currency_check",
-      sql`${table.currency} = 'CNY'`,
-    ),
+    check("payment_orders_amount_check", sql`${table.amountCents} > 0`),
+    check("payment_orders_currency_check", sql`${table.currency} = 'CNY'`),
     // The owner pair moves together: a half-written owner is a bug, not a state.
     check(
       "payment_orders_owner_pair_check",
@@ -123,9 +132,15 @@ export const paymentOrders = pgTable(
       .on(table.deploymentScope)
       .where(sql`${table.status} = 'pending'`),
     // The sweeper's query-first pass reads exactly this.
-    index("payment_orders_status_expires_idx").on(table.status, table.expiresAt),
+    index("payment_orders_status_expires_idx").on(
+      table.status,
+      table.expiresAt,
+    ),
     // The owner-scoped reads (a person's order list, the statement window) filter on exactly this.
-    index("payment_orders_owner_idx").on(table.ownerPayerId, table.ownerPayerKind),
+    index("payment_orders_owner_idx").on(
+      table.ownerPayerId,
+      table.ownerPayerKind,
+    ),
   ],
 );
 
@@ -161,7 +176,10 @@ export const paymentEvents = pgTable(
       .defaultNow(),
   },
   (table) => [
-    check("payment_events_kind_check", sql`${table.kind} IN ('fact', 'anomaly')`),
+    check(
+      "payment_events_kind_check",
+      sql`${table.kind} IN ('fact', 'anomaly')`,
+    ),
     // THE idempotency key: one paid fact per channel transaction, across all orders. `ON CONFLICT
     // DO NOTHING` against this index answers a replay, and the insert that wins the race is the
     // one whose order transition also won its CAS — the two live in one transaction.
