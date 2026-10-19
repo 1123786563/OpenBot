@@ -67,7 +67,7 @@
   "body-link 52 张补挂(非阻塞)"
  ],
  "integration_mode": "未提交检查点（无提交授权）",
- "updated_at": "2026-10-19T16:00",
+ "updated_at": "2026-10-19T22:30",
  "wave1_result": "5/5 settle：零改动收尾 3（#410/#54/#221 测试侧 1 行）+ 实施 1（#377 产品侧 1 行）+ 复验 3（#48/#214/#371）；2 patch 已集成主工作区未提交区（f11cee1054d48ce7 / d46d5bab83d8b6ef）；R7 已同步 6 张",
  "scale_up": {
   "authorized": "2026-10-19 用户选 1（放量）",
@@ -252,12 +252,6 @@
    "status": "待专项派发"
   },
   {
-   "issue": 436,
-   "domain": "craft",
-   "gap": "迁移链不自洽：fresh 库 migrate 成功但启动 42703（skills.icon）；schema↔实库漂移 291 列/39 表；drizzle.config 缺 19 个 schema 文件；与 closeout F1 同根",
-   "priority": "P0-最高（阻塞 fresh-DB CI）"
-  },
-  {
    "issue": 437,
    "domain": "craft",
    "gap": "三缺口：repair 强制重写 / 错误文案 / 抑制态仍出票；现有 32+109 测试零覆盖",
@@ -431,5 +425,5 @@
  ],
  "mt_stream": "done",
  "craft_stream": "done",
- "phase": "58/58 就绪票处理完毕（放量 31 贴标 + 26 gap + #431 部分覆盖）；全 run 累计 R7 38 张（已 GraphQL 实证标签+OPEN）"
+ "phase": "#436 已实施交付（d6123571，R7 已同步）；gap 剩 26/27"
 }
