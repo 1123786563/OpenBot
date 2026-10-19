@@ -71,3 +71,22 @@ TEST_DATABASE_URL=… DATABASE_URL=… <企业四库 URL>… \
 收尾按表名取行数那一步失败（该库当时的表名与我猜的 `bots/runs/message_log` 不一致），随后我把库
 `DROP DATABASE` 掉了，所以**残留行数这一步没有闭环**，能证明的是写入没有落到 `openbot_test`
 （URL 全程钉住专用库），不能证明的是它自己残留了多少行——这点如实记在这里。
+
+## 修完错层指向之后的复测（02:21–02:35）
+
+`scripts/e2e-driven-file-equality.mjs --shapes=group` 复测：**judged 448 / manifest 455**（上一轮 445）。
+7 个仍读不出的文件逐个查因，全部有名字，并已就地修掉两类错层指向（提交 `02be34f2`、`09196211`）：
+
+| 成因 | 文件数 | 证据 | 修法 |
+| --- | --- | --- | --- |
+| fixture/helper 从 e2e 层取 `mock`/`expect`，把 Node 独有的 `registerHooks` 拖进 Bun 进程 | 3 个 app fixture + 2 个 shared-* 套件（经 `helpers/refusals.ts`） | `SyntaxError: Export named 'registerHooks' not found in module 'node:module'` | fixture 改指 `bun-test-compat`；共享 helper 按实际运行器解析 `expect`，类型钉在 e2e 层 matcher 面上 |
+| 驱动层文件从 Node 侧 shim `tests/support/bun-compat` 取 `SQL`/`TransactionSQL` | 12 个 `server/tests/opik-*`、`payment-ordering-migration` | `SyntaxError: Export named 'SQL' not found in module '…/bun-compat'`；生产侧是 `server/src/db/client.ts:1` 的 `import { SQL } from "bun"` | 指向 `bun`（这些文件按清单只由 Bun 执行） |
+| 产品侧安全门要求 `TEST_DATABASE_URL` 库名匹配 `openbot_enterprise_*` | `legacy-anchor`、`membership-model`（含整个 multitenancy 一族） | 套件自己打印 `MT112 legacy-anchor tests refuse to run: TEST_DATABASE_URL must name an openbot_enterprise_* test database` | 建合规库名并按其提示跑 `bun server/scripts/enterprise-test-db.ts migrate` |
+
+修后实测（都在本轮新建、URL 全程钉死的私有库上，用完核对残留并 DROP）：
+`opik-*` 等 10 文件 **118 pass / 0 fail**；4 个 shared-*/opik 文件 **55 pass / 0 fail**；
+3 个 app fixture 文件 **21 pass / 0 fail**；整个 `server/tests/multitenancy/**`（50 文件）从
+**零读数**变成 **444 条用例 / 276 pass / 87 fail / 81 skip**。
+
+一条测量事实值得记住：**bun 在文件级错误时不写 junit 文件**，所以"junit 里没有这个文件"既可能是
+没跑也可能是致命错误，成因必须回到控制台输出——上一版把这两种混成了"unmeasured"。
