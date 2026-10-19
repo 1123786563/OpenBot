@@ -15,6 +15,9 @@ import { enterpriseTenants, enterpriseWorkspaces } from "./enterprise-tenancy";
 const createdAt = () =>
   timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
+const updatedAt = () =>
+  timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
+
 // MT014（Issue #57）：公司运行配置装配的存储面。expand-only——两张新表，
 // 不修改任何既有表/策略/授权。文档列只存「引用」（模型、凭据引用、套餐
 // 映射、Bot 默认），凭据值永远只存在凭据库，绝不进配置文档。
@@ -33,7 +36,7 @@ export const enterpriseRuntimeConfigs = pgTable(
     document: jsonb("document").notNull(),
     revision: integer("revision").notNull().default(1),
     createdAt: createdAt(),
-    updatedAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (table) => [
     check("enterprise_runtime_config_revision", sql`${table.revision} > 0`),
@@ -70,7 +73,7 @@ export const enterpriseRuntimeConfigOverrides = pgTable(
     document: jsonb("document").notNull(),
     revision: integer("revision").notNull().default(1),
     createdAt: createdAt(),
-    updatedAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (table) => [
     primaryKey({ columns: [table.tenantId, table.workspaceId] }),

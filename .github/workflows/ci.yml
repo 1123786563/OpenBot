@@ -598,8 +598,24 @@ jobs:
     name: migrations
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      # A real database built by the migration chain alone — the generate probe compared
+      # schema ↔ snapshot and was blind to a snapshot drifted from the SQL (#436: 38 tables
+      # / 292 columns shipped with no migration; fresh deployments crashed at boot).
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: openbot
+          POSTGRES_PASSWORD: openbot
+          POSTGRES_DB: openbot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U openbot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
-      # drizzle.config.ts refuses to load without it. Nothing here connects.
       DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -612,18 +628,33 @@ jobs:
       # Collisions and gaps between the migration files themselves.
       - run: bunx drizzle-kit check --config=drizzle.config.ts
         working-directory: server
-      # And the other direction: a schema change with no migration written for it. `generate` writes a
-      # file when it finds one, so the tree being dirty afterwards is the failure.
+      # The enterprise roles are a migration precondition, not a migration concern.
+      - name: Enterprise role prerequisites
+        working-directory: server
+        run: docker exec ${{ job.services.postgres.id }} psql -U openbot -d postgres -f - < ops/enterprise/roles.sql
+      - name: Fresh database migrates
+        working-directory: server
+        run: bun scripts/migrate.ts
+      # Either direction of drift fails: a column the schema declares but no migration
+      # creates (the #436 failure), or a table the migrations keep but no schema declares.
       - name: Schema has no unwritten migration
+        working-directory: server
+        run: bun scripts/db-drift-check.ts
+      # And the result boots: a migrated database that cannot start the server is the other
+      # half of #436 (the seed path crashed on skills.icon the moment it inserted).
+      - name: Fresh database boots
         working-directory: server
         run: |
           set -euo pipefail
-          bunx drizzle-kit generate --config=drizzle.config.ts --name=ci_drift_probe
-          if [ -n "$(git status --porcelain drizzle)" ]; then
-            echo "::error::The schema has changed without a migration. Run drizzle-kit generate and commit it."
-            git status --porcelain drizzle
-            exit 1
-          fi
+          printf 'KEY_ENCRYPTION_KEY=%s\nOPENBOT_SINGLE_USER=true\nINTELLIGENCE_API_KEY=ci-dummy\nINTELLIGENCE_API_URL=http://localhost:9\nINTELLIGENCE_GATEWAY_WS_URL=ws://localhost:9\n' "$(bun -e 'console.log(Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64"))')" > .ci-boot.env
+          timeout 45 bun --env-file=.ci-boot.env src/index.ts > boot.log 2>&1 &
+          for i in $(seq 1 45); do
+            grep -q "OpenBot server listening" boot.log && exit 0
+            sleep 1
+          done
+          echo "::error::server did not reach 'listening' on a fresh database"
+          tail -40 boot.log
+          exit 1
 
   # The image is the artefact people deploy, and almost nothing about whether it works is visible to
   # the checks above. A dangling symlink, a supervised service that exits, a missing binary: all of
