@@ -140,7 +140,11 @@ export type PlanCreditGrantor = {
 };
 
 /** The owner kinds a NEW order may carry; `unknown_owner` is a legacy-row verdict, not a buyer. */
-const OWNABLE_PAYER_KINDS = new Set(["personal", "company", "legacy_deployment"]);
+const OWNABLE_PAYER_KINDS = new Set([
+  "personal",
+  "company",
+  "legacy_deployment",
+]);
 
 /**
  * The owner a purchase binds, as the seam demands it: present, well-formed, whitespace-strict,
@@ -251,10 +255,19 @@ export function createPaymentService(deps: {
    * testing payments before the ledger is on) still activates, just without granting.
    */
   grantor?: PlanCreditGrantor;
+  /**
+   * The cadence the activation sweep re-asks a paid order at (BP03/#371). The sweep interval IS
+   * the scheduler — this value only computes the `activationNextRetryAt` fact a failed attempt
+   * retains, so the recorded schedule and the real cadence cannot drift apart.
+   */
+  activationRetryDelayMs?: number;
   now?: () => Date;
   log?: { warn(message: string): void };
 }): PaymentService {
   const now = deps.now ?? (() => new Date());
+  // The sweep's pass cadence, as the retained-retry-schedule arithmetic (default 60s, the
+  // maintenance sweep's own default — see ../payments/maintenance.ts).
+  const activationRetryDelayMs = deps.activationRetryDelayMs ?? 60_000;
   // The shared server logger satisfies the narrow `{ warn }` shape, so the fallback is a
   // plain injection default — warnings route through the one logger, never bare stdout.
   const log = deps.log ?? getLogger("server");
@@ -294,6 +307,19 @@ export function createPaymentService(deps: {
       currency: order.currency,
       status: order.status,
       activationState: order.activationState,
+      // "已付款，权益处理中" is a sentence about DELIVERY, not about money (BP03/#371: the two
+      // states are independent). Only a paid order owes one: applied answers "delivered", a
+      // deterministic conflict answers "needs_resolution", everything the sweep is still
+      // converging — pending AND failed, a rule verdict being the last pass's fact — answers
+      // "processing". No money, no fulfillment to report.
+      fulfillmentState:
+        order.status === "paid"
+          ? order.activationState === "applied"
+            ? "delivered"
+            : order.activationState === "needs_resolution"
+              ? "needs_resolution"
+              : "processing"
+          : null,
       // The QR exists to be paid once: a paid (or terminal) order stops showing it.
       checkout:
         order.status === "pending" && order.checkoutPayload
@@ -303,6 +329,32 @@ export function createPaymentService(deps: {
       periodEnd: order.periodEnd?.toISOString() ?? null,
       createdAt: order.createdAt.toISOString(),
     };
+  }
+
+  /**
+   * Retain one activation attempt's failure (BP03/#371): the reason word and, unless the verdict
+   * is a `needs_resolution` conflict (no retry is coming), the next pass's schedule. Best-effort
+   * on purpose — a store that cannot take this write is the same store the sweep's next pass
+   * reads through, and the retry itself is the recovery.
+   */
+  async function recordActivationFailureQuietly(
+    id: string,
+    reason: string,
+    activationState?: "failed" | "needs_resolution",
+  ): Promise<void> {
+    try {
+      await deps.store.recordActivationFailure({
+        id,
+        reason,
+        nextRetryAt:
+          activationState === "needs_resolution"
+            ? null
+            : new Date(now().getTime() + activationRetryDelayMs),
+        ...(activationState ? { activationState } : {}),
+      });
+    } catch {
+      // The order stays listed for the sweep; the next attempt rewrites the fact.
+    }
   }
 
   function withinLateWindow(order: PaymentOrderRecord, at: Date): boolean {
@@ -362,21 +414,22 @@ export function createPaymentService(deps: {
    * exactly once — the credit writer's insert-or-nothing against the unique index is the
    * guarantee, the same shape the paid fact uses.
    *
-   * Answers whether the allowance is settled (granted, or rightly absent). `false` means the
-   * payout has not landed, so the caller does NOT write `applied` and the sweep's next pass
-   * re-runs the whole sequence — the subscription half is idempotent (read-before-create), the
-   * grant half is idempotent (the key), so the retry converges. Writing `applied` over a failed
-   * payout would strand the allowance with no sweeper ever looking at the order again.
+   * Answers why the allowance has NOT settled, or null when it has (granted, or rightly absent).
+   * A reason means the payout has not landed, so the caller does NOT write `applied` and the
+   * sweep's next pass re-runs the whole sequence — the subscription half is idempotent
+   * (read-before-create), the grant half is idempotent (the key), so the retry converges. Writing
+   * `applied` over a failed payout would strand the allowance with no sweeper ever looking at
+   * the order again.
    */
   async function grantPlanCreditsFor(
     order: PaymentOrderRecord,
-  ): Promise<boolean> {
+  ): Promise<string | null> {
     const grantor = deps.grantor;
-    if (!grantor) return true;
+    if (!grantor) return null;
     const totalCents = grantor.creditsFor(order.planCode);
     // A plan the catalog grants no credits to (or a zero allowance) grants nothing — not an
     // error, not a warning: "this plan has no credit component" is a configured fact.
-    if (totalCents === null || totalCents <= 0) return true;
+    if (totalCents === null || totalCents <= 0) return null;
     /*
      * THE recipient is the order's own owner (10.2/Q27/AC14): the payout lands in the account
      * the order bound at creation, and nothing else names it — the delivery's bytes carry no
@@ -408,7 +461,7 @@ export function createPaymentService(deps: {
       log.warn(
         `payments: plan credit payout for order ${order.id} withheld — the order has no billable owner (Q23); the sweep retries after attribution`,
       );
-      return false;
+      return "unowned_payout";
     }
     try {
       // The expiry aligns to the provider's period end. Unknown period (provider refused the
@@ -422,7 +475,7 @@ export function createPaymentService(deps: {
         log.warn(
           `payments: plan ${order.planCode} credits withheld on order ${order.id} — neither the provider's period nor the order's own period answered an expiry`,
         );
-        return false;
+        return "grant_no_period";
       }
       const { inserted } = await grantor.grantPlanCredits({
         externalCustomerId: recipientKey,
@@ -438,15 +491,15 @@ export function createPaymentService(deps: {
           `payments: plan credit grant for order ${order.id} already recorded; nothing added`,
         );
       }
-      return true;
+      return null;
     } catch {
       // The ledger refused: the subscription stands, but the allowance is not yet paid out.
-      // `false` keeps the order out of `applied` so the sweep retries — the idempotency key is
-      // what makes that retry safe.
+      // The reason keeps the order out of `applied` so the sweep retries — the idempotency key
+      // is what makes that retry safe.
       log.warn(
         `payments: plan credit grant for order ${order.id} failed; the activation retry re-runs it`,
       );
-      return false;
+      return "grant_write_failed";
     }
   }
 
@@ -454,10 +507,10 @@ export function createPaymentService(deps: {
    * 10.3: the subscription row carries the order's owner — the pair resolved from the
    * persisted order (already duplicate-refused by `resolveActivationOwnership`), plus the
    * period the order paid for: the provider's exact period when it answered one, the order's
-   * own snapshot otherwise. Answers whether the stamp landed: `false` keeps the order out of
-   * `applied` so the sweep's next pass re-runs the whole idempotent sequence (the grant key
-   * and the stamp are both retry-safe); a stamp that moved nothing silently would let a
-   * paid subscription sit unattributed forever.
+   * own snapshot otherwise. Answers why the stamp has NOT landed, or null when it has (or is
+   * rightly absent): a reason keeps the order out of `applied` so the sweep's next pass re-runs
+   * the whole idempotent sequence (the grant key and the stamp are both retry-safe); a stamp
+   * that moved nothing silently would let a paid subscription sit unattributed forever.
    */
   async function stampOwnershipFor(
     order: PaymentOrderRecord,
@@ -465,18 +518,18 @@ export function createPaymentService(deps: {
       currentPeriodStart?: string | null;
       currentPeriodEnd?: string | null;
     },
-  ): Promise<boolean> {
+  ): Promise<string | null> {
     const stamp = deps.lago.stampSubscriptionOwnership;
     if (!stamp) {
       log.warn(
         `payments: order ${order.id} activated without a subscription-ownership stamp seam; the projection row stays unattributed`,
       );
-      return true;
+      return null;
     }
     // A pre-attribution legacy order names nobody (Q23): the grant upstream already withheld
     // its payout, so its activation never reaches this branch in practice.
     const owner = order.ownerPayerRef;
-    if (!owner) return true;
+    if (!owner) return null;
     const period =
       exactPeriodOf(subscription) ??
       (order.periodStart && order.periodEnd
@@ -486,7 +539,7 @@ export function createPaymentService(deps: {
       log.warn(
         `payments: order ${order.id} answered no period for the ownership stamp; the activation retry re-runs it`,
       );
-      return false;
+      return "stamp_no_period";
     }
     try {
       const stamped = await stamp({
@@ -500,31 +553,38 @@ export function createPaymentService(deps: {
         log.warn(
           `payments: ownership stamp for order ${order.id} found no subscription row; the activation retry re-runs it`,
         );
+        return "stamp_missing";
       }
-      return stamped;
+      return null;
     } catch {
       log.warn(
         `payments: ownership stamp for order ${order.id} failed; the activation retry re-runs it`,
       );
-      return false;
+      return "stamp_failed";
     }
   }
 
   /**
    * Activation: the reconciliation gate, then the subscription, then the credit payout, then the
-   * cache drop. Unreachable keeps the order pending-activation for the next pass; everything
-   * terminal writes `failed`. A re-run on an already-applied order writes nothing.
+   * cache drop. Unreachable keeps the order pending-activation for the next pass; every verdict
+   * that does not land retains its reason and next-retry schedule (BP03/#371). A DETERMINISTIC
+   * conflict — an entitlement another order already owns — lands in `needs_resolution` instead of
+   * an endless retry: the sweep stops listing it, the reader sees it unresolved, and the money
+   * facts and anomaly evidence stay untouched for the operator. A re-run on an already-applied
+   * order writes nothing.
    */
   async function activateOrder(
     order: PaymentOrderRecord,
-  ): Promise<"applied" | "failed" | "pending" | "duplicate"> {
+  ): Promise<"applied" | "failed" | "pending" | "needs_resolution"> {
     if (order.activationState === "applied") return "applied";
+    if (order.activationState === "needs_resolution") return "needs_resolution";
     let ownership: Awaited<
       ReturnType<PaymentStore["resolveActivationOwnership"]>
     >;
     try {
       ownership = await deps.store.resolveActivationOwnership(order.id);
     } catch {
+      await recordActivationFailureQuietly(order.id, "ownership_unresolved");
       return "pending";
     }
     if (ownership.outcome === "duplicate") {
@@ -534,26 +594,49 @@ export function createPaymentService(deps: {
         order.channelTransactionId ?? order.id,
         order.amountCents,
       );
-      return "duplicate";
+      // The conflict is a fact about the data, not about a retry that has not happened yet:
+      // needs_resolution is the operator's queue (the anomaly above is its evidence), and no
+      // number of passes can make a second transaction the owner of a period already owned.
+      await recordActivationFailureQuietly(
+        order.id,
+        "duplicate_paid",
+        "needs_resolution",
+      );
+      return "needs_resolution";
     }
-    if (ownership.outcome !== "owner") return "pending";
+    if (ownership.outcome !== "owner") {
+      await recordActivationFailureQuietly(order.id, "ownership_unresolved");
+      return "pending";
+    }
     order = ownership.order;
     try {
       const plan = await deps.lago.getPlan(order.planCode);
       if (!plan.found) {
-        await deps.store.recordActivation(order.id, "failed");
+        await recordActivationFailureQuietly(
+          order.id,
+          "plan_not_found",
+          "failed",
+        );
         return "failed";
       }
       // The interval is the wire's word, compared as a string: the activation below creates a
       // monthly subscription, and a plan billed any other way is a mismatch worth refusing —
       // with no override, ever.
       if (plan.interval !== "monthly") {
-        await deps.store.recordActivation(order.id, "failed");
+        await recordActivationFailureQuietly(
+          order.id,
+          "plan_interval_mismatch",
+          "failed",
+        );
         return "failed";
       }
       if (plan.currency !== "CNY") {
         if (!deps.acceptForeignCurrency) {
-          await deps.store.recordActivation(order.id, "failed");
+          await recordActivationFailureQuietly(
+            order.id,
+            "plan_currency_mismatch",
+            "failed",
+          );
           return "failed";
         }
         log.warn(
@@ -569,11 +652,19 @@ export function createPaymentService(deps: {
       // Granted here — after `ensureSubscription` (no allowance without the entitlement it
       // belongs to) and before `recordActivation(applied)` (a payout that has not landed leaves
       // the activation un-applied, so the sweep's next pass retries it).
-      if (!(await grantPlanCreditsFor(order))) return "pending";
+      const grantFailure = await grantPlanCreditsFor(order);
+      if (grantFailure) {
+        await recordActivationFailureQuietly(order.id, grantFailure);
+        return "pending";
+      }
       // The subscription row now carries the order's owner (10.3): stamped after the payout
       // (the allowance and the row name the same account) and before `applied`, so a stamp
       // that did not land is retried by the sweep like every other un-applied half.
-      if (!(await stampOwnershipFor(order, subscription))) return "pending";
+      const stampFailure = await stampOwnershipFor(order, subscription);
+      if (stampFailure) {
+        await recordActivationFailureQuietly(order.id, stampFailure);
+        return "pending";
+      }
       deps.invalidateEntitlementCache();
       await deps.store.recordActivation(
         order.id,
@@ -585,9 +676,14 @@ export function createPaymentService(deps: {
       if (error instanceof BillingError && error.retryable) {
         // The provider could not be reached: activation stays pending and the next pass (poll,
         // callback replay, sweep) retries it. Writing `failed` here would strand a paid order.
+        await recordActivationFailureQuietly(order.id, "provider_unreachable");
         return "pending";
       }
-      await deps.store.recordActivation(order.id, "failed").catch(() => {});
+      await recordActivationFailureQuietly(
+        order.id,
+        "activation_error",
+        "failed",
+      );
       return "failed";
     }
   }
@@ -1177,14 +1273,17 @@ export function createPaymentService(deps: {
         try {
           const outcome = await activateOrder(order);
           /*
-           * The exhaustion alarm (T5-2): a `failed` verdict is no longer terminal (the store
-           * pass retries both pending AND failed — P1-4), but a paid order failing the SAME
-           * gate for days is a fact an operator needs to see. After ACTIVATION_ALARM_AFTER
-           * consecutive failed verdicts, one anomaly row names the order; the (order_id,
-           * code) business key keeps it one row however long the order stays stuck, and a
-           * success clears the counter.
+           * The exhaustion alarm (T5-2, widened by BP03/#371): a paid order whose activation
+           * has not LANDED — a rule refusal (`failed`, retried per P1-4 because the rule can
+           * change) or a transient verdict (`pending`: provider unreachable, ledger refusing)
+           * — pass after pass is a fact an operator needs to see. After ACTIVATION_ALARM_AFTER
+           * consecutive not-landed verdicts, one anomaly row names the order; the (order_id,
+           * code) business key keeps it one row however long the order stays stuck, and any
+           * settled or escalated verdict clears the counter. `needs_resolution` orders never
+           * reach here at all — the store pass no longer lists them, and their conflict
+           * already wrote its own evidence.
            */
-          if (outcome === "failed") {
+          if (outcome === "failed" || outcome === "pending") {
             const strikes = activationStrikes.get(order.id) ?? 0;
             const next = strikes + 1;
             activationStrikes.set(order.id, next);
@@ -1194,7 +1293,7 @@ export function createPaymentService(deps: {
                 code: "activation_retry_exhausted",
                 channelTransactionId: order.channelTransactionId,
                 amountCents: order.amountCents,
-                detail: `activation refused ${next} passes in a row (plan ${order.planCode}); money collected, entitlement not landing — needs an operator`,
+                detail: `activation has not landed in ${next} passes in a row (plan ${order.planCode}, last reason ${order.activationFailureReason ?? "unknown"}); money collected, entitlement not landing — needs an operator`,
               });
             }
           } else {

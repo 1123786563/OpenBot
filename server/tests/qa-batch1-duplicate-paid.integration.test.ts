@@ -1,6 +1,6 @@
-import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq, like } from "drizzle-orm";
+import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import type { PaymentProvider } from "../src/billing/payments/provider";
 import { createPaymentService } from "../src/billing/payments/service";
 import { createPaymentStore } from "../src/billing/payments/store";
@@ -28,15 +28,16 @@ const prefix = `qa1c-${randomUUID().slice(0, 8)}`;
 const planCode = `qa-plan-${randomUUID().slice(0, 8)}`;
 
 afterAll(async () => {
-  await database.delete(paymentEvents).where(like(paymentEvents.orderId, `${prefix}%`));
-  await database.delete(paymentOrders).where(like(paymentOrders.id, `${prefix}%`));
+  await database
+    .delete(paymentEvents)
+    .where(like(paymentEvents.orderId, `${prefix}%`));
+  await database
+    .delete(paymentOrders)
+    .where(like(paymentOrders.id, `${prefix}%`));
   await database.$client.close();
 });
 
-function paidDelivery(
-  orderId: string,
-  transactionId: string,
-): PaymentProvider {
+function paidDelivery(orderId: string, transactionId: string): PaymentProvider {
   return {
     id: "alipay",
     async createSession() {
@@ -119,7 +120,9 @@ test("sequential double payment (cross-provider): both paid, and the duplicate i
   // Order A on alipay, paid for real.
   const a = await openOrder("alipay", "a");
   const alipayService = serviceFor(paidDelivery(a.id, `${prefix}-tx-a`));
-  expect(await alipayService.handleCallback("alipay", new Headers(), "x")).toEqual({
+  expect(
+    await alipayService.handleCallback("alipay", new Headers(), "x"),
+  ).toEqual({
     kind: "success",
   });
   const paidA = await store.readOrder(a.id);
@@ -140,7 +143,9 @@ test("sequential double payment (cross-provider): both paid, and the duplicate i
     successAck: { body: '{"code":"SUCCESS"}', contentType: "text/plain" },
   };
   const wechatService = serviceFor(wechatDelivery);
-  expect(await wechatService.handleCallback("wechat", new Headers(), "x")).toEqual({
+  expect(
+    await wechatService.handleCallback("wechat", new Headers(), "x"),
+  ).toEqual({
     kind: "success",
   });
 
@@ -159,10 +164,14 @@ test("sequential double payment (cross-provider): both paid, and the duplicate i
   expect(duplicate.length).toBeGreaterThanOrEqual(1);
   expect(duplicate[0]?.detail).toContain(a.id);
 
-  // And the recovery seam stays open: a held duplicate is still visible to the activation
-  // sweep's retry list, while the owner is not.
+  // And the recovery seam changed shape with BP03 (#371): a deterministic conflict is no longer
+  // an endless retry. B lands in `needs_resolution` — out of the activation sweep's list (no
+  // infinite re-asking), never `applied` — with the duplicate evidence above as the operator's
+  // queue entry, while the owner A stays settled.
+  expect(paidB?.activationState).toBe("needs_resolution");
+  expect(paidB?.activationFailureReason).toBe("duplicate_paid");
   const pendingActivation = await store.listPaidPendingActivationOrders(100);
   const pendingIds = pendingActivation.map((order) => order.id);
-  expect(pendingIds).toContain(b.id);
+  expect(pendingIds).not.toContain(b.id);
   expect(pendingIds).not.toContain(a.id);
 });

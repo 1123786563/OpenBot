@@ -1,5 +1,5 @@
 {
-  "generatedBy": "scripts/lib/e2e-manifest.mjs groupsOf() — regenerated so ISLANDS take effect for the driver",
+  "generatedBy": "scripts/lib/e2e-manifest.mjs groupsOf() \u2014 regenerated so ISLANDS take effect for the driver",
   "groups": [
     {
       "name": "agent-computer/tests",
@@ -422,6 +422,7 @@
     {
       "name": "server/tests part 9",
       "files": [
+        "server/tests/billing-period-fulfillment.integration.test.ts",
         "server/tests/opik-scope.test.ts",
         "server/tests/opik-scoring-rules.test.ts",
         "server/tests/opik-t-final-assembly.test.ts",
@@ -762,6 +763,7 @@
     "server/tests/billing-credits-consumption.integration.test.ts",
     "server/tests/billing-credits-summary.integration.test.ts",
     "server/tests/billing-credits-writer.integration.test.ts",
+    "server/tests/billing-period-fulfillment.integration.test.ts",
     "server/tests/billing-reconcile.integration.test.ts",
     "server/tests/billing-store.integration.test.ts",
     "server/tests/billing-store.test.ts",
@@ -1111,12 +1113,12 @@
     "agent-computer/tests/local-chrome-startup.test.ts": "runner reported: missing token exits before starting the computer or creating data: expected 9 to be 1",
     "agent-computer/tests/workspace-download.test.ts": "runner reported: returns every byte without the text read limit: expect(...).toBeTrue failed: false",
     "agent-langgraph/tests/google-oauth-proxy.test.ts": "runner reported: LangGraph streams and replays Gemini tool signatures through its actual SDK and AG-UI history: Invalid URL",
-    "agent-mastra/src/mastra/index.test.ts": "runner reported: uses the default endpoint with test-anthropic API key: provider probe exited 1 No `storage` configured on Mastra — falli",
-    "agent-sandbox/tests/snapshot.test.ts": "runner reported: the pruned bytes never enter the archive — the point is memory, not tidiness: The requested length exceeds 65,536 bytes",
+    "agent-mastra/src/mastra/index.test.ts": "runner reported: uses the default endpoint with test-anthropic API key: provider probe exited 1 No `storage` configured on Mastra \u2014 falli",
+    "agent-sandbox/tests/snapshot.test.ts": "runner reported: the pruned bytes never enter the archive \u2014 the point is memory, not tidiness: The requested length exceeds 65,536 bytes",
     "agent-sandbox/tests/sse.test.ts": "runner reported: forwards families, drops noise, closes when the upstream closes: expected 503 to be 200",
     "app/src/lib/upload-queue/queue.test.ts": "runner reported: bounded concurrency: 5 queued, only 3 in flight at once: expected 0 to be 3",
     "app/tests/admin-catalog-sync-ui.test.tsx": "runner reported: the sync button fires the manual route, reports the outcome and re-reads the catalog: Cannot read properties of undefine",
-    "app/tests/admin-credit-grant-ui.test.tsx": "runner reported: 提交体只含目标用户与额度等字段：积分×100、ISO 过期时间、幂等键，绝无账户键: Unable to find an element by: [data-testid=\"grant-result\"] Ignored nodes: com",
+    "app/tests/admin-credit-grant-ui.test.tsx": "runner reported: \u63d0\u4ea4\u4f53\u53ea\u542b\u76ee\u6807\u7528\u6237\u4e0e\u989d\u5ea6\u7b49\u5b57\u6bb5\uff1a\u79ef\u5206\u00d7100\u3001ISO \u8fc7\u671f\u65f6\u95f4\u3001\u5e42\u7b49\u952e\uff0c\u7edd\u65e0\u8d26\u6237\u952e: Unable to find an element by: [data-testid=\"grant-result\"] Ignored nodes: com",
     "app/tests/admin-gateway-readiness.test.tsx": "runner reported: a not-ready gateway names every blocking reason, not a blur: Cannot read properties of undefined (reading '0')",
     "app/tests/approvals-rules.test.tsx": "runner reported: team rules are locked for members, enforced auto-review is shown as required, and the host cap is named: Cannot read pro",
     "app/tests/audit-dry-run-label.test.tsx": "runner reported: a dry-run refusal that went ahead says it was not enforced: Cannot read properties of undefined (reading '0')",
@@ -1162,13 +1164,13 @@
     "server/tests/craft-mcp-relay.test.ts": "runner reported: session-tagged call reaches the vendor authenticated; response passes through: expected 502 to be 202",
     "server/tests/craft-routes-assembly.test.ts": "runner reported: a session on hash A reloads when the resolver answers hash B (push + AGENTS.md + ack): expected 502 to be 200",
     "server/tests/craft-webapp-hmr.test.ts": "runner reported: dev form: the pass opens the socket, frames flow both ways, the label rides to the upstream mount: The preview origin is",
-    "server/tests/craft-webapp-tool.test.ts": "runner reported: first start: exit 0 → the success result byte-exact, running observation: expected \"webapp started successfully\\n\\n--- s",
+    "server/tests/craft-webapp-tool.test.ts": "runner reported: first start: exit 0 \u2192 the success result byte-exact, running observation: expected \"webapp started successfully\\n\\n--- s",
     "server/tests/deployment-route-bot-end-to-end.test.ts": "runner reported: a permitted Bot's read reaches the computer: expected 503 to be 200",
     "server/tests/desktop-connection-failure.test.ts": "runner reported: ",
     "server/tests/enterprise/ai-sdk-v3-gateway-adapter.test.ts": "runner reported: rejects unknown stream types and propagates abort: expected false to be true",
     "server/tests/enterprise/mastra-compatibility.test.ts": "runner reported: locked Mastra bridge emits a non-empty native AG-UI text chunk and finishes cleanly: TypeError: Failed to parse URL from",
     "server/tests/enterprise/mastra-model.integration.test.ts": "runner reported: native OpenAI and Anthropic factories honor persisted route identity and local endpoints: Cannot connect to API: connect",
-    "server/tests/gateway-capability-negotiation.test.ts": "runner reported: a healthy gateway without the extension negotiates absent — health 200 is not readiness: expected false to be true",
+    "server/tests/gateway-capability-negotiation.test.ts": "runner reported: a healthy gateway without the extension negotiates absent \u2014 health 200 is not readiness: expected false to be true",
     "server/tests/gateway-probe.test.ts": "runner reported: a healthy authorized gateway answers ok, bound to the config it used: expected \"unreachable\" to be \"ok\"",
     "server/tests/headless-components.test.ts": "runner reported: every gallery module is listed here: Bun.Glob.scanSync is not a function or its return value is not iterable",
     "server/tests/health.test.ts": "runner reported: forwards auth requests to the configured Better Auth handler: expected 500 to be 204",
@@ -1184,7 +1186,7 @@
     "server/tests/plan-model.test.ts": "runner reported: a plan-only built-in keeps its identity and instructions: Failed to parse URL from undefined: Invalid URL",
     "server/tests/qa-batch2-cycle-config-qr.test.ts": "runner reported: no qrserver reference anywhere in the app source: glob.scanSync is not a function or its return value is not iterable",
     "server/tests/remote-coordination.test.ts": "runner reported: ",
-    "server/tests/reserve-bound-rounding.test.ts": "runner reported: for every case: exact ≤ ceiling < exact + 1 — never under, never a unit over: toBeGreaterThanOrEqual requires a number, ",
+    "server/tests/reserve-bound-rounding.test.ts": "runner reported: for every case: exact \u2264 ceiling < exact + 1 \u2014 never under, never a unit over: toBeGreaterThanOrEqual requires a number, ",
     "server/tests/run-built-agent-cancellation.test.ts": "runner reported: Stop cancels the production selector HTTP connection before a late reply can start the final model: Failed to parse URL ",
     "server/tests/tool-selection-environment-restoration-driver.test.ts": "runner reported: fixtureListenerStopped observes a live loopback listener before proving it stopped: expected false to be true",
     "server/tests/trace-outbound.test.ts": "runner reported: an agent POST inside an active span carries that span's trace: fetch failed: connect EADDRNOTAVAIL 127.0.0.1 - Local (0.",
@@ -1499,7 +1501,7 @@
     "app/tests/account-mode-dialog.test.tsx": "runner named it: attributed runner-difference by scripts/e2e-vs-bun.mjs against .e2e/final3/report.json: green on bun test with the same suite text against the same production code",
     "agent-sandbox/tests/proxy.test.ts": "runner named it: attributed runner-difference with evidence: 25 pass / 0 fail under bun test on current code with the pre-migration suite text, deterministic 24 pass / 1 fail under e2e (GET /events forwards the directory scope to the upstream). forwardEvents' fetch to the fake upstream is never recorded by it under Node; unresolved why, so the suite stays on the Bun tier instead of a guessed port of the shim",
     "server/tests/workshop-preview.test.ts": "root cause named, not guessed: the fake forwarder answers {status:101} and production passes that Response straight through, but Node's undici Response constructor throws RangeError: init[\"status\"] must be in the range of 200 to 599 while Bun builds 1xx fine (verified side by side: node -e new Response(null,{status:101}) throws, bun -e prints 101). The assertion is Bun-coupled HTTP semantics, so the suite stays on the Bun tier under e2e scheduling; 9 pass / 0 fail under bun test in one file.",
-    "server/tests/composio-adapter.test.ts": "runner proved it, not a guess: `e2e run … server/tests/composio-adapter.test.ts` aborts collection with \"Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'\". The specifier comes from the @composio/core graph, so the static boundary tool (which follows repository modules) cannot see it — the suite therefore stays on the Bun runtime, scheduled and reported by e2e."
+    "server/tests/composio-adapter.test.ts": "runner proved it, not a guess: `e2e run \u2026 server/tests/composio-adapter.test.ts` aborts collection with \"Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'\". The specifier comes from the @composio/core graph, so the static boundary tool (which follows repository modules) cannot see it \u2014 the suite therefore stays on the Bun runtime, scheduled and reported by e2e."
   },
   "directoryIslands": [
     "server/tests/multitenancy",
