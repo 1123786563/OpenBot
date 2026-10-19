@@ -756,3 +756,36 @@ Casdoor 回调与 app→API 指向；而我的 server 在 `openbot_app` 库上�
 我自己起的部件已全部拆除：容器 `ob-e2e-eng-casdoor` 已 `docker rm -f`，`casdoor` 与 `openbot_app` 两个库、
 `casdoor` 角色都已 DROP，vite（3010）已停，复制到工作树的 `.env` 已删除，只留下本波次原有的 `openbot_test`。
 教训写进口径：**共享机器上先用 `lsof -a -p <pid> -d cwd` 判断进程归属，再决定动不动**——本轮在这条上失手一次。
+
+#### 12:19–12:29 引擎层第一次真跑到浏览器断言（第 7 条仍未过，但边界变成事实）
+
+可用的栈形状（逐条踩过之后）：Casdoor `:8000`（conf 挂 `/conf`、首启 `initAdminPassword = 123`、
+`application.redirect_uris` **必须是 JSON 数组字符串**，写成逗号串会让 Casdoor 报
+`invalid character 'h' looking for beginning of value`）；API 走 `:3221`（Casdoor 认 3001/3221 两个回调口），
+且 `.env` 里 **`PORT` 与 `SERVER_PORT` 必须一致**，否则 `server/src/config.ts:2880` 直接拒绝启动；
+app 留在 `:3010`，于是 `e2e.config.ts` 一个字都不用改。
+
+三轮执行（每轮都是真跑，不是收集）：
+
+| 轮 | 结果 | 卡点 |
+|---|---|---|
+| 12:19 | `Tests 1 failed / 27 skipped (28)` | Casdoor `Invalid client_id` —— 我复用了上一份已被 DROP 的库里的 client 对 |
+| 12:25 | `Tests 1 failed / 27 skipped (28)` | Casdoor JSON 解析失败（redirect_uris 形状错） |
+| 12:28 | `Test Files 1 failed / 9 skipped (10)`、`Tests 1 failed / 4 skipped (5)` | `auth.setup` 的 `expect(getByRole("link","Bots")).toBeVisible()` 失败 |
+
+第三轮已经没有环境类报错了：登录链路走完、应用渲染出来，断言落在"登录后侧栏出现 Bots"这一步，
+它为什么不过需要再迭代（本轮预算不够）。**所以第 7 条的判定仍是"未过"**，但"能不能跑到断言"从假设
+变成了事实，接手的人不必再重走这三步。
+
+顺带查出一个**产品侧迁移缺口**（不是测试框架问题）：全新 `bun server/scripts/migrate.ts` 出来的库里
+`skills` 没有 `icon` 列，而 server 一启动就往 `skills(icon)` 里写，于是进程直接退出
+（`PostgresError: column "icon" of relation "skills" does not exist`）。声明在
+`server/src/db/schema/plugins.ts:558`，`server/drizzle/*.sql` 里搜不到这一列（只有 `meta/*_snapshot.json` 有），
+带来它的提交是 `a200eafe`（市场功能那波）。我在**自己的夹具库**上 `ALTER TABLE skills ADD COLUMN icon text`
+才让 server 起得来——那是夹具绕行，不是产品修复，缺口留给归属波次。
+这条同时说明第 7 条为什么值得接进 CI：**引擎层是唯一会真起 server 的入口**，
+`test:ci` 的 7936 条里没有任何一条会碰到这个形状。
+
+清理核对过：容器 `ob-e2e-eng-casdoor` 已删、`casdoor` / `openbot_app` 两库与 `casdoor` 角色已 DROP、
+我起的 server/app 进程按 `lsof -a -p PID -d cwd` 确认归属后才杀、工作树 `.env` 已删除；
+另一个会话的 `:3001` 服务全程未受影响（结束时 `health=200`）。
