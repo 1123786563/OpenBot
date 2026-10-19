@@ -411,3 +411,26 @@ TEST_DATABASE_URL=postgres://openbot:openbot@127.0.0.1:55433/openbot_enterprise_
 
 **两条留给下一轮的反面教材**（已写进项目记忆）：全量轮进行中不要并行起任何 scoped 验证（两组抢
 4600，那一轮 +19 条红是我自己造的）；引数字前先确认夹具还活着（这一轮我的私有容器在轮中被回收过）。
+
+## multitenancy 一族在 CI 里为什么还会拒绝运行（10-19 04:02，规则逐条读出）
+
+族内的 `enterprise-test-db.ts` / `migrate-test.ts` 有三道门禁，我按源码逐条验过：
+
+1. **`TEST_DATABASE_URL` 必须是回环主机 + 库名匹配 `openbot_enterprise_*`**
+   （`server/scripts/multitenancy/migrate-test.ts:2536-2596`）。ci.yml 给的是 `openbot_test` →
+   整族在收集期抛 `relation … does not exist`，51 个文件零读数。
+2. **预留 setup 库必须"新"**：`public` schema 为空、`session_user == current_user`（直连、不 SET ROLE）、
+   当前用户不在能力角色集合内、且该角色 **有 BYPASSRLS**
+   （`server/scripts/enterprise-test-db-guard.ts:133-149`）。
+3. **四个 `ENTERPRISE_TEST_*_DATABASE_URL` 必须指向同一实例同一库**
+   （报错原文：`ENTERPRISE_TEST_DIRECTORY_DATABASE_URL must point at the same PostgreSQL instance and
+   database as the setup URL`）。CI 的 5434 服务天然满足 2 与 3（每次作业都是新库），我本机不满足是因为
+   复用了已被迁移过的那一个。
+
+本仓库已具备承接 1 的机制：驱动层的按组 env（`bunEnv` + `DIRECTORY_ISLANDS`，见 `96a36eae`）——本地实测
+该组从零读数变成 **293 条用例真跑**。要在 CI 也成立，缺的只是一步"给企业命名库跑一次迁移并导出
+`MT_TEST_DATABASE_URL`"。我没有替 CI 加这一步：它无法在本机验证，且 `test` job 是所有波次共用的关卡，
+把未验证的作业改动推上去风险大于收益。这一条留给有推送授权的那一次，命令形状已经写在这里。
+
+族内那 38 条失败的定性也在这里说清：不是运行器差异，而是它的 harness 正控在要求上面这套预留拓扑
+（`ISOLATION_SCENARIO_FAILED:…:harness.environment.positive-control`），属多租户那一波的定义范围。
