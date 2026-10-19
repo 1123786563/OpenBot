@@ -395,5 +395,19 @@ docker run -d --name ob-e2e-qdrant -p 127.0.0.1:6333:6333 qdrant/qdrant:latest
 cd server && OPENBOT_BOOTSTRAP_ENTERPRISE_ROLES=on bun scripts/migrate.ts && bun scripts/enterprise-test-db.ts migrate
 ```
 
+**还有一步决定 `server/tests/multitenancy/**` 那 50 个文件能不能跑出读数**（10-19 查实的）：这一族通过
+`server/scripts/multitenancy/migrate-test.ts` 自建 schema，而它硬要求 `TEST_DATABASE_URL` 的**库名**匹配
+`openbot_enterprise_*` 且主机回环，否则整个文件在收集期就抛错拒跑（产品侧刻意的安全门，不给回退）。
+ci.yml 目前只给 `openbot_test`，所以这族在 CI 与旧入口下同样是零读数。本地补齐的形状是：
+
+```bash
+docker exec ob-e2e-pg1 psql -U openbot -d postgres -c 'CREATE DATABASE openbot_enterprise_mt_test OWNER openbot'
+TEST_DATABASE_URL=postgres://openbot:openbot@127.0.0.1:55433/openbot_enterprise_mt_test \
+  bun scripts/migrate.ts && TEST_DATABASE_URL=… bun scripts/enterprise-test-db.ts migrate
+```
+
+跑完再执行这一族：`bun test ./server/tests/multitenancy/*.test.ts` → 50 文件 444 条用例
+**276 pass / 87 fail / 81 skip**（这一步之前是零读数）。剩下的 87 条属多租户整改那一波，不由我改绿。
+
 **两条留给下一轮的反面教材**（已写进项目记忆）：全量轮进行中不要并行起任何 scoped 验证（两组抢
 4600，那一轮 +19 条红是我自己造的）；引数字前先确认夹具还活着（这一轮我的私有容器在轮中被回收过）。
