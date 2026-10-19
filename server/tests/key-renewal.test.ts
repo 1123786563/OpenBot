@@ -496,7 +496,9 @@ describe("05.6 key renewal re-validation", () => {
     const rowsB = await keyRowsFor(grantB.grantId);
     expect(rowsB).toHaveLength(1);
     expect(rowsB[0]!.credentialVersion).toBe(1);
-    expect(rowsB[0]!.status).toBe("active");
+    // #248 (60116422): revokeForUser retires the key row in the same transaction — the
+    // row the revoked grant minted is revoked, not left active behind a dead grant.
+    expect(rowsB[0]!.status).toBe("revoked");
   }, 30_000);
 
   test("renewal with a not-ready gate is refused before anything is dialed or stored", async () => {

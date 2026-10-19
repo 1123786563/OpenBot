@@ -409,6 +409,10 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
     // 波次 15 集成（brief 预授权）：三票任务块并入迁移链 MT029→MT073→MT060，
     // 穷举断言三 ID 并入排序位（MT028<MT029<MT031、MT059<MT060<MT069、
     // MT070<MT073<MT076），其余内容只读。
+    // 修复波次 fix-mt（#46 MT003 测试适配）：实现注册表已含波次 16 的
+    // MT034/MT067/MT074 而本断言清单未同步，按注册表排序位补齐这三项
+    // （MT031<MT034<MT041、MT060<MT067<MT069、MT073<MT074<MT076），
+    // 文件其余内容只读。
     expect(ALLOWED_TASK_IDS).toEqual([
       "MT000",
       "MT004",
@@ -423,13 +427,16 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
       "MT028",
       "MT029",
       "MT031",
+      "MT034",
       "MT041",
       "MT042",
       "MT059",
       "MT060",
+      "MT067",
       "MT069",
       "MT070",
       "MT073",
+      "MT074",
       "MT076",
       "MT077",
       "MT112",

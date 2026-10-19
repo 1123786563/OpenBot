@@ -3,6 +3,7 @@ import type { Database } from "../src/db/client";
 import type { PlatformScope } from "../src/enterprise/contracts";
 import { verifyDirectoryDatabase } from "../src/enterprise/tenancy/connections";
 import { createScopeResolver } from "../src/enterprise/tenancy/store";
+import { enterpriseWorkspaceMemberships } from "../src/db/schema/enterprise-tenancy";
 import { payerKey } from "../src/billing/payer";
 import {
   CompanyScopeRequiredError,
@@ -75,7 +76,15 @@ function controlledDirectoryDatabase(
     transaction: async (operation: (tx: unknown) => Promise<unknown>) =>
       operation({
         execute: async () => [],
-        select: () => controlledQuery(() => rows),
+        // MT005: resolve() checks tenant membership AND workspace membership — the
+        // controlled fixture answers the tenant row for enterpriseMemberships and an
+        // active team row for enterpriseWorkspaceMemberships.
+        select: () =>
+          controlledQuery((table) =>
+            table === enterpriseWorkspaceMemberships
+              ? [{ status: "active" }]
+              : rows,
+          ),
       }),
   } as unknown as Database;
 }

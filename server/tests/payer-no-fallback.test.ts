@@ -823,6 +823,9 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
           occurredAt: new Date(),
           modelId: gateModelId,
           client: "web",
+          // 09.1: the gate's outbox write names the Bot that ran the call and the
+          // person it ran for.
+          attribution: { userId: `usr_${run}_gate_bot`, botId: `bot_${run}_gate` },
         }),
     );
 
@@ -850,6 +853,9 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
       reservationId: hold?.id,
       actualCostNumerator: "3",
       actualCostDenominator: "10",
+      // 09.1: the usage fact carries the input's attribution through to the outbox.
+      botId: `bot_${run}_gate`,
+      ownerUserId: `usr_${run}_gate_bot`,
     });
 
     // An unknown-outcome failure keeps the hold and leaves evidence on the SAME account.
@@ -863,7 +869,9 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
       .from(creditReservations)
       .where(eq(creditReservations.idempotencyKey, `usage:${eventId}`))
       .limit(1);
-    expect(stillHeld?.status).toBe("reserved");
+    // 06.8: the kept hold is marked unknown, not left plain-reserved — it must
+    // outlive its own expiry for reconciliation to report.
+    expect(stillHeld?.status).toBe("unknown");
 
     // Every write this gate made named the bound account; the deployment account was
     // never read for a hold, never named by a write.
@@ -953,19 +961,27 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
     const srcRoot = join(hereDir, "..", "src");
     await walk(srcRoot);
 
+    /*
+     * Comment text can never widen the inventory: the scan blanks both comment forms
+     * before matching, so a prose mention — app.ts's assembly note, routes.ts's admin
+     * comment, the tenancy schema's derivation note — counts for nothing and only
+     * files whose CODE names the identifier are listed.
+     */
+    const codeOnly = (source: string): string =>
+      source
+        .replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "))
+        .replace(/\/\/[^\n]*/g, (comment) => comment.replace(/[^\n]/g, " "));
     const referencing: string[] = [];
     for (const file of files) {
       const content = await readFile(file, "utf8");
-      if (content.includes("deploymentExternalCustomerId")) {
+      if (codeOnly(content).includes("deploymentExternalCustomerId")) {
         referencing.push(file);
       }
     }
     const names = referencing.map((file) => file.replace(`${srcRoot}/`, "")).sort();
     expect(names).toEqual([
-      "app.ts", // assembly comment only (the key arrives derived)
       "billing/payer-legacy.ts", // 02.2 legacy attribution
       "billing/payer.ts", // the payer layer's legacy_deployment branch
-      "billing/routes.ts", // admin route comment only
       "billing/service.ts", // the definition
       "index.ts", // boot derivation + the consumption entry's binding wiring
     ]);

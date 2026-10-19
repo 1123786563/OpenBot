@@ -127,7 +127,7 @@ const evidenceInput = {
   testUserIds: [],
 };
 
-/** The eleven FK edges the drizzle schema declares among the legacy tables. */
+/** The thirteen FK edges the drizzle schema declares among the legacy tables. */
 const DECLARED_EDGES: {
   childTable: string;
   childColumn: string;
@@ -146,6 +146,9 @@ const DECLARED_EDGES: {
   { childTable: "credit_reservation_allocations", childColumn: "grant_id", parentTable: "credit_grants", parentColumn: "id", onDelete: "cascade" },
   { childTable: "credit_charge_remainders", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
   { childTable: "payment_events", childColumn: "order_id", parentTable: "payment_orders", parentColumn: "id", onDelete: "cascade" },
+  { childTable: "credit_reservation_attribution", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
+  // 0147 (#276): 08.1's recovery item, the same one-hop shape as the attribution row above.
+  { childTable: "credit_recovery_items", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
 ];
 
 let classification: CleanupClassification;

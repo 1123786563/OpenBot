@@ -417,10 +417,18 @@ describeDb("MT069 AC4 regression: existing billing model untouched", () => {
           "request_id",
           "title",
         ],
+        // 修复波次 fix-mt（#112 MT069 测试适配）：AC4 原始语义是「既有计费表
+        // 不因 MT069 而变」。MT069 之后主链迁移合法地为 credit_reservations
+        // 加了 7 列（非 MT069 所为），期望清单同步为当前真实 schema：
+        // provider/model/capability/snapshot_version/rate_version 来自
+        // 0140_reservation_locked_basis（锁价基准，对应 0128/0129/0133 建立
+        // 的 rate/model/snapshot 目录域），unknown_at/unknown_reason 来自
+        // 0141_credit_reservation_unknown_state。其余三表仍钉死原清单。
         credit_reservations: [
           "actual_denominator",
           "actual_numerator",
           "applied",
+          "capability",
           "charged",
           "created_at",
           "expires_at",
@@ -429,12 +437,18 @@ describeDb("MT069 AC4 regression: existing billing model untouched", () => {
           "idempotency_key",
           "ledger_id",
           "maximum",
+          "model",
+          "provider",
+          "rate_version",
           "release_reason",
           "released",
           "remainder_denominator",
           "remainder_numerator",
+          "snapshot_version",
           "status",
           "terminal_at",
+          "unknown_at",
+          "unknown_reason",
         ],
       };
       for (const [table, columns] of Object.entries(expected)) {
