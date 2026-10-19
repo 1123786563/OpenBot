@@ -1,0 +1,53 @@
+{
+  "id": "47f76ce7-893b-40a4-aae4-d5048b7a946b",
+  "ok": true,
+  "result": {
+    "runId": "run_7176face537b",
+    "deliveryId": "delivery_e1f76fdf1163",
+    "messages": [
+      {
+        "id": "msg_bb18d0793d65",
+        "run_id": "run_7176face537b",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_56006244-922e-4418-ac0c-c5ecc3c9eec9",
+        "to_handle": "run:run_7176face537b",
+        "subject": "alive",
+        "body": "",
+        "type": "heartbeat",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_e17b121b87f4\",\"dispatchId\":\"ctx_25f372cad35e\",\"phase\":\"investigating\"}",
+        "created_at": "2026-10-19T01:21:13Z",
+        "delivered_at": null
+      },
+      {
+        "id": "msg_5562b36c153b",
+        "run_id": "run_7176face537b",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_ab61ca33-8696-4d0a-be2a-c2c95252d1ef",
+        "to_handle": "run:run_7176face537b",
+        "subject": "Bifrost 01.2-02.2 验收：9/9 票 AC 全 SATISFIED；1 个全局 GAP（main typecheck 双落 gateway 字段）",
+        "body": "逐票读完 #208-#216 票面 AC 并在干净 main @3a1f74b8 上重跑验证（专用库 bf012-pg:55435/openbot_verify_bf12，只读纪律保持，git status 为空）：9 票全部 SATISFIED——#208 凭据 14+15 pass、#209 比例 22 pass、#210 版本锁定 8 pass（operator 字段在 schema 确认）、#211 探测 16+9 pass、#212 协商 25+8 pass、#213 门禁 20 pass 含调用点清单、#214 管理页 4+9 pass、#215 PayerRef 10+11 pass、#216 存量映射 7 pass；票内交付文件 biome lint 0 警告。发现 1 个跨票全局 GAP：main 上 server/app typecheck 共 14 个 TS 错误，根因是 DeploymentConfig 里 e89888e6 与 0d6bb19b 两个提交各加一个 gateway 属性在 merge 时双落（config.ts:274/466），且 config.ts 引用 parseGatewayBaseUrl/parseRequestTimeoutMs 未 import——阻断所有票面 Verification 的 typecheck/build 环节但不影响运行时行为，已在报告中给出修复方向。遗留：bf012-pg 容器保留供复核；票面命令过时点（bun test 需 ./ 前缀、conversion-rate 需 TEST_DATABASE_URL、三类文件分属 e2e/bun-suite 驱动）已写入报告。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_f28373c67071\",\"dispatchId\":\"ctx_35354b2a8390\",\"outcome\":\"succeeded\",\"reportPath\":\"/Users/wuyongjun/Library/Application Support/orca/chat-scratch/3648bdc9a015fe0cb5ab2685374151dc/bf-012-022-verification.md\"}",
+        "created_at": "2026-10-19T01:23:27Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 2,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "888b27f9-c5aa-4858-9331-0c181f203c8e",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

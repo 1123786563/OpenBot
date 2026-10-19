@@ -1,0 +1,546 @@
+{
+ "run": {
+  "short": "run_7176face537b",
+  "objective": "MT+Bifrost 试点波次"
+ },
+ "wave1": [
+  {
+   "issue": 45,
+   "task": "task_8a618f0b14b4",
+   "dispatch": "ctx_ee156f86319d",
+   "worktree": "mt002-harness",
+   "state": "verified+integrated",
+   "result": "验证式收尾：main 已含交付(253bf7e5)+修复迁移引导缺口(+44/-1 fixtures.test.ts，17/17 绿)；独立验证通过(AC1-4 实证/17/17 收敛/quality 无阻塞)；patch c0cdbb743231716d 已集成主工作区未提交区"
+  },
+  {
+   "issue": 215,
+   "task": "task_d9e7e9a91c17",
+   "dispatch": "ctx_17a1f739500e",
+   "worktree": "bf021-payerref",
+   "state": "verified+released",
+   "result": "main 已含全部交付(0d6bb19b payer 模块)；零改动验证：并发唯一 11/11、payer-ref 10/10、biome 绿；typecheck 红根因=config.ts 合并残留(#207 已修)"
+  },
+  {
+   "issue": 207,
+   "task": "task_2ae3b77b72a8",
+   "dispatch": "ctx_c35f4d833dd5",
+   "worktree": "bf011-gateway",
+   "state": "implemented+released",
+   "result": "main 已含主体(0d6bb19b)+删除 config.ts 合并残留 39 行(写域内)；AC 4/4、typecheck 0、单测25+集成10+回归31 绿；组合验证并入 #209 settle 后"
+  }
+ ],
+ "wave2_planned": [
+  {
+   "issue": 209,
+   "task": "task_8d5ab818c845",
+   "dep": "task_2ae3b77b72a8",
+   "note": "#207 settle 后补位启动"
+  }
+ ],
+ "resources": {
+  "db": {
+   "mt002": "openbot_mt002",
+   "bf021": "openbot_bf021",
+   "bf011": "openbot_bf011",
+   "bf013": "openbot_bf013"
+  }
+ },
+ "updated_at": "2026-10-19T15:20",
+ "wave2": [
+  {
+   "issue": 209,
+   "task": "task_8d5ab818c845",
+   "dispatch": "ctx_3ff4ba0d9bcf",
+   "worktree": "bf011-gateway(复用)",
+   "state": "verified+released",
+   "result": "main 已含实现；AC 4/4、Verification 22+8 绿、typecheck 0、零改动；顺带复核 #207 config 清理无回归；报告落 archive/execution-ledgers/checkpoints/209/"
+  }
+ ],
+ "validation": [
+  {
+   "issue": 45,
+   "dispatch": "ctx_e04198b454e5",
+   "worktree": "mt002-harness",
+   "role": "validator",
+   "state": "passed+released"
+  }
+ ],
+ "reclassification": "106 open 票验证文件全在 main(A 类)；B=169 缺失；C=18 无文件；B/C 无依赖仅 #146 —— 下一波主战场=A 类批量验收",
+ "integration": {
+  "mode": "未提交检查点（无提交授权）",
+  "patches": [
+   {
+    "issue": 45,
+    "file": "checkpoints/mt002-migration-bootstrap.patch",
+    "sha256_16": "c0cdbb743231716d",
+    "delta": "fixtures.test.ts +44/-1"
+   },
+   {
+    "issue": 207,
+    "file": "checkpoints/bf011-config-merge-residue.patch",
+    "sha256_16": "0c3b1754d3fd48a3",
+    "delta": "config.ts +1/-39 删合并残留"
+   }
+  ],
+  "worktrees": "mt002-harness/bf021-payerref/bf011-gateway 留存于 ~/orca/workspaces/OpenBot/，增量已全部集成，可清理"
+ },
+ "pilot_outcome": "4/4 票 settle（2 张零改动纯验证、2 张小修复已集成）；implement→validate→integrate 链、依赖门控、补位、workspace 串行、release 纪律全部实测；reclaimable=0",
+ "verify_wave": {
+  "scope": "A 类 102 张批量验收（用户 2026-10-19 选定方案 1）",
+  "batches_file": "verify-batches.json",
+  "active": [
+   {
+    "domain": "mt",
+    "task": "task_f122e528cc2a",
+    "dispatch": "mt_b2",
+    "worktree": "verify-mt",
+    "batch": [
+     55,
+     57,
+     58,
+     59,
+     60,
+     61
+    ]
+   },
+   {
+    "domain": "bf12",
+    "task": "bf12_b2",
+    "dispatch": "ctx_4b7b940016ae",
+    "worktree": "verify-bf12",
+    "batch": [
+     217,
+     218,
+     219,
+     220
+    ],
+    "note": "b1 9/9 SATISFIED",
+    "state": "域完结: 12 SATISFIED + 2 跨票FAIL(修复清单)"
+   },
+   {
+    "domain": "bf36",
+    "task": "task_e17b121b87f4",
+    "dispatch": "ctx_25f372cad35e",
+    "worktree": "verify-bf36",
+    "batch": [
+     230,
+     231,
+     233,
+     234,
+     235,
+     236
+    ]
+   },
+   {
+    "domain": "bfrest",
+    "task": "task_79b47bbef22c",
+    "dispatch": "ctx_fa14f382c31e",
+    "worktree": "verify-bfrest",
+    "batch": [
+     271,
+     276,
+     277,
+     286,
+     289,
+     290
+    ]
+   }
+  ],
+  "plan": "每 worker 域内逐批推进（19 批共 102 张），settle 后 reuse 同终端派下批；结论汇总 satisfied/GAP 清单，关票/贴标待用户授权"
+ },
+ "verify_results": {
+  "bf36_b1": {
+   "tickets": [
+    223,
+    224,
+    225,
+    226,
+    227,
+    228,
+    229
+   ],
+   "verdict": "7/7 SATISFIED",
+   "evidence": "native 52 + driven 87 pass, biome 0 警告, AC 对位",
+   "notes": "票面 native 命令已失效(ADR 0008)→bunx e2e run; typecheck 14 错全因 #207 patch 未并 main(跨票附注)"
+  },
+  "mt_b1": {
+   "tickets": [
+    46,
+    47,
+    50,
+    51,
+    52,
+    53
+   ],
+   "verdict": "MT004-MT010 7票 SATISFIED；MT003 GAPx1",
+   "gaps": [
+    {
+     "issue": 46,
+     "gap": "criterion3 allowlist==registry 穷举断言未同步 MT034/067/074（41/42 pass，工具本体 4 AC 绿）",
+     "fix_class": "断言同步小修"
+    }
+   ],
+   "warnings": "组合回归 MT069 族 2 fail（账务波次，待该族验收时核实）"
+  },
+  "bf12_b2": {
+   "tickets": [
+    217,
+    218,
+    219,
+    220
+   ],
+   "verdict": "#218 PASS; #220 PASS(排序笔误附注); #217/#219 FAIL(跨票残留)",
+   "gaps": [
+    {
+     "issue": 217,
+     "gap": "MT005(#48) workspace-membership 检查激活，02.3 fixture 未补该行，mintTrustedScope 被挡(实现无缺陷)",
+     "fix_class": "fixture 适配小修"
+    },
+    {
+     "issue": 219,
+     "gap": "09.1(fb66bd11) outbox finish 新增 attribution 必填致测试 TypeError；调用点清单被注释文本误伤(+1)",
+     "fix_class": "测试适配小修"
+    },
+    {
+     "issue": 220,
+     "gap": "结构快照期望数组排序笔误(reserved/reservations)",
+     "fix_class": "一行修复"
+    }
+   ]
+  },
+  "mt_b3": {
+   "tickets": [
+    64,
+    65,
+    70,
+    71,
+    73,
+    74
+   ],
+   "verdict": "6/6 PASS"
+  },
+  "mt_b4": {
+   "tickets": [
+    77,
+    79,
+    80,
+    81,
+    84,
+    102
+   ],
+   "verdict": "6/6 PASS；确认 MT003 allowlist 漏 3 ID"
+  },
+  "mt_b5": {
+   "tickets": [
+    103,
+    110,
+    112,
+    113,
+    114,
+    116
+   ],
+   "verdict": "#103/110/113/114 PASS；#114 组合回归预警解除(solo 两轮绿)；#112 GAPx1=AC4 列清单断言过时(7 列来自后续迁移 0128-0141)，行为面 21/21 过"
+  },
+  "bf36_b4": {
+   "tickets": [
+    245,
+    246,
+    247,
+    248,
+    249,
+    250
+   ],
+   "verdict": "5 PASS + #247 跨票(旧断言被 #248 正确行为取代)"
+  },
+  "bf36_b5": {
+   "tickets": [
+    252,
+    253,
+    254,
+    255,
+    256,
+    257
+   ],
+   "verdict": "6/6 PASS 78/78"
+  },
+  "bf36_b6": {
+   "tickets": [
+    258,
+    259,
+    260,
+    261,
+    262
+   ],
+   "verdict": "5/5 PASS 81/0，bf36 域完结"
+  },
+  "mt_b6": {
+   "tickets": [
+    118,
+    119,
+    120,
+    122,
+    165,
+    166
+   ],
+   "verdict": "6/6 PASS；环境注意: ENTERPRISE_TEST_SETUP_DATABASE_URL 缺失会静默 skip"
+  },
+  "mt_b7": {
+   "tickets": [
+    174
+   ],
+   "verdict": "1/1 PASS 17/17(1820 断言)；mt 域完结 36/37 PASS + MT003 GAPx1"
+  },
+  "bfrest_b1": {
+   "tickets": [
+    271,
+    276,
+    277,
+    286,
+    289,
+    290
+   ],
+   "verdict": "进行中：5/6 Bun+e2e 侧全绿，#271 Go 侧运行中"
+  },
+  "bfrest_b2": {
+   "tickets": [
+    291,
+    292,
+    293,
+    294,
+    345,
+    346
+   ],
+   "verdict": "6/6 PASS 37 用例"
+  },
+  "bfrest_b3": {
+   "tickets": [
+    347,
+    348,
+    349,
+    350,
+    351
+   ],
+   "verdict": "#348-351 PASS；#347 实现 PASS/测试副本漂移(DECLARED_EDGES 11v13)"
+  },
+  "bfrest_b4": {
+   "tickets": [
+    369,
+    370,
+    372
+   ],
+   "verdict": "3/3 SATISFIED（运行器漂移红灯非实现缺口）"
+  }
+ },
+ "lessons": "reuse: --terminal 不适用 agent session(terminal_unsupported_for_agent_session)；批间推进用 新dispatch+exact worktree selector",
+ "fix_list": "修复清单: #46 断言同步 / #112 AC4 列清单断言过时 / #217 fixture 适配 / #219 测试适配 / #220 排序笔误 / #247 单断言 / (待提交: #45 c0cdbb74 + #207 0c3b1754)",
+ "domain_summary": "mt 域完结(36 PASS+1 GAP)；bf12 域完结(12+2 跨票)；bf36 域完结(35/35 含批1)；bfrest 剩 3.5 批",
+ "final": "102/102 判定：96 SATISFIED + 6 修复类（全为断言/fixture 适配小修）；含试点共 100/106 A 类全绿",
+ "fix_wave": {
+  "authorized": "用户 2026-10-19 选方案 2（修复波次）",
+  "mt": {
+   "task": "task_defb02542e39",
+   "dispatch": "ctx_1de154157834",
+   "worktree": "fix-mt",
+   "items": [
+    46,
+    112
+   ]
+  },
+  "bf": {
+   "task": "task_955ab538b9b2",
+   "dispatch": "ctx_b910a817a5f0",
+   "worktree": "fix-bf",
+   "items": [
+    217,
+    219,
+    247,
+    347
+   ]
+  },
+  "protocol": "RED 复现→最小 diff→GREEN 确认；不修实现；完成后 patch 集成主工作区未提交区"
+ },
+ "repair_wave": {
+  "settled": "2026-10-19",
+  "fixes": [
+   "#46",
+   "#112",
+   "#217",
+   "#219",
+   "#247",
+   "#347"
+  ],
+  "patches": {
+   "mt002-migration-bootstrap": "c0cdbb743231716d",
+   "bf011-config-merge-residue": "0c3b1754d3fd48a3",
+   "fix-mt-assertions": "9bc17595a07145e3",
+   "fix-bf-fixtures": "5deb4eeeeaee0ba4"
+  },
+  "result": "6/6 GREEN + 复跑全绿；4 patch 已集成主工作区未提交区（8 文件 +103/-47）",
+  "reverted": "docs/verification/e2e-driven-file-equality.json（运行器自动刷新的生成产物，非票内交付）",
+  "reclaimable": 0,
+  "pending_authorization": [],
+  "commits": {
+   "mt002": "9f8312c0",
+   "bf011": "2cd7c130",
+   "fix-mt+fix-bf": "aefd11bb"
+  },
+  "pushed": "origin/main aefd11bb (3a1f74b8..aefd11bb, 2026-10-19)"
+ },
+ "close_wave": {
+  "settled": "2026-10-19",
+  "action": "100 张 SATISFIED 票 close + agent:ready-for-review（label 新建，色 1D76DB）",
+  "verification": "逐票点名核验 100/100 CLOSED|label=true（#45–#372）",
+  "first_pass": "96 成功 + 4 重试（#81/#226/#235/#271 瞬时失败）",
+  "remaining_open_repaired": [],
+  "final": "106/106 A 类全 CLOSED + agent:ready-for-review（100 直验 + 6 修复后）"
+ },
+ "cleanup": "9 worktree + 9 分支已删（删前 8/8 脏文件 diff=main 零损失）；保留 e2e/retro/其他项目分支",
+ "bc_pilot": {
+  "run": "run_0eca8880c73e",
+  "objective": "B/C 波次试点 3 流（用户 2026-10-19 授权：试点先行/3 流/未提交检查点）",
+  "scope_revision": 2,
+  "rescan_evidence": "bc-reclass.json + bc-wave-plan.md（B169+C18 全 open，20 波，W1=42 剔除 #107/#163 后 40）",
+  "workers": [
+   {
+    "issue": 48,
+    "domain": "mt",
+    "task": "task_9434c226891d",
+    "dispatch": "ctx_57647e1dd7c4",
+    "worktree": "/Users/wuyongjun/orca/workspaces/OpenBot/mt048-pilot",
+    "db": "openbot_mt048",
+    "state": "verified+released(零改动复验:实现经253bf7e5已在main,23/23绿+tsc干净)"
+   },
+   {
+    "issue": 214,
+    "domain": "bf",
+    "task": "task_3a436ea36a49",
+    "dispatch": "ctx_790d42f4fe3e",
+    "worktree": "/Users/wuyongjun/orca/workspaces/OpenBot/bf214-pilot",
+    "db": "openbot_bf214",
+    "state": "verified+released(零改动核验:实现已由Bifrost-5 fb66bd11等带入main)"
+   },
+   {
+    "issue": 371,
+    "domain": "bp",
+    "task": "task_ab8618e18964",
+    "dispatch": "ctx_82cf5f6e4b12",
+    "worktree": "/Users/wuyongjun/orca/workspaces/OpenBot/bp371-pilot",
+    "db": "openbot_bp371",
+    "state": "verified+committed(a514209a @ main)"
+   }
+  ],
+  "launched_at": "2026-10-19T04:18Z",
+  "integration_mode": "未提交检查点（无提交授权）",
+  "validation": [
+   {
+    "issue": 371,
+    "dispatch": "ctx_da9392f8b163",
+    "task": "task_bea0e98d30d3",
+    "worktree": "bp371-pilot(复用)",
+    "role": "validator",
+    "state": "passed+released"
+   }
+  ],
+  "review": [
+   {
+    "issue": 371,
+    "role": "reviewer",
+    "state": "passed+released",
+    "note": "validator ctx_da9392f8b163 已通过并释放"
+   }
+  ],
+  "pilot_outcome": "3/3 settle: 2 零改动核验(实现已在main) + 1 真实施全链(implement→validate→review→integrate); 票面声明路径不可靠确认为系统性发现; e2e-bun-suites.json 生成物未转移",
+  "integration": {
+   "mode": "已获提交授权",
+   "commit": "3ca32d49 @ origin/main（原 a514209a 与 e2e 的 ee5efd3d(ci.yml) 变基合并后重推）",
+   "patch_sha256_16": "10d1f17809a02700(v2:验证后机械修——biome format/imports + payment-service.test 删死参 grantor,70/70+typecheck0 复验)",
+   "branch_note": "提交时主工作区已被 e2e 会话切到 retro-2026-10-19-guardrails(基于 5def6c0d)；已 branch -f main a514209a 快进收编,retro 携带该祖先自然合流;e2e 未提交文件未触碰",
+   "pushed": true
+  }
+ },
+ "w1_rolling": {
+  "authorized": "2026-10-19 用户授权放量 W1 剩 37 张，3 域流滚动（bp 已无票）",
+  "base": "本地 main 2b41017c（3ca32d49 #371 + e2e 未推守门整改）",
+  "batches": {
+   "mt-1": {
+    "tickets": [
+     54,
+     62,
+     63,
+     66,
+     67,
+     68
+    ],
+    "task": "task_03e666420294",
+    "dispatch": "ctx_071cffcc63aa",
+    "worktree": "mt-w1",
+    "state": "running"
+   },
+   "mt-2": {
+    "tickets": [
+     69,
+     75,
+     76,
+     78,
+     82,
+     83
+    ],
+    "state": "queued"
+   },
+   "mt-3": {
+    "tickets": [
+     85,
+     111,
+     115,
+     117,
+     121
+    ],
+    "state": "queued"
+   },
+   "mt-4": {
+    "tickets": [
+     143,
+     146,
+     155,
+     167
+    ],
+    "state": "queued"
+   },
+   "bf-1": {
+    "tickets": [
+     221,
+     227,
+     232,
+     240,
+     242,
+     251
+    ],
+    "task": "task_b7b03349086a",
+    "dispatch": "ctx_e54bc2bebf1d",
+    "worktree": "bf-w1",
+    "state": "running"
+   },
+   "bf-2": {
+    "tickets": [
+     264,
+     270,
+     272,
+     273,
+     278,
+     279
+    ],
+    "state": "queued"
+   },
+   "bf-3": {
+    "tickets": [
+     287,
+     295,
+     325,
+     341
+    ],
+    "state": "queued"
+   }
+  },
+  "brief_template": "核验优先：先核验 main 已含等价实现→零改动复验收尾；有缺口才补实现"
+ }
+}

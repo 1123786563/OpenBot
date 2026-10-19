@@ -1,0 +1,38 @@
+{
+  "id": "0fb1b399-674e-47af-82c4-2e2e6caf80ba",
+  "ok": true,
+  "result": {
+    "runId": "run_7176face537b",
+    "deliveryId": "delivery_bce502f53e38",
+    "messages": [
+      {
+        "id": "msg_68d5d7452e2d",
+        "run_id": "run_7176face537b",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_5c475687-2641-4e2e-8096-430d9c34c370",
+        "to_handle": "run:run_7176face537b",
+        "subject": "verify-mt 批量验收：6/6 通过（#118/#119/#120/#122/#165/#166）",
+        "body": "6 票全部通过：#118 MT075 admin-separation 25pass/0fail/0skip；#119 MT076 people-lifecycle 16/0/0；#120 MT077 routing-policy 37/0/0；#122 MT079 preferences 23/0/0；#165 MT122 entry-context 21/0/0；#166 MT123 startup-defaults 24/0/0（含 AC3 双模式 createApp 路径/状态码/DTO 对照）+既有入口回归采样 health19/attachment-routes78/channel-routes125/gateway-admin-routes9/craft-routes-assembly1 全过。环境两处需注意：(1) 上一批遗留的 ent_verify_mt_dir/data/op 密码未知——容器内 127.0.0.1 是 trust 导致误判，宿主机连 5435 走 scram 失败且报错被 verifyCapability catch 吞成 DATABASE_CAPABILITY_CHECK_FAILED，已用超用户重置三 login 密码为 test（纯测试基础设施，仓库零改动，git 干净）；(2) admin-separation 探针把 ENTERPRISE_TEST_SETUP_DATABASE_URL 列为必填，缺它 DB 用例静默 skip（bun 汇总只显示 7 skip 无理由），后续批次务必五个 env 全设。跨票残留：无；唯一失败采样 agent-routes/billing-routes 系 e2e-compat 顶层 import registerHooks（Node-only）在 bun 下不兼容，属运行器差异非 MT 回归。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_f5147faae9a3\",\"dispatchId\":\"ctx_f6a82c822057\",\"outcome\":\"succeeded\"}",
+        "created_at": "2026-10-19T01:55:45Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "1e1c894a-4b54-44c5-9382-9630c40775d8",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

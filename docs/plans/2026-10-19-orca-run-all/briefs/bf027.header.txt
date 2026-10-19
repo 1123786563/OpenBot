@@ -1,0 +1,7 @@
+通用纪律：
+- 所有命令在仓库根（worktree 根）执行，路径相对根解析。
+- 无提交/推送授权：改动留在 worktree 未提交区；报告含 git status --short 与改动文件清单。
+- 报告写到 worktree 根 ORCA-REPORT.md：结论、逐条 AC 实证、命令与输出摘要、改动文件、遗留。
+- 测试两层制见 docs/adr/0008-test-runner-tester-army-e2e.md；不把 skip 当通过。
+- 需要数据库时自建一次性容器（见下）并跑迁移；结束时保留容器不删。
+- 范围外问题用 preamble 的 ask 命令问协调器，不自行扩大范围。

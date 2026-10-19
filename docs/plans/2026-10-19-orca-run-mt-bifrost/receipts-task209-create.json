@@ -1,0 +1,30 @@
+{
+  "id": "e0489615-1e5c-4f3f-b859-1042519627ae",
+  "ok": true,
+  "result": {
+    "task": {
+      "id": "task_8d5ab818c845",
+      "run_id": "run_7176face537b",
+      "parent_id": null,
+      "created_by_terminal_handle": null,
+      "created_by_pane_key": null,
+      "created_by_process_incarnation": null,
+      "created_by_run_generation": null,
+      "task_title": "实现 GitHub Issue #209（Bifrost 01.3 兑换比例必填与合法性校验），repo 1123786563/OpenBot。先 gh...",
+      "display_name": "实现 GitHub Issue #209（Bifrost 01.3 兑换比例必填与合法性校验），repo 1123786563/OpenBot。先 gh...",
+      "spec": "实现 GitHub Issue #209（Bifrost 01.3 兑换比例必填与合法性校验），repo 1123786563/OpenBot。先 gh issue view 209 -R 1123786563 --json body 读完整票面并遵循；事实源：父 Spec #5、docs/adr/0003、CONTEXT.md。Target: 网关计费配置模块 server/src/gateway/ + config.ts 兑换比例校验。Ownership: 只写票面 Write scope；前置 #207（B01.1）已在本 Run 完成，开工先读其已交付契约（server/src/gateway/ 现状），不重复实现、不静默改其接口。集成测试用专用库 TEST_DATABASE_URL=postgres://localhost/openbot_bf013，缺库先 createdb。Constraints: TDD；不提交不推送。Acceptance: 票面 AC + 票面 Verification 命令通过；worker_done 附 --files-modified 与 --report-path。",
+      "status": "pending",
+      "deps": "[\"task_2ae3b77b72a8\"]",
+      "result": null,
+      "created_at": "2026-10-18 19:09:45",
+      "completed_at": null
+    },
+    "mutation": {
+      "requestId": "8e274ad4-d059-4095-a0e1-254f48355bc2",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

@@ -1,0 +1,133 @@
+diff --git a/server/tests/cleanup-relations.integration.test.ts b/server/tests/cleanup-relations.integration.test.ts
+index e90236bf..4dc71f33 100644
+--- a/server/tests/cleanup-relations.integration.test.ts
++++ b/server/tests/cleanup-relations.integration.test.ts
+@@ -127,7 +127,7 @@ const evidenceInput = {
+   testUserIds: [],
+ };
+ 
+-/** The eleven FK edges the drizzle schema declares among the legacy tables. */
++/** The thirteen FK edges the drizzle schema declares among the legacy tables. */
+ const DECLARED_EDGES: {
+   childTable: string;
+   childColumn: string;
+@@ -146,6 +146,9 @@ const DECLARED_EDGES: {
+   { childTable: "credit_reservation_allocations", childColumn: "grant_id", parentTable: "credit_grants", parentColumn: "id", onDelete: "cascade" },
+   { childTable: "credit_charge_remainders", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
+   { childTable: "payment_events", childColumn: "order_id", parentTable: "payment_orders", parentColumn: "id", onDelete: "cascade" },
++  { childTable: "credit_reservation_attribution", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
++  // 0147 (#276): 08.1's recovery item, the same one-hop shape as the attribution row above.
++  { childTable: "credit_recovery_items", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
+ ];
+ 
+ let classification: CleanupClassification;
+diff --git a/server/tests/key-renewal.test.ts b/server/tests/key-renewal.test.ts
+index dd1026c4..5645e4ca 100644
+--- a/server/tests/key-renewal.test.ts
++++ b/server/tests/key-renewal.test.ts
+@@ -496,7 +496,9 @@ describe("05.6 key renewal re-validation", () => {
+     const rowsB = await keyRowsFor(grantB.grantId);
+     expect(rowsB).toHaveLength(1);
+     expect(rowsB[0]!.credentialVersion).toBe(1);
+-    expect(rowsB[0]!.status).toBe("active");
++    // #248 (60116422): revokeForUser retires the key row in the same transaction — the
++    // row the revoked grant minted is revoked, not left active behind a dead grant.
++    expect(rowsB[0]!.status).toBe("revoked");
+   }, 30_000);
+ 
+   test("renewal with a not-ready gate is refused before anything is dialed or stored", async () => {
+diff --git a/server/tests/payer-company-resolution.test.ts b/server/tests/payer-company-resolution.test.ts
+index 083e4c8b..48d703a2 100644
+--- a/server/tests/payer-company-resolution.test.ts
++++ b/server/tests/payer-company-resolution.test.ts
+@@ -3,6 +3,7 @@ import type { Database } from "../src/db/client";
+ import type { PlatformScope } from "../src/enterprise/contracts";
+ import { verifyDirectoryDatabase } from "../src/enterprise/tenancy/connections";
+ import { createScopeResolver } from "../src/enterprise/tenancy/store";
++import { enterpriseWorkspaceMemberships } from "../src/db/schema/enterprise-tenancy";
+ import { payerKey } from "../src/billing/payer";
+ import {
+   CompanyScopeRequiredError,
+@@ -75,7 +76,15 @@ function controlledDirectoryDatabase(
+     transaction: async (operation: (tx: unknown) => Promise<unknown>) =>
+       operation({
+         execute: async () => [],
+-        select: () => controlledQuery(() => rows),
++        // MT005: resolve() checks tenant membership AND workspace membership — the
++        // controlled fixture answers the tenant row for enterpriseMemberships and an
++        // active team row for enterpriseWorkspaceMemberships.
++        select: () =>
++          controlledQuery((table) =>
++            table === enterpriseWorkspaceMemberships
++              ? [{ status: "active" }]
++              : rows,
++          ),
+       }),
+   } as unknown as Database;
+ }
+diff --git a/server/tests/payer-no-fallback.test.ts b/server/tests/payer-no-fallback.test.ts
+index 95abdc66..ab7d58b1 100644
+--- a/server/tests/payer-no-fallback.test.ts
++++ b/server/tests/payer-no-fallback.test.ts
+@@ -823,6 +823,9 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
+           occurredAt: new Date(),
+           modelId: gateModelId,
+           client: "web",
++          // 09.1: the gate's outbox write names the Bot that ran the call and the
++          // person it ran for.
++          attribution: { userId: `usr_${run}_gate_bot`, botId: `bot_${run}_gate` },
+         }),
+     );
+ 
+@@ -850,6 +853,9 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
+       reservationId: hold?.id,
+       actualCostNumerator: "3",
+       actualCostDenominator: "10",
++      // 09.1: the usage fact carries the input's attribution through to the outbox.
++      botId: `bot_${run}_gate`,
++      ownerUserId: `usr_${run}_gate_bot`,
+     });
+ 
+     // An unknown-outcome failure keeps the hold and leaves evidence on the SAME account.
+@@ -863,7 +869,9 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
+       .from(creditReservations)
+       .where(eq(creditReservations.idempotencyKey, `usage:${eventId}`))
+       .limit(1);
+-    expect(stillHeld?.status).toBe("reserved");
++    // 06.8: the kept hold is marked unknown, not left plain-reserved — it must
++    // outlive its own expiry for reconciliation to report.
++    expect(stillHeld?.status).toBe("unknown");
+ 
+     // Every write this gate made named the bound account; the deployment account was
+     // never read for a hold, never named by a write.
+@@ -953,19 +961,27 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
+     const srcRoot = join(hereDir, "..", "src");
+     await walk(srcRoot);
+ 
++    /*
++     * Comment text can never widen the inventory: the scan blanks both comment forms
++     * before matching, so a prose mention — app.ts's assembly note, routes.ts's admin
++     * comment, the tenancy schema's derivation note — counts for nothing and only
++     * files whose CODE names the identifier are listed.
++     */
++    const codeOnly = (source: string): string =>
++      source
++        .replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "))
++        .replace(/\/\/[^\n]*/g, (comment) => comment.replace(/[^\n]/g, " "));
+     const referencing: string[] = [];
+     for (const file of files) {
+       const content = await readFile(file, "utf8");
+-      if (content.includes("deploymentExternalCustomerId")) {
++      if (codeOnly(content).includes("deploymentExternalCustomerId")) {
+         referencing.push(file);
+       }
+     }
+     const names = referencing.map((file) => file.replace(`${srcRoot}/`, "")).sort();
+     expect(names).toEqual([
+-      "app.ts", // assembly comment only (the key arrives derived)
+       "billing/payer-legacy.ts", // 02.2 legacy attribution
+       "billing/payer.ts", // the payer layer's legacy_deployment branch
+-      "billing/routes.ts", // admin route comment only
+       "billing/service.ts", // the definition
+       "index.ts", // boot derivation + the consumption entry's binding wiring
+     ]);

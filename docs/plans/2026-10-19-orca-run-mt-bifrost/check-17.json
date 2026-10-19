@@ -1,0 +1,38 @@
+{
+  "id": "d88cd707-f558-4030-940b-b75798eb0196",
+  "ok": true,
+  "result": {
+    "runId": "run_7176face537b",
+    "deliveryId": "delivery_c01c07a7cf6a",
+    "messages": [
+      {
+        "id": "msg_f28b66967175",
+        "run_id": "run_7176face537b",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_b3db666b-519c-4842-a9a3-c0d73a4d8453",
+        "to_handle": "run:run_7176face537b",
+        "subject": "fix-bf 4 项测试适配全部 GREEN",
+        "body": "四项 Bifrost 测试适配全部按 RED→最小 diff→GREEN 完成：#217 fixture 补 workspace-membership 行（8/8）、#219 finish 补 attribution+清单改排除注释+连带 06.8 unknown 断言（28/28）、#247 断言 active→revoked（8/8）、#347 DECLARED_EDGES 11→13（10/10）；终态复跑 46/46+8/8，typecheck tests 零错（基线 config 8 错为既有）。实现代码零改动、未提交；新建专用库 openbot_fix_bf（5435 容器，roles+主迁移，未含 kb 迁移因四文件均不触及 kb 表）。完整 diff、RED 证据与测试输出见报告。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_955ab538b9b2\",\"dispatchId\":\"ctx_b910a817a5f0\",\"outcome\":\"succeeded\",\"filesModified\":[\"server/tests/payer-company-resolution.test.ts\",\"server/tests/payer-no-fallback.test.ts\",\"server/tests/key-renewal.test.ts\",\"server/tests/cleanup-relations.integration.test.ts\"],\"reportPath\":\"archive/verification/fix-bf-bifrost-test-adaptation-2026-10-19.md\"}",
+        "created_at": "2026-10-19T03:42:35Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "fc99f30e-27c3-4ef1-b956-1b5ffd1e8782",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}
