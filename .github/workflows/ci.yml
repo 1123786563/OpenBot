@@ -393,6 +393,8 @@ jobs:
       ENTERPRISE_TEST_DIRECTORY_DATABASE_URL: postgres://enterprise_directory_login:enterprise-test-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009?options=-c%20role%3Dob_ent_directory
       ENTERPRISE_TEST_DATA_DATABASE_URL: postgres://enterprise_data_login:enterprise-test-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009?options=-c%20role%3Dob_ent_data
       ENTERPRISE_TEST_OPERATOR_DATABASE_URL: postgres://enterprise_operator_login:enterprise-test-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009?options=-c%20role%3Dob_ent_operator
+      # Handed only to the multitenancy groups by tests/bun-suites.test.ts; see the provisioning step below.
+      MT_TEST_DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_enterprise_mt_test
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -429,6 +431,20 @@ jobs:
           OPENBOT_BOOTSTRAP_ENTERPRISE_ROLES: "on"
       # The second service is fresh and isolated from the regular test database. Prove a missing-role
       # migration fails before DDL, then bootstrap and migrate it through the reserved test wrapper.
+      # The multitenancy suites create their own schema through
+      # server/scripts/multitenancy/migrate-test.ts, whose gate refuses any TEST_DATABASE_URL whose
+      # database is not named openbot_enterprise_* on a loopback host. Pointed at openbot_test, all 51 of
+      # them abort during collection, so the run reports a red group that executed zero tests — a failure
+      # nobody can read. Give them a database their own gate accepts and migrate that one too:
+      # tests/bun-suites.test.ts passes MT_TEST_DATABASE_URL to those groups only, so every other suite
+      # keeps openbot_test. Verified locally against the same image: the group goes from no tests
+      # executed at all to 293 cases.
+      - name: Provision the multitenancy test database
+        working-directory: server
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE openbot_enterprise_mt_test'
+          DATABASE_URL="$MT_TEST_DATABASE_URL" TEST_DATABASE_URL="$MT_TEST_DATABASE_URL" \
+            OPENBOT_BOOTSTRAP_ENTERPRISE_ROLES=on bun scripts/migrate.ts
       - name: Enterprise migration preflight and role-safety fixture
         run: bunx e2e run --config e2e.unit.config.ts server/tests/enterprise/migration-role-preflight.integration.test.ts
         env:
