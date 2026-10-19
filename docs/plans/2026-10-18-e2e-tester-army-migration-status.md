@@ -543,5 +543,14 @@ billing 集成套件同一个 Bun-only 来源——`server/src/db/client.ts` 才
 `grep ' › ' | awk -F' › '{print $1}'`，把 e2e 折行的长标题数成 598 个"文件"——换成严格
 `^<path>\.(test|spec|e2e)\.(tsx|ts|mjs) › ` 复数仍是 597，两次 7936 一致。
 
-还没验证的一项，不记成绿：新落进 `server/tests part 2` 的那个 billing 套件在 Bun 运行时下的实际结果
-（需要活的 PG fixture），本轮把证据交给 PR #442 的 CI `tests` job。
+新驱动成员已经在 Bun 运行时下按两种形状实测过，不靠 CI 兜底：
+
+- 单文件：私有 Postgres（`127.0.0.1:55433/openbot_test`，先跑 `bun server/scripts/migrate.ts` 补到
+  `{"type":"migrations-applied","status":"ok"}`）**3 pass / 0 fail / 34 个断言**。要点是**没迁移前的
+  3 条红不是产品红**——两条是 `insert into "payment_orders" …` 的 Failed query（夹具落后于 main 的
+  迁移），一条是它带出来的 `toHaveLength(1) / 收到 0`；补完迁移就全绿。
+- 组形状（`E2E_BUN_ONLY="server/tests part 2" bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts`）：
+  e2e 侧 **1 条断言过、242 s、exit 0**；同一组 24 个文件直接 `bun test` 是 **418 条 = 407 pass / 11 fail**，
+  其中这个新文件的三条（`AC1: Lago landed…`、`AC2: a second paid order…`、`AC2/对账…`）在组进程里
+  **逐条 pass**。那 11 条邻居污染红按既有口径不算组失败（驱动对失败文件各自重跑，只有"独自也红"才算），
+  这条豁免不是本轮新造的，但它意味着"组绿"不等于"组形状下零红"——记账时分开看。
