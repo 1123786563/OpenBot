@@ -495,3 +495,27 @@ runner import、`groupsOf` 重算分组，然后按组验证。我本轮试着�
 3. **机制验证**：`E2E_BUN_ONLY=multitenancy` + 四个 `MT_TEST_*` 走驱动层 → 家族从零读数变为真跑；`fixtures.test.ts` 17/17 全绿。
 
 **为什么还没接进 ci.yml**：新鲜岛上有 6 个文件红——`billing-visibility`/`company-reservation`/`job-ownership`/`payer-accounts`/`scan-executor` 查询的 `billing_customer_mappings`、`job_ownership` 表只由 `runMigrateTest` 任务引导创建，而这 6 个文件一个都不调用（只有 fixtures/preferences/runtime-config 等 8 个文件自举）；字母序排组时它们跑在 fixtures 之前，历史"绿"靠的是库上残留的旧引导。这是家族内的顺序依赖缺陷（B 类整改域），先修自举再接线，接线时作业级 env 加四个 `MT_TEST_*` 指向岛即可，`bunEnv` 侧已就位。
+
+## CI 一条用例都没执行过的真实原因（10-19 15:56 定案，修复在 PR #442）
+
+多租户那一步在 CI 上成功后（`Provision the multitenancy test database` ✅），`bun run test:ci` 仍然零条执行：
+
+```
+no gaps: every suite file is scheduled by e2e …
+ERROR configuration error COLLECTION_ERROR (collection)
+failed to collect app/tests/channel-order.test.ts: Cannot find package '@/lib' imported from
+  app/src/components/app-sidebar/app-sidebar.tsx
+ Test Files  no test files · Tests  no tests executed
+```
+
+**根因不是运行器、不是别名配置**：app 套件 import `@/lib/generated/application-config`，该文件由
+`scripts/generate-app-config.ts` 生成且被 git 忽略。本机 `bun run test` 经 `pretest` 先生成它，而 CI 的
+两个作业（`test:ci`、`startup` 里直接 `bunx e2e run … app/tests/build-cache.test.ts`）都不走 `pretest`；
+另一半原因是生成脚本以 `bun --env-file=.env` 调用，CI 没有 `.env` 会直接失败。**因此本机所有全绿数字
+都是被 pretest 掩盖出来的**——这是"覆盖声明要用实际执行对账"之外新的一课：*本地入口与 CI 入口不完全等价*。
+
+单变量复现（同 sha 的干净 worktree + 真实 `bun install --frozen-lockfile`，无 `.env`、无生成物）：
+修前 `COLLECTION_ERROR` 零条；修后 `app/tests` **114 文件 / 793 条收集，仅 1 条真失败**，无收集中止。
+修法是把"缺就生成"放进 `e2e.unit.config.ts`（运行器必经的咽喉点，同时覆盖 tests 与 startup 两个作业），
+并让生成脚本自己按需 `process.loadEnvFile()`。修复与验证在 **PR #442**（只含这 3 个文件，落在 origin/main
+之上——本地 main 还压着别的会话未推送的提交，我不代他们发布）。
