@@ -181,6 +181,47 @@ describe("checkHindsightHealth", () => {
     expect(status.version).toBe("1.0.0");
   });
 
+  test("runtime llm_trace violation is not masked by a failed gateway probe (#398 m4)", async () => {
+    // Both conditions at once: the declaration says not traced, the running service reports
+    // llm_trace true, and the gateway probe answers with a failed operation. The cross-check
+    // runs before the probe, so the privacy verdict wins: config_noncompliant, not gateway_down.
+    const status = await checkHindsightHealth(loadHindsightConfig(baseEnv), {
+      fetch: fetchDouble({
+        ...healthyService,
+        "/version": () => ({
+          api_version: "1.0.0",
+          features: { llm_trace: true },
+        }),
+        "/v1/default/banks/default/health/llm": () => ({
+          bank_id: "default",
+          operations: [{ operation: "retain", ok: false, status: "error" }],
+        }),
+      }),
+    });
+    expect(status.state).toBe("config_noncompliant");
+    expect(status.violations).toEqual(["runtime_llm_trace_enabled"]);
+    expect(status.version).toBe("1.0.0");
+  });
+
+  test("runtime llm_trace violation is not masked by an unreachable gateway probe (#398 m4)", async () => {
+    // Same pairing with the harder flavor: the probe cannot even connect. The runtime
+    // evidence from /version still decides the verdict before the probe is attempted.
+    const status = await checkHindsightHealth(loadHindsightConfig(baseEnv), {
+      fetch: fetchDouble({
+        ...healthyService,
+        "/version": () => ({
+          api_version: "1.0.0",
+          features: { llm_trace: true },
+        }),
+        "/v1/default/banks/default/health/llm": () => {
+          throw new Error("connection refused");
+        },
+      }),
+    });
+    expect(status.state).toBe("config_noncompliant");
+    expect(status.violations).toEqual(["runtime_llm_trace_enabled"]);
+  });
+
   test("declared false and runtime llm_trace false agree -> service_up (ocr3 cross-check)", async () => {
     const status = await checkHindsightHealth(loadHindsightConfig(baseEnv), {
       fetch: fetchDouble(healthyService),

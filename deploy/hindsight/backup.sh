@@ -30,6 +30,14 @@
 # where available; see the lock comment in the body for the no-flock fallback.
 set -euo pipefail
 
+# Refuse to run under xtrace: `bash -x` echoes expanded command substitutions to
+# stderr, and the pg0 manifest read below captures the database password — a
+# tracing run would leak it into the terminal and any redirected log (#398 m2).
+if [[ $- == *x* ]]; then
+  echo "refusing to run: xtrace (bash -x) echoes expanded command substitution, which would include the database password; re-run without -x" >&2
+  exit 1
+fi
+
 # Backup copies carry the whole memory database; keep them owner-only (0600).
 umask 077
 
@@ -148,7 +156,7 @@ if command -v flock >/dev/null 2>&1; then
   # So before taking the kernel lock, this branch consults the file's content
   # with the SAME live-holder rules as the create-style path: a parseable, alive
   # fingerprint (PID[+lstart]; same kill -0/ps aliveness check, same lstart
-  # match rules) is refused loudly as mixed lock styles; empty, dead or
+  # match rules) is refused loudly as an overlapping run (the holder may use either lock style); empty, dead or
   # unparseable content falls through. These content checks are host-local:
   # PIDs and lstart values identify processes on THIS machine only, so on a
   # directory shared across hosts they cannot verify (and may misjudge) a
@@ -181,7 +189,7 @@ if command -v flock >/dev/null 2>&1; then
         if [ -n "$_recorded_lstart" ] && [ -n "$_holder_lstart" ] && [ "$_recorded_lstart" != "$_holder_lstart" ]; then
           : # recycled PID: alive, but a different process than the fingerprint's writer — fall through
         else
-          echo "refusing to run: mixed lock styles detected — $LOCK_FILE holds a live holder fingerprint (pid $LOCK_PID) from the create-style lock path while this run locks via flock; overlapping runs are not started. If no backup is running, remove the stale file by hand" >&2
+          echo "refusing to run: a live backup run holds the fingerprint in $LOCK_FILE (pid $LOCK_PID) while this run locks via flock — the holder may use either lock style, because a flock run rewrites the same fingerprint after taking the kernel lock; overlapping runs are not started. If no backup is running, remove the stale file by hand" >&2
           exit 1
         fi
       fi
