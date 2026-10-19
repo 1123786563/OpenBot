@@ -1,5 +1,5 @@
-import { describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { getLogger } from "../../shared/logger";
+import { describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import type { PaymentProvider } from "../src/billing/payments/provider";
 import {
   createPaymentService,
@@ -51,6 +51,8 @@ function memoryStore(): PaymentStore {
     currency: "CNY",
     status: "pending",
     activationState: "pending",
+    activationFailureReason: null,
+    activationNextRetryAt: null,
     channelTransactionId: null,
     checkoutPayload: null,
     expiresAt: new Date(clockMs + 15 * 60_000),
@@ -249,8 +251,25 @@ function memoryStore(): PaymentStore {
         orders.set(id, {
           ...order,
           activationState,
+          // A landed activation has no outstanding failure — the real store clears the columns.
+          ...(activationState === "applied"
+            ? { activationFailureReason: null, activationNextRetryAt: null }
+            : {}),
           ...(period
             ? { periodStart: period.start, periodEnd: period.end }
+            : {}),
+        });
+      }
+    },
+    async recordActivationFailure(input) {
+      const order = orders.get(input.id);
+      if (order) {
+        orders.set(input.id, {
+          ...order,
+          activationFailureReason: input.reason,
+          activationNextRetryAt: input.nextRetryAt,
+          ...(input.activationState
+            ? { activationState: input.activationState }
             : {}),
         });
       }
@@ -275,7 +294,13 @@ function memoryStore(): PaymentStore {
           order.periodEnd.getTime() > current.periodStart.getTime(),
       );
       const claimed = overlapping
-        .filter((order) => order.activationState !== "pending")
+        .filter(
+          // Mirrors the real store (BP03/#371): an owner CLAIMED or LANDED the period; a
+          // needs_resolution row is a resolved duplicate and never an owner.
+          (order) =>
+            order.activationState === "applied" ||
+            order.activationState === "failed",
+        )
         .sort((a, b) => {
           const byApplied =
             Number(b.activationState === "applied") -
@@ -313,6 +338,11 @@ function memoryStore(): PaymentStore {
           };
           orders.set(current.id, claimedOwner);
           return { outcome: "owner" as const, order: claimedOwner };
+        }
+        // The real store answers unknown for a needs_resolution winner (a stale read): the
+        // order stays where the duplicate verdict put it.
+        if (current.activationState === "needs_resolution") {
+          return { outcome: "unknown" as const };
         }
         return { outcome: "owner" as const, order: current };
       }
@@ -567,7 +597,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "wechat",
         createdBy: "admin-1",
-      ownerPayerRef: ref("admin-1"),
+        ownerPayerRef: ref("admin-1"),
       }),
     ).rejects.toMatchObject({
       refusal: { reason: "pending-purchase", pendingPlanCode: "team" },
@@ -613,7 +643,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "wechat",
         createdBy: "admin-1",
-      ownerPayerRef: ref("admin-1"),
+        ownerPayerRef: ref("admin-1"),
       }),
     ).rejects.toMatchObject({
       refusal: { reason: "pending-purchase", pendingPlanCode: "team" },
@@ -701,7 +731,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "alipay",
         createdBy: "admin-1",
-      ownerPayerRef: ref("admin-1"),
+        ownerPayerRef: ref("admin-1"),
       }),
     ).rejects.toMatchObject({
       refusal: { reason: "active-subscription", activePlanCode: "pro" },
@@ -716,7 +746,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "alipay",
         createdBy: "a",
-      ownerPayerRef: ref("a"),
+        ownerPayerRef: ref("a"),
       }),
     ).rejects.toBeInstanceOf(PurchaseError);
   });
@@ -730,7 +760,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "wechat",
         createdBy: "a",
-      ownerPayerRef: ref("a"),
+        ownerPayerRef: ref("a"),
       }),
     ).rejects.toMatchObject({ refusal: { reason: "unknown-provider" } });
     // The refusal left no stranded order behind: nothing pending on either channel, and the
@@ -765,7 +795,7 @@ describe("purchase ordering", () => {
         cycle: "monthly",
         provider: "alipay",
         createdBy: "a",
-      ownerPayerRef: ref("a"),
+        ownerPayerRef: ref("a"),
       }),
     ).rejects.toThrow(/unreachable/);
     const pending = await store.readPendingOrder("pro", "alipay");
@@ -786,7 +816,12 @@ describe("purchase ordering", () => {
 
   test("a purchase without a resolvable owner is refused before any order row exists", async () => {
     const { service, store } = buildService();
-    const missing = { planCode: "pro", cycle: "monthly" as const, provider: "alipay" as const, createdBy: "a" };
+    const missing = {
+      planCode: "pro",
+      cycle: "monthly" as const,
+      provider: "alipay" as const,
+      createdBy: "a",
+    };
     await expect(
       // The input the runtime can see when a caller forgets the resolved owner entirely.
       service.createPurchase(
@@ -876,7 +911,10 @@ describe("purchase ordering", () => {
     // The foreign order survives, untouched: still pending, still buyer-b's.
     const survived = await store.readOrder(someoneElses.id);
     expect(survived?.status).toBe("pending");
-    expect(survived?.ownerPayerRef).toEqual({ kind: "personal", id: "buyer-b" });
+    expect(survived?.ownerPayerRef).toEqual({
+      kind: "personal",
+      id: "buyer-b",
+    });
     expect(survived?.version).toBe(0);
     expect(alipay.closes).toEqual([]);
   });
@@ -1827,7 +1865,10 @@ describe("callback triage", () => {
     });
     const settled = await store.readOrder(second.id);
     expect(settled?.status).toBe("paid");
-    expect(settled?.activationState).toBe("pending");
+    // BP03 (#371): a deterministic entitlement conflict is the operator's queue, not an
+    // endless retry — the loser lands in needs_resolution with its duplicate evidence kept.
+    expect(settled?.activationState).toBe("needs_resolution");
+    expect(settled?.activationFailureReason).toBe("duplicate_paid");
     expect(payouts).toEqual([first.id]);
     expect(
       store.anomalies.some(
@@ -2180,7 +2221,7 @@ describe("activation gate", () => {
         provider: "alipay",
         cycle: "monthly",
         createdBy: "admin-1",
-      ownerPayerRef: ref("admin-1"),
+        ownerPayerRef: ref("admin-1"),
       }),
     ).rejects.toMatchObject({
       refusal: { reason: "active-subscription", activePlanCode: "pro" },
@@ -2467,6 +2508,321 @@ describe("the plan allowance payout", () => {
     const { service } = buildService({ store, grantor });
     await service.sweepActivations();
     expect(payouts).toHaveLength(1);
+  });
+});
+
+describe("BP03 delivery recovery (#371)", () => {
+  /**
+   * A grantor double that behaves like the real writer on replay: the first call inserts, every
+   * later call with the same order answers `inserted: false` — the unique-key no-op the retry
+   * converges through. Records every attempt so the tests can assert what was ASKED, beside what
+   * landed.
+   */
+  function replaySafeGrantor(overrides: Partial<PlanCreditGrantor> = {}) {
+    const attempts: Array<{
+      orderId: string;
+      externalCustomerId: string;
+      totalCents: number;
+      expiresAt: Date | null;
+      inserted: boolean;
+    }> = [];
+    const seen = new Set<string>();
+    const grantor: PlanCreditGrantor = {
+      creditsFor: (planCode) => (planCode === "pro" ? 900_000 : null),
+      async grantPlanCredits(input) {
+        const inserted = !seen.has(input.orderId);
+        seen.add(input.orderId);
+        attempts.push({
+          orderId: input.orderId,
+          externalCustomerId: input.externalCustomerId,
+          totalCents: input.totalCents,
+          expiresAt: input.expiresAt,
+          inserted,
+        });
+        return { inserted };
+      },
+      readCurrentPeriodEnd: async () => new Date("2026-11-01T00:00:00Z"),
+      ...overrides,
+    };
+    return { grantor, attempts };
+  }
+
+  /** One paid order settled through the callback path. */
+  async function paidOrder(store: PaymentStore = memoryStore()) {
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      ownerPayerRef: ref("a"),
+      checkoutPayload: null,
+    });
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: {
+          outTradeNo: order.id,
+          state: "paid" as const,
+          channelTransactionId: `tx-${order.id}`,
+          amountCents: 8800,
+        },
+      }),
+    });
+    return { order, store, alipay };
+  }
+
+  test("AC1: Lago landed but the grant refused — the retry patches only the missing half", async () => {
+    const { grantor, attempts } = replaySafeGrantor();
+    const failing = { current: true };
+    const broken: PlanCreditGrantor = {
+      creditsFor: grantor.creditsFor,
+      async grantPlanCredits(input) {
+        if (failing.current) throw new Error("ledger down");
+        return grantor.grantPlanCredits(input);
+      },
+      readCurrentPeriodEnd: grantor.readCurrentPeriodEnd,
+    };
+    const { order, store, alipay } = await paidOrder();
+    const lago = fakeLago({
+      ensureSubscription: async () => ({
+        currentPeriodStart: "2026-10-01T00:00:00Z",
+        currentPeriodEnd: "2026-11-01T00:00:00Z",
+      }),
+    });
+    const first = buildService({
+      store,
+      providers: [alipay],
+      grantor: broken,
+      lago,
+    });
+
+    await first.service.handleCallback("alipay", new Headers(), "x");
+    const interrupted = await store.readOrder(order.id);
+    expect(interrupted?.status).toBe("paid");
+    expect(interrupted?.activationState).not.toBe("applied");
+    // The interruption is retained, not guessed: the reason word and the next pass's schedule.
+    expect(interrupted?.activationFailureReason).toBe("grant_write_failed");
+    expect(interrupted?.activationNextRetryAt).toEqual(
+      new Date(clockMs + 60_000),
+    );
+    // What the user reads while the halves disagree: money landed, entitlement still processing.
+    expect(
+      (await first.service.readOrder(order.id, { actorPayerRef: ref("a") }))
+        .order?.fulfillmentState,
+    ).toBe("processing");
+
+    failing.current = false;
+    const second = buildService({ store, providers: [alipay], grantor, lago });
+    await second.service.sweepActivations();
+    const settled = await store.readOrder(order.id);
+    expect(settled?.activationState).toBe("applied");
+    expect(settled?.activationFailureReason).toBeNull();
+    expect(settled?.activationNextRetryAt).toBeNull();
+    // The subscription seam was asked again (read-before-create) but the payout only ever
+    // inserted once — the retry patched the missing half, not both halves.
+    expect(attempts.filter((attempt) => attempt.inserted)).toHaveLength(1);
+    expect(
+      (await second.service.readOrder(order.id, { actorPayerRef: ref("a") }))
+        .order?.fulfillmentState,
+    ).toBe("delivered");
+  });
+
+  test("AC1 (reverse): the grant landed but the stamp refused — a replayed notification adds no second payout", async () => {
+    const { grantor, attempts } = replaySafeGrantor();
+    const { order, store, alipay } = await paidOrder();
+    let stampFails = true;
+    const lago = fakeLago({
+      ensureSubscription: async () => ({
+        currentPeriodStart: "2026-10-01T00:00:00Z",
+        currentPeriodEnd: "2026-11-01T00:00:00Z",
+      }),
+      stampSubscriptionOwnership: async () => !stampFails,
+    });
+    const first = buildService({ store, providers: [alipay], grantor, lago });
+    await first.service.handleCallback("alipay", new Headers(), "x");
+    expect((await store.readOrder(order.id))?.activationState).not.toBe(
+      "applied",
+    );
+    expect(attempts.filter((attempt) => attempt.inserted)).toHaveLength(1);
+
+    // The stamp heals; the SAME delivery arrives again (the channel redelivered) and the sweep
+    // runs too. The grant half is already durable — every re-ask answers inserted:false.
+    stampFails = false;
+    const second = buildService({ store, providers: [alipay], grantor, lago });
+    expect(
+      await second.service.handleCallback("alipay", new Headers(), "x"),
+    ).toEqual({ kind: "success" });
+    await second.service.sweepActivations();
+    expect((await store.readOrder(order.id))?.activationState).toBe("applied");
+    expect(attempts.filter((attempt) => attempt.inserted)).toHaveLength(1);
+    expect(attempts.length).toBeGreaterThan(1);
+  });
+
+  test("AC2: a deterministic entitlement conflict lands in needs_resolution and the sweep stops asking", async () => {
+    const { grantor, attempts } = replaySafeGrantor();
+    const store = memoryStore();
+    // The owner: paid, activated.
+    const { order: owner } = await paidOrder(store);
+    const ownerService = buildService({ store, providers: [], grantor });
+    await store.confirmPaid({
+      id: owner.id,
+      expectedVersion: owner.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: "tx-owner",
+      amountCents: 8800,
+      periodStart: tick(),
+      periodEnd: addMonths(tick(), 1),
+    });
+    await ownerService.service.sweepActivations();
+    expect((await store.readOrder(owner.id))?.activationState).toBe("applied");
+
+    // The overlapping challenger: same plan, same period window, different transaction.
+    const { order: challenger } = await store.insertOrder({
+      planCode: "pro",
+      provider: "wechat",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      ownerPayerRef: ref("a"),
+      checkoutPayload: null,
+    });
+    await store.confirmPaid({
+      id: challenger.id,
+      expectedVersion: challenger.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: "tx-challenger",
+      amountCents: 8800,
+      periodStart: tick(),
+      periodEnd: addMonths(tick(), 1),
+    });
+
+    const alipay = fakeProvider("alipay");
+    const { service } = buildService({ store, providers: [alipay], grantor });
+    // However many passes run, the challenger never becomes the owner and never grants.
+    await service.sweepActivations();
+    await service.sweepActivations();
+    await service.sweepActivations();
+    const settled = await store.readOrder(challenger.id);
+    expect(settled?.activationState).toBe("needs_resolution");
+    expect(settled?.activationFailureReason).toBe("duplicate_paid");
+    expect(settled?.activationNextRetryAt).toBeNull();
+    expect(
+      attempts
+        .filter((attempt) => attempt.inserted)
+        .map((attempt) => attempt.orderId),
+    ).toEqual([owner.id]);
+    expect(
+      store.anomalies.some(
+        (anomaly) =>
+          anomaly.orderId === challenger.id &&
+          anomaly.code === "duplicate_paid",
+      ),
+    ).toBe(true);
+    // needs_resolution is not "delivered": the read says so.
+    const view = await service.readOrder(challenger.id, {
+      actorPayerRef: ref("a"),
+    });
+    expect(view.order?.fulfillmentState).toBe("needs_resolution");
+  });
+
+  test("AC2: a paid order stuck processing for pass after pass raises the alarm", async () => {
+    const { grantor } = replaySafeGrantor();
+    const broken: PlanCreditGrantor = {
+      ...grantor,
+      grantPlanCredits: async () => {
+        throw new Error("ledger down");
+      },
+    };
+    const { order, store, alipay } = await paidOrder();
+    const { service } = buildService({
+      store,
+      providers: [alipay],
+      grantor: broken,
+    });
+    await service.handleCallback("alipay", new Headers(), "x");
+    const alarms = () =>
+      store.anomalies.filter(
+        (anomaly) =>
+          anomaly.orderId === order.id &&
+          anomaly.code === "activation_retry_exhausted",
+      );
+    await service.sweepActivations();
+    await service.sweepActivations();
+    expect(alarms()).toHaveLength(0);
+    await service.sweepActivations();
+    expect(alarms()).toHaveLength(1);
+    await service.sweepActivations();
+    expect(alarms()).toHaveLength(1);
+  });
+
+  test("AC3: the payout lands in the order owner's account key, not the deployment's", async () => {
+    const { grantor, attempts } = replaySafeGrantor();
+    const { store, alipay } = await paidOrder();
+    const { service } = buildService({ store, providers: [alipay], grantor });
+    await service.handleCallback("alipay", new Headers(), "x");
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]?.externalCustomerId).toBe("openbot-personal-a");
+  });
+
+  test("AC3: neither the provider nor the order answers a period end — the allowance is withheld, never indefinite", async () => {
+    const { grantor, attempts } = replaySafeGrantor({
+      readCurrentPeriodEnd: async () => null,
+    });
+    const inner = memoryStore();
+    // The double's read strips the order's own period snapshot, so the expiry fallback chain
+    // has nothing left to answer — the one shape that must never mint a no-expiry allowance.
+    const store: PaymentStore = {
+      ...inner,
+      async readOrder(id, scope) {
+        const order = await inner.readOrder(id, scope);
+        return order ? { ...order, periodEnd: null } : null;
+      },
+      async listPaidPendingActivationOrders(limit) {
+        const rows = await inner.listPaidPendingActivationOrders(limit);
+        return rows.map((row) => ({ ...row, periodEnd: null }));
+      },
+      async resolveActivationOwnership(orderId) {
+        const outcome = await inner.resolveActivationOwnership(orderId);
+        const strip = (order: PaymentOrderRecord) => ({
+          ...order,
+          periodEnd: null,
+        });
+        if (outcome.outcome === "owner") {
+          return { ...outcome, order: strip(outcome.order) };
+        }
+        return outcome;
+      },
+    };
+    const { order } = await inner.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      ownerPayerRef: ref("a"),
+      checkoutPayload: null,
+    });
+    await inner.confirmPaid({
+      id: order.id,
+      expectedVersion: order.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: "tx-no-period",
+      amountCents: 8800,
+      periodStart: tick(),
+      periodEnd: addMonths(tick(), 1),
+    });
+
+    const alipay = fakeProvider("alipay");
+    const { service } = buildService({ store, providers: [alipay], grantor });
+    await service.sweepActivations();
+    const settled = await store.readOrder(order.id);
+    expect(settled?.activationState).not.toBe("applied");
+    expect(settled?.activationFailureReason).toBe("grant_no_period");
+    expect(attempts).toHaveLength(0);
   });
 });
 

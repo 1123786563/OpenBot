@@ -7,7 +7,7 @@ import {
 } from "../db/schema/credit-reservations";
 import { creditGrants, creditLedger } from "../db/schema/credits";
 import { paymentEvents, paymentOrders } from "../db/schema/payment";
-import { payerKey, type PayerKind } from "./payer";
+import { type PayerKind, payerKey } from "./payer";
 import type { PaymentOrderRecord } from "./payments/types";
 import type { ReconcileFinding, ReconcileReport } from "./types";
 import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./types";
@@ -306,6 +306,12 @@ export function createReconciler(
           planGrants.map((grant) => [grant.idempotencyKey, grant]),
         );
         for (const order of paidOrders) {
+          // A `needs_resolution` order (BP03/#371) is an escalated deterministic conflict —
+          // an entitlement another order already owns. It must NOT carry a grant (paying the
+          // allowance twice is exactly what the conflict means), and it already has its own
+          // finding below (duplicate_paid_order). Auditing it here would flag the correct
+          // state as drift.
+          if (order.activationState === "needs_resolution") continue;
           const expected = expectedPlanCredits(order.planCode);
           if (expected === null || expected <= 0) continue;
           const key = `plan:${order.id}`;
@@ -456,11 +462,11 @@ export function createReconciler(
       /*
        * The projection ask is PER OWNER ACCOUNT (10.3, AC14): one account's live row must not
        * mask another account's lost entitlement, so an owned order is satisfied only by a live
- *    row carrying its own owner pair — and only while its paid window is still running (an
- *    expired order is history; a later repurchase legitimately re-stamps the one row to the
- *    new owner). Orders written before ownership existed have no account to compare against
- *    (Q23 forbids guessing one): they keep the deployment-wide membership the check was
- *    born with, reported once per order so the report can be worked row by row.
+       *    row carrying its own owner pair — and only while its paid window is still running (an
+       *    expired order is history; a later repurchase legitimately re-stamps the one row to the
+       *    new owner). Orders written before ownership existed have no account to compare against
+       *    (Q23 forbids guessing one): they keep the deployment-wide membership the check was
+       *    born with, reported once per order so the report can be worked row by row.
        */
       const liveOwnerPairs = new Set<string>();
       for (const row of liveSubscriptions) {
@@ -474,9 +480,7 @@ export function createReconciler(
             order.periodEnd !== null && order.periodEnd.getTime() > nowMs;
           if (!withinPaidPeriod) continue;
           if (
-            !liveOwnerPairs.has(
-              `${order.ownerPayerKind}:${order.ownerPayerId}`,
-            )
+            !liveOwnerPairs.has(`${order.ownerPayerKind}:${order.ownerPayerId}`)
           ) {
             findings.push({
               category: "payment",
