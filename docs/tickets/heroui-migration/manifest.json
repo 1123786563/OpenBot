@@ -1,0 +1,2139 @@
+{
+  "repository": "1123786563/OpenBot",
+  "design_status": "draft-for-review",
+  "implementation_authorized": false,
+  "source_read_date": "2026-10-19",
+  "base_observed": "295c0b89fc29e1f1745f0ccf484c51f49a04a1ea",
+  "spec_path": "docs/specs/2026-10-19-heroui-ui-migration-design.md",
+  "parent": {
+    "number": 443,
+    "github_id": 5924077333,
+    "node_id": "I_kwDOVCA0Ss8AAAABYRo_FQ",
+    "url": "https://github.com/1123786563/OpenBot/issues/443"
+  },
+  "tickets": [
+    {
+      "id": "H01",
+      "title": "建立 UI 迁移基线并验证 HeroUI 关键交互兼容",
+      "depends_on": [],
+      "goal": "用可复跑证据确定迁移能保持现有能力，消除主题与组合接口的不确定性。",
+      "owned_files": [
+        "计划专属 inventory / baseline / spike / 证据目录；隔离 spike 的最小测试与样式，不接入生产路由"
+      ],
+      "acceptance": [
+        "列清所有路由、26 个公共 UI 模块、相对/别名/动态导入、原生控件和 Base UI Props 调用；为每个文件确定迁移或保留归属。",
+        "核对并固定 HeroUI React/Styles 兼容版本，验证 React/Tailwind peer 依赖；不照抄 v2 配置。",
+        "真实浏览器验证 TanStack Link、Modal 内 Select、嵌套 Modal/Drawer、搜索与清空、旧新 token 同页、Questionnaire/Scroller render 组合。",
+        "右键菜单覆盖指针位置、Shift+F10/ContextMenu 键、触摸策略、关闭和焦点恢复；不满足时给出等价 Adapter 与成本，不删除能力。",
+        "保存两主题/中英文代表页截图、登录与聊天初始 JS/CSS gzip、既有测试失败与环境证据；形成最终契约和共存策略。"
+      ],
+      "steps": [
+        "固定执行工作区与 BASE，扫描实际引用和当前版本。",
+        "建立最小隔离 fixture，分别运行类型、样式和浏览器交互验证。",
+        "记录每项通过/失败/阻塞、组件映射和回退方式；修正清单中的静态遗漏。"
+      ],
+      "produces": [
+        "版本锁定建议、契约矩阵、token 映射、浮层/右键菜单结论、基线与可复跑命令"
+      ],
+      "verification": [
+        "隔离 fixture 的 build/typecheck 与浏览器场景；现有代表测试的同版本基线"
+      ],
+      "source_acceptance": [
+        "A01",
+        "A02",
+        "A04",
+        "A05",
+        "A09"
+      ],
+      "estimate": [
+        1,
+        2
+      ],
+      "routes": [],
+      "ui": [],
+      "owner_role": "researcher；隔离 spike 由 frontend_implementer 承接",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h01.md",
+      "number": 444,
+      "github_id": 5924078516,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRpDtA",
+      "url": "https://github.com/1123786563/OpenBot/issues/444",
+      "native_contains": true,
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 444,
+          "url": "https://github.com/1123786563/OpenBot/issues/444"
+        }
+      ],
+      "published_body_sha256": "a9ad79b866b4ded119944e06712c780016f3cc77cb9fe4ce29a9e84f03c0c328"
+    },
+    {
+      "id": "H02",
+      "title": "让现有页面通过 HeroUI 基础控件保持主题与表单行为",
+      "depends_on": [
+        "H01"
+      ],
+      "goal": "应用亮暗主题、链接按钮和基础表单改用 HeroUI，现有页面继续可用。",
+      "owned_files": [
+        "app/package.json 与实际 Bun lockfile",
+        "app/src/main.tsx、routes/__root.tsx、components/theme-provider.tsx、lib/theme.ts、app/index.html",
+        "app/src/styles.css 与计划中的 styles/*；components/ui/router-link.tsx（确有需要时）"
+      ],
+      "acceptance": [
+        "token 来源统一为 OpenBot 语义；accent/muted 等冲突显式隔离，旧页面与新控件共存无颜色污染。",
+        "openbot-theme、首屏预设、.dark/data-theme 与 color-scheme 使用同一状态；不重复引入主题存储。",
+        "Button 既有变体/尺寸、disabled、submit、ref 和真实 anchor 行为正确；新标签页/组合键导航可用，无嵌套 button/a。",
+        "Input/TextArea/Checkbox/Switch/Field 的值、半选、name、label、错误关联和 TanStack Form 单次更新正确。",
+        "Item/Bubble 等渲染工具的迁移按所有权表实施；本任务负责 Item，Bubble 归 H10。",
+        "全量 typecheck/build 通过，公共控件变更影响到的所有调用点在同检查点修正；不破坏既有路由拆包。"
+      ],
+      "steps": [
+        "按 H01 契约建立主题与 CSS layer 顺序，导入锁定版依赖。",
+        "先验证基础行为，再替换公共控件及必要调用端；集中配置 locale 和路由集成。",
+        "检查遗留 token 在 PromptArea 等依赖和 portal 中的作用域，保存基线对比。"
+      ],
+      "produces": [
+        "已审查基础控件 Interface、主题桥接、链接适配与可集成检查点"
+      ],
+      "verification": [
+        "theme-preference / sidebar-preference 及基础控件行为测试；app typecheck/build；亮暗首屏浏览器检查"
+      ],
+      "source_acceptance": [
+        "A01",
+        "A02",
+        "A05",
+        "A08",
+        "A09"
+      ],
+      "estimate": [
+        1,
+        2
+      ],
+      "routes": [
+        "app/src/routes/__root.tsx"
+      ],
+      "ui": [
+        "app/src/components/ui/button.tsx",
+        "app/src/components/ui/checkbox.tsx",
+        "app/src/components/ui/empty.tsx",
+        "app/src/components/ui/field.tsx",
+        "app/src/components/ui/input-group.tsx",
+        "app/src/components/ui/input.tsx",
+        "app/src/components/ui/item.tsx",
+        "app/src/components/ui/label.tsx",
+        "app/src/components/ui/separator.tsx",
+        "app/src/components/ui/skeleton.tsx",
+        "app/src/components/ui/switch.tsx",
+        "app/src/components/ui/textarea.tsx"
+      ],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h02.md",
+      "number": 445,
+      "github_id": 5924082926,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRpU7g",
+      "url": "https://github.com/1123786563/OpenBot/issues/445",
+      "native_contains": true,
+      "native_blocked_by": [
+        "H01"
+      ],
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 445,
+          "url": "https://github.com/1123786563/OpenBot/issues/445"
+        }
+      ],
+      "published_body_sha256": "c2bd20af774aea668bc7b4e9c779df246a5db1e5287cd7bac4280f5033cc64a7"
+    },
+    {
+      "id": "H03",
+      "title": "完成模型访问授权与撤销的 HeroUI 业务试点",
+      "depends_on": [
+        "H02"
+      ],
+      "goal": "用户能在 HeroUI 页面选择模型、核验绑定码、明确确认授权并撤销授权。",
+      "owned_files": [
+        "app/src/components/settings/model-picker.tsx、model-access-authorizations.tsx",
+        "H01 确定的公共浮层调用端兼容修正；不得改写模型授权数据合同"
+      ],
+      "acceptance": [
+        "预览绑定码不创建授权，只有显式确认才提交；错误码、失效与重试状态保留。",
+        "模型选择保留领域 ID 与空值合同，复杂选项具备 id/textValue，禁用模型无法选择。",
+        "确认/撤销 pending 时防重复提交，成功状态与服务器一致，无凭据泄露。",
+        "Modal/Select/ComboBox/Dropdown/Tooltip 公共封装完成迁移；本页未使用的能力以 H01 fixture 验证，不虚构页面功能。",
+        "ESC/外部关闭、初始/返回焦点、嵌套遮罩、scroll lock 和短视口滚动正确；兼容性变化影响到的其他调用端一起修正。"
+      ],
+      "steps": [
+        "迁移真实模型选择与授权列表路径，并接入公共浮层。",
+        "按组件契约重写复杂 render 和受控值，保持原 mutation/query Interface。",
+        "跑预览→取消/确认→列表→撤销，以及无效码、重复点击与失败重试。"
+      ],
+      "produces": [
+        "首个完整业务验收、Overlay/collection 稳定 Interface、使用者兼容清单"
+      ],
+      "verification": [
+        "模型访问相关现有测试；真实浏览器授权/撤销与焦点；app typecheck/build"
+      ],
+      "source_acceptance": [
+        "A03",
+        "A04",
+        "A05",
+        "A07"
+      ],
+      "estimate": [
+        1,
+        2
+      ],
+      "routes": [
+        "app/src/routes/_authed/settings/model-access.tsx"
+      ],
+      "ui": [
+        "app/src/components/ui/combobox.tsx",
+        "app/src/components/ui/dialog.tsx",
+        "app/src/components/ui/dropdown-menu.tsx",
+        "app/src/components/ui/select.tsx",
+        "app/src/components/ui/tooltip.tsx"
+      ],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h03.md",
+      "number": 446,
+      "github_id": 5924085158,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRpdpg",
+      "url": "https://github.com/1123786563/OpenBot/issues/446",
+      "native_contains": true,
+      "native_blocked_by": [
+        "H02"
+      ],
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 446,
+          "url": "https://github.com/1123786563/OpenBot/issues/446"
+        }
+      ],
+      "published_body_sha256": "04598133420afcfeb59c0e78dba418e67710f856499d8c95c1798f29f92dd444"
+    },
+    {
+      "id": "H04",
+      "title": "迁移个人设置、连接管理与记忆维护流程",
+      "depends_on": [
+        "H03"
+      ],
+      "goal": "用户可以用统一控件维护个人偏好、已连接账号与记忆，保持原有授权范围。",
+      "owned_files": [
+        "app/src/components/settings/*（不含 H03 的两个文件及 settings-sidebar）",
+        "app/src/components/plugins/*、连接管理路由；当前记忆相关展示模块，按 H01 唯一归属清单",
+        "app/src/components/memory/*、passwords/*、delivery/*"
+      ],
+      "acceptance": [
+        "个人资料、密码/通知、消息偏好、连接添加/编辑/断开和账号模式切换路径可用。",
+        "共享连接审批、撤销与权限不足状态保留；OAuth 回调和外部跳转不被新的按钮事件吞掉。",
+        "记忆候选确认、编辑、遗忘和来源权限展示保持既有行为，不新增未批准的自动记忆能力。",
+        "连接/记忆异步加载、空态、表单错误、pending 和取消均可观察；敏感值不被回填。",
+        "切换公司/团队后的列表、草稿和异步响应遵守现有隔离合同，中英文长标签可读。"
+      ],
+      "steps": [
+        "按清单迁移设置、个人连接与插件配置表单。",
+        "覆盖连接模式弹窗、共享授权和记忆操作；共享模块在本任务集中改写。",
+        "回归现有链接账号/记忆测试和真实浏览器取消/失败分支。"
+      ],
+      "produces": [
+        "个人设置、连接与记忆的验收包；供其他页面复用的连接控件"
+      ],
+      "verification": [
+        "account-mode-dialog / shared-grant-dialog / memory-settings / bot-memory / linked-accounts；代表浏览器流程"
+      ],
+      "source_acceptance": [
+        "A03",
+        "A04",
+        "A05",
+        "A07",
+        "A08"
+      ],
+      "estimate": [
+        1,
+        2
+      ],
+      "routes": [
+        "app/src/routes/_authed/_app/bots.$agentId.memory.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.reach.tsx",
+        "app/src/routes/_authed/_app/memory.tsx",
+        "app/src/routes/_authed/_app/reachability.tsx",
+        "app/src/routes/_authed/admin/plugins/$key.tsx",
+        "app/src/routes/_authed/admin/plugins/$key_.bots.$agentId.tsx",
+        "app/src/routes/_authed/admin/plugins/$key_.tools.$tool.tsx",
+        "app/src/routes/_authed/admin/plugins/composio.tsx",
+        "app/src/routes/_authed/admin/plugins/index.tsx",
+        "app/src/routes/_authed/admin/plugins/open-connector.tsx",
+        "app/src/routes/_authed/settings/connected-accounts/$key.tsx",
+        "app/src/routes/_authed/settings/connected-accounts/index.tsx",
+        "app/src/routes/_authed/settings/index.tsx",
+        "app/src/routes/_authed/settings/memory.tsx",
+        "app/src/routes/_authed/settings/notifications.tsx",
+        "app/src/routes/_authed/settings/passwords.tsx"
+      ],
+      "ui": [],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h04.md",
+      "number": 447,
+      "github_id": 5924086788,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRpkBA",
+      "url": "https://github.com/1123786563/OpenBot/issues/447",
+      "native_contains": true,
+      "native_blocked_by": [
+        "H03"
+      ],
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 447,
+          "url": "https://github.com/1123786563/OpenBot/issues/447"
+        }
+      ],
+      "published_body_sha256": "537973cb3244d09a828179fb5c9222d59e5419979efa020a55f5ac09d52a8414"
+    },
+    {
+      "id": "H05",
+      "title": "迁移模型目录、网关与凭据管理流程",
+      "depends_on": [
+        "H03"
+      ],
+      "goal": "管理员能配置开放模型与服务凭据，并清楚看到可用、拒绝和失败状态。",
+      "owned_files": [
+        "模型目录、gateway、credentials、bot-services 对应管理视图与 app/src/components/admin/model-billing-paths.tsx"
+      ],
+      "acceptance": [
+        "模型开放/停用、供应商配置与已登记 Bot 管理的既有增改查路径可用，不修改网关或 Key 协议。",
+        "凭据新增/更新/删除或撤销按当前能力验收，输入遮罩、敏感字段不读回和取消后清理行为保留。",
+        "模型选择不会将 null/数字/字符串 ID 混淆，失效或禁用项明确显示。",
+        "权限不足、验证失败、网络失败和提交中状态明确，点击一次只提交一次。"
+      ],
+      "steps": [
+        "迁移各视图表单与列表动作，保持 query/mutation 与服务端合同。",
+        "复核危险操作确认和焦点返回。",
+        "用允许/拒绝账号验证敏感配置及失败重试。"
+      ],
+      "produces": [
+        "管理员模型与凭据业务迁移检查点"
+      ],
+      "verification": [
+        "model-billing-paths 及已有管理测试；模型/凭据代表流程；app typecheck/build"
+      ],
+      "source_acceptance": [
+        "A03",
+        "A04",
+        "A05",
+        "A07"
+      ],
+      "estimate": [
+        0.5,
+        1
+      ],
+      "routes": [
+        "app/src/routes/_authed/admin/bot-services.tsx",
+        "app/src/routes/_authed/admin/credentials.tsx",
+        "app/src/routes/_authed/admin/gateway.tsx",
+        "app/src/routes/_authed/admin/model-catalog.tsx"
+      ],
+      "ui": [],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h05.md",
+      "number": 448,
+      "github_id": 5924088956,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRpsfA",
+      "url": "https://github.com/1123786563/OpenBot/issues/448",
+      "native_contains": true,
+      "native_blocked_by": [
+        "H03"
+      ],
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 448,
+          "url": "https://github.com/1123786563/OpenBot/issues/448"
+        }
+      ],
+      "published_body_sha256": "7bd71606fa81ca728298a78d3d36014eb68e8b8f53a89a576aa4965b611958cd"
+    },
+    {
+      "id": "H06",
+      "title": "迁移 Bot、技能、知识库与日常任务管理流程",
+      "depends_on": [
+        "H03"
+      ],
+      "goal": "用户和管理员能创建配置 Bot、维护技能与知识库，并管理已有职责和定时任务。",
+      "owned_files": [
+        "app/src/components/agents/*、bots/*、skills/*、knowledge/*（存在者按 H01 清单）",
+        "Bot 详情壳、设置、职责/例行任务模块；排除 H07 权限、H12 运行评估、H10 聊天动作",
+        "app/src/components/bot-profile/*（access/sharing 归 H07）、responsibilities/*、routines/*"
+      ],
+      "acceptance": [
+        "Bot 列表、创建、详情和设置的成功/取消/校验失败路径完整，既有表单值不丢失。",
+        "技能创建/编辑/绑定和知识库上传/删除/状态反馈保持原有能力；文件控件不会误触发页面导航。",
+        "职责与定时任务的已有创建/修改/暂停等动作可用，时间与状态含义保持不变。",
+        "详情路由、返回、长表单滚动和未保存内容处理遵守当前合同；无权限状态不可操作。",
+        "Bot 详情公共壳交付稳定 Interface，权限页与评估页消费该壳，不各自改写。"
+      ],
+      "steps": [
+        "按完整路径迁移 Bot 创建/配置，再迁移技能与知识库，再迁移职责/例行任务。",
+        "保留上传任务和异步状态来源，替换内部通用交互控件。",
+        "回归深链接、保存/取消和权限拒绝，交付详情壳契约。"
+      ],
+      "produces": [
+        "Bot 详情壳与业务表单稳定 Interface、技能/知识库/日常任务验收"
+      ],
+      "verification": [
+        "现有 Bot/技能/知识库/职责相关测试；真实浏览器一条完整创建编辑路径和拒绝路径"
+      ],
+      "source_acceptance": [
+        "A03",
+        "A04",
+        "A05",
+        "A07",
+        "A08"
+      ],
+      "estimate": [
+        1,
+        2
+      ],
+      "routes": [
+        "app/src/routes/_authed/_app/agents/index.tsx",
+        "app/src/routes/_authed/_app/bot.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.index.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.responsibilities.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.routines.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.setup.tsx",
+        "app/src/routes/_authed/_app/bots.index.tsx",
+        "app/src/routes/_authed/_app/responsibilities.tsx",
+        "app/src/routes/_authed/_app/routines.tsx",
+        "app/src/routes/_authed/_app/skills.tsx",
+        "app/src/routes/_authed/_app/team-bots.tsx",
+        "app/src/routes/_authed/admin/knowledge.$kbId.tsx",
+        "app/src/routes/_authed/admin/knowledge.index.tsx",
+        "app/src/routes/_authed/admin/learning.tsx",
+        "app/src/routes/_authed/admin/skills.tsx"
+      ],
+      "ui": [],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h06.md",
+      "number": 449,
+      "github_id": 5924091128,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRp0-A",
+      "url": "https://github.com/1123786563/OpenBot/issues/449",
+      "native_contains": true,
+      "native_blocked_by": [
+        "H03"
+      ],
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 449,
+          "url": "https://github.com/1123786563/OpenBot/issues/449"
+        }
+      ],
+      "published_body_sha256": "ee0bda87cf6672a975db2ff97ebd982218086f3444338927c47ea5f082127505"
+    },
+    {
+      "id": "H07",
+      "title": "迁移公司成员、权限分享、审批与审计流程",
+      "depends_on": [
+        "H03",
+        "H04",
+        "H06"
+      ],
+      "goal": "管理员和成员能在原有权限范围内管理成员、分享 Bot、处理审批和查看审计。",
+      "owned_files": [
+        "enterprise/people/identity-providers/boundaries/approvals/audit 相关视图",
+        "Bot access/sharing/approvals 模块；共享授权弹窗若 H04 已有改动须集成后再更改",
+        "app/src/components/approvals/*、bot-profile/access.tsx、bot-profile/sharing.tsx"
+      ],
+      "acceptance": [
+        "公司成员、团队资格、身份源和边界规则的既有管理流程可用；不能用隐藏控件代替服务端授权。",
+        "Bot 授权/分享/撤销及批准/拒绝保持资源与动作含义；取消不产生副作用。",
+        "审批中、已处理、权限撤销、过期和请求失败反馈明确，不把未知状态显示为成功。",
+        "审计筛选、分页、时间格式与详情读取保持原有行为，不扩大私人内容可见范围。",
+        "切换公司/团队后旧内容和异步结果不串入新范围；键盘能完成确认与取消。"
+      ],
+      "steps": [
+        "使用 H06 详情壳迁移 Bot 权限与分享页面。",
+        "迁移公司治理及审批/审计，复用已审查连接或确认控件。",
+        "分别用允许和拒绝身份验证动作及列表范围。"
+      ],
+      "produces": [
+        "公司治理、权限、审批与审计业务检查点"
+      ],
+      "verification": [
+        "multitenancy/selection / shared-grant-dialog 及已有审批测试；跨范围与撤权浏览器检查"
+      ],
+      "source_acceptance": [
+        "A03",
+        "A04",
+        "A05",
+        "A07",
+        "A08"
+      ],
+      "estimate": [
+        1,
+        2
+      ],
+      "routes": [
+        "app/src/routes/_authed/_app/approvals.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.access.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.approvals.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.sharing.tsx",
+        "app/src/routes/_authed/admin/approvals.tsx",
+        "app/src/routes/_authed/admin/audit.tsx",
+        "app/src/routes/_authed/admin/boundaries.tsx",
+        "app/src/routes/_authed/admin/enterprise.tsx",
+        "app/src/routes/_authed/admin/identity-providers.tsx",
+        "app/src/routes/_authed/admin/people.tsx",
+        "app/src/routes/_authed/settings/approvals.tsx"
+      ],
+      "ui": [],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h07.md",
+      "number": 450,
+      "github_id": 5924092425,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRp6CQ",
+      "url": "https://github.com/1123786563/OpenBot/issues/450",
+      "native_contains": true,
+      "native_blocked_by": [
+        "H03",
+        "H04",
+        "H06"
+      ],
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 450,
+          "url": "https://github.com/1123786563/OpenBot/issues/450"
+        }
+      ],
+      "published_body_sha256": "ab9ee157dcb18ce7fe30e62d390543312718bb1ea24aa9e6e375c45fa58a29e9"
+    },
+    {
+      "id": "H08",
+      "title": "迁移个人与公司积分、购买和订单记录流程",
+      "depends_on": [
+        "H03"
+      ],
+      "goal": "用户清楚看到付款账户、余额和订单状态，并能完成现有购买与记录查询流程。",
+      "owned_files": [
+        "app/src/components/billing/*、admin/billing-cleanup-execution-card.tsx；相关 settings/admin 计费路由"
+      ],
+      "acceptance": [
+        "个人与公司 Payer 归属、金额精度、套餐和付款确认事实不变；余额不足不切换付款账户。",
+        "购买/扫码/升级弹窗、处理中/失败/已收款/权益交付反馈保持现有状态区分。",
+        "积分、用量、订单与发票状态列表的筛选/分页/空态和时间格式正确。",
+        "提交中防重复；取消、重试和管理员发放确认可键盘操作；不误导为已支付或已交付。",
+        "已有 QR、Recharts 和金额格式实现保留；UI 迁移不重写支付或账务服务。"
+      ],
+      "steps": [
+        "迁移个人设置与公司管理中的共享计费视图。",
+        "覆盖购买确认、扫码、到账状态和管理员动作。",
+        "核验付款账户与状态语义，执行现有计费 UI/浏览器回归。"
+      ],
+      "produces": [
+        "付款账户与计费 UI 验收记录"
+      ],
+      "verification": [
+        "billing-credits-ui / billing-format / billing-invoice-shared / billing-payments；tests/e2e/billing.e2e.ts"
+      ],
+      "source_acceptance": [
+        "A03",
+        "A04",
+        "A05",
+        "A07",
+        "A08"
+      ],
+      "estimate": [
+        1,
+        2
+      ],
+      "routes": [
+        "app/src/routes/_authed/admin/billing.tsx",
+        "app/src/routes/_authed/settings/invoices.tsx",
+        "app/src/routes/_authed/settings/orders.tsx",
+        "app/src/routes/_authed/settings/usage.tsx"
+      ],
+      "ui": [],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h08.md",
+      "number": 451,
+      "github_id": 5924093718,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRp_Fg",
+      "url": "https://github.com/1123786563/OpenBot/issues/451",
+      "native_contains": true,
+      "native_blocked_by": [
+        "H03"
+      ],
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 451,
+          "url": "https://github.com/1123786563/OpenBot/issues/451"
+        }
+      ],
+      "published_body_sha256": "bf0309ffcb37920b890950f00f3a9ad81e9bde6db38f3990bb5bb500d43b8fa4"
+    },
+    {
+      "id": "H09",
+      "title": "迁移登录、工作台导航和窄屏侧栏流程",
+      "depends_on": [
+        "H03"
+      ],
+      "goal": "用户能登录并通过桌面或窄屏导航到工作页面，保持偏好、焦点和路由行为。",
+      "owned_files": [
+        "app/src/components/app-sidebar/*、layout/*、settings/settings-sidebar.tsx、admin/admin-sidebar.tsx",
+        "sign/onboarding/tenant 入口和各层 shell；不改既有认证/资源授权算法"
+      ],
+      "acceptance": [
+        "登录、退出、引导、请求登录与公司/团队选择使用统一控件，保留深链接和原有守卫。",
+        "侧栏折叠偏好、快捷键、选中态和返回导航保持；真实 anchor 支持新标签页。",
+        "窄屏 Drawer 的打开/ESC/外部关闭与焦点返回正确，body 滚动锁不会残留。",
+        "PageShell/PageRows/DetailPanel 保持布局 Interface，短视口长内容可滚动，详情面板不被误改成模态。",
+        "亮暗、中英文、320px 宽和 200% 缩放下关键动作可见；保留根级文件 drop 防导航保护。"
+      ],
+      "steps": [
+        "迁移导航内部控件和移动 Drawer，不重建路由模型。",
+        "更新布局和认证入口消费新控件，保持偏好与首屏主题。",
+        "验证深链接、Tab 顺序、短屏滚动和主题切换。"
+      ],
+      "produces": [
+        "稳定导航/布局 Interface、窄屏与桌面承载验证入口"
+      ],
+      "verification": [
+        "sidebar-preference / sidebar-shortcut-layouts / sign-in-card / root-drop-guard / multitenancy/selection；浏览器导航"
+      ],
+      "source_acceptance": [
+        "A02",
+        "A03",
+        "A04",
+        "A05",
+        "A07",
+        "A08"
+      ],
+      "estimate": [
+        1,
+        2
+      ],
+      "routes": [
+        "app/src/routes/_authed/_app/index.tsx",
+        "app/src/routes/_authed/_app.tsx",
+        "app/src/routes/_authed/admin/index.tsx",
+        "app/src/routes/_authed/admin/route.tsx",
+        "app/src/routes/_authed/onboarding.tsx",
+        "app/src/routes/_authed/settings/route.tsx",
+        "app/src/routes/_authed/sign-in/$requestId.tsx",
+        "app/src/routes/_authed/tenant/channels.tsx",
+        "app/src/routes/_authed/tenant/selection.tsx",
+        "app/src/routes/_authed.tsx",
+        "app/src/routes/sign.tsx"
+      ],
+      "ui": [
+        "app/src/components/ui/sheet.tsx",
+        "app/src/components/ui/sidebar.tsx"
+      ],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h09.md",
+      "number": 452,
+      "github_id": 5924095129,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRqEmQ",
+      "url": "https://github.com/1123786563/OpenBot/issues/452",
+      "native_contains": true,
+      "native_blocked_by": [
+        "H03"
+      ],
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 452,
+          "url": "https://github.com/1123786563/OpenBot/issues/452"
+        }
+      ],
+      "published_body_sha256": "e31590c048cb3b200df2ddd85831fa65c8a1c3d9d8fb24571e85b0d3731b4366"
+    },
+    {
+      "id": "H10",
+      "title": "迁移聊天输入、消息动作与实时屏幕交互",
+      "depends_on": [
+        "H03",
+        "H09"
+      ],
+      "goal": "用户在新控件下继续可靠输入、发送附件、阅读流式消息和接管 Bot 屏幕。",
+      "owned_files": [
+        "app/src/components/channels/*、computer/*、suggestions/*（包含 composer、chat-transcript、实时屏幕和消息工具卡；workshop-* 如存在归 H11）",
+        "聊天 UI 与 share/channel/group 路由；保留 PromptArea、Streamdown、Embla、@shadcn/react 专用行为"
+      ],
+      "acceptance": [
+        "中文 IME 组合期间 Enter 不误发，单次提交只生成一次发送；disabled/pending/停止/重试与原合同一致。",
+        "附件添加/粘贴/拖入/取消/上传失败/重试生命周期不变，非接收区 drop 不卸载页面。",
+        "流式追加、手动滚动、回底部和历史加载锚点正确，不因按钮换库重新挂载消息列表。",
+        "问卷/消息滚动的 render 动作与 HeroUI 按钮兼容；上下文菜单支持已验证的右键/键盘/触摸策略。",
+        "实时屏幕键盘接管、释放与快捷键优先级正确，菜单/弹窗焦点不吞掉屏幕控制。",
+        "跨公司/团队会话切换保留原归属，不把草稿、附件或异步响应显示到新范围。"
+      ],
+      "steps": [
+        "按 H01 结论迁移通用动作和消息组合，保持编辑与滚动引擎。",
+        "将旧 render 适配限制在动作入口，不重写整个问卷或 scroller。",
+        "跑附件、IME、流式滚动和屏幕键盘真实浏览器场景。"
+      ],
+      "produces": [
+        "聊天与实时屏幕迁移检查点、专用引擎保留与兼容证据"
+      ],
+      "verification": [
+        "app/tests/composer-* / live-screen-keyboard / carousel-keyboard；tests/e2e/bot-chat.e2e.ts；真实 IME/滚动"
+      ],
+      "source_acceptance": [
+        "A03",
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08"
+      ],
+      "estimate": [
+        2,
+        3
+      ],
+      "routes": [
+        "app/src/routes/_authed/_app/channel/$channelId.tsx",
+        "app/src/routes/_authed/_app/channel/new.tsx",
+        "app/src/routes/_authed/_app/group/$channelId.tsx",
+        "app/src/routes/_authed/_app/group/new.tsx",
+        "app/src/routes/share.$token.tsx"
+      ],
+      "ui": [
+        "app/src/components/ui/bubble.tsx",
+        "app/src/components/ui/carousel.tsx",
+        "app/src/components/ui/context-menu.tsx",
+        "app/src/components/ui/live-waveform.tsx",
+        "app/src/components/ui/message-scroller.tsx",
+        "app/src/components/ui/message.tsx",
+        "app/src/components/ui/questionnaire.tsx"
+      ],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h10.md",
+      "number": 453,
+      "github_id": 5924104420,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRqo5A",
+      "url": "https://github.com/1123786563/OpenBot/issues/453",
+      "native_contains": true,
+      "native_blocked_by": [
+        "H03",
+        "H09"
+      ],
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 453,
+          "url": "https://github.com/1123786563/OpenBot/issues/453"
+        }
+      ],
+      "published_body_sha256": "de6736ffab60206d29e676f40e3e91a829126fa7291d74197d159d234f9faf42"
+    },
+    {
+      "id": "H11",
+      "title": "迁移 Craft 工作区、预览和产物操作流程",
+      "depends_on": [
+        "H10"
+      ],
+      "goal": "用户能在 Craft 中查看任务、操作产物和交互预览，保持会话与 iframe 生命周期。",
+      "owned_files": [
+        "app/src/routes/_authed/_app/craft/**、app/src/components/craft/**，channels/workshop-* 如存在归本任务",
+        "共享聊天/实时屏幕控件消费 H10 已审查 Interface；不改 iframe origin 与会话协议"
+      ],
+      "acceptance": [
+        "Craft 列表、任务、文件与产物动作保持原有加载/失败/成功状态。",
+        "预览菜单、放大/还原和下载/分享不重挂载 iframe 或丢失预览交互状态。",
+        "预览 iframe 的 origin、票据、sandbox 与会话隔离不变；父应用主题不被假设能自动穿透 iframe。",
+        "窄屏和短屏下任务面板/预览可操作，内层滚动与 Overlay 正确。"
+      ],
+      "steps": [
+        "消费 H10 已审查聊天控件迁移 Craft 专属动作。",
+        "回归产物、预览放大还原和会话切换。",
+        "验证纯前端改动未影响 iframe origin 与会话身份合同。"
+      ],
+      "produces": [
+        "Craft 专用交互验收记录"
+      ],
+      "verification": [
+        "已有 Craft 前端/预览回归；真实浏览器交互预览与放大还原"
+      ],
+      "source_acceptance": [
+        "A03",
+        "A04",
+        "A06",
+        "A07",
+        "A08"
+      ],
+      "estimate": [
+        0.5,
+        1
+      ],
+      "routes": [
+        "app/src/routes/_authed/_app/craft/$sessionId.tsx",
+        "app/src/routes/_authed/_app/craft/index.tsx",
+        "app/src/routes/_authed/_app/craft/tasks.tsx"
+      ],
+      "ui": [],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h11.md",
+      "number": 454,
+      "github_id": 5924105251,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRqsIw",
+      "url": "https://github.com/1123786563/OpenBot/issues/454",
+      "native_contains": true,
+      "native_blocked_by": [
+        "H10"
+      ],
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 454,
+          "url": "https://github.com/1123786563/OpenBot/issues/454"
+        }
+      ],
+      "published_body_sha256": "bfa93a65dac03862aba2a77f06143de52cddb6c4b645e4e1db9098dfaa208249"
+    },
+    {
+      "id": "H12",
+      "title": "迁移运行记录、评估对比与运维观测流程",
+      "depends_on": [
+        "H03",
+        "H06"
+      ],
+      "goal": "用户能查询运行与评估，管理员能查看计算机和观测状态，保留列表与图表语义。",
+      "owned_files": [
+        "Bot runs/datasets/evaluations/exports 模块；app/src/components/evaluations/*（存在者）",
+        "computers/playground/observability/ai-observability 管理视图及其专属模块",
+        "app/src/components/ai-observability/*"
+      ],
+      "acceptance": [
+        "运行记录、数据集、评估详情/对比和导出状态的现有路径与深链接可用。",
+        "列表筛选、分页、排序、复杂表头/图表和异步状态保持，不为了换库改写查询或 Recharts。",
+        "运维连接失败/不可用/无权限/空数据明确；不把占位数据当成真实成功。",
+        "长表格横向滚动局限于容器，焦点和关键动作在窄屏/短屏可达。"
+      ],
+      "steps": [
+        "消费 H06 Bot 详情壳迁移运行与评估页面。",
+        "迁移观测与计算机运维动作，不改流和工具执行协议。",
+        "用长数据、空数据和失败状态检验表格/图表和路由。"
+      ],
+      "produces": [
+        "运行/评估/运维业务迁移检查点"
+      ],
+      "verification": [
+        "已有运行评估和 ai-observability 测试；列表/图表/拒绝状态浏览器检查"
+      ],
+      "source_acceptance": [
+        "A03",
+        "A04",
+        "A05",
+        "A07",
+        "A08",
+        "A09"
+      ],
+      "estimate": [
+        1,
+        2
+      ],
+      "routes": [
+        "app/src/routes/_authed/_app/bots.$agentId.datasets.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.evaluations.$datasetId.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.evaluations.experiment-comparisons.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.evaluations.experiments.$experimentId.$executionId.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.evaluations.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.exports.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.runs.$bindingId.tsx",
+        "app/src/routes/_authed/_app/bots.$agentId.runs.tsx",
+        "app/src/routes/_authed/admin/ai-observability.tsx",
+        "app/src/routes/_authed/admin/computers.tsx",
+        "app/src/routes/_authed/admin/observability.tsx",
+        "app/src/routes/_authed/admin/playground.tsx"
+      ],
+      "ui": [],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h12.md",
+      "number": 455,
+      "github_id": 5924106110,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRqvfg",
+      "url": "https://github.com/1123786563/OpenBot/issues/455",
+      "native_contains": true,
+      "native_blocked_by": [
+        "H03",
+        "H06"
+      ],
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 455,
+          "url": "https://github.com/1123786563/OpenBot/issues/455"
+        }
+      ],
+      "published_body_sha256": "978ff35cc04734260fe356d4fa1fb50c17d5fa0feef2d29188d379beb603dddf"
+    },
+    {
+      "id": "H13",
+      "title": "迁移组件画廊与市场交互并保持生成内容适配",
+      "depends_on": [
+        "H03"
+      ],
+      "goal": "用户在画廊和市场中能预览组件并完成既有动作，生成内容遵循当前设计能力边界。",
+      "owned_files": [
+        "app/src/components/gallery/*、settings/components-gallery 与 admin/components 路由、admin/market.tsx",
+        "app/src/lib/copilot/generative-ui.ts 仅允许与迁移直接相关的描述校准；其他设计漂移记录为后续项",
+        "app/src/components/market/*、component-preview.tsx"
+      ],
+      "acceptance": [
+        "画廊列表、详情、预览表单/表格和市场现有筛选/详情/动作可用；不新增尚未批准的市场能力。",
+        "应用内 gallery 控件遵循 HeroUI 主题；原生表格/图表按必要性保留，不强制全部重写。",
+        "sandboxed generated UI 与 Craft 模板明确为独立文档/代码，不能假设可导入父应用 HeroUI 或读取 CSS token。",
+        "现有 generative UI guidance 与本次主题相关的变更有对比证据；不顺带扩展数据权限/执行能力。"
+      ],
+      "steps": [
+        "盘点画廊原生交互控件，迁移实际输入和动作。",
+        "覆盖市场现有可用行为、空态、拒绝和失败。",
+        "检查生成内容指导中与迁移直接冲突的描述，按范围记录或修正。"
+      ],
+      "produces": [
+        "画廊/市场迁移验收与生成内容能力说明"
+      ],
+      "verification": [
+        "已有 gallery/market/generative UI 测试；画廊表单与独立 iframe 浏览器检查"
+      ],
+      "source_acceptance": [
+        "A02",
+        "A03",
+        "A05",
+        "A07",
+        "A08"
+      ],
+      "estimate": [
+        0.5,
+        1
+      ],
+      "routes": [
+        "app/src/routes/_authed/admin/components/$name.tsx",
+        "app/src/routes/_authed/admin/components/index.tsx",
+        "app/src/routes/_authed/admin/market.tsx",
+        "app/src/routes/_authed/settings/components-gallery/$name.tsx",
+        "app/src/routes/_authed/settings/components-gallery/index.tsx"
+      ],
+      "ui": [],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h13.md",
+      "number": 456,
+      "github_id": 5924107123,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRqzcw",
+      "url": "https://github.com/1123786563/OpenBot/issues/456",
+      "native_contains": true,
+      "native_blocked_by": [
+        "H03"
+      ],
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 456,
+          "url": "https://github.com/1123786563/OpenBot/issues/456"
+        }
+      ],
+      "published_body_sha256": "57e5ce8512ad9b6b0de8ff22bab4aaa89ba15357c838c4cebce938ef1b072494"
+    },
+    {
+      "id": "H14",
+      "title": "移除 Base UI 底座并核对完整迁移覆盖",
+      "depends_on": [
+        "H04",
+        "H05",
+        "H06",
+        "H07",
+        "H08",
+        "H09",
+        "H10",
+        "H11",
+        "H12",
+        "H13"
+      ],
+      "goal": "公共控件统一由 HeroUI 承担，旧依赖与过渡样式的删除有完整证据。",
+      "owned_files": [
+        "app/package.json、Bun lockfile、styles/legacy bridge、components/ui 残留引用、迁移覆盖清单"
+      ],
+      "acceptance": [
+        "app/src 无 @base-ui/react import/re-export/类型引用，app 直接依赖移除；测试与类型不残留旧契约。",
+        "删除 shadcn/tailwind.css；shadcn CLI、tw-animate-css、cva 按实际使用决定，未使用才删除。",
+        "@shadcn/react 问卷/消息滚动、PromptArea/Streamdown/Recharts/Embla 保留有明确原因和主题兼容证据。",
+        "所有当前路由与公共 UI 文件都有唯一验收归属；新增/改名路由重新对账，不以旧清单掩盖遗漏。",
+        "依赖锁文件没有无关版本漂移；同环境 typecheck/build 通过并给出 JS/CSS gzip 对比。"
+      ],
+      "steps": [
+        "集成全部业务检查点并重新扫描生产/测试/CSS/锁文件。",
+        "按证据删除依赖和过渡适配，不删除仍被保留引擎使用的 token。",
+        "更新覆盖表和恢复说明，提交最终验收输入检查点。"
+      ],
+      "produces": [
+        "完整交付范围、删除证明、残留例外、最终性能测量"
+      ],
+      "verification": [
+        "全量 import/type/CSS 扫描；app typecheck/build；覆盖与包体对账"
+      ],
+      "source_acceptance": [
+        "A01",
+        "A02",
+        "A06",
+        "A09"
+      ],
+      "estimate": [
+        0.5,
+        1
+      ],
+      "routes": [],
+      "ui": [],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h14.md",
+      "number": 457,
+      "github_id": 5924107997,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRq23Q",
+      "url": "https://github.com/1123786563/OpenBot/issues/457",
+      "native_contains": true,
+      "native_blocked_by": [
+        "H04",
+        "H05",
+        "H06",
+        "H07",
+        "H08",
+        "H09",
+        "H10",
+        "H11",
+        "H12",
+        "H13"
+      ],
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 457,
+          "url": "https://github.com/1123786563/OpenBot/issues/457"
+        }
+      ],
+      "published_body_sha256": "3929a0ad9389ca6563e3f6d0689d96b349b9ea1e12438d39e25800185c0d14bb"
+    },
+    {
+      "id": "H15",
+      "title": "完成全流程、可访问性与独立审查交付验收",
+      "depends_on": [
+        "H14"
+      ],
+      "goal": "用同一代码检查点的测试、浏览器、Review 与 OCR 证明迁移完整可交付。",
+      "owned_files": [
+        "docs/verification 下本计划报告、截图、Review/OCR 与覆盖证据；验收人员不修改生产/测试源文件"
+      ],
+      "acceptance": [
+        "A01–A10 全部绑定实际检查点/哈希和证据；未判/环境阻塞不计通过。",
+        "按 ADR 0008 完成 native/driven/engine 覆盖对账，适用 typecheck/lint/build/test:ci 与 UI 路径通过。",
+        "亮暗×中英文代表页覆盖 1440×900、1280×720、390×844、320px 下限；检查 200% 缩放和 reduced-motion。",
+        "真实浏览器验证焦点/portal/IME/定位/滚动；普通文本 4.5:1、相关非文本 3:1，错误关联和图标按钮名称正确。",
+        "登录/聊天初始 JS gzip 与总 CSS gzip 超过基线 10% 时定位并评审绝对 KB 增量，不能无解释放行。",
+        "独立 reviewer 给出 Spec/质量两个结论，主控 OCR 覆盖原始 BASE..HEAD 加所有未提交交付范围，无有效 critical/high/medium。",
+        "缺陷退回对应业务 Issue 或编号修复计划，由正确角色实施再复验；保存回退点与持久证据后才关闭父 Issue。"
+      ],
+      "steps": [
+        "读取全部有效验证证据，只补缺失范围，运行集成验收。",
+        "按实际快照派发只读 reviewer 并执行 OCR，核实发现后走独立修复与复审。",
+        "核对最终 diff、例外、性能与恢复记录，形成交付报告。"
+      ],
+      "produces": [
+        "完整验收、Review/OCR、差异与回退报告"
+      ],
+      "verification": [
+        "ADR 0008 native/driven/engine 命令及 test:ci；app typecheck/build 与变更 lint；完整范围 OCR"
+      ],
+      "source_acceptance": [
+        "A01",
+        "A02",
+        "A03",
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10"
+      ],
+      "estimate": [
+        1,
+        2
+      ],
+      "routes": [],
+      "ui": [],
+      "owner_role": "frontend_validator（只读验证）；主控编排 Review/OCR",
+      "validator_role": "frontend_validator",
+      "reviewer_role": "reviewer",
+      "status": "pending-design-review",
+      "file": "docs/tickets/heroui-migration/issues/h15.md",
+      "number": 458,
+      "github_id": 5924108937,
+      "node_id": "I_kwDOVCA0Ss8AAAABYRq6iQ",
+      "url": "https://github.com/1123786563/OpenBot/issues/458",
+      "native_contains": true,
+      "native_blocked_by": [
+        "H14"
+      ],
+      "source_issues": [
+        {
+          "repository": "1123786563/OpenBot",
+          "number": 458,
+          "url": "https://github.com/1123786563/OpenBot/issues/458"
+        }
+      ],
+      "published_body_sha256": "b7b5aebbdf0c0fe1ae8902e535c8d794a5288d0d938ad355cea3fd2991377c24"
+    }
+  ],
+  "route_count": 88,
+  "ui_count": 26,
+  "policy": "contains 不等于 depends_on；默认串行实施；审批后才进入实施；当前不添加 ready-for-agent",
+  "components": [
+    {
+      "file": "app/src/components/admin/admin-sidebar.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/admin/billing-cleanup-execution-card.tsx",
+      "owner": "H08",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/admin/model-billing-paths.tsx",
+      "owner": "H05",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/agents/abstract-avatar.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/agents/agent-card.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/agents/agent-profile.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/agents/callback-token-panel.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/agents/create-agent-dialog.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/agents/handoff-panel.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/agents/orb/agent-orb.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/agents/orb/ai-core.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/agents/proposed-bot.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ai-observability/admin-summary.tsx",
+      "owner": "H12",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ai-observability/dataset-detail.tsx",
+      "owner": "H12",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ai-observability/datasets-list.tsx",
+      "owner": "H12",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ai-observability/evaluations-page.tsx",
+      "owner": "H12",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ai-observability/experiment-comparison.tsx",
+      "owner": "H12",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ai-observability/experiment-results.tsx",
+      "owner": "H12",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ai-observability/experiments-section.tsx",
+      "owner": "H12",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ai-observability/exports-status.tsx",
+      "owner": "H12",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ai-observability/placeholder.tsx",
+      "owner": "H12",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ai-observability/run-detail.tsx",
+      "owner": "H12",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ai-observability/run-steps.tsx",
+      "owner": "H12",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ai-observability/runs-list.tsx",
+      "owner": "H12",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ai-observability/state-notice.tsx",
+      "owner": "H12",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/app-sidebar/app-sidebar.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/app-sidebar/channel-item-content.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/app-sidebar/channel-pagination.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/app-sidebar/channel.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/approvals/bot-rules.tsx",
+      "owner": "H07",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/approvals/inline-approval.tsx",
+      "owner": "H07",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/approvals/rules.tsx",
+      "owner": "H07",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/approvals/settings.tsx",
+      "owner": "H07",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/approvals/shared-use-requests.tsx",
+      "owner": "H07",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/approvals/team-settings.tsx",
+      "owner": "H07",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/approvals/waiting.tsx",
+      "owner": "H07",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/auth/provider-logo.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/billing/admin-credit-grant.tsx",
+      "owner": "H08",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/billing/consumption-table.tsx",
+      "owner": "H08",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/billing/credit-bar.tsx",
+      "owner": "H08",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/billing/credit-grant-list.tsx",
+      "owner": "H08",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/billing/invoice-status.tsx",
+      "owner": "H08",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/billing/orders-view.tsx",
+      "owner": "H08",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/billing/pager.tsx",
+      "owner": "H08",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/billing/personal-balance-card.tsx",
+      "owner": "H08",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/billing/plan-card.tsx",
+      "owner": "H08",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/billing/qr-code.tsx",
+      "owner": "H08",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/billing/upgrade-dialog.tsx",
+      "owner": "H08",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/billing/usage-credits-view.tsx",
+      "owner": "H08",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/billing/welcome-banner.tsx",
+      "owner": "H08",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/bot-profile/access.tsx",
+      "owner": "H07",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/bot-profile/activity.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/bot-profile/attention.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/bot-profile/bot-subpage.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/bot-profile/manage.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/bot-profile/pause-banner.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/bot-profile/profile.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/bot-profile/settings-rows.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/bot-profile/setup.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/bot-profile/sharing.tsx",
+      "owner": "H07",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/bots/bot-roster.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/avatar.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/browser-activity.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/channel-chat.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/chat-transcript.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/composer/attachment-strip.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/composer/collapse.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/composer/composer.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/composer/dictation-controls.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/composer/rejected-files.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/conversation-view.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/group-chat.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/group-people.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/recipient-field.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/team-bot-consent.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/tool-boundary.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/tool-line.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/voice-call-widget.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/voice-chat-card.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/workshop-artifacts.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/workshop-files.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/workshop-panel.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/workshop-schedules.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/workshop-share.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/workshop-turn.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/channels/workshop-usage.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/component-preview.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/computer/activity-log.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/computer/command-output.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/computer/computer-controls.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/computer/computer-panel.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/computer/computer-view.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/computer/demonstration-recorder.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/computer/desktop-illustration.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/computer/handoff-resume-notice.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/computer/live-screen.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/computer/placeholder.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/attachment-input.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/chat-panel.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/composer.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/message/plan.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/message/text.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/message/thinking.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/message/tool-call.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/message/transcript-entry.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/output-panel/artifacts-tab.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/output-panel/files-tab.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/output-panel/index.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/output-panel/preview-tab.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/sandbox-status-indicator.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/scheduled-task-editor.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/session-sidebar.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/subagent-view.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/craft/tool-cards/diff-body.tsx",
+      "owner": "H11",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/delivery/reaching-you.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/gallery/activity.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/gallery/cards.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/gallery/charts.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/gallery/decisions.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/gallery/form.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/gallery/frame.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/gallery/preview.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/gallery/quote.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/gallery/refused.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/gallery/table.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/icons/waveform.tsx",
+      "owner": "H14",
+      "disposition": "audit-and-retain"
+    },
+    {
+      "file": "app/src/components/knowledge/upload-tasks-panel.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/layout/detail-panel.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/layout/page-shell.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/layout/page-skeletons.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/layout/row-mark.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/layout/self-host-banner.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/layout/sidebar-shell.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/layout/sidebar-toggle.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/layout/skip-to-content.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/layout/stagger.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/market/connectors-pane.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/market/experts-pane.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/market/my-experts-view.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/market/skills-pane.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/market/wb.tsx",
+      "owner": "H13",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/memory/memories.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/memory/sources.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/passwords/sign-in-form.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/plugins/account-mode-dialog.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/plugins/brokered-account-row.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/plugins/connection-fields.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/plugins/plugin-logo.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/plugins/shared-app-notice.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/plugins/shared-approval-fields.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/responsibilities/new-responsibility-dialog.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/responsibilities/responsibilities.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/responsibilities/responsibility-dialog.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/responsibilities/triggers.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/routines/routines-list.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/settings/background.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/settings/devices.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/settings/github-sources.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/settings/linked-accounts.test.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/settings/linked-accounts.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/settings/message-list-preference.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/settings/model-access-authorizations.tsx",
+      "owner": "H03",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/settings/model-picker.tsx",
+      "owner": "H03",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/settings/settings-sidebar.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/settings/standing-instructions.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/settings/update-routing.tsx",
+      "owner": "H04",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/skills/edit-skill.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/skills/new-skill.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/skills/proposed-skill.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/skills/skill-agents.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/skills/skill-fields.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/skills/skill-tools.tsx",
+      "owner": "H06",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/suggestions/proactive-panel.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/theme-provider.tsx",
+      "owner": "H02",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/bubble.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/button.tsx",
+      "owner": "H02",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/carousel.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/checkbox.tsx",
+      "owner": "H02",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/combobox.tsx",
+      "owner": "H03",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/context-menu.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/dialog.tsx",
+      "owner": "H03",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/dropdown-menu.tsx",
+      "owner": "H03",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/empty.tsx",
+      "owner": "H02",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/field.tsx",
+      "owner": "H02",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/input-group.tsx",
+      "owner": "H02",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/input.tsx",
+      "owner": "H02",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/item.tsx",
+      "owner": "H02",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/label.tsx",
+      "owner": "H02",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/live-waveform.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/message-scroller.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/message.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/questionnaire.tsx",
+      "owner": "H10",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/select.tsx",
+      "owner": "H03",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/separator.tsx",
+      "owner": "H02",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/sheet.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/sidebar.tsx",
+      "owner": "H09",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/skeleton.tsx",
+      "owner": "H02",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/switch.tsx",
+      "owner": "H02",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/textarea.tsx",
+      "owner": "H02",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    },
+    {
+      "file": "app/src/components/ui/tooltip.tsx",
+      "owner": "H03",
+      "disposition": "migrate-or-explicitly-retain-specialized-behavior"
+    }
+  ],
+  "publication_status": "published-awaiting-readback"
+}

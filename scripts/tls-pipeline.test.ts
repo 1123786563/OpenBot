@@ -250,14 +250,21 @@ describe("derive_preview_host (mirrors #361 parseTemplate)", () => {
     // this side must agree: the pre-fix `^:[0-9]+$` check crashed the sidecar
     // into an on-failure loop against a template the server accepts.
     ["https://{session}.x:", "ok|https|x"],
-    // fix-ocr19 #9 (two-口径一致, measured): WHATWG's domain-to-ASCII ACCEPTS
-    // empty interior labels (`a..b`) and boundary hyphens (`a-.b` —
-    // CheckHyphens is off), so the server's parseTemplate serves these bases
-    // (pinned server-side, craft-preview-origin.test.ts). This side's base
-    // regex already accepts both — the alignment is now pinned on both faces
-    // so a future tightening on one side flags the other.
-    ["https://{session}.a..b", "ok|https|a..b"],
+    // fix-ocr19 #9 (measured): WHATWG's domain-to-ASCII ACCEPTS empty
+    // interior labels (`a..b`) and boundary hyphens (`a-.b` — CheckHyphens
+    // is off), so both faces once pinned `a..b` ok. fix-ocr27 #2 tightened
+    // the SERVER side (degenerate wildcard); #415 closes the recorded
+    // deviation by refusing here too — LE would refuse the issuance on its
+    // own terms anyway. `a-.b` stays ok on both faces (pinned server-side,
+    // craft-preview-origin.test.ts).
+    ["https://{session}.a..b", "invalid"],
     ["https://{session}.a-.b", "ok|https|a-.b"],
+    // #415: a wildcard `*` label parses as a WHATWG hostname, so the server
+    // needed its own explicit refusal (parseTemplate, pinned server-side) —
+    // this side's base charset never admitted it, pinned here so a future
+    // regex loosening cannot reopen the divergence class.
+    ["https://{session}.*.example.com", "invalid"],
+    ["https://{session}.x.*.example.com", "invalid"],
   ];
   for (const [template, expected] of edges) {
     test(`F2 edge: ${JSON.stringify(template)} → ${expected.split("|")[0]}`, async () => {

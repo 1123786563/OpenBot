@@ -1,0 +1,38 @@
+{
+  "id": "825ad927-cedf-44a1-8b99-280e9269a2c9",
+  "ok": true,
+  "result": {
+    "runId": "run_68e96a7ff1c9",
+    "deliveryId": "delivery_66cdbc4d1184",
+    "messages": [
+      {
+        "id": "msg_ba9259ccfa51",
+        "run_id": "run_68e96a7ff1c9",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_6aa5ca90-3060-474b-8677-a0037ed165e7",
+        "to_handle": "run:run_68e96a7ff1c9",
+        "subject": "#406 验证 PASS",
+        "body": "只读复跑与 diff 审查全部通过：原生层 craft 6 套件 279/279、Bun 层 socket+hmr 53/53，与实现者回归声明一致。三条 AC 逐条核验成立——(1) mint 改 context.json(body,200,{no-store,no-referrer}) 三参形态、302 headers 增 referrer-policy:no-referrer，两条新测试断言实证，且 git show HEAD 静态核验两缺口在改动前真实存在（RED 可信）；(2) 日志脱敏经 grep 实证：产品三文件（webapp-proxy/preview-origin/preview-ticket）零 ticket+log 命中，测试文件 console 引用全为静音-恢复模式，票据值仅作构造兑换 URL 的必要输入；(3) docs/craft-preview-origin.md 新增头契约句与\"部署注意（#406）\"段（nginx  代替  或 map 掩码 ?ticket=）与实现逐字对应、技术准确。代码质量良好（产品侧仅 +3 行头、注释解释 why、断言打公共 seam），#415 遗留段（wildcard 拒绝、template/lib.sh/tls-pipeline）边界与报告声明一致未混淆；无遗留，结论 PASS。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_33c11918bfff\",\"dispatchId\":\"ctx_46cb9dcaa04d\",\"outcome\":\"succeeded\"}",
+        "created_at": "2026-10-19T12:45:57Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "64fe8217-e8c5-4ff7-a895-0f05852abcff",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

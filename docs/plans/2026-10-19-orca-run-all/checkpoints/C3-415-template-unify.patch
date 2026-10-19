@@ -1,0 +1,150 @@
+diff --git a/docker/compose/certs/lib.sh b/docker/compose/certs/lib.sh
+index 33e03f40..ae81257c 100755
+--- a/docker/compose/certs/lib.sh
++++ b/docker/compose/certs/lib.sh
+@@ -270,14 +270,22 @@ derive_preview_host() {
+     printf 'invalid|%s\n' "$usage"
+     return 1
+   fi
+-  # fix-ocr19 #9 (measured alignment, recorded): this regex ACCEPTS empty
+-  # interior labels (`a..b`) and boundary hyphens (`a-.b`) — and so does the
+-  # server: WHATWG's domain-to-ASCII takes both (UTS 46 CheckHyphens is off),
+-  # so parseTemplate serves those templates. The sidecar therefore KEEPS the
+-  # lax form — a stricter regex here would crash-loop the sidecar against a
+-  # template the server serves. The agreement is pinned on both faces
+-  # (scripts/tls-pipeline.test.ts and server/tests/craft-preview-origin.test.ts,
+-  # the two `a..b`/`a-.b` golden cases); tightening either side updates both.
++  # fix-ocr19 #9 measured that this regex ACCEPTS empty interior labels
++  # (`a..b`) and boundary hyphens (`a-.b`) — WHATWG's domain-to-ASCII takes
++  # both, and the server's parseTemplate once served them. fix-ocr27 #2
++  # tightened the server side (degenerate wildcards); #415 closes that
++  # recorded deviation by refusing empty labels here too — LE refuses such
++  # issuances on its own terms, so the only thing this drops is a doomed
++  # issuance attempt. `a-.b` stays accepted on both faces. Pinned on both
++  # faces (scripts/tls-pipeline.test.ts and
++  # server/tests/craft-preview-origin.test.ts); tightening either side
++  # updates both.
++  case "$base" in
++    *..*)
++      printf 'invalid|%s\n' "$usage"
++      return 1
++      ;;
++  esac
+ 
+   if [ "$scheme" = "http" ]; then
+     # fix-ocr18 #9: INVALID, matching the server's fix-ocr4 #9 refusal —
+diff --git a/scripts/tls-pipeline.test.ts b/scripts/tls-pipeline.test.ts
+index 7d4482c7..843f0172 100644
+--- a/scripts/tls-pipeline.test.ts
++++ b/scripts/tls-pipeline.test.ts
+@@ -250,14 +250,21 @@ describe("derive_preview_host (mirrors #361 parseTemplate)", () => {
+     // this side must agree: the pre-fix `^:[0-9]+$` check crashed the sidecar
+     // into an on-failure loop against a template the server accepts.
+     ["https://{session}.x:", "ok|https|x"],
+-    // fix-ocr19 #9 (two-口径一致, measured): WHATWG's domain-to-ASCII ACCEPTS
+-    // empty interior labels (`a..b`) and boundary hyphens (`a-.b` —
+-    // CheckHyphens is off), so the server's parseTemplate serves these bases
+-    // (pinned server-side, craft-preview-origin.test.ts). This side's base
+-    // regex already accepts both — the alignment is now pinned on both faces
+-    // so a future tightening on one side flags the other.
+-    ["https://{session}.a..b", "ok|https|a..b"],
++    // fix-ocr19 #9 (measured): WHATWG's domain-to-ASCII ACCEPTS empty
++    // interior labels (`a..b`) and boundary hyphens (`a-.b` — CheckHyphens
++    // is off), so both faces once pinned `a..b` ok. fix-ocr27 #2 tightened
++    // the SERVER side (degenerate wildcard); #415 closes the recorded
++    // deviation by refusing here too — LE would refuse the issuance on its
++    // own terms anyway. `a-.b` stays ok on both faces (pinned server-side,
++    // craft-preview-origin.test.ts).
++    ["https://{session}.a..b", "invalid"],
+     ["https://{session}.a-.b", "ok|https|a-.b"],
++    // #415: a wildcard `*` label parses as a WHATWG hostname, so the server
++    // needed its own explicit refusal (parseTemplate, pinned server-side) —
++    // this side's base charset never admitted it, pinned here so a future
++    // regex loosening cannot reopen the divergence class.
++    ["https://{session}.*.example.com", "invalid"],
++    ["https://{session}.x.*.example.com", "invalid"],
+   ];
+   for (const [template, expected] of edges) {
+     test(`F2 edge: ${JSON.stringify(template)} → ${expected.split("|")[0]}`, async () => {
+diff --git a/server/src/craft/preview-origin.ts b/server/src/craft/preview-origin.ts
+index c074ddca..dd4d20e4 100644
+--- a/server/src/craft/preview-origin.ts
++++ b/server/src/craft/preview-origin.ts
+@@ -568,6 +568,17 @@ function parseTemplate(raw: string): ParsedTemplate {
+       "must not contain underscores (they are not DNS label characters).",
+     );
+   }
++  // #415: a wildcard `*` parses into a WHATWG hostname (it is not a
++  // forbidden domain code point), so the probe alone never catches it — but
++  // `<label>.*.example.com` is a host no DNS zone spells, and the sidecar's
++  // derive_preview_host refuses the same template (its base charset never
++  // admits `*`), which is the fix-ocr18 #9 crash-loop divergence class in
++  // the serving direction. Neither face serves it.
++  if (probe.hostname.includes("*")) {
++    return refuse(
++      "must not contain a wildcard `*` label (e.g. {session}.*.example.com) — it is not a DNS name, and the certificate sidecar refuses it too.",
++    );
++  }
+   // The wildcard form serves the app at the origin's root (D3) — a template that
+   // carries a path or query would smuggle the basePath footgun back in.
+   if (probe.pathname !== "/" || probe.search !== "" || probe.hash !== "") {
+diff --git a/server/tests/craft-preview-origin.test.ts b/server/tests/craft-preview-origin.test.ts
+index 28beb308..4f36db9a 100644
+--- a/server/tests/craft-preview-origin.test.ts
++++ b/server/tests/craft-preview-origin.test.ts
+@@ -806,6 +806,36 @@ describe("preview origin admission", () => {
+     }
+   });
+ 
++  // ── #415: a wildcard `*` in the base is refused on both faces ────────────
++  //
++  // WHATWG's URL parser parses `*` into a hostname happily (it is not a
++  // forbidden domain code point), so before this pin parseTemplate served
++  // `https://{session}.*.example.com` and originFor minted
++  // `<label>.*.example.com` — a host no DNS zone spells and no certificate
++  // pipeline answers for, while the sidecar's derive_preview_host refuses
++  // the same template (its base charset never admits `*`) and crash-loops
++  // against an origin the server keeps serving (the fix-ocr18 #9 divergence
++  // class, the serving direction). The two faces now refuse it together.
++  test("#415: a wildcard `*` label in the base is refused — both faces, same verdict", () => {
++    for (const template of [
++      "https://{session}.*.example.com",
++      "https://{session}.x.*.example.com",
++    ]) {
++      const broken = originWith({ previewOriginTemplate: template });
++      const admission = broken.admission();
++      // RED: admission held ok before — `*` parsed and only the dot-count
++      // checks ran on the base.
++      expect(admission.ok).toBe(false);
++      if (!admission.ok) {
++        expect(admission.reason).toContain(
++          "OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE",
++        );
++      }
++      expect(() => broken.originFor(SESSION_ID)).toThrow();
++      expect(broken.handlesRequest(new Request("https://x.*.example.com/"))).toBe(false);
++    }
++  });
++
+   test("fix-ocr5 D: multi-label bases and exactly localhost stay ok", () => {
+     for (const template of [
+       "https://{session}.example.com",
+@@ -827,14 +857,11 @@ describe("preview origin admission", () => {
+     // new URL serves that template and the wildcard derivation in
+     // scripts/tls-pipeline.test.ts pins the SAME base as ok — the two faces
+     // agree on it. Empty interior labels (`a..b`) were pinned ok on both
+-    // faces by the same round; fix-ocr27 #2 tightens the SERVER side — they
++    // faces by the same round; fix-ocr27 #2 tightened the SERVER side — they
+     // mint degenerate wildcards and (for a `..localhost` base) bypass the
+-    // localhost claim narrowing — so the server now refuses what the sidecar
+-    // still accepts. That is a RECORDED lockstep deviation in the sidecar's
+-    // laxer direction, the same category as fix-ocr5 D's single-label base:
+-    // harmless because the server's gate refuses first (no address, no
+-    // serving origin exists to certify for), and LE would refuse an empty
+-    // label on its own terms anyway.
++    // localhost claim narrowing — and #415 closed that recorded deviation
++    // by refusing them on the sidecar too (a doomed LE issuance was all the
++    // laxer face ever bought).
+     const ok = originWith({ previewOriginTemplate: "https://{session}.a-.b" });
+     expect(ok.admission().ok).toBe(true);
+     expect(ok.originFor(SESSION_ID)).toMatch(/^https?:\/\/[0-9a-f]{20}\./);

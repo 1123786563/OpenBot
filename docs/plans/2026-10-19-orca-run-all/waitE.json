@@ -1,0 +1,38 @@
+{
+  "id": "07d315e2-b286-44d0-bf4f-6e0e3eeaca31",
+  "ok": true,
+  "result": {
+    "runId": "run_68e96a7ff1c9",
+    "deliveryId": "delivery_2f810f75e858",
+    "messages": [
+      {
+        "id": "msg_476f0cf16c6a",
+        "run_id": "run_68e96a7ff1c9",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_173bd935-d551-4c74-bd38-eb267affbd22",
+        "to_handle": "run:run_68e96a7ff1c9",
+        "subject": "[mt-M1] 五票全 BLOCKED-GAP：无等价实现，零改动",
+        "body": "逐张核验 #62/#63/#66/#67/#68（MT019/20/23/24/25）：五张的目标表面在 main 均为 pre-MT 的 per-person/channel 旧面，票面 Verification 文件全部不存在且无漂移等价实现（50 个 multitenancy 测试文件票号覆盖表不含此五票；bots-ownership.ts:61 与 conversation-actions.ts:52 明示推迟；路由全只 requireUser；五票 GitHub 零认领）。相邻已交付票 9 个测试文件单跑 282 pass/0 fail 实证了已交付周界为绿且不覆盖本批 AC。全部 BLOCKED-GAP 留专项派发（每张需迁移+判定+接线+测试，超 20 行阈值）；零代码改动。另发现 main 既有缺陷：MT112 锚点种子 ON CONFLICT(id) 撞 user_id 唯一索引致 corpus 顺序耦合 133 fail（单文件复测全绿），已写入报告建议并入 #399/#402 CI 修复线；报告在 worktree 根 ORCA-REPORT.md，容器与 mt011b 库保留。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_d9aef91502d1\",\"dispatchId\":\"ctx_41791797dcef\",\"outcome\":\"succeeded\",\"reportPath\":\"/Users/wuyongjun/orca/workspaces/OpenBot/mt011/ORCA-REPORT.md\"}",
+        "created_at": "2026-10-19T09:04:11Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "98e737fa-5a8a-4a69-b536-6512ec31db59",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

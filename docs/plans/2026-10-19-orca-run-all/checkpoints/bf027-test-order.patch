@@ -1,0 +1,14 @@
+diff --git a/server/tests/personal-credits-read.test.ts b/server/tests/personal-credits-read.test.ts
+index 0d2cb96e..cb5c4eca 100644
+--- a/server/tests/personal-credits-read.test.ts
++++ b/server/tests/personal-credits-read.test.ts
+@@ -390,8 +390,8 @@ describe("GET /api/billing/credits/summary answers the signed-in user's own acco
+       "consumed",
+       "enabled",
+       "expired",
+-      "reserved",
+       "reservations",
++      "reserved",
+       "unknown",
+     ]);
+     expect(Object.keys(body.grants as object[])).toHaveLength(3);

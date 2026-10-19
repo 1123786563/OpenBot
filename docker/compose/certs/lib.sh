@@ -270,14 +270,22 @@ derive_preview_host() {
     printf 'invalid|%s\n' "$usage"
     return 1
   fi
-  # fix-ocr19 #9 (measured alignment, recorded): this regex ACCEPTS empty
-  # interior labels (`a..b`) and boundary hyphens (`a-.b`) — and so does the
-  # server: WHATWG's domain-to-ASCII takes both (UTS 46 CheckHyphens is off),
-  # so parseTemplate serves those templates. The sidecar therefore KEEPS the
-  # lax form — a stricter regex here would crash-loop the sidecar against a
-  # template the server serves. The agreement is pinned on both faces
-  # (scripts/tls-pipeline.test.ts and server/tests/craft-preview-origin.test.ts,
-  # the two `a..b`/`a-.b` golden cases); tightening either side updates both.
+  # fix-ocr19 #9 measured that this regex ACCEPTS empty interior labels
+  # (`a..b`) and boundary hyphens (`a-.b`) — WHATWG's domain-to-ASCII takes
+  # both, and the server's parseTemplate once served them. fix-ocr27 #2
+  # tightened the server side (degenerate wildcards); #415 closes that
+  # recorded deviation by refusing empty labels here too — LE refuses such
+  # issuances on its own terms, so the only thing this drops is a doomed
+  # issuance attempt. `a-.b` stays accepted on both faces. Pinned on both
+  # faces (scripts/tls-pipeline.test.ts and
+  # server/tests/craft-preview-origin.test.ts); tightening either side
+  # updates both.
+  case "$base" in
+    *..*)
+      printf 'invalid|%s\n' "$usage"
+      return 1
+      ;;
+  esac
 
   if [ "$scheme" = "http" ]; then
     # fix-ocr18 #9: INVALID, matching the server's fix-ocr4 #9 refusal —

@@ -1,0 +1,38 @@
+{
+  "id": "223e5177-0f7b-44f4-81f4-4f168447c71f",
+  "ok": true,
+  "result": {
+    "runId": "run_68e96a7ff1c9",
+    "deliveryId": "delivery_b4c811cb26a5",
+    "messages": [
+      {
+        "id": "msg_b38981ea5af0",
+        "run_id": "run_68e96a7ff1c9",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_41c1a322-169b-4911-8e7e-8467f5b13096",
+        "to_handle": "run:run_68e96a7ff1c9",
+        "subject": "#415 独立验证 PASS：281+170+typecheck+biome 全绿，双侧校验一致，AC1-4 满足",
+        "body": "全部重跑实证（未沿用上回合残证，report.json 只覆盖 origin 112）：原生层 7 套件 281/281、Bun 层 tls-pipeline 117+socket 14+hmr 39=170/170、server tsc --noEmit exit 0、biome 改动文件 4 条发现与 HEAD 同构预存零新增；RED 前提用只读探针独立证实（new URL 接受 * 作 hostname；HEAD lib.sh 对 a..b 返回 ok、对 * 本就拒，分歧方向确为 server 收/sidecar 拒），工作区 lib.sh 探针 a..b/*→invalid、a-.b→ok|https|a-.b 双侧一致。Spec compliance：AC1 双侧同判（a..b/*双拒、a-.b双收，交叉 pin+探针双证）、AC2 * 三面拒绝测试全绿、AC3 sidecar 拒空 label 且 tls-pipeline pin invalid、AC4 接线闭环（tls-pipeline 在 e2e-bun-suites.json 由 bun-suites.test.ts 驱动、ci.yml:459 test:ci）逐条满足；票面「共享 golden fixture（JSON）」实现为交叉引用 pin，目标等价（任一侧漂移即红），报告已声明，接受为合理形态偏差。Code quality 良好：产品侧 server 4 行+lib.sh 6 行最小 diff、注释交代 why、测试走公共 seam、无范围外改动（craft-webapp-template.test.ts +5 行系 #413 遗留已声明）；唯一小出入是报告称 biome 7 条预存而我数到 4 条，计数口径差异非缺口。总体 PASS，无遗留。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_071c5612f540\",\"dispatchId\":\"ctx_0720c50b78da\",\"outcome\":\"succeeded\"}",
+        "created_at": "2026-10-19T12:22:05Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "afac197c-8343-48b7-b809-c1022e5d3fd9",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

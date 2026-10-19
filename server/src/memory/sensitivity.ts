@@ -97,7 +97,9 @@ const CREDENTIAL_PATTERNS: readonly RegExp[] = [
 
 /** Medical material, by the words that name it. A hospital's name alone is not one of them. */
 const MEDICAL_PATTERNS: readonly RegExp[] = [
-  /\bdiagnos\w*\b/i,
+  // -tics/-tic stay out on purpose: "diagnostics" is a high-frequency technical word
+  // ("works on the diagnostics team") that carries no medical claim by itself (#398 m3).
+  /\bdiagnos(?:is|e[sd]?|ing)\b/i,
   /\bchemo\w*\b/i,
   /\bradiotherap(?:y|ies)\b/i,
   /\bmedications?\b/i,

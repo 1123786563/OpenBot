@@ -1,0 +1,38 @@
+{
+  "id": "307b20df-571d-48fa-b822-34ca4b522c61",
+  "ok": true,
+  "result": {
+    "runId": "run_68e96a7ff1c9",
+    "deliveryId": "delivery_a64d1c44db3c",
+    "messages": [
+      {
+        "id": "msg_cd3442aec3da",
+        "run_id": "run_68e96a7ff1c9",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_e26464c6-c4b0-405b-9739-d1f188b0b2d2",
+        "to_handle": "run:run_68e96a7ff1c9",
+        "subject": "hs-H1 批次完成：#380 SATISFIED / #398 IMPLEMENTED",
+        "body": "#380 零改动 SATISFIED：2ce901b8 已在 main，用真实自托管实例（pinned 1.0.0，digest 与记录一致）实证全部 AC——loopback-only 8888/9999 未发布/数据 API 401 鉴权、网关 stand-in 证实模型调用唯一出口、backup.sh 实跑 retention 30d、verify-health 四态（service_up/gateway_down/config_noncompliant/service_down）全部 exit 0，29 个 hindsight 测试绿。#398 核验 medium×4 在 main 均未修，全部就地修复（IMPLEMENTED，产品侧 ~14 行）：flock 文案口径（flock-stub 演练）、bash -x 拒跑守卫（trace 0 机密）、diagnos 正则收窄（+2 反例测试）、health 交叉核对前移不再被 gateway_down 掩盖（+2 测试）；12 文件两层制 105 pass、hindsight 29 pass、tsc --noEmit 与 biome 全绿，改动未提交。遗留：票面 lows 全部未修（standin 四项、verify-health 原型链 in、readVersion 空 catch、backup 位数/SIGINT trap/无测试、store 归属 #384），留 Wave 2 专项。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_3638a9bef6dd\",\"dispatchId\":\"ctx_7b59b4d49814\",\"outcome\":\"succeeded\",\"filesModified\":[\"deploy/hindsight/backup.sh\",\"server/src/hindsight/health.ts\",\"server/src/memory/sensitivity.ts\",\"server/tests/hindsight-health.test.ts\",\"server/tests/memory-sensitivity.test.ts\",\"ORCA-REPORT.md\"],\"reportPath\":\"ORCA-REPORT.md\"}",
+        "created_at": "2026-10-19T09:07:59Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": true,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "21d46ece-048b-4c9d-82d8-224a59169de5",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

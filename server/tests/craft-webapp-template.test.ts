@@ -391,6 +391,11 @@ describe("AGENTS.md teaches the two-shape mount contract", () => {
     expect(agents).toContain("/<label>");
     expect(agents).toContain("apiUrl()");
     expect(agents).toContain("automatically");
+    // #413 AC3: the KNOWN bare-fetch behavior stays taught, not just the
+    // apiUrl() remedy — Next prefixes assets but never a raw fetch(), which
+    // resolves at the origin root and 404s beside the /<label> mount.
+    expect(agents).toContain("a raw `fetch()`");
+    expect(agents).toContain("404s beside");
     // The retired cwd foot-gun must stay gone from the guidance.
     expect(agents).not.toContain("resolveWebappBasePath");
   });
