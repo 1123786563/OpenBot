@@ -1,0 +1,399 @@
+{
+  "generatedAt": "2026-10-19T02:13:56.163Z",
+  "shapes": [
+    "group",
+    "directory",
+    "corpus"
+  ],
+  "manifestFiles": 455,
+  "judged": {
+    "group": 445,
+    "directory": 445,
+    "corpus": 445
+  },
+  "runs": {
+    "group": [
+      {
+        "batch": "agent-computer/tests",
+        "files": 4,
+        "judged": 4,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "agent-langgraph/tests",
+        "files": 4,
+        "judged": 4,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "agent-mastra/src",
+        "files": 1,
+        "judged": 1,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "agent-sandbox/tests",
+        "files": 3,
+        "judged": 3,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "app/src",
+        "files": 2,
+        "judged": 2,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "app/tests part 1",
+        "files": 24,
+        "judged": 23,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "app/tests part 2",
+        "files": 24,
+        "judged": 23,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "app/tests part 3",
+        "files": 24,
+        "judged": 23,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "app/tests part 4",
+        "files": 5,
+        "judged": 5,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "app/tests/ai-observability",
+        "files": 10,
+        "judged": 10,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "desktop/scripts",
+        "files": 1,
+        "judged": 1,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "scripts/processes.test.ts",
+        "files": 1,
+        "judged": 1,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "scripts/start-restart-guard.test.ts",
+        "files": 1,
+        "judged": 1,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "scripts/tls-pipeline.test.ts",
+        "files": 1,
+        "judged": 1,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "server/src",
+        "files": 1,
+        "judged": 1,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 1",
+        "files": 24,
+        "judged": 24,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 2",
+        "files": 24,
+        "judged": 24,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 3",
+        "files": 24,
+        "judged": 24,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 4",
+        "files": 24,
+        "judged": 24,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 5",
+        "files": 24,
+        "judged": 24,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 6",
+        "files": 24,
+        "judged": 24,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 7",
+        "files": 24,
+        "judged": 22,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 8",
+        "files": 24,
+        "judged": 24,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 9",
+        "files": 24,
+        "judged": 23,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 10",
+        "files": 24,
+        "judged": 23,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 11",
+        "files": 24,
+        "judged": 23,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 12",
+        "files": 24,
+        "judged": 24,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 13",
+        "files": 24,
+        "judged": 24,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 14",
+        "files": 24,
+        "judged": 22,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "server/tests part 15",
+        "files": 13,
+        "judged": 13,
+        "exit": 0,
+        "note": ""
+      }
+    ],
+    "directory": [
+      {
+        "batch": "agent-computer/tests",
+        "files": 4,
+        "judged": 4,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "agent-langgraph/tests",
+        "files": 4,
+        "judged": 4,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "agent-mastra/src",
+        "files": 1,
+        "judged": 1,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "agent-sandbox/tests",
+        "files": 3,
+        "judged": 3,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "app/src",
+        "files": 2,
+        "judged": 2,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "app/tests",
+        "files": 87,
+        "judged": 84,
+        "exit": 1,
+        "note": ""
+      },
+      {
+        "batch": "desktop/scripts",
+        "files": 1,
+        "judged": 1,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "scripts",
+        "files": 3,
+        "judged": 3,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "server/src",
+        "files": 1,
+        "judged": 1,
+        "exit": 0,
+        "note": ""
+      },
+      {
+        "batch": "server/tests",
+        "files": 349,
+        "judged": 342,
+        "exit": 1,
+        "note": ""
+      }
+    ],
+    "corpus": [
+      {
+        "batch": "all-driven",
+        "files": 455,
+        "judged": 445,
+        "exit": 1,
+        "note": ""
+      }
+    ]
+  },
+  "disagreements": [
+    {
+      "file": "app/tests/ai-observability-datasets.test.tsx",
+      "readings": {
+        "group": "green (28)",
+        "directory": "red (15/28)",
+        "corpus": "red (15/28)"
+      }
+    },
+    {
+      "file": "app/tests/ai-observability-experiments.test.tsx",
+      "readings": {
+        "group": "green (43)",
+        "directory": "red (11/43)",
+        "corpus": "red (11/43)"
+      }
+    },
+    {
+      "file": "app/tests/brokered-account-row.test.tsx",
+      "readings": {
+        "group": "green (43)",
+        "directory": "red (8/43)",
+        "corpus": "red (8/43)"
+      }
+    },
+    {
+      "file": "app/tests/transcript-attachments.test.tsx",
+      "readings": {
+        "group": "green (40)",
+        "directory": "red (1/40)",
+        "corpus": "red (1/40)"
+      }
+    },
+    {
+      "file": "server/tests/cleanup-rehearsal.integration.test.ts",
+      "readings": {
+        "group": "red (1/6)",
+        "directory": "green (6)",
+        "corpus": "red (1/6)"
+      }
+    },
+    {
+      "file": "server/tests/enterprise-controls.integration.test.ts",
+      "readings": {
+        "group": "green (20)",
+        "directory": "red (1/1)",
+        "corpus": "red (1/1)"
+      }
+    },
+    {
+      "file": "server/tests/opik-retention.integration.test.ts",
+      "readings": {
+        "group": "green (33)",
+        "directory": "red (15/33)",
+        "corpus": "red (15/33)"
+      }
+    },
+    {
+      "file": "server/tests/policy-fanout.integration.test.ts",
+      "readings": {
+        "group": "green (7)",
+        "directory": "red (5/7)",
+        "corpus": "red (5/7)"
+      }
+    },
+    {
+      "file": "server/tests/run-built-agent-cancellation.test.ts",
+      "readings": {
+        "group": "green (8)",
+        "directory": "red (1/8)",
+        "corpus": "red (1/8)"
+      }
+    },
+    {
+      "file": "server/tests/voice-session-preview.integration.test.ts",
+      "readings": {
+        "group": "green (3)",
+        "directory": "red (1/1)",
+        "corpus": "red (1/1)"
+      }
+    },
+    {
+      "file": "server/tests/voice-summary-model.test.ts",
+      "readings": {
+        "group": "green (8)",
+        "directory": "red (2/8)",
+        "corpus": "red (2/8)"
+      }
+    }
+  ]
+}
