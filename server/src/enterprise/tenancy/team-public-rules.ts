@@ -84,7 +84,7 @@ export const TEAM_PUBLIC_ACTION_IDS = [
 export type TeamResourceAction = (typeof TEAM_PUBLIC_ACTION_IDS)[number];
 
 /** 依赖种类：与 MT009 迁移的 CHECK 同域。 */
-export type ResourceDependencyKind = "model" | "credential" | "knowledge";
+export type ResourceDependencyKind = "model" | "credential";
 
 /**
  * 动作判定结果。
@@ -407,16 +407,6 @@ async function firstInvalidDependency(
         kind: row.dependency_kind as ResourceDependencyKind,
         ref: row.dependency_ref,
       };
-    }
-    if (row.dependency_kind === "knowledge") {
-      const [target] = (await tx.execute(sql`
-        select status from enterprise_resources
-        where tenant_id = ${tenantId} and id = ${row.dependency_ref}
-        limit 1
-      `)) as unknown as { status: string }[];
-      if (target?.status !== "active") {
-        return { kind: "knowledge", ref: row.dependency_ref };
-      }
     }
   }
   return null;

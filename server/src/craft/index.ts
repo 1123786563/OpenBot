@@ -38,7 +38,6 @@
 
 export {
   buildConnectableAppsList,
-  COMPANY_KNOWLEDGE_SECTION,
   type ConnectableApp,
   generateAgentInstructions,
 } from "./agent-instructions";
@@ -108,7 +107,6 @@ export {
   type CraftManagedContent,
   type CraftManagedContentResolver,
   type CraftManagedContentSources,
-  companySearchSkillAvailable,
   createCraftManagedContentResolver,
   MANAGED_SKILLS_DIR,
   type ManagedContentFileApi,

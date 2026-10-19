@@ -11,7 +11,6 @@ file, and the 2026-10-14 move of the optional stacks under `docker/compose/`.
 | --- | --- | --- |
 | `docker-compose.yml` (repo root) | `postgres`, `migrate`, `agent-computer`, `agent-sandbox`, `openbot-redis`, `spire-init` / `spire-server` / `spire-agent`, `supervisor`, `agent-bot`, `agent-harness` (profile `harness`), `agent-langgraph`, `agent-trpc`, `go-runtime` (profile `go-runtime`) | Always, first. `scripts/start.sh` drives this file. |
 | `docker-compose.override.yml` (repo root) | A port override for `agent-sandbox` only | Never invoked by hand: Compose's default discovery loads it beside the file above. |
-| `docker/compose/kb.yml` | `qdrant`, `kb-redis`, `docreader` | When the kb domain runs on the host (`server/src/kb`). |
 | `docker/compose/services.yml` | `casdoor`, `open-connector` | When `CASDOOR_OAUTH_*` is configured, or the self-hosted OpenConnector broker should run. |
 | `docker/compose/lago.yml` | `lago-redis`, `lago-pdf`, `lago-migrate`, `lago-api`, `lago-front`, `lago-worker`, `lago-clock` | When billing talks to Lago (`LAGO_API_URL`). |
 | `docker/compose/observability.yml` | `loki`, `tempo`, `prometheus`, `alloy`, `grafana`, `glitchtip` (+ its own postgres and redis) | When local telemetry is wanted — [observability.md](observability.md) is the guide. |
@@ -24,7 +23,6 @@ Run from the repository root, and pass `--project-directory .` for every file un
 
 ```sh
 docker compose up -d                                                     # the main stack
-docker compose --project-directory . -f docker/compose/kb.yml up -d
 docker compose --project-directory . -f docker/compose/services.yml up -d
 docker compose --project-directory . -f docker/compose/lago.yml up -d
 docker compose --project-directory . -f docker/compose/observability.yml up -d
@@ -37,7 +35,7 @@ interpolation `.env` is read (the repo root's), and what the `./docker/...` and 
 mount sources inside these files point at. With the flag, a file under `docker/compose/` resolves
 exactly as it did when it lived at the root — same mounts, same `.env`. Without it, the root `.env`
 is not read at all: Lago fails loudly on its missing `env_file`, GlitchTip loudly on its required
-`GLITCHTIP_SECRET_KEY`, and the kb stack quietly falls back to default ports.
+`GLITCHTIP_SECRET_KEY`.
 
 **Start the main stack first.** These files share the main project's `data` network and reach
 `postgres` by service name; cross-file `depends_on` is not a thing Compose resolves, so the restart
@@ -59,7 +57,6 @@ override named in `.env.example`.
 | Stack | Loopback ports |
 | --- | --- |
 | main | postgres 5432, agent-computer 4100, supervisor 4500→4300, agent-bot 4200, agent-langgraph 4201, agent-harness 4202 (picked), agent-trpc 4204, go-runtime 4203, agent-sandbox 4300 + 3011-3098, openbot-redis 6379 |
-| kb | qdrant 6333, kb-redis 6380, docreader 50051 |
 | services | casdoor 8000, open-connector 3100 |
 | lago | lago-api 48889, lago-front 48890 |
 | observability | grafana 3003, loki 3102, tempo 3200 (+ OTLP 4318/4317), prometheus 9090, alloy 12345, glitchtip 8001 |
@@ -108,8 +105,8 @@ toolchain, so installers override the `build` section away rather than relying o
 
 ### The databases on this postgres
 
-Four init scripts mount into the postgres entrypoint — `casdoor/init-db.sql`, `docker/lago/init-db.sql`,
-`docker/openconnector/init-db.sql`, `docker/kb-mastra/init-db.sql` — one login role and one database
+Three init scripts mount into the postgres entrypoint — `casdoor/init-db.sql`, `docker/lago/init-db.sql`,
+`docker/openconnector/init-db.sql` — one login role and one database
 each, so none of these tenants shares a schema with OpenBot's own tables. They are read-only and
 run once, on the first boot of a fresh data volume only; the volume this stack already runs on had
 them applied by hand, because init scripts never re-run against existing data.
@@ -166,10 +163,9 @@ the port is loopback-only. Nothing here touches the legacy deployment's bot regi
 
 ### The Redis instances
 
-Four Redis instances, named to stay unmistakable: `openbot-redis` (this stack — workshop turn locks
+Three Redis instances, named to stay unmistakable: `openbot-redis` (this stack — workshop turn locks
 and event fan-out, pure memory on purpose: persisting it would resurrect locks whose owner process
-is long gone), `kb-redis` (the kb ingest queue's persistence profile is BullMQ's, the opposite
-requirement), `lago-redis` and `glitchtip-redis` (each owned by the stack that names it).
+is long gone), `lago-redis` and `glitchtip-redis` (each owned by the stack that names it).
 
 ### The sandbox port range
 
@@ -179,19 +175,6 @@ server on the host probes/previews them through the gateway base, so the range p
 loopback exactly like the gateway port. `docker-compose.override.yml` narrows the range from
 3010-3100 to 3011-3098 because 3010 collides with the vite dev server. Keep the override, the
 `.env` start/end values and this note in step.
-
-### The knowledge base
-
-What the kb domain still needs from Docker is exactly three dependencies; the kb service itself
-runs on the host (`server/src/kb`, `bun run kb:dev`) and reaches them through the loopback ports
-(`QDRANT_URL`, `KB_REDIS_URL=redis://localhost:6380`, `DOCREADER_ADDR=localhost:50051`); a
-containerized caller reaches them by service name (`qdrant:6333`, `kb-redis:6379`,
-`docreader:50051`). `kb-redis` is separate from `openbot-redis` on purpose: the ingest queue wants
-persistence, the workshop cache must not have it. Qdrant is pinned to a version, not `latest`, and
-keeps its corpus on the `qdrant-data` volume — do not remove the volume or `docker rm` takes the
-corpus with it. Both healthchecks are TCP probes (`/dev/tcp`) because these images ship no wget or
-curl; the functional probes are the kb client's own startup self-checks. The kb_mastra database
-itself stays on the main stack's postgres.
 
 ### Casdoor and OpenConnector
 
@@ -232,5 +215,5 @@ forced because Django signs sessions with it; everything keeps seven days.
 ```sh
 bunx e2e run --config e2e.unit.config.ts tests/compose.test.ts
 docker compose config --quiet                                              # main (+ override)
-docker compose --project-directory . -f docker/compose/kb.yml config --quiet   # and the other three
+docker compose --project-directory . -f docker/compose/services.yml config --quiet  # and the other three
 ```

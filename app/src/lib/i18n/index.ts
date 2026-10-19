@@ -13,7 +13,6 @@ import common from "../../locales/en/common.json";
 import computer from "../../locales/en/computer.json";
 import craft from "../../locales/en/craft.json";
 import errors from "../../locales/en/errors.json";
-import knowledge from "../../locales/en/knowledge.json";
 import market from "../../locales/en/market.json";
 import nav from "../../locales/en/nav.json";
 import obsAdmin from "../../locales/en/obs-admin.json";
@@ -37,7 +36,6 @@ import zhCommon from "../../locales/zh-CN/common.json";
 import zhComputer from "../../locales/zh-CN/computer.json";
 import zhCraft from "../../locales/zh-CN/craft.json";
 import zhErrors from "../../locales/zh-CN/errors.json";
-import zhKnowledge from "../../locales/zh-CN/knowledge.json";
 import zhMarket from "../../locales/zh-CN/market.json";
 import zhNav from "../../locales/zh-CN/nav.json";
 import zhObsAdmin from "../../locales/zh-CN/obs-admin.json";
@@ -67,7 +65,6 @@ export const NAMESPACES = [
   "approvals",
   "routines",
   "skills",
-  "knowledge",
   "market",
   "errors",
   "tenant",
@@ -150,7 +147,6 @@ void i18next
         approvals,
         routines,
         skills,
-        knowledge,
         market,
         workshop,
         errors,
@@ -176,7 +172,6 @@ void i18next
         approvals: zhApprovals,
         routines: zhRoutines,
         skills: zhSkills,
-        knowledge: zhKnowledge,
         market: zhMarket,
         workshop: zhWorkshop,
         errors: zhErrors,

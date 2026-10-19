@@ -112,7 +112,6 @@ if (withOwners) {
     "",
     "> 派单口径：这个仓库的提交者 git identity 是同一个（`wuyj`），blame 只说明「谁最近改过它」，",
     "> 不代表责任波次；按套件区域派单更准 —— `server/tests/enterprise/*` 与 `server/tests/multitenancy/*`",
-    "> （多租户执行波次）、`server/src/kb/*` 与 `server/src/knowledge/*`（知识服务）、",
     "> `app/tests/ai-observability-*`（observability/T02）、`agent-sandbox/tests/*`（workshop 沙箱）。",
   );
 }

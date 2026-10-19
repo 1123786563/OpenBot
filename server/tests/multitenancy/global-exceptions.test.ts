@@ -168,7 +168,6 @@ describe("MT030 例外登记表：显式、封闭、每条带理由与责任人"
       ["GET", "/api/agents"],
       ["GET", "/api/bots"],
       ["GET", "/api/channels"],
-      ["POST", "/api/knowledge"],
       ["GET", "/api/memory"],
       ["GET", "/api/billing/orders"],
       ["GET", "/api/enterprise/conversations"],

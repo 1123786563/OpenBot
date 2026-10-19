@@ -62,7 +62,6 @@ export type SetupSessionWorkspaceInput = {
    */
   managedContent?: {
     connectableAppsSection: string;
-    companySearchSkillAvailable: boolean;
     /** The session owner's craft MCP set — same snapshot the reconcile compares against. */
     mcpServers?: readonly import("./opencode-config").CraftMCPServerConfig[];
   } | null;
@@ -134,8 +133,6 @@ export async function setupSessionWorkspace(
     organizationInstructions: input.organizationInstructions,
     connectableAppsSection:
       input.managedContent?.connectableAppsSection ?? null,
-    companySearchSkillAvailable:
-      input.managedContent?.companySearchSkillAvailable ?? false,
   });
   await api.writeFile(`${root}/AGENTS.md`, agentsMd);
 

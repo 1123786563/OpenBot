@@ -69,7 +69,7 @@ import { createCreditWriter } from "./credits-writer";
  *   call the rehearsal successful if the ledger arithmetic comes back insane.
  *
  * Write discipline: the program deletes ONLY the twelve legacy billing tables' guarded rows.
- * Users, bots, sessions, knowledge-base objects and every other application table are outside
+ * Users, bots, sessions and every other application table are outside
  * its vocabulary entirely (21.5's estate wall). `runCleanupRehearsal` chains the drills into
  * one reviewable rehearsal report (rollback verification, deletion counts, retention counts,
  * post-state verification, accounting smoke) for 21.7 to consume.

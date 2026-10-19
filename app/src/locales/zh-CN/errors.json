@@ -123,9 +123,6 @@
   "identityProviders": {
     "load": "无法加载身份提供方"
   },
-  "knowledge": {
-    "service": "知识服务出错。"
-  },
   "learning": {
     "loadSettings": "无法加载学习设置。",
     "loadStatus": "无法加载学习状态。",

@@ -7,10 +7,5 @@ channels:
   - id: risk-and-compliance
     name: Risk & Compliance
     description: Investigate policies, transaction monitoring, and control evidence.
-    permitted_agents: [knowledge, risk-analyst]
+    permitted_agents: [risk-analyst]
     allowed_groups: [risk, compliance]
-  - id: company-knowledge
-    name: Company Knowledge
-    description: Find authorized answers from company documents.
-    permitted_agents: [knowledge]
-    allowed_groups: [all]

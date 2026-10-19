@@ -51,8 +51,8 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  *   deleted/retained/quarantined counts, a recovery method (every deleted row captured whole in
  *   the receipt), and the admin read route answers it to an administrator and nobody else.
  * - AC-3 (protected surfaces unchanged): company history, personal records, the unknown_owner
- *   quarantine and the application objects (users, sessions, agents, knowledge bases and their
- *   documents) are byte-identical before and after execution.
+ *   quarantine and the application objects (users, sessions, agents) are
+ *   byte-identical before and after execution.
  * - AC-4 (accounting): the company and personal credit footprints are byte-identical after
  *   execution (no old balance copied into either account), a grant→reserve→settle smoke on the
  *   cleaned database passes, and a repeat run with the old authorization refuses — new data
@@ -131,9 +131,6 @@ const evidenceInput = {
 const protectedUserId = `b351-user-${run}`;
 const protectedSessionId = `b351-session-${run}`;
 const protectedAgentId = `b351-agent-${run}`;
-const protectedKbId = `b351kb-${run}-kb`;
-const protectedKnowledgeId = `b351kn-${run}-kn`;
-const kbTenant = `b351-tenant-${run}`;
 
 /** The twelve legacy tables, in the classification's fixed order — the invariance surface. */
 const LEGACY_TABLES = [
@@ -261,12 +258,6 @@ afterAll(async () => {
     .delete(sessions)
     .where(inArray(sessions.id, [protectedSessionId]));
   await database.delete(agents).where(inArray(agents.id, [protectedAgentId]));
-  await database.execute(
-    sql`DELETE FROM knowledges WHERE id = ${protectedKnowledgeId}`,
-  );
-  await database.execute(
-    sql`DELETE FROM knowledge_bases WHERE id = ${protectedKbId}`,
-  );
   await database.delete(users).where(inArray(users.id, [protectedUserId]));
   await database.$client.close();
 });
@@ -296,14 +287,6 @@ beforeAll(async () => {
     type: "built_in",
     configuration: {},
   });
-  await database.execute(sql`
-    INSERT INTO knowledge_bases (id, tenant_id, name, chunking_config, embedding_model_id)
-    VALUES (${protectedKbId}, ${kbTenant}, ${`b351 kb ${run}`}, '{}', 'b351-embedding')
-  `);
-  await database.execute(sql`
-    INSERT INTO knowledges (id, tenant_id, knowledge_base_id, type, title, embedding_model_id)
-    VALUES (${protectedKnowledgeId}, ${kbTenant}, ${protectedKbId}, 'manual', ${`b351 knowledge ${run}`}, 'b351-embedding')
-  `);
 
   // --- The legacy estate: customers and the explicit 02.2 mappings, one per key.
   for (const key of fixtureKeys) {
@@ -772,17 +755,9 @@ describe("AC-2/AC-3/AC-4: the authorized execution, its report and its receipt",
     const agent = await database.execute(
       sql`SELECT * FROM agents WHERE id = ${protectedAgentId}`,
     );
-    const kb = await database.execute(
-      sql`SELECT * FROM knowledge_bases WHERE id = ${protectedKbId}`,
-    );
-    const knowledge = await database.execute(
-      sql`SELECT * FROM knowledges WHERE id = ${protectedKnowledgeId}`,
-    );
     expect(user.length).toBe(1);
     expect(session.length).toBe(1);
     expect(agent.length).toBe(1);
-    expect(kb.length).toBe(1);
-    expect(knowledge.length).toBe(1);
     // And the report's own post-verification agrees, flag by flag: every deleted id is
     // gone, every retained record survived byte-identical, every protected surface hashed
     // equal.
@@ -796,8 +771,6 @@ describe("AC-2/AC-3/AC-4: the authorized execution, its report and its receipt",
         "users",
         "sessions",
         "agents",
-        "knowledge_bases",
-        "knowledges",
       ]),
     );
   });

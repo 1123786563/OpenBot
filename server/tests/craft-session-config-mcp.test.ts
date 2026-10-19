@@ -101,7 +101,6 @@ describe("setupSessionWorkspace with MCP servers", () => {
         agentsTemplate: "",
         managedContent: {
           connectableAppsSection: "No connectable apps available.",
-          companySearchSkillAvailable: false,
           mcpServers: [ACME],
         },
       },

@@ -22,7 +22,7 @@ import { evaluateCleanupRelations } from "./cleanup-relations";
  * precedence order —
  *
  * 1. The estate wall: only the twelve legacy billing tables may ever be named. Users, bots,
- *    sessions, knowledge-base objects and every other application table are refused before
+ *    sessions and every other application table are refused before
  *    any row is probed (existence cannot leak), and so is any row of a table the estate
  *    does not know (Q28: this cleanup is scoped to the legacy billing estate only).
  * 2. Candidacy: the fresh classification must name the record `confirmed_obsolete_test`.
@@ -527,12 +527,12 @@ export async function guardCleanupDeletion(
         });
 
       // Wall 1: the estate. Identity-level, before any row is probed — a table outside the
-      // estate (users, bots, sessions, knowledge base, everything else) is not the cleanup
+      // estate (users, bots, sessions, everything else) is not the cleanup
       // program's to name, and refusing it here cannot leak whether a row exists.
       if (!CLEANUP_ESTATE_TABLES.includes(target.table)) {
         refuse(
           "table_outside_cleanup_estate",
-          `table ${target.table} is outside the legacy billing estate: the cleanup program may only ever name [${CLEANUP_ESTATE_TABLES.join(", ")}] — users, bots, sessions, knowledge-base objects and every other application table are not deletable by this program, whatever recordId it is handed`,
+          `table ${target.table} is outside the legacy billing estate: the cleanup program may only ever name [${CLEANUP_ESTATE_TABLES.join(", ")}] — users, bots, sessions and every other application table are not deletable by this program, whatever recordId it is handed`,
         );
         continue;
       }
