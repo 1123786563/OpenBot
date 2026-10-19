@@ -1,5 +1,5 @@
 {
-  "generatedBy": "scripts/e2e-route-failures.mjs",
+  "generatedBy": "scripts/lib/e2e-manifest.mjs groupsOf() — regenerated so ISLANDS take effect for the driver",
   "groups": [
     {
       "name": "agent-computer/tests",
@@ -216,7 +216,6 @@
       "files": [
         "server/tests/billing-credits-consumption.integration.test.ts",
         "server/tests/billing-credits-summary.integration.test.ts",
-        "server/tests/billing-credits-writer.integration.test.ts",
         "server/tests/billing-reconcile.integration.test.ts",
         "server/tests/billing-store.integration.test.ts",
         "server/tests/billing-store.test.ts",
@@ -237,13 +236,13 @@
         "server/tests/channel-activity.integration.test.ts",
         "server/tests/channel-events.integration.test.ts",
         "server/tests/channel-routes.test.ts",
-        "server/tests/channel-summary.integration.test.ts"
+        "server/tests/channel-summary.integration.test.ts",
+        "server/tests/checkin-rewards.integration.test.ts"
       ]
     },
     {
       "name": "server/tests part 3",
       "files": [
-        "server/tests/checkin-rewards.integration.test.ts",
         "server/tests/cleanup-classification.integration.test.ts",
         "server/tests/cleanup-dry-run.integration.test.ts",
         "server/tests/cleanup-enumeration.integration.test.ts",
@@ -253,6 +252,7 @@
         "server/tests/cleanup-relations.integration.test.ts",
         "server/tests/code-run-store.test.ts",
         "server/tests/component-store.integration.test.ts",
+        "server/tests/composio-adapter.test.ts",
         "server/tests/composio-connection-kinds.test.ts",
         "server/tests/composio-connections.test.ts",
         "server/tests/computer-culler.integration.test.ts",
@@ -310,8 +310,6 @@
         "server/tests/gateway-credential.integration.test.ts",
         "server/tests/gateway-customer-provisioning.integration.test.ts",
         "server/tests/gateway-endpoint-config.integration.test.ts",
-        "server/tests/gateway-probe.integration.test.ts",
-        "server/tests/gateway-probe.test.ts",
         "server/tests/gateway-rate-version.integration.test.ts",
         "server/tests/gateway-readiness.integration.test.ts",
         "server/tests/group-conversations.integration.test.ts",
@@ -324,14 +322,14 @@
         "server/tests/identity-retire.integration.test.ts",
         "server/tests/identity-schema.integration.test.ts",
         "server/tests/identity-store.integration.test.ts",
-        "server/tests/intelligence-authentication.test.ts"
+        "server/tests/intelligence-authentication.test.ts",
+        "server/tests/jsonb-encoding.integration.test.ts",
+        "server/tests/key-drift-handling.test.ts"
       ]
     },
     {
       "name": "server/tests part 6",
       "files": [
-        "server/tests/jsonb-encoding.integration.test.ts",
-        "server/tests/key-drift-handling.test.ts",
         "server/tests/key-expiry.test.ts",
         "server/tests/key-issuance.integration.test.ts",
         "server/tests/key-renewal.test.ts",
@@ -353,14 +351,14 @@
         "server/tests/model-discovery-api.test.ts",
         "server/tests/model-preference.integration.test.ts",
         "server/tests/model-providers.test.ts",
-        "server/tests/model-scope.integration.test.ts"
+        "server/tests/model-scope.integration.test.ts",
+        "server/tests/multitenancy/acceptance-harness.test.ts",
+        "server/tests/multitenancy/admin-separation.test.ts"
       ]
     },
     {
       "name": "server/tests part 7",
       "files": [
-        "server/tests/multitenancy/acceptance-harness.test.ts",
-        "server/tests/multitenancy/admin-separation.test.ts",
         "server/tests/multitenancy/billing-visibility.test.ts",
         "server/tests/multitenancy/bot-publish.test.ts",
         "server/tests/multitenancy/bots-ownership.test.ts",
@@ -382,14 +380,14 @@
         "server/tests/multitenancy/legacy-anchor.test.ts",
         "server/tests/multitenancy/membership-model.test.ts",
         "server/tests/multitenancy/migration-tool.test.ts",
-        "server/tests/multitenancy/not-found-semantics.test.ts"
+        "server/tests/multitenancy/not-found-semantics.test.ts",
+        "server/tests/multitenancy/oauth-state.test.ts",
+        "server/tests/multitenancy/openmuse-private-bot.test.ts"
       ]
     },
     {
       "name": "server/tests part 8",
       "files": [
-        "server/tests/multitenancy/oauth-state.test.ts",
-        "server/tests/multitenancy/openmuse-private-bot.test.ts",
         "server/tests/multitenancy/openmuse-tasks.test.ts",
         "server/tests/multitenancy/payer-accounts.test.ts",
         "server/tests/multitenancy/people-lifecycle.test.ts",
@@ -411,14 +409,14 @@
         "server/tests/multitenancy/sso-scim-config.test.ts",
         "server/tests/multitenancy/startup-checks.test.ts",
         "server/tests/multitenancy/startup-defaults.test.ts",
-        "server/tests/multitenancy/team-public-rules.test.ts"
+        "server/tests/multitenancy/team-public-rules.test.ts",
+        "server/tests/multitenancy/vendor-billing.test.ts",
+        "server/tests/multitenancy/workspace-scope.test.ts"
       ]
     },
     {
       "name": "server/tests part 9",
       "files": [
-        "server/tests/multitenancy/vendor-billing.test.ts",
-        "server/tests/multitenancy/workspace-scope.test.ts",
         "server/tests/offboarding-retirement.integration.test.ts",
         "server/tests/openmuse-activity.test.ts",
         "server/tests/openmuse-deletion.test.ts",
@@ -440,14 +438,14 @@
         "server/tests/opik-deployment.test.ts",
         "server/tests/opik-execution-billing.integration.test.ts",
         "server/tests/opik-execution-billing.test.ts",
-        "server/tests/opik-execution-boot.integration.test.ts"
+        "server/tests/opik-execution-boot.integration.test.ts",
+        "server/tests/opik-execution-boot.test.ts",
+        "server/tests/opik-execution-runner.test.ts"
       ]
     },
     {
       "name": "server/tests part 10",
       "files": [
-        "server/tests/opik-execution-boot.test.ts",
-        "server/tests/opik-execution-runner.test.ts",
         "server/tests/opik-execution-wiring.test.ts",
         "server/tests/opik-executions.integration.test.ts",
         "server/tests/opik-executions.test.ts",
@@ -469,14 +467,14 @@
         "server/tests/opik-results.test.ts",
         "server/tests/opik-retention.integration.test.ts",
         "server/tests/opik-retention.test.ts",
-        "server/tests/opik-retrieval-summary.test.ts"
+        "server/tests/opik-retrieval-summary.test.ts",
+        "server/tests/opik-run-lifecycle.test.ts",
+        "server/tests/opik-run-steps.test.ts"
       ]
     },
     {
       "name": "server/tests part 11",
       "files": [
-        "server/tests/opik-run-lifecycle.test.ts",
-        "server/tests/opik-run-steps.test.ts",
         "server/tests/opik-runs-query.test.ts",
         "server/tests/opik-schema-barrel.test.ts",
         "server/tests/opik-scope.test.ts",
@@ -498,14 +496,14 @@
         "server/tests/payment-callback-ownership.integration.test.ts",
         "server/tests/payment-ordering-migration.integration.test.ts",
         "server/tests/payment-store.integration.test.ts",
-        "server/tests/people-last-sign-in.integration.test.ts"
+        "server/tests/people-last-sign-in.integration.test.ts",
+        "server/tests/people-paging.integration.test.ts",
+        "server/tests/personal-credits-read.test.ts"
       ]
     },
     {
       "name": "server/tests part 12",
       "files": [
-        "server/tests/people-paging.integration.test.ts",
-        "server/tests/personal-credits-read.test.ts",
         "server/tests/picked-harness-auth.test.ts",
         "server/tests/plan-credits-personal.integration.test.ts",
         "server/tests/plan-model.test.ts",
@@ -527,14 +525,14 @@
         "server/tests/qa-batch1-duplicate-paid.integration.test.ts",
         "server/tests/qa-batch1-payment-store.integration.test.ts",
         "server/tests/qa-batch1-replay-storm.integration.test.ts",
-        "server/tests/qa-batch2-cycle-config-qr.test.ts"
+        "server/tests/qa-batch2-cycle-config-qr.test.ts",
+        "server/tests/qa-batch2-t5-semantics.integration.test.ts",
+        "server/tests/qa-batch2-unreadable-fourth.integration.test.ts"
       ]
     },
     {
       "name": "server/tests part 13",
       "files": [
-        "server/tests/qa-batch2-t5-semantics.integration.test.ts",
-        "server/tests/qa-batch2-unreadable-fourth.integration.test.ts",
         "server/tests/qa-batch3-reconcile.test.ts",
         "server/tests/recovery-scan.integration.test.ts",
         "server/tests/recovery-unacked-replay.integration.test.ts",
@@ -556,14 +554,14 @@
         "server/tests/run-built-agent-cancellation.test.ts",
         "server/tests/runtime-agents.integration.test.ts",
         "server/tests/sandbox-state.test.ts",
-        "server/tests/sandboxed-components.integration.test.ts"
+        "server/tests/sandboxed-components.integration.test.ts",
+        "server/tests/sandboxed-publication.integration.test.ts",
+        "server/tests/server-side-tools.integration.test.ts"
       ]
     },
     {
       "name": "server/tests part 14",
       "files": [
-        "server/tests/sandboxed-publication.integration.test.ts",
-        "server/tests/server-side-tools.integration.test.ts",
         "server/tests/settle-conflict-grant-expiry.integration.test.ts",
         "server/tests/settle-idempotency.integration.test.ts",
         "server/tests/shared-brokered-routes.test.ts",
@@ -585,14 +583,14 @@
         "server/tests/tool-selection-environment-restoration.test.ts",
         "server/tests/trace-outbound.test.ts",
         "server/tests/unknown-hold-no-reclaim.integration.test.ts",
-        "server/tests/usage-outbox.integration.test.ts"
+        "server/tests/usage-outbox.integration.test.ts",
+        "server/tests/user-instructions.integration.test.ts",
+        "server/tests/user-preferences.integration.test.ts"
       ]
     },
     {
       "name": "server/tests part 15",
       "files": [
-        "server/tests/user-instructions.integration.test.ts",
-        "server/tests/user-preferences.integration.test.ts",
         "server/tests/voice-session-preview.integration.test.ts",
         "server/tests/voice-session-store.integration.test.ts",
         "server/tests/voice-summary-model.test.ts",
@@ -604,6 +602,19 @@
         "server/tests/workshop-preview.test.ts",
         "server/tests/workshop-schedule-executor.integration.test.ts",
         "server/tests/workshop-store.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/billing-credits-writer",
+      "files": [
+        "server/tests/billing-credits-writer.integration.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/gateway-probe",
+      "files": [
+        "server/tests/gateway-probe.integration.test.ts",
+        "server/tests/gateway-probe.test.ts"
       ]
     }
   ],

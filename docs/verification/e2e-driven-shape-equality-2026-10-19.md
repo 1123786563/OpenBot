@@ -131,3 +131,19 @@ Received protocol 'bun:'` 中止整轮收集。**分流的决定性证据是运�
 cause 字段时，引的就是运行器原文（`Received protocol 'bun:'` 两次中止整轮），不是静态推断。
 过度近似的代价只是把一个套件多留一层 Bun 执行，不会把真失败藏起来；反过来漏判的代价是整轮收集中止，
 所以入口跑（`bun run test` / `bun run test:ci`）本身就是这道盲区的兜底关卡。
+
+## 反向不一致的两条已经消掉一条、另一条定性为套件自身的顺序缺陷（03:30）
+
+`--shapes=group,corpus` 复测：**453 / 456 两种形状都有读数**（只剩 3 个 multitenancy/payment 文件因
+库名门禁拒绝运行）；不一致 27 条 = 24 条"切片绿、corpus 红"（一个进程挤 455 文件的污染，符合预期）
+\+ **2 条反向**：`billing-credits-writer.integration.test.ts`（切片红、corpus 绿）、
+`gateway-probe.integration.test.ts`（同）。两者单独跑都是 16/16、9/9 全过，所以切片内的邻居泄漏在造红。
+把它们按既有 ISLANDS 机制单独成组并重生成分组（`groupsOf` 写回 `e2e-bun-suites.json.groups`，
+驱动层读的就是这份存储的分组，改 ISLANDS 不重生成就**不生效**——这是本轮踩到的机制事实）：
+
+- `server/tests/gateway-probe`（2 文件）现在 **通过**：造出来的红消失了。
+- `server/tests/billing-credits-writer`（1 文件）仍红，但成因换成了可点名的产品侧缺陷：
+  `toEqual` 比较的两行只是**互换位置**（`cg-b6efbe9d…` 与 `cg-28ea949e…`），且它现在独占一组、
+  没有邻居——即该套件对数据库返回顺序有隐式依赖，属计费那一波要修的测试缺陷，不由我改绿。
+
+分组数因此从 30 变 32。

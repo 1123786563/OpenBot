@@ -42,7 +42,15 @@ export const SUITE_DIRS = [
  * group instead of sharing one, so a group's red means "this file is red", not "these files are red
  * together".
  */
-export const ISLANDS = ["ai-observability-"];
+export const ISLANDS = [
+  "ai-observability-",
+  // Measured, not guessed: both files are green run alone (16/16 and 9/9) and green in the
+  // one-process-for-the-whole-corpus shape, but red inside their 24-file slice — the neighbour that
+  // leaks process-wide state in that slice is what fails them. Their own group removes a failure the
+  // migration would otherwise be inventing.
+  "billing-credits-writer",
+  "gateway-probe",
+];
 
 export function readManifest() {
   const parsed = JSON.parse(readFileSync(MANIFEST, "utf8"));
