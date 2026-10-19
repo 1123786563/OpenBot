@@ -1,10 +1,38 @@
 import { existsSync, readFileSync } from "node:fs";
-import { SUITE_DIRS } from "./scripts/lib/e2e-manifest.mjs";
+import { spawnSync } from "node:child_process";
+import { join } from "node:path";
+import { LIVE_SUITES, SUITE_DIRS } from "./scripts/lib/e2e-manifest.mjs";
 import type { E2EConfig } from "e2e";
 
 // e2e 不读 .env；集成测试依赖 DATABASE_URL / OPENAI_* 等变量，显式加载一次。
 if (existsSync(".env")) {
   process.loadEnvFile(".env");
+}
+
+/*
+ * App suites import `@/lib/generated/application-config`, which `scripts/generate-app-config.ts`
+ * writes and git ignores. Locally `pretest` generated it before every run, so the corpus collected;
+ * the CI entry (`bun scripts/test-ci.ts`) and the `startup` job never call `pretest`, and a fresh
+ * checkout aborted at the first app file with `Cannot find package '@/lib'` — a red CI that executed
+ * zero tests while every local number looked honest. Generating here covers every entry through the
+ * one choke point the runner always loads, and only when the file is missing, so the generated
+ * artifact stays a build product rather than something a person has to remember.
+ */
+const generatedAppConfig = join(
+  import.meta.dirname,
+  "app/src/lib/generated/application-config.ts",
+);
+if (!existsSync(generatedAppConfig)) {
+  const generated = spawnSync(
+    "bun",
+    [join(import.meta.dirname, "scripts/generate-app-config.ts")],
+    { cwd: import.meta.dirname, encoding: "utf8" },
+  );
+  if (generated.status !== 0) {
+    throw new Error(
+      `cannot collect app suites without the generated app config: ${generated.stderr?.slice(0, 400)}`,
+    );
+  }
 }
 
 // 单元与集成套件跑在 tools-only target 上：没有 engine，因此不开浏览器、不调用模型。
@@ -60,7 +88,7 @@ const driven = (() => {
  * keeps its assertions intact: `bun run test:api` (or OPENBOT_LIVE_API=1) runs it against
  * OPENBOT_API_BASE_URL.
  */
-const LIVE = ["tests/e2e/api.e2e.test.ts"];
+const LIVE = LIVE_SUITES;
 const liveWanted = Boolean(process.env.OPENBOT_LIVE_API);
 
 export default {

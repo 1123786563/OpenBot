@@ -70,13 +70,22 @@ const exitStatus = await proc.exited;
 if (exitStatus !== 0) {
   process.exitCode = exitStatus;
   await writeStderr(`\n\`e2e run --config ${CONFIG}\` exited ${exitStatus}.\n`);
-} else {
+}
+/*
+ * These report gates used to sit in an `else` on the run's exit status, so the reconciliation between
+ * "the audit's bucket" and "what the runner actually collected" ran only on an already-green corpus.
+ * CI proved what that costs: the first run that executed the whole corpus (7936 tests, 176 known-red)
+ * printed its summary and exited without ever reaching the reconcile. A red suite is exactly when the
+ * coverage claim needs checking, so they now run for every exit status while the runner's own status
+ * still decides the exit code.
+ */
+{
   let report: Report | undefined;
   try {
     report = JSON.parse(readFileSync(resolve(REPORT), "utf8")) as Report;
   } catch {
     await writeStderr(
-      `\nNo readable ${REPORT} after a run that exited 0. Refusing to report a pass on a run that cannot be counted.\n`,
+      `\nNo readable ${REPORT} after a run that exited ${exitStatus}. Refusing to report a pass on a run that cannot be counted.\n`,
     );
     process.exitCode = 1;
   }

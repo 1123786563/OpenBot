@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const { SUITE_DIRS, readManifest } = await import(
+const { LIVE_SUITES, SUITE_DIRS, readManifest } = await import(
   join(root, "scripts/lib/e2e-manifest.mjs")
 );
 const reportPath = resolve(root, process.argv[2] ?? ".e2e/unit/report.json");
@@ -23,7 +23,12 @@ const SKIP = new Set([
   "coverage",
 ]);
 const m = readManifest();
-const excluded = new Set([...m.artifacts]);
+/*
+ * `LIVE_SUITES` is a named exclusion with its own entry point (`bun run test:api`), not a native file.
+ * This tool used to hand-copy that one path into ALLOWED_MISSING, so its native bucket read 598 while
+ * the audit said 597 — the same "two hand-written lists" drift the audit itself was fixed for.
+ */
+const excluded = new Set([...m.artifacts, ...LIVE_SUITES]);
 for (const e of JSON.parse(
   readFileSync(join(root, "docs/verification/e2e-known-broken.json"), "utf8"),
 ).entries ?? [])
@@ -72,7 +77,7 @@ missing.slice(0, 40).forEach((f) => {
  * sat "covered" while nothing ran them (docs/plans/2026-10-18-e2e-tester-army-migration-status.md,
  * the 10-19 04:07 section).
  */
-const ALLOWED_MISSING = new Set(["tests/e2e/api.e2e.test.ts"]);
+const ALLOWED_MISSING = new Set(LIVE_SUITES);
 const unlisted = missing.filter((f) => !ALLOWED_MISSING.has(f));
 if (unlisted.length) {
   console.error(

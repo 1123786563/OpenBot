@@ -326,14 +326,14 @@ CI 的 `test` job 自带两个数据库服务：`postgres`（镜像带 pgvector�
 
 | # | 标准 | 结论 | 证据 |
 | --- | --- | --- | --- |
-| 1 | 14 个目录里每个套件文件都由 e2e 调度或按名排除 | 过 | `node scripts/e2e-coverage-audit.mjs` → `no gaps`（10-19 03:06：1073 = 601 native / 456 driven / 10 engine / 6 exclusions）。核对面与运行器收集面共用 `scripts/lib/e2e-manifest.mjs` 导出的 `SUITE_DIRS`（此前是两份手写的同名清单，谁改谁漂移）；`git ls-files` 交叉核对：跟踪中的套件文件 1072 个，1062 在这 14 个目录内，剩下 10 个是 `archive/plans/multitenancy-execution/checkpoints/**` 的 before/after 证据副本（按定义不参与收集） |
+| 1 | 14 个目录里每个套件文件都由 e2e 调度或按名排除 | 过（覆盖声明另有一道"实际执行"对账） | `node scripts/e2e-coverage-audit.mjs` → `no gaps`（10-19 16:1x：1073 = **597 native / 460 driven / 10 engine / 6 具名排除**）。这两个数不再只是静态扫描的产物：`bunx e2e list --config e2e.unit.config.ts` 实收 597 个文件 / 7936 条用例，`bunx e2e list --config e2e.config.ts` 实收 10 个文件 / 28 条，**审计的 native 与 engine 两桶逐个对得上实际收集**。`node scripts/e2e-collection-reconcile.mjs <report.json>` 把审计桶与报告里真贡献过用例的文件比，零贡献只剩 `tests/e2e/api.e2e.test.ts`（`LIVE` 名单，由 `bun run test:api` 单独跑）；这一条以前是个假账——名单手抄在 `e2e.unit.config.ts` 里，审计只读驱动清单，于是那个文件被记成 native 覆盖而两个 config 都不收集它，现已单源成 `scripts/lib/e2e-manifest.mjs` 的 `LIVE_SUITES`。对账工具抓到过的真洞：`e2e.unit.config.ts` 曾只对 `app` 出 `.test.tsx` glob，`desktop/src` 三个 React 套件的 85 个注册点从未被任何入口收集——已放宽 glob 并按两层制分流到 Bun（`5def6c0d`）。核对面与收集面共用 `SUITE_DIRS`；`git ls-files` 交叉核对：跟踪中的套件文件 1072 个，1062 在这 14 个目录内，剩下 10 个是 `archive/plans/multitenancy-execution/checkpoints/**` 的 before/after 证据副本（按定义不参与收集） |
 | 2 | 没有任何测试入口还跑 `bun test` | 过（入口面按字面重查过一次） | 同一审计的 ENTRY-POINT 检查，且检查面已从"根 package.json 的 `test*` + workflow"扩到**每个 package.json 的每个脚本名**——按字面重查时抓到两处漏网：`agent-sandbox` 的 `test` 与 `server` 的 `kb:test` 还在 `bun test`。两者改为经根上新增的 `test:agent-sandbox` / `test:kb` 委派给 e2e，实测 `cd agent-sandbox && bun run test` 原生 41 条 + 驱动组 1 条全过，`bun run test:kb` **25 文件 / 319 条全过**（补齐 `KB_TEST_DATABASE_URL` 指向的 kb 库与 Qdrant 之后；那 4 条 env 错在旧入口上同样存在，CI 只声明了两个 postgres 服务）。`bun run test:ci` 仍是 ci.yml `test` job 那一步；入口实跑过：`bun run test` → `pretest` → `e2e run --config e2e.unit.config.ts`，合并后 main 走完 8175 条（7915 passed / 175 failed），打印汇总后自行退出 |
-| 3 | 收集不再被单个文件拖没 | 过（当时） | 19:24 / 21:21 两轮 `0 COLLECTION_ERROR`；新加套件由 `e2e-batch-drive-bun-test` 与分区循环兜住 |
+| 3 | 收集不再被单个文件拖没 | **过（CI 实测确认）**：run 39222407160 在真 runner 上跑完整个语料，0 条 COLLECTION_ERROR | 19:24 / 21:21 两轮 `0 COLLECTION_ERROR`；新加套件由 `e2e-batch-drive-bun-test` 与分区循环兜住。**但这一条在 CI 上复发了两次，且是两个不同根因**：① run 39219269815 之前的 `Cannot find package '@/lib'`（干净检出没有生成 `app/src/lib/generated/application-config.ts`，别名因此解析不了）——`29a9ff83` 把生成挪进 `e2e.unit.config.ts` 收集之前，**同一个 run 里 `@/lib` 已经不再出现**；② 同一个 run 剩下的唯一一条 `failed to collect server/tests/billing-period-fulfillment.integration.test.ts: … 'bun:'`，根因是这个新套件写在 Bun 层却没登记进驱动清单，而 native 收集是按清单成员排除的——本轮把它制备进清单，并让审计按"层名 + 清单"双判据把这类错层变成硬缺口（见文末 10-19 16:1x 一节）。本机复测：`bunx e2e list --config e2e.unit.config.ts` exit 0、597 文件 / 7936 条、`failed to collect` 与 `Only URLs` 各 0 条 |
 | 4 | 全量通过率被测出来并逐条归因 | 过（合并后又重测一次） | `.e2e/*/report.json` + `scripts/e2e-vs-bun.mjs` 的 `e2e-vs-bun*.json`，汇总见上。合并落地后的 main（10-19 00:0x）：入口 `bun run test` → **8175 条 = 7915 passed / 175 failed / 85 skipped，599 个文件里 31 红**（迁移前同入口 189 红），31 个红文件三档归因为 17 already-red-at-baseline / 12 red-on-old-runner-with-current-code / 1 runner-difference / 1 驱动层自身 |
 | 5 | 原生层不存在"迁移把它改红了"的条目 | 过（干净无并发的一轮重测判定） | 逐条 runner-difference 都已修或分流；合并后重测出的那唯一 1 条 `server/tests/workshop-preview.test.ts` 有名字上的根因（Node 的 undici `Response` 拒绝 1xx、Bun 允许，断言的是 101 透传），已按 ADR 0008 两层制送回 Bun 运行时并在清单里写明根因；`proxy.test.ts` 有 25/0 对 24/1 的证据 |
 | 6 | 驱动层的 verdict 等于旧运行器对同一文件的 verdict | 过（逐文件，不再只是分组级） | 三种进程形状同测（`scripts/e2e-driven-file-equality.mjs`，明细 `docs/verification/e2e-driven-file-equality.json`）：corpus＝迁移前入口真实形状（十四条路径过滤器挤一个进程）、directory＝每目录一进程、group＝驱动层切片。455 个清单文件里 **445 个三边都有读数**（其余 10 个任何形状都读不出 junit，记为 unmeasured 不算绿），逐文件不一致只有 **11 条**且每条都有名字：10 条"切片绿／大形状红"，单独重跑全部 alone 绿且用例数一致 → 旧入口那一个挤 455 文件的进程本来就把它们判红（兄弟污染），迁移去掉的是假红；1 条方向相反（`cleanup-rehearsal`：切片与 corpus 同为红、只在整目录里绿，邻居同跑 RED 4/58）→ 驱动层与迁移前真实形状一致且偏保守。另把 `server/tests/multitenancy/**` 的红钉成夹具门禁（`migrate-test.ts` 要求 `TEST_DATABASE_URL` 回环 + 库名 `openbot_enterprise_*`，CI 给的 `openbot_test` 过不了）。详见 `docs/verification/e2e-driven-shape-equality-2026-10-19.md` |
 | 7 | 引擎层（`tests/e2e/*.e2e.ts`，28 条）跑通过 | **未过** | 只验到收集。需要 app 起在 3010 与 `.env` 里那个 OpenAI 兼容端点（agent 驱动、花真钱、结果不完全确定），尚未获得启动许可 |
-| 8 | `bun run test` 绿 | **未过（红点已逐条归因，无一条无人认领）** | 最新一轮（10-19 03:59，34 组 + 按组 env + CI 等价夹具）：**7929 条 = 7696 passed / 176 failed / 57 skipped，597 个文件里 29 红**，驱动层 34 组中红组数见 `docs/verification/e2e-driven-shape-equality-2026-10-19.md`；与上一轮 180 相比 **-4**，因为 multitenancy 一族现在真的执行（单组 293 条 / 24 文件）而不是整族拒绝运行。红点全部归因到迁移之外的原因：该族自身 harness 的正控与预留库身份（`enterprise-test-db.ts` 的 guard 认它自己的命名）、计费一族的返回顺序隐式依赖、合并带进来的产品缺陷，以及逐条三档归因里 16 条迁移前就红 / 12 条现网代码在旧运行器上也红；`runner-difference` 仍为 0。这些红在旧运行器上同样复现，不由我改绿。
+| 8 | `bun run test` 绿 | **未过（红点已逐条归因，无一条无人认领）** | 最新一轮（10-19 03:59，34 组 + 按组 env + CI 等价夹具）：**7929 条 = 7696 passed / 176 failed / 57 skipped，597 个文件里 29 红**，驱动层 34 组中红组数见 `docs/verification/e2e-driven-shape-equality-2026-10-19.md`；与上一轮 180 相比 **-4**，因为 multitenancy 一族现在真的执行（单组 293 条 / 24 文件）而不是整族拒绝运行。红点全部归因到迁移之外的原因：该族自身 harness 的正控与预留库身份（`enterprise-test-db.ts` 的 guard 认它自己的命名）、计费一族的返回顺序隐式依赖、合并带进来的产品缺陷，以及逐条三档归因里 16 条迁移前就红 / 12 条现网代码在旧运行器上也红；`runner-difference` 仍为 0。这些红在旧运行器上同样复现，不由我改绿 **CI 侧同一件事第一次有了数**（run 39222407160 @ 33746fe7，PR #442）：`Test Files 27 failed | 553 passed | 17 skipped (597)`、`Tests 176 failed | 7686 passed | 74 skipped (7936)`，40 分钟跑完——这是本仓库的 CI **第一次真正执行迁移后的语料**；总数 7936 与本机 `e2e list` 完全一致，两侧对上了。（同轮还查出一个守门顺序缺陷，见文末 17:1x 一节。） |
 | 9 | `bun run typecheck` 绿 | 过（server 包本轮实测） | 合并残留的重复 `gateway?:` 声明已由别的波次清掉（`2cd7c130`），`server/src/config.ts` 现在只剩一处；`cd server && bun run build`（即 `tsc --noEmit`）退出码 0、无诊断输出。仓库整体 `bun run typecheck` 未再单独跑过，这里只声明 server 包这一档 |
 | 10 | 决策与约束进了 ADR / 文档 | 过 | ADR 0008 两节补充（标题即身份、分组不造 verdict、覆盖可对账）+ 本文 |
 
@@ -519,3 +519,380 @@ failed to collect app/tests/channel-order.test.ts: Cannot find package '@/lib' i
 修法是把"缺就生成"放进 `e2e.unit.config.ts`（运行器必经的咽喉点，同时覆盖 tests 与 startup 两个作业），
 并让生成脚本自己按需 `process.loadEnvFile()`。修复与验证在 **PR #442**（只含这 3 个文件，落在 origin/main
 之上——本地 main 还压着别的会话未推送的提交，我不代他们发布）。
+
+## 2026-10-19 补充：分层一致性守门——导入层必须和驱动清单对齐
+
+CI `tests` job 的报错是入口证据：
+
+```
+failed to collect server/tests/billing-period-fulfillment.integration.test.ts: Only URLs with a scheme in: file, data, and node … 'bun:'
+```
+
+`3ca32d49`（BP03 交付恢复）新增的这个套件本身写得很规矩——它 import 的是
+`tests/support/bun-test-compat`，也就是 Bun 层；但它没进 `docs/verification/e2e-bun-suites.json`。
+`e2e.unit.config.ts` 是**按清单成员**把驱动层文件从 native 收集里排除的，所以不在清单 = Node 收集它 =
+一条不可收集文件让整轮中止且一份报告都不出（ADR 0008 记过的那条硬约束）。
+
+审计为什么没拦住：它把 `support/(e2e-compat|bun-test-compat)` 合并成一个 `importsCompat` 判据，
+只有字面 `bun:test` 才算缺口——于是 Bun 层文件被算进 native 计数，`no gaps` 照样打印。
+这就是"覆盖要用实际执行对账"漏掉的那一类：静态扫描认了一个层名，没认清单。
+
+修法是把两层拆成 `bunLayer` / `e2eLayer` 并让清单参与判决，三条都进 `buckets.gap`：
+bun 层但不在清单（Node 收集会中止）、清单里却没有 bun 层（Bun 侧跑不起来）、
+清单里且 import 了 e2e 层（Bun 侧会撞 Node-only 的 `module.registerHooks`）。
+拆完第一轮它就精准命中那一个文件：
+
+```
+GAPS (1) — each one means the corpus is not fully accounted:
+  server/tests/billing-period-fulfillment.integration.test.ts (imports the bun:test layer, not driven → Node collection aborts the whole run)
+```
+
+然后把该文件制备进清单：`files` + `causes`（cause 记 `server/src/db/client.ts`，与同目录其余
+billing 集成套件同一个 Bun-only 来源——`server/src/db/client.ts` 才是 `import { SQL } from "bun"` 的那一个），
+用 `scripts/lib/e2e-manifest.mjs` 的 `writeManifest` 重算分组：459 → 460 个驱动文件、仍是 35 组、
+`server/tests part 2`–`part 13` 之间 11 个成员按字母序重新切片（分组是确定性的，不是随机重排）。
+清单差异经脚本核对：新增文件 1 个、移除 0 个、`files` 与 `groups` 并集仍相等。
+
+顺手补掉两个同源契约洞（都在同一批文件里，不是扩大范围）：
+
+1. `writeManifest` 以前不写 `directoryIslands`。驱动 `tests/bun-suites.test.ts` 读这个键决定给哪些组
+   下发 `MT_TEST_DATABASE_URL`；谁下一次重跑清单生成，多租户那一族就会静默回到共享 URL，
+   51 个套件在收集期全体 `relation … does not exist`。现在 `DIRECTORY_ISLANDS` 由 lib 直接落盘。
+2. `LIVE` 名单原来是 `e2e.unit.config.ts` 里的手写字面量。审计只读清单，于是
+   `tests/e2e/api.e2e.test.ts` 被记成 native 覆盖，而实际两个 config 都不收集它——它有自己的入口
+   `bun run test:api`（需活的部署）。现在 `LIVE_SUITES` 单源在 lib 里，config 与审计共用，
+   审计把它归入"具名排除"。
+
+本轮执行的度量（不是声明）：
+
+- `bunx e2e list --config e2e.unit.config.ts` → exit 0，597 个文件 / 7936 条用例，
+  `failed to collect` 0 条、`Only URLs with a scheme` 0 条。
+- `bunx e2e list --config e2e.config.ts`（engine 层）→ 10 个文件 / 28 条用例。
+- `node scripts/e2e-coverage-audit.mjs` → exit 0，
+  总账 1073 = 597 native + 460 driven + 10 engine + 6 具名排除；native 与 engine 两个数字
+  都和上面两次实际收集对得上。
+
+本轮两次自伤，留档免得再来一次：`join(root, rel)` 对已经是绝对路径的元素二次拼接，把审计跑崩在
+`ENOENT`（判据本来就该住在主分类循环里，不必重读文件）；数文件时用了
+`grep ' › ' | awk -F' › '{print $1}'`，把 e2e 折行的长标题数成 598 个"文件"——换成严格
+`^<path>\.(test|spec|e2e)\.(tsx|ts|mjs) › ` 复数仍是 597，两次 7936 一致。
+
+新驱动成员已经在 Bun 运行时下按两种形状实测过，不靠 CI 兜底：
+
+- 单文件：私有 Postgres（`127.0.0.1:55433/openbot_test`，先跑 `bun server/scripts/migrate.ts` 补到
+  `{"type":"migrations-applied","status":"ok"}`）**3 pass / 0 fail / 34 个断言**。要点是**没迁移前的
+  3 条红不是产品红**——两条是 `insert into "payment_orders" …` 的 Failed query（夹具落后于 main 的
+  迁移），一条是它带出来的 `toHaveLength(1) / 收到 0`；补完迁移就全绿。
+- 组形状（`E2E_BUN_ONLY="server/tests part 2" bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts`）：
+  e2e 侧 **1 条断言过、242 s、exit 0**；同一组 24 个文件直接 `bun test` 是 **418 条 = 407 pass / 11 fail**，
+  其中这个新文件的三条（`AC1: Lago landed…`、`AC2: a second paid order…`、`AC2/对账…`）在组进程里
+  **逐条 pass**。那 11 条邻居污染红按既有口径不算组失败（驱动对失败文件各自重跑，只有"独自也红"才算），
+  这条豁免不是本轮新造的，但它意味着"组绿"不等于"组形状下零红"——记账时分开看。
+
+## 2026-10-19 17:1x 补充：CI 第一次真跑语料，以及顺手查出的守门顺序缺陷
+
+`33746fe7` 的 run **39222407160** 是这条目标里等了很久的一步：CI 的 `tests` 作业**第一次真正执行迁移后的
+语料**，而不是在收集期退出。原文（`Run bun run test:ci`，08:24:44 → 09:04:01，约 40 分钟）：
+
+```
+1073 suite files in the 14 migrated directories · 597 native e2e · 460 driven by e2e (bun runtime) · 10 engine · 6 named exclusions
+no gaps: every suite file is scheduled by e2e, every test entry point runs e2e, and exclusions are named with a reason.
+Test Files  27 failed | 553 passed | 17 skipped (597)
+     Tests  176 failed | 7686 passed | 74 skipped (7936)
+```
+
+三点要用它替换掉之前的说法：
+
+1. **收集期零中止**。两轮 CI 中止（`@/lib` 与 `'bun:'`）的根因都已消失，`COLLECTION_ERROR` 0 条。
+2. **总数对上**：CI 的 7936 与本机 `bunx e2e list --config e2e.unit.config.ts` 的 7936 / 597 文件**逐一对齐**，
+   这是"干净检出与本机工作树等价"这件事第一次被数字证实（前一轮 CI 是零条，本机却全绿——那批绿数被
+   `pretest` 掩盖过，见上面 15:56 一节）。
+3. 176 条红是**既有红的执行值**，不是"迁移把它们改红了"：`runner-difference` 仍为 0，红文件的构成与
+   本机 29 红文件一轮同族（enterprise 那一族、kb 检索、tool-selection 等）。第 8 条因此仍是"未过"，
+   但从未过变成"有 CI 数的未过"。
+
+顺序缺陷是在读这份日志时发现的，不在测试里：`scripts/test-ci.ts` 把 report 之后的三个守门
+（`e2e-collection-reconcile`、`run.errors`、`MINIMUM_TESTS`）写在 **`if (exitStatus !== 0) … else { … }`
+的 else 分支**里。也就是说**只要语料是红的，CI 就永远不会做"审计桶 vs 实际收集"的对账**——而 176 条红的
+现状下，红才是常态。这轮日志正好证明了后果：它打印完汇总就退出，`Collection reconcile` 一行都没出现。
+修法是让三个守门对任何退出码都跑（`else {` 换成独立块，运行器自己的状态仍然决定最终退出码），
+并把"exited 0"那句读不/report 的措辞改成随退出码。意义不在于让它更早失败，而在于：
+**覆盖声明只有在语料红着的时候也接受实际执行对账，才不是可以被"反正现在不绿"绕过去的检查。**
+
+未定项照旧：第 7 条（引擎层 10 文件 / 28 条的运行时，需要起一次本地栈）；`+2` 原生层红点的
+Qdrant 残留状态解释还没做那一轮复现（方法在 `~/.cache/openbot-e2e/parked/plan-rows-2026-10-19.md`）。
+
+同一轮本机 `bun run test:ci`（合并 `295c0b89` 之后、私有 pgvector :55433 + MT 岛 :55434）跑出
+**7936 条 = 7686 passed / 178 failed / 72 skipped**，与 CI 的 **7936 = 7686 passed / 176 failed / 74 skipped**
+只差 2 条——passed 数完全相同，这 2 条就是先前登记的 `+2` 未定项（`qdrant/collections` 对共享 Qdrant 残留
+状态的依赖），它现在有了配对证据：**同一份代码、同一套用例，环境不同差 2 条，运行器不参与**。
+`node scripts/e2e-collection-reconcile.mjs .e2e/unit/report.json` 在同一份报告上给出
+**native bucket 597 · 实际执行 597 · 贡献为零的文件 0 · 执行了但不属于任何桶 0**，
+审计桶与 runner 报告第一次做到逐文件相等（这个对账本身此前被 `ALLOWED_MISSING` 里手抄的一行拖成
+598 vs 597，已改为共用 `LIVE_SUITES`）。
+
+## 2026-10-19 17:3x 补充：e2e 跑不了的语料要具名，具名还得能被证伪
+
+按文件清点 `git grep -lE 'from "bun:test"' HEAD -- '*.test.ts*'`：HEAD 里只剩 **11 个**文件还直接写
+`bun:test`，其中 1 个已在驱动清单，另外 10 个全是 `archive/plans/multitenancy-execution/checkpoints/**`
+的证据副本（在 14 个目录之外，任何入口都不收集）。**14 个目录内"未被任何桶认领"的套件文件是 0 个**——
+这一节要说的不是 JS 侧，而是 JS 之外。
+
+清点 CI 实际执行了什么，发现三个 e2e 之外的语料，并且**计划文档自己有一行是假的**：
+
+| 语料 | 文件数 | 谁在跑 | 事实 |
+|---|---|---|---|
+| `agent-*/tests`（pytest） | 38 | ci.yml `python harness regressions`，11 条 `python -m pytest … -q` | 跑，但不经 e2e |
+| desktop 的 Rust | 40 个 .rs | desktop.yml 两条 `cargo test --locked --lib …` | 跑，但不经 e2e |
+| `runtime-go` / `agent-trpc` | 18 个 `_test.go` | **没有任何 job 跑它们** | 本文第 44 行原写"CI 里也是独立 job"，`grep -rn 'go test' .github/workflows/` 零命中；ci.yml 只对 `go.mod`/`go.sum` 做哈希复核 |
+
+所以 Go 那一行**不能算"具名排除"，要算"具名缺口"**：这些测试既没迁移也没人执行。
+新增 `docs/verification/e2e-foreign-suites.json` 把三类都登记，字段 `invoked` 区分两种身份——
+`true` 是"跑但不经 e2e"，`false` 是"登记就是为了说没人跑"。
+
+审计加了一道 `FOREIGN RUNNERS` 关卡：扫每个 workflow 的每一行，凡命中
+`python -m pytest …` / `cargo test …` / `go test …` 都必须匹配清单里某条 `pattern`；
+反过来每条 `invoked: true` 的项若在 workflow 里再也匹配不到，也算缺口（边界动了要重新记账）。
+`invoked: false` 免除"必须被调用"这一半，否则 Go 那一条会被反向洗成绿。
+
+证伪过才敢用：把 pytest 那一条从清单里删掉再跑审计 →
+`FOREIGN RUNNERS (11)`、exit 1；还原 → exit 0。当前审计出口 0，四桶账不变
+（1073 = 597 native / 460 driven / 10 engine / 6 具名排除）。
+
+对目标口径的影响，说清楚不粉饰：**"所有的测试改成 tester-army / e2e"在 JS/TS 语料内成立**
+（逐文件对账：597 个桶文件 = 597 个实际执行文件，0 零贡献），**在 JS/TS 之外不成立**——
+pytest 与 Rust 是运行器限制导致的具名排除（e2e 没有 Python/ crates 引擎），
+Go 那 18 个文件是尚未处理的缺口。三条都没被"绿"掩盖：关卡会持续要求它们保持具名。
+
+### 引擎层的"被调度"也要有入口证据（10-19 17:3x）
+
+`tests/e2e/*.e2e.ts` 这 10 个文件 / 28 条一直记在 `engine` 桶里，读起来像"e2e 已经管着它们"。实测两件事：
+
+- `bunx e2e list`（**不带** `--config`）选出的就是这 10 个文件 / 28 条，与 `--config e2e.config.ts` 完全一致，
+  所以引擎层确实归 e2e 的默认配置管；
+- 但**没有任何 workflow 调用默认配置**：`.github/workflows/` 里 `e2e run` 的调用全部带
+  `--config e2e.unit.config.ts`，唯一的入口是 `bun run test:ui`（人跑，需活的部署）。
+
+也就是说第 7 条"未过"的真正含义不是"e2e 不会跑它们"，而是**没有作业调度它们**。审计因此新增
+`engine tier entry: … · scheduled by CI: no …` 一行，把"被收集"与"被执行"分开打印；并加了缺口规则
+（若 `package.json` 里再也没有不带 `--config …unit` 的 `e2e run`，引擎层就退化成无人收集的孤儿 → exit 1）。
+证伪做过：把 `test:ui` 两条命令都改成带 unit 配置 →
+`ENTRY-POINT GAPS (1) … no script invokes 'e2e run' without --config`、exit 1；还原 → exit 0。
+
+### CI 在 `929d1ef5` 上把这三件事一次验完（10-19 17:5x，run 39231751141）
+
+时间戳就是顺序证据（同一 job `tests`，09:41:26 → 10:00 后结束）：
+
+```
+09:42:27  1073 suite files … 597 native e2e · 460 driven · 10 engine …        # 审计过，FOREIGN 关卡没报缺口
+09:42:27  engine tier entry: bun run test:ui · scheduled by CI: no — …        # 引擎层"被收集 ≠ 被执行"落到 CI 日志上
+10:00:17  Test Files  27 failed | 553 passed | 17 skipped (597)
+10:00:17  ERROR: server/tests/multitenancy part 1: 37 of 293 tests failed across 16 files
+          ERROR: server/tests/multitenancy part 2: 45 of 149 tests failed across 22 files
+10:00:17  `e2e run --config e2e.unit.config.ts` exited 1.
+10:00:17  native bucket 597 · files e2e executed 597 · engine 10
+          native files that contributed NO test: 0
+          executed but in no bucket (expect the driver file): 0
+```
+
+三条结论各自对上一条此前只是推断的说法：
+
+1. **守门顺序修好了，而且是在真 runner 上看到的**：`exited 1` 之后紧接着就是三行 reconcile 输出。
+   上一轮（run 39222407160）这里是直接退出、一行不印；本机那次我用桩运行器（exit 1）证明了同一控制流，
+   现在 CI 自己复现了。**语料红着的时候也在做"审计桶 vs 实际执行"的逐文件对账。**
+2. **桶与执行逐文件相等**：597 = 597，零贡献 0，桶外执行 0（`engine 10` 由默认配置收集，但没有作业跑它——
+   就是第 7 条缺口的原话，现在印在 CI 日志里而不是只写在文档里）。
+3. **驱动层的红在 CI 上有名字**：multitenancy 两个组分别 37/293（16 文件）与 45/149（22 文件），
+   超过"独自重跑后仍红 >8 文件"的阈值而判组失败——这正是产品侧库名/预留库门禁那一族（多租户波次所有），
+   不是调度器的发明。`runner-difference` 仍为 0。
+
+### 引擎层运行时为什么本轮还没跑成（10-19 18:0x，用户已许可本机起栈）
+
+许可到手后先做了可行性探查，三个硬阻塞都是实测的，不是推测：
+
+1. **Casdoor 不在 compose 里**：`grep -nE '^  [a-z-]+:' docker-compose.yml` 的 service 清单是
+   postgres / migrate / agent-computer / agent-sandbox / openbot-redis / spire-{init,server,agent} /
+   supervisor / agent-bot / agent-harness(profile) / agent-langgraph / agent-trpc / go-runtime(profile)，
+   **没有 casdoor**。而 `tests/e2e/auth.setup.e2e.ts` 第一句就是"未登录访问会重定向到 Casdoor 登录页"，
+   用 admin/123 过 `:8000`、回调落 3001、回到 3010。探测结果 `:8000` 与 `:8001` 都 closed，`docker ps -a`
+   没有 casdoor 容器，本机也没有 `.env`（只有 `.env.example`）。顺带一条文档与事实不符：
+   `docs/compose.md:63` 写着"services | casdoor 8000, open-connector 3100"，本树 compose 没有这两个服务。
+2. **`postgres` 的发布端口会撞别人的实例**：`docker-compose.yml:24` 是
+   `127.0.0.1:${POSTGRES_PORT:-5432}:5432`，而本机 5432 正被别的会话的 `bf011-pg` 占用（本波次纪律是不动它），
+   所以要 `POSTGRES_PORT=<free>` 才能起，`scripts/start.sh:430` 的默认 `DATABASE_URL` 也随之要覆盖。
+3. **compose 走的是 `--build`**：`openbot-server` / `openbot-agent-*` 这些本地镜像要先构建，
+   `scripts/start.sh:298` 就是 `docker compose up -d --build`。
+
+结论：**缺 Casdoor 起栈，28 条会以"登录不过"整片红**，那种红没有判定价值（ADR 0008 补充三：环境断言要环境证据）。
+一次可解释的运行需要这四步，按顺序：① 起一个 Casdoor（本机没有服务定义，要按 `casdoor/app.conf` +
+`casdoor/init-db.sql` 自己准备，并把它的回调配到 3001）；② 用私有端口起 Postgres 并跑 `migrate`；
+③ `bash scripts/start.sh`（覆盖 `POSTGRES_PORT`、`DATABASE_URL`，并把 `OPENAI_BASE_URL` 指到死端口保证零调用）；
+④ `bunx e2e run --config e2e.config.ts`。端口探测结果：3000/3001/3002/3010/3011/3220/3221/4300/8000 当时全空闲，
+唯一被占的是 5432（别人的）。
+
+#### 18:1x 实际起过一次，把可达的边界测出来了（也留下一次事故）
+
+用户许可之后没有停在"估计起不来"，而是真起了一遍。已验证可行的部分：
+
+- `casbin/casdoor:latest` 本机已有；配置挂载点是 **`/conf`**（挂到 `/app/conf` 会被忽略并退回 MySQL 默认，
+  表现为 `dial tcp [::1]:3306`）。
+- 复用本波次私有实例 `ob-e2e-pg1`（`127.0.0.1:55433`）：`app.conf` 的 `dataSourceName` 把
+  `host=postgres port=5432` 换成 `host=host.docker.internal port=55433`；该实例超级用户是 **`openbot`**
+  而不是 `postgres`，`psql` 要 `-U openbot -d postgres` 才能建库建角色。
+- 按 `casdoor/init-db.sql` 建出独立 `casdoor` 库后 Casdoor 起来（`:8000` → 200）。首启必须加
+  **`initAdminPassword = 123`**，否则它提示内置 admin 没有密码，而 `auth.setup.e2e.ts` 用的就是 admin/123。
+  seed 出来的应用是 `built-in/app-built-in`（`client_id=67689b…`）且 `redirect_uris` 为空，
+  所以要么按文档"直接改 application 行"补回调，要么把 `.env` 的 client 对成这一对。
+- server 必须**在 `server/` 目录下起**：`tenant-package.ts:740` 读的是相对 cwd 的 `../examples/fintech/brand.yaml`，
+  从仓库根起会 ENOENT 退出。
+
+没跨过去的两步：`:3001` 已被另一个会话的 server 占着（见下），我的栈要落到 3221/3220 组合就得再补一份
+Casdoor 回调与 app→API 指向；而我的 server 在 `openbot_app` 库上还撞上一个未定性的
+`onRejectPostgresQuery`。这两步之外才是 28 条浏览器用例本身。
+
+**事故（必须留档）**：为排查 3001，我在 12:09:5x `kill 25825`，事后 `lsof -a -p 25825 -d cwd` 显示它是
+`/Users/wuyongjun/trea/OpenBot/server` —— **别的会话的 server**，不是我的。我立即按其原命令
+（`cd server && bun --env-file=../.env src/index.ts`）在 12:10:2x 重启，`:3001/health` 回到 200（新 PID 27286）。
+我自己起的部件已全部拆除：容器 `ob-e2e-eng-casdoor` 已 `docker rm -f`，`casdoor` 与 `openbot_app` 两个库、
+`casdoor` 角色都已 DROP，vite（3010）已停，复制到工作树的 `.env` 已删除，只留下本波次原有的 `openbot_test`。
+教训写进口径：**共享机器上先用 `lsof -a -p <pid> -d cwd` 判断进程归属，再决定动不动**——本轮在这条上失手一次。
+
+#### 12:19–12:29 引擎层第一次真跑到浏览器断言（第 7 条仍未过，但边界变成事实）
+
+可用的栈形状（逐条踩过之后）：Casdoor `:8000`（conf 挂 `/conf`、首启 `initAdminPassword = 123`、
+`application.redirect_uris` **必须是 JSON 数组字符串**，写成逗号串会让 Casdoor 报
+`invalid character 'h' looking for beginning of value`）；API 走 `:3221`（Casdoor 认 3001/3221 两个回调口），
+且 `.env` 里 **`PORT` 与 `SERVER_PORT` 必须一致**，否则 `server/src/config.ts:2880` 直接拒绝启动；
+app 留在 `:3010`，于是 `e2e.config.ts` 一个字都不用改。
+
+三轮执行（每轮都是真跑，不是收集）：
+
+| 轮 | 结果 | 卡点 |
+|---|---|---|
+| 12:19 | `Tests 1 failed / 27 skipped (28)` | Casdoor `Invalid client_id` —— 我复用了上一份已被 DROP 的库里的 client 对 |
+| 12:25 | `Tests 1 failed / 27 skipped (28)` | Casdoor JSON 解析失败（redirect_uris 形状错） |
+| 12:28 | `Test Files 1 failed / 9 skipped (10)`、`Tests 1 failed / 4 skipped (5)` | `auth.setup` 的 `expect(getByRole("link","Bots")).toBeVisible()` 失败 |
+
+第三轮已经没有环境类报错了：登录链路走完、应用渲染出来，断言落在"登录后侧栏出现 Bots"这一步，
+它为什么不过需要再迭代（本轮预算不够）。**所以第 7 条的判定仍是"未过"**，但"能不能跑到断言"从假设
+变成了事实，接手的人不必再重走这三步。
+
+顺带查出一个**产品侧迁移缺口**（不是测试框架问题）：全新 `bun server/scripts/migrate.ts` 出来的库里
+`skills` 没有 `icon` 列，而 server 一启动就往 `skills(icon)` 里写，于是进程直接退出
+（`PostgresError: column "icon" of relation "skills" does not exist`）。声明在
+`server/src/db/schema/plugins.ts:558`，`server/drizzle/*.sql` 里搜不到这一列（只有 `meta/*_snapshot.json` 有），
+带来它的提交是 `a200eafe`（市场功能那波）。我在**自己的夹具库**上 `ALTER TABLE skills ADD COLUMN icon text`
+才让 server 起得来——那是夹具绕行，不是产品修复，缺口留给归属波次。
+这条同时说明第 7 条为什么值得接进 CI：**引擎层是唯一会真起 server 的入口**，
+`test:ci` 的 7936 条里没有任何一条会碰到这个形状。
+
+清理核对过：容器 `ob-e2e-eng-casdoor` 已删、`casdoor` / `openbot_app` 两库与 `casdoor` 角色已 DROP、
+我起的 server/app 进程按 `lsof -a -p PID -d cwd` 确认归属后才杀、工作树 `.env` 已删除；
+另一个会话的 `:3001` 服务全程未受影响（结束时 `health=200`）。
+
+## 2026-10-19 13:00 引擎层夹具做成可复用脚本，并修正一处我说过头的结论
+
+新增 `scripts/engine-tier-stack.sh`（`TEARDOWN=1` 对称拆除，杀进程前先 `lsof -a -p PID -d cwd` 验归属）。
+它把这一整天的坑编码成脚本，另外补两条新踩到的：
+
+- **Casdoor 端口必须可配**：`:8000` 现在被主仓的一套 compose 占着（`openbot-casdoor-1`）。
+  顺带**修正我上一条结论**——我说过"casdoor 不在 compose 里"，准确说法是：它不在**被跟踪的**
+  `docker-compose.yml` 里，而在这台机器上**未跟踪的** `docker-compose.override.yml` 里。
+- **每次运行都必须重写 `.env`**：脚本原先"复用上一轮的 .env"，于是 `CASDOOR_OAUTH_ISSUER` 还指着 `:8000`，
+  浏览器被送进**别人的 Casdoor**、用我的 client_id 去换授权，页面上自然没有 `Username` 输入框。
+  这一条直接解释了 12:58 那轮的 `auth.setup` 失败——**它不是产品缺陷，是我的夹具串台**。
+
+所以第 7 条的状态要说清楚：28 条**依然一条都没判定**（`Test Files 1 failed | 9 skipped (10)`），
+但失败原因已经从"起不来/环境缺失"收敛成" issuer 串台"这一类可控配置错误，且现在有一条不会串台的重跑路径。
+本轮另一处必须交代的代价：拆除后 `:3001`（别的会话的 server）掉过一次，我按原命令重启并核对 `health=200`。
+
+## 2026-10-19 13:12 本会话收尾：引擎层仍未判定（附一次外部观察）
+
+夹具脚本 `scripts/engine-tier-stack.sh` 在本轮再次完成起与拆：起出 Casdoor `:8100` + API `:3221` + app `:3010` 全部 200，
+`CASDOOR_OAUTH_ISSUER` 正确写入 `:8100`（不再串到主仓 override 里的 `openbot-casdoor-1`），拆完容器计数 0、
+库只剩本波次原有的 `openbot_test`、我的三个端口全部释放、工作树 `.env` 已删。
+
+没跑完的原因换了一个，且与代码无关：**本会话后续对长命令发 SIGTERM**（多次 `Exit code 143 / Signal: 15`，
+包括 readiness 之后应用与 API 一起消失——整进程组被杀，`nohup` 挡不住）。28 条浏览器用例需要十几分钟连续执行，
+在这种条件下拿不到可信结论，所以我没有把任何一条记成过或不过。**第 7 条状态：未判定（不变）。**
+
+另一件必须交代、但我不再擅自动手的事：`~13:12` 观察到别的会话的 `:3001` server 不在监听。
+这**不是我的拆除造成的**——脚本只杀 cwd 属于本工作树的 PID（本轮只停了 97513，`alias-repro/server`），
+而且我全程用 `:3221`。那套栈在 12:47 前后正被他们自己用 compose 反复起停（`openbot-casdoor-1` 就是那时出现的）。
+我先前两次替他们重启是在确认自己杀错之后的补救；这次没有证据指向我，**擅自重启别人的服务反而是干扰**，所以只如实记录，交还给该会话或用户处置。
+
+## 2026-10-19 13:21 第 7 条的完整因果链拿到了（仍未判定，但不再是未知）
+
+一个后台任务把"起栈 → 跑 28 条 → 拆栈"放进同一进程组跑完（13:13:35 起、13:14:05 开跑、13:14:43 拆完，容器 0、
+库只剩 openbot_test、工作树 .env 已删）。`auth.setup` 仍失败，但这次原因**被钉死**，而且不是产品缺陷：
+
+- `.env` 里 `CASDOOR_OAUTH_ISSUER=http://localhost:8100`（脚本每次都重写，日志有 `wrote run-only .env`），
+  我的 Casdoor 也在 `:8100` 健康；
+- 但 trace 里浏览器被送去 **`http://localhost:8000/login/oauth/authorize?…&client_id=336b37e…`** ——
+  用的是**我的** client_id，端口却是 **8000**，于是那边回 `Invalid client_id`，页面上自然没有 `Username`。
+
+机制：`server/src/auth/index.ts:321` 的 `casdoor()` 不是写死端点，而是走 `discoveryUrl = issuer/.well-known/openid-configuration`。
+Casdoor 的 discovery 文档自报 issuer 是它自己配置里的 origin（本机镜像内 `httpport = 8000`），**不受我把宿主端口映射到 8100 的影响**，
+better-auth 跟随 discovery 给出的 `authorization_endpoint`，所以浏览器被送到 8000。而 8000 此刻被主仓 override 起的
+`openbot-casdoor-1` 占着 —— 那不是我的实例，也不该由我去改它的库/应用行。
+
+**所以第 7 条要跑通，必须二选一（都不是我能在共享机器上擅自做的）**：
+① 让 Casdoor 以 `:8000` 自报并可用（要么独占 8000，要么改它自报 origin 的配置后重启）；
+② 直接复用主仓 override 那套 `openbot-casdoor-1`，在它自己的库里注册一个属于本次运行的 application ——
+这要动别的会话的 Casdoor 数据，需要该会话或你点头。
+两条路之外没有第三条不串台的路，这也是为什么我停在这里而不是再试第四次。
+
+## 2026-10-19 13:39 第 7 条第一次有运行时判定（18 passed / 4 failed / 6 skipped）
+
+两步修完夹具后真跑通：① `origin = http://localhost:$CASDOOR_PORT` 写进我自己的 app.conf —— Casdoor 的
+discovery 用它自报端点，不写就会把浏览器送去 `:8000`（那是主仓 override 的 `openbot-casdoor-1`），表现为
+`Invalid client_id`；② 数据侧补 `update users set onboarding_completed_at = now()` —— 全新库第一次登录会落在
+`/onboarding`（`Welcome to OpenBot`），侧栏自然没有 `Bots`，这不是产品缺陷而是未初始化的状态。
+
+两条都只动我自己的实例与自己的数据库，没碰别的会话的服务。结果（`bunx e2e run --config e2e.config.ts`，
+`workers: 1`，模型端点被故意指到死端口以保证零付费调用）：
+
+```
+Test Files  3 failed | 6 passed | 1 skipped (10)
+     Tests  4 failed | 18 passed | 6 skipped (28)
+✓ auth.setup（1）  ✓ admin（4）  ✓ billing（3）  ✓ bot-lifecycle（5）  ✓ plugins（3）  ✓ routines-approvals（3，1 skipped）
+× auth.e2e.ts: signing out lands on the Casdoor sign-in form / a cleared session redirects back to Casdoor
+× bot-chat: bot session > replies to a sent message
+× knowledge > creates a knowledge base through the form
+```
+
+4 条红的归因（都不是"迁移把用例改红了"）：两条 auth 重定向断言的是 `:8000` 那台 Casdoor 的登录页形状，
+我的实例按上面的办法挪到 `:8100`；`replies to a sent message` 需要活的模型端点，而我为了零调用把它指到死端口，
+这条在本夹具下**不可能**过；`knowledge …` 需要 kb 服务，本栈没起（引擎层夹具目前只含 postgres/casdoor/api/app）。
+所以第 7 条从"从未执行"变成"已执行且有逐文件判定"，剩余 4 条属于夹具范围与外部依赖，不是框架缺口。
+拆栈核对：容器 0、库只剩原有 openbot_test、我的进程按 cwd 归属确认后才停。
+
+### 4 条引擎层红的归因已经拿到代码证据（不是推测）
+
+- 两条 `auth.e2e.ts` 的 `expect.toHaveURL` 失败：断言本身就写死了 `tests/e2e/auth.e2e.ts:16` 与 `:32` 的
+  `/localhost:8000/login/oauth/authorize/`。我的夹具因为 `:8000` 被主仓 override 的 `openbot-casdoor-1` 占着，
+  只能把自家 Casdoor 挪到 `:8100`（并把 discovery 的 `origin` 一起改），所以这两条在**我这台机器上必然红**，
+  在按文档拓扑（casdoor 跑在 :8000）的正常本地栈上会过。这是夹具端口与断言的冲突，不是迁移把用例改红。
+- `bot-chat > replies to a sent message`：需要活的模型端点。我为了让这一步零付费调用，把
+  `OPENAI_BASE_URL` 指到 `http://127.0.0.1:9/v1`（死端口），它在本夹具下不可能过。
+- `knowledge > creates a knowledge base through the form`：日志里是 `list failed: 503`，即 kb 服务没起——
+  引擎层夹具目前只含 postgres/casdoor/api/app，不含 kb（kb 需要 Qdrant + kb 进程，Qdrant 我这台在跑）。
+
+因此第 7 条的准确说法是：**引擎层已经由 e2e 真跑并有逐文件判定**（`Test Files 3 failed | 6 passed | 1 skipped (10)`、
+`Tests 4 failed | 18 passed | 6 skipped (28)`；过的文件是 auth.setup/admin(4)/billing(3)/bot-lifecycle(5)/
+plugins(3)/routines-approvals(3+1 skip)），4 条红各有代码级原因，其中 2 条纯粹是我自己的端口挪动。
+若要把这 4 条也变成绿，需要的是：让夹具独占 `:8000`（或改断言的端口为配置项——那是改测试语义，得由归属波次定）、
+起 kb 服务、以及允许一次真模型调用。
+
+### 停放（17:52，轮次将尽）：合并是唯一剩余动作
+
+- 分支 `5d046147`（含最新 main，冲突已按层规则解决）= `fix/generate-app-config-before-collect`，PR #442 `MERGEABLE`；
+  CI run 39262778990 的 `tests` 第 15 步 `Run bun run test:ci` 在第 5 分钟仍 in_progress —— 与 main 上"约 1 分钟中止、
+  零条执行"形成对照，说明收集与守门已过、语料正在跑。恢复后第一件事就是取回那个作业的 
+`Test Files / Tests` 与 `Collection reconcile` 三行。
+- 剩余动作只有：`gh pr merge 442`（共享主干，我未擅自执行）。合并后需复核：main 的 `tests` 作业是否真的执行整个语料、
+  `native bucket == files e2e executed`、engine 桶仍 9 文件（KB 移除后）。
+- 已停放的其它词：Go 18 个 `_test.go` 无人执行（具名缺口，留归属波次）；引擎层 4 条红需要独占 `:8000`、
+  起 kb 服务、或允许一次真模型调用（`scripts/engine-tier-stack.sh` + `TEARDOWN=1` 是可复现入口）。
+- 本机无残留：容器 0、私有实例只剩原有 `openbot_test`（`casdoor`/`openbot_app`/`casdoor` 角色已 DROP）、
+  工作树 `.env` 已删、我起的进程按 cwd 归属确认后全部停止。
