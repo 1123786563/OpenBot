@@ -434,3 +434,32 @@ TEST_DATABASE_URL=postgres://openbot:openbot@127.0.0.1:55433/openbot_enterprise_
 
 族内那 38 条失败的定性也在这里说清：不是运行器差异，而是它的 harness 正控在要求上面这套预留拓扑
 （`ISOLATION_SCENARIO_FAILED:…:harness.environment.positive-control`），属多租户那一波的定义范围。
+
+## 一个把"覆盖声明"与"运行器实际收集"分开对账之后才发现的洞（10-19 04:07）
+
+新工具 `scripts/e2e-collection-reconcile.mjs`：拿 e2e 报告里**真正贡献过用例的文件**与审计的
+原生桶逐一对账。命令 `node scripts/e2e-collection-reconcile.mjs .e2e/mt-aware/report.json`，最新一轮输出：
+
+```
+native bucket 601 · files e2e executed 597 · engine 10
+native files that contributed NO test: 4
+    desktop/src/App.test.tsx · desktop/src/Problem.test.tsx · desktop/src/ProviderPicker.test.tsx
+    tests/e2e/api.e2e.test.ts
+```
+
+`api.e2e.test.ts` 是设计如此（`LIVE` 名单，只由 `bun run test:api` 跑）。前三个不是：
+`e2e.unit.config.ts` 的 glob 只对 `app` 生成了 `**/*.test.tsx`，其余目录只有 `**/*.test.ts`，
+所以 **desktop 这三个 React 套件的 85 个注册点从未被任何入口收集**，而按文件走的审计照样把它们
+算成"原生层已由 e2e 覆盖"。这就是"清单绿/文档绿"不能当覆盖证据的实例。
+
+我没有直接把 glob 改了就交差：故意指向这三个文件跑一次，收集到 **144 条用例，只有 42 通过、102 失败**
+（两次运行还顺带暴露出 `.spec.*` 同样不在 glob 里）。这批套件是**从未在本仓库入口跑过**的代码，
+102 条失败要在"glob 修好"与"逐条 triage"之间做完，是一个独立工作单元；在这个预算里把 +102 红
+推给所有波次共用的入口，比维持现状更不负责。因此本轮把配置还原原状，留下：
+1. 这个可对账工具（它现在就能把差集指出来，谁改 glob 都能立刻看到后果）；
+2. 修法形状：`suites.flatMap` 里给每个目录同时出 `.test.ts/.test.tsx/.test.mts/.spec.ts/.spec.tsx`，
+   然后按 `e2e-vs-bun` 的三档口径逐条给那 102 条定性（大概率需要 desktop 自己的 DOM/预加载，
+   或按两层制分流到 Bun 层）。
+
+我一度把这个差集做成审计里的告警，实现取扩展名的正则写错（把 `test` 当扩展名，虚报 473 条），
+已回退——留在这里是因为它说明了另一件事：把新判据加进 CI 关卡之前，得先证伪它自己。
