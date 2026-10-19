@@ -67,7 +67,7 @@
   "body-link 52 张补挂(非阻塞)"
  ],
  "integration_mode": "未提交检查点（无提交授权）",
- "updated_at": "2026-10-19T16:26",
+ "updated_at": "2026-10-19T16:00",
  "wave1_result": "5/5 settle：零改动收尾 3（#410/#54/#221 测试侧 1 行）+ 实施 1（#377 产品侧 1 行）+ 复验 3（#48/#214/#371）；2 patch 已集成主工作区未提交区（f11cee1054d48ce7 / d46d5bab83d8b6ef）；R7 已同步 6 张",
  "scale_up": {
   "authorized": "2026-10-19 用户选 1（放量）",
@@ -203,7 +203,7 @@
   },
   "M2": {
    "settled": "1 SATISFIED(#69) + 4 BLOCKED-GAP(#75/#76/#78/#82)",
-   "r7": "#69 待同步"
+   "r7": "#69 已同步（2026-10-19 GraphQL 实证）"
   },
   "H1": {
    "settled": "#380 SATISFIED + #398 IMPLEMENTED(独立验证 PASS，已集成)",
@@ -217,12 +217,12 @@
   },
   "B3": {
    "settled": "4 SATISFIED(#279/#295/#325/#341) + 1 BLOCKED-GAP(#287) + 测试漂移修正(+6 行)",
-   "r7": "4 张待同步",
+   "r7": "4 张已同步（2026-10-19 GraphQL 实证）",
    "patch": "ec9c8a9bfcc2b09f"
   },
   "M3": {
    "settled": "3 SATISFIED(#85/#115/#117) + 2 BLOCKED-GAP(#83/#111)",
-   "r7": "3 张待同步",
+   "r7": "3 张已同步（2026-10-19 GraphQL 实证）",
    "notes": "#111 实际为 MT068 内容（manifest 签名+审计接线）；迁移注册表 MT074 与票 #117 撞码；环境侧已幂等补齐 MT012–MT074 迁移"
   },
   "C3": {
@@ -232,7 +232,7 @@
   },
   "M4": {
    "settled": "#146/#155 SATISFIED + #121/#143/#167 BLOCKED-GAP",
-   "r7": "2 张待同步",
+   "r7": "2 张已同步（2026-10-19 GraphQL 实证）",
    "notes": "M4 曾因 API ECONNRESET 中断 2.5h，send 恢复后收官"
   },
   "C4": {
@@ -431,5 +431,5 @@
  ],
  "mt_stream": "done",
  "craft_stream": "done",
- "phase": "58/58 就绪票处理完毕（verified 33 + gap 26 + #431 部分覆盖）"
+ "phase": "58/58 就绪票处理完毕（放量 31 贴标 + 26 gap + #431 部分覆盖）；全 run 累计 R7 38 张（已 GraphQL 实证标签+OPEN）"
 }

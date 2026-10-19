@@ -10,6 +10,8 @@
 
 **Spec:** [详细技术方案](../specs/2026-10-19-plugin-package-marketplace-design.md)。同时阅读根 CONTEXT.md、ADR 0004/0006/0008；ADR 0007 未批准，Personal Space 是后续接入依赖。
 
+**Issue 拆解更新（2026-10-19）：** 用户随后要求拆为具体 Issue，已发布父方案 [#459](https://github.com/1123786563/OpenBot/issues/459) 与 12 张纵向业务票；[真实依赖与验收映射](../tickets/plugin-package-marketplace/README.md) 取代本文 T1–T10 作为 Issue 领取顺序。本文仍作技术实现参考，执行单个 Issue 时只提取它需要的 Task，不把整套水平任务提前实施。
+
 ## Global Constraints
 
 - 本计划只规划，不实施；任务均 pending。规划工作区 /Users/wuyongjun/trea/OpenBot，main，BASE 为 295c0b89fc29e1f1745f0ccf484c51f49a04a1ea。实施时重新记录 BASE，先用 using-git-worktrees 核验/建立执行工作区，显式复制 Spec/Plan 并校验哈希。其他会话脏改动不转移、不覆盖。
@@ -46,7 +48,7 @@
 | T9 发布、迁移、回退 | §12；A08/A09/A12 | T1,T7,T8 | backend_implementer | backend_validator | pending |
 | T10 验收与审查 | §15；A01–A12 | T9 | 主控 | 专业验证者 + reviewer | pending |
 
-默认拓扑顺序 T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9 → T10。本次无 Issue 输入，不创建 Issue 树或假定 Issue 已批准。
+默认拓扑顺序 T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9 → T10。此表为拆票前技术参考。正式实施须读取父 Issue #459 与正式子 Issue，领取顺序和业务依赖以 Issue DAG 为准，不能把本表当作已批准的实施派发。
 
 实施记录写入 docs/plans/2026-10-19-plugin-package-marketplace/ledger.md，每任务保存 HEAD、before/after 快照哈希、拥有文件、验证输出和 Review 状态。前置 verified 且检查点内容集成后才执行下游。
 

@@ -1,0 +1,183 @@
+{
+  "repository": "1123786563/OpenBot",
+  "issues": {
+    "ROOT": {
+      "number": 459,
+      "url": "https://github.com/1123786563/OpenBot/issues/459",
+      "id": 5924298472
+    },
+    "PKG01": {
+      "number": 460,
+      "url": "https://github.com/1123786563/OpenBot/issues/460",
+      "id": 5924327508
+    },
+    "PKG02": {
+      "number": 461,
+      "url": "https://github.com/1123786563/OpenBot/issues/461",
+      "id": 5924342183
+    },
+    "PKG03": {
+      "number": 462,
+      "url": "https://github.com/1123786563/OpenBot/issues/462",
+      "id": 5924346048
+    },
+    "PKG04": {
+      "number": 463,
+      "url": "https://github.com/1123786563/OpenBot/issues/463",
+      "id": 5924349666
+    },
+    "PKG05": {
+      "number": 464,
+      "url": "https://github.com/1123786563/OpenBot/issues/464",
+      "id": 5924352798
+    },
+    "PKG06": {
+      "number": 465,
+      "url": "https://github.com/1123786563/OpenBot/issues/465",
+      "id": 5924389726
+    },
+    "PKG07": {
+      "number": 466,
+      "url": "https://github.com/1123786563/OpenBot/issues/466",
+      "id": 5924398247
+    },
+    "PKG08": {
+      "number": 467,
+      "url": "https://github.com/1123786563/OpenBot/issues/467",
+      "id": 5924404752
+    },
+    "PKG09": {
+      "number": 468,
+      "url": "https://github.com/1123786563/OpenBot/issues/468",
+      "id": 5924407399
+    },
+    "PKG10": {
+      "number": 469,
+      "url": "https://github.com/1123786563/OpenBot/issues/469",
+      "id": 5924410077
+    },
+    "PKG11": {
+      "number": 470,
+      "url": "https://github.com/1123786563/OpenBot/issues/470",
+      "id": 5924412566
+    },
+    "PKG12": {
+      "number": 471,
+      "url": "https://github.com/1123786563/OpenBot/issues/471",
+      "id": 5924427336
+    }
+  },
+  "relations": [
+    {
+      "parent": 459,
+      "contains": [
+        460,
+        461,
+        462,
+        463,
+        464,
+        465,
+        466,
+        467,
+        468,
+        469,
+        470,
+        471
+      ]
+    },
+    {
+      "issue": 460,
+      "blocked_by": []
+    },
+    {
+      "issue": 461,
+      "blocked_by": [
+        74,
+        460
+      ]
+    },
+    {
+      "issue": 462,
+      "blocked_by": [
+        461
+      ]
+    },
+    {
+      "issue": 463,
+      "blocked_by": [
+        462
+      ]
+    },
+    {
+      "issue": 464,
+      "blocked_by": [
+        75,
+        462
+      ]
+    },
+    {
+      "issue": 465,
+      "blocked_by": [
+        464
+      ]
+    },
+    {
+      "issue": 466,
+      "blocked_by": [
+        463,
+        464
+      ]
+    },
+    {
+      "issue": 467,
+      "blocked_by": [
+        464
+      ]
+    },
+    {
+      "issue": 468,
+      "blocked_by": [
+        464
+      ]
+    },
+    {
+      "issue": 469,
+      "blocked_by": [
+        468
+      ]
+    },
+    {
+      "issue": 470,
+      "blocked_by": [
+        463,
+        465,
+        466,
+        467,
+        469
+      ]
+    },
+    {
+      "issue": 471,
+      "blocked_by": [
+        470
+      ]
+    }
+  ],
+  "scan_since": "2026-10-19T12:58:41Z",
+  "linked": [
+    "PKG01",
+    "PKG02",
+    "PKG03",
+    "PKG04",
+    "PKG05",
+    "PKG06",
+    "PKG07",
+    "PKG08",
+    "PKG09",
+    "PKG10",
+    "PKG11",
+    "PKG12"
+  ],
+  "status": "published-verified",
+  "published_at": "2026-10-19T13:07:04.072090+00:00"
+}
