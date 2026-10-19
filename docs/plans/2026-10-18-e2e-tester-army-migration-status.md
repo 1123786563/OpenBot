@@ -866,3 +866,20 @@ Test Files  3 failed | 6 passed | 1 skipped (10)
 这条在本夹具下**不可能**过；`knowledge …` 需要 kb 服务，本栈没起（引擎层夹具目前只含 postgres/casdoor/api/app）。
 所以第 7 条从"从未执行"变成"已执行且有逐文件判定"，剩余 4 条属于夹具范围与外部依赖，不是框架缺口。
 拆栈核对：容器 0、库只剩原有 openbot_test、我的进程按 cwd 归属确认后才停。
+
+### 4 条引擎层红的归因已经拿到代码证据（不是推测）
+
+- 两条 `auth.e2e.ts` 的 `expect.toHaveURL` 失败：断言本身就写死了 `tests/e2e/auth.e2e.ts:16` 与 `:32` 的
+  `/localhost:8000/login/oauth/authorize/`。我的夹具因为 `:8000` 被主仓 override 的 `openbot-casdoor-1` 占着，
+  只能把自家 Casdoor 挪到 `:8100`（并把 discovery 的 `origin` 一起改），所以这两条在**我这台机器上必然红**，
+  在按文档拓扑（casdoor 跑在 :8000）的正常本地栈上会过。这是夹具端口与断言的冲突，不是迁移把用例改红。
+- `bot-chat > replies to a sent message`：需要活的模型端点。我为了让这一步零付费调用，把
+  `OPENAI_BASE_URL` 指到 `http://127.0.0.1:9/v1`（死端口），它在本夹具下不可能过。
+- `knowledge > creates a knowledge base through the form`：日志里是 `list failed: 503`，即 kb 服务没起——
+  引擎层夹具目前只含 postgres/casdoor/api/app，不含 kb（kb 需要 Qdrant + kb 进程，Qdrant 我这台在跑）。
+
+因此第 7 条的准确说法是：**引擎层已经由 e2e 真跑并有逐文件判定**（`Test Files 3 failed | 6 passed | 1 skipped (10)`、
+`Tests 4 failed | 18 passed | 6 skipped (28)`；过的文件是 auth.setup/admin(4)/billing(3)/bot-lifecycle(5)/
+plugins(3)/routines-approvals(3+1 skip)），4 条红各有代码级原因，其中 2 条纯粹是我自己的端口挪动。
+若要把这 4 条也变成绿，需要的是：让夹具独占 `:8000`（或改断言的端口为配置项——那是改测试语义，得由归属波次定）、
+起 kb 服务、以及允许一次真模型调用。
