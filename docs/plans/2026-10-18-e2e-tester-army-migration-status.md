@@ -705,3 +705,27 @@ Go 那 18 个文件是尚未处理的缺口。三条都没被"绿"掩盖：关�
 3. **驱动层的红在 CI 上有名字**：multitenancy 两个组分别 37/293（16 文件）与 45/149（22 文件），
    超过"独自重跑后仍红 >8 文件"的阈值而判组失败——这正是产品侧库名/预留库门禁那一族（多租户波次所有），
    不是调度器的发明。`runner-difference` 仍为 0。
+
+### 引擎层运行时为什么本轮还没跑成（10-19 18:0x，用户已许可本机起栈）
+
+许可到手后先做了可行性探查，三个硬阻塞都是实测的，不是推测：
+
+1. **Casdoor 不在 compose 里**：`grep -nE '^  [a-z-]+:' docker-compose.yml` 的 service 清单是
+   postgres / migrate / agent-computer / agent-sandbox / openbot-redis / spire-{init,server,agent} /
+   supervisor / agent-bot / agent-harness(profile) / agent-langgraph / agent-trpc / go-runtime(profile)，
+   **没有 casdoor**。而 `tests/e2e/auth.setup.e2e.ts` 第一句就是"未登录访问会重定向到 Casdoor 登录页"，
+   用 admin/123 过 `:8000`、回调落 3001、回到 3010。探测结果 `:8000` 与 `:8001` 都 closed，`docker ps -a`
+   没有 casdoor 容器，本机也没有 `.env`（只有 `.env.example`）。顺带一条文档与事实不符：
+   `docs/compose.md:63` 写着"services | casdoor 8000, open-connector 3100"，本树 compose 没有这两个服务。
+2. **`postgres` 的发布端口会撞别人的实例**：`docker-compose.yml:24` 是
+   `127.0.0.1:${POSTGRES_PORT:-5432}:5432`，而本机 5432 正被别的会话的 `bf011-pg` 占用（本波次纪律是不动它），
+   所以要 `POSTGRES_PORT=<free>` 才能起，`scripts/start.sh:430` 的默认 `DATABASE_URL` 也随之要覆盖。
+3. **compose 走的是 `--build`**：`openbot-server` / `openbot-agent-*` 这些本地镜像要先构建，
+   `scripts/start.sh:298` 就是 `docker compose up -d --build`。
+
+结论：**缺 Casdoor 起栈，28 条会以"登录不过"整片红**，那种红没有判定价值（ADR 0008 补充三：环境断言要环境证据）。
+一次可解释的运行需要这四步，按顺序：① 起一个 Casdoor（本机没有服务定义，要按 `casdoor/app.conf` +
+`casdoor/init-db.sql` 自己准备，并把它的回调配到 3001）；② 用私有端口起 Postgres 并跑 `migrate`；
+③ `bash scripts/start.sh`（覆盖 `POSTGRES_PORT`、`DATABASE_URL`，并把 `OPENAI_BASE_URL` 指到死端口保证零调用）；
+④ `bunx e2e run --config e2e.config.ts`。端口探测结果：3000/3001/3002/3010/3011/3220/3221/4300/8000 当时全空闲，
+唯一被占的是 5432（别人的）。
