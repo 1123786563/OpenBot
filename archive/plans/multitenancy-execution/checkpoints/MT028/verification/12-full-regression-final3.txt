@@ -1,7 +1,0 @@
-# MT028 全量回归终态 v3（2026-10-17，全部文件最终态）
-
- 796 pass
- 0 fail
- 10808 expect() calls
-Ran 796 tests across 30 files. [26.00s]
-exit=0

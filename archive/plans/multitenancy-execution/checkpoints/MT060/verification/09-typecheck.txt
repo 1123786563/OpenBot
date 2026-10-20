@@ -1,3 +1,0 @@
-== typecheck (bun run typecheck) @ 04:23:56Z ==
-$ tsc --noEmit
-typecheck-exit=0

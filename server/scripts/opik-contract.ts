@@ -19,7 +19,7 @@
 //
 // The verified endpoint surface (snake_case bodies, hex OTLP ids, projectName
 // routing header, batch_group_id versioning, physical-delete + 404 semantics)
-// is documented in docs/opik-contract.md.
+// is documented in reference/opik-contract.md.
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename } from "node:path";

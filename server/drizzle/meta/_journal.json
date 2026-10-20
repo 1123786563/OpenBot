@@ -1170,6 +1170,13 @@
       "when": 1792857602000,
       "tag": "0166_subscription_customer_scoped_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1792857603000,
+      "tag": "0167_recovery_alerts",
+      "breakpoints": true
     }
   ]
 }

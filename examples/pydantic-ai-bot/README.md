@@ -38,7 +38,7 @@ It listens on `http://localhost:4600/ag-ui` (`PORT` to change) and answers `GET 
 | `REQUIRE_KEY`    | unset     | When set, `/ag-ui` refuses a run whose `authorization` header does not match. |
 
 `OPENAI_BASE_URL` points the OpenAI provider at a compatible gateway, the same way the rest of the
-deployment is configured (see [docs/configuration.md](../../docs/configuration.md)). Note which API
+deployment is configured (see [reference/configuration.md](../../reference/configuration.md)). Note which API
 that gateway has to serve: Pydantic AI calls `/responses`, not `/v1/chat/completions`. A gateway
 offering only chat completions will not answer this example, and the reverse of the constraint the
 two TypeScript Bots carry, which is that they speak chat completions and so cannot use the models

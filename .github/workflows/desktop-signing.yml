@@ -17,7 +17,7 @@ on:
       - desktop/**
       - package.json
       - .github/workflows/desktop-signing.yml
-      - docs/windows-signing.md
+      - reference/windows-signing.md
 
 permissions:
   contents: read

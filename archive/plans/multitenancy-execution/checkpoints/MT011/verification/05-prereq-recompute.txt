@@ -1,9 +1,0 @@
-# 05 prereq-manifest recompute
-# At claim time (before any MT011 edit): 49/49 entries OK + BASE f0520524 == git rev-parse HEAD.
-# This capture runs POST-implementation: 47/49 still byte-identical; the 2 changed entries are
-# exactly MT011's two authorized edits (server/src/index.ts, server/tests/multitenancy/support/scenarios.ts),
-# whose PRE states are reconstructed and hash-verified against the manifest in before-hashes.txt.
-sha256sum: WARNING: 2 computed checksums did NOT match
-server/src/index.ts: FAILED
-server/tests/multitenancy/support/scenarios.ts: FAILED
-OK count: 47/49

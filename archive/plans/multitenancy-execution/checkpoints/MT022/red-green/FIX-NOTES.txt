@@ -1,4 +1,0 @@
-# GREEN-1 → GREEN-3 fix narrative
-GREEN-1: 30/35 — impl bug: readMessages 未翻转 rows（items [3,2,1]）；测试缺陷×4：L373 rawMessageCount().toBe(read+0)=NaN（read 是判定对象）；AC2 撤权 a1-doomed 未恢复→AC4 control/suspension scopeAs 被 REAL 资格门拒（TENANT_FORBIDDEN）；AC4 restore 用恢复后新 scope 冒充旧 scope（永 allow）
-GREEN-2: 32/35 — nextBeforeSeq 钉 items[last]（最新）而非 items[0]（最早，beforeSeq=2 应续读 [1]）；fixture suspendCompanyMembership operationId 确定性 → MT006 幂等去重第二个真实周期为 no-op（provision.ts 事件回放实证）；restore 报 COMPANY_MEMBER_NOT_FOUND 同根因
-GREEN-3: 35/0/0（139 expect）exit 0 —— 修复：实现 items toReversed + nextBeforeSeq=items[0].seq；测试 L373 before 计数对照、AC2 尾部 reinstat（不动撤权期断言）、AC4 撤权前铸 scope 钉 hoisted doomedPreSuspensionScope、fixture operationId 唯一化（revocationSeq）

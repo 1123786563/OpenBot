@@ -1,3 +1,0 @@
-# MT059 env — container mt059-impl-pg @ 127.0.0.1:55566 (brief-assigned port; db stem w14d)
-databases: openbot_enterprise_w14d + openbot_enterprise_w14d_assigned + openbot_kb_w14d; roles ent_w14d_{dir,data,opr} via enterprise-test-db.ts migrate -> {"type":"migrations-applied","status":"ok"}; kb owner ent_w14d_kb (CREATE ROLE + ALTER DATABASE OWNER, restricted)
-seven-variable env: TEST_DATABASE_URL, ENTERPRISE_TEST_SETUP_DATABASE_URL, ENTERPRISE_TEST_{DIRECTORY,DATA,OPERATOR}_DATABASE_URL, MT003_ASSIGNED_TEST_DATABASE_URL, KB_TEST_DATABASE_URL (single 0600 file /tmp/mt059-env.sh, deleted after run)

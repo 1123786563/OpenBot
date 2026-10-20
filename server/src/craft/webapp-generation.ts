@@ -72,7 +72,7 @@
  * gate treats unknown as legacy (null mount — the failure mode there is
  * caught by webapp-info's .webapp-mount cross-check). The one residual risk
  * — an agent deleting the marker — sits at the same trust level as
- * nextjs.pid, and is documented in docs/craft-preview-origin.md.
+ * nextjs.pid, and is documented in reference/craft-preview-origin.md.
  */
 
 /** The session-root file the start script stamps at template-copy time. */

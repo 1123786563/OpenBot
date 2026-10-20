@@ -1,2 +1,0 @@
- 10 pass
- 8 fail

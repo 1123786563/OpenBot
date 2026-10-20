@@ -1,4 +1,0 @@
-# RESTORE evidence: after MUT1–MUT4b, both production files restored from backup
-# (grep mutation markers = 0 in both), focused suite re-run:
-#   29 pass / 0 fail / 158 expect() calls — Ran 29 tests across 1 file. [1253.00ms]
-# Date: 2026-10-16 (3rd takeover, ctx_3e5857d058e2)

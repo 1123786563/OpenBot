@@ -1,5 +1,0 @@
-# GREEN-2: after test-side fixes — focused suite green
- 30 pass
- 0 fail
-Ran 30 tests across 1 file. [356.00ms]
-exit=0

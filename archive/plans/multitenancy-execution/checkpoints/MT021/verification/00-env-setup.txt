@@ -1,6 +1,0 @@
-# MT021 env — container mt021-impl-pg @ 127.0.0.1:55529 (precheck: 55529 FREE)
-databases: openbot_enterprise_mt021_test + openbot_enterprise_mt021_assigned + openbot_kb_mt021_test; logins ent_mt021_{dir,data,opr,kb} via enterprise-test-db.ts migrate -> {"type":"migrations-applied","status":"ok"}
-# prereq chain (brief dependency order, fourteen tasks): MT004→MT008→MT112→MT012→MT014→MT010→MT009→MT077→MT026→MT076→MT069→MT016→MT041→MT027 — all applied, journal 14 rows
-# KB login ent_mt021_kb owns openbot_kb_mt021_test (drizzle-kb migrations run by kb-ownership suite beforeAll)
-BASE: f0520524f0faa2b4533b9d2f1aa692c8f907ba71
-mt021-impl-pg	127.0.0.1:55529->5432/tcp

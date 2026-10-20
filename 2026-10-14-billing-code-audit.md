@@ -65,7 +65,7 @@ summary: {"plan":{"total":100,"used":10,"remaining":90},"rewards":{"total":50,"u
 2. 用户已经生成完的回答被 `controller.error` 撕掉（产品层面：白跑一次长请求）；
 3. 唯一残留是一条 `billing-model-usage-over-bound` 日志 + 15 分钟后 hold 过期产生的 `expired_reserved_reservation`（`reconcile.ts` 那条 finding 只带 `usage_event_id` 和 `maximum`，**不带 token 数**）。
 
-而三处文档都宣称有对账证据：`billing/input-bound.ts:16`「surfaces at settlement as `usage_over_bound` — a held reservation for reconciliation」、`index.ts:3641` 附近同样的话、`docs/configuration.md:58-61`「surfaces at settlement as an over-bound hold for operator reconciliation rather than a silent charge」。实际是"hold 留住了，事实没留住"。
+而三处文档都宣称有对账证据：`billing/input-bound.ts:16`「surfaces at settlement as `usage_over_bound` — a held reservation for reconciliation」、`index.ts:3641` 附近同样的话、`reference/configuration.md:58-61`「surfaces at settlement as an over-bound hold for operator reconciliation rather than a silent charge」。实际是"hold 留住了，事实没留住"。
 
 补充：`index.ts` 的 `finish` 里还有第二条同形态路径——`calculateExactModelUsageCharge` 抛错（`usage_over_token_max` / `usage_over_reservation`）时也是"不写 outbox + 保留 hold"（`index.ts:3673-3690`）。
 
@@ -141,9 +141,9 @@ BILLING_MODEL_MAX_RESERVATION_TOKENS={"GLM-5.3":{"input":128000,"output":16384}}
 
 ### B2【中高】已批准 Spec 与 ADR-0001 / 实现互相矛盾，Spec 未回写
 
-`docs/superpowers/specs/2026-10-11-billing-reliability-design.md:35`（"Billed admission per surface — decided 2026-10-13"）仍写：模型调用输入侧无法证明上界 ⇒ 一律 `input_bound_unsupported` 拒绝；翻盘条件是「a provider count-tokens contract this adapter demonstrably honours (declared `counted`)… landed with adapter-level tests that inspect the actual outgoing request」。
+`docs/specs/superpowers/2026-10-11-billing-reliability-design.md:35`（"Billed admission per surface — decided 2026-10-13"）仍写：模型调用输入侧无法证明上界 ⇒ 一律 `input_bound_unsupported` 拒绝；翻盘条件是「a provider count-tokens contract this adapter demonstrably honours (declared `counted`)… landed with adapter-level tests that inspect the actual outgoing request」。
 
-实现（`index.ts:3647`）已声明 `enforced: "counted"`，但计数器是**我方基于序列化字节的经验估算 + 截断**（`billing/input-bound.ts`，ADR-0001），不是 provider 的 count-tokens 契约；也没有"检查实际外发请求"的适配器级测试。`docs/configuration.md:56-61` 已按 ADR-0001 改写，Spec 没有。
+实现（`index.ts:3647`）已声明 `enforced: "counted"`，但计数器是**我方基于序列化字节的经验估算 + 截断**（`billing/input-bound.ts`，ADR-0001），不是 provider 的 count-tokens 契约；也没有"检查实际外发请求"的适配器级测试。`reference/configuration.md:56-61` 已按 ADR-0001 改写，Spec 没有。
 
 按 `AGENTS.md`：「如果实施 Plan 与已批准 Spec 冲突，以 Spec 为准」「如果实现与 ADR 或批准需求冲突，应升级处理，而不是在实现阶段静默重新设计」。现在是 ADR 与 Spec 各执一词、实现跟 ADR 走。
 
@@ -203,7 +203,7 @@ BILLING_MODEL_MAX_RESERVATION_TOKENS={"GLM-5.3":{"input":128000,"output":16384}}
 
 ### C2【中】`.env.example` 缺 4 个 `BILLING_*` 键 ⇒ 按模板部署必然全量拒绝
 
-`grep -n "BILLING_" .env.example` **无结果**（同文件有 16 处 `LAGO_*`）；四个 hard-cap 键只在 `docs/configuration.md:41-47` 有说明，真实 `.env:644-647` 有值。
+`grep -n "BILLING_" .env.example` **无结果**（同文件有 16 处 `LAGO_*`）；四个 hard-cap 键只在 `reference/configuration.md:41-47` 有说明，真实 `.env:644-647` 有值。
 
 结合 A4/C1：从 `.env.example` 起的新部署只要配了 `LAGO_API_URL`，就会 `creditPolicy.configured === false` ⇒ `index.ts:3611` 对**每一次**模型调用抛 `CreditGateError` ⇒ 用户看到「This deployment has no credits left. Ask an administrator to grant credits or upgrade the plan.」，而真实原因是四个环境变量没配。这是最容易踩、最难自查的一个坑（`.env` 里那行注释自己都写了："Without all four the model gate refuses every call ('no credits')"）。
 

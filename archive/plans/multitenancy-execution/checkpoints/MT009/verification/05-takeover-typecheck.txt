@@ -1,4 +1,0 @@
-# MT009 接管复跑：typecheck（第 2 任）
-# cmd: bun run build（= tsc --noEmit）
-$ tsc --noEmit
-TYPECHECK_EXIT=0

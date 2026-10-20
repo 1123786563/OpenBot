@@ -1,5 +1,0 @@
-# MT027 before-hashes（改动前，2026-10-16T19:12:37Z）
-785cd7ac175a50f943264e5fd01a4bd3a717bedaa19476155aab497334ecde95  server/src/db/schema/index.ts
-43210c521dd5e803c50040c33098b58d3edcc9ed1b19fa70b17a0db300505a03  server/scripts/multitenancy/migrate-test.ts
-e435447142e4471ad30681fc9a657e714fbd8091450a0a03e7b28978d1c4a6b6  server/tests/multitenancy/migration-tool.test.ts
-bac27c45ae75ad57bbf7f623352a56e8d625494379ea92ee2a2d74be26cbd65a  server/src/index.ts

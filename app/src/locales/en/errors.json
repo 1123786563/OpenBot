@@ -33,7 +33,8 @@
     "loadBill": "That bill could not be loaded.",
     "loadPurchase": "That purchase could not be loaded.",
     "loadLatestPurchase": "Your latest purchase could not be loaded.",
-    "grantPersonal": "The grant could not be completed. Try again."
+    "grantPersonal": "The grant could not be completed. Try again.",
+    "loadRecoveryReview": "The settlement review could not be loaded."
   },
   "botLifecycle": {
     "loadNeeds": "Could not load what your Bots need",

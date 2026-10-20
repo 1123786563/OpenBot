@@ -80,7 +80,7 @@ export function createModelCompleter(deps: {
  * Where this deployment's `/chat/completions` actually is.
  *
  * `/v1` USED TO BE APPENDED UNCONDITIONALLY, and that was wrong for every deployment that set the
- * variable. `.env.example` and `docs/configuration.md` both document it with the version in it
+ * variable. `.env.example` and `reference/configuration.md` both document it with the version in it
  * (`https://gateway.internal/v1`), because that is the shape the AI SDK wants: it takes `baseURL`
  * verbatim and asks for `/chat/completions` under it, which is how the built-in Bots reach the same
  * endpoint. Appending here produced `/v1/v1/chat/completions`, so on a gateway — the entire reason

@@ -106,7 +106,7 @@ export function initProcessTracing(name: string, env: TraceProcessEnv): void {
   if (provider) return;
   if (env.OPENBOT_TRACES?.trim().toLowerCase() === "off") return;
 
-  // Surface exporter failures as console diagnostic lines (docs/observability.md's claim):
+  // Surface exporter failures as console diagnostic lines (reference/observability.md's claim):
   // without a logger the OpenTelemetry API drops them silently. ERROR only — a failed OTLP
   // export is worth a line, the steady-state noise is not. Skipped entirely when tracing is
   // off, where there is nothing to diagnose.

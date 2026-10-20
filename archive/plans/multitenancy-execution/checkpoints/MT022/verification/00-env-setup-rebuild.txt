@@ -1,6 +1,0 @@
-# MT022 env rebuild (task 2 takeover) — 2026-10-17T10:44:14Z
-# container mt022-impl-pg @ 127.0.0.1:55563 (precheck: 55563 FREE); pgvector/pgvector:pg16
-# KB role ent_w14a_kb created FIRST; DBs: openbot_enterprise_w14a_test + _assigned + openbot_kb_w14a_test (OWNER=ent_w14a_kb)
-# 7-var env file 0600 (TEST_DATABASE_URL, ENTERPRISE_TEST_SETUP_DATABASE_URL, ENTERPRISE_TEST_{DIRECTORY,DATA,OPERATOR}_DATABASE_URL, MT003_ASSIGNED_TEST_DATABASE_URL, KB_TEST_DATABASE_URL)
---- enterprise-test-db.ts migrate (exit=0) ---
-{"type":"migrations-applied","status":"ok"}

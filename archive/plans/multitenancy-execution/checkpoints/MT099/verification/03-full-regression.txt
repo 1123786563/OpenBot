@@ -1,6 +1,0 @@
-# MT099 全量 bun 回归（票后=基线，无新增 bun 测试）
- 1124 pass
- 0 fail
- 12799 expect() calls
-Ran 1124 tests across 43 files. [118.22s]
-exit=0

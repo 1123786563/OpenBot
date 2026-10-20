@@ -1,4 +1,0 @@
-# Before-hashes of the 3 narrow-edit authorized files (claim time) — 2026-10-16T21:59:23Z
-03b1da57b9c039c3153effcd15ed958db95dd08a151634e273b4b3fe00c5beba  server/scripts/multitenancy/migrate-test.ts
-a962bd06e39a65affea31888c3a260398a5a7e353929c4f98f16da57d3cbdfba  server/tests/multitenancy/migration-tool.test.ts
-bf2fe97212055e49f70ee084c3ccaae827bdfc60218c696c68dc2004526bb4e9  server/src/db/schema/index.ts

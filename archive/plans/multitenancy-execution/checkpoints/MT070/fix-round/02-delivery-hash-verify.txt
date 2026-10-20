@@ -1,3 +1,0 @@
-# MT070 修复轮 delivery 冻结值复核（7 文件 == after-hashes.txt 逐位）— 2026-10-17T00:11:27Z
-ea3fc1e912345ad2528dea6494a65325f5ffe09bfc546532527b752e37f0c213  server/src/billing/company-reservation.ts (pristine frozen value) — MATCH
-(7/7 files verified byte-identical to delivery after-hashes, see session log)

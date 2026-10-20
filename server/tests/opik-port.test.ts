@@ -1,7 +1,7 @@
 // Issue #14 / DAG T08 — the sole Opik port and its manifest-backed HTTP adapter.
 //
 // Every case here runs against an injected transport: serialization facts come from
-// docs/opik-contract.md and the verified T04 manifest (loaded below — the same artifact the
+// reference/opik-contract.md and the verified T04 manifest (loaded below — the same artifact the
 // contract runner produced, so the tests cannot drift from what was actually verified), and
 // every adversarial behavior — never-resolving fetch, timeout, 5xx, malformed JSON, partial
 // envelopes, stale contract, ownership drift — is injected, never dialed. Live-instance

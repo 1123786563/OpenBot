@@ -1,2 +1,0 @@
-pristine module: 
-pristine kb-ownership: 

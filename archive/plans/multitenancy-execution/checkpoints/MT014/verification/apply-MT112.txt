@@ -1,2 +1,0 @@
-applied: MT112 @ openbot_enterprise_mt014_test (127.0.0.1:55481)
-  已执行并记入 journal: 0001_mt112_anchor_mapping_table.sql, 0002_mt112_anchor_rls_policies.sql, 0003_mt112_legacy_anchor_rows.sql, 0004_mt112_anchor_mapping_row.sql

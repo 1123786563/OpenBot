@@ -1,8 +1,0 @@
-# 全量回归终态 — 2026-10-18T06:52:22Z
-预期 = 基线 1222 + 新增 24 = 1246 pass / 0 fail / 48 文件
-
-
- 1246 pass
- 0 fail
- 13472 expect() calls
-Ran 1246 tests across 48 files. [27.23s]

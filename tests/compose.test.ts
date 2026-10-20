@@ -601,7 +601,7 @@ const optionalStacks = [
 ] as const;
 
 /**
- * Run one optional stack the way docs/compose.md documents it: from the repository root, with
+ * Run one optional stack the way reference/compose.md documents it: from the repository root, with
  * `--project-directory .`, which is what makes the root `.env` and the `./docker/...` mount
  * sources resolve exactly as they did when the files lived at the root. `config` starts nothing.
  */
@@ -667,11 +667,11 @@ for (const { name, services } of optionalStacks) {
 }
 
 /**
- * docs/compose.md is the index every compose file points at; an entry going missing — or the
+ * reference/compose.md is the index every compose file points at; an entry going missing — or the
  * invocation losing its flag — is how the last layout change left stale docs and a stale test
  * behind.
  */
-test("docs/compose.md indexes every optional stack and the shared invocation", () => {
+test("reference/compose.md indexes every optional stack and the shared invocation", () => {
   const doc = readFileSync(
     join(hereDir, "..", "docs", "compose.md"),
     "utf8",

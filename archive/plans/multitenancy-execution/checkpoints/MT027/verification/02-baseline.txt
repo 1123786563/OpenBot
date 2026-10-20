@@ -1,4 +1,0 @@
-# MT027 全量基线（改动前，2026-10-16T19:21:01Z）
-command: bun test tests/multitenancy/ --timeout 60000 (server/)
-result: 638 pass / 0 fail / 0 skip，25 files，10020 expect，exit 0
-与 brief 基线 638/0 一致（brief 记 23 文件，实测 25 文件——诚实披露见报告）

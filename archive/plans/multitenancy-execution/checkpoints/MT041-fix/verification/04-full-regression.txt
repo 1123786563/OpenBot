@@ -1,6 +1,0 @@
-# Full regression (MT041-fix tree), scope: server/tests/multitenancy — expected 661 pass / 0 fail / 0 skip across 26 files (= 660 + F1 new case)
-
- 661 pass
- 0 fail
- 10166 expect() calls
-Ran 661 tests across 26 files. [43.97s]

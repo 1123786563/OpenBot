@@ -1,1 +1,0 @@
-prereq final rescan done: 67 items, drift lines above (empty = zero drift)

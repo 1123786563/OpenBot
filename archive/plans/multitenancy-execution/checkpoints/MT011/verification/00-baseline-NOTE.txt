@@ -1,6 +1,0 @@
-# 00 baseline note
-# Full-suite baseline was run immediately after environment setup, BEFORE any MT011 implementation file existed:
-#   bun test tests/multitenancy/ --timeout 30000 -> 458 pass / 0 fail / 0 skip (16 files, 9069 expect) — matches the brief's 458/0/16 exactly.
-# Disclosure: the raw output was not redirected to a file at the time (terminal capture only).
-# Equivalent archived evidence: 02-full-regression.txt shows 477 = 458 pre-existing + 19 new MT011 tests, 0 fail 0 skip —
-# every pre-existing suite is byte-for-byte in effect (and 47/49 prereq-manifest hashes still verify byte-identical post-implementation, 05).

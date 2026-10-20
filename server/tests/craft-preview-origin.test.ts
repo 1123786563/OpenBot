@@ -1827,7 +1827,7 @@ describe("R-9: the dev form's cookie is scoped to the session's label path", () 
 // the label). These tests pin BOTH halves so the behavior is a contract, not an
 // accident.
 
-describe("the restart gap (M-2, documented in docs/craft-preview-origin.md)", () => {
+describe("the restart gap (M-2, documented in reference/craft-preview-origin.md)", () => {
   test("a restarted registry 404s a previously-registered host (the reload answer)", () => {
     const before = originWith({ previewOriginTemplate: TEMPLATE });
     const address = before.originFor(SESSION_ID); // registers the label

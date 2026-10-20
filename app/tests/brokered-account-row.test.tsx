@@ -39,7 +39,7 @@ import { BROKERED_PROBE_OUTCOMES } from "../../server/src/plugins/store";
  * THE SECOND is a deployment with no Composio key. The confirm answers 503, both screens swallow
  * it by design, and the state fell back to the stale local row — so every reader was told
  * "Connected" on a deployment that cannot reach the broker at all, with no sign anything was wrong
- * until a Bot call refused. `docs/plugins/composio.md` has always claimed the page says the key is
+ * until a Bot call refused. `reference/plugins/composio.md` has always claimed the page says the key is
  * missing; nothing implemented it.
  *
  * THE HARNESS IS THIS REPOSITORY'S, from `agent-roster-error.test.tsx` and

@@ -1,9 +1,0 @@
-{
-  "ticket": "MT015", "issue": 58, "integrated_at": "2026-10-17T01:30Z",
-  "review": {"task": "task_1df929c3cbf6", "dispatch": "ctx_7060921ae58f", "verdict": "PASS",
-    "findings": {"critical": 0, "high": 0, "medium": 0,
-      "deferred": ["裁决 D：MUT5 存档证据缺口（非 Blocker，需下游补证或改口径）", "O1 isPositiveInteger ≥2^53 科学计数法理论边角（v2 用 Number.isSafeInteger 收紧）"]}},
-  "integration_method": "3 新文件整复制（scoped-keys 7a0867cb / test 273b2e4a / support 260b9f38）；prereq 49 项零改动",
-  "verification": {"suite_focus": "30/0/0 (117 expect)", "full": "507/0/18 files（批1 合并亲验 = 458+30+19）", "typecheck": 0, "biome7": 0},
-  "baseline_chain": "…→458→(+MT015,MT011)→507"
-}

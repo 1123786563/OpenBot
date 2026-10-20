@@ -5,7 +5,7 @@ through `shared/model-providers.ts`, this module reads it for the Python Bots, a
 language reads it straight as JSON. A developer adding a Bot in Java adds one `bots` entry to the
 file and never reads either loader.
 
-ENVIRONMENT BEATS FILE, exactly as `docs/configuration.md` has always described: `BOT_PROVIDER`
+ENVIRONMENT BEATS FILE, exactly as `reference/configuration.md` has always described: `BOT_PROVIDER`
 and `BOT_MODEL` win, and the file supplies what they leave unset. API keys never appear in the
 file — they arrive in the environment under the `key_variable` the provider row names.
 
@@ -137,7 +137,7 @@ def bot_settings(
 ) -> BotSettings:
     """This Bot's provider and model: environment over spec file over provider default.
 
-    The lookup order is the whole contract, and it is the order `docs/configuration.md` already
+    The lookup order is the whole contract, and it is the order `reference/configuration.md` already
     documents for `BOT_PROVIDER` and `BOT_MODEL` — the environment is how a deployment overrides
     what the repository decided, so it wins. What is new is the middle: the `bots` row this Bot
     had before, written down in one file every language reads instead of repeated in each Bot's

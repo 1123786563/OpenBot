@@ -157,7 +157,7 @@ export function createPreviewTickets(deps: {
 // cookie planted there — the dev form works on those engines. WebKit/Safari
 // rejects a Secure cookie on ANY plain-http origin — loopback included — so
 // the dev form cannot plant the pass there and the preview is unavailable
-// on Safari/WebKit (the known limitation docs/craft-preview-origin.md
+// on Safari/WebKit (the known limitation reference/craft-preview-origin.md
 // records; the acceptance evidence chain is Chromium). Production's https
 // preview hosts are unaffected: every engine stores Secure cookies on
 // https. There is no attribute combination that satisfies both engines

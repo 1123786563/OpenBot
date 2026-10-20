@@ -403,3 +403,120 @@ export const creditRecoveryQueries = pgTable(
     ),
   ],
 );
+
+/**
+ * One alert row per recovery item (Bifrost 08.6): the durable state that makes alerting
+ * honest across restarts — what was alerted, when it started, when it last fired, and
+ * whether it has already escalated. The row IS the dedup: the unique index on item_id
+ * means one alert state per item, ever, so a restart (or two replicas racing) cannot
+ * re-notify from zero.
+ *
+ * WHY A TABLE AND NOT THE SINK'S MEMORY. Dedup and escalation are facts about the
+ * DEPLOYMENT's alerting posture, not about one process: a supervisor restart that
+ * forgot every first-alert would blast a fresh "new anomaly" for every item on every
+ * boot — exactly the spam the ticket's 去重 exists to prevent. Escalation needs
+ * first_alerted_at, which must survive whatever the process does.
+ *
+ * WHAT THE ROW CARRIES — AND WHAT IT NEVER CARRIES. The disposal facts an operator
+ * needs (归属账户 masked, 金额上限, 停留时长 via detected_at, 最近原因 as the stable
+ * code, 失败次数) are copied at alert time so the row reads standalone. It never
+ * carries credentials, raw provider answer bodies, or any OTHER account's data: the
+ * account reference is masked at write time (`maskAccountRef`), the reason is the item's
+ * closed-vocabulary last_reason, and the source summaries stay in
+ * `credit_recovery_queries` where 08.8's view reads them under its own rules.
+ *
+ * THE LEVEL LADDER. `first` (a threshold or dwell limit was crossed, first
+ * notification) → `repeat` (still unresolved after the repeat interval: a reminder,
+ * not a new alert) → `escalated` (unhandled past the escalation window: the terminal
+ * level — an escalated alert never re-fires, so an unattended queue plateaus instead
+ * of filling the channel). `escalated_at` travels with the escalated level and with
+ * nothing else, the same who/when inseparability the item's own claim CHECK keeps.
+ */
+export const creditRecoveryAlerts = pgTable(
+  "credit_recovery_alerts",
+  {
+    /** `cra-` plus 8 random bytes as hex, minted by the alerting pass. */
+    id: text("id").primaryKey(),
+    /** The recovery item this alert state tracks; one per item, ever (unique index). */
+    itemId: text("item_id")
+      .notNull()
+      .references(() => creditRecoveryItems.id, { onDelete: "cascade" }),
+    /** The hold and attempt the item names, copied for reads that key on them. */
+    reservationId: text("reservation_id").notNull(),
+    attemptId: text("attempt_id").notNull(),
+    /** The OWNING account, masked at write time — the full key is the payer layer's
+     * business, not the alert channel's. */
+    accountMasked: text("account_masked").notNull(),
+    /** The hold ceiling at alert time, in scaled units (×100). */
+    maximumCredits: integer("maximum_credits").notNull(),
+    /** The item's failure count when this alert last advanced. */
+    failureCount: integer("failure_count").notNull(),
+    /** The item's last_reason stable code when this alert last advanced. */
+    reasonCode: text("reason_code"),
+    /** The alert level ladder: first → repeat → escalated (terminal). */
+    level: text("level").$type<"first" | "repeat" | "escalated">().notNull(),
+    /** What last crossed: the retry threshold, or the dwell limit. */
+    lastTrigger: text("last_trigger")
+      .$type<"failure_threshold" | "dwell_limit">()
+      .notNull(),
+    /** When the anomaly was first detected (the item's detected_at, copied so dwell
+     * reads standalone). */
+    detectedAt: timestamp("detected_at", { withTimezone: true }).notNull(),
+    /** The dedup anchors: when alerting started and when it last fired. */
+    firstAlertedAt: timestamp("first_alerted_at", {
+      withTimezone: true,
+    }).notNull(),
+    lastAlertedAt: timestamp("last_alerted_at", {
+      withTimezone: true,
+    }).notNull(),
+    /** Set exactly when the level becomes escalated, never unset. */
+    escalatedAt: timestamp("escalated_at", { withTimezone: true }),
+    /** How many notifications this alert state has emitted (first counts as 1). */
+    alertCount: integer("alert_count").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("credit_recovery_alerts_item_unique_idx").on(table.itemId),
+    check(
+      "credit_recovery_alerts_level_check",
+      sql`${table.level} IN ('first', 'repeat', 'escalated')`,
+    ),
+    check(
+      "credit_recovery_alerts_trigger_check",
+      sql`${table.lastTrigger} IN ('failure_threshold', 'dwell_limit')`,
+    ),
+    check(
+      "credit_recovery_alerts_maximum_check",
+      sql`${table.maximumCredits} > 0`,
+    ),
+    check(
+      "credit_recovery_alerts_failure_count_check",
+      sql`${table.failureCount} >= 0`,
+    ),
+    check(
+      "credit_recovery_alerts_alert_count_check",
+      sql`${table.alertCount} >= 1`,
+    ),
+    // The escalated level and its timestamp travel together or not at all — a level the
+    // ladder has not reached must not wear the escalation's badge (the item claim's own
+    // who/when discipline, applied to the alert).
+    check(
+      "credit_recovery_alerts_escalation_check",
+      sql`(${table.level} <> 'escalated' AND ${table.escalatedAt} IS NULL) OR (${table.level} = 'escalated' AND ${table.escalatedAt} IS NOT NULL)`,
+    ),
+    check(
+      "credit_recovery_alerts_ordering_check",
+      sql`${table.lastAlertedAt} >= ${table.firstAlertedAt}`,
+    ),
+    // The operational read: what is still firing, newest first.
+    index("credit_recovery_alerts_level_last_idx").on(
+      table.level,
+      table.lastAlertedAt,
+    ),
+  ],
+);

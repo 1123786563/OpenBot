@@ -1,9 +1,0 @@
-# MT008 after-hashes (3rd takeover final state, 2026-10-16)
-# Same file set as before-hashes.txt; NEW files carry their full final hash.
-f4ddcd5b3e007bcd691e641d387439b9a7cc67b49999f42ece3998388c44b5d8  src/db/schema/enterprise-tenancy.ts
-c5bfb3d4e343bbcf03e205d47977013c1565bb2780708c8bbf912382c631d756  scripts/multitenancy/migrate-test.ts
-c7569901c8c032c5c8ddeda86d9427e437851162fb9cb22d1c4004b3bf482cdc  tests/multitenancy/migration-tool.test.ts
-4da9c4081c7029382033f5ddc553ed402c00d64adc60b1a3000998506a5d0c5c  src/enterprise/tenancy/resource-policy.ts
-3d32eb61f2b976e33072872f712a244fbf57842f030124807b1044117625785b  src/enterprise/tenancy/resource-visibility.ts
-4a0e3ddada3086ba6e64325d6ccfd89996f27a1c833cc44a4506e017f47450c8  tests/multitenancy/resource-policy.test.ts
-6280bae6b560a23bb0ebbc622f261c5f9db05cc59c7d04ae992ab26e311d7998  tests/multitenancy/support/resource-policy.ts

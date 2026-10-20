@@ -59,11 +59,11 @@ const suites = scope.length ? scope : ALL;
 /*
  * Suites this repository cannot load at all right through no fault of the runner: their own fixture
  * moved. `e2e` aborts a whole run at the first uncollectable file, so they are excluded here and
- * named in docs/verification/e2e-known-broken.json — `bun run test:ci` prints the count, and the
+ * named in tests/config/e2e-known-broken.json — `bun run test:ci` prints the count, and the
  * entry disappears when whoever owns that suite repoints it.
  */
 const broken: string[] = (() => {
-  const path = "docs/verification/e2e-known-broken.json";
+  const path = "tests/config/e2e-known-broken.json";
   if (!existsSync(path)) return [];
   const parsed = JSON.parse(readFileSync(path, "utf8")) as {
     entries?: { file: string }[];
@@ -72,7 +72,7 @@ const broken: string[] = (() => {
 })();
 
 const driven = (() => {
-  const path = "docs/verification/e2e-bun-suites.json";
+  const path = "tests/config/e2e-bun-suites.json";
   if (!existsSync(path)) return [];
   const parsed = JSON.parse(readFileSync(path, "utf8")) as {
     files?: string[];

@@ -1,32 +1,17 @@
 [
  {
-  "id": "msg_d5b619e54553",
+  "id": "msg_f8344f5f7c43",
   "run_id": "run_dab21d1c168e",
   "delivery_contract": "current_delivery",
-  "from_handle": "structworker_7cf799a5-967c-45f7-ab33-b76fde6846a1",
+  "from_handle": "structworker_32181b52-a97d-467c-a962-d7f2adae0873",
   "to_handle": "run:run_dab21d1c168e",
-  "subject": "BF wave3 batch done: 5/5 SATISFIED",
-  "body": "Processed #222/#263/#265/#274/#280 in order: #222-#274 were already equivalently implemented on main (verified zero-change with green tests — admin-credit-grant 11+7 pass, credit-views 13 pass, PreLLMReserve + full governance go suite ok, stream-settlement/unknown-hold suites ok), while #280 (provider final-state query) had no equivalent so I implemented it: recovery-provider-query.ts + credit_recovery_queries evidence table + migration 0164 + 9 green integration tests, with no-release/no-settle semantics and drift/typecheck/lint/regressions verified. Found one main-level harness regression unrelated to billing code: async React re-renders never flush under the e2e node runner (5 page tests in #263's UI file fail today though byte-identical code passed 8/8 on Oct 19; minimal zero-billing probe reproduces; passes under bun tier) — documented in report appendix A for the test-migration line. Report at reports/orca-dag-wave3-bf.md with per-ticket evidence, exit codes, and sha256; bifrost submodule verified clean at pinned e44890f8; nothing left except decisions on appendix A/B.",
+  "subject": "fix1 批完成：F7/F9/F1/F3/F4/F10 全修并红绿验证",
+  "body": "修复 round1 评审六项：F7/F9（billing service 裸 id 查询加 customer 交叉校验，配跨用户同字符串 id 碰撞回归测试）、F1（经 scripts/e2e-add-driven.mjs 生成式登记 recovery-provider-query 入 server/tests part 11，13 个无关 partition 重写已还原）、F3/F4（hindsight 扩展 compare_digest 与 filter_bank_list 空集化，新增容器内 verify-tenant-hardening.py 8 查全过）、F10（app-only 下整行丢弃 pass 名 Set-Cookie）。全部新用例做了修复前红/修复后绿双向验证，三域代表套件全绿（billing 7+16+7、craft 93+128、hindsight 23 pass/1 skip + 8 unit checks），server typecheck 仅 3 处 main 既有基线错。产物在未提交树，报告含逐项命令/退出码与 sha256：reports/orca-dag-wave3-fix1.md；遗留仅 main 既有 compat import 漂移（属 partition 流，建议另票）。",
   "type": "worker_done",
   "priority": "normal",
   "thread_id": null,
-  "payload": "{\"taskId\":\"task_ac6eec3a8a53\",\"dispatchId\":\"ctx_1c5f5a48ab83\",\"outcome\":\"succeeded\",\"filesModified\":[\"server/src/billing/recovery-provider-query.ts\",\"server/src/db/schema/credit-reservations.ts\",\"server/drizzle/0164_recovery_provider_queries.sql\",\"server/drizzle/meta/_journal.json\",\"server/tests/recovery-provider-query.integration.test.ts\",\"reports/orca-dag-wave3-bf.md\"],\"reportPath\":\"reports/orca-dag-wave3-bf.md\"}",
-  "created_at": "2026-10-20T05:54:34Z",
-  "delivered_at": null
- },
- {
-  "id": "msg_f931ced9265e",
-  "run_id": "run_dab21d1c168e",
-  "delivery_contract": "current_delivery",
-  "from_handle": "structworker_5e956e4a-c6dd-4781-a36e-3d5f02e009e0",
-  "to_handle": "run:run_dab21d1c168e",
-  "subject": "hbc 批次五票全部 SATISFIED（#378 零改动 + 四票已实施）",
-  "body": "按序处理完 #378/#381/#373/#405/#411：#378 核验 main 已含等价实现零改动 SATISFIED（memory 全套在正确测试层全绿）；#381 交付可信 scope→bank 派生 seam + Hindsight 自定义租户扩展/操作校验器并在真实 Hindsight 1.0.0 实例上 13 条允许/拒绝合约全过（同全局用户双公司隔离、伪造/篡改/过期断言 401、越权 bank 403）；#373 交付账户维度的续期幂等键 + 订阅行复合主键迁移 0164 并以 5 个新真实 DB 用例覆盖重复/乱序/取消/同串不冲突，票面验证命令 34 pass。#405 交付 preview 代理 app-only cookie 策略（pass 剥离、Set-Cookie 去 Domain/限 Path/多 header 保留，旧挂载语义不变）91 pass；#411 交付 OPENBOT_TLS_STATUS_FILE + admission 五态 fail-closed 门禁（mtime 缓存免重启重判、dev 形态免疫、compose 只读挂载、docs 修正）craft 213 pass + sidecar 117 pass。勘误：任务简报给 #411 的 CSP 描述实为 #409（另一流在办），按 DAG 票号执行了 #411 票面。全部证据与 30 文件 sha256 见 reports/orca-dag-wave3-hbc.md；未 commit 未 push；遗留仅 main 既有 bootstrap-local-gateway typecheck 错与 bot-lifecycle audit 缺口（均先于本批存在）。",
-  "type": "worker_done",
-  "priority": "normal",
-  "thread_id": null,
-  "payload": "{\"taskId\":\"task_4f44e707d295\",\"dispatchId\":\"ctx_2c246b665be0\",\"outcome\":\"succeeded\",\"filesModified\":[\"server/src/hindsight/bank-scope.ts\",\"deploy/hindsight/extensions/**\",\"deploy/hindsight/test/contract-instance.sh\",\"deploy/hindsight/docker-compose.yml\",\"deploy/hindsight/hindsight.env.example\",\"deploy/hindsight/README.md\",\"server/src/billing/plan-renewals.ts\",\"server/src/billing/store.ts\",\"server/src/billing/types.ts\",\"server/src/billing/service.ts\",\"server/src/billing/payments/service.ts\",\"server/src/db/schema/billing.ts\",\"server/drizzle/0164_subscription_customer_scoped_identity.sql\",\"server/drizzle/meta/_journal.json\",\"server/src/craft/webapp-proxy.ts\",\"server/src/craft/preview-origin.ts\",\"server/src/craft/preview-tls-status.ts\",\"docker-compose.yml\",\"docs/tls-certs.md\",\"docs/verification/e2e-bun-suites.json\",\"server/tests/hindsight-bank-scope.test.ts\",\"server/tests/hindsight-bank-isolation.contract.test.ts\",\"server/tests/billing-company-renewal.integration.test.ts\",\"server/tests/craft-webapp-proxy.test.ts\",\"server/tests/craft-preview-origin.test.ts\",\"server/tests/subscription-ownership.integration.test.ts\",\"server/tests/plan-credits-personal.integration.test.ts\",\"server/tests/plan-renewal-grantor.test.ts\",\"reports/orca-dag-wave3-hbc.md\"],\"reportPath\":\"reports/orca-dag-wave3-hbc.md\"}",
-  "created_at": "2026-10-20T07:05:17Z",
+  "payload": "{\"taskId\":\"task_e74955d0ff6c\",\"dispatchId\":\"ctx_502df1d61a60\",\"outcome\":\"succeeded\",\"filesModified\":[\"server/src/billing/service.ts\",\"server/src/craft/webapp-proxy.ts\",\"deploy/hindsight/extensions/openbot_tenant/tenant.py\",\"deploy/hindsight/extensions/openbot_tenant/validator.py\",\"deploy/hindsight/test/verify-tenant-hardening.py\",\"server/tests/billing-company-renewal.integration.test.ts\",\"server/tests/craft-webapp-proxy.test.ts\",\"docs/verification/e2e-bun-suites.json\",\"reports/orca-dag-wave3-fix1.md\"],\"reportPath\":\"reports/orca-dag-wave3-fix1.md\"}",
+  "created_at": "2026-10-20T10:29:59Z",
   "delivered_at": null
  }
 ]

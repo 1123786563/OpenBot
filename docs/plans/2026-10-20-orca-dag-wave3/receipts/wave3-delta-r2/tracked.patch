@@ -1,0 +1,517 @@
+diff --git a/app/src/locales/en/admin.json b/app/src/locales/en/admin.json
+index 140ca357..121a0303 100644
+--- a/app/src/locales/en/admin.json
++++ b/app/src/locales/en/admin.json
+@@ -1280,5 +1280,22 @@
+     "pass": "pass",
+     "fail": "FAIL",
+     "recoveryLabel": "Recovery"
++  },
++  "recoveryReview": {
++    "sectionTitle": "Settlement anomaly review",
++    "sectionDescription": "A read-only view of unknown-consumption recovery items and their evidence; settling and releasing are separately authorized disposal actions, not this page.",
++    "loading": "Loading settlement anomalies…",
++    "loadProblem": "The settlement review could not be loaded.",
++    "empty": "No unresolved settlement anomalies right now.",
++    "account": "Account",
++    "ceiling": "Ceiling",
++    "dwell": "Dwell",
++    "failures": "Failures",
++    "reason": "Latest reason",
++    "state": "State",
++    "evidence": "Query evidence",
++    "evidenceEmpty": "No query evidence yet",
++    "usage": "Usage",
++    "noWriteActions": "This view is strictly read-only"
+   }
+ }
+diff --git a/app/src/locales/en/errors.json b/app/src/locales/en/errors.json
+index 9cef77aa..a24617d3 100644
+--- a/app/src/locales/en/errors.json
++++ b/app/src/locales/en/errors.json
+@@ -33,7 +33,8 @@
+     "loadBill": "That bill could not be loaded.",
+     "loadPurchase": "That purchase could not be loaded.",
+     "loadLatestPurchase": "Your latest purchase could not be loaded.",
+-    "grantPersonal": "The grant could not be completed. Try again."
++    "grantPersonal": "The grant could not be completed. Try again.",
++    "loadRecoveryReview": "The settlement review could not be loaded."
+   },
+   "botLifecycle": {
+     "loadNeeds": "Could not load what your Bots need",
+diff --git a/app/src/locales/zh-CN/admin.json b/app/src/locales/zh-CN/admin.json
+index faeb4d8b..2390fc11 100644
+--- a/app/src/locales/zh-CN/admin.json
++++ b/app/src/locales/zh-CN/admin.json
+@@ -1280,5 +1280,22 @@
+     "pass": "通过",
+     "fail": "失败",
+     "recoveryLabel": "恢复方式"
++  },
++  "recoveryReview": {
++    "sectionTitle": "异常结算核查",
++    "sectionDescription": "未知消费恢复项与其证据的只读视图；结算与释放是独立授权的处置动作，不在此页。",
++    "loading": "正在加载异常结算项…",
++    "loadProblem": "异常结算核查数据加载失败。",
++    "empty": "当前没有未处置的异常结算项。",
++    "account": "归属账户",
++    "ceiling": "金额上限",
++    "dwell": "停留时长",
++    "failures": "失败次数",
++    "reason": "最近原因",
++    "state": "状态",
++    "evidence": "查询证据",
++    "evidenceEmpty": "尚无查询证据",
++    "usage": "用量",
++    "noWriteActions": "本视图严格只读"
+   }
+ }
+diff --git a/app/src/locales/zh-CN/errors.json b/app/src/locales/zh-CN/errors.json
+index c7f9cd42..76b4adbe 100644
+--- a/app/src/locales/zh-CN/errors.json
++++ b/app/src/locales/zh-CN/errors.json
+@@ -33,7 +33,8 @@
+     "loadBill": "无法加载该账单。",
+     "loadPurchase": "无法加载该购买记录。",
+     "loadLatestPurchase": "无法加载你最近的一次购买。",
+-    "grantPersonal": "积分发放未完成，请重试。"
++    "grantPersonal": "积分发放未完成，请重试。",
++    "loadRecoveryReview": "无法加载异常结算核查数据。"
+   },
+   "botLifecycle": {
+     "loadNeeds": "无法加载你的 Bots 需要什么",
+diff --git a/app/src/routes/_authed/admin/billing.tsx b/app/src/routes/_authed/admin/billing.tsx
+index 981c2dda..39485a08 100644
+--- a/app/src/routes/_authed/admin/billing.tsx
++++ b/app/src/routes/_authed/admin/billing.tsx
+@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
+ import { useTranslation } from "react-i18next";
+ import { AdminCreditGrantCard } from "@/components/billing/admin-credit-grant";
+ import { BillingCleanupExecutionCard } from "@/components/admin/billing-cleanup-execution-card";
++import { BillingRecoveryReviewCard } from "@/components/admin/billing-recovery-review-card";
+ import {
+   PageSection,
+   PageShell,
+@@ -35,6 +36,12 @@ function BillingAdminPage() {
+       >
+         <BillingCleanupExecutionCard />
+       </PageSection>
++      <PageSection
++        description={t("recoveryReview.sectionDescription")}
++        title={t("recoveryReview.sectionTitle")}
++      >
++        <BillingRecoveryReviewCard />
++      </PageSection>
+     </PageShell>
+   );
+ }
+diff --git a/docs/plans/2026-10-20-orca-dag-wave3/reviews/round1-review.md b/docs/plans/2026-10-20-orca-dag-wave3/reviews/round1-review.md
+index 6ef9d718..225d8226 100644
+--- a/docs/plans/2026-10-20-orca-dag-wave3/reviews/round1-review.md
++++ b/docs/plans/2026-10-20-orca-dag-wave3/reviews/round1-review.md
+@@ -129,3 +129,13 @@
+ - 生产接线缺口为**已声明且合规的边界**：#280 无 source/调度（准入拒绝在位）、#381 的 OpenBot recall 调用路径（README 已改为后续票非目标）、Go 侧零改动（bf3 只读验证）。
+ 
+ — 独立评审者，2026-10-20
++
++## 8. 后记：OCR 扫描关卡取消（用户裁决）
++
++用户于 2026-10-20 指示：**编排流程不再使用 OCR（open-code-review Skill）进行扫描**。据此：
++
++- 本 round1 独立评审（Standards + Spec Compliance 双轴）即作为 wave3 增量的 review 记录，后续不再追加 OCR 轮；
++- 第 6/7 节的 finding 裁决与修复建议不变（F7 后续票、F1/F14 随集成顺手修、其余攒批），修复复审仍由独立 reviewer 承担，不经 OCR 循环；
++- 该裁决同时记入持久记忆，适用于后续编排运行。
++
++— 独立评审者，2026-10-20（OCR waiver）
+diff --git a/docs/verification/e2e-bun-suites.json b/docs/verification/e2e-bun-suites.json
+index 5272bb5b..90ab19fe 100644
+--- a/docs/verification/e2e-bun-suites.json
++++ b/docs/verification/e2e-bun-suites.json
+@@ -46,6 +46,7 @@
+     "app/tests/admin-catalog-sync-ui.test.tsx",
+     "app/tests/admin-credit-grant-ui.test.tsx",
+     "app/tests/admin-gateway-readiness.test.tsx",
++    "app/tests/admin-settlement-review-ui.test.tsx",
+     "app/tests/agent-roster-error.test.tsx",
+     "app/tests/approval-tools.test.tsx",
+     "app/tests/approvals-rules.test.tsx",
+@@ -196,6 +197,7 @@
+     "server/tests/access-grant.integration.test.ts",
+     "server/tests/account-mode.integration.test.ts",
+     "server/tests/admin-credit-grant.integration.test.ts",
++    "server/tests/admin-settlement-review.integration.test.ts",
+     "server/tests/agent-connection-live.test.ts",
+     "server/tests/agent-handoff-endtoend.integration.test.ts",
+     "server/tests/agent-handoff-runner.integration.test.ts",
+@@ -245,7 +247,8 @@
+     "server/tests/channel-activity.integration.test.ts",
+     "server/tests/channel-events.integration.test.ts",
+     "server/tests/channel-routes.test.ts",
+-    "server/tests/channel-summary.integration.test.ts"
++    "server/tests/channel-summary.integration.test.ts",
++    "server/tests/recovery-alerting.integration.test.ts"
+    ]
+   },
+   {
+@@ -646,6 +649,7 @@
+   "app/tests/admin-catalog-sync-ui.test.tsx",
+   "app/tests/admin-credit-grant-ui.test.tsx",
+   "app/tests/admin-gateway-readiness.test.tsx",
++  "app/tests/admin-settlement-review-ui.test.tsx",
+   "app/tests/agent-roster-error.test.tsx",
+   "app/tests/ai-observability-admin-summary.test.tsx",
+   "app/tests/ai-observability-datasets.test.tsx",
+@@ -741,6 +745,7 @@
+   "server/tests/access-grant.integration.test.ts",
+   "server/tests/account-mode.integration.test.ts",
+   "server/tests/admin-credit-grant.integration.test.ts",
++  "server/tests/admin-settlement-review.integration.test.ts",
+   "server/tests/agent-connection-live.test.ts",
+   "server/tests/agent-handoff-endtoend.integration.test.ts",
+   "server/tests/agent-handoff-runner.integration.test.ts",
+@@ -1032,6 +1037,7 @@
+   "server/tests/qa-batch2-t5-semantics.integration.test.ts",
+   "server/tests/qa-batch2-unreadable-fourth.integration.test.ts",
+   "server/tests/qa-batch3-reconcile.test.ts",
++  "server/tests/recovery-alerting.integration.test.ts",
+   "server/tests/recovery-scan.integration.test.ts",
+   "server/tests/recovery-unacked-replay.integration.test.ts",
+   "server/tests/release-semantics.integration.test.ts",
+@@ -1104,4 +1110,4 @@
+   "app/tests/multitenancy",
+   "server/tests/multitenancy"
+  ]
+-}
+\ No newline at end of file
++}
+diff --git a/server/drizzle/meta/_journal.json b/server/drizzle/meta/_journal.json
+index 0c546981..54409cb0 100644
+--- a/server/drizzle/meta/_journal.json
++++ b/server/drizzle/meta/_journal.json
+@@ -1170,6 +1170,13 @@
+       "when": 1792857602000,
+       "tag": "0166_subscription_customer_scoped_identity",
+       "breakpoints": true
++    },
++    {
++      "idx": 167,
++      "version": "7",
++      "when": 1792857603000,
++      "tag": "0167_recovery_alerts",
++      "breakpoints": true
+     }
+   ]
+ }
+\ No newline at end of file
+diff --git a/server/src/audit.ts b/server/src/audit.ts
+index 0e31fa4c..1843fca8 100644
+--- a/server/src/audit.ts
++++ b/server/src/audit.ts
+@@ -818,6 +818,15 @@ export const auditEventTypes = [
+    * the deletions, so the trail never describes a deletion that did not happen.
+    */
+   "billing.cleanup.executed",
++  /**
++   * A non-administrator probed the settlement-anomaly review (Bifrost 08.8): the refusal
++   * the admin gate answered with, and the trail's record that the probe happened. The
++   * payload names the path only — the caller was answered with nothing, so the row
++   * carries no account data either. Successful reviews are NOT audited: they read, and
++   * the review surface itself must stay free of write side effects beyond the gate's own
++   * record of who it turned away.
++   */
++  "billing.recovery.review_denied",
+   /**
+    * A craft session's owner answered a connect_app card (connected/declined; the session,
+    * the app id and the decision in the payload). The handshake itself rides ephemeral KV
+diff --git a/server/src/billing/routes.ts b/server/src/billing/routes.ts
+index 36ba507a..4eaa08d3 100644
+--- a/server/src/billing/routes.ts
++++ b/server/src/billing/routes.ts
+@@ -18,12 +18,16 @@
+ import type { Context, MiddlewareHandler } from "hono";
+ import { Hono } from "hono";
+ import { createHash } from "node:crypto";
+-import { desc, eq } from "drizzle-orm";
++import { asc, desc, eq, inArray, ne } from "drizzle-orm";
+ import { z } from "zod";
+ import { type AuditStore, recordAuditEvent } from "../audit";
+ import type { AppVariables } from "../auth/guards";
+ import type { Database } from "../db/client";
+ import { auditEvents, users } from "../db/schema";
++import {
++  creditRecoveryItems,
++  creditRecoveryQueries,
++} from "../db/schema/credit-reservations";
+ import type { Credits } from "./credits";
+ import type { CreditWriter } from "./credits-writer";
+ import {
+@@ -726,10 +730,14 @@ export function createBillingAdminRoutes(deps: {
+     if (!executed) return context.json({ execution: null });
+     const receipt = executed.payload as Record<string, unknown>;
+     const verified = ofExecution.find(
+-      (row) => (row.payload as Record<string, unknown>).phase === "post_verified",
++      (row) =>
++        (row.payload as Record<string, unknown>).phase === "post_verified",
+     );
+     const verifiedReport = verified
+-      ? ((verified.payload as Record<string, unknown>).report as Record<string, unknown>)
++      ? ((verified.payload as Record<string, unknown>).report as Record<
++          string,
++          unknown
++        >)
+       : undefined;
+     return context.json({
+       execution: {
+@@ -742,5 +750,127 @@ export function createBillingAdminRoutes(deps: {
+     });
+   });
+ 
++  /*
++   * The administrator's settlement-anomaly review (Bifrost 08.8, #283): every unresolved
++   * recovery item with the evidence 08.5 gathered for it, sorted by state and dwell. THIS
++   * ROUTE READS, IT NEVER DISPOSES: settling and releasing are 08.9's evidenced, separately
++   * authorized actions — a review surface that could act would put a money decision one
++   * click away from the judgment that is supposed to precede it. There is no write method
++   * on this path and there must never grow one (the tests hold the route set to exactly
++   * that).
++   *
++   * The refusal is audited (the ticket's rule): a non-administrator probing the anomaly
++   * queue is itself a fact worth a row. The payload names the path only — the caller saw
++   * nothing, so the trail carries no account data either. What the route answers is
++   * already redacted by construction: account refs are the payer layer's opaque keys, the
++   * recent reason is the item's stable code, and the evidence summaries are the bounded
++   * excerpts 08.5 recorded — never a credential, never another account's row.
++   */
++  routes.get("/recovery-items", async (context) => {
++    const denied = deps.requireAdmin(context);
++    if (denied) {
++      if (deps.audit) {
++        await recordAuditEvent(deps.audit, {
++          eventType: "billing.recovery.review_denied",
++          targetType: "billing",
++          actorUserId: context.var.actor.id,
++          payload: { path: "/api/admin/billing/recovery-items" },
++        });
++      }
++      return denied;
++    }
++    if (!deps.database) {
++      // No deployment database wired: the anomaly queue is not "empty", it is unreadable.
++      return context.json(
++        { error: "The settlement review is unavailable. Try again." },
++        503,
++      );
++    }
++
++    // Unresolved items, in-flight (claimed) before waiting (pending), oldest dwell first —
++    // the queue's own reading order (the ticket's 按状态与停留时长排序).
++    const items = await deps.database
++      .select()
++      .from(creditRecoveryItems)
++      .where(ne(creditRecoveryItems.state, "resolved"))
++      .orderBy(
++        asc(creditRecoveryItems.state),
++        asc(creditRecoveryItems.detectedAt),
++      )
++      .limit(200);
++
++    // The evidence 08.5 gathered, newest first, bounded per item: the trail an operator
++    // reads before 08.9 acts. Older history stays in the table for the disposal's own
++    // evidence needs; a review reads the recent window.
++    const EVIDENCE_PER_ITEM = 5;
++    const evidenceByItem = new Map<
++      string,
++      {
++        conclusion: string;
++        source: string;
++        summary: string;
++        usageInput: number | null;
++        usageOutput: number | null;
++        queriedAt: string;
++      }[]
++    >();
++    if (items.length > 0) {
++      const rows = await deps.database
++        .select()
++        .from(creditRecoveryQueries)
++        .where(
++          inArray(
++            creditRecoveryQueries.itemId,
++            items.map((item) => item.id),
++          ),
++        )
++        .orderBy(
++          desc(creditRecoveryQueries.queriedAt),
++          desc(creditRecoveryQueries.id),
++        );
++      for (const row of rows) {
++        const list = evidenceByItem.get(row.itemId) ?? [];
++        if (list.length < EVIDENCE_PER_ITEM) {
++          list.push({
++            conclusion: row.conclusion,
++            source: row.source,
++            summary: row.summary,
++            usageInput: row.usageInput,
++            usageOutput: row.usageOutput,
++            queriedAt: row.queriedAt.toISOString(),
++          });
++          evidenceByItem.set(row.itemId, list);
++        }
++      }
++    }
++
++    const generatedAt = new Date();
++    return context.json({
++      generatedAt: generatedAt.toISOString(),
++      items: items.map((item) => ({
++        itemId: item.id,
++        attemptId: item.attemptId,
++        reservationId: item.reservationId,
++        accountRef: item.externalCustomerId,
++        payerKind: item.payerKind,
++        payerId: item.payerId,
++        provider: item.provider,
++        model: item.model,
++        maximumCredits: item.maximum,
++        failureCount: item.failureCount,
++        lastReason: item.lastReason,
++        state: item.state,
++        detectedAt: item.detectedAt.toISOString(),
++        dwellSeconds: Math.max(
++          0,
++          Math.floor(
++            (generatedAt.getTime() - item.detectedAt.getTime()) / 1000,
++          ),
++        ),
++        evidence: evidenceByItem.get(item.id) ?? [],
++      })),
++    });
++  });
++
+   return routes;
+ }
+diff --git a/server/src/db/schema/credit-reservations.ts b/server/src/db/schema/credit-reservations.ts
+index 35391702..f9a8ffb0 100644
+--- a/server/src/db/schema/credit-reservations.ts
++++ b/server/src/db/schema/credit-reservations.ts
+@@ -403,3 +403,120 @@ export const creditRecoveryQueries = pgTable(
+     ),
+   ],
+ );
++
++/**
++ * One alert row per recovery item (Bifrost 08.6): the durable state that makes alerting
++ * honest across restarts — what was alerted, when it started, when it last fired, and
++ * whether it has already escalated. The row IS the dedup: the unique index on item_id
++ * means one alert state per item, ever, so a restart (or two replicas racing) cannot
++ * re-notify from zero.
++ *
++ * WHY A TABLE AND NOT THE SINK'S MEMORY. Dedup and escalation are facts about the
++ * DEPLOYMENT's alerting posture, not about one process: a supervisor restart that
++ * forgot every first-alert would blast a fresh "new anomaly" for every item on every
++ * boot — exactly the spam the ticket's 去重 exists to prevent. Escalation needs
++ * first_alerted_at, which must survive whatever the process does.
++ *
++ * WHAT THE ROW CARRIES — AND WHAT IT NEVER CARRIES. The disposal facts an operator
++ * needs (归属账户 masked, 金额上限, 停留时长 via detected_at, 最近原因 as the stable
++ * code, 失败次数) are copied at alert time so the row reads standalone. It never
++ * carries credentials, raw provider answer bodies, or any OTHER account's data: the
++ * account reference is masked at write time (`maskAccountRef`), the reason is the item's
++ * closed-vocabulary last_reason, and the source summaries stay in
++ * `credit_recovery_queries` where 08.8's view reads them under its own rules.
++ *
++ * THE LEVEL LADDER. `first` (a threshold or dwell limit was crossed, first
++ * notification) → `repeat` (still unresolved after the repeat interval: a reminder,
++ * not a new alert) → `escalated` (unhandled past the escalation window: the terminal
++ * level — an escalated alert never re-fires, so an unattended queue plateaus instead
++ * of filling the channel). `escalated_at` travels with the escalated level and with
++ * nothing else, the same who/when inseparability the item's own claim CHECK keeps.
++ */
++export const creditRecoveryAlerts = pgTable(
++  "credit_recovery_alerts",
++  {
++    /** `cra-` plus 8 random bytes as hex, minted by the alerting pass. */
++    id: text("id").primaryKey(),
++    /** The recovery item this alert state tracks; one per item, ever (unique index). */
++    itemId: text("item_id")
++      .notNull()
++      .references(() => creditRecoveryItems.id, { onDelete: "cascade" }),
++    /** The hold and attempt the item names, copied for reads that key on them. */
++    reservationId: text("reservation_id").notNull(),
++    attemptId: text("attempt_id").notNull(),
++    /** The OWNING account, masked at write time — the full key is the payer layer's
++     * business, not the alert channel's. */
++    accountMasked: text("account_masked").notNull(),
++    /** The hold ceiling at alert time, in scaled units (×100). */
++    maximumCredits: integer("maximum_credits").notNull(),
++    /** The item's failure count when this alert last advanced. */
++    failureCount: integer("failure_count").notNull(),
++    /** The item's last_reason stable code when this alert last advanced. */
++    reasonCode: text("reason_code"),
++    /** The alert level ladder: first → repeat → escalated (terminal). */
++    level: text("level").$type<"first" | "repeat" | "escalated">().notNull(),
++    /** What last crossed: the retry threshold, or the dwell limit. */
++    lastTrigger: text("last_trigger")
++      .$type<"failure_threshold" | "dwell_limit">()
++      .notNull(),
++    /** When the anomaly was first detected (the item's detected_at, copied so dwell
++     * reads standalone). */
++    detectedAt: timestamp("detected_at", { withTimezone: true }).notNull(),
++    /** The dedup anchors: when alerting started and when it last fired. */
++    firstAlertedAt: timestamp("first_alerted_at", {
++      withTimezone: true,
++    }).notNull(),
++    lastAlertedAt: timestamp("last_alerted_at", {
++      withTimezone: true,
++    }).notNull(),
++    /** Set exactly when the level becomes escalated, never unset. */
++    escalatedAt: timestamp("escalated_at", { withTimezone: true }),
++    /** How many notifications this alert state has emitted (first counts as 1). */
++    alertCount: integer("alert_count").notNull().default(1),
++    createdAt: timestamp("created_at", { withTimezone: true })
++      .notNull()
++      .defaultNow(),
++    updatedAt: timestamp("updated_at", { withTimezone: true })
++      .notNull()
++      .defaultNow(),
++  },
++  (table) => [
++    uniqueIndex("credit_recovery_alerts_item_unique_idx").on(table.itemId),
++    check(
++      "credit_recovery_alerts_level_check",
++      sql`${table.level} IN ('first', 'repeat', 'escalated')`,
++    ),
++    check(
++      "credit_recovery_alerts_trigger_check",
++      sql`${table.lastTrigger} IN ('failure_threshold', 'dwell_limit')`,
++    ),
++    check(
++      "credit_recovery_alerts_maximum_check",
++      sql`${table.maximumCredits} > 0`,
++    ),
++    check(
++      "credit_recovery_alerts_failure_count_check",
++      sql`${table.failureCount} >= 0`,
++    ),
++    check(
++      "credit_recovery_alerts_alert_count_check",
++      sql`${table.alertCount} >= 1`,
++    ),
++    // The escalated level and its timestamp travel together or not at all — a level the
++    // ladder has not reached must not wear the escalation's badge (the item claim's own
++    // who/when discipline, applied to the alert).
++    check(
++      "credit_recovery_alerts_escalation_check",
++      sql`(${table.level} <> 'escalated' AND ${table.escalatedAt} IS NULL) OR (${table.level} = 'escalated' AND ${table.escalatedAt} IS NOT NULL)`,
++    ),
++    check(
++      "credit_recovery_alerts_ordering_check",
++      sql`${table.lastAlertedAt} >= ${table.firstAlertedAt}`,
++    ),
++    // The operational read: what is still firing, newest first.
++    index("credit_recovery_alerts_level_last_idx").on(
++      table.level,
++      table.lastAlertedAt,
++    ),
++  ],
++);

@@ -1,6 +1,0 @@
-(fail) MT042 — platform scan scope rebuild (Issue #85) > AC1: the scan lists due jobs across companies as metadata, never business content > lists due jobs of two companies and never reads the payload [51.77ms]
-(fail) MT042 — platform scan scope rebuild (Issue #85) > AC2: the scope is rebuilt from the persisted record; message fields are hints only > executes under the authoritative record's scope, ignoring wrong message hints [24.66ms]
-(fail) MT042 — platform scan scope rebuild (Issue #85) > AC2: the scope is rebuilt from the persisted record; message fields are hints only > refuses an item with no authoritative record, echoing nothing from the message [23.08ms]
-(fail) MT042 — platform scan scope rebuild (Issue #85) > execution and lease discipline (MT041 consumption) > executes under the MT041 lease, finishes it, and never re-offers a finished item [24.96ms]
-(fail) MT042 — platform scan scope rebuild (Issue #85) > execution and lease discipline (MT041 consumption) > releases the lease on execution failure and the item returns as attempt 2 [5002.01ms]
-(fail) MT042 — platform scan scope rebuild (Issue #85) > execution and lease discipline (MT041 consumption) > skips an item whose job lease is live-held by another executor [5002.02ms]

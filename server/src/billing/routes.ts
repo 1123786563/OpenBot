@@ -18,12 +18,16 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { createHash } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import { auditEvents, users } from "../db/schema";
+import {
+  creditRecoveryItems,
+  creditRecoveryQueries,
+} from "../db/schema/credit-reservations";
 import type { Credits } from "./credits";
 import type { CreditWriter } from "./credits-writer";
 import {
@@ -726,10 +730,14 @@ export function createBillingAdminRoutes(deps: {
     if (!executed) return context.json({ execution: null });
     const receipt = executed.payload as Record<string, unknown>;
     const verified = ofExecution.find(
-      (row) => (row.payload as Record<string, unknown>).phase === "post_verified",
+      (row) =>
+        (row.payload as Record<string, unknown>).phase === "post_verified",
     );
     const verifiedReport = verified
-      ? ((verified.payload as Record<string, unknown>).report as Record<string, unknown>)
+      ? ((verified.payload as Record<string, unknown>).report as Record<
+          string,
+          unknown
+        >)
       : undefined;
     return context.json({
       execution: {
@@ -739,6 +747,128 @@ export function createBillingAdminRoutes(deps: {
         verificationPending: !verifiedReport,
         report: verifiedReport ?? receipt,
       },
+    });
+  });
+
+  /*
+   * The administrator's settlement-anomaly review (Bifrost 08.8, #283): every unresolved
+   * recovery item with the evidence 08.5 gathered for it, sorted by state and dwell. THIS
+   * ROUTE READS, IT NEVER DISPOSES: settling and releasing are 08.9's evidenced, separately
+   * authorized actions — a review surface that could act would put a money decision one
+   * click away from the judgment that is supposed to precede it. There is no write method
+   * on this path and there must never grow one (the tests hold the route set to exactly
+   * that).
+   *
+   * The refusal is audited (the ticket's rule): a non-administrator probing the anomaly
+   * queue is itself a fact worth a row. The payload names the path only — the caller saw
+   * nothing, so the trail carries no account data either. What the route answers is
+   * already redacted by construction: account refs are the payer layer's opaque keys, the
+   * recent reason is the item's stable code, and the evidence summaries are the bounded
+   * excerpts 08.5 recorded — never a credential, never another account's row.
+   */
+  routes.get("/recovery-items", async (context) => {
+    const denied = deps.requireAdmin(context);
+    if (denied) {
+      if (deps.audit) {
+        await recordAuditEvent(deps.audit, {
+          eventType: "billing.recovery.review_denied",
+          targetType: "billing",
+          actorUserId: context.var.actor.id,
+          payload: { path: "/api/admin/billing/recovery-items" },
+        });
+      }
+      return denied;
+    }
+    if (!deps.database) {
+      // No deployment database wired: the anomaly queue is not "empty", it is unreadable.
+      return context.json(
+        { error: "The settlement review is unavailable. Try again." },
+        503,
+      );
+    }
+
+    // Unresolved items, in-flight (claimed) before waiting (pending), oldest dwell first —
+    // the queue's own reading order (the ticket's 按状态与停留时长排序).
+    const items = await deps.database
+      .select()
+      .from(creditRecoveryItems)
+      .where(ne(creditRecoveryItems.state, "resolved"))
+      .orderBy(
+        asc(creditRecoveryItems.state),
+        asc(creditRecoveryItems.detectedAt),
+      )
+      .limit(200);
+
+    // The evidence 08.5 gathered, newest first, bounded per item: the trail an operator
+    // reads before 08.9 acts. Older history stays in the table for the disposal's own
+    // evidence needs; a review reads the recent window.
+    const EVIDENCE_PER_ITEM = 5;
+    const evidenceByItem = new Map<
+      string,
+      {
+        conclusion: string;
+        source: string;
+        summary: string;
+        usageInput: number | null;
+        usageOutput: number | null;
+        queriedAt: string;
+      }[]
+    >();
+    if (items.length > 0) {
+      const rows = await deps.database
+        .select()
+        .from(creditRecoveryQueries)
+        .where(
+          inArray(
+            creditRecoveryQueries.itemId,
+            items.map((item) => item.id),
+          ),
+        )
+        .orderBy(
+          desc(creditRecoveryQueries.queriedAt),
+          desc(creditRecoveryQueries.id),
+        );
+      for (const row of rows) {
+        const list = evidenceByItem.get(row.itemId) ?? [];
+        if (list.length < EVIDENCE_PER_ITEM) {
+          list.push({
+            conclusion: row.conclusion,
+            source: row.source,
+            summary: row.summary,
+            usageInput: row.usageInput,
+            usageOutput: row.usageOutput,
+            queriedAt: row.queriedAt.toISOString(),
+          });
+          evidenceByItem.set(row.itemId, list);
+        }
+      }
+    }
+
+    const generatedAt = new Date();
+    return context.json({
+      generatedAt: generatedAt.toISOString(),
+      items: items.map((item) => ({
+        itemId: item.id,
+        attemptId: item.attemptId,
+        reservationId: item.reservationId,
+        accountRef: item.externalCustomerId,
+        payerKind: item.payerKind,
+        payerId: item.payerId,
+        provider: item.provider,
+        model: item.model,
+        maximumCredits: item.maximum,
+        failureCount: item.failureCount,
+        lastReason: item.lastReason,
+        state: item.state,
+        detectedAt: item.detectedAt.toISOString(),
+        dwellSeconds: Math.max(
+          0,
+          Math.floor(
+            (generatedAt.getTime() - item.detectedAt.getTime()) / 1000,
+          ),
+        ),
+        evidence: evidenceByItem.get(item.id) ?? [],
+      })),
     });
   });
 

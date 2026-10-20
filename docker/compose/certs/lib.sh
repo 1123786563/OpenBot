@@ -804,7 +804,7 @@ run_renewal() {
 
 # ── DNS provider credential table ──────────────────────────────────────────────────
 # The plugin list is open (acme.sh ships ~150); these are the documented ones
-# (docs/tls-certs.md). Checks NAME presence only — a value is never logged.
+# (reference/tls-certs.md). Checks NAME presence only — a value is never logged.
 dns_missing_credentials() {
   provider="$1"
   case "$provider" in
@@ -839,7 +839,7 @@ dns_missing_credentials() {
 #
 # The two halves are SEPARATE functions (fix-ocr26 #11): the guard's --once
 # critical section emits alert_log — cheap, no network, the durable signal
-# docs/tls-certs.md's zero-config Loki rule selects on — and delivers
+# reference/tls-certs.md's zero-config Loki rule selects on — and delivers
 # alert_webhook only AFTER the lock is released. A -m 15 curl INSIDE the mutex
 # outlasted the lock's 5s spin budget, let a concurrent guard degrade past the
 # held lock, read the pre-alert cooldown state, and double-page — the mutual
@@ -869,7 +869,7 @@ alert_log() {
   host="$(json_scalar "$(tls_status_file)" previewHost)"
   message="$(alert_message "$reason" "$days")"
   # The alert marker is a STANDALONE line: `openbot-tls-alert …`, deliberately NOT a
-  # `log`-prefixed `openbot-tls alert …` (review F1) — docs/tls-certs.md's zero-config
+  # `log`-prefixed `openbot-tls alert …` (review F1) — reference/tls-certs.md's zero-config
   # Loki rule selects on exactly this substring, so the two spellings must never drift
   # apart again (a unit test pins the marker).
   printf 'openbot-tls-alert severity=%s reason=%s days_left=%s preview_host=%s message="%s"\n' \

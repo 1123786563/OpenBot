@@ -116,7 +116,7 @@ const HTTP_ABSOLUTE = /^https?:\/\//i;
  * that ever planted a Domain-scoped platform cookie would share it across
  * SUBDOMAINS too, and the hostname line would no longer be the whole story —
  * the premise is recorded as a known deployment constraint in
- * docs/craft-preview-origin.md, not enforced here (the server cannot see the
+ * reference/craft-preview-origin.md, not enforced here (the server cannot see the
  * platform's own cookie configuration). `true` here means: do not enter,
  * whatever the server said.
  *
@@ -1120,7 +1120,7 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
           // element hangs the same sandbox over the old same-origin relative
           // path, where the platform's cookies ARE in scope — the F1 escape
           // shape, D10's accepted known open risk for stock sessions
-          // (docs/craft-preview-origin.md keeps that framing). This comment
+          // (reference/craft-preview-origin.md keeps that framing). This comment
           // must not be read as clearing the legacy path.
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
         />

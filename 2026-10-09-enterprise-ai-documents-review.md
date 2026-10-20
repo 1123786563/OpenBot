@@ -8,10 +8,10 @@
 
 | 简称 | 本次完整阅读的文件 |
 |---|---|
-| D：总体方案 | [2026-10-09-enterprise-ai-platform-design.md](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md) |
-| M：总计划 | [2026-10-09-enterprise-ai-00-master.md](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md) |
-| R：运行时 | [2026-10-09-enterprise-ai-01-runtime.md](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md) |
-| T：租户权限 | [2026-10-09-enterprise-ai-02-tenancy.md](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md) |
+| D：总体方案 | [2026-10-09-enterprise-ai-platform-design.md](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md) |
+| M：总计划 | [2026-10-09-enterprise-ai-00-master.md](docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md) |
+| R：运行时 | [2026-10-09-enterprise-ai-01-runtime.md](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md) |
+| T：租户权限 | [2026-10-09-enterprise-ai-02-tenancy.md](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md) |
 
 - 以用户本次明确的“当前阶段暂不引入 OpenFGA/OPA”为约束。T 第 13 行已经记录此决定；不把 D、M 中相反的旧要求继续视为现行批准项。
 - “确定问题”表示原文、代码片段或当前文件证据能够直接证明矛盾/遗漏；“设计缺口”表示尚不足以证明可行，不表示已发生事故。
@@ -56,7 +56,7 @@
 
 #### D-01｜业务成功标准未形成可签署的需求闭环
 
-**定位：** [§1.3，L50–54](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:50)、[§25.2，L937–946](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:937)、[§29，L1041](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:1041)。
+**定位：** [§1.3，L50–54](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:50)、[§25.2，L937–946](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:937)、[§29，L1041](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:1041)。
 
 **原文：**“首期优先选择企业知识问答、文档处理、带审批的业务操作三类闭环”；“真实业务样本可用”。
 
@@ -68,7 +68,7 @@
 
 #### D-02｜最小生产部署粒度没有跟随简化后的基线收敛
 
-**定位：** [§4，L92–118](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:92)、[§5.2，L171–178](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:171)。
+**定位：** [§4，L92–118](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:92)、[§5.2，L171–178](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:171)。
 
 **原文：**“MVP 不建设几十个微服务”；最小部署又列出过渡 BFF、Go 控制平面、运行服务、Temporal Worker、解析 Worker、工具网关与沙箱控制器。
 
@@ -80,7 +80,7 @@
 
 #### D-03｜备份恢复后的撤权和删除重放缺独立事实来源
 
-**定位：** [§11.3，L418–422](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:418)、[§18.3，L720–724](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:720)、T [§8.3，L1281–1283](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:1281)。
+**定位：** [§11.3，L418–422](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:418)、[§18.3，L720–724](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:720)、T [§8.3，L1281–1283](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:1281)。
 
 **原文：**“恢复旧备份时重新应用删除与撤权账本”。
 
@@ -92,7 +92,7 @@
 
 #### D-04｜分期矩阵与正文对 MVP 安全/质量能力的归属不一致
 
-**定位：** [§11.5，L428–434](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:428)、[§12.3，L471–484](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:471)、[§25.1，L924–929](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:924)。
+**定位：** [§11.5，L428–434](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:428)、[§12.3，L471–484](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:471)、[§25.1，L924–929](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:924)。
 
 **问题与影响：** 正文要求 MVP 基础重排、业务评测和审批等待；分期表却将“重排”“质量评测”“审批编排”写入二期。可以解释为基础能力与运营增强之别，但原文没有这个限定，执行者可能把首期必须的审批恢复或质量门禁后移。
 
@@ -106,7 +106,7 @@
 
 #### M-01｜把尚未交付的分册描述为完整实施说明
 
-**定位：** [§1，L48](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md:48)、[§3，L70–79](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md:70)、[§10，L199–212](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md:199)。
+**定位：** [§1，L48](docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md:48)、[§3，L70–79](docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md:70)、[§10，L199–212](docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md:199)。
 
 **原文：**“本文件与六份子计划共同构成实施说明。”
 
@@ -118,7 +118,7 @@
 
 #### M-02｜依赖图遗漏关键边，可能指导错误并行
 
-**定位：** [§3 表格与 Mermaid，L76–95](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md:76)。
+**定位：** [§3 表格与 Mermaid，L76–95](docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md:76)。
 
 **问题与影响：** 表格规定 K 依赖 T2、E1、E4，图中却只有 `T→K`；表格规定运行适配依赖 R4，但图中的 E 没有 R 依赖。平台存储先做、真正执行后接入可以成立，当前却没有拆开这些验收对象。
 
@@ -128,7 +128,7 @@
 
 #### M-03｜工作区事实、计划状态和证据快照已经漂移
 
-**定位：** [§2，L52](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md:52)、R [R1/R2 已勾选步骤](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:35)、R [L3](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:3)。
+**定位：** [§2，L52](docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md:52)、R [R1/R2 已勾选步骤](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:35)、R [L3](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:3)。
 
 **原文：** M 写“`runtime-go/` 当前不存在，也没有 Go module”；R 仍写“本次仅编写计划，不运行其中命令”，同时 R1/R2 多项为 `[x]`。
 
@@ -142,7 +142,7 @@
 
 #### M-04｜安全迁移入口与 T 的修订不一致
 
-**定位：** [§5，L143–151](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md:143)、T [T1-A，L262](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:262)、T [T1-B，L319–344](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:319)。
+**定位：** [§5，L143–151](docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md:143)、T [T1-A，L262](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:262)、T [T1-B，L319–344](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:319)。
 
 **当前证据：** [server/package.json:9](server/package.json:9) 的 `db:generate/db:migrate` 显式加载 `../.env`。
 
@@ -156,7 +156,7 @@
 
 #### R-01｜引用不存在的 R2-B，真实运行入口和能力就绪标准不完整
 
-**定位：** [R2，L155–172](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:155)。
+**定位：** [R2，L155–172](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:155)。
 
 **原文：**“实际完整接线使用下文 R2-B 的 `New`。”全文不存在 R2-B。
 
@@ -168,7 +168,7 @@
 
 #### R-02｜“HTTP 不重试”不足以约束业务重复副作用
 
-**定位：** [R3，L178–219](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:178)、D [§9.4，L344–346](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:344)。
+**定位：** [R3，L178–219](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:178)、D [§9.4，L344–346](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:344)。
 
 **原文：** `Call(ctx, assertion, name, args)(Result,error)`；`Result{Text string; IsError bool}`；网络错误为 `OUTCOME_UNKNOWN`。
 
@@ -180,7 +180,7 @@
 
 #### R-03｜只过滤 state/forwardedProps，没有完整的可信输入边界
 
-**定位：** [R2，L153–172](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:153)、[R4，L247–255](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:247)。
+**定位：** [R2，L153–172](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:153)、[R4，L247–255](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:247)。
 
 **问题与影响：** 清空 state 和 forwardedProps 是正确防护，但计划未说明 system/developer 消息、历史 assistant/tool 消息、工具定义、resume 内容、专家版本和模型路由由谁生成、谁可覆盖。AG-UI 输入格式合法不等于业务上下文可信；签名只绑定 Run 身份也不能证明输入被批准。
 
@@ -190,7 +190,7 @@
 
 #### R-04｜R4 事件与恢复验收过薄，难以支持采用决策
 
-**定位：** [R4，L229–257](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:229)。
+**定位：** [R4，L229–257](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:229)。
 
 **问题与影响：** 示例只检查一次 RUN_STARTED、一次末尾终止事件；作为首个单元测试合理，作为互操作验收则不够。没有精确规定文本/工具 ID 配对、交错消息、等待审批、断流重连、慢消费者、重复执行和服务重启应得到什么结果。报告 `adoption` 只有 candidate/rejected，也无法表达“协议验证通过但未准入生产”。
 
@@ -200,7 +200,7 @@
 
 #### R-05｜依赖风险已有记录，但没有形成可追踪的候选处置流程
 
-**定位：** [R1，L55–72](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:55)、[G1 评审步骤，L257](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:257)。
+**定位：** [R1，L55–72](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:55)、[G1 评审步骤，L257](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:257)。
 
 **既有证据：** [dependency-review.json:54–86](runtime-go/dependency-review.json:54) 记录漏洞扫描 `exitCode: 3`，并注明风险未修复、需要在接入租户流量前补丁处置或拒绝候选。本次未复扫，不确认其漏洞列表或修复版本仍然准确。
 
@@ -214,7 +214,7 @@
 
 #### T-01｜独立验收需要的资源和 ACL 开通路径缺失
 
-**定位：** [§1.3，L43–47](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:43)、[T1-C，L499–508](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:499)、[T3-A，L1026–1043](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:1026)。
+**定位：** [§1.3，L43–47](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:43)、[T1-C，L499–508](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:499)、[T3-A，L1026–1043](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:1026)。
 
 **原文：**“合法用户……读取自己明确有权限的资源元数据”；CLI 仅支持 `provision-member` 与 `suspend-member`。
 
@@ -226,7 +226,7 @@
 
 #### T-02｜资源层级与角色范围不足以对应总体模型
 
-**定位：** [Schema，L211–255](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:211)、[角色与只读授权，L848](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:848)、D [§6.1–6.2](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:194)。
+**定位：** [Schema，L211–255](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:211)、[角色与只读授权，L848](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:848)、D [§6.1–6.2](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:194)。
 
 **问题与影响：** T 有 Project 表，但 Resource 只引用 Workspace，项目与资源之间没有关系；没有空间/项目成员模型。角色只有 tenant_admin/member/auditor，内容访问全部依靠显式单资源 read grant。这是可选的最小设计，却没有明确声明总体层级、空间角色、继承、共享均未实现，后续模块可能各自补出不同语义。
 
@@ -236,7 +236,7 @@
 
 #### T-03｜策略版本发布流程与单一常量实现矛盾
 
-**定位：** [T2-C，L830–850](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:830)。
+**定位：** [T2-C，L830–850](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:830)。
 
 **原文：** `resource.policyRevision!==LOCAL_POLICY_REVISION` 即 503；又要求“先发布兼容代码、验收后更新数据库版本，再退役旧版”。
 
@@ -248,7 +248,7 @@
 
 #### T-04｜禁用单用户模式的配置变量与当前实现不符
 
-**定位：** [T3-B，L1092–1095](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:1092)。
+**定位：** [T3-B，L1092–1095](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:1092)。
 
 **原文：** 检查 `SINGLE_USER_MODE`。
 
@@ -262,7 +262,7 @@
 
 #### T-05｜复用认证工厂时，身份连接最小权限没有展开到真实依赖
 
-**定位：** [角色合同，L279–285](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:279)、[T3-B/C，L1080–1086、L1157–1177](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:1157)。
+**定位：** [角色合同，L279–285](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:279)、[T3-B/C，L1080–1086、L1157–1177](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:1157)。
 
 **代码证据：** [createAuth:203–259](server/src/auth/index.ts:203) 创建既有 enterprise settings/SSO 接线；[L281–286](server/src/auth/index.ts:281) 登录校验读取企业设置；[L430–441](server/src/auth/index.ts:430) 创建用户后写入角色；T bootstrap 还读取 revokedAccess。
 
@@ -274,7 +274,7 @@
 
 #### T-06｜认证路由白名单只有语法校验，没有实现危险类别禁止规则
 
-**定位：** [T3-A，L934](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:934)、[T3-B，L1098–1117](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:1098)。
+**定位：** [T3-A，L934](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:934)、[T3-B，L1098–1117](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:1098)。
 
 **问题与影响：** 正则只验证 `GET|POST /api/auth/...` 格式，SCIM、SSO 注册等危险类别中的合法格式路径仍可被配置进去。管理员配置是可信输入，但文档承诺“本册禁止公开”就应有启动硬约束，而不仅是操作提醒。
 
@@ -284,7 +284,7 @@
 
 #### T-07｜本地授权保留两次事务和整套快照复核，复杂度偏高
 
-**定位：** [T2-B，L698–751](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:698)、[T2-C，L771](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:771)。
+**定位：** [T2-B，L698–751](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:698)、[T2-C，L771](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:771)。
 
 **问题与影响：** 外部授权调用已删除，但仍采用 snapshot→本地规则→readIfCurrent 的两次 DB 事务。每次都重查成员并获取多层锁，增加往返、竞争、409 和误用旧快照的接口面。此方案并非错误；对当前仅返回元数据的同步本地规则，额外阶段没有明确收益。
 
@@ -294,7 +294,7 @@
 
 #### T-08｜锁协议与安全测试尚不能证明并发撤权正确
 
-**定位：** [T2-B，L619–650、L686–696](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:619)、[竞态示例，L753–762](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:753)、[RLS 测试，L289–306](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:289)。
+**定位：** [T2-B，L619–650、L686–696](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:619)、[竞态示例，L753–762](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:753)、[RLS 测试，L289–306](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:289)。
 
 **问题与影响：**
 
@@ -309,7 +309,7 @@
 
 #### T-09｜全局 Principal 与租户级 operator 的变更范围没有完全对齐
 
-**定位：** [Principal Schema，L196–201](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:196)、[operator 策略，L402–423](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:402)、[状态写入，L688](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:688)。
+**定位：** [Principal Schema，L196–201](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:196)、[operator 策略，L402–423](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:402)、[状态写入，L688](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:688)。
 
 **问题与影响：** `enterprise_principals` 是全局主体表，operator 的策略 `USING(true)` 且具有 UPDATE；一个租户操作进程因此有能力修改全局主体状态/身份绑定。文档确实把它定义为离线特权，不应误报为普通用户越权，但必须区分租户成员暂停与全平台主体暂停，否则会误伤同一自然人的其他租户成员关系。
 
@@ -319,7 +319,7 @@
 
 #### T-10｜进程停机片段实际是强制断连接，不是排空
 
-**定位：** [T3-C，L1144–1151](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:1144)。
+**定位：** [T3-C，L1144–1151](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:1144)。
 
 **原文：** `await server.stop(true)`。
 
@@ -331,7 +331,7 @@
 
 #### T-11｜错误、审计、索引及检查入口还有可维护性缺口
 
-**定位：** [错误定义，L146–154](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:146)、[错误处理，L972–975](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:972)、[测试配置，L1245–1253](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:1245)、[CI说明，L1324](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:1324)。
+**定位：** [错误定义，L146–154](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:146)、[错误处理，L972–975](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:972)、[测试配置，L1245–1253](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:1245)、[CI说明，L1324](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:1324)。
 
 **问题与影响：**
 
@@ -358,7 +358,7 @@
 | 资源授权 | §4/§6：MVP OpenFGA | §1：集成门禁验证 | T：PostgreSQL ACL＋local-ts | 当前不引入 OpenFGA |
 | 条件策略 | §4/§6：MVP OPA | §1：集成门禁验证、CEL 仅遗留 | T：移出当前范围，执行策略交给后续域 | 当前不引入 OPA，但必须补本地动作策略 |
 
-**直接证据：** D [L99–105](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:99)、[L217–219](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:217)、[L868](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:868)、[L1039](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:1039)；M [L35–46](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md:35)；T [L13](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:13)。
+**直接证据：** D [L99–105](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:99)、[L217–219](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:217)、[L868](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:868)、[L1039](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:1039)；M [L35–46](docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md:35)；T [L13](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:13)。
 
 **影响：** 总体图、采购/依赖清单、人员配置、接口语言和验收门禁可能各按不同版本执行。T 的“本次只改 02”可以解释修订历史，却不是长期的跨文档一致性方案；而且其覆盖措辞限定“参与本册验收”，容易被理解成 04 等后续 MVP 模块仍必须引入 OPA。
 
@@ -368,7 +368,7 @@
 
 **严重程度：P0，真实写工具上线阻断。**
 
-**定位：** D [§6.3，L219–222](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:219)、[§9.4，L344–346](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:344)；M [L43](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md:43)；T [L258](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:258)、[L1337–1339](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:1337)。
+**定位：** D [§6.3，L219–222](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:219)、[§9.4，L344–346](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:344)；M [L43](docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md:43)；T [L258](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:258)、[L1337–1339](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:1337)。
 
 **问题：** T 的本地 Authz 只回答资源是否可读，明确不处理执行/审批；D 原来由 OPA 承担数据等级、无人值守、网络、危险工具等条件判断；M 又把旧 CEL 限定在遗留路径。当前所提供的文件没有定义新的确定性执行策略合同。
 
@@ -382,7 +382,7 @@
 
 **严重程度：P0，企业执行路径的身份与路由阻断。**
 
-**定位：** R [R3，L178](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:178) 调 `/api/agent-tools/call`；T [T3-A，L948–951](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:948) 要求同一路径 404；M [§4，L119](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md:119) 规定企业基址 `/api/enterprise/v1`，D [§17](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:650) 仍列 `/api/v1`。
+**定位：** R [R3，L178](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:178) 调 `/api/agent-tools/call`；T [T3-A，L948–951](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:948) 要求同一路径 404；M [§4，L119](docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md:119) 规定企业基址 `/api/enterprise/v1`，D [§17](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:650) 仍列 `/api/v1`。
 
 **代码证据：** [callback-token.ts:75–121](server/src/agents/callback-token.ts:75) 旧断言没有 tenantId/principalId；[app.ts:1643–1719](server/src/app.ts:1643) 使用旧 token 与 signed run 链路；TS 验证路由的 `verify` 是宿主注入接口，不是已经存在的企业租户查询实现。
 
@@ -394,7 +394,7 @@
 
 **严重程度：P1，验收治理缺口。**
 
-**定位：** M [§6，L162–168](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md:162) 用 G1 决定采用；R [L18](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:18) 明确 R1–R4 只达 G1a，G1b 依赖 T2/E2/P3/D4；R [L257](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:257) 又回到“评审 G1”。
+**定位：** M [§6，L162–168](docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md:162) 用 G1 决定采用；R [L18](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:18) 明确 R1–R4 只达 G1a，G1b 依赖 T2/E2/P3/D4；R [L257](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:257) 又回到“评审 G1”。
 
 **影响：** 即使各测试都诚实记录，读者也无法判断“采用”是否允许真实租户、写工具、持久任务或生产流量。
 
@@ -404,7 +404,7 @@
 
 **严重程度：P1；接入有副作用的自动恢复前属于 P0 阻断。**
 
-**定位：** D [§12.4，L486–490](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:486)、[§13.1，L498–500](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:498)、[§16.4，L642](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:642)；M [L7](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md:7)；R [L221](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:221)。
+**定位：** D [§12.4，L486–490](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:486)、[§13.1，L498–500](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:498)、[§16.4，L642](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:642)；M [L7](docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md:7)；R [L221](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:221)。
 
 **问题：** 文档同时规定 PostgreSQL 运行状态为权威、Temporal 控制恢复、Go 执行图步骤，但尚未定义：
 
@@ -423,7 +423,7 @@
 
 **严重程度：P1，跨进程身份契约缺口。**
 
-**定位：** D [§6.2，L211](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:211)、[§6.5，L238](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:238)；T [Principal Schema，L196–201](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:196)、[§10，L1342](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:1342)；R [VerifiedRun，L100](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:100)、[ResolveUser，L164–166](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:164)。
+**定位：** D [§6.2，L211](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:211)、[§6.5，L238](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:238)；T [Principal Schema，L196–201](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:196)、[§10，L1342](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:1342)；R [VerifiedRun，L100](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:100)、[ResolveUser，L164–166](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:164)。
 
 **问题：** T 的 principal 必须关联 users，Scope 必须含 userId；R 只有 actor/tenant/bot/run/thread，未区分主体、发起方、服务身份、有效委托。`tenant+actor+bot` 的运行时 user key 有利于隔离，但也意味着同一共享 thread 对不同参与者可能形成不同框架会话，需要明确是否仅支持个人对话。
 
@@ -435,7 +435,7 @@
 
 **严重程度：P1，预算/数据出域控制缺口。**
 
-**定位：** R [L7](docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md:7) 不接管模型供应商密钥；D [§10.2–10.4](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:356)、[§12.2，L453](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:453)。
+**定位：** R [L7](docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md:7) 不接管模型供应商密钥；D [§10.2–10.4](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:356)、[§12.2，L453](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:453)。
 
 **问题与影响：** 真实运行时需要模型端点和调用能力，但目前具体片段只说明 fake 模型测试。未定义业务别名由谁解析、Go 可否修改端点/参数、调用如何关联预算预留、模型网关失败谁重试、使用量如何去重。若给 Go 一个长期共享模型网关密钥，也可能绕过逐 Run 上限。
 
@@ -445,7 +445,7 @@
 
 **严重程度：P1（故障与准入）；P2（排期口径）。**
 
-**定位：** D [§5.2，L175–176](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:175)、[§21.1，L781–790](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:781)、[§26.2，L973–976](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md:973)；M [§7，L172–178](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md:172)、[§9，L193](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md:193)；T [§7.3 就绪与连接池](docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md:1154)。
+**定位：** D [§5.2，L175–176](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:175)、[§21.1，L781–790](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:781)、[§26.2，L973–976](docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md:973)；M [§7，L172–178](docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md:172)、[§9，L193](docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md:193)；T [§7.3 就绪与连接池](docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md:1154)。
 
 **问题与影响：**
 

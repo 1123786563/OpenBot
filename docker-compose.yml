@@ -1,32 +1,32 @@
 # The main local stack. The optional stacks live in docker/compose/ — services.yml,
 # lago.yml, observability.yml, opik.yml — beside the support files they mount. Start this file
-# first; docs/compose.md carries the map, the start order and the --project-directory . invocation.
-# opik.yml — optional self-hosted AI observability and evaluation; see docs/opik.md. Its OTLP
+# first; reference/compose.md carries the map, the start order and the --project-directory . invocation.
+# opik.yml — optional self-hosted AI observability and evaluation; see reference/opik.md. Its OTLP
 # host ports are 5418/5417 because observability.yml already owns 4318/4317 for Tempo.
 services:
   postgres:
     # Stock PostgreSQL plus pg_partman, from docker/postgres-partman.Dockerfile — why that image
-    # still carries two extensions nothing here uses: docs/compose.md#the-postgres-image.
+    # still carries two extensions nothing here uses: reference/compose.md#the-postgres-image.
     build:
       context: .
       dockerfile: docker/postgres-partman.Dockerfile
     image: ${POSTGRES_IMAGE:-openbot-postgres:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
-    # On `data`, off the Bots' default network — docs/compose.md#the-network-split has what that
+    # On `data`, off the Bots' default network — reference/compose.md#the-network-split has what that
     # keeps away from the one container that runs a Bot's shell.
     environment:
       POSTGRES_DB: openbot
       POSTGRES_USER: openbot
       POSTGRES_PASSWORD: openbot
     ports:
-      # Loopback on both families; docs/compose.md#loopback-on-both-families says why one is not
+      # Loopback on both families; reference/compose.md#loopback-on-both-families says why one is not
       # enough, and #the-network-split why the interface is loopback at all.
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
       - "[::1]:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       # Casdoor, Lago and OpenConnector: one role and one database each, read-only,
-      # first-boot-of-a-fresh-volume only — docs/compose.md#the-databases-on-this-postgres.
+      # first-boot-of-a-fresh-volume only — reference/compose.md#the-databases-on-this-postgres.
       - ./casdoor/init-db.sql:/docker-entrypoint-initdb.d/10-casdoor.sql:ro
       - ./docker/lago/init-db.sql:/docker-entrypoint-initdb.d/20-lago.sql:ro
       - ./docker/openconnector/init-db.sql:/docker-entrypoint-initdb.d/30-openconnector.sql:ro
@@ -42,7 +42,7 @@ services:
     build:
       context: .
       dockerfile: server/Dockerfile
-    # Named and pullable like the other built images: docs/compose.md#image-names-and-pull-policy
+    # Named and pullable like the other built images: reference/compose.md#image-names-and-pull-policy
     # is what `pull_policy` decides here (and what it does not guarantee).
     image: ${SERVER_IMAGE:-openbot-server:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
@@ -55,7 +55,7 @@ services:
       # certs sidecar owns (docker/compose/certs.yml mounts it writable there). Any
       # container running this server image can judge preview-origin admission from
       # the certificate's real health; the host-run API server reads the same file
-      # through OPENBOT_TLS_STATUS_FILE (see docs/tls-certs.md).
+      # through OPENBOT_TLS_STATUS_FILE (see reference/tls-certs.md).
       - ${OPENBOT_TLS_HOST_DIR:-./tls}:/etc/openbot/tls:ro
     depends_on:
       postgres:
@@ -78,7 +78,7 @@ services:
       - "127.0.0.1:${COMPUTER_PORT:-4100}:4100"
       - "[::1]:${COMPUTER_PORT:-4100}:4100"
     # Per-Bot egress: the names are not knowable here, and it is not `.env` because this container
-    # must not receive the deployment's secrets — docs/compose.md#per-bot-egress.
+    # must not receive the deployment's secrets — reference/compose.md#per-bot-egress.
     env_file:
       - path: ./egress.env
         required: false
@@ -123,7 +123,7 @@ services:
       - "127.0.0.1:${SANDBOX_PORT:-4300}:4300"
       - "[::1]:${SANDBOX_PORT:-4300}:4300"
       # Craft's per-session dev servers bind OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_[START|END]
-      # inside; keep in step with the craft config — docs/compose.md#the-sandbox-port-range.
+      # inside; keep in step with the craft config — reference/compose.md#the-sandbox-port-range.
       - "127.0.0.1:3010-3100:3010-3100"
       - "[::1]:3010-3100:3010-3100"
     # Unprivileged, cap-less, no privilege escalation — the same posture Craft's Docker backend
@@ -158,7 +158,7 @@ services:
     restart: unless-stopped
 
   # OpenBot's own Redis: workshop turn locks and event fan-out, pure memory on purpose, on `data`
-  # (never `openbot_sandbox`) so a sandbox cannot resolve it — docs/compose.md#the-redis-instances.
+  # (never `openbot_sandbox`) so a sandbox cannot resolve it — reference/compose.md#the-redis-instances.
   openbot-redis:
     image: redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     command: --port 6379 --save '' --appendonly no
@@ -178,7 +178,7 @@ services:
 
   # Optional SPIRE workload identity for the computers: each gets an SVID from the labels the
   # supervisor sets, so one cannot claim another's identity. `spire-init` chowns the fresh volumes
-  # (they arrive owned by root) so neither CA nor agent runs as root — docs/compose.md#spire.
+  # (they arrive owned by root) so neither CA nor agent runs as root — reference/compose.md#spire.
   spire-init:
     image: busybox:1.37
     command: ["sh", "-c", "chown -R 1000:1000 /server /agent"]
@@ -227,7 +227,7 @@ services:
 
   # One computer per Bot: its own container, files, browser session and processes. The Docker
   # socket is root-equivalent, so only the supervisor holds it —
-  # docs/compose.md#the-supervisor-and-the-engine-socket.
+  # reference/compose.md#the-supervisor-and-the-engine-socket.
   supervisor:
     build:
       context: .
@@ -274,7 +274,7 @@ services:
     volumes:
       # Read-only, still root-equivalent. ENGINE_SOCKET exists because the default path is wrong on
       # rootless Podman on Linux: point it at $XDG_RUNTIME_DIR/podman/podman.sock there
-      # (docs/compose.md#the-supervisor-and-the-engine-socket).
+      # (reference/compose.md#the-supervisor-and-the-engine-socket).
       - ${ENGINE_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
       # To register an entry per Bot as each computer is created.
       - spire-server-socket:/tmp/spire-server/private
@@ -319,7 +319,7 @@ services:
 
   # The harness somebody picked during setup. One service rather than twelve: the image and port
   # come from `.env`, written by the pick. Profile-gated so nothing picked means nothing starts —
-  # and never built from this tree, so `pull_policy: missing` — docs/compose.md#the-picked-harness.
+  # and never built from this tree, so `pull_policy: missing` — reference/compose.md#the-picked-harness.
   agent-harness:
     profiles: ["harness"]
     image: ${PICKED_HARNESS_IMAGE:-}
@@ -431,7 +431,7 @@ services:
   # The Go runtime candidate: a verification-candidate execution runtime the ENTERPRISE entry's
   # run gateway dials. Off by default; starts with `docker compose --profile go-runtime up
   # go-runtime`. Loopback only — the host-run enterprise entry is the sole caller
-  # (docs/compose.md#the-go-runtime).
+  # (reference/compose.md#the-go-runtime).
   go-runtime:
     profiles: ["go-runtime"]
     build:
@@ -463,7 +463,7 @@ services:
 
 networks:
   # Database and the services that reach it by name; nothing a Bot can reach is on it. An
-  # in-Compose API server joins this and `default` — docs/compose.md#the-network-split.
+  # in-Compose API server joins this and `default` — reference/compose.md#the-network-split.
   data:
   # Everything else — where Compose's default already put it; named so a service added without a
   # `networks:` key keeps landing beside the Bots rather than beside the database.

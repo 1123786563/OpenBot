@@ -1,8 +1,0 @@
-# MT009 接管复跑：biome（第 2 任）
-# 新增/触及文件（应 0 诊断）：
-Checked 5 files in 61ms. No fixes applied.
-
-# src/index.ts（纯追加宿主，存量诊断应与前任 after 一致：1 organizeImports + 4 noConsole + 1 noNonNullAssertion，无新增）：
-   1 assist/source/organizeImports
-   1 lint/style/noNonNullAssertion
-   4 lint/suspicious/noConsole

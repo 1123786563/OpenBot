@@ -162,7 +162,7 @@ export type CraftConfig = {
    * `GET /event`; the agent-sandbox gateway exposes a filtered, keepalive-labelled
    * `GET /events` instead (its allowlist has no /event). deployments behind agent-sandbox
    * set "/events" — accepting the gateway's family filter, which drops everything outside
-   * the five product families (see docs/craft-port/README.md 差异点).
+   * the five product families (see docs/plans/craft-port/README.md 差异点).
    */
   readonly opencodeEventPath: string;
   /**

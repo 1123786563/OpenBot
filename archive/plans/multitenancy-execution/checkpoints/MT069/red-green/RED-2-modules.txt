@@ -1,8 +1,0 @@
-error: Cannot find module '../../../src/billing/payer-accounts' from '/Users/wuyongjun/orca/workspaces/OpenBot/i10-mt069/server/tests/multitenancy/support/payer-accounts.ts'
--------------------------------
-
-
- 0 pass
- 1 fail
- 1 error
-Ran 1 test across 1 file. [113.00ms]

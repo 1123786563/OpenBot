@@ -1,6 +1,0 @@
-== MT037 after-state（终态；与 mutation/pristine-hashes 逐字节一致）==
-8d1775071a7a4c85b8d55bb38870b6a02b2db13a79cd950af65ff96e317c6acf  server/src/kb/application/service/kb-restricted-retrieval.ts
-5cc994ba98f652ac551c9805eda2b24ea2eed197beaf583546a74b0094cb79c2  server/src/kb/application/service/kb-restricted-query.ts
-fd0e462793672ad0eacbe20cb387014c2c57689f73e994a4b75b61fc65797b94  server/src/enterprise/tenancy/kb-ownership.ts
-fc9b0a37881aa794b95a830adcfcb39477b344002840a7bb6acacc2453588f9f  server/tests/multitenancy/retrieval-restriction.test.ts
-8ad90b67b3cccc00d7702ea47d0a3c3c392daef4be4d42ecd83f9249aa1f8b0f  server/tests/multitenancy/support/retrieval-restriction.ts

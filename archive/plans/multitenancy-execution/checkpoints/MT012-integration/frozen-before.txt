@@ -1,3 +1,0 @@
-# MT012 集成前 EXE 冻结哈希 — 2026-10-16T14:00Z — coordinator
-c5bfb3d4e343bbcf03e205d47977013c1565bb2780708c8bbf912382c631d756  company-team-multitenancy-execution/server/scripts/multitenancy/migrate-test.ts
-c7569901c8c032c5c8ddeda86d9427e437851162fb9cb22d1c4004b3bf482cdc  company-team-multitenancy-execution/server/tests/multitenancy/migration-tool.test.ts

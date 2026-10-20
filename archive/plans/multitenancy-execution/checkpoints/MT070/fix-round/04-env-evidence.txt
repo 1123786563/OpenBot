@@ -1,7 +1,0 @@
-# 修复轮 env 建档证据（口令脱敏）— 2026-10-17T00:12:22Z
-$ ls -la /tmp/mt070-fix-env.sh  →  -rw-------（0600）七变量
-七变量：TEST_DATABASE_URL / ENTERPRISE_TEST_SETUP_DATABASE_URL / ENTERPRISE_TEST_DIRECTORY_DATABASE_URL /
-       ENTERPRISE_TEST_DATA_DATABASE_URL / ENTERPRISE_TEST_OPERATOR_DATABASE_URL /
-       MT003_ASSIGNED_TEST_DATABASE_URL / KB_TEST_DATABASE_URL
-库：openbot_enterprise_mt070fix_test / openbot_enterprise_mt070fix_assigned / openbot_kb_mt070fix_test（属主 ent_mt070fix_kb，nosuperuser nobypassrls）
-口令全部随机 hex；env 文件用后删除（见 12-tmp-cleanup.txt）

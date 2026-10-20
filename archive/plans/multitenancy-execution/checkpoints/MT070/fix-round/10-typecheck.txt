@@ -1,2 +1,0 @@
-# 修复轮 typecheck（bunx tsc --noEmit）— 2026-10-17T00:14:19Z
-tsc exit=0

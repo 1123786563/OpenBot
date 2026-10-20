@@ -1,9 +1,0 @@
-{
-  "ticket": "MT011", "issue": 51, "integrated_at": "2026-10-17T01:30Z",
-  "review": {"task": "task_8d6f90b51b33", "dispatch": "ctx_f19be14fe040", "verdict": "PASS",
-    "findings": {"critical": 0, "high": 0, "medium": 0,
-      "deferred": ["F1/F2 低危发现留下游接线票处理（复审报告 §末）"]}},
-  "integration_method": "3 新文件整复制（not-found-semantics 80a832ec / test 22b30419 / support d50857ee）+ 2 编辑整复制（scenarios 1ac205ba / index bac27c45，均基于 458 态=EXE 现态）",
-  "verification": {"suite_focus": "19/0/0 (204 expect)", "full": "507/0/18 files（批1 合并亲验）", "typecheck": 0, "biome7": 0},
-  "baseline_chain": "…→458→507"
-}

@@ -4,7 +4,7 @@
 # issue/renewal attempt, updates tls/renewal-status.json (the consumable signal for
 # #362's admission gate and any dashboard), and raises alerts that are NOT silent —
 # a log line always, an http(s) webhook or file append when configured
-# (OPENBOT_TLS_ALERT_WEBHOOK; see docs/tls-certs.md).
+# (OPENBOT_TLS_ALERT_WEBHOOK; see reference/tls-certs.md).
 #
 # Two modes:
 #   --once        evaluate, write status, deliver alerts. Exit 0 = ok/warn, 1 = critical.

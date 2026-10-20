@@ -2,7 +2,7 @@
 # container logs — Alloy tails every container, and the `default` network it and the datasources
 # name is the main project's. The server points at the stack with
 # OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318; observability.md is the guide and
-# docs/compose.md#the-observability-stack the compose-level facts.
+# reference/compose.md#the-observability-stack the compose-level facts.
 #
 # Run from the repository root — --project-directory . is what makes the root .env
 # (GLITCHTIP_SECRET_KEY included) and the ./docker/observability paths resolve exactly as they

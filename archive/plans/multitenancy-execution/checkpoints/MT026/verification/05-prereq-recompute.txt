@@ -1,5 +1,0 @@
-# Prerequisite receipt recompute (brief: 先复算 manifest 再开工)
-# $ git rev-parse HEAD -> f0520524f0faa2b4533b9d2f1aa692c8f907ba71 == BASE line of
-#   checkpoints/prereq-manifest.txt
-# 46/46 file hashes recomputed with shasum -a 256 — ALL MATCH (script walked the
-#   manifest, compared each line; output: "ALL MANIFEST HASHES VERIFIED OK (46 files)")

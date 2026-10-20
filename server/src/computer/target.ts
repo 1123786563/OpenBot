@@ -31,7 +31,7 @@ const NEVER_ALLOWED_HOSTNAMES = new Set([
   /*
    * The ECS and Fargate task-role endpoint. Not the instance metadata address above, and on Fargate
    * it is the only one there is: a task's IAM credentials are served from it, which is exactly what
-   * this list exists to keep a Bot away from, and docs/deployment.md documents Fargate as a target.
+   * this list exists to keep a Bot away from, and reference/deployment.md documents Fargate as a target.
    */
   "169.254.170.2",
   // Alibaba Cloud's equivalent, which also sits outside the usual link-local handling because

@@ -1,3 +1,0 @@
-# MT027 第 2 任 typecheck（2026-10-16T20:45:00Z）
-command: bun x tsc --noEmit (server/)
-typecheck-exit=0

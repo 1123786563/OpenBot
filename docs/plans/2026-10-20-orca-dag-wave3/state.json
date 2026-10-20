@@ -13,9 +13,27 @@
   "dispatched": "2026-10-20T13:12 3 workers（mt3/bf3/hbc3）",
   "settled": "2026-10-20T13:36 3/3 worker_done",
   "verdicts": {
-   "satisfied_zero_change_r7_done": [49, 56, 222, 263, 265, 274, 378],
-   "satisfied_implemented_pending_review": [280, 381, 373, 405, 411],
-   "failed_need_c_class": {"86": "MT043 job cancel/retry 入口缺失；AC3 依赖 #90/#93", "87": "MT044 入站归属到公司/团队维度缺失（需新迁移+隔离队列）", "88": "MT045 事务边界无等价实现"}
+   "satisfied_zero_change_r7_done": [
+    49,
+    56,
+    222,
+    263,
+    265,
+    274,
+    378
+   ],
+   "satisfied_implemented_pending_review": [
+    280,
+    381,
+    373,
+    405,
+    411
+   ],
+   "failed_need_c_class": {
+    "86": "MT043 job cancel/retry 入口缺失；AC3 依赖 #90/#93",
+    "87": "MT044 入站归属到公司/团队维度缺失（需新迁移+隔离队列）",
+    "88": "MT045 事务边界无等价实现"
+   }
   },
   "integration": {
    "method": "git apply --3way + 手工解决 preview-origin.ts（#408+#411 双门禁保留）+ manifest 程序化合并（461 files）",
@@ -32,19 +50,134 @@
  "round2": {
   "dispatched": "2026-10-20T16:38–16:39 4 workers",
   "streams": {
-   "mt4": {"batch": [89, 90, 91, 92, 93], "strategy": "B类核验 vs main@3b4a7c68；#90/#93 接口形态结论供 #86 用", "task": "task_ef0e91242683", "dispatch": "ctx_3fd69746a9dd", "worktree": "mt4(new-child)", "db": "orca-w3-mt-pg@5565/mt4"},
-   "bf4": {"batch": [266, 267, 281, 283], "strategy": "C类；worktree=main@3b4a7c68+前置增量（receipts/wave3-delta-r1 sha256 核对）；新迁移 0167+", "task": "task_fe6b2d675ba0", "dispatch": "ctx_b509f2cac997", "worktree": "bf4(pre-created)", "db": "orca-w3-bf-pg@5566/bf4"},
-   "hbc4": {"batch": [382, 425], "strategy": "#382 复用 #381 bank-scope；#425 R06 legacy 开关；同前置增量基线", "task": "task_e140a5850842", "dispatch": "ctx_89e358da5d9c", "worktree": "hbc4(pre-created)", "db": "orca-w3-hbc-pg@5567/hbc4"},
-   "reviewer1": {"scope": "主工作区 wave3 未提交增量独立只读评审（#280/#381/#373/#405/#411 双结论）", "task": "task_f5c971cecc92", "dispatch": "ctx_dc3d95b76a02", "output": "reviews/round1-review.md"}
-  }
+   "mt4": {
+    "batch": [
+     89,
+     90,
+     91,
+     92,
+     93
+    ],
+    "strategy": "B类核验 vs main@3b4a7c68；#90/#93 接口形态结论供 #86 用",
+    "task": "task_ef0e91242683",
+    "dispatch": "ctx_3fd69746a9dd",
+    "worktree": "mt4(new-child)",
+    "db": "orca-w3-mt-pg@5565/mt4"
+   },
+   "bf4": {
+    "batch": [
+     266,
+     267,
+     281,
+     283
+    ],
+    "strategy": "C类；worktree=main@3b4a7c68+前置增量（receipts/wave3-delta-r1 sha256 核对）；新迁移 0167+",
+    "task": "task_fe6b2d675ba0",
+    "dispatch": "ctx_b509f2cac997",
+    "worktree": "bf4(pre-created)",
+    "db": "orca-w3-bf-pg@5566/bf4"
+   },
+   "hbc4": {
+    "batch": [
+     382,
+     425
+    ],
+    "strategy": "#382 复用 #381 bank-scope；#425 R06 legacy 开关；同前置增量基线",
+    "task": "task_e140a5850842",
+    "dispatch": "ctx_89e358da5d9c",
+    "worktree": "hbc4(pre-created)",
+    "db": "orca-w3-hbc-pg@5567/hbc4"
+   },
+   "reviewer1": {
+    "scope": "主工作区 wave3 未提交增量独立只读评审（#280/#381/#373/#405/#411 双结论）",
+    "task": "task_f5c971cecc92",
+    "dispatch": "ctx_dc3d95b76a02",
+    "output": "reviews/round1-review.md"
+   }
+  },
+  "settled": {
+   "mt4": "#89-93（MT046-050）五票全 FAILED——computer/sandbox/supervisor 共享 token+用户级 actor、RunAssertion 无公司/团队字段、RecoveryService.resume 零实现；#91/#93 部分基础设施已标注（runner-scope 34/34）",
+   "bf4": "#266 #267 零改动 SATISFIED（bifrost@e44890f8 governance 套件）；#281(B08.6 告警) #283(B08.8 核查视图) 已实施：recovery-alerting + credit_recovery_alerts + 0167 + recovery-items 路由 + admin UI；协调器集成+合并树补验 34/0+UI 3/0",
+   "reviewer1": "5/5 票 PASS（#280/#381/#373/#405/#411 验收逐条 MET、quality Good）；finding：F7 Medium（#373 sweep 碰撞面）+ F1/F3/F4/F8/F10 Low + 若干 Info",
+   "hbc4": "running（#382/#425）"
+  },
+  "r7_done": [
+   280,
+   381,
+   373,
+   405,
+   411,
+   266,
+   267
+  ]
  },
  "queue_next": {
-  "mt": "B类继续（#104 起剩余 66 张）→ C类单票 #86/#87/#88",
-  "bf": "#268(←267) #275(←266+268+274) #282(←281) #284/#285(←283) 随完成解锁",
-  "hbc": "#383+(←382) #374(←373+bf#284) #375(←374+mt#140)",
-  "pending_user": ["Opik 旁支 37 张裁决", "main-ws .env PORT/SERVER_PORT 冲突修正", "0163 fresh-DB 幂等化归属", "e2e harness 回归立票"]
+  "mt": "C类积压 #86-88、#89-93（8 张大切片）+ B类剩余 61 张",
+  "bf": "#275(←268) #285(←284) 随完成解锁；#278(B08.3) ← 已解锁待排",
+  "hbc": "#383+(←382) #374(←373+bf#284)",
+  "pending_user": [
+   "Opik 旁支 37 张裁决"
+  ]
  },
- "phase": "R5 round2 running: 3 streams + 1 reviewer dispatched 2026-10-20T16:39",
- "r7_done": [49, 56, 222, 263, 265, 274, 378],
- "updated_at": "2026-10-20T16:42+08:00"
+ "phase": "R5 round3 running: mt5/bf5/fix1 + hbc4 in flight (4 workers)",
+ "r7_done": [
+  49,
+  56,
+  222,
+  263,
+  265,
+  274,
+  378,
+  280,
+  381,
+  373,
+  405,
+  411,
+  266,
+  267
+ ],
+ "updated_at": "2026-10-20T18:2x+08:00",
+ "base_current": "807844ee（用户持续提交：3b4a7c68 wave3 文档 → 807844ee round1 recovery/subscription 测试）",
+ "main_ws_uncommitted": "bf4 自有增量（recovery-alerting/0167/recovery-items/admin UI，9 tracked + 6 新）",
+ "policy": {
+  "ocr": "用户 2026-10-20 指令（当日二次细化）：中间轮不使用 OCR 扫描，独立只读评审保留为审查门禁；OCR 仅在最终提交时对完整范围执行一次"
+ },
+ "round3": {
+  "dispatched": "2026-10-20T18:08 3 workers（hbc4 仍在途，共 4）",
+  "streams": {
+   "mt5": {
+    "batch": [
+     90,
+     93
+    ],
+    "strategy": "C类执行侧归属（MT047/MT050），接口形态供 #86 对接",
+    "task": "task_3f532d0056ab",
+    "dispatch": "ctx_9e778dc9738f",
+    "worktree": "mt5(new-child)",
+    "db": "orca-w3-mt-pg@5565"
+   },
+   "bf5": {
+    "batch": [
+     268,
+     282,
+     284
+    ],
+    "strategy": "#268 bifrost 核验；#282/#284 构建于 #281/#283 之上",
+    "task": "task_e593774b2afe",
+    "dispatch": "ctx_d8930d6e1d02",
+    "worktree": "bf5(pre+delta-r2)",
+    "db": "orca-w3-bf-pg@5566"
+   },
+   "fix1": {
+    "batch": "F7/F9/F1/F3/F4/F10 评审修复",
+    "task": "task_e74955d0ff6c",
+    "dispatch": "ctx_502df1d61a60",
+    "worktree": "fix1(pre+delta-r2)",
+    "db": "orca-w3-hbc-pg@5567"
+   }
+  }
+ },
+ "findings": [
+  "2026-10-20 已修复：main-ws .env PORT=3001→3002（与 SERVER_PORT 对齐，实际监听在 3002；按 .env 注释认可方案）。修复后不移开 .env 复跑 craft-webapp-proxy 92/92 绿，defaultPreviewOrigin 解析为 http://127.0.0.1:3002"
+ ]
 }

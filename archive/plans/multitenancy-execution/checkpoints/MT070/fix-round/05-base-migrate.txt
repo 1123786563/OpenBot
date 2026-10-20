@@ -1,3 +1,0 @@
-# 修复轮 base migrate（enterprise-test-db.ts migrate，建受限角色登录）— 2026-10-17T00:12:22Z
-{"type":"migrations-applied","status":"ok"}
-exit=0

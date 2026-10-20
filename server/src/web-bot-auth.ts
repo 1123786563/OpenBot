@@ -20,7 +20,7 @@ import { signerFromJWK } from "web-bot-auth/crypto";
  * agent identifies itself, and the honest alternative to looking like a person.
  *
  * Signing alone earns nothing until the deployment is registered with Cloudflare, which is a manual
- * step: see docs/configuration.md.
+ * step: see reference/configuration.md.
  */
 
 export const DIRECTORY_PATH = HTTP_MESSAGE_SIGNATURES_DIRECTORY;

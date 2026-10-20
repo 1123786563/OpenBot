@@ -1,6 +1,0 @@
-# $ bun --no-env-file test tests/multitenancy/sso-scim-config.test.ts tests/multitenancy/scim-directory.test.ts tests/multitenancy/identity-binding.test.ts
-  39 pass
-  0 fail
-  0 skipped (skipped does not count as passing)
-Ran 39 tests across 3 files. [~2s]
-(13 sso-scim-config + 14 scim-directory [incl. MUT10 clause] + 12 identity-binding = 39)

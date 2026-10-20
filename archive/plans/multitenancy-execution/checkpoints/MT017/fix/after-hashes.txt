@@ -1,6 +1,0 @@
-# MT017 fix-round after-image SHA-256 (per-file, final bytes after all fix-round edits)
-# Captured: 2026-10-16T23:55:17Z
-
-CHANGED 1dc2fceb3a6bc153525e089495d424363fd1b0fc9f1cdc282ff99796e0a53c5b  tests/multitenancy/support/bot-publish.ts
-CHANGED fd4a64279872057051257d1295da210612797171910f4a78997391305eeac80f  tests/multitenancy/bot-publish.test.ts
-UNCHANGED-PROOF 9bb87d5d7e932f77cc4789544a5f2c6afab72a7972a4bf054dc6a271d1474721  src/enterprise/tenancy/bot-publish.ts

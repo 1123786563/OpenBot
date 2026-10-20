@@ -1,3 +1,0 @@
- 25 pass
- 0 fail
-exit=0

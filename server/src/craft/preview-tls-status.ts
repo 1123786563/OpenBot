@@ -3,7 +3,7 @@
  *
  * `tls/renewal-status.json` is the durable scalar record the TLS sidecar's renewal guard
  * writes (health, healthReason, daysLeft, attempt/success/alert audit — see
- * docs/tls-certs.md). The preview origin's HOST form terminates TLS in front of the
+ * reference/tls-certs.md). The preview origin's HOST form terminates TLS in front of the
  * server: while that certificate is missing, expired, or mid-first-issuance, the origin's
  * addresses would answer browser TLS failures, so admission closes with the reason the
  * record names instead of handing out addresses nobody can load. The DEV form never

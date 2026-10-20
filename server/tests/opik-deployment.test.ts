@@ -73,7 +73,7 @@ describe("docker/compose/opik.yml", () => {
 });
 
 const envExample = readFileSync(join(repoRoot, ".env.example"), "utf8");
-const opikDocs = readFileSync(join(repoRoot, "docs/opik.md"), "utf8");
+const opikDocs = readFileSync(join(repoRoot, "reference/opik.md"), "utf8");
 const rootCompose = readFileSync(join(repoRoot, "docker-compose.yml"), "utf8");
 
 /** The exact variable names T09 (#15) will read from config.ts. */
@@ -112,7 +112,7 @@ describe("configuration surface", () => {
     }
   });
 
-  test("docs/opik.md gives the run command, the health check and the port rationale", () => {
+  test("reference/opik.md gives the run command, the health check and the port rationale", () => {
     expect(opikDocs).toContain(
       "docker compose --project-directory . -f docker/compose/opik.yml up -d",
     );

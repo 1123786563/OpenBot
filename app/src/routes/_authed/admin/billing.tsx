@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { AdminCreditGrantCard } from "@/components/billing/admin-credit-grant";
 import { BillingCleanupExecutionCard } from "@/components/admin/billing-cleanup-execution-card";
+import { BillingRecoveryReviewCard } from "@/components/admin/billing-recovery-review-card";
 import {
   PageSection,
   PageShell,
@@ -34,6 +35,12 @@ function BillingAdminPage() {
         title={t("billingCleanup.sectionTitle")}
       >
         <BillingCleanupExecutionCard />
+      </PageSection>
+      <PageSection
+        description={t("recoveryReview.sectionDescription")}
+        title={t("recoveryReview.sectionTitle")}
+      >
+        <BillingRecoveryReviewCard />
       </PageSection>
     </PageShell>
   );

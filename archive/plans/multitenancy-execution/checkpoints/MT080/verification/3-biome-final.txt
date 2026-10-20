@@ -1,3 +1,0 @@
-# bunx biome check — 本票全部触及文件（含 fmt 修复后），终字节（2026-10-16T19:44:09Z）
-Checked 6 files in 96ms. No fixes applied.
-exit=0

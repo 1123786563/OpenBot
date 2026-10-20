@@ -1,7 +1,0 @@
-# MT022 container teardown — 2026-10-17T10:55:00Z
-# 七变量 env 临时文件(0600)已删除: /tmp/mt022-env-3844-test.env (ls → No such file)
-# pristine 副本与口令临时件一并销毁
-mt022-impl-pg
-exit=0
-0
-mt022-impl-pg no longer present

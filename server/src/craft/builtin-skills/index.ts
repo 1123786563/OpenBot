@@ -11,7 +11,7 @@
  *   credentials attach server-side on the MCP relay and never enter the
  *   sandbox, so the agent drives the user's connected MCP server tools.
  *   Each file's header comment records the onyx source and the reason for
- *   every divergence (docs/craft-port/port-parity.md carries the roll-up).
+ *   every divergence (docs/plans/craft-port/port-parity.md carries the roll-up).
  *
  * browser and image-generation stay BLOCKED (onyx parity gaps with no OpenBot
  * equivalent): browser needs the image's browser-cli.sh + Chromium, and

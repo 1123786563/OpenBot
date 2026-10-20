@@ -15,7 +15,7 @@
  * startup with the path of the offending key rather than at the first model call.
  *
  * ENVIRONMENT BEATS FILE. `BOT_PROVIDER` and `BOT_MODEL` still win, exactly as
- * `docs/configuration.md` has always described; the file supplies what they leave unset. API keys
+ * `reference/configuration.md` has always described; the file supplies what they leave unset. API keys
  * never appear in the file — they arrive in the environment under the `key_variable` the provider
  * row names.
  *
@@ -224,7 +224,7 @@ export type BotSettings = {
 /**
  * This Bot's provider and model: environment over spec file over provider default.
  *
- * The lookup order is the whole contract, and it is the order `docs/configuration.md` already
+ * The lookup order is the whole contract, and it is the order `reference/configuration.md` already
  * documents for `BOT_PROVIDER` and `BOT_MODEL` — the environment is how a deployment overrides
  * what the repository decided, so it wins. What is new is the middle: `model-providers.json`'s
  * `bots` entry, the default this Bot had before this function existed, written down in one file

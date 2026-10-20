@@ -1,9 +1,0 @@
-{
-  "ticket": "MT026", "issue": 69, "integrated_at": "2026-10-17T01:50Z",
-  "review": {"task": "task_bf0e9202445f", "dispatch": "ctx_60e1f2927356", "verdict": "PASS",
-    "findings": {"critical": 0, "high": 0, "medium": 0,
-      "f1_correction": "聚焦用例计数 39→33（文档完整性，coordinator 已在归档件更正并加批注）"}},
-  "integration_method": "8 新文件整复制 + 3 共享文件锚点整块插入（difflib 自动合并曾交错同构任务块，已回退改锚点插入并经断言顺序修正：MT026 按字母序置于 MT077 前）",
-  "verification": {"migrations": "十任务全 0", "suite_focus": "33/0/0（13+14+6）", "full": "577/0/22 files（批2 合并亲验）", "typecheck": 0, "biome": "9 文件 0"},
-  "baseline_chain": "…→507→577"
-}

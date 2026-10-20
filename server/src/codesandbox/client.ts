@@ -132,7 +132,7 @@ export function createSandboxClient(options: SandboxClientOptions): SandboxClien
        * Flipping this to `true` is a billing decision, not a capability flag: the code-run path
        * holds no credit reservation today, so `reportCodeRunUsage` refuses to write a usage row
        * while `creditMeteringEnabled` is true and no reservation is supplied (audit B3). Land the
-       * reservation first — see `docs/superpowers/specs/2026-10-11-billing-reliability-design.md`,
+       * reservation first — see `docs/specs/superpowers/2026-10-11-billing-reliability-design.md`,
        * "Billed admission per surface".
        */
       enforceableTokenBudget: false,
