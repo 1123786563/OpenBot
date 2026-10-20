@@ -63,8 +63,8 @@ export type ResolvedCraftManagedContent = CraftManagedContent & {
 };
 
 /**
- * The scoped adapter contract (the plan's BLOCKED ruling): OpenBot's app and
- * knowledge authorization surfaces, as seen by craft. Every leg defaults to
+ * The scoped adapter contract (the plan's BLOCKED ruling): OpenBot's app
+ * authorization surfaces, as seen by craft. Every leg defaults to
  * "none" so a deployment wires only what it can back.
  */
 export type CraftManagedContentSources = {
