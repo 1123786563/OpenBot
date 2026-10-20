@@ -289,18 +289,25 @@ unknown 的代价只是多一次重试。
   刷新使新建会话长期无失配、不可自愈。）
 - **部署前已启动的 dev server**：以旧脚本启动、无 env → 挂旧前缀，legacy 路径直达可用。
   升级后若该会话被触碰（脚本刷新是 **staleness-gated**：仅当 `opencode.json` 配置字节
-  失配——LLM 配置修改或 skills/MCP managed-content 变化——才 regenerate 重写脚本，
-  并非任意 turn 无条件发生），新脚本对 legacy 会话仍不导出 env，重启后依旧挂旧前缀——
-  两侧一致，无中间态。
+  失配——LLM 配置修改或 skills/MCP managed-content 变化——或（#437 修复）**磁盘上的
+  start 脚本与当前派生不等**——才 regenerate 重写脚本，并非任意 turn 无条件发生），新
+  脚本对 legacy 会话仍不导出 env，重启后依旧挂旧前缀——两侧一致，无中间态。
+- **生产部署空模板（#408 AC6）**：`OPENBOT_APP_URL` 指向非 loopback 主机而
+  `OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE` 为空时，准入显式关闭——`webapp-info` 无地址、
+  给出可展示原因，`preview-ticket` 拒绝出票。dev 形态的 `127.0.0.1:<port>/<label>` 地址
+  对远程浏览器指向其自身 loopback，按构造不可达；loopback/未设 `OPENBOT_APP_URL` 的本地
+  部署不受影响，保持 dev 形态。
 - **`OPENBOT_CRAFT_PREVIEW_ORIGIN_ENABLED=false` 等准入关闭**：新形态无地址（m-5 给
   原因），legacy 会话的旧路径不依赖 preview origin，继续可用；`webapp-info` 对 legacy
   不返回 closed reason（那是新形态地址的事）。
 - **存量会话中重建 webapp**：新脚本拷贝新模板即落标记，会话翻转为 current。过渡窗口
   （脚本尚未以 current 形态刷新、或 dev server 未重启）内预览可能短暂不可用。注意
-  刷新是 **staleness-gated**（`opencode.json` 字节失配才 regenerate，任意消息本身
-  不触发重写）：恢复需要一次真实的配置失配——修改 LLM 配置，或 skills/MCP
-  managed-content 变化——触发 regenerate 后对 webapp 执行一次 `restart`；无失配时
-  restart 重放的仍是旧形脚本。行为在面板与文档中均可解释，不产生静默 404。
+  刷新是 **staleness-gated**（`opencode.json` 字节失配，或 #437 修复加入的
+  「磁盘脚本与当前派生不等」判定，才 regenerate；任意消息本身不触发重写）：恢复走
+  `POST /sessions/<id>/skills/reload`——它对 up-to-date 会话在脚本失配时也会强制
+  regenerate 重写脚本，随后对 webapp 执行一次 `restart` 让挂载记录跟上；重写后无
+  失配时 restart 重放的仍是（已正确的）现行脚本。行为在面板与文档中均可解释，不产
+  生静默 404。
 - **标记被 agent 删除**：会话回到 legacy 判定（旧路径 404 时面板可见）。与
   `nextjs.pid` 同信任级别——会话根目录的由服务端管理、agent 无理由触碰的状态文件。
 - **agent 手工创建 `outputs/web/package.json`**（按 start 脚本的 no-scaffold

@@ -15,7 +15,9 @@ use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 // MT098: pub(crate) so org_context reads the saved session and reuses the verified dial.
-pub(crate) const SAVED_COOKIE: &str = "OPENBOT_ORGANIZATION_SESSION";
+/// `pub` since MT100: the leave-organization command retires the legacy flat cookie with its
+/// organization (the namespaced successor was already wiped by the credential cleanup).
+pub const SAVED_COOKIE: &str = "OPENBOT_ORGANIZATION_SESSION";
 const CALLBACK: &str = "/organization-auth/callback";
 const PATIENCE: Duration = Duration::from_secs(300);
 

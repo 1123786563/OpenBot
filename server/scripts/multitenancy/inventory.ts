@@ -71,6 +71,7 @@ import {
   createUnavailableConversationRoutes,
 } from "../../src/enterprise/conversations/routes";
 import { classifyManagementPlane } from "../../src/enterprise/tenancy/admin-separation";
+import { ENTERPRISE_ENTRY_DISPOSITIONS } from "../../src/enterprise/tenancy/assembly-enterprise";
 import { createWorkshopPublicRoutes } from "../../src/workshop/public-routes";
 import { createWorkshopRoutes } from "../../src/workshop/routes";
 import { testEnvironment } from "../../tests/support/environment";
@@ -1101,10 +1102,7 @@ export async function extractDataTables(): Promise<DataTableEntry[]> {
   return entries.sort((a, b) => (a.id < b.id ? -1 : 1));
 }
 
-const CONFIG_SOURCES = [
-  "src/config.ts",
-  "src/redis.ts",
-];
+const CONFIG_SOURCES = ["src/config.ts", "src/redis.ts"];
 
 const EXTERNAL_DEPS: Array<[string, string, string]> = [
   // env 前缀 → 依赖名 → 业务闭环
@@ -1509,6 +1507,26 @@ function digestOf(inventory: Omit<CoverageInventory, "digest">): string {
   return computeDigest(rest);
 }
 
+/**
+ * MT124（Issue #167）：把企业入口的处置表写回清单——entrance id 精确匹配
+ * 的未指派入口记 ownerTicket 与 owned 状态。处置表在实现模块
+ * （assembly-enterprise.ts）是单一事实源；这里只消费，不复制。
+ */
+function applyEnterpriseEntryDispositions(entrances: EntranceEntry[]): void {
+  const byEntrance = new Map(
+    ENTERPRISE_ENTRY_DISPOSITIONS.map((disposition) => [
+      disposition.entrance,
+      disposition,
+    ]),
+  );
+  for (const entry of entrances) {
+    const disposition = byEntrance.get(entry.entrance);
+    if (!disposition || entry.ownerTicket !== null) continue;
+    entry.ownerTicket = disposition.ownerTicket;
+    entry.status = "owned";
+  }
+}
+
 function mergeEntrances(
   assemblies: AssembledApp[],
   selected: Set<string>,
@@ -1591,6 +1609,9 @@ export async function buildInventory(
     exact: (entry) => entry.entrance,
     prefix: (entry) => entry.path,
   });
+  // MT124（Issue #167）：企业入口装配处置回写——统一上下文/管理面处置表
+  // 认领仍未指派的企业入口（ownership 输入显式指派时以输入为准）。
+  applyEnterpriseEntryDispositions(entrances);
   applyOwnership(backgroundPrograms, ownership, {
     programName: (entry) => entry.name,
   });

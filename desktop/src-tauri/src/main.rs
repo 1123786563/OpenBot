@@ -3426,6 +3426,73 @@ async fn establish_org_context(
     })?
 }
 
+/// Leave this installation's organization: wipe exactly that organization's business state —
+/// media, caches, subscriptions, credentials (its session included) — then retire the frozen
+/// organization context, so the next sign-in may be any organization (the switch path).
+/// Nothing of any other organization's, and no personal provider credential, is touched
+/// (MT100 / Issue #143). The receipt carries identifiers and counts only.
+#[tauri::command]
+async fn leave_organization(
+    app: tauri::AppHandle,
+    root: String,
+) -> Result<openbot_desktop_lib::org_switch_cleanup::CleanupReceipt, Problem> {
+    let root = stack::root_from(&root);
+    tauri::async_runtime::spawn_blocking(move || {
+        let shell = app.state::<Shell>();
+        let _startup = shell.startup.lock().unwrap();
+        if shell.root.lock().unwrap().as_deref() != Some(root.as_path()) {
+            return Err(Problem::plain(
+                "Start this OpenBot installation before leaving its organization.",
+            ));
+        }
+        // The frozen context is the authoritative "whose installation is this"; the
+        // current-organization pointer answers when no context survived a restart.
+        let target = openbot_desktop_lib::org_context::load_persisted(&root)
+            .ok()
+            .and_then(|record| match record {
+                openbot_desktop_lib::org_context::PersistedRecord::Present(context) => {
+                    Some(context.authority)
+                }
+                _ => None,
+            })
+            .or_else(|| {
+                openbot_desktop_lib::credential_namespace::current_organization(&root)
+                    .ok()
+                    .flatten()
+            })
+            .ok_or_else(|| {
+                Problem::plain("This installation is not in an organization.")
+            })?;
+        let mut receipt =
+            openbot_desktop_lib::org_switch_cleanup::forget_organization_state(&root, &target)?;
+        // The frozen context dies only with its own organization: a context belonging to
+        // another authority (a stale one) is not this cleanup's to clear.
+        let context_matches = openbot_desktop_lib::org_context::load_persisted(&root)
+            .ok()
+            .and_then(|record| match record {
+                openbot_desktop_lib::org_context::PersistedRecord::Present(context) => {
+                    Some(context.authority == target)
+                }
+                _ => None,
+            })
+            .unwrap_or(false);
+        if context_matches {
+            openbot_desktop_lib::vault::forget(&root, openbot_desktop_lib::org_context::VAULT_KEY)?;
+        }
+        // The legacy flat session cookie (pre-namespace installs) retires with its
+        // organization too; its namespaced successor was already wiped above.
+        openbot_desktop_lib::vault::forget(&root, openbot_desktop_lib::organization_auth::SAVED_COOKIE)?;
+        if !receipt.completed {
+            eprintln!(
+                "[organization] cleanup did not finish; the receipt says which area remains"
+            );
+        }
+        Ok(receipt)
+    })
+    .await
+    .map_err(|_| Problem::plain("OpenBot could not leave its organization. Restart OpenBot and try again."))?
+}
+
 /// The model screen's rows. Independent of the picker above, and required to stay that way: no
 /// harness on that list is tied to a vendor's models, so choosing one may not narrow this.
 #[tauri::command]
@@ -3916,6 +3983,7 @@ fn main() {
             cancel_organization_sign_in,
             org_context_status,
             establish_org_context,
+            leave_organization,
             ask_the_bot,
         ])
         // A packaged application is not a browser tab. Left alone, WebView2 answers a right-click

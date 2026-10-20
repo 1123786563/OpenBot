@@ -43,6 +43,8 @@ type Grant = {
   status: "active" | "revoked";
   createdAt: string;
   revokedAt: string | null;
+  /** Always present since 05.10's status view; these 04.7 rows hold no live versions. */
+  activeKeys: [];
 };
 
 let grants: Grant[];
@@ -59,6 +61,7 @@ function serving() {
       status: "active",
       createdAt: "2026-10-16T08:00:00.000Z",
       revokedAt: null,
+      activeKeys: [],
     },
     {
       grantId: "g-revoked",
@@ -69,6 +72,7 @@ function serving() {
       status: "revoked",
       createdAt: "2026-10-15T08:00:00.000Z",
       revokedAt: "2026-10-16T09:00:00.000Z",
+      activeKeys: [],
     },
   ];
   revocations = [];
@@ -134,7 +138,7 @@ test("only the active grant offers a Revoke press, and pressing it revokes exact
   serving();
   const view = draw(<ModelAccessAuthorizations />);
 
-  const buttons = await view.findAllByRole("button", { name: /Revoke/ });
+  const buttons = await view.findAllByRole("button", { name: /^Revoke$/ });
   // One press for one grant: the revoked one offers nothing to press.
   expect(buttons).toHaveLength(1);
 
@@ -148,7 +152,7 @@ test("only the active grant offers a Revoke press, and pressing it revokes exact
     const row = view.getByText("Research Bot").closest('[data-slot="item"]');
     expect(row?.textContent).toContain("Revoked");
   });
-  expect(view.queryByRole("button", { name: /Revoke/ })).toBeNull();
+  expect(view.queryByRole("button", { name: /^Revoke$/ })).toBeNull();
 });
 
 test("a refused revocation says so instead of quietly pretending", async () => {
@@ -164,7 +168,7 @@ test("a refused revocation says so instead of quietly pretending", async () => {
   }) as unknown as typeof fetch;
   const view = draw(<ModelAccessAuthorizations />);
 
-  const button = await view.findByRole("button", { name: /Revoke/ });
+  const button = await view.findByRole("button", { name: /^Revoke$/ });
   fireEvent.click(button);
 
   await view.findByRole("alert");

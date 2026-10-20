@@ -238,3 +238,10 @@ export function createUnavailableConversationRoutes() {
   );
   return routes;
 }
+
+/*
+ * MT124 (Issue #167): the enterprise entry's unified assembly shares this exact
+ * mapping — exported so the assembled routes and these routes can never drift
+ * apart on a status code or a wire shape.
+ */
+export { errorResponse as enterpriseConversationErrorResponse };

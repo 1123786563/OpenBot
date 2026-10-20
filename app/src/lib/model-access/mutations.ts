@@ -65,8 +65,23 @@ export function confirmAccessGrantMutationOptions() {
   });
 }
 
-/** One of the person's own grants as the list shows it: the grant plus the Bot's display name. */
-export type AccessGrantSummary = AccessGrant & { botDisplayName: string };
+/**
+ * One live key version of a grant, as the status page shows it (Bifrost 05.10): the version
+ * number, the state the deployment believes, and the term the key was minted under. No secret
+ * field exists in this shape — what the server never stores cannot reach the browser.
+ */
+export type AccessGrantKeyStatus = {
+  credentialVersion: number;
+  status: "active" | "expired" | "revoked";
+  expiresAt: string | null;
+};
+
+/** One of the person's own grants as the list shows it: the grant, the Bot's display name, and
+ * the live key versions the authorization still holds. */
+export type AccessGrantSummary = AccessGrant & {
+  botDisplayName: string;
+  activeKeys: AccessGrantKeyStatus[];
+};
 
 export const accessGrantsKey = ["model-access", "grants"] as const;
 
@@ -94,6 +109,29 @@ export function revokeAccessGrantMutationOptions(queryClient: QueryClient) {
         `/api/model-access/grants/${encodeURIComponent(grantId)}/revoke`,
         "accessGrant",
         { method: "POST", fallbackKey: "modelAccess.revokeFailed" },
+      ),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: accessGrantsKey }),
+  });
+}
+
+/**
+ * Revoke EVERYTHING the person still holds for one Bot (Bifrost 05.10): every active grant for
+ * that Bot, and through each grant's own revocation every key version it still holds. The press
+ * carries only the botId — whose grants they are is the session's fact, and a Bot the person
+ * never authorized answers an empty revoke, not an error. The list is invalidated on settle, so
+ * the rows read revoked the moment the server has committed them.
+ */
+export function revokeAllAccessGrantsMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: (botId: string): Promise<{
+      grants: AccessGrant[];
+      revokedCount: number;
+    }> =>
+      client<{ grants: AccessGrant[]; revokedCount: number }>(
+        "/api/model-access/grants/revoke-all",
+        "grants",
+        { method: "POST", body: { botId }, fallbackKey: "modelAccess.revokeAllFailed" },
       ),
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: accessGrantsKey }),

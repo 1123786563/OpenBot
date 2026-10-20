@@ -116,6 +116,9 @@ import { createTranscriptionProvider } from "./dictation/provider";
 import { createDictationRoutes } from "./dictation/routes";
 import { withRunnerRequestContext } from "./enterprise/runs/request-context";
 import {
+  createWorkbenchPayerMiddleware,
+} from "./billing/workbench-payer";
+import {
   createDeploymentEntryContextMiddleware,
   type DeploymentEntryContextFactory,
 } from "./enterprise/tenancy/entry-context";
@@ -802,6 +805,13 @@ export function createApp(
    * tagged 503; absent answers a tagged 503 on /api/admin/bot-services.
    */
   botServices?: BotServiceStore | BotServiceRegistry,
+  /**
+   * The company-workbench payer wiring (Bifrost 09.2, #287): present binds the workbench
+   * surface's requests to their company scope's payer — the account every reserve, settle and
+   * remainder of the call then names (02.5's no-switch semantics carry it). Absent leaves the
+   * workbench paths resolving exactly as before; this seam never binds a payer on its own.
+   */
+  workbenchPayer?: { database: Database },
 ) {
   // The OpenMuse seam tail, unpacked to the local names the body below reads —
   // one named object at the call site, no seventeen positional arguments to
@@ -2070,12 +2080,21 @@ export function createApp(
   // The CopilotKit runtime, behind the same session guard as every other API route. Mounted last so
   // its own routing under /api/copilotkit cannot shadow an OpenBot route declared above.
   if (copilotHandler) {
-    app.use("/api/copilotkit", async (context, next) =>
-      withRunnerRequestContext(context.req.raw, next),
-    );
-    app.use("/api/copilotkit/*", async (context, next) =>
-      withRunnerRequestContext(context.req.raw, next),
-    );
+    // 09.2: the workbench surface binds its payer inside the same request context the runner
+    // already establishes — after the tenancy middleware has put this request's entry business
+    // on the context, so the binding is the company the server issued the scope for, never a
+    // header's claim. A request with no entry business passes through unbound.
+    const workbenchPayerMiddleware = workbenchPayer
+      ? createWorkbenchPayerMiddleware(workbenchPayer)
+      : undefined;
+    const runnerContext: MiddlewareHandler = async (context, next) => {
+      const run = () => withRunnerRequestContext(context.req.raw, next);
+      return workbenchPayerMiddleware
+        ? workbenchPayerMiddleware(context, run)
+        : run();
+    };
+    app.use("/api/copilotkit", runnerContext);
+    app.use("/api/copilotkit/*", runnerContext);
     // Mounted at the ROOT with the handler carrying its own basePath. Mounting it at
     // "/api/copilotkit" as well double-prefixes it: Hono strips the prefix before the handler sees
     // the path, so every route lands at /api/copilotkit/api/copilotkit/* and /info 404s. The browser

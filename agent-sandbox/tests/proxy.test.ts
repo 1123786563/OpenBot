@@ -379,6 +379,70 @@ describe("proxy: the workshop surface (S2/S5)", () => {
     });
     expect(escapeAttempt.status).toBe(400);
   });
+
+  test("GET /file/content answers absence 404 itself — the upstream's 200-empty-content regression must not leak (#433 AC1)", async () => {
+    // The upstream regression answers a missing path with 200 {"content":""} —
+    // empty content where the server's readFile contract expects 404⇒null —
+    // which readWebappGeneration judged legacy and shipped root-path start
+    // scripts. The fake upstream here plays the regression faithfully (any
+    // /file/content forwarded to it answers the 300KB body), so a 404 can only
+    // come from the proxy's own stat: the filesystem is its fact, not the
+    // upstream's wording.
+    const absent = await call("/file/content?path=outputs/web/package.json", {
+      headers: botHeaders,
+    });
+    expect(absent.status).toBe(404);
+    // The escaping and absolute spellings are refused on this verb too.
+    const escapeAttempt = await call("/file/content?path=../workspace", {
+      headers: botHeaders,
+    });
+    expect(escapeAttempt.status).toBe(400);
+    const absoluteAttempt = await call("/file/content?path=/etc/passwd", {
+      headers: botHeaders,
+    });
+    expect(absoluteAttempt.status).toBe(400);
+    // An existing file keeps the upstream's forwarded shape (the envelope /
+    // passthrough half of the contract regressed nowhere): data.csv landed in
+    // the POST /file test above. This fake upstream answers EVERY /file/content
+    // with its 300KB body, so the forwarded read trips the response cap — 413
+    // here is the proof the request left the proxy toward the upstream instead
+    // of being answered by this branch's 404.
+    const present = await call("/file/content?path=data.csv", {
+      headers: botHeaders,
+    });
+    expect(present.status).toBe(413);
+  });
+
+  test("GET /file serves an existing file's content itself — the upstream's 500-for-file must not leak (#433 AC2)", async () => {
+    // The upstream's GET /file only implements the directory listing; a file
+    // path answered 500 UnknownError (the ticket's second curl). The proxy has
+    // already statted the path for its absence check, so the file's bytes are
+    // its own fact too: 200 with the raw content, never the upstream's verb
+    // gap. data.csv landed in the POST /file test above.
+    const present = await call("/file?path=data.csv", {
+      method: "GET",
+      headers: botHeaders,
+    });
+    expect(present.status).toBe(200);
+    expect(await present.text()).toBe("a,b\n1,2\n");
+  });
+
+  test("GET /file keeps the directory shape upstream — a directory is not the file-content branch (#433 AC2)", async () => {
+    await call("/file?path=dir-probe/keep.txt", {
+      method: "POST",
+      headers: { ...botHeaders, "content-type": "text/plain" },
+      body: "x",
+    });
+    const dir = await call("/file?path=dir-probe", {
+      method: "GET",
+      headers: botHeaders,
+    });
+    // 200 via the FORWARD (the fake upstream's echo body names the pathname),
+    // never a 500 from reading a directory as a file and never this branch's
+    // file-content answer.
+    expect(dir.status).toBe(200);
+    expect(await dir.text()).toContain("/file");
+  });
 });
 
 describe("proxy with per-bot runtimes", () => {

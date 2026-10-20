@@ -11,7 +11,7 @@
  * names, and cannot reach any upstream at all without naming one.
  */
 import { timingSafeEqual } from "node:crypto";
-import { mkdir, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isPlainBotId } from "./bot-id";
 import type { BotRuntimes } from "./bot-runtimes";
@@ -288,6 +288,40 @@ export function createProxyHandler(
       return Response.json({ ok: true, botId });
     }
 
+    // GET /file/content (#433 AC1): the PROXY answers absence itself, like GET /file
+    // below. The upstream regression answers a missing path with
+    // 200 {"content":""} — empty content where the server's readFile contract
+    // expects 404⇒null — which readWebappGeneration read as an assembled app
+    // with a foreign marker, judged the session legacy, and shipped a root-path
+    // start script whose preview address 404s on every request (the ticket's P0
+    // chain). The filesystem is the proxy's own fact: absent gets the honest
+    // 404 here; an existing file still takes the upstream's envelope/binary
+    // shape unchanged (that half of the contract regressed nowhere).
+    if (url.pathname === "/file/content" && request.method === "GET") {
+      const path = url.searchParams.get("path") ?? "";
+      // A pathless read is not this branch's fact: it falls through to the
+      // upstream's own answer (the response-cap tests ride that shape), the
+      // same forward every read took before this branch existed.
+      if (path !== "") {
+        if (path.startsWith("/") || path.split("/").includes("..")) {
+          return Response.json(
+            {
+              error:
+                "The path must be a plain relative path inside the workspace.",
+            },
+            { status: 400 },
+          );
+        }
+        const target = join(env.workspaceDir, "bots", botId, path);
+        const info = await stat(target).catch(() => null);
+        if (info === null) {
+          return Response.json({ error: "Not found." }, { status: 404 });
+        }
+      }
+      // Named-and-existing (or pathless): fall through to the upstream
+      // forward below.
+    }
+
     // GET /file: the PROXY answers absence itself. The upstream opencode-serve answers
     // 500 — not 404 — for a path that does not exist, and a caller cannot tell an absent
     // directory from a broken runtime (craft's managed-skills sweep normalizes 404 to
@@ -311,7 +345,20 @@ export function createProxyHandler(
       if (info === null) {
         return Response.json({ error: "Not found." }, { status: 404 });
       }
-      // Exists (file or directory): fall through to the upstream forward below.
+      // #433 AC2: a regular FILE is answered from the proxy's own disk — the
+      // upstream's GET /file only implements the directory listing (a file
+      // path answers 500 UnknownError there, the contract break the ticket
+      // records), so the content read no longer depends on a verb the upstream
+      // cannot serve. Raw bytes, the honest shape for text and binary alike.
+      // Directories keep the upstream's listing shape (forwarded below).
+      if (info.isFile()) {
+        const bytes = await readFile(target);
+        return new Response(bytes as BodyInit, {
+          status: 200,
+          headers: { "content-type": "application/octet-stream" },
+        });
+      }
+      // Exists (a directory): fall through to the upstream forward below.
     }
 
     // POST /file (B5's writeFile verb): the PROXY writes the file, contained. There is no

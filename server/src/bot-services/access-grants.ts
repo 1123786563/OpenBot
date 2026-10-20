@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../audit";
@@ -102,6 +102,23 @@ export type BindingPreview = {
  * own rows ever come back — the list's `where` is the session's user id, never a request field.
  */
 export type ListedAccessGrant = AccessGrant & { botDisplayName: string };
+
+/**
+ * One key version of a grant, as the person's own status page shows it (Bifrost 05.10): the
+ * version number, the state this deployment believes, and the term the key was minted under.
+ * No secret rides here — the table has no plaintext column to leak, and this shape keeps it
+ * that way structurally rather than by filtering.
+ */
+export type AccessGrantKeyStatus = {
+  credentialVersion: number;
+  status: "active" | "expired" | "revoked";
+  expiresAt: string | null;
+};
+
+/** A listed grant beside the live key versions its authorization still holds. */
+export type ListedAccessGrantWithKeys = ListedAccessGrant & {
+  activeKeys: AccessGrantKeyStatus[];
+};
 
 /**
  * A binding code that is unknown, expired, already used, or names a Bot that is gone or disabled.
@@ -298,7 +315,7 @@ export function createAccessGrantService(
      * `where` is the whole of the visibility rule: another person's grants are not hidden here,
      * they are not in the question.
      */
-    async listForUser(userId: string): Promise<ListedAccessGrant[]> {
+    async listForUser(userId: string): Promise<ListedAccessGrantWithKeys[]> {
       if (
         typeof userId !== "string" ||
         userId.trim() !== userId ||
@@ -314,9 +331,46 @@ export function createAccessGrantService(
         .innerJoin(botServices, eq(accessGrants.botId, botServices.botId))
         .where(eq(accessGrants.userId, userId))
         .orderBy(desc(accessGrants.createdAt));
+      /*
+       * The live key versions beside their grants (05.10): one batched read of the rows the
+       * person may still act on — the active versions, newest first. The revoked and expired
+       * ones are history, already named by the grant's own status line; a person revoking
+       * "every valid version" acts on exactly these rows' grant, and 05.7's revocation
+       * retires the versions themselves in its own commit.
+       */
+      const grantIds = rows.map(({ grant }) => grant.grantId);
+      const keyRows =
+        grantIds.length === 0
+          ? []
+          : await database
+              .select({
+                grantId: gatewayVirtualKeys.grantId,
+                credentialVersion: gatewayVirtualKeys.credentialVersion,
+                status: gatewayVirtualKeys.status,
+                expiresAt: gatewayVirtualKeys.expiresAt,
+              })
+              .from(gatewayVirtualKeys)
+              .where(
+                and(
+                  inArray(gatewayVirtualKeys.grantId, grantIds),
+                  eq(gatewayVirtualKeys.status, "active"),
+                ),
+              )
+              .orderBy(desc(gatewayVirtualKeys.credentialVersion));
+      const keysByGrant = new Map<string, AccessGrantKeyStatus[]>();
+      for (const row of keyRows) {
+        const list = keysByGrant.get(row.grantId) ?? [];
+        list.push({
+          credentialVersion: row.credentialVersion,
+          status: row.status,
+          expiresAt: row.expiresAt?.toISOString() ?? null,
+        });
+        keysByGrant.set(row.grantId, list);
+      }
       return rows.map(({ grant, botDisplayName }) => ({
         ...toGrant(grant),
         botDisplayName,
+        activeKeys: keysByGrant.get(grant.grantId) ?? [],
       }));
     },
 
@@ -470,6 +524,47 @@ export function createAccessGrantService(
      * has not confirmed yet, and looking must not spend the one thing (the code) the confirmation
      * needs. An unknown, used, expired or disabled-Bot code is the one uniform refusal.
      */
+    /**
+     * The person's revoke-everything act (Bifrost 05.10, AC08): one Bot's whole authorization
+     * — every active grant the person holds for it, and through {@link revokeForUser} every
+     * key version each grant still holds. The same visibility rule as the list: the user is
+     * the session's own, so a Bot the person never authorized simply has nothing to revoke —
+     * the answer is an empty result, not an error, and a replay after a completed revoke is
+     * the same silence. Each grant's own revocation keeps its commit, audit and gateway
+     * retirement exactly as the one-grant press has them.
+     */
+    async revokeAllForUser(
+      userId: string,
+      botId: string,
+    ): Promise<{ grants: AccessGrant[]; revokedCount: number }> {
+      if (
+        typeof userId !== "string" ||
+        userId.trim() !== userId ||
+        userId === "" ||
+        typeof botId !== "string" ||
+        botId.trim() !== botId ||
+        botId === ""
+      )
+        throw new AccessGrantUseError();
+      const rows = await database
+        .select({ grantId: accessGrants.grantId })
+        .from(accessGrants)
+        .where(
+          and(
+            eq(accessGrants.userId, userId),
+            eq(accessGrants.botId, botId),
+            eq(accessGrants.status, "active"),
+          ),
+        )
+        .orderBy(desc(accessGrants.createdAt));
+      const grants: AccessGrant[] = [];
+      for (const { grantId } of rows) {
+        const outcome = await this.revokeForUser(grantId, userId);
+        grants.push(outcome.grant);
+      }
+      return { grants, revokedCount: grants.length };
+    },
+
     async preview(
       userId: string,
       bindingCode: string,
@@ -910,8 +1005,33 @@ export function accessGrantRoutes(
       grants: grants.map((grant) => ({
         ...serializeGrant(grant),
         botDisplayName: grant.botDisplayName,
+        // The live key versions (05.10): status, term and version number — no secret, none
+        // exists to send.
+        activeKeys: grant.activeKeys,
       })),
     });
+  });
+
+  /*
+   * Revoke-everything for one Bot (05.10): the body names the Bot, the session names the
+   * person, and the answer is the Bot's grants as they now stand. A Bot with nothing active
+   * is not an error — the act is idempotent, and a replay after a completed revoke answers
+   * the same revoked rows with nothing left to do.
+   */
+  app.post("/grants/revoke-all", async (context) => {
+    const parsed = revokeAllInput.safeParse(await context.req.json().catch(() => null));
+    if (!parsed.success) return context.json({ error: "A botId is required." }, 400);
+    try {
+      const { grants, revokedCount } = await live.revokeAllForUser(
+        context.var.actor.id,
+        parsed.data.botId,
+      );
+      return context.json({ grants: grants.map(serializeGrant), revokedCount });
+    } catch (error) {
+      if (error instanceof AccessGrantUseError)
+        return context.json({ error: error.message, code: error.code }, 404);
+      throw error;
+    }
   });
 
   app.post("/grants/:grantId/revoke", async (context) => {
@@ -952,6 +1072,11 @@ function serializeGrant(grant: AccessGrant) {
  * anything. The two failures a person can cause are said differently: a malformed request is a
  * plain 400, and an unusable code is the one uniform tagged refusal that reveals nothing.
  */
+/** The revoke-all body: `{ botId }` and nothing else, so no other field can smuggle a user. */
+const revokeAllInput = z
+  .object({ botId: z.string().trim().min(1) })
+  .strict();
+
 async function confirmationResponse(
   context: Parameters<MiddlewareHandler<{ Variables: AppVariables }>>[0],
   run: (bindingCode: string) => Promise<Record<string, unknown>>,

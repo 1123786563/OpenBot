@@ -30,6 +30,12 @@ export const usageOutbox = pgTable(
     runId: text("run_id"),
     botId: text("bot_id"),
     ownerUserId: text("owner_user_id"),
+    /**
+     * The team dimension (Bifrost 09.2, AC13): the workspace a company-workbench call ran
+     * under, from the request's server-issued scope. Null on every other path — a named
+     * absence, never a guess (the same discipline ownerUserId keeps).
+     */
+    workspaceId: text("workspace_id"),
     sessionId: text("session_id"),
     status: text("status"),
     lagoStatus: text("lago_status")

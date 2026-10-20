@@ -22,6 +22,8 @@ export type UsageOutboxInput = {
   runId?: string | null;
   botId?: string | null;
   ownerUserId?: string | null;
+  /** The team dimension (09.2): the workspace of a company-workbench call, null elsewhere. */
+  workspaceId?: string | null;
   sessionId?: string | null;
   status?: string | null;
 };
@@ -75,6 +77,7 @@ const immutableFields = [
   "runId",
   "botId",
   "ownerUserId",
+  "workspaceId",
   "sessionId",
   "status",
 ] as const;
@@ -88,6 +91,7 @@ function normalizeInput(
   runId: string | null;
   botId: string | null;
   ownerUserId: string | null;
+  workspaceId: string | null;
   sessionId: string | null;
   status: string | null;
 } {
@@ -99,6 +103,7 @@ function normalizeInput(
     runId: input.runId ?? null,
     botId: input.botId ?? null,
     ownerUserId: input.ownerUserId ?? null,
+    workspaceId: input.workspaceId ?? null,
     sessionId: input.sessionId ?? null,
     status: input.status ?? null,
   };

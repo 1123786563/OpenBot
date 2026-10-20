@@ -64,7 +64,11 @@ import {
   materializeManagedContent,
   type ResolvedCraftManagedContent,
 } from "./managed-content";
-import { writeWebappBootstrapScript } from "./nextjs-dev";
+import {
+  buildWebappBootstrapScript,
+  WEBAPP_BOOTSTRAP_SCRIPT_NAME,
+  writeWebappBootstrapScript,
+} from "./nextjs-dev";
 import type { PromptAttachment } from "./opencode/serve-client";
 import type { CraftLLMProviderConfig } from "./opencode-config";
 import {
@@ -515,6 +519,49 @@ export class CraftSessionManager {
   }
 
   /**
+   * #437's repair predicate: the session's PROTECTED start script, as it sits on
+   * disk, differs from what the current derivation would write. The reload that
+   * used to short-circuit on up-to-date managed content regenerates through
+   * this verdict, so the "webapp_url withheld + mount mismatch" state has a
+   * reachable repair (the ticket's repro: skills/reload answered
+   * skills_stale:false and rewrote nothing, leaving the mismatch permanent —
+   * the user's only way out was rebuilding the session).
+   *
+   * Fail-open by KIND, like every degraded read here: no reserved port, no
+   * wired basePath derivation, no botId, no file API, a read that THREW, or a
+   * script that was never written (null — provisioning's business, not the
+   * reload's) all answer false; webapp-info's .webapp-mount cross-check stays
+   * the net for the states this cannot see. Only a WRITTEN script whose bytes
+   * differ from the fresh derivation (the gated basePath + the reserved port)
+   * forces the regenerate.
+   */
+  private async webappScriptStale(
+    session: CraftSessionRow,
+    botId: string,
+    directory: string,
+  ): Promise<boolean> {
+    if (session.nextjsPort == null || !this.deps.webappBasePathFor)
+      return false;
+    const fileApi = botId ? this.gateway.fileApiFor(botId) : null;
+    if (!fileApi) return false;
+    let current: string | null;
+    try {
+      current = await fileApi.readFile(
+        `${directory}/${WEBAPP_BOOTSTRAP_SCRIPT_NAME}`,
+      );
+    } catch {
+      return false;
+    }
+    if (current === null) return false;
+    const expected = buildWebappBootstrapScript({
+      sessionDirectory: directory,
+      port: session.nextjsPort,
+      basePath: await this.deps.webappBasePathFor(session.id),
+    });
+    return current !== expected;
+  }
+
+  /**
    * Reload a session whose runtime predates the deployment's managed content (skills/MCP).
    * onyx's non-stale short-circuit (manager.py:367-368) is restored now that a real
    * resolver supplies hashes: an up-to-date runtime reloads nothing. A stale one
@@ -535,12 +582,20 @@ export class CraftSessionManager {
       this.config.sessionDirectoryMode,
     );
     const hashes = await this.currentHashesFor(session);
+    // #437: a start script that no longer matches its freshly derived form (a
+    // current-generation session whose script was written root-path by a
+    // degraded provisioning read, or a rotated label key) is repaired by THIS
+    // reload even when the managed content is up to date — the onyx non-stale
+    // short-circuit used to leave the mismatch standing while webapp-info kept
+    // withholding the address, with no reachable action that fixed it.
+    const scriptStale = await this.webappScriptStale(session, botId, directory);
     if (
       !sessionRuntimeStale(
         session,
         hashes?.skillsHash ?? null,
         hashes?.mcpConfigHash ?? null,
-      )
+      ) &&
+      !scriptStale
     ) {
       return false;
     }

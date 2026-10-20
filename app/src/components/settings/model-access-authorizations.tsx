@@ -21,12 +21,18 @@ import { useDateTime } from "@/lib/i18n/datetime";
 import {
   accessGrantsQueryOptions,
   revokeAccessGrantMutationOptions,
+  revokeAllAccessGrantsMutationOptions,
 } from "@/lib/model-access/mutations";
 
 /**
  * The person's own model access authorizations (Bifrost #240, 04.7): one row per grant, the way
  * the server reports it — which Bot, which external identity, active or revoked, and when it was
  * confirmed — and a Revoke press on the active ones.
+ *
+ * The rows also carry each grant's live key versions (05.10): version number, state and term —
+ * the state the deployment believes, never a secret, because none exists to send. Each active
+ * Bot row offers the one-press revoke-all for that Bot's every valid version, riding the same
+ * refetch-the-truth discipline as the single revoke.
  *
  * Everything that makes this safe lives server-side and this component cannot un-live it: the
  * list endpoint answers only the session's own rows, and the revocation locates its grant by
@@ -44,7 +50,8 @@ export function ModelAccessAuthorizations() {
   const queryClient = useQueryClient();
   const list = useQuery(accessGrantsQueryOptions());
   const revoke = useMutation(revokeAccessGrantMutationOptions(queryClient));
-  const error = list.error ?? revoke.error;
+  const revokeAll = useMutation(revokeAllAccessGrantsMutationOptions(queryClient));
+  const error = list.error ?? revoke.error ?? revokeAll.error;
 
   return (
     <PageSection
@@ -84,13 +91,34 @@ export function ModelAccessAuthorizations() {
                       ? t("modelAccess.grantStatusActive")
                       : t("modelAccess.grantStatusRevoked")}
                   </ItemDescription>
+                  {/* The live key versions (05.10): version, state, term — the rows a
+                      revoke-all acts on. Nothing secret rides in them. */}
+                  {grant.activeKeys.map((key) => (
+                    <ItemDescription key={key.credentialVersion}>
+                      {t("modelAccess.keyVersionLine", {
+                        version: key.credentialVersion,
+                        status: t("modelAccess.grantStatusActive"),
+                        expiry: key.expiresAt ? formatDateTime(key.expiresAt) : "—",
+                      })}
+                    </ItemDescription>
+                  ))}
                 </ItemContent>
                 {grant.status === "active" ? (
                   <ItemActions>
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={revoke.isPending}
+                      disabled={revoke.isPending || revokeAll.isPending}
+                      onClick={() => revokeAll.mutate(grant.botId)}
+                    >
+                      {revokeAll.isPending
+                        ? t("modelAccess.revoking")
+                        : t("modelAccess.revokeAll")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={revoke.isPending || revokeAll.isPending}
                       onClick={() => revoke.mutate(grant.grantId)}
                     >
                       {revoke.isPending

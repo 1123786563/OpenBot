@@ -114,9 +114,18 @@ const WEBAPP_NOT_RUNNING_ERROR =
  * handing the address out would be a silent, non-self-healing 404 on every
  * request. The address is withheld and this displayable sentence rides the
  * same channel a closed origin uses (the pane's closedReason state).
+ *
+ * #437 corrected the CAUSE half: "started by an older start script" was a
+ * fact error on the ticket's own population — the script was written by
+ * CURRENT code whose provisioning read degraded (no file API / a gateway
+ * flake) and answered legacy, shipping a root-path script onto a
+ * current-generation session. The sentence now names what is true for every
+ * mount-stale shape (old script, degraded write, rotated label) and points at
+ * the repair that exists: skills/reload rewrites the start script (#437's
+ * repair arm — the mount record then refreshes on the next spawn).
  */
 const WEBAPP_MOUNT_STALE_REASON =
-  "The web app was started by an older start script: its dev server is not mounted on the preview address. Refresh the session's start script (repair or regenerate the session), then start the web app again.";
+  "The web app's dev server is not mounted on the preview address: its start script was written without the preview mount. Reload the session's skills to rewrite the start script, then start the web app again; regenerating the session also repairs it.";
 
 /**
  * The same-origin liveness probe's restart sentence (fix-ocr13): the session

@@ -1,0 +1,38 @@
+{
+  "id": "8862c615-e537-4b69-92ff-3fd5e31957e7",
+  "ok": true,
+  "result": {
+    "runId": "run_b7d44d543855",
+    "deliveryId": "delivery_d5b789201cd5",
+    "messages": [
+      {
+        "id": "msg_a5e3e88e6a82",
+        "run_id": "run_b7d44d543855",
+        "delivery_contract": "current_delivery",
+        "from_handle": "structworker_2c6cfb6b-a1ed-47c0-8a0a-5841bc88b2ae",
+        "to_handle": "run:run_b7d44d543855",
+        "subject": "mt2b: 4 票全部 SATISFIED（#78/#82/#83/#111）",
+        "body": "按序完成 MT035/MT039/MT040/MT068 四票：每票交付 tenancy 实现+新表迁移任务（expand-only）+票专属 support+真实 PG RLS 套件，四套件 18 用例全绿（host-access 6、personal-memory 4、learning-demonstrations 4、purge-restore 4），approvals 回归 bun 层 23/23 + native 层 38/38，multitenancy 全量 1204 pass/3 fail（3 个均为改动前 main 既有失败，无劣化），migration-tool 42/42，e2e 覆盖审计 exit 0，触及文件 biome 0 error、typecheck 0 新错。环境：容器 5566 上建 openbot_enterprise_mt2b（任务库名 mt2b 与套件强制前缀冲突，已披露），制备=base 迁移→剥离 #436 漂移表→29 任务链（含四票新任务）。报告与 20 文件 sha256 见 reports/orca-dag-wave2-mt2b.md；遗留：main 既有 3 个 multitenancy 失败与 bootstrap-local-gateway typecheck 3 错属其它票线。",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_2eb694a7532a\",\"dispatchId\":\"ctx_6ef9b7740d9b\",\"outcome\":\"succeeded\",\"filesModified\":[\"server/src/enterprise/tenancy/host-access.ts\",\"server/src/enterprise/tenancy/personal-memory.ts\",\"server/src/enterprise/tenancy/learning-demonstrations.ts\",\"server/src/enterprise/tenancy/purge-restore.ts\",\"server/src/db/schema/enterprise-host-access.ts\",\"server/src/db/schema/enterprise-personal-memory.ts\",\"server/src/db/schema/enterprise-learning.ts\",\"server/src/db/schema/enterprise-purge-restore.ts\",\"server/src/db/schema/index.ts\",\"server/scripts/multitenancy/migrate-test.ts\",\"server/tests/multitenancy/host-access.test.ts\",\"server/tests/multitenancy/personal-memory.test.ts\",\"server/tests/multitenancy/learning-demonstrations.test.ts\",\"server/tests/multitenancy/purge-restore.test.ts\",\"server/tests/multitenancy/migration-tool.test.ts\",\"server/tests/multitenancy/support/host-access.ts\",\"server/tests/multitenancy/support/personal-memory.ts\",\"server/tests/multitenancy/support/learning-demonstrations.ts\",\"server/tests/multitenancy/support/purge-restore.ts\",\"docs/verification/e2e-bun-suites.json\",\"reports/orca-dag-wave2-mt2b.md\"],\"reportPath\":\"reports/orca-dag-wave2-mt2b.md\"}",
+        "created_at": "2026-10-19T16:49:30Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "8905ea34-5d73-4b63-ad6f-c3c4771a04ae",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "60e4da9f-da14-4be2-afbd-3f95a0a4648d"
+  }
+}

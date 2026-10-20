@@ -491,6 +491,9 @@
     "grantStatusRevoked": "Revoked",
     "revoke": "Revoke",
     "revoking": "Revoking…",
+    "keyVersionLine": "Key v{{version}}: {{status}}, expires {{expiry}}",
+    "revokeAll": "Revoke all versions",
+    "revokeAllFailed": "The revocation did not complete. Try again shortly.",
     "aboutSection": "How this works",
     "about": "A Bot asks its server for a binding code and hands it to you out of band. The code names one Bot and one external identity, lives for a few minutes, and works exactly once. Confirming here creates the authorization; no key, balance or credits are created with it."
   },

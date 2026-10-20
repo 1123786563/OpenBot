@@ -413,6 +413,10 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
     // MT034/MT067/MT074 而本断言清单未同步，按注册表排序位补齐这三项
     // （MT031<MT034<MT041、MT060<MT067<MT069、MT073<MT074<MT076），
     // 文件其余内容只读。
+    // 波次 17（orca-dag-wave2 mt2b，brief 预授权窄缝同款）：本票新增
+    // MT035（Issue #78）、MT039（Issue #82）、MT040（Issue #83）与
+    // MT068（Issue #111）并入排序位（MT034<MT035<MT039<MT040<MT041、
+    // MT067<MT068<MT069）。
     expect(ALLOWED_TASK_IDS).toEqual([
       "MT000",
       "MT004",
@@ -428,17 +432,24 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
       "MT029",
       "MT031",
       "MT034",
+      "MT035",
+      "MT039",
+      "MT040",
       "MT041",
       "MT042",
       "MT059",
       "MT060",
       "MT067",
+      "MT068",
       "MT069",
       "MT070",
       "MT073",
       "MT074",
       "MT076",
       "MT077",
+      // MT078（Issue #121，MT078 brief 预授权）：仅本断言追加 "MT078"
+      // （审计分域与计费管理授权两表迁移注册），文件其余内容只读。
+      "MT078",
       "MT112",
     ]);
     expect(new Set(ALLOWED_TASK_IDS)).toEqual(new Set(TASKS.keys()));

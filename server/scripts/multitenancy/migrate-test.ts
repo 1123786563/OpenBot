@@ -2214,6 +2214,386 @@ const SHARED_APPROVAL_TASK: TaskMigrationSpec = {
  *     载体键）。
  * 不修改任何既有表；供应商事件去重/重放防线仍在既有 webhook inbox（零改动）。
  */
+/**
+ * MT035（Issue #78）：Host Access、签入帮助与危险动作审批的归属。expand-only
+ * ——仅新增两张表与最小 RLS，不改任何既有对象（消费 MT034 审批绑定先例）：
+ *
+ *   - enterprise_host_access_grants：一行 = 一位成员把本机 host 访问授权给
+ *     某 Bot。归属键 (tenant, workspace, principal, agent) 复合外键全内嵌
+ *     tenant_id（跨公司授权行结构性不可能）；status active/revoked 闭集、
+ *     revoked ⇔ revoked_at 行形 CHECK。data 租户 pin 读 + 插自己 + 撤本人
+ *     active 行；operator 租户 pin 读 + 改；零 DELETE；directory 零授权。
+ *   - enterprise_host_action_approvals：一行 = 一次危险动作（write_file /
+ *     run_command 闭集）审批，锁定 (tenant, workspace, principal, agent,
+ *     kind, params_digest)；摘要是服务端规范序列化 sha256（64hex CHECK）；
+ *     status 闭集 + 决定配对行形 CHECK；审批行锁定归属，执行时在事务内
+ *     重读 approved 行并逐字比对执行 scope 四元组与摘要——审批归属与执行
+ *     归属一致由读取谓词保证，不存在跨范围复用通道。data 读 + 插自己 +
+ *     撤回本人 pending；operator 读 + 决定（pending → 终态）。
+ *
+ * 判定/管理服务在 server/src/enterprise/tenancy/host-access.ts。
+ */
+const HOST_ACCESS_TASK: TaskMigrationSpec = {
+  id: "MT035",
+  description:
+    "MT035（Issue #78）：新增 enterprise_host_access_grants 与 enterprise_host_action_approvals（expand-only，仅新增表与最小 RLS，不改既有对象）。",
+  steps: [
+    {
+      slug: "host_access_tables",
+      impact:
+        "新增两张 Host Access 归属表：enterprise_host_access_grants（成员→Bot 的主机访问授权，归属键复合外键内嵌 tenant_id、status/revocation 行形 CHECK）与 enterprise_host_action_approvals（危险动作审批行，锁定归属四元组 + 操作闭集 + 摘要 64hex CHECK + 决定配对行形 CHECK）。不修改任何既有表。",
+      objects: [
+        "enterprise_host_access_grants",
+        "enterprise_host_action_approvals",
+      ],
+      statements: [
+        'CREATE TABLE "enterprise_host_access_grants" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"agent_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"display_name" text NOT NULL,\n' +
+          "\t\"status\" text DEFAULT 'active' NOT NULL,\n" +
+          '\t"revoked_at" timestamp with time zone,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_host_access_grants_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          '\tCONSTRAINT "enterprise_host_access_grant_status" CHECK ("enterprise_host_access_grants"."status" in (\'active\',\'revoked\')),\n' +
+          '\tCONSTRAINT "enterprise_host_access_grant_revocation_shape" CHECK (("enterprise_host_access_grants"."status" = \'revoked\') = ("enterprise_host_access_grants"."revoked_at" is not null))\n' +
+          ");",
+        'ALTER TABLE "enterprise_host_access_grants" ADD CONSTRAINT "enterprise_host_access_grants_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_host_access_grants" ADD CONSTRAINT "enterprise_host_access_grants_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_host_access_grants" ADD CONSTRAINT "enterprise_host_access_grants_tenant_id_agent_id_enterprise_bot_ownership_tenant_id_agent_id_fk" FOREIGN KEY ("tenant_id","agent_id") REFERENCES "public"."enterprise_bot_ownership"("tenant_id","agent_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_host_access_grants" ADD CONSTRAINT "enterprise_host_access_grants_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE INDEX "enterprise_host_access_grant_subject_idx" ON "enterprise_host_access_grants" ("tenant_id","principal_id","status");',
+        'CREATE TABLE "enterprise_host_action_approvals" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"agent_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"grant_id" text NOT NULL,\n' +
+          '\t"operation_kind" text NOT NULL,\n' +
+          '\t"params_digest" text NOT NULL,\n' +
+          "\t\"status\" text DEFAULT 'pending' NOT NULL,\n" +
+          '\t"decided_by" text,\n' +
+          '\t"decided_at" timestamp with time zone,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_host_action_approvals_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          '\tCONSTRAINT "enterprise_host_action_approval_kind" CHECK ("enterprise_host_action_approvals"."operation_kind" in (\'write_file\',\'run_command\')),\n' +
+          "\tCONSTRAINT \"enterprise_host_action_approval_status\" CHECK (\"enterprise_host_action_approvals\".\"status\" in ('pending','approved','declined','withdrawn')),\n" +
+          '\tCONSTRAINT "enterprise_host_action_approval_digest_shape" CHECK ("enterprise_host_action_approvals"."params_digest" ~ \'^[0-9a-f]{64}$\'),\n' +
+          '\tCONSTRAINT "enterprise_host_action_approval_decision_shape" CHECK (("enterprise_host_action_approvals"."status" in (\'approved\',\'declined\')) = ("enterprise_host_action_approvals"."decided_by" is not null and "enterprise_host_action_approvals"."decided_at" is not null))\n' +
+          ");",
+        'ALTER TABLE "enterprise_host_action_approvals" ADD CONSTRAINT "enterprise_host_action_approvals_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_host_action_approvals" ADD CONSTRAINT "enterprise_host_action_approvals_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_host_action_approvals" ADD CONSTRAINT "enterprise_host_action_approvals_tenant_id_agent_id_enterprise_bot_ownership_tenant_id_agent_id_fk" FOREIGN KEY ("tenant_id","agent_id") REFERENCES "public"."enterprise_bot_ownership"("tenant_id","agent_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_host_action_approvals" ADD CONSTRAINT "enterprise_host_action_approvals_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_host_action_approvals" ADD CONSTRAINT "enterprise_host_action_approvals_tenant_id_grant_id_enterprise_host_access_grants_tenant_id_id_fk" FOREIGN KEY ("tenant_id","grant_id") REFERENCES "public"."enterprise_host_access_grants"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE INDEX "enterprise_host_action_approval_object_idx" ON "enterprise_host_action_approvals" ("tenant_id","workspace_id","principal_id","agent_id","operation_kind","params_digest");',
+      ],
+    },
+    {
+      slug: "host_access_rls_policies",
+      impact:
+        "两张新表的 FORCE RLS 与最小授权：授权行 data 角色租户 pin 读 + 插自己（tenant+principal pin）+ 撤本人 active 行（同一谓词 UPDATE 策略），operator 租户 pin 读 + 改；审批行 data 读 + 插自己 + 撤回本人 pending，operator 读 + 决定（pending → 终态）；任何角色零 DELETE；directory 零授权。不改动任何既有表策略或授权。",
+      objects: [
+        "enterprise_host_access_grants",
+        "enterprise_host_action_approvals",
+      ],
+      statements: [
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_host_access_grants" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_host_access_grants" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_host_access_grants" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_host_access_grant_data_read" ON "enterprise_host_access_grants"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_host_access_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_host_access_grant_data_insert" ON "enterprise_host_access_grants"\n  FOR INSERT TO ob_ent_data\n  WITH CHECK ("enterprise_host_access_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_host_access_grants"."principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_host_access_grant_data_revoke" ON "enterprise_host_access_grants"\n  FOR UPDATE TO ob_ent_data\n  USING ("enterprise_host_access_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_host_access_grants"."principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\') AND "enterprise_host_access_grants"."status" = \'active\')\n  WITH CHECK ("enterprise_host_access_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_host_access_grants"."principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_host_access_grant_operator_read" ON "enterprise_host_access_grants"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_host_access_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_host_access_grant_operator_update" ON "enterprise_host_access_grants"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_host_access_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'))\n  WITH CHECK ("enterprise_host_access_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT, INSERT, UPDATE ON TABLE "enterprise_host_access_grants" TO ob_ent_data;',
+        'GRANT SELECT, UPDATE ON TABLE "enterprise_host_access_grants" TO ob_ent_operator;',
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_host_action_approvals" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_host_action_approvals" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_host_action_approvals" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_host_action_approval_data_read" ON "enterprise_host_action_approvals"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_host_action_approvals"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_host_action_approval_data_insert" ON "enterprise_host_action_approvals"\n  FOR INSERT TO ob_ent_data\n  WITH CHECK ("enterprise_host_action_approvals"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_host_action_approvals"."principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_host_action_approval_data_withdraw" ON "enterprise_host_action_approvals"\n  FOR UPDATE TO ob_ent_data\n  USING ("enterprise_host_action_approvals"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_host_action_approvals"."principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\') AND "enterprise_host_action_approvals"."status" = \'pending\')\n  WITH CHECK ("enterprise_host_action_approvals"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_host_action_approvals"."principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_host_action_approval_operator_read" ON "enterprise_host_action_approvals"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_host_action_approvals"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_host_action_approval_operator_decide" ON "enterprise_host_action_approvals"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_host_action_approvals"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_host_action_approvals"."status" = \'pending\')\n  WITH CHECK ("enterprise_host_action_approvals"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT, INSERT, UPDATE ON TABLE "enterprise_host_action_approvals" TO ob_ent_data;',
+        'GRANT SELECT, UPDATE ON TABLE "enterprise_host_action_approvals" TO ob_ent_operator;',
+      ],
+    },
+  ],
+};
+
+/**
+ * MT039（Issue #82）：个人业务记忆与来源选择保持个人权限。expand-only——
+ * 仅新增一张表与最小 RLS，不改任何既有对象（消费 MT038 文档作用域与
+ * MT010 个人资源权限的既有资源/授权表，不假装跨库外键）：
+ *
+ *   - enterprise_personal_memories：一行 = 一条个人业务记忆，归属键
+ *     (tenant, workspace, principal) 复合外键全内嵌 tenant_id（跨公司记忆
+ *     行结构性不可能）；source_kind manual/kb/document 闭集 + 行形 CHECK。
+ *     data 角色四动作全部 tenant+principal 双 pin（个人记忆连读都只给
+ *     本人——同团队他人 RLS 层不可见）；operator 租户 pin 只读；directory
+ *     零授权。
+ *
+ * 判定/管理服务在 server/src/enterprise/tenancy/personal-memory.ts。
+ */
+const PERSONAL_MEMORY_TASK: TaskMigrationSpec = {
+  id: "MT039",
+  description:
+    "MT039（Issue #82）：新增 enterprise_personal_memories（expand-only，仅新增表与最小 RLS，不改既有对象）。",
+  steps: [
+    {
+      slug: "personal_memory_table",
+      impact:
+        "新增个人业务记忆表：归属键 (tenant, workspace, principal) 复合外键内嵌 tenant_id、检索键与内容、来源闭集与行形 CHECK、主体索引。不修改任何既有表。",
+      objects: ["enterprise_personal_memories"],
+      statements: [
+        'CREATE TABLE "enterprise_personal_memories" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"memory_key" text NOT NULL,\n' +
+          '\t"content" text NOT NULL,\n' +
+          "\t\"source_kind\" text DEFAULT 'manual' NOT NULL,\n" +
+          '\t"source_ref" text,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_personal_memories_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          "\tCONSTRAINT \"enterprise_personal_memory_source_kind\" CHECK (\"enterprise_personal_memories\".\"source_kind\" in ('manual','kb','document')),\n" +
+          '\tCONSTRAINT "enterprise_personal_memory_source_shape" CHECK (("enterprise_personal_memories"."source_kind" in (\'kb\',\'document\')) = ("enterprise_personal_memories"."source_ref" is not null))\n' +
+          ");",
+        'ALTER TABLE "enterprise_personal_memories" ADD CONSTRAINT "enterprise_personal_memories_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_personal_memories" ADD CONSTRAINT "enterprise_personal_memories_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_personal_memories" ADD CONSTRAINT "enterprise_personal_memories_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE INDEX "enterprise_personal_memory_subject_idx" ON "enterprise_personal_memories" ("tenant_id","workspace_id","principal_id","memory_key");',
+      ],
+    },
+    {
+      slug: "personal_memory_rls_policies",
+      impact:
+        "新表的 FORCE RLS 与最小授权：data 角色读/插/改/删四动作全部 tenant+principal 双 pin（同团队他人连行都不可见）；operator 租户 pin 只读；零跨主体 UPDATE；directory 零授权。不改动任何既有表策略或授权。",
+      objects: ["enterprise_personal_memories"],
+      statements: [
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_personal_memories" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_personal_memories" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_personal_memories" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_personal_memory_data_read" ON "enterprise_personal_memories"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_personal_memories"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_personal_memories"."principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_personal_memory_data_insert" ON "enterprise_personal_memories"\n  FOR INSERT TO ob_ent_data\n  WITH CHECK ("enterprise_personal_memories"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_personal_memories"."principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_personal_memory_data_update" ON "enterprise_personal_memories"\n  FOR UPDATE TO ob_ent_data\n  USING ("enterprise_personal_memories"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_personal_memories"."principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\'))\n  WITH CHECK ("enterprise_personal_memories"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_personal_memories"."principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_personal_memory_data_delete" ON "enterprise_personal_memories"\n  FOR DELETE TO ob_ent_data\n  USING ("enterprise_personal_memories"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_personal_memories"."principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_personal_memory_operator_read" ON "enterprise_personal_memories"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_personal_memories"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "enterprise_personal_memories" TO ob_ent_data;',
+        'GRANT SELECT ON TABLE "enterprise_personal_memories" TO ob_ent_operator;',
+      ],
+    },
+  ],
+};
+
+/**
+ * MT040（Issue #83）：学习容器、研究与演示记录隔离。expand-only——仅新增
+ * 两张表与最小 RLS，不改任何既有对象：
+ *
+ *   - enterprise_learning_containers：一行 = 一次容器分配，归属键
+ *     (tenant, workspace) 内嵌 tenant_id；namespace 是服务端从归属派生的
+ *     摘要（CHECK 钉死形状 ^mt040-ns-[0-9a-f]{32}$，绝不掺用户输入或凭据
+ *     片段）；allocated/released 闭集 + 行形 CHECK；回收后每次分配都是
+ *     新行，跨范围复用旧容器结构性不可能。
+ *   - enterprise_learning_records：一行 = 一条研究或演示记录（kind 闭集），
+ *     归属 (tenant, workspace, principal) + 容器外键内嵌 tenant_id；
+ *     data 租户 pin 读 + 插自己；operator 租户 pin 读 + 改（释放通道）；
+ *     零 DELETE；directory 零授权。
+ *
+ * 判定/管理服务在 server/src/enterprise/tenancy/learning-demonstrations.ts。
+ */
+const LEARNING_DEMONSTRATION_TASK: TaskMigrationSpec = {
+  id: "MT040",
+  description:
+    "MT040（Issue #83）：新增 enterprise_learning_containers 与 enterprise_learning_records（expand-only，仅新增表与最小 RLS，不改既有对象）。",
+  steps: [
+    {
+      slug: "learning_tables",
+      impact:
+        "新增两张学习域归属表：enterprise_learning_containers（容器分配，namespace 服务端派生摘要 + 形状 CHECK、allocated/released 闭集 + 行形 CHECK）与 enterprise_learning_records（研究/演示记录，kind 闭集，归属键复合外键内嵌 tenant_id）。不修改任何既有表。",
+      objects: [
+        "enterprise_learning_containers",
+        "enterprise_learning_records",
+      ],
+      statements: [
+        'CREATE TABLE "enterprise_learning_containers" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"namespace" text NOT NULL,\n' +
+          '\t"allocated_by_principal_id" text NOT NULL,\n' +
+          "\t\"status\" text DEFAULT 'allocated' NOT NULL,\n" +
+          '\t"released_at" timestamp with time zone,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_learning_containers_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          '\tCONSTRAINT "enterprise_learning_container_status" CHECK ("enterprise_learning_containers"."status" in (\'allocated\',\'released\')),\n' +
+          '\tCONSTRAINT "enterprise_learning_container_release_shape" CHECK (("enterprise_learning_containers"."status" = \'released\') = ("enterprise_learning_containers"."released_at" is not null)),\n' +
+          '\tCONSTRAINT "enterprise_learning_container_namespace_shape" CHECK ("enterprise_learning_containers"."namespace" ~ \'^mt040-ns-[0-9a-f]{32}$\')\n' +
+          ");",
+        'ALTER TABLE "enterprise_learning_containers" ADD CONSTRAINT "enterprise_learning_containers_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_learning_containers" ADD CONSTRAINT "enterprise_learning_containers_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_learning_containers" ADD CONSTRAINT "enterprise_learning_containers_tenant_id_allocated_by_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","allocated_by_principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE INDEX "enterprise_learning_container_scope_idx" ON "enterprise_learning_containers" ("tenant_id","workspace_id","status");',
+        'CREATE TABLE "enterprise_learning_records" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"container_id" text NOT NULL,\n' +
+          '\t"kind" text NOT NULL,\n' +
+          '\t"title" text NOT NULL,\n' +
+          '\t"payload" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_learning_records_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          '\tCONSTRAINT "enterprise_learning_record_kind" CHECK ("enterprise_learning_records"."kind" in (\'research\',\'demonstration\'))\n' +
+          ");",
+        'ALTER TABLE "enterprise_learning_records" ADD CONSTRAINT "enterprise_learning_records_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_learning_records" ADD CONSTRAINT "enterprise_learning_records_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_learning_records" ADD CONSTRAINT "enterprise_learning_records_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_learning_records" ADD CONSTRAINT "enterprise_learning_records_tenant_id_container_id_enterprise_learning_containers_tenant_id_id_fk" FOREIGN KEY ("tenant_id","container_id") REFERENCES "public"."enterprise_learning_containers"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE INDEX "enterprise_learning_record_scope_idx" ON "enterprise_learning_records" ("tenant_id","workspace_id","kind");',
+      ],
+    },
+    {
+      slug: "learning_rls_policies",
+      impact:
+        "两张新表的 FORCE RLS 与最小授权：容器行 data 角色租户 pin 读 + 插自己（tenant+principal pin）、operator 租户 pin 读 + 改（释放通道）；记录行 data 租户 pin 读 + 插自己、operator 租户 pin 读 + 改；任何角色零 DELETE；directory 零授权。不改动任何既有表策略或授权。",
+      objects: [
+        "enterprise_learning_containers",
+        "enterprise_learning_records",
+      ],
+      statements: [
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_learning_containers" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_learning_containers" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_learning_containers" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_learning_container_data_read" ON "enterprise_learning_containers"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_learning_containers"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_learning_container_data_insert" ON "enterprise_learning_containers"\n  FOR INSERT TO ob_ent_data\n  WITH CHECK ("enterprise_learning_containers"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_learning_containers"."allocated_by_principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_learning_container_operator_read" ON "enterprise_learning_containers"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_learning_containers"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_learning_container_operator_update" ON "enterprise_learning_containers"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_learning_containers"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'))\n  WITH CHECK ("enterprise_learning_containers"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT, INSERT ON TABLE "enterprise_learning_containers" TO ob_ent_data;',
+        'GRANT SELECT, UPDATE ON TABLE "enterprise_learning_containers" TO ob_ent_operator;',
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_learning_records" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_learning_records" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_learning_records" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_learning_record_data_read" ON "enterprise_learning_records"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_learning_records"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_learning_record_data_insert" ON "enterprise_learning_records"\n  FOR INSERT TO ob_ent_data\n  WITH CHECK ("enterprise_learning_records"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_learning_records"."principal_id" = nullif(current_setting(\'app.principal_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_learning_record_operator_read" ON "enterprise_learning_records"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_learning_records"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_learning_record_operator_update" ON "enterprise_learning_records"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_learning_records"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'))\n  WITH CHECK ("enterprise_learning_records"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT, INSERT ON TABLE "enterprise_learning_records" TO ob_ent_data;',
+        'GRANT SELECT, UPDATE ON TABLE "enterprise_learning_records" TO ob_ent_operator;',
+      ],
+    },
+  ],
+};
+
+/**
+ * MT068（Issue #111）：清理、保留与恢复带可核验归属与不可伪造 manifest。
+ * expand-only——仅新增两张表与最小 RLS，不改任何既有对象（消费 MT067
+ * 清理域先例与 enterprise_resources 既有状态闭集）：
+ *
+ *   - enterprise_purge_manifests：一行 = 一份服务端生成的 purge/
+ *     retention/restore 清单。归属键内嵌 tenant_id；item_refs 是服务端
+ *     枚举的范围资源清单（jsonb 数组形状 CHECK）；signature 是服务端
+ *     密钥的 HMAC-SHA256（64hex CHECK）；(tenant, idempotency_key) 唯一
+ *     ——同键重跑收敛到同一 manifest。data 只读；operator 读 + 写——
+ *     客户端不存在任何 manifest 写入通道（不可伪造的结构性保证）。
+ *   - enterprise_purge_audit：只追加审计行（event 闭集 + detail 闭形且
+ *     禁秘密载体键 CHECK）；任何角色零 UPDATE/DELETE；operator 只插+读。
+ *
+ * 判定/管理服务在 server/src/enterprise/tenancy/purge-restore.ts。
+ */
+const PURGE_RESTORE_TASK: TaskMigrationSpec = {
+  id: "MT068",
+  description:
+    "MT068（Issue #111）：新增 enterprise_purge_manifests 与 enterprise_purge_audit（expand-only，仅新增表与最小 RLS，不改既有对象）。",
+  steps: [
+    {
+      slug: "purge_manifest_tables",
+      impact:
+        "新增两张清理域表：enterprise_purge_manifests（服务端签名清单，operation/status/签名形状/清单形状/行形 CHECK + 幂等键唯一索引）与 enterprise_purge_audit（只追加审计行，event 闭集 + detail 闭形且禁秘密载体键）。不修改任何既有表。",
+      objects: ["enterprise_purge_manifests", "enterprise_purge_audit"],
+      statements: [
+        'CREATE TABLE "enterprise_purge_manifests" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"operation" text NOT NULL,\n' +
+          '\t"workspace_id" text,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"item_refs" jsonb NOT NULL,\n' +
+          '\t"signature" text NOT NULL,\n' +
+          "\t\"status\" text DEFAULT 'sealed' NOT NULL,\n" +
+          '\t"idempotency_key" text NOT NULL,\n' +
+          '\t"executed_at" timestamp with time zone,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_purge_manifests_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          "\tCONSTRAINT \"enterprise_purge_manifest_operation\" CHECK (\"enterprise_purge_manifests\".\"operation\" in ('purge','retention','restore')),\n" +
+          "\tCONSTRAINT \"enterprise_purge_manifest_status\" CHECK (\"enterprise_purge_manifests\".\"status\" in ('sealed','executed','failed')),\n" +
+          '\tCONSTRAINT "enterprise_purge_manifest_signature_shape" CHECK ("enterprise_purge_manifests"."signature" ~ \'^[0-9a-f]{64}$\'),\n' +
+          '\tCONSTRAINT "enterprise_purge_manifest_items_shape" CHECK (jsonb_typeof("enterprise_purge_manifests"."item_refs") = \'array\'),\n' +
+          '\tCONSTRAINT "enterprise_purge_manifest_execution_shape" CHECK (("enterprise_purge_manifests"."status" = \'executed\') = ("enterprise_purge_manifests"."executed_at" is not null))\n' +
+          ");",
+        'ALTER TABLE "enterprise_purge_manifests" ADD CONSTRAINT "enterprise_purge_manifests_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_purge_manifests" ADD CONSTRAINT "enterprise_purge_manifests_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_purge_manifests" ADD CONSTRAINT "enterprise_purge_manifests_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE UNIQUE INDEX "enterprise_purge_manifest_idempotency_idx" ON "enterprise_purge_manifests" ("tenant_id","idempotency_key");',
+        'CREATE INDEX "enterprise_purge_manifest_scope_idx" ON "enterprise_purge_manifests" ("tenant_id","workspace_id","operation");',
+        'CREATE TABLE "enterprise_purge_audit" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"manifest_id" text NOT NULL,\n' +
+          '\t"event" text NOT NULL,\n' +
+          '\t"actor_principal_id" text NOT NULL,\n' +
+          '\t"detail" jsonb NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_purge_audit_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          "\tCONSTRAINT \"enterprise_purge_audit_event\" CHECK (\"enterprise_purge_audit\".\"event\" in ('sealed','executed','restored','failed')),\n" +
+          '\tCONSTRAINT "enterprise_purge_audit_detail_shape" CHECK (jsonb_typeof("enterprise_purge_audit"."detail") = \'object\'),\n' +
+          '\tCONSTRAINT "enterprise_purge_audit_no_secret_carriers" CHECK (not ("enterprise_purge_audit"."detail" ? \'secret\' or "enterprise_purge_audit"."detail" ? \'password\' or "enterprise_purge_audit"."detail" ? \'token\' or "enterprise_purge_audit"."detail" ? \'apiKey\'))\n' +
+          ");",
+        'ALTER TABLE "enterprise_purge_audit" ADD CONSTRAINT "enterprise_purge_audit_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_purge_audit" ADD CONSTRAINT "enterprise_purge_audit_tenant_id_manifest_id_enterprise_purge_manifests_tenant_id_id_fk" FOREIGN KEY ("tenant_id","manifest_id") REFERENCES "public"."enterprise_purge_manifests"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_purge_audit" ADD CONSTRAINT "enterprise_purge_audit_tenant_id_actor_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","actor_principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE INDEX "enterprise_purge_audit_manifest_idx" ON "enterprise_purge_audit" ("tenant_id","manifest_id");',
+      ],
+    },
+    {
+      slug: "purge_manifest_rls_policies",
+      impact:
+        "两张新表的 FORCE RLS 与最小授权：manifest 行 data 角色租户 pin 只读、operator 租户 pin 读 + 插 + 改（签名与执行都走受限 operator 通道，客户端无写入通道）；审计行 operator 读 + 插，任何角色零 UPDATE/DELETE。另按 MT067 先例给 enterprise_resources 补列级 UPDATE(status, revision) 授权（走既有 operator UPDATE 行策略）。不改动任何既有表策略或既有授权。",
+      objects: ["enterprise_purge_manifests", "enterprise_purge_audit"],
+      statements: [
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_purge_manifests" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_purge_manifests" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_purge_manifests" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_purge_manifest_data_read" ON "enterprise_purge_manifests"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_purge_manifests"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_purge_manifest_operator_read" ON "enterprise_purge_manifests"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_purge_manifests"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_purge_manifest_operator_write" ON "enterprise_purge_manifests"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_purge_manifests"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_purge_manifest_operator_update" ON "enterprise_purge_manifests"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_purge_manifests"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'))\n  WITH CHECK ("enterprise_purge_manifests"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT ON TABLE "enterprise_purge_manifests" TO ob_ent_data;',
+        'GRANT SELECT, INSERT, UPDATE ON TABLE "enterprise_purge_manifests" TO ob_ent_operator;',
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_purge_audit" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_purge_audit" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_purge_audit" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_purge_audit_operator_read" ON "enterprise_purge_audit"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_purge_audit"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_purge_audit_operator_insert" ON "enterprise_purge_audit"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_purge_audit"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT, INSERT ON TABLE "enterprise_purge_audit" TO ob_ent_operator;',
+        // MT067 先例（expand-only 追加授权）：purge/restore 的资源状态翻转
+        // 走既有 enterprise_resource_operator_update 行策略（租户 pin +
+        // resource_id pin，逐资源作业），本票只补列级 UPDATE(status,
+        // revision) 授权；不新增策略、不改任何既有授权。
+        'GRANT UPDATE ("status", "revision") ON TABLE "enterprise_resources" TO ob_ent_operator;',
+      ],
+    },
+  ],
+};
+
 const VENDOR_BILLING_INTERACTION_TASK: TaskMigrationSpec = {
   id: "MT074",
   description:
@@ -2275,7 +2655,82 @@ const DELETION_SEMANTICS_TASK: TaskMigrationSpec = {
   ],
 };
 
+/**
+ * MT078（Issue #121）：业务审计与身份审计分域，计费管理需明确授权。
+ *
+ * expand-only，两张新表，不改任何既有表/策略/角色授权：
+ *
+ *   1. enterprise_audit_events——租户审计事件的分域存储（business |
+ *      identity | platform）。跟随 enterprise_security_events 的受限通道
+ *      模型（ob_ent_operator + RLS + FORCE RLS），但读策略只有租户 pin
+ *      （审计查询读多行，不是 operation pin 的单行面）；写策略保持
+ *      tenant ∧ operation 双 pin。ob_ent_directory / ob_ent_data 零授权。
+ *   2. billing_company_manage_grants——公司计费管理授权事实（发放|调整|
+ *      退款 位集）。跟随 MT073 公司财务读取授权同款纪律（PK+双侧复合
+ *      FK；billing 域 D2 裁决：owner 通道、无 RLS、受限角色零授权）。
+ */
+const AUDIT_DOMAIN_TASK: TaskMigrationSpec = {
+  id: "MT078",
+  description:
+    "MT078（Issue #121）：审计分域存储与计费管理授权——新增 enterprise_audit_events（受限 operator RLS）与 billing_company_manage_grants（billing 域 owner 通道），expand-only。",
+  steps: [
+    {
+      slug: "audit_domain_events",
+      impact:
+        "新增 enterprise_audit_events 表：分域审计事件（domain ∈ business|identity|platform 封闭 CHECK）。operator 读策略=租户 pin（跨租户结构性排除），写策略=租户+操作双 pin；FORCE RLS；directory/data 零授权（结构隔离）。",
+      objects: ["enterprise_audit_events"],
+      statements: [
+        'CREATE TABLE "enterprise_audit_events" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"domain" text NOT NULL,\n' +
+          '\t"event_type" text NOT NULL,\n' +
+          '\t"actor_id" text NOT NULL,\n' +
+          '\t"target_id" text,\n' +
+          '\t"payload" jsonb NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_audit_events_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          '\tCONSTRAINT "enterprise_audit_event_domain" CHECK ("enterprise_audit_events"."domain" in (\'business\',\'identity\',\'platform\')),\n' +
+          '\tCONSTRAINT "enterprise_audit_events_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action\n' +
+          ");",
+        'CREATE INDEX "enterprise_audit_event_tenant_domain_time" ON "enterprise_audit_events" ("tenant_id","domain","created_at");',
+        "ALTER TABLE \"enterprise_audit_events\" ENABLE ROW LEVEL SECURITY;",
+        'CREATE POLICY "enterprise_audit_event_operator_read" ON "enterprise_audit_events"\n' +
+          "  FOR SELECT TO ob_ent_operator\n" +
+          '  USING ("enterprise_audit_events"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_audit_event_operator_insert" ON "enterprise_audit_events"\n' +
+          "  FOR INSERT TO ob_ent_operator\n" +
+          '  WITH CHECK ("enterprise_audit_events"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\')\n' +
+          '    AND "enterprise_audit_events"."id" = nullif(current_setting(\'app.operation_id\', true), \'\'));',
+        'GRANT SELECT, INSERT ON TABLE "enterprise_audit_events" TO ob_ent_operator;',
+        'ALTER TABLE "enterprise_audit_events" FORCE ROW LEVEL SECURITY;',
+      ],
+    },
+    {
+      slug: "billing_manage_grants",
+      impact:
+        "新增 billing_company_manage_grants 表：公司计费管理授权事实（发放|调整|退款位集，PK(tenant,principal)，双侧复合 FK 证成员；billing 域 owner 通道、无 RLS、受限角色零授权=结构隔离）。",
+      objects: ["billing_company_manage_grants"],
+      statements: [
+        'CREATE TABLE "billing_company_manage_grants" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"granted_by" text NOT NULL,\n' +
+          '\t"actions" integer NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "billing_company_manage_grants_tenant_id_principal_id_pk" PRIMARY KEY("tenant_id","principal_id"),\n' +
+          '\tCONSTRAINT "billing_company_manage_actions" CHECK ("billing_company_manage_grants"."actions" between 1 and 7),\n' +
+          '\tCONSTRAINT "billing_company_manage_grants_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action,\n' +
+          '\tCONSTRAINT "billing_company_manage_grants_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action,\n' +
+          '\tCONSTRAINT "billing_company_manage_grants_tenant_id_granted_by_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","granted_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action\n' +
+          ");",
+      ],
+    },
+  ],
+};
+
 export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
+
   [SELF_CHECK_TASK.id, SELF_CHECK_TASK],
   [WORKSPACE_MEMBERSHIP_TASK.id, WORKSPACE_MEMBERSHIP_TASK],
   [LEGACY_ANCHOR_TASK.id, LEGACY_ANCHOR_TASK],
@@ -2301,7 +2756,12 @@ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [OPENMUSE_TASK_TENANCY_TASK.id, OPENMUSE_TASK_TENANCY_TASK],
   [SHARED_APPROVAL_TASK.id, SHARED_APPROVAL_TASK],
   [DELETION_SEMANTICS_TASK.id, DELETION_SEMANTICS_TASK],
+  [HOST_ACCESS_TASK.id, HOST_ACCESS_TASK],
+  [PERSONAL_MEMORY_TASK.id, PERSONAL_MEMORY_TASK],
+  [LEARNING_DEMONSTRATION_TASK.id, LEARNING_DEMONSTRATION_TASK],
+  [PURGE_RESTORE_TASK.id, PURGE_RESTORE_TASK],
   [VENDOR_BILLING_INTERACTION_TASK.id, VENDOR_BILLING_INTERACTION_TASK],
+  [AUDIT_DOMAIN_TASK.id, AUDIT_DOMAIN_TASK],
 ]);
 
 export const ALLOWED_TASK_IDS: readonly string[] = [...TASKS.keys()].sort();

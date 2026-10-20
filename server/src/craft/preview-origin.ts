@@ -450,6 +450,27 @@ function mainSiteHostOf(
 }
 
 /**
+ * #408 (AC6): whether the deployment's appUrl names a host a browser reaches
+ * over the network — the production context an empty template cannot serve.
+ * Unset, unparsable, or loopback (localhost, 127.0.0.0/8, [::1]) answers
+ * false: those are the local dev forms the 127.0.0.1 preview was built for,
+ * where the dev form's address IS reachable. Read through the same parser
+ * mainSiteHostOf uses, so the two appUrl consumers cannot disagree about what
+ * a deployment "is".
+ */
+function isNonLoopbackAppUrl(appUrl: string | undefined): boolean {
+  const mainSite = mainSiteHostOf(appUrl);
+  if (mainSite === null) return false;
+  const host = mainSite.hostname.toLowerCase();
+  return !(
+    host === "localhost" ||
+    host === "::1" ||
+    host === "[::1]" ||
+    host.startsWith("127.")
+  );
+}
+
+/**
  * #410: the Origin-header side of `claimsPreviewHost`. The dev form answers
  * false for everything — its address carries the session in a PATH label and an
  * Origin header never spells a path, so a dev-form preview is
@@ -726,6 +747,19 @@ export function createPreviewOrigin(deps: {
       return {
         ok: false,
         reason: `The preview origin is disabled: ${devPort.invalid}`,
+      };
+    }
+    // #408 (AC6): production + empty template is an explicit close, never a
+    // loopback address a remote browser would aim at its own machine. The
+    // deployment context is the same appUrl #404 reads — unset or loopback is
+    // the local dev form and keeps the dev shape; anything else names a host
+    // the user's browser reaches over the network, where
+    // http://127.0.0.1:<port>/<label> is unreachable by construction.
+    if (template.kind === "dev" && isNonLoopbackAppUrl(deps.appUrl)) {
+      return {
+        ok: false,
+        reason:
+          "The preview origin is closed: OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE is empty (the dev form), but this deployment serves the app on a non-loopback host, so a 127.0.0.1 preview address would be unreachable from the user's browser. Set OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE (e.g. https://{session}.preview.example.com) to serve previews on their own host.",
       };
     }
     return { ok: true };

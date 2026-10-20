@@ -1,0 +1,92 @@
+{
+ "run": {
+  "objective": "wave2：craft 3 + bf 2 + mt 14 遗留票编排",
+  "base": "bf64d0f2 (worktree 实际 HEAD; 计划 BASE c80927fa)",
+  "scope_revision": 2,
+  "orca_run_id": "run_b7d44d543855"
+ },
+ "streams": {
+  "craft": {
+   "queue": [
+    437,
+    433,
+    408
+   ],
+   "state": "settled+integrated+R7",
+   "result": "3/3 SATISFIED；patch aa238bf4 已应用主工作区；#408 完整、#437 真机挂#431、#433 真容器留镜像流程；复验 133+41 用例一致",
+   "task": "task_f134cce34ced",
+   "dispatch": "ctx_b18d20315fad"
+  },
+  "bf": {
+   "queue": [
+    251,
+    287
+   ],
+   "state": "settled+integrated+R7",
+   "result": "2/2 SATISFIED 实施交付；patch cc948e09 已应用主工作区（13M+5新）；复验 12/12 一致",
+   "task": "task_cf59ee2e44ff",
+   "dispatch": "ctx_7a91175ac117"
+  },
+  "mt": {
+   "queue": [
+    62,
+    63,
+    66,
+    67,
+    68,
+    75,
+    76
+   ],
+   "state": "settled+integrated+R7",
+   "result": "#63/66/67/68/75/76 六张 SATISFIED 已实施+贴标（23/18/15/16/11/13 全绿，复验一致）；#62 SATISFIED 核验未集成（mt-w1@b7832879，迁移链适配待裁决）",
+   "task": "task_f2da738381ce",
+   "dispatch": "ctx_443d07c8f0e4"
+  },
+  "mt2b": {
+   "queue": [
+    78,
+    82,
+    83,
+    111
+   ],
+   "state": "settled+integrated+R7",
+   "result": "4/4 SATISFIED（6/4/4/4 全绿）；patch a0c9f7dd+16 文件",
+   "task": "task_2eb694a7532a",
+   "dispatch": "ctx_6ef9b7740d9b"
+  },
+  "mt2c": {
+   "queue": [
+    121,
+    143,
+    167
+   ],
+   "state": "settled+integrated+R7",
+   "result": "3/3 SATISFIED（26/7+748/3/17）；patch 2bff1443+10 文件；migrate-test 与 mt2b 三方合并后组合验证 42/0",
+   "task": "task_3e95da30e12a",
+   "dispatch": "ctx_73c86cf6ea77"
+  }
+ },
+ "phase": "R5 running: 3 workers dispatched 2026-10-19T22:57",
+ "updated_at": "2026-10-20T10:03",
+ "containers": {
+  "craft2": "orca-w2-craft-pg@5564",
+  "bf2": "orca-w2-bf-pg@5561",
+  "mt2": "orca-w2-mt-pg@5562"
+ },
+ "backlog": {
+  "mt_sibling": [],
+  "plan": "全部已派出"
+ },
+ "final": {
+  "closed_at": "2026-10-20T09:25",
+  "outcome": "19/19：16 SATISFIED 已实施+集成+贴标；#62 SATISFIED 核验未集成（mt-w1 迁移链适配待裁决）；#436 delivered_but_open 等人工",
+  "integration": "主工作区未提交区：craft2.patch aa238bf4 / bf2.patch cc948e09 / mt2 18 文件 / mt2b.patch a0c9f7dd+16 / mt2c.patch 2bff1443+10（三文件三方合并）",
+  "final_regression": "合并树 multitenancy 全套 1325 pass / 5 fail / 1 error：既有基线 3（mt2b 报告在案）+ 主工作区本地 env 文件致 acceptance-harness 2（A/B 对照 worktree 17/17 证实）；本轮引入 0",
+  "r7": "16 张贴标+评论（408/437/433/251/287/63/66/67/68/75/76/78/82/83/111/121/143/167 去重；#62 仅核验评论）",
+  "cleanup": "5 worktree+分支、5 容器、/tmp env、监督循环已清；报告归档 workers/、patch+sha256 在 receipts/"
+ },
+ "post_close": {
+  "mt_w1_merged": "2306caaa 已推 origin/main；合并树 bot-lifecycle 25/0；#62 已贴标",
+  "main_ws": "主工作区已 ff 2306caaa，wave2 未提交交付保留待审核"
+ }
+}

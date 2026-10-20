@@ -369,6 +369,51 @@ describe("resolvePreviewRequest (D5 dev form: 127.0.0.1:<SERVER_PORT>)", () => {
     }
   });
 
+  test("#408 AC6: production (non-loopback appUrl) + empty template closes admission — no loopback address exists", () => {
+    // The dev form's address is http://127.0.0.1:<port>/<label>: on a
+    // deployment whose appUrl names a network host, that address points at the
+    // VISITOR's own loopback — unreachable by construction. Admission closes
+    // with the reason naming the fix, and originFor throws rather than minting
+    // the unreachable address (AC6: closed = no address, never a fallback).
+    const origin = originWith(
+      {},
+      { PORT: "3001" },
+      undefined,
+      undefined,
+      "https://app.example.com",
+    );
+    const admission = origin.admission();
+    expect(admission.ok).toBe(false);
+    if (!admission.ok) {
+      expect(admission.reason).toContain(
+        "OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE",
+      );
+    }
+    expect(() => origin.originFor(SESSION_ID)).toThrow();
+  });
+
+  test("#408 AC6: a loopback appUrl keeps the dev form — local deployments stay as-is", () => {
+    const origin = originWith(
+      {},
+      { PORT: "3001" },
+      undefined,
+      undefined,
+      "http://localhost:3001",
+    );
+    expect(origin.admission().ok).toBe(true);
+    expect(origin.originFor(SESSION_ID)).toMatch(
+      /^http:\/\/127\.0\.0\.1:3001\/[0-9a-f]+$/,
+    );
+  });
+
+  test("#408 AC6: production + a host template is unaffected — the close is the empty-template shape only", () => {
+    const origin = originAt(UNDER, "https://app.example.com");
+    expect(origin.admission().ok).toBe(true);
+    expect(origin.originFor(SESSION_ID)).toMatch(
+      /^https:\/\/[0-9a-f]+\.preview\.example\.com$/,
+    );
+  });
+
   test("PORT/SERVER_PORT disagreement closes admission with a displayable reason", () => {
     const origin = originWith({}, { PORT: "3001", SERVER_PORT: "3002" });
     const admission = origin.admission();

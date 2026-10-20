@@ -4,6 +4,7 @@ import type { AppVariables } from "../src/auth/guards";
 import { loadCraftConfig } from "../src/craft/config";
 import type { ResolvedCraftManagedContent } from "../src/craft/managed-content";
 import { CraftSessionManager } from "../src/craft/manager";
+import { buildWebappBootstrapScript } from "../src/craft/nextjs-dev";
 import type { CraftLLMProviderConfig } from "../src/craft/opencode-config";
 import type { SandboxGateway } from "../src/craft/sandbox-gateway";
 import { createSessionRoutes } from "../src/craft/session-routes";
@@ -150,6 +151,8 @@ function harness(input: {
   failWrites?: boolean;
   /** Only the binary skill-file writes fail — the push lands, nothing else. */
   failSkillWrites?: boolean;
+  /** The #437 seam: the generation-gated mount the start script should carry. */
+  webappBasePathFor?: (sessionId: string) => Promise<string | null>;
 }) {
   const row = input.row === undefined ? sessionRow() : input.row;
   const updates: Array<{ id: string; patch: Record<string, unknown> }> = [];
@@ -179,6 +182,7 @@ function harness(input: {
     botIdFor: async () => "craft",
     managedContentFor: input.contentFor,
     managedContentHashesFor: input.hashesFor,
+    webappBasePathFor: input.webappBasePathFor,
   });
   const turnState = {
     mode: "memory",
@@ -461,6 +465,100 @@ describe("POST /sessions/:id/skills/reload", () => {
 });
 
 // ── skills_stale derivation on the session responses ─────────────────────────
+
+// ── #437: the mount-stale start script's repair rides the reload ────────────
+
+describe("POST /sessions/:id/skills/reload: #437 start-script repair", () => {
+  const SCRIPT_PATH = `${DIRECTORY}/start-webapp.sh`;
+
+  test("a root-path script on a mount-deriving session is rewritten even when the runtime is up to date", async () => {
+    // The ticket's broken state: provisioning's degraded read shipped a
+    // root-path start script onto a current-generation session, webapp-info
+    // withheld the address, and the non-stale short-circuit answered
+    // skills_stale:false without rewriting anything. The reload now regenerates
+    // through the script-stale verdict and the rewritten script carries the
+    // mount the preview address rides.
+    const { app, files } = harness({
+      row: sessionRow({ nextjsPort: 3020 }),
+      webappBasePathFor: async () => "/7c255b1074f4fe780f32",
+    });
+    files.set(
+      SCRIPT_PATH,
+      buildWebappBootstrapScript({
+        sessionDirectory: DIRECTORY,
+        port: 3020,
+        basePath: null,
+      }),
+    );
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/skills/reload`,
+      {
+        method: "POST",
+      },
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { skills_stale: boolean };
+    expect(body.skills_stale).toBe(false);
+    const rewritten = files.get(SCRIPT_PATH);
+    expect(typeof rewritten).toBe("string");
+    expect(rewritten as string).toContain(
+      "export ONYX_WEBAPP_BASE_PATH='/7c255b1074f4fe780f32'",
+    );
+    expect(rewritten as string).toContain(
+      "export NEXT_PUBLIC_BASE_PATH='/7c255b1074f4fe780f32'",
+    );
+  });
+
+  test("a script that already matches its derivation keeps the no-op — nothing regenerates", async () => {
+    // The repair must not un-short-circuit healthy sessions: the bytes match,
+    // so the reload answers false and the regenerate tail never runs
+    // (opencode.json — which every regenerate writes — stays unwritten).
+    const { app, files } = harness({
+      row: sessionRow({ nextjsPort: 3020 }),
+      webappBasePathFor: async () => "/7c255b1074f4fe780f32",
+    });
+    files.set(
+      SCRIPT_PATH,
+      buildWebappBootstrapScript({
+        sessionDirectory: DIRECTORY,
+        port: 3020,
+        basePath: "/7c255b1074f4fe780f32",
+      }),
+    );
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/skills/reload`,
+      {
+        method: "POST",
+      },
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { skills_stale: boolean };
+    expect(body.skills_stale).toBe(false);
+    expect(files.has(`${DIRECTORY}/opencode.json`)).toBe(false);
+  });
+
+  test("no reserved port means no script to repair — the no-op short-circuit stands", async () => {
+    // nextjsPort:null is the headless shape: nothing derives a mount and
+    // nothing writes a start script, so an up-to-date runtime still reloads
+    // nothing (the pre-#437 contract, pinned against repair overreach).
+    const { app, files } = harness({
+      row: sessionRow({ nextjsPort: null }),
+      webappBasePathFor: async () => "/7c255b1074f4fe780f32",
+    });
+    files.set(SCRIPT_PATH, "stale bytes that must not trigger anything");
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/skills/reload`,
+      {
+        method: "POST",
+      },
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { skills_stale: boolean };
+    expect(body.skills_stale).toBe(false);
+    expect(files.get(SCRIPT_PATH)).toBe("stale bytes that must not trigger anything");
+    expect(files.has(`${DIRECTORY}/opencode.json`)).toBe(false);
+  });
+});
 
 describe("session response skills_stale (derived, not hardcoded)", () => {
   test("default wiring (no managed content) derives false through the predicate", async () => {

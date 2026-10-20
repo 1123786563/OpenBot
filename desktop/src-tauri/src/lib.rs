@@ -11,6 +11,7 @@ pub mod host_access;
 pub mod install;
 pub mod intelligence;
 pub mod org_context;
+pub mod org_switch_cleanup;
 pub mod organization_auth;
 pub mod plan;
 pub mod preparation;

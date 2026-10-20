@@ -16,6 +16,7 @@ import {
   withPayerBinding,
   type PayerBinding,
 } from "../src/billing/payer-binding";
+import { currentWorkbenchScope } from "../src/billing/workbench-payer";
 import { createPayerAccount, readPayerAccountForKey } from "../src/billing/payer";
 import { deploymentExternalCustomerId } from "../src/billing/service";
 import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "../src/billing/types";
@@ -572,6 +573,7 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
       MODEL_RESERVATION_WINDOW_MS: 15 * 60_000,
       resolveConsumptionPayerBinding,
       currentPayerBinding,
+      currentWorkbenchScope,
       CreditPolicyUnconfiguredError,
       ModelNotPricedError,
       CreditGateFailureError,
@@ -930,6 +932,8 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
     // identifiers the gate actually read must include the payer seam — proof the
     // extracted code is the wired one — and the union can never exceed the pinned list:
     // an identifier outside it is a ReferenceError the moment the gate touches it.
+    // currentWorkbenchScope is read inside the finish closure (after gateCall returns, so
+    // outside the union's reach); it rides deps below, where finish finds it.
     for (const core of [
       "resolveConsumptionPayerBinding",
       "currentPayerBinding",

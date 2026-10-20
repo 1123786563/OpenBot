@@ -204,6 +204,11 @@ The page snapshot a Bot resolves element references against lives in Postgres, s
 can answer a click the first one snapshotted. Run more than one if the platform wants it. The
 supervisor is still not in this image, so every replica shares the one browser inside it.
 
+A network-facing deployment must set `OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE` (for example
+`https://{session}.preview.example.com`): with the template empty, admission closes with a
+stated reason instead of minting `127.0.0.1` preview addresses a remote browser cannot open
+(#408 AC6). See docs/craft-preview-origin.md for the template's shape rules.
+
 The craft preview origin (`*.preview` hostnames) does not follow: its label registry and preview
 tickets live in process memory (#418, the accepted M-2 trade-off), so a ticket minted on one
 replica redeems only on that replica and a preview hostname answers only where its label was

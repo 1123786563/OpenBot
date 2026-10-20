@@ -145,6 +145,7 @@ import {
   ensureDeploymentPayerBinding,
   resolveConsumptionPayerBinding,
 } from "./billing/payer-binding";
+import { currentWorkbenchScope } from "./billing/workbench-payer";
 import {
   countChatInputTokens,
   fitChatInputRequest,
@@ -321,10 +322,8 @@ import type { DeliveryScope } from "./delivery/types";
 import { DeliveryRefusedError } from "./delivery/types";
 import { createDemonstrationRecorder } from "./demonstrations/recording";
 import { createDemonstrationStore } from "./demonstrations/store";
-import {
-  createConversationRoutes,
-  createUnavailableConversationRoutes,
-} from "./enterprise/conversations/routes";
+import { createUnavailableConversationRoutes } from "./enterprise/conversations/routes";
+import { createEnterpriseConversationEntryRoutes } from "./enterprise/tenancy/assembly-enterprise";
 import { createConversationService } from "./enterprise/conversations/service";
 import { createProductionRunnerComposition } from "./enterprise/runs/runner";
 import {
@@ -1054,10 +1053,10 @@ const enterpriseCapabilities = await (async () => {
   }
 })();
 const enterpriseConversationRoutes = enterpriseCapabilities
-  ? createConversationRoutes(
-      enterpriseCapabilities.conversations,
-      enterpriseCapabilities.scopes,
-    )
+  ? createEnterpriseConversationEntryRoutes({
+      factory: enterpriseCapabilities.entry,
+      service: enterpriseCapabilities.conversations,
+    })
   : createUnavailableConversationRoutes();
 // MT006 (issue #49): workspace scope listing plus company team administration.
 // The listing half runs on the directory/data channels already verified above;
@@ -4510,6 +4509,10 @@ if (billing !== undefined && usageOutbox !== undefined) {
             // never a guess.
             botId: input.attribution.botId,
             ownerUserId: input.attribution.userId,
+            // The team dimension (09.2): the workspace a company-workbench call ran under,
+            // from the request's own scope. Attribution only — the payer above is already
+            // fixed, and no dimension of the caller moves it.
+            workspaceId: currentWorkbenchScope()?.workspaceId ?? null,
           });
         } catch (error) {
           const failureCode = usageOutboxWriteFailureCode(error);
@@ -6658,6 +6661,10 @@ const app = createApp(
   identityStore,
   identityGithubCallback,
   botServiceStore,
+  // The company-workbench payer wiring (Bifrost 09.2): the same database every billing seam
+  // above resolves through, so the binding the workbench middleware establishes and the gate
+  // that consumes it name one account.
+  { database },
 );
 
 /*

@@ -491,6 +491,9 @@
     "grantStatusRevoked": "已撤销",
     "revoke": "撤销",
     "revoking": "撤销中…",
+    "keyVersionLine": "Key v{{version}}：{{status}}，有效期至 {{expiry}}",
+    "revokeAll": "撤销全部有效版本",
+    "revokeAllFailed": "撤销未完成。请稍后重试。",
     "aboutSection": "工作原理",
     "about": "Bot 在它的服务端申请绑定码，并通过站外渠道交给你。绑定码只对应一个 Bot 和一个外部身份，几分钟内有效，且只能使用一次。在这里确认即创建授权；确认本身不产生 Key、余额或积分。"
   },

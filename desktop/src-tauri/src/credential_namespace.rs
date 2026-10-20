@@ -150,7 +150,10 @@ pub fn org_credentials(root: &Path, authority: &str) -> Result<Vec<String>, Prob
 }
 
 /// The url-safe SHA-256 of the normalized authority: the namespace's organization key.
-fn namespace_hash(authority: &str) -> Result<String, Problem> {
+/// `pub(crate)` since MT100: the switch-cleanup module derives its per-organization state
+/// directories from the same key, so an organization's data and credentials can never be
+/// namespaced apart.
+pub(crate) fn namespace_hash(authority: &str) -> Result<String, Problem> {
     let normalized = auth::authority(authority)?;
     Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(normalized.as_bytes())))
 }
