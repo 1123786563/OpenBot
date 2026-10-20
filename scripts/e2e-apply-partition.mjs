@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(
-  readFileSync(join(root, "docs/verification/e2e-bun-suites.json"), "utf8"),
+  readFileSync(join(root, "tests/config/e2e-bun-suites.json"), "utf8"),
 );
 const bunFiles = new Set(manifest.files ?? []);
 const TEST_FILE = /(\.test|\.spec)\.(ts|tsx|mts)$/;

@@ -86,7 +86,7 @@ for (let pass = 0; pass < maxPasses; pass++) {
 }
 
 writeFileSync(
-  join(root, "docs/verification/e2e-fix-collection.json"),
+  join(root, ".archive/runs/e2e/e2e-fix-collection.json"),
   JSON.stringify({ moves, blocked }, null, 1),
 );
 console.log(

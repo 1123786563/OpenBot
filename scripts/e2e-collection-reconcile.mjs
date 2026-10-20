@@ -30,7 +30,7 @@ const m = readManifest();
  */
 const excluded = new Set([...m.artifacts, ...LIVE_SUITES]);
 for (const e of JSON.parse(
-  readFileSync(join(root, "docs/verification/e2e-known-broken.json"), "utf8"),
+  readFileSync(join(root, "tests/config/e2e-known-broken.json"), "utf8"),
 ).entries ?? [])
   excluded.add(e.file);
 const native = [],
@@ -74,7 +74,7 @@ missing.slice(0, 40).forEach((f) => {
  * live deployment (`bun run test:api`); anything else joining this set must say why it is exempt
  * and when it plans to leave. Everything outside the set fails the run: a native-bucket file no
  * entry collected is the audit's bucket and the runner disagreeing, which is how 85 desktop tests
- * sat "covered" while nothing ran them (docs/plans/2026-10-18-e2e-tester-army-migration-status.md,
+ * sat "covered" while nothing ran them (.archive/runs/legacy-plans/2026-10-18-e2e-tester-army/,
  * the 10-19 04:07 section).
  */
 const ALLOWED_MISSING = new Set(LIVE_SUITES);

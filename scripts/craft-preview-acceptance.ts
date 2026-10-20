@@ -37,8 +37,8 @@
  * 指名缺哪个前置）1。绝不静默 skip 后返回 0。
  * 产物归档（T3 第 3 项）：截图、summary.json（逐条 AC →
  * PASS/FAIL/SKIP/finding + 每步断言细节 + 截图清单 + server 日志切片路径）、
- * server 日志切片，全落 `docs/verification/craft-preview/<UTC 时间戳>/`
- * （不在 .gitignore，可提交复核）。票面 AC 回勾只认这里归档的产物。
+ * server 日志切片，全落 `.archive/runs/craft-preview/verification/<UTC 时间戳>/`
+ * （运行证据不进入 docs）。票面 AC 回勾只认这里归档的产物。
  *
  * 环境变量（默认值适合上面的 3220/3221 布局）：
  *   CRAFT_ACCEPTANCE_APP_ORIGIN / _API_ORIGIN / _CASDOOR_USER / _CASDOOR_PASSWORD
@@ -112,15 +112,15 @@ const SANDBOX_BOT = process.env.CRAFT_ACCEPTANCE_SANDBOX_BOT ?? "craft";
 const SERVER_LOG = process.env.CRAFT_ACCEPTANCE_SERVER_LOG ?? "";
 /**
  * 产物归档目录（整改方案 T3 第 3 项）：截图、summary.json、server 日志切片
- * 全部落 `docs/verification/craft-preview/<UTC 时间戳>/` —— 该路径**不在
- * .gitignore**（与 gui-test-screenshots/ 相反），证据因此可提交、可复核；
+ * 全部落 `.archive/runs/craft-preview/verification/<UTC 时间戳>/` —— 运行证据
+ * 统一进入归档目录，避免污染 docs 方案树；
  * 「票面 AC 回勾」只认这里归档的产物。CRAFT_ACCEPTANCE_SHOT_DIR 仍可覆盖
  * （本地调试想落到别处时用）。
  */
 const VERIFICATION_STAMP = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
 const SHOT_DIR =
   process.env.CRAFT_ACCEPTANCE_SHOT_DIR ??
-  `docs/verification/craft-preview/${VERIFICATION_STAMP}`;
+  `.archive/runs/craft-preview/verification/${VERIFICATION_STAMP}`;
 const CLEANUP = process.env.CRAFT_ACCEPTANCE_CLEANUP_SESSIONS === "1";
 /**
  * 本地沙箱容器名（stopSessionWebapp 的 docker exec 通道）。fix-ocr25 #11：
@@ -2180,7 +2180,7 @@ try {
   //   path」、craft-preview-rejection.test.ts）；探针应用是新代际装配，浏览器
   //   级 legacy 流程不在本脚本范围。
   // - registry 重启空窗（M-2）：重启后旧预览标签 404、经主站重新进入恢复 ——
-  //   docs/craft-preview-origin.md 已接受边界；本脚本不重启自身所依赖的 API server。
+  //   reference/craft-preview-origin.md 已接受边界；本脚本不重启自身所依赖的 API server。
   log(
     "[边界记录] 旧会话 D10 与 M-2 重启空窗：浏览器级不重跑，行为由本 SHA 单元套件钉住 + docs 已记录，不计 FAIL。",
   );

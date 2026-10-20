@@ -32,8 +32,8 @@ const arg = (name, fallback) => {
   return hit ? hit.slice(name.length + 3) : fallback;
 };
 // Defaults to the untracked .e2e/ so a verification run cannot dirty the tree: the copy under
-// docs/verification/ is evidence someone chose to publish, so regenerating it is an explicit
-// `--out=docs/verification/e2e-driven-file-equality.json` in a command a reviewer can see.
+// .archive/verification/ is evidence someone chose to retain, so regenerating it is an explicit
+// `--out=.archive/verification/e2e-driven-file-equality.json` in a command a reviewer can see.
 const out = resolve(root, arg("out", ".e2e/driven-file-equality.json"));
 const timeoutMs = Number(arg("timeout", 900_000));
 const shapes = (arg("shapes", "group,directory,corpus") || "")

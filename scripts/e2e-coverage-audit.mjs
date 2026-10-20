@@ -43,12 +43,12 @@ for (const dir of dirs) walk(join(root, dir));
 
 const driven = new Set(
   JSON.parse(
-    readFileSync(join(root, "docs/verification/e2e-bun-suites.json"), "utf8"),
+    readFileSync(join(root, "tests/config/e2e-bun-suites.json"), "utf8"),
   ).files ?? [],
 );
 const artifacts = new Set(
   JSON.parse(
-    readFileSync(join(root, "docs/verification/e2e-bun-suites.json"), "utf8"),
+    readFileSync(join(root, "tests/config/e2e-bun-suites.json"), "utf8"),
   ).artifacts ?? [],
 );
 const live = new Set(LIVE_SUITES);
@@ -56,7 +56,7 @@ const broken = new Set(
   (
     JSON.parse(
       readFileSync(
-        join(root, "docs/verification/e2e-known-broken.json"),
+        join(root, "tests/config/e2e-known-broken.json"),
         "utf8",
       ),
     ).entries ?? []
@@ -163,11 +163,11 @@ function foreignGaps() {
   const gaps = [];
   const registryPath = join(
     root,
-    "docs/verification/e2e-foreign-suites.json",
+    "tests/config/e2e-foreign-suites.json",
   );
   if (!existsSync(registryPath))
     return [
-      "docs/verification/e2e-foreign-suites.json is missing: a corpus e2e cannot execute must be migrated or named there, not left out of the walk.",
+      "tests/config/e2e-foreign-suites.json is missing: a corpus e2e cannot execute must be migrated or named there, not left out of the walk.",
     ];
   const entries =
     JSON.parse(readFileSync(registryPath, "utf8")).entries ?? [];
@@ -186,7 +186,7 @@ function foreignGaps() {
       );
       if (!named)
         gaps.push(
-          `${file}: \`${command}\` runs a non-e2e test corpus that no entry in docs/verification/e2e-foreign-suites.json names`,
+          `${file}: \`${command}\` runs a non-e2e test corpus that no entry in tests/config/e2e-foreign-suites.json names`,
         );
       entries.forEach((entry, index) => {
         if (new RegExp(entry.pattern).test(command))
