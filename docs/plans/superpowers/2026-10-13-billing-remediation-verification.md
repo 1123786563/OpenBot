@@ -60,7 +60,7 @@
   `provider_cap`); code run flips only with a sandbox contract that enforces the configured
   token budget end to end. Lago-only code-run metering REFUSED (the rate is part of the
   approved hard-cap policy).
-- `docs/configuration.md` now states that enabling the hard-cap block refuses billed model
+- `reference/configuration.md` now states that enabling the hard-cap block refuses billed model
   calls (`input_bound_unsupported`) and code runs (`billing-token-budget-unavailable`), and
   points at the decision record. No enabling code written (Step 3 N/A).
 

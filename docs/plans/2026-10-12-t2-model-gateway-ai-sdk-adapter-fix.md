@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, AI SDK v3 `LanguageModelV3`/`streamText`, OpenBot ModelGateway canonical chat-completions response and SSE stream.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md` §§3–5, 8; `.superpowers/sdd/2026-10-12-t2-model-gateway-ai-sdk-adapter/task-1-brief.md`; independent review `.superpowers/sdd/2026-10-12-t2-model-gateway-ai-sdk-adapter/reports/task-1-independent-review.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md` §§3–5, 8; `.superpowers/sdd/2026-10-12-t2-model-gateway-ai-sdk-adapter/task-1-brief.md`; independent review `.superpowers/sdd/2026-10-12-t2-model-gateway-ai-sdk-adapter/reports/task-1-independent-review.md`.
 
 ## Global Constraints
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Drizzle runtime migrator, postgres.js, PostgreSQL 17, GitHub Actions, Docker Compose.
 
-**Spec:** `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/ocr-repair-dag.md` R1; prior implementation plan `docs/superpowers/plans/2026-10-11-mastra-ocr-r1-role-safety.md`; exact independent findings in `.superpowers/sdd/2026-10-11-mastra-ocr-r1-role-safety/reports/review.md` (R1-REV-01 High, R1-REV-02 High, R1-REV-03 Medium); migration entry-point evidence from researcher `/root/r1_migration_paths` and harness evidence from `/root/r1_pg_test_harness`.
+**Spec:** `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/ocr-repair-dag.md` R1; prior implementation plan `docs/plans/superpowers/2026-10-11-mastra-ocr-r1-role-safety.md`; exact independent findings in `.superpowers/sdd/2026-10-11-mastra-ocr-r1-role-safety/reports/review.md` (R1-REV-01 High, R1-REV-02 High, R1-REV-03 Medium); migration entry-point evidence from researcher `/root/r1_migration_paths` and harness evidence from `/root/r1_pg_test_harness`.
 
 ## Global Constraints
 
@@ -49,7 +49,7 @@
 - Modify: `server/tests/enterprise/enterprise-test-database.test.ts`
 - Modify: `server/tests/enterprise/tenancy-rls.integration.test.ts`
 - Create/modify: focused integration fixture/test source as needed under `server/scripts/` and `server/tests/enterprise/`; keep exact paths in the task report.
-- Modify: `docs/deployment.md`, `docs/development.md`
+- Modify: `reference/deployment.md`, `reference/development.md`
 
 **Interfaces:**
 - Consumes `assertEnterpriseRolePreconditions(rows)` and the existing direct-superuser guard in `server/ops/enterprise/roles.sql`.

@@ -10,10 +10,10 @@
 
 **Spec / 规范依据:**
 
-- [移动端集成规格](../../../trea/OpenBot/docs/superpowers/specs/OpenMuse-Mobile-OpenBot-Backend.md)
-- [企业总计划：决策、共同契约、门禁唯一注册](../../../trea/OpenBot/docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md)
-- [企业租户与独立入口计划](../../../trea/OpenBot/docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md)
-- [企业运行候选计划](../../../trea/OpenBot/docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md)
+- [移动端集成规格](../../../trea/OpenBot/docs/specs/superpowers/OpenMuse-Mobile-OpenBot-Backend.md)
+- [企业总计划：决策、共同契约、门禁唯一注册](../../../trea/OpenBot/docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md)
+- [企业租户与独立入口计划](../../../trea/OpenBot/docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md)
+- [企业运行候选计划](../../../trea/OpenBot/docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md)
 - [OpenMuse 旧适配器说明](../../../trea/openmuse/docs/OPENBOT-INTEGRATION.md)
 
 发生冲突时，以企业总计划的安全契约为约束，先登记差异并取得修订批准；本计划不能自行降低 G1b/G2。

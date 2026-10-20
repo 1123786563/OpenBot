@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Drizzle ORM, PostgreSQL, Bun tests, existing Run/attempt lease and outbox contracts.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; parent T2 plan/brief; architecture ruling `.superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/reports/failure-api-architecture.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent T2 plan/brief; architecture ruling `.superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/reports/failure-api-architecture.md`.
 
 ## Global Constraints
 

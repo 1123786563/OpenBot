@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Drizzle ORM, PostgreSQL.
 
-**Spec:** Parent review finding `.superpowers/sdd/2026-10-09-trpc-intelligence-migration/reports/task-2-fr01-final-review.md` (T02-FR02); approved idempotency contract `docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md` §T1-C and duplicate operation contract; parent DAG `docs/plans/2026-10-09-trpc-intelligence-dag.json`.
+**Spec:** Parent review finding `.superpowers/sdd/2026-10-09-trpc-intelligence-migration/reports/task-2-fr01-final-review.md` (T02-FR02); approved idempotency contract `docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md` §T1-C and duplicate operation contract; parent DAG `docs/plans/2026-10-09-trpc-intelligence-dag.json`.
 
 ## Global Constraints
 

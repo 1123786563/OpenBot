@@ -4,7 +4,7 @@
 
 **输入与证据**（本规格全部断言来自本次逐文件读取）：
 
-- `docs/superpowers/specs/plan.md` §3（全局约束 L56–71）、§5（L114–199）、C02（L246–270）、C05（L349–362）、C07（L379–392）。
+- `docs/specs/superpowers/plan.md` §3（全局约束 L56–71）、§5（L114–199）、C02（L246–270）、C05（L349–362）、C07（L379–392）。
 - `shared/enterprise/mobile-schemas.ts`、`shared/enterprise/mobile-contracts.ts`（已冻结 re-export）。
 - `server/src/enterprise/`：`app.ts`、`contracts.ts`、`errors.ts`、`tenancy/{scope,transaction,directory,routes}.ts`、`authz/{service,repository}.ts`、`bootstrap.ts`、`tenancy/provision.ts`。
 - `server/src/db/schema/enterprise-{tenancy,authz}.ts`。

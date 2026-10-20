@@ -34,7 +34,7 @@
 
 ---
 
-执行顺序见 [总计划](00-master.md)/[DAG](dag-ledger.md)，共同类型见 [Interface](interfaces.md)。计划审阅并选择执行方法后才执行。所有路径相对工作区 `/Users/wuyongjun/orca/workspaces/OpenBot/company-team-multitenancy`。T22 是独立 Git 子模块，必须递归检查点、单独审查。文件明细见 `surface-inventory.json`；目录范围排除已显式分给其他任务的文件。
+执行顺序见 [总计划](00-master.md)/[DAG](../../../.archive/runs/legacy-plans/2026-10-15-company-team-multitenancy/dag-ledger.md)，共同类型见 [Interface](interfaces.md)。计划审阅并选择执行方法后才执行。所有路径相对工作区 `/Users/wuyongjun/orca/workspaces/OpenBot/company-team-multitenancy`。T22 是独立 Git 子模块，必须递归检查点、单独审查。文件明细见 `.archive/runs/legacy-plans/2026-10-15-company-team-multitenancy/surface-inventory.json`；目录范围排除已显式分给其他任务的文件。
 
 ### Task 9: 知识、记忆、研究和学习
 

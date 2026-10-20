@@ -8,7 +8,7 @@
 
 **Tech Stack:** @opentelemetry/sdk-trace-node@^2.12、exporter-trace-otlp-http@^0.223、resources@^2.12、api@^1.9.1（shared 经根 package.json，P1 先例）、Hono 中间件、裸 Bun.serve 包装、runtime-go otel@v1.40（indirect 转直接）。
 
-**Spec:** `docs/superpowers/specs/2026-10-10-observability-design.md` §3.2、§3.3、§5-P2、§6-P2
+**Spec:** `docs/specs/superpowers/2026-10-10-observability-design.md` §3.2、§3.3、§5-P2、§6-P2
 
 ## Global Constraints
 
@@ -136,13 +136,13 @@ git commit -m "feat(observability): inject traceparent on server outbound calls"
 ### Task 6: 文档与配置收尾
 
 **Files:**
-- Modify: `docs/observability.md`（"Later phases" 里 traces 移入正文：span 命名约定、trace_id 日志字段、OTEL_EXPORTER_OTLP_ENDPOINT 语义、OPENBOT_TRACES=off 开关、当前无 Tempo 时导出失败的预期行为）
+- Modify: `reference/observability.md`（"Later phases" 里 traces 移入正文：span 命名约定、trace_id 日志字段、OTEL_EXPORTER_OTLP_ENDPOINT 语义、OPENBOT_TRACES=off 开关、当前无 Tempo 时导出失败的预期行为）
 - Modify: `.env.example`（`OTEL_EXPORTER_OTLP_ENDPOINT` 条目旁注释补 `/v1/traces` 用途与 `OPENBOT_TRACES` 开关）
 
 - [ ] **Step 1: 文档** → **Step 2: 全分支门禁**（`bunx biome lint --error-on-warnings server/src worker/src shared supervisor/src agent-bot/src agent-computer/src`、`cd server && bun run typecheck`、`bun test server/tests shared/ worker/`）→ **Step 3: Commit**
 
 ```bash
-git add docs/observability.md .env.example
+git add reference/observability.md .env.example
 git commit -m "docs: trace conventions for the P2 phase"
 ```
 

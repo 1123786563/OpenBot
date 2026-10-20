@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, PostgreSQL, Postgres.js, Drizzle ORM 0.45.2.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; parent repair plan `docs/superpowers/plans/2026-10-11-mastra-r5-3-repair.md` Task R5-3-F1-B; prior implementation checkpoint recorded in `.superpowers/sdd/2026-10-11-mastra-r5-3-repair/progress.md` under R5-3-F1-B; finding `.superpowers/sdd/2026-10-11-mastra-r5-3-repair/reports/task-r5-3-f1-b-review.md` R5-3-F1-B-R1.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent repair plan `docs/plans/superpowers/2026-10-11-mastra-r5-3-repair.md` Task R5-3-F1-B; prior implementation checkpoint recorded in `.superpowers/sdd/2026-10-11-mastra-r5-3-repair/progress.md` under R5-3-F1-B; finding `.superpowers/sdd/2026-10-11-mastra-r5-3-repair/reports/task-r5-3-f1-b-review.md` R5-3-F1-B-R1.
 
 ## Global Constraints
 

@@ -4,13 +4,13 @@
   "requirements_source": "User-approved written migration specification; no target Issue supplied.",
   "workspace": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot",
   "base": "fbdecc29cd786952c4b496abc68384b31a320b17",
-  "plan": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-09-trpc-intelligence-migration.md",
+  "plan": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-09-trpc-intelligence-migration.md",
   "nodes": [
     {
       "id": "T01",
       "title": "冻结 SDK、wire 合同与隔离验证入口",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-03",
         "AC-05",
@@ -72,7 +72,7 @@
       "id": "T02",
       "title": "建立可信 Scope 与资源授权前置",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-05"
       ],
@@ -127,7 +127,7 @@
       "id": "T03",
       "title": "持久会话、消息与附件历史",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-02",
         "AC-03",
@@ -190,7 +190,7 @@
       "id": "T04",
       "title": "运行账本、租约、模型出口与预算",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-02",
         "AC-05",
@@ -248,7 +248,7 @@
       "id": "T05",
       "title": "工具准备、审批与持久执行回执",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-05",
         "AC-06",
@@ -303,7 +303,7 @@
       "id": "T06",
       "title": "装配真实 tRPC-Agent-Go 服务",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-02",
         "AC-05",
@@ -360,7 +360,7 @@
       "id": "T07",
       "title": "持久事件、ACK 与可重放订阅",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-04",
         "AC-05",
@@ -414,7 +414,7 @@
       "id": "T08",
       "title": "自有 AgentRunner 与后端 SDK 兼容",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-02",
         "AC-03",
@@ -463,7 +463,7 @@
       "id": "T09",
       "title": "前端聊天、工具与重连兼容",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-02",
         "AC-03",
@@ -521,7 +521,7 @@
       "id": "T10",
       "title": "平台检查点、取消与审批恢复",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-06",
         "AC-07"
@@ -569,7 +569,7 @@
       "id": "T11",
       "title": "Go 恢复接缝及跨进程故障验证",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-06",
         "AC-07"
@@ -617,7 +617,7 @@
       "id": "T12",
       "title": "定时任务、频道、handoff 与后台入口",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-03",
         "AC-05",
@@ -678,7 +678,7 @@
       "id": "T13",
       "title": "复用个人记忆并补齐来源与删除传播",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-05",
         "AC-09"
@@ -734,7 +734,7 @@
       "id": "T14",
       "title": "自有学习作业、候选审核与版本发布",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-05",
         "AC-09"
@@ -792,7 +792,7 @@
       "id": "T15",
       "title": "学习管理页面与自有能力显示",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-01",
         "AC-05",
@@ -839,7 +839,7 @@
       "id": "T16",
       "title": "旧历史与技能资料导入及单写切换",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-09",
         "AC-10"
@@ -884,7 +884,7 @@
       "id": "T17",
       "title": "自有模式默认配置、bootstrap 与部署",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-01",
         "AC-02",
@@ -970,7 +970,7 @@
       "id": "T18",
       "title": "桌面原生安装与连接迁移",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-01",
         "AC-07",
@@ -1031,7 +1031,7 @@
       "id": "T19",
       "title": "桌面初始化界面与各客户端验收",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-01",
         "AC-03",
@@ -1084,7 +1084,7 @@
       "id": "T20",
       "title": "完整交付审计、依赖风险与离线验收",
       "source_issues": [],
-      "source_spec": "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
+      "source_spec": "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
       "acceptance": [
         "AC-01",
         "AC-02",
@@ -1112,13 +1112,13 @@
         "runtime-go/dependency-review.json",
         "runtime-go/testdata/compatibility-report.json",
         "README.md",
-        "docs/architecture.md",
-        "docs/configuration.md",
-        "docs/deployment.md",
-        "docs/development.md",
-        "docs/automatic-learning.md",
-        "docs/coworkers.md",
-        "docs/releasing.md",
+        "reference/architecture.md",
+        "reference/configuration.md",
+        "reference/deployment.md",
+        "reference/development.md",
+        "reference/automatic-learning.md",
+        "reference/coworkers.md",
+        "reference/releasing.md",
         "charts/openbot/README.md",
         "scripts/architecture-diagram.ts",
         "assets/architecture-light.svg",
@@ -1143,13 +1143,13 @@
           "runtime-go/dependency-review.json",
           "runtime-go/testdata/compatibility-report.json",
           "README.md",
-          "docs/architecture.md",
-          "docs/configuration.md",
-          "docs/deployment.md",
-          "docs/development.md",
-          "docs/automatic-learning.md",
-          "docs/coworkers.md",
-          "docs/releasing.md",
+          "reference/architecture.md",
+          "reference/configuration.md",
+          "reference/deployment.md",
+          "reference/development.md",
+          "reference/automatic-learning.md",
+          "reference/coworkers.md",
+          "reference/releasing.md",
           "charts/openbot/README.md",
           "scripts/architecture-diagram.ts",
           "assets/architecture-light.svg",

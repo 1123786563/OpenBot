@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun、Hono、Node crypto、Next.js 16、React、Playwright、acme.sh / ACME DNS-01。
 
-**Spec:** `docs/specs/2026-10-15-craft-preview-origin-design.md`；GitHub #358 及实施关联 #359–#367。原实施计划：`docs/superpowers/plans/2026-10-15-craft-preview-origin-execution.md`。
+**Spec:** `docs/specs/2026-10-15-craft-preview-origin-design.md`；GitHub #358 及实施关联 #359–#367。原实施计划：`docs/plans/superpowers/2026-10-15-craft-preview-origin-execution.md`。
 
 ## Global Constraints
 
@@ -27,7 +27,7 @@
 - `preview-origin.ts` 兑换时把 `sessionId` 原文传给 `previewSessionCookieHeader`；`holdsPreviewSessionPass` 仅比较 Cookie 值与 sessionId。`resolvePreviewWebappHmrUpgrade` 复用此判断，HTTP 的 `createPreviewProxy` 和 HMR 均随后按 id 查会话。最小复现：`holdsPreviewSessionPass("cs_demo", Request{Cookie: openbot_preview_session=cs_demo}) === true`，未签票、未兑换。已知预览地址及 session id 的请求可绕过 AC4 的票据入口；这不证明攻击者能枚举未知的 hash 主机。
 - `scripts/craft-preview-acceptance.ts` 明确将 **Server Actions 协议级断言标为 SKIP**；四种写方法和页面热更新不能替代这项 AC2 证据。
 - 生产 ACME 代码与脚本已有，但本计划基线没有真实 DNS 凭据或生产运行证据。证书首签、续期和告警结果只能通过授权的非生产演练及后续部署证据确认。
-- `docs/craft-preview-origin.md` 已记录内存 registry 重启空窗与 Safari 明文 loopback 限制；二者是已接受/已披露边界，不在没有新需求的情况下擅自重构。
+- `reference/craft-preview-origin.md` 已记录内存 registry 重启空窗与 Safari 明文 loopback 限制；二者是已接受/已披露边界，不在没有新需求的情况下擅自重构。
 
 **执行期临时收敛：** 若目标部署当前运行这版明文 pass，修复交付前应由有部署权限的人把 `OPENBOT_CRAFT_PREVIEW_ORIGIN_ENABLED=false` 作为临时门控，并核验新会话的 `webapp-info` 显示关闭原因、预览请求为 503 且不回退旧同源路径；旧会话仍按 D10 单独评估。本计划不执行该配置变更。
 
@@ -43,7 +43,7 @@
 | `server/tests/craft-preview-pass.test.ts`（新） | 伪造、篡改、跨会话、跨用户、密钥轮换与旧 Cookie 拒绝。 |
 | `server/tests/craft-preview-origin.test.ts`、`server/tests/craft-webapp-hmr.test.ts`、`server/tests/craft-preview-rejection.test.ts` | HTTP/WS 入口及浏览器 Cookie 路径回归。 |
 | `scripts/craft-preview-acceptance.ts` | 真实生成应用的 Server Action、伪造 pass、浏览器隔离及重启检查。 |
-| `docs/craft-preview-origin.md`、`docs/tls-certs.md` | 记录 pass 迁移、部署证据和已批准边界；不把计划当验收证据。 |
+| `reference/craft-preview-origin.md`、`reference/tls-certs.md` | 记录 pass 迁移、部署证据和已批准边界；不把计划当验收证据。 |
 
 ## Review Focus
 
@@ -62,7 +62,7 @@
 | T1 / #358 AC4、#360、#366 | pass 不可伪造，旧值拒绝 | 无 | backend_implementer / backend_validator | `preview-pass.ts`、`preview-ticket.ts`、`craft-preview-pass.test.ts` | 产出 `PreviewPassCodec`；单测 | pending |
 | T2 / #358 AC3/AC4/AC5、#361–#363、#366 | HTTP/HMR 同源校验、owner 变更拒绝 | T1 | backend_implementer / backend_validator | `preview-origin.ts`、`webapp-proxy.ts`、`index.ts`、相关 server tests | 消费 `PreviewPassCodec`；路由/WS 测试 | pending |
 | T3 / #358 AC1/AC2/AC3/AC5/AC7/AC9、#362–#367 | 当前 HEAD 的真实浏览器全链；Server Actions 不再 SKIP | T2 | frontend_implementer / frontend_validator | `scripts/craft-preview-acceptance.ts`、必要的浏览器探针 | 消费 T2 的 pass；Playwright + 真实 dev server | pending |
-| T4 / #358 AC6/AC8、#359；D6/D11 | 非生产证书演练、生产准入证据、Spec 差异裁决 | T2、T3 | backend_implementer / backend_validator | `docs/craft-preview-origin.md`、`docs/tls-certs.md`；仅确有失败时涉及证书脚本 | 消费 T3 证据；TLS 测试、DNS-01 staging 演练 | pending |
+| T4 / #358 AC6/AC8、#359；D6/D11 | 非生产证书演练、生产准入证据、Spec 差异裁决 | T2、T3 | backend_implementer / backend_validator | `reference/craft-preview-origin.md`、`reference/tls-certs.md`；仅确有失败时涉及证书脚本 | 消费 T3 证据；TLS 测试、DNS-01 staging 演练 | pending |
 
 显式票据依赖仍为 `#360 → #361 → #362 → (#363,#364) → #365 → (#366,#367)`；本修复 DAG 只处理已集成基线上的新缺口，不重派九张原票。
 
@@ -88,7 +88,7 @@
 - [ ] **Step 2: 跑 RED。** `bun test server/tests/craft-preview-origin.test.ts server/tests/craft-webapp-hmr.test.ts server/tests/craft-preview-rejection.test.ts`；新增伪造测试必须先失败，且失败点为被错误放行。
 - [ ] **Step 3: 将 codec 实例接入 `createPreviewOrigin`，HTTP/HMR 复用 `verifyPass`。** owner 从签名 claim 取得并交由 store 的 `findSession(sessionId,userId)` 复核；无行返回 404，坏 pass 先返回 401。保持现有 Host、Origin、准入与 Cookie Path 判定。
 - [ ] **Step 4: 跑 GREEN 与回归。** 上述三文件、`craft-preview-ticket.test.ts`、`craft-webapp-proxy.test.ts` 全通过；`bun run --filter server typecheck` 退出 0。旧明文 Cookie 必须 401，而重新换票须恢复。
-- [ ] **Step 5: 更新 `docs/craft-preview-origin.md` 的升级说明。** 明确部署后旧 preview pass 被拒，用户从主站重新进入；不要求迁移旧会话 webapp 代际。保存检查点并由独立 reviewer 审 Spec 与代码质量。
+- [ ] **Step 5: 更新 `reference/craft-preview-origin.md` 的升级说明。** 明确部署后旧 preview pass 被拒，用户从主站重新进入；不要求迁移旧会话 webapp 代际。保存检查点并由独立 reviewer 审 Spec 与代码质量。
 
 ### Task 3: 真实浏览器验收与 Server Actions 补证
 
@@ -103,7 +103,7 @@
 
 ### Task 4: 生产准入、ACME 演练与需求差异裁决
 
-**Files:** Modify `docs/tls-certs.md`, `docs/craft-preview-origin.md`；仅在演练证明流水线缺陷时另立最小脚本修复任务，所有修复仍走 SDD/OCR。
+**Files:** Modify `reference/tls-certs.md`, `reference/craft-preview-origin.md`；仅在演练证明流水线缺陷时另立最小脚本修复任务，所有修复仍走 SDD/OCR。
 
 **Interfaces:** 消费 T2/T3 的安全与浏览器证据；产出 AC1–AC9 逐项证据表，含 SHA、命令、结果、证据类型和未测范围。
 

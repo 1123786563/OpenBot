@@ -30,9 +30,9 @@
 
 | Task | Source | Owned files | Consumes | Produces | Shared-state lock |
 | --- | --- | --- | --- | --- | --- |
-| R03 | #9/T03 | `server/tests/opik-deployment.test.ts`, `docs/tickets/opik-4/checkpoints/T03.md` | T03 Compose and pinned manifest | rendered-config regression checks | no Opik instance; test-only |
-| R05 | #11/T05 | `server/src/ai-observability/redaction.ts`, `server/tests/opik-redaction.test.ts`, `shared/ai-observability.ts`, `docs/tickets/opik-4/checkpoints/T05.md` | existing safe projection API | same API with closed leakage and truthful omission | no shared build artifacts |
-| R06 | #12/T06 | `server/src/ai-observability/contracts.ts`, `server/src/ai-observability/scope.ts`, `server/tests/opik-scope.test.ts`, `docs/tickets/opik-4/checkpoints/T06.md` | existing trusted scope API | injective derived keys and reviewed scope contract | no shared build artifacts |
+| R03 | #9/T03 | `server/tests/opik-deployment.test.ts`, `docs/plans/tickets/opik-4/checkpoints/T03.md` | T03 Compose and pinned manifest | rendered-config regression checks | no Opik instance; test-only |
+| R05 | #11/T05 | `server/src/ai-observability/redaction.ts`, `server/tests/opik-redaction.test.ts`, `shared/ai-observability.ts`, `docs/plans/tickets/opik-4/checkpoints/T05.md` | existing safe projection API | same API with closed leakage and truthful omission | no shared build artifacts |
+| R06 | #12/T06 | `server/src/ai-observability/contracts.ts`, `server/src/ai-observability/scope.ts`, `server/tests/opik-scope.test.ts`, `docs/plans/tickets/opik-4/checkpoints/T06.md` | existing trusted scope API | injective derived keys and reviewed scope contract | no shared build artifacts |
 | I01 | #7/T01 | exact five source/test files plus `T01.md` in DAG | T01 approved review | integrated route seam | coordinator sequential transfer |
 | I02 | #8/T02 | exact i18n files plus `T02.md` in DAG | T02 approved review | integrated UI names | coordinator sequential transfer |
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** React + TanStack Router (file routes) + @tanstack/react-query, existing `client`/`tryClient` transport, i18next (en source-of-truth typed keys), bun test + happy-dom + testing-library.
 
-**Spec:** docs/tickets/bifrost-5/issues/10.6-personal-orders-and-grants-ui.md (AC14/AC19 of docs/specs/2026-10-14-bifrost-github-spec.md; Q27 of docs/specs/2026-10-14-bifrost-integration-design.md; ADR 0004; CONTEXT.md 订单/订阅/Grant 术语)
+**Spec:** docs/plans/tickets/bifrost-5/issues/10.6-personal-orders-and-grants-ui.md (AC14/AC19 of docs/specs/2026-10-14-bifrost-github-spec.md; Q27 of docs/specs/2026-10-14-bifrost-integration-design.md; ADR 0004; CONTEXT.md 订单/订阅/Grant 术语)
 
 ## Global Constraints
 

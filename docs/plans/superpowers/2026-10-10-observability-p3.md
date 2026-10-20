@@ -8,7 +8,7 @@
 
 **Tech Stack:** docker compose profiles、Loki 3.x、Tempo 2.x、Prometheus 3.x、Grafana 11.x、Alloy 1.x（River）、GlitchTip latest（digest/版本钉定）、curl 验证。
 
-**Spec:** `docs/superpowers/specs/2026-10-10-observability-design.md` §3.4、§3.5、§3.6、§5-P3、§6-P3；补 P2 遗留的 Tempo 视觉验证。
+**Spec:** `docs/specs/superpowers/2026-10-10-observability-design.md` §3.4、§3.5、§3.6、§5-P3、§6-P3；补 P2 遗留的 Tempo 视觉验证。
 
 ## Global Constraints
 
@@ -18,7 +18,7 @@
 - GlitchTip 的 Postgres 是独立容器 + named volume，**严禁**挂主 postgres（lago 用独立库的先例证明主库隔离是仓库红线）。
 - 工作树有并行会话活跃脏文件（docker-compose.yml 当前就是脏的！）：**派单前必查 `git status --short docker-compose.yml`**；若脏——对 compose 的修改同样用选择性暂存（P2 验证过的方法），并在提交后 `git show HEAD -- docker-compose.yml` 自证纯净。
 - 验证命令：`docker compose config`（语法）、`docker compose --profile observability up -d`、curl 各健康端点；已知基线失败（tenancy 测试 DB、market 会话遗留 lint 警告）不算新增。
-- `.env.example` / `docs/observability.md` 若与并行脏文件重叠，用选择性暂存。
+- `.env.example` / `reference/observability.md` 若与并行脏文件重叠，用选择性暂存。
 
 ---
 
@@ -226,7 +226,7 @@ git commit -m "feat(observability): LGTM+Alloy stack as the observability compos
 ### Task 2: Tempo 视觉验证（补 P2 验收）+ traces 入栈验证
 
 **Files:**
-- Modify: `docs/observability.md`（Tempo 段从待办转正文：查询方式、P2 验收补记）
+- Modify: `reference/observability.md`（Tempo 段从待办转正文：查询方式、P2 验收补记）
 
 **Interfaces:**
 - Consumes: Task 1 的 4318；P2 的 `initProcessTracing`（server 已接，`OPENBOT_TRACES`/endpoint 未配时无导出）。
@@ -253,10 +253,10 @@ curl -s "http://127.0.0.1:3200/api/traces/<traceID>" | head -c 300
 
 期望：serviceName=server 有结果；单 trace 可取回。把两次响应摘要写入报告。**浏览器视觉验证（Grafana 3003 → Tempo 数据源 → trace 瀑布图）留给用户手动确认，报告给出确切的点击路径。**
 
-- [ ] **Step 3: docs/observability.md 更新**（Tracing 节加"本地 Tempo"小节：endpoint、查询命令、Grafana 路径；"Later phases" 移除 Tempo 项）→ **Step 4: Commit**
+- [ ] **Step 3: reference/observability.md 更新**（Tracing 节加"本地 Tempo"小节：endpoint、查询命令、Grafana 路径；"Later phases" 移除 Tempo 项）→ **Step 4: Commit**
 
 ```bash
-git add docs/observability.md
+git add reference/observability.md
 git commit -m "docs(observability): local tempo verification path for traces"
 ```
 
@@ -267,7 +267,7 @@ git commit -m "docs(observability): local tempo verification path for traces"
 **Files:**
 - Modify: `docker-compose.yml`（glitchtip + glitchtip-postgres，profile observability）
 - Create: `docker/observability/glitchtip-init-db.sql`
-- Modify: `docs/observability.md`（GlitchTip 小节：初始化步骤、DSN 配置、测试事件命令）
+- Modify: `reference/observability.md`（GlitchTip 小节：初始化步骤、DSN 配置、测试事件命令）
 
 **Interfaces:**
 - Produces: GlitchTip `127.0.0.1:8001`；DSN 形如 `http://<key>@127.0.0.1:8001/<project>`（HTTP 本地栈）。
@@ -292,7 +292,7 @@ curl -s -X POST "${DSN%/*}/api/${DSN##*/}/envelope/" \
 - [ ] **Step 4: docs 更新 + Commit**
 
 ```bash
-git add docker-compose.yml docker/observability/glitchtip-init-db.sql docs/observability.md .env.example
+git add docker-compose.yml docker/observability/glitchtip-init-db.sql reference/observability.md .env.example
 git commit -m "feat(observability): glitchtip for crash reporting in the observability profile"
 ```
 
@@ -301,7 +301,7 @@ git commit -m "feat(observability): glitchtip for crash reporting in the observa
 ### Task 4: 起栈一键化与文档收尾
 
 **Files:**
-- Modify: `docs/observability.md`（"本地观测栈"节：一条起栈命令、URL 表、停栈命令、数据留存说明、崩溃测试事件命令）
+- Modify: `reference/observability.md`（"本地观测栈"节：一条起栈命令、URL 表、停栈命令、数据留存说明、崩溃测试事件命令）
 - Modify: `scripts/start.sh`？**否**——start.sh 管业务栈；观测栈独立用 compose profile，文档写命令即可（YAGNI）。
 - Modify: `.env.example`（若 Task 1/3 有遗漏的样例合并进来）
 
@@ -314,7 +314,7 @@ git commit -m "feat(observability): glitchtip for crash reporting in the observa
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/observability.md .env.example
+git add reference/observability.md .env.example
 git commit -m "docs(observability): observability profile usage guide"
 ```
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun test, Drizzle ORM, PostgreSQL integration fixture.
 
-**Spec:** Parent R2 repair plan `docs/superpowers/plans/2026-10-11-mastra-ocr-r2-fix1.md`; independent Fix1 validator report `.superpowers/sdd/2026-10-11-mastra-ocr-r2-fix1/reports/validation.md` (SHA256 `6951dcd4b4d14be1970510f056855ef82deb5c703d6809d2238396e236a02562`). The validator reproduced 34/36 full-suite pass and proved the new JSON-array test's pending row adds one mismatch to later tenant-wide reconciliations; excluding that test makes the other 35 pass.
+**Spec:** Parent R2 repair plan `docs/plans/superpowers/2026-10-11-mastra-ocr-r2-fix1.md`; independent Fix1 validator report `.superpowers/sdd/2026-10-11-mastra-ocr-r2-fix1/reports/validation.md` (SHA256 `6951dcd4b4d14be1970510f056855ef82deb5c703d6809d2238396e236a02562`). The validator reproduced 34/36 full-suite pass and proved the new JSON-array test's pending row adds one mismatch to later tenant-wide reconciliations; excluding that test makes the other 35 pass.
 
 ## Global Constraints
 

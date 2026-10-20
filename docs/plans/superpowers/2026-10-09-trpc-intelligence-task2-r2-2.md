@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun test, Drizzle ORM, PostgreSQL dialect.
 
-**Spec:** `docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md` AC-05; `docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md` T1-B/T1-C; repair requirement `docs/superpowers/plans/2026-10-09-trpc-intelligence-task2-review-fixes.md` Task R2-2; finding `reports/task-2-review.md` T02-R03.
+**Spec:** `docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md` AC-05; `docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md` T1-B/T1-C; repair requirement `docs/plans/superpowers/2026-10-09-trpc-intelligence-task2-review-fixes.md` Task R2-2; finding `reports/task-2-review.md` T02-R03.
 
 ## Global Constraints
 

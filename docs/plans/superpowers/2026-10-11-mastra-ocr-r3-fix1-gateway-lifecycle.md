@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Fetch API, ReadableStream, AI SDK PlanModel adapter.
 
-**Spec:** `docs/superpowers/plans/2026-10-11-mastra-ocr-r3-run-governance.md` Task 3; independent review `.superpowers/sdd/2026-10-11-mastra-ocr-r3-governance/reports/task-3-review.md`; approved ruling R3-ARCH-04 in `.superpowers/sdd/2026-10-11-mastra-ocr-r3-governance/progress.md`.
+**Spec:** `docs/plans/superpowers/2026-10-11-mastra-ocr-r3-run-governance.md` Task 3; independent review `.superpowers/sdd/2026-10-11-mastra-ocr-r3-governance/reports/task-3-review.md`; approved ruling R3-ARCH-04 in `.superpowers/sdd/2026-10-11-mastra-ocr-r3-governance/progress.md`.
 
 ## Global Constraints
 

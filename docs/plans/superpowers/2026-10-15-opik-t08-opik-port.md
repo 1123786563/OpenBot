@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun tests, Biome 2.5.10, existing server fetch/AbortSignal support.
 
-**Spec:** `docs/specs/2026-10-14-opik-integration-design.md` (especially §§4–6, 8, 10, A1/A4/A10/A13); Issue #14 snapshot at `docs/plans/evidence/2026-10-15-issue4/issue-tree.json`; dependencies T04, T05, T07 in `docs/plans/2026-10-15-opik-issue4-dag.json`; `docs/opik-contract.md` and `docs/plans/evidence/2026-10-15-issue4/opik-contract/47-manifest.json`.
+**Spec:** `docs/specs/2026-10-14-opik-integration-design.md` (especially §§4–6, 8, 10, A1/A4/A10/A13); Issue #14 snapshot at `docs/plans/evidence/2026-10-15-issue4/issue-tree.json`; dependencies T04, T05, T07 in `docs/plans/2026-10-15-opik-issue4-dag.json`; `reference/opik-contract.md` and `docs/plans/evidence/2026-10-15-issue4/opik-contract/47-manifest.json`.
 
 ## Global Constraints
 
@@ -49,7 +49,7 @@
 
 **Contract boundaries:**
 - Implement only operations supported by the verified T04 manifest and needed by current parent tasks; do not create speculative operations or duplicate T04's live runner.
-- Keep request/response JSON shapes and route selection aligned with `docs/opik-contract.md` and the T04 evidence. Do not copy endpoint strings or body schemas into consumers.
+- Keep request/response JSON shapes and route selection aligned with `reference/opik-contract.md` and the T04 evidence. Do not copy endpoint strings or body schemas into consumers.
 - Pass only values that are already safe projections; error objects carry stable error codes and safe status/operation metadata, never raw bodies, headers, credentials, or untrusted identifiers.
 - Apply an explicit finite timeout to every network request and cap request body bytes at the verified bound; a missing verified limit refuses oversized/unknown payloads.
 - On ownership drift, stop subsequent writes for the affected scope and return a typed alertable failure. Do not report empty success or retry against another project.

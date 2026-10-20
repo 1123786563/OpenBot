@@ -6,7 +6,7 @@
 
 **Architecture:** Keep product policy in the existing enterprise services and Mastra adapters, with PostgreSQL constraints/RLS as defense in depth. Repair work is serial and split by stable ownership boundaries: role/migration safety, schema invariants, Run governance, conversation contracts, attachment reconciliation, and Mastra lifecycle. Low-impact observations and conditional claims remain explicitly ruled or deferred in the ledger rather than being bundled into risky refactors.
 
-**Spec:** `docs/superpowers/specs/2026-10-10-mastra-intelligence-migration-design.md`; inherited tenancy requirements: `docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md`; full OCR: `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/reports/ocr-r15-base-to-head-retry.txt`; complete adjudications: `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/reports/adjudication-schema.md`, `adjudication-conversations.md`, `adjudication-runtime.md`, and `adjudication-mastra.md`; DAG: `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/ocr-repair-dag.md`.
+**Spec:** `docs/specs/superpowers/2026-10-10-mastra-intelligence-migration-design.md`; inherited tenancy requirements: `docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md`; full OCR: `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/reports/ocr-r15-base-to-head-retry.txt`; complete adjudications: `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/reports/adjudication-schema.md`, `adjudication-conversations.md`, `adjudication-runtime.md`, and `adjudication-mastra.md`; DAG: `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/ocr-repair-dag.md`.
 
 ## Global Constraints
 

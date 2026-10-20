@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, PostgreSQL, Drizzle ORM 0.45.2.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; parent repair source `docs/superpowers/plans/2026-10-11-mastra-ocr-r5-boundary-migration-fixes.md` Task 3; findings `.superpowers/sdd/2026-10-11-mastra-ocr-r5-boundary-migration-fixes/reports/task-r5-3-review.md`; root-cause evidence `.superpowers/sdd/2026-10-11-mastra-ocr-r5-boundary-migration-fixes/reports/r5-3-root-cause-research.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent repair source `docs/plans/superpowers/2026-10-11-mastra-ocr-r5-boundary-migration-fixes.md` Task 3; findings `.superpowers/sdd/2026-10-11-mastra-ocr-r5-boundary-migration-fixes/reports/task-r5-3-review.md`; root-cause evidence `.superpowers/sdd/2026-10-11-mastra-ocr-r5-boundary-migration-fixes/reports/r5-3-root-cause-research.md`.
 
 ## Global Constraints
 

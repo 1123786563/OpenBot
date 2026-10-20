@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun, TypeScript, Drizzle ORM, PostgreSQL.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; review source: `.superpowers/sdd/2026-10-11-mastra-ocr-r3-fix2-outer-ocr/reports/outer-ocr-committed-final-2026-10-11.md`, finding `model-capability.ts:586-589`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; review source: `.superpowers/sdd/2026-10-11-mastra-ocr-r3-fix2-outer-ocr/reports/outer-ocr-committed-final-2026-10-11.md`, finding `model-capability.ts:586-589`.
 
 ## Global Constraints
 

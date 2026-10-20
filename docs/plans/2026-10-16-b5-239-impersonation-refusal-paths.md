@@ -6,7 +6,7 @@
 
 **Tech Stack:** Bun + Hono + Drizzle（专用 PostgreSQL 测试库）。
 
-**Spec:** docs/tickets/bifrost-5/issues/04.6-impersonation-refusal-paths.md + 父 Spec AC03 + ADR 0002 + CONTEXT.md。
+**Spec:** docs/plans/tickets/bifrost-5/issues/04.6-impersonation-refusal-paths.md + 父 Spec AC03 + ADR 0002 + CONTEXT.md。
 
 ## Global Constraints
 

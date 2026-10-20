@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Drizzle PostgreSQL SQL, Bun test. No database access in this task.
 
-**Spec:** Approved `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; parent T2 `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; failure API plan and Fix1/Fix2; finding in `.superpowers/sdd/2026-10-13-mastra-run-request-failure/reports/fix2-reviewer-report.md`.
+**Spec:** Approved `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent T2 `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; failure API plan and Fix1/Fix2; finding in `.superpowers/sdd/2026-10-13-mastra-run-request-failure/reports/fix2-reviewer-report.md`.
 
 ## Global Constraints
 

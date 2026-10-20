@@ -4,7 +4,7 @@
 
 > 版本：v1.0
 > 编写日期：2026-10-11
-> 输入：`docs/superpowers/specs/OpenMuse-Mobile-OpenBot-Backend.md`（下称"集成方案"）
+> 输入：`docs/specs/superpowers/OpenMuse-Mobile-OpenBot-Backend.md`（下称"集成方案"）
 > 代码基线：OpenBot `main` @ `ab46dd1`（2026-10-11）；OpenMuse Mobile 迁移落位 `apps/openmuse-mobile` @ `8dda8a0`
 > 状态：设计定稿，作为后端实现（任务 #4）与上线方案（任务 #5）的依据
 

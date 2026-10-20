@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript / Hono middleware / drizzle + PostgreSQL（共享 credentials vault）/ bun test。
 
-**Spec:** docs/tickets/bifrost-5/issues/06.1-reserve-service-authentication.md；父 Spec docs/specs/2026-10-14-bifrost-github-spec.md AC05；docs/specs/2026-10-14-bifrost-integration-design.md Q5/Q10；ADR 0003。
+**Spec:** docs/plans/tickets/bifrost-5/issues/06.1-reserve-service-authentication.md；父 Spec docs/specs/2026-10-14-bifrost-github-spec.md AC05；docs/specs/2026-10-14-bifrost-integration-design.md Q5/Q10；ADR 0003。
 
 ## Global Constraints
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun 1.3 workspaces、Hono 4、pino 9+、pino-pretty（仅 TTY）、Biome 2.5、bun:test。
 
-**Spec:** `docs/superpowers/specs/2026-10-10-observability-design.md` §3.1、§3.2、§4、§5-P1、§6-P1
+**Spec:** `docs/specs/superpowers/2026-10-10-observability-design.md` §3.1、§3.2、§4、§5-P1、§6-P1
 
 ## Global Constraints
 
@@ -683,14 +683,14 @@ git commit -m "fix(observability): append host process logs instead of truncatin
 ### Task 8: 约定文档与收尾
 
 **Files:**
-- Create: `docs/observability.md`
-- Modify: `docs/development.md`（加一节指向 observability.md）
+- Create: `reference/observability.md`
+- Modify: `reference/development.md`（加一节指向 observability.md）
 
 **Interfaces:**
 - Consumes: Task 1 记录的 pino 版本；Task 5 的 lint 规则。
 - Produces: 团队日志约定文档（级别语义、字段约定、脱敏红线、查看路径）。
 
-- [ ] **Step 1: 写 `docs/observability.md`**
+- [ ] **Step 1: 写 `reference/observability.md`**
 
 内容必须覆盖以下小节（写成仓库正式文档风格，正文用这里给定的要点展开）：
 
@@ -713,13 +713,13 @@ git commit -m "fix(observability): append host process logs instead of truncatin
 - 备忘：pino 默认对 `err` 键序列化（含 message/stack）；其余自定义字段一律走结构化字段，不做字符串拼接。
 ```
 
-- [ ] **Step 2: `docs/development.md` 加指引**
+- [ ] **Step 2: `reference/development.md` 加指引**
 
 在开发环境相关章节附近加一小节：
 
 ```markdown
 ## 日志与排障
-服务端日志为 JSON 单行，级别用 `LOG_LEVEL` 控制；字段与查看方式见 [可观测性约定](./observability.md)。宿主机进程日志在 `.logs/`（追加式），容器日志用 `docker logs`。
+服务端日志为 JSON 单行，级别用 `LOG_LEVEL` 控制；字段与查看方式见 [可观测性约定](../../observability.md)。宿主机进程日志在 `.logs/`（追加式），容器日志用 `docker logs`。
 ```
 
 - [ ] **Step 3: 全量门禁**
@@ -731,7 +731,7 @@ Expected: 全绿（或仅记录基线外既有失败）
 
 ```bash
 cd /Users/wuyongjun/trea/OpenBot
-git add docs/observability.md docs/development.md
+git add reference/observability.md reference/development.md
 git commit -m "docs: observability conventions for logging and request tracking"
 ```
 

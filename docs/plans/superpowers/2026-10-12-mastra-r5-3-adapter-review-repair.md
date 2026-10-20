@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, PostgreSQL, Postgres.js 3.4.9, Drizzle ORM 0.45.2.
 
-**Spec:** `docs/superpowers/plans/2026-10-11-mastra-r5-3-f1-b-pinned-client-adapter.md`; independent findings in `.superpowers/sdd/2026-10-11-mastra-r5-3-f1-b-pinned-client-adapter/reports/task-review.md`.
+**Spec:** `docs/plans/superpowers/2026-10-11-mastra-r5-3-f1-b-pinned-client-adapter.md`; independent findings in `.superpowers/sdd/2026-10-11-mastra-r5-3-f1-b-pinned-client-adapter/reports/task-review.md`.
 
 ## Global Constraints
 

@@ -5,7 +5,7 @@ BASE: `bab7c0b9` (= `main`, clean tree). No commits; deliver as uncommitted diff
 
 ## Facts read before planning (not assumed)
 
-- 父 Spec `docs/specs/2026-10-14-bifrost-integration-design.md`（Q15、AC19）; ADR 0002/0003; ticket `docs/tickets/bifrost-5/issues/04.1-bot-service-registry.md`.
+- 父 Spec `docs/specs/2026-10-14-bifrost-integration-design.md`（Q15、AC19）; ADR 0002/0003; ticket `docs/plans/tickets/bifrost-5/issues/04.1-bot-service-registry.md`.
 - 审计写入模式: `server/src/audit.ts` — `createAuditStore(database)`, `recordAuditEvent(store, { eventType, targetType, targetId, actorUserId, payload })`; event types are a closed const list `auditEventTypes` (typed union `AuditEventType`).
 - 管理员守卫: `server/src/auth/guards.ts` — `createRequireUser` sets `actor`; `requireAdmin(context)` returns 403 JSON or `undefined`.
 - 管理员登记路由模式: `app.ts` `/api/admin/credentials*`（requireUser + requireAdmin + 503 when service absent + typed refusal errors → HTTP status）。

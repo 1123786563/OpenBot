@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Node.js crypto, Bun, PostgreSQL, Drizzle migrations.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md` §§3–4; complete OCR evidence: `.superpowers/sdd/2026-10-11-mastra-r4-2-proxy-verification-fix/reports/outer-ocr-workspace-final-2026-10-11.md` and `outer-ocr-migration-retry-2026-10-11.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md` §§3–4; complete OCR evidence: `.superpowers/sdd/2026-10-11-mastra-r4-2-proxy-verification-fix/reports/outer-ocr-workspace-final-2026-10-11.md` and `outer-ocr-migration-retry-2026-10-11.md`.
 
 ## Global Constraints
 
@@ -99,7 +99,7 @@
 
 ## Rulings for other complete-OCR comments
 
-- Ruling: the 0063-in-place finding does not establish a Drizzle hash-mismatch defect. Locked local `drizzle-orm` migrator source skips by `created_at` timestamp, and `docs/development.md` explicitly says `drizzle-kit check` does not validate journal-directory identity or database hashes. Existing environments get the forward 0065 locks; fresh installs receive the extra 0063 locks, with the same final constraints. Cost if an external deployment system independently audits historical checksums is an environment-specific warning; no such system or applied-production state is evidenced here. Keep the current lock addition and preserve its before/after evidence.
+- Ruling: the 0063-in-place finding does not establish a Drizzle hash-mismatch defect. Locked local `drizzle-orm` migrator source skips by `created_at` timestamp, and `reference/development.md` explicitly says `drizzle-kit check` does not validate journal-directory identity or database hashes. Existing environments get the forward 0065 locks; fresh installs receive the extra 0063 locks, with the same final constraints. Cost if an external deployment system independently audits historical checksums is an environment-specific warning; no such system or applied-production state is evidenced here. Keep the current lock addition and preserve its before/after evidence.
 - Ruling: the 0065 low diagnostic label `invalid_run_ceiling_count` is retained for compatibility with 0063's error format and existing operations/test consumers; document this stable cross-migration label in the SQL comment.
 - Ruling: retain explicit `forbiddenSelectors` as defense in depth beside the allowlist and comment the intent.
 - Ruling: compare canonical public binding context without changing protocol semantics; existing HMAC comparison remains the secret authenticator. If needed, use equal-length `timingSafeEqual` for same-sized canonical buffers.

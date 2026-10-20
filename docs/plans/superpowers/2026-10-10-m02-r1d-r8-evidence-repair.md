@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript/Bun, Drizzle/PostgreSQL, Mastra PostgresStore, existing verified tenancy/provisioning fixtures.
 
-**Spec:** Approved Mastra migration spec `docs/superpowers/specs/2026-10-10-mastra-intelligence-migration-design.md` §§4–5, 10; Task 2 brief `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/task-2-brief.md`; R1C findings `.superpowers/sdd/2026-10-10-m02-r1c-behavioral-acceptance-audit/reports/m02-r1c-review.md`.
+**Spec:** Approved Mastra migration spec `docs/specs/superpowers/2026-10-10-mastra-intelligence-migration-design.md` §§4–5, 10; Task 2 brief `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/task-2-brief.md`; R1C findings `.superpowers/sdd/2026-10-10-m02-r1c-behavioral-acceptance-audit/reports/m02-r1c-review.md`.
 
 ## Global Constraints
 

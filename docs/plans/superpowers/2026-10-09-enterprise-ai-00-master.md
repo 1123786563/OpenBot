@@ -10,7 +10,7 @@
 
 **文档基线：** `enterprise-mvp-v0.2`，修订日期 2026-10-09。总体方案与 00/01/02 同步修订；本次授权仅覆盖文档修改，不代表准许代码、安装、迁移、部署或 Git 操作。本文 §1 为规范性决策索引，§4 为跨文档契约入口，§6 为门禁唯一注册表；其他文档不得另行放宽。发现冲突应先修订并确认，不以文件先后顺序悄悄覆盖安全要求。
 
-**规格：** [总体方案](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md)；[评审问题快照](2026-10-09-enterprise-ai-documents-review.md)。评审行号是修订前快照，现行定位使用章节与问题编号。
+**规格：** [总体方案](../../specs/superpowers/2026-10-09-enterprise-ai-platform-design.md)；[评审问题快照](2026-10-09-enterprise-ai-documents-review.md)。评审行号是修订前快照，现行定位使用章节与问题编号。
 
 ## 全局约束
 
@@ -68,7 +68,7 @@
 - `server/drizzle.config.ts:20-42` 与 `server/src/db/schema/index.ts`：新增表必须同时进入生成器清单与导出。
 - `server/tests/support/database.ts`：测试必须使用 `testDatabaseUrl()`，禁止回退生产库。
 - `server/tsconfig.json:28-32`：现有测试未纳入类型检查，新增 enterprise 测试使用独立 tsconfig 纳入门禁。
-- `.gitignore:7` 忽略 `docs/superpowers/`；本计划不会更改忽略规则，交付通过文件展示。后续若要版本化，需用户授权明确路径，不能自动强制提交。
+- 旧版 `.gitignore` 曾忽略 `docs/superpowers/`；本计划不会改写历史交付约束。新的方案细节统一放在 `docs/plans/superpowers/`，运行证据进入 `.archive/runs/`。
 
 写计划时工作区已存在 `app` 的 i18n、布局、路由、测试 preload、package、tsconfig、bun.lock 与 `.trae/` 变更。它们不是本计划产生的代码。后续执行首先读取最新差异；触及这些文件须局部合并，不用旧快照覆盖。
 

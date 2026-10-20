@@ -1,7 +1,7 @@
 {
  "repository": "1123786563/OpenBot",
  "parent": "https://github.com/1123786563/OpenBot/issues/5",
- "supersedes": "docs/tickets/bifrost-5/manifest.json (22-ticket draft)",
+ "supersedes": "docs/plans/tickets/bifrost-5/manifest.json (22-ticket draft)",
  "source_read_date": "2026-10-15",
  "source_state": "OPEN",
  "status": "draft-v2-awaiting-breakdown-approval",

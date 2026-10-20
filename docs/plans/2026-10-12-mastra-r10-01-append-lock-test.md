@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun tests, TypeScript, Drizzle ORM, PostgreSQL; existing `enterpriseRuntimeDatabaseUrlFrom`, capability verifiers, scope resolver, RunService, EventService, and synthetic deployment fixture.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md` §§3–5, 8; R10-01 from `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/reports/task-2-r10-review.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md` §§3–5, 8; R10-01 from `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/reports/task-2-r10-review.md`.
 
 ## Global Constraints
 

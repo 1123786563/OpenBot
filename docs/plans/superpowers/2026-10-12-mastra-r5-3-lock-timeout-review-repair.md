@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, PostgreSQL, Drizzle ORM 0.45.2, Postgres.js 3.4.9.
 
-**Spec:** `docs/superpowers/plans/2026-10-12-mastra-r5-3-advisory-lock-timeout.md`; independent findings in `.superpowers/sdd/2026-10-12-mastra-r5-3-advisory-lock-timeout/reports/task-review.md`.
+**Spec:** `docs/plans/superpowers/2026-10-12-mastra-r5-3-advisory-lock-timeout.md`; independent findings in `.superpowers/sdd/2026-10-12-mastra-r5-3-advisory-lock-timeout/reports/task-review.md`.
 
 ## Global Constraints
 

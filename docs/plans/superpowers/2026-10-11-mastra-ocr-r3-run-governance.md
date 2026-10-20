@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Drizzle ORM, PostgreSQL 17, OpenAI/Anthropic-compatible HTTP SSE, Mastra PlanModel.
 
-**Spec:** Approved design docs/superpowers/specs/2026-10-10-mastra-intelligence-migration-design.md section 6; root migration Task 3 in docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md; OCR adjudication .superpowers/sdd/2026-10-10-mastra-intelligence-migration/reports/adjudication-runtime.md; repair DAG .superpowers/sdd/2026-10-10-mastra-intelligence-migration/ocr-repair-dag.md R3. Prerequisite R2 verified in .superpowers/sdd/2026-10-11-mastra-ocr-r2-schema/progress.md.
+**Spec:** Approved design docs/specs/superpowers/2026-10-10-mastra-intelligence-migration-design.md section 6; root migration Task 3 in docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md; OCR adjudication .superpowers/sdd/2026-10-10-mastra-intelligence-migration/reports/adjudication-runtime.md; repair DAG .superpowers/sdd/2026-10-10-mastra-intelligence-migration/ocr-repair-dag.md R3. Prerequisite R2 verified in .superpowers/sdd/2026-10-11-mastra-ocr-r2-schema/progress.md.
 
 ## Global Constraints
 

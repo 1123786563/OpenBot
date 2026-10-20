@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Drizzle ORM, PostgreSQL RLS/advisory locks, existing CopilotKit model/provider and PlanModel adapters.
 
-**Spec:** `docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md`; `docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md` §§ 8–10; parent implementation `docs/superpowers/plans/2026-10-09-trpc-intelligence-migration.md` Task 4; findings `.superpowers/sdd/2026-10-09-trpc-intelligence-migration/reports/task-4-review.md`.
+**Spec:** `docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md`; `docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md` §§ 8–10; parent implementation `docs/plans/superpowers/2026-10-09-trpc-intelligence-migration.md` Task 4; findings `.superpowers/sdd/2026-10-09-trpc-intelligence-migration/reports/task-4-review.md`.
 
 ## Global Constraints
 

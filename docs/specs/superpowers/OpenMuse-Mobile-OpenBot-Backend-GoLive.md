@@ -5,7 +5,7 @@
 > 版本：v1.0
 > 编写日期：2026-10-11
 > 代码基线：`main` @ `fa4b67f`（移动端 BFF + EXPO_APP_SCHEME）；迁移分支 `feat/openmuse-mobile-migration` @ `8dda8a0`
-> 配套设计：`docs/superpowers/specs/OpenMuse-Mobile-OpenBot-Backend-Architecture.md`
+> 配套设计：`docs/specs/superpowers/OpenMuse-Mobile-OpenBot-Backend-Architecture.md`
 > 范围：OpenBot 后端服务 + OpenMuse Mobile 客户端的部署、CI/CD、灰度与回滚、上线检查
 
 ---
@@ -106,7 +106,7 @@ EXPO_PUBLIC_API_URL=http://10.0.2.2:3001 pnpm start   # Android 模拟器 dev bu
 | 副本 | 1 | ≥2（server 无状态，session/活动分发均在 PG；Computer stream 代理需 ingress 会话粘性或单副本网关段） |
 | 数据库 | 基础实例 | 高可用 + PITR + 每日快照 |
 | `LOG_LEVEL` | debug | info（JSON 输出接 alloy→loki） |
-| 观测 | compose 自带 loki/tempo/grafana | chart 同套；告警接 Grafana（`docs/observability.md`） |
+| 观测 | compose 自带 loki/tempo/grafana | chart 同套；告警接 Grafana（`reference/observability.md`） |
 | Computer | 单实例 supervisor 或共享 browser | per-Bot 沙箱（`AGENT_SANDBOX_*`）按合规要求 |
 | 移动端 API 地址 | `EXPO_PUBLIC_API_URL=https://staging.example` | 生产域名 |
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun + Hono + drizzle-orm + PostgreSQL（专用测试库 openbot_b5_290v @ b5-verify-pg:5590）。
 
-**Spec:** docs/tickets/bifrost-5/issues/10.1-order-personal-ownership.md；父 Spec docs/specs/2026-10-14-bifrost-integration-design.md（Q27、AC14）；ADR 0004；CONTEXT.md（Payment Order：发起人是审计身份，不必等于付款主体）。
+**Spec:** docs/plans/tickets/bifrost-5/issues/10.1-order-personal-ownership.md；父 Spec docs/specs/2026-10-14-bifrost-integration-design.md（Q27、AC14）；ADR 0004；CONTEXT.md（Payment Order：发起人是审计身份，不必等于付款主体）。
 
 ## Global Constraints
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, CopilotKit Runtime 1.77.0, AI SDK 6.0.264, AG-UI, existing Drizzle Run/Gateway/route services.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; parent Task 2 `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; continuation `docs/plans/2026-10-12-mastra-t2-production-cutover.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent Task 2 `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; continuation `docs/plans/2026-10-12-mastra-t2-production-cutover.md`.
 
 **Source evidence:** `.superpowers/sdd/2026-10-12-mastra-t2-production-cutover/reports/governed-execution-continuation-map.md`, `governed-success-route-architecture.md` (SHA256 `70091d421fa9c8151a0bbec9fb39c700d4376e83cdff8b3f115228e1698b3417`), `governed-per-step-cap-ruling.md` (SHA256 `360bc24a4ec525d9d410b70ee2a4ee87795d4c81a3a70853567673fc0b082e37`). The last report proves pinned CopilotKit passes one static `maxOutputTokens` to every tool step; the adapter must derive a fresh per-call cap.
 

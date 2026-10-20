@@ -6,8 +6,8 @@
 
 - 工作区：`/Users/wuyongjun/trea/OpenBot`；branch：`main`；规划 BASE：`1dc117b65dbb958e73d6c1a0a4a6ee6fa0f48717`。
 - 需求：用户询问迁移 Mastra 所需改造，继而要求编写详细计划；未要求实施。
-- 分析：`docs/research/2026-10-19-mastra-agent-migration-assessment.md` 和 `2026-10-19-mastra-official-capabilities.md`。
-- 规划时哈希：`2026-10-19-mastra-agent-execution-migration/baseline.json`；是规划证据，不是实施增量 Review Package。
+- 分析：`docs/plans/research/2026-10-19-mastra-agent-migration-assessment.md` 和 `2026-10-19-mastra-official-capabilities.md`。
+- 规划时哈希：`.archive/runs/legacy-plans/2026-10-19-mastra-agent-execution-migration/baseline.json`；是规划证据，不是实施增量 Review Package。
 - 现有用户改动：drizzle meta snapshot 与其他任务脚本/计划，保留在原位置。本次只新增本任务文档。
 - 执行前：重核 HEAD/工作区、批准 Spec、接口、测试与既有 Ledger；显式转移未提交文档。实施 BASE 与 Task 检查点由真正执行时写入 Ledger，不复用规划日期推断完成状态。
 

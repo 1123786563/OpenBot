@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Web Streams.
 
-**Spec:** [Approved Mastra migration design §6](../specs/2026-10-10-mastra-intelligence-migration-design.md); R15 full workspace OCR `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/reports/ocr-r15-workspace.txt`; architecture adjudication in the R16 ledger.
+**Spec:** [Approved Mastra migration design §6](../../specs/superpowers/2026-10-10-mastra-intelligence-migration-design.md); R15 full workspace OCR `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/reports/ocr-r15-workspace.txt`; architecture adjudication in the R16 ledger.
 
 ## Global Constraints
 

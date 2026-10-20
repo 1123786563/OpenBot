@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go (governance plugin), testify; no schema/DB changes.
 
-**Spec:** docs/tickets/bifrost-5/issues/07.7-provider-output-cap-enforcement.md (+ parent spec AC06, Q11/Q20; ADR 0001/0003; CONTEXT.md Provider Bounds)
+**Spec:** docs/plans/tickets/bifrost-5/issues/07.7-provider-output-cap-enforcement.md (+ parent spec AC06, Q11/Q20; ADR 0001/0003; CONTEXT.md Provider Bounds)
 
 ## Global Constraints
 

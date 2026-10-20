@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Drizzle SQL builder, postgres.js, synthetic DB-free tests.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; OCR reports `.superpowers/sdd/2026-10-13-mastra-ocr-t2gov/reports/ocr-r{1,2,3}-workspace.txt` and `ocr-r1-base-to-head.txt`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; OCR reports `.superpowers/sdd/2026-10-13-mastra-ocr-t2gov/reports/ocr-r{1,2,3}-workspace.txt` and `ocr-r1-base-to-head.txt`.
 
 ## Global Constraints
 

@@ -783,7 +783,7 @@
         ".env.example",
         "docker/opik/versions.json",
         "server/tests/opik-deployment.test.ts",
-        "docs/opik.md"
+        "reference/opik.md"
       ],
       "interfaces": {
         "consumes": [],
@@ -1259,7 +1259,7 @@
         "server/tests/opik-bindings.test.ts",
         "server/tests/opik-bindings.integration.test.ts",
         "server/tests/support/opik-test-db.ts",
-        "docs/tickets/opik-4/checkpoints/T07.md",
+        "docs/plans/tickets/opik-4/checkpoints/T07.md",
         "docs/plans/evidence/2026-10-15-issue4/T07/",
         "server/drizzle.config.ts (add exactly one schema-list entry for ai-observability-bindings.ts)"
       ],

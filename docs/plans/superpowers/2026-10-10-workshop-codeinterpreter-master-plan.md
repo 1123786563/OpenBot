@@ -1,7 +1,7 @@
 # Bot 工作台（Workshop）× Code Interpreter 统一架构与并行实施总计划
 
 > 2026-10-10。作者：高见远（架构师）。
-> 输入：`docs/superpowers/specs/2026-10-10-craft-workshop-design.md`（Workshop 产品设计，W1–W6）、`docs/superpowers/plans/2026-10-10-code-interpreter-run-code.md`（Code Interpreter Task 1–9 + P1 待办）、`docs/superpowers/plans/2026-10-10-sandbox-lifecycle-craft.md`（P1-A）。
+> 输入：`docs/specs/superpowers/2026-10-10-craft-workshop-design.md`（Workshop 产品设计，W1–W6）、`docs/plans/superpowers/2026-10-10-code-interpreter-run-code.md`（Code Interpreter Task 1–9 + P1 待办）、`docs/plans/superpowers/2026-10-10-sandbox-lifecycle-craft.md`（P1-A）。
 > 前置动作：本计划先对仓库做了逐文件核实（见第 2 节），**不以设计文档的前置声明为准**。核实结论改变了排期：Code Interpreter 的 Task 1–9 与 P1-A 的 Task 1–5 均已落地，剩余的是"验证 + P1 待办"，而不是"从零实施"。
 > 本次交付物只有本文档，不含任何代码改动。
 
@@ -117,7 +117,7 @@
 | `workshop.*` 审计事件 | `server/src/audit.ts` 中 grep `workshop` 零命中 | ❌ 未注册 |
 | `/api/workshop/**` | `server/src/app.ts` 中无挂载 | ❌ 不存在 |
 | 前端工作台视图 | `app/src/components/channels/` 下无 workshop 组件 | ❌ 不存在 |
-| 全仓 `workshop` 关键字（ts/tsx/md/yml） | 仅命中 1 个文件：`docs/superpowers/specs/2026-10-10-craft-workshop-design.md` | ❌ 纯文档 |
+| 全仓 `workshop` 关键字（ts/tsx/md/yml） | 仅命中 1 个文件：`docs/specs/superpowers/2026-10-10-craft-workshop-design.md` | ❌ 纯文档 |
 
 ### 2.3 盘点结论（三条，直接改变排期）
 
@@ -705,7 +705,7 @@ workshop.lock_unavailable       workshop.fanout_degraded
 | RLS | 新增 `server/drizzle/0066_*.sql`（自定义策略） | 🟢 | 是 |
 | 计量 | 修改 `server/src/billing/**`（meter 接线） | 🟢 | 是 |
 | live smoke | 修改 `scripts/codesandbox-smoke.ts`；新增 `scripts/workshop-smoke.ts`；修改根 `package.json` | 🟢 | 是 |
-| 可观测 / 文档 | 新增 `docs/configuration.md` 小节、`docs/observability/**` 增补 | 🟢 | 否 |
+| 可观测 / 文档 | 新增 `reference/configuration.md` 小节、`docs/observability/**` 增补 | 🟢 | 否 |
 
 ### Lane C — per-bot 容器隔离与 P1-B 状态机（v2 新增）
 
@@ -1325,7 +1325,7 @@ W2.5 链（v2.1 新增，挂在 W2 链末端）：B11（headless） → B16（�
 
 #### I6 · 可观测与文档
 - **目标**：SSE 流、代理、执行器都挂上 request_id 与结构化日志；配置文档跟上。
-- **涉及文件**：修改 `docs/configuration.md`（沙箱与工作台小节）；必要时增补 `docs/observability/**`
+- **涉及文件**：修改 `reference/configuration.md`（沙箱与工作台小节）；必要时增补 `docs/observability/**`
 - **输入接口**：S2、B9、I1
 - **输出接口**：配置项说明、事件 schema 索引指向 `agent-sandbox/docs/sse-samples.md`；v2 增补：Redis 降级语义（§3.5.6）与 `WORKSHOP_PREVIEW_MODE` 三态说明；v2.1 增补：定时任务配置（预授权范围说明、错过触发的补跑策略）
 - **验收标准**：文档中的每一项变量都能在 `.env.example` 里 grep 到

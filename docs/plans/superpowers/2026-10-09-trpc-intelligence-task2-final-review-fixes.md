@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun test, Drizzle ORM, PostgreSQL JSONB audit events.
 
-**Spec:** `docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md` T1-C, especially its complete-payload idempotency rule and “重复直接返回旧结果”; Task 2 final independent review `reports/task-2-final-review.md` finding T02-FR01.
+**Spec:** `docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md` T1-C, especially its complete-payload idempotency rule and “重复直接返回旧结果”; Task 2 final independent review `reports/task-2-final-review.md` finding T02-FR01.
 
 ## Global Constraints
 

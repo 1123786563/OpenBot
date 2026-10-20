@@ -19,7 +19,7 @@ v0.4 审核修订：按用户要求区分固定业务归属与版本化工作范
 | [个人 Agent 主规格](2026-10-16-enterprise-personal-agent-product-permissions-spec.md) §4.1、§8–11 | C01 已确认保留逻辑私有 Bot 并隔离实际范围；主规格其他新增建议仍按其确认状态处理。既有草案包含委托、Task/Run 分离、审批、恢复和预算，但缺少完整的长任务时间与推进合同。 |
 | [产品规划 G01–G10、M0–M3](2026-10-16-personal-smb-product-roadmap.md)、[提议 ADR 0007](../adr/0007-personal-space-business-scope-and-payer.md) | 长期工作纳入三个真实业务流程，个人/组织任务均需真实范围及固定付款，等待、恢复、成果和费用在普通用户入口可理解。个人模型推荐尚待书面评审。 |
 | [OpenMuse 完整产品规格](../superpowers/specs/2026-10-12-openmuse-on-openbot-spec.md) | 专用 Task 模块拥有五类任务、步骤、证据、产物、等待、租约及恢复；Responsibility、Routine 和 Goal 不被合并成 Task。 |
-| [OpenMuse v4 规划合同](../../apps/openmuse/docs/superpowers/plans/2026-10-12-openmuse-openbot-contracts-v4.md) §7、§10 | 有逐轮执行、等待输入/审核、Monitor 的条件/游标/去重/退避；单步首条验收的参考期限为 300 秒。它不是跨月任务的产品到期规则。 |
+| [OpenMuse v4 规划合同](../../apps/openmuse/docs/plans/superpowers/2026-10-12-openmuse-openbot-contracts-v4.md) §7、§10 | 有逐轮执行、等待输入/审核、Monitor 的条件/游标/去重/退避；单步首条验收的参考期限为 300 秒。它不是跨月任务的产品到期规则。 |
 | [企业平台设计](../superpowers/specs/2026-10-09-enterprise-ai-platform-design.md) §12–13 | 提出检查点、持久编排、授权重验、有限重试、单调度所有者及 Temporal 迁移方向；不据此认定该运行基础已经实现或通过门禁。 |
 | [多租户设计](2026-10-14-company-team-multitenancy-design.md)、[ADR 0006](../adr/0006-logical-private-bot-scoped-execution.md)、[记忆设计](2026-10-15-hindsight-personal-memory-design.md)、[付款设计](2026-10-15-billing-payment-account-and-fulfillment-design.md) | 长期存活不能扩大成员资格、来源权限、Bot 能力或付款范围；不能通过恢复复活遗忘内容，不能释放结果未知的既有费用预留。 |
 

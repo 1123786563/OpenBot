@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript / Bun test / Drizzle（PostgreSQL 专用测试库）/ Hono。
 
-**Spec:** docs/tickets/bifrost-5/issues/05.5-key-expiry-default-and-config.md；docs/specs/2026-10-14-bifrost-integration-design.md（Q13 默认 15 分钟、Q18 OpenBot 掌管生命周期）；docs/adr/0002-per-user-bot-model-access.md。
+**Spec:** docs/plans/tickets/bifrost-5/issues/05.5-key-expiry-default-and-config.md；docs/specs/2026-10-14-bifrost-integration-design.md（Q13 默认 15 分钟、Q18 OpenBot 掌管生命周期）；docs/adr/0002-per-user-bot-model-access.md。
 
 ## Global Constraints
 

@@ -562,9 +562,9 @@ git commit -m "feat(opik): mount the observation module behind one optional app.
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-10-15-opik-t01-observability-module-seam.md`. Two execution options:
+Plan complete and saved to `docs/plans/superpowers/2026-10-15-opik-t01-observability-module-seam.md`. Two execution options:
 
 1. **Subagent-Driven (recommended)** — 每个 Task 派发新的 subagent，Task 之间 review。
 2. **Inline Execution** — 本会话内按 executing-plans 批量执行并设检查点。
 
-完成后把提交哈希、快照路径与文件哈希清单填入 `docs/tickets/opik-4/manifest.json` 中 `T01.handoff.checkpoint`（空缺即视为未完成），并在 GitHub #7 勾选验收标准。
+完成后把提交哈希、快照路径与文件哈希清单填入 `docs/plans/tickets/opik-4/manifest.json` 中 `T01.handoff.checkpoint`（空缺即视为未完成），并在 GitHub #7 勾选验收标准。

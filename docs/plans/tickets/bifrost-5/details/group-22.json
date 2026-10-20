@@ -187,7 +187,7 @@
    "tests": ["交付范围核验（最终 diff 只含授权范围）", "OCR 覆盖完整性检查", "就绪结论文档完整性断言"],
    "verification": [
     "git rev-parse HEAD && git -C bifrost rev-parse HEAD",
-    "ocr review --audience agent --background 'Bifrost 严格积分计费交付范围' --from <BASE> --to <HEAD> --output docs/tickets/bifrost-5/ocr/<round>.md",
+    "ocr review --audience agent --background 'Bifrost 严格积分计费交付范围' --from <BASE> --to <HEAD> --output docs/plans/tickets/bifrost-5/ocr/<round>.md",
     "bun run test:ci"
    ],
    "owned_scope": ["版本固定与 Review/OCR 记录", "部署就绪结论文档"],

@@ -4,7 +4,7 @@
 
 **Goal:** Close the valid R13 review findings without changing the confirmed policy: each Run's aggregate budget equals the caller's explicit `forwardedProps.maxOutputTokens`.
 
-**Source of truth:** Approved design `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; T2 plan `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; user budget ruling recorded in `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/progress.md`; R13 report/review/validation in the same Ledger reports directory.
+**Source of truth:** Approved design `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; T2 plan `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; user budget ruling recorded in `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/progress.md`; R13 report/review/validation in the same Ledger reports directory.
 
 **Global constraints:** Preserve every existing user edit. `server/tests/enterprise/runs.integration.test.ts` is dirty user work; this plan permits only additive `forwardedProps.maxOutputTokens` values in shared test input helpers and exact inline `RunService.start` input literals, preserving all existing assertions and unrelated hunks. `server/tests/enterprise/runner-events.integration.test.ts` is T2-owned and may receive the same focused fixture updates and DB-gated persistence assertions. No migration/schema widening. No DB startup, URL probing, migration, or live DB access; DB tests may be authored and safely gated but remain unverified until the user's disposable DB is explicitly ready.
 

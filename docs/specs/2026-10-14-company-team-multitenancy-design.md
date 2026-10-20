@@ -191,7 +191,7 @@ OAuth/SSO 回调通过服务器持有的状态绑定发起公司、团队、用�
 
 ### C2：旧 Enterprise 显式 Grant 与团队公共授权
 
-`docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md` 与现有策略强调显式个人资源 Grant、不隐式继承 Workspace 权限。本次 R4 选择团队公共资源访问，是明确新增行为。
+`docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md` 与现有策略强调显式个人资源 Grant、不隐式继承 Workspace 权限。本次 R4 选择团队公共资源访问，是明确新增行为。
 
 本文件批准后，通过新策略版本和资源发布属性实现；旧版本不放宽。后续 ADR 应记录这项有限演进：仅团队明确公共资源采用团队资格，个人内容及内容管理动作不继承。
 
@@ -201,7 +201,7 @@ OAuth/SSO 回调通过服务器持有的状态绑定发起公司、团队、用�
 
 ### 文档证据限制
 
-根 AGENTS 引用的 `docs/agents/domain.md` 与 `docs/agents/issue-tracker.md` 当前本地目录不存在。本次仅设计，不自动创建 Issue；不得声称已核验远端 Issue 或完整需求树。
+根 AGENTS 的规范入口位于 `.agents/rules/domain.md` 与 `.agents/rules/issue-tracker.md`。本次仅设计，不自动创建 Issue；不得声称已核验远端 Issue 或完整需求树。
 
 ## 11. 验收条件
 

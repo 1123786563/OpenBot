@@ -6,12 +6,12 @@
 
 **Architecture:** Preserve the published GitHub Issue and historical publication snapshots. Correct only the local current manifest that supplies coordinator Task Briefs. The public implementation exports six named projection functions and the version constant; the generic `projectSafe()` name does not exist.
 
-**Sources:** Approved Opik Spec A4; Issue #11 snapshot; `reviews/R05-review.md`; `server/src/ai-observability/redaction.ts` in the reviewed R05 source worktree; `docs/tickets/opik-4/manifest.json`.
+**Sources:** Approved Opik Spec A4; Issue #11 snapshot; `reviews/R05-review.md`; `server/src/ai-observability/redaction.ts` in the reviewed R05 source worktree; `docs/plans/tickets/opik-4/manifest.json`.
 
 ## Global Constraints
 
 - Do not edit GitHub Issues, historical snapshot files, production code, tests, or other ticket interfaces.
-- Owned file: `docs/tickets/opik-4/manifest.json`; report under `docs/plans/evidence/2026-10-15-issue4/repairs/`.
+- Owned file: `docs/plans/tickets/opik-4/manifest.json`; report under `docs/plans/evidence/2026-10-15-issue4/repairs/`.
 - Preserve all task dependencies, statuses, and non-T05 contracts.
 - No commit, push, merge, publish, or stash.
 

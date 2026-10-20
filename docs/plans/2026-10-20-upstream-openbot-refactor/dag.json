@@ -70,7 +70,7 @@
       "validator_role": "reviewer",
       "owned_files": [
         "docs/plans/2026-10-20-upstream-openbot-refactor/",
-        "docs/research/2026-10-20-upstream-openbot-feature-matrix.md"
+        "docs/plans/research/2026-10-20-upstream-openbot-feature-matrix.md"
       ],
       "interfaces": "BASE / manifest / interfaces",
       "verification": "文档与Git基线",

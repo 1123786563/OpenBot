@@ -8,11 +8,11 @@
 
 **Tech Stack:** TypeScript, Bun Test, AI SDK model wrapper, Drizzle ORM, PostgreSQL, OCR.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-billing-reliability-design.md`
+**Spec:** `docs/specs/superpowers/2026-10-11-billing-reliability-design.md`
 
 ## Global Constraints
 
-- This is a repair plan for `docs/superpowers/plans/2026-10-11-billing-reliability-00-master.md` and subplans 01–05; do not reimplement their verified work.
+- This is a repair plan for `docs/plans/superpowers/2026-10-11-billing-reliability-00-master.md` and subplans 01–05; do not reimplement their verified work.
 - Hard-cap admission requires an atomic pre-call reservation and a provable bound on actual billable input and output. A reservation alone is not a provider limit.
 - Preserve integer/rational credit arithmetic, stable `eventId`, independently retryable Lago and credit targets, and the existing payment/webhook/bill policies.
 - No completed billed model stream may be reported as successful when its finish usage fact failed to persist. A database outage cannot magically preserve usage that the provider has already produced; make this failure visible and retain the durable hold for investigation.
@@ -37,7 +37,7 @@
 | 1. Bound billed model calls | 03 Task 3A; master hard cap | none | backend_implementer / backend_validator | `server/src/copilot.ts`, `server/src/index.ts`, focused model tests | Enforced input/output bound or pre-call refusal |
 | 2. Make finish persistence decisive | 01 Task 3; 03 Task 3A | Task 1 | backend_implementer / backend_validator | `server/src/copilot.ts`, `server/src/index.ts`, focused model tests | Successful finish means `usage_outbox.record` committed |
 | 3. Prove durable recovery | 01 Tasks 1–4; 03 Task 4 | Task 2 | backend_implementer / backend_validator | billing reconciliation and integration tests only if a missing finding is demonstrated | PostgreSQL evidence for failed writes, holds, replay and delivery |
-| 4. Revalidate plans 00–05 | six-plan acceptance | Tasks 1–3 | reviewer / backend_validator | verification reports under `docs/superpowers/plans/` | Full acceptance matrix and OCR report |
+| 4. Revalidate plans 00–05 | six-plan acceptance | Tasks 1–3 | reviewer / backend_validator | verification reports under `docs/plans/superpowers/` | Full acceptance matrix and OCR report |
 
 Execution order is 1 → 2 → 3 → 4. Tasks 1 and 2 both touch the model wrapper and assembly, so they run serially in the same reviewed worktree. Preserve the starting BASE and task checkpoints in the execution ledger. The user has authorized a plan, not implementation or commits; an eventual execution brief must choose the authorized commit/checkpoint strategy before dispatch.
 
@@ -104,8 +104,8 @@ Execution order is 1 → 2 → 3 → 4. Tasks 1 and 2 both touch the model wrapp
 ### Task 4: Revalidate all six plans with evidence and independent review
 
 **Files:**
-- Create: `docs/superpowers/plans/2026-10-12-billing-reliability-remediation-verification.md` during execution
-- Create: round-numbered OCR reports under `docs/superpowers/plans/` during execution
+- Create: `docs/plans/superpowers/2026-10-12-billing-reliability-remediation-verification.md` during execution
+- Create: round-numbered OCR reports under `docs/plans/superpowers/` during execution
 
 **Interfaces:**
 - Consumes the original six plans, their approved spec, Task 1–3 reviewed checkpoints, and the actual original branch BASE.

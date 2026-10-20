@@ -176,7 +176,7 @@ node scripts/e2e-report-summary.mjs .e2e/unit/report.json        # 按失败原�
 
 依赖 Bun 运行时本身的套件（server 的 SQL/HTTP 层、`bun:` 协议、Bun 加载器行为、可写的 ESM
 namespace）继续以 `bun test` 执行，但由 e2e 调度与报告：清单在
-`docs/verification/e2e-bun-suites.json`，它们从 `tests/support/bun-test-compat` 取同样的 API，
+`tests/config/e2e-bun-suites.json`，它们从 `tests/support/bun-test-compat` 取同样的 API，
 `tests/bun-suites.test.ts` 按组跑并把 bun 的用例数与失败文本折进一条 e2e 断言（用例数为 0 判失败）。
 清单由逐文件收集审计生成，`scripts/e2e-partition-fix-loop.mjs` 负责在依赖变化后把它收敛回干净；
 分区落定后用 `node scripts/e2e-apply-partition.mjs` 双向改写导入，可重复执行。

@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, PostgreSQL, Postgres.js 3.4.9, Drizzle ORM 0.45.2.
 
-**Spec:** `docs/superpowers/plans/2026-10-11-mastra-r5-3-f1-b-pinned-client-adapter.md`; outer OCR finding in `.superpowers/sdd/2026-10-11-mastra-r5-3-repair/reports/ocr-workspace-r2.txt`.
+**Spec:** `docs/plans/superpowers/2026-10-11-mastra-r5-3-f1-b-pinned-client-adapter.md`; outer OCR finding in `.superpowers/sdd/2026-10-11-mastra-r5-3-repair/reports/ocr-workspace-r2.txt`.
 
 ## Global Constraints
 

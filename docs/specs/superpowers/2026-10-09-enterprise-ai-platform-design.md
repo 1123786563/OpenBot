@@ -5,7 +5,7 @@
 > 建设方式：目标架构＋OpenBot 现状映射。兼容私有化与 SaaS，先开展小范围生产试点。
 >
 > 文档基线已统一：保留 TypeScript/Hono/Bun 控制平面；Go 仅为独立 Agent 执行候选；复用现有认证；当前整个 MVP 不引入 OpenFGA/OPA。用户授权按评审建议修订四份文档，不代表批准编码、安装、部署或数据迁移。
-> 规范性决策索引见 [总计划 §1](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md)，共同契约见其 §4，门禁唯一注册见其 §6。03–06 分册待编写；本稿并不代表整体实施就绪。
+> 规范性决策索引见 [总计划 §1](../../plans/superpowers/2026-10-09-enterprise-ai-00-master.md)，共同契约见其 §4，门禁唯一注册见其 §6。03–06 分册待编写；本稿并不代表整体实施就绪。
 >
 > 本文是总体建设与分期评审文件，不是逐文件编码计划。规模、性能、人员和周期均为建议目标或规划假设，不是当前项目实测结果、采购报价或交付承诺。线上协议文档查询日期为 2026-10-09；滚动文档不等于当前仓库依赖版本已经支持其中所有能力。
 
@@ -904,17 +904,17 @@ D5验收前冻结：硬件/CPU架构/副本、DB与各池总连接数、身份/�
 | 服务端 | `server/src/index.ts:332-390`、`:2810-2860`：集中装配多个业务域 | 渐进改造 | TS/Hono/Bun保留治理域，新企业独立入口；Go只执行候选，不写治理数据 |
 | 认证 | `server/src/auth/index.ts:195-275`、`server/src/auth/scim.ts:58-120` | 保留流程、替换权威源按需 | 对接统一 IdP，稳定内部 principal 映射，保留撤销链路 |
 | 租户 | `server/src/db/schema/core.ts:261-282`：租户包；本次未见全面租户外键与 RLS | 新增核心隔离 | TenantContext、复合约束、缓存与对象隔离、跨租户测试 |
-| 组权限 | `docs/architecture.md:159-163`：allowed_groups 不等于已生效访问控制 | 改造 | 身份组同步＋资源关系授权，逐路由验收 |
+| 组权限 | `reference/architecture.md:159-163`：allowed_groups 不等于已生效访问控制 | 改造 | 身份组同步＋资源关系授权，逐路由验收 |
 | 插件 | `server/src/db/schema/plugins.ts:45-149`、`:561-629`：MCP 配置、技能与 grants | 保留治理、新增生命周期 | Manifest、不可变版本、依赖、审核、撤回、市场 |
-| 工具执行 | `server/src/app.ts:1631-1790`、`docs/architecture.md:39-73` | 保留模式、逐域迁移 | 统一参数解析、授权、审批、意图、回执和成本 |
-| 沙箱 | `docs/architecture.md:75-87`；`charts/openbot/README.md:400-427` | 改造与强化 | 隔离真实凭证主体、强制网络策略、资源与生命周期治理 |
+| 工具执行 | `server/src/app.ts:1631-1790`、`reference/architecture.md:39-73` | 保留模式、逐域迁移 | 统一参数解析、授权、审批、意图、回执和成本 |
+| 沙箱 | `reference/architecture.md:75-87`；`charts/openbot/README.md:400-427` | 改造与强化 | 隔离真实凭证主体、强制网络策略、资源与生命周期治理 |
 | 网络 | `charts/openbot/README.md:461-477`：策略需开启与 CNI enforcement | 必须改造 | 上线默认拒绝并验证实际连通性，不能只检查 YAML |
 | 模型 | `server/src/db/schema/admin.ts:133-160`：使用身份记录；远端可 unknown | 新增治理、保留可用基础 | 统一网关、预算、Token、版本、评测与外部黑盒风险分级 |
 | 知识库 | `server/src/tenant-package.ts:220-227`：knowledge 配置校验但当前无消费者 | 新增完整 RAG | 导入、解析、Chunk、ACL、索引、引用、更新删除 |
 | 专家 | `server/src/agents/routes.ts:481-585`：生命周期与复制 | 改造 | 版本化配置、评测、发布、灰度、回滚 |
 | 调度 | `server/src/db/schema/work.ts:16-99`：租约、attempt、幂等工作项 | 保留旧队列、迁移业务编排 | Temporal 负责新业务任务，按计划唯一调度器切换 |
 | AG-UI | `server/src/copilot.ts:66-77`、`:1101-1159`：远程接入与持久线程依赖 | 保留协议、替换持久化边界 | 新 Run 账本与恢复；旧线程适配读取与迁移 |
-| A2A | `docs/architecture.md:197-257`：自有 Bot handoff；本次未见标准 Card/任务端点 | 新增标准边界 | 独立适配、发现、委托、状态、产物与协议验收 |
+| A2A | `reference/architecture.md:197-257`：自有 Bot handoff；本次未见标准 Card/任务端点 | 新增标准边界 | 独立适配、发现、委托、状态、产物与协议验收 |
 | App | `mobile/app/conversation.tsx:49-73`：REST 历史＋发送后刷新 | 保留工程、补齐体验 | 流式、游标、离线队列、弱网、推送与设备撤销 |
 | 小程序 | 本次未见独立小程序工程证据 | 新增 | Taro 薄客户端＋共享协议与业务逻辑 |
 | HA | `charts/openbot/values.yaml:21-55`：副本等基础；`server/src/app.ts:439-443`：简单 health | 保留模板、改造验收 | 依赖 readiness、业务探针、数据 HA、按运行负载伸缩 |
@@ -1107,7 +1107,7 @@ MVP 总体验收应由产品、业务负责人、平台负责人、安全和运�
 
 - `/Users/wuyongjun/trea/OpenBot/README.md`：项目定位与当前能力。
 - `/Users/wuyongjun/trea/OpenBot/package.json`、`app/package.json`、`server/package.json`、`mobile/package.json`：现有技术栈与检查入口。
-- `/Users/wuyongjun/trea/OpenBot/docs/architecture.md`：协议、工具治理、Computer、身份、插件和队列边界。
-- `/Users/wuyongjun/trea/OpenBot/docs/deployment.md`：部署形态与运行依赖。
+- `/Users/wuyongjun/trea/OpenBot/reference/architecture.md`：协议、工具治理、Computer、身份、插件和队列边界。
+- `/Users/wuyongjun/trea/OpenBot/reference/deployment.md`：部署形态与运行依赖。
 - `/Users/wuyongjun/trea/OpenBot/charts/openbot/README.md`：Kubernetes 部署与隔离条件。
 - 第 24 章列出的源文件与行号：领域实现证据及检索范围内的缺口。

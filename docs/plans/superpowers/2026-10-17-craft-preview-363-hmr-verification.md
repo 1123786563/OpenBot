@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun（server/探针/TLS 前置）、Playwright + Chrome（真浏览器）、docker 共享栈（postgres/casdoor/agent-sandbox）。
 
-**Spec:** Issue #363（GitHub）；父 Spec `docs/specs/2026-10-15-craft-preview-origin-design.md`（AC5）；运维事实源 `docs/craft-preview-origin.md`。
+**Spec:** Issue #363（GitHub）；父 Spec `docs/specs/2026-10-15-craft-preview-origin-design.md`（AC5）；运维事实源 `reference/craft-preview-origin.md`。
 
 ## Global Constraints
 

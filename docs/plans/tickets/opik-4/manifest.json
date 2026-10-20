@@ -120,7 +120,7 @@
   "tickets": [
     {
       "id": "T01",
-      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t01-observability-module-seam.md",
+      "plan_file": "docs/plans/superpowers/2026-10-15-opik-t01-observability-module-seam.md",
       "group": "00",
       "group_slug": "prefactor-seams",
       "group_title": "Prefactor 与 seam",
@@ -153,7 +153,7 @@
     },
     {
       "id": "T02",
-      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t02-observability-ui-i18n-seam.md",
+      "plan_file": "docs/plans/superpowers/2026-10-15-opik-t02-observability-ui-i18n-seam.md",
       "group": "00",
       "group_slug": "prefactor-seams",
       "group_title": "Prefactor 与 seam",
@@ -187,7 +187,7 @@
     },
     {
       "id": "T03",
-      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t03-opik-optional-deployment.md",
+      "plan_file": "docs/plans/superpowers/2026-10-15-opik-t03-opik-optional-deployment.md",
       "group": "01",
       "group_slug": "opik-foundation",
       "group_title": "Opik 部署、契约与安全地基",
@@ -205,7 +205,7 @@
       "handoff": {
         "consumes": "",
         "produces": "`versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名",
-        "owned_scope": "docker/compose/opik.yml, docker/opik/versions.json, docker/opik/otel-collector-config.yaml, docker/opik/nginx_default_local.conf, docker/opik/clickhouse-config/additional_config.xml, docker/opik/clickhouse-config/users.d/distributed_insert_queue.xml, docker/opik/clickhouse-config/users.d/enable_time_type.xml, docs/opik.md, .env.example, docker-compose.yml, server/tests/opik-deployment.test.ts",
+        "owned_scope": "docker/compose/opik.yml, docker/opik/versions.json, docker/opik/otel-collector-config.yaml, docker/opik/nginx_default_local.conf, docker/opik/clickhouse-config/additional_config.xml, docker/opik/clickhouse-config/users.d/distributed_insert_queue.xml, docker/opik/clickhouse-config/users.d/enable_time_type.xml, reference/opik.md, .env.example, docker-compose.yml, server/tests/opik-deployment.test.ts",
         "verification": [
           "bun test server/tests/opik-deployment.test.ts",
           "docker compose --project-directory . -f docker/compose/opik.yml config --quiet",
@@ -261,7 +261,7 @@
     },
     {
       "id": "T05",
-      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t05-redaction-projection.md",
+      "plan_file": "docs/plans/superpowers/2026-10-15-opik-t05-redaction-projection.md",
       "group": "01",
       "group_slug": "opik-foundation",
       "group_title": "Opik 部署、契约与安全地基",
@@ -294,7 +294,7 @@
     },
     {
       "id": "T06",
-      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t06-trusted-scope-seam.md",
+      "plan_file": "docs/plans/superpowers/2026-10-15-opik-t06-trusted-scope-seam.md",
       "group": "01",
       "group_slug": "opik-foundation",
       "group_title": "Opik 部署、契约与安全地基",
@@ -1497,7 +1497,7 @@
       "handoff": {
         "consumes": "T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单 | T22(#28) 的交付契约：实验记录结构 + 幂等键约定 | T34(#40) 的交付契约：导出任务与下载鉴权契约",
         "produces": "清理状态机 + 删除证据格式",
-        "owned_scope": "server/src/ai-observability/lifecycle.ts, server/tests/opik-lifecycle.test.ts, server/tests/opik-lifecycle.integration.test.ts, docs/opik.md",
+        "owned_scope": "server/src/ai-observability/lifecycle.ts, server/tests/opik-lifecycle.test.ts, server/tests/opik-lifecycle.integration.test.ts, reference/opik.md",
         "verification": [
           "bun test server/tests/opik-lifecycle.test.ts",
           "TEST_DATABASE_URL=<isolated-pg> bun test server/tests/opik-lifecycle.integration.test.ts   # 缺 TEST_DATABASE_URL 会 skip，不得记为通过",

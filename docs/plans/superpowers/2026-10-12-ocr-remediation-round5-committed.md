@@ -10,7 +10,7 @@ Review partially complete: 57 finding(s); 3 of 46 selected item(s) failed.
 
 ─── server/drizzle.config.ts:3-3 ───
 [bug · medium] TEST_DATABASE_URL 被置于 DATABASE_URL 之前,而 db:migrate 脚本通过 `bun --env-file=../.env
-drizzle-kit migrate` 加载环境变量,且 docs/development.md 指导开发者为集成测试设置 TEST_DATABASE_URL。该变量一旦写入 .env 或残留于部署
+drizzle-kit migrate` 加载环境变量,且 reference/development.md 指导开发者为集成测试设置 TEST_DATABASE_URL。该变量一旦写入 .env 或残留于部署
 shell,生产/开发迁移命令会静默改道测试库,造成"以为已迁移实则未迁移"的高危错配。建议至少在配置内对两者同时存在时给出显式警告,并在部署/生产迁移文档中明确要求 unset
 TEST_DATABASE_URL。
 

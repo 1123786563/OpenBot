@@ -8,7 +8,7 @@
 
 **Tech Stack:** Hono（server 路由）、Drizzle/PostgreSQL（TEST_DATABASE_URL 专用库 `openbot_b5_227`）、Bun test、TanStack Query + React（app）、i18next（en / zh-CN）。
 
-**Spec:** docs/tickets/bifrost-5/issues/03.5-admin-manual-sync.md；父 Spec docs/specs/2026-10-14-bifrost-github-spec.md（AC10/AC19，US17）；docs/specs/2026-10-14-bifrost-integration-design.md（Q17）
+**Spec:** docs/plans/tickets/bifrost-5/issues/03.5-admin-manual-sync.md；父 Spec docs/specs/2026-10-14-bifrost-github-spec.md（AC10/AC19，US17）；docs/specs/2026-10-14-bifrost-integration-design.md（Q17）
 
 ## Global Constraints
 

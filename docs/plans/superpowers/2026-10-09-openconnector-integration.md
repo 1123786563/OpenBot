@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun monorepo, TypeScript, Hono, drizzle-orm + PostgreSQL, TanStack Router/Query (app), bun test, biome.
 
-**Spec:** `docs/superpowers/specs/2026-10-09-openconnector-integration-design.md`
+**Spec:** `docs/specs/superpowers/2026-10-09-openconnector-integration-design.md`
 
 ## Global Constraints
 
@@ -1223,8 +1223,8 @@ git commit -m "feat(app): OpenConnector directory page and broker-generic connec
 
 **Files:**
 - Modify: `docker-compose.yml` (new service + volume)
-- Create: `docs/plugins/open-connector.md`
-- Modify: `docs/plugins/composio.md` is NOT touched (it documents Composio only).
+- Create: `reference/plugins/open-connector.md`
+- Modify: `reference/plugins/composio.md` is NOT touched (it documents Composio only).
 
 **Interfaces:** None (deployment + docs).
 
@@ -1254,7 +1254,7 @@ Bind `127.0.0.1` so the broker is reachable from the host-run server (`http://lo
 
 - [ ] **Step 2: Write the docs page**
 
-`docs/plugins/open-connector.md` — follow `composio.md`'s section shape at a third of the length: what the broker is (self-hosted container; credentials stay in this deployment's volume, AES-256-GCM when `OOMOL_CONNECT_ENCRYPTION_KEY` is set); the setup table (deployer sets the three env vars + starts the service; administrator enables an app at `/admin/plugins/open-connector`; each person connects at `/settings/connected-accounts`); what phase 1 offers (key and no-auth apps; OAuth consent apps are not offered, and why — the client-registration non-goal, pointing at composio.md's section); key connections are accepted without being checked (no safety labels to probe with — the row says so); disconnect semantics (the key still works at the vendor — rotate it there); blast radius (one container inside this deployment, its volume and encryption key are the deployment's to protect — contrast with composio.md's cloud sentence).
+`reference/plugins/open-connector.md` — follow `composio.md`'s section shape at a third of the length: what the broker is (self-hosted container; credentials stay in this deployment's volume, AES-256-GCM when `OOMOL_CONNECT_ENCRYPTION_KEY` is set); the setup table (deployer sets the three env vars + starts the service; administrator enables an app at `/admin/plugins/open-connector`; each person connects at `/settings/connected-accounts`); what phase 1 offers (key and no-auth apps; OAuth consent apps are not offered, and why — the client-registration non-goal, pointing at composio.md's section); key connections are accepted without being checked (no safety labels to probe with — the row says so); disconnect semantics (the key still works at the vendor — rotate it there); blast radius (one container inside this deployment, its volume and encryption key are the deployment's to protect — contrast with composio.md's cloud sentence).
 
 - [ ] **Step 3: Full gate**
 
@@ -1264,7 +1264,7 @@ Expected: all clean. Then `grep -rn "provenance === \"composio\"" app/src server
 - [ ] **Step 4: Commit**
 
 ```bash
-git add docker-compose.yml docs/plugins/open-connector.md
+git add docker-compose.yml reference/plugins/open-connector.md
 git commit -m "feat(deploy): OpenConnector compose service and connector docs"
 ```
 

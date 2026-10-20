@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Hono, CopilotKit SSE, Mastra, Drizzle/PostgreSQL, Orca supervised Claude workers, OCR.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; DAG and acceptance map `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; recovery plan `docs/plans/2026-10-13-mastra-migration-recovery-execution.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; DAG and acceptance map `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; recovery plan `docs/plans/2026-10-13-mastra-migration-recovery-execution.md`.
 
 ## Global Constraints
 

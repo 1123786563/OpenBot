@@ -8,7 +8,7 @@
 
 **Tech Stack:** React + TanStack Router/Query + i18next（zh-CN/en 双语），bun:test + happy-dom + @testing-library/react。
 
-**Spec:** 票 `docs/tickets/bifrost-5/issues/02.7-personal-balance-ui.md`；父 Spec `docs/specs/2026-10-14-bifrost-github-spec.md`（AC01/AC19）；ADR 0002/0003/0004；CONTEXT.md。
+**Spec:** 票 `docs/plans/tickets/bifrost-5/issues/02.7-personal-balance-ui.md`；父 Spec `docs/specs/2026-10-14-bifrost-github-spec.md`（AC01/AC19）；ADR 0002/0003/0004；CONTEXT.md。
 
 ## Global Constraints
 

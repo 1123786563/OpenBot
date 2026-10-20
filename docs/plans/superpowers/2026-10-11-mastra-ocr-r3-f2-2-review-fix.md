@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Drizzle, PostgreSQL, node:crypto.
 
-**Spec:** `docs/superpowers/plans/2026-10-11-mastra-ocr-r3-fix2-outer-ocr.md` Task F2-2, acceptance item 5; independent review finding `F2-2-R1` in `.superpowers/sdd/2026-10-11-mastra-ocr-r3-fix2-outer-ocr/reports/task-f2-2-review.md`.
+**Spec:** `docs/plans/superpowers/2026-10-11-mastra-ocr-r3-fix2-outer-ocr.md` Task F2-2, acceptance item 5; independent review finding `F2-2-R1` in `.superpowers/sdd/2026-10-11-mastra-ocr-r3-fix2-outer-ocr/reports/task-f2-2-review.md`.
 
 ## Global Constraints
 

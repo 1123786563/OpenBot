@@ -8,7 +8,7 @@
 
 **Tech Stack:** Hono + zod + drizzle（服务端）、React 19 + TanStack Router/Query + recharts（新增）+ motion/react + tailwind v4（前端）、bun:test（两端测试）。
 
-**Spec:** `docs/superpowers/specs/2026-10-10-billing-pages-redesign-design.md`（本计划逐节实现该规格）
+**Spec:** `docs/specs/superpowers/2026-10-10-billing-pages-redesign-design.md`（本计划逐节实现该规格）
 
 ## Global Constraints
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun tests, PostgreSQL test database, Drizzle/Postgres, Biome.
 
-**Spec:** Parent [Issue #5 Bifrost Spec](../../specs/2026-10-14-bifrost-github-spec.md); Ticket #207 snapshot and reviewer finding in the sibling checkpoint `archive/execution-ledgers/checkpoints/207/review.md`; existing #207 plan in `docs/superpowers/plans/2026-10-15-issue5-bifrost-strict-credit-integration.md`.
+**Spec:** Parent [Issue #5 Bifrost Spec](../../specs/2026-10-14-bifrost-github-spec.md); Ticket #207 snapshot and reviewer finding in the sibling checkpoint `archive/execution-ledgers/checkpoints/207/review.md`; existing #207 plan in `docs/plans/superpowers/2026-10-15-issue5-bifrost-strict-credit-integration.md`.
 
 ## Global Constraints
 

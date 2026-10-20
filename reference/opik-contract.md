@@ -14,7 +14,7 @@ runner 校验失败退出非零、不写 manifest。parser 测试（`server/test
 
 ## 基础事实
 
-- API 基址是前端反代：`http://127.0.0.1:5174/api`（见 `docs/opik.md`）。后端 8080 不发布。
+- API 基址是前端反代：`http://127.0.0.1:5174/api`（见 `reference/opik.md`）。后端 8080 不发布。
 - 请求/响应体都是 **snake_case** JSON；查询串也是 snake_case（`project_id`、`trace_id`、`from_time`…）。
 - 自托管默认 workspace 无需 API key；OTLP 端点与 REST 一样走 `/api` 反代。
 - **Authorization 头格式未经验证（R4-18 登记）**：全部已实测栈均为无鉴权 loopback，
@@ -91,7 +91,7 @@ JSON 键，如 `input.value` → `input.value`）；`thread_id` → thread；`op
 ## 关联
 
 - Spec：`docs/specs/2026-10-14-opik-integration-design.md`（A1/A4/A11/A13）。
-- 计划：`docs/superpowers/plans/2026-10-15-opik-t04-verified-contract.md`。
+- 计划：`docs/plans/superpowers/2026-10-15-opik-t04-verified-contract.md`。
 - 证据：`docs/plans/evidence/2026-10-15-issue4/opik-contract/`（manifest 在
   `47-manifest.json`；`attempts/` 保留了迭代过程中的失败证据）。
 - `docker/opik/versions.json` 的 `compatibility.status` 仍为 `unverified`；本 manifest

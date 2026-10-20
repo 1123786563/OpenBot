@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Node.js crypto, Bun test.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md` §§3–4; original repair context `docs/superpowers/plans/2026-10-11-mastra-ocr-r4-binding-migration-fix.md` Task R4-2; finding `.../reports/task-r4-2-review.md` R4-2-REV-1.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md` §§3–4; original repair context `docs/plans/superpowers/2026-10-11-mastra-ocr-r4-binding-migration-fix.md` Task R4-2; finding `.../reports/task-r4-2-review.md` R4-2-REV-1.
 
 ## Global Constraints
 

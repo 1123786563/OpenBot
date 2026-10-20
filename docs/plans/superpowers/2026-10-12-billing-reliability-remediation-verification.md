@@ -1,7 +1,7 @@
 # Billing Reliability Remediation — Verification Report
 
 **Date:** 2026-10-12
-**Scope:** `docs/superpowers/plans/2026-10-12-billing-reliability-audit-remediation.md` (Tasks 1–3) plus revalidation of the six-plan suite (`2026-10-11-billing-reliability-00` … `05`).
+**Scope:** `docs/plans/superpowers/2026-10-12-billing-reliability-audit-remediation.md` (Tasks 1–3) plus revalidation of the six-plan suite (`2026-10-11-billing-reliability-00` … `05`).
 **Out of scope (unchanged decision):** plan 03 Task 2B (explicit overdraft alternative) — marked DO NOT EXECUTE and remains unimplemented by design.
 
 ## 1. Database evidence (Task 4 Step 1)
@@ -72,7 +72,7 @@ All active tasks were previously delivered on this branch (38 commits, BASE `241
 
 ## 5. Independent review (Task 4 Step 4)
 
-OCR rounds (reports under `docs/superpowers/plans/`):
+OCR rounds (reports under `docs/plans/superpowers/`):
 
 - **Round 1** `2026-10-12-ocr-remediation-round1-committed.md` — committed range `241e6879..ccaa38c6`, exit 0 but **44 of 46 review items failed on provider rate limiting (HTTP 429)** — treated as interrupted, not as approval.
 - **Round 2** `2026-10-12-ocr-remediation-round2-workspace.md` — workspace mode, exit 0, `copilot.ts` reviewed; `index.ts`/`reconcile.ts` rate-limited.

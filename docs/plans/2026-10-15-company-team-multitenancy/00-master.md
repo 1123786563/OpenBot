@@ -58,8 +58,8 @@
 | [05 客户端](05-clients.md) | T17–T22 | Web公共选择与工作流、Rust原生、桌面UI、Canonical三端 |
 | [06 收尾](06-release.md) | T23–T26 | 观测、历史迁移、全入口装配、完整验收 |
 | [共同Interface](interfaces.md) | 全部 | 一次定义的类型、行为与测试seam |
-| [DAG/Ledger](dag-ledger.md) | 全部 | 依赖、验收映射、恢复及检查点 |
-| `tasks.json` / `surface-inventory.json` | 全部 | 可机器校验的DAG及文件/静态入口候选 |
+| [DAG/Ledger](../../../.archive/runs/legacy-plans/2026-10-15-company-team-multitenancy/dag-ledger.md) | 全部 | 依赖、验收映射、恢复及检查点 |
+| `tasks.json` / `.archive/runs/legacy-plans/2026-10-15-company-team-multitenancy/surface-inventory.json` | 全部 | 可机器校验的DAG及文件/静态入口候选 |
 
 本工作涉及多个子系统，采用总计划+六份可独立验证分册；分册通过冻结Interface连接，不将全系统写成一个不可审查任务。分册通过仅代表其候选功能可用，所有分册及最终门禁通过才统一开放。
 
@@ -81,7 +81,7 @@ OpenBot BASE固定gitlink `apps/openmuse@46792335dfc260efa05f2185aa353093b12d993
 
 ## 全文件与入口覆盖
 
-`surface-inventory.json` 是基于冻结BASE生成的静态候选与文件归属，非已完成审计。T01取得真实注册路由（包括条件与动态路由）、Worker/脚本/agent入口、SQL表与外部存储明细；T25用真实装配与T26测试证明覆盖。未分类或业务正向不可用一律阻断release。
+`.archive/runs/legacy-plans/2026-10-15-company-team-multitenancy/surface-inventory.json` 是基于冻结BASE生成的静态候选与文件归属，非已完成审计。T01取得真实注册路由（包括条件与动态路由）、Worker/脚本/agent入口、SQL表与外部存储明细；T25用真实装配与T26测试证明覆盖。未分类或业务正向不可用一律阻断release。
 
 新增BASE合入的OpenMuse任务、个人文件/PDF、财务artifact、邮件/日历、reviewed-actions、通知、删除/保留/恢复分别归T13/T14；不能因早期设计表未单列而遗漏。
 

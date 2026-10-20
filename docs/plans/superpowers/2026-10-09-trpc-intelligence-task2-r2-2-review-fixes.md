@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun test, Drizzle ORM `pg-proxy`, `PgDialect`.
 
-**Spec:** `docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md` AC-05; parent repair plan Task R2-2; independent finding `reports/r2-2-review.md` R2-2-R01.
+**Spec:** `docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md` AC-05; parent repair plan Task R2-2; independent finding `reports/r2-2-review.md` R2-2-R01.
 
 ## Global Constraints
 

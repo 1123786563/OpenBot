@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Drizzle ORM/Kit, PostgreSQL 17, Bun integration tests.
 
-**Spec:** `docs/superpowers/specs/2026-10-10-mastra-intelligence-migration-design.md`; inherited tenancy contract `docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md`; source adjudication `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/reports/adjudication-schema.md`; R2 repair DAG `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/ocr-repair-dag.md`; read-only design evidence `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/reports/r2-schema-architecture-advice.md`; parent plan `docs/superpowers/plans/2026-10-11-mastra-ocr-repair.md` Task 3.
+**Spec:** `docs/specs/superpowers/2026-10-10-mastra-intelligence-migration-design.md`; inherited tenancy contract `docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md`; source adjudication `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/reports/adjudication-schema.md`; R2 repair DAG `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/ocr-repair-dag.md`; read-only design evidence `.superpowers/sdd/2026-10-10-mastra-intelligence-migration/reports/r2-schema-architecture-advice.md`; parent plan `docs/plans/superpowers/2026-10-11-mastra-ocr-repair.md` Task 3.
 
 ## Global Constraints
 

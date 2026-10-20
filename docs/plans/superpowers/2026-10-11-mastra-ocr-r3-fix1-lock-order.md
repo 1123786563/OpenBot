@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Drizzle ORM, PostgreSQL 17.
 
-**Spec:** `docs/superpowers/plans/2026-10-11-mastra-ocr-r3-run-governance.md` Task 1; accepted R3 review `R3-T1-REV-01` in `.superpowers/sdd/2026-10-11-mastra-ocr-r3-governance/reports/review.md`; user-approved R3 boundaries in `.superpowers/sdd/2026-10-11-mastra-ocr-r3-governance/progress.md`.
+**Spec:** `docs/plans/superpowers/2026-10-11-mastra-ocr-r3-run-governance.md` Task 1; accepted R3 review `R3-T1-REV-01` in `.superpowers/sdd/2026-10-11-mastra-ocr-r3-governance/reports/review.md`; user-approved R3 boundaries in `.superpowers/sdd/2026-10-11-mastra-ocr-r3-governance/progress.md`.
 
 ## Global Constraints
 

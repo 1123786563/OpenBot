@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Drizzle PostgreSQL, Hono; isolated PostgreSQL verification deferred until the user-provided test database is ready.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; parent Task 2 in `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; evidence `.superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/reports/expert-version-source-evidence.md` and `expert-version-prerequisite-architecture.md` in the same directory.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent Task 2 in `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; evidence `.superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/reports/expert-version-source-evidence.md` and `expert-version-prerequisite-architecture.md` in the same directory.
 
 ## Global Constraints
 

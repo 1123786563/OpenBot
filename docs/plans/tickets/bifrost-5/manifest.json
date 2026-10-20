@@ -10913,7 +10913,7 @@
    ],
    "verification": [
     "git rev-parse HEAD && git -C bifrost rev-parse HEAD",
-    "ocr review --audience agent --background 'Bifrost 严格积分计费交付范围' --from <BASE> --to <HEAD> --output docs/tickets/bifrost-5/ocr/<round>.md",
+    "ocr review --audience agent --background 'Bifrost 严格积分计费交付范围' --from <BASE> --to <HEAD> --output docs/plans/tickets/bifrost-5/ocr/<round>.md",
     "bun run test:ci"
    ],
    "owned_scope": [

@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Drizzle ORM, PostgreSQL 17.
 
-**Spec:** `docs/superpowers/plans/2026-10-11-mastra-ocr-r3-run-governance.md` Task 2 and review finding `R3-T2-REV-01` in `.superpowers/sdd/2026-10-11-mastra-ocr-r3-governance/reports/task-2-review.md`.
+**Spec:** `docs/plans/superpowers/2026-10-11-mastra-ocr-r3-run-governance.md` Task 2 and review finding `R3-T2-REV-01` in `.superpowers/sdd/2026-10-11-mastra-ocr-r3-governance/reports/task-2-review.md`.
 
 ## Global Constraints
 

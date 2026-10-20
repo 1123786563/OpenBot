@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun test, TypeScript, Drizzle ORM, PostgreSQL integration tests.
 
-**Spec:** Approved R2-1B repair plan `docs/superpowers/plans/2026-10-09-trpc-intelligence-task2-review-fixes-round2.md`; independent review finding `reports/task-2-r1b-review.md`; original tenancy contract `docs/superpowers/plans/2026-10-09-enterprise-ai-02-tenancy.md` (T1-B/T1-C).
+**Spec:** Approved R2-1B repair plan `docs/plans/superpowers/2026-10-09-trpc-intelligence-task2-review-fixes-round2.md`; independent review finding `reports/task-2-r1b-review.md`; original tenancy contract `docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md` (T1-B/T1-C).
 
 ## Global Constraints
 

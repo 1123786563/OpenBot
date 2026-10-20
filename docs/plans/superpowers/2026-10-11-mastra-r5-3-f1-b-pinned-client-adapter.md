@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, PostgreSQL, Postgres.js 3.4.9, Drizzle ORM 0.45.2.
 
-**Spec and sources:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; parent repair `docs/superpowers/plans/2026-10-11-mastra-r5-3-repair.md` Task R5-3-F1-B; prior R1 and same-PID review `docs/superpowers/plans/2026-10-11-mastra-r5-3-f1-b-connection-pinning.md`; High finding `.superpowers/sdd/2026-10-11-mastra-r5-3-repair/reports/task-r5-3-f1-b-review.md` R5-3-F1-B-R1; locked-version blocker `.superpowers/sdd/2026-10-11-mastra-r5-3-f1-b-connection-pinning/reports/implementation.md`; read-only compatibility review `.superpowers/sdd/2026-10-11-mastra-r5-3-f1-b-connection-pinning/reports/lock-architecture-review.md`.
+**Spec and sources:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent repair `docs/plans/superpowers/2026-10-11-mastra-r5-3-repair.md` Task R5-3-F1-B; prior R1 and same-PID review `docs/plans/superpowers/2026-10-11-mastra-r5-3-f1-b-connection-pinning.md`; High finding `.superpowers/sdd/2026-10-11-mastra-r5-3-repair/reports/task-r5-3-f1-b-review.md` R5-3-F1-B-R1; locked-version blocker `.superpowers/sdd/2026-10-11-mastra-r5-3-f1-b-connection-pinning/reports/implementation.md`; read-only compatibility review `.superpowers/sdd/2026-10-11-mastra-r5-3-f1-b-connection-pinning/reports/lock-architecture-review.md`.
 
 ## Global Constraints
 

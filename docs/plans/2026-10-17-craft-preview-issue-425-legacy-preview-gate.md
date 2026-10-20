@@ -8,7 +8,7 @@
 ## 0. 前置与工作树纪律
 
 1. **执行前必须把工作树推进到含实现的 main**。用户工作树当前在 `ce1d9ce1`，`server/src/craft/preview-origin.ts` 等文件不存在，本票无法执行。推进方式由用户决定（本地有未推送提交与暂存的 bifrost-5 改动）。
-2. 独立 worktree（如 `impl-425-legacy-gate`），周期性 commit、不 push（沿用 `docs/tickets/craft-preview-origin/manifest.json` 的全局约束）。
+2. 独立 worktree（如 `impl-425-legacy-gate`），周期性 commit、不 push（沿用 `docs/plans/tickets/craft-preview-origin/manifest.json` 的全局约束）。
 3. **不得与 #427 并行**：两票同写 `server/src/craft/webapp-proxy.ts`（#425 改 `proxyWebapp` 与 `resolveWebappHmrUpgrade`；#427 改 `resolvePreviewWebappHmrUpgrade` 的门读取），且都动 `CraftConfig`。按 `AGENTS.md`「可写文件不重叠才并行」，串行执行，建议本票先行（安全暴露收口优先）。
 
 ## 1. 为什么要四腿，不是两腿（拆解依据）
@@ -35,7 +35,7 @@
 | T5 | **HMR 腿**：`resolveWebappHmrUpgrade` 在关闭时拒绝，拒绝形状与该函数既有 401/503 一致，且发生在 `server.upgrade` 提交之前 | `webapp-proxy.ts:1175` 起 | RED：`craft-webapp-hmr.test.ts` 加 legacy 关闭用例（含「refusal 在 upgrade 之前」的可观察断言）；GREEN：通过 |
 | T6 | 换票腿**验证为 no-op**：确认关闭态下 legacy 仍走 409、`unknown` 仍走 503（`fix-ocr26 #8`），不被本开关改变 | 无写操作，产出为测试 + 票面记录 | RED：断言两条既有语义不变；GREEN：本就成立 → 记录为「经测试确认的 no-op」 |
 | T7 | 前端可见性：`legacyNotice` 文案补风险表述；新增关闭态展示（沿用 `closedReason` 的短路形状，见 :863-866 优先于 iframe 的既有分支） | `app/src/components/craft/output-panel/preview-tab.tsx`（:1172 展示处、:811-814 的代际判定 `const legacy`）、`app/src/locales/zh-CN/craft.json:33`、`app/src/locales/en/craft.json:33` | RED：`craft-preview-tab.test.tsx` 断言「关闭态不换票、不渲染 iframe、展示原因」；GREEN：通过 |
-| T8 | 文档：`docs/craft-preview-origin.md` 存量会话一节（:153 起）写入风险、开关变量名、默认值取舍理由、收敛办法（重建 app 会由模板拷贝写 `.webapp-generation` 标记 → 翻转为 current，判定见 `webapp-generation.ts:103`） | `docs/craft-preview-origin.md` | 人工清单：风险、开关、收敛三条齐备 |
+| T8 | 文档：`reference/craft-preview-origin.md` 存量会话一节（:153 起）写入风险、开关变量名、默认值取舍理由、收敛办法（重建 app 会由模板拷贝写 `.webapp-generation` 标记 → 翻转为 current，判定见 `webapp-generation.ts:103`） | `reference/craft-preview-origin.md` | 人工清单：风险、开关、收敛三条齐备 |
 | T9 | 回归门禁与证据 | — | 见第 3 节全绿；票面 AC 勾选以测试名为据**不算** |
 
 ## 3. 门禁（合入前必须全绿）
@@ -72,5 +72,5 @@ bunx biome lint <本票改动的文件>
 |---|---|
 | 旧会话行为明确（可用 / 不可用 + 原因），二者必有其一且被文档化 | T1–T5、T7、T8 |
 | 不出现「旧应用在新形态下静默 404」的中间态 | T3、T6（+ 既有 `unknown→current`、mount 交叉校验保持） |
-| 判定逻辑有测试并写明理由 | T1、T3、T4、T5（信号为显式标记文件，理由见 `docs/craft-preview-origin.md:158-187`） |
+| 判定逻辑有测试并写明理由 | T1、T3、T4、T5（信号为显式标记文件，理由见 `reference/craft-preview-origin.md:158-187`） |
 | 用户可见提示与文档一致 | T7 ↔ T8 交叉核对 |

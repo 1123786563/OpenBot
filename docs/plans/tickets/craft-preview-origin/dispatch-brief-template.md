@@ -17,7 +17,7 @@
 先按顺序读：
 1. gh issue view {ISSUE} --repo 1123786563/OpenBot
 2. {SPEC_REFS}
-3. 仓库根 AGENTS.md 与 docs/agents/issue-tracker.md
+3. 仓库根 AGENTS.md 与 .agents/rules/issue-tracker.md
 {CONSUMES}
 
 任务：按票面实现。票面末尾若有「来自 #NNN 审阅的约束」，逐条遵守。

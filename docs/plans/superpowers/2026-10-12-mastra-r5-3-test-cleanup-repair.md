@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun test, TypeScript, Postgres.js 3.4.9.
 
-**Spec:** `docs/superpowers/plans/2026-10-12-mastra-r5-3-adapter-review-repair.md`; independent task finding `.superpowers/sdd/2026-10-11-mastra-r5-3-f1-b-pinned-client-adapter-repair/reports/task-review.md`.
+**Spec:** `docs/plans/superpowers/2026-10-12-mastra-r5-3-adapter-review-repair.md`; independent task finding `.superpowers/sdd/2026-10-11-mastra-r5-3-f1-b-pinned-client-adapter-repair/reports/task-review.md`.
 
 ## Global Constraints
 

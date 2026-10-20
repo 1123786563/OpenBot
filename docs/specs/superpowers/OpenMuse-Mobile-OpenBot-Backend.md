@@ -587,4 +587,4 @@ Better Auth 登录 OpenBot 用户
 - [OpenBot Computer Routes](https://github.com/CopilotKit/OpenBot/blob/main/server/src/computer/routes.ts)
 - [OpenBot Frontend Computer Tools](https://github.com/CopilotKit/OpenBot/blob/main/app/src/lib/copilot/computer-tools.tsx)
 - [OpenBot Frontend Approval Tools](https://github.com/CopilotKit/OpenBot/blob/main/app/src/lib/copilot/approval-tools.tsx)
-- [OpenBot 服务端架构文档](https://github.com/CopilotKit/OpenBot/blob/main/docs/architecture.md)
+- [OpenBot 服务端架构文档](https://github.com/CopilotKit/OpenBot/blob/main/reference/architecture.md)

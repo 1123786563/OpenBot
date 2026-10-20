@@ -6,12 +6,12 @@
 
 ## 评审入口
 
-- [详细方案](../../specs/2026-10-19-mastra-agent-execution-migration-design.md)
-- [已确认架构决定](../../adr/0010-mastra-execution-openbot-governance.md)
+- [详细方案](../../../specs/2026-10-19-mastra-agent-execution-migration-design.md)
+- [已确认架构决定](../../../adr/0010-mastra-execution-openbot-governance.md)
 - [已发布父 Issue 正文快照](parent-issue.md)
 - [可恢复拆票清单、依赖、验收与正文哈希](tickets.json)
-- [既有 Issue 的读取快照与依赖核对](sources.json)
-- [已有文件级实施计划](../../plans/2026-10-19-mastra-agent-execution-migration.md)
+- 既有 Issue 的读取快照与依赖核对已归档至 `.archive/runs/legacy-plans/tickets/mastra-agent-execution/sources.json`。
+- [已有文件级实施计划](../../../plans/2026-10-19-mastra-agent-execution-migration.md)
 
 Issue 按业务可演示行为拆分，前后端专业分工放在票内，不将 15 个技术 Task 原样改名为 Issue。本轮共有 16 张子票；ME01 是必要的兼容性验证切片，其余是交互/后台/迁移完整路径。默认串行实施；DAG 分叉只表达真实依赖，不授权并行编辑共享模块。
 
@@ -82,10 +82,10 @@ flowchart TD
 - 正式父 Spec：[#472](https://github.com/1123786563/OpenBot/issues/472)；16 张子 Issue 全部 open，标签为 enhancement 和 ready-for-agent。
 - GitHub 原生 contains 关系：16 条；原生 blocked_by 关系：21 条，包含 ME07 → 既有 #395。
 - 已按分页回读父/子正文、标题、标签、状态、正式子 Issue 集合和每票阻塞集合，核对本地正文 SHA256；没有修改既有 #6/#376 正文或状态。
-- [发布核验报告](publication-verification.json) 保存回读时间、正文摘要及全部关系；[清单](tickets.json) 保存真实编号/URL、原生依赖和批准记录。
+- 发布核验报告已归档至 `.archive/runs/legacy-plans/tickets/mastra-agent-execution/publication-verification.json`；[清单](tickets.json) 保存真实编号/URL、原生依赖和批准记录。
 - 方案、ADR、拆分与发布已确认；本次未启动代码实施，未提交、推送或执行生产迁移/部署。ready-for-agent 不代表所有前置已完成，目前只有 ME01 无实施依赖。
 - 发布脚本逐条保存 receipt，网络失败可恢复；不要使用旧草案重新生成覆盖正式正文。恢复发布只核对本批，不更改已有父 Spec 正文和状态。
 
 ## 静态检查
 
-在此目录执行 `python3 build.py`：草案态重建本地正文，已批准/发布后只校验现有正文而不覆盖；校验唯一 ID、存在的依赖、无自环/环、拓扑顺序、每票至少五项验收、专业角色、外部依赖白名单和 A01–A20 完整覆盖；不调用 GitHub、不修改生产代码。这是文档校验，不是产品测试。
+历史文档校验工具已归档；它用于草案态重建本地正文，已批准/发布后只校验现有正文而不覆盖；校验唯一 ID、存在的依赖、无自环/环、拓扑顺序、每票至少五项验收、专业角色、外部依赖白名单和 A01–A20 完整覆盖；不调用 GitHub、不修改生产代码。这是文档校验，不是产品测试。

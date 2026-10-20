@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - 覆盖父 Spec 验收：**A1**（关闭时现有执行与 tracing 仍成立；启用时真实实例能收到有效安全记录——本 Ticket 只交付“能启动真实实例且版本锁定”，实际收发验证在 #10 / T04）。
-- 只允许改：`docker/compose/opik.yml`、`docker/opik/versions.json`、`docs/opik.md`、`.env.example`、`docker-compose.yml`（仅头部注释一行）、`server/tests/opik-deployment.test.ts`。**共 6 个文件**（manifest 原记 4 个，多出的 2 个是发现的可发现性注释与静态约束测试，已按 O1 记录）。
+- 只允许改：`docker/compose/opik.yml`、`docker/opik/versions.json`、`reference/opik.md`、`.env.example`、`docker-compose.yml`（仅头部注释一行）、`server/tests/opik-deployment.test.ts`。**共 6 个文件**（manifest 原记 4 个，多出的 2 个是发现的可发现性注释与静态约束测试，已按 O1 记录）。
 - **禁止任何浮动 tag**。上游 compose 的默认值是 `${OPIK_VERSION:-latest}`、`clickhouse-init: alpine:latest`、`jaegertracing/all-in-one:latest`，全部必须显式钉死；`versions.json` 里出现 `latest` 即视为未完成。
 - **端口冲突必须解决**：上游 `otel-collector` 发布 `4317/4318`，而本仓库既有可观测栈已经占用它们——`docker/compose/observability.yml` 里 Tempo 发布 `127.0.0.1:${TEMPO_OTLP_HTTP_PORT:-4318}:4318` 与 `${TEMPO_OTLP_GRPC_PORT:-4317}:4317`。因此 Opik 侧的 OTLP 宿主端口必须重映射到不冲突的默认值（本计划用 `5418`/`5417`），且仍然只绑 loopback。
 - 所有发布端口只绑 `127.0.0.1` 与 `[::1]`，不得出现 `0.0.0.0` 或裸 `HOST:CONTAINER`。
@@ -28,7 +28,7 @@
 | --- | --- |
 | `docker/compose/opik.yml` | 可选栈：裁剪后的上游服务集，版本钉死，端口 loopback 且避开 4317/4318 |
 | `docker/opik/versions.json` | 唯一版本事实源：每个镜像的 tag 与 digest、Opik SDK 精确版本、对应上游 commit、验证时间 |
-| `docs/opik.md` | 启动/停止/健康检查/故障排查/保留策略指针；不给凭据 |
+| `reference/opik.md` | 启动/停止/健康检查/故障排查/保留策略指针；不给凭据 |
 | `.env.example` | 注释形态的 Opik 变量（端口、版本、开关、API 地址） |
 | `docker-compose.yml` | 头部注释追加一行，把 `opik.yml` 列入可选栈 |
 | `server/tests/opik-deployment.test.ts` | 静态约束测试：无浮动 tag、无非 loopback 端口、无 4317/4318 冲突、versions.json 与 compose 一致 |
@@ -275,7 +275,7 @@ Expected: FAIL — 新 describe 块读取不到 compose 内容或断言失败
 ```yaml
 # Opik: self-hosted AI observability and evaluation, optional. Start the main stack first —
 # OpenBot reaches it over loopback and the integration stays off until OPIK_* is configured,
-# so a missing Opik never changes Agent execution. docs/opik.md is the guide; the pinned
+# so a missing Opik never changes Agent execution. reference/opik.md is the guide; the pinned
 # image tags and digests live in docker/opik/versions.json and must not float.
 #
 # OTLP host ports are 5418/5417, NOT the upstream 4318/4317: the LGTM stack in
@@ -433,7 +433,7 @@ git commit -m "feat(opik): optional self-hosted stack with pinned digests and lo
 
 **Files:**
 - Modify: `.env.example`
-- Create: `docs/opik.md`
+- Create: `reference/opik.md`
 - Modify: `docker-compose.yml`（仅头部注释）
 - Test: `server/tests/opik-deployment.test.ts`（追加）
 
@@ -450,7 +450,7 @@ git commit -m "feat(opik): optional self-hosted stack with pinned digests and lo
 import { readFileSync as read } from "node:fs";
 
 const envExample = read(join(repoRoot, ".env.example"), "utf8");
-const opikDocs = read(join(repoRoot, "docs/opik.md"), "utf8");
+const opikDocs = read(join(repoRoot, "reference/opik.md"), "utf8");
 const rootCompose = read(join(repoRoot, "docker-compose.yml"), "utf8");
 
 /** The exact variable names T09 (#15) will read from config.ts. */
@@ -483,7 +483,7 @@ describe("configuration surface", () => {
     }
   });
 
-  test("docs/opik.md gives the run command, the health check and the port rationale", () => {
+  test("reference/opik.md gives the run command, the health check and the port rationale", () => {
     expect(opikDocs).toContain("docker compose --project-directory . -f docker/compose/opik.yml up -d");
     expect(opikDocs).toContain("health-check");
     expect(opikDocs).toContain("4318");
@@ -500,7 +500,7 @@ describe("configuration surface", () => {
 - [ ] **Step 2: 运行测试确认失败**
 
 Run: `bun test server/tests/opik-deployment.test.ts`
-Expected: FAIL — `docs/opik.md` 不存在
+Expected: FAIL — `reference/opik.md` 不存在
 
 - [ ] **Step 3: 在 `.env.example` 的可观测性段落之后追加**
 
@@ -514,7 +514,7 @@ Expected: FAIL — `docs/opik.md` 不存在
 # The stack lives in docker/compose/opik.yml and the pinned image tags and digests live in
 # docker/opik/versions.json. Start it from the repository root:
 #   docker compose --project-directory . -f docker/compose/opik.yml up -d
-# Guide: docs/opik.md.
+# Guide: reference/opik.md.
 #
 # OTLP is published on 5418/5417, not the upstream 4318/4317, because the LGTM stack in
 # docker/compose/observability.yml already owns those on loopback for Tempo.
@@ -535,7 +535,7 @@ Expected: FAIL — `docs/opik.md` 不存在
 #OPIK_CLICKHOUSE_PASSWORD=change-me
 ```
 
-- [ ] **Step 4: 写 `docs/opik.md`**
+- [ ] **Step 4: 写 `reference/opik.md`**
 
 必须包含以下小节（内容据实填写，不给凭据）：
 
@@ -547,7 +547,7 @@ OpenTelemetry/Tempo/Grafana 追踪行为完全不变。
 
 ## 版本
 
-版本事实源是 [`docker/opik/versions.json`](../docker/opik/versions.json)：每个镜像的 tag 与
+版本事实源是 [`docker/opik/versions.json`](../../../docker/opik/versions.json)：每个镜像的 tag 与
 digest、Opik SDK 精确版本、对应上游 commit 与验证时间。该文件里不允许出现 `latest` 或任何浮动
 tag。`compatibility.status` 只有 #10（契约冒烟）拿到真实 ingest / query / evaluation / id 映射 /
 删除证据后才能是 `verified`；在那之前它是 `unverified`，任何页面都不得声称已验证兼容。
@@ -613,7 +613,7 @@ Opik 控制台与私有 API 的保护属于 #38（T32）。在它完成之前，
 把第 1–2 行的可选栈清单（`kb.yml, services.yml, …`）补上 `opik.yml`，并在合适位置加一行说明：
 
 ```yaml
-# opik.yml — optional self-hosted AI observability and evaluation; see docs/opik.md. Its OTLP
+# opik.yml — optional self-hosted AI observability and evaluation; see reference/opik.md. Its OTLP
 # host ports are 5418/5417 because observability.yml already owns 4318/4317 for Tempo.
 ```
 
@@ -637,7 +637,7 @@ Expected: 所有服务 healthy；health-check 返回 200；`down` 干净退出�
 - [ ] **Step 8: 提交**
 
 ```bash
-git add .env.example docs/opik.md docker-compose.yml server/tests/opik-deployment.test.ts
+git add .env.example reference/opik.md docker-compose.yml server/tests/opik-deployment.test.ts
 git commit -m "docs(opik): optional stack guide, off-by-default config, and the 5418/5417 port rationale"
 ```
 
@@ -648,7 +648,7 @@ git commit -m "docs(opik): optional stack guide, off-by-default config, and the 
 **Spec coverage（Ticket #9 的 4 条验收标准）**
 1. 「可选部署能启动真实自托管实例；未部署或未启用时现有 Agent 执行与 tracing 行为完全不变」→ Task 2 的 compose + Task 3 Step 7 的真实启动；off-by-default 由 “every OPIK_ line in .env.example is commented out” 测试锁定。
 2. 「服务镜像与 SDK 版本锁定为实际验证过的具体值（tag/digest），不使用浮动标签」→ Task 1 的 versions.json + “no image is pinned to a floating tag” / “no floating image tag anywhere in the stack” / “default OPIK_VERSION matches versions.json” 三条测试。
-3. 「运维文档给出启动、关闭、健康检查与故障排查步骤，且不泄露凭据」→ Task 3 Step 4 的 docs/opik.md + “no secret value is written” 测试。
+3. 「运维文档给出启动、关闭、健康检查与故障排查步骤，且不泄露凭据」→ Task 3 Step 4 的 reference/opik.md + “no secret value is written” 测试。
 4. 「相关配置进入环境变量样例，缺省时集成保持关闭」→ Task 3 Step 3 + “every contract variable is documented” 测试。
 
 **Placeholder scan**：`versions.json` 与 compose 里的 `<tag>` / `<digest>` / `<64 hex>` 是**必须在执行时填入真实值的槽位**，每个都紧跟给出取得该值的确切命令（Task 1 Step 1/2），不是 TBD。docs 模板中的 `​```bash` 用了零宽字符转义，写入文件时必须还原为普通三反引号。
@@ -659,9 +659,9 @@ git commit -m "docs(opik): optional stack guide, off-by-default config, and the 
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-10-15-opik-t03-opik-optional-deployment.md`. Two execution options:
+Plan complete and saved to `docs/plans/superpowers/2026-10-15-opik-t03-opik-optional-deployment.md`. Two execution options:
 
 1. **Subagent-Driven (recommended)** — 每个 Task 派发新的 subagent，Task 之间 review。
 2. **Inline Execution** — 本会话内按 executing-plans 批量执行并设检查点。
 
-完成后把提交哈希、`versions.json` 的实际 tag/digest 与启动验证输出填入 `docs/tickets/opik-4/manifest.json` 的 `T03.handoff.checkpoint`，并在 GitHub #9 勾选验收标准。缺 Docker 环境时按 Task 3 Step 7 记录阻塞，不得记为通过。
+完成后把提交哈希、`versions.json` 的实际 tag/digest 与启动验证输出填入 `docs/plans/tickets/opik-4/manifest.json` 的 `T03.handoff.checkpoint`，并在 GitHub #9 勾选验收标准。缺 Docker 环境时按 Task 3 Step 7 记录阻塞，不得记为通过。

@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, PostgreSQL 17, Drizzle ORM migrations.
 
-**Spec:** Original R2 plan `docs/superpowers/plans/2026-10-11-mastra-ocr-r2-schema.md`; review `.superpowers/sdd/2026-10-11-mastra-ocr-r2-schema/reports/review.md`; frozen R2-T1-CP1 package `.superpowers/sdd/2026-10-11-mastra-ocr-r2-schema/reports/task-1.patch`.
+**Spec:** Original R2 plan `docs/plans/superpowers/2026-10-11-mastra-ocr-r2-schema.md`; review `.superpowers/sdd/2026-10-11-mastra-ocr-r2-schema/reports/review.md`; frozen R2-T1-CP1 package `.superpowers/sdd/2026-10-11-mastra-ocr-r2-schema/reports/task-1.patch`.
 
 ## Global Constraints
 

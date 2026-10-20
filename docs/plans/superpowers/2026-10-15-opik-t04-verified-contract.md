@@ -26,7 +26,7 @@
 
 ## File ownership and interfaces
 
-Create only `server/scripts/opik-contract.ts`, `server/tests/opik-contract.test.ts`, `server/tests/support/opik-contract-fixtures.ts`, `docs/opik-contract.md`, and `docs/plans/evidence/2026-10-15-issue4/opik-contract/` evidence files. Consume T03's `docker/compose/opik.yml`, `docker/opik/versions.json`, and T05's approved projection API; do not modify them. Produce `VerifiedOpikContract` with exact service tag/digest, SDK semver, upstream revision, request/response evidence, OTLP parent/child mapping, dataset/experiment behavior, deletion proof, content limit and timestamp. Any interface change needs a coordinator decision before code changes.
+Create only `server/scripts/opik-contract.ts`, `server/tests/opik-contract.test.ts`, `server/tests/support/opik-contract-fixtures.ts`, `reference/opik-contract.md`, and `docs/plans/evidence/2026-10-15-issue4/opik-contract/` evidence files. Consume T03's `docker/compose/opik.yml`, `docker/opik/versions.json`, and T05's approved projection API; do not modify them. Produce `VerifiedOpikContract` with exact service tag/digest, SDK semver, upstream revision, request/response evidence, OTLP parent/child mapping, dataset/experiment behavior, deletion proof, content limit and timestamp. Any interface change needs a coordinator decision before code changes.
 
 ## Steps
 

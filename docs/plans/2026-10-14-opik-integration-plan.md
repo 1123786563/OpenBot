@@ -45,7 +45,7 @@
 - 事实源：批准 Spec → `docs/adr/0001-conservative-input-bound.md` → `CONTEXT.md` → Git → 本计划/DAG/Ledger。最新主工作区领域快照保存在 `evidence/2026-10-14-opik/source-context.md`；Bifrost 在设计中的快照仅作兼容参考，不是批准 Spec。
 - `AGENTS.md` 引用的 `docs/agents/domain.md`、`docs/agents/issue-tracker.md` 在 BASE 不存在；使用根 `CONTEXT.md` 和用户提供的规则。没有目标 Issue，`source_issues=[]`，不声称读取过 Issue 树，也不自动创建 Issue。
 - 基线：`bun install --frozen-lockfile` 成功；6 个相关文件 42 pass / 0 fail，日志在 `evidence/2026-10-14-opik/baseline-tests.log`。这是针对性基线，不等于全仓测试通过。
-- 机器可恢复 DAG：`docs/plans/2026-10-14-opik-integration-dag.json`；执行账本：`docs/plans/2026-10-14-opik-integration-ledger.md`。
+- 机器可恢复 DAG：`docs/plans/2026-10-14-opik-integration-dag.json`；执行账本：`.archive/runs/legacy-plans/ledgers/2026-10-14-opik-integration-ledger.md`。
 - 每个 Task 的本节、Global Constraints、Interfaces 和验收组成 Task Brief。派发时只提供该 Brief、必要事实源、前置接口、文件所有权和报告路径；`fork_turns=none`，实现者知道自己不是唯一工作者，不得撤销他人改动。
 - 共享文件只有当前 Task 可以写。前置任务 verified 且已审查的检查点在同一工作区后，主控才能放行下游。就绪节点仍默认串行。
 - 每 Task 前后记录 HEAD、staged/unstaged diff、任务新增文件完整内容及哈希，输出增量 Review Package；报告与验证绑定检查点哈希。空 BASE..HEAD 不能代替未提交审查。
@@ -94,7 +94,7 @@ BASE 最新 journal idx=86。若执行前分支集成了新迁移，主控先更
 
 **Depends on:** 无。**Role:** backend_implementer。**Validation:** backend_validator + reviewer。**Acceptance:** A1/A4/A10/A11/A13 的上游前置证据。
 
-**Files:** Create `docker/compose/opik.yml`, `docker/opik/collector.yaml`, `docker/opik/versions.json`, `server/scripts/opik-contract.ts`, `server/tests/opik-contract.test.ts`, `docs/opik.md`; Modify `.env.example`, `server/package.json`, `bun.lock`。不复制完整 Opik 源码，不修改默认 compose。
+**Files:** Create `docker/compose/opik.yml`, `docker/opik/collector.yaml`, `docker/opik/versions.json`, `server/scripts/opik-contract.ts`, `server/tests/opik-contract.test.ts`, `reference/opik.md`; Modify `.env.example`, `server/package.json`, `bun.lock`。不复制完整 Opik 源码，不修改默认 compose。
 
 **Interfaces:** Consumes 当前 OTLP contract；Produces `VerifiedOpikContract` manifest：服务 tag/digest、SDK 精确版本、对应上游提交、实际 OTLP/查询/项目/数据集/实验/删除请求与响应 fixture、ID 映射、数据删除证据、支持的正文上限。所有后续 HTTP 序列化只由该 manifest 驱动。
 
@@ -102,7 +102,7 @@ BASE 最新 journal idx=86。若执行前分支集成了新迁移，主控先更
 - [ ] Step 2: Run `bun test server/tests/opik-contract.test.ts`；Expected RED：contract 解析/安全请求未实现。
 - [ ] Step 3: 选择执行时最新非预发布、官方声明匹配且通过实测的服务/SDK版本，精确锁定至 `versions.json` 与 lockfile。脚本 `runOpikContract(target: URL, evidenceDir: string): Promise<VerifiedOpikContract>` 用合成数据验证创建、OTLP写入、父子关系、thread关联、查询、版本化样本、实验写入及全部删除；失败退出非零，不以 skip 算通过。
 - [ ] Step 4: 按选定上游 tag 的 compose/Helm 文件装配实际依赖；本地 UI loopback 端口默认 5174，Collector默认4319，可配置。内部依赖不对外发布；使用独立项目/volume。Collector入口要求内部生产者凭证，未认证请求在真实冒烟中必须401/403；header使用部署配置且不进入报告。Collector 路由 Agent span及最小父上下文，不把任意 HTTP正文/附件镜像到Opik；仅受支持、受认证的内部生产者可送入。
-- [ ] Step 5: Run `bun test server/tests/opik-contract.test.ts`、`docker compose --project-directory . -f docker/compose/opik.yml config --quiet`，再按 `docs/opik.md` 启动专属合成实例并运行 `bun server/scripts/opik-contract.ts --target http://127.0.0.1:5174/api --evidence docs/plans/evidence/2026-10-14-opik/task-01/contract`；Expected GREEN：所有能力逐项 pass、版本清单非浮动、实际 canary 无泄露、删除后记录查不到。
+- [ ] Step 5: Run `bun test server/tests/opik-contract.test.ts`、`docker compose --project-directory . -f docker/compose/opik.yml config --quiet`，再按 `reference/opik.md` 启动专属合成实例并运行 `bun server/scripts/opik-contract.ts --target http://127.0.0.1:5174/api --evidence docs/plans/evidence/2026-10-14-opik/task-01/contract`；Expected GREEN：所有能力逐项 pass、版本清单非浮动、实际 canary 无泄露、删除后记录查不到。
 - [ ] Step 6: 保存检查点、测试与真实契约证据并 Review。未验证删除、ID映射、受治理Judge或OTLP兼容时不放行；修adapter或报告阻塞，不能据此削掉批准需求。
 
 ## Task 2: 可信范围、权威归属与可恢复存储
@@ -248,7 +248,7 @@ BASE 最新 journal idx=86。若执行前分支集成了新迁移，主控先更
 
 **Depends on:** 2,6,8,9。**Role:** backend_implementer。**Validation:** backend_validator + reviewer。**Acceptance:** A4/A5/A6/A10/A11/A12。
 
-**Files:** Create `server/src/ai-observability/{admin-routes,lifecycle,exports,console-auth}.ts`, `server/tests/opik-lifecycle.test.ts`, `server/tests/opik-admin-routes.test.ts`, `server/tests/opik-lifecycle.integration.test.ts`, `server/scripts/opik-acceptance.ts`; Modify `server/src/index.ts`, `server/src/agents/routes.ts`（删除/移交通知）、`server/src/ai-observability/{routes,bindings,opik-http}.ts`, `docker/compose/opik.yml`, `docs/opik.md`。不修改现有Bot删除权限与企业资源生命周期。
+**Files:** Create `server/src/ai-observability/{admin-routes,lifecycle,exports,console-auth}.ts`, `server/tests/opik-lifecycle.test.ts`, `server/tests/opik-admin-routes.test.ts`, `server/tests/opik-lifecycle.integration.test.ts`, `server/scripts/opik-acceptance.ts`; Modify `server/src/index.ts`, `server/src/agents/routes.ts`（删除/移交通知）、`server/src/ai-observability/{routes,bindings,opik-http}.ts`, `docker/compose/opik.yml`, `reference/opik.md`。不修改现有Bot删除权限与企业资源生命周期。
 
 **Interfaces:** Produces `createObservationLifecycle(deps).scheduleDelete(scopeRef, resourceRef): Promise<DeletionTask>`、`sweep(now:Date):Promise<SweepResult>`；`createExportService(deps).request(actor,botId,input):Promise<ExportJob>`、`download(actor,exportId):Promise<Response>`；`AdminSummary`与`DeletionTask`在contracts定义；ObservationHealth复用Task3定义，不重新定义。范围受限健康数据只汇总其scope，平台全实例数据需要独立admin资格。API `/api/admin/ai-observability/summary`→`{summary}`、`/health`→`{health}`；创建者POST `.../exports`→`{export}`，GET `.../exports/:exportId`受控下载；POST `.../datasets/:id/delete`→`{deletion}`。
 
@@ -258,7 +258,7 @@ BASE 最新 journal idx=86。若执行前分支集成了新迁移，主控先更
 - [ ] Step 4: kind=`ai.export`只读取已授权的安全DTO，JSON导出流无原始URL、可执行HTML和凭证；持久文件按scope安全定位、每次下载重授权、不会生成绕过API的长期公开链接。删除/过期/撤权取消排队任务并清缓存；评测集版本物理删除前先禁止新实验。
 - [ ] Step 5: 管理汇总先限定scope，再计算Bot/状态/有效样本/token缺失计数。平台运维管理员控制台入口要在反向代理/网络层保护整个Opik私有API；`authorizeConsoleAccess(actor, authorization): boolean`只允许整实例平台资格，反向代理使用现有身份校验或平台私网身份，不新增Opik账号表。部署验证直接访问未保护backend不可达，创建者/受限管理员访问任意console私有API被拒绝；浏览器角色不是唯一门控。部署手册列明实际volume/object存储、备份保留上限、完整清理步骤及证据，不能把备份策略空缺标通过。
 - [ ] Step 6: Run新单测和独立库集成，再Task1真实实例验证trace、span、dataset snapshot、experiment删除及跨scope不受影响。Expected GREEN：权限即时失效、上游实际查不到、故障重试不跨project、不误报完成、受限admin无法直达私有API。
-- [ ] Step 7: 实现 `runOpikAcceptance(targets: AcceptanceTargets, evidenceDir: string): Promise<AcceptanceReport>`，包含A1..A13合成fixture与机器可读证据；先测试缺server/Opik/独立DB配置退出非零。真实检查只调用专属实例、与Task1共享contract harness，不默认运行应用.env。更新真实contract manifest的删除证据；完整Review并把可操作部署命令、保留行为和剩余平台限制保存在docs/opik.md。
+- [ ] Step 7: 实现 `runOpikAcceptance(targets: AcceptanceTargets, evidenceDir: string): Promise<AcceptanceReport>`，包含A1..A13合成fixture与机器可读证据；先测试缺server/Opik/独立DB配置退出非零。真实检查只调用专属实例、与Task1共享contract harness，不默认运行应用.env。更新真实contract manifest的删除证据；完整Review并把可操作部署命令、保留行为和剩余平台限制保存在reference/opik.md。
 
 ## Task 12: 管理员汇总、健康与创建者导出状态
 

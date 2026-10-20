@@ -8,7 +8,7 @@
 
 **Tech Stack:** PostgreSQL, Bun, TypeScript, Node.js `crypto`, Drizzle ORM.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; final OCR source `.superpowers/sdd/2026-10-11-mastra-ocr-r3-fix3-resolve-clock/reports/outer-ocr-workspace-final-2026-10-11.md` findings 1 and 14.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; final OCR source `.superpowers/sdd/2026-10-11-mastra-ocr-r3-fix3-resolve-clock/reports/outer-ocr-workspace-final-2026-10-11.md` findings 1 and 14.
 
 ## Global Constraints
 

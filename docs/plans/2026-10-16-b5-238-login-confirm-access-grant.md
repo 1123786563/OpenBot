@@ -6,7 +6,7 @@
 
 **Tech Stack:** Bun + Hono + Drizzle（PostgreSQL 专用测试库）、TanStack Router/Query 前端确认页。
 
-**Spec:** docs/tickets/bifrost-5/issues/04.5-login-confirm-create-access-grant.md（票正文）+ docs/specs/2026-10-14-bifrost-integration-design.md（Q3/Q15/Q22）+ ADR 0002。
+**Spec:** docs/plans/tickets/bifrost-5/issues/04.5-login-confirm-create-access-grant.md（票正文）+ docs/specs/2026-10-14-bifrost-integration-design.md（Q3/Q15/Q22）+ ADR 0002。
 
 ## Global Constraints
 

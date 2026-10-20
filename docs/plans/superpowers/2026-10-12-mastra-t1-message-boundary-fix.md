@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, `@mastra/core` 1.64.0, Biome.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md` §§3–5; parent plan `docs/plans/2026-10-11-mastra-intelligence-only-dag.md` Task 1; findings in `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/reports/t1-recovery-review.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md` §§3–5; parent plan `docs/plans/2026-10-11-mastra-intelligence-only-dag.md` Task 1; findings in `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/reports/t1-recovery-review.md`.
 
 ## Global Constraints
 

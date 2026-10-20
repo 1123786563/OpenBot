@@ -729,9 +729,9 @@ git commit -m "feat(opik): allowlist projection for records, SDK metadata and ex
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-10-15-opik-t05-redaction-projection.md`. Two execution options:
+Plan complete and saved to `docs/plans/superpowers/2026-10-15-opik-t05-redaction-projection.md`. Two execution options:
 
 1. **Subagent-Driven (recommended)** — 每个 Task 派发新的 subagent，Task 之间 review。
 2. **Inline Execution** — 本会话内按 executing-plans 批量执行并设检查点。
 
-完成后把提交哈希与 canary 清单写入 `docs/tickets/opik-4/manifest.json` 的 `T05.handoff.checkpoint`，并在 GitHub #11 勾选验收标准。
+完成后把提交哈希与 canary 清单写入 `docs/plans/tickets/opik-4/manifest.json` 的 `T05.handoff.checkpoint`，并在 GitHub #11 勾选验收标准。

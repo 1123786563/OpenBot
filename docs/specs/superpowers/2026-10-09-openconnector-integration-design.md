@@ -244,7 +244,7 @@ transport; adapter; broker (api_key / custom_credential / no_auth); access/store
 generalization; admin directory page + More-apps row; per-person connect with fields; call gate
 end-to-end; grants & audit; connected-accounts UI generalization; shared-account mode expected to ride the existing
 machinery (verified by one integration test; small provider-generalization glue fixes are in
-scope if the test finds them); docs page `docs/plugins/open-connector.md`.
+scope if the test finds them); docs page `reference/plugins/open-connector.md`.
 
 **Phase 2 (separate decisions, not designed here):** OAuth-consent providers (client-registration
 surface + authorize round-trip + connection-request polling), safe key probes (per-app read-only

@@ -10,7 +10,7 @@
 
 **Tech Stack:** TypeScript, Bun Test, Drizzle ORM, PostgreSQL, Hono, Zod, TanStack Query (frontend).
 
-**Spec:** `docs/superpowers/specs/2026-10-11-billing-reliability-design.md` (the approved billing reliability design) · Audit: `2026-10-14-billing-code-audit.md` · ADRs: `docs/adr/0001-conservative-input-bound.md`, `docs/adr/0003-bifrost-openbot-credit-admission.md` · Domain language: `CONTEXT.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-billing-reliability-design.md` (the approved billing reliability design) · Audit: `2026-10-14-billing-code-audit.md` · ADRs: `docs/adr/0001-conservative-input-bound.md`, `docs/adr/0003-bifrost-openbot-credit-admission.md` · Domain language: `CONTEXT.md`.
 
 ## Global Constraints
 
@@ -1053,12 +1053,12 @@ git commit -m "fix(billing): an unknown usage outcome keeps its hold and leaves 
 
 ### Task 3: The over-bound path records the tokens it refuses to charge
 
-**Why:** `copilot.ts:834-846` errors the stream *before* `settleFinish`, so `index.ts`'s `finish` (and its `usageOutbox.record`) never runs: the provider's real token counts are lost, Lago never sees the event, and the only residue is one log line plus an `expired_reserved_reservation` finding that carries no token numbers. Three documents claim otherwise (`billing/input-bound.ts:16`, the gate comment in `index.ts:3636-3646`, `docs/configuration.md:56-61`).
+**Why:** `copilot.ts:834-846` errors the stream *before* `settleFinish`, so `index.ts`'s `finish` (and its `usageOutbox.record`) never runs: the provider's real token counts are lost, Lago never sees the event, and the only residue is one log line plus an `expired_reserved_reservation` finding that carries no token numbers. Three documents claim otherwise (`billing/input-bound.ts:16`, the gate comment in `index.ts:3636-3646`, `reference/configuration.md:56-61`).
 
 **Files:**
 - Modify: `server/src/copilot.ts:440-453` (`ModelUsageGateLifecycle` gains `recordUnsettled`), `:834-846` (over-bound branch), `:800-812` (`failSettlement`)
 - Modify: `server/src/index.ts:3660-3716` (the gate's `finish` charge-refusal branch and the new lifecycle member)
-- Modify: `server/src/billing/input-bound.ts:6-18` (header claim), `docs/configuration.md:56-61`
+- Modify: `server/src/billing/input-bound.ts:6-18` (header claim), `reference/configuration.md:56-61`
 - Test: `server/tests/copilot-usage-meter.test.ts` (new cases)
 
 **Interfaces:**
@@ -1252,7 +1252,7 @@ and in the `finish` charge-refusal branch (`:3673-3690`, the `catch` around `cal
  * not the log line — is what reconciliation and an operator read.
 ```
 2. The gate comment in `server/src/index.ts` (the `bounds:` block, currently "…surfaces at settlement as usage_over_bound for reconciliation") — same correction, naming `usage-evidence.ts`.
-3. `docs/configuration.md:56-61` — replace "surfaces at settlement as an over-bound hold for operator reconciliation rather than a silent charge" with: "surfaces at settlement as `usage_over_bound`: the run fails, the hold is retained until it expires into an `expired_reserved_reservation` finding, and a durable `usage_outbox` row keeps the provider's real token counts (both targets terminal-evidence) so an operator can price the call by hand."
+3. `reference/configuration.md:56-61` — replace "surfaces at settlement as an over-bound hold for operator reconciliation rather than a silent charge" with: "surfaces at settlement as `usage_over_bound`: the run fails, the hold is retained until it expires into an `expired_reserved_reservation` finding, and a durable `usage_outbox` row keeps the provider's real token counts (both targets terminal-evidence) so an operator can price the call by hand."
 4. If decision gate **G2** has been resolved, quote the winning document here; otherwise append to all three: `（G2 未决：Spec「Billed admission per surface」仍写 input_bound_unsupported，与 ADR-0001 冲突，待回写。）`
 
 - [ ] **Step 7: Typecheck, run, commit**
@@ -1265,7 +1265,7 @@ cd /Users/wuyongjun/trea/OpenBot && bun test server/tests/copilot-usage-meter.te
 Expected: exit 0, green.
 
 ```bash
-git add server/src/copilot.ts server/src/index.ts server/src/billing/input-bound.ts docs/configuration.md server/tests/copilot-usage-meter.test.ts
+git add server/src/copilot.ts server/src/index.ts server/src/billing/input-bound.ts reference/configuration.md server/tests/copilot-usage-meter.test.ts
 git commit -m "fix(billing): over-bound and unpriceable usage keeps a durable token record (audit A3)"
 ```
 
@@ -1281,7 +1281,7 @@ git commit -m "fix(billing): over-bound and unpriceable usage keeps a durable to
 - Modify: `server/src/copilot.ts:531-556` (new error classes, gate catch)
 - Modify: `server/src/index.ts:3608-3635` (which sentinel each refusal throws; log `available` vs `required`), and the billing assembly block (`:3520-3600`) for the boot-time issues log
 - Modify: `.env.example` (add the four keys after the `LAGO_*` block, ~line 745)
-- Modify: `docs/configuration.md` (point at `.env.example`)
+- Modify: `reference/configuration.md` (point at `.env.example`)
 - Test: `server/tests/copilot-usage-meter.test.ts`, `server/tests/billing-config.test.ts`
 
 **Interfaces:**
@@ -1590,7 +1590,7 @@ Insert after the `LAGO_PLAN_CATALOG` block (`.env.example`, ~line 745):
 # BILLING_CODE_RUN_MAX_RESERVATION_TOKENS="100000"
 ```
 
-In `docs/configuration.md`, after the four-row table, add one sentence:
+In `reference/configuration.md`, after the four-row table, add one sentence:
 
 ```markdown
 `.env.example` carries the same four keys with these worked examples; a deployment copied from the
@@ -1608,7 +1608,7 @@ cd /Users/wuyongjun/trea/OpenBot && bun test server/tests/copilot-usage-meter.te
 Expected: exit 0, green.
 
 ```bash
-git add server/src/copilot.ts server/src/index.ts server/tests/copilot-usage-meter.test.ts server/tests/billing-config.test.ts .env.example docs/configuration.md
+git add server/src/copilot.ts server/src/index.ts server/tests/copilot-usage-meter.test.ts server/tests/billing-config.test.ts .env.example reference/configuration.md
 git commit -m "fix(billing): refusals name their cause — unpriced policy vs unpriced model vs empty balance (audit A4/C2)"
 ```
 
@@ -3008,7 +3008,7 @@ Expected: exit 0, green. Any existing test that asserted "a row the provider sto
 
 - [ ] **Step 5: Document the remaining gap**
 
-Append to the `readSubscriptions` docblock in `service.ts` and to `docs/configuration.md`'s billing section:
+Append to the `readSubscriptions` docblock in `service.ts` and to `reference/configuration.md`'s billing section:
 
 ```markdown
 The provider list is requested for four statuses (`active`, `incomplete`, `canceled`,
@@ -3020,7 +3020,7 @@ the purchase guard. Adding it needs a `billing_subscriptions_status_check` migra
 - [ ] **Step 6: Commit**
 
 ```bash
-git add server/src/billing/store.ts server/src/billing/service.ts server/src/billing/types.ts server/tests/support/billing.ts server/tests docs/configuration.md
+git add server/src/billing/store.ts server/src/billing/service.ts server/src/billing/types.ts server/tests/support/billing.ts server/tests reference/configuration.md
 git commit -m "fix(billing): retire subscription projections the provider no longer lists (audit B6)"
 ```
 
@@ -3204,7 +3204,7 @@ export async function reportCodeRunUsage(
        * Flipping this to `true` is a billing decision, not a capability flag: the code-run path
        * holds no credit reservation today, so `reportCodeRunUsage` refuses to write a usage row
        * while `creditMeteringEnabled` is true and no reservation is supplied (audit B3). Land the
-       * reservation first — see `docs/superpowers/specs/2026-10-11-billing-reliability-design.md`,
+       * reservation first — see `docs/specs/superpowers/2026-10-11-billing-reliability-design.md`,
        * "Billed admission per surface".
        */
       enforceableTokenBudget: false,

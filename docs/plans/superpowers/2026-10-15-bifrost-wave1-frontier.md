@@ -13,7 +13,7 @@
 - Task 2 → #209（`01.3` 兑换比例必填与合法性校验）
 - Task 3 → #215（`02.1` PayerRef 账户模型与映射唯一性）
 - Task 4 → #234（`04.1` Bot 服务登记与唯一服务身份）
-- 父 Spec：`https://github.com/1123786563/OpenBot/issues/5`；本地索引 `docs/tickets/bifrost-5/manifest.json`（151 张 DAG 与验收映射）
+- 父 Spec：`https://github.com/1123786563/OpenBot/issues/5`；本地索引 `docs/plans/tickets/bifrost-5/manifest.json`（151 张 DAG 与验收映射）
 
 **执行工作区（Ledger）：** `/Users/wuyongjun/orca/workspaces/OpenBot/bifrost-wave1`，分支 `1123786563/bifrost-wave1`，**BASE = `4dd1922d`**。主 checkout 被另一执行者持有，禁止在主 checkout 施工。
 

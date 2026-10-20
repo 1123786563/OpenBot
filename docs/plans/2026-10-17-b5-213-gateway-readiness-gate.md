@@ -1,6 +1,6 @@
 # b5-213 / Bifrost 01.7 — 消费入口就绪门禁（实施计划）
 
-Ticket: docs/tickets/bifrost-5/issues/01.7（#213）
+Ticket: docs/plans/tickets/bifrost-5/issues/01.7（#213）
 BASE: bab7c0b9（worktree /Users/wuyongjun/orca/workspaces/OpenBot/b5-213，未提交检查点模式）
 专用测试库: postgres://openbot:openbot@localhost:5590/openbot_b5_213（b5-verify-pg 容器，已 createdb + roles.sql + migrate）
 

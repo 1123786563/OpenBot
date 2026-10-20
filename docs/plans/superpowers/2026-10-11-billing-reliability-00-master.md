@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Hono, Drizzle ORM, PostgreSQL, Lago, Alipay, WeChat Pay, Bun Test.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-billing-reliability-design.md`
+**Spec:** `docs/specs/superpowers/2026-10-11-billing-reliability-design.md`
 
 ## Global Constraints
 

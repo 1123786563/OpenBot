@@ -1,5 +1,7 @@
 # OpenBot docs
 
+新增文档按[目录与产物归处](../.agents/rules/artifacts.md)分类。实施方案和方案细节从[方案目录](../docs/plans/README.md)进入；Agent 规范见根 [AGENTS.md](../AGENTS.md)；运行与验证证据存 `.archive/runs/<run-key>/`。本页保留现有产品与操作参考文档的索引，历史内容按规范分批迁移；测试实际读取的配置不能直接归档。
+
 Start with the root [README](../README.md), then use these references:
 
 - [Architecture](architecture.md): services, ports, browser governance, computers, components, plugins, knowledge, and security boundaries.

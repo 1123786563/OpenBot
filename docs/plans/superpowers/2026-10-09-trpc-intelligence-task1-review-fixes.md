@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun workspaces, TypeScript, CopilotKit 1.77.0, AG-UI 1.0.1, Ajv 8.20.0, Zod, JSON Schema 2020-12.
 
-**Spec:** [Approved migration design](../specs/2026-10-09-trpc-intelligence-migration-design.md); [original plan Task 1](2026-10-09-trpc-intelligence-migration.md); [fix-round-2 independent review](../../.superpowers/sdd/2026-10-09-trpc-intelligence-migration/reports/task-1-fix-2-review.md). This numbered plan covers only T1-F2-H1 and T1-F2-M1–M4.
+**Spec:** [Approved migration design](../../specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md); [original plan Task 1](2026-10-09-trpc-intelligence-migration.md); [fix-round-2 independent review](../../.superpowers/sdd/2026-10-09-trpc-intelligence-migration/reports/task-1-fix-2-review.md). This numbered plan covers only T1-F2-H1 and T1-F2-M1–M4.
 
 ## Global Constraints
 

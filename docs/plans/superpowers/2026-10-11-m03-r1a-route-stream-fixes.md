@@ -2,7 +2,7 @@
 
 **Goal:** Close the two blocking findings from M03-R1 repair review while preserving the five repaired M03 behaviors.
 
-**Source:** Approved Mastra migration design §6; original repair plan `docs/superpowers/plans/2026-10-11-m03-r1-model-governance-fixes.md`; repair review `.superpowers/sdd/2026-10-11-m03-r1-model-governance-fixes/reports/review.md` SHA256 `94fb92c12dbca64695e4dc7ea53b1202f461cb22ca9e8e92e86a222ad0844d08`; exact repair before checkpoint package SHA256 `00f2db99f4a528f35ec52b8fb1726e34a47db2b48ac116deb117479b6d0741aa`. Worktree `/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot`, BASE `e15cef8ec3c3c223aaf0935a0ea81f8c5e370737`; changes remain uncommitted.
+**Source:** Approved Mastra migration design §6; original repair plan `docs/plans/superpowers/2026-10-11-m03-r1-model-governance-fixes.md`; repair review `.superpowers/sdd/2026-10-11-m03-r1-model-governance-fixes/reports/review.md` SHA256 `94fb92c12dbca64695e4dc7ea53b1202f461cb22ca9e8e92e86a222ad0844d08`; exact repair before checkpoint package SHA256 `00f2db99f4a528f35ec52b8fb1726e34a47db2b48ac116deb117479b6d0741aa`. Worktree `/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot`, BASE `e15cef8ec3c3c223aaf0935a0ea81f8c5e370737`; changes remain uncommitted.
 
 ## Global Constraints
 

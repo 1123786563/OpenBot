@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Hono, Drizzle ORM, PostgreSQL, React Query types, Bun Test.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-billing-reliability-design.md`
+**Spec:** `docs/specs/superpowers/2026-10-11-billing-reliability-design.md`
 
 ## Global Constraints
 
@@ -23,8 +23,8 @@
 ### Task 1: Record approved billing visibility and duplicate disposition
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-10-11-billing-reliability-design.md`
-- Create: `docs/superpowers/specs/adr/` decision record only if the repository's ADR convention is approved for these policies
+- Modify: `docs/specs/superpowers/2026-10-11-billing-reliability-design.md`
+- Create: `docs/specs/superpowers/adr/` decision record only if the repository's ADR convention is approved for these policies
 
 **Interfaces:**
 - The approved visibility rule is user-scoped: an authenticated actor reads only invoices/orders whose `createdBy` matches that actor's stable user ID. The current auth actor has `id` but no tenant ID; do not invent a tenant column absent an established tenant-bearing purchase contract.

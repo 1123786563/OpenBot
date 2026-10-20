@@ -21,8 +21,8 @@
 3. 当前已发布子 Issue 是 #460–#471，共 12 张；这是摄取完整性对照，不是只读这 12 张就结束。区分 contains 与 depends_on，记录读取时间和来源；无法读取的部分标为不完整。
 4. 本地如存在，读取：
    - docs/specs/2026-10-19-plugin-package-marketplace-design.md
-   - docs/tickets/plugin-package-marketplace/README.md
-   - docs/tickets/plugin-package-marketplace/manifest.json
+   - docs/plans/tickets/plugin-package-marketplace/README.md
+   - docs/plans/tickets/plugin-package-marketplace/manifest.json
    - docs/plans/2026-10-19-plugin-package-marketplace-implementation.md
    文件缺失时从父 Issue 完整快照与子 Issue 正文恢复所需依据，不假定未提交文档已在远端。
 5. 原计划 T1–T10 是技术参考；正式业务拆分以 #460–#471 和当前 Issue DAG 为准。每张业务票内部再拆 Task，不能为做前一张票提前实施后续全部功能。

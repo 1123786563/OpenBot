@@ -108,7 +108,7 @@ flowchart TD
 
 ### Task 1：固定更新清单与执行基线
 
-**Depends on:** 无。**Files:** 本计划、`docs/research/2026-10-20-upstream-openbot-feature-matrix.md`；创建计划专属目录中的 `ledger.md`、`patch-manifest.md`、`interfaces.md`。实施开始才建立执行工作区。
+**Depends on:** 无。**Files:** 本计划、`docs/plans/research/2026-10-20-upstream-openbot-feature-matrix.md`；创建计划专属目录中的 `ledger.md`、`patch-manifest.md`、`interfaces.md`。实施开始才建立执行工作区。
 
 **Interfaces:** Consumes：固定本地/上游 SHA、ADR、现有 approved specs。Produces：每个功能的 `source_sha / touched_paths / local_equivalent / decision / acceptance / evidence`，和共享接口快照。
 
@@ -222,7 +222,7 @@ flowchart TD
 
 ### Task 9：harness 目录和 Antigravity 可行性评估
 
-**Files:** 创建 `docs/research/2026-10-20-upstream-harness-adoption.md`；只读 `shared/harnesses.json`（上游）、本地创建向导、`desktop/src-tauri/src/harness.rs`、agent-*、现有 provider/model-access 规则。
+**Files:** 创建 `docs/plans/research/2026-10-20-upstream-harness-adoption.md`；只读 `shared/harnesses.json`（上游）、本地创建向导、`desktop/src-tauri/src/harness.rs`、agent-*、现有 provider/model-access 规则。
 
 **Interfaces:** 输出每个 harness 的 `framework / install_image / runtime_endpoint / credential_requirement / web_create / desktop_install / governance_compatibility` 映射表。
 
@@ -235,7 +235,7 @@ flowchart TD
 
 ### Task 10：现有移动端与执行架构差距评估
 
-**Files:** 创建 `docs/research/2026-10-20-upstream-mobile-runtime-adoption.md`；只读 `apps/openmuse/apps/mobile/`、相关 mobile BFF、上游 `mobile/` 与 `toolkit/`、本地 Mastra Spec。
+**Files:** 创建 `docs/plans/research/2026-10-20-upstream-mobile-runtime-adoption.md`；只读 `apps/openmuse/apps/mobile/`、相关 mobile BFF、上游 `mobile/` 与 `toolkit/`、本地 Mastra Spec。
 
 **Interfaces:** 输出移动能力映射（聊天、Bot、审批、屏幕、插件、记忆、例程、通知、登录/组织切换），及执行接口映射（turn admission、lease/lock、history、approval resume、cancel/stop）。
 

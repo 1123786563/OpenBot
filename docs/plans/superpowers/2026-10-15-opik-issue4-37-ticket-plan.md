@@ -32,7 +32,7 @@ Topological order (machine-validated): `T01, T02, T03, T04, T05, T06, T07, T08, 
 
 ### Task 01 — T01 / Issue #7: [Opik T01] 观测后端模块骨架与路由注册 seam
 
-- **Depends on:** none. **Implementation role:** `backend_implementer`. **Validator:** `backend_validator`. **Current status:** `verified`. **Plan/spec:** `docs/superpowers/plans/2026-10-15-opik-t01-observability-module-seam.md`.
+- **Depends on:** none. **Implementation role:** `backend_implementer`. **Validator:** `backend_validator`. **Current status:** `verified`. **Plan/spec:** `docs/plans/superpowers/2026-10-15-opik-t01-observability-module-seam.md`.
 - **Owned files:** `server/src/ai-observability/context.ts`, `server/src/ai-observability/routes/index.ts`, `server/src/app.ts`, `server/src/index.ts`, `server/tests/opik-module-skeleton.test.ts`
 - **Consumes:** []
 - **Produces:** 路由注册约定 + 观测请求上下文的注入方式.
@@ -58,7 +58,7 @@ A resuming agent needs only: the parent Spec items listed above, the Handoff of 
 
 ### Task 02 — T02 / Issue #8: [Opik T02] 观测 UI 独立 i18n 子命名空间与路由约定
 
-- **Depends on:** none. **Implementation role:** `frontend_implementer`. **Validator:** `frontend_validator`. **Current status:** `verified`. **Plan/spec:** `docs/superpowers/plans/2026-10-15-opik-t02-observability-ui-i18n-seam.md`.
+- **Depends on:** none. **Implementation role:** `frontend_implementer`. **Validator:** `frontend_validator`. **Current status:** `verified`. **Plan/spec:** `docs/plans/superpowers/2026-10-15-opik-t02-observability-ui-i18n-seam.md`.
 - **Owned files:** `app/src/lib/i18n/ai-observability.test.ts`, `app/src/lib/i18n/i18next.d.ts`, `app/src/lib/i18n/index.ts`, `app/src/locales/en/ai-observability-*.json`, `app/src/locales/zh-CN/ai-observability-*.json`
 - **Consumes:** []
 - **Produces:** 四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定.
@@ -84,8 +84,8 @@ A resuming agent needs only: the parent Spec items listed above, the Handoff of 
 
 ### Task 03 — T03 / Issue #9: [Opik T03] Opik 可选部署与版本锁定清单
 
-- **Depends on:** none. **Implementation role:** `backend_implementer`. **Validator:** `backend_validator`. **Current status:** `verified`. **Plan/spec:** `docs/superpowers/plans/2026-10-15-opik-t03-opik-optional-deployment.md`.
-- **Owned files:** `docker/compose/opik.yml`, `docker/opik/`, `docker-compose.yml`, `.env.example`, `docker/opik/versions.json`, `server/tests/opik-deployment.test.ts`, `docs/opik.md`
+- **Depends on:** none. **Implementation role:** `backend_implementer`. **Validator:** `backend_validator`. **Current status:** `verified`. **Plan/spec:** `docs/plans/superpowers/2026-10-15-opik-t03-opik-optional-deployment.md`.
+- **Owned files:** `docker/compose/opik.yml`, `docker/opik/`, `docker-compose.yml`, `.env.example`, `docker/opik/versions.json`, `server/tests/opik-deployment.test.ts`, `reference/opik.md`
 - **Consumes:** []
 - **Produces:** 非浮动版本清单 + 启动/关闭/健康检查步骤.
 - **Verification:** Issue acceptance plus targeted test, typecheck, lint; #43 requires real self-hosted Opik and full gates
@@ -110,7 +110,7 @@ A resuming agent needs only: the parent Spec items listed above, the Handoff of 
 
 ### Task 04 — T04 / Issue #10: [Opik T04] 上游契约冒烟与 VerifiedOpikContract manifest
 
-- **Depends on:** T03. **Implementation role:** `backend_implementer`. **Validator:** `backend_validator`. **Current status:** `running`. **Plan/spec:** `docs/superpowers/plans/2026-10-15-opik-t04-verified-contract.md`.
+- **Depends on:** T03. **Implementation role:** `backend_implementer`. **Validator:** `backend_validator`. **Current status:** `running`. **Plan/spec:** `docs/plans/superpowers/2026-10-15-opik-t04-verified-contract.md`.
 - **Owned files:** `server/scripts/opik-contract.ts`, `server/tests/opik-contract.test.ts`, `docs/plans/evidence/2026-10-15-issue4/opik-contract/`
 - **Consumes:** ["T03"]
 - **Produces:** VerifiedOpikContract manifest（版本、fixture、ID 映射、删除证据、正文上限）.
@@ -136,7 +136,7 @@ A resuming agent needs only: the parent Spec items listed above, the Handoff of 
 
 ### Task 05 — T05 / Issue #11: [Opik T05] 采集侧脱敏投影与安全内容策略
 
-- **Depends on:** none. **Implementation role:** `backend_implementer`. **Validator:** `backend_validator`. **Current status:** `running`. **Plan/spec:** `docs/superpowers/plans/2026-10-15-opik-t05-redaction-projection.md`.
+- **Depends on:** none. **Implementation role:** `backend_implementer`. **Validator:** `backend_validator`. **Current status:** `running`. **Plan/spec:** `docs/plans/superpowers/2026-10-15-opik-t05-redaction-projection.md`.
 - **Owned files:** `server/src/ai-observability/redaction.ts`, `shared/ai-observability.ts`, `server/tests/opik-redaction.test.ts`
 - **Consumes:** []
 - **Produces:** 安全投影接口 + 内容策略版本号.
@@ -162,7 +162,7 @@ A resuming agent needs only: the parent Spec items listed above, the Handoff of 
 
 ### Task 06 — T06 / Issue #12: [Opik T06] 可信 scope seam 与企业预留拒绝
 
-- **Depends on:** none. **Implementation role:** `backend_implementer`. **Validator:** `backend_validator`. **Current status:** `verified`. **Plan/spec:** `docs/superpowers/plans/2026-10-15-opik-t06-trusted-scope-seam.md`.
+- **Depends on:** none. **Implementation role:** `backend_implementer`. **Validator:** `backend_validator`. **Current status:** `verified`. **Plan/spec:** `docs/plans/superpowers/2026-10-15-opik-t06-trusted-scope-seam.md`.
 - **Owned files:** `server/src/ai-observability/contracts.ts`, `server/src/ai-observability/scope.ts`, `server/tests/opik-scope.test.ts`
 - **Consumes:** []
 - **Produces:** ObservationScope 解析接口 + 两个测试 scope 的构造方式.
@@ -188,7 +188,7 @@ A resuming agent needs only: the parent Spec items listed above, the Handoff of 
 
 ### Task 07 — T07 / Issue #13: [Opik T07] 观测归属存储 schema 与可信绑定
 
-- **Depends on:** T06. **Implementation role:** `backend_implementer`. **Validator:** `backend_validator`. **Current status:** `pending`. **Plan/spec:** `docs/superpowers/plans/2026-10-15-opik-t07-authoritative-bindings.md`.
+- **Depends on:** T06. **Implementation role:** `backend_implementer`. **Validator:** `backend_validator`. **Current status:** `pending`. **Plan/spec:** `docs/plans/superpowers/2026-10-15-opik-t07-authoritative-bindings.md`.
 - **Owned files:** `server/src/db/schema/ai-observation-bindings.ts`, `server/src/ai-observability/bindings.ts`, `server/tests/opik-bindings.test.ts`, `server/drizzle/`
 - **Consumes:** ["T06"]
 - **Produces:** 归属存储表结构 + 绑定/解析 API.
@@ -1015,4 +1015,4 @@ A resuming agent needs only: the parent Spec items listed above, the Handoff of 
 
 ## Ledger and completion
 
-Record every Run/Task/Dispatch, effective agent/model/effort, worker_done/escalation/ruling, checkpoint/hash, exact verification and review report in `docs/plans/2026-10-15-opik-issue4-ledger.md` and update the DAG. Completion requires all 37 children and A1–A13 verified, full-range independent Claude Spec/security/quality review, full OCR pass over committed and uncommitted delivery content, and final diff/finishing-branch review. Do not push, merge or publish.
+Record every Run/Task/Dispatch, effective agent/model/effort, worker_done/escalation/ruling, checkpoint/hash, exact verification and review report in `.archive/runs/legacy-plans/ledgers/2026-10-15-opik-issue4-ledger.md` and update the DAG. Completion requires all 37 children and A1–A13 verified, full-range independent Claude Spec/security/quality review, full OCR pass over committed and uncommitted delivery content, and final diff/finishing-branch review. Do not push, merge or publish.

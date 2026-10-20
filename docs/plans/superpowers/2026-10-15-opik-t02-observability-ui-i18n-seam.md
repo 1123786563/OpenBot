@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - 覆盖父 Spec 验收：**A5**（状态文案层）。
-- 只允许改：`app/src/locales/en/ai-observability-{runs,datasets,evaluations,admin}.json`、`app/src/locales/zh-CN/ai-observability-{runs,datasets,evaluations,admin}.json`、`app/src/lib/i18n/index.ts`、`app/src/lib/i18n/i18next.d.ts`、`app/src/lib/i18n/ai-observability.test.ts`。**共 11 个文件**（超过 O1 的 ≤8，已在 `docs/tickets/opik-4/manifest.json` 的 `documented_deviations` 记录：其中 8 个是极小 JSON、2 个是注册行）。
+- 只允许改：`app/src/locales/en/ai-observability-{runs,datasets,evaluations,admin}.json`、`app/src/locales/zh-CN/ai-observability-{runs,datasets,evaluations,admin}.json`、`app/src/lib/i18n/index.ts`、`app/src/lib/i18n/i18next.d.ts`、`app/src/lib/i18n/ai-observability.test.ts`。**共 11 个文件**（超过 O1 的 ≤8，已在 `docs/plans/tickets/opik-4/manifest.json` 的 `documented_deviations` 记录：其中 8 个是极小 JSON、2 个是注册行）。
 - 不得编辑既有共享文案文件 `agents.json` / `errors.json` / `admin.json` / `nav.json` / `common.json`。这是本 Ticket 存在的理由。
 - 必须静态 import，不得引入 lazy bundle loader（`index.ts` 的既有注释已说明 lazy 会导致切换语言后界面停留在英文）。
 - `en` 是 key 的事实源，`zh-CN` 按 key 逐一 fallback；但本 Ticket 要求两者 **key 集合完全相同**，八类状态都必须有中文，不允许留空字符串。
@@ -741,7 +741,7 @@ git commit -m "test(opik): guard the observation i18n sub-namespaces and the eig
 1. 「文案按运行、评测集、实验、管理拆成四个双子语命名空间，四条前端链各自独占文案文件，不编辑既有共享文案文件，也不彼此冲突」→ Task 1/2 建 8 个文件，Task 3 注册，Task 4 的 `meta.ownedBy` 断言把归属矩阵变成可执行契约；Global Constraints 明令禁止编辑 `agents.json`/`errors.json`。
 2. 「八类状态在英文与中文均有明确文案且语义不混用」→ Task 4 的 “carries all eight”、“distinct titles”、“omitted/empty/unavailable 三个不同事实” 三条测试。
 3. 「四个子命名空间的归属矩阵写入交接说明，接手 agent 不会写错文件」→ `index.ts` 的 `NAMESPACES` 注释（含路由约定）+ 每个 bundle 的 `meta.ownedBy` + Task 4 的断言。
-4. 「Bot 维度与管理维度路由约定确定并可被后续页面直接复用；直接输入路由时仍执行权限校验」→ 路由约定在 `index.ts` 注释与本计划 Global Constraints 中交付。**注意：本条的“直接输入路由仍执行权限校验”无法在 T02 验证，因为路由要到 #18 才存在；该子句已记录在 `docs/tickets/opik-4/manifest.json` 的 `documented_deviations`，必须在 #18 验证，不得在本 Ticket 记为通过。**
+4. 「Bot 维度与管理维度路由约定确定并可被后续页面直接复用；直接输入路由时仍执行权限校验」→ 路由约定在 `index.ts` 注释与本计划 Global Constraints 中交付。**注意：本条的“直接输入路由仍执行权限校验”无法在 T02 验证，因为路由要到 #18 才存在；该子句已记录在 `docs/plans/tickets/opik-4/manifest.json` 的 `documented_deviations`，必须在 #18 验证，不得在本 Ticket 记为通过。**
 
 **Placeholder scan**：无 TBD / TODO；8 个 JSON 的完整内容都已给出（这是本 Ticket 的全部交付物，不能省略）；测试代码完整可跑。
 
@@ -749,9 +749,9 @@ git commit -m "test(opik): guard the observation i18n sub-namespaces and the eig
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-10-15-opik-t02-observability-ui-i18n-seam.md`. Two execution options:
+Plan complete and saved to `docs/plans/superpowers/2026-10-15-opik-t02-observability-ui-i18n-seam.md`. Two execution options:
 
 1. **Subagent-Driven (recommended)** — 每个 Task 派发新的 subagent，Task 之间 review。
 2. **Inline Execution** — 本会话内按 executing-plans 批量执行并设检查点。
 
-完成后把提交哈希与文件清单填入 `docs/tickets/opik-4/manifest.json` 的 `T02.handoff.checkpoint`，并在 GitHub #8 勾选验收标准（第 3 条的路由权限子句留给 #18）。
+完成后把提交哈希与文件清单填入 `docs/plans/tickets/opik-4/manifest.json` 的 `T02.handoff.checkpoint`，并在 GitHub #8 勾选验收标准（第 3 条的路由权限子句留给 #18）。

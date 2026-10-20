@@ -102,7 +102,7 @@
 
 ### 3.7 约定文档
 
-新增 `docs/observability.md`：级别语义、上下文字段约定、脱敏规则（对齐 TEN-22）、trace 传播约定、本地看日志的两条路径（Grafana 3003 / jq 直读）、崩溃上报开关说明。同步更新 `docs/development.md` 与 `.env.example`。
+新增 `reference/observability.md`：级别语义、上下文字段约定、脱敏规则（对齐 TEN-22）、trace 传播约定、本地看日志的两条路径（Grafana 3003 / jq 直读）、崩溃上报开关说明。同步更新 `reference/development.md` 与 `.env.example`。
 
 ## 4. 风险与缓解
 
@@ -131,4 +131,4 @@
 2. **P2**：spike 结论有据（通过或降级及原因）；一次跨 server→agent-bot→computer 的请求在 Tempo 呈现连续 trace（或降级后 Loki 日志可按 trace_id 串联）。
 3. **P3**：`--profile observability up` 后数秒内日志出现在 Loki；Grafana 从日志可跳转 Tempo；Web/mobile/桌面各一条测试崩溃事件出现在 GlitchTip 并带版本号。
 4. **P4**：Prometheus 抓到 `/metrics`；dashboard 呈现错误率、时延、LLM 调用量。
-5. **P5**：三端崩溃上报带 `OPENBOT_CRASH_REPORTING_DISABLED` 开关验证有效；`docs/observability.md` 发布。
+5. **P5**：三端崩溃上报带 `OPENBOT_CRASH_REPORTING_DISABLED` 开关验证有效；`reference/observability.md` 发布。

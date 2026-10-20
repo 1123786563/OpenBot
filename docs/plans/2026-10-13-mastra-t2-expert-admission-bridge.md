@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Drizzle PostgreSQL (injected DB-free tests now; isolated PostgreSQL gate later).
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; parent Task 2 in `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; prerequisite `docs/plans/2026-10-13-mastra-t2-expert-version-prerequisite.md`; read-only reports `task-2-source-preflight.md` and `task-2-admission-architecture.md` under `.superpowers/sdd/2026-10-13-mastra-t2-expert-version-prerequisite/reports/`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent Task 2 in `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; prerequisite `docs/plans/2026-10-13-mastra-t2-expert-version-prerequisite.md`; read-only reports `task-2-source-preflight.md` and `task-2-admission-architecture.md` under `.superpowers/sdd/2026-10-13-mastra-t2-expert-version-prerequisite/reports/`.
 
 ## Global Constraints
 

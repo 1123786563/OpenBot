@@ -8,7 +8,7 @@
 
 **Tech Stack:** Hono + zod + drizzle（server）；React + TanStack Query + i18next（app）；bun:test + 真实 PostgreSQL（`openbot_b5_222`）+ happy-dom。
 
-**Spec:** 票 `docs/tickets/bifrost-5/issues/02.8-admin-grant-to-personal-account.md`（AC14/AC19）；父 Spec `docs/specs/2026-10-14-bifrost-integration-design.md`（Q27：发放归属个人，不采用客户端随意指定的用户 ID → 但管理员发放的目标用户本身就是业务入参，账户键仍由服务端从 userId 解析，绝不收 externalCustomerId）；ADR 0002/0003/0004；CONTEXT.md。
+**Spec:** 票 `docs/plans/tickets/bifrost-5/issues/02.8-admin-grant-to-personal-account.md`（AC14/AC19）；父 Spec `docs/specs/2026-10-14-bifrost-integration-design.md`（Q27：发放归属个人，不采用客户端随意指定的用户 ID → 但管理员发放的目标用户本身就是业务入参，账户键仍由服务端从 userId 解析，绝不收 externalCustomerId）；ADR 0002/0003/0004；CONTEXT.md。
 
 ## Global Constraints
 

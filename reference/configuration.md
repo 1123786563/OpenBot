@@ -68,7 +68,7 @@ still receives the metered event, while the credit side blocks the row
 (`missing_reservation`) so an operator can price the call by hand. Billed code runs are
 still refused fail-closed with `billing-token-budget-unavailable` until the sandbox contract
 can enforce the configured token budget — the code-run decision recorded in
-`docs/superpowers/specs/2026-10-11-billing-reliability-design.md` ("Billed admission per
+`docs/specs/superpowers/2026-10-11-billing-reliability-design.md` ("Billed admission per
 surface").（G2 未决：Spec「Billed admission per surface」仍写 input_bound_unsupported，与
 ADR-0001 的 counted+截断冲突，待回写。2026-10-15。）
 
@@ -1011,7 +1011,7 @@ back to building, which suits a developer and does not suit a machine with no to
 useful answer is that the image could not be fetched. Somewhere that must never build, override the
 `build` sections away instead.
 
-`docs/releasing.md` shows reading the digests straight out of a release's `container-images.json`.
+`reference/releasing.md` shows reading the digests straight out of a release's `container-images.json`.
 
 ## Workshop
 

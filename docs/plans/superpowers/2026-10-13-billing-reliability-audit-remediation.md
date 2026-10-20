@@ -10,7 +10,7 @@
 
 **Tech Stack:** TypeScript, Bun Test, Drizzle ORM, PostgreSQL, OCR.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-billing-reliability-design.md`
+**Spec:** `docs/specs/superpowers/2026-10-11-billing-reliability-design.md`
 
 ## Global Constraints
 
@@ -34,7 +34,7 @@
 | F2 | low | `COUNT(*)::int` on `usage_outbox` target counts overflows past 2^31 rows. | `server/src/billing/reconcile.ts:517-527` | **Fixed** — `COUNT(*)::bigint` + safe-integer guard (`exactCount`) that throws rather than rounds |
 | F3 | low | `confirmPaid`'s paid-fact insert uses an untargeted `onConflictDoNothing`; a random `pe-` primary-key collision would be misread as "transaction already known" (~2^-64, but it is an unknown conflict being classified as a duplicate). | `server/src/billing/payments/store.ts` `confirmPaid` | **Fixed** — targeted conflict on the channel-transaction partial index; `pe-` pkey collision redraws via the bounded-retry loop (`isPaymentEventIdConflict`); collision test in `payment-store.integration.test.ts` |
 | F4 | medium | Expired `reserved` holds occupy capacity until manual SQL; no release path exists (OCR round-5 Item 1, still open). | `server/src/billing/credits-writer.ts` (`held` subquery ignores `expires_at`), `reconcile.ts:469-498` (finding only) | **Fixed (option a)** — `held` subquery gains `r.expires_at > now()`; `reserveCredits` rejects a past expiry; decision recorded in the design spec; late-settle clamp verified by test |
-| F5 | decision | Billing enabled ⇒ every billed model call refuses (`input_bound_unsupported`) and every code run refuses (`billing-token-budget-unavailable`). Documented terminal states, but the product stays dark until the enabling capabilities exist. | `server/src/index.ts:3228-3241`, `server/src/codesandbox/client.ts:130-131`, `server/src/codesandbox/gateway.ts:163-166` | **Decided: stay fail-closed both surfaces** — decision + flip conditions in the design spec ("Billed admission per surface"); Lago-only code-run metering refused; `docs/configuration.md` states the refusals |
+| F5 | decision | Billing enabled ⇒ every billed model call refuses (`input_bound_unsupported`) and every code run refuses (`billing-token-budget-unavailable`). Documented terminal states, but the product stays dark until the enabling capabilities exist. | `server/src/index.ts:3228-3241`, `server/src/codesandbox/client.ts:130-131`, `server/src/codesandbox/gateway.ts:163-166` | **Decided: stay fail-closed both surfaces** — decision + flip conditions in the design spec ("Billed admission per surface"); Lago-only code-run metering refused; `reference/configuration.md` states the refusals |
 | F6 | low | Usage `client` field is hardcoded `"web"` on both write paths; CLI/API-originated usage is misattributed. | `server/src/index.ts` (model gate assembly), `server/src/workshop/metering.ts:146` | **Fixed** — `server/src/usage-origin.ts` (AsyncLocalStorage, vocabulary web/api/unknown); gate input carries `client` read at doStream; session middleware names `web`, worker dispatch names `api`; tests in `copilot-usage-meter.test.ts` / `workshop-metering.test.ts` |
 | F7 | docs | Plan documents and comments lag verified behavior: plan 01 names `consumeCredits` + `usage:` delivery key (actual: `settleReservation`), pending ordering by `created_at` (actual: `updated_at`); plan 05 describes per-plan/scope paid-order counting (actual: `duplicate_paid` anomaly rows); `maintenance.ts` header claims the sweep is not started in production (it is, `server/src/index.ts`). | docs + `server/src/billing/maintenance.ts` header | **Fixed** — dated as-built notes appended to plans 01 and 05 naming the mechanisms and commits (`b616ccaa`, `195ca54b`, `c3c2a206`); `maintenance.ts` header names the production wiring; interfaces spot-check clean |
 
@@ -83,7 +83,7 @@
 - Capacity accounting must not count an expired hold as held. Choose and record one of: (a) `held` subquery gains `expires_at > now()`, (b) a sweep that terminally `release`s expired `reserved` rows with reason `expired`, or (c) both. Record the choice in the design spec before implementing.
 - Recovery must be idempotent and leave the reconciliation finding vocabulary intact (a swept release and an operator release must be distinguishable in `release_reason`).
 
-- [x] **Step 1: Record the decision** in `docs/superpowers/specs/2026-10-11-billing-reliability-design.md` (option a/b/c and the `release_reason` vocabulary).
+- [x] **Step 1: Record the decision** in `docs/specs/superpowers/2026-10-11-billing-reliability-design.md` (option a/b/c and the `release_reason` vocabulary).
 - [x] **Step 2: Write failing tests.** Concurrent reserve against capacity that is fully held only by expired holds must succeed; `reserveCredits` with a past `expiresAt` rejects; if (b)/(c): the sweep releases exactly the expired `reserved` rows, once, and leaves settled/released rows untouched. Run RED.
 - [x] **Step 3: Implement** the chosen option(s).
 - [x] **Step 4: GREEN + regression.** `billing-credits-writer.integration.test.ts`, `billing-reconcile.integration.test.ts`, typecheck; exit 0.
@@ -92,7 +92,7 @@
 ## Task 4: Decision gate and capability path for billed admission (F5; absorbs the decision half of OCR round-5 Item 6)
 
 **Files:**
-- Record first: `docs/superpowers/specs/2026-10-11-billing-reliability-design.md`
+- Record first: `docs/specs/superpowers/2026-10-11-billing-reliability-design.md`
 - Only if the decision is "enable": `server/src/copilot.ts`, `server/src/index.ts`, `server/src/codesandbox/client.ts`, `server/src/codesandbox/gateway.ts`, `server/src/workshop/metering.ts` and their tests.
 
 **Interfaces:**
@@ -101,9 +101,9 @@
 - Enabling code-run billing requires the sandbox contract to enforce the configured token budget end to end; the `code_run` outbox row then either carries reservation facts or its credits target is explicitly skipped (the Lago-only metering decision from OCR round-5 Item 6 must be answered in the same record).
 
 - [x] **Step 1: Record the go/no-go decision** per surface, with the capability evidence required to flip each one.
-- [x] **Step 2: If "stay closed" for a surface:** add the missing product-facing documentation (`docs/configuration.md` must state that enabling hard-cap billing currently refuses billed model calls and code runs) and stop. Do not write enabling code.
+- [x] **Step 2: If "stay closed" for a surface:** add the missing product-facing documentation (`reference/configuration.md` must state that enabling hard-cap billing currently refuses billed model calls and code runs) and stop. Do not write enabling code.
 - ~~**Step 3: If "enable" for a surface:**~~ *(not applicable — both surfaces stayed closed per Step 1's decision)*
-- [x] **Step 4: Review.** Confirm no billed path admits a call whose bounds it cannot prove, and that `docs/configuration.md` matches behavior.
+- [x] **Step 4: Review.** Confirm no billed path admits a call whose bounds it cannot prove, and that `reference/configuration.md` matches behavior.
 
 ## Task 5: Accurate usage source attribution (F6)
 
@@ -122,8 +122,8 @@
 ## Task 6: Documentation and comment convergence (F7)
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-10-11-billing-reliability-01-usage-events.md` (delivery mechanism, pending ordering)
-- Modify: `docs/superpowers/plans/2026-10-11-billing-reliability-05-bills-reconciliation.md` (duplicate-detection mechanism)
+- Modify: `docs/plans/superpowers/2026-10-11-billing-reliability-01-usage-events.md` (delivery mechanism, pending ordering)
+- Modify: `docs/plans/superpowers/2026-10-11-billing-reliability-05-bills-reconciliation.md` (duplicate-detection mechanism)
 - Modify: `server/src/billing/maintenance.ts` (stale "nothing starts this in production yet" header)
 
 **Interfaces:**
@@ -135,7 +135,7 @@
 ## Task 7: Integrated verification and review
 
 **Files:**
-- Create: `docs/superpowers/plans/2026-10-13-billing-remediation-verification.md` during execution.
+- Create: `docs/plans/superpowers/2026-10-13-billing-remediation-verification.md` during execution.
 
 - [x] **Step 1: Database evidence.** Dedicated `TEST_DATABASE_URL`; apply appended migrations (Tasks 1–5 add none unless Task 3's sweep needs an index — if so, a new migration only); record commands and versions.
 - [x] **Step 2: Full targeted suite.** All billing/payment/credit/usage/webhook/statement test files plus typecheck; record counts, skips, exit codes. Baseline at audit time: 533 pass / 0 fail across the plan-named files; the run must not regress.

@@ -1,6 +1,6 @@
 # OpenBot 上游更新详细改造 Implementation Plan
 
-**采用与发布更新（2026-10-20）：** 用户已采用详细设计、测试边界和 12 张业务票拆分，父 Spec [#489](https://github.com/1123786563/OpenBot/issues/489) 及子票已创建；正式设计依据为 `docs/specs/2026-10-20-upstream-openbot-adoption-design.md`。下文是已采用范围的文件级 Task；代码实施仍未启动。发布关系与核验结果见 tickets manifest 和 publication-verification.json。
+**采用与发布更新（2026-10-20）：** 用户已采用详细设计、测试边界和 12 张业务票拆分，父 Spec [#489](https://github.com/1123786563/OpenBot/issues/489) 及子票已创建；正式设计依据为 `docs/specs/2026-10-20-upstream-openbot-adoption-design.md`。下文是已采用范围的文件级 Task；代码实施仍未启动。发布关系见 tickets manifest，核验结果已归档到 `.archive/runs/legacy-plans/tickets/upstream-openbot-update/`。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -66,7 +66,7 @@
 | 登录 | `agent-computer/src/sign-in.ts`, `server/src/computer/{schema,gateway}.ts`, `server/src/passwords/{types,store,service,routes,resume}.ts`, `server/src/db/schema/passwords.ts` | Computer 协议、service 状态机、持久化、continuation |
 | 登录 UI | `app/src/components/passwords/sign-in-form.tsx`, `app/src/lib/passwords/{queries,mutations}.ts`, `app/src/lib/copilot/sign-in-tool.tsx` | 分步表单、状态轮询、秘密清理 |
 | 研究 | 新 `shared/research.ts`, `server/src/plugins/{catalogue,mcp,tools,store,selection}.ts`, `app/src/lib/plugins/tool-name.ts` | provider 角色/认证/read 分类/skill ref/标签 |
-| 测试调度 | `docs/verification/e2e-bun-suites.json`, `scripts/lib/e2e-manifest.mjs` | 每任务新增 suite 立即登记，串行修改 |
+| 测试调度 | `tests/config/e2e-bun-suites.json`, `scripts/lib/e2e-manifest.mjs` | 每任务新增 suite 立即登记，串行修改 |
 | 词条 | `app/src/locales/{en,zh-CN}/{channels,computer,settings}.json` | 归任务所有，禁止复制上游英文硬编码 |
 
 ### I1：Computer 活动事件（U01 生产并使用）

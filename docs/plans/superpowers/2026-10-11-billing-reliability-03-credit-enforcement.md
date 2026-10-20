@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Drizzle ORM, PostgreSQL, Hono, React Query types, Bun Test.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-billing-reliability-design.md`
+**Spec:** `docs/specs/superpowers/2026-10-11-billing-reliability-design.md`
 
 ## Global Constraints
 
@@ -23,8 +23,8 @@
 ### Task 1: Record approved credit policy and define deployment settings
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-10-11-billing-reliability-design.md`
-- Create: `docs/superpowers/specs/adr/` decision record only if the repository's ADR convention is approved for this policy
+- Modify: `docs/specs/superpowers/2026-10-11-billing-reliability-design.md`
+- Create: `docs/specs/superpowers/adr/` decision record only if the repository's ADR convention is approved for this policy
 
 **Interfaces:**
 - Produces a validated typed configuration contract for model/input/output rational rates, code-run rational rate, per-model maximum reserved usage, and a per-run maximum reserved usage.

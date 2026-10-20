@@ -46,6 +46,7 @@
     "app/tests/admin-catalog-sync-ui.test.tsx",
     "app/tests/admin-credit-grant-ui.test.tsx",
     "app/tests/admin-gateway-readiness.test.tsx",
+    "app/tests/admin-settlement-review-ui.test.tsx",
     "app/tests/agent-roster-error.test.tsx",
     "app/tests/approval-tools.test.tsx",
     "app/tests/approvals-rules.test.tsx",
@@ -196,6 +197,7 @@
     "server/tests/access-grant.integration.test.ts",
     "server/tests/account-mode.integration.test.ts",
     "server/tests/admin-credit-grant.integration.test.ts",
+    "server/tests/admin-settlement-review.integration.test.ts",
     "server/tests/agent-connection-live.test.ts",
     "server/tests/agent-handoff-endtoend.integration.test.ts",
     "server/tests/agent-handoff-runner.integration.test.ts",
@@ -245,7 +247,8 @@
     "server/tests/channel-activity.integration.test.ts",
     "server/tests/channel-events.integration.test.ts",
     "server/tests/channel-routes.test.ts",
-    "server/tests/channel-summary.integration.test.ts"
+    "server/tests/channel-summary.integration.test.ts",
+    "server/tests/recovery-alerting.integration.test.ts"
    ]
   },
   {
@@ -646,6 +649,7 @@
   "app/tests/admin-catalog-sync-ui.test.tsx",
   "app/tests/admin-credit-grant-ui.test.tsx",
   "app/tests/admin-gateway-readiness.test.tsx",
+  "app/tests/admin-settlement-review-ui.test.tsx",
   "app/tests/agent-roster-error.test.tsx",
   "app/tests/ai-observability-admin-summary.test.tsx",
   "app/tests/ai-observability-datasets.test.tsx",
@@ -741,6 +745,7 @@
   "server/tests/access-grant.integration.test.ts",
   "server/tests/account-mode.integration.test.ts",
   "server/tests/admin-credit-grant.integration.test.ts",
+  "server/tests/admin-settlement-review.integration.test.ts",
   "server/tests/agent-connection-live.test.ts",
   "server/tests/agent-handoff-endtoend.integration.test.ts",
   "server/tests/agent-handoff-runner.integration.test.ts",
@@ -1032,6 +1037,7 @@
   "server/tests/qa-batch2-t5-semantics.integration.test.ts",
   "server/tests/qa-batch2-unreadable-fourth.integration.test.ts",
   "server/tests/qa-batch3-reconcile.test.ts",
+  "server/tests/recovery-alerting.integration.test.ts",
   "server/tests/recovery-scan.integration.test.ts",
   "server/tests/recovery-unacked-replay.integration.test.ts",
   "server/tests/release-semantics.integration.test.ts",

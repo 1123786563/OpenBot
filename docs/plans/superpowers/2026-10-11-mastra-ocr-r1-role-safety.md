@@ -46,8 +46,8 @@
 - Modify: `server/tests/enterprise/tenancy-connections.test.ts`
 - Create: `server/tests/enterprise/enterprise-role-preflight.test.ts`
 - Modify: `server/tests/enterprise/tenancy-rls.integration.test.ts` only for static role-artifact assertions or a safe, transaction-scoped test on the verified dedicated test database.
-- Modify: `docs/deployment.md`
-- Modify: `docs/development.md`
+- Modify: `reference/deployment.md`
+- Modify: `reference/development.md`
 
 **Consumes / produces:** Consumes role names `ob_ent_directory`, `ob_ent_data`, `ob_ent_operator`, `ob_ent_identity_operator`, migration 0055's existing explicit grants, and `R16-Fix5-CP1`. Produces one consistent role-safety contract: the bootstrap rejects unsafe pre-existing capability attributes and protected ownership; runtime verification rejects unsafe capability/login attributes and PUBLIC enterprise relation/column grants; `scripts/migrate.ts` fails before applying any migration if required capability roles are missing or unsafe; the DBA invocation for `roles.sql` verifies a direct superuser session before reading `pg_authid`. The preflight row interface is `EnterpriseRoleCatalogRow = { rolname: string; rolcanlogin: boolean; rolsuper: boolean; rolbypassrls: boolean; rolcreatedb: boolean; rolcreaterole: boolean; rolreplication: boolean }`.
 

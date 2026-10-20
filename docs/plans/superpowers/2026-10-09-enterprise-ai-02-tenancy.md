@@ -8,7 +8,7 @@
 
 **技术栈：** 当前 Hono、Bun、Drizzle ORM、PostgreSQL、Better Auth、Zod。Go 仅为候选执行运行时，不是本册控制平面；授权规则随应用制品版本化发布，不增加外部授权服务、策略语言或 SDK。
 
-**规范性索引（enterprise-mvp-v0.2，2026-10-09）：** M指[总计划00](docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md)，其§1为决策、§4为共同wire契约、§6为门禁唯一注册；总体依据见[总体方案](docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md)。发现冲突须修文档而不是绕过。本册只实现租户/身份/资源范围，03–06待编写，不声称其实现完备。
+**规范性索引（enterprise-mvp-v0.2，2026-10-09）：** M指[总计划00](../../plans/superpowers/2026-10-09-enterprise-ai-00-master.md)，其§1为决策、§4为共同wire契约、§6为门禁唯一注册；总体依据见[总体方案](../../specs/superpowers/2026-10-09-enterprise-ai-platform-design.md)。发现冲突须修文档而不是绕过。本册只实现租户/身份/资源范围，03–06待编写，不声称其实现完备。
 
 **本次已确认修订：** 当前整个 MVP 不引入 OpenFGA/OPA，不部署对应服务，不维护策略包、外部模型或自动后备实现；未来引入外部引擎必须另行 ADR、设计和批准。MVP 本地 Authz 只决定资源 `read`，工具 `ActionPolicy` 由 04 以确定性 TypeScript 实现；二者不能互相冒充。本轮总体方案与 00/01/02 同步修订，评审报告为修订前问题快照，不改变其历史行号。
 

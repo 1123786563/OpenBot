@@ -1,6 +1,6 @@
 # tRPC-Agent-Go 与 Intelligence 完整替换 Implementation Plan
 
-> 2026-10-10 设计变更：用户已选择 Mastra 统一承担 Agent 执行与 Intelligence 替代能力。新书面设计见 [Mastra 迁移设计](../specs/2026-10-10-mastra-intelligence-migration-design.md)。原 Go 方向 T05–T20 暂缓派发，新规格已批准，新计划与 DAG 已更新于 `docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md` 和 `docs/plans/2026-10-10-mastra-intelligence-dag.json`；本旧 Go 计划不再派发，既有已验证检查点保留。
+> 2026-10-10 设计变更：用户已选择 Mastra 统一承担 Agent 执行与 Intelligence 替代能力。新书面设计见 [Mastra 迁移设计](../../specs/2026-10-19-mastra-agent-execution-migration-design.md)。原 Go 方向 T05–T20 暂缓派发，新规格已批准，新计划与 DAG 已更新于 `docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md` 和 `docs/plans/2026-10-10-mastra-intelligence-dag.json`；本旧 Go 计划不再派发，既有已验证检查点保留。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 专业实现 Agent 串行执行，主控负责集成、验证派发、Review 与 OCR。
 
@@ -10,7 +10,7 @@
 
 **Tech Stack:** Bun/Hono/TypeScript/Drizzle/PostgreSQL、React、RxJS/AG-UI、tRPC-Agent-Go、Tauri Rust、Docker Compose/Helm。以 bun.lock/go.sum 和 SDK 1.77.0 基线为起点，安全升级须记录并重验契约。
 
-**Spec:** [已批准迁移规格](../specs/2026-10-09-trpc-intelligence-migration-design.md)；[企业规格](../specs/2026-10-09-enterprise-ai-platform-design.md)、[总合同/门禁](2026-10-09-enterprise-ai-00-master.md)、[租户前置](2026-10-09-enterprise-ai-02-tenancy.md)。批准来源：用户在本会话确认书面规格，2026-10-09。
+**Spec:** [已批准迁移规格](../../specs/superpowers/2026-10-09-enterprise-ai-platform-design.md)；[企业规格](../../specs/superpowers/2026-10-09-enterprise-ai-platform-design.md)、[总合同/门禁](2026-10-09-enterprise-ai-00-master.md)、[租户前置](2026-10-09-enterprise-ai-02-tenancy.md)。批准来源：用户在本会话确认书面规格，2026-10-09。
 
 ## Global Constraints
 
@@ -39,7 +39,7 @@
 
 工作区：`/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot`，BASE=`fbdecc29cd786952c4b496abc68384b31a320b17`，detached HEAD。已存在并附属于本会话；不得重新创建或切换原目录。
 
-[规格来源基线](../../plans/2026-10-09-trpc-intelligence-spec-baseline.json)、[计划基线](../../plans/2026-10-09-trpc-intelligence-plan-baseline.json)、[DAG/验收映射](../../plans/2026-10-09-trpc-intelligence-dag.json)、[执行前自检](../../plans/2026-10-09-trpc-intelligence-preflight.md)随计划保存。原工作区有持续变化的认证、配置、账务和运行时验证修改；仅记录路径/hash，未复制其业务代码。本隔离 BASE 自身是有效起点，但后续集成回当前分支前必须按最新 Git 做差异核对，不用 stash。
+[规格来源基线](../../../.archive/runs/legacy-plans/2026-10-09-trpc-intelligence/2026-10-09-trpc-intelligence-spec-baseline.json)、[计划基线](../../../.archive/runs/legacy-plans/2026-10-09-trpc-intelligence/2026-10-09-trpc-intelligence-plan-baseline.json)、[DAG/验收映射](../2026-10-09-trpc-intelligence-dag.json)、[执行前自检](../2026-10-09-trpc-intelligence-preflight.md)随计划保存。原工作区有持续变化的认证、配置、账务和运行时验证修改；仅记录路径/hash，未复制其业务代码。本隔离 BASE 自身是有效起点，但后续集成回当前分支前必须按最新 Git 做差异核对，不用 stash。
 
 当前交付为详细计划。产品依赖未安装、测试未运行，planned/ready 不代表 verified。既有基线失败须记录并归属，不把环境错误当业务 RED。文档被当前 .gitignore 忽略，需以完整内容快照归档，最终交付清单不能只看 git diff。计划批准后按既定 SDD 执行，不重新询问执行方法。
 
@@ -610,7 +610,7 @@ expect(screen.queryByText(/Intelligence API Key/i)).toBeNull();
 **Files / ownership:**
 
 - **Create:** `server/scripts/runtime-acceptance.ts`、`server/tests/enterprise/intelligence-removal.test.ts`、`docs/plans/2026-10-09-trpc-intelligence-evidence.md`。
-- **Modify existing:** `runtime-go/dependency-review.json`、`runtime-go/testdata/compatibility-report.json`、`README.md`、`docs/architecture.md`、`docs/configuration.md`、`docs/deployment.md`、`docs/development.md`、`docs/automatic-learning.md`、`docs/coworkers.md`、`docs/releasing.md`、`charts/openbot/README.md`、`scripts/architecture-diagram.ts`、`assets/architecture-light.svg`、`assets/architecture-dark.svg`。
+- **Modify existing:** `runtime-go/dependency-review.json`、`runtime-go/testdata/compatibility-report.json`、`README.md`、`reference/architecture.md`、`reference/configuration.md`、`reference/deployment.md`、`reference/development.md`、`reference/automatic-learning.md`、`reference/coworkers.md`、`reference/releasing.md`、`charts/openbot/README.md`、`scripts/architecture-diagram.ts`、`assets/architecture-light.svg`、`assets/architecture-dark.svg`。
 
 迁移目录只拥有本任务新增文件及 journal/snapshot 增量；已有源文件局部修改，不覆盖前置交付。
 
