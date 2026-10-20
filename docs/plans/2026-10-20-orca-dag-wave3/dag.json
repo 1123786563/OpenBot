@@ -1,0 +1,4557 @@
+{
+ "nodes": [
+  {
+   "issue": 5,
+   "title": "Spec: Bifrost 模型访问、短期虚拟 Key 与严格积分计费",
+   "domain": "unrooted",
+   "kind": "spec_aggregate",
+   "roots": [],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 6,
+   "title": "Spec: 公司与团队多租户整改（全功能隔离后统一上线）",
+   "domain": "unrooted",
+   "kind": "spec_aggregate",
+   "roots": [],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 49,
+   "title": "[B] MT006 公司与团队列表、选择与管理入口",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    188
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 56,
+   "title": "[D] MT013 多租户模式开关与启动就绪校验",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    190
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 86,
+   "title": "[J] MT043 认领、重试与人工取消保持归属",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    196
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 87,
+   "title": "[J] MT044 入站邮件、GitHub 与 Webhook 的归属解析",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    196
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 88,
+   "title": "[J] MT045 主动建议与外部调用前后的事务边界",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    196
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 89,
+   "title": "[K] MT046 电脑与浏览器实例分配、远程屏幕与人工接管授权",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    197
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 90,
+   "title": "[K] MT047 快照、shell、文件、cancel/reset/cull 的归属",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    197
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 91,
+   "title": "[K] MT048 运行协议环节的归属：委托、能力、步骤、事件、恢复与取消",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    197
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 92,
+   "title": "[K] MT049 TypeScript agent 适配器统一消费已验证归属",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    197
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 93,
+   "title": "[K] MT050 Go Runtime、supervisor 与原生 agent 适配器的归属传递",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    197
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 94,
+   "title": "[K] MT051 执行上界、审批与机密脱敏的既有保证不回退",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    197
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 95,
+   "title": "[K] MT052 状态化公共 Bot 为不同使用者隔离浏览器与工作区",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    197
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 96,
+   "title": "[L] MT053 Craft 会话、turn、消息与快照的作用域",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    198
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 97,
+   "title": "[L] MT054 Craft 计划任务、子任务与应用连接的归属",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    198
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 98,
+   "title": "[L] MT055 产物与对象存储路径按归属隔离",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    198
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 99,
+   "title": "[L] MT056 签名下载与代理访问在签发点和访问点都授权，撤销即停止",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    198
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 100,
+   "title": "[L] MT057 Workshop 会话、执行、产物与沙箱实例关联的作用域",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    198
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 101,
+   "title": "[L] MT058 分享令牌改为有效分享授权（受众、有效期、撤销）",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    198
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 104,
+   "title": "[M] MT061 OpenMuse 文件、PDF 检视/填写/传输与个人工作区的作用域",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    199
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 105,
+   "title": "[M] MT062 OpenMuse 目标、想法、记忆与财务产物的作用域",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    199
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 107,
+   "title": "[M] MT064 OpenMuse 审阅动作提案与回执的归属",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    199
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 108,
+   "title": "[M] MT065 OpenMuse 活动流与通知的归属与正文过滤",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    199
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 109,
+   "title": "[M] MT066 语音、听写与移动聚合接口只返回当前范围",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    199
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 123,
+   "title": "[P] MT080 Web 公司与团队选择界面及无资格空状态",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 124,
+   "title": "[P] MT081 Web REST 与上传下载签发统一附加当前范围",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 125,
+   "title": "[P] MT082 Web SSE 与 WebSocket 建连、续订携带范围并终止旧连接",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 126,
+   "title": "[P] MT083 按公司团队隔离查询缓存并拒绝旧 generation 的在途响应",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 127,
+   "title": "[P] MT084 Web Bot 详情与配置页接入范围",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 128,
+   "title": "[P] MT085 Web Bot 共享与发布页按服务端能力展示",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 129,
+   "title": "[P] MT086 Web Bot 职责、电脑与审批页面接入范围",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 130,
+   "title": "[P] MT087 Web 会话与群聊页面接入范围",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 131,
+   "title": "[P] MT088 Web 技能与连接账号页面接入范围",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 132,
+   "title": "[P] MT089 Web 记忆与定时任务页面接入范围",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 134,
+   "title": "[P] MT091 Web Craft 与 Workshop 页面接入范围",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 135,
+   "title": "[P] MT092 Web 分享页的身份、受众与撤销状态",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 136,
+   "title": "[P] MT093 Web 知识管理与文档处理页面接入范围",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 137,
+   "title": "[P] MT094 Web 插件、技能与组件页面接入范围",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 138,
+   "title": "[P] MT095 Web people、身份提供方与凭据管理界面按能力开放",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 139,
+   "title": "[P] MT096 Web 学习、企业与审计管理界面按能力开放",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 140,
+   "title": "[P] MT097 Web 账单、订单与团队用量视图",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    202
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 144,
+   "title": "[Q] MT101 桌面组织登录、公司团队选择与嵌入工作台携带选择",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    203
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 145,
+   "title": "[Q] MT102 桌面本地状态与业务缓存按组织隔离",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    203
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 147,
+   "title": "[R] MT104 移动端 tenancy 适配层：选择与缓存",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    204
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 148,
+   "title": "[R] MT105 移动端流式与媒体传输携带当前范围",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    204
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 149,
+   "title": "[R] MT106 Web、iOS、Android 三端选择与缓存一致性验证",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    204
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 150,
+   "title": "[R] MT107 移动聚合接口范围与三端流式/媒体一致性验证",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    204
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 151,
+   "title": "[S] MT108 Trace、日志与事件的归属字段注入",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    205
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 152,
+   "title": "[S] MT109 用量事件的账户区分与脱敏回归",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    205
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 153,
+   "title": "[S] MT110 共享观测后端的查询、导出与 trace 链接授权",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    205
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 154,
+   "title": "[S] MT111 已启用集成的隔离与账户路由证据",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    205
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 156,
+   "title": "[T] MT113 历史根记录归属回填并保持既有个人授权",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 157,
+   "title": "[T] MT114 主库子记录回填第一批：Bot、会话、凭据与插件",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 158,
+   "title": "[T] MT115 主库子记录回填第二批：记忆、任务、Craft/Workshop、OpenMuse、账务与策略",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 159,
+   "title": "[T] MT116 知识库侧归属回填与独立进度记录",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 160,
+   "title": "[T] MT117 跨库一致性校验、断点续跑与回填报告",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 161,
+   "title": "[T] MT118 对象存储文件与产物的归属迁移",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 163,
+   "title": "[T] MT120 无法归属外部状态的隔离清单与启用阻断",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 164,
+   "title": "[T] MT121 冻结写入、备份恢复、失败隔离与回退程序（含演练）",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 168,
+   "title": "[T] MT125 旧 REST、Copilot 与移动聚合入口装配与兼容",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 169,
+   "title": "[T] MT126 流式与长连接入口的上下文与订阅授权装配",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 170,
+   "title": "[T] MT127 全局登录、健康检查与平台静态目录例外登记闭合",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 171,
+   "title": "[T] MT128 机器回调与个人 Bifrost 直连路径例外登记闭合",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 172,
+   "title": "[T] MT129 多租户启动就绪强制与缺口阻断",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 173,
+   "title": "[T] MT130 Worker 与后台装配去默认公司",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 175,
+   "title": "[T] MT132 身份矩阵 runner 与逐入口覆盖状态输出",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 176,
+   "title": "[T] MT133 覆盖证据：Bot、会话与附件",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 177,
+   "title": "[T] MT134 覆盖证据：插件审批、知识与记忆",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 178,
+   "title": "[T] MT135 覆盖证据：后台任务与执行隔离",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 179,
+   "title": "[T] MT136 覆盖证据：Craft/Workshop、OpenMuse 与删除恢复",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 180,
+   "title": "[T] MT137 覆盖证据：公司/个人付款账户与账务可见性",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 181,
+   "title": "[T] MT138 覆盖证据：治理、审计与观测出口",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 182,
+   "title": "[T] MT139 覆盖证据：Web 客户端",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 183,
+   "title": "[T] MT140 覆盖证据：桌面与移动端",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 184,
+   "title": "[T] MT141 缺口关闭与阻塞项清单",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 185,
+   "title": "[T] MT142 独立 Review 与完整范围代码审查",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 186,
+   "title": "[T] MT143 统一上线候选包与证据汇总",
+   "domain": "mt",
+   "kind": "ticket",
+   "roots": [
+    206
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 222,
+   "title": "Bifrost 02.8 管理员发放到指定个人账户",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 221,
+     "state": "open",
+     "title": "Bifrost 02.7 用户余额页面"
+    }
+   ],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 263,
+   "title": "Bifrost 06.12 预留/待结算/实扣接入用户视图",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 260,
+     "state": "closed",
+     "title": "Bifrost 06.9 Settle 幂等"
+    },
+    {
+     "number": 221,
+     "state": "open",
+     "title": "Bifrost 02.7 用户余额页面"
+    }
+   ],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 265,
+   "title": "Bifrost 07.2 PreLLM 认证并申请预留",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 264,
+     "state": "open",
+     "title": "Bifrost 07.1 Bifrost 准入扩展挂载与开关"
+    }
+   ],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 266,
+   "title": "Bifrost 07.3 未预留 short-circuit 拒绝语义",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 265,
+     "state": "open",
+     "title": "Bifrost 07.2 PreLLM 认证并申请预留"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 265,
+     "state": "open",
+     "title": "Bifrost 07.2 PreLLM 认证并申请预留"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 267,
+   "title": "Bifrost 07.4 dispatch 承诺持久化与幂等 claim",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 265,
+     "state": "open",
+     "title": "Bifrost 07.2 PreLLM 认证并申请预留"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 265,
+     "state": "open",
+     "title": "Bifrost 07.2 PreLLM 认证并申请预留"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 268,
+   "title": "Bifrost 07.5 真实重试重新准入",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 267,
+     "state": "open",
+     "title": "Bifrost 07.4 dispatch 承诺持久化与幂等 claim"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 267,
+     "state": "open",
+     "title": "Bifrost 07.4 dispatch 承诺持久化与幂等 claim"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 274,
+   "title": "Bifrost 07.11 计费失败/取消/无 usage 处理",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 273,
+     "state": "open",
+     "title": "Bifrost 07.10 流式最终用量结算"
+    }
+   ],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 275,
+   "title": "Bifrost 07.12 端到端全链路验收与硬拒绝",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 266,
+     "state": "open",
+     "title": "Bifrost 07.3 未预留 short-circuit 拒绝语义"
+    },
+    {
+     "number": 268,
+     "state": "open",
+     "title": "Bifrost 07.5 真实重试重新准入"
+    },
+    {
+     "number": 270,
+     "state": "open",
+     "title": "Bifrost 07.7 provider 输出封顶强制"
+    },
+    {
+     "number": 272,
+     "state": "open",
+     "title": "Bifrost 07.9 重复 ack 只记录一次"
+    },
+    {
+     "number": 274,
+     "state": "open",
+     "title": "Bifrost 07.11 计费失败/取消/无 usage 处理"
+    },
+    {
+     "number": 245,
+     "state": "closed",
+     "title": "Bifrost 05.4 CredentialBundle 内容与明文边界"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 266,
+     "state": "open",
+     "title": "Bifrost 07.3 未预留 short-circuit 拒绝语义"
+    },
+    {
+     "number": 268,
+     "state": "open",
+     "title": "Bifrost 07.5 真实重试重新准入"
+    },
+    {
+     "number": 274,
+     "state": "open",
+     "title": "Bifrost 07.11 计费失败/取消/无 usage 处理"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 280,
+   "title": "Bifrost 08.5 provider 终态查询",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 279,
+     "state": "open",
+     "title": "Bifrost 08.4 后台重试与失败次数记录"
+    }
+   ],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 281,
+   "title": "Bifrost 08.6 持续异常告警",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 280,
+     "state": "open",
+     "title": "Bifrost 08.5 provider 终态查询"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 280,
+     "state": "open",
+     "title": "Bifrost 08.5 provider 终态查询"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 282,
+   "title": "Bifrost 08.7 用户待结算原因展示",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 281,
+     "state": "open",
+     "title": "Bifrost 08.6 持续异常告警"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 281,
+     "state": "open",
+     "title": "Bifrost 08.6 持续异常告警"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 283,
+   "title": "Bifrost 08.8 管理员只读核查视图",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 280,
+     "state": "open",
+     "title": "Bifrost 08.5 provider 终态查询"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 280,
+     "state": "open",
+     "title": "Bifrost 08.5 provider 终态查询"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 284,
+   "title": "Bifrost 08.9 证据化结算与释放命令",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 283,
+     "state": "open",
+     "title": "Bifrost 08.8 管理员只读核查视图"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 283,
+     "state": "open",
+     "title": "Bifrost 08.8 管理员只读核查视图"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 285,
+   "title": "Bifrost 08.10 平台损失补偿与停用账户债务保留",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 284,
+     "state": "open",
+     "title": "Bifrost 08.9 证据化结算与释放命令"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 284,
+     "state": "open",
+     "title": "Bifrost 08.9 证据化结算与释放命令"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 288,
+   "title": "Bifrost 09.3 个人 Key 不获得公司内容访问",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 287,
+     "state": "open",
+     "title": "Bifrost 09.2 公司 payer 贯穿全链路"
+    }
+   ],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 296,
+   "title": "Bifrost 11.1 Embedding 输入边界证据与计价维度",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 275,
+     "state": "open",
+     "title": "Bifrost 07.12 端到端全链路验收与硬拒绝"
+    },
+    {
+     "number": 225,
+     "state": "closed",
+     "title": "Bifrost 03.3 known/free/unknown 价格状态分类"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 275,
+     "state": "open",
+     "title": "Bifrost 07.12 端到端全链路验收与硬拒绝"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 297,
+   "title": "Bifrost 11.2 Embedding 未知价格拒绝执行",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 296,
+     "state": "open",
+     "title": "Bifrost 11.1 Embedding 输入边界证据与计价维度"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 296,
+     "state": "open",
+     "title": "Bifrost 11.1 Embedding 输入边界证据与计价维度"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 298,
+   "title": "Bifrost 11.3 Rerank 计价维度与启用门禁",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 296,
+     "state": "open",
+     "title": "Bifrost 11.1 Embedding 输入边界证据与计价维度"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 296,
+     "state": "open",
+     "title": "Bifrost 11.1 Embedding 输入边界证据与计价维度"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 299,
+   "title": "Bifrost 11.4 Rerank 缺维度拒绝路径",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 298,
+     "state": "open",
+     "title": "Bifrost 11.3 Rerank 计价维度与启用门禁"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 298,
+     "state": "open",
+     "title": "Bifrost 11.3 Rerank 计价维度与启用门禁"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 300,
+   "title": "Bifrost 11.5 OCR 图像/页数计价维度",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 296,
+     "state": "open",
+     "title": "Bifrost 11.1 Embedding 输入边界证据与计价维度"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 296,
+     "state": "open",
+     "title": "Bifrost 11.1 Embedding 输入边界证据与计价维度"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 301,
+   "title": "Bifrost 11.6 OCR 未知价格不得免费执行",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 300,
+     "state": "open",
+     "title": "Bifrost 11.5 OCR 图像/页数计价维度"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 300,
+     "state": "open",
+     "title": "Bifrost 11.5 OCR 图像/页数计价维度"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 302,
+   "title": "Bifrost 12.1 图像生成规格维度预留",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 275,
+     "state": "open",
+     "title": "Bifrost 07.12 端到端全链路验收与硬拒绝"
+    },
+    {
+     "number": 224,
+     "state": "closed",
+     "title": "Bifrost 03.2 多维价格快照持久化与版本"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 275,
+     "state": "open",
+     "title": "Bifrost 07.12 端到端全链路验收与硬拒绝"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 303,
+   "title": "Bifrost 12.2 图像生成实际用量结算与明细",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 302,
+     "state": "open",
+     "title": "Bifrost 12.1 图像生成规格维度预留"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 302,
+     "state": "open",
+     "title": "Bifrost 12.1 图像生成规格维度预留"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 304,
+   "title": "Bifrost 12.3 图像编辑输入成本纳入",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 302,
+     "state": "open",
+     "title": "Bifrost 12.1 图像生成规格维度预留"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 302,
+     "state": "open",
+     "title": "Bifrost 12.1 图像生成规格维度预留"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 305,
+   "title": "Bifrost 12.4 变体与多入口不能绕预算",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 304,
+     "state": "open",
+     "title": "Bifrost 12.3 图像编辑输入成本纳入"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 304,
+     "state": "open",
+     "title": "Bifrost 12.3 图像编辑输入成本纳入"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 306,
+   "title": "Bifrost 13.1 语音生成上限预留",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [
+    5
+   ],
+   "deps": [
+    {
+     "number": 275,
+     "state": "open",
+     "title": "Bifrost 07.12 端到端全链路验收与硬拒绝"
+    },
+    {
+     "number": 224,
+     "state": "closed",
+     "title": "Bifrost 03.2 多维价格快照持久化与版本"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 275,
+     "state": "open",
+     "title": "Bifrost 07.12 端到端全链路验收与硬拒绝"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 307,
+   "title": "Bifrost 13.2 语音生成实际用量结算",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 306,
+     "state": "open",
+     "title": "Bifrost 13.1 语音生成上限预留"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 306,
+     "state": "open",
+     "title": "Bifrost 13.1 语音生成上限预留"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 308,
+   "title": "Bifrost 13.3 播放/流中断尾部费用只结算一次",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 307,
+     "state": "open",
+     "title": "Bifrost 13.2 语音生成实际用量结算"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 307,
+     "state": "open",
+     "title": "Bifrost 13.2 语音生成实际用量结算"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 309,
+   "title": "Bifrost 13.4 尾部不可约束路径不启用",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 308,
+     "state": "open",
+     "title": "Bifrost 13.3 播放/流中断尾部费用只结算一次"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 308,
+     "state": "open",
+     "title": "Bifrost 13.3 播放/流中断尾部费用只结算一次"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 310,
+   "title": "Bifrost 14.1 转录可靠输入长度计量",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 275,
+     "state": "open",
+     "title": "Bifrost 07.12 端到端全链路验收与硬拒绝"
+    },
+    {
+     "number": 224,
+     "state": "closed",
+     "title": "Bifrost 03.2 多维价格快照持久化与版本"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 275,
+     "state": "open",
+     "title": "Bifrost 07.12 端到端全链路验收与硬拒绝"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 311,
+   "title": "Bifrost 14.2 转录结算与元数据篡改防护",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 310,
+     "state": "open",
+     "title": "Bifrost 14.1 转录可靠输入长度计量"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 310,
+     "state": "open",
+     "title": "Bifrost 14.1 转录可靠输入长度计量"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 312,
+   "title": "Bifrost 14.3 其他音频处理路径能力证据",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 310,
+     "state": "open",
+     "title": "Bifrost 14.1 转录可靠输入长度计量"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 310,
+     "state": "open",
+     "title": "Bifrost 14.1 转录可靠输入长度计量"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 313,
+   "title": "Bifrost 14.4 未验证音频路径保持不可用",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 312,
+     "state": "open",
+     "title": "Bifrost 14.3 其他音频处理路径能力证据"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 312,
+     "state": "open",
+     "title": "Bifrost 14.3 其他音频处理路径能力证据"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 314,
+   "title": "Bifrost 15.1 实时会话身份固定",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 276,
+     "state": "closed",
+     "title": "Bifrost 08.1 dispatch 未知状态恢复扫描"
+    },
+    {
+     "number": 308,
+     "state": "open",
+     "title": "Bifrost 13.3 播放/流中断尾部费用只结算一次"
+    },
+    {
+     "number": 311,
+     "state": "open",
+     "title": "Bifrost 14.2 转录结算与元数据篡改防护"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 308,
+     "state": "open",
+     "title": "Bifrost 13.3 播放/流中断尾部费用只结算一次"
+    },
+    {
+     "number": 311,
+     "state": "open",
+     "title": "Bifrost 14.2 转录结算与元数据篡改防护"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 315,
+   "title": "Bifrost 15.2 单元级 attempt 与 Reservation hook",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 314,
+     "state": "open",
+     "title": "Bifrost 15.1 实时会话身份固定"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 314,
+     "state": "open",
+     "title": "Bifrost 15.1 实时会话身份固定"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 316,
+   "title": "Bifrost 15.3 音频输入门控",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 315,
+     "state": "open",
+     "title": "Bifrost 15.2 单元级 attempt 与 Reservation hook"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 315,
+     "state": "open",
+     "title": "Bifrost 15.2 单元级 attempt 与 Reservation hook"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 317,
+   "title": "Bifrost 15.4 旧单元未结清不放开新输入",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 316,
+     "state": "open",
+     "title": "Bifrost 15.3 音频输入门控"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 316,
+     "state": "open",
+     "title": "Bifrost 15.3 音频输入门控"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 318,
+   "title": "Bifrost 15.5 耗尽后停止后续单元",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 316,
+     "state": "open",
+     "title": "Bifrost 15.3 音频输入门控"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 316,
+     "state": "open",
+     "title": "Bifrost 15.3 音频输入门控"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 319,
+   "title": "Bifrost 15.6 撤销/到期阻止后续单元并尽力关停",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 318,
+     "state": "open",
+     "title": "Bifrost 15.5 耗尽后停止后续单元"
+    },
+    {
+     "number": 248,
+     "state": "closed",
+     "title": "Bifrost 05.7 撤销后拒绝续期与旧版本禁用"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 318,
+     "state": "open",
+     "title": "Bifrost 15.5 耗尽后停止后续单元"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 320,
+   "title": "Bifrost 15.7 关停尾部费用只结算一次",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 319,
+     "state": "open",
+     "title": "Bifrost 15.6 撤销/到期阻止后续单元并尽力关停"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 319,
+     "state": "open",
+     "title": "Bifrost 15.6 撤销/到期阻止后续单元并尽力关停"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 321,
+   "title": "Bifrost 15.8 断线/重启恢复与实时消费展示",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 320,
+     "state": "open",
+     "title": "Bifrost 15.7 关停尾部费用只结算一次"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 320,
+     "state": "open",
+     "title": "Bifrost 15.7 关停尾部费用只结算一次"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 322,
+   "title": "Bifrost 16.1 WebRTC 入口复用单元预留与门控",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 318,
+     "state": "open",
+     "title": "Bifrost 15.5 耗尽后停止后续单元"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 318,
+     "state": "open",
+     "title": "Bifrost 15.5 耗尽后停止后续单元"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 323,
+   "title": "Bifrost 16.2 WebRTC 关停与尾部结算一致",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 322,
+     "state": "open",
+     "title": "Bifrost 16.1 WebRTC 入口复用单元预留与门控"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 322,
+     "state": "open",
+     "title": "Bifrost 16.1 WebRTC 入口复用单元预留与门控"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 324,
+   "title": "Bifrost 16.3 防临时 provider 会话绕开",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 323,
+     "state": "open",
+     "title": "Bifrost 16.2 WebRTC 关停与尾部结算一致"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 323,
+     "state": "open",
+     "title": "Bifrost 16.2 WebRTC 关停与尾部结算一致"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 326,
+   "title": "Bifrost 17.2 提交前完整上限预留与提交幂等",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 325,
+     "state": "open",
+     "title": "Bifrost 17.1 异步任务身份持久化"
+    }
+   ],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 327,
+   "title": "Bifrost 17.3 providerJobID 丢失进入未知恢复",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 326,
+     "state": "open",
+     "title": "Bifrost 17.2 提交前完整上限预留与提交幂等"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 326,
+     "state": "open",
+     "title": "Bifrost 17.2 提交前完整上限预留与提交幂等"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 328,
+   "title": "Bifrost 17.4 状态/结果查询只读授权",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 326,
+     "state": "open",
+     "title": "Bifrost 17.2 提交前完整上限预留与提交幂等"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 326,
+     "state": "open",
+     "title": "Bifrost 17.2 提交前完整上限预留与提交幂等"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 329,
+   "title": "Bifrost 17.5 重复 GET 与完成通知只结算一次",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 328,
+     "state": "open",
+     "title": "Bifrost 17.4 状态/结果查询只读授权"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 328,
+     "state": "open",
+     "title": "Bifrost 17.4 状态/结果查询只读授权"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 330,
+   "title": "Bifrost 17.6 按可靠终态 usage 结算",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 329,
+     "state": "open",
+     "title": "Bifrost 17.5 重复 GET 与完成通知只结算一次"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 329,
+     "state": "open",
+     "title": "Bifrost 17.5 重复 GET 与完成通知只结算一次"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 331,
+   "title": "Bifrost 17.7 取消失败/未知终态保持完整预留",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 330,
+     "state": "open",
+     "title": "Bifrost 17.6 按可靠终态 usage 结算"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 330,
+     "state": "open",
+     "title": "Bifrost 17.6 按可靠终态 usage 结算"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 332,
+   "title": "Bifrost 17.8 任务状态展示与归属不变",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 330,
+     "state": "open",
+     "title": "Bifrost 17.6 按可靠终态 usage 结算"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 330,
+     "state": "open",
+     "title": "Bifrost 17.6 按可靠终态 usage 结算"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 333,
+   "title": "Bifrost 18.1 批量整体上限预留",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 330,
+     "state": "open",
+     "title": "Bifrost 17.6 按可靠终态 usage 结算"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 330,
+     "state": "open",
+     "title": "Bifrost 17.6 按可靠终态 usage 结算"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 334,
+   "title": "Bifrost 18.2 批量逐条归属结算",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 333,
+     "state": "open",
+     "title": "Bifrost 18.1 批量整体上限预留"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 333,
+     "state": "open",
+     "title": "Bifrost 18.1 批量整体上限预留"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 335,
+   "title": "Bifrost 18.3 部分成功结算",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 334,
+     "state": "open",
+     "title": "Bifrost 18.2 批量逐条归属结算"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 334,
+     "state": "open",
+     "title": "Bifrost 18.2 批量逐条归属结算"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 336,
+   "title": "Bifrost 18.4 部分取消不丢不重",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 334,
+     "state": "open",
+     "title": "Bifrost 18.2 批量逐条归属结算"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 334,
+     "state": "open",
+     "title": "Bifrost 18.2 批量逐条归属结算"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 337,
+   "title": "Bifrost 19.1 视频生成规格计价与预留",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 326,
+     "state": "open",
+     "title": "Bifrost 17.2 提交前完整上限预留与提交幂等"
+    },
+    {
+     "number": 224,
+     "state": "closed",
+     "title": "Bifrost 03.2 多维价格快照持久化与版本"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 326,
+     "state": "open",
+     "title": "Bifrost 17.2 提交前完整上限预留与提交幂等"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 338,
+   "title": "Bifrost 19.2 未定价视频规格不可用",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 337,
+     "state": "open",
+     "title": "Bifrost 19.1 视频生成规格计价与预留"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 337,
+     "state": "open",
+     "title": "Bifrost 19.1 视频生成规格计价与预留"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 339,
+   "title": "Bifrost 19.3 视频编辑/变体规格计价",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 337,
+     "state": "open",
+     "title": "Bifrost 19.1 视频生成规格计价与预留"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 337,
+     "state": "open",
+     "title": "Bifrost 19.1 视频生成规格计价与预留"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 340,
+   "title": "Bifrost 19.4 视频异步结算恢复与产物查询",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 339,
+     "state": "open",
+     "title": "Bifrost 19.3 视频编辑/变体规格计价"
+    },
+    {
+     "number": 330,
+     "state": "open",
+     "title": "Bifrost 17.6 按可靠终态 usage 结算"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 339,
+     "state": "open",
+     "title": "Bifrost 19.3 视频编辑/变体规格计价"
+    },
+    {
+     "number": 330,
+     "state": "open",
+     "title": "Bifrost 17.6 按可靠终态 usage 结算"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 342,
+   "title": "Bifrost 20.2 可强制限额才启用",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 341,
+     "state": "open",
+     "title": "Bifrost 20.1 工具/路由附加调用计价维度纳入"
+    }
+   ],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 343,
+   "title": "Bifrost 20.3 用户明细区分模型与附加费用",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 341,
+     "state": "open",
+     "title": "Bifrost 20.1 工具/路由附加调用计价维度纳入"
+    }
+   ],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 344,
+   "title": "Bifrost 20.4 未定价工具旁路阻止与公司工具权限隔离",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 342,
+     "state": "open",
+     "title": "Bifrost 20.2 可强制限额才启用"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 342,
+     "state": "open",
+     "title": "Bifrost 20.2 可强制限额才启用"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 352,
+   "title": "Bifrost 22.1 全入口枚举",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 214,
+     "state": "open",
+     "title": "Bifrost 01.8 管理员就绪状态页面"
+    },
+    {
+     "number": 222,
+     "state": "open",
+     "title": "Bifrost 02.8 管理员发放到指定个人账户"
+    },
+    {
+     "number": 233,
+     "state": "closed",
+     "title": "Bifrost 03.11 公开只读模型发现与价格查询接口"
+    },
+    {
+     "number": 241,
+     "state": "closed",
+     "title": "Bifrost 04.8 内置工作台隐式授权"
+    },
+    {
+     "number": 251,
+     "state": "open",
+     "title": "Bifrost 05.10 用户侧 Key 状态展示与全版本撤销"
+    },
+    {
+     "number": 263,
+     "state": "open",
+     "title": "Bifrost 06.12 预留/待结算/实扣接入用户视图"
+    },
+    {
+     "number": 275,
+     "state": "open",
+     "title": "Bifrost 07.12 端到端全链路验收与硬拒绝"
+    },
+    {
+     "number": 285,
+     "state": "open",
+     "title": "Bifrost 08.10 平台损失补偿与停用账户债务保留"
+    },
+    {
+     "number": 289,
+     "state": "closed",
+     "title": "Bifrost 09.4 订阅 harness 边界标记"
+    },
+    {
+     "number": 295,
+     "state": "open",
+     "title": "Bifrost 10.6 个人订单与 Grant 追溯页面"
+    },
+    {
+     "number": 301,
+     "state": "open",
+     "title": "Bifrost 11.6 OCR 未知价格不得免费执行"
+    },
+    {
+     "number": 305,
+     "state": "open",
+     "title": "Bifrost 12.4 变体与多入口不能绕预算"
+    },
+    {
+     "number": 309,
+     "state": "open",
+     "title": "Bifrost 13.4 尾部不可约束路径不启用"
+    },
+    {
+     "number": 313,
+     "state": "open",
+     "title": "Bifrost 14.4 未验证音频路径保持不可用"
+    },
+    {
+     "number": 321,
+     "state": "open",
+     "title": "Bifrost 15.8 断线/重启恢复与实时消费展示"
+    },
+    {
+     "number": 324,
+     "state": "open",
+     "title": "Bifrost 16.3 防临时 provider 会话绕开"
+    },
+    {
+     "number": 332,
+     "state": "open",
+     "title": "Bifrost 17.8 任务状态展示与归属不变"
+    },
+    {
+     "number": 336,
+     "state": "open",
+     "title": "Bifrost 18.4 部分取消不丢不重"
+    },
+    {
+     "number": 340,
+     "state": "open",
+     "title": "Bifrost 19.4 视频异步结算恢复与产物查询"
+    },
+    {
+     "number": 344,
+     "state": "open",
+     "title": "Bifrost 20.4 未定价工具旁路阻止与公司工具权限隔离"
+    },
+    {
+     "number": 351,
+     "state": "closed",
+     "title": "Bifrost 21.7 授权范围执行与清理报告"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 222,
+     "state": "open",
+     "title": "Bifrost 02.8 管理员发放到指定个人账户"
+    },
+    {
+     "number": 263,
+     "state": "open",
+     "title": "Bifrost 06.12 预留/待结算/实扣接入用户视图"
+    },
+    {
+     "number": 275,
+     "state": "open",
+     "title": "Bifrost 07.12 端到端全链路验收与硬拒绝"
+    },
+    {
+     "number": 285,
+     "state": "open",
+     "title": "Bifrost 08.10 平台损失补偿与停用账户债务保留"
+    },
+    {
+     "number": 301,
+     "state": "open",
+     "title": "Bifrost 11.6 OCR 未知价格不得免费执行"
+    },
+    {
+     "number": 305,
+     "state": "open",
+     "title": "Bifrost 12.4 变体与多入口不能绕预算"
+    },
+    {
+     "number": 309,
+     "state": "open",
+     "title": "Bifrost 13.4 尾部不可约束路径不启用"
+    },
+    {
+     "number": 313,
+     "state": "open",
+     "title": "Bifrost 14.4 未验证音频路径保持不可用"
+    },
+    {
+     "number": 321,
+     "state": "open",
+     "title": "Bifrost 15.8 断线/重启恢复与实时消费展示"
+    },
+    {
+     "number": 324,
+     "state": "open",
+     "title": "Bifrost 16.3 防临时 provider 会话绕开"
+    },
+    {
+     "number": 332,
+     "state": "open",
+     "title": "Bifrost 17.8 任务状态展示与归属不变"
+    },
+    {
+     "number": 336,
+     "state": "open",
+     "title": "Bifrost 18.4 部分取消不丢不重"
+    },
+    {
+     "number": 340,
+     "state": "open",
+     "title": "Bifrost 19.4 视频异步结算恢复与产物查询"
+    },
+    {
+     "number": 344,
+     "state": "open",
+     "title": "Bifrost 20.4 未定价工具旁路阻止与公司工具权限隔离"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 353,
+   "title": "Bifrost 22.2 每入口 gate 与 payer 核查",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 352,
+     "state": "open",
+     "title": "Bifrost 22.1 全入口枚举"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 352,
+     "state": "open",
+     "title": "Bifrost 22.1 全入口枚举"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 354,
+   "title": "Bifrost 22.3 conformance 证据：文本/图像/音频",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 353,
+     "state": "open",
+     "title": "Bifrost 22.2 每入口 gate 与 payer 核查"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 353,
+     "state": "open",
+     "title": "Bifrost 22.2 每入口 gate 与 payer 核查"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 355,
+   "title": "Bifrost 22.4 conformance 证据：Embedding/实时/异步/工具",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 353,
+     "state": "open",
+     "title": "Bifrost 22.2 每入口 gate 与 payer 核查"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 353,
+     "state": "open",
+     "title": "Bifrost 22.2 每入口 gate 与 payer 核查"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 356,
+   "title": "Bifrost 22.5 父 Spec 19 条 AC 完整场景验收",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 354,
+     "state": "open",
+     "title": "Bifrost 22.3 conformance 证据：文本/图像/音频"
+    },
+    {
+     "number": 355,
+     "state": "open",
+     "title": "Bifrost 22.4 conformance 证据：Embedding/实时/异步/工具"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 354,
+     "state": "open",
+     "title": "Bifrost 22.3 conformance 证据：文本/图像/音频"
+    },
+    {
+     "number": 355,
+     "state": "open",
+     "title": "Bifrost 22.4 conformance 证据：Embedding/实时/异步/工具"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 357,
+   "title": "Bifrost 22.6 版本固定、独立 Review 与全范围 OCR",
+   "domain": "bf",
+   "kind": "ticket",
+   "roots": [],
+   "deps": [
+    {
+     "number": 356,
+     "state": "open",
+     "title": "Bifrost 22.5 父 Spec 19 条 AC 完整场景验收"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 356,
+     "state": "open",
+     "title": "Bifrost 22.5 父 Spec 19 条 AC 完整场景验收"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 358,
+   "title": "Craft 预览独立 Origin：隔离生成代码与平台会话（已批准 Spec）",
+   "domain": "unrooted",
+   "kind": "spec_aggregate",
+   "roots": [],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 373,
+   "title": "[计费支付 BP05] 公司订阅续期与周期纠错",
+   "domain": "bp",
+   "kind": "ticket",
+   "roots": [
+    368
+   ],
+   "deps": [
+    {
+     "number": 371,
+     "state": "open",
+     "title": "[计费支付 BP03] 已收款订单的订阅与积分交付恢复"
+    },
+    {
+     "number": 292,
+     "state": "closed",
+     "title": "Bifrost 10.3 订阅归属与续期到账"
+    },
+    {
+     "number": 115,
+     "state": "open",
+     "title": "[N] MT072 支付回调、订阅激活、outbox 与对账从原记录解析付款账户"
+    }
+   ],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 374,
+   "title": "[计费支付 BP06] 逐账户账务异常处置与对账",
+   "domain": "bp",
+   "kind": "ticket",
+   "roots": [
+    368
+   ],
+   "deps": [
+    {
+     "number": 370,
+     "state": "closed",
+     "title": "[计费支付 BP02] 每笔渠道收款事实与异常收款归档"
+    },
+    {
+     "number": 371,
+     "state": "open",
+     "title": "[计费支付 BP03] 已收款订单的订阅与积分交付恢复"
+    },
+    {
+     "number": 373,
+     "state": "open",
+     "title": "[计费支付 BP05] 公司订阅续期与周期纠错"
+    },
+    {
+     "number": 114,
+     "state": "closed",
+     "title": "[N] MT071 结算、释放、尾差与重试幂等在新归属下保持"
+    },
+    {
+     "number": 259,
+     "state": "closed",
+     "title": "Bifrost 06.8 未知结果 hold 不因超时回收"
+    },
+    {
+     "number": 284,
+     "state": "open",
+     "title": "Bifrost 08.9 证据化结算与释放命令"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 373,
+     "state": "open",
+     "title": "[计费支付 BP05] 公司订阅续期与周期纠错"
+    },
+    {
+     "number": 284,
+     "state": "open",
+     "title": "Bifrost 08.9 证据化结算与释放命令"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 375,
+   "title": "[计费支付 BP07] 个人与公司支付记录、积分和能力状态展示",
+   "domain": "bp",
+   "kind": "ticket",
+   "roots": [
+    368
+   ],
+   "deps": [
+    {
+     "number": 371,
+     "state": "open",
+     "title": "[计费支付 BP03] 已收款订单的订阅与积分交付恢复"
+    },
+    {
+     "number": 372,
+     "state": "closed",
+     "title": "[计费支付 BP04] 公司管理员直接发放积分"
+    },
+    {
+     "number": 373,
+     "state": "open",
+     "title": "[计费支付 BP05] 公司订阅续期与周期纠错"
+    },
+    {
+     "number": 374,
+     "state": "open",
+     "title": "[计费支付 BP06] 逐账户账务异常处置与对账"
+    },
+    {
+     "number": 295,
+     "state": "open",
+     "title": "Bifrost 10.6 个人订单与 Grant 追溯页面"
+    },
+    {
+     "number": 116,
+     "state": "closed",
+     "title": "[N] MT073 账务可见性：付款人订单、公司财务授权与团队用量视图"
+    },
+    {
+     "number": 140,
+     "state": "open",
+     "title": "[P] MT097 Web 账单、订单与团队用量视图"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 373,
+     "state": "open",
+     "title": "[计费支付 BP05] 公司订阅续期与周期纠错"
+    },
+    {
+     "number": 374,
+     "state": "open",
+     "title": "[计费支付 BP06] 逐账户账务异常处置与对账"
+    },
+    {
+     "number": 140,
+     "state": "open",
+     "title": "[P] MT097 Web 账单、订单与团队用量视图"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 376,
+   "title": "Spec: 自托管 Hindsight 个人记忆集成",
+   "domain": "unrooted",
+   "kind": "spec_aggregate",
+   "roots": [],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 378,
+   "title": "[Hindsight 02] 敏感候选与过期清理",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 377,
+     "state": "open",
+     "title": "[Hindsight 01] 候选记忆审核与召回门槛"
+    }
+   ],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 381,
+   "title": "[Hindsight 04] 租户身份与 Hindsight bank 隔离",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 380,
+     "state": "open",
+     "title": "[Hindsight 03] 自托管 Hindsight 服务与隐私配置"
+    },
+    {
+     "number": 82,
+     "state": "open",
+     "title": "[I] MT039 个人记忆与来源选择保持个人权限"
+    }
+   ],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 382,
+   "title": "[Hindsight 05] 通用个人偏好的跨 Bot 语义召回",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 377,
+     "state": "open",
+     "title": "[Hindsight 01] 候选记忆审核与召回门槛"
+    },
+    {
+     "number": 381,
+     "state": "open",
+     "title": "[Hindsight 04] 租户身份与 Hindsight bank 隔离"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 381,
+     "state": "open",
+     "title": "[Hindsight 04] 租户身份与 Hindsight bank 隔离"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 383,
+   "title": "[Hindsight 06] 来源受限个人记忆的授权召回",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 382,
+     "state": "open",
+     "title": "[Hindsight 05] 通用个人偏好的跨 Bot 语义召回"
+    },
+    {
+     "number": 82,
+     "state": "open",
+     "title": "[I] MT039 个人记忆与来源选择保持个人权限"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 382,
+     "state": "open",
+     "title": "[Hindsight 05] 通用个人偏好的跨 Bot 语义召回"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 384,
+   "title": "[Hindsight 07] 已确认个人记忆的幂等同步与重试",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 382,
+     "state": "open",
+     "title": "[Hindsight 05] 通用个人偏好的跨 Bot 语义召回"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 382,
+     "state": "open",
+     "title": "[Hindsight 05] 通用个人偏好的跨 Bot 语义召回"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 385,
+   "title": "[Hindsight 08] Hindsight 故障时的安全降级召回",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 383,
+     "state": "open",
+     "title": "[Hindsight 06] 来源受限个人记忆的授权召回"
+    },
+    {
+     "number": 384,
+     "state": "open",
+     "title": "[Hindsight 07] 已确认个人记忆的幂等同步与重试"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 383,
+     "state": "open",
+     "title": "[Hindsight 06] 来源受限个人记忆的授权召回"
+    },
+    {
+     "number": 384,
+     "state": "open",
+     "title": "[Hindsight 07] 已确认个人记忆的幂等同步与重试"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 386,
+   "title": "[Hindsight 09] 个人记忆生效时间与历史更正",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 382,
+     "state": "open",
+     "title": "[Hindsight 05] 通用个人偏好的跨 Bot 语义召回"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 382,
+     "state": "open",
+     "title": "[Hindsight 05] 通用个人偏好的跨 Bot 语义召回"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 387,
+   "title": "[Hindsight 10] 个人记忆回答的可展开依据",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 383,
+     "state": "open",
+     "title": "[Hindsight 06] 来源受限个人记忆的授权召回"
+    },
+    {
+     "number": 386,
+     "state": "open",
+     "title": "[Hindsight 09] 个人记忆生效时间与历史更正"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 383,
+     "state": "open",
+     "title": "[Hindsight 06] 来源受限个人记忆的授权召回"
+    },
+    {
+     "number": 386,
+     "state": "open",
+     "title": "[Hindsight 09] 个人记忆生效时间与历史更正"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 388,
+   "title": "[Hindsight 11] 同一授权来源内的派生判断候选",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 378,
+     "state": "open",
+     "title": "[Hindsight 02] 敏感候选与过期清理"
+    },
+    {
+     "number": 383,
+     "state": "open",
+     "title": "[Hindsight 06] 来源受限个人记忆的授权召回"
+    },
+    {
+     "number": 387,
+     "state": "open",
+     "title": "[Hindsight 10] 个人记忆回答的可展开依据"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 378,
+     "state": "open",
+     "title": "[Hindsight 02] 敏感候选与过期清理"
+    },
+    {
+     "number": 383,
+     "state": "open",
+     "title": "[Hindsight 06] 来源受限个人记忆的授权召回"
+    },
+    {
+     "number": 387,
+     "state": "open",
+     "title": "[Hindsight 10] 个人记忆回答的可展开依据"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 389,
+   "title": "[Hindsight 12] 派生判断的本人审核与使用",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 388,
+     "state": "open",
+     "title": "[Hindsight 11] 同一授权来源内的派生判断候选"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 388,
+     "state": "open",
+     "title": "[Hindsight 11] 同一授权来源内的派生判断候选"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 390,
+   "title": "[Hindsight 13] 遗忘与来源撤销的即时阻断",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 383,
+     "state": "open",
+     "title": "[Hindsight 06] 来源受限个人记忆的授权召回"
+    },
+    {
+     "number": 389,
+     "state": "open",
+     "title": "[Hindsight 12] 派生判断的本人审核与使用"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 383,
+     "state": "open",
+     "title": "[Hindsight 06] 来源受限个人记忆的授权召回"
+    },
+    {
+     "number": 389,
+     "state": "open",
+     "title": "[Hindsight 12] 派生判断的本人审核与使用"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 391,
+   "title": "[Hindsight 14] 远端删除、备份恢复与清理证据",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 384,
+     "state": "open",
+     "title": "[Hindsight 07] 已确认个人记忆的幂等同步与重试"
+    },
+    {
+     "number": 390,
+     "state": "open",
+     "title": "[Hindsight 13] 遗忘与来源撤销的即时阻断"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 384,
+     "state": "open",
+     "title": "[Hindsight 07] 已确认个人记忆的幂等同步与重试"
+    },
+    {
+     "number": 390,
+     "state": "open",
+     "title": "[Hindsight 13] 遗忘与来源撤销的即时阻断"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 392,
+   "title": "[Hindsight 15] 暂停学习与暂停使用个人记忆",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 377,
+     "state": "open",
+     "title": "[Hindsight 01] 候选记忆审核与召回门槛"
+    },
+    {
+     "number": 382,
+     "state": "open",
+     "title": "[Hindsight 05] 通用个人偏好的跨 Bot 语义召回"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 382,
+     "state": "open",
+     "title": "[Hindsight 05] 通用个人偏好的跨 Bot 语义召回"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 393,
+   "title": "[Hindsight 16] 个人记忆后台预算与运营积压",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 380,
+     "state": "open",
+     "title": "[Hindsight 03] 自托管 Hindsight 服务与隐私配置"
+    },
+    {
+     "number": 384,
+     "state": "open",
+     "title": "[Hindsight 07] 已确认个人记忆的幂等同步与重试"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 384,
+     "state": "open",
+     "title": "[Hindsight 07] 已确认个人记忆的幂等同步与重试"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 394,
+   "title": "[Hindsight 17] 历史已确认 OpenBot 记忆迁移",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 384,
+     "state": "open",
+     "title": "[Hindsight 07] 已确认个人记忆的幂等同步与重试"
+    },
+    {
+     "number": 385,
+     "state": "open",
+     "title": "[Hindsight 08] Hindsight 故障时的安全降级召回"
+    },
+    {
+     "number": 82,
+     "state": "open",
+     "title": "[I] MT039 个人记忆与来源选择保持个人权限"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 384,
+     "state": "open",
+     "title": "[Hindsight 07] 已确认个人记忆的幂等同步与重试"
+    },
+    {
+     "number": 385,
+     "state": "open",
+     "title": "[Hindsight 08] Hindsight 故障时的安全降级召回"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 395,
+   "title": "[Hindsight 18] Intelligence 个人记忆路径退出",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 389,
+     "state": "open",
+     "title": "[Hindsight 12] 派生判断的本人审核与使用"
+    },
+    {
+     "number": 391,
+     "state": "open",
+     "title": "[Hindsight 14] 远端删除、备份恢复与清理证据"
+    },
+    {
+     "number": 394,
+     "state": "open",
+     "title": "[Hindsight 17] 历史已确认 OpenBot 记忆迁移"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 389,
+     "state": "open",
+     "title": "[Hindsight 12] 派生判断的本人审核与使用"
+    },
+    {
+     "number": 391,
+     "state": "open",
+     "title": "[Hindsight 14] 远端删除、备份恢复与清理证据"
+    },
+    {
+     "number": 394,
+     "state": "open",
+     "title": "[Hindsight 17] 历史已确认 OpenBot 记忆迁移"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 396,
+   "title": "[Hindsight 19] 跨入口验收与全员启用",
+   "domain": "hs",
+   "kind": "ticket",
+   "roots": [
+    376
+   ],
+   "deps": [
+    {
+     "number": 387,
+     "state": "open",
+     "title": "[Hindsight 10] 个人记忆回答的可展开依据"
+    },
+    {
+     "number": 389,
+     "state": "open",
+     "title": "[Hindsight 12] 派生判断的本人审核与使用"
+    },
+    {
+     "number": 391,
+     "state": "open",
+     "title": "[Hindsight 14] 远端删除、备份恢复与清理证据"
+    },
+    {
+     "number": 392,
+     "state": "open",
+     "title": "[Hindsight 15] 暂停学习与暂停使用个人记忆"
+    },
+    {
+     "number": 393,
+     "state": "open",
+     "title": "[Hindsight 16] 个人记忆后台预算与运营积压"
+    },
+    {
+     "number": 395,
+     "state": "open",
+     "title": "[Hindsight 18] Intelligence 个人记忆路径退出"
+    },
+    {
+     "number": 6,
+     "state": "open",
+     "title": "Spec: 公司与团队多租户整改（全功能隔离后统一上线）"
+    }
+   ],
+   "open_blockers": [
+    {
+     "number": 387,
+     "state": "open",
+     "title": "[Hindsight 10] 个人记忆回答的可展开依据"
+    },
+    {
+     "number": 389,
+     "state": "open",
+     "title": "[Hindsight 12] 派生判断的本人审核与使用"
+    },
+    {
+     "number": 391,
+     "state": "open",
+     "title": "[Hindsight 14] 远端删除、备份恢复与清理证据"
+    },
+    {
+     "number": 392,
+     "state": "open",
+     "title": "[Hindsight 15] 暂停学习与暂停使用个人记忆"
+    },
+    {
+     "number": 393,
+     "state": "open",
+     "title": "[Hindsight 16] 个人记忆后台预算与运营积压"
+    },
+    {
+     "number": 395,
+     "state": "open",
+     "title": "[Hindsight 18] Intelligence 个人记忆路径退出"
+    },
+    {
+     "number": 6,
+     "state": "open",
+     "title": "Spec: 公司与团队多租户整改（全功能隔离后统一上线）"
+    }
+   ],
+   "external_blockers": [],
+   "ready": false,
+   "state": "blocked"
+  },
+  {
+   "issue": 405,
+   "title": "[Craft Preview][P1] preview 代理转发应用 cookie 并安全处理 Set-Cookie",
+   "domain": "craft",
+   "kind": "ticket",
+   "roots": [
+    358
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 411,
+   "title": "[Craft Preview][P0] server 读取 renewal-status 并在证书不可用时关闭",
+   "domain": "craft",
+   "kind": "ticket",
+   "roots": [
+    358
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  },
+  {
+   "issue": 425,
+   "title": "Craft 预览 Origin 修复 R06 — legacy 同源预览加开关与风险可见性（AC1 例外收口）",
+   "domain": "craft",
+   "kind": "ticket",
+   "roots": [
+    358
+   ],
+   "deps": [],
+   "open_blockers": [],
+   "external_blockers": [],
+   "ready": true,
+   "state": "ready"
+  }
+ ],
+ "edges": [
+  {
+   "from": 265,
+   "to": 266,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 265,
+   "to": 267,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 267,
+   "to": 268,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 266,
+   "to": 275,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 268,
+   "to": 275,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 274,
+   "to": 275,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 280,
+   "to": 281,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 281,
+   "to": 282,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 280,
+   "to": 283,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 283,
+   "to": 284,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 284,
+   "to": 285,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 275,
+   "to": 296,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 296,
+   "to": 297,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 296,
+   "to": 298,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 298,
+   "to": 299,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 296,
+   "to": 300,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 300,
+   "to": 301,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 275,
+   "to": 302,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 302,
+   "to": 303,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 302,
+   "to": 304,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 304,
+   "to": 305,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 275,
+   "to": 306,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 306,
+   "to": 307,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 307,
+   "to": 308,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 308,
+   "to": 309,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 275,
+   "to": 310,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 310,
+   "to": 311,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 310,
+   "to": 312,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 312,
+   "to": 313,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 308,
+   "to": 314,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 311,
+   "to": 314,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 314,
+   "to": 315,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 315,
+   "to": 316,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 316,
+   "to": 317,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 316,
+   "to": 318,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 318,
+   "to": 319,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 319,
+   "to": 320,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 320,
+   "to": 321,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 318,
+   "to": 322,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 322,
+   "to": 323,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 323,
+   "to": 324,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 326,
+   "to": 327,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 326,
+   "to": 328,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 328,
+   "to": 329,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 329,
+   "to": 330,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 330,
+   "to": 331,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 330,
+   "to": 332,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 330,
+   "to": 333,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 333,
+   "to": 334,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 334,
+   "to": 335,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 334,
+   "to": 336,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 326,
+   "to": 337,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 337,
+   "to": 338,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 337,
+   "to": 339,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 339,
+   "to": 340,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 330,
+   "to": 340,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 342,
+   "to": 344,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 222,
+   "to": 352,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 263,
+   "to": 352,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 275,
+   "to": 352,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 285,
+   "to": 352,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 301,
+   "to": 352,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 305,
+   "to": 352,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 309,
+   "to": 352,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 313,
+   "to": 352,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 321,
+   "to": 352,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 324,
+   "to": 352,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 332,
+   "to": 352,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 336,
+   "to": 352,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 340,
+   "to": 352,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 344,
+   "to": 352,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 352,
+   "to": 353,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 353,
+   "to": 354,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 353,
+   "to": 355,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 354,
+   "to": 356,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 355,
+   "to": 356,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 356,
+   "to": 357,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 373,
+   "to": 374,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 284,
+   "to": 374,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 373,
+   "to": 375,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 374,
+   "to": 375,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 140,
+   "to": 375,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 381,
+   "to": 382,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 382,
+   "to": 383,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 382,
+   "to": 384,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 383,
+   "to": 385,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 384,
+   "to": 385,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 382,
+   "to": 386,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 383,
+   "to": 387,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 386,
+   "to": 387,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 378,
+   "to": 388,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 383,
+   "to": 388,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 387,
+   "to": 388,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 388,
+   "to": 389,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 383,
+   "to": 390,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 389,
+   "to": 390,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 384,
+   "to": 391,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 390,
+   "to": 391,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 382,
+   "to": 392,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 384,
+   "to": 393,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 384,
+   "to": 394,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 385,
+   "to": 394,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 389,
+   "to": 395,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 391,
+   "to": 395,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 394,
+   "to": 395,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 387,
+   "to": 396,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 389,
+   "to": 396,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 391,
+   "to": 396,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 392,
+   "to": 396,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 393,
+   "to": 396,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 395,
+   "to": 396,
+   "condition": "business_verified",
+   "explicit": true
+  },
+  {
+   "from": 6,
+   "to": 396,
+   "condition": "business_verified",
+   "explicit": true
+  }
+ ],
+ "in_flight": {
+  "mastra": {
+   "root": 472,
+   "issues": [
+    473,
+    474,
+    475,
+    476,
+    477,
+    478,
+    479,
+    480,
+    481,
+    482,
+    483,
+    484,
+    485,
+    486,
+    487,
+    488
+   ],
+   "why": "mastra-exec worktree controller run active (ledger live, ME01-05 done/in review)"
+  },
+  "heroui": {
+   "root": 443,
+   "issues": [
+    444,
+    445,
+    446,
+    447,
+    448,
+    449,
+    450,
+    451,
+    452,
+    453,
+    454,
+    455,
+    456,
+    457,
+    458
+   ],
+   "why": "feat/heroui-v3-migration worktree + live OCR processes"
+  },
+  "plugin": {
+   "root": 459,
+   "issues": [
+    460,
+    461,
+    462,
+    463,
+    464,
+    465,
+    466,
+    467,
+    468,
+    469,
+    470,
+    471
+   ],
+   "why": "feat/plugin-package-market-v1 worktree + live OCR processes"
+  }
+ }
+}

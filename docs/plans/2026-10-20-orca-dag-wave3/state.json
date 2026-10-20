@@ -1,0 +1,56 @@
+{
+ "run": {
+  "objective": "orca-dag-wave3：现有 open ready-for-agent backlog 编排（mt 76 + bf 68 + hs 17 + bp 3 + craft 3，排除在途三树与 Opik 旁支）",
+  "mode": "open-backlog",
+  "base": "2306caaa (main, wave2 收尾后)",
+  "main_ws_uncommitted": "wave2 集成交付保留待审核（无提交授权）",
+  "scope_revision": 1,
+  "orca_run_id": "run_dab21d1c168e",
+  "authorized": "2026-10-20 用户：171 张候选全量、3 流×1 worker（mt B类核验优先与 R7 沿用授权按提案默认生效）"
+ },
+ "reconciled": {
+  "delivered_by_label": 58,
+  "in_flight_excluded": {
+   "mastra": "mastra-exec worktree，ledger 活跃（本 Run 期间仍在写入）",
+   "heroui": "feat/heroui-v3-migration + 活跃 OCR 进程",
+   "plugin": "feat/plugin-package-market-v1 + 活跃 OCR 进程"
+  },
+  "opik_pending_user": 37,
+  "unlabeled_open": 42
+ },
+ "phase": "R5 running: 3 workers dispatched 2026-10-20T13:12–13:13 (+08)",
+ "streams": {
+  "mt3": {
+   "queue_first_batch": [49, 56, 86, 87, 88],
+   "strategy": "B类核验优先，后续按 domain_ready.mt 补位",
+   "task": "task_0f8e197e52bc",
+   "dispatch": "ctx_094d29e58f07",
+   "worktree": "mt3",
+   "db": "orca-w3-mt-pg@5565"
+  },
+  "bf3": {
+   "queue_first_batch": [222, 263, 265, 274, 280],
+   "strategy": "C类实施；完成解锁 #266/#267（←265）、#281/#283（←280）等依赖链",
+   "task": "task_ac6eec3a8a53",
+   "dispatch": "ctx_1c5f5a48ab83",
+   "worktree": "bf3",
+   "db": "orca-w3-bf-pg@5566"
+  },
+  "hbc3": {
+   "queue_first_batch": [378, 381, 373, 405, 411],
+   "strategy": "hs 链后续按 dag.json 补位；#425 等首批后；bp #374/#375 等跨树依赖",
+   "task": "task_4f44e707d295",
+   "dispatch": "ctx_2c246b665be0",
+   "worktree": "hbc3",
+   "db": "orca-w3-hbc-pg@5567"
+  }
+ },
+ "supervision": {
+  "supervisor_pid": 81474,
+  "loop": "watch.sh 心跳直接 ack；worker_done/escalation/question 落 pending_message.json 不 ack，等协调器裁决",
+  "artifacts": ["watch.log", "last_check.json", "pending_message.json", "receipts/"]
+ },
+ "ready": 91,
+ "blocked_in_tree": 76,
+ "updated_at": "2026-10-20T13:15+08:00"
+}

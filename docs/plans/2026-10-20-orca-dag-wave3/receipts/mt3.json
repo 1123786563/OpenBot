@@ -1,0 +1,91 @@
+{
+  "id": "7ea53ad1-4cef-4a85-9e34-cd86a97695cf",
+  "ok": true,
+  "result": {
+    "runId": "run_dab21d1c168e",
+    "taskId": "task_0f8e197e52bc",
+    "dispatchId": "ctx_094d29e58f07",
+    "state": "ready",
+    "stage": "input_accepted",
+    "turnStart": "observed",
+    "setup": {
+      "requested": "run",
+      "effective": "run",
+      "source": "orchestration_default",
+      "hookFound": true,
+      "startupPolicy": "wait-for-setup",
+      "state": "running"
+    },
+    "launch": {
+      "requested": {
+        "agent": "claude",
+        "model": null,
+        "effort": null
+      },
+      "effective": {
+        "agent": "claude",
+        "model": null,
+        "effort": null
+      }
+    },
+    "mode": {
+      "mode": "structured",
+      "preferred": "structured",
+      "reason": "user_default",
+      "detail": "Started a structured chat session worker, the default for new agent tabs in your settings."
+    },
+    "timeoutMs": 60000,
+    "effects": [
+      {
+        "kind": "worktree",
+        "action": "created_child",
+        "id": "d6edf033-748a-4549-ae5a-e9efd34cef91::/Users/wuyongjun/orca/workspaces/OpenBot/mt3"
+      },
+      {
+        "kind": "terminal",
+        "role": "setup",
+        "action": "created",
+        "id": "term_b28427a3-ae6f-4dc1-9808-950d377dcf96",
+        "tabId": "ed24ab9a-8e06-45f2-907e-aec8c19105aa",
+        "leafId": "4c558345-20f1-4a19-91f5-ff0a96059f31"
+      },
+      {
+        "kind": "setup",
+        "action": "run",
+        "requested": "run",
+        "effective": "run",
+        "source": "orchestration_default",
+        "hookFound": true,
+        "startupPolicy": "wait-for-setup",
+        "state": "running",
+        "terminalId": "term_b28427a3-ae6f-4dc1-9808-950d377dcf96"
+      },
+      {
+        "kind": "terminal",
+        "role": "agent",
+        "action": "created",
+        "id": "structworker_38044286-fc77-459e-b055-45a415718b92",
+        "surface": "background"
+      },
+      {
+        "kind": "setup",
+        "action": "wait_unevaluated",
+        "state": "terminal_handle_stale"
+      },
+      {
+        "kind": "dispatch_input",
+        "role": "agent",
+        "id": "structworker_38044286-fc77-459e-b055-45a415718b92",
+        "state": "accepted"
+      }
+    ],
+    "residualResources": [],
+    "mutation": {
+      "requestId": "d253b3bb-93de-4327-82c3-bfd634ef551e",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "dea517d6-dc39-4136-ad21-1b1e3bce54cf"
+  }
+}
