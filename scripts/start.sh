@@ -52,7 +52,7 @@ LANGGRAPH_PORT="$(setting LANGGRAPH_PORT 4201)"
 BOT_PROVIDER="$(setting BOT_PROVIDER openai | tr '[:upper:]' '[:lower:]' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
 SUPERVISOR_PORT="$(setting SUPERVISOR_PORT 4500)"
 # Through `setting`, like every other key here, so `.env` counts as the comment above says and as
-# docs/configuration.md tells people to rely on. Read from the environment alone, `false` in `.env`
+# reference/configuration.md tells people to rely on. Read from the environment alone, `false` in `.env`
 # was ignored: the supervisor was still started and the server still told to use it.
 ONE_COMPUTER_EACH="$(setting OPENBOT_ONE_COMPUTER_EACH true)"
 export APP_PORT SERVER_PORT
@@ -487,7 +487,7 @@ Next steps:
   - Audit trail:           http://localhost:$APP_PORT/admin/audit
   - Boundaries/policy:     http://localhost:$APP_PORT/admin/boundaries
   - Setup docs:            README.md
-  - Configuration docs:    docs/configuration.md
+  - Configuration docs:    reference/configuration.md
 
 Try:
 

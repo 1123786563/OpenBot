@@ -303,7 +303,7 @@ describe("start.sh one computer each", () => {
    * `OPENBOT_ONE_COMPUTER_EACH=false` IN `.env` TURNS THE SUPERVISOR OFF, AS THE DOCS SAY.
    *
    * The key was read from the environment alone, so a `.env` line was ignored: the supervisor was
-   * still started and the server still told to use it. docs/configuration.md says to set it "in
+   * still started and the server still told to use it. reference/configuration.md says to set it "in
    * `.env` or in the environment", and every other setting in this script is read that way.
    *
    * THE SUPERVISOR IS WHAT GIVES EACH BOT ITS OWN COMPUTER, so its absence from the services handed
