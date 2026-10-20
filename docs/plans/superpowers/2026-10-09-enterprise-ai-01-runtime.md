@@ -10,7 +10,7 @@
 
 **技术栈：** 独立 Go module、标准库 HTTP、tRPC-Agent-Go 与其 AG-UI 子模块、Bun/Hono 契约测试。
 
-**规格：** [总体方案](../../specs/superpowers/2026-10-09-enterprise-ai-platform-design.md)；基线与全局约束见 [总计划](../../plans/superpowers/2026-10-09-enterprise-ai-00-master.md)。本轮修订对应[评审报告](2026-10-09-enterprise-ai-documents-review.md)的运行时及跨文档问题。
+**规格：** [总体方案](../../specs/superpowers/2026-10-09-enterprise-ai-platform-design.md)；基线与全局约束见 [总计划](../../plans/superpowers/2026-10-09-enterprise-ai-00-master.md)。本轮修订对应历史评审快照中的运行时及跨文档问题；该快照已归档到本地运行归档。
 
 ## 全局约束
 

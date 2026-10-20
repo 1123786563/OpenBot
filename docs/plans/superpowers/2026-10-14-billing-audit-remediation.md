@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Date:** 2026-10-14 · **Source:** the code-verified billing audit `2026-10-14-billing-code-audit.md` (baseline `main` @ `c0167c5c`; 471 billing unit tests passing, `cd server && bun run typecheck` exit 0).
+**Date:** 2026-10-14 · **Source:** the code-verified billing audit (historical report retained in the local run archive; baseline `main` @ `c0167c5c`; 471 billing unit tests passing, `cd server && bun run typecheck` exit 0).
 
 **Goal:** Close the audit's P0–P3 defects — the two paths that lose usage facts, the credit-balance read that disagrees with the admission authority, the misleading refusals, and the money/ops hygiene items — without re-opening the verified reservation/outbox/payment/reconcile seams.
 
@@ -10,7 +10,7 @@
 
 **Tech Stack:** TypeScript, Bun Test, Drizzle ORM, PostgreSQL, Hono, Zod, TanStack Query (frontend).
 
-**Spec:** `docs/specs/superpowers/2026-10-11-billing-reliability-design.md` (the approved billing reliability design) · Audit: `2026-10-14-billing-code-audit.md` · ADRs: `docs/adr/0001-conservative-input-bound.md`, `docs/adr/0003-bifrost-openbot-credit-admission.md` · Domain language: `CONTEXT.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-billing-reliability-design.md` (the approved billing reliability design) · Audit: historical report in the local run archive · ADRs: `docs/adr/0001-conservative-input-bound.md`, `docs/adr/0003-bifrost-openbot-credit-admission.md` · Domain language: `CONTEXT.md`.
 
 ## Global Constraints
 
@@ -3852,7 +3852,7 @@ The whole plan is done only when all of this is true, run in this order, with th
 4. `cd /Users/wuyongjun/trea/OpenBot/app && bun test tests/billing-*.test.ts tests/billing-*.test.tsx` → 0 fail.
 5. `cd /Users/wuyongjun/trea/OpenBot && bunx biome check server/src/billing server/src/copilot.ts app/src/lib/billing app/src/components/billing` → clean (or only pre-existing findings, listed).
 6. Manual, against a sandbox Lago + Alipay sandbox: buy a plan, confirm the grant lands with the catalog amount, spend credits on one model call, and verify (a) the summary's `remaining` drops by the hold during the call and by the settled cost after it, (b) `usage_outbox` shows `delivered/delivered` for that event, (c) `POST /api/admin/billing/reconcile` returns zero findings.
-7. Re-run the audit's own reproduction for A1 (the stub script in `2026-10-14-billing-code-audit.md` §A1) and confirm the expired grant no longer appears in `remaining`.
+7. Re-run the audit's A1 reproduction (the historical stub script retained in the local run archive) and confirm the expired grant no longer appears in `remaining`.
 8. `git log --oneline` shows one commit per task, each naming its audit finding.
 
 ## Out of scope (tracked elsewhere)

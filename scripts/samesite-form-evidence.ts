@@ -28,7 +28,7 @@ const SANDBOX_BOT = process.env.CRAFT_ACCEPTANCE_SANDBOX_BOT ?? "craft";
 const SERVER_LOG = process.env.CRAFT_ACCEPTANCE_SERVER_LOG ?? "";
 const SHOT_DIR =
   process.env.CRAFT_ACCEPTANCE_SHOT_DIR ??
-  "gui-test-screenshots/craft-preview-365-samesite";
+  ".archive/runs/craft-preview/samesite-form-evidence";
 const CLEANUP = process.env.CRAFT_ACCEPTANCE_CLEANUP_SESSIONS === "1";
 /**
  * 本地沙箱容器名（stopSessionWebapp 的 docker exec 通道）。fix-ocr25 #11：
