@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { serve } from "bun";
 import type { Page } from "playwright";
 import { downloadHeaders } from "../../shared/file-download";
+import { ExecutionScopeRegistry } from "../../shared/execution-scope";
 import { initProcessTracing, withTraceFetch } from "../../shared/trace";
 import {
   cutAtCodeUnits,
@@ -12,11 +13,13 @@ import {
 } from "./aria-snapshot";
 import {
   actsOnTheComputer,
+  describeExecutionScope,
   isOpenPath,
   isQuietPath,
   matchesToken,
   mutatesBrowser,
   offeredToken,
+  statedScope,
 } from "./authorisation";
 import { isPlainBotId } from "./bot-id";
 import { browserRuntimeFromEnv } from "./browser-runtime";
@@ -109,6 +112,9 @@ if (!COMPUTER_TOKEN) {
   );
   process.exit(1);
 }
+
+/** Which execution scope each Bot belongs to; first use binds (MT050). */
+const browserScopes = new ExecutionScopeRegistry();
 
 /*
  * No multi-address connect anywhere in this process. Bun turns it on by default, and its timer can
@@ -755,6 +761,32 @@ serve<StreamData>({
     // Resolved once per request. Everything below that touches a browser, a takeover or a snapshot
     // goes through this Bot's session, so there is no path where one Bot's call reaches another's.
     const botId = botIdOf(request);
+
+    /*
+     * The execution ownership the caller must state, per Bot (MT050): the computer token is
+     * deployment-level, so without this check any holder of it could drive any Bot's browser and
+     * read any Bot's workspace files — machine-equivalence the tenancy program exists to end.
+     * First use binds the Bot to a scope; a later disagreement is a cross-scope reach and is
+     * refused here, naming the ownership (never the token) so the log says which side crossed.
+     */
+    if (!isOpenPath(url.pathname)) {
+      const scope = statedScope(request.headers);
+      if (!scope) {
+        console.warn(
+          `computer refused a ${url.pathname} request that stated no execution ownership.`,
+        );
+        return json({ error: "Execution ownership is required." }, 403);
+      }
+      if (isPlainBotId(botId) && !browserScopes.bind(botId, scope)) {
+        console.warn(
+          `computer refused a ${url.pathname} request for ${botId} from ${describeExecutionScope(scope)}: that Bot belongs to another execution scope.`,
+        );
+        return json(
+          { error: "That Bot belongs to another execution scope." },
+          403,
+        );
+      }
+    }
 
     // Refused here rather than deeper down, because the id names a directory and the API server
     // forwards whatever URL segment a caller typed. `reset` deletes that directory as root.

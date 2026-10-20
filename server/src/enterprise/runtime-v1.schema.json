@@ -75,6 +75,11 @@
               "minLength": 1,
               "maxLength": 200
             },
+            "workspace_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
             "principal_id": {
               "type": "string",
               "minLength": 1,
@@ -151,6 +156,7 @@
           "required": [
             "schema_version",
             "tenant_id",
+            "workspace_id",
             "principal_id",
             "actor_id",
             "initiator_kind",

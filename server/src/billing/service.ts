@@ -387,7 +387,14 @@ export function createBillingService(deps: {
         const remote = await client.getSubscription(
           active.externalSubscriptionId,
         );
-        if (remote.body) {
+        // The bare-id GET is ambiguous under #373's own premise — the same id string can
+        // be live under two customers at once — so an answer only counts when it names
+        // this row's customer. Another customer's record carries no facts about this
+        // subscription; the context drops to null rather than showing someone else's period.
+        if (
+          remote.body &&
+          remote.body.externalCustomerId === active.externalCustomerId
+        ) {
           subscription = {
             status: remote.body.status,
             currentPeriodStart: remote.body.currentPeriodStart ?? null,
@@ -826,6 +833,13 @@ export function createBillingService(deps: {
             row.externalSubscriptionId,
           );
           if (!remote.body) continue;
+          // The bare-id GET asks without the customer dimension, and #373's own premise is
+          // that the same id string can be live under two customers at once: an answer
+          // naming another customer is not this row's period and must not drive its payout.
+          // Undeterminable, like every other gap here — the row stays uncovered for the
+          // next pass.
+          if (remote.body.externalCustomerId !== row.externalCustomerId)
+            continue;
           if (
             remote.body.status !== "active" &&
             remote.body.status !== "incomplete"

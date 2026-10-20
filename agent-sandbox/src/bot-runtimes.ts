@@ -62,7 +62,12 @@ type Entry = {
 };
 
 export type BotRuntimes = {
-  getOrSpawn(botId: string): Promise<BotRuntime>;
+  /**
+   * The Bot's runtime, spawning on first use. `workspaceDir` names the tree the runtime's
+   * cwd and sessions live in — the proxy passes the ownership-named one (MT050); absent, the
+   * module's configured root decides, which is the deployment-wide default.
+   */
+  getOrSpawn(botId: string, workspaceDir?: string): Promise<BotRuntime>;
   /**
    * Note that a Bot's stream produced something. Called by the SSE forwarder for every block it
    * forwards, so a Bot mid-turn — busy, chatty, working — is distinguishable from one merely
@@ -105,6 +110,8 @@ export type BotRuntimes = {
   startDevServer(input: {
     botId: string;
     dir: string;
+    /** The ownership-named workspace to contain against (MT050); absent, the configured root. */
+    botWorkspace?: string;
     command?: string;
   }): Promise<
     | { ok: true; port: number; command: string }
@@ -198,7 +205,10 @@ export function createBotRuntimes(options: BotRuntimesOptions): BotRuntimes {
   };
 
   return {
-    async getOrSpawn(botId: string): Promise<BotRuntime> {
+    async getOrSpawn(
+      botId: string,
+      workspaceDir?: string,
+    ): Promise<BotRuntime> {
       if (!isPlainBotId(botId)) throw new UnusableBotIdError(botId);
       let entry = entries.get(botId);
       if (!entry) {
@@ -208,7 +218,9 @@ export function createBotRuntimes(options: BotRuntimesOptions): BotRuntimes {
         portByBot.set(botId, port);
         entry = {
           port,
-          workspaceDir: `${workspaceRoot}/${botId}`,
+          // The caller's tree when it named one (the proxy always does — the
+          // ownership-named workspace, MT050); the configured root otherwise.
+          workspaceDir: workspaceDir ?? `${workspaceRoot}/${botId}`,
           upstream: null,
           lastUsedAtMs: nowMs(),
           lastActivityAtMs: nowMs(),

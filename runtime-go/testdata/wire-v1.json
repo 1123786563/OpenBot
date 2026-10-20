@@ -1,6 +1,7 @@
 {
   "schema_version": "1",
   "tenant_id": "tenant_wire_golden",
+  "workspace_id": "workspace_wire_golden",
   "principal_id": "principal_wire_golden",
   "actor_id": "actor_wire_golden",
   "initiator_kind": "user",

@@ -4,7 +4,8 @@
 # The instance is throwaway verification infrastructure, never a deployment:
 #   - image pinned to the same verified tag as deploy/hindsight/docker-compose.yml;
 #   - model calls answer from the local gateway stand-in (gateway-standin.mjs), so no
-#     external provider is reached;
+#     external provider is reached; since #382 the stand-in runs with --extract-facts so
+#     the retain→recall pipeline produces real hits (one echo fact per request);
 #   - OpenBot's tenant/validator extensions are mounted read-only and selected, with a
 #     throwaway service key and assertion secret (exported for the test run);
 #   - loopback-only publish; the container is removed by `stop`.
@@ -61,6 +62,7 @@ ensure_hf_cache
 
 node "$REPO_ROOT/deploy/hindsight/test/gateway-standin.mjs" \
   --port "$GATEWAY_PORT" --host 0.0.0.0 --allow-non-loopback \
+  --extract-facts \
   --log "$STANDIN_LOG" >/dev/null 2>&1 &
 echo $! > "$STANDIN_LOG.pid"
 

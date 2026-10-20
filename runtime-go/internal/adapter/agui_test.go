@@ -111,6 +111,7 @@ func envelopeJSON(mutate func(map[string]any)) string {
 	fields := map[string]any{
 		"schema_version":        "1",
 		"tenant_id":             testTenantID,
+		"workspace_id":          "team_fixed_test_member",
 		"principal_id":          testPrincipalID,
 		"actor_id":              testActorID,
 		"initiator_kind":        "user",

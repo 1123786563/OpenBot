@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { PersonalCreditBalance } from "@/lib/billing/credits";
 import { credits } from "@/lib/billing/format";
+import { pendingSettlementReasonCopyKey } from "@/lib/billing/pending-settlement-reasons";
 
 /**
  * The personal credit account card (ticket 02.7): the account type the server named, the four
@@ -59,68 +60,91 @@ export function PersonalBalanceCard({
       </dl>
 
       {/*
-       * Pending settlement is group 06's answer (ticket 06.12): the quota, its reserved vs
-       * unknown split, and the latest reservations with status and reason each. A pre-06.12
-       * server's `enabled: false` still renders the honest 未启用 marker — never a bare 0.
-       * Both branches keep the same testid: the server's gate is the visible contract change
-       * that routes answers into the amounts branch.
+       * Pending settlement is group 06's answer (ticket 06.12), said the way 08.7 (#282)
+       * owes it to the reader: the quota, its reserved vs unknown split, the reservations
+       * behind it each with a reason that is a SENTENCE — the server's stable code mapped
+       * through pending-settlement-reasons.ts, never the raw code, never an internal error
+       * string — and one line saying how a pending item gets resolved (the recovery
+       * flow's 预计处理方式).
+       *
+       * NOTHING PENDING, NO BLOCK (the ticket's AC: 无待结算项时界面不显示误导性区块):
+       * an enabled answer with an empty quota hides the whole block — "待结算 0" would
+       * dress an absence as a fact, and the bounded reservation list would show settled
+       * history under a pending label. The quota, not the list, decides: it counts every
+       * occupying hold, so quota 0 means nothing is pending even if recent rows exist.
+       * A pre-06.12 server's `enabled: false` still renders the honest 未启用 marker —
+       * never a bare 0. Both branches keep the same testid: the server's gate is the
+       * visible contract change that routes answers into the amounts branch.
        */}
       {balance.pendingSettlement.enabled ? (
-        <>
-          <p
-            className="text-muted-foreground mt-4 text-sm tabular-nums"
-            data-testid="pending-settlement"
-          >
-            {t("creditsPage.pendingSettlement")}{" "}
-            {credits(balance.pendingSettlement.available)}
-            <span className="ml-2">
-              {t("creditsPage.pendingReserved")}{" "}
-              {credits(balance.pendingSettlement.reserved)}
-            </span>
-            <span className="ml-2">
-              {t("creditsPage.pendingUnknown")}{" "}
-              {credits(balance.pendingSettlement.unknown)}
-            </span>
-          </p>
-          {balance.pendingSettlement.reservations.length > 0 ? (
-            <ul className="mt-2 space-y-1" data-testid="reservation-list">
-              {balance.pendingSettlement.reservations.map((reservation) => (
-                <li
-                  key={reservation.id}
-                  className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs"
-                  data-status={reservation.status}
-                  data-testid="reservation-row"
-                >
-                  <span
-                    className={
-                      reservation.status === "unknown"
-                        ? "font-medium text-warning"
-                        : undefined
-                    }
-                    data-testid="reservation-status"
-                  >
-                    {t(`creditsPage.reservationStatus.${reservation.status}`)}
-                  </span>
-                  <span className="tabular-nums">
-                    {credits(reservation.maximum)}
-                    {t("creditsPage.creditUnit")}
-                  </span>
-                  <span>
-                    {[reservation.botName, reservation.model]
-                      .filter(Boolean)
-                      .join(" · ") || "–"}
-                  </span>
-                  {reservation.unknownReason || reservation.releaseReason ? (
-                    <span className="truncate">
-                      {t("creditsPage.reservationReason")}
-                      {reservation.unknownReason ?? reservation.releaseReason}
-                    </span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </>
+        balance.pendingSettlement.available > 0 ? (
+          <>
+            <p
+              className="text-muted-foreground mt-4 text-sm tabular-nums"
+              data-testid="pending-settlement"
+            >
+              {t("creditsPage.pendingSettlement")}{" "}
+              {credits(balance.pendingSettlement.available)}
+              <span className="ml-2">
+                {t("creditsPage.pendingReserved")}{" "}
+                {credits(balance.pendingSettlement.reserved)}
+              </span>
+              <span className="ml-2">
+                {t("creditsPage.pendingUnknown")}{" "}
+                {credits(balance.pendingSettlement.unknown)}
+              </span>
+            </p>
+            <p
+              className="text-muted-foreground mt-1 text-xs"
+              data-testid="pending-handling"
+            >
+              {t("creditsPage.pendingHandling")}
+            </p>
+            {balance.pendingSettlement.reservations.length > 0 ? (
+              <ul className="mt-2 space-y-1" data-testid="reservation-list">
+                {balance.pendingSettlement.reservations.map((reservation) => {
+                  const reasonKey = pendingSettlementReasonCopyKey(
+                    reservation.unknownReason ?? reservation.releaseReason,
+                  );
+                  return (
+                    <li
+                      key={reservation.id}
+                      className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs"
+                      data-status={reservation.status}
+                      data-testid="reservation-row"
+                    >
+                      <span
+                        className={
+                          reservation.status === "unknown"
+                            ? "font-medium text-warning"
+                            : undefined
+                        }
+                        data-testid="reservation-status"
+                      >
+                        {t(`creditsPage.reservationStatus.${reservation.status}`)}
+                      </span>
+                      <span className="tabular-nums">
+                        {credits(reservation.maximum)}
+                        {t("creditsPage.creditUnit")}
+                      </span>
+                      <span>
+                        {[reservation.botName, reservation.model]
+                          .filter(Boolean)
+                          .join(" · ") || "–"}
+                      </span>
+                      {reasonKey ? (
+                        <span className="truncate" data-testid="reservation-reason">
+                          {t("creditsPage.reservationReason")}
+                          {t(reasonKey)}
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </>
+        ) : null
       ) : (
         <p
           className="text-muted-foreground mt-4 text-sm tabular-nums"

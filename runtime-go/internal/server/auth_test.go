@@ -63,6 +63,7 @@ func envelopeJSON(mutate func(map[string]any)) string {
 	fields := map[string]any{
 		"schema_version":        "1",
 		"tenant_id":             "t1",
+		"workspace_id":          "ws1",
 		"principal_id":          "p1",
 		"actor_id":              "a1",
 		"initiator_kind":        identity.InitiatorUser,
@@ -89,6 +90,7 @@ func envelopeJSON(mutate func(map[string]any)) string {
 func wantEnvelope() identity.VerifiedRun {
 	return identity.VerifiedRun{
 		TenantID:            "t1",
+		WorkspaceID:         "ws1",
 		PrincipalID:         "p1",
 		ActorID:             "a1",
 		InitiatorKind:       identity.InitiatorUser,
@@ -359,7 +361,8 @@ func TestAuthValidatesAndInjectsVerifiedIdentity(t *testing.T) {
 		t.Fatalf("runner context has no verified identity: %v", next.runErr)
 	}
 	want := wantEnvelope()
-	if got.TenantID != want.TenantID || got.PrincipalID != want.PrincipalID ||
+	if got.TenantID != want.TenantID || got.WorkspaceID != want.WorkspaceID ||
+		got.PrincipalID != want.PrincipalID ||
 		got.ActorID != want.ActorID || got.InitiatorKind != want.InitiatorKind ||
 		got.RunID != want.RunID || got.AttemptID != want.AttemptID ||
 		got.TurnID != want.TurnID || got.ThreadID != want.ThreadID ||
@@ -394,6 +397,26 @@ func TestAuthValidatesAndInjectsVerifiedIdentity(t *testing.T) {
 // The validation request carries the invocation VERBATIM plus the capability
 // and service credentials — and nothing from the AG-UI body: the plane
 // vouches for credentials, not for client payloads.
+// MT050 (acceptance 1): the workspace dimension of the ownership is as
+// load-bearing as the tenant — an envelope the plane "verified" without it is
+// incomplete, and an incomplete envelope is refused, never repaired with a
+// default workspace.
+func TestAuthRefusesAnEnvelopeWithoutWorkspace(t *testing.T) {
+	stub := newValidationStub(http.StatusOK, envelopeJSON(func(fields map[string]any) {
+		delete(fields, "workspace_id")
+	}))
+	next := &guardedNext{}
+	w := httptest.NewRecorder()
+	authed(t, stub, next.handler()).ServeHTTP(w, validRequest(testRunBody, envelopeJSON(nil)))
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d (body: %s), want 502 for an incomplete envelope", w.Code, w.Body.String())
+	}
+	if next.invoked() {
+		t.Fatal("an envelope without workspace ownership reached the runner")
+	}
+}
+
 func TestAuthForwardsOnlyTheInvocationToValidation(t *testing.T) {
 	stub := newValidationStub(http.StatusOK, envelopeJSON(nil))
 	next := &guardedNext{}
@@ -420,8 +443,8 @@ func TestAuthForwardsOnlyTheInvocationToValidation(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &sent); err != nil {
 		t.Fatalf("validation body is not JSON: %q", body)
 	}
-	if len(sent) != 16 {
-		t.Fatalf("validation body = %#v, want exactly the invocation's 16 fields", sent)
+	if len(sent) != 17 {
+		t.Fatalf("validation body = %#v, want exactly the invocation's 17 fields", sent)
 	}
 	if sent["turn_id"] != "turn_1" || sent["thread_id"] != "th1" || sent["tenant_id"] != "t1" {
 		t.Fatalf("validation body carried wrong values: %#v", sent)

@@ -261,6 +261,7 @@ func readBounded(r *http.Request, max int64) ([]byte, error) {
 type envelopeWire struct {
 	SchemaVersion      string `json:"schema_version"`
 	TenantID           string `json:"tenant_id"`
+	WorkspaceID        string `json:"workspace_id"`
 	PrincipalID        string `json:"principal_id"`
 	ActorID            string `json:"actor_id"`
 	InitiatorKind      string `json:"initiator_kind"`
@@ -360,6 +361,7 @@ func (c AuthConfig) validate(r *http.Request, capability string, invocation []by
 	}
 	run := identity.VerifiedRun{
 		TenantID:            wire.TenantID,
+		WorkspaceID:         wire.WorkspaceID,
 		PrincipalID:         wire.PrincipalID,
 		ActorID:             wire.ActorID,
 		InitiatorKind:       wire.InitiatorKind,

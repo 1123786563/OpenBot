@@ -67,6 +67,7 @@ func verifiedRun() identity.VerifiedRun {
 	// tests drive IS the envelope's turn (master §4.3).
 	return identity.VerifiedRun{
 		TenantID:            "t1",
+		WorkspaceID:         "ws1",
 		PrincipalID:         "p1",
 		ActorID:             "a1",
 		InitiatorKind:       identity.InitiatorUser,

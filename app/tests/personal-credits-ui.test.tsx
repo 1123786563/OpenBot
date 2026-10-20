@@ -395,14 +395,16 @@ test("个人余额页渲染账户类型、可用/已消费/已过期与待结算
   expect(pending).toContain("结果未知");
   expect(pending).toContain("10");
   // The per-reservation list names each hold's status and reason: the unknown one says why it
-  // is stuck (in the reader's words, with the verbatim reason), and both name their Bot.
+  // is stuck as a sentence in the reader's words (08.7's mapping — the raw stable code never
+  // reaches the DOM), and both name their Bot.
   const rows = view.getAllByTestId("reservation-row");
   expect(rows).toHaveLength(2);
   const unknownRow = rows.find(
     (row) => row.getAttribute("data-status") === "unknown",
   );
   expect(unknownRow?.textContent).toContain("结果未知");
-  expect(unknownRow?.textContent).toContain("usage_missing");
+  expect(unknownRow?.textContent).toContain("调用已结束但用量尚未回报");
+  expect(unknownRow?.textContent).not.toContain("usage_missing");
   expect(unknownRow?.textContent).toContain("测试 Bot A");
   const reservedRow = rows.find(
     (row) => row.getAttribute("data-status") === "reserved",

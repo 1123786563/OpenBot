@@ -24,7 +24,7 @@
  * derivation already knows" was wrong, and is corrected here — the honest trade
  * is in-memory index vs. a store column, and #362 accepts the in-memory one).
  *
- * M-2, accepted and documented (reference/craft-preview-origin.md): the registry is
+ * M-2, accepted and documented (docs/craft-preview-origin.md): the registry is
  * in-memory, so a server restart forgets every label. An already-open preview tab
  * then reloads into 404 "Unknown preview host" and stays refused until the person
  * re-enters through the main site (the webapp-info poll or a fresh ticket — both

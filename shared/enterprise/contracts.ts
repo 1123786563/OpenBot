@@ -111,6 +111,8 @@ export interface ToolReceiptDTO {
 export interface RuntimeInvocation {
   schema_version: 1;
   tenant_id: string;
+  /** MT050 (Issue #93): the workspace half of the ownership, required on the Go wire too. */
+  workspace_id: string;
   principal_id: string;
   actor_id: string;
   initiator_kind: "human" | "schedule";

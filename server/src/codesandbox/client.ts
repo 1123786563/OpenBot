@@ -32,6 +32,17 @@ export type SandboxClientOptions = {
   token: string;
   /** Which Bot's workspace every request targets; the proxy routes on `x-openbot-bot-id`. */
   botId: string;
+  /**
+   * The execution ownership every request states (MT050): the sandbox proxy refuses a
+   * deployment-token-only request, so a caller that has resolved the Bot's (company, team)
+   * passes it here and the two ownership headers ride beside the token. Absent is kept
+   * honest rather than defaulted: a caller without an ownership gets the proxy's 403, which
+   * is the refusal the tenancy program wants, not a silent deployment-wide scope.
+   */
+  executionScope?: {
+    readonly tenantId: string;
+    readonly workspaceId: string;
+  };
   fetchImpl?: typeof fetch;
 };
 
@@ -95,6 +106,10 @@ export function createSandboxClient(options: SandboxClientOptions): SandboxClien
     });
     headers["x-sandbox-token"] = options.token;
     headers["x-openbot-bot-id"] = options.botId;
+    if (options.executionScope) {
+      headers["x-openbot-tenant-id"] = options.executionScope.tenantId;
+      headers["x-openbot-workspace-id"] = options.executionScope.workspaceId;
+    }
     const budgetMs = timeoutMs ?? 0;
     const signal = budgetMs > 0 ? AbortSignal.timeout(budgetMs) : undefined;
     let response: Response;
@@ -132,7 +147,7 @@ export function createSandboxClient(options: SandboxClientOptions): SandboxClien
        * Flipping this to `true` is a billing decision, not a capability flag: the code-run path
        * holds no credit reservation today, so `reportCodeRunUsage` refuses to write a usage row
        * while `creditMeteringEnabled` is true and no reservation is supplied (audit B3). Land the
-       * reservation first — see `docs/specs/superpowers/2026-10-11-billing-reliability-design.md`,
+       * reservation first — see `docs/superpowers/specs/2026-10-11-billing-reliability-design.md`,
        * "Billed admission per surface".
        */
       enforceableTokenBudget: false,
@@ -234,6 +249,12 @@ export function createSandboxClient(options: SandboxClientOptions): SandboxClien
       const headers: Record<string, string> = {
         "x-sandbox-token": options.token,
         "x-openbot-bot-id": options.botId,
+        ...(options.executionScope
+          ? {
+              "x-openbot-tenant-id": options.executionScope.tenantId,
+              "x-openbot-workspace-id": options.executionScope.workspaceId,
+            }
+          : {}),
       };
       const response = await doFetch(`${base}/events`, { headers });
       if (!response.ok || !response.body) {

@@ -614,6 +614,43 @@ describe("a legacy session's preview (webappGeneration: legacy)", () => {
     expect(strip?.className).toContain("pointer-events-none");
   });
 
+  // ── #425: the legacy form's deployment switch ─────────────────────────────
+  // OPENBOT_CRAFT_LEGACY_PREVIEW_ENABLED=false makes webapp-info answer
+  // webapp_url:null with the closure sentence and the generation honestly
+  // legacy. The pane reuses the CLOSED card — the same channel every other
+  // closure sentence rides: no iframe, no exchange, the server's own reason.
+  test("a switched-off legacy form shows the closed card with the server's reason — no iframe, no exchange (#425)", async () => {
+    const { posts } = serving({
+      has_webapp: true,
+      webapp_url: null,
+      previewOrigin: null,
+      previewOriginClosedReason:
+        "Legacy same-origin previews are disabled on this deployment: the old preview shares the platform's own origin, so generated code could use your session to reach platform APIs. Rebuild the web app to move it onto the isolated preview origin.",
+      webappGeneration: "legacy",
+      status: "running",
+      ready: true,
+    });
+    const view = draw();
+
+    await view.findByText(t("preview.closedTitle"));
+    expect(view.getByText(/Legacy same-origin previews/)).toBeTruthy();
+    expect(view.container.querySelector("iframe")).toBeNull();
+    await settleReactWork();
+    // No pass is ever bought for the legacy form — there is nothing to enter.
+    expect(posts).toEqual([]);
+  });
+
+  test("the legacy notice names the same-origin risk — the pane's copy follows the locale (#425)", async () => {
+    const { view } = drawLegacy();
+    await view.findByTitle(t("preview.title"));
+    // The bundle's sentence now carries the risk statement the docs record
+    // (the preview shares the platform's origin; generated code can use the
+    // person's session against platform APIs). Read through i18n so the
+    // assertion follows the bundle instead of pinning a copy of the sentence.
+    expect(t("preview.legacyNotice")).toContain("platform APIs");
+    expect(view.getByText(t("preview.legacyNotice"))).toBeTruthy();
+  });
+
   test("a legacy app whose server is down renders the down state, never a frame at the new origin", async () => {
     serving({
       has_webapp: true,

@@ -10,6 +10,7 @@ with a fresh assertion naming whose identity this request acts for.
 
 from __future__ import annotations
 
+import hmac
 import logging
 
 from hindsight_api.config import get_config
@@ -70,7 +71,17 @@ class OpenBotTenantExtension(TenantExtension):
         self._known_schemas: set[str] = set()
 
     async def authenticate(self, context: RequestContext) -> TenantContext:
-        if context.api_key != self.expected_api_key:
+        # Constant-time on the shared key, as the assertion half of the service identity
+        # already is (assertion.py): a plain != answers a key-guessing probe by timing.
+        # Bytes because compare_digest only takes ASCII str — the header is not trusted to
+        # be one — and a request without any key is not a comparison at all.
+        if (
+            context.api_key is None
+            or not hmac.compare_digest(
+                context.api_key.encode("utf-8"),
+                self.expected_api_key.encode("utf-8"),
+            )
+        ):
             raise AuthenticationError("Invalid service credentials")
         # MCP transport re-auth delegates here as well; the passthrough header reaches both
         # transports, so the assertion requirement is uniform.
