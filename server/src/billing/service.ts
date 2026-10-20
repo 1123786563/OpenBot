@@ -294,6 +294,7 @@ export function createBillingService(deps: {
       // A plan with no credit component has no allowance to renew: the period is handled —
       // advance the marker so the detection does not re-run on every delivery.
       await store.advanceSubscriptionAllowance({
+        externalCustomerId: row.externalCustomerId,
         externalSubscriptionId: row.externalSubscriptionId,
         allowancePeriodStart: periodStart,
         allowancePeriodEnd: periodEnd,
@@ -318,6 +319,7 @@ export function createBillingService(deps: {
     // The marker moves only after the grant is recorded: a crash between the two leaves the
     // period uncovered, and the next delivery or sweep re-runs the idempotent grant.
     await store.advanceSubscriptionAllowance({
+      externalCustomerId: row.externalCustomerId,
       externalSubscriptionId: row.externalSubscriptionId,
       allowancePeriodStart: periodStart,
       allowancePeriodEnd: periodEnd,
@@ -820,7 +822,9 @@ export function createBillingService(deps: {
         try {
           // The provider's own period is the fact a renewal is detected from; a subscription
           // the provider no longer answers (or no longer runs) is skipped, not guessed.
-          const remote = await client.getSubscription(row.externalSubscriptionId);
+          const remote = await client.getSubscription(
+            row.externalSubscriptionId,
+          );
           if (!remote.body) continue;
           if (
             remote.body.status !== "active" &&

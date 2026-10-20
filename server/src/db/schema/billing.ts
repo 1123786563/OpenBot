@@ -5,12 +5,13 @@ import {
   foreignKey,
   index,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import type { BillingSubscriptionStatus } from "../../billing/types";
 import type { PayerKind } from "../../billing/payer";
+import type { BillingSubscriptionStatus } from "../../billing/types";
 
 /**
  * The customers the billing provider knows about, keyed by the external ID this deployment
@@ -105,7 +106,14 @@ export const billingSubscriptions = pgTable(
     externalCustomerId: text("external_customer_id")
       .notNull()
       .references(() => billingCustomers.externalId, { onDelete: "cascade" }),
-    externalSubscriptionId: text("external_subscription_id").primaryKey(),
+    /**
+     * The provider namespaces external subscription ids per customer (BP05/#373): a personal
+     * deployment's subscription and a company's can share the string. The row's identity is
+     * the PAIR with its customer, the same domain the provider itself answers in — never the
+     * bare string, which would collapse two accounts' subscriptions into one row and one
+     * payout.
+     */
+    externalSubscriptionId: text("external_subscription_id").notNull(),
     planCode: text("plan_code").notNull(),
     status: text("status").$type<BillingSubscriptionStatus>().notNull(),
     /** The payment subject the owning order was bound to; the pair moves together or not at all. */
@@ -143,6 +151,9 @@ export const billingSubscriptions = pgTable(
       "billing_subscriptions_allowance_pair_check",
       sql`(${table.allowancePeriodStart} IS NULL) = (${table.allowancePeriodEnd} IS NULL)`,
     ),
+    primaryKey({
+      columns: [table.externalCustomerId, table.externalSubscriptionId],
+    }),
     index("billing_subscriptions_customer_idx").on(table.externalCustomerId),
     // The renewal pass and the per-account reconciliation match by the owner pair, never by
     // a deployment-wide walk.

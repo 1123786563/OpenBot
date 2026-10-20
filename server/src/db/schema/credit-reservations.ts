@@ -329,3 +329,77 @@ export const creditRecoveryItems = pgTable(
     ),
   ],
 );
+
+/**
+ * One provider final-state query against a recovery item (Bifrost 08.5): the durable,
+ * append-only evidence row a query leaves behind, one per query, readable by the
+ * administrator-facing recovery views (08.8) and by the evidenced disposal (08.9) as the
+ * fact its action stands on.
+ *
+ * WHY A TABLE AND NOT A COLUMN. The item's `last_reason` names only the NEWEST fact; a
+ * query pass that runs again (08.4's cadence) must not overwrite the trail that led there
+ * — "queried twice, provider still has no record" is a different fact from "queried once",
+ * and the disposal's evidence must survive later queries. The row is therefore written
+ * once and never updated: `conclusion` is a closed vocabulary, `summary` is the bounded
+ * raw excerpt of what the source answered, and `queried_at`/`recorded_at` keep the query's
+ * own time apart from the write's.
+ *
+ * WHAT THE CONCLUSIONS MEAN (the ticket's three-way classification, snake_case):
+ * `settled_evidence` — the provider confirms the work completed (with its own usage
+ * summary when it has one); `no_charge_evidence` — the provider confirms the request was
+ * never billed (refused/undispatched), the only conclusion that may ENTER the release
+ * path; `still_unknown` — the provider has no record of the request, or the query itself
+ * failed (unreachable, timeout, unmappable answer). "No record" is NOT release evidence
+ * (Q12: 查不到不等于没发生), which is why it shares a conclusion with transport failure.
+ */
+export const creditRecoveryQueries = pgTable(
+  "credit_recovery_queries",
+  {
+    /** `crq-` plus 8 random bytes as hex, minted by the query handler. */
+    id: text("id").primaryKey(),
+    /** The recovery item this query was run for; deleting the item takes its trail. */
+    itemId: text("item_id")
+      .notNull()
+      .references(() => creditRecoveryItems.id, { onDelete: "cascade" }),
+    /** The hold the item names, copied for reads that key on the reservation. */
+    reservationId: text("reservation_id").notNull(),
+    /** The attempt identity the source was asked about, copied the same way. */
+    attemptId: text("attempt_id").notNull(),
+    /** Who answered: the source's own name (e.g. "bifrost-jobaccounting"), not a free
+     * string the handler invents — the source names itself. */
+    source: text("source").notNull(),
+    /** The three-way classification (see the table comment); CHECK-enforced. */
+    conclusion: text("conclusion")
+      .$type<"settled_evidence" | "no_charge_evidence" | "still_unknown">()
+      .notNull(),
+    /** The bounded raw excerpt of what the source answered — evidence, not prose; when
+     * the query failed, the stable failure code. */
+    summary: text("summary").notNull(),
+    /** The provider's own usage report, when it completed with one; null otherwise. The
+     * shape is the settle contract's closed dimension vocabulary, never a partial guess. */
+    usageInput: integer("usage_input"),
+    usageOutput: integer("usage_output"),
+    /** When the query ran, kept apart from when the row was written. */
+    queriedAt: timestamp("queried_at", { withTimezone: true }).notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "credit_recovery_queries_conclusion_check",
+      sql`${table.conclusion} IN ('settled_evidence', 'no_charge_evidence', 'still_unknown')`,
+    ),
+    // Usage dimensions travel together or not at all: a settled conclusion may carry them,
+    // and nothing else may — a half-present usage would be a guess dressed as evidence.
+    check(
+      "credit_recovery_queries_usage_pair_check",
+      sql`(${table.usageInput} IS NULL AND ${table.usageOutput} IS NULL) OR (${table.usageInput} IS NOT NULL AND ${table.usageOutput} IS NOT NULL)`,
+    ),
+    // The recovery trail read: everything asked about one item, newest first.
+    index("credit_recovery_queries_item_queried_idx").on(
+      table.itemId,
+      table.queriedAt,
+    ),
+  ],
+);

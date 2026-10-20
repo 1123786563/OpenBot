@@ -1,6 +1,12 @@
-import { afterAll, afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { createHmac, randomUUID } from "node:crypto";
 import { and, eq, like } from "drizzle-orm";
+import {
+  afterAll,
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createLagoClient } from "../src/billing/lago";
 import type { PayerRef } from "../src/billing/payer";
@@ -702,7 +708,7 @@ describe("10.5 plan credits into the purchaser's personal account", () => {
     expect(upgraded?.planCode).toBe(planCode("big"));
     expect(upgraded?.ownerPayerKind).toBe("personal");
     expect(upgraded?.ownerPayerId).toBe(owner);
-    const renewalKey = `plan-renewal:${subscriptionId}:${periods.current.start}`;
+    const renewalKey = `plan-renewal:${ownerKey}:${subscriptionId}:${periods.current.start}`;
     const ownerGrants = await planGrantsFor(ownerKey);
     expect(ownerGrants.map((grant) => grant.idempotencyKey)).toEqual([
       `plan:${orderId}`,

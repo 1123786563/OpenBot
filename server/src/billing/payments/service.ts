@@ -61,6 +61,8 @@ export type PaymentLagoFacade = {
    * logs a warning on every activation, never silently.
    */
   stampSubscriptionOwnership?(input: {
+    /** The customer the subscription was ensured under — half of the row's identity (BP05). */
+    externalCustomerId: string;
     externalSubscriptionId: string;
     ownerPayerKind: PayerRef["kind"];
     ownerPayerId: string;
@@ -543,6 +545,7 @@ export function createPaymentService(deps: {
     }
     try {
       const stamped = await stamp({
+        externalCustomerId: deps.externalCustomerKey,
         externalSubscriptionId: `${deps.externalCustomerKey}-${order.planCode}`,
         ownerPayerKind: owner.kind,
         ownerPayerId: owner.id,

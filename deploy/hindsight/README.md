@@ -45,6 +45,20 @@ explicitly is reported noncompliant, never assumed fine.
   Binds loopback only by default; a non-loopback `--host` (e.g. `--host 0.0.0.0` for a local
   container to reach it via `host.docker.internal`) is refused unless `--allow-non-loopback`
   is also passed. Never point production at it.
+- `extensions/openbot_tenant/` — OpenBot's custom tenant authentication and bank-scope
+  validation (#381), mounted read-only into the container and selected via `hindsight.env`:
+  `OpenBotTenantExtension` (the service identity is the PAIR of the shared API key and a
+  short-lived HMAC-signed bank-scope assertion OpenBot mints per trusted identity; one
+  PostgreSQL schema per company, provisioned on the company's first authenticated request)
+  and `OpenBotOperationValidator` (every retain/recall/delete confined to the banks the
+  assertion names; tags are classification and never widen the grant). The signing secret
+  `HINDSIGHT_API_TENANT_ASSERTION_SECRET` here must equal OpenBot's
+  `HINDSIGHT_BANK_ASSERTION_SECRET`; the OpenBot-side seam is
+  `server/src/hindsight/bank-scope.ts`.
+- `test/contract-instance.sh` — boots a throwaway instance of the same pinned image with the
+  extensions selected, the stand-in as model gateway, and a reused HuggingFace cache, for
+  the real-instance allow/deny matrix in `server/tests/hindsight-bank-isolation.contract.test.ts`
+  (`start` / `stop` / `status`).
 
 ## Operating
 
@@ -82,7 +96,8 @@ content, tokens, or endpoints.
 
 ## Explicit non-goals
 
-- This recipe does not provide tenant isolation between companies; bank mapping and the
-  OpenBot-side TenantExtension/OperationValidatorExtension land with the multi-tenant wave.
 - Service availability here does not mean personal-memory recall works end to end; that is
-  later tickets (#381+, per the wave plan).
+  later tickets (per the wave plan).
+- Company/bank isolation is enforced by the extensions above, but wiring OpenBot's recall
+  paths (which memories flow into which bank, review-gated) is later tickets' work; this
+  recipe only guarantees that what reaches the service is confined to the granted banks.

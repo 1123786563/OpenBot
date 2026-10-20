@@ -210,9 +210,15 @@ export function createBillingStore(
           .insert(billingSubscriptions)
           .values({ ...input, updatedAt: now })
           .onConflictDoUpdate({
-            target: billingSubscriptions.externalSubscriptionId,
+            // BP05 (#373): the row's identity is the (customer, subscription) pair — the
+            // provider's own namespace. A subscription never moves between customers: the
+            // customer is identity here exactly as the owner pair is, and a delivery scoped
+            // to one customer can never adopt (or re-home) another customer's row.
+            target: [
+              billingSubscriptions.externalCustomerId,
+              billingSubscriptions.externalSubscriptionId,
+            ],
             set: {
-              externalCustomerId: input.externalCustomerId,
               planCode: input.planCode,
               status: input.status,
               updatedAt: now,
@@ -234,9 +240,15 @@ export function createBillingStore(
             updatedAt: now,
           })
           .where(
-            eq(
-              billingSubscriptions.externalSubscriptionId,
-              input.externalSubscriptionId,
+            and(
+              eq(
+                billingSubscriptions.externalCustomerId,
+                input.externalCustomerId,
+              ),
+              eq(
+                billingSubscriptions.externalSubscriptionId,
+                input.externalSubscriptionId,
+              ),
             ),
           )
           .returning({ id: billingSubscriptions.externalSubscriptionId }),
@@ -260,6 +272,10 @@ export function createBillingStore(
           })
           .where(
             and(
+              eq(
+                billingSubscriptions.externalCustomerId,
+                input.externalCustomerId,
+              ),
               eq(
                 billingSubscriptions.externalSubscriptionId,
                 input.externalSubscriptionId,
@@ -288,8 +304,7 @@ export function createBillingStore(
         database
           .select({
             externalCustomerId: billingSubscriptions.externalCustomerId,
-            externalSubscriptionId:
-              billingSubscriptions.externalSubscriptionId,
+            externalSubscriptionId: billingSubscriptions.externalSubscriptionId,
             planCode: billingSubscriptions.planCode,
             status: billingSubscriptions.status,
             ownerPayerKind: billingSubscriptions.ownerPayerKind,

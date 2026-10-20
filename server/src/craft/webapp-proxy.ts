@@ -38,20 +38,18 @@ import {
   WorkspaceListingError,
 } from "./directory-archive";
 import {
+  WEBAPP_MOUNT_MARKER,
   webappDevServerReady,
   webappUpstreamHost,
-  WEBAPP_MOUNT_MARKER,
 } from "./nextjs-dev";
-import { refuseResponse } from "./refusal";
-import {
-  PREVIEW_PASS_REFUSAL,
-  type ServePreview,
-} from "./preview-origin";
+import { PREVIEW_PASS_REFUSAL, type ServePreview } from "./preview-origin";
 import {
   createPreviewTickets,
   defaultPreviewOrigin,
+  PREVIEW_SESSION_COOKIE,
   type PreviewTickets,
 } from "./preview-ticket";
+import { refuseResponse } from "./refusal";
 import type { AgentSandboxFileApi, SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import { readWebappGeneration } from "./webapp-generation";
@@ -286,8 +284,9 @@ const EXCLUDED_REQUEST_HEADER_PREFIXES = [
   "x-onyx-",
 ];
 
-/** Response headers never forwarded back: hop-by-hop, and set-cookie (an app must not set
- * cookies on the parent domain). */
+/** Response headers never forwarded back: hop-by-hop, and set-cookie — dropped whole
+ * under the default policy (the legacy same-origin mount must not set cookies at all);
+ * under `app-only` (#405) the sanitized lines are re-added after this loop. */
 const EXCLUDED_RESPONSE_HEADERS = new Set([
   "content-encoding",
   "content-length",
@@ -296,11 +295,42 @@ const EXCLUDED_RESPONSE_HEADERS = new Set([
   "set-cookie",
 ]);
 
-function stripRequestHeaders(source: Headers): Headers {
+/**
+ * How the proxy treats cookies (#405). `strip-all` is the LEGACY same-origin mount's
+ * behavior, unchanged: the platform's own cookies ride a same-origin iframe, so the app
+ * never sees any of them and never sets any back. `app-only` is the preview origin's: the
+ * platform pass and the generated app's cookies are separate jars there, so the app's own
+ * cookies are forwarded to the dev server (the pass never is) and the app's Set-Cookie
+ * answers ride back — sanitized to host-only preview cookies by sanitizeAppSetCookie.
+ */
+export type WebappCookiePolicy = "strip-all" | "app-only";
+
+/** The request-side half of `app-only`: drop the pass, forward the app's own pairs. */
+function forwardAppCookiePairs(raw: string): string | null {
+  const kept = raw
+    .split(";")
+    .map((pair) => pair.trim())
+    .filter((pair) => pair.length > 0)
+    .filter((pair) => !pair.startsWith(`${PREVIEW_SESSION_COOKIE}=`));
+  return kept.length > 0 ? kept.join("; ") : null;
+}
+
+function stripRequestHeaders(
+  source: Headers,
+  cookiePolicy: WebappCookiePolicy = "strip-all",
+): Headers {
   const headers = new Headers();
   for (const [key, value] of source.entries()) {
     const lowered = key.toLowerCase();
-    if (EXCLUDED_REQUEST_HEADERS.has(lowered)) continue;
+    if (EXCLUDED_REQUEST_HEADERS.has(lowered)) {
+      // The one header whose stripping is policy-dependent (#405): under `app-only`
+      // the pass is removed pair-by-pair and the app's own cookies continue.
+      if (lowered === "cookie" && cookiePolicy === "app-only") {
+        const forwarded = forwardAppCookiePairs(value);
+        if (forwarded !== null) headers.set("cookie", forwarded);
+      }
+      continue;
+    }
     if (
       EXCLUDED_REQUEST_HEADER_PREFIXES.some((prefix) =>
         lowered.startsWith(prefix),
@@ -311,6 +341,41 @@ function stripRequestHeaders(source: Headers): Headers {
     headers.set(key, value);
   }
   return headers;
+}
+
+/**
+ * The response-side half of `app-only` (#405): one upstream Set-Cookie line, reduced to a
+ * host-only cookie on the preview origin. The `Domain` attribute is DROPPED — with it an
+ * app could plant a cookie on the parent domain, where the platform's session lives —
+ * and a `Path` that is not absolute (or tries to smuggle attributes past the split) is
+ * dropped too, so the cookie's scope stays a well-formed path on this host. Everything
+ * else (HttpOnly, Secure, SameSite, Max-Age, Expires, the name=value pair verbatim)
+ * survives, and every header of a multi-header Set-Cookie answer is sanitized
+ * independently — none is lost, none is merged.
+ */
+function sanitizeAppSetCookie(raw: string): string {
+  const [pair, ...attributes] = raw.split(";");
+  const kept: string[] = [];
+  for (const attribute of attributes) {
+    const trimmed = attribute.trim();
+    if (trimmed.length === 0) continue;
+    const assignment = trimmed.indexOf("=");
+    const name =
+      assignment === -1 ? trimmed : trimmed.slice(0, assignment).trim();
+    const lowered = name.toLowerCase();
+    if (lowered === "domain") continue;
+    if (lowered === "path") {
+      // Keep only a well-formed absolute path: `Path=relative` is not a scope on this
+      // host, and the browser would fall back to default-path semantics anyway.
+      const value =
+        assignment === -1 ? "" : trimmed.slice(assignment + 1).trim();
+      if (!value.startsWith("/")) continue;
+      kept.push(`Path=${value}`);
+      continue;
+    }
+    kept.push(trimmed);
+  }
+  return [pair.trim(), ...kept].join("; ");
 }
 
 /**
@@ -367,12 +432,19 @@ export async function proxyWebappRequest(input: {
   requestHeaders: Headers;
   /** The caller's request body, when it carried one. Omitted for a bodyless verb. */
   body?: BodyInit | null;
+  /**
+   * Cookie policy (#405): `strip-all` (the default, the legacy same-origin mount) drops
+   * every cookie both ways; `app-only` (the preview origin) forwards the app's own
+   * cookies and answers its Set-Cookie with host-only sanitized lines.
+   */
+  cookiePolicy?: WebappCookiePolicy;
   fetchImpl?: typeof fetch;
 }): Promise<ProxyWebappResult> {
   const fetchImpl = input.fetchImpl ?? fetch;
+  const cookiePolicy = input.cookiePolicy ?? "strip-all";
   const path = input.path.replace(/^\/+/, "");
   const target = `${input.upstreamBaseUrl}/${path}${input.query}`;
-  const headers = stripRequestHeaders(input.requestHeaders);
+  const headers = stripRequestHeaders(input.requestHeaders, cookiePolicy);
 
   let upstream: Response;
   try {
@@ -399,6 +471,14 @@ export async function proxyWebappRequest(input: {
   for (const [key, value] of upstream.headers.entries()) {
     if (EXCLUDED_RESPONSE_HEADERS.has(key.toLowerCase())) continue;
     responseHeaders.set(key, value);
+  }
+  if (cookiePolicy === "app-only") {
+    // Every Set-Cookie line the app answered with rides back, each sanitized to a
+    // host-only preview cookie (#405). getSetCookie preserves the multiple headers the
+    // plain entries() loop would fold into one comma-joined (invalid) line.
+    for (const raw of upstream.headers.getSetCookie()) {
+      responseHeaders.append("set-cookie", sanitizeAppSetCookie(raw));
+    }
   }
   responseHeaders.set(
     "content-type",
@@ -1049,6 +1129,10 @@ export function createWebappProxyRoutes(
         ? context.req.url.slice(context.req.url.indexOf("?"))
         : "",
       method: context.req.method,
+      // The preview origin's cookie jar (#405): the app's own cookies cross to the
+      // dev server, the platform pass never does, and the app's Set-Cookie answers
+      // come back as host-only preview cookies.
+      cookiePolicy: "app-only",
       // Buffered, not streamed: a preview is driven by a person clicking through
       // an app, so the payloads are JSON-sized, and a forwarded stream can only
       // be consumed once — which a retry after the ready probe would find already
@@ -1326,7 +1410,10 @@ export async function resolvePreviewWebappHmrUpgrade(
   if (verified === null) {
     return { ok: false, status: 401, error: PREVIEW_PASS_REFUSAL };
   }
-  const session = await deps.store.findSession(input.sessionId, verified.userId);
+  const session = await deps.store.findSession(
+    input.sessionId,
+    verified.userId,
+  );
   if (!session) {
     return {
       ok: false,

@@ -14,8 +14,11 @@
 // site redeems at the preview origin's entry and plants the preview domain's
 // OWN session cookie — session-level (no Max-Age/Expires), HttpOnly, SameSite=None; Secure (#365 F-1).
 
-import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createHmac } from "node:crypto";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { loadCraftConfig } from "../src/craft/config";
 import {
   createPreviewOrigin,
@@ -72,6 +75,11 @@ function originWith(
     new Response("unproxied", { status: 503 }),
   /** #404: the deployment's own main-site address (index.ts injects config.appUrl). */
   appUrl?: string,
+  /**
+   * #411: the TLS renewal-status gate. Default open — this suite's subject is the
+   * origin's own logic; the gate has its own describe below, over real status files.
+   */
+  tlsStatusGate?: { verdict(): { ok: true } | { ok: false; reason: string } },
 ) {
   return createPreviewOrigin({
     config: {
@@ -86,6 +94,9 @@ function originWith(
     env,
     servePreview,
     ...(appUrl === undefined ? {} : { appUrl }),
+    ...(tlsStatusGate === undefined
+      ? { tlsStatusGate: { verdict: () => ({ ok: true }) as const } }
+      : { tlsStatusGate }),
   });
 }
 
@@ -101,6 +112,128 @@ const SWALLOW = "https://{session}.example.com";
 const UNDER = "https://{session}.preview.example.com";
 const LOCAL = "https://{session}.localhost:3001";
 const MAIN = "http://localhost:3001";
+
+// ── #411 (P0): admission reads the TLS renewal-status file ───────────────────
+//
+// The HOST form's addresses are https behind a certificate terminated in front of the
+// server, so admission closes while that certificate is missing, expired, mid-first-
+// issuance, or failing to renew — with the renewal guard's own sentence — and re-opens
+// the moment the sidecar rewrites the status file, no restart. The DEV form never
+// consults the gate. Every case below runs against a REAL status file in a temp
+// directory, driven through the production gate (createTlsStatusGate over node:fs).
+describe("#411: the TLS renewal-status gate in admission (host form)", () => {
+  const statusRecord = (health: string, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ health, daysLeft: 45, ...extra });
+
+  /**
+   * An origin in the HOST form whose gate the ORIGIN derives from the env path
+   * itself — that chain (OPENBOT_TLS_STATUS_FILE → createTlsStatusGate →
+   * admission) is under test, so no gate stub is injected anywhere in this suite.
+   */
+  function hostOriginWithStatus() {
+    const dir = mkdtempSync(join(tmpdir(), "openbot-tls-status-"));
+    const statusFile = join(dir, "renewal-status.json");
+    const origin = createPreviewOrigin({
+      config: {
+        enabled: true,
+        webappProxyEnabled: true,
+        previewOriginEnabled: true,
+        previewOriginTemplate: TEMPLATE,
+      },
+      previewTickets: createPreviewTickets({ store: fakeStore().store }),
+      secret: SECRET,
+      env: { OPENBOT_TLS_STATUS_FILE: statusFile },
+      servePreview: async () => new Response("unproxied", { status: 503 }),
+    });
+    return { origin, statusFile, dir };
+  }
+
+  test("ok and warn with days left answer open; warn carries no extra burden", () => {
+    for (const health of ["ok", "warn"]) {
+      const { origin, statusFile } = hostOriginWithStatus();
+      writeFileSync(statusFile, statusRecord(health));
+      expect(origin.admission()).toEqual({ ok: true });
+    }
+  });
+
+  test("starting closes with the first-issuance sentence", () => {
+    const { origin, statusFile } = hostOriginWithStatus();
+    writeFileSync(statusFile, statusRecord("starting", { daysLeft: 0 }));
+    const gate = origin.admission();
+    expect(gate.ok).toBe(false);
+    if (!gate.ok)
+      expect(gate.reason).toContain("first TLS certificate is being issued");
+  });
+
+  test("critical and failed close, surfacing the guard's own reason", () => {
+    for (const health of ["critical", "failed"]) {
+      const { origin, statusFile } = hostOriginWithStatus();
+      writeFileSync(
+        statusFile,
+        statusRecord(health, { healthReason: "dns propagation stuck" }),
+      );
+      const gate = origin.admission();
+      expect(gate.ok).toBe(false);
+      if (!gate.ok) {
+        expect(gate.reason).toContain(health);
+        expect(gate.reason).toContain("dns propagation stuck");
+      }
+    }
+  });
+
+  test("an ok band with the certificate already expired closes (daysLeft is the fact)", () => {
+    const { origin, statusFile } = hostOriginWithStatus();
+    writeFileSync(statusFile, statusRecord("ok", { daysLeft: 0 }));
+    const gate = origin.admission();
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) expect(gate.reason).toContain("no days left");
+  });
+
+  test("a missing status file closes, naming the gap and the env (fail closed)", () => {
+    const { origin } = hostOriginWithStatus(); // never written
+    const gate = origin.admission();
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) {
+      expect(gate.reason).toContain("it is missing");
+      expect(gate.reason).toContain("OPENBOT_TLS_STATUS_FILE");
+    }
+  });
+
+  test("a malformed file and an unknown health band close too", () => {
+    const first = hostOriginWithStatus();
+    writeFileSync(first.statusFile, "{not json");
+    expect(first.origin.admission().ok).toBe(false);
+    const second = hostOriginWithStatus();
+    writeFileSync(second.statusFile, statusRecord("on-fire"));
+    expect(second.origin.admission().ok).toBe(false);
+  });
+
+  test("a status-file update re-judges admission without a restart", () => {
+    const { origin, statusFile } = hostOriginWithStatus();
+    writeFileSync(
+      statusFile,
+      statusRecord("critical", { healthReason: "renewal failing" }),
+    );
+    expect(origin.admission().ok).toBe(false);
+    // The sidecar renews: the file rewrites (different size, same mtime-second on a
+    // coarse filesystem), and the very next admission call must see the new truth.
+    writeFileSync(statusFile, statusRecord("ok", { daysLeft: 60 }));
+    expect(origin.admission()).toEqual({ ok: true });
+    // And back down: expiry re-closes without any process restart.
+    writeFileSync(statusFile, statusRecord("ok", { daysLeft: 0 }));
+    expect(origin.admission().ok).toBe(false);
+  });
+
+  test("the DEV form never consults the gate: no file, admission open", () => {
+    const dir = mkdtempSync(join(tmpdir(), "openbot-tls-status-"));
+    const origin = originWith(
+      {}, // the empty template is the dev form
+      { OPENBOT_TLS_STATUS_FILE: join(dir, "renewal-status.json") },
+    );
+    expect(origin.admission()).toEqual({ ok: true });
+    expect(origin.originFor(SESSION_ID)).toContain("127.0.0.1");
+  });
+});
 
 // ── config: the two admission fields ───────────────────────────────────────
 
@@ -159,6 +292,9 @@ describe("preview hostname derivation", () => {
       previewTickets: createPreviewTickets({ store: fakeStore().store }),
       secret: "a-different-deployment-secret",
       env: {},
+      // #411: the host form consults the TLS gate; this origin's subject is the
+      // rekeying, so the gate answers open.
+      tlsStatusGate: { verdict: () => ({ ok: true }) as const },
     });
     expect(rekeyed.originFor(SESSION_ID)).not.toBe(keyed.originFor(SESSION_ID));
   });
@@ -592,9 +728,7 @@ describe("fix-ocr22 #2: the localhost base claims only the template port, never 
       origin.handlesRequest(new Request("https://preview.example.com/")),
     ).toBe(true);
     expect(
-      origin.handlesRequest(
-        new Request("https://x.preview.example.com:9999/"),
-      ),
+      origin.handlesRequest(new Request("https://x.preview.example.com:9999/")),
     ).toBe(true);
   });
 });
@@ -815,9 +949,9 @@ describe("preview origin admission", () => {
       // Fail-closed (AC6): no address exists, and the loopback host and port
       // space are never claimed into the preview namespace.
       expect(() => broken.originFor(SESSION_ID)).toThrow();
-      expect(
-        broken.handlesRequest(new Request("http://127.0.0.1:3001/")),
-      ).toBe(false);
+      expect(broken.handlesRequest(new Request("http://127.0.0.1:3001/"))).toBe(
+        false,
+      );
     }
   });
 
@@ -845,9 +979,9 @@ describe("preview origin admission", () => {
         );
       }
       expect(() => broken.originFor(SESSION_ID)).toThrow();
-      expect(
-        broken.handlesRequest(new Request("https://x..localhost/")),
-      ).toBe(false);
+      expect(broken.handlesRequest(new Request("https://x..localhost/"))).toBe(
+        false,
+      );
     }
   });
 
@@ -877,7 +1011,9 @@ describe("preview origin admission", () => {
         );
       }
       expect(() => broken.originFor(SESSION_ID)).toThrow();
-      expect(broken.handlesRequest(new Request("https://x.*.example.com/"))).toBe(false);
+      expect(
+        broken.handlesRequest(new Request("https://x.*.example.com/")),
+      ).toBe(false);
     }
   });
 
@@ -1531,9 +1667,7 @@ describe("fix-ocr22 #1: a pass-holder's entry-root ?ticket= is a business parame
       }),
     );
     expect(response.status).toBe(200);
-    expect(calls).toEqual([
-      { sessionId: SESSION_ID, appPath: "/", query: "" },
-    ]);
+    expect(calls).toEqual([{ sessionId: SESSION_ID, appPath: "/", query: "" }]);
   });
 });
 
@@ -1971,7 +2105,9 @@ describe("the preview origin's proxied traffic (cookie gate + servePreview seam)
     const response = await origin.handlePreviewRequest(
       SESSION_ID,
       new Request(`${address}/`, {
-        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${passFor(OTHER_SESSION_ID)}` },
+        headers: {
+          cookie: `${PREVIEW_SESSION_COOKIE}=${passFor(OTHER_SESSION_ID)}`,
+        },
       }),
     );
     expect(response.status).toBe(401);
@@ -2267,11 +2403,7 @@ describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
     );
     expect(redemption.status).toBe(302);
     const cookie = redemption.headers.get("set-cookie") ?? "";
-    const planted = cookie
-      .split(";")[0]
-      ?.split("=")
-      .slice(1)
-      .join("=") ?? "";
+    const planted = cookie.split(";")[0]?.split("=").slice(1).join("=") ?? "";
     // The repair's core: the planted value is a deployment-signed pass bound
     // to (SESSION_ID, USER_ID) — not the raw session id the old code echoed.
     expect(planted).not.toBe(SESSION_ID);
@@ -2385,7 +2517,9 @@ describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
 
     const before = await origin.handlePreviewRequest(
       SESSION_ID,
-      new Request(`${address}/`, { headers: { cookie: passCookie(SESSION_ID) } }),
+      new Request(`${address}/`, {
+        headers: { cookie: passCookie(SESSION_ID) },
+      }),
     );
     expect(before.status).toBe(200);
 
@@ -2393,7 +2527,9 @@ describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
     owners.set(SESSION_ID, "u2");
     const after = await origin.handlePreviewRequest(
       SESSION_ID,
-      new Request(`${address}/`, { headers: { cookie: passCookie(SESSION_ID) } }),
+      new Request(`${address}/`, {
+        headers: { cookie: passCookie(SESSION_ID) },
+      }),
     );
     expect(after.status).toBe(404);
     // The verified claim (the ORIGINAL owner) is what the seam saw both times.
@@ -2467,7 +2603,11 @@ describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
     expect(okA.status).toBe(200);
     expect(okB.status).toBe(200);
     expect(calls).toEqual([
-      { sessionId: SESSION_ID, userId: USER_ID, appPath: `${labelA}/api/things` },
+      {
+        sessionId: SESSION_ID,
+        userId: USER_ID,
+        appPath: `${labelA}/api/things`,
+      },
       {
         sessionId: OTHER_SESSION_ID,
         userId: USER_ID,

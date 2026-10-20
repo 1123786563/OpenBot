@@ -100,7 +100,7 @@ Superpowers 负责实现阶段的 TDD 编排。
 ### Review
 
 每个任务和实现阶段最终 Review 由 Superpowers 负责。
-之后可选运行  `open-code-review`，再做一轮 Standards + Spec Compliance 独立审查。
+之后可选运行  `code-review`，再做一轮 Standards + Spec Compliance 独立审查。
 Review Agent 默认应保持只读。
 
 ## 长上下文 / Context Management 策略

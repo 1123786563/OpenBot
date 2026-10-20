@@ -221,6 +221,7 @@
   {
    "name": "server/tests part 2",
    "files": [
+    "server/tests/billing-company-renewal.integration.test.ts",
     "server/tests/billing-credits-consumption.integration.test.ts",
     "server/tests/billing-credits-summary.integration.test.ts",
     "server/tests/billing-period-fulfillment.integration.test.ts",
@@ -760,6 +761,7 @@
   "server/tests/auth-localhost-fetch.test.ts",
   "server/tests/auth-mobile-scheme.integration.test.ts",
   "server/tests/authorization-impersonation.test.ts",
+  "server/tests/billing-company-renewal.integration.test.ts",
   "server/tests/billing-credits-consumption.integration.test.ts",
   "server/tests/billing-credits-summary.integration.test.ts",
   "server/tests/billing-credits-writer.integration.test.ts",
@@ -1099,7 +1101,7 @@
  ],
  "causes": {},
  "directoryIslands": [
-  "server/tests/multitenancy",
-  "app/tests/multitenancy"
+  "app/tests/multitenancy",
+  "server/tests/multitenancy"
  ]
 }

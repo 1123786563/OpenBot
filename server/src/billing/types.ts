@@ -590,6 +590,8 @@ export type BillingSubscriptionRow = {
  * so a webhook refresh or a sync call physically cannot move an owner.
  */
 export type SubscriptionOwnershipStamp = {
+  /** The customer the subscription row lives under — half of the row's identity (BP05). */
+  externalCustomerId: string;
   externalSubscriptionId: string;
   ownerPayerKind: PayerKind;
   ownerPayerId: string;
@@ -615,9 +617,11 @@ export type OwnedSubscriptionRow = {
  * The renewal payout (10.3): what the billing service needs to pay a period's allowance into
  * the subscription owner's account, and nothing more. The account key is derived by the
  * SERVICE from the row's own owner pair — a delivery's bytes carry no OpenBot identity — and
- * the idempotency key (`plan-renewal:<externalSubscriptionId>:<periodStart>`) is the ledger's
- * own fence: a duplicate or racing delivery of the same period is a no-op, while the next
- * period's key never collides with the last one's.
+ * the idempotency key (`plan-renewal:<accountKey>:<externalSubscriptionId>:<periodStart>`,
+ * composed in ./plan-renewals) is the ledger's own fence: a duplicate or racing delivery of
+ * the same period is a no-op, while the next period's key never collides with the last one's,
+ * and the account leading the key keeps a personal and a company subscription that share the
+ * provider's id string from collapsing into one payout (BP05).
  */
 export type SubscriptionRenewalGrantor = {
   /** Scaled credit units (×100) the plan's period allowance pays, or null when it grants none. */
@@ -707,6 +711,8 @@ export type BillingStore = {
    * racing delivery cannot walk the marker backwards. `false` means nothing moved.
    */
   advanceSubscriptionAllowance(input: {
+    /** The customer the subscription row lives under — half of the row's identity (BP05). */
+    externalCustomerId: string;
     externalSubscriptionId: string;
     allowancePeriodStart: Date;
     allowancePeriodEnd: Date;

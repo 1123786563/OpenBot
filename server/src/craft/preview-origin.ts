@@ -56,13 +56,18 @@
 
 import { createHmac } from "node:crypto";
 import type { CraftConfig } from "./config";
+import { createPreviewPassCodec, type PreviewPassCodec } from "./preview-pass";
 import {
   PREVIEW_SESSION_COOKIE,
   type PreviewTickets,
   previewPortFromEnv,
   previewSessionCookieHeader,
 } from "./preview-ticket";
-import { createPreviewPassCodec, type PreviewPassCodec } from "./preview-pass";
+import {
+  createTlsStatusGate,
+  DEFAULT_TLS_STATUS_FILE,
+  type TlsStatusVerdict,
+} from "./preview-tls-status";
 import { refuseResponse } from "./refusal";
 
 /** The gate's answer: open, or closed with the sentence a person can read. */
@@ -692,9 +697,22 @@ export function createPreviewOrigin(deps: {
    * the boot file from webapp-proxy's createPreviewProxy; tests stub the seam.
    */
   servePreview: ServePreview;
+  /**
+   * #411: the TLS renewal-status gate the HOST form's admission consults.
+   * Injectable so tests drive the five health bands without a sidecar;
+   * production derives it from OPENBOT_TLS_STATUS_FILE (default
+   * /etc/openbot/tls/renewal-status.json, the main compose's read-only mount).
+   */
+  tlsStatusGate?: { verdict(): TlsStatusVerdict };
 }): PreviewOrigin {
   const env = deps.env ?? process.env;
   const template = parseTemplate(deps.config.previewOriginTemplate);
+  const tlsStatusGate =
+    deps.tlsStatusGate ??
+    createTlsStatusGate({
+      statusFile:
+        env.OPENBOT_TLS_STATUS_FILE?.trim() || DEFAULT_TLS_STATUS_FILE,
+    });
   const devPort = previewDevPort(env);
   // #358 repair: the pass codec derives from the SAME deployment secret the
   // hostname labels use, under its own purpose label ("craft-preview-pass") —
@@ -749,6 +767,7 @@ export function createPreviewOrigin(deps: {
         reason: `The preview origin is disabled: ${devPort.invalid}`,
       };
     }
+
     // #408 (AC6): production + empty template is an explicit close, never a
     // loopback address a remote browser would aim at its own machine. The
     // deployment context is the same appUrl #404 reads — unset or loopback is
@@ -761,6 +780,18 @@ export function createPreviewOrigin(deps: {
         reason:
           "The preview origin is closed: OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE is empty (the dev form), but this deployment serves the app on a non-loopback host, so a 127.0.0.1 preview address would be unreachable from the user's browser. Set OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE (e.g. https://{session}.preview.example.com) to serve previews on their own host.",
       };
+    }
+    // #411 (AC6/AC8): the HOST form's addresses are https behind a certificate
+    // this deployment terminates in front of the server — admission closes while
+    // that certificate is missing, expired, or mid-first-issuance, surfacing the
+    // renewal guard's own sentence instead of handing out addresses the browser
+    // would fail to load. The DEV form never consults the gate: its addresses
+    // are plain http on a local port, no certificate in the path. The gate
+    // re-stats the file on every call, so a sidecar update re-opens admission
+    // without a restart.
+    if (template.kind === "host") {
+      const tls = tlsStatusGate.verdict();
+      if (!tls.ok) return { ok: false, reason: tls.reason };
     }
     return { ok: true };
   };

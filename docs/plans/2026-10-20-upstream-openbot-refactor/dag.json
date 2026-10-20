@@ -1,0 +1,542 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-20",
+  "mode": "plan-only",
+  "root_issue": "https://github.com/1123786563/OpenBot/issues/489",
+  "issue_ingestion": "Published parent/sub-issues; publisher verifies paginated native contains/blocked_by and issue bodies. Full discussion and current-state ingestion belongs to execution startup.",
+  "local_base": "3b4a7c68132c3507300408346a44fb9d56f3c14c",
+  "upstream_base": "e8bb27368ff436958b614292ae91283e51d5a813",
+  "plan_path": "docs/plans/2026-10-20-upstream-openbot-refactor/implementation-plan.md",
+  "contains": {
+    "plan": [
+      "S00",
+      "S01",
+      "S02",
+      "S03",
+      "S04",
+      "U01",
+      "U02",
+      "U03",
+      "U04",
+      "L01",
+      "L02",
+      "L03",
+      "D01",
+      "R01",
+      "R02",
+      "R03",
+      "E01",
+      "V01"
+    ]
+  },
+  "default_scheduling": "serial",
+  "node_ownership_note": "Exact localized copy paths and per-task test-manifest updates are additional owned files listed in implementation-plan.md; require serial integration. Dynamic SQL filename allocated from journal at execution.",
+  "nodes": [
+    {
+      "id": "S00",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/489"
+      ],
+      "source_requirements": [
+        "A01",
+        "A02",
+        "A03",
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "acceptance": [
+        "A01",
+        "A02",
+        "A03",
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "depends_on": [],
+      "owner_role": "coordinator",
+      "validator_role": "reviewer",
+      "owned_files": [
+        "docs/plans/2026-10-20-upstream-openbot-refactor/",
+        "docs/research/2026-10-20-upstream-openbot-feature-matrix.md"
+      ],
+      "interfaces": "BASE / manifest / interfaces",
+      "verification": "文档与Git基线",
+      "status": "pending"
+    },
+    {
+      "id": "S01",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/490"
+      ],
+      "source_requirements": [
+        "A01"
+      ],
+      "acceptance": [
+        "A01"
+      ],
+      "depends_on": [
+        "S00"
+      ],
+      "owner_role": "backend_implementer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/src/config.ts",
+        "server/tests/config.test.ts"
+      ],
+      "interfaces": "loadConfig unchanged",
+      "verification": "V-N config + single-user",
+      "status": "pending"
+    },
+    {
+      "id": "S02",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/491"
+      ],
+      "source_requirements": [
+        "A02"
+      ],
+      "acceptance": [
+        "A02"
+      ],
+      "depends_on": [
+        "S00"
+      ],
+      "owner_role": "backend_implementer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/src/telemetry/scrub.ts",
+        "server/tests/enterprise-controls.test.ts",
+        "server/tests/otel-export-scrubbing.test.ts"
+      ],
+      "interfaces": "scrubCommand unchanged",
+      "verification": "V-N enterprise-controls + V-B OTLP",
+      "status": "pending"
+    },
+    {
+      "id": "S03",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/492"
+      ],
+      "source_requirements": [
+        "A03"
+      ],
+      "acceptance": [
+        "A03"
+      ],
+      "depends_on": [
+        "S00"
+      ],
+      "owner_role": "backend_implementer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/src/responsibilities/email.ts",
+        "server/tests/responsibility-triggers.test.ts"
+      ],
+      "interfaces": "extractEmailText unchanged",
+      "verification": "V-N responsibility-triggers",
+      "status": "pending"
+    },
+    {
+      "id": "S04",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/493"
+      ],
+      "source_requirements": [
+        "A04"
+      ],
+      "acceptance": [
+        "A04"
+      ],
+      "depends_on": [
+        "S00"
+      ],
+      "owner_role": "mechanical_worker",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/src/routines/schedule.ts",
+        "server/tests/routine-schedule.test.ts"
+      ],
+      "interfaces": "describeCron unchanged",
+      "verification": "V-N routine-schedule",
+      "status": "pending"
+    },
+    {
+      "id": "U01",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/494"
+      ],
+      "source_requirements": [
+        "A05"
+      ],
+      "acceptance": [
+        "A05"
+      ],
+      "depends_on": [
+        "S00"
+      ],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "owned_files": [
+        "app/src/lib/copilot/computer-activity.ts",
+        "app/src/lib/computers/call.ts",
+        "app/src/components/computer/use-auto-watch-screen.ts",
+        "app/src/routes/_authed/_app/channel/$channelId.tsx",
+        "app/tests/auto-watch-screen.test.tsx",
+        "app/tests/computer-screen-announcement.test.ts"
+      ],
+      "interfaces": "I1",
+      "verification": "V-B screen events + UI",
+      "status": "pending"
+    },
+    {
+      "id": "U02",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/495"
+      ],
+      "source_requirements": [
+        "A06"
+      ],
+      "acceptance": [
+        "A06"
+      ],
+      "depends_on": [
+        "S00"
+      ],
+      "owner_role": "backend_implementer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "shared/connect-prompt.ts",
+        "shared/connect-prompt.test.ts",
+        "server/src/plugins/store.ts",
+        "server/tests/plugin-user-credential.integration.test.ts",
+        "server/tests/plugin-connect-route.test.ts"
+      ],
+      "interfaces": "I2 producer",
+      "verification": "codec + account integration",
+      "status": "pending"
+    },
+    {
+      "id": "U03",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/495"
+      ],
+      "source_requirements": [
+        "A06"
+      ],
+      "acceptance": [
+        "A06"
+      ],
+      "depends_on": [
+        "U02"
+      ],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "owned_files": [
+        "app/src/components/channels/connect-app-card.tsx",
+        "app/src/components/channels/chat-transcript.tsx",
+        "app/tests/connect-app-card.test.tsx"
+      ],
+      "interfaces": "I2 consumer",
+      "verification": "V-B OAuth and scope",
+      "status": "pending"
+    },
+    {
+      "id": "U04",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/499"
+      ],
+      "source_requirements": [
+        "A07"
+      ],
+      "acceptance": [
+        "A07"
+      ],
+      "depends_on": [
+        "U03"
+      ],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "owned_files": [
+        "app/src/components/channels/tool-activity.tsx",
+        "app/src/components/channels/chat-transcript.tsx",
+        "app/src/components/channels/browser-activity.tsx",
+        "app/tests/tool-activity.test.tsx"
+      ],
+      "interfaces": "I2 consumer; groupToolSteps producer",
+      "verification": "V-B grouping + transcript",
+      "status": "pending"
+    },
+    {
+      "id": "L01",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/496"
+      ],
+      "source_requirements": [
+        "A08"
+      ],
+      "acceptance": [
+        "A08"
+      ],
+      "depends_on": [
+        "S00"
+      ],
+      "owner_role": "backend_implementer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "agent-computer/src/sign-in.ts",
+        "agent-computer/src/index.ts",
+        "agent-computer/src/authorisation.ts",
+        "server/src/computer/schema.ts",
+        "server/src/computer/gateway.ts",
+        "agent-computer/tests/sign-in.test.ts",
+        "server/tests/computer-sign-in-code.test.ts"
+      ],
+      "interfaces": "I3 Computer producer",
+      "verification": "V-N browser fixtures + gateway",
+      "status": "pending"
+    },
+    {
+      "id": "L02",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/496"
+      ],
+      "source_requirements": [
+        "A08"
+      ],
+      "acceptance": [
+        "A08"
+      ],
+      "depends_on": [
+        "L01"
+      ],
+      "owner_role": "backend_implementer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/src/passwords/types.ts",
+        "server/src/passwords/store.ts",
+        "server/src/passwords/service.ts",
+        "server/src/passwords/routes.ts",
+        "server/src/passwords/resume.ts",
+        "server/src/db/schema/passwords.ts",
+        "server/src/audit.ts",
+        "server/drizzle/<allocated>_sign_in_code_step.sql",
+        "server/drizzle/meta/_journal.json",
+        "server/tests/passwords-sign-in.test.ts",
+        "server/tests/passwords-store.integration.test.ts"
+      ],
+      "interfaces": "I3 API producer",
+      "verification": "state machine + DB migration + recovery",
+      "status": "pending"
+    },
+    {
+      "id": "L03",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/496"
+      ],
+      "source_requirements": [
+        "A08"
+      ],
+      "acceptance": [
+        "A08"
+      ],
+      "depends_on": [
+        "L02"
+      ],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "owned_files": [
+        "app/src/components/passwords/sign-in-form.tsx",
+        "app/src/lib/passwords/queries.ts",
+        "app/src/lib/passwords/mutations.ts",
+        "app/src/lib/copilot/sign-in-tool.tsx",
+        "app/tests/sign-in-card.test.tsx",
+        "app/tests/sign-in-code-step.test.tsx"
+      ],
+      "interfaces": "I3 UI consumer",
+      "verification": "V-B two-step form + compatibility",
+      "status": "pending"
+    },
+    {
+      "id": "D01",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/497"
+      ],
+      "source_requirements": [
+        "A09"
+      ],
+      "acceptance": [
+        "A09"
+      ],
+      "depends_on": [
+        "S00"
+      ],
+      "owner_role": "backend_implementer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/src/model-availability-check.ts",
+        "server/src/intelligence-entitlement-check.ts",
+        "server/src/index.ts",
+        "server/tests/model-availability-check.test.ts",
+        "server/tests/intelligence-entitlement-check.test.ts"
+      ],
+      "interfaces": "I5",
+      "verification": "fake network/log + startup deadlines",
+      "status": "pending"
+    },
+    {
+      "id": "R01",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/500"
+      ],
+      "source_requirements": [
+        "A10"
+      ],
+      "acceptance": [
+        "A10"
+      ],
+      "depends_on": [
+        "S00"
+      ],
+      "owner_role": "backend_implementer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "shared/research.ts",
+        "shared/research.test.ts",
+        "server/src/plugins/catalogue.ts",
+        "server/tests/plugin-catalogue.test.ts"
+      ],
+      "interfaces": "I4 producer",
+      "verification": "roles and fail-closed classification",
+      "status": "pending"
+    },
+    {
+      "id": "R02",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/500"
+      ],
+      "source_requirements": [
+        "A10"
+      ],
+      "acceptance": [
+        "A10"
+      ],
+      "depends_on": [
+        "R01"
+      ],
+      "owner_role": "backend_implementer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/src/plugins/mcp.ts",
+        "server/src/plugins/tools.ts",
+        "server/src/plugins/store.ts",
+        "server/src/plugins/selection.ts",
+        "server/tests/parallel-research.test.ts",
+        "server/tests/web-research.test.ts",
+        ".env.example",
+        "docs/web-research.md"
+      ],
+      "interfaces": "I4 auth/selection consumer",
+      "verification": "mock MCP + grants/payer/real smoke where configured",
+      "status": "pending"
+    },
+    {
+      "id": "R03",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/500"
+      ],
+      "source_requirements": [
+        "A10"
+      ],
+      "acceptance": [
+        "A10"
+      ],
+      "depends_on": [
+        "R02",
+        "U04"
+      ],
+      "owner_role": "frontend_implementer",
+      "validator_role": "frontend_validator",
+      "owned_files": [
+        "app/src/lib/plugins/tool-name.ts",
+        "app/src/components/channels/tool-activity.tsx",
+        "app/src/components/skills/skill-tools.tsx",
+        "app/src/lib/skills/form.ts",
+        "app/tests/tool-name.test.ts",
+        "app/tests/tool-activity.test.tsx"
+      ],
+      "interfaces": "I4 UI consumer",
+      "verification": "V-B roles/selection/summary",
+      "status": "pending"
+    },
+    {
+      "id": "E01",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/498"
+      ],
+      "source_requirements": [
+        "A12"
+      ],
+      "acceptance": [
+        "A12"
+      ],
+      "depends_on": [
+        "S00"
+      ],
+      "owner_role": "architect",
+      "validator_role": "reviewer",
+      "owned_files": [
+        "docs/plans/2026-10-20-upstream-openbot-refactor/adoption-decisions.md"
+      ],
+      "interfaces": "adoption record",
+      "verification": "read-only evidence + ADR/Spec review",
+      "status": "pending"
+    },
+    {
+      "id": "V01",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/501"
+      ],
+      "source_requirements": [
+        "A11"
+      ],
+      "acceptance": [
+        "A11"
+      ],
+      "depends_on": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "U01",
+        "U04",
+        "L03",
+        "D01",
+        "R03",
+        "E01"
+      ],
+      "owner_role": "coordinator",
+      "validator_role": "backend_validator + frontend_validator + reviewer",
+      "owned_files": [
+        "docs/plans/2026-10-20-upstream-openbot-refactor/verification-summary.md",
+        "docs/plans/2026-10-20-upstream-openbot-refactor/rulings.md",
+        "docs/plans/2026-10-20-upstream-openbot-refactor/ocr-round-N.*"
+      ],
+      "interfaces": "integrated checkpoints -> full-scope evidence",
+      "verification": "V-ALL + independent review + full OCR",
+      "status": "pending"
+    }
+  ]
+}

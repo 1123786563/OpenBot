@@ -1,0 +1,11 @@
+deploy/hindsight/extensions/
+deploy/hindsight/test/contract-instance.sh
+server/drizzle/0165_recovery_provider_queries.sql
+server/drizzle/0166_subscription_customer_scoped_identity.sql
+server/src/billing/recovery-provider-query.ts
+server/src/craft/preview-tls-status.ts
+server/src/hindsight/bank-scope.ts
+server/tests/billing-company-renewal.integration.test.ts
+server/tests/hindsight-bank-isolation.contract.test.ts
+server/tests/hindsight-bank-scope.test.ts
+server/tests/recovery-provider-query.integration.test.ts

@@ -2,55 +2,49 @@
  "run": {
   "objective": "orca-dag-wave3：现有 open ready-for-agent backlog 编排（mt 76 + bf 68 + hs 17 + bp 3 + craft 3，排除在途三树与 Opik 旁支）",
   "mode": "open-backlog",
-  "base": "2306caaa (main, wave2 收尾后)",
-  "main_ws_uncommitted": "wave2 集成交付保留待审核（无提交授权）",
+  "base_initial": "2306caaa",
+  "base_current": "3b4a7c68（用户 2026-10-20 13:56 提交：d7f68d0e kb 清理 / fd62295a wave2 集成交付 / 3b4a7c68 wave3 计划文档）",
+  "main_ws_uncommitted": "wave3 集成增量（round1 bf3+hbc3，21 受控文件 + 14 新文件，未提交检查点）",
   "scope_revision": 1,
   "orca_run_id": "run_dab21d1c168e",
   "authorized": "2026-10-20 用户：171 张候选全量、3 流×1 worker（mt B类核验优先与 R7 沿用授权按提案默认生效）"
  },
- "reconciled": {
-  "delivered_by_label": 58,
-  "in_flight_excluded": {
-   "mastra": "mastra-exec worktree，ledger 活跃（本 Run 期间仍在写入）",
-   "heroui": "feat/heroui-v3-migration + 活跃 OCR 进程",
-   "plugin": "feat/plugin-package-market-v1 + 活跃 OCR 进程"
+ "round1": {
+  "dispatched": "2026-10-20T13:12 3 workers（mt3/bf3/hbc3）",
+  "settled": "2026-10-20T13:36 3/3 worker_done",
+  "verdicts": {
+   "satisfied_zero_change_r7_done": [49, 56, 222, 263, 265, 274, 378],
+   "satisfied_implemented_pending_review": [280, 381, 373, 405, 411],
+   "failed_need_c_class": {"86": "MT043 job cancel/retry 入口缺失；AC3 依赖 #90/#93", "87": "MT044 入站归属到公司/团队维度缺失（需新迁移+隔离队列）", "88": "MT045 事务边界无等价实现"}
   },
-  "opik_pending_user": 37,
-  "unlabeled_open": 42
+  "integration": {
+   "method": "git apply --3way + 手工解决 preview-origin.ts（#408+#411 双门禁保留）+ manifest 程序化合并（461 files）",
+   "migrations": "0164_usage_outbox(wave2 已提交) + 0165_recovery(bf3) + 0166_subscription(hbc3)，fresh-DB 迁移验证通过",
+   "combined_verification": "e2e native 230/230（craft×2/hindsight/plan-renewal）；bun billing 25/25 + recovery 9/9；typecheck 仅 3 个既有基线错；biome 修复 1 处 import 排序后干净",
+   "reports_archived": "workers/{mt3,bf3,hbc3}/，sha256 于 receipts/round1-reports.sha256"
+  },
+  "findings": [
+   "main-ws 本地 .env 同时设 PORT=3001 与 SERVER_PORT=3002（冲突）→ 默认 admission 路径 19 条测试假失败；A/B 移开 .env 后 92/92 绿（wave2 收尾记录过的同类坑）。建议用户修正 .env",
+   "fresh-DB 上 0163 恢复表与 MT 任务链 create 冲突，受限角色授权不落地（worker 测试库侧重放 RLS+GRANT 绕过）；幂等化修复待派给归属票",
+   "bf3 报告附录 A：e2e node 层页面级异步渲染 harness 回归（byte-identical 代码 10-19 绿 → 今日败）；建议单独立票"
+  ]
  },
- "phase": "R5 running: 3 workers dispatched 2026-10-20T13:12–13:13 (+08)",
- "streams": {
-  "mt3": {
-   "queue_first_batch": [49, 56, 86, 87, 88],
-   "strategy": "B类核验优先，后续按 domain_ready.mt 补位",
-   "task": "task_0f8e197e52bc",
-   "dispatch": "ctx_094d29e58f07",
-   "worktree": "mt3",
-   "db": "orca-w3-mt-pg@5565"
-  },
-  "bf3": {
-   "queue_first_batch": [222, 263, 265, 274, 280],
-   "strategy": "C类实施；完成解锁 #266/#267（←265）、#281/#283（←280）等依赖链",
-   "task": "task_ac6eec3a8a53",
-   "dispatch": "ctx_1c5f5a48ab83",
-   "worktree": "bf3",
-   "db": "orca-w3-bf-pg@5566"
-  },
-  "hbc3": {
-   "queue_first_batch": [378, 381, 373, 405, 411],
-   "strategy": "hs 链后续按 dag.json 补位；#425 等首批后；bp #374/#375 等跨树依赖",
-   "task": "task_4f44e707d295",
-   "dispatch": "ctx_2c246b665be0",
-   "worktree": "hbc3",
-   "db": "orca-w3-hbc-pg@5567"
+ "round2": {
+  "dispatched": "2026-10-20T16:38–16:39 4 workers",
+  "streams": {
+   "mt4": {"batch": [89, 90, 91, 92, 93], "strategy": "B类核验 vs main@3b4a7c68；#90/#93 接口形态结论供 #86 用", "task": "task_ef0e91242683", "dispatch": "ctx_3fd69746a9dd", "worktree": "mt4(new-child)", "db": "orca-w3-mt-pg@5565/mt4"},
+   "bf4": {"batch": [266, 267, 281, 283], "strategy": "C类；worktree=main@3b4a7c68+前置增量（receipts/wave3-delta-r1 sha256 核对）；新迁移 0167+", "task": "task_fe6b2d675ba0", "dispatch": "ctx_b509f2cac997", "worktree": "bf4(pre-created)", "db": "orca-w3-bf-pg@5566/bf4"},
+   "hbc4": {"batch": [382, 425], "strategy": "#382 复用 #381 bank-scope；#425 R06 legacy 开关；同前置增量基线", "task": "task_e140a5850842", "dispatch": "ctx_89e358da5d9c", "worktree": "hbc4(pre-created)", "db": "orca-w3-hbc-pg@5567/hbc4"},
+   "reviewer1": {"scope": "主工作区 wave3 未提交增量独立只读评审（#280/#381/#373/#405/#411 双结论）", "task": "task_f5c971cecc92", "dispatch": "ctx_dc3d95b76a02", "output": "reviews/round1-review.md"}
   }
  },
- "supervision": {
-  "supervisor_pid": 81474,
-  "loop": "watch.sh 心跳直接 ack；worker_done/escalation/question 落 pending_message.json 不 ack，等协调器裁决",
-  "artifacts": ["watch.log", "last_check.json", "pending_message.json", "receipts/"]
+ "queue_next": {
+  "mt": "B类继续（#104 起剩余 66 张）→ C类单票 #86/#87/#88",
+  "bf": "#268(←267) #275(←266+268+274) #282(←281) #284/#285(←283) 随完成解锁",
+  "hbc": "#383+(←382) #374(←373+bf#284) #375(←374+mt#140)",
+  "pending_user": ["Opik 旁支 37 张裁决", "main-ws .env PORT/SERVER_PORT 冲突修正", "0163 fresh-DB 幂等化归属", "e2e harness 回归立票"]
  },
- "ready": 91,
- "blocked_in_tree": 76,
- "updated_at": "2026-10-20T13:15+08:00"
+ "phase": "R5 round2 running: 3 streams + 1 reviewer dispatched 2026-10-20T16:39",
+ "r7_done": [49, 56, 222, 263, 265, 274, 378],
+ "updated_at": "2026-10-20T16:42+08:00"
 }
