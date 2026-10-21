@@ -962,6 +962,7 @@ export function createBillingAdminRoutes(deps: {
       evidence_mismatch: 409,
       settle_refused: 422,
       release_refused: 422,
+      compensate_refused: 422,
     } as const satisfies Record<
       (typeof DISPOSAL_REFUSAL_REASONS)[number],
       400 | 404 | 409 | 422

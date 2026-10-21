@@ -497,12 +497,13 @@ test("a replay over an already-settled hold converges on the first settlement an
   const { replay, settleCalls } = makeReplay();
   const batch = await replay.replayUnackedResults("worker-e", 10);
 
-  expect(batch).toMatchObject({ claimed: 1, replayed: 1, failed: 0 });
-  // 08.3 AC2 spy count: the recovery issues exactly ONE settle request (the idempotent
-  // convergence ride), never a second — the ack backfill itself settles nothing.
-  expect(settleCalls()).toBe(1);
-  // Same idempotency facts: the replay's settle hit the terminal first settlement and
-  // converged — the ledger still holds exactly ONE entry at the original amount.
+  // 08.3's contract (updated by #278): the settled-but-ack-lost branch NEVER issues a
+  // Settle — the settlement is verified read-only against the hold and only the ack is
+  // backfilled, so the spy count is ZERO, not the idempotent convergence ride of one.
+  expect(batch).toMatchObject({ claimed: 1, settledAckRecovered: 1, failed: 0 });
+  expect(settleCalls()).toBe(0);
+  // Same idempotency facts: the first settlement stands untouched — the ledger still
+  // holds exactly ONE entry at the original amount.
   const ledger = await ledgerRows(world.customerKey);
   expect(ledger).toHaveLength(1);
   expect(ledger[0]?.credits).toBe(45);
@@ -510,6 +511,7 @@ test("a replay over an already-settled hold converges on the first settlement an
   expect((await outboxRow(eventId))?.creditsStatus).toBe("delivered");
   const resolved = await recoveryItemRow(reservationId);
   expect(resolved?.state).toBe("resolved");
+  expect(resolved?.lastReason).toBe("result_settled_ack_recovered");
 });
 
 // ── Not this handler's shape: no persisted result — the item is retained, untouched ───

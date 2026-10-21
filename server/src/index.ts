@@ -153,6 +153,7 @@ import {
 import { createLagoClient } from "./billing/lago";
 import {
   startBillingRenewalSweeps,
+  startRecoveryRetrySweeps,
   startRecoveryScanSweeps,
   startUsageDeliverySweeps,
 } from "./billing/maintenance";
@@ -163,6 +164,7 @@ import { createPaymentService } from "./billing/payments/service";
 import { createPaymentStore } from "./billing/payments/store";
 import { createWechatProvider } from "./billing/payments/wechat";
 import { createReconciler } from "./billing/reconcile";
+import { createRecoveryRetry } from "./billing/recovery-retry";
 import { createRecoveryScanner } from "./billing/recovery-scan";
 import {
   createBillingService,
@@ -4782,6 +4784,23 @@ if (billing !== undefined && usageOutbox !== undefined) {
     },
   );
   billingSweepStops.push(recoverySweeps.stop);
+  // The recovery retry sweep (Bifrost 08.4): every interval the pass hands the recovery
+  // lanes their DUE items — the persisted-result replay always; the provider final-state
+  // query only where a source is wired, which no deployment does yet, so no-result items
+  // stay pending on the review queue until one is. Failures back off (next_retry_at) and
+  // stop entirely at the threshold: the manual disposal queue is where they land, with
+  // 08.6's alerting as their voice. The scheduler never touches the holds themselves.
+  const recoveryRetrySweeps = startRecoveryRetrySweeps(
+    createRecoveryRetry({
+      database,
+      log: (message) => log.warn(message),
+    }),
+    {
+      log: (message) => log.warn(message),
+      lock: { databaseUrl: config.databaseUrl, key: 4_192_009 },
+    },
+  );
+  billingSweepStops.push(recoveryRetrySweeps.stop);
 }
 
 /*

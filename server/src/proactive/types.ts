@@ -75,8 +75,20 @@ export type ProactiveSetting = {
   lastRunAt: Date | null;
   lastStatus: ProactiveRunStatus;
   lastError: string | null;
+  /** MT045: the persisted company/team mapping, null on legacy personal settings. */
+  tenantId: string | null;
+  workspaceId: string | null;
   createdAt: Date;
   updatedAt: Date;
+};
+/**
+ * MT045: server-supplied scope attribution for an enterprise setting. Ids are server
+ * values, never user text; create-once — update never migrates attribution (changing
+ * scope = a new setting), matching the MT044 trigger discipline.
+ */
+export type ProactiveSettingAttribution = {
+  tenantId: string;
+  workspaceId: string;
 };
 export type ProactiveSuggestion = {
   id: string;

@@ -33,6 +33,7 @@ import { Separator } from "@/components/ui/separator";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { removeSkillMutationOptions } from "@/lib/plugins/mutations";
 import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import type { SkillFormValues } from "@/lib/skills/form";
 
 /**
  * Personal `/` skills. They are instructions, not capabilities, and can only be granted to Bots the
@@ -76,6 +77,16 @@ function SkillsPage() {
    */
   const loading = skillsPending || mePending;
   const [error, setError] = useState<string | null>(null);
+  const draftKey = showCreate ? "new" : editingSlug ? `edit:${editingSlug}` : "";
+  const [skillDraft, setSkillDraft] = useState<{
+    key: string;
+    values: SkillFormValues;
+    dirty: boolean;
+  }>();
+  const currentDraft = skillDraft?.key === draftKey ? skillDraft : undefined;
+  const saveDraft = (values: SkillFormValues, dirty: boolean) => {
+    setSkillDraft({ key: draftKey, values, dirty });
+  };
 
   const removeSkill = useMutation({
     ...removeSkillMutationOptions(queryClient),
@@ -100,12 +111,24 @@ function SkillsPage() {
     <DetailPanel
       detail={
         showCreate ? (
-          <NewSkill />
+          <NewSkill
+            draftDirty={currentDraft?.dirty}
+            draftValues={currentDraft?.values}
+            onDraftChange={saveDraft}
+          />
         ) : editingSlug ? (
-          <EditSkill slug={editingSlug} />
+          <EditSkill
+            draftDirty={currentDraft?.dirty}
+            draftValues={currentDraft?.values}
+            onDraftChange={saveDraft}
+            slug={editingSlug}
+          />
         ) : null
       }
-      onClose={() => navigate({ search: {} })}
+      onClose={() => {
+        setSkillDraft(undefined);
+        navigate({ search: {} });
+      }}
       open={showCreate || showEdit}
     >
       <PageShell

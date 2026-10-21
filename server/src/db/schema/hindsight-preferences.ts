@@ -52,6 +52,26 @@ export const genericPersonalPreferences = pgTable(
     /** sha256 of the content last successfully retained; null means the row awaits its first sync. */
     syncedContentDigest: text("synced_content_digest"),
     syncedAt: timestamp("synced_at", { withTimezone: true }),
+    /**
+     * Hindsight 09 (#386): when this fact began to apply. Null = the start could not be
+     * determined (an unknown-time correction, or a row predating 0174) — such a row answers
+     * current questions flagged uncertain and never claims historical validity.
+     */
+    effectiveFrom: timestamp("effective_from", { withTimezone: true }),
+    /**
+     * When this fact stopped applying; null = still open. A window closes only by correction,
+     * never by forgetting — the tombstone (deleted_at + enabled + cleared content) answers
+     * nothing, current or historical.
+     */
+    effectiveUntil: timestamp("effective_until", { withTimezone: true }),
+    /** The correcting row's id; the chain head (null) is the current fact. */
+    supersededBy: text("superseded_by"),
+    /** The closing correction could not name a time: the open window is an unknown, not ongoing. */
+    supersededTimeUnknown: boolean("superseded_time_unknown")
+      .notNull()
+      .default(false),
+    /** When the person made the correction that closed this row. */
+    correctedAt: timestamp("corrected_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -75,6 +95,21 @@ export const genericPersonalPreferences = pgTable(
         enterpriseMemberships.tenantId,
         enterpriseMemberships.principalId,
       ],
+    }),
+    check(
+      "generic_personal_preference_window_shape",
+      sql`(
+        ((${table.supersededBy} is null) = (${table.effectiveUntil} is null)) or
+        (${table.supersededBy} is not null and ${table.effectiveUntil} is null and ${table.supersededTimeUnknown} = true)
+      ) and (${table.effectiveUntil} is null or ${table.effectiveFrom} is null or ${table.effectiveUntil} > ${table.effectiveFrom})`,
+    ),
+    check(
+      "generic_personal_preference_unknown_flag",
+      sql`(${table.supersededTimeUnknown} = false) or (${table.supersededBy} is not null and ${table.effectiveUntil} is null)`,
+    ),
+    foreignKey({
+      columns: [table.tenantId, table.supersededBy],
+      foreignColumns: [table.tenantId, table.id],
     }),
     uniqueIndex("generic_personal_preferences_document_idx").on(
       table.tenantId,

@@ -1,6 +1,9 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
-import { creditRecoveryItems } from "../db/schema/credit-reservations";
+import {
+  creditRecoveryItems,
+  creditReservations,
+} from "../db/schema/credit-reservations";
 import { usageOutbox } from "../db/schema/usage-outbox";
 import { createCreditWriter } from "./credits-writer";
 import {
@@ -26,9 +29,11 @@ import { createUsageOutbox, type UsageOutbox } from "./usage-outbox";
  * recorded exact rational. Usage is never re-collected and no provider attempt is ever
  * re-admitted (the customer keeps the ONE reservation the recovery item names). The
  * settle itself converges (06.x): a hold already `settled` returns the first result, so a
- * replay racing a delayed first delivery — or an ack lost after the settle landed, 08.3's
- * shape — still leaves exactly ONE ledger entry at the original amount; a different
- * actual or a released hold is a real conflict that lands in the failure path below.
+ * replay racing a delayed first delivery still leaves exactly ONE ledger entry at the
+ * original amount; a different actual or a released hold is a real conflict that lands in
+ * the failure path below. 08.3's own shape — the settle LANDED and only the ack was lost —
+ * never reaches the effect at all: the hold's recorded settlement is verified read-only
+ * against the persisted result and only the ack is backfilled.
  *
  * THE ITEM LIFECYCLE (the columns 08.1 fixed). A claimed item that finishes moves to
  * `resolved` (0148): the replay succeeded, the record already proved delivered, or — for
@@ -45,6 +50,10 @@ import { createUsageOutbox, type UsageOutbox } from "./usage-outbox";
 export type UnackedReplayOutcome =
   /** The persisted result was re-delivered to Settle, acked, and the item resolved. */
   | "replayed"
+  /** The ledger already held the settlement and only the ack was lost (08.3): the result
+   * was verified read-only against the hold, the ack backfilled, and the item resolved —
+   * with NO Settle effect invoked at all. */
+  | "settled_ack_recovered"
   /** The record's credits target was already delivered: no re-delivery, item resolved. */
   | "already_delivered"
   /** The credits target is in the terminal `blocked` state (manual review): untouched. */
@@ -68,6 +77,7 @@ export type UnackedReplayResult = {
 export type UnackedReplayBatch = {
   claimed: number;
   replayed: number;
+  settledAckRecovered: number;
   alreadyDelivered: number;
   creditsBlocked: number;
   noPersistedResult: number;
@@ -79,6 +89,8 @@ export const REPLAY_RETAINED_REASON_NO_RESULT = "no_persisted_result";
 export const REPLAY_RESOLVED_REASON_DELIVERED = "result_replayed_delivered";
 export const REPLAY_RESOLVED_REASON_ALREADY_DELIVERED = "result_already_delivered";
 export const REPLAY_RETAINED_REASON_BLOCKED = "credits_delivery_blocked";
+/** 08.3's resolution reason: the settlement was the ledger's own, only the ack was backfilled. */
+export const REPLAY_RESOLVED_REASON_ACK_RECOVERED = "result_settled_ack_recovered";
 
 /** Only a short snake_case code survives into `last_reason`; anything else could carry payload. */
 const STABLE_CODE = /^[a-z0-9_]{1,64}$/;
@@ -157,6 +169,7 @@ const OUTCOME_COUNTER: Record<
   keyof Omit<UnackedReplayBatch, "claimed">
 > = {
   replayed: "replayed",
+  settled_ack_recovered: "settledAckRecovered",
   already_delivered: "alreadyDelivered",
   credits_blocked: "creditsBlocked",
   no_persisted_result: "noPersistedResult",
@@ -265,9 +278,50 @@ export function createRecoveryReplay(
         return { outcome: "credits_blocked", eventId: record.eventId };
       }
 
-      // THE SHAPE THIS TICKET EXISTS FOR: the result is persisted, the ack never arrived.
-      // Replay the SAME delivery — same effect, same eventId as requestId, the recorded
-      // exact rational — never a re-collection of usage, never a new provider attempt.
+      // THE SHAPE 08.3 EXISTS FOR: the ledger already holds this reservation's settlement
+      // and only the ACK was lost. This branch is a READ-ONLY convergence — verify the
+      // hold's recorded actual IS the persisted result's own rational, backfill the ack,
+      // close the item — with NO Settle effect invoked at all (the ticket's spy count 0:
+      // 只补 ack、不补账). A settled hold carrying a DIFFERENT actual is not this record's
+      // settlement converging; it is retained as a counted failure under the settle
+      // surface's own stable kind, never acked against a settlement it cannot name.
+      const [hold] = await database
+        .select({
+          status: creditReservations.status,
+          actualNumerator: creditReservations.actualNumerator,
+          actualDenominator: creditReservations.actualDenominator,
+        })
+        .from(creditReservations)
+        .where(eq(creditReservations.id, item.reservationId))
+        .limit(1);
+      if (hold?.status === "settled") {
+        // Exact-rational equality without normalizing either side: the writer stores its
+        // actual in lowest terms and the outbox row carries the reported rational as it
+        // arrived, so the cross-products — not the digit strings — are the comparison.
+        const settledAtSameActual =
+          hold.actualNumerator !== null &&
+          hold.actualDenominator !== null &&
+          record.actualCostNumerator !== null &&
+          record.actualCostDenominator !== null &&
+          BigInt(hold.actualNumerator) * BigInt(record.actualCostDenominator) ===
+            BigInt(record.actualCostNumerator) * BigInt(hold.actualDenominator);
+        if (settledAtSameActual) {
+          await outbox.markCreditsDelivered(record.eventId);
+          await resolveItem(item.id, REPLAY_RESOLVED_REASON_ACK_RECOVERED);
+          return { outcome: "settled_ack_recovered", eventId: record.eventId };
+        }
+        const code = "settled_with_different_actual";
+        log(
+          `billing: recovery ack refused reservation=${item.reservationId} event=${record.eventId} code=${code}`,
+        );
+        await releaseItem(item.id, code, true);
+        return { outcome: "failed", eventId: record.eventId, failureCode: code };
+      }
+
+      // THE SHAPE THIS TICKET EXISTS FOR: the result is persisted, the ack never arrived,
+      // and the hold is still open. Replay the SAME delivery — same effect, same eventId
+      // as requestId, the recorded exact rational — never a re-collection of usage, never
+      // a new provider attempt.
       try {
         await settle(record);
         // The settle landed; write the ack the crash lost. If THIS fails, the catch
@@ -310,6 +364,7 @@ export function createRecoveryReplay(
       const batch: UnackedReplayBatch = {
         claimed: items.length,
         replayed: 0,
+        settledAckRecovered: 0,
         alreadyDelivered: 0,
         creditsBlocked: 0,
         noPersistedResult: 0,

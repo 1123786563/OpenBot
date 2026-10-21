@@ -48,6 +48,12 @@ export const proactiveSettings = pgTable(
       .notNull()
       .default("idle"),
     lastError: text("last_error"),
+    /**
+     * MT045 (Issue #88): the persisted company/team mapping, null on legacy personal settings.
+     * Create-once like the MT044 trigger columns; liveness is resolved at delivery time.
+     */
+    tenantId: text("tenant_id"),
+    workspaceId: text("workspace_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -61,6 +67,7 @@ export const proactiveSettings = pgTable(
       table.agentId,
     ),
     index("proactive_settings_due_idx").on(table.enabled, table.nextRunAt),
+    index("proactive_settings_tenant_idx").on(table.tenantId),
     check(
       "proactive_settings_interval_check",
       sql`${table.intervalMinutes} >= 60 AND ${table.intervalMinutes} <= 1440`,
