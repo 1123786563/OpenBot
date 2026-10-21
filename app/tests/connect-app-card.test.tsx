@@ -481,6 +481,29 @@ describe("the poll that is the only thing allowed to say connected", () => {
     ).toBeNull();
   });
 
+  test("stopping the wait ends a blocked-tab wait instead of leaving its link", async () => {
+    openSpy.mockReturnValue(null);
+    const { view } = drawCard();
+    await settle();
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    await settle();
+    expect(
+      view.getByRole("link", { name: "Open GitHub's sign-in" }),
+    ).toBeTruthy();
+    // The person gives up on the blocked tab: the link is the ending it replaces, so it goes too.
+    fireEvent.click(view.getByRole("button", { name: "Stop waiting" }));
+    await settle();
+    expect(
+      view.queryByRole("link", { name: "Open GitHub's sign-in" }),
+    ).toBeNull();
+    // Operable: the same press starts a fresh attempt (and offers the link again, tab still blocked).
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    await settle();
+    expect(
+      view.getByRole("link", { name: "Open GitHub's sign-in" }),
+    ).toBeTruthy();
+  });
+
   test("only this person's live row says connected — a shared row or a revoked one does not", async () => {
     connectionRows = [
       { serverId: SERVER_ID, holder: "deployment" },

@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { connectAccountMutationOptions } from "@/lib/plugins/mutations";
@@ -96,13 +96,13 @@ export function ConnectAppCard({
    * the one it means. A hand-maintained per-branch list is how a stale ending survives to sit
    * beside the new one, which is a card answering two different questions at once.
    */
-  const resetOutcome = () => {
+  const resetOutcome = useCallback(() => {
     setWaiting(false);
     setNeedsKey(false);
     setBadUrl(false);
     setTimedOut(false);
     setBlockedUrl(null);
-  };
+  }, []);
   const connections = useQuery({
     ...connectionsQueryOptions(),
     // Only while a consent is open in the other tab; otherwise this is an ordinary cached read.
@@ -143,7 +143,7 @@ export function ConnectAppCard({
       void queryClient.invalidateQueries({ queryKey: pluginKeys.all });
     }
     was.current = connected;
-  }, [connected]);
+  }, [connected, resetOutcome]);
 
   useEffect(() => {
     if (!waiting) return;
@@ -154,7 +154,7 @@ export function ConnectAppCard({
       setTimedOut(true);
     }, WAIT_LIMIT_MS);
     return () => clearTimeout(deadline);
-  }, [waiting]);
+  }, [waiting, resetOutcome]);
 
   /**
    * The tab, opened on the click itself rather than on the answer to it.
@@ -258,11 +258,7 @@ export function ConnectAppCard({
               <p className="text-muted-foreground" role="status">
                 {t("connectCard.waiting")}
               </p>
-              <Button
-                onClick={() => setWaiting(false)}
-                size="sm"
-                variant="outline"
-              >
+              <Button onClick={resetOutcome} size="sm" variant="outline">
                 {t("connectCard.stopWaiting")}
               </Button>
             </>
