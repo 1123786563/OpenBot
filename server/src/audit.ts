@@ -274,6 +274,9 @@ export const auditEventTypes = [
   // A Bot asking its owner to sign it in to a website, and how that ended. Never the username, the
   // password or a code: the row says which site, which request and whether a saved login was used.
   "computer.sign_in_requested",
+  // The site took the password and is asking for a one-time code; the request now waits for the
+  // person to enter it in the private form. Still no credential anywhere in the row.
+  "computer.sign_in_code_requested",
   "computer.sign_in_completed",
   "computer.sign_in_failed",
   "computer.sign_in_cancelled",

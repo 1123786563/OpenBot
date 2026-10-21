@@ -10,6 +10,8 @@
 export type SignInStatus =
   | "pending"
   | "filling"
+  /** The site took the password and is showing a one-time-code field; the form now asks for only that. */
+  | "code_required"
   | "taken_over"
   | "signed_in"
   | "failed"

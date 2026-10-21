@@ -1,5 +1,11 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { CopilotKitProvider, useCopilotKit } from "@copilotkit/react-core/v2";
 import {
@@ -9,6 +15,7 @@ import {
 } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type { ComponentType, ReactNode } from "react";
+import i18n from "@/lib/i18n";
 import { SignInTool } from "@/lib/copilot/sign-in-tool";
 import { settleReactWork } from "./settle-react-work";
 
@@ -22,7 +29,10 @@ import { settleReactWork } from "./settle-react-work";
  * real provider and the real hook, so an SDK that changes how it keeps renderers is caught here too.
  */
 
-beforeAll(() => GlobalRegistrator.register());
+beforeAll(async () => {
+  GlobalRegistrator.register();
+  await i18n.changeLanguage("en");
+});
 afterEach(cleanup);
 afterAll(async () => {
   await settleReactWork();
@@ -42,15 +52,15 @@ const signInRequest = {
   botId: "default",
   origin: SITE,
   reason: null,
-  status: "pending",
-  method: null,
-  outcome: null,
+  status: "pending" as string,
+  method: null as string | null,
+  outcome: null as string | null,
   threadId: null,
   toolCallId: TOOL_CALL_ID,
   controlRequestId: null,
   createdAt: "2026-10-12T10:00:00Z",
   expiresAt: "2026-10-12T10:15:00Z",
-  resolvedAt: null,
+  resolvedAt: null as string | null,
   passwordManager: false,
   savedLogins: [],
 };
@@ -65,7 +75,7 @@ function serving(open: (typeof signInRequest)[]) {
       if (path === "/api/sign-in-requests")
         return Response.json({ requests: open });
       if (path === `/api/sign-in-requests/${signInRequest.id}`)
-        return Response.json(signInRequest);
+        return Response.json(open[0] ?? signInRequest);
       return Response.json({ error: "Not found" }, { status: 404 });
     },
     { preconnect: originalFetch.preconnect },
@@ -162,3 +172,86 @@ test("the waiting card offers the private sign-in once the request exists", asyn
   stop.abort();
   await answered;
 });
+
+test("the waiting handler keeps waiting while the site asks for a code", async () => {
+  const codeRequest = {
+    ...signInRequest,
+    status: "code_required",
+    method: "typed",
+  };
+  const signedInRequest = {
+    ...signInRequest,
+    status: "signed_in",
+    method: "typed",
+    outcome: `Signed in to ${SITE}.`,
+    resolvedAt: "2026-10-12T10:05:00Z",
+  };
+  serving([codeRequest]);
+  const queries = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const kept: Kept = {};
+  const tree = render(
+    <Providers queries={queries}>
+      <SignInTool />
+      <Capture kept={kept} />
+    </Providers>,
+  );
+  await waitFor(() => expect(kept.handler).toBeDefined());
+  const Kept = kept.renderer as Renderer;
+  tree.rerender(
+    <Providers queries={queries}>
+      <SignInTool />
+      <Capture kept={kept} />
+      <Kept
+        name="computer_request_sign_in"
+        args={{ site: SITE }}
+        status="executing"
+        toolCallId={TOOL_CALL_ID}
+      />
+    </Providers>,
+  );
+  await tree.findByText("Waiting for you to sign in");
+
+  const stop = new AbortController();
+  const answered = kept.handler?.(
+    { site: SITE },
+    { signal: stop.signal, toolCall: { id: TOOL_CALL_ID } },
+  );
+
+  const open = await tree.findByRole(
+    "button",
+    { name: /Open private sign-in/ },
+    { timeout: 4000 },
+  );
+  fireEvent.click(open);
+  await tree.findByText(`Sign in to ${SITE}`);
+  // The dialog's form is on the code step, and on it alone: no password asked again.
+  await tree.findByText("Enter the verification code");
+  expect(tree.queryByText("Password")).toBeNull();
+
+  // Longer than two polls of the waiting handler: a code step is not an answer, and the turn has
+  // neither succeeded nor failed while it sits open.
+  let returned: unknown = "waiting";
+  void Promise.resolve(answered).then((value) => {
+    returned = value;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 3500));
+  expect(returned).toBe("waiting");
+  await tree.findByText("Waiting for you to sign in");
+
+  // The site accepts the code; only then does the waiting turn come back with a verdict.
+  serving([signedInRequest]);
+  const outcome = (await answered) as { signedIn?: boolean };
+  expect(outcome.signedIn).toBe(true);
+
+  // Leaving the conversation ends the card's binding: the pending list the card looked its request
+  // up in is dropped rather than left for whatever mounts next.
+  tree.unmount();
+  expect(
+    queries
+      .getQueryCache()
+      .getAll()
+      .filter((query) => query.queryKey.includes("sign-in-requests")),
+  ).toEqual([]);
+}, 15000);

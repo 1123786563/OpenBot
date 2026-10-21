@@ -396,10 +396,87 @@ describe("scrubbing commands", () => {
       'curl -u "admin:s3 cret" https://x.test',
       "curl -u admin:[REDACTED] https://x.test",
     ],
+    [
+      "curl --proxy-user admin:glorbwibble https://x.test",
+      "curl --proxy-user admin:[REDACTED] https://x.test",
+    ],
+    [
+      "curl --proxy-user=admin:glorbwibble https://x.test",
+      "curl --proxy-user=admin:[REDACTED] https://x.test",
+    ],
+    // Positional password flags: the word after the flag is the secret, so it takes the tool that
+    // owns the flag to say so. The fixture secrets are made-up words that match no token shape.
+    [
+      "docker login -p glorbwibble registry.example.test",
+      "docker login -p [REDACTED] registry.example.test",
+    ],
+    [
+      'docker login -p "glorb wibble" registry.example.test',
+      "docker login -p [REDACTED] registry.example.test",
+    ],
+    [
+      "sshpass -p glorbwibble ssh deploy@host.example.test",
+      "sshpass -p [REDACTED] ssh deploy@host.example.test",
+    ],
+    [
+      "sshpass -p 'glorb wibble' ssh deploy@host.example.test",
+      "sshpass -p [REDACTED] ssh deploy@host.example.test",
+    ],
+    [
+      "sshpass -P authprompt -p glorbwibble ssh deploy@host.example.test",
+      "sshpass -P authprompt -p [REDACTED] ssh deploy@host.example.test",
+    ],
+    ["redis-cli -a glorbwibble ping", "redis-cli -a [REDACTED] ping"],
+    ["redis-cli -aglorbwibble ping", "redis-cli -a[REDACTED] ping"],
+    ["redis-cli --pass glorbwibble ping", "redis-cli --pass [REDACTED] ping"],
+    ["redis-cli --pass=glorbwibble ping", "redis-cli --pass=[REDACTED] ping"],
+    // An attached short form that reads as a flag named after a secret: the password itself goes,
+    // and the word after it stays.
+    ["redis-cli -aMY_TOKEN_VALUE ping", "redis-cli -a[REDACTED] ping"],
+    ["mysqldump -pglorbwibble appdb", "mysqldump -p[REDACTED] appdb"],
+    // An uppercase -P is the attached port, not the password: only the lowercase flag reads as one.
+    ["mysql -h db -P3306 -phunter2 app", "mysql -h db -P3306 -p[REDACTED] app"],
+    [
+      "open redis://:glorbwibble@cache:6379/0",
+      "open redis://:[REDACTED]@cache:6379/0",
+    ],
+    // What a flag's own grammar leaves alone: a separated `-p` means the password is prompted for
+    // and the word after it is a database; `-U` is not curl's credential flag; a bare `-p` does not
+    // swallow the flag that follows it.
+    ["mysql -p database", "mysql -p database"],
+    ["mysql -uroot -p --verbose", "mysql -uroot -p --verbose"],
+    ["docker -p 8080:80 nginx", "docker -p 8080:80 nginx"],
+    ["docker login -p -u deploy", "docker login -p -u deploy"],
+    [
+      "docker login --password-stdin < creds.txt",
+      "docker login --password-stdin < creds.txt",
+    ],
+    [
+      "sshpass ssh -p 2222 deploy@host.example.test",
+      "sshpass ssh -p 2222 deploy@host.example.test",
+    ],
+    [
+      "sshpass -P authprompt ssh deploy@host.example.test",
+      "sshpass -P authprompt ssh deploy@host.example.test",
+    ],
+    [
+      "wget -U Mozilla:5 https://example.test",
+      "wget -U Mozilla:5 https://example.test",
+    ],
   ];
   for (const [input, output] of cases) {
     test(input, () => expect(scrubCommand(input)).toBe(output));
   }
+  test("a command continued with a backslash is still one command to its password flag", () => {
+    expect(scrubCommand("mysql -uroot \\\n  -pglorbwibble appdb")).toBe(
+      "mysql -uroot \\\n  -p[REDACTED] appdb",
+    );
+  });
+  test("a line break starts another command, so its -p is a port again", () => {
+    expect(
+      scrubCommand("mysql -uroot appdb\nssh -p2222 deploy@host.example.test"),
+    ).toBe("mysql -uroot appdb\nssh -p2222 deploy@host.example.test");
+  });
   test("an ordinary command is untouched", () => {
     expect(scrubCommand("ls -la /workspace && git status")).toBe(
       "ls -la /workspace && git status",

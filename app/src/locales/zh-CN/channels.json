@@ -110,6 +110,21 @@
     "messageAria": "消息",
     "placeholder": "随便问点什么"
   },
+  "connectCard": {
+    "title": "连接 {{title}}",
+    "connect": "连接",
+    "waitingButton": "正在等待 {{title}}…",
+    "waiting": "请在已打开的标签页中完成授权，然后回到这里。",
+    "stopWaiting": "停止等待",
+    "timedOut": "等待 5 分钟后仍未连接 {{title}}。可再次点击连接重试。",
+    "blocked": "浏览器拦截了新标签页。",
+    "blockedLink": "打开 {{title}} 的授权页面",
+    "keyMode": "{{title}} 使用你持有的密钥连接，而不是访问页面授权。",
+    "keyModeLink": "到 {{title}} 的页面填写",
+    "thenAskAgain": "，然后再发起一次。",
+    "connected": "{{title}} 已连接。再次发起，Bot 即可使用它。",
+    "error": "无法连接 {{title}}。"
+  },
   "consent": {
     "skipped": "已跳过。未使用你的任何内容。",
     "allowedOnce": "已允许一次。请让 Bot 再试一次。",
@@ -197,6 +212,21 @@
   "toolLine": {
     "blocked": "已阻止：{{label}}",
     "failed": "{{label}}，未成功"
+  },
+  "tools": {
+    "browsedPages_other": "浏览了 {{count}} 个页面",
+    "usedBrowser": "使用了浏览器",
+    "usedConnector": "使用了 {{connector}}",
+    "usedConnectors_other": "使用了 {{count}} 个连接器",
+    "andPhrase": "并",
+    "listSeparator": "，",
+    "issueCount_other": "{{count}} 个问题",
+    "stepBlocked": "已阻止",
+    "stepFailed": "未成功",
+    "searchedTimes_other": "搜索了网页 {{count}} 次",
+    "readPages_other": "读取了 {{count}} 个页面",
+    "researchSearch": "搜索网页",
+    "researchFetch": "读取网页"
   },
   "transcript": {
     "loadingAria": "正在加载此对话",

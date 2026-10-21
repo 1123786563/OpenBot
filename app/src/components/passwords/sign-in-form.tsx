@@ -1,7 +1,12 @@
-import { IconKey, IconLock, IconPointer } from "@tabler/icons-react";
+import {
+  IconKey,
+  IconLock,
+  IconPointer,
+  IconShieldCheck,
+} from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
@@ -20,6 +25,7 @@ import {
   cancelSignInMutationOptions,
   confirmSavedLoginMutationOptions,
   finishSignInMutationOptions,
+  submitSignInCodeMutationOptions,
   submitSignInMutationOptions,
   takeOverSignInMutationOptions,
 } from "@/lib/passwords/mutations";
@@ -37,7 +43,10 @@ import { queryClient } from "@/query-client";
  * result, so the model never sees it, and the transcript never holds it. The password lives in this
  * component's state until it is sent and is cleared the moment it is.
  *
- * Four answers: type a login, confirm a saved one, take over the browser, or decline.
+ * Three answers while the request is open: type a login, confirm a saved one, or decline; a fourth
+ * hands the browser over. A verification code is never asked for here up front. If the site, once it
+ * has the password, sends one, the request reads `code_required` and the form asks for that code
+ * alone, then sends it on its own, cleared from state the same way.
  */
 export function SignInForm({ requestId }: { requestId: string }) {
   const { t } = useTranslation("common");
@@ -50,6 +59,7 @@ export function SignInForm({ requestId }: { requestId: string }) {
         : 3_000,
   });
   const submit = useMutation(submitSignInMutationOptions(queryClient));
+  const submitCode = useMutation(submitSignInCodeMutationOptions(queryClient));
   const confirmSaved = useMutation(
     confirmSavedLoginMutationOptions(queryClient),
   );
@@ -60,7 +70,31 @@ export function SignInForm({ requestId }: { requestId: string }) {
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [save, setSave] = useState(false);
+  // A failed send's sentence outlives the send: the mutations carrying what was typed are reset
+  // once settled, so TanStack keeps no variables, and what the person needs to read is held here.
+  const [failure, setFailure] = useState<string | null>(null);
   const id = useId();
+
+  // The observers — and so the resets — are stable for the component's life; only the first pair
+  // is kept, and those are the two that carry what was typed.
+  const secretCarriers = useRef([submit, submitCode]);
+  useEffect(
+    // Unmount with a send still in the air: what was typed goes with the component, not into the
+    // mutation cache, whose settled entries would otherwise outlive the form until gc.
+    () => () => {
+      for (const carrier of secretCarriers.current) carrier.reset();
+    },
+    [],
+  );
+
+  /** Leaving this step, one way or another: nothing typed stays anywhere. */
+  const forgetTyped = () => {
+    setUsername("");
+    setPassword("");
+    setCode("");
+    setFailure(null);
+    for (const carrier of secretCarriers.current) carrier.reset();
+  };
 
   if (request.isPending) return null;
   if (request.error)
@@ -72,16 +106,11 @@ export function SignInForm({ requestId }: { requestId: string }) {
   const data = request.data;
   const busy =
     submit.isPending ||
+    submitCode.isPending ||
     confirmSaved.isPending ||
     takeOver.isPending ||
     finish.isPending ||
     cancel.isPending;
-  const failure =
-    submit.error ??
-    confirmSaved.error ??
-    takeOver.error ??
-    finish.error ??
-    cancel.error;
 
   if (FINAL_SIGN_IN.includes(data.status))
     return (
@@ -95,6 +124,103 @@ export function SignInForm({ requestId }: { requestId: string }) {
         <p className="text-muted-foreground text-sm">
           {data.outcome ?? t("signInForm.noLongerOpen")}
         </p>
+      </PageSection>
+    );
+
+  if (data.status === "code_required")
+    return (
+      <PageSection
+        title={t("signInForm.codeTitle")}
+        description={t("signInForm.codeDescription")}
+      >
+        {/* The step appeared without any action of theirs; say so where a screen reader hears it. */}
+        <p className="sr-only" role="status">
+          {t("signInForm.codeStepNotice")}
+        </p>
+        <form
+          className="flex flex-col gap-3"
+          autoComplete="off"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const value = code.trim();
+            if (!value) return;
+            setFailure(null);
+            submitCode.mutate(
+              { id: requestId, code: value },
+              {
+                // Cleared whatever happened: a code is good once, and a wrong one is retyped.
+                onSettled: (_data, error) => {
+                  setCode("");
+                  setFailure(error?.message ?? null);
+                  submitCode.reset();
+                },
+              },
+            );
+          }}
+        >
+          <label className="flex flex-col gap-1 text-sm" htmlFor={`${id}-code`}>
+            {t("signInForm.code")}
+            <Input
+              id={`${id}-code`}
+              autoComplete="one-time-code"
+              autoFocus
+              inputMode="numeric"
+              name="code"
+              required
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+            />
+          </label>
+          {data.outcome ? (
+            <p className="text-destructive text-sm" role="alert">
+              {data.outcome}
+            </p>
+          ) : null}
+          {failure ? (
+            <p className="text-destructive text-sm" role="alert">
+              {failure}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" type="submit" disabled={busy || !code.trim()}>
+              <IconShieldCheck />
+              {submitCode.isPending
+                ? t("signInForm.checking")
+                : t("signInForm.finishSignIn")}
+            </Button>
+            <Button
+              size="sm"
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                forgetTyped();
+                takeOver.mutate(requestId, {
+                  onSettled: (_data, error) =>
+                    setFailure(error?.message ?? null),
+                });
+              }}
+            >
+              <IconPointer />
+              {t("signInForm.takeOver")}
+            </Button>
+            <Button
+              size="sm"
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                forgetTyped();
+                cancel.mutate(requestId, {
+                  onSettled: (_data, error) =>
+                    setFailure(error?.message ?? null),
+                });
+              }}
+            >
+              {t("signInForm.cancel")}
+            </Button>
+          </div>
+        </form>
       </PageSection>
     );
 
@@ -117,7 +243,11 @@ export function SignInForm({ requestId }: { requestId: string }) {
           <Button
             size="sm"
             disabled={busy}
-            onClick={() => finish.mutate(requestId)}
+            onClick={() =>
+              finish.mutate(requestId, {
+                onSettled: (_data, error) => setFailure(error?.message ?? null),
+              })
+            }
           >
             {finish.isPending
               ? t("signInForm.finishing")
@@ -125,16 +255,44 @@ export function SignInForm({ requestId }: { requestId: string }) {
           </Button>
           <Button
             size="sm"
+            type="button"
             variant="ghost"
             disabled={busy}
-            onClick={() => cancel.mutate(requestId)}
+            onClick={() => {
+              forgetTyped();
+              cancel.mutate(requestId, {
+                onSettled: (_data, error) => setFailure(error?.message ?? null),
+              });
+            }}
           >
             {t("signInForm.cancel")}
           </Button>
         </div>
         {failure ? (
           <p className="mt-2 text-destructive text-sm" role="alert">
-            {failure.message}
+            {failure}
+          </p>
+        ) : null}
+      </PageSection>
+    );
+
+  // The login is on its way to the site and this form has nothing to add: any control here would
+  // ask the server for a second attempt it must refuse while one is running. The poll brings the
+  // answer — signed in, a code step, or a refusal worth reading — within seconds.
+  if (data.status === "filling")
+    return (
+      <PageSection
+        title={t("signInForm.signingIn")}
+        description={t("signInForm.workingDescription")}
+      >
+        {data.outcome ? (
+          <p className="text-destructive text-sm" role="alert">
+            {data.outcome}
+          </p>
+        ) : null}
+        {failure ? (
+          <p className="text-destructive text-sm" role="alert">
+            {failure}
           </p>
         ) : null}
       </PageSection>
@@ -172,12 +330,11 @@ export function SignInForm({ requestId }: { requestId: string }) {
                       disabled={busy}
                       onClick={() =>
                         confirmSaved.mutate(
+                          { id: requestId, loginId: login.id },
                           {
-                            id: requestId,
-                            loginId: login.id,
-                            ...(code ? { code } : {}),
+                            onSettled: (_data, error) =>
+                              setFailure(error?.message ?? null),
                           },
-                          { onSettled: () => setCode("") },
                         )
                       }
                     >
@@ -200,21 +357,22 @@ export function SignInForm({ requestId }: { requestId: string }) {
           onSubmit={(event) => {
             event.preventDefault();
             if (!password) return;
+            setFailure(null);
             submit.mutate(
               {
                 id: requestId,
                 input: {
                   ...(username ? { username } : {}),
                   password,
-                  ...(code ? { code } : {}),
                   save,
                 },
               },
               {
                 // Cleared whatever happened: a failed attempt is retyped, never kept.
-                onSettled: () => {
+                onSettled: (_data, error) => {
                   setPassword("");
-                  setCode("");
+                  setFailure(error?.message ?? null);
+                  submit.reset();
                 },
               },
             );
@@ -248,18 +406,6 @@ export function SignInForm({ requestId }: { requestId: string }) {
               onChange={(event) => setPassword(event.target.value)}
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm" htmlFor={`${id}-code`}>
-            {t("signInForm.code")}
-            <Input
-              id={`${id}-code`}
-              autoComplete="one-time-code"
-              inputMode="numeric"
-              name="code"
-              type="password"
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-            />
-          </label>
           {data.passwordManager ? (
             <label
               className="flex items-center gap-2 text-sm"
@@ -275,7 +421,7 @@ export function SignInForm({ requestId }: { requestId: string }) {
           ) : null}
           {failure ? (
             <p className="text-destructive text-sm" role="alert">
-              {failure.message}
+              {failure}
             </p>
           ) : null}
           <div className="flex flex-wrap gap-2">
@@ -290,7 +436,13 @@ export function SignInForm({ requestId }: { requestId: string }) {
               type="button"
               variant="outline"
               disabled={busy}
-              onClick={() => takeOver.mutate(requestId)}
+              onClick={() => {
+                forgetTyped();
+                takeOver.mutate(requestId, {
+                  onSettled: (_data, error) =>
+                    setFailure(error?.message ?? null),
+                });
+              }}
             >
               <IconPointer />
               {t("signInForm.takeOver")}
@@ -300,7 +452,13 @@ export function SignInForm({ requestId }: { requestId: string }) {
               type="button"
               variant="ghost"
               disabled={busy}
-              onClick={() => cancel.mutate(requestId)}
+              onClick={() => {
+                forgetTyped();
+                cancel.mutate(requestId, {
+                  onSettled: (_data, error) =>
+                    setFailure(error?.message ?? null),
+                });
+              }}
             >
               {t("signInForm.decline")}
             </Button>

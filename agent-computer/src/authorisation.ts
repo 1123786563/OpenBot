@@ -79,6 +79,9 @@ const ACTING_PATHS = new Set([
   "/files/write",
   // Typing a person's login into the page. Refused while they hold the wheel, like any other typing.
   "/sign-in/fill",
+  // The code the site asked for after the password, from the same private form: typed, not driven,
+  // and refused while a person holds the wheel exactly like the login it belongs to.
+  "/sign-in/code",
 ]);
 
 export function actsOnTheComputer(pathname: string): boolean {

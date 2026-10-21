@@ -15,6 +15,7 @@ import {
   users,
 } from "../src/db/schema";
 import { createPluginStore, PluginRefusedError } from "../src/plugins/store";
+import { readConnectPrompt } from "../../shared/connect-prompt";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /**
@@ -591,5 +592,118 @@ describe("retiring the credentials a person owns", () => {
     expect(
       (await store.retireConnectionsFor("", "admin@openbot.local")).retired,
     ).toBe(0);
+  });
+});
+
+/*
+ * THE PROMPT INSIDE THE REFUSAL. A personal connect refusal is the one refusal a person can act on
+ * from where they are standing, so the store carries a structured prompt inside its sentence — the
+ * transcript draws a card from it, and everything else about the call is unchanged. The prompt is
+ * DISPLAY DATA (`shared/connect-prompt.ts`): it must appear exactly where the person can self-serve,
+ * and nowhere else. A missing Bot grant, a missing OAuth client and a Shared app's deployment
+ * account are refusals naming somebody else's job, and rewriting those into "connect your account"
+ * would send a person to press a button that cannot fix their problem.
+ *
+ * Every case below reads the refusal back through `readConnectPrompt`, so a marker emitted where it
+ * does not belong, or a sentence that stopped carrying one, both fail here.
+ */
+describe("the prompt inside a personal connect refusal", () => {
+  /** The call's refusal, or a loud failure — a call that answered was itself a bug. */
+  async function refused(actorId: string): Promise<PluginRefusedError> {
+    try {
+      await store.callTool({ ref, args: {}, botId, actorId });
+    } catch (error) {
+      if (error instanceof PluginRefusedError) return error;
+      throw error;
+    }
+    throw new Error("the call was not refused");
+  }
+
+  /** Both fixtures' join rows, so a test starts from nobody having connected. */
+  async function disconnectBoth() {
+    await database
+      .delete(mcpUserCredentials)
+      .where(
+        and(
+          eq(mcpUserCredentials.serverId, serverId),
+          inArray(mcpUserCredentials.userId, [askerId, otherId]),
+        ),
+      );
+  }
+
+  test("a person who has not connected is prompted to connect their own server", async () => {
+    await disconnectBoth();
+
+    const prompt = readConnectPrompt((await refused(askerId)).message);
+    expect(prompt).not.toBeNull();
+    expect(prompt?.serverId).toBe(serverId);
+    expect(prompt?.title).toBe("Google Drive");
+    expect(prompt?.message).toContain("have not connected");
+  });
+
+  test("a revoked credential still prompts, naming the reconnection", async () => {
+    await disconnectBoth();
+    await registerClient();
+    const credentialId = await connect(askerId, askerRefreshToken);
+    await database
+      .update(credentials)
+      .set({ revokedAt: new Date() })
+      .where(eq(credentials.id, credentialId));
+
+    // The row still exists, so the pre-queue `held` read passes and the vault read is what finds
+    // the withdrawal. The prompt is the same one a missing row earns: withdrawn access is nobody's
+    // fault, and connecting again is the step.
+    const prompt = readConnectPrompt((await refused(askerId)).message);
+    expect(prompt).not.toBeNull();
+    expect(prompt?.serverId).toBe(serverId);
+    expect(prompt?.message).toContain("withdrawn");
+  });
+
+  test("another person's connection neither satisfies the asker nor redirects the prompt", async () => {
+    await disconnectBoth();
+    await connect(otherId, otherRefreshToken);
+    decrypted.length = 0;
+
+    const prompt = readConnectPrompt((await refused(askerId)).message);
+    // Their own prompt, for the server THEY have to connect — never a pass through somebody else's
+    // grant, and never a call out on it.
+    expect(prompt).not.toBeNull();
+    expect(prompt?.serverId).toBe(serverId);
+    expect(prompt?.message).toContain("have not connected");
+    expect(decrypted).toEqual([]);
+  });
+
+  test("a missing OAuth client keeps the administrator's refusal, with no prompt", async () => {
+    await disconnectBoth();
+    await connect(askerId, askerRefreshToken);
+    await database
+      .update(mcpServers)
+      .set({ credentialId: null })
+      .where(eq(mcpServers.id, serverId));
+
+    // The person did their part; only an administrator can fix this one, so the sentence stays the
+    // deployment's and the card must not send them to press Connect again.
+    const message = (await refused(askerId)).message;
+    expect(message).toContain("OAuth client");
+    expect(readConnectPrompt(message)).toBeNull();
+  });
+
+  test("a missing Bot grant keeps its own refusal, with no prompt", async () => {
+    await disconnectBoth();
+    await registerClient();
+    await connect(askerId, askerRefreshToken);
+    await database
+      .delete(pluginGrants)
+      .where(and(eq(pluginGrants.ref, ref), eq(pluginGrants.agentId, botId)));
+
+    const message = (await refused(askerId)).message;
+    expect(message).toContain("has not been given the tool");
+    expect(readConnectPrompt(message)).toBeNull();
+
+    // The grant is the suite's standing fixture; every other case here assumes it.
+    await database
+      .insert(pluginGrants)
+      .values({ kind: "mcp", ref, agentId: botId })
+      .onConflictDoNothing();
   });
 });

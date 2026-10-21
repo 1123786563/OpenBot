@@ -1,3 +1,8 @@
+import {
+  researchRoleOfTool,
+  type ResearchRole,
+} from "../../../../shared/research";
+
 /**
  * A tool call, named the way the person watching would name it.
  *
@@ -8,13 +13,65 @@
  *
  * Anything that is not a prefixed MCP name is left exactly as it is: a component the app registered
  * already has a name somebody chose.
+ *
+ * Research is the one exception where the server is dropped entirely: `web_search_exa` would read
+ * "Web search exa", which tells the person which vendor this deployment buys search from and
+ * nothing about their answer. Which provider is granted is an administrator's fact, on the Bot's
+ * access page.
  */
 export type ToolName = {
   /** What was done, for the line itself. */
   label: string;
   /** Which server it was done against, muted beside the label. Absent for anything not MCP. */
   detail?: string;
+  /**
+   * The key in the `channels` locale a translator renders this label from, for a research tool.
+   * Absent for everything else — those labels are the reader's own words already.
+   */
+  labelKey?: ResearchLabelKey;
 };
+
+/**
+ * The channels.json keys a research role's label renders from.
+ *
+ * A key and not a string, because `readToolName` answers without a translator: its `label` for a
+ * research tool is the English phrase, and anything drawing the line in the reader's language goes
+ * through this key instead.
+ */
+export type ResearchLabelKey = "tools.researchSearch" | "tools.researchFetch";
+
+/**
+ * The label a research call carries when no translation happens.
+ *
+ * These must stay the same strings `app/src/locales/en/channels.json` renders for the keys above —
+ * the fallback and the translation are the same surface in two languages, and
+ * `app/tests/tool-name.test.ts` pins the equality so they cannot drift apart.
+ */
+const RESEARCH_ROLE_FALLBACKS: Readonly<Record<ResearchRole, string>> =
+  Object.freeze({ search: "Search the web", fetch: "Read web pages" });
+
+const RESEARCH_LABEL_KEYS: Readonly<Record<ResearchRole, ResearchLabelKey>> =
+  Object.freeze({
+    search: "tools.researchSearch",
+    fetch: "tools.researchFetch",
+  });
+
+/**
+ * The two role refs a skill can declare, in picker order.
+ *
+ * `shared/research.ts` exports the parser and not the prefix constant (an R01 decision, kept: the
+ * shared module's surface does not grow for a consumer that can spell two strings), so the refs are
+ * spelled here. What keeps that honest is `app/tests/tool-name.test.ts`, which feeds every ref back
+ * through `researchRoleOf` and fails the suite if the shared parser stops recognising it — before
+ * the picker can offer a declaration the server would refuse to save.
+ */
+export const RESEARCH_ROLES: readonly {
+  role: ResearchRole;
+  ref: string;
+}[] = [
+  { role: "search", ref: "@research/search" },
+  { role: "fetch", ref: "@research/fetch" },
+] as const satisfies readonly { role: ResearchRole; ref: string }[];
 
 export function readToolName(name: string): ToolName {
   const parts = name.split("__");
@@ -22,6 +79,16 @@ export function readToolName(name: string): ToolName {
 
   const [, server, ...rest] = parts;
   const tool = rest.join("__");
+  /*
+   * Research is named for what it did, not for who did it, so the role label replaces both the
+   * humanised name and the server: there is no "exa" left to mute beside it.
+   */
+  const role = researchRoleOfTool(server ?? "", tool);
+  if (role)
+    return {
+      label: RESEARCH_ROLE_FALLBACKS[role],
+      labelKey: RESEARCH_LABEL_KEYS[role],
+    };
   const label = humanise(tool);
 
   /*

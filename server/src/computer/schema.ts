@@ -322,19 +322,39 @@ export type ComputerProfile = {
  *
  * `origin` is the site the person was asked to sign in to. The computer refuses to type anything when
  * the page is on a different origin, so a login cannot be carried to a page that redirected elsewhere.
+ * No code travels with the password: a code is typed after the site asks for one, through
+ * `SignInCodeInput`.
  */
 export type SignInFillInput = {
   origin: string;
   username?: string;
   password: string;
-  /** A one-time code the person entered alongside, typed if the site asks for one. */
-  code?: string;
 };
 
 /** What the computer reports. No field here ever carries a credential. */
 export type SignInFillResult = {
   submitted: boolean;
   /** Whether the page still shows a password field after submitting: the plainest sign of a failure. */
+  passwordFieldVisible: boolean;
+  /**
+   * The site accepted the password and is now showing a one-time-code field, on this origin. Never
+   * known before the password is in, and only when the field is actually visible. Optional because
+   * an agent-computer that has not been redeployed does not report it: treat absent as "not asked
+   * for", never as a code step to guess at.
+   */
+  codeRequested?: boolean;
+  url: string;
+  error?: string;
+};
+
+/** The verification code a site asked for, typed into the page that is waiting for it. */
+export type SignInCodeInput = { origin: string; code: string };
+
+export type SignInCodeResult = {
+  submitted: boolean;
+  /** Whether a code field still shows after submitting: the plainest sign the code was refused. */
+  codeFieldVisible: boolean;
+  /** Whether the site answered the code with the login page: the person signs in again. */
   passwordFieldVisible: boolean;
   url: string;
   error?: string;

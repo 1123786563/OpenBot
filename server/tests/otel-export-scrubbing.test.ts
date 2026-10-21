@@ -8,6 +8,7 @@ import { createOtelEventExporter } from "../src/telemetry/otel";
  */
 test("a command exported to the collector is scrubbed of the secrets in it", async () => {
   const secret = "fixture-value-7f3a91c0d2";
+  const loginSecret = "fixture-glorb-4e6b2a91d5c3";
   const received: string[] = [];
   const collector = Bun.serve({
     hostname: "127.0.0.1",
@@ -32,6 +33,9 @@ test("a command exported to the collector is scrubbed of the secrets in it", asy
         bot: "bot-1",
         action: "computer_run_command",
         command: `curl -H "Authorization: Bearer ${secret}" https://api.example.test`,
+        login: {
+          command: `docker login -p ${loginSecret} registry.example.test`,
+        },
         nested: { command: `export API_TOKEN=${secret}` },
       },
     });
@@ -40,7 +44,9 @@ test("a command exported to the collector is scrubbed of the secrets in it", asy
     collector.stop(true);
   }
   const wire = received.join("");
+  expect(wire).toContain("computer.action_allowed");
   expect(wire).toContain("computer_run_command");
   expect(wire).toContain("[REDACTED]");
   expect(wire).not.toContain(secret);
+  expect(wire).not.toContain(loginSecret);
 });

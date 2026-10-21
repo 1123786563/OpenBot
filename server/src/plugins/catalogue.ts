@@ -36,7 +36,17 @@ export type CatalogueAuth =
   /** Answers without any credential at all. */
   | { kind: "none" }
   /** One token, held by the deployment, used for everybody. */
-  | { kind: "deployment-bearer" }
+  | {
+      kind: "deployment-bearer";
+      /**
+       * The header the token travels in. Absent means `Authorization`, as a Bearer token unless the
+       * token names its own scheme. A vendor that reads its key from a header of its own, as Exa
+       * reads `x-api-key`, names it here, and the token is sent in it exactly as stored. The name
+       * is a reviewed contract like the host beside it — it is never taken from a caller, and an
+       * administrator does not get to type one in.
+       */
+      header?: string;
+    }
   /**
    * First-party and in-process. There is no credential, because there is nothing to authenticate
    * to: the call runs against this deployment's own tables, as the person whose turn it is.
@@ -138,8 +148,53 @@ export type CatalogueEntry = {
    * naming it resolves to a Composio dial with no app and no brokered gate.
    */
   transport?: CuratedTransportKind;
+  /**
+   * The only tools on this server that read, when the vendor's list is too long or moves too fast
+   * for {@link CatalogueEntry.writeTools} to be trusted complete.
+   *
+   * With it, every advertised tool NOT named here is a write. Firecrawl is why: it publishes tool
+   * families (`firecrawl_monitor_*`) rather than names, a write list can only hold names, and a
+   * monitor deletion nobody listed would otherwise classify as a read.
+   */
+  readTools?: readonly string[];
   docsUrl: string;
 };
+
+/**
+ * Exa's research and multi-step agent tools spend credits, so only the three that read are reads.
+ *
+ * READ IS A PERMISSION CLASSIFICATION AND NOT A PRICE. `web_search_advanced_exa` is on the list
+ * because it only reads; that a read costs the deployment nothing is a separate fact about Exa's
+ * free tier, and widening what a Bot may do unasked is not how a vendor's billing is mirrored.
+ */
+const EXA_READ_TOOLS = Object.freeze([
+  "web_search_exa",
+  "web_fetch_exa",
+  "web_search_advanced_exa",
+]);
+
+/**
+ * Crawls, agents, browser sessions and feedback start work or change state at Firecrawl.
+ *
+ * READ IS A PERMISSION CLASSIFICATION AND NOT A PRICE here too: the free tier answers search and
+ * scrape without a key, and that generosity decides nothing about effect. A crawl starts a
+ * long-running job on the vendor's side, so it is a write whatever it costs.
+ */
+const FIRECRAWL_WRITE_TOOLS = Object.freeze([
+  "firecrawl_crawl",
+  "firecrawl_agent",
+  "firecrawl_interact",
+  "firecrawl_interact_stop",
+  "firecrawl_feedback",
+  "firecrawl_search_feedback",
+]);
+
+const FIRECRAWL_READ_TOOLS = Object.freeze([
+  "firecrawl_search",
+  "firecrawl_scrape",
+  "firecrawl_map",
+  "firecrawl_parse",
+]);
 
 /**
  * A short list, deliberately.
@@ -183,6 +238,60 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
     auth: { kind: "deployment-bearer" },
     writeTools: Object.freeze([]),
     docsUrl: "https://docs.parallel.ai/integrations/mcp/search-mcp",
+  },
+  {
+    key: "exa",
+    title: "Exa Search",
+    vendor: "Exa",
+    summary:
+      "Public-web search and page reading. Free rate-limited access without a key.",
+    host: "https://mcp.exa.ai",
+    path: "/mcp",
+    auth: { kind: "none" },
+    writeTools: Object.freeze([]),
+    readTools: EXA_READ_TOOLS,
+    docsUrl: "https://exa.ai/docs/reference/exa-mcp",
+  },
+  {
+    key: "exa-authenticated",
+    title: "Exa Search (API key)",
+    vendor: "Exa",
+    summary:
+      "Public-web search and page reading using this deployment's Exa API key.",
+    host: "https://mcp.exa.ai",
+    path: "/mcp",
+    // Exa reads its key from `x-api-key`, not from `Authorization`.
+    auth: { kind: "deployment-bearer", header: "x-api-key" },
+    writeTools: Object.freeze([]),
+    readTools: EXA_READ_TOOLS,
+    docsUrl: "https://exa.ai/docs/reference/exa-mcp",
+  },
+  {
+    key: "firecrawl",
+    title: "Firecrawl",
+    vendor: "Firecrawl",
+    summary:
+      "Public-web search and page scraping. Free access without a key offers search, scrape and parse.",
+    host: "https://mcp.firecrawl.dev",
+    path: "/v2/mcp",
+    auth: { kind: "none" },
+    writeTools: FIRECRAWL_WRITE_TOOLS,
+    readTools: FIRECRAWL_READ_TOOLS,
+    docsUrl: "https://docs.firecrawl.dev/mcp-server",
+  },
+  {
+    key: "firecrawl-authenticated",
+    title: "Firecrawl (API key)",
+    vendor: "Firecrawl",
+    summary:
+      "Public-web search and page scraping using this deployment's Firecrawl API key.",
+    host: "https://mcp.firecrawl.dev",
+    path: "/v2/mcp",
+    // No header of its own: Firecrawl reads its key from `Authorization`, which is the default.
+    auth: { kind: "deployment-bearer" },
+    writeTools: FIRECRAWL_WRITE_TOOLS,
+    readTools: FIRECRAWL_READ_TOOLS,
+    docsUrl: "https://docs.firecrawl.dev/mcp-server",
   },
 
   {
@@ -355,6 +464,21 @@ export function serverCredentialKind(entry: CatalogueEntry): "mcp" | null {
   return entry.auth.kind === "deployment-bearer" ? "mcp" : null;
 }
 
+/**
+ * The header this entry's deployment token is sent in.
+ *
+ * Exa names `x-api-key` because that is the header Exa reads; every other answer is the default
+ * `Authorization`, which is what every deployment-bearer server did before the field existed. A
+ * `user-oauth` vendor sends no deployment token, a keyless endpoint has nothing to send, and a
+ * server an administrator added by URL has no entry — all three fall to the default rather than to
+ * a guess, because the question only matters where a token actually goes out.
+ */
+export function tokenHeaderFor(entry: CatalogueEntry | null): string {
+  return entry?.auth.kind === "deployment-bearer" && entry.auth.header
+    ? entry.auth.header
+    : "Authorization";
+}
+
 export function catalogueEntry(key: string): CatalogueEntry | null {
   return BY_KEY.get(key) ?? null;
 }
@@ -453,6 +577,10 @@ export function classifyTool(
   // The reviewed list outranks the column, and only in this direction: a name a person reviewed as a
   // write stays a write whatever the listing recorded about it.
   if (entry?.writeTools.includes(toolName)) return "write";
+  // An entry that names its reads names all of them, so anything else it advertises is a write.
+  // Consulted before the column for the same reason the write list is: a vendor label arrives in an
+  // unconstrained column, and an allowlist that could be outvoted by one would not be an allowlist.
+  if (entry?.readTools && !entry.readTools.includes(toolName)) return "write";
   // Anything the column holds settles the rest. `typeof` rather than truthiness so the empty string
   // is treated as the value it is instead of as an absence of one.
   if (typeof recorded === "string")

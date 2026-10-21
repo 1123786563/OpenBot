@@ -20,6 +20,9 @@ type StepLabelKey =
   | "browser.step.key"
   | "browser.step.scroll";
 
+/** The phrases a browsing step is called, keyed for translation. Exported with `isBrowserStep`. */
+export type { StepLabelKey };
+
 const labelKeys: Record<string, StepLabelKey> = {
   computer_navigate: "browser.step.navigate",
   computer_read: "browser.step.read",
@@ -30,16 +33,24 @@ const labelKeys: Record<string, StepLabelKey> = {
   computer_scroll: "browser.step.scroll",
 };
 
+/**
+ * Whether a tool call is a browsing step this file knows how to draw.
+ *
+ * One answer for both groupers, so a step can never be a browser step to one and an unknown tool to
+ * the other: `groupBrowserSteps` folds on it, and the transcript-wide `groupToolSteps` folds on it
+ * too.
+ */
+export function isBrowserStep(step: BrowserStep): boolean {
+  return Object.hasOwn(labelKeys, step.toolCall.function.name);
+}
+
 /** Group adjacent browsing steps without moving messages or hiding requests for human help. */
 export function groupBrowserSteps(
   items: readonly VisibleChatItem[],
 ): TranscriptItem[] {
   const grouped: TranscriptItem[] = [];
   for (const item of items) {
-    if (
-      item.kind !== "tool" ||
-      !Object.hasOwn(labelKeys, item.toolCall.function.name)
-    ) {
+    if (item.kind !== "tool" || !isBrowserStep(item)) {
       grouped.push(item);
       continue;
     }

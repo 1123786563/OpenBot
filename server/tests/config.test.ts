@@ -583,6 +583,25 @@ describe("deployment configuration", () => {
       { TRUSTED_ORIGINS: "http://localhost:3010,https://openbot.example.com" },
     ],
     ["an address that is not a URL at all", { OPENBOT_PUBLIC_URL: "openbot" }],
+    /*
+     * Scheme forms that parse as URLs but name no host. `example.com:3010` and
+     * `localhost:3010` are how a missed `https://` lands in a .env, and a bare `myapp://`
+     * is a scheme with nothing behind it. Their hostname is empty, and an empty hostname
+     * names no machine, so none of these is a LAN label that could be read as private.
+     */
+    [
+      "a public URL typed without its scheme",
+      { OPENBOT_PUBLIC_URL: "example.com:3010" },
+    ],
+    [
+      "an app URL typed without its scheme",
+      { OPENBOT_APP_URL: "localhost:3010" },
+    ],
+    ["a trusted origin that is only a scheme", { TRUSTED_ORIGINS: "myapp://" }],
+    [
+      "a URL whose hostname normalises away",
+      { OPENBOT_PUBLIC_URL: "http://." },
+    ],
   ])("refuses no sign-in combined with %s", (_label, published) => {
     expect(() =>
       loadConfig({ ...withoutSignIn, ...OPEN, ...published }),
@@ -602,6 +621,14 @@ describe("deployment configuration", () => {
     ["a unique-local IPv6 address", { OPENBOT_PUBLIC_URL: "http://[fd00::1]" }],
     ["an mDNS name", { TRUSTED_ORIGINS: "http://openbot.local:3010" }],
     ["a single-label LAN name", { TRUSTED_ORIGINS: "http://nas:3010" }],
+    /*
+     * A mobile scheme origin with a host is real config for the auth layer, and the host it
+     * names is a single label — the reading the empty-host forms above must not inherit.
+     */
+    [
+      "a mobile scheme origin with a host",
+      { TRUSTED_ORIGINS: "myapp://handset:3010" },
+    ],
   ])("still runs with no sign-in on %s", (_label, reachable) => {
     expect(() =>
       loadConfig({ ...withoutSignIn, ...OPEN, ...reachable }),

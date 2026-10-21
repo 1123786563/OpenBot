@@ -110,6 +110,21 @@
     "messageAria": "Message",
     "placeholder": "Ask anything"
   },
+  "connectCard": {
+    "title": "Connect {{title}}",
+    "connect": "Connect",
+    "waitingButton": "Waiting for {{title}}…",
+    "waiting": "Finish in the tab that opened, then come back here.",
+    "stopWaiting": "Stop waiting",
+    "timedOut": "{{title}} still is not connected after 5 minutes. Press connect to try again.",
+    "blocked": "This browser blocked the tab.",
+    "blockedLink": "Open {{title}}'s sign-in",
+    "keyMode": "{{title}} connects with a key you hold rather than by visiting a page.",
+    "keyModeLink": "Enter it on {{title}}'s page",
+    "thenAskAgain": ", then ask again.",
+    "connected": "{{title}} is connected. Ask again and the Bot can use it.",
+    "error": "Could not connect {{title}}."
+  },
   "consent": {
     "skipped": "Skipped. Nothing of yours was used.",
     "allowedOnce": "Allowed once. Ask the Bot to try again.",
@@ -197,6 +212,26 @@
   "toolLine": {
     "blocked": "Blocked: {{label}}",
     "failed": "{{label}}, didn't work"
+  },
+  "tools": {
+    "browsedPages_one": "Browsed {{count}} page",
+    "browsedPages_other": "Browsed {{count}} pages",
+    "usedBrowser": "used the browser",
+    "usedConnector": "used {{connector}}",
+    "usedConnectors_one": "used {{count}} connector",
+    "usedConnectors_other": "used {{count}} connectors",
+    "andPhrase": " and ",
+    "listSeparator": ", ",
+    "issueCount_one": "1 issue",
+    "issueCount_other": "{{count}} issues",
+    "stepBlocked": "Blocked",
+    "stepFailed": "Didn't work",
+    "searchedTimes_one": "searched the web {{count}} time",
+    "searchedTimes_other": "searched the web {{count}} times",
+    "readPages_one": "read {{count}} page",
+    "readPages_other": "read {{count}} pages",
+    "researchSearch": "Search the web",
+    "researchFetch": "Read web pages"
   },
   "transcript": {
     "loadingAria": "Loading this conversation",

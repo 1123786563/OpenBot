@@ -1,4 +1,5 @@
 import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { RESEARCH_TOOLS, researchRoleOfTool } from "../../shared/research";
 import {
   CATALOGUE,
   type CatalogueEntry,
@@ -8,6 +9,7 @@ import {
   hostAdmissible,
   resolveServerUrl,
   serverCredentialKind,
+  tokenHeaderFor,
 } from "../src/plugins/catalogue";
 
 /**
@@ -599,4 +601,322 @@ test("a recorded read cannot take an action off a curated entry's write list", (
   // And the empty string is a recorded value rather than a silence, so it does not fall through to
   // the write list and read as a read for an action the list omits.
   expect(classifyTool(notion, "notion-fetch", true, "")).toBe("write");
+});
+
+/*
+ * The research providers (R01, A10 static half).
+ *
+ * Exa and Firecrawl join Parallel as reviewed source contracts: a host and path pinned from the
+ * vendor's published documentation, an auth shape that says whose credential travels and in which
+ * header, and a tool classification that fails closed. Every assertion below was extracted from the
+ * upstream catalogue (evidence/upstream-sources/server/src/plugins/catalogue.ts) and re-checked
+ * against this fork's own shapes rather than copied whole, because this fork's entries carry fields
+ * the upstream file does not and vice versa.
+ */
+describe("the research providers", () => {
+  test("each of the six entries resolves to the one address its vendor publishes", () => {
+    // The instance-host argument is offered and must be ignored: a pinned host cannot be talked
+    // into reaching an address the caller chose, and the path is the catalogue's as well.
+    const urls: Record<string, string> = {
+      parallel: "https://search.parallel.ai/mcp",
+      "parallel-authenticated": "https://search.parallel.ai/mcp",
+      exa: "https://mcp.exa.ai/mcp",
+      "exa-authenticated": "https://mcp.exa.ai/mcp",
+      firecrawl: "https://mcp.firecrawl.dev/v2/mcp",
+      "firecrawl-authenticated": "https://mcp.firecrawl.dev/v2/mcp",
+    };
+    for (const [key, url] of Object.entries(urls)) {
+      expect(resolveServerUrl(key, "https://attacker.example")?.url).toBe(url);
+    }
+  });
+
+  test("a lookalike host is refused for every research vendor", () => {
+    /*
+     * The two shapes an equality check must see through: a host that merely ends in the vendor's
+     * domain (`search.parallel.ai.evil.com`) and a subdomain of the vendor's own domain that the
+     * vendor does not serve (`evil-search.parallel.ai`). hostAdmissible compares the raw string,
+     * so neither passes; a suffix check or a contains check would admit the first.
+     */
+    const exa = catalogueEntry("exa");
+    const firecrawl = catalogueEntry("firecrawl");
+    const parallel = catalogueEntry("parallel");
+    expect(exa).not.toBeNull();
+    expect(firecrawl).not.toBeNull();
+    expect(parallel).not.toBeNull();
+
+    expect(hostAdmissible(exa!, "https://mcp.exa.ai")).toBe(true);
+    expect(hostAdmissible(exa!, "https://mcp.exa.ai.evil.test")).toBe(false);
+    expect(hostAdmissible(exa!, "https://api.exa.ai")).toBe(false);
+    expect(hostAdmissible(exa!, "https://evil.test/mcp.exa.ai")).toBe(false);
+
+    expect(hostAdmissible(firecrawl!, "https://mcp.firecrawl.dev")).toBe(true);
+    expect(
+      hostAdmissible(firecrawl!, "https://mcp.firecrawl.dev.evil.test"),
+    ).toBe(false);
+    expect(hostAdmissible(firecrawl!, "https://eu.mcp.firecrawl.dev")).toBe(
+      false,
+    );
+
+    expect(hostAdmissible(parallel!, "https://search.parallel.ai")).toBe(true);
+    expect(
+      hostAdmissible(parallel!, "https://search.parallel.ai.evil.com"),
+    ).toBe(false);
+    expect(hostAdmissible(parallel!, "https://evil-search.parallel.ai")).toBe(
+      false,
+    );
+  });
+
+  test("the path is never the caller's, however the host argument is shaped", () => {
+    // Path variants die at the same pin: resolveServerUrl joins the entry's path, so no caller
+    // spelling of a path can move a request to another route on the vendor's machine.
+    expect(
+      resolveServerUrl("exa", "https://attacker.example/v2")?.entry.path,
+    ).toBe("/mcp");
+    expect(
+      resolveServerUrl("firecrawl", "https://attacker.example/mcp")?.entry.path,
+    ).toBe("/v2/mcp");
+    expect(
+      resolveServerUrl("firecrawl", "https://attacker.example/")?.entry.path,
+    ).toBe("/v2/mcp");
+  });
+
+  test("the catalogue keys stay unique, so a duplicate cannot shadow a reviewed entry", () => {
+    // BY_KEY is a Map, so a repeated key would not error — it would silently publish one of the
+    // two entries under the shared slug, and which one is an accident of array order.
+    expect(new Set(CATALOGUE.map((entry) => entry.key)).size).toBe(
+      CATALOGUE.length,
+    );
+  });
+});
+
+describe("whose credential each research provider uses", () => {
+  test("the anonymous entries take no credential and the keyed ones take the deployment's", () => {
+    for (const key of ["parallel", "exa", "firecrawl"]) {
+      expect(catalogueEntry(key)?.auth.kind).toBe("none");
+      expect(serverCredentialKind(catalogueEntry(key)!)).toBeNull();
+    }
+    for (const key of [
+      "parallel-authenticated",
+      "exa-authenticated",
+      "firecrawl-authenticated",
+    ]) {
+      expect(catalogueEntry(key)?.auth.kind).toBe("deployment-bearer");
+      expect(serverCredentialKind(catalogueEntry(key)!)).toBe("mcp");
+    }
+  });
+
+  test("Exa's key travels in x-api-key, as Exa reads it, not in Authorization", () => {
+    const entry = catalogueEntry("exa-authenticated");
+    expect(
+      entry?.auth.kind === "deployment-bearer" ? entry.auth.header : undefined,
+    ).toBe("x-api-key");
+    expect(tokenHeaderFor(entry)).toBe("x-api-key");
+  });
+
+  test("a vendor without its own header keeps Authorization, as before", () => {
+    // Firecrawl reads its key from Authorization; so does every deployment-bearer server this
+    // catalogue had before the header field existed. The default IS the old behavior.
+    expect(tokenHeaderFor(catalogueEntry("firecrawl-authenticated"))).toBe(
+      "Authorization",
+    );
+    expect(tokenHeaderFor(catalogueEntry("parallel-authenticated"))).toBe(
+      "Authorization",
+    );
+  });
+
+  test("anything that is not a deployment token answers the Authorization default", () => {
+    // A user-oauth vendor sends no deployment token at all, a keyless endpoint has nothing to
+    // send, and a server an administrator added by URL has no entry — all three fall to the
+    // default header rather than to a guess.
+    expect(tokenHeaderFor(catalogueEntry("google-drive"))).toBe(
+      "Authorization",
+    );
+    expect(tokenHeaderFor(catalogueEntry("exa"))).toBe("Authorization");
+    expect(tokenHeaderFor(null)).toBe("Authorization");
+    expect(tokenHeaderFor(catalogueEntry("not-a-vendor"))).toBe(
+      "Authorization",
+    );
+  });
+});
+
+describe("what a tool does on the research providers", () => {
+  test("Exa reads only through its three named tools", () => {
+    const exa = catalogueEntry("exa")!;
+    // Pinned literally, in declared order, so a rename or a dropped name fails here rather than
+    // quietly narrowing or widening the allowlist.
+    expect(exa.readTools).toEqual([
+      "web_search_exa",
+      "web_fetch_exa",
+      "web_search_advanced_exa",
+    ]);
+    expect(classifyTool(exa, "web_search_exa", true)).toBe("read");
+    expect(classifyTool(exa, "web_fetch_exa", true)).toBe("read");
+    expect(classifyTool(exa, "web_search_advanced_exa", true)).toBe("read");
+    // Exa's agent tools spend credits on multi-step runs. Being advertised is not being a read.
+    expect(classifyTool(exa, "agent_run", true)).toBe("write");
+    expect(classifyTool(exa, "web_search_news_exa", true)).toBe("write");
+  });
+
+  test("Firecrawl's crawls, agents, browser sessions and feedback are writes", () => {
+    const firecrawl = catalogueEntry("firecrawl")!;
+    expect(firecrawl.writeTools).toEqual([
+      "firecrawl_crawl",
+      "firecrawl_agent",
+      "firecrawl_interact",
+      "firecrawl_interact_stop",
+      "firecrawl_feedback",
+      "firecrawl_search_feedback",
+    ]);
+    expect(firecrawl.readTools).toEqual([
+      "firecrawl_search",
+      "firecrawl_scrape",
+      "firecrawl_map",
+      "firecrawl_parse",
+    ]);
+    for (const name of firecrawl.writeTools) {
+      expect(classifyTool(firecrawl, name, true)).toBe("write");
+    }
+    for (const name of firecrawl.readTools) {
+      expect(classifyTool(firecrawl, name, true)).toBe("read");
+    }
+  });
+
+  test("an unknown Firecrawl tool is a write even when the vendor called it a read", () => {
+    const firecrawl = catalogueEntry("firecrawl")!;
+    /*
+     * Firecrawl publishes tool FAMILIES (`firecrawl_monitor_*`) rather than a stable list of
+     * names, so a write list could not have named every effect. With `readTools` the direction
+     * flips: every advertised name the allowlist does not hold is a write, and a recorded "read"
+     * from an unconstrained vendor column cannot buy it back. The provider's name in the
+     * catalogue is not an argument for reading.
+     */
+    expect(classifyTool(firecrawl, "firecrawl_monitor_delete", true)).toBe(
+      "write",
+    );
+    expect(
+      classifyTool(firecrawl, "firecrawl_monitor_delete", true, "read"),
+    ).toBe("write");
+    expect(classifyTool(firecrawl, "firecrawl_scrape_v3", true, "read")).toBe(
+      "write",
+    );
+    // A vendor label still narrows where the allowlist already reads: nothing here widened.
+    expect(classifyTool(firecrawl, "firecrawl_scrape", true, "write")).toBe(
+      "write",
+    );
+  });
+
+  test("an unadvertised name is a write on the research providers as anywhere else", () => {
+    for (const key of [
+      "exa",
+      "exa-authenticated",
+      "firecrawl",
+      "firecrawl-authenticated",
+    ]) {
+      expect(classifyTool(catalogueEntry(key), "not_advertised", false)).toBe(
+        "write",
+      );
+    }
+    // A server with no entry at all stays a write whatever the tool is called.
+    expect(classifyTool(null, "firecrawl_search", true)).toBe("write");
+  });
+
+  test("both entries of a provider classify identically", () => {
+    // The keyed entry is the same vendor with a credential, not a different tool surface.
+    for (const [base, keyed] of [
+      ["exa", "exa-authenticated"],
+      ["firecrawl", "firecrawl-authenticated"],
+    ] as const) {
+      const anonymous = catalogueEntry(base)!;
+      const authenticated = catalogueEntry(keyed)!;
+      for (const name of [
+        ...(anonymous.readTools ?? []),
+        ...(anonymous.writeTools ?? []),
+        "brand-new-tool",
+      ]) {
+        expect(classifyTool(authenticated, name, true)).toBe(
+          classifyTool(anonymous, name, true),
+        );
+      }
+    }
+  });
+});
+
+describe("the shared research roles and this catalogue agree", () => {
+  /*
+   * shared/research.ts labels tools in the app too, and the app cannot import the server. So the
+   * six keys live in both places, and the only thing keeping them honest is this test: a key in
+   * the shared table that is not a catalogue entry, or a research entry missing from the table,
+   * fails here instead of surfacing as a grant that resolves to nothing.
+   */
+  test("every shared key is a catalogue entry, and vice versa", () => {
+    const researchKeys = Object.keys(RESEARCH_TOOLS).sort();
+    const catalogueResearchKeys = CATALOGUE.map((entry) => entry.key)
+      .filter((key) =>
+        ["parallel", "exa", "firecrawl"].some(
+          (vendor) => key === vendor || key === `${vendor}-authenticated`,
+        ),
+      )
+      .sort();
+    expect(researchKeys).toEqual(catalogueResearchKeys);
+    for (const key of researchKeys) {
+      expect(catalogueEntry(key)).not.toBeNull();
+    }
+  });
+
+  test("the shared tool names are the ones this catalogue classifies as reads", () => {
+    for (const [key, research] of Object.entries(RESEARCH_TOOLS)) {
+      const entry = catalogueEntry(key);
+      expect(entry).not.toBeNull();
+      expect(classifyTool(entry, research.search, true)).toBe("read");
+      expect(classifyTool(entry, research.fetch, true)).toBe("read");
+      // And the role lookup agrees, so a granted real ref still resolves through the table.
+      expect(researchRoleOfTool(key, research.search)).toBe("search");
+      expect(researchRoleOfTool(key, research.fetch)).toBe("fetch");
+    }
+  });
+});
+
+describe("the Parallel entries this deployment already granted against", () => {
+  /*
+   * R01 adds four entries beside two that production already holds grants for. The old keys, the
+   * old endpoint, the old auth kinds and the old tool names are the compatibility surface: a
+   * skill declaring `parallel/web_search` and a vault row naming `parallel-authenticated` must
+   * keep resolving exactly as they did before Exa and Firecrawl were reviewed in.
+   */
+  test("keeps the inherited keys, endpoint, auth kinds and credential kinds", () => {
+    expect(catalogueEntry("parallel")?.key).toBe("parallel");
+    expect(catalogueEntry("parallel-authenticated")?.key).toBe(
+      "parallel-authenticated",
+    );
+    expect(resolveServerUrl("parallel")?.url).toBe(
+      "https://search.parallel.ai/mcp",
+    );
+    expect(catalogueEntry("parallel")?.auth.kind).toBe("none");
+    expect(catalogueEntry("parallel-authenticated")?.auth.kind).toBe(
+      "deployment-bearer",
+    );
+    expect(serverCredentialKind(catalogueEntry("parallel")!)).toBeNull();
+    expect(
+      serverCredentialKind(catalogueEntry("parallel-authenticated")!),
+    ).toBe("mcp");
+    // No header was named before the field existed; none may appear now.
+    expect(tokenHeaderFor(catalogueEntry("parallel-authenticated"))).toBe(
+      "Authorization",
+    );
+  });
+
+  test("keeps classifying the old real tool refs as reads", () => {
+    for (const key of ["parallel", "parallel-authenticated"]) {
+      expect(researchRoleOfTool(key, "web_search")).toBe("search");
+      expect(researchRoleOfTool(key, "web_fetch")).toBe("fetch");
+      expect(classifyTool(catalogueEntry(key), "web_search", true)).toBe(
+        "read",
+      );
+      expect(classifyTool(catalogueEntry(key), "web_fetch", true)).toBe("read");
+    }
+    // No readTools on Parallel: the entries opt into the allowlist direction, and this
+    // deployment's existing grants were made under the write-list direction.
+    expect(catalogueEntry("parallel")?.readTools).toBeUndefined();
+    expect(catalogueEntry("parallel-authenticated")?.readTools).toBeUndefined();
+  });
 });

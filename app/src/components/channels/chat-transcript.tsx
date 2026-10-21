@@ -62,11 +62,7 @@ import {
 import { readTeamBotConsent } from "@/lib/team-bots";
 import { cn } from "@/lib/utils";
 import { VOICE_CHAT_ACTIVITY, type VoiceChatEntry } from "@/lib/voice/archive";
-import {
-  BrowserActivity,
-  groupBrowserSteps,
-  type TranscriptItem,
-} from "./browser-activity";
+import { readConnectPrompt } from "../../../../shared/connect-prompt";
 import {
   attachmentModality,
   type SentAttachment,
@@ -74,7 +70,13 @@ import {
 } from "./chat-messages";
 import { splitChatOrigin } from "./chat-origin";
 import type { QueuedMessage } from "./composer";
+import { ConnectAppCard } from "./connect-app-card";
 import { TeamBotConsentCard } from "./team-bot-consent";
+import {
+  groupToolSteps,
+  ToolActivity,
+  type TranscriptItem,
+} from "./tool-activity";
 import { ToolRenderBoundary } from "./tool-boundary";
 import { ToolLine } from "./tool-line";
 import { VoiceChatCard } from "./voice-chat-card";
@@ -1406,6 +1408,9 @@ function ServerToolLine({ name, result }: { name: string; result?: string }) {
   // A Team Bot asking to use this person's own account draws its consent card, not the sentence.
   const consent = refused ? readTeamBotConsent(body) : null;
   if (consent) return <TeamBotConsentCard {...consent} />;
+  // An app this person has not connected draws the thing they can act on, not the sentence.
+  const prompt = connectPromptOf(answer);
+  if (prompt) return <ConnectAppCard {...prompt} />;
   return (
     <ToolLine
       {...(detail ? { detail } : {})}
@@ -1421,6 +1426,27 @@ function ServerToolLine({ name, result }: { name: string; result?: string }) {
       ) : null}
     </ToolLine>
   );
+}
+
+/**
+ * The connect prompt inside a refused tool result, or null for any other result.
+ *
+ * The server writes one refusal whose message opens with a marker the transcript can parse back
+ * (see `readConnectPrompt`), so the renderer can draw the thing the person can act on instead of a
+ * sentence pointing at a screen elsewhere. THE ENVELOPE COMES OFF HERE rather than at the codec:
+ * the tool result arrives JSON-encoded and addressed to the model, so it starts with quotes and
+ * `Refused.`, while the codec only recognises text that STARTS with its marker — handing it over
+ * unstripped would make every card silently undrawable, which is the one failure this seam exists
+ * to prevent. Fail-closed on purpose: a refusal the codec does not fully recognise is drawn as the
+ * text it is, which is also what a client without the card would show.
+ *
+ * Exported so the fail-closed half can be pinned without mounting anything.
+ */
+export function connectPromptOf(result: string | undefined) {
+  if (result === undefined) return null;
+  const answer = asText(result);
+  if (!answer.startsWith(REFUSAL_MARKER)) return null;
+  return readConnectPrompt(answer.slice(REFUSAL_MARKER.length).trim());
 }
 
 /**
@@ -1560,7 +1586,7 @@ export function ChatTranscript({
    * cost was markdown parsing and chart SVGs, and those are skipped by the memoised children below,
    * which is where the 25x came from. This runs per render and is not worth guarding.
    */
-  const items = groupBrowserSteps(toVisibleChatItems(messages));
+  const items = groupToolSteps(toVisibleChatItems(messages));
 
   /*
    * ONLY WHILE THERE IS NOTHING ELSE TO LOOK AT. Once a reply starts streaming, or a tool line
@@ -1703,12 +1729,12 @@ export function ChatTranscript({
             </div>
             {items.length === 0 && restoring ? <RestoringTranscript /> : null}
             {items.map((item, index) =>
-              item.kind === "browser" ? (
+              item.kind === "tools" ? (
                 <MessageScrollerItem key={item.id} messageId={item.id}>
                   <Arriving
                     delay={delays.delayFor(item.id, index, items.length)}
                   >
-                    <BrowserActivity
+                    <ToolActivity
                       group={item}
                       active={busy && index === items.length - 1}
                     />

@@ -696,6 +696,94 @@ describe("inbound email via SES -> SNS", () => {
   test("MIME text extraction prefers text/plain and decodes quoted-printable", () => {
     expect(extractEmailText(mime)).toBe("The disk on db-1 is at 99%.");
   });
+  // Each part transfer-decodes to bytes, then reads those bytes in the charset its own
+  // Content-Type names. All senders and boundaries below are fictional.
+  const perPartMime = [
+    "From: Ops <ops@example.com>",
+    "Subject: Disk full",
+    'Content-Type: multipart/alternative; boundary="b2"',
+    "",
+    "--b2",
+    "Content-Type: text/plain; charset=iso-8859-1",
+    "Content-Transfer-Encoding: quoted-printable",
+    "",
+    "The disk on db-1 is at caf=E9 level.",
+    "--b2",
+    "Content-Type: text/html; charset=utf-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    "PGI+ZGlzazwvYj4=",
+    "--b2--",
+  ].join("\r\n");
+  const latin1HtmlMime = [
+    "From: Ops <ops@example.com>",
+    "Subject: Disk full",
+    'Content-Type: multipart/alternative; boundary="b3"',
+    "",
+    "--b3",
+    "Content-Type: text/html; charset=iso-8859-1",
+    "Content-Transfer-Encoding: base64",
+    "",
+    "PHA+Y2Fm6TwvcD48cD54JnNvbDt5PC9wPg==",
+    "--b3--",
+  ].join("\r\n");
+  test("each part decodes with its own charset after transfer decoding", () => {
+    expect(extractEmailText(perPartMime)).toBe(
+      "The disk on db-1 is at café level.",
+    );
+  });
+  test("a base64 part decodes in its declared charset, not always UTF-8", () => {
+    expect(extractEmailText(latin1HtmlMime)).toBe("café x&sol;y");
+  });
+  test("a charset the runtime does not know falls back to UTF-8", () => {
+    const unknown = [
+      "From: Ops <ops@example.com>",
+      "Subject: Disk full",
+      "Content-Type: text/plain; charset=x-unknown-8bit",
+      "Content-Transfer-Encoding: base64",
+      "",
+      "Y2Fmw6k=",
+    ].join("\r\n");
+    expect(extractEmailText(unknown)).toBe("café");
+  });
+  test("HTML-only bodies decode character references exactly once", () => {
+    const html = [
+      "From: Ops <ops@example.com>",
+      "Subject: Renewal",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      "<p>AT&amp;T</p><p>we&#8217;re</p><p>&#x27;q&#x27;</p><p>A&nbsp;B</p><p>&amp;lt;tag&amp;gt;</p><p>&#0; &#55296;</p>",
+    ].join("\r\n");
+    expect(extractEmailText(html)).toBe(
+      "AT&T we’re 'q' A B &lt;tag&gt; &#0; &#55296;",
+    );
+  });
+  test("plain text bodies keep character references as written", () => {
+    const plain = [
+      "From: Ops <ops@example.com>",
+      "Subject: Escalation",
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      "Contact AT&amp;T about &lt;tag&gt; and &amp;lt;b&amp;gt;.",
+    ].join("\r\n");
+    expect(extractEmailText(plain)).toBe(
+      "Contact AT&amp;T about &lt;tag&gt; and &amp;lt;b&amp;gt;.",
+    );
+  });
+  test("a signed SES notification decodes each part in its own charset", async () => {
+    const { events, post } = harness();
+    const message = JSON.parse(notification("PASS")) as Record<string, unknown>;
+    const response = await post(
+      signed({
+        ...base,
+        Message: JSON.stringify({ ...message, content: perPartMime }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(events[0]?.payload).toMatchObject({
+      text: "The disk on db-1 is at café level.",
+    });
+  });
   test("signing certificate URLs must be HTTPS on an sns.<region>.amazonaws.com host", () => {
     expect(isSnsUrl(CERT_URL, true)).toBe(true);
     expect(
