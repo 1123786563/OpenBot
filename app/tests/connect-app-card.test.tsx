@@ -338,6 +338,50 @@ describe("the tab claimed on the click", () => {
     );
     expect(view.queryByRole("alert")).toBeNull();
   });
+
+  /*
+   * One answer on screen at a time: each attempt's ending replaces what the last one showed, so a
+   * card never offers two different explanations of where the person is supposed to go.
+   */
+  test("a bad url replaces a previous blocked-tab link, never sits beside it", async () => {
+    openSpy.mockReturnValue(null);
+    const { view } = drawCard();
+    await settle();
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    await settle();
+    expect(
+      view.getByRole("link", { name: "Open GitHub's sign-in" }),
+    ).toBeTruthy();
+    // The person gives up on the blocked tab, presses again, and this time the answer is no web
+    // address at all.
+    fireEvent.click(view.getByRole("button", { name: "Stop waiting" }));
+    await settle();
+    connectAnswer = { url: "javascript:void(0)" };
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    await settle();
+    expect(view.getByRole("alert").textContent).toContain("not a web address");
+    expect(
+      view.queryByRole("link", { name: "Open GitHub's sign-in" }),
+    ).toBeNull();
+  });
+
+  test("a blocked tab replaces a previous bad-url refusal, never sits beside it", async () => {
+    connectAnswer = { url: "javascript:void(0)" };
+    const { view } = drawCard();
+    await settle();
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    await settle();
+    expect(view.getByRole("alert").textContent).toContain("not a web address");
+    // The person presses again; the browser blocks the tab this time, and the real url is offered
+    // as a link in the refusal's place.
+    connectAnswer = { url: AUTH_URL };
+    openSpy.mockReturnValue(null);
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    await settle();
+    const link = view.getByRole("link", { name: "Open GitHub's sign-in" });
+    expect(link.getAttribute("href")).toBe(AUTH_URL);
+    expect(view.queryByRole("alert")).toBeNull();
+  });
 });
 
 describe("the poll that is the only thing allowed to say connected", () => {

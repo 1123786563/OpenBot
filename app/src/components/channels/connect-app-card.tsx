@@ -173,6 +173,9 @@ export function ConnectAppCard({
           tab?.close();
           setNeedsKey(true);
           setWaiting(false);
+          setTimedOut(false);
+          setBadUrl(false);
+          setBlockedUrl(null);
           return;
         }
         /*
@@ -185,12 +188,14 @@ export function ConnectAppCard({
           tab?.close();
           setBadUrl(true);
           setWaiting(false);
+          setTimedOut(false);
+          setBlockedUrl(null);
           return;
         }
         setWaiting(true);
         setTimedOut(false);
+        setBadUrl(false);
         if (tab) {
-          setBadUrl(false);
           setBlockedUrl(null);
           tab.location.replace(url);
         }

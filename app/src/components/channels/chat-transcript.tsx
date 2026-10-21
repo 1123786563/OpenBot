@@ -1399,15 +1399,17 @@ function ServerToolLine({ name, result }: { name: string; result?: string }) {
    * any guess made here. See REFUSAL_MARKER in server/src/plugins/tools.ts.
    */
   const answer = result === undefined ? undefined : asText(result);
-  const refused = answer?.startsWith(REFUSAL_MARKER) ?? false;
+  const refusal = refusalBody(answer, REFUSAL_MARKER);
+  const refused = refusal !== null;
   const failed = !refused && toolResultFailed(result);
   /*
    * The marker is for this component, not for the reader. Left in, a refusal reads "Blocked" in the
    * label and then "Refused." again in the first two words of the body, which is the same fact three
    * times over by the end of the sentence. Stripped here rather than on the server, because the
-   * server's copy is what the model is told and "Refused." in front of a reason is right for it.
+   * server's copy is what the model is told and "Refused." in front of a reason is right for it —
+   * and the strip is `refusalBody`, the one sequence every reader shares.
    */
-  const body = refused ? answer?.slice(REFUSAL_MARKER.length).trim() : answer;
+  const body = refusal ?? answer;
   // A Team Bot asking to use this person's own account draws its consent card, not the sentence.
   const consent = refused ? readTeamBotConsent(body) : null;
   if (consent) return <TeamBotConsentCard {...consent} />;
