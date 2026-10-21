@@ -116,6 +116,22 @@ export type RunAssertion = {
   initiator?: AuditInitiator;
   /** The durable handoff claim under which a remote delivery may coordinate further work. */
   handoff?: { key: string; owner: string };
+  /**
+   * The enterprise execution ownership this run was admitted under (MT049, Issue #92).
+   *
+   * HERE RATHER THAN IN A HEADER OR THE REQUEST BODY, for the same reason `threadId` is: a framework
+   * Bot calls a tool back from a different process, and the company/team a run belongs to has to
+   * cross that boundary as the deployment's own signed statement, not as anything the caller could
+   * pick. Both halves travel together or neither does — a half pair is refused on read, never
+   * repaired with a default.
+   *
+   * Optional because a personal deployment mints assertions with no ownership at all, and an
+   * assertion minted before this existed still reads. Enterprise consumers do not accept an
+   * attribution-less assertion as one of theirs: requiring it is MT049's adapter-side discipline
+   * (`resolveAgentAdapterCallback` in enterprise/tenancy/agent-adapters.ts), not a change to every
+   * reader at once.
+   */
+  ownership?: { tenantId: string; workspaceId: string };
 };
 
 type SignedRun = RunAssertion & { exp: number };
@@ -181,6 +197,22 @@ export function readRunAssertion(
         !payload.handoff.owner)
     )
       return null;
+    // An ownership half-pair is not a mangling to read leniently: one of two
+    // identifiers names no scope any consumer could check against, and a
+    // default would quietly re-attach the call to the wrong company or team.
+    if (payload.ownership !== undefined) {
+      const tenantId = (payload.ownership as { tenantId?: unknown })?.tenantId;
+      const workspaceId = (payload.ownership as { workspaceId?: unknown })
+        ?.workspaceId;
+      if (
+        typeof tenantId !== "string" ||
+        !tenantId ||
+        typeof workspaceId !== "string" ||
+        !workspaceId
+      )
+        return null;
+      payload.ownership = { tenantId, workspaceId };
+    }
     return {
       botId: payload.botId,
       actorId: payload.actorId,
@@ -204,6 +236,7 @@ export function readRunAssertion(
       // minted before this existed carries none, and a person is what those runs were.
       initiator: readInitiator(payload.initiator),
       ...(payload.handoff ? { handoff: payload.handoff } : {}),
+      ...(payload.ownership ? { ownership: payload.ownership } : {}),
     };
   } catch {
     return null;

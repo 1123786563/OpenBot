@@ -31,14 +31,18 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { Database } from "../db/client";
+import { derivedJudgmentCandidates } from "../db/schema/hindsight-judgments";
 import { genericPersonalPreferences } from "../db/schema/hindsight-preferences";
 import { sourceBoundMemories } from "../db/schema/hindsight-source-bound";
 import { hindsightSyncWork } from "../db/schema/hindsight-sync";
 import {
   backgroundTaskBankScope,
+  botBankFor,
   type HindsightBankGrant,
   type HindsightBankScope,
   mintBankScopeAssertion,
+  sourceBankFor,
+  teamBankFor,
   userBankFor,
 } from "./bank-scope";
 import type { PreferenceRecallServiceConfig } from "./preference-recall";
@@ -49,7 +53,10 @@ import {
 } from "./scoped-recall";
 
 /** The subjects this queue drains; one authority table per type. */
-export type SyncSubjectType = "preference" | "source_bound";
+export type SyncSubjectType =
+  | "preference"
+  | "source_bound"
+  | "derived_judgment";
 
 /** What a confirm/edit/correction hands the queue; structural, so both services satisfy it. */
 export interface HindsightSyncWorkRecorder {
@@ -125,17 +132,27 @@ export function isUniqueViolation(error: unknown): boolean {
   return false;
 }
 
-/** The authority rows this queue reads, unified over the two subject tables. */
+/**
+ * The authority rows this queue reads, unified over the subject tables. A judgment row's
+ * review state additionally covers 'rejected' and 'expired' (#389) — neither is ever sent,
+ * which the confirmed-or-edited gate below decides, not the type.
+ */
 type AuthorityRow = {
+  tenantId: string;
   principalId: string;
   content: string;
-  reviewState: "unreviewed" | "confirmed" | "edited";
+  reviewState: "unreviewed" | "confirmed" | "edited" | "rejected" | "expired";
   enabled: boolean;
   deletedAt: Date | null;
   hindsightDocumentId: string;
   syncedContentDigest: string | null;
   syncedAt: Date | null;
   updatedAt: Date;
+  /** Judgment rows only: which scope's bank the row belongs in. */
+  scopeKind?: "general" | "team" | "source" | "bot";
+  workspaceId?: string | null;
+  sourceId?: string | null;
+  agentId?: string | null;
 };
 
 type WorkRow = typeof hindsightSyncWork.$inferSelect;
@@ -303,6 +320,19 @@ export function createHindsightSyncQueue(
     if (subjectType === "preference") {
       return loadPreference(tenantId, subjectId);
     }
+    if (subjectType === "derived_judgment") {
+      const [row] = await database
+        .select()
+        .from(derivedJudgmentCandidates)
+        .where(
+          and(
+            eq(derivedJudgmentCandidates.tenantId, tenantId),
+            eq(derivedJudgmentCandidates.id, subjectId),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
+    }
     const row = await loadSourceBoundRow(tenantId, subjectId);
     return row;
   }
@@ -446,6 +476,18 @@ export function createHindsightSyncQueue(
         );
       return;
     }
+    if (subjectType === "derived_judgment") {
+      await database
+        .update(derivedJudgmentCandidates)
+        .set({ syncedContentDigest: digest, syncedAt: now(), updatedAt: now() })
+        .where(
+          and(
+            eq(derivedJudgmentCandidates.tenantId, tenantId),
+            eq(derivedJudgmentCandidates.id, subjectId),
+          ),
+        );
+      return;
+    }
     await database
       .update(sourceBoundMemories)
       .set({ syncedContentDigest: digest, syncedAt: now(), updatedAt: now() })
@@ -480,9 +522,10 @@ export function createHindsightSyncQueue(
     if (
       row.deletedAt !== null ||
       !row.enabled ||
-      row.reviewState === "unreviewed"
+      (row.reviewState !== "confirmed" && row.reviewState !== "edited")
     ) {
-      // Only confirmed, un-paused, un-forgotten content is ever sent.
+      // Only confirmed/edited, un-paused, un-forgotten content is ever sent. For judgments
+      // (#389) this also buries rejected and expired rows: their pending work is done.
       await finishWork(work, "done", null);
       return "nothingToDo";
     }
@@ -528,8 +571,9 @@ export function createHindsightSyncQueue(
 
   /**
    * The bank this row's content belongs in, derived from the row's own attribution. A
-   * source-bound row's restriction is re-authorized HERE — at task time — and an
-   * unauthorized restriction defers the work (it is never sent while unauthorized).
+   * source-bound row's restriction — and a judgment row's scope (#389) — is re-authorized
+   * HERE, at task time, and an unauthorized scope defers the work (it is never sent while
+   * unauthorized).
    */
   async function bankFor(
     subjectType: SyncSubjectType,
@@ -541,6 +585,61 @@ export function createHindsightSyncQueue(
       return {
         grant: { id: userBankFor(row.principalId), kind: "user" },
       };
+    }
+    if (subjectType === "derived_judgment") {
+      const authorizations = options.authorizations;
+      if (!authorizations) {
+        return {
+          deferred: true,
+          reason: "no authorization store configured for judgment work",
+        };
+      }
+      const scopeKind = row.scopeKind ?? "general";
+      if (scopeKind === "general") {
+        return {
+          grant: { id: userBankFor(row.principalId), kind: "user" },
+        };
+      }
+      if (scopeKind === "team") {
+        const active = await authorizations.workspaceMembershipActive(
+          row.tenantId,
+          row.principalId,
+          row.workspaceId ?? "",
+        );
+        if (!active) {
+          return {
+            deferred: true,
+            reason: "team scope not currently authorized",
+          };
+        }
+        return {
+          grant: { id: teamBankFor(row.workspaceId ?? ""), kind: "team" },
+        };
+      }
+      if (scopeKind === "source") {
+        const sources = await authorizations.enabledSourceIds(
+          row.tenantId,
+          row.principalId,
+        );
+        if (!sources.includes(row.sourceId ?? "")) {
+          return {
+            deferred: true,
+            reason: "source scope not currently authorized",
+          };
+        }
+        return {
+          grant: { id: sourceBankFor(row.sourceId ?? ""), kind: "source" },
+        };
+      }
+      const authorized = await authorizations.botAuthorized(
+        row.tenantId,
+        row.principalId,
+        row.agentId ?? "",
+      );
+      if (!authorized) {
+        return { deferred: true, reason: "bot scope not currently authorized" };
+      }
+      return { grant: { id: botBankFor(row.agentId ?? ""), kind: "bot" } };
     }
     const bound = row as SourceBoundRecordRow;
     const authorizations = options.authorizations;
