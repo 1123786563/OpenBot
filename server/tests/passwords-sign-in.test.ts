@@ -811,6 +811,47 @@ describe("a sign-in that is being entered", () => {
     ).rejects.toThrow(/no longer open/);
     expect(context.computer.fills).toEqual([]);
   });
+
+  test("a row closed under the login attempt takes no failed audit its state contradicts", async () => {
+    const context = setup({ fill: { passwordFieldVisible: true } });
+    const request = await context.service.request({
+      ownerUserId: "owner",
+      botId: "bot",
+      site: "example.com",
+      actor,
+    });
+    const inner = context.computer.gateway.signIn.bind(
+      context.computer.gateway,
+    );
+    // Another writer closes the row under the attempt — the CAS an expired lease's landing or a
+    // concurrent takeover uses — so the refusal the site is about to answer with has no open row
+    // to reopen.
+    context.computer.gateway.signIn = async (botId, input) => {
+      await context.store.transition("owner", request.id, ["filling"], {
+        status: "failed",
+        outcome: "Closed while the login was being entered.",
+        resolvedAt: new Date(),
+      });
+      return inner(botId, input);
+    };
+    await expect(
+      context.service.submit("owner", request.id, actor, {
+        username: USERNAME,
+        password: PASSWORD,
+      }),
+    ).rejects.toThrow(/password field/);
+    // The concurrent close keeps the row: this attempt's failure did not reopen it.
+    expect((await context.store.request("owner", request.id))?.status).toBe(
+      "failed",
+    );
+    // And nothing failed is audited: the row's own ending is the trail's answer, and a
+    // `sign_in_failed` written past it would contradict the state it claims to describe.
+    expect(
+      context.trail.rows.some(
+        (row) => row.eventType === "computer.sign_in_failed",
+      ),
+    ).toBe(false);
+  });
 });
 
 /*
@@ -942,6 +983,35 @@ describe("a verification code the site asks for after the password", () => {
     });
     expect(done.status).toBe("signed_in");
     expect(computer.codes).toHaveLength(1);
+  });
+
+  test("a row closed under the code attempt takes no failed audit its state contradicts", async () => {
+    const { service, request, store, trail, computer } = await withCodeStep({
+      fill: { codeRequested: true },
+      code: { codeFieldVisible: true },
+    });
+    const inner = computer.gateway.signInCode.bind(computer.gateway);
+    // Another writer closes the row under the attempt — the CAS an expired lease's landing or a
+    // concurrent takeover uses — so the refusal the site is about to answer with has no open row
+    // to reopen.
+    computer.gateway.signInCode = async (botId, input) => {
+      await store.transition("owner", request.id, ["filling"], {
+        status: "failed",
+        outcome: "Closed while the code was being entered.",
+        resolvedAt: new Date(),
+      });
+      return inner(botId, input);
+    };
+    await expect(
+      service.submitCode("owner", request.id, actor, { code: CODE }),
+    ).rejects.toThrow(/did not accept that code/);
+    // The concurrent close keeps the row: this attempt's failure did not reopen it.
+    expect((await store.request("owner", request.id))?.status).toBe("failed");
+    // And nothing failed is audited: the row's own ending is the trail's answer, and a
+    // `sign_in_failed` written past it would contradict the state it claims to describe.
+    expect(
+      trail.rows.some((row) => row.eventType === "computer.sign_in_failed"),
+    ).toBe(false);
   });
 
   test("a code is only taken from a request the site has brought to the code step", async () => {

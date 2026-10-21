@@ -123,7 +123,8 @@
     "keyModeLink": "到 {{title}} 的页面填写",
     "thenAskAgain": "，然后再发起一次。",
     "connected": "{{title}} 已连接。再次发起，Bot 即可使用它。",
-    "error": "无法连接 {{title}}。"
+    "error": "无法连接 {{title}}。",
+    "badUrl": "{{title}} 返回的授权地址不是此卡片可打开的网页地址。"
   },
   "consent": {
     "skipped": "已跳过。未使用你的任何内容。",

@@ -1,4 +1,9 @@
-import { afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import {
   type CapabilityRow,
   DEFAULT_CAPABILITIES,
@@ -426,6 +431,26 @@ describe("scrubbing commands", () => {
       "sshpass -P authprompt -p glorbwibble ssh deploy@host.example.test",
       "sshpass -P authprompt -p [REDACTED] ssh deploy@host.example.test",
     ],
+    // The env form sshpass itself recommends over `-p`: the password is in the assignment, `-e`
+    // carries no value of its own, and SSHPASS names no full word the NAME=value rules match.
+    [
+      "SSHPASS=glorbwibble sshpass -e ssh deploy@host.example.test",
+      "SSHPASS=[REDACTED] sshpass -e ssh deploy@host.example.test",
+    ],
+    [
+      "SSHPASS='glorb wibble' sshpass -e ssh deploy@host.example.test",
+      "SSHPASS=[REDACTED] sshpass -e ssh deploy@host.example.test",
+    ],
+    // docker's grammar puts global options between the command and its subcommand; a registry
+    // password behind them is still a password.
+    [
+      "docker -H tcp://registry.example:2375 login -p glorbwibble",
+      "docker -H tcp://registry.example:2375 login -p [REDACTED]",
+    ],
+    [
+      "docker --context prod login -p glorbwibble",
+      "docker --context prod login -p [REDACTED]",
+    ],
     ["redis-cli -a glorbwibble ping", "redis-cli -a [REDACTED] ping"],
     ["redis-cli -aglorbwibble ping", "redis-cli -a[REDACTED] ping"],
     ["redis-cli --pass glorbwibble ping", "redis-cli --pass [REDACTED] ping"],
@@ -459,6 +484,18 @@ describe("scrubbing commands", () => {
       "sshpass -P authprompt ssh deploy@host.example.test",
       "sshpass -P authprompt ssh deploy@host.example.test",
     ],
+    // An env assignment whose name merely begins with the same letters is not sshpass's to read,
+    // and a global option does not turn a neighbour subcommand into a login: `ps` stays a process
+    // list, and `run`'s own `-p` is a port mapping, not docker's registry password.
+    [
+      "SSHPASS_FILE=/run/secrets/ssh sshpass -e ssh deploy@host.example.test",
+      "SSHPASS_FILE=/run/secrets/ssh sshpass -e ssh deploy@host.example.test",
+    ],
+    [
+      "docker -H tcp://registry.example:2375 ps -p 8080:80",
+      "docker -H tcp://registry.example:2375 ps -p 8080:80",
+    ],
+    ["docker run login -p 8080:80 nginx", "docker run login -p 8080:80 nginx"],
     [
       "wget -U Mozilla:5 https://example.test",
       "wget -U Mozilla:5 https://example.test",

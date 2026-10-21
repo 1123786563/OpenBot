@@ -18,6 +18,26 @@ const POLL_MS = 2_000;
 const WAIT_LIMIT_MS = 5 * 60 * 1_000;
 
 /**
+ * The authorization url, only when it is a web address a tab may be sent to.
+ *
+ * THE ANSWER CROSSES A TRUST BOUNDARY the click did not: it is whatever the broker (or a catalogue
+ * entry) answered with, and the tab this card claimed was opened with this app's own origin — so a
+ * `javascript:` answer would run here, as this app. Every other external href the transcript
+ * renders is checked the same way, and the catalogue and broker paths both answer https, so the
+ * check costs nothing honest.
+ */
+function webUrl(candidate: string): string | null {
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? candidate
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * A connections row plus the revoked flag the card refuses success on.
  *
  * The row type the connections list declares carries no `revoked` today, and the absent field must
@@ -62,6 +82,8 @@ export function ConnectAppCard({
   const [waiting, setWaiting] = useState(false);
   /** This app takes a key somebody types, so there is no page to send them to. */
   const [needsKey, setNeedsKey] = useState(false);
+  /** The answer was no web address, so there was nowhere this card could send anyone. */
+  const [badUrl, setBadUrl] = useState(false);
   /** The authorization url, when the browser refused to open the tab holding it. */
   const [blockedUrl, setBlockedUrl] = useState<string | null>(null);
   /** The wait ran its full limit with no row to show for it. */
@@ -153,14 +175,27 @@ export function ConnectAppCard({
           setWaiting(false);
           return;
         }
+        /*
+         * Not a web address is not a place this card sends anyone, whatever answered with it: the
+         * claimed tab is closed and the person is told, the same shape a failed start takes. The
+         * url is never rendered either — the blocked-tab fallback below exists for a real page.
+         */
+        const url = webUrl(authorizationUrl);
+        if (!url) {
+          tab?.close();
+          setBadUrl(true);
+          setWaiting(false);
+          return;
+        }
         setWaiting(true);
         setTimedOut(false);
         if (tab) {
+          setBadUrl(false);
           setBlockedUrl(null);
-          tab.location.replace(authorizationUrl);
+          tab.location.replace(url);
         }
         // The tab was blocked. The url is still good, so offer it as something to click.
-        else setBlockedUrl(authorizationUrl);
+        else setBlockedUrl(url);
       },
       onError: () => tab?.close(),
     });
@@ -234,6 +269,11 @@ export function ConnectAppCard({
               {connect.error instanceof Error
                 ? connect.error.message
                 : t("connectCard.error", { title })}
+            </p>
+          ) : null}
+          {badUrl ? (
+            <p className="text-destructive" role="alert">
+              {t("connectCard.badUrl", { title })}
             </p>
           ) : null}
         </div>

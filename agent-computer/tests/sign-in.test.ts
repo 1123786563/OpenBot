@@ -169,6 +169,26 @@ beforeAll(async () => {
           }, 2500);
         </script>`);
       }
+      // A refusal the site draws late: the wrong password is answered with a transition state
+      // first, and the login page comes back only after the fill has already looked and moved on.
+      if (url.pathname === "/login-slow-refuse")
+        return page(`<form method="post" action="/slow-refuse">
+          <label>Email <input name="email" type="email"></label>
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>`);
+      if (url.pathname === "/slow-refuse" && request.method === "POST") {
+        const form = await request.formData();
+        if (form.get("password") === PASSWORD)
+          return Response.redirect(`${origin}/home`, 303);
+        return page(`<p>Checking your sign-in…</p><script>
+          setTimeout(() => {
+            document.body.insertAdjacentHTML("beforeend",
+              \`<form method="post" action="/slow-refuse">
+                <input name="email" type="email"><input name="password" type="password">
+                <button>Sign in</button></form>\`);
+          }, 2500);
+        </script>`);
+      }
       // A site that moves the code step to another origin entirely.
       if (url.pathname === "/login-cross")
         return page(`<form method="post" action="${otherOrigin}/cross-code">
@@ -291,6 +311,24 @@ describe.skipIf(!asked)("typing a login", () => {
     });
     expect(result.submitted).toBe(true);
     expect(result.passwordFieldVisible).toBe(true);
+    await tab.close();
+  });
+
+  test("a refusal the site draws late is still the answer after the grace wait", async () => {
+    // The wrong password is answered with a transition state: no password field and no code field
+    // when the fill first looks. Two seconds later the site has redrawn its login form, and it is
+    // the re-sampled page — not what the transition state looked like — the answer reads. Reading
+    // the stale silence instead would report the login as accepted, and the server would act on a
+    // session the site refused.
+    const tab = await open("/login-slow-refuse");
+    const result = await fillSignIn(tab, {
+      origin,
+      username: "a@example.test",
+      password: "wrong-one",
+    });
+    expect(result.submitted).toBe(true);
+    expect(result.passwordFieldVisible).toBe(true);
+    expect(result.codeRequested).toBe(false);
     await tab.close();
   });
 

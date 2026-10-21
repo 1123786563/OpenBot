@@ -62,7 +62,10 @@ import {
 import { readTeamBotConsent } from "@/lib/team-bots";
 import { cn } from "@/lib/utils";
 import { VOICE_CHAT_ACTIVITY, type VoiceChatEntry } from "@/lib/voice/archive";
-import { readConnectPrompt } from "../../../../shared/connect-prompt";
+import {
+  readConnectPrompt,
+  refusalBody,
+} from "../../../../shared/connect-prompt";
 import {
   attachmentModality,
   type SentAttachment,
@@ -1437,16 +1440,16 @@ function ServerToolLine({ name, result }: { name: string; result?: string }) {
  * the tool result arrives JSON-encoded and addressed to the model, so it starts with quotes and
  * `Refused.`, while the codec only recognises text that STARTS with its marker — handing it over
  * unstripped would make every card silently undrawable, which is the one failure this seam exists
- * to prevent. Fail-closed on purpose: a refusal the codec does not fully recognise is drawn as the
- * text it is, which is also what a client without the card would show.
+ * to prevent. The strip itself is `refusalBody`, the one sequence the fold and every reader share.
+ * Fail-closed on purpose: a refusal the codec does not fully recognise is drawn as the text it is,
+ * which is also what a client without the card would show.
  *
  * Exported so the fail-closed half can be pinned without mounting anything.
  */
 export function connectPromptOf(result: string | undefined) {
   if (result === undefined) return null;
-  const answer = asText(result);
-  if (!answer.startsWith(REFUSAL_MARKER)) return null;
-  return readConnectPrompt(answer.slice(REFUSAL_MARKER.length).trim());
+  const body = refusalBody(asText(result), REFUSAL_MARKER);
+  return body === null ? null : readConnectPrompt(body);
 }
 
 /**

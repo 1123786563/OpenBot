@@ -11,7 +11,10 @@ import {
   toolResultFailed,
 } from "@/lib/plugins/tool-result";
 import { readTeamBotConsent } from "@/lib/team-bots";
-import { readConnectPrompt } from "../../../../shared/connect-prompt";
+import {
+  readConnectPrompt,
+  refusalBody,
+} from "../../../../shared/connect-prompt";
 import { researchRoleOfTool } from "../../../../shared/research";
 import {
   browserStepDetails,
@@ -87,15 +90,17 @@ function foldable(item: ToolItem): boolean {
  * Both of these draw a card with something to press — a Team Bot asking to act as them, and an app
  * they have not connected — and neither may sit behind a fold for the same reason: a question
  * nobody can see is a conversation that has stopped without saying so. The envelope comes off the
- * same way `chat-transcript`'s `connectPromptOf` takes it off: the result arrives JSON-encoded and
- * addressed to the model, and the markers only recognise text that starts with them.
+ * one way every reader takes it off (`refusalBody`, the strip `chat-transcript`'s
+ * `connectPromptOf` also reads): the result arrives JSON-encoded and addressed to the model, and
+ * the markers only recognise text that starts with them.
  */
 function asksThePerson(result: string | undefined): boolean {
   if (result === undefined) return false;
-  const answer = asText(result);
-  if (!answer.startsWith(REFUSAL_MARKER)) return false;
-  const body = answer.slice(REFUSAL_MARKER.length).trim();
-  return readTeamBotConsent(body) !== null || readConnectPrompt(body) !== null;
+  const body = refusalBody(asText(result), REFUSAL_MARKER);
+  return (
+    body !== null &&
+    (readTeamBotConsent(body) !== null || readConnectPrompt(body) !== null)
+  );
 }
 
 /**
@@ -219,11 +224,13 @@ export function stepDetails(step: ToolItem): StepDetails {
   /*
    * The same reading `ServerToolLine` does: the result arrives JSON-encoded, a refusal carries the
    * server's marker rather than a guessed wording, and everything else is the vendor's answer —
-   * which the group shows through `forDisplay` when it is drawn, untrusted envelope and all.
+   * which the group shows through `forDisplay` when it is drawn, untrusted envelope and all. The
+   * marker strip is `refusalBody`, the one sequence every reader shares.
    */
   const answer = step.result === undefined ? undefined : asText(step.result);
-  const refused = answer?.startsWith(REFUSAL_MARKER) ?? false;
-  const body = refused ? answer?.slice(REFUSAL_MARKER.length).trim() : answer;
+  const refusal = refusalBody(answer, REFUSAL_MARKER);
+  const refused = refusal !== null;
+  const body = refusal ?? answer;
   const [, server = ""] = name.split("__");
   /*
    * A research step is its role first: the label is the role's, the detail is what it acted on,

@@ -905,23 +905,6 @@ const reachedAsFor = (access: ServerAccess, actorId: string): string =>
     : DEPLOYMENT_ACTOR;
 
 /**
- * Where this server actually is, when the stored row and the catalogue disagree.
- *
- * `mcp_servers.url` is written once, when a server is added, by copying what the catalogue said at
- * the time. That makes it a cache of a reviewed decision — and a cache nothing invalidates. Moving
- * Google Drive from its preview MCP host to its GA REST host changed the catalogue and left every
- * deployment that had already added Drive calling the old address, with no way to tell from any
- * screen: the row looks exactly as intentional as it did the day it was written.
- *
- * So for an entry with a PINNED host, the catalogue wins. It is the reviewed source contract, and a
- * host it no longer names is a host this deployment has decided not to talk to. Editing the
- * catalogue is the act of changing where a first-party server is, and it should take effect.
- *
- * The stored value still wins for the two cases where it is the only truth: a custom server an
- * administrator added by URL, which has no entry at all, and a per-instance vendor whose `host` is
- * null because the customer's own hostname is the answer.
- */
-/**
  * The header a deployment's token goes out in, when that is not the default.
  *
  * THE TRI-STATE IS THE POINT. `tokenHeaderFor` in the catalogue answers "which header name
@@ -940,6 +923,23 @@ function deploymentTokenHeader(
     : undefined;
 }
 
+/**
+ * Where this server actually is, when the stored row and the catalogue disagree.
+ *
+ * `mcp_servers.url` is written once, when a server is added, by copying what the catalogue said at
+ * the time. That makes it a cache of a reviewed decision — and a cache nothing invalidates. Moving
+ * Google Drive from its preview MCP host to its GA REST host changed the catalogue and left every
+ * deployment that had already added Drive calling the old address, with no way to tell from any
+ * screen: the row looks exactly as intentional as it did the day it was written.
+ *
+ * So for an entry with a PINNED host, the catalogue wins. It is the reviewed source contract, and a
+ * host it no longer names is a host this deployment has decided not to talk to. Editing the
+ * catalogue is the act of changing where a first-party server is, and it should take effect.
+ *
+ * The stored value still wins for the two cases where it is the only truth: a custom server an
+ * administrator added by URL, which has no entry at all, and a per-instance vendor whose `host` is
+ * null because the customer's own hostname is the answer.
+ */
 function effectiveUrl(
   row: { id: string; url: string },
   entry: CatalogueEntry | null,

@@ -290,6 +290,54 @@ describe("the tab claimed on the click", () => {
     await settle();
     expect(connectPosts).toBe(2);
   });
+
+  /*
+   * The authorization url is outside data — a broker's answer this tab, opened with this app's own
+   * origin, is one `javascript:` away from executing. The same scheme check every other external
+   * href in the transcript gets, applied before anything navigates or renders.
+   */
+  test("a javascript: url navigates nothing: the tab closes and the card says so", async () => {
+    connectAnswer = {
+      url: "javascript:fetch('/api/admin', { method: 'DELETE' })",
+    };
+    const { view } = drawCard();
+    await settle();
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    await settle();
+    expect(openedTab.navigated).toBeUndefined();
+    expect(openedTab.closed).toBe(true);
+    expect(view.getByRole("alert").textContent).toContain("not a web address");
+    // The blocked-tab fallback is for a real page: no href carries the refused url either.
+    expect(
+      view.queryByRole("link", { name: "Open GitHub's sign-in" }),
+    ).toBeNull();
+  });
+
+  test("an answer that is no url at all takes the same refusal", async () => {
+    connectAnswer = { url: "not a web address" };
+    const { view } = drawCard();
+    await settle();
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    await settle();
+    expect(openedTab.navigated).toBeUndefined();
+    expect(openedTab.closed).toBe(true);
+    expect(view.getByRole("alert").textContent).toContain("not a web address");
+    expect(
+      view.queryByRole("link", { name: "Open GitHub's sign-in" }),
+    ).toBeNull();
+  });
+
+  test("an http authorization url still opens: the check is the scheme, not the tls", async () => {
+    connectAnswer = { url: "http://auth.vendor.example/oauth/authorize" };
+    const { view } = drawCard();
+    await settle();
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    await settle();
+    expect(openedTab.navigated).toBe(
+      "http://auth.vendor.example/oauth/authorize",
+    );
+    expect(view.queryByRole("alert")).toBeNull();
+  });
 });
 
 describe("the poll that is the only thing allowed to say connected", () => {

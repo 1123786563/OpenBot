@@ -123,7 +123,8 @@
     "keyModeLink": "Enter it on {{title}}'s page",
     "thenAskAgain": ", then ask again.",
     "connected": "{{title}} is connected. Ask again and the Bot can use it.",
-    "error": "Could not connect {{title}}."
+    "error": "Could not connect {{title}}.",
+    "badUrl": "The sign-in page {{title}} answered with is not a web address this card can open."
   },
   "consent": {
     "skipped": "Skipped. Nothing of yours was used.",

@@ -63,9 +63,13 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
     /(\bmysql(?:dump)?\b(?:[^|;&\\\r\n]|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p)("[^"]*"|'[^']*'|[^\s'"-]\S*)/g,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
-  // `docker login -p secret`, where `-p` is the password rather than a port.
+  // `docker login -p secret`, where `-p` is the password rather than a port. docker's grammar puts
+  // global options between the command and its subcommand (`docker -H tcp://… login`), so a flag —
+  // and that flag's own value, a word that does not start with `-` — may sit in between. A
+  // subcommand cannot: `run` is not a flag, which is what keeps `docker run login -p 8080:80` a
+  // port mapping instead of a registry password.
   [
-    /(\bdocker(?:[ \t]|\\\r?\n)+login\b(?:[^|;&\\\r\n]|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p[ \t]*)("[^"]*"|'[^']*'|[^\s'"-]\S*)/gi,
+    /(\bdocker(?:(?:[ \t]|\\\r?\n)+-[^\s]+(?:[ \t]+[^\s-]\S*)?)*?(?:[ \t]|\\\r?\n)+login\b(?:[^|;&\\\r\n]|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p[ \t]*)("[^"]*"|'[^']*'|[^\s'"-]\S*)/gi,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `sshpass -p secret ssh user@host`, where `-p` is the password handed to ssh. Only sshpass's own
@@ -73,6 +77,14 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // wraps keeps its `-p` and `-P`, which are ports. Case matters here: `-P` is sshpass's prompt.
   [
     /(\bsshpass(?:(?:[ \t]|\\\r?\n)+(?:-[fdP][ \t]*(?:"[^"]*"|'[^']*'|[^\s'"-]\S*)|-[^\sp]\S*))*?(?:[ \t]|\\\r?\n)+-p[ \t]*)("[^"]*"|'[^']*'|[^\s'"-]\S*)/g,
+    (_m, lead) => `${lead}${REDACTED}`,
+  ],
+  // `SSHPASS=secret sshpass -e ssh host`: the env form sshpass itself recommends over `-p`, because
+  // the password stays out of the process list. `-e` carries no value of its own — the assignment in
+  // front is the secret — and SSHPASS names no full word the NAME=value rule matches (no
+  // PASSWORD/PASSWD/PWD inside it), so without this rule the password survives verbatim.
+  [
+    /(\bSSHPASS\s*=\s*)("[^"]*"|'[^']*'|[^\s'"]+)/g,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `redis-cli -a secret`, `-asecret` and `--pass secret`, the same shape under redis-cli's names.

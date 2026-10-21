@@ -300,12 +300,15 @@ export async function fillSignIn(
     // A password field still showing is a refused login; the server says so. Only past that is a
     // code field the site asking for a second step. The code field is looked for first, so one a
     // site draws as a password input is not mistaken for the login's own, and is then given a
-    // moment to appear.
+    // moment to appear. Both readings are taken again once it has: the re-render the wait exists
+    // for can bring the password field back as easily as bring a code field in, and a refusal
+    // judged from the transition state's silence would tell the server the login went through.
     let codeRequested = await page.evaluate(markCodeField, LOGIN_ATTRIBUTE);
-    const refused = await passwordVisible(page);
+    let refused = await passwordVisible(page);
     if (!codeRequested && !refused) {
       await page.waitForTimeout(2_000);
       codeRequested = await page.evaluate(markCodeField, LOGIN_ATTRIBUTE);
+      refused = await passwordVisible(page);
     }
     if (codeRequested && originOfUrl(page.url()) !== input.origin)
       return answer(

@@ -154,3 +154,27 @@ export function readConnectPrompt(
     return null;
   }
 }
+
+/**
+ * The sentence a refusal carries after the marker, or null when this is no refusal.
+ *
+ * ONE STRIP, EVERY READER. A refused tool result reaches the transcript wearing an envelope — the
+ * marker in front, the sentence after it, padding a vendor's formatting may have added — and two
+ * different questions are asked of it: whether it is a question for the person (the fold's
+ * judgement) and what the card it carries says (the rendering). Each used to take the envelope off
+ * by hand, and hands drift; this is the one sequence all of them read, so a refusal cannot be one
+ * thing to the fold and another to the card.
+ *
+ * The marker itself stays a declared-at-both-ends constant, like `CONNECT_APP_MARKER` above is for
+ * this file's own wire: each caller passes the copy its side of the wire declared, and the text
+ * its decoder has already unwrapped. Anything that does not start with the marker — a plain
+ * result, or a vendor's sentence that merely contains it — answers null, fail-closed the same way
+ * {@link readConnectPrompt} is.
+ */
+export function refusalBody(
+  result: string | undefined,
+  marker: string,
+): string | null {
+  if (result === undefined || !result.startsWith(marker)) return null;
+  return result.slice(marker.length).trim();
+}

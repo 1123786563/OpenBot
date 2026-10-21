@@ -3,6 +3,7 @@ import {
   CONNECT_APP_MARKER,
   connectAppRefusal,
   readConnectPrompt,
+  refusalBody,
   type ConnectPrompt,
 } from "./connect-prompt";
 
@@ -194,5 +195,46 @@ describe("a text that is not a refusal this server wrote", () => {
     })} ${" ".repeat(9_000)}m`;
     expect(bloated.length - CONNECT_APP_MARKER.length).toBeGreaterThan(8_192);
     expect(readConnectPrompt(bloated)).toBeNull();
+  });
+});
+
+/*
+ * The envelope a refusal rides in on the way to the transcript, and the one strip every reader of
+ * that envelope shares. `refusalBody` is what the fold's judgement (does this result ask the person
+ * something?) and the card's rendering both call, so one sequence — marker at the start, sentence
+ * after it, trimmed — is the only sequence there is. The marker itself stays a declared-at-both-
+ * ends constant; each caller passes the copy its side of the wire declared.
+ */
+describe("refusalBody, the one envelope-strip every reader shares", () => {
+  // Byte-for-byte the app side's REFUSAL_MARKER; a literal here because a shared test reading one
+  // side's declaration would make that side the contract for both.
+  const MARKER = "Refused.";
+
+  test("the sentence after the marker, trimmed, is what a caller gets", () => {
+    expect(refusalBody("Refused.   the reason  ", MARKER)).toBe("the reason");
+    expect(refusalBody(`Refused. ${connectAppRefusal(prompt)}`, MARKER)).toBe(
+      connectAppRefusal(prompt),
+    );
+  });
+
+  test("answers null for no result, a plain result, and a marker that is not at the start", () => {
+    expect(refusalBody(undefined, MARKER)).toBeNull();
+    expect(
+      refusalBody("The workspace policy does not allow that.", MARKER),
+    ).toBeNull();
+    // Fail-closed, the same as the codec: a vendor's text that merely contains the marker is not
+    // a refusal this deployment wrote.
+    expect(
+      refusalBody(`The vendor said: Refused. see their docs.`, MARKER),
+    ).toBeNull();
+  });
+
+  test("a refusal the codec accepts survives the strip unchanged", () => {
+    // The fold asks `refusalBody` and the card asks `readConnectPrompt`; this is the two of them
+    // composing on one refusal, which is the drift the shared strip exists to make impossible.
+    const refusal = `Refused. ${connectAppRefusal(prompt)}`;
+    expect(readConnectPrompt(refusalBody(refusal, MARKER) ?? "")).toEqual(
+      prompt,
+    );
   });
 });

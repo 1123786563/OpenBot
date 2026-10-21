@@ -403,14 +403,25 @@ export function createSignInService(deps: SignInServiceDependencies) {
         outcome: failure,
         ...(back === "pending" ? { method: null } : {}),
       });
-      await audit("computer.sign_in_failed", actor, "computer", claimed.botId, {
-        bot: claimed.botId,
-        request: id,
-        site: claimed.origin,
-        ...(claimed.method ? { method: claimed.method } : {}),
-        step: "code",
-        failure,
-      });
+      // Only a transition that landed is this attempt's failure to record. A row closed under the
+      // attempt — a concurrent close, a lease that expired into failed — keeps its own ending, and
+      // an audit written past it would contradict the state the trail is supposed to match. The
+      // same gate landUnknown applies.
+      if (reopened)
+        await audit(
+          "computer.sign_in_failed",
+          actor,
+          "computer",
+          claimed.botId,
+          {
+            bot: claimed.botId,
+            request: id,
+            site: claimed.origin,
+            ...(claimed.method ? { method: claimed.method } : {}),
+            step: "code",
+            failure,
+          },
+        );
       throw new SignInRefusedError(failure, reopened ? 409 : 400);
     }
     const page = result?.url ? scrub(result.url, [code]) : undefined;
@@ -522,15 +533,26 @@ export function createSignInService(deps: SignInServiceDependencies) {
         fillingUntil: null,
         outcome: failure,
       });
-      await audit("computer.sign_in_failed", actor, "computer", claimed.botId, {
-        bot: claimed.botId,
-        request: id,
-        site: claimed.origin,
-        method,
-        step: "login",
-        ...(extra.loginId ? { savedLogin: extra.loginId } : {}),
-        failure,
-      });
+      // Only a transition that landed is this attempt's failure to record: a row closed under the
+      // attempt (a concurrent close, a lease that expired into failed) keeps its own ending, and
+      // an audit written past it would contradict the state the trail is supposed to match. The
+      // same gate enterCode and landUnknown apply.
+      if (reopened)
+        await audit(
+          "computer.sign_in_failed",
+          actor,
+          "computer",
+          claimed.botId,
+          {
+            bot: claimed.botId,
+            request: id,
+            site: claimed.origin,
+            method,
+            step: "login",
+            ...(extra.loginId ? { savedLogin: extra.loginId } : {}),
+            failure,
+          },
+        );
       throw new SignInRefusedError(failure, reopened ? 409 : 400);
     }
     if (method === "saved" && extra.loginId)
