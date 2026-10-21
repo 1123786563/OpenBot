@@ -136,8 +136,10 @@ export function ConnectAppCard({
   const was = useRef(connected);
   useEffect(() => {
     if (connected && !was.current && attempted.current) {
-      setWaiting(false);
-      setTimedOut(false);
+      // The row is this person's, so the wait is over — and every ending the wait might have been
+      // carrying goes with it. A revocation that flips the row back later must not find a stale
+      // ending to fall back to.
+      resetOutcome();
       void queryClient.invalidateQueries({ queryKey: pluginKeys.all });
     }
     was.current = connected;
@@ -146,7 +148,9 @@ export function ConnectAppCard({
   useEffect(() => {
     if (!waiting) return;
     const deadline = setTimeout(() => {
-      setWaiting(false);
+      // The wait ran out, and that is the whole ending: a blocked-tab link left beside it would be
+      // one more way to finish the connection without the card ever noticing it happened.
+      resetOutcome();
       setTimedOut(true);
     }, WAIT_LIMIT_MS);
     return () => clearTimeout(deadline);

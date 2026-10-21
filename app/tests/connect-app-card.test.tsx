@@ -456,6 +456,31 @@ describe("the poll that is the only thing allowed to say connected", () => {
     ).toBeNull();
   });
 
+  test("a timeout ends a blocked-tab wait instead of stacking beside its link", async () => {
+    fakeClock = true;
+    jest.useFakeTimers();
+    openSpy.mockReturnValue(null);
+    const { view } = drawCard();
+    await settle();
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    await settle();
+    // The tab was blocked, so the url is on the card as a link while the wait runs.
+    expect(
+      view.getByRole("link", { name: "Open GitHub's sign-in" }),
+    ).toBeTruthy();
+    for (let step = 0; step < 6; step += 1) {
+      await advance(50_000);
+    }
+    // The wait ran out: the timed-out ending is the whole answer. A link left beside it would be
+    // one more way to finish the connection without the card ever noticing it happened.
+    expect(
+      view.getByText(/still is not connected after 5 minutes/),
+    ).toBeTruthy();
+    expect(
+      view.queryByRole("link", { name: "Open GitHub's sign-in" }),
+    ).toBeNull();
+  });
+
   test("only this person's live row says connected — a shared row or a revoked one does not", async () => {
     connectionRows = [
       { serverId: SERVER_ID, holder: "deployment" },
