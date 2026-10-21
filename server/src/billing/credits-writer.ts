@@ -7,6 +7,7 @@ import {
   creditReservationAllocations,
   creditReservations,
   creditSettlementDetails,
+  creditSpeechSettlementDetails,
 } from "../db/schema/credit-reservations";
 import { creditGrants, creditLedger as ledger } from "../db/schema/credits";
 import {
@@ -107,11 +108,11 @@ export type CreditSettlementResult = {
 
 /**
  * One settlement's capability line (12.2): what the consumption entry shows beside the
- * money. The closed shape mirrors `credit_settlement_details` (0177) — the capability
- * vocabulary, the frozen spec's counts, and the exact decimal unit price the settlement
- * priced at; the CHECKs on the table are the database's half of this shape.
+ * money. The closed union mirrors the settlement-detail tables — the capability
+ * vocabulary's member names its own table and its own facts (0179 image, 0181 speech);
+ * the CHECKs on those tables are the database's half of these shapes.
  */
-export type SettlementLineDetail = {
+export type ImageSettlementLineDetail = {
   capability: "image";
   requestedCount: number;
   generatedCount: number;
@@ -120,6 +121,26 @@ export type SettlementLineDetail = {
   quality: string | null;
   unitPriceUsd: string;
 };
+
+/**
+ * The speech line (13.2): what was actually spoken — the characters in, the seconds out —
+ * and the TWO locked tier prices the settlement priced at. `actualSeconds` is the exact
+ * decimal string the settlement priced (the artifact's or usage's own statement), never a
+ * float that has already been through binary rounding.
+ */
+export type SpeechSettlementLineDetail = {
+  capability: "speech";
+  inputCharacters: number;
+  cappedSeconds: number;
+  actualSeconds: string;
+  perInputCharacterUsd: string;
+  perOutputSecondUsd: string;
+  voiceTier: string | null;
+};
+
+export type SettlementLineDetail =
+  | ImageSettlementLineDetail
+  | SpeechSettlementLineDetail;
 
 export type CreditWriter = {
   /**
@@ -568,18 +589,33 @@ export function createCreditWriter(database: Database): CreditWriter {
         if (input.lineDetail !== undefined) {
           // Same transaction as the ledger row and the terminal update: the detail is the
           // settlement's display half, and a settled charge can never land without the
-          // line that names it (0177's one-row-per-reservation uniqueness is the fence).
-          await tx.insert(creditSettlementDetails).values({
-            reservationId: reservation.id,
-            ledgerId,
-            capability: input.lineDetail.capability,
-            requestedCount: input.lineDetail.requestedCount,
-            generatedCount: input.lineDetail.generatedCount,
-            inputImages: input.lineDetail.inputImages,
-            size: input.lineDetail.size,
-            quality: input.lineDetail.quality,
-            unitPriceUsd: input.lineDetail.unitPriceUsd,
-          });
+          // line that names it (the detail tables' one-row-per-reservation uniqueness is
+          // the fence). The capability's own member names its own table.
+          if (input.lineDetail.capability === "image") {
+            await tx.insert(creditSettlementDetails).values({
+              reservationId: reservation.id,
+              ledgerId,
+              capability: input.lineDetail.capability,
+              requestedCount: input.lineDetail.requestedCount,
+              generatedCount: input.lineDetail.generatedCount,
+              inputImages: input.lineDetail.inputImages,
+              size: input.lineDetail.size,
+              quality: input.lineDetail.quality,
+              unitPriceUsd: input.lineDetail.unitPriceUsd,
+            });
+          } else {
+            await tx.insert(creditSpeechSettlementDetails).values({
+              reservationId: reservation.id,
+              ledgerId,
+              capability: input.lineDetail.capability,
+              inputCharacters: input.lineDetail.inputCharacters,
+              cappedSeconds: input.lineDetail.cappedSeconds,
+              actualSeconds: input.lineDetail.actualSeconds,
+              perInputCharacterUsd: input.lineDetail.perInputCharacterUsd,
+              perOutputSecondUsd: input.lineDetail.perOutputSecondUsd,
+              voiceTier: input.lineDetail.voiceTier,
+            });
+          }
         }
 
         const released = reservation.maximum - applied;

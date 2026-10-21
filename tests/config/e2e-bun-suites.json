@@ -354,6 +354,7 @@
     "server/tests/identity-retire.integration.test.ts",
     "server/tests/identity-schema.integration.test.ts",
     "server/tests/identity-store.integration.test.ts",
+    "server/tests/image-edit-pricing.test.ts",
     "server/tests/image-generation-pricing.test.ts",
     "server/tests/image-settlement.integration.test.ts",
     "server/tests/intelligence-authentication.test.ts",
@@ -369,6 +370,7 @@
   {
    "name": "server/tests part 7",
    "files": [
+    "server/tests/key-state-sync.test.ts",
     "server/tests/last-sign-in-backfill.integration.test.ts",
     "server/tests/learning-agent.integration.test.ts",
     "server/tests/learning-langgraph.test.ts",
@@ -398,6 +400,7 @@
   {
    "name": "server/tests part 8",
    "files": [
+    "server/tests/opik-admin-summary.test.ts",
     "server/tests/opik-bindings.integration.test.ts",
     "server/tests/opik-bindings.test.ts",
     "server/tests/opik-case-review.integration.test.ts",
@@ -427,6 +430,7 @@
   {
    "name": "server/tests part 9",
    "files": [
+    "server/tests/opik-export.integration.test.ts",
     "server/tests/opik-export.test.ts",
     "server/tests/opik-health.test.ts",
     "server/tests/opik-id-links.integration.test.ts",
@@ -456,6 +460,7 @@
   {
    "name": "server/tests part 10",
    "files": [
+    "server/tests/opik-trace-chain.test.ts",
     "server/tests/order-ownership.integration.test.ts",
     "server/tests/organization-auth.test.ts",
     "server/tests/organization-store.integration.test.ts",
@@ -485,6 +490,7 @@
   {
    "name": "server/tests part 11",
    "files": [
+    "server/tests/plugin-logos.integration.test.ts",
     "server/tests/plugin-routes.integration.test.ts",
     "server/tests/plugin-store.integration.test.ts",
     "server/tests/plugin-user-credential.integration.test.ts",
@@ -514,10 +520,12 @@
   {
    "name": "server/tests part 12",
    "files": [
+    "server/tests/recovery-unacked-replay.integration.test.ts",
     "server/tests/release-semantics.integration.test.ts",
     "server/tests/remote-bot-handoff.integration.test.ts",
     "server/tests/remote-coordination.integration.test.ts",
     "server/tests/remote-coordination.test.ts",
+    "server/tests/rerank-pricing.test.ts",
     "server/tests/reservation-status.integration.test.ts",
     "server/tests/reserve-bound-rounding.test.ts",
     "server/tests/reserve-concurrency.integration.test.ts",
@@ -543,6 +551,8 @@
   {
    "name": "server/tests part 13",
    "files": [
+    "server/tests/settle-idempotency.integration.test.ts",
+    "server/tests/settlement-resolution.integration.test.ts",
     "server/tests/shared-brokered-routes.test.ts",
     "server/tests/shared-brokered-schema.integration.test.ts",
     "server/tests/shared-brokered-store.integration.test.ts",
@@ -554,6 +564,7 @@
     "server/tests/skill-tools.integration.test.ts",
     "server/tests/skill-uninstall-grants.integration.test.ts",
     "server/tests/speech-pricing.test.ts",
+    "server/tests/speech-settlement.integration.test.ts",
     "server/tests/sso-required-sessions.integration.test.ts",
     "server/tests/subscription-ownership.integration.test.ts",
     "server/tests/team-bots.integration.test.ts",
@@ -563,6 +574,7 @@
     "server/tests/tool-selection-environment-restoration.test.ts",
     "server/tests/trace-outbound.test.ts",
     "server/tests/transcription-pricing.test.ts",
+    "server/tests/transcription-tamper.integration.test.ts",
     "server/tests/unknown-hold-no-reclaim.integration.test.ts",
     "server/tests/usage-outbox.integration.test.ts",
     "server/tests/user-instructions.integration.test.ts",
@@ -572,6 +584,10 @@
   {
    "name": "server/tests part 14",
    "files": [
+    "server/tests/unknown-hold-no-reclaim.integration.test.ts",
+    "server/tests/usage-outbox.integration.test.ts",
+    "server/tests/user-instructions.integration.test.ts",
+    "server/tests/user-preferences.integration.test.ts",
     "server/tests/voice-session-preview.integration.test.ts",
     "server/tests/voice-session-store.integration.test.ts",
     "server/tests/voice-summary-model.test.ts",
@@ -929,6 +945,7 @@
   "server/tests/identity-retire.integration.test.ts",
   "server/tests/identity-schema.integration.test.ts",
   "server/tests/identity-store.integration.test.ts",
+  "server/tests/image-edit-pricing.test.ts",
   "server/tests/image-generation-pricing.test.ts",
   "server/tests/image-settlement.integration.test.ts",
   "server/tests/intelligence-authentication.test.ts",
@@ -1129,6 +1146,7 @@
   "server/tests/remote-bot-handoff.integration.test.ts",
   "server/tests/remote-coordination.integration.test.ts",
   "server/tests/remote-coordination.test.ts",
+  "server/tests/rerank-pricing.test.ts",
   "server/tests/reservation-status.integration.test.ts",
   "server/tests/reserve-bound-rounding.test.ts",
   "server/tests/reserve-concurrency.integration.test.ts",
@@ -1160,6 +1178,7 @@
   "server/tests/skill-tools.integration.test.ts",
   "server/tests/skill-uninstall-grants.integration.test.ts",
   "server/tests/speech-pricing.test.ts",
+  "server/tests/speech-settlement.integration.test.ts",
   "server/tests/sso-required-sessions.integration.test.ts",
   "server/tests/subscription-ownership.integration.test.ts",
   "server/tests/team-bots.integration.test.ts",
@@ -1169,6 +1188,7 @@
   "server/tests/tool-selection-environment-restoration.test.ts",
   "server/tests/trace-outbound.test.ts",
   "server/tests/transcription-pricing.test.ts",
+  "server/tests/transcription-tamper.integration.test.ts",
   "server/tests/unknown-hold-no-reclaim.integration.test.ts",
   "server/tests/usage-outbox.integration.test.ts",
   "server/tests/user-instructions.integration.test.ts",

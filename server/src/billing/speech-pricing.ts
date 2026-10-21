@@ -249,8 +249,10 @@ export type SpeechCeiling =
 const MAX_STORED_UNITS = 2_147_483_647n;
 const DECIMAL_SHAPE = /^(\d+)(?:\.(\d+))?$/;
 
-/** One exact amount string → its BigInt rational; null when not an exact decimal. */
-function parseExactDecimal(amount: string): {
+/** One exact amount string → its BigInt rational; null when not an exact decimal.
+ * Exported because the settlement (13.2) prices the same tier strings through the same
+ * exact-decimal discipline — one reader for one spelling. */
+export function parseExactDecimal(amount: string): {
   numerator: bigint;
   denominator: bigint;
 } | null {

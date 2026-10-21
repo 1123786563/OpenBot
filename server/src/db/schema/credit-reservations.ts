@@ -276,6 +276,69 @@ export const creditSettlementDetails = pgTable(
 );
 
 /**
+ * The SPEECH settlement line detail (Bifrost 13.2, #307) — the speech counterpart of
+ * {@link creditSettlementDetails}, in its own table because that one states the IMAGE
+ * facts in its NOT NULLs and a speech row would have to fake them to fit. Written only
+ * inside the credit writer's settle transaction (one commit with the ledger row and the
+ * reservation's terminal update), keyed uniquely by the reservation. The MONEY stays on
+ * the ledger row; this row carries what was actually spoken — the characters in, the
+ * seconds out (an exact decimal string, the shape the settlement priced), the cap the
+ * hold was certified against, and the TWO locked tier prices it priced at. The closed
+ * `capability` vocabulary stays closed on each side ('speech' here, 'image' there).
+ */
+export const creditSpeechSettlementDetails = pgTable(
+  "credit_speech_settlement_details",
+  {
+    reservationId: text("reservation_id").primaryKey(),
+    ledgerId: text("ledger_id")
+      .notNull()
+      .references(() => creditLedger.id),
+    capability: text("capability").notNull(),
+    inputCharacters: integer("input_characters").notNull(),
+    /** The output-duration cap the hold was certified against (13.1's frozen spec). */
+    cappedSeconds: integer("capped_seconds").notNull(),
+    /** The actual billed seconds — the exact decimal the settlement priced, never a float. */
+    actualSeconds: text("actual_seconds").notNull(),
+    /** The locked per-input-character USD the settlement priced at. */
+    perInputCharacterUsd: text("per_input_character_usd").notNull(),
+    /** The locked per-output-second USD the settlement priced at. */
+    perOutputSecondUsd: text("per_output_second_usd").notNull(),
+    voiceTier: text("voice_tier"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "credit_speech_settlement_details_reservation_id_fk",
+      columns: [table.reservationId],
+      foreignColumns: [creditReservations.id],
+    }),
+    check(
+      "credit_speech_settlement_details_capability_check",
+      sql`${table.capability} = 'speech'`,
+    ),
+    check(
+      "credit_speech_settlement_details_quantities_check",
+      sql`${table.inputCharacters} >= 0 and ${table.cappedSeconds} > 0`,
+    ),
+    check(
+      "credit_speech_settlement_details_actual_seconds_shape_check",
+      sql`${table.actualSeconds} ~ '^[0-9]+(\\.[0-9]+)?$'`,
+    ),
+    check(
+      "credit_speech_settlement_details_per_input_character_shape_check",
+      sql`${table.perInputCharacterUsd} ~ '^[0-9]+(\\.[0-9]+)?$'`,
+    ),
+    check(
+      "credit_speech_settlement_details_per_output_second_shape_check",
+      sql`${table.perOutputSecondUsd} ~ '^[0-9]+(\\.[0-9]+)?$'`,
+    ),
+    index("credit_speech_settlement_details_ledger_idx").on(table.ledgerId),
+  ],
+);
+
+/**
  * One unknown-dispatch recovery item (Bifrost 08.1): the durable name of one hold whose
  * provider result never reliably arrived, written by the recovery scan for the downstream
  * handlers (08.2's persisted-result replay, 08.4's background retry, 08.9's evidenced

@@ -854,6 +854,17 @@ export const auditEventTypes = [
    */
   "billing.recovery.compensated",
   /**
+   * A metered request's own metadata disagreed with what the server measured (Bifrost
+   * 14.2, #311): the client declared a duration the audio's container does not
+   * corroborate. The settlement priced the MEASUREMENT, not the claim — this row is why
+   * the claim cannot quietly lower a bill — and the payload carries the claim, the
+   * measurement, the difference and where the claim came from, so 系统性低报 shows up as
+   * a countable pattern in the trail rather than a discount nobody noticed. Deployment-
+   * initiated and keyed to the reservation: the FORGERY is the fact, and the audit trail
+   * is append-only, so the row stands even when the same settle later refuses.
+   */
+  "billing.audio_metadata_mismatch",
+  /**
    * An authorized operator REGISTERED an account-scope billing resolution (Bifrost BP06,
    * #374): the account-level disposal decision (补发/结算/释放/平台承担损失/人工退款)
    * with its action, the evidence kind it stood on, and the command's identity. The row
