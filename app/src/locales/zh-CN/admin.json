@@ -1230,6 +1230,41 @@
       "gateway_readiness_rate_not_configured": "USD→积分兑换比例未配置，付费模型能力被拒绝：管理员需保存合法比例（没有默认值）。",
       "gateway_readiness_rate_unavailable": "兑换比例无法按合法值读取，付费模型能力被拒绝：请修复已存比例后再启用计费。",
       "gateway_readiness_gate_unavailable": "本进程未安装网关就绪门禁，付费模型能力被拒绝。"
+    },
+    "audio": {
+      "title": "音频路径可用性",
+      "description": "网关能严格计费的音频处理路径。证据缺失的路径不可调用，拒绝原因会指明缺什么。",
+      "available": "可用",
+      "unavailable": "不可用",
+      "notAnEntrance": "本网关无此入口",
+      "streamVariant": "流式",
+      "missingIntro": "缺失证据：",
+      "missing": {
+        "no_wire_price_source": "该路径计费的维度在协议上无价格来源",
+        "no_input_meter_wired": "该路径未接入服务端可信的输入计量",
+        "no_admission_wiring": "不存在可准入该路径的 Reserve/Settle 接线",
+        "no_gateway_entrypoint": "网关中不存在该能力族的路由"
+      },
+      "basisMissingDims": "{{ref}}：未定价维度 — {{dimensions}}",
+      "basisEnableable": "{{ref}}：已为该路径定价"
+    },
+    "capabilities": {
+      "title": "能力可用性",
+      "description": "网关能否按各能力自身的计费维度严格计费 Embedding、Rerank 与 OCR。未知价格不是免费，也绝不显示为免费。",
+      "enabled": "已启用",
+      "free": "免费",
+      "priceUnknown": "未启用 — 价格未知",
+      "unmapped": "未启用 — 无价格基线",
+      "freeExplanation": "该能力的全部计费维度均明确定价为零 — 是上游给出的价格，不是缺失。",
+      "enabledCells": "{{count}} 个已定价模型，其中 {{freeCount}} 个免费",
+      "missingIntro": "未定价维度：",
+      "missingDimension": "{{ref}}：{{dimension}} 未定价",
+      "unmappedExplanation": "该能力从未同步过价格基线，无法定价或启用。",
+      "names": {
+        "embedding": "Embedding",
+        "rerank": "Rerank",
+        "ocr": "OCR"
+      }
     }
   },
   "billingPage": {

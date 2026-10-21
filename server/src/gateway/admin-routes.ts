@@ -71,6 +71,9 @@ import {
   type GatewayKeyDriftStore,
 } from "./key-drift";
 import { type AuditStore, recordAuditEvent } from "../audit";
+import { audioPathAvailabilityView } from "../billing/audio-path-admission";
+import { modelRefKey } from "./catalog";
+import { gatewayPriceSnapshotControls } from "./price-snapshot";
 
 /**
  * The services this surface drives. Defaults resolve through the installed
@@ -183,12 +186,35 @@ export function gatewayAdminRoutes(
           notConfiguredConversionRateState(),
         )
       : Promise.resolve(notConfiguredConversionRateState()));
+    // 14.4 (#313): the audio path availability projection — the registry's structural
+    // gaps verbatim plus, per audio-capable cell's LATEST snapshot, whether that basis
+    // enables the path. Read independently like every other detail: the projection is
+    // absent when no price snapshot service is wired, and the door's refusal (the
+    // admission gate) stays the authority either way.
+    const audioPaths = await readDetail(async () => {
+      const snapshots = gatewayPriceSnapshotControls();
+      if (!snapshots) return undefined;
+      const latest = await snapshots.listLatestPriceSnapshots();
+      return audioPathAvailabilityView(
+        latest
+          .filter(
+            (snapshot) =>
+              snapshot.ref.capability === "speech" ||
+              snapshot.ref.capability === "transcription",
+          )
+          .map((snapshot) => ({
+            ref: modelRefKey(snapshot.ref),
+            dims: snapshot.dims,
+          })),
+      );
+    });
     return context.json({
       readiness: verdict,
       endpoint: endpoint ?? null,
       credential: credential ?? null,
       probe: probe ?? null,
       extension: extension ?? null,
+      audioPaths: audioPaths ?? null,
       // The exact rational is bigint in memory; JSON carries it as the
       // decimal strings the save input and every display use. A number would
       // round — the one thing a price basis must never do.

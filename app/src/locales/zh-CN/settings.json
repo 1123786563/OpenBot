@@ -377,6 +377,8 @@
     "columnModel": "模型",
     "columnClient": "使用端",
     "overdrawBadge": "（未覆盖 {{shortfall}}）",
+    "feeSplitModel": "模型 {{amount}}",
+    "feeSplitSurcharge": "附加 {{amount}}",
     "overdrawHint": "本次消费超出可用余额。台账记录全部费用，其中 {{shortfall}} 无积分覆盖。",
     "pagerStatus": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条",
     "consumptionTable": "用量明细",

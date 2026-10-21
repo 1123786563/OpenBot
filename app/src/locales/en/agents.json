@@ -628,7 +628,8 @@
   },
   "botSubpage": {
     "titleFallback": "Bot",
-    "unreachable": "This Bot is not one you can reach."
+    "unreachable": "This Bot is not one you can reach.",
+    "unavailable": "This Bot is not available here."
   },
   "botProfile": {
     "forYou": "For you",

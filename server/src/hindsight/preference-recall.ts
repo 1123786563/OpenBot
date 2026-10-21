@@ -40,6 +40,13 @@ import {
   mintBankScopeAssertion,
   resolveHindsightBankScope,
 } from "./bank-scope";
+import {
+  type MemoryRevocationStatus,
+  type PersonalMemoryRevocationRecorder,
+  STOPPED_USING_SUMMARY,
+} from "./revocation-ledger";
+import { type HindsightPauseControls, usagePausedFor } from "./pause-controls";
+import { type HindsightRecoveryGate, recallOpenFor } from "./restore-recovery";
 
 /** What a Bot receives: the confirmed original, and nothing remote-derived. */
 export type RecalledGenericPreference = {
@@ -334,7 +341,20 @@ export interface PreferenceWorkRecorder {
 export function createPreferenceRecallService(
   store: PreferenceRecordStore,
   config: PreferenceRecallServiceConfig,
-  options: { now?: () => Date; work?: PreferenceWorkRecorder } = {},
+  options: {
+    now?: () => Date;
+    work?: PreferenceWorkRecorder;
+    /** The durable revocation ledger #390 attaches; without it the status stays honest anyway. */
+    revocations?: PersonalMemoryRevocationRecorder;
+    /** The person's pause switches (#392); usage-paused answers recall empty before any remote call. */
+    pause?: HindsightPauseControls;
+    /**
+     * The backup-restore recovery gate (#391): while a restore awaits its revocation replay,
+     * recall answers empty — before any remote call, like the pause switch, so the SQL
+     * degradation path (whose rows a restore may have resurrected) never runs either.
+     */
+    recovery?: HindsightRecoveryGate;
+  } = {},
 ) {
   const now = options.now ?? (() => new Date());
   const doFetch =
@@ -365,6 +385,44 @@ export function createPreferenceRecallService(
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
       signal: AbortSignal.timeout(config.requestTimeoutMs ?? 5000),
     });
+  }
+
+  /**
+   * One best-effort remote delete whose outcome is observable (#390): `attempted` is false
+   * exactly when the service could not be reached, and `confirmed` is true on 2xx or 404 (a
+   * document the service no longer knows is as deleted as one it just removed). Never thrown
+   * — the authority row already stopped every use before this ran.
+   */
+  async function deleteDocument(
+    grant: HindsightBankScope,
+    documentId: string,
+  ): Promise<{
+    attempted: boolean;
+    confirmed: boolean;
+    error: string | null;
+  }> {
+    try {
+      const response = await hindsight(
+        grant,
+        `/v1/${HINDSIGHT_TENANT_SEGMENT}/banks/${grant.banks[0].id}/documents/${encodeURIComponent(documentId)}`,
+        { method: "DELETE" },
+      );
+      const confirmed = response.ok || response.status === 404;
+      return {
+        attempted: true,
+        confirmed,
+        error: confirmed ? null : `service answered ${response.status}`,
+      };
+    } catch (error) {
+      return {
+        attempted: false,
+        confirmed: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "service could not be reached",
+      };
+    }
   }
 
   /**
@@ -616,11 +674,17 @@ export function createPreferenceRecallService(
     /**
      * Forget a preference: tombstoned the way the personal memory store forgets (content
      * cleared, disabled), so no later recall of the same document can resurrect it, and the
-     * remote document is deleted best-effort. A failed remote delete leaves a hit that recall
-     * drops anyway — no current OpenBot row, no Bot-visible content; the durable deletion
-     * ledger and its retries are the later tickets' (#384 and the deletion track).
+     * remote document is deleted best-effort. Since #390 the answer is the honest two-part
+     * status: the block took effect at `stoppedUsingAt` — before any remote call was
+     * initiated, so a Hindsight outage delays only the cleanup — and the remote deletion is
+     * reported separately (`outstanding` while unconfirmed, never claimed cleared; the
+     * deletion-evidence track owns that claim). The revocation ledger, when attached, records
+     * the block and the deletion outcome for the retry drain and the backup-restore replay.
      */
-    async forgetGenericPreference(scope: PlatformScope, id: string) {
+    async forgetGenericPreference(
+      scope: PlatformScope,
+      id: string,
+    ): Promise<MemoryRevocationStatus> {
       const grant = resolveHindsightBankScope(scope);
       const row = await store.load(grant.tenantId, id);
       if (
@@ -629,22 +693,48 @@ export function createPreferenceRecallService(
         row.deletedAt !== null
       )
         throw new PreferenceNotFoundError();
-      row.deletedAt = now();
+      const stoppedUsingAt = now();
+      const documentId = row.hindsightDocumentId;
+      // The durable block FIRST: the tombstone and the ledger row land before anything
+      // leaves for the service.
+      row.deletedAt = stoppedUsingAt;
       row.enabled = false;
       row.content = "";
       row.syncedContentDigest = null;
       row.syncedAt = null;
-      row.updatedAt = now();
+      row.updatedAt = stoppedUsingAt;
       await store.save(row);
-      try {
-        await hindsight(
-          grant,
-          `/v1/${HINDSIGHT_TENANT_SEGMENT}/banks/${grant.banks[0].id}/documents/${encodeURIComponent(row.hindsightDocumentId)}`,
-          { method: "DELETE" },
-        );
-      } catch {
-        // Best effort by design; see the doc comment.
+      if (options.revocations) {
+        await options.revocations.recordBlock({
+          tenantId: grant.tenantId,
+          principalId: grant.principalId,
+          kind: "memory",
+          subjectType: "preference",
+          targetId: row.id,
+          documentId,
+          bankId: grant.banks[0].id,
+          bankKind: "user",
+          blockedAt: stoppedUsingAt,
+        });
       }
+      const deletion = await deleteDocument(grant, documentId);
+      if (options.revocations) {
+        await options.revocations.noteDeletionOutcome({
+          tenantId: grant.tenantId,
+          documentId,
+          attemptedAt: now(),
+          confirmed: deletion.confirmed,
+          error: deletion.error,
+        });
+      }
+      return {
+        stoppedUsingAt,
+        remoteDeletion: {
+          attempted: deletion.attempted,
+          outstanding: deletion.confirmed ? 0 : 1,
+        },
+        summary: STOPPED_USING_SUMMARY,
+      };
     },
 
     /**
@@ -680,6 +770,13 @@ export function createPreferenceRecallService(
       }
       const mode: "current" | "historical" =
         asOf === undefined ? "current" : "historical";
+      // Pause-usage (#392): the person's own switch, checked BEFORE the service is asked —
+      // so the answer is empty here, and the SQL degradation path (reached only through the
+      // unavailability signal this call would raise) never runs either. Nothing is deleted.
+      if (await usagePausedFor(options.pause, scope)) return [];
+      // Backup-restore gate (#391): a restore that has not been replayed keeps recall closed;
+      // the empty answer here precedes the service call, so the degradation path never opens.
+      if (!(await recallOpenFor(options.recovery))) return [];
       let response: Response;
       try {
         response = await hindsight(

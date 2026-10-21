@@ -1,6 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
+import {
+  streamWriteStillCurrent,
+  useStreamScope,
+  withStreamScope,
+} from "@/lib/enterprise/tenant/stream-scope";
 import { socketUrl as buildSocketUrl } from "@/lib/socket-url";
 import { type ChannelPage, type ChannelSummary, channelKeys } from "./queries";
 
@@ -13,6 +18,14 @@ import { type ChannelPage, type ChannelSummary, channelKeys } from "./queries";
  * Two connections can drop and only one is this one. `onopen` covers this socket. The other is the
  * server's subscription to Postgres, which stays invisible here — so the server sends a resync when
  * it comes back, answered with the same refetch.
+ *
+ * THE SOCKET IS BOUND TO THE SELECTION (MT082 / Issue #125). It opens only once the scope source
+ * has resolved, carries the current selection pair on its URL (a WebSocket upgrade cannot carry
+ * headers), and every event consults the SAME cache generation the roster's reads guard with
+ * before it writes: a switch moves the generation, this effect rebinds, and a frame already in
+ * flight through the teardown is dropped rather than applied to a roster the new scope is about
+ * to refill (spec A10) — and a reconnect answers under the selection current THEN, never a
+ * defaulted one (spec A6).
  */
 
 /** The server saying it may have missed announcements, so the roster we hold may be wrong. */
@@ -197,15 +210,15 @@ export function applyChannelEvent(
 const FIRST_RETRY_MS = 500;
 const MAX_RETRY_MS = 30_000;
 
-function socketUrl() {
-  return buildSocketUrl("/api/channels/events");
-}
-
 export function useChannelEvents() {
   const queryClient = useQueryClient();
   const router = useRouter();
+  const scope = useStreamScope();
 
   useEffect(() => {
+    // Pending scope: no business subscription on a guess (MT082 AC1).
+    if (scope.status === "pending") return;
+    const { userId, selection, generation: openedAt } = scope;
     let socket: WebSocket | undefined;
     let retryTimer: number | undefined;
     let retryDelay = FIRST_RETRY_MS;
@@ -213,7 +226,9 @@ export function useChannelEvents() {
 
     const connect = () => {
       if (stopped) return;
-      socket = new WebSocket(socketUrl());
+      socket = new WebSocket(
+        buildSocketUrl(withStreamScope("/api/channels/events", selection)),
+      );
 
       socket.onopen = () => {
         retryDelay = FIRST_RETRY_MS;
@@ -222,6 +237,13 @@ export function useChannelEvents() {
       };
 
       socket.onmessage = (message) => {
+        // A frame that left the server under the selection this socket opened against, arriving
+        // after the switch: dropped, not applied (MT082 AC4). The rebind this guard heralds
+        // closes the socket on the same render cycle.
+        if (!streamWriteStillCurrent(queryClient, userId, openedAt)) {
+          socket?.close();
+          return;
+        }
         const parsed = parseChannelSocketMessage(message.data);
         if (!parsed) return;
 
@@ -299,7 +321,9 @@ export function useChannelEvents() {
       if (socket) socket.onclose = null;
       socket?.close();
     };
-  }, [queryClient, router]);
+    // `scope` is identity-stable between rebinds: it changes exactly when the selection pair or
+    // the cache generation moved, which is exactly when this socket must be rebuilt (MT082 AC2).
+  }, [queryClient, router, scope]);
 }
 
 /**

@@ -101,6 +101,7 @@ export const MODEL_CAPABILITIES = [
   "speech",
   "transcription",
   "rerank",
+  "ocr",
   "realtime",
   "video",
   "unknown",
@@ -216,6 +217,9 @@ const CAPABILITY_VOCABULARY: Readonly<Record<string, ModelCapability>> = {
   rerank: "rerank",
   reranking: "rerank",
   rank: "rerank",
+  // document OCR (the wire's own request-type token is "ocr")
+  ocr: "ocr",
+  documentocr: "ocr",
   // realtime voice / bidirectional sessions
   realtime: "realtime",
   livertc: "realtime",

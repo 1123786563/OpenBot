@@ -93,6 +93,42 @@ async function privateBot(owner: AgentActor, roleDescription = "Answers.") {
 const profileStore = () => profiles;
 
 describe("Team Bots in PostgreSQL", () => {
+  test("the list answers each reader's capabilities: aim for the owner, retire and assign for admins", async () => {
+    // MT085: the sharing page renders from these fields and nothing of its own, so the split the
+    // routes enforce — publish is the owner's, unpublish adds administrators, assign is an
+    // administrator's — must arrive per row, per reader.
+    const owner = await person();
+    const teammate = await person();
+    const admin = await person("admin");
+    const bot = await privateBot(owner);
+    await teamBots.publish(owner, bot, {
+      audience: "team",
+      emails: [],
+      groups: [],
+    });
+
+    const asOwner = (await teamBots.list(owner)).find((row) => row.id === bot);
+    expect(asOwner).toMatchObject({
+      canUnpublish: true,
+      canEditPublication: true,
+      canAssign: false,
+    });
+    const asAdmin = (await teamBots.list(admin)).find((row) => row.id === bot);
+    expect(asAdmin).toMatchObject({
+      canUnpublish: true,
+      canEditPublication: false,
+      canAssign: true,
+    });
+    const asTeammate = (await teamBots.list(teammate)).find(
+      (row) => row.id === bot,
+    );
+    expect(asTeammate).toMatchObject({
+      canUnpublish: false,
+      canEditPublication: false,
+      canAssign: false,
+    });
+  });
+
   test("a teammate chats with a Team Bot but cannot watch or drive its owner's computer", async () => {
     const owner = await person();
     const teammate = await person();

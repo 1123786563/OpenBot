@@ -1,8 +1,16 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { LiveScreen } from "@/components/computer/live-screen";
+import { authKeys } from "@/lib/auth/queries";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 
 /**
  * What a person's click turns into while they hold the wheel.
@@ -42,9 +50,18 @@ class SocketDouble {
 }
 
 let originalWebSocket: typeof WebSocket;
+let originalFetch: typeof fetch;
 
 beforeAll(() => {
   GlobalRegistrator.register();
+  // MT082: the screen socket waits for the scope source to resolve, so the harness
+  // answers the auth read it makes (and nothing else asks for more than a 200).
+  originalFetch = global.fetch;
+  global.fetch = (async () =>
+    new Response(JSON.stringify({ user: { id: "live-screen-user" } }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })) as unknown as typeof fetch;
   originalWebSocket = globalThis.WebSocket;
   globalThis.WebSocket = SocketDouble as unknown as typeof WebSocket;
 });
@@ -55,6 +72,7 @@ afterEach(() => {
 });
 
 afterAll(() => {
+  global.fetch = originalFetch;
   globalThis.WebSocket = originalWebSocket;
   GlobalRegistrator.unregister();
 });
@@ -66,7 +84,16 @@ async function liveCanvas(): Promise<{
   canvas: HTMLCanvasElement;
   socket: SocketDouble;
 }> {
-  const { container } = render(<LiveScreen computerId="mouse-test" driving />);
+  // The scope source read is seeded rather than fetched: this file runs on the
+  // Node runner, where a query resolving after mount does not re-render, and the
+  // screen socket waits on that read before it opens (MT082).
+  const queryClient = new QueryClient();
+  queryClient.setQueryData(authKeys.currentUser(), { id: "live-screen-user" });
+  const { container } = render(
+    <QueryClientProvider client={queryClient}>
+      <LiveScreen computerId="mouse-test" driving />
+    </QueryClientProvider>,
+  );
   await waitFor(() => expect(SocketDouble.latest).toBeDefined());
   const socket = SocketDouble.latest as SocketDouble;
 

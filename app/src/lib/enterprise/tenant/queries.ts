@@ -83,8 +83,12 @@ export class TenantSelectionChangedError extends Error {
  * and per app instance — rather than from module state, so two live views never advance each
  * other's counter. A refused answer throws: React Query records the error on the entry that asked,
  * which a tenant switch has already removed, and the entry now on screen is untouched.
+ *
+ * Exported since MT083 (#126): the scoped-cache mechanism hands the same guard to the business
+ * surfaces (the bot detail page the first of them), so their reads refuse an outlived selection
+ * exactly like the tenant face's own — one generation, one refusal, no per-surface copies.
  */
-async function guarded<T>(
+export async function guarded<T>(
   queryClient: QueryClient,
   userId: string,
   fetch_: () => Promise<T>,

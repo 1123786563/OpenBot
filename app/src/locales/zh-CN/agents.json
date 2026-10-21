@@ -628,7 +628,8 @@
   },
   "botSubpage": {
     "titleFallback": "Bot",
-    "unreachable": "你无法触达此 Bot。"
+    "unreachable": "你无法触达此 Bot。",
+    "unavailable": "此 Bot 在此处不可用。"
   },
   "botProfile": {
     "forYou": "为你",

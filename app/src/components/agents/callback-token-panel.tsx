@@ -6,6 +6,7 @@ import {
   issueCallbackTokenMutationOptions,
   revokeCallbackTokenMutationOptions,
 } from "@/lib/agents/mutations";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * The credential this coworker presents when it calls a tool back.
@@ -23,14 +24,21 @@ import {
 export function CallbackTokenPanel({
   agentId,
   hasToken,
+  scope,
 }: {
   agentId: string;
   hasToken: boolean;
+  /** The scope the surface read this coworker under; its writes submit under the same one (MT084). */
+  scope?: ScopedCache;
 }) {
   const { t } = useTranslation("agents");
   const queryClient = useQueryClient();
-  const issue = useMutation(issueCallbackTokenMutationOptions(queryClient));
-  const revoke = useMutation(revokeCallbackTokenMutationOptions(queryClient));
+  const issue = useMutation(
+    issueCallbackTokenMutationOptions(queryClient, scope),
+  );
+  const revoke = useMutation(
+    revokeCallbackTokenMutationOptions(queryClient, scope),
+  );
 
   /** Held in state, not in a query cache: it must not survive a refetch or a navigation. */
   const [token, setToken] = useState<string | null>(null);
