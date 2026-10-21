@@ -7,7 +7,6 @@ import {
 } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
@@ -18,12 +17,12 @@ import { ChannelChat } from "@/components/channels/channel-chat";
 import { WorkshopPanel } from "@/components/channels/workshop-panel";
 import { ComputerChatControls } from "@/components/computer/computer-controls";
 import { ComputerViewPanel } from "@/components/computer/computer-panel";
+import { useAutoWatchScreen } from "@/components/computer/use-auto-watch-screen";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";
 import { useMarkOpenChannelRead } from "@/lib/channels/mark-read";
 import { type AgentChannel, channelQueryOptions } from "@/lib/channels/queries";
-import { onComputerActivity } from "@/lib/copilot/computer-activity";
 
 const chatSearchSchema = z.object({
   settings: z.boolean().optional(),
@@ -64,29 +63,29 @@ function RouteComponent() {
 
   useMarkOpenChannelRead(channelId);
 
-  // Browser activity may auto-open the screen once per run unless this run was dismissed.
-  const dismissedEpoch = useRef<number | null>(null);
-  const runEpoch = useRef<number | null>(null);
-  useEffect(() => {
-    if (!agentId) return;
-    return onComputerActivity((activity) => {
-      if (activity.botId !== agentId) return;
-      runEpoch.current = activity.epoch;
-      if (dismissedEpoch.current === activity.epoch) return;
+  // Browser activity may auto-open the screen once per run unless this run was dismissed. The
+  // settings and workshop panes are the person's: auto-open never takes either of them.
+  const autoWatch = useAutoWatchScreen({
+    botId: agentId,
+    watching: isWatching,
+    busy: isSettingsOpen || isWorkshopOpen,
+    open: () =>
       navigate({
-        search: (previous) =>
-          previous.watch === true || previous.settings === true
-            ? previous
-            : { ...previous, settings: undefined, watch: true },
-      });
-    });
-  }, [agentId, navigate]);
+        search: (previous) => ({
+          ...previous,
+          settings: undefined,
+          workshop: undefined,
+          watch: true,
+        }),
+      }),
+    close: () =>
+      navigate({ search: (previous) => ({ ...previous, watch: undefined }) }),
+  });
 
   // Settings, watch, and the workshop share one pane; opening one clears the others' flags.
   const show = (next: "settings" | "watch" | "workshop" | null) => {
     // Dismissal applies only to the current browser-activity run.
-    if (next !== "watch" && isWatching)
-      dismissedEpoch.current = runEpoch.current;
+    if (next !== "watch" && isWatching) autoWatch.dismiss();
     return navigate({
       search: (previous) => ({
         ...previous,

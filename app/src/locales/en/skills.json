@@ -51,7 +51,11 @@
     "notConnectedHere": "Not connected here",
     "notOfferedTitle": "{{ref}} — no connected server offers this",
     "elsewhereHint": "This skill names these, and no server connected here offers them — because the connector has not been added, or was removed. They cost nothing and load nothing until it exists. Click one to stop naming it.",
-    "grantsNothing": "Picking this skill is what loads these tools for a turn. It does not grant them — a Bot still only calls what it was granted, so naming a tool here gives nobody access to it."
+    "grantsNothing": "Picking this skill is what loads these tools for a turn. It does not grant them — a Bot still only calls what it was granted, so naming a tool here gives nobody access to it.",
+    "researchHeading": "Public-web research",
+    "researchSearch": "Search the web",
+    "researchFetch": "Read web pages",
+    "researchTitle": "{{ref}} — on whichever research connector the Bot holds"
   },
   "proposed": {
     "done": "Done",

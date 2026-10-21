@@ -403,6 +403,7 @@ import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
 } from "./intelligence-client";
+import { scheduleStartupDiagnostics } from "./intelligence-entitlement-check";
 import {
   createLearningAutoAssign,
   probeLearningContainer,
@@ -429,6 +430,7 @@ import { createMemoryIngestion } from "./memory/ingestion";
 import { createIntelligenceMemory } from "./memory/intelligence";
 import { createMemoryStore } from "./memory/store";
 import { memoryTools } from "./memory/tools";
+import { officialModelMetadataLookup } from "./model-availability-check";
 import { OPENMUSE_TEMPLATE_KEY } from "./mobile-bff/openmuse-bot";
 import { currentRunObservationScope } from "./observation-run-scope";
 import { createActivityFeed } from "./openmuse-activity/feed";
@@ -4169,6 +4171,58 @@ auditRoutineStore(routineStore, bootAuditStore);
 const selfHostBannerIntelligence = createIntelligenceClient(
   config.runtime.intelligence,
 );
+
+/*
+ * Boot diagnostics (spec 2026-10-20 §6, #497): the model question and, where the optional learning
+ * dependency is actually enabled, the entitlement question — said once, fire-and-forget. Both
+ * checks resolve either way, keep to one 3s budget, and log at most one warning line, so a failing
+ * probe is advice in the log rather than a start-up dependency; the gateway readiness gate stays
+ * the only authority on paid model work, and this reports nothing it decides.
+ */
+scheduleStartupDiagnostics({
+  model: async () => {
+    const key = await resolveRuntimeModelApiKey();
+    if (!key) {
+      return { enabled: false, name: runtimeModel.defaultModel };
+    }
+    // A custom base URL is a compatible endpoint: no legitimate single-model lookup exists, and a
+    // 404 there would say nothing about the model, so no lookup is supplied at all.
+    const customBase =
+      runtimeModel.provider === "anthropic"
+        ? process.env.ANTHROPIC_BASE_URL
+        : process.env.OPENAI_BASE_URL;
+    if (customBase?.trim()) {
+      return { enabled: true, name: runtimeModel.defaultModel };
+    }
+    return {
+      enabled: true,
+      name: runtimeModel.defaultModel,
+      lookup: officialModelMetadataLookup({
+        provider: runtimeModel.provider,
+        model: runtimeModel.defaultModel,
+        key,
+      }),
+    };
+  },
+  entitlement: {
+    // The deployment's real learning condition (the same one the container path uses): without a
+    // provisioning path the diagnostic does not probe at all, so the contract is unchanged.
+    enabled: learningCanCreate,
+    read: async () => {
+      const response =
+        await selfHostBannerIntelligence.getRuntimeEntitlements();
+      if (response.status !== "ready") {
+        throw new Error(`runtime entitlement reported ${response.status}`);
+      }
+      return { active: response.entitlement.active === true };
+    },
+  },
+  log: (source, result) => {
+    if (result.kind === "warning") {
+      log.warn({ diagnostic: source, ...result }, "startup diagnostic");
+    }
+  },
+});
 
 /*
  * The billing seam, assembled only when a provider was configured.

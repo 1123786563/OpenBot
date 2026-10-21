@@ -66,6 +66,15 @@ export type VendorTransport = {
     url: string;
     token?: string;
     /**
+     * The header a deployment token goes in, when the vendor reads one that is not `Authorization`.
+     *
+     * Named by the catalogue entry and carried as an optional field for the same reason every
+     * addition here is optional: an MCP-shaped implementation still satisfies the seam. Only the
+     * MCP transport reads it; the others take their credential from an actor or a broker and have
+     * no deployment token to place.
+     */
+    tokenHeader?: string;
+    /**
      * Declared by the shared connection shape, and never supplied on THIS path.
      *
      * `refreshTools` is the only caller of `listTools` in the system, and it passes `{url, token}`.
@@ -87,6 +96,8 @@ export type VendorTransport = {
     connection: {
       url: string;
       token?: string;
+      /** See the listing's `tokenHeader` above: the catalogue's reviewed name for the token's header. */
+      tokenHeader?: string;
       /**
        * Who this call is for, and which Bot is making it.
        *

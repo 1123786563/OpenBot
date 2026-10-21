@@ -84,6 +84,8 @@ import type {
   ScrollInput,
   SecretRequest,
   SecretResult,
+  SignInCodeInput,
+  SignInCodeResult,
   SignInFillInput,
   SignInFillResult,
   SnapshotElement,
@@ -269,6 +271,16 @@ export interface ComputerGateway {
     input: SignInFillInput,
     signal?: AbortSignal,
   ): Promise<SignInFillResult>;
+  /**
+   * Type the verification code a site asked for into the page still waiting for it.
+   * Same private sign-in path and terms as `signIn`: owner/Bot scoping and service
+   * authentication on the transport, no audit row here, and the code on the request body only.
+   */
+  signInCode(
+    botId: string,
+    input: SignInCodeInput,
+    signal?: AbortSignal,
+  ): Promise<SignInCodeResult>;
   humanInput(botId: string, input: HumanInput): Promise<HumanInputResult>;
   computers(): Promise<{
     isolation: "per-bot" | "shared";
@@ -1068,6 +1080,17 @@ export function createComputerGateway(
       return post<SignInFillResult>(
         botId,
         "/sign-in/fill",
+        input,
+        signal,
+        SIGN_IN_BACKSTOP_MS,
+      );
+    },
+
+    /** The code a site asked for once the password was in, on the same path and terms as the login. */
+    signInCode(botId: string, input: SignInCodeInput, signal?: AbortSignal) {
+      return post<SignInCodeResult>(
+        botId,
+        "/sign-in/code",
         input,
         signal,
         SIGN_IN_BACKSTOP_MS,

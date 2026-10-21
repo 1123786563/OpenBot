@@ -2,6 +2,7 @@ import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../src/auth/guards";
+import { readConnectState } from "../src/plugins/oauth";
 import { createPluginRoutes } from "../src/plugins/routes";
 import {
   CatalogueEntryUnknownError,
@@ -89,6 +90,57 @@ describe("connecting a dynamically registered vendor", () => {
     expect(url.host).toBe("mcp.notion.com");
     expect(url.pathname).toBe("/authorize");
     expect(url.searchParams.get("client_id")).toBe("dyn-1");
+  });
+
+  /**
+   * WHO THE CONSENT IS FOR IS THE SESSION'S DECISION, MADE TWICE.
+   *
+   * The connect card this flow serves says which server to connect and nothing about who is
+   * asking — the actor comes from the signed-in session, is sealed into the state the vendor
+   * echoes back, and the callback asks `personHasAccess` about THAT sealed id before anything
+   * happens. So a request body naming another user is dead weight on the one route that can start
+   * a consent flow, and the flow is bound to the person who pressed it however the press reached
+   * here. Pinned rather than assumed: the prompt is display data, and this endpoint is where the
+   * server stops trusting it.
+   */
+  test("acts for the session's actor, never for an identity the request carries", async () => {
+    const ensureCalls: { serverId: string; by: string }[] = [];
+    const hono = app({
+      oauthClientFor: async () => null,
+      ensureOAuthClient: async (serverId, by) => {
+        ensureCalls.push({ serverId, by });
+        return { clientId: "dyn-1", clientSecret: "" };
+      },
+    });
+
+    const response = await hono.request(
+      "http://t/api/plugins/servers/notion/connect",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          userId: "intruder@openbot.test",
+          serverId: "google-drive",
+        }),
+        headers: { "content-type": "application/json" },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    // Registered for the session actor, against the server the URL named — neither field read
+    // from the body.
+    expect(ensureCalls).toEqual([
+      { serverId: "notion", by: "person@openbot.test" },
+    ]);
+
+    const body = (await response.json()) as { authorizationUrl: string };
+    const url = new URL(body.authorizationUrl);
+    const state = await readConnectState(
+      url.searchParams.get("state") ?? "",
+      ENCRYPTION_KEY,
+    );
+    expect(state).not.toBeNull();
+    expect(state?.userId).toBe("user-1");
+    expect(state?.serverId).toBe("notion");
   });
 
   /**

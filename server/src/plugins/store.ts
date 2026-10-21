@@ -50,6 +50,7 @@ import {
   type ServerAccess,
   ServerUnresolvableError,
 } from "./access";
+import { researchRoleOf } from "../../../shared/research";
 import {
   isBrokeredProvenance,
   type BrokeredProvenance,
@@ -82,6 +83,7 @@ import {
 import { inspectToolArguments } from "./content-governance";
 import { type ListedTool, McpServerError } from "./mcp";
 import { registerDynamicClient } from "./oauth";
+import { connectAppRefusal } from "../../../shared/connect-prompt";
 import { deploymentAlias, personalAlias } from "./openconnector";
 import { shareTargetOf } from "./share-target";
 import {
@@ -901,6 +903,25 @@ const reachedAsFor = (access: ServerAccess, actorId: string): string =>
   access.reachedAs === "person"
     ? actorId || UNATTRIBUTED_ACTOR
     : DEPLOYMENT_ACTOR;
+
+/**
+ * The header a deployment's token goes out in, when that is not the default.
+ *
+ * THE TRI-STATE IS THE POINT. `tokenHeaderFor` in the catalogue answers "which header name
+ * applies" and names `Authorization` for everything that did not opt into another; the transport
+ * needs to know whether the request is a DEFAULT one, because the two branches shape the token
+ * differently — the default adds the Bearer scheme the way it always has, and a vendor-named
+ * header takes the key exactly as stored. So this reads the entry's reviewed optional field
+ * directly and answers `undefined` for every default server, which is the one shape the
+ * catalogue's answer cannot distinguish.
+ */
+function deploymentTokenHeader(
+  entry: CatalogueEntry | null,
+): string | undefined {
+  return entry?.auth.kind === "deployment-bearer"
+    ? entry.auth.header
+    : undefined;
+}
 
 /**
  * Where this server actually is, when the stored row and the catalogue disagree.
@@ -1830,7 +1851,19 @@ export function createPluginStore(options: PluginStoreOptions) {
         throw new PluginRefusedError(
           resolved.ref.holder === "deployment"
             ? `${row.title} is shared across this deployment and no account is connected to it yet. Ask an administrator to connect it.`
-            : `You have not connected your ${row.title} account. Connect it in Settings and ask again.`,
+            : /*
+               * A PERSONAL app with no connection is the one refusal here the asker can act on
+               * themselves, so it is the one that carries the structured prompt the transcript
+               * draws a card from (`shared/connect-prompt.ts`). The sentence stays whole inside it:
+               * it is still what the model reads, and still the whole answer on a client that
+               * draws no card. The Shared arm above names an administrator's job and deliberately
+               * carries no prompt — pressing Connect as this person cannot fix it.
+               */
+              connectAppRefusal({
+                serverId: row.id,
+                title: row.title,
+                message: `You have not connected your ${row.title} account. Connect it in Settings and ask again.`,
+              }),
           null,
         );
       }
@@ -1849,6 +1882,23 @@ export function createPluginStore(options: PluginStoreOptions) {
             `${row.id} needs a credential this deployment no longer holds. An administrator has to add it again.`,
           )
         : undefined;
+      /*
+       * A keyed provider without its key sends nothing at all.
+       *
+       * A keyless entry answers to anybody, so `token: undefined` there is the server's own terms.
+       * But an entry whose reviewed auth is `deployment-bearer` exists on the terms of its key: a
+       * row that lost its credential — never added, vault row gone — would otherwise dial the
+       * vendor unauthenticated and be answered by whatever the anonymous tier gives, which may be
+       * a working search. Whatever that answer is worth, it is not the connector the administrator
+       * configured, and the call would spend it silently. Refused here, at the same seam every
+       * other credential refusal leaves from.
+       */
+      if (!token && entry?.auth.kind === "deployment-bearer") {
+        throw new PluginRefusedError(
+          `${row.title} needs this deployment's API key, and the deployment is not holding one. An administrator has to add it again.`,
+          null,
+        );
+      }
       return { token };
     }
 
@@ -1902,8 +1952,18 @@ export function createPluginStore(options: PluginStoreOptions) {
       .limit(1);
 
     if (!held) {
+      /*
+       * The asker's own missing connection, carried with the prompt the transcript draws a card
+       * from (`shared/connect-prompt.ts`). Every arm below that names a step only an administrator
+       * or the deployment can take keeps its plain sentence: the prompt is display data for the one
+       * refusal a person can act on from where they are standing.
+       */
       throw new PluginRefusedError(
-        `You have not connected your ${entry.title} account. Connect it in Settings and ask again.`,
+        connectAppRefusal({
+          serverId: row.id,
+          title: entry.title,
+          message: `You have not connected your ${entry.title} account. Connect it in Settings and ask again.`,
+        }),
         null,
       );
     }
@@ -2099,10 +2159,14 @@ export function createPluginStore(options: PluginStoreOptions) {
             .limit(1);
 
           // Disconnected while this call was queued. The same sentence as above: nothing is broken,
-          // and connecting again is the thing to do.
+          // and connecting again is the thing to do — so the same prompt rides with it.
           if (!current) {
             throw new PluginRefusedError(
-              `You have not connected your ${title} account. Connect it in Settings and ask again.`,
+              connectAppRefusal({
+                serverId: row.id,
+                title,
+                message: `You have not connected your ${title} account. Connect it in Settings and ask again.`,
+              }),
               null,
             );
           }
@@ -2121,8 +2185,14 @@ export function createPluginStore(options: PluginStoreOptions) {
            * while somebody disconnected, as well as by one that was told after the fact.
            */
           if (!locked || locked.revokedAt) {
+            // Withdrawn access is the third state a person can fix themselves, so it carries the
+            // prompt too (`shared/connect-prompt.ts`).
             throw new PluginRefusedError(
-              `Your ${title} access was withdrawn. Connect it again in Settings.`,
+              connectAppRefusal({
+                serverId: row.id,
+                title,
+                message: `Your ${title} access was withdrawn. Connect it again in Settings.`,
+              }),
               null,
             );
           }
@@ -4168,10 +4238,14 @@ export function createPluginStore(options: PluginStoreOptions) {
         const token = transport.listNeedsCredential
           ? (await connectionTokenFor(row, entry, actorId, access)).token
           : undefined;
+        const tokenHeader = transport.listNeedsCredential
+          ? deploymentTokenHeader(entry)
+          : undefined;
 
         listed = await transport.listTools({
           url: effectiveUrl(row, entry),
           token,
+          ...(tokenHeader ? { tokenHeader } : {}),
         });
       } catch (error) {
         /*
@@ -4979,7 +5053,18 @@ export function createPluginStore(options: PluginStoreOptions) {
           : [...new Set(input.tools.map((ref) => ref.trim()).filter(Boolean))];
       if (declared !== undefined && declared.length > 0) {
         const known = await knownToolRefs(declared);
-        const unknown = declared.filter((ref) => !known.has(ref));
+        /*
+         * A research role ref names a role, not a server's tool, so no row can ever answer for it:
+         * `mcp_tools` will never hold a server called `@research`. It is a declarative reference —
+         * selection (`declaredBy`) expands it onto whichever providers' tools a Bot actually holds,
+         * and grants nothing — so the save check reads it through the same `researchRoleOf` the
+         * selection does and counts it known rather than asking the database. A misspelling, an
+         * empty role or a role shape without the `@` answers null there and stays on the refused
+         * path below; a real `serverId/toolName` ref is still checked exactly as before.
+         */
+        const unknown = declared.filter(
+          (ref) => !known.has(ref) && researchRoleOf(ref) === null,
+        );
         if (unknown.length > 0) {
           throw new PluginRefusedError(
             `No tool by that name has been seen here: ${unknown.join(", ")}. A skill names tools as serverId/toolName, and the server has to have been refreshed at least once.`,
@@ -8353,10 +8438,14 @@ export function createPluginStore(options: PluginStoreOptions) {
         );
         const vendor =
           injectedVendor ?? transportFor(access.transport).callTool;
+        const tokenHeader = deploymentTokenHeader(entry);
         const result = await vendor(
           {
             url: effectiveUrl(row, entry),
             token,
+            // The header the entry's reviewed auth names. Absent for every server whose token
+            // rides `Authorization`, which is every server that existed before the field did.
+            ...(tokenHeader ? { tokenHeader } : {}),
             actorId: vendorUserId ?? input.credentialActorId ?? input.actorId,
             botId: input.botId,
             /*

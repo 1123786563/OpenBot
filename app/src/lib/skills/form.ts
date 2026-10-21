@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { researchRoleOf } from "../../../../shared/research";
 
 /**
  * The four things a person decides about a skill.
@@ -58,7 +59,7 @@ export const emptySkillForm: SkillFormValues = {
 };
 
 /**
- * The declared refs no connected server offers.
+ * The declared refs no connected server offers, research roles excepted.
  *
  * WHY THIS EXISTS. The picker draws the tools of the servers this deployment has connected, and a
  * skill's declared set is not confined to those: a package ships skills declaring tools for
@@ -70,11 +71,19 @@ export const emptySkillForm: SkillFormValues = {
  * A wrong number on a screen somebody governs with is worse than no number, so the leftovers are
  * named rather than dropped. They are not an error: a ref for a connector that does not exist here
  * loads nothing, because the offer is intersected with the Bot's grants.
+ *
+ * A RESEARCH ROLE IS NOT A LEFTOVER. `@research/search` names no server, so no server could ever
+ * offer it and the leftover group would report it forever — a legal declaration presented as a
+ * dead ref, on the one screen that must not teach people that declarations rot. It resolves, at
+ * selection time, to whichever provider's tool the Bot actually holds; the exemption is exactly
+ * the shared parser's two answers, so a misspelled role is still reported as what it is.
  */
 export function undeclaredElsewhere(
   selected: readonly string[],
   offered: readonly string[],
 ): string[] {
   const known = new Set(offered);
-  return selected.filter((ref) => !known.has(ref));
+  return selected.filter(
+    (ref) => !known.has(ref) && researchRoleOf(ref) === null,
+  );
 }

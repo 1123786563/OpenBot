@@ -8,6 +8,7 @@ import { createOtelEventExporter } from "../src/telemetry/otel";
  */
 test("a command exported to the collector is scrubbed of the secrets in it", async () => {
   const secret = "fixture-value-7f3a91c0d2";
+  const loginSecret = "fixture-glorb-4e6b2a91d5c3";
   const received: string[] = [];
   const collector = Bun.serve({
     hostname: "127.0.0.1",
@@ -32,6 +33,9 @@ test("a command exported to the collector is scrubbed of the secrets in it", asy
         bot: "bot-1",
         action: "computer_run_command",
         command: `curl -H "Authorization: Bearer ${secret}" https://api.example.test`,
+        login: {
+          command: `docker login -p ${loginSecret} registry.example.test`,
+        },
         nested: { command: `export API_TOKEN=${secret}` },
       },
     });
@@ -40,7 +44,61 @@ test("a command exported to the collector is scrubbed of the secrets in it", asy
     collector.stop(true);
   }
   const wire = received.join("");
+  expect(wire).toContain("computer.action_allowed");
   expect(wire).toContain("computer_run_command");
   expect(wire).toContain("[REDACTED]");
   expect(wire).not.toContain(secret);
+  expect(wire).not.toContain(loginSecret);
+});
+
+/*
+ * The positional rules fixed in V01-F4, at the same wire level: docker's global options sit between
+ * the command and its subcommand, sshpass's env form keeps the password out of the process list —
+ * and neither shape may survive the hop to an outside collector any better than the `-p` forms do.
+ */
+test("docker global options and the sshpass env form are scrubbed on the wire too", async () => {
+  const dockerSecret = "fixture-docker-91c3e7a2b5d4";
+  const sshSecret = "fixture-sshpass-3d8c1f6e90b7";
+  const received: string[] = [];
+  const collector = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: async (request) => {
+      received.push(await request.text());
+      return new Response("{}");
+    },
+  });
+  try {
+    const exporter = createOtelEventExporter({
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: `http://127.0.0.1:${collector.port}/v1/logs`,
+    });
+    exporter?.emit({
+      eventType: "computer.action_allowed",
+      targetType: "computer",
+      targetId: "bot-1",
+      actorUserId: null,
+      initiatorKind: "person",
+      initiatorId: null,
+      payload: {
+        dockerLogin: {
+          command: `docker -H tcp://registry.example:2375 login -p ${dockerSecret}`,
+        },
+        // A subcommand is not a global option: `run`'s own `-p` is a port mapping, and the port
+        // must survive.
+        dockerPort: { command: "docker run login -p 8080:80 nginx" },
+        sshpassEnv: {
+          command: `SSHPASS=${sshSecret} sshpass -e ssh deploy@host.example.test`,
+        },
+      },
+    });
+    await exporter?.shutdown();
+  } finally {
+    collector.stop(true);
+  }
+  const wire = received.join("");
+  expect(wire).toContain("login -p [REDACTED]");
+  expect(wire).toContain("SSHPASS=[REDACTED]");
+  expect(wire).toContain("docker run login -p 8080:80 nginx");
+  expect(wire).not.toContain(dockerSecret);
+  expect(wire).not.toContain(sshSecret);
 });

@@ -691,7 +691,10 @@ function singleUserAllowed(
  * A routable public address is the different thing, and it is the one that refuses.
  *
  * UNPARSEABLE COUNTS AS PUBLIC, and so does an unrecognised name. A value nobody could read is not
- * a value anybody checked, and the safe reading of "I cannot tell" is never "it is fine".
+ * a value anybody checked, and the safe reading of "I cannot tell" is never "it is fine". That
+ * includes a URL that parses but names no host at all — `localhost:3010` typed without its scheme
+ * parses as scheme `localhost:` with an empty hostname — since an empty hostname is no more a LAN
+ * name than an unparseable one, and so is read as public rather than private.
  */
 type Reach = "loopback" | "private" | "public";
 
@@ -703,6 +706,7 @@ function reachOf(raw: string): Reach {
     return "public";
   }
   bare = bare.replace(/^\[|\]$/g, "").replace(/\.+$/, "");
+  if (!bare) return "public";
 
   if (
     bare === "localhost" ||

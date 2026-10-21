@@ -51,7 +51,11 @@
     "notConnectedHere": "此处未连接",
     "notOfferedTitle": "{{ref}} — 没有已连接的服务器提供此项",
     "elsewhereHint": "此技能引用了这些工具，但此处连接的服务器都没有提供——因为连接器尚未添加，或已被移除。在它存在之前，它们不产生任何开销，也不会加载任何内容。点击其中一个可停止引用它。",
-    "grantsNothing": "选中此技能才会为某一轮加载这些工具。这并不代表授予它们——Bot 仍然只能调用被授予的内容，因此在这里命名工具不会给任何人访问权限。"
+    "grantsNothing": "选中此技能才会为某一轮加载这些工具。这并不代表授予它们——Bot 仍然只能调用被授予的内容，因此在这里命名工具不会给任何人访问权限。",
+    "researchHeading": "公共网页研究",
+    "researchSearch": "搜索网页",
+    "researchFetch": "读取网页",
+    "researchTitle": "{{ref}} — 在 Bot 持有的任一研究连接器上使用"
   },
   "proposed": {
     "done": "完成",

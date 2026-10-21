@@ -182,6 +182,14 @@ describe("describeCron", () => {
     expect(describeCron("0,30 9 * * *")).toBe("Every day at 09:00 and 09:30");
   });
 
+  // Cron fires once for a repeated minute — `0,0` is one firing, not two — so the prose must say
+  // it once. A duplicate in the list is dropped before the times are joined, the way `weekdays`
+  // says Sunday once when it arrives as both 0 and 7.
+  test("a repeated minute is described once", () => {
+    expect(describeCron("0,30,0 9 * * *")).toBe("Every day at 09:00 and 09:30");
+    expect(describeCron("0,0 9 * * *")).toBe("Every day at 09:00");
+  });
+
   test("falls through to the raw expression when it is stranger than words", () => {
     expect(describeCron("*/7 3,4 * * *")).toBe("*/7 3,4 * * *");
   });

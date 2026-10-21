@@ -1,9 +1,19 @@
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  spyOn,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getLogger } from "../../shared/logger";
+import { Journal } from "@copilotkit/aimock";
 import { MCPMock, type MCPToolDefinition } from "@copilotkit/aimock/mcp";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
@@ -26,6 +36,8 @@ import {
   mcpTools,
   mcpUserCredentials,
   pluginGrants,
+  skills,
+  skillTools,
   users,
 } from "../src/db/schema";
 import {
@@ -33,14 +45,21 @@ import {
   CatalogueTransportUnroutableError,
   ServerRowAmbiguousError,
 } from "../src/plugins/access";
-import type { BrokerConnection, ComposioBroker, ConnectedAppBroker } from "../src/plugins/broker";
+import type {
+  BrokerConnection,
+  ComposioBroker,
+  ConnectedAppBroker,
+} from "../src/plugins/broker";
 import type { CatalogueEntry } from "../src/plugins/catalogue";
 import { catalogueEntry } from "../src/plugins/catalogue";
 import {
   type ComposioResult,
   useComposioClient,
 } from "../src/plugins/composio";
-import { personalAlias, useOpenConnectorClient } from "../src/plugins/openconnector";
+import {
+  personalAlias,
+  useOpenConnectorClient,
+} from "../src/plugins/openconnector";
 import { redirectUriFor } from "../src/plugins/oauth";
 import type { AccountRef } from "../src/plugins/shared-accounts";
 import {
@@ -2905,7 +2924,9 @@ describe("a dynamic client the vendor has evicted", () => {
         said.push(
           args
             .map((argument) =>
-              typeof argument === "string" ? argument : JSON.stringify(argument),
+              typeof argument === "string"
+                ? argument
+                : JSON.stringify(argument),
             )
             .join(" "),
         );
@@ -7827,8 +7848,11 @@ describe("an OpenConnector app runs the brokered gates under its own provider", 
       },
     };
     /** What the OpenConnector transport dialled, with the account handle it was handed. */
-    const dialled: { service: string; actionId: string; alias: string | null }[] =
-      [];
+    const dialled: {
+      service: string;
+      actionId: string;
+      alias: string | null;
+    }[] = [];
     useOpenConnectorClient({
       listActions: async () => [
         {
@@ -7974,7 +7998,11 @@ describe("an OpenConnector app runs the brokered gates under its own provider", 
       });
       // Accepted without being checked: OpenConnector publishes no safety labels, so there is
       // nothing this deployment may spend a just-typed key on. The row says so honestly.
-      expect(connected).toEqual({ connected: true, verified: false, probe: null });
+      expect(connected).toEqual({
+        connected: true,
+        verified: false,
+        probe: null,
+      });
       expect(brokerAsked).toEqual([
         {
           call: "connectWithFields",
@@ -8070,13 +8098,15 @@ describe("an OpenConnector app runs the brokered gates under its own provider", 
       await database
         .delete(mcpServers)
         .where(eq(mcpServers.id, "open-connector-github"));
-      await database.delete(brokeredConnections).where(
-        and(
-          eq(brokeredConnections.provider, "open-connector"),
-          eq(brokeredConnections.app, "github"),
-          eq(brokeredConnections.userId, "user_asker"),
-        ),
-      );
+      await database
+        .delete(brokeredConnections)
+        .where(
+          and(
+            eq(brokeredConnections.provider, "open-connector"),
+            eq(brokeredConnections.app, "github"),
+            eq(brokeredConnections.userId, "user_asker"),
+          ),
+        );
     }
   });
 });
@@ -8279,5 +8309,716 @@ describe("a vault read that fails on a query of this deployment's own", () => {
     expect(written).toContain(`absent_vault_${suite}`);
     expect(written).not.toContain("Failed query:");
     expect(written).not.toContain(faultCredentialId ?? "<none>");
+  });
+});
+
+/**
+ * Research providers on the call path, at the only door a vendor has.
+ *
+ * R01 put the keyed Exa/Firecrawl entries in the catalogue and `tokenHeaderFor` beside it; R02 is
+ * where a deployment token actually leaves the building with the header the entry names. The wire
+ * truth about header VALUES lives in `plugin-mcp-authorization.test.ts` against a bare local
+ * server; what this file adds is the rest of the journey — catalogue entry, credential vault,
+ * grant, policy, audit row — with a real MCP server on the other end (`@copilotkit/aimock`), so
+ * the keyed research providers are proven to ride the same gates as every other connector rather
+ * than a research-shaped bypass of them.
+ *
+ * The mock's journal redacts credential headers to `[REDACTED]` (it is built to keep secrets out
+ * of its own transcript), so what is asserted here is the header NAME going out and the call
+ * verdict coming back; the raw value, its trimming and the absence of a scheme are asserted one
+ * layer down, where a server we wrote records what it saw.
+ */
+describe("research providers on the call path", () => {
+  const researchBotId = `agent_research_bot_${suite}`;
+  const researchActorId = `user_research_${suite}`;
+  /** Fixture keys, clearly fictional. A real key never enters a test report. */
+  const EXA_KEY = "exa-test-key-000000000000000000000000";
+  const PARALLEL_KEY = "parallel-test-key-000000000000000000";
+  /** A real AES-256 key length, because every call here opens the vault. */
+  const VAULT_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
+  const exaServerId = "exa-authenticated";
+  const parallelServerId = "parallel-authenticated";
+  const firecrawlServerId = "firecrawl";
+  const exaSearchRef = `${exaServerId}/web_search_exa`;
+  const exaFetchRef = `${exaServerId}/web_fetch_exa`;
+  const parallelSearchRef = `${parallelServerId}/web_search`;
+  const firecrawlSearchRef = `${firecrawlServerId}/firecrawl_search`;
+  const firecrawlCrawlRef = `${firecrawlServerId}/firecrawl_crawl`;
+
+  const researchPolicy: { current: ActionPolicy } = {
+    current: { mode: "enforce", deny: [], allow: ["true"] },
+  };
+
+  /**
+   * The real vault over the test database, wired like the rotation suite's: a call here decrypts
+   * the row the server points at, so a key that does not decrypt is a red test and not a stub's
+   * opinion.
+   */
+  const researchVault = {
+    readSecret: async (id: string) => {
+      const [row] = await database
+        .select({
+          encryptedValue: credentials.encryptedValue,
+          revokedAt: credentials.revokedAt,
+        })
+        .from(credentials)
+        .where(eq(credentials.id, id));
+      return row ?? null;
+    },
+    create: async () => {
+      throw new Error("this describe does not create credentials");
+    },
+    updateSecret: async () => {
+      throw new Error("this describe does not update credentials");
+    },
+    revoke: async () => {
+      throw new Error("this describe does not revoke credentials");
+    },
+  };
+
+  const researchStore = createPluginStore({
+    database,
+    auditStore: createAuditStore(database),
+    credentials: researchVault,
+    encryptionKey: VAULT_KEY,
+    policy: () => researchPolicy.current,
+  });
+
+  const researchServerIds = [exaServerId, parallelServerId, firecrawlServerId];
+  const researchToolNames: Record<string, string[]> = {
+    [exaServerId]: ["web_search_exa", "web_fetch_exa"],
+    [parallelServerId]: ["web_search", "web_fetch"],
+    [firecrawlServerId]: [
+      "firecrawl_search",
+      "firecrawl_scrape",
+      "firecrawl_crawl",
+    ],
+  };
+  let existingServers: (typeof mcpServers.$inferSelect)[] = [];
+  let existingTools: (typeof mcpTools.$inferSelect)[] = [];
+  const createdCredentialIds: string[] = [];
+
+  /**
+   * One research call against a mock MCP server standing in for the pinned host.
+   *
+   * The redirect is scoped to the host, the way `withMockedNotionListing` scopes its own, and the
+   * journal is what the assertions read: which requests arrived, carrying which header names.
+   */
+  async function withMockedVendor(
+    host: string,
+    tools: string[],
+    body: (mock: MCPMock) => Promise<void>,
+  ) {
+    const mock = new MCPMock();
+    for (const name of tools) {
+      mock.addTool({ name, description: name, inputSchema: {} });
+    }
+    mock.onToolCall(/.*/, () => [{ type: "text", text: "a result" }]);
+    // The journal is what getRequests reads; a fresh one per mock, so no test reads another's.
+    mock.setJournal(new Journal());
+    const mockUrl = await mock.start();
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const target = String(input instanceof Request ? input.url : input);
+      return realFetch(target.startsWith(host) ? mockUrl : input, init);
+    }) as typeof fetch;
+    try {
+      await body(mock);
+    } finally {
+      globalThis.fetch = realFetch;
+      await mock.stop?.();
+    }
+  }
+
+  async function researchAuditRows(targetId: string) {
+    return database
+      .select({
+        eventType: auditEvents.eventType,
+        payload: auditEvents.payload,
+      })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.targetType, "mcp_tool"),
+          eq(auditEvents.targetId, targetId),
+          sinceThisRun(),
+          eq(sql<string>`${auditEvents.payload} ->> 'bot'`, researchBotId),
+        ),
+      );
+  }
+
+  beforeAll(async () => {
+    await database
+      .insert(agents)
+      .values({
+        id: researchBotId,
+        name: researchBotId,
+        type: "remote_ag_ui",
+        configuration: {},
+      })
+      .onConflictDoNothing();
+
+    existingServers = await database
+      .select()
+      .from(mcpServers)
+      .where(inArray(mcpServers.id, researchServerIds));
+    existingTools = await database
+      .select()
+      .from(mcpTools)
+      .where(inArray(mcpTools.serverId, researchServerIds));
+
+    for (const serverId of researchServerIds) {
+      if (existingServers.some((row) => row.id === serverId)) continue;
+      const entry = catalogueEntry(serverId);
+      if (!entry || entry.host === null) {
+        throw new Error(`${serverId} is not a pinned catalogue entry`);
+      }
+      await database
+        .insert(mcpServers)
+        .values({
+          id: serverId,
+          title: entry.title,
+          vendor: entry.vendor,
+          url: `${entry.host}${entry.path}`,
+          provenance: "first-party",
+        })
+        .onConflictDoNothing();
+    }
+    for (const [serverId, names] of Object.entries(researchToolNames)) {
+      await database
+        .insert(mcpTools)
+        .values(names.map((name) => ({ serverId, name, description: name })))
+        .onConflictDoNothing();
+    }
+
+    // The deployment's keys, encrypted with this describe's own vault key and pointed at by the
+    // keyed server rows. `firecrawl` is the free entry and takes none.
+    const [exaRow] = await database
+      .select({ credentialId: mcpServers.credentialId })
+      .from(mcpServers)
+      .where(eq(mcpServers.id, exaServerId));
+    if (!exaRow?.credentialId) {
+      const [credential] = await database
+        .insert(credentials)
+        .values({
+          kind: "mcp",
+          provider: exaServerId,
+          keyId: `mcp-${exaServerId}-${suite}`,
+          encryptedValue: await encryptSecret(VAULT_KEY, EXA_KEY),
+          metadata: {},
+        })
+        .returning({ id: credentials.id });
+      createdCredentialIds.push(credential.id);
+      await database
+        .update(mcpServers)
+        .set({ credentialId: credential.id })
+        .where(eq(mcpServers.id, exaServerId));
+    }
+    const [parallelRow] = await database
+      .select({ credentialId: mcpServers.credentialId })
+      .from(mcpServers)
+      .where(eq(mcpServers.id, parallelServerId));
+    if (!parallelRow?.credentialId) {
+      const [credential] = await database
+        .insert(credentials)
+        .values({
+          kind: "mcp",
+          provider: parallelServerId,
+          keyId: `mcp-${parallelServerId}-${suite}`,
+          encryptedValue: await encryptSecret(VAULT_KEY, PARALLEL_KEY),
+          metadata: {},
+        })
+        .returning({ id: credentials.id });
+      createdCredentialIds.push(credential.id);
+      await database
+        .update(mcpServers)
+        .set({ credentialId: credential.id })
+        .where(eq(mcpServers.id, parallelServerId));
+    }
+  });
+
+  afterAll(async () => {
+    await database
+      .delete(pluginGrants)
+      .where(eq(pluginGrants.agentId, researchBotId));
+    await database.delete(agents).where(eq(agents.id, researchBotId));
+    // Tools and credentials this run created go; rows somebody else had stay, and the server rows
+    // follow the capture-and-restore convention the google-drive fixtures use.
+    for (const [serverId, names] of Object.entries(researchToolNames)) {
+      await database.delete(mcpTools).where(
+        and(
+          eq(mcpTools.serverId, serverId),
+          inArray(
+            mcpTools.name,
+            names.filter(
+              (name) =>
+                !existingTools.some(
+                  (row) => row.serverId === serverId && row.name === name,
+                ),
+            ),
+          ),
+        ),
+      );
+    }
+    if (createdCredentialIds.length > 0) {
+      // Clear the pointers first: the rows this suite created are only this suite's to remove.
+      await database
+        .update(mcpServers)
+        .set({ credentialId: null })
+        .where(inArray(mcpServers.id, [exaServerId, parallelServerId]));
+      await database
+        .delete(credentials)
+        .where(inArray(credentials.id, createdCredentialIds));
+    }
+    const createdServers = researchServerIds.filter(
+      (serverId) => !existingServers.some((row) => row.id === serverId),
+    );
+    if (createdServers.length > 0) {
+      await database
+        .delete(mcpServers)
+        .where(inArray(mcpServers.id, createdServers));
+    }
+  });
+
+  test("Exa's key goes out in x-api-key, and in no other header", async () => {
+    await researchStore.grant(
+      "mcp",
+      exaSearchRef,
+      researchBotId,
+      "admin@openbot.local",
+    );
+    await withMockedVendor(
+      "https://mcp.exa.ai",
+      ["web_search_exa"],
+      async (mock) => {
+        const answer = await researchStore.callTool({
+          ref: exaSearchRef,
+          args: { query: "openbot" },
+          botId: researchBotId,
+          actorId: researchActorId,
+        });
+        expect(answer.isError).toBe(false);
+        const requests = mock.getRequests() as {
+          headers: Record<string, string>;
+        }[];
+        expect(requests.length).toBeGreaterThan(0);
+        const carried = requests.flatMap((request) =>
+          Object.keys(request.headers).map((name) => name.toLowerCase()),
+        );
+        expect(carried).toContain("x-api-key");
+        expect(carried).not.toContain("authorization");
+      },
+    );
+  });
+
+  test("Parallel's keyed entry still authenticates with Authorization as before", async () => {
+    await researchStore.grant(
+      "mcp",
+      parallelSearchRef,
+      researchBotId,
+      "admin@openbot.local",
+    );
+    await withMockedVendor(
+      "https://search.parallel.ai",
+      ["web_search"],
+      async (mock) => {
+        const answer = await researchStore.callTool({
+          ref: parallelSearchRef,
+          args: { query: "openbot" },
+          botId: researchBotId,
+          actorId: researchActorId,
+        });
+        expect(answer.isError).toBe(false);
+        const requests = mock.getRequests() as {
+          headers: Record<string, string>;
+        }[];
+        expect(requests.length).toBeGreaterThan(0);
+        const carried = requests.flatMap((request) =>
+          Object.keys(request.headers).map((name) => name.toLowerCase()),
+        );
+        expect(carried).toContain("authorization");
+        expect(carried).not.toContain("x-api-key");
+      },
+    );
+  });
+
+  test("a keyed provider with no key sends nothing at all", async () => {
+    await researchStore.grant(
+      "mcp",
+      exaSearchRef,
+      researchBotId,
+      "admin@openbot.local",
+    );
+    const [row] = await database
+      .select({ credentialId: mcpServers.credentialId })
+      .from(mcpServers)
+      .where(eq(mcpServers.id, exaServerId));
+    await database
+      .update(mcpServers)
+      .set({ credentialId: null })
+      .where(eq(mcpServers.id, exaServerId));
+    try {
+      await withMockedVendor(
+        "https://mcp.exa.ai",
+        ["web_search_exa"],
+        async (mock) => {
+          await expect(
+            researchStore.callTool({
+              ref: exaSearchRef,
+              args: { query: "openbot" },
+              botId: researchBotId,
+              actorId: researchActorId,
+            }),
+          ).rejects.toBeInstanceOf(PluginRefusedError);
+          // The refusal is local. An endpoint that answers without a key is exactly the request a
+          // keyed entry must never spend.
+          expect(mock.getRequests().length).toBe(0);
+        },
+      );
+    } finally {
+      await database
+        .update(mcpServers)
+        .set({ credentialId: row?.credentialId ?? null })
+        .where(eq(mcpServers.id, exaServerId));
+    }
+  });
+
+  test("a revoked research grant refuses, and the vendor is not asked", async () => {
+    await researchStore.grant(
+      "mcp",
+      exaSearchRef,
+      researchBotId,
+      "admin@openbot.local",
+    );
+    await researchStore.revoke(
+      "mcp",
+      exaSearchRef,
+      researchBotId,
+      "admin@openbot.local",
+    );
+    await withMockedVendor(
+      "https://mcp.exa.ai",
+      ["web_search_exa"],
+      async (mock) => {
+        await expect(
+          researchStore.callTool({
+            ref: exaSearchRef,
+            args: { query: "openbot" },
+            botId: researchBotId,
+            actorId: researchActorId,
+          }),
+        ).rejects.toBeInstanceOf(PluginRefusedError);
+        expect(mock.getRequests().length).toBe(0);
+      },
+    );
+    const rows = await researchAuditRows(exaSearchRef);
+    const rejected = rows.filter(
+      (row) =>
+        row.eventType === "mcp.call_rejected" &&
+        (row.payload as { refusal?: string }).refusal === "not_granted",
+    );
+    expect(rejected.length).toBe(1);
+  });
+
+  test("a Firecrawl tool outside its reads is a write, and a write policy stops it", async () => {
+    await researchStore.grant(
+      "mcp",
+      firecrawlCrawlRef,
+      researchBotId,
+      "admin@openbot.local",
+    );
+    await researchStore.grant(
+      "mcp",
+      firecrawlSearchRef,
+      researchBotId,
+      "admin@openbot.local",
+    );
+    researchPolicy.current = {
+      mode: "enforce",
+      deny: ['intent == "write_tool"'],
+      allow: ["true"],
+    };
+    try {
+      await withMockedVendor(
+        "https://mcp.firecrawl.dev",
+        ["firecrawl_crawl", "firecrawl_search"],
+        async (mock) => {
+          // `firecrawl_crawl` launches a crawl on the vendor: a write by the entry's read list, even
+          // though no reviewed write list named it.
+          await expect(
+            researchStore.callTool({
+              ref: firecrawlCrawlRef,
+              args: { url: "https://example.com" },
+              botId: researchBotId,
+              actorId: researchActorId,
+            }),
+          ).rejects.toBeInstanceOf(PluginRefusedError);
+          // The search beside it reads, and the same policy that stops the crawl lets it through.
+          const answer = await researchStore.callTool({
+            ref: firecrawlSearchRef,
+            args: { query: "openbot" },
+            botId: researchBotId,
+            actorId: researchActorId,
+          });
+          expect(answer.isError).toBe(false);
+          expect(mock.getRequests().length).toBeGreaterThan(0);
+        },
+      );
+    } finally {
+      researchPolicy.current = { mode: "enforce", deny: [], allow: ["true"] };
+    }
+    const rows = await researchAuditRows(firecrawlCrawlRef);
+    const rejected = rows.filter(
+      (row) =>
+        row.eventType === "mcp.call_rejected" &&
+        (row.payload as { effect?: string }).effect === "write",
+    );
+    expect(rejected.length).toBe(1);
+  });
+
+  test("the trail names the provider, the tool and whose credential ran", async () => {
+    await researchStore.grant(
+      "mcp",
+      exaFetchRef,
+      researchBotId,
+      "admin@openbot.local",
+    );
+    await withMockedVendor(
+      "https://mcp.exa.ai",
+      ["web_fetch_exa"],
+      async () => {
+        await researchStore.callTool({
+          ref: exaFetchRef,
+          args: { url: "https://example.com/page" },
+          botId: researchBotId,
+          actorId: researchActorId,
+        });
+      },
+    );
+    const rows = await researchAuditRows(exaFetchRef);
+    const succeeded = rows.find(
+      (row) => row.eventType === "mcp.call_succeeded",
+    );
+    expect(succeeded).toBeDefined();
+    const payload = succeeded?.payload as {
+      server?: string;
+      tool?: string;
+      effect?: string;
+      reachedAs?: string;
+    };
+    expect(payload.server).toBe(exaServerId);
+    expect(payload.tool).toBe("web_fetch_exa");
+    expect(payload.effect).toBe("read");
+    // A keyed provider runs on the deployment's credential, so the trail says the deployment
+    // reached it — never a person who happens to be asking.
+    expect(payload.reachedAs).toBe("deployment");
+    // The key never travels: no payload field of a succeeded call carries the fixture key.
+    expect(JSON.stringify(succeeded?.payload)).not.toContain(EXA_KEY);
+  });
+});
+
+/**
+ * Research role refs on the skill save path.
+ *
+ * A skill declares `@research/search` or `@research/fetch` — logical roles, not a server's own
+ * tools. Selection already reads them that way (`declaredBy` expands each role onto whichever
+ * providers' tools the Bot actually holds), so the save-time check that asks "has this deployment
+ * ever seen this ref" has to read them the same way: a role ref is a claim about a role, and
+ * `mcp_tools` will never hold a row for a server called `@research`. Refusing it here severs the
+ * very path up10 criterion 5 wires together — the same role string guides the prompt, the
+ * selection and the summary — and the 400 lands on the person writing the skill, where no amount
+ * of selection-side tolerance can reach.
+ *
+ * What must NOT change: a real `serverId/toolName` ref is still checked against what this
+ * deployment has actually listed, and a ref that merely looks like a role — a misspelling, an
+ * empty role, a missing `@` — still resolves to nothing and is refused, because a declaration
+ * nobody can resolve should be fixed where it was written rather than saved to select nothing.
+ */
+describe("research role refs on the skill save path", () => {
+  const saveActorId = `user_skill_save_${suite}`;
+  /** A fixture server and tool only this describe wrote, so the known-ref check has a row to find. */
+  const fixtureServerId = `skillref_${suite}`;
+  const fixtureToolName = `known_tool_${suite}`;
+  const fixtureRef = `${fixtureServerId}/${fixtureToolName}`;
+
+  const saveVault = {
+    readSecret: async () => null,
+    create: async () => {
+      throw new Error("the save path never touches the vault");
+    },
+    updateSecret: async () => {
+      throw new Error("the save path never touches the vault");
+    },
+    revoke: async () => {
+      throw new Error("the save path never touches the vault");
+    },
+  };
+
+  const saveStore = createPluginStore({
+    database,
+    auditStore: createAuditStore(database),
+    credentials: saveVault,
+    encryptionKey: Buffer.alloc(32, 9).toString("base64"),
+    policy: () => ({ mode: "enforce", deny: [], allow: ["true"] }),
+  });
+
+  const skillSlug = (label: string) => `skill_role_${label}_${suite}`;
+  const slugs = {
+    roleOnly: skillSlug("roles"),
+    mixed: skillSlug("mixed"),
+    mixedUnknown: skillSlug("mixed_unknown"),
+    misspelled: skillSlug("misspelled"),
+    emptyRole: skillSlug("empty"),
+    noAt: skillSlug("no_at"),
+  };
+
+  /** What a skill ended up declaring, sorted — the row is the only place a save leaves evidence. */
+  async function declaredRefs(slug: string) {
+    const rows = await database
+      .select({ ref: skillTools.ref })
+      .from(skillTools)
+      .where(eq(skillTools.skillId, slug));
+    return rows.map((row) => row.ref).sort();
+  }
+
+  /** The refusal a rejected save produced, read the way the route turns it into a 400. */
+  async function refusalOf(input: Parameters<PluginStore["installSkill"]>[0]) {
+    try {
+      await saveStore.installSkill(input);
+    } catch (error) {
+      return error;
+    }
+    return null;
+  }
+
+  beforeAll(async () => {
+    await database
+      .insert(mcpServers)
+      .values({
+        id: fixtureServerId,
+        title: fixtureServerId,
+        vendor: "fixture",
+        url: "https://fixture.example.test/mcp",
+        provenance: "first-party",
+      })
+      .onConflictDoNothing();
+    await database
+      .insert(mcpTools)
+      .values({
+        serverId: fixtureServerId,
+        name: fixtureToolName,
+        description: fixtureToolName,
+      })
+      .onConflictDoNothing();
+  });
+
+  afterAll(async () => {
+    // The declared rows follow the skill by cascade; nothing here is somebody else's to keep.
+    await database
+      .delete(skills)
+      .where(inArray(skills.id, Object.values(slugs)));
+    await database
+      .delete(mcpTools)
+      .where(eq(mcpTools.serverId, fixtureServerId));
+    await database.delete(mcpServers).where(eq(mcpServers.id, fixtureServerId));
+  });
+
+  test("a skill declaring only research role refs saves, and the refs persist verbatim", async () => {
+    await saveStore.installSkill({
+      slug: slugs.roleOnly,
+      title: "Public-web research",
+      summary: "Search the web and read what it found",
+      instructions: "Search, then fetch the promising pages.",
+      ownerUserId: null,
+      tools: ["@research/search", "@research/fetch"],
+      by: saveActorId,
+    });
+    expect(await declaredRefs(slugs.roleOnly)).toEqual([
+      "@research/fetch",
+      "@research/search",
+    ]);
+    // The skill itself is really there, not merely quiet about tools.
+    const [row] = await database
+      .select({ slug: skills.slug })
+      .from(skills)
+      .where(eq(skills.id, slugs.roleOnly));
+    expect(row?.slug).toBe(slugs.roleOnly);
+  });
+
+  test("a role ref beside a real serverId/tool ref saves, and both persist", async () => {
+    await saveStore.installSkill({
+      slug: slugs.mixed,
+      title: "Mixed declaration",
+      summary: "One role, one real tool",
+      instructions: "Use both.",
+      ownerUserId: null,
+      tools: ["@research/search", fixtureRef],
+      by: saveActorId,
+    });
+    expect(await declaredRefs(slugs.mixed)).toEqual([
+      "@research/search",
+      fixtureRef,
+    ]);
+  });
+
+  test("an unknown real ref still refuses, and the role ref is not named as missing", async () => {
+    const absentRef = `${fixtureServerId}/absent_tool`;
+    const refusal = await refusalOf({
+      slug: slugs.mixedUnknown,
+      title: "Mixed with a typo",
+      summary: "One role, one tool this deployment never listed",
+      instructions: "Use both.",
+      ownerUserId: null,
+      tools: ["@research/search", absentRef],
+      by: saveActorId,
+    });
+    expect(refusal).toBeInstanceOf(PluginRefusedError);
+    expect((refusal as PluginRefusedError).message).toContain(absentRef);
+    // The role ref is a declaration the server understands; it must not be reported as the typo.
+    expect((refusal as PluginRefusedError).message).not.toContain("@research");
+    expect(await declaredRefs(slugs.mixedUnknown)).toEqual([]);
+  });
+
+  test("a misspelled role ref still refuses", async () => {
+    const refusal = await refusalOf({
+      slug: slugs.misspelled,
+      title: "Misspelled role",
+      summary: "A role nobody defined",
+      instructions: "Search.",
+      ownerUserId: null,
+      tools: ["@research/searh"],
+      by: saveActorId,
+    });
+    expect(refusal).toBeInstanceOf(PluginRefusedError);
+    expect(await declaredRefs(slugs.misspelled)).toEqual([]);
+  });
+
+  test("an empty role still refuses", async () => {
+    const refusal = await refusalOf({
+      slug: slugs.emptyRole,
+      title: "Empty role",
+      summary: "The @ with nothing after the slash",
+      instructions: "Search.",
+      ownerUserId: null,
+      tools: ["@research/"],
+      by: saveActorId,
+    });
+    expect(refusal).toBeInstanceOf(PluginRefusedError);
+    expect(await declaredRefs(slugs.emptyRole)).toEqual([]);
+  });
+
+  test("a role shape without the @ is a server ref, and is refused as unknown", async () => {
+    const refusal = await refusalOf({
+      slug: slugs.noAt,
+      title: "Bare role",
+      summary: "No @, so a server named research would have to exist",
+      instructions: "Search.",
+      ownerUserId: null,
+      tools: ["research/search"],
+      by: saveActorId,
+    });
+    expect(refusal).toBeInstanceOf(PluginRefusedError);
+    expect(await declaredRefs(slugs.noAt)).toEqual([]);
   });
 });

@@ -18,18 +18,40 @@ async function post(id: string, action: string, body?: unknown) {
   }).then((response) => response.json())) as SignInRequest;
 }
 
-/** The credential goes in the request body and nowhere else: not state, not the cache, not a log. */
+/**
+ * The credential goes in the request body and nowhere else: not state, not the cache, not a log.
+ *
+ * No verification code: one is asked for only after the site has the password, and only on its own.
+ * A code an old client sends along with the password is not read. See
+ * `submitSignInCodeMutationOptions`.
+ */
 export type SignInSubmission = {
   username?: string;
   password: string;
-  code?: string;
   save?: boolean;
 };
 
 export function submitSignInMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
+    // `gcTime` 0: the moment nothing observes this mutation it leaves the cache, so the password it
+    // carried is not kept in memory after the form is gone.
+    gcTime: 0,
     mutationFn: (variables: { id: string; input: SignInSubmission }) =>
       post(variables.id, "submit", variables.input),
+    onSettled: () => invalidate(queryClient),
+  });
+}
+
+/**
+ * The verification code the site sent, once the request is `code_required`. The code and nothing
+ * else. `gcTime` 0 for the same reason the password submission carries it: a code is good once and
+ * is cleared with the send, not kept in the cache.
+ */
+export function submitSignInCodeMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    gcTime: 0,
+    mutationFn: (variables: { id: string; code: string }) =>
+      post(variables.id, "code", { code: variables.code }),
     onSettled: () => invalidate(queryClient),
   });
 }
@@ -37,11 +59,8 @@ export function submitSignInMutationOptions(queryClient: QueryClient) {
 /** Choosing a saved login in the form is the owner's confirmation to use it for this sign-in. */
 export function confirmSavedLoginMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
-    mutationFn: (variables: { id: string; loginId: string; code?: string }) =>
-      post(variables.id, "use-saved", {
-        loginId: variables.loginId,
-        ...(variables.code ? { code: variables.code } : {}),
-      }),
+    mutationFn: (variables: { id: string; loginId: string }) =>
+      post(variables.id, "use-saved", { loginId: variables.loginId }),
     onSettled: () => invalidate(queryClient),
   });
 }

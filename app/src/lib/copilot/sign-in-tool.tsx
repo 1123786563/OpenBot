@@ -1,6 +1,6 @@
 import { IconLock } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { ToolLine } from "@/components/channels/tool-line";
 import { SignInForm } from "@/components/passwords/sign-in-form";
@@ -157,6 +157,14 @@ function SignInCard({
   outcome: Outcome;
 }) {
   const [open, setOpen] = useState(false);
+  // Leaving the card — navigation, another conversation, another organization's chat — ends this
+  // card's binding to the request, and the pending list it looked the request up in is dropped with
+  // it, rather than left behind for whatever mounts next.
+  const queryClient = useQueryClient();
+  useEffect(
+    () => () => queryClient.removeQueries({ queryKey: passwordKeys.pending() }),
+    [queryClient],
+  );
   // While the call waits there is no result to carry the id, so the open request that this call
   // asked for is looked up instead, polled until the handler has opened it.
   const lookup = running && !outcome.requestId && Boolean(toolCallId);

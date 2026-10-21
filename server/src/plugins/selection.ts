@@ -1,4 +1,9 @@
 import { textOf } from "../agents/message-text";
+import {
+  type ResearchRole,
+  researchRoleOf,
+  researchRoleOfTool,
+} from "../../../shared/research";
 /**
  * Choosing which of a Bot's tools to put in front of the model, one run at a time.
  *
@@ -184,6 +189,23 @@ export function readChosenSkills(
 }
 
 /**
+ * The research role a held ref plays, or null.
+ *
+ * The guard is THIS side's obligation, not the shared table's: `researchRoleOf` and
+ * `researchRoleOfTool` answer for strings, and what reaches them here comes from rows and
+ * declarations a database held. A ref that is not a string, or one with no server side, plays no
+ * role rather than half of one — and nothing on the narrowing path may throw, because a throw here
+ * would be read as a selector that failed and would widen the offer to everything. Kept beside its
+ * twin in `tools.ts`, which builds instructions from the same refs and owes the same protection.
+ */
+function roleOfHeldRef(ref: string): ResearchRole | null {
+  if (typeof ref !== "string") return null;
+  const slash = ref.indexOf("/");
+  if (slash <= 0) return null;
+  return researchRoleOfTool(ref.slice(0, slash), ref.slice(slash + 1));
+}
+
+/**
  * The tools a set of chosen skills asks for, intersected with what the Bot actually holds.
  *
  * The intersection is the whole safety property. A skill may name any tool: anybody signed in may
@@ -197,7 +219,23 @@ function declaredBy(
 ): Set<string> {
   const refs = new Set<string>();
   for (const skill of skills) {
-    for (const ref of skill.tools) if (granted.has(ref)) refs.add(ref);
+    for (const ref of skill.tools) {
+      if (granted.has(ref)) refs.add(ref);
+      /*
+       * A research role stands for that role on every provider — still only among what is granted.
+       *
+       * The expansion reads the declaration through `researchRoleOf`, whose null answer covers
+       * everything that is not exactly one of the two role refs: a misspelling resolves to nothing
+       * rather than to a guess, and a real `serverId/toolName` ref stays exactly that. What the
+       * role then collects is limited, by the loop below, to refs the grant already held — a skill
+       * declaring `@research/search` gains whichever providers' search tools this Bot holds and
+       * never a tool the Bot was never given.
+       */
+      const role = typeof ref === "string" ? researchRoleOf(ref) : null;
+      if (!role) continue;
+      for (const held of granted)
+        if (roleOfHeldRef(held) === role) refs.add(held);
+    }
   }
   return refs;
 }

@@ -41,17 +41,20 @@ describe("Parallel public-web research", () => {
       serverCredentialKind(catalogueEntry("parallel-authenticated")!),
     ).toBe("mcp");
   });
-  test("describes Parallel only while both research tools are actually offered", () => {
+  test("describes Parallel research only while both tools are actually offered", () => {
     expect(grantedToolGuidance(pair())).toContain(
-      "Parallel provides public-web search and extraction",
+      "For public-web research you can use:",
+    );
+    expect(grantedToolGuidance(pair())).toContain(
+      "- Parallel: mcp__parallel__web_search finds sources and mcp__parallel__web_fetch reads selected pages.",
     );
     // Described, not preferred: a Bot holding another search tool is not told to pass it over.
     expect(grantedToolGuidance(pair())).not.toContain("by default");
     expect(grantedToolGuidance([tool("parallel", "web_search")])).not.toContain(
-      "Parallel provides public-web search and extraction",
+      "public-web research",
     );
     expect(grantedToolGuidance([], ["parallel"])).not.toContain(
-      "Parallel provides public-web search and extraction",
+      "public-web research",
     );
     expect(grantedToolGuidance([])).toBe("");
   });
@@ -61,11 +64,15 @@ describe("Parallel public-web research", () => {
       ...pair("parallel-authenticated"),
     ]);
     expect(guidance).toContain(
-      "mcp__parallel-authenticated__web_search and mcp__parallel-authenticated__web_fetch discover sources",
+      "- Parallel: mcp__parallel-authenticated__web_search finds sources and mcp__parallel-authenticated__web_fetch reads selected pages.",
     );
-    expect(guidance).toContain(
-      "it does not connect a person's private account",
-    );
+    expect(guidance).not.toContain("mcp__parallel__web_search");
+    expect(guidance).toContain("do not connect a person's private account");
+  });
+  test("keeps Parallel's own session guidance, injected as its note and nowhere else", () => {
+    const guidance = grantedToolGuidance(pair("parallel-authenticated"));
+    expect(guidance).toContain("Parallel: Generate one session_id");
+    expect(guidance).toContain("Parallel: Omit model_name");
   });
   test("ships a Research Desk declaration referencing catalogue tools without granting access", () => {
     const skills = parse(

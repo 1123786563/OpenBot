@@ -3,7 +3,14 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import { RESEARCH_ROLES } from "@/lib/plugins/tool-name";
 import { undeclaredElsewhere } from "@/lib/skills/form";
+
+/** The picker label of a research role, keyed per role in the `skills` locale. */
+const RESEARCH_ROLE_LABEL_KEYS = {
+  search: "tools.researchSearch",
+  fetch: "tools.researchFetch",
+} as const;
 
 /**
  * Which tools this skill says it needs.
@@ -133,6 +140,35 @@ export function SkillTools({
           ))}
         </div>
       )}
+
+      {/*
+       * The two research roles, declared by what a Bot should do rather than by which vendor does
+       * it. Gated on the page having loaded at all — not on any server offering anything — because
+       * a role names no server: it stands for whichever research connector the Bot holds, on every
+       * provider, and resolving it is selection's job. Declaring one here with nothing granted
+       * still loads nothing, exactly like every other declaration below.
+       */}
+      {plugins.data ? (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-muted-foreground text-xs">
+            {t("tools.researchHeading")}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {RESEARCH_ROLES.map(({ role, ref }) => (
+              <Button
+                key={ref}
+                onClick={() => toggle(ref)}
+                size="sm"
+                title={t("tools.researchTitle", { ref })}
+                type="button"
+                variant={held.has(ref) ? "default" : "outline"}
+              >
+                {t(RESEARCH_ROLE_LABEL_KEYS[role])}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {elsewhere.length > 0 ? (
         <div className="flex flex-col gap-1.5">

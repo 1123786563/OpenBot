@@ -1,4 +1,9 @@
-import { afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import {
   type CapabilityRow,
   DEFAULT_CAPABILITIES,
@@ -396,10 +401,119 @@ describe("scrubbing commands", () => {
       'curl -u "admin:s3 cret" https://x.test',
       "curl -u admin:[REDACTED] https://x.test",
     ],
+    [
+      "curl --proxy-user admin:glorbwibble https://x.test",
+      "curl --proxy-user admin:[REDACTED] https://x.test",
+    ],
+    [
+      "curl --proxy-user=admin:glorbwibble https://x.test",
+      "curl --proxy-user=admin:[REDACTED] https://x.test",
+    ],
+    // Positional password flags: the word after the flag is the secret, so it takes the tool that
+    // owns the flag to say so. The fixture secrets are made-up words that match no token shape.
+    [
+      "docker login -p glorbwibble registry.example.test",
+      "docker login -p [REDACTED] registry.example.test",
+    ],
+    [
+      'docker login -p "glorb wibble" registry.example.test',
+      "docker login -p [REDACTED] registry.example.test",
+    ],
+    [
+      "sshpass -p glorbwibble ssh deploy@host.example.test",
+      "sshpass -p [REDACTED] ssh deploy@host.example.test",
+    ],
+    [
+      "sshpass -p 'glorb wibble' ssh deploy@host.example.test",
+      "sshpass -p [REDACTED] ssh deploy@host.example.test",
+    ],
+    [
+      "sshpass -P authprompt -p glorbwibble ssh deploy@host.example.test",
+      "sshpass -P authprompt -p [REDACTED] ssh deploy@host.example.test",
+    ],
+    // The env form sshpass itself recommends over `-p`: the password is in the assignment, `-e`
+    // carries no value of its own, and SSHPASS names no full word the NAME=value rules match.
+    [
+      "SSHPASS=glorbwibble sshpass -e ssh deploy@host.example.test",
+      "SSHPASS=[REDACTED] sshpass -e ssh deploy@host.example.test",
+    ],
+    [
+      "SSHPASS='glorb wibble' sshpass -e ssh deploy@host.example.test",
+      "SSHPASS=[REDACTED] sshpass -e ssh deploy@host.example.test",
+    ],
+    // docker's grammar puts global options between the command and its subcommand; a registry
+    // password behind them is still a password.
+    [
+      "docker -H tcp://registry.example:2375 login -p glorbwibble",
+      "docker -H tcp://registry.example:2375 login -p [REDACTED]",
+    ],
+    [
+      "docker --context prod login -p glorbwibble",
+      "docker --context prod login -p [REDACTED]",
+    ],
+    ["redis-cli -a glorbwibble ping", "redis-cli -a [REDACTED] ping"],
+    ["redis-cli -aglorbwibble ping", "redis-cli -a[REDACTED] ping"],
+    ["redis-cli --pass glorbwibble ping", "redis-cli --pass [REDACTED] ping"],
+    ["redis-cli --pass=glorbwibble ping", "redis-cli --pass=[REDACTED] ping"],
+    // An attached short form that reads as a flag named after a secret: the password itself goes,
+    // and the word after it stays.
+    ["redis-cli -aMY_TOKEN_VALUE ping", "redis-cli -a[REDACTED] ping"],
+    ["mysqldump -pglorbwibble appdb", "mysqldump -p[REDACTED] appdb"],
+    // An uppercase -P is the attached port, not the password: only the lowercase flag reads as one.
+    ["mysql -h db -P3306 -phunter2 app", "mysql -h db -P3306 -p[REDACTED] app"],
+    [
+      "open redis://:glorbwibble@cache:6379/0",
+      "open redis://:[REDACTED]@cache:6379/0",
+    ],
+    // What a flag's own grammar leaves alone: a separated `-p` means the password is prompted for
+    // and the word after it is a database; `-U` is not curl's credential flag; a bare `-p` does not
+    // swallow the flag that follows it.
+    ["mysql -p database", "mysql -p database"],
+    ["mysql -uroot -p --verbose", "mysql -uroot -p --verbose"],
+    ["docker -p 8080:80 nginx", "docker -p 8080:80 nginx"],
+    ["docker login -p -u deploy", "docker login -p -u deploy"],
+    [
+      "docker login --password-stdin < creds.txt",
+      "docker login --password-stdin < creds.txt",
+    ],
+    [
+      "sshpass ssh -p 2222 deploy@host.example.test",
+      "sshpass ssh -p 2222 deploy@host.example.test",
+    ],
+    [
+      "sshpass -P authprompt ssh deploy@host.example.test",
+      "sshpass -P authprompt ssh deploy@host.example.test",
+    ],
+    // An env assignment whose name merely begins with the same letters is not sshpass's to read,
+    // and a global option does not turn a neighbour subcommand into a login: `ps` stays a process
+    // list, and `run`'s own `-p` is a port mapping, not docker's registry password.
+    [
+      "SSHPASS_FILE=/run/secrets/ssh sshpass -e ssh deploy@host.example.test",
+      "SSHPASS_FILE=/run/secrets/ssh sshpass -e ssh deploy@host.example.test",
+    ],
+    [
+      "docker -H tcp://registry.example:2375 ps -p 8080:80",
+      "docker -H tcp://registry.example:2375 ps -p 8080:80",
+    ],
+    ["docker run login -p 8080:80 nginx", "docker run login -p 8080:80 nginx"],
+    [
+      "wget -U Mozilla:5 https://example.test",
+      "wget -U Mozilla:5 https://example.test",
+    ],
   ];
   for (const [input, output] of cases) {
     test(input, () => expect(scrubCommand(input)).toBe(output));
   }
+  test("a command continued with a backslash is still one command to its password flag", () => {
+    expect(scrubCommand("mysql -uroot \\\n  -pglorbwibble appdb")).toBe(
+      "mysql -uroot \\\n  -p[REDACTED] appdb",
+    );
+  });
+  test("a line break starts another command, so its -p is a port again", () => {
+    expect(
+      scrubCommand("mysql -uroot appdb\nssh -p2222 deploy@host.example.test"),
+    ).toBe("mysql -uroot appdb\nssh -p2222 deploy@host.example.test");
+  });
   test("an ordinary command is untouched", () => {
     expect(scrubCommand("ls -la /workspace && git status")).toBe(
       "ls -la /workspace && git status",

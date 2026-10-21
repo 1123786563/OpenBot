@@ -1,5 +1,7 @@
 # Public-web research with Parallel
 
+> Parallel-specific companion to [`docs/web-research.md`](web-research.md), which covers all three research providers (Parallel, Exa, Firecrawl), the role-based skill declarations and the governance they ride. Everything below still holds; the guidance it describes is now written per provider rather than naming Parallel unconditionally.
+
 Parallel provides public-web search and extraction for OpenBot. When both its `web_search` and `web_fetch` tools are granted to a Bot, the built-in Bot guidance describes them to it for public-web research, alongside whatever other tools it holds. The shipped Research Desk example also includes a public-web research skill. This configuration is conditional on ordinary authorization: no existing Bot receives new access automatically.
 
 ## Enable research

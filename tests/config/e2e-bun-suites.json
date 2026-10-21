@@ -53,6 +53,7 @@
     "app/tests/audit-dry-run-label.test.tsx",
     "app/tests/audit-export-truncated.test.tsx",
     "app/tests/authoring-tool-cards.test.tsx",
+    "app/tests/auto-watch-screen.test.tsx",
     "app/tests/bot-access-skills.test.tsx",
     "app/tests/bot-app-grants-screen.test.tsx",
     "app/tests/bot-approval-rules.test.tsx",
@@ -64,13 +65,13 @@
     "app/tests/bot-responsibilities.test.tsx",
     "app/tests/bot-roster.test.tsx",
     "app/tests/bot-route-default-agent.test.tsx",
-    "app/tests/bot-settings-rows.test.tsx",
-    "app/tests/bot-setup.test.tsx"
+    "app/tests/bot-settings-rows.test.tsx"
    ]
   },
   {
    "name": "app/tests part 2",
    "files": [
+    "app/tests/bot-setup.test.tsx",
     "app/tests/bot-sharing.test.tsx",
     "app/tests/boundaries-read-failure.test.tsx",
     "app/tests/brokered-account-row.test.tsx",
@@ -93,17 +94,19 @@
     "app/tests/composer-send-failure.test.tsx",
     "app/tests/composer-unnamed-mime.test.tsx",
     "app/tests/composer-upload-group.test.tsx",
-    "app/tests/composing-enter.test.tsx",
-    "app/tests/composio-picker-add-error.test.tsx"
+    "app/tests/composing-enter.test.tsx"
    ]
   },
   {
    "name": "app/tests part 3",
    "files": [
+    "app/tests/composio-picker-add-error.test.tsx",
     "app/tests/computer-activity.test.ts",
     "app/tests/computer-control-button.test.tsx",
     "app/tests/computer-handoff.test.ts",
+    "app/tests/computer-screen-announcement.test.ts",
     "app/tests/computer-tool-refusals.test.ts",
+    "app/tests/connect-app-card.test.tsx",
     "app/tests/craft-session-title.test.tsx",
     "app/tests/failed-send-attachments.test.tsx",
     "app/tests/form-submit-controls.test.ts",
@@ -120,19 +123,21 @@
     "app/tests/person-sent-message.test.ts",
     "app/tests/playground-json.test.ts",
     "app/tests/plugin-read-failure.test.tsx",
-    "app/tests/proposed-bot-card.test.tsx",
-    "app/tests/proposed-skill-card.test.tsx",
-    "app/tests/root-drop-guard.test.tsx",
-    "app/tests/router.test.ts"
+    "app/tests/proposed-bot-card.test.tsx"
    ]
   },
   {
    "name": "app/tests part 4",
    "files": [
+    "app/tests/proposed-skill-card.test.tsx",
+    "app/tests/root-drop-guard.test.tsx",
+    "app/tests/router.test.ts",
     "app/tests/serve.test.ts",
     "app/tests/sign-in-card.test.tsx",
+    "app/tests/sign-in-code-step.test.tsx",
     "app/tests/skills-read-failure.test.tsx",
     "app/tests/stopped-turn.test.ts",
+    "app/tests/tool-activity.test.tsx",
     "app/tests/transcript-attachments.test.tsx",
     "app/tests/user-authorizations-ui.test.tsx",
     "app/tests/user-key-status-ui.test.tsx"
@@ -723,6 +728,7 @@
   "app/tests/audit-dry-run-label.test.tsx",
   "app/tests/audit-export-truncated.test.tsx",
   "app/tests/authoring-tool-cards.test.tsx",
+  "app/tests/auto-watch-screen.test.tsx",
   "app/tests/bot-access-skills.test.tsx",
   "app/tests/bot-app-grants-screen.test.tsx",
   "app/tests/bot-approval-rules.test.tsx",
@@ -763,7 +769,9 @@
   "app/tests/computer-activity.test.ts",
   "app/tests/computer-control-button.test.tsx",
   "app/tests/computer-handoff.test.ts",
+  "app/tests/computer-screen-announcement.test.ts",
   "app/tests/computer-tool-refusals.test.ts",
+  "app/tests/connect-app-card.test.tsx",
   "app/tests/craft-session-title.test.tsx",
   "app/tests/failed-send-attachments.test.tsx",
   "app/tests/form-submit-controls.test.ts",
@@ -787,8 +795,10 @@
   "app/tests/router.test.ts",
   "app/tests/serve.test.ts",
   "app/tests/sign-in-card.test.tsx",
+  "app/tests/sign-in-code-step.test.tsx",
   "app/tests/skills-read-failure.test.tsx",
   "app/tests/stopped-turn.test.ts",
+  "app/tests/tool-activity.test.tsx",
   "app/tests/transcript-attachments.test.tsx",
   "app/tests/user-authorizations-ui.test.tsx",
   "app/tests/user-key-status-ui.test.tsx",
@@ -1246,7 +1256,10 @@
   "server/tests/multitenancy/agent-adapters.test.ts": "runner named it: wave3 round7 mt9 套件",
   "server/tests/multitenancy/runs-protocol.test.ts": "runner named it: wave3 round7 mt9 套件",
   "server/tests/hindsight-judgment-review.contract.test.ts": "runner named it: wave3 hbc8 #389 套件",
-  "server/tests/hindsight-judgment-review.integration.test.ts": "runner named it: wave3 hbc8 #389 套件"
+  "server/tests/hindsight-judgment-review.integration.test.ts": "runner named it: wave3 hbc8 #389 套件",
+  "app/tests/connect-app-card.test.tsx": "runner named it: bun-test-compat layer: happy-dom component suite using bun:test spyOn/fake timers (jest) for the connect card's tab and poll seams",
+  "app/tests/tool-activity.test.tsx": "runner named it: bun-test-compat layer: happy-dom component suite over the transcript's groupToolSteps projection and ToolActivity fold (details/summary, i18n en/zh, streaming identity)",
+  "app/tests/sign-in-code-step.test.tsx": "runner named it: L03 A08: the private sign-in form's code step and secret hygiene, on the Bun tier with the other app UI suites"
  },
  "directoryIslands": [
   "server/tests/multitenancy",

@@ -3,7 +3,13 @@ import { ApprovalRefusedError } from "../approvals/types";
 import type { AuditInitiator } from "../audit";
 import { HeadlessToolSuspension } from "../computer/headless-tools";
 import { markUntrusted } from "../untrusted-content";
+import {
+  type ResearchRole,
+  RESEARCH_TOOLS,
+  researchRoleOfTool,
+} from "../../../shared/research";
 import type { SelectableSkill } from "./selection";
+import { catalogueEntry, type CatalogueEntry } from "./catalogue";
 import {
   isDeploymentFault,
   PluginRefusedError,
@@ -142,19 +148,7 @@ export function grantedToolGuidance(
     (system) => !held.includes(system),
   );
 
-  const researchConnector = ["parallel-authenticated", "parallel"].find(
-    (server) =>
-      ["web_search", "web_fetch"].every((name) =>
-        tools.some((tool) => tool.ref === `${server}/${name}`),
-      ),
-  );
-  const researchTools = researchConnector
-    ? tools.filter(
-        (tool) =>
-          tool.ref === `${researchConnector}/web_search` ||
-          tool.ref === `${researchConnector}/web_fetch`,
-      )
-    : [];
+  const research = researchProviders(tools);
 
   return [
     ...(tools.length > 0
@@ -177,13 +171,7 @@ export function grantedToolGuidance(
           "access, and the thing that is missing is yours, not theirs.",
         ]
       : []),
-    ...(researchConnector
-      ? [
-          `Parallel provides public-web search and extraction: ${researchTools.map((tool) => tool.name).join(" and ")} discover sources and read selected pages.`,
-          "Parallel searches the public web; it does not connect a person's private account. Send only the research objective, necessary search queries and requested URLs, not a full transcript or private documents. Generate one session_id for the conversation and reuse it on related search/fetch calls. Omit model_name unless the exact configured model identifier is known.",
-          "Cite source URLs and distinguish excerpts from full-page reads. Report provider errors or missing sources; do not invent evidence or quietly bypass a denial. Interactive browser work still uses the authorized computer tools when needed.",
-        ]
-      : []),
+    ...researchGuidance(research),
     /*
      * The vendors this deployment connects to and this Bot does not hold.
      *
@@ -204,6 +192,104 @@ export function grantedToolGuidance(
         ]
       : []),
   ].join("\n");
+}
+
+/**
+ * The research role a held ref plays, or null.
+ *
+ * THE GUARD LIVES HERE, ON THE CONSUMING SIDE, because the shared table answers only for
+ * well-formed pairs. `researchRoleOfTool` is the reviewed null-semantics core; what this adds is
+ * the protection its callers owe it: a ref that is not a string (this list is built from rows and
+ * instructions, and nothing here may throw on what a database actually holds), and a ref with no
+ * server side at all, which plays no role rather than half of one. Kept beside its twin in
+ * `selection.ts` — the two exist because the shared module deliberately does not grow a second
+ * entry point for the same question.
+ */
+function roleOfHeldRef(ref: string): ResearchRole | null {
+  if (typeof ref !== "string") return null;
+  const slash = ref.indexOf("/");
+  if (slash <= 0) return null;
+  return researchRoleOfTool(ref.slice(0, slash), ref.slice(slash + 1));
+}
+
+/** One provider's research pair, as the Bot actually holds it. */
+type ResearchProvider = {
+  entry: CatalogueEntry;
+  search: GrantedTool;
+  fetch: GrantedTool;
+};
+
+/**
+ * The research providers this Bot can actually use: a search tool and a fetch tool from one server.
+ *
+ * One per vendor. A deployment that added a vendor twice, once free and once with its key, has
+ * granted the keyed one for its limits, so that is the one the Bot is told about. Only catalogue
+ * entries count — a custom server that happens to name its tools like a provider's is nobody's
+ * research surface and is described as whatever it is.
+ */
+function researchProviders(tools: GrantedTool[]): ResearchProvider[] {
+  const byServer = new Map<
+    string,
+    Partial<Record<ResearchRole, GrantedTool>>
+  >();
+  for (const tool of tools) {
+    const role = roleOfHeldRef(tool.ref);
+    if (!role) continue;
+    const server = tool.ref.slice(0, tool.ref.indexOf("/"));
+    byServer.set(server, { ...byServer.get(server), [role]: tool });
+  }
+  const byVendor = new Map<string, ResearchProvider>();
+  for (const [server, held] of byServer) {
+    const entry = catalogueEntry(server);
+    if (!entry || !held.search || !held.fetch) continue;
+    const provider = { entry, search: held.search, fetch: held.fetch };
+    const existing = byVendor.get(entry.vendor);
+    if (!existing || entry.auth.kind === "deployment-bearer")
+      byVendor.set(entry.vendor, provider);
+  }
+  return [...byVendor.values()];
+}
+
+/**
+ * What a Bot is told about public-web research, the same for every provider.
+ *
+ * Described, not preferred: a Bot holding one of these and some other search tool is not told to
+ * pass the other over. With more than one, the person's choice decides. Nothing here tells a model
+ * to reach for another provider when one fails — a refusal is reported, and routing around it is
+ * the one thing this guidance must never suggest.
+ *
+ * Each provider's own notes ride beside its own line, because a session identifier is Parallel's
+ * parameter and not research's: a note injected for every vendor would have the model sending
+ * arguments one vendor never asked for.
+ *
+ * Told to search unprompted for facts that change, because a Bot holding these answered "top five
+ * countries by GDP" from memory and then, asked, said it could search. The bound in the next line
+ * is what keeps that from becoming the open-web hunt the provenance guidance warns about.
+ */
+function researchGuidance(providers: ResearchProvider[]): string[] {
+  if (providers.length === 0) return [];
+  return [
+    "For public-web research you can use:",
+    ...providers.map(
+      ({ entry, search, fetch }) =>
+        `- ${entry.vendor}: ${search.name} finds sources and ${fetch.name} reads selected pages.`,
+    ),
+    ...(providers.length > 1
+      ? [
+          "Use the one the person asks for. Otherwise pick one and keep to it for the conversation.",
+        ]
+      : []),
+    "Search before answering when the answer depends on facts that change: current figures, rankings, prices, who holds a role, recent events. Do not answer those from memory while you hold these tools, even when the person did not ask you to search.",
+    "Keep it bounded: a search or two and a read of the best sources, then answer, and say what you could not confirm.",
+    "These search the public web; they do not connect a person's private account. Send only the research objective, necessary search queries and requested URLs, not a full transcript or private documents.",
+    ...providers.flatMap(({ entry }) =>
+      (RESEARCH_TOOLS[entry.key]?.notes ?? []).map(
+        (note) => `${entry.vendor}: ${note}`,
+      ),
+    ),
+    "Do not name the provider in your answer unless the person asks which one you used: cite the sources you read.",
+    "Cite source URLs and distinguish excerpts from full-page reads. Report provider errors or missing sources; do not invent evidence or quietly bypass a denial. Interactive browser work still uses the authorized computer tools when needed.",
+  ];
 }
 
 /**

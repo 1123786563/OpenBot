@@ -211,6 +211,15 @@ type Connection = {
   url: string;
   /** The bearer token for this server, already decrypted. Absent for a server that needs none. */
   token?: string;
+  /**
+   * The header the token goes in, sent as stored, when the vendor does not read `Authorization`.
+   *
+   * Named by the catalogue entry (`auth: { kind: "deployment-bearer", header }`) and carried here
+   * rather than re-derived, so the reviewed name is the only one that can reach the wire. Absent
+   * means the default `Authorization` branch below, whose scheme handling every existing server
+   * keeps.
+   */
+  tokenHeader?: string;
 };
 
 /**
@@ -342,7 +351,14 @@ async function withClient<T>(
 ): Promise<T> {
   const transport = new StreamableHTTPClientTransport(new URL(connection.url), {
     requestInit: connection.token
-      ? { headers: { Authorization: authorizationHeader(connection.token) } }
+      ? {
+          headers: connection.tokenHeader
+            ? // A vendor that reads its key from a header of its own takes the token exactly as
+              // stored — no scheme prepended, whitespace only trimmed. The name and the shape are
+              // the entry's reviewed contract, not something a caller chose.
+              { [connection.tokenHeader]: connection.token.trim() }
+            : { Authorization: authorizationHeader(connection.token) },
+        }
       : undefined,
   });
   const client = new Client({ name: "openbot", version: "1.0.0" });

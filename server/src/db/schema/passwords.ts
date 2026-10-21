@@ -80,14 +80,17 @@ export const signInRequests = pgTable(
       .defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-    /** While `filling`: past this, the attempt is treated as abandoned and the request reopens. */
+    /**
+     * While `filling`: past this, the attempt is treated as abandoned. Whether the write landed is
+     * unknown, so the request ends `failed` as unknown and is never reopened for a replay.
+     */
     fillingUntil: timestamp("filling_until", { withTimezone: true }),
   },
   (t) => [
     index("sign_in_requests_owner_idx").on(t.ownerUserId, t.status),
     check(
       "sign_in_requests_status_check",
-      sql`${t.status} IN ('pending', 'filling', 'taken_over', 'signed_in', 'failed', 'cancelled', 'expired')`,
+      sql`${t.status} IN ('pending', 'filling', 'code_required', 'taken_over', 'signed_in', 'failed', 'cancelled', 'expired')`,
     ),
     check(
       "sign_in_requests_method_check",
