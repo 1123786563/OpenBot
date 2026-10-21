@@ -602,6 +602,9 @@ export function createExecutionArtifactsService(
     },
 
     async cullExecutionArtifacts(scope, input) {
+      // F2（round3 评审）：cull 是删除类操作且候选可来自全部署树——与其余
+      // 四个公开入口同一纪律，scope 必须先过受信断言，过滤器才可信。
+      assertTrustedScope(scope);
       // 候选先过 scope 过滤器（AC4）：跨公司/跨团队路径在 remove 之前出局。
       const removable = cullableArtifactsInScope(
         input.root,
