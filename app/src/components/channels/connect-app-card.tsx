@@ -89,6 +89,20 @@ export function ConnectAppCard({
   /** The wait ran its full limit with no row to show for it. */
   const [timedOut, setTimedOut] = useState(false);
   const connect = useMutation(connectAccountMutationOptions());
+  /*
+   * ONE ENDING AT A TIME. Every attempt ends in exactly one of these — the key form, an unreachable
+   * url, a waiting tab, a blocked tab, or the failure the connector answered with — and each ending
+   * replaces the last one wholesale: the outcome flags are cleared together before the path sets
+   * the one it means. A hand-maintained per-branch list is how a stale ending survives to sit
+   * beside the new one, which is a card answering two different questions at once.
+   */
+  const resetOutcome = () => {
+    setWaiting(false);
+    setNeedsKey(false);
+    setBadUrl(false);
+    setTimedOut(false);
+    setBlockedUrl(null);
+  };
   const connections = useQuery({
     ...connectionsQueryOptions(),
     // Only while a consent is open in the other tab; otherwise this is an ordinary cached read.
@@ -171,11 +185,8 @@ export function ConnectAppCard({
          */
         if (!authorizationUrl) {
           tab?.close();
+          resetOutcome();
           setNeedsKey(true);
-          setWaiting(false);
-          setTimedOut(false);
-          setBadUrl(false);
-          setBlockedUrl(null);
           return;
         }
         /*
@@ -186,23 +197,24 @@ export function ConnectAppCard({
         const url = webUrl(authorizationUrl);
         if (!url) {
           tab?.close();
+          resetOutcome();
           setBadUrl(true);
-          setWaiting(false);
-          setTimedOut(false);
-          setBlockedUrl(null);
           return;
         }
+        resetOutcome();
         setWaiting(true);
-        setTimedOut(false);
-        setBadUrl(false);
         if (tab) {
-          setBlockedUrl(null);
           tab.location.replace(url);
         }
         // The tab was blocked. The url is still good, so offer it as something to click.
         else setBlockedUrl(url);
       },
-      onError: () => tab?.close(),
+      // A failed start is its own ending too: the stale outcomes go with it, so the alert shows
+      // the one failure the connector answered with and nothing it replaces.
+      onError: () => {
+        tab?.close();
+        resetOutcome();
+      },
     });
   };
 

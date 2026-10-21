@@ -430,6 +430,32 @@ describe("the poll that is the only thing allowed to say connected", () => {
     expect((retry as HTMLButtonElement).disabled).toBe(false);
   });
 
+  test("a failed retry after the timeout replaces the stale wait instead of stacking on it", async () => {
+    fakeClock = true;
+    jest.useFakeTimers();
+    const { view } = drawCard();
+    await settle();
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    await settle();
+    for (let step = 0; step < 6; step += 1) {
+      await advance(50_000);
+    }
+    expect(
+      view.getByText(/still is not connected after 5 minutes/),
+    ).toBeTruthy();
+    // The retry fails — and the failure is the whole answer: the timed-out ending it replaces
+    // does not stay on the screen beside it.
+    connectAnswer = { error: "The connector is not registered." };
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    await settle();
+    expect(view.getByRole("alert").textContent).toContain(
+      "The connector is not registered.",
+    );
+    expect(
+      view.queryByText(/still is not connected after 5 minutes/),
+    ).toBeNull();
+  });
+
   test("only this person's live row says connected — a shared row or a revoked one does not", async () => {
     connectionRows = [
       { serverId: SERVER_ID, holder: "deployment" },
