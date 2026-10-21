@@ -462,7 +462,7 @@ describe("renewal-guard health, alerts, cooldown, recovery", () => {
       OPENBOT_TLS_ALERT_WEBHOOK: `file:${join(dir, "alerts.jsonl")}`,
     });
     expect(result.exit).toBe(1);
-    // docs/tls-certs.md's zero-config Loki rule selects on exactly this substring.
+    // reference/tls-certs.md's zero-config Loki rule selects on exactly this substring.
     expect(result.err).toContain("openbot-tls-alert severity=critical");
     expect(result.err).toContain("reason=renewal-failed");
     // …and the drifting `log`-prefixed form ("openbot-tls alert …") must not come back.
@@ -2141,14 +2141,14 @@ describe("deployment wiring pins (fix-ocr20 #8/#9/#10)", () => {
     // lands at docker/compose/tls instead of the repo root. The root-anchored
     // `/tls` entry cannot catch that spelling; this fallback does.
     expect(gitignoreSource).toContain("docker/compose/tls/");
-    const docs = readFileSync("docs/tls-certs.md", "utf8");
+    const docs = readFileSync("reference/tls-certs.md", "utf8");
     // The fallback is bound-of-one: a CUSTOM in-repo host directory is the
     // deployment's own gitignore job, and the docs must say so.
     expect(docs).toContain("gitignore");
   });
 
   test("fix-ocr22 #9/#10: the compose floor is documented, and the drill's usage matches its sh shebang", () => {
-    const docs = readFileSync("docs/tls-certs.md", "utf8");
+    const docs = readFileSync("reference/tls-certs.md", "utf8");
     // certs.yml's env_file long syntax (`path:` + `required:`) needs
     // compose ≥ 2.24; older versions fail with an unknown-key error that
     // reads like a broken repo. The floor is part of the deployment guide.

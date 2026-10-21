@@ -266,7 +266,7 @@ console.log(`\nledger: archive/verification/e2e-import-boundary.json`);
  */
 if (process.argv.includes("--apply")) {
   const { spawnSync } = await import("node:child_process");
-  const manifestPath = join(root, "docs/verification/e2e-bun-suites.json");
+  const manifestPath = join(root, "tests/config/e2e-bun-suites.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const files = new Set(manifest.files ?? []);
   const causes = { ...(manifest.causes ?? {}) };

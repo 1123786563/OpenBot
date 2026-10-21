@@ -294,6 +294,7 @@ export function createBillingService(deps: {
       // A plan with no credit component has no allowance to renew: the period is handled —
       // advance the marker so the detection does not re-run on every delivery.
       await store.advanceSubscriptionAllowance({
+        externalCustomerId: row.externalCustomerId,
         externalSubscriptionId: row.externalSubscriptionId,
         allowancePeriodStart: periodStart,
         allowancePeriodEnd: periodEnd,
@@ -318,6 +319,7 @@ export function createBillingService(deps: {
     // The marker moves only after the grant is recorded: a crash between the two leaves the
     // period uncovered, and the next delivery or sweep re-runs the idempotent grant.
     await store.advanceSubscriptionAllowance({
+      externalCustomerId: row.externalCustomerId,
       externalSubscriptionId: row.externalSubscriptionId,
       allowancePeriodStart: periodStart,
       allowancePeriodEnd: periodEnd,
@@ -385,7 +387,14 @@ export function createBillingService(deps: {
         const remote = await client.getSubscription(
           active.externalSubscriptionId,
         );
-        if (remote.body) {
+        // The bare-id GET is ambiguous under #373's own premise — the same id string can
+        // be live under two customers at once — so an answer only counts when it names
+        // this row's customer. Another customer's record carries no facts about this
+        // subscription; the context drops to null rather than showing someone else's period.
+        if (
+          remote.body &&
+          remote.body.externalCustomerId === active.externalCustomerId
+        ) {
           subscription = {
             status: remote.body.status,
             currentPeriodStart: remote.body.currentPeriodStart ?? null,
@@ -820,8 +829,17 @@ export function createBillingService(deps: {
         try {
           // The provider's own period is the fact a renewal is detected from; a subscription
           // the provider no longer answers (or no longer runs) is skipped, not guessed.
-          const remote = await client.getSubscription(row.externalSubscriptionId);
+          const remote = await client.getSubscription(
+            row.externalSubscriptionId,
+          );
           if (!remote.body) continue;
+          // The bare-id GET asks without the customer dimension, and #373's own premise is
+          // that the same id string can be live under two customers at once: an answer
+          // naming another customer is not this row's period and must not drive its payout.
+          // Undeterminable, like every other gap here — the row stays uncovered for the
+          // next pass.
+          if (remote.body.externalCustomerId !== row.externalCustomerId)
+            continue;
           if (
             remote.body.status !== "active" &&
             remote.body.status !== "incomplete"

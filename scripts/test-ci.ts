@@ -132,10 +132,10 @@ if (exitStatus !== 0) {
       );
       process.exitCode = 1;
     } else {
-      const broken = existsSync("docs/verification/e2e-known-broken.json")
+      const broken = existsSync("tests/config/e2e-known-broken.json")
         ? ((
             JSON.parse(
-              readFileSync("docs/verification/e2e-known-broken.json", "utf8"),
+              readFileSync("tests/config/e2e-known-broken.json", "utf8"),
             ) as { entries?: unknown[] }
           ).entries?.length ?? 0)
         : 0;
@@ -144,7 +144,7 @@ if (exitStatus !== 0) {
           ` from ${summary.discovered} discovered.` +
           (broken
             ? `\n\n${broken} suite file(s) are excluded because their own fixture moved\n` +
-              "(docs/verification/e2e-known-broken.json) — that is a real broken test, not a pass.\n"
+              "(tests/config/e2e-known-broken.json) — that is a real broken test, not a pass.\n"
             : "") +
           "\n",
       );

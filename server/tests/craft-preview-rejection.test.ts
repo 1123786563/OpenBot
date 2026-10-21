@@ -22,6 +22,9 @@
 // steppable fake clock, minimal store seams, hono `app.request` for routes.
 
 import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
 import { loadCraftConfig } from "../src/craft/config";
@@ -129,10 +132,27 @@ function originWith(
     },
     previewTickets: tickets,
     secret: SECRET,
-    env,
+    // #411: a host-form origin fail-closes without a judgeable TLS status
+    // record, and this suite's OPEN twins mint host-form addresses — hand them
+    // a healthy record (the fixture shape #411's own matrix uses) so the TLS
+    // gate stays out of the way of the closure this file is actually testing.
+    // Dev-form origins never consult it, and every closure's own reason
+    // (enabled/template/port checks) fires independently of TLS health.
+    env: {
+      OPENBOT_TLS_STATUS_FILE: healthyTlsStatusFile,
+      ...env,
+    },
     servePreview,
   });
 }
+
+/** A healthy TLS renewal-status record in a throwaway file (#411's fixture shape). */
+const healthyTlsStatusFile = (() => {
+  const dir = mkdtempSync(join(tmpdir(), "openbot-tls-status-rejection-"));
+  const statusFile = join(dir, "renewal-status.json");
+  writeFileSync(statusFile, JSON.stringify({ health: "ok", daysLeft: 45 }));
+  return statusFile;
+})();
 
 /** An open origin, its address for one session, and a ticket bound to that host. */
 function entryCase(

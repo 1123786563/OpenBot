@@ -1,1 +1,0 @@
-{"name":"craft414-probe","private":true,"scripts":{"dev":"next dev -p 3399"},"dependencies":{"next":"16.2.9","react":"19.2.7","react-dom":"19.2.7"},"devDependencies":{"@types/node":"26.1.0","@types/react":"19.2.17","@types/react-dom":"19.2.3","typescript":"^6"}}

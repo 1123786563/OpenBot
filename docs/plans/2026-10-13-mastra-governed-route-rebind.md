@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, existing HMAC route catalog and synthetic DB-free catalog tests.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; parent T2 `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; accepted T2 production continuation `docs/plans/2026-10-12-mastra-t2-production-cutover.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent T2 `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; accepted T2 production continuation `docs/plans/2026-10-12-mastra-t2-production-cutover.md`.
 
 **Source evidence:** `.superpowers/sdd/2026-10-12-mastra-t2-production-cutover/reports/governed-success-route-architecture.md` (SHA256 `70091d421fa9c8151a0bbec9fb39c700d4376e83cdff8b3f115228e1698b3417`), §3. The approved `canonicalizeModelRouteSnapshot` computes the same versioned HMAC/fingerprint values used at admission; using it again avoids changing the independently reviewed catalog module.
 

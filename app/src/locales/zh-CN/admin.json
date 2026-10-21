@@ -1280,5 +1280,22 @@
     "pass": "通过",
     "fail": "失败",
     "recoveryLabel": "恢复方式"
+  },
+  "recoveryReview": {
+    "sectionTitle": "异常结算核查",
+    "sectionDescription": "未知消费恢复项与其证据的只读视图；结算与释放是独立授权的处置动作，不在此页。",
+    "loading": "正在加载异常结算项…",
+    "loadProblem": "异常结算核查数据加载失败。",
+    "empty": "当前没有未处置的异常结算项。",
+    "account": "归属账户",
+    "ceiling": "金额上限",
+    "dwell": "停留时长",
+    "failures": "失败次数",
+    "reason": "最近原因",
+    "state": "状态",
+    "evidence": "查询证据",
+    "evidenceEmpty": "尚无查询证据",
+    "usage": "用量",
+    "noWriteActions": "本视图严格只读"
   }
 }

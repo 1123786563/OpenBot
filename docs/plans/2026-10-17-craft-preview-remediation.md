@@ -1,7 +1,7 @@
 # Craft 预览独立 Origin — 现状修复方案（Issue #358 审核后）
 
 - **基线**：`origin/main` = `44754feb`（PR #400 + #401 已合并）。审核证据取自 detached worktree `/private/tmp/openbot-audit-358`。
-- **事实源**：Spec `docs/specs/2026-10-15-craft-preview-origin-design.md`（已批准，D1–D11 / AC1–AC9）、`docs/tickets/craft-preview-origin/manifest.json`、GitHub #358–#367、`44754feb` 的代码与测试。
+- **事实源**：Spec `docs/specs/2026-10-15-craft-preview-origin-design.md`（已批准，D1–D11 / AC1–AC9）、`docs/plans/tickets/craft-preview-origin/manifest.json`、GitHub #358–#367、`44754feb` 的代码与测试。
 - **审核结论口径**：9 条 AC → verified 3（AC3/AC4/AC9）、partial 6（AC1/AC2/AC5/AC6/AC7/AC8）；D6 一项与 Spec 冲突。#359–#367 在 GitHub 上全部 OPEN、票面 AC 勾选数为 0，而 #358 正文把它们标为 `[x]`。
 - **本方案性质**：实施计划（HOW）。不改变已批准需求；T4 是唯一需要回写 Spec 的任务，且已按用户决定定为「记录偏离」。
 
@@ -55,7 +55,7 @@
 **写范围**
 - 新建 `docker/compose/edge.yml`：反代服务（nginx:alpine 或 traefik，二选一在实现首步锁定并写明理由），`443` 端口映射，只读挂载 `docker/compose/tls/`（与 `certs.yml` 的 `--install-cert` 输出路径同源），`server_name ~^(?<sub>[0-9a-f]{20}\.)?<preview-base>$` + `proxy_set_header Host $host`（**必须原样透传 Host**：分流语义建立在 `request.url` 的 host 上，见 `server/src/index.ts:5781` 的 dispatcher）。
 - `docker/compose/certs.yml`：`reloadcmd` 从 `docker compose restart openbot-server` 改为重载反代（`nginx -s reload` / traefik file-provider），保证「在途预览连接不被打断」。
-- `charts/openbot/values.yaml`（`ingress.hosts` @651、`ingress.tls` @656）：补一个 preview 通配 host 的取值样例 + `docs/compose.md`、`docs/tls-certs.md` 的运行步骤（含 `OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE` 与反代 `preview-base` 必须同源这一点）。
+- `charts/openbot/values.yaml`（`ingress.hosts` @651、`ingress.tls` @656）：补一个 preview 通配 host 的取值样例 + `reference/compose.md`、`reference/tls-certs.md` 的运行步骤（含 `OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE` 与反代 `preview-base` 必须同源这一点）。
 - **server 侧新增可用性信号（准入输入）**：`server/src/craft/config.ts` 增加 `previewEdgeProbeUrl`（如 `https://probe.<preview-base>/`，或部署方声明的「入口已就绪」只读探针），在 `server/src/craft/preview-origin.ts` 的 `admission()`（:479）链上增加一条判定：模板为 host 形态且入口探针不可用 → `{ ok:false, reason: 可展示 }`。探针必须**带缓存与超时**，不得每请求拨号；不可用时给出的是原因文案而不是猜测。
 - 测试：`server/tests/craft-preview-origin.test.ts` 增加「host 形态 + 入口不可用 → 503 + 原因，且 `originFor` 抛错」用例；`tests/compose.test.ts` 增加 edge 服务与证书卷断言。
 
@@ -104,7 +104,7 @@
 **写范围**
 1. **吸收审核 harness**：把 `/private/tmp/audit358-verify.ts` 的 15 项断言移植为 `server/tests/craft-preview-socket.test.ts`（真实 `Bun.serve`，非 `app.request`）：换票 302 + cookie 属性字面串、重放 401、注入时钟过期、他人通行证、会话删除后不可兑换、四动词透传、label 挂载保留、`cookie`/`authorization`/`origin` 不出现在上游、CSP 落在代理响应、`/api/**` 在 dev 形态落回主站路由、重启后旧 label 不再被认领。
 2. **接线**：根 `package.json` 增加 `test:live-craft-preview`（模式对齐既有 `test:live-*`：缺 `.env`/前置服务时**先报错退出 1**，不允许静默 skip 后返回 0）；`scripts/craft-preview-acceptance.ts` 的 preflight 失败必须是非零退出并打印缺哪一项。
-3. **产物归档**：输出目录改为 `docs/verification/craft-preview/<UTC 时间戳>/`，内容含 `summary.json`（逐条 `AC → PASS/FAIL/SKIP + 断言细节`）、每张截图、server 日志切片；该路径**不加入 .gitignore**（与 `gui-test-screenshots` 区分）。脚本改为写 `summary.json` 而不是只 print stdout。
+3. **产物归档**：输出目录改为 `.archive/runs/craft-preview/verification/<UTC 时间戳>/`，内容含 `summary.json`（逐条 `AC → PASS/FAIL/SKIP + 断言细节`）、每张截图、server 日志切片；脚本改为写 `summary.json` 而不是只 print stdout。
 4. **补齐 AC1 的字面 401**：现证据里页面内跨源 fetch 是被 CSP 拦成 `TypeError: Failed to fetch`，字面 401 只在 server 日志步。脚本需分别断言两层——(a) 浏览器侧被拦（说明 CSP 生效），(b) 绕过 CSP 的直连（`fetch` 目标改用允许的路径或在页面外用 CDP 发请求）得到 401 且响应体可读，并在 `summary.json` 里标成两条独立证据，避免再用「CSP 拦截」冒充「origin 隔离 401」。
 5. **CI**：新增 workflow 只跑第 1 项的单测/类型检查（无外部依赖）；live 验收保持人工触发但产物必须作为 PR 附件或提交进上表的归档路径。不要给 CI 配真实 DNS 凭据。
 
@@ -120,15 +120,15 @@
 
 ### T4｜按 R1 回写 Spec，并重述 #364 票面（不假装满足）
 
-**问题事实**：Spec D6（`docs/specs/2026-10-15-craft-preview-origin-design.md:65`）要求 `basePath`/`assetPrefix`/`redirects` **全部删除**、`lib/base-path.ts` **退化为常量空串**。实现（`server/assets/craft/web-template/next.config.ts`、`lib/base-path.ts`）在 dev 形态仍按注入 env 设 `basePath`+`assetPrefix`，`BASE_PATH` 读 `NEXT_PUBLIC_BASE_PATH`；`docs/craft-preview-origin.md:177` 已承认「F-2（#365 R-6）**恢复** env 驱动」。`#364` 票面 5 条 AC 在 GitHub 上 0 勾选。按 `AGENTS.md`「实现与批准 Spec 冲突应升级处理」，已升级为决定 R1。
+**问题事实**：Spec D6（`docs/specs/2026-10-15-craft-preview-origin-design.md:65`）要求 `basePath`/`assetPrefix`/`redirects` **全部删除**、`lib/base-path.ts` **退化为常量空串**。实现（`server/assets/craft/web-template/next.config.ts`、`lib/base-path.ts`）在 dev 形态仍按注入 env 设 `basePath`+`assetPrefix`，`BASE_PATH` 读 `NEXT_PUBLIC_BASE_PATH`；`reference/craft-preview-origin.md:177` 已承认「F-2（#365 R-6）**恢复** env 驱动」。`#364` 票面 5 条 AC 在 GitHub 上 0 勾选。按 `AGENTS.md`「实现与批准 Spec 冲突应升级处理」，已升级为决定 R1。
 
 **写范围**
 - Spec 增补（**只加不改语义**，逐条带理由）：
   - D3/D6 改为：「basePath 机制在**生产 host 形态**整体退场（应用跑 origin 根路径）；**dev 形态**因不依赖本地泛域名 TLS，保留 `/<label>` 受控 env 注入挂载，`apiUrl()` 是该形态下生成代码访问自身 API 的唯一受支持路径。」
   - AC2 补一条 dev 形态限定：「生成代码的裸 `fetch("/api/...")` 在 dev 形态仍会进入宿主 `/api/**` 命名空间，但**不携带平台会话**（cookie host-only + 跨站 `SameSite=Lax`）→ 401/404；该形态的隔离依据是 host 不同，不是路径不可达。」
   - 新增「已知偏离」小节：记录 cwd 正则、`redirects` 兜底、无条件 `assetPrefix` 已删除（D6 已满足的部分），与保留 env 注入挂载（偏离部分）及收敛条件（若将来 `*.localhost` 本地 TLS 成本可接受，再切独立主机）。
-- `docs/tickets/craft-preview-origin/issues/05-scaffold-drop-basepath.md` 的 AC 重写为新契约（不再含「next.config.ts 不再含 basePath/assetPrefix」这类与契约矛盾的字面项）。
-- `docs/craft-preview-origin.md` 首部状态行（现写「#360–#363 交付轨迹」）更新为实际落地范围，并把 dev 形态的足枪写入「已知约束」。
+- `docs/plans/tickets/craft-preview-origin/issues/05-scaffold-drop-basepath.md` 的 AC 重写为新契约（不再含「next.config.ts 不再含 basePath/assetPrefix」这类与契约矛盾的字面项）。
+- `reference/craft-preview-origin.md` 首部状态行（现写「#360–#363 交付轨迹」）更新为实际落地范围，并把 dev 形态的足枪写入「已知约束」。
 
 **验证**：Spec/票面/实现三者一致（人工比对清单）；`grep -n "basePath" docs/specs/2026-10-15-craft-preview-origin-design.md` 的措辞不再与实现互斥；`server/tests/craft-webapp-template.test.ts` 的断言与票面新 AC 对应（该文件当前已钉 `BASE_PATH` 白名单与三方正则 parity，217 测试全过）。
 
@@ -153,7 +153,7 @@
 **写范围**
 - `server/src/craft/config.ts` 新增 `legacyPreviewEnabled`（建议默认 `true` 保持兼容，但提供一键关闭；命名与既有 `boolEnv` 模式一致）。关闭时 legacy 会话在 `webapp-info` 得到 `webapp_url:null` + 可展示原因（复用 `previewOriginClosedReason` 面），前端显示「该会话的预览与平台同源，已被部署方禁用，请重建 web app」。
 - `app/src/components/craft/output-panel/preview-tab.tsx` 的 legacy 提示（现 `legacyNotice`）补上「与平台同源」这一风险表述；i18n 两份 locale 同步。
-- `docs/craft-preview-origin.md` 存量会话一节记录：风险、开关、收敛办法（重建 app 会写 `.webapp-generation` 标记即翻转为 current，见 `server/src/craft/webapp-generation.ts:67`）。
+- `reference/craft-preview-origin.md` 存量会话一节记录：风险、开关、收敛办法（重建 app 会写 `.webapp-generation` 标记即翻转为 current，见 `server/src/craft/webapp-generation.ts:67`）。
 
 **验证**：`craft-webapp-proxy.test.ts` 增「legacy 开关关闭 → null + 原因，不换票（409 路径不变）」；前端测试 `craft-preview-tab.test.tsx` 增提示断言；可选 live：legacy 会话在开关关闭时面板给出可读原因而不是 iframe。
 
@@ -184,8 +184,8 @@
 | T9 | **sidecar 与 server 模板判定锁步**：实测 `sh lib.sh __derive` 对 `https://{session}.127.0.0.1:3001`、`{session}.com`、`{session}.a..b` 返回 ok，而 `preview-origin.ts:341/417/422` 分别拒绝；`lib.sh:182-189` 注释已过期。另 `entrypoint.sh`/`lib.sh` 把 acme.sh 输出尾部逐字写入 docker logs 与 `renewal-status.json`，DNS 插件若回显 token 即入库 | 新增锁步用例表（同一批模板串喂两侧，断言判定一致）；输出脱敏后 `grep -i token` 在日志与状态文件中 0 命中 |
 | T10 | **告警闭环成为硬要求**：`OPENBOT_TLS_ALERT_WEBHOOK` 默认为空、仓库无 Loki/Grafana 规则、`renewal-status.json`/`reload.stamp` 零读取。改为：host 形态部署时未配置告警通道 → sidecar 拒绝启动并给原因；并交付一组可导入的告警规则 | `tls-pipeline.test.ts` 增「无 webhook 且声明生产 → 拒绝启动」 |
 | T11 | **测试抖动**：默认超时下 `scripts/tls-pipeline.test.ts` = 95 pass / **4 fail（5s 超时）**+ 3 errors；`--timeout 60000` = 99 pass / 0 fail（137s）。根因是慢子进程与 bun 默认 5s 竞争，非代码缺陷。给这些用例显式 `timeout`，并考虑把 spawn 密集用例移出根 `bun run test`（它含 `./scripts`） | `bun test scripts/tls-pipeline.test.ts`（不带 `--timeout`）连跑两轮全绿 |
-| T12 | **registry 落库／多副本**（触发式，不主动做）：`preview-origin.ts:477` 是内存 `Map`，`docs/craft-preview-origin.md:84` 已记 M-2（重启后旧地址 404／落回主站，须经主站重进重铸；已注册才认领）。触发条件：出现多副本部署，或运维反馈「重启丢预览」成规模 | 触发后再立票 |
-| T13 | **跟踪一致性**：#358 正文把 #359–#367 标为 `[x]` 而 9 票全 OPEN、票面勾选 0；`docs/craft-preview-origin.md` 状态行滞后；`gui-test-screenshots` 的 gitignore 使证据不可归档（与 T3 配套）。GitHub 写入需你授权，本方案只准备文案 | 人工核对清单 |
+| T12 | **registry 落库／多副本**（触发式，不主动做）：`preview-origin.ts:477` 是内存 `Map`，`reference/craft-preview-origin.md:84` 已记 M-2（重启后旧地址 404／落回主站，须经主站重进重铸；已注册才认领）。触发条件：出现多副本部署，或运维反馈「重启丢预览」成规模 | 触发后再立票 |
+| T13 | **跟踪一致性**：#358 正文把 #359–#367 标为 `[x]` 而 9 票全 OPEN、票面勾选 0；`reference/craft-preview-origin.md` 状态行滞后；`gui-test-screenshots` 的 gitignore 使证据不可归档（与 T3 配套）。GitHub 写入需你授权，本方案只准备文案 | 人工核对清单 |
 
 ---
 

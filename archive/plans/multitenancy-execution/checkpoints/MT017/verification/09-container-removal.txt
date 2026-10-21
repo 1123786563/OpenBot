@@ -1,7 +1,0 @@
-== container removal (real execution, coordinator-visible) ==
-$ docker ps --format '{{.Names}}' | grep mt017
-mt017-impl-pg
-$ docker rm -f mt017-impl-pg
-mt017-impl-pg
-$ docker ps -a --format '{{.Names}}' | grep mt017 (post-removal probe; expect no output)
-(none — container fully removed)

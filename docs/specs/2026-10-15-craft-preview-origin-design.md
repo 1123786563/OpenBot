@@ -1,6 +1,6 @@
 # Craft 预览独立 Origin 设计（隔离生成代码与平台会话）
 
-状态：**已批准**。用户于 2026-10-15 逐条确认 Q1–Q5（Q1 hash、Q2 ACME DNS-01 自动化、Q3 单次使用 + 30 秒 + preview 域会话级 cookie、Q4 不迁移、Q5 `webapp_url` 绝对化）。本文是行为、范围与验收依据，不是实施计划。D1–D6 为实测证据锁定的决定，D7–D11 为本次用户确认的决定；可按 `docs/tickets/craft-preview-origin/` 派发。
+状态：**已批准**。用户于 2026-10-15 逐条确认 Q1–Q5（Q1 hash、Q2 ACME DNS-01 自动化、Q3 单次使用 + 30 秒 + preview 域会话级 cookie、Q4 不迁移、Q5 `webapp_url` 绝对化）。本文是行为、范围与验收依据，不是实施计划。D1–D6 为实测证据锁定的决定，D7–D11 为本次用户确认的决定；可按 `docs/plans/tickets/craft-preview-origin/` 派发。
 
 来源：2026-10-15 对运行中栈的真实浏览器实测（Chromium + Casdoor 登录 + server :3001 + 沙箱内 dev server），以及本仓库源码只读核验。领域术语见根 `CONTEXT.md`。
 

@@ -26,7 +26,7 @@
 - billing/cleanup-execution.ts：PROTECTED_TABLES 去 knowledge_bases/knowledges；rehearsal/classification 注释
 - tests 编辑：craft-builtin-skills、craft-agents-template、craft-managed-content、craft-session-config-mcp、opik-tool-steps、cleanup-execution.integration、multitenancy/inventory（去 2 个 kb 用例）
 - package.json：root test:kb；server kb:* 11 条
-- Dockerfile 143 注释、scripts/e2e-red-inventory.mjs:115、docs/compose.md kb 节
+- Dockerfile 143 注释、scripts/e2e-red-inventory.mjs:115、reference/compose.md kb 节
 
 ## 不动（独立线/误报）
 acknowledge 系、MCP brokered_connections "knowledge lane" 注释、onyx 文案之外的

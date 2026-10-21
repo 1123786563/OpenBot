@@ -388,7 +388,7 @@ git commit -m "feat(billing): admission applies a bound's fit before counting th
 
 **Files:**
 - Modify: `server/src/index.ts`(gate 的 bounds 构造与注释,import)
-- Modify: `docs/configuration.md`(chat 适配器输入界说明)
+- Modify: `reference/configuration.md`(chat 适配器输入界说明)
 
 **Interfaces:**
 - Consumes: Task 1 `countChatInputTokens`/`fitChatInputRequest`;Task 2 合同 `fit`。
@@ -438,7 +438,7 @@ gate 的 bounds(替换 input 的 unsupported)并重写其上注释:
 Run: `cd server && bunx tsc --noEmit -p .`
 Expected: 无错误
 
-- [x] **Step 3: 配置文档更新(docs/configuration.md 的 hard-cap 段落后补一行)**
+- [x] **Step 3: 配置文档更新(reference/configuration.md 的 hard-cap 段落后补一行)**
 
 在 `BILLING_CODE_RUN_MAX_RESERVATION_TOKENS` 表格行之后、段落说明中追加:
 
@@ -454,7 +454,7 @@ operator reconciliation rather than a silent charge.
 - [x] **Step 4: 提交**
 
 ```bash
-git add server/src/index.ts docs/configuration.md
+git add server/src/index.ts reference/configuration.md
 git commit -m "feat(billing): wire the conservative counted input bound into the model gate"
 ```
 

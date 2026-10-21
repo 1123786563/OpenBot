@@ -1,7 +1,0 @@
-# GREEN-1 focused suite — 2026-10-18T06:45:10Z
-(pass) MT034 shared-account approvals: locked object, params digest, owning scope (Issue #77) > storage fence: least grants, trusted seams, input validation > an unknown or already-decided request reads as the same canonical deny (no existence leak) [1.48ms]
-
- 16 pass
- 0 fail
- 64 expect() calls
-Ran 16 tests across 1 file. [457.00ms]

@@ -1,5 +1,0 @@
-# 冻结面核验（credential-ownership.ts / enterprise-credentials.ts 与领取时逐字节一致）
-9aca25433525132bdc37da25116196fb96cef5af8614c288c3dd637dbe30df31  server/src/enterprise/tenancy/credential-ownership.ts
-b14a0683729523dea5c9b8b0dac5f3bf6b0e17a0e4f4f22bf60d4c8969444b6e  server/src/db/schema/enterprise-credentials.ts
-9aca25433525132bdc37da25116196fb96cef5af8614c288c3dd637dbe30df31  server/src/enterprise/tenancy/credential-ownership.ts
-b14a0683729523dea5c9b8b0dac5f3bf6b0e17a0e4f4f22bf60d4c8969444b6e  server/src/db/schema/enterprise-credentials.ts

@@ -1,3 +1,0 @@
-# MT028 修复轮 typecheck（2026-10-17）
-$ tsc --noEmit
-typecheck-exit=0

@@ -13,12 +13,42 @@
 import { timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  describeExecutionScope,
+  EXECUTION_TENANT_HEADER,
+  EXECUTION_WORKSPACE_HEADER,
+  executionWorkspaceSegments,
+  ExecutionScopeRegistry,
+  type ExecutionScope,
+  parseExecutionScope,
+} from "../../shared/execution-scope";
 import { isPlainBotId } from "./bot-id";
 import type { BotRuntimes } from "./bot-runtimes";
 import type { SandboxEnv } from "./env";
 import { createSnapshot, restoreArchive } from "./snapshot";
 import { forwardEvents } from "./sse";
 import { readWebappFile, startWebapp, stopWebapp } from "./webapp";
+
+export { parseExecutionScope };
+export type { ExecutionScope };
+
+/**
+ * The ownership a response echoes back, so a caller can see the scope it acted in — the same
+ * headers it sent, and never anything about a token.
+ */
+function withExecutionScope(
+  response: Response,
+  scope: ExecutionScope,
+): Response {
+  const headers = new Headers(response.headers);
+  headers.set(EXECUTION_TENANT_HEADER, scope.tenantId);
+  headers.set(EXECUTION_WORKSPACE_HEADER, scope.workspaceId);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
 export function tokenMatches(
   presented: string | undefined,
@@ -120,6 +150,8 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export function createProxyHandler(
   env: SandboxEnv,
   runtimes: BotRuntimes,
+  /** Shared with the runtime/dev-server spawners so every subsystem agrees where a Bot lives. */
+  executionScopes: ExecutionScopeRegistry = new ExecutionScopeRegistry(),
 ): (
   request: Request,
   bunServer?: {
@@ -163,16 +195,55 @@ export function createProxyHandler(
         { status: 400 },
       );
 
-    // reset 是治理动作：只允许显式端点，路径白名单之外照旧 404。
+    /*
+     * The execution ownership (MT050): the token above proves only "a caller of this deployment",
+     * which made every token holder equivalent at the machine level. These two headers carry whose
+     * execution this is; without them the request is refused rather than served as deployment-wide,
+     * and a Bot's first scope-carrying request binds it — a later request from a different scope is
+     * one company's caller reaching for another's workspace, refused here where it can still be.
+     */
+    const scope = parseExecutionScope(request.headers);
+    if (!scope) {
+      console.warn(
+        `sandbox refused a ${request.method} ${url.pathname} request that stated no execution ownership.`,
+      );
+      return Response.json(
+        { error: "Execution ownership is required." },
+        { status: 403 },
+      );
+    }
+    if (!executionScopes.bind(botId, scope)) {
+      console.warn(
+        `sandbox refused a ${request.method} ${url.pathname} request for ${botId} from ${describeExecutionScope(scope)}: that Bot's workspace belongs to another execution scope.`,
+      );
+      return Response.json(
+        { error: "That Bot's workspace belongs to another execution scope." },
+        { status: 403 },
+      );
+    }
+    // The ownership-named tree (MT047): every file, snapshot and reset below resolves inside it,
+    // and the segments are validated ids, so the path cannot leave this scope's own subtree.
+    const workspaceRoot = join(
+      env.workspaceDir,
+      ...executionWorkspaceSegments(scope, botId).slice(0, -1),
+    );
+    const botWorkspace = join(
+      env.workspaceDir,
+      ...executionWorkspaceSegments(scope, botId),
+    );
+
+    // reset 是治理动作：只允许显式端点，路径白名单之外照旧 404。The removed tree is
+    // this scope's own (derived above from validated ids), so a reset can never reach
+    // another company's or team's workspace (MT047 AC4).
     if (url.pathname === "/workspace/reset") {
       if (request.method !== "POST")
         return Response.json({ error: "Use POST." }, { status: 405 });
       await runtimes.stopBot(botId);
-      await rm(`${env.workspaceDir}/bots/${botId}`, {
+      await rm(botWorkspace, {
         recursive: true,
         force: true,
       });
-      return Response.json({ ok: true, botId });
+      return withExecutionScope(Response.json({ ok: true, botId }), scope);
     }
 
     // Allowed but awaiting its task: honest 501, never a silent 404 that would read as a typo.
@@ -259,6 +330,9 @@ export function createProxyHandler(
       const started = await runtimes.startDevServer({
         botId,
         dir,
+        // The scope's own tree, so the containment arithmetic below runs against the
+        // ownership-named workspace rather than the deployment-wide default.
+        botWorkspace,
         ...(typeof body.command === "string" && body.command.trim()
           ? { command: body.command }
           : {}),
@@ -312,7 +386,7 @@ export function createProxyHandler(
             { status: 400 },
           );
         }
-        const target = join(env.workspaceDir, "bots", botId, path);
+        const target = join(botWorkspace, path);
         const info = await stat(target).catch(() => null);
         if (info === null) {
           return Response.json({ error: "Not found." }, { status: 404 });
@@ -340,7 +414,7 @@ export function createProxyHandler(
           { status: 400 },
         );
       }
-      const target = join(env.workspaceDir, "bots", botId, path);
+      const target = join(botWorkspace, path);
       const info = await stat(target).catch(() => null);
       if (info === null) {
         return Response.json({ error: "Not found." }, { status: 404 });
@@ -382,10 +456,13 @@ export function createProxyHandler(
           { status: 413 },
         );
       }
-      const target = join(env.workspaceDir, "bots", botId, path);
+      const target = join(botWorkspace, path);
       await mkdir(join(target, ".."), { recursive: true });
       await writeFile(target, body);
-      return Response.json({ path, size: body.byteLength }, { status: 201 });
+      return withExecutionScope(
+        Response.json({ path, size: body.byteLength }, { status: 201 }),
+        scope,
+      );
     }
 
     // DELETE /file: the contained inverse of the write — the proxy deletes, and only a regular
@@ -402,7 +479,7 @@ export function createProxyHandler(
           { status: 400 },
         );
       }
-      const target = join(env.workspaceDir, "bots", botId, path);
+      const target = join(botWorkspace, path);
       const info = await stat(target).catch(() => null);
       if (!info?.isFile())
         return Response.json({ error: "Not found." }, { status: 404 });
@@ -413,10 +490,7 @@ export function createProxyHandler(
     // The static webapp road (S3): files that were built, no process. Start verifies the
     // build exists (404-shaped refusal); GET serves one file under containment.
     if (url.pathname === "/webapp/start" && request.method === "POST") {
-      const started = await startWebapp(
-        { workspaceRoot: `${env.workspaceDir}/bots` },
-        botId,
-      );
+      const started = await startWebapp({ workspaceRoot }, botId);
       if (!started.ok) {
         return Response.json(
           {
@@ -433,11 +507,7 @@ export function createProxyHandler(
     }
     if (url.pathname === "/webapp/file" && request.method === "GET") {
       const path = url.searchParams.get("path") ?? "";
-      const file = await readWebappFile(
-        { workspaceRoot: `${env.workspaceDir}/bots` },
-        botId,
-        path,
-      );
+      const file = await readWebappFile({ workspaceRoot }, botId, path);
       if (!file) return Response.json({ error: "Not found." }, { status: 404 });
       return new Response(file.bytes as BodyInit, {
         status: 200,
@@ -450,16 +520,19 @@ export function createProxyHandler(
     // a serve whose memory lies about its files.
     if (url.pathname === "/workspace/snapshot" && request.method === "GET") {
       const archive = await createSnapshot({
-        botWorkspace: `${env.workspaceDir}/bots/${botId}`,
+        botWorkspace,
         botId,
       });
-      return new Response(archive as unknown as BodyInit, {
-        status: 200,
-        headers: {
-          "content-type": "application/gzip",
-          "content-disposition": `attachment; filename="${botId}-workspace.tar.gz"`,
-        },
-      });
+      return withExecutionScope(
+        new Response(archive as unknown as BodyInit, {
+          status: 200,
+          headers: {
+            "content-type": "application/gzip",
+            "content-disposition": `attachment; filename="${botId}-workspace.tar.gz"`,
+          },
+        }),
+        scope,
+      );
     }
     if (url.pathname === "/workspace/restore" && request.method === "POST") {
       const busy = runtimes
@@ -473,10 +546,7 @@ export function createProxyHandler(
       }
       const archive = new Uint8Array(await request.arrayBuffer());
       await runtimes.stopBot(botId);
-      const restored = await restoreArchive(
-        archive,
-        `${env.workspaceDir}/bots/${botId}`,
-      );
+      const restored = await restoreArchive(archive, botWorkspace);
       if (!restored.ok) {
         return Response.json(
           {
@@ -486,10 +556,10 @@ export function createProxyHandler(
           { status: 400 },
         );
       }
-      return Response.json({ ok: true, botId });
+      return withExecutionScope(Response.json({ ok: true, botId }), scope);
     }
 
-    const runtime = await runtimes.getOrSpawn(botId);
+    const runtime = await runtimes.getOrSpawn(botId, botWorkspace);
 
     // The event stream is forwarded, not relayed: keepalives and the family filter are the
     // wrapper's own contribution (see ./sse.ts) — a plain byte-pipe would forward the noise

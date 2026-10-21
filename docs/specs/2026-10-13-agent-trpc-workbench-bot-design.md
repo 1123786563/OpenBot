@@ -1,7 +1,7 @@
 # agent-trpc 工作台 Bot 接入设计
 
 状态：待批准（2026-10-13）
-关联：`docs/enterprise-runtime.md`（企业链路，本设计不动它）
+关联：`reference/enterprise-runtime.md`（企业链路，本设计不动它）
 
 ## 背景与目标
 

@@ -1,6 +1,0 @@
-(pass) MT070 account discipline and unchanged writer path > keeps restricted roles outside the attribution table [5.43ms]
-
- 16 pass
- 0 fail
- 97 expect() calls
-Ran 16 tests across 1 file. [665.00ms]

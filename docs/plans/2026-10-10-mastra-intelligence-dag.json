@@ -1,7 +1,7 @@
 {
   "date": "2026-10-10",
-  "spec": "docs/superpowers/specs/2026-10-10-mastra-intelligence-migration-design.md",
-  "plan": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md",
+  "spec": "docs/specs/superpowers/2026-10-10-mastra-intelligence-migration-design.md",
+  "plan": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md",
   "workspace": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot",
   "base": "fbdecc29cd786952c4b496abc68384b31a320b17",
   "starting_head": "508800cf2c54f6eba2f3cf52ff897b198a92c714",
@@ -23,7 +23,7 @@
         "server/tests/learning-mastra.test.ts"
       ],
       "interfaces": {
-        "plan_task": "Task 1; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 1 for exact Consumes/Produces"
+        "plan_task": "Task 1; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 1 for exact Consumes/Produces"
       },
       "verification": [
         "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
@@ -55,7 +55,7 @@
         "server/tests/enterprise/mastra-storage.integration.test.ts"
       ],
       "interfaces": {
-        "plan_task": "Task 2; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 2 for exact Consumes/Produces"
+        "plan_task": "Task 2; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 2 for exact Consumes/Produces"
       },
       "verification": [
         "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
@@ -82,7 +82,7 @@
         "server/tests/enterprise/mastra-model.test.ts"
       ],
       "interfaces": {
-        "plan_task": "Task 3; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 3 for exact Consumes/Produces"
+        "plan_task": "Task 3; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 3 for exact Consumes/Produces"
       },
       "verification": [
         "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
@@ -111,7 +111,7 @@
         "server/tests/enterprise/mastra-tools.integration.test.ts"
       ],
       "interfaces": {
-        "plan_task": "Task 4; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 4 for exact Consumes/Produces"
+        "plan_task": "Task 4; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 4 for exact Consumes/Produces"
       },
       "verification": [
         "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
@@ -138,7 +138,7 @@
         "server/tests/enterprise/mastra-runtime.integration.test.ts"
       ],
       "interfaces": {
-        "plan_task": "Task 5; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 5 for exact Consumes/Produces"
+        "plan_task": "Task 5; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 5 for exact Consumes/Produces"
       },
       "verification": [
         "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
@@ -169,7 +169,7 @@
         "server/tests/enterprise/mastra-agui.integration.test.ts"
       ],
       "interfaces": {
-        "plan_task": "Task 6; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 6 for exact Consumes/Produces"
+        "plan_task": "Task 6; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 6 for exact Consumes/Produces"
       },
       "verification": [
         "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
@@ -196,7 +196,7 @@
         "app/tests/mastra-chat-history.test.tsx"
       ],
       "interfaces": {
-        "plan_task": "Task 7; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 7 for exact Consumes/Produces"
+        "plan_task": "Task 7; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 7 for exact Consumes/Produces"
       },
       "verification": [
         "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
@@ -223,7 +223,7 @@
         "server/tests/enterprise/mastra-recovery.integration.test.ts"
       ],
       "interfaces": {
-        "plan_task": "Task 8; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 8 for exact Consumes/Produces"
+        "plan_task": "Task 8; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 8 for exact Consumes/Produces"
       },
       "verification": [
         "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
@@ -250,7 +250,7 @@
         "server/tests/enterprise/mastra-headless.integration.test.ts"
       ],
       "interfaces": {
-        "plan_task": "Task 9; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 9 for exact Consumes/Produces"
+        "plan_task": "Task 9; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 9 for exact Consumes/Produces"
       },
       "verification": [
         "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
@@ -279,7 +279,7 @@
         "server/tests/enterprise/mastra-memory.integration.test.ts"
       ],
       "interfaces": {
-        "plan_task": "Task 10; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 10 for exact Consumes/Produces"
+        "plan_task": "Task 10; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 10 for exact Consumes/Produces"
       },
       "verification": [
         "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
@@ -310,7 +310,7 @@
         "server/tests/enterprise/mastra-learning.integration.test.ts"
       ],
       "interfaces": {
-        "plan_task": "Task 11; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 11 for exact Consumes/Produces"
+        "plan_task": "Task 11; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 11 for exact Consumes/Produces"
       },
       "verification": [
         "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
@@ -342,7 +342,7 @@
         "server/tests/enterprise/mastra-import.integration.test.ts"
       ],
       "interfaces": {
-        "plan_task": "Task 12; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 12 for exact Consumes/Produces"
+        "plan_task": "Task 12; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 12 for exact Consumes/Produces"
       },
       "verification": [
         "用已存在 PostgreSQL TEST_DATABASE_URL fixture，production 未改时保存每个预期失败与数据库清理证据。",
@@ -368,7 +368,7 @@
         "app/tests/mastra-learning-admin.test.tsx"
       ],
       "interfaces": {
-        "plan_task": "Task 13; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 13 for exact Consumes/Produces"
+        "plan_task": "Task 13; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 13 for exact Consumes/Produces"
       },
       "verification": [
         "bun test app/tests/mastra-learning-admin.test.tsx，预期缺少产品 API/现有 Intelligence 调用未满足新断言。",
@@ -410,7 +410,7 @@
         "tests/mastra-deployment.test.ts"
       ],
       "interfaces": {
-        "plan_task": "Task 14; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 14 for exact Consumes/Produces"
+        "plan_task": "Task 14; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 14 for exact Consumes/Produces"
       },
       "verification": [
         "分别跑服务配置单测和部署模板合成检查，记录缺失行为；每租户角色只在 TEST_DATABASE_URL 隔离库创建及清理。",
@@ -437,7 +437,7 @@
         "desktop/src-tauri/src/lib.rs"
       ],
       "interfaces": {
-        "plan_task": "Task 15; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 15 for exact Consumes/Produces"
+        "plan_task": "Task 15; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 15 for exact Consumes/Produces"
       },
       "verification": [
         "cargo test --manifest-path desktop/src-tauri/Cargo.toml scoped names, save output.",
@@ -464,7 +464,7 @@
         "desktop/src/Welcome.tsx"
       ],
       "interfaces": {
-        "plan_task": "Task 16; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 16 for exact Consumes/Produces"
+        "plan_task": "Task 16; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 16 for exact Consumes/Produces"
       },
       "verification": [
         "bun test desktop/src/MastraSetup.test.tsx desktop/src/App.test.tsx。",
@@ -496,12 +496,12 @@
       "owner_role": "主控编排验收；independent backend_validator、frontend_validator、reviewer（最强可用模型）",
       "validator_role": "backend_validator + frontend_validator",
       "owned_files": [
-        "docs/superpowers/reports/2026-10-10-mastra-intelligence-validation.md",
+        ".archive/runs/2026-10-10-mastra-intelligence-migration/verification/report.md",
         "server/scripts/enterprise-runtime-probe.ts",
         "server/tests/enterprise/mastra-acceptance.integration.test.ts"
       ],
       "interfaces": {
-        "plan_task": "Task 17; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 17 for exact Consumes/Produces"
+        "plan_task": "Task 17; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md heading Task 17 for exact Consumes/Produces"
       },
       "verification": [
         "逐条单独执行 bun test server/tests/enterprise/mastra-acceptance.integration.test.ts、bun run typecheck、bun run lint、bun run build、browser suite；每一命令成功后才运行下一条，保存每个 exit/result 与同一 after-hash。非必要 provider/浏览器环境若不可用，报告受限不将 skip 计通过。"

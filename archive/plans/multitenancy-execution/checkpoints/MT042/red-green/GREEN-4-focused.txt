@@ -1,4 +1,0 @@
-(fail) MT042 — platform scan scope rebuild (Issue #85) > execution and lease discipline (MT041 consumption) > releases the lease on execution failure and the item returns as attempt 2 [22.27ms]
- 14 pass
- 1 fail
-Ran 15 tests across 1 file. [745.00ms]

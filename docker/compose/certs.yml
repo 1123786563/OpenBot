@@ -1,7 +1,7 @@
 # TLS certificates for the craft preview origin (#359, spec craft-preview-origin
 # D8/AC8): an acme.sh sidecar that issues and renews the `*.<preview-host>` wildcard
 # over ACME DNS-01 and installs it into the shared TLS directory, with the renewal
-# guard alerting when anything fails. docs/tls-certs.md is the deployment guide.
+# guard alerting when anything fails. reference/tls-certs.md is the deployment guide.
 #
 # Run from the repository root, beside the main stack:
 #   docker compose --project-directory . -f docker/compose/certs.yml up -d
@@ -49,7 +49,7 @@ services:
       # letsencrypt (production) or letsencrypt_test (staging — dry runs, no rate limit).
       ACME_CA: ${ACME_CA:-letsencrypt}
       ACME_ACCOUNT_EMAIL: ${ACME_ACCOUNT_EMAIL:-}
-      # Health bands and alerting (docs/tls-certs.md): warn at 30 days left,
+      # Health bands and alerting (reference/tls-certs.md): warn at 30 days left,
       # critical at 14 (a healthy renewal fires ~60 days before expiry), re-page at
       # most once per 24h while a failure persists.
       OPENBOT_TLS_WARN_DAYS: ${OPENBOT_TLS_WARN_DAYS:-30}

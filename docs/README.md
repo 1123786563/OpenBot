@@ -1,30 +1,14 @@
-# OpenBot docs
+# OpenBot 方案文档
 
-Start with the root [README](../README.md), then use these references:
+`docs/` 只保存规范性设计和实施方案。按需读取对应入口，不要把运行日志、验证结果或 Review/OCR 报告写回这里。
 
-- [Architecture](architecture.md): services, ports, browser governance, computers, components, plugins, knowledge, and security boundaries.
-- [Configuration](configuration.md): environment variables and tenant package YAML.
-- [Development](development.md): local setup, migrations, ports, and quality checks.
-- [Coworkers](coworkers.md): durable Bot profiles, channels, visibility, deletion, and external AG-UI registration.
-- [Routines](routines.md): standing instructions a Bot runs on a schedule, the worker that fires them, and who they run as.
-- [Automatic Learning](automatic-learning.md): which Bots contribute conversations to a Learning container, and receive its published skills.
-- [Parallel research](parallel-research.md): public-web search and extraction through the Parallel Search connector.
-- Plugins, one connector per page — what an administrator registers, what each person consents to, and what the failures mean:
-  - [Composio](plugins/composio.md): the broker, and so the one page here that is a catalogue of apps rather than a single connector.
-  - [Google Drive](plugins/google-drive.md)
-  - [Notion](plugins/notion.md)
-- [Compose stacks](compose.md): which `docker compose` files exist, what each one brings up, and when to reach for it.
-- [Observability](observability.md): metrics, logs, and traces.
-- [Enterprise Go runtime](enterprise-runtime.md): the optional Go runtime candidate — 接入方式与运行手册.
-- [Opik](opik.md) and the [Opik upstream contract](opik-contract.md): optional self-hosted tracing, and the verified contract the server codes against.
-- [Workshop × CodeSandbox testing](workshop-testing-guide.md): how to test the workshop surface against CodeSandbox.
-- [Craft preview origin](craft-preview-origin.md): the preview origin's runtime behavior and known constraints.
-- [Preview-origin TLS certificates](tls-certs.md): ACME DNS-01 wildcard certificates for the preview origin.
-- [Deployment](deployment.md): the container, what is in the image, minimum sizes, and the platform notes.
-- [Kubernetes](../charts/openbot/README.md): the Helm chart, what a cluster needs before it, and the values that differ per cloud.
-- [Releasing](releasing.md): how a release is proposed, reviewed and published.
-- [Windows desktop signing](windows-signing.md): protected Azure Key Vault signing and verification of the app and NSIS installer.
-- [Desktop provider OAuth](../desktop/PROVIDER_OAUTH.md): what a distributor configures to offer Google and xAI sign-in in a desktop build.
-- [Desktop telemetry](../desktop/TELEMETRY.md): every event the desktop app sends, and what it carries.
+| 内容 | 入口 |
+| --- | --- |
+| 实施方案、DAG 和方案细节 | [plans/README.md](plans/README.md) |
+| 已批准或待裁决的架构设计 | [specs/](specs/) |
+| 架构决策记录 | [adr/](adr/) |
+| Agent 规范 | 根 [AGENTS.md](../AGENTS.md) → [.agents/rules/](../.agents/rules/) |
+| 执行、验证、Review/OCR 和历史快照 | `.archive/runs/<run-key>/`，不放在 `docs/` |
+| 产品、部署和运维参考 | [reference/README.md](../reference/README.md) |
 
-Do not include credential values, customer data, transcripts, or local-only notes in public docs.
+测试实际读取的 manifest 位于 `tests/config/`；它们是版本化测试输入，不是验证报告。目录分类与迁移规则见 [产物归处规范](../.agents/rules/artifacts.md)。

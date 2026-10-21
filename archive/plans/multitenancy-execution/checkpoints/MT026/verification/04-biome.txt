@@ -1,9 +1,0 @@
-# $ bunx biome check <all 11 touched files>
-Checked 11 files in 20ms. No fixes applied.   (0 errors, 0 warnings)
-
-# Files checked: enterprise-sso-scim.ts, schema/index.ts, sso-scim-config.ts,
-# scim-directory.ts, identity-binding.ts, migrate-test.ts, sso-scim-config.test.ts,
-# scim-directory.test.ts, identity-binding.test.ts, support/sso-scim.ts,
-# migration-tool.test.ts
-# Formatter fixes were applied during development (biome check --write, --unsafe for
-# `!`->`?.` and unused-symbol removal); behavior re-verified by focused + full suites.

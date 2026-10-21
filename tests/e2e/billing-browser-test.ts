@@ -6,7 +6,7 @@
  *       Casdoor（http://localhost:8000）已启动，本机装有 Chrome/Chromium。
  *
  * 覆盖：套餐与积分页、升级/购买对话框、账单管理页、URL 参数边界、API 故障态、API 入参边界。
- * 输出：逐条 PASS/FAIL/SKIP + 控制台错误/接口错误清单 + 截图（gui-test-screenshots/billing/）。
+ * 输出：逐条 PASS/FAIL/SKIP + 控制台错误/接口错误清单 + 截图（.archive/runs/gui-tests/billing/）。
  */
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { mkdirSync, existsSync } from "node:fs";
@@ -16,7 +16,7 @@ const CASDOOR_URL = "http://localhost:8000";
 const CASDOOR_USER = "admin";
 const CASDOOR_PASSWORD = "123";
 const T = 30_000;
-const SHOT_DIR = "gui-test-screenshots/billing";
+const SHOT_DIR = ".archive/runs/gui-tests/billing";
 
 type StepResult = { name: string; ok: boolean; detail: string; kind: "pass" | "fail" | "skip" };
 const results: StepResult[] = [];

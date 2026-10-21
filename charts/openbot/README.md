@@ -373,7 +373,7 @@ that. `config.learning.autoAssign: false` turns the automatic assignment off.
 (`CPK_INTELLIGENCE_LEARNING_CONTAINER_ID`) and `config.learning.revision` the skills revision
 (`CPK_INTELLIGENCE_SKILLS_REVISION`). Both are only starting values: settings saved in Admin →
 Automatic Learning take precedence, including switching it off. See
-[docs/automatic-learning.md](../../docs/automatic-learning.md).
+[reference/automatic-learning.md](../../reference/automatic-learning.md).
 
 ## Memory and background research
 
@@ -387,7 +387,7 @@ for the whole deployment.
 
 ## Slack, Teams, text messages, push, SCIM, inbound email and OpenTelemetry
 
-Each is off until its values are set, and each is the same setting [docs/configuration.md](../../docs/configuration.md)
+Each is off until its values are set, and each is the same setting [reference/configuration.md](../../reference/configuration.md)
 describes for a `.env`. Secrets go under `secrets`; with an existing Secret or an external store, use
 the key in the last column.
 
@@ -476,7 +476,7 @@ sweep that fires standing instructions a Bot was asked to carry out on a schedul
 `routines.schedule`. It needs `secrets.workerSharedSecret` — the credential it presents to the API
 server to be recognised as the worker rather than an arbitrary caller — and is off by default because
 turning it on with no secret set is a CronJob whose every run is refused. See the routines refusal
-below, and [docs/routines.md](../../docs/routines.md).
+below, and [reference/routines.md](../../reference/routines.md).
 
 A third CronJob **deletes data, is on by default, and is the only one of the three that does**:
 `attachments.culler` sweeps staged attachments that were never sent. A file uploaded into the
@@ -562,7 +562,7 @@ install rather than found as a browser that fails on every page.
 Sites behind Cloudflare decide per request whether to challenge. Three settings change what a Bot's
 browser looks like to them, and the handoff (the Bot asks, a person takes control, solves the check
 and hands back) is the designed fallback when they are not enough. The full explanation is in
-[docs/configuration.md](../../docs/configuration.md#getting-past-bot-checks).
+[reference/configuration.md](../../reference/configuration.md#getting-past-bot-checks).
 
 **Headed Chromium, on by default.** `computers.browserMode: headed` runs full Chromium on the pod's
 own Xvfb, in `shared` and `sandbox` mode alike, behind the same live screen. `headless` is still

@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Drizzle SQL builder, PostgreSQL contract (DB-free synthetic tests now; isolated DB acceptance later).
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; parent T2 `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; accepted T2 production continuation `docs/plans/2026-10-12-mastra-t2-production-cutover.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent T2 `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; accepted T2 production continuation `docs/plans/2026-10-12-mastra-t2-production-cutover.md`.
 
 **Source evidence:** `.superpowers/sdd/2026-10-12-mastra-t2-production-cutover/reports/governed-success-route-architecture.md` (SHA256 `70091d421fa9c8151a0bbec9fb39c700d4376e83cdff8b3f115228e1698b3417`), §§2 and 6. The architecture report was read before the SSE reviewer settled; the coordinator separately verified SSE validator and reviewer PASS at the pinned hashes. Its suggestion to complete after a malformed/aborted stream is **not adopted**: the user requires runtime stream-type boundary failure to cancel and settle usage as unknown, and a failed Run cannot become succeeded.
 

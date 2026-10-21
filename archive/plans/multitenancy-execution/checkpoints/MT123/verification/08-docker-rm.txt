@@ -1,3 +1,0 @@
-# MT123 container teardown (2026-10-18 09:18:48)
-mt123-impl-pg
-(empty = removed)

@@ -1,2 +1,0 @@
-# biome on touched files (no fixes applied = tree unchanged by formatter)
-Checked 2 files in 66ms. No fixes applied.

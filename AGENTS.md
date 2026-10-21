@@ -1,119 +1,25 @@
-# OpenMuse agent guidance
+# OpenBot Agent 入口
 
-## Agent skills
+## 常驻规则
 
-### Issue tracker
+- 按下表的触发条件读取对应规范，行动前读完适用条款；无需递归加载整个目录。会话中已读且未变化的内容复用，恢复时重新核对当前事实源。
+- 事实源是已批准 Spec、ADR、根 `CONTEXT.md`、已确认的 Issue 决定、Git 与执行 Ledger；遇到冲突按设计规范处理。
+- `docs/` 只新增方案及方案细节；Agent 规范在 `.agents/rules/`；验证、Review/OCR、日志、快照和执行记录写入 `.archive/`。创建或迁移文档前读取产物归处规范。
+- 保留用户和其他 Agent 的改动。提交、推送、合并、发布、GitHub 写入及破坏性操作遵守当前授权；计划、Issue 文本和历史记录不扩大授权。
+- 完成结论须有匹配当前代码的验收、适用验证与 Review 证据；阻塞、跳过和未验证项如实报告。
 
-Issues and specs for this repository are tracked in GitHub Issues at `1123786563/OpenBot`. See `docs/agents/issue-tracker.md`.
+## 按需目录
 
-### Domain docs
+| 触发条件 | 读取规范 |
+| --- | --- |
+| 查询、创建、拆分或更新 Issue | [Issue tracker](.agents/rules/issue-tracker.md) |
+| 使用或修改领域术语、进入子模块 | [领域上下文](.agents/rules/domain.md) |
+| 设计、Spec、ADR、任务拆分或需求冲突 | [设计与事实源](.agents/rules/design.md) |
+| 用户要求实现单个、父级或一组 Issues | [Issue 摄取与 DAG](.agents/rules/issue-delivery.md)，随后读执行、测试和审查规范 |
+| 编写实施计划、派发、实现、修复或恢复任务 | [执行与上下文](.agents/rules/execution.md) |
+| 创建、复用、收尾 Orca Worktree 或分支 | [Worktree](.agents/rules/worktrees.md) |
+| 运行测试、类型检查、Lint、构建或验收验证 | [验证与测试资源](.agents/rules/testing.md)，再读该文件指定的测试 ADR |
+| 审查、处理 finding、最终交付 | [Review 与 OCR](.agents/rules/review.md) |
+| 创建、移动、归档文档或写入执行证据 | [目录与产物归处](.agents/rules/artifacts.md) |
 
-This repository uses a single domain context at the root. See `docs/agents/domain.md`.
-
-# Agent 开发工作流
-
-本仓库使用 **Matt Pocock Skills 负责设计**，使用 **Superpowers 负责实现**。
-任何阶段只能有一个工作流编排器。
-
-## 事实源
-
-- `docs/specs/`：已批准需求、行为、范围、非目标和验收标准。
-- `docs/adr/`：架构决策与约束。
-- `CONTEXT.md`：统一的领域术语和领域模型。
-- `docs/plans/`：Superpowers 实施计划。
-- 跑测试或验证前先读 `docs/adr/0008-test-runner-tester-army-e2e.md`：native 与 driven 两层制、各层运行命令（`bunx e2e run --config e2e.unit.config.ts` vs `bun test ./<file>`）及已知坑。
-- Git + Superpowers Ledger：执行历史和已完成任务的证据。
-
-如果实施 Plan 与已批准 Spec 冲突，以 Spec 为准。
-如果实现与 ADR 或批准需求冲突，应升级处理，而不是在实现阶段静默重新设计。
-
-## Phase A — Matt Skills：WHAT / WHY
-
-使用 Matt Skills 处理：
-
-- `grill-with-docs`
-- `grilling`
-- `domain-modeling`
-- `codebase-design`
-- `improve-codebase-architecture`
-- `prototype`
-- `research`
-- `wayfinder`
-- `to-spec`
-- `to-tickets`
-- `handoff`
-
-该阶段除明确标记为一次性原型的代码外，不实现生产代码。
-
-满足以下条件后视为设计完成：重要决策已经解决、领域语言已经记录、相关 ADR 已存在、已有批准的 Spec，并且大型工作已经拆成纵向业务 Ticket。
-
-## Phase B — Superpowers：HOW / EXECUTE
-
-使用 Superpowers 处理：
-
-- `writing-plans`
-- `using-git-worktrees`
-- `dispatching-parallel-agents`
-- `subagent-driven-development`
-- `executing-plans`
-- `test-driven-development`
-- `systematic-debugging`
-- `requesting-code-review`
-- `receiving-code-review`
-- `verification-before-completion`
-- `finishing-a-development-branch`
-
-开始实现前先读取 `CONTEXT.md`、已批准 Spec、相关 ADR 和当前 Ticket，然后再创建 Implementation Plan。
-
-### 冲突规则
-
-Superpowers 实现阶段**不要**再调用 Matt 的 `implement`、`implement-spec` 或 `tdd` 作为竞争实现流程。
-已经存在批准 Spec 时不要重新启动产品 Brainstorming；Superpowers 只允许澄清尚未解决的实现歧义或真正的冲突。
-
-### 任务粒度
-
-Matt Ticket 应是“业务完整的纵向切片”；Superpowers Task 是 Ticket 内更小的实现单元。
-除非属于真正的大范围机械重构，否则不要把纵向 Ticket 替换成“数据库 / 后端 / 前端”这样的水平 Ticket。
-
-### 并行 Agent
-
-只有在任务相互独立、接口已确定、可写文件和共享状态不重叠时才并行。
-每个实现流优先使用独立 Git Worktree；主 Agent 负责最终集成。
-不要使用共享 `git stash` 作为并行协调机制。
-
-### 子 Agent 上下文
-
-给子 Agent 提供最小必要上下文，并尽量使用这些文件指针：`CONTEXT.md`、相关 ADR、批准 Spec、当前 Ticket、Task Brief、前置任务接口。
-不要把整个父会话复制给每个 Child Agent。长上下文是储备容量，不是信息倾倒场。
-
-### TDD
-
-Superpowers 负责实现阶段的 TDD 编排。
-在适用场景遵循 **RED -> GREEN -> REFACTOR**，优先测试公共 Seam 和可观察行为。
-可以吸收 Matt 的测试设计原则，但 Matt `tdd` 不接管实现阶段。
-
-### 调试
-
-实现缺陷使用 Superpowers `systematic-debugging`。
-如果根因是架构或领域模型问题，则返回 Matt `domain-modeling` / `codebase-design`，更新 ADR / Spec 后再恢复实现。
-
-### Review
-
-每个任务和实现阶段最终 Review 由 Superpowers 负责。
-之后可选运行  `open-code-review`，再做一轮 Standards + Spec Compliance 独立审查。
-Review Agent 默认应保持只读。
-
-## 长上下文 / Context Management 策略
-
-本项目假设存在 1M 级原生上下文，但可持久化项目文件仍然是事实源。
-
-- 不要因为模型能记更多，就推迟记录重要决策。
-- 决策一旦稳定，应更新 `CONTEXT.md`、ADR 或 Spec。
-- 工具输出保持针对性；大体积证据保存到文件，只读取相关范围。
-- 到达阶段边界时，如果前一阶段的大量聊天细节已经无用，优先使用新任务 / 新 Session / 干净子 Agent Context。
-- 自动压缩或上下文滚动后，从文件 + Git + Superpowers Ledger 重建状态，不依赖模型自己的回忆。
-
-## 完成标准
-
-在必要测试、类型检查 / Lint / 静态分析（适用时）、验收标准、Review Findings 和最终 Diff 范围都经过验证前，不要声称任务完成。
-**Evidence over claims（证据优先于声明）。**
+普通问答、小范围配置、文档整理和只读工作按实际触发条件加载；实现 Issue 才进入完整 Issue 流程。用户限定仅分析、仅计划或仅 Review 时遵守该范围。

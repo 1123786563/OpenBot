@@ -22,14 +22,14 @@
 ## 2. 事实源与现状
 
 - `CONTEXT.md`：OpenBot、自托管部署、Credit Gate、Admission、Settlement 的领域约定。
-- `docs/observability.md`、`docs/superpowers/specs/2026-10-10-observability-design.md`：现有日志、W3C 传播、OTLP、Tempo 与 Grafana。
+- `reference/observability.md`、`docs/specs/superpowers/2026-10-10-observability-design.md`：现有日志、W3C 传播、OTLP、Tempo 与 Grafana。
 - `docs/adr/0001-conservative-input-bound.md`：输入上界与计费准入约束。
 - `shared/trace.ts`、`server/src/telemetry/trace-middleware.ts`：进程级 tracing 和 HTTP span；处理器返回 Response 后结束 span，不保证涵盖 SSE 的完整生命周期。
 - `server/src/copilot.ts`、`server/src/agents/endpoint.ts`：工作台执行装配、AG-UI middleware 与带传播信息的受控出站调用。
 - `.env.example`：本地启动默认托管端点指向 `agent-langgraph`；`agent-bot` 是协议参考运行时。
 - `agent-langgraph/src/index.ts`、`agent-bot/src/index.ts`、`agent-trpc/internal/bot/bot.go`、`agent-mastra/src/mastra/index.ts`：不同框架运行时；能力不完全相同。
 - `server/src/plugins/store.ts`、`server/src/agents/profile-policy.ts`：Bot 归属及现有授权应被复用，不能只相信客户端或 trace metadata。
-- `docs/enterprise-runtime.md`、`server/src/db/schema/enterprise-conversations.ts`：企业运行与会话有独立的身份、账本及授权约束；本设计不修改它们。
+- `reference/enterprise-runtime.md`、`server/src/db/schema/enterprise-conversations.ts`：企业运行与会话有独立的身份、账本及授权约束；本设计不修改它们。
 
 企业相关现状只作为兼容性参考，不代表用户正在设计的租户模型已经批准。
 

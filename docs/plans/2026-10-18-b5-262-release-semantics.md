@@ -1,6 +1,6 @@
 # b5-262 实施计划（06.11 Release 需确认未计费与过期额度不复活）
 
-Ticket: docs/tickets/bifrost-5/issues/06.11-release-only-with-no-charge-proof.md（父 #5，AC15）
+Ticket: docs/plans/tickets/bifrost-5/issues/06.11-release-only-with-no-charge-proof.md（父 #5，AC15）
 BASE: HEAD 3e8a6072 + 未提交集成层（#260 settle / #261 conflictKind+grant-expiry / 06.8 unknown / 06.12 attribution / 0144–0146 迁移）。
 Worktree: /Users/wuyongjun/orca/workspaces/OpenBot/b5-262。验证库: b5-verify-pg2 @5594 全新库 `openbot_b5_262_0611`（迁移 0146 止，已跑 migrate ok；冒烟 settle-idempotency 29 绿 + settle-conflict-grant-expiry 7 绿已复现）。
 

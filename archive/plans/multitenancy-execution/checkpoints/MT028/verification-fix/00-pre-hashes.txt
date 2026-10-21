@@ -1,8 +1,0 @@
-# MT028 修复轮前像哈希（2026-10-17，改动前逐文件 SHA-256）
-# F2 代码改动前像
-a0d204a7406cc2c07ad0becf8c2685a77b618cba35ba1c210d5aaeabc316c521  server/tests/multitenancy/support/oauth-state.ts
-# F1/F3/F4 档案与报告改动前像
-198a7ca1ab90ac63ff761c2fe6b4dfff1ed4debb69de74acef4b7ec0aec369a6  docs/plans/2026-10-15-company-team-multitenancy-execution/reports/MT028.md
-51a6d2ce256dbbe7b0b3dba30a9438f8b9ea035a3838f1facd11ec02cc3aac63  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT028/verification/17-true-final.txt
-eb3f87321fb394f97e61689b07da735b65f68bf4ca53f0c2db038c1bf6a43f3e  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT028/after-hashes-final.txt
-d8fd31baba28c2a5f57a710113a29531fe04fb62251ce4cc63bc168c7e087fba  docs/plans/2026-10-15-company-team-multitenancy-execution/checkpoints/MT028/sha256-manifest.txt

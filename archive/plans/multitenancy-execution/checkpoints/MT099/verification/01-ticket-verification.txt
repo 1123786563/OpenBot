@@ -1,6 +1,0 @@
-# MT099 票面验证命令（逐字）
-# cargo test --manifest-path desktop/src-tauri/Cargo.toml credential_namespace
-running 21 tests
-test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 579 filtered out; finished in 0.17s
-running 0 tests
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 150 filtered out; finished in 0.00s

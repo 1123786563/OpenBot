@@ -1,6 +1,0 @@
-error: expect(received).toEqual(expected)
-(fail) admin separation on the real enterprise test database > a trusted company admin context allows the company plane without audit; another company's context is refused [4.93ms]
-(fail) admin separation on the real enterprise test database > a trusted company admin context allows the company plane without audit; another company's context is refused [4.93ms]
- 24 pass
- 1 fail
-exit=0

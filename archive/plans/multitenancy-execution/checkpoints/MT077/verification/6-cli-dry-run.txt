@@ -1,7 +1,0 @@
-multitenancy migrate-test — dry-run（默认；执行需 --apply --manifest <file>）
-task: MT077 — MT077（Issue #120）：新增 enterprise_governance_policies、enterprise_governance_overrides 与 enterprise_template_installs（expand-only，仅新增表与最小 RLS，不改既有对象）。
-database: openbot_enterprise_mt077_test @ 127.0.0.1:55490
-journal: 已应用 2/2；待应用 0 步
-summary: 待应用 0 步 / 0 条语句 / 涉及对象: 无
-manifest:
-{"schemaVersion":1,"tool":"multitenancy-migrate-test","taskId":"MT077","planDigest":"b6690cb2d17d97817fed7b4a0d91bca106baac79e1a824a09a0f54351e41b2f4","steps":[{"number":1,"name":"0001_mt077_governance_policy_tables.sql","statementDigest":"4dafaec991752cc01156496cd75f30d243c59fd270ac2c2924253328f9080262","statementCount":6},{"number":2,"name":"0002_mt077_governance_policy_rls.sql","statementDigest":"1e5cb539e679c3785759b9fedfb0982c3fbf3beda8eeff593763526909d5504e","statementCount":30}]}

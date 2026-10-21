@@ -1,6 +1,6 @@
 # Current Issue #6 DAG reconciliation
 
-This addendum supersedes the historical `dag-ledger.md` only where current GitHub ingestion or the current user authorization differs. The historical 26-task plan remains a file/interface reference; execution nodes are the 150 formal GitHub Tickets.
+This addendum supersedes the historical `../../../.archive/runs/legacy-plans/2026-10-15-company-team-multitenancy/dag-ledger.md` only where current GitHub ingestion or the current user authorization differs. The historical 26-task plan remains a file/interface reference; execution nodes are the 150 formal GitHub Tickets.
 
 ## Node inventory
 

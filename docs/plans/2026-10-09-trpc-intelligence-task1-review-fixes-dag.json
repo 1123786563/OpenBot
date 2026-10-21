@@ -4,7 +4,7 @@
   "requirements_source": "Task 1 fix-round-2 independent review; findings T1-F2-H1, T1-F2-M1, T1-F2-M2, T1-F2-M3, T1-F2-M4",
   "workspace": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot",
   "base": "fbdecc29cd786952c4b496abc68384b31a320b17",
-  "plan": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-09-trpc-intelligence-task1-review-fixes.md",
+  "plan": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/plans/superpowers/2026-10-09-trpc-intelligence-task1-review-fixes.md",
   "nodes": [
     {
       "id": "T1-R2-1",

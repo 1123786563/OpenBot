@@ -43,7 +43,7 @@ computer and leave the person a blank page to solve. Now:
   and an https public URL, every request a Bot's browser sends is signed and the key is published at
   `/.well-known/http-message-signatures-directory`. Register the deployment once
   with Cloudflare (Bot Submission Form, Request Signature) for sites that allow signed agents to let
-  Bots through. See docs/configuration.md. Every site a Bot visits sees the deployment's URL.
+  Bots through. See reference/configuration.md. Every site a Bot visits sees the deployment's URL.
 - A residential or ISP proxy is a first-class setting: `EGRESS_PROXY_DEFAULT`, or on Helm
   `computers.egressProxy` with the URL in a Secret. Off by default; turning it on makes Bots' traffic
   look like a person's home connection, which is the operator's choice to make.
@@ -175,7 +175,7 @@ A deployment that already registered them keeps them. A coworker dropped from th
 retired on the next boot: its row stays, still listed and still refused by delete as protected,
 because only a remote coworker with a blank endpoint is retired automatically. To remove the ten
 from such a deployment, set `deleted_at` on their `agent_profiles` rows after upgrading (see
-[configuration.md](docs/configuration.md#agents)).
+[configuration.md](reference/configuration.md#agents)).
 
 ## 0.1.2
 
@@ -546,7 +546,7 @@ Two catalogue entries reach Parallel's public-web search and extraction at
 granted automatically. When a Bot holds both `web_search` and `web_fetch`, the built-in Bot guidance
 describes them for public-web research, and the fintech example's Research Desk ships a
 `research-public-web` skill that declares them. See
-[Public-web research with Parallel](docs/parallel-research.md).
+[Public-web research with Parallel](reference/parallel-research.md).
 
 ### `lodash-es` is pinned to the patched 4.18.0
 
@@ -706,7 +706,7 @@ The runtime health check in step 3 was a `python3` heredoc. On a machine without
 Windows, where `python3` is usually the Microsoft Store alias that exits 49, the run stopped there
 with the server and worker up and the app never started. The check now runs in Bun, which the
 script already requires, with the same output and exit status, and `python3` is gone from the
-prerequisites in `docs/development.md`.
+prerequisites in `reference/development.md`.
 
 ### An MCP tool that answers with a resource link is no longer read as an empty name
 
@@ -729,7 +729,7 @@ OpenAI SDK only defaults an absent URL, so it was given "" as the address. The B
 ### `OPENBOT_ONE_COMPUTER_EACH=false` in `.env` is honoured by `start.sh`
 
 `scripts/start.sh` read `OPENBOT_ONE_COMPUTER_EACH` from the environment alone, so the line that
-`docs/configuration.md` tells people to put in `.env` was ignored: the supervisor was still started
+`reference/configuration.md` tells people to put in `.env` was ignored: the supervisor was still started
 and the server still told to give each Bot its own computer. It now reads the key as it reads every
 other setting, the environment first, then `.env`, then the default of `true`.
 
@@ -796,7 +796,7 @@ delivers nothing until a container exists in the Intelligence project and is ass
 set `CPK_INTELLIGENCE_LEARNING_CONTAINER_ID` (Helm: `config.learning.containerId`), or enter it on
 the Admin page. OpenBot starts and chats without one. Skills are reviewed and published in
 Intelligence; nothing is approved automatically. See
-[Automatic Learning](docs/automatic-learning.md). Adds migration `0046_automatic_learning`.
+[Automatic Learning](reference/automatic-learning.md). Adds migration `0046_automatic_learning`.
 
 ### Dictate messages and talk to a coworker in a live voice call
 
@@ -805,7 +805,7 @@ for recording, cancelling, transcribing, or sending speech. Optional OpenAI Real
 adapters add a floating call widget. The live model handles conversation directly and delegates tools
 and actions to the existing Bot in the same thread. Ending a call saves its transcript and a short
 summary; later voice calls and typed messages receive that history. Calls start silently, and muting
-affects the person's microphone. See [configuration](docs/configuration.md#live-voice-calls).
+affects the person's microphone. See [configuration](reference/configuration.md#live-voice-calls).
 
 Voice summaries use the configured chat provider, including Anthropic keys and Claude or ChatGPT
 plan sign-in. Retrying a failed summary refreshes its sidebar preview without replacing newer
@@ -1058,7 +1058,7 @@ before this is consulted. Explicitly NOT gated on `NODE_ENV`: the image and the 
 to `production` for every deployment including that trial, so it says nothing about who can reach
 a deployment.
 
-`docs/architecture.md`, `docs/deployment.md` and `docs/configuration.md` all described the old rule
+`reference/architecture.md`, `reference/deployment.md` and `reference/configuration.md` all described the old rule
 and now describe this one.
 
 ### The EKS cluster recipe puts the node's IAM role out of a Bot's reach
@@ -1439,7 +1439,7 @@ that sets `COMPOSIO_API_KEY` now has that broker: each person connects their own
 granted an app's tools the way it is granted any other, and every call is decided and recorded
 through the gateway like the rest. Unset, there is nothing to connect, nothing to grant and no
 Composio tool for a Bot to call, and the Plugins page says so under **More apps** rather than
-pretending otherwise. See [docs/plugins/composio.md](docs/plugins/composio.md).
+pretending otherwise. See [reference/plugins/composio.md](reference/plugins/composio.md).
 
 ### A skill's grants are removed when it is uninstalled
 
@@ -1950,7 +1950,7 @@ is handed `DATABASE_URL`, `SERVER_INTERNAL_URL` and `WORKER_SHARED_SECRET` by `s
 by nothing else, so the copy this command started read none of them and threw at boot on every run,
 printing a stack trace in between the app's output and the server's. It has never started
 successfully. The command now starts the app and the server, which is what `README.md` and
-`docs/development.md` already say it does. Routines are unaffected: `scripts/start.sh` starts the
+`reference/development.md` already say it does. Routines are unaffected: `scripts/start.sh` starts the
 worker exactly as before, and on Kubernetes the CronJob does.
 
 ### Double-clicking works while a person is driving a Bot's browser
@@ -2504,8 +2504,8 @@ digest for all of them rather than for one.
 
 Nothing changes for a checkout: unset, `COMPUTER_IMAGE`, `SUPERVISOR_IMAGE`, `BOT_IMAGE`,
 `LANGGRAPH_IMAGE` and `SERVER_IMAGE` name local tags and Compose builds them as before. Point them
-at published digests and set `IMAGE_PULL_POLICY=missing` to pull instead. `docs/releasing.md` shows
-reading the references out of `container-images.json`; `docs/configuration.md` lists the settings.
+at published digests and set `IMAGE_PULL_POLICY=missing` to pull instead. `reference/releasing.md` shows
+reading the references out of `container-images.json`; `reference/configuration.md` lists the settings.
 
 CI now builds those five Dockerfiles too. Nothing did before, because they are built by
 `docker compose up --build`, which only the smoke journey runs and which cannot run in CI, so a
@@ -3040,7 +3040,7 @@ tolerated both, is unchanged.
 `EMBEDDED_POSTGRES=on` could not create its cluster on a platform whose persistent volume is an ext4
 mount — Railway, and by the same mechanism most others — and it failed differently depending on where
 the volume was mounted. Neither of the two paths this repo suggested worked, and the two suggestions
-disagreed with each other: `docs/deployment.md` said `/var/lib/postgresql/data`, the `Dockerfile`
+disagreed with each other: `reference/deployment.md` said `/var/lib/postgresql/data`, the `Dockerfile`
 comment said `/var/lib/postgresql`.
 
 Mounted at the parent, the mount arrives owned by root, `data` is not in it, and the image's
@@ -3952,7 +3952,7 @@ its own `<title>` for the app, `/health` for the compose services. When a check 
 whether the process failed to start or the port belongs to something else.
 
 The root cause was in `.env.example`, and is fixed there too. The server reads `PORT`, this script
-reads `SERVER_PORT`, `docs/configuration.md` documents `SERVER_PORT` as the setting, and only `PORT`
+reads `SERVER_PORT`, `reference/configuration.md` documents `SERVER_PORT` as the setting, and only `PORT`
 shipped. Moving the server by editing that one line left the script still looking at 3001. Both names
 are now present, next to each other, saying they have to agree.
 
@@ -4190,7 +4190,7 @@ Sessions survive and nobody signs in again.
   connect one on somebody's behalf. The redirect URI has to match what is registered character for
   character, and the connector page states the exact string to paste, because a mismatch fails at
   Google with a message that never mentions OpenBot. See
-  [docs/plugins/google-drive.md](docs/plugins/google-drive.md) for the whole setup and for what each
+  [reference/plugins/google-drive.md](reference/plugins/google-drive.md) for the whole setup and for what each
   failure means.
 
   **Disconnecting is not built yet.** The account page says so and points at Google's own third-party
@@ -4220,7 +4220,7 @@ Sessions survive and nobody signs in again.
   builds and pushes one image to `ghcr.io/copilotkit/openbot`, signs a build provenance attestation
   for its digest, tags the commit and creates the GitHub Release with `container-images.json` so a
   deployment can name an exact digest rather than a tag somebody could move. See
-  [docs/releasing.md](docs/releasing.md).
+  [reference/releasing.md](reference/releasing.md).
 - **CI now runs the thing it ships.** Two checks were added. `migrations` refuses a schema change
   with no migration written for it, and a snapshot that has drifted from the schema. `image` builds
   the container, boots it with embedded PostgreSQL, and fails if it does not answer or if a
@@ -4248,7 +4248,7 @@ Sessions survive and nobody signs in again.
 - **One container that runs the whole thing.** The root `Dockerfile` builds an image carrying the
   app, the API, a Bot computer, and optionally PostgreSQL, supervised together. Point `DATABASE_URL`
   at a database you already run and the built-in one never starts; leave it unset and the container
-  is self-contained. See [docs/deployment.md](docs/deployment.md) for the measured minimum sizes and
+  is self-contained. See [reference/deployment.md](reference/deployment.md) for the measured minimum sizes and
   the platforms it has been run on.
 - **Bots can run commands.** `computer_run_command` runs a command in the Bot's `/workspace`, so a
   Bot can install a tool, unpack what it downloaded, or run what it was asked to run instead of only

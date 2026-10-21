@@ -149,7 +149,7 @@ describe("tenant theme validation", () => {
   /*
    * A comment is not something a theme defines.
    *
-   * The rule this enforces, as `docs/configuration.md` states it, is about what a theme may define:
+   * The rule this enforces, as `reference/configuration.md` states it, is about what a theme may define:
    * two blocks, approved variables, no imports and no URLs. A comment defines nothing, and a
    * stylesheet written by hand has one at the top saying whose brand it is.
    */

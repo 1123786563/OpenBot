@@ -9,6 +9,30 @@
  * state machine out: if a decision matters, it does not belong next to `chromium.launch()`.
  */
 
+import {
+  describeExecutionScope,
+  type ExecutionScope,
+  parseExecutionScope,
+} from "../../shared/execution-scope";
+
+export {
+  EXECUTION_TENANT_HEADER,
+  EXECUTION_WORKSPACE_HEADER,
+} from "../../shared/execution-scope";
+export { parseExecutionScope, describeExecutionScope };
+export type { ExecutionScope };
+
+/**
+ * The execution ownership a request must state alongside the computer token (MT050).
+ *
+ * The token says "a caller this deployment trusts"; these headers say whose Bot is being driven, and
+ * a request without them no longer reads as deployment-level. The return is the stated scope or
+ * null — the per-Bot agreement check is the caller's, against the registry this process keeps.
+ */
+export function statedScope(headers: Headers): ExecutionScope | null {
+  return parseExecutionScope(headers);
+}
+
 /**
  * Does this secret match?
  *

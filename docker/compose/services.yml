@@ -1,6 +1,6 @@
 # Casdoor + OpenConnector. Start the main stack first: both reach postgres by service name and it
 # lives in docker-compose.yml, cross-file depends_on being something Compose does not resolve —
-# `restart: unless-stopped` absorbs the gap instead. docs/compose.md#casdoor-and-openconnector has
+# `restart: unless-stopped` absorbs the gap instead. reference/compose.md#casdoor-and-openconnector has
 # the token and database contract.
 #
 # Run from the repository root — --project-directory . is what makes the root .env and the

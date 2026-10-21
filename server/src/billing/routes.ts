@@ -18,12 +18,16 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { createHash } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import { auditEvents, users } from "../db/schema";
+import {
+  creditRecoveryItems,
+  creditRecoveryQueries,
+} from "../db/schema/credit-reservations";
 import type { Credits } from "./credits";
 import type { CreditWriter } from "./credits-writer";
 import {
@@ -41,6 +45,13 @@ import {
 } from "./rewards";
 import type { BillingStatements } from "./statements";
 import { BillingError, type BillingService } from "./types";
+import {
+  DISPOSAL_REFUSAL_SENTENCES,
+  createRecoveryDisposal,
+} from "./recovery-disposal";
+// The reasons list is used only as a type here (`typeof` for the status map's key union).
+import type { DISPOSAL_REFUSAL_REASONS } from "./recovery-disposal";
+import type { ConversionRate } from "../gateway/conversion-rate";
 
 /** The shape `requireAdmin` takes in auth/guards.ts: a refusal answer, or nothing to add. */
 type RequireAdmin = (
@@ -457,9 +468,30 @@ export function createBillingAdminRoutes(deps: {
    * route that cannot resolve must not fall back to a caller-named key.
    */
   database?: Database;
+  /**
+   * The deployment's environment conversion rate (the value a version-0 price lock names),
+   * threaded to the disposal's settle path exactly as the protocol surfaces take it. Absent
+   * leaves version-0 locks unsettleable there too — the same refusal, never a fallback rate.
+   */
+  environmentRate?: ConversionRate;
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
+  /*
+   * The disposal command's service (08.9): built once where the ledger it commands exists,
+   * with the audit store and environment rate the deployment wired. A route that could not
+   * build it answers 503 — a disposal is a money decision, never best-effort.
+   */
+  const disposal =
+    deps.database && deps.creditWriter
+      ? createRecoveryDisposal({
+          database: deps.database,
+          ...(deps.environmentRate !== undefined
+            ? { environmentRate: deps.environmentRate }
+            : {}),
+          ...(deps.audit ? { audit: deps.audit } : {}),
+        })
+      : undefined;
   routes.onError((error, context) => {
     // A body that is not JSON, or JSON of the wrong shape, is the caller's mistake — answered with a
     // sentence of ours, not the parser's, and never the parsed fragment of anything.
@@ -726,10 +758,14 @@ export function createBillingAdminRoutes(deps: {
     if (!executed) return context.json({ execution: null });
     const receipt = executed.payload as Record<string, unknown>;
     const verified = ofExecution.find(
-      (row) => (row.payload as Record<string, unknown>).phase === "post_verified",
+      (row) =>
+        (row.payload as Record<string, unknown>).phase === "post_verified",
     );
     const verifiedReport = verified
-      ? ((verified.payload as Record<string, unknown>).report as Record<string, unknown>)
+      ? ((verified.payload as Record<string, unknown>).report as Record<
+          string,
+          unknown
+        >)
       : undefined;
     return context.json({
       execution: {
@@ -740,6 +776,204 @@ export function createBillingAdminRoutes(deps: {
         report: verifiedReport ?? receipt,
       },
     });
+  });
+
+  /*
+   * The administrator's settlement-anomaly review (Bifrost 08.8, #283): every unresolved
+   * recovery item with the evidence 08.5 gathered for it, sorted by state and dwell. THIS
+   * ROUTE READS, IT NEVER DISPOSES: settling and releasing are 08.9's evidenced, separately
+   * authorized actions — a review surface that could act would put a money decision one
+   * click away from the judgment that is supposed to precede it. There is no write method
+   * on this path and there must never grow one (the tests hold the route set to exactly
+   * that).
+   *
+   * The refusal is audited (the ticket's rule): a non-administrator probing the anomaly
+   * queue is itself a fact worth a row. The payload names the path only — the caller saw
+   * nothing, so the trail carries no account data either. What the route answers is
+   * already redacted by construction: account refs are the payer layer's opaque keys, the
+   * recent reason is the item's stable code, and the evidence summaries are the bounded
+   * excerpts 08.5 recorded — never a credential, never another account's row.
+   */
+  routes.get("/recovery-items", async (context) => {
+    const denied = deps.requireAdmin(context);
+    if (denied) {
+      if (deps.audit) {
+        await recordAuditEvent(deps.audit, {
+          eventType: "billing.recovery.review_denied",
+          targetType: "billing",
+          actorUserId: context.var.actor.id,
+          payload: { path: "/api/admin/billing/recovery-items" },
+        });
+      }
+      return denied;
+    }
+    if (!deps.database) {
+      // No deployment database wired: the anomaly queue is not "empty", it is unreadable.
+      return context.json(
+        { error: "The settlement review is unavailable. Try again." },
+        503,
+      );
+    }
+
+    // Unresolved items, in-flight (claimed) before waiting (pending), oldest dwell first —
+    // the queue's own reading order (the ticket's 按状态与停留时长排序).
+    const items = await deps.database
+      .select()
+      .from(creditRecoveryItems)
+      .where(ne(creditRecoveryItems.state, "resolved"))
+      .orderBy(
+        asc(creditRecoveryItems.state),
+        asc(creditRecoveryItems.detectedAt),
+      )
+      .limit(200);
+
+    // The evidence 08.5 gathered, newest first, bounded per item: the trail an operator
+    // reads before 08.9 acts. Older history stays in the table for the disposal's own
+    // evidence needs; a review reads the recent window.
+    const EVIDENCE_PER_ITEM = 5;
+    const evidenceByItem = new Map<
+      string,
+      {
+        conclusion: string;
+        source: string;
+        summary: string;
+        usageInput: number | null;
+        usageOutput: number | null;
+        queriedAt: string;
+      }[]
+    >();
+    if (items.length > 0) {
+      const rows = await deps.database
+        .select()
+        .from(creditRecoveryQueries)
+        .where(
+          inArray(
+            creditRecoveryQueries.itemId,
+            items.map((item) => item.id),
+          ),
+        )
+        .orderBy(
+          desc(creditRecoveryQueries.queriedAt),
+          desc(creditRecoveryQueries.id),
+        );
+      for (const row of rows) {
+        const list = evidenceByItem.get(row.itemId) ?? [];
+        if (list.length < EVIDENCE_PER_ITEM) {
+          list.push({
+            conclusion: row.conclusion,
+            source: row.source,
+            summary: row.summary,
+            usageInput: row.usageInput,
+            usageOutput: row.usageOutput,
+            queriedAt: row.queriedAt.toISOString(),
+          });
+          evidenceByItem.set(row.itemId, list);
+        }
+      }
+    }
+
+    const generatedAt = new Date();
+    return context.json({
+      generatedAt: generatedAt.toISOString(),
+      items: items.map((item) => ({
+        itemId: item.id,
+        attemptId: item.attemptId,
+        reservationId: item.reservationId,
+        accountRef: item.externalCustomerId,
+        payerKind: item.payerKind,
+        payerId: item.payerId,
+        provider: item.provider,
+        model: item.model,
+        maximumCredits: item.maximum,
+        failureCount: item.failureCount,
+        lastReason: item.lastReason,
+        state: item.state,
+        // The disposal's optimistic-concurrency anchor (08.9): the version an operator's
+        // expectedVersion must quote, so a command built from a stale review refuses.
+        version: item.version,
+        detectedAt: item.detectedAt.toISOString(),
+        dwellSeconds: Math.max(
+          0,
+          Math.floor(
+            (generatedAt.getTime() - item.detectedAt.getTime()) / 1000,
+          ),
+        ),
+        evidence: evidenceByItem.get(item.id) ?? [],
+      })),
+    });
+  });
+
+  /*
+   * The evidenced disposal (Bifrost 08.9, #284): the settle-or-release COMMAND, on its own
+   * path and under its own authorization — the read surface above stays write-free forever,
+   * and this route never reuses its guard silently: it runs requireAdmin in ITS handler and
+   * answers a probe with its OWN refusal trail (billing.recovery.disposal_denied), so the
+   * judgment (the review) and the money decision (this command) cannot collapse into one
+   * click. The operator is the session's own actor — the command body never names one, or a
+   * command could forge its own trail.
+   *
+   * WHAT THE BODY MAY SAY: the action, the evidence row it stands on, the expectedVersion
+   * the operator read with the item, and the command's idempotency key. Everything else —
+   * the account, the amount, the pricing — is the database's to say; the service derives
+   * the settle's usage from the evidence row itself, so a disposal can never quote a
+   * number the evidence does not carry (金额与证据一致，by construction).
+   */
+  routes.post("/recovery-items/:itemId/disposal", async (context) => {
+    const denied = deps.requireAdmin(context);
+    if (denied) {
+      if (deps.audit) {
+        await recordAuditEvent(deps.audit, {
+          eventType: "billing.recovery.disposal_denied",
+          targetType: "billing",
+          actorUserId: context.var.actor.id,
+          payload: { path: "/api/admin/billing/recovery-items/:itemId/disposal" },
+        });
+      }
+      return denied;
+    }
+    if (!deps.database || !disposal) {
+      // No ledger wired: there is nothing to dispose against, and a 503 says so — never a
+      // pretend success against a ledger nobody configured.
+      return context.json(
+        { error: "The disposal command is unavailable. Try again." },
+        503,
+      );
+    }
+    let body: unknown;
+    try {
+      body = await context.req.json();
+    } catch {
+      return context.json({ error: DISPOSAL_REFUSAL_SENTENCES.request_invalid }, 400);
+    }
+    const outcome = await disposal.dispose({
+      ...(typeof body === "object" && body !== null ? body : {}),
+      recoveryItemId: context.req.param("itemId"),
+      // The one field the body must not own: who is commanding. The session answers.
+      operatorId: context.var.actor.id,
+    });
+    if (outcome.status === "disposed" || outcome.status === "replayed") {
+      return context.json(outcome, 200);
+    }
+    const statusByReason = {
+      request_invalid: 400,
+      no_such_item: 404,
+      version_conflict: 409,
+      already_disposed: 409,
+      evidence_mismatch: 409,
+      settle_refused: 422,
+      release_refused: 422,
+    } as const satisfies Record<
+      (typeof DISPOSAL_REFUSAL_REASONS)[number],
+      400 | 404 | 409 | 422
+    >;
+    return context.json(
+      {
+        error: DISPOSAL_REFUSAL_SENTENCES[outcome.reasonCode],
+        code: outcome.reasonCode,
+        detail: outcome.detail,
+      },
+      statusByReason[outcome.reasonCode],
+    );
   });
 
   return routes;

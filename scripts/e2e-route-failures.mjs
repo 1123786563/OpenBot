@@ -102,7 +102,7 @@ for (const [file, entry] of [...hits].sort((a, b) => b[1].count - a[1].count)) {
 
 if (!apply) {
   console.log(
-    `\ndry run; --apply records them in docs/verification/e2e-bun-suites.json`,
+    `\ndry run; --apply records them in tests/config/e2e-bun-suites.json`,
   );
   process.exit(0);
 }

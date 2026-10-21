@@ -1,9 +1,0 @@
-# 修复轮容器创建 — 2026-10-17T00:12:08Z（口令脱敏；真实口令仅存 /tmp 0600 文件，用后删）
-$ docker run -d --name mt070-fix-pg -e POSTGRES_PASSWORD=<random-hex-32> -e POSTGRES_HOST_AUTH_METHOD=trust -p 127.0.0.1:55538:5432 pgvector/pgvector:pg16
-container id: a296a33cdf94408318edb509e069718d7bf080e2a82008f9af31f6b38b98fc8a
-$ docker port mt070-fix-pg
-5432/tcp -> 127.0.0.1:55538
-（仅回环 127.0.0.1 绑定）
-$ docker exec mt070-fix-pg psql -U postgres -tc "select version()"
- PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
-

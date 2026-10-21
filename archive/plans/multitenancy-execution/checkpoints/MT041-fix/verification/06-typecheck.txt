@@ -1,2 +1,0 @@
-# typecheck: bunx tsc --noEmit
-EXIT=0

@@ -1,6 +1,6 @@
 # Opik: self-hosted AI observability and evaluation, optional. Start the main stack first —
 # OpenBot reaches it over loopback and the integration stays off until OPIK_* is configured,
-# so a missing Opik never changes Agent execution. docs/opik.md is the guide; the pinned
+# so a missing Opik never changes Agent execution. reference/opik.md is the guide; the pinned
 # image digests live in docker/opik/versions.json, are pinned verbatim below (R2-13: every
 # service is digest-anchored, tags must not float), and must not float.
 #

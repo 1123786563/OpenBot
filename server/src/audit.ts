@@ -822,6 +822,30 @@ export const auditEventTypes = [
    */
   "billing.cleanup.executed",
   /**
+   * A non-administrator probed the settlement-anomaly review (Bifrost 08.8): the refusal
+   * the admin gate answered with, and the trail's record that the probe happened. The
+   * payload names the path only — the caller was answered with nothing, so the row
+   * carries no account data either. Successful reviews are NOT audited: they read, and
+   * the review surface itself must stay free of write side effects beyond the gate's own
+   * record of who it turned away.
+   */
+  "billing.recovery.review_denied",
+  /**
+   * A non-administrator probed the disposal command (Bifrost 08.9): the refusal the admin
+   * gate answered with. The payload names the path only, exactly like the review probe —
+   * the caller was answered with nothing, and a probe of the money decision is itself a
+   * fact the trail keeps.
+   */
+  "billing.recovery.disposal_denied",
+  /**
+   * An administrator disposed of a recovery item (Bifrost 08.9): the settle-or-release
+   * command that landed, with the action, the specific evidence row it stood on, the
+   * reservation it moved, the expectedVersion it quoted, and the command's idempotency
+   * key — the whole command, because the trail must reconstruct the decision on its own.
+   * Replays of the same command are NOT re-audited: the first row is the act.
+   */
+  "billing.recovery.disposed",
+  /**
    * A craft session's owner answered a connect_app card (connected/declined; the session,
    * the app id and the decision in the payload). The handshake itself rides ephemeral KV
    * (onyx parity — no approval row), so this audit row is the one durable record that a

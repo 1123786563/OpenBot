@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun test + drizzle-orm (bun-sql) + PostgreSQL 专用测试库。
 
-**Spec:** docs/tickets/bifrost-5/issues/21.1-cleanup-manifest-enumeration.md；父 Spec docs/specs/2026-10-14-bifrost-github-spec.md AC18；docs/specs/2026-10-14-bifrost-integration-design.md Q23/Q28/Q29；docs/adr/0004-company-team-tenancy.md。
+**Spec:** docs/plans/tickets/bifrost-5/issues/21.1-cleanup-manifest-enumeration.md；父 Spec docs/specs/2026-10-14-bifrost-github-spec.md AC18；docs/specs/2026-10-14-bifrost-integration-design.md Q23/Q28/Q29；docs/adr/0004-company-team-tenancy.md。
 
 ## Global Constraints
 

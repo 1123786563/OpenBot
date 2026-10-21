@@ -1,7 +1,0 @@
-== pre-remove state (docker ps) ==
-mt041-fix-pg | Up 14 minutes | 127.0.0.1:55521->5432/tcp
-== docker rm -f mt041-fix-pg (real execution, output below) ==
-mt041-fix-pg
-== post-remove state (must be empty) ==
-== port 55521 after removal (must be free) ==
-55521 free

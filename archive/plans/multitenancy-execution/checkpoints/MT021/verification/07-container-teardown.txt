@@ -1,8 +1,0 @@
-# MT021 容器销毁（真实执行回显）
-2026-10-16T22:06:09Z
-$ docker rm -f mt021-impl-pg
-mt021-impl-pg
-$ docker ps --format '{{.Names}}' | grep mt021
-(no mt021 container running)
-$ lsof -i :55529 -sTCP:LISTEN
-(no listener on 55529)

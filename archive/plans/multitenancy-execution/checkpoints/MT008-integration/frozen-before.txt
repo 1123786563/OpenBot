@@ -1,4 +1,0 @@
-# MT008 集成前 EXE 冻结哈希 — 2026-10-16T13:15Z — coordinator
-f9e312a72fe2c7ddc7d3370be2c76ccb74c8fabd8b25c10d301568aa2aee0f0e  server/src/db/schema/enterprise-tenancy.ts
-b87caeb457ddca70c3826703161d5ea524b3ff73aace58b6e814c5480b4ad83a  server/scripts/multitenancy/migrate-test.ts
-185c1ca33e2f1fc924a1674039eed4820403fd9940c097df4aa8b35bbab0f1e7  server/tests/multitenancy/migration-tool.test.ts

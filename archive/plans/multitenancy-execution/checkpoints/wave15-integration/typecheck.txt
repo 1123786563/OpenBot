@@ -1,4 +1,0 @@
-# wave15-integration typecheck — bun run typecheck（tsc --noEmit，预期 exit 0）
-# date: 2026-10-18 14:25:02 +0800; cwd=server
-$ tsc --noEmit
-exit=0

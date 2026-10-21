@@ -212,6 +212,23 @@ export type CraftConfig = {
    */
   readonly previewOriginEnabled: boolean;
   /**
+   * Gate the LEGACY same-origin preview form (#425, the AC1 exception's closure).
+   * The legacy form shares the platform's own origin, so its iframes ride the
+   * platform's cookies and generated code can use the person's session to reach
+   * platform APIs — the very exposure the preview origin exists to end, kept open
+   * for old sessions only by D10's "existing sessions do not migrate". This switch
+   * is the deployment's one-button way to close it. DEFAULT TRUE, deliberately:
+   * flipping the default would break every existing session's preview the moment
+   * this code ships (AC7 — existing sessions must not regress), and this ticket's
+   * purpose is to hand the deployment the CHOICE, not to make it for them. A
+   * closed legacy form answers `webapp_url: null` + a displayable reason
+   * (webapp-info), 503 on the same-origin proxy and HMR legs, and never changes
+   * the mint's 409. Sessions converge off the legacy form by rebuilding their
+   * app (the template copy stamps the generation marker — the fresh assembly
+   * walks the preview origin).
+   */
+  readonly legacyPreviewEnabled: boolean;
+  /**
    * The preview origin's address template. Empty = the D5 dev form
    * (`http://127.0.0.1:<server port>` — the port is derived with serverPort's
    * PORT/SERVER_PORT semantics in preview-origin.ts). A deployment with a
@@ -481,6 +498,13 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
     previewOriginEnabled: boolEnv(
       env,
       "OPENBOT_CRAFT_PREVIEW_ORIGIN_ENABLED",
+      true,
+    ),
+    // #425: the legacy same-origin form's deployment-level switch. Default true
+    // (see the field's own comment for the AC7 rationale).
+    legacyPreviewEnabled: boolEnv(
+      env,
+      "OPENBOT_CRAFT_LEGACY_PREVIEW_ENABLED",
       true,
     ),
     previewOriginTemplate: stringEnv(

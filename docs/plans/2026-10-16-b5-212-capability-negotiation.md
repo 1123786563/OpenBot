@@ -1,6 +1,6 @@
 # b5-212 / Bifrost 01.6 — 积分准入扩展能力协商（实施计划）
 
-Ticket: docs/tickets/bifrost-5/issues/01.6-admission-extension-negotiation.md
+Ticket: docs/plans/tickets/bifrost-5/issues/01.6-admission-extension-negotiation.md
 BASE: bab7c0b9（worktree /Users/wuyongjun/orca/workspaces/OpenBot/b5-212，未提交检查点模式）
 专用测试库: postgres://openbot:openbot@localhost:5432/openbot_b5_212（已 createdb + scripts/migrate.ts 迁移 ok）
 

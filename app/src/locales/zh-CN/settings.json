@@ -380,7 +380,22 @@
     "overdrawHint": "本次消费超出可用余额。台账记录全部费用，其中 {{shortfall}} 无积分覆盖。",
     "pagerStatus": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条",
     "consumptionTable": "用量明细",
-    "columnBot": "Bot"
+    "columnBot": "Bot",
+    "pendingReasons": {
+      "usage_missing": "调用已结束但用量尚未回报，待平台核对后结算。",
+      "stream_error": "响应中途出错，结果未知，待平台核对后结算。",
+      "cancelled": "调用被中断，结果未知，待平台核对后结算。",
+      "usage_invalid": "回报的用量无法计价，待平台人工核对。",
+      "usage_over_bound": "回报的用量超出预设边界，待平台人工核对。",
+      "usage_charge_failed": "结算写入失败，待平台核对后补结算。",
+      "dispatch_result_unknown": "模型服务的最终结果尚未确认，待平台核实后结算或释放。",
+      "hold_expired_without_result": "调用超时未收到结果，待平台核实后结算或释放。",
+      "provider_error": "模型服务在产生任何内容前已拒绝，未产生费用。",
+      "bound_refused": "调用未通过准入检查，未到达模型服务，未产生费用。",
+      "no_usage": "模型服务报告本次调用用量为零，未产生费用。",
+      "fallback": "该笔调用仍在核对中，处理完成后金额会自动更新。"
+    },
+    "pendingHandling": "待结算部分不占用您的可用额度之外的资金；平台将向模型服务核实结果后自动结算或释放。"
   },
   "ordersPage": {
     "title": "订单与积分",

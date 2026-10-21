@@ -137,12 +137,18 @@ deSEC is the fully-free alternative (delegation + token in one place).
 
 `tls/renewal-status.json` is the durable signal (scalar fields, written by the
 guard): `health`, `healthReason`, `daysLeft`, `lastAttemptOk/At/Kind/Error/Digest`,
-`lastSuccessAt`, `lastAlertAt/Severity`, `previewHost`, `certificate`. Consumers today
-are the container healthcheck and the alert channels below; a dashboard can read the
-file directly. The server does **not** read it (grep over `server/src` at `bbea87ba`
-finds no reference), so preview admission never depends on certificate health — an
-expired certificate fails in the browser and in the alerts, not in the gate. #359's
-`Produces` contract is this file plus the alert channels below.
+`lastSuccessAt`, `lastAlertAt/Severity`, `previewHost`, `certificate`. Consumers are
+the container healthcheck, the alert channels below, a dashboard reading the file
+directly — and, since #411, the OpenBot **server**: the preview origin's HOST-form
+admission reads it (default `/etc/openbot/tls/renewal-status.json`, overridable with
+`OPENBOT_TLS_STATUS_FILE`; the main compose mounts `./tls` there read-only) and closes
+while the certificate is missing, expired, failing to renew, or mid-first-issuance
+(`starting`), surfacing the guard's own `healthReason` as the closed-origin sentence —
+and re-judging on the next request the moment the sidecar rewrites the file, no
+restart. The DEV form never reads it (no certificate in its path). A certificate that
+goes bad is therefore a closed origin with a readable reason, not addresses that fail
+in the browser. #359's `Produces` contract is this file plus the alert channels
+below.
 
 `renewal-guard.sh` turns the certificate's remaining days plus the last attempt
 into health (`starting` / `ok` / `warn` / `critical`). `starting` is a fresh

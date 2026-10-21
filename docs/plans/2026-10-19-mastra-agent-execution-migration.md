@@ -8,13 +8,13 @@
 
 **Tech Stack:** TypeScript、Bun、Hono、Mastra、AI SDK LanguageModelV3、AG-UI、CopilotKit SSE/React、Drizzle/PostgreSQL、tester-army e2e、OpenTelemetry/Opik。
 
-**Spec:** 需求依据是本会话“现有 agent 框架改成 mastra”的迁移分析及“编写详细改造计划”的请求，和 `docs/research/2026-10-19-mastra-agent-migration-assessment.md`。这不是已批准实施 Spec；下述 D01–D08 是本计划的明确建议，实施前由 Task 0 固化为批准范围。相关约束见根 `CONTEXT.md`、ADR 0001–0006、0008、0009 和 `docs/specs/2026-10-15-hindsight-personal-memory-design.md`。长任务草案不作为批准需求。
+**Spec:** 需求依据是本会话“现有 agent 框架改成 mastra”的迁移分析及“编写详细改造计划”的请求，和 `docs/plans/research/2026-10-19-mastra-agent-migration-assessment.md`。这不是已批准实施 Spec；下述 D01–D08 是本计划的明确建议，实施前由 Task 0 固化为批准范围。相关约束见根 `CONTEXT.md`、ADR 0001–0006、0008、0009 和 `docs/specs/2026-10-15-hindsight-personal-memory-design.md`。长任务草案不作为批准需求。
 
 ## Global Constraints
 
 - 当前只写计划，不运行实现、不创建 Issue、不提交、不推送、不修改数据库、不部署。未执行基线测试，不能将本计划当作通过证据。
 - 计划工作区：`/Users/wuyongjun/trea/OpenBot`，规划 BASE：`1dc117b65dbb958e73d6c1a0a4a6ee6fa0f48717`，读取分支 `main`；现有 drizzle snapshot 与其他任务未跟踪文件保持原样。
-- 本次是串行文档规划，按 `docs/agents/worktrees.md` 在现有工作区保存。实施前使用 using-git-worktrees 核验/建立执行工作区；显式复制并校验本计划、DAG、研究记录及批准 Spec 的哈希。规划 BASE 不自动成为实施 BASE。
+- 本次是串行文档规划，按 `.agents/rules/worktrees.md` 在现有工作区保存。实施前使用 using-git-worktrees 核验/建立执行工作区；显式复制并校验本计划、DAG、研究记录及批准 Spec 的哈希。规划 BASE 不自动成为实施 BASE。
 - 首次实施先重读 Git 与 Ledger；已有任务按代码和相同哈希的验证证据复用，不重派历史已完成任务。旧计划的状态不能外推到当前版本。
 - 默认按 DAG 串行 SDD；backend_implementer 实现后端，frontend_implementer 仅负责必要前端适配；对应 validator 只读验证，独立 reviewer 同时检查 Spec 和质量。
 - 无本地提交授权时使用完整未提交检查点：HEAD、staged/unstaged patch、新增/删除文件内容与 SHA256、命令、退出码、报告路径。禁止空 BASE..HEAD 代替实际增量 Review，禁止共享 stash。
@@ -58,10 +58,10 @@
 - 后台：`routines/run-turn.ts`、`index.ts` 的 createTurnRunner 调用及 routineIntelligence 历史读取仍依赖 Intelligence。
 - 学习：`learning/runtime.ts` 使用 `@copilotkit/runtime/internal/learned-skills`，快照/归档/撤销能力有实际依赖，不能以 Mastra skills 名称相似推断可替换。
 - 仅确认 `CheckpointService/RecoveryService` 声明存在，没有据此认定持久恢复实现可用；Task 6 必须验证实际存储。
-- 旧 `docs/plans/2026-10-13-mastra-orca-continuation.md` 引用的 `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md` 在规划读取时缺失。Task 0 登记此缺口；不能静默沿用其“已批准”标签扩大本计划范围。
+- 旧 `docs/plans/2026-10-13-mastra-orca-continuation.md` 引用的 `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md` 在规划读取时缺失。Task 0 登记此缺口；不能静默沿用其“已批准”标签扩大本计划范围。
 - 当前 manifest 声明 `@mastra/core=1.64.0`、`@mastra/client-js=1.43.0`、`@mastra/memory=1.20.0`、`@mastra/pg=1.25.0`、`@mastra/hono=1.5.0`、`@ag-ui/mastra=1.1.6`、server `ai=6.0.264`。根目录为另一 AI SDK 主版本。Task 1 核实 lockfile 与实际解析，不直接使用最新文档 API。
 
-官方参考与读取日期见 `docs/research/2026-10-19-mastra-official-capabilities.md`。Agent HITL、流协议和 durable 特性以实际锁定版本探针为准。
+官方参考与读取日期见 `docs/plans/research/2026-10-19-mastra-official-capabilities.md`。Agent HITL、流协议和 durable 特性以实际锁定版本探针为准。
 
 ## 3. 文件职责与共同接口
 
@@ -158,7 +158,7 @@ bun run --cwd app typecheck
 git diff --check
 ```
 
-第二条示例按 server/tests 选择组，可能覆盖多组；窄跑前必须从 `docs/verification/e2e-bun-suites.json` 的 groups[].files 反查准确 name，不能把文件路径直接假设为 group.name。新增测试优先使用 `tests/support/e2e-compat.ts`，只因已证明的 Bun 运行时/加载器原因才进入 driven。分区变更由实际审计生成，不能手改排除掩盖收集失败。
+第二条示例按 server/tests 选择组，可能覆盖多组；窄跑前必须从 `tests/config/e2e-bun-suites.json` 的 groups[].files 反查准确 name，不能把文件路径直接假设为 group.name。新增测试优先使用 `tests/support/e2e-compat.ts`，只因已证明的 Bun 运行时/加载器原因才进入 driven。分区变更由实际审计生成，不能手改排除掩盖收集失败。
 
 每个 Task 对自己的测试清单执行上述适用路径，记录实际收集文件、用例数、skip 原因和报告 JSON；只有 GREEN 完整且 validator/reviewer 通过后才标 verified。静态检查使用 `bunx biome check` 加本任务明确文件路径，不执行全仓自动格式化。新写代码触发其他文件类型错误时必须定位增量，不将新错误归为基线。
 
@@ -403,7 +403,7 @@ git diff --check
 
 **依赖：** T13。**角色：** backend_implementer 清理；backend_validator 验证；主控统一独立 reviewer 与 OCR。不由实现者批准自己。
 
-**Files:** Modify `copilot.ts`、必要 `agents/plan-model.ts`、server 依赖与配置说明、`docs/enterprise-runtime.md`；Create `docs/verification/2026-10-19-mastra-agent-migration.md`。不删除 React/SSE 必需的 @copilotkit 包、可选学习适配器、历史映射表和远程 harness。
+**Files:** Modify `copilot.ts`、必要 `agents/plan-model.ts`、server 依赖与配置说明、`reference/enterprise-runtime.md`；Create `.archive/runs/2026-10-19-mastra-agent-migration/verification/report.md`。不删除 React/SSE 必需的 @copilotkit 包、可选学习适配器、历史映射表和远程 harness。
 
 **Consumes:** T0 入口清单与所有 frozen checkpoints。**Produces:** 完整交付 diff、验证摘要、有效问题零阻塞的独立/OCR 报告、可审核维护窗口手册。
 

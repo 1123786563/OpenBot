@@ -68,7 +68,7 @@ const noVerdictNote =
 // from bun itself. Only asked-for groups are re-run: a whole tier costs minutes per group.
 function attributeGroup(name) {
   const manifest = JSON.parse(
-    readFileSync(join(root, "docs/verification/e2e-bun-suites.json"), "utf8"),
+    readFileSync(join(root, "tests/config/e2e-bun-suites.json"), "utf8"),
   );
   const group = (manifest.groups ?? []).find((g) => g.name === name);
   if (!group) return { name, error: "no such group in the manifest" };

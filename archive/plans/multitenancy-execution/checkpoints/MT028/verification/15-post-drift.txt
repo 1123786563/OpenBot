@@ -1,9 +1,0 @@
-# MT028 前置复算（交付后漂移核验，2026-10-17）
-BASE f0520524f0faa2b4533b9d2f1aa692c8f907ba71
-CHANGED: server/scripts/multitenancy/migrate-test.ts
-CHANGED: server/src/db/schema/index.ts
-CHANGED: server/src/index.ts
-CHANGED: server/tests/multitenancy/migration-tool.test.ts
-unchanged=209 changed=��预期 changed=8 个本票授权扩展/新文件——migrate-test.ts、migration-tool.test.ts、schema/index.ts、src/index.ts 在 manifest 内，其余 4 个为本票新文件不在 manifest 内）
-
-结论：213 项 manifest 中 209 项零漂移；4 项 CHANGED 全部是本票 brief 预授权的扩展点（migrate-test.ts 追加 MT028 任务 / migration-tool.test.ts allowlist 追加 / schema barrel 追加 1 行 / index.ts 装配段追加），其余 4 个本票交付文件为 manifest 外纯新增。

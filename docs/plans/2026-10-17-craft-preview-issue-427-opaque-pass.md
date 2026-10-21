@@ -46,7 +46,7 @@
 | T2 | 索引模块：新增 pass store（建议 `server/src/craft/preview-pass.ts`，与 `preview-ticket.ts` 同层，理由：票据表与通行证表都是短命内存 TTL 结构，但不该共用一个模块——票据是单次消费的**入场券**，通行证是会话级**存续凭据**，生命周期不同） | 新文件 + `preview-ticket.ts` 的导出边界 | RED：单测——铸 token 即登记、再兑换覆盖、未知 token 查不到、空值查不到、不记日志；GREEN：通过 |
 | T3 | 植入口改造：兑换成功时铸 token 并登记，`Set-Cookie` 改用 token；保持 `entryRoot` 单读 | `preview-origin.ts:741-768` | RED：观测 Set-Cookie 值为 43 字符 base64url、无 `Max-Age`/`Expires`、含 `HttpOnly; SameSite=None; Secure`、dev 形态 `Path=/<label>`；GREEN：通过 |
 | T4 | 门改造：`holdsPreviewSessionPass` 改为查索引比较；三个调用点（:700、:779、`webapp-proxy.ts:1273`）语义不变、签名不变 | `preview-origin.ts:95-102`（+ 调用点零改动为目标） | RED：他人 token 401、无 pass 401、深路径阴影不遮蔽、覆盖旧 token 后旧值失效；GREEN：通过 |
-| T5 | 注释与文档同步：`preview-ticket.ts:181-194` 的折叠理由、`preview-origin.ts:738-740` 的 `ponytail` 注记、`docs/craft-preview-origin.md` 的进入流程（:42-56）与重启空窗（:84）两节 | 上述三处 | 人工清单：不留任何「通行证值是 session id」的表述 |
+| T5 | 注释与文档同步：`preview-ticket.ts:181-194` 的折叠理由、`preview-origin.ts:738-740` 的 `ponytail` 注记、`reference/craft-preview-origin.md` 的进入流程（:42-56）与重启空窗（:84）两节 | 上述三处 | 人工清单：不留任何「通行证值是 session id」的表述 |
 | T6 | 边界确认（no-op 验证）：`preview-origin-live` 探针读 registry 不读凭据（`webapp-proxy.ts:681` 起）、hostname/label 派生不受影响（`preview-origin.ts:230-239`、:510-534） | 无写操作，产出为测试与票面记录 | RED：断言二者行为不变；GREEN：本就成立 → 记录 |
 | T7 | 真实 socket 复验：把审核期 harness 的 cookie 相关断言在 token 形态下重跑一遍 | `server/tests/craft-preview-socket.test.ts`（若 #416/#422 尚未落地，则临时在本票 worktree 内验证并在票面附命令与输出） | 断言：上游看不到 `cookie`/`authorization`/`origin`；通行证值非 sessionId；门在 upgrade 提交前拒 |
 | T8 | 回归门禁 | — | 第 4 节全绿 |

@@ -2,15 +2,15 @@
   "date": "2026-10-10",
   "root_issue": null,
   "requirements_source": [
-    "docs/superpowers/specs/2026-10-09-trpc-intelligence-migration-design.md",
-    "docs/superpowers/specs/2026-10-09-enterprise-ai-platform-design.md",
-    "docs/superpowers/plans/2026-10-09-trpc-intelligence-migration.md#task-4",
+    "docs/specs/superpowers/2026-10-09-trpc-intelligence-migration-design.md",
+    "docs/specs/superpowers/2026-10-09-enterprise-ai-platform-design.md",
+    "docs/plans/superpowers/2026-10-09-trpc-intelligence-migration.md#task-4",
     ".superpowers/sdd/2026-10-09-trpc-intelligence-migration/reports/task-4-review.md",
     "User ruling 2026-10-10: budget ceiling is independent per Run; controller ruling T04-R1-R01 keeps the ceiling reservation key distinct from ordinary RunService reservation idempotency."
   ],
   "workspace": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot",
   "base": "508800cf2c54f6eba2f3cf52ff897b198a92c714",
-  "plan": "docs/superpowers/plans/2026-10-10-trpc-intelligence-t04-review-fixes-r1.md",
+  "plan": "docs/plans/superpowers/2026-10-10-trpc-intelligence-t04-review-fixes-r1.md",
   "nodes": [
     {
       "id": "T04-R1",

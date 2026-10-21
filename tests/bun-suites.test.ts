@@ -15,7 +15,7 @@ import { expect, test } from "./support/e2e-compat";
  * the report. Each group below is one result row in the run, with Bun's own counts and failure text
  * carried into the assertion message.
  *
- * The groups come from `docs/verification/e2e-bun-suites.json`, which `scripts/e2e-bun-manifest.mjs`
+ * The groups come from `tests/config/e2e-bun-suites.json`, which `scripts/e2e-bun-manifest.mjs`
  * writes from the per-file collection audit; the unit config excludes exactly those files, so a
  * suite is either collected natively or driven here, never both and never neither.
  */
@@ -38,7 +38,7 @@ function read(stream: NodeJS.ReadableStream | null): Promise<string> {
 
 const manifestPath = join(
   import.meta.dirname,
-  "../docs/verification/e2e-bun-suites.json",
+  "../tests/config/e2e-bun-suites.json",
 );
 const manifestJson = existsSync(manifestPath)
   ? (JSON.parse(readFileSync(manifestPath, "utf8")) as {
@@ -100,7 +100,7 @@ if (only && !groups.length) {
   test("bun runtime manifest exists", () => {
     expect(
       existsSync(manifestPath),
-      "docs/verification/e2e-bun-suites.json is missing; run `node scripts/e2e-file-audit.mjs && node scripts/e2e-bun-manifest.mjs`",
+      "tests/config/e2e-bun-suites.json is missing; run `node scripts/e2e-file-audit.mjs && node scripts/e2e-bun-manifest.mjs`",
     ).toBe(true);
   });
 }

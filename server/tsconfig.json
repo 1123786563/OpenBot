@@ -4,7 +4,7 @@
   // product code that happens to live outside `src`.
   //
   // `../scripts/composio-smoke.ts` FOR THE SAME REASON, one directory further out. It ships in the
-  // image — the Dockerfile copies that one file and no other — it is what `docs/plugins/composio.md`
+  // image — the Dockerfile copies that one file and no other — it is what `reference/plugins/composio.md`
   // tells an operator to run when Composio misbehaves, and it imports `src/plugins/composio*`
   // directly, so it is this workspace's code that happens to live at the repository root. Nothing
   // else covered it: the root `scripts/` directory is in no workspace, and `bun run typecheck` is

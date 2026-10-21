@@ -44,4 +44,4 @@ TEST_DATABASE_URL="postgres://<从主 .env 推导，库名 openbot_b5_<n>>" bun 
 
 ## Task 状态跟踪
 
-见 Ledger：`docs/plans/2026-10-16-bifrost-5-ledger.md`（每票：source_issues / acceptance / depends_on / 角色 / 文件所有权 / 接口 / 验证 / 状态 / 检查点哈希 / dispatch 与 worktree ID）。
+见 Ledger：`.archive/runs/legacy-plans/ledgers/2026-10-16-bifrost-5-ledger.md`（每票：source_issues / acceptance / depends_on / 角色 / 文件所有权 / 接口 / 验证 / 状态 / 检查点哈希 / dispatch 与 worktree ID）。

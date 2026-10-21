@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun test, CopilotKit/AG-UI test fixtures.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; accepted remote ruling and plan `docs/plans/2026-10-12-mastra-t2-production-cutover.md`; source mapping `.superpowers/sdd/2026-10-12-mastra-t2-production-cutover/reports/remote-stale-test-alignment-map.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; accepted remote ruling and plan `docs/plans/2026-10-12-mastra-t2-production-cutover.md`; source mapping `.superpowers/sdd/2026-10-12-mastra-t2-production-cutover/reports/remote-stale-test-alignment-map.md`.
 
 ## Global Constraints
 

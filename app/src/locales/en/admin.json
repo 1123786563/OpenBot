@@ -1280,5 +1280,22 @@
     "pass": "pass",
     "fail": "FAIL",
     "recoveryLabel": "Recovery"
+  },
+  "recoveryReview": {
+    "sectionTitle": "Settlement anomaly review",
+    "sectionDescription": "A read-only view of unknown-consumption recovery items and their evidence; settling and releasing are separately authorized disposal actions, not this page.",
+    "loading": "Loading settlement anomalies…",
+    "loadProblem": "The settlement review could not be loaded.",
+    "empty": "No unresolved settlement anomalies right now.",
+    "account": "Account",
+    "ceiling": "Ceiling",
+    "dwell": "Dwell",
+    "failures": "Failures",
+    "reason": "Latest reason",
+    "state": "State",
+    "evidence": "Query evidence",
+    "evidenceEmpty": "No query evidence yet",
+    "usage": "Usage",
+    "noWriteActions": "This view is strictly read-only"
   }
 }

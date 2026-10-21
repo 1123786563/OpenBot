@@ -291,6 +291,32 @@ export const creditRecoveryItems = pgTable(
     /** The claim: who owns the item and when, together or not at all (the CHECK). */
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     claimedBy: text("claimed_by"),
+    /**
+     * The optimistic-concurrency version (08.9): what an operator's `expectedVersion`
+     * stands on. A disposal resolves the item through a guarded UPDATE on this column, so
+     * a command built from a stale read cannot land; the resolution itself bumps it, which
+     * is what fences a second disposal behind the resolved-state check.
+     */
+    version: integer("version").notNull().default(1),
+    /**
+     * THE DISPOSAL RECORD (08.9) — all five columns together or all five absent (the
+     * CHECK): the action an administrator commanded, who commanded it and when, the
+     * specific evidence row (credit_recovery_queries) the action stood on, and the
+     * command's own idempotency key (a transport retry of the SAME command reads the
+     * recorded answer; a DIFFERENT disposal of a resolved item refuses). The recovery
+     * handlers' own resolutions (08.2's replay) leave these NULL — their evidence is the
+     * replay's reason, not an operator's evidence row.
+     */
+    resolvedAction: text("resolved_action").$type<"settle" | "release">(),
+    resolvedBy: text("resolved_by"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    // No drizzle-level FK here on purpose: this table and credit_recovery_queries already
+    // reference each other (the trail's own item_id FK points back), and a second
+    // cross-edge makes the schema's type inference circular. The REAL constraint lives in
+    // the SQL migration (0168), which is what any migrated database enforces; the drift
+    // gate checks columns, and the service validates the evidence row itself.
+    resolutionEvidenceId: text("resolution_evidence_id"),
+    resolutionIdempotencyKey: text("resolution_idempotency_key"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -315,17 +341,235 @@ export const creditRecoveryItems = pgTable(
       "credit_recovery_items_failure_count_check",
       sql`${table.failureCount} >= 0`,
     ),
+    check(
+      "credit_recovery_items_version_check",
+      sql`${table.version} >= 1`,
+    ),
+    check(
+      "credit_recovery_items_resolved_action_check",
+      sql`${table.resolvedAction} IS NULL OR ${table.resolvedAction} IN ('settle', 'release')`,
+    ),
+    // A disposal record is complete or absent: an action without its operator, or an
+    // evidence pointer without an action, is a half-fact this table refuses to hold.
+    check(
+      "credit_recovery_items_disposal_shape_check",
+      sql`(${table.resolvedAction} IS NULL AND ${table.resolvedBy} IS NULL AND ${table.resolvedAt} IS NULL AND ${table.resolutionEvidenceId} IS NULL AND ${table.resolutionIdempotencyKey} IS NULL) OR (${table.resolvedAction} IN ('settle', 'release') AND ${table.resolvedBy} IS NOT NULL AND ${table.resolvedAt} IS NOT NULL AND ${table.resolutionEvidenceId} IS NOT NULL AND ${table.resolutionIdempotencyKey} IS NOT NULL)`,
+    ),
+    // One disposal per command key, ever — a database-level truth, so two replicas racing
+    // the same command cannot both record it (partial: the handlers' NULL keys don't
+    // collide with each other).
+    uniqueIndex(
+      "credit_recovery_items_resolution_idempotency_key_unique_idx",
+    )
+      .on(table.resolutionIdempotencyKey)
+      .where(sql`${table.resolutionIdempotencyKey} IS NOT NULL`),
     // A claim without its owner (or the reverse) is not a state this table can hold: the
-    // who and the when are part of the claimed fact, not adjacent columns. A resolved item
-    // keeps both — who finished it is part of the resolution's evidence (08.2).
+    // who and the when are part of the claimed fact, not adjacent columns. A handler's
+    // resolved item keeps both — who finished it is part of the resolution's evidence
+    // (08.2). The THIRD shape (08.9, 0168): an evidenced disposal resolves an item
+    // straight out of `pending` — the review queue's items are unclaimed, that is why an
+    // operator reads them — so `resolved` without a claim is legal exactly when a
+    // disposal record exists (the disposal-shape CHECK above guarantees its
+    // who/when/evidence/key completeness).
     check(
       "credit_recovery_items_claim_consistency_check",
-      sql`(${table.state} = 'pending' AND ${table.claimedAt} IS NULL AND ${table.claimedBy} IS NULL) OR (${table.state} IN ('claimed', 'resolved') AND ${table.claimedAt} IS NOT NULL AND ${table.claimedBy} IS NOT NULL)`,
+      sql`(${table.state} = 'pending' AND ${table.claimedAt} IS NULL AND ${table.claimedBy} IS NULL) OR (${table.state} IN ('claimed', 'resolved') AND ${table.claimedAt} IS NOT NULL AND ${table.claimedBy} IS NOT NULL) OR (${table.state} = 'resolved' AND ${table.resolvedAction} IS NOT NULL)`,
     ),
     // The claim queue read: pending items, oldest detection first.
     index("credit_recovery_items_state_detected_idx").on(
       table.state,
       table.detectedAt,
+    ),
+  ],
+);
+
+/**
+ * One provider final-state query against a recovery item (Bifrost 08.5): the durable,
+ * append-only evidence row a query leaves behind, one per query, readable by the
+ * administrator-facing recovery views (08.8) and by the evidenced disposal (08.9) as the
+ * fact its action stands on.
+ *
+ * WHY A TABLE AND NOT A COLUMN. The item's `last_reason` names only the NEWEST fact; a
+ * query pass that runs again (08.4's cadence) must not overwrite the trail that led there
+ * — "queried twice, provider still has no record" is a different fact from "queried once",
+ * and the disposal's evidence must survive later queries. The row is therefore written
+ * once and never updated: `conclusion` is a closed vocabulary, `summary` is the bounded
+ * raw excerpt of what the source answered, and `queried_at`/`recorded_at` keep the query's
+ * own time apart from the write's.
+ *
+ * WHAT THE CONCLUSIONS MEAN (the ticket's three-way classification, snake_case):
+ * `settled_evidence` — the provider confirms the work completed (with its own usage
+ * summary when it has one); `no_charge_evidence` — the provider confirms the request was
+ * never billed (refused/undispatched), the only conclusion that may ENTER the release
+ * path; `still_unknown` — the provider has no record of the request, or the query itself
+ * failed (unreachable, timeout, unmappable answer). "No record" is NOT release evidence
+ * (Q12: 查不到不等于没发生), which is why it shares a conclusion with transport failure.
+ */
+export const creditRecoveryQueries = pgTable(
+  "credit_recovery_queries",
+  {
+    /** `crq-` plus 8 random bytes as hex, minted by the query handler. */
+    id: text("id").primaryKey(),
+    /** The recovery item this query was run for; deleting the item takes its trail. */
+    itemId: text("item_id")
+      .notNull()
+      .references(() => creditRecoveryItems.id, { onDelete: "cascade" }),
+    /** The hold the item names, copied for reads that key on the reservation. */
+    reservationId: text("reservation_id").notNull(),
+    /** The attempt identity the source was asked about, copied the same way. */
+    attemptId: text("attempt_id").notNull(),
+    /** Who answered: the source's own name (e.g. "bifrost-jobaccounting"), not a free
+     * string the handler invents — the source names itself. */
+    source: text("source").notNull(),
+    /** The three-way classification (see the table comment); CHECK-enforced. */
+    conclusion: text("conclusion")
+      .$type<"settled_evidence" | "no_charge_evidence" | "still_unknown">()
+      .notNull(),
+    /** The bounded raw excerpt of what the source answered — evidence, not prose; when
+     * the query failed, the stable failure code. */
+    summary: text("summary").notNull(),
+    /** The provider's own usage report, when it completed with one; null otherwise. The
+     * shape is the settle contract's closed dimension vocabulary, never a partial guess. */
+    usageInput: integer("usage_input"),
+    usageOutput: integer("usage_output"),
+    /** When the query ran, kept apart from when the row was written. */
+    queriedAt: timestamp("queried_at", { withTimezone: true }).notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "credit_recovery_queries_conclusion_check",
+      sql`${table.conclusion} IN ('settled_evidence', 'no_charge_evidence', 'still_unknown')`,
+    ),
+    // Usage dimensions travel together or not at all: a settled conclusion may carry them,
+    // and nothing else may — a half-present usage would be a guess dressed as evidence.
+    check(
+      "credit_recovery_queries_usage_pair_check",
+      sql`(${table.usageInput} IS NULL AND ${table.usageOutput} IS NULL) OR (${table.usageInput} IS NOT NULL AND ${table.usageOutput} IS NOT NULL)`,
+    ),
+    // The recovery trail read: everything asked about one item, newest first.
+    index("credit_recovery_queries_item_queried_idx").on(
+      table.itemId,
+      table.queriedAt,
+    ),
+  ],
+);
+
+/**
+ * One alert row per recovery item (Bifrost 08.6): the durable state that makes alerting
+ * honest across restarts — what was alerted, when it started, when it last fired, and
+ * whether it has already escalated. The row IS the dedup: the unique index on item_id
+ * means one alert state per item, ever, so a restart (or two replicas racing) cannot
+ * re-notify from zero.
+ *
+ * WHY A TABLE AND NOT THE SINK'S MEMORY. Dedup and escalation are facts about the
+ * DEPLOYMENT's alerting posture, not about one process: a supervisor restart that
+ * forgot every first-alert would blast a fresh "new anomaly" for every item on every
+ * boot — exactly the spam the ticket's 去重 exists to prevent. Escalation needs
+ * first_alerted_at, which must survive whatever the process does.
+ *
+ * WHAT THE ROW CARRIES — AND WHAT IT NEVER CARRIES. The disposal facts an operator
+ * needs (归属账户 masked, 金额上限, 停留时长 via detected_at, 最近原因 as the stable
+ * code, 失败次数) are copied at alert time so the row reads standalone. It never
+ * carries credentials, raw provider answer bodies, or any OTHER account's data: the
+ * account reference is masked at write time (`maskAccountRef`), the reason is the item's
+ * closed-vocabulary last_reason, and the source summaries stay in
+ * `credit_recovery_queries` where 08.8's view reads them under its own rules.
+ *
+ * THE LEVEL LADDER. `first` (a threshold or dwell limit was crossed, first
+ * notification) → `repeat` (still unresolved after the repeat interval: a reminder,
+ * not a new alert) → `escalated` (unhandled past the escalation window: the terminal
+ * level — an escalated alert never re-fires, so an unattended queue plateaus instead
+ * of filling the channel). `escalated_at` travels with the escalated level and with
+ * nothing else, the same who/when inseparability the item's own claim CHECK keeps.
+ */
+export const creditRecoveryAlerts = pgTable(
+  "credit_recovery_alerts",
+  {
+    /** `cra-` plus 8 random bytes as hex, minted by the alerting pass. */
+    id: text("id").primaryKey(),
+    /** The recovery item this alert state tracks; one per item, ever (unique index). */
+    itemId: text("item_id")
+      .notNull()
+      .references(() => creditRecoveryItems.id, { onDelete: "cascade" }),
+    /** The hold and attempt the item names, copied for reads that key on them. */
+    reservationId: text("reservation_id").notNull(),
+    attemptId: text("attempt_id").notNull(),
+    /** The OWNING account, masked at write time — the full key is the payer layer's
+     * business, not the alert channel's. */
+    accountMasked: text("account_masked").notNull(),
+    /** The hold ceiling at alert time, in scaled units (×100). */
+    maximumCredits: integer("maximum_credits").notNull(),
+    /** The item's failure count when this alert last advanced. */
+    failureCount: integer("failure_count").notNull(),
+    /** The item's last_reason stable code when this alert last advanced. */
+    reasonCode: text("reason_code"),
+    /** The alert level ladder: first → repeat → escalated (terminal). */
+    level: text("level").$type<"first" | "repeat" | "escalated">().notNull(),
+    /** What last crossed: the retry threshold, or the dwell limit. */
+    lastTrigger: text("last_trigger")
+      .$type<"failure_threshold" | "dwell_limit">()
+      .notNull(),
+    /** When the anomaly was first detected (the item's detected_at, copied so dwell
+     * reads standalone). */
+    detectedAt: timestamp("detected_at", { withTimezone: true }).notNull(),
+    /** The dedup anchors: when alerting started and when it last fired. */
+    firstAlertedAt: timestamp("first_alerted_at", {
+      withTimezone: true,
+    }).notNull(),
+    lastAlertedAt: timestamp("last_alerted_at", {
+      withTimezone: true,
+    }).notNull(),
+    /** Set exactly when the level becomes escalated, never unset. */
+    escalatedAt: timestamp("escalated_at", { withTimezone: true }),
+    /** How many notifications this alert state has emitted (first counts as 1). */
+    alertCount: integer("alert_count").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("credit_recovery_alerts_item_unique_idx").on(table.itemId),
+    check(
+      "credit_recovery_alerts_level_check",
+      sql`${table.level} IN ('first', 'repeat', 'escalated')`,
+    ),
+    check(
+      "credit_recovery_alerts_trigger_check",
+      sql`${table.lastTrigger} IN ('failure_threshold', 'dwell_limit')`,
+    ),
+    check(
+      "credit_recovery_alerts_maximum_check",
+      sql`${table.maximumCredits} > 0`,
+    ),
+    check(
+      "credit_recovery_alerts_failure_count_check",
+      sql`${table.failureCount} >= 0`,
+    ),
+    check(
+      "credit_recovery_alerts_alert_count_check",
+      sql`${table.alertCount} >= 1`,
+    ),
+    // The escalated level and its timestamp travel together or not at all — a level the
+    // ladder has not reached must not wear the escalation's badge (the item claim's own
+    // who/when discipline, applied to the alert).
+    check(
+      "credit_recovery_alerts_escalation_check",
+      sql`(${table.level} <> 'escalated' AND ${table.escalatedAt} IS NULL) OR (${table.level} = 'escalated' AND ${table.escalatedAt} IS NOT NULL)`,
+    ),
+    check(
+      "credit_recovery_alerts_ordering_check",
+      sql`${table.lastAlertedAt} >= ${table.firstAlertedAt}`,
+    ),
+    // The operational read: what is still firing, newest first.
+    index("credit_recovery_alerts_level_last_idx").on(
+      table.level,
+      table.lastAlertedAt,
     ),
   ],
 );

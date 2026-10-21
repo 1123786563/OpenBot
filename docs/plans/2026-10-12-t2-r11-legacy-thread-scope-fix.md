@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Hono, Drizzle, Bun tests, existing DirectoryDatabase/DataDatabase capability verifiers and conversation services.
 
-**Spec and finding sources:** Approved `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md` §§2–5, 8; Task 2 brief; R11 review `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/reports/task-2-r11-review.md` (SHA256 `cbf0770658594aabae13754c29b28a052575e5adc61a7838197809e2f16544ea`), findings R11-01 (Medium) and R11-02 (Low).
+**Spec and finding sources:** Approved `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md` §§2–5, 8; Task 2 brief; R11 review `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/reports/task-2-r11-review.md` (SHA256 `cbf0770658594aabae13754c29b28a052575e5adc61a7838197809e2f16544ea`), findings R11-01 (Medium) and R11-02 (Low).
 
 ## Global Constraints
 

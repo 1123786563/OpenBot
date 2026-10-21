@@ -1,2 +1,0 @@
-up-to-date: MT004 @ openbot_enterprise_mt004_test (127.0.0.1:55445)
-  已应用 2 步，无需执行

@@ -50,6 +50,13 @@ services:
     environment:
       DATABASE_URL: postgres://openbot:openbot@postgres:5432/openbot
       OPENBOT_BOOTSTRAP_ENTERPRISE_ROLES: "on"
+    volumes:
+      # #411: the TLS renewal-status record, read-only — the same ./tls directory the
+      # certs sidecar owns (docker/compose/certs.yml mounts it writable there). Any
+      # container running this server image can judge preview-origin admission from
+      # the certificate's real health; the host-run API server reads the same file
+      # through OPENBOT_TLS_STATUS_FILE (see docs/tls-certs.md).
+      - ${OPENBOT_TLS_HOST_DIR:-./tls}:/etc/openbot/tls:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -33,7 +33,8 @@
     "loadBill": "无法加载该账单。",
     "loadPurchase": "无法加载该购买记录。",
     "loadLatestPurchase": "无法加载你最近的一次购买。",
-    "grantPersonal": "积分发放未完成，请重试。"
+    "grantPersonal": "积分发放未完成，请重试。",
+    "loadRecoveryReview": "无法加载异常结算核查数据。"
   },
   "botLifecycle": {
     "loadNeeds": "无法加载你的 Bots 需要什么",

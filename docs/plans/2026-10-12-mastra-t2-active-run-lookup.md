@@ -4,7 +4,7 @@
 
 **Goal:** Expose the persisted active Run and exact active attempt identity through the authorized RunService boundary, so reconnect, `isRunning`, and user stop can be implemented without trusting client run IDs, process-local state, or direct Runner database queries.
 
-**Source of truth:** Approved design `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; parent DAG `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; parent Task 2 brief `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/briefs/task-2.md`; current T2 Runner/SSE plan `docs/plans/2026-10-12-mastra-t2-runner-sse-admission.md`; implementation stop report `.superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/reports/task-1-implementer-report.md`; architecture evidence `.superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/reports/interface-architecture.md`.
+**Source of truth:** Approved design `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent DAG `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; parent Task 2 brief `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/briefs/task-2.md`; current T2 Runner/SSE plan `docs/plans/2026-10-12-mastra-t2-runner-sse-admission.md`; implementation stop report `.superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/reports/task-1-implementer-report.md`; architecture evidence `.superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/reports/interface-architecture.md`.
 
 ## Global Constraints
 

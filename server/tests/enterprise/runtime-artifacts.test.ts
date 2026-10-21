@@ -173,8 +173,8 @@ describe("the compatibility report obeys the R4 report contract", () => {
 
   test("baselines the governing documents it answers to", () => {
     const plans = [
-      "docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md",
-      "docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md",
+      "docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md",
+      "docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md",
     ];
     for (const plan of plans) {
       expect(report.document_baseline[plan], `document_baseline[${plan}]`).toBe(

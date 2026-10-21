@@ -180,6 +180,7 @@ func waitFor(t *testing.T, condition func() bool) {
 func envelopeFor(version string) identity.VerifiedRun {
 	v := identity.VerifiedRun{
 		TenantID:            "t1",
+		WorkspaceID:         "ws1",
 		PrincipalID:         "p1",
 		ActorID:             "a1",
 		InitiatorKind:       identity.InitiatorUser,

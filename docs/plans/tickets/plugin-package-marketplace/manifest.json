@@ -1,0 +1,601 @@
+{
+  "repository": "1123786563/OpenBot",
+  "parent": {
+    "number": 459,
+    "url": "https://github.com/1123786563/OpenBot/issues/459",
+    "id": 5924298472
+  },
+  "status": "published-verified-not-started",
+  "source_read_at": "2026-10-19T13:07:25.623759+00:00",
+  "workspace": "/Users/wuyongjun/trea/OpenBot",
+  "git_head": "203d0f0244b2f898218fa12027089c631e8448d9",
+  "spec_path": "docs/specs/2026-10-19-plugin-package-marketplace-design.md",
+  "spec_sha256": "cad3f1f27434dfe273c7bd994a15a4311c64b240d174e7db91488703c106b7da",
+  "contains": [
+    "https://github.com/1123786563/OpenBot/issues/460",
+    "https://github.com/1123786563/OpenBot/issues/461",
+    "https://github.com/1123786563/OpenBot/issues/462",
+    "https://github.com/1123786563/OpenBot/issues/463",
+    "https://github.com/1123786563/OpenBot/issues/464",
+    "https://github.com/1123786563/OpenBot/issues/465",
+    "https://github.com/1123786563/OpenBot/issues/466",
+    "https://github.com/1123786563/OpenBot/issues/467",
+    "https://github.com/1123786563/OpenBot/issues/468",
+    "https://github.com/1123786563/OpenBot/issues/469",
+    "https://github.com/1123786563/OpenBot/issues/470",
+    "https://github.com/1123786563/OpenBot/issues/471"
+  ],
+  "nodes": [
+    {
+      "id": "PKG01",
+      "issue_number": 460,
+      "url": "https://github.com/1123786563/OpenBot/issues/460",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/459"
+      ],
+      "acceptance": [
+        "A01",
+        "A12"
+      ],
+      "depends_on": [],
+      "owner_role": "coordinator",
+      "implementation_roles": [
+        "backend_implementer",
+        "frontend_implementer"
+      ],
+      "validator_role": [
+        "backend_validator",
+        "frontend_validator",
+        "reviewer"
+      ],
+      "owned_files": [
+        "shared/enterprise/plugin-package-contracts.ts",
+        "server/src/plugin-packages/",
+        "scripts/plugin-packages/build.ts",
+        "server/src/enterprise/plugin-packages/routes.ts",
+        "app/src/components/market/package-pane.tsx",
+        "app/src/components/market/package-detail.tsx"
+      ],
+      "owned_scope": "制品构建与登记、只读目录接口、市场插件包列表与详情。",
+      "interfaces": {
+        "consumes": "现有认证与团队 Scope、代码内专家/Skill 目录作为首个导出来源；不依赖新安装表。",
+        "produces": "VerifiedArtifact、MarketplaceV1 与范围内只读 PackagePage；后续安装按 packageKey/version/digest 选取精确版本。"
+      },
+      "verification": "用纯文件制品测试证明摘要及拒绝；用真实认证请求和浏览器证明当前范围目录可见、错误可理解。",
+      "status": "pending",
+      "technical_task_mapping": [
+        "T1",
+        "T7",
+        "T8"
+      ]
+    },
+    {
+      "id": "PKG02",
+      "issue_number": 461,
+      "url": "https://github.com/1123786563/OpenBot/issues/461",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/459"
+      ],
+      "acceptance": [
+        "A02",
+        "A03",
+        "A04",
+        "A12"
+      ],
+      "depends_on": [
+        "https://github.com/1123786563/OpenBot/issues/460",
+        "https://github.com/1123786563/OpenBot/issues/74"
+      ],
+      "owner_role": "coordinator",
+      "implementation_roles": [
+        "backend_implementer",
+        "frontend_implementer"
+      ],
+      "validator_role": [
+        "backend_validator",
+        "frontend_validator",
+        "reviewer"
+      ],
+      "owned_files": [
+        "server/src/db/schema/enterprise-plugin-packages.ts",
+        "server/src/enterprise/plugin-packages/store.ts",
+        "server/src/enterprise/plugin-packages/mutation-context.ts",
+        "server/src/enterprise/plugin-packages/plans.ts",
+        "server/src/enterprise/plugin-packages/install-service.ts",
+        "app/src/components/market/package-install-dialog.tsx",
+        "server/drizzle/"
+      ],
+      "owned_scope": "最小安装/修订/计划/资源链接/变更回执存储，安装 API，预览确认和已安装视图；按本票需求扩表，不预建后续全部能力。",
+      "interfaces": {
+        "consumes": "PKG01 的不可变发布与制品；#74 已有企业连接器目录/安装归属；可信 Scope 与公司管理员写通道。",
+        "produces": "PackagePlanDTO、PackageInstallDTO、10 分钟安装预览与 actor+幂等键回执；范围唯一的 install/revision/resource links。"
+      },
+      "verification": "真实数据库并发安装/幂等测试、管理 API 越权测试、浏览器预览到安装状态演示。",
+      "status": "pending",
+      "technical_task_mapping": [
+        "T2",
+        "T3",
+        "T4",
+        "T7",
+        "T8"
+      ]
+    },
+    {
+      "id": "PKG03",
+      "issue_number": 462,
+      "url": "https://github.com/1123786563/OpenBot/issues/462",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/459"
+      ],
+      "acceptance": [
+        "A02",
+        "A04",
+        "A06",
+        "A11"
+      ],
+      "depends_on": [
+        "https://github.com/1123786563/OpenBot/issues/461"
+      ],
+      "owner_role": "coordinator",
+      "implementation_roles": [
+        "backend_implementer",
+        "frontend_implementer"
+      ],
+      "validator_role": [
+        "backend_validator",
+        "frontend_validator",
+        "reviewer"
+      ],
+      "owned_files": [
+        "server/src/plugins/package-grants.ts",
+        "server/src/enterprise/plugin-packages/resources.ts",
+        "server/src/enterprise/plugin-packages/runtime.ts",
+        "server/src/enterprise/plugin-packages/pins.ts",
+        "server/src/enterprise/runs/service.ts",
+        "server/src/enterprise/runs/store.ts",
+        "app/src/components/market/package-grants.tsx"
+      ],
+      "owned_scope": "Skill 包资源解析、范围 grant、Skill 运行 pin、Bot 授权页面及真实对话执行；不包含供应商工具派发。",
+      "interfaces": {
+        "consumes": "PKG02 的 install/revision；现有 Bot ownership、Run/attempt 与工具策略；包 Skill 只引用不可变资源。",
+        "produces": "范围 PackageGrantDTO、同 Run 事务提交的 Skill pins、仅按当前 Bot/范围提供的 Skill summaries/content。"
+      },
+      "verification": "完成安装→授权→真实 Run 使用 Skill→撤权后拒绝演示；对原子 pin、跨范围和同名资源做集成检查。",
+      "status": "pending",
+      "technical_task_mapping": [
+        "T3",
+        "T5",
+        "T6",
+        "T7",
+        "T8"
+      ]
+    },
+    {
+      "id": "PKG04",
+      "issue_number": 463,
+      "url": "https://github.com/1123786563/OpenBot/issues/463",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/459"
+      ],
+      "acceptance": [
+        "A08",
+        "A10"
+      ],
+      "depends_on": [
+        "https://github.com/1123786563/OpenBot/issues/462"
+      ],
+      "owner_role": "coordinator",
+      "implementation_roles": [
+        "backend_implementer",
+        "frontend_implementer"
+      ],
+      "validator_role": [
+        "backend_validator",
+        "frontend_validator",
+        "reviewer"
+      ],
+      "owned_files": [
+        "server/src/enterprise/plugin-packages/expert-template.ts",
+        "server/src/agents/profile-store.ts",
+        "server/src/enterprise/tenancy/bots-ownership.ts",
+        "app/src/components/market/package-expert-dialog.tsx",
+        "server/drizzle/"
+      ],
+      "owned_scope": "模板校验、受限 built_in 创建、企业 ownership、模板来源、初始 Skill grant 与创建向导。",
+      "interfaces": {
+        "consumes": "PKG03 的范围 Skill grant 和运行 pin；现有 AgentProfile/BotOwnership/ExpertVersion 权威接口。",
+        "produces": "instantiateExpert 与原子 profile+ownership+来源+Skill grant；可继续对话的 agentId。"
+      },
+      "verification": "真实角色事务故障注入与重复创建测试，浏览器从模板创建→打开 Bot→使用已有 Skill 演示。",
+      "status": "pending",
+      "technical_task_mapping": [
+        "T3",
+        "T7",
+        "T8"
+      ]
+    },
+    {
+      "id": "PKG05",
+      "issue_number": 464,
+      "url": "https://github.com/1123786563/OpenBot/issues/464",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/459"
+      ],
+      "acceptance": [
+        "A02",
+        "A04",
+        "A05",
+        "A07"
+      ],
+      "depends_on": [
+        "https://github.com/1123786563/OpenBot/issues/462",
+        "https://github.com/1123786563/OpenBot/issues/75"
+      ],
+      "owner_role": "coordinator",
+      "implementation_roles": [
+        "backend_implementer",
+        "frontend_implementer"
+      ],
+      "validator_role": [
+        "backend_validator",
+        "frontend_validator",
+        "reviewer"
+      ],
+      "owned_files": [
+        "server/src/plugins/package-access.ts",
+        "server/src/plugins/store.ts",
+        "server/src/plugins/tools.ts",
+        "server/src/enterprise/plugin-packages/dispatch.ts",
+        "server/src/db/schema/enterprise-plugins.ts",
+        "app/src/components/market/package-connections.tsx"
+      ],
+      "owned_scope": "包资源到已有 connector install 的引用、当前 actor 连接解析、工具 grant/pin、同步 Run 的受管派发与就绪 UI。",
+      "interfaces": {
+        "consumes": "PKG03 的范围授权与 Run pin；#75 的当前用户连接/Bot 授权实时重验；已有 MCP/OpenConnector/Composio、ActionPolicy 和审批。",
+        "produces": "TrustedManagedAccess、包工具绑定、package dispatch operation/argsDigest/connection generation 与既有工具回执关联。"
+      },
+      "verification": "用真实受限数据库和可控 transport 观察放行/拒绝次数，并对受支持连接执行真实账号 smoke；完成授权→调用→断连→下一次拒绝演示。",
+      "status": "pending",
+      "technical_task_mapping": [
+        "T5",
+        "T6",
+        "T7",
+        "T8"
+      ]
+    },
+    {
+      "id": "PKG06",
+      "issue_number": 465,
+      "url": "https://github.com/1123786563/OpenBot/issues/465",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/459"
+      ],
+      "acceptance": [
+        "A03",
+        "A06",
+        "A07"
+      ],
+      "depends_on": [
+        "https://github.com/1123786563/OpenBot/issues/464"
+      ],
+      "owner_role": "coordinator",
+      "implementation_roles": [
+        "backend_implementer",
+        "frontend_implementer"
+      ],
+      "validator_role": [
+        "backend_validator",
+        "frontend_validator",
+        "reviewer"
+      ],
+      "owned_files": [
+        "server/src/enterprise/plugin-packages/plans.ts",
+        "server/src/enterprise/plugin-packages/lifecycle.ts",
+        "server/src/enterprise/plugin-packages/runtime.ts",
+        "app/src/components/market/package-version-dialog.tsx"
+      ],
+      "owned_scope": "upgrade/rollback 计划、revision CAS、授权差异、旧 pin 兼容与 Web 版本选择。",
+      "interfaces": {
+        "consumes": "PKG02 的计划事务、PKG03/05 的 Skill/工具 pins 和当前 grant；不可变多版本发布。",
+        "produces": "新的安装 revision、版本差异预览、当前授权与旧 pin 取交集的运行规则。"
+      },
+      "verification": "两版本旧/新 Run 对照、真实 CAS 并发与权限增量审批检查；浏览器完成升级和回滚流程。",
+      "status": "pending",
+      "technical_task_mapping": [
+        "T4",
+        "T6",
+        "T7",
+        "T8"
+      ]
+    },
+    {
+      "id": "PKG07",
+      "issue_number": 466,
+      "url": "https://github.com/1123786563/OpenBot/issues/466",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/459"
+      ],
+      "acceptance": [
+        "A05",
+        "A08"
+      ],
+      "depends_on": [
+        "https://github.com/1123786563/OpenBot/issues/463",
+        "https://github.com/1123786563/OpenBot/issues/464"
+      ],
+      "owner_role": "coordinator",
+      "implementation_roles": [
+        "backend_implementer",
+        "frontend_implementer"
+      ],
+      "validator_role": [
+        "backend_validator",
+        "frontend_validator",
+        "reviewer"
+      ],
+      "owned_files": [
+        "server/src/enterprise/plugin-packages/lifecycle.ts",
+        "server/src/enterprise/plugin-packages/dispatch.ts",
+        "app/src/components/market/package-status-dialog.tsx"
+      ],
+      "owned_scope": "enabled/disabled/uninstalled 状态、generation、影响预览、资源保留与重装语义。",
+      "interfaces": {
+        "consumes": "PKG04 专家创建来源、PKG05 派发与共享底层 connector 引用。",
+        "produces": "tombstone 安装、单调 generation、已撤 grant、明确重装/启用提示与资产链接。"
+      },
+      "verification": "共享 connector 双包场景、在途派发并发及重装测试；浏览器卸载后确认专家/私人编辑/回执仍可按权限访问。",
+      "status": "pending",
+      "technical_task_mapping": [
+        "T4",
+        "T6",
+        "T7",
+        "T8"
+      ]
+    },
+    {
+      "id": "PKG08",
+      "issue_number": 467,
+      "url": "https://github.com/1123786563/OpenBot/issues/467",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/459"
+      ],
+      "acceptance": [
+        "A01",
+        "A05",
+        "A12"
+      ],
+      "depends_on": [
+        "https://github.com/1123786563/OpenBot/issues/464"
+      ],
+      "owner_role": "coordinator",
+      "implementation_roles": [
+        "backend_implementer",
+        "frontend_implementer"
+      ],
+      "validator_role": [
+        "backend_validator",
+        "frontend_validator",
+        "reviewer"
+      ],
+      "owned_files": [
+        "scripts/plugin-packages/publish.ts",
+        "server/src/plugin-packages/catalogue.ts",
+        "server/src/enterprise/plugin-packages/dispatch.ts",
+        "app/src/components/market/package-detail.tsx"
+      ],
+      "owned_scope": "发布/下架/撤回管理命令、release 锁、范围 readiness 与撤回状态展示。",
+      "interfaces": {
+        "consumes": "PKG01 发布记录和制品、PKG05 dispatch 锁协议；现有平台/公司管理面分离。",
+        "produces": "listed 与 published/withdrawn 两个独立状态、可审计撤回结果、全局一致的派发阻断。"
+      },
+      "verification": "跨两团队的真实派发竞争与平台/公司权限检查，CLI 下架与撤回的差异演示。",
+      "status": "pending",
+      "technical_task_mapping": [
+        "T1",
+        "T4",
+        "T6",
+        "T7",
+        "T8",
+        "T9"
+      ]
+    },
+    {
+      "id": "PKG09",
+      "issue_number": 468,
+      "url": "https://github.com/1123786563/OpenBot/issues/468",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/459"
+      ],
+      "acceptance": [
+        "A02",
+        "A05",
+        "A07",
+        "A12"
+      ],
+      "depends_on": [
+        "https://github.com/1123786563/OpenBot/issues/464"
+      ],
+      "owner_role": "coordinator",
+      "implementation_roles": [
+        "backend_implementer",
+        "frontend_implementer"
+      ],
+      "validator_role": [
+        "backend_validator",
+        "frontend_validator",
+        "reviewer"
+      ],
+      "owned_files": [
+        "server/src/app.ts",
+        "server/src/index.ts",
+        "server/src/plugins/routes.ts",
+        "server/src/approvals/execute.ts",
+        "server/src/memory/ingestion.ts",
+        "server/src/enterprise/tenancy/admin-separation.ts"
+      ],
+      "owned_scope": "HTTP/内部回调、审批恢复、schedule/responsibility、memory ingestion 的包上下文传递和支持矩阵。",
+      "interfaces": {
+        "consumes": "PKG05 受管包工具执行；现有 Run lease/attempt、审批和可信后台身份重建。",
+        "produces": "逐入口支持/拒绝清单；从持久化 Run 恢复的服务端包上下文；一致的拒绝码。"
+      },
+      "verification": "逐入口 transport spy/真实 API 检查及受管后台/审批恢复集成测试，证据必须点名每个入口。",
+      "status": "pending",
+      "technical_task_mapping": [
+        "T6",
+        "T7"
+      ]
+    },
+    {
+      "id": "PKG10",
+      "issue_number": 469,
+      "url": "https://github.com/1123786563/OpenBot/issues/469",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/459"
+      ],
+      "acceptance": [
+        "A05",
+        "A07",
+        "A08",
+        "A12"
+      ],
+      "depends_on": [
+        "https://github.com/1123786563/OpenBot/issues/468"
+      ],
+      "owner_role": "coordinator",
+      "implementation_roles": [
+        "backend_implementer",
+        "frontend_implementer"
+      ],
+      "validator_role": [
+        "backend_validator",
+        "frontend_validator",
+        "reviewer"
+      ],
+      "owned_files": [
+        "server/src/enterprise/plugin-packages/dispatch.ts",
+        "server/src/enterprise/plugin-packages/routes.ts",
+        "app/src/components/market/package-operations.tsx"
+      ],
+      "owned_scope": "unknown 调用查询、脱敏 Activity/安装详情状态、核对结果回填和受控恢复。",
+      "interfaces": {
+        "consumes": "PKG05 dispatch 状态、PKG09 原范围 Run 恢复；现有 Activity/审批/工具回执权威。",
+        "produces": "unknown→有证据的确定结果关联，以及仍未知/需重新授权的用户状态；不新增任务状态机。"
+      },
+      "verification": "持久化崩溃注入、重启核对与断连恢复测试；浏览器展示 unknown、不可重试原因及确定回执。",
+      "status": "pending",
+      "technical_task_mapping": [
+        "T6",
+        "T7",
+        "T8",
+        "T9"
+      ]
+    },
+    {
+      "id": "PKG11",
+      "issue_number": 470,
+      "url": "https://github.com/1123786563/OpenBot/issues/470",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/459"
+      ],
+      "acceptance": [
+        "A08",
+        "A09",
+        "A11",
+        "A12"
+      ],
+      "depends_on": [
+        "https://github.com/1123786563/OpenBot/issues/463",
+        "https://github.com/1123786563/OpenBot/issues/465",
+        "https://github.com/1123786563/OpenBot/issues/466",
+        "https://github.com/1123786563/OpenBot/issues/467",
+        "https://github.com/1123786563/OpenBot/issues/469"
+      ],
+      "owner_role": "coordinator",
+      "implementation_roles": [
+        "backend_implementer",
+        "frontend_implementer"
+      ],
+      "validator_role": [
+        "backend_validator",
+        "frontend_validator",
+        "reviewer"
+      ],
+      "owned_files": [
+        "plugins/",
+        "scripts/plugin-packages/migrate-legacy.ts",
+        "server/src/config.ts",
+        "server/src/marketplace/",
+        "package.json",
+        "Dockerfile",
+        "docs/operations/plugin-packages.md"
+      ],
+      "owned_scope": "真实内置包、镜像制品、迁移 dry-run/manifest/apply、影子读取、pilot 与回退演练。",
+      "interfaces": {
+        "consumes": "已完成的安装/授权/版本/卸载/撤回/核对行为；旧专家安装回执、Skill 内容哈希和企业范围权威。",
+        "produces": "旧 ID/slug→包资源的可审计映射，unresolved 报告，只读制品镜像及精确团队 allowlist。"
+      },
+      "verification": "迁移 dry-run→源并发变更拒绝→apply 演练及启用→Run→关入口回退，记录镜像与数据库版本。",
+      "status": "pending",
+      "technical_task_mapping": [
+        "T9"
+      ]
+    },
+    {
+      "id": "PKG12",
+      "issue_number": 471,
+      "url": "https://github.com/1123786563/OpenBot/issues/471",
+      "source_issues": [
+        "https://github.com/1123786563/OpenBot/issues/459"
+      ],
+      "acceptance": [
+        "A01",
+        "A02",
+        "A03",
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "depends_on": [
+        "https://github.com/1123786563/OpenBot/issues/470"
+      ],
+      "owner_role": "coordinator",
+      "implementation_roles": [],
+      "validator_role": [
+        "backend_validator",
+        "frontend_validator",
+        "reviewer"
+      ],
+      "owned_files": [
+        "docs/plans/2026-10-19-plugin-package-marketplace/",
+        ".archive/runs/plugin-package-marketplace/"
+      ],
+      "owned_scope": "端到端缝合、真实角色测试、入口/验收映射、独立审查与 OCR；发现的缺陷回到对应专业实现任务修复。",
+      "interfaces": {
+        "consumes": "所有 V1 业务切片的已审查集成检查点与有效验证证据。",
+        "produces": "A01–A12 验收矩阵、入口矩阵、验证摘要、审查结果、剩余阻塞和明确支持范围。"
+      },
+      "verification": "按用户可见主路径在真实部署验收，复用有效证据只补缺项，审查覆盖完整交付范围。",
+      "status": "pending",
+      "technical_task_mapping": [
+        "T10"
+      ]
+    }
+  ],
+  "external_dependencies": [
+    {
+      "number": 74,
+      "evidence": "Existing plugin installation module inspected; status alone is not implementation evidence."
+    },
+    {
+      "number": 75,
+      "evidence": "Existing issue remains a prerequisite for package-origin tool invocation; verify implementation and integration before dispatch."
+    }
+  ],
+  "review_status": "Planning graph validated; remote bodies, labels, sub-issues and blocked-by links read back. No implementation review claimed."
+}

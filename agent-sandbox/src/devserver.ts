@@ -46,8 +46,15 @@ export type DevServers = {
   /**
    * The Bot's dev server for a dir, starting one if none. Same Bot+dir answers the same
    * running server (the lazy-start dedup); a different dir for the same Bot gets its own.
+   * `botWorkspace` names the ownership-scoped tree to contain against (MT050); absent, the
+   * configured root decides.
    */
-  start(input: { botId: string; dir: string; command?: string }): Promise<
+  start(input: {
+    botId: string;
+    dir: string;
+    botWorkspace?: string;
+    command?: string;
+  }): Promise<
     | { ok: true; port: number; command: string }
     | { ok: false; reason: "capacity"; running: number; max: number }
     | { ok: false; reason: "outside-workspace"; dir: string }
@@ -111,7 +118,8 @@ export function createDevServers(options: DevServersOptions): DevServers {
       // would otherwise hand a caller's command a working directory the sandbox never meant
       // to share. Resolved lexically — the workspace root is the module's own configured
       // base, not caller input, so segment arithmetic is exact here.
-      const botWorkspace = `${workspaceRoot}/${input.botId}`;
+      const botWorkspace =
+        input.botWorkspace ?? `${workspaceRoot}/${input.botId}`;
       // An ABSOLUTE dir is a different escape entirely: joining it under the workspace makes
       // it relative by accident (`/workspace/bots/a//etc/...` reads fine), so the leading
       // slash itself is the refusal — a dev server dir is a subdirectory, spelled relatively.
@@ -132,7 +140,9 @@ export function createDevServers(options: DevServersOptions): DevServers {
       // (`a/../../..`) escapes, and so does any input whose RESOLVED path fails to sit under
       // the workspace (which also catches smuggled absolute dirs, whose segments are joined
       // as relative parts and land somewhere unrelated). Both statements below must hold.
-      const climbCount = resolvedDir.split("/").filter((part) => part === "..").length;
+      const climbCount = resolvedDir
+        .split("/")
+        .filter((part) => part === "..").length;
       const segmentCount = resolvedDir
         .split("/")
         .filter((part) => part && part !== "." && part !== "..").length;

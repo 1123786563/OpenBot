@@ -271,9 +271,39 @@ unknown 的代价只是多一次重试。
 | `webappGeneration` 字段 | `"legacy"` | `"current"` |
 | HMR | 同源 HMR 分发（升级请求仍按 `/api/craft/sessions/<id>/webapp/_next/webpack-hmr` 解析） | preview origin 的 HMR（#363 代码已落地；运行时热更新仍待实测，受 #437 阻塞） |
 
-预览面板对 legacy 会话显示一行双语提示（`preview.legacyNotice`），与本文档口径一致。
+预览面板对 legacy 会话显示一行双语提示（`preview.legacyNotice`），与本文档口径一致：
+提示同时说明**风险**（该预览与平台同源，生成的代码可以用你的会话访问平台 API）与
+**收敛办法**（重建 web app 迁移到隔离预览源）。
 旧同源路径的 HTTP 代理与 HMR 分发在新形态下**仍然注册**，这是 D10"走旧路径"的载体；
 其同源暴露面是 spec 明确接受的存量代价，随会话自然结束而消失。
+
+### 部署级开关与风险收口（#425，AC1 例外的关闭面）
+
+**风险**：legacy 形态下 iframe 指向的是主站自己的同源路径，携带平台 cookie——
+`WEBAPP_DEV_CSP` 的 `connect-src 'self'` 中 `'self'` 就是主站 origin，因此生成的代码
+可以以登录用户身份读写平台 API。这正是 #358 要修的暴露，D10 只是对存量会话暂缓。
+
+**开关**：`OPENBOT_CRAFT_LEGACY_PREVIEW_ENABLED`（`boolEnv` 语义：`true`/`false`/
+`1`/`0`/`yes`/`no`/`on`/`off`）。**默认 `true`**——直接默认关闭会让所有存量会话的预览
+在升级当场不可用（AC7 的"存量不回归"优先）；本开关的目的是给部署方选择权，不是替
+所有部署做决定。关闭后四个面同时收口：
+
+| 面 | 关闭后的行为 |
+|---|---|
+| `webapp-info` | legacy 分支答 `webapp_url: null` + 可展示关闭原因（`previewOriginClosedReason`，复用既有关闭通道），`webappGeneration` 仍如实 `"legacy"` |
+| 同源 HTTP 代理 | 两处 `proxyWebapp` 注册对 legacy 会话答 503 + 同一原因句；判定在鉴权与属主检查之后（401/404 语义不变，开关不泄露会话存在性）、在就绪探针之前（被拒请求不拨上游） |
+| 同源 HMR 升级 | `resolveWebappHmrUpgrade` 以同一判定在 `server.upgrade` 提交前拒绝（503） |
+| 换票 | **不变**：legacy 仍 409（`PREVIEW_TICKET_LEGACY_ERROR`），unknown 仍 503 可重试——开关不是票据语义 |
+
+判定与 HTTP/HMR 两腿镜像（`legacyPreviewSwitchedOffFor`）：仅读代际裁决，且只在开关
+关闭时才读（默认部署零额外开销）；`unknown`（读取抖动）也拒绝——同源路由的合法流量
+只有 legacy 人群（current 会话的面板走 preview origin、HMR 走 origin 自己的分发器），
+让抖动把门撑开会使开关的承诺取决于 gateway 天气。**已修复人群不受影响**：挂载记录
+能证明 current 挂载的会话（fix-ocr27 #3 的手工装配修复分支）在开关关闭时仍走新形态。
+
+**收敛办法**：重建 web app（让 agent 重新 `webapp start`/重新生成会话）——模板拷贝
+写入 `.webapp-generation` 标记（见上文判定信号），装配即翻转为 current，随后走隔离
+预览源；判定信号的三态语义（legacy/current/unknown）见 `webapp-generation.ts`。
 
 签票路由与 `webapp-info` 同读装配代际（fix-ocr24 #5）：直接 POST
 `/api/craft/sessions/<id>/preview-ticket` 对 legacy 会话拒签 409（可展示原因、不落任何

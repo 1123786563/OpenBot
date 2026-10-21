@@ -1,7 +1,0 @@
-# MT042 after-hashes (frozen-surface verification, recomputed 2026-10-17T16:35:59Z by continuation dispatch)
-# Format: <sha256>  <path>  <UNCHANGED|CHANGED-authorized>
-03fb260895fb538407eefcad6e4e112a25f2efa723df06e0c54193d7405b16ee  scripts/multitenancy/migrate-test.ts  CHANGED-authorized (brief-predesignated seam: migrate-test.ts += MT042 task; migration-tool.test.ts += "MT042" exhaustive assertion — design §5 narrow exception)
-2b3a8386de357bae46645013d788ba272588c7490e99caa6c1e28b6e9b2bc5c7  tests/multitenancy/migration-tool.test.ts  CHANGED-authorized (brief-predesignated seam: migrate-test.ts += MT042 task; migration-tool.test.ts += "MT042" exhaustive assertion — design §5 narrow exception)
-45d1b500f66fee054a6030b860d97799434849363a39d56dde3348c3a7acf454  src/enterprise/tenancy/job-ownership.ts  UNCHANGED
-895b0e548513223e148a4a631dabe4181a0964d853ce2a099158813901d9b107  src/enterprise/tenancy/scope-gate.ts  UNCHANGED
-ca6450f0c1c537fa68b7c12505fffd7c9d9646253660431f8b3f2879b26ba578  src/db/schema/job-ownership.ts  UNCHANGED

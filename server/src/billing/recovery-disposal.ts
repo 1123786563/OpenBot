@@ -1,0 +1,484 @@
+import { and, eq } from "drizzle-orm";
+import type { AuditStore } from "../audit";
+import { recordAuditEvent } from "../audit";
+import type { Database } from "../db/client";
+import { creditRecoveryItems, creditRecoveryQueries, creditReservations } from "../db/schema/credit-reservations";
+import type { ConversionRate } from "../gateway/conversion-rate";
+import { CreditReservationConflictError, createCreditWriter } from "./credits-writer";
+import { createCreditSettleService } from "./credit-settle";
+
+/**
+ * The evidenced disposal (Bifrost 08.9, #284): the administrator's settle-or-release
+ * command for a recovery item — the money decision the 08.8 review exists to inform, made
+ * ONLY through this separately-authorized seam, never through the read surface.
+ *
+ * THE COMMAND. { recoveryItemId, action: settle|release, evidence: { queryId },
+ * expectedVersion, operatorId, idempotencyKey }. Every field is mandatory and
+ * operatorId is derived from the AUTHENTICATED session on the route, never read from the
+ * body: a command that names its own operator would let anyone forge the trail.
+ *
+ * NO EVIDENCE, NO DISPOSAL. A settle stands on a specific `credit_recovery_queries` row
+ * whose conclusion is `settled_evidence` WITH its usage — the amount is DERIVED from that
+ * row, never chosen by the operator, so "金额与证据一致" is true by construction rather than
+ * by hope. A release stands on a `no_charge_evidence` row — the provider's own
+ * confirmation the request was never billed — and NOTHING else: `still_unknown` is not
+ * release evidence (Q12: 查不到不等于没发生), and a settle-evidence row is the opposite of a
+ * no-charge proof.
+ *
+ * THE ACCOUNTING GOES THROUGH THE PROTOCOL, NOT AROUND IT. Settle is 06.9's
+ * `CreditSettleService` (exact pricing through the reservation's locked basis, the
+ * ledger's `reservation:<id>` fence, the first terminal result standing); release is 06.11's
+ * recovery door `releaseUnknownReservation` (a still-`reserved` hold refuses, a terminal
+ * hold answers the first result). The disposal never writes a ledger row itself.
+ *
+ * VERSION AND REPLAY. The item's `version` (0168) is the guard: the resolution lands in
+ * ONE UPDATE fenced on `state <> 'resolved' AND version = expectedVersion`, so a command
+ * built from a stale read refuses with `version_conflict` and two disposals racing resolve
+ * to exactly one winner. A resolved item answers by its record: the SAME idempotency key
+ * reads the recorded outcome back (`replayed` — the transport retry, no second effect, no
+ * second audit row); a DIFFERENT key refuses with `already_disposed`. Either way there is
+ * no second accounting effect — the underlying protocol is terminal-once, and the item
+ * names the one disposal that won.
+ *
+ * THE AUDIT RIDES THE ACT. Every disposal that lands writes `billing.recovery.disposed`
+ * through the audit store (when the deployment wired one — the repo's rule: absent store
+ * skips the trail, it never blocks the act). The refusal a non-administrator meets is the
+ * ROUTE's own `billing.recovery.disposal_denied` row, mirroring the review surface.
+ */
+
+/** The closed refusal vocabulary. A new member is a contract change, never a free string. */
+export const DISPOSAL_REFUSAL_REASONS = [
+  "request_invalid",
+  "no_such_item",
+  "version_conflict",
+  "already_disposed",
+  "evidence_mismatch",
+  "settle_refused",
+  "release_refused",
+] as const;
+
+export type RecoveryDisposalRefusalReasonCode =
+  (typeof DISPOSAL_REFUSAL_REASONS)[number];
+
+/** One line, shown on every surface, per refusal code — the settle surface's discipline. */
+export const DISPOSAL_REFUSAL_SENTENCES: Record<
+  RecoveryDisposalRefusalReasonCode,
+  string
+> = {
+  request_invalid: "The disposal command is not a valid disposal command.",
+  no_such_item: "There is no such recovery item to dispose.",
+  version_conflict:
+    "The item moved since it was read; re-read the review and dispose against the current version.",
+  already_disposed:
+    "The item has already been disposed; the first disposal stands.",
+  evidence_mismatch:
+    "The named evidence does not support this disposal action for this item.",
+  settle_refused: "The settlement itself refused; nothing was disposed.",
+  release_refused: "The release itself refused; nothing was disposed.",
+};
+
+/** The command contract, as the ticket's Produces list names it. */
+export type RecoveryDisposalCommand = {
+  recoveryItemId: string;
+  action: "settle" | "release";
+  /** The specific evidence row the action stands on (08.5's credit_recovery_queries). */
+  evidence: { queryId: string };
+  /** The version the operator read with the item; a stale version refuses. */
+  expectedVersion: number;
+  /** The administrator commanding the disposal — the session's own actor on the route. */
+  operatorId: string;
+  /** The command's own retry identity: the same key replays the recorded answer. */
+  idempotencyKey: string;
+};
+
+/** What a disposal answers: the landed act, the recorded replay, or a named refusal. */
+export type RecoveryDisposalOutcome =
+  | {
+      status: "disposed";
+      action: "settle" | "release";
+      itemId: string;
+      reservationId: string;
+      /** The evidence row the act stood on. */
+      evidenceId: string;
+      /** The item's version after the resolution (the guard for the NEXT disposal). */
+      version: number;
+      /** Settle only: the protocol's own first-result figures. */
+      chargedCredits?: number;
+      /** Settle only: what the grants absorbed. */
+      appliedCredits?: number;
+      /** Release only: the capacity handed back. */
+      releasedCredits?: number;
+    }
+  | {
+      status: "replayed";
+      action: "settle" | "release";
+      itemId: string;
+      evidenceId: string;
+      /** The recorded disposal's own key — the caller sees it answered itself. */
+      idempotencyKey: string;
+      resolvedAt: string;
+    }
+  | {
+      status: "refused";
+      reasonCode: RecoveryDisposalRefusalReasonCode;
+      /** The refused command's own facts — never another subject's data. */
+      detail: Record<string, unknown>;
+    };
+
+export type RecoveryDisposalDependencies = {
+  database: Database;
+  /** The deployment's environment rate, as the settle service takes it (version-0 locks). */
+  environmentRate?: ConversionRate;
+  /** Present on a deployment with the audit store; absent skips the trail, as everywhere else. */
+  audit?: AuditStore;
+  /** The suite's clock; production takes the database's own now. */
+  now?: () => Date;
+};
+
+const IDENTITY_MAX = 256;
+
+/** Identifier-shaped string: non-empty, bounded, no leading or trailing whitespace. */
+function isIdentifier(value: unknown, maxLength: number): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maxLength &&
+    value.trim() === value
+  );
+}
+
+function refused(
+  reasonCode: RecoveryDisposalRefusalReasonCode,
+  detail: Record<string, unknown>,
+): Extract<RecoveryDisposalOutcome, { status: "refused" }> {
+  return { status: "refused", reasonCode, detail };
+}
+
+export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencies) {
+  const { database } = dependencies;
+  const writer = createCreditWriter(database);
+  const settleService = createCreditSettleService({
+    database,
+    ...(dependencies.environmentRate !== undefined
+      ? { environmentRate: dependencies.environmentRate }
+      : {}),
+  });
+  const now = () => dependencies.now?.() ?? new Date();
+
+  async function dispose(
+    command: unknown,
+  ): Promise<RecoveryDisposalOutcome> {
+    // ---- The shape boundary: every field present and identifier-shaped, the action in
+    // the closed vocabulary, the version a whole positive number. A refusal here names
+    // the field and nothing else — never a parsed fragment.
+    if (typeof command !== "object" || command === null) {
+      return refused("request_invalid", { field: "body" });
+    }
+    const body = command as Record<string, unknown>;
+    const action = body.action;
+    if (action !== "settle" && action !== "release") {
+      return refused("request_invalid", { field: "action" });
+    }
+    if (!isIdentifier(body.recoveryItemId, IDENTITY_MAX)) {
+      return refused("request_invalid", { field: "recoveryItemId" });
+    }
+    if (!isIdentifier(body.operatorId, IDENTITY_MAX)) {
+      return refused("request_invalid", { field: "operatorId" });
+    }
+    if (!isIdentifier(body.idempotencyKey, IDENTITY_MAX)) {
+      return refused("request_invalid", { field: "idempotencyKey" });
+    }
+    const evidence = body.evidence;
+    if (
+      typeof evidence !== "object" ||
+      evidence === null ||
+      !isIdentifier((evidence as Record<string, unknown>).queryId, IDENTITY_MAX)
+    ) {
+      return refused("request_invalid", { field: "evidence.queryId" });
+    }
+    const expectedVersion = body.expectedVersion;
+    if (
+      typeof expectedVersion !== "number" ||
+      !Number.isSafeInteger(expectedVersion) ||
+      expectedVersion < 1
+    ) {
+      return refused("request_invalid", { field: "expectedVersion" });
+    }
+    const typed: RecoveryDisposalCommand = {
+      recoveryItemId: body.recoveryItemId,
+      action,
+      evidence: { queryId: (evidence as { queryId: string }).queryId },
+      expectedVersion,
+      operatorId: body.operatorId,
+      idempotencyKey: body.idempotencyKey,
+    };
+
+    // ---- The item, and the resolved-state answers that never re-account.
+    const [item] = await database
+      .select()
+      .from(creditRecoveryItems)
+      .where(eq(creditRecoveryItems.id, typed.recoveryItemId))
+      .limit(1);
+    if (!item) {
+      return refused("no_such_item", { recoveryItemId: typed.recoveryItemId });
+    }
+    if (item.state === "resolved") {
+      // The SAME command replayed (transport retry) reads its own recorded answer; a
+      // DIFFERENT disposal of a resolved item is the conflict the ticket refuses.
+      if (
+        item.resolutionIdempotencyKey !== null &&
+        item.resolutionIdempotencyKey === typed.idempotencyKey
+      ) {
+        return {
+          status: "replayed",
+          action: item.resolvedAction ?? typed.action,
+          itemId: item.id,
+          evidenceId: item.resolutionEvidenceId ?? typed.evidence.queryId,
+          idempotencyKey: item.resolutionIdempotencyKey,
+          resolvedAt: item.resolvedAt?.toISOString() ?? now().toISOString(),
+        };
+      }
+      return refused("already_disposed", {
+        recoveryItemId: item.id,
+        resolvedAction: item.resolvedAction,
+        resolvedAt: item.resolvedAt?.toISOString() ?? null,
+      });
+    }
+    if (item.version !== typed.expectedVersion) {
+      return refused("version_conflict", {
+        recoveryItemId: item.id,
+        expectedVersion: typed.expectedVersion,
+        currentVersion: item.version,
+      });
+    }
+
+    // ---- The evidence: a specific row of THIS item's trail, saying what the action
+    // needs. This is where "无费用证据不得释放" and "结算必须引用具体证据" live.
+    const [evidenceRow] = await database
+      .select()
+      .from(creditRecoveryQueries)
+      .where(eq(creditRecoveryQueries.id, typed.evidence.queryId))
+      .limit(1);
+    if (!evidenceRow || evidenceRow.itemId !== item.id) {
+      return refused("evidence_mismatch", {
+        queryId: typed.evidence.queryId,
+        reason: "no such evidence row for this item",
+      });
+    }
+    if (typed.action === "settle") {
+      if (evidenceRow.conclusion !== "settled_evidence") {
+        return refused("evidence_mismatch", {
+          queryId: evidenceRow.id,
+          conclusion: evidenceRow.conclusion,
+          reason: "a settle stands on settled_evidence only",
+        });
+      }
+      if (
+        evidenceRow.usageInput === null ||
+        evidenceRow.usageOutput === null
+      ) {
+        return refused("evidence_mismatch", {
+          queryId: evidenceRow.id,
+          reason: "the settled evidence carries no usage to settle from",
+        });
+      }
+    } else if (evidenceRow.conclusion !== "no_charge_evidence") {
+      // still_unknown is not release evidence — the provider has no record is NOT proof
+      // nothing was billed (Q12), and settled_evidence is the opposite of a no-charge.
+      return refused("evidence_mismatch", {
+        queryId: evidenceRow.id,
+        conclusion: evidenceRow.conclusion,
+        reason: "a release stands on no_charge_evidence only",
+      });
+    }
+
+    // ---- The accounting, through the protocol. Refusals here leave everything as it
+    // was (the settle service's own discipline); the item is not resolved by a refusal.
+    if (typed.action === "settle") {
+      // The usage IS the evidence row's: the closed dimension vocabulary with every
+      // dimension the row does not carry at zero — the amount cannot disagree with the
+      // evidence because the operator never sent an amount at all.
+      const settleOutcome = await settleService.settle({
+        reservationId: item.reservationId,
+        actualUsage: {
+          input: evidenceRow.usageInput ?? 0,
+          output: evidenceRow.usageOutput ?? 0,
+          reasoning: 0,
+          image: 0,
+          image_output: 0,
+          audio_input: 0,
+          audio_output: 0,
+          cache_read: 0,
+          cache_write: 0,
+          video: 0,
+          surcharge_web_search: 0,
+          surcharge_per_request: 0,
+        },
+        evidence: {
+          kind: "provider_usage_report",
+          reference: evidenceRow.id,
+        },
+        settledBy: typed.operatorId,
+        idempotencyKey: typed.idempotencyKey,
+      });
+      if (settleOutcome.status === "refused") {
+        return refused("settle_refused", {
+          reasonCode: settleOutcome.reasonCode,
+          detail: settleOutcome.detail,
+        });
+      }
+      const resolution = await resolveItem(
+        typed,
+        evidenceRow.id,
+        item.version,
+        item.reservationId,
+      );
+      if (resolution.status === "refused") return resolution;
+      return {
+        status: "disposed",
+        action: "settle",
+        itemId: item.id,
+        reservationId: item.reservationId,
+        evidenceId: evidenceRow.id,
+        version: resolution.version,
+        chargedCredits: settleOutcome.chargedCredits,
+        appliedCredits: settleOutcome.appliedCredits,
+        releasedCredits: settleOutcome.releasedCredits,
+      };
+    }
+
+    // The release: the recovery door only (a still-`reserved` hold refuses below), with
+    // the reason naming the evidence the act stands on.
+    try {
+      await writer.releaseUnknownReservation(
+        item.reservationId,
+        `recovery_disposal:${evidenceRow.id}`,
+      );
+    } catch (error) {
+      if (error instanceof CreditReservationConflictError) {
+        return refused("release_refused", {
+          kind: error.conflictKind,
+          reason: "the reservation's own state refused the recovery release",
+        });
+      }
+      throw error;
+    }
+    // The row that answered: terminal facts for the response (and an honest released
+    // amount even when the release converged on an earlier terminal write).
+    const [reservationAfter] = await database
+      .select({
+        status: creditReservations.status,
+        released: creditReservations.released,
+      })
+      .from(creditReservations)
+      .where(eq(creditReservations.id, item.reservationId))
+      .limit(1);
+    if (reservationAfter?.status !== "released") {
+      // The recovery door's own refusal shape: a hold that was never `unknown` (or a
+      // settle that landed first). Nothing moved on our say-so; say so.
+      return refused("release_refused", {
+        reservationStatus: reservationAfter?.status ?? "missing",
+        reason: "the reservation did not release",
+      });
+    }
+    const resolution = await resolveItem(
+      typed,
+      evidenceRow.id,
+      item.version,
+      item.reservationId,
+    );
+    if (resolution.status === "refused") return resolution;
+    return {
+      status: "disposed",
+      action: "release",
+      itemId: item.id,
+      reservationId: item.reservationId,
+      evidenceId: evidenceRow.id,
+      version: resolution.version,
+      releasedCredits: reservationAfter.released ?? 0,
+    };
+  }
+
+  /**
+   * The one guarded write that resolves the item: `state <> 'resolved' AND version =
+   * expectedVersion`. A racing disposal that won in between turns the rowcount to 0 and
+   * this command into the resolved-state answers (replay of itself, or the conflict) —
+   * the protocol's terminal-once semantics mean the accounting already converged.
+   */
+  async function resolveItem(
+    command: RecoveryDisposalCommand,
+    evidenceId: string,
+    expectedVersion: number,
+    reservationId: string,
+  ): Promise<
+    | { status: "resolved"; version: number }
+    | Extract<RecoveryDisposalOutcome, { status: "refused" }>
+  > {
+    const resolvedAt = now();
+    const won = await database
+      .update(creditRecoveryItems)
+      .set({
+        state: "resolved",
+        version: expectedVersion + 1,
+        resolvedAction: command.action,
+        resolvedBy: command.operatorId,
+        resolvedAt,
+        resolutionEvidenceId: evidenceId,
+        resolutionIdempotencyKey: command.idempotencyKey,
+        updatedAt: resolvedAt,
+      })
+      .where(
+        and(
+          eq(creditRecoveryItems.id, command.recoveryItemId),
+          eq(creditRecoveryItems.version, expectedVersion),
+        ),
+      )
+      .returning({ version: creditRecoveryItems.version });
+    if (won.length === 0) {
+      const [current] = await database
+        .select()
+        .from(creditRecoveryItems)
+        .where(eq(creditRecoveryItems.id, command.recoveryItemId))
+        .limit(1);
+      if (
+        current?.resolutionIdempotencyKey !== null &&
+        current?.resolutionIdempotencyKey === command.idempotencyKey
+      ) {
+        // Unreachable in practice (the same key recorded itself above), kept so the
+        // race's every exit answers honestly rather than crashing.
+        return {
+          status: "refused",
+          reasonCode: "already_disposed",
+          detail: { recoveryItemId: command.recoveryItemId, replayed: true },
+        };
+      }
+      return refused("version_conflict", {
+        recoveryItemId: command.recoveryItemId,
+        expectedVersion,
+        currentVersion: current?.version ?? null,
+        reason: "a concurrent disposal resolved the item first",
+      });
+    }
+
+    // The act's own trail: who disposed, what action, on which evidence, at which
+    // version — the audit the ticket demands rides the disposal itself.
+    if (dependencies.audit) {
+      await recordAuditEvent(dependencies.audit, {
+        eventType: "billing.recovery.disposed",
+        targetType: "billing",
+        targetId: command.recoveryItemId,
+        actorUserId: command.operatorId,
+        payload: {
+          action: command.action,
+          evidenceId,
+          reservationId,
+          expectedVersion,
+          idempotencyKey: command.idempotencyKey,
+        },
+      });
+    }
+    return { status: "resolved", version: won[0]?.version ?? expectedVersion + 1 };
+  }
+
+  return { dispose };
+}

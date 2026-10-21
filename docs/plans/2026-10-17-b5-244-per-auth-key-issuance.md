@@ -1,6 +1,6 @@
 # b5-244 实施计划 — Bifrost 05.3 为有效授权签发独立 Key（#244）
 
-状态：**执行中（TDD）**。Ticket：`docs/tickets/bifrost-5/issues/05.3-per-authorization-short-key-issuance.md`。
+状态：**执行中（TDD）**。Ticket：`docs/plans/tickets/bifrost-5/issues/05.3-per-authorization-short-key-issuance.md`。
 
 ## 0. 依赖核验（开工前记录，均以仓库实际实现为准）
 

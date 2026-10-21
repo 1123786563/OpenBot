@@ -3,7 +3,7 @@
  *
  * Serialization here is governed by the verified T04 contract only: each operation is gated
  * on the manifest capability its evidence belongs to, the wire shapes mirror
- * docs/opik-contract.md (snake_case bodies, `project_name` for trace creation — there is no
+ * reference/opik-contract.md (snake_case bodies, `project_name` for trace creation — there is no
  * `project_id` there — the `projectName` header routing OTLP writes, 32/16-hex ids, string
  * nanoseconds, hyphenated UUIDv7 overrides, the `page/size/total/content` envelope), and a
  * request body never exceeds the verified byte cap. Facts the contract does not state are not
@@ -339,7 +339,7 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
   // parsed and held. Absent (or blank) means no header and byte-identical
   // behavior: the compose loopback authenticates nothing.
   // R4-18 (registered, not fixed): the header VALUE FORMAT is unverified contract
-  // territory. docs/opik-contract.md states no Authorization semantics and every
+  // territory. reference/opik-contract.md states no Authorization semantics and every
   // evidence stack ran the no-auth loopback, so the bare-value choice below (no
   // `Bearer ` scheme, lowercase header name) has never been validated against a
   // real key-authenticating deployment. Before any deployment wires OPIK_API_KEY,

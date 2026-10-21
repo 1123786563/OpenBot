@@ -96,7 +96,7 @@ export type OperationReceipt = z.infer<typeof OperationReceiptSchema>;
 
 /*
  * 企业 Bot/Channel/Thread 会话子系统的两个冻结 DTO（C05），依据
- * docs/superpowers/specs/enterprise-conversations-subsystem.md §3.2。
+ * docs/specs/superpowers/enterprise-conversations-subsystem.md §3.2。
  * 与登录会话视图 PersonalSession 不同名不同义：PersonalConversation 是个人
  * Channel 会话（服务端权威；threadId 由服务端生成，客户端不提交任何身份字段，
  * .strict() 让 principalId/scope/token 等身份与凭证字段天然被拒）。

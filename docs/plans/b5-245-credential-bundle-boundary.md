@@ -1,6 +1,6 @@
 # B5-245 实施计划 — Bifrost 05.4 CredentialBundle 内容与明文边界
 
-票面：`docs/tickets/bifrost-5/issues/05.4-credential-bundle-and-plaintext-boundary.md`
+票面：`docs/plans/tickets/bifrost-5/issues/05.4-credential-bundle-and-plaintext-boundary.md`
 基线：branch `1123786563/b5-245` @ 344dc208（#244 集成层已在基线内）。
 专用测试库：`postgresql://openbot:openbot@127.0.0.1:5594/openbot_b5_245`（已 createdb + roles.sql + migrate）。
 

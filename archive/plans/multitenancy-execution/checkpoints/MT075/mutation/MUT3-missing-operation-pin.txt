@@ -1,6 +1,0 @@
-error: Failed query: insert into "enterprise_security_events" ("tenant_id", "id", "operation_id", "actor_id", "event_type", "details", "created_at") values ($1, $2, $3, $4, $5, $6, default)
-(fail) admin separation on the real enterprise test database > AC1: the cross-plane audit event lands in enterprise_security_events through the restricted operator role [4.39ms]
-(fail) admin separation on the real enterprise test database > AC1: the cross-plane audit event lands in enterprise_security_events through the restricted operator role [4.39ms]
- 24 pass
- 1 fail
-exit=0

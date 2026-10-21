@@ -42,7 +42,7 @@ not initialise into a directory that already contains `lost+found`.
 The one-container image does not carry the separate framework Bot images that `docker-compose.yml`
 starts. Leave MANAGED_AGENT_AG_UI_URL unset unless a Bot endpoint is actually reachable from this
 container. If their `.env` still has the laptop default `http://localhost:4201/ag-ui`, unset it for
-this path. See docs/deployment.md for platform notes, sizing and migrations.
+this path. See reference/deployment.md for platform notes, sizing and migrations.
 
 B. CLONE: RUN OPENBOT LOCALLY, CHANGE IT, OR EDIT A TENANT PACKAGE
 
@@ -91,7 +91,7 @@ belong to the same project; changing a mapping applies to new threads and does n
 old evidence. Operators may seed a default with CPK_INTELLIGENCE_LEARNING_CONTAINER_ID on the API server;
 CPK_INTELLIGENCE_SKILLS_REVISION optionally pins a published revision. Saved Admin settings take
 precedence, including off. Keep the project key server-side and use the existing Intelligence UI
-for management (a runtime project key cannot authorize those writes). See docs/automatic-learning.md.
+for management (a runtime project key cannot authorize those writes). See reference/automatic-learning.md.
 
 To run Intelligence on their own Mac instead of the managed service, point them at
 https://docs.copilotkit.ai/intelligence/self-hosting-local. It is a preview for macOS with Docker
@@ -179,5 +179,5 @@ by TENANT_PACKAGE_DIR. Copy it, edit `agents.yaml`, and point TENANT_PACKAGE_DIR
 The server runs from `server/`, so TENANT_PACKAGE_DIR is relative to that; the default is
 `../examples/fintech`, not `examples/fintech`.
 
-Further reading: README.md, docs/development.md, docs/deployment.md, and docs/configuration.md for
+Further reading: README.md, reference/development.md, reference/deployment.md, and reference/configuration.md for
 every variable.

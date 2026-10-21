@@ -4,7 +4,7 @@
 
 **Goal:** Close independent-review finding F1 for R13 Fix1 by testing Run transaction rollback and persisted aggregate budget admission under the existing isolated-database gate.
 
-**Source of truth:** Approved design `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; parent plan `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; user ruling and active progress Ledger `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/progress.md`; Fix1 plan, Brief, implementer/validation/review reports in `.superpowers/sdd/2026-10-12-mastra-t2-r13-review-fix1/`.
+**Source of truth:** Approved design `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent plan `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; user ruling and active progress Ledger `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/progress.md`; Fix1 plan, Brief, implementer/validation/review reports in `.superpowers/sdd/2026-10-12-mastra-t2-r13-review-fix1/`.
 
 **Global constraints:** The explicit caller `forwardedProps.maxOutputTokens` is the Run's persisted aggregate ceiling. Preserve existing user changes. Do not run an integration test unless its required disposable DB environment is already present; do not probe environment endpoints. No production database, service startup, migration, schema/journal edits, commits, or branch operations. DB assertions can be added and safely gated, with runtime result explicitly unverified when URLs are absent.
 

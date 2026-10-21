@@ -200,7 +200,7 @@ describe("whether a model has to be driven through the Responses API", () => {
  *
  * `shared/model-providers.json` is the file every language in the box reads; this module is its
  * TypeScript loader. These tests pin the order the loader applies — environment, then file, then
- * provider default — because that order is what `docs/configuration.md` promises and what a
+ * provider default — because that order is what `reference/configuration.md` promises and what a
  * developer in any other language is entitled to expect from their own loader too.
  */
 describe("what a Bot runs from the spec file", () => {

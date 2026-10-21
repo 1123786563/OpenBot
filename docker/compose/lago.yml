@@ -1,7 +1,7 @@
 # Lago, the billing provider OpenBot's billing seam talks to when LAGO_API_URL and friends are
 # configured. Digest-pinned to getlago/lago v1.53.0 and partman-less on purpose; secrets come
 # from docker/lago/.env (init-env.sh). Start the main stack first — `lago-migrate` exits on a
-# dead database rather than retrying. docs/compose.md#lago.
+# dead database rather than retrying. reference/compose.md#lago.
 #
 # Run from the repository root — --project-directory . is what makes the root .env and the
 # ./docker/lago/.env env_file resolve exactly as they did when this file lived at the root:

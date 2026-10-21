@@ -1,3 +1,0 @@
-# RED-0 syntax repair (predecessor's RED file never parsed; Bun: 'await' can only be used inside an async function @760)
-# fix: thrownMessage(() => → thrownMessage(async () => at line 759 (only instance; await inside sync arrow)
-# bun build --no-bundle → PARSE OK

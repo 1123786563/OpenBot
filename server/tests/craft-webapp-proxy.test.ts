@@ -1,5 +1,3 @@
-import { fileURLToPath } from "node:url";
-import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -11,18 +9,20 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { inflateRawSync } from "node:zlib";
 import type { MiddlewareHandler } from "hono";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { AppVariables } from "../src/auth/guards";
 import { loadCraftConfig } from "../src/craft/config";
-import { refuseResponse } from "../src/craft/refusal";
 import {
   buildWebappBootstrapScript,
-  writeWebappBootstrapScript,
   WEBAPP_MOUNT_MARKER,
+  writeWebappBootstrapScript,
 } from "../src/craft/nextjs-dev";
 import { createPreviewOrigin } from "../src/craft/preview-origin";
 import { createPreviewTickets } from "../src/craft/preview-ticket";
+import { refuseResponse } from "../src/craft/refusal";
 import type {
   AgentSandboxFileApi,
   SandboxGateway,
@@ -102,6 +102,193 @@ describe("proxyWebappRequest", () => {
     expect(seen.headers?.get("authorization")).toBeNull();
     expect(seen.headers?.get("x-forwarded-for")).toBeNull();
     expect(seen.headers?.get("accept")).toBe("text/html");
+  });
+
+  // ── #405 (P1): the preview origin's app cookies ─────────────────────────────
+  //
+  // The platform pass and the generated app's cookies are SEPARATE jars. The preview
+  // origin proxies only the app's own cookies to the dev server (never the pass), and
+  // lets the app's Set-Cookie answers ride back — but only as host-only cookies on the
+  // preview origin: any Domain attribute is dropped, a Path that is not absolute is
+  // dropped, and every one of multiple Set-Cookie headers survives sanitization.
+  describe("cookie policy: app-only (the preview origin)", () => {
+    test("forwards the app's cookies and strips only the platform pass; the app's Set-Cookie rides back", async () => {
+      const seen: { headers: Headers | null; setCookieSeen: string[] | null } =
+        {
+          headers: null,
+          setCookieSeen: null,
+        };
+      const fetchImpl = (async (_url: string, init: RequestInit) => {
+        seen.headers = new Headers(init.headers as Record<string, string>);
+        const response = new Response("ok", { status: 200 });
+        // Two Set-Cookie headers, the multiple-header case the plain Headers map
+        // would otherwise collapse.
+        response.headers.append(
+          "set-cookie",
+          "appsession=s3; Path=/; HttpOnly; SameSite=Lax",
+        );
+        response.headers.append("set-cookie", "cart=9; Path=/");
+        seen.setCookieSeen = response.headers.getSetCookie();
+        return response;
+      }) as typeof fetch;
+
+      const result = await proxyWebappRequest({
+        upstreamBaseUrl: "http://127.0.0.1:3010",
+        path: "cart",
+        query: "",
+        method: "GET",
+        requestHeaders: new Headers({
+          cookie:
+            "openbot_preview_session=pass-ticket; appsession=s1; theme=dark",
+          accept: "text/html",
+        }),
+        cookiePolicy: "app-only",
+        fetchImpl,
+      });
+
+      // The dev server sees the app's cookies — and NOT the platform pass.
+      expect(seen.headers?.get("cookie")).toBe("appsession=s1; theme=dark");
+      expect(
+        seen.headers?.get("cookie")?.includes("openbot_preview_session"),
+      ).toBe(false);
+      // Both Set-Cookie answers survive the proxy, unsanitized attributes intact.
+      expect(seen.setCookieSeen).toHaveLength(2);
+      const answers = result.headers.getSetCookie();
+      expect(answers).toHaveLength(2);
+      expect(answers[0]).toBe("appsession=s3; Path=/; HttpOnly; SameSite=Lax");
+      expect(answers[1]).toBe("cart=9; Path=/");
+    });
+
+    test("an app cannot set a Domain cookie: the attribute is dropped, leaving a host-only preview cookie", async () => {
+      const fetchImpl = (async () => {
+        const response = new Response("ok", { status: 200 });
+        response.headers.append(
+          "set-cookie",
+          "evil=1; Domain=example.com; Path=/; Secure",
+        );
+        response.headers.append("set-cookie", "sub=2; Domain=.example.com");
+        return response;
+      }) as typeof fetch;
+
+      const result = await proxyWebappRequest({
+        upstreamBaseUrl: "http://127.0.0.1:3010",
+        path: "",
+        query: "",
+        method: "GET",
+        requestHeaders: new Headers(),
+        cookiePolicy: "app-only",
+        fetchImpl,
+      });
+
+      const answers = result.headers.getSetCookie();
+      expect(answers).toHaveLength(2);
+      for (const answer of answers) {
+        expect(/domain\s*=/i.test(answer)).toBe(false);
+      }
+      // Everything else the app asked for survives: the name=value pair and the
+      // non-escaping attributes.
+      expect(answers[0]).toBe("evil=1; Path=/; Secure");
+      expect(answers[1]).toBe("sub=2");
+    });
+
+    test("a non-absolute Path attribute is dropped; an absolute one is kept verbatim", async () => {
+      const fetchImpl = (async () => {
+        const response = new Response("ok", { status: 200 });
+        response.headers.append("set-cookie", "a=1; Path=relative");
+        response.headers.append("set-cookie", "b=2; Path=/nested/deep");
+        return response;
+      }) as typeof fetch;
+
+      const result = await proxyWebappRequest({
+        upstreamBaseUrl: "http://127.0.0.1:3010",
+        path: "",
+        query: "",
+        method: "GET",
+        requestHeaders: new Headers(),
+        cookiePolicy: "app-only",
+        fetchImpl,
+      });
+
+      const answers = result.headers.getSetCookie();
+      expect(answers[0]).toBe("a=1");
+      expect(answers[1]).toBe("b=2; Path=/nested/deep");
+    });
+
+    test("an app cannot write the platform pass's own cookie name: the line is dropped whole (F10)", async () => {
+      // The app's jar is separate from the pass, but the NAME is not: a host-only
+      // openbot_preview_session on the preview origin is what the browser would match
+      // against the platform's pass, shadowing it. Whatever value the app carries —
+      // signed-looking or not — the line never reaches the browser, and its siblings
+      // in the same multi-header answer are untouched.
+      const fetchImpl = (async () => {
+        const response = new Response("ok", { status: 200 });
+        response.headers.append(
+          "set-cookie",
+          "openbot_preview_session=forged-pass; Path=/; HttpOnly",
+        );
+        response.headers.append("set-cookie", "appsession=s9; Path=/");
+        response.headers.append("set-cookie", "openbot_preview_session=");
+        return response;
+      }) as typeof fetch;
+
+      const result = await proxyWebappRequest({
+        upstreamBaseUrl: "http://127.0.0.1:3010",
+        path: "",
+        query: "",
+        method: "GET",
+        requestHeaders: new Headers(),
+        cookiePolicy: "app-only",
+        fetchImpl,
+      });
+
+      const answers = result.headers.getSetCookie();
+      expect(answers).toHaveLength(1);
+      expect(answers[0]).toBe("appsession=s9; Path=/");
+    });
+
+    test("a request whose only cookie is the pass forwards no cookie header at all", async () => {
+      const seen: { headers: Headers | null } = { headers: null };
+      const fetchImpl = (async (_url: string, init: RequestInit) => {
+        seen.headers = new Headers(init.headers as Record<string, string>);
+        return new Response("ok", { status: 200 });
+      }) as typeof fetch;
+
+      await proxyWebappRequest({
+        upstreamBaseUrl: "http://127.0.0.1:3010",
+        path: "",
+        query: "",
+        method: "GET",
+        requestHeaders: new Headers({
+          cookie: "openbot_preview_session=only-a-pass",
+        }),
+        cookiePolicy: "app-only",
+        fetchImpl,
+      });
+      expect(seen.headers?.get("cookie")).toBeNull();
+    });
+
+    test("the default policy (the legacy same-origin mount) still strips every cookie both ways", async () => {
+      const seen: { headers: Headers | null } = { headers: null };
+      const fetchImpl = (async (_url: string, init: RequestInit) => {
+        seen.headers = new Headers(init.headers as Record<string, string>);
+        const response = new Response("ok", { status: 200 });
+        response.headers.append("set-cookie", "app=1; Path=/");
+        return response;
+      }) as typeof fetch;
+
+      const result = await proxyWebappRequest({
+        upstreamBaseUrl: "http://127.0.0.1:3010",
+        path: "",
+        query: "",
+        method: "GET",
+        requestHeaders: new Headers({
+          cookie: "openbot_preview_session=pass; appsession=s1",
+        }),
+        fetchImpl,
+      });
+      expect(seen.headers?.get("cookie")).toBeNull();
+      expect(result.headers.getSetCookie()).toHaveLength(0);
+    });
   });
 
   test("a connection failure is a 502, not a pass-through", async () => {
@@ -1208,6 +1395,11 @@ function infoRoutes(options: {
   mountReadSpy?: { count: number };
   /** The generation-marker read FAILS (fix-ocr26 #8) — a transient flake. */
   generationReadThrows?: boolean;
+  /**
+   * #425: the deployment's legacy-preview switch. Omit/true = ON (the default);
+   * false models OPENBOT_CRAFT_LEGACY_PREVIEW_ENABLED=false.
+   */
+  legacyPreviewEnabled?: boolean;
 }) {
   const fetchImpl = (async () =>
     options.ready === false
@@ -1244,14 +1436,20 @@ function infoRoutes(options: {
         : { [`${DIRECTORY}/${WEBAPP_MOUNT_MARKER}`]: options.mountRecord }),
   });
   return createWebappProxyRoutes(fakeRequireUser(), {
-    config: loadCraftConfig({}),
+    config: loadCraftConfig(
+      options.legacyPreviewEnabled === false
+        ? { OPENBOT_CRAFT_LEGACY_PREVIEW_ENABLED: "false" }
+        : {},
+    ),
     store: storeWithSession("app", "u1", 3011),
     gateway: gatewayWith(
       (() => {
         let inner = options.mountReadThrows ? flakyMountRead(api) : api;
         if (options.generationReadThrows) inner = flakyGenerationRead(inner);
-        if (options.mountReadSpy) inner = countingMountRead(inner, options.mountReadSpy);
-        if (options.fileReadSpy) inner = countingFileReads(inner, options.fileReadSpy);
+        if (options.mountReadSpy)
+          inner = countingMountRead(inner, options.mountReadSpy);
+        if (options.fileReadSpy)
+          inner = countingFileReads(inner, options.fileReadSpy);
         return inner;
       })(),
     ),
@@ -1948,7 +2146,7 @@ describe("webapp-info: the first-build birth sequence (H1) — script, mount and
     sandbox.files.set(`${WEBAPP}/package.json`, '{"name":"web"}');
     sandbox.files.set(
       `${WEBAPP}/next.config.ts`,
-      "const basePath = process.env.ONYX_WEBAPP_BASE_PATH ?? \"\";",
+      'const basePath = process.env.ONYX_WEBAPP_BASE_PATH ?? "";',
     );
     sandbox.files.set(
       `${DIRECTORY}/${WEBAPP_GENERATION_MARKER}`,
@@ -2034,7 +2232,10 @@ describe("start-webapp.sh: the mount record mirrors the RUNNING server (fix-ocr4
     });
     writeFileSync(join(dir, "outputs/web/package.json"), '{"name":"web"}');
     // An existing install: the spawn branch must not need bun install.
-    writeFileSync(join(dir, "outputs/web/node_modules/.bin/next"), "#!/bin/sh\n");
+    writeFileSync(
+      join(dir, "outputs/web/node_modules/.bin/next"),
+      "#!/bin/sh\n",
+    );
     chmodSync(join(dir, "outputs/web/node_modules/.bin/next"), 0o755);
   }
 
@@ -2153,6 +2354,70 @@ describe("POST /sessions/:id/preview-ticket: admission gate", () => {
       previewTickets: createPreviewTickets({ store: storeWithSession("app") }),
     });
   }
+
+  // ── #411 (P0): the TLS renewal-status file closes the origin end to end ──────
+  //
+  // A REAL origin (no admission stub) whose gate derives from
+  // OPENBOT_TLS_STATUS_FILE — pointed at a temp path that was never written, the
+  // "certificate state unknown" case — must close the surfaces the pane drives:
+  // webapp-info answers previewOrigin null with the closed reason, and the ticket
+  // route answers 503 with the same sentence. This is the AC6/AC8 pairing the
+  // five-band matrix in craft-preview-origin.test.ts judges at the origin itself.
+  test("#411: a missing renewal-status.json closes webapp-info (null + reason) and the ticket route (503)", async () => {
+    const statusDir = mkdtempSync(join(tmpdir(), "openbot-tls-status-w411-"));
+    const origin = createPreviewOrigin({
+      config: {
+        enabled: true,
+        webappProxyEnabled: true,
+        previewOriginEnabled: true,
+        previewOriginTemplate: "https://{session}.preview.example.com",
+      },
+      previewTickets: createPreviewTickets({ store: storeWithSession("app") }),
+      secret: "w411-test-secret",
+      env: {
+        OPENBOT_TLS_STATUS_FILE: join(statusDir, "renewal-status.json"),
+      },
+      servePreview: async () => new Response("unproxied", { status: 503 }),
+    });
+    const app = createWebappProxyRoutes(fakeRequireUser(), {
+      config: loadCraftConfig({}),
+      store: storeWithSession("app", "u1", 3011),
+      gateway: gatewayWith(
+        memoryFileApi({
+          [`${WEBAPP}/package.json`]: '{"name":"web"}',
+          [`${DIRECTORY}/${WEBAPP_GENERATION_MARKER}`]:
+            WEBAPP_GENERATION_CURRENT,
+        }),
+      ),
+      botIdFor: async () => "craft-bot",
+      sandboxConnectionFor: () => ({
+        baseUrl: "http://sbox.internal:4300",
+        token: null,
+      }),
+      previewOriginFor: () => {
+        throw new Error("a closed origin has no address to mint");
+      },
+      previewOriginAdmission: origin.admission,
+      previewTickets: createPreviewTickets({ store: storeWithSession("app") }),
+    });
+
+    const info = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    expect(info.status).toBe(200);
+    const body = (await info.json()) as {
+      previewOrigin: string | null;
+      previewOriginClosedReason: string | null;
+    };
+    expect(body.previewOrigin).toBeNull();
+    expect(body.previewOriginClosedReason).toContain("it is missing");
+    expect(body.previewOriginClosedReason).toContain("OPENBOT_TLS_STATUS_FILE");
+
+    const ticket = await app.request(`/sessions/${SESSION_ID}/preview-ticket`, {
+      method: "POST",
+    });
+    expect(ticket.status).toBe(503);
+    const refusal = (await ticket.json()) as { error: string };
+    expect(refusal.error).toContain("it is missing");
+  });
 
   test("closed admission → 503 with the displayable reason, nothing minted", async () => {
     const tickets = createPreviewTickets({ store: storeWithSession("app") });
@@ -2591,7 +2856,10 @@ describe("refuseResponse — the shared HTML/JSON refusal sink (fix-ocr15)", () 
   });
 
   test("the HTML response carries the hardening headers: strict CSP + nosniff", () => {
-    const response = refuseResponse(htmlRequest(), "The sandbox is not available.");
+    const response = refuseResponse(
+      htmlRequest(),
+      "The sandbox is not available.",
+    );
     expect(response.headers.get("content-security-policy")).toBe(
       "default-src 'none'; style-src 'unsafe-inline'",
     );
@@ -2615,12 +2883,12 @@ describe("refuseResponse — the shared HTML/JSON refusal sink (fix-ocr15)", () 
     // refusal has long expired. The family discipline already marks the
     // probe's 204 no-store for exactly this reason; both refusal shapes
     // hold the same line.
-    const json = refuseResponse(new Request("http://127.0.0.1:3001/x/"), "down");
-    expect(json.headers.get("cache-control")).toBe("no-store");
-    const html = refuseResponse(
-      htmlRequest(),
-      "The web app is not running.",
+    const json = refuseResponse(
+      new Request("http://127.0.0.1:3001/x/"),
+      "down",
     );
+    expect(json.headers.get("cache-control")).toBe("no-store");
+    const html = refuseResponse(htmlRequest(), "The web app is not running.");
     expect(html.headers.get("cache-control")).toBe("no-store");
   });
 });
@@ -2675,5 +2943,326 @@ describe("the .webapp-mount read is single-sourced (fix-ocr28 #4 — source pins
     expect(outsideHelper).not.toContain(
       'addressPath === "/" ? "" : addressPath',
     );
+  });
+});
+
+// ── #425: the legacy same-origin preview's deployment switch ───────────────────
+//
+// The AC1 exception's closure (D10's known-open risk, made closable): the legacy
+// form shares the platform's own origin, so its cookie-carrying iframe lets
+// generated code use the person's session against platform APIs. Four faces, one
+// switch — the address (webapp-info answers null + the displayable sentence), the
+// HTTP service leg (503 before any upstream dial), the mint (UNCHANGED: legacy
+// still 409, unknown still 503 — the switch is not a ticket semantic), and the
+// population boundary (current sessions and healed records keep their preview;
+// only the true legacy form closes).
+
+describe("webapp-info under the legacy switch (#425)", () => {
+  test("switch off + legacy: NO address, the displayable reason, generation honestly legacy", async () => {
+    const app = infoRoutes({
+      currentGeneration: false,
+      legacyPreviewEnabled: false,
+      previewOriginFor: () => PREVIEW_ADDRESS,
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      previewOrigin: string | null;
+      previewOriginClosedReason: string | null;
+      webappGeneration: string;
+      has_webapp: boolean;
+      ready: boolean;
+      status: string;
+    };
+    expect(body.webapp_url).toBeNull();
+    expect(body.previewOrigin).toBeNull();
+    // The same channel every other closure sentence rides, naming both facts
+    // the ticket requires: the same-origin risk and the rebuild convergence.
+    expect(body.previewOriginClosedReason).toContain("same-origin");
+    expect(body.previewOriginClosedReason).toContain("Rebuild");
+    expect(body.webappGeneration).toBe("legacy");
+    expect(body.has_webapp).toBe(true);
+    expect(body.ready).toBe(true);
+    expect(body.status).toBe("running");
+  });
+
+  test("switch off + legacy: the closed origin's own reason does NOT double-answer — the legacy switch's sentence wins", async () => {
+    // A deployment can close the origin AND the legacy form. The pane reads
+    // ONE reason; the legacy branch owns its own closure sentence (the
+    // origin's reason describes a form this session was never going to use).
+    const app = infoRoutes({
+      currentGeneration: false,
+      legacyPreviewEnabled: false,
+      previewOriginAdmission: () => ({
+        ok: false,
+        reason: "The preview origin is disabled on this deployment.",
+      }),
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      previewOriginClosedReason: string | null;
+    };
+    expect(body.previewOriginClosedReason).toContain("Legacy");
+  });
+
+  test("switch off + healed record: the current-shape answer stands — the healed population is not the legacy form", async () => {
+    const app = infoRoutes({
+      currentGeneration: false,
+      mountRecord: "/abc123label",
+      legacyPreviewEnabled: false,
+      previewOriginFor: () => PREVIEW_ADDRESS,
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      previewOriginClosedReason: string | null;
+      webappGeneration: string;
+    };
+    expect(body.webapp_url).toBe(PREVIEW_ADDRESS);
+    expect(body.previewOriginClosedReason).toBeNull();
+    expect(body.webappGeneration).toBe("current");
+  });
+
+  test("switch off + CURRENT session: the current shape is untouched (no tax on the new form)", async () => {
+    const app = infoRoutes({
+      legacyPreviewEnabled: false,
+      previewOriginFor: () => PREVIEW_ADDRESS,
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+    const body = (await response.json()) as {
+      webapp_url: string | null;
+      previewOriginClosedReason: string | null;
+      webappGeneration: string;
+    };
+    expect(body.webapp_url).toBe(PREVIEW_ADDRESS);
+    expect(body.previewOriginClosedReason).toBeNull();
+    expect(body.webappGeneration).toBe("current");
+  });
+});
+
+describe("the same-origin proxy leg under the legacy switch (#425)", () => {
+  /** Route-level app with the switch's own state; `dialed` collects every upstream fetch. */
+  function switchedApp(input: {
+    legacy: boolean;
+    switchedOff: boolean;
+    ownerUserId?: string;
+    requireUser?: MiddlewareHandler<{ Variables: AppVariables }>;
+  }) {
+    const dialed: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: RequestInfo | URL) => {
+      dialed.push(String(url));
+      return new Response("<html>app</html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    }) as typeof fetch;
+    const app = createWebappProxyRoutes(
+      input.requireUser ?? fakeRequireUser(),
+      {
+        config: loadCraftConfig(
+          input.switchedOff
+            ? { OPENBOT_CRAFT_LEGACY_PREVIEW_ENABLED: "false" }
+            : {},
+        ),
+        store: storeWithSession("app", input.ownerUserId ?? "u1", 3011),
+        gateway: gatewayWith(
+          memoryFileApi(
+            input.legacy
+              ? { [`${WEBAPP}/package.json`]: '{"name":"web"}' }
+              : {
+                  [`${WEBAPP}/package.json`]: '{"name":"web"}',
+                  [`${DIRECTORY}/${WEBAPP_GENERATION_MARKER}`]:
+                    WEBAPP_GENERATION_CURRENT,
+                },
+          ),
+        ),
+        botIdFor: async () => "craft-bot",
+        sandboxConnectionFor: () => ({
+          baseUrl: "http://sbox.internal:4300",
+          token: null,
+        }),
+      },
+    );
+    return {
+      app,
+      dialed,
+      restore: () => {
+        globalThis.fetch = originalFetch;
+      },
+    };
+  }
+
+  test("switch off + legacy session: 503 with the sentence, and NO upstream dial", async () => {
+    const { app, dialed, restore } = switchedApp({
+      legacy: true,
+      switchedOff: true,
+    });
+    try {
+      const response = await app.request(
+        `/sessions/${SESSION_ID}/webapp/index.html`,
+        { headers: { accept: "text/html" } },
+      );
+      expect(response.status).toBe(503);
+      expect(await response.text()).toContain("Legacy same-origin previews");
+      // The refusal lands BEFORE the ready probe: a request that will never be
+      // forwarded pays no dial.
+      expect(dialed).toHaveLength(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test("switch off + CURRENT session: the same-origin route still serves — the switch closes only the legacy form", async () => {
+    const { app, dialed, restore } = switchedApp({
+      legacy: false,
+      switchedOff: true,
+    });
+    try {
+      const response = await app.request(
+        `/sessions/${SESSION_ID}/webapp/index.html`,
+        { headers: { accept: "text/html" } },
+      );
+      expect(response.status).toBe(200);
+      expect(dialed.length).toBeGreaterThan(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test("switch ON + legacy session: the old path still serves (AC7's regression pin)", async () => {
+    const { app, dialed, restore } = switchedApp({
+      legacy: true,
+      switchedOff: false,
+    });
+    try {
+      const response = await app.request(
+        `/sessions/${SESSION_ID}/webapp/index.html`,
+        { headers: { accept: "text/html" } },
+      );
+      expect(response.status).toBe(200);
+    } finally {
+      restore();
+    }
+  });
+
+  test("the gate sits after auth and ownership: no 401/404 oracle for the switch", async () => {
+    // An UNAUTHENTICATED caller answers 401 even with the switch off — the
+    // refusal must not become a session-existence probe for the logged-out.
+    const rejectAll: MiddlewareHandler<{
+      Variables: AppVariables;
+    }> = async (context) => context.json({ error: "Sign in first." }, 401);
+    const { app, restore } = switchedApp({
+      legacy: true,
+      switchedOff: true,
+      requireUser: rejectAll,
+    });
+    try {
+      const response = await app.request(
+        `/sessions/${SESSION_ID}/webapp/index.html`,
+      );
+      expect(response.status).toBe(401);
+    } finally {
+      restore();
+    }
+    // A FOREIGN session answers 404, not the switch's 503: ownership is
+    // decided before the gate, so the switch leaks no existence either.
+    const foreign = switchedApp({
+      legacy: true,
+      switchedOff: true,
+      ownerUserId: "someone-else",
+    });
+    try {
+      const response = await foreign.app.request(
+        `/sessions/${SESSION_ID}/webapp/index.html`,
+      );
+      expect(response.status).toBe(404);
+    } finally {
+      foreign.restore();
+    }
+  });
+});
+
+describe("the mint under the legacy switch (#425 — a verified no-op)", () => {
+  function mintApp(files: Record<string, string>, switchedOff: boolean) {
+    const tickets = createPreviewTickets({ store: storeWithSession("app") });
+    const app = createWebappProxyRoutes(fakeRequireUser(), {
+      config: loadCraftConfig(
+        switchedOff ? { OPENBOT_CRAFT_LEGACY_PREVIEW_ENABLED: "false" } : {},
+      ),
+      store: storeWithSession("app", "u1", 3011),
+      gateway: gatewayWith(memoryFileApi(files)),
+      botIdFor: async () => "craft-bot",
+      sandboxConnectionFor: () => ({
+        baseUrl: "http://sbox.internal:4300",
+        token: null,
+      }),
+      previewOriginFor: () => "http://127.0.0.1:3005/label",
+      previewTickets: tickets,
+    });
+    return { app, tickets };
+  }
+
+  test("switch off + legacy: the mint's 409 stands — the switch is not a ticket semantic", async () => {
+    const { app, tickets } = mintApp(
+      { [`${WEBAPP}/package.json`]: '{"name":"web"}' },
+      true,
+    );
+    const response = await app.request(`/sessions/${SESSION_ID}/preview-ticket`, {
+      method: "POST",
+    });
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: string };
+    // The D10 legacy refusal, NOT the switch's closure sentence.
+    expect(body.error).toContain("no preview-origin ticket to issue");
+    expect(tickets.size()).toBe(0);
+  });
+
+  test("switch off + unknown generation: still the retryable 503, never the 409 (fix-ocr26 #8 stands)", async () => {
+    const flaky = createWebappProxyRoutes(fakeRequireUser(), {
+      config: loadCraftConfig({
+        OPENBOT_CRAFT_LEGACY_PREVIEW_ENABLED: "false",
+      }),
+      store: storeWithSession("app", "u1", 3011),
+      gateway: gatewayWith(
+        flakyGenerationRead(
+          memoryFileApi({
+            [`${WEBAPP}/package.json`]: '{"name":"web"}',
+            [`${DIRECTORY}/${WEBAPP_GENERATION_MARKER}`]:
+              WEBAPP_GENERATION_CURRENT,
+          }),
+        ),
+      ),
+      botIdFor: async () => "craft-bot",
+      sandboxConnectionFor: () => ({
+        baseUrl: "http://sbox.internal:4300",
+        token: null,
+      }),
+      previewOriginFor: () => "http://127.0.0.1:3005/label",
+      previewTickets: createPreviewTickets({ store: storeWithSession("app") }),
+    });
+    const response = await flaky.request(
+      `/sessions/${SESSION_ID}/preview-ticket`,
+      { method: "POST" },
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toContain("could not be verified");
+  });
+
+  test("switch off + current: the mint still answers 200 (the current form is untaxed)", async () => {
+    const { app, tickets } = mintApp(
+      {
+        [`${WEBAPP}/package.json`]: '{"name":"web"}',
+        [`${DIRECTORY}/${WEBAPP_GENERATION_MARKER}`]: WEBAPP_GENERATION_CURRENT,
+      },
+      true,
+    );
+    const response = await app.request(`/sessions/${SESSION_ID}/preview-ticket`, {
+      method: "POST",
+    });
+    expect(response.status).toBe(200);
+    expect(tickets.size()).toBe(1);
   });
 });

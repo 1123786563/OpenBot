@@ -1,8 +1,0 @@
-(pass) MT029 credential lease: fixed purpose, scope, revocable (Issue #72) > MT029 storage fences > purpose, status, window and row-shape CHECKs hold at the storage boundary [3.31ms]
-(pass) MT029 credential lease: fixed purpose, scope, revocable (Issue #72) > MT029 storage fences > the audit vocabulary and detail shape are closed sets at the database too [1.74ms]
-(pass) MT029 credential lease: fixed purpose, scope, revocable (Issue #72) > MT029 storage fences > cross-company lease rows are structurally impossible (composite FKs) [3.31ms]
-
- 24 pass
- 0 fail
- 202 expect() calls
-Ran 24 tests across 1 file. [1.80s]

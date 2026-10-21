@@ -1,2 +1,0 @@
-# typecheck: bunx tsc --noEmit — 2026-10-16T22:13:06Z
-tsc exit=0

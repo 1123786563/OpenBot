@@ -1,23 +1,23 @@
 {
-  "id": "98fe8da8-665f-4b55-9ca9-efafbe5da92d",
+  "id": "3bac58b8-ef81-4d80-bf4f-c16fa53aa02c",
   "ok": true,
   "result": {
     "runId": "run_dab21d1c168e",
-    "deliveryId": "delivery_b35771407e71",
+    "deliveryId": "delivery_fe6f36959bc7",
     "messages": [
       {
-        "id": "msg_ce6473af3cd7",
+        "id": "msg_f8344f5f7c43",
         "run_id": "run_dab21d1c168e",
         "delivery_contract": "current_delivery",
-        "from_handle": "structworker_38044286-fc77-459e-b055-45a415718b92",
+        "from_handle": "structworker_32181b52-a97d-467c-a962-d7f2adae0873",
         "to_handle": "run:run_dab21d1c168e",
-        "subject": "MT batch #49/#56/#86/#87/#88: 2 SATISFIED, 3 FAILED(no equivalent)",
-        "body": "按序核验了 5 张 MT 域批次票并按仓库配方在 orca-w3-mt-pg 上完成测试库初始化与验证：#49(MT006) 与 #56(MT013) 在 main@2306caaa 已有等价实现，零改动给出 SATISFIED 证据（workspace-scope 34/0、startup-checks 41/0、startup-defaults 24/0、config 158/158，均 exit 0）。#86(MT043)/#87(MT044)/#88(MT045) 确认无等价实现——逐 AC 缺口与 file:line 证据见报告，其中 #86 AC3 依赖未落地的 MT047(#90)/MT050(#93)，三票均需专项 C 类派发而非本批赶工。另发现系统性缺陷：#436 的 0163 恢复表与 MT 任务链 create 步冲突，使全新库上受限角色 MT 套件授权永不落地（旧库不受影响），本轮已在测试库侧精确重放 MT004/MT014 的 RLS+GRANT 语句绕过（仓库零改动），建议将幂等化修复派给归属票（#46 MT003 或 #436 follow-up）；完整结论与哈希见 reports/orca-dag-wave3-mt.md (sha256 e38ffefa34e7a92c33da4d47c24f8518a546c141647a5d01ac41f5f4437da129)。",
+        "subject": "fix1 批完成：F7/F9/F1/F3/F4/F10 全修并红绿验证",
+        "body": "修复 round1 评审六项：F7/F9（billing service 裸 id 查询加 customer 交叉校验，配跨用户同字符串 id 碰撞回归测试）、F1（经 scripts/e2e-add-driven.mjs 生成式登记 recovery-provider-query 入 server/tests part 11，13 个无关 partition 重写已还原）、F3/F4（hindsight 扩展 compare_digest 与 filter_bank_list 空集化，新增容器内 verify-tenant-hardening.py 8 查全过）、F10（app-only 下整行丢弃 pass 名 Set-Cookie）。全部新用例做了修复前红/修复后绿双向验证，三域代表套件全绿（billing 7+16+7、craft 93+128、hindsight 23 pass/1 skip + 8 unit checks），server typecheck 仅 3 处 main 既有基线错。产物在未提交树，报告含逐项命令/退出码与 sha256：reports/orca-dag-wave3-fix1.md；遗留仅 main 既有 compat import 漂移（属 partition 流，建议另票）。",
         "type": "worker_done",
         "priority": "normal",
         "thread_id": null,
-        "payload": "{\"taskId\":\"task_0f8e197e52bc\",\"dispatchId\":\"ctx_094d29e58f07\",\"outcome\":\"succeeded\",\"reportPath\":\"reports/orca-dag-wave3-mt.md\"}",
-        "created_at": "2026-10-20T05:36:28Z",
+        "payload": "{\"taskId\":\"task_e74955d0ff6c\",\"dispatchId\":\"ctx_502df1d61a60\",\"outcome\":\"succeeded\",\"filesModified\":[\"server/src/billing/service.ts\",\"server/src/craft/webapp-proxy.ts\",\"deploy/hindsight/extensions/openbot_tenant/tenant.py\",\"deploy/hindsight/extensions/openbot_tenant/validator.py\",\"deploy/hindsight/test/verify-tenant-hardening.py\",\"server/tests/billing-company-renewal.integration.test.ts\",\"server/tests/craft-webapp-proxy.test.ts\",\"docs/verification/e2e-bun-suites.json\",\"reports/orca-dag-wave3-fix1.md\"],\"reportPath\":\"reports/orca-dag-wave3-fix1.md\"}",
+        "created_at": "2026-10-20T10:29:59Z",
         "delivered_at": null
       }
     ],
@@ -28,7 +28,7 @@
     "cancelled": false,
     "connectionLost": false,
     "mutation": {
-      "requestId": "6fe02315-814c-43e3-aba2-2001e33834a1",
+      "requestId": "2b5f3acb-c8bc-44c9-bcb2-dc2e596ba17a",
       "replayed": false
     }
   },

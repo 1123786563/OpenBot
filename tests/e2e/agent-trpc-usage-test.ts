@@ -13,7 +13,7 @@
  *      回复中出现不可猜测的 uuid 才算工具真的执行了。
  *
  * 默认有头模式（headless: false）便于观看；无 GUI 环境自动回退 headless。
- * 截图：gui-test-screenshots/usage/。全部通过退出 0。
+ * 截图：.archive/runs/gui-tests/usage/。全部通过退出 0。
  */
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { type Browser, chromium, type Page } from "playwright-core";
@@ -25,7 +25,7 @@ const CASDOOR_USER = "admin";
 const CASDOOR_PASSWORD = "123";
 const SHORT_TIMEOUT_MS = 20_000;
 const REPLY_TIMEOUT_MS = 180_000;
-const SHOT_DIR = "gui-test-screenshots/usage";
+const SHOT_DIR = ".archive/runs/gui-tests/usage";
 
 const MANAGED_AGENT_TOKEN = (() => {
   const env = readFileSync(new URL("../../.env", import.meta.url), "utf8");

@@ -70,7 +70,7 @@
 - 现有输入计数是经验校准，不是 provider 真实 token 的数学上界；ADR 0001 允许低估后进入人工对账，与本次严格防超支存在适用范围冲突，须明确新路径策略。参考 `docs/specs/2026-10-13-provable-input-bound-design.md`、`docs/adr/0001-conservative-input-bound.md`。
 - Bifrost 模型目录含供应商模型列表和价格数据，价格有多种维度，不能默认只有输入/输出 token 两列。
 - 仓库内 `bifrost` 为子模块，与 `/Users/wuyongjun/trea/bifrost` 独立 checkout 均处于 `f10954f77efa515e593f83a860cb29b88fd95c08`。当前研究针对该版本，未验证运行中的版本与配置。
-- `AGENTS.md` 引用的 `docs/agents/domain.md` 不存在；当前领域术语读取根 `CONTEXT.md`。
+- Agent 规范现在从根 `AGENTS.md` 的按需目录读取；领域术语规则位于 `.agents/rules/domain.md`，共享术语仍以根 `CONTEXT.md` 为准。
 
 ## 目标与范围
 

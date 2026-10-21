@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Hono, OpenCode serve, agent-sandbox, Drizzle/Postgres, Redis where configured. No Mastra dependency is needed for this path.
 
-**Spec:** User's request for a one-to-one TypeScript port of `/Users/wuyongjun/trea/onyx` Craft, and the source-code review in this conversation (2026-10-12). Reference design: `docs/superpowers/specs/2026-10-10-craft-workshop-design.md`. That design deliberately omits some Onyx capabilities; for this Craft parity remediation, the user's explicit parity requirement supersedes those omissions. Do not silently generalize this decision to the separate Workshop product.
+**Spec:** User's request for a one-to-one TypeScript port of `/Users/wuyongjun/trea/onyx` Craft, and the source-code review in this conversation (2026-10-12). Reference design: `docs/specs/superpowers/2026-10-10-craft-workshop-design.md`. That design deliberately omits some Onyx capabilities; for this Craft parity remediation, the user's explicit parity requirement supersedes those omissions. Do not silently generalize this decision to the separate Workshop product.
 
 ## Global Constraints
 
@@ -33,12 +33,12 @@
 
 | Task | Owner role | Depends on | Owned implementation files | Produces |
 | --- | --- | --- | --- | --- |
-| 1. Baseline/contract | researcher + reviewer (read-only) | — | `docs/craft-port/` parity fixtures/report only | pinned Onyx SHA, contract matrix, executable fixture cases |
+| 1. Baseline/contract | researcher + reviewer (read-only) | — | `docs/plans/craft-port/` parity fixtures/report only | pinned Onyx SHA, contract matrix, executable fixture cases |
 | 2. Managed content + prompt | backend_implementer | 1 | `server/src/craft/agent-instructions.ts`, `AGENTS.template.md`, `skills.ts`, `workspace.ts`, `manager.ts`, `routes.ts`, `server/src/index.ts`, focused tests | `resolveCraftManagedContent(userId, sessionId)` snapshot; rendered prompt and skill files |
 | 3. MCP/connect_app/security | backend_implementer | 2 | `server/src/craft/opencode-config.ts`, new focused Craft MCP/approval modules, `server/src/craft/opencode/serve-client.ts`, agent-sandbox gateway/proxy changes as required, focused tests | session-tagged MCP config, connect_app tool, approval/403 event contract |
 | 4. Web App tool/runtime | backend_implementer | 2 | new `server/src/craft/templates/webapp.plugin.ts`, `server/src/craft/workspace.ts`, `server/src/craft/nextjs-dev.ts`, relevant agent-sandbox dev-server endpoint, focused tests | `webapp(start/status/logs)` tool and managed `start-webapp.sh` |
 | 5. Output contract | backend_implementer | 1 | `server/src/craft/webapp-proxy.ts`, `directory-archive.ts` if shared, focused tests | Onyx-compatible ZIP download |
-| 6. Full parity verification | backend_validator + reviewer | 3, 4, 5 | reports under `docs/craft-port/`; no business-code edits | behavior evidence, independent review, OCR report |
+| 6. Full parity verification | backend_validator + reviewer | 3, 4, 5 | reports under `docs/plans/craft-port/`; no business-code edits | behavior evidence, independent review, OCR report |
 
 Task 3 and Task 4 share `workspace.ts` and the sandbox runtime: execute serially in one integration worktree. Task 5 may be prepared separately only if its file ownership and test resources stay isolated. The primary agent integrates and checks each reviewed checkpoint before releasing dependent tasks.
 
@@ -46,9 +46,9 @@ Task 3 and Task 4 share `workspace.ts` and the sandbox runtime: execute serially
 
 **Interfaces:** Consumes Onyx Craft implementation and this review. Produces a versioned comparison fixture and source map for Tasks 2–6.
 
-- [ ] Record `git rev-parse HEAD` for both repos, OpenBot BASE, dirty-file baseline, and Onyx source paths in `docs/craft-port/` without copying secrets.
+- [ ] Record `git rev-parse HEAD` for both repos, OpenBot BASE, dirty-file baseline, and Onyx source paths in `docs/plans/craft-port/` without copying secrets.
 - [ ] Trace Onyx session creation → managed-content push → workspace setup → opencode config → prompt/tool call → event translation → output. Record exact tool schemas, prompt substitutions, MCP permission rules, webapp results, and ZIP HTTP contract with file/line references.
-- [ ] Compare each previously declared intentional divergence in `docs/craft-port/port-parity.md` against the user's parity requirement. Record a ruling: restore parity, environment-equivalent substitution, or explicitly blocked by missing OpenBot capability. A blocked item is not marked complete.
+- [ ] Compare each previously declared intentional divergence in `docs/plans/craft-port/port-parity.md` against the user's parity requirement. Record a ruling: restore parity, environment-equivalent substitution, or explicitly blocked by missing OpenBot capability. A blocked item is not marked complete.
 - [ ] Add fixture inputs/expected outputs for a bare user, a user with one connected and one connectable app, a disabled MCP tool, an approval denial, a Web App start, and archive download. No assertion may be derived solely from OpenBot's current behavior.
 - [ ] Verify every acceptance row maps to one later Task and that the task dependency graph is acyclic.
 

@@ -2,7 +2,7 @@
 
 > 状态:**已批准**。5 项决策已拍板(2026-10-13,全部按推荐选项),可进入实现(Superpowers)阶段。
 > 决策依据 ADR:`docs/adr/0001-conservative-input-bound.md`;术语见根 `CONTEXT.md`。
-> 与 `docs/superpowers/specs/2026-10-11-billing-reliability-design.md`(下称"原 Spec")冲突时以原 Spec 为准。
+> 与 `docs/specs/superpowers/2026-10-11-billing-reliability-design.md`(下称"原 Spec")冲突时以原 Spec 为准。
 
 ## Goal
 

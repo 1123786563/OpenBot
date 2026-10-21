@@ -1,3 +1,0 @@
-# MT028 typecheck 终态复跑（2026-10-17，biome 修复后）
-command: bun x tsc --noEmit (server/)
-typecheck-exit=0

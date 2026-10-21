@@ -8,9 +8,9 @@
 
 **Tech Stack:** TypeScript, Bun, Hono, CopilotKit SSE, Drizzle/PostgreSQL, Mastra storage.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; parent DAG `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent DAG `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`.
 
-**Source of truth:** Approved design `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md`; parent Task 2 plan/brief/Ledger; T2 production continuation plan and report; read-only architecture report `.superpowers/sdd/2026-10-12-mastra-t2-production-cutover/reports/next-slice-architecture.md`; current Fix4 remote fail-closed checkpoint.
+**Source of truth:** Approved design `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent Task 2 plan/brief/Ledger; T2 production continuation plan and report; read-only architecture report `.superpowers/sdd/2026-10-12-mastra-t2-production-cutover/reports/next-slice-architecture.md`; current Fix4 remote fail-closed checkpoint.
 
 **Confirmed policy:** Resolve scope only from authenticated actor, active membership and exact server-owned thread. Require finalized Mastra message intent bound to tenant/thread/actor/client key/digest/attachments/backend version. Server Run ID/attempt and explicit caller `forwardedProps.maxOutputTokens` are authoritative; no client runId/tenant/workspace selector. Run cap is integer `1..2_147_483_647`. Do not execute any model request from this slice unless the invocation goes through the approved Run capability/ModelGateway governance; this task may fail closed at the model boundary while that next slice is pending. Unsupported remote AG-UI/Mastra remain refused.
 

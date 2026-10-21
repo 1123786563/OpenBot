@@ -14,7 +14,7 @@
 
 1. 根 AGENTS.md、CONTEXT.md、`docs/agents/issue-tracker.md`、`docs/agents/domain.md`。
 2. `docs/specs/2026-10-20-upstream-openbot-adoption-design.md`：本次产品行为、范围和验收。
-3. `docs/tickets/upstream-openbot-update/README.md`、`tickets.json`、`parent-issue.md` 及 12 个 `issues/upNN.md`：业务票据、真实依赖与状态。
+3. `docs/plans/tickets/upstream-openbot-update/README.md`、`tickets.json`、`parent-issue.md` 及 12 个 `issues/upNN.md`：业务票据、真实依赖与状态。
 4. `docs/plans/2026-10-20-upstream-openbot-refactor/implementation-plan.md`、`dag.json`：18 个内部 Task、接口、文件所有权和测试入口。
 5. 实施前读取适用 ADR 0002–0010，尤其 0004 隔离、0005 Hindsight、0008 测试层、0009 KB 移除、0010 Mastra；引用的已批准公司/团队、Hindsight 和 Mastra Spec 按任务读取。
 

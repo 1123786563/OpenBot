@@ -101,7 +101,7 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
    your usual sign-in and project choice; install either browser first. It writes
    the API URL, the key and the container, not `INTELLIGENCE_GATEWAY_WS_URL`, so
    set that one to the same deployment yourself. Once `openbot` exists, the server assigns it
-   as the default by itself unless [Admin → Automatic Learning](docs/automatic-learning.md)
+   as the default by itself unless [Admin → Automatic Learning](reference/automatic-learning.md)
    has a saved setting.
    Managed Intelligence needs no separate licence token.
 
@@ -147,7 +147,7 @@ INTELLIGENCE_API_KEY=cpk-...   # the value of CPK_INTELLIGENCE_API_KEY
 ```
 
 To give the Bots a Learning container on that stack, see
-[Automatic Learning](docs/automatic-learning.md).
+[Automatic Learning](reference/automatic-learning.md).
 
 ## Deploy it
 
@@ -170,7 +170,7 @@ Everything is on 3001 here, the app included, rather than the 3010 the clone use
 most recent release and a version tag such as `:v0.0.9` pins one.
 
 Leave `EMBEDDED_POSTGRES` off and set `DATABASE_URL` to point at a database you already run.
-[docs/deployment.md](docs/deployment.md) has the minimum sizes, the platform notes, and how it behaves behind more than one replica.
+[reference/deployment.md](reference/deployment.md) has the minimum sizes, the platform notes, and how it behaves behind more than one replica.
 
 ## Try it
 
@@ -226,7 +226,7 @@ Leave `EMBEDDED_POSTGRES` off and set `DATABASE_URL` to point at a database you 
 - **Secrets never enter the transcript**: the trail records that a secret was requested and how long it was, not what it said.
 - **Bring your own agent**: any AG-UI endpoint is a Bot, on a framework or hand-written. Endpoints are validated with the same target checks used for browser navigation, and an auth header is stored write-only.
 - **Components instead of prose**: compiled React components live in `app/src/components/gallery/`, sandboxed ones are authored in `/admin/playground` and published with no deployment. Every call asks the server whether the component exists, is published, and is not withheld from that Bot. Data functions are granted per component.
-- **Governed MCP**: Google Drive, Notion and [Parallel Search](docs/parallel-research.md) ship in the catalogue, and Composio brokers a few hundred more apps behind one account, each reached as the person asking. The catalogue carries only vendors this deployment stands behind, so adding one is a review of that vendor. Custom servers must pass URL checks; unknown tools and custom-server tools are treated as writes, and a catalogue tool the server advertises but does not name as a write classifies as a read. A Bot is told which connectors exist here and which it holds, so it says it has not been granted one rather than browsing to the vendor's website.
+- **Governed MCP**: Google Drive, Notion and [Parallel Search](reference/parallel-research.md) ship in the catalogue, and Composio brokers a few hundred more apps behind one account, each reached as the person asking. The catalogue carries only vendors this deployment stands behind, so adding one is a review of that vendor. Custom servers must pass URL checks; unknown tools and custom-server tools are treated as writes, and a catalogue tool the server advertises but does not name as a write classifies as a read. A Bot is told which connectors exist here and which it holds, so it says it has not been granted one rather than browsing to the vendor's website.
 - **Skills are instructions, not capabilities**: personal skills attach only to Bots their author owns, deployment skills are admin-owned, and both are invoked with `/` in the composer. A Bot granted the shipped `skill-creator` skill can write one with you in the conversation, and saves it only when you press the button on the card.
 - **Sign in with what your company already has**: Google, Microsoft or Okta from the environment, or a company's own SAML or OpenID Connect provider registered while the deployment runs and routed by email domain. Any one turns sign-in on; several may be configured at once.
 - **Decide who gets in**: `/admin/people` lists everybody who has signed in, promotes and demotes them, and removes access, which ends the session they are using and stops the next sign-in. Every change is on the audit trail.
@@ -234,7 +234,7 @@ Leave `EMBEDDED_POSTGRES` off and set `DATABASE_URL` to point at a database you 
 - **Credentials encrypted at rest**: stored through `/admin/credentials`, never returned by an API, and redacted from audit events.
 - **Loopback by default**: computers bind to `127.0.0.1` and require a per-container token, so nothing reaches a logged-in browser by knowing its port. The supervisor binds there too, because it holds the Docker socket and its token is a shared secret rather than a network boundary.
 - **Durable threads and memory**: conversations survive restarts through CopilotKit Intelligence, and each deployment stamps the threads it owns.
-- **Routines**: ask a Bot to do something on a schedule and it does, running as you, in the channel you asked in. A 15-minute floor and a cap of 20 enabled routines keep a sentence from scheduling more than a person meant, and ten failures in a row switch a routine off rather than burn model spend forever. Needs a worker process, which `scripts/start.sh` starts locally; see [docs/routines.md](docs/routines.md).
+- **Routines**: ask a Bot to do something on a schedule and it does, running as you, in the channel you asked in. A 15-minute floor and a cap of 20 enabled routines keep a sentence from scheduling more than a person meant, and ten failures in a row switch a routine off rather than burn model spend forever. Needs a worker process, which `scripts/start.sh` starts locally; see [reference/routines.md](reference/routines.md).
 
 ## Bring your own agent
 
@@ -264,7 +264,7 @@ Tenant package agents are declared in the package's own `agents.yaml`, in the di
 - `built-in`, with a system prompt; or
 - `remote-ag-ui`, with an endpoint.
 
-See [docs/configuration.md](docs/configuration.md) and [docs/coworkers.md](docs/coworkers.md).
+See [reference/configuration.md](reference/configuration.md) and [reference/coworkers.md](reference/coworkers.md).
 
 ## Configuration
 
@@ -301,7 +301,7 @@ Settings worth knowing:
 | `DEPLOYMENT_ID`                      | Names this deployment when two share one Intelligence project.            |
 | `OPENBOT_SELF_HOST_BANNER`           | Set `false` to hide the bar offering CopilotKit's help self-hosting OpenBot. It never shows on a paid Intelligence plan. |
 
-Full reference: [docs/configuration.md](docs/configuration.md).
+Full reference: [reference/configuration.md](reference/configuration.md).
 
 ## Architecture
 
@@ -323,7 +323,7 @@ It resolves the target, evaluates policy, writes an audit row, and then calls
 `agent-computer`. The computer also exposes lower-level token-protected service
 endpoints; keep them private and do not use them to bypass the gateway.
 
-More detail: [docs/architecture.md](docs/architecture.md).
+More detail: [reference/architecture.md](reference/architecture.md).
 
 ## Sign in
 
@@ -435,17 +435,17 @@ Use `bash scripts/start.sh` for the whole stack and `bash scripts/stop.sh` to ta
 
 - [copilotkit.ai/openbot](https://copilotkit.ai/openbot)
 - [docs/README.md](docs/README.md)
-- [docs/architecture.md](docs/architecture.md)
-- [docs/configuration.md](docs/configuration.md)
-- [docs/development.md](docs/development.md)
-- [docs/compose.md](docs/compose.md): the Compose files described and how to run them
-- [docs/coworkers.md](docs/coworkers.md)
-- [docs/routines.md](docs/routines.md)
-- [docs/automatic-learning.md](docs/automatic-learning.md)
-- [docs/deployment.md](docs/deployment.md)
+- [reference/architecture.md](reference/architecture.md)
+- [reference/configuration.md](reference/configuration.md)
+- [reference/development.md](reference/development.md)
+- [reference/compose.md](reference/compose.md): the Compose files described and how to run them
+- [reference/coworkers.md](reference/coworkers.md)
+- [reference/routines.md](reference/routines.md)
+- [reference/automatic-learning.md](reference/automatic-learning.md)
+- [reference/deployment.md](reference/deployment.md)
 - [charts/openbot/README.md](charts/openbot/README.md): the Helm chart
-- [docs/releasing.md](docs/releasing.md)
-- [docs/parallel-research.md](docs/parallel-research.md): public-web search and extraction through Parallel
+- [reference/releasing.md](reference/releasing.md)
+- [reference/parallel-research.md](reference/parallel-research.md): public-web search and extraction through Parallel
 
 ## Contributing
 

@@ -1,5 +1,0 @@
-      ^
-error: Cannot use beforeAll() outside of the test runner. Run "bun test" to run tests.
-      at /Users/wuyongjun/orca/workspaces/OpenBot/i7-mt009/server/tests/multitenancy/team-public-rules.test.ts:159:1
-
-Bun v1.4.2 (macOS arm64)

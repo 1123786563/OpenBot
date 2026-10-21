@@ -13,7 +13,7 @@ const hereDir = dirname(herePath);
  *
  * The caps have a fallback in `config.ts`, a default in the chart's `values.yaml`, a second default
  * in `_helpers.tpl` (which has to be there, because `--reuse-values` leaves the values key absent on
- * an existing release), and a figure quoted in `docs/configuration.md`. The helper always renders
+ * an existing release), and a figure quoted in `reference/configuration.md`. The helper always renders
  * the variable, so on Kubernetes the code fallback never runs and the docs describe a source the
  * deployment is not using.
  *
@@ -36,7 +36,7 @@ const chart = parse(
 };
 
 const docs = await Bun.file(
-  resolve(repositoryRoot, "docs/configuration.md"),
+  resolve(repositoryRoot, "reference/configuration.md"),
 ).text();
 
 /** What `handoffCaps` falls back to with nothing in the environment. */

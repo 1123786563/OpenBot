@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun tests, AI SDK v3 `LanguageModel`, existing OpenBot ModelGateway wire contract.
 
-**Spec:** `docs/superpowers/specs/2026-10-11-mastra-intelligence-only-design.md` §§3–5, 8; `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/briefs/task-2.md` model-governance requirements; architecture evidence `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/reports/t2-model-governance-seam-architecture.md` and `reports/t2-r12-route-contract-architecture.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md` §§3–5, 8; `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/briefs/task-2.md` model-governance requirements; architecture evidence `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/reports/t2-model-governance-seam-architecture.md` and `reports/t2-r12-route-contract-architecture.md`.
 
 ## Global Constraints
 

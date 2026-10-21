@@ -168,7 +168,7 @@ if [ -z "$EMAIL" ] && [ "$ACME_CA" = "letsencrypt" ]; then
   exit 1
 fi
 if [ -z "$DNS" ]; then
-  refuse_start "ACME_DNS is required (the acme.sh DNS-01 plugin, e.g. dns_cf — see docs/tls-certs.md)"
+  refuse_start "ACME_DNS is required (the acme.sh DNS-01 plugin, e.g. dns_cf — see reference/tls-certs.md)"
   # fix-ocr26 #10: the guard evaluates every refused start — the fix-ocr9 #3
   # refused-start alert was dead code on the refuse paths (guard --once sat
   # only on the issuance/install failure branches). It degrades gracefully
@@ -180,7 +180,7 @@ if [ -z "$DNS" ]; then
 fi
 missing="$(dns_missing_credentials "$DNS")"
 if [ -n "$missing" ]; then
-  refuse_start "DNS-01 credentials missing for $DNS: need $missing (inject via ./dns.env — docs/tls-certs.md)"
+  refuse_start "DNS-01 credentials missing for $DNS: need $missing (inject via ./dns.env — reference/tls-certs.md)"
   # fix-ocr26 #10: the guard evaluates every refused start — the fix-ocr9 #3
   # refused-start alert was dead code on the refuse paths (guard --once sat
   # only on the issuance/install failure branches). It degrades gracefully

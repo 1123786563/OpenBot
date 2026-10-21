@@ -1,10 +1,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-/** Shared shape and grouping for docs/verification/e2e-bun-suites.json. */
+/** Shared shape and grouping for tests/config/e2e-bun-suites.json. */
 
 const root = resolve(import.meta.dirname, "../..");
-export const MANIFEST = join(root, "docs/verification/e2e-bun-suites.json");
+export const MANIFEST = join(root, "tests/config/e2e-bun-suites.json");
 export const GROUP_SIZE = 24;
 
 /*

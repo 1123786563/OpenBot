@@ -1,8 +1,0 @@
-# MT028 biome --write 修复过程（2026-10-17）
-Found 2 warnings.
-check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  × Some errors were emitted while applying fixes.
-  
-
-write-exit=0

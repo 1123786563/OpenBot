@@ -88,7 +88,7 @@
         "docker/compose/opik.yml",
         "docker/opik/collector.yaml",
         "docker/opik/versions.json",
-        "docs/opik.md",
+        "reference/opik.md",
         "server/package.json",
         "server/scripts/opik-contract.ts",
         "server/tests/opik-contract.test.ts"
@@ -96,7 +96,7 @@
       "interfaces": "Consumes 当前 OTLP contract；Produces `VerifiedOpikContract` manifest：服务 tag/digest、SDK 精确版本、对应上游提交、实际 OTLP/查询/项目/数据集/实验/删除请求与响应 fixture、ID 映射、数据删除证据、支持的正文上限。所有后续 HTTP 序列化只由该 manifest 驱动。",
       "verification": [
         "- [ ] Step 2: Run `bun test server/tests/opik-contract.test.ts`；Expected RED：contract 解析/安全请求未实现。",
-        "- [ ] Step 5: Run `bun test server/tests/opik-contract.test.ts`、`docker compose --project-directory . -f docker/compose/opik.yml config --quiet`，再按 `docs/opik.md` 启动专属合成实例并运行 `bun server/scripts/opik-contract.ts --target http://127.0.0.1:5174/api --evidence docs/plans/evidence/2026-10-14-opik/task-01/contract`；Expected GREEN：所有能力逐项 pass、版本清单非浮动、实际 canary 无泄露、删除后记录查不到。"
+        "- [ ] Step 5: Run `bun test server/tests/opik-contract.test.ts`、`docker compose --project-directory . -f docker/compose/opik.yml config --quiet`，再按 `reference/opik.md` 启动专属合成实例并运行 `bun server/scripts/opik-contract.ts --target http://127.0.0.1:5174/api --evidence docs/plans/evidence/2026-10-14-opik/task-01/contract`；Expected GREEN：所有能力逐项 pass、版本清单非浮动、实际 canary 无泄露、删除后记录查不到。"
       ],
       "status": "ready",
       "review_status": "not_started",
@@ -554,7 +554,7 @@
       ],
       "owned_files": [
         "docker/compose/opik.yml",
-        "docs/opik.md",
+        "reference/opik.md",
         "server/scripts/opik-acceptance.ts",
         "server/src/agents/routes.ts",
         "server/src/ai-observability/admin-routes.ts",

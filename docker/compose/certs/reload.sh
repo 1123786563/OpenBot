@@ -6,7 +6,7 @@
 # new certificate up on its next accept. Note that this is NOT the OpenBot server —
 # server/src never opens cert.pem/key.pem, and the server listens plain HTTP behind
 # the proxy that holds the certificate. Two mechanisms, both optional and both
-# documented in docs/tls-certs.md:
+# documented in reference/tls-certs.md:
 #
 #   1. tls/reload.stamp — mtime bump, the polling seam for a terminator that can watch
 #      the directory (an nginx-style proxy reloaded by SIGHUP does not need it).

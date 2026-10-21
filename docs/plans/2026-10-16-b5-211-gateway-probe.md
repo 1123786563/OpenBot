@@ -1,6 +1,6 @@
 # b5-211 / Bifrost 01.5 — 网关连接与认证探测（实施计划）
 
-Ticket: docs/tickets/bifrost-5/issues/01.5-gateway-connection-probe.md
+Ticket: docs/plans/tickets/bifrost-5/issues/01.5-gateway-connection-probe.md
 BASE: bab7c0b9（worktree /Users/wuyongjun/orca/workspaces/OpenBot/b5-211，未提交检查点模式）
 专用测试库: postgres://openbot:openbot@localhost:5432/openbot_b5_211（已 createdb + 迁移）
 

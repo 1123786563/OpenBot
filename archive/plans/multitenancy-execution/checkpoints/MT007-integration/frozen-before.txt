@@ -1,4 +1,0 @@
-# MT007 集成前 EXE 冻结 — 2026-10-16T15:25Z
-07767157087d132fb9613219b413d3d7c2f09a20fbd8c1caecaf17b02480ee30  company-team-multitenancy-execution/server/src/enterprise/tenancy/workspace-admin.ts
-efd534a34d77187805ff715469279c0d3b427c582ffdd5fc12439849d27d0374  company-team-multitenancy-execution/server/src/enterprise/runs/events.ts
-e0a6ab8ae039b312194d674b7bf3043f7aa7b282ce1dac7e54b569fa1ec32a2f  company-team-multitenancy-execution/server/src/enterprise/runs/runner.ts

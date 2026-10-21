@@ -29,7 +29,7 @@
  * Rotation semantics: the key material is (deployment secret, purpose label,
  * version). Changing any of them invalidates every outstanding pass — holders
  * re-enter from the main site and re-redeem. That is the documented upgrade
- * behavior (docs/craft-preview-origin.md), not a compatibility branch: the old
+ * behavior (reference/craft-preview-origin.md), not a compatibility branch: the old
  * plaintext session-id cookie verifies to null here, by construction and by
  * test, and NO legacy shape is ever accepted.
  */

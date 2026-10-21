@@ -1,8 +1,0 @@
-# MT099 REVIEW full cargo (cmd: cargo test --manifest-path desktop/src-tauri/Cargo.toml)
-running 600 tests
-test result: ok. 592 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 14.56s
-running 150 tests
-test result: ok. 149 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 56.82s
-running 0 tests
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-cargo totals: passed= failed=0

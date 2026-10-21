@@ -76,7 +76,7 @@ for (const [directory, files] of byDirectory) {
 }
 
 writeFileSync(
-  resolve(root, "docs/verification/e2e-bun-suites.json"),
+  resolve(root, "tests/config/e2e-bun-suites.json"),
   `${JSON.stringify(
     {
       generatedBy: "scripts/e2e-bun-manifest.mjs",

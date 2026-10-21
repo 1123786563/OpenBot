@@ -1,5 +1,0 @@
-(fail) MT074 AC1: vendor calls disclose only the registered company > a quarantined account on the mapped customer is not a payer [2.38ms]
-(fail) MT074 AC1: vendor calls disclose only the registered company > a quarantined account on the mapped customer is not a payer [2.38ms]
- 21 pass
- 1 fail
-RESTORE: sha256 match (a2ccc8e50a91ae4a85fce968bcab141c20783190a70212e54bb1a8c8c43d159f)

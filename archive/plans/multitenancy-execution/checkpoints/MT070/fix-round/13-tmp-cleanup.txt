@@ -1,8 +1,0 @@
-# 修复轮临时文件删除（env 0600 用后删）— 2026-10-17T00:15:22Z
-$ rm /tmp/mt070-fix-env.sh /tmp/mt070-fix-pgpw.txt /tmp/mt070-fix-pristine-service.ts
-rm exit=0
-$ ls /tmp/mt070-fix-env.sh /tmp/mt070-fix-pgpw.txt /tmp/mt070-fix-pristine-service.ts
-ls: /tmp/mt070-fix-env.sh: No such file or directory
-ls: /tmp/mt070-fix-pgpw.txt: No such file or directory
-ls: /tmp/mt070-fix-pristine-service.ts: No such file or directory
-ls exit=1 (No such file = deleted confirmed)

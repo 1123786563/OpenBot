@@ -171,7 +171,7 @@ if (import.meta.main) {
    * without `KEY_ENCRYPTION_KEY`, the three Intelligence addressing values, and a complete identity
    * provider or `OPENBOT_SINGLE_USER`. So a sweep that deletes rows and touches no ciphertext,
    * no model and no session died at start-up with `KEY_ENCRYPTION_KEY must be configured`, and the
-   * documented external-cron path in `docs/deployment.md` — "it needs only DATABASE_URL" — was
+   * documented external-cron path in `reference/deployment.md` — "it needs only DATABASE_URL" — was
    * simply false. It worked under Helm only because that CronJob injected five credentials it had
    * no use for, in the pod with the least reason of any to hold them.
    *

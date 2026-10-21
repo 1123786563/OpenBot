@@ -1,4 +1,0 @@
-# GREEN-1: first run after implementation (30 tests reached; 2 test-side defects — slice(-DIGEST.length) used pattern-string length 12, and a canary-only tenant id is a VALID id so correctly does not throw; canary logicalKey entry wrongly in rejection battery — all three fixed in test file, implementation untouched)
- 28 pass
- 2 fail
-Ran 30 tests across 1 file. [1358.00ms]

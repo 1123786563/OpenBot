@@ -1,8 +1,0 @@
-{
-  "ticket": "MT077", "issue": 120, "integrated_at": "2026-10-17T01:50Z",
-  "review": {"task": "task_13c54eab85a8", "dispatch": "ctx_557a3c1c4573", "verdict": "PASS",
-    "findings": {"critical": 0, "high": 0, "medium": 0, "nonblocking_observations": 4}},
-  "integration_method": "4 新文件整复制 + 3 共享文件经 i9-review-mt077 装配版（EXE+MT077，复审批证合并语义等价）",
-  "verification": {"migrations": "十任务序 MT004→…→MT009→MT077→MT026 全 0", "suite_focus": "37/0/0", "full": "577/0/22 files（批2 合并亲验 = 507+37+33）", "typecheck": 0, "biome9": 0},
-  "baseline_chain": "…→507→577"
-}

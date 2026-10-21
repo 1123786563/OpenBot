@@ -380,7 +380,22 @@
     "overdrawHint": "This call cost more than the balance could fund. The ledger records the full cost; {{shortfall}} was not covered by any grant.",
     "pagerStatus": "Page {{page}} of {{totalPages}} · {{total}} entries",
     "consumptionTable": "Usage details",
-    "columnBot": "Bot"
+    "columnBot": "Bot",
+    "pendingReasons": {
+      "usage_missing": "The call finished but its usage was never reported; it settles after the platform reconciles it.",
+      "stream_error": "The response failed midway, so the outcome is unknown; it settles after the platform reconciles it.",
+      "cancelled": "The call was interrupted, so the outcome is unknown; it settles after the platform reconciles it.",
+      "usage_invalid": "The reported usage cannot be priced; it awaits manual review.",
+      "usage_over_bound": "The reported usage exceeded the preset bound; it awaits manual review.",
+      "usage_charge_failed": "Recording the settlement failed; the platform will reconcile and settle it.",
+      "dispatch_result_unknown": "The model service's final result is unconfirmed; it settles or releases once the platform verifies it.",
+      "hold_expired_without_result": "The call timed out with no result; it settles or releases once the platform verifies it.",
+      "provider_error": "The model service refused before producing anything, so no charge was incurred.",
+      "bound_refused": "The call failed admission and never reached the model service, so no charge was incurred.",
+      "no_usage": "The model service reported zero usage for this call, so no charge was incurred.",
+      "fallback": "This call is still being reconciled; the figure updates when it completes."
+    },
+    "pendingHandling": "Pending amounts are held, not spent; the platform verifies the outcome with the model service and then settles or releases them automatically."
   },
   "ordersPage": {
     "title": "Orders & credits",

@@ -1,3 +1,0 @@
-# MT099 全量 cargo（票后）
-cargo totals: passed=741 failed=0
-exit=0

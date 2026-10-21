@@ -38,20 +38,18 @@ import {
   WorkspaceListingError,
 } from "./directory-archive";
 import {
+  WEBAPP_MOUNT_MARKER,
   webappDevServerReady,
   webappUpstreamHost,
-  WEBAPP_MOUNT_MARKER,
 } from "./nextjs-dev";
-import { refuseResponse } from "./refusal";
-import {
-  PREVIEW_PASS_REFUSAL,
-  type ServePreview,
-} from "./preview-origin";
+import { PREVIEW_PASS_REFUSAL, type ServePreview } from "./preview-origin";
 import {
   createPreviewTickets,
   defaultPreviewOrigin,
+  PREVIEW_SESSION_COOKIE,
   type PreviewTickets,
 } from "./preview-ticket";
+import { refuseResponse } from "./refusal";
 import type { AgentSandboxFileApi, SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import { readWebappGeneration } from "./webapp-generation";
@@ -126,6 +124,48 @@ const WEBAPP_NOT_RUNNING_ERROR =
  */
 const WEBAPP_MOUNT_STALE_REASON =
   "The web app's dev server is not mounted on the preview address: its start script was written without the preview mount. Reload the session's skills to rewrite the start script, then start the web app again; regenerating the session also repairs it.";
+
+/**
+ * The legacy form's closure sentence (#425, the AC1 exception's收口): the
+ * deployment turned the legacy same-origin preview off. It names the two facts
+ * the ticket requires — WHY the form is closed (it shares the platform's own
+ * origin, so the pane's cookie-carrying iframe lets generated code use the
+ * person's session against platform APIs — the exposure the preview origin
+ * exists to end) and the way OUT (rebuild the app; the fresh assembly stamps
+ * the generation marker and walks the preview origin). Rides the same
+ * displayable channel (`previewOriginClosedReason`) every other closure
+ * sentence on this surface uses; PREVIEW_PASS_REFUSAL stays unmixed — a closed
+ * pass exchange and a closed legacy form are different semantics.
+ */
+const LEGACY_PREVIEW_CLOSED_REASON =
+  "Legacy same-origin previews are disabled on this deployment: the old preview shares the platform's own origin, so generated code could use your session to reach platform APIs. Rebuild the web app to move it onto the isolated preview origin.";
+
+/**
+ * #425's leg gate: whether this session's same-origin traffic is the legacy
+ * form this deployment switched off. One judgment, consumed by the proxy and
+ * HMR legs as mirrors of each other (the discipline webapp-info and the mint
+ * already follow for their generation reads). Only runs when the switch is
+ * OFF, so the default deployment pays nothing.
+ *
+ * "unknown" (the read flaked — no verdict) refuses too, on purpose: the only
+ * population this route serves is the legacy form (a current session's pane
+ * enters through the preview origin and its HMR rides the origin's own
+ * dispatcher), so a refusal here can only hit the population the switch means
+ * to close; letting a flake hold the legacy door open would make the switch's
+ * promise depend on gateway weather.
+ */
+async function legacyPreviewSwitchedOffFor(
+  deps: Pick<WebappProxyRoutesDeps, "config" | "gateway">,
+  sessionId: string,
+  botId: string,
+): Promise<boolean> {
+  if (deps.config.legacyPreviewEnabled) return false;
+  const generation = await readWebappGeneration(
+    deps.gateway.fileApiFor(botId),
+    sessionDirectory(sessionId, deps.config.sessionDirectoryMode),
+  );
+  return generation !== "current";
+}
 
 /**
  * The same-origin liveness probe's restart sentence (fix-ocr13): the session
@@ -286,8 +326,9 @@ const EXCLUDED_REQUEST_HEADER_PREFIXES = [
   "x-onyx-",
 ];
 
-/** Response headers never forwarded back: hop-by-hop, and set-cookie (an app must not set
- * cookies on the parent domain). */
+/** Response headers never forwarded back: hop-by-hop, and set-cookie — dropped whole
+ * under the default policy (the legacy same-origin mount must not set cookies at all);
+ * under `app-only` (#405) the sanitized lines are re-added after this loop. */
 const EXCLUDED_RESPONSE_HEADERS = new Set([
   "content-encoding",
   "content-length",
@@ -296,11 +337,42 @@ const EXCLUDED_RESPONSE_HEADERS = new Set([
   "set-cookie",
 ]);
 
-function stripRequestHeaders(source: Headers): Headers {
+/**
+ * How the proxy treats cookies (#405). `strip-all` is the LEGACY same-origin mount's
+ * behavior, unchanged: the platform's own cookies ride a same-origin iframe, so the app
+ * never sees any of them and never sets any back. `app-only` is the preview origin's: the
+ * platform pass and the generated app's cookies are separate jars there, so the app's own
+ * cookies are forwarded to the dev server (the pass never is) and the app's Set-Cookie
+ * answers ride back — sanitized to host-only preview cookies by sanitizeAppSetCookie.
+ */
+export type WebappCookiePolicy = "strip-all" | "app-only";
+
+/** The request-side half of `app-only`: drop the pass, forward the app's own pairs. */
+function forwardAppCookiePairs(raw: string): string | null {
+  const kept = raw
+    .split(";")
+    .map((pair) => pair.trim())
+    .filter((pair) => pair.length > 0)
+    .filter((pair) => !pair.startsWith(`${PREVIEW_SESSION_COOKIE}=`));
+  return kept.length > 0 ? kept.join("; ") : null;
+}
+
+function stripRequestHeaders(
+  source: Headers,
+  cookiePolicy: WebappCookiePolicy = "strip-all",
+): Headers {
   const headers = new Headers();
   for (const [key, value] of source.entries()) {
     const lowered = key.toLowerCase();
-    if (EXCLUDED_REQUEST_HEADERS.has(lowered)) continue;
+    if (EXCLUDED_REQUEST_HEADERS.has(lowered)) {
+      // The one header whose stripping is policy-dependent (#405): under `app-only`
+      // the pass is removed pair-by-pair and the app's own cookies continue.
+      if (lowered === "cookie" && cookiePolicy === "app-only") {
+        const forwarded = forwardAppCookiePairs(value);
+        if (forwarded !== null) headers.set("cookie", forwarded);
+      }
+      continue;
+    }
     if (
       EXCLUDED_REQUEST_HEADER_PREFIXES.some((prefix) =>
         lowered.startsWith(prefix),
@@ -311,6 +383,50 @@ function stripRequestHeaders(source: Headers): Headers {
     headers.set(key, value);
   }
   return headers;
+}
+
+/**
+ * The response-side half of `app-only` (#405): one upstream Set-Cookie line, reduced to a
+ * host-only cookie on the preview origin. The `Domain` attribute is DROPPED — with it an
+ * app could plant a cookie on the parent domain, where the platform's session lives —
+ * and a `Path` that is not absolute (or tries to smuggle attributes past the split) is
+ * dropped too, so the cookie's scope stays a well-formed path on this host. A line whose
+ * cookie NAME is the platform pass (`PREVIEW_SESSION_COOKIE`) is dropped whole: the app's
+ * jar is separate, but the name is not — a host-only cookie of that name on the preview
+ * origin is what the browser would match against the pass the platform itself set there,
+ * shadowing it and locking the user out of their preview session (the value never
+ * verifies, so this is denial, not escalation). Everything else (HttpOnly, Secure,
+ * SameSite, Max-Age, Expires, the name=value pair verbatim) survives, and every header
+ * of a multi-header Set-Cookie answer is sanitized independently — none is lost, none
+ * is merged.
+ */
+function sanitizeAppSetCookie(raw: string): string | null {
+  const [pair, ...attributes] = raw.split(";");
+  // The pass's name is not the app's to write, whatever value it carries.
+  const assignment = pair.indexOf("=");
+  const name = (assignment === -1 ? pair : pair.slice(0, assignment)).trim();
+  if (name === PREVIEW_SESSION_COOKIE) return null;
+  const kept: string[] = [];
+  for (const attribute of attributes) {
+    const trimmed = attribute.trim();
+    if (trimmed.length === 0) continue;
+    const assignment = trimmed.indexOf("=");
+    const name =
+      assignment === -1 ? trimmed : trimmed.slice(0, assignment).trim();
+    const lowered = name.toLowerCase();
+    if (lowered === "domain") continue;
+    if (lowered === "path") {
+      // Keep only a well-formed absolute path: `Path=relative` is not a scope on this
+      // host, and the browser would fall back to default-path semantics anyway.
+      const value =
+        assignment === -1 ? "" : trimmed.slice(assignment + 1).trim();
+      if (!value.startsWith("/")) continue;
+      kept.push(`Path=${value}`);
+      continue;
+    }
+    kept.push(trimmed);
+  }
+  return [pair.trim(), ...kept].join("; ");
 }
 
 /**
@@ -367,12 +483,19 @@ export async function proxyWebappRequest(input: {
   requestHeaders: Headers;
   /** The caller's request body, when it carried one. Omitted for a bodyless verb. */
   body?: BodyInit | null;
+  /**
+   * Cookie policy (#405): `strip-all` (the default, the legacy same-origin mount) drops
+   * every cookie both ways; `app-only` (the preview origin) forwards the app's own
+   * cookies and answers its Set-Cookie with host-only sanitized lines.
+   */
+  cookiePolicy?: WebappCookiePolicy;
   fetchImpl?: typeof fetch;
 }): Promise<ProxyWebappResult> {
   const fetchImpl = input.fetchImpl ?? fetch;
+  const cookiePolicy = input.cookiePolicy ?? "strip-all";
   const path = input.path.replace(/^\/+/, "");
   const target = `${input.upstreamBaseUrl}/${path}${input.query}`;
-  const headers = stripRequestHeaders(input.requestHeaders);
+  const headers = stripRequestHeaders(input.requestHeaders, cookiePolicy);
 
   let upstream: Response;
   try {
@@ -399,6 +522,16 @@ export async function proxyWebappRequest(input: {
   for (const [key, value] of upstream.headers.entries()) {
     if (EXCLUDED_RESPONSE_HEADERS.has(key.toLowerCase())) continue;
     responseHeaders.set(key, value);
+  }
+  if (cookiePolicy === "app-only") {
+    // Every Set-Cookie line the app answered with rides back, each sanitized to a
+    // host-only preview cookie (#405) — except a line claiming the pass's own name,
+    // which is dropped whole. getSetCookie preserves the multiple headers the
+    // plain entries() loop would fold into one comma-joined (invalid) line.
+    for (const raw of upstream.headers.getSetCookie()) {
+      const sanitized = sanitizeAppSetCookie(raw);
+      if (sanitized !== null) responseHeaders.append("set-cookie", sanitized);
+    }
   }
   responseHeaders.set(
     "content-type",
@@ -902,6 +1035,26 @@ export function createWebappProxyRoutes(
           });
         }
       }
+      // #425: the deployment switched the legacy form off. The pane gets NO
+      // address and the displayable closure sentence — the same shape a closed
+      // origin answers — while `webappGeneration` stays honestly "legacy" (the
+      // pane's version-skew logic and the docs' convergence story both key on
+      // it). The healed branch above already ran: a record-proved current mount
+      // answers the current shape BEFORE this gate, so a session the record
+      // vouches for keeps its preview; only the true legacy form closes. The
+      // mint's 409 is untouched — a closed form changes nothing about ticket
+      // semantics (there was never a ticket to issue for legacy).
+      if (!deps.config.legacyPreviewEnabled) {
+        return context.json({
+          has_webapp: hasWebapp,
+          webapp_url: null,
+          previewOrigin: null,
+          previewOriginClosedReason: LEGACY_PREVIEW_CLOSED_REASON,
+          webappGeneration: "legacy" as const,
+          status: ready ? "running" : "stopped",
+          ready,
+        });
+      }
       return context.json({
         has_webapp: hasWebapp,
         webapp_url: legacyWebappPreviewPath(sessionId),
@@ -1027,6 +1180,16 @@ export function createWebappProxyRoutes(
     if (port === null) {
       return refuse(context, WEBAPP_NO_SUPPORT_ERROR);
     }
+    // #425's service leg: a legacy session's same-origin traffic is refused when
+    // the deployment switched the legacy form off — BEFORE the upstream probe
+    // (no dial for a request that will never be forwarded) and after auth +
+    // ownership (an unauthenticated caller still answers 401; a foreign session
+    // still 404 — the switch must not become a session-existence oracle). The
+    // refusal is 503 with the displayable sentence, the same family this
+    // surface's other functional refusals use.
+    if (await legacyPreviewSwitchedOffFor(deps, sessionId, botId)) {
+      return refuse(context, LEGACY_PREVIEW_CLOSED_REASON);
+    }
     // The reserved port lives INSIDE the sandbox: the probe and the proxy both
     // dial the sandbox host (the gateway connection's host), never this server's
     // own loopback (F-E).
@@ -1049,6 +1212,10 @@ export function createWebappProxyRoutes(
         ? context.req.url.slice(context.req.url.indexOf("?"))
         : "",
       method: context.req.method,
+      // The preview origin's cookie jar (#405): the app's own cookies cross to the
+      // dev server, the platform pass never does, and the app's Set-Cookie answers
+      // come back as host-only preview cookies.
+      cookiePolicy: "app-only",
       // Buffered, not streamed: a preview is driven by a person clicking through
       // an app, so the payloads are JSON-sized, and a forwarded stream can only
       // be consumed once — which a retry after the ready probe would find already
@@ -1197,7 +1364,7 @@ export function webappHmrUpstreamUrl(input: {
 
 export type WebappHmrDeps = Pick<
   WebappProxyRoutesDeps,
-  "config" | "store" | "botIdFor" | "sandboxConnectionFor"
+  "config" | "store" | "botIdFor" | "sandboxConnectionFor" | "gateway"
 >;
 
 export type WebappHmrResolution =
@@ -1233,6 +1400,14 @@ export async function resolveWebappHmrUpgrade(
   }
   if (session.nextjsPort === null) {
     return { ok: false, status: 503, error: WEBAPP_NO_SUPPORT_ERROR };
+  }
+  // #425's HMR leg: the legacy form's hot-reload channel refuses under the same
+  // judgment the HTTP proxy leg refuses with (the mirror is the discipline) —
+  // before `server.upgrade` commits, in this resolver's own 401/404/503 refusal
+  // family, so a switched-off deployment leaves no half-alive channel an open
+  // legacy pane could keep riding.
+  if (await legacyPreviewSwitchedOffFor(deps, input.sessionId, botId)) {
+    return { ok: false, status: 503, error: LEGACY_PREVIEW_CLOSED_REASON };
   }
   // The reserved port lives INSIDE the sandbox (F-E): dial the sandbox host, never loopback.
   return {
@@ -1326,7 +1501,10 @@ export async function resolvePreviewWebappHmrUpgrade(
   if (verified === null) {
     return { ok: false, status: 401, error: PREVIEW_PASS_REFUSAL };
   }
-  const session = await deps.store.findSession(input.sessionId, verified.userId);
+  const session = await deps.store.findSession(
+    input.sessionId,
+    verified.userId,
+  );
   if (!session) {
     return {
       ok: false,

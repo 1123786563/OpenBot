@@ -413,7 +413,7 @@ describe("a batch size the sweep cannot finish on", () => {
  * Run as a real process rather than by importing the module, because the thing under test is what
  * the script does BEFORE it deletes anything — an in-process call to `cullStagedAttachments` cannot
  * fail the way this failed, which is at start-up, in `loadConfig`, with `KEY_ENCRYPTION_KEY must be
- * configured`. `docs/deployment.md` tells an operator to run exactly this from an external cron and
+ * configured`. `reference/deployment.md` tells an operator to run exactly this from an external cron and
  * that it needs only the database; the Helm CronJob is not that path and injected five credentials
  * this sweep has no use for. So the environment handed to the child is the documented one, built
  * from nothing rather than inherited, and the assertion is that the process succeeds.

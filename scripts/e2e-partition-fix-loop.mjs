@@ -11,7 +11,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const manifestPath = join(root, "docs/verification/e2e-bun-suites.json");
+const manifestPath = join(root, "tests/config/e2e-bun-suites.json");
 const groupSize = 24;
 const flag = (name, fallback) =>
   process.argv.find((entry) => entry.startsWith(`--${name}=`))?.slice(name.length + 3) ??
@@ -141,7 +141,7 @@ for (const scope of scopes) {
 }
 
 writeFileSync(
-  join(root, "docs/verification/e2e-partition-loop.json"),
+  join(root, ".archive/runs/e2e/e2e-partition-loop.json"),
   JSON.stringify({ added, blocked, clean }, null, 1),
 );
 console.log(

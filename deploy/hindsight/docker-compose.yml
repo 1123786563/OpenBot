@@ -28,12 +28,23 @@ services:
     restart: unless-stopped
     shm_size: 1g
     env_file: hindsight.env
+    environment:
+      # Where the OpenBot tenant/validator extensions below are importable from. The
+      # extensions are deployment code, not operator configuration: they ride with the
+      # checked-out deployment recipe, mounted read-only.
+      PYTHONPATH: /opt/openbot-extensions
     ports:
       # Loopback only: the OpenBot server on this host is the sole client.
       - "127.0.0.1:8888:8888"
       # No 9999 entry on purpose — the control plane stays unpublished.
     volumes:
       - hindsight-data:/home/hindsight/.pg0
+      # OpenBot's custom tenant authentication and bank-scope validation (#381): the
+      # OpenBotTenantExtension (shared service key + signed bank-scope assertion, one
+      # PostgreSQL schema per company) and the OpenBotOperationValidator (every memory
+      # operation confined to the banks the assertion grants; tags never widen it).
+      # Read-only: the service never writes its own authorization code.
+      - ./extensions:/opt/openbot-extensions:ro
     networks:
       - openbot-hindsight
     # Linux hosts (Docker Engine >= 20.10): pin host.docker.internal to the host-gateway

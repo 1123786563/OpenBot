@@ -1086,7 +1086,7 @@ export function createApp(
    * provider-proxy surfaces never pass through here, record no usage today, and any future
    * usage-bearing surface must mount below this line or name its own origin.
    */
-  app.use("/api/*", (context, next) => withUsageOrigin("web", next));
+  app.use("/api/*", (_context, next) => withUsageOrigin("web", next));
   /*
    * MT122 (issue #165): the deployment main entry's request-context floor,
    * mounted only in multitenancy mode beside a wired entry factory. Every
@@ -3015,6 +3015,9 @@ export function createApp(
         // The personal grant route's resolution source (02.8): the deployment's own database,
         // where the payer mapping and the users table live.
         database: billing.database,
+        // The disposal command's pricing anchor (08.9): the environment rate a version-0
+        // price lock names, threaded to the settle path the disposal goes through.
+        environmentRate: config.gateway?.creditConversionRate,
       }),
     );
   }

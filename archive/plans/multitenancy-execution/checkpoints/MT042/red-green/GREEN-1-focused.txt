@@ -1,7 +1,0 @@
-(fail) MT042 — platform scan scope rebuild (Issue #85) > AC1: the scan lists due jobs across companies as metadata, never business content > lists due jobs of two companies and never reads the payload [63.10ms]
-(fail) MT042 — platform scan scope rebuild (Issue #85) > AC2: the scope is rebuilt from the persisted record; message fields are hints only > executes under the authoritative record's scope, ignoring wrong message hints [21.11ms]
-(fail) MT042 — platform scan scope rebuild (Issue #85) > execution and lease discipline (MT041 consumption) > releases the lease on execution failure and the item returns as attempt 2 [15.81ms]
-(fail) MT042 — platform scan scope rebuild (Issue #85) > revocation and malformed input (machine semantics) > refuses a malformed key deterministically and never echoes it [0.76ms]
- 11 pass
- 4 fail
-Ran 15 tests across 1 file. [533.00ms]
