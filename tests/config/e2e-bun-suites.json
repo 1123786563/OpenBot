@@ -181,8 +181,7 @@
         "desktop/src/App.test.tsx",
         "desktop/src/Problem.test.tsx",
         "desktop/src/ProviderPicker.test.tsx",
-        "desktop/src/telemetry.test.ts",
-        "desktop/src/OrgSwitchCleanup.test.tsx"
+        "desktop/src/telemetry.test.ts"
       ]
     },
     {
@@ -1341,8 +1340,7 @@
     "app/tests/computer-screen-announcement.test.ts",
     "app/tests/connect-app-card.test.tsx",
     "app/tests/sign-in-code-step.test.tsx",
-    "app/tests/tool-activity.test.tsx",
-    "desktop/src/OrgSwitchCleanup.test.tsx"
+    "app/tests/tool-activity.test.tsx"
   ],
   "artifacts": [
     "deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts",
@@ -1388,7 +1386,6 @@
     "server/tests/hindsight-derived-judgments.integration.test.ts": "runner named it: wave3 round6 \u4ea4\u4ed8\u5957\u4ef6",
     "app/tests/connect-app-card.test.tsx": "runner named it: bun-test-compat layer: happy-dom component suite using bun:test spyOn/fake timers (jest) for the connect card's tab and poll seams",
     "app/tests/tool-activity.test.tsx": "runner named it: bun-test-compat layer: happy-dom component suite over the transcript's groupToolSteps projection and ToolActivity fold (details/summary, i18n en/zh, streaming identity)",
-    "desktop/src/OrgSwitchCleanup.test.tsx": "runner named it: cannot load under Node",
     "app/tests/sign-in-code-step.test.tsx": "runner named it: L03 A08: the private sign-in form's code step and secret hygiene, on the Bun tier with the other app UI suites"
   },
   "directoryIslands": [
