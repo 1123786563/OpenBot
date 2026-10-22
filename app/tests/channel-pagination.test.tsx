@@ -21,6 +21,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { agentKeys } from "@/lib/agents/queries";
 import { authKeys } from "@/lib/auth/queries";
 import { type ChannelSummary, channelKeys } from "@/lib/channels/queries";
+import { scopedCachePrefix } from "@/lib/enterprise/tenant/scoped-cache";
 import { userPreferencesQueryOptions } from "@/lib/settings/message-list";
 import { botLifecycleKeys } from "@/lib/bot-lifecycle/queries";
 
@@ -111,7 +112,13 @@ beforeAll(() => {
   globalThis.IntersectionObserver = ScrollObserver;
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL) => {
-      requests.push(String(input));
+      const url = String(input);
+      // The scoped roster read (MT087) waits for the scope source; the per-test respond() owns
+      // every OTHER answer, so the auth read is answered here, once, for all of them.
+      if (url === "/api/me") {
+        return Response.json({ user: { id: "user", email: "user@example.com", role: "user", onboarding: null } });
+      }
+      requests.push(url);
       return respond();
     },
     { preconnect: originalFetch.preconnect },
@@ -190,7 +197,11 @@ function renderSidebar() {
     teamRules: [],
     questions: [],
   });
-  queryClient.setQueryData(channelKeys.list(), {
+  /*
+   * The sidebar reads the roster through the scoped key (MT087): under no selection that is the
+   * personal context's own subtree, so the preset lands where the sidebar actually reads.
+   */
+  queryClient.setQueryData([...scopedCachePrefix("user", null), ...channelKeys.list()], {
     pages: [
       { channels: [channel("Recent conversation")], nextCursor: "older/page" },
     ],

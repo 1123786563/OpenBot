@@ -32,7 +32,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { removeSkillMutationOptions } from "@/lib/plugins/mutations";
-import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import { scopedPluginsPageQueryOptions } from "@/lib/plugins/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import type { SkillFormValues } from "@/lib/skills/form";
 
 /**
@@ -65,8 +66,12 @@ function SkillsPage() {
   // roster uses when `new` and `agent` arrive together.
   const showCreate = isCreating === true;
   const showEdit = !showCreate && editingSlug !== undefined;
+  // The skills read rides the scope this screen holds (MT088): keyed under the scope's own
+  // prefix, carrying the pair, so the skills offered are the server's answer under the scope in
+  // force and a switch drops the old scope's page wholesale.
+  const scope = useScopedCache();
   const { data, isPending: skillsPending } = useQuery(
-    pluginsPageQueryOptions(),
+    scopedPluginsPageQueryOptions(queryClient, scope),
   );
   const { data: me, isPending: mePending } = useQuery(
     currentUserQueryOptions(),
@@ -89,7 +94,7 @@ function SkillsPage() {
   };
 
   const removeSkill = useMutation({
-    ...removeSkillMutationOptions(queryClient),
+    ...removeSkillMutationOptions(queryClient, scope),
     onError: (thrown: Error) => setError(thrown.message),
     onSuccess: () => setError(null),
   });

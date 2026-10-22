@@ -1,5 +1,6 @@
 import { IconRefresh, IconX } from "@tabler/icons-react";
 import { useCallback, useState } from "react";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { type UploadResult, uploadFile } from "@/lib/craft/client";
@@ -47,6 +48,10 @@ export type UseAttachments = {
 /** Drive every added file through the upload, one state machine per chip. */
 export function useAttachments(sessionId: string): UseAttachments {
   const [chips, setChips] = useState<AttachmentChip[]>([]);
+  // The upload submits under the scope in force (MT091 / Issue #134, AC3): an attachment
+  // lands in the session the scope in force owns.
+  const scope = useScopedCache();
+  const pair = scope.status === "open" ? (scope.selection ?? {}) : undefined;
 
   const patch = useCallback((id: string, fields: Partial<AttachmentChip>) => {
     setChips((current) =>
@@ -59,7 +64,7 @@ export function useAttachments(sessionId: string): UseAttachments {
       if (!sessionId) return; // no session bound — the attach road is closed
       patch(chip.id, { status: "UPLOADING", error: undefined });
       try {
-        const result = await uploadFile(sessionId, chip.file);
+        const result = await uploadFile(sessionId, chip.file, pair);
         patch(chip.id, { status: "COMPLETED", result });
       } catch (error) {
         patch(chip.id, {
@@ -68,7 +73,7 @@ export function useAttachments(sessionId: string): UseAttachments {
         });
       }
     },
-    [sessionId, patch],
+    [sessionId, patch, pair],
   );
 
   const addFiles = useCallback(

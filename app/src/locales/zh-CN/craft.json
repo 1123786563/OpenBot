@@ -6,6 +6,7 @@
     "none": "还没有会话，新建一个让 Agent 开始构建。",
     "noneSelected": "选择一个会话，或新建一个。",
     "untitled": "未命名",
+    "unavailable": "此会话在当前工作区不可用。",
     "rename": "重命名会话",
     "delete": "删除",
     "deleteConfirm": "删除此会话？",

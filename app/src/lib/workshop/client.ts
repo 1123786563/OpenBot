@@ -168,6 +168,12 @@ export type WorkshopStreamEvent =
 const workshopPath = (channelId: string, suffix = "") =>
   `/api/workshop/${encodeURIComponent(channelId)}${suffix}`;
 
+/**
+ * The selection pair a scoped workshop call rides (MT091 / Issue #134), spread into the client
+ * options — the same pair the transport attaches as headers on this reviewed path family.
+ */
+export type WorkshopScopePair = { tenantId?: string; workspaceId?: string };
+
 /** The snapshot: one request, the whole tab. */
 export function workshopSnapshot(
   channelId: string,
@@ -184,12 +190,14 @@ export function startWorkshopTurn(
   channelId: string,
   input: { prompt: string },
   signal?: AbortSignal,
+  scope?: WorkshopScopePair,
 ): Promise<StartTurnResponse> {
   return client(workshopPath(channelId, "/turns"), {
     method: "POST",
     body: input,
     fallback: "The turn could not be started.",
     signal,
+    ...(scope ?? {}),
   }).then((response) => response.json() as Promise<StartTurnResponse>);
 }
 
@@ -197,12 +205,14 @@ export function startWorkshopTurn(
 export function cancelWorkshopTurn(
   channelId: string,
   turnId: string,
+  scope?: WorkshopScopePair,
 ): Promise<CancelTurnResponse> {
   return client(
     workshopPath(channelId, `/turns/${encodeURIComponent(turnId)}/cancel`),
     {
       method: "POST",
       fallback: "The turn could not be stopped.",
+      ...(scope ?? {}),
     },
   ).then((response) => response.json() as Promise<CancelTurnResponse>);
 }
@@ -214,11 +224,13 @@ export function cancelWorkshopTurn(
 export function fetchWorkshopTurnEvents(
   channelId: string,
   turnId: string,
+  scope?: WorkshopScopePair,
 ): Promise<{ turnId: string; events: WorkshopStreamEvent[] }> {
   return client(
     workshopPath(channelId, `/turns/${encodeURIComponent(turnId)}/events`),
     {
       fallback: "The turn's events could not be loaded.",
+      ...(scope ?? {}),
     },
   ).then(
     (response) =>
@@ -234,11 +246,13 @@ export function listWorkshopFiles(
   channelId: string,
   path = "",
   signal?: AbortSignal,
+  scope?: WorkshopScopePair,
 ): Promise<WorkshopFileNode[]> {
   const query = path ? `?path=${encodeURIComponent(path)}` : "";
   return client(workshopPath(channelId, `/files${query}`), {
     fallback: "The files could not be listed.",
     signal,
+    ...(scope ?? {}),
   }).then((response) => response.json() as Promise<WorkshopFileNode[]>);
 }
 
@@ -251,13 +265,13 @@ export function listWorkshopFiles(
 export async function uploadWorkshopFiles(
   channelId: string,
   files: File[],
+  scope?: WorkshopScopePair,
 ): Promise<{ uploaded: number }> {
   const body = new FormData();
   for (const file of files) body.append("files", file, file.name);
-  const response = await clientUpload(
-    workshopPath(channelId, "/files/upload"),
-    body,
-  );
+  const response = await clientUpload(workshopPath(channelId, "/files/upload"), body, {
+    ...(scope ?? {}),
+  });
   if (!response.ok) {
     const reason = (await response.json().catch(() => null)) as {
       error?: string;
@@ -285,19 +299,25 @@ export function workshopArtifactDownloadUrl(
 export function createWorkshopShare(
   channelId: string,
   input: { scope: WorkshopShareScope; expiresInDays?: number },
+  pair?: WorkshopScopePair,
 ): Promise<CreateShareResponse> {
   return client(workshopPath(channelId, "/share"), {
     method: "POST",
     body: input,
     fallback: "The share link could not be created.",
+    ...(pair ?? {}),
   }).then((response) => response.json() as Promise<CreateShareResponse>);
 }
 
 /** Close a share. Existing links stop working; the session and its artifacts stay. */
-export function revokeWorkshopShare(channelId: string): Promise<void> {
+export function revokeWorkshopShare(
+  channelId: string,
+  pair?: WorkshopScopePair,
+): Promise<void> {
   return client(workshopPath(channelId, "/share"), {
     method: "DELETE",
     fallback: "The share link could not be revoked.",
+    ...(pair ?? {}),
   }).then(() => undefined);
 }
 
@@ -346,9 +366,11 @@ export type SchedulesResponse = {
 
 export function listWorkshopSchedules(
   channelId: string,
+  scope?: WorkshopScopePair,
 ): Promise<SchedulesResponse> {
   return client(workshopPath(channelId, "/schedules"), {
     fallback: "The schedules could not be loaded.",
+    ...(scope ?? {}),
   }).then((response) => response.json() as Promise<SchedulesResponse>);
 }
 
@@ -364,11 +386,13 @@ export function createWorkshopSchedule(
       maxTurnsPerRun?: number;
     };
   },
+  scope?: WorkshopScopePair,
 ): Promise<{ id: string; rrule: string }> {
   return client(workshopPath(channelId, "/schedules"), {
     method: "POST",
     body: input,
     fallback: "The schedule could not be created.",
+    ...(scope ?? {}),
   }).then(
     (response) => response.json() as Promise<{ id: string; rrule: string }>,
   );
@@ -378,6 +402,7 @@ export function toggleWorkshopSchedule(
   channelId: string,
   id: string,
   enabled: boolean,
+  scope?: WorkshopScopePair,
 ): Promise<{ id: string; status: string }> {
   return client(
     workshopPath(channelId, `/schedules/${encodeURIComponent(id)}`),
@@ -385,6 +410,7 @@ export function toggleWorkshopSchedule(
       method: "PATCH",
       body: { enabled },
       fallback: "The schedule could not be toggled.",
+      ...(scope ?? {}),
     },
   ).then(
     (response) => response.json() as Promise<{ id: string; status: string }>,
@@ -394,21 +420,27 @@ export function toggleWorkshopSchedule(
 export function deleteWorkshopSchedule(
   channelId: string,
   id: string,
+  scope?: WorkshopScopePair,
 ): Promise<{ ok: boolean }> {
   return client(
     workshopPath(channelId, `/schedules/${encodeURIComponent(id)}`),
     {
       method: "DELETE",
       fallback: "The schedule could not be deleted.",
+      ...(scope ?? {}),
     },
   ).then((response) => response.json() as Promise<{ ok: boolean }>);
 }
 
 /** Wipe the workspace and start the session over. Artifacts and turns are kept as history. */
-export function resetWorkshop(channelId: string): Promise<ResetResponse> {
+export function resetWorkshop(
+  channelId: string,
+  scope?: WorkshopScopePair,
+): Promise<ResetResponse> {
   return client(workshopPath(channelId, "/reset"), {
     method: "POST",
     fallback: "The workspace could not be reset.",
+    ...(scope ?? {}),
   }).then((response) => response.json() as Promise<ResetResponse>);
 }
 

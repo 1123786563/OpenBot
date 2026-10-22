@@ -1,5 +1,5 @@
 import { IconPlus } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -23,7 +23,8 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
-import { scheduledTasksQueryOptions } from "@/lib/craft/scheduled-tasks";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import { scopedScheduledTasksQueryOptions } from "@/lib/craft/scheduled-tasks";
 import type { CraftScheduledTaskListItem } from "@/lib/craft/types";
 import { relativeTime } from "@/lib/relative-time";
 import { cn } from "@/lib/utils";
@@ -53,7 +54,11 @@ function CraftTasksPage() {
   // Creating wins if both are somehow set — the roster's rule, re-used verbatim.
   const showCreate = isCreating === true;
   const showEdit = !showCreate && editingId !== undefined;
-  const tasks = useQuery(scheduledTasksQueryOptions());
+  // The roster is the scope's own answer (MT091 / Issue #134, AC1/AC3): the pair rides the
+  // read, and the editor's writes below settle under the same scope.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const tasks = useQuery(scopedScheduledTasksQueryOptions(queryClient, scope));
 
   return (
     <div className="flex min-h-0 flex-1">

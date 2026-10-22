@@ -1,5 +1,13 @@
-import { queryOptions } from "@tanstack/react-query";
 import {
+  type QueryClient,
+  type QueryFunction,
+  queryOptions,
+} from "@tanstack/react-query";
+import { tryClient } from "@/lib/client";
+import { guarded } from "@/lib/enterprise/tenant/queries";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import {
+  type CraftScopePair,
   fetchSandboxStatus,
   getSession,
   issuePreviewTicket,
@@ -9,6 +17,14 @@ import {
   listSessions,
   webappInfo,
 } from "./client";
+import type {
+  CraftArtifactEntry,
+  CraftFileEntry,
+  CraftMessage,
+  CraftSandboxStatusResponse,
+  CraftSession,
+  CraftWebappInfo,
+} from "./types";
 
 /**
  * Query keys + options for the craft feature, one root so invalidation is one call.
@@ -86,9 +102,280 @@ export const craftSandboxStatusQueryOptions = (id: string) =>
     queryKey: craftKeys.sandboxStatus(id),
     queryFn: ({ signal }) => fetchSandboxStatus(id, signal),
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
+      const status = (
+        query.state.data as CraftSandboxStatusResponse | undefined
+      )?.status;
       if (status === "provisioning") return 2000;
       if (status === "running") return 30_000;
       return false;
     },
   });
+
+// ---------------------------------------------------------------------------
+// The scoped half (MT091 / Issue #134): the craft pages read and write through here
+// ---------------------------------------------------------------------------
+
+/** The selection pair a scoped craft call rides — the client module's own shape, re-exported. */
+export type { CraftScopePair } from "./client";
+
+/**
+ * The scope the craft writes here submit under (MT091 / Issue #134, AC3): an open scope's
+ * selection rides the request, and a pending one submits nothing.
+ */
+export function craftScopePair(
+  scope: ScopedCache | undefined,
+): CraftScopePair | undefined {
+  return scope !== undefined && scope.status === "open"
+    ? (scope.selection ?? {})
+    : undefined;
+}
+
+/**
+ * What a cross-scope session id reads as (MT091 / Issue #134, AC1): the server's 404 is the
+ * canonical no-leak answer — a session of another company is indistinguishable from one that
+ * never existed — and this typed error is the page's one way to render that answer as an
+ * explicit refusal state instead of a blank pane.
+ */
+export class CraftSessionUnavailableError extends Error {
+  constructor() {
+    super("This craft session is not available.");
+    this.name = "CraftSessionUnavailableError";
+  }
+}
+
+/** The pending-scope key suffix every scoped craft read parks under while the user resolves. */
+const SCOPE_PENDING = ":scope-pending";
+
+/**
+ * The sessions roster, bound to the scope the screen holds (MT091 AC1): keyed under the scope's
+ * own cache prefix (MT083), carrying the selection pair, and answered through the generation
+ * guard — the sessions a scope sees are that scope's own answer, and a switch drops the old
+ * scope's roster wholesale rather than leaving it beside the new scope's.
+ */
+export function scopedCraftSessionsQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...craftKeys.list()]
+        : [...craftKeys.list(), SCOPE_PENDING],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<Awaited<ReturnType<typeof listSessions>>>(() => {})
+        : async ({ signal }): Promise<CraftSession[]> =>
+            guarded(queryClient, open.userId, () =>
+              listSessions(signal, craftScopePair(scope)),
+            ),
+  });
+}
+
+/**
+ * One session's detail, bound the same way (MT091 AC1): a cross-scope id answers 404 and reads
+ * as {@link CraftSessionUnavailableError} — the invisible semantic, not a blank pane.
+ */
+export function scopedCraftSessionQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+  id: string,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...craftKeys.session(id)]
+        : [...craftKeys.session(id), SCOPE_PENDING],
+    enabled: open !== null,
+    retry: false,
+    queryFn:
+      open === null
+        ? () => new Promise<Awaited<ReturnType<typeof getSession>>>(() => {})
+        : async ({ signal }): Promise<CraftSession> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient(
+                `/api/craft/sessions/${encodeURIComponent(id)}`,
+                {
+                  signal,
+                  fallbackKey: "craft.loadSession",
+                  ...(open.selection ?? {}),
+                },
+              );
+              if (!response.ok) {
+                if (response.status === 404)
+                  throw new CraftSessionUnavailableError();
+                throw new Error("The craft session could not be loaded.");
+              }
+              return (await response.json()) as CraftSession;
+            }),
+  });
+}
+
+/** The persisted message history, bound to the scope (MT091 AC1). */
+export function scopedCraftMessagesQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+  id: string,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...craftKeys.messages(id)]
+        : [...craftKeys.messages(id), SCOPE_PENDING],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<Awaited<ReturnType<typeof listMessages>>>(() => {})
+        : async ({ signal }): Promise<CraftMessage[]> =>
+            guarded(queryClient, open.userId, () =>
+              listMessages(id, signal, craftScopePair(scope)),
+            ),
+  });
+}
+
+/** The artifacts shelf, bound to the scope (MT091 AC1: 产物面只反映当前范围). */
+export function scopedCraftArtifactsQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+  id: string,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...craftKeys.artifacts(id)]
+        : [...craftKeys.artifacts(id), SCOPE_PENDING],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<Awaited<ReturnType<typeof listArtifacts>>>(() => {})
+        : async ({ signal }): Promise<CraftArtifactEntry[]> =>
+            guarded(queryClient, open.userId, () =>
+              listArtifacts(id, signal, craftScopePair(scope)),
+            ),
+  });
+}
+
+/** One directory of the file tree, bound to the scope (MT091 AC1). */
+export function scopedCraftFilesQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+  id: string,
+  path = "",
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...craftKeys.files(id, path)]
+        : [...craftKeys.files(id, path), SCOPE_PENDING],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<Awaited<ReturnType<typeof listFiles>>>(() => {})
+        : async ({ signal }): Promise<CraftFileEntry[]> =>
+            guarded(queryClient, open.userId, () =>
+              listFiles(id, path, signal, craftScopePair(scope)),
+            ),
+  });
+}
+
+/** The webapp inspection, bound to the scope (MT091 AC2: the preview's own facts are scoped). */
+export function scopedCraftWebappQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+  id: string,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...craftKeys.webapp(id)]
+        : [...craftKeys.webapp(id), SCOPE_PENDING],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<Awaited<ReturnType<typeof webappInfo>>>(() => {})
+        : async ({ signal }): Promise<CraftWebappInfo> =>
+            guarded(queryClient, open.userId, () =>
+              webappInfo(id, signal, craftScopePair(scope)),
+            ),
+  });
+}
+
+/**
+ * The sandbox poll, bound to the scope (MT091 AC1) with the poll's own cadence kept verbatim:
+ * provisioning watched at 2s, running at 30s, settled not at all.
+ */
+export function scopedCraftSandboxStatusQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+  id: string,
+) {
+  const open = scope.status === "open" ? scope : null;
+  /*
+   * The cadence callback reads the answer, so the queryFn is typed up front (a ternary of two
+   * function literals does not carry the type through `queryOptions` inference when a callback
+   * parameter depends on it) — both branches produce the same declared shape.
+   */
+  const queryFn: QueryFunction<CraftSandboxStatusResponse> =
+    open === null
+      ? () => new Promise<CraftSandboxStatusResponse>(() => {})
+      : ({ signal }) =>
+          guarded(queryClient, open.userId, () =>
+            fetchSandboxStatus(id, signal, craftScopePair(scope)),
+          );
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...craftKeys.sandboxStatus(id)]
+        : [...craftKeys.sandboxStatus(id), SCOPE_PENDING],
+    enabled: open !== null,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === "provisioning") return 2000;
+      if (status === "running") return 30_000;
+      return false;
+    },
+    queryFn,
+  });
+}
+
+/**
+ * The preview-pass exchange, bound to the scope (MT091 AC2): the single-use pass is an
+ * authorization issuance, so the mint submits under the scope in force — a scope that cannot
+ * see the session is a scope the pass is not issued to.
+ */
+export function scopedCraftPreviewTicketMutationOptions(
+  scope: ScopedCache,
+  id: string,
+) {
+  return {
+    mutationKey: [
+      ...craftKeys.webapp(id),
+      "preview-ticket",
+    ] as const,
+    mutationFn: () =>
+      issuePreviewTicket(id, craftScopePair(scope)),
+  };
+}
+
+/**
+ * Invalidate the craft tree at BOTH roots (MT091): the unscoped one the legacy assembly still
+ * writes and this scope's own prefix, so a write this scope just made cannot leave the other
+ * root holding the previous answer.
+ */
+export function invalidateCraftInScope(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
+  void queryClient.invalidateQueries({ queryKey: craftKeys.all });
+  if (scope !== undefined && scope.status === "open") {
+    void queryClient.invalidateQueries({
+      queryKey: [...scope.prefix, ...craftKeys.all],
+    });
+  }
+}

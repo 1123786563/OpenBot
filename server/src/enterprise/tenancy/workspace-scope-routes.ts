@@ -32,6 +32,14 @@ export interface WorkspaceScopeRouteDeps {
     authorizer: CompanyAdminAuthorizer;
     service: WorkspaceAdminService;
   };
+  /**
+   * The company admin surface (MT095/MT096/MT097, Issues #138-#140): people, identity,
+   * credentials, audit, enterprise config, learning and the company books, mounted at this
+   * same entrance so the MT075 company-plane classification covers every path it adds.
+   * Absent → that surface's routes are simply not mounted here (its own unavailable face
+   * answers 503 where the assembly wires one).
+   */
+  companyAdmin?: Hono;
 }
 
 const WORKSPACE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
@@ -137,6 +145,12 @@ export function createWorkspaceScopeRoutes(
     if (!deps.admin) throw new Error("WORKSPACE_ADMIN_UNAVAILABLE");
     return deps.admin;
   };
+
+  // MT095/MT096/MT097: the company admin surface rides the same entrance, so
+  // the closed company-plane classification stays the one authority for both.
+  if (deps.companyAdmin !== undefined) {
+    routes.route("/", deps.companyAdmin);
+  }
 
   routes.post("/admin/teams", async (context) => {
     try {

@@ -3,14 +3,15 @@ import {
   IconArrowsMinimize,
   IconExternalLink,
 } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { previewOriginLive } from "@/lib/craft/client";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
-  craftPreviewTicketMutationOptions,
-  craftWebappQueryOptions,
+  scopedCraftPreviewTicketMutationOptions,
+  scopedCraftWebappQueryOptions,
 } from "@/lib/craft/queries";
 import type { CraftWebappInfo } from "@/lib/craft/types";
 import { cn } from "@/lib/utils";
@@ -341,8 +342,13 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation("craft");
   const [expanded, setExpanded] = useState(false);
   const toggleRef = useRef<HTMLButtonElement | null>(null);
+  // The inspection and the pass it buys are the scope's own (MT091 / Issue #134, AC2): the
+  // webapp facts ride the selection pair, and the single-use pass is minted under the scope in
+  // force — an authorization issuance, so a scope that cannot see the session gets no pass.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
   const info = useQuery({
-    ...craftWebappQueryOptions(sessionId),
+    ...scopedCraftWebappQueryOptions(queryClient, scope, sessionId),
     refetchInterval: (query) => previewPollInterval(query.state.data),
   });
 
@@ -356,7 +362,7 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
    * the frame and throw away whatever the person was mid-way through testing.
    */
   const { mutateAsync: exchangePass } = useMutation(
-    craftPreviewTicketMutationOptions(sessionId),
+    scopedCraftPreviewTicketMutationOptions(scope, sessionId),
   );
   /*
    * THE CALL GOES THROUGH A REF, NOT A DEP (fix-ocr10 #1). v5's `mutateAsync`
@@ -375,6 +381,16 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
    * declared BEFORE the entering effect so the ref is fresh on the same
    * commit the decision next runs.
    */
+  /*
+   * The probe's selection pair, read through a ref for the same reason exchangePass is: the
+   * frame-load callback outlives renders, and a pair captured stale would probe under a scope
+   * that has moved (MT091).
+   */
+  const probeScopePairRef = useRef(
+    scope.status === "open" ? (scope.selection ?? {}) : undefined,
+  );
+  probeScopePairRef.current =
+    scope.status === "open" ? (scope.selection ?? {}) : undefined;
   const exchangePassRef = useRef(exchangePass);
   useEffect(() => {
     exchangePassRef.current = exchangePass;
@@ -634,7 +650,11 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
       probeAbortRef.current?.abort();
       const probe = new AbortController();
       probeAbortRef.current = probe;
-      void previewOriginLive(entered.forSession, probe.signal)
+      void previewOriginLive(
+        entered.forSession,
+        probe.signal,
+        probeScopePairRef.current,
+      )
         .then((response) => {
           // fix-ocr18 #7: the verdict rechecks disposal first — symmetric
           // with the pre-mint check above. Once the response has settled,

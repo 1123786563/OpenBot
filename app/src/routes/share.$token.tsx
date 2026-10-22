@@ -18,10 +18,20 @@ function SharePage() {
   const { t } = useTranslation("workshop");
   const token = Route.useParams().token;
 
+  /*
+   * MT092 (Issue #135): a share's availability is the SERVER's answer, never a copy the page
+   * holds. The token is the whole key and no identity rides the request, so this query is the
+   * one place the page must not outlive its authorization: nothing is kept (gcTime 0 — a
+   * remount re-asks, so a revoked or expired link reads as the uniform miss on the very next
+   * visit, no cached "still live" carry-over), nothing is served stale (staleTime 0), and a
+   * refusal never retries (the answer does not change by asking again).
+   */
   const share = useQuery({
     queryKey: ["workshop", "share", token],
     queryFn: () => workshopApi.publicShare(token),
     retry: false,
+    staleTime: 0,
+    gcTime: 0,
   });
 
   const report = workshopApi.useReportShare();

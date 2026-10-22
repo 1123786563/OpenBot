@@ -28,27 +28,28 @@ import {
   SkillsPane,
 } from "@/components/market/skills-pane";
 import { WbCardSkeleton, WbSecondaryButton } from "@/components/market/wb";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
   installExpertMutationOptions,
   installMarketSkillMutationOptions,
-  invalidateMarketplace,
+  invalidateMarketplaceInScope,
   uninstallExpertMutationOptions,
   uninstallMarketSkillMutationOptions,
 } from "@/lib/marketplace/mutations";
-import { marketplaceQueryOptions } from "@/lib/marketplace/queries";
+import { scopedMarketplaceQueryOptions } from "@/lib/marketplace/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+
 import {
   addCuratedServerMutationOptions,
   enableComposioAppMutationOptions,
   enableOpenConnectorAppMutationOptions,
-  invalidatePlugins,
 } from "@/lib/plugins/mutations";
 import {
   type ComposioApp,
   composioAppsQueryOptions,
   openConnectorAppsQueryOptions,
-  pluginsPageQueryOptions,
+  scopedPluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
 import { cn } from "@/lib/utils";
 import { queryClient } from "@/query-client";
@@ -91,9 +92,17 @@ function MarketPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const marketplace = useQuery(marketplaceQueryOptions());
-  const plugins = useQuery(pluginsPageQueryOptions());
-  const agents = useQuery(agentListQueryOptions());
+  // The catalog face is the scope's own answer (MT094 / Issue #137, AC1/AC2): the shelf, the
+  // installed skills and the agent roster all carry the selection pair and file under the
+  // scope's cache prefix — the cards' install marks describe this scope's workspace, no other.
+  const scopeCache = useScopedCache();
+  const marketplace = useQuery(
+    scopedMarketplaceQueryOptions(queryClient, scopeCache),
+  );
+  const plugins = useQuery(
+    scopedPluginsPageQueryOptions(queryClient, scopeCache),
+  );
+  const agents = useQuery(scopedAgentListQueryOptions(queryClient, scopeCache));
   const me = useQuery(currentUserQueryOptions());
   const isAdmin = me.data?.role === "admin";
   const connectorsTab = tab === "connectors";
@@ -127,25 +136,26 @@ function MarketPage() {
         left.delete(kind);
         return left;
       });
-      await invalidateMarketplace(queryClient);
-      invalidatePlugins(queryClient);
+      await invalidateMarketplaceInScope(queryClient, scopeCache);
     },
   });
 
+  // Every install and uninstall submits under the scope in force (MT094 AC1) and settles at
+  // both roots — the track() spread keeps its own refetch, which covers both surfaces too.
   const installExpert = useMutation({
-    ...installExpertMutationOptions(queryClient),
+    ...installExpertMutationOptions(queryClient, scopeCache),
     ...track("expert"),
   });
   const uninstallExpert = useMutation({
-    ...uninstallExpertMutationOptions(queryClient),
+    ...uninstallExpertMutationOptions(queryClient, scopeCache),
     ...track("expert"),
   });
   const installSkill = useMutation({
-    ...installMarketSkillMutationOptions(queryClient),
+    ...installMarketSkillMutationOptions(queryClient, scopeCache),
     ...track("skill"),
   });
   const uninstallSkill = useMutation({
-    ...uninstallMarketSkillMutationOptions(queryClient),
+    ...uninstallMarketSkillMutationOptions(queryClient, scopeCache),
     ...track("skill"),
   });
   const addCurated = useMutation({

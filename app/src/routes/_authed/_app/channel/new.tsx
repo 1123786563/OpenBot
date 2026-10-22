@@ -1,5 +1,5 @@
 import type { Message } from "@ag-ui/core";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -27,9 +27,10 @@ import {
 import { defaultAgentProfile } from "@/lib/agents/default-agent";
 import {
   type AgentProfile,
-  agentListQueryOptions,
-  agentQueryOptions,
+  scopedAgentDetailQueryOptions,
+  scopedAgentListQueryOptions,
 } from "@/lib/agents/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { useStartChannel } from "@/lib/channels/start";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 import { newId } from "../../../../lib/new-id";
@@ -54,8 +55,13 @@ function RouteComponent() {
   const { agent } = Route.useSearch();
   const navigate = Route.useNavigate();
   const { startChosen, startGroup, pending } = useStartChannel();
+  // The candidates offered are the server's answer under the scope in force (MT087 AC2): a Bot of
+  // another scope is never selectable because the scoped roster never names it, and the URL's own
+  // Bot is read through the same scoped seam.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
   const { data: profiles, isError: rosterError } = useQuery(
-    agentListQueryOptions(),
+    scopedAgentListQueryOptions(queryClient, scope),
   );
 
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +80,7 @@ function RouteComponent() {
     error: detailFailure,
     isPending: detailPending,
   } = useQuery({
-    ...agentQueryOptions(agent ?? ""),
+    ...scopedAgentDetailQueryOptions(queryClient, scope, agent ?? ""),
     enabled: Boolean(agent) && profiles !== undefined && !listed,
     retry: false,
   });

@@ -439,6 +439,45 @@ export type CreditConsumptionEntry = {
   /** The Bot the call was admitted for (06.12's attribution), null when not protocol-born. */
   botId: string | null;
   botName: string | null;
+  /**
+   * The capability line this entry settled as, when its settlement wrote one: the image
+   * line (12.2), the speech line (13.2) or the async job line (17.6) — the entry shows
+   * WHAT was consumed, distinguishable across capabilities. Other entries carry null.
+   */
+  lineDetail:
+    | {
+        capability: string;
+        image: {
+          size: string | null;
+          quality: string | null;
+          requestedCount: number;
+          generatedCount: number;
+        };
+      }
+    | {
+        capability: string;
+        speech: {
+          inputCharacters: number;
+          voiceTier: string | null;
+          cappedSeconds: number;
+          actualSeconds: string;
+        };
+      }
+    | {
+        capability: string;
+        asyncJob: {
+          jobId: string;
+          providerJobId: string | null;
+          entryCount: number;
+          terminalState: "completed" | "failed" | "cancelled";
+        };
+      }
+    | null;
+  /**
+   * The model/surcharge fee split of this entry (20.3), in credits — absent when the
+   * settlement wrote no split, never a zero surcharge line the UI would read as free.
+   */
+  feeBreakdown?: { modelCredits: number; surchargeCredits: number };
   /** ISO-8601 of when it happened. */
   timestamp: string;
 };

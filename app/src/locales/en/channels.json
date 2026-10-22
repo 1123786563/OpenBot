@@ -71,7 +71,8 @@
     "channelFallback": "Channel",
     "coworkerAria": "Channel coworker",
     "loadError": "Could not load this channel.",
-    "workshop": "Workshop"
+    "workshop": "Workshop",
+    "unavailable": "This conversation is not available under the scope you hold."
   },
   "channelNew": {
     "rosterError": "Coworkers couldn't be loaded.",
@@ -168,11 +169,6 @@
     "emailAria": "Their email",
     "emailPlaceholder": "Their email",
     "add": "Add",
-    "people": "People:",
-    "leaveAria": "Leave this group",
-    "removePersonAria": "Remove {{email}}",
-    "leave": "leave",
-    "open": "Open {{name}}",
     "people": {
       "title": "People in this group",
       "description": "Everyone here sees the whole conversation, and every Bot in it answers them.",
@@ -182,7 +178,11 @@
       "addPlaceholder": "Add someone by email",
       "count_one": "{{count}} person",
       "count_other": "{{count}} people"
-    }
+    },
+    "leaveAria": "Leave this group",
+    "removePersonAria": "Remove {{email}}",
+    "leave": "leave",
+    "open": "Open {{name}}"
   },
   "groupDetail": {
     "groupFallback": "Group"
