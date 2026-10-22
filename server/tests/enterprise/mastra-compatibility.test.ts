@@ -21,6 +21,36 @@ test("locked Mastra packages suspend and resume a native workflow", async () => 
   expect(report.workflowSuspendResume.resumedOutput).toBe("approved-value");
 });
 
+test("ME01: locked Mastra runs a tool loop once through the controlled model", async () => {
+  const report = await probeMastraCompatibility();
+
+  expect(report.agentToolLoop.toolCallOnce).toBe(true);
+  expect(report.agentToolLoop.finalAnswerFromResult).toBe(true);
+  expect(report.agentToolLoop.controlledModelSteps).toBe(2);
+  expect(report.agentToolLoop.providerRequests).toBe(2);
+});
+
+test("ME01: fullStream shapes and suspend/resume API surface are pinned", async () => {
+  const report = await probeMastraCompatibility();
+
+  expect(report.agentExecution.fullStreamChunkTypes).toEqual(
+    expect.arrayContaining([
+      "text-delta",
+      "tool-call",
+      "tool-result",
+      "step-finish",
+      "finish",
+    ]),
+  );
+  expect(report.agentExecution.languageModelVersion).toBe("v3");
+  expect(report.agentExecution.suspendResumeApiSurface).toEqual({
+    listSuspendedRuns: true,
+    resumeStream: true,
+    approveToolCall: true,
+  });
+  expect(report.packageVersions["@mastra/core"]).toBe("1.64.0");
+});
+
 test("Hono adapter and self-hosted storage constructors are available", async () => {
   const report = await probeMastraCompatibility();
 

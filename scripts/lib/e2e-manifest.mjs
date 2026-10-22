@@ -73,6 +73,12 @@ export function readManifest() {
     files: new Set(parsed.files ?? []),
     artifacts: new Set(parsed.artifacts ?? []),
     causes: { ...(parsed.causes ?? {}) },
+    // Passthrough: writers feed this object straight into writeManifest(),
+    // whose `audit` key is optional (JSON.stringify drops undefined). Without
+    // it, any reader-then-writer round trip silently stripped the audit
+    // pointer another writer recorded — the exact cross-writer field loss
+    // this convergence exists to prevent.
+    audit: parsed.audit,
     raw: parsed,
   };
 }
@@ -108,11 +114,28 @@ export function groupsOf(files) {
   return groups;
 }
 
-export function writeManifest({ files, artifacts, causes }, generatedBy) {
+/*
+ * THE one writer. Every generator records the same payload shape here: the
+ * grouping (`groups`), the driven files, the non-executable artifacts, the
+ * per-file `causes` evidence, and the `directoryIslands` the driver
+ * (`tests/bun-suites.test.ts`) reads to hand the multitenancy groups their
+ * dedicated `MT_TEST_DATABASE_URL`. Before this convergence the manifest had
+ * two mutually exclusive output shapes — any writer could silently strip
+ * `directoryIslands` (51 multitenancy suites aborting on the shared URL) or
+ * wipe another writer's `causes`. `audit` is a passthrough for generators
+ * that derive the file list from an audit snapshot; writers that don't have
+ * one simply omit it (JSON.stringify drops `undefined`).
+ */
+export function writeManifest(
+  { files, artifacts, causes, audit },
+  generatedBy,
+) {
   const list = [...files].sort();
   const payload = {
     generatedBy,
+    audit,
     groups: groupsOf(list),
+    directoryIslands: DIRECTORY_ISLANDS,
     files: list,
     artifacts: [...artifacts].sort(),
     causes,

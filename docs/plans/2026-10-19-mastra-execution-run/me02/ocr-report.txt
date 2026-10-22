@@ -1,0 +1,407 @@
+Review complete: 19 finding(s) across 13 selected item(s).
+
+─── scripts/e2e-bun-manifest.mjs:67-70 ───
+[bug · high] 此处自行实现的分组只保留了 DIRECTORY_ISLANDS(目录岛),丢失了 scripts/lib/e2e-manifest.mjs 中 `groupsOf()`
+同样应用的文件名前缀级 ISLANDS("ai-observability-"、"billing-credits-writer"、"gateway-probe")。lib 注释明确记载这些套件是
+"measured, not guessed":它们单跑绿、混入 24 文件字母分片会因邻居泄漏进程级状态而误红,独立分组正是防该假失败的措施。再生后的清单把
+billing-credits-writer.integration.test.ts 并入 server/tests part 2、gateway-probe 两文件并入 part
+5、ai-observability 10 文件并入 app/tests part 1,等于重新引入已实测的误红配置;且 tests/bun-suites.test.ts
+只消费清单、不校验该不变量,回归会静默生效。建议直接复用 `groupsOf()` 而非重写分组(顺带消除 groupSize=24 与 GROUP_SIZE 的重复定义)。
+
+- const island = DIRECTORY_ISLANDS.find((dir) =>
+-     entry.file.startsWith(`${dir}/`),
+-   );
+-   const directory = island ?? entry.file.split("/").slice(0, 2).join("/");
++ // 复用 lib 的分组:groupsOf() 同时应用 ISLANDS 与 DIRECTORY_ISLANDS,
++ // 并与 writeManifest 保持相同的排序和 "part N" 命名,避免两套算法漂移。
++ import { DIRECTORY_ISLANDS, MANIFEST, groupsOf } from "./lib/e2e-manifest.mjs";
++ // ...
++ const groups = groupsOf(driven.map((d) => d.file));
+
+
+─── scripts/e2e-bun-manifest.mjs:86-87 ───
+[maintainability · medium] 新脚本与旧生成器 scripts/e2e-batch-drive-bun-test.mjs(经 lib 的 writeManifest)写同一个
+docs/verification/e2e-bun-suites.json,但输出形状互斥:新脚本写 audit/directoryIslands、不写 causes;旧脚本写 causes、不写
+directoryIslands/audit,分组算法也不同。而 scripts/test-ci.ts:59 仍把旧脚本作为分区修复命令、tests/bun-suites.test.ts:103
+把本脚本作为修复命令——按任一指引修复都会把清单覆盖回另一种形状;一旦旧脚本覆盖,directoryIslands 消失后 bun-suites.test.ts 的 `?? []` 兜底会让
+MT_TEST_DATABASE_URL 注入静默失效(正是上文注释警告的后果)。建议复用 lib 已导出的 MANIFEST 常量,并让两个生成器共用同一 payload 组装(分组经
+groupsOf 派生),消除双写漂移。
+
++ import { MANIFEST } from "./lib/e2e-manifest.mjs";
++ // ...
+  writeFileSync(
+-   resolve(root, "docs/verification/e2e-bun-suites.json"),
++   MANIFEST,
+
+
+─── server/tests/support/me01-child.ts:67-75 ───
+[bug · medium] main() 的异常路径（listSuspendedRuns / resumeStream / 流读取 / finishReason / text 任一抛错）只会走到这个
+catch，设置 exitCode = 1 后返回，但已打开的 PostgresStore 连接池不会被关闭。持有 TCP 句柄的池会保持子进程事件循环存活，进程可能不退出；而父测试
+runResumeChild（mastra-agent-resume-process.test.ts）只依赖 child 'exit' 事件 resolve，且没有设置超时或 kill
+兜底，最终表现为整个测试用例挂起直至 runner 超时。建议在 main() 内部用 try/finally 包住 store 生命周期，保证任意路径都能 close（同时可移除现有两处重复的
+`await store.close()`）。
+
+- main().catch((error) => {
+-   console.log(
+-     `${ME01_CHILD_RESULT_PREFIX}${JSON.stringify({
+-       ok: false,
+-       error: String(error),
+-     })}`,
+-   );
+-   process.exitCode = 1;
++ // 在 main() 内部：
++ const { agent, store, controlled } = await buildMe01Stack({
++   dbUrl,
++   providerUrl,
++   requireApproval: true,
+  });
++ try {
++   // ...原有主体（含 SUSPENDED_RUN_NOT_FOUND 的 return 路径）...
++ } finally {
++   await store.close();
++ }
++ // 并删除主体中现有的两处 `await store.close()`，确保异常路径同样释放连接池
+
+
+─── server/tests/support/me01-fixture.ts:73-77 ───
+[maintainability · low] CREATE DATABASE 成功后，若后续 CREATE ROLE 或两条 GRANT 任一步失败（例如容器瞬时不可达、权限异常），已创建的
+database/role 不会被清理：函数抛错时调用方拿不到返回值，drop() 无从触发，finally 中的清理也被跳过。在共享的 openbot-test-pg
+测试容器中会跨多次运行累积残留对象（数据库 + 登录角色）。建议对建库后的步骤加 try/catch，失败时先执行与 drop() 相同的清理再 rethrow。
+
++   try {
+-   await psql("postgres", `CREATE DATABASE "${dbName}"`);
++     await psql("postgres", `CREATE DATABASE "${dbName}"`);
+-   await psql(
++     await psql(
+-     "postgres",
++       "postgres",
+-     `CREATE ROLE "${roleName}" LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`,
++       `CREATE ROLE "${roleName}" LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`,
++     );
++     await psql("postgres", `GRANT CONNECT ON DATABASE "${dbName}" TO "${roleName}"`);
++     await psql(dbName, `GRANT USAGE, CREATE ON SCHEMA public TO "${roleName}"`);
++   } catch (error) {
++     await psql("postgres", `DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`).catch(
++       () => undefined,
++     );
++     await psql("postgres", `DROP ROLE IF EXISTS "${roleName}"`).catch(
++       () => undefined,
+-   );
++     );
++     throw error;
++   }
+
+
+─── server/src/mastra/governed-agent.ts:50-58 ───
+[security · medium] EXECUTION_BINDING_MISMATCH 校验只覆盖了 6 个事实字段中的 4 个:GovernedExecutionFacts 还发布 scope
+与 executionKey,但二者与 binding 不一致时不会被拒绝。executionKey 是实际传给 Mastra `agent.stream({ runId })`
+的引擎运行标识(execution.ts:200),若独立构造的 binding 携带不同 executionKey,引擎将以错误的执行身份运行且此处无任何拦截;scope
+同理。生产路径(copilot factory 从 facts 逐字段拷贝)无法触发,但该校验的存在意义正是拦截独立构造的 binding(测试装配与 ME04/ME05 后续路径),且
+carrier 侧同类校验(resolveInvocation 的 MODEL_INVOCATION_BINDING_MISMATCH)是全字段比对。建议补齐 executionKey 与 scope
+的比对(scope 按身份字段比,避免对象引用比较的脆性)。
+
+    if (
+      facts &&
+      (facts.runId !== request.binding.runId ||
+        facts.attemptId !== request.binding.attemptId ||
+        facts.generation !== request.binding.generation ||
+-       facts.botId !== request.binding.botId)
++       facts.botId !== request.binding.botId ||
++       facts.executionKey !== request.binding.executionKey ||
++       facts.scope.tenantId !== request.binding.scope.tenantId ||
++       facts.scope.workspaceId !== request.binding.scope.workspaceId ||
++       facts.scope.principalId !== request.binding.scope.principalId)
+    ) {
+      throw new MastraGovernedExecutionRefusal("EXECUTION_BINDING_MISMATCH");
+    }
+
+
+─── server/src/mastra/governed-agent.ts:39-40 ───
+[test · medium] governedRequest 的四个 fail-closed 分支(EXECUTION_GOVERNED_MODEL_REQUIRED /
+EXECUTION_BINDING_UNBOUND / EXECUTION_BINDING_MISMATCH / EXECUTION_RESUME_UNSUPPORTED)在整个
+server/tests 下没有任何断言:governed-agent 模块与 executeGovernedMastra 均无测试导入,四个标记字符串零匹配;现有
+mastra-governed-execution.test.ts 走的是不带 executionBinding 的测试装配,恰好绕过全部 binding 校验(方法缺失即放行的分支)。这些
+refusal 是本切片的核心治理不变量,建议新增直测 governedRequest/executeGovernedMastra 的用例,覆盖三类 refusal、governedModel
+缺失,以及携带 executionBinding 的协作体与 binding 逐字段一致/不一致两个方向。
+
+
+
+─── server/src/mastra/governed-agent.ts:86-90 ───
+[maintainability · low] createGovernedMastraExecution 在仓库内目前零引用(copilot.ts 实际通过
+createMastraAgUiAgent 直传 executeGovernedMastra 与 instructions/tools),属于无消费者的预留封装;且它以 options 静默覆盖
+request 自带的 instructions/tools/governedModel,未来调用方误传这些字段时不会有任何告警。若确为后续 ticket 预留,建议在注释中注明落地 ticket
+编号,否则删除以避免死代码。
+
+
+
+─── server/src/copilot.ts:2182-2186 ───
+[test · medium] MASTRA_TEXT_ONLY_SLICE 拒绝路径在 server/tests 下零匹配,copilot factory 的
+EXECUTION_BINDING_UNBOUND 同步抛错同样未测——带 tools/学习技能的 Bot 被选中 mastra 引擎后只能以运行期失败收场,这一 fail-closed
+行为目前完全无覆盖。另外该拒绝发生在迭代期而非装配期:选择器入参只有 {botId, governed},无法感知 Bot 是否持有 tools/learned skills,误配后该 Bot
+的每次运行都失败,而装配点(builtInAgentConfiguration 返回处)不产生任何信号。建议为该场景补测试(带 granted tool 的 Bot + mastra 选择器 →
+迭代抛 MASTRA_TEXT_ONLY_SLICE),并考虑在配置期即识别并暴露该冲突(如记日志或让选择器拿到 tools 信息)。
+
+
+
+─── server/src/enterprise/runs/governed-execution.ts:182-184 ───
+[maintainability · low] executionKey 在准入时一次性铸造,而返回的 bind(next) 是可重绑的(binding =
+next):一旦未来某调用方在代次提升后复用同一 carrier 重绑,executionBinding() 会把新的 attemptId/generation 配上旧的 executionKey,而
+execution.ts 把 executionKey 直接用作 Mastra 的 runId(契约注释称其 "maps the engine run back to the business
+run")。当前生产 runner 每个 carrier 仅 bind 一次(runner.ts:486)、Mastra 侧无 storage 消费,暂无实际影响;但建议把铸造移入 bind()
+使引擎 run id 恒与所绑定身份同生,或在注释中明确 single-bind 假设,避免 ME03+ 接入持久化/审计后出现同一 engine run id 跨代次复用的歧义。
+
+-   // ME02: the engine execution identity, minted once per admission by the
+-   // server — the client never names it.
+-   const executionKey = randomUUID();
++   // ME02: the engine execution identity — the client never names it. Minted
++   // at bind (not admission) so the engine run id stays 1:1 with the bound
++   // {attemptId, generation} even if a carrier is ever rebound.
++   let executionKey = randomUUID();
++   // ...
++     bind(next) {
++       binding = next;
++       executionKey = randomUUID();
++     },
+
+
+─── server/src/mastra/stream-events.ts:299-302 ───
+[bug · high] finish reason 白名单遗漏了治理网关可达的词汇:ai-sdk-v3-gateway-adapter.ts 的 UNIFIED_FINISH_REASONS 会把
+provider 的 finish_reason 统一为 stop/length/tool-calls/content-filter,而本执行路径显式设置
+maxOutputTokens(取自治理上限),预算截断的步骤会以 reason "length" 收尾——此时这里抛 UnknownMastraChunkError,把治理预算下的正常截断变成整个
+run 被拒绝。"content-filter"(provider 策略拦截)与 "tool-calls"(ME04 接入工具后的中间步)同样在网关可达词汇内。测试侧 sseText 固定
+finish_reason "stop",驱动套件与 ME01 探针都未覆盖这些值。建议:为 length/content-filter/tool-calls 定义明确语义(length
+至少应作为正常终止由 runner 结算,content-filter 可归入错误,tool-calls 参照 suspended 作为无成功终态的非终态),或在注释与测试中证明锁定版本不会产生这些
+reason。
+
++       case "length":
++         // 预算截断是治理路径的正常收尾:照常终止,业务结果由 runner 结算。
++         this.outcome = "finished";
++         this.terminalEmitted = true;
++         this.ensureRunStarted();
++         this.events.push({
++           type: "RUN_FINISHED",
++           threadId: this.identity.threadId,
++           runId: this.identity.runId,
++         } as unknown as BaseEvent);
++         break;
++       case "tool-calls":
++         // 工具循环中间态:无成功终态,参照 suspended 处理。
++         if (this.outcome === null) this.outcome = "suspended";
++         break;
+        default:
+          throw new UnknownMastraChunkError(
+            `MASTRA_STREAM_UNKNOWN_CHUNK: finish reason ${String(reason)}`,
+          );
+
+
+─── server/src/mastra/stream-events.ts:139-142 ───
+[bug · low] 帧状态校验不对称:text-delta 强制先见 text-start,但 text-end 对未在 openTextIds 中的 id 仍会发出
+TEXT_MESSAGE_END(无对应 START),重复 text-end 也会重复发 END。损坏的引擎帧会产出违反 AG-UI 事件序的序列,与模块自身"损坏帧 REJECT
+而非容忍"的契约不一致。建议与 text-delta 对称:未开门的 id 直接抛 UnknownMastraChunkError。
+
+        case "text-end": {
+          const id = this.textId(payload);
+-         this.openTextIds.delete(id);
++         if (!this.openTextIds.delete(id)) {
++           throw new UnknownMastraChunkError(
++             "MASTRA_STREAM_UNKNOWN_CHUNK: text-end without open text-start",
++           );
++         }
+          this.ensureRunStarted();
+
+
+─── server/src/mastra/stream-events.ts:168-172 ───
+[bug · low] tool-call-delta 同样未校验 announcedToolCalls:未先见 tool-call-input-streaming-start 的 delta
+会发出无 TOOL_CALL_START 的 TOOL_CALL_ARGS(tool-call-input-streaming-end / tool-result 亦然)。与 text-delta
+的严格校验不对称,建议补齐同样的前置校验。
+
+          if (typeof payload.argsTextDelta !== "string") {
+            throw new UnknownMastraChunkError(
+              "MASTRA_STREAM_UNKNOWN_CHUNK: tool delta without argsTextDelta",
++           );
++         }
++         if (!this.announcedToolCalls.has(toolCallId)) {
++           throw new UnknownMastraChunkError(
++             "MASTRA_STREAM_UNKNOWN_CHUNK: tool-call-delta before streaming start",
+            );
+          }
+
+
+─── server/src/mastra/stream-events.ts:72-75 ───
+[performance · low] events 数组只增不减:push() 每次返回切片但从不清理,result getter 还会再复制一份。流式路径(execution.ts 的
+runAndNormalize)从不读取 result,却让整条 run 的全部事件(长流可能是数千个 delta 事件)一直滞留在内存直到 run
+结束,纯属浪费。建议流式模式下返回切片后即清空前缀(仅保留 outcome 等状态),或为 normalizeMastraChunks 的测试路径单独保留累积语义。
+
+- export class MastraStreamNormalizer {
++   /** 仅批量归一(normalizeMastraChunks)累积;流式路径在构造时传 streaming: true 以便 push 返回后清空。 */
+    private readonly events: BaseEvent[] = [];
+-   private outcome: MastraStreamOutcome | null = null;
+-   private terminalEmitted = false;
++   private readonly streaming: boolean;
++ 
++   constructor(
++     private readonly identity: MastraStreamIdentity,
++     options?: { streaming?: boolean },
++   ) {
++     this.streaming = options?.streaming ?? false;
++   }
++ 
++   // push() 末尾:
++   // const emitted = this.events.slice(before);
++   // if (this.streaming) this.events.splice(0, this.events.length);
++   // return emitted;
+
+
+─── server/src/mastra/stream-events.ts:310-313 ───
+[bug · low] onError 中 JSON.stringify(cause) 遇到含循环引用的 error payload 会二次抛错,使 RUN_ERROR
+事件本身无法生成——错误流反而变成裸异常,错误文本丢失(与 markUntrusted 包裹想保证的可诊断性相悖)。建议 try/catch 兜底为可读的固定描述。
+
+-     const text =
+-       typeof (cause as { message?: unknown }).message === "string"
+-         ? (cause as { message: string }).message
+-         : JSON.stringify(cause);
++     let text: string;
++     if (typeof (cause as { message?: unknown }).message === "string") {
++       text = (cause as { message: string }).message;
++     } else {
++       try {
++         text = JSON.stringify(cause);
++       } catch {
++         text = "model stream error (unserializable payload)";
++       }
++     }
+
+
+─── server/src/mastra/execution.ts:150-155 ───
+[maintainability · low] mastraLoopModel 手工白盒只转发 doStream 与四个 getter,而注入的
+GovernedModelRequest.model(治理网关适配器)同时实现了 doGenerate(ai-sdk-v3-gateway-adapter.ts:367)。Agent
+内部任何非流式调用会命中 "doGenerate is not a function" 才在运行时暴露;且同一 PR 的 ME01 探针(compatibility.ts)用的是全转发
+Proxy,两条路径对同一模型的封装面不一致。建议改用与探针一致的 Proxy 全转发(在 doStream 上叠加剥离),或对其余方法显式抛出带语义的错误。
+
+-   const dial = (options: unknown) => {
+-     const model = inner as {
+-       doStream: (options: unknown) => unknown;
+-     };
+-     return model.doStream(stripMastraRequestBookkeeping(options));
+-   };
++   const source = inner as Record<string | symbol, unknown>;
++   return new Proxy(source, {
++     get(target, property, receiver) {
++       if (property === "doStream") {
++         return (options: unknown) =>
++           (target.doStream as (options: unknown) => unknown)(
++             stripMastraRequestBookkeeping(options),
++           );
++       }
++       return Reflect.get(target, property, receiver);
++     },
++   });
+
+
+─── server/src/copilot.ts:2178-2178 ───
+[bug · low] text-only 守卫的 fail-closed 枚举遗漏了 computerGuidance:计算机部署上每个 Bot 都携带 computerGuidance,且在
+legacy 治理路径上浏览器/前端工具是经 input.tools 进入模型循环的(withTools 装配链可证),而被选中 mastra
+引擎后这些工具不会进入执行(ExecutionRequest.tools 恒为 []),guidance 又在工厂中被 `void computerGuidance` 静默丢弃。结果是一个使用浏览器的
+Bot 被选中后既不拒绝、也无任何告警,能力被静默降级——这与 tools/learnedSkills 的 fail-closed 哲学不一致,且选择器入参 {botId, governed}
+让装配方无从排除此类 Bot。建议在守卫中同时拒绝 computerGuidance 存在的 Bot(直到 ME06 接线浏览器工具),或在选择器契约中暴露该事实。
+
+-   if (tools.length > 0 || (learnedSkills?.tools.length ?? 0) > 0) {
++   if (
++     tools.length > 0 ||
++     (learnedSkills?.tools.length ?? 0) > 0 ||
++     computerGuidance !== undefined
++   ) {
+
+
+─── server/src/mastra/stream-events.ts:29-42 ───
+[bug · medium] 冻结的 chunk 词汇表遗漏了同一锁定版本引擎在本路径上定义并可达的 chunk 类型:1.64.0 的 `AgentChunkType`
+联合(dist/stream/types.d.ts)还包含
+`tool-error`(ToolErrorPayload)、`reasoning-start/delta/end/signature`、`redacted-reasoning`、`raw`、`res
+ponse-metadata` 等,均不在 KNOWN_CHUNK_TYPES 或 allow-list 中。其中 `tool-error` 是 ME04
+接入工具后第一条可达路径:`grantedTools.execute` 会重新抛出 `HeadlessToolSuspension`(plugins/tools.ts:252),AI SDK v5
+对工具入参校验失败/执行抛错也会以 tool-error part 呈现——届时这里会抛 `MASTRA_STREAM_UNKNOWN_CHUNK:
+tool-error`,把真实的工具错误载荷(toolCallId/toolName/error.message)整个丢弃,run 以无法归类的 unknown-chunk
+异常收场,而不是模块契约承诺的、可诊断的 RUN_ERROR(治理失败分类器也拿不到标记)。若治理路由未来接入推理型模型,`reasoning-*` 同理。建议至少为 `tool-error`
+增加显式分支(转 RUN_ERROR,错误文本经 markUntrusted 包裹),并对其余引擎定义的 chunk 类型逐个做出"处理或显式拒绝"的决策而非默认 UNKNOWN。
+
+- const KNOWN_CHUNK_TYPES: readonly string[] = [
+-   "start",
+-   "text-start",
+-   "text-delta",
+-   "text-end",
+-   "tool-call-input-streaming-start",
+-   "tool-call-delta",
+-   "tool-call-input-streaming-end",
+-   "tool-call",
+-   "tool-result",
+-   "finish",
+-   "error",
+-   ...MASTRA_STREAM_CHUNK_ALLOW_LIST,
+- ];
++ // KNOWN_CHUNK_TYPES 中加入 "tool-error",并在 push 的 switch 增加:
++       case "tool-error": {
++         const toolCallId = this.toolCallId(payload);
++         this.ensureRunStarted();
++         this.outcome = "errored";
++         const cause = object(payload.error) ? payload.error : {};
++         const text =
++           typeof (cause as { message?: unknown }).message === "string"
++             ? (cause as { message: string }).message
++             : JSON.stringify(payload.error);
++         this.emitRunError(
++           markUntrusted(text, `tool ${toolCallId} execution error`),
++         );
++         break;
++       }
+
+
+─── server/src/mastra/ag-ui-agent.ts:89-93 ───
+[maintainability · low] `NO_GOVERNED_MODEL` 用 `as unknown as` 伪造了冻结合同中必填的
+`ExecutionRequest.governedModel`(model: undefined、maxOutputTokens: 0、markConsumed 为
+no-op),削弱了"server-owned execution inputs completed onto every ExecutionRequest"的合同:当前生产接线(copilot.ts
+的 mastraAgentConfiguration)总是传入 completion,且经 executeGovernedMastra 时守卫会以
+EXECUTION_GOVERNED_MODEL_REQUIRED 干净拒绝;但该哨兵一旦绕过治理守卫直接喂给同样导出的 runMastraExecution,会在 `model.doStream`
+处以晦涩的 TypeError(reading 'doStream' of undefined)崩溃,而 no-op 的 markConsumed 还会静默吞掉用量记账。建议改为
+fail-fast:将 `MastraExecutionCompletion.governedModel` 设为必填,或在 run() 里对缺失 completion
+直接抛出明确错误,而不是用类型断言填充哨兵。
+
+- const NO_GOVERNED_MODEL = {
+-   model: undefined,
+-   maxOutputTokens: 0,
+-   markConsumed: () => {},
+- } as unknown as GovernedModelRequest;
++ export interface MastraExecutionCompletion {
++   readonly instructions?: readonly string[];
++   readonly tools?: readonly GrantedTool[];
++   readonly governedModel: GovernedModelRequest;
++ }
++ 
++ // run() 内:
++       const { execute, binding, completion } = this.options;
++       if (!completion?.governedModel) {
++         throw new Error("MASTRA_AGENT_GOVERNED_MODEL_REQUIRED");
++       }
+
+
+─── server/src/mastra/execution.ts:224-226 ───
+[bug · low] 生成器提前终止(unsubscribe 触发 return(),或 normalizer.push 抛 UnknownMastraChunkError 走 finally)时只
+`releaseLock()` 而没有 `reader.cancel()`:引擎 fullStream 未被取消,模型循环会继续拨号产出无人消费的流(在治理路径上继续消耗 run 预算)直到
+abort 信号另行抵达;若消费方未 abort(该函数是导出的通用 ExecuteMastra 实现,不保证只被自带 abort 的适配器使用),流会完整跑完。与注释"starts the
+engine only when subscribed and stops with it"的承诺不符。建议在 finally 中先 cancel 再释放锁(已结束/已出错的流上 cancel 为
+no-op 或拒绝,需兜底)。
+
+    } finally {
++     await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+
+
+LLM retry report summary: 2 of 178 requests affected -- 2 requests recovered after retry
+
+Core review (1 request):
+- server/src/mastra/ag-ui-agent.ts,server/src/mastra/compatibility.ts,server/src/mastra/execution-contracts.ts,server/src/mastra/execution.ts,server/src/mastra/instructions.ts,server/src/mastra/stream-events.ts: network error -> succeeded
+
+Comment filtering (1 request):
+- server/src/copilot.ts,server/src/enterprise/runs/governed-execution.ts,server/src/mastra/governed-agent.ts: network error -> succeeded
+
+Per-attempt detail: --format json (retry_report).

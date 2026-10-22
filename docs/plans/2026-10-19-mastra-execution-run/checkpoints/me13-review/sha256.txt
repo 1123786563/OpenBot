@@ -1,0 +1,10 @@
+# SHA256 — ME13 (#485) checkpoint me13-review
+# HEAD bf64d0f2 uncommitted tree; controller wave 216/0/1033 (18 files)
+eab686d993009ac92cee5ea6d339378c06fc132addd5dade76689ee58eb53d69  server/src/mastra/legacy-import.ts
+1f148e039decad6a837e6607dfeb86b06aaedb8028f1dd93b207ab85a4bca7f7  server/src/mastra/cutover.ts
+d3e91a021521d49489da44c16f455d96174a3efa499f912cc5ca0a306c44722f  server/scripts/mastra-agent-cutover.ts
+4559e443534e4dc18836c387618b4aea4357f8c77406851f3552734f0f06030a  server/tests/mastra-legacy-import.test.ts
+d1c1266ec2df8aa95b95b6c55ac42fd8678fb2209d80808cdc086f4157d893c9  server/tests/enterprise/mastra-import.integration.test.ts
+8b3af9546b67972e019d38d68d51b64002be0c2a51e9a45cb7be2bdbc9e9b55f  docs/plans/2026-10-19-mastra-execution-run/me13/report.md
+9cf9c8b1ae6dd270ddfa440ff1e94897f56e0dfe0449fb06028dd7c8d568a787  docs/verification/e2e-bun-suites.json
+8d6c6de7c64c0ba30c02c491f50f38839e9abe257b2cc30f53056325fc57281e  server/tests/mastra-legacy-import.test.ts

@@ -23,6 +23,7 @@ import {
   headlessTurnRefusal,
   installEnterpriseControls,
 } from "./admin/controls";
+import { createEnterpriseStore } from "./admin/settings-store";
 import {
   CoworkerUnavailableError,
   createActorAgentResolver,
@@ -138,13 +139,6 @@ import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
 import { CREDIT_SCALE, createCredits } from "./billing/credits";
 import { createCreditWriter } from "./billing/credits-writer";
-import { createPlanRenewalGrantor } from "./billing/plan-renewals";
-import {
-  CreditInsufficientError,
-  currentPayerBinding,
-  ensureDeploymentPayerBinding,
-  resolveConsumptionPayerBinding,
-} from "./billing/payer-binding";
 import {
   countChatInputTokens,
   fitChatInputRequest,
@@ -156,11 +150,18 @@ import {
   startUsageDeliverySweeps,
 } from "./billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
+import {
+  CreditInsufficientError,
+  currentPayerBinding,
+  ensureDeploymentPayerBinding,
+  resolveConsumptionPayerBinding,
+} from "./billing/payer-binding";
 import { createAlipayProvider } from "./billing/payments/alipay";
 import { startPaymentSweeps } from "./billing/payments/maintenance";
 import { createPaymentService } from "./billing/payments/service";
 import { createPaymentStore } from "./billing/payments/store";
 import { createWechatProvider } from "./billing/payments/wechat";
+import { createPlanRenewalGrantor } from "./billing/plan-renewals";
 import { createReconciler } from "./billing/reconcile";
 import { createRecoveryScanner } from "./billing/recovery-scan";
 import {
@@ -184,6 +185,7 @@ import {
   UsageOutboxConflictError,
 } from "./billing/usage-outbox";
 import { createWebhookVerifier } from "./billing/webhook-signature";
+import { createBotServiceRegistry } from "./bot-services/registry";
 import {
   loadAttachmentForTurn,
   markAttachmentsSent,
@@ -233,10 +235,12 @@ import { createSnapshotStore } from "./computer/snapshot-store";
 import { createStreamAuthorizer } from "./computer/stream-auth";
 import { loadConfig, trustedBrowserOrigins } from "./config";
 import {
+  billingMethodForModel,
   CreditGateFailureError,
   CreditPolicyUnconfiguredError,
   type IdentifyActor,
   type IdentifyUser,
+  type ModelBillingAuditEvent,
   ModelNotPricedError,
   ModelUsageSettlementError,
   mountCopilotRuntime,
@@ -244,12 +248,11 @@ import {
   runtimeModelForEnvironment,
   setBuiltinModelSpanObserver,
   setBuiltinToolStepObserver,
+  setMastraContinuations,
+  setModelBillingAudit,
   setModelUsageGate,
   setWorkbenchGatewayModel,
   type ToolSelection,
-  setModelBillingAudit,
-  type ModelBillingAuditEvent,
-  billingMethodForModel,
 } from "./copilot";
 import { builtinSkillFilesFor } from "./craft/builtin-skills";
 import { loadCraftConfig } from "./craft/config";
@@ -258,12 +261,12 @@ import {
   personalUnconnectedApps,
 } from "./craft/managed-content";
 import { resolveCraftMcpServers } from "./craft/mcp-servers";
-import { createPreviewOrigin, samePreviewOrigin } from "./craft/preview-origin";
-import { createPreviewTickets } from "./craft/preview-ticket";
 import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
 } from "./craft/opencode-config";
+import { createPreviewOrigin, samePreviewOrigin } from "./craft/preview-origin";
+import { createPreviewTickets } from "./craft/preview-ticket";
 import {
   type CraftRoutesFactory,
   createCraftRoutes,
@@ -274,8 +277,8 @@ import {
   createPreviewProxy,
   type PreviewWebappHmrDeps,
   resolvePreviewWebappHmrUpgrade,
-  type WebappHmrSocketData,
   resolveWebappHmrUpgrade,
+  type WebappHmrSocketData,
   webappHmrIsAppPath,
   webappHmrSessionIdFromPath,
   webappHmrSocketHandlers,
@@ -288,19 +291,6 @@ import {
   encryptSecret,
   resolveModelApiKey,
 } from "./credentials";
-import {
-  createGatewayAdminCredentialService,
-  gatewayAdminCredentialControls,
-  installGatewayAdminCredentialService,
-} from "./gateway/admin-credential";
-import { startGatewayCatalogSyncScheduler } from "./gateway/catalog-sync";
-import {
-  createGatewayVirtualKeyStateClient,
-  startGatewayKeyStateSyncScheduler,
-} from "./gateway/key-state-sync";
-import { gatewayEndpointControls } from "./gateway/endpoint-config";
-import { assertGatewayReadyForBilling } from "./gateway/readiness";
-import { createEnterpriseStore } from "./admin/settings-store";
 import { createDatabase } from "./db/client";
 import {
   channelAgents,
@@ -337,10 +327,6 @@ import {
   createCredentialLeaseService,
 } from "./enterprise/tenancy/credential-lease";
 import {
-  createSharedApprovalAdminService,
-  createSharedApprovalService,
-} from "./enterprise/tenancy/shared-approvals";
-import {
   createCredentialOwnershipAdminService,
   createCredentialOwnershipDecisionService,
   type SecretVault,
@@ -359,6 +345,10 @@ import {
   createPluginCatalogAdminService,
   createPluginCatalogDecisionService,
 } from "./enterprise/tenancy/plugin-catalog";
+import {
+  createSharedApprovalAdminService,
+  createSharedApprovalService,
+} from "./enterprise/tenancy/shared-approvals";
 import {
   applyStartupVerdict,
   runMultitenancyStartupChecks,
@@ -388,6 +378,18 @@ import {
   createWorkspaceScopeRoutes,
 } from "./enterprise/tenancy/workspace-scope-routes";
 import {
+  createGatewayAdminCredentialService,
+  gatewayAdminCredentialControls,
+  installGatewayAdminCredentialService,
+} from "./gateway/admin-credential";
+import { startGatewayCatalogSyncScheduler } from "./gateway/catalog-sync";
+import { gatewayEndpointControls } from "./gateway/endpoint-config";
+import {
+  createGatewayVirtualKeyStateClient,
+  startGatewayKeyStateSyncScheduler,
+} from "./gateway/key-state-sync";
+import { assertGatewayReadyForBilling } from "./gateway/readiness";
+import {
   createHostAccessBroker,
   HostAccessRefusedError,
 } from "./host-access/broker";
@@ -396,7 +398,6 @@ import { githubCallbackRoutes } from "./identity/github-callback";
 import { retireIdentityLinks, retireOwnedAccounts } from "./identity/retire";
 import { slackCodeRedeemer } from "./identity/slack-redeem";
 import { createIdentityStore } from "./identity/store";
-import { createBotServiceRegistry } from "./bot-services/registry";
 import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
@@ -416,11 +417,19 @@ import {
 import { clearLearningRevisionFallback } from "./learning/runtime";
 import { createLearningSettingsStore } from "./learning/settings";
 import { createMarketplaceStore } from "./marketplace/store";
+import {
+  createMastraContinuationInstall,
+  type MastraContinuationInstall,
+  MastraContinuationRefusal,
+} from "./mastra/approvals";
+import { createMastraContinuationStore } from "./mastra/continuation-store";
+import type { ExecutionBinding } from "./mastra/execution-contracts";
 import { PostgresTenantStorageRegistry } from "./mastra/postgres-registry";
 import {
   RegistryTenantStorageLookup,
   type TenantCredentialStore,
 } from "./mastra/provisioning";
+import { createMastraResumeDriver } from "./mastra/resume-driver";
 import { createTenantMastraStorage } from "./mastra/tenant-storage";
 import { createMemoryDefaults } from "./memory/defaults";
 import { createMemoryIngestion } from "./memory/ingestion";
@@ -1047,6 +1056,9 @@ const enterpriseCapabilities = await (async () => {
       scopes,
       entry,
       conversations: createConversationService({ data, mastraStorage }),
+      // ME06 (#478): the tenant-restricted engine storage the continuation
+      // install's storageFor resolves suspension snapshots through.
+      mastraStorage,
     };
   } catch (error) {
     console.error("Enterprise conversation service unavailable", error);
@@ -2914,6 +2926,100 @@ const enterpriseRunner = enterpriseCapabilities
       credentialReader: credentialStore,
     })
   : undefined;
+
+/*
+ * ME06 (#478): the durable-continuation production assembly — the review
+ * fence ME05 left open ("setMastraContinuations has no production caller")
+ * closes here, so a client-participation suspension is a REAL, visible
+ * waiting state: the real continuation ledger over this deployment's
+ * database, the tenant-restricted engine storage its snapshots live in, and
+ * the six-gate resume entry the participation route drives. Nothing changes
+ * for the legacy engine (the Mastra path only runs where the server-side
+ * selector admits it), and no client field can reach any of it.
+ *
+ * The resumed loop's GOVERNED model re-binding (route + ceiling + run
+ * re-activation) is the approvals-integration/re-run contract (ME09/ME10):
+ * the runs service refuses capability minting for a settled run, so until
+ * that contract lands the loopFor below refuses with a named composition
+ * error — fail-closed, never a budget or lease bypass.
+ */
+const mastraContinuationStore = enterpriseCapabilities
+  ? createMastraContinuationStore({
+      database,
+      secret: config.keyEncryptionKey,
+    })
+  : undefined;
+let mastraContinuationInstall: MastraContinuationInstall | undefined;
+if (mastraContinuationStore && enterpriseCapabilities && enterpriseRunner) {
+  const storageForBinding = async (binding: ExecutionBinding) => {
+    if (!binding.threadId) return undefined;
+    const mastraBinding =
+      await enterpriseCapabilities.conversations.resolveMastraBinding(
+        binding.scope,
+        binding.threadId,
+      );
+    return enterpriseCapabilities.mastraStorage.getStore(
+      binding.scope,
+      mastraBinding,
+    );
+  };
+  mastraContinuationInstall = createMastraContinuationInstall({
+      store: mastraContinuationStore,
+      storageFor: storageForBinding,
+      // ME06: the frontend bridges suspend themselves (the engine's
+      // `suspend()` surface); mounting the durable approval pause on granted
+      // tools is the approvals-integration slice's assembly (ME09).
+      durableToolNames: [],
+      toolGrantCurrent: async ({ scope, botId, toolName }) => {
+        const tools = await grantedTools({
+          store: pluginStore,
+          botId,
+          actorId: scope.actorId,
+          initiator: PERSON_INITIATOR,
+          credentialActorFor: teamBots.credentialActorFor(scope.actorId, botId),
+        });
+        return tools.some((tool) => tool.name === toolName);
+      },
+      generationCurrent: async ({ scope, runId, attemptId, generation }) => {
+        // The run's CURRENT attempt generation must still be the one the
+        // continuation binds: a stopped run's generation moves, so its
+        // continuations refuse (the stop gate). Absence refuses too.
+        try {
+          return (
+            (await enterpriseRunner.runs.getActiveAttemptGeneration(
+              scope,
+              runId,
+              attemptId ?? "",
+            )) === generation
+          );
+        } catch {
+          return false;
+        }
+      },
+      driver: createMastraResumeDriver({
+        storageFor: storageForBinding,
+        loopFor: () => {
+          throw new MastraContinuationRefusal(
+            "MASTRA_RESUME_LOOP_MODEL_UNWIRED",
+            "MASTRA_RESUME_LOOP_MODEL_UNWIRED: the resumed loop's governed model re-binding (route, ceiling and run re-activation) is the approvals-integration/re-run wiring; the suspension stays waiting instead of dialling outside the governed budget.",
+          );
+        },
+      }),
+  });
+  setMastraContinuations(mastraContinuationInstall);
+}
+
+const mastraContinuationRouteDeps =
+  mastraContinuationStore &&
+  enterpriseCapabilities &&
+  mastraContinuationInstall
+    ? {
+        install: mastraContinuationInstall,
+        store: mastraContinuationStore,
+        resolveScope: (request: Request) =>
+          enterpriseCapabilities.scopes.resolve(request),
+      }
+    : undefined;
 
 const copilotRuntime = mountCopilotRuntime(
   config,
@@ -6538,6 +6644,7 @@ const app = createApp(
     teamBots,
     enterpriseConversations: enterpriseConversationRoutes,
     enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
+    mastraContinuations: mastraContinuationRouteDeps,
     // MT122 (issue #165): present only when enterprise capabilities are wired;
     // multitenancy off or a missing channel leaves the assembly byte-for-byte
     // what it was (the middleware itself is mounted in createApp, mode-gated).

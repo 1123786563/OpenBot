@@ -254,6 +254,27 @@ export interface MessagePage {
   readonly nextBeforeSeq: number | null;
 }
 
+/**
+ * ME03 internal append input for one engine output message (assistant text
+ * or tool call-result; activity content rides only as parts inside an
+ * assistant envelope, never as a role) on a mastra-backend conversation.
+ *
+ * `clientMessageKey` is a SERVER-issued idempotency key (execution key +
+ * engine message id) — never a client-supplied value — so an output retry
+ * resolves to the same message intent instead of appending a duplicate. The
+ * versioned full parts ride in `parts`; the public MessageDTO stays
+ * compatible (display projection only).
+ */
+export interface EngineMessageAppendInput {
+  readonly threadId: string;
+  readonly clientMessageKey: string;
+  readonly role: "assistant" | "tool";
+  readonly parts: readonly import("../mastra/message-parts").OpenBotMessagePart[];
+  /** Engine message id recorded into the stored identity mapping. */
+  readonly engineMessageId: string;
+  readonly toolCallId?: string;
+}
+
 export interface StartRunInput {
   readonly threadId: string;
   readonly clientMessageKey: string;

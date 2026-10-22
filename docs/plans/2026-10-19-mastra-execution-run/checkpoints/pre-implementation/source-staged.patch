@@ -1,0 +1,911 @@
+diff --git a/docs/adr/0010-mastra-execution-openbot-governance.md b/docs/adr/0010-mastra-execution-openbot-governance.md
+new file mode 100644
+index 00000000..e58171e3
+--- /dev/null
++++ b/docs/adr/0010-mastra-execution-openbot-governance.md
+@@ -0,0 +1,11 @@
++---
++status: proposed
++---
++
++# Mastra 执行 Agent 循环，OpenBot 保留业务运行与治理权威
++
++OpenBot 已有 Run/Attempt、逐调用预算与结算、工具授权审批、会话 intent 和公司/团队范围，当前内置执行仍依赖 CopilotKit BuiltInAgent。建议以受控 Mastra 适配替换执行循环，保留现有 AG-UI 客户端和 OpenBot 权威模块；普通 Agent 显式挂起/恢复先与 OpenBot 生命周期对齐，暂不同时引入第二个 durable workflow 调度权威。
++
++替代方案是整体转交 Mastra 的执行、memory、workflow 与客户端协议，但会同时改变运行身份、审批副作用、写入者和结算事实源，迁移与回滚风险较高。本方案的代价是维护流/完整消息/continuation 适配，以及保留可选 Intelligence 学习依赖；将来若删除这些适配，需要独立证明授权、预算、恢复和新旧数据兼容。
++
++本 ADR 是方案评审稿，尚未 accepted；它不修改 ADR 0004/0005/0006/0008/0009 的既有约束，也不授权实施或发布。验收见 [详细方案](../specs/2026-10-19-mastra-agent-execution-migration-design.md)。
+diff --git a/docs/plans/2026-10-19-orca-dag-wave2/contains.tsv b/docs/plans/2026-10-19-orca-dag-wave2/contains.tsv
+new file mode 100644
+index 00000000..3af3d789
+--- /dev/null
++++ b/docs/plans/2026-10-19-orca-dag-wave2/contains.tsv
+@@ -0,0 +1,121 @@
++6	187
++6	188
++6	189
++6	190
++6	191
++6	192
++6	193
++6	194
++6	195
++6	196
++6	197
++6	198
++6	199
++6	200
++6	201
++6	202
++6	203
++6	204
++6	205
++6	206
++6	368
++5	207
++5	208
++5	209
++5	210
++5	211
++5	212
++5	213
++5	214
++5	215
++5	216
++5	217
++5	218
++5	219
++5	220
++5	221
++5	222
++5	223
++5	224
++5	225
++5	226
++5	227
++5	228
++5	229
++5	230
++5	231
++5	232
++5	233
++5	234
++5	235
++5	236
++5	237
++5	238
++5	239
++5	240
++5	241
++5	242
++5	243
++5	244
++5	245
++5	246
++5	247
++5	248
++5	249
++5	250
++5	251
++5	252
++5	253
++5	254
++5	255
++5	256
++5	257
++5	258
++5	259
++5	260
++5	261
++5	262
++5	263
++5	264
++5	265
++5	266
++5	267
++5	268
++5	269
++5	270
++5	271
++5	272
++5	273
++5	274
++5	275
++5	276
++5	277
++5	278
++5	279
++5	280
++5	281
++5	282
++5	283
++5	284
++5	285
++5	286
++5	287
++5	288
++5	289
++5	290
++5	291
++5	292
++5	293
++5	294
++5	295
++5	296
++5	297
++5	298
++5	299
++5	300
++5	301
++5	302
++5	303
++5	304
++5	305
++5	306
+diff --git a/docs/plans/2026-10-19-orca-dag-wave2/ingest.sh b/docs/plans/2026-10-19-orca-dag-wave2/ingest.sh
+new file mode 100755
+index 00000000..9d703553
+--- /dev/null
++++ b/docs/plans/2026-10-19-orca-dag-wave2/ingest.sh
+@@ -0,0 +1,24 @@
++#!/usr/bin/env bash
++# R1 rescan: 树结构重扫（同四根），diff 出新增节点；票详情仅增量拉取。只读。
++set -euo pipefail
++REPO=1123786563/OpenBot
++DIR="$(cd "$(dirname "$0")" && pwd)"
++: > "$DIR/contains.tsv"
++frontier="6 5 358 376"
++seen="6 5 358 376"
++while [ -n "$frontier" ]; do
++  next=""
++  for n in $frontier; do
++    kids=$(gh api --paginate "repos/$REPO/issues/$n/sub_issues" --jq '.[].number' | sort -n | tr '\n' ' ')
++    for k in $kids; do
++      echo -e "$n\t$k" >> "$DIR/contains.tsv"
++      if ! grep -qw "$k" <<< "$seen"; then
++        seen="$seen $k"
++        next="$next $k"
++      fi
++    done
++  done
++  frontier=$(echo $next)
++done
++echo $seen | tr ' ' '\n' | sed '/^$/d' | sort -n > "$DIR/nodes.txt"
++echo "nodes: $(wc -l < "$DIR/nodes.txt")"
+diff --git a/docs/specs/2026-10-19-mastra-agent-execution-migration-design.md b/docs/specs/2026-10-19-mastra-agent-execution-migration-design.md
+new file mode 100644
+index 00000000..a72f405e
+--- /dev/null
++++ b/docs/specs/2026-10-19-mastra-agent-execution-migration-design.md
+@@ -0,0 +1,203 @@
++# Spec：内置 Agent 执行迁移 Mastra
++
++日期：2026-10-19。状态：**详细方案与拆票评审稿 v1，尚未批准实施或发布**。
++
++来源：本会话用户依次要求分析迁移范围、编写实施计划、设计详细方案并拆解具体 Issue。方案承接上一轮计划；“已写成可验收的规格”“允许创建 Issue”“批准设计”“授权实施/上线”是不同状态，不互相推导。
++
++## Problem Statement
++
++当前内置 Bot 执行依赖 CopilotKit BuiltInAgent，网页与后台还通过不同的 Runner、历史读取和审批恢复装配执行。仓库虽有 Mastra 租户存储、兼容探针与远程 harness，但它们没有完成内置执行迁移。直接替换构造函数会遗漏工具授权、逐步预算、用量结算、附件、暂停恢复、后台任务、学习和多租户隔离。
++
++用户需要将内置 Agent 执行统一到 Mastra，同时保留现有工作台的交互和权限规则；不能为了迁框架而丢失历史、重复执行危险工具、改变付款方，或者使某些后台入口继续走旧引擎。
++
++## Solution
++
++将 Mastra 作为内置 Bot 的模型与工具循环执行框架，OpenBot 继续作为业务身份、范围、Run/Attempt、预算、审批、消息写入和工具副作用的权威。通过现有网页运行入口与后台执行入口接入一个受控执行模块，对外保持 AG-UI 和现有 CopilotKit React/SSE 客户端兼容。
++
++迁移按可演示的完整业务切片展开：受控文本聊天 → 历史附件 → 连接器工具 → 审批恢复 → Computer/前端工具 → 记忆/技能 → 后台与交接 → 迁移切换 → 无强制 Intelligence 部署与最终验收。学习服务保留为独立可选适配器；完全替换其自动学习算法另立需求。
++
++## User Stories
++
++1. 作为工作台用户，我希望迁移后仍能给现有 Bot 发消息并逐字看到回答，以便保持原工作流程。
++2. 作为用户，我希望 Bot 保留自己的角色与我的常驻指令，以便迁移不改变职责。
++3. 作为用户，我希望刷新或重新连接后看到同一份历史，以便不丢消息或出现重复答案。
++4. 作为用户，我希望上传的文件和图片在本轮与后续授权会话中正确引用，以便 Bot 理解材料。
++5. 作为用户，我希望工具调用和结果保留准确对应，以便理解 Bot 做了什么。
++6. 作为用户，我希望 Bot 只使用我授予的连接工具，以便我的其他连接不会被擅自使用。
++7. 作为用户，我希望供应商拒绝与平台政策拒绝分别显示，以便知道如何解决问题。
++8. 作为用户，我希望涉及审批的操作先停下来等待，以便先核对动作与参数。
++9. 作为用户，我希望批准后准确继续原操作，以便不必重新描述整项任务。
++10. 作为用户，我希望拒绝、过期和撤权之后工具不会执行，以便决定得到遵守。
++11. 作为用户，我希望重复点击批准或系统重启不会重复发送邮件等外部动作，以便避免重复副作用。
++12. 作为用户，我希望未知外部结果显示为待处置，以免系统猜测成功或自动重复操作。
++13. 作为用户，我希望需要浏览器或本地参与的工具等待真实结果，以便系统不伪造执行。
++14. 作为用户，我希望停止当前运行，而不误停新运行或另一人的运行，以便控制准确。
++15. 作为用户，我希望普通网络断连不等同于主动取消，以便重新连接后继续查看状态。
++16. 作为用户，我希望 Bot 仍使用本人已确认且有权访问的记忆，以便跨会话保持连续。
++17. 作为用户，我希望未审核、已遗忘和失去来源权限的记忆不进入回答，以便记忆控制有效。
++18. 作为已启用学习的用户，我希望已发布技能及其撤销仍有效，以便迁移不悄悄取消学习能力。
++19. 作为未启用学习的部署管理员，我希望不配置 Intelligence 也能运行基础功能，以便减少必需依赖。
++20. 作为用户，我希望定时任务和职责自动推进使用与网页相同的权限与预算，以便入口不会改变规则。
++21. 作为用户，我希望 Bot 交接只把有权分享的信息交给有权运行的目标，以便委派不扩大访问。
++22. 作为使用 OpenMuse/Workshop 的用户，我希望其调用 OpenBot 的任务仍能执行和回传产物，以便迁移不中断现有集成。
++23. 作为付费用户，我希望每次模型调用都受预算约束并按权威用量结算，以便不会重复扣费或悄悄换付款账户。
++24. 作为同属多家公司或团队的用户，我希望角色、记忆、凭据、附件和执行环境彼此隔离，以免串用状态。
++25. 作为运维人员，我希望先盘点旧历史和暂停记录并做 dry-run，以便知道哪些能迁、哪些需隔离。
++26. 作为用户，我希望切换和回滚都保留新消息与结果，以免回滚变成数据丢失。
++27. 作为运维人员，我希望能沿同一运行标识找到模型、工具、审批与结算证据，以便诊断故障。
++28. 作为维护者，我希望每张实施 Issue 都有明确范围和验收，以便另一个 Agent 能快速接手。
++
++## Implementation Decisions
++
++### 1. 架构与权威分工
++
++| 事项 | 权威 | Mastra 的角色 |
++| --- | --- | --- |
++| 身份、公司/团队/本人/Bot 范围、来源权限 | OpenBot 可信目录与授权模块 | 仅消费经过签发并在运行时重验的上下文 |
++| Run、Attempt、generation、owner lease、取消 | OpenBot RunService | 引擎运行标识映射到业务运行，不自行批准业务终态 |
++| 预算、付款方、capability、实际结算 | OpenBot 网关与积分台账 | 通过受控 LanguageModel 执行每次模型调用 |
++| 工具 grant、policy、审批、审计与 receipt | OpenBot 工具执行模块 | 选择已提供的工具并提交参数 |
++| 对话、附件引用、intent、稳定顺序 | OpenBot ConversationService | 使用授权历史；不对同一会话另开自动写入者 |
++| 持久挂起与恢复 | OpenBot continuation + 受限引擎 snapshot | 保存/恢复框架执行状态；不代替身份与审批检查 |
++| 个人记忆 | OpenBot 审核与来源权威；既有 Hindsight 集成 | 使用已确认且当前有权访问的内容 |
++| 学习技能 | 既有可选学习提供者与 OpenBot 配置 | 消费经校验的当次技能快照 |
++
++不建立第二套授权、预算或消息权威。采用 expand → 按业务入口迁移 → contract：旧代码在迁移未完成时可存在，但同一业务范围只允许一个活跃执行/消息写入者，不允许错误后自动换引擎绕过拒绝。
++
++### 2. 主执行路径与 Interface
++
++```mermaid
++flowchart TD
++  A[网页或持久后台任务] --> B[可信身份/范围/会话/预算准入]
++  B --> C[OpenBot Run/Attempt 与 owner lease]
++  C --> D[受控 Mastra 执行模块]
++  D --> E[受控模型网关]
++  D --> F[已授权工具执行与审批]
++  D --> G[持久 continuation]
++  D --> H[事件归一化与消息 intent]
++  H --> I[持久事件日志/完整会话]
++  I --> J[AG-UI SSE/客户端重连]
++```
++
++主 seam 是“已准入的业务运行”：消费服务端签发的执行绑定、授权历史、固定模型路由/付款方式、授权工具、AbortSignal 和可选可信恢复引用；返回现有规范事件流。绑定至少区分 tenant、workspace、principal、actor、bot、run、attempt、generation 和引擎执行标识。
++
++客户端只提交既有业务输入和幂等键；不能通过 context/forwardedProps 选择可信 scope、provider key、route、引擎、owner 或恢复快照。公开客户端 DTO 维持兼容；新的内部消息表示采用版本化完整 parts，不把展示文本投影当完整模型历史。
++
++### 3. 模型治理
++
++- 使用已有 LanguageModelV3 网关适配，而不是让 Mastra 按 provider 字符串自行找 key。每一步获得独立的、绑定当前 Run/Attempt/generation 的调用 capability。
++- 运行聚合预算同时约束输入与输出；模型每次请求的输出上限不大于当前允许值，既有输入上界证明继续成立。示例：总额度 100，已确认实际消耗 70，下一调用最多只能申请剩余 30，并继续接受持久准入核验。
++- 禁止 SDK 自动 retry、fallback、自动标题/摘要/embedding 等隐式模型调用；若未来启用，必须先提供独立明确的预算、调用身份与结算合同。
++- 余额不足、未知价格、非法帧或无法结算时拒绝/失败；未知用量保留既有待结算规则，不虚构零消费或成功。
++- API 积分路径与订阅 harness 路径保持原先固定选择；拒绝后不得切换 payer、credential 或付费方式。
++
++### 4. 工具、消息与事件
++
++- 受控工具保留参数校验、授权复核、initiator、供应商错误、不可信内容包装及审计。发现 MCP 工具不等于已授予工具，不能直接挂载原始工具绕过执行器。
++- 保留完整 message parts、tool-call/result、附件引用与 activity/state；读取前验证 thread/resource 与来源权限，附件在授权后加载字节。
++- Mastra fullStream 转换成现有文本、工具参数增量、结果、状态、挂起、错误和终态事件。控制事件不可静默丢弃；损坏或未知控制语义阻断本轮执行。
++- 稳定标识区分消息、模型调用、工具调用和业务操作。一个业务操作在合法恢复/重试中保留同一 operationId 与参数摘要；新 generation 不是重新执行已完成外部操作的理由。
++- 事件先持久化再发布；消息通过 intent/幂等键落盘，不依赖浏览器把显示内容回传成为历史。工具结果只有持久 receipt 或真实客户端执行结果才可进入后续上下文。
++
++### 5. 生命周期、断连与失败
++
++| 触发 | 业务状态/行为 | 禁止的行为 |
++| --- | --- | --- |
++| 准入通过且获得当前 lease | queued → running；开始模型/工具 | 未准入直连 provider |
++| 需要审批 | running → waiting_approval，先保存恢复证据 | 把 waiting 当 succeeded |
++| 等待用户回答或前端工具结果 | running → suspended，并展示下一动作 | 假造回答或工具结果 |
++| 恢复输入与当前授权一致 | 认领准确 continuation，受控恢复 | 无条件新建一次全量执行 |
++| 模型结束、用量已确认、输出已持久化 | 当前 owner 才能 running → succeeded | 仅见引擎 finish 即成功 |
++| 主动 stop | 对精确 Run/Attempt 取消，阻断后续敏感调用 | 按 thread 模糊取消另一新运行 |
++| 网络连接消失 | 仅断开订阅；已有 owner 按合同推进/保存可恢复状态，重连重放事件 | 把断连冒充用户取消或无限占用 lease |
++| owner 过期或失去授权 | 阻断新模型/工具/成功写入；按现有失败恢复合同处理 | 失效实例继续发布终态 |
++| 进程在模型调用中崩溃 | 保留未知用量/失败证据，显式处置 | 声称模型流可从任意 token 自动续算 |
++| 外部调用可能已生效但 receipt 未确认 | 标记未知、待核对；有供应商幂等/查询证据才决定重试 | 自动重复发送/扣款等写动作 |
++
++Mastra 不是第二个业务调度器。本版不引入 durable agent/workflow 作为 Run 状态权威。普通 Agent、审批 snapshot 与任意进程故障自动恢复是不同能力。
++
++### 6. continuation 与跨存储一致性
++
++- continuation 存储有独立 schemaVersion、引擎版本指纹、业务绑定、稳定操作身份、toolCallId、工具名、参数摘要、受保护 snapshot 引用、revision、认领与终态。
++- snapshot 只含恢复必需的数据，不保存 provider key、capability 明文、函数或实时 AbortSignal。租户数据使用受限角色与既有隔离存储。
++- 审批展示的动作和参数摘要必须与将执行的动作一致；回答/客户端工具结果引用认证后落盘的记录，不信任任意 body 文本作为已认证工具事实。
++- 恢复时重验身份、团队/来源权限、工具 grant、Bot 访问、generation 与预算；使用数据库 CAS/受限 claim 防并发。claim 有过期回收规则，回收不能自动重放未知副作用。
++- 审批、OpenBot continuation 与 Mastra snapshot 可能跨存储，采用持久 intent、可重试对账和明确中间态。不能将连续两个写请求当成原子事务；恢复证据缺失时不向用户发布“可恢复”。
++- 已完成 receipt 在恢复中复用；参数/授权/计划改变使旧批准失效。未知引擎快照版本不得自动反序列化执行，进入受控不兼容状态。
++
++### 7. 记忆、技能与既有需求复用
++
++- 本方案不重做 Hindsight：个人记忆退出 Intelligence 的行为由已有 #395 交付，本迁移的记忆 Ticket 只适配并验证消费该合同。#395 当前开放，需核验已审查实现，不能因为旧代码存在就声称就绪。
++- 仅使用本人已确认且当前来源权限允许的记忆；候选、已遗忘、来源已撤销、只有 Intelligence 无 OpenBot 记录的内容不可进入新上下文。Hindsight 未就绪/故障时只用合规的已确认本地记录。
++- 现有学习的快照、归档校验、技能文件读取、刷新与撤销保持。恢复使用绑定的内容版本，但每次敏感读取仍核对当前撤销；服务故障不伪装成用户关闭学习。
++- 不启用学习时不构造 Intelligence 客户端；启用时独立解析凭据并保持真实 delivery/health 状态。只读旧历史导入 reader 也为可选服务，不参与新运行执行。
++
++### 8. 后台执行与集成
++
++后台记录保存业务归属、受限执行身份、稳定推进意图和预算来源，执行时从可信目录重新签发当前范围。队列载荷里的 tenant/owner 字符串不构成可信身份；缺 scope 或预算明确拒绝，不能猜默认公司、管理员身份或无限预算。
++
++定时任务、职责、投递、唤醒、交接、审批续跑和主仓库 OpenMuse/Workshop 调用均走同一受控模块。每种入口保留其去重、结果回传、深度、私有分享和产物授权。仅迁移对 OpenBot 的调用装配，不改写 OpenMuse 子模块、Computer/Craft 自身引擎或新的长任务产品行为。
++
++### 9. 迁移、版本与回滚
++
++- 精确锁定实际解析的 Mastra/AI SDK/AG-UI/Zod 组合，以当前 manifest 组为起点，先验证模型、工具、完整流及独立进程审批恢复。最新官方文档不是当前已安装包的兼容证据。
++- 新旧实现共存期间以服务端 engine/version 和写入 fence 固定运行，不能让客户端随意选引擎，也不能一次失败后转另一引擎。
++- 导入流程 inspect/dry-run/apply/verify/rollback，默认只读；记录分页游标、稳定源 ID、数量/摘要与未知归属，支持中断续跑。
++- 切换前停止目标范围新准入并排空旧 writer/活跃 lease；暂停记录按“可兼容转换”“旧路径排空”“受控隔离/人工重新发起”逐项处置，不能丢下旧暂停记录就删除恢复器。
++- 先验证 staging，再切单写入者。保留旧数据只读，不 drop 表、不删除卷。迁移旧聊天不等于迁移个人长期记忆。
++- 切换后已有新消息/快照时，回滚到仍能理解新数据与隔离合同的兼容应用版本，保持当前历史权威；不能简单指回旧库。无法安全回退时停在维护状态，明确原因。
++
++### 10. 需求验收编号
++
++| 编号 | 必须可观察的结果 | 责任 Ticket |
++| --- | --- | --- |
++| A01 | 锁定依赖下模型/工具/跨进程暂停恢复可验证 | ME01 |
++| A02 | 原聊天入口由 Mastra 产生非空流式回答 | ME02 |
++| A03 | 每次调用受预算与权威结算，拒绝不换付款方式 | ME02、ME04 |
++| A04 | thread/history/附件/tool parts 重读完整且幂等 | ME03 |
++| A05 | 只执行已授权工具，错误/审计与撤权合同不回退 | ME04 |
++| A06 | 审批/问答保存、刷新、重启后准确恢复且无盲重放 | ME05 |
++| A07 | Computer、gallery、前端工具等待真实参与和结果 | ME06 |
++| A08 | 个人记忆遵守审核、来源、暂停与遗忘规则 | ME07 |
++| A09 | 技能快照/校验/撤销保留，学习为可选服务 | ME08 |
++| A10 | 定时任务同一 scope/预算/历史合同、重复投递去重 | ME09 |
++| A11 | 职责/投递/唤醒/审批续跑无旧执行旁路 | ME10 |
++| A12 | Bot 交接目标/分享/深度/回传受控 | ME11 |
++| A13 | 主仓库 OpenMuse/Workshop 调用兼容且产物有授权 | ME12 |
++| A14 | 旧历史分页、幂等导入、归属隔离与摘要对账 | ME13 |
++| A15 | 在途暂停有处置、单 writer 切换、回滚保留新数据 | ME14 |
++| A16 | 不配置 Intelligence 能运行基础功能，缺核心能力拒绝启动 | ME15 |
++| A17 | 观测关联准确、无重复计费/内容泄漏 | ME02–ME12、ME15 |
++| A18 | 并发/跨实例/restart/stop/撤权/RLS 均有行为证据 | ME05、ME14–ME16 |
++| A19 | 原客户端刷新、重连、停止、语音历史保持一致 | ME02、ME03、ME05、ME06、ME16 |
++| A20 | 旧内置执行路径退出，完整审查和最终范围可核验 | ME16 |
++
++## Testing Decisions
++
++主 seam 是真实挂载的业务运行入口，观察事件、消息、准入/结算事实、实际供应商调用、可见性和 UI。后台从持久任务认领入口验证同一合同；工具/模型确定性 fixture 可替代外部供应商，但不能替代真实数据库 CAS/RLS/租约证据。
++
++每张 Ticket 自带正向演示、越权/撤权、取消或失败注入；不等最终收尾才第一次测集成。身份矩阵至少两家公司、同公司两团队、同团队另一人、双团队成员和后台受限执行身份；同一个全局用户跨公司运行不能串状态。
++
++沿用既有 Copilot/Runner、Mastra compatibility、gateway、审批、headless、handoff、memory/learning 与客户端历史测试风格。测试调度按 ADR 0008 统一 e2e，native/driven 分区有清单，产物目录唯一，用例数非零；数据库测试使用专用受限角色 fixture。缺环境写 unverified，不写通过。
++
++恢复必须独立进程/实例验证；外部副作用必须区分“请求未发”“已发有 receipt”“已发未知”，不以 mock 调用次数证明分布式 exactly-once。预算测试同时核对实际调用和台账/待结算状态。
++
++最终要求：验收映射无缺口、适用类型检查/Lint/构建、独立 Spec+quality Review、完整交付范围 OCR 及有效 critical/high/medium 问题清零。此文未运行这些验证。
++
++## Out of Scope
++
++- 完全移除 CopilotKit React/SSE SDK；更换 UI 设计或在本迁移中实施 HeroUI。
++- 替换 Intelligence 自动学习算法或丢弃现有技能；增加 Mastra 原生自动长期记忆。
++- 实现 Hindsight 产品功能、记忆迁移、删除算法；消费既有 #376/#395 合同。
++- 新的跨几天/月的任务产品、durable agent/workflow 调度或任意 token 中途续算承诺。
++- 开放当前预算无法验证的 remote_ag_ui/remote_mastra，替换所有独立 harness。
++- 改写 OpenMuse 子模块的 TanStack Agent、Craft/Computer 执行引擎、计费或权限产品规则。
++- 恢复已下线 KB，自动删除旧表/卷，执行生产导入、停机、部署或发布。
++
++## Further Notes
++
++- GitHub 目标仓库：`1123786563/OpenBot`。拟发布一张独立父 Spec 和 16 张正式子 Issue；contains 与 depends_on 分开保存。新迁移不是 #6 的整体重做，不修改已有父 Issue 正文/状态。
++- 当前实现计划提供 HOW 的文件级指引，本 Spec 冻结 WHAT/WHY。二者冲突以经批准 Spec 为准；批准前不得将评审稿冒充批准设计。
++- 已有 #92/#94 定义适配器归属和执行保证；本方案复用其接口并补 Mastra 行为证据。已有 #395 管个人记忆退出，不能另发重复票重做；#162 虽关闭仍需核验代码与迁移证据。#436 为 fresh-schema 环境风险，独立测试库若被它阻塞应引用事实，不扩大为本轮数据库重构。
++- 官方能力读取于 2026-10-19：[流式事件](https://mastra.ai/docs/guides/streaming)、[审批与挂起](https://mastra.ai/docs/agents/human-in-the-loop)、[durable agents](https://mastra.ai/docs/harness/durable-agents)。官方说明支持框架能力判断；具体当前版本和数据库可靠性由 ME01/ME05 验证，不能据文档宣称已经通过。
++- 测试 seam 与 Issue 粒度将同本评审稿一次性送审；确认后按拓扑序发布、添加 ready-for-agent、正式 sub-issue 和原生 blocked_by（不可用时保留正文依赖并披露）。标签不代表前置依赖完成、实现授权或上线许可。
+diff --git a/docs/tickets/mastra-agent-execution/tickets.json b/docs/tickets/mastra-agent-execution/tickets.json
+new file mode 100644
+index 00000000..607361f0
+--- /dev/null
++++ b/docs/tickets/mastra-agent-execution/tickets.json
+@@ -0,0 +1,522 @@
++{
++  "repo": "1123786563/OpenBot",
++  "feature": "mastra-agent-execution",
++  "parent_key": "ME-SPEC",
++  "parent_issue": null,
++  "status": "draft-awaiting-breakdown-review",
++  "publication_authorized_after_review": false,
++  "proposed_labels": [
++    "enhancement",
++    "ready-for-agent"
++  ],
++  "spec": "docs/specs/2026-10-19-mastra-agent-execution-migration-design.md",
++  "adr": "docs/adr/0010-mastra-execution-openbot-governance.md",
++  "source_plan": "docs/plans/2026-10-19-mastra-agent-execution-migration.md",
++  "tickets": [
++    {
++      "id": "ME01",
++      "title": "锁定 Mastra 兼容组合并演示可持久恢复的最小执行",
++      "depends_on": [],
++      "acceptance": [
++        "A01"
++      ],
++      "plan_tasks": [
++        "T0",
++        "T1"
++      ],
++      "roles": [
++        "backend_implementer"
++      ],
++      "deliver": "维护者可用固定版本的最小 Bot 完成回答、一次受控工具调用和独立进程暂停恢复，证明迁移依赖可用。",
++      "criteria": [
++        "记录实际解析的 Mastra、AI SDK、AG-UI、Zod 与运行时版本；从现有版本组起步，不以通配或 latest 作为可恢复格式依据。",
++        "通过真实应用装配的隔离测试入口发起消息，收到非空规范文本流；工具调用一次且模型第二步能使用结果。",
++        "自定义受控模型在每个步骤被调用；禁止隐藏 provider 直连、自动 retry/fallback 及额外标题/摘要调用。",
++        "暂停载荷落在受限持久存储，原进程退出后另一进程恢复准确操作；Workflow 同进程内存测试不能代替 Agent 恢复。",
++        "采集脱敏完整事件样本，覆盖文本、工具参数增量、结果、错误、挂起与终态；缺必要能力明确阻断后续票。",
++        "恢复/模型能力若要求升级，提交最小精确版本变更和同一组通过证据，不静默换用最新文档 API。"
++      ],
++      "verification": "演示一轮带工具的流式回答及一次独立进程恢复；核对真实模型/工具调用计数。数据库 fixture 缺失则恢复验收 unverified。",
++      "boundary": "只做迁移所需兼容探针及必要版本锁定；不接生产默认路由，不实现新业务权限/计费。",
++      "produces": "精确版本指纹、完整事件 fixture、受控模型与恢复载荷合同。",
++      "risk": "依赖/API 不兼容时停止并修订版本方案，不能以普通文本成功代替恢复能力。"
++    },
++    {
++      "id": "ME02",
++      "title": "现有聊天入口通过 Mastra 完成受预算约束的文本回答",
++      "depends_on": [
++        "ME01"
++      ],
++      "acceptance": [
++        "A02",
++        "A03",
++        "A17",
++        "A19"
++      ],
++      "plan_tasks": [
++        "T2",
++        "T3",
++        "T5",
++        "T8"
++      ],
++      "roles": [
++        "backend_implementer",
++        "frontend_implementer"
++      ],
++      "deliver": "用户在受控测试范围的现有聊天界面发送纯文本，获得 Mastra 流式回答、准确费用和可停止/重连的运行状态。",
++      "criteria": [
++        "保留 Bot 角色、常驻指令和可信内容指引；两个用户同用逻辑 Bot 时不串指令、模型、凭据或消息。",
++        "真实挂载入口完成身份、范围、会话、Run/Attempt/lease 准入；客户端指定 scope、引擎、provider、route 或 Run 身份无效。",
++        "流式文本开始/增量/结束及错误转换为现有 AG-UI；回答非空，错误或缺终态不得伪装成功。",
++        "每次模型调用通过原网关能力与输出/输入上界；非法上限、余额不足、未知价格和未知用量保持原拒绝/待结算规则。",
++        "付款方式在运行前固定；API 积分拒绝不能改走订阅/其他账户，订阅路径保持原费用归属且有兼容证据。",
++        "输出与结束事件持久化、用量确认成功之后，只有当前 owner 能完成 Run；stop 精确指向当前运行，断连不等同取消，重连不重复计费或消息。",
++        "一笔调用只有一组权威结算/观测关联；其他能力尚未迁移时不把该测试范围切成所有用户默认执行。"
++      ],
++      "verification": "原聊天客户端加 fake provider 的挂载测试，覆盖正常/402/坏帧/事件落盘失败、并发用户、主动停止与重连；核对消息、事件及结算。",
++      "boundary": "纯文本交互端到端；暂不提供连接器、附件或审批，不移除旧引擎，也不开放 remote Agent。",
++      "produces": "受控执行模块、ExecutionBinding 与规范事件合同、按服务端范围选择引擎的测试装配。",
++      "risk": "缺 scope、lease 或预算拒绝执行；不能回退旧引擎绕过当前拒绝。"
++    },
++    {
++      "id": "ME03",
++      "title": "聊天刷新与附件往返保留完整历史和稳定顺序",
++      "depends_on": [
++        "ME02"
++      ],
++      "acceptance": [
++        "A04",
++        "A19"
++      ],
++      "plan_tasks": [
++        "T4",
++        "T12"
++      ],
++      "roles": [
++        "backend_implementer",
++        "frontend_implementer"
++      ],
++      "deliver": "用户上传文件或图片并继续对话，刷新、翻页或重连后仍能看到完整消息及工具关联，Bot 读取同一份有权限的历史。",
++      "criteria": [
++        "完整保存文本、文件/图片引用、工具调用与结果、必要 activity/state/审批 metadata；展示文本投影不替代模型历史。",
++        "同一输入幂等键只产生一个消息 intent，输出重试不会重复追加；序列与分页稳定，未 finalized 内容不进入模型上下文。",
++        "ConversationService 是同一会话的唯一消息写入者，禁止 Mastra Memory 自动再次 append；snapshot 持久化与对话写入分别管理。",
++        "附件在所属 thread、公司/团队/本人权限验证后才读字节或签发下载；另一用户、团队或公司不能借已知 ID 取得内容。",
++        "刷新、重连、服务重启和 pending intent 修复保持完整 parts 与调用关系；损坏/缺失历史明确失败，不退回空历史继续。",
++        "保留既有历史清理规则，客户端伪造 system/tool 历史不成为服务端权威；原语音归档与聊天读取一致。"
++      ],
++      "verification": "上传/回答/刷新/翻页的真实客户端流程；工具 pairs roundtrip、重复/中断写入与受限数据库跨范围测试。",
++      "boundary": "会话与附件完整性，不做旧平台全量历史导入、不新增自动长期记忆。",
++      "produces": "授权完整历史读写、稳定消息身份与幂等/parts 转换合同。",
++      "risk": "跨系统写入用 intent/reconcile，失败不能用双写或丢消息恢复服务。"
++    },
++    {
++      "id": "ME04",
++      "title": "Bot 通过本人授权的连接器工具完成多步工作",
++      "depends_on": [
++        "ME03"
++      ],
++      "acceptance": [
++        "A03",
++        "A05",
++        "A17"
++      ],
++      "plan_tasks": [
++        "T2",
++        "T5"
++      ],
++      "roles": [
++        "backend_implementer"
++      ],
++      "deliver": "用户让 Bot 调用已连接应用，Bot 只使用被授权工具，正确处理结果/拒绝，并在多步执行中持续遵守预算。",
++      "criteria": [
++        "工具发现与授权分离；只提供经过现有 grant 和工具筛选的工具，参数经原 schema 校验，实际调用仍过 policy、credential 和 audit。",
++        "执行时重新检查撤权与连接归属；同名工具、保留名冲突或非法工具名明确处理，不能覆盖系统工具。",
++        "供应商错误、平台拒绝和外部不可信内容保持原语义，不把供应商拒绝当普通成功数据。",
++        "模型每一步签发不同 capability，首步预算 100 消耗 70 后次步最多申请 30；预算拒绝不自动 retry 或换路由。",
++        "保留现有最多 8 步的工具循环；到上限给出真实结果/原因，不能伪造工具执行或完整成功。",
++        "工具提议、实际执行、receipt 与观测只关联同一操作一次；失去 owner 或用户撤权后阻断新的外部调用。"
++      ],
++      "verification": "一个真实受控包装的只读连接器工具完成调用后回答；另测未授予、撤权、多步预算、超时和供应商错误；逐步核对 capability/receipt。",
++      "boundary": "受管连接器工具适配；不重写插件/凭据系统，不把原始 MCP tools 直接绕过执行器挂载。",
++      "produces": "统一受控工具包装、toolCallId/operationId/参数摘要与模型多步治理合同。",
++      "risk": "未知工具和权限失败明确拒绝；结果未知不标记成功或直接重放。"
++    },
++    {
++      "id": "ME05",
++      "title": "危险操作与用户问答可持久挂起并准确恢复",
++      "depends_on": [
++        "ME04"
++      ],
++      "acceptance": [
++        "A06",
++        "A18",
++        "A19"
++      ],
++      "plan_tasks": [
++        "T6",
++        "T8",
++        "T12"
++      ],
++      "roles": [
++        "backend_implementer",
++        "frontend_implementer"
++      ],
++      "deliver": "用户看到工具动作和参数，批准、拒绝或补充回答；刷新或服务重启后仍能继续准确的待办，不重复执行外部动作。",
++      "criteria": [
++        "审批/问答挂起前保存 continuation 与受保护 snapshot 引用，关联当前 scope、Bot、Run/Attempt/generation、稳定 operationId、参数摘要和引擎版本。",
++        "用户看到的动作/参数与实际执行完全一致；篡改参数、他人批准、来源撤权或旧 generation 的恢复被拒绝。",
++        "审批等待和问答等待分别展示 waiting_approval/suspended；只有正式结果持久化及费用确认后才允许 succeeded。",
++        "两个并发恢复者只有一个能获得 CAS claim；重复点击、重复 webhook、刷新和重启不导致已确认外部操作重做。",
++        "合法恢复跨 Attempt 保留 operationId；已完成 receipt 复用，外部可能已生效但结果未知时显示待处置，不自动重放。",
++        "独立进程/实例从持久存储恢复，过期 claim 按 receipt 证据处理；版本不兼容/缺快照明确隔离，不反序列化执行猜测载荷。",
++        "拒绝、过期、停止及存储失败遵守原行为，不能先发布可恢复状态再发现缺恢复数据；日志/快照不泄露模型秘密。"
++      ],
++      "verification": "现有审批 UI 的批准/拒绝/问答/刷新流程，另测两个实例抢恢复、落盘间故障、退出重启、撤权及未知副作用。",
++      "boundary": "通用审批与问答恢复，包含必要 UI；不做任意模型 token 的断点续算，不声称外部系统 exactly-once。",
++      "produces": "versioned continuation、恢复 claim/receipt/未知结果合同，客户端等待与恢复事件。",
++      "risk": "无法证明外部效果时待人工或供应商证据核对；不靠新 attempt 自动重复。"
++    },
++    {
++      "id": "ME06",
++      "title": "Computer 与前端工具在有人和无人值守场景中保持真实执行",
++      "depends_on": [
++        "ME05"
++      ],
++      "acceptance": [
++        "A07",
++        "A19"
++      ],
++      "plan_tasks": [
++        "T6",
++        "T9",
++        "T12"
++      ],
++      "roles": [
++        "backend_implementer",
++        "frontend_implementer"
++      ],
++      "deliver": "用户或后台 Bot 使用现有 Computer、gallery 和前端工具；需要本人参与时明确等待，并用真实工具结果继续回答。",
++      "criteria": [
++        "Computer/沙箱工具按公司/团队/本人/逻辑 Bot 解析环境和凭据，禁止以全局 Bot ID 共享有状态环境。",
++        "服务端可执行的工具沿原受控路径执行，需要浏览器的工具发出客户端请求并保存等待状态，不伪造客户端返回。",
++        "后台无人值守缺少参与人时持久挂起，原 UI 可查看并完成所需参与；停止或撤权后不能再执行。",
++        "工具结果关联原 operationId/toolCallId 和参数摘要，重复客户端回包不能重复追加结果或触发副作用。",
++        "gallery/activity 与产物的渲染/授权语义保持，错误可诊断，页面刷新后等待状态不丢失。",
++        "保持原 Computer 审批和 host-access 限制；跨范围环境、已撤销控制凭据与过期恢复均拒绝。"
++      ],
++      "verification": "一次真实客户端参与工具与一次 headless 挂起后人工完成；对环境授权、重复回包和停止做失败注入。",
++      "boundary": "迁移工具调度和客户端参与协议；不改写 Computer、Craft 或沙箱自身执行引擎。",
++      "produces": "有人/无人值守的受控工具执行合同与持久前端结果关联。",
++      "risk": "参与或环境不可用时等待/失败并展示原因，不能降低审批。"
++    },
++    {
++      "id": "ME07",
++      "title": "Mastra 对话与后台只消费已确认且获授权的个人记忆",
++      "depends_on": [
++        "ME04"
++      ],
++      "external_blockers": [
++        395
++      ],
++      "acceptance": [
++        "A08"
++      ],
++      "plan_tasks": [
++        "T7"
++      ],
++      "roles": [
++        "backend_implementer"
++      ],
++      "deliver": "用户的记忆审核、暂停使用、来源撤权和遗忘在 Mastra 网页及后台上下文中继续有效。",
++      "criteria": [
++        "消费已有 Hindsight #395 的单一记忆权威交付，不重复实现该 Issue 的旧路径退出/迁移行为；前置代码与验证必须已集成。",
++        "未审核、被拒绝/遗忘、来源失权和 Intelligence 独有内容不进入模型上下文，包括故障的本地降级路径。",
++        "同公司明确通用偏好与团队/来源受限内容分别遵守现有授权；同用户跨公司、同 Bot 跨团队不串记忆。",
++        "暂停使用立即阻断注入；暂停学习只影响新候选，不被框架解释为删除既有记忆。",
++        "原受控记忆工具、来源说明与当前有效内容保持，Mastra 不自动创建另一套 resource 级长期记忆。",
++        "Hindsight 未就绪/故障只召回 OpenBot 当前有权的已确认本地记录，不能临时恢复 Intelligence 双重权威。"
++      ],
++      "verification": "同一已确认/候选/遗忘/来源受限数据集在网页与 headless 读取；核对模型实际收到内容和跨公司拒绝。",
++      "boundary": "执行上下文和工具消费适配；Hindsight 同步、索引、派生、删除与旧权威退出归既有 #376/#395。",
++      "produces": "受权个人记忆上下文装配，不向 Agent 暴露 bank 或可任意选择的 scope。",
++      "risk": "外部 #395 未完成集成时本票实现/生产验收受阻；可以只读核查，但不以空快照假装通过。"
++    },
++    {
++      "id": "ME08",
++      "title": "保留可选学习技能的快照校验、加载与撤销",
++      "depends_on": [
++        "ME05"
++      ],
++      "acceptance": [
++        "A09"
++      ],
++      "plan_tasks": [
++        "T7"
++      ],
++      "roles": [
++        "backend_implementer"
++      ],
++      "deliver": "已启用学习的 Bot 在 Mastra 中继续使用原发布技能，未启用学习的部署无需连接 Intelligence。",
++      "criteria": [
++        "保留技能 catalog、按名称加载、支持文件读取、归档校验、刷新和撤销策略，不以空 skills 列表代替服务故障。",
++        "每个外层运行获取一次经校验快照；合法恢复使用绑定内容版本，同时核对当前撤销和授权。",
++        "技能工具保留原名称和保留名规则，外部同名工具不能覆盖学习工具或扩大文件读取范围。",
++        "学习 disabled 时不在启动、模块导入或运行中构造/调用 Intelligence 客户端；enabled 时使用独立配置并显示真实 delivery/health。",
++        "单个用户取消等待不取消另一运行共享刷新；同 Bot 不同公司/团队用户不共用未授权缓存。",
++        "旧学习服务异常保持已定义失败/降级策略并可观察，不静默关闭功能、不把技能目录内容写入全局可见上下文。"
++      ],
++      "verification": "启用/禁用/异常/撤销/共享刷新取消/恢复的技能端到端测试；记录模型看到 catalog 和实际读取结果。",
++      "boundary": "保留现有学习服务的可选适配，不实现 Mastra 学习算法，不删除仍必需的 CopilotKit learned-skills 校验代码。",
++      "produces": "独立可选 LearningProvider 及按运行绑定快照的上下文合同。",
++      "risk": "服务故障显示真实状态，不能借本迁移擅自取消既有学习能力。"
++    },
++    {
++      "id": "ME09",
++      "title": "定时任务通过统一 Mastra 执行并回写原会话",
++      "depends_on": [
++        "ME06",
++        "ME07",
++        "ME08"
++      ],
++      "acceptance": [
++        "A10"
++      ],
++      "plan_tasks": [
++        "T9"
++      ],
++      "roles": [
++        "backend_implementer"
++      ],
++      "deliver": "用户的定时任务到点后使用与网页相同的 Bot、工具、记忆和预算执行，结果出现在原会话且重复投递不重复推进。",
++      "criteria": [
++        "从持久调度记录和可信目录重建当前 scope/受限身份；队列中的任意 tenant/owner 字符串不构成授权。",
++        "准入前确定明确预算和固定 payer；缺配置拒绝并显示原因，不猜默认公司或无限额度。",
++        "重复 firing/队列重投递只认领同一推进意图；执行 lease/heartbeat/stop 由 OpenBot 权威管理，不使用 Intelligence socket/私有 thread lock。",
++        "相同对话完整历史与当前授权上下文用于运行，工具参与需求按通用挂起合同处理，无浏览器不绕审批。",
++        "失败、暂停、取消与最终结果准确回写原会话，刷新后可见，原运行不会被队列重试重复收费。",
++        "员工撤权/删除、lease 丢失或预算耗尽后阻断新敏感调用，有真实错误与结算证据。"
++      ],
++      "verification": "手动触发/时间触发各一次，另测双 worker、重复投递、无预算、撤权、审批等待和结果回写；网关和历史不访问 Intelligence。",
++      "boundary": "仅定时任务端到端切片；职责、投递、唤醒与 Bot 交接分别由后续票迁移。",
++      "produces": "可复用受控 headless turn 合同和后台准入/预算来源约束。",
++      "risk": "无法证明旧任务范围或预算则隔离，不以默认管理员执行。"
++    },
++    {
++      "id": "ME10",
++      "title": "职责、投递、唤醒与审批续跑统一执行和回传",
++      "depends_on": [
++        "ME09"
++      ],
++      "acceptance": [
++        "A11"
++      ],
++      "plan_tasks": [
++        "T9",
++        "T10"
++      ],
++      "roles": [
++        "backend_implementer"
++      ],
++      "deliver": "职责推进、消息投递、唤醒和已批准操作续跑都使用同一受控 Mastra turn，保持各自稳定意图和用户可见状态。",
++      "criteria": [
++        "逐项登记并迁移上述四种入口，记录业务归属、受限执行身份、预算来源、去重键、目标会话和回调。",
++        "每入口重验当事人/Bot/目标资源资格，来源撤销后不以全局扫描身份继续执行。",
++        "复用前置 headless turn 的 lease、完整历史、预算、工具与记忆，不新建平行模型或 Intelligence runner 路径。",
++        "同一业务推进意图在重投递/恢复中保持操作身份；已完成 receipt 不重复执行，未知副作用停止自动推进。",
++        "审批续跑必须引用准确 continuation，不能把批准事件当新聊天重跑整个计划。",
++        "每种入口独立完成正常推进及取消/超时/重复投递演示，用户可查看结果与失败原因，费用/观测归属正确。"
++      ],
++      "verification": "四类入口各一条正常及故障/重复案例，共用前置 turn；对照入口清单核对无 Intelligence 执行/历史旁路。",
++      "boundary": "受控迁移已存在四种入口；不增加长期任务产品、跨公司转交或新调度算法。",
++      "produces": "四种入口到同一 turn 的薄装配及完整结果回传清单。",
++      "risk": "一个入口失败不改用另一身份/账户/引擎；未知意图隔离。"
++    },
++    {
++      "id": "ME11",
++      "title": "Bot 交接与回收重试保持授权、分享和深度限制",
++      "depends_on": [
++        "ME10"
++      ],
++      "acceptance": [
++        "A12"
++      ],
++      "plan_tasks": [
++        "T10"
++      ],
++      "roles": [
++        "backend_implementer"
++      ],
++      "deliver": "用户把工作交给另一 Bot 时，目标只得到允许分享的上下文，并准确回传一次结果，后台回收器不重复推进。",
++      "criteria": [
++        "目标 Bot 通过发起人的授权 roster 解析，删除/失权目标明确拒绝，Mastra 默认子 Agent 规则不替代该授权。",
++        "原交接签名、最大深度、私有分享审批和目标 thread/channel 关系保持，子 Bot 不继承父 Bot 全部凭据、工具或个人记忆。",
++        "交接与返回结果采用稳定业务身份；delivery/reaper 重投递不会重复通知或重复创建对话。",
++        "执行通过同一 headless turn，每个子调用仍有明确预算/付款归属；不使用 Intelligence runner/socket。",
++        "目标失败/等待/已停止如实回传，不能在仅已接受任务时对用户称目标已完成。",
++        "测试跨团队/公司、私有分享拒绝、撤权、深度超限和结果读取权限，兼顾正常交接可用。"
++      ],
++      "verification": "两 Bot 正常交接加一次私有分享等待恢复；另测 reaper 重试、越权和目标失败。",
++      "boundary": "业务 handoff 装配，不引入新的 supervisor/network 产品或开放 remote Agent。",
++      "produces": "受控交接输入/结果读取与 reaper 幂等合同。",
++      "risk": "无法共享就等待审批或拒绝，不能先发送私有内容再补授权。"
++    },
++    {
++      "id": "ME12",
++      "title": "OpenMuse 与 Workshop 调用保留任务、产物和作用域",
++      "depends_on": [
++        "ME09"
++      ],
++      "acceptance": [
++        "A13"
++      ],
++      "plan_tasks": [
++        "T9",
++        "T10"
++      ],
++      "roles": [
++        "backend_implementer"
++      ],
++      "deliver": "通过主仓库调用 OpenBot 的 OpenMuse 任务与 Workshop 执行能使用统一 Mastra turn，并返回原业务可读取的结果和产物。",
++      "criteria": [
++        "核对主仓库实际装配的 OpenMuse/Workshop headless 调用，分别记录调用入口、身份、scope、预算、产物与取消关系。",
++        "每个实际调用走前置受控 turn，不在子模块引入第二模型直连或通过 owner/Bot ID 猜全局环境。",
++        "任务等待审批/前端参与时保留通用 continuation，完成后按原任务/会话回传，重复回调不重复创建产物。",
++        "产物、预览、下载与执行环境继续按业务范围授权；跨团队/公司和撤销会话后拒绝。",
++        "原有执行超时、取消、错误展示与费用归属保持，缺失外部依赖明确 unverified 而非假成功。"
++      ],
++      "verification": "主仓库 OpenMuse task 和 Workshop 端到端装配各一正常/取消/越权流程；检查任务状态与产物下载权限。",
++      "boundary": "仅迁移主仓库调用装配，不改 OpenMuse 子模块 TanStack Agent、Craft 或 Workshop 自身底层执行器。",
++      "produces": "集成入口清单和对统一 turn 的稳定适配。",
++      "risk": "不以扩大环境/文件权限解决迁移失败；子模块内部改造另立需求。"
++    },
++    {
++      "id": "ME13",
++      "title": "盘点并幂等导入旧会话与完整消息",
++      "depends_on": [
++        "ME03",
++        "ME05"
++      ],
++      "acceptance": [
++        "A14"
++      ],
++      "plan_tasks": [
++        "T11"
++      ],
++      "roles": [
++        "backend_implementer"
++      ],
++      "deliver": "运维先看到历史迁移 dry-run 与归属风险，再在隔离环境证明可中断重入导入，用户能完整读取迁入会话。",
++      "criteria": [
++        "inspect/dry-run 默认不写数据；输出脱敏来源清单、分页游标、数量/摘要、归属证据和无法迁入原因。",
++        "读取全部页，以稳定源身份去重；工具调用/结果、附件、时间和顺序保留，导入完成能通过原客户端读取。",
++        "中断后可续跑，同一数据再次导入不增重复消息；导入目标在验证前不成为活跃 writer。",
++        "归属不唯一、引用缺失、快照不兼容的记录隔离，不猜默认公司/本人；源/目标摘要不符阻止 verify。",
++        "聊天导入不导入或导出只有 Intelligence 的个人长期记忆；不重复已有外部线程归属迁移。",
++        "旧数据保留只读，不自动 drop 表/删除对象或卷；所有写入只在明确授权的专用 fixture 演练。"
++      ],
++      "verification": "包含多页、重复页、工具/附件和未知归属的数据集；演练中途退出再导入并从客户端核对。",
++      "boundary": "导入工具与预演，不执行生产 apply；旧暂停记录正式切换处置归后续票。",
++      "produces": "受控导入 manifest、游标/摘要、staging 校验和幂等映射。",
++      "risk": "源 API/归属不完整明确标记，不能把未读取页当无数据。"
++    },
++    {
++      "id": "ME14",
++      "title": "处置在途运行并完成单写切换与无数据损失回滚演练",
++      "depends_on": [
++        "ME11",
++        "ME12",
++        "ME13"
++      ],
++      "acceptance": [
++        "A15",
++        "A18"
++      ],
++      "plan_tasks": [
++        "T11",
++        "T13"
++      ],
++      "roles": [
++        "backend_implementer"
++      ],
++      "deliver": "运维能清楚处置每个在途/暂停任务，在维护窗口单写切换，并在故障时保留新消息和结果回退。",
++      "criteria": [
++        "切换前核对全部运行入口、旁路历史 reader、活跃 writer/lease 与暂停清单；缺项不得 apply。",
++        "停止目标范围新准入并排空旧执行；已终结记录只读，可兼容暂停转换并跨进程演练，不兼容暂停选择旧路排空或明确隔离/重新发起。",
++        "记录版本/写入 fence，验证导入后才切 engine/backend；任何时刻同范围不能有两套 writer，客户端不能切引擎。",
++        "旧 owner、过期 lease 或旧 worker 在切换后不能发起新外部操作、追加成功或覆盖新状态。",
++        "切换后出现新消息/快照再 rollback，仍保留完整新历史与操作 receipt；仅回退支持当前数据的兼容版本，不直接指回旧库。",
++        "如果无法安全回退，停在维护状态并展示可诊断原因，不删除新数据或自动重复外部写操作。",
++        "所有 apply/rollback 只在授权 fixture 演练；生产维护命令与责任人/恢复门槛形成可审查 runbook，生产执行另获授权。"
++      ],
++      "verification": "两个实例、活跃运行/暂停/未知外部效果混合 fixture，演练旧 writer 拒绝、apply 中断与生成新消息后的 rollback。",
++      "boundary": "切换程序、在途处置与预演，不授权生产停机/发布，不重写其他系统的历史归属迁移。",
++      "produces": "写入 fence、暂停处置账本、切换核验与兼容回滚 runbook。",
++      "risk": "任何不可转换或未排空状态在其范围阻塞，不能跳过以完成上线。"
++    },
++    {
++      "id": "ME15",
++      "title": "无强制 Intelligence 部署可运行并诊断全部基础入口",
++      "depends_on": [
++        "ME14"
++      ],
++      "acceptance": [
++        "A16",
++        "A17",
++        "A18"
++      ],
++      "plan_tasks": [
++        "T13"
++      ],
++      "roles": [
++        "backend_implementer",
++        "frontend_implementer"
++      ],
++      "deliver": "未启用学习的新部署不配置 Intelligence 也能运行聊天及后台；运维沿同一运行链路诊断模型、工具、审批和费用。",
++      "criteria": [
++        "基础启动不再要求 Intelligence runner/history/socket 配置；禁用学习和导入 reader 时不在 import/boot/run 创建相关客户端。",
++        "缺核心目录、数据、模型治理或持久恢复能力时明确拒绝启动/启用相关入口，不能降级成无权限内存 runner。",
++        "启用学习后独立解析其配置与健康状态；故障显示真实 delivery，不关闭功能或把基础运行说成全部不可用。",
++        "模型/工具/审批/运行观测关联 OpenBot 稳定身份且不重复计费；日志、错误、event/trace 不泄露 key/capability 或他人内容。",
++        "全部基础入口在无 Intelligence 的隔离环境完成正向运行；两实例 stop/恢复/撤权、数据库 RLS 和重启等待状态有真实证据。",
++        "部署健康/配置文案与实际能力一致，既有全功能多租户上线门槛保持，不以本票通过宣称 #6 已完成。"
++      ],
++      "verification": "无 Intelligence 的隔离启动+网页/后台运行，启用学习的故障演示，跨实例与受限数据库身份矩阵和观测对账。",
++      "boundary": "去基础运行硬依赖与可诊断部署，不完全替换学习服务，不删除 React/SSE 依赖。",
++      "produces": "基础/可选能力分离配置、健康合同和完整观测关联证据。",
++      "risk": "基础能力缺失明确拒绝；实际环境缺项不得以全 skip 通过。"
++    },
++    {
++      "id": "ME16",
++      "title": "退出旧内置执行路径并完成全入口交付验收",
++      "depends_on": [
++        "ME15"
++      ],
++      "acceptance": [
++        "A18",
++        "A19",
++        "A20"
++      ],
++      "plan_tasks": [
++        "T14"
++      ],
++      "roles": [
++        "backend_implementer",
++        "frontend_implementer"
++      ],
++      "deliver": "维护者取得可审查的完整迁移交付，旧内置执行旁路退出，用户原业务在正向、越权和故障场景下保持可用。",
++      "criteria": [
++        "逐入口对照迁移清单和实际装配，所有本轮内置执行走 Mastra；BuiltInAgent/旧 Runner 活跃消费者归零。",
++        "清理不可达旧执行代码/配置，保留客户端必需 SDK、可选学习、只读导入、历史映射和未迁独立 harness；残留逐项有理由。",
++        "A01–A20 全部有映射和同版本证据，外部 #395 合同已集成；真实跨实例/restart/RLS/完整消息和 UI 正向+越权均通过。",
++        "适用类型检查、Lint、构建、测试分区与覆盖对账完成；环境阻塞、不执行、全 skip 不记 PASS。",
++        "完整范围独立 Spec/质量 Review 及 OCR 覆盖通过，有效 critical/high/medium 全部修复复审；混合提交/未提交交付两种范围都覆盖。",
++        "归档快照/哈希、命令与报告、迁移/回滚预演、所有 ruling 和限制；最终 diff 只含授权范围，无生产 apply/发布。"
++      ],
++      "verification": "完整受影响回归、真实客户端刷新/停止/语音、基础部署及数据库矩阵；独立审查/OCR 与最终入口审计。",
++      "boundary": "最终 contract 与验收，不把遗漏的新产品范围塞进收尾，不自动关闭旧父 Issue 或执行部署。",
++      "produces": "可追溯交付报告、完整验收矩阵、零阻塞审查和维护窗口候选包。",
++      "risk": "任何真实必需验收未判或有效 finding 都不计完成；需要修复按独立修复计划进行。"
++    }
++  ]
++}

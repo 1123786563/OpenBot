@@ -4,12 +4,22 @@
 // Only a Bun-runtime dependency belongs in the driven manifest. Anything else — a matcher the compat
 // layer has not grown yet, an alias the runner cannot resolve, a file that registers nothing — is a
 // gap in this repository's harness and must not be hidden by routing it onto another runtime.
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+// The grouping, the manifest path and THE writer come from the shared lib:
+// writeManifest() applies BOTH island kinds — the filename-prefix ISLANDS
+// (ai-observability-, billing-credits-writer, gateway-probe; measured, not
+// guessed — see the lib comment) and the DIRECTORY_ISLANDS — with the same
+// sort and "part N" naming every other writer uses, and persists the same
+// payload shape (directoryIslands + audit + causes) so no writer can strip
+// what another recorded. A hand-rolled second grouping here once drifted
+// from it and silently re-merged the prefix islands into 24-file
+// alphabetical slices, which is exactly the false-red configuration the
+// islands exist to prevent.
+import { MANIFEST, readManifest, writeManifest } from "./lib/e2e-manifest.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const auditPath = process.argv[2] ?? "archive/verification/e2e-file-audit.json";
-const groupSize = Number(process.env.E2E_BUN_GROUP_SIZE ?? 24);
 
 // The mobile QA deliverable is written against an Appium driver and a device bundle: it is not
 // executable in this repository and never ran under `bun test` either. It is kept out of both the
@@ -57,42 +67,45 @@ const todo = audit.filter(
     !artifacts.includes(entry),
 );
 
-const byDirectory = new Map();
-for (const entry of driven) {
-  const directory = entry.file.split("/").slice(0, 2).join("/");
-  if (!byDirectory.has(directory)) byDirectory.set(directory, []);
-  byDirectory.get(directory).push(entry.file);
+// One grouping algorithm, one writer: writeManifest() keys directory islands
+// by full path and filename-prefix islands by their own key, so a group's red
+// keeps meaning "these files are red together" without this script
+// re-deriving any of it. The per-file `causes` evidence other writers
+// recorded is preserved (filtered to files still on the manifest) — a
+// regeneration that wiped it was the dual-writer bug this convergence fixes.
+// Bootstrap-from-zero: a manifest that is missing, wiped, or half-written
+// (an interrupted writer leaves truncated JSON) must not crash the generator
+// before it writes anything — so the parse is guarded, not just the stat.
+// Only `causes` is read off `existing`; `audit` is absent, which
+// writeManifest() treats as "this writer records none".
+let existing;
+try {
+  existing = existsSync(MANIFEST) ? readManifest() : { causes: {} };
+} catch (error) {
+  console.warn(
+    `e2e-bun-manifest: existing manifest unreadable, dropping recorded causes (${
+      error instanceof Error ? error.message : String(error)
+    })`,
+  );
+  existing = { causes: {} };
 }
-
-const groups = [];
-for (const [directory, files] of byDirectory) {
-  for (let index = 0; index < files.length; index += groupSize) {
-    const chunk = files.slice(index, index + groupSize);
-    groups.push({
-      name: `${directory}${files.length > groupSize ? ` part ${index / groupSize + 1}` : ""}`,
-      files: chunk,
-    });
-  }
-}
-
-writeFileSync(
-  resolve(root, "docs/verification/e2e-bun-suites.json"),
-  `${JSON.stringify(
-    {
-      generatedBy: "scripts/e2e-bun-manifest.mjs",
-      audit: auditPath,
-      groups,
-      files: driven.map((d) => d.file),
-      artifacts: artifacts.map((a) => a.file),
-    },
-    null,
-    1,
-  )}\n`,
+const kept = new Set([...driven, ...artifacts].map((entry) => entry.file));
+const keptCauses = Object.fromEntries(
+  Object.entries(existing.causes).filter(([file]) => kept.has(file)),
+);
+const groupCount = writeManifest(
+  {
+    files: driven.map((d) => d.file),
+    artifacts: artifacts.map((a) => a.file),
+    causes: keptCauses,
+    audit: auditPath,
+  },
+  "scripts/e2e-bun-manifest.mjs",
 );
 
 console.log(`${audit.length} files audited`);
 console.log(
-  `${driven.length} kept on the Bun runtime, in ${groups.length} driven group(s)`,
+  `${driven.length} kept on the Bun runtime, in ${groupCount} driven group(s)`,
 );
 console.log(
   `${artifacts.length} deliverable artifacts, not executable here: ${artifacts.map((a) => a.file).join(", ")}`,

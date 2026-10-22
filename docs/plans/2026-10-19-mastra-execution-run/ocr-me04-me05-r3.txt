@@ -1,0 +1,265 @@
+Review partially complete: 14 finding(s); 3 of 13 selected item(s) failed.
+
+─── server/src/mastra/tools.ts:187-191 ───
+[bug · medium] governed 路径会特意把 HeadlessToolSuspension
+原样上抛（plugins/tools.ts:252；来源：approvals/service.ts:363 的审批等待、store.ts:8253 的共享裁决），legacy 内置路径由
+executeNativeApprovalTool/native-context 把它转成 AG-UI interrupt 挂起等人。这里直接 `granted.execute(input)`
+透传后，挂起会落入引擎的 tool-error 分支，被 stream-events 用 markUntrusted 包成「vendor
+工具错误」文本喂回模型——审批等待被静默吞掉：人永远收不到审批请求，模型把它读成 vendor 拒绝并继续作答。此外 legacy 对每次内置工具执行还包了
+observeBuiltinToolExecution（tool-step 回执结算），此引擎上的服务端执行将不再写回执。建议：至少识别 HeadlessToolSuspension 并以命名拒绝
+fail-closed（而非洗成 untrusted 工具错误），或在引擎装配处像 MASTRA_TEXT_ONLY_SLICE 对 learned skills/computer
+那样，对审批门控的授权拒绝启用，直到 ME09 的持久化审批接线（requireApproval/durableToolNames）覆盖它们。
+
+-         // The ONE granted execute: grant → policy → credential → audit.
+-         // Vendor answers arrive already enveloped (vendorAnswer); refusals
+-         // arrive as "Refused." text; a throw becomes the engine's tool-error,
+-         // which stream-events wraps with markUntrusted.
+-         return granted.execute(input);
++         try {
++           return await granted.execute(input);
++         } catch (error) {
++           if (error instanceof HeadlessToolSuspension) {
++             // Never laundered as an untrusted vendor error: the approval
++             // pause this engine cannot yet host fails the run closed.
++             throw new MastraToolRefusal(
++               "MASTRA_TOOL_SUSPENSION_UNSUPPORTED: this engine cannot pause for approval; failing closed instead.",
++             );
++           }
++           throw error;
++         }
+
+
+─── server/src/mastra/tools.ts:82-82 ───
+[maintainability · medium] 模型名由 toolNameFor 拼成 `mcp__<serverId>__<toolName>`（store.ts:804），而
+store/授权侧没有任何更早的长度校验（代码内 TODO 亦自认延迟）。一旦某个授权名超过 64 字符，createMastraTools 在装配期抛
+MASTRA_TOOL_NAME_INVALID，会使该 Bot 在 Mastra 引擎上的每一次运行整体失败——包括永远用不到该工具的纯文本轮次——而不是配置期错误。建议把同一校验真正前移到
+grant/refresh 时（plugins/store.ts 的 toolNameFor 使用点旁），让拒绝在配置期
+surfaced；若本波不做，至少应在引擎选择处提前探测并拒绝切换，避免合法授权变成运行期硬失败。
+
+- const VALID_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
++ // 建议（plugins/store.ts，grant/refresh 路径）复用同一校验：
++ // if (!VALID_TOOL_NAME.test(toolNameFor(ref))) {
++ //   throw new Error(`GRANT_TOOL_NAME_INVALID: ${toolNameFor(ref)} exceeds the 64-char model tool-name limit`);
++ // }
+
+
+─── server/src/mastra/tools.ts:100-101 ───
+[test · low] 这两个读取位置目前只被单元测试用合成 context（{ agent: { toolCallId } }，见 mastra-tools.test.ts callTool
+默认值）验证过，没有针对锁定版本 @mastra/core 真实引擎 execute context 形态的断言——mastra-governed-tools.test.ts 的集成用例也未挂
+onOperation 断言非空 id。若真实 context 两种形态都不携带该字段，所有操作会静默退化为 unkeyed（每次执行都 mint 新 operationId），与注释宣称的「同一
+toolCallId 重试保持同一身份」的 ME05 契约相悖，且要等 ME09 接上 onOperation 才会暴露。建议在现有走真实引擎回路的集成测试里断言
+operation.toolCallId 非空（把 createMastraTools 的 guard.onOperation 记录下来核对）。
+
+
+
+─── server/src/mastra/governed-agent.ts:73-73 ───
+[maintainability · low] 前一行刚用 typeof 校验了 markConsumed 是函数，但 executionBinding 只以 ?.() 调用：若传入的
+collaborator 携带了非函数的 truthy executionBinding（跨包畸形对象），这里会抛裸 TypeError，而不是下方注释承诺的命名拒绝
+EXECUTION_BINDING_UNBOUND——破坏了本函数自己确立的「fail closed, named refusal」一致性。建议与 markConsumed 同样用 typeof
+判型后再调用。
+
+-   const facts = governed.executionBinding?.();
++   const facts =
++     typeof governed.executionBinding === "function"
++       ? governed.executionBinding()
++       : null;
+
+
+─── server/src/mastra/compatibility.ts:382-384 ───
+[test · low] toolLoop 的赋值排在 `await toolOutput.text` 之后：若 text 阶段抛错（fullStream 已被 getReader 消费完再取
+.text 属于易碎点），即便工具确实只执行了一次、controlledModelSteps 也已测得，toolCallOnce 等结果仍全部丢失，报告只剩全 false +
+probeError——而 probeError 只挂在 agentExecution 上，agentToolLoop 的消费方无法区分「测得为假」与「未测得」。建议把不依赖 text
+的字段（toolCallOnce/controlledModelSteps/providerRequests）在流消费完成后立即赋值；finalAnswerFromResult 可改为在 chunk
+遍历中累积 text-delta 计算，避免依赖第二次 await。
+
+
+
+─── server/src/mastra/approvals.ts:310-314 ───
+[maintainability · low] decisionIdOf 重复实现：continuation-store.ts 已导出完全相同的 decisionIdOf（幂等决策 id 的推导是
+already_applied 幂等判断与存储侧 claim 记录共同依赖的契约面），本文件又私有复制一份。未来新增 decision kind 时两处可能漂移（switch 落空返回
+undefined），导致幂等判断与存储侧记录的 decisionId 不一致。本文件已从 "./continuation-store" 导入多个符号，建议直接复用导出版本并删除本地副本。
+
+- function decisionIdOf(decision: ResumeDecision): string {
+-   switch (decision.kind) {
+-     case "approved":
+-     case "declined":
+-       return decision.approvalId;
++ // 删除此私有 decisionIdOf，改为复用 continuation-store.ts 的导出实现：
++ import {
++   MASTRA_CONTINUATION_REFUSALS,
++   type MastraContinuationRecord,
++   MastraContinuationRefusal,
++   type MastraContinuationStore,
++   decisionIdOf,
++   type MastraOperationIdentity,
++ } from "./continuation-store";
+
+
+─── server/src/mastra/continuation-store.ts:415-416 ───
+[bug · medium] loadPendingRow 缺少 status 过滤：函数名与 saveContinuation 的收敛语义、schema 注释都声称 "pending"（One
+PENDING continuation per (run, tool call)），但查询会把同 (runId, toolCallId) 的 finished/claimed
+行一并当作"已存在挂起"返回 ref。由于唯一索引 mastra_continuations_run_call_idx 不是 partial，finished 行会永久阻断该 (run, call)
+的新行：一旦同一 run 的同一 toolCallId 在行 finished 后再次挂起，saveContinuation 会静默返回 finished 行的 ref，新挂起的数据（含新
+fingerprint/snapshotRef）丢失，且该 ref 恢复时永远 alreadyFinished 不可恢复。建议查询排除 finished（此时重放插入会因唯一键冲突走
+fail-closed 的 SAVE_LOST，而非静默返回不可恢复的 ref），并评估将唯一索引改为 partial（WHERE status <> 'finished'）让"每 (run,
+call) 一个 pending"由数据库真正保证。
+
+            eq(mastraExecutionContinuations.runId, runId),
+            eq(mastraExecutionContinuations.toolCallId, toolCallId),
++           ne(mastraExecutionContinuations.status, "finished"),
+
+
+─── server/src/mastra/continuation-store.ts:593-597 ───
+[bug · low] F4 竞态分支的复核集合与插入前闸门不一致：注释声称 "re-verify its identity against ours, the same gate the
+pre-insert replay check applies"，但插入前检查比对的是 argsDigest/kind/toolName，这里只比对
+operationId/argsDigest/packageFingerprint——遗漏了 kind 与 toolName，且两处都未比对 snapshotRef。同 run 同 call 但
+kind/toolName/snapshot 分歧的并发保存可以穿过该分支，留下与已公示挂起不一致的恢复数据。建议对齐两个闸门的比较集合。
+
+          if (
+            row.operationId !== operationId ||
+            row.argsDigest !== payload.argsDigest ||
++           row.kind !== payload.kind ||
++           row.toolName !== payload.toolName ||
+            row.packageFingerprint !== payload.packageFingerprint
+          ) {
+
+
+─── server/src/mastra/execution.ts:257-257 ───
+[maintainability · medium] buildAgent 返回的 durable 是死返回值：runAndNormalize 解构丢弃（resume-driver.ts 中的 new
+Mastra 甚至不接收返回值），durable 挂起快照的写入完全依赖 new Mastra(...) 构造函数对 agent 的副作用式 storage 注册——这是引擎未文档化的行为。ME01
+探针验证过的装配（server/tests/support/me01-fixture.ts 的 buildMe01Stack）始终在栈中保留 mastra
+实例引用；若注册语义要求实例存活（或后续版本改变该行为），所有 durable 挂起将静默退化为进程内暂停，ME05 的保存与 resumeStream
+读取链路整体失效且无任何报错。建议让实例生命周期覆盖整个流（保留引用直至 finally），或以测试证明丢弃引用后挂起仍持久化，再据此移除这个无消费方的返回值并注释说明不变量。
+
+-   const { agent } = buildAgent(request);
++   const { agent, durable } = buildAgent(request);
++   // durable 须与流同生命周期持有（ME01 验证过的装配保留实例引用），
++   // 或在验证构造器副作用注册不变量后移除该无消费方的返回值。
+
+
+─── server/src/mastra/execution.ts:351-352 ───
+[bug · medium] 挂起保存兜底路径存在三个缺口：(1) normalizer 未给出 suspendedToolCallId 时取"第一个无 result 的 announced
+调用"，多调用并行未决（引擎并行 tool calls 后某个 durable 调用暂停）会选错 pending 调用，持久化错误的 toolCallId，恢复时驱动错误的调用；(2)
+announced.get(suspendedId) 未命中或兜底未命中时，if (toolCallId && call) 整体静默跳过保存——流已经 terminal-less
+结束（下游读作等待态）却既无 continuation 也无 RUN_ERROR，直接违反本模块自己声明的 "never publish recoverable without recovery
+data"；(3) argsText 不可解析时退化为对原始文本做 argsDigestFor 摘要，而审批决策侧的 argsDigest 是 canonicalJson(parsed args)
+的摘要（ME05 测试与 tools.ts 均如此），两者永不相等，该挂起将被 argsMismatch 永久锁死无法合法批准。建议：未识别出唯一 pending 调用、或 args
+不可解析时，一律按保存失败处理（补发 RUN_ERROR，与 onSuspension 抛错路径同型）；多候选存在时拒绝猜测。
+
+        const [toolCallId, call] = pending ?? [];
+-       if (toolCallId && call) {
++       if (!toolCallId || !call) {
++         yield {
++           type: "RUN_ERROR",
++           message:
++             "MASTRA_CONTINUATION_SAVE_FAILED: the suspension ended terminal-less but no single pending tool call could be identified; the run failed instead of publishing a waiting state nothing could resume.",
++         } as unknown as BaseEvent;
++         return;
++       }
+
+
+─── server/src/mastra/resume-driver.ts:131-136 ───
+[bug · medium] 恢复驱动未接管二次挂起的保存：这里重新挂载 requireApproval 的注释明言 "if the engine re-asks"
+恢复流会以同样方式再次暂停，但驱动对 resumeStream 的输出只做 drainResume——恢复流中若再次触发 durable 暂停，将以 terminal-less 结束且没有任何
+continuation 保存（deps 没有 onSuspension 等价钩子），随后照常 receiptSink.executed() 并返回 outcome
+"resumed"、finishContinuation 落 "resumed"：引擎快照停在 suspended、经 onEvent 透出的等待态却没有恢复数据，违反
+"无恢复数据不得发布可恢复状态" 的 ME05 不变量。建议为驱动 deps 增加挂起保存钩子（镜像 ExecutionContinuationContext.onSuspension，由
+approvals-integration 装配接上 store.saveContinuation），未接线时拒绝挂载 durable 暂停，并将 re-suspended 的
+drain（finishReason === "suspended"）作为独立结果上报而非笼统的 "resumed"。
+
+-       const tools: Record<string, unknown> = { ...(loop.tools ?? {}) };
+-       for (const [name, tool] of Object.entries(tools)) {
+-         if ((loop.durableToolNames ?? []).includes(name)) {
+-           (tool as { requireApproval?: boolean }).requireApproval = true;
+-         }
++ export interface CreateMastraResumeDriverDeps {
++   // ...existing deps...
++   /** 恢复流中再次 durable 暂停时的保存钩子；未接线则拒绝挂载 durable 暂停。 */
++   readonly onSuspension?: (fact: {
++     toolCallId: string;
++     toolName: string;
++     argsDigest: string;
++   }) => Promise<void>;
+-       }
++ }
+
+
+─── server/src/mastra/resume-driver.ts:149-152 ───
+[maintainability · low] 裸语句丢弃 new Mastra 实例：与 execution.ts buildAgent 的 durable
+丢弃同型，恢复读取（resumeStream 反序列化持久化挂起快照）完全依赖构造函数对 agent 的副作用式 storage 注册，且无任何引用保留。ME01
+验证过的装配形态（me01-fixture.buildMe01Stack）保留实例于栈中。建议至少将实例保留到 drainResume 完成之后，或与 execution.ts
+侧一并验证"丢弃引用后注册仍生效"这一引擎不变量并注释说明，避免引擎版本升级时静默失效。
+
+-       new Mastra({
++       // 保留实例引用直至 drainResume 完成（与 execution.ts 的 durable 持有统一处理）
++       const durable = new Mastra({
+          agents: { [agentId]: agent },
+          storage: storage as never,
+        });
+
+
+─── server/src/mastra/compatibility.ts:329-332 ───
+[maintainability · low] 这段 SSE Response 构造与本文件上方首个 scripted provider 的 fetch
+handler（L111-114）逐字符相同，且新 handler 内 5 个 chunk 字面量的 {id/object/created/model/choices}
+脚手架也高度重复。两份拷贝意味着后续调整 SSE 帧格式（或补 usage 字段）时必须同步改两处，漏一处则两个探针行为静默分叉。建议抽一个 sseResponse(chunks)
+helper（顺带可用 chunk(delta, finish_reason) 收敛字面量脚手架）供两个 provider 复用。
+
+-           return new Response(
++ const sseResponse = (chunks: unknown[]): Response =>
++   new Response(
+-             `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`,
++     `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`,
+-             { headers: { "content-type": "text/event-stream" } },
++     { headers: { "content-type": "text/event-stream" } },
+-           );
++   );
++ // 两处 fetch handler 均改为 return sseResponse(chunks);
+
+
+─── server/src/mastra/governed-agent.ts:42-50 ───
+[maintainability · low] scopeIdentityEquals 手工枚举 PlatformScope 当前全部 7
+个字段做准入身份比较。execution-contracts.ts 自述契约策略是 "extend (never renamed)"——一旦 PlatformScope 增加第 8
+个字段，此比较会静默跳过新字段（注释 "all seven contract fields" 一同腐烂），这个 defense-in-depth 门被无声削弱，而相邻的 approvals.ts
+scopeIdentityMatches（只比 4 个身份字段，服务于 re-derived binding）又是另一份手写子集，三处更难保持同步。建议改为键集驱动（在 PlatformScope
+定义旁冻结一份全字段列表并遍历比较，或用 satisfies 强制穷举），使新增字段自动进入比较而不是依赖人工记得改这里。
+
+-   return (
+-     facts.tenantId === binding.tenantId &&
+-     facts.workspaceId === binding.workspaceId &&
+-     facts.principalId === binding.principalId &&
+-     facts.actorId === binding.actorId &&
+-     facts.memberEpoch === binding.memberEpoch &&
+-     facts.aclEpoch === binding.aclEpoch &&
+-     facts.entrypoint === binding.entrypoint
+-   );
++ const SCOPE_IDENTITY_FIELDS = [
++   "tenantId",
++   "workspaceId",
++   "principalId",
++   "actorId",
++   "memberEpoch",
++   "aclEpoch",
++   "entrypoint",
++ ] as const satisfies readonly (keyof PlatformScope)[];
++ 
++ function scopeIdentityEquals(
++   facts: PlatformScope,
++   binding: PlatformScope,
++ ): boolean {
++   return SCOPE_IDENTITY_FIELDS.every((field) => facts[field] === binding[field]);
++ }
+
+
+LLM retry report summary: 6 of 102 requests affected -- 2 requests failed, 4 requests recovered after retry
+
+Review planning (1 request):
+- server/src/mastra/approvals.ts,server/src/mastra/continuation-store.ts,server/src/mastra/execution-contracts.ts,server/src/mastra/execution.ts,server/src/mastra/resume-driver.ts: rate limited (HTTP 429) -> succeeded
+
+Core review (5 requests):
+- server/src/mastra/approvals.ts,server/src/mastra/continuation-store.ts,server/src/mastra/execution-contracts.ts,server/src/mastra/execution.ts,server/src/mastra/resume-driver.ts: timed out -> failed
+- server/src/mastra/conversation-runtime.ts,server/src/mastra/message-parts.ts,server/src/mastra/stream-events.ts: rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> failed
+- server/src/mastra/ag-ui-agent.ts,server/src/mastra/compatibility.ts,server/src/mastra/governed-agent.ts,server/src/mastra/instructions.ts,server/src/mastra/tools.ts: network error -> succeeded
+- server/src/mastra/ag-ui-agent.ts,server/src/mastra/compatibility.ts,server/src/mastra/governed-agent.ts,server/src/mastra/instructions.ts,server/src/mastra/tools.ts: rate limited (HTTP 429) -> succeeded
+- server/src/mastra/approvals.ts,server/src/mastra/continuation-store.ts,server/src/mastra/execution-contracts.ts,server/src/mastra/execution.ts,server/src/mastra/resume-driver.ts: network error -> succeeded
+
+Per-attempt detail: --format json (retry_report).

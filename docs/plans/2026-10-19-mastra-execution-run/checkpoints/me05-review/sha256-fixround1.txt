@@ -1,0 +1,8 @@
+36e0d4e91059a59813340e02fcfdd81434813368b82f9b90859713f6f7563e42  server/src/mastra/continuation-store.ts
+d7642515811cbdc9d523816f19d6fd5efdfdbc672be4116c4649c4ad66848cfe  server/src/mastra/approvals.ts
+1d4c4bd6de66eb7815717f8595e61d4404d50ce8629ebcc4ca584248296108d9  server/src/mastra/resume-driver.ts
+bc6dc0f71482c85371514cd68afc25870873149adace3cf333333aca1a0ea91d  server/tests/mastra-continuations.test.ts
+4caf16dd2a6f638e8013265747bf3bf949dd53d9e28bf8c8aa3c26ed2674cc05  server/src/mastra/compatibility.ts
+18e0f0e5b5c9a8d628c6db43445bb2a7c522d829fcf682e0ff6c09a1de83498f  server/src/mastra/conversation-runtime.ts
+480b33d8b4bca200365d48dcea0841d6ef5af610230ab65fbc96b209208e07a7  docs/plans/2026-10-19-mastra-execution-run/me05/report.md
+854ebc6bea9afc7165ef525576637c81ea93707da07d3fce4e7eba070e4067d8  docs/plans/2026-10-19-mastra-execution-run/me05/fix-round-1-report.md

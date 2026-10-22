@@ -1,0 +1,12 @@
+
+ RUN  e2e v0.20.0 /Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec
+      run 01a15638-3189-7ef6-8e2c-7588dccc9c9f · targets: node
+
+ ✓ |node| tests/bun-suites.test.ts (1 test) 6.30s
+   ✓ bun runtime suite server/tests part 6 6.30s
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  06:11:25
+   Duration  6.42s
+

@@ -1,5 +1,6 @@
 {
- "generatedBy": "scripts/e2e-batch-drive-bun-test.mjs",
+ "generatedBy": "scripts/e2e-bun-manifest.mjs",
+ "audit": "archive/verification/e2e-file-audit.json",
  "groups": [
   {
    "name": "agent-computer/tests",
@@ -111,6 +112,7 @@
     "app/tests/learning-admin.test.tsx",
     "app/tests/live-screen-app-shortcuts.test.tsx",
     "app/tests/live-screen-keyboard.test.tsx",
+    "app/tests/mastra-runtime-compat.test.tsx",
     "app/tests/memory-settings.test.tsx",
     "app/tests/model-picker-ui.test.tsx",
     "app/tests/observability-i18n-namespaces.test.ts",
@@ -122,13 +124,13 @@
     "app/tests/proposed-skill-card.test.tsx",
     "app/tests/root-drop-guard.test.tsx",
     "app/tests/router.test.ts",
-    "app/tests/serve.test.ts",
-    "app/tests/sign-in-card.test.tsx"
+    "app/tests/serve.test.ts"
    ]
   },
   {
    "name": "app/tests part 4",
    "files": [
+    "app/tests/sign-in-card.test.tsx",
     "app/tests/skills-read-failure.test.tsx",
     "app/tests/stopped-turn.test.ts",
     "app/tests/transcript-attachments.test.tsx",
@@ -300,14 +302,18 @@
     "server/tests/enterprise/ai-sdk-v3-gateway-adapter.test.ts",
     "server/tests/enterprise/conversations.integration.test.ts",
     "server/tests/enterprise/mastra-compatibility.test.ts",
-    "server/tests/enterprise/mastra-model.integration.test.ts",
-    "server/tests/enterprise/mastra-storage.integration.test.ts",
-    "server/tests/enterprise/runner-events.integration.test.ts"
+    "server/tests/enterprise/mastra-continuations.integration.test.ts",
+    "server/tests/enterprise/mastra-conversation-runtime.integration.test.ts",
+    "server/tests/enterprise/mastra-frontend-tool-participation.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 5",
    "files": [
+    "server/tests/enterprise/mastra-import.integration.test.ts",
+    "server/tests/enterprise/mastra-model.integration.test.ts",
+    "server/tests/enterprise/mastra-storage.integration.test.ts",
+    "server/tests/enterprise/runner-events.integration.test.ts",
     "server/tests/enterprise/runs.integration.test.ts",
     "server/tests/enterprise/tenancy-rls.integration.test.ts",
     "server/tests/enterprise/tenancy.integration.test.ts",
@@ -327,16 +333,16 @@
     "server/tests/human-input-end-to-end.test.ts",
     "server/tests/identity-challenges.integration.test.ts",
     "server/tests/identity-github-callback.integration.test.ts",
-    "server/tests/identity-retire.integration.test.ts",
-    "server/tests/identity-schema.integration.test.ts",
-    "server/tests/identity-store.integration.test.ts",
-    "server/tests/intelligence-authentication.test.ts",
-    "server/tests/jsonb-encoding.integration.test.ts"
+    "server/tests/identity-retire.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 6",
    "files": [
+    "server/tests/identity-schema.integration.test.ts",
+    "server/tests/identity-store.integration.test.ts",
+    "server/tests/intelligence-authentication.test.ts",
+    "server/tests/jsonb-encoding.integration.test.ts",
     "server/tests/key-drift-handling.test.ts",
     "server/tests/key-expiry.test.ts",
     "server/tests/key-issuance.integration.test.ts",
@@ -348,6 +354,24 @@
     "server/tests/learning-langgraph.test.ts",
     "server/tests/learning-mastra.test.ts",
     "server/tests/learning-settings.integration.test.ts",
+    "server/tests/mastra-ag-ui-agent.test.ts",
+    "server/tests/mastra-agent-resume-process.test.ts",
+    "server/tests/mastra-browser-runner.test.ts",
+    "server/tests/mastra-computer-tools.test.ts",
+    "server/tests/mastra-continuations.test.ts",
+    "server/tests/mastra-engine-wiring.integration.test.ts",
+    "server/tests/mastra-governed-execution.test.ts",
+    "server/tests/mastra-governed-tools.test.ts",
+    "server/tests/mastra-learned-skills.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 7",
+   "files": [
+    "server/tests/mastra-legacy-import.test.ts",
+    "server/tests/mastra-message-parts.test.ts",
+    "server/tests/mastra-stream-events.test.ts",
+    "server/tests/mastra-tools.test.ts",
     "server/tests/mcp-grant-removal.integration.test.ts",
     "server/tests/memory-defaults.integration.test.ts",
     "server/tests/memory-expiry.test.ts",
@@ -360,19 +384,19 @@
     "server/tests/model-preference.integration.test.ts",
     "server/tests/model-providers.test.ts",
     "server/tests/model-scope.integration.test.ts",
-    "server/tests/offboarding-retirement.integration.test.ts"
-   ]
-  },
-  {
-   "name": "server/tests part 7",
-   "files": [
+    "server/tests/offboarding-retirement.integration.test.ts",
     "server/tests/openmuse-activity.test.ts",
     "server/tests/openmuse-deletion.test.ts",
     "server/tests/openmuse-reviewed-actions-store.integration.test.ts",
     "server/tests/opik-admin-contract.test.ts",
     "server/tests/opik-admin-summary.integration.test.ts",
     "server/tests/opik-admin-summary.test.ts",
-    "server/tests/opik-bindings.integration.test.ts",
+    "server/tests/opik-bindings.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 8",
+   "files": [
     "server/tests/opik-bindings.test.ts",
     "server/tests/opik-case-review.integration.test.ts",
     "server/tests/opik-case-review.test.ts",
@@ -389,19 +413,19 @@
     "server/tests/opik-execution-boot.integration.test.ts",
     "server/tests/opik-execution-boot.test.ts",
     "server/tests/opik-execution-runner.test.ts",
-    "server/tests/opik-execution-wiring.test.ts"
-   ]
-  },
-  {
-   "name": "server/tests part 8",
-   "files": [
+    "server/tests/opik-execution-wiring.test.ts",
     "server/tests/opik-executions.integration.test.ts",
     "server/tests/opik-executions.test.ts",
     "server/tests/opik-experiment-routes.integration.test.ts",
     "server/tests/opik-experiments.integration.test.ts",
     "server/tests/opik-experiments.test.ts",
     "server/tests/opik-export.integration.test.ts",
-    "server/tests/opik-export.test.ts",
+    "server/tests/opik-export.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 9",
+   "files": [
     "server/tests/opik-health.test.ts",
     "server/tests/opik-id-links.integration.test.ts",
     "server/tests/opik-id-links.test.ts",
@@ -418,19 +442,19 @@
     "server/tests/opik-retrieval-summary.test.ts",
     "server/tests/opik-run-lifecycle.test.ts",
     "server/tests/opik-run-steps.test.ts",
-    "server/tests/opik-runs-query.test.ts"
-   ]
-  },
-  {
-   "name": "server/tests part 9",
-   "files": [
+    "server/tests/opik-runs-query.test.ts",
     "server/tests/opik-schema-barrel.test.ts",
     "server/tests/opik-scope.test.ts",
     "server/tests/opik-scoring-rules.test.ts",
     "server/tests/opik-t-final-assembly.test.ts",
     "server/tests/opik-tool-steps.test.ts",
     "server/tests/opik-trace-chain.test.ts",
-    "server/tests/order-ownership.integration.test.ts",
+    "server/tests/order-ownership.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 10",
+   "files": [
     "server/tests/organization-auth.test.ts",
     "server/tests/organization-store.integration.test.ts",
     "server/tests/otel-export-scrubbing.test.ts",
@@ -447,19 +471,19 @@
     "server/tests/people-last-sign-in.integration.test.ts",
     "server/tests/people-paging.integration.test.ts",
     "server/tests/personal-credits-read.test.ts",
-    "server/tests/picked-harness-auth.test.ts"
-   ]
-  },
-  {
-   "name": "server/tests part 10",
-   "files": [
+    "server/tests/picked-harness-auth.test.ts",
     "server/tests/plan-credits-personal.integration.test.ts",
     "server/tests/plan-model.test.ts",
     "server/tests/plugin-credential-binding.integration.test.ts",
     "server/tests/plugin-credential-rotation.integration.test.ts",
     "server/tests/plugin-curated-credential.integration.test.ts",
     "server/tests/plugin-logos.integration.test.ts",
-    "server/tests/plugin-routes.integration.test.ts",
+    "server/tests/plugin-routes.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 11",
+   "files": [
     "server/tests/plugin-store.integration.test.ts",
     "server/tests/plugin-user-credential.integration.test.ts",
     "server/tests/policy-durability.integration.test.ts",
@@ -476,19 +500,19 @@
     "server/tests/qa-batch2-cycle-config-qr.test.ts",
     "server/tests/qa-batch2-t5-semantics.integration.test.ts",
     "server/tests/qa-batch2-unreadable-fourth.integration.test.ts",
-    "server/tests/qa-batch3-reconcile.test.ts"
-   ]
-  },
-  {
-   "name": "server/tests part 11",
-   "files": [
+    "server/tests/qa-batch3-reconcile.test.ts",
     "server/tests/recovery-scan.integration.test.ts",
     "server/tests/recovery-unacked-replay.integration.test.ts",
     "server/tests/release-semantics.integration.test.ts",
     "server/tests/remote-bot-handoff.integration.test.ts",
     "server/tests/remote-coordination.integration.test.ts",
     "server/tests/remote-coordination.test.ts",
-    "server/tests/reservation-status.integration.test.ts",
+    "server/tests/reservation-status.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 12",
+   "files": [
     "server/tests/reserve-bound-rounding.test.ts",
     "server/tests/reserve-concurrency.integration.test.ts",
     "server/tests/reserve-payer-tampering.test.ts",
@@ -505,19 +529,19 @@
     "server/tests/sandboxed-components.integration.test.ts",
     "server/tests/sandboxed-publication.integration.test.ts",
     "server/tests/server-side-tools.integration.test.ts",
-    "server/tests/settle-conflict-grant-expiry.integration.test.ts"
-   ]
-  },
-  {
-   "name": "server/tests part 12",
-   "files": [
+    "server/tests/settle-conflict-grant-expiry.integration.test.ts",
     "server/tests/settle-idempotency.integration.test.ts",
     "server/tests/shared-brokered-routes.test.ts",
     "server/tests/shared-brokered-schema.integration.test.ts",
     "server/tests/shared-brokered-store.integration.test.ts",
     "server/tests/shared-computer-run.integration.test.ts",
     "server/tests/shared-gated-mode.integration.test.ts",
-    "server/tests/shared-use-store.integration.test.ts",
+    "server/tests/shared-use-store.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 13",
+   "files": [
     "server/tests/shared-wiring.integration.test.ts",
     "server/tests/skill-ownership.integration.test.ts",
     "server/tests/skill-tools.integration.test.ts",
@@ -534,19 +558,19 @@
     "server/tests/usage-outbox.integration.test.ts",
     "server/tests/user-instructions.integration.test.ts",
     "server/tests/user-preferences.integration.test.ts",
-    "server/tests/voice-session-preview.integration.test.ts"
-   ]
-  },
-  {
-   "name": "server/tests part 13",
-   "files": [
+    "server/tests/voice-session-preview.integration.test.ts",
     "server/tests/voice-session-store.integration.test.ts",
     "server/tests/voice-summary-model.test.ts",
     "server/tests/web-bot-auth.test.ts",
     "server/tests/work-queue.integration.test.ts",
     "server/tests/workbench-implicit-grant.test.ts",
     "server/tests/workshop-artifacts.test.ts",
-    "server/tests/workshop-metering.test.ts",
+    "server/tests/workshop-metering.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 14",
+   "files": [
     "server/tests/workshop-preview.test.ts",
     "server/tests/workshop-schedule-executor.integration.test.ts",
     "server/tests/workshop-store.test.ts"
@@ -572,7 +596,6 @@
     "server/tests/multitenancy/admin-separation.test.ts",
     "server/tests/multitenancy/billing-visibility.test.ts",
     "server/tests/multitenancy/bot-publish.test.ts",
-    "server/tests/multitenancy/bots-ownership.test.ts",
     "server/tests/multitenancy/cache-keys.test.ts",
     "server/tests/multitenancy/company-reservation.test.ts",
     "server/tests/multitenancy/conversation-messages.test.ts",
@@ -591,13 +614,13 @@
     "server/tests/multitenancy/migration-tool.test.ts",
     "server/tests/multitenancy/not-found-semantics.test.ts",
     "server/tests/multitenancy/oauth-state.test.ts",
-    "server/tests/multitenancy/openmuse-private-bot.test.ts"
+    "server/tests/multitenancy/openmuse-private-bot.test.ts",
+    "server/tests/multitenancy/openmuse-tasks.test.ts"
    ]
   },
   {
    "name": "server/tests/multitenancy part 2",
    "files": [
-    "server/tests/multitenancy/openmuse-tasks.test.ts",
     "server/tests/multitenancy/payer-accounts.test.ts",
     "server/tests/multitenancy/people-lifecycle.test.ts",
     "server/tests/multitenancy/personal-share-rules.test.ts",
@@ -622,6 +645,10 @@
     "server/tests/multitenancy/workspace-scope.test.ts"
    ]
   }
+ ],
+ "directoryIslands": [
+  "server/tests/multitenancy",
+  "app/tests/multitenancy"
  ],
  "files": [
   "agent-computer/tests/identity.test.ts",
@@ -706,6 +733,7 @@
   "app/tests/learning-admin.test.tsx",
   "app/tests/live-screen-app-shortcuts.test.tsx",
   "app/tests/live-screen-keyboard.test.tsx",
+  "app/tests/mastra-runtime-compat.test.tsx",
   "app/tests/memory-settings.test.tsx",
   "app/tests/model-picker-ui.test.tsx",
   "app/tests/multitenancy/selection.test.tsx",
@@ -826,6 +854,10 @@
   "server/tests/enterprise/ai-sdk-v3-gateway-adapter.test.ts",
   "server/tests/enterprise/conversations.integration.test.ts",
   "server/tests/enterprise/mastra-compatibility.test.ts",
+  "server/tests/enterprise/mastra-continuations.integration.test.ts",
+  "server/tests/enterprise/mastra-conversation-runtime.integration.test.ts",
+  "server/tests/enterprise/mastra-frontend-tool-participation.integration.test.ts",
+  "server/tests/enterprise/mastra-import.integration.test.ts",
   "server/tests/enterprise/mastra-model.integration.test.ts",
   "server/tests/enterprise/mastra-storage.integration.test.ts",
   "server/tests/enterprise/runner-events.integration.test.ts",
@@ -866,6 +898,19 @@
   "server/tests/learning-langgraph.test.ts",
   "server/tests/learning-mastra.test.ts",
   "server/tests/learning-settings.integration.test.ts",
+  "server/tests/mastra-ag-ui-agent.test.ts",
+  "server/tests/mastra-agent-resume-process.test.ts",
+  "server/tests/mastra-browser-runner.test.ts",
+  "server/tests/mastra-computer-tools.test.ts",
+  "server/tests/mastra-continuations.test.ts",
+  "server/tests/mastra-engine-wiring.integration.test.ts",
+  "server/tests/mastra-governed-execution.test.ts",
+  "server/tests/mastra-governed-tools.test.ts",
+  "server/tests/mastra-learned-skills.test.ts",
+  "server/tests/mastra-legacy-import.test.ts",
+  "server/tests/mastra-message-parts.test.ts",
+  "server/tests/mastra-stream-events.test.ts",
+  "server/tests/mastra-tools.test.ts",
   "server/tests/mcp-grant-removal.integration.test.ts",
   "server/tests/memory-defaults.integration.test.ts",
   "server/tests/memory-expiry.test.ts",
@@ -882,7 +927,6 @@
   "server/tests/multitenancy/admin-separation.test.ts",
   "server/tests/multitenancy/billing-visibility.test.ts",
   "server/tests/multitenancy/bot-publish.test.ts",
-  "server/tests/multitenancy/bots-ownership.test.ts",
   "server/tests/multitenancy/cache-keys.test.ts",
   "server/tests/multitenancy/company-reservation.test.ts",
   "server/tests/multitenancy/conversation-messages.test.ts",
@@ -1083,15 +1127,10 @@
  ],
  "artifacts": [
   "deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts",
-  "deliverables/mobile-e2e-qa/tests/e2e/specs/env.smoke.ios.spec.ts",
   "deliverables/mobile-e2e-qa/tests/e2e/specs/env.smoke.spec.ts",
   "deliverables/mobile-e2e-qa/tests/e2e/specs/interruption.spec.ts",
   "deliverables/mobile-e2e-qa/tests/e2e/specs/offline.spec.ts",
   "deliverables/mobile-e2e-qa/tests/e2e/specs/order.spec.ts"
  ],
- "causes": {},
- "directoryIslands": [
-  "server/tests/multitenancy",
-  "app/tests/multitenancy"
- ]
+ "causes": {}
 }

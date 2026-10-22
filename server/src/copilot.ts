@@ -51,6 +51,7 @@ import {
   nativeApprovalRun,
 } from "./approvals/native-context";
 import type { AuditInitiator } from "./audit";
+import { CreditInsufficientError } from "./billing/payer-binding";
 import {
   attachmentIdsIn,
   newInlineBudget,
@@ -65,6 +66,7 @@ import {
 import type { DeploymentConfig } from "./config";
 import { observeModelConnection } from "./desktop-connection-failure";
 import { desktopTelemetryProperties } from "./desktop-telemetry";
+import type { PlatformScope } from "./enterprise/contracts";
 import type { GovernedModelRequest } from "./enterprise/runs/governed-execution";
 import {
   currentRunnerRequest,
@@ -80,6 +82,26 @@ import {
   type LearningRuntime,
 } from "./learning/runtime";
 import type { LearningSettingsStore } from "./learning/settings";
+import {
+  createMastraAgUiAgent,
+  observableToAsyncIterable,
+} from "./mastra/ag-ui-agent";
+import {
+  type MastraContinuationInstall,
+  MastraContinuationRefusal,
+  type MastraContinuationResumeResult,
+} from "./mastra/approvals";
+import {
+  createProducedMessageCollector,
+  type MastraConversationRuntime,
+} from "./mastra/conversation-runtime";
+import type {
+  ExecuteMastra,
+  ExecutionBinding,
+  FrontendToolDefinition,
+  ResumeDecision,
+} from "./mastra/execution-contracts";
+import { executeGovernedMastra } from "./mastra/governed-agent";
 import {
   type LoadPersonalMemory,
   PersonalMemoryMiddleware,
@@ -98,7 +120,6 @@ import type { GrantedTool } from "./plugins/tools";
 import { grantedToolGuidance, parametersFor } from "./plugins/tools";
 import { UNTRUSTED_GUIDANCE } from "./untrusted-content";
 import { currentUsageOrigin, type UsageOrigin } from "./usage-origin";
-import { CreditInsufficientError } from "./billing/payer-binding";
 
 export { currentRunnerRequest, withRunnerRequestContext };
 
@@ -2109,6 +2130,342 @@ function meteredModel<T>(
 export const meteredModelForTests = meteredModel;
 
 /**
+ * Which engine executes a governed built-in Bot's run (ME02, #474).
+ *
+ * A server-side seam, exactly like the meter and the gateway transport: the
+ * composition (or a test assembly) installs a selector, and absent one every
+ * Bot keeps the legacy built-in engine. The selector is consulted only inside
+ * a governed admission — the Mastra path exists only where the Runner has
+ * admitted the run, minted the governed model collaborator and bound its
+ * identity, so no client field can choose it and no provider-keyed build can
+ * reach it. This ticket does not flip any default.
+ */
+export type BuiltinExecutionEngine = "legacy" | "mastra";
+
+let builtinExecutionEngineFor:
+  | ((input: { botId: string; governed: boolean }) => BuiltinExecutionEngine)
+  | undefined;
+
+/**
+ * Install (or clear) the server-side engine selector. Pass `undefined` to
+ * restore the default: every Bot on the legacy engine.
+ */
+export function setBuiltinExecutionEngine(
+  selector:
+    | ((input: { botId: string; governed: boolean }) => BuiltinExecutionEngine)
+    | undefined,
+): void {
+  builtinExecutionEngineFor = selector;
+}
+
+/**
+ * The server-side conversation runtime the Mastra engine path runs against
+ * (ME03 #475): `loadExecutionInput` rebuilds the model context from the
+ * server's persisted, principal-authorized history, and
+ * `persistExecutionMessages` records the engine's answer through the
+ * ConversationService single-writer seam.
+ *
+ * A composition seam exactly like {@link setBuiltinExecutionEngine}: the
+ * server assembly installs the production runtime; a test assembly may
+ * install one over its own storage. Unlike the selector this is NOT optional
+ * on the engine path — a Mastra-selected run without a wired runtime refuses
+ * (`MASTRA_CONVERSATION_RUNTIME_UNWIRED`) instead of silently running on the
+ * browser's echoed history: the spec's authority for a turn's history is the
+ * server store, never the client.
+ */
+let mastraConversationRuntime: MastraConversationRuntime | undefined;
+
+export function setMastraConversationRuntime(
+  runtime: MastraConversationRuntime | undefined,
+): void {
+  mastraConversationRuntime = runtime;
+}
+
+/**
+ * ME05 (#477): the durable-continuation install the Mastra engine path runs
+ * with — tenant engine storage for suspension snapshots, the durable tool
+ * names, the save-before-waiting hook and the accurate-resume entry. The same
+ * composition-seam shape as the conversation runtime: the server assembly
+ * installs the production install; a test assembly installs its own. UNWIRED
+ * the engine behaves exactly as before ME05 (a suspension stays in-process
+ * and terminal-less) — never half-wired.
+ */
+let mastraContinuations: MastraContinuationInstall | undefined;
+
+export function setMastraContinuations(
+  install: MastraContinuationInstall | undefined,
+): void {
+  mastraContinuations = install;
+}
+
+/**
+ * ME05 fix-round-1: the ONE named entry the approvals HTTP route consumes to
+ * apply an authenticated decision to a durable continuation. The
+ * approvals-integration slice calls exactly this function from its handler;
+ * the routes themselves are untouched by the ME05 slice. Everything
+ * server-owned (the store, the production resume driver, the six gates, the
+ * CAS claim, the receipt ordering) flows from the installed
+ * {@link MastraContinuationInstall} — the caller supplies only the
+ * authenticated scope and decision.
+ *
+ * Unwired (no `setMastraContinuations` install) it refuses with a named
+ * composition error instead of silently dropping the decision: a durable
+ * approval must never read as "nothing to resume" merely because the
+ * assembly did not run.
+ */
+export async function resumeFromApprovalDecision(input: {
+  scope: PlatformScope;
+  continuationId: string;
+  revision: number;
+  decision: ResumeDecision;
+}): Promise<MastraContinuationResumeResult> {
+  const install = mastraContinuations;
+  if (!install) {
+    throw new MastraContinuationRefusal(
+      "MASTRA_CONTINUATIONS_UNWIRED",
+      "MASTRA_CONTINUATIONS_UNWIRED: no durable-continuation install is wired; the approval decision cannot be applied.",
+    );
+  }
+  return install.resume({
+    scope: input.scope,
+    ref: {
+      continuationId: input.continuationId,
+      revision: input.revision,
+    },
+    decision: input.decision,
+  });
+}
+
+/**
+ * Wrap one governed execution so its produced messages are PERSISTED before
+ * the success terminal is forwarded.
+ *
+ * The runner settles completion when RUN_FINISHED reaches it, so holding that
+ * terminal back until `persistExecutionMessages` resolved puts the answer in
+ * the conversation store BEFORE settle-complete semantics can run: a refresh
+ * or a pagination read shows the answer even before the completion is
+ * published, and a persistence failure fails the run instead of completing a
+ * turn whose answer the store would never show. The governed/settlement
+ * contract itself is untouched — the runner's owner-complete rules still gate
+ * completion exactly as before.
+ */
+function withPersistedOutput(
+  execute: ExecuteMastra,
+  runtime: MastraConversationRuntime,
+  binding: ExecutionBinding,
+): ExecuteMastra {
+  return (request) =>
+    new Observable<BaseEvent>((subscriber) => {
+      const collector = createProducedMessageCollector();
+      let terminal: BaseEvent | undefined;
+      let tornDown = false;
+      const subscription = execute(request).subscribe({
+        next: (event) => {
+          if (tornDown || terminal !== undefined) return;
+          if (event.type === "RUN_FINISHED") {
+            terminal = event;
+            return;
+          }
+          collector.push(event);
+          subscriber.next(event);
+        },
+        error: (cause) => {
+          if (!tornDown) subscriber.error(cause);
+        },
+        complete: () => {
+          if (tornDown) return;
+          if (terminal === undefined) {
+            // Terminal-less suspension: no success to persist behind.
+            subscriber.complete();
+            return;
+          }
+          runtime.persistExecutionMessages(binding, collector.snapshot()).then(
+            () => {
+              if (tornDown) return;
+              subscriber.next(terminal);
+              subscriber.complete();
+            },
+            (cause) => {
+              if (!tornDown) subscriber.error(cause);
+            },
+          );
+        },
+      });
+      return () => {
+        tornDown = true;
+        subscription.unsubscribe();
+      };
+    });
+}
+
+/**
+ * The built-in configuration for a Bot the server selected onto the Mastra
+ * engine (ME02).
+ *
+ * A factory config, so BuiltInAgent still owns the lifecycle while the
+ * factory yields the Mastra execution's canonical events directly. The
+ * binding is resolved at FACTORY time — after the governed Runner bound the
+ * run identities — and fails closed before that. The trusted prompt parts
+ * are the same composition the classic governed path builds; the execution
+ * composes them server-side and never lets client context or forwardedProps
+ * near them.
+ *
+ * ME04 (#476) wired the granted connector tools onto this path: the execution
+ * request carries the Bot's held tools and the trusted prompt composes the
+ * same held-tool/connected-vendor guidance the legacy prompt does. ME06 (#478)
+ * wired the computer guidance and the browser participation tools; ME08 (#480)
+ * wired the learned skills — the outer run's ALREADY-VALIDATED invocation
+ * (acquired once per run by the same middleware the legacy engine uses) rides
+ * the execution request through the ME04 controlled wrapper, and its catalog
+ * composes into the trusted prompt at the legacy position. The execution
+ * composes every trusted part server-side and never lets client context or
+ * forwardedProps near them.
+ *
+ * ME03 (#475) wired the conversation contract onto this path: the run input
+ * is rebuilt server-side by `loadExecutionInput` (the client-supplied history
+ * never reaches the model) and the produced messages are persisted through
+ * `persistExecutionMessages` before the success terminal reaches the runner.
+ */
+function mastraAgentConfiguration(input: {
+  agent: RegisteredBuiltInAgent;
+  governedModel: GovernedModelRequest;
+  standing: string | null;
+  tools: GrantedTool[];
+  learnedSkills?: LearnedSkillInvocation;
+  computerGuidance?: string;
+  /** Vendors this deployment connects to, held or not: prompt honesty. */
+  connectedVendors: readonly string[];
+}): BuiltInAgentConfiguration {
+  const {
+    agent,
+    governedModel,
+    standing,
+    tools,
+    learnedSkills,
+    computerGuidance,
+    connectedVendors,
+  } = input;
+  // ME04 wired the granted connector tools, ME06 wired the computer
+  // guidance + the browser participation tools, and ME08 wired the learned
+  // skills (below): every surface a built-in Bot holds is wired onto this
+  // engine, so nothing fail-closed remains on the configuration path.
+  // ME08: the held-tool guidance keeps the legacy composition; the learned
+  // catalog rides the SAME tail in the legacy position — right AFTER the
+  // computer paragraph, exactly where the legacy built-in prompt places it
+  // (copilot.ts legacy branches). Never re-authored, never re-ordered.
+  const grantedGuidanceText = grantedToolGuidance(tools, connectedVendors);
+  const instructionParts = [
+    agent.systemPrompt,
+    ...(standing ? [standing] : []),
+  ];
+  return {
+    type: "custom",
+    factory: (factoryContext) => {
+      const abortSignal = factoryContext.abortSignal;
+      // Fail-closed guards (unbound execution binding, unwired conversation
+      // runtime) live inside the generator so an unwired surface fails as a
+      // structured RUN_ERROR at iteration time, never as a synchronous
+      // throw out of the factory.
+      return (async function* () {
+        const facts = governedModel.executionBinding?.();
+        if (!facts) throw new Error("EXECUTION_BINDING_UNBOUND");
+        // ME03 production wiring: the engine path runs on the server-rebuilt
+        // authorized history and persists its output through the conversation
+        // runtime. Without one the run refuses rather than executing on the
+        // browser's echoed transcript.
+        const runtime = mastraConversationRuntime;
+        if (!runtime) throw new Error("MASTRA_CONVERSATION_RUNTIME_UNWIRED");
+        // The model context is the server's persisted history — the client's
+        // system/tool/user echo is consumed only for the submitted-message
+        // key and then dropped. A thread that does not resolve to this
+        // principal (or history that fails verification) fails the turn.
+        const rebuilt = await runtime.loadExecutionInput(
+          facts.scope,
+          factoryContext.input,
+        );
+        const binding: ExecutionBinding = {
+          ...facts,
+          // The wire threadId is authoritative only after the rebuild proved
+          // it resolves to this principal's mastra conversation; persistence
+          // refuses a binding without one.
+          threadId: rebuilt.threadId,
+        };
+        // ME05: when the continuation install is wired, EVERY execution runs
+        // with its durable context — tenant engine storage, the durable tool
+        // names and the save-before-waiting hook — merged server-side into
+        // the execution request. Unwired, the execute path is untouched.
+        const install = mastraContinuations;
+        const execute: ExecuteMastra = install
+          ? (request) =>
+              executeGovernedMastra({
+                ...request,
+                continuations: {
+                  storage: install.storageFor(request.binding),
+                  durableToolNames: install.durableToolNames,
+                  onSuspension: (suspension) =>
+                    install
+                      .saveSuspension(request.binding, suspension)
+                      .then(() => undefined),
+                },
+              })
+          : executeGovernedMastra;
+        // ME06: the run's client-declared participation tools (the browser's
+        // `useFrontendTool` registrations, relayed on every run input) mount
+        // as INERT bridges — the model's call suspends the engine for real
+        // client participation; the server never executes them. The granted
+        // connector tools keep winning any name collision (the mount drops a
+        // bridged declaration that would shadow one).
+        const frontendTools: FrontendToolDefinition[] = (
+          rebuilt.tools ?? []
+        ).flatMap((tool) =>
+          typeof tool?.name === "string"
+            ? [
+                {
+                  name: tool.name,
+                  description:
+                    typeof tool.description === "string"
+                      ? tool.description
+                      : "",
+                  ...(tool.parameters !== undefined
+                    ? { parameters: tool.parameters }
+                    : {}),
+                },
+              ]
+            : [],
+        );
+        const executionAgent = createMastraAgUiAgent(
+          withPersistedOutput(execute, runtime, binding),
+          binding,
+          {
+            instructions: instructionParts,
+            trailingInstructions: [
+              ...(grantedGuidanceText ? [grantedGuidanceText] : []),
+              ...(computerGuidance ? [computerGuidance] : []),
+              ...(learnedSkills?.catalog ? [learnedSkills.catalog] : []),
+            ],
+            // ME04: the granted connector tools ride the execution request;
+            // the controlled wrapper (mastra/tools.ts) mounts them per call
+            // with this run's abort signal as the stop wire.
+            // ME08: the outer run's validated learned-skill invocation rides
+            // the SAME request — mounted through the SAME controlled wrapper
+            // shape under its original reserved names, executing through the
+            // SDK's own verified snapshot (never re-implemented here).
+            tools,
+            ...(learnedSkills ? { learnedSkills } : {}),
+            ...(frontendTools.length > 0 ? { frontendTools } : {}),
+            governedModel,
+          },
+        );
+        yield* observableToAsyncIterable(
+          executionAgent.run(rebuilt),
+          abortSignal,
+        );
+      })();
+    },
+  };
+}
+
+/**
  * Wrap the model instance in the usage meter when one is wired and the model is an instance (the
  * string form is resolved by the runtime itself, where this file cannot reach). The build's
  * attribution rides along, so the gate's usage fact names the Bot that ran it and who for.
@@ -2218,6 +2575,20 @@ export function builtInAgentConfiguration(
 
   if (governedModel) {
     governedModel.markConsumed();
+    if (
+      builtinExecutionEngineFor?.({ botId: agent.id, governed: true }) ===
+      "mastra"
+    ) {
+      return mastraAgentConfiguration({
+        agent,
+        governedModel,
+        standing,
+        tools,
+        learnedSkills,
+        computerGuidance,
+        connectedVendors,
+      });
+    }
     return {
       model: governedModel.model,
       prompt: [

@@ -1,0 +1,257 @@
+Review complete: 15 finding(s) across 13 selected item(s).
+
+─── scripts/e2e-bun-manifest.mjs:77-79 ───
+[bug · high] manifest dual-writer 修复不完整：`directoryIslands` 键只由本脚本写入，其余写者会静默剥离它。下游
+`tests/bun-suites.test.ts:64` 以 `manifestJson.directoryIslands ?? []` 决定是否给 multitenancy 组注入
+`MT_TEST_DATABASE_URL`；但清单仍有多个活跃写者走 `scripts/lib/e2e-manifest.mjs` 的
+`writeManifest()`（`e2e-batch-drive-bun-test.mjs`、`e2e-add-driven.mjs`、`e2e-fix-collection.mjs`、`e2e-
+route-failures.mjs`，另有 `e2e-import-boundary.mjs` 直接写回），其 payload 不含 `directoryIslands`/`audit`、仍写
+`causes`。任一写者运行后清单即被覆盖回旧形状：`directoryIslands` 静默退化为 `[]`，multitenancy 组失去专用数据库覆盖，51 个套件在共享
+`openbot_test` URL 下 collection abort（lib 注释描述的正是该故障模式）；反向地，本脚本重生成时又会抹掉其他写者记录的 `causes`。这正是 ME02 OCR
+指出的"两个生成器输出形状互斥"，本次只统一了分组算法。建议把写入形状也收敛到 lib：`writeManifest()` 持久化 `directoryIslands:
+DIRECTORY_ISLANDS` 并透传 `audit`，本脚本改调 `writeManifest()`；或退役其余写者。
+
+-       audit: auditPath,
+-       groups,
++ // scripts/lib/e2e-manifest.mjs —— 所有写者共用同一 payload 形状：
++ export function writeManifest({ files, artifacts, causes, audit }, generatedBy) {
++   const list = [...files].sort();
++   const payload = {
++     generatedBy,
++     audit,
++     groups: groupsOf(list),
+-       directoryIslands: DIRECTORY_ISLANDS,
++     directoryIslands: DIRECTORY_ISLANDS,
++     files: list,
++     artifacts: [...artifacts].sort(),
++     causes,
++   };
++   writeFileSync(MANIFEST, `${JSON.stringify(payload, null, 1)}\n`);
++   return payload.groups.length;
++ }
++ // 本脚本随后改调 writeManifest(driven, artifacts, "scripts/e2e-bun-manifest.mjs", auditPath)
+
+
+─── server/src/mastra/governed-agent.ts:49-50 ───
+[security · medium] fail-open 缺口:当 `governed.executionBinding` 方法本身缺失(接口定义为可选方法)时,`facts` 为
+undefined——既不触发 EXECUTION_BINDING_UNBOUND,也不执行任何字段比对,`request.binding`(决定 Mastra run id、事件
+runId、botId)被整体信任放行。这与 governed-execution.ts:36 接口注释宣称的 "fails closed rather than guessing identity"
+姿态相悖:"方法存在但返回 null" 拒绝、"方法缺失" 放行的非对称没有依据——两者都意味着协作者未发布任何 admission
+执行事实。生产链路安全(createGovernedModelExecution 恒带该方法,copilot.ts:2208 工厂对 facts 缺失已 fail-closed),但
+`executeGovernedMastra` 是导出接缝,该门是纵深防御,不应留形状绕过;且 refusal matrix
+测试(mastra-governed-execution.test.ts:744)仅覆盖"返回 null",未覆盖"方法缺失"(stubGovernedModel
+已支持省略该字段却无测试行使)。建议统一为:拿不到 facts 一律拒绝,并补对应测试。
+
+    const facts = governed.executionBinding?.();
+-   if (governed.executionBinding && !facts) {
++   if (!facts) {
++     // 无论方法缺失还是未绑定:不发布执行事实的协作者无法证明
++     // admission 身份,一律拒绝而非信任 request.binding。
++     throw new MastraGovernedExecutionRefusal("EXECUTION_BINDING_UNBOUND");
++   }
+
+
+─── server/src/mastra/governed-agent.ts:66-68 ───
+[bug · medium] scope 一致性比对不完整:`PlatformScope`(enterprise/contracts.ts:40-48)共 7
+个字段——tenantId、workspaceId、principalId、actorId、memberEpoch、aclEpoch、entrypoint——此处仅比对 3
+个。memberEpoch/aclEpoch 是授权纪元、actorId 是身份,一个携带过期纪元或不同 actor 的 scope 会顺利通过 MISMATCH 门。生产路径中
+binding.scope 与 facts.scope 同引用(copilot.ts:2211 直接 `scope: facts.scope`),该门是纵深防御,更应完整;上一轮 "governed
+binding mismatch incompleteness" 的修复覆盖了 run/attempt/generation/botId/executionKey 及 3 个 scope
+字段,scope 部分仍不完整。建议补齐剩余 4 字段,或提取统一的 scope 相等性辅助函数供比对复用。
+
+        facts.scope.tenantId !== request.binding.scope.tenantId ||
+        facts.scope.workspaceId !== request.binding.scope.workspaceId ||
+-       facts.scope.principalId !== request.binding.scope.principalId)
++       facts.scope.principalId !== request.binding.scope.principalId ||
++       facts.scope.actorId !== request.binding.scope.actorId ||
++       facts.scope.memberEpoch !== request.binding.scope.memberEpoch ||
++       facts.scope.aclEpoch !== request.binding.scope.aclEpoch ||
++       facts.scope.entrypoint !== request.binding.scope.entrypoint)
+
+
+─── server/src/enterprise/runs/governed-execution.ts:186-186 ───
+[maintainability · low] 死存储:`executionBinding()` 在 `binding` 为 null 时经三元判断直接返回 null,而首次 `bind()`
+必然重铸 executionKey,故此处初始 `randomUUID()` 的值在任何可观察路径上均不可达——白铸一次 UUID,且与上方注释 "Minted at bind (not
+admission)" 字面不符(代码在 admission 时也铸了)。全文件检索确认 executionKey 仅此声明、executionBinding 返回处(:342)与 bind
+重铸处(:354)三个读写点,初始值确无观察者。建议延迟铸造,让类型本身表达"key 诞生于 bind"的不变量。
+
+-   let executionKey = randomUUID();
++   let executionKey: string | undefined;
+
+
+─── server/src/mastra/governed-agent.ts:94-94 ───
+[maintainability · low] 无消费方的 re-export:全库检索显示 `MastraExecutionRefusal` 仅在 execution.ts
+内定义并使用,没有任何模块从 governed-agent 导入它;该 re-export 是纯增量的出口面,且与同类新名 `MastraGovernedExecutionRefusal`
+在同一出口并列,消费方极易 import 错误的拒绝类(两者语义不同:一个是 ME03 消息切片拒绝,一个是治理门拒绝)。建议删除该 re-export(及其在 import
+中的具名引入),需要该类型的调用方直接从 "./execution" 导入。
+
+- export { MastraExecutionRefusal };
++ // 删除该 re-export;需要 MastraExecutionRefusal 的调用方直接从 "./execution" 导入
+
+
+─── server/tests/support/me01-child.ts:17-21 ───
+[bug · medium] me01-child.ts 池泄漏修复不完整:`buildMe01Stack` 在 try/finally 之外 await,若其在内部创建 PostgresStore
+之后失败(如 DDL 查询在连接建立后出错,空闲连接滞留池中),`main().catch` 只能打印结果行而拿不到 store 引用,Postgres TCP
+句柄将保持事件循环存活,进程无法退出;父测试 `runResumeChild` 仅监听 'exit' 且无超时/kill 兜底,整条用例会挂到 runner
+超时——恰好复现了本波次要修复的挂起类问题。建议将构建移入 try 并以可选引用在 finally 中关池(或由 fixture 侧兜底,见 me01-fixture.ts 的对应意见)。
+
+-   const { agent, store, controlled } = await buildMe01Stack({
++   let stack: Awaited<ReturnType<typeof buildMe01Stack>> | undefined;
++   try {
++     stack = await buildMe01Stack({
+-     dbUrl,
++       dbUrl,
+-     providerUrl,
++       providerUrl,
+-     requireApproval: true,
++       requireApproval: true,
+-   });
++     });
++     const { agent, controlled } = stack;
++     // ...existing body...
++   } finally {
++     await stack?.store.close();
++   }
+
+
+─── server/tests/support/me01-fixture.ts:329-332 ───
+[bug · medium] buildMe01Stack 自身不清理失败路径:`new PostgresStore()` 之后任一步抛出(现实失败点是 `CREATE TABLE`
+查询——连接已建立后再出错,空闲连接留在池里持有 TCP 句柄),调用方拿不到 store 引用便无法 close。这会使 me01-child.ts(父进程只等 'exit')挂到 runner
+超时,父测试内 build 失败同样泄漏句柄。建议构建函数对构造之后的初始化做 try/catch 并先关池再抛出,让所有调用方天然安全。
+
+    const store = new PostgresStore({
+      id: `me01-${randomUUID().slice(0, 8)}`,
+      connectionString: options.dbUrl,
+    });
++   try {
++     // ...existing setup: DDL + echoTool/agent/mastra construction...
++   } catch (error) {
++     await store.close().catch(() => undefined);
++     throw error;
++   }
+
+
+─── server/tests/support/me01-fixture.ts:103-109 ───
+[maintainability · low] drop():两条 DROP 顺序 await 且未各自捕获——DROP DATABASE 失败(如 docker exec 超时)会跳过 DROP
+ROLE,共享测试容器随失败累积残留 role;且 drop() 在测试 finally 中抛出会掩盖原始断言错误。同函数上方的 bootstrap 失败路径已对两条 DROP 分别
+`.catch(() => undefined)`,此处应保持一致。
+
+      async drop() {
+        await psql(
+          "postgres",
+          `DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`,
++       ).catch(() => undefined);
++       await psql("postgres", `DROP ROLE IF EXISTS "${roleName}"`).catch(
++         () => undefined,
+        );
+-       await psql("postgres", `DROP ROLE IF EXISTS "${roleName}"`);
+      },
+
+
+─── server/tests/support/me01-fixture.ts:132-134 ───
+[maintainability · low] startFakeProvider 的 request 'end' 处理器中 `JSON.parse(body)` 无 try/catch,且未监听
+request 的 'error' 事件:畸形请求体会让异常逃逸到 HTTP server 事件处理器直接崩掉测试进程,客户端中途断开则响应永不写出。当前调用方(AI SDK fetch)只发合法
+JSON、bad-frame 模式只污染响应方向,故现实风险低,但作为可复用 fixture 建议补上受控的 400 分支与 error 监听,保证失败可诊断而非以崩溃/挂起形式出现。
+
++     request.on("error", () => response.destroy());
+      request.on("end", () => {
+        const turn = requests.length;
+-       const parsedBody = JSON.parse(body) as {
++       let parsedBody: {
++         model?: string;
++         messages?: { role: string; tool_calls?: { function?: { name?: string } }[] }[];
++       };
++       try {
++         parsedBody = JSON.parse(body);
++       } catch {
++         response.writeHead(400, { "content-type": "application/json" });
++         response.end(JSON.stringify({ error: "ME01 fake provider: invalid JSON body" }));
++         return;
++       }
+
+
+─── server/tests/support/me01-fixture.ts:81-81 ───
+[maintainability · low] `CREATE ROLE ... PASSWORD '${password}'` 将密码直接内插进 SQL 单引号字符串,当前仅因密码由 UUID
+十六进制派生(不含引号/反斜杠)而安全,属于脆弱模式:后续若改动密码生成方式即引入 SQL 破坏。psql -c 无法用参数绑定,建议改用 dollar-quoting 隔离(execFile 直传
+argv,无 shell 展开,`$$` 安全)。
+
+-       `CREATE ROLE "${roleName}" LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`,
++       `CREATE ROLE "${roleName}" LOGIN PASSWORD $$${password}$$ NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`,
+
+
+─── server/src/mastra/execution.ts:53-58 ───
+[test · medium] 该客户端可达的 fail-closed 拒绝路径（消息 content 为非文本 parts）无任何测试覆盖：全仓搜索 server/tests 中没有
+ME03_MESSAGE_PARTS_UNSUPPORTED 或对 toModelMessages 的直接/间接测试。本轮修复波的核心议题之一就是"未测的 fail-closed
+拒绝"，governed-agent 的拒绝矩阵已补齐，但 execution.ts 这族拒绝（未知 role、非文本 parts）仍零覆盖——尤其内联附件的
+Bot（inlineAttachments 会生成 content parts）切到 mastra 引擎后每次运行都会命中此拒绝，属最容易被真实流量触发的路径。建议补充：content-parts
+消息、未知 role、system/tool role 被静默忽略（而非拒绝）三个用例。
+
+      const text = textContent(message);
+      if (text === null) {
+        throw new MastraExecutionRefusal(
+          "ME03_MESSAGE_PARTS_UNSUPPORTED: this execution slice carries plain text only.",
+        );
+      }
++ // 补充配套测试（mastra-execution 消息族）：
++ // - content: [{ type: "file", ... }] → ME03_MESSAGE_PARTS_UNSUPPORTED
++ // - role: "developer" → ME03_MESSAGE_PARTS_UNSUPPORTED
++ // - 仅 system/tool 历史被跳过后仍有 user 文本 → 正常执行
+
+
+─── server/src/mastra/execution.ts:60-62 ───
+[bug · low] toModelMessages 缺少空历史守卫：当客户端只发 system/tool 消息（被 continue 跳过）或全部为空字符串文本时，converted
+为空数组并直接进入
+agent.stream([])——引擎对空消息列表的行为未定义（可能空拨号烧预算，或在引擎深处抛出不带标记的错误）。本模块的设计哲学是"拒绝而非猜测"（任何非纯文本都已拒绝），空历史应同样显式拒绝，
+与 MastraExecutionRefusal 家族保持一致。
+
+      converted.push({ role: message.role, content: text });
++   }
++   if (converted.length === 0) {
++     throw new MastraExecutionRefusal(
++       "ME03_MESSAGE_PARTS_UNSUPPORTED: no user/assistant text survived relay; refusing an empty model history.",
++     );
+    }
+    return converted;
+
+
+─── server/src/mastra/ag-ui-agent.ts:172-174 ───
+[bug · low] 以 `queued.error !== undefined` 识别错误条目无法区分"error 回调收到 undefined"与普通空条目：若上游以
+subscriber.error(undefined) 终止，queue.push({ error: undefined }) 三字段皆空——不 throw、不 return、不
+yield，该条目被静默吞掉，且订阅已终结不再有新条目，生成器将一直挂起直到 abort 才退出，错误信息完全丢失。虽然当前上游（rxjs
+from(asyncGenerator)）抛出的都是定义值，但这是桥接层的通用契约缺陷。建议用键存在性（"error" in queued）而非值判空来判别。
+
+-       if (queued.error !== undefined) throw queued.error;
++       if ("error" in queued) throw queued.error;
+        if (queued.done) return;
+        if (queued.event) yield queued.event;
+
+
+─── server/src/copilot.ts:2227-2228 ───
+[maintainability · low] `void computerGuidance;` 是修复残留的死语句：computerGuidance 已在上方 fail-closed
+守卫（computerGuidance !== undefined 时拒绝）中使用，能走到此处意味着它必然为 undefined，该语句不产生任何效果。对应本轮修复项
+#15（死包装器移除）的清理不彻底，应删除。
+
+-       void computerGuidance;
+        return observableToAsyncIterable(
+
+
+─── server/src/copilot.ts:2199-2204 ───
+[maintainability · low] Mastra 引擎下同一 Bot 的系统提示词与 legacy 存在未记录的行为差异：legacy
+受管路径（builtInAgentConfiguration 中 prompt 数组）在 tools 为空但 connectedVendors 非空时，仍会通过 grantedToolGuidance
+追加"This deployment also connects to: …"的连接商感知段落——该段落恰恰是为零工具的 Bot 写的（告诉用户哪个 connector 可以由管理员授予）；而
+mastraAgentConfiguration 未接收 connectedVendors，此段落被整体丢弃。注释给出的理由（"没工具的 Bot 不该被告知它没有的手"）只覆盖工具清单部分，不适用于
+vendors 段。建议要么传入 connectedVendors 并仅保留 connected-but-not-held 段落（不引入任何"手"），要么在注释中明确记录该差异是 ME04
+的有意延后。
+
+    const instructionParts = [
+      agent.systemPrompt,
+      ...(standing ? [standing] : []),
+-     // Deliberately no tool or computer guidance: with no tools attached the
+-     // Bot would be told about hands it does not have. ME04/ME06 append them.
++     // Deliberately no held-tool or computer guidance: with no tools attached
++     // the Bot would be told about hands it does not have. ME04/ME06 append
++     // them. The connected-but-not-held vendor paragraph (grantedToolGuidance
++     // with empty tools) is likewise deferred to ME04: recorded as a
++     // deliberate, temporary divergence from the legacy prompt.
+    ];
+
