@@ -44,6 +44,8 @@ const FULL_AMOUNTS: Record<PriceDimension, string> = {
   video: "0.01",
   surcharge_web_search: "0.001",
   surcharge_per_request: "0.01",
+  surcharge_tool_call: "0.002",
+  surcharge_a2a_call: "0.003",
 };
 
 /** Build 03.2-shaped dims: every dimension known by default, the overrides applied. */

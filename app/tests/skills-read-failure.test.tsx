@@ -14,6 +14,10 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import type { ComponentType } from "react";
 import { EditSkill } from "@/components/skills/edit-skill";
 import { type PluginsPage, pluginKeys } from "@/lib/plugins/queries";
+import { scopedCachePrefix } from "@/lib/enterprise/tenant/scoped-cache";
+
+/** Where the skills page reads its page answer under no selection (MT088). */
+const scopedPage = () => [...scopedCachePrefix("user-1", null), ...pluginKeys.page()];
 import { Route as SkillsRoute } from "@/routes/_authed/_app/skills";
 import { Route as AdminSkillsRoute } from "@/routes/_authed/admin/skills";
 
@@ -70,12 +74,12 @@ afterEach(() => {
 });
 
 /** A client the failing query settles on in one attempt, so no test waits on a retry. */
-function failingQueryClient() {
+function failingQueryClient(key: readonly unknown[] = pluginKeys.page()) {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
 
 /** A client already holding a plugins page with no skills in it: the honest empty answer. */
-function answeredEmpty() {
+function answeredEmpty(key: readonly unknown[] = pluginKeys.page()) {
   const client = failingQueryClient();
   const page: PluginsPage = {
     catalogue: [],
@@ -86,13 +90,16 @@ function answeredEmpty() {
     composioConfigured: false,
     openConnectorConfigured: false,
   };
-  client.setQueryData(pluginKeys.page(), page);
+  client.setQueryData(key, page);
   return client;
 }
 
-async function waitForFailedRead(client: QueryClient) {
+async function waitForFailedRead(
+  client: QueryClient,
+  key: readonly unknown[] = pluginKeys.page(),
+) {
   await waitFor(() => {
-    expect(client.getQueryState(pluginKeys.page())?.status).toBe("error");
+    expect(client.getQueryState(key)?.status).toBe("error");
   });
 }
 
@@ -170,9 +177,9 @@ function renderAlone(client: QueryClient, Component: ComponentType) {
 }
 
 test("a person's skills page says the skills failed to load, not that they have none", async () => {
-  const client = failingQueryClient();
+  const client = failingQueryClient(scopedPage());
   const view = renderSkills(client);
-  await waitForFailedRead(client);
+  await waitForFailedRead(client, scopedPage());
 
   expect(
     await view.findByText("Your skills could not be loaded."),
@@ -181,9 +188,9 @@ test("a person's skills page says the skills failed to load, not that they have 
 });
 
 test("a person with genuinely no skills is still told so", async () => {
-  const client = answeredEmpty();
+  const client = answeredEmpty(scopedPage());
   const view = renderSkills(client);
-  await waitForFailedRead(client);
+  await waitForFailedRead(client, scopedPage());
 
   expect(await view.findByText("You don't have any skills yet.")).toBeTruthy();
   expect(view.queryByText("Your skills could not be loaded.")).toBeNull();

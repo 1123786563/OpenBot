@@ -135,14 +135,17 @@ const WORKSPACE_HEADER = "x-openbot-workspace";
  *
  * TODAY the reviewed path families are the enterprise API (MT081), the coworker REST surface
  * (MT084, whose scoped reads and saves bind the Bot detail and configuration pages to the
- * selection), and the Team Bot publication surface (MT085, whose sharing page reads and writes
- * bind the same way). The deployment's other legacy REST surfaces (`/api/channels`, `/api/craft`,
- * `/api/workshop`, the dictation upload…) deliberately are NOT here: the server's entry middleware
- * passes those through untouched until they consume the scope seam themselves (MT125 lays the
- * client headers onto the legacy assembly), so sending the pair there now would be a selection no
- * one reads. The uploads and download issuances that target those surfaces ride the same attach
- * logic below (`clientUpload` and `send` share `scopeSelection`, AC3) and start carrying the pair
- * the moment their paths earn a review.
+ * selection), the Team Bot publication surface (MT085, whose sharing page reads and writes bind
+ * the same way), and the four page-binding tickets that follow the same seam: the Bot
+ * operations surface (MT086 — responsibilities, computers, approvals), the conversation surface
+ * (MT087 — channels and groups), the skills-and-connections surface (MT088 — plugins), and the
+ * memory-and-routines surface (MT089). The deployment's other legacy REST surfaces (`/api/craft`,
+ * `/api/workshop`, the dictation upload…) deliberately are NOT here: the server's entry
+ * middleware passes those through untouched until they consume the scope seam themselves (MT125
+ * lays the client headers onto the legacy assembly), so sending the pair there now would be a
+ * selection no one reads. The uploads and download issuances that target those surfaces ride the
+ * same attach logic below (`clientUpload` and `send` share `scopeSelection`, AC3) and start
+ * carrying the pair the moment their paths earn a review.
  */
 export interface ScopeHeaderPathEntry {
   /** Stable id, the cross-check test names entries by. */
@@ -176,6 +179,62 @@ export const SCOPE_HEADER_ALLOWED_PATHS: readonly ScopeHeaderPathEntry[] = [
     reason:
       "the Team Bot publication surface — who may publish, unpublish and assign is the server's own capability answer, and the sharing page's reads and writes bind to the selection (MT085); the server consumes the pair when the legacy assembly reads it (MT125)",
     ownerTicket: "MT085",
+  },
+  {
+    id: "approvals-rest",
+    prefix: "/api/approvals",
+    reason:
+      "the approval surface — whose inbox, rules and team caps a person holds is company/team business data, and the approvals page's reads and decisions bind to the selection (MT086); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT086",
+  },
+  {
+    id: "responsibilities-rest",
+    prefix: "/api/responsibilities",
+    reason:
+      "the standing-responsibility surface — a Bot's ongoing duties and their triggers are company/team business data, and the responsibilities page's reads, creates and actions bind to the selection (MT086); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT086",
+  },
+  {
+    id: "computers-rest",
+    prefix: "/api/computers",
+    reason:
+      "the computer surface — the fleet, its action boundary and the holder state that drives every control are the server's own answers, and the computers pages' reads and actions bind to the selection (MT086); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT086",
+  },
+  {
+    id: "channels-rest",
+    prefix: "/api/channels",
+    reason:
+      "the conversation surface — a person's channels with their coworkers are company/team business data, and the roster, detail, create and member writes bind to the selection (MT087); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT087",
+  },
+  {
+    id: "groups-rest",
+    prefix: "/api/groups",
+    reason:
+      "the group-conversation surface — creating a group and changing its members are company/team business writes, and they bind to the selection (MT087); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT087",
+  },
+  {
+    id: "plugins-rest",
+    prefix: "/api/plugins",
+    reason:
+      "the skills-and-connections surface — which skills exist and which connected accounts a person holds are company/team business data, and the skills and connected-accounts pages' reads, installs, connections and disclosures bind to the selection (MT088); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT088",
+  },
+  {
+    id: "memory-rest",
+    prefix: "/api/memory",
+    reason:
+      "the memory surface — a person's memories and their sources are company/team business data, and the memory pages' reads and writes bind to the selection (MT089); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT089",
+  },
+  {
+    id: "routines-rest",
+    prefix: "/api/routines",
+    reason:
+      "the routine surface — a person's standing instructions and their runs are company/team business data, and the routines page's reads, enable, delete and run-now writes bind to the selection (MT089); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT089",
   },
 ];
 

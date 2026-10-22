@@ -161,10 +161,10 @@ describe("MT081 AC2 — unreviewed and non-same-origin paths attach nothing", ()
 
   test("a same-origin business path outside the reviewed inventory attaches nothing", async () => {
     serve();
-    // `/api/agents` earned its review at MT084 (the scoped Bot detail/config surface), so the
-    // example of an unreviewed path is the channels REST surface — still a same-origin business
-    // path the inventory has not admitted (MT125 lays the legacy assembly).
-    await client("/api/channels", SELECTORS);
+    // `/api/agents` earned its review at MT084, `/api/channels` at MT087 (the scoped conversation
+    // surfaces), so the example of an unreviewed path is the craft surface — still a same-origin
+    // business path the inventory has not admitted (MT125 lays the legacy assembly).
+    await client("/api/craft/runs", SELECTORS);
     expect(headerOf(asked[0]?.init, "x-openbot-tenant")).toBeUndefined();
     expect(headerOf(asked[0]?.init, "x-openbot-workspace")).toBeUndefined();
   });
@@ -209,7 +209,7 @@ describe("MT081 AC3 — uploads ride the same attach logic, not their own", () =
     serve();
     const form = new FormData();
     form.append("file", new File(["bytes"], "a.txt", { type: "text/plain" }));
-    await clientUpload("/api/channels/ch-1/attachments", form, SELECTORS);
+    await clientUpload("/api/craft/runs/r-1/attachments", form, SELECTORS);
 
     expect(headerOf(asked[0]?.init, "x-openbot-tenant")).toBeUndefined();
     expect(headerOf(asked[0]?.init, "x-openbot-workspace")).toBeUndefined();

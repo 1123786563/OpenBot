@@ -1,5 +1,7 @@
-import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { type QueryClient, queryOptions } from "@tanstack/react-query";
+import { client, tryClient } from "@/lib/client";
+import { guarded } from "@/lib/enterprise/tenant/queries";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * One standing instruction, as the Routines page sees it.
@@ -74,6 +76,87 @@ export function routineRunsQueryOptions(id: string) {
       }),
     // A run in flight settles within minutes; poll so Running turns into its outcome.
     refetchInterval: 5_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The scoped half (MT089 / Issue #132): the routines pages read and act through here
+// ---------------------------------------------------------------------------
+
+/**
+ * The routines page's read, bound to the scope the screen holds (MT089 / Issue #132, AC2): keyed
+ * under the scope's own cache prefix (MT083), carrying the selection pair, and answered through
+ * the generation guard — so the routines a scope holds are that scope's own answer, never one
+ * scope's schedule beside another's.
+ */
+export function scopedRoutinesQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...routineKeys.list()]
+        : [...routineKeys.list(), ":scope-pending"],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<RoutinesPage>(() => {})
+        : async ({ signal }): Promise<RoutinesPage> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient("/api/routines", {
+                signal,
+                fallbackKey: "routines.load",
+                ...(open.selection ?? {}),
+              });
+              if (!response.ok) {
+                throw new Error("Routines could not be read.");
+              }
+              const body = (await response.json()) as Partial<RoutinesPage>;
+              return {
+                routines: body.routines ?? [],
+                sweep: body.sweep ?? { lastSweptAt: null, working: false },
+              };
+            }),
+  });
+}
+
+/** One routine's runs, bound the same way, polling exactly as the unscoped read does (MT089). */
+export function scopedRoutineRunsQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+  id: string,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...routineKeys.runs(id)]
+        : [...routineKeys.runs(id), ":scope-pending"],
+    enabled: open !== null,
+    refetchInterval: 5_000,
+    queryFn:
+      open === null
+        ? () => new Promise<RoutineRunRecord[]>(() => {})
+        : async ({ signal }): Promise<RoutineRunRecord[]> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient(
+                `/api/routines/${encodeURIComponent(id)}/runs`,
+                {
+                  signal,
+                  fallbackKey: "routines.loadRuns",
+                  ...(open.selection ?? {}),
+                },
+              );
+              if (!response.ok) {
+                throw new Error("Runs could not be read.");
+              }
+              const body = (await response.json().catch(() => null)) as {
+                runs?: RoutineRunRecord[];
+              } | null;
+              return body?.runs ?? [];
+            }),
   });
 }
 

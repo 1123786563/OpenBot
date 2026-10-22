@@ -46,6 +46,8 @@ function serving() {
   refuseWrite = null;
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    // The scoped memory read (MT089) waits for the scope source before it asks anything.
+    if (url === "/api/me") return Response.json({ user: { id: "user-1" } });
     const method = init?.method ?? "GET";
     if (method !== "GET") {
       writes.push({

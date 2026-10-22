@@ -1,4 +1,9 @@
-import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
@@ -27,14 +32,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import { conversationLabel } from "@/lib/channels/label";
-import { channelListQueryOptions } from "@/lib/channels/queries";
+import { scopedChannelListQueryOptions } from "@/lib/channels/queries";
 import {
   createResponsibilityMutationOptions,
   type ResponsibilityRecord,
 } from "@/lib/responsibilities";
-import { queryClient } from "@/query-client";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 type Source = "none" | ResponsibilityRecord["subscriptions"][number]["source"];
 
@@ -60,8 +65,15 @@ export function NewResponsibilityDialog({
 }) {
   const { t } = useTranslation("routines");
   const formId = useId();
-  const bots = useQuery(agentListQueryOptions());
-  const channels = useInfiniteQuery(channelListQueryOptions());
+  // The candidates and the create all ride the scope this screen holds (MT086): the Bots and
+  // conversations offered are the server's answer under the scope in force, so an object of
+  // another scope is never selectable, and the write carries the same pair.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const bots = useQuery(scopedAgentListQueryOptions(queryClient, scope));
+  const channels = useInfiniteQuery(
+    scopedChannelListQueryOptions(queryClient, scope),
+  );
   const [channelId, setChannelId] = useState("");
   const [pickedBot, setAgentId] = useState("");
   const agentId = fixedBot ?? pickedBot;
@@ -82,7 +94,9 @@ export function NewResponsibilityDialog({
         channel.active &&
         (fixedBot === undefined || channel.agentIds.includes(fixedBot)),
     ) ?? [];
-  const create = useMutation(createResponsibilityMutationOptions(queryClient));
+  const create = useMutation(
+    createResponsibilityMutationOptions(queryClient, scope),
+  );
   const sourceItems = Object.fromEntries(
     (Object.keys(SOURCE_KEYS) as Source[]).map((key) => [
       key,

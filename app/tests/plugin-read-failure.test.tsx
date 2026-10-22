@@ -12,6 +12,8 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { type PluginsPage, pluginKeys } from "@/lib/plugins/queries";
+import { scopedCachePrefix } from "@/lib/enterprise/tenant/scoped-cache";
+import { authKeys } from "@/lib/auth/queries";
 import { Route as AdminAppRoute } from "@/routes/_authed/admin/plugins/$key";
 import { Route as AdminToolRoute } from "@/routes/_authed/admin/plugins/$key_.tools.$tool";
 import { Route as ConnectedAccountRoute } from "@/routes/_authed/settings/connected-accounts/$key";
@@ -63,9 +65,23 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
-/** A client the failing query settles on in one attempt, so no test waits on a retry. */
-function failingQueryClient() {
-  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+/**
+ * A client the failing query settles on in one attempt, so no test waits on a retry. The scope
+ * source is preset fresh (its own 60s staleTime), so the scoped reads open at once in this
+ * fetch-less harness (MT088).
+ */
+function failingQueryClient(key: readonly unknown[] = pluginKeys.page()) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(authKeys.currentUser(), {
+    id: "user-1",
+    email: "user-1@example.com",
+    role: "user",
+    onboarding: null,
+  });
+  client.setQueryDefaults(key, { queryFn: async () => {
+    throw new Error("plugins exploded");
+  }, retry: false });
+  return client;
 }
 
 /** A client already holding a plugins page that genuinely lacks this connector. */
@@ -258,9 +274,14 @@ test("a list that genuinely lacks the connector still says it is not enabled, on
 });
 
 test("a connected account's page says the plugin list failed, not that it is not a service to connect", async () => {
-  const client = failingQueryClient();
+  // The account page reads under the scope's own prefix (MT088), so its failure state is the
+  // scoped key's, while the admin pages above keep the unscoped entry they read.
+  const key = [...scopedCachePrefix("user-1", null), ...pluginKeys.page()];
+  const client = failingQueryClient(key);
   const view = renderAccount(client);
-  await waitForFailedRead(client);
+  await waitFor(() => {
+    expect(client.getQueryState(key)?.status).toBe("error");
+  });
 
   expect(await view.findByRole("alert")).toBeTruthy();
   expect(
