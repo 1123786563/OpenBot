@@ -36,6 +36,8 @@ import {
   createDrizzleDegradedPreferenceSearch,
   createDrizzleDegradedSourceBoundSearch,
 } from "../src/hindsight/degraded-recall";
+import { createDrizzleDerivedJudgmentRecords } from "../src/hindsight/derived-judgments";
+import { createDerivedJudgmentReviewService } from "../src/hindsight/judgment-review";
 import {
   createDrizzlePreferenceRecords,
   createPreferenceRecallService,
@@ -308,6 +310,16 @@ beforeAll(async () => {
     createDrizzlePreferenceRecords(database),
     createDrizzleSourceBoundRecords(database),
     createDrizzleSourceBoundAuthorizations(database),
+    // #389: judgment ids dispatch to the review seam; this suite's judgment cases live in
+    // hindsight-judgment-review.integration.test.ts, this construction just stays honest.
+    createDerivedJudgmentReviewService(
+      createDrizzlePreferenceRecords(database),
+      createDrizzleSourceBoundRecords(database),
+      createDrizzleDerivedJudgmentRecords(database),
+      createDrizzleSourceBoundAuthorizations(database),
+      config,
+      { now: clock },
+    ),
   );
 });
 

@@ -34,7 +34,7 @@ export const hindsightSyncWork = pgTable(
     id: text("id").notNull(),
     /** Which authority table the subject row lives in. */
     subjectType: text("subject_type")
-      .$type<"preference" | "source_bound">()
+      .$type<"preference" | "source_bound" | "derived_judgment">()
       .notNull(),
     subjectId: text("subject_id").notNull(),
     principalId: text("principal_id").notNull(),

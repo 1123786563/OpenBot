@@ -17,13 +17,14 @@ import {
   enterpriseWorkspaces,
 } from "./enterprise-tenancy";
 
-// Hindsight 11（Issue #388）：同一授权来源内的派生判断候选。
+// Hindsight 11（Issue #388）：同一授权来源内的派生判断候选；#389 补齐本人审核状态。
 //
 // derived_judgment_candidates 一行 = 系统从多条已确认依据综合出、等待本人决定的判断
-// 候选（CONTEXT.md「Derived Memory」：依据已确认不等于判断已确认）。候选在本票只到
-// unreviewed 为止——确认/编辑/拒绝是 #389；因此行上预留 hindsight_document_id（hdj_
-// 前缀，稳定文档身份）与同步摘要列，但候选路径从不 retain，unreviewed 判断对一切跨
-// 会话召回结构性不可见（两条召回 seam 与降级路径只读 preferences/source_bound 表）。
+// 候选（CONTEXT.md「Derived Memory」：依据已确认不等于判断已确认）。#388 只到
+// unreviewed 为止；#389 补上确认/编辑/拒绝与 30 天过期（expired）。行上的
+// hindsight_document_id（hdj_ 前缀，稳定文档身份）在提出时分配、仅在确认后才
+// retain；unreviewed/rejected/expired 判断对一切跨会话召回结构性不可见（#389 的判断
+// 召回 seam 与既有路径都只放行 confirmed/edited 行）。
 //
 // scope 是候选继承的全部依据的限制（ADR 0005）：general（通用个人记忆）或恰好一个
 // 授权来源（形成团队/连接来源/Bot）。依据跨 scope 混合在提出门就被拒绝，行上 shape
@@ -52,11 +53,16 @@ export const derivedJudgmentCandidates = pgTable(
     content: text("content").notNull(),
     provenance: text("provenance").notNull(),
     reviewState: text("review_state")
-      .$type<"unreviewed" | "confirmed" | "edited" | "rejected">()
+      .$type<"unreviewed" | "confirmed" | "edited" | "rejected" | "expired">()
       .notNull()
       .default("unreviewed"),
     enabled: boolean("enabled").notNull().default(true),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    /**
+     * When the person decided (confirm/edit/reject — #389), or when the expiry sweep decided
+     * for them; null while the candidate still waits.
+     */
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
     /** sha256 over (scope, judgment text, sorted evidence document ids); dedupes leads. */
     proposalDigest: text("proposal_digest").notNull(),
     /**
@@ -87,7 +93,7 @@ export const derivedJudgmentCandidates = pgTable(
     ),
     check(
       "derived_judgment_review_state",
-      sql`${table.reviewState} in ('unreviewed', 'confirmed', 'edited', 'rejected')`,
+      sql`${table.reviewState} in ('unreviewed', 'confirmed', 'edited', 'rejected', 'expired')`,
     ),
     check(
       "derived_judgment_scope_shape",

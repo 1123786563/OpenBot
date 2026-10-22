@@ -1275,6 +1275,41 @@
       "when": 1792857617000,
       "tag": "0181_speech_settlement_details",
       "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1792857618000,
+      "tag": "0182_hindsight_judgment_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1792857619000,
+      "tag": "0183_hindsight_revocations",
+      "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1792857620000,
+      "tag": "0184_hindsight_pause_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1792857621000,
+      "tag": "0185_hindsight_background_budgets",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1792857622000,
+      "tag": "0186_hindsight_legacy_memory_migration",
+      "breakpoints": true
     }
   ]
 }

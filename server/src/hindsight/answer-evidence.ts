@@ -22,12 +22,20 @@
  * `forgetEvidence` dispatch by which authority table owns the id and delegate to the seam that
  * owns the policy — `correctGenericPreference` for a preference's time-windowed correction,
  * `editSourceBoundMemory` for a source-bound fact's plain correction, and the two forget
- * seams for removal. The next answer (indexed or degraded) reads the rows those operations
- * changed, which is what "the next answer reflects the latest permissions and facts" tests.
+ * seams for removal. Since #389 a cited id may also be a confirmed/edited derived judgment:
+ * it expands with its complete basis one level deep (a nested judgment carries its own id for
+ * the next expansion), and its edit/forget dispatch to the judgment review seam, which
+ * re-runs the evidence gates and never widens the judgment's scope. The next answer (indexed
+ * or degraded) reads the rows those operations changed, which is what "the next answer
+ * reflects the latest permissions and facts" tests.
  */
 
 import type { PlatformScope } from "../enterprise/contracts";
 import { resolveHindsightBankScope } from "./bank-scope";
+import type {
+  DerivedJudgmentInspection,
+  DerivedJudgmentReviewService,
+} from "./judgment-review";
 import {
   type PreferenceRecallService,
   type PreferenceRecordStore,
@@ -95,6 +103,8 @@ export type UnavailableEvidence = {
 export type PersonalMemoryEvidence =
   | PreferenceEvidence
   | SourceBoundEvidence
+  /** A confirmed/edited derived judgment with its complete basis, one level deep (#389). */
+  | Extract<DerivedJudgmentInspection, { state: "available" }>
   | UnavailableEvidence;
 
 /** One inspect may expand at most this many bases; an answer's basis list is small. */
@@ -160,12 +170,19 @@ export function createAnswerEvidenceService(
   preferenceRecords: PreferenceRecordStore,
   sourceBoundRecords: SourceBoundRecordStore,
   authorizations: SourceBoundAuthorizationStore,
+  judgmentReview: Pick<
+    DerivedJudgmentReviewService,
+    | "inspectJudgmentEvidence"
+    | "editDerivedJudgment"
+    | "forgetDerivedJudgment"
+    | "ownsJudgment"
+  >,
 ) {
   /** Which authority table owns an id for THIS principal (never another principal's answer). */
   async function resolveOwner(
     scope: PlatformScope,
     id: string,
-  ): Promise<"preference" | "source_bound" | "none"> {
+  ): Promise<"preference" | "source_bound" | "derived_judgment" | "none"> {
     const identity = resolveHindsightBankScope(scope);
     const preferenceRow = await preferenceRecords.load(identity.tenantId, id);
     if (preferenceRow && preferenceRow.principalId === identity.principalId) {
@@ -174,6 +191,9 @@ export function createAnswerEvidenceService(
     const boundRow = await sourceBoundRecords.load(identity.tenantId, id);
     if (boundRow && boundRow.principalId === identity.principalId) {
       return "source_bound";
+    }
+    if (await judgmentReview.ownsJudgment(scope, id)) {
+      return "derived_judgment";
     }
     return "none";
   }
@@ -263,6 +283,16 @@ export function createAnswerEvidenceService(
           });
           continue;
         }
+        // A confirmed/edited derived judgment expands with its complete basis; the judgment's
+        // own policy (re-verified adoption, scope, and evidence gates) lives in #389's seam.
+        const judgment = await judgmentReview.inspectJudgmentEvidence(
+          scope,
+          id,
+        );
+        if (judgment.state === "available") {
+          answers.push(judgment);
+          continue;
+        }
         answers.push({ state: "unavailable", id });
       }
       return answers;
@@ -302,6 +332,10 @@ export function createAnswerEvidenceService(
       if (owner === "source_bound") {
         return sourceBound.editSourceBoundMemory(scope, id, input);
       }
+      if (owner === "derived_judgment") {
+        // The judgment's edit re-runs its evidence gates and touches the text alone (#389).
+        return judgmentReview.editDerivedJudgment(scope, id, input);
+      }
       throw new EvidenceNotFoundError();
     },
 
@@ -313,6 +347,9 @@ export function createAnswerEvidenceService(
       }
       if (owner === "source_bound") {
         return sourceBound.forgetSourceBoundMemory(scope, id);
+      }
+      if (owner === "derived_judgment") {
+        return judgmentReview.forgetDerivedJudgment(scope, id);
       }
       throw new EvidenceNotFoundError();
     },

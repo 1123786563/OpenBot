@@ -63,6 +63,12 @@ import {
   teamBankFor,
 } from "./bank-scope";
 import type { PreferenceRecallServiceConfig } from "./preference-recall";
+import { type HindsightPauseControls, usagePausedFor } from "./pause-controls";
+import {
+  type MemoryRevocationStatus,
+  type PersonalMemoryRevocationRecorder,
+  STOPPED_USING_SUMMARY,
+} from "./revocation-ledger";
 
 /** The restriction that carves a memory's bank; exactly one target, spelled by the kind. */
 export type SourceBoundRestriction =
@@ -407,7 +413,14 @@ export function createSourceBoundRecallService(
   records: SourceBoundRecordStore,
   authorizations: SourceBoundAuthorizationStore,
   config: PreferenceRecallServiceConfig,
-  options: { now?: () => Date; work?: SourceBoundWorkRecorder } = {},
+  options: {
+    now?: () => Date;
+    work?: SourceBoundWorkRecorder;
+    /** The durable revocation ledger #390 attaches; without it the status stays honest anyway. */
+    revocations?: PersonalMemoryRevocationRecorder;
+    /** The person's pause switches (#392); usage-paused answers recall empty before any remote call. */
+    pause?: HindsightPauseControls;
+  } = {},
 ) {
   const now = options.now ?? (() => new Date());
   const doFetch =
@@ -463,6 +476,44 @@ export function createSourceBoundRecallService(
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Best-effort remote delete of one document whose outcome is observable (#390): `attempted`
+   * is false exactly when the service could not be reached; `confirmed` is true on 2xx or 404.
+   * Never thrown — the authority row already stopped every use before this ran.
+   */
+  async function deleteRemoteDocument(
+    identity: { tenantId: string; principalId: string },
+    bank: HindsightBankGrant,
+    documentId: string,
+  ): Promise<{
+    attempted: boolean;
+    confirmed: boolean;
+    error: string | null;
+  }> {
+    try {
+      const response = await hindsight(
+        backgroundTaskBankScope(identity, bank),
+        `/v1/${HINDSIGHT_TENANT_SEGMENT}/banks/${bank.id}/documents/${encodeURIComponent(documentId)}`,
+        { method: "DELETE" },
+      );
+      const confirmed = response.ok || response.status === 404;
+      return {
+        attempted: true,
+        confirmed,
+        error: confirmed ? null : `service answered ${response.status}`,
+      };
+    } catch (error) {
+      return {
+        attempted: false,
+        confirmed: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "service could not be reached",
+      };
     }
   }
 
@@ -579,6 +630,9 @@ export function createSourceBoundRecallService(
           AGENT_ID_MAX,
         );
       }
+      // Pause-usage (#392): checked before any authorization read or remote call, so the
+      // degradation path never runs either; the records stay, only their use stops.
+      if (await usagePausedFor(options.pause, scope)) return [];
       const first = await readAuthorization(
         identity.tenantId,
         identity.principalId,
@@ -713,9 +767,15 @@ export function createSourceBoundRecallService(
      * every authority table forgets (content cleared, disabled, deleted_at), so no later
      * recall — index hit or SQL degradation — can resurrect it; the remote document is deleted
      * best-effort under the row's own bank attribution, and a failed delete leaves a hit the
-     * recall drops anyway (no current row, no Bot-visible content).
+     * recall drops anyway (no current row, no Bot-visible content). Since #390 the answer is
+     * the honest two-part status: stopped being used at `stoppedUsingAt` (the block lands
+     * before any remote call is initiated), remote cleanup reported separately and never
+     * claimed cleared.
      */
-    async forgetSourceBoundMemory(scope: PlatformScope, id: string) {
+    async forgetSourceBoundMemory(
+      scope: PlatformScope,
+      id: string,
+    ): Promise<MemoryRevocationStatus> {
       const identity = resolveHindsightBankScope(scope);
       const row = await records.load(identity.tenantId, id);
       if (
@@ -725,23 +785,47 @@ export function createSourceBoundRecallService(
       ) {
         throw new SourceBoundNotFoundError();
       }
-      row.deletedAt = now();
+      const stoppedUsingAt = now();
+      const documentId = row.hindsightDocumentId;
+      const bank = bankGrantForRestriction(restrictionOf(row));
+      row.deletedAt = stoppedUsingAt;
       row.enabled = false;
       row.content = "";
       row.syncedContentDigest = null;
       row.syncedAt = null;
-      row.updatedAt = now();
+      row.updatedAt = stoppedUsingAt;
       await records.save(row);
-      try {
-        const bank = bankGrantForRestriction(restrictionOf(row));
-        await hindsight(
-          backgroundTaskBankScope(identity, bank),
-          `/v1/${HINDSIGHT_TENANT_SEGMENT}/banks/${bank.id}/documents/${encodeURIComponent(row.hindsightDocumentId)}`,
-          { method: "DELETE" },
-        );
-      } catch {
-        // Best effort by design; see the doc comment.
+      if (options.revocations) {
+        await options.revocations.recordBlock({
+          tenantId: identity.tenantId,
+          principalId: identity.principalId,
+          kind: "memory",
+          subjectType: "source_bound",
+          targetId: row.id,
+          documentId,
+          bankId: bank.id,
+          bankKind: bank.kind,
+          blockedAt: stoppedUsingAt,
+        });
       }
+      const deletion = await deleteRemoteDocument(identity, bank, documentId);
+      if (options.revocations) {
+        await options.revocations.noteDeletionOutcome({
+          tenantId: identity.tenantId,
+          documentId,
+          attemptedAt: now(),
+          confirmed: deletion.confirmed,
+          error: deletion.error,
+        });
+      }
+      return {
+        stoppedUsingAt,
+        remoteDeletion: {
+          attempted: deletion.attempted,
+          outstanding: deletion.confirmed ? 0 : 1,
+        },
+        summary: STOPPED_USING_SUMMARY,
+      };
     },
   };
 }

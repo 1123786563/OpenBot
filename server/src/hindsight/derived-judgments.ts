@@ -34,9 +34,11 @@
  * this module holds no Hindsight service configuration and makes no remote calls — a
  * candidate is never retained anywhere — and the recall seams (#382/#383) plus the
  * degradation path (#385) read only their own authority tables, so the candidate's hdj_
- * document id maps to no row they will ever load. The document identity is still assigned at
- * creation, because a confirm (#389) will drain through the sync queue (#384) under an
- * identity that must not depend on the review outcome.
+ * document id maps to no row they will ever load. The judgment-recall seam #389 adds reads
+ * THIS table but keeps only confirmed-or-edited rows, so an unreviewed candidate still maps
+ * to nothing any Bot can see. The document identity is still assigned at creation, because a
+ * confirm (#389) drains through the sync queue (#384) under an identity that must not depend
+ * on the review outcome.
  *
  * Replayed leads fold at the storage layer: a partial unique index allows one unreviewed
  * candidate per (scope, judgment text, evidence set), so proposing the same lead twice
@@ -44,7 +46,7 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   derivedJudgmentCandidates,
@@ -52,6 +54,7 @@ import {
 } from "../db/schema/hindsight-judgments";
 import type { PlatformScope } from "../enterprise/contracts";
 import { resolveHindsightBankScope } from "./bank-scope";
+import { type HindsightPauseControls, learningPausedFor } from "./pause-controls";
 import {
   type PreferenceAuthorityRow,
   type PreferenceRecordStore,
@@ -90,9 +93,11 @@ export type DerivedJudgmentRow = {
   agentId: string | null;
   content: string;
   provenance: string;
-  reviewState: "unreviewed" | "confirmed" | "edited" | "rejected";
+  reviewState: "unreviewed" | "confirmed" | "edited" | "rejected" | "expired";
   enabled: boolean;
   deletedAt: Date | null;
+  /** When the person decided (#389), or the expiry sweep decided for them; null while waiting. */
+  reviewedAt: Date | null;
   proposalDigest: string;
   hindsightDocumentId: string;
   syncedContentDigest: string | null;
@@ -118,6 +123,14 @@ export interface DerivedJudgmentStore {
     row: DerivedJudgmentRow,
     evidence: readonly DerivedJudgmentEvidenceRow[],
   ): Promise<void>;
+  /** Full-row update by (tenantId, id); the id, document identity and evidence relation never change. */
+  save(row: DerivedJudgmentRow): Promise<void>;
+  /**
+   * The expiry sweep (#389): every still-unreviewed, living candidate proposed strictly before
+   * the cutoff becomes 'expired' with `reviewedAt` set to the sweep's decision time. Returns
+   * how many rows expired; the sweep is global because a background task owns no one scope.
+   */
+  expireUnreviewedBefore(cutoff: Date): Promise<number>;
   load(tenantId: string, id: string): Promise<DerivedJudgmentRow | null>;
   /** Rows of THIS principal in THIS company holding these document ids. */
   loadByDocumentIds(
@@ -207,7 +220,9 @@ export type DerivedJudgmentRefusalReason =
   | "missing-evidence"
   | "cross-source-evidence"
   | "unconfirmed-evidence"
-  | "unauthorized-evidence";
+  | "unauthorized-evidence"
+  /** The person paused learning (#392): automatic proposals stop until they resume. */
+  | "learning-paused";
 
 export class DerivedJudgmentRefusedError extends Error {
   readonly reason: DerivedJudgmentRefusalReason;
@@ -218,7 +233,9 @@ export class DerivedJudgmentRefusedError extends Error {
   }
 }
 
-const CONTENT_MAX = 6000;
+/** The judgment text ceiling; exported so the review seam (#389) edits under the same bound. */
+export const JUDGMENT_CONTENT_MAX = 6000;
+const CONTENT_MAX = JUDGMENT_CONTENT_MAX;
 const PROVENANCE_MAX = 500;
 /** A first-version judgment synthesizes a handful of experiences; twenty is already generous. */
 const EVIDENCE_MAX = 20;
@@ -309,7 +326,8 @@ function plainString(value: unknown, field: string, max: number): string {
   return value;
 }
 
-type ResolvedEvidence =
+/** One basis resolved to its authority row; the gates and the renderers share this shape. */
+export type ResolvedEvidence =
   | { kind: "preference"; row: PreferenceAuthorityRow }
   | { kind: "source_bound"; row: SourceBoundRecordRow }
   | { kind: "derived_judgment"; row: DerivedJudgmentRow };
@@ -372,12 +390,129 @@ async function verifyResolvedEvidence(
   return { ok: true, scope: scope ?? { kind: "general" } };
 }
 
+/**
+ * Render one resolved basis as the candidate/evidence surface shows it: content, source, and
+ * time — nothing summarized away. Module-level (not service state) and exported so the review
+ * seam (#389) expands a confirmed judgment's chain with the SAME rendering the candidate
+ * listing used, never a second copy.
+ */
+export function renderEvidenceView(
+  evidence: ResolvedEvidence,
+): JudgmentEvidenceView {
+  if (evidence.kind === "preference") {
+    return {
+      kind: "preference",
+      id: evidence.row.id,
+      content: evidence.row.content,
+      provenance: evidence.row.provenance,
+      markedGenericAt: evidence.row.markedGenericAt,
+      effectiveFrom: evidence.row.effectiveFrom,
+      effectiveUntil: evidence.row.effectiveUntil,
+    };
+  }
+  if (evidence.kind === "source_bound") {
+    return {
+      kind: "source_bound",
+      id: evidence.row.id,
+      content: evidence.row.content,
+      provenance: evidence.row.provenance,
+      restriction: restrictionViewOf(evidence.row),
+      formedAt: evidence.row.formedAt,
+    };
+  }
+  return {
+    kind: "derived_judgment",
+    id: evidence.row.id,
+    content: evidence.row.content,
+    provenance: evidence.row.provenance,
+    scope: judgmentScopeOf(evidence.row),
+    proposedAt: evidence.row.proposedAt,
+  };
+}
+
+/**
+ * The four gates over a STORED evidence relation, as a reusable verifier. The review/usage
+ * module (#389) re-runs exactly this verifier when confirming or editing a candidate, when
+ * recalling a confirmed judgment, and when expanding the judgment's evidence chain — one
+ * implementation of "the judgment stands only while its whole basis does", never a looser
+ * copy. Silent by design: a candidate whose basis no longer passes is withheld or refused by
+ * the CALLER; this verifier only names the gate.
+ */
+export function createDerivedJudgmentEvidenceVerifier(
+  preferences: PreferenceRecordStore,
+  sourceBound: SourceBoundRecordStore,
+  judgments: DerivedJudgmentStore,
+  authorizations: SourceBoundAuthorizationStore,
+) {
+  return {
+    /**
+     * The stored evidence relation, resolved back to rows by record id — the path a listing, a
+     * review action, and a recall of a confirmed judgment all take.
+     */
+    async verifyStoredEvidence(
+      tenantId: string,
+      principalId: string,
+      row: DerivedJudgmentRow,
+      snapshot: AuthorizationSnapshot,
+    ): Promise<
+      | {
+          ok: true;
+          scope: JudgmentScope;
+          evidence: ResolvedEvidence[];
+        }
+      | { ok: false; reason: DerivedJudgmentRefusalReason }
+    > {
+      const stored = await judgments.loadEvidence(tenantId, row.id);
+      const resolved: ResolvedEvidence[] = [];
+      for (const edge of stored) {
+        if (edge.evidenceType === "preference") {
+          const found = await preferences.load(tenantId, edge.evidenceId);
+          if (found && found.principalId === principalId) {
+            resolved.push({ kind: "preference", row: found });
+            continue;
+          }
+          return { ok: false, reason: "missing-evidence" };
+        }
+        if (edge.evidenceType === "source_bound") {
+          const found = await sourceBound.load(tenantId, edge.evidenceId);
+          if (found && found.principalId === principalId) {
+            resolved.push({ kind: "source_bound", row: found });
+            continue;
+          }
+          return { ok: false, reason: "missing-evidence" };
+        }
+        const found = await judgments.load(tenantId, edge.evidenceId);
+        if (found && found.principalId === principalId) {
+          resolved.push({ kind: "derived_judgment", row: found });
+          continue;
+        }
+        return { ok: false, reason: "missing-evidence" };
+      }
+      const verified = await verifyResolvedEvidence(
+        resolved,
+        snapshot,
+        authorizations,
+      );
+      if (!verified.ok) return { ok: false, reason: verified.reason };
+      return { ok: true, scope: verified.scope, evidence: resolved };
+    },
+  };
+}
+
+export type DerivedJudgmentEvidenceVerifier = ReturnType<
+  typeof createDerivedJudgmentEvidenceVerifier
+>;
+
 export function createDerivedJudgmentService(
   preferences: PreferenceRecordStore,
   sourceBound: SourceBoundRecordStore,
   judgments: DerivedJudgmentStore,
   authorizations: SourceBoundAuthorizationStore,
-  options: { now?: () => Date } = {},
+  options: {
+    now?: () => Date;
+    /** The person's pause switches (#392); learning-paused refuses automatic proposals. */
+    pause?: HindsightPauseControls;
+  } = {},
 ) {
   const now = options.now ?? (() => new Date());
 
@@ -420,91 +555,15 @@ export function createDerivedJudgmentService(
   }
 
   /**
-   * The stored evidence relation, resolved back to rows by record id — the path a listing (and
-   * an idempotent re-propose) takes. Silent by design: a candidate whose basis no longer
-   * passes is withheld, not thrown.
+   * The shared four-gate verifier; the listing below and the review seam (#389) hold the same
+   * instance discipline — every read of a judgment's basis goes through this one function.
    */
-  async function verifyStoredEvidence(
-    tenantId: string,
-    principalId: string,
-    row: DerivedJudgmentRow,
-    snapshot: AuthorizationSnapshot,
-  ): Promise<
-    | {
-        ok: true;
-        scope: JudgmentScope;
-        evidence: ResolvedEvidence[];
-      }
-    | { ok: false; reason: DerivedJudgmentRefusalReason }
-  > {
-    const stored = await judgments.loadEvidence(tenantId, row.id);
-    const resolved: ResolvedEvidence[] = [];
-    for (const edge of stored) {
-      if (edge.evidenceType === "preference") {
-        const found = await preferences.load(tenantId, edge.evidenceId);
-        if (found && found.principalId === principalId) {
-          resolved.push({ kind: "preference", row: found });
-          continue;
-        }
-        return { ok: false, reason: "missing-evidence" };
-      }
-      if (edge.evidenceType === "source_bound") {
-        const found = await sourceBound.load(tenantId, edge.evidenceId);
-        if (found && found.principalId === principalId) {
-          resolved.push({ kind: "source_bound", row: found });
-          continue;
-        }
-        return { ok: false, reason: "missing-evidence" };
-      }
-      const found = await judgments.load(tenantId, edge.evidenceId);
-      if (found && found.principalId === principalId) {
-        resolved.push({ kind: "derived_judgment", row: found });
-        continue;
-      }
-      return { ok: false, reason: "missing-evidence" };
-    }
-    const verified = await verifyResolvedEvidence(
-      resolved,
-      snapshot,
-      authorizations,
-    );
-    if (!verified.ok) return { ok: false, reason: verified.reason };
-    return { ok: true, scope: verified.scope, evidence: resolved };
-  }
-
-  function renderEvidenceView(
-    evidence: ResolvedEvidence,
-  ): JudgmentEvidenceView {
-    if (evidence.kind === "preference") {
-      return {
-        kind: "preference",
-        id: evidence.row.id,
-        content: evidence.row.content,
-        provenance: evidence.row.provenance,
-        markedGenericAt: evidence.row.markedGenericAt,
-        effectiveFrom: evidence.row.effectiveFrom,
-        effectiveUntil: evidence.row.effectiveUntil,
-      };
-    }
-    if (evidence.kind === "source_bound") {
-      return {
-        kind: "source_bound",
-        id: evidence.row.id,
-        content: evidence.row.content,
-        provenance: evidence.row.provenance,
-        restriction: restrictionViewOf(evidence.row),
-        formedAt: evidence.row.formedAt,
-      };
-    }
-    return {
-      kind: "derived_judgment",
-      id: evidence.row.id,
-      content: evidence.row.content,
-      provenance: evidence.row.provenance,
-      scope: judgmentScopeOf(evidence.row),
-      proposedAt: evidence.row.proposedAt,
-    };
-  }
+  const verifier = createDerivedJudgmentEvidenceVerifier(
+    preferences,
+    sourceBound,
+    judgments,
+    authorizations,
+  );
 
   async function snapshotFor(scope: PlatformScope): Promise<{
     tenantId: string;
@@ -584,6 +643,15 @@ export function createDerivedJudgmentService(
           "A derived judgment synthesizes multiple distinct experiences; the citations name only one.",
         );
       }
+      // Pause-learning (#392): the automatic candidate-generation seam is the thing the switch
+      // stops. Refused with its own reason — a pause is neither a dead basis nor a bad shape,
+      // and the surface must be able to say so.
+      if (await learningPausedFor(options.pause, scope)) {
+        throw new DerivedJudgmentRefusedError(
+          "learning-paused",
+          "Learning is paused for this person; automatic candidate proposals are stopped until they resume.",
+        );
+      }
       const { tenantId, principalId, snapshot } = await snapshotFor(scope);
       const resolved = await resolveByDocumentIds(
         tenantId,
@@ -615,7 +683,7 @@ export function createDerivedJudgmentService(
         verified: { scope: JudgmentScope; evidence: ResolvedEvidence[] };
       }> => {
         if (existing) {
-          const reverified = await verifyStoredEvidence(
+          const reverified = await verifier.verifyStoredEvidence(
             tenantId,
             principalId,
             existing,
@@ -644,6 +712,7 @@ export function createDerivedJudgmentService(
           reviewState: "unreviewed",
           enabled: true,
           deletedAt: null,
+          reviewedAt: null,
           proposalDigest: digest,
           hindsightDocumentId: derivedJudgmentDocumentIdFor(tenantId, id),
           syncedContentDigest: null,
@@ -674,7 +743,7 @@ export function createDerivedJudgmentService(
             digest,
           );
           if (!folded) throw error;
-          const reverified = await verifyStoredEvidence(
+          const reverified = await verifier.verifyStoredEvidence(
             tenantId,
             principalId,
             folded,
@@ -724,7 +793,7 @@ export function createDerivedJudgmentService(
       );
       const listed: DerivedJudgmentCandidate[] = [];
       for (const row of open) {
-        const verified = await verifyStoredEvidence(
+        const verified = await verifier.verifyStoredEvidence(
           tenantId,
           principalId,
           row,
@@ -740,14 +809,19 @@ export function createDerivedJudgmentService(
   };
 }
 
-function refusalOf(failure: {
-  reason: DerivedJudgmentRefusalReason;
-  position: number;
-}): DerivedJudgmentRefusedError {
+/**
+ * The observable refusal for one failed gate. Exported so the review seam (#389) refuses a
+ * confirm/edit with the SAME reason vocabulary a proposal uses — the surface can tell a dead
+ * basis from an unauthorized one, and the tests pin the words.
+ */
+export function refusalOf(
+  failure: { reason: DerivedJudgmentRefusalReason; position: number },
+  outcome = "the judgment is not proposed",
+): DerivedJudgmentRefusedError {
   if (failure.reason === "missing-evidence") {
     return new DerivedJudgmentRefusedError(
       failure.reason,
-      `Evidence at position ${failure.position || 1} does not resolve to a confirmed record of this person in this company; the judgment is not proposed.`,
+      `Evidence at position ${failure.position || 1} does not resolve to a confirmed record of this person in this company; ${outcome}.`,
     );
   }
   if (failure.reason === "cross-source-evidence") {
@@ -759,12 +833,18 @@ function refusalOf(failure: {
   if (failure.reason === "unconfirmed-evidence") {
     return new DerivedJudgmentRefusedError(
       failure.reason,
-      `Evidence at position ${failure.position || 1} is not a confirmed, living fact; unreviewed or forgotten bases cannot support a judgment.`,
+      `Evidence at position ${failure.position || 1} is not a confirmed, living fact; unreviewed or forgotten bases cannot support a judgment; ${outcome}.`,
+    );
+  }
+  if (failure.reason === "learning-paused") {
+    return new DerivedJudgmentRefusedError(
+      failure.reason,
+      `Learning is paused for this person; automatic candidate proposals are stopped until they resume; ${outcome}.`,
     );
   }
   return new DerivedJudgmentRefusedError(
     "unauthorized-evidence",
-    `Evidence at position ${failure.position || 1} no longer holds its authorization; the judgment is not proposed.`,
+    `Evidence at position ${failure.position || 1} no longer holds its authorization; ${outcome}.`,
   );
 }
 
@@ -786,6 +866,43 @@ export function createDrizzleDerivedJudgmentRecords(
           await tx.insert(relation).values([...evidence]);
         }
       });
+    },
+    async save(row) {
+      await database
+        .update(candidates)
+        .set({
+          content: row.content,
+          provenance: row.provenance,
+          reviewState: row.reviewState,
+          enabled: row.enabled,
+          deletedAt: row.deletedAt,
+          reviewedAt: row.reviewedAt,
+          syncedContentDigest: row.syncedContentDigest,
+          syncedAt: row.syncedAt,
+          updatedAt: row.updatedAt,
+        })
+        .where(
+          and(eq(candidates.tenantId, row.tenantId), eq(candidates.id, row.id)),
+        );
+    },
+    async expireUnreviewedBefore(cutoff) {
+      const expired = await database
+        .update(candidates)
+        .set({
+          reviewState: "expired",
+          updatedAt: new Date(),
+          reviewedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(candidates.reviewState, "unreviewed"),
+            lt(candidates.proposedAt, cutoff),
+            eq(candidates.enabled, true),
+            isNull(candidates.deletedAt),
+          ),
+        )
+        .returning({ id: candidates.id });
+      return expired.length;
     },
     async load(tenantId, id) {
       const [found] = await database
