@@ -152,6 +152,37 @@ export interface RollbackGateEvaluation {
   };
 }
 
+/**
+ * 「表不存在」的判别面：Postgres SQLSTATE 42P01（经 bun-sql 的 cause 链
+ * 传递，errno 字段承载）或其等义 message。只有它算「无数据」；连接失败、
+ * 权限等一切其他错误都不是——回退门宁可判定失败也不把「测不到」当
+ * 「测过为零」（fail-closed）。
+ */
+function isMissingRelationError(error: unknown): boolean {
+  let current: unknown = error;
+  for (
+    let depth = 0;
+    current !== null && typeof current === "object" && depth < 4;
+    depth += 1
+  ) {
+    const candidate = current as {
+      errno?: unknown;
+      code?: unknown;
+      message?: unknown;
+      cause?: unknown;
+    };
+    if (candidate.errno === "42P01" || candidate.code === "42P01") return true;
+    if (
+      typeof candidate.message === "string" &&
+      /relation "[^"]+" does not exist/i.test(candidate.message)
+    ) {
+      return true;
+    }
+    current = candidate.cause;
+  }
+  return false;
+}
+
 /** 闭集表名直查（sql.raw 只接本模块的表名闭集，不接任何外部输入）。 */
 async function countByTable(
   database: Database,
@@ -160,13 +191,19 @@ async function countByTable(
 ): Promise<{ n: number }[]> {
   return (await database
     .execute(sql.raw(`select ${projection} as n from public."${table}"`))
-    .catch(() => [])) as unknown as { n: number }[];
+    .catch((error: unknown) => {
+      // 缺表 = 无数据（判定如实降级；缺表事实由备份步的 missingTables 披露）。
+      if (isMissingRelationError(error)) return [];
+      throw error;
+    })) as unknown as { n: number }[];
 }
 
 /**
  * 安全回退门（AC3 判定半边；纯读、零写入）。两条硬判定都不满足条件时
  * 拒绝，两条拒绝理由都列出（MT013 同纪律：一次列全）。表缺失按 0 计
- * （缺表 = 无数据，不是判定失败——缺表事实由备份步的 missingTables 披露）。
+ * （缺表 = 无数据，不是判定失败——缺表事实由备份步的 missingTables 披露）；
+ * 任何其他测量错误（连接失败、权限等）如实抛出——fail-closed，不把
+ * 「测不到」折叠成「测过为零」的放行。
  */
 export async function evaluateRollbackGate(
   database: Database,
@@ -191,7 +228,11 @@ export async function evaluateRollbackGate(
     select count(*)::int as n from enterprise_resources
     where kind = 'event-subscription' and visibility is null and status = 'active'
   `)
-    .catch(() => [{ n: 0 }] as unknown)) as unknown as { n: number }[];
+    .catch((error: unknown) => {
+      // 与 countByTable 同一判别面：只有缺表按 0 计，其余错误如实抛出。
+      if (isMissingRelationError(error)) return [{ n: 0 }] as unknown;
+      throw error;
+    })) as unknown as { n: number }[];
   const heldJobLeases = Number(leaseRows[0]?.n ?? 0);
   const activeEventSubscriptions = Number(subscriptionRows[0]?.n ?? 0);
   const stopFirstSatisfied =

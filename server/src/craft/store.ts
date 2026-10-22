@@ -11,7 +11,17 @@
 
 import { randomBytes } from "node:crypto";
 import net from "node:net";
-import { and, asc, count, desc, eq, isNotNull, lt, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  lt,
+  sql,
+} from "drizzle-orm";
 import type { Database } from "../db/client";
 import type { CraftMessageType, CraftSessionOrigin } from "../db/schema/craft";
 import {
@@ -62,6 +72,14 @@ export type CraftStore = {
     userId: string,
     limit?: number,
   ): Promise<Array<Omit<CraftSessionRow, never>>>;
+  /**
+   * The rows for exactly these ids (empty for none). Paged join faces fetch
+   * what their page names instead of the newest-N window `listUserSessions`
+   * serves, so an old-but-pinned row is reachable the same as a fresh one.
+   */
+  findSessionsByIds(
+    sessionIds: readonly string[],
+  ): Promise<readonly CraftSessionRow[]>;
   /** The user's empty (pre-provisioned) INTERACTIVE session, if one exists. */
   getEmptySessionForUser(userId: string): Promise<CraftSessionRow | undefined>;
   /** Insert an INITIALIZING row (reservation phase). */
@@ -214,6 +232,14 @@ export function createCraftStore(db: Database): CraftStore {
         )
         .orderBy(desc(craftSessions.createdAt))
         .limit(limit);
+    },
+
+    async findSessionsByIds(sessionIds) {
+      if (sessionIds.length === 0) return [];
+      return db
+        .select()
+        .from(craftSessions)
+        .where(inArray(craftSessions.id, [...sessionIds]));
     },
 
     async getEmptySessionForUser(userId) {

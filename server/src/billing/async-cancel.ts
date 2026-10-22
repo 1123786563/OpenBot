@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { AuditStore } from "../audit";
 import { DEPLOYMENT_INITIATOR, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
@@ -8,9 +8,12 @@ import {
   asyncJobs,
   creditReservations,
 } from "../db/schema/credit-reservations";
-import { createCreditReleaseService, type CreditReleaseOutcome } from "./credit-release";
-import { createCreditWriter } from "./credits-writer";
+import {
+  type CreditReleaseOutcome,
+  createCreditReleaseService,
+} from "./credit-release";
 import { RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS } from "./credit-reserve";
+import { createCreditWriter } from "./credits-writer";
 import { findCompanyScopeIdentityField } from "./personal-key-isolation";
 
 /*
@@ -47,7 +50,11 @@ import { findCompanyScopeIdentityField } from "./personal-key-isolation";
  * ever (`async_job_cancellations`, 0207): a repeated request under the SAME key replays
  * the recorded conclusion without asking the provider again, and a NEW key (a genuine
  * retry) asks once more and moves the row — `released_on_evidence` is terminal, every
- * other conclusion may be superseded by a later evidenced one. The audit row lands when a
+ * other conclusion may be superseded by a later evidenced one. Concurrent asks serialize
+ * on the row itself (SELECT … FOR UPDATE inside the record write): the requests counter
+ * never undercounts a race, a first-time PK loser retries under the winner's committed
+ * row, and a weaker conclusion arriving after a terminal release leaves the release
+ * recorded — only the ask is counted onto it. The audit row lands when a
  * conclusion first arrives or changes, never twice for the same conclusion (取消动作与结论
  * 可审计, 重复通知不重复审计 — 18.4's rule).
  *
@@ -186,7 +193,11 @@ function validateCancelRequest(input: unknown):
       detail: Record<string, unknown>;
     } {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, reasonCode: "request_invalid", detail: { field: "body" } };
+    return {
+      ok: false,
+      reasonCode: "request_invalid",
+      detail: { field: "body" },
+    };
   }
   const raw = input as Record<string, unknown>;
 
@@ -207,7 +218,11 @@ function validateCancelRequest(input: unknown):
   }
 
   if (!isIdentifier(raw.grantId, 512)) {
-    return { ok: false, reasonCode: "request_invalid", detail: { field: "grantId" } };
+    return {
+      ok: false,
+      reasonCode: "request_invalid",
+      detail: { field: "grantId" },
+    };
   }
   if (!isIdentifier(raw.cancelIdempotencyKey, 512)) {
     return {
@@ -231,7 +246,11 @@ function validateCancelRequest(input: unknown):
   }
   const selector = selectors[0];
   if (!isIdentifier(raw[selector], 512)) {
-    return { ok: false, reasonCode: "request_invalid", detail: { field: selector } };
+    return {
+      ok: false,
+      reasonCode: "request_invalid",
+      detail: { field: selector },
+    };
   }
   return {
     ok: true,
@@ -255,18 +274,152 @@ export type AsyncCancelService = {
 };
 
 /** The money reaction a provider conclusion produces on a HELD (reserved) hold. */
-function conclusionForHeld(
-  outcome: ProviderCancelOutcome,
-): { conclusion: AsyncCancelConclusion; evidenceReference: string | null } {
+function conclusionForHeld(outcome: ProviderCancelOutcome): {
+  conclusion: AsyncCancelConclusion;
+  evidenceReference: string | null;
+} {
   switch (outcome.kind) {
     case "succeeded_unbilled_evidenced":
-      return { conclusion: "released_on_evidence", evidenceReference: outcome.evidenceReference };
+      return {
+        conclusion: "released_on_evidence",
+        evidenceReference: outcome.evidenceReference,
+      };
     case "succeeded_no_evidence":
     case "unsupported":
     case "failed":
       return { conclusion: "hold_kept", evidenceReference: null };
     case "result_unknown":
       return { conclusion: "hold_unknown", evidenceReference: null };
+  }
+}
+
+/**
+ * A unique-constraint violation (23505) anywhere in the driver's error chain —
+ * the losing side of two first-time writers racing on the row's PK.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  let current: unknown = error;
+  for (
+    let depth = 0;
+    current !== null && typeof current === "object" && depth < 4;
+    depth += 1
+  ) {
+    const candidate = current as {
+      errno?: unknown;
+      code?: unknown;
+      cause?: unknown;
+    };
+    if (candidate.errno === "23505" || candidate.code === "23505") return true;
+    current = candidate.cause;
+  }
+  return false;
+}
+
+/**
+ * One record write, serialized on the job's own row. The blind upsert this
+ * replaces answered races by luck: two new-key cancels both computed `requests`
+ * from the same stale read (the counter undercounted exactly when the retry
+ * storm hit), and a weaker conclusion could overwrite a terminal release. Here
+ * the transaction anchors on the row (SELECT … FOR UPDATE); a first-time writer
+ * that loses the PK race to a concurrent insert retries under the row the
+ * winner committed. A terminal `released_on_evidence` is never un-recorded: the
+ * weaker ask is counted onto the row while the release quartet stays whole (the
+ * table's CHECKs make half-of-each an impossible row).
+ */
+async function writeConclusionRecord(
+  database: Database,
+  input: {
+    readonly jobId: string;
+    readonly requestKey: string;
+    readonly providerCancelResult: ProviderCancelOutcome["kind"];
+    readonly evidenceKind: "no_usage" | null;
+    readonly evidenceReference: string | null;
+    readonly conclusion: AsyncCancelConclusion;
+    readonly releasedCredits: number | null;
+  },
+  now: () => Date,
+): Promise<{
+  readonly providerCancelResult: ProviderCancelOutcome["kind"];
+  readonly evidenceKind: "no_usage" | null;
+  readonly evidenceReference: string | null;
+  readonly conclusion: AsyncCancelConclusion;
+  readonly releasedCredits: number | null;
+  readonly conclusionChanged: boolean;
+}> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await database.transaction(async (tx) => {
+        const [locked] = await tx
+          .select()
+          .from(asyncJobCancellations)
+          .where(eq(asyncJobCancellations.jobId, input.jobId))
+          .limit(1)
+          .for("update");
+        if (locked === undefined) {
+          await tx.insert(asyncJobCancellations).values({
+            jobId: input.jobId,
+            lastRequestKey: input.requestKey,
+            providerCancelResult: input.providerCancelResult,
+            evidenceKind: input.evidenceKind,
+            evidenceReference: input.evidenceReference,
+            conclusion: input.conclusion,
+            releasedCredits: input.releasedCredits,
+            requests: 1,
+            firstRequestedAt: now(),
+            lastSeenAt: now(),
+          });
+          return {
+            providerCancelResult: input.providerCancelResult,
+            evidenceKind: input.evidenceKind,
+            evidenceReference: input.evidenceReference,
+            conclusion: input.conclusion,
+            releasedCredits: input.releasedCredits,
+            conclusionChanged: true,
+          };
+        }
+        const terminalHeld =
+          locked.conclusion === "released_on_evidence" &&
+          input.conclusion !== "released_on_evidence";
+        const effective = terminalHeld
+          ? {
+              providerCancelResult: locked.providerCancelResult,
+              // The evidence-shape CHECK owns this column: non-null exactly
+              // when the result is evidenced, and "no_usage" is the only kind
+              // the writer above ever lands.
+              evidenceKind: locked.evidenceKind as "no_usage" | null,
+              evidenceReference: locked.evidenceReference,
+              conclusion: locked.conclusion,
+              releasedCredits: locked.releasedCredits,
+            }
+          : {
+              providerCancelResult: input.providerCancelResult,
+              evidenceKind: input.evidenceKind,
+              evidenceReference: input.evidenceReference,
+              conclusion: input.conclusion,
+              releasedCredits: input.releasedCredits,
+            };
+        await tx
+          .update(asyncJobCancellations)
+          .set({
+            lastRequestKey: input.requestKey,
+            providerCancelResult: effective.providerCancelResult,
+            evidenceKind: effective.evidenceKind,
+            evidenceReference: effective.evidenceReference,
+            conclusion: effective.conclusion,
+            releasedCredits: effective.releasedCredits,
+            requests: locked.requests + 1,
+            lastSeenAt: now(),
+          })
+          .where(eq(asyncJobCancellations.jobId, input.jobId));
+        return {
+          ...effective,
+          conclusionChanged: locked.conclusion !== effective.conclusion,
+        };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error) && attempt < 2) continue;
+      throw error;
+    }
   }
 }
 
@@ -277,9 +430,14 @@ export function createAsyncCancelService(
   const writer = createCreditWriter(database);
   const release =
     dependencies.release ??
-    ((request: Parameters<NonNullable<AsyncCancelServiceDependencies["release"]>>[0]) =>
-      createCreditReleaseService({ database }).release(request));
-  const markUnknown = dependencies.markUnknown ?? ((id, reason) => writer.markReservationUnknown(id, reason));
+    ((
+      request: Parameters<
+        NonNullable<AsyncCancelServiceDependencies["release"]>
+      >[0],
+    ) => createCreditReleaseService({ database }).release(request));
+  const markUnknown =
+    dependencies.markUnknown ??
+    ((id, reason) => writer.markReservationUnknown(id, reason));
   const now = dependencies.now ?? (() => new Date());
 
   /** The audit row — once per landed conclusion, never twice for the same one. */
@@ -289,7 +447,12 @@ export function createAsyncCancelService(
       providerJobId: string | null;
       grantId: string;
       payer: { kind: string; id: string };
-    } & { providerCancelResult: string; conclusion: AsyncCancelConclusion; evidenceReference: string | null; releasedCredits: number | null },
+    } & {
+      providerCancelResult: string;
+      conclusion: AsyncCancelConclusion;
+      evidenceReference: string | null;
+      releasedCredits: number | null;
+    },
   ): Promise<void> {
     if (dependencies.audit === undefined) return;
     try {
@@ -330,8 +493,13 @@ export function createAsyncCancelService(
           detail: validated.detail,
         };
       }
-      const { grantId, cancelIdempotencyKey, jobId, submitIdempotencyKey, providerJobId } =
-        validated.request;
+      const {
+        grantId,
+        cancelIdempotencyKey,
+        jobId,
+        submitIdempotencyKey,
+        providerJobId,
+      } = validated.request;
 
       // Scope first, exactly 17.4's read: the payer is resolved from the grant row alone,
       // and a scope that resolves nothing owns nothing. Visibility is not admission — a
@@ -343,7 +511,11 @@ export function createAsyncCancelService(
         .where(eq(accessGrants.grantId, grantId))
         .limit(1);
       if (grant?.scope !== "model-access") {
-        return { status: "nothing_to_cancel", jobId: null, reason: "job_not_found" };
+        return {
+          status: "nothing_to_cancel",
+          jobId: null,
+          reason: "job_not_found",
+        };
       }
 
       const [jobRow] = await database
@@ -364,7 +536,11 @@ export function createAsyncCancelService(
         jobRow.payerId !== grant.userId ||
         jobRow.payerKind !== "personal"
       ) {
-        return { status: "nothing_to_cancel", jobId: null, reason: "job_not_found" };
+        return {
+          status: "nothing_to_cancel",
+          jobId: null,
+          reason: "job_not_found",
+        };
       }
 
       const [hold] = await database
@@ -373,7 +549,11 @@ export function createAsyncCancelService(
         .where(eq(creditReservations.id, jobRow.reservationId))
         .limit(1);
       if (hold === undefined) {
-        return { status: "nothing_to_cancel", jobId: jobRow.jobId, reason: "job_not_found" };
+        return {
+          status: "nothing_to_cancel",
+          jobId: jobRow.jobId,
+          reason: "job_not_found",
+        };
       }
       if (hold.status === "settled") {
         return {
@@ -403,9 +583,14 @@ export function createAsyncCancelService(
         (existing.lastRequestKey === cancelIdempotencyKey ||
           existing.conclusion === "released_on_evidence")
       ) {
+        // Atomic on the server side: concurrent replays of the same key each
+        // add their own +1 instead of racing a read-modify-write.
         await database
           .update(asyncJobCancellations)
-          .set({ requests: existing.requests + 1, lastSeenAt: now() })
+          .set({
+            requests: sql`${asyncJobCancellations.requests} + 1`,
+            lastSeenAt: now(),
+          })
           .where(eq(asyncJobCancellations.jobId, jobRow.jobId));
         return {
           status: "answered",
@@ -428,7 +613,6 @@ export function createAsyncCancelService(
       });
 
       let conclusion: AsyncCancelConclusion;
-      let evidenceReference: string | null = null;
       let releasedCredits: number | null = null;
       if (providerOutcome.kind === "succeeded_unbilled_evidenced") {
         if (hold.status === "reserved") {
@@ -444,7 +628,6 @@ export function createAsyncCancelService(
           });
           if (released.status === "released") {
             conclusion = "released_on_evidence";
-            evidenceReference = providerOutcome.evidenceReference;
             releasedCredits = released.releasedCredits;
           } else {
             // 06.11 refused (e.g. the hold moved to unknown since the read): the money
@@ -457,65 +640,55 @@ export function createAsyncCancelService(
           // (an unknown hold is recovery's to dispose, 08.9) — the evidence is recorded,
           // the release is not forced.
           conclusion = "hold_unknown";
-          evidenceReference = providerOutcome.evidenceReference;
         }
       } else {
         const derived = conclusionForHeld(providerOutcome);
         conclusion = derived.conclusion;
-        if (providerOutcome.kind === "result_unknown" && hold.status === "reserved") {
+        if (
+          providerOutcome.kind === "result_unknown" &&
+          hold.status === "reserved"
+        ) {
           // The ask never answered: the job's fate at the provider is unknown, and the
           // hold says so — full capacity still occupied (06.8), recovery's to dispose.
-          await markUnknown(jobRow.reservationId, "async_cancel_result_unknown");
+          await markUnknown(
+            jobRow.reservationId,
+            "async_cancel_result_unknown",
+          );
         }
       }
 
-      const row = {
-        jobId: jobRow.jobId,
-        lastRequestKey: cancelIdempotencyKey,
-        providerCancelResult: providerOutcome.kind,
-        evidenceKind:
-          providerOutcome.kind === "succeeded_unbilled_evidenced"
-            ? ("no_usage" as const)
-            : null,
-        evidenceReference:
-          providerOutcome.kind === "succeeded_unbilled_evidenced"
-            ? providerOutcome.evidenceReference
-            : null,
-        conclusion,
-        releasedCredits,
-        ...(existing === undefined
-          ? { requests: 1, firstRequestedAt: now(), lastSeenAt: now() }
-          : { requests: existing.requests + 1, lastSeenAt: now() }),
-      };
-      await database
-        .insert(asyncJobCancellations)
-        .values(row)
-        .onConflictDoUpdate({
-          target: asyncJobCancellations.jobId,
-          set: {
-            lastRequestKey: row.lastRequestKey,
-            providerCancelResult: row.providerCancelResult,
-            evidenceKind: row.evidenceKind,
-            evidenceReference: row.evidenceReference,
-            conclusion: row.conclusion,
-            releasedCredits: row.releasedCredits,
-            requests: row.requests,
-            lastSeenAt: row.lastSeenAt,
-          },
-        });
-
-      const conclusionChanged =
-        existing === undefined || existing.conclusion !== conclusion;
-      if (conclusionChanged) {
+      // The record write, serialized on the row (see writeConclusionRecord):
+      // concurrent new-key asks each count, and a terminal release recorded by
+      // the other side of a race stays the row's answer.
+      const written = await writeConclusionRecord(
+        database,
+        {
+          jobId: jobRow.jobId,
+          requestKey: cancelIdempotencyKey,
+          providerCancelResult: providerOutcome.kind,
+          evidenceKind:
+            providerOutcome.kind === "succeeded_unbilled_evidenced"
+              ? ("no_usage" as const)
+              : null,
+          evidenceReference:
+            providerOutcome.kind === "succeeded_unbilled_evidenced"
+              ? providerOutcome.evidenceReference
+              : null,
+          conclusion,
+          releasedCredits,
+        },
+        now,
+      );
+      if (written.conclusionChanged) {
         await auditConclusion({
           jobId: jobRow.jobId,
           providerJobId: jobRow.providerJobId,
           grantId: jobRow.grantId,
           payer: { kind: jobRow.payerKind, id: jobRow.payerId },
-          providerCancelResult: providerOutcome.kind,
-          conclusion,
-          evidenceReference,
-          releasedCredits,
+          providerCancelResult: written.providerCancelResult,
+          conclusion: written.conclusion,
+          evidenceReference: written.evidenceReference,
+          releasedCredits: written.releasedCredits,
         });
       }
 
@@ -523,10 +696,10 @@ export function createAsyncCancelService(
         status: "answered",
         asked: true,
         jobId: jobRow.jobId,
-        providerCancelResult: providerOutcome.kind,
-        conclusion,
-        releasedCredits,
-        evidenceReference,
+        providerCancelResult: written.providerCancelResult,
+        conclusion: written.conclusion,
+        releasedCredits: written.releasedCredits,
+        evidenceReference: written.evidenceReference,
       };
     },
   };

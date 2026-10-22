@@ -163,6 +163,76 @@ describeDb("MT121 rollback procedure (Issue #164)", () => {
     );
   });
 
+  // ---- 回退门缺表容错的判别面（fail-closed，不把「测不到」当「测过为零」）----
+  describe("the gate tolerates only missing tables, never measurement failures", () => {
+    /**
+     * evaluateRollbackGate 的 execute 次序：3 张可归属表 → job_leases →
+     * 订阅数。前 N 次成功（0 行/0 计数），第 failAt 次抛 failure。
+     */
+    function databaseFailingAt(failAt: number, failure: () => Error): Database {
+      let calls = 0;
+      return {
+        execute: async () => {
+          calls += 1;
+          if (calls === failAt) throw failure();
+          return [{ n: 0 }];
+        },
+      } as unknown as Database;
+    }
+
+    test("an unreachable database rejects the gate instead of allowing rollback", async () => {
+      await expect(
+        evaluateRollbackGate(
+          databaseFailingAt(
+            1,
+            () => new Error("Failed query: select … (connection refused)"),
+          ),
+        ),
+      ).rejects.toThrow(/connection refused/);
+    });
+
+    test("a measurement failure on the subscription count also rejects (no swallowed stop-first)", async () => {
+      await expect(
+        evaluateRollbackGate(
+          databaseFailingAt(
+            5,
+            () => new Error("Failed query: select count(*) … (terminated)"),
+          ),
+        ),
+      ).rejects.toThrow(/terminated/);
+    });
+
+    test("a genuinely missing table still degrades honestly to zero (missing ≠ failure)", async () => {
+      const missingTable = () => {
+        const cause = Object.assign(
+          new Error('relation "public.enterprise_resources" does not exist'),
+          {
+            name: "PostgresError",
+            errno: "42P01",
+          },
+        );
+        return new Error(
+          "Failed query: select count(distinct tenant_id)::int as n",
+          {
+            cause,
+          } as ErrorOptions,
+        );
+      };
+      // 第 1 次（enterprise_resources）缺表；其余成功。
+      const gate = await evaluateRollbackGate(
+        databaseFailingAt(1, missingTable),
+      );
+      expect(
+        gate.measured.tenantsPerTable.map((row) => row.table),
+      ).not.toContain("enterprise_resources");
+      // 第 5 次（订阅计数）缺表：订阅按 0 计。
+      const gateSubscriptions = await evaluateRollbackGate(
+        databaseFailingAt(5, missingTable),
+      );
+      expect(gateSubscriptions.measured.activeEventSubscriptions).toBe(0);
+    });
+  });
+
   // ---- AC3：回退门两条硬判定 ----
   describeDb("AC3 the rollback gate enforces both hard rules", () => {
     itDb(
