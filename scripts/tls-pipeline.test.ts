@@ -291,6 +291,47 @@ describe("derive_preview_host (mirrors #361 parseTemplate)", () => {
       }
     });
   }
+
+  // ── #415: the SHARED golden fixture — both faces read the ONE file ──────────
+  //
+  // scripts/fixtures/tls-template-golden.json is the single source of template
+  // verdicts this face (the sidecar's derive_preview_host) shares with the
+  // server's parseTemplate (server/tests/craft-preview-origin.test.ts reads the
+  // same file from the other direction). Before #415 each face carried its own
+  // inline list and the lockstep lived in cross-referencing comments; the
+  // ticket's own cases (a `*` the server once served, a `..` this side once
+  // certified) fell exactly in that seam. A verdict change on either face now
+  // updates the ONE fixture, and the OTHER face's suite goes red until it agrees
+  // — the divergence class dies at CI time instead of in a crash-loop.
+  const sharedGolden = JSON.parse(
+    readFileSync(resolve("scripts/fixtures/tls-template-golden.json"), "utf8"),
+  ) as {
+    cases: Array<{
+      id: string;
+      template: string;
+      server: { verdict: string };
+      sidecar:
+        | { verdict: "ok"; derived: string }
+        | { verdict: "skip"; reasonContains: string }
+        | { verdict: "invalid" };
+    }>;
+  };
+  for (const c of sharedGolden.cases) {
+    test(`#415 shared golden (${c.id}): ${JSON.stringify(c.template)} → sidecar ${c.sidecar.verdict} (server ${c.server.verdict})`, async () => {
+      const r = await derive(c.template);
+      if (c.sidecar.verdict === "ok") {
+        expect(r.exit).toBe(0);
+        expect(r.out.trim()).toBe(c.sidecar.derived);
+      } else if (c.sidecar.verdict === "skip") {
+        expect(r.exit).toBe(0);
+        expect(r.out.trim()).toMatch(/^skip\|/);
+        expect(r.out).toContain(c.sidecar.reasonContains);
+      } else {
+        expect(r.exit).toBe(1);
+        expect(r.out.trim()).toMatch(/^invalid\|/);
+      }
+    });
+  }
 });
 
 // ── #404 (AC6/M-1): a base that swallows the main site is refused ─────────────

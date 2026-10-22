@@ -15,9 +15,9 @@
 // OWN session cookie — session-level (no Max-Age/Expires), HttpOnly, SameSite=None; Secure (#365 F-1).
 
 import { createHmac } from "node:crypto";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { loadCraftConfig } from "../src/craft/config";
 import {
@@ -1054,6 +1054,68 @@ describe("preview origin admission", () => {
     expect(emptyLabel.admission().ok).toBe(false);
     expect(() => emptyLabel.originFor(SESSION_ID)).toThrow();
   });
+
+  // ── #415: the SHARED golden fixture — both faces read the ONE file ──────────
+  //
+  // scripts/fixtures/tls-template-golden.json is the single source of template
+  // verdicts this face (parseTemplate) shares with the sidecar's
+  // derive_preview_host (scripts/tls-pipeline.test.ts reads the same file from
+  // the other direction, spawning the real lib.sh). Before #415 the lockstep
+  // lived in cross-referencing comments alone and the ticket's own cases (a `*`
+  // this face once served, a `..` the sidecar once certified) fell exactly in
+  // that seam. A verdict change on either face now updates the ONE fixture, and
+  // the OTHER face's suite goes red until it agrees. The fixture's two recorded
+  // divergences (localhost-base: sidecar skips, server serves; single-label-base:
+  // sidecar laxer) are harmless by construction and pinned case by case there.
+  test.each(
+    JSON.parse(
+      readFileSync(
+        resolve(
+          import.meta.dirname,
+          "../../scripts/fixtures/tls-template-golden.json",
+        ),
+        "utf8",
+      ),
+    ).cases as Array<{
+      id: string;
+      template: string;
+      server: { verdict: "open"; derived?: string } | { verdict: "closed" };
+    }>,
+  )(
+    "#415 shared golden ($id): $template → server $server.verdict",
+    ({ template, server }) => {
+      const origin = originWith(
+        { previewOriginTemplate: template },
+        // The dev-form case needs a derivable port; the host-form cases ignore it.
+        { PORT: "3001" },
+      );
+      const admission = origin.admission();
+      expect(admission.ok).toBe(server.verdict === "open");
+      if (server.verdict === "open") {
+        const address = origin.originFor(SESSION_ID);
+        // The 20-hex label is HMAC-derived; the fixture spells it {label}. The
+        // dev form (empty template) rides a PATH label on 127.0.0.1 — there the
+        // {label} sits after the "/"; the host forms carry it as the hostname's
+        // leading label.
+        const afterScheme = address.slice(address.indexOf("//") + 2);
+        const label =
+          template === ""
+            ? afterScheme.split("/")[1]
+            : afterScheme.split("/")[0].split(".")[0];
+        expect(label).toMatch(/^[0-9a-f]{20}$/);
+        if (server.derived) {
+          expect(address).toBe(server.derived.replace("{label}", label));
+        }
+      } else {
+        if (!admission.ok) {
+          expect(admission.reason).toContain(
+            "OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE",
+          );
+        }
+        expect(() => origin.originFor(SESSION_ID)).toThrow();
+      }
+    },
+  );
 
   // ── fix-ocr4 #9: a non-https host template is refused ───────────────────
   // The preview pass cookie is hardcoded SameSite=None; Secure, and a
