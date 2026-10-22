@@ -75,7 +75,7 @@ const BACK = {
   linkProps: { to: "/admin/components" },
 } as const;
 
-export const Route = createFileRoute("/_authed/admin/components/$name")({
+export const Route = createFileRoute("/_authed/settings/components-gallery/$name")({
   component: RouteComponent,
 });
 

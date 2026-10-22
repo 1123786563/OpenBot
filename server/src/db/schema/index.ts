@@ -29,6 +29,8 @@ export * from "./delivery";
 export * from "./demonstrations";
 export * from "./enterprise-audit";
 export * from "./enterprise-bot-ownership";
+export * from "./enterprise-craft-scopes";
+export * from "./enterprise-craft-schedules";
 export * from "./enterprise-conversations";
 export * from "./enterprise-credential-lease";
 export * from "./enterprise-credentials";
