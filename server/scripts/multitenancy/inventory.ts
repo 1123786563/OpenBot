@@ -72,6 +72,14 @@ import {
 } from "../../src/enterprise/conversations/routes";
 import { classifyManagementPlane } from "../../src/enterprise/tenancy/admin-separation";
 import { ENTERPRISE_ENTRY_DISPOSITIONS } from "../../src/enterprise/tenancy/assembly-enterprise";
+import {
+  createMobileAggregationEntryRoutes,
+  LEGACY_ENTRY_DISPOSITIONS,
+} from "../../src/enterprise/tenancy/assembly-legacy";
+import {
+  createStreamEntryRoutes,
+  STREAM_ENTRY_DISPOSITIONS,
+} from "../../src/enterprise/tenancy/assembly-stream";
 import { createWorkshopPublicRoutes } from "../../src/workshop/public-routes";
 import { createWorkshopRoutes } from "../../src/workshop/routes";
 import { testEnvironment } from "../../tests/support/environment";
@@ -483,6 +491,37 @@ async function coworkerBag(
     notes,
   );
   if (triggers.note) notes.push(triggers.note);
+  // MT125（Issue #168）/MT126（Issue #169）：统一装配的移动聚合与流式
+  // 入口族——真实路由工厂（stub 依赖与 MT124 同款：清单装配没有会话源，
+  // 工厂建立即 AUTH_REQUIRED，绝不伪造可用）。
+  const refusingFactory = {
+    fromRequest: async () => {
+      throw new Error("AUTH_REQUIRED");
+    },
+  } as never;
+  const mobileAggregate = await honoOrEmpty(
+    "enterprise-mobile-aggregate",
+    () =>
+      createMobileAggregationEntryRoutes({
+        factory: refusingFactory,
+        service: { readMobileAggregate: P() } as never,
+      }),
+    notes,
+  );
+  const streamEntry = await honoOrEmpty(
+    "enterprise-stream-entry",
+    () =>
+      createStreamEntryRoutes({
+        factory: refusingFactory,
+        service: {
+          openSubscription: P(),
+          pushEvent: P(),
+          cancelSubscription: P(),
+        } as never,
+        events: { nextEvent: async () => null },
+      }),
+    notes,
+  );
   return {
     demonstrations: P(),
     approvals: P(),
@@ -501,6 +540,12 @@ async function coworkerBag(
     enterpriseConversations,
     ...(workspaceScope.routes.length
       ? { enterpriseWorkspaceScope: workspaceScope }
+      : {}),
+    ...(mobileAggregate.routes.length
+      ? { enterpriseMobileAggregate: mobileAggregate }
+      : {}),
+    ...(streamEntry.routes.length
+      ? { enterpriseStreamEntry: streamEntry }
       : {}),
     teamBots: P(),
     lifecycle: P(),
@@ -715,6 +760,8 @@ const CLOSURE_BY_PREFIX: Array<[string, string]> = [
   ["/.well-known", "bot"],
   ["/api/copilotkit", "agent-runtime"],
   ["/api/enterprise/conversations", "conversation"],
+  // MT126（Issue #169）：流式统一入口（会话事件订阅）归会话闭环。
+  ["/api/enterprise/streams", "conversation"],
   // MT075（Issue #118）：公司/团队管理面（MT006 workspace-scope）有了
   // 自己的闭环归属——管理面分类（platform/company）见
   // src/enterprise/tenancy/admin-separation.ts，随 summary.managementPlanes 回写。
@@ -1524,13 +1571,17 @@ function digestOf(inventory: Omit<CoverageInventory, "digest">): string {
  * MT124（Issue #167）：把企业入口的处置表写回清单——entrance id 精确匹配
  * 的未指派入口记 ownerTicket 与 owned 状态。处置表在实现模块
  * （assembly-enterprise.ts）是单一事实源；这里只消费，不复制。
+ * MT125/MT126（Issue #168/#169）的旧入口与流式入口处置表同一消费形状。
  */
-function applyEnterpriseEntryDispositions(entrances: EntranceEntry[]): void {
+function applyEntranceDispositions(
+  entrances: EntranceEntry[],
+  dispositions: readonly {
+    readonly entrance: string;
+    readonly ownerTicket: string;
+  }[],
+): void {
   const byEntrance = new Map(
-    ENTERPRISE_ENTRY_DISPOSITIONS.map((disposition) => [
-      disposition.entrance,
-      disposition,
-    ]),
+    dispositions.map((disposition) => [disposition.entrance, disposition]),
   );
   for (const entry of entrances) {
     const disposition = byEntrance.get(entry.entrance);
@@ -1624,7 +1675,10 @@ export async function buildInventory(
   });
   // MT124（Issue #167）：企业入口装配处置回写——统一上下文/管理面处置表
   // 认领仍未指派的企业入口（ownership 输入显式指派时以输入为准）。
-  applyEnterpriseEntryDispositions(entrances);
+  // MT125/MT126（Issue #168/#169）：旧入口与流式入口处置表同一形状消费。
+  applyEntranceDispositions(entrances, ENTERPRISE_ENTRY_DISPOSITIONS);
+  applyEntranceDispositions(entrances, LEGACY_ENTRY_DISPOSITIONS);
+  applyEntranceDispositions(entrances, STREAM_ENTRY_DISPOSITIONS);
   applyOwnership(backgroundPrograms, ownership, {
     programName: (entry) => entry.name,
   });
