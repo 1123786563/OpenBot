@@ -1,0 +1,1179 @@
+=== MODIFIED: app/src/lib/plugin-packages/queries.ts ===
+--- docs/plans/2026-10-19-plugin-package-marketplace/checkpoints/cp07-pkg03b-fix1/files/app/src/lib/plugin-packages/queries.ts	2026-10-20 03:36:11
++++ app/src/lib/plugin-packages/queries.ts	2026-10-20 03:47:08
+@@ -2,11 +2,12 @@
+ import { client } from "@/lib/client";
+ import type {
+   PackageCatalogueDetail,
++  PackageInstallDetailDTO,
+   PackagePage,
+ } from "../../../../shared/enterprise/plugin-package-contracts";
+ 
+ /**
+- * The read-only plugin-package catalogue, PKG01.
++ * The read-only plugin-package catalogue, PKG01, plus the scope-scoped install detail read.
+  *
+  * THE SCOPE IS PART OF EVERY KEY, not something the client attaches behind the caller's back:
+  * `tenantId` + `workspaceId` + `principalId` name the subtree a page lives under, and the same
+@@ -14,9 +15,10 @@
+  * therefore produces a different key — nothing under the old key can decorate the new team — and
+  * a response that left under the old pair can only land in an entry the screen no longer reads.
+  *
+- * WHAT IS ABSENT ON PURPOSE. Package installs, plans and grants are other tickets; these reads
+- * carry no mutation, no install id and no token. The DTOs are the shared wire contract, imported
+- * as types so a drift is a compile error here too.
++ * WHAT IS ABSENT ON PURPOSE. The catalogue reads carry no mutation and no token; installs and
++ * plans are write paths owned by `mutations.ts` (PKG02). The install-detail read (PKG03) is
++ * read-only too: the scope triple names the key and travels as headers only — never in a body.
++ * The DTOs are the shared wire contract, imported as types so a drift is a compile error here too.
+  */
+ 
+ /** The selection a package page answers under; the principal is the signed-in user's id. */
+@@ -65,6 +67,12 @@
+   /** The detail key names the package identity; the scope prefix keeps teams apart. */
+   detail: (scope: PluginPackageScope, publisher: string, name: string) =>
+     [...scopeKey(scope), "detail", publisher, name] as const,
++  /**
++   * The install-detail key names the installed instance; the scope prefix keeps teams apart, so a
++   * grant mutation can invalidate exactly the one install it answered for and nothing beside it.
++   */
++  installDetail: (scope: PluginPackageScope, installId: string) =>
++    [...scopeKey(scope), "install", installId] as const,
+ };
+ 
+ function listPath(query: PluginPackageListQuery): string {
+@@ -121,3 +129,29 @@
+     },
+   });
+ }
++
++/**
++ * One install's facts in this scope: the resources of the current revision and the active Bot
++ * grants — the authorization state the grant screen manages. Scope headers only; the scope in
++ * the key keeps a late answer from ever landing in another team's tree.
++ */
++export function pluginPackageInstallDetailQueryOptions(
++  scope: PluginPackageScope,
++  installId: string,
++) {
++  return queryOptions({
++    queryKey: pluginPackageKeys.installDetail(scope, installId),
++    queryFn: async ({ signal }): Promise<PackageInstallDetailDTO> => {
++      const response = await client(
++        `${PACKAGE_ROOT}/installs/${encodeURIComponent(installId)}`,
++        {
++          tenantId: scope.tenantId,
++          workspaceId: scope.workspaceId,
++          signal,
++          fallbackKey: "marketplace.load",
++        },
++      );
++      return (await response.json()) as PackageInstallDetailDTO;
++    },
++  });
++}
+=== MODIFIED: app/src/lib/plugin-packages/mutations.ts ===
+--- docs/plans/2026-10-19-plugin-package-marketplace/checkpoints/cp07-pkg03b-fix1/files/app/src/lib/plugin-packages/mutations.ts	2026-10-20 03:36:11
++++ app/src/lib/plugin-packages/mutations.ts	2026-10-20 03:49:33
+@@ -1,7 +1,13 @@
+-import { mutationOptions, type QueryClient } from "@tanstack/react-query";
++import {
++  mutationOptions,
++  type QueryClient,
++  useMutation,
++} from "@tanstack/react-query";
+ import { client } from "@/lib/client";
+ import type {
+   PackageConfig,
++  PackageGrantDTO,
++  PackageGrantResource,
+   PackageInstallDTO,
+   PackagePlanDTO,
+ } from "../../../../shared/enterprise/plugin-package-contracts";
+@@ -18,6 +24,11 @@
+  * NOTHING HERE CARRIES A SECRET. The plan body is the contract's flat non-secret config plus the
+  * exact package identity; apply carries only the server-generated plan id and one idempotency key
+  * per confirm attempt.
++ *
++ * PKG03 ADDS THE BOT GRANT WRITES, on the same discipline: the scope is an argument that rides as
++ * the selection headers (never a body field), one idempotency key per attempt, and success
++ * invalidates exactly the affected install-detail key — the one entry whose authorization state
++ * the write changed — so the affected screen refetches and everything else keeps its cache.
+  */
+ 
+ const PACKAGE_ROOT = "/api/enterprise/plugin-packages";
+@@ -94,3 +105,103 @@
+     },
+   });
+ }
++
++/** One grant attempt: the exact resources, the CAS target, and one idempotency key. */
++export type PackageGrantRequest = {
++  scope: PluginPackageScope;
++  installId: string;
++  botId: string;
++  /** null = first grant for this install/bot pair; else the grant revision the caller read. */
++  expectedGrantRevision: number | null;
++  resources: PackageGrantResource[];
++  idempotencyKey: string;
++};
++
++/** One revoke attempt: identity plus CAS target; the server supersedes the active grant. */
++export type PackageGrantRevokeRequest = {
++  scope: PluginPackageScope;
++  installId: string;
++  botId: string;
++  expectedGrantRevision: number | null;
++  idempotencyKey: string;
++};
++
++/**
++ * Grant skill resources to one Bot (PUT …/installs/:installId/bots/:botId/grants).
++ *
++ * The body is exactly `PackageGrantInputSchema`: install and bot identity, the CAS target and the
++ * resources. Scope and actor never travel in it — the server derives them from the trusted
++ * headers the client attaches from `request.scope`. A Bot grant authorizes pinned skill use in
++ * runs; it never changes what the install itself may do.
++ */
++export function usePackageGrant(queryClient: QueryClient) {
++  return useMutation(
++    mutationOptions({
++      mutationFn: async (
++        request: PackageGrantRequest,
++      ): Promise<PackageGrantDTO> => {
++        const response = await client(
++          `${PACKAGE_ROOT}/installs/${encodeURIComponent(request.installId)}/bots/${encodeURIComponent(request.botId)}/grants`,
++          {
++            method: "PUT",
++            body: {
++              installId: request.installId,
++              botId: request.botId,
++              expectedGrantRevision: request.expectedGrantRevision,
++              resources: request.resources,
++            },
++            headers: { "idempotency-key": request.idempotencyKey },
++            tenantId: request.scope.tenantId,
++            workspaceId: request.scope.workspaceId,
++            fallback: "The Bot grant could not be added.",
++          },
++        );
++        return (await response.json()) as PackageGrantDTO;
++      },
++      onSuccess: async (_grant, request) => {
++        // Exactly the one install-detail entry whose authorization state changed.
++        await queryClient.invalidateQueries({
++          queryKey: pluginPackageKeys.installDetail(
++            request.scope,
++            request.installId,
++          ),
++        });
++      },
++    }),
++  );
++}
++
++/**
++ * Revoke one Bot's grant (DELETE …/installs/:installId/bots/:botId/grants). The optional body
++ * carries only the CAS target; an absent body means null, so the UI sends the revision it read.
++ */
++export function usePackageGrantRevoke(queryClient: QueryClient) {
++  return useMutation(
++    mutationOptions({
++      mutationFn: async (
++        request: PackageGrantRevokeRequest,
++      ): Promise<PackageGrantDTO> => {
++        const response = await client(
++          `${PACKAGE_ROOT}/installs/${encodeURIComponent(request.installId)}/bots/${encodeURIComponent(request.botId)}/grants`,
++          {
++            method: "DELETE",
++            body: { expectedGrantRevision: request.expectedGrantRevision },
++            headers: { "idempotency-key": request.idempotencyKey },
++            tenantId: request.scope.tenantId,
++            workspaceId: request.scope.workspaceId,
++            fallback: "The Bot grant could not be revoked.",
++          },
++        );
++        return (await response.json()) as PackageGrantDTO;
++      },
++      onSuccess: async (_grant, request) => {
++        await queryClient.invalidateQueries({
++          queryKey: pluginPackageKeys.installDetail(
++            request.scope,
++            request.installId,
++          ),
++        });
++      },
++    }),
++  );
++}
+=== MODIFIED: app/src/components/market/package-detail.tsx ===
+--- docs/plans/2026-10-19-plugin-package-marketplace/checkpoints/cp07-pkg03b-fix1/files/app/src/components/market/package-detail.tsx	2026-10-20 03:36:11
++++ app/src/components/market/package-detail.tsx	2026-10-20 03:48:55
+@@ -1,6 +1,7 @@
+ import { IconAlertTriangle } from "@tabler/icons-react";
+ import { useQuery } from "@tanstack/react-query";
+ import { useTranslation } from "react-i18next";
++import { PackageGrantsSection } from "@/components/market/package-grants";
+ import { WbIdRow, WbStatsRow, WbTag } from "@/components/market/wb";
+ import { Button } from "@/components/ui/button";
+ import {
+@@ -298,6 +299,18 @@
+                 label={t("packages.detail.digest")}
+               />
+               {install ? <PackageInstallFacts install={install} /> : null}
++              {/*
++               * The grant surface is the company administrator's alone, and only an
++               * install that still exists can manage grants. The wire contract declares
++               * an `allowedActions` array on every install, but no server build names a
++               * grant action in it yet, so the gate is the install's own lifecycle
++               * state; the server re-authorizes every write regardless.
++               */}
++              {canInstall &&
++              install !== null &&
++              install.status !== "uninstalled" ? (
++                <PackageGrantsSection install={install} scope={scope} />
++              ) : null}
+               <section>
+                 <h3 className="text-sm font-medium text-foreground">
+                   {t("packages.detail.resources")}
+=== MODIFIED: app/src/locales/en/market.json ===
+--- docs/plans/2026-10-19-plugin-package-marketplace/checkpoints/cp07-pkg03b-fix1/files/app/src/locales/en/market.json	2026-10-20 03:36:11
++++ app/src/locales/en/market.json	2026-10-20 03:49:03
+@@ -153,6 +153,30 @@
+         "needs_grant": "Needs Bot grant",
+         "unavailable": "Unavailable"
+       }
++    },
++    "grants": {
++      "title": "Bot grants",
++      "hint": "A grant authorizes one Bot to use this package's pinned skills in runs. Installing alone grants nothing.",
++      "loading": "Loading Bot grants…",
++      "loadError": "Bot grants could not be loaded.",
++      "retry": "Try again",
++      "empty": "No Bot holds a grant yet: until a grant is added below, no Bot can execute this package. Installing alone does not grant execution rights.",
++      "revoke": "Revoke",
++      "revoking": "Revoking…",
++      "revokeAria": "Revoke the grant for {{bot}}",
++      "formTitle": "Grant skills to a Bot",
++      "botIdLabel": "Bot ID",
++      "botIdPlaceholder": "The ID of the Bot to grant",
++      "skillsLabel": "Skill resources of the current revision (a grant replaces the Bot's previous set)",
++      "noSkills": "This package declares no skill resources to grant.",
++      "grant": "Grant resources",
++      "granting": "Granting…",
++      "grantError": "The grant could not be added. Review the Bot ID and resources, then try again.",
++      "grantForbidden": "You do not have permission to manage Bot grants in this team.",
++      "grantConflict": "This grant changed while you were editing. The list below is fresh — review it and try again.",
++      "revokeError": "The grant could not be revoked. Try again.",
++      "revokeForbidden": "You do not have permission to manage Bot grants in this team.",
++      "revokeConflict": "This grant changed while you were viewing it. The list below is fresh — review it and try again."
+     }
+   },
+   "wb": {
+=== MODIFIED: app/src/locales/zh-CN/market.json ===
+--- docs/plans/2026-10-19-plugin-package-marketplace/checkpoints/cp07-pkg03b-fix1/files/app/src/locales/zh-CN/market.json	2026-10-20 03:36:11
++++ app/src/locales/zh-CN/market.json	2026-10-20 03:49:10
+@@ -153,6 +153,30 @@
+         "needs_grant": "需要 Bot 授权",
+         "unavailable": "不可用"
+       }
++    },
++    "grants": {
++      "title": "Bot 授权",
++      "hint": "授权允许某一个 Bot 在运行中使用该包固定的技能。仅安装不会授予任何能力。",
++      "loading": "正在加载 Bot 授权…",
++      "loadError": "Bot 授权加载失败。",
++      "retry": "重试",
++      "empty": "还没有任何 Bot 持有授权：在下方添加授权之前，没有 Bot 可以执行该包。仅安装不会授予执行权限。",
++      "revoke": "撤销",
++      "revoking": "撤销中…",
++      "revokeAria": "撤销 {{bot}} 的授权",
++      "formTitle": "向 Bot 授予技能",
++      "botIdLabel": "Bot ID",
++      "botIdPlaceholder": "要授权的 Bot 的 ID",
++      "skillsLabel": "当前版本的技能资源（一次授权会替换该 Bot 之前的授权集合）",
++      "noSkills": "该包没有可授予的技能资源。",
++      "grant": "授予权限",
++      "granting": "授权中…",
++      "grantError": "授权添加失败。请检查 Bot ID 与资源后重试。",
++      "grantForbidden": "你没有权限管理该团队的 Bot 授权。",
++      "grantConflict": "授权在你编辑期间发生了变化。下方列表已是最新，请确认后重试。",
++      "revokeError": "授权撤销失败，请重试。",
++      "revokeForbidden": "你没有权限管理该团队的 Bot 授权。",
++      "revokeConflict": "授权在你查看期间发生了变化。下方列表已是最新，请确认后重试。"
+     }
+   },
+   "wb": {
+=== NEW FILE: app/src/components/market/package-grants.tsx ===
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import * as React from "react";
+import { useTranslation } from "react-i18next";
+import { WbSecondaryButton, WbTag } from "@/components/market/wb";
+import { ClientResponseError } from "@/lib/client";
+import {
+  usePackageGrant,
+  usePackageGrantRevoke,
+} from "@/lib/plugin-packages/mutations";
+import {
+  type PluginPackageScope,
+  pluginPackageInstallDetailQueryOptions,
+} from "@/lib/plugin-packages/queries";
+import type { PackageInstallDTO } from "../../../../shared/enterprise/plugin-package-contracts";
+
+/**
+ * The Bot grant management section of the install detail, PKG03 slice C.
+ *
+ * WHAT A GRANT IS. Installing a package grants nothing ("安装≠授权"); a grant is what authorizes
+ * ONE Bot to use the install's pinned skill resources in runs. This section draws the
+ * install's active grants (per Bot, with its revision) and the two verbs that change them: grant
+ * skill resources of the CURRENT revision to a Bot, and revoke. The server re-authorizes every
+ * write and derives the scope from the trusted headers; this screen only ever hides verbs.
+ *
+ * SUPERSEDE SEMANTICS drive the form. A grant PUT replaces the Bot's whole resource set — the
+ * server revokes the active rows and writes the new set at the next generation — so when the
+ * typed Bot already holds a grant its resources arrive pre-selected, and granting can never
+ * silently revoke something the administrator did not see. The CAS target travels with the write:
+ * the revision this screen read, or null for a first grant.
+ *
+ * THE BOT IS NAMED BY ID, not picked from a roster: the package surface has no Bot-roster read,
+ * and the server answers unknown and cross-team bots with one identical 404.
+ */
+
+/** One key per attempt; UUID where the runtime offers it, an ASCII fallback otherwise. */
+function newIdempotencyKey(): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === "function") {
+    return cryptoApi.randomUUID();
+  }
+  return `pkg-grant-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function statusOf(error: unknown): number | null {
+  return error instanceof ClientResponseError ? error.status : null;
+}
+
+/** The server's own refusal sentence, when the transport captured one. */
+function serverMessageOf(error: unknown): string | null {
+  return error instanceof ClientResponseError ? error.serverMessage : null;
+}
+
+export function PackageGrantsSection({
+  scope,
+  install,
+}: {
+  scope: PluginPackageScope;
+  install: PackageInstallDTO;
+}) {
+  const { t } = useTranslation("market");
+  const queryClient = useQueryClient();
+  const detail = useQuery(
+    pluginPackageInstallDetailQueryOptions(scope, install.installId),
+  );
+  const grantMutation = usePackageGrant(queryClient);
+  const revokeMutation = usePackageGrantRevoke(queryClient);
+
+  const [botIdDraft, setBotIdDraft] = React.useState("");
+  const [selected, setSelected] = React.useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const [error, setError] = React.useState<string | null>(null);
+  const trimmedBotId = botIdDraft.trim();
+
+  const skillResources =
+    detail.data?.resources.filter((resource) => resource.kind === "skill") ??
+    [];
+
+  /*
+   * The selection follows the named Bot's active grant: typing a Bot that holds one checks its
+   * resources, typing one that does not clears the form. A refetch after a write re-syncs the
+   * checkboxes with what the server now reports.
+   */
+  React.useEffect(() => {
+    if (detail.data === undefined) return;
+    const active = detail.data.grants.find(
+      (grant) => grant.botId === trimmedBotId,
+    );
+    setSelected(
+      new Set(active ? active.resources.map((r) => r.resourceId) : []),
+    );
+  }, [detail.data, trimmedBotId]);
+
+  const activeGrant =
+    detail.data?.grants.find((grant) => grant.botId === trimmedBotId) ?? null;
+
+  const grantPending = grantMutation.isPending;
+  const revokePending = revokeMutation.isPending;
+  const canSubmit =
+    trimmedBotId !== "" && selected.size > 0 && !grantPending && !revokePending;
+
+  const submitGrant = () => {
+    if (!canSubmit) return;
+    setError(null);
+    grantMutation.mutate(
+      {
+        scope,
+        installId: install.installId,
+        botId: trimmedBotId,
+        expectedGrantRevision: activeGrant?.revision ?? null,
+        resources: skillResources
+          .filter((resource) => selected.has(resource.id))
+          .map((resource) => ({
+            resourceId: resource.id,
+            kind: "skill" as const,
+          })),
+        idempotencyKey: newIdempotencyKey(),
+      },
+      {
+        onError: (mutationError) => {
+          const status = statusOf(mutationError);
+          const serverMessage = serverMessageOf(mutationError);
+          if (status === 403) {
+            setError(t("packages.grants.grantForbidden"));
+          } else if (status === 409) {
+            setError(t("packages.grants.grantConflict"));
+          } else {
+            setError(serverMessage ?? t("packages.grants.grantError"));
+          }
+        },
+      },
+    );
+  };
+
+  const revoke = (botId: string, expectedGrantRevision: number) => {
+    setError(null);
+    revokeMutation.mutate(
+      {
+        scope,
+        installId: install.installId,
+        botId,
+        expectedGrantRevision,
+        idempotencyKey: newIdempotencyKey(),
+      },
+      {
+        onError: (mutationError) => {
+          const status = statusOf(mutationError);
+          const serverMessage = serverMessageOf(mutationError);
+          if (status === 403) {
+            setError(t("packages.grants.revokeForbidden"));
+          } else if (status === 409) {
+            setError(t("packages.grants.revokeConflict"));
+          } else {
+            setError(serverMessage ?? t("packages.grants.revokeError"));
+          }
+        },
+      },
+    );
+  };
+
+  if (detail.isPending) {
+    return (
+      <section aria-label={t("packages.grants.title")}>
+        <h3 className="text-sm font-medium text-foreground">
+          {t("packages.grants.title")}
+        </h3>
+        <p className="mt-2 text-sm text-foreground/50">
+          {t("packages.grants.loading")}
+        </p>
+      </section>
+    );
+  }
+
+  if (detail.isError || detail.data === undefined) {
+    return (
+      <section aria-label={t("packages.grants.title")}>
+        <h3 className="text-sm font-medium text-foreground">
+          {t("packages.grants.title")}
+        </h3>
+        <div className="mt-2 flex flex-col items-start gap-2" role="alert">
+          <p className="text-destructive text-sm">
+            {t("packages.grants.loadError")}
+          </p>
+          <WbSecondaryButton
+            onClick={() => void detail.refetch()}
+            type="button"
+          >
+            {t("packages.grants.retry")}
+          </WbSecondaryButton>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section aria-label={t("packages.grants.title")}>
+      <h3 className="text-sm font-medium text-foreground">
+        {t("packages.grants.title")}
+      </h3>
+      <p className="mt-1 text-xs leading-5 text-foreground/50">
+        {t("packages.grants.hint")}
+      </p>
+
+      {detail.data.grants.length === 0 ? (
+        <p className="mt-2 text-xs leading-5 text-foreground/60">
+          {t("packages.grants.empty")}
+        </p>
+      ) : (
+        <ul
+          aria-label={t("packages.grants.title")}
+          className="mt-2 flex flex-col gap-2"
+        >
+          {detail.data.grants.map((grant) => (
+            <li
+              className="flex flex-wrap items-center gap-2 rounded-lg bg-foreground/[0.03] px-3 py-2"
+              key={grant.botId}
+            >
+              <code className="min-w-0 truncate font-mono text-xs text-foreground/80">
+                {grant.botId}
+              </code>
+              {grant.resources.map((resource) => (
+                <code
+                  className="min-w-0 truncate font-mono text-foreground/50 text-xs"
+                  key={resource.resourceId}
+                >
+                  {resource.resourceId}
+                </code>
+              ))}
+              <WbTag className="ml-auto">{`r${grant.revision}`}</WbTag>
+              <WbSecondaryButton
+                aria-label={t("packages.grants.revokeAria", {
+                  bot: grant.botId,
+                })}
+                disabled={revokePending || grantPending}
+                onClick={() => revoke(grant.botId, grant.revision)}
+                type="button"
+              >
+                {revokePending
+                  ? t("packages.grants.revoking")
+                  : t("packages.grants.revoke")}
+              </WbSecondaryButton>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-3 flex flex-col gap-2 rounded-xl bg-foreground/[0.03] p-3">
+        <h4 className="text-xs font-medium text-foreground">
+          {t("packages.grants.formTitle")}
+        </h4>
+        <input
+          aria-label={t("packages.grants.botIdLabel")}
+          className="h-8 rounded-md border border-border bg-background px-2 font-mono text-xs"
+          disabled={grantPending || revokePending}
+          onChange={(event) => setBotIdDraft(event.target.value)}
+          placeholder={t("packages.grants.botIdPlaceholder")}
+          value={botIdDraft}
+        />
+        {skillResources.length === 0 ? (
+          <p className="text-xs leading-5 text-foreground/50">
+            {t("packages.grants.noSkills")}
+          </p>
+        ) : (
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className="text-xs leading-5 text-foreground/50">
+              {t("packages.grants.skillsLabel")}
+            </legend>
+            {skillResources.map((resource) => (
+              <label
+                className="flex items-center gap-2 text-xs text-foreground/70"
+                key={resource.id}
+              >
+                <input
+                  aria-label={resource.id}
+                  checked={selected.has(resource.id)}
+                  disabled={grantPending || revokePending}
+                  onChange={(event) => {
+                    setSelected((held) => {
+                      const next = new Set(held);
+                      if (event.target.checked) {
+                        next.add(resource.id);
+                      } else {
+                        next.delete(resource.id);
+                      }
+                      return next;
+                    });
+                  }}
+                  type="checkbox"
+                />
+                <code className="min-w-0 truncate font-mono">
+                  {resource.id}
+                </code>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        <div className="flex items-center gap-3">
+          <WbSecondaryButton
+            disabled={!canSubmit}
+            onClick={submitGrant}
+            type="button"
+          >
+            {grantPending
+              ? t("packages.grants.granting")
+              : t("packages.grants.grant")}
+          </WbSecondaryButton>
+        </div>
+        {error !== null ? (
+          <p className="text-destructive text-xs" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+=== NEW FILE: app/tests/plugin-package-grants.test.tsx ===
+import "./preload";
+// app/tests/plugin-package-grants.test.tsx
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  within,
+} from "@testing-library/react";
+import type {
+  PackageCatalogueDetail,
+  PackageGrantDTO,
+  PackageInstallDetailDTO,
+  PackageInstallDTO,
+  PackagePage,
+  PackagePageItem,
+} from "../../shared/enterprise/plugin-package-contracts";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
+import { PackagePane } from "../src/components/market/package-pane";
+import i18n from "../src/lib/i18n";
+import { pluginPackageKeys } from "../src/lib/plugin-packages/queries";
+
+/**
+ * The Bot grant management section of the package detail dialog, PKG03 slice C.
+ *
+ * WHAT THESE CASES HOLD. A company tenant_admin sees, per installed package, which Bots hold
+ * which skill-resource grants, grants skill resources of the current revision to a Bot (a real
+ * PUT with scope headers, the contract body and one idempotency key — never a scope field in the
+ * body), and revokes (DELETE with the CAS revision). After a grant the needs-grant notice clears
+ * through the invalidated install-detail refetch. The scope identifiers are part of the query
+ * key (asserted by value, not snapshot), so a grant answered after a team switch can only ever
+ * touch the tree it left under. A plain company member gets no section and no requests.
+ *
+ * THE HARNESS IS THIS REPOSITORY'S native e2e pattern (see `plugin-package-install.test.tsx`):
+ * happy-dom registered per file, a fetch stub that records method/path/headers/body, one
+ * `QueryClient` with `retry: false`, and `settle` as the act boundary that flushes React Query.
+ */
+
+const SCOPE_A = {
+  tenantId: "tenant-a",
+  workspaceId: "workspace-a",
+  principalId: "user-1",
+};
+const SCOPE_B = {
+  tenantId: "tenant-b",
+  workspaceId: "workspace-b",
+  principalId: "user-1",
+};
+
+const INSTALL_ID = "install-1";
+const PACKAGE_KEY = "release-labs/notes-writer";
+const DIGEST = "b".repeat(64);
+const DETAIL_PATH = `/api/enterprise/plugin-packages/installs/${INSTALL_ID}`;
+const GRANTS_PATH = `${DETAIL_PATH}/bots/bot-1/grants`;
+
+const RELEASE_ITEM: PackagePageItem = {
+  packageKey: PACKAGE_KEY,
+  version: "2.0.0",
+  displayName: "Release Notes Writer",
+  summary: "Writes release notes from a changelog.",
+  category: "writing",
+  install: null,
+  installable: true,
+  blockers: [],
+};
+
+const RELEASE_DETAIL: PackageCatalogueDetail = {
+  packageKey: PACKAGE_KEY,
+  version: "2.0.0",
+  artifactDigest: DIGEST,
+  displayName: "Release Notes Writer",
+  summary: "Writes release notes from a changelog.",
+  category: "writing",
+  publisher: "release-labs",
+  name: "notes-writer",
+  resources: [{ id: "notes-writer", kind: "skill", available: true }],
+  installable: true,
+  blockers: [],
+};
+
+const INSTALL: PackageInstallDTO = {
+  installId: INSTALL_ID,
+  packageKey: PACKAGE_KEY,
+  version: "2.0.0",
+  artifactDigest: DIGEST,
+  revision: 1,
+  generation: 1,
+  status: "enabled",
+  readiness: "needs_grant",
+  blockers: [{ code: "NEEDS_GRANT" }],
+  allowedActions: [],
+};
+
+const GRANT: PackageGrantDTO = {
+  installId: INSTALL_ID,
+  botId: "bot-1",
+  revision: 1,
+  resources: [{ resourceId: "notes-skill", kind: "skill" }],
+};
+
+function installDetail(granted: boolean): PackageInstallDetailDTO {
+  return {
+    installId: INSTALL_ID,
+    packageKey: PACKAGE_KEY,
+    version: "2.0.0",
+    artifactDigest: DIGEST,
+    revision: 1,
+    generation: 1,
+    status: "enabled",
+    readiness: granted ? "ready" : "needs_grant",
+    blockers: granted ? [] : [{ code: "NEEDS_GRANT" }],
+    allowedActions: [],
+    resources: [
+      { id: "notes-skill", kind: "skill", available: true },
+      { id: "tracker", kind: "managedConnector", available: false },
+    ],
+    grants: granted ? [GRANT] : [],
+  };
+}
+
+type Captured = {
+  method: string;
+  path: string;
+  headers: Record<string, string>;
+  body: string | null;
+};
+
+let detailGranted: boolean;
+let grantRequests: Captured[];
+let revokeRequests: Captured[];
+let grantGate: Promise<Response> | null;
+let seen: Captured[];
+const originalFetch = global.fetch;
+
+beforeAll(() => GlobalRegistrator.register());
+afterEach(cleanup);
+afterAll(() => GlobalRegistrator.unregister());
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+beforeEach(() => {
+  detailGranted = false;
+  grantRequests = [];
+  revokeRequests = [];
+  grantGate = null;
+  seen = [];
+  window.localStorage.clear();
+  global.fetch = Object.assign(
+    async (
+      input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1],
+    ) => {
+      const url = new URL(String(input), "http://localhost");
+      const headers: Record<string, string> = {};
+      new Headers(init?.headers as HeadersInit | undefined).forEach(
+        (value, key) => {
+          headers[key] = value;
+        },
+      );
+      const captured: Captured = {
+        method: init?.method ?? "GET",
+        path: url.pathname,
+        headers,
+        body: typeof init?.body === "string" ? init.body : null,
+      };
+      seen.push(captured);
+      if (url.pathname === "/api/me") {
+        return json({
+          user: {
+            id: "user-1",
+            email: "user-1@example.test",
+            name: "User One",
+            role: "user",
+            onboarding: null,
+          },
+        });
+      }
+      if (url.pathname === "/api/enterprise/workspace-scope") {
+        return json({
+          companies: [
+            {
+              tenantId: "tenant-a",
+              name: "Tenant A",
+              role: "tenant_admin",
+              memberEpoch: 1,
+              teams: [{ workspaceId: "workspace-a", name: "Team A" }],
+            },
+          ],
+        });
+      }
+      if (
+        url.pathname === "/api/enterprise/plugin-packages" &&
+        captured.method === "GET"
+      ) {
+        const page: PackagePage = {
+          items: [{ ...RELEASE_ITEM, install: INSTALL }],
+          nextCursor: null,
+        };
+        return json(page);
+      }
+      if (
+        url.pathname ===
+        "/api/enterprise/plugin-packages/catalogue/release-labs/notes-writer"
+      ) {
+        return json(RELEASE_DETAIL);
+      }
+      if (url.pathname === DETAIL_PATH && captured.method === "GET") {
+        return json(installDetail(detailGranted));
+      }
+      if (url.pathname === GRANTS_PATH && captured.method === "PUT") {
+        grantRequests.push(captured);
+        // The server commits before it answers, so even a gated answer describes
+        // a world where the grant exists.
+        detailGranted = true;
+        if (grantGate) return grantGate;
+        return json(GRANT, 201);
+      }
+      if (url.pathname === GRANTS_PATH && captured.method === "DELETE") {
+        revokeRequests.push(captured);
+        detailGranted = false;
+        return json({ ...GRANT, revision: 2 }, 201);
+      }
+      return new Response(null, { status: 404 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+});
+
+afterEach(() => {
+  global.fetch = originalFetch;
+  void i18n.changeLanguage("en");
+});
+
+async function settle(check: () => void, turns = 80): Promise<void> {
+  let last: unknown;
+  for (let turn = 0; turn < turns; turn += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    try {
+      check();
+      return;
+    } catch (error) {
+      last = error;
+    }
+  }
+  throw last instanceof Error
+    ? last
+    : new Error("The package grant flow never settled.");
+}
+
+/** Unconditional act turns: used where the assertion is an absence and must outwait a refetch. */
+async function flush(turns = 8): Promise<void> {
+  for (let turn = 0; turn < turns; turn += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+  }
+}
+
+function renderPane(
+  scope: typeof SCOPE_A | typeof SCOPE_B,
+  canInstall = true,
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  }),
+) {
+  const view = render(
+    <QueryClientProvider client={client}>
+      <PackagePane canInstall={canInstall} scope={scope} />
+    </QueryClientProvider>,
+  );
+  return { view, client };
+}
+
+async function openDetail(view: ReturnType<typeof render>) {
+  await settle(() => {
+    expect(view.getByText("Release Notes Writer")).toBeDefined();
+  });
+  fireEvent.keyDown(view.getByText("Release Notes Writer"), { key: "Enter" });
+  await settle(() => {
+    expect(view.getByRole("dialog")).toBeDefined();
+    expect(within(view.getByRole("dialog")).getByText(DIGEST)).toBeDefined();
+  });
+}
+
+/** The grants section draws its form only once the install-detail read has answered. */
+async function awaitGrantsSection(view: ReturnType<typeof render>) {
+  await settle(() => {
+    const dialog = view.getByRole("dialog");
+    expect(within(dialog).getByText("Bot grants")).toBeDefined();
+    expect(within(dialog).getByLabelText("Bot ID")).toBeDefined();
+  });
+}
+
+/** Fill the grant form: the Bot id and exactly the named skill resources. */
+async function fillGrantForm(
+  view: ReturnType<typeof render>,
+  botId: string,
+  resources: string[],
+) {
+  const dialog = view.getByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Bot ID"), {
+    target: { value: botId },
+  });
+  for (const resource of resources) {
+    fireEvent.click(within(dialog).getByLabelText(resource));
+  }
+}
+
+const EMPTY_NOTICE =
+  "No Bot holds a grant yet: until a grant is added below, no Bot can execute this package. Installing alone does not grant execution rights.";
+
+test("an admin grant PUT carries the scope headers and exactly the contract body", async () => {
+  const { view } = renderPane(SCOPE_A);
+  await openDetail(view);
+  await awaitGrantsSection(view);
+  const dialog = () => view.getByRole("dialog");
+
+  // The empty state names the real authorization situation: installed ≠ granted.
+  expect(within(dialog()).getByText(EMPTY_NOTICE)).toBeDefined();
+  expect(within(dialog()).queryByText("bot-1")).toBeNull();
+
+  await fillGrantForm(view, "bot-1", ["notes-skill"]);
+  fireEvent.click(
+    within(dialog()).getByRole("button", { name: "Grant resources" }),
+  );
+
+  await settle(() => {
+    expect(within(dialog()).getByText("bot-1")).toBeDefined();
+    // The grant row's revision chip beside the install facts' own r1 chip.
+    expect(within(dialog()).getAllByText("r1").length).toBe(2);
+  });
+  expect(within(dialog()).queryByText(EMPTY_NOTICE)).toBeNull();
+  expect(grantRequests).toHaveLength(1);
+  const request = grantRequests[0];
+  expect(request?.method).toBe("PUT");
+  expect(request?.path).toBe(GRANTS_PATH);
+  expect(request?.headers["x-openbot-tenant"]).toBe("tenant-a");
+  expect(request?.headers["x-openbot-workspace"]).toBe("workspace-a");
+  const key = request?.headers["idempotency-key"] ?? "";
+  expect(key.length).toBeGreaterThan(0);
+  expect(key.length).toBeLessThanOrEqual(128);
+  // Scope and actor never travel in the body — headers only, per the wire contract.
+  expect(JSON.parse(request?.body ?? "{}")).toEqual({
+    installId: INSTALL_ID,
+    botId: "bot-1",
+    expectedGrantRevision: null,
+    resources: [{ resourceId: "notes-skill", kind: "skill" }],
+  });
+});
+
+test("after grant success the needs-grant notice clears through the invalidated refetch", async () => {
+  const { view } = renderPane(SCOPE_A);
+  await openDetail(view);
+  await awaitGrantsSection(view);
+  const dialog = () => view.getByRole("dialog");
+  expect(within(dialog()).getByText(EMPTY_NOTICE)).toBeDefined();
+
+  const detailReads = () =>
+    seen.filter((entry) => entry.path === DETAIL_PATH && entry.method === "GET")
+      .length;
+  const readsBeforeGrant = detailReads();
+
+  await fillGrantForm(view, "bot-1", ["notes-skill"]);
+  fireEvent.click(
+    within(dialog()).getByRole("button", { name: "Grant resources" }),
+  );
+
+  await settle(() => {
+    expect(within(dialog()).queryByText(EMPTY_NOTICE)).toBeNull();
+    expect(within(dialog()).getByText("bot-1")).toBeDefined();
+  });
+  // The notice cleared because the mutation invalidated exactly the install-detail
+  // key and the section refetched it: a second read of the same install followed.
+  expect(detailReads()).toBeGreaterThan(readsBeforeGrant);
+});
+
+test("revoke sends DELETE with the grant's CAS revision and an idempotency key", async () => {
+  detailGranted = true;
+  const { view } = renderPane(SCOPE_A);
+  await openDetail(view);
+  await awaitGrantsSection(view);
+  const dialog = () => view.getByRole("dialog");
+  expect(within(dialog()).queryByText(EMPTY_NOTICE)).toBeNull();
+
+  fireEvent.click(
+    within(dialog()).getByRole("button", {
+      name: "Revoke the grant for bot-1",
+    }),
+  );
+
+  await settle(() => {
+    expect(within(dialog()).getByText(EMPTY_NOTICE)).toBeDefined();
+  });
+  expect(revokeRequests).toHaveLength(1);
+  const request = revokeRequests[0];
+  expect(request?.method).toBe("DELETE");
+  expect(request?.path).toBe(GRANTS_PATH);
+  expect(request?.headers["x-openbot-tenant"]).toBe("tenant-a");
+  expect(request?.headers["x-openbot-workspace"]).toBe("workspace-a");
+  expect((request?.headers["idempotency-key"] ?? "").length).toBeGreaterThan(0);
+  expect(JSON.parse(request?.body ?? "{}")).toEqual({
+    expectedGrantRevision: 1,
+  });
+});
+
+test("the grant key carries the scope identifiers and a mid-flight grant cannot write the other team's cache", async () => {
+  // The key is the isolation mechanism, so the assertion reads its value: the scope
+  // triple (tenantId, workspaceId, principalId) sits in the prefix, install id after it.
+  expect(pluginPackageKeys.installDetail(SCOPE_A, INSTALL_ID)).toEqual([
+    "plugin-packages",
+    "tenant-a",
+    "workspace-a",
+    "user-1",
+    "install",
+    INSTALL_ID,
+  ]);
+  expect(pluginPackageKeys.installDetail(SCOPE_B, INSTALL_ID)).toEqual([
+    "plugin-packages",
+    "tenant-b",
+    "workspace-b",
+    "user-1",
+    "install",
+    INSTALL_ID,
+  ]);
+
+  const { view, client } = renderPane(SCOPE_A);
+  await openDetail(view);
+  await awaitGrantsSection(view);
+  const dialog = () => view.getByRole("dialog");
+
+  let release = (_response: Response) => {};
+  grantGate = new Promise<Response>((resolve) => {
+    release = resolve;
+  });
+  await fillGrantForm(view, "bot-1", ["notes-skill"]);
+  fireEvent.click(
+    within(dialog()).getByRole("button", { name: "Grant resources" }),
+  );
+  await settle(() => {
+    expect(grantRequests).toHaveLength(1);
+  });
+  expect(grantRequests[0]?.headers["x-openbot-tenant"]).toBe("tenant-a");
+
+  // The person switches teams while the grant is still in flight.
+  view.rerender(
+    <QueryClientProvider client={client}>
+      <PackagePane canInstall scope={SCOPE_B} />
+    </QueryClientProvider>,
+  );
+  expect(view.queryByRole("dialog")).toBeNull();
+  await settle(() => {
+    expect(view.getByText("Release Notes Writer")).toBeDefined();
+  });
+  const tenantBGrantReads = () =>
+    seen.filter(
+      (entry) =>
+        entry.path === DETAIL_PATH &&
+        entry.method === "GET" &&
+        entry.headers["x-openbot-tenant"] === "tenant-b",
+    ).length;
+  expect(tenantBGrantReads()).toBe(0);
+
+  // Team A's grant only now answers. It may refresh A's tree; B's cache must stay empty.
+  release(json(GRANT, 201));
+  await flush();
+
+  expect(
+    client.getQueryData(pluginPackageKeys.installDetail(SCOPE_B, INSTALL_ID)),
+  ).toBeUndefined();
+  expect(tenantBGrantReads()).toBe(0);
+
+  // Back under team A the stale entry refetches and shows the grant that was made there.
+  view.rerender(
+    <QueryClientProvider client={client}>
+      <PackagePane canInstall scope={SCOPE_A} />
+    </QueryClientProvider>,
+  );
+  await openDetail(view);
+  await awaitGrantsSection(view);
+  expect(within(view.getByRole("dialog")).getByText("bot-1")).toBeDefined();
+  expect(
+    client.getQueryData<PackageInstallDetailDTO>(
+      pluginPackageKeys.installDetail(SCOPE_A, INSTALL_ID),
+    )?.grants,
+  ).toEqual([GRANT]);
+});
+
+test("the submit is disabled with no resources selected and while the grant is pending", async () => {
+  const { view } = renderPane(SCOPE_A);
+  await openDetail(view);
+  await awaitGrantsSection(view);
+  const dialog = () => view.getByRole("dialog");
+  const submit = () =>
+    within(dialog()).getByRole("button", { name: "Grant resources" });
+
+  // No Bot id and no resources: nothing to send.
+  expect((submit() as HTMLButtonElement).disabled).toBe(true);
+
+  // A Bot id alone is still zero resources selected.
+  fireEvent.change(within(dialog()).getByLabelText("Bot ID"), {
+    target: { value: "bot-1" },
+  });
+  expect((submit() as HTMLButtonElement).disabled).toBe(true);
+
+  let release = (_response: Response) => {};
+  grantGate = new Promise<Response>((resolve) => {
+    release = resolve;
+  });
+  fireEvent.click(within(dialog()).getByLabelText("notes-skill"));
+  expect((submit() as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(submit());
+
+  await settle(() => {
+    expect(grantRequests).toHaveLength(1);
+  });
+  // While the PUT is pending the verb is the pending label and refuses a second press.
+  const pending = within(dialog()).getByRole("button", {
+    name: "Granting…",
+  }) as HTMLButtonElement;
+  expect(pending.disabled).toBe(true);
+  fireEvent.click(pending);
+  expect(grantRequests).toHaveLength(1);
+
+  release(json(GRANT, 201));
+  await settle(() => {
+    expect(within(dialog()).getByText("bot-1")).toBeDefined();
+  });
+  expect(grantRequests).toHaveLength(1);
+});
+
+test("a plain company member has no grants section and no grant requests leave", async () => {
+  const { view } = renderPane(SCOPE_A, false);
+  await openDetail(view);
+
+  expect(view.queryByLabelText("Bot ID")).toBeNull();
+  expect(seen.some((entry) => entry.path === DETAIL_PATH)).toBeFalse();
+  expect(grantRequests).toHaveLength(0);
+  expect(revokeRequests).toHaveLength(0);
+});

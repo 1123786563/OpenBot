@@ -1,0 +1,22 @@
+--- server/src/enterprise/plugin-packages/runtime.ts	(pkg03b as reviewed — entry map lines 50-52)
++++ server/src/enterprise/plugin-packages/runtime.ts	(pkg03b fix 1 — controller edit 2026-10-19 19:34)
+@@ -47,9 +47,15 @@
+  *   - chat run creation: WIRED — `createRunService.start` calls `prepareWithin`
+  *     via `RunServiceDependencies.preparePackageRun` (production composition in
+  *     `index.ts` → `createProductionRunnerComposition`).
+- *   - chat runtime Skill read: WIRED — `readPinnedSkills` is the pinned,
+- *     grantedSkills-shaped provider served from the run's pins (see index.ts
+- *     composition).
++ *   - chat runtime Skill read: NOT WIRED (disclosed deferral of brief
++ *     deliverable 4) — `readPinnedSkills` below is implemented and tested, but
++ *     has NO production call site: the chat skill-loading seam
++ *     (`selectionForActor.loadSkills(botId)` in `index.ts`) resolves skills
++ *     pre-admission from the botId alone and carries no run identity, so
++ *     serving the pinned read through it requires threading (runId,
++ *     attemptGeneration) through the dispatch path — deferred to the dispatch
++ *     wiring ticket. `loadSkills` keeps its legacy `grantedSkills` behavior and
++ *     cannot serve package resources (package skills never enter the global
++ *     slug table).
+  *   - approvals resume / schedules & responsibility / memory ingestion /
+  *     `plugins/routes.ts` call / `app.ts` internal call: NOT WIRED — later
+  *     tickets; until wired they must not serve package resources

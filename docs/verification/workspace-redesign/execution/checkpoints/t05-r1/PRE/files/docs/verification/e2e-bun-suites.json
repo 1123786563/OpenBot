@@ -634,6 +634,31 @@
         "server/tests/multitenancy/vendor-billing.test.ts",
         "server/tests/multitenancy/workspace-scope.test.ts"
       ]
+    },
+    {
+      "name": "server/tests/multitenancy pkg02",
+      "files": [
+        "server/tests/multitenancy/package-storage.test.ts",
+        "server/tests/package-install.integration.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/multitenancy pkg03",
+      "files": [
+        "server/tests/multitenancy/package-grants.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/multitenancy pkg03b",
+      "files": [
+        "server/tests/multitenancy/package-runtime.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/multitenancy pkg04",
+      "files": [
+        "server/tests/multitenancy/package-expert.test.ts"
+      ]
     }
   ],
   "files": [
@@ -918,6 +943,10 @@
     "server/tests/multitenancy/oauth-state.test.ts",
     "server/tests/multitenancy/openmuse-private-bot.test.ts",
     "server/tests/multitenancy/openmuse-tasks.test.ts",
+    "server/tests/multitenancy/package-expert.test.ts",
+    "server/tests/multitenancy/package-grants.test.ts",
+    "server/tests/multitenancy/package-runtime.test.ts",
+    "server/tests/multitenancy/package-storage.test.ts",
     "server/tests/multitenancy/payer-accounts.test.ts",
     "server/tests/multitenancy/people-lifecycle.test.ts",
     "server/tests/multitenancy/personal-share-rules.test.ts",
@@ -1000,6 +1029,7 @@
     "server/tests/organization-auth.test.ts",
     "server/tests/organization-store.integration.test.ts",
     "server/tests/otel-export-scrubbing.test.ts",
+    "server/tests/package-install.integration.test.ts",
     "server/tests/page-frame-retention.integration.test.ts",
     "server/tests/passwords-store.integration.test.ts",
     "server/tests/payer-account.integration.test.ts",

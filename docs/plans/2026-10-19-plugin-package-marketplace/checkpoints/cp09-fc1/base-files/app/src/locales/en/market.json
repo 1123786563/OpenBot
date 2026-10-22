@@ -1,0 +1,136 @@
+{
+  "title": "Marketplace",
+  "description": "Install experts, skills and connectors for your Bots — one press, ready to use.",
+  "tab": {
+    "experts": "Experts",
+    "skills": "Skills",
+    "connectors": "Connectors"
+  },
+  "searchAria": "Search the marketplace",
+  "search": {
+    "experts": "Search experts",
+    "skills": "Search skills",
+    "connectors": "Search connectors"
+  },
+  "installedOnly": "Installed",
+  "category": {
+    "all": "All"
+  },
+  "install": "Install",
+  "installed": "Installed",
+  "installing": "Installing…",
+  "uninstall": "Uninstall",
+  "chat": "Chat",
+  "connect": "Connect account",
+  "contactAdmin": "Ask an admin",
+  "section": {
+    "builtin": "Built-in connectors",
+    "openConnector": "OpenConnector directory",
+    "composio": "Composio directory"
+  },
+  "connectors": {
+    "adminHint": "Connecting a new connector needs a deployment credential, so it is an administrator's action. What the deployment already has is shown above; ask an administrator to add more."
+  },
+  "empty": {
+    "experts": "No experts match.",
+    "skills": "No skills match.",
+    "connectors": "No connectors here yet.",
+    "search": "Nothing matches “{{query}}”."
+  },
+  "loadError": "The marketplace could not be loaded.",
+  "loading": "Loading…",
+  "wb": {
+    "myExperts": "My experts",
+    "createExpert": "New expert",
+    "addSkill": "Add skill",
+    "customConnector": "Custom connector",
+    "installedCount": "Installed ({{count}})",
+    "featured": "Featured scenarios",
+    "featuredSkills": "Featured skills",
+    "shuffle": "Shuffle",
+    "expertCenter": "Expert centre",
+    "viewAll": "View all",
+    "backToList": "Back",
+    "searchMine": "Search my experts",
+    "countExperts": "Experts",
+    "countTeams": "Teams",
+    "segmentMine": "Created by me",
+    "segmentShared": "Shared with me",
+    "segmentMarket": "Marketplace",
+    "segmentMineSkills": "Created by me",
+    "segmentDeployment": "From deployment",
+    "segment": {
+      "market": "Marketplace",
+      "mineSkills": "Created by me",
+      "deployment": "From deployment"
+    },
+    "section": {
+      "connected": "Connected"
+    },
+    "sourceMarket": "Marketplace",
+    "summon": "Open chat",
+    "edit": "Edit",
+    "manage": "Manage",
+    "helpTitle": "What this expert does",
+    "helpHint": "Open a chat to summon this expert: it joins the channel with its own role and tools and works with you.",
+    "skillsTitle": "Carried skills",
+    "instructionsTitle": "Instructions",
+    "grantedN_one": "Granted to {{count}} Bot",
+    "grantedN_other": "Granted to {{count}} Bots",
+    "skillsCountN_one": "{{count}} skill",
+    "skillsCountN_other": "{{count}} skills",
+    "toolsN_one": "{{count}} tool",
+    "toolsN_other": "{{count}} tools",
+    "withdrawn": "{{count}} granted tools are not currently advertised by this connector; they return automatically if it offers them again.",
+    "perInstance": {
+      "yes": "Dedicated",
+      "no": "Shared"
+    },
+    "auth": {
+      "none": "No credential",
+      "deployment-bearer": "Deployment token",
+      "user-oauth": "User OAuth",
+      "builtin": "Built-in"
+    },
+    "badge": {
+      "system": "System",
+      "team": "Team",
+      "pinned": "Pinned"
+    },
+    "stats": {
+      "visibility": "Visibility",
+      "runsOn": "Runs on",
+      "kind": "Kind",
+      "public": "Public",
+      "private": "Private",
+      "builtin": "Built-in runtime",
+      "selfHosted": "Self-hosted",
+      "kindSystem": "System",
+      "kindTeam": "Team-assigned",
+      "kindMine": "Created by me",
+      "kindShared": "Shared with me",
+      "grantedBots": "Granted Bots",
+      "tools": "Tools",
+      "skillsCount": "Skills",
+      "origin": "Source",
+      "category": "Category",
+      "categoriesCount": "Categories",
+      "status": "Status",
+      "credential": "Credential",
+      "configured": "Configured",
+      "notConfigured": "Not configured",
+      "notInstalled": "Not installed",
+      "sourceBuiltin": "Built-in catalogue",
+      "sourceCustom": "Custom",
+      "actions": "Actions",
+      "perInstance": "Instance"
+    },
+    "empty": {
+      "mine": "No experts created yet",
+      "mineHint": "Create an agent and it appears here as an expert card.",
+      "shared": "Nothing is shared with you yet.",
+      "skillsMine": "No skills created yet.",
+      "skillsDeployment": "The deployment provides no shared skills."
+    }
+  }
+}

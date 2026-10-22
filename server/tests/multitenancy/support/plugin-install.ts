@@ -175,45 +175,12 @@ export interface PluginInstallFixture {
   dispose(): Promise<void>;
 }
 
-/** Resolves to the first SQLSTATE in the error chain ("" when it did not throw). */
-export async function thrownSqlState(
-  promise: Promise<unknown>,
-): Promise<string> {
-  try {
-    await promise;
-    return "";
-  } catch (error) {
-    for (let e: unknown = error; e instanceof Error; e = e.cause) {
-      // Bun's postgres client carries the SQLSTATE on `errno` (PostgresError);
-      // drizzle surfaces it as `code`. Accept either spelling.
-      const code = (e as Error & { code?: unknown }).code;
-      const errno = (e as Error & { errno?: unknown }).errno;
-      if (typeof code === "string" && /^\d{5}$/.test(code)) return code;
-      if (typeof errno === "string" && /^\d{5}$/.test(errno)) return errno;
-    }
-    return "UNKNOWN";
-  }
-}
+// Thrown-error probes are shared with the whole package test chain; the single
+// source lives in ./sql-errors (was duplicated verbatim here and in
+// package-install.ts).
+import { thrownMessage, thrownSqlState } from "./sql-errors";
 
-/** Resolves to the concatenated error-message + SQLSTATE chain ("" when it did not throw). */
-export async function thrownMessage(
-  promise: Promise<unknown>,
-): Promise<string> {
-  try {
-    await promise;
-    return "";
-  } catch (error) {
-    const parts: string[] = [];
-    for (let e: unknown = error; e instanceof Error; e = e.cause) {
-      parts.push(e.message);
-      const code = (e as Error & { code?: unknown }).code;
-      const errno = (e as Error & { errno?: unknown }).errno;
-      if (typeof code === "string") parts.push(code);
-      if (typeof errno === "string") parts.push(errno);
-    }
-    return parts.join(" | ");
-  }
-}
+export { thrownMessage, thrownSqlState };
 
 /**
  * Creates the MT031 fixture. URLs are resolved up front and refused (never a

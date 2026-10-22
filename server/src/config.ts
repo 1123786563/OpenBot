@@ -270,6 +270,21 @@ export type DeploymentConfig = {
   /** Restricted operator-channel database; unwired → workspace admin routes answer 503. */
   enterpriseOperatorDatabaseUrl?: string;
   tenantStorageRuntimeDatabaseUrl?: string;
+  /**
+   * Content-addressed root of trusted plugin-package artifacts
+   * (`sha256/<digest>/`). The deploy build writes it with
+   * `scripts/plugin-packages/build.ts`; the default sits beside the packaged
+   * marketplace index at the repository root. No client ever sees it.
+   */
+  pluginArtifactRoot: string;
+  /**
+   * Absolute path of the plugin-package marketplace index JSON. Named by
+   * `OPENBOT_PLUGIN_MARKETPLACE_INDEX` for deployments that ship the index
+   * outside the repository layout (the Docker COPY gap is tracked by PKG11);
+   * the default resolves to the same repository-root `plugins/marketplace.json`
+   * the startup path always read, so default behavior is unchanged.
+   */
+  pluginMarketplaceIndexPath: string;
   keyEncryptionKey: string;
   /**
    * Authentication for the bundled Bot and/or the installed picked harness.
@@ -2987,6 +3002,12 @@ export function loadConfig(
       "tenantStorageRuntimeDatabaseUrl",
       optional(environment, "OPENBOT_TENANT_STORAGE_RUNTIME_DATABASE_URL"),
     ),
+    pluginArtifactRoot:
+      optional(environment, "OPENBOT_PLUGIN_ARTIFACT_ROOT") ??
+      fileURLToPath(new URL("../../plugins/.artifacts", import.meta.url)),
+    pluginMarketplaceIndexPath:
+      optional(environment, "OPENBOT_PLUGIN_MARKETPLACE_INDEX") ??
+      fileURLToPath(new URL("../../plugins/marketplace.json", import.meta.url)),
     keyEncryptionKey: deploymentKey,
     ...(webBotAuth ? { webBotAuth } : {}),
     ...(managedAgent ? { managedAgent } : {}),

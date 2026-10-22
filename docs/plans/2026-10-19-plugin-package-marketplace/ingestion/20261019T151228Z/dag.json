@@ -1,0 +1,815 @@
+{
+  "captured_at": "2026-10-19T15:14:26.047705+00:00",
+  "complete": true,
+  "nodes": {
+    "1123786563/OpenBot#459": {
+      "repository": "1123786563/OpenBot",
+      "number": 459,
+      "state": "open",
+      "title": "Spec: 插件包与市场 V1（受信包、范围授权与版本化运行）",
+      "updated_at": "2026-10-19T13:07:03Z",
+      "in_scope": true,
+      "body_sha256": "c844b676769ada457b5de175278abd20ed05482c29209cd3f1d3a3138e9d209b",
+      "comment_count": 0,
+      "children": [
+        [
+          "1123786563/OpenBot",
+          460
+        ],
+        [
+          "1123786563/OpenBot",
+          461
+        ],
+        [
+          "1123786563/OpenBot",
+          462
+        ],
+        [
+          "1123786563/OpenBot",
+          463
+        ],
+        [
+          "1123786563/OpenBot",
+          464
+        ],
+        [
+          "1123786563/OpenBot",
+          465
+        ],
+        [
+          "1123786563/OpenBot",
+          466
+        ],
+        [
+          "1123786563/OpenBot",
+          467
+        ],
+        [
+          "1123786563/OpenBot",
+          468
+        ],
+        [
+          "1123786563/OpenBot",
+          469
+        ],
+        [
+          "1123786563/OpenBot",
+          470
+        ],
+        [
+          "1123786563/OpenBot",
+          471
+        ]
+      ],
+      "blocked_by": []
+    },
+    "1123786563/OpenBot#460": {
+      "repository": "1123786563/OpenBot",
+      "number": 460,
+      "state": "open",
+      "title": "[插件包 PKG01] 浏览经过校验的受信插件包目录",
+      "updated_at": "2026-10-19T13:00:36Z",
+      "in_scope": true,
+      "body_sha256": "52431595d852ea93ba2ba8a2f5a1f6914b213f33188af9c042edf7a898e6458b",
+      "comment_count": 0,
+      "children": [],
+      "blocked_by": []
+    },
+    "1123786563/OpenBot#461": {
+      "repository": "1123786563/OpenBot",
+      "number": 461,
+      "state": "open",
+      "title": "[插件包 PKG02] 在当前团队预览并幂等安装 Skill 插件包",
+      "updated_at": "2026-10-19T13:01:31Z",
+      "in_scope": true,
+      "body_sha256": "8c830311ef30a103ca5b7efbb8aa6aab7668bb132c590cade6e4b9ab515be9bc",
+      "comment_count": 0,
+      "children": [],
+      "blocked_by": [
+        [
+          "1123786563/OpenBot",
+          460
+        ],
+        [
+          "1123786563/OpenBot",
+          74
+        ]
+      ]
+    },
+    "1123786563/OpenBot#462": {
+      "repository": "1123786563/OpenBot",
+      "number": 462,
+      "state": "open",
+      "title": "[插件包 PKG03] 授权范围内 Bot 使用已安装 Skill 的固定版本",
+      "updated_at": "2026-10-19T13:01:46Z",
+      "in_scope": true,
+      "body_sha256": "20c6438564f18e7bb57f881e521c34e123a67ce54fded87da3616ff3c3bfc56f",
+      "comment_count": 0,
+      "children": [],
+      "blocked_by": [
+        [
+          "1123786563/OpenBot",
+          461
+        ]
+      ]
+    },
+    "1123786563/OpenBot#463": {
+      "repository": "1123786563/OpenBot",
+      "number": 463,
+      "state": "open",
+      "title": "[插件包 PKG04] 从插件包幂等创建当前范围的专家 Bot",
+      "updated_at": "2026-10-19T13:02:00Z",
+      "in_scope": true,
+      "body_sha256": "5085598470a1d9003cf312646d502e42d5d12b341fb874c0f84fe6b3f343550e",
+      "comment_count": 0,
+      "children": [],
+      "blocked_by": [
+        [
+          "1123786563/OpenBot",
+          462
+        ]
+      ]
+    },
+    "1123786563/OpenBot#464": {
+      "repository": "1123786563/OpenBot",
+      "number": 464,
+      "state": "open",
+      "title": "[插件包 PKG05] 使用本人连接执行插件包声明的受管工具",
+      "updated_at": "2026-10-19T13:02:12Z",
+      "in_scope": true,
+      "body_sha256": "9501db60c1598b6fe79eca8648fafd1b2b542a08486a8050d87cf80cbe3ba96a",
+      "comment_count": 0,
+      "children": [],
+      "blocked_by": [
+        [
+          "1123786563/OpenBot",
+          462
+        ],
+        [
+          "1123786563/OpenBot",
+          75
+        ]
+      ]
+    },
+    "1123786563/OpenBot#465": {
+      "repository": "1123786563/OpenBot",
+      "number": 465,
+      "state": "open",
+      "title": "[插件包 PKG06] 预览权限差异并升级或回滚插件包版本",
+      "updated_at": "2026-10-19T13:04:33Z",
+      "in_scope": true,
+      "body_sha256": "09ce574717d01d545e293563cf40530447c1bd28c6f7f4edc09c884a4cdb88d4",
+      "comment_count": 0,
+      "children": [],
+      "blocked_by": [
+        [
+          "1123786563/OpenBot",
+          464
+        ]
+      ]
+    },
+    "1123786563/OpenBot#466": {
+      "repository": "1123786563/OpenBot",
+      "number": 466,
+      "state": "open",
+      "title": "[插件包 PKG07] 停用、卸载和重装插件包并保留用户资产",
+      "updated_at": "2026-10-19T13:05:07Z",
+      "in_scope": true,
+      "body_sha256": "bfe94c6f8347bca70912e04b7ca6769e60d7efdc62429e9173b437944eddd227",
+      "comment_count": 0,
+      "children": [],
+      "blocked_by": [
+        [
+          "1123786563/OpenBot",
+          463
+        ],
+        [
+          "1123786563/OpenBot",
+          464
+        ]
+      ]
+    },
+    "1123786563/OpenBot#467": {
+      "repository": "1123786563/OpenBot",
+      "number": 467,
+      "state": "open",
+      "title": "[插件包 PKG08] 部署侧下架或安全撤回指定插件包版本",
+      "updated_at": "2026-10-19T13:05:32Z",
+      "in_scope": true,
+      "body_sha256": "c5dcafebbc27af36ab1ab7ca026d2931385d6ad2cf35abf8911206b9a54f0747",
+      "comment_count": 0,
+      "children": [],
+      "blocked_by": [
+        [
+          "1123786563/OpenBot",
+          464
+        ]
+      ]
+    },
+    "1123786563/OpenBot#468": {
+      "repository": "1123786563/OpenBot",
+      "number": 468,
+      "state": "open",
+      "title": "[插件包 PKG09] 在审批恢复和后台入口保持包运行的原范围",
+      "updated_at": "2026-10-19T13:05:41Z",
+      "in_scope": true,
+      "body_sha256": "3aa9040c032d74b03070ecb05af9c6dc305a0629d1f14681bc4a17e4d5cc725a",
+      "comment_count": 0,
+      "children": [],
+      "blocked_by": [
+        [
+          "1123786563/OpenBot",
+          464
+        ]
+      ]
+    },
+    "1123786563/OpenBot#469": {
+      "repository": "1123786563/OpenBot",
+      "number": 469,
+      "state": "open",
+      "title": "[插件包 PKG10] 核对外部效果未知的包调用并安全恢复",
+      "updated_at": "2026-10-19T13:05:52Z",
+      "in_scope": true,
+      "body_sha256": "1e81b9c1c7b055bb4d0e3e6b7f950ae76ac4befc2eb07707c0fcc0408d18dda4",
+      "comment_count": 0,
+      "children": [],
+      "blocked_by": [
+        [
+          "1123786563/OpenBot",
+          468
+        ]
+      ]
+    },
+    "1123786563/OpenBot#470": {
+      "repository": "1123786563/OpenBot",
+      "number": 470,
+      "state": "open",
+      "title": "[插件包 PKG11] 迁移存量专家和 Skill 并灰度启用包市场",
+      "updated_at": "2026-10-19T13:06:02Z",
+      "in_scope": true,
+      "body_sha256": "b7113b149fc9b1646385d71d8ef28ff28ecacbb398adcc16a1b4f741799f5795",
+      "comment_count": 0,
+      "children": [],
+      "blocked_by": [
+        [
+          "1123786563/OpenBot",
+          463
+        ],
+        [
+          "1123786563/OpenBot",
+          465
+        ],
+        [
+          "1123786563/OpenBot",
+          466
+        ],
+        [
+          "1123786563/OpenBot",
+          467
+        ],
+        [
+          "1123786563/OpenBot",
+          469
+        ]
+      ]
+    },
+    "1123786563/OpenBot#471": {
+      "repository": "1123786563/OpenBot",
+      "number": 471,
+      "state": "open",
+      "title": "[插件包 PKG12] 完成插件包首发闭环验收与交付证据",
+      "updated_at": "2026-10-19T13:06:54Z",
+      "in_scope": true,
+      "body_sha256": "65364ad25091c2774a10de56906db1290b7d4002f597d29515ac582ff1660461",
+      "comment_count": 0,
+      "children": [],
+      "blocked_by": [
+        [
+          "1123786563/OpenBot",
+          470
+        ]
+      ]
+    },
+    "1123786563/OpenBot#74": {
+      "repository": "1123786563/OpenBot",
+      "number": 74,
+      "state": "closed",
+      "title": "[H] MT031 插件安装与连接归属（目录只读，安装不全局）",
+      "updated_at": "2026-10-19T03:56:05Z",
+      "in_scope": false,
+      "body_sha256": "ec5317a04584ee3c4b25b88026f87599161f6ce4a6b44e09f19aa8d3705a33bf",
+      "comment_count": 0,
+      "children": [],
+      "blocked_by": []
+    },
+    "1123786563/OpenBot#75": {
+      "repository": "1123786563/OpenBot",
+      "number": 75,
+      "state": "open",
+      "title": "[H] MT032 工具调用时重新校验当前用户连接与 Bot 授权",
+      "updated_at": "2026-10-14T18:43:29Z",
+      "in_scope": false,
+      "body_sha256": "64dce1aac92192789d17e1d186ee79a282701963fbad6be78bd7dde0c1c9006f",
+      "comment_count": 0,
+      "children": [],
+      "blocked_by": []
+    }
+  },
+  "contains": [
+    {
+      "parent": "1123786563/OpenBot#459",
+      "child": "1123786563/OpenBot#460"
+    },
+    {
+      "parent": "1123786563/OpenBot#459",
+      "child": "1123786563/OpenBot#461"
+    },
+    {
+      "parent": "1123786563/OpenBot#459",
+      "child": "1123786563/OpenBot#462"
+    },
+    {
+      "parent": "1123786563/OpenBot#459",
+      "child": "1123786563/OpenBot#463"
+    },
+    {
+      "parent": "1123786563/OpenBot#459",
+      "child": "1123786563/OpenBot#464"
+    },
+    {
+      "parent": "1123786563/OpenBot#459",
+      "child": "1123786563/OpenBot#465"
+    },
+    {
+      "parent": "1123786563/OpenBot#459",
+      "child": "1123786563/OpenBot#466"
+    },
+    {
+      "parent": "1123786563/OpenBot#459",
+      "child": "1123786563/OpenBot#467"
+    },
+    {
+      "parent": "1123786563/OpenBot#459",
+      "child": "1123786563/OpenBot#468"
+    },
+    {
+      "parent": "1123786563/OpenBot#459",
+      "child": "1123786563/OpenBot#469"
+    },
+    {
+      "parent": "1123786563/OpenBot#459",
+      "child": "1123786563/OpenBot#470"
+    },
+    {
+      "parent": "1123786563/OpenBot#459",
+      "child": "1123786563/OpenBot#471"
+    }
+  ],
+  "depends_on": [
+    {
+      "issue": "1123786563/OpenBot#461",
+      "depends_on": "1123786563/OpenBot#460"
+    },
+    {
+      "issue": "1123786563/OpenBot#461",
+      "depends_on": "1123786563/OpenBot#74"
+    },
+    {
+      "issue": "1123786563/OpenBot#462",
+      "depends_on": "1123786563/OpenBot#461"
+    },
+    {
+      "issue": "1123786563/OpenBot#463",
+      "depends_on": "1123786563/OpenBot#462"
+    },
+    {
+      "issue": "1123786563/OpenBot#464",
+      "depends_on": "1123786563/OpenBot#462"
+    },
+    {
+      "issue": "1123786563/OpenBot#464",
+      "depends_on": "1123786563/OpenBot#75"
+    },
+    {
+      "issue": "1123786563/OpenBot#465",
+      "depends_on": "1123786563/OpenBot#464"
+    },
+    {
+      "issue": "1123786563/OpenBot#466",
+      "depends_on": "1123786563/OpenBot#463"
+    },
+    {
+      "issue": "1123786563/OpenBot#466",
+      "depends_on": "1123786563/OpenBot#464"
+    },
+    {
+      "issue": "1123786563/OpenBot#467",
+      "depends_on": "1123786563/OpenBot#464"
+    },
+    {
+      "issue": "1123786563/OpenBot#468",
+      "depends_on": "1123786563/OpenBot#464"
+    },
+    {
+      "issue": "1123786563/OpenBot#469",
+      "depends_on": "1123786563/OpenBot#468"
+    },
+    {
+      "issue": "1123786563/OpenBot#470",
+      "depends_on": "1123786563/OpenBot#463"
+    },
+    {
+      "issue": "1123786563/OpenBot#470",
+      "depends_on": "1123786563/OpenBot#465"
+    },
+    {
+      "issue": "1123786563/OpenBot#470",
+      "depends_on": "1123786563/OpenBot#466"
+    },
+    {
+      "issue": "1123786563/OpenBot#470",
+      "depends_on": "1123786563/OpenBot#467"
+    },
+    {
+      "issue": "1123786563/OpenBot#470",
+      "depends_on": "1123786563/OpenBot#469"
+    },
+    {
+      "issue": "1123786563/OpenBot#471",
+      "depends_on": "1123786563/OpenBot#470"
+    }
+  ],
+  "topological_order": [
+    "1123786563/OpenBot#460",
+    "1123786563/OpenBot#461",
+    "1123786563/OpenBot#462",
+    "1123786563/OpenBot#463",
+    "1123786563/OpenBot#464",
+    "1123786563/OpenBot#465",
+    "1123786563/OpenBot#466",
+    "1123786563/OpenBot#467",
+    "1123786563/OpenBot#468",
+    "1123786563/OpenBot#469",
+    "1123786563/OpenBot#470",
+    "1123786563/OpenBot#471"
+  ],
+  "expected_child_count": 12,
+  "actual_child_count": 12,
+  "local_acceptance_comparison": [
+    {
+      "issue": "1123786563/OpenBot#460",
+      "acceptance": [
+        "A01",
+        "A12"
+      ],
+      "body_matches": true
+    },
+    {
+      "issue": "1123786563/OpenBot#461",
+      "acceptance": [
+        "A02",
+        "A03",
+        "A04",
+        "A12"
+      ],
+      "body_matches": true
+    },
+    {
+      "issue": "1123786563/OpenBot#462",
+      "acceptance": [
+        "A02",
+        "A04",
+        "A06",
+        "A11"
+      ],
+      "body_matches": true
+    },
+    {
+      "issue": "1123786563/OpenBot#463",
+      "acceptance": [
+        "A08",
+        "A10"
+      ],
+      "body_matches": true
+    },
+    {
+      "issue": "1123786563/OpenBot#464",
+      "acceptance": [
+        "A02",
+        "A04",
+        "A05",
+        "A07"
+      ],
+      "body_matches": true
+    },
+    {
+      "issue": "1123786563/OpenBot#465",
+      "acceptance": [
+        "A03",
+        "A06",
+        "A07"
+      ],
+      "body_matches": true
+    },
+    {
+      "issue": "1123786563/OpenBot#466",
+      "acceptance": [
+        "A05",
+        "A08"
+      ],
+      "body_matches": true
+    },
+    {
+      "issue": "1123786563/OpenBot#467",
+      "acceptance": [
+        "A01",
+        "A05",
+        "A12"
+      ],
+      "body_matches": true
+    },
+    {
+      "issue": "1123786563/OpenBot#468",
+      "acceptance": [
+        "A02",
+        "A05",
+        "A07",
+        "A12"
+      ],
+      "body_matches": true
+    },
+    {
+      "issue": "1123786563/OpenBot#469",
+      "acceptance": [
+        "A05",
+        "A07",
+        "A08",
+        "A12"
+      ],
+      "body_matches": true
+    },
+    {
+      "issue": "1123786563/OpenBot#470",
+      "acceptance": [
+        "A08",
+        "A09",
+        "A11",
+        "A12"
+      ],
+      "body_matches": true
+    },
+    {
+      "issue": "1123786563/OpenBot#471",
+      "acceptance": [
+        "A01",
+        "A02",
+        "A03",
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "body_matches": true
+    }
+  ],
+  "errors": [],
+  "requests": [
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/459",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/459/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/459/sub_issues?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/459/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/460",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/460/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/460/sub_issues?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/460/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/461",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/461/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/461/sub_issues?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/461/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/462",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/462/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/462/sub_issues?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/462/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/463",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/463/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/463/sub_issues?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/463/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/464",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/464/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/464/sub_issues?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/464/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/465",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/465/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/465/sub_issues?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/465/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/466",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/466/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/466/sub_issues?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/466/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/467",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/467/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/467/sub_issues?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/467/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/468",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/468/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/468/sub_issues?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/468/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/469",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/469/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/469/sub_issues?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/469/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/470",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/470/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/470/sub_issues?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/470/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/471",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/471/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/471/sub_issues?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/471/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/74",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/74/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/74/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/75",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/75/comments?per_page=100&page=1",
+      "exit_code": 0
+    },
+    {
+      "endpoint": "repos/1123786563/OpenBot/issues/75/dependencies/blocked_by?per_page=100&page=1",
+      "exit_code": 0
+    }
+  ]
+}

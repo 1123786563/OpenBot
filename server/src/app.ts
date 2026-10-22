@@ -1006,6 +1006,9 @@ export function createApp(
       coworker.enterpriseWorkspaceScope,
     );
   }
+  if (coworker?.pluginPackages) {
+    app.route("/api/enterprise/plugin-packages", coworker.pluginPackages);
+  }
   /*
    * Registering an identity provider is an administrator's decision, not a signed-in one.
    *

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
 import type { AbstractAgent } from "@ag-ui/client";
 import {
@@ -327,6 +328,14 @@ import { createDemonstrationStore } from "./demonstrations/store";
 import type { PlatformScope, RunnerRequestLease } from "./enterprise/contracts";
 import { createUnavailableConversationRoutes } from "./enterprise/conversations/routes";
 import { createConversationService } from "./enterprise/conversations/service";
+import { createPackageService } from "./enterprise/plugin-packages/install-service";
+import { createPackageMutationStore } from "./enterprise/plugin-packages/mutation-context";
+import { createPackageRuntime } from "./enterprise/plugin-packages/runtime";
+import {
+  createPluginPackageRoutes,
+  createUnavailablePluginPackageRoutes,
+} from "./enterprise/plugin-packages/routes";
+import { createPackageReadStore } from "./enterprise/plugin-packages/store";
 import { createProductionRunnerComposition } from "./enterprise/runs/runner";
 import { createEnterpriseConversationEntryRoutes } from "./enterprise/tenancy/assembly-enterprise";
 import { createMobileAggregationEntryRoutes } from "./enterprise/tenancy/assembly-legacy";
@@ -344,6 +353,7 @@ import {
 import { createCompanyCapabilitiesService } from "./enterprise/tenancy/company-capabilities";
 import { createCompanyConfigReader } from "./enterprise/tenancy/company-config";
 import {
+  type OperatorDatabase,
   verifyDataDatabase,
   verifyDirectoryDatabase,
   verifyOperatorDatabase,
@@ -610,6 +620,7 @@ import { createSignInService } from "./passwords/service";
 import { createPasswordStore } from "./passwords/store";
 import { createOnboardingStore } from "./people/onboarding";
 import { createPeopleStore } from "./people/store";
+import { loadPackageCatalogue } from "./plugin-packages/catalogue";
 import { createAccountModeSwitch } from "./plugins/account-mode";
 import { useRoutineTools } from "./plugins/builtin-routines";
 import { useComposioClient } from "./plugins/composio";
@@ -3197,6 +3208,14 @@ const enterpriseRunner = enterpriseCapabilities
       // through the same encrypted credential store every other surface uses.
       credentialEncryptionKey: config.keyEncryptionKey,
       credentialReader: credentialStore,
+      // PKG03B (Spec §9): package pins commit with the run row, and the
+      // pinned Skill read serves package skills from those pins. Shared with
+      // the package routes' catalogue root; absent artifacts fail the READ
+      // closed per install, never the pin write.
+      preparePackageRun: createPackageRuntime({
+        data: enterpriseCapabilities.data,
+        artifactRoot: config.pluginArtifactRoot,
+      }).prepareWithin,
     })
   : undefined;
 
@@ -5504,6 +5523,12 @@ const personResponseSweep = repeatAfterEach(async () => {
  * deployment with the capability off, which is a deployment that never started one.
  */
 let workOfferedListener: WorkOfferedListener | undefined;
+/*
+ * The handoff sweep's two-second backstop poll, held for the same reason every named sweep
+ * above is: an unheld Repeating keeps claiming leases through the graceful-shutdown window
+ * and a `process.exit(0)` can land mid-delivery. Undefined when the capability is off.
+ */
+let handoffKickSweep: Repeating | undefined;
 
 if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
   const runner = createHandoffRunner({
@@ -5634,7 +5659,7 @@ if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
       if (kind === HANDOFF_KIND) void kick();
     },
   );
-  repeatAfterEach(kick, 2_000);
+  handoffKickSweep = repeatAfterEach(kick, 2_000);
 }
 
 /*
@@ -8767,6 +8792,9 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     personResponseSweep.stop();
     groupSweep.stop();
     for (const sweep of deliverySweeps) sweep.stop();
+    // The handoff backstop poll (OCR round2 M12): stop claiming new hops before the
+    // listeners below, exactly like the named sweeps — undefined with the capability off.
+    handoffKickSweep?.stop();
     // The billing sweepers (audit C3): stopped before the listeners below, so a shutdown cannot
     // land mid-batch. Each stop is its own try/catch — one that throws must not block the rest.
     for (const stop of billingSweepStops) {

@@ -1,0 +1,453 @@
+{
+  "base": "9057aeebb69ebbbd2673378c17eec1dd830cfb17",
+  "head": "9057aeebb69ebbbd2673378c17eec1dd830cfb17",
+  "branch": "feat/plugin-package-market-v1",
+  "content_sha256": "56dde21a9b9902c152aa4b2aea4c6e3d4ae90af901162627ada2b2732cb67d9f",
+  "files": [
+    {
+      "path": "app/src/components/app-sidebar/app-sidebar.tsx",
+      "state": "present",
+      "sha256": "b99ba2eb32ba587b34996d83e042ae014b523920735394ffc56b80311b9d5b90",
+      "bytes": 17398,
+      "untracked": false
+    },
+    {
+      "path": "app/src/components/market/package-detail.tsx",
+      "state": "present",
+      "sha256": "0a9411b514c11e5dd8d2aac2eb93cbc6b2ca35c510aac1c7431a19ffef993849",
+      "bytes": 12479,
+      "untracked": true
+    },
+    {
+      "path": "app/src/components/market/package-install-dialog.tsx",
+      "state": "present",
+      "sha256": "2ad200fa11b2ec124b5ba1b12229f92523d1fc75279e21a6a2f8f6b39539485f",
+      "bytes": 21758,
+      "untracked": true
+    },
+    {
+      "path": "app/src/components/market/package-pane.tsx",
+      "state": "present",
+      "sha256": "a32674631feb26957e2181c8f6fe315f5943303c0dc12cdf3c5a6668a5a0448b",
+      "bytes": 14841,
+      "untracked": true
+    },
+    {
+      "path": "app/src/components/market/packages-page.tsx",
+      "state": "present",
+      "sha256": "b968e7b9809e09c3f36009dcfaaf59abf24b09524b7e3c02ff2d50e6668bafd8",
+      "bytes": 1211,
+      "untracked": true
+    },
+    {
+      "path": "app/src/components/market/wb.tsx",
+      "state": "present",
+      "sha256": "57775062d510c4ccb852e12cb76ab6046e2c51110da12fad61c80926a962fbc1",
+      "bytes": 11259,
+      "untracked": false
+    },
+    {
+      "path": "app/src/lib/client.ts",
+      "state": "present",
+      "sha256": "a8b0415725de3ee7de7958644a5648d26117d5166d49ede3477bac935f522bda",
+      "bytes": 12969,
+      "untracked": false
+    },
+    {
+      "path": "app/src/lib/plugin-packages/mutations.ts",
+      "state": "present",
+      "sha256": "d552563faa106914c9f858aaaeb043cf372cb9f3cf166640ca06da32be8d6b45",
+      "bytes": 3455,
+      "untracked": true
+    },
+    {
+      "path": "app/src/lib/plugin-packages/queries.ts",
+      "state": "present",
+      "sha256": "e1d8a5cea6ddb510b23abf21e61b4668a0f9918be3e97b973e7d8c7d6749dd91",
+      "bytes": 4232,
+      "untracked": true
+    },
+    {
+      "path": "app/src/lib/plugin-packages/use-package-scope.ts",
+      "state": "present",
+      "sha256": "0032de246601397a8949add27401ea92faab5a7f8e9101e4922b1294dfc3f239",
+      "bytes": 2237,
+      "untracked": true
+    },
+    {
+      "path": "app/src/locales/en/market.json",
+      "state": "present",
+      "sha256": "27d714edb376a485800a29450f190b4c7255a3d827ff7bdecdd199884ec71e16",
+      "bytes": 10387,
+      "untracked": false
+    },
+    {
+      "path": "app/src/locales/en/nav.json",
+      "state": "present",
+      "sha256": "b2345e2925d10c7cf98f276e112369f530c1882cf84d74b1de7b610001dc220f",
+      "bytes": 1739,
+      "untracked": false
+    },
+    {
+      "path": "app/src/locales/zh-CN/market.json",
+      "state": "present",
+      "sha256": "734f58372260bc3c977dcafc8b0026c1ca5fb37513f9d15dabaa4c4eb76e89e7",
+      "bytes": 9710,
+      "untracked": false
+    },
+    {
+      "path": "app/src/locales/zh-CN/nav.json",
+      "state": "present",
+      "sha256": "19a303ed0107a25db4070c2203d12710848fd89b4ba3a13fe24ab728839c3d7c",
+      "bytes": 1702,
+      "untracked": false
+    },
+    {
+      "path": "app/src/routeTree.gen.ts",
+      "state": "present",
+      "sha256": "76186c36ed1c997ade5e13e76b7dbb41b3321933b2814a5ce7d6dc238df9e6be",
+      "bytes": 86976,
+      "untracked": false
+    },
+    {
+      "path": "app/src/routes/_authed/admin/market.tsx",
+      "state": "present",
+      "sha256": "0676f600275f9e015dddae5bff0af16b9232f89015960e3034af446189d52068",
+      "bytes": 18836,
+      "untracked": false
+    },
+    {
+      "path": "app/src/routes/_authed/packages.tsx",
+      "state": "present",
+      "sha256": "8f64aab9f4497fa9e75846a043a4db634a7ce4ec798be9fd16e864c48068688d",
+      "bytes": 228,
+      "untracked": true
+    },
+    {
+      "path": "app/tests/enterprise-client.test.ts",
+      "state": "present",
+      "sha256": "3a439340dbbcbf0ae3780bd8c9827f11e5b9429f4f90c95f92bddd3a3a6f179a",
+      "bytes": 8536,
+      "untracked": false
+    },
+    {
+      "path": "app/tests/packages-page.test.tsx",
+      "state": "present",
+      "sha256": "9ed9cdf874282c4ffe6355e7bcd3e2ea3ef16bf2674a9ada0398990a4f15bdeb",
+      "bytes": 7100,
+      "untracked": true
+    },
+    {
+      "path": "app/tests/plugin-package-catalogue.test.tsx",
+      "state": "present",
+      "sha256": "3013d8bb24a5e81c97ca94353f48a6a332d73d6bdff05d38f14ce1c712004cc3",
+      "bytes": 17477,
+      "untracked": true
+    },
+    {
+      "path": "app/tests/plugin-package-install.test.tsx",
+      "state": "present",
+      "sha256": "8360fbd87e8f5087f8f6ebd503625cda9e48885053cf7d8720ae2ce5c10c7d52",
+      "bytes": 34263,
+      "untracked": true
+    },
+    {
+      "path": "docs/verification/e2e-bun-suites.json",
+      "state": "present",
+      "sha256": "b729914719745911dc056ed5ee94d9d9b464b086a8467c85ba5dc69e98f8c997",
+      "bytes": 103598,
+      "untracked": false
+    },
+    {
+      "path": "plugins/marketplace.json",
+      "state": "present",
+      "sha256": "c9e30e424313851f05e1ac7391eaf47a184b995b66bab015610a48251a160a1d",
+      "bytes": 273,
+      "untracked": true
+    },
+    {
+      "path": "plugins/packages/openbot/demo-skill/README.md",
+      "state": "present",
+      "sha256": "ccaac752591bb3595e3d6119fa0faa9ca747d9a0e643db62e679e12cb7c4aec9",
+      "bytes": 317,
+      "untracked": true
+    },
+    {
+      "path": "plugins/packages/openbot/demo-skill/openbot.plugin.json",
+      "state": "present",
+      "sha256": "f2cba63b8955212d921a81c5693ade804d87387942add2a8f5fe6ddf92af6e15",
+      "bytes": 377,
+      "untracked": true
+    },
+    {
+      "path": "plugins/packages/openbot/demo-skill/skills/summarize/SKILL.md",
+      "state": "present",
+      "sha256": "2460f78cfabbc40003b5da9b96eb430f8ad2de46dbab2b228cac74b219ee6508",
+      "bytes": 650,
+      "untracked": true
+    },
+    {
+      "path": "scripts/lib/e2e-manifest.mjs",
+      "state": "present",
+      "sha256": "2bdca5c659efd15cefab7197b8dad1718da392175c1a60e46f7f71a3aeefa08e",
+      "bytes": 6360,
+      "untracked": false
+    },
+    {
+      "path": "scripts/plugin-packages/build.ts",
+      "state": "present",
+      "sha256": "ee809ded6b60ae3e16f78b09ab80dd99f42098d8115f977163b98c49df490aad",
+      "bytes": 2834,
+      "untracked": true
+    },
+    {
+      "path": "server/drizzle.config.ts",
+      "state": "present",
+      "sha256": "7667b10a3e117b6c9f88dc20303e108cdd540af4829b20cf5f7d9c03cdeabc5d",
+      "bytes": 3834,
+      "untracked": false
+    },
+    {
+      "path": "server/scripts/multitenancy/migrate-test.ts",
+      "state": "present",
+      "sha256": "39dba136a6e3f80423e45419e1dab644a18125b31581f918bc4856afec616f5b",
+      "bytes": 262092,
+      "untracked": false
+    },
+    {
+      "path": "server/src/app.ts",
+      "state": "present",
+      "sha256": "e1510e8aff8a2c869bbfea73232082a2e4dc3967693b5f9968b4fa097d203e09",
+      "bytes": 135948,
+      "untracked": false
+    },
+    {
+      "path": "server/src/config.ts",
+      "state": "present",
+      "sha256": "3ef1167b7a5d8ad24072a28bee8fba065902af8a94f49aa5c52fa439067e5cf3",
+      "bytes": 124418,
+      "untracked": false
+    },
+    {
+      "path": "server/src/db/schema/enterprise-plugin-packages.ts",
+      "state": "present",
+      "sha256": "cdcb3d8a6f8d97ad88382cabaaa79b745821e131bd074912a3aa2edff686a1c6",
+      "bytes": 30542,
+      "untracked": true
+    },
+    {
+      "path": "server/src/db/schema/index.ts",
+      "state": "present",
+      "sha256": "07a4aef437c69bb64c896986b50ace291c2e3349012ae8b5dca4bb1a755e4b8a",
+      "bytes": 2541,
+      "untracked": false
+    },
+    {
+      "path": "server/src/enterprise/plugin-packages/contracts.ts",
+      "state": "present",
+      "sha256": "0f16a8216bd01c97916c8c5616b056969e5b39c3705a49e698f588e2f694a1d3",
+      "bytes": 8541,
+      "untracked": true
+    },
+    {
+      "path": "server/src/enterprise/plugin-packages/grants.ts",
+      "state": "present",
+      "sha256": "5f06857eb39d9f26feb1c10708ead37b7096b473ada28b6a42af023f0cae75b6",
+      "bytes": 22748,
+      "untracked": true
+    },
+    {
+      "path": "server/src/enterprise/plugin-packages/install-service.ts",
+      "state": "present",
+      "sha256": "fb21b88482050ac400de14178b35381f2751e8c118dbb664a7d7f943e424319d",
+      "bytes": 25029,
+      "untracked": true
+    },
+    {
+      "path": "server/src/enterprise/plugin-packages/mutation-context.ts",
+      "state": "present",
+      "sha256": "d63d001d5e9635bededd130fab30a815b04a8c57abdee47e897fa9e20f0dd276",
+      "bytes": 8520,
+      "untracked": true
+    },
+    {
+      "path": "server/src/enterprise/plugin-packages/plans.ts",
+      "state": "present",
+      "sha256": "0fa065d0ee3645c11c515b2d3b3012a96d48135f383b86e56e7edafb05eeb140",
+      "bytes": 8137,
+      "untracked": true
+    },
+    {
+      "path": "server/src/enterprise/plugin-packages/routes.ts",
+      "state": "present",
+      "sha256": "6d8d2b21b8ad4135b43dd6006cf539ef0cae415f0b1890da9a8c097eb9b61928",
+      "bytes": 15255,
+      "untracked": true
+    },
+    {
+      "path": "server/src/enterprise/plugin-packages/runtime.ts",
+      "state": "present",
+      "sha256": "b39625132b89f7e7d8ed3c4d91c5d86dda9b70a07ede1e8d6c14bde12f5f7f1b",
+      "bytes": 20614,
+      "untracked": true
+    },
+    {
+      "path": "server/src/enterprise/plugin-packages/store.ts",
+      "state": "present",
+      "sha256": "fc9728534ee11030bd4070843325308d166a81ad038db1bebbfdc22138d3fca5",
+      "bytes": 10882,
+      "untracked": true
+    },
+    {
+      "path": "server/src/enterprise/runs/runner.ts",
+      "state": "present",
+      "sha256": "cc8e30bf01a7a2ac24997827c104299339b3c0cda1234b915a6d1bc22bca303b",
+      "bytes": 34051,
+      "untracked": false
+    },
+    {
+      "path": "server/src/enterprise/runs/service.ts",
+      "state": "present",
+      "sha256": "d3eb9be7fcb74854a4cb3d7a6aef7366b53378ec500750ef103eff2fbb0f1309",
+      "bytes": 15755,
+      "untracked": false
+    },
+    {
+      "path": "server/src/enterprise/tenancy/admin-separation.ts",
+      "state": "present",
+      "sha256": "f5560a78d2d6d0ed6154c6f77332ed504bdc15cea5014bfb5c6111dcac1f8668",
+      "bytes": 17829,
+      "untracked": false
+    },
+    {
+      "path": "server/src/index.ts",
+      "state": "present",
+      "sha256": "3e0c3706bdcbec7b5e03d041b1f83e3a58bb6fba0f9e6a43733b7cf9d4e1bca0",
+      "bytes": 307112,
+      "untracked": false
+    },
+    {
+      "path": "server/src/plugin-packages/artifact.ts",
+      "state": "present",
+      "sha256": "1901ca0a2e0dfd5c94a52a3bea0b7ab81d6264e28cbd9a521736eea37cb8261a",
+      "bytes": 14339,
+      "untracked": true
+    },
+    {
+      "path": "server/src/plugin-packages/catalogue.ts",
+      "state": "present",
+      "sha256": "8bb8edd6c72f0035993c6b3756e2c964d934ea734d99e44d0f2e051e1d98d4b8",
+      "bytes": 13150,
+      "untracked": true
+    },
+    {
+      "path": "server/src/plugin-packages/manifest.ts",
+      "state": "present",
+      "sha256": "87de00fed5a911c2c76fd0ebce93caf9cb5c4fc9a14db444a0e5a49fba0bb926",
+      "bytes": 486,
+      "untracked": true
+    },
+    {
+      "path": "server/tests/multitenancy/admin-separation.test.ts",
+      "state": "present",
+      "sha256": "72089a717a4fa4d4e8f3484827bed036f7ad894de2644c656d23bbec6c469489",
+      "bytes": 33627,
+      "untracked": false
+    },
+    {
+      "path": "server/tests/multitenancy/migration-tool.test.ts",
+      "state": "present",
+      "sha256": "2f2572d121106e3c660aa1168a6a213dc623228e9fc8a800c2f841e387287bbd",
+      "bytes": 47417,
+      "untracked": false
+    },
+    {
+      "path": "server/tests/multitenancy/package-grants.test.ts",
+      "state": "present",
+      "sha256": "4eb22d583fbe4453a560f2869fc00f009585a629cfcba873307d878a179ea602",
+      "bytes": 26589,
+      "untracked": true
+    },
+    {
+      "path": "server/tests/multitenancy/package-runtime.test.ts",
+      "state": "present",
+      "sha256": "ed0e380c32d37838afeca97eccec3f709e06ff9b5ff0fd0e575afdf729489ed2",
+      "bytes": 26718,
+      "untracked": true
+    },
+    {
+      "path": "server/tests/multitenancy/package-storage.test.ts",
+      "state": "present",
+      "sha256": "26ee68b026742452c60481f89e5a34fb5a55c5b4f22da925f8708f1786ecd142",
+      "bytes": 28015,
+      "untracked": true
+    },
+    {
+      "path": "server/tests/multitenancy/support/package-install.ts",
+      "state": "present",
+      "sha256": "834f507354ee92ef676ab49a921fe14345f050df6fe267d8e873eb342ea40805",
+      "bytes": 16338,
+      "untracked": true
+    },
+    {
+      "path": "server/tests/package-artifact.test.ts",
+      "state": "present",
+      "sha256": "821858123f56982ef40f763e6900c9e3cd3958d799443262fa3d8a1e72e3511f",
+      "bytes": 17931,
+      "untracked": true
+    },
+    {
+      "path": "server/tests/package-catalogue.test.ts",
+      "state": "present",
+      "sha256": "33f5901dab5a02677f5b580654b3574a8282355ff30b1e58f60fc481a6486931",
+      "bytes": 22690,
+      "untracked": true
+    },
+    {
+      "path": "server/tests/package-grants-routes.test.ts",
+      "state": "present",
+      "sha256": "a180013b1d72f10f13335c8fc1580401bdce9ea138c1d03fb218b63abb4accdd",
+      "bytes": 17181,
+      "untracked": true
+    },
+    {
+      "path": "server/tests/package-install-routes.test.ts",
+      "state": "present",
+      "sha256": "c0d2ae55340fb97ff65217dd165111d87e2fb9aa665a5b6223e8a45c341bcf75",
+      "bytes": 21927,
+      "untracked": true
+    },
+    {
+      "path": "server/tests/package-install.integration.test.ts",
+      "state": "present",
+      "sha256": "a726c5b7322c730a149fdea9d6ccd37fe98f62ca480576dd0d7b42eba5658d71",
+      "bytes": 40033,
+      "untracked": true
+    },
+    {
+      "path": "server/tests/package-read-routes.test.ts",
+      "state": "present",
+      "sha256": "bf595abbf099066c0686d93ce13c9678a8a3faa2a9ed6280c2231ab4d2e2c54f",
+      "bytes": 10235,
+      "untracked": true
+    },
+    {
+      "path": "server/tests/schema-drizzle-parity.test.ts",
+      "state": "present",
+      "sha256": "a4547712a1d76d49a8c8907d032b658d6c8ec7759c737cae52126cb27fe2500d",
+      "bytes": 1190,
+      "untracked": true
+    },
+    {
+      "path": "shared/enterprise/plugin-package-contracts.ts",
+      "state": "present",
+      "sha256": "0d0279b9cde2daf6c4eb2ac36c5aff4d00d64981081435157a93435e63c65afd",
+      "bytes": 16115,
+      "untracked": true
+    }
+  ],
+  "limitations": [
+    "Historical PKG01/PKG02 task-before snapshots were not captured; BASE is not claimed as a task-before checkpoint.",
+    "Generated artifact stores and execution reports are excluded from source identity."
+  ]
+}

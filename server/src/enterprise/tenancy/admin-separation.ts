@@ -22,8 +22,12 @@
 //      入口精确绑定的登记项）下才放行，且每次放行都产生一条审计事件
 //      （recordManagementAuditEvent 经受限 operator 角色与真实 RLS INSERT
 //      策略落 enterprise_security_events——与撤权审计同一通道，事件类型
-//      独立封闭集合，不改 revocation.ts）。没有登记就是拒绝：平台身份
-//      不因平台权限获得任何公司管理权。
+//      独立封闭集合，不改 revocation.ts）。判定放行与审计写入的组合入口
+//      是 authorizeAndRecordCompanyManagementAction（同一事务内完成，审计
+//      缺失即动作失败）。集成状态（OCR round5 R5-2 披露）：生产代码当前
+//      零调用——它是跨面管理动作（MT019 族）的既定 seam，尚无生产接线方；
+//      plugin-packages 刻意不经它（缘由见该函数注释）。没有登记就是拒绝：
+//      平台身份不因平台权限获得任何公司管理权。
 //
 // 管理权不隐含业务内容读取权：判定结果只携带动作许可与审计意图，不携带
 // 任何 PlatformScope/principal/workspace 句柄；业务内容读取仍只经 MT005
@@ -67,6 +71,13 @@ export interface ManagementPlaneRule {
  *     新路由自动归平台面（保守默认），归类无需逐条登记。
  *   - /api/enterprise/workspace-scope/admin/** —— 公司管理员管理本公司
  *     团队与成员名单（MT006 等价集中入口的 HTTP 面）：公司/团队级。
+ *   - PKG02/PKG03/PKG04：/api/enterprise/plugin-packages/plans 与
+ *     /plans/:id/apply（POST），/installs/:id/bots/:botId/grants
+ *     （PUT 授权 / DELETE 撤权）与 /installs/:id/experts/:resourceId
+ *     （POST 专家实例化）——公司管理员提交插件包安装预览/确认、
+ *     为范围内 Bot 授予/撤回技能授权、从安装修订的专家模板创建范围内
+ *     Bot：公司/团队级，按精确方法+路径登记（计划/安装/Bot/资源 ID 是
+ *     路径参数）。
  *   - /api/auth/scim/** 的 PUT/PATCH/DELETE —— SCIM 供应写动词是部署
  *     管理员的身份管理动作（app.ts 以 ADMIN_ONLY 语义守卫）：平台级；
  *     GET/POST 是普通身份面，不分类。
@@ -85,6 +96,13 @@ export const MANAGEMENT_PLANE_RULES: readonly ManagementPlaneRule[] =
       plane: "company",
       surface: "workspace-admin",
       prefix: "/api/enterprise/workspace-scope/admin/",
+    },
+    {
+      plane: "company",
+      surface: "package-admin",
+      pathPattern:
+        /^\/api\/enterprise\/plugin-packages\/(?:plans(?:\/[^/]+\/apply)?|installs\/[^/]+\/(?:bots\/[^/]+\/grants|experts\/[^/]+))$/,
+      methods: ["POST", "PUT", "DELETE"],
     },
     {
       plane: "platform",
@@ -188,6 +206,16 @@ export function authorizePlatformManagementAction(
     });
   }
   if (actor.kind === "company_admin") {
+    return Object.freeze({
+      outcome: "deny",
+      code: "PLATFORM_ADMIN_REQUIRED",
+      plane: "platform",
+    });
+  }
+  // 与公司面的空 tenantId 拒绝对称（fail-closed）：kind 正确但主体为空
+  // 的畸形 actor（{ kind: "deployment_admin", userId: "" } 等）不因构造
+  // 恰好命中类型而进入平台管理面。
+  if (!actorSubjectOf(actor).trim()) {
     return Object.freeze({
       outcome: "deny",
       code: "PLATFORM_ADMIN_REQUIRED",
@@ -458,4 +486,32 @@ export async function recordManagementAuditEvent(
       at: event.at,
     },
   });
+}
+
+/**
+ * 跨面放行判定与审计落库的组合入口：判定放行（allow）携带的审计事件在
+ * 调用方传入的同一 operator 事务内写入——写入失败原样上抛，动作随之
+ * 失败。头注释「每次放行都产生一条审计事件」由此成为构造保证，而不是
+ * 留给接线方的自觉：拿到 allow 却丢弃 decision.audit 的未来调用方不再
+ * 存在（与撤权审计 recordRevocationAuditEvent 的判定-落库绑定同一模式）。
+ * deny 原样返回，不接触事务。
+ *
+ * 集成状态（OCR round5 R5-2，文档披露，零行为变更）：生产代码零调用
+ * （grep 实证），当前只有测试消费。意图消费方是跨面管理动作（MT019
+ * 族：平台身份经显式登记跨面执行公司管理动作）的接线方。plugin-packages
+ * 刻意不经它：PKG02/03/04 的写通道按 Spec 走 CompanyAdminContext
+ * （assert + resolve），其域内审计是同一事务内的 enterprise_package_changes
+ * 回执（PKG03/PKG04 已测），不属于本函数绑定的 enterprise_security_events
+ * 跨面审计通道。首个真实跨面消费方接线时必须经此组合入口——不允许
+ * 拿到 allow 却丢弃审计。
+ */
+export async function authorizeAndRecordCompanyManagementAction(
+  input: Parameters<typeof authorizeCompanyManagementAction>[0],
+  tx: OperatorTransaction,
+): Promise<ManagementActionDecision> {
+  const decision = authorizeCompanyManagementAction(input);
+  if (decision.outcome === "allow" && decision.audit !== null) {
+    await recordManagementAuditEvent(tx, decision.audit);
+  }
+  return decision;
 }

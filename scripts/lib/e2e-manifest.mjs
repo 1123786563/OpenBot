@@ -94,7 +94,10 @@ export function readManifest() {
 
 export function groupsOf(files) {
   const byDirectory = new Map();
+  const present = new Set(files);
+  const explicit = new Set(Object.values(EXPLICIT_GROUPS).flat());
   for (const file of [...files].sort()) {
+    if (explicit.has(file)) continue;
     const segments = file.split("/");
     const directory = segments.slice(0, 2).join("/");
     const island = ISLANDS.find((prefix) => segments.at(-1).startsWith(prefix));
@@ -119,6 +122,10 @@ export function groupsOf(files) {
         files: list.slice(index, index + GROUP_SIZE),
       });
     }
+  }
+  for (const [name, files] of Object.entries(EXPLICIT_GROUPS)) {
+    const members = files.filter((file) => present.has(file));
+    if (members.length > 0) groups.push({ name, files: members });
   }
   return groups;
 }
@@ -156,6 +163,9 @@ export function writeManifest(
     causes,
     directoryIslands: [...DIRECTORY_ISLANDS],
   };
-  writeFileSync(MANIFEST, `${JSON.stringify(payload, null, 1)}\n`);
+  // Two-space indent, matching `biome format` for JSON: a regeneration then
+  // leaves the committed file byte-identical instead of trading a reorder diff
+  // (OCR round2 M1) for a whole-file reindent diff.
+  writeFileSync(MANIFEST, `${JSON.stringify(payload, null, 2)}\n`);
   return payload.groups.length;
 }

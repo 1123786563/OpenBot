@@ -1,0 +1,1734 @@
+diff --git a/app/src/components/app-sidebar/app-sidebar.tsx b/app/src/components/app-sidebar/app-sidebar.tsx
+index 09170a64..77993630 100644
+--- a/app/src/components/app-sidebar/app-sidebar.tsx
++++ b/app/src/components/app-sidebar/app-sidebar.tsx
+@@ -2,6 +2,7 @@ import {
+   IconBolt,
+   IconBox,
+   IconLogout,
++  IconPackage,
+   IconPlus,
+   IconSearch,
+   IconSettings,
+@@ -390,6 +391,27 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+               <span className="text-sm trackint-tight">{t("skills")}</span>
+             </SidebarMenuButton>
+           </SidebarMenuItem>
++          <SidebarMenuItem>
++            {/* Packages are a team surface: browsing the trusted catalogue needs no
++                deployment-admin role, so the shelf lives beside Skills, not Admin. */}
++            <SidebarMenuButton
++              className="hover:bg-foreground/5 h-10"
++              render={(props) => (
++                <Link
++                  {...props}
++                  to="/packages"
++                  activeProps={{
++                    className: "bg-foreground/5",
++                  }}
++                />
++              )}
++            >
++              <div className="size-[28px] flex items-center justify-center">
++                <IconPackage />
++              </div>
++              <span className="text-sm">{t("packages")}</span>
++            </SidebarMenuButton>
++          </SidebarMenuItem>
+           <SidebarMenuItem>
+             {/* Craft: the autonomous-build surface, fork-only. Same footer row as Bots and Skills. */}
+             <SidebarMenuButton
+diff --git a/app/src/components/market/wb.tsx b/app/src/components/market/wb.tsx
+index 197fccb7..5ef26949 100644
+--- a/app/src/components/market/wb.tsx
++++ b/app/src/components/market/wb.tsx
+@@ -28,7 +28,7 @@ export function WbCard({
+       className={cn(
+         "flex min-w-0 flex-col gap-3 self-start rounded-2xl border border-border bg-card p-5 shadow-card transition-[box-shadow,border-color] duration-200",
+         interactive &&
+-          "cursor-pointer hover:border-foreground/20 hover:shadow-card-hover",
++          "cursor-pointer hover:border-foreground/20 hover:shadow-card-hover focus-visible:border-foreground/20 focus-visible:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+         className,
+       )}
+       {...props}
+diff --git a/app/src/lib/client.ts b/app/src/lib/client.ts
+index 79a04c70..bc3df5f5 100644
+--- a/app/src/lib/client.ts
++++ b/app/src/lib/client.ts
+@@ -61,8 +61,34 @@ export type ClientOptions = {
+    * resolver refuses a workspace without a tenant, so callers select both or neither.
+    */
+   workspaceId?: string;
++  /**
++   * Request headers the endpoint requires beyond the transport's own, such as an
++   * `Idempotency-Key` on a confirm. Merged under the content-type and the scope selection so a
++   * caller cannot spoof either by supplying a header here.
++   */
++  headers?: Record<string, string>;
+ };
+ 
++/**
++ * A non-ok answer from the server, carrying the facts a screen may need to branch on.
++ *
++ * THE MESSAGE IS UNCHANGED. Every caller that read `thrown.message` still reads the same sentence.
++ * What is new is the status and the server's own sentence (null when it sent none), so a shelf can
++ * tell "you may not see this" (401/403) from "the request never arrived" without parsing prose.
++ */
++export class ClientResponseError extends Error {
++  readonly status: number;
++  /** The readable sentence the server itself sent, or null when its body carried none. */
++  readonly serverMessage: string | null;
++
++  constructor(status: number, message: string, serverMessage: string | null) {
++    super(message);
++    this.name = "ClientResponseError";
++    this.status = status;
++    this.serverMessage = serverMessage;
++  }
++}
++
+ /**
+  * The sentence a failed request carries, resolved from whichever fallback the caller gave.
+  *
+@@ -144,13 +170,10 @@ function scopeSelection(
+  * The deployment APIs put a plain string in `error`; the enterprise API puts its closed error
+  * object there — `{ code, request_id, retryable, summary }` on the wire
+  * (server/src/enterprise/app.ts onError), with `message` the shape a plan text may name for it.
+- * Both are one sentence to a person: read the string, or the readable field of the object, and
+- * otherwise let the caller's fallback speak.
++ * Both are one sentence to a person: read the string, or the readable field of the object. Null
++ * means the server sent none, and the caller's fallback speaks instead.
+  */
+-async function refusalMessage(
+-  response: Response,
+-  options: ClientOptions,
+-): Promise<string> {
++async function refusalText(response: Response): Promise<string | null> {
+   const body = (await response.json().catch(() => null)) as {
+     error?: unknown;
+   } | null;
+@@ -161,16 +184,27 @@ async function refusalMessage(
+       if (typeof field === "string" && field.length > 0) return field;
+     }
+   }
+-  return fallbackText(options);
++  return null;
+ }
+ 
+ /** Every request in this app is authenticated, and every one of them is JSON or nothing. */
+ async function send(path: string, options: ClientOptions): Promise<Response> {
+   const selection = scopeSelection(path, options);
+-  const headers: Record<string, string> | undefined =
+-    options.body === undefined
+-      ? selection
+-      : { "content-type": "application/json", ...selection };
++  /*
++   * Caller headers first, then the transport's own facts on top: a request cannot rename the
++   * content type of its body or the scope it selects, which is the same discipline the scope
++   * headers have had since they were introduced.
++   */
++  const merged: Record<string, string> = {};
++  // HTTP header names are case-insensitive; normalize caller keys so a caller-sent
++  // "Content-Type" or "X-Openbot-Tenant" variant replaces into the same slot instead
++  // of appending a second, ambiguous header next to the transport's own value.
++  for (const [name, value] of Object.entries(options.headers ?? {})) {
++    merged[name.toLowerCase()] = value;
++  }
++  if (options.body !== undefined) merged["content-type"] = "application/json";
++  if (selection !== undefined) Object.assign(merged, selection);
++  const headers = Object.keys(merged).length > 0 ? merged : undefined;
+   return fetch(path, {
+     method: options.method,
+     credentials: "include",
+@@ -225,9 +259,16 @@ export async function client<T>(
+   if (!response.ok) {
+     /*
+      * The server's message is the useful one: it names the field or the permission that failed. The
+-     * fallback is only for the cases where it sent none, or sent something that is not JSON.
++     * fallback is only for the cases where it sent none, or sent something that is not JSON. The
++     * status and whether the sentence came from the server ride the error for callers that must
++     * tell a refusal from transport trouble.
+      */
+-    throw new Error(await refusalMessage(response, options));
++    const serverMessage = await refusalText(response);
++    throw new ClientResponseError(
++      response.status,
++      serverMessage !== null ? serverMessage : await fallbackText(options),
++      serverMessage,
++    );
+   }
+ 
+   if (key === undefined) return response;
+diff --git a/app/src/locales/en/market.json b/app/src/locales/en/market.json
+index 54c29bad..b6230d2b 100644
+--- a/app/src/locales/en/market.json
++++ b/app/src/locales/en/market.json
+@@ -4,13 +4,15 @@
+   "tab": {
+     "experts": "Experts",
+     "skills": "Skills",
+-    "connectors": "Connectors"
++    "connectors": "Connectors",
++    "packages": "Plugin packages"
+   },
+   "searchAria": "Search the marketplace",
+   "search": {
+     "experts": "Search experts",
+     "skills": "Search skills",
+-    "connectors": "Search connectors"
++    "connectors": "Search connectors",
++    "packages": "Search plugin packages"
+   },
+   "installedOnly": "Installed",
+   "category": {
+@@ -39,6 +41,120 @@
+   },
+   "loadError": "The marketplace could not be loaded.",
+   "loading": "Loading…",
++  "packages": {
++    "pageTitle": "Packages",
++    "pageDescription": "Browse the trusted plugin packages this team can install; installing alone grants no Bot execution rights.",
++    "searchAria": "Search plugin packages",
++    "searchPlaceholder": "Search by name, publisher or summary",
++    "scopeRequired": "Select a team first",
++    "scopeRequiredHint": "Plugin packages are browsed inside a team. Choose a company and team under Workspace, then come back here.",
++    "unavailable": "Unavailable",
++    "blockers": "Why it cannot be used",
++    "loadError": "Plugin packages could not be loaded.",
++    "loadErrorHint": "The catalogue did not answer. Try again in a moment.",
++    "permissionError": "You do not have permission to browse this team's plugin packages.",
++    "permissionErrorHint": "Ask a team administrator for access, or choose a team you belong to.",
++    "accountError": "Your account could not be loaded, so plugin packages cannot pick a team yet.",
++    "retry": "Try again",
++    "empty": "No plugin packages are available in this team yet.",
++    "emptySearch": "No plugin packages match “{{query}}”.",
++    "emptyCategory": "No plugin packages in the “{{category}}” category.",
++    "loadMore": "Load more",
++    "loadingMore": "Loading…",
++    "loadMoreError": "More packages could not be loaded.",
++    "blocker": {
++      "ARTIFACT_MISSING": "The package artifact is missing from this deployment.",
++      "ARTIFACT_INVALID": "The package artifact failed verification.",
++      "PACKAGE_UNLISTED": "This package is no longer listed in the marketplace.",
++      "PACKAGE_UNSUPPORTED": "This deployment does not support this package.",
++      "RESOURCE_UNAVAILABLE": "One of the package resources is unavailable.",
++      "NEEDS_CONNECTION": "A required connector is not connected yet.",
++      "NEEDS_GRANT": "No Bot has been granted this package's tools yet.",
++      "UNKNOWN": "This package cannot be used for an unspecified reason."
++    },
++    "detail": {
++      "publisher": "Publisher",
++      "name": "Name",
++      "version": "Version",
++      "digest": "Digest",
++      "resources": "Resources",
++      "blockers": "Blockers",
++      "installState": "Installation",
++      "noResources": "This package declares no resources.",
++      "available": "Available",
++      "unavailable": "Unavailable",
++      "loading": "Loading package details…",
++      "loadError": "Package details could not be loaded.",
++      "retry": "Try again",
++      "kind": {
++        "skill": "Skill",
++        "expertTemplate": "Expert template",
++        "managedConnector": "Connector",
++        "unknown": "Resource"
++      }
++    },
++    "install": {
++      "previewAction": "Preview install",
++      "title": "Install {{name}}",
++      "description": "Review exactly what installation will create in team {{team}}. Installing a package never grants a Bot permission to execute it.",
++      "team": "Team",
++      "version": "Version",
++      "resourceCount": "Resources",
++      "packageKey": "Package",
++      "digest": "Artifact digest",
++      "expiry": "This preview is valid for 10 minutes, until {{time}}.",
++      "expiryUnknown": "This preview is valid for 10 minutes.",
++      "creating": "Creating the install preview…",
++      "planError": "The install preview could not be created. Your configuration was kept; try again.",
++      "forbidden": "You do not have permission to install packages in this team. Ask a company administrator.",
++      "unavailable": "Package installation is unavailable on this deployment right now.",
++      "retryPreview": "Try preview again",
++      "resources": "Resources",
++      "tools": "Tool access this package declares",
++      "noTools": "This package declares no connector tools.",
++      "toolEffect": {
++        "read": "Read",
++        "write": "Write"
++      },
++      "blockers": "Before it can run",
++      "previewGrantNotice": "After installation, no Bot can execute this package until a Bot grant is added explicitly.",
++      "config": "Configuration",
++      "configHint": "Flat, non-secret values only. Credentials belong to the connector's own connection screen and are never stored in a package.",
++      "configKey": "Configuration key",
++      "configValue": "Configuration value",
++      "configType": "Configuration type",
++      "configTypeString": "Text",
++      "configTypeNumber": "Number",
++      "configTypeBoolean": "True / false",
++      "addConfigField": "Add configuration field",
++      "removeConfigField": "Remove field",
++      "configInvalidKey": "Configuration keys must not look like secrets (token, password, API key…).",
++      "configDuplicateKey": "Each configuration key may appear only once.",
++      "configTooManyKeys": "At most 32 config entries are allowed.",
++      "configTooLong": "Config keys are limited to 64 characters and string values to 512.",
++      "configInvalidNumber": "Configuration value “{{value}}” is not a number.",
++      "confirm": "Confirm install",
++      "confirming": "Installing…",
++      "close": "Close",
++      "installed": "Installed",
++      "grantNotice": "The package is installed, but no Bot may execute it yet: installation alone does not grant Bot execution rights.",
++      "applyError": "The installation could not be confirmed. Review the preview and try again.",
++      "applyExpired": "This install preview expired. Your configuration was kept — create a new preview.",
++      "applyConflict": "This package changed or this confirmation was already used. Review a fresh preview before trying again.",
++      "applyForbidden": "You do not have permission to install packages in this team.",
++      "status": {
++        "enabled": "Enabled",
++        "disabled": "Disabled",
++        "uninstalled": "Uninstalled"
++      },
++      "readiness": {
++        "ready": "Ready",
++        "needs_connection": "Needs connection",
++        "needs_grant": "Needs Bot grant",
++        "unavailable": "Unavailable"
++      }
++    }
++  },
+   "wb": {
+     "myExperts": "My experts",
+     "createExpert": "New expert",
+diff --git a/app/src/locales/en/nav.json b/app/src/locales/en/nav.json
+index caee13a3..1e7fb485 100644
+--- a/app/src/locales/en/nav.json
++++ b/app/src/locales/en/nav.json
+@@ -10,6 +10,7 @@
+   "noChannelsDescription": "Start talking to agents and your channels will appear here.",
+   "bots": "Bots",
+   "skills": "Skills",
++  "packages": "Packages",
+   "market": "Market",
+   "agents": "Agents",
+   "craft": "Craft",
+diff --git a/app/src/locales/zh-CN/market.json b/app/src/locales/zh-CN/market.json
+index e7f6f92e..a0f93712 100644
+--- a/app/src/locales/zh-CN/market.json
++++ b/app/src/locales/zh-CN/market.json
+@@ -4,13 +4,15 @@
+   "tab": {
+     "experts": "专家",
+     "skills": "技能",
+-    "connectors": "连接器"
++    "connectors": "连接器",
++    "packages": "插件包"
+   },
+   "searchAria": "搜索市场",
+   "search": {
+     "experts": "搜索专家",
+     "skills": "搜索技能",
+-    "connectors": "搜索连接器"
++    "connectors": "搜索连接器",
++    "packages": "搜索插件包"
+   },
+   "installedOnly": "我安装的",
+   "category": {
+@@ -39,6 +41,120 @@
+   },
+   "loadError": "市场加载失败。",
+   "loading": "加载中…",
++  "packages": {
++    "pageTitle": "插件包",
++    "pageDescription": "浏览本团队可安装的受信插件包；安装本身不会授予 Bot 执行能力。",
++    "searchAria": "搜索插件包",
++    "searchPlaceholder": "按名称、发布者或摘要搜索",
++    "scopeRequired": "请先选择团队",
++    "scopeRequiredHint": "插件包在团队范围内浏览。请先在「工作区」中选择公司和团队，再回到这里。",
++    "unavailable": "不可用",
++    "blockers": "不可用原因",
++    "loadError": "插件包加载失败。",
++    "loadErrorHint": "目录没有响应，请稍后重试。",
++    "permissionError": "你没有权限浏览该团队的插件包。",
++    "permissionErrorHint": "请联系团队管理员开通权限，或切换到你有权访问的团队。",
++    "accountError": "账户信息加载失败，暂时无法确定插件包所属团队。",
++    "retry": "重试",
++    "empty": "当前团队还没有可用的插件包。",
++    "emptySearch": "没有匹配“{{query}}”的插件包。",
++    "emptyCategory": "「{{category}}」分类下没有插件包。",
++    "loadMore": "加载更多",
++    "loadingMore": "加载中…",
++    "loadMoreError": "更多插件包加载失败。",
++    "blocker": {
++      "ARTIFACT_MISSING": "此部署缺少该包的制品文件。",
++      "ARTIFACT_INVALID": "该包的制品文件未通过校验。",
++      "PACKAGE_UNLISTED": "该包已从市场上架目录中移除。",
++      "PACKAGE_UNSUPPORTED": "此部署不支持该包。",
++      "RESOURCE_UNAVAILABLE": "该包中有资源当前不可用。",
++      "NEEDS_CONNECTION": "需要的连接器尚未连接。",
++      "NEEDS_GRANT": "还没有 Bot 被授予该包的工具。",
++      "UNKNOWN": "该包因未知原因当前不可用。"
++    },
++    "detail": {
++      "publisher": "发布者",
++      "name": "包名",
++      "version": "版本",
++      "digest": "摘要",
++      "resources": "资源",
++      "blockers": "阻塞原因",
++      "installState": "安装状态",
++      "noResources": "该包没有声明任何资源。",
++      "available": "可用",
++      "unavailable": "不可用",
++      "loading": "正在加载包详情…",
++      "loadError": "包详情加载失败。",
++      "retry": "重试",
++      "kind": {
++        "skill": "技能",
++        "expertTemplate": "专家模板",
++        "managedConnector": "连接器",
++        "unknown": "资源"
++      }
++    },
++    "install": {
++      "previewAction": "预览安装",
++      "title": "安装 {{name}}",
++      "description": "请确认将在团队 {{team}} 中创建的内容。安装插件包不会授予任何 Bot 执行权限。",
++      "team": "团队",
++      "version": "版本",
++      "resourceCount": "资源",
++      "packageKey": "插件包",
++      "digest": "制品摘要",
++      "expiry": "此预览 10 分钟内有效，截止 {{time}}。",
++      "expiryUnknown": "此预览 10 分钟内有效。",
++      "creating": "正在生成安装预览…",
++      "planError": "安装预览生成失败。已保留你的配置，请重试。",
++      "forbidden": "你没有权限在此团队安装插件包。请联系公司管理员。",
++      "unavailable": "此部署当前无法安装插件包。",
++      "retryPreview": "重新预览",
++      "resources": "资源",
++      "tools": "该包声明的工具访问",
++      "noTools": "该包没有声明连接器工具。",
++      "toolEffect": {
++        "read": "读取",
++        "write": "写入"
++      },
++      "blockers": "运行前仍缺少",
++      "previewGrantNotice": "安装后仍需显式添加 Bot 授权，Bot 才能执行该包。",
++      "config": "配置",
++      "configHint": "只支持扁平的、非秘密的值。凭据请到连接器自己的连接页面配置，绝不会保存在插件包中。",
++      "configKey": "配置键",
++      "configValue": "配置值",
++      "configType": "配置类型",
++      "configTypeString": "文本",
++      "configTypeNumber": "数字",
++      "configTypeBoolean": "真 / 假",
++      "addConfigField": "添加配置项",
++      "removeConfigField": "移除配置项",
++      "configInvalidKey": "配置键不能看起来像秘密（token、password、API key 等）。",
++      "configDuplicateKey": "每个配置键只能出现一次。",
++      "configTooManyKeys": "配置项最多 32 个。",
++      "configTooLong": "配置键最长 64 字符，字符串值最长 512 字符。",
++      "configInvalidNumber": "配置值“{{value}}”不是数字。",
++      "confirm": "确认安装",
++      "confirming": "正在安装…",
++      "close": "关闭",
++      "installed": "已安装",
++      "grantNotice": "插件包已安装，但还没有任何 Bot 可以执行它：仅安装不会授予 Bot 执行权限。",
++      "applyError": "安装确认失败。请检查预览后重试。",
++      "applyExpired": "安装预览已过期。你的配置已保留，请重新生成预览。",
++      "applyConflict": "该包已发生变化，或此确认已被使用。请查看新的预览后重试。",
++      "applyForbidden": "你没有权限在此团队安装插件包。",
++      "status": {
++        "enabled": "已启用",
++        "disabled": "已停用",
++        "uninstalled": "已卸载"
++      },
++      "readiness": {
++        "ready": "就绪",
++        "needs_connection": "需要连接",
++        "needs_grant": "需要 Bot 授权",
++        "unavailable": "不可用"
++      }
++    }
++  },
+   "wb": {
+     "myExperts": "我的专家",
+     "createExpert": "创建专家",
+diff --git a/app/src/locales/zh-CN/nav.json b/app/src/locales/zh-CN/nav.json
+index da92a844..6cc163bd 100644
+--- a/app/src/locales/zh-CN/nav.json
++++ b/app/src/locales/zh-CN/nav.json
+@@ -10,6 +10,7 @@
+   "noChannelsDescription": "开始与 Agent 对话，你的频道将显示在这里。",
+   "bots": "Bots",
+   "skills": "技能",
++  "packages": "插件包",
+   "market": "市场",
+   "agents": "Agents",
+   "craft": "Craft",
+diff --git a/app/src/routeTree.gen.ts b/app/src/routeTree.gen.ts
+index 0018afcb..9adcf754 100644
+--- a/app/src/routeTree.gen.ts
++++ b/app/src/routeTree.gen.ts
+@@ -14,6 +14,7 @@ import { Route as SignRouteImport } from './routes/sign'
+ import { Route as AuthedAppRouteImport } from './routes/_authed/_app'
+ import { Route as AuthedAdminRouteRouteImport } from './routes/_authed/admin/route'
+ import { Route as AuthedOnboardingRouteImport } from './routes/_authed/onboarding'
++import { Route as AuthedPackagesRouteImport } from './routes/_authed/packages'
+ import { Route as AuthedSettingsRouteRouteImport } from './routes/_authed/settings/route'
+ import { Route as ShareTokenRouteImport } from './routes/share.$token'
+ import { Route as AuthedAppIndexRouteImport } from './routes/_authed/_app/index'
+@@ -120,6 +121,11 @@ const AuthedOnboardingRoute = AuthedOnboardingRouteImport.update({
+   path: '/onboarding',
+   getParentRoute: () => AuthedRoute,
+ } as any)
++const AuthedPackagesRoute = AuthedPackagesRouteImport.update({
++  id: '/packages',
++  path: '/packages',
++  getParentRoute: () => AuthedRoute,
++} as any)
+ const AuthedSettingsRouteRoute = AuthedSettingsRouteRouteImport.update({
+   id: '/settings',
+   path: '/settings',
+@@ -575,6 +581,7 @@ export interface FileRoutesByFullPath {
+   '/admin': typeof AuthedAdminRouteRouteWithChildren
+   '/settings': typeof AuthedSettingsRouteRouteWithChildren
+   '/onboarding': typeof AuthedOnboardingRoute
++  '/packages': typeof AuthedPackagesRoute
+   '/share/$token': typeof ShareTokenRoute
+   '/approvals': typeof AuthedAppApprovalsRoute
+   '/bot': typeof AuthedAppBotRoute
+@@ -660,6 +667,7 @@ export interface FileRoutesByTo {
+   '/': typeof AuthedAppIndexRoute
+   '/sign': typeof SignRoute
+   '/onboarding': typeof AuthedOnboardingRoute
++  '/packages': typeof AuthedPackagesRoute
+   '/share/$token': typeof ShareTokenRoute
+   '/approvals': typeof AuthedAppApprovalsRoute
+   '/bot': typeof AuthedAppBotRoute
+@@ -749,6 +757,7 @@ export interface FileRoutesById {
+   '/_authed/settings': typeof AuthedSettingsRouteRouteWithChildren
+   '/_authed/_app': typeof AuthedAppRouteWithChildren
+   '/_authed/onboarding': typeof AuthedOnboardingRoute
++  '/_authed/packages': typeof AuthedPackagesRoute
+   '/share/$token': typeof ShareTokenRoute
+   '/_authed/_app/approvals': typeof AuthedAppApprovalsRoute
+   '/_authed/_app/bot': typeof AuthedAppBotRoute
+@@ -839,6 +848,7 @@ export interface FileRouteTypes {
+     | '/admin'
+     | '/settings'
+     | '/onboarding'
++    | '/packages'
+     | '/share/$token'
+     | '/approvals'
+     | '/bot'
+@@ -924,6 +934,7 @@ export interface FileRouteTypes {
+     | '/'
+     | '/sign'
+     | '/onboarding'
++    | '/packages'
+     | '/share/$token'
+     | '/approvals'
+     | '/bot'
+@@ -1012,6 +1023,7 @@ export interface FileRouteTypes {
+     | '/_authed/settings'
+     | '/_authed/_app'
+     | '/_authed/onboarding'
++    | '/_authed/packages'
+     | '/share/$token'
+     | '/_authed/_app/approvals'
+     | '/_authed/_app/bot'
+@@ -1138,6 +1150,13 @@ declare module '@tanstack/react-router' {
+       preLoaderRoute: typeof AuthedOnboardingRouteImport
+       parentRoute: typeof AuthedRoute
+     }
++    '/_authed/packages': {
++      id: '/_authed/packages'
++      path: '/packages'
++      fullPath: '/packages'
++      preLoaderRoute: typeof AuthedPackagesRouteImport
++      parentRoute: typeof AuthedRoute
++    }
+     '/_authed/settings': {
+       id: '/_authed/settings'
+       path: '/settings'
+@@ -1936,6 +1955,7 @@ interface AuthedRouteChildren {
+   AuthedSettingsRouteRoute: typeof AuthedSettingsRouteRouteWithChildren
+   AuthedAppRoute: typeof AuthedAppRouteWithChildren
+   AuthedOnboardingRoute: typeof AuthedOnboardingRoute
++  AuthedPackagesRoute: typeof AuthedPackagesRoute
+   AuthedSignInRequestIdRoute: typeof AuthedSignInRequestIdRoute
+   AuthedTenantChannelsRoute: typeof AuthedTenantChannelsRoute
+   AuthedTenantSelectionRoute: typeof AuthedTenantSelectionRoute
+@@ -1946,6 +1966,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
+   AuthedSettingsRouteRoute: AuthedSettingsRouteRouteWithChildren,
+   AuthedAppRoute: AuthedAppRouteWithChildren,
+   AuthedOnboardingRoute: AuthedOnboardingRoute,
++  AuthedPackagesRoute: AuthedPackagesRoute,
+   AuthedSignInRequestIdRoute: AuthedSignInRequestIdRoute,
+   AuthedTenantChannelsRoute: AuthedTenantChannelsRoute,
+   AuthedTenantSelectionRoute: AuthedTenantSelectionRoute,
+diff --git a/app/src/routes/_authed/admin/market.tsx b/app/src/routes/_authed/admin/market.tsx
+index 3d95d7d5..80887146 100644
+--- a/app/src/routes/_authed/admin/market.tsx
++++ b/app/src/routes/_authed/admin/market.tsx
+@@ -1,5 +1,6 @@
+ import {
+   IconBolt,
++  IconPackage,
+   IconPencil,
+   IconPlug,
+   IconSearch,
+@@ -22,6 +23,7 @@ import {
+   TemplateDialogWb,
+ } from "@/components/market/experts-pane";
+ import { MyExpertsView } from "@/components/market/my-experts-view";
++import { PackagePane } from "@/components/market/package-pane";
+ import {
+   SkillDialogWb,
+   type SkillSubject,
+@@ -38,6 +40,7 @@ import {
+   uninstallMarketSkillMutationOptions,
+ } from "@/lib/marketplace/mutations";
+ import { marketplaceQueryOptions } from "@/lib/marketplace/queries";
++import { usePackageScope } from "@/lib/plugin-packages/use-package-scope";
+ import {
+   addCuratedServerMutationOptions,
+   enableComposioAppMutationOptions,
+@@ -74,9 +77,9 @@ export const Route = createFileRoute("/_authed/admin/market")({
+   component: MarketPage,
+ });
+ 
+-type Tab = "experts" | "skills" | "connectors";
++type Tab = "experts" | "skills" | "connectors" | "packages";
+ 
+-function MarketPage() {
++export function MarketPage() {
+   const { t } = useTranslation("market");
+   const [tab, setTab] = React.useState<Tab>("experts");
+   const [view, setView] = React.useState<"hub" | "mine">("hub");
+@@ -96,6 +99,11 @@ function MarketPage() {
+   const agents = useQuery(agentListQueryOptions());
+   const me = useQuery(currentUserQueryOptions());
+   const isAdmin = me.data?.role === "admin";
++  // PKG01/02: packages are read under the team the person last chose explicitly,
++  // and the install verb belongs to the selected company's tenant_admin role —
++  // never the deployment's. The server re-authorizes every plan/apply regardless.
++  const { scope: packageScope, canInstall: canInstallPackages } =
++    usePackageScope({ enabled: tab === "packages" });
+   const connectorsTab = tab === "connectors";
+   const openConnector = useQuery({
+     ...openConnectorAppsQueryOptions(brokerQuery),
+@@ -245,6 +253,11 @@ function MarketPage() {
+       label: t("tab.connectors"),
+       icon: <IconPlug className="size-5" />,
+     },
++    {
++      key: "packages",
++      label: t("tab.packages"),
++      icon: <IconPackage className="size-5" />,
++    },
+   ];
+ 
+   // Dialog subjects: one per card kind, held so the dialog survives the re-render a mutation
+@@ -302,22 +315,24 @@ function MarketPage() {
+               ))}
+             </nav>
+             <div className="ml-auto flex flex-wrap items-center gap-2">
+-              <div className="relative">
+-                <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-foreground/40" />
+-                <input
+-                  aria-label={t("searchAria")}
+-                  className="h-9 w-56 rounded-lg border border-transparent bg-foreground/[0.04] pr-3 pl-8 text-sm text-foreground outline-none transition-colors placeholder:text-foreground/40 focus-visible:border-foreground/20 focus-visible:bg-card"
+-                  onChange={(event) => setSearch(event.target.value)}
+-                  placeholder={
+-                    tab === "experts"
+-                      ? t("search.experts")
+-                      : tab === "skills"
+-                        ? t("search.skills")
+-                        : t("search.connectors")
+-                  }
+-                  value={search}
+-                />
+-              </div>
++              {tab === "packages" ? null : (
++                <div className="relative">
++                  <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-foreground/40" />
++                  <input
++                    aria-label={t("searchAria")}
++                    className="h-9 w-56 rounded-lg border border-transparent bg-foreground/[0.04] pr-3 pl-8 text-sm text-foreground outline-none transition-colors placeholder:text-foreground/40 focus-visible:border-foreground/20 focus-visible:bg-card"
++                    onChange={(event) => setSearch(event.target.value)}
++                    placeholder={
++                      tab === "experts"
++                        ? t("search.experts")
++                        : tab === "skills"
++                          ? t("search.skills")
++                          : t("search.connectors")
++                    }
++                    value={search}
++                  />
++                </div>
++              )}
+               {tab === "experts" && view === "hub" ? (
+                 <WbSecondaryButton onClick={() => setView("mine")}>
+                   <IconUser className="size-4" />
+@@ -356,7 +371,14 @@ function MarketPage() {
+             </p>
+           ) : null}
+ 
+-          {pending ? (
++          {tab === "packages" ? (
++            <PackagePane
++              canInstall={canInstallPackages}
++              currentUserError={me.isError}
++              currentUserPending={me.isPending}
++              scope={packageScope}
++            />
++          ) : pending ? (
+             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+               {["a", "b", "c", "d", "e", "f"].map((slot) => (
+                 <WbCardSkeleton key={slot} />
+diff --git a/app/tests/enterprise-client.test.ts b/app/tests/enterprise-client.test.ts
+index ae152ea5..e3edc734 100644
+--- a/app/tests/enterprise-client.test.ts
++++ b/app/tests/enterprise-client.test.ts
+@@ -183,6 +183,36 @@ test("success still unwraps the envelope key, and a malformed one still refuses"
+   await expect(client("/api/somewhere", "items")).rejects.toThrow();
+ });
+ 
++test("caller header names are normalized so transport facts cannot be duplicated", async () => {
++  const asked = intercept();
++
++  await client("/api/enterprise/plugin-packages", {
++    method: "POST",
++    tenantId: "acme",
++    workspaceId: "team-1",
++    headers: {
++      "Content-Type": "text/plain",
++      "X-Openbot-Tenant": "forged",
++      "X-Custom": "kept",
++    },
++    body: { ok: true },
++  });
++
++  const headers = asked[0]?.init?.headers as Record<string, string>;
++  // The transport's own facts own their slots; a case-variant caller key
++  // collapses into the same header instead of appending a second one.
++  expect(headers["content-type"]).toBe("application/json");
++  expect(headers["x-openbot-tenant"]).toBe("acme");
++  expect(headers["x-openbot-workspace"]).toBe("team-1");
++  expect(headers["x-custom"]).toBe("kept");
++  expect(
++    Object.keys(headers).filter((name) => name === "content-type"),
++  ).toHaveLength(1);
++  expect(
++    Object.keys(headers).filter((name) => name === "x-openbot-tenant"),
++  ).toHaveLength(1);
++});
++
+ function jsonResponse(status: number, body: unknown): Response {
+   return new Response(JSON.stringify(body), {
+     status,
+diff --git a/docs/verification/e2e-bun-suites.json b/docs/verification/e2e-bun-suites.json
+index 96356bd2..e67c132b 100644
+--- a/docs/verification/e2e-bun-suites.json
++++ b/docs/verification/e2e-bun-suites.json
+@@ -634,6 +634,25 @@
+         "server/tests/multitenancy/vendor-billing.test.ts",
+         "server/tests/multitenancy/workspace-scope.test.ts"
+       ]
++    },
++    {
++      "name": "server/tests/multitenancy pkg02",
++      "files": [
++        "server/tests/multitenancy/package-storage.test.ts",
++        "server/tests/package-install.integration.test.ts"
++      ]
++    },
++    {
++      "name": "server/tests/multitenancy pkg03",
++      "files": [
++        "server/tests/multitenancy/package-grants.test.ts"
++      ]
++    },
++    {
++      "name": "server/tests/multitenancy pkg03b",
++      "files": [
++        "server/tests/multitenancy/package-runtime.test.ts"
++      ]
+     }
+   ],
+   "files": [
+@@ -918,6 +937,9 @@
+     "server/tests/multitenancy/oauth-state.test.ts",
+     "server/tests/multitenancy/openmuse-private-bot.test.ts",
+     "server/tests/multitenancy/openmuse-tasks.test.ts",
++    "server/tests/multitenancy/package-grants.test.ts",
++    "server/tests/multitenancy/package-runtime.test.ts",
++    "server/tests/multitenancy/package-storage.test.ts",
+     "server/tests/multitenancy/payer-accounts.test.ts",
+     "server/tests/multitenancy/people-lifecycle.test.ts",
+     "server/tests/multitenancy/personal-share-rules.test.ts",
+@@ -1000,6 +1022,7 @@
+     "server/tests/organization-auth.test.ts",
+     "server/tests/organization-store.integration.test.ts",
+     "server/tests/otel-export-scrubbing.test.ts",
++    "server/tests/package-install.integration.test.ts",
+     "server/tests/page-frame-retention.integration.test.ts",
+     "server/tests/passwords-store.integration.test.ts",
+     "server/tests/payer-account.integration.test.ts",
+diff --git a/scripts/lib/e2e-manifest.mjs b/scripts/lib/e2e-manifest.mjs
+index e6c0e0c5..21c99d0a 100644
+--- a/scripts/lib/e2e-manifest.mjs
++++ b/scripts/lib/e2e-manifest.mjs
+@@ -67,6 +67,28 @@ export const DIRECTORY_ISLANDS = [
+   "app/tests/multitenancy",
+ ];
+ 
++/*
++ * Suites that do not live in one directory island but need the same dedicated
++ * enterprise database environment. PKG02's install suites are split across
++ * `server/tests` and `server/tests/multitenancy`; naming the group with the
++ * `server/tests/multitenancy` prefix is what makes `bunEnv()` in
++ * tests/bun-suites.test.ts (which matches on the group name) hand it the
++ * `MT_TEST_*` overrides. The list is explicit so regeneration keeps the group
++ * instead of folding the files back into their directory groups.
++ */
++export const EXPLICIT_GROUPS = Object.freeze({
++  "server/tests/multitenancy pkg02": [
++    "server/tests/multitenancy/package-storage.test.ts",
++    "server/tests/package-install.integration.test.ts",
++  ],
++  "server/tests/multitenancy pkg03": [
++    "server/tests/multitenancy/package-grants.test.ts",
++  ],
++  "server/tests/multitenancy pkg03b": [
++    "server/tests/multitenancy/package-runtime.test.ts",
++  ],
++});
++
+ export function readManifest() {
+   const parsed = JSON.parse(readFileSync(MANIFEST, "utf8"));
+   return {
+@@ -79,7 +101,10 @@ export function readManifest() {
+ 
+ export function groupsOf(files) {
+   const byDirectory = new Map();
++  const present = new Set(files);
++  const explicit = new Set(Object.values(EXPLICIT_GROUPS).flat());
+   for (const file of [...files].sort()) {
++    if (explicit.has(file)) continue;
+     const segments = file.split("/");
+     const directory = segments.slice(0, 2).join("/");
+     const island = ISLANDS.find((prefix) => segments.at(-1).startsWith(prefix));
+@@ -105,6 +130,10 @@ export function groupsOf(files) {
+       });
+     }
+   }
++  for (const [name, files] of Object.entries(EXPLICIT_GROUPS)) {
++    const members = files.filter((file) => present.has(file));
++    if (members.length > 0) groups.push({ name, files: members });
++  }
+   return groups;
+ }
+ 
+@@ -116,6 +145,10 @@ export function writeManifest({ files, artifacts, causes }, generatedBy) {
+     files: list,
+     artifacts: [...artifacts].sort(),
+     causes,
++    // `bunEnv()` reads this to hand the multitenancy groups MT_TEST_* instead
++    // of the shared URL. Written here so regenerating the groups cannot
++    // silently drop the island declaration.
++    directoryIslands: [...DIRECTORY_ISLANDS],
+   };
+   writeFileSync(MANIFEST, `${JSON.stringify(payload, null, 1)}\n`);
+   return payload.groups.length;
+diff --git a/server/drizzle.config.ts b/server/drizzle.config.ts
+index 172623d0..6a5cdb16 100644
+--- a/server/drizzle.config.ts
++++ b/server/drizzle.config.ts
+@@ -37,6 +37,7 @@ export default defineConfig({
+     "./src/db/schema/craft.ts",
+     "./src/db/schema/components.ts",
+     "./src/db/schema/plugins.ts",
++    "./src/db/schema/enterprise-plugin-packages.ts",
+     "./src/db/schema/work.ts",
+     "./src/db/schema/voice.ts",
+     "./src/db/schema/learning.ts",
+diff --git a/server/scripts/multitenancy/migrate-test.ts b/server/scripts/multitenancy/migrate-test.ts
+index 68f41dc2..b7912095 100644
+--- a/server/scripts/multitenancy/migrate-test.ts
++++ b/server/scripts/multitenancy/migrate-test.ts
+@@ -2275,6 +2275,380 @@ const DELETION_SEMANTICS_TASK: TaskMigrationSpec = {
+   ],
+ };
+ 
++/**
++ * PKG02（Issue #461）：插件包范围安装存储。expand-only——仅在 MT031 之后
++ * 新增五张包安装表（install / revision / plan / resource link / change
++ * receipt）与按既有模式的最小 RLS/授权，并为 MT031 的连接器安装表补一个
++ * (tenant_id, workspace_id, id) 唯一索引（包资源链接的复合外键需要）。
++ *
++ * 关键约束：
++ *   - 全部五表 tenant + workspace 双归属；复合外键证明 install、revision、
++ *     link、change 属于同一公司与团队；连接器引用走 MT031 表，不建平行表。
++ *   - revision/link/change 追加写：operator 只有 INSERT/SELECT（无
++ *     UPDATE/DELETE）；install/plan 允许 UPDATE（计划消费、状态/代数前进）。
++ *   - data 角色只读，租户臂 + 团队臂；秘密载体键在 config/diff 存储层被拒。
++ *   - 非空幂等键按 (tenant, workspace, actor) 部分唯一。
++ * 前置：MT031（连接器安装表）。不修改任何既有表列/策略/授权。
++ */
++const PACKAGE_INSTALL_TASK: TaskMigrationSpec = {
++  id: "PKG02",
++  description:
++    "PKG02（Issue #461）：新增插件包范围安装存储（installs/revisions/plans/resource links/changes，expand-only，最小 RLS 与追加写授权；为 MT031 连接器安装表补范围唯一索引）。",
++  steps: [
++    {
++      slug: "package_tables",
++      impact:
++        "新增五张包安装表：install（范围+包唯一、正数 generation/revision、tombstone status）、revision（不可变版本/digest/闭形 config）、plan（actor/principal/操作/输入摘要/10 分钟过期/消费与结果）、resource link（种类互斥 CHECK，连接器复合外键指向 MT031 install 表）、change（追加回执 + 非空幂等键部分唯一）。并为 enterprise_plugin_installs 补 (tenant_id, workspace_id, id) 唯一索引（资源链接复合外键所需）。不改既有表列/策略。",
++      objects: [
++        "enterprise_package_installs",
++        "enterprise_package_revisions",
++        "enterprise_package_plans",
++        "enterprise_package_resource_links",
++        "enterprise_package_changes",
++        "enterprise_plugin_installs",
++      ],
++      statements: [
++        'CREATE TABLE "enterprise_package_installs" (\n' +
++          '\t"tenant_id" text NOT NULL,\n' +
++          '\t"id" text NOT NULL,\n' +
++          '\t"workspace_id" text NOT NULL,\n' +
++          '\t"package_key" text NOT NULL,\n' +
++          '\t"current_version" text NOT NULL,\n' +
++          "\t\"status\" text DEFAULT 'enabled' NOT NULL,\n" +
++          '\t"generation" integer DEFAULT 1 NOT NULL,\n' +
++          '\t"revision" integer DEFAULT 1 NOT NULL,\n' +
++          '\t"installed_by" text NOT NULL,\n' +
++          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
++          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
++          '\tCONSTRAINT "enterprise_package_installs_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
++          "\tCONSTRAINT \"enterprise_package_install_status\" CHECK (\"enterprise_package_installs\".\"status\" in ('enabled','disabled','uninstalled')),\n" +
++          '\tCONSTRAINT "enterprise_package_install_counters" CHECK ("enterprise_package_installs"."generation" > 0 and "enterprise_package_installs"."revision" > 0),\n' +
++          '\tCONSTRAINT "enterprise_package_install_package_key" CHECK (char_length("enterprise_package_installs"."package_key") between 3 and 129 and "enterprise_package_installs"."package_key" like \'%/%\')\n' +
++          ");",
++        'ALTER TABLE "enterprise_package_installs" ADD CONSTRAINT "enterprise_package_installs_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_installs" ADD CONSTRAINT "enterprise_package_installs_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_installs" ADD CONSTRAINT "enterprise_package_installs_tenant_id_installed_by_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","installed_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
++        'CREATE UNIQUE INDEX "enterprise_package_install_scope_key_uq" ON "enterprise_package_installs" ("tenant_id","workspace_id","package_key");',
++        'CREATE INDEX "enterprise_package_install_workspace_idx" ON "enterprise_package_installs" ("tenant_id","workspace_id","package_key");',
++        'CREATE UNIQUE INDEX "enterprise_plugin_install_scope_id_uq" ON "enterprise_plugin_installs" ("tenant_id","workspace_id","id");',
++        'CREATE TABLE "enterprise_package_revisions" (\n' +
++          '\t"tenant_id" text NOT NULL,\n' +
++          '\t"install_id" text NOT NULL,\n' +
++          '\t"revision" integer NOT NULL,\n' +
++          '\t"release_version" text NOT NULL,\n' +
++          '\t"artifact_digest" text NOT NULL,\n' +
++          '\t"config" jsonb NOT NULL,\n' +
++          '\t"created_by" text NOT NULL,\n' +
++          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
++          '\tCONSTRAINT "enterprise_package_revisions_tenant_id_install_id_revision_pk" PRIMARY KEY("tenant_id","install_id","revision"),\n' +
++          '\tCONSTRAINT "enterprise_package_revision_positive" CHECK ("enterprise_package_revisions"."revision" > 0),\n' +
++          '\tCONSTRAINT "enterprise_package_revision_digest" CHECK ("enterprise_package_revisions"."artifact_digest" ~ \'^[0-9a-f]{64}$\'),\n' +
++          "\tCONSTRAINT \"enterprise_package_revision_config_shape\" CHECK (jsonb_typeof(\"enterprise_package_revisions\".\"config\") = 'object' and not \"enterprise_package_revisions\".\"config\" ?| array['envelope','plaintext','secret','password','token','apiKey','api_key','secretRef','encryptedValue','encrypted_value'])\n" +
++          ");",
++        'ALTER TABLE "enterprise_package_revisions" ADD CONSTRAINT "enterprise_package_revisions_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_revisions" ADD CONSTRAINT "enterprise_package_revisions_tenant_id_install_id_enterprise_package_installs_tenant_id_id_fk" FOREIGN KEY ("tenant_id","install_id") REFERENCES "public"."enterprise_package_installs"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_revisions" ADD CONSTRAINT "enterprise_package_revisions_tenant_id_created_by_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","created_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
++        'CREATE INDEX "enterprise_package_revision_install_idx" ON "enterprise_package_revisions" ("tenant_id","install_id","revision");',
++        'CREATE TABLE "enterprise_package_plans" (\n' +
++          '\t"tenant_id" text NOT NULL,\n' +
++          '\t"id" text NOT NULL,\n' +
++          '\t"workspace_id" text NOT NULL,\n' +
++          '\t"actor_id" text NOT NULL,\n' +
++          '\t"principal_id" text NOT NULL,\n' +
++          '\t"operation" text NOT NULL,\n' +
++          '\t"package_key" text NOT NULL,\n' +
++          '\t"version" text NOT NULL,\n' +
++          '\t"artifact_digest" text NOT NULL,\n' +
++          '\t"expected_revision" integer,\n' +
++          '\t"canonical_input" jsonb NOT NULL,\n' +
++          '\t"input_digest" text NOT NULL,\n' +
++          '\t"preview" jsonb NOT NULL,\n' +
++          '\t"expires_at" timestamp with time zone NOT NULL,\n' +
++          '\t"consumed_at" timestamp with time zone,\n' +
++          '\t"result" jsonb,\n' +
++          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
++          '\tCONSTRAINT "enterprise_package_plans_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
++          "\tCONSTRAINT \"enterprise_package_plan_operation\" CHECK (\"enterprise_package_plans\".\"operation\" in ('install','upgrade','rollback')),\n" +
++          '\tCONSTRAINT "enterprise_package_plan_expected_revision" CHECK ("enterprise_package_plans"."expected_revision" is null or "enterprise_package_plans"."expected_revision" > 0),\n' +
++          '\tCONSTRAINT "enterprise_package_plan_actor_shape" CHECK (char_length("enterprise_package_plans"."actor_id") between 1 and 128 and char_length("enterprise_package_plans"."principal_id") between 1 and 128),\n' +
++          '\tCONSTRAINT "enterprise_package_plan_digests" CHECK ("enterprise_package_plans"."artifact_digest" ~ \'^[0-9a-f]{64}$\' and "enterprise_package_plans"."input_digest" ~ \'^[0-9a-f]{64}$\')\n' +
++          ");",
++        'ALTER TABLE "enterprise_package_plans" ADD CONSTRAINT "enterprise_package_plans_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_plans" ADD CONSTRAINT "enterprise_package_plans_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_plans" ADD CONSTRAINT "enterprise_package_plans_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
++        'CREATE INDEX "enterprise_package_plan_expiry_idx" ON "enterprise_package_plans" ("tenant_id","expires_at");',
++        'CREATE TABLE "enterprise_package_resource_links" (\n' +
++          '\t"tenant_id" text NOT NULL,\n' +
++          '\t"install_id" text NOT NULL,\n' +
++          '\t"revision" integer NOT NULL,\n' +
++          '\t"resource_id" text NOT NULL,\n' +
++          '\t"workspace_id" text NOT NULL,\n' +
++          '\t"kind" text NOT NULL,\n' +
++          '\t"existing_skill_id" text,\n' +
++          '\t"connector_install_id" text,\n' +
++          '\t"expert_template_ref" text,\n' +
++          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
++          '\tCONSTRAINT "enterprise_package_link_pk" PRIMARY KEY("tenant_id","install_id","revision","resource_id"),\n' +
++          "\tCONSTRAINT \"enterprise_package_link_kind\" CHECK (\"enterprise_package_resource_links\".\"kind\" in ('skill','expertTemplate','managedConnector')),\n" +
++          '\tCONSTRAINT "enterprise_package_link_reference_shape" CHECK (("enterprise_package_resource_links"."kind" = \'skill\' and "enterprise_package_resource_links"."existing_skill_id" is null and "enterprise_package_resource_links"."connector_install_id" is null and "enterprise_package_resource_links"."expert_template_ref" is null) or ("enterprise_package_resource_links"."kind" = \'managedConnector\' and "enterprise_package_resource_links"."existing_skill_id" is null and "enterprise_package_resource_links"."connector_install_id" is not null and "enterprise_package_resource_links"."expert_template_ref" is null) or ("enterprise_package_resource_links"."kind" = \'expertTemplate\' and "enterprise_package_resource_links"."existing_skill_id" is null and "enterprise_package_resource_links"."connector_install_id" is null and "enterprise_package_resource_links"."expert_template_ref" is not null))\n' +
++          ");",
++        'ALTER TABLE "enterprise_package_resource_links" ADD CONSTRAINT "enterprise_package_link_tenant_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_resource_links" ADD CONSTRAINT "enterprise_package_link_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_resource_links" ADD CONSTRAINT "enterprise_package_link_revision_fk" FOREIGN KEY ("tenant_id","install_id","revision") REFERENCES "public"."enterprise_package_revisions"("tenant_id","install_id","revision") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_resource_links" ADD CONSTRAINT "enterprise_package_link_connector_fk" FOREIGN KEY ("tenant_id","workspace_id","connector_install_id") REFERENCES "public"."enterprise_plugin_installs"("tenant_id","workspace_id","id") ON DELETE restrict ON UPDATE no action;',
++        'CREATE INDEX "enterprise_package_link_revision_idx" ON "enterprise_package_resource_links" ("tenant_id","install_id","revision");',
++        'CREATE TABLE "enterprise_package_changes" (\n' +
++          '\t"tenant_id" text NOT NULL,\n' +
++          '\t"change_id" text NOT NULL,\n' +
++          '\t"workspace_id" text NOT NULL,\n' +
++          '\t"install_id" text NOT NULL,\n' +
++          '\t"revision" integer NOT NULL,\n' +
++          '\t"actor_id" text NOT NULL,\n' +
++          '\t"action" text NOT NULL,\n' +
++          '\t"diff" jsonb NOT NULL,\n' +
++          "\t\"idempotency_key\" text DEFAULT '' NOT NULL,\n" +
++          '\t"request_digest" text NOT NULL,\n' +
++          '\t"result_json" jsonb NOT NULL,\n' +
++          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
++          '\tCONSTRAINT "enterprise_package_changes_tenant_id_change_id_pk" PRIMARY KEY("tenant_id","change_id"),\n' +
++          "\tCONSTRAINT \"enterprise_package_change_action\" CHECK (\"enterprise_package_changes\".\"action\" in ('install','upgrade','rollback')),\n" +
++          '\tCONSTRAINT "enterprise_package_change_key" CHECK (char_length("enterprise_package_changes"."idempotency_key") <= 128 and "enterprise_package_changes"."request_digest" ~ \'^[0-9a-f]{64}$\'),\n' +
++          "\tCONSTRAINT \"enterprise_package_change_diff_shape\" CHECK (jsonb_typeof(\"enterprise_package_changes\".\"diff\") = 'object' and not \"enterprise_package_changes\".\"diff\" ?| array['envelope','plaintext','secret','password','token','apiKey','api_key','secretRef','encryptedValue','encrypted_value'])\n" +
++          ");",
++        'ALTER TABLE "enterprise_package_changes" ADD CONSTRAINT "enterprise_package_changes_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_changes" ADD CONSTRAINT "enterprise_package_changes_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_changes" ADD CONSTRAINT "enterprise_package_changes_tenant_id_install_id_revision_enterprise_package_revisions_tenant_id_install_id_revision_fk" FOREIGN KEY ("tenant_id","install_id","revision") REFERENCES "public"."enterprise_package_revisions"("tenant_id","install_id","revision") ON DELETE cascade ON UPDATE no action;',
++        'CREATE UNIQUE INDEX "enterprise_package_change_idempotency_uq" ON "enterprise_package_changes" ("tenant_id","workspace_id","actor_id","idempotency_key") WHERE "idempotency_key" <> \'\';',
++        'CREATE INDEX "enterprise_package_change_install_idx" ON "enterprise_package_changes" ("tenant_id","install_id","revision");',
++      ],
++    },
++    {
++      slug: "package_rls_policies",
++      impact:
++        "五张新表的 FORCE RLS 与最小授权：data 角色只读（租户臂 + 团队臂；revision 经 install 团队存在性）；operator 角色 install/plan 可读可写（plan 仅 UPDATE 消费）、revision/link/change 追加写（INSERT+SELECT，无 UPDATE/DELETE）；directory 零授权。",
++      objects: [
++        "enterprise_package_installs",
++        "enterprise_package_revisions",
++        "enterprise_package_plans",
++        "enterprise_package_resource_links",
++        "enterprise_package_changes",
++      ],
++      statements: [
++        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_package_installs" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
++        'ALTER TABLE "enterprise_package_installs" ENABLE ROW LEVEL SECURITY;',
++        'ALTER TABLE "enterprise_package_installs" FORCE ROW LEVEL SECURITY;',
++        'CREATE POLICY "enterprise_package_install_data_read" ON "enterprise_package_installs"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_package_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_installs"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_package_install_operator_read" ON "enterprise_package_installs"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_package_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_package_install_operator_insert" ON "enterprise_package_installs"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_package_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_package_install_operator_update" ON "enterprise_package_installs"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_package_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'))\n  WITH CHECK ("enterprise_package_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'GRANT SELECT ON TABLE "enterprise_package_installs" TO ob_ent_data, ob_ent_operator;',
++        'GRANT INSERT, UPDATE ON TABLE "enterprise_package_installs" TO ob_ent_operator;',
++        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_package_revisions" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
++        'ALTER TABLE "enterprise_package_revisions" ENABLE ROW LEVEL SECURITY;',
++        'ALTER TABLE "enterprise_package_revisions" FORCE ROW LEVEL SECURITY;',
++        'CREATE POLICY "enterprise_package_revision_data_read" ON "enterprise_package_revisions"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_package_revisions"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND exists (select 1 from "enterprise_package_installs" i where i."tenant_id" = "enterprise_package_revisions"."tenant_id" and i."id" = "enterprise_package_revisions"."install_id" and i."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\')));',
++        'CREATE POLICY "enterprise_package_revision_operator_read" ON "enterprise_package_revisions"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_package_revisions"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_package_revision_operator_insert" ON "enterprise_package_revisions"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_package_revisions"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'GRANT SELECT ON TABLE "enterprise_package_revisions" TO ob_ent_data, ob_ent_operator;',
++        'GRANT INSERT ON TABLE "enterprise_package_revisions" TO ob_ent_operator;',
++        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_package_plans" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
++        'ALTER TABLE "enterprise_package_plans" ENABLE ROW LEVEL SECURITY;',
++        'ALTER TABLE "enterprise_package_plans" FORCE ROW LEVEL SECURITY;',
++        'CREATE POLICY "enterprise_package_plan_data_read" ON "enterprise_package_plans"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_package_plans"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_plans"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_package_plan_operator_read" ON "enterprise_package_plans"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_package_plans"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_package_plan_operator_insert" ON "enterprise_package_plans"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_package_plans"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_package_plan_operator_update" ON "enterprise_package_plans"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_package_plans"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'))\n  WITH CHECK ("enterprise_package_plans"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'GRANT SELECT ON TABLE "enterprise_package_plans" TO ob_ent_data, ob_ent_operator;',
++        'GRANT INSERT, UPDATE ON TABLE "enterprise_package_plans" TO ob_ent_operator;',
++        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_package_resource_links" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
++        'ALTER TABLE "enterprise_package_resource_links" ENABLE ROW LEVEL SECURITY;',
++        'ALTER TABLE "enterprise_package_resource_links" FORCE ROW LEVEL SECURITY;',
++        'CREATE POLICY "enterprise_package_link_data_read" ON "enterprise_package_resource_links"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_package_resource_links"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_resource_links"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_package_link_operator_read" ON "enterprise_package_resource_links"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_package_resource_links"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_package_link_operator_insert" ON "enterprise_package_resource_links"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_package_resource_links"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'GRANT SELECT ON TABLE "enterprise_package_resource_links" TO ob_ent_data, ob_ent_operator;',
++        'GRANT INSERT ON TABLE "enterprise_package_resource_links" TO ob_ent_operator;',
++        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_package_changes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
++        'ALTER TABLE "enterprise_package_changes" ENABLE ROW LEVEL SECURITY;',
++        'ALTER TABLE "enterprise_package_changes" FORCE ROW LEVEL SECURITY;',
++        'CREATE POLICY "enterprise_package_change_data_read" ON "enterprise_package_changes"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_package_changes"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_changes"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_package_change_operator_read" ON "enterprise_package_changes"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_package_changes"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_package_change_operator_insert" ON "enterprise_package_changes"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_package_changes"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'GRANT SELECT ON TABLE "enterprise_package_changes" TO ob_ent_data, ob_ent_operator;',
++        'GRANT INSERT ON TABLE "enterprise_package_changes" TO ob_ent_operator;',
++      ],
++    },
++    {
++      slug: "package_hardening",
++      impact:
++        '加固（追加步骤，不重写已应用的 0001/0002）：删除与主键/唯一索引重复的三个索引；把 revision config、change diff 的秘密载体 CHECK 改为递归检查任意深度的键（旧 CHECK 只看顶层键，嵌套 {"nested":{"token":…}} 可通过）；为 plan 的 canonical_input 新增同样的闭形与递归秘密 CHECK。',
++      objects: [
++        "enterprise_package_installs",
++        "enterprise_package_revisions",
++        "enterprise_package_plans",
++        "enterprise_package_resource_links",
++        "enterprise_package_changes",
++      ],
++      statements: [
++        // The three indexes below duplicate a PK or UNIQUE prefix.
++        'DROP INDEX IF EXISTS "enterprise_package_install_workspace_idx";',
++        'DROP INDEX IF EXISTS "enterprise_package_revision_install_idx";',
++        'DROP INDEX IF EXISTS "enterprise_package_link_revision_idx";',
++        'ALTER TABLE "enterprise_package_revisions" DROP CONSTRAINT IF EXISTS "enterprise_package_revision_config_shape";',
++        `ALTER TABLE "enterprise_package_revisions" ADD CONSTRAINT "enterprise_package_revision_config_shape" CHECK (jsonb_typeof("enterprise_package_revisions"."config") = 'object' and not jsonb_path_exists("enterprise_package_revisions"."config", '$.** ? (@.type() == "object").keyvalue() ? (@.key like_regex "^(envelope|plaintext|secret|password|token|apiKey|api_key|secretRef|encryptedValue|encrypted_value)$")'));`,
++        'ALTER TABLE "enterprise_package_plans" DROP CONSTRAINT IF EXISTS "enterprise_package_plan_input_shape";',
++        `ALTER TABLE "enterprise_package_plans" ADD CONSTRAINT "enterprise_package_plan_input_shape" CHECK (jsonb_typeof("enterprise_package_plans"."canonical_input") = 'object' and not jsonb_path_exists("enterprise_package_plans"."canonical_input", '$.** ? (@.type() == "object").keyvalue() ? (@.key like_regex "^(envelope|plaintext|secret|password|token|apiKey|api_key|secretRef|encryptedValue|encrypted_value)$")'));`,
++        'ALTER TABLE "enterprise_package_changes" DROP CONSTRAINT IF EXISTS "enterprise_package_change_diff_shape";',
++        `ALTER TABLE "enterprise_package_changes" ADD CONSTRAINT "enterprise_package_change_diff_shape" CHECK (jsonb_typeof("enterprise_package_changes"."diff") = 'object' and not jsonb_path_exists("enterprise_package_changes"."diff", '$.** ? (@.type() == "object").keyvalue() ? (@.key like_regex "^(envelope|plaintext|secret|password|token|apiKey|api_key|secretRef|encryptedValue|encrypted_value)$")'));`,
++      ],
++    },
++  ],
++};
++
++/**
++ * PKG03（Issue #462）：插件包 Bot 授权与 Run 包钉扎存储。expand-only——
++ * PKG02 之后新增 enterprise_package_grants（按授权代数逐代记录，追加+撤销置
++ * revoked_at）；slice B 追加 enterprise_run_package_pins（Run 准入与运行时
++ * Skill 读取的钉扎表，规范 §6/§9）。同时为 MT031 之后的包安装表补
++ * (tenant_id, workspace_id, id) 唯一索引（授权表复合外键需要），并把
++ * enterprise_package_changes 的动作 CHECK 扩到 'grant'/'revoke'。
++ *
++ * 关键约束：
++ *   - 授权行主键 (tenant_id, install_id, generation, bot_id, resource_id)；
++ *     grant revision = 该 (install, bot) 的去重 generation 计数——每次授予/
++ *     撤销置换写入新代数，撤销因此同样推进 revision（旧审批不复活）。
++ *   - 两面 tool_ref CHECK：skill 行固定空串，connectorTool 行必须非空
++ *     （用 CHECK 区分两类授权行，不用 SQL NULL 技巧）。
++ *   - FK (tenant_id, bot_id) → enterprise_bot_ownership（MT016 归属权威，
++ *     钉死公司）；FK (tenant_id, workspace_id, install_id) → 包安装表
++ *     （钉死团队）；granted_by 复合外键钉公司成员关系。
++ *   - 非空 revoked_at 的行上 (tenant, install, bot, resource, tool_ref)
++ *     部分唯一：同一资源同一 Bot 至多一条活跃授权。
++ *   - RLS 同 installs 形态：data 只读租户+团队臂；operator 租户臂读 +
++ *     INSERT + UPDATE（UPDATE 仅服务撤销写 revoked_at，无 DELETE）；
++ *     directory 零授权。FORCE RLS。
++ *   - Run 钉扎表主键 (tenant_id, run_id, attempt_generation, install_id)；
++ *     FK (tenant_id, run_id) → enterprise_runs、
++ *     FK (tenant_id, workspace_id, install_id) → 包安装表。RLS 同 installs
++ *     形态（data 读租户+团队臂），另按规范 §6 给 data 开最小 INSERT
++ *     （Run 写事务与 pin 同事务写入，租户+团队臂）；operator 仅读+INSERT
++ *     （无 UPDATE/DELETE——钉扎行不可变）。directory 零授权。
++ * 前置：PKG02（包安装表与 MT031 连接器权威）、enterprise_runs。不修改任何
++ * 已入账步骤的语句（journal 逐字核对；新步骤只允许追加在尾部）。
++ */
++const PACKAGE_GRANT_TASK: TaskMigrationSpec = {
++  id: "PKG03",
++  description:
++    "PKG03（Issue #462）：新增插件包 Bot 授权表 enterprise_package_grants（expand-only，最小 RLS 与授权；为包安装表补范围唯一索引；changes 动作 CHECK 扩到 grant/revoke）。",
++  steps: [
++    {
++      slug: "package_grant_table",
++      impact:
++        "新增 enterprise_package_grants 表：主键 (tenant_id, install_id, generation, bot_id, resource_id)；resource_kind/tool_ref 两面 CHECK（skill 行 tool_ref 固定空串，connectorTool 行必须非空）；generation 正数 CHECK；复合外键钉 tenants/workspaces/包安装表/MT016 Bot 归属/公司成员关系；活跃授权 (tenant, install, bot, resource, tool_ref) 部分唯一。并为 enterprise_package_installs 补 (tenant_id, workspace_id, id) 唯一索引（授权复合外键所需）。不改既有表列/策略。",
++      objects: ["enterprise_package_grants", "enterprise_package_installs"],
++      statements: [
++        'CREATE UNIQUE INDEX "enterprise_package_install_scope_id_uq" ON "enterprise_package_installs" ("tenant_id","workspace_id","id");',
++        'CREATE TABLE "enterprise_package_grants" (\n' +
++          '\t"tenant_id" text NOT NULL,\n' +
++          '\t"install_id" text NOT NULL,\n' +
++          '\t"generation" integer NOT NULL,\n' +
++          '\t"bot_id" text NOT NULL,\n' +
++          '\t"resource_id" text NOT NULL,\n' +
++          '\t"workspace_id" text NOT NULL,\n' +
++          "\t\"resource_kind\" text DEFAULT 'skill' NOT NULL,\n" +
++          "\t\"tool_ref\" text DEFAULT '' NOT NULL,\n" +
++          '\t"granted_by" text NOT NULL,\n' +
++          '\t"granted_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
++          '\t"revoked_at" timestamp with time zone,\n' +
++          '\tCONSTRAINT "enterprise_package_grant_pk" PRIMARY KEY("tenant_id","install_id","generation","bot_id","resource_id"),\n' +
++          '\tCONSTRAINT "enterprise_package_grant_generation" CHECK ("enterprise_package_grants"."generation" > 0),\n' +
++          '\tCONSTRAINT "enterprise_package_grant_tool_ref" CHECK (("enterprise_package_grants"."resource_kind" = \'skill\' and "enterprise_package_grants"."tool_ref" = \'\') or ("enterprise_package_grants"."resource_kind" = \'connectorTool\' and "enterprise_package_grants"."tool_ref" <> \'\')),\n' +
++          '\tCONSTRAINT "enterprise_package_grant_ids" CHECK (char_length("enterprise_package_grants"."resource_id") between 1 and 64 and char_length("enterprise_package_grants"."bot_id") between 1 and 256)\n' +
++          ");",
++        'ALTER TABLE "enterprise_package_grants" ADD CONSTRAINT "enterprise_package_grant_tenant_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_grants" ADD CONSTRAINT "enterprise_package_grant_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_grants" ADD CONSTRAINT "enterprise_package_grant_install_fk" FOREIGN KEY ("tenant_id","workspace_id","install_id") REFERENCES "public"."enterprise_package_installs"("tenant_id","workspace_id","id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_grants" ADD CONSTRAINT "enterprise_package_grant_bot_fk" FOREIGN KEY ("tenant_id","bot_id") REFERENCES "public"."enterprise_bot_ownership"("tenant_id","agent_id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_package_grants" ADD CONSTRAINT "enterprise_package_grant_granted_by_fk" FOREIGN KEY ("tenant_id","granted_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
++        'CREATE UNIQUE INDEX "enterprise_package_grant_active_uq" ON "enterprise_package_grants" ("tenant_id","install_id","bot_id","resource_id","tool_ref") WHERE "revoked_at" is null;',
++      ],
++    },
++    {
++      slug: "package_grant_rls",
++      impact:
++        "enterprise_package_grants 的 FORCE RLS 与最小授权：data 只读（租户臂 + 团队臂）；operator 租户臂读 + INSERT + UPDATE（撤销写 revoked_at 所需，无 DELETE）；directory 零授权。",
++      objects: ["enterprise_package_grants"],
++      statements: [
++        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_package_grants" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
++        'ALTER TABLE "enterprise_package_grants" ENABLE ROW LEVEL SECURITY;',
++        'ALTER TABLE "enterprise_package_grants" FORCE ROW LEVEL SECURITY;',
++        'CREATE POLICY "enterprise_package_grant_data_read" ON "enterprise_package_grants"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_package_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_grants"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_package_grant_operator_read" ON "enterprise_package_grants"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_package_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_package_grant_operator_insert" ON "enterprise_package_grants"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_package_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_package_grant_operator_update" ON "enterprise_package_grants"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_package_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'))\n  WITH CHECK ("enterprise_package_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'GRANT SELECT ON TABLE "enterprise_package_grants" TO ob_ent_data, ob_ent_operator;',
++        'GRANT INSERT, UPDATE ON TABLE "enterprise_package_grants" TO ob_ent_operator;',
++      ],
++    },
++    {
++      slug: "package_changes_grant_actions",
++      impact:
++        "把 enterprise_package_changes 的动作 CHECK 从 ('install','upgrade','rollback') 扩到含 'grant'/'revoke'（授权与撤权回执与领域变更同事务追加；约束只放宽不收紧，expand-only）。",
++      objects: ["enterprise_package_changes"],
++      statements: [
++        'ALTER TABLE "enterprise_package_changes" DROP CONSTRAINT "enterprise_package_change_action";',
++        "ALTER TABLE \"enterprise_package_changes\" ADD CONSTRAINT \"enterprise_package_change_action\" CHECK (\"enterprise_package_changes\".\"action\" in ('install','upgrade','rollback','grant','revoke'));",
++      ],
++    },
++    {
++      slug: "package_run_pin_table",
++      impact:
++        "slice B：新增 enterprise_run_package_pins（Run 准入经包运行时模块写入的钉扎表）。主键 (tenant_id, run_id, attempt_generation, install_id)；attempt_generation/revision/grant_revision 正数 CHECK；release_digest 64 位十六进制 CHECK；allowed_resource_ids jsonb 数组（≤256）CHECK；复合外键钉 tenants/workspaces/enterprise_runs/包安装表（复用 PKG03 第 1 步的范围唯一索引）。不可变行：无 UPDATE/DELETE 通道。",
++      objects: ["enterprise_run_package_pins", "enterprise_runs"],
++      statements: [
++        'CREATE TABLE "enterprise_run_package_pins" (\n' +
++          '\t"tenant_id" text NOT NULL,\n' +
++          '\t"run_id" uuid NOT NULL,\n' +
++          '\t"attempt_generation" integer NOT NULL,\n' +
++          '\t"install_id" text NOT NULL,\n' +
++          '\t"workspace_id" text NOT NULL,\n' +
++          '\t"revision" integer NOT NULL,\n' +
++          '\t"release_digest" text NOT NULL,\n' +
++          '\t"grant_revision" integer NOT NULL,\n' +
++          '\t"allowed_resource_ids" jsonb NOT NULL,\n' +
++          '\t"pinned_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
++          '\tCONSTRAINT "enterprise_run_package_pin_pk" PRIMARY KEY("tenant_id","run_id","attempt_generation","install_id"),\n' +
++          '\tCONSTRAINT "enterprise_run_package_pin_generation" CHECK ("enterprise_run_package_pins"."attempt_generation" > 0),\n' +
++          '\tCONSTRAINT "enterprise_run_package_pin_revision" CHECK ("enterprise_run_package_pins"."revision" > 0 and "enterprise_run_package_pins"."grant_revision" > 0),\n' +
++          '\tCONSTRAINT "enterprise_run_package_pin_digest" CHECK ("enterprise_run_package_pins"."release_digest" ~ \'^[0-9a-f]{64}$\'),\n' +
++          '\tCONSTRAINT "enterprise_run_package_pin_allowed_shape" CHECK (jsonb_typeof("enterprise_run_package_pins"."allowed_resource_ids") = \'array\' and jsonb_array_length("enterprise_run_package_pins"."allowed_resource_ids") <= 256)\n' +
++          ");",
++        'ALTER TABLE "enterprise_run_package_pins" ADD CONSTRAINT "enterprise_run_package_pin_tenant_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_run_package_pins" ADD CONSTRAINT "enterprise_run_package_pin_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_run_package_pins" ADD CONSTRAINT "enterprise_run_package_pin_run_fk" FOREIGN KEY ("tenant_id","run_id") REFERENCES "public"."enterprise_runs"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
++        'ALTER TABLE "enterprise_run_package_pins" ADD CONSTRAINT "enterprise_run_package_pin_install_fk" FOREIGN KEY ("tenant_id","workspace_id","install_id") REFERENCES "public"."enterprise_package_installs"("tenant_id","workspace_id","id") ON DELETE cascade ON UPDATE no action;',
++      ],
++    },
++    {
++      slug: "package_run_pin_rls",
++      impact:
++        "enterprise_run_package_pins 的 FORCE RLS 与最小授权：data 读租户+团队臂 + 最小 INSERT（租户+团队臂——Run 写事务与 pin 同事务提交，规范 §6/§9）；operator 仅读+INSERT（租户臂，装配与测试通道）；无 UPDATE/DELETE；directory 零授权。",
++      objects: ["enterprise_run_package_pins"],
++      statements: [
++        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_run_package_pins" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
++        'ALTER TABLE "enterprise_run_package_pins" ENABLE ROW LEVEL SECURITY;',
++        'ALTER TABLE "enterprise_run_package_pins" FORCE ROW LEVEL SECURITY;',
++        'CREATE POLICY "enterprise_run_package_pin_data_read" ON "enterprise_run_package_pins"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_run_package_pins"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_run_package_pins"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_run_package_pin_data_insert" ON "enterprise_run_package_pins"\n  FOR INSERT TO ob_ent_data\n  WITH CHECK ("enterprise_run_package_pins"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_run_package_pins"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_run_package_pin_operator_read" ON "enterprise_run_package_pins"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_run_package_pins"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'CREATE POLICY "enterprise_run_package_pin_operator_insert" ON "enterprise_run_package_pins"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_run_package_pins"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
++        'GRANT SELECT, INSERT ON TABLE "enterprise_run_package_pins" TO ob_ent_data;',
++        'GRANT SELECT, INSERT ON TABLE "enterprise_run_package_pins" TO ob_ent_operator;',
++      ],
++    },
++  ],
++};
++
+ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
+   [SELF_CHECK_TASK.id, SELF_CHECK_TASK],
+   [WORKSPACE_MEMBERSHIP_TASK.id, WORKSPACE_MEMBERSHIP_TASK],
+@@ -2294,6 +2668,8 @@ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
+   [OAUTH_STATE_TASK.id, OAUTH_STATE_TASK],
+   [COMPANY_CALL_ATTRIBUTION_TASK.id, COMPANY_CALL_ATTRIBUTION_TASK],
+   [PLUGIN_CATALOG_TASK.id, PLUGIN_CATALOG_TASK],
++  [PACKAGE_INSTALL_TASK.id, PACKAGE_INSTALL_TASK],
++  [PACKAGE_GRANT_TASK.id, PACKAGE_GRANT_TASK],
+   [SCAN_SCOPE_REBUILD_TASK.id, SCAN_SCOPE_REBUILD_TASK],
+   [PERSONAL_BOT_TASK.id, PERSONAL_BOT_TASK],
+   [CREDENTIAL_LEASE_TASK.id, CREDENTIAL_LEASE_TASK],
+diff --git a/server/src/app.ts b/server/src/app.ts
+index d779157e..1d668d64 100644
+--- a/server/src/app.ts
++++ b/server/src/app.ts
+@@ -575,6 +575,12 @@ export function createApp(
+     enterpriseConversations?: Hono;
+     /** MT006 (issue #49): workspace scope listing + team administration routes. */
+     enterpriseWorkspaceScope?: Hono;
++    /**
++     * PKG01: read-only plugin-package marketplace. Mounted by the assembly even
++     * when its catalogue could not load — those routes answer 503, never an
++     * empty success page.
++     */
++    pluginPackages?: Hono;
+     /**
+      * MT122 (issue #165): the deployment main entry's request-context seam.
+      * Present, the business API mounts the entry middleware after the
+@@ -969,6 +975,9 @@ export function createApp(
+       coworker.enterpriseWorkspaceScope,
+     );
+   }
++  if (coworker?.pluginPackages) {
++    app.route("/api/enterprise/plugin-packages", coworker.pluginPackages);
++  }
+   /*
+    * Registering an identity provider is an administrator's decision, not a signed-in one.
+    *
+diff --git a/server/src/config.ts b/server/src/config.ts
+index a25e4133..73f95ae0 100644
+--- a/server/src/config.ts
++++ b/server/src/config.ts
+@@ -41,6 +41,7 @@ import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
+ // without putting it in this module's eager import graph. Node has no such global, so the same
+ // laziness needs a handle.
+ import { createRequire } from "node:module";
++import { fileURLToPath } from "node:url";
+ 
+ const nodeRequire = createRequire(import.meta.url);
+ 
+@@ -267,6 +268,13 @@ export type DeploymentConfig = {
+   /** Restricted operator-channel database; unwired → workspace admin routes answer 503. */
+   enterpriseOperatorDatabaseUrl?: string;
+   tenantStorageRuntimeDatabaseUrl?: string;
++  /**
++   * Content-addressed root of trusted plugin-package artifacts
++   * (`sha256/<digest>/`). The deploy build writes it with
++   * `scripts/plugin-packages/build.ts`; the default sits beside the packaged
++   * marketplace index at the repository root. No client ever sees it.
++   */
++  pluginArtifactRoot: string;
+   keyEncryptionKey: string;
+   /**
+    * Authentication for the bundled Bot and/or the installed picked harness.
+@@ -2936,6 +2944,9 @@ export function loadConfig(
+       "tenantStorageRuntimeDatabaseUrl",
+       optional(environment, "OPENBOT_TENANT_STORAGE_RUNTIME_DATABASE_URL"),
+     ),
++    pluginArtifactRoot:
++      optional(environment, "OPENBOT_PLUGIN_ARTIFACT_ROOT") ??
++      fileURLToPath(new URL("../../plugins/.artifacts", import.meta.url)),
+     keyEncryptionKey: deploymentKey,
+     ...(webBotAuth ? { webBotAuth } : {}),
+     ...(managedAgent ? { managedAgent } : {}),
+diff --git a/server/src/db/schema/index.ts b/server/src/db/schema/index.ts
+index f41c8d0c..78b617cf 100644
+--- a/server/src/db/schema/index.ts
++++ b/server/src/db/schema/index.ts
+@@ -36,6 +36,7 @@ export * from "./enterprise-governance-policy";
+ export * from "./enterprise-model-routes";
+ export * from "./enterprise-oauth-state";
+ export * from "./enterprise-personal-bot";
++export * from "./enterprise-plugin-packages";
+ export * from "./enterprise-plugins";
+ export * from "./enterprise-runs";
+ export * from "./enterprise-runtime-config";
+diff --git a/server/src/enterprise/runs/runner.ts b/server/src/enterprise/runs/runner.ts
+index ec952a4f..85c23c9f 100644
+--- a/server/src/enterprise/runs/runner.ts
++++ b/server/src/enterprise/runs/runner.ts
+@@ -51,7 +51,11 @@ import {
+   type ModelRouteSnapshotInput,
+ } from "./model-route-catalog";
+ import { runOutputCeilingFromInput } from "./output-ceiling";
+-import { createRunService, type RunModelRoute } from "./service";
++import {
++  createRunService,
++  type RunModelRoute,
++  type RunServiceDependencies,
++} from "./service";
+ import { RunDomainError } from "./store";
+ 
+ /**
+@@ -858,6 +862,11 @@ export interface ProductionRunnerCompositionDependencies {
+   readonly gatewayEnvironment?: Record<string, string | undefined>;
+   /** Upstream fetch for the gateway dial; defaults to the runtime's fetch. */
+   readonly modelFetch?: typeof fetch;
++  /**
++   * PKG03B: package runtime `prepareWithin`, forwarded to the run service so
++   * enterprise runs pin package grants in the run transaction (Spec §9).
++   */
++  readonly preparePackageRun?: RunServiceDependencies["preparePackageRun"];
+ }
+ 
+ export interface ProductionRunnerComposition {
+@@ -897,6 +906,9 @@ export function createProductionRunnerComposition(
+     expertVersions,
+     modelRouteFor: requestBoundModelRouteFor,
+     modelCapabilitySecret: deps.modelCapabilitySecret,
++    ...(deps.preparePackageRun
++      ? { preparePackageRun: deps.preparePackageRun }
++      : {}),
+     ...(deps.leaseMilliseconds !== undefined
+       ? { leaseMilliseconds: deps.leaseMilliseconds }
+       : {}),
+diff --git a/server/src/enterprise/runs/service.ts b/server/src/enterprise/runs/service.ts
+index 3623681c..ee911c45 100644
+--- a/server/src/enterprise/runs/service.ts
++++ b/server/src/enterprise/runs/service.ts
+@@ -24,6 +24,7 @@ import {
+   reserveModelBudgetInTransaction,
+   runCeilingIdempotencyKey,
+ } from "../models/budget";
++import type { PreparePackageRunInput } from "../plugin-packages/runtime";
+ import type { DataDatabase } from "../tenancy/connections";
+ import { assertTrustedScope } from "../tenancy/store";
+ import { createModelInvocationCapabilityService } from "./model-capability";
+@@ -138,6 +139,9 @@ export async function completeRunWithLease(
+   return transition(scope, input);
+ }
+ 
++/** The restricted data-channel transaction the run writer uses. */
++type RunWriteTx = Parameters<Parameters<DataDatabase["transaction"]>[0]>[0];
++
+ export interface RunServiceDependencies {
+   readonly data: DataDatabase;
+   readonly conversations: ConversationService;
+@@ -151,6 +155,18 @@ export interface RunServiceDependencies {
+   ) => number | Promise<number>;
+   readonly modelCapabilitySecret: string | Uint8Array;
+   readonly leaseMilliseconds?: number;
++  /**
++   * PKG03B (Spec §9): package runtime `prepareWithin`, invoked INSIDE the run
++   * transaction right after the run/attempt rows are written, so a Bot with
++   * active package grants gets its pins atomically with the run. A Bot without
++   * grants pins nothing and the run starts unchanged. Absent (non-enterprise
++   * compositions) the seam is inert.
++   */
++  readonly preparePackageRun?: (
++    tx: RunWriteTx,
++    scope: PlatformScope,
++    input: PreparePackageRunInput,
++  ) => Promise<unknown>;
+ }
+ 
+ function validateStart(scope: PlatformScope, input: StartRunInput): void {
+@@ -260,6 +276,17 @@ export function createRunService(deps: RunServiceDependencies): RunService {
+           routeMaximumTokens,
+           leaseMilliseconds,
+         );
++        // PKG03B: pins commit with the run row (Spec §9 — the same restricted
++        // transaction; no ready run is ever observable without its pins). A
++        // Bot without package grants writes no pins; a storage failure here
++        // rolls the whole run start back rather than starting an unpinned run.
++        if (deps.preparePackageRun) {
++          await deps.preparePackageRun(tx, scope, {
++            botId: admission.agentId,
++            runId: created.runId,
++            attemptGeneration: created.generation,
++          });
++        }
+         await reserveModelBudgetInTransaction(
+           tx,
+           scope,
+diff --git a/server/src/enterprise/tenancy/admin-separation.ts b/server/src/enterprise/tenancy/admin-separation.ts
+index 6bc740c6..29269e5a 100644
+--- a/server/src/enterprise/tenancy/admin-separation.ts
++++ b/server/src/enterprise/tenancy/admin-separation.ts
+@@ -67,6 +67,11 @@ export interface ManagementPlaneRule {
+  *     新路由自动归平台面（保守默认），归类无需逐条登记。
+  *   - /api/enterprise/workspace-scope/admin/** —— 公司管理员管理本公司
+  *     团队与成员名单（MT006 等价集中入口的 HTTP 面）：公司/团队级。
++ *   - PKG02/PKG03：/api/enterprise/plugin-packages/plans 与
++ *     /plans/:id/apply（POST），以及 /installs/:id/bots/:botId/grants
++ *     （PUT 授权 / DELETE 撤权）——公司管理员提交插件包安装预览/确认、
++ *     为范围内 Bot 授予/撤回技能授权：公司/团队级，按精确方法+路径登记
++ *     （计划/安装/Bot ID 是路径参数）。
+  *   - /api/auth/scim/** 的 PUT/PATCH/DELETE —— SCIM 供应写动词是部署
+  *     管理员的身份管理动作（app.ts 以 ADMIN_ONLY 语义守卫）：平台级；
+  *     GET/POST 是普通身份面，不分类。
+@@ -86,6 +91,13 @@ export const MANAGEMENT_PLANE_RULES: readonly ManagementPlaneRule[] =
+       surface: "workspace-admin",
+       prefix: "/api/enterprise/workspace-scope/admin/",
+     },
++    {
++      plane: "company",
++      surface: "package-admin",
++      pathPattern:
++        /^\/api\/enterprise\/plugin-packages\/(?:plans(?:\/[^/]+\/apply)?|installs\/[^/]+\/bots\/[^/]+\/grants)$/,
++      methods: ["POST", "PUT", "DELETE"],
++    },
+     {
+       plane: "platform",
+       surface: "scim-admin",
+diff --git a/server/src/index.ts b/server/src/index.ts
+index a472b8e9..bd712248 100644
+--- a/server/src/index.ts
++++ b/server/src/index.ts
+@@ -1,4 +1,5 @@
+ import { createHash, randomUUID } from "node:crypto";
++import { readFile } from "node:fs/promises";
+ import { isDeepStrictEqual } from "node:util";
+ import type { AbstractAgent } from "@ag-ui/client";
+ import {
+@@ -331,6 +332,14 @@ import {
+   createUnavailableConversationRoutes,
+ } from "./enterprise/conversations/routes";
+ import { createConversationService } from "./enterprise/conversations/service";
++import { createPackageService } from "./enterprise/plugin-packages/install-service";
++import { createPackageMutationStore } from "./enterprise/plugin-packages/mutation-context";
++import { createPackageRuntime } from "./enterprise/plugin-packages/runtime";
++import {
++  createPluginPackageRoutes,
++  createUnavailablePluginPackageRoutes,
++} from "./enterprise/plugin-packages/routes";
++import { createPackageReadStore } from "./enterprise/plugin-packages/store";
+ import { createProductionRunnerComposition } from "./enterprise/runs/runner";
+ import {
+   verifyDataDatabase,
+@@ -538,6 +547,7 @@ import { createSignInService } from "./passwords/service";
+ import { createPasswordStore } from "./passwords/store";
+ import { createOnboardingStore } from "./people/onboarding";
+ import { createPeopleStore } from "./people/store";
++import { loadPackageCatalogue } from "./plugin-packages/catalogue";
+ import { createAccountModeSwitch } from "./plugins/account-mode";
+ import { useRoutineTools } from "./plugins/builtin-routines";
+ import { useComposioClient } from "./plugins/composio";
+@@ -1119,6 +1129,78 @@ const enterpriseWorkspaceScopeRoutes = enterpriseCapabilities
+       });
+     })()
+   : createUnavailableWorkspaceScopeRoutes();
++// PKG01 (#460) / PKG02 (#461): the plugin-package marketplace. The marketplace
++// index and the content-addressed artifacts are deployment build outputs,
++// verified once at startup. A missing index or artifact root leaves the routes
++// answering 503 — browsing is unavailable, never an empty or partly fabricated
++// catalogue. Reads reuse the enterprise entry's trusted Scope resolver (`scopes`
++// above) instead of standing up a second one.
++//
++// PKG02 adds install facts to reads (restricted data channel) and plan/apply
++// (restricted operator channel). Without a verified operator channel the
++// service still serves reads but every plan/apply answers 503
++// ADMIN_CHANNEL_UNAVAILABLE — never an owner-database fallback. Plan/apply also
++// require a verified CompanyAdminContext issued by the same authorizer the
++// workspace-scope admin routes use, so a platform administrator gains no
++// implicit company authority.
++const pluginPackageRoutes = await (async () => {
++  if (!enterpriseCapabilities) return createUnavailablePluginPackageRoutes();
++  try {
++    const indexSource = await readFile(
++      new URL("../../plugins/marketplace.json", import.meta.url),
++      "utf8",
++    );
++    const catalogue = await loadPackageCatalogue({
++      index: JSON.parse(indexSource),
++      artifactRoot: config.pluginArtifactRoot,
++    });
++    const operatorUrl = config.enterpriseOperatorDatabaseUrl;
++    const operator = operatorUrl
++      ? await (async () => {
++          let database: ReturnType<typeof createDatabase> | undefined;
++          try {
++            // createDatabase itself can reject on a malformed connection
++            // string; that failure degrades exactly like a failed capability
++            // check — plan/apply answer 503, read-only browsing stays up —
++            // instead of taking the whole catalogue route down.
++            database = createDatabase(operatorUrl);
++            return await verifyOperatorDatabase(database);
++          } catch {
++            await database?.$client.close().catch(() => {});
++            return null;
++          }
++        })()
++      : null;
++    const adminAuthorizer = createCompanyAdminAuthorizer(
++      enterpriseCapabilities.directory,
++      {
++        authenticate: authenticateWorkspaceScopeRequest,
++        selectTenant: (request) => request.headers.get("x-openbot-tenant"),
++      },
++    );
++    return createPluginPackageRoutes({
++      catalogue,
++      service: createPackageService({
++        catalogue,
++        readStore: createPackageReadStore(enterpriseCapabilities.data),
++        mutation: operator ? createPackageMutationStore(operator) : null,
++      }),
++      resolveScope: (request) => enterpriseCapabilities.scopes.resolve(request),
++      resolveAdmin: operator
++        ? (request) => adminAuthorizer.resolveAdminContext(request)
++        : undefined,
++    });
++  } catch (error) {
++    log.error(
++      {
++        type: "plugin-package-catalogue-unavailable",
++        cause: error instanceof Error ? error.message : String(error),
++      },
++      "plugin-package-catalogue-unavailable",
++    );
++    return createUnavailablePluginPackageRoutes();
++  }
++})();
+ // MT010 (Issue #53): personal-resource share rules. The decision half rides
+ // the already-verified restricted data channel; the owner-only share/revoke
+ // half needs the restricted operator channel and stays null — fail-closed,
+@@ -2957,6 +3039,14 @@ const enterpriseRunner = enterpriseCapabilities
+       // through the same encrypted credential store every other surface uses.
+       credentialEncryptionKey: config.keyEncryptionKey,
+       credentialReader: credentialStore,
++      // PKG03B (Spec §9): package pins commit with the run row, and the
++      // pinned Skill read serves package skills from those pins. Shared with
++      // the package routes' catalogue root; absent artifacts fail the READ
++      // closed per install, never the pin write.
++      preparePackageRun: createPackageRuntime({
++        data: enterpriseCapabilities.data,
++        artifactRoot: config.pluginArtifactRoot,
++      }).prepareWithin,
+     })
+   : undefined;
+ 
+@@ -6695,6 +6785,7 @@ const app = createApp(
+     teamBots,
+     enterpriseConversations: enterpriseConversationRoutes,
+     enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
++    pluginPackages: pluginPackageRoutes,
+     // MT122 (issue #165): present only when enterprise capabilities are wired;
+     // multitenancy off or a missing channel leaves the assembly byte-for-byte
+     // what it was (the middleware itself is mounted in createApp, mode-gated).
+diff --git a/server/tests/multitenancy/admin-separation.test.ts b/server/tests/multitenancy/admin-separation.test.ts
+index 04d703cf..0b33bb28 100644
+--- a/server/tests/multitenancy/admin-separation.test.ts
++++ b/server/tests/multitenancy/admin-separation.test.ts
+@@ -18,11 +18,18 @@
+ // 加三个受限角色 URL；缺配置时数据库用例显式 skip（理由写在用例名里），
+ // 绝不回退开发库，skipped 不计为通过。
+ 
+-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+ import { sql } from "drizzle-orm";
+ import type { Context } from "hono";
++import {
++  afterAll,
++  beforeAll,
++  describe,
++  expect,
++  test,
++} from "../../../tests/support/bun-test-compat";
+ import { buildInventory } from "../../scripts/multitenancy/inventory";
+ import { requireAdmin } from "../../src/auth/guards";
++import { createPluginPackageRoutes } from "../../src/enterprise/plugin-packages/routes";
+ import {
+   assertClassifiedCompanyEntrance,
+   authorizeCompanyManagementAction,
+@@ -115,6 +122,14 @@ const COMPANY_ENTRANCES = [
+   "DELETE /api/enterprise/workspace-scope/admin/teams/:workspaceId/members/:principalId",
+ ] as const;
+ 
++/** PKG02 install preview/confirm + PKG03 Bot grant/revoke: company management. */
++const PACKAGE_COMPANY_ENTRANCES = [
++  "POST /api/enterprise/plugin-packages/plans",
++  "POST /api/enterprise/plugin-packages/plans/:id/apply",
++  "PUT /api/enterprise/plugin-packages/installs/:id/bots/:botId/grants",
++  "DELETE /api/enterprise/plugin-packages/installs/:id/bots/:botId/grants",
++] as const;
++
+ function entranceOf(id: string): { method: string; path: string } {
+   const separator = id.indexOf(" ");
+   if (separator <= 0) throw new Error(`ENTRANCE_ID_MALFORMED:${id}`);
+@@ -171,6 +186,79 @@ describe("management plane classification (closed rule table)", () => {
+     for (const id of COMPANY_ENTRANCES) {
+       expect(classifyManagementPlane(entranceOf(id))).toBe("company");
+     }
++    for (const id of PACKAGE_COMPANY_ENTRANCES) {
++      expect(classifyManagementPlane(entranceOf(id))).toBe("company");
++    }
++  });
++
++  test("PKG02 plan/apply are company management; package reads are not", () => {
++    // The real route table says which entrances exist; classification must
++    // agree with it, so a future route added here without a rule fails.
++    const routes = createPluginPackageRoutes({
++      catalogue: null,
++      resolveScope: async () => {
++        throw new Error("AUTH_REQUIRED");
++      },
++    });
++    const mount = "/api/enterprise/plugin-packages";
++    const registered = (
++      routes.routes as ReadonlyArray<{ method: string; path: string }>
++    ).filter((row) => row.method !== "ALL");
++    const packageRoutes = registered
++      .map((row) => `${row.method} ${mount}${row.path === "/" ? "" : row.path}`)
++      .sort();
++    expect(packageRoutes).toEqual(
++      [
++        "GET /api/enterprise/plugin-packages",
++        "GET /api/enterprise/plugin-packages/catalogue/:publisher/:name",
++        "GET /api/enterprise/plugin-packages/installs/:id",
++        "POST /api/enterprise/plugin-packages/plans",
++        "POST /api/enterprise/plugin-packages/plans/:id/apply",
++        "PUT /api/enterprise/plugin-packages/installs/:id/bots/:botId/grants",
++        "DELETE /api/enterprise/plugin-packages/installs/:id/bots/:botId/grants",
++      ].sort(),
++    );
++    expect(
++      classifyManagementPlane({
++        method: "POST",
++        path: `${mount}/plans`,
++      }),
++    ).toBe("company");
++    expect(
++      classifyManagementPlane({
++        method: "POST",
++        path: `${mount}/plans/plan-1/apply`,
++      }),
++    ).toBe("company");
++    // Reads and the collection are business entrances, not management.
++    for (const entrance of [
++      { method: "GET", path: mount },
++      { method: "GET", path: `${mount}/plans` },
++      { method: "GET", path: `${mount}/installs/install-1` },
++      { method: "POST", path: mount },
++    ]) {
++      expect(classifyManagementPlane(entrance)).toBeNull();
++    }
++    // A platform identity gains no company authority by knowing the route.
++    for (const actor of [
++      { kind: "platform_operator" as const, subject: "platform-scanner" },
++      { kind: "deployment_admin" as const, userId: "deployment-admin-user" },
++    ]) {
++      expect(
++        authorizeCompanyManagementAction({
++          actor,
++          entrance: entranceOf(
++            "POST /api/enterprise/plugin-packages/plans/plan-1/apply",
++          ),
++          tenantId: "tenant-a",
++          grants: createManagementCrossGrantRegistry([]),
++        }),
++      ).toEqual({
++        outcome: "deny",
++        code: "MANAGEMENT_CROSS_AUTHORIZATION_REQUIRED",
++        plane: "company",
++      });
++    }
+   });
+ 
+   test("business and self-service entrances are not management entrances", () => {
+diff --git a/server/tests/multitenancy/migration-tool.test.ts b/server/tests/multitenancy/migration-tool.test.ts
+index d974709b..ac4582ca 100644
+--- a/server/tests/multitenancy/migration-tool.test.ts
++++ b/server/tests/multitenancy/migration-tool.test.ts
+@@ -413,6 +413,9 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
+     // MT034/MT067/MT074 而本断言清单未同步，按注册表排序位补齐这三项
+     // （MT031<MT034<MT041、MT060<MT067<MT069、MT073<MT074<MT076），
+     // 文件其余内容只读。
++    // PKG02/PKG03（#461/#462 brief 预授权，pkg03b 实现补记）：包安装与
++    // Bot 授权/Run 钉扎迁移任务注册（MT 通道外的 out-of-band 追踪），按
++    // 注册表排序位补齐这两项；文件其余内容只读。
+     expect(ALLOWED_TASK_IDS).toEqual([
+       "MT000",
+       "MT004",
+@@ -440,6 +443,8 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
+       "MT076",
+       "MT077",
+       "MT112",
++      "PKG02",
++      "PKG03",
+     ]);
+     expect(new Set(ALLOWED_TASK_IDS)).toEqual(new Set(TASKS.keys()));
+     const selfCheck = TASKS.get("MT000");
