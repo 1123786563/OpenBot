@@ -1,4 +1,4 @@
-import { client } from "@/lib/client";
+import { client, clientUpload } from "@/lib/client";
 
 /**
  * The workshop's REST surface, typed for the browser.
@@ -244,8 +244,9 @@ export function listWorkshopFiles(
 
 /**
  * Upload files into the workspace. multipart rather than JSON, so the browser streams the bytes
- * rather than reading them into strings; the server enforces the limits and its refusal text is
- * what the caller should surface.
+ * rather than reading them into strings, via the transport's own multipart half (`clientUpload`:
+ * same credentials, same scope-selection attach — MT081 AC3); the server enforces the limits and
+ * its refusal text is what the caller should surface.
  */
 export async function uploadWorkshopFiles(
   channelId: string,
@@ -253,11 +254,10 @@ export async function uploadWorkshopFiles(
 ): Promise<{ uploaded: number }> {
   const body = new FormData();
   for (const file of files) body.append("files", file, file.name);
-  const response = await fetch(workshopPath(channelId, "/files/upload"), {
-    method: "POST",
-    credentials: "include",
+  const response = await clientUpload(
+    workshopPath(channelId, "/files/upload"),
     body,
-  });
+  );
   if (!response.ok) {
     const reason = (await response.json().catch(() => null)) as {
       error?: string;

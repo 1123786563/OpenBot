@@ -2690,18 +2690,18 @@ const AUDIT_DOMAIN_TASK: TaskMigrationSpec = {
           '\t"payload" jsonb NOT NULL,\n' +
           '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
           '\tCONSTRAINT "enterprise_audit_events_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
-          '\tCONSTRAINT "enterprise_audit_event_domain" CHECK ("enterprise_audit_events"."domain" in (\'business\',\'identity\',\'platform\')),\n' +
+          "\tCONSTRAINT \"enterprise_audit_event_domain\" CHECK (\"enterprise_audit_events\".\"domain\" in ('business','identity','platform')),\n" +
           '\tCONSTRAINT "enterprise_audit_events_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action\n' +
           ");",
         'CREATE INDEX "enterprise_audit_event_tenant_domain_time" ON "enterprise_audit_events" ("tenant_id","domain","created_at");',
-        "ALTER TABLE \"enterprise_audit_events\" ENABLE ROW LEVEL SECURITY;",
+        'ALTER TABLE "enterprise_audit_events" ENABLE ROW LEVEL SECURITY;',
         'CREATE POLICY "enterprise_audit_event_operator_read" ON "enterprise_audit_events"\n' +
           "  FOR SELECT TO ob_ent_operator\n" +
-          '  USING ("enterprise_audit_events"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+          "  USING (\"enterprise_audit_events\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
         'CREATE POLICY "enterprise_audit_event_operator_insert" ON "enterprise_audit_events"\n' +
           "  FOR INSERT TO ob_ent_operator\n" +
-          '  WITH CHECK ("enterprise_audit_events"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\')\n' +
-          '    AND "enterprise_audit_events"."id" = nullif(current_setting(\'app.operation_id\', true), \'\'));',
+          "  WITH CHECK (\"enterprise_audit_events\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+          "    AND \"enterprise_audit_events\".\"id\" = nullif(current_setting('app.operation_id', true), ''));",
         'GRANT SELECT, INSERT ON TABLE "enterprise_audit_events" TO ob_ent_operator;',
         'ALTER TABLE "enterprise_audit_events" FORCE ROW LEVEL SECURITY;',
       ],
@@ -2729,8 +2729,632 @@ const AUDIT_DOMAIN_TASK: TaskMigrationSpec = {
   ],
 };
 
-export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
+/**
+ * MT061（Issue #104）：OpenMuse 文件/文档/个人工作区域的归属域。expand-only
+ * ——两张新协会表与按既有模式的最小 RLS；不修改任何既有表/策略/角色授权。
+ *
+ *   1. openmuse_file_scopes：一行 = 一个只有 owner_user_id 的文件根记录在
+ *      一个 (公司, 团队, 主体) 三元组上的归属关联（Spec §4.2 逐字形状）。
+ *      file_id 主键 FK → openmuse_files(id) cascade；复合外键钉到
+ *      enterprise_workspaces 与 enterprise_memberships 与 users，均
+ *      cascade；attribution ∈ {'created','import'} CHECK 区分本地上传 pin
+ *      与外部引用（邮件附件导入）pin。
+ *   2. openmuse_document_actions：一行 = 一次 PDF 填写/传输动作的发起归属
+ *      （AC2「保存发起归属，执行时校验」的持久面）。(file_id, action_kind)
+ *      复合主键（同键重放收敛）；action_kind ∈ {'fill','transfer'} CHECK；
+ *      同款复合外键。
+ *   3. RLS 沿 MT059/MT060 既有模式 + MT042 扫描臂：REVOKE PUBLIC + 四能力
+ *      角色 → ENABLE + FORCE → data 租户臂 + restrictive 主体自读 →
+ *      operator 租户 + 主体上下文读/插/删 → operator app.scan_sweep='on'
+ *      跨租户读臂（平台触发重建专用）。目录角色无任何策略与授权。零
+ *      UPDATE 授权——归属不可改写是结构不是纪律。
+ */
+const OPENMUSE_FILE_TENANCY_RLS_STATEMENTS: readonly string[] = [
+  'REVOKE ALL PRIVILEGES ON TABLE "openmuse_file_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "openmuse_file_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "openmuse_file_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "openmuse_file_scope_data_tenant_read" ON "openmuse_file_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_file_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "openmuse_file_scope_data_self_read" ON "openmuse_file_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_file_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_file_scope_operator_read" ON "openmuse_file_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"openmuse_file_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_file_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_file_scope_operator_insert" ON "openmuse_file_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"openmuse_file_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_file_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_file_scope_operator_delete" ON "openmuse_file_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"openmuse_file_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_file_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_file_scope_operator_sweep_read" ON "openmuse_file_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (current_setting('app.scan_sweep', true) = 'on');",
+  'GRANT SELECT ON TABLE "openmuse_file_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "openmuse_file_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "openmuse_file_scopes" TO ob_ent_operator;',
+  'REVOKE ALL PRIVILEGES ON TABLE "openmuse_document_actions" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "openmuse_document_actions" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "openmuse_document_actions" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "openmuse_document_action_data_tenant_read" ON "openmuse_document_actions"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_document_actions\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "openmuse_document_action_data_self_read" ON "openmuse_document_actions"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_document_actions\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_document_action_operator_read" ON "openmuse_document_actions"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"openmuse_document_actions\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_document_actions\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_document_action_operator_insert" ON "openmuse_document_actions"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"openmuse_document_actions\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_document_actions\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_document_action_operator_delete" ON "openmuse_document_actions"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"openmuse_document_actions\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_document_actions\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_document_action_operator_sweep_read" ON "openmuse_document_actions"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (current_setting('app.scan_sweep', true) = 'on');",
+  'GRANT SELECT ON TABLE "openmuse_document_actions" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "openmuse_document_actions" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "openmuse_document_actions" TO ob_ent_operator;',
+];
 
+const OPENMUSE_FILE_TENANCY_TASK: TaskMigrationSpec = {
+  id: "MT061",
+  description:
+    "MT061（Issue #104）：OpenMuse 文件/文档/个人工作区域归属域——新增 openmuse_file_scopes 与 openmuse_document_actions 协会表（表 + RLS 两步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "file_scope_tables",
+      impact:
+        "新增 openmuse_file_scopes 与 openmuse_document_actions 表：file_id 主键（FK → openmuse_files cascade）/ (file_id, action_kind) 复合主键；复合外键钉到 enterprise_workspaces、enterprise_memberships 与 users（均 cascade）；attribution 与 action_kind CHECK；范围列表索引。不修改任何既有表。",
+      objects: ["openmuse_file_scopes", "openmuse_document_actions"],
+      statements: [
+        'CREATE TABLE "openmuse_file_scopes" (\n' +
+          '\t"file_id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          "\t\"attribution\" text DEFAULT 'created' NOT NULL,\n" +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "openmuse_file_scopes_attribution" CHECK ("openmuse_file_scopes"."attribution" in (\'created\',\'import\'))\n' +
+          ");",
+        'CREATE INDEX "openmuse_file_scopes_scope_list_idx" ON "openmuse_file_scopes" USING btree ("tenant_id","workspace_id","principal_id","created_at","file_id");',
+        'ALTER TABLE "openmuse_file_scopes" ADD CONSTRAINT "openmuse_file_scopes_file_fk" FOREIGN KEY ("file_id") REFERENCES "public"."openmuse_files"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_file_scopes" ADD CONSTRAINT "openmuse_file_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_file_scopes" ADD CONSTRAINT "openmuse_file_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_file_scopes" ADD CONSTRAINT "openmuse_file_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE TABLE "openmuse_document_actions" (\n' +
+          '\t"file_id" text NOT NULL,\n' +
+          '\t"action_kind" text NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "openmuse_document_actions_pk" PRIMARY KEY ("file_id","action_kind"),\n' +
+          '\tCONSTRAINT "openmuse_document_actions_kind" CHECK ("openmuse_document_actions"."action_kind" in (\'fill\',\'transfer\'))\n' +
+          ");",
+        'CREATE INDEX "openmuse_document_actions_scope_list_idx" ON "openmuse_document_actions" USING btree ("tenant_id","workspace_id","principal_id","created_at","file_id");',
+        'ALTER TABLE "openmuse_document_actions" ADD CONSTRAINT "openmuse_document_actions_file_fk" FOREIGN KEY ("file_id") REFERENCES "public"."openmuse_files"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_document_actions" ADD CONSTRAINT "openmuse_document_actions_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_document_actions" ADD CONSTRAINT "openmuse_document_actions_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_document_actions" ADD CONSTRAINT "openmuse_document_actions_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "file_scope_rls",
+      impact:
+        "仅对两张新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 租户范围 SELECT + restrictive 主体自读；operator 租户+主体上下文读/插/删 + app.scan_sweep 扫描臂）及配套最小 GRANT；零 UPDATE 授权。不改动任何既有表策略或既有授权。目录角色无任何策略与授权。",
+      objects: ["openmuse_file_scopes", "openmuse_document_actions"],
+      statements: OPENMUSE_FILE_TENANCY_RLS_STATEMENTS,
+    },
+  ],
+};
+
+/**
+ * MT062（Issue #105）：OpenMuse 个人域（目标/想法/记忆）与财务产物的归属
+ * 域。expand-only——一张新协会表与按既有模式的最小 RLS；不修改任何既有
+ * 表/策略/角色授权。
+ *
+ *   1. openmuse_personal_scopes：一行 = 一个个人域根记录（openmuse_goals /
+ *      openmuse_ideas / openmuse_memories，或作为财务产物 pin 的
+ *      openmuse_files 行 id）在一个 (公司, 团队, 主体) 三元组上的归属关联
+ *      （Spec §4.2 逐字形状）。(object_type, object_id) 复合主键：一个对
+ *      象至多一条归属；三类根表各自的 text 主键无法跨表外键——根行存在
+ *      性与 owner 一致性由服务面 rows 缝核死（诚实披露，见 schema 注释）。
+ *      object_type ∈ {'goal','idea','memory','finance_artifact'} CHECK；
+ *      attribution ∈ {'created','import'} CHECK。
+ *   2. RLS 沿 MT059/MT060 既有模式 + MT042 扫描臂：REVOKE PUBLIC + 四能力
+ *      角色 → ENABLE + FORCE → data 租户臂 + restrictive 主体自读（AC1：
+ *      同团队他人连行都不可见）→ operator 租户 + 主体上下文读/插/删 →
+ *      operator app.scan_sweep='on' 跨租户读臂。目录角色无任何策略与授
+ *      权。零 UPDATE 授权——归属不可改写是结构不是纪律。
+ */
+const OPENMUSE_PERSONAL_TENANCY_RLS_STATEMENTS: readonly string[] = [
+  'REVOKE ALL PRIVILEGES ON TABLE "openmuse_personal_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "openmuse_personal_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "openmuse_personal_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "openmuse_personal_scope_data_tenant_read" ON "openmuse_personal_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_personal_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "openmuse_personal_scope_data_self_read" ON "openmuse_personal_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_personal_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_personal_scope_operator_read" ON "openmuse_personal_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"openmuse_personal_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_personal_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_personal_scope_operator_insert" ON "openmuse_personal_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"openmuse_personal_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_personal_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_personal_scope_operator_delete" ON "openmuse_personal_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"openmuse_personal_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_personal_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_personal_scope_operator_sweep_read" ON "openmuse_personal_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (current_setting('app.scan_sweep', true) = 'on');",
+  'GRANT SELECT ON TABLE "openmuse_personal_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "openmuse_personal_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "openmuse_personal_scopes" TO ob_ent_operator;',
+];
+
+const OPENMUSE_PERSONAL_TENANCY_TASK: TaskMigrationSpec = {
+  id: "MT062",
+  description:
+    "MT062（Issue #105）：OpenMuse 个人域（目标/想法/记忆）与财务产物归属域——新增 openmuse_personal_scopes 协会表（表 + RLS 两步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "personal_scope_tables",
+      impact:
+        "新增 openmuse_personal_scopes 表：(object_type, object_id) 复合主键；复合外键钉到 enterprise_workspaces、enterprise_memberships 与 users（均 cascade）；object_type 与 attribution CHECK；范围列表索引。不修改任何既有表。",
+      objects: ["openmuse_personal_scopes"],
+      statements: [
+        'CREATE TABLE "openmuse_personal_scopes" (\n' +
+          '\t"object_type" text NOT NULL,\n' +
+          '\t"object_id" text NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          "\t\"attribution\" text DEFAULT 'created' NOT NULL,\n" +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "openmuse_personal_scopes_pk" PRIMARY KEY ("object_type","object_id"),\n' +
+          "\tCONSTRAINT \"openmuse_personal_scopes_object_type\" CHECK (\"openmuse_personal_scopes\".\"object_type\" in ('goal','idea','memory','finance_artifact')),\n" +
+          '\tCONSTRAINT "openmuse_personal_scopes_attribution" CHECK ("openmuse_personal_scopes"."attribution" in (\'created\',\'import\'))\n' +
+          ");",
+        'CREATE INDEX "openmuse_personal_scopes_scope_list_idx" ON "openmuse_personal_scopes" USING btree ("tenant_id","workspace_id","principal_id","object_type","created_at","object_id");',
+        'ALTER TABLE "openmuse_personal_scopes" ADD CONSTRAINT "openmuse_personal_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_personal_scopes" ADD CONSTRAINT "openmuse_personal_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_personal_scopes" ADD CONSTRAINT "openmuse_personal_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "personal_scope_rls",
+      impact:
+        "仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 租户范围 SELECT + restrictive 主体自读；operator 租户+主体上下文读/插/删 + app.scan_sweep 扫描臂）及配套最小 GRANT；零 UPDATE 授权。不改动任何既有表策略或既有授权。目录角色无任何策略与授权。",
+      objects: ["openmuse_personal_scopes"],
+      statements: OPENMUSE_PERSONAL_TENANCY_RLS_STATEMENTS,
+    },
+  ],
+};
+
+/**
+ * MT064（Issue #107）：OpenMuse 审阅动作提案与回执的归属域。expand-only
+ * ——一张新协会表与按既有模式的最小 RLS；不修改任何既有表/策略/授权。
+ *
+ *   1. openmuse_reviewed_action_scopes：一行 = 一条审阅动作提案根记录
+ *      （openmuse_reviewed_actions，只有 owner_user_id 的用户级形状）在
+ *      一个 (公司, 团队, 主体) 三元组上的归属关联（Spec §4.2 逐字形状）。
+ *      action_id 主键 FK → openmuse_reviewed_actions(id) cascade——回执
+ *      （attempt 行）经级联继承同一归属；复合外键钉到
+ *      enterprise_workspaces、enterprise_memberships 与 users（均
+ *      cascade）。无 attribution 列：审阅动作没有外部导入路径。
+ *   2. RLS 沿 MT059–MT062 既有模式 + MT042 扫描臂：REVOKE PUBLIC + 四能力
+ *      角色 → ENABLE + FORCE → data 租户臂 + restrictive 主体自读 →
+ *      operator 租户 + 主体上下文读/插/删 + app.scan_sweep='on' 跨租户读
+ *      臂。目录角色无任何策略与授权。零 UPDATE 授权。
+ */
+const OPENMUSE_REVIEWED_ACTION_TENANCY_RLS_STATEMENTS: readonly string[] = [
+  'REVOKE ALL PRIVILEGES ON TABLE "openmuse_reviewed_action_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "openmuse_reviewed_action_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "openmuse_reviewed_action_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "openmuse_reviewed_action_scope_data_tenant_read" ON "openmuse_reviewed_action_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_reviewed_action_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "openmuse_reviewed_action_scope_data_self_read" ON "openmuse_reviewed_action_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_reviewed_action_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_reviewed_action_scope_operator_read" ON "openmuse_reviewed_action_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"openmuse_reviewed_action_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_reviewed_action_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_reviewed_action_scope_operator_insert" ON "openmuse_reviewed_action_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"openmuse_reviewed_action_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_reviewed_action_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_reviewed_action_scope_operator_delete" ON "openmuse_reviewed_action_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"openmuse_reviewed_action_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_reviewed_action_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_reviewed_action_scope_operator_sweep_read" ON "openmuse_reviewed_action_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (current_setting('app.scan_sweep', true) = 'on');",
+  'GRANT SELECT ON TABLE "openmuse_reviewed_action_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "openmuse_reviewed_action_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "openmuse_reviewed_action_scopes" TO ob_ent_operator;',
+];
+
+const OPENMUSE_REVIEWED_ACTION_TENANCY_TASK: TaskMigrationSpec = {
+  id: "MT064",
+  description:
+    "MT064（Issue #107）：OpenMuse 审阅动作提案与回执归属域——新增 openmuse_reviewed_action_scopes 协会表（表 + RLS 两步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "reviewed_action_scope_tables",
+      impact:
+        "新增 openmuse_reviewed_action_scopes 表：action_id 主键（FK → openmuse_reviewed_actions cascade）；复合外键钉到 enterprise_workspaces、enterprise_memberships 与 users（均 cascade）；范围列表索引。不修改任何既有表。",
+      objects: ["openmuse_reviewed_action_scopes"],
+      statements: [
+        'CREATE TABLE "openmuse_reviewed_action_scopes" (\n' +
+          '\t"action_id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL\n' +
+          ");",
+        'CREATE INDEX "openmuse_reviewed_action_scopes_scope_list_idx" ON "openmuse_reviewed_action_scopes" USING btree ("tenant_id","workspace_id","principal_id","created_at","action_id");',
+        'ALTER TABLE "openmuse_reviewed_action_scopes" ADD CONSTRAINT "openmuse_reviewed_action_scopes_action_fk" FOREIGN KEY ("action_id") REFERENCES "public"."openmuse_reviewed_actions"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_reviewed_action_scopes" ADD CONSTRAINT "openmuse_reviewed_action_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_reviewed_action_scopes" ADD CONSTRAINT "openmuse_reviewed_action_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_reviewed_action_scopes" ADD CONSTRAINT "openmuse_reviewed_action_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "reviewed_action_scope_rls",
+      impact:
+        "仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 租户范围 SELECT + restrictive 主体自读；operator 租户+主体上下文读/插/删 + app.scan_sweep 扫描臂）及配套最小 GRANT；零 UPDATE 授权。不改动任何既有表策略或既有授权。目录角色无任何策略与授权。",
+      objects: ["openmuse_reviewed_action_scopes"],
+      statements: OPENMUSE_REVIEWED_ACTION_TENANCY_RLS_STATEMENTS,
+    },
+  ],
+};
+
+/**
+ * MT065（Issue #108）：OpenMuse 活动流与通知的归属域。expand-only——两张
+ * 新协会表与按既有模式的最小 RLS；不修改任何既有表/策略/授权。
+ *
+ *   1. openmuse_notification_scopes：一行 = 一条通知根记录
+ *      （openmuse_notifications，只有 user_id 的用户级形状）在一个 (公司,
+ *      团队, 主体) 三元组上的归属关联。notification_id 主键 FK →
+ *      openmuse_notifications(id) cascade。
+ *   2. openmuse_delivery_binding_scopes：一行 = 一条通知渠道绑定根记录
+ *      （delivery_bindings，四元组用户级形状、无租户列）在一个三元组上的
+ *      归属关联（AC4 通知渠道半边；推送设备对应面在 MT066）。binding_id
+ *      主键 FK → delivery_bindings(id) cascade。
+ *   3. RLS 沿 MT059–MT062 既有模式 + MT042 扫描臂（两表同款）。零
+ *      UPDATE 授权。
+ */
+const OPENMUSE_ACTIVITY_TENANCY_RLS_STATEMENTS: readonly string[] = [
+  'REVOKE ALL PRIVILEGES ON TABLE "openmuse_notification_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "openmuse_notification_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "openmuse_notification_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "openmuse_notification_scope_data_tenant_read" ON "openmuse_notification_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_notification_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "openmuse_notification_scope_data_self_read" ON "openmuse_notification_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_notification_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_notification_scope_operator_read" ON "openmuse_notification_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"openmuse_notification_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_notification_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_notification_scope_operator_insert" ON "openmuse_notification_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"openmuse_notification_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_notification_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_notification_scope_operator_delete" ON "openmuse_notification_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"openmuse_notification_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_notification_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_notification_scope_operator_sweep_read" ON "openmuse_notification_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (current_setting('app.scan_sweep', true) = 'on');",
+  'GRANT SELECT ON TABLE "openmuse_notification_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "openmuse_notification_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "openmuse_notification_scopes" TO ob_ent_operator;',
+  'REVOKE ALL PRIVILEGES ON TABLE "openmuse_delivery_binding_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "openmuse_delivery_binding_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "openmuse_delivery_binding_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "openmuse_delivery_binding_scope_data_tenant_read" ON "openmuse_delivery_binding_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_delivery_binding_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "openmuse_delivery_binding_scope_data_self_read" ON "openmuse_delivery_binding_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_delivery_binding_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_delivery_binding_scope_operator_read" ON "openmuse_delivery_binding_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"openmuse_delivery_binding_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_delivery_binding_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_delivery_binding_scope_operator_insert" ON "openmuse_delivery_binding_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"openmuse_delivery_binding_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_delivery_binding_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_delivery_binding_scope_operator_delete" ON "openmuse_delivery_binding_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"openmuse_delivery_binding_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_delivery_binding_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_delivery_binding_scope_operator_sweep_read" ON "openmuse_delivery_binding_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (current_setting('app.scan_sweep', true) = 'on');",
+  'GRANT SELECT ON TABLE "openmuse_delivery_binding_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "openmuse_delivery_binding_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "openmuse_delivery_binding_scopes" TO ob_ent_operator;',
+];
+
+const OPENMUSE_ACTIVITY_TENANCY_TASK: TaskMigrationSpec = {
+  id: "MT065",
+  description:
+    "MT065（Issue #108）：OpenMuse 活动流与通知归属域——新增 openmuse_notification_scopes 与 openmuse_delivery_binding_scopes 协会表（表 + RLS 两步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "activity_scope_tables",
+      impact:
+        "新增 openmuse_notification_scopes 与 openmuse_delivery_binding_scopes 表：notification_id / binding_id 主键（FK → openmuse_notifications / delivery_bindings 均 cascade）；复合外键钉到 enterprise_workspaces、enterprise_memberships 与 users（均 cascade）；范围列表索引。不修改任何既有表。",
+      objects: [
+        "openmuse_notification_scopes",
+        "openmuse_delivery_binding_scopes",
+      ],
+      statements: [
+        'CREATE TABLE "openmuse_notification_scopes" (\n' +
+          '\t"notification_id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL\n' +
+          ");",
+        'CREATE INDEX "openmuse_notification_scopes_scope_list_idx" ON "openmuse_notification_scopes" USING btree ("tenant_id","workspace_id","principal_id","created_at","notification_id");',
+        'ALTER TABLE "openmuse_notification_scopes" ADD CONSTRAINT "openmuse_notification_scopes_notification_fk" FOREIGN KEY ("notification_id") REFERENCES "public"."openmuse_notifications"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_notification_scopes" ADD CONSTRAINT "openmuse_notification_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_notification_scopes" ADD CONSTRAINT "openmuse_notification_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_notification_scopes" ADD CONSTRAINT "openmuse_notification_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE TABLE "openmuse_delivery_binding_scopes" (\n' +
+          '\t"binding_id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL\n' +
+          ");",
+        'CREATE INDEX "openmuse_delivery_binding_scopes_scope_list_idx" ON "openmuse_delivery_binding_scopes" USING btree ("tenant_id","workspace_id","principal_id","created_at","binding_id");',
+        'ALTER TABLE "openmuse_delivery_binding_scopes" ADD CONSTRAINT "openmuse_delivery_binding_scopes_binding_fk" FOREIGN KEY ("binding_id") REFERENCES "public"."delivery_bindings"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_delivery_binding_scopes" ADD CONSTRAINT "openmuse_delivery_binding_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_delivery_binding_scopes" ADD CONSTRAINT "openmuse_delivery_binding_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_delivery_binding_scopes" ADD CONSTRAINT "openmuse_delivery_binding_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "activity_scope_rls",
+      impact:
+        "仅对两张新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 租户范围 SELECT + restrictive 主体自读；operator 租户+主体上下文读/插/删 + app.scan_sweep 扫描臂）及配套最小 GRANT；零 UPDATE 授权。不改动任何既有表策略或既有授权。目录角色无任何策略与授权。",
+      objects: [
+        "openmuse_notification_scopes",
+        "openmuse_delivery_binding_scopes",
+      ],
+      statements: OPENMUSE_ACTIVITY_TENANCY_RLS_STATEMENTS,
+    },
+  ],
+};
+
+/**
+ * MT066（Issue #109）：语音、听写与移动聚合的归属域。expand-only——三张
+ * 新表与按既有模式的最小 RLS；不修改任何既有表/策略/授权。
+ *
+ *   1. voice_session_scopes：一行 = 一条语音会话根记录（voice_sessions，
+ *      用户级形状、无租户列）在一个三元组上的归属关联 + usage_seconds
+ *      冻结用量（AC1 语音半边，供 MT070）。session_id 主键 FK →
+ *      voice_sessions(id) cascade。
+ *   2. dictation_usage_scopes：一行 = 一次听写请求的用量归属记录（听写无
+ *      会话根行，本行即持久用量事实；AC1 听写半边）。id 主键服务端生成；
+ *      usage_key 唯一（幂等收敛）；audio_seconds/output_tokens 非负
+ *      CHECK；无根表外键可钉（诚实披露）。
+ *   3. push_device_scopes：一行 = 一台推送设备根记录（push_devices，仅
+ *      owner_user_id）在一个三元组上的归属绑定（AC3）。device_id 主键
+ *      FK → push_devices(id) cascade。
+ *   4. RLS 沿 MT059–MT062 既有模式 + MT042 扫描臂（三表同款）。零
+ *      UPDATE 授权。
+ */
+const OPENMUSE_VOICE_MOBILE_TENANCY_RLS_STATEMENTS: readonly string[] = [
+  'REVOKE ALL PRIVILEGES ON TABLE "voice_session_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "voice_session_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "voice_session_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "voice_session_scope_data_tenant_read" ON "voice_session_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"voice_session_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "voice_session_scope_data_self_read" ON "voice_session_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"voice_session_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "voice_session_scope_operator_read" ON "voice_session_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"voice_session_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"voice_session_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "voice_session_scope_operator_insert" ON "voice_session_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"voice_session_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"voice_session_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "voice_session_scope_operator_delete" ON "voice_session_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"voice_session_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"voice_session_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "voice_session_scope_operator_sweep_read" ON "voice_session_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (current_setting('app.scan_sweep', true) = 'on');",
+  'GRANT SELECT ON TABLE "voice_session_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "voice_session_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "voice_session_scopes" TO ob_ent_operator;',
+  'REVOKE ALL PRIVILEGES ON TABLE "dictation_usage_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "dictation_usage_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "dictation_usage_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "dictation_usage_scope_data_tenant_read" ON "dictation_usage_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"dictation_usage_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "dictation_usage_scope_data_self_read" ON "dictation_usage_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"dictation_usage_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "dictation_usage_scope_operator_read" ON "dictation_usage_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"dictation_usage_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"dictation_usage_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "dictation_usage_scope_operator_insert" ON "dictation_usage_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"dictation_usage_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"dictation_usage_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "dictation_usage_scope_operator_delete" ON "dictation_usage_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"dictation_usage_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"dictation_usage_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "dictation_usage_scope_operator_sweep_read" ON "dictation_usage_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (current_setting('app.scan_sweep', true) = 'on');",
+  'GRANT SELECT ON TABLE "dictation_usage_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "dictation_usage_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "dictation_usage_scopes" TO ob_ent_operator;',
+  'REVOKE ALL PRIVILEGES ON TABLE "push_device_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "push_device_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "push_device_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "push_device_scope_data_tenant_read" ON "push_device_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"push_device_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "push_device_scope_data_self_read" ON "push_device_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"push_device_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "push_device_scope_operator_read" ON "push_device_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"push_device_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"push_device_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "push_device_scope_operator_insert" ON "push_device_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"push_device_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"push_device_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "push_device_scope_operator_delete" ON "push_device_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"push_device_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"push_device_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "push_device_scope_operator_sweep_read" ON "push_device_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (current_setting('app.scan_sweep', true) = 'on');",
+  'GRANT SELECT ON TABLE "push_device_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "push_device_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "push_device_scopes" TO ob_ent_operator;',
+];
+
+const OPENMUSE_VOICE_MOBILE_TENANCY_TASK: TaskMigrationSpec = {
+  id: "MT066",
+  description:
+    "MT066（Issue #109）：语音、听写与移动聚合归属域——新增 voice_session_scopes、dictation_usage_scopes 与 push_device_scopes 表（表 + RLS 两步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "voice_mobile_scope_tables",
+      impact:
+        "新增 voice_session_scopes（session_id 主键 FK → voice_sessions cascade + usage_seconds 冻结用量）、dictation_usage_scopes（id 主键、usage_key 唯一幂等键、audio_seconds/output_tokens 非负 CHECK；听写无根行，本表自持用量事实）与 push_device_scopes（device_id 主键 FK → push_devices cascade）三表；复合外键钉到 enterprise_workspaces、enterprise_memberships 与 users（均 cascade）；范围列表索引。不修改任何既有表。",
+      objects: [
+        "voice_session_scopes",
+        "dictation_usage_scopes",
+        "push_device_scopes",
+      ],
+      statements: [
+        'CREATE TABLE "voice_session_scopes" (\n' +
+          '\t"session_id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          '\t"usage_seconds" integer NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "voice_session_scopes_usage_non_negative" CHECK ("voice_session_scopes"."usage_seconds" >= 0)\n' +
+          ");",
+        'CREATE INDEX "voice_session_scopes_scope_list_idx" ON "voice_session_scopes" USING btree ("tenant_id","workspace_id","principal_id","created_at","session_id");',
+        'ALTER TABLE "voice_session_scopes" ADD CONSTRAINT "voice_session_scopes_session_fk" FOREIGN KEY ("session_id") REFERENCES "public"."voice_sessions"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "voice_session_scopes" ADD CONSTRAINT "voice_session_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "voice_session_scopes" ADD CONSTRAINT "voice_session_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "voice_session_scopes" ADD CONSTRAINT "voice_session_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE TABLE "dictation_usage_scopes" (\n' +
+          '\t"id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"usage_key" text NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          '\t"audio_seconds" integer NOT NULL,\n' +
+          '\t"output_tokens" integer NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "dictation_usage_scopes_meters_non_negative" CHECK ("dictation_usage_scopes"."audio_seconds" >= 0 and "dictation_usage_scopes"."output_tokens" >= 0)\n' +
+          ");",
+        'CREATE UNIQUE INDEX "dictation_usage_scopes_usage_key_uq" ON "dictation_usage_scopes" USING btree ("usage_key");',
+        'CREATE INDEX "dictation_usage_scopes_scope_list_idx" ON "dictation_usage_scopes" USING btree ("tenant_id","workspace_id","principal_id","created_at","id");',
+        'ALTER TABLE "dictation_usage_scopes" ADD CONSTRAINT "dictation_usage_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "dictation_usage_scopes" ADD CONSTRAINT "dictation_usage_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "dictation_usage_scopes" ADD CONSTRAINT "dictation_usage_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE TABLE "push_device_scopes" (\n' +
+          '\t"device_id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL\n' +
+          ");",
+        'CREATE INDEX "push_device_scopes_scope_list_idx" ON "push_device_scopes" USING btree ("tenant_id","workspace_id","principal_id","created_at","device_id");',
+        'ALTER TABLE "push_device_scopes" ADD CONSTRAINT "push_device_scopes_device_fk" FOREIGN KEY ("device_id") REFERENCES "public"."push_devices"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "push_device_scopes" ADD CONSTRAINT "push_device_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "push_device_scopes" ADD CONSTRAINT "push_device_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "push_device_scopes" ADD CONSTRAINT "push_device_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "voice_mobile_scope_rls",
+      impact:
+        "仅对三张新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 租户范围 SELECT + restrictive 主体自读；operator 租户+主体上下文读/插/删 + app.scan_sweep 扫描臂）及配套最小 GRANT；零 UPDATE 授权。不改动任何既有表策略或既有授权。目录角色无任何策略与授权。",
+      objects: [
+        "voice_session_scopes",
+        "dictation_usage_scopes",
+        "push_device_scopes",
+      ],
+      statements: OPENMUSE_VOICE_MOBILE_TENANCY_RLS_STATEMENTS,
+    },
+  ],
+};
+
+export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [SELF_CHECK_TASK.id, SELF_CHECK_TASK],
   [WORKSPACE_MEMBERSHIP_TASK.id, WORKSPACE_MEMBERSHIP_TASK],
   [LEGACY_ANCHOR_TASK.id, LEGACY_ANCHOR_TASK],
@@ -2754,6 +3378,14 @@ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [CREDENTIAL_LEASE_TASK.id, CREDENTIAL_LEASE_TASK],
   [COMPANY_FINANCE_GRANT_TASK.id, COMPANY_FINANCE_GRANT_TASK],
   [OPENMUSE_TASK_TENANCY_TASK.id, OPENMUSE_TASK_TENANCY_TASK],
+  [OPENMUSE_FILE_TENANCY_TASK.id, OPENMUSE_FILE_TENANCY_TASK],
+  [OPENMUSE_PERSONAL_TENANCY_TASK.id, OPENMUSE_PERSONAL_TENANCY_TASK],
+  [
+    OPENMUSE_REVIEWED_ACTION_TENANCY_TASK.id,
+    OPENMUSE_REVIEWED_ACTION_TENANCY_TASK,
+  ],
+  [OPENMUSE_ACTIVITY_TENANCY_TASK.id, OPENMUSE_ACTIVITY_TENANCY_TASK],
+  [OPENMUSE_VOICE_MOBILE_TENANCY_TASK.id, OPENMUSE_VOICE_MOBILE_TENANCY_TASK],
   [SHARED_APPROVAL_TASK.id, SHARED_APPROVAL_TASK],
   [DELETION_SEMANTICS_TASK.id, DELETION_SEMANTICS_TASK],
   [HOST_ACCESS_TASK.id, HOST_ACCESS_TASK],

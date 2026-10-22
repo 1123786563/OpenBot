@@ -82,6 +82,50 @@ export type GatewayRateView =
       }
   | { configured: false; reason: string; explanation: string };
 
+/**
+ * One audio path's availability row (Bifrost 14.4, #313): the registry's structural
+ * verdict — the missing-item codes a refusal names — plus, per audio-capable cell's
+ * latest snapshot, whether that basis enables the path. The server owns every verdict;
+ * this type only carries it.
+ */
+export type GatewayAudioPathMissingItem = {
+  code: string;
+  detail: string;
+};
+
+export type GatewayAudioPathAvailability = {
+  path: string;
+  family: string;
+  stream: boolean;
+  exists: boolean;
+  missingItems: GatewayAudioPathMissingItem[];
+  bases: {
+    ref: string;
+    enableable: boolean;
+    missingDimensions: { dimension: string; reason: string }[];
+  }[];
+};
+
+/**
+ * One group-11 capability's availability summary (Bifrost 11.6, #301): the basis-level
+ * verdict over that capability's own billed dimensions — enabled, free (every billed
+ * dimension priced exactly zero), unmapped (no basis ever synced), or price_unknown (a
+ * basis exists and refuses, with the per-cell missing dimensions). Free and unknown are
+ * different states with different words; the server owns every verdict, this type only
+ * carries it.
+ */
+export type GatewayCapabilityAvailability = {
+  capability: "embedding" | "rerank" | "ocr";
+  state: "enabled" | "free" | "unmapped" | "price_unknown";
+  reasonCode?: string;
+  cells: { ref: string; free: boolean }[];
+  missingDimensions?: {
+    ref: string;
+    dimension: string;
+    reasonCode: string;
+  }[];
+};
+
 export type GatewayAdminStatus = {
   readiness: GatewayReadiness;
   endpoint: GatewayEndpointView | null;
@@ -89,6 +133,8 @@ export type GatewayAdminStatus = {
   probe: GatewayProbeView | null;
   extension: GatewayExtensionView | null;
   rate: GatewayRateView;
+  audioPaths: GatewayAudioPathAvailability[] | null;
+  capabilities: GatewayCapabilityAvailability[] | null;
 };
 
 export const gatewayKeys = {
