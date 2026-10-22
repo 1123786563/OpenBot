@@ -203,7 +203,8 @@ SNI-aware, forwarding plaintext HTTP (websocket-upgrade aware) to the OpenBot se
 What is in `docker/compose/preview-tls/`:
 
 - `nginx.conf.template` — rendered at container start by the image's envsubst
-  (`OPENBOT_PREVIEW_UPSTREAM`, default `http://host.docker.internal:3000` — point it
+  (`OPENBOT_PREVIEW_UPSTREAM`, default `http://host.docker.internal:3001` — the
+  OpenBot server's port (DEFAULT_PORT=3001) published on the docker host; point it
   at a compose service name when the terminator shares the server's network;
   `OPENBOT_PREVIEW_TLS_SERVER_NAME`, default `_` = the only 443 server =
   default_server). It also serves a loopback-only `:8080/healthz` so the container

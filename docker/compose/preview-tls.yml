@@ -32,10 +32,10 @@ services:
     environment:
       # Where plaintext HTTP is forwarded. Default: the OpenBot server on the
       # docker host (main compose publishes its port there). Set to a compose
-      # service URL (http://server:3000) when the terminator runs inside the same
+      # service URL (http://server:3001) when the terminator runs inside the same
       # compose network — uncomment the networks block at the bottom and add the
       # main stack's network to it.
-      OPENBOT_PREVIEW_UPSTREAM: ${OPENBOT_PREVIEW_UPSTREAM:-http://host.docker.internal:3000}
+      OPENBOT_PREVIEW_UPSTREAM: ${OPENBOT_PREVIEW_UPSTREAM:-http://host.docker.internal:3001}
       # The wildcard's server_name; `_` = only 443 server = default_server.
       OPENBOT_PREVIEW_TLS_SERVER_NAME: ${OPENBOT_PREVIEW_TLS_SERVER_NAME:-_}
       # reload.stamp mtime poll cadence (reload-watcher.sh).

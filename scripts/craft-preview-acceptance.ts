@@ -1097,9 +1097,18 @@ try {
       const base = previewBaseOrigin();
       // host 形态探测未注册 label 子域（fail-closed：404 + 预览拒绝文案）；
       // dev 形态探测未注册首段（回落主站，不带预览文案）。
+      // fix-ocr26 F5（OCR R1）：same-site 的 bogus 探测地址必须是「未注册
+      // label 拼成子域」——旧代码把 label 拼进了路径（${origin}/label.${host}/），
+      // 对不覆盖 apex 的通配符证书（#412）TLS 校验直接失败 → status 0 →
+      // 断言恒 FAIL。与 expectOrigin 同款拼法：保留 base 协议与端口（本地
+      // TLS 拓扑的非 443 端口），label 进主机名首段。
       const bogusUrl =
         TOPOLOGY === "same-site"
-          ? `${new URL(base).origin}/definitely-not-a-label.${new URL(base).hostname}/`
+          ? (() => {
+              const base = new URL(PREVIEW_BASE);
+              const port = base.port === "" ? "" : `:${base.port}`;
+              return `${base.protocol}//definitely-not-a-label.${base.hostname}${port}/`;
+            })()
           : `${base}/definitely-not-a-label/`;
       const bogus = await fetch(bogusUrl, { redirect: "manual" })
         .then(async (r) => ({ status: r.status, body: await r.text() }))
@@ -1892,7 +1901,7 @@ try {
       }
       // 1) 攻击前提成立：主站会话 cookie 在本 context 的 jar 里，且主站与
       //    预览同 eTLD+1（同 site，凭证写会携带主站 cookie——这正是要被
-      //    guard 扣住的而）。
+      //    guard 扣住的写面）。
       const mainHost = new URL(APP_ORIGIN).hostname;
       const previewHost = new URL(sessionA.origin).hostname;
       const sameSite =
@@ -1962,7 +1971,10 @@ try {
         guardLine !== undefined && guardLine.includes('"verdict":"preview"'),
         `403 但非 #410 origin-guard 判决（无 verdict:preview 的 warn 行）——需归因：${guardLine?.slice(0, 160) ?? "（无 guard warn 行）"}`,
       );
-      await shot("08-same-site-guard", previewPage);
+      // LOW-9（取证对象对位）：本步骤的取证页是 guardPage（CSP 绕过、发起
+      // 凭证写的页面）；previewPage 是上游步骤建立的普通预览页，不是本步骤
+      // 的行为主体，截它会把“guard 拒绝”错记成无关页面状态。
+      await shot("08-same-site-guard", guardPage);
       return `同 site（${previewHost} → ${mainHost}）凭证写 ${sent} → server 日志 403 ×${refused403.length} + guard verdict=preview（主站 cookie 随行但被服务端扣住）`;
     },
   );

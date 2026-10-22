@@ -536,7 +536,16 @@ jobs:
       # an explicit 30 s per-test budget (see jest.setTimeout in the file) rather than bun's 5 s
       # default. Running it through the named script keeps the flag and the file's own budget in one
       # place, instead of a bare `bun test` line drifting from what `test:tls` does locally.
-      - run: bun run test:tls
+      # F6 (OCR R1): the suite is ALREADY driven by `test:ci` above (tests/config/
+      # e2e-bun-suites.json drives scripts/tls-pipeline.test.ts), so running the named entry here
+      # too executed the whole heavy suite twice per push/PR with no extra signal. The explicit
+      # `test:tls` entry stays available for manual re-runs (#407) and is kept exercised on the
+      # nightly/e2e-only path, where the craft-preview topology it underwrites is the subject.
+      - name: TLS pipeline suite (explicit entry, nightly/e2e path only)
+        if: >-
+          github.event_name == 'schedule' ||
+          (github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
+        run: bun run test:tls
 
   startup:
     name: startup (${{ matrix.os }})
