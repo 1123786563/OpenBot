@@ -218,6 +218,45 @@ describeDb(
     );
 
     itDb(
+      "a cancelled task refuses rebuild: a stale queue message cannot resurrect it (fix2)",
+      async () => {
+        const { task, ownerScope } = await pinnedScheduleOfOwner();
+        const cancel = await fixture.craftSchedules.cancelSchedule(
+          ownerScope,
+          task.id,
+        );
+        expect(cancel).toMatchObject({ outcome: "cancelled" });
+        // 陈旧队列消息：取消（软删除）之后才到达的触发。权威任务行已经
+        // 删除——重建必须拒绝，不能照旧产出执行事实与受信 Scope。
+        const resolution = await fixture.craftSchedules.resolveForExecution(
+          fixture.machine,
+          { taskId: task.id, hint: { stale: true } },
+        );
+        expect(resolution).toMatchObject({
+          outcome: "missing",
+          code: "CRAFT_SCHEDULE_TASK_CANCELLED",
+        });
+        // 触发执行同款拒绝：零租约认领、零 work。
+        const fired = await fixture.craftSchedules.runScheduledFire(
+          fixture.machine,
+          {
+            taskId: task.id,
+            executor: { kind: "principal", id: ownerScope.principalId },
+            leaseMs: 5_000,
+            connectionLeases: [],
+            work: async () => {
+              throw new Error("WORK_MUST_NOT_RUN_AFTER_CANCEL");
+            },
+          },
+        );
+        expect(fired).toMatchObject({
+          outcome: "missing",
+          code: "CRAFT_SCHEDULE_TASK_CANCELLED",
+        });
+      },
+    );
+
+    itDb(
       "a machine identity that was never issued is rejected loudly",
       async () => {
         const { task } = await pinnedScheduleOfOwner();

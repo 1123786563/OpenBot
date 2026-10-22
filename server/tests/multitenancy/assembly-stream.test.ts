@@ -78,10 +78,18 @@ function probeEnvironment(): { ok: true } | { ok: false; reason: string } {
 }
 
 const ENV = probeEnvironment();
-const itDb = ((name: string, fn: () => void | Promise<void>) =>
+const itDb = ((
+  name: string,
+  fn: () => void | Promise<void>,
+  timeout?: number,
+) =>
   ENV.ok
-    ? test(name, fn)
-    : test.skip(`${name} [skipped: ${ENV.reason}]`, fn)) as typeof test;
+    ? test(name, fn, timeout)
+    : test.skip(
+        `${name} [skipped: ${ENV.reason}]`,
+        fn,
+        timeout,
+      )) as typeof test;
 const describeDb = ENV.ok ? describe : describe.skip;
 
 type Identity = "a-member" | "b-member";
@@ -97,6 +105,11 @@ let app: Hono;
 let pendingEvents: StreamEventBody[] = [];
 /** 事件端口钩子：下一次取事件前执行一次（mid-stream 撤权的驱动器）。 */
 let beforeNextEvent: (() => Promise<void>) | null = null;
+/** fix2 回归钩子：取事件调用计数；置位时下一次取事件阻塞在该门上。 */
+let portCalls = 0;
+let nextGate: PromiseWithResolvers<StreamEventBody | null> | null = null;
+/** fix2 回归钩子：pushEvent 调用计数（探针含在内）。 */
+let pushCount = 0;
 /** AC3 事务探针：装配层若调用 business.transaction 即置位并抛出。 */
 let assemblyOpenedTransaction = false;
 
@@ -245,17 +258,35 @@ beforeAll(async () => {
   void createScopeResolver; // resolver 由工厂内部共享（同一 authenticate 闭包）。
 
   const service = createStreamSubscriptionService({ data, operator });
+  // fix2 回归面：端口与推送各带一个计数器（其余语义零变化）。
+  const countingService = {
+    ...service,
+    pushEvent: ((
+      scope: never,
+      subscriptionId: string,
+      body: StreamEventBody,
+    ) => {
+      pushCount += 1;
+      return service.pushEvent(scope, subscriptionId, body);
+    }) as typeof service.pushEvent,
+  };
   app = new Hono().route(
     "/api/enterprise/streams",
     createStreamEntryRoutes({
       factory: probingFactory,
-      service,
+      service: countingService,
       events: {
         nextEvent: async () => {
+          portCalls += 1;
           if (beforeNextEvent) {
             const hook = beforeNextEvent;
             beforeNextEvent = null;
             await hook();
+          }
+          if (nextGate) {
+            const gate = nextGate;
+            nextGate = null;
+            return gate.promise;
           }
           return pendingEvents.shift() ?? null;
         },
@@ -639,6 +670,97 @@ describeDb("MT126 stream entry assembly (Issue #169)", () => {
       },
     );
   });
+
+  // ---- fix2：客户端取消与背压（MT126 SSE 长连接的回归面） ----
+  describeDb(
+    "client cancellation and backpressure release the SSE loop",
+    () => {
+      itDb(
+        "a departed client releases the loop; a late event is never revalidated or delivered",
+        async () => {
+          const subscriptionId = await openSubscription(
+            "a-member",
+            "company-a",
+            "team-a1",
+            `${runTag}-thread-a1`,
+          );
+          portCalls = 0;
+          pushCount = 0;
+          // 取事件阻塞在门上：模拟「静默订阅」——客户端离开时没有任何在途事件。
+          const gate = Promise.withResolvers<StreamEventBody | null>();
+          nextGate = gate;
+          try {
+            const response = await requestAs({
+              method: "GET",
+              path: `/api/enterprise/streams/subscriptions/${subscriptionId}/events`,
+              session: "a-member",
+              tenantId: ids["company-a"],
+              workspaceId: ids["team-a1"],
+            });
+            expect(response.status).toBe(200);
+            expect(pushCount).toBe(1); // 探针帧的一次判定
+            const reader = response.body!.getReader();
+            const probe = await reader.read();
+            expect(probe.value).toBeDefined(); // 探针帧可读
+            // 探针帧被读走后，循环进入对下一事件的等待（阻塞在门上）。
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            expect(portCalls).toBe(1);
+            // 客户端离开（取消读端）；此刻没有任何在途事件可唤醒循环。
+            await reader.cancel();
+            // 事件在取消之后才迟到——迟到的正文绝不再过判定面、绝不再投递。
+            gate.resolve({
+              type: "message",
+              status: "ok",
+              message: "late event after departure",
+            });
+            await new Promise((resolve) => setTimeout(resolve, 150));
+            expect(pushCount).toBe(1); // 只有探针；迟到事件零判定
+          } finally {
+            nextGate = null;
+          }
+        },
+        10_000,
+      );
+
+      itDb(
+        "a full consumer queue pauses the pull (desiredSize backpressure), reading resumes it",
+        async () => {
+          const subscriptionId = await openSubscription(
+            "a-member",
+            "company-a",
+            "team-a1",
+            `${runTag}-thread-a1`,
+          );
+          portCalls = 0;
+          pushCount = 0;
+          pendingEvents = [
+            { type: "message", status: "ok", message: "queued behind probe" },
+          ];
+          const response = await requestAs({
+            method: "GET",
+            path: `/api/enterprise/streams/subscriptions/${subscriptionId}/events`,
+            session: "a-member",
+            tenantId: ids["company-a"],
+            workspaceId: ids["team-a1"],
+          });
+          expect(response.status).toBe(200);
+          // 消费端一字未读：探针帧仍在队列里（desiredSize ≤ 0），循环不得
+          // 拉取下一个事件把队列越堆越深。
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          expect(portCalls).toBe(0);
+          // 读走探针帧 → 队列腾出 → 循环恢复拉取并投递预置事件。
+          const reader = response.body!.getReader();
+          const probe = await reader.read();
+          expect(probe.value).toBeDefined();
+          const queued = await reader.read();
+          expect(queued.value).toBeDefined();
+          expect(portCalls).toBeGreaterThanOrEqual(1);
+          await reader.cancel();
+        },
+        10_000,
+      );
+    },
+  );
 });
 
 // ---- 处置表（静态事实 + buildInventory 回写） ----

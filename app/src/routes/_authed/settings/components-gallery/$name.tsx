@@ -10,7 +10,6 @@ import {
   IconWorld,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -57,11 +56,12 @@ import {
 } from "@/lib/components/mutations";
 import {
   type ComponentRecord,
-  scopedComponentListQueryOptions,
   type DataFunctionSummary,
   dataFunctionsQueryOptions,
+  scopedComponentListQueryOptions,
 } from "@/lib/components/queries";
 import { RENDERABLE_NAMES } from "@/lib/copilot/gallery-registry";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { useDateTime } from "@/lib/i18n/datetime";
 import { queryClient } from "@/query-client";
 
@@ -72,10 +72,12 @@ import { queryClient } from "@/query-client";
 /** The same way back from every state this route can be in. */
 const BACK = {
   label: "components.backLabel",
-  linkProps: { to: "/admin/components" },
+  linkProps: { to: "/settings/components-gallery" },
 } as const;
 
-export const Route = createFileRoute("/_authed/settings/components-gallery/$name")({
+export const Route = createFileRoute(
+  "/_authed/settings/components-gallery/$name",
+)({
   component: RouteComponent,
 });
 
@@ -149,7 +151,7 @@ function RouteComponent() {
             </EmptyDescription>
           </EmptyHeader>
           <Button
-            render={<Link to="/admin/components" />}
+            render={<Link to="/settings/components-gallery" />}
             size="sm"
             variant="outline"
           >

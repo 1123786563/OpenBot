@@ -72,10 +72,14 @@ function probeEnvironment(): { ok: true } | { ok: false; reason: string } {
 }
 
 const ENV = probeEnvironment();
-const itDb = ((name: string, fn: () => Promise<void>) =>
+const itDb = ((name: string, fn: () => Promise<void>, timeout?: number) =>
   ENV.ok
-    ? test(name, fn)
-    : test.skip(`${name} [skipped: ${ENV.reason}]`, fn)) as typeof test;
+    ? test(name, fn, timeout)
+    : test.skip(
+        `${name} [skipped: ${ENV.reason}]`,
+        fn,
+        timeout,
+      )) as typeof test;
 const describeDb = ENV.ok ? describe : describe.skip;
 
 // ---------------------------------------------------------------------------
@@ -227,6 +231,52 @@ describeDb("MT053 AC1 list and detail stay inside the caller's scope", () => {
       });
     }
   });
+
+  itDb(
+    "every pinned session stays listed, however many the owner has (fix2: join keeps store filter semantics, not its 100-row convenience page)",
+    async () => {
+      const ownerScope = await fixture.scopeAs("a1-member", "team-a1");
+      // 权威 store 的 listUserSessions 默认页是最新 100 条 INTERACTIVE；
+      // 超过它的已 pin 会话此前在任何页都 join 不回来（被静默丢弃）。
+      const pinned: string[] = [];
+      for (let i = 0; i < 105; i += 1) {
+        const session = await fixture.craft.createSession({
+          userId: ownerScope.actorId,
+          name: `fix2 flood ${i}`,
+        });
+        const pin = await fixture.sessions.pinCraftSession(ownerScope, {
+          sessionId: session.id,
+        });
+        if (!("status" in pin)) throw new Error(`PIN_FAILED: ${pin}`);
+        pinned.push(session.id);
+      }
+      const oldest = pinned[0]!;
+      // 非交互起源同样可 pin，但列表面与权威 store 同语义：不出现在
+      // craft 面上（origin 过滤对齐——不因 join 而放宽或收紧）。
+      const scheduled = await fixture.craft.createSession({
+        userId: ownerScope.actorId,
+        name: "fix2 scheduled origin",
+        origin: "SCHEDULED",
+      });
+      const scheduledPin = await fixture.sessions.pinCraftSession(ownerScope, {
+        sessionId: scheduled.id,
+      });
+      if (!("status" in scheduledPin)) throw new Error(`PIN_FAILED: 2`);
+
+      const listed = await fixture.sessions.listSessions(ownerScope, {
+        limit: 200,
+      });
+      const ids = listed.sessions.map((row) => row.sessionId);
+      // 最老的那条（第 101+ 名）必须在列表里：协会行说它 pin 了，权威行
+      // 也活着——join 没有理由丢它。
+      expect(ids).toContain(oldest);
+      // 非交互起源对齐 store 的过滤语义：不可见。
+      expect(ids).not.toContain(scheduled.id);
+      // 本测试种的全部 INTERACTIVE 会话都在（200 上限内）。
+      for (const id of pinned) expect(ids).toContain(id);
+    },
+    60_000,
+  );
 
   itDb(
     "a same-team member does not see a private session in list or detail",
