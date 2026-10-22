@@ -21,7 +21,7 @@ export const Route = createFileRoute("/_authed/admin")({
 
 function RouteComponent() {
   return (
-    <SidebarShell width="300px">
+    <SidebarShell width="256px">
       <SkipToContent />
       <AdminSidebar />
       <main id={MAIN_CONTENT_ID} className="flex-1">

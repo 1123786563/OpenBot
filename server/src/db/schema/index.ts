@@ -48,6 +48,8 @@ export * from "./enterprise-sso-scim";
 export * from "./enterprise-tenancy";
 export * from "./enterprise-audit";
 export * from "./hindsight-preferences";
+export * from "./hindsight-source-bound";
+export * from "./hindsight-sync";
 export * from "./gateway";
 export * from "./group";
 export * from "./identity";

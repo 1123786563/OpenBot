@@ -50,6 +50,19 @@ export type RecalledGenericPreference = {
   provenance: string;
   /** When the person explicitly marked this preference as general. */
   markedGenericAt: Date;
+  /**
+   * When this fact began to apply (Hindsight 09 / #386). Null = the start could not be
+   * determined — the answer carries that uncertainty, never a fabricated date.
+   */
+  effectiveFrom: Date | null;
+  /** When this fact stopped applying; null = still open (the current fact). */
+  effectiveUntil: Date | null;
+  /**
+   * The temporal answer is not sure of itself: either the fact's start is unknown (current
+   * question), or the asked-about moment falls where a correction's time is unknown
+   * (historical question). The Bot expresses the uncertainty instead of guessing a date.
+   */
+  timeUncertain: boolean;
 };
 
 /** The authority row, in full; internal to the module and its tests. */
@@ -66,6 +79,11 @@ export type PreferenceAuthorityRow = {
   hindsightDocumentId: string;
   syncedContentDigest: string | null;
   syncedAt: Date | null;
+  effectiveFrom: Date | null;
+  effectiveUntil: Date | null;
+  supersededBy: string | null;
+  supersededTimeUnknown: boolean;
+  correctedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -224,11 +242,17 @@ function plainString(
 }
 
 /** Map a database row to the contract a Bot sees: no bank, no document id, no sync state. */
-const toView = (row: PreferenceAuthorityRow): RecalledGenericPreference => ({
+const toView = (
+  row: PreferenceAuthorityRow,
+  timeUncertain = false,
+): RecalledGenericPreference => ({
   id: row.id,
   content: row.content,
   provenance: row.provenance,
   markedGenericAt: row.markedGenericAt,
+  effectiveFrom: row.effectiveFrom,
+  effectiveUntil: row.effectiveUntil,
+  timeUncertain,
 });
 
 /** A row a recall may still hand to a Bot: live, on, and confirmed or edited. */
@@ -238,10 +262,75 @@ const recallEligible = (row: PreferenceAuthorityRow) =>
   (row.reviewState === "confirmed" || row.reviewState === "edited") &&
   row.content !== "";
 
+/**
+ * Whether the row's validity window covers the asked-about moment (Hindsight 09 / #386).
+ *
+ * A CURRENT question reads the chain head — not superseded, and already effective; a fact
+ * whose start is unknown still answers, flagged uncertain. A HISTORICAL question needs a
+ * known start at or before the moment; an open window on the chain head covers any past
+ * moment, and a window closed at an UNKNOWN time surfaces uncertain inside the ambiguity
+ * rather than pretending to know the transition. Unconfirmed changes never get here at all
+ * (the review gate); a tombstone answers neither kind of question.
+ */
+function temporallyVisible(
+  row: PreferenceAuthorityRow,
+  at: Date,
+  mode: "current" | "historical",
+): boolean {
+  if (mode === "current") {
+    if (row.effectiveFrom !== null && row.effectiveFrom > at) return false;
+    if (row.effectiveUntil !== null) return row.effectiveUntil > at;
+    if (row.supersededBy === null) return true;
+    // Closed at an UNKNOWN time: the old fact was current until the correction was decided;
+    // from the decision on, the successor owns the current answer.
+    return row.correctedAt !== null && at < row.correctedAt;
+  }
+  if (row.effectiveFrom === null) return false;
+  if (row.effectiveFrom > at) return false;
+  if (row.effectiveUntil !== null) return row.effectiveUntil > at;
+  if (row.supersededBy === null) return true;
+  // Closed at an unknown time in (from, correctedAt]: inside that span the old fact is the
+  // honest answer, flagged uncertain (when exactly it changed cannot be known); past the
+  // decision moment the change has certainly happened, and the successor answers instead.
+  return (
+    row.supersededTimeUnknown &&
+    row.correctedAt !== null &&
+    at <= row.correctedAt
+  );
+}
+
+/** The uncertainty flag for a visible row: unknown start (current) or unknown close (past). */
+function timeUncertaintyOf(
+  row: PreferenceAuthorityRow,
+  mode: "current" | "historical",
+): boolean {
+  if (mode === "current") return row.effectiveFrom === null;
+  return (
+    row.supersededBy !== null &&
+    row.effectiveUntil === null &&
+    row.supersededTimeUnknown
+  );
+}
+
+/**
+ * The durable sync-work recorder #384 attaches; structural, so the sync queue satisfies it
+ * without this module importing it. Recording happens on the confirm/edit paths — the work
+ * row is the durable "this confirmed content should reach Hindsight" intent the queue drains.
+ */
+export interface PreferenceWorkRecorder {
+  record(input: {
+    subjectType: "preference";
+    tenantId: string;
+    subjectId: string;
+    principalId: string;
+    contentDigest: string;
+  }): Promise<void>;
+}
+
 export function createPreferenceRecallService(
   store: PreferenceRecordStore,
   config: PreferenceRecallServiceConfig,
-  options: { now?: () => Date } = {},
+  options: { now?: () => Date; work?: PreferenceWorkRecorder } = {},
 ) {
   const now = options.now ?? (() => new Date());
   const doFetch =
@@ -333,6 +422,7 @@ export function createPreferenceRecallService(
       // Authority first: the row exists before anything leaves for the service, so a retain
       // that never completes leaves a pending row, never an indexed orphan.
       const id = randomUUID();
+      const at = now();
       const row: PreferenceAuthorityRow = {
         tenantId: grant.tenantId,
         id,
@@ -342,14 +432,30 @@ export function createPreferenceRecallService(
         reviewState: "confirmed",
         enabled: true,
         deletedAt: null,
-        markedGenericAt: now(),
+        markedGenericAt: at,
         hindsightDocumentId: preferenceDocumentIdFor(grant.tenantId, id),
         syncedContentDigest: null,
         syncedAt: null,
-        createdAt: now(),
-        updatedAt: now(),
+        // Validity begins at confirmation — the fact's OpenBot birth, the one start that is
+        // always known. Earlier validity was never established and is never back-claimed.
+        effectiveFrom: at,
+        effectiveUntil: null,
+        supersededBy: null,
+        supersededTimeUnknown: false,
+        correctedAt: null,
+        createdAt: at,
+        updatedAt: at,
       };
       await store.create(row);
+      if (options.work) {
+        await options.work.record({
+          subjectType: "preference",
+          tenantId: row.tenantId,
+          subjectId: row.id,
+          principalId: row.principalId,
+          contentDigest: digestOf(row.content),
+        });
+      }
       const remoteSynced = await retain(grant, row);
       if (remoteSynced) await store.save(row);
       return { record: toView(row), remoteSynced };
@@ -373,9 +479,123 @@ export function createPreferenceRecallService(
       row.content = content;
       row.reviewState = "edited";
       row.updatedAt = now();
+      if (options.work) {
+        await options.work.record({
+          subjectType: "preference",
+          tenantId: row.tenantId,
+          subjectId: row.id,
+          principalId: row.principalId,
+          contentDigest: digestOf(row.content),
+        });
+      }
       const remoteSynced = await retain(grant, row);
       await store.save(row);
       return { record: toView(row), remoteSynced };
+    },
+
+    /**
+     * Correct a time-varying fact (Hindsight 09 / #386). The correction is explicit and the
+     * old fact is NOT deleted: it keeps its confirmed content and gains a validity window
+     * closed at the person's stated effective time — or, when no time could be determined, an
+     * open window flagged `supersededTimeUnknown`, which historical reads inside the ambiguity
+     * surface as uncertainty rather than a guessed date. The successor row is a NEW confirmed
+     * fact under its own document identity (so both versions stay recallable: current
+     * questions find the successor, historical questions find the predecessor), and only the
+     * successor is retained now — the predecessor's content did not change, so its remote
+     * document stands as indexed. Correcting a row that is itself superseded is refused: the
+     * chain has one head, and the person corrects the current fact.
+     */
+    async correctGenericPreference(
+      scope: PlatformScope,
+      id: string,
+      input: { content: unknown; effectiveFrom?: unknown },
+    ): Promise<{
+      record: RecalledGenericPreference;
+      superseded: RecalledGenericPreference;
+      remoteSynced: boolean;
+    }> {
+      const grant = resolveHindsightBankScope(scope);
+      const content = plainString(input.content, "content", CONTENT_MAX);
+      let effectiveFrom: Date | null = null;
+      if (input.effectiveFrom !== undefined) {
+        const parsed =
+          input.effectiveFrom instanceof Date
+            ? input.effectiveFrom
+            : typeof input.effectiveFrom === "string"
+              ? new Date(input.effectiveFrom)
+              : null;
+        if (!parsed || Number.isNaN(parsed.getTime())) {
+          throw new PreferenceRefusedError(
+            "A correction's effective time must be a date.",
+          );
+        }
+        effectiveFrom = parsed;
+      }
+      const row = await store.load(grant.tenantId, id);
+      if (!row || row.principalId !== grant.principalId || row.deletedAt !== null)
+        throw new PreferenceNotFoundError();
+      if (row.supersededBy !== null) {
+        throw new PreferenceRefusedError(
+          "This fact was already corrected; correct the current fact instead.",
+        );
+      }
+      // A stated time must fall strictly inside the old fact's own window: a correction
+      // cannot take effect at or before the moment the old fact began.
+      if (
+        effectiveFrom !== null &&
+        row.effectiveFrom !== null &&
+        effectiveFrom <= row.effectiveFrom
+      ) {
+        throw new PreferenceRefusedError(
+          "A correction cannot take effect at or before the old fact began.",
+        );
+      }
+      const at = now();
+      const successorId = randomUUID();
+      row.effectiveUntil = effectiveFrom;
+      row.supersededBy = successorId;
+      row.supersededTimeUnknown = effectiveFrom === null;
+      row.correctedAt = at;
+      row.updatedAt = at;
+      const successor: PreferenceAuthorityRow = {
+        tenantId: grant.tenantId,
+        id: successorId,
+        principalId: grant.principalId,
+        content,
+        provenance: row.provenance,
+        reviewState: "confirmed",
+        enabled: true,
+        deletedAt: null,
+        markedGenericAt: at,
+        hindsightDocumentId: preferenceDocumentIdFor(grant.tenantId, successorId),
+        syncedContentDigest: null,
+        syncedAt: null,
+        effectiveFrom,
+        effectiveUntil: null,
+        supersededBy: null,
+        supersededTimeUnknown: false,
+        correctedAt: null,
+        createdAt: at,
+        updatedAt: at,
+      };
+      await store.create(successor);
+      await store.save(row);
+      if (options.work) {
+        await options.work.record({
+          subjectType: "preference",
+          tenantId: successor.tenantId,
+          subjectId: successor.id,
+          principalId: successor.principalId,
+          contentDigest: digestOf(successor.content),
+        });
+      }
+      const remoteSynced = await retain(grant, successor);
+      if (remoteSynced) await store.save(successor);
+      return {
+        record: toView(successor, effectiveFrom === null),
+        superseded: toView(row),
+        remoteSynced,
+      };
     },
 
     /**
@@ -418,13 +638,28 @@ export function createPreferenceRecallService(
      */
     async recallGenericPreferences(
       scope: PlatformScope,
-      input: { query: unknown; askingAgentId?: unknown },
+      input: { query: unknown; askingAgentId?: unknown; asOf?: unknown },
     ): Promise<RecalledGenericPreference[]> {
       const grant = resolveHindsightBankScope(scope);
       const query = plainString(input.query, "a query", QUERY_MAX).trim();
       if (input.askingAgentId !== undefined) {
         plainString(input.askingAgentId, "an asking agent id", 128);
       }
+      // The asked-about moment: absent = a current question; present = a historical one.
+      let asOf: Date | undefined;
+      if (input.asOf !== undefined) {
+        const parsed =
+          input.asOf instanceof Date
+            ? input.asOf
+            : typeof input.asOf === "string"
+              ? new Date(input.asOf)
+              : null;
+        if (!parsed || Number.isNaN(parsed.getTime())) {
+          throw new PreferenceRefusedError("An as-of time must be a date.");
+        }
+        asOf = parsed;
+      }
+      const mode: "current" | "historical" = asOf === undefined ? "current" : "historical";
       let response: Response;
       try {
         response = await hindsight(
@@ -463,7 +698,11 @@ export function createPreferenceRecallService(
       return ranked
         .flatMap((documentId) => {
           const row = byDocument.get(documentId);
-          return row && recallEligible(row) ? [toView(row)] : [];
+          return row &&
+            recallEligible(row) &&
+            temporallyVisible(row, asOf ?? now(), mode)
+            ? [toView(row, timeUncertaintyOf(row, mode))]
+            : [];
         })
         .slice(0, RECALL_LIMIT);
     },
@@ -502,6 +741,11 @@ export function createDrizzlePreferenceRecords(
           deletedAt: row.deletedAt,
           syncedContentDigest: row.syncedContentDigest,
           syncedAt: row.syncedAt,
+          effectiveFrom: row.effectiveFrom,
+          effectiveUntil: row.effectiveUntil,
+          supersededBy: row.supersededBy,
+          supersededTimeUnknown: row.supersededTimeUnknown,
+          correctedAt: row.correctedAt,
           updatedAt: row.updatedAt,
         })
         .where(and(eq(table.tenantId, row.tenantId), eq(table.id, row.id)));

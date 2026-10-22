@@ -19,7 +19,7 @@
 // DATABASE_URL）加三个受限角色 URL；缺配置时整套显式 skip（跳过原因
 // 写在用例名里，skipped 不计为通过），绝不回退开发库。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/e2e-compat";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {
   notFoundVerdict,

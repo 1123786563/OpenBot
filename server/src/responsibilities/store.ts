@@ -54,10 +54,14 @@ export function createResponsibilityStore(
     transaction: Transaction,
     runId: string,
     key = runId,
+    queueItem?: (runId: string) => { kind: string; key: string },
   ) {
+    const item = queueItem
+      ? queueItem(runId)
+      : { kind: RESPONSIBILITY_RUN_KIND, key };
     await transaction
       .insert(workItems)
-      .values({ kind: RESPONSIBILITY_RUN_KIND, key, payload: { runId } })
+      .values({ kind: item.kind, key: item.key, payload: { runId } })
       .onConflictDoNothing();
   }
   const store: ResponsibilityStore = {
@@ -186,7 +190,7 @@ export function createResponsibilityStore(
         .orderBy(desc(responsibilityRuns.createdAt))
         .limit(50);
     },
-    async ingestEvent(input) {
+    async ingestEvent(input, options) {
       const event = parseResponsibilityEvent(input);
       return database.transaction(async (transaction) => {
         if (event.responsibilityId)
@@ -284,7 +288,7 @@ export function createResponsibilityStore(
           await transaction
             .insert(responsibilityRuns)
             .values({ id: runId, responsibilityId: goal.id, eventId });
-          await queueRun(transaction, runId);
+          await queueRun(transaction, runId, runId, options?.queueItem);
           runIds.push(runId);
         }
         return { eventId, duplicate: false, runIds };

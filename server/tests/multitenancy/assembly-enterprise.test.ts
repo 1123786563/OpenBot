@@ -19,7 +19,7 @@ import {
   describe,
   expect,
   test,
-} from "../../../tests/support/bun-test-compat";
+} from "../../../tests/support/e2e-compat";
 import { buildInventory } from "../../scripts/multitenancy/inventory";
 import { createConversationRoutes } from "../../src/enterprise/conversations/routes";
 import {
