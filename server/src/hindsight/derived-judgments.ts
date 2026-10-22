@@ -54,6 +54,7 @@ import {
 } from "../db/schema/hindsight-judgments";
 import type { PlatformScope } from "../enterprise/contracts";
 import { resolveHindsightBankScope } from "./bank-scope";
+import { type HindsightPauseControls, learningPausedFor } from "./pause-controls";
 import {
   type HindsightPauseControls,
   learningPausedFor,

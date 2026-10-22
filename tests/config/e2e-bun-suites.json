@@ -34,24 +34,24 @@
    "files": [
     "agent-sandbox/tests/proxy.test.ts",
     "agent-sandbox/tests/snapshot.test.ts",
-    "agent-sandbox/tests/sse.test.ts"
-   ]
-  },
-  {
-   "name": "app/src",
-   "files": [
-    "app/src/lib/i18n/ai-observability.test.ts"
-   ]
-  },
-  {
-   "name": "app/tests part 1",
-   "files": [
+    "agent-sandbox/tests/sse.test.ts",
+    "app/src/lib/i18n/ai-observability.test.ts",
     "app/tests/account-mode-dialog.test.tsx",
     "app/tests/admin-catalog-sync-ui.test.tsx",
     "app/tests/admin-credit-grant-ui.test.tsx",
     "app/tests/admin-gateway-readiness.test.tsx",
     "app/tests/admin-settlement-review-ui.test.tsx",
     "app/tests/agent-roster-error.test.tsx",
+    "app/tests/ai-observability-admin-summary.test.tsx",
+    "app/tests/ai-observability-datasets.test.tsx",
+    "app/tests/ai-observability-experiment-comparison.test.tsx",
+    "app/tests/ai-observability-experiments.test.tsx",
+    "app/tests/ai-observability-exports.test.tsx",
+    "app/tests/ai-observability-route-chain.test.tsx",
+    "app/tests/ai-observability-routes.test.tsx",
+    "app/tests/ai-observability-run-detail.test.tsx",
+    "app/tests/ai-observability-run-steps.test.tsx",
+    "app/tests/ai-observability-runs-list.test.tsx",
     "app/tests/approval-tools.test.tsx",
     "app/tests/approvals-rules.test.tsx",
     "app/tests/async-jobs-ui.test.tsx",
@@ -125,6 +125,16 @@
     "app/tests/mastra-runtime-compat.test.tsx",
     "app/tests/memory-settings.test.tsx",
     "app/tests/model-picker-ui.test.tsx",
+    "app/tests/multitenancy/cache-generation.test.tsx",
+    "app/tests/multitenancy/selection.test.tsx",
+    "app/tests/multitenancy/transport-rest.test.tsx",
+    "app/tests/multitenancy/transport-streams.test.tsx",
+    "app/tests/multitenancy/web-bot-detail.test.tsx",
+    "app/tests/multitenancy/web-bot-ops.test.tsx",
+    "app/tests/multitenancy/web-bot-publish.test.tsx",
+    "app/tests/multitenancy/web-channels.test.tsx",
+    "app/tests/multitenancy/web-memory-routines.test.tsx",
+    "app/tests/multitenancy/web-skills-connections.test.tsx",
     "app/tests/observability-i18n-namespaces.test.ts",
     "app/tests/observability-route-guards.test.tsx",
     "app/tests/pending-settlement-ui.test.tsx",
@@ -273,6 +283,7 @@
     "server/tests/billing-company-renewal.integration.test.ts",
     "server/tests/billing-credits-consumption.integration.test.ts",
     "server/tests/billing-credits-summary.integration.test.ts",
+    "server/tests/billing-credits-writer.integration.test.ts",
     "server/tests/billing-period-fulfillment.integration.test.ts",
     "server/tests/billing-reconcile.integration.test.ts",
     "server/tests/billing-resolution.integration.test.ts"
@@ -418,6 +429,8 @@
     "server/tests/gateway-credential.integration.test.ts",
     "server/tests/gateway-customer-provisioning.integration.test.ts",
     "server/tests/gateway-endpoint-config.integration.test.ts",
+    "server/tests/gateway-probe.integration.test.ts",
+    "server/tests/gateway-probe.test.ts",
     "server/tests/gateway-rate-version.integration.test.ts",
     "server/tests/gateway-readiness.integration.test.ts",
     "server/tests/group-conversations.integration.test.ts",
