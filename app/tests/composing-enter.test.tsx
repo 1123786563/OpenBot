@@ -75,6 +75,8 @@ beforeEach(() => {
         typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
       if (method !== "GET") writes.push({ request: `${method} ${path}`, body });
       const json = (value: unknown) => Response.json(value);
+      // The scoped boundary read (MT086) waits for the scope source before it asks anything.
+      if (path === "/api/me") return json({ user: { id: "user-1" } });
       if (path === "/api/computers/policy") {
         return json({ policy: method === "PUT" ? body : POLICY });
       }

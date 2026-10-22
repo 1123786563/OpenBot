@@ -4,6 +4,7 @@ import { recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import { creditRecoveryItems, creditRecoveryQueries, creditReservations } from "../db/schema/credit-reservations";
 import type { ConversionRate } from "../gateway/conversion-rate";
+import { PRICE_DIMENSIONS } from "../gateway/price-snapshot";
 import { CreditReservationConflictError, createCreditWriter } from "./credits-writer";
 import { createCreditSettleService } from "./credit-settle";
 
@@ -343,23 +344,21 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
     if (typed.action === "settle") {
       // The usage IS the evidence row's: the closed dimension vocabulary with every
       // dimension the row does not carry at zero — the amount cannot disagree with the
-      // evidence because the operator never sent an amount at all.
+      // evidence because the operator never sent an amount at all. Built over the
+      // vocabulary itself so a new dimension joins by existing, never by this list.
+      const actualUsage = Object.fromEntries(
+        PRICE_DIMENSIONS.map((dimension) => [
+          dimension,
+          dimension === "input"
+            ? (evidenceRow.usageInput ?? 0)
+            : dimension === "output"
+              ? (evidenceRow.usageOutput ?? 0)
+              : 0,
+        ]),
+      ) as Record<(typeof PRICE_DIMENSIONS)[number], number>;
       const settleOutcome = await settleService.settle({
         reservationId: item.reservationId,
-        actualUsage: {
-          input: evidenceRow.usageInput ?? 0,
-          output: evidenceRow.usageOutput ?? 0,
-          reasoning: 0,
-          image: 0,
-          image_output: 0,
-          audio_input: 0,
-          audio_output: 0,
-          cache_read: 0,
-          cache_write: 0,
-          video: 0,
-          surcharge_web_search: 0,
-          surcharge_per_request: 0,
-        },
+        actualUsage,
         evidence: {
           kind: "provider_usage_report",
           reference: evidenceRow.id,

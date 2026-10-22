@@ -1247,24 +1247,6 @@
       },
       "basisMissingDims": "{{ref}}: unpriced dimensions — {{dimensions}}",
       "basisEnableable": "{{ref}}: priced for this path"
-    },
-    "capabilities": {
-      "title": "Capability availability",
-      "description": "Whether the gateway can bill Embedding, Rerank and OCR strictly, against each capability's own billed dimensions. An unknown price is not free and never shows as free.",
-      "enabled": "Enabled",
-      "free": "Free",
-      "priceUnknown": "Not enabled — price unknown",
-      "unmapped": "Not enabled — no price basis",
-      "freeExplanation": "Every billed dimension of this capability is priced at exactly zero — an upstream price, not a missing one.",
-      "enabledCells": "{{count}} priced model(s), {{freeCount}} of them free",
-      "missingIntro": "Unpriced dimensions:",
-      "missingDimension": "{{ref}}: {{dimension}} is not priced",
-      "unmappedExplanation": "No price basis has ever been synced for this capability, so nothing can be priced or enabled.",
-      "names": {
-        "embedding": "Embedding",
-        "rerank": "Rerank",
-        "ocr": "OCR"
-      }
     }
   },
   "billingPage": {
@@ -1332,5 +1314,6 @@
     "evidenceEmpty": "No query evidence yet",
     "usage": "Usage",
     "noWriteActions": "This view is strictly read-only"
-  }
+  },
+  "unavailable": "This page is not available under the scope you hold."
 }

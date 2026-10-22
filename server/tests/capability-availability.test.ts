@@ -10,6 +10,13 @@ import {
   type OcrAdmissionDependencies,
 } from "../src/billing/ocr-admission";
 import { summarizeCapabilityAvailability } from "../src/gateway/capability-availability";
+import { summarizeVideoSpecAvailability } from "../src/billing/video-spec-availability";
+import {
+  createVideoSubmitService,
+} from "../src/billing/video-submit";
+import {
+  videoTierPriceTableFromSnapshot,
+} from "../src/billing/video-generation-pricing";
 
 /*
  * Ticket 11.6 (#301) — unknown OCR prices are never executed as free, and the free/unknown
@@ -42,8 +49,11 @@ const FULL_AMOUNTS: Record<PriceDimension, string> = {
   cache_read: "0.0000001",
   cache_write: "0.0000015",
   video: "0.01",
+  video_input: "0.002",
   surcharge_web_search: "0.001",
   surcharge_per_request: "0.01",
+  surcharge_tool_call: "0.002",
+  surcharge_a2a_call: "0.003",
 };
 
 /** Build 03.2-shaped dims: every dimension known by default, the overrides applied. */
@@ -352,5 +362,147 @@ describe("Bifrost 11.6 (#301): the three-capability availability summary (AC3, A
     expect(embedding?.missingDimensions?.map((m) => m.dimension)).toEqual([
       "input",
     ]);
+  });
+});
+
+/*
+ * Ticket 19.2 (#338) — an unpriced video spec is not selectable, not callable, and says
+ * exactly which dimension it is missing; a re-priced basis flips the same verdict on.
+ *
+ *   AC-1  未定价的视频规格不可选择、不可调用，供应商派发数为 0 — the availability
+ *         summary answers price_unknown per cell/method (not a family switch), and the
+ *         forced call refuses at the enablement stage: the submit service (reserve door,
+ *         job row, dispatch — the whole money seam) is never called;
+ *   AC-2  不可用原因指向缺失的具体维度 — the refusal and the summary both name `video`
+ *         with its own per-dimension reason;
+ *   AC-3  拒绝不产生任何账务写入 — no reserve call forms a hold, so no ledger row can
+ *         land (the door's own zero-write guarantee is the reserve suite's contract; the
+ *         proof here is the door never being reached);
+ *   AC-4  补齐定价后该规格可启用 — the same pure reads on the re-priced basis answer
+ *         enabled/free, and the same submit gate then admits the identical request.
+ */
+describe("Bifrost 19.2 (#338): unpriced video specs are unavailable, and say why", () => {
+  const videoRef = {
+    provider: "p",
+    model: "veo-cell",
+    capability: "video",
+  } as const;
+
+  function submitGateSpy(dims: PriceSnapshotDims) {
+    let submitCalls = 0;
+    const service = createVideoSubmitService({
+      resolveBasis: async () => ({ ok: true as const, dims, rate: RATE }),
+      asyncSubmit: async () => {
+        submitCalls += 1;
+        return { status: "submitted" as const, jobId: "aj-v" };
+      },
+      tierTableFor: async (basis) => videoTierPriceTableFromSnapshot(basis),
+    });
+    return {
+      submitCalls: () => submitCalls,
+      call: (request: unknown) =>
+        service.submitVideo({
+          submitIdempotencyKey: "video-19-2",
+          grantId: "grant-1",
+          payer: { kind: "personal", id: "user-1" },
+          model: { provider: "p", model: "veo-cell", capability: "video" },
+          snapshotVersion: 1,
+          rateVersion: 0,
+          request,
+        }),
+    };
+  }
+
+  test("a video cell whose basis prices `video` is available; the unpriced cell is price_unknown with the dimension named (AC1/AC2)", () => {
+    const summary = summarizeVideoSpecAvailability({
+      snapshots: [
+        { ref: videoRef, dims: dims() },
+        {
+          ref: { provider: "p", model: "veo-unpriced", capability: "video" },
+          dims: dims({ video: unknown() }),
+        },
+      ],
+    });
+    expect(summary.capability).toBe("video");
+    const priced = summary.cells.find(
+      (cell) => cell.ref.model === "veo-cell",
+    );
+    expect(
+      priced?.methods.find((m) => m.method === "generation"),
+    ).toEqual({ method: "generation", state: "enabled", free: false });
+    const unpriced = summary.cells.find(
+      (cell) => cell.ref.model === "veo-unpriced",
+    );
+    expect(
+      unpriced?.methods.find((m) => m.method === "generation"),
+    ).toEqual({
+      method: "generation",
+      state: "price_unknown",
+      reasonCode: "video_spec_price_unknown",
+      missingDimensions: [{ dimension: "video", reasonCode: "price_dim_no_source" }],
+    });
+  });
+
+  test("availability is per model + method, never a family switch — the same model's unpriced cell does not darken its priced sibling (Resume hint)", () => {
+    const summary = summarizeVideoSpecAvailability({
+      snapshots: [
+        { ref: videoRef, dims: dims() },
+        {
+          ref: { provider: "p", model: "veo-unpriced", capability: "video" },
+          dims: dims({ video: unknown() }),
+        },
+      ],
+    });
+    // The priced cell stays selectable while its sibling refuses: same provider, same
+    // capability, different basis — the verdict is the cell's own, never the family's.
+    expect(summary.cells.find((c) => c.ref.model === "veo-cell")?.methods[0].state).toBe("enabled");
+    expect(summary.cells.find((c) => c.ref.model === "veo-unpriced")?.methods[0].state).toBe("price_unknown");
+  });
+
+  test("a cell with no snapshot at all is unmapped — a different answer than an unknown basis", () => {
+    const summary = summarizeVideoSpecAvailability({
+      snapshots: [{ ref: videoRef, dims: dims() }],
+    });
+    const listed = summary.cells.map((cell) => cell.ref.model);
+    expect(listed).toEqual(["veo-cell"]);
+  });
+
+  test("a free basis answers free — a price of zero, never a missing dimension", () => {
+    const summary = summarizeVideoSpecAvailability({
+      snapshots: [{ ref: videoRef, dims: dims({ video: { status: "known", amount: "0" } }) }],
+    });
+    expect(
+      summary.cells[0].methods.find((m) => m.method === "generation"),
+    ).toEqual({ method: "generation", state: "free", free: true });
+  });
+
+  test("forcing a call on an unpriced spec refuses at the enablement stage — the whole submit seam uncalled, dispatch 0 (AC1/AC3)", async () => {
+    const gate = submitGateSpy(dims({ video: unknown() }));
+    const outcome = await gate.call({ seconds: 8, size: "1280x720" });
+    expect(outcome).toEqual({
+      status: "refused",
+      stage: "enablement",
+      reasonCode: "video_tier_price_unknown",
+      detail: {
+        code: "video_tier_price_unknown",
+        dimension: "video",
+        reason: "price_dim_no_source",
+      },
+    });
+    expect(gate.submitCalls()).toBe(0);
+  });
+
+  test("re-pricing the basis flips the same verdict and the same gate on (AC4)", async () => {
+    // Before: unpriced. After the administrator prices `video` on a new snapshot version,
+    // the identical request is admitted — no other change, no other capability touched.
+    const refused = await submitGateSpy(dims({ video: unknown() })).call({
+      seconds: 8,
+      size: "1280x720",
+    });
+    expect(refused.status).toBe("refused");
+    const admitted = await submitGateSpy(
+      dims({ video: { status: "known", amount: "0.01" } }),
+    ).call({ seconds: 8, size: "1280x720" });
+    expect(admitted.status).toBe("submitted");
   });
 });

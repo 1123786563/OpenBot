@@ -35,13 +35,14 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { useBotNames } from "@/lib/agents/bot-names";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import {
   removeSkillMutationOptions,
   saveSkillMutationOptions,
   setPluginGrantMutationOptions,
 } from "@/lib/plugins/mutations";
-import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import { scopedPluginsPageQueryOptions } from "@/lib/plugins/queries";
 
 /**
  * The deployment's skills: named instructions a person invokes with `/` and a Bot follows.
@@ -61,8 +62,13 @@ const EMPTY_DRAFT = { slug: "", title: "", summary: "", instructions: "" };
 function RouteComponent() {
   const { t } = useTranslation("admin");
   const queryClient = useQueryClient();
-  const plugins = useQuery(pluginsPageQueryOptions());
-  const { data: agents } = useQuery(agentListQueryOptions());
+  // The skills admin face is the scope's own answer (MT094 / Issue #137, AC2): the roster and
+  // the writes below carry the selection pair and settle under the scope's cache prefix.
+  const scope = useScopedCache();
+  const plugins = useQuery(scopedPluginsPageQueryOptions(queryClient, scope));
+  const { data: agents } = useQuery(
+    scopedAgentListQueryOptions(queryClient, scope),
+  );
   const nameFor = useBotNames();
 
   const [error, setError] = useState<string | null>(null);
@@ -71,15 +77,15 @@ function RouteComponent() {
 
   const report = { onError: (thrown: Error) => setError(thrown.message) };
   const saveSkill = useMutation({
-    ...saveSkillMutationOptions(queryClient),
+    ...saveSkillMutationOptions(queryClient, scope),
     ...report,
   });
   const removeSkill = useMutation({
-    ...removeSkillMutationOptions(queryClient),
+    ...removeSkillMutationOptions(queryClient, scope),
     ...report,
   });
   const setGrant = useMutation({
-    ...setPluginGrantMutationOptions(queryClient),
+    ...setPluginGrantMutationOptions(queryClient, scope),
     ...report,
   });
 

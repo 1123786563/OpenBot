@@ -1,5 +1,7 @@
-import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { type QueryClient, queryOptions } from "@tanstack/react-query";
+import { client, tryClient } from "@/lib/client";
+import { guarded } from "@/lib/enterprise/tenant/queries";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * The marketplace catalogue as the server publishes it, with the asking person's install state.
@@ -57,5 +59,45 @@ export function marketplaceQueryOptions() {
       });
       return response.json();
     },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The scoped half (MT094 / Issue #137): the catalog pages read and install through here
+// ---------------------------------------------------------------------------
+
+/**
+ * The catalogue with the asking scope's install state (MT094 / Issue #137, AC1): the shelf is
+ * browsable — the entries themselves are server constants — but what "installed" means is the
+ * pair's own answer, keyed under the scope's cache prefix and guarded by the generation, so a
+ * switch drops the old scope's shelf wholesale. An install lands in the scope that made it, and
+ * the cards' install marks never describe another scope's workspace.
+ */
+export function scopedMarketplaceQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...marketplaceKeys.catalogue()]
+        : [...marketplaceKeys.catalogue(), ":scope-pending"],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<MarketplacePayload>(() => {})
+        : async ({ signal }): Promise<MarketplacePayload> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient("/api/marketplace", {
+                signal,
+                fallbackKey: "marketplace.load",
+                ...(open.selection ?? {}),
+              });
+              if (!response.ok) {
+                throw new Error("The marketplace could not be loaded.");
+              }
+              return (await response.json()) as MarketplacePayload;
+            }),
   });
 }

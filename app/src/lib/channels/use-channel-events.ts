@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { scopedCachePrefix } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   streamWriteStillCurrent,
   useStreamScope,
@@ -224,6 +225,17 @@ export function useChannelEvents() {
     let retryDelay = FIRST_RETRY_MS;
     let stopped = false;
 
+    /*
+     * Where the roster's live entries live under THIS selection (MT087 / Issue #130): the same
+     * scope prefix the scoped list read composes onto (`scoped-cache.ts`, MT083). The effect rebinds
+     * on every selection change and the generation guard drops any frame that outlived its scope,
+     * so the closure's selection is exactly the scope a frame arriving now belongs to.
+     */
+    const rosterKeys = [
+      channelKeys.list(),
+      [...scopedCachePrefix(userId, selection), ...channelKeys.list()],
+    ];
+
     const connect = () => {
       if (stopped) return;
       socket = new WebSocket(
@@ -232,8 +244,11 @@ export function useChannelEvents() {
 
       socket.onopen = () => {
         retryDelay = FIRST_RETRY_MS;
-        // Recover events missed while the socket was disconnected.
-        void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
+        // Recover events missed while the socket was disconnected, in both homes: the scoped
+        // roster the sidebar renders and the unscoped entries other surfaces still read.
+        for (const key of rosterKeys) {
+          void queryClient.invalidateQueries({ queryKey: key });
+        }
       };
 
       socket.onmessage = (message) => {
@@ -250,14 +265,24 @@ export function useChannelEvents() {
         // Refetch rather than patch: there is no delta to apply. Checked before anything reads
         // `channelId`, because this message has none.
         if (isResync(parsed)) {
-          void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
+          for (const key of rosterKeys) {
+            void queryClient.invalidateQueries({ queryKey: key });
+          }
           return;
         }
 
         const activity = parsed;
-        // A group conversation's shared transcript moves with the same events; refetch it if open.
+        // A group conversation's shared transcript moves with the same events; refetch it if open,
+        // in both homes — the scoped transcript the group page reads and the unscoped one.
         void queryClient.invalidateQueries({
           queryKey: ["groups", activity.channelId],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: [
+            ...scopedCachePrefix(userId, selection),
+            "groups",
+            activity.channelId,
+          ],
         });
 
         /*
@@ -268,19 +293,16 @@ export function useChannelEvents() {
          * belongs at the top of page one, and moving a row between pages would fight the cursors the
          * next fetch uses. The page it is on stays correct, and the next refetch puts it in order.
          */
-        queryClient.setQueryData(
-          channelKeys.list(),
-          (data: ChannelCache | undefined) => {
+        for (const key of rosterKeys) {
+          queryClient.setQueryData(key, (data: ChannelCache | undefined) => {
             if (!data) return data;
             const patched = applyChannelEvent(data, activity);
             if (patched !== "unknown") return patched;
             // An unknown channel id means the roster is stale; refetch rather than patch.
-            void queryClient.invalidateQueries({
-              queryKey: channelKeys.list(),
-            });
+            void queryClient.invalidateQueries({ queryKey: key });
             return data;
-          },
-        );
+          });
+        }
 
         /*
          * A tab looking at the channel somebody just deleted in another tab.

@@ -1,9 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { workshopSnapshotQueryOptions } from "@/lib/workshop/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import {
+  WorkshopUnavailableError,
+  scopedWorkshopSnapshotQueryOptions,
+} from "@/lib/workshop/queries";
 import { WorkshopArtifactsView } from "./workshop-artifacts";
 import { WorkshopFilesView } from "./workshop-files";
 import { WorkshopSchedulesView } from "./workshop-schedules";
@@ -32,7 +36,15 @@ export function WorkshopPanel({
   const [tab, setTab] = useState<
     "process" | "files" | "artifacts" | "usage" | "share" | "schedules"
   >("process");
-  const snapshot = useQuery(workshopSnapshotQueryOptions(channelId));
+  // The aggregate is the scope's own answer (MT091 / Issue #134, AC1): the pair rides the
+  // request and the entry files under the scope's cache prefix, so a cross-scope channel id —
+  // another company's workshop, indistinguishable from one that never existed — reaches this
+  // tab as the typed unavailable error below, never as another scope's rows.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const snapshot = useQuery(
+    scopedWorkshopSnapshotQueryOptions(queryClient, scope, channelId),
+  );
 
   const tabs = [
     { id: "process" as const, label: t("panel.tabs.process") },
@@ -51,6 +63,10 @@ export function WorkshopPanel({
       {snapshot.isPending ? (
         <p className="p-4 text-sm text-muted-foreground" role="status">
           {t("panel.loading")}
+        </p>
+      ) : snapshot.error instanceof WorkshopUnavailableError ? (
+        <p className="p-4 text-sm text-muted-foreground" role="alert">
+          {t("panel.unavailable")}
         </p>
       ) : snapshot.isError ? (
         <p className="p-4 text-sm text-destructive" role="alert">
