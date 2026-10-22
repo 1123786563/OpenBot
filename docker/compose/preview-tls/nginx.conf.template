@@ -9,7 +9,7 @@
 #
 # Configuration (environment, see docker/compose/preview-tls.yml):
 #   OPENBOT_PREVIEW_UPSTREAM       where plaintext HTTP is forwarded. Default
-#                                 http://host.docker.internal:3000 — the OpenBot
+#                                 http://host.docker.internal:3001 — the OpenBot
 #                                 server on the docker host. Point it at a compose
 #                                 service name instead when the terminator runs in
 #                                 the same compose network as the server.

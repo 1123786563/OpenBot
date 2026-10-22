@@ -211,13 +211,24 @@ const PREVIEW_SESSION_COOKIE = "openbot_preview_session";
  * （同一 previewLabel 派生），但主机名形态的期望在 expectOrigin 内逐分支写死，
  * 不靠正则碰巧兼容。
  */
+/**
+ * host 形态地址拼装（R2-F9，OCR R2）：从 PREVIEW_BASE 派生协议/主机名/端口，
+ * label 拼进主机名首段。旧代码在 expectOrigin 与 preflight bogus 探测两处手写
+ * 同款拼法，单边漂移会让断言与探测口径分裂 —— 与 PREVIEW_SESSION_COOKIE 同一
+ * 治理惯例（收敛到单一事实源）。仅在 same-site 拓扑下调用（dev 形态 label 在
+ * 路径首段，不走这里）。
+ */
+function hostFormOrigin(name: string): string {
+  const base = new URL(PREVIEW_BASE);
+  // 主机名首段挂 label；base 带端口时保留（非 443 的本地 TLS 拓扑），
+  // 443 被 WHATWG 序列化丢弃的形态由 base 本身携带。
+  const port = base.port === "" ? "" : `:${base.port}`;
+  return `${base.protocol}//${name}.${base.hostname}${port}`;
+}
+
 function expectOrigin(label: string): string {
   if (TOPOLOGY === "same-site") {
-    const base = new URL(PREVIEW_BASE);
-    // 主机名首段挂 label；base 带端口时保留（非 443 的本地 TLS 拓扑），
-    // 443 被 WHATWG 序列化丢弃的形态由 base 本身携带。
-    const port = base.port === "" ? "" : `:${base.port}`;
-    return `${base.protocol}//${label}.${base.hostname}${port}`;
+    return hostFormOrigin(label);
   }
   return `${PREVIEW_ORIGIN}/${label}`;
 }
@@ -1100,15 +1111,11 @@ try {
       // fix-ocr26 F5（OCR R1）：same-site 的 bogus 探测地址必须是「未注册
       // label 拼成子域」——旧代码把 label 拼进了路径（${origin}/label.${host}/），
       // 对不覆盖 apex 的通配符证书（#412）TLS 校验直接失败 → status 0 →
-      // 断言恒 FAIL。与 expectOrigin 同款拼法：保留 base 协议与端口（本地
-      // TLS 拓扑的非 443 端口），label 进主机名首段。
+      // 断言恒 FAIL。R2-F9（OCR R2）：与 expectOrigin 同款拼法收敛进
+      // hostFormOrigin，不再手写（保留 base 协议与端口，label 进主机名首段）。
       const bogusUrl =
         TOPOLOGY === "same-site"
-          ? (() => {
-              const base = new URL(PREVIEW_BASE);
-              const port = base.port === "" ? "" : `:${base.port}`;
-              return `${base.protocol}//definitely-not-a-label.${base.hostname}${port}/`;
-            })()
+          ? `${hostFormOrigin("definitely-not-a-label")}/`
           : `${base}/definitely-not-a-label/`;
       const bogus = await fetch(bogusUrl, { redirect: "manual" })
         .then(async (r) => ({ status: r.status, body: await r.text() }))
@@ -1275,6 +1282,21 @@ try {
       // http://127.0.0.1:<port>/<label>；服务器铸造的地址是唯一事实源。
       const early = await api.craft(`sessions/${row.id}/webapp-info`);
       const origin = String(early.body?.webapp_url ?? "");
+      // R2-F8（OCR R2）：旧代码在断言前直接 new URL(origin)，空/相对 origin 扡裸
+      // TypeError（“Invalid URL”），把真实原因（webapp-info 响应异常）藏掉。先
+      // 断言非空，再单独捕获解析失败，两条路径都给出携带原始值与响应形状的
+      // 可读信息；严格相等断言保持不变（不放宽回 startsWith）。
+      assert(
+        origin !== "",
+        `webapp_url 为空（webapp-info 响应：${JSON.stringify(early.body).slice(0, 160)}）`,
+      );
+      try {
+        new URL(origin);
+      } catch {
+        throw new Error(
+          `webapp_url=${JSON.stringify(origin)} 不是绝对地址（期望 ${expectOrigin("<label>")} 形态；webapp-info 响应：${JSON.stringify(early.body).slice(0, 160)}）`,
+        );
+      }
       const label =
         TOPOLOGY === "same-site"
           ? (new URL(origin).hostname.split(".")[0] ?? "")

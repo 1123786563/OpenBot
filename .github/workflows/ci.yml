@@ -532,20 +532,11 @@ jobs:
       # A passing job must include the expected test floor. Import-time failures can otherwise skip
       # files before their tests are registered.
       - run: bun run test:ci
-      # #407: the TLS pipeline suite spawns real bash/openssl/drill processes, so its slow cases ride
-      # an explicit 30 s per-test budget (see jest.setTimeout in the file) rather than bun's 5 s
-      # default. Running it through the named script keeps the flag and the file's own budget in one
-      # place, instead of a bare `bun test` line drifting from what `test:tls` does locally.
-      # F6 (OCR R1): the suite is ALREADY driven by `test:ci` above (tests/config/
-      # e2e-bun-suites.json drives scripts/tls-pipeline.test.ts), so running the named entry here
-      # too executed the whole heavy suite twice per push/PR with no extra signal. The explicit
-      # `test:tls` entry stays available for manual re-runs (#407) and is kept exercised on the
-      # nightly/e2e-only path, where the craft-preview topology it underwrites is the subject.
-      - name: TLS pipeline suite (explicit entry, nightly/e2e path only)
-        if: >-
-          github.event_name == 'schedule' ||
-          (github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
-        run: bun run test:tls
+      # #407 + F6 (OCR R1): the TLS pipeline suite is already driven by `test:ci` above
+      # (tests/config/e2e-bun-suites.json drives scripts/tls-pipeline.test.ts). The explicit
+      # `test:tls` entry used to live here behind a step-level nightly/e2e-only condition that
+      # was unreachable — this job's if is the exact complement of that condition. R2-F7 (OCR R2)
+      # moved the explicit entry into the craft-preview-e2e job, which runs only on that path.
 
   startup:
     name: startup (${{ matrix.os }})
@@ -994,6 +985,16 @@ jobs:
         with:
           bun-version: 1.4.3
       - run: bun install --frozen-lockfile
+      # R2-F7 (OCR R2): the explicit TLS pipeline entry moved here from the `test` job —
+      # its old step-level nightly/e2e-only condition was unreachable there (this job's
+      # if is exactly that condition, and `test` carries its complement), so on any
+      # event either the step or the job was skipped. This job runs only on the
+      # nightly/e2e-only path, so no step-level condition is needed; running the
+      # named `test:tls` entry (#407: the 30 s per-test budget for the real
+      # bash/openssl/drill cases) before the acceptance suite keeps the entry
+      # exercised on every run of the job whose topology it underwrites.
+      - name: TLS pipeline suite (explicit entry)
+        run: bun run test:tls
       - name: Run the acceptance suite against the staging stack
         env:
           # #416: the same-site topology profile (AC1 same-site step is a pass
