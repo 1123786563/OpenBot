@@ -29,6 +29,8 @@
  * 第一个就停）。结果以一条结构化记录进入启动日志（可审计），拒绝时 exit 非 0。
  */
 
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { sql } from "drizzle-orm";
 import { getLogger } from "../../../../shared/logger";
 import type { CoverageInventory } from "../../../scripts/multitenancy/inventory";
@@ -36,11 +38,8 @@ import {
   createDatabase as createDatabaseFn,
   type Database,
 } from "../../db/client";
-import {
-  evaluateGlobalExceptionRegistry,
-  GLOBAL_EXCEPTION_ENTRIES,
-  type GlobalExceptionFinding,
-} from "./global-exceptions";
+import { evaluateDefaultGlobalExceptionClosure } from "./global-exception-closure";
+import { evaluateDefaultMachinePersonalExceptionRegistry } from "./machine-personal-exceptions";
 
 // ---------------------------------------------------------------------------
 // 覆盖校验（MT001 CoverageInventory 契约消费方）
@@ -456,13 +455,26 @@ export interface StartupCheckDeps {
   readonly closeDatabase?: (database: Database) => Promise<void>;
 }
 
-/** MT030：globalExceptions 检查的结果面（复用 global-exceptions 的 finding 形状）。 */
+/** MT030+MT127：globalExceptions 检查的结果面（finding 码并集，机器可读）。 */
 type GlobalExceptionsCheck =
   | { readonly ok: true; readonly registered: readonly string[] }
   | {
       readonly ok: false;
       readonly reason: string;
-      readonly findings: readonly GlobalExceptionFinding[];
+      readonly findings: readonly { code: string; detail: string }[];
+    };
+
+/** MT128：machinePersonalExceptions 检查的结果面（第五道启动门）。 */
+type MachinePersonalExceptionsCheck =
+  | {
+      readonly ok: true;
+      readonly registeredCallbacks: readonly string[];
+      readonly registeredPersonal: readonly string[];
+    }
+  | {
+      readonly ok: false;
+      readonly reason: string;
+      readonly findings: readonly { code: string; detail: string }[];
     };
 
 export interface MultitenancyStartupRecord {
@@ -487,6 +499,11 @@ export interface MultitenancyStartupRecord {
       | { readonly ok: false; readonly reason: string };
     /** MT030：例外端点登记表闭合（每条有理由与责任人 + 无未登记全局端点）。 */
     readonly globalExceptions: GlobalExceptionsCheck;
+    /**
+     * MT128：机器回调与个人直连路径独立例外登记闭合（门下入口逐个在册、
+     * 两族互斥）。
+     */
+    readonly machinePersonalExceptions: MachinePersonalExceptionsCheck;
   };
 }
 
@@ -578,9 +595,18 @@ async function evaluateCoverageCheck(
 }
 
 /**
- * MT030：例外端点登记表检查（纯评估，与 coverage 共用同一份已读清单）。
- * 清单不可用时本检查同样带理由失败——验证不了「无未登记全局端点」
- * 就不能声称通过（fail-closed），拒绝理由独立于 coverage 的那份。
+ * 验证方式证据文件的默认存在性谓词（MT127）：evidenceFiles 是仓库相对路径，
+ * 从本模块位置解析（进程 cwd 不是事实源——server 启动目录与测试目录无关）。
+ */
+const evidenceFileExistsDefault = (file: string): boolean =>
+  existsSync(resolve(import.meta.dir, "../../../../", file));
+
+/**
+ * MT030+MT127：例外端点登记表检查（纯评估，与 coverage 共用同一份已读清单）。
+ * MT127 起消费闭合评估器：形状 + 平台/身份闭包（MT030）+ 逐条验证方式在册
+ * 且证据文件存在（MT127）。清单不可用时本检查同样带理由失败——验证不了
+ * 「无未登记全局端点」就不能声称通过（fail-closed），拒绝理由独立于
+ * coverage 的那份。
  */
 function evaluateGlobalExceptionsCheck(
   loaded:
@@ -594,24 +620,58 @@ function evaluateGlobalExceptionsCheck(
       findings: [],
     };
   }
-  const evaluation = evaluateGlobalExceptionRegistry({
-    entries: GLOBAL_EXCEPTION_ENTRIES,
+  const evaluation = evaluateDefaultGlobalExceptionClosure({
     entrances: loaded.inventory.entrances ?? [],
+    evidenceExists: evidenceFileExistsDefault,
   });
   return evaluation.ok
     ? { ok: true, registered: evaluation.registered }
     : {
         ok: false,
-        reason:
-          evaluation.reason ?? "global exception registry validation failed",
+        reason: evaluation.reason ?? "global exception closure failed",
         findings: evaluation.findings,
       };
 }
 
 /**
- * 四项启动校验的编排（MT030 加入第四项 globalExceptions）。全部评估完才返
- * 回记录（拒绝要列全缺口）；任何探测连接用完即关。本函数不打印日志、不
- * 退出进程——那是 applyStartupVerdict 的事，两步分开才可单测。
+ * MT128：机器回调与个人直连例外登记检查（纯评估，与 coverage 共用同一份
+ * 已读清单；登记表是代码，登记变更即就绪重评）。清单不可用时同样带理由
+ * 失败——验证不了「门下入口逐个在册」就不能声称通过（fail-closed）。
+ */
+function evaluateMachinePersonalExceptionsCheck(
+  loaded:
+    | { ok: true; inventory: CoverageInventory }
+    | { ok: false; reason: string },
+): MultitenancyStartupRecord["checks"]["machinePersonalExceptions"] {
+  if (!loaded.ok) {
+    return {
+      ok: false,
+      reason: `machine/personal exception registry could not be validated: the coverage ${loaded.reason}`,
+      findings: [],
+    };
+  }
+  const evaluation = evaluateDefaultMachinePersonalExceptionRegistry({
+    entrances: loaded.inventory.entrances ?? [],
+  });
+  return evaluation.ok
+    ? {
+        ok: true,
+        registeredCallbacks: evaluation.registeredCallbacks,
+        registeredPersonal: evaluation.registeredPersonal,
+      }
+    : {
+        ok: false,
+        reason:
+          evaluation.reason ?? "machine/personal exception registry failed",
+        findings: evaluation.findings,
+      };
+}
+
+/**
+ * 五项启动校验的编排（MT030 加入第四项 globalExceptions；MT128 加入第五项
+ * machinePersonalExceptions）。全部评估完才返回记录（拒绝要列全缺口）；
+ * 任何探测连接用完即关。本函数不打印日志、不退出进程——那是
+ * applyStartupVerdict 的事，两步分开才可单测。
  */
 export async function runMultitenancyStartupChecks(
   inputs: MultitenancyStartupInputs,
@@ -635,9 +695,13 @@ export async function runMultitenancyStartupChecks(
       inputs.waiversPath,
       readTextFile,
     );
-  // a2. 例外端点登记表（MT030）：每条有理由与责任人 + 无未登记全局端点。
+  // a2. 例外端点登记表（MT030 形状+闭包；MT127 起加验证方式闭合）。
   const globalExceptions: MultitenancyStartupRecord["checks"]["globalExceptions"] =
     evaluateGlobalExceptionsCheck(loadedInventory);
+  // a3. 机器回调与个人直连例外登记（MT128，第五道门）：门下入口逐个在册、
+  // 两族互斥；登记表是代码，登记变更即就绪重评。
+  const machinePersonalExceptions: MultitenancyStartupRecord["checks"]["machinePersonalExceptions"] =
+    evaluateMachinePersonalExceptionsCheck(loadedInventory);
 
   // b. 单用户/开发绕过残留。
   const devBypass = evaluateDevBypassResidue({
@@ -694,13 +758,23 @@ export async function runMultitenancyStartupChecks(
   }
 
   const accepted =
-    coverage.ok && devBypass.ok && databaseRoles.ok && globalExceptions.ok;
+    coverage.ok &&
+    devBypass.ok &&
+    databaseRoles.ok &&
+    globalExceptions.ok &&
+    machinePersonalExceptions.ok;
   return {
     type: "multitenancy-startup-validation",
     mode: "on",
     accepted,
     timestamp: new Date().toISOString(),
-    checks: { coverage, devBypass, databaseRoles, globalExceptions },
+    checks: {
+      coverage,
+      devBypass,
+      databaseRoles,
+      globalExceptions,
+      machinePersonalExceptions,
+    },
   };
 }
 

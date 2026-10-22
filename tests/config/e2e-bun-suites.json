@@ -703,31 +703,38 @@
     "server/tests/multitenancy/admin-separation.test.ts",
     "server/tests/multitenancy/agent-adapters.test.ts",
     "server/tests/multitenancy/assembly-enterprise.test.ts",
+    "server/tests/multitenancy/assembly-legacy.test.ts",
+    "server/tests/multitenancy/assembly-stream.test.ts",
     "server/tests/multitenancy/attachments.test.ts",
     "server/tests/multitenancy/audit-domains.test.ts",
+    "server/tests/multitenancy/backfill-consistency.test.ts",
     "server/tests/multitenancy/billing-visibility.test.ts",
     "server/tests/multitenancy/bot-lifecycle.test.ts",
     "server/tests/multitenancy/bot-publish.test.ts",
     "server/tests/multitenancy/bots-ownership.test.ts",
     "server/tests/multitenancy/cache-keys.test.ts",
+    "server/tests/multitenancy/child-backfill-kb.test.ts",
     "server/tests/multitenancy/child-backfill-main-batch1.test.ts",
     "server/tests/multitenancy/child-backfill-main-batch1.test.ts\nserver/tests/multitenancy/integration-evidence.test.ts\nserver/tests/multitenancy/legacy-anchor.test.ts\nserver/tests/multitenancy/migration-tool.test.ts\nserver/tests/multitenancy/observability-authz.test.ts\nserver/tests/multitenancy/root-backfill.test.ts",
+    "server/tests/multitenancy/child-backfill-main-batch2.test.ts",
     "server/tests/multitenancy/company-admin-routes.test.ts",
     "server/tests/multitenancy/company-reservation.test.ts",
     "server/tests/multitenancy/computer-allocation.test.ts",
     "server/tests/multitenancy/conversation-messages.test.ts",
     "server/tests/multitenancy/conversations-list.test.ts",
-    "server/tests/multitenancy/credential-lease.test.ts",
-    "server/tests/multitenancy/credentials-ownership.test.ts",
-    "server/tests/multitenancy/deletion-semantics.test.ts",
-    "server/tests/multitenancy/entry-context.test.ts",
-    "server/tests/multitenancy/execution-artifacts.test.ts",
-    "server/tests/multitenancy/fixtures.test.ts"
+    "server/tests/multitenancy/credential-lease.test.ts"
    ]
   },
   {
    "name": "server/tests/multitenancy part 2",
    "files": [
+    "server/tests/multitenancy/credentials-ownership.test.ts",
+    "server/tests/multitenancy/deletion-semantics.test.ts",
+    "server/tests/multitenancy/entry-context.test.ts",
+    "server/tests/multitenancy/execution-artifacts.test.ts",
+    "server/tests/multitenancy/external-files-migration.test.ts",
+    "server/tests/multitenancy/fixtures.test.ts",
+    "server/tests/multitenancy/global-exception-closure.test.ts",
     "server/tests/multitenancy/global-exceptions.test.ts",
     "server/tests/multitenancy/group-membership.test.ts",
     "server/tests/multitenancy/host-access.test.ts",
@@ -739,11 +746,17 @@
     "server/tests/multitenancy/job-ownership.test.ts",
     "server/tests/multitenancy/learning-demonstrations.test.ts",
     "server/tests/multitenancy/legacy-anchor.test.ts",
+    "server/tests/multitenancy/machine-personal-exceptions.test.ts",
     "server/tests/multitenancy/marketplace-install.test.ts",
     "server/tests/multitenancy/membership-model.test.ts",
     "server/tests/multitenancy/migration-tool.test.ts",
     "server/tests/multitenancy/native-runtime.test.ts",
-    "server/tests/multitenancy/not-found-semantics.test.ts",
+    "server/tests/multitenancy/not-found-semantics.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests/multitenancy part 3",
+   "files": [
     "server/tests/multitenancy/oauth-state.test.ts",
     "server/tests/multitenancy/observability-authz.test.ts",
     "server/tests/multitenancy/openmuse-activity-notifications.test.ts",
@@ -751,12 +764,7 @@
     "server/tests/multitenancy/openmuse-personal.test.ts",
     "server/tests/multitenancy/openmuse-private-bot.test.ts",
     "server/tests/multitenancy/openmuse-reviewed-actions.test.ts",
-    "server/tests/multitenancy/openmuse-tasks.test.ts"
-   ]
-  },
-  {
-   "name": "server/tests/multitenancy part 3",
-   "files": [
+    "server/tests/multitenancy/openmuse-tasks.test.ts",
     "server/tests/multitenancy/payer-accounts.test.ts",
     "server/tests/multitenancy/people-lifecycle.test.ts",
     "server/tests/multitenancy/personal-memory.test.ts",
@@ -766,10 +774,18 @@
     "server/tests/multitenancy/proactive-tx.test.ts",
     "server/tests/multitenancy/public-bot-usage.test.ts",
     "server/tests/multitenancy/purge-restore.test.ts",
+    "server/tests/multitenancy/quarantine-list.test.ts",
+    "server/tests/multitenancy/readiness-enforcement.test.ts",
     "server/tests/multitenancy/resource-policy.test.ts",
     "server/tests/multitenancy/revocation.test.ts",
     "server/tests/multitenancy/rls-core.test.ts",
-    "server/tests/multitenancy/root-backfill.test.ts",
+    "server/tests/multitenancy/rollback-procedure.test.ts",
+    "server/tests/multitenancy/root-backfill.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests/multitenancy part 4",
+   "files": [
     "server/tests/multitenancy/routing-policy.test.ts",
     "server/tests/multitenancy/runs-protocol.test.ts",
     "server/tests/multitenancy/runtime-config.test.ts",
@@ -780,12 +796,7 @@
     "server/tests/multitenancy/shared-approvals.test.ts",
     "server/tests/multitenancy/skills-components.test.ts",
     "server/tests/multitenancy/sso-scim-config.test.ts",
-    "server/tests/multitenancy/startup-checks.test.ts"
-   ]
-  },
-  {
-   "name": "server/tests/multitenancy part 4",
-   "files": [
+    "server/tests/multitenancy/startup-checks.test.ts",
     "server/tests/multitenancy/startup-defaults.test.ts",
     "server/tests/multitenancy/streams.test.ts",
     "server/tests/multitenancy/team-public-rules.test.ts",
@@ -795,6 +806,7 @@
     "server/tests/multitenancy/tool-invocation.test.ts",
     "server/tests/multitenancy/vendor-billing.test.ts",
     "server/tests/multitenancy/voice-mobile-bff.test.ts",
+    "server/tests/multitenancy/worker-assembly.test.ts",
     "server/tests/multitenancy/workspace-scope.test.ts"
    ]
   }
@@ -1141,15 +1153,20 @@
   "server/tests/multitenancy/admin-separation.test.ts",
   "server/tests/multitenancy/agent-adapters.test.ts",
   "server/tests/multitenancy/assembly-enterprise.test.ts",
+  "server/tests/multitenancy/assembly-legacy.test.ts",
+  "server/tests/multitenancy/assembly-stream.test.ts",
   "server/tests/multitenancy/attachments.test.ts",
   "server/tests/multitenancy/audit-domains.test.ts",
+  "server/tests/multitenancy/backfill-consistency.test.ts",
   "server/tests/multitenancy/billing-visibility.test.ts",
   "server/tests/multitenancy/bot-lifecycle.test.ts",
   "server/tests/multitenancy/bot-publish.test.ts",
   "server/tests/multitenancy/bots-ownership.test.ts",
   "server/tests/multitenancy/cache-keys.test.ts",
+  "server/tests/multitenancy/child-backfill-kb.test.ts",
   "server/tests/multitenancy/child-backfill-main-batch1.test.ts",
   "server/tests/multitenancy/child-backfill-main-batch1.test.ts\nserver/tests/multitenancy/integration-evidence.test.ts\nserver/tests/multitenancy/legacy-anchor.test.ts\nserver/tests/multitenancy/migration-tool.test.ts\nserver/tests/multitenancy/observability-authz.test.ts\nserver/tests/multitenancy/root-backfill.test.ts",
+  "server/tests/multitenancy/child-backfill-main-batch2.test.ts",
   "server/tests/multitenancy/company-admin-routes.test.ts",
   "server/tests/multitenancy/company-reservation.test.ts",
   "server/tests/multitenancy/computer-allocation.test.ts",
@@ -1160,7 +1177,9 @@
   "server/tests/multitenancy/deletion-semantics.test.ts",
   "server/tests/multitenancy/entry-context.test.ts",
   "server/tests/multitenancy/execution-artifacts.test.ts",
+  "server/tests/multitenancy/external-files-migration.test.ts",
   "server/tests/multitenancy/fixtures.test.ts",
+  "server/tests/multitenancy/global-exception-closure.test.ts",
   "server/tests/multitenancy/global-exceptions.test.ts",
   "server/tests/multitenancy/group-membership.test.ts",
   "server/tests/multitenancy/host-access.test.ts",
@@ -1172,6 +1191,7 @@
   "server/tests/multitenancy/job-ownership.test.ts",
   "server/tests/multitenancy/learning-demonstrations.test.ts",
   "server/tests/multitenancy/legacy-anchor.test.ts",
+  "server/tests/multitenancy/machine-personal-exceptions.test.ts",
   "server/tests/multitenancy/marketplace-install.test.ts",
   "server/tests/multitenancy/membership-model.test.ts",
   "server/tests/multitenancy/migration-tool.test.ts",
@@ -1194,9 +1214,12 @@
   "server/tests/multitenancy/proactive-tx.test.ts",
   "server/tests/multitenancy/public-bot-usage.test.ts",
   "server/tests/multitenancy/purge-restore.test.ts",
+  "server/tests/multitenancy/quarantine-list.test.ts",
+  "server/tests/multitenancy/readiness-enforcement.test.ts",
   "server/tests/multitenancy/resource-policy.test.ts",
   "server/tests/multitenancy/revocation.test.ts",
   "server/tests/multitenancy/rls-core.test.ts",
+  "server/tests/multitenancy/rollback-procedure.test.ts",
   "server/tests/multitenancy/root-backfill.test.ts",
   "server/tests/multitenancy/routing-policy.test.ts",
   "server/tests/multitenancy/runs-protocol.test.ts",
@@ -1218,6 +1241,7 @@
   "server/tests/multitenancy/tool-invocation.test.ts",
   "server/tests/multitenancy/vendor-billing.test.ts",
   "server/tests/multitenancy/voice-mobile-bff.test.ts",
+  "server/tests/multitenancy/worker-assembly.test.ts",
   "server/tests/multitenancy/workspace-scope.test.ts",
   "server/tests/ocr-pricing.test.ts",
   "server/tests/offboarding-retirement.integration.test.ts",
@@ -1515,7 +1539,16 @@
   "server/tests/realtime-recovery.integration.test.ts": "runner named it: wave3 bf19 套件",
   "server/tests/realtime-webrtc-parity.integration.test.ts": "runner named it: wave3 bf19 套件",
   "server/tests/multitenancy/child-backfill-main-batch1.test.ts\nserver/tests/multitenancy/integration-evidence.test.ts\nserver/tests/multitenancy/legacy-anchor.test.ts\nserver/tests/multitenancy/migration-tool.test.ts\nserver/tests/multitenancy/observability-authz.test.ts\nserver/tests/multitenancy/root-backfill.test.ts": "runner named it: wave3 mt20 套件",
-  "server/tests/acceptance-matrix.integration.test.ts\nserver/tests/conformance-evidence-extended.test.ts\nserver/tests/conformance-evidence.test.ts\nserver/tests/delivery-baseline.test.ts": "runner named it: wave3 bf20 套件"
+  "server/tests/acceptance-matrix.integration.test.ts\nserver/tests/conformance-evidence-extended.test.ts\nserver/tests/conformance-evidence.test.ts\nserver/tests/delivery-baseline.test.ts": "runner named it: wave3 bf20 套件",
+  "server/tests/multitenancy/backfill-consistency.test.ts": "runner named it: wave3 mt21b 套件",
+  "server/tests/multitenancy/child-backfill-kb.test.ts": "runner named it: wave3 mt21b 套件",
+  "server/tests/multitenancy/child-backfill-main-batch2.test.ts": "runner named it: wave3 mt21b 套件",
+  "server/tests/multitenancy/external-files-migration.test.ts": "runner named it: wave3 mt21b 套件",
+  "--help": "runner named it: cannot load under Node",
+  "server/tests/multitenancy/global-exception-closure.test.ts": "runner named it: wave3 mt23 套件",
+  "server/tests/multitenancy/machine-personal-exceptions.test.ts": "runner named it: wave3 mt23 套件",
+  "server/tests/multitenancy/readiness-enforcement.test.ts": "runner named it: wave3 mt23 套件",
+  "server/tests/multitenancy/worker-assembly.test.ts": "runner named it: wave3 mt23 套件"
  },
  "directoryIslands": [
   "server/tests/multitenancy",
