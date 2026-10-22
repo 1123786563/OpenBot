@@ -52,6 +52,7 @@ import {
 // The reasons list is used only as a type here (`typeof` for the status map's key union).
 import type { DISPOSAL_REFUSAL_REASONS } from "./recovery-disposal";
 import type { ConversionRate } from "../gateway/conversion-rate";
+import type { RealtimeUsageReader } from "./realtime-usage";
 
 /** The shape `requireAdmin` takes in auth/guards.ts: a refusal answer, or nothing to add. */
 type RequireAdmin = (
@@ -218,6 +219,11 @@ export function createBillingCreditRoutes(deps: {
   audit?: AuditStore;
   /** The claim clock — the period is this answer, never a client field. */
   now?: () => Date;
+  /**
+   * 15.8's realtime session consumption read (the 套餐与积分 page's realtime rows).
+   * Absent answers 503, never a fallback — the same rule the reward claim keeps.
+   */
+  realtimeUsage?: RealtimeUsageReader;
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
@@ -276,6 +282,28 @@ export function createBillingCreditRoutes(deps: {
         payer,
       ),
     );
+  });
+
+  /*
+   * The realtime session consumption read (15.8, AC3/AC4): the person's own realtime
+   * sessions with per-session consumption, the amount still awaiting settlement, and the
+   * abnormal-state reason the doors themselves wrote (15.5's stop, 15.6's close). The same
+   * shape the reads above keep: the account is the session's own personal payer, resolved
+   * server-side — no route parameter names an account, so another person's sessions are
+   * never in the question, and the forged-parameter middleware above already answers a
+   * client that tries. Amounts stay the ledger's own ×100 integers.
+   */
+  routes.get("/credits/realtime-sessions", async (context) => {
+    if (!deps.realtimeUsage) {
+      return context.json(
+        { error: "Realtime usage is unavailable. Try again." },
+        503,
+      );
+    }
+    const payer = resolvePayerForPersonalUser(context.var.actor);
+    return context.json({
+      sessions: await deps.realtimeUsage.realtimeSessionsForPayer(payer),
+    });
   });
 
   /*

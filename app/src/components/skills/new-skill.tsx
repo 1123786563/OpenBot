@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
 import { SkillFields } from "@/components/skills/skill-fields";
 import { saveSkillMutationOptions } from "@/lib/plugins/mutations";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { emptySkillForm } from "@/lib/skills/form";
 import type { SkillFormValues } from "@/lib/skills/form";
 
@@ -23,9 +24,11 @@ export function NewSkill({
 }) {
   const { t } = useTranslation("skills");
   const queryClient = useQueryClient();
+  // The save rides the scope this screen holds (MT088 AC3): the write carries the selection pair.
+  const scope = useScopedCache();
   const navigate = useNavigate();
 
-  const createSkill = useMutation(saveSkillMutationOptions(queryClient));
+  const createSkill = useMutation(saveSkillMutationOptions(queryClient, scope));
 
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8">

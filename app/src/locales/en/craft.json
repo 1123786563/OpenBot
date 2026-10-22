@@ -6,6 +6,7 @@
     "none": "No sessions yet. Start one to ask an agent to build.",
     "noneSelected": "Pick a session, or start a new one.",
     "untitled": "Untitled",
+    "unavailable": "This session is not available in the current workspace.",
     "rename": "Rename session",
     "delete": "Delete",
     "deleteConfirm": "Delete this session?",

@@ -22,7 +22,12 @@ import { DetailPanel } from "@/components/layout/detail-panel";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";
 import { useMarkOpenChannelRead } from "@/lib/channels/mark-read";
-import { type AgentChannel, channelQueryOptions } from "@/lib/channels/queries";
+import {
+  type AgentChannel,
+  ChannelUnavailableError,
+  scopedChannelDetailQueryOptions,
+} from "@/lib/channels/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 const chatSearchSchema = z.object({
   settings: z.boolean().optional(),
@@ -52,7 +57,13 @@ function RouteComponent() {
   const { t } = useTranslation("channels");
   const { channelId } = Route.useParams();
   const { settings, watch, workshop } = Route.useSearch();
-  const channel = useQuery(channelQueryOptions(channelId));
+  // The conversation read rides the scope this screen holds (MT087): keyed under the scope's own
+  // prefix, carrying the pair, and refused — as one explicit state — when the scope does.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const channel = useQuery(
+    scopedChannelDetailQueryOptions(queryClient, scope, channelId),
+  );
   const navigate = Route.useNavigate();
   const isSettingsOpen = settings === true;
   const isWorkshopOpen = workshop === true;
@@ -202,6 +213,7 @@ function RouteComponent() {
       <ChannelBody
         channel={channel.data}
         isPending={channel.isPending}
+        unavailable={channel.error instanceof ChannelUnavailableError}
         hasError={Boolean(channel.error)}
       />
     </DetailPanel>
@@ -215,15 +227,29 @@ function RouteComponent() {
 function ChannelBody({
   channel,
   isPending,
+  unavailable,
   hasError,
 }: {
   channel: AgentChannel | undefined;
   isPending: boolean;
+  unavailable: boolean;
   hasError: boolean;
 }) {
   const { t } = useTranslation("channels");
   // Nothing while the channel loads: a placeholder inside a local round-trip is a flicker.
   if (isPending) return null;
+  if (unavailable) {
+    // The one unavailable state (MT087 AC3): a conversation of a scope this person has left says
+    // so in the same words as one that never existed — the server's 404 does not distinguish them.
+    return (
+      <p
+        className="p-8 text-sm text-muted-foreground"
+        data-testid="channel-unavailable"
+      >
+        {t("channelDetail.unavailable")}
+      </p>
+    );
+  }
   if (hasError || !channel) {
     return (
       <p className="p-8 text-sm text-destructive" role="alert">

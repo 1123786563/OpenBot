@@ -54,6 +54,7 @@ import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import { desktopAuthPage } from "./auth/native-browser";
 import type { Credits } from "./billing/credits";
 import type { CreditWriter } from "./billing/credits-writer";
+import { createRealtimeUsageService } from "./billing/realtime-usage";
 import { createRewardGranter } from "./billing/rewards";
 import {
   createPaymentCallbackRoutes,
@@ -3051,6 +3052,15 @@ export function createApp(
               rewards: createRewardGranter({
                 database: billing.database,
                 creditWriter: billing.creditWriter,
+              }),
+            }
+          : {}),
+        // 15.8's realtime consumption rows ride the same database the ledger reads; mounted
+        // only where the billing assembly has one, and the route refuses 503 without it.
+        ...(billing?.database
+          ? {
+              realtimeUsage: createRealtimeUsageService({
+                database: billing.database,
               }),
             }
           : {}),

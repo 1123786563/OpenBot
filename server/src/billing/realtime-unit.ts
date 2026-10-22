@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   creditReservations,
@@ -15,6 +15,20 @@ import {
   type CreditReserveRefusalReasonCode,
   type ReserveBoundEvidence,
 } from "./credit-reserve";
+import {
+  SETTLE_USAGE_EVIDENCE_KINDS,
+  createCreditSettleService,
+  type CreditSettleOutcome,
+  type CreditSettleRefusalReasonCode,
+  type SettleUsageEvidence,
+} from "./credit-settle";
+import {
+  computeReservationCeiling,
+  lockedBasisOfReservation,
+  resolveLockedReservationBasis,
+} from "./reserve-bound";
+import { PRICE_DIMENSIONS } from "../gateway/price-snapshot";
+import type { ConversionRate } from "../gateway/conversion-rate";
 
 /*
  * The realtime billing unit door (Bifrost 15.2, #315): the place a realtime session's money
@@ -58,6 +72,22 @@ import {
  * that restores it.
  */
 
+/**
+ * The authorization-family refusal codes whose verdict ENDS the session (15.6): the grant,
+ * the payer it resolves to, or the payment identity can no longer be stood on, so no later
+ * unit of this session could ever be admitted honestly. `model_not_open` is deliberately
+ * absent — 15.2 pinned that a scope close stops the next unit without touching the session
+ * row (a scope verdict is the model's, not the session's authorization).
+ */
+const AUTHORIZATION_REFUSAL_CLOSE_REASONS: ReadonlySet<string> = new Set([
+  "grant_invalid",
+  "payer_unresolved",
+  "payer_conflict",
+] as const);
+
+/** Why a shutdown writes `unknown` on the units it could not confirm (15.6). */
+const SHUTDOWN_UNKNOWN_REASON = "shutdown_tail_unconfirmed";
+
 /** The local unit id's prefix — recognisable on sight, like the session's `rs-`. */
 export const REALTIME_UNIT_ID_PREFIX = "ru-";
 
@@ -91,6 +121,12 @@ export type RealtimeUnitRefusalReasonCode =
   | "request_invalid"
   | "session_not_found"
   | "session_not_open"
+  /**
+   * 15.5's stop: the session was stopped by balance exhaustion and admits no new unit.
+   * The detail carries the stop's own reason (the door's `insufficient_credits`), so a
+   * money verdict never reads as a transport verdict on any surface.
+   */
+  | "session_stopped"
   | CreditReserveRefusalReasonCode;
 
 /** The unit's contract view — the ticket's RealtimeUnit members, as rows answer them. */
@@ -104,6 +140,10 @@ export type RealtimeUnitRecord = {
   attemptId: string | null;
   reservationId: string | null;
   refusalReason: string | null;
+  /** Why a holding unit became unknown (15.6 shutdown sweep, 15.7 overage tail). */
+  unknownReason: string | null;
+  /** When the unit's hold settled through 06.9 (15.7) — null unless settled. */
+  settledAt: string | null;
   createdAt: string;
   stateUpdatedAt: string;
 };
@@ -161,6 +201,14 @@ export type RealtimeUnitDependencies = {
   now?: () => Date;
   /** 03.6's freshness window, threaded to the reserve door unchanged. */
   catalogFreshnessWindowMs?: number;
+  /**
+   * 15.7's tail settlement, composed over 06.9 unchanged (the reservation's own fence is
+   * the money idempotency). Injectable so a deployment wires its own settle service —
+   * with its environment rate; absent, the door builds one over this database.
+   */
+  settle?: (request: unknown) => Promise<CreditSettleOutcome>;
+  /** The deployment's environment rate — the value a rate-version-0 lock names (06.5). */
+  environmentRate?: ConversionRate;
 };
 
 function refused(
@@ -268,6 +316,8 @@ function recordOf(row: typeof realtimeUnits.$inferSelect): RealtimeUnitRecord {
     attemptId: row.attemptId,
     reservationId: row.reservationId,
     refusalReason: row.refusalReason,
+    unknownReason: row.unknownReason,
+    settledAt: row.settledAt === null ? null : row.settledAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     stateUpdatedAt: row.stateUpdatedAt.toISOString(),
   };
@@ -309,6 +359,122 @@ async function replayOutcome(
   };
 }
 
+/** Why a tail settlement refused. The settle surface's own closed set plus this door's unit-shape codes. */
+export type RealtimeUnitSettleRefusalReasonCode =
+  | "request_invalid"
+  | "unit_not_holding"
+  | CreditSettleRefusalReasonCode;
+
+/** What a tail settlement answers: settled once, unknown at the bound's edge, or refused. */
+export type RealtimeUnitSettleOutcome =
+  | {
+      status: "settled";
+      unit: RealtimeUnitRecord;
+      /** 06.9's own settled answer — the charge's exact shape. */
+      settle: Extract<CreditSettleOutcome, { status: "settled" }>;
+      /** True when the unit was already settled and this call answered the original result. */
+      replay?: boolean;
+    }
+  | {
+      status: "unknown";
+      unit: RealtimeUnitRecord;
+      /** Today one code: the tail's exact cost exceeds the unit's bound. */
+      reasonCode: "tail_exceeds_bound";
+      detail: Record<string, unknown>;
+    }
+  | {
+      status: "refused";
+      unit: RealtimeUnitRecord | null;
+      reasonCode: RealtimeUnitSettleRefusalReasonCode;
+      detail: Record<string, unknown>;
+    };
+
+/** One tail settlement request's server-verified shape. */
+type RealtimeUnitSettleRequest = {
+  unitId: string;
+  actualUsage: Record<(typeof PRICE_DIMENSIONS)[number], number>;
+  evidence: SettleUsageEvidence;
+  settledBy: string;
+  idempotencyKey: string;
+};
+
+/**
+ * The tail settlement's shape validation — the same discipline the doors keep: every
+ * dimension of the closed vocabulary with a non-negative whole count (an unknown key is
+ * billing a dimension this deployment cannot price), evidence from 06.9's own closed kind
+ * set (an adapter that cannot produce enforceable usage evidence cannot settle — its tails
+ * stay unknown with the reason on the row), and identifier-shaped identities.
+ */
+function validateSettleRequest(
+  input: unknown,
+): { ok: true; request: RealtimeUnitSettleRequest } | { ok: false; detail: Record<string, unknown> } {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, detail: { field: "body" } };
+  }
+  const raw = input as Record<string, unknown>;
+  if (!isIdentifier(raw.unitId, 512)) {
+    return { ok: false, detail: { field: "unitId" } };
+  }
+  const usage = raw.actualUsage;
+  if (usage === null || typeof usage !== "object" || Array.isArray(usage)) {
+    return { ok: false, detail: { field: "actualUsage" } };
+  }
+  const usageRecord = usage as Record<string, unknown>;
+  const knownDimensions = new Set<string>(PRICE_DIMENSIONS);
+  for (const key of Object.keys(usageRecord)) {
+    if (!knownDimensions.has(key)) {
+      return { ok: false, detail: { field: "actualUsage", reason: "unknown_dimension", dimension: key } };
+    }
+  }
+  const actualUsage = {} as Record<(typeof PRICE_DIMENSIONS)[number], number>;
+  for (const dimension of PRICE_DIMENSIONS) {
+    const quantity = usageRecord[dimension];
+    if (
+      typeof quantity !== "number" ||
+      !Number.isSafeInteger(quantity) ||
+      quantity < 0
+    ) {
+      return { ok: false, detail: { field: "actualUsage", dimension } };
+    }
+    actualUsage[dimension] = quantity;
+  }
+  const evidence = raw.evidence;
+  if (evidence === null || typeof evidence !== "object" || Array.isArray(evidence)) {
+    return { ok: false, detail: { field: "evidence" } };
+  }
+  const evidenceRecord = evidence as Record<string, unknown>;
+  if (!SETTLE_USAGE_EVIDENCE_KINDS.includes(evidenceRecord.kind as never)) {
+    return { ok: false, detail: { field: "evidence", reason: "kind" } };
+  }
+  if (
+    evidenceRecord.reference !== undefined &&
+    !isIdentifier(evidenceRecord.reference, 512)
+  ) {
+    return { ok: false, detail: { field: "evidence", reason: "reference" } };
+  }
+  if (!isIdentifier(raw.settledBy, 512)) {
+    return { ok: false, detail: { field: "settledBy" } };
+  }
+  if (!isIdentifier(raw.idempotencyKey, 512)) {
+    return { ok: false, detail: { field: "idempotencyKey" } };
+  }
+  return {
+    ok: true,
+    request: {
+      unitId: raw.unitId,
+      actualUsage,
+      evidence: {
+        kind: evidenceRecord.kind as SettleUsageEvidence["kind"],
+        ...(evidenceRecord.reference !== undefined
+          ? { reference: evidenceRecord.reference as string }
+          : {}),
+      },
+      settledBy: raw.settledBy,
+      idempotencyKey: raw.idempotencyKey,
+    },
+  };
+}
+
 /**
  * The unit door. Order is the contract: shape → the session's frozen identity (it must
  * exist and be open) → replay convergence → one transaction holding the unit insert and the
@@ -318,6 +484,14 @@ async function replayOutcome(
 export function createRealtimeUnitService(dependencies: RealtimeUnitDependencies) {
   const { database } = dependencies;
   const now = dependencies.now ?? (() => new Date());
+  const settle =
+    dependencies.settle ??
+    createCreditSettleService({
+      database,
+      ...(dependencies.environmentRate === undefined
+        ? {}
+        : { environmentRate: dependencies.environmentRate }),
+    }).settle;
 
   return {
     async openUnit(input: unknown): Promise<RealtimeUnitOpenOutcome> {
@@ -364,6 +538,19 @@ export function createRealtimeUnitService(dependencies: RealtimeUnitDependencies
           .limit(1);
         if (existing !== undefined) {
           return replayOutcome(tx as Tx, existing);
+        }
+
+        // 3. 15.5's stop: an exhausted session admits NO NEW unit, and the refusal names
+        //    the stop's own reason — the door is never asked, so nothing new could hold
+        //    and no provider input could be billed to a unit of this session (耗尽后不
+        //    开始新的计费单元). A REPLAY answered above converges on the original unit's
+        //    original outcome untouched; the refusal precedes a new unit's existence, so
+        //    it writes no row.
+        if (session.stoppedAt !== null) {
+          return refused(null, "session_stopped", {
+            sessionId: request.sessionId,
+            stopReason: session.stopReason,
+          });
         }
 
         // 3. The unit row is born pending INSIDE the transaction that immediately answers
@@ -422,6 +609,53 @@ export function createRealtimeUnitService(dependencies: RealtimeUnitDependencies
             })
             .where(eq(realtimeUnits.unitId, unitId))
             .returning();
+          if (AUTHORIZATION_REFUSAL_CLOSE_REASONS.has(outcome.reasonCode)) {
+            // 15.6's shutdown, written by the verdict that earned it: an authorization
+            // the session can no longer stand on ends the session — closed through the
+            // shape 0193 reserved — and every still-holding unit of the session becomes
+            // unknown in the same commit (关停不取消已发生费用的结算，未确认部分进入
+            // unknown). The holds are kept: nothing is released, nothing is charged, and
+            // 15.7's tail settlement may still settle these rows when evidence arrives.
+            await tx
+              .update(realtimeSessions)
+              .set({ state: "closed", closedAt: now(), closeReason: outcome.reasonCode })
+              .where(
+                and(
+                  eq(realtimeSessions.sessionId, request.sessionId),
+                  eq(realtimeSessions.state, "open"),
+                ),
+              );
+            await tx
+              .update(realtimeUnits)
+              .set({
+                state: "unknown",
+                unknownReason: SHUTDOWN_UNKNOWN_REASON,
+                stateUpdatedAt: now(),
+              })
+              .where(
+                and(
+                  eq(realtimeUnits.sessionId, request.sessionId),
+                  inArray(realtimeUnits.state, ["reserved", "processing"]),
+                ),
+              );
+          }
+          if (outcome.reasonCode === "insufficient_credits") {
+            // 15.5's stop, written by the refusal that proved it: the balance could not
+            // cover this unit, so the session admits no later one. The same transaction
+            // carries the refused unit row and the session's stop — one commit, one
+            // fact. Settlement of what already holds is untouched: the stop writes no
+            // hold release, no ledger row, and no close (已发生费用的结算责任不受停止
+            // 影响; 关闭是 15.6 的语义).
+            await tx
+              .update(realtimeSessions)
+              .set({ stoppedAt: now(), stopReason: outcome.reasonCode })
+              .where(
+                and(
+                  eq(realtimeSessions.sessionId, request.sessionId),
+                  isNull(realtimeSessions.stoppedAt),
+                ),
+              );
+          }
           return refused(recordOf(refusedRow), outcome.reasonCode, outcome.detail);
         }
 
@@ -477,6 +711,172 @@ export function createRealtimeUnitService(dependencies: RealtimeUnitDependencies
       return current === undefined
         ? undefined
         : { status: "not_moved", unit: recordOf(current) };
+    },
+
+    /**
+     * The tail settlement (15.7): a holding unit's final usage, settled through 06.9
+     * within the unit's own bound, exactly once. The RESERVATION's fence is the money
+     * idempotency (one settle per hold, replays answer the first result); this method's
+     * own job is the unit-level guard around it:
+     *   - a tail whose exact cost EXCEEDS the unit's bound does not settle — the whole
+     *     unit goes `unknown` (`tail_exceeds_bound`), the hold kept for the recovery,
+     *     nothing charged and nothing dropped (不静默追加也不静默丢弃);
+     *   - a unit still `unknown` from a shutdown settles FROM unknown when its evidence
+     *     arrives — the shutdown kept the hold for exactly this;
+     *   - only evidence from 06.9's closed vocabulary may stand under a settle: an
+     *     adapter that cannot produce enforceable usage evidence leaves its tails
+     *     unknown with the reason on the row (无法约束尾部的不可结算).
+     */
+    async settleUnit(input: unknown): Promise<RealtimeUnitSettleOutcome | undefined> {
+      const validated = validateSettleRequest(input);
+      if (!validated.ok) {
+        return {
+          status: "refused",
+          unit: null,
+          reasonCode: "request_invalid",
+          detail: validated.detail,
+        };
+      }
+      const request = validated.request;
+
+      const [unit] = await database
+        .select()
+        .from(realtimeUnits)
+        .where(eq(realtimeUnits.unitId, request.unitId))
+        .limit(1);
+      if (unit === undefined) {
+        return undefined;
+      }
+      if (unit.reservationId === null) {
+        // A refused (or never-held) unit has no money to settle — its row is the record.
+        return {
+          status: "refused",
+          unit: recordOf(unit),
+          reasonCode: "unit_not_holding",
+          detail: { unitId: unit.unitId, state: unit.state },
+        };
+      }
+
+      // The bound check the reservation's own settle cannot make (it knows the hold, not
+      // the unit's certified ceiling): price the tail through the SAME locked basis and
+      // exact arithmetic, and refuse the settlement the bound cannot cover.
+      const [reservation] = await database
+        .select()
+        .from(creditReservations)
+        .where(eq(creditReservations.id, unit.reservationId))
+        .limit(1);
+      const basis = reservation === undefined ? null : lockedBasisOfReservation(reservation);
+      if (basis !== null) {
+        const resolved = await resolveLockedReservationBasis(
+          {
+            database,
+            ...(dependencies.environmentRate === undefined
+              ? {}
+              : { environmentRate: dependencies.environmentRate }),
+          },
+          basis,
+        );
+        if (resolved.resolved) {
+          const priced = computeReservationCeiling({
+            dims: resolved.dims,
+            quantities: request.actualUsage,
+            rate: resolved.rate,
+          });
+          if (priced.ok) {
+            const exact = priced.exactScaledUnits;
+            if (exact.numerator > BigInt(unit.boundCents) * exact.denominator) {
+              // The overage tail: the whole unit becomes unknown — one reservation, one
+              // settlement, so a partial charge is not expressible — and the recovery
+              // (08.x) disposes of a row that names why.
+              const [unknownRow] = await database
+                .update(realtimeUnits)
+                .set({
+                  state: "unknown",
+                  unknownReason: "tail_exceeds_bound",
+                  stateUpdatedAt: now(),
+                })
+                .where(
+                  and(
+                    eq(realtimeUnits.unitId, unit.unitId),
+                    inArray(realtimeUnits.state, [
+                      "reserved",
+                      "processing",
+                      "unknown",
+                    ]),
+                  ),
+                )
+                .returning();
+              return {
+                status: "unknown",
+                unit: recordOf(unknownRow ?? unit),
+                reasonCode: "tail_exceeds_bound",
+                detail: {
+                  boundCents: unit.boundCents,
+                  exactScaledUnits: `${exact.numerator}/${exact.denominator}`,
+                },
+              };
+            }
+          }
+        }
+      }
+
+      // The settlement itself — 06.9 composed unchanged: the reservation's fence settles
+      // once and answers the first result to every replay.
+      const outcome = await settle({
+        reservationId: unit.reservationId,
+        actualUsage: request.actualUsage,
+        evidence: request.evidence,
+        settledBy: request.settledBy,
+        idempotencyKey: request.idempotencyKey,
+      });
+      if (outcome.status === "refused") {
+        return {
+          status: "refused",
+          unit: recordOf(unit),
+          reasonCode: outcome.reasonCode,
+          detail: outcome.detail,
+        };
+      }
+
+      const [settledRow] = await database
+        .update(realtimeUnits)
+        .set({
+          state: "settled",
+          unknownReason: null,
+          settledAt: now(),
+          stateUpdatedAt: now(),
+        })
+        .where(
+          and(
+            eq(realtimeUnits.unitId, unit.unitId),
+            inArray(realtimeUnits.state, ["reserved", "processing", "unknown"]),
+          ),
+        )
+        .returning();
+      if (settledRow !== undefined) {
+        return { status: "settled", unit: recordOf(settledRow), settle: outcome };
+      }
+      // The guard did not move: the unit was already settled (a replay of the same tail)
+      // — answer the original result, or the state that refused the move.
+      const [current] = await database
+        .select()
+        .from(realtimeUnits)
+        .where(eq(realtimeUnits.unitId, unit.unitId))
+        .limit(1);
+      if (current !== undefined && current.state === "settled") {
+        return {
+          status: "settled",
+          unit: recordOf(current),
+          settle: outcome,
+          replay: true,
+        };
+      }
+      return {
+        status: "refused",
+        unit: current === undefined ? recordOf(unit) : recordOf(current),
+        reasonCode: "unit_not_holding",
+        detail: { unitId: unit.unitId, state: current?.state ?? unit.state },
+      };
     },
 
     /** One unit's state — the query the recovery and the forwarding gate read (AC4). */

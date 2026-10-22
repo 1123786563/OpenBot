@@ -3,7 +3,7 @@ import {
   IconDownload,
   IconRefresh,
 } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -46,6 +46,11 @@ import {
   invoiceDetailQueryOptions,
   invoicesQueryOptions,
 } from "@/lib/billing/invoices";
+import {
+  scopedInvoiceDetailQueryOptions,
+  scopedInvoicesQueryOptions,
+} from "@/lib/billing/scoped";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { useDateTime } from "@/lib/i18n/datetime";
 
 export const Route = createFileRoute("/_authed/settings/invoices")({
@@ -132,7 +137,16 @@ function RouteComponent() {
    * range change; the page, not the render, is the unit of time here.
    */
   const window = useMemo(() => windowFor(range), [range]);
-  const invoices = useQuery(invoicesQueryOptions(window, page));
+  /*
+   * The scope the page holds (MT097 / Issue #140, AC4): the bill list files under the
+   * scope's own prefix and carries the pair, so a switch drops the old scope's amounts
+   * wholesale; unresolved scope (pending) falls back to the unscoped read.
+   */
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const invoices = useQuery(
+    scopedInvoicesQueryOptions(queryClient, scope, window, page),
+  );
 
   const setRange = (next: RangeKey) => {
     // A new window invalidates the page number: page 4 of a three-month window is not page 4 of
@@ -373,7 +387,11 @@ function InvoiceDialog({
 }) {
   const { t } = useTranslation("settings");
   const { formatDate, formatDateTime } = useDateTime();
-  const detail = useQuery(invoiceDetailQueryOptions(invoiceId));
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const detail = useQuery(
+    scopedInvoiceDetailQueryOptions(queryClient, scope, invoiceId ?? ""),
+  );
   const invoice = detail.data;
 
   return (

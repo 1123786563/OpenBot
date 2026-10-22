@@ -15,7 +15,11 @@ import {
   deleteSession,
   renameSession,
 } from "@/lib/craft/client";
-import { craftKeys, craftSessionsQueryOptions } from "@/lib/craft/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import {
+  invalidateCraftInScope,
+  scopedCraftSessionsQueryOptions,
+} from "@/lib/craft/queries";
 import type { CraftSession } from "@/lib/craft/types";
 import { relativeTime } from "@/lib/relative-time";
 import { cn } from "@/lib/utils";
@@ -30,20 +34,29 @@ export function SessionSidebar() {
   const { t } = useTranslation("craft");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  // The roster and its writes are the scope's own (MT091 / Issue #134): the list carries the
+  // selection pair and files under the scope's prefix, and create/delete/rename submit under the
+  // same pair — a session minted here belongs to the scope that minted it.
+  const scope = useScopedCache();
   const activeId = useParams({
     strict: false,
     select: (params) => (params as { sessionId?: string }).sessionId,
   });
-  const sessions = useQuery(craftSessionsQueryOptions());
+  const sessions = useQuery(
+    scopedCraftSessionsQueryOptions(queryClient, scope),
+  );
 
   const interactive = (sessions.data ?? [])
     .filter((session) => session.origin === "INTERACTIVE")
     .sort((a, b) => b.last_activity_at.localeCompare(a.last_activity_at));
 
+  const pair =
+    scope.status === "open" ? (scope.selection ?? {}) : undefined;
+
   const create = useMutation({
-    mutationFn: () => createSession(),
+    mutationFn: () => createSession(pair),
     onSuccess: (session) => {
-      void queryClient.invalidateQueries({ queryKey: craftKeys.list() });
+      invalidateCraftInScope(queryClient, scope);
       void navigate({
         to: "/craft/$sessionId",
         params: { sessionId: session.id },
@@ -52,9 +65,9 @@ export function SessionSidebar() {
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => deleteSession(id),
+    mutationFn: (id: string) => deleteSession(id, pair),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: craftKeys.list() });
+      invalidateCraftInScope(queryClient, scope);
     },
   });
 
@@ -127,15 +140,22 @@ function SessionRow({
 }) {
   const { t } = useTranslation("craft");
   const queryClient = useQueryClient();
+  const scope = useScopedCache();
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [draft, setDraft] = useState(session.name ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const rename = useMutation({
-    mutationFn: (name: string) => renameSession(session.id, name),
+    // The rename submits under the scope in force (MT091 AC3), and settles at both cache roots.
+    mutationFn: (name: string) =>
+      renameSession(
+        session.id,
+        name,
+        scope.status === "open" ? (scope.selection ?? {}) : undefined,
+      ),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: craftKeys.list() });
+      invalidateCraftInScope(queryClient, scope);
       setEditing(false);
     },
   });

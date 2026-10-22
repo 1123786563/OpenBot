@@ -18,6 +18,8 @@ import {
   pluginKeys,
 } from "@/lib/plugins/queries";
 import { Route as BotAppRoute } from "@/routes/_authed/admin/plugins/$key_.bots.$agentId";
+import { authKeys } from "@/lib/auth/queries";
+import { scopedCachePrefix } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * What the per-Bot grant screen draws: which of its three pages a failed read returns, and the one
@@ -73,16 +75,30 @@ afterEach(() => {
 const APP_KEY = "slack";
 const BOT_ID = "bot-1";
 
+/** The scoped page entry this screen reads since MT094 — the personal subtree, no selection. */
+const scopedPage = () => [
+  ...scopedCachePrefix("user-1", null),
+  ...pluginKeys.page(),
+];
+
 /** A client the failing queries settle on in one attempt, so no test waits on a retry. */
 function failingQueryClient() {
-  return new QueryClient({
+  const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  // MT094: the screen's reads wait for the scope source — preset it fresh so they open at once.
+  queryClient.setQueryData(authKeys.currentUser(), {
+    id: "user-1",
+    email: "user-1@example.com",
+    role: "user",
+    onboarding: null,
+  });
+  return queryClient;
 }
 
 /**
- * A client already holding a good plugins page under the exact key `pluginsPageQueryOptions()`
- * reads, built on `failingQueryClient()`.
+ * A client already holding a good plugins page under the exact key the screen reads (the
+ * scoped entry since MT094), built on `failingQueryClient()`.
  *
  * With this file's always-failing `fetch`, mounting against it reproduces a failed BACKGROUND
  * refetch: `refetchOnMount` fires because `staleTime` is 0, that fetch 500s, and `isError` goes
@@ -91,7 +107,7 @@ function failingQueryClient() {
  */
 function stalePluginsClient(page: PluginsPage) {
   const queryClient = failingQueryClient();
-  queryClient.setQueryData(pluginKeys.page(), page);
+  queryClient.setQueryData(scopedPage(), page);
   return queryClient;
 }
 
@@ -151,7 +167,7 @@ function pluginsPage(overrides: Partial<PluginsPage> = {}): PluginsPage {
  *  that the seeded data alone (which would render identically before any fetch ran) proves it. */
 async function waitForFailedRefetch(queryClient: QueryClient) {
   await waitFor(() => {
-    expect(queryClient.getQueryState(pluginKeys.page())?.status).toBe("error");
+    expect(queryClient.getQueryState(scopedPage())?.status).toBe("error");
   });
 }
 

@@ -1,14 +1,27 @@
-import { and, asc, count, desc, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  lte,
+  ne,
+  sql,
+} from "drizzle-orm";
 import type { Database } from "../db/client";
 import { botServices } from "../db/schema/bot-services";
 import {
-  creditSettlementDimensionBreakdown,
+  creditAsyncSettlementDetails,
   creditReservationAttribution,
   creditReservations,
   creditSettlementDetails,
+  creditSettlementDimensionBreakdown,
   creditSpeechSettlementDetails,
 } from "../db/schema/credit-reservations";
 import { creditGrants, creditLedger } from "../db/schema/credits";
+import { billingCreditAccounts } from "../db/schema/payer-accounts";
 import { type GrantCapacity, liveGrants, readCapacity } from "./capacity";
 import { type PayerRef, payerKey } from "./payer";
 import type {
@@ -129,8 +142,28 @@ export function createCredits(deps: {
         0,
       );
       const held = capacity.grants.reduce((sum, grant) => sum + grant.held, 0);
+      /*
+       * The account-level capability status (BP07/#375), read-only from the account row the
+       * quarantine path owns: a row exists only when an account was registered or quarantined,
+       * so its absence is an ordinary never-quarantined account — `active` is the absence of
+       * the fact, and the reason is null with it. One SELECT beside the balance reads; no
+       * write path touches this table here.
+       */
+      const [accountRow] = await database
+        .select({
+          status: billingCreditAccounts.status,
+          quarantineReason: billingCreditAccounts.quarantineReason,
+        })
+        .from(billingCreditAccounts)
+        .where(eq(billingCreditAccounts.externalCustomerId, key))
+        .limit(1);
       return {
         accountType: "personal",
+        account: {
+          status:
+            accountRow?.status === "quarantined" ? "quarantined" : "active",
+          quarantineReason: accountRow?.quarantineReason ?? null,
+        },
         available: scaleDown(capacity.spendableUnits),
         consumed: scaleDown(liveUsed + Number(lapsed?.used ?? 0)),
         expired: scaleDown(Number(lapsed?.unused ?? 0)),
@@ -205,6 +238,11 @@ export function createCredits(deps: {
           speechCappedSeconds: creditSpeechSettlementDetails.cappedSeconds,
           speechActualSeconds: creditSpeechSettlementDetails.actualSeconds,
           speechVoiceTier: creditSpeechSettlementDetails.voiceTier,
+          asyncCapability: creditAsyncSettlementDetails.capability,
+          asyncJobId: creditAsyncSettlementDetails.jobId,
+          asyncProviderJobId: creditAsyncSettlementDetails.providerJobId,
+          asyncEntryCount: creditAsyncSettlementDetails.entryCount,
+          asyncTerminalState: creditAsyncSettlementDetails.terminalState,
         })
         .from(creditLedger)
         // The attribution walk: a reservation-born ledger row (the writer records
@@ -234,6 +272,13 @@ export function createCredits(deps: {
         .leftJoin(
           creditSpeechSettlementDetails,
           eq(creditSpeechSettlementDetails.ledgerId, creditLedger.id),
+        )
+        // The async job line (17.6) joins the same way: a settled async charge's entry
+        // shows the JOB it is attributable to — the one key every surface of the charge
+        // names — beside the entry count and the terminal state that ended it.
+        .leftJoin(
+          creditAsyncSettlementDetails,
+          eq(creditAsyncSettlementDetails.ledgerId, creditLedger.id),
         )
         .where(where)
         .orderBy(desc(creditLedger.createdAt))
@@ -274,7 +319,8 @@ export function createCredits(deps: {
         let model = 0;
         let surcharge = 0;
         for (const member of members) {
-          if (member.dimension.startsWith("surcharge_")) surcharge += member.units;
+          if (member.dimension.startsWith("surcharge_"))
+            surcharge += member.units;
           else model += member.units;
         }
         return {
@@ -300,7 +346,9 @@ export function createCredits(deps: {
           // the image spec and counts, distinguishable from every other capability — with
           // the amount this entry already carries. Other rows carry no line at all.
           lineDetail:
-            row.lineCapability === "image"
+            row.lineCapability === "image" &&
+            row.lineRequestedCount !== null &&
+            row.lineGeneratedCount !== null
               ? {
                   capability: row.lineCapability,
                   image: {
@@ -310,7 +358,10 @@ export function createCredits(deps: {
                     generatedCount: row.lineGeneratedCount,
                   },
                 }
-              : row.speechCapability === "speech"
+              : row.speechCapability === "speech" &&
+                  row.speechInputCharacters !== null &&
+                  row.speechCappedSeconds !== null &&
+                  row.speechActualSeconds !== null
                 ? // 13.2's speech line: the characters in, the seconds out — the entry a
                   // speech consumption shows, distinguishable from image and chat.
                   {
@@ -322,7 +373,23 @@ export function createCredits(deps: {
                       actualSeconds: row.speechActualSeconds,
                     },
                   }
-                : null,
+                : row.asyncJobId !== null &&
+                    row.asyncTerminalState !== null &&
+                    row.asyncEntryCount !== null
+                  ? // 17.6's async job line: the job the charge is attributable to —
+                    // the local identity, its provider mapping, the entries and the
+                    // terminal state that ended the job, distinguishable from every
+                    // synchronous capability's entry.
+                    {
+                      capability: row.asyncCapability ?? "unknown",
+                      asyncJob: {
+                        jobId: row.asyncJobId,
+                        providerJobId: row.asyncProviderJobId,
+                        entryCount: row.asyncEntryCount,
+                        terminalState: row.asyncTerminalState,
+                      },
+                    }
+                  : null,
           // 20.3's fee split: model fee and surcharge fee of THIS entry, whole scaled
           // units of the ledger row it explains — absent when the settlement wrote no
           // split, and never a zero surcharge line the UI would read as "free tools".

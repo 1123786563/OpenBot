@@ -1,5 +1,5 @@
 import { IconPlugConnected, IconPlus } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -42,14 +42,14 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import {
   addMemorySourceMutationOptions,
-  availableMemorySourcesQueryOptions,
+  scopedAvailableMemorySourcesQueryOptions,
   memorySourceActionMutationOptions,
-  memorySourcesQueryOptions,
+  scopedMemorySourcesQueryOptions,
 } from "@/lib/memory";
-import { queryClient } from "@/query-client";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * Connected apps a Bot reads facts from. Given a Bot, only that Bot's sources, and a new one is that
@@ -60,8 +60,13 @@ import { queryClient } from "@/query-client";
  */
 export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
   const { t } = useTranslation("agents");
-  const sources = useQuery(memorySourcesQueryOptions());
-  const bots = useQuery(agentListQueryOptions());
+  // The sources list, the picker it feeds and every source write ride the scope this screen holds
+  // (MT089 AC1): the choices offered are the server's answer under the scope in force, so a source
+  // of another scope is never offered, and the writes carry the same pair.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const sources = useQuery(scopedMemorySourcesQueryOptions(queryClient, scope));
+  const bots = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   const [adding, setAdding] = useState(false);
   const [pickedBot, setAgentId] = useState("");
   const agentId = fixedBot ?? pickedBot;
@@ -70,7 +75,9 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
   const [args, setArgs] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const id = useId();
-  const tools = useQuery(availableMemorySourcesQueryOptions(agentId));
+  const tools = useQuery(
+    scopedAvailableMemorySourcesQueryOptions(queryClient, scope, agentId),
+  );
   const chosen = tools.data?.find((tool) => tool.ref === toolRef);
   const properties = chosen?.inputSchema.properties;
   const settings =
@@ -94,8 +101,12 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
   const required = Array.isArray(chosen?.inputSchema.required)
     ? chosen.inputSchema.required
     : [];
-  const add = useMutation(addMemorySourceMutationOptions(queryClient));
-  const action = useMutation(memorySourceActionMutationOptions(queryClient));
+  const add = useMutation(
+    addMemorySourceMutationOptions(queryClient, scope),
+  );
+  const action = useMutation(
+    memorySourceActionMutationOptions(queryClient, scope),
+  );
   const shown = (sources.data ?? []).filter(
     (source) => fixedBot === undefined || source.agentId === fixedBot,
   );

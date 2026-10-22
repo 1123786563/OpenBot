@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PageEmpty, PageSection, PageShell } from "@/components/layout/page-shell";
@@ -16,6 +16,7 @@ import {
 } from "./consumption-table";
 import { CreditGrantList } from "./credit-grant-list";
 import { PersonalBalanceCard } from "./personal-balance-card";
+import { RealtimeSessionsCard } from "./realtime-sessions-card";
 import { PlanCard } from "./plan-card";
 import { UpgradeDialog } from "./upgrade-dialog";
 import { WelcomeBanner } from "./welcome-banner";
@@ -29,6 +30,14 @@ import {
 } from "@/lib/billing/credits";
 import { BillingUnavailableError } from "@/lib/billing/invoices";
 import { entitlementsQueryOptions } from "@/lib/billing/queries";
+import {
+  scopedCreditsConsumptionQueryOptions,
+  scopedCreditsGrantsQueryOptions,
+  scopedCreditsSummaryQueryOptions,
+  scopedEntitlementsQueryOptions,
+} from "@/lib/billing/scoped";
+import { scopedRealtimeSessionsQueryOptions } from "@/lib/billing/realtime";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * 套餐与积分 as one view, lifted out of the route file (ticket 02.7) so the page's whole surface
@@ -81,18 +90,32 @@ export function UsageCreditsView({
   page,
   onRangeChange,
   onPage,
+  scope,
 }: {
   range: ConsumptionRange;
   page: number;
   onRangeChange: (next: ConsumptionRange) => void;
   onPage: (next: number) => void;
+  /**
+   * The scope the page holds (MT097 / Issue #140, AC4): every money read files under the
+   * scope's own prefix and carries the selection pair, so a switch drops the old scope's
+   * amounts wholesale. A pending scope reads nothing — the seam's own refusal.
+   */
+  scope: ScopedCache;
 }) {
   const { t } = useTranslation("settings");
   const [upgradeOpen, setUpgradeOpen] = useState(false);
 
-  const entitlements = useQuery(entitlementsQueryOptions);
-  const summary = useQuery(creditsSummaryQueryOptions);
-  const grants = useQuery(creditsGrantsQueryOptions);
+  const queryClient = useQueryClient();
+  const entitlements = useQuery(
+    scopedEntitlementsQueryOptions(queryClient, scope),
+  );
+  const summary = useQuery(
+    scopedCreditsSummaryQueryOptions(queryClient, scope),
+  );
+  const grants = useQuery(
+    scopedCreditsGrantsQueryOptions(queryClient, scope),
+  );
   const catalog = useQuery(catalogQueryOptions);
   /*
    * Same discipline as the bill list's window: `windowFor` reads the clock, and an unmemoized
@@ -100,7 +123,15 @@ export function UsageCreditsView({
    * read per range change is one query per range change.
    */
   const window = useMemo(() => windowFor(range), [range]);
-  const consumption = useQuery(creditsConsumptionQueryOptions(window, page));
+  const consumption = useQuery(
+    scopedCreditsConsumptionQueryOptions(queryClient, scope, window, page),
+  );
+  // 15.8's realtime rows: the person's own realtime sessions with their consumption, the
+  // amount awaiting settlement, and the doors' own abnormal-state reasons. Always fresh —
+  // a live session's money moves with every unit.
+  const realtimeSessions = useQuery(
+    scopedRealtimeSessionsQueryOptions(queryClient, scope),
+  );
 
   // A deployment with no billing provider has no credit surface at all, which is a fact about the
   // deployment and not a failure — said as one, with no retry, because retrying a route that is
@@ -263,6 +294,26 @@ export function UsageCreditsView({
           </div>
         )}
       </PageSection>
+
+      {/*
+       * 15.8 (#321): the realtime session rows — consumption, the amount awaiting
+       * settlement, and why a session is abnormal, per session. Mounted after the grants
+       * and before the ledger, the same order the reader's question grows in; an
+       * unavailable surface is a deployment fact said as one (the pending-settlement
+       * module's own rule), and a landed empty list is the card's own sentence.
+       */}
+      {realtimeSessions.error ? null : (
+        <PageSection
+          title={t("creditsPage.realtimeTitle")}
+          description={t("creditsPage.realtimeDescription")}
+        >
+          {realtimeSessions.isPending ? (
+            <Skeleton className="mt-4 h-32 w-full rounded-xl" />
+          ) : (
+            <RealtimeSessionsCard sessions={realtimeSessions.data.sessions} />
+          )}
+        </PageSection>
+      )}
 
       <PageSection
         title={t("creditsPage.consumptionTitle")}

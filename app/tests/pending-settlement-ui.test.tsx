@@ -80,6 +80,7 @@ function balanceOf(
 ): PersonalCreditBalance {
   return {
     accountType: "personal",
+    account: { status: "active", quarantineReason: null },
     available: 12.5,
     consumed: 3.2,
     expired: 0,

@@ -462,6 +462,9 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
       // （审计分域与计费管理授权两表迁移注册），文件其余内容只读。
       "MT078",
       "MT112",
+      // MT114（Issue #157，MT114 brief 预授权窄缝同款）：仅本断言追加
+      // "MT114"（子记录回填批次进度表迁移注册），文件其余内容只读。
+      "MT114",
     ]);
     expect(new Set(ALLOWED_TASK_IDS)).toEqual(new Set(TASKS.keys()));
     const selfCheck = TASKS.get("MT000");
