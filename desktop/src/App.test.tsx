@@ -803,6 +803,27 @@ test.each(["reopen", "runtime"])(
           name: "Employee",
           role: "user",
         };
+      // MT101: the sign-in completion reads the frozen context before opening the workbench.
+      // A complete company/team pair opens straight through — the behavior this test pins.
+      if (command === "org_context_status")
+        return {
+          authority: authorityUrl,
+          user: {
+            id: "employee",
+            email: "employee@example.test",
+            name: "Employee",
+            role: "user",
+          },
+          company: {
+            tenantId: "company",
+            name: "Company",
+            role: "member",
+            memberEpoch: 1,
+          },
+          team: { workspaceId: "company-team", name: "Team" },
+          establishedAtMs: 1,
+          verifiedAtMs: 1,
+        };
       if (command === "cancel_organization_sign_in") return null;
       return previous(command, args);
     };

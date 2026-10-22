@@ -384,6 +384,10 @@ function installDeployment(deployment: Deployment): Server {
 
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const requested = typeof input === "string" ? input : String(input);
+    // The account actions ride the scope (MT088), whose source must answer before they fire.
+    if (requested === "/api/me") {
+      return Response.json({ user: { id: "user-1" } });
+    }
     /*
      * The route, with any query taken off it.
      *

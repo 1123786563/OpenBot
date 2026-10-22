@@ -8,10 +8,11 @@ import {
   IconFileTypeDocx,
   IconWorld,
 } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { artifactUrl, exportDocxUrl } from "@/lib/craft/client";
-import { craftArtifactsQueryOptions } from "@/lib/craft/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import { scopedCraftArtifactsQueryOptions } from "@/lib/craft/queries";
 import type { CraftArtifactEntry, CraftArtifactType } from "@/lib/craft/types";
 
 /**
@@ -21,7 +22,12 @@ import type { CraftArtifactEntry, CraftArtifactType } from "@/lib/craft/types";
  */
 export function ArtifactsTab({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation("craft");
-  const { data, isPending } = useQuery(craftArtifactsQueryOptions(sessionId));
+  // The shelf is the scope's own answer (MT091 / Issue #134, AC1): the pair rides the read.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const { data, isPending } = useQuery(
+    scopedCraftArtifactsQueryOptions(queryClient, scope, sessionId),
+  );
 
   if (isPending) {
     return (

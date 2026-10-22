@@ -1,11 +1,15 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { ChatPanel } from "@/components/craft/chat-panel";
 import { OutputPanel } from "@/components/craft/output-panel";
 import { SandboxStatusIndicator } from "@/components/craft/sandbox-status-indicator";
 import { SessionSidebar } from "@/components/craft/session-sidebar";
-import { craftSessionQueryOptions } from "@/lib/craft/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import {
+  CraftSessionUnavailableError,
+  scopedCraftSessionQueryOptions,
+} from "@/lib/craft/queries";
 
 /**
  * One craft session, in three panes: the roster, the conversation, and the output (preview, files,
@@ -20,7 +24,28 @@ export const Route = createFileRoute("/_authed/_app/craft/$sessionId")({
 function CraftSessionView() {
   const { sessionId } = Route.useParams();
   const { t } = useTranslation("craft");
-  const session = useQuery(craftSessionQueryOptions(sessionId));
+  // The detail read is the scope's own answer (MT091 / Issue #134, AC1): the pair rides the
+  // request and the entry files under the scope's cache prefix, so a cross-scope id — another
+  // company's session, indistinguishable from one that never existed — reaches this pane as the
+  // typed unavailable error below, never as another scope's rows.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const session = useQuery(
+    scopedCraftSessionQueryOptions(queryClient, scope, sessionId),
+  );
+
+  if (session.error instanceof CraftSessionUnavailableError) {
+    return (
+      <div className="flex min-h-0 flex-1">
+        <SessionSidebar />
+        <div className="flex flex-1 items-center justify-center p-6">
+          <p className="max-w-sm text-center text-sm text-muted-foreground">
+            {t("session.unavailable")}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1">

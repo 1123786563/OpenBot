@@ -4,7 +4,7 @@ import {
   IconChevronRight,
   IconPlug,
 } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { TFunction } from "i18next";
 import * as React from "react";
@@ -25,12 +25,13 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   type CatalogueItem,
-  connectionsQueryOptions,
+  scopedConnectionsQueryOptions,
   type PluginServer,
   personalConnections,
-  pluginsPageQueryOptions,
+  scopedPluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
 
 /**
@@ -99,8 +100,14 @@ function summaryFor(
 
 function RouteComponent() {
   const { t } = useTranslation("admin");
-  const plugins = useQuery(pluginsPageQueryOptions());
-  const connections = useQuery(connectionsQueryOptions());
+  // The plugin admin face is the scope's own answer (MT094 / Issue #137, AC2 — 已安装列表与
+  // 配置只反映当前范围): both reads carry the selection pair and file under the scope's prefix.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const plugins = useQuery(scopedPluginsPageQueryOptions(queryClient, scope));
+  const connections = useQuery(
+    scopedConnectionsQueryOptions(queryClient, scope),
+  );
 
   /*
    * PERSONAL ONLY: a Shared app's connection is the deployment's standing account, not something

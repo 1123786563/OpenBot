@@ -54,6 +54,7 @@ import { Route as AuthedSettingsOrdersRouteImport } from './routes/_authed/setti
 import { Route as AuthedSettingsPasswordsRouteImport } from './routes/_authed/settings/passwords'
 import { Route as AuthedSettingsUsageRouteImport } from './routes/_authed/settings/usage'
 import { Route as AuthedSignInRequestIdRouteImport } from './routes/_authed/sign-in/$requestId'
+import { Route as AuthedTenantAdminRouteRouteImport } from './routes/_authed/tenant/admin/route'
 import { Route as AuthedTenantChannelsRouteImport } from './routes/_authed/tenant/channels'
 import { Route as AuthedTenantSelectionRouteImport } from './routes/_authed/tenant/selection'
 import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/agents/index'
@@ -75,6 +76,12 @@ import { Route as AuthedSettingsComponentsGalleryIndexRouteImport } from './rout
 import { Route as AuthedSettingsComponentsGalleryNameRouteImport } from './routes/_authed/settings/components-gallery/$name'
 import { Route as AuthedSettingsConnectedAccountsIndexRouteImport } from './routes/_authed/settings/connected-accounts/index'
 import { Route as AuthedSettingsConnectedAccountsKeyRouteImport } from './routes/_authed/settings/connected-accounts/$key'
+import { Route as AuthedTenantAdminIndexRouteImport } from './routes/_authed/tenant/admin/index'
+import { Route as AuthedTenantAdminAuditRouteImport } from './routes/_authed/tenant/admin/audit'
+import { Route as AuthedTenantAdminBillingRouteImport } from './routes/_authed/tenant/admin/billing'
+import { Route as AuthedTenantAdminEnterpriseRouteImport } from './routes/_authed/tenant/admin/enterprise'
+import { Route as AuthedTenantAdminLearningRouteImport } from './routes/_authed/tenant/admin/learning'
+import { Route as AuthedTenantAdminPeopleRouteImport } from './routes/_authed/tenant/admin/people'
 import { Route as AuthedAppBotsAgentIdIndexRouteImport } from './routes/_authed/_app/bots.$agentId.index'
 import { Route as AuthedAppBotsAgentIdAccessRouteImport } from './routes/_authed/_app/bots.$agentId.access'
 import { Route as AuthedAppBotsAgentIdApprovalsRouteImport } from './routes/_authed/_app/bots.$agentId.approvals'
@@ -324,6 +331,11 @@ const AuthedSignInRequestIdRoute = AuthedSignInRequestIdRouteImport.update({
   path: '/sign-in/$requestId',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedTenantAdminRouteRoute = AuthedTenantAdminRouteRouteImport.update({
+  id: '/tenant/admin',
+  path: '/tenant/admin',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedTenantChannelsRoute = AuthedTenantChannelsRouteImport.update({
   id: '/tenant/channels',
   path: '/tenant/channels',
@@ -438,6 +450,39 @@ const AuthedSettingsConnectedAccountsKeyRoute =
     path: '/connected-accounts/$key',
     getParentRoute: () => AuthedSettingsRouteRoute,
   } as any)
+const AuthedTenantAdminIndexRoute = AuthedTenantAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthedTenantAdminRouteRoute,
+} as any)
+const AuthedTenantAdminAuditRoute = AuthedTenantAdminAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => AuthedTenantAdminRouteRoute,
+} as any)
+const AuthedTenantAdminBillingRoute =
+  AuthedTenantAdminBillingRouteImport.update({
+    id: '/billing',
+    path: '/billing',
+    getParentRoute: () => AuthedTenantAdminRouteRoute,
+  } as any)
+const AuthedTenantAdminEnterpriseRoute =
+  AuthedTenantAdminEnterpriseRouteImport.update({
+    id: '/enterprise',
+    path: '/enterprise',
+    getParentRoute: () => AuthedTenantAdminRouteRoute,
+  } as any)
+const AuthedTenantAdminLearningRoute =
+  AuthedTenantAdminLearningRouteImport.update({
+    id: '/learning',
+    path: '/learning',
+    getParentRoute: () => AuthedTenantAdminRouteRoute,
+  } as any)
+const AuthedTenantAdminPeopleRoute = AuthedTenantAdminPeopleRouteImport.update({
+  id: '/people',
+  path: '/people',
+  getParentRoute: () => AuthedTenantAdminRouteRoute,
+} as any)
 const AuthedAppBotsAgentIdIndexRoute =
   AuthedAppBotsAgentIdIndexRouteImport.update({
     id: '/bots/$agentId/',
@@ -562,6 +607,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/onboarding': typeof AuthedOnboardingRoute
   '/share/$token': typeof ShareTokenRoute
+  '/tenant/admin': typeof AuthedTenantAdminRouteRouteWithChildren
   '/approvals': typeof AuthedAppApprovalsRoute
   '/bot': typeof AuthedAppBotRoute
   '/memory': typeof AuthedAppMemoryRoute
@@ -613,6 +659,11 @@ export interface FileRoutesByFullPath {
   '/admin/plugins/open-connector': typeof AuthedAdminPluginsOpenConnectorRoute
   '/settings/components-gallery/$name': typeof AuthedSettingsComponentsGalleryNameRoute
   '/settings/connected-accounts/$key': typeof AuthedSettingsConnectedAccountsKeyRoute
+  '/tenant/admin/audit': typeof AuthedTenantAdminAuditRoute
+  '/tenant/admin/billing': typeof AuthedTenantAdminBillingRoute
+  '/tenant/admin/enterprise': typeof AuthedTenantAdminEnterpriseRoute
+  '/tenant/admin/learning': typeof AuthedTenantAdminLearningRoute
+  '/tenant/admin/people': typeof AuthedTenantAdminPeopleRoute
   '/agents/': typeof AuthedAppAgentsIndexRoute
   '/bots/': typeof AuthedAppBotsIndexRoute
   '/craft/': typeof AuthedAppCraftIndexRoute
@@ -620,6 +671,7 @@ export interface FileRoutesByFullPath {
   '/admin/plugins/': typeof AuthedAdminPluginsIndexRoute
   '/settings/components-gallery/': typeof AuthedSettingsComponentsGalleryIndexRoute
   '/settings/connected-accounts/': typeof AuthedSettingsConnectedAccountsIndexRoute
+  '/tenant/admin/': typeof AuthedTenantAdminIndexRoute
   '/bots/$agentId/access': typeof AuthedAppBotsAgentIdAccessRoute
   '/bots/$agentId/approvals': typeof AuthedAppBotsAgentIdApprovalsRoute
   '/bots/$agentId/datasets': typeof AuthedAppBotsAgentIdDatasetsRoute
@@ -696,6 +748,11 @@ export interface FileRoutesByTo {
   '/admin/plugins/open-connector': typeof AuthedAdminPluginsOpenConnectorRoute
   '/settings/components-gallery/$name': typeof AuthedSettingsComponentsGalleryNameRoute
   '/settings/connected-accounts/$key': typeof AuthedSettingsConnectedAccountsKeyRoute
+  '/tenant/admin/audit': typeof AuthedTenantAdminAuditRoute
+  '/tenant/admin/billing': typeof AuthedTenantAdminBillingRoute
+  '/tenant/admin/enterprise': typeof AuthedTenantAdminEnterpriseRoute
+  '/tenant/admin/learning': typeof AuthedTenantAdminLearningRoute
+  '/tenant/admin/people': typeof AuthedTenantAdminPeopleRoute
   '/agents': typeof AuthedAppAgentsIndexRoute
   '/bots': typeof AuthedAppBotsIndexRoute
   '/craft': typeof AuthedAppCraftIndexRoute
@@ -703,6 +760,7 @@ export interface FileRoutesByTo {
   '/admin/plugins': typeof AuthedAdminPluginsIndexRoute
   '/settings/components-gallery': typeof AuthedSettingsComponentsGalleryIndexRoute
   '/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsIndexRoute
+  '/tenant/admin': typeof AuthedTenantAdminIndexRoute
   '/bots/$agentId/access': typeof AuthedAppBotsAgentIdAccessRoute
   '/bots/$agentId/approvals': typeof AuthedAppBotsAgentIdApprovalsRoute
   '/bots/$agentId/datasets': typeof AuthedAppBotsAgentIdDatasetsRoute
@@ -732,6 +790,7 @@ export interface FileRoutesById {
   '/_authed/_app': typeof AuthedAppRouteWithChildren
   '/_authed/onboarding': typeof AuthedOnboardingRoute
   '/share/$token': typeof ShareTokenRoute
+  '/_authed/tenant/admin': typeof AuthedTenantAdminRouteRouteWithChildren
   '/_authed/_app/approvals': typeof AuthedAppApprovalsRoute
   '/_authed/_app/bot': typeof AuthedAppBotRoute
   '/_authed/_app/memory': typeof AuthedAppMemoryRoute
@@ -784,6 +843,11 @@ export interface FileRoutesById {
   '/_authed/admin/plugins/open-connector': typeof AuthedAdminPluginsOpenConnectorRoute
   '/_authed/settings/components-gallery/$name': typeof AuthedSettingsComponentsGalleryNameRoute
   '/_authed/settings/connected-accounts/$key': typeof AuthedSettingsConnectedAccountsKeyRoute
+  '/_authed/tenant/admin/audit': typeof AuthedTenantAdminAuditRoute
+  '/_authed/tenant/admin/billing': typeof AuthedTenantAdminBillingRoute
+  '/_authed/tenant/admin/enterprise': typeof AuthedTenantAdminEnterpriseRoute
+  '/_authed/tenant/admin/learning': typeof AuthedTenantAdminLearningRoute
+  '/_authed/tenant/admin/people': typeof AuthedTenantAdminPeopleRoute
   '/_authed/_app/agents/': typeof AuthedAppAgentsIndexRoute
   '/_authed/_app/bots/': typeof AuthedAppBotsIndexRoute
   '/_authed/_app/craft/': typeof AuthedAppCraftIndexRoute
@@ -791,6 +855,7 @@ export interface FileRoutesById {
   '/_authed/admin/plugins/': typeof AuthedAdminPluginsIndexRoute
   '/_authed/settings/components-gallery/': typeof AuthedSettingsComponentsGalleryIndexRoute
   '/_authed/settings/connected-accounts/': typeof AuthedSettingsConnectedAccountsIndexRoute
+  '/_authed/tenant/admin/': typeof AuthedTenantAdminIndexRoute
   '/_authed/_app/bots/$agentId/access': typeof AuthedAppBotsAgentIdAccessRoute
   '/_authed/_app/bots/$agentId/approvals': typeof AuthedAppBotsAgentIdApprovalsRoute
   '/_authed/_app/bots/$agentId/datasets': typeof AuthedAppBotsAgentIdDatasetsRoute
@@ -820,6 +885,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/onboarding'
     | '/share/$token'
+    | '/tenant/admin'
     | '/approvals'
     | '/bot'
     | '/memory'
@@ -871,6 +937,11 @@ export interface FileRouteTypes {
     | '/admin/plugins/open-connector'
     | '/settings/components-gallery/$name'
     | '/settings/connected-accounts/$key'
+    | '/tenant/admin/audit'
+    | '/tenant/admin/billing'
+    | '/tenant/admin/enterprise'
+    | '/tenant/admin/learning'
+    | '/tenant/admin/people'
     | '/agents/'
     | '/bots/'
     | '/craft/'
@@ -878,6 +949,7 @@ export interface FileRouteTypes {
     | '/admin/plugins/'
     | '/settings/components-gallery/'
     | '/settings/connected-accounts/'
+    | '/tenant/admin/'
     | '/bots/$agentId/access'
     | '/bots/$agentId/approvals'
     | '/bots/$agentId/datasets'
@@ -954,6 +1026,11 @@ export interface FileRouteTypes {
     | '/admin/plugins/open-connector'
     | '/settings/components-gallery/$name'
     | '/settings/connected-accounts/$key'
+    | '/tenant/admin/audit'
+    | '/tenant/admin/billing'
+    | '/tenant/admin/enterprise'
+    | '/tenant/admin/learning'
+    | '/tenant/admin/people'
     | '/agents'
     | '/bots'
     | '/craft'
@@ -961,6 +1038,7 @@ export interface FileRouteTypes {
     | '/admin/plugins'
     | '/settings/components-gallery'
     | '/settings/connected-accounts'
+    | '/tenant/admin'
     | '/bots/$agentId/access'
     | '/bots/$agentId/approvals'
     | '/bots/$agentId/datasets'
@@ -989,6 +1067,7 @@ export interface FileRouteTypes {
     | '/_authed/_app'
     | '/_authed/onboarding'
     | '/share/$token'
+    | '/_authed/tenant/admin'
     | '/_authed/_app/approvals'
     | '/_authed/_app/bot'
     | '/_authed/_app/memory'
@@ -1041,6 +1120,11 @@ export interface FileRouteTypes {
     | '/_authed/admin/plugins/open-connector'
     | '/_authed/settings/components-gallery/$name'
     | '/_authed/settings/connected-accounts/$key'
+    | '/_authed/tenant/admin/audit'
+    | '/_authed/tenant/admin/billing'
+    | '/_authed/tenant/admin/enterprise'
+    | '/_authed/tenant/admin/learning'
+    | '/_authed/tenant/admin/people'
     | '/_authed/_app/agents/'
     | '/_authed/_app/bots/'
     | '/_authed/_app/craft/'
@@ -1048,6 +1132,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/plugins/'
     | '/_authed/settings/components-gallery/'
     | '/_authed/settings/connected-accounts/'
+    | '/_authed/tenant/admin/'
     | '/_authed/_app/bots/$agentId/access'
     | '/_authed/_app/bots/$agentId/approvals'
     | '/_authed/_app/bots/$agentId/datasets'
@@ -1392,6 +1477,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSignInRequestIdRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/tenant/admin': {
+      id: '/_authed/tenant/admin'
+      path: '/tenant/admin'
+      fullPath: '/tenant/admin'
+      preLoaderRoute: typeof AuthedTenantAdminRouteRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/tenant/channels': {
       id: '/_authed/tenant/channels'
       path: '/tenant/channels'
@@ -1538,6 +1630,48 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/connected-accounts/$key'
       preLoaderRoute: typeof AuthedSettingsConnectedAccountsKeyRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
+    }
+    '/_authed/tenant/admin/': {
+      id: '/_authed/tenant/admin/'
+      path: '/'
+      fullPath: '/tenant/admin/'
+      preLoaderRoute: typeof AuthedTenantAdminIndexRouteImport
+      parentRoute: typeof AuthedTenantAdminRouteRoute
+    }
+    '/_authed/tenant/admin/audit': {
+      id: '/_authed/tenant/admin/audit'
+      path: '/audit'
+      fullPath: '/tenant/admin/audit'
+      preLoaderRoute: typeof AuthedTenantAdminAuditRouteImport
+      parentRoute: typeof AuthedTenantAdminRouteRoute
+    }
+    '/_authed/tenant/admin/billing': {
+      id: '/_authed/tenant/admin/billing'
+      path: '/billing'
+      fullPath: '/tenant/admin/billing'
+      preLoaderRoute: typeof AuthedTenantAdminBillingRouteImport
+      parentRoute: typeof AuthedTenantAdminRouteRoute
+    }
+    '/_authed/tenant/admin/enterprise': {
+      id: '/_authed/tenant/admin/enterprise'
+      path: '/enterprise'
+      fullPath: '/tenant/admin/enterprise'
+      preLoaderRoute: typeof AuthedTenantAdminEnterpriseRouteImport
+      parentRoute: typeof AuthedTenantAdminRouteRoute
+    }
+    '/_authed/tenant/admin/learning': {
+      id: '/_authed/tenant/admin/learning'
+      path: '/learning'
+      fullPath: '/tenant/admin/learning'
+      preLoaderRoute: typeof AuthedTenantAdminLearningRouteImport
+      parentRoute: typeof AuthedTenantAdminRouteRoute
+    }
+    '/_authed/tenant/admin/people': {
+      id: '/_authed/tenant/admin/people'
+      path: '/people'
+      fullPath: '/tenant/admin/people'
+      preLoaderRoute: typeof AuthedTenantAdminPeopleRouteImport
+      parentRoute: typeof AuthedTenantAdminRouteRoute
     }
     '/_authed/_app/bots/$agentId/': {
       id: '/_authed/_app/bots/$agentId/'
@@ -1887,11 +2021,36 @@ const AuthedAppRouteWithChildren = AuthedAppRoute._addFileChildren(
   AuthedAppRouteChildren,
 )
 
+interface AuthedTenantAdminRouteRouteChildren {
+  AuthedTenantAdminAuditRoute: typeof AuthedTenantAdminAuditRoute
+  AuthedTenantAdminBillingRoute: typeof AuthedTenantAdminBillingRoute
+  AuthedTenantAdminEnterpriseRoute: typeof AuthedTenantAdminEnterpriseRoute
+  AuthedTenantAdminLearningRoute: typeof AuthedTenantAdminLearningRoute
+  AuthedTenantAdminPeopleRoute: typeof AuthedTenantAdminPeopleRoute
+  AuthedTenantAdminIndexRoute: typeof AuthedTenantAdminIndexRoute
+}
+
+const AuthedTenantAdminRouteRouteChildren: AuthedTenantAdminRouteRouteChildren =
+  {
+    AuthedTenantAdminAuditRoute: AuthedTenantAdminAuditRoute,
+    AuthedTenantAdminBillingRoute: AuthedTenantAdminBillingRoute,
+    AuthedTenantAdminEnterpriseRoute: AuthedTenantAdminEnterpriseRoute,
+    AuthedTenantAdminLearningRoute: AuthedTenantAdminLearningRoute,
+    AuthedTenantAdminPeopleRoute: AuthedTenantAdminPeopleRoute,
+    AuthedTenantAdminIndexRoute: AuthedTenantAdminIndexRoute,
+  }
+
+const AuthedTenantAdminRouteRouteWithChildren =
+  AuthedTenantAdminRouteRoute._addFileChildren(
+    AuthedTenantAdminRouteRouteChildren,
+  )
+
 interface AuthedRouteChildren {
   AuthedAdminRouteRoute: typeof AuthedAdminRouteRouteWithChildren
   AuthedSettingsRouteRoute: typeof AuthedSettingsRouteRouteWithChildren
   AuthedAppRoute: typeof AuthedAppRouteWithChildren
   AuthedOnboardingRoute: typeof AuthedOnboardingRoute
+  AuthedTenantAdminRouteRoute: typeof AuthedTenantAdminRouteRouteWithChildren
   AuthedSignInRequestIdRoute: typeof AuthedSignInRequestIdRoute
   AuthedTenantChannelsRoute: typeof AuthedTenantChannelsRoute
   AuthedTenantSelectionRoute: typeof AuthedTenantSelectionRoute
@@ -1902,6 +2061,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedSettingsRouteRoute: AuthedSettingsRouteRouteWithChildren,
   AuthedAppRoute: AuthedAppRouteWithChildren,
   AuthedOnboardingRoute: AuthedOnboardingRoute,
+  AuthedTenantAdminRouteRoute: AuthedTenantAdminRouteRouteWithChildren,
   AuthedSignInRequestIdRoute: AuthedSignInRequestIdRoute,
   AuthedTenantChannelsRoute: AuthedTenantChannelsRoute,
   AuthedTenantSelectionRoute: AuthedTenantSelectionRoute,

@@ -8,7 +8,12 @@ import {
   fetchWorkshopTurnEvents,
   type WorkshopStreamEvent,
 } from "@/lib/workshop/client";
-import { workshopSnapshotQueryOptions } from "@/lib/workshop/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import {
+  invalidateWorkshopInScope,
+  scopedWorkshopSnapshotQueryOptions,
+  workshopScopePair,
+} from "@/lib/workshop/queries";
 import { useWorkshopStream } from "@/lib/workshop/stream";
 
 /**
@@ -28,7 +33,12 @@ export function WorkshopTurnView({
 }) {
   const { t } = useTranslation("workshop");
   const queryClient = useQueryClient();
-  const snapshot = useQuery(workshopSnapshotQueryOptions(channelId));
+  // The turn face reads and stops under the scope in force (MT091 / Issue #134, AC3 — 执行动作
+  // 提交当前范围).
+  const scope = useScopedCache();
+  const snapshot = useQuery(
+    scopedWorkshopSnapshotQueryOptions(queryClient, scope, channelId),
+  );
   const latestTurn = snapshot.data?.turns.at(-1);
   const running =
     latestTurn !== undefined &&
@@ -45,11 +55,25 @@ export function WorkshopTurnView({
   // wire shape, so the view renders history and live identically (the stream's events win
   // while it holds them; the store's take over the moment the turn settles).
   const settledEvents = useQuery({
-    queryKey: ["workshop", "turn-events", channelId, latestTurn?.id],
+    queryKey: [
+      ...(scope.status === "open" ? scope.prefix : []),
+      "workshop",
+      "turn-events",
+      channelId,
+      latestTurn?.id,
+    ],
     enabled:
-      !running && latestTurn !== undefined && latestTurn.id !== undefined,
+      scope.status === "open" &&
+      !running &&
+      latestTurn !== undefined &&
+      latestTurn.id !== undefined,
     staleTime: Number.POSITIVE_INFINITY,
-    queryFn: () => fetchWorkshopTurnEvents(channelId, latestTurn!.id!),
+    queryFn: () =>
+      fetchWorkshopTurnEvents(
+        channelId,
+        latestTurn!.id!,
+        workshopScopePair(scope),
+      ),
   });
   const shown = running ? events : (settledEvents.data?.events ?? []);
 
@@ -59,10 +83,12 @@ export function WorkshopTurnView({
     if (!latestTurn) return;
     setStopping(true);
     try {
-      await cancelWorkshopTurn(channelId, latestTurn.id);
-      await queryClient.invalidateQueries({
-        queryKey: workshopSnapshotQueryOptions(channelId).queryKey,
-      });
+      await cancelWorkshopTurn(
+        channelId,
+        latestTurn.id,
+        workshopScopePair(scope),
+      );
+      invalidateWorkshopInScope(queryClient, scope);
     } finally {
       setStopping(false);
     }

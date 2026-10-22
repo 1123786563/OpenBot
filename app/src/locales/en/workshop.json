@@ -3,6 +3,7 @@
     "ariaLabel": "Workshop",
     "loading": "Loading the workshop…",
     "loadError": "The workshop could not be loaded.",
+    "unavailable": "This workshop is not available in the current workspace.",
     "tabs": {
       "ariaLabel": "Workshop views",
       "process": "Process",

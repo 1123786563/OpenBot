@@ -112,5 +112,6 @@
     "decline": "拒绝"
   },
   "adminNotePrefix": "团队设置与共享账号申请位于",
-  "adminNoteLink": "Admin → Approvals"
+  "adminNoteLink": "Admin → Approvals",
+  "unavailable": "当前所选范围不可用审批。"
 }

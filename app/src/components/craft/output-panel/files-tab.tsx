@@ -1,8 +1,9 @@
 import { IconFile, IconFolder } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { craftFilesQueryOptions } from "@/lib/craft/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import { scopedCraftFilesQueryOptions } from "@/lib/craft/queries";
 import type { CraftFileEntry } from "@/lib/craft/types";
 
 /**
@@ -15,7 +16,12 @@ import type { CraftFileEntry } from "@/lib/craft/types";
 export function FilesTab({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation("craft");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const root = useQuery(craftFilesQueryOptions(sessionId, "outputs"));
+  // The tree is the scope's own answer (MT091 / Issue #134, AC1): the pair rides every read.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const root = useQuery(
+    scopedCraftFilesQueryOptions(queryClient, scope, sessionId, "outputs"),
+  );
 
   const toggle = (path: string) => {
     setExpanded((previous) => {
@@ -68,8 +74,17 @@ function TreeNode({
 }) {
   const isDirectory = node.kind === "dir";
   const open = expanded.has(node.path);
+  // Lazy: a directory's children are fetched when it opens, cached under its own key — under
+  // the scope in force, like every other craft read (MT091).
+  const nodeQueryClient = useQueryClient();
+  const nodeScope = useScopedCache();
   const children = useQuery({
-    ...craftFilesQueryOptions(sessionId, node.path),
+    ...scopedCraftFilesQueryOptions(
+      nodeQueryClient,
+      nodeScope,
+      sessionId,
+      node.path,
+    ),
     enabled: isDirectory && open,
   });
 

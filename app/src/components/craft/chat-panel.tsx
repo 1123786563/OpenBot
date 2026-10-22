@@ -15,15 +15,16 @@ import {
   listLiveApprovals,
 } from "@/lib/craft/client";
 import {
-  craftKeys,
-  craftMessagesQueryOptions,
-  craftSessionQueryOptions,
+  invalidateCraftInScope,
+  scopedCraftMessagesQueryOptions,
+  scopedCraftSessionQueryOptions,
 } from "@/lib/craft/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   isScheduledRunInFlight,
-  scheduledRunContextKey,
-  scheduledRunContextQueryOptions,
+  scopedScheduledRunContextQueryOptions,
 } from "@/lib/craft/scheduled-tasks";
+import type { CraftScheduledRunContext } from "@/lib/craft/types";
 import { messagesToTranscript, useBuildStreaming } from "@/lib/craft/streaming";
 import { Composer } from "./composer";
 import { TranscriptEntry } from "./message/transcript-entry";
@@ -57,17 +58,32 @@ const SUGGESTIONS = [
 export function ChatPanel({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation("craft");
   const queryClient = useQueryClient();
-  const messages = useQuery(craftMessagesQueryOptions(sessionId));
+  // The conversation's reads and writes are the scope's own (MT091 / Issue #134): the history,
+  // the session facts, the live approvals and the scheduled-run banner all carry the selection
+  // pair and file under the scope's cache prefix.
+  const scope = useScopedCache();
+  const pair = scope.status === "open" ? (scope.selection ?? {}) : undefined;
+  const messages = useQuery(
+    scopedCraftMessagesQueryOptions(queryClient, scope, sessionId),
+  );
   const approvals = useQuery({
-    queryKey: ["craft", "approvals", sessionId],
-    queryFn: () => listLiveApprovals(sessionId),
+    queryKey: [
+      ...(scope.status === "open" ? scope.prefix : []),
+      "craft",
+      "approvals",
+      sessionId,
+    ],
+    enabled: scope.status === "open",
+    queryFn: () => listLiveApprovals(sessionId, undefined, pair),
     refetchInterval: 5000,
   });
-  const session = useQuery(craftSessionQueryOptions(sessionId));
+  const session = useQuery(
+    scopedCraftSessionQueryOptions(queryClient, scope, sessionId),
+  );
   // Gate on origin so interactive sessions never ask for a context they cannot have.
   const isScheduledSession = session.data?.origin === "SCHEDULED";
-  const scheduledRun = useQuery({
-    ...scheduledRunContextQueryOptions(sessionId),
+  const scheduledRun = useQuery<CraftScheduledRunContext | null>({
+    ...scopedScheduledRunContextQueryOptions(queryClient, scope, sessionId),
     enabled: isScheduledSession,
   });
   const {
@@ -120,17 +136,9 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
     void (async () => {
       await streamScheduledRunEvents();
       if (cancelled) return;
-      await queryClient.invalidateQueries({
-        queryKey: craftKeys.messages(sessionId),
-      });
-      await queryClient.invalidateQueries({
-        queryKey: scheduledRunContextKey(sessionId),
-      });
-      // A scheduled run can scaffold and start a web app exactly like an
-      // interactive turn; the preview pane gates on this read.
-      await queryClient.invalidateQueries({
-        queryKey: craftKeys.webapp(sessionId),
-      });
+      // The durable rows refresh at BOTH roots (MT091): the run's messages, its banner
+      // context and any web app it scaffolded all live under the craft tree.
+      invalidateCraftInScope(queryClient, scope);
     })();
     return () => {
       cancelled = true;
@@ -140,7 +148,7 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
     shouldStreamScheduledRun,
     streamScheduledRunEvents,
     queryClient,
-    sessionId,
+    scope,
   ]);
 
   const handleSend = async (
@@ -156,43 +164,33 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
     const unnamed = session.data?.name == null;
     await streamMessage(content, attachments, () => {
       if (!unnamed) return;
-      void generateSessionName(sessionId)
-        .then(async () => {
-          await queryClient.invalidateQueries({
-            queryKey: craftKeys.list(),
-          });
-          await queryClient.invalidateQueries({
-            queryKey: craftKeys.session(sessionId),
-          });
+      void generateSessionName(sessionId, pair)
+        .then(() => {
+          invalidateCraftInScope(queryClient, scope);
         })
         .catch(() => undefined);
-    });
-    await queryClient.invalidateQueries({
-      queryKey: craftKeys.messages(sessionId),
-    });
-    await queryClient.invalidateQueries({
-      queryKey: craftKeys.artifacts(sessionId),
-    });
-    await queryClient.invalidateQueries({
-      queryKey: craftKeys.session(sessionId),
     });
     // A turn is the only thing that can start (or crash) the session's dev
     // server, so turn end is when the preview's `has_webapp`/`ready` facts
     // change. Without this the pane kept serving the pre-turn read and showed
     // "waiting for the first web app" beside an app the agent had just built.
-    await queryClient.invalidateQueries({
-      queryKey: craftKeys.webapp(sessionId),
-    });
+    invalidateCraftInScope(queryClient, scope);
   };
 
   const decide = async (
     approvalId: string,
     decision: "allow_once" | "deny",
   ) => {
-    await decideCraftApproval(approvalId, decision);
+    // The decision is an execution action under the scope in force (MT091 AC3).
+    await decideCraftApproval(approvalId, decision, pair);
     await queryClient.invalidateQueries({
       queryKey: ["craft", "approvals", sessionId],
     });
+    if (scope.status === "open") {
+      await queryClient.invalidateQueries({
+        queryKey: [...scope.prefix, "craft", "approvals", sessionId],
+      });
+    }
   };
 
   return (

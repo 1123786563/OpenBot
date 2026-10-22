@@ -1,9 +1,11 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   foreignKey,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -781,6 +783,110 @@ export const asyncJobs = pgTable(
 );
 
 /**
+ * One async job's settle-trigger observability row (Bifrost 17.5, #329): how many times
+ * settlement was triggered, by which lane (poll or completion notification), and the ONE
+ * unified idempotency key both lanes computed (jobId + terminal version) — so a duplicate
+ * trigger shows up as a count, never as a double charge (the reservation's own settle
+ * fence, 06.9, is the money guarantee; this row is the visibility).
+ *
+ * The first trigger writes the key, the terminal state and the first timestamp, and they
+ * never move; every trigger increments the counters atomically. No amounts live here —
+ * the ledger is one, and it is not this table.
+ */
+export const asyncSettleTriggers = pgTable(
+  "async_settle_triggers",
+  {
+    /** The job whose settlement was triggered — one row per job, ever. */
+    jobId: text("job_id")
+      .primaryKey()
+      .references(() => asyncJobs.jobId),
+    /** The unified key the first trigger computed (`async-terminal-settle:<job>:<state>:<digest>`). */
+    idempotencyKey: text("idempotency_key").notNull(),
+    /** The terminal state the first report carried. */
+    terminalState: text("terminal_state")
+      .$type<"completed" | "failed" | "cancelled">()
+      .notNull(),
+    totalTriggers: integer("total_triggers").notNull().default(1),
+    pollTriggers: integer("poll_triggers").notNull().default(0),
+    notificationTriggers: integer("notification_triggers").notNull().default(0),
+    firstTriggeredAt: timestamp("first_triggered_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastTriggeredAt: timestamp("last_triggered_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** Which lane triggered last — the closed two-member set the tickets name. */
+    lastSource: text("last_source")
+      .$type<"poll" | "notification">()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("async_settle_triggers_idempotency_key_idx").on(
+      table.idempotencyKey,
+    ),
+    check(
+      "async_settle_triggers_counts_check",
+      sql`${table.totalTriggers} >= 1 AND ${table.pollTriggers} >= 0 AND ${table.notificationTriggers} >= 0 AND ${table.totalTriggers} >= ${table.pollTriggers} + ${table.notificationTriggers}`,
+    ),
+    // The operational read: recently triggered jobs, newest first.
+    index("async_settle_triggers_last_idx").on(table.lastTriggeredAt),
+  ],
+);
+
+/**
+ * The async job's settlement line detail (Bifrost 17.6, #330) — the async counterpart of
+ * {@link creditSettlementDetails} (image, 0179) and {@link creditSpeechSettlementDetails}
+ * (speech, 0181), in its own table because its facts are neither: the attribution anchor
+ * is the JOB (`jobId`, UNIQUE — the one key every surface of an async charge names), the
+ * capability is the job's own (the closed vocabulary `async_jobs`' CHECK owns), and the
+ * usage is the whole per-dimension map the provider's terminal report carried. Written
+ * only inside the credit writer's settle transaction (one commit with the ledger row and
+ * the reservation's terminal update), keyed uniquely by the reservation; the MONEY stays
+ * on the ledger row.
+ */
+export const creditAsyncSettlementDetails = pgTable(
+  "credit_async_settlement_details",
+  {
+    reservationId: text("reservation_id").primaryKey(),
+    ledgerId: text("ledger_id")
+      .notNull()
+      .references(() => creditLedger.id),
+    /** The job's own capability — the same closed vocabulary async_jobs' CHECK owns. */
+    capability: text("capability").notNull(),
+    /** The local job identity — the attribution anchor of the whole charge. */
+    jobId: text("job_id").notNull(),
+    /** The provider's job id, when the mapping is known (null is a state, 17.1). */
+    providerJobId: text("provider_job_id"),
+    entryCount: integer("entry_count").notNull(),
+    terminalState: text("terminal_state")
+      .$type<"completed" | "failed" | "cancelled">()
+      .notNull(),
+    /** The provider's real terminal usage, one whole number per billing dimension. */
+    actualUsage: jsonb("actual_usage").$type<Record<string, number>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("credit_async_settlement_details_job_id_idx").on(table.jobId),
+    check(
+      "credit_async_settlement_details_capability_check",
+      sql`${table.capability} in ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'ocr', 'realtime', 'video', 'unknown')`,
+    ),
+    check(
+      "credit_async_settlement_details_terminal_state_check",
+      sql`${table.terminalState} in ('completed', 'failed', 'cancelled')`,
+    ),
+    check("credit_async_settlement_details_entry_count_check", sql`${table.entryCount} > 0`),
+    check(
+      "credit_async_settlement_details_usage_shape_check",
+      sql`jsonb_typeof(${table.actualUsage}) = 'object'`,
+    ),
+    index("credit_async_settlement_details_ledger_idx").on(table.ledgerId),
+  ],
+);
+
+/**
  * One established realtime session (Bifrost 15.1, #314): the durable identity a WebSocket
  * or WebRTC session is born under — the grant, the payer the door RESOLVED server-side,
  * the model cell and BOTH locked versions, frozen at establishment so the session's
@@ -949,5 +1055,403 @@ export const creditSettlementDimensionBreakdown = pgTable(
       "credit_settlement_dimension_breakdown_units_check",
       sql`${table.units} >= 0`,
     ),
+  ],
+);
+
+/**
+ * One row per REAL tool call — the tool execution's own billing identity (Bifrost 20.1,
+ * #341). Every real tool call gets a local `tc-` charge id plus the caller's idempotency
+ * key (a replay converges on the row its hold already minted), the entrance it arrived
+ * through (the closed registry in `billing/tool-surcharge-pricing.ts` — MCP, injected,
+ * responses, web search, A2A), the surcharge dimension it bills on, and the attribution
+ * frozen at creation exactly the way `async_jobs` freezes its own. A charged row carries
+ * its reservation's `att-` attempt id — the 07.x bijection — so tool fees and model fees
+ * are distinguishable by construction: the dimension is always a `surcharge_*` member,
+ * and the settlement breakdown's surcharge group says the same thing about the same call.
+ *
+ * `refused` rows never hold a reservation or an attempt — a refusal writes no money rows,
+ * and the refusal reason plus the audit trail carry the attempt; a `charged` row holds the
+ * reservation the call settled against, or carries `pricedFree` when the basis priced the
+ * call exactly zero (free is a price, executable hold-free). The routing-attached
+ * embedding call is deliberately not an entry: it bills on the attached model's own token
+ * dimensions through the request's reservation.
+ */
+export const toolCallCharges = pgTable(
+  "tool_call_charges",
+  {
+    /** The call's local identity, writer-minted — recognisable on sight, like `cr-`/`aj-`. */
+    chargeId: text("charge_id").primaryKey(),
+    /** The caller's durable request identity; a replay answers the existing row. */
+    idempotencyKey: text("idempotency_key").notNull(),
+    /** The entrance id, from the closed tool-execution registry. */
+    entry: text("entry").notNull(),
+    /** What executed: the `<client>-<tool>` pattern, the search tool, or the agent name. */
+    tool: text("tool").notNull(),
+    /** The surcharge dimension this call bills on (never a model dimension). */
+    dimension: text("dimension").notNull(),
+    /** The authorization the call ran under — frozen, like every attribution fact here. */
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => accessGrants.grantId),
+    /** The resolved payer the attribution froze at creation, never the request's spelling. */
+    payerKind: text("payer_kind").notNull(),
+    payerId: text("payer_id").notNull(),
+    /** The admission's own outcome: charged (with its hold, or priced exactly free) or refused. */
+    state: text("state")
+      .$type<"charged" | "refused">()
+      .notNull(),
+    /** The reservation this call's hold minted; absent exactly when no hold formed. */
+    reservationId: text("reservation_id").references(
+      () => creditReservations.id,
+    ),
+    /** True when the basis priced the call exactly zero — charged, hold-free. */
+    pricedFree: boolean("priced_free").notNull().default(false),
+    /** The admission's own refusal code, recorded on the refused row. */
+    refusalReason: text("refusal_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("tool_call_charges_idempotency_key_unique_idx").on(
+      table.idempotencyKey,
+    ),
+    check(
+      "tool_call_charges_entry_check",
+      sql`${table.entry} IN ('mcp.tool_call', 'injected.tool_call', 'injected.web_search', 'responses.tool_call', 'a2a.call')`,
+    ),
+    check(
+      "tool_call_charges_dimension_check",
+      sql`${table.dimension} IN ('surcharge_web_search', 'surcharge_tool_call', 'surcharge_a2a_call')`,
+    ),
+    check(
+      "tool_call_charges_payer_kind_check",
+      sql`${table.payerKind} IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')`,
+    ),
+    check(
+      "tool_call_charges_state_check",
+      sql`${table.state} IN ('charged', 'refused')`,
+    ),
+    check(
+      "tool_call_charges_state_shape_check",
+      sql`(${table.state} = 'charged' AND ${table.refusalReason} IS NULL AND (${table.reservationId} IS NOT NULL OR ${table.pricedFree} = true)) OR (${table.state} = 'refused' AND ${table.reservationId} IS NULL AND ${table.refusalReason} IS NOT NULL AND ${table.pricedFree} = false)`,
+    ),
+    // The user view and the sweep walk a grant's calls oldest first.
+    index("tool_call_charges_grant_idx").on(
+      table.grantId,
+      table.createdAt,
+    ),
+    // One charge per reservation: a hold mints exactly one tool-call identity.
+    uniqueIndex("tool_call_charges_reservation_idx")
+      .on(table.reservationId)
+      .where(sql`${table.reservationId} IS NOT NULL`),
+  ],
+);
+
+/**
+ * One accepted batch submit's durable parent identity (Bifrost 18.1, #333): the local
+ * `bj-` batch identity a replayed submit converges on (the submit idempotency key is
+ * UNIQUE), with the attribution facts — grant, resolved payer, locked versions — fixed at
+ * creation, and the ONE whole-batch reservation the submit held BEFORE any provider
+ * dispatch. The cap is every item's worst-case exact cost summed across the items' own
+ * model cells with a single upward rounding at the end; it is fixed at creation, so there
+ * is no reservation that can follow it ("不允许部分派发后再追加预留" is a structural
+ * property, not a checked rule).
+ *
+ * The batch carries no model cell of its own: its items' models (and unit prices) differ,
+ * so the pricing basis is the PAIR (batch versions × each item's cell) on the child rows.
+ * The reservation's own basis lock names the batch's anchor cell — the first distinct cell
+ * admitted — which is a true resolvable basis but NOT the batch's price basis; batch
+ * settlement prices from the child rows, never from the hold's lock.
+ *
+ * `providerBatchId` is nullable on purpose (the async family's 17.3 lane): "not yet known"
+ * is a state the row holds while the reservation stays occupied at its FULL cap, moved to
+ * `unknown` the moment the dispatch answer is known lost.
+ */
+export const batchJobs = pgTable(
+  "batch_jobs",
+  {
+    /** `bj-` plus random bytes, minted by the submit path. */
+    batchId: text("batch_id").primaryKey(),
+    /** The submit request's stable identity; one submit is one batch, ever. */
+    submitIdempotencyKey: text("submit_idempotency_key").notNull(),
+    /** The authorization the submit ran under; attribution never re-resolves. */
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => accessGrants.grantId),
+    /** The payer the reservation billed, copied at creation (the resolved account). */
+    payerKind: text("payer_kind").notNull(),
+    payerId: text("payer_id").notNull(),
+    /** The batch's locked versions — the version half of every item's price basis. */
+    snapshotVersion: integer("snapshot_version").notNull(),
+    rateVersion: integer("rate_version").notNull(),
+    /** The provider's batch id when its answer arrived; null when lost (17.3's lane). */
+    providerBatchId: text("provider_batch_id"),
+    /** The whole-batch hold; an accepted submit always holds exactly one. */
+    reservationId: text("reservation_id")
+      .notNull()
+      .references(() => creditReservations.id),
+    /** Every item's worst-case exact cost, summed, ONE upward rounding. */
+    maximumCredits: integer("maximum_credits").notNull(),
+    /** How many child items the cap conversion covered. */
+    itemCount: integer("item_count").notNull(),
+    /** Dispatch's own outcome; the money's states live on the reservation. The terminal
+     * members (18.3) are reachable only after the batch's settlement committed — the
+     * dispatch-shape CHECK pins them to a provider id and a settled_at. */
+    state: text("state")
+      .$type<
+        | "submitted"
+        | "dispatch_unconfirmed"
+        | "partial"
+        | "completed"
+        | "failed"
+        | "cancelled"
+      >()
+      .notNull()
+      .default("dispatch_unconfirmed"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    /** The per-class outcome counts (18.3, cancelled 18.4) — the status view's members. */
+    completedCount: integer("completed_count").notNull().default(0),
+    failedBillableCount: integer("failed_billable_count").notNull().default(0),
+    releasedCount: integer("released_count").notNull().default(0),
+    unknownCount: integer("unknown_count").notNull().default(0),
+    cancelledCount: integer("cancelled_count").notNull().default(0),
+    /** When the batch's ONE settlement committed (null until then). */
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("batch_jobs_submit_idempotency_key_unique_idx").on(
+      table.submitIdempotencyKey,
+    ),
+    check(
+      "batch_jobs_payer_kind_check",
+      sql`${table.payerKind} IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')`,
+    ),
+    check(
+      "batch_jobs_version_check",
+      sql`${table.snapshotVersion} >= 1 AND ${table.rateVersion} >= 0`,
+    ),
+    check("batch_jobs_maximum_check", sql`${table.maximumCredits} > 0`),
+    check("batch_jobs_item_count_check", sql`${table.itemCount} > 0`),
+    check(
+      "batch_jobs_state_check",
+      sql`${table.state} IN ('submitted', 'dispatch_unconfirmed', 'partial', 'completed', 'failed', 'cancelled')`,
+    ),
+    check(
+      "batch_jobs_dispatch_shape_check",
+      sql`(${table.state} = 'submitted' AND ${table.providerBatchId} IS NOT NULL AND ${table.dispatchedAt} IS NOT NULL) OR (${table.state} = 'dispatch_unconfirmed' AND ${table.providerBatchId} IS NULL) OR (${table.state} IN ('partial', 'completed', 'failed', 'cancelled') AND ${table.providerBatchId} IS NOT NULL AND ${table.settledAt} IS NOT NULL)`,
+    ),
+    check(
+      "batch_jobs_counts_check",
+      sql`${table.completedCount} >= 0 AND ${table.failedBillableCount} >= 0 AND ${table.releasedCount} >= 0 AND ${table.unknownCount} >= 0 AND ${table.cancelledCount} >= 0`,
+    ),
+    // The recovery sweep and the status reads arrive by grant and by provider batch id.
+    index("batch_jobs_grant_idx").on(table.grantId, table.createdAt),
+    uniqueIndex("batch_jobs_provider_batch_id_idx").on(table.providerBatchId),
+  ],
+);
+
+/**
+ * One batch item's durable child identity (Bifrost 18.1, #333): the item's own `bi-`
+ * identity, the caller's `custom_id` (UNIQUE per batch — the key the provider's per-item
+ * results come back keyed by, so a result maps to exactly one item), the item's OWN model
+ * cell (items of one batch may price differently — the cap conversion priced each on its
+ * own cell), and the item's certified worst-case quantities frozen at submit (the
+ * input-side evidence the cap was certified from). The child carries no money and no payer
+ * of its own: its attribution IS the parent's — one payer, one hold, by construction.
+ */
+export const batchItems = pgTable(
+  "batch_items",
+  {
+    /** `bi-` plus random bytes, minted by the submit path. */
+    itemId: text("item_id").primaryKey(),
+    batchId: text("batch_id")
+      .notNull()
+      .references(() => batchJobs.batchId),
+    /** The item's position in the submit's items array — the stable walk order. */
+    itemIndex: integer("item_index").notNull(),
+    /** The caller's per-item identity; the provider's results arrive keyed by this. */
+    customId: text("custom_id").notNull(),
+    /** The item's own model cell — the cell half of its price basis. */
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    capability: text("capability").notNull(),
+    /** The item's certified worst-case quantities, one whole number per used dimension. */
+    quantities: jsonb("quantities")
+      .$type<Record<string, number>>()
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check("batch_items_index_check", sql`${table.itemIndex} >= 0`),
+    check(
+      "batch_items_custom_id_check",
+      sql`length(${table.customId}) > 0 AND length(${table.customId}) <= 512`,
+    ),
+    check(
+      "batch_items_capability_check",
+      sql`${table.capability} IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'realtime', 'video', 'unknown')`,
+    ),
+    check(
+      "batch_items_quantities_shape_check",
+      sql`jsonb_typeof(${table.quantities}) = 'object'`,
+    ),
+    uniqueIndex("batch_items_batch_index_unique_idx").on(
+      table.batchId,
+      table.itemIndex,
+    ),
+    uniqueIndex("batch_items_custom_id_unique_idx").on(
+      table.batchId,
+      table.customId,
+    ),
+    // The result lane joins by custom id inside one batch; the item walk joins by parent.
+    index("batch_items_batch_idx").on(table.batchId, table.itemIndex),
+  ],
+);
+
+/**
+ * The batch settlement's per-item line details (Bifrost 18.2, #334): one row per item,
+ * written inside the credit writer's settle transaction beside the ONE aggregated ledger
+ * row of the batch's settlement — so the charge is attributable at both levels: the batch
+ * (the ledger row, named by `requestId` = batchId) and every item (its own line here, the
+ * same `ledgerId`). The rows of one settlement share one ledger id and their exact costs
+ * sum to that row's actual cost (the writer asserts it at write time). The MONEY stays on
+ * the ledger row; `exactCost` is the item's exact rational share — a traceable entry, not
+ * a second ledger.
+ */
+export const creditBatchSettlementDetails = pgTable(
+  "credit_batch_settlement_details",
+  {
+    /** The item the line names — the per-item attribution anchor, one line per item. */
+    itemId: text("item_id")
+      .primaryKey()
+      .references(() => batchItems.itemId),
+    /** The batch the item belongs to — the batch-level attribution join. */
+    batchId: text("batch_id")
+      .notNull()
+      .references(() => batchJobs.batchId),
+    /** The ONE ledger row of the batch's settlement this line shares. */
+    ledgerId: text("ledger_id")
+      .notNull()
+      .references(() => creditLedger.id),
+    /** The item's own model cell — the cell its usage was priced on. */
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    capability: text("capability").notNull(),
+    /** The caller's per-item identity — the human-readable attribution key. */
+    customId: text("custom_id").notNull(),
+    /** The item's own terminal state (completed/failed/cancelled — items may differ). */
+    terminalState: text("terminal_state")
+      .$type<"completed" | "failed" | "cancelled">()
+      .notNull(),
+    /** The provider's real per-item usage, one whole number per used dimension. */
+    actualUsage: jsonb("actual_usage").$type<Record<string, number>>().notNull(),
+    /** The item's exact rational share of the settlement, decimal strings in jsonb. */
+    exactCost: jsonb("exact_cost")
+      .$type<{ numerator: string; denominator: string }>()
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "credit_batch_settlement_details_capability_check",
+      sql`${table.capability} IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'realtime', 'video', 'unknown')`,
+    ),
+    check(
+      "credit_batch_settlement_details_terminal_state_check",
+      sql`${table.terminalState} IN ('completed', 'failed', 'cancelled')`,
+    ),
+    check(
+      "credit_batch_settlement_details_custom_id_check",
+      sql`length(${table.customId}) > 0`,
+    ),
+    check(
+      "credit_batch_settlement_details_usage_shape_check",
+      sql`jsonb_typeof(${table.actualUsage}) = 'object'`,
+    ),
+    check(
+      "credit_batch_settlement_details_cost_shape_check",
+      sql`jsonb_typeof(${table.exactCost}) = 'object' AND jsonb_typeof(${table.exactCost}->'numerator') = 'string' AND jsonb_typeof(${table.exactCost}->'denominator') = 'string'`,
+    ),
+    // The batch-level attribution read; the ledger join for the consumption view.
+    index("credit_batch_settlement_details_batch_idx").on(table.batchId),
+    index("credit_batch_settlement_details_ledger_idx").on(table.ledgerId),
+  ],
+);
+
+/**
+ * One batch item's reported disposition (Bifrost 18.3, #335): the classification the
+ * partial lane derives from the provider's per-item reports — the closed four-class
+ * vocabulary the ticket names — with the provider's own terminal word, the release
+ * evidence (present exactly when the item released: `not_dispatched` is the only member,
+ * the provider's own accounting that the item never ran), the raw usage the item's
+ * pricing consumed, and how many reports arrived for the item (a duplicate is a count,
+ * never a second charge). NO money lives here: the classification and its counts are
+ * observability; the ledger is one, and it is not this table.
+ */
+export const batchItemOutcomes = pgTable(
+  "batch_item_outcomes",
+  {
+    /** The item the disposition names — one outcome row per item, ever. */
+    itemId: text("item_id")
+      .primaryKey()
+      .references(() => batchItems.itemId),
+    batchId: text("batch_id")
+      .notNull()
+      .references(() => batchJobs.batchId),
+    /** The caller's per-item identity — the human-readable correlation key. */
+    customId: text("custom_id").notNull(),
+    /** The closed classification vocabulary: completed / failed_billable /
+     * not_dispatched / unknown / cancelled (18.4 — the cancelled row carries usage when
+     * the item was billed for what ran, or `cancelled_unbilled` evidence when it was
+     * not; never neither, never both). */
+    classification: text("classification")
+      .$type<
+        | "completed"
+        | "failed_billable"
+        | "not_dispatched"
+        | "unknown"
+        | "cancelled"
+      >()
+      .notNull(),
+    /** The provider's own terminal word for the item (null for non-terminal classes). */
+    terminalState: text("terminal_state")
+      .$type<"completed" | "failed" | "cancelled">(),
+    /** The no-charge evidence — present exactly when the classification released. */
+    evidence: jsonb("evidence")
+      .$type<{ kind: string; reference?: string }>(),
+    /** The raw per-item usage the item's pricing consumed (billable classes only). */
+    usage: jsonb("usage").$type<Record<string, number>>(),
+    /** How many reports arrived for this item — the duplicate-notification observability. */
+    reports: integer("reports").notNull().default(1),
+    firstReportedAt: timestamp("first_reported_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastReportedAt: timestamp("last_reported_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "batch_item_outcomes_classification_check",
+      sql`${table.classification} IN ('completed', 'failed_billable', 'not_dispatched', 'unknown', 'cancelled')`,
+    ),
+    check(
+      "batch_item_outcomes_terminal_state_check",
+      sql`${table.terminalState} IS NULL OR ${table.terminalState} IN ('completed', 'failed', 'cancelled')`,
+    ),
+    check("batch_item_outcomes_reports_check", sql`${table.reports} >= 1`),
+    check(
+      "batch_item_outcomes_shape_check",
+      sql`((${table.classification} IN ('completed', 'failed_billable') AND ${table.terminalState} IS NOT NULL AND ${table.usage} IS NOT NULL) OR (${table.classification} = 'not_dispatched' AND ${table.evidence} IS NOT NULL) OR (${table.classification} = 'cancelled' AND ((${table.terminalState} IS NOT NULL AND ${table.usage} IS NOT NULL) OR ${table.evidence} IS NOT NULL)) OR (${table.classification} = 'unknown'))`,
+    ),
+    index("batch_item_outcomes_batch_idx").on(table.batchId, table.customId),
   ],
 );

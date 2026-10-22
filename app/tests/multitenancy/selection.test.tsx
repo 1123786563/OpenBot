@@ -793,7 +793,10 @@ test("the workspace selector rides only same-origin reviewed paths, next to the 
   expect(headerOf(asked[1]?.init, "x-openbot-tenant")).toBe("acme");
   expect(headerOf(asked[1]?.init, "x-openbot-workspace")).toBe("acme-finance");
 
-  await client("/api/channels", {
+  // `/api/channels` earned its review at MT087 (the scoped conversation surfaces) and
+  // `/api/craft` at MT091 (the scoped creation surfaces); the proactive surface is the
+  // unreviewed example now.
+  await client("/api/proactive/suggestions", {
     tenantId: "acme",
     workspaceId: "acme-finance",
   });
