@@ -97,6 +97,19 @@ export interface CompanyUsageLine {
   readonly occurredAt: Date;
 }
 
+/** 一条公司用量证据行（usage_outbox 的只读投影；×100 缩放整数与 token 数原样）。 */
+export interface CompanyUsageLine {
+  readonly eventId: string;
+  readonly source: "llm" | "code_run";
+  readonly model: string;
+  /** 公司工作台调用的团队维度；null = 无团队维度的公司行（与表同形）。 */
+  readonly workspaceId: string | null;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly reservationId: string | null;
+  readonly occurredAt: Date;
+}
+
 /** 一条公司财务读取授权（按存储行回答）。 */
 export interface CompanyFinanceGrant {
   readonly tenantId: string;
