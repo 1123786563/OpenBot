@@ -5,7 +5,7 @@ import {
   IconPlayerPlay,
   IconTrash,
 } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { TFunction } from "i18next";
 import { Fragment, useState } from "react";
@@ -46,11 +46,11 @@ import {
   nothingIsFiring,
   type RoutineRecord,
   type RoutineRunRecord,
-  routineRunsQueryOptions,
-  routinesQueryOptions,
+  scopedRoutineRunsQueryOptions,
+  scopedRoutinesQueryOptions,
 } from "@/lib/routines/queries";
 import { cn } from "@/lib/utils";
-import { queryClient } from "@/query-client";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * What the last-run cell says, and in what tone.
@@ -164,7 +164,11 @@ const RUN_STATUS = {
 /** Every firing of one routine, newest first, each linking to the thread it ran in. */
 function RoutineRuns({ routine }: { routine: RoutineRecord }) {
   const { t } = useTranslation("routines");
-  const runs = useQuery(routineRunsQueryOptions(routine.id));
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const runs = useQuery(
+    scopedRoutineRunsQueryOptions(queryClient, scope, routine.id),
+  );
   // Pending renders nothing: "No runs yet." would otherwise flash for the fetch.
   if (runs.isPending) return null;
   if (runs.error)
@@ -239,10 +243,19 @@ export function RoutinesList({
   embedded?: boolean;
 } = {}) {
   const { t } = useTranslation("routines");
-  const routines = useQuery(routinesQueryOptions());
-  const setEnabled = useMutation(setRoutineEnabledMutationOptions(queryClient));
-  const deleteRoutine = useMutation(deleteRoutineMutationOptions(queryClient));
-  const runNow = useMutation(runRoutineNowMutationOptions(queryClient));
+  // The routines read and every action ride the scope this screen holds (MT089 AC2): keyed under
+  // the scope's own prefix, carrying the pair, so the schedule shown and changed is the scope's
+  // own, and a switch drops the old scope's rows wholesale (AC3).
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const routines = useQuery(scopedRoutinesQueryOptions(queryClient, scope));
+  const setEnabled = useMutation(
+    setRoutineEnabledMutationOptions(queryClient, scope),
+  );
+  const deleteRoutine = useMutation(
+    deleteRoutineMutationOptions(queryClient, scope),
+  );
+  const runNow = useMutation(runRoutineNowMutationOptions(queryClient, scope));
   /** Which routine's run history is open. One at a time keeps the list scannable. */
   const [historyId, setHistoryId] = useState<string | null>(null);
   /** The routine a delete is being confirmed for, or null. Its own dialog rather than one per row. */

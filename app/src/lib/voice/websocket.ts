@@ -1,3 +1,4 @@
+import { withStreamScope } from "@/lib/enterprise/tenant/stream-scope";
 import { decodePcm, encodePcm } from "./pcm";
 import type { ConnectVoice, VoiceEvent } from "./types";
 
@@ -15,6 +16,7 @@ type Playing = {
 export const connectWebSocket: ConnectVoice = async ({
   channelId,
   signal,
+  scope,
   onEvent,
   onError,
   onOutput,
@@ -117,13 +119,19 @@ export const connectWebSocket: ConnectVoice = async ({
     output = context.createMediaStreamDestination();
     onOutput(output.stream);
 
-    const response = await fetch("/api/voice/calls", {
-      method: "POST",
-      credentials: "include",
-      signal,
-      headers: { "Content-Type": "application/json", "x-openbot-voice": "1" },
-      body: JSON.stringify({ channelId }),
-    });
+    // The call's establishment POST is the stream's subscription moment, so the selection rides
+    // its URL (MT082 AC1); the realtime socket it returns is another origin's and never sees the
+    // pair — a company id has no business leaving ours.
+    const response = await fetch(
+      withStreamScope("/api/voice/calls", scope ?? null),
+      {
+        method: "POST",
+        credentials: "include",
+        signal,
+        headers: { "Content-Type": "application/json", "x-openbot-voice": "1" },
+        body: JSON.stringify({ channelId }),
+      },
+    );
     const body: unknown = await response.json();
     if (!response.ok)
       throw new Error(

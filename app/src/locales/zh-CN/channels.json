@@ -71,7 +71,8 @@
     "channelFallback": "频道",
     "coworkerAria": "频道同事",
     "loadError": "无法加载此频道。",
-    "workshop": "工作台"
+    "workshop": "工作台",
+    "unavailable": "当前所选范围不可用此会话。"
   },
   "channelNew": {
     "rosterError": "无法加载同事。",
@@ -168,11 +169,6 @@
     "emailAria": "对方的邮箱",
     "emailPlaceholder": "对方的邮箱",
     "add": "添加",
-    "people": "成员：",
-    "leaveAria": "退出此群组",
-    "removePersonAria": "移除 {{email}}",
-    "leave": "退出",
-    "open": "打开 {{name}}",
     "people": {
       "title": "此群组中的人",
       "description": "这里的每个人都能看到完整对话，其中的每个 Bot 都会回答他们。",
@@ -182,7 +178,11 @@
       "addPlaceholder": "通过邮箱添加某人",
       "count_one": "{{count}} 人",
       "count_other": "{{count}} 人"
-    }
+    },
+    "leaveAria": "退出此群组",
+    "removePersonAria": "移除 {{email}}",
+    "leave": "退出",
+    "open": "打开 {{name}}"
   },
   "groupDetail": {
     "groupFallback": "群组"

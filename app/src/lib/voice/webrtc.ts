@@ -1,9 +1,11 @@
+import { withStreamScope } from "@/lib/enterprise/tenant/stream-scope";
 import type { ConnectVoice, VoiceEvent } from "./types";
 
 /** WebRTC owns audio buffering and interruption truncation; the data channel carries controls. */
 export const connectWebRtc: ConnectVoice = async ({
   channelId,
   signal,
+  scope,
   onEvent,
   onError,
   onOutput,
@@ -110,13 +112,18 @@ export const connectWebRtc: ConnectVoice = async ({
     };
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
-    const response = await fetch("/api/voice/calls", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json", "x-openbot-voice": "1" },
-      body: JSON.stringify({ channelId, sdp: offer.sdp }),
-      signal,
-    });
+    // The call's establishment POST is the stream's subscription moment; the selection rides its
+    // URL (MT082 AC1), and the peer connection it negotiates never sees the pair.
+    const response = await fetch(
+      withStreamScope("/api/voice/calls", scope ?? null),
+      {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", "x-openbot-voice": "1" },
+        body: JSON.stringify({ channelId, sdp: offer.sdp }),
+        signal,
+      },
+    );
     if (!response.ok) {
       const body: unknown = await response.json().catch(() => null);
       throw new Error(

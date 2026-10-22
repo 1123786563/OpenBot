@@ -1230,6 +1230,23 @@
       "gateway_readiness_rate_not_configured": "The USD→credits conversion rate is not configured, so paid model capabilities are refused: an administrator must save a legal rate (there is no default).",
       "gateway_readiness_rate_unavailable": "The conversion rate could not be read as a legal value, so paid model capabilities are refused: repair the stored rate before enabling billing.",
       "gateway_readiness_gate_unavailable": "The gateway readiness gate is not installed in this process, so paid model capabilities are refused."
+    },
+    "audio": {
+      "title": "Audio path availability",
+      "description": "Which audio processing paths the gateway can bill strictly. A path with missing evidence is not callable, and the refusal names what is missing.",
+      "available": "Available",
+      "unavailable": "Not available",
+      "notAnEntrance": "Not an entrance on this gateway",
+      "streamVariant": "streaming",
+      "missingIntro": "Missing evidence:",
+      "missing": {
+        "no_wire_price_source": "no price source on the wire for a dimension this path bills",
+        "no_input_meter_wired": "no server-trusted input meter wired for this path",
+        "no_admission_wiring": "no Reserve/Settle admission wiring exists to admit this path",
+        "no_gateway_entrypoint": "no route exists in the gateway for this family"
+      },
+      "basisMissingDims": "{{ref}}: unpriced dimensions — {{dimensions}}",
+      "basisEnableable": "{{ref}}: priced for this path"
     }
   },
   "billingPage": {
@@ -1297,5 +1314,6 @@
     "evidenceEmpty": "No query evidence yet",
     "usage": "Usage",
     "noWriteActions": "This view is strictly read-only"
-  }
+  },
+  "unavailable": "This page is not available under the scope you hold."
 }

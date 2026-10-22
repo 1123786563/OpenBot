@@ -22,9 +22,10 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   addGroupMemberMutationOptions,
-  groupQueryOptions,
+  scopedGroupQueryOptions,
   removeGroupMemberMutationOptions,
 } from "@/lib/groups";
 
@@ -36,13 +37,16 @@ import {
 export function GroupPeopleButton({ channelId }: { channelId: string }) {
   const { t } = useTranslation("channels");
   const queryClient = useQueryClient();
-  const group = useQuery(groupQueryOptions(channelId));
+  // The member list and every membership write ride the scope this screen holds (MT087): the
+  // roster offered is the server's answer under the scope in force, and the writes carry the pair.
+  const scope = useScopedCache();
+  const group = useQuery(scopedGroupQueryOptions(queryClient, scope, channelId));
   const me = useQuery(currentUserQueryOptions()).data;
   const add = useMutation(
-    addGroupMemberMutationOptions(queryClient, channelId),
+    addGroupMemberMutationOptions(queryClient, channelId, scope),
   );
   const remove = useMutation(
-    removeGroupMemberMutationOptions(queryClient, channelId),
+    removeGroupMemberMutationOptions(queryClient, channelId, scope),
   );
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");

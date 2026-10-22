@@ -1,4 +1,4 @@
-import { client, tryClient } from "@/lib/client";
+import { client, clientUpload, tryClient } from "@/lib/client";
 import type {
   CraftApproval,
   CraftArtifactEntry,
@@ -124,10 +124,11 @@ export function sendMessage(
 
 /**
  * Upload one file into the session's attachments directory. Multipart is the one body shape
- * `client` cannot carry (it serializes JSON), so this rides a same-origin `fetch` with the
- * same credentials — still through this module, per the feature's data-access convention.
- * The server sanitizes the filename, so the response's `filename`/`path` may differ from the
- * local file's name; the chip updates to what actually landed.
+ * `client` cannot carry (it serializes JSON), so this rides the transport's own multipart half
+ * (`clientUpload`: same credentials, same scope-selection attach — MT081 AC3, no private fetch
+ * here) — still through this module, per the feature's data-access convention. The server
+ * sanitizes the filename, so the response's `filename`/`path` may differ from the local file's
+ * name; the chip updates to what actually landed.
  */
 export async function uploadFile(
   id: string,
@@ -135,11 +136,7 @@ export async function uploadFile(
 ): Promise<UploadResult> {
   const form = new FormData();
   form.append("file", file);
-  const response = await fetch(sessionPath(id, "/upload"), {
-    method: "POST",
-    credentials: "include",
-    body: form,
-  });
+  const response = await clientUpload(sessionPath(id, "/upload"), form);
   const body = (await response.json().catch(() => null)) as
     | UploadResult
     | { error?: string }

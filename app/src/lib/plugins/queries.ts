@@ -1,5 +1,7 @@
-import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { type QueryClient, queryOptions } from "@tanstack/react-query";
+import { client, tryClient } from "@/lib/client";
+import { guarded } from "@/lib/enterprise/tenant/queries";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * Re-exported, not re-declared.
@@ -276,6 +278,17 @@ export type PluginConnection = {
    */
   displayName?: string | null;
   /**
+   * Whether THIS person may read this connection's secret in the clear — the server's own answer,
+   * never a client's guess (MT027: usable is not readable; a `disclose` authorization is a row of
+   * its own beside the `use` one). Absent or false means the reveal action does not exist, the
+   * same fail-closed rule the ownership service lives by when it is not wired.
+   *
+   * THE REDACTION IS STRUCTURAL, not a promise: this type has no envelope and no secret field for
+   * anything to leak through, exactly like the server's own redacted credential view — the one
+   * place plaintext exists is the disclose response, which nothing caches.
+   */
+  canDisclose?: boolean;
+  /**
    * Whether a real call was last made with this credential, present only on a BROKERED row.
    *
    * Only a brokered row has anything to re-check: this deployment holds no secret for it, only a
@@ -381,6 +394,79 @@ export function pluginsPageQueryOptions() {
       });
       return response.json();
     },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The scoped half (MT088 / Issue #131): the skills and connected-accounts pages read through here
+// ---------------------------------------------------------------------------
+
+/**
+ * The skills page's read, bound to the scope the screen holds (MT088 / Issue #131, AC1): keyed
+ * under the scope's own cache prefix (MT083), carrying the selection pair, and answered through
+ * the generation guard — so the skills a scope offers are that scope's own answer, and a switch
+ * drops the old scope's page wholesale.
+ */
+export function scopedPluginsPageQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...pluginKeys.page()]
+        : [...pluginKeys.page(), ":scope-pending"],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<PluginsPage>(() => {})
+        : async ({ signal }): Promise<PluginsPage> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient("/api/plugins", {
+                signal,
+                fallbackKey: "plugins.loadPlugins",
+                ...(open.selection ?? {}),
+              });
+              if (!response.ok) {
+                throw new Error("Skills could not be read.");
+              }
+              return (await response.json()) as PluginsPage;
+            }),
+  });
+}
+
+/**
+ * The connected-accounts page's read, bound to the scope the screen holds (MT088 / Issue #131,
+ * AC1) — the same key discipline, the same carried pair, the same guard, over the redacted
+ * connection rows.
+ */
+export function scopedConnectionsQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...pluginKeys.connections()]
+        : [...pluginKeys.connections(), ":scope-pending"],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<PluginConnections>(() => {})
+        : async ({ signal }): Promise<PluginConnections> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient("/api/plugins/connections", {
+                signal,
+                fallbackKey: "plugins.loadAccounts",
+                ...(open.selection ?? {}),
+              });
+              if (!response.ok) {
+                throw new Error("Connected accounts could not be read.");
+              }
+              return (await response.json()) as PluginConnections;
+            }),
   });
 }
 

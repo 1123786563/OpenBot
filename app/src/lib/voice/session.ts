@@ -1,7 +1,12 @@
 import type { SaveVoiceSessionInput } from "../../../../shared/voice-session";
 import { closingOf, openingOf } from "./cut";
 import { VOICE_CONTEXT_ITEM_ID, VoiceTranscript } from "./transcript";
-import type { ConnectVoice, VoiceConnection, VoiceEvent } from "./types";
+import type {
+  ConnectVoice,
+  VoiceConnection,
+  VoiceEvent,
+  VoiceStreamScope,
+} from "./types";
 
 export type VoiceState = {
   phase: "idle" | "connecting" | "connected" | "error";
@@ -60,6 +65,11 @@ export class VoiceSession {
       askAgent(request: string, signal: AbortSignal): Promise<string>;
       context(): string | Promise<string>;
       anchorMessageId?(): string | null;
+      /**
+       * The selection a new call is established under, read at start time (MT082): a call opened
+       * under one scope stays that scope's — the hook that owns this getter ends it on a switch.
+       */
+      scope?(): VoiceStreamScope | null;
       onEnd?(call: SaveVoiceSessionInput): void;
     },
   ) {}
@@ -127,6 +137,7 @@ export class VoiceSession {
       const connection = await this.deps.connect({
         channelId: this.deps.channelId,
         signal: abort.signal,
+        scope: this.deps.scope?.() ?? null,
         onEvent: (event) => {
           if (current()) this.event(event, generation);
         },

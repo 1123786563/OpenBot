@@ -3,7 +3,12 @@ import {
   type QueryClient,
   queryOptions,
 } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { client, tryClient } from "@/lib/client";
+
+/** The selection pair a scoped call rides, spread into the client options (MT086). */
+type ScopePair = { tenantId?: string; workspaceId?: string };
+import { guarded } from "@/lib/enterprise/tenant/queries";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 export type ApprovalDecision =
   | "allow_once"
   | "allow_always"
@@ -83,146 +88,303 @@ export const approvalInboxOptions = () =>
     },
     refetchInterval: 10_000,
   });
-export const decideApproval = (id: string, decision: ApprovalDecision) =>
+
+// ---------------------------------------------------------------------------
+// The scoped half (MT086 / Issue #129): the approvals page reads and decides through here
+// ---------------------------------------------------------------------------
+
+/**
+ * The refusal a scoped inbox read raises when the server answers that the approval surface is not
+ * this person's to hold under the scope they carry — a suspended company, a left team.
+ *
+ * The status is the server's own (404, the canonical no-leak answer); the
+ * page answers it with ONE unavailable state rather than a blank inbox, which would read as "no
+ * approvals" over "no access" (MT086 AC2).
+ */
+export class ApprovalsUnavailableError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super("Approvals are not available under the scope you hold.");
+    this.name = "ApprovalsUnavailableError";
+    this.status = status;
+  }
+}
+
+/**
+ * The approvals inbox, bound to the scope the screen holds (MT086 / Issue #129, AC1).
+ *
+ * The key composes onto the scope's own cache prefix (`scoped-cache.ts`, MT083), so one person's
+ * two scopes never share an inbox and a switch drops the old scope's wholesale; the request
+ * carries the selection pair; and the answer passes the same generation guard every scoped read
+ * passes, so an inbox that left under one selection never decorates the scope that replaced it.
+ * The pair-shaped refusal (403/404) raises the typed unavailable error the page answers with the
+ * one refusal state.
+ */
+export function scopedApprovalInboxOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, "approvals"]
+        : ["approvals", ":scope-pending"],
+    enabled: open !== null,
+    refetchInterval: 10_000,
+    queryFn:
+      open === null
+        ? () => new Promise<ApprovalInboxData>(() => {})
+        : async ({ signal }): Promise<ApprovalInboxData> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient("/api/approvals", {
+                signal,
+                fallbackKey: "approvals.load",
+                ...(open.selection ?? {}),
+              });
+              if (response.status === 404) {
+                throw new ApprovalsUnavailableError(response.status);
+              }
+              if (!response.ok) {
+                const body = (await response.json().catch(() => null)) as {
+                  error?: unknown;
+                } | null;
+                throw new Error(
+                  typeof body?.error === "string"
+                    ? body.error
+                    : "The approval inbox could not be read.",
+                );
+              }
+              return (await response.json()) as ApprovalInboxData;
+            }),
+  });
+}
+export const decideApproval = (
+  id: string,
+  decision: ApprovalDecision,
+  scope?: ScopePair,
+) =>
   client(`/api/approvals/${encodeURIComponent(id)}/decision`, {
     method: "POST",
     body: { decision },
     fallbackKey: "approvals.saveDecision",
+    ...(scope ?? {}),
   });
-export const revokeApprovalRule = (id: string) =>
+export const revokeApprovalRule = (id: string, scope?: ScopePair) =>
   client(`/api/approvals/rules/${encodeURIComponent(id)}`, {
     method: "DELETE",
     fallbackKey: "approvals.revoke",
+    ...(scope ?? {}),
   });
 export const setApprovalEnabled = (enabled: boolean) =>
   setApprovalPreferences({ enabled });
-export const setApprovalPreferences = (input: {
-  enabled?: boolean;
-  autoReview?: boolean;
-  hostCommands?: HostCommandPolicy;
-}) =>
+export const setApprovalPreferences = (
+  input: {
+    enabled?: boolean;
+    autoReview?: boolean;
+    hostCommands?: HostCommandPolicy;
+  },
+  scope?: ScopePair,
+) =>
   client("/api/approvals/preferences", {
     method: "PATCH",
     body: input,
     fallbackKey: "approvals.savePreference",
+    ...(scope ?? {}),
   });
-export const createApprovalRule = (input: ApprovalRuleInput) =>
+export const createApprovalRule = (input: ApprovalRuleInput, scope?: ScopePair) =>
   client("/api/approvals/rules", {
     method: "POST",
     body: input,
     fallbackKey: "approvals.saveRule",
+    ...(scope ?? {}),
   });
-export const setTeamApprovalSettings = (input: {
-  enforceAutoReview?: boolean;
-  customRulesEnabled?: boolean;
-  hostCommandsCap?: HostCommandPolicy;
-}) =>
+export const setTeamApprovalSettings = (
+  input: {
+    enforceAutoReview?: boolean;
+    customRulesEnabled?: boolean;
+    hostCommandsCap?: HostCommandPolicy;
+  },
+  scope?: ScopePair,
+) =>
   client("/api/approvals/team", {
     method: "PATCH",
     body: input,
     fallbackKey: "approvals.saveTeamSetting",
+    ...(scope ?? {}),
   });
-export const createTeamApprovalRule = (input: ApprovalRuleInput) =>
+export const createTeamApprovalRule = (
+  input: ApprovalRuleInput,
+  scope?: ScopePair,
+) =>
   client("/api/approvals/team/rules", {
     method: "POST",
     body: input,
     fallbackKey: "approvals.saveTeamRule",
+    ...(scope ?? {}),
   });
-export const revokeTeamApprovalRule = (id: string) =>
+export const revokeTeamApprovalRule = (id: string, scope?: ScopePair) =>
   client(`/api/approvals/team/rules/${encodeURIComponent(id)}`, {
     method: "DELETE",
     fallbackKey: "approvals.removeTeamRule",
+    ...(scope ?? {}),
   });
-export const answerPersonQuestion = (id: string, response: string) =>
+export const answerPersonQuestion = (
+  id: string,
+  response: string,
+  scope?: ScopePair,
+) =>
   client(`/api/approvals/questions/${encodeURIComponent(id)}/respond`, {
     method: "POST",
     body: { response },
     fallbackKey: "teamBots.saveAnswer",
+    ...(scope ?? {}),
   });
 export const updateApprovalRule = (
   id: string,
   input: Partial<ApprovalRuleInput>,
+  scope?: ScopePair,
 ) =>
   client(`/api/approvals/rules/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: input,
     fallbackKey: "approvals.changeRule",
+    ...(scope ?? {}),
   });
 export const updateTeamApprovalRule = (
   id: string,
   input: Partial<ApprovalRuleInput>,
+  scope?: ScopePair,
 ) =>
   client(`/api/approvals/team/rules/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: input,
     fallbackKey: "approvals.changeTeamRule",
+    ...(scope ?? {}),
   });
 
 const approvalsKey = ["approvals"] as const;
-const settle = (queryClient: QueryClient) => () =>
-  queryClient.invalidateQueries({ queryKey: approvalsKey });
 
-export const approvalPreferencesMutationOptions = (queryClient: QueryClient) =>
+/**
+ * The scope the writes here submit under (MT086 / Issue #129, AC1): an open scope's selection
+ * rides the request as the client's own per-request pair, and a pending one submits nothing — a
+ * decision cannot fire before its surface's scope source has answered.
+ */
+function scopePair(
+  scope: ScopedCache | undefined,
+): { tenantId?: string; workspaceId?: string } | undefined {
+  return scope !== undefined && scope.status === "open"
+    ? (scope.selection ?? {})
+    : undefined;
+}
+
+/**
+ * Server-derived answers are invalidated in both homes: the approvals surface's unscoped entries,
+ * and — when a scope is in force — this scope's own subtree (MT083's prefix), where the scoped
+ * inbox read lives.
+ */
+const settle = (queryClient: QueryClient, scope?: ScopedCache) => () =>
+  Promise.all([
+    queryClient.invalidateQueries({ queryKey: approvalsKey }),
+    ...(scope !== undefined && scope.status === "open"
+      ? [
+          queryClient.invalidateQueries({
+            queryKey: [...scope.prefix, ...approvalsKey],
+          }),
+        ]
+      : []),
+  ]);
+
+export const approvalPreferencesMutationOptions = (
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) =>
   mutationOptions({
-    mutationFn: setApprovalPreferences,
-    onSettled: settle(queryClient),
+    mutationFn: (input: Parameters<typeof setApprovalPreferences>[0]) =>
+      setApprovalPreferences(input, scopePair(scope)),
+    onSettled: settle(queryClient, scope),
   });
-export const createApprovalRuleMutationOptions = (queryClient: QueryClient) =>
+export const createApprovalRuleMutationOptions = (
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) =>
   mutationOptions({
-    mutationFn: createApprovalRule,
-    onSettled: settle(queryClient),
+    mutationFn: (input: ApprovalRuleInput) =>
+      createApprovalRule(input, scopePair(scope)),
+    onSettled: settle(queryClient, scope),
   });
-export const updateApprovalRuleMutationOptions = (queryClient: QueryClient) =>
+export const updateApprovalRuleMutationOptions = (
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) =>
   mutationOptions({
     mutationFn: ({ id, behaviour }: { id: string; behaviour: RuleBehaviour }) =>
-      updateApprovalRule(id, { behaviour }),
-    onSettled: settle(queryClient),
+      updateApprovalRule(id, { behaviour }, scopePair(scope)),
+    onSettled: settle(queryClient, scope),
   });
-export const revokeApprovalRuleMutationOptions = (queryClient: QueryClient) =>
+export const revokeApprovalRuleMutationOptions = (
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) =>
   mutationOptions({
-    mutationFn: revokeApprovalRule,
-    onSettled: settle(queryClient),
+    mutationFn: (id: string) => revokeApprovalRule(id, scopePair(scope)),
+    onSettled: settle(queryClient, scope),
   });
-export const teamApprovalSettingsMutationOptions = (queryClient: QueryClient) =>
+export const teamApprovalSettingsMutationOptions = (
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) =>
   mutationOptions({
-    mutationFn: setTeamApprovalSettings,
-    onSettled: settle(queryClient),
+    mutationFn: (input: Parameters<typeof setTeamApprovalSettings>[0]) =>
+      setTeamApprovalSettings(input, scopePair(scope)),
+    onSettled: settle(queryClient, scope),
   });
 export const createTeamApprovalRuleMutationOptions = (
   queryClient: QueryClient,
+  scope?: ScopedCache,
 ) =>
   mutationOptions({
-    mutationFn: createTeamApprovalRule,
-    onSettled: settle(queryClient),
+    mutationFn: (input: ApprovalRuleInput) =>
+      createTeamApprovalRule(input, scopePair(scope)),
+    onSettled: settle(queryClient, scope),
   });
 export const updateTeamApprovalRuleMutationOptions = (
   queryClient: QueryClient,
+  scope?: ScopedCache,
 ) =>
   mutationOptions({
     mutationFn: ({ id, behaviour }: { id: string; behaviour: RuleBehaviour }) =>
-      updateTeamApprovalRule(id, { behaviour }),
-    onSettled: settle(queryClient),
+      updateTeamApprovalRule(id, { behaviour }, scopePair(scope)),
+    onSettled: settle(queryClient, scope),
   });
 export const revokeTeamApprovalRuleMutationOptions = (
   queryClient: QueryClient,
+  scope?: ScopedCache,
 ) =>
   mutationOptions({
-    mutationFn: revokeTeamApprovalRule,
-    onSettled: settle(queryClient),
+    mutationFn: (id: string) => revokeTeamApprovalRule(id, scopePair(scope)),
+    onSettled: settle(queryClient, scope),
   });
 /** Allow once, always allow, deny, or "I did it myself" on one waiting action. */
-export const decideApprovalMutationOptions = (queryClient: QueryClient) =>
+export const decideApprovalMutationOptions = (
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) =>
   mutationOptions({
     mutationFn: ({ id, choice }: { id: string; choice: ApprovalDecision }) =>
-      decideApproval(id, choice),
-    onSuccess: settle(queryClient),
+      decideApproval(id, choice, scopePair(scope)),
+    onSuccess: settle(queryClient, scope),
   });
 /** Answer a question a Bot asked mid-run; the run resumes with the answer. */
-export const answerPersonQuestionMutationOptions = (queryClient: QueryClient) =>
+export const answerPersonQuestionMutationOptions = (
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) =>
   mutationOptions({
     mutationFn: ({ id, response }: { id: string; response: string }) =>
-      answerPersonQuestion(id, response),
-    onSuccess: settle(queryClient),
+      answerPersonQuestion(id, response, scopePair(scope)),
+    onSuccess: settle(queryClient, scope),
   });
 
 /**

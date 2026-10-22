@@ -86,6 +86,10 @@ export function scopeRefusalOf(
 const WORKSPACE_SCOPE_LISTING = ":workspace-scope";
 /** Third-level token under a tenant scope; team entries gather under it, per workspace. */
 const WORKSPACE = ":workspace";
+/** The live current selection this app session holds (see {@link selectionKeys.current}). */
+const CURRENT_SELECTION = ":current-selection";
+/** Where business surfaces cache what they answer under "no company/team selected" (MT083). */
+const PERSONAL_SCOPE = ":personal";
 
 export const selectionKeys = {
   /** The eligibility listing — the one read that needs no selection, like the chooser. */
@@ -94,6 +98,25 @@ export const selectionKeys = {
   /** Everything one (company, team) answers for, under the tenant prefix the switch removes. */
   workspaceScope: (userId: string, tenantId: string, workspaceId: string) =>
     [...tenantKeys.scope(userId, tenantId), WORKSPACE, workspaceId] as const,
+  /**
+   * The selection this app session is actually working under, pair or null.
+   *
+   * Written by {@link selectWorkspaceScope} (the one switch seam), seeded from the per-account
+   * storage by whoever observes it first (the streaming half reads it in
+   * `lib/enterprise/tenant/stream-scope.ts`, MT082), and mirrored across tabs through the
+   * browser's storage event. Distinct from storage itself, which stays what it always was: the
+   * user's last explicit choice, not a live value.
+   */
+  current: (userId: string) =>
+    [...tenantKeys.all, userId, CURRENT_SELECTION] as const,
+  /**
+   * The personal context's business subtree: what the scoped-cache mechanism (MT083,
+   * `scoped-cache.ts`) files business reads and writes under when nothing is selected. The one
+   * prefix a switch INTO a selection must remove — data cached under "no selection" belongs to no
+   * company, and must not sit beside (or flash through into) the scope just chosen.
+   */
+  personalScope: (userId: string) =>
+    [...tenantKeys.all, userId, PERSONAL_SCOPE] as const,
 };
 
 /**
@@ -324,8 +347,14 @@ function sameScope(
  * generation advances and the old company's ENTIRE scope subtree goes (ours and the channels
  * surface's alike, since both live under the same tenant prefix). Team change inside one company
  * advances the generation and drops only the old team's subtree: leaving one team is not leaving
- * the company. Order matters exactly as in `selectTenant` — the generation moves before any cache
- * goes, so a response already in flight against the old scope is refused on arrival.
+ * the company. And moving from no selection into one drops the personal context's business subtree
+ * (`selectionKeys.personalScope`, MT083) beside the generation advance. Order matters exactly as in
+ * `selectTenant` — the generation moves before any cache goes, so a response already in flight
+ * against the old scope is refused on arrival.
+ *
+ * The live current-selection entry (`selectionKeys.current`, MT082) moves here too: every switch
+ * that can change what a stream should carry changes it in this one place, so the streaming half
+ * has no second seam to keep in step.
  */
 export function selectWorkspaceScope(
   queryClient: QueryClient,
@@ -334,6 +363,7 @@ export function selectWorkspaceScope(
   next: ScopeSelection | null,
 ): void {
   if (sameScope(previous, next)) return;
+  queryClient.setQueryData(selectionKeys.current(userId), next);
   if (
     previous !== null &&
     next !== null &&
@@ -358,4 +388,13 @@ export function selectWorkspaceScope(
     previous?.tenantId ?? null,
     next?.tenantId ?? null,
   );
+  if (previous === null && next !== null) {
+    // Choosing a scope out of the personal context drops the personal context's business subtree
+    // as well (MT083): the generation has already moved above, so an in-flight personal read is
+    // refused on arrival — and this removal is why no stale personal entry can render beside the
+    // scope that was just chosen, the same discipline a team change applies to the old team.
+    queryClient.removeQueries({
+      queryKey: selectionKeys.personalScope(userId),
+    });
+  }
 }

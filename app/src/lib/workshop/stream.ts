@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  useStreamScope,
+  withStreamScope,
+} from "@/lib/enterprise/tenant/stream-scope";
 import { type WorkshopStreamEvent, workshopEventsUrl } from "./client";
 import { createStreamMachine } from "./stream-machine";
 
@@ -16,6 +20,13 @@ import { createStreamMachine } from "./stream-machine";
  *    malformed JSON; the catch skips that message and keeps the stream — a corrupt frame from
  *    a proxy or a mid-deploy version skew is one lost event, not a dead view.
  *
+ * THE FOURTH RULE IS THE SELECTION'S (MT082 / Issue #125). The stream opens only once the scope
+ * source has resolved, carries the current selection pair on its URL (an EventSource cannot
+ * carry headers), and is torn down by the same cache generation the REST reads guard with: a
+ * switch moves the generation, this effect rebinds, and the old connection is closed before the
+ * new one opens — no old-scope event reaches the view, and a dropped line that reconnects uses
+ * the selection that is current THEN (never a defaulted one, spec A6).
+ *
  * The hook ends when `active` turns false (the turn settled) — no zombie connections.
  */
 export function useWorkshopStream(input: {
@@ -30,6 +41,7 @@ export function useWorkshopStream(input: {
 } {
   const { channelId, active } = input;
   const EventSourceConstructor = input.sourceFactory ?? EventSource;
+  const scope = useStreamScope();
   const [events, setEvents] = useState<WorkshopStreamEvent[]>([]);
   const [connected, setConnected] = useState(false);
   /**
@@ -39,10 +51,13 @@ export function useWorkshopStream(input: {
   const machineRef = useRef(createStreamMachine());
 
   useEffect(() => {
-    if (!active) {
+    // Pending scope: no business subscription on a guess (MT082 AC1). Resolves as soon as the
+    // auth read the route gate already made answers.
+    if (!active || scope.status === "pending") {
       setConnected(false);
       return;
     }
+    const selection = scope.selection;
     const machine = machineRef.current;
     let closed = false;
     let source: EventSource | null = null;
@@ -50,7 +65,10 @@ export function useWorkshopStream(input: {
     const open = () => {
       if (closed) return;
       source = new EventSourceConstructor(
-        workshopEventsUrl(channelId, machine.resumeFrom()),
+        withStreamScope(
+          workshopEventsUrl(channelId, machine.resumeFrom()),
+          selection,
+        ),
       );
       source.onopen = () => {
         if (!closed) setConnected(true);
@@ -67,7 +85,9 @@ export function useWorkshopStream(input: {
       };
       source.onmessage = (message: MessageEvent<string>) => {
         // The machine swallows the malformed frame (counts it, keeps going): the try/catch
-        // lives there, once, where every rule of the stream lives.
+        // lives there, once, where every rule of the stream lives. A frame that lands after
+        // this effect's cleanup (a scope switch closed the source) writes nothing (MT082 AC4).
+        if (closed) return;
         if (machine.ingest(message.data)) {
           setEvents(machine.events);
         }
@@ -82,7 +102,9 @@ export function useWorkshopStream(input: {
       source?.close();
       setConnected(false);
     };
-  }, [channelId, active, EventSourceConstructor]);
+    // `scope` is identity-stable between rebinds: it changes exactly when the pair or the cache
+    // generation moved, which is exactly when this connection must be rebuilt (MT082 AC2/AC3).
+  }, [channelId, active, EventSourceConstructor, scope]);
 
   // A fresh turn run resets the cursor and the view: seqs are turn-scoped on the server.
   useEffect(() => {

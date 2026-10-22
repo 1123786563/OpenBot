@@ -82,6 +82,30 @@ export type GatewayRateView =
       }
   | { configured: false; reason: string; explanation: string };
 
+/**
+ * One audio path's availability row (Bifrost 14.4, #313): the registry's structural
+ * verdict — the missing-item codes a refusal names — plus, per audio-capable cell's
+ * latest snapshot, whether that basis enables the path. The server owns every verdict;
+ * this type only carries it.
+ */
+export type GatewayAudioPathMissingItem = {
+  code: string;
+  detail: string;
+};
+
+export type GatewayAudioPathAvailability = {
+  path: string;
+  family: string;
+  stream: boolean;
+  exists: boolean;
+  missingItems: GatewayAudioPathMissingItem[];
+  bases: {
+    ref: string;
+    enableable: boolean;
+    missingDimensions: { dimension: string; reason: string }[];
+  }[];
+};
+
 export type GatewayAdminStatus = {
   readiness: GatewayReadiness;
   endpoint: GatewayEndpointView | null;
@@ -89,6 +113,7 @@ export type GatewayAdminStatus = {
   probe: GatewayProbeView | null;
   extension: GatewayExtensionView | null;
   rate: GatewayRateView;
+  audioPaths: GatewayAudioPathAvailability[] | null;
 };
 
 export const gatewayKeys = {

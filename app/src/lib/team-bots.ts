@@ -4,7 +4,11 @@ import {
   queryOptions,
 } from "@tanstack/react-query";
 import { agentKeys } from "@/lib/agents/queries";
-import { client } from "@/lib/client";
+import { client, tryClient } from "@/lib/client";
+import { guarded } from "@/lib/enterprise/tenant/queries";
+import type {
+  ScopedCache,
+} from "@/lib/enterprise/tenant/scoped-cache";
 import { sharedUseKeys } from "@/lib/plugins/shared-use";
 
 /** A published Team Bot as this person sees it. Audience fields only for its owner and admins. */
@@ -20,6 +24,20 @@ export type TeamBot = {
   assigned: boolean;
   /** False while its name or description would leave teammates unable to see it. */
   visibleToTeam: boolean;
+  /**
+   * Whether THIS person may take the publication away: the owner or an administrator. A server
+   * capability, answered per row — the sharing page renders the action from it and never
+   * re-derives it from an ownership flag or a role of its own (MT085 AC1).
+   */
+  canUnpublish: boolean;
+  /**
+   * Whether THIS person may publish or re-aim the publication: the owner only. The server splits
+   * this from `canUnpublish` exactly as its own `publish` and `unpublish` rules do — an
+   * administrator may retire somebody else's publication but may not aim it (MT085).
+   */
+  canEditPublication: boolean;
+  /** Whether THIS person may pin this Bot for groups: an administrator, answered per row (MT085). */
+  canAssign: boolean;
   people?: string[];
   groups?: string[];
   assignments?: string[];
@@ -28,6 +46,12 @@ export type TeamBotsData = {
   teamBots: TeamBot[];
   /** This person's own Bots that are not published yet. */
   publishable: { id: string; name: string; title: string }[];
+  /**
+   * The audience ranges the server allows a publication to choose. The design's set — the whole
+   * team, or named people and groups — and nothing wider: a cross-company option cannot be
+   * offered because the server never names one (MT085 AC2).
+   */
+  publishAudiences: readonly ("team" | "people")[];
 };
 
 export const teamBotKeys = { all: ["team-bots"] as const };
@@ -44,6 +68,48 @@ export function teamBotsQueryOptions() {
   });
 }
 
+/**
+ * The sharing page's read, bound to the scope the screen holds (MT085): keyed under the scope's
+ * own cache prefix, carrying the selection pair, and answered through the same generation guard
+ * every scoped read passes — so a publication list that left under one selection never decorates
+ * the scope that replaced it.
+ */
+export function scopedTeamBotsQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...teamBotKeys.all]
+        : [...teamBotKeys.all, ":scope-pending"],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<TeamBotsData>(() => {})
+        : async ({ signal }): Promise<TeamBotsData> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient("/api/team-bots", {
+                signal,
+                fallbackKey: "teamBots.load",
+                ...(open.selection ?? {}),
+              });
+              if (!response.ok) {
+                const body = (await response.json().catch(() => null)) as {
+                  error?: unknown;
+                } | null;
+                throw new Error(
+                  typeof body?.error === "string"
+                    ? body.error
+                    : "Team Bots could not be read.",
+                );
+              }
+              return (await response.json()) as TeamBotsData;
+            }),
+  });
+}
+
 /** Where a teammate starts a private chat with a Team Bot; what "Copy link" copies. */
 export function teamBotLink(botId: string, origin = window.location.origin) {
   return `${origin}/channel/new?agent=${encodeURIComponent(botId)}`;
@@ -52,14 +118,34 @@ export function teamBotLink(botId: string, origin = window.location.origin) {
 const path = (botId: string, rest = "") =>
   `/api/team-bots/${encodeURIComponent(botId)}${rest}`;
 
-/** Any change to who can see a Bot changes the roster too. */
-const refresh = (queryClient: QueryClient) =>
+/** The selection options a write here carries when a scope is in force (MT085). */
+function scopeOptions(scope: ScopedCache | undefined) {
+  return scope !== undefined && scope.status === "open"
+    ? (scope.selection ?? {})
+    : {};
+}
+
+/** Any change to who can see a Bot changes the roster too — both cache homes. */
+const refresh = (queryClient: QueryClient, scope?: ScopedCache) =>
   Promise.all([
     queryClient.invalidateQueries({ queryKey: teamBotKeys.all }),
     queryClient.invalidateQueries({ queryKey: agentKeys.all }),
+    ...(scope !== undefined && scope.status === "open"
+      ? [
+          queryClient.invalidateQueries({
+            queryKey: [...scope.prefix, ...teamBotKeys.all],
+          }),
+          queryClient.invalidateQueries({
+            queryKey: [...scope.prefix, ...agentKeys.all],
+          }),
+        ]
+      : []),
   ]);
 
-export function publishTeamBotMutationOptions(queryClient: QueryClient) {
+export function publishTeamBotMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: async (input: {
       botId: string;
@@ -72,31 +158,39 @@ export function publishTeamBotMutationOptions(queryClient: QueryClient) {
         method: "PUT",
         body,
         fallbackKey: "teamBots.publish",
+        ...scopeOptions(scope),
       });
     },
     /* Publishing can widen who reaches a shared app, so the request inbox may now hold a
      * fresh one (or SharedAppNotice's own query may need to drop a request it just resolved). */
     onSettled: () =>
       Promise.all([
-        refresh(queryClient),
+        refresh(queryClient, scope),
         queryClient.invalidateQueries({ queryKey: sharedUseKeys.requests() }),
       ]),
   });
 }
 
-export function unpublishTeamBotMutationOptions(queryClient: QueryClient) {
+export function unpublishTeamBotMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: async (botId: string) => {
       await client(path(botId, "/publication"), {
         method: "DELETE",
         fallbackKey: "teamBots.unpublish",
+        ...scopeOptions(scope),
       });
     },
-    onSettled: () => refresh(queryClient),
+    onSettled: () => refresh(queryClient, scope),
   });
 }
 
-export function assignTeamBotMutationOptions(queryClient: QueryClient) {
+export function assignTeamBotMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: async (input: {
       botId: string;
@@ -111,10 +205,11 @@ export function assignTeamBotMutationOptions(queryClient: QueryClient) {
           method: input.remove ? "DELETE" : "POST",
           ...(input.remove ? {} : { body: { group: input.group } }),
           fallbackKey: "teamBots.saveAssignment",
+          ...scopeOptions(scope),
         },
       );
     },
-    onSettled: () => refresh(queryClient),
+    onSettled: () => refresh(queryClient, scope),
   });
 }
 
@@ -140,12 +235,17 @@ export function teamBotConsentMutationOptions() {
   });
 }
 
-export function clearTeamBotConsentsMutationOptions() {
+export function clearTeamBotConsentsMutationOptions(scope?: ScopedCache) {
   return mutationOptions({
     mutationFn: async () => {
       await client("/api/team-bots/consents", {
         method: "DELETE",
         fallbackKey: "teamBots.clearPreferences",
+        // The connected-accounts page's clear rides the scope it holds (MT088 AC3); the chat-inline
+        // callers keep no scope of their own and submit exactly as before.
+        ...((scope !== undefined && scope.status === "open"
+          ? (scope.selection ?? {})
+          : {}) as { tenantId?: string; workspaceId?: string }),
       });
     },
   });

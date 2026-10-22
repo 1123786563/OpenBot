@@ -9,6 +9,7 @@ import {
   PageShell,
 } from "@/components/layout/page-shell";
 import { PageRowsSkeleton } from "@/components/layout/page-skeletons";
+import { AudioPathAvailability } from "@/components/gateway/audio-path-availability";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -203,6 +204,17 @@ function GatewayPage() {
           <ReadinessView status={status.data} probeError={runProbe.error} />
         )}
       </PageSection>
+
+      {status.data?.audioPaths ? (
+        <PageSection
+          title={t("gateway.audio.title")}
+          description={t("gateway.audio.description")}
+        >
+          <PageRows>
+            <AudioPathAvailability paths={status.data.audioPaths} />
+          </PageRows>
+        </PageSection>
+      ) : null}
 
       <PageSection
         title={t("gateway.endpoint.title")}

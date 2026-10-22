@@ -9,9 +9,10 @@ import {
   Message as MessageRow,
 } from "@/components/ui/message";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   type GroupMessage,
-  groupQueryOptions,
+  scopedGroupQueryOptions,
   sendGroupMessageMutationOptions,
 } from "@/lib/groups";
 import { markdownComponents } from "@/lib/markdown";
@@ -30,10 +31,14 @@ import { TeamBotConsentCard } from "./team-bot-consent";
  */
 export function GroupChat({ channelId }: { channelId: string }) {
   const queryClient = useQueryClient();
-  const group = useQuery(groupQueryOptions(channelId));
+  // The transcript rides the scope this screen holds (MT087): keyed under the scope's own prefix,
+  // carrying the pair, guarded by the generation — a reply that left under one selection never
+  // lands in the scope that replaced it.
+  const scope = useScopedCache();
+  const group = useQuery(scopedGroupQueryOptions(queryClient, scope, channelId));
   const me = useQuery(currentUserQueryOptions()).data;
   const send = useMutation(
-    sendGroupMessageMutationOptions(queryClient, channelId),
+    sendGroupMessageMutationOptions(queryClient, channelId, scope),
   );
   const bots = group.data?.bots ?? [];
   const names = new Map(bots.map((bot) => [bot.id, bot.name]));

@@ -46,6 +46,7 @@ import {
   profileUpdateInput,
 } from "@/lib/agents/form";
 import { updateAgentMutationOptions } from "@/lib/agents/mutations";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { isComposing } from "@/lib/composing";
 import { queryClient } from "@/query-client";
@@ -72,7 +73,10 @@ const TEXT_FIELDS = [
 /** Who a Bot is and where it runs. Editable by whoever may manage it; read-only for everyone else. */
 export function SetupSections({ agent }: { agent: AgentProfile }) {
   const { t } = useTranslation("agents");
-  const update = useMutation(updateAgentMutationOptions(queryClient));
+  // The configuration save submits under the scope this page read the Bot under (MT084 AC3), and
+  // its optimistic row lives in that scope's cache entry, rolled back only while it still holds.
+  const scope = useScopedCache();
+  const update = useMutation(updateAgentMutationOptions(queryClient, scope));
   const [editing, setEditing] = useState<TextField | null>(null);
   const save = (patch: Partial<AgentFormValues>) =>
     update.mutateAsync({
@@ -328,6 +332,7 @@ function EditTextDialog({
  */
 function ConnectionSection({ agent }: { agent: AgentProfile }) {
   const { t } = useTranslation("agents");
+  const scope = useScopedCache();
   const builtIn = !agent.endpoint || agent.builtIn;
   return (
     <PageSection title={t("setup.connection")}>
@@ -354,6 +359,7 @@ function ConnectionSection({ agent }: { agent: AgentProfile }) {
         <CallbackTokenPanel
           agentId={agent.id}
           hasToken={agent.hasCallbackToken}
+          scope={scope}
         />
       ) : null}
     </PageSection>

@@ -1,5 +1,5 @@
 import { IconChevronRight, IconPlus } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -19,9 +19,11 @@ import {
 import { Separator } from "@/components/ui/separator";
 import {
   type ResponsibilityRecord,
-  responsibilitiesQueryOptions,
+  ResponsibilitiesUnavailableError,
+  scopedResponsibilitiesQueryOptions,
   triggersQueryOptions,
 } from "@/lib/responsibilities";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { NewResponsibilityDialog } from "./new-responsibility-dialog";
 import {
   ResponsibilityDialog,
@@ -40,7 +42,11 @@ import {
  */
 export function BotResponsibilities({ agentId }: { agentId?: string }) {
   const { t } = useTranslation("routines");
-  const goals = useQuery(responsibilitiesQueryOptions());
+  // The list rides the scope this screen holds (MT086): keyed under the scope's own prefix,
+  // carrying the pair, and refused — as one explicit state — when the scope does.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const goals = useQuery(scopedResponsibilitiesQueryOptions(queryClient, scope));
   const [creating, setCreating] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const shown = (goals.data ?? []).filter(
@@ -48,6 +54,16 @@ export function BotResponsibilities({ agentId }: { agentId?: string }) {
   );
   // Looked up from the query rather than held, so the dialog follows every refetch.
   const open = shown.find((goal) => goal.id === openId);
+  if (goals.error instanceof ResponsibilitiesUnavailableError) {
+    return (
+      <p
+        className="mt-6 text-muted-foreground text-sm"
+        data-testid="responsibilities-unavailable"
+      >
+        {t("responsibilities.unavailable")}
+      </p>
+    );
+  }
   return (
     <PageSection
       action={

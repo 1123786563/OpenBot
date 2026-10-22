@@ -3,7 +3,22 @@ import {
   type QueryClient,
   queryOptions,
 } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { client, tryClient } from "@/lib/client";
+import { guarded } from "@/lib/enterprise/tenant/queries";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+
+/** The selection pair a scoped call rides, spread into the client options (MT089). */
+type ScopePair = { tenantId?: string; workspaceId?: string };
+
+/**
+ * The scope the writes here submit under (MT089 / Issue #132, AC2): an open scope's selection
+ * rides the request, and a pending one submits nothing.
+ */
+function scopePair(scope: ScopedCache | undefined): ScopePair | undefined {
+  return scope !== undefined && scope.status === "open"
+    ? (scope.selection ?? {})
+    : undefined;
+}
 export type MemoryRecord = {
   id: string;
   content: string;
@@ -11,8 +26,7 @@ export type MemoryRecord = {
   sourceId: string | null;
   enabled: boolean;
   reviewState: "unreviewed" | "confirmed" | "edited";
-  /** `intelligence`: held by CopilotKit Intelligence for this person, formed outside OpenBot. */
-  formedBy: "person" | "import" | "bot" | "intelligence";
+  formedBy: "person" | "import" | "bot";
   formedByAgentId: string | null;
   sourceApp: string | null;
   sourceLink: string | null;
@@ -40,6 +54,131 @@ export const memoryKeys = {
   sources: ["memory", "sources"] as const,
   available: (id: string) => ["memory", "available", id] as const,
 };
+
+// ---------------------------------------------------------------------------
+// The scoped half (MT089 / Issue #132): the memory pages read and write through here
+// ---------------------------------------------------------------------------
+
+/**
+ * The memories list, bound to the scope the screen holds (MT089 / Issue #132, AC1): keyed under
+ * the scope's own cache prefix (MT083), carrying the selection pair, and answered through the
+ * generation guard — so the memories a scope holds are that scope's own answer, and a switch
+ * drops the old scope's rows wholesale rather than leaving them beside the new scope's.
+ */
+export function scopedMemoriesQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...memoryKeys.all]
+        : [...memoryKeys.all, ":scope-pending"],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<MemoryRecord[]>(() => {})
+        : async ({ signal }): Promise<MemoryRecord[]> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient("/api/memory", {
+                signal,
+                fallbackKey: "memory.load",
+                ...(open.selection ?? {}),
+              });
+              if (!response.ok) {
+                throw new Error("Memories could not be read.");
+              }
+              const body = (await response.json().catch(() => null)) as {
+                memories?: MemoryRecord[];
+              } | null;
+              if (body === null || !Array.isArray(body.memories)) {
+                throw new Error("Memories could not be read.");
+              }
+              return body.memories;
+            }),
+  });
+}
+
+/** The sources list, bound the same way (MT089 AC1: 来源选择只含当前范围有权内容). */
+export function scopedMemorySourcesQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...memoryKeys.sources]
+        : [...memoryKeys.sources, ":scope-pending"],
+    enabled: open !== null,
+    refetchInterval: 15_000,
+    queryFn:
+      open === null
+        ? () => new Promise<MemorySource[]>(() => {})
+        : async ({ signal }): Promise<MemorySource[]> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient("/api/memory/sources", {
+                signal,
+                fallbackKey: "memory.loadSources",
+                ...(open.selection ?? {}),
+              });
+              if (!response.ok) {
+                throw new Error("Memory sources could not be read.");
+              }
+              const body = (await response.json().catch(() => null)) as {
+                sources?: MemorySource[];
+              } | null;
+              if (body === null || !Array.isArray(body.sources)) {
+                throw new Error("Memory sources could not be read.");
+              }
+              return body.sources;
+            }),
+  });
+}
+
+/**
+ * The tools a source picker may offer, bound the same way (MT089 AC1): the picker's choices are
+ * the server's answer under the scope in force, so a tool of another scope is never offered.
+ */
+export function scopedAvailableMemorySourcesQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+  id: string,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...memoryKeys.available(id)]
+        : [...memoryKeys.available(id), ":scope-pending"],
+    enabled: open !== null && !!id,
+    queryFn:
+      open === null
+        ? () => new Promise<MemorySourceTool[]>(() => {})
+        : async ({ signal }): Promise<MemorySourceTool[]> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient(
+                `/api/memory/sources/available/${encodeURIComponent(id)}`,
+                {
+                  signal,
+                  fallbackKey: "memory.loadActions",
+                  ...(open.selection ?? {}),
+                },
+              );
+              if (!response.ok) {
+                throw new Error("Memory actions could not be read.");
+              }
+              const body = (await response.json().catch(() => null)) as {
+                tools?: MemorySourceTool[];
+              } | null;
+              if (body === null || !Array.isArray(body.tools)) {
+                throw new Error("Memory actions could not be read.");
+              }
+              return body.tools;
+            }),
+  });
+}
 export const memoriesQueryOptions = () =>
   queryOptions({
     queryKey: memoryKeys.all,
@@ -66,40 +205,49 @@ export const availableMemorySourcesQueryOptions = (id: string) =>
         { fallbackKey: "memory.loadActions" },
       ),
   });
-export const createMemory = (content: string) =>
+export const createMemory = (content: string, scope?: ScopePair) =>
   client("/api/memory", {
     method: "POST",
     body: { content },
     fallbackKey: "memory.remember",
+    ...(scope ?? {}),
   });
 export const updateMemory = (
   id: string,
   input: { content?: string; enabled?: boolean; reviewState?: "confirmed" },
+  scope?: ScopePair,
 ) =>
   client(`/api/memory/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: input,
     fallbackKey: "memory.update",
+    ...(scope ?? {}),
   });
-export const deleteMemory = (id: string) =>
+export const deleteMemory = (id: string, scope?: ScopePair) =>
   client(`/api/memory/${encodeURIComponent(id)}`, {
     method: "DELETE",
     fallbackKey: "memory.forget",
+    ...(scope ?? {}),
   });
-export const addMemorySource = (input: {
-  agentId: string;
-  toolRef: string;
-  title: string;
-  args: Record<string, unknown>;
-}) =>
+export const addMemorySource = (
+  input: {
+    agentId: string;
+    toolRef: string;
+    title: string;
+    args: Record<string, unknown>;
+  },
+  scope?: ScopePair,
+) =>
   client("/api/memory/sources", {
     method: "POST",
     body: input,
     fallbackKey: "memory.addSource",
+    ...(scope ?? {}),
   });
 export const memorySourceAction = (
   id: string,
   action: "sync" | "remove" | "enable" | "disable",
+  scope?: ScopePair,
 ) =>
   client(
     `/api/memory/sources/${encodeURIComponent(id)}${action === "sync" ? "/sync" : ""}`,
@@ -110,18 +258,34 @@ export const memorySourceAction = (
         ? { body: { enabled: action === "enable" } }
         : {}),
       fallbackKey: "memory.changeSource",
+      ...(scope ?? {}),
     },
   );
 
-const settleMemory = (queryClient: QueryClient) => () =>
-  queryClient.invalidateQueries({ queryKey: memoryKeys.all });
+const settleMemory = (queryClient: QueryClient, scope?: ScopedCache) => () =>
+  Promise.all([
+    queryClient.invalidateQueries({ queryKey: memoryKeys.all }),
+    ...(scope !== undefined && scope.status === "open"
+      ? [
+          queryClient.invalidateQueries({
+            queryKey: [...scope.prefix, ...memoryKeys.all],
+          }),
+        ]
+      : []),
+  ]);
 
-export const createMemoryMutationOptions = (queryClient: QueryClient) =>
+export const createMemoryMutationOptions = (
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) =>
   mutationOptions({
-    mutationFn: createMemory,
-    onSettled: settleMemory(queryClient),
+    mutationFn: (content: string) => createMemory(content, scopePair(scope)),
+    onSettled: settleMemory(queryClient, scope),
   });
-export const updateMemoryMutationOptions = (queryClient: QueryClient) =>
+export const updateMemoryMutationOptions = (
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) =>
   mutationOptions({
     mutationFn: ({
       id,
@@ -129,24 +293,34 @@ export const updateMemoryMutationOptions = (queryClient: QueryClient) =>
     }: {
       id: string;
       input: { content?: string; enabled?: boolean; reviewState?: "confirmed" };
-    }) => updateMemory(id, input),
-    onSettled: settleMemory(queryClient),
+    }) => updateMemory(id, input, scopePair(scope)),
+    onSettled: settleMemory(queryClient, scope),
   });
-export const deleteMemoryMutationOptions = (queryClient: QueryClient) =>
+export const deleteMemoryMutationOptions = (
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) =>
   mutationOptions({
-    mutationFn: deleteMemory,
-    onSettled: settleMemory(queryClient),
+    mutationFn: (id: string) => deleteMemory(id, scopePair(scope)),
+    onSettled: settleMemory(queryClient, scope),
   });
 
 /** Opt a Bot in to reading one of its connected apps' actions as a memory source. */
-export const addMemorySourceMutationOptions = (queryClient: QueryClient) =>
+export const addMemorySourceMutationOptions = (
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) =>
   mutationOptions({
-    mutationFn: addMemorySource,
-    onSuccess: settleMemory(queryClient),
+    mutationFn: (input: Parameters<typeof addMemorySource>[0]) =>
+      addMemorySource(input, scopePair(scope)),
+    onSuccess: settleMemory(queryClient, scope),
   });
 
 /** Sync, remove, enable or disable one memory source. */
-export const memorySourceActionMutationOptions = (queryClient: QueryClient) =>
+export const memorySourceActionMutationOptions = (
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) =>
   mutationOptions({
     mutationFn: ({
       sourceId,
@@ -154,6 +328,6 @@ export const memorySourceActionMutationOptions = (queryClient: QueryClient) =>
     }: {
       sourceId: string;
       name: "sync" | "remove" | "enable" | "disable";
-    }) => memorySourceAction(sourceId, name),
-    onSuccess: settleMemory(queryClient),
+    }) => memorySourceAction(sourceId, name, scopePair(scope)),
+    onSuccess: settleMemory(queryClient, scope),
   });

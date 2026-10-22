@@ -141,7 +141,12 @@
     "access": "Access",
     "accessDescription": "What you agreed to, as the vendor recorded it — not what was asked for. The two differ when a consent screen is only partly accepted.",
     "granted": "Granted",
-    "noScope": "The vendor named no scope."
+    "noScope": "The vendor named no scope.",
+    "secretTitle": "Secret",
+    "secretMasked": "Masked. {{vendor}} holds the live credential; this deployment stores only a sealed copy.",
+    "revealSecret": "Reveal secret",
+    "hideSecret": "Hide",
+    "revealAudited": "Reading the secret in the clear is an action of its own, authorized separately from using the connection, and every read is written to the audit log."
   },
   "passwords": {
     "title": "Passwords",
@@ -377,6 +382,8 @@
     "columnModel": "Model",
     "columnClient": "Client",
     "overdrawBadge": "({{shortfall}} unfunded)",
+    "feeSplitModel": "Model {{amount}}",
+    "feeSplitSurcharge": "Surcharge {{amount}}",
     "overdrawHint": "This call cost more than the balance could fund. The ledger records the full cost; {{shortfall}} was not covered by any grant.",
     "pagerStatus": "Page {{page}} of {{totalPages}} · {{total}} entries",
     "consumptionTable": "Usage details",

@@ -19,6 +19,9 @@
  *     newer content is ever retained — an old task cannot overwrite a newer active version.
  *   - Transient remote failures: a failed retain leaves the work pending with the error
  *     recorded; the next drain after recovery completes it (自动补同步).
+ *   - Blocked documents (#391): the drain also consults the revocation ledger by document id —
+ *     a forgotten document is never re-retained, even when a restored backup has momentarily
+ *     resurrected the authority row (旧同步任务不能重建遗忘记录).
  *
  * Re-verification is at task time, not enqueue time: the drain re-loads the authority row
  * under its own tenant pin and re-checks the principal (归属重核), and for source-bound rows
@@ -33,6 +36,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { derivedJudgmentCandidates } from "../db/schema/hindsight-judgments";
 import { genericPersonalPreferences } from "../db/schema/hindsight-preferences";
+import { hindsightRevocations } from "../db/schema/hindsight-revocations";
 import { sourceBoundMemories } from "../db/schema/hindsight-source-bound";
 import { hindsightSyncWork } from "../db/schema/hindsight-sync";
 import {
@@ -46,6 +50,7 @@ import {
   userBankFor,
 } from "./bank-scope";
 import type { PreferenceRecallServiceConfig } from "./preference-recall";
+import type { HindsightBudgetGate } from "./budget-gate";
 import {
   bankGrantForRestriction,
   type SourceBoundAuthorizationStore,
@@ -164,6 +169,14 @@ export function createHindsightSyncQueue(
     now?: () => Date;
     /** Source-bound rows re-verify their restriction here at task time. */
     authorizations?: SourceBoundAuthorizationStore;
+    /**
+     * The background-processing budget gate (#393). Admission is keyed on the work row's id
+     * plus its attempt count: a budget-deferred retry (attempts unchanged) re-admits the same
+     * reservation and is charged once; a failed retain bumps attempts and is a fresh,
+     * honestly separate admission. Exhaustion defers the work — it stays pending — and no
+     * recall path ever consults this gate.
+     */
+    budget?: HindsightBudgetGate;
     fetch?: (input: string, init?: RequestInit) => Promise<Response>;
   } = {},
 ) {
@@ -360,7 +373,10 @@ export function createHindsightSyncQueue(
     bankId: string,
     documentId: string,
     content: string,
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+  ): Promise<
+    | { ok: true }
+    | { ok: false; reason: string; reached: boolean }
+  > {
     const token = mintBankScopeAssertion(grant, {
       secret: config.assertionSecret,
       ttlMs: ASSERTION_TTL_MS,
@@ -389,7 +405,11 @@ export function createHindsightSyncQueue(
         },
       );
       if (!response.ok) {
-        return { ok: false, reason: `service answered ${response.status}` };
+        return {
+          ok: false,
+          reason: `service answered ${response.status}`,
+          reached: true,
+        };
       }
       return { ok: true };
     } catch (error) {
@@ -399,6 +419,7 @@ export function createHindsightSyncQueue(
           error instanceof Error
             ? error.message
             : "service could not be reached",
+        reached: false,
       };
     }
   }
@@ -529,6 +550,24 @@ export function createHindsightSyncQueue(
       await finishWork(work, "done", null);
       return "nothingToDo";
     }
+    // The revocation ledger is the second, row-independent word on what was forgotten (#391):
+    // a document with a ledger row is never re-sent, even if a restored backup resurrected
+    // the authority row this work points at (the replay window) — an old sync task must not
+    // rebuild remotely what the person already forgot.
+    const [blocked] = await database
+      .select({ id: hindsightRevocations.id })
+      .from(hindsightRevocations)
+      .where(
+        and(
+          eq(hindsightRevocations.tenantId, work.tenantId),
+          eq(hindsightRevocations.documentId, row.hindsightDocumentId),
+        ),
+      )
+      .limit(1);
+    if (blocked) {
+      await finishWork(work, "done", "subject blocked by revocation ledger");
+      return "nothingToDo";
+    }
     const currentDigest = digestOf(row.content);
     if (currentDigest !== work.expectedDigest) {
       // A newer edit/correction landed between enqueue and now; its own work owns the
@@ -546,6 +585,23 @@ export function createHindsightSyncQueue(
       await finishWork(work, "done", null);
       return "alreadyIndexed";
     }
+    // Budget admission (#393), only now that a remote processing call is actually about to
+    // happen: exhaustion defers the work (it stays pending, retried next drain), and the
+    // admission's idempotency key keeps a deferred retry on ONE reservation.
+    let reservationId: string | undefined;
+    if (options.budget) {
+      const admission = await options.budget.admitBackgroundWork({
+        tenantId: work.tenantId,
+        principalId: row.principalId,
+        workKey: `${work.id}:${work.attempts}`,
+        units: 1,
+      });
+      if (!admission.ok) {
+        await deferWork(work, `budget: ${admission.reason}`);
+        return "deferred";
+      }
+      reservationId = admission.reservationId;
+    }
     const outcome = await retain(
       backgroundTaskBankScope(
         { tenantId: work.tenantId, principalId: row.principalId },
@@ -556,8 +612,23 @@ export function createHindsightSyncQueue(
       row.content,
     );
     if (!outcome.ok) {
+      if (options.budget && reservationId !== undefined) {
+        // The service answered and refused: it did the work, the charge stands. A transport
+        // failure never reached the service: release the hold, charge nothing.
+        if (outcome.reached) {
+          await options.budget.settleBackgroundWork(reservationId);
+        } else {
+          await options.budget.releaseBackgroundWork(
+            reservationId,
+            outcome.reason,
+          );
+        }
+      }
       await failWork(work, outcome.reason);
       return "failed";
+    }
+    if (options.budget && reservationId !== undefined) {
+      await options.budget.settleBackgroundWork(reservationId);
     }
     await markRowSynced(
       work.subjectType,
