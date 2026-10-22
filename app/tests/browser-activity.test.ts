@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../../tests/support/e2e-compat";
 import { browserStepDetails } from "../src/components/channels/browser-activity";
 import { groupToolSteps } from "../src/components/channels/tool-activity";
 import type { VisibleChatItem } from "../src/components/channels/chat-messages";

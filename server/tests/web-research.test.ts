@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { readFileSync } from "node:fs";
 import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import {

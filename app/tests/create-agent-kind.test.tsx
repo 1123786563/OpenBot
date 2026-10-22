@@ -6,7 +6,7 @@ import {
   expect,
   mock,
   test,
-} from "bun:test";
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { WEB_HARNESSES } from "@openbot/shared/harnesses";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -89,6 +89,7 @@ function draw(screen: ReactNode) {
     history: createMemoryHistory({ initialEntries: ["/"] }),
     routeTree: createRootRoute({ component: () => screen }),
   });
+
   return render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />

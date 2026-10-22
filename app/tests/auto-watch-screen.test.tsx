@@ -5,7 +5,7 @@ import {
   describe,
   expect,
   test,
-} from "bun:test";
+} from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { useAutoWatchScreen } from "@/components/computer/use-auto-watch-screen";

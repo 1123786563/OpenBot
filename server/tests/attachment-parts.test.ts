@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { MAX_EXTRACTED_CHARACTERS } from "@openbot/shared/attachments";
 import {
   newInlineBudget,

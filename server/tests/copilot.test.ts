@@ -383,8 +383,9 @@ describe("registered Copilot agents", () => {
         { provider: "openai", defaultModel: "gpt-5.6-terra" },
         "openai-secret",
       ),
-    ).toEqual({
-      model: "openai/gpt-5.6-terra",
+    ).toMatchObject({
+      // The toolkit's agent carries an AI SDK v3 language model, not a provider-prefixed string.
+      model: { modelId: "gpt-5.6-terra", config: { provider: "openai.chat" } },
       // The provenance rule is unconditional, so even a Bot with no tools and no computer carries
       // it. That Bot needs it most: nothing it says was read anywhere.
       prompt: `Be helpful.\n\n${PROVENANCE_GUIDANCE}\n\n${UNTRUSTED_GUIDANCE}`,

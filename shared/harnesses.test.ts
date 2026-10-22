@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "../tests/support/bun-test-compat";
 import { HARNESSES } from "./harnesses";
 
 test("carries every row the desktop picker offers, in its order", () => {

@@ -2506,7 +2506,16 @@ export async function buildAgents(
   let vendors: readonly string[] = [];
   try {
     vendors = await loadVendors();
-  } catch {}
+  } catch {
+    // Vendor guidance is best-effort: losing it must not prevent a run or change its grants.
+    // Report once per build here, including failures from the production plugin-store loader.
+    // Never log the thrown value: database errors can contain connection details or row contents.
+    console.error({
+      error: "connected_vendor_lookup_failed",
+      context: { operation: "loadVendors", agentCount: agents.length },
+      timestamp: new Date().toISOString(),
+    });
+  }
   /*
    * Read once per build and only when somebody will be told it, like the vendors above and the model
    * key below: it is a fact about the person, not about a coworker, and asking per Bot would be the
@@ -2520,7 +2529,14 @@ export async function buildAgents(
   if (agents.some((agent) => agent.type === "built_in")) {
     try {
       instructions = (await loadInstructions?.()) ?? null;
-    } catch {}
+    } catch {
+      // Never log the thrown value: database errors can expose instructions or credentials.
+      console.error({
+        error: "standing_instruction_read_failed",
+        context: { operation: "loadInstructions", agentCount: agents.length },
+        timestamp: new Date().toISOString(),
+      });
+    }
   }
   return Object.fromEntries(
     await Promise.all(

@@ -42,7 +42,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { grantRoster } from "@/lib/agents/grant-roster";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { brokerDisplay } from "@/lib/brokered-provenance";
+import { brokerDisplay, isBrokeredProvenance } from "@/lib/brokered-provenance";
 import { storeMcpToken } from "@/lib/credentials/mutations";
 import {
   addCuratedServerMutationOptions,
@@ -162,7 +162,7 @@ export function connectionKindFor(
   server: PluginServer | undefined,
   auth: CatalogueItem["auth"] | undefined,
 ): CatalogueItem["auth"] | "brokered" {
-  if (server?.provenance === "composio") return "brokered";
+  if (server && isBrokeredProvenance(server.provenance)) return "brokered";
   return auth ?? "deployment-bearer";
 }
 

@@ -5,7 +5,7 @@ import {
   beforeEach,
   expect,
   test,
-} from "bun:test";
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -70,6 +70,7 @@ function draw(screen: ReactNode) {
     history: createMemoryHistory({ initialEntries: ["/"] }),
     routeTree: createRootRoute({ component: () => screen }),
   });
+
   return render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
