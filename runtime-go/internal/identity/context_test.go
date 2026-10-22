@@ -18,6 +18,7 @@ func TestMissingVerifiedIdentityIsDenied(t *testing.T) {
 func fullEnvelope() VerifiedRun {
 	return VerifiedRun{
 		TenantID:           "t1",
+		WorkspaceID:        "ws1",
 		PrincipalID:        "p1",
 		ActorID:            "a1",
 		InitiatorKind:      InitiatorUser,
@@ -52,6 +53,7 @@ func TestFullEnvelopeRoundTripsThroughContext(t *testing.T) {
 func TestIncompleteEnvelopeIsRefused(t *testing.T) {
 	for field, clear := range map[string]func(*VerifiedRun){
 		"tenant_id":            func(v *VerifiedRun) { v.TenantID = "" },
+		"workspace_id":         func(v *VerifiedRun) { v.WorkspaceID = "" },
 		"principal_id":         func(v *VerifiedRun) { v.PrincipalID = "" },
 		"actor_id":             func(v *VerifiedRun) { v.ActorID = "" },
 		"initiator_kind":       func(v *VerifiedRun) { v.InitiatorKind = "" },

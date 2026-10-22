@@ -1,6 +1,11 @@
 import { serve } from "bun";
 import { Hono } from "hono";
-import { authorised } from "./authorisation";
+import { ExecutionScopeRegistry } from "../../shared/execution-scope";
+import {
+  authorised,
+  describeExecutionScope,
+  statedScope,
+} from "./authorisation";
 import { environmentFor } from "./environment";
 import {
   ComputerNotAnsweringError,
@@ -76,6 +81,9 @@ const spireSocketVolume =
 
 const app = new Hono();
 
+/** Which execution scope each Bot's computer belongs to; first use binds (MT050). */
+const computerScopes = new ExecutionScopeRegistry();
+
 /*
  * The trace span, before the Bearer check so a refused request is still traced: the
  * caller's `traceparent` continues their trace here, and a request with none is traced
@@ -95,6 +103,30 @@ app.use("*", async (context, next) => {
   if (context.req.path === "/health") return next();
   if (!authorised(context.req.header("authorization"), token)) {
     return context.json({ error: "Unauthorized." }, 401);
+  }
+  /*
+   * The execution ownership the caller must state, per Bot (MT050): the token proves "a caller
+   * of this deployment" and nothing about whose computer this is, so the scope rides two headers
+   * and the Bot's first use binds it. A later request in disagreement is one scope's caller
+   * reaching for another scope's container, and the refusal names the ownership (never the token)
+   * so an operator can see which side crossed.
+   */
+  const scope = statedScope(context.req.header());
+  if (!scope) {
+    console.warn(
+      "supervisor refused a request that stated no execution ownership.",
+    );
+    return context.json({ error: "Execution ownership is required." }, 403);
+  }
+  const botId = /^\/computers\/([^/]+)/.exec(context.req.path)?.[1];
+  if (botId && !computerScopes.bind(botId, scope)) {
+    console.warn(
+      `supervisor refused a request for ${botId} from ${describeExecutionScope(scope)}: that Bot's computer belongs to another execution scope.`,
+    );
+    return context.json(
+      { error: "That Bot's computer belongs to another execution scope." },
+      403,
+    );
   }
   return next();
 });

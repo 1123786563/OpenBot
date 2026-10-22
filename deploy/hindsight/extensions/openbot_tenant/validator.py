@@ -113,10 +113,17 @@ class OpenBotOperationValidator(OperationValidatorExtension):
         return BankListScope(bank_ids=list(allowed))
 
     async def filter_bank_list(self, ctx: BankListContext) -> BankListResult:
-        """The post-query narrowing for callers that reached the list without a scope."""
-        allowed = getattr(ctx.request_context, "allowed_bank_ids", None)
-        if getattr(ctx.request_context, "internal", False) or allowed is None:
+        """The post-query narrowing for callers that reached the list without a scope.
+
+        ``allowed_bank_ids is None`` on an EXTERNAL request is the no-grant state, and
+        ``bank_list_scope`` answers the very same caller with an empty list — the
+        post-query narrowing must not widen what the scope seam refused.
+        """
+        if getattr(ctx.request_context, "internal", False):
             return BankListResult(banks=ctx.banks)
+        allowed = getattr(ctx.request_context, "allowed_bank_ids", None)
+        if allowed is None:
+            return BankListResult(banks=[])
         return BankListResult(
             banks=[bank for bank in ctx.banks if bank.get("id") in set(allowed)]
         )

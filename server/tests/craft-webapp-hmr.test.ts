@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "../../tests/support/bun-test-compat";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { loadCraftConfig } from "../src/craft/config";
@@ -58,15 +59,31 @@ function hmrDeps(input: {
   nextjsPort?: number | null;
   connBaseUrl?: string | null;
   gatewayBaseUrl?: string;
+  /** #425: the legacy-preview switch; false models the env's explicit "false". */
+  legacyPreviewEnabled?: boolean;
+  /** #425: true models a LEGACY workspace (app body, no generation marker). */
+  currentGeneration?: boolean;
 }): WebappHmrDeps {
   const owner = input.ownerUserId ?? "u1";
   const port = input.nextjsPort === undefined ? 3011 : input.nextjsPort;
+  // The generation files the switch's judgment reads, in the memory-file-api
+  // spelling craft-webapp-proxy.test.ts uses (DIRECTORY-relative paths).
+  const directory = `/workspace/sessions/${SESSION_ID}`;
+  const files: Record<string, string> = {
+    [`${directory}/outputs/web/package.json`]: '{"name":"web"}',
+  };
+  if (input.currentGeneration !== false) {
+    files[`${directory}/.webapp-generation`] = "2";
+  }
   return {
-    config: loadCraftConfig(
-      input.gatewayBaseUrl
+    config: loadCraftConfig({
+      ...(input.gatewayBaseUrl
         ? { OPENBOT_CRAFT_SANDBOX_GATEWAY_URL: input.gatewayBaseUrl }
-        : {},
-    ),
+        : {}),
+      ...(input.legacyPreviewEnabled === false
+        ? { OPENBOT_CRAFT_LEGACY_PREVIEW_ENABLED: "false" }
+        : {}),
+    }),
     store: {
       async getSession(id: string, userId: string) {
         return id === SESSION_ID && userId === owner
@@ -83,6 +100,15 @@ function hmrDeps(input: {
             baseUrl: input.connBaseUrl ?? "http://sbox.internal:4300",
             token: null,
           },
+    // #425: the same-origin leg's generation read goes through the gateway's
+    // file API — a minimal in-memory stand-in (the shape the gate consumes).
+    gateway: {
+      fileApiFor: () => ({
+        async readFile(path: string) {
+          return files[path] ?? null;
+        },
+      }),
+    } as unknown as WebappHmrDeps["gateway"],
   };
 }
 
@@ -1031,6 +1057,23 @@ describe("the boot file's preview HMR wiring (fix-ocr18 #3 — source pin)", () 
 // the boot file wires it INSIDE the preview HMR branch, before the upgrade
 // resolver — pinned at source level like every other index.ts wiring above.
 describe("the preview HMR upgrade's Origin gate (fix-ocr28 #1 — CSWSH)", () => {
+  /**
+   * #411: a healthy TLS renewal-status record in a throwaway file — the host
+   * form's origins below fail closed without one, and this suite's subject is
+   * the ORIGIN COMPARISON, not the certificate gate (that one has its own
+   * five-band matrix in craft-preview-origin.test.ts). Same fixture shape
+   * #411's own suite uses.
+   */
+  function healthyTlsStatusFile(): string {
+    const dir = mkdtempSync(join(tmpdir(), "openbot-tls-status-hmr-"));
+    const statusFile = join(dir, "renewal-status.json");
+    writeFileSync(
+      statusFile,
+      JSON.stringify({ health: "ok", daysLeft: 45 }),
+    );
+    return statusFile;
+  }
+
   const origin = createPreviewOrigin({
     config: {
       enabled: true,
@@ -1086,7 +1129,10 @@ describe("the preview HMR upgrade's Origin gate (fix-ocr28 #1 — CSWSH)", () =>
       },
       previewTickets: createPreviewTickets({ store: {} as never }),
       secret: "same-origin-suite-secret",
-      env: {},
+      // #411: a host-form origin fail-closes without a judgeable TLS status
+      // record — this suite's subject is the ORIGIN COMPARISON, so the record
+      // is a healthy one (the same fixture shape #411's own matrix uses).
+      env: { OPENBOT_TLS_STATUS_FILE: healthyTlsStatusFile() },
       servePreview: async () => new Response("unused"),
     });
     const hostAddress = hostForm.originFor(SESSION_ID);
@@ -1118,7 +1164,8 @@ describe("the preview HMR upgrade's Origin gate (fix-ocr28 #1 — CSWSH)", () =>
       },
       previewTickets: createPreviewTickets({ store: {} as never }),
       secret: "same-origin-suite-secret",
-      env: {},
+      // #411, as above: a healthy record so the TLS gate stays out of the way.
+      env: { OPENBOT_TLS_STATUS_FILE: healthyTlsStatusFile() },
       servePreview: async () => new Response("unused"),
     });
     const hostAddress = hostForm.originFor(SESSION_ID);
@@ -1149,5 +1196,59 @@ describe("the preview HMR upgrade's Origin gate (fix-ocr28 #1 — CSWSH)", () =>
       branch.indexOf("resolvePreviewWebappHmrUpgrade("),
     );
     expect(branch).toContain("Cross-origin WebSocket upgrades are refused.");
+  });
+});
+
+// ── #425: the same-origin HMR leg under the legacy-preview switch ──────────────
+//
+// The legacy form's hot-reload channel refuses under the same judgment the HTTP
+// proxy leg refuses with, BEFORE `server.upgrade` commits — an observable refusal
+// is exactly what the boot file's dispatcher turns into a plain HTTP status, so
+// the resolver's {ok:false} IS the pre-upgrade refusal a switched-off deployment
+// must answer with. The current population is untaxed: their HMR rides the
+// preview origin's own dispatcher, and the judgment says "current" for them.
+
+describe("resolveWebappHmrUpgrade — the legacy-preview switch (#425)", () => {
+  test("switch off + legacy workspace: 503 with the closure sentence, before the upgrade", async () => {
+    const decision = await resolveWebappHmrUpgrade(
+      hmrDeps({ legacyPreviewEnabled: false, currentGeneration: false }),
+      { sessionId: SESSION_ID, actor: { id: "u1" }, path: HMR_PATH, query: "" },
+    );
+    expect(decision).toMatchObject({ ok: false, status: 503 });
+    if (!decision.ok) {
+      expect(decision.error).toContain("Legacy same-origin previews");
+      expect(decision.error).toContain("Rebuild");
+    }
+  });
+
+  test("switch off + CURRENT workspace: the upgrade still resolves (the new form is untaxed)", async () => {
+    const decision = await resolveWebappHmrUpgrade(
+      hmrDeps({ legacyPreviewEnabled: false }),
+      { sessionId: SESSION_ID, actor: { id: "u1" }, path: HMR_PATH, query: "" },
+    );
+    expect(decision.ok).toBe(true);
+    if (decision.ok) {
+      // The reserved port on the sandbox host — the session's nextjsPort, not
+      // the gateway connection's own port.
+      expect(decision.upstreamUrl).toContain(
+        "ws://sbox.internal:3011/api/craft/sessions/",
+      );
+    }
+  });
+
+  test("switch ON + legacy workspace: the old channel still answers (AC7's pin)", async () => {
+    const decision = await resolveWebappHmrUpgrade(
+      hmrDeps({ currentGeneration: false }),
+      { sessionId: SESSION_ID, actor: { id: "u1" }, path: HMR_PATH, query: "" },
+    );
+    expect(decision.ok).toBe(true);
+  });
+
+  test("the gate sits after auth: an unauthenticated upgrade still answers 401, never the switch's 503", async () => {
+    const decision = await resolveWebappHmrUpgrade(
+      hmrDeps({ legacyPreviewEnabled: false, currentGeneration: false }),
+      { sessionId: SESSION_ID, actor: null, path: HMR_PATH, query: "" },
+    );
+    expect(decision).toMatchObject({ ok: false, status: 401 });
   });
 });

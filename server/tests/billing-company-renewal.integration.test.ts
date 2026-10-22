@@ -467,6 +467,103 @@ describe("BP05: company subscription renewal and period correction", () => {
     );
   });
 
+  test("the sweep pays a customer only from an answer naming that customer, never a bare-id collision (F7)", async () => {
+    // The sweep asks the provider by BARE subscription id, and under this ticket's own
+    // premise the same string can be live under two customers at once. The stub's
+    // bare-id GET answers whichever record it holds first, so seeding the company's
+    // record first makes it the ONLY answer either row can get: the company's row is
+    // answered with its own record, the deployment's row with someone else's.
+    const person = personOf("sweep-collision");
+    const company = companyOf("sweep-collision");
+    const shared = `shared-sweep-${prefix}`;
+    await seedOwnedSubscription({
+      externalCustomerId: companyCustomerKey,
+      externalSubscriptionId: shared,
+      planCode: "pro",
+      owner: company,
+    });
+    await seedOwnedSubscription({
+      externalCustomerId: deploymentKey,
+      externalSubscriptionId: shared,
+      planCode: "pro",
+      owner: person,
+    });
+    // The company's provider period runs a month AHEAD of the deployment's own record:
+    // paying the deployment from the collision would cover a period its subscription
+    // never ran, in someone else's calendar.
+    const companyPeriod = {
+      start: "2026-12-01T00:00:00.000Z",
+      end: "2027-01-01T00:00:00.000Z",
+    };
+    stub.state.list = stub.state.list.map((row) =>
+      row.externalCustomerId === companyCustomerKey &&
+      row.externalSubscriptionId === shared
+        ? { ...row, periodStart: companyPeriod.start, periodEnd: companyPeriod.end }
+        : row,
+    );
+
+    await billingService.sweepRenewals();
+
+    // The company was answered with its own record: its period paid, in its account.
+    const companyGrants = await planGrantsFor(payerKey(company));
+    expect(companyGrants.map((grant) => grant.idempotencyKey)).toEqual([
+      `plan-renewal:${payerKey(company)}:${shared}:${companyPeriod.start}`,
+    ]);
+    // The deployment was answered with the company's record — undeterminable, so nothing
+    // paid and nothing advanced: no grant for ANY period, the marker still at October.
+    const personalGrants = await planGrantsFor(payerKey(person));
+    expect(personalGrants).toHaveLength(0);
+    const personalRow = await subscriptionRow({
+      externalCustomerId: deploymentKey,
+      externalSubscriptionId: shared,
+    });
+    expect(personalRow?.allowancePeriodStart?.toISOString()).toBe(
+      "2026-10-01T00:00:00.000Z",
+    );
+  });
+
+  test("the entitlement read shows no subscription facts from a bare-id collision (F9)", async () => {
+    // The courtesy subscription read beside the projection is also a bare-id GET: an
+    // answer naming another customer is not this row's subscription, so it must not show
+    // up as the caller's running period. The context drops to null, never to someone
+    // else's facts.
+    const person = personOf("ent-collision");
+    const company = companyOf("ent-collision");
+    // A customer of this test's own, so the read has exactly one row to choose — the
+    // deployment key carries earlier tests' subscriptions in this shared database.
+    const entCustomerKey = `openbot-ent-${prefix}`;
+    const shared = `shared-ent-${prefix}`;
+    await seedOwnedSubscription({
+      externalCustomerId: companyCustomerKey,
+      externalSubscriptionId: shared,
+      planCode: "pro",
+      owner: company,
+    });
+    await seedOwnedSubscription({
+      externalCustomerId: entCustomerKey,
+      externalSubscriptionId: shared,
+      planCode: "pro",
+      owner: person,
+    });
+    stub.state.list = stub.state.list.map((row) =>
+      row.externalCustomerId === companyCustomerKey &&
+      row.externalSubscriptionId === shared
+        ? {
+            ...row,
+            periodStart: "2026-12-01T00:00:00.000Z",
+            periodEnd: "2027-01-01T00:00:00.000Z",
+          }
+        : row,
+    );
+
+    const entitlements = await billingService.entitlements(entCustomerKey);
+
+    // The projection's own answer stands — the customer is active — but the provider's
+    // courtesy context is absent rather than another customer's December period.
+    expect(entitlements.active).toBe(true);
+    expect(entitlements.subscription).toBeNull();
+  });
+
   test("a renewal without the provider's period facts pays nothing and moves no marker", async () => {
     const company = companyOf("noise");
     const subscriptionId = `${companyCustomerKey}-noise-pro`;

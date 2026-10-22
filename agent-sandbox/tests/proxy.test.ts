@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { serve } from "../../tests/support/bun-compat";
@@ -98,6 +103,9 @@ const call = (path: string, init?: RequestInit) =>
 const botHeaders = {
   "x-sandbox-token": "secret-token",
   "x-openbot-bot-id": "alpha",
+  // MT050: the execution ownership every authorized request states.
+  "x-openbot-tenant-id": "tenant-a",
+  "x-openbot-workspace-id": "team-a1",
 };
 
 describe("proxy", () => {
@@ -455,7 +463,11 @@ describe("proxy with per-bot runtimes", () => {
     expect(noBot.status).toBe(400);
     const noToken = await call("/session", {
       method: "POST",
-      headers: { "x-openbot-bot-id": "alpha" },
+      headers: {
+        "x-openbot-bot-id": "alpha",
+        "x-openbot-tenant-id": "tenant-a",
+        "x-openbot-workspace-id": "team-a1",
+      },
       body: "{}",
     });
     expect(noToken.status).toBe(401);
@@ -489,7 +501,12 @@ describe("proxy with per-bot runtimes", () => {
   });
 
   test("reset 端点移除 bot 工作区并返回 200", async () => {
-    const runtime = await runtimes.getOrSpawn("reset-me");
+    // The ownership-named tree the proxy routes this Bot's files to (MT050): the reset
+    // only ever removes the scope's own subtree, so the file must live in it.
+    const runtime = await runtimes.getOrSpawn(
+      "reset-me",
+      `${env.workspaceDir}/tenants/tenant-a/workspaces/team-a1/bots/reset-me`,
+    );
     const { writeFile } = await import("node:fs/promises");
     await writeFile(`${runtime.workspaceDir}/keep.txt`, "x");
     const response = await call("/workspace/reset", {
