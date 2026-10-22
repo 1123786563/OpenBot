@@ -1247,24 +1247,6 @@
       },
       "basisMissingDims": "{{ref}}：未定价维度 — {{dimensions}}",
       "basisEnableable": "{{ref}}：已为该路径定价"
-    },
-    "capabilities": {
-      "title": "能力可用性",
-      "description": "网关能否按各能力自身的计费维度严格计费 Embedding、Rerank 与 OCR。未知价格不是免费，也绝不显示为免费。",
-      "enabled": "已启用",
-      "free": "免费",
-      "priceUnknown": "未启用 — 价格未知",
-      "unmapped": "未启用 — 无价格基线",
-      "freeExplanation": "该能力的全部计费维度均明确定价为零 — 是上游给出的价格，不是缺失。",
-      "enabledCells": "{{count}} 个已定价模型，其中 {{freeCount}} 个免费",
-      "missingIntro": "未定价维度：",
-      "missingDimension": "{{ref}}：{{dimension}} 未定价",
-      "unmappedExplanation": "该能力从未同步过价格基线，无法定价或启用。",
-      "names": {
-        "embedding": "Embedding",
-        "rerank": "Rerank",
-        "ocr": "OCR"
-      }
     }
   },
   "billingPage": {
@@ -1332,5 +1314,6 @@
     "evidenceEmpty": "尚无查询证据",
     "usage": "用量",
     "noWriteActions": "本视图严格只读"
-  }
+  },
+  "unavailable": "当前所选范围不可用此页面。"
 }

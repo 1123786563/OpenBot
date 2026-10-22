@@ -1,7 +1,11 @@
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { craftKeys, craftSandboxStatusQueryOptions } from "@/lib/craft/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import {
+  craftKeys,
+  scopedCraftSandboxStatusQueryOptions,
+} from "@/lib/craft/queries";
 import type { CraftSandboxStatus } from "@/lib/craft/types";
 
 /**
@@ -64,11 +68,23 @@ export function SandboxStatusIndicator({ sessionId }: { sessionId: string }) {
 /** The chip's display status for one session: the poll's answer, with "restoring" overlaid. */
 function useSandboxStatus(sessionId: string): SandboxDisplayStatus {
   const queryClient = useQueryClient();
-  const query = useQuery(craftSandboxStatusQueryOptions(sessionId));
+  // The chip's poll is the scope's own answer (MT091 / Issue #134, AC1): the pair rides it.
+  const scope = useScopedCache();
+  const query = useQuery(
+    scopedCraftSandboxStatusQueryOptions(queryClient, scope, sessionId),
+  );
   const status = query.data?.status ?? null;
-  // A session detail fetch over a sleeping sandbox is the wake in flight.
-  const sessionFetching =
+  // A session detail fetch over a sleeping sandbox is the wake in flight — watched at both
+  // roots (one hook per root, both always called; a pending scope simply watches a key no
+  // entry files under yet), because the scoped read and the wake's own detail read file under
+  // the scope's prefix while the legacy assembly still writes the unscoped one.
+  const prefix = scope.status === "open" ? scope.prefix : [];
+  const unscopedFetching =
     useIsFetching({ queryKey: craftKeys.session(sessionId) }) > 0;
+  const scopedFetching = useIsFetching({
+    queryKey: [...prefix, ...craftKeys.session(sessionId)],
+  }) > 0;
+  const sessionFetching = unscopedFetching || scopedFetching;
 
   // onyx's reconciler, shrunk to its load-bearing line: when the sandbox first answers
   // running, the session detail is reloaded (workspace reconcile) — the chip's poll is the
@@ -79,9 +95,14 @@ function useSandboxStatus(sessionId: string): SandboxDisplayStatus {
       void queryClient.invalidateQueries({
         queryKey: craftKeys.session(sessionId),
       });
+      if (scope.status === "open") {
+        void queryClient.invalidateQueries({
+          queryKey: [...scope.prefix, ...craftKeys.session(sessionId)],
+        });
+      }
     }
     previous.current = status;
-  }, [status, sessionId, queryClient]);
+  }, [status, sessionId, queryClient, scope]);
 
   if (status === null) return "loading";
   if (status === "sleeping" && sessionFetching) return "restoring";
@@ -95,16 +116,27 @@ function useSandboxStatus(sessionId: string): SandboxDisplayStatus {
  */
 export function useWakeOnIntent(sessionId: string): () => void {
   const queryClient = useQueryClient();
+  // The wake reads and refreshes at both roots (MT091): the chip's own poll files under the
+  // scope's prefix, while the legacy assembly still writes the unscoped one.
+  const scope = useScopedCache();
   return useCallback(() => {
-    const status = queryClient.getQueryData<{
-      status: CraftSandboxStatus | null;
-    }>(craftKeys.sandboxStatus(sessionId))?.status;
-    if (status !== "sleeping" && status !== "terminated") return;
+    const keys: unknown[][] = [[...craftKeys.sandboxStatus(sessionId)]];
+    if (scope.status === "open") {
+      keys.push([...scope.prefix, ...craftKeys.sandboxStatus(sessionId)]);
+    }
+    const status = keys.some(
+      (key) =>
+        queryClient.getQueryData<{ status: CraftSandboxStatus | null }>(key)
+          ?.status === "sleeping" ||
+        queryClient.getQueryData<{ status: CraftSandboxStatus | null }>(key)
+          ?.status === "terminated",
+    );
+    if (!status) return;
     void queryClient.invalidateQueries({
       queryKey: craftKeys.session(sessionId),
     });
-    void queryClient.invalidateQueries({
-      queryKey: craftKeys.sandboxStatus(sessionId),
-    });
-  }, [queryClient, sessionId]);
+    for (const key of keys) {
+      void queryClient.invalidateQueries({ queryKey: key });
+    }
+  }, [queryClient, sessionId, scope]);
 }

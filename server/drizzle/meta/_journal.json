@@ -1366,6 +1366,83 @@
       "when": 1792857631000,
       "tag": "0194_realtime_units",
       "breakpoints": true
+    },
+    {
+      "idx": 195,
+      "version": "7",
+      "when": 1792857632000,
+      "tag": "0195_tool_surcharge_dimensions",
+      "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "7",
+      "when": 1792857633000,
+      "tag": "0196_async_settle_triggers",
+      "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "7",
+      "when": 1792857634000,
+      "tag": "0197_async_settlement_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 198,
+      "version": "7",
+      "when": 1792857635000,
+      "tag": "0198_batch_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 199,
+      "version": "7",
+      "when": 1792857636000,
+      "tag": "0199_batch_settlement_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "7",
+      "when": 1792857637000,
+      "tag": "0200_batch_partial_states",
+      "breakpoints": true
+    },
+    {
+      "idx": 201,
+      "version": "7",
+      "when": 1792857638000,
+      "tag": "0201_batch_cancel_semantics",
+      "breakpoints": true
+    },
+    {
+      "idx": 202,
+      "version": "7",
+      "when": 1792857639000,
+      "tag": "0202_video_input_dimension",
+      "breakpoints": true
+    },
+    {
+      "idx": 203,
+      "version": "7",
+      "when": 1792857640000,
+      "tag": "0203_realtime_session_stop",
+      "breakpoints": true
+    },
+    {
+      "idx": 204,
+      "version": "7",
+      "when": 1792857641000,
+      "tag": "0204_realtime_unit_unknown",
+      "breakpoints": true
+    },
+    {
+      "idx": 205,
+      "version": "7",
+      "when": 1792857642000,
+      "tag": "0205_realtime_unit_settled",
+      "breakpoints": true
     }
   ]
 }

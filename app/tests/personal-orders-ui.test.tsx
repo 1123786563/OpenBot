@@ -221,7 +221,7 @@ function renderView({ page = 1 }: { page?: number } = {}) {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <OrdersGrantsView page={page} onPage={() => {}} />
+      <OrdersGrantsView page={page} onPage={() => {}} scope={PERSONAL_SCOPE} />
     </QueryClientProvider>,
   );
 }
@@ -241,6 +241,23 @@ afterAll(async () => {
 });
 
 const originalFetch = globalThis.fetch;
+
+/*
+ * The personal context's scope (MT097): the billing views now read through the scoped seam, so
+ * the harness hands them the no-selection scope a person without a company selection holds —
+ * the reads still hit the same /api/billing paths the stubs answer.
+ */
+const scopedCachePrefixMod = await import(
+  "@/lib/enterprise/tenant/scoped-cache"
+);
+const PERSONAL_SCOPE = {
+  status: "open" as const,
+  userId: "ui-test-user",
+  selection: null,
+  generation: 1,
+  prefix: scopedCachePrefixMod.scopedCachePrefix("ui-test-user", null),
+  key: "ui-test-user:personal",
+};
 
 test("orderIdOfPlanGrant traces a plan grant to its funding order", () => {
   expect(

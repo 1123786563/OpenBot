@@ -98,6 +98,8 @@ const V1_AMOUNTS = {
   video: "0.01",
   surcharge_web_search: "0.001",
   surcharge_per_request: "0.0001",
+  surcharge_tool_call: "0.002",
+  surcharge_a2a_call: "0.003",
 } as const;
 
 /** Version 2 prices: input and output quadruple (the world changes after the lock). */
@@ -246,6 +248,8 @@ function usageOf(named: Record<string, number>): Record<string, number> {
     video: 0,
     surcharge_web_search: 0,
     surcharge_per_request: 0,
+    surcharge_tool_call: 0,
+    surcharge_a2a_call: 0,
   };
   for (const [dimension, quantity] of Object.entries(named)) {
     usage[dimension] = quantity;

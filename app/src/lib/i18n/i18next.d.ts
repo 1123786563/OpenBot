@@ -7,6 +7,7 @@ import type aiObservabilityRuns from "../../locales/en/ai-observability-runs.jso
 import type approvals from "../../locales/en/approvals.json";
 import type channels from "../../locales/en/channels.json";
 import type common from "../../locales/en/common.json";
+import type companyAdmin from "../../locales/en/company-admin.json";
 import type computer from "../../locales/en/computer.json";
 import type craft from "../../locales/en/craft.json";
 import type errors from "../../locales/en/errors.json";
@@ -43,6 +44,7 @@ declare module "i18next" {
       market: typeof market;
       errors: typeof errors;
       tenant: typeof tenant;
+      "company-admin": typeof companyAdmin;
       workshop: typeof workshop;
       craft: typeof craft;
       "ai-observability-runs": typeof aiObservabilityRuns;

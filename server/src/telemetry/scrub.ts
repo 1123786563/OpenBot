@@ -135,6 +135,20 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
     /([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]*):([^\s/@]+)@/gi,
     (_m, scheme, user) => `${scheme}${user}:${REDACTED}@`,
   ],
+  // Cookie headers: `Cookie: session=…`, `cookie: a=b; c=d`, `set-cookie: …`. A session cookie is a
+  // bearer credential with a different casing (MT109/Issue #152): the value goes whole, like the
+  // Authorization header's — the names a cookie carries name nothing the reader needs.
+  [
+    /((?:set-)?cookie\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s'"]+)/gi,
+    (_m, lead) => `${lead}${REDACTED}`,
+  ],
+  // OAuth's query-borne credentials: the authorization `code`, the access/refresh token and the
+  // client secret as a provider's callback or token URL carries them (`?code=…&state=…`). The
+  // parameter keeps its name — that is the diagnosis — and loses its value.
+  [
+    /([?&](?:code|access_token|refresh_token|client_secret)=)[^&\s'"]+/gi,
+    (_m, lead) => `${lead}${REDACTED}`,
+  ],
 ];
 
 export function scrubCommand(command: string): string {

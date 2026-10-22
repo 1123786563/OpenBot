@@ -3,6 +3,7 @@
     "ariaLabel": "工作台",
     "loading": "正在加载工作台…",
     "loadError": "工作台加载失败。",
+    "unavailable": "此工作坊在当前工作区不可用。",
     "tabs": {
       "ariaLabel": "工作台视图",
       "process": "过程",

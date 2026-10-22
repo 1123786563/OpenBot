@@ -211,6 +211,7 @@
       "cancel": "取消",
       "adding": "添加中…",
       "addKind": "添加{{kind}}触发器"
-    }
+    },
+    "unavailable": "当前所选范围不可用职责。"
   }
 }

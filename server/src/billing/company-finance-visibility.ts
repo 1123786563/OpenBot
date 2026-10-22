@@ -34,10 +34,11 @@
 // payer-accounts / company-reservation 一致；账簿投影只含公司账务事实
 // （映射客户、账户状态、余额、用量），不含账户内部键。
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { billingCompanyFinanceGrants } from "../db/schema/company-finance";
 import { creditReservations } from "../db/schema/credit-reservations";
+import { usageOutbox } from "../db/schema/usage-outbox";
 import { enterpriseMemberships } from "../db/schema/enterprise-tenancy";
 import {
   type CompanyUsageSummary,
@@ -48,6 +49,19 @@ import {
   createPayerAccountService,
   type PayerAccountService,
 } from "./payer-accounts";
+
+/** 一条公司用量证据行（usage_outbox 的只读投影；×100 缩放整数与 token 数原样）。 */
+export interface CompanyUsageLine {
+  readonly eventId: string;
+  readonly source: "llm" | "code_run";
+  readonly model: string;
+  /** 公司工作台调用的团队维度；null = 无团队维度的公司行（与表同形）。 */
+  readonly workspaceId: string | null;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly reservationId: string | null;
+  readonly occurredAt: Date;
+}
 
 /** 一条公司财务读取授权（按存储行回答）。 */
 export interface CompanyFinanceGrant {
@@ -135,6 +149,18 @@ export interface CompanyFinanceVisibilityService {
     tenantId: string;
     principalId: string;
   }): Promise<CompanyBooks>;
+  /**
+   * 公司用量证据行（MT097 / Issue #140 AC3）：判定门后从**已交付的 usage_outbox**
+   * （billing 侧 Bifrost 09 链路）只读投影最近用量行——按公司映射客户过滤，个人
+   * Bifrost 直连消费（个人客户的行）**结构性不在答案里**，不是服务层自觉过滤。
+   * 只读消费，零复制、零新账务；行可经 reservationId 关联结算明细（0189 维度拆分、
+   * 0197 异步结算行）——本投影不 join，明细归各自交付面。
+   */
+  recentUsageLines(input: {
+    tenantId: string;
+    principalId: string;
+    limit?: number;
+  }): Promise<readonly CompanyUsageLine[]>;
 }
 
 function requireNonEmpty(value: unknown, what: string): string {
@@ -345,6 +371,47 @@ export function createCompanyFinanceVisibilityService({
           byUser: summary.byUser,
         },
       };
+    },
+
+    async recentUsageLines(input) {
+      requireNonEmpty(input?.tenantId, "tenantId");
+      requireNonEmpty(input?.principalId, "principalId");
+      // 判定门先行（与 companyBooks 同一门）：拒绝路径零用量行读取。
+      await this.assertCompanyFinanceReader({
+        tenantId: input.tenantId,
+        principalId: input.principalId,
+      });
+      const mapping = await payer.resolveCompanyCustomer(input.tenantId);
+      if (!mapping) {
+        // 诚实空：无映射即无公司用量行（个人直连消费不在本面，也无处可泄）。
+        return [];
+      }
+      const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+      const rows = await database
+        .select({
+          eventId: usageOutbox.eventId,
+          source: usageOutbox.source,
+          model: usageOutbox.model,
+          workspaceId: usageOutbox.workspaceId,
+          inputTokens: usageOutbox.inputTokens,
+          outputTokens: usageOutbox.outputTokens,
+          reservationId: usageOutbox.reservationId,
+          occurredAt: usageOutbox.occurredAt,
+        })
+        .from(usageOutbox)
+        .where(eq(usageOutbox.externalCustomerId, mapping.externalCustomerId))
+        .orderBy(desc(usageOutbox.occurredAt))
+        .limit(limit);
+      return rows.map((row) => ({
+        eventId: row.eventId,
+        source: row.source,
+        model: row.model,
+        workspaceId: row.workspaceId,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        reservationId: row.reservationId,
+        occurredAt: row.occurredAt,
+      }));
     },
   };
 }
