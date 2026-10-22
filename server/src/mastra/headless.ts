@@ -48,7 +48,7 @@ import type { BaseEvent } from "@ag-ui/client";
 import { getLogger } from "../../../shared/logger";
 import { frameFiring } from "../../../shared/routine-firing";
 import type { AuditInitiator } from "../audit";
-import { HeadlessToolSuspension } from "../computer/headless-tools";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type {
   ConversationService,
   PlatformScope,
@@ -68,7 +68,7 @@ import {
 } from "../enterprise/runs/governed-execution";
 import { isPositiveInt32TokenCount } from "../enterprise/runs/output-ceiling";
 import { RunDomainError } from "../enterprise/runs/store";
-import type { GrantedTool } from "../plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import type { TurnRunner } from "../routines/runner";
 import {
   MASTRA_CONTINUATION_REFUSALS,

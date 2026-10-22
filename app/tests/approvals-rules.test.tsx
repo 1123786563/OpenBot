@@ -19,9 +19,9 @@ import type { ReactNode } from "react";
 import { InlineApproval } from "@/components/approvals/inline-approval";
 import { ApprovalSettings } from "@/components/approvals/settings";
 import {
-  BrowserActivity,
-  groupBrowserSteps,
-} from "@/components/channels/browser-activity";
+  groupToolSteps,
+  ToolActivity,
+} from "@/components/channels/tool-activity";
 import { toVisibleChatItems } from "@/components/channels/chat-messages";
 import {
   afterAll,
@@ -389,7 +389,7 @@ test("a pending change is drawn in the conversation where the action was, and de
 test("in the real transcript shape a waiting click is folded into browser activity, so its card is drawn beside the group", async () => {
   // What the channel transcript builds from the conversation: a navigate that finished and the
   // click the chat stopped on, unanswered, grouped into one browser-activity line.
-  const items = groupBrowserSteps(
+  const items = groupToolSteps(
     toVisibleChatItems([
       { id: "u1", role: "user", content: "Order a pizza on httpbin" },
       {
@@ -423,16 +423,16 @@ test("in the real transcript shape a waiting click is folded into browser activi
       },
     ] as never),
   );
-  const group = items.find((item) => item.kind === "browser");
-  if (group?.kind !== "browser") throw new Error("no browser group");
+  const group = items.find((item) => item.kind === "tools");
+  if (group?.kind !== "tools") throw new Error("no tool group");
   const view = render(
     <QueryClientProvider
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
     >
-      {/* BrowserActivity mounts the waiting cards beside its folded line itself. */}
-      <BrowserActivity group={group} active={false} />
+      {/* ToolActivity mounts the waiting cards beside its folded line itself. */}
+      <ToolActivity group={group} active={false} />
     </QueryClientProvider>,
   );
   await view.findByRole("region", { name: "Waiting for your approval" });

@@ -5,9 +5,10 @@ import type { AbstractAgent, RunAgentInput } from "@ag-ui/client";
 import { HttpAgent } from "@ag-ui/client";
 import { LLMock } from "@copilotkit/aimock";
 import { BuiltInAgent } from "@copilotkit/runtime/v2";
+import { PROVENANCE_GUIDANCE } from "@openbot/shared/bot-prompt";
+import { defaultModelFor } from "@openbot/shared/model-providers";
 import { EMPTY, lastValueFrom } from "rxjs";
 import { z } from "zod";
-import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
 import { createActorAgentResolver } from "../src/agents/agent-resolver";
 import { MAX_INLINED_BYTES_PER_RUN } from "../src/channels/attachment-parts";
 import { loadConfig } from "../src/config";
@@ -286,6 +287,30 @@ describe("deployment model selection", () => {
       expect(request.model).toBe(tenantPackage.model.defaultModel);
     },
   );
+
+  /*
+   * Switching the provider away from the package's own, without naming a model. The two fallbacks are
+   * not the same source: OpenAI's is the built-in Bot's own (it speaks the Responses API), Anthropic's
+   * is the shared spec's. See BUILT_IN_OPENAI_FALLBACK_MODEL in copilot.ts.
+   */
+  test("switched to OpenAI with no model named, the built-in Bot falls back to its own OpenAI model", () => {
+    const model = runtimeModelForEnvironment(
+      { provider: "anthropic", defaultModel: "claude-from-package" },
+      { BOT_PROVIDER: "openai" },
+    );
+    expect(model.provider).toBe("openai");
+    expect(model.defaultModel).toBe("gpt-5.6-terra");
+  });
+
+  test("switched to Anthropic with no model named, the built-in Bot falls back to the shared spec's", () => {
+    const model = runtimeModelForEnvironment(
+      { provider: "openai", defaultModel: "gpt-from-package" },
+      { BOT_PROVIDER: "anthropic" },
+    );
+    expect(model.provider).toBe("anthropic");
+    expect(model.defaultModel).toBe(defaultModelFor("anthropic"));
+    expect(model.defaultModel).toBe("claude-sonnet-4-5");
+  });
 });
 
 describe("registered Copilot agents", () => {
@@ -358,8 +383,9 @@ describe("registered Copilot agents", () => {
         { provider: "openai", defaultModel: "gpt-5.6-terra" },
         "openai-secret",
       ),
-    ).toEqual({
-      model: "openai/gpt-5.6-terra",
+    ).toMatchObject({
+      // The toolkit's agent carries an AI SDK v3 language model, not a provider-prefixed string.
+      model: { modelId: "gpt-5.6-terra", config: { provider: "openai.chat" } },
       // The provenance rule is unconditional, so even a Bot with no tools and no computer carries
       // it. That Bot needs it most: nothing it says was read anywhere.
       prompt: `Be helpful.\n\n${PROVENANCE_GUIDANCE}\n\n${UNTRUSTED_GUIDANCE}`,
@@ -1265,6 +1291,13 @@ describe("where a Bot says its answer came from", () => {
     expect(guidance).toContain("do not go hunting the open web");
   });
 
+  test("it leaves finding sources to a search tool, and offers to check one without", () => {
+    // Without this, a Bot granted a search tool still answered current figures from memory.
+    const guidance = PROVENANCE_GUIDANCE.toLowerCase().replace(/\s+/g, " ");
+    expect(guidance).toContain("finding sources is what a search tool is for");
+    expect(guidance).toContain("offer to check a source the person names");
+  });
+
   test("it names the answers that must not be stated without a source", () => {
     // The general rule is easy to read past. The list is what makes it bite on the turn that
     // produced this: a threshold, a deadline, a filing obligation, a figure.
@@ -1966,7 +1999,7 @@ describe("where an attachment reaches the model, and where it deliberately does 
   ];
 
   test("a built-in Bot's run fails naming the attachment it could not load", async () => {
-    // Protects `BuiltInAgentWithSaneHistory.run` (copilot.ts:~924). Drop the
+    // Protects `BuiltInAgentWithSaneHistory.run` (toolkit/src/copilotkit/agents.ts). Drop the
     // `inlineAttachments` call there and this run completes instead of erroring.
     const agents = await buildAgents(
       [assistant],
@@ -2036,7 +2069,7 @@ describe("where an attachment reaches the model, and where it deliberately does 
 
   test("the narrowed built-in path reads the attachment once, not twice", async () => {
     /*
-     * Protects the exclusion: `RunBuiltAgent.run` (copilot.ts:~989) deliberately does not call
+     * Protects the exclusion: `RunBuiltAgent.run` (toolkit/src/copilotkit/agents.ts) deliberately does not call
      * `resolveAttachmentParts` itself. It only delegates to the built-in agent its `build()`
      * produces, and that agent's own `run` is what inlines the attachment. Re-adding the call at
      * `RunBuiltAgent.run` would read the same attachment a second time, which is what turns this
@@ -2162,7 +2195,7 @@ describe("where an attachment reaches the model, and where it deliberately does 
      * The permanence half of the same argument. `inlineAttachments` maps over the WHOLE history and
      * history is replayed every turn, so a row deleted by the sweeper after an interrupted send
      * would otherwise fail this channel's every future turn for ever, exactly as the dangling call
-     * in `agents/history-sanitize.ts` did in production. The old part says the file is gone; the
+     * in `toolkit/history-sanitize.ts` did in production. The old part says the file is gone; the
      * one the person is actually asking about still arrives as bytes.
      */
     const agent = await builtInWith(async (id) =>

@@ -1,5 +1,5 @@
 import { expect, test } from "../../tests/support/e2e-compat";
-import type { SaveVoiceSessionInput } from "../../shared/voice-session";
+import type { SaveVoiceSessionInput } from "@openbot/shared/voice-session";
 import { parseVoiceSessionInput } from "../src/voice/sessions";
 import { createVoiceSummarizer } from "../src/voice/summary";
 

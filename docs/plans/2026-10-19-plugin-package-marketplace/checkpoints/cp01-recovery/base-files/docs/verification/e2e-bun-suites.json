@@ -712,7 +712,11 @@
     "app/tests/computer-control-button.test.tsx",
     "app/tests/computer-handoff.test.ts",
     "app/tests/computer-tool-refusals.test.ts",
+    "app/tests/connect-app-card.test.tsx",
     "app/tests/craft-session-title.test.tsx",
+    "app/tests/create-agent-endpoint.test.tsx",
+    "app/tests/create-agent-kind.test.tsx",
+    "app/tests/create-agent-steps.test.tsx",
     "app/tests/failed-send-attachments.test.tsx",
     "app/tests/form-submit-controls.test.ts",
     "app/tests/github-sources-settings.test.tsx",
@@ -773,6 +777,7 @@
     "server/tests/billing-credits-consumption.integration.test.ts",
     "server/tests/billing-credits-summary.integration.test.ts",
     "server/tests/billing-credits-writer.integration.test.ts",
+    "server/tests/billing-period-fulfillment.integration.test.ts",
     "server/tests/billing-reconcile.integration.test.ts",
     "server/tests/billing-store.integration.test.ts",
     "server/tests/billing-store.test.ts",
@@ -1089,13 +1094,15 @@
     "server/tests/voice-session-store.integration.test.ts",
     "server/tests/voice-summary-model.test.ts",
     "server/tests/web-bot-auth.test.ts",
+    "server/tests/web-research.test.ts",
     "server/tests/work-queue.integration.test.ts",
     "server/tests/workbench-implicit-grant.test.ts",
     "server/tests/workshop-artifacts.test.ts",
     "server/tests/workshop-metering.test.ts",
     "server/tests/workshop-preview.test.ts",
     "server/tests/workshop-schedule-executor.integration.test.ts",
-    "server/tests/workshop-store.test.ts"
+    "server/tests/workshop-store.test.ts",
+    "shared/harnesses.test.ts"
   ],
   "artifacts": [
     "deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts",
@@ -1513,7 +1520,14 @@
     "server/tests/composio-adapter.test.ts": "runner proved it, not a guess: `e2e run … server/tests/composio-adapter.test.ts` aborts collection with \"Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'\". The specifier comes from the @composio/core graph, so the static boundary tool (which follows repository modules) cannot see it — the suite therefore stays on the Bun runtime, scheduled and reported by e2e.",
     "desktop/src/App.test.tsx": "Bun loader behaviour, not a bun:test import: these desktop React suites render production modules that read import.meta.env (VITE_OPENBOT_SUPPORT_URL and friends). Under the Node runner that property is undefined, so every case dies with `Cannot read properties of undefined (reading 'VITE_OPENBOT_SUPPORT_URL')` before a single assertion runs; Bun's loader fills it, so the suites execute there. Found by scripts/e2e-collection-reconcile.mjs: e2e.unit.config.ts only globbed .test.tsx for app, which left 85 registered tests collected by no entry while the file-walking audit still counted them as covered.",
     "desktop/src/Problem.test.tsx": "Bun loader behaviour, not a bun:test import: these desktop React suites render production modules that read import.meta.env (VITE_OPENBOT_SUPPORT_URL and friends). Under the Node runner that property is undefined, so every case dies with `Cannot read properties of undefined (reading 'VITE_OPENBOT_SUPPORT_URL')` before a single assertion runs; Bun's loader fills it, so the suites execute there. Found by scripts/e2e-collection-reconcile.mjs: e2e.unit.config.ts only globbed .test.tsx for app, which left 85 registered tests collected by no entry while the file-walking audit still counted them as covered.",
-    "desktop/src/ProviderPicker.test.tsx": "Bun loader behaviour, not a bun:test import: these desktop React suites render production modules that read import.meta.env (VITE_OPENBOT_SUPPORT_URL and friends). Under the Node runner that property is undefined, so every case dies with `Cannot read properties of undefined (reading 'VITE_OPENBOT_SUPPORT_URL')` before a single assertion runs; Bun's loader fills it, so the suites execute there. Found by scripts/e2e-collection-reconcile.mjs: e2e.unit.config.ts only globbed .test.tsx for app, which left 85 registered tests collected by no entry while the file-walking audit still counted them as covered."
+    "desktop/src/ProviderPicker.test.tsx": "Bun loader behaviour, not a bun:test import: these desktop React suites render production modules that read import.meta.env (VITE_OPENBOT_SUPPORT_URL and friends). Under the Node runner that property is undefined, so every case dies with `Cannot read properties of undefined (reading 'VITE_OPENBOT_SUPPORT_URL')` before a single assertion runs; Bun's loader fills it, so the suites execute there. Found by scripts/e2e-collection-reconcile.mjs: e2e.unit.config.ts only globbed .test.tsx for app, which left 85 registered tests collected by no entry while the file-walking audit still counted them as covered.",
+    "app/tests/connect-app-card.test.tsx": "react-router 1.170.32 matches no Transitioner on node (module-level isServer is true), so a RouterProvider never renders a first match there; bun has a global document and walks the client path. 9+5 pass / 0 fail under bun test.",
+    "app/tests/create-agent-endpoint.test.tsx": "same react-router 1.170.32 node condition as create-agent-kind: MatchesInner reads an uninitialised acknowledgement[0] under the node runtime. bun test green.",
+    "app/tests/create-agent-kind.test.tsx": "react-router 1.170.32: node's module-level isServer skips the Transitioner that seeds _rendered, and MatchesInner's useLayoutEffect dereferences it — the suite renders a router, so it stays on the Bun tier (bun has document). 9 pass / 0 fail under bun test.",
+    "app/tests/create-agent-steps.test.tsx": "same react-router 1.170.32 node condition as create-agent-kind. bun test green.",
+    "server/tests/billing-period-fulfillment.integration.test.ts": "fork suite (BP03) that already imported tests/support/bun-test-compat but was never listed here — the driven collector dies on bun: and nothing executed it on either tier. Listed so bun-suites schedules it.",
+    "server/tests/web-research.test.ts": "the suite answers through Bun.serve and reads server.port — the node shim never binds, so the captured headers stay undefined. Bun-coupled HTTP, stays on the Bun tier; 11 pass / 0 fail under bun test.",
+    "shared/harnesses.test.ts": "asserts each named mark exists through Bun.file — the node shim's exists() answers false. Stays on the Bun tier; green under bun test."
   },
   "directoryIslands": [
     "server/tests/multitenancy",

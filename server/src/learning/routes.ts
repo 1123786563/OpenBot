@@ -5,8 +5,8 @@ import type {
   LearningAutoAssignState,
   LearningDeliveryStatus,
   LearningOverview,
-} from "../../../shared/learning";
-import { getLogger } from "../../../shared/logger";
+} from "@openbot/shared/learning";
+import { getLogger } from "@openbot/shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import { type AppVariables, requireAdmin } from "../auth/guards";
 import type { LearningAutoAssign } from "./auto-assign";

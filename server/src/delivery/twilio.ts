@@ -2,6 +2,8 @@
 // does not find `validateRequest` on it, so a named import throws at link time under the e2e runner.
 import twilio from "twilio";
 
+import { DELIVERY_REQUEST_TIMEOUT_MS } from "../timeouts";
+
 const { validateRequest } = twilio;
 
 import {
@@ -72,7 +74,7 @@ export function createTwilioTransport(config: TwilioConfig) {
     try {
       response = await wire(url, {
         method: "POST",
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(DELIVERY_REQUEST_TIMEOUT_MS),
         headers: {
           authorization: `Basic ${Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64")}`,
           "content-type": "application/x-www-form-urlencoded",

@@ -7,6 +7,10 @@ const FALLBACK_KEY = "passwords.complete";
 const invalidate = (queryClient: QueryClient) =>
   queryClient.invalidateQueries({ queryKey: passwordKeys.all });
 
+/** The request as the answer left it, shown at once rather than at the next poll. */
+const show = (queryClient: QueryClient) => (request: SignInRequest) =>
+  queryClient.setQueryData(passwordKeys.signIn(request.id), request);
+
 const path = (id: string, action: string) =>
   `/api/sign-in-requests/${encodeURIComponent(id)}/${action}`;
 
@@ -38,20 +42,19 @@ export function submitSignInMutationOptions(queryClient: QueryClient) {
     gcTime: 0,
     mutationFn: (variables: { id: string; input: SignInSubmission }) =>
       post(variables.id, "submit", variables.input),
+    onSuccess: show(queryClient),
     onSettled: () => invalidate(queryClient),
   });
 }
 
-/**
- * The verification code the site sent, once the request is `code_required`. The code and nothing
- * else. `gcTime` 0 for the same reason the password submission carries it: a code is good once and
- * is cleared with the send, not kept in the cache.
- */
+/** The verification code the site sent, once the request is `code_required`. The code and nothing else. */
 export function submitSignInCodeMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
+    // The same `gcTime` 0 as the password: a code is good once and is cleared with the send, not kept.
     gcTime: 0,
     mutationFn: (variables: { id: string; code: string }) =>
       post(variables.id, "code", { code: variables.code }),
+    onSuccess: show(queryClient),
     onSettled: () => invalidate(queryClient),
   });
 }
@@ -61,6 +64,7 @@ export function confirmSavedLoginMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
     mutationFn: (variables: { id: string; loginId: string }) =>
       post(variables.id, "use-saved", { loginId: variables.loginId }),
+    onSuccess: show(queryClient),
     onSettled: () => invalidate(queryClient),
   });
 }

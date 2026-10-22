@@ -1,6 +1,6 @@
 import type { BaseEvent, Message, RunAgentInput } from "@ag-ui/client";
 import { attachmentUrl } from "../../../shared/attachments";
-import { sanitizeSeededHistory } from "../agents/history-sanitize";
+import { sanitizeSeededHistory } from "@openbot/toolkit/history-sanitize";
 import type {
   ConversationService,
   EngineMessageAppendInput,

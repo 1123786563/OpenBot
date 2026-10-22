@@ -24,6 +24,7 @@ import {
   type AuditStore,
   recordAuditEvent,
 } from "../audit";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { withUntrustedNotice } from "../untrusted-content";
 import { type ComputerCapacity, computerCapacity } from "./capacity";
 import {
@@ -38,7 +39,6 @@ import {
   WorkspaceRequestError,
   WorkspaceTooLargeError,
 } from "./client";
-import { HeadlessToolSuspension } from "./headless-tools";
 import { checkComputerAddress } from "./target";
 
 export {
@@ -1622,7 +1622,7 @@ async function writeControlEvent(
 const PAGE_FIELDS = ["title", "text"] as const;
 const SNAPSHOT_FIELDS = ["title", "elements"] as const;
 
-/** A two-step login can take two page loads and a code; this outlasts the computer's own waits. */
+/** A two-step login can take two page loads and a wait for a code field; this outlasts the computer's own waits. */
 const SIGN_IN_BACKSTOP_MS = 75_000;
 
 export function hostOf(url: string): string {

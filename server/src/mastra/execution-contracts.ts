@@ -3,7 +3,7 @@ import type { Observable } from "rxjs";
 import type { AuditInitiator } from "../audit";
 import type { PlatformScope } from "../enterprise/contracts";
 import type { GovernedModelRequest } from "../enterprise/runs/governed-execution";
-import type { GrantedTool } from "../plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import type { MastraToolOperation } from "./tools";
 
 /*

@@ -8,7 +8,7 @@ import {
   OpenMuseOwnerDisabledError,
   OpenMuseTaskQuotaError,
 } from "../openmuse-tasks/store";
-import type { GrantedTool } from "../plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { REFUSAL_MARKER } from "../plugins/tools";
 import type { GoalToolRecord } from "./goals";
 import type { IdeaToolRecord } from "./ideas";

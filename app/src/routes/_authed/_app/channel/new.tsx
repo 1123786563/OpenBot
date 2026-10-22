@@ -14,7 +14,6 @@ import { ConversationView } from "@/components/channels/conversation-view";
 import { seedMessage } from "@/components/channels/transcript-messages";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { Combobox } from "@/components/ui/combobox";
-import { defaultAgentProfile } from "@/lib/agents/default-agent";
 import {
   type AgentProfile,
   scopedAgentDetailQueryOptions,
@@ -74,10 +73,9 @@ function RouteComponent() {
     enabled: Boolean(agent) && profiles !== undefined && !listed,
     retry: false,
   });
-  const chosen =
-    listed ??
-    (fetched?.id === agent ? fetched : undefined) ??
-    (agent ? undefined : defaultAgentProfile(profiles));
+  // Only the URL names a recipient up front. Without one the To: field starts empty and open: a
+  // Bot picked on the person's behalf is one they have to notice and remove.
+  const chosen = listed ?? (fetched?.id === agent ? fetched : undefined);
   const needsUrlAgentDetail =
     Boolean(agent) && profiles !== undefined && !listed;
   const waitingForUrlAgent =

@@ -1,5 +1,5 @@
-import type { HandoffRequest } from "../../../shared/computer-control";
-import { injectTraceHeaders } from "../../../shared/trace";
+import type { HandoffRequest } from "@openbot/shared/computer-control";
+import { injectTraceHeaders } from "@openbot/shared/trace";
 import type { NavigateResult } from "./schema";
 import { checkNavigationTarget } from "./target";
 

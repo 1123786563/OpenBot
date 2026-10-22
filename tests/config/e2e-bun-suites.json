@@ -117,6 +117,9 @@
     "app/tests/computer-tool-refusals.test.ts",
     "app/tests/connect-app-card.test.tsx",
     "app/tests/craft-session-title.test.tsx",
+    "app/tests/create-agent-endpoint.test.tsx",
+    "app/tests/create-agent-kind.test.tsx",
+    "app/tests/create-agent-steps.test.tsx",
     "app/tests/failed-send-attachments.test.tsx",
     "app/tests/form-submit-controls.test.ts",
     "app/tests/github-sources-settings.test.tsx",
@@ -1132,6 +1135,12 @@
     "server/tests/multitenancy/workshop-scope.test.ts",
     "server/tests/multitenancy/workspace-scope.test.ts"
    ]
+  },
+  {
+   "name": "shared",
+   "files": [
+    "shared/harnesses.test.ts"
+   ]
   }
  ],
  "directoryIslands": [
@@ -1220,6 +1229,9 @@
   "app/tests/computer-tool-refusals.test.ts",
   "app/tests/connect-app-card.test.tsx",
   "app/tests/craft-session-title.test.tsx",
+  "app/tests/create-agent-endpoint.test.tsx",
+  "app/tests/create-agent-kind.test.tsx",
+  "app/tests/create-agent-steps.test.tsx",
   "app/tests/failed-send-attachments.test.tsx",
   "app/tests/form-submit-controls.test.ts",
   "app/tests/github-sources-settings.test.tsx",
@@ -1785,7 +1797,8 @@
   "server/tests/workshop-metering.test.ts",
   "server/tests/workshop-preview.test.ts",
   "server/tests/workshop-schedule-executor.integration.test.ts",
-  "server/tests/workshop-store.test.ts"
+  "server/tests/workshop-store.test.ts",
+  "shared/harnesses.test.ts"
  ],
  "artifacts": [
   "deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts",
