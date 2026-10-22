@@ -293,7 +293,9 @@
     "server/tests/billing-credits-writer.integration.test.ts",
     "server/tests/billing-period-fulfillment.integration.test.ts",
     "server/tests/billing-reconcile.integration.test.ts",
-    "server/tests/billing-resolution.integration.test.ts"
+    "server/tests/billing-resolution.integration.test.ts",
+    "server/tests/enterprise/mastra-entries.integration.test.ts",
+    "server/tests/mastra-entries.test.ts"
    ]
   },
   {

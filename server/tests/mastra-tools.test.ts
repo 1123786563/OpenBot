@@ -160,32 +160,62 @@ describe("createMastraTools wrapping", () => {
     expect(refused).toBe("Refused. policy denied this call.");
   });
 
-  it("suspension_from_granted_execute_refuses_named_not_untrusted", async () => {
-    // OCR fix wave 3 (R3-1): the governed granted path rethrows
-    // HeadlessToolSuspension on purpose (plugins/tools.ts) — the approval
-    // wait of the legacy built-in path. This engine cannot host that pause:
-    // the throw must surface as a NAMED refusal, never fall into the engine's
-    // tool-error branch where stream-events would markUntrusted it into a
-    // "vendor tool error" the model reads as a vendor rejection — silently
-    // swallowing the approval wait.
+  it("approval_wait_parks_on_the_engine_and_non_approval_waits_refuse_named", async () => {
+    // OCR fix wave 3 (R3-1), superseded by ME10's F4: the governed granted
+    // path catches the approvals gate's HeadlessToolSuspension and PARKS the
+    // engine durably (the pinned engine's own `context.agent.suspend`, the
+    // same surface the frontend bridge uses) — never falling into the
+    // tool-error branch where stream-events would markUntrusted the wait
+    // into a "vendor tool error" the model reads as a rejection. With no
+    // park surface at all (no `context.agent`), the wait still fails closed
+    // with the named refusal; a NON-approval wait (a question, whose drive
+    // shape is a different contract) refuses by name even with a park
+    // surface present.
+    const parks: unknown[] = [];
     const suspending = tool({
       execute: async () => {
         throw new HeadlessToolSuspension("waiting for approval", {
           kind: "approval",
+          approvalId: "approval-1",
         });
       },
     });
     const record = createMastraTools([suspending]);
-    let caught: unknown;
+    // The engine injects `context.agent` on every execute (its suspend
+    // no-ops outside a run), so the direct call below parks exactly the way
+    // an in-run call would, and the marker names the call.
+    const parked = await callTool(record.mcp__server__echo_tool, {
+      value: "hi",
+    });
+    expect(parked).toMatchObject({ waiting: true, kind: "approval" });
+    void parks;
+
+    // (The engine's createTool enriches any passed context.agent with its
+    // own suspend surface, so "no park surface" is not reachable through
+    // the mounted wrapper for an approval wait — the fail-closed branch is
+    // the kind check below plus defense for exotic hosts.)
+
+    // A non-approval wait never parks, marker or refusal laundering.
+    const questioning = tool({
+      execute: async () => {
+        throw new HeadlessToolSuspension("waiting for the answer", {
+          kind: "question",
+          requestId: "q-1",
+        });
+      },
+    });
+    const questionRecord = createMastraTools([questioning]);
+    let questionCaught: unknown;
     try {
-      await callTool(record.mcp__server__echo_tool, { value: "hi" });
+      await callTool(questionRecord.mcp__server__echo_tool, { value: "hi" });
     } catch (error) {
-      caught = error;
+      questionCaught = error;
     }
-    expect(caught).toBeInstanceOf(MastraToolRefusal);
-    expect(String((caught as Error).message)).toContain(
+    expect(questionCaught).toBeInstanceOf(MastraToolRefusal);
+    expect(String((questionCaught as Error).message)).toContain(
       "MASTRA_TOOL_SUSPENSION_UNSUPPORTED",
     );
+
     // Any other throw keeps the engine's tool-error semantics (markUntrusted
     // downstream): only the suspension is intercepted.
     const failing = tool({

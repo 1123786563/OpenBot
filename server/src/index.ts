@@ -4718,9 +4718,16 @@ const settleWaitingResponsibilityRun = async (
   const [waitingRun] = await database
     .select({ id: responsibilityRuns.id })
     .from(responsibilityRuns)
+    .innerJoin(
+      responsibilities,
+      eq(responsibilityRuns.responsibilityId, responsibilities.id),
+    )
     .where(
       and(
         eq(responsibilityRuns.status, "waiting"),
+        // Owner-scoped: another person's waiting run never answers to this
+        // decision, whatever the parked call id looks like.
+        eq(responsibilities.ownerUserId, ownerUserId),
         sql`${responsibilityRuns.waiting}->>'requestId' = ${toolCallId}`,
       ),
     )
