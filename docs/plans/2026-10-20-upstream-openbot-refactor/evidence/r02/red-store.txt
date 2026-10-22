@@ -1,0 +1,5 @@
+(fail) research providers on the call path > Exa's key goes out in x-api-key, and in no other header [29.39ms]
+(fail) research providers on the call path > a keyed provider with no key sends nothing at all [17.73ms]
+ 4 pass
+ 2 fail
+Ran 6 tests across 1 file. [511.00ms]

@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-10-20T06:41:50.793304+00:00",
+  "status": "published-and-verified",
+  "parent_url": "https://github.com/1123786563/OpenBot/issues/489",
+  "checks": {
+    "unique_tickets": 12,
+    "acceptance_groups": 12,
+    "native_sub_issues_read_back": 12,
+    "native_dependencies_read_back": 13,
+    "body_hashes_match": true,
+    "labels_read_back": [
+      "enhancement",
+      "ready-for-agent"
+    ],
+    "product_tests_executed": false,
+    "implementation_started": false
+  },
+  "publication_report": "publication-verification.json"
+}

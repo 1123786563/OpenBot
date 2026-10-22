@@ -1,0 +1,14 @@
+ M server/src/config.ts
+ M server/src/responsibilities/email.ts
+ M server/src/routines/schedule.ts
+ M server/src/telemetry/scrub.ts
+ M server/tests/config.test.ts
+ M server/tests/enterprise-controls.test.ts
+ M server/tests/otel-export-scrubbing.test.ts
+ M server/tests/responsibility-triggers.test.ts
+ M server/tests/routine-schedule.test.ts
+?? docs/plans/2026-10-20-upstream-openbot-refactor/
+?? docs/plans/2026-10-20-upstream-openbot-update-plan.md
+?? docs/research/2026-10-20-upstream-openbot-feature-matrix.md
+?? docs/specs/2026-10-20-upstream-openbot-adoption-design.md
+?? docs/tickets/upstream-openbot-update/

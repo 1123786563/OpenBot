@@ -1,0 +1,16 @@
+[ocr] Summary: 2 file(s) reviewed, 0 comment(s), ~10255 token(s) used (input: ~5167, output: ~5088), cache(read: ~2752, write: ~0), 11m30s elapsed
+[ocr] Session: 81215ec9-b14f-4923-86a8-c4a3ee8e246d
+Review failed: 0 finding(s); 2 of 2 selected item(s) failed.
+
+LLM retry report summary: 2 of 3 requests affected -- 2 requests failed
+
+Review planning (1 request):
+- server/src/config.ts,server/src/telemetry/scrub.ts: timed out -> failed
+
+Core review (1 request):
+- server/src/config.ts,server/src/telemetry/scrub.ts: timed out -> failed
+
+Per-attempt detail: --format json (retry_report).
+[ocr] usage on failure: 2 file(s), 5167 input + 5088 output = 10255 total tokens, 2 tool calls, elapsed 11m30s, budget_exceeded=false, session 81215ec9-b14f-4923-86a8-c4a3ee8e246d
+[ocr] Session: 81215ec9-b14f-4923-86a8-c4a3ee8e246d (retry with: --resume 81215ec9-b14f-4923-86a8-c4a3ee8e246d)
+Error: review failed: all 2 file review(s) failed — check your LLM configuration and API key

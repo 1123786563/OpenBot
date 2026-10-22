@@ -1,0 +1,7 @@
+bun test v1.4.2 (50a8a8387)
+
+ 15 pass
+ 0 fail
+ 39 expect() calls
+Ran 15 tests across 1 file. [503.00ms]
+GREEN_EXIT=0

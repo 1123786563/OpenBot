@@ -1,0 +1,15 @@
+# OCR r2 terminated by user ruling 2026-10-20 ("不再使用OCR 进行扫描"), before completion.
+# partial output below (if any):
+[ocr] Summary: 2 file(s) reviewed, 0 comment(s), ~98996 token(s) used (input: ~76331, output: ~22665), cache(read: ~62784, write: ~0), 7m24s elapsed
+[ocr] Session: 14cbf164-2ef8-40e0-bcd8-d0acc337a932
+Review failed: 0 finding(s); 2 of 2 selected item(s) failed.
+
+LLM retry report summary: 1 of 9 requests affected -- 1 request failed
+
+Core review (1 request):
+- server/src/config.ts,server/src/telemetry/scrub.ts: rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> failed
+
+Per-attempt detail: --format json (retry_report).
+[ocr] usage on failure: 2 file(s), 76331 input + 22665 output = 98996 total tokens, 13 tool calls, elapsed 7m24s, budget_exceeded=false, session 14cbf164-2ef8-40e0-bcd8-d0acc337a932
+[ocr] Session: 14cbf164-2ef8-40e0-bcd8-d0acc337a932 (retry with: --resume 14cbf164-2ef8-40e0-bcd8-d0acc337a932)
+Error: review failed: all 2 file review(s) failed — check your LLM configuration and API key

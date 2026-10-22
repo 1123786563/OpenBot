@@ -1,0 +1,13 @@
+   × the header a stored token is sent in > is the vendor's own header, as stored, when the entry names one 5ms
+   × the header a stored token is sent in > the vendor's header is sent raw, with no scheme added 6ms
+   × what a Bot is told about research > a provider is described only while both of its tools are held 5ms
+   × what a Bot is told about research > names each provider's own tools and adds only its own notes 2ms
+   × what a Bot is told about research > a vendor added twice is described once, with its key 1ms
+   × what a Bot is told about research > two vendors are both described, and the person's choice decides 2ms
+   × what a Bot is told about research > a failure is reported, never routed around to another provider 1ms
+   × Parallel public-web research > describes Parallel research only while both tools are actually offered 1ms
+   × Parallel public-web research > uses deployment-authenticated research when both connectors are authorized 2ms
+   × Parallel public-web research > keeps Parallel's own session guidance, injected as its note and nowhere else 1ms
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+ Test Files  3 failed | 0 passed (3)
+      Tests  10 failed | 17 passed | 2 skipped (29)

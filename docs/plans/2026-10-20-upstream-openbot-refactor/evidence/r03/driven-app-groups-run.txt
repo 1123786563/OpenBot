@@ -1,0 +1,52 @@
+
+ RUN  e2e v0.20.0 /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update
+      run 01a159f9-8476-7627-addf-436e52856a2b · targets: node
+
+stdout | runner
+{"level":30,"time":1792510890179,"service":"server","type":"openmuse-mail-placeholder-action-ids","ids":["gmail.list","gmail.search","gmail.thread","gmail.attachment.get","gmail.attachment.bytes"],"msg":"openmuse-mail-placeholder-action-ids"}
+{"level":40,"time":1792510890187,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792510890274,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792510890276,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792510890279,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792510890281,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792510891531,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792510891539,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":30,"time":1792510891628,"service":"server","type":"openmuse-calendar-placeholder-action-id","id":"gcalendar.list","msg":"openmuse-calendar-placeholder-action-id"}
+{"level":30,"time":1792510891770,"service":"server","type":"openmuse-reviewed-action-placeholder-ids","ids":{"gmail.send":"gmail.send","gcalendar.create":"gcalendar.create","gcalendar.update":"gcalendar.update","gcalendar.delete":"gcalendar.delete","gcalendar.get":"gcalendar.get"},"msg":"openmuse-reviewed-action-placeholder-ids"}
+{"level":40,"time":1792510892094,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+stderr | |node| tests/bun-suites.test.ts > bun runtime suite app/tests part 1
+[bun-suites] app/tests part 1: 4 file(s) failed only when sharing a process: app/tests/account-mode-dialog.test.tsx, app/tests/approvals-rules.test.tsx, app/tests/bot-approval-rules.test.tsx, app/tests/bot-memory.test.tsx
+stderr | |node| tests/bun-suites.test.ts > bun runtime suite app/tests/ai-observability
+[bun-suites] app/tests/ai-observability: 1 file(s) failed only when sharing a process: app/tests/ai-observability-admin-summary.test.tsx
+ ❯ |node| tests/bun-suites.test.ts (6 tests | 1 failed) 127.98s
+   ✓ bun runtime suite app/tests part 1 8.88s
+   ✓ bun runtime suite app/tests part 2 13.87s
+   ✓ bun runtime suite app/tests part 3 2.10s
+   ✓ bun runtime suite app/tests part 4 39.10s
+   × bun runtime suite app/tests/ai-observability 63.41s
+     → app/tests/ai-observability: 1 of 2 failing file(s) are still red run alo…
+   ✓ bun runtime suite app/tests/multitenancy 626ms
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |node| tests/bun-suites.test.ts > bun runtime suite app/tests/ai-observability
+ASSERTION_FAILED: app/tests/ai-observability: 1 of 2 failing file(s) are still red run alone
+app/tests/ai-observability-route-chain.test.tsx: 5 of 5 — a directly typed detail URL renders the detail page, not the list: AssertionError: expect(received).toContain(expected)&#10;&#10;Expected to contain: &quot;Run detail&quot;&#10;Received: &quot;Something went wrong!Hide Errorundefined is not an object (evaluating &apos;queryClient.ensureQueryData&apos;)&quot;&#10;&#10;&#10;Ignored nodes: comments, script, style&#10; | the parent&apos;s own URL still renders the list: AssertionError: expect(received).toContain(expected)&#10;&#10;Expected to contain: &quot;Run history&quot;&#10;Received: &quot;Something went wrong!Hide Errorundefined is not an object (evaluating &apos;queryClient.ensureQueryData&apos;)&quot;&#10;&#10;&#10;Ignored nodes: comments, script, style&#10 | navigating from the list to a detail swaps the list for the detail: AssertionError: expect(received).toContain(expected)&#10;&#10;Expected to contain: &quot;Run history&quot;&#10;Received: &quot;Something went wrong!Hide Errorundefined is not an object (evaluating &apos;queryClient.ensureQueryData&apos;)&quot;&#10;&#10;&#10;Ignored nodes: comments, script, style&#10: expected 1 to be 0
+ ❯ tests/support/e2e-compat.ts:132:16
+    130|     ? e2eExpect(actual, message).not
+    131|     : e2eExpect(actual, message);
+    132|   base[matcher](...args);
+       |                ^
+    133| }
+    134|
+ ❯ trace .e2e/r03-driven/results/bun-suites-test-bun-runtime-suite-app-tests-ai-feede8db50f80723/trace.md
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 0 passed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  23:41:32
+   Duration  128.21s (2m 8s)
+     Traces  .e2e/r03-driven/results/ (1 page, trace.md in each test's directory)
+

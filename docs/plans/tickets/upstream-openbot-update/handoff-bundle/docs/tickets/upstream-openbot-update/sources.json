@@ -1,0 +1,36 @@
+{
+  "read_at": "2026-10-20T06:25:02.176646+00:00",
+  "repo": "1123786563/OpenBot",
+  "local_base": "3b4a7c68132c3507300408346a44fb9d56f3c14c",
+  "upstream_base": "e8bb27368ff436958b614292ae91283e51d5a813",
+  "title_searches": [
+    "上游",
+    "验证码",
+    "Firecrawl",
+    "开屏",
+    "脱敏",
+    "single-user",
+    "Exa",
+    "连接卡片"
+  ],
+  "related_issues_read": [
+    {
+      "number": 94,
+      "state": "OPEN",
+      "url": "https://github.com/1123786563/OpenBot/issues/94",
+      "relationship": "related; no automatic dependency"
+    },
+    {
+      "number": 11,
+      "state": "OPEN",
+      "url": "https://github.com/1123786563/OpenBot/issues/11",
+      "relationship": "related; no automatic dependency"
+    }
+  ],
+  "existing_design_reference": {
+    "parent": 472,
+    "relationship": "Mastra separate approved design; not modified"
+  },
+  "issue_ingestion_scope": "targeted duplicate/overlap research; not a complete implementation issue-tree ingestion",
+  "native_api_precedent": "docs/tickets/mastra-agent-execution/publish.py; no write requests made this turn"
+}
