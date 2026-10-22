@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
  * component carries per-Bot grants, per-function grants and an editable description — more than a
  * tile can hold.
  */
-export const Route = createFileRoute("/_authed/settings/components-gallery/")({
+export const Route = createFileRoute("/_authed/admin/components/")({
   component: RouteComponent,
 });
 
