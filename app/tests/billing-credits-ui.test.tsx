@@ -1,13 +1,4 @@
 import "./preload";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  expect,
-  mock,
-  test,
-} from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type * as React from "react";
@@ -18,6 +9,15 @@ import type {
   PlanCatalogEntry,
 } from "@/lib/billing/credits";
 import i18n from "@/lib/i18n";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  mock,
+  test,
+} from "../../tests/support/e2e-compat";
 import { settleReactWork } from "./settle-react-work";
 
 /*
@@ -32,14 +32,14 @@ import { settleReactWork } from "./settle-react-work";
  * react` itself is imported statically above because it registers suite-level hooks at import
  * time and refuses them from inside a test.
  */
-mock.module("@/components/ui/dialog", () => {
+const uninstallDialogMock = mock.module("@/components/ui/dialog", () => {
   const pass = ({ children }: { children?: React.ReactNode }) =>
     children ?? null;
   const CloseContext = createContext<() => void>(() => {});
   /*
-   * A SHAPE-COMPATIBLE passthrough, because mock.module is registry-level and OUTLIVES THIS
-   * FILE. Later files (brokered-account-row's key dialog, the transcript's lightbox) exercise
-   * the real Dialog's semantics through this mock, so it honors the real one's split behavior:
+   * A SHAPE-COMPATIBLE passthrough. e2e-compat's mock.module is registry level, but this file
+   * unregisters the handle in its afterAll, so later files in the same process get the real
+   * module back; while this file holds the mock, it honors the real one's split behavior:
    * - a DialogTrigger child ALWAYS renders (the real trigger is the closed-state affordance;
    *   eating it made the transcript's attachment tiles vanish for every later file);
    * - every other child (the DialogContent tree) renders ONLY while open, wrapped in
@@ -137,9 +137,9 @@ mock.module("@/components/ui/dialog", () => {
       <p>{children}</p>
     ),
     /*
-     * EVERY export, because mock.module is process-lifetime: a later test file importing
-     * chat-transcript pulls this same mock, and a missing DialogClose/Overlay/Portal/Trigger
-     * was a SyntaxError that failed that file before its own first test ran.
+     * EVERY export, because the mock module is generated from the factory's returned keys alone:
+     * this file's own graph (upgrade-dialog) imports DialogClose/Overlay/Portal/Trigger too, and
+     * a missing export was a SyntaxError that failed the file before its own first test ran.
      */
     DialogClose: pass,
     DialogOverlay: pass,
@@ -147,6 +147,14 @@ mock.module("@/components/ui/dialog", () => {
     DialogTrigger,
   };
 });
+
+/*
+ * Give the registry entry back: e2e-compat's mock.module answers by the raw specifier for every
+ * importer the worker resolves afterwards, and a passthrough shell left behind is what made the
+ * first later file to need the real Dialog's semantics (detail-panel's aria-labelled dialogs)
+ * fail on a schedule no single file reproduces.
+ */
+afterAll(() => uninstallDialogMock());
 
 const { ConsumptionTable } = await import(
   "@/components/billing/consumption-table"

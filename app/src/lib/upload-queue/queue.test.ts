@@ -1,7 +1,14 @@
 import "../../../tests/preload";
-import { afterEach, beforeEach, describe, expect, mock, test } from "../../../../tests/support/bun-test-compat";
 import { type BatchEnd, createUploadQueue } from "@/lib/upload-queue/queue";
 import type { UploadPayload } from "@/lib/upload-queue/state";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  test,
+} from "../../../../tests/support/bun-test-compat";
 
 /**
  * QA 补盲区：queue 编排层的集成级纯逻辑（mock 注入 uploadDocumentFile）。
@@ -23,9 +30,16 @@ type UploadCall = {
 
 let calls: UploadCall[] = [];
 
+/**
+ * mock.module 返回的注销句柄。Bun 1.4.2 的 mock.module 不返回句柄（实测为 undefined），
+ * 此时 afterEach 里的注销按 no-op 处理，句柄一旦存在（未来 Bun 版本）即自动生效；
+ * mock.restore() 只还原 spy，不还原 module mock，所以这里单独收口。
+ */
+let uninstallKnowledgeMock: unknown;
+
 beforeEach(() => {
   calls = [];
-  mock.module("@/lib/knowledge", () => ({
+  uninstallKnowledgeMock = mock.module("@/lib/knowledge", () => ({
     uploadDocumentFile: (
       kbId: string,
       file: File,
@@ -50,6 +64,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // 每轮结束注销本轮安装的 module mock，不让它泄漏到同进程的后续文件。
+  if (typeof uninstallKnowledgeMock === "function")
+    (uninstallKnowledgeMock as () => void)();
   mock.restore();
 });
 
