@@ -36,6 +36,7 @@ export * from "./enterprise-conversations";
 export * from "./enterprise-share-grants";
 export * from "./enterprise-credential-lease";
 export * from "./enterprise-credentials";
+export * from "./enterprise-execution-lease";
 export * from "./enterprise-expert-versions";
 export * from "./enterprise-governance-policy";
 export * from "./enterprise-host-access";
