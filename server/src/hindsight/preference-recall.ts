@@ -672,6 +672,111 @@ export function createPreferenceRecallService(
     },
 
     /**
+     * Correct a time-varying fact (Hindsight 09 / #386). The correction is explicit and the
+     * old fact is NOT deleted: it keeps its confirmed content and gains a validity window
+     * closed at the person's stated effective time — or, when no time could be determined, an
+     * open window flagged `supersededTimeUnknown`, which historical reads inside the ambiguity
+     * surface as uncertainty rather than a guessed date. The successor row is a NEW confirmed
+     * fact under its own document identity (so both versions stay recallable: current
+     * questions find the successor, historical questions find the predecessor), and only the
+     * successor is retained now — the predecessor's content did not change, so its remote
+     * document stands as indexed. Correcting a row that is itself superseded is refused: the
+     * chain has one head, and the person corrects the current fact.
+     */
+    async correctGenericPreference(
+      scope: PlatformScope,
+      id: string,
+      input: { content: unknown; effectiveFrom?: unknown },
+    ): Promise<{
+      record: RecalledGenericPreference;
+      superseded: RecalledGenericPreference;
+      remoteSynced: boolean;
+    }> {
+      const grant = resolveHindsightBankScope(scope);
+      const content = plainString(input.content, "content", CONTENT_MAX);
+      let effectiveFrom: Date | null = null;
+      if (input.effectiveFrom !== undefined) {
+        const parsed =
+          input.effectiveFrom instanceof Date
+            ? input.effectiveFrom
+            : typeof input.effectiveFrom === "string"
+              ? new Date(input.effectiveFrom)
+              : null;
+        if (!parsed || Number.isNaN(parsed.getTime())) {
+          throw new PreferenceRefusedError(
+            "A correction's effective time must be a date.",
+          );
+        }
+        effectiveFrom = parsed;
+      }
+      const row = await store.load(grant.tenantId, id);
+      if (!row || row.principalId !== grant.principalId || row.deletedAt !== null)
+        throw new PreferenceNotFoundError();
+      if (row.supersededBy !== null) {
+        throw new PreferenceRefusedError(
+          "This fact was already corrected; correct the current fact instead.",
+        );
+      }
+      // A stated time must fall strictly inside the old fact's own window: a correction
+      // cannot take effect at or before the moment the old fact began.
+      if (
+        effectiveFrom !== null &&
+        row.effectiveFrom !== null &&
+        effectiveFrom <= row.effectiveFrom
+      ) {
+        throw new PreferenceRefusedError(
+          "A correction cannot take effect at or before the old fact began.",
+        );
+      }
+      const at = now();
+      const successorId = randomUUID();
+      row.effectiveUntil = effectiveFrom;
+      row.supersededBy = successorId;
+      row.supersededTimeUnknown = effectiveFrom === null;
+      row.correctedAt = at;
+      row.updatedAt = at;
+      const successor: PreferenceAuthorityRow = {
+        tenantId: grant.tenantId,
+        id: successorId,
+        principalId: grant.principalId,
+        content,
+        provenance: row.provenance,
+        reviewState: "confirmed",
+        enabled: true,
+        deletedAt: null,
+        markedGenericAt: at,
+        hindsightDocumentId: preferenceDocumentIdFor(grant.tenantId, successorId),
+        syncedContentDigest: null,
+        syncedAt: null,
+        effectiveFrom,
+        effectiveUntil: null,
+        supersededBy: null,
+        supersededTimeUnknown: false,
+        correctedAt: null,
+        createdAt: at,
+        updatedAt: at,
+      };
+      await store.create(successor);
+      await store.save(row);
+      if (options.work) {
+        await options.work.record({
+          subjectType: "preference",
+          tenantId: successor.tenantId,
+          subjectId: successor.id,
+          principalId: successor.principalId,
+          contentDigest: digestOf(successor.content),
+        });
+      }
+      const remoteSynced = await retain(grant, successor);
+      if (remoteSynced) await store.save(successor);
+      return {
+        record: toView(successor, effectiveFrom === null),
+        superseded: toView(row),
+        remoteSynced,
+      };
+    },
+
+    /**
      * Forget a preference: tombstoned the way the personal memory store forgets (content
      * cleared, disabled), so no later recall of the same document can resurrect it, and the
      * remote document is deleted best-effort. Since #390 the answer is the honest two-part
