@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { IntelligenceAgentRunner } from "@copilotkit/runtime/v2";
+import { getLogger } from "@openbot/shared/logger";
 import { workOwner } from "@openbot/shared/work-owner";
 import { eq } from "drizzle-orm";
 import { type AuditStore, handoffInitiator } from "../audit";
@@ -22,6 +23,8 @@ import { createHandoffRunner } from "./handoff-runner";
 import { signHandoffDeliveryRun } from "./handoff-signing";
 import type { AgentActor } from "./profile-types";
 import { serverTurnAdmission } from "./turn-admission";
+
+const log = getLogger("server");
 
 /**
  * Handing work between Bots, started on this replica: the runner that claims hops, the delivery
@@ -133,13 +136,12 @@ export async function startHandoffDelivery(deps: {
     try {
       const report = await runner.sweep();
       if (report.delivered.length > 0 || report.skipped.length > 0) {
-        console.info(JSON.stringify({ type: "bot-handoff", ...report }));
+        log.info(JSON.stringify({ type: "bot-handoff", ...report }));
       }
     } catch (error) {
       // A sweep that failed must not take the loop with it: the next one may find the database back.
-      console.warn(
-        "[handoff] a sweep could not run:",
-        error instanceof Error ? error.message : error,
+      log.warn(
+        `[handoff] a sweep could not run: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   };

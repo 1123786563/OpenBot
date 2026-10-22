@@ -1,3 +1,4 @@
+import { getLogger } from "@openbot/shared/logger";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { z } from "zod";
 import type { RunAssertion } from "../agents/callback-token";
@@ -13,6 +14,8 @@ import {
   questionConversationBot,
 } from "./questions";
 import { ApprovalRefusedError } from "./types";
+
+const log = getLogger("server");
 
 /**
  * One pass of the person-response loop: claim a person's answer to a Bot's question, check the
@@ -136,7 +139,7 @@ export function createPersonResponseTick(deps: {
         throw error;
       }
     } catch (error) {
-      console.error(
+      log.error(
         JSON.stringify({
           type: "person-response-error",
           error: error instanceof Error ? error.message : String(error),

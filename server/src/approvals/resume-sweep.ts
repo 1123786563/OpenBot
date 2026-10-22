@@ -1,3 +1,4 @@
+import { getLogger } from "@openbot/shared/logger";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -16,6 +17,8 @@ import type { DeliveryScope } from "../delivery/types";
 import type { ResponsibilityStore } from "../responsibilities/types";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import type { ApprovalResumeDependencies, ApprovalService } from "./service";
+
+const log = getLogger("server");
 
 /**
  * One pass of the approval resume loop: claim a decided approval, carry it out, and pick the waiting
@@ -208,7 +211,7 @@ export function createApprovalResumeTick(deps: {
             });
             return;
           } catch (failure) {
-            console.error(
+            log.error(
               JSON.stringify({
                 type: "approval-abandon-error",
                 error:
@@ -228,7 +231,7 @@ export function createApprovalResumeTick(deps: {
         throw error;
       }
     } catch (error) {
-      console.error(
+      log.error(
         JSON.stringify({
           type: "approval-resume-error",
           error: error instanceof Error ? error.message : String(error),
