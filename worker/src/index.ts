@@ -66,14 +66,23 @@ const routineStore = createRoutineStore(database);
  * a 202 throws — naming the status, because that is the whole diagnosis a person reading
  * `last_error` needs.
  */
-async function dispatch(routineRunId: string): Promise<void> {
+async function dispatch(
+  routineRunId: string,
+  firing?: { key: string },
+): Promise<void> {
   const response = await fetch(routineRunUrl(serverInternalUrl), {
     method: "POST",
     headers: {
       authorization: `Bearer ${workerSharedSecret}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ routineRunId }),
+    body: JSON.stringify({
+      routineRunId,
+      // ME09: the firing's durable identity (the offer key) rides along so
+      // the server's governed turn can converge a redelivery on the same
+      // advance intent. Servers that predate the field ignore it.
+      ...(firing?.key ? { firingKey: firing.key } : {}),
+    }),
     // The `for(;;)` loop below has no CronJob around it at all, so nothing bounds this call from
     // outside the process the way `activeDeadlineSeconds` bounds the CronJob's job; a wedged server
     // must not stall the only thing firing routines.

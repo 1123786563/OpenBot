@@ -3,9 +3,9 @@ import { PROVIDER_BY_CONNECTION_KIND } from "../openmuse-connectors/google-oauth
 import type { OpenMuseGoogleRows } from "../openmuse-connectors/store";
 import { MODULE_GAP, MODULE_GAP_ERROR } from "./manifest";
 import {
-  OpenMusePurgeRefusedError,
   type OpenMuseAccountDeletionStore,
   type OpenMuseDeletionResourceRows,
+  OpenMusePurgeRefusedError,
   type StoredOpenMuseDeletionResource,
 } from "./store";
 

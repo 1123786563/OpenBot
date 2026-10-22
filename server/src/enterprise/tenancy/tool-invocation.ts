@@ -52,10 +52,7 @@ import {
   enterpriseWorkspaceMemberships,
 } from "../../db/schema/enterprise-tenancy";
 import type { PlatformScope } from "../contracts";
-import {
-  assertDataDatabase,
-  type DataDatabase,
-} from "./connections";
+import { assertDataDatabase, type DataDatabase } from "./connections";
 import {
   notFoundVerdict,
   type ResourceNotFoundVerdict,
@@ -176,10 +173,7 @@ export function createToolInvocationService(channels: {
                 enterpriseWorkspaceMemberships.tenantId,
                 enterpriseMemberships.tenantId,
               ),
-              eq(
-                enterpriseWorkspaceMemberships.workspaceId,
-                scope.workspaceId,
-              ),
+              eq(enterpriseWorkspaceMemberships.workspaceId, scope.workspaceId),
               eq(
                 enterpriseWorkspaceMemberships.principalId,
                 enterpriseMemberships.principalId,
@@ -288,17 +282,17 @@ export function createToolInvocationService(channels: {
               eq(enterpriseCredentialActions.tenantId, scope.tenantId),
               eq(enterpriseCredentialActions.credentialId, input.credentialId),
               eq(enterpriseCredentialActions.action, "use"),
-              eq(
-                enterpriseCredentialActions.principalId,
-                scope.principalId,
-              ),
+              eq(enterpriseCredentialActions.principalId, scope.principalId),
             ),
           )
           .limit(1);
         if (!useGrant) {
           // 本人（或本团队）的连接但使用授权已撤销：可解释的明确码
           // （对象对调用者可见，码不泄露他人事实）。
-          return { outcome: "deny", code: "TOOL_CREDENTIAL_NOT_USABLE" } as const;
+          return {
+            outcome: "deny",
+            code: "TOOL_CREDENTIAL_NOT_USABLE",
+          } as const;
         }
         return { outcome: "allow" } as const;
       });

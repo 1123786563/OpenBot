@@ -302,9 +302,7 @@ export function assessVideoGenerationEnablement(input: {
   const quantities = Object.fromEntries(
     PRICE_DIMENSIONS.map((dimension) => [
       dimension,
-      dimension === "video"
-        ? spec.spec.seconds * spec.spec.outputCount
-        : 0,
+      dimension === "video" ? spec.spec.seconds * spec.spec.outputCount : 0,
     ]),
   ) as ReservationBoundQuantities;
 

@@ -8,6 +8,7 @@ import {
   clearDesktopConnectionFailure,
   recordDesktopConnectionFailure,
 } from "../desktop-connection-failure";
+
 const log = getLogger("server");
 
 // Use the model contract of the runtime we actually ship, without a second AI SDK version.

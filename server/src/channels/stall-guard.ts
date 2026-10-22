@@ -48,6 +48,7 @@ import {
   recordAuditEvent,
 } from "../audit";
 import { type StalledStream, TurnWatchdog } from "./turn-watchdog";
+
 const log = getLogger("server");
 
 /** The fetch an `HttpAgent` uses, as @ag-ui/client 0.0.57 declares it. */

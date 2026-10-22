@@ -8,9 +8,9 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { jsonb } from "./json";
-import { agents, channels, users } from "./core";
 import { codeRuns } from "./code-runs";
+import { agents, channels, users } from "./core";
+import { jsonb } from "./json";
 
 export type WorkshopSessionStatus = "active" | "archived";
 
@@ -166,7 +166,10 @@ export const workshopArtifacts = pgTable(
   },
   (table) => [
     // The gallery reads a session's artifacts newest-first; this is that query.
-    index("workshop_artifacts_session_idx").on(table.sessionId, table.createdAt),
+    index("workshop_artifacts_session_idx").on(
+      table.sessionId,
+      table.createdAt,
+    ),
     check(
       "workshop_artifacts_type_check",
       sql`${table.type} IN ('csv', 'chart', 'report', 'webapp', 'file', 'dataset')`,
@@ -257,14 +260,14 @@ export const workshopTurnEvents = pgTable(
   },
   (table) => [
     // The ordering guarantee the whole replay protocol leans on: within a turn, one row per seq.
-    uniqueIndex("workshop_turn_events_turn_seq_idx").on(table.turnId, table.seq),
+    uniqueIndex("workshop_turn_events_turn_seq_idx").on(
+      table.turnId,
+      table.seq,
+    ),
   ],
 );
 
-export type WorkshopScheduleStatus =
-  | "enabled"
-  | "paused"
-  | "deleted";
+export type WorkshopScheduleStatus = "enabled" | "paused" | "deleted";
 
 /**
  * A recurring ask against a workshop session (B16): a schedule fires the same prompt on a RRULE
@@ -296,10 +299,11 @@ export const workshopSchedules = pgTable(
      * the boundary it states in the firing prompt; tool calls outside it route through the
      * agent layer's approval (see schedule-executor.ts's boundary note).
      */
-    preapproved: jsonb("preapproved").$type<
-      | { paths: string[]; tools: string[]; maxTurnsPerRun: number }
-      | null
-    >(),
+    preapproved: jsonb("preapproved").$type<{
+      paths: string[];
+      tools: string[];
+      maxTurnsPerRun: number;
+    } | null>(),
     status: text("status")
       .$type<WorkshopScheduleStatus>()
       .notNull()
@@ -315,7 +319,9 @@ export const workshopSchedules = pgTable(
     index("workshop_schedules_session_idx").on(table.sessionId),
     index("workshop_schedules_due_idx")
       .on(table.nextRunAt)
-      .where(sql`${table.status} = 'enabled' AND ${table.nextRunAt} IS NOT NULL`),
+      .where(
+        sql`${table.status} = 'enabled' AND ${table.nextRunAt} IS NOT NULL`,
+      ),
   ],
 );
 

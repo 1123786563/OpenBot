@@ -38,18 +38,21 @@ import { eq } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { accessGrants } from "../db/schema";
 import { asyncJobs } from "../db/schema/credit-reservations";
-import { PRICE_DIMENSIONS, type PriceDimension } from "../gateway/price-snapshot";
 import {
-  RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS,
+  PRICE_DIMENSIONS,
+  type PriceDimension,
+} from "../gateway/price-snapshot";
+import {
   type CreditReserveOutcome,
   type CreditReserveRequest,
+  RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS,
 } from "./credit-reserve";
 import { createCreditWriter } from "./credits-writer";
+import { findCompanyScopeIdentityField } from "./personal-key-isolation";
 import {
   computeReservationCeiling,
   type ReservationBoundQuantities,
 } from "./reserve-bound";
-import { findCompanyScopeIdentityField } from "./personal-key-isolation";
 
 /** The local job id's prefix — recognisable on sight, like the reservation's `cr-`. */
 export const ASYNC_JOB_ID_PREFIX = "aj-";
@@ -139,7 +142,11 @@ export type AsyncSubmitServiceDependencies = {
         dims: Parameters<typeof computeReservationCeiling>[0]["dims"];
         rate: Parameters<typeof computeReservationCeiling>[0]["rate"];
       }
-    | { ok: false; reason: "price_basis_not_found"; detail?: Record<string, unknown> }
+    | {
+        ok: false;
+        reason: "price_basis_not_found";
+        detail?: Record<string, unknown>;
+      }
   >;
   now?: () => Date;
 };
@@ -155,7 +162,11 @@ export function computeAsyncSubmitCap(input: {
   rate: Parameters<typeof computeReservationCeiling>[0]["rate"];
 }):
   | { ok: true; maximumCredits: number; totals: ReservationBoundQuantities }
-  | { ok: false; code: "request_invalid" | "price_unknown"; detail: Record<string, unknown> } {
+  | {
+      ok: false;
+      code: "request_invalid" | "price_unknown";
+      detail: Record<string, unknown>;
+    } {
   const totals = Object.fromEntries(
     PRICE_DIMENSIONS.map((dimension) => [dimension, 0]),
   ) as Record<PriceDimension, number>;
@@ -167,7 +178,9 @@ export function computeAsyncSubmitCap(input: {
         detail: { field: `entries[${index}]` },
       };
     }
-    for (const [dimension, quantity] of Object.entries(entry.quantities ?? {})) {
+    for (const [dimension, quantity] of Object.entries(
+      entry.quantities ?? {},
+    )) {
       if (!PRICE_DIMENSIONS.includes(dimension as PriceDimension)) {
         return {
           ok: false,
@@ -198,12 +211,24 @@ export function computeAsyncSubmitCap(input: {
     const issue = priced.issue;
     switch (issue.code) {
       case "price_unknown":
-        return { ok: false, code: "price_unknown", detail: { dimension: issue.dimension, reason: issue.reason } };
+        return {
+          ok: false,
+          code: "price_unknown",
+          detail: { dimension: issue.dimension, reason: issue.reason },
+        };
       case "quantity_invalid":
-        return { ok: false, code: "request_invalid", detail: { field: `entries.quantities.${issue.dimension}` } };
+        return {
+          ok: false,
+          code: "request_invalid",
+          detail: { field: `entries.quantities.${issue.dimension}` },
+        };
       case "rate_invalid":
       case "ceiling_exceeds_ledger":
-        return { ok: false, code: "price_unknown", detail: { reason: issue.code } };
+        return {
+          ok: false,
+          code: "price_unknown",
+          detail: { reason: issue.code },
+        };
     }
   }
   return { ok: true, maximumCredits: priced.maximumCredits, totals };
@@ -224,7 +249,9 @@ function isIdentifier(value: unknown, maxLength: number): value is string {
  */
 function validateSubmitRequest(
   input: unknown,
-): { ok: true; request: AsyncSubmitRequest } | { ok: false; detail: Record<string, unknown> } {
+):
+  | { ok: true; request: AsyncSubmitRequest }
+  | { ok: false; detail: Record<string, unknown> } {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false, detail: { field: "body" } };
   }
@@ -254,7 +281,10 @@ function validateSubmitRequest(
     RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS.map((key) => key.toLowerCase()),
   );
   for (const key of Object.keys(raw)) {
-    if (forbidden.has(key.toLowerCase()) || findCompanyScopeIdentityField({ [key]: true })) {
+    if (
+      forbidden.has(key.toLowerCase()) ||
+      findCompanyScopeIdentityField({ [key]: true })
+    ) {
       return { ok: false, detail: { field: key } };
     }
   }
@@ -293,7 +323,9 @@ function validateSubmitRequest(
       snapshotVersion: raw.snapshotVersion as number,
       rateVersion: raw.rateVersion as number,
       entries: raw.entries as AsyncSubmitEntry[],
-      ...(raw.expiresAt !== undefined ? { expiresAt: raw.expiresAt as Date | string } : {}),
+      ...(raw.expiresAt !== undefined
+        ? { expiresAt: raw.expiresAt as Date | string }
+        : {}),
     },
   };
 }
@@ -465,7 +497,9 @@ export function createAsyncSubmitService(
         const [winner] = await database
           .select()
           .from(asyncJobs)
-          .where(eq(asyncJobs.submitIdempotencyKey, request.submitIdempotencyKey))
+          .where(
+            eq(asyncJobs.submitIdempotencyKey, request.submitIdempotencyKey),
+          )
           .limit(1);
         if (winner) {
           return { status: "submitted", created: false, ...viewOf(winner) };
@@ -488,10 +522,7 @@ export function createAsyncSubmitService(
         submitIdempotencyKey: request.submitIdempotencyKey,
       });
       if (dispatched.kind === "lost") {
-        await markUnknown(
-          reserved.reservationId,
-          "async_dispatch_answer_lost",
-        );
+        await markUnknown(reserved.reservationId, "async_dispatch_answer_lost");
       }
       const [final] = await database
         .update(asyncJobs)

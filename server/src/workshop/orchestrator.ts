@@ -13,12 +13,16 @@
  * `enqueue` RESOLVES WHEN THE TURN EXISTS, not when it finishes: the run is fire-and-forget,
  * and the caller's stream (B9) observes the events this run appends.
  */
-import { recordAuditEvent, type AuditInitiator, type AuditStore } from "../audit";
+import {
+  type AuditInitiator,
+  type AuditStore,
+  recordAuditEvent,
+} from "../audit";
 import type { CodeRunGateway, StreamingRun } from "../codesandbox/gateway";
-import type { TranslatedEvent, SandboxArtifact } from "../codesandbox/types";
+import type { SandboxArtifact, TranslatedEvent } from "../codesandbox/types";
+import { indexArtifacts } from "./artifacts";
 import type { TurnLease, TurnLock } from "./locks";
 import type { WorkshopStore } from "./store";
-import { indexArtifacts } from "./artifacts";
 
 /** Postgres's unique-violation: a lost race on a guarded insert. */
 const UNIQUE_VIOLATION = "23505";
@@ -73,10 +77,7 @@ export type TurnOrchestratorOptions = {
   /** The Bot's sandbox client for the before/after diff; null where none is configured. */
   clientFor?: (botId: string) => {
     listFiles(): Promise<string[]>;
-    readFile(
-      path: string,
-      maxBytes: number,
-    ): Promise<SandboxArtifact>;
+    readFile(path: string, maxBytes: number): Promise<SandboxArtifact>;
   } | null;
   /** Activity budget handed to the gateway's stream; default 300000. */
   activityTimeoutMs?: number;
@@ -192,7 +193,11 @@ export function createTurnOrchestrator(
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         await store.markFailed(input.turnId, reason);
-        await audit("workshop.turn_failed", { turnId: input.turnId, reason }, input);
+        await audit(
+          "workshop.turn_failed",
+          { turnId: input.turnId, reason },
+          input,
+        );
         return;
       }
       activeStreams.set(input.turnId, streaming);
@@ -269,7 +274,10 @@ export function createTurnOrchestrator(
         // failure shape, settled now.
         const turn = await store.getTurn(input.turnId);
         if (turn && turn.status === "running") {
-          await store.markFailed(input.turnId, "the stream ended without completing");
+          await store.markFailed(
+            input.turnId,
+            "the stream ended without completing",
+          );
           await audit(
             "workshop.turn_failed",
             { turnId: input.turnId, reason: "stream-ended-unsettled" },
@@ -280,17 +288,18 @@ export function createTurnOrchestrator(
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       await store.markFailed(input.turnId, reason);
-      await audit("workshop.turn_failed", { turnId: input.turnId, reason }, input);
+      await audit(
+        "workshop.turn_failed",
+        { turnId: input.turnId, reason },
+        input,
+      );
     } finally {
       stopHeartbeat();
       await lease.release().catch(() => undefined);
     }
   };
 
-  const startHeartbeat = (
-    turnId: string,
-    lease: TurnLease,
-  ): (() => void) => {
+  const startHeartbeat = (turnId: string, lease: TurnLease): (() => void) => {
     const interval =
       options.interval ??
       ((callback: () => void, ms: number) => {
@@ -316,7 +325,9 @@ export function createTurnOrchestrator(
         // The row's own marker: a person's turn, a machine's turn on somebody's behalf, or
         // a schedule's. Mapped from the audit initiator's shape, which is richer.
         initiator:
-          input.initiator && input.initiator.kind !== "person" ? "headless" : "person",
+          input.initiator && input.initiator.kind !== "person"
+            ? "headless"
+            : "person",
       });
       await audit(
         "workshop.turn_started",

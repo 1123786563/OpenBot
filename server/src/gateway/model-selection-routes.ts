@@ -46,31 +46,32 @@
  * that never registered it (or disabled it) gets an explicit tagged error,
  * never an empty list dressed up as an answer.
  */
-import type { AppVariables } from "../auth/guards";
+
 import { type Context, Hono, type MiddlewareHandler } from "hono";
+import { enterpriseControls } from "../admin/controls";
+import type { AppVariables } from "../auth/guards";
+import { WORKBENCH_BOT_ID } from "../bot-services/access-grants";
 import type { BotServiceStore } from "../bot-services/store";
 import type { BotServiceCapability } from "../bot-services/types";
-import { WORKBENCH_BOT_ID } from "../bot-services/access-grants";
+import { MODEL_CAPABILITIES, type ModelRef, modelRefKey } from "./catalog";
 import {
   type BotCapability,
   type GatewayModelCapabilityFilterService,
-  type ModelExclusionReason,
-  MODEL_EXCLUSION_REASONS,
   gatewayModelCapabilityFilterControls,
+  MODEL_EXCLUSION_REASONS,
+  type ModelExclusionReason,
 } from "./model-capability-filter";
 import {
   type EffectiveModelResolution,
   type GatewayModelPreferenceService,
-  type ModelPreferenceScope,
-  MODEL_PREFERENCE_SCOPES,
   gatewayModelPreferenceControls,
+  MODEL_PREFERENCE_SCOPES,
+  type ModelPreferenceScope,
 } from "./model-preference";
 import {
-  type GatewayPriceSnapshotStore,
   createEnterpriseGatewayPriceSnapshotStore,
+  type GatewayPriceSnapshotStore,
 } from "./price-snapshot";
-import { MODEL_CAPABILITIES, type ModelRef, modelRefKey } from "./catalog";
-import { enterpriseControls } from "../admin/controls";
 
 /**
  * Why the selection on record may not be offerable right now. Closed and
@@ -124,7 +125,9 @@ export type ModelSelectionRouteDeps = {
   selectable: () =>
     | Pick<GatewayModelCapabilityFilterService, "listSelectableModels">
     | undefined;
-  priceSnapshots: () => Pick<GatewayPriceSnapshotStore, "listLatestPriceSnapshots"> | undefined;
+  priceSnapshots: () =>
+    | Pick<GatewayPriceSnapshotStore, "listLatestPriceSnapshots">
+    | undefined;
 };
 
 function defaultDeps(): ModelSelectionRouteDeps {
@@ -301,7 +304,10 @@ export function createModelSelectionRoutes(
 
     const body = await context.req.json().catch(() => undefined);
     if (typeof body !== "object" || body === null) {
-      return context.json({ error: "A preference write names a scope and a model ref." }, 400);
+      return context.json(
+        { error: "A preference write names a scope and a model ref." },
+        400,
+      );
     }
     const payload = body as Record<string, unknown>;
 
@@ -319,7 +325,9 @@ export function createModelSelectionRoutes(
       !MODEL_PREFERENCE_SCOPES.includes(scope as ModelPreferenceScope)
     ) {
       return context.json(
-        { error: `A preference write names one of the scopes ${MODEL_PREFERENCE_SCOPES.join(", ")}.` },
+        {
+          error: `A preference write names one of the scopes ${MODEL_PREFERENCE_SCOPES.join(", ")}.`,
+        },
         400,
       );
     }
@@ -328,7 +336,10 @@ export function createModelSelectionRoutes(
     // that names a user is.
     if (payload.botId !== undefined) {
       return context.json(
-        { error: "The Bot context is the workbench bot and is never a body field." },
+        {
+          error:
+            "The Bot context is the workbench bot and is never a body field.",
+        },
         400,
       );
     }
@@ -354,7 +365,10 @@ export function createModelSelectionRoutes(
       !MODEL_CAPABILITIES.includes(ref.capability as never)
     ) {
       return context.json(
-        { error: "A preference write names a complete model ref: provider, model, capability." },
+        {
+          error:
+            "A preference write names a complete model ref: provider, model, capability.",
+        },
         400,
       );
     }
@@ -394,7 +408,10 @@ export function createModelSelectionRoutes(
 /** Attach the availability verdict to 03.9's answer — the ref is never changed. */
 function effectiveView(
   effective: EffectiveModelResolution,
-  selection: { selectable: ModelRef[]; excluded: { ref: ModelRef; reasonCode: ModelExclusionReason }[] },
+  selection: {
+    selectable: ModelRef[];
+    excluded: { ref: ModelRef; reasonCode: ModelExclusionReason }[];
+  },
 ): EffectiveModelView {
   if (effective.status === "unset") return { status: "unset" };
   const key = modelRefKey(effective.ref);

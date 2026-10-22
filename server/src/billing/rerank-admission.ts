@@ -1,11 +1,11 @@
-import type { ConversionRate } from "../gateway/conversion-rate";
 import type { ModelRef } from "../gateway/catalog";
+import type { ConversionRate } from "../gateway/conversion-rate";
 import type { PayerRef } from "./payer";
+import { assessRerankEnablement } from "./rerank-pricing";
 import {
   computeReservationCeiling,
   type ReservationCeilingIssue,
 } from "./reserve-bound";
-import { assessRerankEnablement } from "./rerank-pricing";
 
 /*
  * The rerank admission wiring (Bifrost 11.4, #299): the door a rerank dispatch lands on —
@@ -56,9 +56,7 @@ export type RerankAdmissionRefusal =
       status: "refused";
       /** The ceiling conversion could not certify a hold over the enabled verdict. */
       stage: "ceiling";
-      reasonCode:
-        | ReservationCeilingIssue["code"]
-        | "free_basis_zero_ceiling";
+      reasonCode: ReservationCeilingIssue["code"] | "free_basis_zero_ceiling";
       detail: Record<string, unknown>;
     }
   | {
@@ -122,7 +120,9 @@ export type RerankAdmissionInput = {
  * request. A refusal at any stage answers with that stage's own reason and leaves the
  * account exactly as it was — the entry never writes anything itself.
  */
-export function createRerankAdmission(dependencies: RerankAdmissionDependencies) {
+export function createRerankAdmission(
+  dependencies: RerankAdmissionDependencies,
+) {
   return {
     async admit(input: RerankAdmissionInput): Promise<RerankAdmissionOutcome> {
       // 1. The enablement verdict, first and cheapest: shape before prices, prices

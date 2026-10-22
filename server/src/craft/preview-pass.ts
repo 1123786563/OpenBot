@@ -53,7 +53,8 @@ export const PREVIEW_PASS_VERSION = "v1";
  * definition and cannot drift: `v1.` + base64url userId + `.` + a 32-byte MAC's
  * 43 base64url chars.
  */
-export const PREVIEW_PASS_COOKIE_SHAPE = /^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/;
+export const PREVIEW_PASS_COOKIE_SHAPE =
+  /^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/;
 
 /** The purpose label this module's MAC use of the deployment secret derives under. */
 const PASS_KEY_PURPOSE = "craft-preview-pass";

@@ -33,10 +33,12 @@ import {
 } from "../db/schema/hindsight-budget";
 
 /** What one admission asks for, and what its answer means. */
-export type BackgroundWorkAdmission = { ok: true; reservationId: string } | {
-  ok: false;
-  reason: "company-cap" | "personal-cap";
-};
+export type BackgroundWorkAdmission =
+  | { ok: true; reservationId: string }
+  | {
+      ok: false;
+      reason: "company-cap" | "personal-cap";
+    };
 
 /** The gate the sync queue (and any later background processor) consults. */
 export interface HindsightBudgetGate {
@@ -50,14 +52,9 @@ export interface HindsightBudgetGate {
   /** The work ran: its reservation counts toward usage, finally. Idempotent per reservation. */
   settleBackgroundWork(reservationId: string, units?: number): Promise<void>;
   /** The work did not run after all (transport failure): the hold stops counting. */
-  releaseBackgroundWork(
-    reservationId: string,
-    reason: string,
-  ): Promise<void>;
+  releaseBackgroundWork(reservationId: string, reason: string): Promise<void>;
   /** The usage the ops view reports: this company's and one principal's current period. */
-  currentUsage(
-    tenantId: string,
-  ): Promise<{
+  currentUsage(tenantId: string): Promise<{
     companyUnits: number;
     personalUnits: readonly { principalId: string; units: number }[];
     period: string;
@@ -204,10 +201,7 @@ export function createDrizzleBudgetGate(
           and(
             eq(hindsightBudgetReservations.tenantId, tenantId),
             eq(hindsightBudgetReservations.period, period),
-            inArray(hindsightBudgetReservations.state, [
-              "reserved",
-              "settled",
-            ]),
+            inArray(hindsightBudgetReservations.state, ["reserved", "settled"]),
           ),
         )
         .groupBy(hindsightBudgetReservations.principalId);
@@ -269,10 +263,7 @@ export function createDrizzleBudgetGate(
         and(
           eq(hindsightBudgetReservations.tenantId, tenantId),
           eq(hindsightBudgetReservations.period, period),
-          inArray(hindsightBudgetReservations.state, [
-            "reserved",
-            "settled",
-          ]),
+          inArray(hindsightBudgetReservations.state, ["reserved", "settled"]),
         ),
       )
       .groupBy(hindsightBudgetReservations.principalId);

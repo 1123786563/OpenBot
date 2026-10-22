@@ -30,6 +30,7 @@ import {
 import { mastraMessageIntentAttachments } from "../db/schema/mastra-message-intents";
 import { sniffMimeType } from "./attachment-mime";
 import type { StoredAttachment } from "./attachment-parts";
+
 const log = getLogger("server");
 
 function megabytes(bytes: number): string {
@@ -500,7 +501,6 @@ export async function markAttachmentsSentInTransaction(
         isNull(attachments.attachedAt),
       ),
     );
-
 
   const recorded = await transaction
     .select({ id: attachments.id })

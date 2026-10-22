@@ -1,0 +1,23 @@
+bun test v1.4.2 (50a8a8387)
+
+server/tests/mastra-engine-wiring.integration.test.ts:
+(pass) answer_is_persisted_before_complete_and_visible_on_reread [80.53ms]
+(pass) follow_up_context_comes_from_persisted_history_not_the_wire [24.63ms]
+(pass) forged_client_history_never_reaches_the_model [18.36ms]
+
+server/tests/enterprise/mastra-conversation-runtime.integration.test.ts:
+(pass) tool_pairs_roundtrip [47.09ms]
+(pass) attachment_scope_checked_before_bytes [56.48ms]
+(pass) same_input_key_one_intent [8.46ms]
+(pass) retry_assistant_output_does_not_duplicate [23.67ms]
+(pass) candidate_seq_not_visible_until_finalized [22.48ms]
+(pass) other_resource_cannot_read_thread [8.36ms]
+(pass) restart_preserves_full_parts [12.00ms]
+(pass) client_forged_history_never_becomes_authoritative [8.77ms]
+(pass) corrupt_history_fails_explicitly [7.36ms]
+(pass) concurrent_same_key_append_converges_not_pending [20.73ms]
+
+ 13 pass
+ 0 fail
+ 57 expect() calls
+Ran 13 tests across 2 files. [3.54s]

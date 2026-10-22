@@ -25,9 +25,12 @@
  * wired answer tagged 503s — a missing gate refuses rather than guesses, the
  * same shape 01.2's routes answer with.
  */
-import { type AppVariables, requireAdmin } from "../auth/guards";
-import { enterpriseControls } from "../admin/controls";
+
 import { type Context, Hono, type MiddlewareHandler } from "hono";
+import { enterpriseControls } from "../admin/controls";
+import { type AuditStore, recordAuditEvent } from "../audit";
+import { type AppVariables, requireAdmin } from "../auth/guards";
+import { audioPathAvailabilityView } from "../billing/audio-path-admission";
 import {
   type GatewayAdminCredentialService,
   gatewayAdminCredentialControls,
@@ -36,44 +39,39 @@ import {
   type GatewayCapabilityNegotiationService,
   gatewayCapabilityControls,
 } from "./capability-negotiation";
+import { modelRefKey } from "./catalog";
+import {
+  GATEWAY_CATALOG_SYNC_STATE_ID,
+  type GatewayCatalogSyncService,
+  gatewayCatalogSyncControls,
+} from "./catalog-sync";
+import { notConfiguredConversionRateState } from "./conversion-rate";
 import {
   type ConversionRateStore,
   createConversionRateStore,
 } from "./conversion-rate-store";
-import { notConfiguredConversionRateState } from "./conversion-rate";
 import {
   type GatewayEndpointService,
   gatewayEndpointControls,
 } from "./endpoint-config";
 import {
-  type GatewayProbeService,
-  gatewayProbeControls,
-} from "./probe";
-import {
-  gatewayReadinessControls,
-  type GatewayReadinessService,
-} from "./readiness";
+  createGatewayKeyDriftStore,
+  GATEWAY_KEY_DRIFT_DECISIONS,
+  type GatewayKeyDriftStore,
+  serializeKeyDriftEvent,
+} from "./key-drift";
+import { gatewayKeyStateSyncControls } from "./key-state-sync";
 import {
   type GatewayModelScopeService,
   gatewayModelScopeControls,
   MODEL_SCOPE_REASON_MAX_LENGTH,
 } from "./model-scope";
-import {
-  type GatewayCatalogSyncService,
-  GATEWAY_CATALOG_SYNC_STATE_ID,
-  gatewayCatalogSyncControls,
-} from "./catalog-sync";
-import { gatewayKeyStateSyncControls } from "./key-state-sync";
-import {
-  createGatewayKeyDriftStore,
-  GATEWAY_KEY_DRIFT_DECISIONS,
-  serializeKeyDriftEvent,
-  type GatewayKeyDriftStore,
-} from "./key-drift";
-import { type AuditStore, recordAuditEvent } from "../audit";
-import { audioPathAvailabilityView } from "../billing/audio-path-admission";
-import { modelRefKey } from "./catalog";
 import { gatewayPriceSnapshotControls } from "./price-snapshot";
+import { type GatewayProbeService, gatewayProbeControls } from "./probe";
+import {
+  type GatewayReadinessService,
+  gatewayReadinessControls,
+} from "./readiness";
 
 /**
  * The services this surface drives. Defaults resolve through the installed
@@ -389,7 +387,10 @@ export function gatewayAdminRoutes(
               capability: input.capability as never,
             },
             reason: input.reason,
-            actor: { userId: context.var.actor.id, email: context.var.actor.email },
+            actor: {
+              userId: context.var.actor.id,
+              email: context.var.actor.email,
+            },
           })
         : await modelScope.closeModel({
             ref: {
@@ -398,7 +399,10 @@ export function gatewayAdminRoutes(
               capability: input.capability as never,
             },
             reason: input.reason,
-            actor: { userId: context.var.actor.id, email: context.var.actor.email },
+            actor: {
+              userId: context.var.actor.id,
+              email: context.var.actor.email,
+            },
           });
     if (!result.ok) {
       // Input problems are the caller's (400); a ref the catalog does not hold is
@@ -534,9 +538,7 @@ export function gatewayAdminRoutes(
     if (
       !input ||
       typeof input.decision !== "string" ||
-      !GATEWAY_KEY_DRIFT_DECISIONS.includes(
-        input.decision as never,
-      )
+      !GATEWAY_KEY_DRIFT_DECISIONS.includes(input.decision as never)
     ) {
       return context.json(
         {
@@ -558,7 +560,10 @@ export function gatewayAdminRoutes(
     const existing = await store.getEvent(eventId);
     if (!existing) {
       return context.json(
-        { error: "No such key drift event.", code: "gateway_key_drift_event_unknown" },
+        {
+          error: "No such key drift event.",
+          code: "gateway_key_drift_event_unknown",
+        },
         404,
       );
     }
@@ -591,7 +596,9 @@ export function gatewayAdminRoutes(
   return app;
 }
 
-async function readDetail<T>(read: () => Promise<T | undefined>): Promise<T | null> {
+async function readDetail<T>(
+  read: () => Promise<T | undefined>,
+): Promise<T | null> {
   try {
     return (await read()) ?? null;
   } catch {

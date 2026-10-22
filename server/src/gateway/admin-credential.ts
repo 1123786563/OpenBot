@@ -30,15 +30,15 @@ import { eq, sql } from "drizzle-orm";
 import type { Logger } from "../../../shared/logger";
 import { getLogger } from "../../../shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
-import type { Database } from "../db/client";
-import { reasonWithoutStatement } from "../db/query-failure";
-import { enterpriseSettings } from "../db/schema";
 import {
-  createCredentialStore,
   CredentialRefusedError,
+  createCredentialStore,
   decryptSecret,
   encryptSecret,
 } from "../credentials";
+import type { Database } from "../db/client";
+import { reasonWithoutStatement } from "../db/query-failure";
+import { enterpriseSettings } from "../db/schema";
 
 /** The kind this module writes, and the only kind its routes can produce. */
 export const GATEWAY_ADMIN_CREDENTIAL_KIND = "gateway_admin";

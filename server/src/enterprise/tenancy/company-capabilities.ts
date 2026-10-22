@@ -18,9 +18,9 @@
 // 「有权限」；每个位独立回答，任何一位的故障不影响其他位。载荷只含四个
 // 布尔与公司 id——不是成员名册，不泄露任何事实给无能力者。
 
-import { canReadBusinessAudit } from "./audit-domains";
-import type { BillingManagementService } from "./audit-domains";
 import type { CompanyFinanceVisibilityService } from "../../billing/company-finance-visibility";
+import type { BillingManagementService } from "./audit-domains";
+import { canReadBusinessAudit } from "./audit-domains";
 import type { OperatorDatabase } from "./connections";
 import type { CompanyMemberContext } from "./workspace-admin";
 

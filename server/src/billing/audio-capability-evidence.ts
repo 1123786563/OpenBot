@@ -1,6 +1,9 @@
-import type { PriceDimension, PriceSnapshotDims } from "../gateway/price-snapshot";
-import { TRANSCRIPTION_BILLED_DIMENSIONS } from "./transcription-pricing";
+import type {
+  PriceDimension,
+  PriceSnapshotDims,
+} from "../gateway/price-snapshot";
 import { speechTierPriceTableFromSnapshot } from "./speech-pricing";
+import { TRANSCRIPTION_BILLED_DIMENSIONS } from "./transcription-pricing";
 
 /*
  * The per-path audio capability evidence (Bifrost 14.3, #312): one record per audio
@@ -63,7 +66,11 @@ export type AudioCapabilityEvidenceRecord = {
   /** The gateway route this path serves, or the wire name for a passthrough-only path. */
   path: string;
   /** The processing family, for grouping in the conformance report. */
-  family: "recognition" | "synthesis" | "translation" | "separation-enhancement";
+  family:
+    | "recognition"
+    | "synthesis"
+    | "translation"
+    | "separation-enhancement";
   /** The route's stream variant flag (the entrance's identity, with the path). */
   stream: boolean;
   /** False for a family someone checked for that is NOT an entrance on this gateway. */
@@ -91,202 +98,211 @@ export type AudioCapabilityEvidenceRecord = {
  * which is itself the evidence claim: no variant bills a dimension the meter does not
  * read.
  */
-export const AUDIO_CAPABILITY_EVIDENCE: readonly AudioCapabilityEvidenceRecord[] = [
-  {
-    path: "/v1/audio/transcriptions",
-    family: "recognition",
-    stream: false,
-    exists: true,
-    sourceAnchor: "core/providers/openai/openai.go:3157",
-    billedDimensions: TRANSCRIPTION_BILLED_DIMENSIONS,
-    nonVocabularyUnits: [],
-    boundaryEvidence: [
-      {
-        side: "input",
-        mechanism:
-          "server-trusted container duration (WAV fmt/data metadata), certified in whole seconds rounded up",
-        verifier: "14.1 parseWavDurationSeconds / measureAudioDurationSeconds",
+export const AUDIO_CAPABILITY_EVIDENCE: readonly AudioCapabilityEvidenceRecord[] =
+  [
+    {
+      path: "/v1/audio/transcriptions",
+      family: "recognition",
+      stream: false,
+      exists: true,
+      sourceAnchor: "core/providers/openai/openai.go:3157",
+      billedDimensions: TRANSCRIPTION_BILLED_DIMENSIONS,
+      nonVocabularyUnits: [],
+      boundaryEvidence: [
+        {
+          side: "input",
+          mechanism:
+            "server-trusted container duration (WAV fmt/data metadata), certified in whole seconds rounded up",
+          verifier:
+            "14.1 parseWavDurationSeconds / measureAudioDurationSeconds",
+        },
+        {
+          side: "output",
+          mechanism:
+            "attested output-token cap the booked transcript is held to",
+          verifier:
+            "14.1 assessTranscription (transcription_output_uncapped refusal)",
+        },
+      ],
+      verification: {
+        environment: "local-deterministic",
+        commands: [
+          "bun test server/tests/transcription-pricing.test.ts",
+          "TEST_DATABASE_URL=<test-db> bun test server/tests/transcription-tamper.integration.test.ts",
+        ],
       },
-      {
-        side: "output",
-        mechanism: "attested output-token cap the booked transcript is held to",
-        verifier: "14.1 assessTranscription (transcription_output_uncapped refusal)",
+      variants: [
+        "response_format: json | verbose_json | text | srt | vtt | diarized_json",
+        "timestamp_granularities: word, segment (verbose_json)",
+        "language / prompt hints",
+      ],
+      missingItems: [],
+    },
+    {
+      path: "/v1/audio/transcriptions",
+      family: "recognition",
+      stream: true,
+      exists: true,
+      sourceAnchor: "core/providers/openai/openai.go:3442",
+      billedDimensions: TRANSCRIPTION_BILLED_DIMENSIONS,
+      nonVocabularyUnits: [],
+      boundaryEvidence: [
+        {
+          side: "input",
+          mechanism:
+            "server-trusted container duration (WAV fmt/data metadata), certified in whole seconds rounded up",
+          verifier:
+            "14.1 parseWavDurationSeconds / measureAudioDurationSeconds",
+        },
+        {
+          side: "output",
+          mechanism:
+            "attested output-token cap the booked transcript is held to",
+          verifier:
+            "14.1 assessTranscription (transcription_output_uncapped refusal)",
+        },
+      ],
+      verification: {
+        environment: "local-deterministic",
+        commands: [
+          "bun test server/tests/transcription-pricing.test.ts",
+          "TEST_DATABASE_URL=<test-db> bun test server/tests/transcription-tamper.integration.test.ts",
+        ],
       },
-    ],
-    verification: {
-      environment: "local-deterministic",
-      commands: [
-        "bun test server/tests/transcription-pricing.test.ts",
-        "TEST_DATABASE_URL=<test-db> bun test server/tests/transcription-tamper.integration.test.ts",
+      variants: ["the streaming transcription chunks of the same formats"],
+      missingItems: [],
+    },
+    {
+      path: "/v1/audio/speech",
+      family: "synthesis",
+      stream: false,
+      exists: true,
+      sourceAnchor: "core/providers/openai/openai.go:2724",
+      billedDimensions: ["audio_output", "surcharge_per_request"],
+      nonVocabularyUnits: [
+        "input_characters (per-tier, versioned by the frozen spec and the 0181 settlement line)",
+      ],
+      boundaryEvidence: [
+        {
+          side: "input",
+          mechanism:
+            "the complete text counted in full, frozen in the spec before dispatch",
+          verifier:
+            "13.1 assessSpeechGeneration (speech_input_uncountable refusal)",
+        },
+        {
+          side: "output",
+          mechanism:
+            "duration cap the caller attests and the stream is severed at",
+          verifier:
+            "13.1 assessSpeechGeneration (speech_output_duration_uncapped refusal)",
+        },
+      ],
+      verification: {
+        environment: "local-deterministic",
+        commands: [
+          "bun test server/tests/speech-pricing.test.ts",
+          "TEST_DATABASE_URL=<test-db> bun test server/tests/speech-settlement.integration.test.ts",
+          "TEST_DATABASE_URL=<test-db> bun test server/tests/speech-interruption.integration.test.ts",
+        ],
+      },
+      variants: ["voice tiers (per-voice price rows, wildcard fallback)"],
+      missingItems: [],
+    },
+    {
+      path: "/v1/audio/speech",
+      family: "synthesis",
+      stream: true,
+      exists: true,
+      sourceAnchor: "core/providers/openai/openai.go:2870",
+      billedDimensions: ["audio_output", "surcharge_per_request"],
+      nonVocabularyUnits: [
+        "input_characters (per-tier, versioned by the frozen spec and the 0181 settlement line)",
+      ],
+      boundaryEvidence: [
+        {
+          side: "input",
+          mechanism:
+            "the complete text counted in full, frozen in the spec before dispatch",
+          verifier:
+            "13.1 assessSpeechGeneration (speech_input_uncountable refusal)",
+        },
+        {
+          side: "output",
+          mechanism:
+            "duration cap the caller attests and the stream is severed at; an interruption settles the confirmed buffer tail once (13.3)",
+          verifier: "13.1 assessSpeechGeneration; 13.3 settleInterruptedSpeech",
+        },
+      ],
+      verification: {
+        environment: "local-deterministic",
+        commands: [
+          "bun test server/tests/speech-pricing.test.ts",
+          "TEST_DATABASE_URL=<test-db> bun test server/tests/speech-interruption.integration.test.ts",
+        ],
+      },
+      variants: ["the streaming synthesis chunks of the same voice tiers"],
+      missingItems: [],
+    },
+    {
+      path: "/v1/audio/translations",
+      family: "translation",
+      stream: false,
+      exists: true,
+      // The only place the pinned gateway names this path: the passthrough billing
+      // classifier. No dedicated provider method serves it; nothing meters its input.
+      sourceAnchor: "core/providers/openai/passthrough_usage.go:38",
+      billedDimensions: ["audio_input", "output", "surcharge_per_request"],
+      nonVocabularyUnits: [],
+      boundaryEvidence: [],
+      verification: {
+        environment: "local-deterministic",
+        commands: ["bun test server/tests/audio-capability-evidence.test.ts"],
+      },
+      variants: [],
+      missingItems: [
+        {
+          code: "no_input_meter_wired",
+          detail:
+            "14.1's duration meter is wired to the transcription path only; no server-trusted measurement exists for this route",
+        },
+        {
+          code: "no_admission_wiring",
+          detail:
+            "the gateway carries this path as a passthrough billing reference only (no dedicated provider method); no Reserve/Settle wiring exists to admit it",
+        },
+        {
+          code: "no_wire_price_source",
+          detail:
+            "the v1 pricing object carries no audio_input field, and no curated basis prices a translation cell",
+        },
       ],
     },
-    variants: [
-      "response_format: json | verbose_json | text | srt | vtt | diarized_json",
-      "timestamp_granularities: word, segment (verbose_json)",
-      "language / prompt hints",
-    ],
-    missingItems: [],
-  },
-  {
-    path: "/v1/audio/transcriptions",
-    family: "recognition",
-    stream: true,
-    exists: true,
-    sourceAnchor: "core/providers/openai/openai.go:3442",
-    billedDimensions: TRANSCRIPTION_BILLED_DIMENSIONS,
-    nonVocabularyUnits: [],
-    boundaryEvidence: [
-      {
-        side: "input",
-        mechanism:
-          "server-trusted container duration (WAV fmt/data metadata), certified in whole seconds rounded up",
-        verifier: "14.1 parseWavDurationSeconds / measureAudioDurationSeconds",
+    {
+      path: "audio/separation-enhancement",
+      family: "separation-enhancement",
+      stream: false,
+      exists: false,
+      // Diarization — the family's nearest neighbor — is transcriptions' diarized_json
+      // response_format, not an entrance; no separation/enhancement route exists at all.
+      sourceAnchor: "core/schemas/transcriptions.go:23",
+      billedDimensions: [],
+      nonVocabularyUnits: [],
+      boundaryEvidence: [],
+      verification: {
+        environment: "local-deterministic",
+        commands: ["bun test server/tests/audio-capability-evidence.test.ts"],
       },
-      {
-        side: "output",
-        mechanism: "attested output-token cap the booked transcript is held to",
-        verifier: "14.1 assessTranscription (transcription_output_uncapped refusal)",
-      },
-    ],
-    verification: {
-      environment: "local-deterministic",
-      commands: [
-        "bun test server/tests/transcription-pricing.test.ts",
-        "TEST_DATABASE_URL=<test-db> bun test server/tests/transcription-tamper.integration.test.ts",
+      variants: [],
+      missingItems: [
+        {
+          code: "no_gateway_entrypoint",
+          detail:
+            "no separation/enhancement route exists in the gateway; diarization is transcriptions' diarized_json response_format, not an entrance",
+        },
       ],
     },
-    variants: ["the streaming transcription chunks of the same formats"],
-    missingItems: [],
-  },
-  {
-    path: "/v1/audio/speech",
-    family: "synthesis",
-    stream: false,
-    exists: true,
-    sourceAnchor: "core/providers/openai/openai.go:2724",
-    billedDimensions: ["audio_output", "surcharge_per_request"],
-    nonVocabularyUnits: [
-      "input_characters (per-tier, versioned by the frozen spec and the 0181 settlement line)",
-    ],
-    boundaryEvidence: [
-      {
-        side: "input",
-        mechanism: "the complete text counted in full, frozen in the spec before dispatch",
-        verifier: "13.1 assessSpeechGeneration (speech_input_uncountable refusal)",
-      },
-      {
-        side: "output",
-        mechanism: "duration cap the caller attests and the stream is severed at",
-        verifier: "13.1 assessSpeechGeneration (speech_output_duration_uncapped refusal)",
-      },
-    ],
-    verification: {
-      environment: "local-deterministic",
-      commands: [
-        "bun test server/tests/speech-pricing.test.ts",
-        "TEST_DATABASE_URL=<test-db> bun test server/tests/speech-settlement.integration.test.ts",
-        "TEST_DATABASE_URL=<test-db> bun test server/tests/speech-interruption.integration.test.ts",
-      ],
-    },
-    variants: ["voice tiers (per-voice price rows, wildcard fallback)"],
-    missingItems: [],
-  },
-  {
-    path: "/v1/audio/speech",
-    family: "synthesis",
-    stream: true,
-    exists: true,
-    sourceAnchor: "core/providers/openai/openai.go:2870",
-    billedDimensions: ["audio_output", "surcharge_per_request"],
-    nonVocabularyUnits: [
-      "input_characters (per-tier, versioned by the frozen spec and the 0181 settlement line)",
-    ],
-    boundaryEvidence: [
-      {
-        side: "input",
-        mechanism: "the complete text counted in full, frozen in the spec before dispatch",
-        verifier: "13.1 assessSpeechGeneration (speech_input_uncountable refusal)",
-      },
-      {
-        side: "output",
-        mechanism:
-          "duration cap the caller attests and the stream is severed at; an interruption settles the confirmed buffer tail once (13.3)",
-        verifier: "13.1 assessSpeechGeneration; 13.3 settleInterruptedSpeech",
-      },
-    ],
-    verification: {
-      environment: "local-deterministic",
-      commands: [
-        "bun test server/tests/speech-pricing.test.ts",
-        "TEST_DATABASE_URL=<test-db> bun test server/tests/speech-interruption.integration.test.ts",
-      ],
-    },
-    variants: ["the streaming synthesis chunks of the same voice tiers"],
-    missingItems: [],
-  },
-  {
-    path: "/v1/audio/translations",
-    family: "translation",
-    stream: false,
-    exists: true,
-    // The only place the pinned gateway names this path: the passthrough billing
-    // classifier. No dedicated provider method serves it; nothing meters its input.
-    sourceAnchor: "core/providers/openai/passthrough_usage.go:38",
-    billedDimensions: ["audio_input", "output", "surcharge_per_request"],
-    nonVocabularyUnits: [],
-    boundaryEvidence: [],
-    verification: {
-      environment: "local-deterministic",
-      commands: [
-        "bun test server/tests/audio-capability-evidence.test.ts",
-      ],
-    },
-    variants: [],
-    missingItems: [
-      {
-        code: "no_input_meter_wired",
-        detail:
-          "14.1's duration meter is wired to the transcription path only; no server-trusted measurement exists for this route",
-      },
-      {
-        code: "no_admission_wiring",
-        detail:
-          "the gateway carries this path as a passthrough billing reference only (no dedicated provider method); no Reserve/Settle wiring exists to admit it",
-      },
-      {
-        code: "no_wire_price_source",
-        detail:
-          "the v1 pricing object carries no audio_input field, and no curated basis prices a translation cell",
-      },
-    ],
-  },
-  {
-    path: "audio/separation-enhancement",
-    family: "separation-enhancement",
-    stream: false,
-    exists: false,
-    // Diarization — the family's nearest neighbor — is transcriptions' diarized_json
-    // response_format, not an entrance; no separation/enhancement route exists at all.
-    sourceAnchor: "core/schemas/transcriptions.go:23",
-    billedDimensions: [],
-    nonVocabularyUnits: [],
-    boundaryEvidence: [],
-    verification: {
-      environment: "local-deterministic",
-      commands: [
-        "bun test server/tests/audio-capability-evidence.test.ts",
-      ],
-    },
-    variants: [],
-    missingItems: [
-      {
-        code: "no_gateway_entrypoint",
-        detail:
-          "no separation/enhancement route exists in the gateway; diarization is transcriptions' diarized_json response_format, not an entrance",
-      },
-    ],
-  },
-] as const;
+  ] as const;
 
 /** One path's basis-dependent gap: the dimensions the basis cannot price, in order. */
 export type AudioPathEvidenceGap = {
@@ -305,7 +321,8 @@ function basisUnknownDimensions(
     .filter((dimension) => dims[dimension].status === "unknown")
     .map((dimension) => ({
       dimension,
-      reason: dims[dimension].status === "unknown" ? dims[dimension].reason : "",
+      reason:
+        dims[dimension].status === "unknown" ? dims[dimension].reason : "",
     }));
 }
 

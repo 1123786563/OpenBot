@@ -1,12 +1,12 @@
+import type { ConversionRate } from "../gateway/conversion-rate";
 import {
   PRICE_DIMENSIONS,
   type PriceDimension,
   type PriceDimensionUnknownReason,
   type PriceSnapshotDims,
 } from "../gateway/price-snapshot";
-import type { ConversionRate } from "../gateway/conversion-rate";
-import type { ReservationBoundQuantities } from "./reserve-bound";
 import { CREDIT_SCALE } from "./credits";
+import type { ReservationBoundQuantities } from "./reserve-bound";
 
 /*
  * The speech-generation pricing boundary (Bifrost 13.1, #306): the tier price resolution,
@@ -158,10 +158,15 @@ export function assessSpeechGeneration(input: {
     !Number.isSafeInteger(input.durationCapSeconds) ||
     input.durationCapSeconds <= 0
   ) {
-    return { enabled: false, issue: { code: "speech_output_duration_uncapped" } };
+    return {
+      enabled: false,
+      issue: { code: "speech_output_duration_uncapped" },
+    };
   }
   const voice =
-    typeof request?.voice === "string" && request.voice.trim() === request.voice && request.voice.length > 0
+    typeof request?.voice === "string" &&
+    request.voice.trim() === request.voice &&
+    request.voice.length > 0
       ? request.voice
       : null;
 
@@ -322,10 +327,12 @@ export function speechGenerationCeiling(input: {
     requestCost.numerator * charCost.denominator * secondCost.denominator;
 
   // USD → credits → scaled units, still exact; the one rounding step is upward.
-  const scaledNumerator = costNumerator * input.rate.numerator * BigInt(CREDIT_SCALE);
+  const scaledNumerator =
+    costNumerator * input.rate.numerator * BigInt(CREDIT_SCALE);
   const scaledDenominator = common * input.rate.denominator;
   const gcd = (a: bigint, b: bigint): bigint => (b === 0n ? a : gcd(b, a % b));
-  const divisor = scaledNumerator === 0n ? 1n : gcd(scaledNumerator, scaledDenominator);
+  const divisor =
+    scaledNumerator === 0n ? 1n : gcd(scaledNumerator, scaledDenominator);
   const exact = {
     numerator: scaledNumerator / divisor,
     denominator: scaledDenominator / divisor,

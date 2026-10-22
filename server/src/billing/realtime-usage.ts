@@ -1,6 +1,10 @@
 import { desc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
-import { creditReservations, realtimeSessions, realtimeUnits } from "../db/schema/credit-reservations";
+import {
+  creditReservations,
+  realtimeSessions,
+  realtimeUnits,
+} from "../db/schema/credit-reservations";
 import type { PayerRef } from "./payer";
 
 /*
@@ -117,7 +121,10 @@ export function createRealtimeUsageService(
           sql`${realtimeSessions.payerKind} = ${payer.kind} and ${realtimeSessions.payerId} = ${payer.id}`,
         )
         .groupBy(realtimeSessions.sessionId)
-        .orderBy(desc(realtimeSessions.startedAt), desc(realtimeSessions.sessionId))
+        .orderBy(
+          desc(realtimeSessions.startedAt),
+          desc(realtimeSessions.sessionId),
+        )
         .limit(REALTIME_SESSION_VIEW_LIMIT);
       return rows.map((row) => ({
         sessionId: row.sessionId,

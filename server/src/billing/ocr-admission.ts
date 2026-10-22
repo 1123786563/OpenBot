@@ -1,13 +1,13 @@
-import type { ConversionRate } from "../gateway/conversion-rate";
 import type { ModelRef } from "../gateway/catalog";
-import type { PayerRef } from "./payer";
+import type { ConversionRate } from "../gateway/conversion-rate";
 import {
   assessOcrEnablement,
   type OcrEnablementIssue,
   type OcrRequestShape,
 } from "./ocr-pricing";
-import { computeReservationCeiling } from "./reserve-bound";
+import type { PayerRef } from "./payer";
 import type { ReservationCeilingIssue } from "./reserve-bound";
+import { computeReservationCeiling } from "./reserve-bound";
 
 /*
  * The OCR admission door (Bifrost 11.6, #301): the entry an OCR dispatch lands on — 11.5's
@@ -91,7 +91,10 @@ export type OcrAdmission = {
   rateVersion: number;
 };
 
-export type OcrAdmissionOutcome = OcrAdmission | OcrAdmissionFree | OcrAdmissionRefusal;
+export type OcrAdmissionOutcome =
+  | OcrAdmission
+  | OcrAdmissionFree
+  | OcrAdmissionRefusal;
 
 /** The seams the entry composes — production wires 06.2 and the provider dispatch. */
 export type OcrAdmissionDependencies = {

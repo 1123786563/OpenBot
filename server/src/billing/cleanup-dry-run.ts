@@ -1,17 +1,17 @@
 import { createHash } from "node:crypto";
 import type { Database } from "../db/client";
 import {
-  classifyCleanup,
   type ClassifiedRecord,
   type CleanupClassification,
+  classifyCleanup,
   type TestEvidenceInput,
 } from "./cleanup-classification";
+import type { CleanupManifest } from "./cleanup-manifest";
 import {
-  evaluateCleanupRelations,
   type CleanupRelationsManifest,
+  evaluateCleanupRelations,
   type RemovalReason,
 } from "./cleanup-relations";
-import type { CleanupManifest } from "./cleanup-manifest";
 
 /*
  * The legacy billing cleanup dry-run (group 21.4) on top of 21.2's classification and 21.3's
@@ -150,7 +150,10 @@ export type CleanupDryRunReport = {
         status: string;
       }[];
     };
-    openOrders: { total: number; sample: { orderId: string; status: string }[] };
+    openOrders: {
+      total: number;
+      sample: { orderId: string; status: string }[];
+    };
   };
   summary: { recordsTotal: number };
 };
@@ -314,7 +317,10 @@ function assertContractsAligned(
   classification: CleanupClassification,
   relations: CleanupRelationsManifest,
 ): void {
-  if (relations.basis.classificationVersion !== classification.classificationVersion) {
+  if (
+    relations.basis.classificationVersion !==
+    classification.classificationVersion
+  ) {
     throw new Error(
       `relations manifest was built on classification version ${relations.basis.classificationVersion}, but version ${classification.classificationVersion} was handed in — re-evaluate relations before assembling the dry-run.`,
     );
@@ -371,9 +377,7 @@ function groupsFor(
     byTable.set(record.table, ids);
   }
   return [...byTable.entries()]
-    .sort(
-      ([a], [b]) => tableRank(order, a) - tableRank(order, b),
-    )
+    .sort(([a], [b]) => tableRank(order, a) - tableRank(order, b))
     .map(([table, ids]) => ({
       table,
       rows: ids.length,
@@ -392,7 +396,10 @@ export function assembleCleanupDryRunReport(
   options: DryRunOptions = {},
 ): CleanupDryRunReport {
   assertContractsAligned(classification, relations);
-  const sampleLimit = Math.max(1, Math.trunc(options.sampleLimit ?? DEFAULT_SAMPLE_LIMIT));
+  const sampleLimit = Math.max(
+    1,
+    Math.trunc(options.sampleLimit ?? DEFAULT_SAMPLE_LIMIT),
+  );
   const order = tableOrderOf(classification);
   const rank = (table: string) => tableRank(order, table);
   const byRecordId = (a: { recordId: string }, b: { recordId: string }) =>
@@ -409,14 +416,11 @@ export function assembleCleanupDryRunReport(
     .map((safe) => ({
       table: safe.table,
       recordId: safe.recordId,
-      externalCustomerId: keyByCandidate.get(`${safe.table}/${safe.recordId}`) ?? null,
+      externalCustomerId:
+        keyByCandidate.get(`${safe.table}/${safe.recordId}`) ?? null,
     }))
     .sort((a, b) => rank(a.table) - rank(b.table) || byRecordId(a, b));
-  const deleteByTable = groupsFor(
-    deleteRecords,
-    sampleLimit,
-    order,
-  );
+  const deleteByTable = groupsFor(deleteRecords, sampleLimit, order);
   const deleteRowsByKey = new Map<string, number>();
   for (const record of deleteRecords) {
     const key = record.externalCustomerId ?? "unknown";
@@ -424,18 +428,18 @@ export function assembleCleanupDryRunReport(
   }
 
   // --- to-retain: the kept classes, then the candidates 21.3 pulled (with reasons).
-  const keptByClass = (
-    ["company_history", "personal_records"] as const
-  ).map((klass) => {
-    const records = classification.records.filter(
-      (record) => record.class === klass,
-    );
-    return {
-      class: klass,
-      rows: records.length,
-      byTable: groupsFor(records, sampleLimit, order),
-    };
-  });
+  const keptByClass = (["company_history", "personal_records"] as const).map(
+    (klass) => {
+      const records = classification.records.filter(
+        (record) => record.class === klass,
+      );
+      return {
+        class: klass,
+        rows: records.length,
+        byTable: groupsFor(records, sampleLimit, order),
+      };
+    },
+  );
   const byReason = Object.fromEntries(
     (
       [
@@ -462,7 +466,11 @@ export function assembleCleanupDryRunReport(
     const records = classification.unknownOwners.filter(
       (record) => record.isolationReason === reason,
     );
-    return { reason, rows: records.length, byTable: groupsFor(records, sampleLimit, order) };
+    return {
+      reason,
+      rows: records.length,
+      byTable: groupsFor(records, sampleLimit, order),
+    };
   });
 
   const scopeHash = computeCleanupScopeHash(classification, relations);
@@ -545,10 +553,12 @@ export function assembleCleanupDryRunReport(
       },
       openOrders: {
         total: relations.externalOpenOrders.length,
-        sample: relations.externalOpenOrders.slice(0, sampleLimit).map((order_) => ({
-          orderId: order_.orderId,
-          status: order_.status,
-        })),
+        sample: relations.externalOpenOrders
+          .slice(0, sampleLimit)
+          .map((order_) => ({
+            orderId: order_.orderId,
+            status: order_.status,
+          })),
       },
     },
     summary: { recordsTotal: classification.records.length },

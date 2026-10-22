@@ -30,12 +30,9 @@
  * the classification from the ledger.
  */
 
-import { eq, sql as dsql } from "drizzle-orm";
+import { sql as dsql, eq } from "drizzle-orm";
 import type { AuditStore } from "../audit";
 import { DEPLOYMENT_INITIATOR, recordAuditEvent } from "../audit";
-import type { ConversionRate } from "../gateway/conversion-rate";
-import { MODEL_CAPABILITIES } from "../gateway/catalog";
-import { PRICE_DIMENSIONS, type PriceDimension } from "../gateway/price-snapshot";
 import type { Database } from "../db/client";
 import {
   batchItemOutcomes,
@@ -43,6 +40,12 @@ import {
   batchJobs,
   creditReservations,
 } from "../db/schema/credit-reservations";
+import { MODEL_CAPABILITIES } from "../gateway/catalog";
+import type { ConversionRate } from "../gateway/conversion-rate";
+import {
+  PRICE_DIMENSIONS,
+  type PriceDimension,
+} from "../gateway/price-snapshot";
 import {
   CreditReservationConflictError,
   createCreditWriter,
@@ -53,7 +56,10 @@ import {
 } from "./reserve-bound";
 
 /** The item's terminal states a partial report may carry. */
-export type BatchPartialItemTerminalState = "completed" | "failed" | "cancelled";
+export type BatchPartialItemTerminalState =
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 /**
  * The no-charge evidence kinds an ABSENT batch item may release on. Closed on purpose:
@@ -392,7 +398,10 @@ export function createBatchPartialSettleService(
             : {}),
           ...(input.usage !== null
             ? {
-                usage: dsql`${input.usage}` as unknown as Record<string, number>,
+                usage: dsql`${input.usage}` as unknown as Record<
+                  string,
+                  number
+                >,
               }
             : {}),
           reports: dsql`${batchItemOutcomes.reports} + 1`,
@@ -489,7 +498,10 @@ export function createBatchPartialSettleService(
           return {
             status: "refused",
             reasonCode: "request_invalid",
-            detail: { field: `reports[${index}].customId`, reason: "duplicate" },
+            detail: {
+              field: `reports[${index}].customId`,
+              reason: "duplicate",
+            },
           };
         }
         const item = byCustomId.get(report.customId);
@@ -537,7 +549,10 @@ export function createBatchPartialSettleService(
             return {
               status: "refused",
               reasonCode: "request_invalid",
-              detail: { field: `reports[${index}]`, reason: "billed_with_unbilled_evidence" },
+              detail: {
+                field: `reports[${index}]`,
+                reason: "billed_with_unbilled_evidence",
+              },
             };
           }
           usageFull = anyPositive
@@ -682,7 +697,12 @@ export function createBatchPartialSettleService(
           .update(batchJobs)
           .set({ unknownCount: counts.unknown })
           .where(eq(batchJobs.batchId, batch.batchId));
-        return { status: "pending_unknown", batchId: batch.batchId, unknownItems, counts };
+        return {
+          status: "pending_unknown",
+          batchId: batch.batchId,
+          unknownItems,
+          counts,
+        };
       }
 
       // Price every billable item on its OWN cell at the batch's locked versions (18.2's
@@ -696,7 +716,10 @@ export function createBatchPartialSettleService(
         return {
           status: "refused",
           reasonCode: "settlement_conflict",
-          detail: { kind: "no_such_reservation", reason: "no such reservation" },
+          detail: {
+            kind: "no_such_reservation",
+            reason: "no such reservation",
+          },
         };
       }
       const basisCache = new Map<
@@ -812,7 +835,10 @@ export function createBatchPartialSettleService(
         totalDenominator =
           totalDenominator * priced.exactScaledUnits.denominator;
       }
-      const actual = { numerator: totalNumerator, denominator: totalDenominator };
+      const actual = {
+        numerator: totalNumerator,
+        denominator: totalDenominator,
+      };
 
       // The batch's terminal state: completed when every item completed, cancelled when
       // every item cancelled (18.4), failed when none completed, partial for every mix

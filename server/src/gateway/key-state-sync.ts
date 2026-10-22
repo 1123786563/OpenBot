@@ -11,8 +11,8 @@ import {
 } from "../db/schema";
 import {
   compareGatewayKeyFields,
-  gatewayKeyDriftEventValues,
   type GatewayKeyFieldDrift,
+  gatewayKeyDriftEventValues,
 } from "./key-drift";
 
 /*
@@ -108,10 +108,7 @@ export type GatewayKeySyncFailureReasonCode =
 export class GatewayKeyStateError extends Error {
   readonly reasonCode: GatewayKeySyncFailureReasonCode;
 
-  constructor(
-    reasonCode: GatewayKeySyncFailureReasonCode,
-    message: string,
-  ) {
+  constructor(reasonCode: GatewayKeySyncFailureReasonCode, message: string) {
     super(message);
     this.name = "GatewayKeyStateError";
     this.reasonCode = reasonCode;
@@ -581,8 +578,7 @@ export function createGatewayKeyStateSyncService(
                 keyId: gatewayKeyDriftEvents.keyId,
                 grantId: gatewayKeyDriftEvents.grantId,
                 botId: gatewayKeyDriftEvents.botId,
-                gatewayVirtualKeyId:
-                  gatewayKeyDriftEvents.gatewayVirtualKeyId,
+                gatewayVirtualKeyId: gatewayKeyDriftEvents.gatewayVirtualKeyId,
                 localCustomerId: gatewayKeyDriftEvents.localCustomerId,
                 reasonCode: gatewayKeyDriftEvents.reasonCode,
                 remoteCustomerId: gatewayKeyDriftEvents.remoteCustomerId,
@@ -611,7 +607,8 @@ export function createGatewayKeyStateSyncService(
             type: "gateway-key-sync-apply-failed",
             driftCount: drifts.length,
             fieldDriftCount: fieldDrifts.length,
-            errorName: error instanceof Error ? error.name : String(typeof error),
+            errorName:
+              error instanceof Error ? error.name : String(typeof error),
           },
           "The key state verdicts could not be applied; the last-good statuses are kept.",
         );
@@ -931,7 +928,9 @@ export function startGatewayKeyStateSyncScheduler(options: {
       database: options.database,
       client: options.client,
       store: createGatewayKeyStateStore(options.database),
-      ...(options.auditStore === undefined ? {} : { auditStore: options.auditStore }),
+      ...(options.auditStore === undefined
+        ? {}
+        : { auditStore: options.auditStore }),
       log,
     });
   }
@@ -1044,22 +1043,24 @@ function keyStateFrom(json: unknown): GatewayKeyRemoteState | undefined {
   ) {
     return undefined;
   }
-  if (
-    typeof rawExpires === "string" &&
-    Number.isNaN(Date.parse(rawExpires))
-  ) {
+  if (typeof rawExpires === "string" && Number.isNaN(Date.parse(rawExpires))) {
     return undefined;
   }
   // The owner (05.9): a Go *string with omitempty — absent means no customer owns it
   // here (a team, a business unit, or nothing), which is exactly what the comparison
   // must hear.
   const rawCustomer = (key as { customer_id?: unknown }).customer_id;
-  if (rawCustomer !== undefined && rawCustomer !== null && typeof rawCustomer !== "string") {
+  if (
+    rawCustomer !== undefined &&
+    rawCustomer !== null &&
+    typeof rawCustomer !== "string"
+  ) {
     return undefined;
   }
   // The scope (05.9): a Go bool without omitempty — always present in a real answer,
   // read as false when a peer omits it (deny-by-default is also the honest default).
-  const rawAllowAll = (key as { allow_all_providers?: unknown }).allow_all_providers;
+  const rawAllowAll = (key as { allow_all_providers?: unknown })
+    .allow_all_providers;
   if (rawAllowAll !== undefined && typeof rawAllowAll !== "boolean") {
     return undefined;
   }
@@ -1180,12 +1181,12 @@ export function createGatewayVirtualKeyStateClient(
           if (deadlineHandle !== undefined) clearTimeout(deadlineHandle);
         })
         .catch((error: unknown) => {
-        if (isTimeoutError(error)) return null;
-        throw new GatewayKeyStateError(
-          "gateway_key_sync_invalid_response",
-          "The gateway's key state response could not be read, so the sync is refused.",
-        );
-      });
+          if (isTimeoutError(error)) return null;
+          throw new GatewayKeyStateError(
+            "gateway_key_sync_invalid_response",
+            "The gateway's key state response could not be read, so the sync is refused.",
+          );
+        });
 
       if (capped === null) {
         throw new GatewayKeyStateError(

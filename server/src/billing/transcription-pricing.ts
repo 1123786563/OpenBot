@@ -1,10 +1,10 @@
+import type { ConversionRate } from "../gateway/conversion-rate";
 import {
   PRICE_DIMENSIONS,
   type PriceDimension,
   type PriceDimensionUnknownReason,
   type PriceSnapshotDims,
 } from "../gateway/price-snapshot";
-import type { ConversionRate } from "../gateway/conversion-rate";
 import {
   computeReservationCeiling,
   type ReservationBoundQuantities,
@@ -191,7 +191,10 @@ export function assessTranscription(input: {
     !Number.isFinite(input.measuredSeconds) ||
     input.measuredSeconds <= 0
   ) {
-    return { enabled: false, issue: { code: "transcription_input_unmeasurable" } };
+    return {
+      enabled: false,
+      issue: { code: "transcription_input_unmeasurable" },
+    };
   }
   if (
     !Number.isSafeInteger(input.outputTokenCap) ||
@@ -258,7 +261,10 @@ export function transcriptionCeiling(input: {
       maximumCredits: number;
       exactScaledUnits: { numerator: bigint; denominator: bigint };
     }
-  | { ok: false; issue: TranscriptionEnablementIssue | ReservationCeilingIssue } {
+  | {
+      ok: false;
+      issue: TranscriptionEnablementIssue | ReservationCeilingIssue;
+    } {
   const verdict = assessTranscription(input);
   if (!verdict.enabled) {
     return { ok: false, issue: verdict.issue };

@@ -1,7 +1,7 @@
 import { type Context, Hono, type MiddlewareHandler } from "hono";
-import { requireAdmin, type AppVariables } from "../auth/guards";
-import type { BotServiceStore } from "./store";
+import { type AppVariables, requireAdmin } from "../auth/guards";
 import type { BotServiceRegistry } from "./registry";
+import type { BotServiceStore } from "./store";
 import {
   BOT_ID_PATTERN,
   BotServiceCredentialMissingError,
@@ -51,7 +51,9 @@ export function botServiceCredentialRoutes(
   });
 
   /** A botId that cannot be a service identity is malformed input, not a missing row. */
-  function botIdOf(context: Context<{ Variables: AppVariables }>): string | Response {
+  function botIdOf(
+    context: Context<{ Variables: AppVariables }>,
+  ): string | Response {
     const botId = context.req.param("botId") ?? "";
     if (!BOT_ID_PATTERN.test(botId)) {
       return context.json(

@@ -8,8 +8,8 @@
  * event, so a missed sweep costs two seconds where a missed event would cost the name entirely.
  */
 import { and, asc, eq, isNull, notExists, sql } from "drizzle-orm";
-import { readFiring } from "../../../shared/routine-firing";
 import { getLogger } from "../../../shared/logger";
+import { readFiring } from "../../../shared/routine-firing";
 import type { Database } from "../db/client";
 import {
   channelMemberships,
@@ -20,6 +20,7 @@ import {
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import { CHANNEL_ACTIVITY_TOPIC, type ChannelActivityEvent } from "./events";
 import { oneLine } from "./text";
+
 const log = getLogger("server");
 
 export const CHANNEL_SUMMARY_KIND = "channel.summary";

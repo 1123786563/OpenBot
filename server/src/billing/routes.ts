@@ -15,10 +15,11 @@
  * property on the paths the seam does not own (a parse failure, an unexpected throw), so no URL, no
  * status line and no credential can reach a response body through this file.
  */
-import type { Context, MiddlewareHandler } from "hono";
-import { Hono } from "hono";
+
 import { createHash } from "node:crypto";
 import { asc, desc, eq, inArray, ne } from "drizzle-orm";
+import type { Context, MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
@@ -28,6 +29,7 @@ import {
   creditRecoveryItems,
   creditRecoveryQueries,
 } from "../db/schema/credit-reservations";
+import type { ConversionRate } from "../gateway/conversion-rate";
 import type { Credits } from "./credits";
 import type { CreditWriter } from "./credits-writer";
 import {
@@ -37,11 +39,18 @@ import {
   resolvePersonalPayerAccount,
 } from "./payer-personal";
 import type { PaymentOrderReadScope } from "./payments/types";
+import type { RealtimeUsageReader } from "./realtime-usage";
+// The reasons list is used only as a type here (`typeof` for the status map's key union).
+import type { DISPOSAL_REFUSAL_REASONS } from "./recovery-disposal";
+import {
+  createRecoveryDisposal,
+  DISPOSAL_REFUSAL_SENTENCES,
+} from "./recovery-disposal";
 import {
   REWARD_TYPES,
+  type RewardGranter,
   rewardDefinitions,
   rewardPeriodOfDay,
-  type RewardGranter,
 } from "./rewards";
 import type { BillingStatements } from "./statements";
 import { BillingError, type BillingService } from "./types";
@@ -1059,7 +1068,9 @@ export function createBillingAdminRoutes(deps: {
           eventType: "billing.recovery.disposal_denied",
           targetType: "billing",
           actorUserId: context.var.actor.id,
-          payload: { path: "/api/admin/billing/recovery-items/:itemId/disposal" },
+          payload: {
+            path: "/api/admin/billing/recovery-items/:itemId/disposal",
+          },
         });
       }
       return denied;
@@ -1076,7 +1087,10 @@ export function createBillingAdminRoutes(deps: {
     try {
       body = await context.req.json();
     } catch {
-      return context.json({ error: DISPOSAL_REFUSAL_SENTENCES.request_invalid }, 400);
+      return context.json(
+        { error: DISPOSAL_REFUSAL_SENTENCES.request_invalid },
+        400,
+      );
     }
     const outcome = await disposal.dispose({
       ...(typeof body === "object" && body !== null ? body : {}),

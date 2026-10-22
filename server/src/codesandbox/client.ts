@@ -57,13 +57,24 @@ export type SandboxClient = {
     options: SandboxSendMessageOptions,
   ): Promise<SandboxRunResult>;
   listFiles(): Promise<string[]>;
-  readFile(path: string, maxBytes: number): Promise<{ path: string; size: number; content: string; truncated: boolean }>;
+  readFile(
+    path: string,
+    maxBytes: number,
+  ): Promise<{
+    path: string;
+    size: number;
+    content: string;
+    truncated: boolean;
+  }>;
   /**
    * Writes one text file into this Bot's workspace (workshop uploads). The proxy's allow-list
    * carries POST /file from the S2 batch; until then a deployment without it answers 404 and
    * the upload path reports the failure rather than pretending.
    */
-  writeFile(path: string, content: string): Promise<{ path: string; size: number }>;
+  writeFile(
+    path: string,
+    content: string,
+  ): Promise<{ path: string; size: number }>;
   /** Wipes this Bot's workspace through the governed reset endpoint. */
   resetWorkspace(): Promise<void>;
   /**
@@ -75,7 +86,9 @@ export type SandboxClient = {
    * The workshop's stream: /events (S2), family-labelled by the wrapper. The iterable ends when
    * the upstream closes; the `: keepalive` comments never surface here.
    */
-  subscribeEvents(onEvent: (event: TranslatedEvent) => void): Promise<{ stop(): void }>;
+  subscribeEvents(
+    onEvent: (event: TranslatedEvent) => void,
+  ): Promise<{ stop(): void }>;
 };
 
 export function parseUsage(message: unknown): SandboxUsage | undefined {
@@ -90,7 +103,9 @@ export function parseUsage(message: unknown): SandboxUsage | undefined {
   return undefined;
 }
 
-export function createSandboxClient(options: SandboxClientOptions): SandboxClient {
+export function createSandboxClient(
+  options: SandboxClientOptions,
+): SandboxClient {
   const doFetch = options.fetchImpl ?? fetch;
   const base = options.baseUrl.replace(/\/$/, "");
 
@@ -159,7 +174,8 @@ export function createSandboxClient(options: SandboxClientOptions): SandboxClien
         body: JSON.stringify({ title }),
       });
       const body = (await response.json()) as { id?: string };
-      if (!body.id) throw new Error("The sandbox session response carried no id.");
+      if (!body.id)
+        throw new Error("The sandbox session response carried no id.");
       return body.id;
     },
 
@@ -195,9 +211,13 @@ export function createSandboxClient(options: SandboxClientOptions): SandboxClien
       const response = await request("/file?path=.");
       const body = (await response.json()) as unknown;
       if (Array.isArray(body))
-        return body.map((entry) =>
-          typeof entry === "string" ? entry : String((entry as { path?: unknown }).path ?? ""),
-        ).filter((path) => path.length > 0);
+        return body
+          .map((entry) =>
+            typeof entry === "string"
+              ? entry
+              : String((entry as { path?: unknown }).path ?? ""),
+          )
+          .filter((path) => path.length > 0);
       return [];
     },
 
@@ -284,7 +304,9 @@ export function createSandboxClient(options: SandboxClientOptions): SandboxClien
               "unknown") as TranslatedEventFamily;
             let payload: Record<string, unknown>;
             try {
-              payload = JSON.parse(dataLine.slice("data:".length).trim()) as Record<string, unknown>;
+              payload = JSON.parse(
+                dataLine.slice("data:".length).trim(),
+              ) as Record<string, unknown>;
             } catch {
               payload = {};
             }
@@ -303,14 +325,11 @@ export function createSandboxClient(options: SandboxClientOptions): SandboxClien
     },
 
     async writeFile(path, content) {
-      const response = await request(
-        `/file?path=${encodeURIComponent(path)}`,
-        {
-          method: "POST",
-          headers: { "content-type": "text/plain" },
-          body: content,
-        },
-      );
+      const response = await request(`/file?path=${encodeURIComponent(path)}`, {
+        method: "POST",
+        headers: { "content-type": "text/plain" },
+        body: content,
+      });
       if (!response.ok && response.status !== 201) {
         throw new Error(`Sandbox /file answered ${response.status}.`);
       }

@@ -24,11 +24,16 @@ import type { AgentChannel } from "../channels/routes";
 import { HeadlessToolSuspension } from "../computer/headless-tools";
 import type { Database } from "../db/client";
 import { workItems } from "../db/schema/work";
+import {
+  GOVERNED_HEADLESS_REFUSALS,
+  GovernedHeadlessRefusal,
+} from "../mastra/headless";
 import type { GrantedTool } from "../plugins/tools";
 import { REFUSAL_MARKER } from "../plugins/tools";
 import type { WorkQueue } from "../work/queue";
 import { BotPausedError } from "./lifecycle";
 import type { AgentActor } from "./profile-types";
+
 const log = getLogger("server");
 
 export const WAKE_UP_KIND = "bot.wakeup";
@@ -398,6 +403,13 @@ export type WakeUpTurn = (input: {
   threadId: string;
   instruction: string;
   initiator: AuditInitiator;
+  /**
+   * ME10 (#482): the follow-up's own durable identity (the work item key).
+   * The governed turn derives its ONE advance intent from it, so a queue
+   * redelivery of the same follow-up converges on the first advance instead
+   * of minting a second run.
+   */
+  runId?: string;
 }) => Promise<{ replyText: string }>;
 
 /**
@@ -484,6 +496,7 @@ export function createWakeUpRunner(options: {
               threadId: channel.threadId,
               instruction: wakeUpInstruction(payload),
               initiator,
+              runId: item.key,
             });
             await channels.recordActivity(
               actor,
@@ -506,6 +519,15 @@ export function createWakeUpRunner(options: {
             );
           } catch (error) {
             if (error instanceof BotPausedError) {
+              await done("skipped", error.message);
+              report.skipped.push(item.key);
+            } else if (
+              // ME10 (#482): a redelivery converging on the first advance is
+              // not a failure — the follow-up advanced exactly once, under
+              // the first delivery's identity.
+              error instanceof GovernedHeadlessRefusal &&
+              error.code === GOVERNED_HEADLESS_REFUSALS.intentAlreadyAdvanced
+            ) {
               await done("skipped", error.message);
               report.skipped.push(item.key);
             } else if (error instanceof HeadlessToolSuspension) {

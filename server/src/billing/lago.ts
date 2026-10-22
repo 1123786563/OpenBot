@@ -153,9 +153,9 @@ export type LagoClient = {
    * interval (an enum string, compared as one) and the currency the plan is priced in. 404 is
    * "absent", a fact the payment activation acts on.
    */
-  getPlan(planCode: string): Promise<
-    LagoResult<{ interval: string; currency: string | null }>
-  >;
+  getPlan(
+    planCode: string,
+  ): Promise<LagoResult<{ interval: string; currency: string | null }>>;
   /**
    * Terminate one subscription at the provider, keyed on this server's external id. 404 answers
    * as success — an absent subscription is already terminated as far as this deployment is
@@ -357,7 +357,9 @@ export function createLagoClient(config: LagoClientConfig): LagoClient {
 
   async function request(
     path: string,
-    init: { method: "GET" | "POST" | "DELETE"; body?: unknown } = { method: "GET" },
+    init: { method: "GET" | "POST" | "DELETE"; body?: unknown } = {
+      method: "GET",
+    },
   ): Promise<{ status: number; body: unknown }> {
     const url = new URL(`${base}${path}`);
     await config.assertTarget(url);

@@ -62,8 +62,8 @@ import {
   sourceBankFor,
   teamBankFor,
 } from "./bank-scope";
-import type { PreferenceRecallServiceConfig } from "./preference-recall";
 import { type HindsightPauseControls, usagePausedFor } from "./pause-controls";
+import type { PreferenceRecallServiceConfig } from "./preference-recall";
 import { type HindsightRecoveryGate, recallOpenFor } from "./restore-recovery";
 import {
   type MemoryRevocationStatus,

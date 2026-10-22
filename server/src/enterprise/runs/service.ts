@@ -395,6 +395,24 @@ export function createRunService(deps: RunServiceDependencies): RunService {
         return attempt.generation;
       });
     },
+    markRunSuspended(
+      scope: PlatformScope,
+      input: {
+        lease: RunnerRequestLease;
+        status: "waiting_approval" | "suspended";
+      },
+    ): Promise<boolean> {
+      assertTrustedScope(scope);
+      return store.markRunSuspended(scope, input);
+    },
+    reactivateSuspensionLease(scope: PlatformScope, runId: string) {
+      assertTrustedScope(scope);
+      return store.reactivateSuspensionLease(scope, runId);
+    },
+    disposeUnresumableSuspensions(scope: PlatformScope): Promise<number> {
+      assertTrustedScope(scope);
+      return store.disposeUnresumableSuspensions(scope);
+    },
     reserveModelBudget(
       scope: PlatformScope,
       input: BudgetInput,

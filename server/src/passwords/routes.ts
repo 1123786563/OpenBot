@@ -5,6 +5,7 @@ import type { AppVariables } from "../auth/guards";
 import type { ActionActor } from "../computer/gateway";
 import type { SignInService } from "./service";
 import { SignInRefusedError } from "./types";
+
 const log = getLogger("server");
 
 /** Same rule as the computer routes: the local development actor is not a users row. */

@@ -1,0 +1,36 @@
+# SHA256 — ME06 (#478) checkpoint me06-review
+# Tree: /Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec  (branch 1123786563/mastra-exec)
+# HEAD: bf64d0f2772766a7c0cdbc3e9831c9024400e165 (no commits; uncommitted-increment checkpoint)
+# Controller-verified wave: 164 pass / 0 fail / 786 expects, 15 files (2026-10-20T15:3xZ)
+bdf36dee7eb55f7f4f67b89f76b962a95b31a5b411a13becb1d9075d76750905  server/src/mastra/frontend-tools.ts
+2e4d04c0a801504cd2a9f6affd93102df21c8f78ed579e4936e0c3490d0c2f12  server/src/mastra/computer-scope.ts
+5750599d3b1c48f7a9586247728c6376443ff6c96781120a25b6b92cd7388bb9  server/src/mastra/continuation-routes.ts
+5718ab8cd30cd2b58e2019212df6afa99d4b242bc32deee20b33691f3813f53e  server/src/mastra/execution-contracts.ts
+920e010e5c6e7167b7fb38a67ff6cf371581c14e58367fa02c63c15f58698708  server/src/mastra/execution.ts
+69f400cb158b5b259c1965bf4fdc3a83984e255d1ff9b377d8470da84bbec200  server/src/mastra/stream-events.ts
+8c8a15ac93c81d831a2ab8163a80a3dbe6b9718f780ea7bd63387ad9c90df36b  server/src/mastra/resume-driver.ts
+ac7c24cbdb421a75e874523a6a5f020eb6b8d75f19a2e2267f65806ceda78b8c  server/src/mastra/approvals.ts
+e46af3d9cb60e0004a57e9d2ca96e0950c7b01eae56db1bf56ef708da49ef7a2  server/src/mastra/continuation-store.ts
+3ecd7e43d5384bb25751bc5d3754a36bf4bee9d3d653d41c230847cdf4078788  server/src/mastra/ag-ui-agent.ts
+6057c8d292ce7f7a19f7cd61d47cb93213eb907876a5f4f5299852dc858f4dc2  server/src/copilot.ts
+7d0906d8ebc3b29e45cfb9e8092b0a1202a293e223a8b105ef74fa8cc66bda5f  server/src/index.ts
+7bf9fef8070b314fd0b591f8a5143d39b42ade29e31e6b31e1f5d84953e4fe11  server/src/app.ts
+c5093aa21ad575e9c35fea318cfa4ee736741948d53b24c21ad6b8b3b9e5d51b  server/tests/support/pg-container.ts
+e8da7da431457b7dffb24e303a92a56a540c94493ebce4103642f7946fb478df  server/tests/support/me06-fixture.ts
+0dc6aaa40328071937de345121a2ecc53a1a6e48e89f1365cedc662538861e42  server/tests/support/me06-child.ts
+d7c2a418238e1009db45a46115f41395e447d7d37364f824ccad8cabd721729b  server/tests/mastra-computer-tools.test.ts
+3e7b788598d620310cee4d71bc40bf184af7a53b8bd48c08fdbd79ee555ce1e6  server/tests/enterprise/mastra-frontend-tool-participation.integration.test.ts
+9b34424f6cda253d88843297d87bb10efc5b3f3df256eb01d7ea88508a72fb86  server/tests/support/me01-fixture.ts
+e4705ab8be5d71e5094d74c5ccb2ccc2a19c8bfc6454d7e92ac5614e5cccfa05  server/tests/support/me03-fixture.ts
+363007324eb4f471c5c6133c4d3d5ea677f57382a97570c9f4893f971b18285d  server/tests/support/me05-fixture.ts
+6ffc180141ed17ec810816e92f8e6cc532a96285ee3745db3acd825f00a98388  server/tests/mastra-governed-execution.test.ts
+ab6fac00fe9fa1002d347ddfcecb4302af48afeee46134244b4413ae48c5d9b6  server/tests/mastra-browser-runner.test.ts
+6a210a76288df1df6b57749cf7d6b6a7b46f989a8d7c4192d5d5ef44c32bb5e2  docs/plans/2026-10-19-mastra-execution-run/me06/report.md
+b618665ea1c8e615ff82f0544b4aa1fcd987e164e0f87d75fab57cd349e2e0e3  docs/verification/e2e-bun-suites.json
+738c738de67298d3b4f8c32d413b7c5087b87c461235096edf0f7ec64d931f90  server/src/mastra/continuation-routes.ts
+742066a56d47bda3f60ee2b097ee888739b9f189b8e00934274566a9d45dc50b  server/src/mastra/continuation-store.ts
+bdc1b2f9f348f06035571608227325e453702673977128397a3ae90746fd6a3e  server/src/mastra/frontend-tools.ts
+deb8d9cdbef59c8a459d6ae28c8b796b2eff2727f6babf5d33e5578b899db7d1  server/tests/mastra-computer-tools.test.ts
+302277bc7a08855dd4d6fb63dd6d1d63eb4fd0bcc9cdbdc717d6fa4ead4ec78b  docs/plans/2026-10-19-mastra-execution-run/me06/report.md
+56043bf3640dcccea06881df8f48b61cc673acb55ea74bf44a0d6cec39e62001  docs/plans/2026-10-19-mastra-execution-run/me06/review-findings.md
+3370976ce3e01a0b7a44a8e7f405d2316e7763e0be034a943fd1c4335c9d59a6  docs/plans/2026-10-19-mastra-execution-run/me06/fix-round-1-report.md

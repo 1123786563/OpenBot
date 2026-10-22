@@ -35,7 +35,8 @@ export const DEFAULT_VIRTUAL_KEY_TTL_MINUTES = 15;
 export const MAX_VIRTUAL_KEY_TTL_MINUTES = 1_440;
 
 /** The environment variable a deployment sets to move the term off the default. */
-export const VIRTUAL_KEY_TTL_MINUTES_VARIABLE = "BIFROST_VIRTUAL_KEY_TTL_MINUTES";
+export const VIRTUAL_KEY_TTL_MINUTES_VARIABLE =
+  "BIFROST_VIRTUAL_KEY_TTL_MINUTES";
 
 /**
  * Why a term configuration is illegal, in the voice `gatewayRequestTimeoutProblem` keeps:
@@ -46,7 +47,11 @@ export function virtualKeyTtlMinutesProblem(
   name: string,
   value: unknown,
 ): string | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value)) {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value)
+  ) {
     return `${name} must be a whole number of minutes`;
   }
   if (value <= 0) {
@@ -69,7 +74,10 @@ export function resolveVirtualKeyTtlMinutes(
   const raw = environment[VIRTUAL_KEY_TTL_MINUTES_VARIABLE]?.trim();
   if (!raw) return DEFAULT_VIRTUAL_KEY_TTL_MINUTES;
   const value = Number(raw);
-  const problem = virtualKeyTtlMinutesProblem(VIRTUAL_KEY_TTL_MINUTES_VARIABLE, value);
+  const problem = virtualKeyTtlMinutesProblem(
+    VIRTUAL_KEY_TTL_MINUTES_VARIABLE,
+    value,
+  );
   if (problem) throw new Error(problem);
   return value;
 }

@@ -39,13 +39,13 @@ import {
   hindsightControlledBackups,
 } from "../db/schema/hindsight-restore";
 import { hindsightRevocations } from "../db/schema/hindsight-revocations";
-import type { RevocationBankKind } from "./revocation-ledger";
-import type { PreferenceRecallServiceConfig } from "./preference-recall";
 import {
   backgroundTaskBankScope,
-  mintBankScopeAssertion,
   type HindsightBankGrant,
+  mintBankScopeAssertion,
 } from "./bank-scope";
+import type { PreferenceRecallServiceConfig } from "./preference-recall";
+import type { RevocationBankKind } from "./revocation-ledger";
 
 /** The pinned claim; shown verbatim only when all three legs hold actual evidence. */
 export const CONTROLLED_COPIES_CLEARED_SUMMARY =
@@ -66,7 +66,11 @@ const OPERATIONS_PAGE = 100;
 /** ...and stops after this many pages per (bank, status): beyond it the leg is unevidenced. */
 const OPERATIONS_PAGE_CAP = 10;
 /** The terminal statuses whose payloads the retention window governs. */
-const TERMINAL_OPERATION_STATUSES = ["completed", "failed", "cancelled"] as const;
+const TERMINAL_OPERATION_STATUSES = [
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
 
 /** The active-data leg: what the ledger's own rows say, deletion plus verification. */
 export type ActiveDataCleanupEvidence = {
@@ -182,7 +186,9 @@ export function createCleanupEvidenceService(
    * own re-probe (a stored `absent` is evidence of a past moment, and the claim may not rest
    * on a past moment: an unmarked restore would leave it stale with nothing to contradict).
    */
-  async function probeAndRecord(row: VerifyRow): Promise<DocumentVerifyOutcome> {
+  async function probeAndRecord(
+    row: VerifyRow,
+  ): Promise<DocumentVerifyOutcome> {
     const outcome = await verifyDocument(row);
     await database
       .update(hindsightRevocations)
@@ -232,7 +238,9 @@ export function createCleanupEvidenceService(
    * onto them) must answer empty. Either probe failing means the copy is NOT proven gone —
    * a 404 alone was never enough, because the units could outlive a botched delete.
    */
-  async function verifyDocument(row: VerifyRow): Promise<DocumentVerifyOutcome> {
+  async function verifyDocument(
+    row: VerifyRow,
+  ): Promise<DocumentVerifyOutcome> {
     const identity = { tenantId: row.tenantId, principalId: row.principalId };
     const bank = { id: row.bankId, kind: row.bankKind };
     try {
@@ -328,7 +336,8 @@ export function createCleanupEvidenceService(
         retentionDays: null,
         banksChecked: 0,
         beyondWindow: null,
-        reason: "operation retention window not declared; a number is not evidence",
+        reason:
+          "operation retention window not declared; a number is not evidence",
       };
     }
     const cutoff = now().getTime() - input.retentionDays * 24 * 60 * 60 * 1000;
@@ -478,8 +487,8 @@ export function createCleanupEvidenceService(
     // backup job runs outside OpenBot), not a shortcut to cleared.
     const confirmations = rows
       .filter((row) => row.deletionState === "confirmed")
-      .map((row) =>
-        row.deletionAttemptedAt?.getTime() ?? Number.POSITIVE_INFINITY,
+      .map(
+        (row) => row.deletionAttemptedAt?.getTime() ?? Number.POSITIVE_INFINITY,
       );
     const earliestConfirmed = confirmations.length
       ? Math.min(...confirmations)

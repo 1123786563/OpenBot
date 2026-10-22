@@ -8,10 +8,7 @@ import {
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
-import {
-  enterpriseMemberships,
-  enterpriseTenants,
-} from "./enterprise-tenancy";
+import { enterpriseMemberships, enterpriseTenants } from "./enterprise-tenancy";
 
 // Hindsight 16（Issue #394）：历史已确认 OpenBot 记忆迁移的持久状态。
 //
@@ -78,9 +75,7 @@ export const hindsightMigrationQuarantine = pgTable(
     ownerUserId: text("owner_user_id").notNull(),
     /** Why attribution could not be proven — the reason, never the content. */
     reason: text("reason")
-      .$type<
-        "no-principal" | "no-active-membership" | "ambiguous-company"
-      >()
+      .$type<"no-principal" | "no-active-membership" | "ambiguous-company">()
       .notNull(),
     /** When the row was quarantined; a later re-scan refreshes, never duplicates. */
     quarantinedAt: timestamp("quarantined_at", { withTimezone: true })
@@ -110,7 +105,9 @@ export const hindsightMigrationRuns = pgTable(
     /** Progress counters, refreshed as the run advances — the resume's reconciliation base. */
     processed: integer("processed").notNull().default(0),
     migrated: integer("migrated").notNull().default(0),
-    skippedPendingReview: integer("skipped_pending_review").notNull().default(0),
+    skippedPendingReview: integer("skipped_pending_review")
+      .notNull()
+      .default(0),
     skippedInactive: integer("skipped_inactive").notNull().default(0),
     quarantined: integer("quarantined").notNull().default(0),
     lastError: text("last_error"),

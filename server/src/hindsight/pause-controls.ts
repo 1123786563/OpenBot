@@ -138,7 +138,8 @@ export function createDrizzlePauseControls(
       .values({
         tenantId,
         principalId,
-        learningPausedAt: "learningPausedAt" in set ? set.learningPausedAt : null,
+        learningPausedAt:
+          "learningPausedAt" in set ? set.learningPausedAt : null,
         usagePausedAt: "usagePausedAt" in set ? set.usagePausedAt : null,
         createdAt: at,
         updatedAt: at,

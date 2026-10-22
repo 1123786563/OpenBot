@@ -1,10 +1,10 @@
+import type { ConversionRate } from "../gateway/conversion-rate";
 import {
   PRICE_DIMENSIONS,
   type PriceDimension,
   type PriceDimensionUnknownReason,
   type PriceSnapshotDims,
 } from "../gateway/price-snapshot";
-import type { ConversionRate } from "../gateway/conversion-rate";
 import {
   computeReservationCeiling,
   type ReservationBoundQuantities,

@@ -4,7 +4,10 @@ import {
   type OpenMuseNotificationRow,
   openmuseNotifications,
 } from "../db/schema/openmuse";
-import { createOwnerDisabled, OpenMuseOwnerDisabledError } from "../openmuse-personal/shared";
+import {
+  createOwnerDisabled,
+  OpenMuseOwnerDisabledError,
+} from "../openmuse-personal/shared";
 
 export { OpenMuseOwnerDisabledError };
 
@@ -48,8 +51,6 @@ export type StoredOpenMuseNotification = {
   createdAt: Date;
   readAt: Date | null;
 };
-
-
 
 /** The row seam the store runs on: drizzle in production, data in tests. */
 export type OpenMuseNotificationRows = {

@@ -564,7 +564,10 @@ export function createStreamSubscriptionService(channels: {
         await beginContext(tx, scope);
         await takeLocks(tx, [
           ...baseLockKeys(scope).map((key) => ({ key, exclusive: false })),
-          { key: streamLockKey(scope.tenantId, `map:${externalId}`), exclusive: true },
+          {
+            key: streamLockKey(scope.tenantId, `map:${externalId}`),
+            exclusive: true,
+          },
         ]);
         const mappingId = `map:${externalId}`;
         await tx.execute(

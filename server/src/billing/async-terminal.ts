@@ -2,14 +2,17 @@ import { createHash } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import type { AuditStore } from "../audit";
 import { DEPLOYMENT_INITIATOR, recordAuditEvent } from "../audit";
-import type { ConversionRate } from "../gateway/conversion-rate";
-import { PRICE_DIMENSIONS } from "../gateway/price-snapshot";
 import type { Database } from "../db/client";
 import {
   asyncSettleTriggers,
   creditReservations,
 } from "../db/schema/credit-reservations";
-import { readAsyncJob, readAsyncJobByProviderJobId } from "./async-job-identity";
+import type { ConversionRate } from "../gateway/conversion-rate";
+import { PRICE_DIMENSIONS } from "../gateway/price-snapshot";
+import {
+  readAsyncJob,
+  readAsyncJobByProviderJobId,
+} from "./async-job-identity";
 import {
   CreditReservationConflictError,
   createCreditWriter,
@@ -18,8 +21,8 @@ import {
   computeDimensionScaledUnits,
   computeReservationCeiling,
   lockedBasisOfReservation,
-  resolveLockedReservationBasis,
   type ReservationBoundQuantities,
+  resolveLockedReservationBasis,
 } from "./reserve-bound";
 
 /*
@@ -355,17 +358,29 @@ export function createAsyncTerminalSettleService(
         };
       }
       if (hasJobId && !isNonEmptyIdentifier(input.jobId)) {
-        return { status: "refused", reasonCode: "request_invalid", detail: { field: "jobId" } };
+        return {
+          status: "refused",
+          reasonCode: "request_invalid",
+          detail: { field: "jobId" },
+        };
       }
       if (hasProviderJobId && !isNonEmptyIdentifier(input.providerJobId)) {
-        return { status: "refused", reasonCode: "request_invalid", detail: { field: "providerJobId" } };
+        return {
+          status: "refused",
+          reasonCode: "request_invalid",
+          detail: { field: "providerJobId" },
+        };
       }
       // Every dimension of the closed vocabulary, a whole non-negative count: a dimension
       // the report does not carry is not a zero — a terminal report that cannot name its
       // usage in full cannot be priced strictly (06.9's own rule, kept here).
       const usage = input.terminal?.usage;
       if (usage === null || typeof usage !== "object" || Array.isArray(usage)) {
-        return { status: "refused", reasonCode: "request_invalid", detail: { field: "terminal.usage" } };
+        return {
+          status: "refused",
+          reasonCode: "request_invalid",
+          detail: { field: "terminal.usage" },
+        };
       }
       for (const dimension of PRICE_DIMENSIONS) {
         const quantity = (usage as Record<string, unknown>)[dimension];
@@ -386,12 +401,17 @@ export function createAsyncTerminalSettleService(
       // provider's — the reverse mapping 17.1 owns answers the latter.
       const job = hasJobId
         ? await readAsyncJob(database, input.jobId as string)
-        : await readAsyncJobByProviderJobId(database, input.providerJobId as string);
+        : await readAsyncJobByProviderJobId(
+            database,
+            input.providerJobId as string,
+          );
       if (job === undefined) {
         return {
           status: "refused",
           reasonCode: "job_not_found",
-          detail: hasJobId ? { jobId: input.jobId } : { providerJobId: input.providerJobId },
+          detail: hasJobId
+            ? { jobId: input.jobId }
+            : { providerJobId: input.providerJobId },
         };
       }
 
@@ -416,7 +436,10 @@ export function createAsyncTerminalSettleService(
         return {
           status: "refused",
           reasonCode: "settlement_conflict",
-          detail: { kind: "no_such_reservation", reason: "no such reservation" },
+          detail: {
+            kind: "no_such_reservation",
+            reason: "no such reservation",
+          },
         };
       }
       const wasSettled = reservation.status === "settled";
@@ -479,7 +502,10 @@ export function createAsyncTerminalSettleService(
             return {
               status: "refused",
               reasonCode: "price_basis_not_found",
-              detail: { rateVersion: basis.rateVersion, reason: "rate_invalid" },
+              detail: {
+                rateVersion: basis.rateVersion,
+                reason: "rate_invalid",
+              },
             };
           case "ceiling_exceeds_ledger":
             return {
@@ -522,7 +548,10 @@ export function createAsyncTerminalSettleService(
                 denominator: exact.denominator.toString(),
               },
               overBy: {
-                numerator: (exact.numerator - cap * exact.denominator).toString(),
+                numerator: (
+                  exact.numerator -
+                  cap * exact.denominator
+                ).toString(),
                 denominator: exact.denominator.toString(),
               },
             }

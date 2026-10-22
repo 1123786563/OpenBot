@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { getLogger } from "../../../shared/logger";
 import { seal, unseal } from "../auth/signed-value";
 import type { CatalogueAuth } from "./catalogue";
+
 const log = getLogger("server");
 
 /**

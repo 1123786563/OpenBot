@@ -3,13 +3,13 @@ import {
   type PriceDimensionUnknownReason,
   type PriceSnapshotDims,
 } from "../gateway/price-snapshot";
-import type { ReservationBoundQuantities } from "./reserve-bound";
 import {
-  imageGenerationSpecOf,
-  resolveImageTierPrice,
   type ImageGenerationSpec,
   type ImageTierPriceTable,
+  imageGenerationSpecOf,
+  resolveImageTierPrice,
 } from "./image-generation-pricing";
+import type { ReservationBoundQuantities } from "./reserve-bound";
 
 /*
  * The image-edit pricing boundary (Bifrost 12.3, #304): the input-image cost folded into
@@ -53,10 +53,7 @@ import {
  * The dimensions an image edit bills. `image_output` per generated image, `image` per
  * input image (the images to edit and the mask).
  */
-export const IMAGE_EDIT_BILLED_DIMENSIONS = [
-  "image_output",
-  "image",
-] as const;
+export const IMAGE_EDIT_BILLED_DIMENSIONS = ["image_output", "image"] as const;
 
 /** One input image's frozen spec, read from the payload's own container. */
 export type InputImageSpec = {
@@ -77,11 +74,12 @@ export type ImageEditSpec = {
 };
 
 /** Why an edit request could not be fixed. Closed vocabulary, displayable. */
-export type ImageEditSpecIssue =
-  | { code: "image_spec_indeterminable"; field: "image" | "mask" | "n" | "size" | "quality" };
+export type ImageEditSpecIssue = {
+  code: "image_spec_indeterminable";
+  field: "image" | "mask" | "n" | "size" | "quality";
+};
 
-const DATA_URL =
-  /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/;
+const DATA_URL = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/;
 const BARE_BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
 function base64Bytes(text: string): Uint8Array | null {
@@ -133,7 +131,8 @@ function jpegDimensions(bytes: Uint8Array): InputImageSpec | null {
     }
     const length = view.getUint16(offset + 2);
     const isFrame =
-      (marker >= 0xc0 && marker <= 0xcf) &&
+      marker >= 0xc0 &&
+      marker <= 0xcf &&
       marker !== 0xc4 &&
       marker !== 0xc8 &&
       marker !== 0xcc;

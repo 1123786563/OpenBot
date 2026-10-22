@@ -6,6 +6,7 @@ import {
 } from "../../db/schema/enterprise-conversations";
 import {
   enterpriseModelBudgetReservations,
+  enterpriseModelInvocationCapabilities,
   enterpriseRunAttempts,
   enterpriseRunOutbox,
   enterpriseRuns,
@@ -956,6 +957,277 @@ export function createRunStore(
           generation,
           fencingToken: attempt.fencingToken,
           leaseExpiresAt,
+        };
+      });
+    },
+    /**
+     * ME09 (#481): the durable-suspension transition. A run whose engine
+     * paused on a durable approval/participation call moves to
+     * `waiting_approval` (the approval semantics of Spec §5) or `suspended`
+     * (a frontend/participation wait) — both remain ACTIVE statuses, so the
+     * capability service keeps minting against the SAME run when the
+     * continuation is later resumed. Fenced by the exact request lease the
+     * pausing driver holds, the same fencing family
+     * {@link transitionTerminal} settles under: a driver that lost its lease
+     * can neither mark a suspension nor keep the run alive.
+     */
+    async markRunSuspended(
+      scope: PlatformScope,
+      input: {
+        lease: RunnerRequestLease;
+        status: "waiting_approval" | "suspended";
+      },
+    ): Promise<boolean> {
+      return this.transaction(scope, async (tx) => {
+        const [updated] = await tx
+          .update(enterpriseRuns)
+          .set({ status: input.status, updatedAt: sql`now()` })
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.id, input.lease.runId),
+              eq(enterpriseRuns.attemptGeneration, input.lease.generation),
+              sql`${enterpriseRuns.status} in ('queued', 'running')`,
+              sql`exists (
+                select 1 from ${enterpriseRunAttempts}
+                where ${enterpriseRunAttempts.tenantId} = ${scope.tenantId}
+                  and ${enterpriseRunAttempts.runId} = ${input.lease.runId}
+                  and ${enterpriseRunAttempts.id} = ${input.lease.attemptId}
+                  and ${enterpriseRunAttempts.generation} = ${input.lease.generation}
+                  and ${enterpriseRunAttempts.status} = 'active'
+                  and ${enterpriseRunAttempts.requestOwnerToken} = ${input.lease.ownerToken}
+                  and ${enterpriseRunAttempts.requestOwnerExpiresAt} > clock_timestamp()
+              )`,
+            ),
+          )
+          .returning({ id: enterpriseRuns.id });
+        if (!updated) return false;
+        await tx.insert(enterpriseRunOutbox).values({
+          tenantId: scope.tenantId,
+          runId: input.lease.runId,
+          eventType: `run.${input.status}`,
+          payload: {
+            runId: input.lease.runId,
+            generation: input.lease.generation,
+          },
+        });
+        return true;
+      });
+    },
+    /**
+     * ME10 (#482, F6): the dead-suspension disposition. A run parked
+     * `waiting_approval`/`suspended` whose reactivation window
+     * (createdAt + MAXIMUM_RUN_DURATION, the exact predicate
+     * {@link reactivateSuspensionLease} refuses on) has passed can never be
+     * driven again — leaving it waiting forever is the "no driver, no
+     * recovery" dead row. This settles such runs FAILED with the named code
+     * (the user-visible failure reason), once, and emits the outbox event
+     * every transition does. Runs still inside the window — including an
+     * approval a person has not decided yet — are left alone: waiting is
+     * their CORRECT state until the window actually passes.
+     */
+    async disposeUnresumableSuspensions(scope: PlatformScope): Promise<number> {
+      return this.transaction(scope, async (tx) => {
+        const now = new Date();
+        const settled = await tx
+          .update(enterpriseRuns)
+          .set({
+            status: "failed",
+            errorCode: "SUSPENSION_WINDOW_EXPIRED",
+            finishedAt: now,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              sql`${enterpriseRuns.status} in ('waiting_approval', 'suspended')`,
+              sql`${enterpriseRuns.createdAt} + interval '${sql.raw(
+                String(MAXIMUM_RUN_DURATION_MILLISECONDS),
+              )} milliseconds' <= ${now}`,
+            ),
+          )
+          .returning({ id: enterpriseRuns.id, status: enterpriseRuns.status });
+        for (const row of settled) {
+          await tx.insert(enterpriseRunOutbox).values({
+            tenantId: scope.tenantId,
+            runId: row.id,
+            eventType: "run.suspension_window_expired",
+            payload: { runId: row.id },
+          });
+        }
+        return settled.length;
+      });
+    },
+    /**
+     * ME09 (#481): the resume drive's lease re-activation — the runs-service
+     * face of "run re-activation" for a durable suspension. ONLY a run still
+     * waiting (`waiting_approval`/`suspended`) at its CURRENT attempt may
+     * re-arm: a terminal run refuses (the settled-run capability fence stays
+     * authoritative), a live request owner refuses (one driver at a time),
+     * and the re-armed lease is capped by the same maximum run duration every
+     * renewal answers to. Returns the admitted execution facts the resumed
+     * loop's governed model re-binds to (the run's OWN route ref and cap —
+     * never a caller-supplied route), so capability minting continues against
+     * the same run, the same payer and the remaining budget.
+     */
+    async reactivateSuspensionLease(
+      scope: PlatformScope,
+      runId: string,
+    ): Promise<{
+      lease: RunnerRequestLease;
+      modelRouteRef: string;
+      maximumTokens: number;
+      /**
+       * ME10: the token total this run has ALREADY spent (confirmed usage
+       * plus outstanding capability limits) — the resumed carrier seeds its
+       * settlement ledger with it, so the resumed dials ask for the run's
+       * REMAINING budget, never the ceiling again.
+       */
+      settledTokens: number;
+    }> {
+      return this.transaction(scope, async (tx) => {
+        const [run] = await tx
+          .select()
+          .from(enterpriseRuns)
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.id, runId),
+              sql`${enterpriseRuns.status} in ('waiting_approval', 'suspended')`,
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!run)
+          throw new RunDomainError(
+            "RUN_NOT_ACTIVE",
+            409,
+            "Only a run still waiting on a durable suspension may re-arm its lease.",
+          );
+        const [attempt] = await tx
+          .select()
+          .from(enterpriseRunAttempts)
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, runId),
+              eq(enterpriseRunAttempts.generation, run.attemptGeneration),
+              eq(enterpriseRunAttempts.status, "active"),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!attempt) throw new RunDomainError("RUN_ATTEMPT_STALE", 409);
+        const now = new Date();
+        if (
+          attempt.requestOwnerToken &&
+          attempt.requestOwnerExpiresAt &&
+          attempt.requestOwnerExpiresAt > now
+        ) {
+          throw new RunDomainError("RUN_REQUEST_LEASE_HELD", 409);
+        }
+        const runLeaseExpiresAt = new Date(
+          Math.min(
+            now.getTime() + leaseMilliseconds,
+            run.createdAt.getTime() + MAXIMUM_RUN_DURATION_MILLISECONDS,
+          ),
+        );
+        if (runLeaseExpiresAt <= now)
+          throw new RunDomainError("RUN_LEASE_EXPIRED", 409);
+        // ME10: the token total this run has already spent — the SAME sum
+        // the capability mint's budget gate computes (confirmed usage plus
+        // outstanding limits) — so the resumed carrier's ledger starts where
+        // the park left off and the resumed dials ask for the REMAINING
+        // budget, never the ceiling again.
+        const spentRows = await tx
+          .select({
+            status: enterpriseModelInvocationCapabilities.status,
+            usedTokens: enterpriseModelInvocationCapabilities.usedTokens,
+            maximumTokens: enterpriseModelInvocationCapabilities.maximumTokens,
+          })
+          .from(enterpriseModelInvocationCapabilities)
+          .where(
+            and(
+              eq(
+                enterpriseModelInvocationCapabilities.tenantId,
+                scope.tenantId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.workspaceId,
+                scope.workspaceId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.principalId,
+                scope.principalId,
+              ),
+              eq(enterpriseModelInvocationCapabilities.runId, runId),
+            ),
+          );
+        const settledTokens = spentRows.reduce(
+          (sum, row) =>
+            sum +
+            (row.status === "confirmed" ? row.usedTokens : row.maximumTokens),
+          0,
+        );
+        await tx
+          .update(enterpriseRuns)
+          .set({ leaseExpiresAt: runLeaseExpiresAt, updatedAt: now })
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.id, runId),
+              eq(enterpriseRuns.attemptGeneration, run.attemptGeneration),
+              sql`${enterpriseRuns.status} in ('waiting_approval', 'suspended')`,
+            ),
+          );
+        await tx
+          .update(enterpriseRunAttempts)
+          .set({ leaseExpiresAt: runLeaseExpiresAt })
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, runId),
+              eq(enterpriseRunAttempts.id, attempt.id),
+              eq(enterpriseRunAttempts.generation, attempt.generation),
+              eq(enterpriseRunAttempts.status, "active"),
+            ),
+          );
+        const ownerToken = randomUUID();
+        const [claimed] = await tx
+          .update(enterpriseRunAttempts)
+          .set({
+            requestOwnerToken: ownerToken,
+            requestOwnerExpiresAt: runLeaseExpiresAt,
+          })
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, runId),
+              eq(enterpriseRunAttempts.id, attempt.id),
+              eq(enterpriseRunAttempts.generation, attempt.generation),
+              eq(enterpriseRunAttempts.status, "active"),
+              sql`(${enterpriseRunAttempts.requestOwnerToken} is null or ${enterpriseRunAttempts.requestOwnerExpiresAt} <= ${now.toISOString()})`,
+            ),
+          )
+          .returning({ id: enterpriseRunAttempts.id });
+        if (!claimed) throw new RunDomainError("RUN_REQUEST_LEASE_HELD", 409);
+        return {
+          lease: {
+            runId,
+            attemptId: attempt.id,
+            generation: attempt.generation,
+            ownerToken,
+            expiresAt: runLeaseExpiresAt,
+          },
+          modelRouteRef: run.modelRouteRef,
+          maximumTokens: run.modelRouteMaximumTokens,
+          settledTokens,
         };
       });
     },

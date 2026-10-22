@@ -25,6 +25,7 @@ import {
 import type { BotReset } from "./lifecycle-reset";
 import type { AgentActor, AgentProfile } from "./profile-types";
 import type { WakeUpStore } from "./wake-up";
+
 const log = getLogger("server");
 
 /** The single-user developer's placeholder account, which has no users row to reference. */

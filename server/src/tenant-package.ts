@@ -16,6 +16,7 @@ import {
   skills as skillTable,
   skillTools,
 } from "./db/schema";
+
 const log = getLogger("server");
 
 const approvedThemeVariables = new Set([

@@ -2,10 +2,10 @@ import { asc, eq } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { asyncJobs } from "../db/schema/credit-reservations";
 import {
-  attachAsyncJobProviderId,
-  readAsyncJob,
   type AsyncJobAttachRefusalReason,
   type AsyncJobView,
+  attachAsyncJobProviderId,
+  readAsyncJob,
 } from "./async-job-identity";
 import { createCreditWriter } from "./credits-writer";
 
@@ -137,7 +137,10 @@ export function createAsyncDispatchRecoveryService(
           detail: { jobId },
         };
       }
-      if (view.state !== "dispatch_unconfirmed" || view.providerJobId !== null) {
+      if (
+        view.state !== "dispatch_unconfirmed" ||
+        view.providerJobId !== null
+      ) {
         return { status: "not_unconfirmed", job: view };
       }
 
@@ -202,10 +205,19 @@ function isProviderJobIdTaken(error: unknown): boolean {
   // causes until it finds the driver's own shape or runs out. The SQLSTATE lives in
   // `errno` on Bun's PostgresError and in `code` on node-postgres — either names it.
   let current: unknown = error;
-  for (let depth = 0; depth < 4 && current !== null && current !== undefined; depth += 1) {
+  for (
+    let depth = 0;
+    depth < 4 && current !== null && current !== undefined;
+    depth += 1
+  ) {
     if (typeof current === "object" && current !== null) {
-      const candidate = current as { code?: unknown; errno?: unknown; constraint?: unknown };
-      const sqlstate = candidate.code === "23505" || candidate.errno === "23505";
+      const candidate = current as {
+        code?: unknown;
+        errno?: unknown;
+        constraint?: unknown;
+      };
+      const sqlstate =
+        candidate.code === "23505" || candidate.errno === "23505";
       if (
         sqlstate &&
         candidate.constraint === "async_jobs_provider_job_id_idx"

@@ -40,13 +40,13 @@ import {
   mintBankScopeAssertion,
   resolveHindsightBankScope,
 } from "./bank-scope";
+import { type HindsightPauseControls, usagePausedFor } from "./pause-controls";
+import { type HindsightRecoveryGate, recallOpenFor } from "./restore-recovery";
 import {
   type MemoryRevocationStatus,
   type PersonalMemoryRevocationRecorder,
   STOPPED_USING_SUMMARY,
 } from "./revocation-ledger";
-import { type HindsightPauseControls, usagePausedFor } from "./pause-controls";
-import { type HindsightRecoveryGate, recallOpenFor } from "./restore-recovery";
 
 /** What a Bot receives: the confirmed original, and nothing remote-derived. */
 export type RecalledGenericPreference = {

@@ -8,10 +8,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import type {
-  CreditGrantSource,
-  CreditGrantStatus,
-} from "../../billing/types";
+import type { CreditGrantSource, CreditGrantStatus } from "../../billing/types";
 import { billingCustomers } from "./billing";
 
 /**
@@ -53,7 +50,10 @@ export const creditGrants = pgTable(
      * facts a background job flips — so this column is an audit of how the row was born, not a
      * second truth about how it is doing.
      */
-    status: text("status").$type<CreditGrantStatus>().notNull().default("active"),
+    status: text("status")
+      .$type<CreditGrantStatus>()
+      .notNull()
+      .default("active"),
     /**
      * What makes a retried grant one grant: the writer's stable key for the occurrence (e.g.
      * `plan:<orderId>` for the allowance a paid order pays out; `admin:<random>` for a hand

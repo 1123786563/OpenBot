@@ -1019,8 +1019,11 @@ export function accessGrantRoutes(
    * the same revoked rows with nothing left to do.
    */
   app.post("/grants/revoke-all", async (context) => {
-    const parsed = revokeAllInput.safeParse(await context.req.json().catch(() => null));
-    if (!parsed.success) return context.json({ error: "A botId is required." }, 400);
+    const parsed = revokeAllInput.safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!parsed.success)
+      return context.json({ error: "A botId is required." }, 400);
     try {
       const { grants, revokedCount } = await live.revokeAllForUser(
         context.var.actor.id,
@@ -1073,9 +1076,7 @@ function serializeGrant(grant: AccessGrant) {
  * plain 400, and an unusable code is the one uniform tagged refusal that reveals nothing.
  */
 /** The revoke-all body: `{ botId }` and nothing else, so no other field can smuggle a user. */
-const revokeAllInput = z
-  .object({ botId: z.string().trim().min(1) })
-  .strict();
+const revokeAllInput = z.object({ botId: z.string().trim().min(1) }).strict();
 
 async function confirmationResponse(
   context: Parameters<MiddlewareHandler<{ Variables: AppVariables }>>[0],

@@ -41,8 +41,6 @@ export type StoredOpenMuseGoal = {
   deletedAt: Date | null;
 };
 
-
-
 /** The row seam the store runs on: drizzle in production, data in tests. */
 export type OpenMuseGoalRows = {
   insertGoal(goal: StoredOpenMuseGoal): Promise<void>;

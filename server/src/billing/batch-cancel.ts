@@ -25,15 +25,15 @@
  * still lands its trail — one place, every door.
  */
 
-import type { AuditStore } from "../audit";
-import type { ConversionRate } from "../gateway/conversion-rate";
-import type { Database } from "../db/client";
 import { eq } from "drizzle-orm";
+import type { AuditStore } from "../audit";
+import type { Database } from "../db/client";
 import {
   batchItemOutcomes,
   batchJobs,
   creditBatchSettlementDetails,
 } from "../db/schema/credit-reservations";
+import type { ConversionRate } from "../gateway/conversion-rate";
 import type {
   BatchOutcomeCounts,
   BatchPartialItemReport,
@@ -71,7 +71,9 @@ export type BatchCancelDependencies = {
  * unknown. A batch whose other items are still unreported answers `pending_unknown`:
  * the cancellations stand, the money waits for the rest.
  */
-export function createBatchCancelService(dependencies: BatchCancelDependencies) {
+export function createBatchCancelService(
+  dependencies: BatchCancelDependencies,
+) {
   const { database } = dependencies;
   const partial = createBatchPartialSettleService(dependencies);
 
@@ -88,7 +90,10 @@ export function createBatchCancelService(dependencies: BatchCancelDependencies) 
           detail: { field: "batchId" },
         };
       }
-      if (!Array.isArray(input.cancellations) || input.cancellations.length === 0) {
+      if (
+        !Array.isArray(input.cancellations) ||
+        input.cancellations.length === 0
+      ) {
         return {
           status: "refused",
           reasonCode: "request_invalid",

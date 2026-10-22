@@ -1,17 +1,17 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { getLogger } from "../../../shared/logger";
+import {
+  type BrokeredProvenance,
+  isBrokeredProvenance,
+} from "../../../shared/src/brokered-provenance";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import { PERSON_INITIATOR } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
 import { reasonWithoutStatement } from "../db/query-failure";
-import type { AccountModeSwitch } from "./account-mode";
 import { brokerToolkitOf } from "./access";
-import {
-  isBrokeredProvenance,
-  type BrokeredProvenance,
-} from "../../../shared/src/brokered-provenance";
+import type { AccountModeSwitch } from "./account-mode";
 import {
   type BrokerApp,
   type BrokerField,
@@ -28,7 +28,6 @@ import {
 } from "./broker";
 import { CATALOGUE, catalogueEntry } from "./catalogue";
 import { toolkitOf, vendorSentence } from "./composio";
-import { toolkitOf as openConnectorToolkitOf } from "./openconnector";
 import {
   authorizationUrlFor,
   type ConnectOrigin,
@@ -40,6 +39,7 @@ import {
   redirectUriFor,
   sealConnectState,
 } from "./oauth";
+import { toolkitOf as openConnectorToolkitOf } from "./openconnector";
 import { type AccountRef, asAccountMode } from "./shared-accounts";
 import {
   asSharedUseApproval,
@@ -57,6 +57,7 @@ import {
   PluginRefusedError,
   type PluginStore,
 } from "./store";
+
 const log = getLogger("server");
 
 /**
@@ -1212,7 +1213,10 @@ export function createPluginRoutes(
       } catch (error) {
         // The same failure the directory route answers, in the same words, because it is the same
         // call.
-        const refusal = brokerRefusal(error, OPENCONNECTOR_DIRECTORY_UNAVAILABLE);
+        const refusal = brokerRefusal(
+          error,
+          OPENCONNECTOR_DIRECTORY_UNAVAILABLE,
+        );
         return context.json({ error: refusal.error }, refusal.status);
       }
     }
@@ -2709,7 +2713,10 @@ export function createPluginRoutes(
      * cards group by. Absent on a re-save leaves what was there, the same rule `summary` follows.
      */
     if (body.icon !== undefined && typeof body.icon !== "string") {
-      return context.json({ error: "An icon is text when it is present." }, 400);
+      return context.json(
+        { error: "An icon is text when it is present." },
+        400,
+      );
     }
     if (body.category !== undefined && typeof body.category !== "string") {
       return context.json(

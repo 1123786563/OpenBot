@@ -87,10 +87,12 @@ export type UnackedReplayBatch = {
 /** The recovery reason an item is left with after a failed replay. */
 export const REPLAY_RETAINED_REASON_NO_RESULT = "no_persisted_result";
 export const REPLAY_RESOLVED_REASON_DELIVERED = "result_replayed_delivered";
-export const REPLAY_RESOLVED_REASON_ALREADY_DELIVERED = "result_already_delivered";
+export const REPLAY_RESOLVED_REASON_ALREADY_DELIVERED =
+  "result_already_delivered";
 export const REPLAY_RETAINED_REASON_BLOCKED = "credits_delivery_blocked";
 /** 08.3's resolution reason: the settlement was the ledger's own, only the ack was backfilled. */
-export const REPLAY_RESOLVED_REASON_ACK_RECOVERED = "result_settled_ack_recovered";
+export const REPLAY_RESOLVED_REASON_ACK_RECOVERED =
+  "result_settled_ack_recovered";
 
 /** Only a short snake_case code survives into `last_reason`; anything else could carry payload. */
 const STABLE_CODE = /^[a-z0-9_]{1,64}$/;
@@ -153,7 +155,10 @@ export type RecoveryReplayDependencies = {
   log?: (message: string) => void;
 };
 
-function isNonEmptyIdentifier(value: unknown, maxLength: number): value is string {
+function isNonEmptyIdentifier(
+  value: unknown,
+  maxLength: number,
+): value is string {
   return (
     typeof value === "string" &&
     value.length > 0 &&
@@ -303,7 +308,8 @@ export function createRecoveryReplay(
           hold.actualDenominator !== null &&
           record.actualCostNumerator !== null &&
           record.actualCostDenominator !== null &&
-          BigInt(hold.actualNumerator) * BigInt(record.actualCostDenominator) ===
+          BigInt(hold.actualNumerator) *
+            BigInt(record.actualCostDenominator) ===
             BigInt(record.actualCostNumerator) * BigInt(hold.actualDenominator);
         if (settledAtSameActual) {
           await outbox.markCreditsDelivered(record.eventId);
@@ -315,7 +321,11 @@ export function createRecoveryReplay(
           `billing: recovery ack refused reservation=${item.reservationId} event=${record.eventId} code=${code}`,
         );
         await releaseItem(item.id, code, true);
-        return { outcome: "failed", eventId: record.eventId, failureCode: code };
+        return {
+          outcome: "failed",
+          eventId: record.eventId,
+          failureCode: code,
+        };
       }
 
       // THE SHAPE THIS TICKET EXISTS FOR: the result is persisted, the ack never arrived,
@@ -342,7 +352,11 @@ export function createRecoveryReplay(
           // failure here must not mask the replay failure the item already records.
         }
         await releaseItem(item.id, code, true);
-        return { outcome: "failed", eventId: record.eventId, failureCode: code };
+        return {
+          outcome: "failed",
+          eventId: record.eventId,
+          failureCode: code,
+        };
       }
 
       await resolveItem(item.id, REPLAY_RESOLVED_REASON_DELIVERED);
@@ -356,7 +370,9 @@ export function createRecoveryReplay(
         );
       }
       if (!Number.isInteger(limit) || limit < 1) {
-        throw new TypeError("replayUnackedResults: limit must be a positive integer");
+        throw new TypeError(
+          "replayUnackedResults: limit must be a positive integer",
+        );
       }
       // 08.1's claim: SELECT ... FOR UPDATE SKIP LOCKED inside one transaction, so
       // concurrent workers receive disjoint sets and each item is processed once per pass.

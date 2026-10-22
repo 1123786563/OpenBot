@@ -43,8 +43,6 @@ export type StoredOpenMuseIdea = {
   deletedAt: Date | null;
 };
 
-
-
 /** The row seam the store runs on: drizzle in production, data in tests. */
 export type OpenMuseIdeaRows = {
   insertIdea(idea: StoredOpenMuseIdea): Promise<void>;

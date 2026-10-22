@@ -5,10 +5,11 @@
  * Nothing in this module (or the sweeper that drives it) ever un-blocks a row: recovery is a
  * manual operator act against the reconciler's report.
  */
-import type { BillingService } from "./types";
+
 import type { CreditWriter } from "./credits-writer";
-import type { UsageOutbox, UsageOutboxRecord } from "./usage-outbox";
+import type { BillingService } from "./types";
 import { UsageDeliveryError } from "./usage-delivery-error";
+import type { UsageOutbox, UsageOutboxRecord } from "./usage-outbox";
 
 export { UsageDeliveryError } from "./usage-delivery-error";
 
@@ -119,7 +120,8 @@ export function createCreditUsageTarget(
         numerator: BigInt(record.actualCostNumerator),
         denominator: BigInt(record.actualCostDenominator),
       },
-      title: record.source === "llm" ? "LLM token usage" : "Code run token usage",
+      title:
+        record.source === "llm" ? "LLM token usage" : "Code run token usage",
       requestId: record.eventId,
       model: record.model,
       client: record.client,
@@ -164,23 +166,23 @@ export function createUsageDelivery(deps: {
           markDelivered: () => Promise<void>;
           block: (failureCode: string) => Promise<void>;
         }[] = [
-            {
-              name: "lago",
-              pending: record.lagoStatus === "pending",
-              effect: () => deps.sendToLago(record),
-              markDelivered: () => outbox.markLagoDelivered(record.eventId),
-              block: (failureCode) =>
-                outbox.blockDelivery(record.eventId, "lago", failureCode),
-            },
-            {
-              name: "credits",
-              pending: record.creditsStatus === "pending",
-              effect: () => deps.chargeCredits(record),
-              markDelivered: () => outbox.markCreditsDelivered(record.eventId),
-              block: (failureCode) =>
-                outbox.blockDelivery(record.eventId, "credits", failureCode),
-            },
-          ];
+          {
+            name: "lago",
+            pending: record.lagoStatus === "pending",
+            effect: () => deps.sendToLago(record),
+            markDelivered: () => outbox.markLagoDelivered(record.eventId),
+            block: (failureCode) =>
+              outbox.blockDelivery(record.eventId, "lago", failureCode),
+          },
+          {
+            name: "credits",
+            pending: record.creditsStatus === "pending",
+            effect: () => deps.chargeCredits(record),
+            markDelivered: () => outbox.markCreditsDelivered(record.eventId),
+            block: (failureCode) =>
+              outbox.blockDelivery(record.eventId, "credits", failureCode),
+          },
+        ];
 
         let effectFailed = false;
         let allDelivered = true;

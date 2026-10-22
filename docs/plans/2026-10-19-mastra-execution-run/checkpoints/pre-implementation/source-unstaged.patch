@@ -1,0 +1,768 @@
+diff --git a/docs/adr/0010-mastra-execution-openbot-governance.md b/docs/adr/0010-mastra-execution-openbot-governance.md
+index e58171e3..822523b9 100644
+--- a/docs/adr/0010-mastra-execution-openbot-governance.md
++++ b/docs/adr/0010-mastra-execution-openbot-governance.md
+@@ -1,5 +1,5 @@
+ ---
+-status: proposed
++status: accepted
+ ---
+ 
+ # Mastra 执行 Agent 循环，OpenBot 保留业务运行与治理权威
+@@ -8,4 +8,4 @@ OpenBot 已有 Run/Attempt、逐调用预算与结算、工具授权审批、会
+ 
+ 替代方案是整体转交 Mastra 的执行、memory、workflow 与客户端协议，但会同时改变运行身份、审批副作用、写入者和结算事实源，迁移与回滚风险较高。本方案的代价是维护流/完整消息/continuation 适配，以及保留可选 Intelligence 学习依赖；将来若删除这些适配，需要独立证明授权、预算、恢复和新旧数据兼容。
+ 
+-本 ADR 是方案评审稿，尚未 accepted；它不修改 ADR 0004/0005/0006/0008/0009 的既有约束，也不授权实施或发布。验收见 [详细方案](../specs/2026-10-19-mastra-agent-execution-migration-design.md)。
++用户于 2026-10-19 确认详细方案与拆票，本 ADR 随该方案 accepted；它不修改 ADR 0004/0005/0006/0008/0009 的既有约束，也不授权代码实施或生产发布。验收见 [详细方案](../specs/2026-10-19-mastra-agent-execution-migration-design.md)。
+diff --git a/docs/plans/2026-10-19-orca-dag-wave2/contains.tsv b/docs/plans/2026-10-19-orca-dag-wave2/contains.tsv
+index 3af3d789..6cc55ec4 100644
+--- a/docs/plans/2026-10-19-orca-dag-wave2/contains.tsv
++++ b/docs/plans/2026-10-19-orca-dag-wave2/contains.tsv
+@@ -1,3 +1,146 @@
++187	44
++187	45
++187	46
++188	47
++188	48
++188	49
++188	50
++189	51
++189	52
++189	53
++189	54
++189	55
++190	56
++190	57
++190	58
++191	59
++191	60
++191	61
++191	62
++191	63
++192	64
++192	65
++192	66
++192	67
++192	68
++193	69
++193	70
++193	71
++193	72
++193	73
++194	74
++194	75
++194	76
++194	77
++194	78
++195	79
++195	80
++195	81
++195	82
++195	83
++196	84
++196	85
++196	86
++196	87
++196	88
++197	89
++197	90
++197	91
++197	92
++197	93
++197	94
++197	95
++198	96
++198	97
++198	98
++198	99
++198	100
++198	101
++199	102
++199	103
++199	104
++199	105
++199	106
++199	107
++199	108
++199	109
++199	110
++199	111
++200	112
++200	113
++200	114
++200	115
++200	116
++200	117
++201	118
++201	119
++201	120
++201	121
++201	122
++202	123
++202	124
++202	125
++202	126
++202	127
++202	128
++202	129
++202	130
++202	131
++202	132
++202	133
++202	134
++202	135
++202	136
++202	137
++202	138
++202	139
++202	140
++203	141
++203	142
++203	143
++203	144
++203	145
++204	146
++204	147
++204	148
++204	149
++204	150
++205	151
++205	152
++205	153
++205	154
++206	155
++206	156
++206	157
++206	158
++206	159
++206	160
++206	161
++206	162
++206	163
++206	164
++206	165
++206	166
++206	167
++206	168
++206	169
++206	170
++206	171
++206	172
++206	173
++206	174
++206	175
++206	176
++206	177
++206	178
++206	179
++206	180
++206	181
++206	182
++206	183
++206	184
++206	185
++206	186
+ 6	187
+ 6	188
+ 6	189
+@@ -18,7 +161,6 @@
+ 6	204
+ 6	205
+ 6	206
+-6	368
+ 5	207
+ 5	208
+ 5	209
+@@ -119,3 +261,62 @@
+ 5	304
+ 5	305
+ 5	306
++6	368
++368	369
++368	370
++368	371
++368	372
++368	373
++368	374
++368	375
++376	377
++376	378
++376	380
++376	381
++376	382
++376	383
++376	384
++376	385
++376	386
++376	387
++376	388
++376	389
++376	390
++376	391
++376	392
++376	393
++376	394
++376	395
++376	396
++358	403
++358	404
++358	405
++358	406
++358	407
++358	408
++358	409
++358	410
++358	411
++358	412
++358	413
++358	414
++358	415
++358	416
++358	417
++358	418
++358	419
++358	420
++358	421
++358	422
++358	423
++358	424
++358	425
++358	426
++358	427
++358	428
++358	429
++358	430
++358	431
++358	433
++358	436
++358	437
+diff --git a/docs/plans/2026-10-19-orca-dag-wave2/ingest.sh b/docs/plans/2026-10-19-orca-dag-wave2/ingest.sh
+index 9d703553..bc5bc239 100755
+--- a/docs/plans/2026-10-19-orca-dag-wave2/ingest.sh
++++ b/docs/plans/2026-10-19-orca-dag-wave2/ingest.sh
+@@ -1,24 +1,28 @@
+ #!/usr/bin/env bash
+-# R1 rescan: 树结构重扫（同四根），diff 出新增节点；票详情仅增量拉取。只读。
++# R1 rescan v3: 基线上轮 nodes.txt，8 路并行核验全部节点 sub_issues；新节点迭代入队。只读。
+ set -euo pipefail
+ REPO=1123786563/OpenBot
+ DIR="$(cd "$(dirname "$0")" && pwd)"
+-: > "$DIR/contains.tsv"
+-frontier="6 5 358 376"
+-seen="6 5 358 376"
+-while [ -n "$frontier" ]; do
++export DIR REPO
++run_one() { set -o pipefail; gh api --paginate "repos/$REPO/issues/$1/sub_issues" --jq '.[].number' 2>/dev/null | sed "s/^/$1\t/" || echo "FAIL $1" >> "$DIR/fetch_failures.txt"; }
++export -f run_one
++: > "$DIR/fetch_failures.txt"
++BASE="$DIR/../2026-10-19-orca-run-all/nodes.txt"
++seen=$(sort -n < "$BASE" | tr '\n' ' ')
++queue=$(sort -n < "$BASE")
++round=0
++while [ -n "$queue" ]; do
++  round=$((round+1))
++  qfile=$(mktemp); echo "$queue" > "$qfile"
++  xargs -P 8 -I{} bash -c 'run_one {}' < "$qfile" > "$DIR/round${round}.raw" || true
++  rm -f "$qfile"
++  sort -k2 -n "$DIR/round${round}.raw" > "$DIR/round${round}.tsv"
+   next=""
+-  for n in $frontier; do
+-    kids=$(gh api --paginate "repos/$REPO/issues/$n/sub_issues" --jq '.[].number' | sort -n | tr '\n' ' ')
+-    for k in $kids; do
+-      echo -e "$n\t$k" >> "$DIR/contains.tsv"
+-      if ! grep -qw "$k" <<< "$seen"; then
+-        seen="$seen $k"
+-        next="$next $k"
+-      fi
+-    done
++  for k in $(awk -F'\t' '{print $2}' "$DIR/round${round}.raw" | sort -n | uniq); do
++    grep -qw "$k" <<< "$seen" || { seen="$seen $k"; next="$next $k"; }
+   done
+-  frontier=$(echo $next)
++  queue=$(echo $next | tr ' ' '\n' | sed '/^$/d')
+ done
++awk -F'\t' '{print $1"\t"$2}' "$DIR"/round*.tsv | sort -k2 -n -u > "$DIR/contains.tsv"
+ echo $seen | tr ' ' '\n' | sed '/^$/d' | sort -n > "$DIR/nodes.txt"
+-echo "nodes: $(wc -l < "$DIR/nodes.txt")"
++echo "rounds=$round nodes=$(wc -l < "$DIR/nodes.txt") failures=$(grep -c FAIL "$DIR/fetch_failures.txt" || true)"
+diff --git a/docs/specs/2026-10-19-mastra-agent-execution-migration-design.md b/docs/specs/2026-10-19-mastra-agent-execution-migration-design.md
+index a72f405e..64d423f2 100644
+--- a/docs/specs/2026-10-19-mastra-agent-execution-migration-design.md
++++ b/docs/specs/2026-10-19-mastra-agent-execution-migration-design.md
+@@ -1,6 +1,6 @@
+ # Spec：内置 Agent 执行迁移 Mastra
+ 
+-日期：2026-10-19。状态：**详细方案与拆票评审稿 v1，尚未批准实施或发布**。
++日期：2026-10-19。状态：**方案与 16 张业务子 Issue 拆分已由用户于 2026-10-19 确认；授权发布 Issues，尚未授权代码实施或生产上线**。
+ 
+ 来源：本会话用户依次要求分析迁移范围、编写实施计划、设计详细方案并拆解具体 Issue。方案承接上一轮计划；“已写成可验收的规格”“允许创建 Issue”“批准设计”“授权实施/上线”是不同状态，不互相推导。
+ 
+@@ -197,7 +197,7 @@ Mastra 不是第二个业务调度器。本版不引入 durable agent/workflow 
+ ## Further Notes
+ 
+ - GitHub 目标仓库：`1123786563/OpenBot`。拟发布一张独立父 Spec 和 16 张正式子 Issue；contains 与 depends_on 分开保存。新迁移不是 #6 的整体重做，不修改已有父 Issue 正文/状态。
+-- 当前实现计划提供 HOW 的文件级指引，本 Spec 冻结 WHAT/WHY。二者冲突以经批准 Spec 为准；批准前不得将评审稿冒充批准设计。
++- 当前实现计划提供 HOW 的文件级指引，本 Spec 冻结 WHAT/WHY。二者冲突以本次已确认 Spec 为准；方案确认不等于实施或上线授权。
+ - 已有 #92/#94 定义适配器归属和执行保证；本方案复用其接口并补 Mastra 行为证据。已有 #395 管个人记忆退出，不能另发重复票重做；#162 虽关闭仍需核验代码与迁移证据。#436 为 fresh-schema 环境风险，独立测试库若被它阻塞应引用事实，不扩大为本轮数据库重构。
+ - 官方能力读取于 2026-10-19：[流式事件](https://mastra.ai/docs/guides/streaming)、[审批与挂起](https://mastra.ai/docs/agents/human-in-the-loop)、[durable agents](https://mastra.ai/docs/harness/durable-agents)。官方说明支持框架能力判断；具体当前版本和数据库可靠性由 ME01/ME05 验证，不能据文档宣称已经通过。
+-- 测试 seam 与 Issue 粒度将同本评审稿一次性送审；确认后按拓扑序发布、添加 ready-for-agent、正式 sub-issue 和原生 blocked_by（不可用时保留正文依赖并披露）。标签不代表前置依赖完成、实现授权或上线许可。
++- 测试 seam、方案和 16 张 Issue 的粒度与依赖已在本会话获用户确认；按拓扑序发布、添加 ready-for-agent、正式 sub-issue 和原生 blocked_by（不可用时保留正文依赖并披露）。标签不代表前置依赖完成、实现授权或上线许可。
+diff --git a/docs/tickets/mastra-agent-execution/tickets.json b/docs/tickets/mastra-agent-execution/tickets.json
+index 607361f0..cf224bfe 100644
+--- a/docs/tickets/mastra-agent-execution/tickets.json
++++ b/docs/tickets/mastra-agent-execution/tickets.json
+@@ -2,9 +2,9 @@
+   "repo": "1123786563/OpenBot",
+   "feature": "mastra-agent-execution",
+   "parent_key": "ME-SPEC",
+-  "parent_issue": null,
+-  "status": "draft-awaiting-breakdown-review",
+-  "publication_authorized_after_review": false,
++  "parent_issue": 472,
++  "status": "published-and-verified",
++  "publication_authorized_after_review": true,
+   "proposed_labels": [
+     "enhancement",
+     "ready-for-agent"
+@@ -39,7 +39,16 @@
+       "verification": "演示一轮带工具的流式回答及一次独立进程恢复；核对真实模型/工具调用计数。数据库 fixture 缺失则恢复验收 unverified。",
+       "boundary": "只做迁移所需兼容探针及必要版本锁定；不接生产默认路由，不实现新业务权限/计费。",
+       "produces": "精确版本指纹、完整事件 fixture、受控模型与恢复载荷合同。",
+-      "risk": "依赖/API 不兼容时停止并修订版本方案，不能以普通文本成功代替恢复能力。"
++      "risk": "依赖/API 不兼容时停止并修订版本方案，不能以普通文本成功代替恢复能力。",
++      "file": "issues/me01.md",
++      "body_sha256": "58c925d9092f71040d1164efad56ed00578a5d22be1e4290c10f368e17236596",
++      "issue_number": 473,
++      "issue_id": 5926237869,
++      "url": "https://github.com/1123786563/OpenBot/issues/473",
++      "published_title": "[Mastra ME01] 锁定 Mastra 兼容组合并演示可持久恢复的最小执行",
++      "published_at": "2026-10-19T14:56:41.112045+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": []
+     },
+     {
+       "id": "ME02",
+@@ -76,7 +85,18 @@
+       "verification": "原聊天客户端加 fake provider 的挂载测试，覆盖正常/402/坏帧/事件落盘失败、并发用户、主动停止与重连；核对消息、事件及结算。",
+       "boundary": "纯文本交互端到端；暂不提供连接器、附件或审批，不移除旧引擎，也不开放 remote Agent。",
+       "produces": "受控执行模块、ExecutionBinding 与规范事件合同、按服务端范围选择引擎的测试装配。",
+-      "risk": "缺 scope、lease 或预算拒绝执行；不能回退旧引擎绕过当前拒绝。"
++      "risk": "缺 scope、lease 或预算拒绝执行；不能回退旧引擎绕过当前拒绝。",
++      "file": "issues/me02.md",
++      "body_sha256": "4553f6bc00c673b641afaefb6856190c1c0ece2232fd8c704d4e20e037936a6f",
++      "issue_number": 474,
++      "issue_id": 5926238449,
++      "url": "https://github.com/1123786563/OpenBot/issues/474",
++      "published_title": "[Mastra ME02] 现有聊天入口通过 Mastra 完成受预算约束的文本回答",
++      "published_at": "2026-10-19T14:56:43.177336+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        473
++      ]
+     },
+     {
+       "id": "ME03",
+@@ -108,7 +128,18 @@
+       "verification": "上传/回答/刷新/翻页的真实客户端流程；工具 pairs roundtrip、重复/中断写入与受限数据库跨范围测试。",
+       "boundary": "会话与附件完整性，不做旧平台全量历史导入、不新增自动长期记忆。",
+       "produces": "授权完整历史读写、稳定消息身份与幂等/parts 转换合同。",
+-      "risk": "跨系统写入用 intent/reconcile，失败不能用双写或丢消息恢复服务。"
++      "risk": "跨系统写入用 intent/reconcile，失败不能用双写或丢消息恢复服务。",
++      "file": "issues/me03.md",
++      "body_sha256": "a1ab9f23513df416bcc25e22bcf311d099186c21b73ed53fc381e00deda723de",
++      "issue_number": 475,
++      "issue_id": 5926239406,
++      "url": "https://github.com/1123786563/OpenBot/issues/475",
++      "published_title": "[Mastra ME03] 聊天刷新与附件往返保留完整历史和稳定顺序",
++      "published_at": "2026-10-19T14:56:46.833767+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        474
++      ]
+     },
+     {
+       "id": "ME04",
+@@ -140,7 +171,18 @@
+       "verification": "一个真实受控包装的只读连接器工具完成调用后回答；另测未授予、撤权、多步预算、超时和供应商错误；逐步核对 capability/receipt。",
+       "boundary": "受管连接器工具适配；不重写插件/凭据系统，不把原始 MCP tools 直接绕过执行器挂载。",
+       "produces": "统一受控工具包装、toolCallId/operationId/参数摘要与模型多步治理合同。",
+-      "risk": "未知工具和权限失败明确拒绝；结果未知不标记成功或直接重放。"
++      "risk": "未知工具和权限失败明确拒绝；结果未知不标记成功或直接重放。",
++      "file": "issues/me04.md",
++      "body_sha256": "cee60fc191eeb7ea873b282adaf62a449302e7e464907782d9821ed436109703",
++      "issue_number": 476,
++      "issue_id": 5926240005,
++      "url": "https://github.com/1123786563/OpenBot/issues/476",
++      "published_title": "[Mastra ME04] Bot 通过本人授权的连接器工具完成多步工作",
++      "published_at": "2026-10-19T14:56:48.935746+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        475
++      ]
+     },
+     {
+       "id": "ME05",
+@@ -175,7 +217,18 @@
+       "verification": "现有审批 UI 的批准/拒绝/问答/刷新流程，另测两个实例抢恢复、落盘间故障、退出重启、撤权及未知副作用。",
+       "boundary": "通用审批与问答恢复，包含必要 UI；不做任意模型 token 的断点续算，不声称外部系统 exactly-once。",
+       "produces": "versioned continuation、恢复 claim/receipt/未知结果合同，客户端等待与恢复事件。",
+-      "risk": "无法证明外部效果时待人工或供应商证据核对；不靠新 attempt 自动重复。"
++      "risk": "无法证明外部效果时待人工或供应商证据核对；不靠新 attempt 自动重复。",
++      "file": "issues/me05.md",
++      "body_sha256": "01c75aa6f1c8947bdff034ba4d68fcb5a3335c46d1509c99e53f1228264be68b",
++      "issue_number": 477,
++      "issue_id": 5926240869,
++      "url": "https://github.com/1123786563/OpenBot/issues/477",
++      "published_title": "[Mastra ME05] 危险操作与用户问答可持久挂起并准确恢复",
++      "published_at": "2026-10-19T14:56:51.908804+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        476
++      ]
+     },
+     {
+       "id": "ME06",
+@@ -208,7 +261,18 @@
+       "verification": "一次真实客户端参与工具与一次 headless 挂起后人工完成；对环境授权、重复回包和停止做失败注入。",
+       "boundary": "迁移工具调度和客户端参与协议；不改写 Computer、Craft 或沙箱自身执行引擎。",
+       "produces": "有人/无人值守的受控工具执行合同与持久前端结果关联。",
+-      "risk": "参与或环境不可用时等待/失败并展示原因，不能降低审批。"
++      "risk": "参与或环境不可用时等待/失败并展示原因，不能降低审批。",
++      "file": "issues/me06.md",
++      "body_sha256": "e7f475abba4dade17c34094da5b8763f3f185da813743730df712588bbc34da0",
++      "issue_number": 478,
++      "issue_id": 5926241604,
++      "url": "https://github.com/1123786563/OpenBot/issues/478",
++      "published_title": "[Mastra ME06] Computer 与前端工具在有人和无人值守场景中保持真实执行",
++      "published_at": "2026-10-19T14:56:53.915526+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        477
++      ]
+     },
+     {
+       "id": "ME07",
+@@ -240,7 +304,19 @@
+       "verification": "同一已确认/候选/遗忘/来源受限数据集在网页与 headless 读取；核对模型实际收到内容和跨公司拒绝。",
+       "boundary": "执行上下文和工具消费适配；Hindsight 同步、索引、派生、删除与旧权威退出归既有 #376/#395。",
+       "produces": "受权个人记忆上下文装配，不向 Agent 暴露 bank 或可任意选择的 scope。",
+-      "risk": "外部 #395 未完成集成时本票实现/生产验收受阻；可以只读核查，但不以空快照假装通过。"
++      "risk": "外部 #395 未完成集成时本票实现/生产验收受阻；可以只读核查，但不以空快照假装通过。",
++      "file": "issues/me07.md",
++      "body_sha256": "af9e3ce357143583a8d857a08beab4490055415d87f603826966f3841576f5d3",
++      "issue_number": 479,
++      "issue_id": 5926242245,
++      "url": "https://github.com/1123786563/OpenBot/issues/479",
++      "published_title": "[Mastra ME07] Mastra 对话与后台只消费已确认且获授权的个人记忆",
++      "published_at": "2026-10-19T14:56:56.099289+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        476,
++        395
++      ]
+     },
+     {
+       "id": "ME08",
+@@ -269,7 +345,18 @@
+       "verification": "启用/禁用/异常/撤销/共享刷新取消/恢复的技能端到端测试；记录模型看到 catalog 和实际读取结果。",
+       "boundary": "保留现有学习服务的可选适配，不实现 Mastra 学习算法，不删除仍必需的 CopilotKit learned-skills 校验代码。",
+       "produces": "独立可选 LearningProvider 及按运行绑定快照的上下文合同。",
+-      "risk": "服务故障显示真实状态，不能借本迁移擅自取消既有学习能力。"
++      "risk": "服务故障显示真实状态，不能借本迁移擅自取消既有学习能力。",
++      "file": "issues/me08.md",
++      "body_sha256": "5e0b13348014a2a303ecc2e4276b27e1db0b25979edcc44a9e61fcbfb0d686fb",
++      "issue_number": 480,
++      "issue_id": 5926243056,
++      "url": "https://github.com/1123786563/OpenBot/issues/480",
++      "published_title": "[Mastra ME08] 保留可选学习技能的快照校验、加载与撤销",
++      "published_at": "2026-10-19T14:56:58.554164+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        477
++      ]
+     },
+     {
+       "id": "ME09",
+@@ -300,7 +387,20 @@
+       "verification": "手动触发/时间触发各一次，另测双 worker、重复投递、无预算、撤权、审批等待和结果回写；网关和历史不访问 Intelligence。",
+       "boundary": "仅定时任务端到端切片；职责、投递、唤醒与 Bot 交接分别由后续票迁移。",
+       "produces": "可复用受控 headless turn 合同和后台准入/预算来源约束。",
+-      "risk": "无法证明旧任务范围或预算则隔离，不以默认管理员执行。"
++      "risk": "无法证明旧任务范围或预算则隔离，不以默认管理员执行。",
++      "file": "issues/me09.md",
++      "body_sha256": "a8d6a080d0e96a433e91f2d48acfd634765c6a494c751a4522674a0e127b7aef",
++      "issue_number": 481,
++      "issue_id": 5926243730,
++      "url": "https://github.com/1123786563/OpenBot/issues/481",
++      "published_title": "[Mastra ME09] 定时任务通过统一 Mastra 执行并回写原会话",
++      "published_at": "2026-10-19T14:57:01.000528+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        478,
++        479,
++        480
++      ]
+     },
+     {
+       "id": "ME10",
+@@ -330,7 +430,18 @@
+       "verification": "四类入口各一条正常及故障/重复案例，共用前置 turn；对照入口清单核对无 Intelligence 执行/历史旁路。",
+       "boundary": "受控迁移已存在四种入口；不增加长期任务产品、跨公司转交或新调度算法。",
+       "produces": "四种入口到同一 turn 的薄装配及完整结果回传清单。",
+-      "risk": "一个入口失败不改用另一身份/账户/引擎；未知意图隔离。"
++      "risk": "一个入口失败不改用另一身份/账户/引擎；未知意图隔离。",
++      "file": "issues/me10.md",
++      "body_sha256": "0df3324f034ea1f41a94bb721a05038737500fe06563f691965db03c5189f0d2",
++      "issue_number": 482,
++      "issue_id": 5926244642,
++      "url": "https://github.com/1123786563/OpenBot/issues/482",
++      "published_title": "[Mastra ME10] 职责、投递、唤醒与审批续跑统一执行和回传",
++      "published_at": "2026-10-19T14:57:03.856011+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        481
++      ]
+     },
+     {
+       "id": "ME11",
+@@ -359,7 +470,18 @@
+       "verification": "两 Bot 正常交接加一次私有分享等待恢复；另测 reaper 重试、越权和目标失败。",
+       "boundary": "业务 handoff 装配，不引入新的 supervisor/network 产品或开放 remote Agent。",
+       "produces": "受控交接输入/结果读取与 reaper 幂等合同。",
+-      "risk": "无法共享就等待审批或拒绝，不能先发送私有内容再补授权。"
++      "risk": "无法共享就等待审批或拒绝，不能先发送私有内容再补授权。",
++      "file": "issues/me11.md",
++      "body_sha256": "7a958ffaf0724af89d8c54b18d9b39d79e844d89958cb69c8d2da72505f9cc1b",
++      "issue_number": 483,
++      "issue_id": 5926245276,
++      "url": "https://github.com/1123786563/OpenBot/issues/483",
++      "published_title": "[Mastra ME11] Bot 交接与回收重试保持授权、分享和深度限制",
++      "published_at": "2026-10-19T14:57:05.892312+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        482
++      ]
+     },
+     {
+       "id": "ME12",
+@@ -388,7 +510,18 @@
+       "verification": "主仓库 OpenMuse task 和 Workshop 端到端装配各一正常/取消/越权流程；检查任务状态与产物下载权限。",
+       "boundary": "仅迁移主仓库调用装配，不改 OpenMuse 子模块 TanStack Agent、Craft 或 Workshop 自身底层执行器。",
+       "produces": "集成入口清单和对统一 turn 的稳定适配。",
+-      "risk": "不以扩大环境/文件权限解决迁移失败；子模块内部改造另立需求。"
++      "risk": "不以扩大环境/文件权限解决迁移失败；子模块内部改造另立需求。",
++      "file": "issues/me12.md",
++      "body_sha256": "95c9796eb04c49f650514d99b4ff304422ab9a259852d34dd235921b289b17f7",
++      "issue_number": 484,
++      "issue_id": 5926246280,
++      "url": "https://github.com/1123786563/OpenBot/issues/484",
++      "published_title": "[Mastra ME12] OpenMuse 与 Workshop 调用保留任务、产物和作用域",
++      "published_at": "2026-10-19T14:57:09.166678+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        481
++      ]
+     },
+     {
+       "id": "ME13",
+@@ -418,7 +551,19 @@
+       "verification": "包含多页、重复页、工具/附件和未知归属的数据集；演练中途退出再导入并从客户端核对。",
+       "boundary": "导入工具与预演，不执行生产 apply；旧暂停记录正式切换处置归后续票。",
+       "produces": "受控导入 manifest、游标/摘要、staging 校验和幂等映射。",
+-      "risk": "源 API/归属不完整明确标记，不能把未读取页当无数据。"
++      "risk": "源 API/归属不完整明确标记，不能把未读取页当无数据。",
++      "file": "issues/me13.md",
++      "body_sha256": "233741bbe3807230abb64e38d992513e4793b803846d0cf8b911b26085f78541",
++      "issue_number": 485,
++      "issue_id": 5926247239,
++      "url": "https://github.com/1123786563/OpenBot/issues/485",
++      "published_title": "[Mastra ME13] 盘点并幂等导入旧会话与完整消息",
++      "published_at": "2026-10-19T14:57:12.875311+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        475,
++        477
++      ]
+     },
+     {
+       "id": "ME14",
+@@ -452,7 +597,20 @@
+       "verification": "两个实例、活跃运行/暂停/未知外部效果混合 fixture，演练旧 writer 拒绝、apply 中断与生成新消息后的 rollback。",
+       "boundary": "切换程序、在途处置与预演，不授权生产停机/发布，不重写其他系统的历史归属迁移。",
+       "produces": "写入 fence、暂停处置账本、切换核验与兼容回滚 runbook。",
+-      "risk": "任何不可转换或未排空状态在其范围阻塞，不能跳过以完成上线。"
++      "risk": "任何不可转换或未排空状态在其范围阻塞，不能跳过以完成上线。",
++      "file": "issues/me14.md",
++      "body_sha256": "76c6b56ff38caac992f5bf8ff95bb1d9ad796cd80e325389f5481fd9820622d2",
++      "issue_number": 486,
++      "issue_id": 5926248709,
++      "url": "https://github.com/1123786563/OpenBot/issues/486",
++      "published_title": "[Mastra ME14] 处置在途运行并完成单写切换与无数据损失回滚演练",
++      "published_at": "2026-10-19T14:57:18.293024+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        483,
++        484,
++        485
++      ]
+     },
+     {
+       "id": "ME15",
+@@ -484,7 +642,18 @@
+       "verification": "无 Intelligence 的隔离启动+网页/后台运行，启用学习的故障演示，跨实例与受限数据库身份矩阵和观测对账。",
+       "boundary": "去基础运行硬依赖与可诊断部署，不完全替换学习服务，不删除 React/SSE 依赖。",
+       "produces": "基础/可选能力分离配置、健康合同和完整观测关联证据。",
+-      "risk": "基础能力缺失明确拒绝；实际环境缺项不得以全 skip 通过。"
++      "risk": "基础能力缺失明确拒绝；实际环境缺项不得以全 skip 通过。",
++      "file": "issues/me15.md",
++      "body_sha256": "60f29fdd4529b6629b367ef985c289bce388d045167d4086769fca5833244d7a",
++      "issue_number": 487,
++      "issue_id": 5926250088,
++      "url": "https://github.com/1123786563/OpenBot/issues/487",
++      "published_title": "[Mastra ME15] 无强制 Intelligence 部署可运行并诊断全部基础入口",
++      "published_at": "2026-10-19T14:57:21.345113+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        486
++      ]
+     },
+     {
+       "id": "ME16",
+@@ -516,7 +685,70 @@
+       "verification": "完整受影响回归、真实客户端刷新/停止/语音、基础部署及数据库矩阵；独立审查/OCR 与最终入口审计。",
+       "boundary": "最终 contract 与验收，不把遗漏的新产品范围塞进收尾，不自动关闭旧父 Issue 或执行部署。",
+       "produces": "可追溯交付报告、完整验收矩阵、零阻塞审查和维护窗口候选包。",
+-      "risk": "任何真实必需验收未判或有效 finding 都不计完成；需要修复按独立修复计划进行。"
++      "risk": "任何真实必需验收未判或有效 finding 都不计完成；需要修复按独立修复计划进行。",
++      "file": "issues/me16.md",
++      "body_sha256": "585bfd5a84d0fa748940b3ad2db9951525243d9d83d821a2243c6d5ca7da10d6",
++      "issue_number": 488,
++      "issue_id": 5926250714,
++      "url": "https://github.com/1123786563/OpenBot/issues/488",
++      "published_title": "[Mastra ME16] 退出旧内置执行路径并完成全入口交付验收",
++      "published_at": "2026-10-19T14:57:23.843057+00:00",
++      "parent_link_written": true,
++      "native_blocked_by_numbers": [
++        487
++      ]
+     }
+-  ]
++  ],
++  "parent_body_sha256": "b0c2fbc47b3a8e898220edbdbc152b7d44a0d739e8191062f60067585e646757",
++  "spec_sha256": "d6145088de1dc82d2761b0c0dcf724d86210f26bb5abae4a0858dd6a0140726b",
++  "topological_order": [
++    "ME01",
++    "ME02",
++    "ME03",
++    "ME04",
++    "ME05",
++    "ME06",
++    "ME07",
++    "ME08",
++    "ME09",
++    "ME10",
++    "ME11",
++    "ME12",
++    "ME13",
++    "ME14",
++    "ME15",
++    "ME16"
++  ],
++  "external_dependencies": [
++    {
++      "repo": "1123786563/OpenBot",
++      "number": 395,
++      "blocks": [
++        "ME07"
++      ],
++      "status": "OPEN at read; implementation not audited"
++    }
++  ],
++  "native_relationship_support": {
++    "blocked_by_get": "verified on existing #395, returned #389/#391/#394",
++    "sub_issues_get": "verified on existing #6 with pagination",
++    "write_support": "Verified by POST and paginated GET for all 16 sub-issue relationships and 21 blocked_by edges",
++    "fallback": "retain explicit body dependencies and report unavailable native writes"
++  },
++  "approval": {
++    "date": "2026-10-19",
++    "source": "user confirmed detailed design, breakdown, dependencies, testing seams and publication of parent + 16 children",
++    "implementation_authorized": false
++  },
++  "parent_publication": {
++    "issue_number": 472,
++    "issue_id": 5926236933,
++    "url": "https://github.com/1123786563/OpenBot/issues/472",
++    "published_title": "Spec: 内置 Agent 执行迁移 Mastra",
++    "body_sha256": "b0c2fbc47b3a8e898220edbdbc152b7d44a0d739e8191062f60067585e646757",
++    "published_at": "2026-10-19T14:56:39.037414+00:00"
++  },
++  "parent_url": "https://github.com/1123786563/OpenBot/issues/472",
++  "parent_id": 5926236933,
++  "verified_at": "2026-10-19T15:01:29.985059+00:00"
+ }
+diff --git a/server/tests/opik-t-final-assembly.test.ts b/server/tests/opik-t-final-assembly.test.ts
+index 2ea3abef..755319e7 100644
+--- a/server/tests/opik-t-final-assembly.test.ts
++++ b/server/tests/opik-t-final-assembly.test.ts
+@@ -515,13 +515,14 @@ describe("T-final M1: the boot assembly reads the ambient scope", () => {
+     ).toBe(2);
+   });
+ 
+-  test("the one remaining ambient read is the retrieval adapter's, whose fact is emitted inline (OCR R3-39 scoping)", () => {
+-    // The retrieval observation is emitted synchronously inside the run's
+-    // pipeline, where the ambient context holds — the tool-step settlement's
+-    // ambient read, the one R3-39 kills, is gone (zero on that path).
+-    expect(indexSource.match(/currentRunObservationScope\(\)/g)?.length).toBe(
+-      1,
+-    );
++  test("no ambient read remains — the retrieval adapter's was the last (OCR R3-39 scoping, ADR 0009)", () => {
++    // The retrieval observation — the one ambient read R3-39 still allowed —
++    // went with the knowledge domain (ADR 0009). Zero is the budget: any new
++    // observation path must read the scope its fact carried, never the
++    // ambient store.
++    expect(
++      indexSource.match(/currentRunObservationScope\(\)/g)?.length ?? 0,
++    ).toBe(0);
+   });
+ 
+   test("the run-scope resolver is constructed before the first top-level await — the boot TDZ race is dead (OCR R3-36)", () => {
+diff --git a/server/tests/tenant-package.test.ts b/server/tests/tenant-package.test.ts
+index db2cf48c..e55dc32a 100644
+--- a/server/tests/tenant-package.test.ts
++++ b/server/tests/tenant-package.test.ts
+@@ -418,16 +418,6 @@ describe("tenant YAML validation", () => {
+        */
+       skills: ["bot-creator", "skill-creator"],
+     });
+-    // The pairing the shipped package makes, which is the whole reason Knowledge narrows to document
+-    // tools rather than being offered everything its grants hold.
+-    expect(
+-      tenantPackage.agents.find((agent) => agent.id === "knowledge")?.skills,
+-    ).toEqual([
+-      "find-a-document",
+-      "check-a-claim",
+-      "whats-changed",
+-      "who-owns-this",
+-    ]);
+     /*
+      * The skill that writes skills, shipped with no declared tools on purpose. Its tools are the app's
+      * own rather than a connector's, so they are not `serverId/toolName` refs; a declaration here would
+@@ -450,7 +440,7 @@ describe("tenant YAML validation", () => {
+     });
+   });
+ 
+-  test("starts a deployment with two coworkers, not the whole catalog", async () => {
++  test("starts a deployment with one coworker, not the whole catalog", async () => {
+     /*
+      * The roster a fresh deployment opens on. The ten in `catalog/` used to load from `agents/`, so
+      * every new deployment met a dozen Bots at once. Risk Analyst and the picked harness only register
+@@ -468,7 +458,6 @@ describe("tenant YAML validation", () => {
+       );
+       expect(tenantPackage.agents.map((agent) => agent.id)).toEqual([
+         "general-assistant",
+-        "knowledge",
+       ]);
+     } finally {
+       if (saved.managed === undefined)

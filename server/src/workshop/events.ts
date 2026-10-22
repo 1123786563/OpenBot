@@ -34,7 +34,9 @@ export type WorkshopStreamEvent =
 export type SeqencedStreamEvent = WorkshopStreamEvent & { seq: number };
 
 /** The opencode event's properties, whether the payload nests them or carries them flat. */
-const propertiesOf = (payload: Record<string, unknown>): Record<string, unknown> => {
+const propertiesOf = (
+  payload: Record<string, unknown>,
+): Record<string, unknown> => {
   const nested = payload["properties"];
   if (nested !== null && typeof nested === "object") {
     return nested as Record<string, unknown>;
@@ -108,10 +110,7 @@ export async function replaySince(
 
 export type WorkshopEventSink = {
   /** Persist one gateway event under its turn and ping the bus. Returns the wire shape. */
-  append(
-    turnId: string,
-    event: TranslatedEvent,
-  ): Promise<SeqencedStreamEvent>;
+  append(turnId: string, event: TranslatedEvent): Promise<SeqencedStreamEvent>;
 };
 
 export function createEventSink(
@@ -174,7 +173,9 @@ export function streamEventsResponse(input: StreamEventsInput): Response {
 }
 
 /** The stream alone, for callers that stream through Hono's context.body instead. */
-export function eventsStreamBody(input: StreamEventsInput): ReadableStream<Uint8Array> {
+export function eventsStreamBody(
+  input: StreamEventsInput,
+): ReadableStream<Uint8Array> {
   const { bus, store, turnIds } = input;
   const keepaliveMs = input.keepaliveMs ?? 15_000;
   const perTurnLastSeq = new Map<string, number>(
@@ -201,7 +202,9 @@ export function eventsStreamBody(input: StreamEventsInput): ReadableStream<Uint8
         // Catch-up first, per turn, from the database.
         for (const turnId of turnIds) {
           const since = perTurnLastSeq.get(turnId) ?? 0;
-          const events = await replaySince(store, turnId, since).catch(() => []);
+          const events = await replaySince(store, turnId, since).catch(
+            () => [],
+          );
           for (const event of events) {
             perTurnLastSeq.set(turnId, event.seq);
             guard(sseBlock(event));

@@ -1,12 +1,6 @@
 {
- "generatedBy": "scripts/e2e-add-driven.mjs",
+ "generatedBy": "scripts/e2e-bun-manifest.mjs",
  "groups": [
-  {
-   "name": "--help",
-   "files": [
-    "--help"
-   ]
-  },
   {
    "name": "agent-computer/tests",
    "files": [
@@ -19,9 +13,7 @@
   {
    "name": "agent-langgraph/tests",
    "files": [
-    "agent-langgraph/tests/google-oauth-proxy.test.ts",
     "agent-langgraph/tests/governed-export-bytes.test.ts",
-    "agent-langgraph/tests/governed-tracing.test.ts",
     "agent-langgraph/tests/trace-chain.test.ts"
    ]
   },
@@ -124,6 +116,7 @@
     "app/tests/learning-admin.test.tsx",
     "app/tests/live-screen-app-shortcuts.test.tsx",
     "app/tests/live-screen-keyboard.test.tsx",
+    "app/tests/mastra-runtime-compat.test.tsx",
     "app/tests/memory-settings.test.tsx",
     "app/tests/model-picker-ui.test.tsx",
     "app/tests/observability-i18n-namespaces.test.ts",
@@ -201,11 +194,6 @@
   {
    "name": "desktop/src",
    "files": [
-    "desktop/src/App.test.tsx",
-    "desktop/src/CompanySelection.test.tsx",
-    "desktop/src/LocalStateIsolation.test.tsx",
-    "desktop/src/Problem.test.tsx",
-    "desktop/src/ProviderPicker.test.tsx",
     "desktop/src/telemetry.test.ts"
    ]
   },
@@ -231,7 +219,6 @@
    "name": "server/tests part 1",
    "files": [
     "server/tests/acceptance-matrix.integration.test.ts",
-    "server/tests/acceptance-matrix.integration.test.ts\nserver/tests/conformance-evidence-extended.test.ts\nserver/tests/conformance-evidence.test.ts\nserver/tests/delivery-baseline.test.ts",
     "server/tests/access-grant-key-status.integration.test.ts",
     "server/tests/access-grant-revoke.test.ts",
     "server/tests/access-grant.integration.test.ts",
@@ -379,6 +366,8 @@
     "server/tests/enterprise/conversations.integration.test.ts",
     "server/tests/enterprise/mastra-compatibility.test.ts",
     "server/tests/enterprise/mastra-model.integration.test.ts",
+    "server/tests/enterprise/mastra-resume-fences.test.ts",
+    "server/tests/enterprise/mastra-routines.integration.test.ts",
     "server/tests/enterprise/mastra-storage.integration.test.ts",
     "server/tests/enterprise/runner-events.integration.test.ts",
     "server/tests/enterprise/runs.integration.test.ts",
@@ -448,6 +437,26 @@
     "server/tests/learning-langgraph.test.ts",
     "server/tests/learning-mastra.test.ts",
     "server/tests/learning-settings.integration.test.ts",
+    "server/tests/mastra-ag-ui-agent.test.ts",
+    "server/tests/mastra-agent-resume-process.test.ts",
+    "server/tests/mastra-browser-runner.test.ts",
+    "server/tests/mastra-computer-tools.test.ts",
+    "server/tests/mastra-continuations.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 9",
+   "files": [
+    "server/tests/mastra-engine-wiring.integration.test.ts",
+    "server/tests/mastra-governed-execution.test.ts",
+    "server/tests/mastra-governed-tools.test.ts",
+    "server/tests/mastra-headless.test.ts",
+    "server/tests/mastra-learned-skills.test.ts",
+    "server/tests/mastra-legacy-import.test.ts",
+    "server/tests/mastra-message-parts.test.ts",
+    "server/tests/mastra-personal-memory.test.ts",
+    "server/tests/mastra-stream-events.test.ts",
+    "server/tests/mastra-tools.test.ts",
     "server/tests/mcp-grant-removal.integration.test.ts",
     "server/tests/memory-defaults.integration.test.ts",
     "server/tests/memory-exit-single-authority.integration.test.ts",
@@ -460,7 +469,7 @@
    ]
   },
   {
-   "name": "server/tests part 9",
+   "name": "server/tests part 10",
    "files": [
     "server/tests/model-discovery-api.test.ts",
     "server/tests/model-preference.integration.test.ts",
@@ -489,7 +498,7 @@
    ]
   },
   {
-   "name": "server/tests part 10",
+   "name": "server/tests part 11",
    "files": [
     "server/tests/opik-execution-billing.integration.test.ts",
     "server/tests/opik-execution-billing.test.ts",
@@ -518,7 +527,7 @@
    ]
   },
   {
-   "name": "server/tests part 11",
+   "name": "server/tests part 12",
    "files": [
     "server/tests/opik-retention.integration.test.ts",
     "server/tests/opik-retention.test.ts",
@@ -547,7 +556,7 @@
    ]
   },
   {
-   "name": "server/tests part 12",
+   "name": "server/tests part 13",
    "files": [
     "server/tests/payment-ordering-migration.integration.test.ts",
     "server/tests/payment-store.integration.test.ts",
@@ -576,7 +585,7 @@
    ]
   },
   {
-   "name": "server/tests part 13",
+   "name": "server/tests part 14",
    "files": [
     "server/tests/qa-batch1-duplicate-paid.integration.test.ts",
     "server/tests/qa-batch1-payment-store.integration.test.ts",
@@ -605,7 +614,7 @@
    ]
   },
   {
-   "name": "server/tests part 14",
+   "name": "server/tests part 15",
    "files": [
     "server/tests/remote-coordination.test.ts",
     "server/tests/rerank-pricing.test.ts",
@@ -634,7 +643,7 @@
    ]
   },
   {
-   "name": "server/tests part 15",
+   "name": "server/tests part 16",
    "files": [
     "server/tests/shared-brokered-schema.integration.test.ts",
     "server/tests/shared-brokered-store.integration.test.ts",
@@ -665,7 +674,7 @@
    ]
   },
   {
-   "name": "server/tests part 16",
+   "name": "server/tests part 17",
    "files": [
     "server/tests/usage-breakdown.integration.test.ts",
     "server/tests/usage-outbox.integration.test.ts",
@@ -716,7 +725,6 @@
     "server/tests/multitenancy/billing-visibility.test.ts",
     "server/tests/multitenancy/bot-lifecycle.test.ts",
     "server/tests/multitenancy/bot-publish.test.ts",
-    "server/tests/multitenancy/bots-ownership.test.ts",
     "server/tests/multitenancy/cache-keys.test.ts",
     "server/tests/multitenancy/child-backfill-kb.test.ts",
     "server/tests/multitenancy/child-backfill-main-batch1.test.ts",
@@ -780,7 +788,6 @@
     "server/tests/multitenancy/native-runtime.test.ts",
     "server/tests/multitenancy/not-found-semantics.test.ts",
     "server/tests/multitenancy/oauth-state.test.ts",
-    "server/tests/multitenancy/observability-authz.test.ts",
     "server/tests/multitenancy/openmuse-activity-notifications.test.ts",
     "server/tests/multitenancy/openmuse-files.test.ts",
     "server/tests/multitenancy/openmuse-personal.test.ts",
@@ -853,14 +860,11 @@
   }
  ],
  "files": [
-  "--help",
   "agent-computer/tests/identity.test.ts",
   "agent-computer/tests/live-screen.test.ts",
   "agent-computer/tests/local-chrome-startup.test.ts",
   "agent-computer/tests/workspace-download.test.ts",
-  "agent-langgraph/tests/google-oauth-proxy.test.ts",
   "agent-langgraph/tests/governed-export-bytes.test.ts",
-  "agent-langgraph/tests/governed-tracing.test.ts",
   "agent-langgraph/tests/trace-chain.test.ts",
   "agent-mastra/src/mastra/index.test.ts",
   "agent-sandbox/tests/proxy.test.ts",
@@ -943,6 +947,7 @@
   "app/tests/learning-admin.test.tsx",
   "app/tests/live-screen-app-shortcuts.test.tsx",
   "app/tests/live-screen-keyboard.test.tsx",
+  "app/tests/mastra-runtime-compat.test.tsx",
   "app/tests/memory-settings.test.tsx",
   "app/tests/model-picker-ui.test.tsx",
   "app/tests/multitenancy/cache-generation.test.tsx",
@@ -985,17 +990,11 @@
   "app/tests/user-authorizations-ui.test.tsx",
   "app/tests/user-key-status-ui.test.tsx",
   "desktop/scripts/desktop-version.test.ts",
-  "desktop/src/App.test.tsx",
-  "desktop/src/CompanySelection.test.tsx",
-  "desktop/src/LocalStateIsolation.test.tsx",
-  "desktop/src/Problem.test.tsx",
-  "desktop/src/ProviderPicker.test.tsx",
   "desktop/src/telemetry.test.ts",
   "scripts/processes.test.ts",
   "scripts/start-restart-guard.test.ts",
   "scripts/tls-pipeline.test.ts",
   "server/tests/acceptance-matrix.integration.test.ts",
-  "server/tests/acceptance-matrix.integration.test.ts\nserver/tests/conformance-evidence-extended.test.ts\nserver/tests/conformance-evidence.test.ts\nserver/tests/delivery-baseline.test.ts",
   "server/tests/access-grant-key-status.integration.test.ts",
   "server/tests/access-grant-revoke.test.ts",
   "server/tests/access-grant.integration.test.ts",
@@ -1118,7 +1117,14 @@
   "server/tests/enterprise/ai-sdk-v3-gateway-adapter.test.ts",
   "server/tests/enterprise/conversations.integration.test.ts",
   "server/tests/enterprise/mastra-compatibility.test.ts",
+  "server/tests/enterprise/mastra-continuations.integration.test.ts",
+  "server/tests/enterprise/mastra-conversation-runtime.integration.test.ts",
+  "server/tests/enterprise/mastra-frontend-tool-participation.integration.test.ts",
+  "server/tests/enterprise/mastra-import.integration.test.ts",
+  "server/tests/enterprise/mastra-memory-context.integration.test.ts",
   "server/tests/enterprise/mastra-model.integration.test.ts",
+  "server/tests/enterprise/mastra-resume-fences.test.ts",
+  "server/tests/enterprise/mastra-routines.integration.test.ts",
   "server/tests/enterprise/mastra-storage.integration.test.ts",
   "server/tests/enterprise/runner-events.integration.test.ts",
   "server/tests/enterprise/runs.integration.test.ts",
@@ -1180,6 +1186,21 @@
   "server/tests/learning-langgraph.test.ts",
   "server/tests/learning-mastra.test.ts",
   "server/tests/learning-settings.integration.test.ts",
+  "server/tests/mastra-ag-ui-agent.test.ts",
+  "server/tests/mastra-agent-resume-process.test.ts",
+  "server/tests/mastra-browser-runner.test.ts",
+  "server/tests/mastra-computer-tools.test.ts",
+  "server/tests/mastra-continuations.test.ts",
+  "server/tests/mastra-engine-wiring.integration.test.ts",
+  "server/tests/mastra-governed-execution.test.ts",
+  "server/tests/mastra-governed-tools.test.ts",
+  "server/tests/mastra-headless.test.ts",
+  "server/tests/mastra-learned-skills.test.ts",
+  "server/tests/mastra-legacy-import.test.ts",
+  "server/tests/mastra-message-parts.test.ts",
+  "server/tests/mastra-personal-memory.test.ts",
+  "server/tests/mastra-stream-events.test.ts",
+  "server/tests/mastra-tools.test.ts",
   "server/tests/mcp-grant-removal.integration.test.ts",
   "server/tests/memory-defaults.integration.test.ts",
   "server/tests/memory-exit-single-authority.integration.test.ts",
@@ -1206,7 +1227,6 @@
   "server/tests/multitenancy/billing-visibility.test.ts",
   "server/tests/multitenancy/bot-lifecycle.test.ts",
   "server/tests/multitenancy/bot-publish.test.ts",
-  "server/tests/multitenancy/bots-ownership.test.ts",
   "server/tests/multitenancy/cache-keys.test.ts",
   "server/tests/multitenancy/child-backfill-kb.test.ts",
   "server/tests/multitenancy/child-backfill-main-batch1.test.ts",
@@ -1255,7 +1275,6 @@
   "server/tests/multitenancy/native-runtime.test.ts",
   "server/tests/multitenancy/not-found-semantics.test.ts",
   "server/tests/multitenancy/oauth-state.test.ts",
-  "server/tests/multitenancy/observability-authz.test.ts",
   "server/tests/multitenancy/openmuse-activity-notifications.test.ts",
   "server/tests/multitenancy/openmuse-files.test.ts",
   "server/tests/multitenancy/openmuse-personal.test.ts",
@@ -1296,7 +1315,6 @@
   "server/tests/multitenancy/streams.test.ts",
   "server/tests/multitenancy/team-public-rules.test.ts",
   "server/tests/multitenancy/telemetry-attribution.test.ts",
-  "server/tests/multitenancy/telemetry-attribution.test.ts\nserver/tests/multitenancy/telemetry-usage.test.ts\nserver/tests/multitenancy/voice-mobile-bff.test.ts",
   "server/tests/multitenancy/telemetry-usage.test.ts",
   "server/tests/multitenancy/tool-invocation.test.ts",
   "server/tests/multitenancy/vendor-billing.test.ts",
@@ -1491,7 +1509,6 @@
  ],
  "artifacts": [
   "deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts",
-  "deliverables/mobile-e2e-qa/tests/e2e/specs/env.smoke.ios.spec.ts",
   "deliverables/mobile-e2e-qa/tests/e2e/specs/env.smoke.spec.ts",
   "deliverables/mobile-e2e-qa/tests/e2e/specs/interruption.spec.ts",
   "deliverables/mobile-e2e-qa/tests/e2e/specs/offline.spec.ts",

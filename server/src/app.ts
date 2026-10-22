@@ -122,6 +122,7 @@ import type { DemonstrationStore } from "./demonstrations/store";
 import { mountDesktopConnectionFailure } from "./desktop-connection-failure";
 import { createTranscriptionProvider } from "./dictation/provider";
 import { createDictationRoutes } from "./dictation/routes";
+import type { PlatformScope } from "./enterprise/contracts";
 import { withRunnerRequestContext } from "./enterprise/runs/request-context";
 import { createLegacyEntryGuard } from "./enterprise/tenancy/assembly-legacy";
 import {
@@ -159,6 +160,9 @@ import {
 } from "./learning/routes";
 import { createMarketplaceRoutes } from "./marketplace/routes";
 import type { MarketplaceStore } from "./marketplace/store";
+import type { MastraContinuationInstall } from "./mastra/approvals";
+import { createMastraContinuationRoutes } from "./mastra/continuation-routes";
+import type { MastraContinuationStore } from "./mastra/continuation-store";
 import type { MemoryIngestion } from "./memory/ingestion";
 import { createMemoryRoutes } from "./memory/routes";
 import type { MemoryStore } from "./memory/store";
@@ -576,6 +580,17 @@ export function createApp(
     enterpriseConversations?: Hono;
     /** MT006 (issue #49): workspace scope listing + team administration routes. */
     enterpriseWorkspaceScope?: Hono;
+    /**
+     * ME06 (#478): the durable frontend_tool participation routes' deps —
+     * the real continuation ledger and this deployment's scope resolver.
+     * The `requireUser` middleware is created here (mount time), so the deps
+     * arrive and the route builds where the auth middleware lives.
+     */
+    mastraContinuations?: {
+      install: MastraContinuationInstall;
+      store: MastraContinuationStore;
+      resolveScope: (request: Request) => Promise<PlatformScope>;
+    };
     /**
      * MT122 (issue #165): the deployment main entry's request-context seam.
      * Present, the business API mounts the entry middleware after the
@@ -2084,6 +2099,17 @@ export function createApp(
       if (typeof routineRunId !== "string" || !routineRunId.trim()) {
         return context.json({ error: "A routineRunId is required." }, 400);
       }
+      // ME09: the firing's durable identity, when the worker carries one —
+      // the offer key the queue deduplicated on. Shape-checked, never
+      // trusted as authorization (the scheduling record decides that); it
+      // only names WHICH firing this is so a redelivery converges.
+      const firingKey = (body as { firingKey?: unknown } | null)?.firingKey;
+      const firing =
+        typeof firingKey === "string" &&
+        firingKey.trim() &&
+        firingKey.length <= 200
+          ? { firingKey: firingKey.trim() }
+          : undefined;
       /*
        * Fire and answer: the consumer needs "accepted", not the outcome. The run row in
        * `routine_runs` carries the outcome, and the consumer finishes the work item on this 202.
@@ -2095,9 +2121,9 @@ export function createApp(
       // deliberately not under /api/* (see the comment above it), so no session `web` floor
       // applies here — naming `api` is what puts the turns this fans out on their usage facts
       // at all.
-      void withUsageOrigin("api", () => routineRunner.run(routineRunId)).catch(
-        () => {},
-      );
+      void withUsageOrigin("api", () =>
+        routineRunner.run(routineRunId, firing),
+      ).catch(() => {});
       return context.json({ accepted: true }, 202);
     });
   }
@@ -2706,6 +2732,14 @@ export function createApp(
     app.route(
       "/api/approvals",
       createApprovalRoutes(coworker.approvals, requireUser),
+    );
+  if (coworker?.mastraContinuations)
+    app.route(
+      "/api/mastra-continuations",
+      createMastraContinuationRoutes({
+        ...coworker.mastraContinuations,
+        requireUser,
+      }),
     );
   if (coworker?.passwords) {
     app.route(

@@ -2,8 +2,8 @@ import type { Database } from "../db/client";
 import type { CreditGrantResult, CreditWriter } from "./credits-writer";
 import type { PayerAccount } from "./payer";
 import {
-  resolvePersonalPayerAccount,
   type PersonalUserIdentity,
+  resolvePersonalPayerAccount,
 } from "./payer-personal";
 import type { CreditGrantSource } from "./types";
 
@@ -50,12 +50,14 @@ export type RewardDefinition = {
  * a request names the reward type and nothing else, so "how much am I worth" is never a number
  * the client supplied.
  */
-export const rewardDefinitions: Record<(typeof REWARD_TYPES)[number], RewardDefinition> =
-  {
-    // One credit a day, alive a year — the same default life a manual grant gets. Both numbers
-    // are the minimal honest policy; a real campaign tunes them here or adds a type here.
-    signin: { totalCents: 100, ttlDays: 365, reason: "每日签到奖励" },
-  };
+export const rewardDefinitions: Record<
+  (typeof REWARD_TYPES)[number],
+  RewardDefinition
+> = {
+  // One credit a day, alive a year — the same default life a manual grant gets. Both numbers
+  // are the minimal honest policy; a real campaign tunes them here or adds a type here.
+  signin: { totalCents: 100, ttlDays: 365, reason: "每日签到奖励" },
+};
 
 /**
  * One reward occurrence's stable name: `reward:<type>:<period>:<user>`. The user rides the key
@@ -126,7 +128,10 @@ export function createRewardGranter(deps: {
       }
       // THE resolution: the claimer's own personal account, from the authenticated identity
       // alone. Created idempotently on first claim — an account is a mapping row, born empty.
-      const account = await resolvePersonalPayerAccount(deps.database, input.user);
+      const account = await resolvePersonalPayerAccount(
+        deps.database,
+        input.user,
+      );
       const idempotencyKey = rewardIdempotencyKey({
         userId: input.user.id,
         rewardType: input.rewardType,

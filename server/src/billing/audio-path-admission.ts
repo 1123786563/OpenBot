@@ -1,13 +1,16 @@
-import type { ConversionRate } from "../gateway/conversion-rate";
 import type { ModelRef } from "../gateway/catalog";
-import type { PayerRef } from "./payer";
+import type { ConversionRate } from "../gateway/conversion-rate";
+import type {
+  PriceDimension,
+  PriceSnapshotDims,
+} from "../gateway/price-snapshot";
 import {
   AUDIO_CAPABILITY_EVIDENCE,
-  enableableAudioPaths,
   type AudioCapabilityEvidenceRecord,
   type AudioPathMissingItem,
+  enableableAudioPaths,
 } from "./audio-capability-evidence";
-import { speechTierPriceTableFromSnapshot } from "./speech-pricing";
+import type { PayerRef } from "./payer";
 import {
   computeReservationCeiling,
   type ReservationBoundQuantities,
@@ -119,7 +122,9 @@ export type AudioPathAdmission = {
   stream: boolean;
 };
 
-export type AudioPathAdmissionOutcome = AudioPathAdmission | AudioPathAdmissionRefusal;
+export type AudioPathAdmissionOutcome =
+  | AudioPathAdmission
+  | AudioPathAdmissionRefusal;
 
 /** The seams the gate composes — production wires 06.2 and the provider dispatch. */
 export type AudioPathAdmissionDependencies = {
@@ -204,7 +209,8 @@ export function assessAudioPathAvailability(input: {
       tail?: SpeechTailVerdict;
     } {
   const record = AUDIO_CAPABILITY_EVIDENCE.find(
-    (candidate) => candidate.path === input.path && candidate.stream === input.stream,
+    (candidate) =>
+      candidate.path === input.path && candidate.stream === input.stream,
   );
   if (record === undefined || !record.exists) {
     // A path the registry does not carry as an entrance — or carries as a checked absence
@@ -358,7 +364,9 @@ export function createAudioPathAdmission(
   dependencies: AudioPathAdmissionDependencies,
 ) {
   return {
-    async admit(input: AudioPathAdmissionInput): Promise<AudioPathAdmissionOutcome> {
+    async admit(
+      input: AudioPathAdmissionInput,
+    ): Promise<AudioPathAdmissionOutcome> {
       // 1. The availability verdict, first and cheapest: the registry before the prices,
       //    the prices before any door. A refusal here never reaches the reserve at all.
       const availability = assessAudioPathAvailability({

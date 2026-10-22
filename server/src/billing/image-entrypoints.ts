@@ -1,22 +1,22 @@
-import type { ConversionRate } from "../gateway/conversion-rate";
 import type { ModelRef } from "../gateway/catalog";
+import type { ConversionRate } from "../gateway/conversion-rate";
+import {
+  assessImageEditEnablement,
+  type ImageEditSpec,
+  imageEditSpecOf,
+} from "./image-edit-pricing";
+import {
+  assessImageGenerationEnablement,
+  type ImageGenerationSpec,
+  type ImageTierPriceTable,
+  imageGenerationCeilingDims,
+  imageGenerationSpecOf,
+} from "./image-generation-pricing";
 import type { PayerRef } from "./payer";
 import {
   computeReservationCeiling,
   type ReservationCeilingIssue,
 } from "./reserve-bound";
-import {
-  assessImageEditEnablement,
-  imageEditSpecOf,
-  type ImageEditSpec,
-} from "./image-edit-pricing";
-import {
-  assessImageGenerationEnablement,
-  imageGenerationCeilingDims,
-  imageGenerationSpecOf,
-  type ImageGenerationSpec,
-  type ImageTierPriceTable,
-} from "./image-generation-pricing";
 
 /*
  * The image entrypoint matrix (Bifrost 12.4, #305): every entrance the image wire carries
@@ -227,7 +227,10 @@ export async function admitImageEntrypoint(
       status: "refused",
       stage: "entrypoint",
       reasonCode: "image_entrypoint_not_admitted",
-      detail: { kind: input.kind as string, wiredKinds: IMAGE_ENTRYPOINT_KINDS },
+      detail: {
+        kind: input.kind as string,
+        wiredKinds: IMAGE_ENTRYPOINT_KINDS,
+      },
     };
   }
 

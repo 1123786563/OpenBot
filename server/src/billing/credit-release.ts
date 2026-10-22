@@ -73,7 +73,10 @@ export type CreditReleaseRefusalReasonCode =
   (typeof RELEASE_REFUSAL_REASONS)[number];
 
 /** One line, shown on every surface, per refusal code — the settle surface's discipline. */
-export const RELEASE_REFUSAL_SENTENCES: Record<CreditReleaseRefusalReasonCode, string> = {
+export const RELEASE_REFUSAL_SENTENCES: Record<
+  CreditReleaseRefusalReasonCode,
+  string
+> = {
   request_invalid: "The release request is not a valid release request.",
   payer_conflict:
     "The request names a payment account; the account is fixed by the reservation and self-reported accounts are refused.",
@@ -190,7 +193,10 @@ function refused(
  */
 function validateRequest(input: unknown): RequestValidation {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "body" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "body" }),
+    };
   }
   const raw = input as Record<string, unknown>;
 

@@ -7,6 +7,13 @@ type Dependencies = {
   issueCapability(maximumTokens: number): Promise<string>;
   routeRef: string;
   runTokenCeiling: number;
+  /**
+   * ME10: tokens this run has ALREADY settled before this adapter was
+   * built (the resume drive's carrier). The ledger starts there, so the
+   * resumed dials ask for the run's REMAINING budget — never the ceiling
+   * again on top of what the park turn spent.
+   */
+  alreadySettledTokens?: number;
 };
 type CallOptions = Parameters<LanguageModelV3["doGenerate"]>[0];
 
@@ -358,7 +365,7 @@ function finishReason(reason: unknown) {
 export function createAiSdkV3GatewayAdapter(
   dependencies: Dependencies,
 ): LanguageModelV3 {
-  const ledger = { settledTokens: 0 };
+  const ledger = { settledTokens: dependencies.alreadySettledTokens ?? 0 };
   return {
     specificationVersion: "v3",
     provider: "openbot",

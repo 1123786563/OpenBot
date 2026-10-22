@@ -6,29 +6,29 @@ import {
   realtimeSessions,
   realtimeUnits,
 } from "../db/schema/credit-reservations";
+import type { ConversionRate } from "../gateway/conversion-rate";
+import { PRICE_DIMENSIONS } from "../gateway/price-snapshot";
 import type { Tx } from "./capacity";
-import type { PayerRef } from "./payer";
 import {
-  reserveCreditInTransaction,
-  RESERVE_BOUND_EVIDENCE_KINDS,
-  type CreditReserveRequest,
   type CreditReserveRefusalReasonCode,
+  type CreditReserveRequest,
+  RESERVE_BOUND_EVIDENCE_KINDS,
   type ReserveBoundEvidence,
+  reserveCreditInTransaction,
 } from "./credit-reserve";
 import {
-  SETTLE_USAGE_EVIDENCE_KINDS,
-  createCreditSettleService,
   type CreditSettleOutcome,
   type CreditSettleRefusalReasonCode,
+  createCreditSettleService,
+  SETTLE_USAGE_EVIDENCE_KINDS,
   type SettleUsageEvidence,
 } from "./credit-settle";
+import type { PayerRef } from "./payer";
 import {
   computeReservationCeiling,
   lockedBasisOfReservation,
   resolveLockedReservationBasis,
 } from "./reserve-bound";
-import { PRICE_DIMENSIONS } from "../gateway/price-snapshot";
-import type { ConversionRate } from "../gateway/conversion-rate";
 
 /*
  * The realtime billing unit door (Bifrost 15.2, #315): the place a realtime session's money
@@ -237,7 +237,9 @@ function isIdentifier(value: unknown, maxLength: number): value is string {
  */
 function validateOpenRequest(
   input: unknown,
-): { ok: true; request: RealtimeUnitOpenInput } | { ok: false; detail: Record<string, unknown> } {
+):
+  | { ok: true; request: RealtimeUnitOpenInput }
+  | { ok: false; detail: Record<string, unknown> } {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false, detail: { field: "body" } };
   }
@@ -267,9 +269,7 @@ function validateOpenRequest(
     if (
       candidate === null ||
       typeof candidate !== "object" ||
-      !RESERVE_BOUND_EVIDENCE_KINDS.includes(
-        candidate.kind as never,
-      ) ||
+      !RESERVE_BOUND_EVIDENCE_KINDS.includes(candidate.kind as never) ||
       !Number.isSafeInteger(candidate.maximumTokens) ||
       (candidate.maximumTokens as number) <= 0
     ) {
@@ -407,7 +407,9 @@ type RealtimeUnitSettleRequest = {
  */
 function validateSettleRequest(
   input: unknown,
-): { ok: true; request: RealtimeUnitSettleRequest } | { ok: false; detail: Record<string, unknown> } {
+):
+  | { ok: true; request: RealtimeUnitSettleRequest }
+  | { ok: false; detail: Record<string, unknown> } {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false, detail: { field: "body" } };
   }
@@ -423,7 +425,14 @@ function validateSettleRequest(
   const knownDimensions = new Set<string>(PRICE_DIMENSIONS);
   for (const key of Object.keys(usageRecord)) {
     if (!knownDimensions.has(key)) {
-      return { ok: false, detail: { field: "actualUsage", reason: "unknown_dimension", dimension: key } };
+      return {
+        ok: false,
+        detail: {
+          field: "actualUsage",
+          reason: "unknown_dimension",
+          dimension: key,
+        },
+      };
     }
   }
   const actualUsage = {} as Record<(typeof PRICE_DIMENSIONS)[number], number>;
@@ -439,7 +448,11 @@ function validateSettleRequest(
     actualUsage[dimension] = quantity;
   }
   const evidence = raw.evidence;
-  if (evidence === null || typeof evidence !== "object" || Array.isArray(evidence)) {
+  if (
+    evidence === null ||
+    typeof evidence !== "object" ||
+    Array.isArray(evidence)
+  ) {
     return { ok: false, detail: { field: "evidence" } };
   }
   const evidenceRecord = evidence as Record<string, unknown>;
@@ -481,7 +494,9 @@ function validateSettleRequest(
  * reserve outcome. A refusal at any pre-transaction step writes nothing; the transaction's
  * own refusals write the refused unit row — the recorded evidence — and nothing else.
  */
-export function createRealtimeUnitService(dependencies: RealtimeUnitDependencies) {
+export function createRealtimeUnitService(
+  dependencies: RealtimeUnitDependencies,
+) {
   const { database } = dependencies;
   const now = dependencies.now ?? (() => new Date());
   const settle =
@@ -589,12 +604,19 @@ export function createRealtimeUnitService(dependencies: RealtimeUnitDependencies
           idempotencyKey: unitId,
           expiresAt: request.expiresAt,
         };
-        const outcome = await reserveCreditInTransaction(tx as Tx, reserveRequest, {
-          now,
-          ...(dependencies.catalogFreshnessWindowMs === undefined
-            ? {}
-            : { catalogFreshnessWindowMs: dependencies.catalogFreshnessWindowMs }),
-        });
+        const outcome = await reserveCreditInTransaction(
+          tx as Tx,
+          reserveRequest,
+          {
+            now,
+            ...(dependencies.catalogFreshnessWindowMs === undefined
+              ? {}
+              : {
+                  catalogFreshnessWindowMs:
+                    dependencies.catalogFreshnessWindowMs,
+                }),
+          },
+        );
 
         if (outcome.status === "refused") {
           // The refused unit is a RECORDED outcome: the door's own code on the row, no
@@ -618,7 +640,11 @@ export function createRealtimeUnitService(dependencies: RealtimeUnitDependencies
             // 15.7's tail settlement may still settle these rows when evidence arrives.
             await tx
               .update(realtimeSessions)
-              .set({ state: "closed", closedAt: now(), closeReason: outcome.reasonCode })
+              .set({
+                state: "closed",
+                closedAt: now(),
+                closeReason: outcome.reasonCode,
+              })
               .where(
                 and(
                   eq(realtimeSessions.sessionId, request.sessionId),
@@ -656,7 +682,11 @@ export function createRealtimeUnitService(dependencies: RealtimeUnitDependencies
                 ),
               );
           }
-          return refused(recordOf(refusedRow), outcome.reasonCode, outcome.detail);
+          return refused(
+            recordOf(refusedRow),
+            outcome.reasonCode,
+            outcome.detail,
+          );
         }
 
         const [reservedRow] = await tx
@@ -727,7 +757,9 @@ export function createRealtimeUnitService(dependencies: RealtimeUnitDependencies
      *     adapter that cannot produce enforceable usage evidence leaves its tails
      *     unknown with the reason on the row (无法约束尾部的不可结算).
      */
-    async settleUnit(input: unknown): Promise<RealtimeUnitSettleOutcome | undefined> {
+    async settleUnit(
+      input: unknown,
+    ): Promise<RealtimeUnitSettleOutcome | undefined> {
       const validated = validateSettleRequest(input);
       if (!validated.ok) {
         return {
@@ -765,7 +797,10 @@ export function createRealtimeUnitService(dependencies: RealtimeUnitDependencies
         .from(creditReservations)
         .where(eq(creditReservations.id, unit.reservationId))
         .limit(1);
-      const basis = reservation === undefined ? null : lockedBasisOfReservation(reservation);
+      const basis =
+        reservation === undefined
+          ? null
+          : lockedBasisOfReservation(reservation);
       if (basis !== null) {
         const resolved = await resolveLockedReservationBasis(
           {
@@ -854,7 +889,11 @@ export function createRealtimeUnitService(dependencies: RealtimeUnitDependencies
         )
         .returning();
       if (settledRow !== undefined) {
-        return { status: "settled", unit: recordOf(settledRow), settle: outcome };
+        return {
+          status: "settled",
+          unit: recordOf(settledRow),
+          settle: outcome,
+        };
       }
       // The guard did not move: the unit was already settled (a replay of the same tail)
       // — answer the original result, or the state that refused the move.

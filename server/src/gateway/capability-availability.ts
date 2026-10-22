@@ -1,8 +1,8 @@
-import type { PriceDimension, PriceSnapshotDims } from "./price-snapshot";
-import { modelRefKey, type ModelRef } from "./catalog";
 import { EMBEDDING_BILLED_DIMENSIONS } from "../billing/embedding-pricing";
-import { RERANK_BILLED_DIMENSIONS } from "../billing/rerank-pricing";
 import { OCR_BILLED_DIMENSIONS } from "../billing/ocr-pricing";
+import { RERANK_BILLED_DIMENSIONS } from "../billing/rerank-pricing";
+import { type ModelRef, modelRefKey } from "./catalog";
+import type { PriceDimension, PriceSnapshotDims } from "./price-snapshot";
 
 /*
  * The three-capability availability summary (Bifrost 11.6, #301): one read that answers,
@@ -76,7 +76,11 @@ export type CapabilityAvailability = {
    * When unavailable for a priced-basis reason: every cell's missing dimensions with their
    * per-dimension reasons — the administrator's re-pricing worklist, never a guess.
    */
-  missingDimensions?: { ref: ModelRef; dimension: PriceDimension; reasonCode: string }[];
+  missingDimensions?: {
+    ref: ModelRef;
+    dimension: PriceDimension;
+    reasonCode: string;
+  }[];
 };
 
 /** One cell's basis against the capability's billed dimensions: available, or the missing list. */
@@ -141,7 +145,11 @@ export function summarizeCapabilityAvailability(input: {
       reasonCode: "capability_price_unknown" as const,
       cells: [],
       missingDimensions: cells.flatMap((cell) =>
-        cell.missing.map((entry) => ({ ref: cell.ref, dimension: entry.dimension, reasonCode: entry.reason })),
+        cell.missing.map((entry) => ({
+          ref: cell.ref,
+          dimension: entry.dimension,
+          reasonCode: entry.reason,
+        })),
       ),
     };
   });

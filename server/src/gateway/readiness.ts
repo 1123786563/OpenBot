@@ -41,8 +41,8 @@
 import type { Logger } from "../../../shared/logger";
 import { getLogger } from "../../../shared/logger";
 import { GatewayAdminCredentialNotConfiguredError } from "./admin-credential";
-import { billingAdmission, type ConversionRateState } from "./conversion-rate";
 import type { GatewayNegotiationRecord } from "./capability-negotiation";
+import { billingAdmission, type ConversionRateState } from "./conversion-rate";
 import type { GatewayEndpointConfig } from "./endpoint-config";
 import type { GatewayProbeRecord } from "./probe";
 

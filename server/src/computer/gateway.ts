@@ -906,7 +906,10 @@ export function createComputerGateway(
       actor: ActionActor,
       reason: string,
       /** The lease the server read before deciding to revoke, sent as the computer's precondition. */
-      observed?: { requestId: string | null; takenBy: string | null | undefined },
+      observed?: {
+        requestId: string | null;
+        takenBy: string | null | undefined;
+      },
     ) {
       const state = await post<ControlState>(botId, "/control/revoke", {
         reason,

@@ -4,9 +4,9 @@ import type { Database } from "../db/client";
 import type { PlatformScope } from "../enterprise/contracts";
 import type { DeploymentEntryBusiness } from "../enterprise/tenancy/entry-context";
 import {
+  type PayerBinding,
   restorePayerBinding,
   withPayerBinding,
-  type PayerBinding,
 } from "./payer-binding";
 import { resolveCompanyPayerAccount } from "./payer-company";
 
@@ -84,7 +84,10 @@ export function createWorkbenchPayerMiddleware(deps: {
       }
     ).get("entryBusiness");
     if (!business) return next();
-    const binding = await resolveWorkbenchPayerBinding(database, business.scope);
+    const binding = await resolveWorkbenchPayerBinding(
+      database,
+      business.scope,
+    );
     const { tenantId, workspaceId, principalId } = business.scope;
     return withWorkbenchScope({ tenantId, workspaceId, principalId }, () =>
       withPayerBinding(binding, next),

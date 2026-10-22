@@ -1,6 +1,6 @@
 import type {
-  SpeechSettleRequest,
   SpeechSettlementOutcome,
+  SpeechSettleRequest,
 } from "./speech-settlement";
 
 /*
@@ -114,7 +114,12 @@ function chunkSeconds(bytes: Uint8Array): {
       : null;
   if (view === null || bytes.length < 44) return null;
   const tag = (offset: number) =>
-    String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+    String.fromCharCode(
+      bytes[offset],
+      bytes[offset + 1],
+      bytes[offset + 2],
+      bytes[offset + 3],
+    );
   if (tag(0) !== "RIFF" || tag(8) !== "WAVE") return null;
   let offset = 12;
   let byteRate: bigint | null = null;
@@ -146,7 +151,10 @@ function gcd(a: bigint, b: bigint): bigint {
   return x;
 }
 
-function reduce(numerator: bigint, denominator: bigint): {
+function reduce(
+  numerator: bigint,
+  denominator: bigint,
+): {
   numerator: bigint;
   denominator: bigint;
 } {
@@ -181,10 +189,7 @@ function terminatingDecimal(value: {
     const scale = 10n ** 9n;
     const scaled = reduce(value.numerator * scale, value.denominator);
     const wholes = scaled.numerator / scaled.denominator;
-    const roundUp =
-      scaled.numerator % scaled.denominator === 0n
-        ? 0n
-        : 1n;
+    const roundUp = scaled.numerator % scaled.denominator === 0n ? 0n : 1n;
     const digits = (wholes + roundUp).toString().padStart(10, "0");
     return `${digits.slice(0, -9) || "0"}.${digits.slice(-9).replace(/0+$/, "")}`;
   }

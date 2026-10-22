@@ -1,0 +1,14 @@
+# SHA256 — ME04 (#476) checkpoint me04-review
+# Tree: /Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec  (branch 1123786563/mastra-exec)
+# HEAD: bf64d0f2772766a7c0cdbc3e9831c9024400e165 (no commits made; full uncommitted-increment checkpoint per brief)
+# All Mastra-migration files are untracked/modified relative to HEAD (ME01–ME04 share one uncommitted tree);
+# provenance per file is stated in me04/report.md §"崩溃派发遗留 vs 本轮改动".
+78f6bc2cceea738ac57bfad998dbdbe27927328c3da53fe705e78a63b1d75b97  server/src/mastra/tools.ts
+05a028532d5436033707bb7495f9a1ef02bad7131d59880caf6ba4601b2d9899  server/src/mastra/execution.ts
+859afe22e7746453fc94b295c7bc07a0d9bdaeca7f67940ec3c1b5f28325749d  server/src/mastra/stream-events.ts
+bf23673193d6eb990ef1fdf49f943de07f69d669bfa0faf7581157f87a90bc38  server/src/copilot.ts
+7ce77291e9cd9bfade8b217c6ba44576e89b494ca9aefa72d9a75d04fc82d3fd  server/tests/mastra-tools.test.ts
+e2e21355c47ffb6458275de96dbe169fc1ca98190f5d91327b20cb9d2664f76c  server/tests/mastra-governed-tools.test.ts
+30a850c03c00b7a6c079196e58343371c46b4d89d60de006133dfd2b8c7ea294  server/tests/support/me04-harness.ts
+14f264b2bf22f68871a19ed10eb8767566815452bae8bf2cfcc7f5046c1b6907  docs/verification/e2e-bun-suites.json
+bc58acd67896a859e7197ee0d33c46f96364c498ab202bef569f65d7cc44f6cd  archive/verification/e2e-file-audit.json

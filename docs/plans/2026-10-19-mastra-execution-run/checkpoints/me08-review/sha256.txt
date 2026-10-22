@@ -1,0 +1,14 @@
+# SHA256 — ME08 (#480) checkpoint me08-review
+# HEAD bf64d0f2 uncommitted tree; controller wave 178/0/868 ×2 (16 files)
+5c31b138fbfd143013030271a3b6f3a0f6b26e77f28a35d7a27a33b95e688741  server/src/mastra/execution-contracts.ts
+21f9bb0ffc866bdd8d7e7597ee85d1db3209639f3bca328d539a8190d5b72c31  server/src/mastra/tools.ts
+3e2bfbd5a5b136fb2311cb0077e04ba68ccf3bf88f31749c062d4b37e4fab972  server/src/mastra/execution.ts
+cc6e4387c899f1033056d5d76fc1fa14d9741818515ce9da58460313333a3da4  server/src/mastra/ag-ui-agent.ts
+43e8cd0795a9a48a922e39e59ea37284a496cdd807baef2b6ee573574a47e96c  server/src/copilot.ts
+c220ec0aa7e389dc412f873f43899c75565ece46eca090ab85e50028e0fdc2a6  server/tests/mastra-learned-skills.test.ts
+690f62b5ff884e1fdd60bef2436869b9d78ec45960833e67b582a2d0ade2593f  server/tests/mastra-browser-runner.test.ts
+72ab4f9427ee4de2fea51c3201b234bff587aabd201d3783bd50f1ed9038c767  server/tests/mastra-governed-execution.test.ts
+0a7dcf452871f0e45f3cb0e53d4521be0c72ab18c904f95371818bb7ed9c8dd7  server/tests/mastra-tools.test.ts
+8380d29844331f5aa89290acc8d7563cbe83113173c25c6311a7b73d5a717677  docs/plans/2026-10-19-mastra-execution-run/me08/report.md
+bc0562432c516431a2ed7af9798796fac6ff7516e3e0969a1766c76175146abc  docs/verification/e2e-bun-suites.json
+25c72c7ccc4128bc53db98071295c982ad2c389d4bd672404235f166db9704c6  docs/plans/2026-10-19-mastra-execution-run/me08/report.md

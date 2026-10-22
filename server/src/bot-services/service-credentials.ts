@@ -10,8 +10,8 @@ import {
 import type { Database } from "../db/client";
 import { credentials } from "../db/schema";
 import { mintBotServiceSecret } from "./auth";
-import { createBotServiceStore } from "./store";
 import type { BotServiceRecord } from "./store";
+import { createBotServiceStore } from "./store";
 import {
   BotServiceCredentialMissingError,
   BotServiceNotFoundError,

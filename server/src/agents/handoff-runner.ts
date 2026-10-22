@@ -21,6 +21,7 @@ import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import { HANDOFF_KIND } from "./handoff";
 import { ThreadBusyError } from "./handoff-delivery";
 import { BOT_PAUSED_REASON, isBotPaused } from "./lifecycle";
+
 const log = getLogger("server");
 
 /** What a hop carries, as `handoff.ts` wrote it. */

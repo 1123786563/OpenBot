@@ -97,7 +97,11 @@ export interface ComponentVersionNotMonotonic {
 }
 
 export type SkillPublishDecision =
-  | { readonly outcome: "allow"; readonly name: string; readonly revision: number }
+  | {
+      readonly outcome: "allow";
+      readonly name: string;
+      readonly revision: number;
+    }
   | ResourceNotFoundVerdict
   | SkillPublishForbidden
   | ComponentVersionNotMonotonic;
@@ -165,10 +169,7 @@ export interface SkillComponentService {
     input: { readonly name: string; readonly initialRevision?: number },
   ): Promise<SkillPublishDecision>;
   /** 成员读团队公共技能（AC1 可用面：活跃行 = 当前版本）。 */
-  readSkill(
-    scope: PlatformScope,
-    name: string,
-  ): Promise<SkillReadDecision>;
+  readSkill(scope: PlatformScope, name: string): Promise<SkillReadDecision>;
   /** 成员改团队公共技能（AC1 不可改面：可见但只读）。 */
   modifySkill(
     scope: PlatformScope,
@@ -262,7 +263,13 @@ export function createSkillComponentService(channels: {
         scope.tenantId,
         scope.principalId,
         scope.workspaceId,
-        JSON.stringify(["enterprise", kind, scope.tenantId, scope.workspaceId, name]),
+        JSON.stringify([
+          "enterprise",
+          kind,
+          scope.tenantId,
+          scope.workspaceId,
+          name,
+        ]),
       )) {
         await tx.execute(
           exclusive
@@ -283,7 +290,10 @@ export function createSkillComponentService(channels: {
         .leftJoin(
           enterpriseWorkspaceMemberships,
           and(
-            eq(enterpriseWorkspaceMemberships.tenantId, enterpriseMemberships.tenantId),
+            eq(
+              enterpriseWorkspaceMemberships.tenantId,
+              enterpriseMemberships.tenantId,
+            ),
             eq(enterpriseWorkspaceMemberships.workspaceId, scope.workspaceId),
             eq(
               enterpriseWorkspaceMemberships.principalId,
@@ -419,12 +429,7 @@ export function createSkillComponentService(channels: {
     assertTrustedScope(scope);
     assertName(name);
     assertRevision(revision);
-    const facts = await readFacts(
-      scope,
-      kindOf(kind),
-      name,
-      true,
-    );
+    const facts = await readFacts(scope, kindOf(kind), name, true);
     if (!facts.ok) return notFoundVerdict();
     if (facts.row) {
       const isAuthor = facts.authorPrincipalId === scope.principalId;
@@ -499,12 +504,7 @@ export function createSkillComponentService(channels: {
     },
 
     async upgradeComponent(scope, input) {
-      return publishOrUpgrade(
-        scope,
-        "component",
-        input.name,
-        input.toRevision,
-      );
+      return publishOrUpgrade(scope, "component", input.name, input.toRevision);
     },
 
     async invokeComponentFunction(scope, input) {
@@ -551,7 +551,10 @@ export function createSkillComponentService(channels: {
           .leftJoin(
             enterpriseWorkspaceMemberships,
             and(
-              eq(enterpriseWorkspaceMemberships.tenantId, enterpriseMemberships.tenantId),
+              eq(
+                enterpriseWorkspaceMemberships.tenantId,
+                enterpriseMemberships.tenantId,
+              ),
               eq(enterpriseWorkspaceMemberships.workspaceId, scope.workspaceId),
               eq(
                 enterpriseWorkspaceMemberships.principalId,
@@ -634,7 +637,11 @@ export function createSkillComponentService(channels: {
         return { outcome: "deny", code: "SKILL_PUBLISH_FORBIDDEN" } as const;
       }
       await retireActiveRow(scope, facts.row.id);
-      return { outcome: "allow", name: input.name, revision: facts.row.revision } as const;
+      return {
+        outcome: "allow",
+        name: input.name,
+        revision: facts.row.revision,
+      } as const;
     },
   };
 }

@@ -1,7 +1,7 @@
-import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
-import { recordAuditEvent, type AuditStore } from "../audit";
+import { Hono } from "hono";
 import type { AgentProfileStore } from "../agents/profile-store";
+import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import type { PluginStore } from "../plugins/store";
 import {
@@ -176,7 +176,10 @@ export function createMarketplaceRoutes(deps: MarketplaceDeps) {
       return context.json({ error: "No such expert in the catalogue." }, 404);
     }
     if (!deps.agents) {
-      return context.json({ error: "This deployment cannot create Bots." }, 503);
+      return context.json(
+        { error: "This deployment cannot create Bots." },
+        503,
+      );
     }
     const actor = context.var.actor;
     const agentActor = { id: actor.id, role: actor.role };
@@ -214,7 +217,9 @@ export function createMarketplaceRoutes(deps: MarketplaceDeps) {
     const skippedSkills: string[] = [];
     if (deps.skillWrites && deps.grants) {
       for (const skillSlug of expert.skills) {
-        const entry = CATALOGUE_SKILLS.find((skill) => skill.slug === skillSlug);
+        const entry = CATALOGUE_SKILLS.find(
+          (skill) => skill.slug === skillSlug,
+        );
         if (!entry) continue;
         const owner = await deps.skillWrites.skillOwner(skillSlug);
         if (owner === undefined) {

@@ -1,0 +1,273 @@
+bun test v1.4.2 (50a8a8387)
+
+server/tests/mastra-browser-runner.test.ts:
+[CopilotKit Runtime] telemetry enabled — see https://docs.copilotkit.ai/telemetry to opt out (set COPILOTKIT_TELEMETRY_DISABLED=true).
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+AI SDK Warning: System messages in the prompt or messages fields can be a security risk because they may enable prompt injection attacks. Use the system option instead when possible. Set allowSystemInMessages to true to suppress this warning, or false to throw an error.
+(pass) browser entry over the Mastra execution path > authorized_browser_run_uses_mastra [52.71ms]
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+(pass) browser entry over the Mastra execution path > forged_run_and_model_ignored [9.30ms]
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+Error running agent: 912 |       // The run's RUN_STARTED persists; every append after it is refused —
+913 |       // the runner's contract (runner-production: a failed event append
+914 |       // fails the run) is a stream ERROR after the start, never a success
+915 |       // terminal and never an untruthful completion.
+916 |       const fixture = harness({
+917 |         eventsAppendErrorAfterFirst: new Error("event store down"),
+                                               ^
+error: event store down
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/tests/mastra-browser-runner.test.ts:917:42)
+
+Error stack: Error: event store down
+    at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/tests/mastra-browser-runner.test.ts:917:42)
+Error details: {
+  name: "Error",
+  message: "event store down",
+  cause: undefined,
+}
+(pass) browser entry over the Mastra execution path > event_append_failure_prevents_success [5.10ms]
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+Error running agent: 57 |     // governed. Rather than fabricating a placeholder (a fake markConsumed
+58 |     // would silently swallow usage settlement and a undefined model would
+59 |     // crash deep inside the engine dial), the adapter refuses here with the
+60 |     // explicit marker the wiring bug can be grepped for.
+61 |     if (!completion?.governedModel) {
+62 |       throw new Error("MASTRA_AGENT_GOVERNED_MODEL_REQUIRED");
+                     ^
+error: MASTRA_AGENT_GOVERNED_MODEL_REQUIRED
+      at run (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/src/mastra/ag-ui-agent.ts:62:17)
+      at admitAndExecute (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/src/enterprise/runs/runner.ts:495:21)
+
+Error stack: Error: MASTRA_AGENT_GOVERNED_MODEL_REQUIRED
+    at run (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/src/mastra/ag-ui-agent.ts:62:17)
+    at admitAndExecute (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/src/enterprise/runs/runner.ts:495:21)
+Error details: {
+  name: "Error",
+  message: "MASTRA_AGENT_GOVERNED_MODEL_REQUIRED",
+  cause: undefined,
+}
+(pass) browser entry over the Mastra execution path > suspended_run_not_completed [0.56ms]
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+Error running agent: 712 |       await this.appendEvent(state, relayed);
+713 |       state.settlementAttempted = true;
+714 |       const completed = await this.deps.runs.complete(state.scope, {
+715 |         lease: state.lease,
+716 |       });
+717 |       if (!completed) throw new Error("RUN_COMPLETION_SETTLEMENT_STALE");
+                                      ^
+error: RUN_COMPLETION_SETTLEMENT_STALE
+      at relayEvent (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/src/enterprise/runs/runner.ts:717:33)
+
+Error stack: Error: RUN_COMPLETION_SETTLEMENT_STALE
+    at relayEvent (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/src/enterprise/runs/runner.ts:717:33)
+Error details: {
+  name: "Error",
+  message: "RUN_COMPLETION_SETTLEMENT_STALE",
+  cause: undefined,
+}
+(pass) browser entry over the Mastra execution path > stale_attempt_cannot_complete [9.32ms]
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+(pass) browser entry over the Mastra execution path > disconnect_does_not_product_cancel [0.35ms]
+[CopilotKit] License token did not yield a telemetry_id; telemetry events will be sent anonymously.
+(pass) browser entry over the Mastra execution path > two_users_no_context_cross_talk [9.69ms]
+
+server/tests/mastra-agent-resume-process.test.ts:
+(pass) me01 tool loop runs one tool call through the controlled model and answers from its result [730.28ms]
+(pass) me01 suspended run persists and a fresh OS process resumes the exact operation once [883.82ms]
+[AGENT] Error in agent stream {
+  error: 2494 |     }
+2495 |     return await safeValidateTypes({ value, schema });
+2496 |   } catch (error) {
+2497 |     return {
+2498 |       success: false,
+2499 |       error: JSONParseError.isInstance(error) ? error : new JSONParseError({ text, cause: error }),
+                                                               ^
+AI_JSONParseError: JSON parsing failed: Text: {not-json.
+Error message: JSON Parse error: Expected '}'
+       text: "{not-json",
+ vercel.ai.error: true,
+ vercel.ai.error.AI_JSONParseError: true,
+
+      at safeParseJSON (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/node_modules/.bun/@ai-sdk+provider-utils@4.0.46+bca6845d7a0cc15a/node_modules/@ai-sdk/provider-utils/dist/index.mjs:2499:57)
+      at transform (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/node_modules/.bun/@ai-sdk+provider-utils@4.0.46+bca6845d7a0cc15a/node_modules/@ai-sdk/provider-utils/dist/index.mjs:2527:34)
+
+SyntaxError: JSON Parse error: Expected '}'
+,
+  runId: "me01-bad-frame",
+  provider: "openai.chat",
+  modelId: "me01-model",
+}
+(pass) me01 malformed provider stream surfaces an error terminal, never a fake success [550.68ms]
+
+server/tests/mastra-ag-ui-agent.test.ts:
+(pass) mastra AG-UI agent adapter > clone_keeps_binding_and_abort [0.32ms]
+(pass) mastra AG-UI agent adapter > unsubscribe_does_not_cancel_run [23.00ms]
+(pass) mastra AG-UI agent adapter > run_without_governed_model_fails_fast [0.10ms]
+
+server/tests/mastra-tools.test.ts:
+(pass) createMastraTools wrapping > granted_tool_executes_once [0.89ms]
+(pass) createMastraTools wrapping > ungranted_tool_is_absent [0.03ms]
+(pass) createMastraTools wrapping > two_bindings_do_not_share_tools_or_prompt [0.03ms]
+(pass) createMastraTools wrapping > vendor_error_remains_untrusted [0.18ms]
+(pass) createMastraTools wrapping > reserved_name_collision_refused [0.16ms]
+(pass) createMastraTools wrapping > lost_lease_blocks_new_external_call [0.19ms]
+
+server/tests/mastra-governed-execution.test.ts:
+(pass) governed Mastra execution > two_steps_issue_distinct_capabilities [4.09ms]
+(pass) governed Mastra execution > spent_budget_narrows_next_capability [2.72ms]
+Error in agent stream {
+  error: 482 |   it("budget_402_no_retry", async () => {
+483 |     // A terminal 402 budget refusal must never be retried against the same
+484 |     // run ceiling: exactly one model call, an error terminal, and the
+485 |     // fixed MODEL_BUDGET_EXCEEDED classification.
+486 |     const runs = syntheticRuns({
+487 |       issueError: new ModelInvocationError("MODEL_BUDGET_EXCEEDED", 402),
+                        ^
+ModelInvocationError: MODEL_BUDGET_EXCEEDED
+ status: 402,
+   code: "MODEL_BUDGET_EXCEEDED"
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/tests/mastra-governed-execution.test.ts:487:19)
+,
+  runId: "3bce6324-b2d7-4f54-8307-ff4d1300d2b3",
+  provider: "openbot",
+  modelId: "mroute:v1:7eff492d7ad4057d731cbdab7822b83facae417e384e434a76b75dfd5bc1897d",
+}
+(pass) governed Mastra execution > budget_402_no_retry [1.60ms]
+Error in LLM execution {
+  error: 1131 |           settled = true;
+1132 |           await settle(null).catch(() => {});
+1133 |         }
+1134 |         await reader.cancel().catch(() => {});
+1135 |         removeAbortListener();
+1136 |         controller.error(new Error("MODEL_STREAM_FAILED"));
+                                    ^
+error: MODEL_STREAM_FAILED
+      at pull (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/src/enterprise/models/gateway.ts:1136:30)
+,
+  runId: "426caec6-f066-426b-8aa4-1a2cf1afe22b",
+  provider: "openbot",
+  modelId: "mroute:v1:7eff492d7ad4057d731cbdab7822b83facae417e384e434a76b75dfd5bc1897d",
+}
+Error in agent stream {
+  error: 1131 |           settled = true;
+1132 |           await settle(null).catch(() => {});
+1133 |         }
+1134 |         await reader.cancel().catch(() => {});
+1135 |         removeAbortListener();
+1136 |         controller.error(new Error("MODEL_STREAM_FAILED"));
+                                    ^
+error: MODEL_STREAM_FAILED
+      at pull (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/src/enterprise/models/gateway.ts:1136:30)
+,
+  runId: "426caec6-f066-426b-8aa4-1a2cf1afe22b",
+  provider: "openbot",
+  modelId: "mroute:v1:7eff492d7ad4057d731cbdab7822b83facae417e384e434a76b75dfd5bc1897d",
+}
+(pass) governed Mastra execution > malformed_usage_no_clean_finish [2.71ms]
+(pass) governed Mastra execution > client_route_override_inert [1.52ms]
+(pass) governed Mastra execution > subscription_never_falls_back_from_credit_refusal [0.14ms]
+(pass) governed Mastra execution > instructions_are_the_trusted_server_composition [0.03ms]
+(pass) governed execution refusal matrix > missing_governed_model_refuses [0.12ms]
+(pass) governed execution refusal matrix > unbound_execution_binding_refuses [0.09ms]
+(pass) governed execution refusal matrix > execution_binding_method_missing_refuses [0.07ms]
+(pass) governed execution refusal matrix > binding_mismatch_refuses_on_every_published_fact [0.17ms]
+Error in agent stream {
+  error: 695 |       modelId: "stub-model",
+696 |       supportedUrls: () => ({}),
+697 |       // The probe marker: if the gate let this request through, the engine
+698 |       // dial starts and hits this throw — proof the validation passed.
+699 |       doStream: () => {
+700 |         throw new Error("PROBE_GATE_PASSED");
+                        ^
+error: PROBE_GATE_PASSED
+      at doStream (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/tests/mastra-governed-execution.test.ts:700:19)
+      at doStream (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/node_modules/.bun/@mastra+core@1.64.0+2c9e464fc5770e35/node_modules/@mastra/core/dist/llm-DNEWp-X9.js:116:28)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/node_modules/.bun/@mastra+core@1.64.0+2c9e464fc5770e35/node_modules/@mastra/core/dist/agent-DsRUDsS_.js:23449:108)
+      at pRetry (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/node_modules/.bun/p-retry@7.1.1/node_modules/p-retry/index.js:197:25)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/node_modules/.bun/@mastra+core@1.64.0+2c9e464fc5770e35/node_modules/@mastra/core/dist/agent-DsRUDsS_.js:23448:57)
+      at async start (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/node_modules/.bun/@mastra+core@1.64.0+2c9e464fc5770e35/node_modules/@mastra/core/dist/trip-wire-D8UqG8U-.js:2496:26)
+,
+  runId: "dc27f5aa-c13a-40c8-baac-af9b16a45c9f",
+  provider: "stub",
+  modelId: "stub-model",
+}
+(pass) governed execution refusal matrix > consistent_binding_passes_the_gate_and_reaches_the_dial [0.99ms]
+(pass) governed execution refusal matrix > resume_requests_refuse [0.07ms]
+(pass) mastra execution message-family refusals > non_text_content_parts_refuse [0.17ms]
+(pass) mastra execution message-family refusals > unknown_wire_role_refuses [0.07ms]
+(pass) mastra execution message-family refusals > system_and_tool_history_skipped_user_text_runs [1.17ms]
+(pass) mastra execution message-family refusals > empty_relayed_history_refuses [0.10ms]
+(pass) mastra text-only slice refusals > bot_with_granted_tool_runs_the_mastra_tool_loop [2.63ms]
+(pass) mastra text-only slice refusals > bot_with_computer_guidance_fails_at_iteration [0.21ms]
+
+server/tests/mastra-stream-events.test.ts:
+(pass) mastra stream normalization to AG-UI > text_chunks_normalize_to_content [0.10ms]
+(pass) mastra stream normalization to AG-UI > error_never_becomes_success [0.04ms]
+(pass) mastra stream normalization to AG-UI > suspension_has_no_success_terminal [0.01ms]
+(pass) mastra stream normalization to AG-UI > missing_terminal_is_failure [0.01ms]
+(pass) mastra stream normalization to AG-UI > unknown_control_chunk_rejects [0.05ms]
+(pass) mastra stream normalization to AG-UI > tool_chunks_normalize_with_stable_call_ids [0.06ms]
+(pass) mastra stream normalization to AG-UI > abort_is_diagnostic_and_never_reports_success [0.01ms]
+(pass) mastra stream normalization to AG-UI > finish_reason_length_is_a_normal_single_terminal [0.02ms]
+(pass) mastra stream normalization to AG-UI > finish_reason_tool_calls_has_no_success_terminal [0.02ms]
+(pass) mastra stream normalization to AG-UI > tool_calls_step_end_mid_stream_does_not_terminal_the_loop [0.03ms]
+(pass) mastra stream normalization to AG-UI > finish_reason_content_filter_is_an_error_terminal [0.01ms]
+(pass) mastra stream normalization to AG-UI > tool_error_chunk_is_a_wrapped_run_error [0.02ms]
+(pass) mastra stream normalization to AG-UI > engine_metadata_chunks_are_explicitly_ignored [0.02ms]
+(pass) mastra stream normalization to AG-UI > text_end_without_open_start_rejects [0.02ms]
+(pass) mastra stream normalization to AG-UI > tool_frames_without_an_announced_call_reject [0.03ms]
+(pass) mastra stream normalization to AG-UI > unserializable_error_payload_still_emits_a_run_error [0.69ms]
+(pass) mastra stream normalization to AG-UI > streaming_mode_hands_off_events_without_accumulating [0.04ms]
+
+server/tests/mastra-governed-tools.test.ts:
+(pass) governed Mastra tool loop > granted_tool_executes_once [3.81ms]
+(pass) governed Mastra tool loop > each_step_issues_distinct_capabilities [2.39ms]
+(pass) governed Mastra tool loop > budget_100_70_next_le_30 [2.02ms]
+Error in agent stream {
+  error: 125 |   it("budget_402_no_retry_no_route_switch", async () => {
+126 |     // A terminal 402 at capability issue: no retry against the same ceiling,
+127 |     // no second dial toward any other route or payer — one model step
+128 |     // attempt, an error terminal, the fixed classification.
+129 |     const runs = syntheticRuns({
+130 |       issueError: new ModelInvocationError("MODEL_BUDGET_EXCEEDED", 402),
+                        ^
+ModelInvocationError: MODEL_BUDGET_EXCEEDED
+ status: 402,
+   code: "MODEL_BUDGET_EXCEEDED"
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/tests/mastra-governed-tools.test.ts:130:19)
+,
+  runId: "f929cf98-0768-4bbb-97c3-ec332c35c1dc",
+  provider: "openbot",
+  modelId: "mroute:v1:7eff492d7ad4057d731cbdab7822b83facae417e384e434a76b75dfd5bc1897d",
+}
+(pass) governed Mastra tool loop > budget_402_no_retry_no_route_switch [1.94ms]
+(pass) governed Mastra tool loop > tool_loop_cap_eight_truthful_terminal [8.86ms]
+(pass) governed Mastra tool loop > revoked_grant_blocks_new_external_call [2.50ms]
+(pass) governed Mastra tool loop > operation_receipt_associated_once [284.50ms]
+
+server/tests/mastra-message-parts.test.ts:
+(pass) mastra message parts > tool_pairs_roundtrip [0.15ms]
+(pass) mastra message parts > attachment_parts_roundtrip_preserves_references [0.09ms]
+(pass) mastra message parts > corrupt_stored_parts_fail_explicitly [0.09ms]
+(pass) mastra message parts > stored_role_must_match_row_role [0.02ms]
+(pass) mastra message parts > legacy_text_rows_rebuild_with_stamped_attachments [0.03ms]
+(pass) mastra message parts > unsupported_wire_roles_are_refused_not_dropped [0.03ms]
+(pass) mastra message parts > sanitize_cleanup_rules_survive_the_server_rebuild [0.05ms]
+(pass) mastra message parts > schema_version_is_frozen_at_one
+(pass) mastra message parts > user_parts_beyond_text_and_attachments_refuse_named [0.12ms]
+(pass) mastra message parts > digest_input_is_key_order_stable [0.08ms]
+
+server/tests/enterprise/mastra-compatibility.test.ts:
+(pass) locked Mastra bridge emits a non-empty native AG-UI text chunk and finishes cleanly [55.49ms]
+(pass) locked Mastra packages suspend and resume a native workflow [37.51ms]
+(pass) ME01: locked Mastra runs a tool loop once through the controlled model [46.19ms]
+(pass) ME01: fullStream shapes and suspend/resume API surface are pinned [45.77ms]
+(pass) Hono adapter and self-hosted storage constructors are available [46.04ms]
+
+ 77 pass
+ 0 fail
+ 349 expect() calls
+Ran 77 tests across 9 files. [3.59s]

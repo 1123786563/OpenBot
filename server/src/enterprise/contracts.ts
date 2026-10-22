@@ -120,6 +120,49 @@ export interface RunService {
     runId: string,
     attemptId: string,
   ): Promise<number>;
+  /**
+   * ME09 (#481): the durable-suspension transition — a leased run pauses on a
+   * durable approval/participation wait and stays ACTIVE (waiting_approval /
+   * suspended) so the continuation's resume can keep minting capabilities
+   * against the SAME run. Fenced by the exact request lease the pausing
+   * driver holds; false means the fence refused.
+   */
+  markRunSuspended(
+    scope: PlatformScope,
+    input: {
+      lease: RunnerRequestLease;
+      status: "waiting_approval" | "suspended";
+    },
+  ): Promise<boolean>;
+  /**
+   * ME09 (#481): the resume drive's lease re-activation. Only a run still
+   * waiting at its CURRENT attempt re-arms; a terminal run refuses. Returns
+   * the fresh request lease plus the run's OWN admitted execution facts
+   * (route ref + ceiling) the resumed loop's governed model re-binds to.
+   */
+  reactivateSuspensionLease(
+    scope: PlatformScope,
+    runId: string,
+  ): Promise<{
+    lease: RunnerRequestLease;
+    modelRouteRef: string;
+    maximumTokens: number;
+    /**
+     * ME10: the token total the run has already spent — the resumed
+     * carrier's settlement ledger seeds with it, so resumed dials ask for
+     * the run's REMAINING budget.
+     */
+    settledTokens: number;
+  }>;
+  /**
+   * ME10 (#482, F6): settles the scope's dead suspensions — runs parked
+   * waiting whose reactivation window has passed and which no driver can
+   * ever re-arm. The user-visible failure carries the named code
+   * SUSPENSION_WINDOW_EXPIRED; runs still inside the window stay waiting.
+   * Optional in the contract: assemblies without the face simply never reap
+   * (the waiting rows then keep the pre-ME10 semantics).
+   */
+  disposeUnresumableSuspensions?(scope: PlatformScope): Promise<number>;
   reserveModelBudget(
     scope: PlatformScope,
     input: BudgetInput,
@@ -252,6 +295,27 @@ export interface MessageDTO {
 export interface MessagePage {
   readonly items: readonly MessageDTO[];
   readonly nextBeforeSeq: number | null;
+}
+
+/**
+ * ME03 internal append input for one engine output message (assistant text
+ * or tool call-result; activity content rides only as parts inside an
+ * assistant envelope, never as a role) on a mastra-backend conversation.
+ *
+ * `clientMessageKey` is a SERVER-issued idempotency key (execution key +
+ * engine message id) — never a client-supplied value — so an output retry
+ * resolves to the same message intent instead of appending a duplicate. The
+ * versioned full parts ride in `parts`; the public MessageDTO stays
+ * compatible (display projection only).
+ */
+export interface EngineMessageAppendInput {
+  readonly threadId: string;
+  readonly clientMessageKey: string;
+  readonly role: "assistant" | "tool";
+  readonly parts: readonly import("../mastra/message-parts").OpenBotMessagePart[];
+  /** Engine message id recorded into the stored identity mapping. */
+  readonly engineMessageId: string;
+  readonly toolCallId?: string;
 }
 
 export interface StartRunInput {

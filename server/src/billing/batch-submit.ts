@@ -50,15 +50,18 @@ import { eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { accessGrants } from "../db/schema";
 import { batchItems, batchJobs } from "../db/schema/credit-reservations";
-import { PRICE_DIMENSIONS, type PriceDimension } from "../gateway/price-snapshot";
 import {
-  RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS,
+  PRICE_DIMENSIONS,
+  type PriceDimension,
+} from "../gateway/price-snapshot";
+import {
   type CreditReserveOutcome,
   type CreditReserveRequest,
+  RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS,
 } from "./credit-reserve";
 import { createCreditWriter } from "./credits-writer";
-import { computeReservationCeiling } from "./reserve-bound";
 import { findCompanyScopeIdentityField } from "./personal-key-isolation";
+import { computeReservationCeiling } from "./reserve-bound";
 
 /** The local batch/item ids' prefixes — recognisable on sight, like the reservation's `cr-`. */
 export const BATCH_ID_PREFIX = "bj-";
@@ -76,9 +79,7 @@ export type BatchDispatchOutcome =
   | { kind: "lost"; reason: string };
 
 /** One item's certified worst-case quantities: whole, non-negative, per billing dimension. */
-export type BatchSubmitItemQuantities = Partial<
-  Record<PriceDimension, number>
->;
+export type BatchSubmitItemQuantities = Partial<Record<PriceDimension, number>>;
 
 /** One item of the submit: its own model cell, its caller identity, its worst case. */
 export type BatchSubmitItem = {
@@ -169,7 +170,11 @@ export type BatchSubmitServiceDependencies = {
         dims: Parameters<typeof computeReservationCeiling>[0]["dims"];
         rate: Parameters<typeof computeReservationCeiling>[0]["rate"];
       }
-    | { ok: false; reason: "price_basis_not_found"; detail?: Record<string, unknown> }
+    | {
+        ok: false;
+        reason: "price_basis_not_found";
+        detail?: Record<string, unknown>;
+      }
   >;
   now?: () => Date;
 };
@@ -178,10 +183,7 @@ export type BatchSubmitServiceDependencies = {
 type ExactRational = { numerator: bigint; denominator: bigint };
 
 /** Add two exact rationals by cross-multiplication — no rounding anywhere. */
-function addExact(
-  a: ExactRational,
-  b: ExactRational,
-): ExactRational {
+function addExact(a: ExactRational, b: ExactRational): ExactRational {
   return {
     numerator: a.numerator * b.denominator + b.numerator * a.denominator,
     denominator: a.denominator * b.denominator,
@@ -191,9 +193,7 @@ function addExact(
 /** ceil(numerator/denominator) for non-negative rationals — the ONE rounding the cap takes. */
 function ceilExact(value: ExactRational): bigint {
   if (value.numerator === 0n) return 0n;
-  return (
-    (value.numerator + value.denominator - 1n) / value.denominator
-  );
+  return (value.numerator + value.denominator - 1n) / value.denominator;
 }
 
 /** Largest value the ledger's 32-bit integer columns can held, in stored units. */
@@ -284,7 +284,11 @@ export function computeBatchCap(input: {
           };
         case "rate_invalid":
         case "ceiling_exceeds_ledger":
-          return { ok: false, code: "price_unknown", detail: { reason: issue.code } };
+          return {
+            ok: false,
+            code: "price_unknown",
+            detail: { reason: issue.code },
+          };
       }
     }
     itemExact.push(priced.exactScaledUnits);
@@ -322,7 +326,9 @@ function isIdentifier(value: unknown, maxLength: number): value is string {
  */
 function validateSubmitRequest(
   input: unknown,
-): { ok: true; request: BatchSubmitRequest } | { ok: false; detail: Record<string, unknown> } {
+):
+  | { ok: true; request: BatchSubmitRequest }
+  | { ok: false; detail: Record<string, unknown> } {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false, detail: { field: "body" } };
   }
@@ -352,7 +358,10 @@ function validateSubmitRequest(
     RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS.map((key) => key.toLowerCase()),
   );
   for (const key of Object.keys(raw)) {
-    if (forbidden.has(key.toLowerCase()) || findCompanyScopeIdentityField({ [key]: true })) {
+    if (
+      forbidden.has(key.toLowerCase()) ||
+      findCompanyScopeIdentityField({ [key]: true })
+    ) {
       return { ok: false, detail: { field: key } };
     }
   }
@@ -385,7 +394,10 @@ function validateSubmitRequest(
     if (customIds.has(item.customId)) {
       return {
         ok: false,
-        detail: { field: `items[${index}].customId`, reason: "duplicate_custom_id" },
+        detail: {
+          field: `items[${index}].customId`,
+          reason: "duplicate_custom_id",
+        },
       };
     }
     customIds.add(item.customId);
@@ -522,10 +534,7 @@ export function createBatchSubmitService(
       //    be resolved, or a dimension any item's basis prices unknown, refuses the batch
       //    before any hold or dispatch.
       const cells = distinctCellsOf(request);
-      const bases = new Map<
-        string,
-        Awaited<ReturnType<typeof resolveBasis>>
-      >();
+      const bases = new Map<string, Awaited<ReturnType<typeof resolveBasis>>>();
       for (const cell of cells) {
         const basis = await resolveBasis({
           ...cell,
@@ -539,7 +548,10 @@ export function createBatchSubmitService(
             detail: { reason: basis.reason, ...(basis.detail ?? {}) },
           };
         }
-        bases.set(`${cell.provider}\u0000${cell.model}\u0000${cell.capability}`, basis);
+        bases.set(
+          `${cell.provider}\u0000${cell.model}\u0000${cell.capability}`,
+          basis,
+        );
       }
       const cap = computeBatchCap({
         items: request.items.map((item) => {
@@ -549,7 +561,11 @@ export function createBatchSubmitService(
             dims: Parameters<typeof computeReservationCeiling>[0]["dims"];
             rate: Parameters<typeof computeReservationCeiling>[0]["rate"];
           };
-          return { quantities: item.quantities, dims: basis.dims, rate: basis.rate };
+          return {
+            quantities: item.quantities,
+            dims: basis.dims,
+            rate: basis.rate,
+          };
         }),
       });
       if (!cap.ok) {
@@ -635,10 +651,7 @@ export function createBatchSubmitService(
         .where(eq(accessGrants.grantId, request.grantId))
         .limit(1);
       if (!grant) {
-        await release(
-          reservationId,
-          "batch admission refused: grant_invalid",
-        );
+        await release(reservationId, "batch admission refused: grant_invalid");
         return {
           status: "refused",
           reasonCode: "reserve_refused",
@@ -662,10 +675,11 @@ export function createBatchSubmitService(
         // jsonb-first, so a JS *string* param would land as a jsonb string scalar the
         // table's shape CHECK refuses — the object itself arrives as the real object
         // (the same documented trap the async settlement detail writes around).
-        quantities: sql`${fullQuantitiesOf(item.quantities)}` as unknown as Record<
-          string,
-          number
-        >,
+        quantities:
+          sql`${fullQuantitiesOf(item.quantities)}` as unknown as Record<
+            string,
+            number
+          >,
       }));
       const inserted = await database.transaction(async (tx) => {
         const [batchRow] = await tx
@@ -703,7 +717,9 @@ export function createBatchSubmitService(
         const [winner] = await database
           .select()
           .from(batchJobs)
-          .where(eq(batchJobs.submitIdempotencyKey, request.submitIdempotencyKey))
+          .where(
+            eq(batchJobs.submitIdempotencyKey, request.submitIdempotencyKey),
+          )
           .limit(1);
         if (winner) {
           const items = await database
@@ -714,7 +730,11 @@ export function createBatchSubmitService(
             .from(batchItems)
             .where(eq(batchItems.batchId, winner.batchId))
             .orderBy(batchItems.itemIndex);
-          return { status: "submitted", created: false, ...viewOf(winner, items) };
+          return {
+            status: "submitted",
+            created: false,
+            ...viewOf(winner, items),
+          };
         }
         return {
           status: "refused",

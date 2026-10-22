@@ -5,6 +5,7 @@ import type { AppVariables } from "../auth/guards";
 import type { ProactiveEngine } from "./engine";
 import type { ProactiveStore } from "./store";
 import { ProactiveNotFoundError, ProactiveRefusedError } from "./types";
+
 const log = getLogger("server");
 
 /** `/api/proactive`: a person's background-research settings and the suggestions they produced. */

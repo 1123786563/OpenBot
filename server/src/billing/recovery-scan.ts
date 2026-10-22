@@ -147,7 +147,10 @@ function generateRecoveryItemId(): string {
   return `cri-${randomBytes(8).toString("hex")}`;
 }
 
-function isNonEmptyIdentifier(value: unknown, maxLength: number): value is string {
+function isNonEmptyIdentifier(
+  value: unknown,
+  maxLength: number,
+): value is string {
   return (
     typeof value === "string" &&
     value.length > 0 &&
@@ -240,10 +243,18 @@ export function createRecoveryScanner(
       const candidates: RecoveryScanCandidate[] = openHolds.map((hold) => ({
         reservationId: hold.id,
         attemptId: attemptIdForReservation(hold.id),
-        reason: hold.status === "unknown" ? "unknown_marked" : "hold_expired_unanswered",
+        reason:
+          hold.status === "unknown"
+            ? "unknown_marked"
+            : "hold_expired_unanswered",
       }));
       if (openHolds.length === 0) {
-        return { scannedAt: at.toISOString(), candidates: [], itemsGenerated: 0, items: [] };
+        return {
+          scannedAt: at.toISOString(),
+          candidates: [],
+          itemsGenerated: 0,
+          items: [],
+        };
       }
 
       // --- Fix the payer mapping behind each account, once per pass: an account with no
@@ -315,7 +326,9 @@ export function createRecoveryScanner(
         );
       }
       if (!Number.isInteger(limit) || limit < 1) {
-        throw new TypeError(`claimRecoveryItems: limit must be a positive integer`);
+        throw new TypeError(
+          `claimRecoveryItems: limit must be a positive integer`,
+        );
       }
       const at = now();
       // One transaction: the skip-locked select and the state transition it feeds. A
@@ -327,7 +340,10 @@ export function createRecoveryScanner(
           .select({ id: creditRecoveryItems.id })
           .from(creditRecoveryItems)
           .where(eq(creditRecoveryItems.state, "pending"))
-          .orderBy(asc(creditRecoveryItems.detectedAt), asc(creditRecoveryItems.id))
+          .orderBy(
+            asc(creditRecoveryItems.detectedAt),
+            asc(creditRecoveryItems.id),
+          )
           .limit(limit)
           .for("update", { skipLocked: true });
         if (pending.length === 0) return [];

@@ -60,8 +60,8 @@
 
 import { and, eq, sql } from "drizzle-orm";
 import {
-  executionWorkspaceSegments,
   type ExecutionScope,
+  executionWorkspaceSegments,
 } from "../../../../shared/execution-scope";
 import { enterpriseBotOwnership } from "../../db/schema/enterprise-bot-ownership";
 import {
@@ -228,7 +228,11 @@ export type ExecutionTarget = Readonly<{
 }>;
 
 export type ExecutionSurfaceOutcome =
-  "cancelled" | "not-running" | "cleared" | "absent" | "unavailable";
+  | "cancelled"
+  | "not-running"
+  | "cleared"
+  | "absent"
+  | "unavailable";
 
 /** 一个执行面的适配器：把 target 翻译成该面的既有取消/重置入口。 */
 export interface ExecutionSurface {

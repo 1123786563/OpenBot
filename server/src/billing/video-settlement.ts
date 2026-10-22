@@ -1,17 +1,20 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { accessGrants } from "../db/schema";
-import { RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS } from "./credit-reserve";
-import { findCompanyScopeIdentityField } from "./personal-key-isolation";
-import { asyncJobs, creditReservations } from "../db/schema/credit-reservations";
-import { PRICE_DIMENSIONS } from "../gateway/price-snapshot";
-import type { ReservationBoundQuantities } from "./reserve-bound";
 import {
-  createAsyncTerminalSettleService,
+  asyncJobs,
+  creditReservations,
+} from "../db/schema/credit-reservations";
+import { PRICE_DIMENSIONS } from "../gateway/price-snapshot";
+import {
   type AsyncTerminalReport,
   type AsyncTerminalSettleOutcome,
   type AsyncTerminalState,
+  createAsyncTerminalSettleService,
 } from "./async-terminal";
+import { RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS } from "./credit-reserve";
+import { findCompanyScopeIdentityField } from "./personal-key-isolation";
+import type { ReservationBoundQuantities } from "./reserve-bound";
 
 /*
  * The video settlement, recovery and artifact-query lane (Bifrost 19.4, #340 — group 19's
@@ -74,8 +77,10 @@ export type VideoTerminalReport =
   | { state: "failed" | "cancelled" };
 
 /** Why a terminal report could not be converted. Closed vocabulary, displayable. */
-export type VideoTerminalConversionIssue =
-  | { code: "video_usage_indeterminable"; field: "seconds" | "outputCount" | "inputSeconds" };
+export type VideoTerminalConversionIssue = {
+  code: "video_usage_indeterminable";
+  field: "seconds" | "outputCount" | "inputSeconds";
+};
 
 /** The conversion's answer: the usage map, or the refusal that names the unreadable field. */
 export type VideoTerminalUsage =
@@ -83,11 +88,7 @@ export type VideoTerminalUsage =
   | { ok: false; issue: VideoTerminalConversionIssue };
 
 function wholeSeconds(value: unknown): boolean {
-  return (
-    typeof value === "number" &&
-    Number.isSafeInteger(value) &&
-    value >= 0
-  );
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 /**
@@ -130,10 +131,7 @@ export function videoTerminalUsageOf(report: unknown): VideoTerminalUsage {
     return { ok: true, usage: zeroed() };
   }
 
-  if (
-    !wholeSeconds(body.seconds) ||
-    (body.seconds as number) < 1
-  ) {
+  if (!wholeSeconds(body.seconds) || (body.seconds as number) < 1) {
     return {
       ok: false,
       issue: { code: "video_usage_indeterminable", field: "seconds" },
@@ -279,7 +277,10 @@ export type VideoArtifactQueryFound = {
 };
 
 export type VideoArtifactQueryAnswer =
-  | { kind: "answered"; outcome: VideoArtifactQueryFound | { status: "not_found" } }
+  | {
+      kind: "answered";
+      outcome: VideoArtifactQueryFound | { status: "not_found" };
+    }
   | {
       kind: "refused";
       reasonCode: VideoArtifactQueryRefusalReasonCode;
@@ -316,7 +317,11 @@ export function createVideoArtifactQueryService(
   const { database, retrieve } = dependencies;
   return {
     async queryArtifacts(request: unknown): Promise<VideoArtifactQueryAnswer> {
-      if (request === null || typeof request !== "object" || Array.isArray(request)) {
+      if (
+        request === null ||
+        typeof request !== "object" ||
+        Array.isArray(request)
+      ) {
         return {
           kind: "refused",
           reasonCode: "request_invalid",

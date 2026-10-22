@@ -4,10 +4,7 @@ import type { Database } from "../db/client";
 import { payerAccounts } from "../db/schema/billing";
 import { creditGrants, creditLedger } from "../db/schema/credits";
 import { enterpriseTenants } from "../db/schema/enterprise-tenancy";
-import {
-  createPayerAccount,
-  readPayerAccountForKey,
-} from "./payer";
+import { createPayerAccount, readPayerAccountForKey } from "./payer";
 import { deploymentExternalCustomerId } from "./service";
 
 /**
@@ -205,9 +202,8 @@ export async function mapLegacyExternalCustomerIds(
     legacyDeploymentMapped: outcomes.filter(
       (o) => o.kind === "legacy_deployment",
     ).length,
-    unknownOwnerQuarantined: outcomes.filter(
-      (o) => o.kind === "unknown_owner",
-    ).length,
+    unknownOwnerQuarantined: outcomes.filter((o) => o.kind === "unknown_owner")
+      .length,
     unprocessed: outcomes.filter((o) => o.kind === "unprocessed").length,
     outcomes,
   };

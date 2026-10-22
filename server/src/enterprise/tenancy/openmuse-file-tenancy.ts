@@ -52,15 +52,15 @@
 
 import { and, eq, sql } from "drizzle-orm";
 import {
-  openmuseDocumentActions,
-  openmuseFileScopes,
-  type OpenMuseDocumentActionRow,
-  type OpenMuseFileScopeRow,
-} from "../../db/schema/openmuse-file-tenancy";
-import {
   enterpriseMemberships,
   enterpriseWorkspaceMemberships,
 } from "../../db/schema/enterprise-tenancy";
+import {
+  type OpenMuseDocumentActionRow,
+  type OpenMuseFileScopeRow,
+  openmuseDocumentActions,
+  openmuseFileScopes,
+} from "../../db/schema/openmuse-file-tenancy";
 import type { PlatformScope } from "../contracts";
 import { assertTrustedMachineIdentity } from "../runs/scan-executor";
 import {

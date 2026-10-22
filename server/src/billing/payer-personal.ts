@@ -1,9 +1,5 @@
 import type { Database } from "../db/client";
-import {
-  createPayerAccount,
-  type PayerAccount,
-  type PayerRef,
-} from "./payer";
+import { createPayerAccount, type PayerAccount, type PayerRef } from "./payer";
 
 /**
  * The payer resolution module's personal branch: an authenticated user IS their billing subject.
@@ -56,7 +52,9 @@ export const foreignAccountIdentityKeys = [
 ] as const;
 
 /** Matching is case-insensitive, so `UserID` cannot ride past the refusal a `userId` gets. */
-const foreignKeySet = new Set(foreignAccountIdentityKeys.map((key) => key.toLowerCase()));
+const foreignKeySet = new Set(
+  foreignAccountIdentityKeys.map((key) => key.toLowerCase()),
+);
 
 /**
  * The first account-identity parameter present in a request's fields — answered with the key as

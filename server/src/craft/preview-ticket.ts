@@ -106,7 +106,10 @@ export function createPreviewTickets(deps: {
       }
       // The root alone is not authority: the session must still exist and
       // still belong to the issuing user (deletion / reassignment refusal).
-      const session = await deps.store.findSession(entry.sessionId, entry.userId);
+      const session = await deps.store.findSession(
+        entry.sessionId,
+        entry.userId,
+      );
       if (!session) return { reason: "session" };
       return { userId: entry.userId };
     },
@@ -198,8 +201,8 @@ export function previewSessionCookieHeader(value: string, path = "/"): string {
   // codec's signature check alone, and the old plaintext session-id cookie is
   // rejected THERE (verify), never waved through here.
   const safeValue =
-    (/^[A-Za-z0-9_-]{1,128}$/.test(value) ||
-      (PREVIEW_PASS_COOKIE_SHAPE.test(value) && value.length <= 512))
+    /^[A-Za-z0-9_-]{1,128}$/.test(value) ||
+    (PREVIEW_PASS_COOKIE_SHAPE.test(value) && value.length <= 512)
       ? value
       : "";
   // fix-ocr24 #6, why the fold is SILENT: the fold itself is the rejection

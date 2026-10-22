@@ -44,24 +44,22 @@
 
 import { randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import type { AuditStore, AuditEventInput } from "../audit";
+import type { AuditEventInput, AuditStore } from "../audit";
 import type { Database } from "../db/client";
 import {
   accessGrants,
   botServices,
   gatewayModelCatalogRefs,
   gatewayModelOpenScopes,
+  gatewayPriceSnapshots,
   payerAccounts,
 } from "../db/schema";
 import { realtimeSessions } from "../db/schema/credit-reservations";
 import { assertCatalogFresh } from "../gateway/catalog-freshness";
 import { assertPriceSnapshotDims } from "../gateway/price-snapshot";
-import { gatewayPriceSnapshots } from "../db/schema";
 import { classifyPriceDims } from "../gateway/price-status";
+import { RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS } from "./credit-reserve";
 import { type PayerRef, payerKey } from "./payer";
-import {
-  RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS,
-} from "./credit-reserve";
 import { findCompanyScopeIdentityField } from "./personal-key-isolation";
 
 /** The local session id's prefix — recognisable on sight, like the reservation's `cr-`. */
@@ -201,7 +199,9 @@ function isIdentifier(value: unknown, maxLength: number): value is string {
  */
 function validateEstablishmentRequest(
   input: unknown,
-): { ok: true; request: RealtimeEstablishmentInput } | { ok: false; detail: Record<string, unknown> } {
+):
+  | { ok: true; request: RealtimeEstablishmentInput }
+  | { ok: false; detail: Record<string, unknown> } {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false, detail: { field: "body" } };
   }
@@ -228,7 +228,10 @@ function validateEstablishmentRequest(
     RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS.map((key) => key.toLowerCase()),
   );
   for (const key of Object.keys(raw)) {
-    if (forbidden.has(key.toLowerCase()) || findCompanyScopeIdentityField({ [key]: true })) {
+    if (
+      forbidden.has(key.toLowerCase()) ||
+      findCompanyScopeIdentityField({ [key]: true })
+    ) {
       return { ok: false, detail: { field: key } };
     }
     // 16.3 (#324): a provider-session credential or upstream endpoint field is a bypass
@@ -289,7 +292,9 @@ export type RealtimeEstablishmentInput = {
   readonly rateVersion: number;
 };
 
-function recordOf(row: typeof realtimeSessions.$inferSelect): RealtimeSessionRecord {
+function recordOf(
+  row: typeof realtimeSessions.$inferSelect,
+): RealtimeSessionRecord {
   return {
     sessionId: row.sessionId,
     grantId: row.grantId,
@@ -479,7 +484,9 @@ export function createRealtimeSessionService(
             capability: request.model.capability,
           },
           now: now(),
-          ...(freshnessWindowMs === undefined ? {} : { windowMs: freshnessWindowMs }),
+          ...(freshnessWindowMs === undefined
+            ? {}
+            : { windowMs: freshnessWindowMs }),
         });
         if (!freshness.fresh) {
           return refused(
@@ -547,7 +554,9 @@ export function createRealtimeSessionService(
     },
 
     /** The recovery input (AC3): one session's frozen identity, or undefined. */
-    async restore(sessionId: string): Promise<RealtimeSessionRecord | undefined> {
+    async restore(
+      sessionId: string,
+    ): Promise<RealtimeSessionRecord | undefined> {
       const [row] = await database
         .select()
         .from(realtimeSessions)

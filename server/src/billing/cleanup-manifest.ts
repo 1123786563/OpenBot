@@ -1,5 +1,5 @@
-import { sql } from "drizzle-orm";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import type { Database } from "../db/client";
 import {
   billingCustomers,
@@ -14,7 +14,6 @@ import {
 } from "../db/schema/credit-reservations";
 import { creditGrants, creditLedger } from "../db/schema/credits";
 import { paymentEvents, paymentOrders } from "../db/schema/payment";
-import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { usageOutbox } from "../db/schema/usage-outbox";
 
 /*
@@ -207,8 +206,12 @@ export async function enumerateCleanupManifest(
       {
         name: "billing_customers",
         basis: keyedBasis,
-        totals: () => totalsOf(tx, billingCustomers, billingCustomers.externalId),
-        attribution: attributionOn(billingCustomers, billingCustomers.externalId),
+        totals: () =>
+          totalsOf(tx, billingCustomers, billingCustomers.externalId),
+        attribution: attributionOn(
+          billingCustomers,
+          billingCustomers.externalId,
+        ),
       },
       {
         name: "payer_accounts",
@@ -271,13 +274,19 @@ export async function enumerateCleanupManifest(
         name: "credit_grants",
         basis: keyedBasis,
         totals: () => totalsOf(tx, creditGrants, creditGrants.id),
-        attribution: attributionOn(creditGrants, creditGrants.externalCustomerId),
+        attribution: attributionOn(
+          creditGrants,
+          creditGrants.externalCustomerId,
+        ),
       },
       {
         name: "credit_ledger",
         basis: keyedBasis,
         totals: () => totalsOf(tx, creditLedger, creditLedger.id),
-        attribution: attributionOn(creditLedger, creditLedger.externalCustomerId),
+        attribution: attributionOn(
+          creditLedger,
+          creditLedger.externalCustomerId,
+        ),
       },
       {
         name: "credit_reservations",
@@ -293,7 +302,11 @@ export async function enumerateCleanupManifest(
         basis:
           "attributed through the reservation's external_customer_id (inner join credit_reservations), then the explicit payer mapping; no mapping row counts as unmapped",
         totals: () =>
-          totalsOf(tx, creditReservationAllocations, creditReservationAllocations.id),
+          totalsOf(
+            tx,
+            creditReservationAllocations,
+            creditReservationAllocations.id,
+          ),
         attribution: () =>
           tx
             .select({
@@ -345,7 +358,10 @@ export async function enumerateCleanupManifest(
             .from(paymentOrders)
             .leftJoin(
               creditGrants,
-              eq(creditGrants.idempotencyKey, sql`'plan:' || ${paymentOrders.id}`),
+              eq(
+                creditGrants.idempotencyKey,
+                sql`'plan:' || ${paymentOrders.id}`,
+              ),
             )
             .leftJoin(
               payerAccounts,
@@ -368,10 +384,16 @@ export async function enumerateCleanupManifest(
               n: sql<number>`count(*)::int`,
             })
             .from(paymentEvents)
-            .innerJoin(paymentOrders, eq(paymentOrders.id, paymentEvents.orderId))
+            .innerJoin(
+              paymentOrders,
+              eq(paymentOrders.id, paymentEvents.orderId),
+            )
             .leftJoin(
               creditGrants,
-              eq(creditGrants.idempotencyKey, sql`'plan:' || ${paymentOrders.id}`),
+              eq(
+                creditGrants.idempotencyKey,
+                sql`'plan:' || ${paymentOrders.id}`,
+              ),
             )
             .leftJoin(
               payerAccounts,
@@ -410,14 +432,26 @@ export async function enumerateCleanupManifest(
 
     // The customers list: every key the keyed tables hold, with live per-table counts.
     const keyedTables = [
-      { table: "billing_customers", object: billingCustomers, column: billingCustomers.externalId },
+      {
+        table: "billing_customers",
+        object: billingCustomers,
+        column: billingCustomers.externalId,
+      },
       {
         table: "billing_subscriptions",
         object: billingSubscriptions,
         column: billingSubscriptions.externalCustomerId,
       },
-      { table: "credit_grants", object: creditGrants, column: creditGrants.externalCustomerId },
-      { table: "credit_ledger", object: creditLedger, column: creditLedger.externalCustomerId },
+      {
+        table: "credit_grants",
+        object: creditGrants,
+        column: creditGrants.externalCustomerId,
+      },
+      {
+        table: "credit_ledger",
+        object: creditLedger,
+        column: creditLedger.externalCustomerId,
+      },
       {
         table: "credit_reservations",
         object: creditReservations,
@@ -428,7 +462,11 @@ export async function enumerateCleanupManifest(
         object: creditChargeRemainders,
         column: creditChargeRemainders.externalCustomerId,
       },
-      { table: "usage_outbox", object: usageOutbox, column: usageOutbox.externalCustomerId },
+      {
+        table: "usage_outbox",
+        object: usageOutbox,
+        column: usageOutbox.externalCustomerId,
+      },
     ];
     const mappings = await tx
       .select({
@@ -464,7 +502,8 @@ export async function enumerateCleanupManifest(
     // Unknown attribution, listed separately: explicit quarantine AND no-mapping rows.
     const unknownOwners = customers.filter(
       (entry) =>
-        entry.attribution === "unknown_owner" || entry.attribution === "unmapped",
+        entry.attribution === "unknown_owner" ||
+        entry.attribution === "unmapped",
     );
 
     // In-flight responsibility evidence: holds that may still settle must never be cleaned.
@@ -475,7 +514,9 @@ export async function enumerateCleanupManifest(
       })
       .from(creditReservations)
       .groupBy(creditReservations.status);
-    statusRows.sort((a, b) => (a.status < b.status ? -1 : a.status > b.status ? 1 : 0));
+    statusRows.sort((a, b) =>
+      a.status < b.status ? -1 : a.status > b.status ? 1 : 0,
+    );
     const reservationStatusCounts = Object.fromEntries(
       statusRows.map((row) => [row.status, row.n]),
     );

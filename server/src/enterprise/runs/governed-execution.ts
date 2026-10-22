@@ -5,7 +5,6 @@ import type {
   ModelInvocationContext,
   PlatformScope,
   RunFailureCode,
-  RunnerRequestLease,
   RunService,
 } from "../contracts";
 import { createAiSdkV3GatewayAdapter } from "../models/ai-sdk-v3-gateway-adapter";
@@ -28,11 +27,28 @@ type LanguageModelV3 = Extract<LanguageModel, { specificationVersion: "v3" }>;
  * SDK: the model instance itself, the server-set output ceiling, and the
  * consumption mark the Runner checks to prove the collaborator actually
  * reached the per-run rebuild point. Never a wire field, never a global.
+ *
+ * `executionBinding` (ME02) publishes the server-issued execution facts the
+ * Mastra engine binding consumes: the admitted scope and Bot, the run
+ * identities the Runner bound post-start, and a server-generated execution
+ * key. Absent on a collaborator built before `bind`, so a call that arrives
+ * before the Runner bound the run fails closed rather than guessing identity.
  */
 export interface GovernedModelRequest {
   readonly model: LanguageModelV3;
   readonly maxOutputTokens: number;
   markConsumed(): void;
+  executionBinding?(): GovernedExecutionFacts | null;
+}
+
+/** The server-issued execution facts of one governed admission (ME02). */
+export interface GovernedExecutionFacts {
+  readonly scope: PlatformScope;
+  readonly botId: string;
+  readonly runId: string;
+  readonly attemptId: string;
+  readonly generation: number;
+  readonly executionKey: string;
 }
 
 /** The admitted identity a carrier accepts invocations for, bound post-start. */
@@ -73,6 +89,13 @@ export type GovernedModelExecutionDependencies = {
   readonly credentialReader: ModelCredentialSecretReader;
   readonly environment?: Record<string, string | undefined>;
   readonly fetch?: typeof fetch;
+  /**
+   * ME10: tokens this run has ALREADY settled before this carrier was
+   * built (the resume drive). The adapter's settlement ledger starts
+   * there, so the resumed dials ask for the run's REMAINING budget —
+   * never the ceiling again on top of what earlier dials spent.
+   */
+  readonly alreadySettledTokens?: number;
 };
 
 const unauthorized = (code: string): never => {
@@ -162,6 +185,13 @@ export function createGovernedModelExecution(
   const issued = new Set<string>();
   const confirmed = new Set<string>();
   const unknown = new Set<string>();
+  // ME02: the engine execution identity — the client never names it. Minted
+  // at bind (not admission) so the engine run id stays 1:1 with the bound
+  // {attemptId, generation} even if a carrier is ever rebound: execution.ts
+  // uses it directly as the Mastra run id. Lazy (`undefined` until bind) so
+  // the type itself carries the invariant: no key exists before bind() minted
+  // one, and an admission without a bound key publishes no facts at all.
+  let executionKey: string | undefined;
 
   /*
    * The gateway's environment copy strips the deployment's BOT_MODEL and
@@ -299,6 +329,11 @@ export function createGovernedModelExecution(
     routeRef: deps.routeRef,
     runTokenCeiling: deps.ceiling,
     issueCapability,
+    // ME10: a resumed drive's carrier starts its ledger at what the run has
+    // already settled, so the resumed dials ask for the REMAINING budget.
+    ...(deps.alreadySettledTokens !== undefined
+      ? { alreadySettledTokens: deps.alreadySettledTokens }
+      : {}),
   });
 
   const governedModel: GovernedModelRequest = {
@@ -307,12 +342,32 @@ export function createGovernedModelExecution(
     markConsumed: () => {
       consumed = true;
     },
+    // ME02: the server-issued execution facts for the Mastra engine binding.
+    // Null until the Runner binds the run identities — never guessed. A
+    // binding without its minted key (unreachable today: bind() always mints
+    // one) reports null too, so the consumer's UNBOUND refusal covers it
+    // instead of an `undefined` key slipping through as an identity.
+    executionBinding: () => {
+      if (!binding || executionKey === undefined) return null;
+      return {
+        scope: deps.scope,
+        botId: deps.agentId,
+        runId: binding.runId,
+        attemptId: binding.attemptId,
+        generation: binding.generation,
+        executionKey,
+      };
+    },
   };
 
   return {
     governedModel,
     bind(next) {
       binding = next;
+      // Fresh engine identity per binding: the Mastra run id is minted with
+      // the {attemptId, generation} it maps back to, never reused across a
+      // rebinding.
+      executionKey = randomUUID();
     },
     wasModelConsumed: () => consumed,
     settlementClean: () =>

@@ -6,9 +6,9 @@ import {
 import type { ReservationBoundQuantities } from "./reserve-bound";
 import {
   resolveVideoTierPrice,
-  videoGenerationSpecOf,
   type VideoGenerationSpec,
   type VideoTierPriceTable,
+  videoGenerationSpecOf,
 } from "./video-generation-pricing";
 
 /*
@@ -55,10 +55,7 @@ import {
  * The dimensions a video edit bills. `video` per output second (× clip count), `video_input`
  * per input-video second — the two sides 0202 split so free-input is recordable.
  */
-export const VIDEO_EDIT_BILLED_DIMENSIONS = [
-  "video",
-  "video_input",
-] as const;
+export const VIDEO_EDIT_BILLED_DIMENSIONS = ["video", "video_input"] as const;
 
 /** The edit/variant request types this boundary prices — upstream's own two names. */
 export const VIDEO_EDIT_REQUEST_TYPES = ["edit", "remix"] as const;

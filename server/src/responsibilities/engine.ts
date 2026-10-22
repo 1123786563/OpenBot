@@ -1,5 +1,9 @@
 import { BOT_PAUSED_REASON, isBotPaused } from "../agents/lifecycle";
 import { HeadlessToolSuspension } from "../computer/headless-tools";
+import {
+  GOVERNED_HEADLESS_REFUSALS,
+  GovernedHeadlessRefusal,
+} from "../mastra/headless";
 import type { WorkQueue } from "../work/queue";
 import type { ResponsibilityRunContext, ResponsibilityStore } from "./types";
 
@@ -143,6 +147,18 @@ export function createResponsibilityEngine(options: {
               error: errorText(error),
             });
             report.waiting.push(runId);
+          } else if (
+            // ME10 (#482): a redelivery converging on the first advance is
+            // not a failure and must not touch the failure ledgers — the
+            // run advanced exactly once, under the first delivery.
+            error instanceof GovernedHeadlessRefusal &&
+            error.code === GOVERNED_HEADLESS_REFUSALS.intentAlreadyAdvanced
+          ) {
+            await store.settleRun(runId, {
+              status: "skipped",
+              error: errorText(error),
+            });
+            report.skipped.push(runId);
           } else {
             const reason = errorText(error);
             await store.settleRun(runId, { status: "failed", error: reason });

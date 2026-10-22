@@ -11,6 +11,7 @@ import type { OpenMuseMailClient } from "./client";
 import { ATTACHMENT_MAX_BYTES, OpenMuseMailVendorError } from "./client";
 
 export { ATTACHMENT_MAX_BYTES };
+
 import {
   decodeMailCursor,
   encodeMailCursor,

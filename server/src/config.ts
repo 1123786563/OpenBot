@@ -5,6 +5,10 @@ function spreadOptional<K extends string, V>(
   return value === undefined ? {} : ({ [key]: value } as { [_ in K]?: V });
 }
 
+// Bun gives an ESM module a global `require`, which is how `pemOrFile` below reaches `node:fs`
+// without putting it in this module's eager import graph. Node has no such global, so the same
+// laziness needs a handle.
+import { createRequire } from "node:module";
 /**
  * What the runtime can do. There is exactly one answer because CopilotKit Intelligence is required
  * for durable threads and memory. Configuration the product cannot function without belongs at the
@@ -37,10 +41,6 @@ import {
 import { gatewayEnvDefaultConfig } from "./gateway/endpoint-config";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
-// Bun gives an ESM module a global `require`, which is how `pemOrFile` below reaches `node:fs`
-// without putting it in this module's eager import graph. Node has no such global, so the same
-// laziness needs a handle.
-import { createRequire } from "node:module";
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -1512,11 +1512,15 @@ function gatewayConfig(environment: Environment): GatewayConfig | undefined {
     }
     creditConversionRate = parsed.rate;
   }
-  if (endpoint === undefined && creditConversionRate === undefined) return undefined;
+  if (endpoint === undefined && creditConversionRate === undefined)
+    return undefined;
   return {
     ...(endpoint === undefined
       ? {}
-      : { baseUrl: endpoint.baseUrl, requestTimeoutMs: endpoint.requestTimeoutMs }),
+      : {
+          baseUrl: endpoint.baseUrl,
+          requestTimeoutMs: endpoint.requestTimeoutMs,
+        }),
     ...(creditConversionRate === undefined ? {} : { creditConversionRate }),
   };
 }
@@ -2044,7 +2048,10 @@ function billingPlanQuotas(
           `LAGO_PLAN_QUOTAS plan "${planCode}" quota "${record.metricCode}" limit must not be negative`,
         );
       }
-      if (record.metricName !== undefined && typeof record.metricName !== "string") {
+      if (
+        record.metricName !== undefined &&
+        typeof record.metricName !== "string"
+      ) {
         throw new Error(
           `LAGO_PLAN_QUOTAS plan "${planCode}" quota "${record.metricCode}" metricName must be a string`,
         );
@@ -2054,7 +2061,10 @@ function billingPlanQuotas(
           `LAGO_PLAN_QUOTAS plan "${planCode}" quota "${record.metricCode}" unit must be a string`,
         );
       }
-      if (record.usedCents !== undefined && typeof record.usedCents !== "number") {
+      if (
+        record.usedCents !== undefined &&
+        typeof record.usedCents !== "number"
+      ) {
         throw new Error(
           `LAGO_PLAN_QUOTAS plan "${planCode}" quota "${record.metricCode}" usedCents must be a number`,
         );
@@ -2349,12 +2359,17 @@ function pemOrFile(value: string, variable: string): string {
   try {
     const contents = readFileSync(value, "utf8");
     if (!contents.includes("-----BEGIN")) {
-      throw new Error(`${variable} points at ${value}, which holds no PEM material`);
+      throw new Error(
+        `${variable} points at ${value}, which holds no PEM material`,
+      );
     }
     return contents;
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith(variable)) throw error;
-    throw new Error(`${variable} names a file that could not be read: ${value}`);
+    if (error instanceof Error && error.message.startsWith(variable))
+      throw error;
+    throw new Error(
+      `${variable} names a file that could not be read: ${value}`,
+    );
   }
 }
 
@@ -2375,7 +2390,10 @@ function pemList(value: string, variable: string): string[] {
  * forgivable under the opt-in; link-local, CGNAT, TEST-NET and multicast never are, on either
  * layer.
  */
-function notifyBaseAllowed(environment: Environment, raw: string): string | undefined {
+function notifyBaseAllowed(
+  environment: Environment,
+  raw: string,
+): string | undefined {
   let parsed: URL;
   try {
     parsed = new URL(raw);
@@ -2385,7 +2403,11 @@ function notifyBaseAllowed(environment: Environment, raw: string): string | unde
   if (parsed.protocol !== "https:") {
     return "PAYMENT_NOTIFY_BASE_URL must be an https URL: the channels post payment notifications to it";
   }
-  if (parsed.pathname.replace(/\/+$/, "") !== "" || parsed.search || parsed.hash) {
+  if (
+    parsed.pathname.replace(/\/+$/, "") !== "" ||
+    parsed.search ||
+    parsed.hash
+  ) {
     return "PAYMENT_NOTIFY_BASE_URL must be the origin only, without a path, query or fragment";
   }
 
@@ -2398,7 +2420,9 @@ function notifyBaseAllowed(environment: Environment, raw: string): string | unde
     return allowPrivate ? undefined : refusal;
   }
   if (host.startsWith("[") && host.endsWith("]")) {
-    return ipv6LiteralAllowed(host.slice(1, -1), allowPrivate) ? undefined : refusal;
+    return ipv6LiteralAllowed(host.slice(1, -1), allowPrivate)
+      ? undefined
+      : refusal;
   }
   if (host.includes(":")) {
     return ipv6LiteralAllowed(host, allowPrivate) ? undefined : refusal;
@@ -2413,9 +2437,17 @@ function notifyBaseAllowed(environment: Environment, raw: string): string | unde
 }
 
 /** The IPv4 tables from the outbound gate, reduced to boot's yes/no. */
-function ipv4LiteralAllowed(a: number, b: number, allowPrivate: boolean): boolean {
+function ipv4LiteralAllowed(
+  a: number,
+  b: number,
+  allowPrivate: boolean,
+): boolean {
   if (a === 127 || (a === 0 && b === 0)) return allowPrivate; // loopback and "this host"
-  if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) {
+  if (
+    a === 10 ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
+  ) {
     return allowPrivate; // RFC1918
   }
   // Link-local (the metadata addresses sit here), "this network", CGNAT, TEST-NET,
@@ -2547,7 +2579,10 @@ function paymentsConfig(
     if (wechatApiv3Key.length !== 32) {
       throw new Error("WXPAY_API_V3_KEY must be exactly 32 characters");
     }
-    const platformCertificates = pemList(wechatPlatformCerts, "WXPAY_PLATFORM_CERTS");
+    const platformCertificates = pemList(
+      wechatPlatformCerts,
+      "WXPAY_PLATFORM_CERTS",
+    );
     if (platformCertificates.length === 0) {
       throw new Error(
         "WXPAY_PLATFORM_CERTS must name at least one platform certificate (PEM or path)",
@@ -2561,7 +2596,8 @@ function paymentsConfig(
       merchantPrivateKeyPem: pemOrFile(wechatPrivateKey, "WXPAY_PRIVATE_KEY"),
       platformCertificates,
       gatewayUrl:
-        optional(environment, "WXPAY_GATEWAY_URL") ?? "https://api.mch.weixin.qq.com",
+        optional(environment, "WXPAY_GATEWAY_URL") ??
+        "https://api.mch.weixin.qq.com",
     };
   }
 
@@ -2611,8 +2647,15 @@ function paymentsConfig(
         `PAYMENT_PLAN_CATALOG plan "${planCode}" must be an object with amountCents, currency and periodMonths`,
       );
     }
-    const { amountCents, currency, periodMonths } = entry as Record<string, unknown>;
-    if (typeof amountCents !== "number" || !Number.isInteger(amountCents) || amountCents <= 0) {
+    const { amountCents, currency, periodMonths } = entry as Record<
+      string,
+      unknown
+    >;
+    if (
+      typeof amountCents !== "number" ||
+      !Number.isInteger(amountCents) ||
+      amountCents <= 0
+    ) {
       throw new Error(
         `PAYMENT_PLAN_CATALOG plan "${planCode}" amountCents must be a positive integer number of cents`,
       );
@@ -2632,8 +2675,9 @@ function paymentsConfig(
     // raises LAGO_PLAN_CATALOG's monthly price but forgets PAYMENT_PLAN_CATALOG shows one
     // number and collects another, which is the exact failure a person reads as being
     // overcharged. Refuse to start; the monthly cycle is the only cycle v1 collects.
-    const displayed =
-      billing.planCatalog.get(planCode)?.pricing.find(
+    const displayed = billing.planCatalog
+      .get(planCode)
+      ?.pricing.find(
         (cycle) =>
           cycle.code === "monthly" || cycle.code === "recurring_monthly",
       );

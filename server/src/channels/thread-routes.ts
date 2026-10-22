@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
 import type { ThreadIdentity } from "./thread-identity";
+
 const log = getLogger("server");
 
 /**

@@ -1,10 +1,7 @@
 import { and, eq, isNotNull, lte } from "drizzle-orm";
-import type { Database } from "../db/client";
-import {
-  workshopScheduleRuns,
-  workshopSchedules,
-} from "../db/schema/workshop";
 import { getLogger } from "../../../shared/logger";
+import type { Database } from "../db/client";
+import { workshopScheduleRuns, workshopSchedules } from "../db/schema/workshop";
 import { nextRunAt, parsePreapproval } from "./schedule";
 
 /**
@@ -130,7 +127,10 @@ export async function sweepWorkshopSchedules(
         status: "planned",
       })
       .onConflictDoNothing({
-        target: [workshopScheduleRuns.scheduleId, workshopScheduleRuns.scheduledFor],
+        target: [
+          workshopScheduleRuns.scheduleId,
+          workshopScheduleRuns.scheduledFor,
+        ],
       })
       .returning({ id: workshopScheduleRuns.id })
       .catch(() => [] as Array<{ id: string }>);
@@ -142,15 +142,22 @@ export async function sweepWorkshopSchedules(
     // Advance the schedule BEFORE the turn: a firing whose enqueue throws has still fired —
     // the run row records the attempt, and lastRunAt/nextRunAt move so a failure does not
     // become an outage of the recurrence itself.
-    const advanced = await advanceSchedule(deps.db, schedule.id, schedule.rrule, schedule.timezone ?? "UTC", now().getTime()).catch(
-      () => null,
-    );
+    const advanced = await advanceSchedule(
+      deps.db,
+      schedule.id,
+      schedule.rrule,
+      schedule.timezone ?? "UTC",
+      now().getTime(),
+    ).catch(() => null);
     if (!advanced) {
       // The schedule's recurrence stopped parsing (an edit raced the sweep): mark the run
       // skipped with the reason and stand down — the write path's recompute owns recovery.
       await deps.db
         .update(workshopScheduleRuns)
-        .set({ status: "skipped", note: "The recurrence stopped parsing at fire time." })
+        .set({
+          status: "skipped",
+          note: "The recurrence stopped parsing at fire time.",
+        })
         .where(eq(workshopScheduleRuns.id, runId))
         .catch(() => undefined);
       report.refused += 1;

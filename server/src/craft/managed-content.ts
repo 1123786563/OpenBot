@@ -87,7 +87,9 @@ export type CraftManagedContentSources = {
    * the server-bundled `assets/craft/web-template/` tree, read once and cached.
    * Static — the userId is accepted for source symmetry, not consulted.
    */
-  webTemplateFilesFor?(userId: string): Promise<ReadonlyMap<string, Uint8Array>>;
+  webTemplateFilesFor?(
+    userId: string,
+  ): Promise<ReadonlyMap<string, Uint8Array>>;
   /** The user's craft MCP servers (Task 3's seam). Default: none. */
   mcpServersFor?(userId: string): Promise<readonly CraftMCPServerConfig[]>;
 };
@@ -110,7 +112,8 @@ export function createCraftManagedContentResolver(
     const [apps, skillFiles, libraryFiles, webTemplateFiles, mcpServers] =
       await Promise.all([
         sources.connectableAppsFor(session.userId),
-        sources.skillFilesFor?.(session.userId) ?? new Map<string, Uint8Array>(),
+        sources.skillFilesFor?.(session.userId) ??
+          new Map<string, Uint8Array>(),
         sources.libraryFilesFor?.(session.userId) ??
           new Map<string, Uint8Array>(),
         sources.webTemplateFilesFor?.(session.userId) ??
@@ -161,7 +164,10 @@ async function defaultWebTemplateFiles(): Promise<
       if (entry.isDirectory()) {
         await walk(child, rel);
       } else if (entry.isFile()) {
-        files.set(rel, new Uint8Array(await readFile(new URL(entry.name, dir))));
+        files.set(
+          rel,
+          new Uint8Array(await readFile(new URL(entry.name, dir))),
+        );
       }
     }
   };

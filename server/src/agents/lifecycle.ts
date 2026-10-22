@@ -18,6 +18,7 @@ import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import { botLifecycle, updateRoutingPreferences } from "../db/schema/lifecycle";
+
 const log = getLogger("server");
 
 /** The sentence every skipped dispatch records, so the trail and the run rows say the same thing. */

@@ -66,6 +66,7 @@ export * from "./identity";
 export * from "./job-ownership";
 export * from "./learning";
 export * from "./lifecycle";
+export * from "./mastra-execution-continuations";
 export * from "./mastra-message-intents";
 export * from "./mastra-tenant-storage";
 export * from "./memory";

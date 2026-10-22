@@ -139,7 +139,8 @@ export const TOOL_SURCHARGE_ENTRIES: readonly ToolSurchargeEntry[] = [
   {
     id: "codemode.meta_tool",
     surface: "A codemode meta-tool (listToolFiles, readToolFile, getToolDocs).",
-    anchor: "bifrost/plugins/governance/main.go (IsCodemodeTool branch at PreMCPHook)",
+    anchor:
+      "bifrost/plugins/governance/main.go (IsCodemodeTool branch at PreMCPHook)",
     dimension: null,
     billsIdentity: false,
     notAnEntranceReason:
@@ -155,7 +156,11 @@ export const TOOL_IDENTITY_ENTRY_IDS = TOOL_SURCHARGE_ENTRIES.filter(
 /** The id type a tool_call_charges row may carry. */
 export type ToolSurchargeEntryIdForIdentity = Extract<
   ToolSurchargeEntry["id"],
-  "mcp.tool_call" | "injected.tool_call" | "injected.web_search" | "responses.tool_call" | "a2a.call"
+  | "mcp.tool_call"
+  | "injected.tool_call"
+  | "injected.web_search"
+  | "responses.tool_call"
+  | "a2a.call"
 >;
 
 /**
@@ -173,7 +178,7 @@ export const TOOL_SURCHARGE_BILLED_DIMENSIONS = [
 /** Why the tool surcharge verdict refused. Closed vocabulary, displayable anywhere. */
 export type ToolSurchargeEnablementIssueCode =
   /** A billed dimension is unknown on the basis — unknown is never a zero cost. */
-  | "tool_price_unknown";
+  "tool_price_unknown";
 
 /** One missing fact the verdict names: the dimension, and the fixed reason it is unknown. */
 export type ToolSurchargeMissingDimension = {
@@ -217,7 +222,8 @@ export function assessToolSurchargeEnablement(
     return { status: "refused", code: "tool_price_unknown", missing };
   }
   const free = TOOL_SURCHARGE_BILLED_DIMENSIONS.every(
-    (dimension) => dims[dimension].status === "known" && dims[dimension].amount === "0",
+    (dimension) =>
+      dims[dimension].status === "known" && dims[dimension].amount === "0",
   );
   return { status: "enabled", free };
 }
@@ -236,7 +242,9 @@ export function toolSurchargeRegistryIssues(): string[] {
       issues.push(`${entry.id}: bills an identity row but names no dimension`);
     }
     if (entry.dimension !== null && !vocabulary.has(entry.dimension)) {
-      issues.push(`${entry.id}: dimension ${entry.dimension} is outside PRICE_DIMENSIONS`);
+      issues.push(
+        `${entry.id}: dimension ${entry.dimension} is outside PRICE_DIMENSIONS`,
+      );
     }
     if (!entry.billsIdentity && entry.notAnEntranceReason === undefined) {
       issues.push(`${entry.id}: a non-entrance must say why it is none`);

@@ -30,11 +30,22 @@ export function createCodeSandboxRoutes(
     const botId = typeof body?.botId === "string" ? body.botId : "";
     const task = typeof body?.task === "string" ? body.task : "";
     const timeoutSeconds =
-      typeof body?.timeoutSeconds === "number" ? body.timeoutSeconds : undefined;
+      typeof body?.timeoutSeconds === "number"
+        ? body.timeoutSeconds
+        : undefined;
     if (!botId || !task)
-      return context.json({ error: "botId and task are required strings." }, 400);
-    if (timeoutSeconds !== undefined && (timeoutSeconds < 1 || timeoutSeconds > 600))
-      return context.json({ error: "timeoutSeconds must be between 1 and 600." }, 400);
+      return context.json(
+        { error: "botId and task are required strings." },
+        400,
+      );
+    if (
+      timeoutSeconds !== undefined &&
+      (timeoutSeconds < 1 || timeoutSeconds > 600)
+    )
+      return context.json(
+        { error: "timeoutSeconds must be between 1 and 600." },
+        400,
+      );
     if (!(await canUseBot(actor, botId)))
       return context.json({ error: "You may not run code as this Bot." }, 403);
 
@@ -53,11 +64,18 @@ export function createCodeSandboxRoutes(
       | { botId?: unknown }
       | undefined;
     const botId = typeof body?.botId === "string" ? body.botId : "";
-    if (!botId) return context.json({ error: "botId is a required string." }, 400);
+    if (!botId)
+      return context.json({ error: "botId is a required string." }, 400);
     if (!(await canUseBot(actor, botId)))
-      return context.json({ error: "You may not reset this Bot's workspace." }, 403);
+      return context.json(
+        { error: "You may not reset this Bot's workspace." },
+        403,
+      );
 
-    const outcome = await factory({ botId, ownerUserId: actor.id }).resetWorkspace();
+    const outcome = await factory({
+      botId,
+      ownerUserId: actor.id,
+    }).resetWorkspace();
     return context.json(outcome, outcome.ok ? 200 : 409);
   });
 

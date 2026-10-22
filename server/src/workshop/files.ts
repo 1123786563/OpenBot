@@ -6,7 +6,7 @@
  * is told — the same record-first order the gateway holds for runs, so an upload that was
  * refused still leaves a row saying who tried and why it was turned away.
  */
-import { recordAuditEvent, type AuditStore } from "../audit";
+import { type AuditStore, recordAuditEvent } from "../audit";
 import type { SandboxClient } from "../codesandbox/client";
 import type { WorkshopStore } from "./store";
 
@@ -38,9 +38,9 @@ export type WorkshopFileNode = {
 export type WorkshopFilesOptions = {
   store: WorkshopStore & {
     /** The session lookup by id — browsing and uploading address sessions, not channels. */
-    sessionById(id: string): Promise<
-      { id: string; botId: string; ownerUserId: string } | undefined
-    >;
+    sessionById(
+      id: string,
+    ): Promise<{ id: string; botId: string; ownerUserId: string } | undefined>;
   };
   auditStore?: AuditStore;
   /** Which Bot's sandbox this deployment talks to, or null where none is configured. */

@@ -32,7 +32,26 @@ export type CrossProcessScenario = (typeof CROSS_PROCESS_SCENARIOS)[number];
 
 /** One AC's row in the matrix. */
 export type AcceptanceMatrixRow = {
-  ac: "AC01" | "AC02" | "AC03" | "AC04" | "AC05" | "AC06" | "AC07" | "AC08" | "AC09" | "AC10" | "AC11" | "AC12" | "AC13" | "AC14" | "AC15" | "AC16" | "AC17" | "AC18" | "AC19";
+  ac:
+    | "AC01"
+    | "AC02"
+    | "AC03"
+    | "AC04"
+    | "AC05"
+    | "AC06"
+    | "AC07"
+    | "AC08"
+    | "AC09"
+    | "AC10"
+    | "AC11"
+    | "AC12"
+    | "AC13"
+    | "AC14"
+    | "AC15"
+    | "AC16"
+    | "AC17"
+    | "AC18"
+    | "AC19";
   /** The observable result the AC requires, in the Spec's own words. */
   requirement: string;
   /** The concrete behavioral scenario this row executes to prove it. */
@@ -404,8 +423,25 @@ export const ACCEPTANCE_MATRIX: readonly AcceptanceMatrixRow[] = [
 
 /** The ACs the matrix carries — the Spec's own nineteen, exactly once each. */
 export const MATRIX_ACS = [
-  "AC01", "AC02", "AC03", "AC04", "AC05", "AC06", "AC07", "AC08", "AC09", "AC10",
-  "AC11", "AC12", "AC13", "AC14", "AC15", "AC16", "AC17", "AC18", "AC19",
+  "AC01",
+  "AC02",
+  "AC03",
+  "AC04",
+  "AC05",
+  "AC06",
+  "AC07",
+  "AC08",
+  "AC09",
+  "AC10",
+  "AC11",
+  "AC12",
+  "AC13",
+  "AC14",
+  "AC15",
+  "AC16",
+  "AC17",
+  "AC18",
+  "AC19",
 ] as const;
 
 /**
@@ -421,10 +457,17 @@ export function countsAsPassed(counts: {
   failed: number;
   skipped: number;
 }): { passed: boolean; reason?: string } {
-  if (counts.failed > 0) return { passed: false, reason: `${counts.failed} failed` };
+  if (counts.failed > 0)
+    return { passed: false, reason: `${counts.failed} failed` };
   if (counts.skipped > 0)
-    return { passed: false, reason: `${counts.skipped} skipped — skip 不计为通过` };
+    return {
+      passed: false,
+      reason: `${counts.skipped} skipped — skip 不计为通过`,
+    };
   if (counts.passed === 0)
-    return { passed: false, reason: "0 cases executed — absence is not a pass" };
+    return {
+      passed: false,
+      reason: "0 cases executed — absence is not a pass",
+    };
   return { passed: true };
 }

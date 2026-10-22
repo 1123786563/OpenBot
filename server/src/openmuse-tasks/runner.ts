@@ -50,6 +50,7 @@
  */
 
 import { createHash } from "node:crypto";
+import type { PDFDocument } from "pdf-lib";
 import { getLogger } from "../../../shared/logger";
 import type { AgentActor } from "../agents/profile-types";
 import type { AuditInitiator } from "../audit";
@@ -62,18 +63,20 @@ import {
 } from "../openmuse-documents/fill";
 import {
   createPdfFieldExtractor,
-  inspectPdfDocument,
   extractPdfDocument,
-  type PdfFieldExtractor,
+  inspectPdfDocument,
   loadPdfDocument,
+  type PdfFieldExtractor,
 } from "../openmuse-documents/inspect";
 import type { OpenMuseFileStore } from "../openmuse-files/store";
 import { AMOUNT_CONVENTION, analyzeSpending } from "../openmuse-finance/csv";
 import type { OpenMuseNotificationEvent } from "../openmuse-notifications/store";
 import type { DocumentReplyReview } from "../openmuse-reviewed-actions/service";
 import type { WorkQueue } from "../work/queue";
-import { type TaskWorkerCapacity, taskWorkerCapacity,
+import {
   OPENMUSE_TASK_MAX_ATTEMPTS,
+  type TaskWorkerCapacity,
+  taskWorkerCapacity,
 } from "./capacity";
 import type {
   OpenMuseEvidence,
@@ -84,7 +87,6 @@ import type {
   StoredOpenMuseTask,
 } from "./store";
 import { documentTaskInput, OPENMUSE_TASK_KIND, reviewWaitOf } from "./store";
-import type { PDFDocument } from "pdf-lib";
 
 export { OPENMUSE_TASK_KIND } from "./store";
 

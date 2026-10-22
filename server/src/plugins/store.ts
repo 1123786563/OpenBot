@@ -1,4 +1,10 @@
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { connectAppRefusal } from "../../../shared/connect-prompt";
+import { researchRoleOf } from "../../../shared/research";
+import {
+  type BrokeredProvenance,
+  isBrokeredProvenance,
+} from "../../../shared/src/brokered-provenance";
 import { type ApprovalGate, currentApprovalContext } from "../approvals/types";
 import {
   type AuditInitiator,
@@ -43,6 +49,10 @@ import {
   skillTools,
   users,
 } from "../db/schema";
+// The model tool-name rule lives with its rationale (and its mount-time
+// enforcement) in the Mastra tool wrapper; the grant write consumes the ONE
+// constant so the two gates cannot drift apart.
+import { VALID_TOOL_NAME } from "../mastra/tools";
 import type { CheckPrivateShare } from "../proactive/private-share";
 import {
   accessFor,
@@ -50,11 +60,6 @@ import {
   type ServerAccess,
   ServerUnresolvableError,
 } from "./access";
-import { researchRoleOf } from "../../../shared/research";
-import {
-  isBrokeredProvenance,
-  type BrokeredProvenance,
-} from "../../../shared/src/brokered-provenance";
 import {
   type BrokerConnection,
   BrokerRefusalError,
@@ -83,7 +88,6 @@ import {
 import { inspectToolArguments } from "./content-governance";
 import { type ListedTool, McpServerError } from "./mcp";
 import { registerDynamicClient } from "./oauth";
-import { connectAppRefusal } from "../../../shared/connect-prompt";
 import { deploymentAlias, personalAlias } from "./openconnector";
 import { shareTargetOf } from "./share-target";
 import {
@@ -5192,6 +5196,23 @@ export function createPluginStore(options: PluginStoreOptions) {
       agentId: string,
       by: string,
     ): Promise<void> {
+      // The model tool name is minted here (this is the write that turns a
+      // stored ref into `mcp__<server>__<tool>` for every run of the Bot), so
+      // an unaddressable name refuses at this configuration write instead of
+      // failing every Mastra-engine run of the Bot at mount — including
+      // pure-text turns that never call the tool. Same rule as the mount-time
+      // check, consumed as the ONE shared constant (mastra/tools.ts); that
+      // runtime check stays as defense in depth for grants written before
+      // this gate existed.
+      if (kind === "mcp") {
+        const modelToolName = toolNameFor(ref);
+        if (!VALID_TOOL_NAME.test(modelToolName)) {
+          throw new PluginRefusedError(
+            `GRANT_TOOL_NAME_INVALID: ${modelToolName} cannot be offered to a model (a tool name is 1-64 characters of A-Z, a-z, 0-9, "_" and "-"; the server and tool halves of the ref spell it).`,
+            null,
+          );
+        }
+      }
       await database
         .insert(pluginGrants)
         .values({ kind, ref, agentId, grantedBy: by })
