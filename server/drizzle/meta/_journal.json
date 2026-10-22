@@ -1289,6 +1289,34 @@
       "when": 1792857620000,
       "tag": "0183_hindsight_judgment_review",
       "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1792857621000,
+      "tag": "0184_hindsight_revocations",
+      "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1792857622000,
+      "tag": "0185_hindsight_pause_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1792857623000,
+      "tag": "0186_hindsight_background_budgets",
+      "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1792857624000,
+      "tag": "0187_hindsight_legacy_memory_migration",
+      "breakpoints": true
     }
   ]
 }
