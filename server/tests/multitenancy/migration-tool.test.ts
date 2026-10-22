@@ -465,6 +465,10 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
       // MT114（Issue #157，MT114 brief 预授权窄缝同款）：仅本断言追加
       // "MT114"（子记录回填批次进度表迁移注册），文件其余内容只读。
       "MT114",
+      // 波次 20（orca-dag-wave3 mt22，brief 预授权窄缝同款）：本票新增
+      // MT120（Issue #163）持久隔离清单表迁移注册并入排序位
+      // （MT114<MT120）。
+      "MT120",
     ]);
     expect(new Set(ALLOWED_TASK_IDS)).toEqual(new Set(TASKS.keys()));
     const selfCheck = TASKS.get("MT000");

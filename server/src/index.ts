@@ -6,7 +6,7 @@ import {
   IntelligenceAgentRunner,
 } from "@copilotkit/runtime/v2";
 import { serve } from "bun";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { COMPUTER_GUIDANCE } from "../../shared/bot-prompt";
 import { DICTATION_HTTP_IDLE_SECONDS } from "../../shared/dictation";
@@ -23,6 +23,7 @@ import {
   headlessTurnRefusal,
   installEnterpriseControls,
 } from "./admin/controls";
+import { createEnterpriseStore } from "./admin/settings-store";
 import {
   CoworkerUnavailableError,
   createActorAgentResolver,
@@ -136,16 +137,9 @@ import { createIdentityProviderStore } from "./auth/identity-provider-store";
 import { createOrganizationAuth } from "./auth/organization";
 import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
+import { createCompanyFinanceVisibilityService } from "./billing/company-finance-visibility";
 import { CREDIT_SCALE, createCredits } from "./billing/credits";
 import { createCreditWriter } from "./billing/credits-writer";
-import { createPlanRenewalGrantor } from "./billing/plan-renewals";
-import {
-  CreditInsufficientError,
-  currentPayerBinding,
-  ensureDeploymentPayerBinding,
-  resolveConsumptionPayerBinding,
-} from "./billing/payer-binding";
-import { currentWorkbenchScope } from "./billing/workbench-payer";
 import {
   countChatInputTokens,
   fitChatInputRequest,
@@ -158,11 +152,18 @@ import {
   startUsageDeliverySweeps,
 } from "./billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
+import {
+  CreditInsufficientError,
+  currentPayerBinding,
+  ensureDeploymentPayerBinding,
+  resolveConsumptionPayerBinding,
+} from "./billing/payer-binding";
 import { createAlipayProvider } from "./billing/payments/alipay";
 import { startPaymentSweeps } from "./billing/payments/maintenance";
 import { createPaymentService } from "./billing/payments/service";
 import { createPaymentStore } from "./billing/payments/store";
 import { createWechatProvider } from "./billing/payments/wechat";
+import { createPlanRenewalGrantor } from "./billing/plan-renewals";
 import { createReconciler } from "./billing/reconcile";
 import { createRecoveryRetry } from "./billing/recovery-retry";
 import { createRecoveryScanner } from "./billing/recovery-scan";
@@ -187,6 +188,8 @@ import {
   UsageOutboxConflictError,
 } from "./billing/usage-outbox";
 import { createWebhookVerifier } from "./billing/webhook-signature";
+import { currentWorkbenchScope } from "./billing/workbench-payer";
+import { createBotServiceRegistry } from "./bot-services/registry";
 import {
   loadAttachmentForTurn,
   markAttachmentsSent,
@@ -236,10 +239,12 @@ import { createSnapshotStore } from "./computer/snapshot-store";
 import { createStreamAuthorizer } from "./computer/stream-auth";
 import { loadConfig, trustedBrowserOrigins } from "./config";
 import {
+  billingMethodForModel,
   CreditGateFailureError,
   CreditPolicyUnconfiguredError,
   type IdentifyActor,
   type IdentifyUser,
+  type ModelBillingAuditEvent,
   ModelNotPricedError,
   ModelUsageSettlementError,
   mountCopilotRuntime,
@@ -247,12 +252,10 @@ import {
   runtimeModelForEnvironment,
   setBuiltinModelSpanObserver,
   setBuiltinToolStepObserver,
+  setModelBillingAudit,
   setModelUsageGate,
   setWorkbenchGatewayModel,
   type ToolSelection,
-  setModelBillingAudit,
-  type ModelBillingAuditEvent,
-  billingMethodForModel,
 } from "./copilot";
 import { builtinSkillFilesFor } from "./craft/builtin-skills";
 import { loadCraftConfig } from "./craft/config";
@@ -261,25 +264,25 @@ import {
   personalUnconnectedApps,
 } from "./craft/managed-content";
 import { resolveCraftMcpServers } from "./craft/mcp-servers";
-import { createPreviewOrigin, samePreviewOrigin } from "./craft/preview-origin";
-import { createPreviewTickets } from "./craft/preview-ticket";
-import { createSandboxGateway } from "./craft/sandbox-gateway";
 import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
 } from "./craft/opencode-config";
+import { createPreviewOrigin, samePreviewOrigin } from "./craft/preview-origin";
+import { createPreviewTickets } from "./craft/preview-ticket";
 import {
   type CraftRoutesFactory,
   createCraftRoutes,
   stopCraftIdleReaper,
 } from "./craft/routes";
+import { createSandboxGateway } from "./craft/sandbox-gateway";
 import { createCraftStore } from "./craft/store";
 import {
   createPreviewProxy,
   type PreviewWebappHmrDeps,
   resolvePreviewWebappHmrUpgrade,
-  type WebappHmrSocketData,
   resolveWebappHmrUpgrade,
+  type WebappHmrSocketData,
   webappHmrIsAppPath,
   webappHmrSessionIdFromPath,
   webappHmrSocketHandlers,
@@ -292,19 +295,6 @@ import {
   encryptSecret,
   resolveModelApiKey,
 } from "./credentials";
-import {
-  createGatewayAdminCredentialService,
-  gatewayAdminCredentialControls,
-  installGatewayAdminCredentialService,
-} from "./gateway/admin-credential";
-import { startGatewayCatalogSyncScheduler } from "./gateway/catalog-sync";
-import {
-  createGatewayVirtualKeyStateClient,
-  startGatewayKeyStateSyncScheduler,
-} from "./gateway/key-state-sync";
-import { gatewayEndpointControls } from "./gateway/endpoint-config";
-import { assertGatewayReadyForBilling } from "./gateway/readiness";
-import { createEnterpriseStore } from "./admin/settings-store";
 import { createDatabase } from "./db/client";
 import {
   channelAgents,
@@ -315,6 +305,8 @@ import {
   routineRuns,
   sessions,
 } from "./db/schema";
+import { pushDevices } from "./db/schema/delivery";
+import { voiceSessions } from "./db/schema/voice";
 import { createDeliveryRouter, DELIVERY_WORK_KINDS } from "./delivery/router";
 import {
   configuredDeliveryProviders,
@@ -326,9 +318,23 @@ import { DeliveryRefusedError } from "./delivery/types";
 import { createDemonstrationRecorder } from "./demonstrations/recording";
 import { createDemonstrationStore } from "./demonstrations/store";
 import { createUnavailableConversationRoutes } from "./enterprise/conversations/routes";
-import { createEnterpriseConversationEntryRoutes } from "./enterprise/tenancy/assembly-enterprise";
 import { createConversationService } from "./enterprise/conversations/service";
 import { createProductionRunnerComposition } from "./enterprise/runs/runner";
+import { createEnterpriseConversationEntryRoutes } from "./enterprise/tenancy/assembly-enterprise";
+import { createMobileAggregationEntryRoutes } from "./enterprise/tenancy/assembly-legacy";
+import { createStreamEntryRoutes } from "./enterprise/tenancy/assembly-stream";
+import {
+  createBillingManagementService,
+  exportTenantAuditEvents,
+  queryTenantAuditEvents,
+  recordTenantAuditEvent,
+} from "./enterprise/tenancy/audit-domains";
+import {
+  createCompanyAdminRoutes,
+  createUnavailableCompanyAdminRoutes,
+} from "./enterprise/tenancy/company-admin-routes";
+import { createCompanyCapabilitiesService } from "./enterprise/tenancy/company-capabilities";
+import { createCompanyConfigReader } from "./enterprise/tenancy/company-config";
 import {
   verifyDataDatabase,
   verifyDirectoryDatabase,
@@ -339,20 +345,22 @@ import {
   createCredentialLeaseService,
 } from "./enterprise/tenancy/credential-lease";
 import {
-  createSharedApprovalAdminService,
-  createSharedApprovalService,
-} from "./enterprise/tenancy/shared-approvals";
-import {
   createCredentialOwnershipAdminService,
   createCredentialOwnershipDecisionService,
   type SecretVault,
 } from "./enterprise/tenancy/credential-ownership";
 import { createDeploymentEntryContextFactory } from "./enterprise/tenancy/entry-context";
+import { createLearningDemonstrationService } from "./enterprise/tenancy/learning-demonstrations";
 import {
   createResourceInventoryService,
   type ResourceInventoryService,
 } from "./enterprise/tenancy/not-found-semantics";
 import { createOAuthStateService } from "./enterprise/tenancy/oauth-state";
+import {
+  createOpenMuseVoiceMobileTenancyService,
+  type OpenMuseVoiceMobileTenancyRows,
+} from "./enterprise/tenancy/openmuse-voice-mobile-tenancy";
+import { createCompanyPeopleLifecycleService } from "./enterprise/tenancy/people-lifecycle";
 import {
   createPersonalShareAdminService,
   createPersonalShareDecisionService,
@@ -361,6 +369,11 @@ import {
   createPluginCatalogAdminService,
   createPluginCatalogDecisionService,
 } from "./enterprise/tenancy/plugin-catalog";
+import {
+  createSharedApprovalAdminService,
+  createSharedApprovalService,
+} from "./enterprise/tenancy/shared-approvals";
+import { createCompanySsoScimConfigService } from "./enterprise/tenancy/sso-scim-config";
 import {
   applyStartupVerdict,
   runMultitenancyStartupChecks,
@@ -376,6 +389,7 @@ import {
   type AuthenticatedRequestIdentity,
   createScopeResolver,
 } from "./enterprise/tenancy/store";
+import { createStreamSubscriptionService } from "./enterprise/tenancy/streams";
 import {
   createTeamResourceActionService,
   type TeamResourceActionService,
@@ -386,25 +400,21 @@ import {
   createWorkspaceScopeLister,
 } from "./enterprise/tenancy/workspace-admin";
 import {
-  createCompanyAdminRoutes,
-  createUnavailableCompanyAdminRoutes,
-} from "./enterprise/tenancy/company-admin-routes";
-import { createCompanyCapabilitiesService } from "./enterprise/tenancy/company-capabilities";
-import { createCompanyConfigReader } from "./enterprise/tenancy/company-config";
-import { createCompanyPeopleLifecycleService } from "./enterprise/tenancy/people-lifecycle";
-import { createCompanySsoScimConfigService } from "./enterprise/tenancy/sso-scim-config";
-import { createLearningDemonstrationService } from "./enterprise/tenancy/learning-demonstrations";
-import {
-  createBillingManagementService,
-  exportTenantAuditEvents,
-  queryTenantAuditEvents,
-  recordTenantAuditEvent,
-} from "./enterprise/tenancy/audit-domains";
-import { createCompanyFinanceVisibilityService } from "./billing/company-finance-visibility";
-import {
   createUnavailableWorkspaceScopeRoutes,
   createWorkspaceScopeRoutes,
 } from "./enterprise/tenancy/workspace-scope-routes";
+import {
+  createGatewayAdminCredentialService,
+  gatewayAdminCredentialControls,
+  installGatewayAdminCredentialService,
+} from "./gateway/admin-credential";
+import { startGatewayCatalogSyncScheduler } from "./gateway/catalog-sync";
+import { gatewayEndpointControls } from "./gateway/endpoint-config";
+import {
+  createGatewayVirtualKeyStateClient,
+  startGatewayKeyStateSyncScheduler,
+} from "./gateway/key-state-sync";
+import { assertGatewayReadyForBilling } from "./gateway/readiness";
 import {
   createHostAccessBroker,
   HostAccessRefusedError,
@@ -414,7 +424,6 @@ import { githubCallbackRoutes } from "./identity/github-callback";
 import { retireIdentityLinks, retireOwnedAccounts } from "./identity/retire";
 import { slackCodeRedeemer } from "./identity/slack-redeem";
 import { createIdentityStore } from "./identity/store";
-import { createBotServiceRegistry } from "./bot-services/registry";
 import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
@@ -445,8 +454,8 @@ import { createMemoryDefaults } from "./memory/defaults";
 import { createMemoryIngestion } from "./memory/ingestion";
 import { createMemoryStore } from "./memory/store";
 import { memoryTools } from "./memory/tools";
-import { officialModelMetadataLookup } from "./model-availability-check";
 import { OPENMUSE_TEMPLATE_KEY } from "./mobile-bff/openmuse-bot";
+import { officialModelMetadataLookup } from "./model-availability-check";
 import { currentRunObservationScope } from "./observation-run-scope";
 import { createActivityFeed } from "./openmuse-activity/feed";
 import { createOpenMuseActivityRoutes } from "./openmuse-activity/routes";
@@ -1185,16 +1194,121 @@ const enterpriseWorkspaceScopeRoutes = enterpriseCapabilities
           enterpriseCapabilities.directory,
           enterpriseCapabilities.data,
         ),
-        admin: operator && companyAdminAuthorizer !== null
-          ? {
-              authorizer: companyAdminAuthorizer,
-              service: createWorkspaceAdminService(operator),
-            }
-          : undefined,
+        admin:
+          operator && companyAdminAuthorizer !== null
+            ? {
+                authorizer: companyAdminAuthorizer,
+                service: createWorkspaceAdminService(operator),
+              }
+            : undefined,
         companyAdmin: companyAdminRoutes,
       });
     })()
   : createUnavailableWorkspaceScopeRoutes();
+// MT125 (Issue #168) / MT126 (Issue #169): the legacy-family and stream-entry
+// unified assemblies. Both ride the SAME entry-context factory the enterprise
+// conversation entry uses — one session resolution, one issuance WeakSet, one
+// membership revalidation. The mobile aggregate reads through the MT066 scope
+// service over the restricted data+operator channels (its voice/push root
+// rows come from the app database — exactly the projection the service's rows
+// interface names). The stream entry drives MT025's subscription decision
+// plane; its event port is the no-event port until the event-bus wiring
+// ticket connects the transport (the open/probe/cancel semantics are complete
+// either way). Absent enterprise capabilities or the operator channel,
+// neither family mounts — absent, never a permissive stand-in.
+const enterpriseMobileAggregateAndStreamEntry = await (async () => {
+  if (!enterpriseCapabilities) return null;
+  const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+  const operator = operatorUrl
+    ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
+        // Same discipline as the workspace-admin channel above: a failing
+        // operator verification leaves the families unmounted, never
+        // permissive; no console here (server/src is noConsole-enforced).
+        () => null,
+      )
+    : null;
+  if (!operator) return null;
+  const voiceMobileRows: OpenMuseVoiceMobileTenancyRows = {
+    async findOwnedSession(ownerUserId, sessionId) {
+      const [row] = await database
+        .select()
+        .from(voiceSessions)
+        .where(
+          and(
+            eq(voiceSessions.id, sessionId),
+            eq(voiceSessions.userId, ownerUserId),
+          ),
+        )
+        .limit(1);
+      return row
+        ? {
+            id: row.id,
+            channelId: row.channelId,
+            startedAt: row.startedAt,
+            endedAt: row.endedAt,
+            durationSeconds: row.durationSeconds,
+          }
+        : null;
+    },
+    async listSessionsByIds(ownerUserId, sessionIds) {
+      if (sessionIds.length === 0) return [];
+      const found = await database
+        .select()
+        .from(voiceSessions)
+        .where(
+          and(
+            inArray(voiceSessions.id, [...sessionIds]),
+            eq(voiceSessions.userId, ownerUserId),
+          ),
+        );
+      return found.map((row) => ({
+        id: row.id,
+        channelId: row.channelId,
+        startedAt: row.startedAt,
+        endedAt: row.endedAt,
+        durationSeconds: row.durationSeconds,
+      }));
+    },
+    async findOwnedDevice(ownerUserId, deviceId) {
+      const [row] = await database
+        .select()
+        .from(pushDevices)
+        .where(
+          and(
+            eq(pushDevices.id, deviceId),
+            eq(pushDevices.ownerUserId, ownerUserId),
+          ),
+        )
+        .limit(1);
+      return row
+        ? { id: row.id, platform: row.platform, enabled: row.enabled }
+        : null;
+    },
+  };
+  return {
+    mobileAggregate: createMobileAggregationEntryRoutes({
+      factory: enterpriseCapabilities.entry,
+      service: createOpenMuseVoiceMobileTenancyService({
+        data: enterpriseCapabilities.data,
+        operator,
+        rows: voiceMobileRows,
+      }),
+    }),
+    streamEntry: createStreamEntryRoutes({
+      factory: enterpriseCapabilities.entry,
+      service: createStreamSubscriptionService({
+        data: enterpriseCapabilities.data,
+        operator,
+      }),
+      events: {
+        // No-event port: the SSE decision/probe/termination semantics are
+        // complete; the event-bus wiring ticket swaps this port for the real
+        // transport (assembly-stream.ts discloses the seam).
+        nextEvent: async () => null,
+      },
+    }),
+  };
+})();
 // MT010 (Issue #53): personal-resource share rules. The decision half rides
 // the already-verified restricted data channel; the owner-only share/revoke
 // half needs the restricted operator channel and stays null — fail-closed,
@@ -6708,6 +6822,14 @@ const app = createApp(
     teamBots,
     enterpriseConversations: enterpriseConversationRoutes,
     enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
+    ...(enterpriseMobileAggregateAndStreamEntry
+      ? {
+          enterpriseMobileAggregate:
+            enterpriseMobileAggregateAndStreamEntry.mobileAggregate,
+          enterpriseStreamEntry:
+            enterpriseMobileAggregateAndStreamEntry.streamEntry,
+        }
+      : {}),
     // MT122 (issue #165): present only when enterprise capabilities are wired;
     // multitenancy off or a missing channel leaves the assembly byte-for-byte
     // what it was (the middleware itself is mounted in createApp, mode-gated).
