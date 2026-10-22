@@ -38,6 +38,10 @@ const UNKNOWN_REASON_COPY_KEYS: ReadonlySet<string> = new Set([
   // The recovery scan's detection vocabulary (recovery-scan.ts's DETECTION_REASONS).
   "dispatch_result_unknown",
   "hold_expired_without_result",
+  // The async lanes' own marks (17.2/17.3's lost dispatch answer, 17.7's unknown cancel
+  // result) — the jobs page's waiting states read through this same table.
+  "async_dispatch_answer_lost",
+  "async_cancel_result_unknown",
 ]);
 
 /** The confirmed-no-cost vocabulary a release reason may carry (usage-evidence.ts). */
@@ -61,6 +65,8 @@ export type PendingSettlementReasonCopyKey =
   | `creditsPage.pendingReasons.usage_charge_failed`
   | `creditsPage.pendingReasons.dispatch_result_unknown`
   | `creditsPage.pendingReasons.hold_expired_without_result`
+  | `creditsPage.pendingReasons.async_dispatch_answer_lost`
+  | `creditsPage.pendingReasons.async_cancel_result_unknown`
   | `creditsPage.pendingReasons.provider_error`
   | `creditsPage.pendingReasons.bound_refused`
   | `creditsPage.pendingReasons.no_usage`

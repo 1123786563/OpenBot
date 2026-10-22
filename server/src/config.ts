@@ -245,16 +245,19 @@ export type DeploymentConfig = {
    * The multitenancy switch and its startup-validation inputs (MT013).
    *
    * Off by default; the legacy single-tenant boot is byte-for-byte unchanged while it is off.
-   * On, the process runs the three startup checks in enterprise/tenancy/startup-checks.ts and
+   * On, the process runs the startup checks in enterprise/tenancy/startup-checks.ts and
    * refuses to boot on any gap. `inventoryPath` names the CoverageInventory JSON the MT001
    * generator (`server/scripts/multitenancy/inventory.ts`) produced; `waiversPath` names an
    * explicit waiver list whose every entry carries a reason, because an audited exception is
-   * the only kind this mode accepts.
+   * the only kind this mode accepts. `quarantineDefaultWorkspaceId` (MT129) names the MT112
+   * anchor default workspace the quarantine gate scans against — explicit by design, never
+   * guessed, and its absence fails the gate closed in multitenancy mode.
    */
   multitenancy: {
     enabled: boolean;
     inventoryPath?: string;
     waiversPath?: string;
+    quarantineDefaultWorkspaceId?: string;
   };
   /** Audio configuration is independent of agent model providers. */
   transcription?: TranscriptionConfig;
@@ -3033,6 +3036,7 @@ function multitenancyConfig(environment: Environment): {
   enabled: boolean;
   inventoryPath?: string;
   waiversPath?: string;
+  quarantineDefaultWorkspaceId?: string;
 } {
   const raw = optional(environment, "OPENBOT_MULTITENANCY")?.trim();
   let enabled: boolean;
@@ -3049,10 +3053,20 @@ function multitenancyConfig(environment: Environment): {
   }
   const inventoryPath = optional(environment, "OPENBOT_MULTITENANCY_INVENTORY");
   const waiversPath = optional(environment, "OPENBOT_MULTITENANCY_WAIVERS");
+  // MT129（Issue #172）：隔离门的显式输入——MT112 锚点默认团队。多租户模式
+  // 下缺它即 fail-closed（验证不了「隔离清单已清空」就不能声称通过），
+  // 绝不内部猜测。
+  const quarantineDefaultWorkspaceId = optional(
+    environment,
+    "OPENBOT_MULTITENANCY_QUARANTINE_DEFAULT_WORKSPACE",
+  );
   return {
     enabled,
     ...(inventoryPath ? { inventoryPath } : {}),
     ...(waiversPath ? { waiversPath } : {}),
+    ...(quarantineDefaultWorkspaceId
+      ? { quarantineDefaultWorkspaceId }
+      : {}),
   };
 }
 

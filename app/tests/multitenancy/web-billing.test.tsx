@@ -158,7 +158,13 @@ function jsonResponse(status: number, body: unknown): Response {
  * globex answers its own (different numbers — the switch must show them, not acme's), and a
  * finance-refused switch lets the books read answer the typed 403.
  */
-function serve(options: { booksStatus?: number } = {}): void {
+function serve(
+  options: {
+    booksStatus?: number;
+    /** Overrides the invoices page — the MT141 gap pin sends both anomaly shapes at once. */
+    invoices?: typeof OWN_INVOICES_PAGE;
+  } = {},
+): void {
   asked = [];
   global.fetch = (async (
     input: RequestInfo | URL,
@@ -197,7 +203,7 @@ function serve(options: { booksStatus?: number } = {}): void {
       return jsonResponse(200, BOOKS_ACME);
     }
     if (path.startsWith("/api/billing/invoices")) {
-      return jsonResponse(200, OWN_INVOICES_PAGE);
+      return jsonResponse(200, options.invoices ?? OWN_INVOICES_PAGE);
     }
     if (path.startsWith("/api/billing/credits/summary")) {
       return jsonResponse(
@@ -439,5 +445,53 @@ describe("MT097 billing surfaces bind to the selection (Issue #140)", () => {
         "company-admin-books",
       ]),
     ).toBeUndefined();
+  });
+
+  // MT141 / Issue #184 — the explicit pin for the gap MT139 fixed in flight: the server may
+  // omit `anomalies` entirely (statements.ts: absent = no anomalies recorded, never an
+  // error), and when present the codes land as their own lines. Before the fix the absent
+  // field crashed the order row outright; this case rides the real view + real
+  // anomalyLines so the contract cannot regress quietly.
+  test("MT141 pin: an invoice without the anomalies field renders, one with anomalies lists its codes", async () => {
+    serve({
+      invoices: {
+        invoices: [
+          // Shape 1: the field is absent — the contract's own words: "no anomalies recorded".
+          { ...OWN_INVOICES_PAGE.invoices[0], invoiceId: "po_absent" },
+          // Shape 2: the field is present with one anomaly code.
+          {
+            ...OWN_INVOICES_PAGE.invoices[0],
+            invoiceId: "po_amount_mismatch",
+            anomalies: [
+              {
+                code: "amount_mismatch",
+                detail: "paid 19900, expected 20000",
+                channelTransactionId: "tx-1",
+                amountCents: 19900,
+                occurredAt: "2026-10-02T00:00:00.000Z",
+              },
+            ],
+          },
+        ],
+        pagination: { totalCount: 2, totalPages: 1, currentPage: 1, nextPage: null },
+      },
+    });
+    const queryClient = freshClient();
+    openScope(queryClient, ACME);
+    const view = draw(
+      queryClient,
+      <OrdersGrantsView page={1} onPage={() => {}} scope={{ status: "open", userId: USER, selection: ACME, generation: 1, prefix: scopedCachePrefix(USER, ACME), key: "k" } as never} />,
+    );
+    // Shape 1 renders its row at all (the pre-fix behavior was a crash), with no anomaly block.
+    await waitFor(() => {
+      expect(view.getByText("po_absent")).toBeTruthy();
+    });
+    expect(view.queryByTestId("anomalies-po_absent")).toBeNull();
+    // Shape 2 renders the code as its own line.
+    await waitFor(() => {
+      expect(
+        view.getByTestId("anomaly-po_amount_mismatch-amount_mismatch"),
+      ).toBeTruthy();
+    });
   });
 });

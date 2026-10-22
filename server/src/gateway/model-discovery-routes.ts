@@ -67,6 +67,7 @@ import {
 } from "./price-snapshot";
 import { type ModelRef, modelRefKey } from "./catalog";
 import { enterpriseControls } from "../admin/controls";
+import { speechTailAvailabilityView } from "../billing/speech-tail-availability";
 
 /** The services the route asks; the real mount resolves the gateway ones lazily per request. */
 export type ModelDiscoveryRouteDeps = {
@@ -210,6 +211,16 @@ export function createModelDiscoveryRoutes(
       bot: { botId: bot.botId, displayName: bot.displayName },
       selectable: selectableViews,
       excluded: excludedViews,
+      /*
+       * 13.4 (#309): the speech call modes' tail constraint, answered beside the model
+       * list for the same reason the excluded set names its reasons — a caller deciding
+       * HOW to call a speech model must see which response formats are usable and why the
+       * others are not, before the admission door refuses the call. Pure projection off
+       * the same verdict the door consults (speechTailAvailabilityView), so this surface
+       * and the door can never disagree. An additive member of the frozen contract,
+       * recorded in #309's produces list; every other key keeps its shape.
+       */
+      speechPaths: speechTailAvailabilityView(),
     });
   });
 

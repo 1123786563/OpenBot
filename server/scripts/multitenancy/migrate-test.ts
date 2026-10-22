@@ -3413,6 +3413,67 @@ const OPENMUSE_VOICE_MOBILE_TENANCY_TASK: TaskMigrationSpec = {
   ],
 };
 
+/**
+ * MT120（Issue #163）：无法归属外部状态的持久隔离清单。
+ *
+ * 一张新表 enterprise_quarantine_items（表 + RLS 两步，expand-only）：
+ * 扫描幂等 upsert（setup/属主语义）、运维经受限通道查看、处置经受限
+ * operator 通道翻状态（审计先行在服务面 quarantine-list.ts）。
+ */
+const QUARANTINE_LIST_TASK: TaskMigrationSpec = {
+  id: "MT120",
+  description:
+    "MT120（Issue #163）：持久隔离清单——新增 enterprise_quarantine_items（表 + RLS 两步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "quarantine_items_table",
+      impact:
+        "新增 enterprise_quarantine_items：一行 = 一条无法唯一归属的外部状态隔离条目（确定性 id `<category>:<recordId>`，PK (tenant_id, id)，FK tenant → enterprise_tenants cascade）；category/reason/disposition/status 四闭集 CHECK；处置留痕列（resolved_at/resolved_by/target_tenant_id）。不修改任何既有表。",
+      objects: ["enterprise_quarantine_items"],
+      statements: [
+        'CREATE TABLE "enterprise_quarantine_items" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"category" text NOT NULL,\n' +
+          '\t"record_id" text NOT NULL,\n' +
+          '\t"reason" text NOT NULL,\n' +
+          '\t"suggested_disposition" text NOT NULL,\n' +
+          "\t\"status\" text DEFAULT 'open' NOT NULL,\n" +
+          '\t"discovered_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"last_seen_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"resolved_at" timestamp with time zone,\n' +
+          '\t"resolved_by" text,\n' +
+          '\t"target_tenant_id" text,\n' +
+          '\tCONSTRAINT "enterprise_quarantine_items_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "enterprise_tenants"("id") ON DELETE cascade ON UPDATE cascade,\n' +
+          '\tCONSTRAINT "enterprise_quarantine_items_pk" PRIMARY KEY ("tenant_id", "id"),\n' +
+          "\tCONSTRAINT \"enterprise_quarantine_items_category_closed\" CHECK (\"category\" IN ('root-record', 'external-file')),\n" +
+          "\tCONSTRAINT \"enterprise_quarantine_items_reason_closed\" CHECK (\"reason\" IN ('claimed-by-another-tenant', 'owner-principal-missing', 'ambiguous-membership', 'parent-tenant-mismatch', 'parent-association-missing', 'digest-mismatch')),\n" +
+          "\tCONSTRAINT \"enterprise_quarantine_items_disposition_closed\" CHECK (\"suggested_disposition\" IN ('assign', 'destroy')),\n" +
+          "\tCONSTRAINT \"enterprise_quarantine_items_status_closed\" CHECK (\"status\" IN ('open', 'assigned', 'destroyed', 'cleared-upstream'))\n" +
+          ");",
+      ],
+    },
+    {
+      slug: "quarantine_items_rls",
+      impact:
+        "仅对 enterprise_quarantine_items：REVOKE PUBLIC、ENABLE + FORCE RLS、最小策略（data 租户臂 SELECT；operator 租户臂 SELECT/INSERT/UPDATE）及配套最小 GRANT（data 只读；operator 全列 INSERT + 处置列 UPDATE——resolved_* / target_tenant_id / status）。不改动任何既有表策略或既有授权。",
+      objects: ["enterprise_quarantine_items"],
+      statements: [
+        'REVOKE ALL ON TABLE "enterprise_quarantine_items" FROM PUBLIC;',
+        'ALTER TABLE "enterprise_quarantine_items" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_quarantine_items" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_quarantine_items_data_read" ON "enterprise_quarantine_items" FOR SELECT TO ob_ent_data USING ("tenant_id" = current_setting(\'app.tenant_id\', true));',
+        'CREATE POLICY "enterprise_quarantine_items_operator_read" ON "enterprise_quarantine_items" FOR SELECT TO ob_ent_operator USING ("tenant_id" = current_setting(\'app.tenant_id\', true));',
+        'CREATE POLICY "enterprise_quarantine_items_operator_insert" ON "enterprise_quarantine_items" FOR INSERT TO ob_ent_operator WITH CHECK ("tenant_id" = current_setting(\'app.tenant_id\', true));',
+        'CREATE POLICY "enterprise_quarantine_items_operator_update" ON "enterprise_quarantine_items" FOR UPDATE TO ob_ent_operator USING ("tenant_id" = current_setting(\'app.tenant_id\', true)) WITH CHECK ("tenant_id" = current_setting(\'app.tenant_id\', true));',
+        'GRANT SELECT ON TABLE "enterprise_quarantine_items" TO ob_ent_data;',
+        'GRANT SELECT, INSERT ON TABLE "enterprise_quarantine_items" TO ob_ent_operator;',
+        'GRANT UPDATE ("status", "resolved_at", "resolved_by", "target_tenant_id", "reason", "suggested_disposition", "last_seen_at") ON TABLE "enterprise_quarantine_items" TO ob_ent_operator;',
+      ],
+    },
+  ],
+};
+
 export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [SELF_CHECK_TASK.id, SELF_CHECK_TASK],
   [WORKSPACE_MEMBERSHIP_TASK.id, WORKSPACE_MEMBERSHIP_TASK],
@@ -3446,6 +3507,7 @@ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   ],
   [OPENMUSE_ACTIVITY_TENANCY_TASK.id, OPENMUSE_ACTIVITY_TENANCY_TASK],
   [OPENMUSE_VOICE_MOBILE_TENANCY_TASK.id, OPENMUSE_VOICE_MOBILE_TENANCY_TASK],
+  [QUARANTINE_LIST_TASK.id, QUARANTINE_LIST_TASK],
   [SHARED_APPROVAL_TASK.id, SHARED_APPROVAL_TASK],
   [DELETION_SEMANTICS_TASK.id, DELETION_SEMANTICS_TASK],
   [HOST_ACCESS_TASK.id, HOST_ACCESS_TASK],

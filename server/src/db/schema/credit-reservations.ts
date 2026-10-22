@@ -887,6 +887,78 @@ export const creditAsyncSettlementDetails = pgTable(
 );
 
 /**
+ * The async job's cancellation record (Bifrost 17.7, #331): one row per job — the
+ * provider's own cancel conclusion, the unbilled evidence an evidenced release stands on,
+ * and the money reaction that conclusion produced. A cancel request is not a no-charge
+ * proof: only the provider's own unbilled confirmation releases (through the Release
+ * protocol's `no_usage` evidence kind, the receipt as reference); `unsupported`/`failed`
+ * keep the hold held, and an unknown RESULT moves the hold to 06.8's unknown — full
+ * capacity still occupied. Key expiry and client departure have no column here because
+ * neither is a conclusion about the job. The row is the audit-visible fact (取消动作与
+ * 结论可审计); the money truth stays on the reservation and the ledger.
+ */
+export const asyncJobCancellations = pgTable(
+  "async_job_cancellations",
+  {
+    /** The job whose cancellation this row records — one row per job, ever. */
+    jobId: text("job_id")
+      .primaryKey()
+      .references(() => asyncJobs.jobId),
+    /** The most recent cancel request's idempotency key — the replay detector. */
+    lastRequestKey: text("last_request_key").notNull(),
+    /** The provider's own conclusion, latest ask: closed set, money follows it. */
+    providerCancelResult: text("provider_cancel_result")
+      .$type<
+        | "succeeded_unbilled_evidenced"
+        | "succeeded_no_evidence"
+        | "unsupported"
+        | "failed"
+        | "result_unknown"
+      >()
+      .notNull(),
+    /** The evidence kind an evidenced cancel released on (Release protocol's own). */
+    evidenceKind: text("evidence_kind"),
+    /** The verifiable trail id — the provider's cancellation receipt. */
+    evidenceReference: text("evidence_reference"),
+    /** The money reaction: released on evidence, kept held, or moved to unknown. */
+    conclusion: text("conclusion")
+      .$type<"released_on_evidence" | "hold_kept" | "hold_unknown">()
+      .notNull(),
+    /** What the Release protocol handed back; null unless released_on_evidence. */
+    releasedCredits: integer("released_credits"),
+    /** Every cancel request, replays included — the retry storm as a count. */
+    requests: integer("requests").notNull().default(1),
+    firstRequestedAt: timestamp("first_requested_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "async_job_cancel_result_check",
+      sql`${table.providerCancelResult} IN ('succeeded_unbilled_evidenced', 'succeeded_no_evidence', 'unsupported', 'failed', 'result_unknown')`,
+    ),
+    check(
+      "async_job_cancel_evidence_shape_check",
+      sql`(${table.providerCancelResult} = 'succeeded_unbilled_evidenced' AND ${table.evidenceKind} IS NOT NULL AND ${table.evidenceReference} IS NOT NULL) OR (${table.providerCancelResult} <> 'succeeded_unbilled_evidenced' AND ${table.evidenceKind} IS NULL AND ${table.evidenceReference} IS NULL)`,
+    ),
+    check(
+      "async_job_cancel_conclusion_check",
+      sql`${table.conclusion} IN ('released_on_evidence', 'hold_kept', 'hold_unknown')`,
+    ),
+    check(
+      "async_job_cancel_released_shape_check",
+      sql`(${table.conclusion} = 'released_on_evidence' AND ${table.releasedCredits} IS NOT NULL AND ${table.releasedCredits} >= 0) OR (${table.conclusion} <> 'released_on_evidence' AND ${table.releasedCredits} IS NULL)`,
+    ),
+    check("async_job_cancel_requests_check", sql`${table.requests} >= 1`),
+    // The operational read: recently cancelled jobs, newest first.
+    index("async_job_cancel_last_idx").on(table.lastSeenAt),
+  ],
+);
+
+/**
  * One established realtime session (Bifrost 15.1, #314): the durable identity a WebSocket
  * or WebRTC session is born under — the grant, the payer the door RESOLVED server-side,
  * the model cell and BOTH locked versions, frozen at establishment so the session's
