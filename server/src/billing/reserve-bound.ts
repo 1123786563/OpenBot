@@ -218,6 +218,77 @@ export function computeReservationCeiling(input: {
 }
 
 /**
+ * One dimension's exact scaled cost (20.3): the per-dimension member of what
+ * {@link computeReservationCeiling} sums — the same quantity × price × rate × CREDIT_SCALE
+ * arithmetic, computed per dimension and left exact (no rounding here; the settlement's
+ * single rounding is allocated when the split is written). Only dimensions with a positive
+ * quantity are members: a dimension the call did not use accounts for none of the cost.
+ */
+export type DimensionScaledUnit = {
+  readonly dimension: PriceDimension;
+  readonly numerator: bigint;
+  readonly denominator: bigint;
+};
+
+/**
+ * The per-dimension exact scaled costs of one priced usage — the settlement's split input.
+ * Pure, and derived through the same parse/validate discipline as the ceiling: an unknown
+ * dimension or unreadable price refuses rather than guessing, and the members' exact sum is
+ * the total the ceiling function computes (the caller's `exactScaledUnits`), by the same
+ * accumulation order.
+ */
+export function computeDimensionScaledUnits(input: {
+  dims: PriceSnapshotDims;
+  quantities: ReservationBoundQuantities;
+  rate: ConversionRate;
+}):
+  | { ok: true; members: DimensionScaledUnit[] }
+  | { ok: false; issue: ReservationCeilingIssue } {
+  const { dims, quantities, rate } = input;
+  if (rate.numerator <= 0n || rate.denominator <= 0n) {
+    return { ok: false, issue: { code: "rate_invalid" } };
+  }
+  assertPriceSnapshotDims(dims, "The settlement dimension split basis");
+  const members: DimensionScaledUnit[] = [];
+  for (const dimension of PRICE_DIMENSIONS) {
+    const quantity = quantities[dimension];
+    if (!Number.isSafeInteger(quantity) || quantity < 0) {
+      return { ok: false, issue: { code: "quantity_invalid", dimension } };
+    }
+    if (quantity === 0) continue;
+    const state = dims[dimension];
+    if (state.status === "unknown") {
+      return {
+        ok: false,
+        issue: { code: "price_unknown", dimension, reason: state.reason },
+      };
+    }
+    const amount = parseExactDecimal(state.amount);
+    if (amount === null) {
+      return {
+        ok: false,
+        issue: {
+          code: "price_unknown",
+          dimension,
+          reason: "price_dim_unreadable",
+        },
+      };
+    }
+    // quantity × price (USD) × rate × CREDIT_SCALE, exact.
+    const numerator =
+      BigInt(quantity) * amount.numerator * rate.numerator * BigInt(CREDIT_SCALE);
+    const denominator = amount.denominator * rate.denominator;
+    const exact = reduce(numerator, denominator);
+    members.push({
+      dimension,
+      numerator: exact.numerator,
+      denominator: exact.denominator,
+    });
+  }
+  return { ok: true, members };
+}
+
+/**
  * The pricing basis a reservation locked at admission: the model cell plus the two versions.
  * Complete by construction — a lock names all five fields or none; the reservation table's
  * CHECK enforces the same completeness on the row.

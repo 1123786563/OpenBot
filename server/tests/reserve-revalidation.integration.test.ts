@@ -540,9 +540,11 @@ test("the reserve module never imports the conservative input-bound estimator", 
   // request, never prove one's ceiling (ADR 0001).
   expect(/from\s+"[^"]*input-bound/.test(source)).toBe(false);
   expect(/require\("[^"]*input-bound"\)/.test(source)).toBe(false);
-  // The enforceable kinds are exactly the two mechanisms; the estimate is structurally outside.
+  // The enforceable kinds are exactly the refusal/truncation mechanisms plus the embedding
+  // refusal evidence (11.2, integrated with bf8's increment); the estimate stays outside.
   expect([...RESERVE_BOUND_EVIDENCE_KINDS].sort()).toEqual([
     "provider_max_tokens",
+    "self_enforced_input_refusal",
     "self_enforced_input_truncation",
   ]);
 });

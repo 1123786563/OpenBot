@@ -140,6 +140,25 @@ export function ConsumptionTable({
                           })}
                         </span>
                       ) : null}
+                      {/*
+                       * 20.3's fee split: a settlement that carries a surcharge shows its
+                       * two parts (model fee / tool-route surcharge) under the total — each
+                       * part traceable to the same entry, the parts summing to it. A row
+                       * whose settlement wrote no split, or whose surcharge is genuinely
+                       * zero, shows nothing: no empty line, no misleading 0 (AC4).
+                       */}
+                      {entry.feeBreakdown &&
+                      entry.feeBreakdown.surchargeCredits > 0 ? (
+                        <p className="text-muted-foreground mt-0.5 text-xs whitespace-nowrap">
+                          {t("creditsPage.feeSplitModel", {
+                            amount: credits(entry.feeBreakdown.modelCredits),
+                          })}
+                          {" · "}
+                          {t("creditsPage.feeSplitSurcharge", {
+                            amount: credits(entry.feeBreakdown.surchargeCredits),
+                          })}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="text-muted-foreground hidden px-4 py-2 sm:table-cell">
                       {/*
