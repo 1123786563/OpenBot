@@ -54,13 +54,13 @@ import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import { desktopAuthPage } from "./auth/native-browser";
 import type { Credits } from "./billing/credits";
 import type { CreditWriter } from "./billing/credits-writer";
-import { createRealtimeUsageService } from "./billing/realtime-usage";
-import { createRewardGranter } from "./billing/rewards";
 import {
   createPaymentCallbackRoutes,
   createPaymentRoutes,
 } from "./billing/payments/routes";
 import type { PaymentService } from "./billing/payments/service";
+import { createRealtimeUsageService } from "./billing/realtime-usage";
+import { createRewardGranter } from "./billing/rewards";
 import {
   createBillingAdminRoutes,
   createBillingCreditRoutes,
@@ -70,6 +70,13 @@ import {
 } from "./billing/routes";
 import type { BillingStatements } from "./billing/statements";
 import type { BillingService } from "./billing/types";
+import { createWorkbenchPayerMiddleware } from "./billing/workbench-payer";
+import { accessGrantRoutes } from "./bot-services/access-grants";
+import { botServiceRoutes } from "./bot-services/auth";
+import { botServiceCredentialRoutes } from "./bot-services/credential-routes";
+import type { BotServiceRegistry } from "./bot-services/registry";
+import { botServiceAdminRoutes } from "./bot-services/routes";
+import type { BotServiceStore } from "./bot-services/store";
 import {
   createAttachmentRoutes,
   createChannelAttachmentRoutes,
@@ -116,44 +123,36 @@ import { mountDesktopConnectionFailure } from "./desktop-connection-failure";
 import { createTranscriptionProvider } from "./dictation/provider";
 import { createDictationRoutes } from "./dictation/routes";
 import { withRunnerRequestContext } from "./enterprise/runs/request-context";
-import {
-  createWorkbenchPayerMiddleware,
-} from "./billing/workbench-payer";
+import { createLegacyEntryGuard } from "./enterprise/tenancy/assembly-legacy";
 import {
   createDeploymentEntryContextMiddleware,
   type DeploymentEntryContextFactory,
 } from "./enterprise/tenancy/entry-context";
-import type { HostAccessBroker } from "./host-access/broker";
-import { createHostAccessRoutes } from "./host-access/routes";
-import { identityRoutes } from "./identity/routes";
-import type { IdentityStore } from "./identity/store";
-import { gatewayAdminCredentialRoutes } from "./gateway/admin-credential-routes";
-import { gatewayAdminRoutes } from "./gateway/admin-routes";
 import {
   GatewayAdminCredentialNotConfiguredError,
   gatewayAdminCredentialControls,
 } from "./gateway/admin-credential";
+import { gatewayAdminCredentialRoutes } from "./gateway/admin-credential-routes";
+import { gatewayAdminRoutes } from "./gateway/admin-routes";
 import {
   createEnterpriseGatewayNegotiationStore,
   createGatewayCapabilityNegotiationService,
 } from "./gateway/capability-negotiation";
-import { createConversionRateStore } from "./gateway/conversion-rate-store";
 import { notConfiguredConversionRateState } from "./gateway/conversion-rate";
+import { createConversionRateStore } from "./gateway/conversion-rate-store";
 import { gatewayEndpointControls } from "./gateway/endpoint-config";
+import { createModelDiscoveryRoutes } from "./gateway/model-discovery-routes";
+import { createModelSelectionRoutes } from "./gateway/model-selection-routes";
 import { createEnterpriseGatewayProbeStore } from "./gateway/probe";
 import {
   createGatewayReadinessService,
   installGatewayReadinessService,
 } from "./gateway/readiness";
+import type { HostAccessBroker } from "./host-access/broker";
+import { createHostAccessRoutes } from "./host-access/routes";
+import { identityRoutes } from "./identity/routes";
+import type { IdentityStore } from "./identity/store";
 import { createIntelligenceClient } from "./intelligence-client";
-import { botServiceAdminRoutes } from "./bot-services/routes";
-import type { BotServiceStore } from "./bot-services/store";
-import { botServiceCredentialRoutes } from "./bot-services/credential-routes";
-import { accessGrantRoutes } from "./bot-services/access-grants";
-import { createModelSelectionRoutes } from "./gateway/model-selection-routes";
-import { createModelDiscoveryRoutes } from "./gateway/model-discovery-routes";
-import { botServiceRoutes } from "./bot-services/auth";
-import type { BotServiceRegistry } from "./bot-services/registry";
 import {
   createLearningRoutes,
   type LearningAdminDependencies,
@@ -588,6 +587,14 @@ export function createApp(
      * byte-for-byte what it was.
      */
     entryContext?: DeploymentEntryContextFactory;
+    /**
+     * MT125 (Issue #168): the mobile aggregation's unified assembly
+     * (GET /api/mobile/openmuse-aggregate over the MT066 scope service).
+     * Mounted beside the mobile BFF; absent mounts nothing.
+     */
+    enterpriseMobileAggregate?: Hono;
+    /** MT126 (Issue #169): the stream entry's unified assembly (/api/enterprise/streams). */
+    enterpriseStreamEntry?: Hono;
     teamBots?: TeamBots;
     /** Pause, reset, Activity and attention for a person's own Bots. See agents/lifecycle.ts. */
     lifecycle?: BotLifecycleServices;
@@ -970,6 +977,12 @@ export function createApp(
       coworker.enterpriseConversations,
     );
   }
+  // MT126 (Issue #169): the stream entry's unified assembly — subscription
+  // open/SSE/cancel, every route establishing its context from the same
+  // shared factory. Absent (channels unwired) mounts nothing.
+  if (coworker?.enterpriseStreamEntry) {
+    app.route("/api/enterprise/streams", coworker.enterpriseStreamEntry);
+  }
   // MT006 (issue #49): scope listing is the login-time discovery surface; the
   // admin half inside answers 503 itself when the operator channel is unwired.
   if (coworker?.enterpriseWorkspaceScope) {
@@ -1103,6 +1116,16 @@ export function createApp(
       "/api/*",
       createDeploymentEntryContextMiddleware(coworker.entryContext),
     );
+    /*
+     * MT125 (Issue #168): the legacy-family entrance guard, mounted in the
+     * same mode-gated block after the entry-context floor — explicitly-closed
+     * entrances answer 503 with a stable code instead of serving; registered
+     * exceptions and unified entrances pass through to their own
+     * establishment (their reasons live in the disposition table and the
+     * MT001 inventory, not on this path). Single-tenant mode never mounts it:
+     * the legacy surface is byte-for-byte what it was.
+     */
+    app.use("/api/*", createLegacyEntryGuard());
   }
   app.route("/api/admin/enterprise", createEnterpriseAdminRoutes(requireUser));
   if (openMuseTemplateRevisions) {
@@ -2426,6 +2449,17 @@ export function createApp(
           : {}),
       }),
     );
+  }
+
+  /*
+   * MT125 (Issue #168): the mobile aggregation's unified assembly — the one
+   * entrance on the family whose read is scope-filtered (MT066's aggregate
+   * over the three association gates). Mounted OUTSIDE the channelStore
+   * block: it needs neither store, only the entry factory the assembly
+   * wired; absent (enterprise capabilities unwired) mounts nothing.
+   */
+  if (coworker?.enterpriseMobileAggregate) {
+    app.route("/api/mobile", coworker.enterpriseMobileAggregate);
   }
 
   /*
