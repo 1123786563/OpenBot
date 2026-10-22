@@ -475,7 +475,12 @@
    "name": "server/tests part 7",
    "files": [
     "server/tests/identity-challenges.integration.test.ts",
-    "server/tests/identity-github-callback.integration.test.ts",
+    "server/tests/identity-github-callback.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 7",
+   "files": [
     "server/tests/identity-retire.integration.test.ts",
     "server/tests/identity-schema.integration.test.ts",
     "server/tests/identity-store.integration.test.ts",
@@ -578,7 +583,12 @@
    "name": "server/tests part 9",
    "files": [
     "server/tests/opik-comparison.test.ts",
-    "server/tests/opik-contract.test.ts",
+    "server/tests/opik-contract.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 9",
+   "files": [
     "server/tests/opik-control-plane-auth.test.ts",
     "server/tests/opik-datasets-routes.integration.test.ts",
     "server/tests/opik-datasets.integration.test.ts",
@@ -622,7 +632,12 @@
    "name": "server/tests part 10",
    "files": [
     "server/tests/opik-judge-scoring.test.ts",
-    "server/tests/opik-model-span.test.ts",
+    "server/tests/opik-model-span.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 10",
+   "files": [
     "server/tests/opik-module-skeleton.test.ts",
     "server/tests/opik-port.test.ts",
     "server/tests/opik-redaction.test.ts",
@@ -666,7 +681,12 @@
    "name": "server/tests part 11",
    "files": [
     "server/tests/passwords-store.integration.test.ts",
-    "server/tests/payer-account.integration.test.ts",
+    "server/tests/payer-account.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 11",
+   "files": [
     "server/tests/payer-company-resolution.integration.test.ts",
     "server/tests/payer-legacy-mapping.integration.test.ts",
     "server/tests/payer-no-fallback.test.ts",
@@ -710,7 +730,12 @@
    "name": "server/tests part 12",
    "files": [
     "server/tests/policy-fanout.integration.test.ts",
-    "server/tests/price-snapshot.integration.test.ts",
+    "server/tests/price-snapshot.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 12",
+   "files": [
     "server/tests/price-status-classification.integration.test.ts",
     "server/tests/proactive-store.integration.test.ts",
     "server/tests/production-loader-boundary.test.ts",
@@ -847,7 +872,12 @@
    "files": [
     "server/tests/usage-breakdown.integration.test.ts",
     "server/tests/usage-outbox.integration.test.ts",
-    "server/tests/user-instructions.integration.test.ts",
+    "server/tests/user-instructions.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 15",
+   "files": [
     "server/tests/user-preferences.integration.test.ts",
     "server/tests/video-edit-pricing.test.ts",
     "server/tests/video-pricing.test.ts",
