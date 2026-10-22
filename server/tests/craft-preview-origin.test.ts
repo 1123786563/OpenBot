@@ -18,11 +18,13 @@ import { createHmac } from "node:crypto";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { getLogger } from "../../shared/logger";
+import { describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { loadCraftConfig } from "../src/craft/config";
 import {
   createPreviewOrigin,
   type ServePreview,
+  singleReplicaStartupNotice,
 } from "../src/craft/preview-origin";
 import { createPreviewPassCodec } from "../src/craft/preview-pass";
 import {
@@ -2676,5 +2678,101 @@ describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
         appPath: `${labelB}/api/things`,
       },
     ]);
+  });
+});
+
+// ── #418 Option B: 单副本契约显式化（部署文档/启动检查 + 可观测信号）─────────
+//
+// ticket 表与 label→session registry 都是进程内状态。多副本/负载均衡下，签票与
+// 兑换落到不同实例时，兑换实例的 registry 没有该 label → 404 "Unknown preview
+// host."，且无任何部署级信号能区分「多副本路由切错」与「重启空窗（M-2，会话内
+// 自愈）」。Option B 的选择（D-4）是不引入共享存储，代价是把单副本契约写显：
+// (1) registry 空态对部署可观测（健康检查/日志能发现「registry 空」这一形状）；
+// (2) 启动时把契约打进日志，多副本信号（OPENBOT_REDIS_URL 已设）在场时升为 warn。
+describe("#418 Option B: single-replica contract — registry empty-state observability", () => {
+  test("registryStats: a fresh instance reports 0 entries (the multi-replica wrong-instance shape, made visible)", () => {
+    // 换票落在另一副本时的形状与重启空窗同形：registry 空。能读到这个数，
+    // 健康检查/日志才能把「无预览」说清楚，而不是只剩一个裸 404。
+    expect(originWith().registryStats()).toEqual({ registeredLabels: 0 });
+  });
+
+  test("registryStats: originFor registers — the count climbs, and a second instance stays 0 (state is per-process)", () => {
+    const origin = originWith();
+    origin.originFor(SESSION_ID);
+    origin.originFor(OTHER_SESSION_ID);
+    expect(origin.registryStats()).toEqual({ registeredLabels: 2 });
+    // 同一进程的另一实例不受影响 —— registry 是进程内的，这正是契约本身。
+    expect(originWith().registryStats()).toEqual({ registeredLabels: 0 });
+  });
+
+  test("registryStats: never a session id or label — the observability surface discloses nothing (AC9)", () => {
+    const origin = originWith();
+    origin.originFor(SESSION_ID);
+    const stats = JSON.stringify(origin.registryStats());
+    expect(stats).not.toContain(SESSION_ID);
+    expect(stats).not.toContain(
+      createHmac("sha256", SECRET)
+        .update(SESSION_ID)
+        .digest("hex")
+        .slice(0, 16),
+    );
+  });
+});
+
+describe("#418 Option B: singleReplicaStartupNotice — the startup line the boot log prints", () => {
+  const logged = () => {
+    const info = spyOn(getLogger("server"), "info").mockImplementation(() => {});
+    const warn = spyOn(getLogger("server"), "warn").mockImplementation(() => {});
+    return { info, warn };
+  };
+
+  test("preview origin enabled (host form) → one info line naming the in-process registry contract", () => {
+    const { info, warn } = logged();
+    singleReplicaStartupNotice({
+      previewOriginEnabled: true,
+      template: TEMPLATE,
+      registryStats: () => ({ registeredLabels: 0 }),
+    });
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalled();
+    const [fields, message] = info.mock.calls[0] ?? [];
+    expect(String(message)).toContain("single-replica");
+    expect(String(message)).toContain("preview origin");
+    // 结构化字段留给采集器：契约关键词 + registry 空态都可机读。
+    expect(fields).toMatchObject({ contract: "single-replica" });
+    expect(fields).toMatchObject({ registeredLabels: 0 });
+    info.mockRestore();
+    warn.mockRestore();
+  });
+
+  test("preview origin enabled + OPENBOT_REDIS_URL set (the multi-replica signal) → escalated to warn, still naming sticky routing", () => {
+    const { info, warn } = logged();
+    singleReplicaStartupNotice({
+      previewOriginEnabled: true,
+      template: TEMPLATE,
+      redisUrl: "redis://redis:6379",
+      registryStats: () => ({ registeredLabels: 0 }),
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(info).not.toHaveBeenCalled();
+    const [fields, message] = warn.mock.calls[0] ?? [];
+    expect(String(message)).toContain("sticky");
+    expect(fields).toMatchObject({ multiReplicaSignal: true });
+    info.mockRestore();
+    warn.mockRestore();
+  });
+
+  test("preview origin disabled → silence (no line, never a false single-replica alarm)", () => {
+    const { info, warn } = logged();
+    singleReplicaStartupNotice({
+      previewOriginEnabled: false,
+      template: "",
+      redisUrl: "redis://redis:6379",
+      registryStats: () => ({ registeredLabels: 0 }),
+    });
+    expect(info).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+    info.mockRestore();
+    warn.mockRestore();
   });
 });

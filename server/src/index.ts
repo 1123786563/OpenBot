@@ -273,7 +273,11 @@ import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
 } from "./craft/opencode-config";
-import { createPreviewOrigin, samePreviewOrigin } from "./craft/preview-origin";
+import {
+  createPreviewOrigin,
+  samePreviewOrigin,
+  singleReplicaStartupNotice,
+} from "./craft/preview-origin";
 import { createPreviewTickets } from "./craft/preview-ticket";
 import {
   type CraftRoutesFactory,
@@ -7012,6 +7016,26 @@ const craftPreviewOrigin =
         appUrl: config.appUrl,
       })
     : undefined;
+/*
+ * #418 Option B: the single-replica contract, stated at startup. The preview
+ * origin's label registry and the ticket table are in-process state, so the
+ * deployment shape this server supports is ONE replica — or sticky routing in
+ * front of more. The notice is info on a plain single-replica boot and warn
+ * when OPENBOT_REDIS_URL is set (the deployment's own multi-replica signal,
+ * the same variable createRedisPort reads): Redis configured but no sticky
+ * routing is the half-migrated shape whose previews 404 "Unknown preview
+ * host." on the instances that never saw the label. A disabled origin stays
+ * silent — a closed origin has no preview hosts to route wrong. Craft off
+ * entirely = no notice: nothing is claimed.
+ */
+if (craftPreviewOrigin) {
+  singleReplicaStartupNotice({
+    previewOriginEnabled: craftEffectiveConfig.previewOriginEnabled,
+    template: craftEffectiveConfig.previewOriginTemplate,
+    redisUrl: process.env.OPENBOT_REDIS_URL,
+    registryStats: craftPreviewOrigin.registryStats,
+  });
+}
 
 /*
  * fix-ocr20 #1: the gate is `enabled && craftPreviewOrigin !== undefined`, not

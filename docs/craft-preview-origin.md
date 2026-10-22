@@ -123,6 +123,32 @@ fix-ocr13）：探针必须同源——跨源 fetch 无 CORS 头时 status 不�
 30 秒票据流买一张 schema 迁移不值——恢复代价是一次点击。多副本部署或运维反馈
 "重启丢预览"成为真实痛点时再迁移（见 preview-origin.ts 头注释）。
 
+### 多副本契约：单副本或 sticky 路由，否则跨实例 404（#418，Option B）
+
+同一份进程内状态（label registry 与 preview ticket 表）在多副本/负载均衡下的另一个
+代价：**签票落在副本 A，兑换落在副本 B** 时，B 的 registry 从未见过该 label，请求
+得到 404 "Unknown preview host."，与重启空窗（M-2）同形，但**不会自愈**——会话没有
+重启，重新走票也会被负载均衡再次分到别的副本。Redis（若配了）救不了它：registry
+与 ticket 表都不在 Redis 里，Redis 只服务 workshop 域的锁与总线。
+
+部署形态因此是二选一，显式写在启动日志里：
+
+- **单副本**：本服务当前支持的目标形态（D-4：仅在生产要求 HA 时再做共享存储）。
+- **多副本 + sticky 路由**：负载均衡器必须把同一预览会话的流量固定到同一实例
+ （host 形态按 `<label>.<preview-base>` 子域哈希分发即可，dev 形态按源 IP）。没有
+ sticky 的多副本不在支持范围内。
+
+启动检查（#418）：preview origin 开启时，启动日志必打一条
+`single-replica contract: the preview origin's label registry and ticket table are in-process …`
+（info 级）；当检测到 `OPENBOT_REDIS_URL` 已设（部署自己的多副本信号，与 workshop
+域读同一个变量）而 registry 仍是进程内状态时，升为 **warn** 并点名 sticky 路由。
+craft 关闭或 preview origin 关闭时不打——关闭的 origin 没有 preview host 可路由错。
+
+可观测信号：preview origin 暴露 `registryStats()`（返回
+`{"registeredLabels": N}`，只计数，永不枚举 label 或 session id，AC9）。健康检查/
+日志采集器可用「活跃预览存在但本实例 registeredLabels=0」这一形状定位多副本路由
+切错的实例——这是 Option B 代替共享存储的观测面：不修 404，但让 404 可被归因。
+
 ### 浏览器兼容：Safari/WebKit 拒收明文 http 的 Secure cookie（记录不修）
 
 预览 pass cookie 为 `SameSite=None; Secure`（Chromium 语义必需：跨站 iframe 上下文里
