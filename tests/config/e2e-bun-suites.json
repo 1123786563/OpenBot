@@ -364,6 +364,7 @@
    "files": [
     "server/tests/enterprise/mastra-continuations.integration.test.ts",
     "server/tests/enterprise/mastra-conversation-runtime.integration.test.ts",
+    "server/tests/enterprise/mastra-entries.integration.test.ts",
     "server/tests/enterprise/mastra-frontend-tool-participation.integration.test.ts",
     "server/tests/enterprise/mastra-import.integration.test.ts",
     "server/tests/enterprise/mastra-memory-context.integration.test.ts",
@@ -384,13 +385,13 @@
     "server/tests/gateway-credential.integration.test.ts",
     "server/tests/gateway-customer-provisioning.integration.test.ts",
     "server/tests/gateway-endpoint-config.integration.test.ts",
-    "server/tests/gateway-rate-version.integration.test.ts",
-    "server/tests/gateway-readiness.integration.test.ts"
+    "server/tests/gateway-rate-version.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 7",
    "files": [
+    "server/tests/gateway-readiness.integration.test.ts",
     "server/tests/group-conversations.integration.test.ts",
     "server/tests/headless-components.integration.test.ts",
     "server/tests/headless-components.test.ts",
@@ -413,13 +414,13 @@
     "server/tests/hindsight-temporal-correction.integration.test.ts",
     "server/tests/human-input-end-to-end.test.ts",
     "server/tests/identity-challenges.integration.test.ts",
-    "server/tests/identity-github-callback.integration.test.ts",
-    "server/tests/identity-retire.integration.test.ts"
+    "server/tests/identity-github-callback.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 8",
    "files": [
+    "server/tests/identity-retire.integration.test.ts",
     "server/tests/identity-schema.integration.test.ts",
     "server/tests/identity-store.integration.test.ts",
     "server/tests/image-edit-pricing.test.ts",
@@ -442,14 +443,15 @@
     "server/tests/mastra-ag-ui-agent.test.ts",
     "server/tests/mastra-agent-resume-process.test.ts",
     "server/tests/mastra-browser-runner.test.ts",
-    "server/tests/mastra-computer-tools.test.ts",
-    "server/tests/mastra-continuations.test.ts"
+    "server/tests/mastra-computer-tools.test.ts"
    ]
   },
   {
    "name": "server/tests part 9",
    "files": [
+    "server/tests/mastra-continuations.test.ts",
     "server/tests/mastra-engine-wiring.integration.test.ts",
+    "server/tests/mastra-entries.test.ts",
     "server/tests/mastra-governed-execution.test.ts",
     "server/tests/mastra-governed-tools.test.ts",
     "server/tests/mastra-headless.test.ts",
@@ -470,14 +472,14 @@
     "server/tests/model-capability-filter.test.ts",
     "server/tests/model-discovery-api.test.ts",
     "server/tests/model-preference.integration.test.ts",
-    "server/tests/model-providers.test.ts",
-    "server/tests/model-scope.integration.test.ts",
-    "server/tests/ocr-pricing.test.ts"
+    "server/tests/model-providers.test.ts"
    ]
   },
   {
    "name": "server/tests part 10",
    "files": [
+    "server/tests/model-scope.integration.test.ts",
+    "server/tests/ocr-pricing.test.ts",
     "server/tests/offboarding-retirement.integration.test.ts",
     "server/tests/openmuse-activity.test.ts",
     "server/tests/openmuse-deletion.test.ts",
@@ -499,14 +501,14 @@
     "server/tests/opik-deployment.test.ts",
     "server/tests/opik-execution-billing.integration.test.ts",
     "server/tests/opik-execution-billing.test.ts",
-    "server/tests/opik-execution-boot.integration.test.ts",
-    "server/tests/opik-execution-boot.test.ts",
-    "server/tests/opik-execution-runner.test.ts"
+    "server/tests/opik-execution-boot.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 11",
    "files": [
+    "server/tests/opik-execution-boot.test.ts",
+    "server/tests/opik-execution-runner.test.ts",
     "server/tests/opik-execution-wiring.test.ts",
     "server/tests/opik-executions.integration.test.ts",
     "server/tests/opik-executions.test.ts",
@@ -528,14 +530,14 @@
     "server/tests/opik-results.test.ts",
     "server/tests/opik-retention.integration.test.ts",
     "server/tests/opik-retention.test.ts",
-    "server/tests/opik-retrieval-summary.test.ts",
-    "server/tests/opik-run-lifecycle.test.ts",
-    "server/tests/opik-run-steps.test.ts"
+    "server/tests/opik-retrieval-summary.test.ts"
    ]
   },
   {
    "name": "server/tests part 12",
    "files": [
+    "server/tests/opik-run-lifecycle.test.ts",
+    "server/tests/opik-run-steps.test.ts",
     "server/tests/opik-runs-query.test.ts",
     "server/tests/opik-schema-barrel.test.ts",
     "server/tests/opik-scope.test.ts",
@@ -557,14 +559,14 @@
     "server/tests/payment-callback-ownership.integration.test.ts",
     "server/tests/payment-ordering-migration.integration.test.ts",
     "server/tests/payment-store.integration.test.ts",
-    "server/tests/people-last-sign-in.integration.test.ts",
-    "server/tests/people-paging.integration.test.ts",
-    "server/tests/personal-credits-read.test.ts"
+    "server/tests/people-last-sign-in.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 13",
    "files": [
+    "server/tests/people-paging.integration.test.ts",
+    "server/tests/personal-credits-read.test.ts",
     "server/tests/personal-key-isolation.test.ts",
     "server/tests/picked-harness-auth.test.ts",
     "server/tests/plan-credits-personal.integration.test.ts",
@@ -586,14 +588,14 @@
     "server/tests/qa-batch1-credits-writer.integration.test.ts",
     "server/tests/qa-batch1-duplicate-paid.integration.test.ts",
     "server/tests/qa-batch1-payment-store.integration.test.ts",
-    "server/tests/qa-batch1-replay-storm.integration.test.ts",
-    "server/tests/qa-batch2-cycle-config-qr.test.ts",
-    "server/tests/qa-batch2-t5-semantics.integration.test.ts"
+    "server/tests/qa-batch1-replay-storm.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 14",
    "files": [
+    "server/tests/qa-batch2-cycle-config-qr.test.ts",
+    "server/tests/qa-batch2-t5-semantics.integration.test.ts",
     "server/tests/qa-batch2-unreadable-fourth.integration.test.ts",
     "server/tests/qa-batch3-reconcile.test.ts",
     "server/tests/realtime-bypass-audit.test.ts",
@@ -615,14 +617,14 @@
     "server/tests/remote-coordination.integration.test.ts",
     "server/tests/remote-coordination.test.ts",
     "server/tests/rerank-pricing.test.ts",
-    "server/tests/rerank-refusal.integration.test.ts",
-    "server/tests/reservation-status.integration.test.ts",
-    "server/tests/reserve-bound-rounding.test.ts"
+    "server/tests/rerank-refusal.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 15",
    "files": [
+    "server/tests/reservation-status.integration.test.ts",
+    "server/tests/reserve-bound-rounding.test.ts",
     "server/tests/reserve-concurrency.integration.test.ts",
     "server/tests/reserve-payer-tampering.test.ts",
     "server/tests/reserve-revalidation.integration.test.ts",
@@ -644,14 +646,14 @@
     "server/tests/shared-brokered-routes.test.ts",
     "server/tests/shared-brokered-schema.integration.test.ts",
     "server/tests/shared-brokered-store.integration.test.ts",
-    "server/tests/shared-computer-run.integration.test.ts",
-    "server/tests/shared-gated-mode.integration.test.ts",
-    "server/tests/shared-use-store.integration.test.ts"
+    "server/tests/shared-computer-run.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 16",
    "files": [
+    "server/tests/shared-gated-mode.integration.test.ts",
+    "server/tests/shared-use-store.integration.test.ts",
     "server/tests/shared-wiring.integration.test.ts",
     "server/tests/skill-ownership.integration.test.ts",
     "server/tests/skill-tools.integration.test.ts",
@@ -673,14 +675,14 @@
     "server/tests/transcription-tamper.integration.test.ts",
     "server/tests/unknown-hold-no-reclaim.integration.test.ts",
     "server/tests/usage-breakdown.integration.test.ts",
-    "server/tests/usage-outbox.integration.test.ts",
-    "server/tests/user-instructions.integration.test.ts",
-    "server/tests/user-preferences.integration.test.ts"
+    "server/tests/usage-outbox.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 17",
    "files": [
+    "server/tests/user-instructions.integration.test.ts",
+    "server/tests/user-preferences.integration.test.ts",
     "server/tests/video-edit-pricing.test.ts",
     "server/tests/video-pricing.test.ts",
     "server/tests/video-settlement-recovery.integration.test.ts",
@@ -1065,6 +1067,7 @@
   "server/tests/enterprise/mastra-compatibility.test.ts",
   "server/tests/enterprise/mastra-continuations.integration.test.ts",
   "server/tests/enterprise/mastra-conversation-runtime.integration.test.ts",
+  "server/tests/enterprise/mastra-entries.integration.test.ts",
   "server/tests/enterprise/mastra-frontend-tool-participation.integration.test.ts",
   "server/tests/enterprise/mastra-import.integration.test.ts",
   "server/tests/enterprise/mastra-memory-context.integration.test.ts",
@@ -1138,6 +1141,7 @@
   "server/tests/mastra-computer-tools.test.ts",
   "server/tests/mastra-continuations.test.ts",
   "server/tests/mastra-engine-wiring.integration.test.ts",
+  "server/tests/mastra-entries.test.ts",
   "server/tests/mastra-governed-execution.test.ts",
   "server/tests/mastra-governed-tools.test.ts",
   "server/tests/mastra-headless.test.ts",

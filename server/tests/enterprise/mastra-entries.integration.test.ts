@@ -22,6 +22,7 @@ import {
 } from "../../src/enterprise/runs/model-route-catalog";
 import { createRunService } from "../../src/enterprise/runs/service";
 import { createScopeResolver } from "../../src/enterprise/tenancy/store";
+import { resumeMastraContinuation } from "../../src/mastra/approvals";
 import { createMastraContinuationStore } from "../../src/mastra/continuation-store";
 import { tenantStorageKey } from "../../src/mastra/contracts";
 import { createMastraConversationRuntime } from "../../src/mastra/conversation-runtime";
@@ -31,6 +32,7 @@ import type {
 } from "../../src/mastra/execution-contracts";
 import {
   assertResumeBindingCurrent,
+  createGenerationCurrentGate,
   createGovernedTurnRunner,
   GOVERNED_HEADLESS_REFUSALS,
   GovernedHeadlessRefusal,
@@ -500,8 +502,10 @@ test("F4: an approval wait parks durably and the decision resumes the exact cont
   // The settlement gate's carrier is the DRIVE's OWN carrier, surfaced the
   // way the production wrapper surfaces it (fix-round-1): the drive dials
   // through it and `settleResumedRun` answers to that same usage ledger.
-  // Drive through the REAL orchestrator: six gates, CAS claim, receipt
-  // ordering, the engine resume against the stored snapshot.
+  // Drive through the REAL orchestrator (resumeMastraContinuation): the
+  // six gates (identity, generation, fingerprint, decision/argument
+  // compatibility, grant), the CAS claim, the receipt ordering, and the
+  // engine resume against the stored snapshot.
   const decision: ResumeDecision = {
     kind: "approved",
     approvalId: "approval-it-1",
@@ -598,23 +602,26 @@ test("F4: an approval wait parks durably and the decision resumes the exact cont
       };
     },
   });
-  const driven = await inner.resume({
-    claim: {
+  const driven = await resumeMastraContinuation(
+    {
+      store: continuationStore,
+      // The re-verification gates, wired exactly the way production wires
+      // them (index.ts): the composed generation gate over the REAL runs
+      // service; the grant gate answers from this suite's own grant (the
+      // plugin ledger is not part of this fixture).
+      generationCurrent: createGenerationCurrentGate(runs),
+      toolGrantCurrent: async () => true,
+      driver: inner,
+    },
+    {
+      scope,
       ref: record!.ref,
-      binding: record!.binding,
-      payload: record!.payload,
-      claimToken: "orchestrator-claims-first",
+      decision,
     },
-    decision,
-    receiptSink: {
-      started: async () => undefined,
-      executed: async () => null,
-    },
-    onSuspension: async () => undefined,
-    // ME10: the caller's trusted scope rides to the drive.
-    scope,
-  });
-  const outcome = typeof driven === "string" ? driven : driven.outcome;
+  );
+  // The orchestrator's result kind IS the drive outcome (resumed /
+  // declined / re_suspended / reused_receipt / pending_unknown).
+  const outcome = typeof driven === "string" ? driven : driven.kind;
   expect(outcome).toBe("resumed");
 
   // The settlement gate: the resumed drive's usage settles the run
