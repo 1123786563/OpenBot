@@ -1,0 +1,78 @@
+# Reference TLS terminator for the craft preview origin (#412, decision #403 D-2:
+# "external ingress terminates TLS; the repo ships a compose reference" — no Bun TLS
+# in the server, which stays plain HTTP behind this proxy).
+#
+# This is the CONSUMER side of the certificate pipeline: docker/compose/certs.yml
+# issues/renews `*.<preview-host>` into ./tls; this stack terminates TLS for every
+# <hash>.<preview-host> with that one wildcard and forwards plaintext HTTP to the
+# OpenBot server. Start the certs sidecar FIRST — nginx refuses to start without
+# cert.pem/key.pem (fail-closed, on purpose).
+#
+# Run from the repository root, beside the main stack:
+#   docker compose --project-directory . -f docker/compose/preview-tls.yml up -d
+#
+# Deliberately its OWN project (name below) — not joined onto the shared `openbot`
+# project — so the reference topology can be adopted, replaced, or torn down without
+# touching the main stack. A deployment that terminates TLS with a managed load
+# balancer or another ingress skips this file entirely.
+name: openbot-preview-tls
+
+services:
+  preview-tls:
+    image: nginx:1.27-alpine
+    container_name: openbot-preview-tls
+    # The command is `sh start.sh` (not a bare `nginx` command, so the image's
+    # template-envsubst startup script is skipped by design): start.sh renders the
+    # template itself (envsubst with the explicit variable list), launches the
+    # reload-watcher in the background, then execs nginx in the foreground.
+    # Everything is invoked through sh (no exec-bit dependency across bind mounts —
+    # same posture as the certs sidecar's healthcheck).
+    command: ["sh", "/openbot-preview-tls/start.sh"]
+    restart: on-failure
+    environment:
+      # Where plaintext HTTP is forwarded. Default: the OpenBot server on the
+      # docker host (main compose publishes its port there). Set to a compose
+      # service URL (http://server:3000) when the terminator runs inside the same
+      # compose network — uncomment the networks block at the bottom and add the
+      # main stack's network to it.
+      OPENBOT_PREVIEW_UPSTREAM: ${OPENBOT_PREVIEW_UPSTREAM:-http://host.docker.internal:3000}
+      # The wildcard's server_name; `_` = only 443 server = default_server.
+      OPENBOT_PREVIEW_TLS_SERVER_NAME: ${OPENBOT_PREVIEW_TLS_SERVER_NAME:-_}
+      # reload.stamp mtime poll cadence (reload-watcher.sh).
+      OPENBOT_PREVIEW_TLS_RELOAD_POLL_SECONDS: ${OPENBOT_PREVIEW_TLS_RELOAD_POLL_SECONDS:-15}
+    ports:
+      - "443:443"
+    extra_hosts:
+      # For the default upstream (the server on the docker host).
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Read-only scripts: nginx.conf.template, start.sh, reload-watcher.sh.
+      - ./docker/compose/preview-tls:/openbot-preview-tls:ro
+      # The nginx config template, at the path start.sh's envsubst reads (start.sh
+      # renders it into /etc/nginx/conf.d/preview-tls.conf at container start).
+      - ./docker/compose/preview-tls/nginx.conf.template:/etc/nginx/templates/preview-tls.conf.template:ro
+      # The shared TLS directory, READ-ONLY — exactly the files the certs sidecar
+      # writes (cert.pem, key.pem, reload.stamp, renewal-status.json). Same
+      # /etc/openbot/tls convention as the sidecar and the main compose.
+      #
+      # Permissions tradeoff (see nginx.conf.template's note): the master process
+      # runs as root and reads the 0600 key once per load; workers never open it.
+      # The non-root alternative is documented in docs/tls-certs.md.
+      - ${OPENBOT_TLS_HOST_DIR:-./tls}:/etc/openbot/tls:ro
+    # # Optional: run on the main stack's network so OPENBOT_PREVIEW_UPSTREAM can be
+    # # a service name instead of host.docker.internal. Uncomment and adjust.
+    # networks:
+    #   - openbot_default
+    healthcheck:
+      # Loopback plain listener inside nginx.conf.template: container health must
+      # not depend on the certificate's validity or the upstream answering.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    mem_limit: ${OPENBOT_PREVIEW_TLS_MEM_LIMIT:-128m}
+
+# networks:
+#   openbot_default:
+#     external: true
