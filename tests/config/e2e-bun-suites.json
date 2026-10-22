@@ -785,7 +785,7 @@
    ]
   },
   {
-   "name": "server/tests/multitenancy part 4",
+   "name": "server/tests/multitenancy part 5",
    "files": [
     "server/tests/multitenancy/personal-share-rules.test.ts",
     "server/tests/multitenancy/plugin-install.test.ts",
