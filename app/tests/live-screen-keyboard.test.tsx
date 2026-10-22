@@ -1,8 +1,15 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { LiveScreen } from "@/components/computer/live-screen";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 
 class SocketDouble {
   static readonly OPEN = 1;
@@ -32,9 +39,18 @@ class SocketDouble {
 }
 
 let originalWebSocket: typeof WebSocket;
+let originalFetch: typeof fetch;
 
 beforeAll(() => {
   GlobalRegistrator.register();
+  // MT082: the screen socket waits for the scope source to resolve, so the harness
+  // answers the auth read it makes (and nothing else asks for more than a 200).
+  originalFetch = global.fetch;
+  global.fetch = (async () =>
+    new Response(JSON.stringify({ user: { id: "live-screen-user" } }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })) as unknown as typeof fetch;
   originalWebSocket = globalThis.WebSocket;
   globalThis.WebSocket = SocketDouble as unknown as typeof WebSocket;
 });
@@ -45,12 +61,17 @@ afterEach(() => {
 });
 
 afterAll(() => {
+  global.fetch = originalFetch;
   globalThis.WebSocket = originalWebSocket;
   GlobalRegistrator.unregister();
 });
 
 async function liveSocket(): Promise<SocketDouble> {
-  render(<LiveScreen computerId="keyboard-test" driving />);
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <LiveScreen computerId="keyboard-test" driving />
+    </QueryClientProvider>,
+  );
   await waitFor(() => expect(SocketDouble.latest).toBeDefined());
   return SocketDouble.latest as SocketDouble;
 }

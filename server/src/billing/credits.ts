@@ -1,7 +1,8 @@
-import { and, asc, count, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { botServices } from "../db/schema/bot-services";
 import {
+  creditSettlementDimensionBreakdown,
   creditReservationAttribution,
   creditReservations,
   creditSettlementDetails,
@@ -243,6 +244,45 @@ export function createCredits(deps: {
         Math.ceil(totalCount / CONSUMPTION_PAGE_SIZE),
         1,
       );
+
+      // The per-dimension split (20.3), read for exactly this page's rows — never a fan-out
+      // join over the paginated ledger read. A settlement that wrote no split answers no
+      // split (undefined below): the UI shows no surcharge line for it, never a zero that
+      // would read as "tools were free".
+      const splitRows = await database
+        .select({
+          ledgerId: creditSettlementDimensionBreakdown.ledgerId,
+          dimension: creditSettlementDimensionBreakdown.dimension,
+          units: creditSettlementDimensionBreakdown.units,
+        })
+        .from(creditSettlementDimensionBreakdown)
+        .where(
+          inArray(
+            creditSettlementDimensionBreakdown.ledgerId,
+            rows.map((row) => row.id),
+          ),
+        );
+      const splitByLedger = new Map<string, typeof splitRows>();
+      for (const split of splitRows) {
+        const members = splitByLedger.get(split.ledgerId) ?? [];
+        members.push(split);
+        splitByLedger.set(split.ledgerId, members);
+      }
+      const feeBreakdownOf = (ledgerId: string) => {
+        const members = splitByLedger.get(ledgerId);
+        if (members === undefined || members.length === 0) return undefined;
+        let model = 0;
+        let surcharge = 0;
+        for (const member of members) {
+          if (member.dimension.startsWith("surcharge_")) surcharge += member.units;
+          else model += member.units;
+        }
+        return {
+          modelCredits: scaleDown(model),
+          surchargeCredits: scaleDown(surcharge),
+        };
+      };
+
       return {
         entries: rows.map((row) => ({
           id: row.id,
@@ -283,6 +323,10 @@ export function createCredits(deps: {
                     },
                   }
                 : null,
+          // 20.3's fee split: model fee and surcharge fee of THIS entry, whole scaled
+          // units of the ledger row it explains — absent when the settlement wrote no
+          // split, and never a zero surcharge line the UI would read as "free tools".
+          feeBreakdown: feeBreakdownOf(row.id),
           timestamp: row.createdAt.toISOString(),
         })),
         pagination: {

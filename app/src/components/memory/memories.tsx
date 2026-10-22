@@ -179,21 +179,16 @@ function MemoryRow({
     enabled?: boolean;
     reviewState?: "confirmed";
   }) => save.mutate({ id: memory.id, input });
-  // Intelligence keeps only the words of a memory it holds for this person, so it can be edited or
-  // forgotten here but not paused or reviewed.
-  const heldByIntelligence = memory.formedBy === "intelligence";
-  const status = heldByIntelligence
-    ? t("memory.keptInIntelligence")
-    : !memory.enabled
-      ? t("memory.card.disabled")
-      : memory.formedBy === "bot"
-        ? t("memory.card.formedBy", { name: botName }) +
-          (memory.reviewState === "unreviewed"
-            ? t("memory.card.awaitingReview")
-            : "")
-        : memory.reviewState === "unreviewed"
-          ? t("memory.card.importedAwaiting")
-          : t("memory.card.reviewed");
+  const status = !memory.enabled
+    ? t("memory.card.disabled")
+    : memory.formedBy === "bot"
+      ? t("memory.card.formedBy", { name: botName }) +
+        (memory.reviewState === "unreviewed"
+          ? t("memory.card.awaitingReview")
+          : "")
+      : memory.reviewState === "unreviewed"
+        ? t("memory.card.importedAwaiting")
+        : t("memory.card.reviewed");
   return (
     <Item size="sm">
       <ItemMedia variant="icon">
@@ -264,19 +259,17 @@ function MemoryRow({
           </p>
         )}
       </ItemContent>
-      {heldByIntelligence ? null : (
-        <ItemActions>
-          {/* Binary and immediate: Bots stop or start using it when switched. */}
-          <Switch
-            aria-label={t("memory.card.useAria", {
-              content: clip(memory.content),
-            })}
-            checked={memory.enabled}
-            disabled={save.isPending}
-            onCheckedChange={(enabled) => update({ enabled })}
-          />
-        </ItemActions>
-      )}
+      <ItemActions>
+        {/* Binary and immediate: Bots stop or start using it when switched. */}
+        <Switch
+          aria-label={t("memory.card.useAria", {
+            content: clip(memory.content),
+          })}
+          checked={memory.enabled}
+          disabled={save.isPending}
+          onCheckedChange={(enabled) => update({ enabled })}
+        />
+      </ItemActions>
       {editing ? (
         <EditMemoryDialog
           memory={memory}

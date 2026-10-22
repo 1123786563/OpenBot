@@ -60,10 +60,17 @@ const PUBLISHED: TeamBot = {
   publishedAt: "2026-10-01T00:00:00Z",
   assigned: false,
   visibleToTeam: true,
+  // The server's capability answer since MT085: the actions THIS person may take.
+  canUnpublish: true,
+  canEditPublication: true,
+  canAssign: false,
   people: [],
   groups: [],
   assignments: [],
 };
+
+/** The audience ranges the server names; the design's set, never wider (MT085 AC2). */
+const AUDIENCES = ["team", "people"] as const;
 
 const writes: { url: string; method: string; body: unknown }[] = [];
 
@@ -79,7 +86,8 @@ function serving(data: TeamBotsData, role: "admin" | "user") {
       });
       return Response.json({});
     }
-    if (url.includes("/api/team-bots")) return Response.json(data);
+    if (url.includes("/api/team-bots"))
+      return Response.json({ publishAudiences: AUDIENCES, ...data });
     if (url.includes("/shared-use/bot/")) return Response.json({ apps: [] });
     if (url.includes("/shared-use")) return Response.json({ requests: [] });
     return Response.json({
@@ -171,16 +179,29 @@ test("a published Bot of yours can be updated, unpublished and its link copied",
   expect(await view.findByRole("button", { name: "Update" })).toBeTruthy();
 });
 
-test("an administrator can assign a published Bot to groups but not publish someone else's", async () => {
+test("an administrator can assign a published Bot to groups and retire, but not aim, someone else's", async () => {
   serving(
-    { teamBots: [{ ...PUBLISHED, mine: false }], publishable: [] },
+    {
+      teamBots: [
+        {
+          ...PUBLISHED,
+          mine: false,
+          // The server's answer for an administrator on somebody else's Bot: retire and assign
+          // yes, aim no — the split the page renders from, never re-derives (MT085).
+          canUnpublish: true,
+          canEditPublication: false,
+          canAssign: true,
+        },
+      ],
+      publishable: [],
+    },
     "admin",
   );
   const view = draw({ ...BOT, mine: false });
   expect(await view.findByText("Not assigned to any group.")).toBeTruthy();
   expect(view.queryByRole("button", { name: /Audience/ })).toBeNull();
   expect(view.queryByRole("button", { name: "Update" })).toBeNull();
-  expect(view.queryByRole("button", { name: "Unpublish" })).toBeNull();
+  expect(view.getByRole("button", { name: "Unpublish" })).toBeTruthy();
   const user = userEvent.setup({ document });
   await user.click(view.getByRole("button", { name: /Assign to a group/ }));
   await user.type(await view.findByLabelText("Group, or *"), "finance");
@@ -198,7 +219,16 @@ test("an administrator can assign a published Bot to groups but not publish some
 test("an administrator removes a group a Bot is assigned to", async () => {
   serving(
     {
-      teamBots: [{ ...PUBLISHED, mine: false, assignments: ["*", "finance"] }],
+      teamBots: [
+        {
+          ...PUBLISHED,
+          mine: false,
+          canUnpublish: true,
+          canEditPublication: false,
+          canAssign: true,
+          assignments: ["*", "finance"],
+        },
+      ],
       publishable: [],
     },
     "admin",

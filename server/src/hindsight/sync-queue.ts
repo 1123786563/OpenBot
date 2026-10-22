@@ -46,6 +46,7 @@ import {
   userBankFor,
 } from "./bank-scope";
 import type { PreferenceRecallServiceConfig } from "./preference-recall";
+import type { HindsightBudgetGate } from "./budget-gate";
 import {
   bankGrantForRestriction,
   type SourceBoundAuthorizationStore,
@@ -164,6 +165,14 @@ export function createHindsightSyncQueue(
     now?: () => Date;
     /** Source-bound rows re-verify their restriction here at task time. */
     authorizations?: SourceBoundAuthorizationStore;
+    /**
+     * The background-processing budget gate (#393). Admission is keyed on the work row's id
+     * plus its attempt count: a budget-deferred retry (attempts unchanged) re-admits the same
+     * reservation and is charged once; a failed retain bumps attempts and is a fresh,
+     * honestly separate admission. Exhaustion defers the work — it stays pending — and no
+     * recall path ever consults this gate.
+     */
+    budget?: HindsightBudgetGate;
     fetch?: (input: string, init?: RequestInit) => Promise<Response>;
   } = {},
 ) {
@@ -360,7 +369,10 @@ export function createHindsightSyncQueue(
     bankId: string,
     documentId: string,
     content: string,
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+  ): Promise<
+    | { ok: true }
+    | { ok: false; reason: string; reached: boolean }
+  > {
     const token = mintBankScopeAssertion(grant, {
       secret: config.assertionSecret,
       ttlMs: ASSERTION_TTL_MS,
@@ -389,7 +401,11 @@ export function createHindsightSyncQueue(
         },
       );
       if (!response.ok) {
-        return { ok: false, reason: `service answered ${response.status}` };
+        return {
+          ok: false,
+          reason: `service answered ${response.status}`,
+          reached: true,
+        };
       }
       return { ok: true };
     } catch (error) {
@@ -399,6 +415,7 @@ export function createHindsightSyncQueue(
           error instanceof Error
             ? error.message
             : "service could not be reached",
+        reached: false,
       };
     }
   }
@@ -546,6 +563,23 @@ export function createHindsightSyncQueue(
       await finishWork(work, "done", null);
       return "alreadyIndexed";
     }
+    // Budget admission (#393), only now that a remote processing call is actually about to
+    // happen: exhaustion defers the work (it stays pending, retried next drain), and the
+    // admission's idempotency key keeps a deferred retry on ONE reservation.
+    let reservationId: string | undefined;
+    if (options.budget) {
+      const admission = await options.budget.admitBackgroundWork({
+        tenantId: work.tenantId,
+        principalId: row.principalId,
+        workKey: `${work.id}:${work.attempts}`,
+        units: 1,
+      });
+      if (!admission.ok) {
+        await deferWork(work, `budget: ${admission.reason}`);
+        return "deferred";
+      }
+      reservationId = admission.reservationId;
+    }
     const outcome = await retain(
       backgroundTaskBankScope(
         { tenantId: work.tenantId, principalId: row.principalId },
@@ -556,8 +590,23 @@ export function createHindsightSyncQueue(
       row.content,
     );
     if (!outcome.ok) {
+      if (options.budget && reservationId !== undefined) {
+        // The service answered and refused: it did the work, the charge stands. A transport
+        // failure never reached the service: release the hold, charge nothing.
+        if (outcome.reached) {
+          await options.budget.settleBackgroundWork(reservationId);
+        } else {
+          await options.budget.releaseBackgroundWork(
+            reservationId,
+            outcome.reason,
+          );
+        }
+      }
       await failWork(work, outcome.reason);
       return "failed";
+    }
+    if (options.budget && reservationId !== undefined) {
+      await options.budget.settleBackgroundWork(reservationId);
     }
     await markRowSynced(
       work.subjectType,

@@ -39,6 +39,7 @@ import {
 } from "@/lib/agents/mutations";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { resetBotMutationOptions } from "@/lib/bot-lifecycle/mutations";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   botResetPlanQueryOptions,
   type ResetPlan,
@@ -165,20 +166,31 @@ function ResetDialog({
  */
 export function ManageSection({
   agent,
+  scope,
   onHidden,
   onDuplicated,
   onDeleted,
 }: {
   agent: AgentProfile;
+  /** The scope the page read this Bot under; its writes submit under the same one (MT084). */
+  scope?: ScopedCache;
   onHidden: () => void;
   onDuplicated: (copyId: string) => void;
   onDeleted: () => void;
 }) {
   const { t } = useTranslation("agents");
-  const setPinned = useMutation(setAgentPinnedMutationOptions(queryClient));
-  const setHidden = useMutation(setAgentHiddenMutationOptions(queryClient));
-  const duplicate = useMutation(duplicateAgentMutationOptions(queryClient));
-  const remove = useMutation(deleteAgentMutationOptions(queryClient));
+  const setPinned = useMutation(
+    setAgentPinnedMutationOptions(queryClient, scope),
+  );
+  const setHidden = useMutation(
+    setAgentHiddenMutationOptions(queryClient, scope),
+  );
+  const duplicate = useMutation(
+    duplicateAgentMutationOptions(queryClient, scope),
+  );
+  const remove = useMutation(
+    deleteAgentMutationOptions(queryClient, scope),
+  );
   const [resetOpen, setResetOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const error = setPinned.error ?? setHidden.error ?? duplicate.error;
