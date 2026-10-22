@@ -351,7 +351,12 @@
    "files": [
     "server/tests/craft-preview-origin-guard.test.ts",
     "server/tests/craft-preview-socket.test.ts",
-    "server/tests/craft-routes-assembly.test.ts",
+    "server/tests/craft-routes-assembly.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 5",
+   "files": [
     "server/tests/craft-webapp-hmr.test.ts",
     "server/tests/craft-webapp-tool.test.ts",
     "server/tests/credential-bundle-boundary.test.ts"
@@ -385,7 +390,12 @@
    "files": [
     "server/tests/enterprise/ai-sdk-v3-gateway-adapter.test.ts",
     "server/tests/enterprise/conversations.integration.test.ts",
-    "server/tests/enterprise/mastra-compatibility.test.ts",
+    "server/tests/enterprise/mastra-compatibility.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 6",
+   "files": [
     "server/tests/enterprise/mastra-model.integration.test.ts",
     "server/tests/enterprise/mastra-resume-fences.test.ts",
     "server/tests/enterprise/mastra-routines.integration.test.ts",
@@ -421,7 +431,12 @@
    "files": [
     "server/tests/hindsight-answer-evidence.integration.test.ts",
     "server/tests/hindsight-background-budget.integration.test.ts",
-    "server/tests/hindsight-degraded-recall.integration.test.ts",
+    "server/tests/hindsight-degraded-recall.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 7",
+   "files": [
     "server/tests/hindsight-derived-judgments.integration.test.ts",
     "server/tests/hindsight-judgment-review.contract.test.ts",
     "server/tests/hindsight-judgment-review.integration.test.ts",
@@ -455,7 +470,12 @@
    "files": [
     "server/tests/image-generation-pricing.test.ts",
     "server/tests/image-settlement.integration.test.ts",
-    "server/tests/intelligence-authentication.test.ts",
+    "server/tests/intelligence-authentication.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 8",
+   "files": [
     "server/tests/jsonb-encoding.integration.test.ts",
     "server/tests/key-drift-handling.test.ts",
     "server/tests/key-expiry.test.ts",
@@ -509,7 +529,12 @@
    "files": [
     "server/tests/model-discovery-api.test.ts",
     "server/tests/model-preference.integration.test.ts",
-    "server/tests/model-providers.test.ts",
+    "server/tests/model-providers.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 9",
+   "files": [
     "server/tests/model-scope.integration.test.ts",
     "server/tests/ocr-pricing.test.ts",
     "server/tests/offboarding-retirement.integration.test.ts",
@@ -543,7 +568,12 @@
    "files": [
     "server/tests/opik-execution-billing.integration.test.ts",
     "server/tests/opik-execution-billing.test.ts",
-    "server/tests/opik-execution-boot.integration.test.ts",
+    "server/tests/opik-execution-boot.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 10",
+   "files": [
     "server/tests/opik-execution-boot.test.ts",
     "server/tests/opik-execution-runner.test.ts",
     "server/tests/opik-execution-wiring.test.ts",
@@ -577,7 +607,12 @@
    "files": [
     "server/tests/opik-retention.integration.test.ts",
     "server/tests/opik-retention.test.ts",
-    "server/tests/opik-retrieval-summary.test.ts",
+    "server/tests/opik-retrieval-summary.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 11",
+   "files": [
     "server/tests/opik-run-lifecycle.test.ts",
     "server/tests/opik-run-steps.test.ts",
     "server/tests/opik-runs-query.test.ts",
@@ -611,7 +646,12 @@
    "files": [
     "server/tests/payment-ordering-migration.integration.test.ts",
     "server/tests/payment-store.integration.test.ts",
-    "server/tests/people-last-sign-in.integration.test.ts",
+    "server/tests/people-last-sign-in.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 12",
+   "files": [
     "server/tests/people-paging.integration.test.ts",
     "server/tests/personal-credits-read.test.ts",
     "server/tests/personal-key-isolation.test.ts",
@@ -645,7 +685,12 @@
    "files": [
     "server/tests/qa-batch1-duplicate-paid.integration.test.ts",
     "server/tests/qa-batch1-payment-store.integration.test.ts",
-    "server/tests/qa-batch1-replay-storm.integration.test.ts",
+    "server/tests/qa-batch1-replay-storm.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 13",
+   "files": [
     "server/tests/qa-batch2-cycle-config-qr.test.ts",
     "server/tests/qa-batch2-t5-semantics.integration.test.ts",
     "server/tests/qa-batch2-unreadable-fourth.integration.test.ts",
@@ -666,15 +711,15 @@
     "server/tests/recovery-unacked-replay.integration.test.ts",
     "server/tests/release-semantics.integration.test.ts",
     "server/tests/remote-bot-handoff.integration.test.ts",
-    "server/tests/remote-coordination.integration.test.ts"
+    "server/tests/remote-coordination.integration.test.ts",
+    "server/tests/remote-coordination.test.ts",
+    "server/tests/rerank-pricing.test.ts",
+    "server/tests/rerank-refusal.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 15",
    "files": [
-    "server/tests/remote-coordination.test.ts",
-    "server/tests/rerank-pricing.test.ts",
-    "server/tests/rerank-refusal.integration.test.ts",
     "server/tests/reservation-status.integration.test.ts",
     "server/tests/reserve-bound-rounding.test.ts",
     "server/tests/reserve-concurrency.integration.test.ts",
@@ -700,15 +745,15 @@
     "server/tests/settle-conflict-grant-expiry.integration.test.ts",
     "server/tests/settle-idempotency.integration.test.ts",
     "server/tests/settlement-resolution.integration.test.ts",
-    "server/tests/shared-brokered-routes.test.ts"
+    "server/tests/shared-brokered-routes.test.ts",
+    "server/tests/shared-brokered-schema.integration.test.ts",
+    "server/tests/shared-brokered-store.integration.test.ts",
+    "server/tests/shared-computer-run.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 16",
    "files": [
-    "server/tests/shared-brokered-schema.integration.test.ts",
-    "server/tests/shared-brokered-store.integration.test.ts",
-    "server/tests/shared-computer-run.integration.test.ts",
     "server/tests/shared-gated-mode.integration.test.ts",
     "server/tests/shared-use-store.integration.test.ts",
     "server/tests/shared-wiring.integration.test.ts",
@@ -718,7 +763,7 @@
    ]
   },
   {
-   "name": "server/tests part 15",
+   "name": "server/tests part 16",
    "files": [
     "server/tests/speech-interruption.integration.test.ts",
     "server/tests/speech-pricing.test.ts",
