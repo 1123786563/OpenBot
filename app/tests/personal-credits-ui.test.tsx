@@ -1,11 +1,4 @@
 import "./preload";
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render } from "@testing-library/react";
-import type * as React from "react";
-import type { ReactNode } from "react";
-import { cloneElement, createContext, useContext } from "react";
-import i18n from "@/lib/i18n";
 /*
  * The runner comes straight from bun:test — the same door the sibling personal-orders-ui suite
  * uses, and the one the ticket's prescribed verification command names (`bun test
