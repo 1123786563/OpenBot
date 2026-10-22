@@ -1,0 +1,10 @@
+0 app/src/lib/plugins/tool-name.ts
+0 app/src/components/channels/tool-activity.tsx
+0 app/src/components/skills/skill-tools.tsx
+0 app/src/lib/skills/form.ts
+0 app/src/locales/en/channels.json
+0 app/src/locales/zh-CN/channels.json
+0 app/src/locales/en/skills.json
+0 app/src/locales/zh-CN/skills.json
+0 app/tests/tool-name.test.ts
+0 app/tests/tool-activity.test.tsx

@@ -1,0 +1,14 @@
+bun test v1.4.2 (50a8a8387)
+
+app/tests/tool-activity.test.tsx:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '../src/components/channels/tool-activity' from '/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/app/tests/tool-activity.test.tsx'
+-------------------------------
+
+
+ 0 pass
+ 1 fail
+ 1 error
+Ran 1 test across 1 file. [295.00ms]

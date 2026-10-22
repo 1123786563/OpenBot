@@ -1,0 +1,69 @@
+diff --git a/server/src/config.ts b/server/src/config.ts
+index a25e4133..aa61e704 100644
+--- a/server/src/config.ts
++++ b/server/src/config.ts
+@@ -691,7 +691,10 @@ function singleUserAllowed(
+  * A routable public address is the different thing, and it is the one that refuses.
+  *
+  * UNPARSEABLE COUNTS AS PUBLIC, and so does an unrecognised name. A value nobody could read is not
+- * a value anybody checked, and the safe reading of "I cannot tell" is never "it is fine".
++ * a value anybody checked, and the safe reading of "I cannot tell" is never "it is fine". That
++ * includes a URL that parses but names no host at all — `localhost:3010` typed without its scheme
++ * parses as scheme `localhost:` with an empty hostname — since an empty hostname is no more a LAN
++ * name than an unparseable one, and so is read as public rather than private.
+  */
+ type Reach = "loopback" | "private" | "public";
+ 
+@@ -703,6 +706,7 @@ function reachOf(raw: string): Reach {
+     return "public";
+   }
+   bare = bare.replace(/^\[|\]$/g, "").replace(/\.+$/, "");
++  if (!bare) return "public";
+ 
+   if (
+     bare === "localhost" ||
+diff --git a/server/tests/config.test.ts b/server/tests/config.test.ts
+index 4cd701cc..df159c11 100644
+--- a/server/tests/config.test.ts
++++ b/server/tests/config.test.ts
+@@ -583,6 +583,25 @@ describe("deployment configuration", () => {
+       { TRUSTED_ORIGINS: "http://localhost:3010,https://openbot.example.com" },
+     ],
+     ["an address that is not a URL at all", { OPENBOT_PUBLIC_URL: "openbot" }],
++    /*
++     * Scheme forms that parse as URLs but name no host. `example.com:3010` and
++     * `localhost:3010` are how a missed `https://` lands in a .env, and a bare `myapp://`
++     * is a scheme with nothing behind it. Their hostname is empty, and an empty hostname
++     * names no machine, so none of these is a LAN label that could be read as private.
++     */
++    [
++      "a public URL typed without its scheme",
++      { OPENBOT_PUBLIC_URL: "example.com:3010" },
++    ],
++    [
++      "an app URL typed without its scheme",
++      { OPENBOT_APP_URL: "localhost:3010" },
++    ],
++    ["a trusted origin that is only a scheme", { TRUSTED_ORIGINS: "myapp://" }],
++    [
++      "a URL whose hostname normalises away",
++      { OPENBOT_PUBLIC_URL: "http://." },
++    ],
+   ])("refuses no sign-in combined with %s", (_label, published) => {
+     expect(() =>
+       loadConfig({ ...withoutSignIn, ...OPEN, ...published }),
+@@ -602,6 +621,14 @@ describe("deployment configuration", () => {
+     ["a unique-local IPv6 address", { OPENBOT_PUBLIC_URL: "http://[fd00::1]" }],
+     ["an mDNS name", { TRUSTED_ORIGINS: "http://openbot.local:3010" }],
+     ["a single-label LAN name", { TRUSTED_ORIGINS: "http://nas:3010" }],
++    /*
++     * A mobile scheme origin with a host is real config for the auth layer, and the host it
++     * names is a single label — the reading the empty-host forms above must not inherit.
++     */
++    [
++      "a mobile scheme origin with a host",
++      { TRUSTED_ORIGINS: "myapp://handset:3010" },
++    ],
+   ])("still runs with no sign-in on %s", (_label, reachable) => {
+     expect(() =>
+       loadConfig({ ...withoutSignIn, ...OPEN, ...reachable }),

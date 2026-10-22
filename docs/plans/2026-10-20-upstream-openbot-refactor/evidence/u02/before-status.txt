@@ -1,0 +1,21 @@
+ M app/src/lib/computers/call.ts
+ M app/src/lib/copilot/computer-activity.ts
+ M app/src/routes/_authed/_app/channel/$channelId.tsx
+ M docs/verification/e2e-bun-suites.json
+ M server/src/config.ts
+ M server/src/responsibilities/email.ts
+ M server/src/routines/schedule.ts
+ M server/src/telemetry/scrub.ts
+ M server/tests/config.test.ts
+ M server/tests/enterprise-controls.test.ts
+ M server/tests/otel-export-scrubbing.test.ts
+ M server/tests/responsibility-triggers.test.ts
+ M server/tests/routine-schedule.test.ts
+?? app/src/components/computer/use-auto-watch-screen.ts
+?? app/tests/auto-watch-screen.test.tsx
+?? app/tests/computer-screen-announcement.test.ts
+?? docs/plans/2026-10-20-upstream-openbot-refactor/
+?? docs/plans/2026-10-20-upstream-openbot-update-plan.md
+?? docs/research/2026-10-20-upstream-openbot-feature-matrix.md
+?? docs/specs/2026-10-20-upstream-openbot-adoption-design.md
+?? docs/tickets/upstream-openbot-update/

@@ -1,0 +1,55 @@
+ M agent-computer/src/authorisation.ts
+ M agent-computer/src/index.ts
+ M agent-computer/src/sign-in.ts
+ M agent-computer/tests/sign-in.test.ts
+ M app/src/components/channels/browser-activity.tsx
+ M app/src/components/channels/chat-transcript.tsx
+ M app/src/lib/computers/call.ts
+ M app/src/lib/copilot/computer-activity.ts
+ M app/src/locales/en/channels.json
+ M app/src/locales/zh-CN/channels.json
+ M app/src/routes/_authed/_app/channel/$channelId.tsx
+ M app/tests/user-key-status-ui.test.tsx
+ M desktop/src/OrgSwitchCleanup.test.tsx
+ M docs/verification/e2e-bun-suites.json
+ M server/src/computer/gateway.ts
+ M server/src/computer/schema.ts
+ M server/src/config.ts
+ M server/src/plugins/store.ts
+ M server/src/responsibilities/email.ts
+ M server/src/routines/schedule.ts
+ M server/src/telemetry/scrub.ts
+ M server/tests/access-grant-key-status.integration.test.ts
+ M server/tests/company-payer-e2e.integration.test.ts
+ M server/tests/config.test.ts
+ M server/tests/enterprise-controls.test.ts
+ M server/tests/multitenancy/assembly-enterprise.test.ts
+ M server/tests/multitenancy/attachments.test.ts
+ M server/tests/multitenancy/audit-domains.test.ts
+ M server/tests/multitenancy/bot-lifecycle.test.ts
+ M server/tests/multitenancy/group-membership.test.ts
+ M server/tests/multitenancy/marketplace-install.test.ts
+ M server/tests/multitenancy/skills-components.test.ts
+ M server/tests/multitenancy/streams.test.ts
+ M server/tests/multitenancy/tool-invocation.test.ts
+ M server/tests/otel-export-scrubbing.test.ts
+ M server/tests/passwords-sign-in.test.ts
+ M server/tests/plugin-connect-route.test.ts
+ M server/tests/plugin-user-credential.integration.test.ts
+ M server/tests/responsibility-triggers.test.ts
+ M server/tests/routine-schedule.test.ts
+?? app/src/components/channels/connect-app-card.tsx
+?? app/src/components/channels/tool-activity.tsx
+?? app/src/components/computer/use-auto-watch-screen.ts
+?? app/tests/auto-watch-screen.test.tsx
+?? app/tests/computer-screen-announcement.test.ts
+?? app/tests/connect-app-card.test.tsx
+?? app/tests/tool-activity.test.tsx
+?? docs/plans/2026-10-20-upstream-openbot-refactor/
+?? docs/plans/2026-10-20-upstream-openbot-update-plan.md
+?? docs/research/2026-10-20-upstream-openbot-feature-matrix.md
+?? docs/specs/2026-10-20-upstream-openbot-adoption-design.md
+?? docs/tickets/upstream-openbot-update/
+?? server/tests/computer-sign-in-code.test.ts
+?? shared/connect-prompt.test.ts
+?? shared/connect-prompt.ts

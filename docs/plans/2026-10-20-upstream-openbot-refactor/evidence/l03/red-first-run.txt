@@ -1,0 +1,11 @@
+(fail) the first step asks for a login, never for a code [1379.88ms]
+(fail) the first submission sends the password alone [1016.17ms]
+(fail) the code step asks for only the code [1005.25ms]
+(fail) a wrong code is cleared, explained, and can be sent again [1004.75ms]
+(fail) a settled send leaves no secret in the mutation cache [1013.79ms]
+(fail) a filling request offers nothing to submit again [1004.90ms]
+(fail) declining clears what was typed [1028.87ms]
+(fail) unmounting mid-send leaves no secret in the mutation cache [1005.77ms]
+(fail) the code step speaks both languages [1.10ms]
+ 1 pass
+ 9 fail

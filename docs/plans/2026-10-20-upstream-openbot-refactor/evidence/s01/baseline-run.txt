@@ -1,0 +1,4 @@
+S01 baseline (pre-change), 2026-10-20 15:04 +08:
+cmd: E2E_UNIT_SCOPE=server bunx e2e run --config e2e.unit.config.ts server/tests/config.test.ts server/tests/single-user.test.ts
+result: 2 files passed, 164 tests passed, 0 failed, 0 skipped (duration 1.43s)
+Harness 在 worktree 可用；基线为绿。RED 阶段由新增 hostless 用例触发。

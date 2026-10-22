@@ -1,0 +1,24 @@
+[ocr] Summary: 2 file(s) reviewed, 1 comment(s), ~319856 token(s) used (input: ~273814, output: ~46042), cache(read: ~187008, write: ~0), 14m46s elapsed
+[ocr] Session: 4c82a468-4c1a-4746-9ca2-7441fe4b576f
+Review complete: 1 finding(s) across 2 selected item(s).
+
+─── server/src/telemetry/scrub.ts:60-60 ───
+[security · medium] mysql 规则保留 `i` 标志带来一个真实的漏脱敏路径（已与 evidence/upstream-sources
+副本逐行比对，确认该行为继承自上游，非移植错误，但值得上报跟进）：mysql 客户端中大写 `-P3306` 是端口的附加短格式，`i` 使 `(?:[ 	]|\\\r?\\n)-p` 命中大写
+`-P`，端口号被误脱敏；且因 `g` 替换从首个匹配后继续、剩余文本不再含 `\bmysql\b` 锚点，`mysql -h db -P3306 -phunter2 app` 中真正的口令
+`-phunter2` 反而完全保留——与模块头注释 "a secret that survived costs a rotation" 的优先级相悖。同组的 sshpass 规则刻意去掉 `i`
+并注明 "Case matters here"（`-P` 是端口/提示符），本条保留 `i` 与之标准不一致，更像上游疏漏。受"字节一致移植"约束，建议不要在本地改动正则，而是：(1)
+向上游反馈此缺陷；(2) 在 enterprise-controls.test.ts 补一条钉住当前行为的用例（见 suggestion），使后续同步上游修复时能显式更新该期望，避免被当作回归掩盖。
+
+- /(\bmysql(?:dump)?\b(?:[^|;&\\\r\n]|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p)("[^"]*"|'[^']*'|[^\s'"-]\S*)/gi,
++ // 已知上游行为：大小写不敏感使端口附加形式 `-P3306` 命中 `-p`，该匹配消耗掉唯一的
++ // `\bmysql\b` 锚点，同一命令里真正的 `-phunter2` 未被脱敏；待上游修复后同步更新此期望。
++ ["mysql -h db -P3306 -phunter2 app", "mysql -h db -P[REDACTED] -phunter2 app"],
+
+
+LLM retry report summary: 1 of 15 requests affected -- 1 request recovered after retry
+
+Core review (1 request):
+- server/src/config.ts,server/src/telemetry/scrub.ts: rate limited (HTTP 429) -> rate limited (HTTP 429) -> succeeded
+
+Per-attempt detail: --format json (retry_report).

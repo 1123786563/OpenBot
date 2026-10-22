@@ -1,0 +1,50 @@
+
+ RUN  e2e v0.20.0 /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update
+      run 01a159f8-545b-7668-a3ce-39fccb31c939 · targets: node
+
+stdout | runner
+{"level":30,"time":1792510812237,"service":"server","type":"openmuse-mail-placeholder-action-ids","ids":["gmail.list","gmail.search","gmail.thread","gmail.attachment.get","gmail.attachment.bytes"],"msg":"openmuse-mail-placeholder-action-ids"}
+{"level":40,"time":1792510812245,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792510812331,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792510812333,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792510812336,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792510812339,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792510813546,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792510813553,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":30,"time":1792510813642,"service":"server","type":"openmuse-calendar-placeholder-action-id","id":"gcalendar.list","msg":"openmuse-calendar-placeholder-action-id"}
+{"level":30,"time":1792510813785,"service":"server","type":"openmuse-reviewed-action-placeholder-ids","ids":{"gmail.send":"gmail.send","gcalendar.create":"gcalendar.create","gcalendar.update":"gcalendar.update","gcalendar.delete":"gcalendar.delete","gcalendar.get":"gcalendar.get"},"msg":"openmuse-reviewed-action-placeholder-ids"}
+{"level":40,"time":1792510814109,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+ ✓ |node| app/tests/tool-name.test.ts (27 tests) 10ms
+   ✓ naming a tool call > an MCP tool reads as an action against a named server 2ms
+   ✓ naming a tool call > the server is dropped when the action already names it 1ms
+   ✓ naming a tool call > the server is dropped when the action names it in the singular 0ms
+   ✓ naming a tool call > camelCase from a vendor reads the same way 1ms
+   ✓ naming a tool call > a tool name containing the separator keeps all of it 0ms
+   ✓ naming a tool call > a component the app registered is left alone 1ms
+   ✓ naming a tool call > the server is dropped when a hyphenated server's words are already in the label 0ms
+   ✓ naming a tool call > the server is dropped when an underscored server's words are already in the label 0ms
+   ✓ naming a tool call > a multi-token server the label does not name is kept as detail 0ms
+   ✓ naming a tool call > the server is kept when the singular of its name only matches the label's verb 0ms
+   ✓ naming a tool call > the server is kept when the singular of its name only matches the label's verb, second case 0ms
+   ✓ naming a research call by its role > a search on any research provider reads as searching the web 0ms
+   ✓ naming a research call by its role > a fetch on any research provider reads the same way, whichever vendor reads the page 0ms
+   ✓ naming a research call by its role > the provider never leaks into the detail either 0ms
+   ✓ naming a research call by its role > a research server's other tools keep their own names 1ms
+   ✓ naming a research call by its role > a tool on a server that plays no research role is untouched 0ms
+   ✓ the role refs a skill declares > every declared ref parses back to its own role 0ms
+   ✓ the role refs a skill declares > there is exactly one ref per role, in picker order 0ms
+   ✓ the role refs a skill declares > a real server/tool ref is never a role ref 1ms
+   ✓ skill selection over research role refs > a role ref is never reported as a tool no server offers 0ms
+   ✓ skill selection over research role refs > an old real ref still reports when no connected server offers it 0ms
+   ✓ skill selection over research role refs > real offered refs and role refs coexist in one declaration 0ms
+   ✓ skill selection over research role refs > a misspelled role is a dead ref and still says so 1ms
+   ✓ the research vocabulary on screen > the English fallback labels are the English locale's labels 0ms
+   ✓ the research vocabulary on screen > both languages carry the two role labels and they differ 1ms
+   ✓ the research vocabulary on screen > both languages carry the summary phrases, with plurals where English needs them 1ms
+   ✓ the research vocabulary on screen > the skill picker carries its research entries in both languages 0ms
+
+ Test Files  1 passed (1)
+      Tests  27 passed (27)
+   Start at  23:40:14
+   Duration  403ms
+

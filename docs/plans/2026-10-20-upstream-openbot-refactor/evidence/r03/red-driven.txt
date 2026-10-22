@@ -1,0 +1,399 @@
+bun test v1.4.2 (50a8a8387)
+
+app/tests/tool-activity.test.tsx:
+544 |  * back — the one thing this view must never do is read like research happened when a provider
+545 |  * refused, failed, or never answered.
+546 |  */
+547 | test("a research search step is named for its role and carries its query, not its vendor", () => {
+548 |   const step = stepDetails(webSearch("s", SEARCHED));
+549 |   expect(step.kind).toBe("search");
+                          ^
+error: expect(received).toBe(expected)
+
+Expected: "search"
+Received: "connector"
+
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/app/tests/tool-activity.test.tsx:549:21)
+(fail) a research search step is named for its role and carries its query, not its vendor [0.21ms]
+559 | 
+560 | test("a research fetch step keeps the real source link", () => {
+561 |   const step = stepDetails(
+562 |     webFetch("f", "https://example.com/page", '{"content":"# Page"}'),
+563 |   );
+564 |   expect(step.kind).toBe("fetch");
+                          ^
+error: expect(received).toBe(expected)
+
+Expected: "fetch"
+Received: "connector"
+
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/app/tests/tool-activity.test.tsx:564:21)
+(fail) a research fetch step keeps the real source link [0.08ms]
+600 |       '{"urls":["https://a.com/","https://b.com/"]}',
+601 |       '{"pages":2}',
+602 |     ),
+603 |   );
+604 |   expect(done.pending).toBe(false);
+605 |   expect(done.pages).toBe(2);
+                           ^
+error: expect(received).toBe(expected)
+
+Expected: 2
+Received: 0
+
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/app/tests/tool-activity.test.tsx:605:22)
+(fail) a fetch counts pages only from real returns: nothing while pending, failed or refused [0.09ms]
+623 |         '{"urls":["https://f.com/"]}',
+624 |         JSON.stringify("The vendor reported an error: boom"),
+625 |       ),
+626 |     ),
+627 |   ]);
+628 |   expect(summary.searches).toBe(3);
+                                 ^
+error: expect(received).toBe(expected)
+
+Expected: 3
+Received: undefined
+
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/app/tests/tool-activity.test.tsx:628:28)
+(fail) summarise counts searches and pages from real returns only [0.10ms]
+648 |         JSON.stringify("The vendor reported an error: 401"),
+649 |       ),
+650 |     ),
+651 |   ]);
+652 |   // No fabricated counts: neither phrase may be phrased from a call that never returned.
+653 |   expect(summary.searches).toBe(0);
+                                 ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: undefined
+
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/app/tests/tool-activity.test.tsx:653:28)
+(fail) a group where every research call failed counts nothing and keeps each reason [0.06ms]
+71 | // if an empty list of elements is returned
+72 | function makeGetAllQuery(allQuery, getMissingError) {
+73 |   return (container, ...args) => {
+74 |     const els = allQuery(container, ...args);
+75 |     if (!els.length) {
+76 |       throw (0, _config.getConfig)().getElementError(getMissingError(container, ...args), container);
+                                                                                                        ^
+TestingLibraryElementError: Unable to find an element with the text: Searched the web 3 times and read 5 pages. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<details[39m
+      [33mclass[39m=[32m"tool-line my-1.5 min-w-0"[39m
+    [36m>[39m
+      [36m<summary[39m
+        [33mclass[39m=[32m"flex cursor-pointer list-none items-baseline gap-1.5"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33maria-hidden[39m=[32m"true"[39m
+          [33mclass[39m=[32m"tool-line-chevron shrink-0 text-xs text-muted-foreground transition-transform"[39m
+        [36m>[39m
+          [0m▸[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"inline-flex min-w-0 max-w-full items-baseline gap-1.5 text-sm text-muted-foreground "[39m
+        [36m>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"shrink-0"[39m
+          [36m>[39m
+            [0m使用了 Parallel[0m
+          [36m</span>[39m
+        [36m</span>[39m
+      [36m</summary>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"mt-2 max-h-80 overflow-auto border-l pl-3 text-xs [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h1]:font-medium [&_h2]:font-medium [&_h3]:font-medium"[39m
+      [36m>[39m
+        [36m<ol[39m
+          [33mclass[39m=[32m"space-y-2 py-1"[39m
+        [36m>[39m
+          [36m<li[39m
+            [33mclass[39m=[32m"min-w-0"[39m
+          [36m>[39m
+            [36m<details[39m
+              [33mclass[39m=[32m"tool-line min-w-0"[39m
+            [36m>[39m
+              [36m<summary[39m
+                [33mclass[39m=[32m"flex cursor-pointer list-none items-center gap-1.5"[39m
+              [36m>[39m
+                [36m<span[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"tool-line-chevron shrink-0 text-xs text-muted-foreground transition-transform"[39m
+                [36m>[39m
+                  [0m▸[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"flex min-w-0 items-center gap-2"[39m
+                [36m>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"shrink-0"[39m
+                  [36m>[39m
+                    [0mWeb search[0m
+                  [36m</span>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"truncate text-muted-foreground"[39m
+                  [36m>[39m
+                    [0mparallel[0m
+                  [36m</span>[39m
+                [36m</span>[39m
+              [36m</summary>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"mt-1.5 space-y-2 pl-5"[39m
+              [36m>[39m
+                [36m<dl[39m
+                  [33mclass[39m=[32m"grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5"[39m
+                [36m>[39m
+                  [36m<div[39m
+                    [33mclass[39m=[32m"contents"[39m
+                  [36m>[39m
+                    [36m<dt[39m
+                      [33mclass[39m=[32m"text-muted-foreground"[39m
+                    [36m>[39m
+                      [0mquery[0m
+                    [36m</dt>[39m
+                    [36m<dd[39m
+                      [33mclass[39m=[32m"min-w-0 break-words"[39m
+                    [36m>[39m
+                      [0mopenbot upstream[0m
+                    [36m</dd>[39m
+                  [36m</div>[39m
+                [36m</dl>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"max-h-60 overflow-auto border-l pl-3 text-xs [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h1]:font-medium [&_h2]:font-medium [&_h3]:font-medium"[39m
+                [36m>[39m
+                  [36m<div[39m
+                    [33mclass[39m=[32m"space-y-4 whitespace-normal [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"[39m
+                  [36m>[39m
+                    [36m<div[39m
+                      [33mclass[39m=[32m"my-4 flex w-full flex-col gap-2 rounded-xl border border-border bg-sidebar p-2"[39m
+                      [33mdata-language[39m=[32m"json"[39m
+                      [33mdata-streamdown[39m=[32m"code-block"[39m
+                      [33mdir[39m=[32m"ltr"[39m
+                      [33mstyle[39m=[32m"content-visibility: auto; contain-intrinsic-size: auto 200px;"[39m
+                    [36m>[39m
+                      [36m<div[39m
+                        [33mclass[39m=[32m"flex h-8 items-center text-muted-foreground text-xs"[39m
+                        [33mdata-language[39m=[32m"json"[39m
+                        [33mdata-streamdown[39m=[32m"code-block-header"[39m
+                      [36m>[39m
+                        [36m<span[39m
+                          [33mclass[39m=[32m"ml-1 font-mono lowercase"[39m
+                        [36m>[39m
+                          [0mjson[0m
+                        [36m</span>[39m
+                      [36m</div>[39m
+                      [36m<div[39m
+                        [33mclass[39m=[32m"pointer-events-none sticky top-2 z-10 -mt-10 flex h-8 items-center justify-end"[39m
+                      [36m>[39m
+                        [36m<div[39m
+                          [33mclass[39m=[32m"pointer-events-auto flex shrink-0 items-center gap-2 rounded-md border border-sidebar bg-sidebar/80 px-1.5 py-1 supports-[backdrop-filter]:bg-sidebar/70 supports-[backdrop-filter]:backdrop-blur"[39m
+                          [33mdata-streamdown[39m=[32m"code-block-actions"[39m
+                        [36m>[39m
+                          [36m<button[39m
+                            [33maria-label[39m=[32m"Download file"[39m
+                            [33mclass[39m=[32m"cursor-pointer p-1 text-muted-foreground transition-all hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"[39m
+                            [33mdata-streamdown[39m=[32m"code-block-download-button"[39m
+                            [33mtitle[39m=[32m"Download file"[39m
+                            [33mtype[39m=[32m"button"[39m
+                          [36m>[39m
+                            [36m<svg[39m
+                              [33maria-hidden[39m=[32m"true"[39m
+                              [33mcolor[39m=[32m"currentColor"[39m
+                              [33mheight[39m=[32m"16"[39m
+                              [33msize[39m=[32m"14"[39m
+                              [33mstroke-linejoin[39m=[32m"round"[39m
+                              [33mviewBox[39m=[32m"0 0 16 16"[39m
+                              [33mwidth[39m=[32m"16"[39m
+                            [36m>[39m
+                              [36m<path[39m
+                                [33mclip-rule[39m=[32m"evenodd"[39m
+                                [33md[39m=[32m"M8.75 1V1.75V8.68934L10.7197 6.71967L11.25 6.18934L12.3107 7.25L11.7803 7.78033L8.70711 10.8536C8.31658 11.2441 7.68342 11.2441 7.29289 10.8536L4.21967 7.78033L3.689...
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/node_modules/.bun/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:76:100)
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/node_modules/.bun/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:52:17)
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/node_modules/.bun/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:95:19)
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/app/tests/tool-activity.test.tsx:672:15)
+(fail) the collapsed line counts real searches and pages, in English [11.00ms]
+689 |   const line = document.body.textContent ?? "";
+690 |   // Neither summary phrase may appear: nothing came back, and the line falls back to naming the
+691 |   // first step rather than pretending a count.
+692 |   expect(line.includes("Searched the web")).toBe(false);
+693 |   expect(line.includes("read ")).toBe(false);
+694 |   expect(line.includes("Read web pages")).toBe(true); // the fetch step's own label
+                                                ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/app/tests/tool-activity.test.tsx:694:43)
+(fail) a failed research run keeps the provider's reason and the source link, and counts nothing [1.42ms]
+32 |   // throw errors w/ suggestions for better queries. Opt in so off by default.
+33 |   throwSuggestions: false,
+34 |   // called when getBy* queries fail. (message, container) => Error
+35 |   getElementError(message, container) {
+36 |     const prettifiedDOM = (0, _prettyDom.prettyDOM)(container);
+37 |     const error = new Error([message, `Ignored nodes: comments, ${config.defaultIgnore}\n${prettifiedDOM}`].filter(Boolean).join('\n\n'));
+                           ^
+TestingLibraryElementError: Unable to find an element with the text: 搜索了网页 2 次并读取了 1 个页面. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<details[39m
+      [33mclass[39m=[32m"tool-line my-1.5 min-w-0"[39m
+    [36m>[39m
+      [36m<summary[39m
+        [33mclass[39m=[32m"flex cursor-pointer list-none items-baseline gap-1.5"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33maria-hidden[39m=[32m"true"[39m
+          [33mclass[39m=[32m"tool-line-chevron shrink-0 text-xs text-muted-foreground transition-transform"[39m
+        [36m>[39m
+          [0m▸[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"inline-flex min-w-0 max-w-full items-baseline gap-1.5 text-sm text-muted-foreground "[39m
+        [36m>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"shrink-0"[39m
+          [36m>[39m
+            [0m使用了 Parallel[0m
+          [36m</span>[39m
+        [36m</span>[39m
+      [36m</summary>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"mt-2 max-h-80 overflow-auto border-l pl-3 text-xs [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h1]:font-medium [&_h2]:font-medium [&_h3]:font-medium"[39m
+      [36m>[39m
+        [36m<ol[39m
+          [33mclass[39m=[32m"space-y-2 py-1"[39m
+        [36m>[39m
+          [36m<li[39m
+            [33mclass[39m=[32m"min-w-0"[39m
+          [36m>[39m
+            [36m<details[39m
+              [33mclass[39m=[32m"tool-line min-w-0"[39m
+            [36m>[39m
+              [36m<summary[39m
+                [33mclass[39m=[32m"flex cursor-pointer list-none items-center gap-1.5"[39m
+              [36m>[39m
+                [36m<span[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"tool-line-chevron shrink-0 text-xs text-muted-foreground transition-transform"[39m
+                [36m>[39m
+                  [0m▸[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"flex min-w-0 items-center gap-2"[39m
+                [36m>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"shrink-0"[39m
+                  [36m>[39m
+                    [0mWeb search[0m
+                  [36m</span>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"truncate text-muted-foreground"[39m
+                  [36m>[39m
+                    [0mparallel[0m
+                  [36m</span>[39m
+                [36m</span>[39m
+              [36m</summary>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"mt-1.5 space-y-2 pl-5"[39m
+              [36m>[39m
+                [36m<dl[39m
+                  [33mclass[39m=[32m"grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5"[39m
+                [36m>[39m
+                  [36m<div[39m
+                    [33mclass[39m=[32m"contents"[39m
+                  [36m>[39m
+                    [36m<dt[39m
+                      [33mclass[39m=[32m"text-muted-foreground"[39m
+                    [36m>[39m
+                      [0mquery[0m
+                    [36m</dt>[39m
+                    [36m<dd[39m
+                      [33mclass[39m=[32m"min-w-0 break-words"[39m
+                    [36m>[39m
+                      [0mopenbot upstream[0m
+                    [36m</dd>[39m
+                  [36m</div>[39m
+                [36m</dl>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"max-h-60 overflow-auto border-l pl-3 text-xs [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h1]:font-medium [&_h2]:font-medium [&_h3]:font-medium"[39m
+                [36m>[39m
+                  [36m<div[39m
+                    [33mclass[39m=[32m"space-y-4 whitespace-normal [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"[39m
+                  [36m>[39m
+                    [36m<div[39m
+                      [33mclass[39m=[32m"my-4 flex w-full flex-col gap-2 rounded-xl border border-border bg-sidebar p-2"[39m
+                      [33mdata-language[39m=[32m"json"[39m
+                      [33mdata-streamdown[39m=[32m"code-block"[39m
+                      [33mdir[39m=[32m"ltr"[39m
+                      [33mstyle[39m=[32m"content-visibility: auto; contain-intrinsic-size: auto 200px;"[39m
+                    [36m>[39m
+                      [36m<div[39m
+                        [33mclass[39m=[32m"flex h-8 items-center text-muted-foreground text-xs"[39m
+                        [33mdata-language[39m=[32m"json"[39m
+                        [33mdata-streamdown[39m=[32m"code-block-header"[39m
+                      [36m>[39m
+                        [36m<span[39m
+                          [33mclass[39m=[32m"ml-1 font-mono lowercase"[39m
+                        [36m>[39m
+                          [0mjson[0m
+                        [36m</span>[39m
+                      [36m</div>[39m
+                      [36m<div[39m
+                        [33mclass[39m=[32m"pointer-events-none sticky top-2 z-10 -mt-10 flex h-8 items-center justify-end"[39m
+                      [36m>[39m
+                        [36m<div[39m
+                          [33mclass[39m=[32m"pointer-events-auto flex shrink-0 items-center gap-2 rounded-md border border-sidebar bg-sidebar/80 px-1.5 py-1 supports-[backdrop-filter]:bg-sidebar/70 supports-[backdrop-filter]:backdrop-blur"[39m
+                          [33mdata-streamdown[39m=[32m"code-block-actions"[39m
+                        [36m>[39m
+                          [36m<button[39m
+                            [33maria-label[39m=[32m"Download file"[39m
+                            [33mclass[39m=[32m"cursor-pointer p-1 text-muted-foreground transition-all hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"[39m
+                            [33mdata-streamdown[39m=[32m"code-block-download-button"[39m
+                            [33mtitle[39m=[32m"Download file"[39m
+                            [33mtype[39m=[32m"button"[39m
+                          [36m>[39m
+                            [36m<svg[39m
+                              [33maria-hidden[39m=[32m"true"[39m
+                              [33mcolor[39m=[32m"currentColor"[39m
+                              [33mheight[39m=[32m"16"[39m
+                              [33msize[39m=[32m"14"[39m
+                              [33mstroke-linejoin[39m=[32m"round"[39m
+                              [33mviewBox[39m=[32m"0 0 16 16"[39m
+                              [33mwidth[39m=[32m"16"[39m
+                            [36m>[39m
+                              [36m<path[39m
+                                [33mclip-rule[39m=[32m"evenodd"[39m
+                                [33md[39m=[32m"M8.75 1V1.75V8.68934L10.7197 6.71967L11.25 6.18934L12.3107 7.25L11.7803 7.78033L8.70711 10.8536C8.31658 11.2441 7.68342 11.2441 7.29289 10.8536L4.21967 7.78033L3.689...
+      at getElementError (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/node_modules/.bun/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/config.js:37:23)
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/node_modules/.bun/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:76:38)
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/node_modules/.bun/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:52:17)
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/node_modules/.bun/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:95:19)
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/app/tests/tool-activity.test.tsx:717:20)
+(fail) the research summary reads in Chinese, roles included [3.14ms]
+737 |   expect(step.kind).toBe("connector");
+738 |   expect(step.label).toBe("Web search advanced exa");
+739 |   expect(step.connector).toBe("Exa");
+740 |   expect(step.labelKey).toBeUndefined();
+741 |   const summary = summarise([step]);
+742 |   expect(summary.searches).toBe(0);
+                                 ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: undefined
+
+      at <anonymous> (/Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/app/tests/tool-activity.test.tsx:742:28)
+(fail) a research server's unlabelled tool stays an ordinary connector step [0.11ms]
+
+ 18 pass
+ 9 fail
+ 114 expect() calls
+Ran 27 tests across 1 file. [236.00ms]

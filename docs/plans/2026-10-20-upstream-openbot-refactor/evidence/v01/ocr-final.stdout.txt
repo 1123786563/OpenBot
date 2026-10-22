@@ -1,0 +1,18 @@
+[ocr] WARNING: cannot read file apps/openmuse at ref HEAD: exit status 128
+[ocr] WARNING: cannot read file bifrost at ref HEAD: exit status 128
+[ocr]   ✘ file_read failed: invalid line range: start_line 330 is greater than end_line 120
+[ocr]   ✘ file_read failed: file "docs/plans/2026-10-20-upstream-openbot-refactor/verification-summary.md" not found: git show HEAD:docs/plans/2026-10-20-upstream-openbot-refactor/verification-summary.md: exit status 128: fatal: path 'docs/plans/2026-10-20-upstream-openbot-refactor/verification-summary.md' exists on disk, but not in 'HEAD'
+
+[ocr]   ✘ file_read failed: invalid line range: start_line 180 is greater than end_line 120
+[ocr]   ✘ file_read failed: invalid line range: start_line 180 is greater than end_line 140
+[ocr]   ✘ file_read failed: invalid line range: start_line 680 is greater than end_line 100
+[ocr]   ✘ file_read failed: invalid line range: start_line 4225 is greater than end_line 120
+[ocr] Summary: 230 file(s) reviewed, 124 comment(s), ~26829081 token(s) used (input: ~25822665, output: ~1006416), cache(read: ~23048512, write: ~0), 54m21s elapsed
+[ocr] Session: 7d3629fb-b44f-4416-a5f8-11649e5031c6
+[ocr] WARNING [comment_refiled] server/src/billing/recovery-disposal.ts: comment filed against server/src/billing/disposal-placeholder.ts describes code in server/src/billing/recovery-disposal.ts; re-filed
+[ocr] WARNING [comment_refiled] server/src/enterprise/tenancy/execution-artifacts.ts: comment filed against server/src/db/schema/identity.ts,server/src/enterprise/runtime-v1.schema.json,server/src/enterprise/tenancy/execution-artifacts.ts,server/src/enterprise/wire-schema.ts,shared/enterprise/contracts.ts,shared/enterprise/mobile-schemas.ts,shared/execution-scope.ts describes code in server/src/enterprise/tenancy/execution-artifacts.ts; re-filed
+[ocr] WARNING [comment_refiled] server/src/enterprise/tenancy/execution-artifacts.ts: comment filed against server/src/db/schema/identity.ts,server/src/enterprise/runtime-v1.schema.json,server/src/enterprise/tenancy/execution-artifacts.ts,server/src/enterprise/wire-schema.ts,shared/enterprise/contracts.ts,shared/enterprise/mobile-schemas.ts,shared/execution-scope.ts describes code in server/src/enterprise/tenancy/execution-artifacts.ts; re-filed
+[ocr] WARNING [comment_refiled] shared/execution-scope.ts: comment filed against server/src/db/schema/identity.ts,server/src/enterprise/runtime-v1.schema.json,server/src/enterprise/tenancy/execution-artifacts.ts,server/src/enterprise/wire-schema.ts,shared/enterprise/contracts.ts,shared/enterprise/mobile-schemas.ts,shared/execution-scope.ts describes code in shared/execution-scope.ts; re-filed
+[ocr] WARNING [comment_refiled] server/src/telemetry/scrub.ts: comment filed against server/src/telemetry/scrub.ts,shared/trace.ts describes code in server/src/telemetry/scrub.ts; re-filed
+[ocr] WARNING [comment_refiled] server/src/telemetry/scrub.ts: comment filed against server/src/telemetry/scrub.ts,shared/trace.ts describes code in server/src/telemetry/scrub.ts; re-filed
+[ocr] Results written to docs/plans/2026-10-20-upstream-openbot-refactor/evidence/v01/ocr-final.txt

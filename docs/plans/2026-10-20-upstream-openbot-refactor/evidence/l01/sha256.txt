@@ -1,0 +1,10 @@
+9ff60d418f078fa0bb7290088b441701ceb5dd4a245cf06ede59462b8b2bee60  agent-computer/src/sign-in.ts
+2fe50dbdbce029d6ca4916cdbc913203f7458d3fc711a36ce4fce3cce2d67fae  agent-computer/src/index.ts
+cc2aabc77fc6ac77fba3ca0d1cd912eb59a0c670fe7820ebbf257e3dfb781815  agent-computer/src/authorisation.ts
+c6204774bf79e5cbc336a345c2d55a3234c0558b0ee62a282aa1fe3ae5e6310d  agent-computer/tests/sign-in.test.ts
+5b00e89931d434dbbc8bb2e8c2381fc4a5a25535a65f4547a3b7a52cf9d8d8fc  server/src/computer/schema.ts
+dbd62f1f74d1a4355fba6161fa12dae85c71ea52325a963132be9c942ded2c72  server/src/computer/gateway.ts
+5a5aca304c0b4d4fb6e8e39e4da11a88e85abbbcef3bdede429623bd8cfdda31  server/tests/computer-sign-in-code.test.ts
+1d2683b6824c4d80d87d22e3602633a7337034ef420457aae18cfd32e322e133  server/tests/passwords-sign-in.test.ts
+5a5aca304c0b4d4fb6e8e39e4da11a88e85abbbcef3bdede429623bd8cfdda31  docs/plans/2026-10-20-upstream-openbot-refactor/evidence/l01/computer-sign-in-code.test.ts.txt
+59c399b111c1513cd38a0613452a4fe44f392dc7493af3da41cd6d2893b7d050  docs/plans/2026-10-20-upstream-openbot-refactor/evidence/l01/after-tracked.diff

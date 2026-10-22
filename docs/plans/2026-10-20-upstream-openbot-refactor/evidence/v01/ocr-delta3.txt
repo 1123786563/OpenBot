@@ -1,0 +1,52 @@
+Review complete: 2 finding(s) across 1 selected item(s).
+
+─── app/src/components/channels/connect-app-card.tsx:99-105 ───
+[bug · medium] 新注释宣称的不变量（"每个结局先整体清空所有标志，再设置该路径自己的那一个"）并没有覆盖全部终点路径，helper 收敛得不完整：
+
+1. 等待超时的回调（第 148–151 行）仍是手写 `setWaiting(false); setTimedOut(true);`，不清 `blockedUrl`。可达场景：标签页被拦截 →
+`waiting=true` 且 `blockedUrl=url` → 5 分钟到点 →
+卡片同时渲染超时消息和被拦截链接，正是注释中要避免的"一张卡片同时回答两个问题"；且此时轮询已停（`refetchInterval` 随 waiting
+关闭），点击这条残留链接完成的连接也不会被卡片察觉。
+
+2. "connected" 终点（第 138–141 行）同样绕过 helper，只清 waiting/timedOut（连接存在时渲染分支互斥、无视觉冲突，仅是标志残留，程度较轻）。
+
+建议：把超时回调改走 `resetOutcome()`；connected 效果视取舍处理（清空 needsKey 后若连接被撤销会回落到普通按钮而非 key
+表单入口，需确认是否合意），若有意保留现状，则应收窄注释的措辞以免文档与行为不符。
+
+-   const resetOutcome = () => {
+-     setWaiting(false);
+-     setNeedsKey(false);
+-     setBadUrl(false);
+-     setTimedOut(false);
+-     setBlockedUrl(null);
+-   };
++ // 超时回调（第 148–151 行）同步收敛：
++     const deadline = setTimeout(() => {
++       resetOutcome();
++       setTimedOut(true);
++     }, WAIT_LIMIT_MS);
+
+
+─── app/src/components/channels/connect-app-card.tsx:99-105 ───
+[bug · low] helper 收敛不完整的第二处（与已确认的超时回调问题同类但位置不同）：第 139–140 行"行出现即成功"的 effect 仍是手写
+`setWaiting(false); setTimedOut(false);`，未采用 resetOutcome，也不清
+blockedUrl/needsKey/badUrl，与新增注释宣称的"每个结局先整体清空、再设自己的那一个"不变量相悖。可达场景：标签页被拦截 → blockedUrl=url 且 waiting
+→ 用户点链接完成授权 → 行出现进入 connected 分支（残留标志暂不可见）→ 之后连接被撤销/行消失，connected 翻回 false
+时卡片回落到按钮分支，过期的"浏览器拒绝打开标签页"链接（或过期 needsKey 提示）重新渲染，正是注释要避免的陈旧结局。建议该 effect 一并改用 resetOutcome()。
+
+-   const resetOutcome = () => {
+-     setWaiting(false);
+-     setNeedsKey(false);
+-     setBadUrl(false);
+-     setTimedOut(false);
+-     setBlockedUrl(null);
+-   };
++   useEffect(() => {
++     if (connected && !was.current && attempted.current) {
++       // 连接成功也是一次结局：与其余终点一样整体清空，避免撤销后退回按钮分支时残留旧结局。
++       resetOutcome();
++       void queryClient.invalidateQueries({ queryKey: pluginKeys.all });
++     }
++     was.current = connected;
++   }, [connected]);
+

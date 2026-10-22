@@ -1,0 +1,67 @@
+
+ RUN  e2e v0.20.0 /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update
+      run 01a15938-8685-733e-acd7-c9713dc57c2e · targets: node
+
+stdout | runner
+{"level":30,"time":1792498245303,"service":"server","type":"openmuse-mail-placeholder-action-ids","ids":["gmail.list","gmail.search","gmail.thread","gmail.attachment.get","gmail.attachment.bytes"],"msg":"openmuse-mail-placeholder-action-ids"}
+{"level":40,"time":1792498245320,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792498245544,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792498245561,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792498245574,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792498245582,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792498248383,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792498248398,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":30,"time":1792498248777,"service":"server","type":"openmuse-calendar-placeholder-action-id","id":"gcalendar.list","msg":"openmuse-calendar-placeholder-action-id"}
+{"level":30,"time":1792498249129,"service":"server","type":"openmuse-reviewed-action-placeholder-ids","ids":{"gmail.send":"gmail.send","gcalendar.create":"gcalendar.create","gcalendar.update":"gcalendar.update","gcalendar.delete":"gcalendar.delete","gcalendar.get":"gcalendar.get"},"msg":"openmuse-reviewed-action-placeholder-ids"}
+{"level":40,"time":1792498250126,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+ℹ skipped agent-computer/tests/web-bot-auth-browser.test.ts, which no positional selected and which failed to collect: Cannot find package 'web-bot-auth' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/agent-computer/tests/web-bot-auth-browser.test.ts; web-bot-auth is declared in /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/agent-computer/package.json but is not installed: run bun install
+ℹ skipped agent-computer/tests/web-bot-auth.test.ts, which no positional selected and which failed to collect: Cannot find package 'web-bot-auth' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/agent-computer/tests/web-bot-auth.test.ts; web-bot-auth is declared in /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/agent-computer/package.json but is not installed: run bun install
+ℹ skipped agent-langgraph/tests/history.test.ts, which no positional selected and which failed to collect: Cannot find package '@langchain/anthropic' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/agent-langgraph/tests/history.test.ts; @langchain/anthropic is declared in /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/agent-langgraph/package.json but is not installed: run bun install
+ℹ skipped desktop/src/OrgSwitchCleanup.test.tsx, which no positional selected and which failed to collect: Cannot find package '@happy-dom/global-registrator' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/desktop/src/OrgSwitchCleanup.test.tsx; @happy-dom/global-registrator is declared in /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/desktop/package.json but is not installed: run bun install
+ℹ skipped server/tests/access-grant-key-status.integration.test.ts, which no positional selected and which failed to collect: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/server/src/db/client.ts; add it to the project: bun add -d bun
+ℹ skipped server/tests/company-payer-e2e.integration.test.ts, which no positional selected and which failed to collect: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/server/src/db/client.ts; add it to the project: bun add -d bun
+ℹ skipped server/tests/multitenancy/assembly-enterprise.test.ts, which no positional selected and which failed to collect: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/server/scripts/multitenancy/inventory.ts; add it to the project: bun add -d bun
+ℹ skipped server/tests/multitenancy/attachments.test.ts, which no positional selected and which failed to collect: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/server/src/db/client.ts; add it to the project: bun add -d bun
+ℹ skipped server/tests/multitenancy/audit-domains.test.ts, which no positional selected and which failed to collect: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/server/src/db/client.ts; add it to the project: bun add -d bun
+ℹ skipped server/tests/multitenancy/bot-lifecycle.test.ts, which no positional selected and which failed to collect: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/server/src/db/client.ts; add it to the project: bun add -d bun
+ℹ skipped server/tests/multitenancy/group-membership.test.ts, which no positional selected and which failed to collect: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/server/src/db/client.ts; add it to the project: bun add -d bun
+ℹ skipped server/tests/multitenancy/marketplace-install.test.ts, which no positional selected and which failed to collect: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/server/src/db/client.ts; add it to the project: bun add -d bun
+ℹ skipped server/tests/multitenancy/skills-components.test.ts, which no positional selected and which failed to collect: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/server/src/db/client.ts; add it to the project: bun add -d bun
+ℹ skipped server/tests/multitenancy/streams.test.ts, which no positional selected and which failed to collect: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/server/src/db/client.ts; add it to the project: bun add -d bun
+ℹ skipped server/tests/multitenancy/tool-invocation.test.ts, which no positional selected and which failed to collect: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/.worktrees/upstream-openbot-update/server/src/db/client.ts; add it to the project: bun add -d bun
+stderr | |node| tests/bun-suites.test.ts > bun runtime suite app/tests part 1
+[bun-suites] app/tests part 1: 4 file(s) failed only when sharing a process: app/tests/account-mode-dialog.test.tsx, app/tests/approvals-rules.test.tsx, app/tests/bot-approval-rules.test.tsx, app/tests/bot-memory.test.tsx
+stderr | |node| tests/bun-suites.test.ts > bun runtime suite app/tests/ai-observability
+[bun-suites] app/tests/ai-observability: 1 file(s) failed only when sharing a process: app/tests/ai-observability-admin-summary.test.tsx
+ ❯ |node| tests/bun-suites.test.ts (6 tests | 1 failed) 126.33s
+   ✓ bun runtime suite app/tests part 1 11.29s
+   ✓ bun runtime suite app/tests part 2 14.45s
+   ✓ bun runtime suite app/tests part 3 1.96s
+   ✓ bun runtime suite app/tests part 4 34.33s
+   × bun runtime suite app/tests/ai-observability 63.53s
+     → app/tests/ai-observability: 1 of 2 failing file(s) are still red run alo…
+   ✓ bun runtime suite app/tests/multitenancy 763ms
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |node| tests/bun-suites.test.ts > bun runtime suite app/tests/ai-observability
+ASSERTION_FAILED: app/tests/ai-observability: 1 of 2 failing file(s) are still red run alone
+app/tests/ai-observability-route-chain.test.tsx: 5 of 5 — a directly typed detail URL renders the detail page, not the list: AssertionError: expect(received).toContain(expected)&#10;&#10;Expected to contain: &quot;Run detail&quot;&#10;Received: &quot;Something went wrong!Hide Errorundefined is not an object (evaluating &apos;queryClient.ensureQueryData&apos;)&quot;&#10;&#10;&#10;Ignored nodes: comments, script, style&#10; | the parent&apos;s own URL still renders the list: AssertionError: expect(received).toContain(expected)&#10;&#10;Expected to contain: &quot;Run history&quot;&#10;Received: &quot;Something went wrong!Hide Errorundefined is not an object (evaluating &apos;queryClient.ensureQueryData&apos;)&quot;&#10;&#10;&#10;Ignored nodes: comments, script, style&#10 | navigating from the list to a detail swaps the list for the detail: AssertionError: expect(received).toContain(expected)&#10;&#10;Expected to contain: &quot;Run history&quot;&#10;Received: &quot;Something went wrong!Hide Errorundefined is not an object (evaluating &apos;queryClient.ensureQueryData&apos;)&quot;&#10;&#10;&#10;Ignored nodes: comments, script, style&#10: expected 1 to be 0
+ ❯ tests/support/e2e-compat.ts:132:16
+    130|     ? e2eExpect(actual, message).not
+    131|     : e2eExpect(actual, message);
+    132|   base[matcher](...args);
+       |                ^
+    133| }
+    134|
+ ❯ trace .e2e/u04-driven/results/bun-suites-test-bun-runtime-suite-app-tests-ai-feede8db50f80723/trace.md
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 0 passed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  20:10:50
+   Duration  126.91s (2m 7s)
+     Traces  .e2e/u04-driven/results/ (1 page, trace.md in each test's directory)
+

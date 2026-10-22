@@ -1,0 +1,517 @@
+diff --git a/server/src/config.ts b/server/src/config.ts
+index a25e4133..aa61e704 100644
+--- a/server/src/config.ts
++++ b/server/src/config.ts
+@@ -691,7 +691,10 @@ function singleUserAllowed(
+  * A routable public address is the different thing, and it is the one that refuses.
+  *
+  * UNPARSEABLE COUNTS AS PUBLIC, and so does an unrecognised name. A value nobody could read is not
+- * a value anybody checked, and the safe reading of "I cannot tell" is never "it is fine".
++ * a value anybody checked, and the safe reading of "I cannot tell" is never "it is fine". That
++ * includes a URL that parses but names no host at all — `localhost:3010` typed without its scheme
++ * parses as scheme `localhost:` with an empty hostname — since an empty hostname is no more a LAN
++ * name than an unparseable one, and so is read as public rather than private.
+  */
+ type Reach = "loopback" | "private" | "public";
+ 
+@@ -703,6 +706,7 @@ function reachOf(raw: string): Reach {
+     return "public";
+   }
+   bare = bare.replace(/^\[|\]$/g, "").replace(/\.+$/, "");
++  if (!bare) return "public";
+ 
+   if (
+     bare === "localhost" ||
+diff --git a/server/src/responsibilities/email.ts b/server/src/responsibilities/email.ts
+index 74e03275..45592f7f 100644
+--- a/server/src/responsibilities/email.ts
++++ b/server/src/responsibilities/email.ts
+@@ -159,21 +159,78 @@ function unfoldHeaders(block: string) {
+   }
+   return headers;
+ }
+-function decodeBody(body: string, encoding: string | undefined) {
++/**
++ * The text a part's transfer-encoded bytes spell, in the charset its Content-Type names.
++ *
++ * Base64 and quoted-printable carry bytes, not text: a `charset=iso-8859-1` part saying "caf=E9" is
++ * "café", and reading those bytes as UTF-8 turned every accented letter into U+FFFD. A charset the
++ * runtime does not know falls back to UTF-8, as before.
++ */
++function decodeBytes(bytes: Buffer, charset: string | undefined) {
++  if (charset) {
++    try {
++      return new TextDecoder(charset).decode(bytes);
++    } catch {
++      // unknown label: read as UTF-8
++    }
++  }
++  return bytes.toString("utf8");
++}
++function decodeBody(
++  body: string,
++  encoding: string | undefined,
++  charset: string | undefined,
++) {
+   const kind = encoding?.toLowerCase();
+   if (kind === "base64")
+-    return Buffer.from(body.replace(/\s+/g, ""), "base64").toString("utf8");
++    return decodeBytes(
++      Buffer.from(body.replace(/\s+/g, ""), "base64"),
++      charset,
++    );
+   if (kind === "quoted-printable")
+-    return Buffer.from(
+-      body
+-        .replace(/=\r?\n/g, "")
+-        .replace(/=([0-9A-F]{2})/gi, (_, hex: string) =>
+-          String.fromCharCode(Number.parseInt(hex, 16)),
+-        ),
+-      "latin1",
+-    ).toString("utf8");
++    return decodeBytes(
++      Buffer.from(
++        body
++          .replace(/=\r?\n/g, "")
++          .replace(/=([0-9A-F]{2})/gi, (_, hex: string) =>
++            String.fromCharCode(Number.parseInt(hex, 16)),
++          ),
++        "latin1",
++      ),
++      charset,
++    );
+   return body;
+ }
++/**
++ * An HTML-only mail writes `AT&amp;T` and `we&#8217;re`, and the Bot should read what the sender
++ * wrote. Numeric references, the five XML names and `&nbsp;` are decoded in one pass after the tags
++ * are stripped, so `&amp;lt;` reads as `&lt;` rather than as a tag, and any other name is left as
++ * written.
++ */
++const CHARACTER_REFERENCE =
++  /&(?:#(\d{1,7})|#x([0-9a-f]{1,6})|(amp|lt|gt|quot|apos|nbsp));/gi;
++const NAMED_CHARACTERS: Record<string, string> = {
++  amp: "&",
++  lt: "<",
++  gt: ">",
++  quot: '"',
++  apos: "'",
++  nbsp: " ",
++};
++function decodeCharacterReference(
++  reference: string,
++  decimal: string | undefined,
++  hex: string | undefined,
++  name: string | undefined,
++) {
++  if (name) return NAMED_CHARACTERS[name.toLowerCase()] ?? reference;
++  const code = decimal
++    ? Number.parseInt(decimal, 10)
++    : Number.parseInt(hex ?? "", 16);
++  return code > 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff)
++    ? String.fromCodePoint(code)
++    : reference;
++}
+ /** Minimal MIME walk: the first text/plain part, else text/html with tags stripped. */
+ export function extractEmailText(raw: string, depth = 0): string {
+   const split = /\r?\n\r?\n/.exec(raw);
+@@ -201,11 +258,16 @@ export function extractEmailText(raw: string, depth = 0): string {
+       plain ?? texts.find((part) => /^text\/html/i.test(part.type));
+     return chosen ? extractEmailText(chosen.part, depth + 1) : "";
+   }
+-  const decoded = decodeBody(body, headers.get("content-transfer-encoding"));
++  const decoded = decodeBody(
++    body,
++    headers.get("content-transfer-encoding"),
++    /charset="?([^";\s]+)"?/i.exec(type)?.[1],
++  );
+   return /^text\/html/i.test(type)
+     ? decoded
+         .replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, "")
+         .replace(/<[^>]+>/g, " ")
++        .replace(CHARACTER_REFERENCE, decodeCharacterReference)
+         .replace(/\s+/g, " ")
+         .trim()
+     : decoded.trim();
+diff --git a/server/src/routines/schedule.ts b/server/src/routines/schedule.ts
+index 7fae13c7..dfa11735 100644
+--- a/server/src/routines/schedule.ts
++++ b/server/src/routines/schedule.ts
+@@ -298,7 +298,9 @@ export function describeCron(cron: string): string {
+         .split(",")
+         .map((part) => parsePlainInt(part, 0, 59));
+       if (minutes.every((value): value is number => value !== null)) {
+-        const times = [...minutes]
++        // De-duplicated like `weekdays`: cron fires once for `0,0`, so it must not read as
++        // "09:00 and 09:00".
++        const times = [...new Set(minutes)]
+           .sort((a, b) => a - b)
+           .map((value) => `${pad2(hour)}:${pad2(value)}`);
+         return `Every day at ${joinWords(times)}`;
+diff --git a/server/src/telemetry/scrub.ts b/server/src/telemetry/scrub.ts
+index 23d9f8d1..db34003f 100644
+--- a/server/src/telemetry/scrub.ts
++++ b/server/src/telemetry/scrub.ts
+@@ -42,6 +42,44 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
+     /(x-api-key\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s'"]+)/gi,
+     (_m, lead) => `${lead}${REDACTED}`,
+   ],
++  /*
++   * Credentials passed positionally: the value is the word after the flag, so nothing in the command
++   * names it and the rules below cannot see it. Tool-anchored, and checked before them because a
++   * generic rule can mistake an attached short-form password for a flag name — `redis-cli -asecret`
++   * reads as a flag called `-asecret`, and the rule for a flag named after a secret then redacts the
++   * word after it instead of the password.
++   *
++   * Each of these refuses a value that begins with `-`, so a flag left bare, which asks for the
++   * password interactively, does not swallow the flag that follows it. And each ends where its
++   * command does: at a line break, which starts another command whose `-p` is a port again, though
++   * not at a line continued with a backslash, which is the same command.
++   */
++  // `-psecret` for mysql and friends. Nothing separates them: a space means the password is asked for
++  // at the prompt and the word after `-p` is the database, so only the attached form is redacted.
++  // Case-sensitive on purpose, unlike the upstream source: an uppercase `-P` is how mysql attaches a
++  // port (`mysql -h db -P3306`), and upstream's `i` reads it as a password — redacting the port while
++  // a real `-phunter2` later in the same command line survives.
++  [
++    /(\bmysql(?:dump)?\b(?:[^|;&\\\r\n]|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p)("[^"]*"|'[^']*'|[^\s'"-]\S*)/g,
++    (_m, lead) => `${lead}${REDACTED}`,
++  ],
++  // `docker login -p secret`, where `-p` is the password rather than a port.
++  [
++    /(\bdocker(?:[ \t]|\\\r?\n)+login\b(?:[^|;&\\\r\n]|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p[ \t]*)("[^"]*"|'[^']*'|[^\s'"-]\S*)/gi,
++    (_m, lead) => `${lead}${REDACTED}`,
++  ],
++  // `sshpass -p secret ssh user@host`, where `-p` is the password handed to ssh. Only sshpass's own
++  // options are read, `-f file`, `-d fd` and `-P prompt` with the word after them, so the command it
++  // wraps keeps its `-p` and `-P`, which are ports. Case matters here: `-P` is sshpass's prompt.
++  [
++    /(\bsshpass(?:(?:[ \t]|\\\r?\n)+(?:-[fdP][ \t]*(?:"[^"]*"|'[^']*'|[^\s'"-]\S*)|-[^\sp]\S*))*?(?:[ \t]|\\\r?\n)+-p[ \t]*)("[^"]*"|'[^']*'|[^\s'"-]\S*)/g,
++    (_m, lead) => `${lead}${REDACTED}`,
++  ],
++  // `redis-cli -a secret`, `-asecret` and `--pass secret`, the same shape under redis-cli's names.
++  [
++    /(\bredis-cli\b(?:[^|;&\\\r\n]|\\[\s\S])*?(?:[ \t]|\\\r?\n)(?:-a[ \t]*|--pass(?:=|[ \t]+)))("[^"]*"|'[^']*'|[^\s'"-]\S*)/gi,
++    (_m, lead) => `${lead}${REDACTED}`,
++  ],
+   // A quoted key in a JSON body: `-d '{"password":"x"}'`, or `-d "{\\"password\\":\\"x\\"}"` once the
+   // shell quoting around it has escaped the inner quotes. The rule below stops at the closing quote
+   // of the key, so it never saw these.
+@@ -68,23 +106,21 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
+     ),
+     (_m, lead) => `${lead}${REDACTED}`,
+   ],
+-  // `-psecret` for mysql and friends, `-p secret` too.
+-  [
+-    /(\bmysql(?:dump)?\b[^|;&]*?\s-p)(\S+)/gi,
+-    (_m, lead) => `${lead}${REDACTED}`,
+-  ],
+   // `curl -u user:password`, and the other ways curl takes it: `-uuser:password`,
+-  // `--user=user:password`, and either of them with the pair in quotes.
++  // `--user=user:password`, `--proxy-user user:password`, and any of them with the pair in quotes.
++  // curl's short form for the proxy is `-U`, which is deliberately not here: `-U` is a user agent to
++  // wget and an unrelated flag to ssh, and a pair like `wget -U Mozilla:5` is not a credential.
+   [
+-    /(\s(?:-u\s*|--user(?:=|\s+)))(?:"([^":]*):[^"]*"|'([^':]*):[^']*'|([^\s:"']+):\S+)/g,
++    /(\s(?:-u\s*|--user(?:=|\s+)|--proxy-user(?:=|\s+)))(?:"([^":]*):[^"]*"|'([^':]*):[^']*'|([^\s:"']+):\S+)/g,
+     (_m, lead, doubleQuoted, singleQuoted, bare) => {
+       const user = doubleQuoted ?? singleQuoted ?? bare;
+       return `${lead}${user}:${REDACTED}`;
+     },
+   ],
+-  // Userinfo in any URL: `https://user:pass@host`.
++  // Userinfo in any URL: `https://user:pass@host`. The user is optional, because
++  // `redis://:pass@host` is how a password-only scheme is written.
+   [
+-    /([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+):([^\s/@]+)@/gi,
++    /([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]*):([^\s/@]+)@/gi,
+     (_m, scheme, user) => `${scheme}${user}:${REDACTED}@`,
+   ],
+ ];
+diff --git a/server/tests/config.test.ts b/server/tests/config.test.ts
+index 4cd701cc..df159c11 100644
+--- a/server/tests/config.test.ts
++++ b/server/tests/config.test.ts
+@@ -583,6 +583,25 @@ describe("deployment configuration", () => {
+       { TRUSTED_ORIGINS: "http://localhost:3010,https://openbot.example.com" },
+     ],
+     ["an address that is not a URL at all", { OPENBOT_PUBLIC_URL: "openbot" }],
++    /*
++     * Scheme forms that parse as URLs but name no host. `example.com:3010` and
++     * `localhost:3010` are how a missed `https://` lands in a .env, and a bare `myapp://`
++     * is a scheme with nothing behind it. Their hostname is empty, and an empty hostname
++     * names no machine, so none of these is a LAN label that could be read as private.
++     */
++    [
++      "a public URL typed without its scheme",
++      { OPENBOT_PUBLIC_URL: "example.com:3010" },
++    ],
++    [
++      "an app URL typed without its scheme",
++      { OPENBOT_APP_URL: "localhost:3010" },
++    ],
++    ["a trusted origin that is only a scheme", { TRUSTED_ORIGINS: "myapp://" }],
++    [
++      "a URL whose hostname normalises away",
++      { OPENBOT_PUBLIC_URL: "http://." },
++    ],
+   ])("refuses no sign-in combined with %s", (_label, published) => {
+     expect(() =>
+       loadConfig({ ...withoutSignIn, ...OPEN, ...published }),
+@@ -602,6 +621,14 @@ describe("deployment configuration", () => {
+     ["a unique-local IPv6 address", { OPENBOT_PUBLIC_URL: "http://[fd00::1]" }],
+     ["an mDNS name", { TRUSTED_ORIGINS: "http://openbot.local:3010" }],
+     ["a single-label LAN name", { TRUSTED_ORIGINS: "http://nas:3010" }],
++    /*
++     * A mobile scheme origin with a host is real config for the auth layer, and the host it
++     * names is a single label — the reading the empty-host forms above must not inherit.
++     */
++    [
++      "a mobile scheme origin with a host",
++      { TRUSTED_ORIGINS: "myapp://handset:3010" },
++    ],
+   ])("still runs with no sign-in on %s", (_label, reachable) => {
+     expect(() =>
+       loadConfig({ ...withoutSignIn, ...OPEN, ...reachable }),
+diff --git a/server/tests/enterprise-controls.test.ts b/server/tests/enterprise-controls.test.ts
+index 0ec640bd..1e10a823 100644
+--- a/server/tests/enterprise-controls.test.ts
++++ b/server/tests/enterprise-controls.test.ts
+@@ -396,10 +396,87 @@ describe("scrubbing commands", () => {
+       'curl -u "admin:s3 cret" https://x.test',
+       "curl -u admin:[REDACTED] https://x.test",
+     ],
++    [
++      "curl --proxy-user admin:glorbwibble https://x.test",
++      "curl --proxy-user admin:[REDACTED] https://x.test",
++    ],
++    [
++      "curl --proxy-user=admin:glorbwibble https://x.test",
++      "curl --proxy-user=admin:[REDACTED] https://x.test",
++    ],
++    // Positional password flags: the word after the flag is the secret, so it takes the tool that
++    // owns the flag to say so. The fixture secrets are made-up words that match no token shape.
++    [
++      "docker login -p glorbwibble registry.example.test",
++      "docker login -p [REDACTED] registry.example.test",
++    ],
++    [
++      'docker login -p "glorb wibble" registry.example.test',
++      "docker login -p [REDACTED] registry.example.test",
++    ],
++    [
++      "sshpass -p glorbwibble ssh deploy@host.example.test",
++      "sshpass -p [REDACTED] ssh deploy@host.example.test",
++    ],
++    [
++      "sshpass -p 'glorb wibble' ssh deploy@host.example.test",
++      "sshpass -p [REDACTED] ssh deploy@host.example.test",
++    ],
++    [
++      "sshpass -P authprompt -p glorbwibble ssh deploy@host.example.test",
++      "sshpass -P authprompt -p [REDACTED] ssh deploy@host.example.test",
++    ],
++    ["redis-cli -a glorbwibble ping", "redis-cli -a [REDACTED] ping"],
++    ["redis-cli -aglorbwibble ping", "redis-cli -a[REDACTED] ping"],
++    ["redis-cli --pass glorbwibble ping", "redis-cli --pass [REDACTED] ping"],
++    ["redis-cli --pass=glorbwibble ping", "redis-cli --pass=[REDACTED] ping"],
++    // An attached short form that reads as a flag named after a secret: the password itself goes,
++    // and the word after it stays.
++    ["redis-cli -aMY_TOKEN_VALUE ping", "redis-cli -a[REDACTED] ping"],
++    ["mysqldump -pglorbwibble appdb", "mysqldump -p[REDACTED] appdb"],
++    // An uppercase -P is the attached port, not the password: only the lowercase flag reads as one.
++    ["mysql -h db -P3306 -phunter2 app", "mysql -h db -P3306 -p[REDACTED] app"],
++    [
++      "open redis://:glorbwibble@cache:6379/0",
++      "open redis://:[REDACTED]@cache:6379/0",
++    ],
++    // What a flag's own grammar leaves alone: a separated `-p` means the password is prompted for
++    // and the word after it is a database; `-U` is not curl's credential flag; a bare `-p` does not
++    // swallow the flag that follows it.
++    ["mysql -p database", "mysql -p database"],
++    ["mysql -uroot -p --verbose", "mysql -uroot -p --verbose"],
++    ["docker -p 8080:80 nginx", "docker -p 8080:80 nginx"],
++    ["docker login -p -u deploy", "docker login -p -u deploy"],
++    [
++      "docker login --password-stdin < creds.txt",
++      "docker login --password-stdin < creds.txt",
++    ],
++    [
++      "sshpass ssh -p 2222 deploy@host.example.test",
++      "sshpass ssh -p 2222 deploy@host.example.test",
++    ],
++    [
++      "sshpass -P authprompt ssh deploy@host.example.test",
++      "sshpass -P authprompt ssh deploy@host.example.test",
++    ],
++    [
++      "wget -U Mozilla:5 https://example.test",
++      "wget -U Mozilla:5 https://example.test",
++    ],
+   ];
+   for (const [input, output] of cases) {
+     test(input, () => expect(scrubCommand(input)).toBe(output));
+   }
++  test("a command continued with a backslash is still one command to its password flag", () => {
++    expect(scrubCommand("mysql -uroot \\\n  -pglorbwibble appdb")).toBe(
++      "mysql -uroot \\\n  -p[REDACTED] appdb",
++    );
++  });
++  test("a line break starts another command, so its -p is a port again", () => {
++    expect(
++      scrubCommand("mysql -uroot appdb\nssh -p2222 deploy@host.example.test"),
++    ).toBe("mysql -uroot appdb\nssh -p2222 deploy@host.example.test");
++  });
+   test("an ordinary command is untouched", () => {
+     expect(scrubCommand("ls -la /workspace && git status")).toBe(
+       "ls -la /workspace && git status",
+diff --git a/server/tests/otel-export-scrubbing.test.ts b/server/tests/otel-export-scrubbing.test.ts
+index d8ac54bc..b0edb605 100644
+--- a/server/tests/otel-export-scrubbing.test.ts
++++ b/server/tests/otel-export-scrubbing.test.ts
+@@ -8,6 +8,7 @@ import { createOtelEventExporter } from "../src/telemetry/otel";
+  */
+ test("a command exported to the collector is scrubbed of the secrets in it", async () => {
+   const secret = "fixture-value-7f3a91c0d2";
++  const loginSecret = "fixture-glorb-4e6b2a91d5c3";
+   const received: string[] = [];
+   const collector = Bun.serve({
+     hostname: "127.0.0.1",
+@@ -32,6 +33,9 @@ test("a command exported to the collector is scrubbed of the secrets in it", asy
+         bot: "bot-1",
+         action: "computer_run_command",
+         command: `curl -H "Authorization: Bearer ${secret}" https://api.example.test`,
++        login: {
++          command: `docker login -p ${loginSecret} registry.example.test`,
++        },
+         nested: { command: `export API_TOKEN=${secret}` },
+       },
+     });
+@@ -40,7 +44,9 @@ test("a command exported to the collector is scrubbed of the secrets in it", asy
+     collector.stop(true);
+   }
+   const wire = received.join("");
++  expect(wire).toContain("computer.action_allowed");
+   expect(wire).toContain("computer_run_command");
+   expect(wire).toContain("[REDACTED]");
+   expect(wire).not.toContain(secret);
++  expect(wire).not.toContain(loginSecret);
+ });
+diff --git a/server/tests/responsibility-triggers.test.ts b/server/tests/responsibility-triggers.test.ts
+index 58cd58af..044c7769 100644
+--- a/server/tests/responsibility-triggers.test.ts
++++ b/server/tests/responsibility-triggers.test.ts
+@@ -696,6 +696,94 @@ describe("inbound email via SES -> SNS", () => {
+   test("MIME text extraction prefers text/plain and decodes quoted-printable", () => {
+     expect(extractEmailText(mime)).toBe("The disk on db-1 is at 99%.");
+   });
++  // Each part transfer-decodes to bytes, then reads those bytes in the charset its own
++  // Content-Type names. All senders and boundaries below are fictional.
++  const perPartMime = [
++    "From: Ops <ops@example.com>",
++    "Subject: Disk full",
++    'Content-Type: multipart/alternative; boundary="b2"',
++    "",
++    "--b2",
++    "Content-Type: text/plain; charset=iso-8859-1",
++    "Content-Transfer-Encoding: quoted-printable",
++    "",
++    "The disk on db-1 is at caf=E9 level.",
++    "--b2",
++    "Content-Type: text/html; charset=utf-8",
++    "Content-Transfer-Encoding: base64",
++    "",
++    "PGI+ZGlzazwvYj4=",
++    "--b2--",
++  ].join("\r\n");
++  const latin1HtmlMime = [
++    "From: Ops <ops@example.com>",
++    "Subject: Disk full",
++    'Content-Type: multipart/alternative; boundary="b3"',
++    "",
++    "--b3",
++    "Content-Type: text/html; charset=iso-8859-1",
++    "Content-Transfer-Encoding: base64",
++    "",
++    "PHA+Y2Fm6TwvcD48cD54JnNvbDt5PC9wPg==",
++    "--b3--",
++  ].join("\r\n");
++  test("each part decodes with its own charset after transfer decoding", () => {
++    expect(extractEmailText(perPartMime)).toBe(
++      "The disk on db-1 is at café level.",
++    );
++  });
++  test("a base64 part decodes in its declared charset, not always UTF-8", () => {
++    expect(extractEmailText(latin1HtmlMime)).toBe("café x&sol;y");
++  });
++  test("a charset the runtime does not know falls back to UTF-8", () => {
++    const unknown = [
++      "From: Ops <ops@example.com>",
++      "Subject: Disk full",
++      "Content-Type: text/plain; charset=x-unknown-8bit",
++      "Content-Transfer-Encoding: base64",
++      "",
++      "Y2Fmw6k=",
++    ].join("\r\n");
++    expect(extractEmailText(unknown)).toBe("café");
++  });
++  test("HTML-only bodies decode character references exactly once", () => {
++    const html = [
++      "From: Ops <ops@example.com>",
++      "Subject: Renewal",
++      "Content-Type: text/html; charset=utf-8",
++      "",
++      "<p>AT&amp;T</p><p>we&#8217;re</p><p>&#x27;q&#x27;</p><p>A&nbsp;B</p><p>&amp;lt;tag&amp;gt;</p><p>&#0; &#55296;</p>",
++    ].join("\r\n");
++    expect(extractEmailText(html)).toBe(
++      "AT&T we’re 'q' A B &lt;tag&gt; &#0; &#55296;",
++    );
++  });
++  test("plain text bodies keep character references as written", () => {
++    const plain = [
++      "From: Ops <ops@example.com>",
++      "Subject: Escalation",
++      "Content-Type: text/plain; charset=utf-8",
++      "",
++      "Contact AT&amp;T about &lt;tag&gt; and &amp;lt;b&amp;gt;.",
++    ].join("\r\n");
++    expect(extractEmailText(plain)).toBe(
++      "Contact AT&amp;T about &lt;tag&gt; and &amp;lt;b&amp;gt;.",
++    );
++  });
++  test("a signed SES notification decodes each part in its own charset", async () => {
++    const { events, post } = harness();
++    const message = JSON.parse(notification("PASS")) as Record<string, unknown>;
++    const response = await post(
++      signed({
++        ...base,
++        Message: JSON.stringify({ ...message, content: perPartMime }),
++      }),
++    );
++    expect(response.status).toBe(200);
++    expect(events[0]?.payload).toMatchObject({
++      text: "The disk on db-1 is at café level.",
++    });
++  });
+   test("signing certificate URLs must be HTTPS on an sns.<region>.amazonaws.com host", () => {
+     expect(isSnsUrl(CERT_URL, true)).toBe(true);
+     expect(
+diff --git a/server/tests/routine-schedule.test.ts b/server/tests/routine-schedule.test.ts
+index 0468a72e..45f5f9ac 100644
+--- a/server/tests/routine-schedule.test.ts
++++ b/server/tests/routine-schedule.test.ts
+@@ -182,6 +182,14 @@ describe("describeCron", () => {
+     expect(describeCron("0,30 9 * * *")).toBe("Every day at 09:00 and 09:30");
+   });
+ 
++  // Cron fires once for a repeated minute — `0,0` is one firing, not two — so the prose must say
++  // it once. A duplicate in the list is dropped before the times are joined, the way `weekdays`
++  // says Sunday once when it arrives as both 0 and 7.
++  test("a repeated minute is described once", () => {
++    expect(describeCron("0,30,0 9 * * *")).toBe("Every day at 09:00 and 09:30");
++    expect(describeCron("0,0 9 * * *")).toBe("Every day at 09:00");
++  });
++
+   test("falls through to the raw expression when it is stranger than words", () => {
+     expect(describeCron("*/7 3,4 * * *")).toBe("*/7 3,4 * * *");
+   });
