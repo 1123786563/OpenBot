@@ -56,6 +56,7 @@
     "app/tests/agent-roster-error.test.tsx",
     "app/tests/approval-tools.test.tsx",
     "app/tests/approvals-rules.test.tsx",
+    "app/tests/async-jobs-ui.test.tsx",
     "app/tests/audit-dry-run-label.test.tsx",
     "app/tests/audit-export-truncated.test.tsx",
     "app/tests/authoring-tool-cards.test.tsx",
@@ -70,13 +71,13 @@
     "app/tests/bot-profile-notice.test.tsx",
     "app/tests/bot-reaching-you.test.tsx",
     "app/tests/bot-responsibilities.test.tsx",
-    "app/tests/bot-roster.test.tsx",
-    "app/tests/bot-route-default-agent.test.tsx"
+    "app/tests/bot-roster.test.tsx"
    ]
   },
   {
    "name": "app/tests part 2",
    "files": [
+    "app/tests/bot-route-default-agent.test.tsx",
     "app/tests/bot-settings-rows.test.tsx",
     "app/tests/bot-setup.test.tsx",
     "app/tests/bot-sharing.test.tsx",
@@ -99,13 +100,13 @@
     "app/tests/composer-insecure-context.test.tsx",
     "app/tests/composer-paste.test.tsx",
     "app/tests/composer-queue-attachments.test.tsx",
-    "app/tests/composer-send-failure.test.tsx",
-    "app/tests/composer-unnamed-mime.test.tsx"
+    "app/tests/composer-send-failure.test.tsx"
    ]
   },
   {
    "name": "app/tests part 3",
    "files": [
+    "app/tests/composer-unnamed-mime.test.tsx",
     "app/tests/composer-upload-group.test.tsx",
     "app/tests/composing-enter.test.tsx",
     "app/tests/composio-picker-add-error.test.tsx",
@@ -128,13 +129,13 @@
     "app/tests/observability-i18n-namespaces.test.ts",
     "app/tests/observability-route-guards.test.tsx",
     "app/tests/pending-settlement-ui.test.tsx",
-    "app/tests/person-sent-message.test.ts",
-    "app/tests/personal-credits-ui.test.tsx"
+    "app/tests/person-sent-message.test.ts"
    ]
   },
   {
    "name": "app/tests part 4",
    "files": [
+    "app/tests/personal-credits-ui.test.tsx",
     "app/tests/playground-json.test.ts",
     "app/tests/plugin-read-failure.test.tsx",
     "app/tests/proposed-bot-card.test.tsx",
@@ -248,16 +249,18 @@
     "server/tests/approvals-policy.integration.test.ts",
     "server/tests/approvals-question-resume.integration.test.ts",
     "server/tests/approvals-store.integration.test.ts",
+    "server/tests/async-cancel-semantics.integration.test.ts",
     "server/tests/async-job-identity.integration.test.ts",
+    "server/tests/async-jobs-view.test.ts",
     "server/tests/async-lost-jobid.integration.test.ts",
-    "server/tests/async-settle-once.integration.test.ts",
-    "server/tests/async-status-authz.test.ts",
-    "server/tests/async-submit-reservation.integration.test.ts"
+    "server/tests/async-settle-once.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 2",
    "files": [
+    "server/tests/async-status-authz.test.ts",
+    "server/tests/async-submit-reservation.integration.test.ts",
     "server/tests/async-terminal-settlement.integration.test.ts",
     "server/tests/attachment-routes.test.ts",
     "server/tests/attachment-store.test.ts",
@@ -279,14 +282,14 @@
     "server/tests/billing-credits-summary.integration.test.ts",
     "server/tests/billing-period-fulfillment.integration.test.ts",
     "server/tests/billing-reconcile.integration.test.ts",
-    "server/tests/billing-resolution.integration.test.ts",
-    "server/tests/billing-store.integration.test.ts",
-    "server/tests/billing-store.test.ts"
+    "server/tests/billing-resolution.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 3",
    "files": [
+    "server/tests/billing-store.integration.test.ts",
+    "server/tests/billing-store.test.ts",
     "server/tests/billing-usage-delivery.test.ts",
     "server/tests/billing-usage-outbox.integration.test.ts",
     "server/tests/billing-webhook.test.ts",
@@ -308,14 +311,14 @@
     "server/tests/channel-routes.test.ts",
     "server/tests/channel-summary.integration.test.ts",
     "server/tests/checkin-rewards.integration.test.ts",
-    "server/tests/cleanup-classification.integration.test.ts",
-    "server/tests/cleanup-dry-run.integration.test.ts",
-    "server/tests/cleanup-enumeration.integration.test.ts"
+    "server/tests/cleanup-classification.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 4",
    "files": [
+    "server/tests/cleanup-dry-run.integration.test.ts",
+    "server/tests/cleanup-enumeration.integration.test.ts",
     "server/tests/cleanup-execution.integration.test.ts",
     "server/tests/cleanup-guards.integration.test.ts",
     "server/tests/cleanup-rehearsal.integration.test.ts",
@@ -337,14 +340,14 @@
     "server/tests/conformance-evidence.test.ts",
     "server/tests/control-refusal-end-to-end.test.ts",
     "server/tests/craft-idle-reaper.test.ts",
-    "server/tests/craft-mcp-relay.test.ts",
-    "server/tests/craft-preview-origin-guard.test.ts",
-    "server/tests/craft-preview-socket.test.ts"
+    "server/tests/craft-mcp-relay.test.ts"
    ]
   },
   {
    "name": "server/tests part 5",
    "files": [
+    "server/tests/craft-preview-origin-guard.test.ts",
+    "server/tests/craft-preview-socket.test.ts",
     "server/tests/craft-routes-assembly.test.ts",
     "server/tests/craft-webapp-hmr.test.ts",
     "server/tests/craft-webapp-tool.test.ts",
@@ -366,14 +369,14 @@
     "server/tests/e2e-strict-billing-text.integration.test.ts",
     "server/tests/embedding-pricing.test.ts",
     "server/tests/embedding-refusal.integration.test.ts",
-    "server/tests/enterprise-controls.integration.test.ts",
-    "server/tests/enterprise/ai-sdk-v3-gateway-adapter.test.ts",
-    "server/tests/enterprise/conversations.integration.test.ts"
+    "server/tests/enterprise-controls.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 6",
    "files": [
+    "server/tests/enterprise/ai-sdk-v3-gateway-adapter.test.ts",
+    "server/tests/enterprise/conversations.integration.test.ts",
     "server/tests/enterprise/mastra-compatibility.test.ts",
     "server/tests/enterprise/mastra-model.integration.test.ts",
     "server/tests/enterprise/mastra-storage.integration.test.ts",
@@ -395,14 +398,14 @@
     "server/tests/group-conversations.integration.test.ts",
     "server/tests/headless-components.integration.test.ts",
     "server/tests/headless-components.test.ts",
-    "server/tests/health.test.ts",
-    "server/tests/hindsight-answer-evidence.integration.test.ts",
-    "server/tests/hindsight-background-budget.integration.test.ts"
+    "server/tests/health.test.ts"
    ]
   },
   {
    "name": "server/tests part 7",
    "files": [
+    "server/tests/hindsight-answer-evidence.integration.test.ts",
+    "server/tests/hindsight-background-budget.integration.test.ts",
     "server/tests/hindsight-degraded-recall.integration.test.ts",
     "server/tests/hindsight-derived-judgments.integration.test.ts",
     "server/tests/hindsight-judgment-review.contract.test.ts",
@@ -424,14 +427,14 @@
     "server/tests/identity-schema.integration.test.ts",
     "server/tests/identity-store.integration.test.ts",
     "server/tests/image-edit-pricing.test.ts",
-    "server/tests/image-entrypoints.test.ts",
-    "server/tests/image-generation-pricing.test.ts",
-    "server/tests/image-settlement.integration.test.ts"
+    "server/tests/image-entrypoints.test.ts"
    ]
   },
   {
    "name": "server/tests part 8",
    "files": [
+    "server/tests/image-generation-pricing.test.ts",
+    "server/tests/image-settlement.integration.test.ts",
     "server/tests/intelligence-authentication.test.ts",
     "server/tests/jsonb-encoding.integration.test.ts",
     "server/tests/key-drift-handling.test.ts",
@@ -453,14 +456,14 @@
     "server/tests/memory-sensitivity.test.ts",
     "server/tests/memory-store.integration.test.ts",
     "server/tests/model-capability-filter.integration.test.ts",
-    "server/tests/model-capability-filter.test.ts",
-    "server/tests/model-discovery-api.test.ts",
-    "server/tests/model-preference.integration.test.ts"
+    "server/tests/model-capability-filter.test.ts"
    ]
   },
   {
    "name": "server/tests part 9",
    "files": [
+    "server/tests/model-discovery-api.test.ts",
+    "server/tests/model-preference.integration.test.ts",
     "server/tests/model-providers.test.ts",
     "server/tests/model-scope.integration.test.ts",
     "server/tests/ocr-pricing.test.ts",
@@ -482,14 +485,14 @@
     "server/tests/opik-datasets-routes.integration.test.ts",
     "server/tests/opik-datasets.integration.test.ts",
     "server/tests/opik-datasets.test.ts",
-    "server/tests/opik-deployment.test.ts",
-    "server/tests/opik-execution-billing.integration.test.ts",
-    "server/tests/opik-execution-billing.test.ts"
+    "server/tests/opik-deployment.test.ts"
    ]
   },
   {
    "name": "server/tests part 10",
    "files": [
+    "server/tests/opik-execution-billing.integration.test.ts",
+    "server/tests/opik-execution-billing.test.ts",
     "server/tests/opik-execution-boot.integration.test.ts",
     "server/tests/opik-execution-boot.test.ts",
     "server/tests/opik-execution-runner.test.ts",
@@ -511,14 +514,14 @@
     "server/tests/opik-port.test.ts",
     "server/tests/opik-redaction.test.ts",
     "server/tests/opik-results.integration.test.ts",
-    "server/tests/opik-results.test.ts",
-    "server/tests/opik-retention.integration.test.ts",
-    "server/tests/opik-retention.test.ts"
+    "server/tests/opik-results.test.ts"
    ]
   },
   {
    "name": "server/tests part 11",
    "files": [
+    "server/tests/opik-retention.integration.test.ts",
+    "server/tests/opik-retention.test.ts",
     "server/tests/opik-retrieval-summary.test.ts",
     "server/tests/opik-run-lifecycle.test.ts",
     "server/tests/opik-run-steps.test.ts",
@@ -540,14 +543,14 @@
     "server/tests/payer-legacy-mapping.integration.test.ts",
     "server/tests/payer-no-fallback.test.ts",
     "server/tests/payer-personal-resolution.integration.test.ts",
-    "server/tests/payment-callback-ownership.integration.test.ts",
-    "server/tests/payment-ordering-migration.integration.test.ts",
-    "server/tests/payment-store.integration.test.ts"
+    "server/tests/payment-callback-ownership.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 12",
    "files": [
+    "server/tests/payment-ordering-migration.integration.test.ts",
+    "server/tests/payment-store.integration.test.ts",
     "server/tests/people-last-sign-in.integration.test.ts",
     "server/tests/people-paging.integration.test.ts",
     "server/tests/personal-credits-read.test.ts",
@@ -569,14 +572,14 @@
     "server/tests/proactive-store.integration.test.ts",
     "server/tests/production-loader-boundary.test.ts",
     "server/tests/provider-oauth.test.ts",
-    "server/tests/qa-batch1-credits-writer.integration.test.ts",
-    "server/tests/qa-batch1-duplicate-paid.integration.test.ts",
-    "server/tests/qa-batch1-payment-store.integration.test.ts"
+    "server/tests/qa-batch1-credits-writer.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 13",
    "files": [
+    "server/tests/qa-batch1-duplicate-paid.integration.test.ts",
+    "server/tests/qa-batch1-payment-store.integration.test.ts",
     "server/tests/qa-batch1-replay-storm.integration.test.ts",
     "server/tests/qa-batch2-cycle-config-qr.test.ts",
     "server/tests/qa-batch2-t5-semantics.integration.test.ts",
@@ -598,14 +601,14 @@
     "server/tests/recovery-unacked-replay.integration.test.ts",
     "server/tests/release-semantics.integration.test.ts",
     "server/tests/remote-bot-handoff.integration.test.ts",
-    "server/tests/remote-coordination.integration.test.ts",
-    "server/tests/remote-coordination.test.ts",
-    "server/tests/rerank-pricing.test.ts"
+    "server/tests/remote-coordination.integration.test.ts"
    ]
   },
   {
    "name": "server/tests part 14",
    "files": [
+    "server/tests/remote-coordination.test.ts",
+    "server/tests/rerank-pricing.test.ts",
     "server/tests/rerank-refusal.integration.test.ts",
     "server/tests/reservation-status.integration.test.ts",
     "server/tests/reserve-bound-rounding.test.ts",
@@ -627,14 +630,14 @@
     "server/tests/settle-conflict-grant-expiry.integration.test.ts",
     "server/tests/settle-idempotency.integration.test.ts",
     "server/tests/settlement-resolution.integration.test.ts",
-    "server/tests/shared-brokered-routes.test.ts",
-    "server/tests/shared-brokered-schema.integration.test.ts",
-    "server/tests/shared-brokered-store.integration.test.ts"
+    "server/tests/shared-brokered-routes.test.ts"
    ]
   },
   {
    "name": "server/tests part 15",
    "files": [
+    "server/tests/shared-brokered-schema.integration.test.ts",
+    "server/tests/shared-brokered-store.integration.test.ts",
     "server/tests/shared-computer-run.integration.test.ts",
     "server/tests/shared-gated-mode.integration.test.ts",
     "server/tests/shared-use-store.integration.test.ts",
@@ -761,7 +764,12 @@
     "server/tests/multitenancy/inbound-attribution.test.ts",
     "server/tests/multitenancy/integration-evidence.test.ts",
     "server/tests/multitenancy/inventory.test.ts",
-    "server/tests/multitenancy/job-claim-cancel.test.ts",
+    "server/tests/multitenancy/job-claim-cancel.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests/multitenancy part 3",
+   "files": [
     "server/tests/multitenancy/job-ownership.test.ts",
     "server/tests/multitenancy/learning-demonstrations.test.ts",
     "server/tests/multitenancy/legacy-anchor.test.ts",
@@ -827,7 +835,12 @@
     "server/tests/multitenancy/startup-defaults.test.ts",
     "server/tests/multitenancy/streams.test.ts",
     "server/tests/multitenancy/team-public-rules.test.ts",
-    "server/tests/multitenancy/telemetry-attribution.test.ts",
+    "server/tests/multitenancy/telemetry-attribution.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests/multitenancy part 5",
+   "files": [
     "server/tests/multitenancy/telemetry-attribution.test.ts\nserver/tests/multitenancy/telemetry-usage.test.ts\nserver/tests/multitenancy/voice-mobile-bff.test.ts",
     "server/tests/multitenancy/telemetry-usage.test.ts",
     "server/tests/multitenancy/tool-invocation.test.ts",
@@ -872,6 +885,7 @@
   "app/tests/ai-observability-runs-list.test.tsx",
   "app/tests/approval-tools.test.tsx",
   "app/tests/approvals-rules.test.tsx",
+  "app/tests/async-jobs-ui.test.tsx",
   "app/tests/audit-dry-run-label.test.tsx",
   "app/tests/audit-export-truncated.test.tsx",
   "app/tests/authoring-tool-cards.test.tsx",
@@ -999,7 +1013,9 @@
   "server/tests/approvals-policy.integration.test.ts",
   "server/tests/approvals-question-resume.integration.test.ts",
   "server/tests/approvals-store.integration.test.ts",
+  "server/tests/async-cancel-semantics.integration.test.ts",
   "server/tests/async-job-identity.integration.test.ts",
+  "server/tests/async-jobs-view.test.ts",
   "server/tests/async-lost-jobid.integration.test.ts",
   "server/tests/async-settle-once.integration.test.ts",
   "server/tests/async-status-authz.test.ts",

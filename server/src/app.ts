@@ -3043,6 +3043,15 @@ export function createApp(
         audit: auditStore,
         externalCustomerKey: billing.externalCustomerKey,
         customerName: billing.customerName,
+        // 17.8's review read: the task dimension beside the anomaly queue, mounted only
+        // where the billing assembly has the database the jobs live in.
+        ...(billing.database
+          ? {
+              asyncJobsView: createAsyncJobsViewService({
+                database: billing.database,
+              }),
+            }
+          : {}),
         // The credit ledger's write side, mounted only where billing itself is: the grant route
         // reads its presence, so a deployment without the writer answers 503 instead of writing
         // into a ledger nobody configured.
@@ -3094,6 +3103,15 @@ export function createApp(
         ...(billing?.database
           ? {
               realtimeUsage: createRealtimeUsageService({
+                database: billing.database,
+              }),
+            }
+          : {}),
+        // 17.8's async jobs read rides the same database the ledger reads; mounted only
+        // where the billing assembly has one, and the route refuses 503 without it.
+        ...(billing?.database
+          ? {
+              asyncJobsView: createAsyncJobsViewService({
                 database: billing.database,
               }),
             }
