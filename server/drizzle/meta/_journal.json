@@ -1268,6 +1268,13 @@
       "when": 1792857616000,
       "tag": "0180_hindsight_derived_judgments",
       "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1792857617000,
+      "tag": "0181_speech_settlement_details",
+      "breakpoints": true
     }
   ]
 }

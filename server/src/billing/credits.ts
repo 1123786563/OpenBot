@@ -5,6 +5,7 @@ import {
   creditReservationAttribution,
   creditReservations,
   creditSettlementDetails,
+  creditSpeechSettlementDetails,
 } from "../db/schema/credit-reservations";
 import { creditGrants, creditLedger } from "../db/schema/credits";
 import { type GrantCapacity, liveGrants, readCapacity } from "./capacity";
@@ -198,6 +199,11 @@ export function createCredits(deps: {
           lineGeneratedCount: creditSettlementDetails.generatedCount,
           lineSize: creditSettlementDetails.size,
           lineQuality: creditSettlementDetails.quality,
+          speechCapability: creditSpeechSettlementDetails.capability,
+          speechInputCharacters: creditSpeechSettlementDetails.inputCharacters,
+          speechCappedSeconds: creditSpeechSettlementDetails.cappedSeconds,
+          speechActualSeconds: creditSpeechSettlementDetails.actualSeconds,
+          speechVoiceTier: creditSpeechSettlementDetails.voiceTier,
         })
         .from(creditLedger)
         // The attribution walk: a reservation-born ledger row (the writer records
@@ -221,6 +227,12 @@ export function createCredits(deps: {
         .leftJoin(
           creditSettlementDetails,
           eq(creditSettlementDetails.ledgerId, creditLedger.id),
+        )
+        // The speech line (13.2) joins the same way through its own table: a ledger row
+        // carries exactly one capability's line, whichever table holds it.
+        .leftJoin(
+          creditSpeechSettlementDetails,
+          eq(creditSpeechSettlementDetails.ledgerId, creditLedger.id),
         )
         .where(where)
         .orderBy(desc(creditLedger.createdAt))
@@ -248,9 +260,8 @@ export function createCredits(deps: {
           // the image spec and counts, distinguishable from every other capability — with
           // the amount this entry already carries. Other rows carry no line at all.
           lineDetail:
-            row.lineCapability === null
-              ? null
-              : {
+            row.lineCapability === "image"
+              ? {
                   capability: row.lineCapability,
                   image: {
                     size: row.lineSize,
@@ -258,7 +269,20 @@ export function createCredits(deps: {
                     requestedCount: row.lineRequestedCount,
                     generatedCount: row.lineGeneratedCount,
                   },
-                },
+                }
+              : row.speechCapability === "speech"
+                ? // 13.2's speech line: the characters in, the seconds out — the entry a
+                  // speech consumption shows, distinguishable from image and chat.
+                  {
+                    capability: row.speechCapability,
+                    speech: {
+                      inputCharacters: row.speechInputCharacters,
+                      voiceTier: row.speechVoiceTier,
+                      cappedSeconds: row.speechCappedSeconds,
+                      actualSeconds: row.speechActualSeconds,
+                    },
+                  }
+                : null,
           timestamp: row.createdAt.toISOString(),
         })),
         pagination: {
