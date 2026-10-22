@@ -261,6 +261,7 @@ import {
 import { resolveCraftMcpServers } from "./craft/mcp-servers";
 import { createPreviewOrigin, samePreviewOrigin } from "./craft/preview-origin";
 import { createPreviewTickets } from "./craft/preview-ticket";
+import { createSandboxGateway } from "./craft/sandbox-gateway";
 import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
@@ -5450,6 +5451,21 @@ const craftWebappHmrDeps =
         store: createCraftStore(database),
         botIdFor: craftSandboxBotId,
         sandboxConnectionFor: craftSandboxConnection,
+        // #425: the legacy-preview switch's HMR leg reads the session's
+        // generation marker through the same sandbox facts the HTTP legs use.
+        // A gateway of its own (the routes assembly builds its own too): the
+        // file API is a stateless HTTP wrapper over craftSandboxConnection —
+        // the same connection lambda, so the surfaces cannot disagree about
+        // the upstream.
+        gateway: createSandboxGateway({
+          config: craftEffectiveConfig,
+          connectionFor: (botId: string) => {
+            const conn = craftSandboxConnection();
+            return conn
+              ? { botId, baseUrl: conn.baseUrl, token: conn.token }
+              : null;
+          },
+        }),
       }
     : undefined;
 

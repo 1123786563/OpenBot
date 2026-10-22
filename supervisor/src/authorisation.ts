@@ -1,4 +1,16 @@
 import { timingSafeEqual } from "node:crypto";
+import {
+  describeExecutionScope,
+  type ExecutionScope,
+  parseExecutionScope,
+} from "../../shared/execution-scope";
+
+export {
+  EXECUTION_TENANT_HEADER,
+  EXECUTION_WORKSPACE_HEADER,
+} from "../../shared/execution-scope";
+export { parseExecutionScope, describeExecutionScope };
+export type { ExecutionScope };
 
 /**
  * Whether a request's `Authorization` header carries the supervisor's secret.
@@ -16,4 +28,17 @@ export function authorised(header: string | undefined, token: string): boolean {
   const expected = Buffer.from(`Bearer ${token}`);
   if (offered.length !== expected.length) return false;
   return timingSafeEqual(offered, expected);
+}
+
+/**
+ * The execution ownership a request must state alongside the token (MT050).
+ *
+ * The Bearer says "a caller of this deployment"; it does not say whose computer this call reaches
+ * for. These two headers carry that, and a request without them is refused rather than served as
+ * deployment-level — the token alone no longer widens into every Bot's container. The scope is
+ * compared against the Bot's earlier binding by the caller (`scopeFor`), because the place a
+ * cross-scope reach shows up is per-Bot, not per-request.
+ */
+export function statedScope(headers: Headers): ExecutionScope | null {
+  return parseExecutionScope(headers);
 }

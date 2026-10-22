@@ -30,7 +30,7 @@
     "closedTitle": "Preview is unavailable on this deployment",
     "sameOriginTitle": "The preview can't open here",
     "sameOriginHint": "This page is being accessed through the preview's own address, so opening the preview would let the app act as this site. Open the platform from a different address to use the preview.",
-    "legacyNotice": "This app was built before the new preview origin — its preview keeps using the legacy path until the session ends.",
+    "legacyNotice": "This app was built before the new preview origin, and its preview shares the platform's own origin: generated code can use your session to reach platform APIs. Rebuild the web app to move it onto the isolated preview origin; until then this preview keeps using the legacy path until the session ends.",
     "expand": "Expand preview",
     "collapse": "Exit full screen",
     "openInNewTab": "Open in a new tab",

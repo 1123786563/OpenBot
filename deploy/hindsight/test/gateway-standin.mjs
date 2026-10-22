@@ -19,12 +19,20 @@ import { appendFileSync } from "node:fs";
  * Every request is appended to the log file given by --log so the verification report
  * can show which model calls Hindsight routed through the configured gateway endpoint.
  *
- * Usage: node gateway-standin.mjs [--port 9100] [--host 127.0.0.1] [--log /tmp/hindsight-gateway-standin.log]
+ * Usage: node gateway-standin.mjs [--port 9100] [--host 127.0.0.1] [--log /tmp/hindsight-gateway-standin.log] [--extract-facts]
  *   Binds to the loopback address by default. A non-loopback --host (e.g. `--host 0.0.0.0`,
  *   to let the Docker container reach the stand-in via http://host.docker.internal:<port>
  *   during isolated local verification) is refused unless --allow-non-loopback is also
  *   passed: the guard keeps this unauthenticated stand-in from ever being exposed beyond
  *   the operator's explicit opt-in.
+ *
+ * --extract-facts (Hindsight 05 / #382) flips the chat completion from inert filler to ONE
+ * echo fact per request, shaped exactly as Hindsight's extraction schema parses
+ * ({"facts": [{what, when, where, who, why, fact_type}]}): the fact's `what` prefixes the
+ * echoed request text so a recalled hit's text is always distinguishable from the original
+ * document — the property the #382 contract suite asserts when proving the Bot receives the
+ * OpenBot-confirmed original rather than Hindsight's extraction. Off by default: #380/#381
+ * verification keeps the inert behavior it was written against.
  */
 import { createServer } from "node:http";
 
@@ -74,6 +82,9 @@ if (!LOOPBACK_HOSTS.has(host) && !args.includes("--allow-non-loopback")) {
 
 const EMBEDDING_DIMENSIONS = 8;
 
+// --extract-facts: see the header comment. Off = the inert filler earlier tickets verified.
+const EXTRACT_FACTS = args.includes("--extract-facts");
+
 function log(entry) {
   appendFileSync(
     logFile,
@@ -81,14 +92,49 @@ function log(entry) {
   );
 }
 
+/** The text of the last user message, the closest thing to "what was to be extracted". */
+function lastUserText(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.role !== "user") continue;
+    const content = messages[i].content;
+    if (typeof content === "string") return content;
+    if (Array.isArray(content))
+      return content
+        .map((part) => (typeof part?.text === "string" ? part.text : ""))
+        .join(" ");
+    return "";
+  }
+  return "";
+}
+
 function chatCompletion(body) {
   const model = body?.model ?? "stand-in-model";
-  // A JSON-string answer satisfies OpenAI-compatible clients that asked for a
-  // JSON-shaped reply; the content is deliberately inert filler.
-  const content = JSON.stringify({
-    facts: [],
-    note: "stand-in gateway: no real extraction",
-  });
+  let content;
+  if (EXTRACT_FACTS) {
+    // One echo fact, in the shape hindsight_api's lenient facts parser accepts. The prefix
+    // keeps the extracted text distinct from the original document text.
+    const what = `stand-in extracted: ${lastUserText(body).slice(0, 500)}`;
+    content = JSON.stringify({
+      facts: [
+        {
+          what,
+          when: "N/A",
+          where: "N/A",
+          who: "N/A",
+          why: "N/A",
+          fact_type: "world",
+        },
+      ],
+    });
+  } else {
+    // A JSON-string answer satisfies OpenAI-compatible clients that asked for a
+    // JSON-shaped reply; the content is deliberately inert filler.
+    content = JSON.stringify({
+      facts: [],
+      note: "stand-in gateway: no real extraction",
+    });
+  }
   return {
     id: `chatcmpl-standin-${Date.now()}`,
     object: "chat.completion",

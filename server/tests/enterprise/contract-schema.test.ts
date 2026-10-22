@@ -506,6 +506,7 @@ describe("enterprise wire contract v1", () => {
     const invocation = {
       schema_version: 1,
       tenant_id: "tenant-1",
+      workspace_id: "workspace-1",
       principal_id: "principal-1",
       actor_id: "actor-1",
       initiator_kind: "human",

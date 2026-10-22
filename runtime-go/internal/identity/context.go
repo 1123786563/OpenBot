@@ -36,6 +36,7 @@ const (
 // assertion, not the place where initiator policy lives).
 type VerifiedRun struct {
 	TenantID            string
+	WorkspaceID         string
 	PrincipalID         string
 	ActorID             string
 	InitiatorKind       string
@@ -70,7 +71,7 @@ func WithVerified(ctx context.Context, v VerifiedRun) context.Context {
 // plane did not vouch for is a field no run may execute on.
 func FromContext(ctx context.Context) (VerifiedRun, error) {
 	v, ok := ctx.Value(key{}).(VerifiedRun)
-	if !ok || v.TenantID == "" || v.PrincipalID == "" || v.ActorID == "" ||
+	if !ok || v.TenantID == "" || v.WorkspaceID == "" || v.PrincipalID == "" || v.ActorID == "" ||
 		v.InitiatorKind == "" || v.RunID == "" || v.AttemptID == "" || v.TurnID == "" ||
 		v.ThreadID == "" || v.ExpertVersion == "" || v.InputDigest == "" ||
 		v.ModelRouteRef == "" || v.BudgetReservationID == "" ||

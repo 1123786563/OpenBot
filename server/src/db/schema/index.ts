@@ -47,6 +47,7 @@ export * from "./enterprise-shared-approvals";
 export * from "./enterprise-sso-scim";
 export * from "./enterprise-tenancy";
 export * from "./enterprise-audit";
+export * from "./hindsight-preferences";
 export * from "./gateway";
 export * from "./group";
 export * from "./identity";

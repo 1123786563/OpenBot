@@ -828,6 +828,32 @@ export const auditEventTypes = [
    */
   "billing.recovery.review_denied",
   /**
+   * A non-administrator probed the disposal command (Bifrost 08.9): the refusal the admin
+   * gate answered with. The payload names the path only, exactly like the review probe —
+   * the caller was answered with nothing, and a probe of the money decision is itself a
+   * fact the trail keeps.
+   */
+  "billing.recovery.disposal_denied",
+  /**
+   * An administrator disposed of a recovery item (Bifrost 08.9): the settle-or-release
+   * command that landed, with the action, the specific evidence row it stood on, the
+   * reservation it moved, the expectedVersion it quoted, and the command's idempotency
+   * key — the whole command, because the trail must reconstruct the decision on its own.
+   * Replays of the same command are NOT re-audited: the first row is the act.
+   */
+  "billing.recovery.disposed",
+  /**
+   * An administrator compensated a recovery item (Bifrost 08.10, #285): the platform
+   * absorbed a loss the trail could neither settle nor release — a distinct act from a
+   * disposal, recorded under its OWN event type so it can never be read back as
+   * "confirmed no charge". The payload carries the recorded justification (reason), the
+   * absorbed amount (the hold's ceiling), the still_unknown evidence row the absorption
+   * stood on, the reservation, the expectedVersion and the command key — the whole
+   * decision, reconstructable from the row alone. Replays of the same command are NOT
+   * re-audited: the first row is the act.
+   */
+  "billing.recovery.compensated",
+  /**
    * A craft session's owner answered a connect_app card (connected/declined; the session,
    * the app id and the decision in the payload). The handshake itself rides ephemeral KV
    * (onyx parity — no approval row), so this audit row is the one durable record that a

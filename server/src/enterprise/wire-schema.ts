@@ -139,6 +139,11 @@ export const RuntimeInvocationWireSchema = z
   .object({
     schema_version: z.literal(1),
     tenant_id: Identifier,
+    // MT050 (Issue #93): the workspace half of the ownership, required on the
+    // same wire the Go runtime reads (identity.VerifiedRun.WorkspaceID). An
+    // envelope without it is rejected here exactly as FromContext rejects it
+    // there, so neither language can accept an ownership the other dropped.
+    workspace_id: Identifier,
     principal_id: Identifier,
     actor_id: Identifier,
     initiator_kind: z.enum(["human", "schedule"]),

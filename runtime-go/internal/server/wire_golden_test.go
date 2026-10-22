@@ -26,12 +26,12 @@ import (
 
 // goldenWireSampleSha256 is the hash of server/tests/enterprise/runs/fixtures/
 // wire-v1.json — the same bytes testdata/wire-v1.json must carry.
-const goldenWireSampleSha256 = "9ec689126e3c3702625acd536b30fbf81d982fa8d3b82883f1f5fbd87d339e4e"
+const goldenWireSampleSha256 = "73226adfbc215b661c8cd45e00464d1d202fdd799532cd13d4b9c89354883066"
 
 // requiredEnvelopeFields is the wire's required field set, mirrored from the
 // envelopeWire json tags; delegation_ref is the one optional field.
 var requiredEnvelopeFields = []string{
-	"schema_version", "tenant_id", "principal_id", "actor_id", "initiator_kind",
+	"schema_version", "tenant_id", "workspace_id", "principal_id", "actor_id", "initiator_kind",
 	"run_id", "attempt_id", "turn_id", "thread_id", "expert_version",
 	"input_digest", "model_route_ref", "budget_reservation_id", "lease_id",
 	"fencing_token", "expires_at",
@@ -82,6 +82,7 @@ func TestGoldenWireSampleMatchesTheFrozenContract(t *testing.T) {
 	// (identity.FromContext): a half envelope is refused, not repaired.
 	run := identity.VerifiedRun{
 		TenantID:            wire.TenantID,
+		WorkspaceID:         wire.WorkspaceID,
 		PrincipalID:         wire.PrincipalID,
 		ActorID:             wire.ActorID,
 		InitiatorKind:       wire.InitiatorKind,

@@ -126,6 +126,48 @@ const WEBAPP_MOUNT_STALE_REASON =
   "The web app's dev server is not mounted on the preview address: its start script was written without the preview mount. Reload the session's skills to rewrite the start script, then start the web app again; regenerating the session also repairs it.";
 
 /**
+ * The legacy form's closure sentence (#425, the AC1 exception's收口): the
+ * deployment turned the legacy same-origin preview off. It names the two facts
+ * the ticket requires — WHY the form is closed (it shares the platform's own
+ * origin, so the pane's cookie-carrying iframe lets generated code use the
+ * person's session against platform APIs — the exposure the preview origin
+ * exists to end) and the way OUT (rebuild the app; the fresh assembly stamps
+ * the generation marker and walks the preview origin). Rides the same
+ * displayable channel (`previewOriginClosedReason`) every other closure
+ * sentence on this surface uses; PREVIEW_PASS_REFUSAL stays unmixed — a closed
+ * pass exchange and a closed legacy form are different semantics.
+ */
+const LEGACY_PREVIEW_CLOSED_REASON =
+  "Legacy same-origin previews are disabled on this deployment: the old preview shares the platform's own origin, so generated code could use your session to reach platform APIs. Rebuild the web app to move it onto the isolated preview origin.";
+
+/**
+ * #425's leg gate: whether this session's same-origin traffic is the legacy
+ * form this deployment switched off. One judgment, consumed by the proxy and
+ * HMR legs as mirrors of each other (the discipline webapp-info and the mint
+ * already follow for their generation reads). Only runs when the switch is
+ * OFF, so the default deployment pays nothing.
+ *
+ * "unknown" (the read flaked — no verdict) refuses too, on purpose: the only
+ * population this route serves is the legacy form (a current session's pane
+ * enters through the preview origin and its HMR rides the origin's own
+ * dispatcher), so a refusal here can only hit the population the switch means
+ * to close; letting a flake hold the legacy door open would make the switch's
+ * promise depend on gateway weather.
+ */
+async function legacyPreviewSwitchedOffFor(
+  deps: Pick<WebappProxyRoutesDeps, "config" | "gateway">,
+  sessionId: string,
+  botId: string,
+): Promise<boolean> {
+  if (deps.config.legacyPreviewEnabled) return false;
+  const generation = await readWebappGeneration(
+    deps.gateway.fileApiFor(botId),
+    sessionDirectory(sessionId, deps.config.sessionDirectoryMode),
+  );
+  return generation !== "current";
+}
+
+/**
  * The same-origin liveness probe's restart sentence (fix-ocr13): the session
  * row is durable but its preview label is not (the registry is in-process,
  * M-2) — the pane reads this 503 as "drop the entry and re-enter through the
@@ -348,13 +390,22 @@ function stripRequestHeaders(
  * host-only cookie on the preview origin. The `Domain` attribute is DROPPED — with it an
  * app could plant a cookie on the parent domain, where the platform's session lives —
  * and a `Path` that is not absolute (or tries to smuggle attributes past the split) is
- * dropped too, so the cookie's scope stays a well-formed path on this host. Everything
- * else (HttpOnly, Secure, SameSite, Max-Age, Expires, the name=value pair verbatim)
- * survives, and every header of a multi-header Set-Cookie answer is sanitized
- * independently — none is lost, none is merged.
+ * dropped too, so the cookie's scope stays a well-formed path on this host. A line whose
+ * cookie NAME is the platform pass (`PREVIEW_SESSION_COOKIE`) is dropped whole: the app's
+ * jar is separate, but the name is not — a host-only cookie of that name on the preview
+ * origin is what the browser would match against the pass the platform itself set there,
+ * shadowing it and locking the user out of their preview session (the value never
+ * verifies, so this is denial, not escalation). Everything else (HttpOnly, Secure,
+ * SameSite, Max-Age, Expires, the name=value pair verbatim) survives, and every header
+ * of a multi-header Set-Cookie answer is sanitized independently — none is lost, none
+ * is merged.
  */
-function sanitizeAppSetCookie(raw: string): string {
+function sanitizeAppSetCookie(raw: string): string | null {
   const [pair, ...attributes] = raw.split(";");
+  // The pass's name is not the app's to write, whatever value it carries.
+  const assignment = pair.indexOf("=");
+  const name = (assignment === -1 ? pair : pair.slice(0, assignment)).trim();
+  if (name === PREVIEW_SESSION_COOKIE) return null;
   const kept: string[] = [];
   for (const attribute of attributes) {
     const trimmed = attribute.trim();
@@ -474,10 +525,12 @@ export async function proxyWebappRequest(input: {
   }
   if (cookiePolicy === "app-only") {
     // Every Set-Cookie line the app answered with rides back, each sanitized to a
-    // host-only preview cookie (#405). getSetCookie preserves the multiple headers the
+    // host-only preview cookie (#405) — except a line claiming the pass's own name,
+    // which is dropped whole. getSetCookie preserves the multiple headers the
     // plain entries() loop would fold into one comma-joined (invalid) line.
     for (const raw of upstream.headers.getSetCookie()) {
-      responseHeaders.append("set-cookie", sanitizeAppSetCookie(raw));
+      const sanitized = sanitizeAppSetCookie(raw);
+      if (sanitized !== null) responseHeaders.append("set-cookie", sanitized);
     }
   }
   responseHeaders.set(
@@ -982,6 +1035,26 @@ export function createWebappProxyRoutes(
           });
         }
       }
+      // #425: the deployment switched the legacy form off. The pane gets NO
+      // address and the displayable closure sentence — the same shape a closed
+      // origin answers — while `webappGeneration` stays honestly "legacy" (the
+      // pane's version-skew logic and the docs' convergence story both key on
+      // it). The healed branch above already ran: a record-proved current mount
+      // answers the current shape BEFORE this gate, so a session the record
+      // vouches for keeps its preview; only the true legacy form closes. The
+      // mint's 409 is untouched — a closed form changes nothing about ticket
+      // semantics (there was never a ticket to issue for legacy).
+      if (!deps.config.legacyPreviewEnabled) {
+        return context.json({
+          has_webapp: hasWebapp,
+          webapp_url: null,
+          previewOrigin: null,
+          previewOriginClosedReason: LEGACY_PREVIEW_CLOSED_REASON,
+          webappGeneration: "legacy" as const,
+          status: ready ? "running" : "stopped",
+          ready,
+        });
+      }
       return context.json({
         has_webapp: hasWebapp,
         webapp_url: legacyWebappPreviewPath(sessionId),
@@ -1106,6 +1179,16 @@ export function createWebappProxyRoutes(
     const port = session.nextjsPort;
     if (port === null) {
       return refuse(context, WEBAPP_NO_SUPPORT_ERROR);
+    }
+    // #425's service leg: a legacy session's same-origin traffic is refused when
+    // the deployment switched the legacy form off — BEFORE the upstream probe
+    // (no dial for a request that will never be forwarded) and after auth +
+    // ownership (an unauthenticated caller still answers 401; a foreign session
+    // still 404 — the switch must not become a session-existence oracle). The
+    // refusal is 503 with the displayable sentence, the same family this
+    // surface's other functional refusals use.
+    if (await legacyPreviewSwitchedOffFor(deps, sessionId, botId)) {
+      return refuse(context, LEGACY_PREVIEW_CLOSED_REASON);
     }
     // The reserved port lives INSIDE the sandbox: the probe and the proxy both
     // dial the sandbox host (the gateway connection's host), never this server's
@@ -1281,7 +1364,7 @@ export function webappHmrUpstreamUrl(input: {
 
 export type WebappHmrDeps = Pick<
   WebappProxyRoutesDeps,
-  "config" | "store" | "botIdFor" | "sandboxConnectionFor"
+  "config" | "store" | "botIdFor" | "sandboxConnectionFor" | "gateway"
 >;
 
 export type WebappHmrResolution =
@@ -1317,6 +1400,14 @@ export async function resolveWebappHmrUpgrade(
   }
   if (session.nextjsPort === null) {
     return { ok: false, status: 503, error: WEBAPP_NO_SUPPORT_ERROR };
+  }
+  // #425's HMR leg: the legacy form's hot-reload channel refuses under the same
+  // judgment the HTTP proxy leg refuses with (the mirror is the discipline) —
+  // before `server.upgrade` commits, in this resolver's own 401/404/503 refusal
+  // family, so a switched-off deployment leaves no half-alive channel an open
+  // legacy pane could keep riding.
+  if (await legacyPreviewSwitchedOffFor(deps, input.sessionId, botId)) {
+    return { ok: false, status: 503, error: LEGACY_PREVIEW_CLOSED_REASON };
   }
   // The reserved port lives INSIDE the sandbox (F-E): dial the sandbox host, never loopback.
   return {

@@ -3,6 +3,7 @@ import {
   actsOnTheComputer,
   isOpenPath,
   matchesToken,
+  statedScope,
   offeredToken,
 } from "../src/authorisation";
 
@@ -139,5 +140,30 @@ describe("what the wheel stops while a person is driving", () => {
     ]) {
       expect(actsOnTheComputer(path)).toBeFalse();
     }
+  });
+});
+
+describe("the execution ownership a computer request must state (MT050)", () => {
+  test("both scope headers together parse into the stated scope", () => {
+    const headers = new Headers({
+      "x-openbot-tenant-id": "tenant-a",
+      "x-openbot-workspace-id": "team-a1",
+    });
+    expect(statedScope(headers)).toEqual({
+      tenantId: "tenant-a",
+      workspaceId: "team-a1",
+    });
+  });
+
+  test.each([
+    ["neither header", {}],
+    ["only the tenant", { "x-openbot-tenant-id": "tenant-a" }],
+    ["only the workspace", { "x-openbot-workspace-id": "team-a1" }],
+    [
+      "a traversal-shaped id",
+      { "x-openbot-tenant-id": "..", "x-openbot-workspace-id": "team-a1" },
+    ],
+  ])("%s states no scope", (_, raw) => {
+    expect(statedScope(new Headers(raw))).toBeNull();
   });
 });
