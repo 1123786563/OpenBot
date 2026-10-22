@@ -815,7 +815,7 @@
    ]
   },
   {
-   "name": "server/tests/multitenancy part 4",
+   "name": "server/tests/multitenancy part 5",
    "files": [
     "server/tests/multitenancy/scan-executor.test.ts",
     "server/tests/multitenancy/scim-directory.test.ts",
