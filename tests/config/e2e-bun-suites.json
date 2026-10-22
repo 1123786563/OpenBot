@@ -860,7 +860,12 @@
     "server/tests/sso-required-sessions.integration.test.ts",
     "server/tests/subscription-ownership.integration.test.ts",
     "server/tests/team-bots.integration.test.ts",
-    "server/tests/tenant-package.test.ts",
+    "server/tests/tenant-package.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 14",
+   "files": [
     "server/tests/test-database-url.integration.test.ts",
     "server/tests/tool-isolation.test.ts",
     "server/tests/tool-selection-environment-restoration-driver.test.ts",
