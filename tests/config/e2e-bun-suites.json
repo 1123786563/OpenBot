@@ -803,7 +803,12 @@
     "server/tests/multitenancy/root-backfill.test.ts",
     "server/tests/multitenancy/routing-policy.test.ts",
     "server/tests/multitenancy/runs-protocol.test.ts",
-    "server/tests/multitenancy/runtime-config.test.ts",
+    "server/tests/multitenancy/runtime-config.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests/multitenancy part 4",
+   "files": [
     "server/tests/multitenancy/scan-executor.test.ts",
     "server/tests/multitenancy/scim-directory.test.ts",
     "server/tests/multitenancy/scope-gate.test.ts",
