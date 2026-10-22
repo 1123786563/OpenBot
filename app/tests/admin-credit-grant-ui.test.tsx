@@ -1,32 +1,56 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import i18n from "@/lib/i18n";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  mock,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { settleReactWork } from "./settle-react-work";
 
 /* The dialogs this page does not use are mocked at the registry level the way every billing
  * suites does — a no-op shell so the module graph stays honest without Base UI's portals. */
-mock.module("@/components/ui/dialog", () => {
-  const pass = ({ children }: { children?: ReactNode }) => children ?? null;
-  return {
-    Dialog: pass,
-    DialogContent: pass,
-    DialogHeader: pass,
-    DialogBody: pass,
-    DialogFooter: pass,
-    DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
-    DialogDescription: ({ children }: { children?: ReactNode }) => (
-      <p>{children}</p>
-    ),
-    DialogClose: pass,
-    DialogOverlay: pass,
-    DialogPortal: pass,
-    DialogTrigger: pass,
-  };
+const uninstallDialogMock: unknown = mock.module(
+  "@/components/ui/dialog",
+  () => {
+    const pass = ({ children }: { children?: ReactNode }) => children ?? null;
+    return {
+      Dialog: pass,
+      DialogContent: pass,
+      DialogHeader: pass,
+      DialogBody: pass,
+      DialogFooter: pass,
+      DialogTitle: ({ children }: { children?: ReactNode }) => (
+        <h2>{children}</h2>
+      ),
+      DialogDescription: ({ children }: { children?: ReactNode }) => (
+        <p>{children}</p>
+      ),
+      DialogClose: pass,
+      DialogOverlay: pass,
+      DialogPortal: pass,
+      DialogTrigger: pass,
+    };
+  },
+);
+
+/*
+ * Give the registry entry back at suite end — where the runtime allows it. Bun's mock.module is
+ * process-wide, but as of Bun 1.4.2 it returns no restore handle (probed: undefined), so this
+ * registration is inert here and starts unregistering the day Bun ships the handle; until then
+ * the passthrough shell stays behind for the later files of this group's single `bun test`
+ * process, all of which run (and pass) under it.
+ */
+afterAll(() => {
+  if (typeof uninstallDialogMock === "function")
+    (uninstallDialogMock as () => void)();
 });
 
 const { AdminCreditGrantCard } = await import(
@@ -68,7 +92,9 @@ const originalFetch = global.fetch;
 
 type CapturedRequest = { url: string; body: Record<string, unknown> };
 
-function installFetchStub(responder: (body: Record<string, unknown>) => Response) {
+function installFetchStub(
+  responder: (body: Record<string, unknown>) => Response,
+) {
   const requests: CapturedRequest[] = [];
   globalThis.fetch = (async (
     input: string | URL | Request,
@@ -203,7 +229,9 @@ test("重复提交应答 replay 时明确说明未重复入账", async () => {
 });
 
 test("失败渲染服务端错误句（展示失败原因）", async () => {
-  installFetchStub(() => json({ error: "Administrator access required." }, 403));
+  installFetchStub(() =>
+    json({ error: "Administrator access required." }, 403),
+  );
   const view = renderCard();
   await fillAndSubmit(view);
 

@@ -1,4 +1,11 @@
 import "./preload";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render } from "@testing-library/react";
+import type * as React from "react";
+import type { ReactNode } from "react";
+import { cloneElement, createContext, useContext } from "react";
+import i18n from "@/lib/i18n";
 /*
  * The runner comes straight from bun:test — the same door the sibling personal-orders-ui suite
  * uses, and the one the ticket's prescribed verification command names (`bun test
@@ -43,12 +50,12 @@ const CloseContext = createContext<() => void>(() => {});
 
 /* Base UI dialogs never mount under happy-dom (the portal rides browser transition APIs the DOM
  * shim does not implement), so the dialog shell is replaced with a SHAPE-COMPATIBLE passthrough —
- * the same mock billing-credits-ui.test.tsx installs, because mock.module is registry-level and
- * OUTLIVES THIS FILE: a simpler shell registered here would clobber the richer semantics later
- * files (dialog-heavy suites like bot-approval-rules) rely on — a closed dialog must mount
- * nothing, a trigger's child always renders, and DialogContent keeps a real close button.
- * Content renders inline instead of into a portal — the only part happy-dom cannot do. */
-mock.module("@/components/ui/dialog", () => {
+ * the same mock billing-credits-ui.test.tsx installs. mock.module is registry level, but each
+ * installer unregisters its handle at its own afterAll, so the passthrough never outlives the
+ * file that set it and later files get the real module's richer semantics back: a closed dialog
+ * must mount nothing, a trigger's child always renders, and DialogContent keeps a real close
+ * button. Content renders inline instead of into a portal — the only part happy-dom cannot do. */
+const uninstallDialogMock = mock.module("@/components/ui/dialog", () => {
   const pass = ({ children }: { children?: ReactNode }) => children ?? null;
   const DialogTriggerMock = ({
     children,
@@ -125,6 +132,13 @@ mock.module("@/components/ui/dialog", () => {
     DialogTrigger: DialogTriggerMock,
   };
 });
+
+/*
+ * Give the registry entry back at suite end: the handle e2e-compat returns deletes the mock for
+ * the raw specifier, so a later file the same worker imports resolves the real Dialog instead of
+ * this passthrough — the leak behind the suite's order-dependent dialog failures.
+ */
+afterAll(() => uninstallDialogMock());
 
 const { UsageCreditsView } = await import(
   "@/components/billing/usage-credits-view"
