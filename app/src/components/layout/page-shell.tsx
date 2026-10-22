@@ -32,8 +32,8 @@ import { SidebarToggle, useSidebarToggleVisible } from "./sidebar-toggle";
 type ShellWidth = "prose" | "wide";
 
 const WIDTHS: Record<ShellWidth, string> = {
-  prose: "max-w-2xl",
-  wide: "max-w-5xl",
+  prose: "max-w-[672px]",
+  wide: "max-w-[1024px]",
 };
 
 export function PageShell({
@@ -204,7 +204,7 @@ export function PageRows({
      */
     <div
       className={cn(
-        "mt-4 overflow-hidden rounded-2xl border border-border bg-card shadow-card dark:border-transparent dark:shadow-none",
+        "mt-4 overflow-hidden rounded-xl border border-border bg-card shadow-card dark:border-transparent dark:shadow-none",
         "[&_[data-slot=item]]:rounded-none",
         className,
       )}

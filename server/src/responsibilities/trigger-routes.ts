@@ -16,6 +16,11 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { getLogger } from "../../../shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
+import type {
+  InboundQuarantineInput,
+  InboundTriggerAttribution,
+  InboundTriggerResolution,
+} from "../enterprise/tenancy/inbound-attribution";
 import {
   linearTimestampFresh,
   verifyBearer,
@@ -32,28 +37,61 @@ import {
   type TriggerDirectory,
 } from "./triggers";
 import type { ResponsibilityEvent, ResponsibilityEventResult } from "./types";
+
 const log = getLogger("server");
 
 export const TRIGGER_BODY_LIMIT = 256 * 1024;
+
+/**
+ * MT044 (Issue #87): the ownership-attribution seam. Supplied by the assembly when this
+ * deployment resolves inbound deliveries to a company/team; absent means every trigger is the
+ * legacy personal kind and the path below is byte-identical to before. The payload never
+ * participates in resolution — `resolve` reads the persisted trigger mapping, and a delivery
+ * that cannot be resolved lands in the quarantine queue instead of any business scope.
+ */
+export type InboundAttributionSeam = {
+  resolve(trigger: ResolvedTrigger): Promise<InboundTriggerResolution>;
+  ingestEnterprise(input: {
+    trigger: ResolvedTrigger;
+    attribution: InboundTriggerAttribution;
+    delivery: {
+      deliveryId: string;
+      type: string;
+      payload: Record<string, unknown>;
+    };
+  }): Promise<ResponsibilityEventResult>;
+  quarantine(input: InboundQuarantineInput): Promise<{
+    status: "quarantined" | "duplicate";
+    id: string;
+  }>;
+};
 
 export type TriggerIngressDeps = {
   directory: TriggerDirectory;
   ingest: (event: ResponsibilityEvent) => Promise<ResponsibilityEventResult>;
   auditStore?: AuditStore;
   now?: () => number;
+  attribution?: InboundAttributionSeam;
 };
 export type DeliveryOutcome =
   | ({ status: "queued" } & ResponsibilityEventResult)
   | { status: "ignored"; reason: string }
-  | { status: "inactive"; reason: string };
+  | { status: "inactive"; reason: string }
+  | {
+      status: "quarantined";
+      reason: string;
+      quarantine: { id: string; status: string };
+    };
 
 /**
  * The one path every trigger kind (webhook, providers, email, Slack) takes after authentication:
- * lifecycle gate, narrow filter, then the store's transactional event + run + queue insert, audited
- * with the trigger source.
+ * ownership resolution (MT044, when the seam is installed — an unresolvable delivery is
+ * quarantined for operators and never reaches a business scope), then the lifecycle gate, the
+ * narrow filter, then the store's transactional event + run + queue insert (enterprise-attributed
+ * deliveries queue through the MT042 scan shape), audited with the trigger source.
  */
 export async function deliverToTrigger(
-  deps: Pick<TriggerIngressDeps, "ingest" | "auditStore">,
+  deps: Pick<TriggerIngressDeps, "ingest" | "auditStore" | "attribution">,
   trigger: ResolvedTrigger,
   delivery: {
     deliveryId: string;
@@ -62,6 +100,60 @@ export async function deliverToTrigger(
   },
   filterPasses: boolean,
 ): Promise<DeliveryOutcome> {
+  // MT044: ownership comes from the persisted trigger mapping, never the payload. An
+  // authenticated delivery that cannot be resolved is quarantined — visible to operators, not
+  // run in (or recorded under) any business scope. Vendors retry non-2xx, so the response
+  // acknowledges durably-quarantined deliveries with 200.
+  const seam = deps.attribution;
+  if (seam) {
+    const resolution = await seam.resolve(trigger);
+    if (resolution.kind === "unresolvable") {
+      const quarantine = await seam.quarantine({
+        channel: trigger.kind,
+        triggerId: trigger.id,
+        deliveryId: delivery.deliveryId,
+        eventType: delivery.type.slice(0, 128) || "received",
+        reason: resolution.code,
+        payload: delivery.payload,
+      });
+      log.warn(
+        {
+          type: "responsibility-trigger-quarantined",
+          triggerId: trigger.id,
+          channel: trigger.kind,
+          reason: resolution.code,
+          quarantineId: quarantine.id,
+        },
+        "responsibility-trigger-quarantined",
+      );
+      return {
+        status: "quarantined",
+        reason: `Ownership could not be resolved (${resolution.code}). The delivery was quarantined.`,
+        quarantine,
+      };
+    }
+    if (resolution.kind === "enterprise") {
+      if (!trigger.enabled)
+        return { status: "inactive", reason: "This trigger is paused." };
+      if (trigger.responsibilityStatus !== "active")
+        return {
+          status: "inactive",
+          reason: `The responsibility is ${trigger.responsibilityStatus}.`,
+        };
+      if (!filterPasses)
+        return {
+          status: "ignored",
+          reason: "The trigger's filter did not match.",
+        };
+      const result = await seam.ingestEnterprise({
+        trigger,
+        attribution: resolution.attribution,
+        delivery,
+      });
+      await auditTriggered(deps, trigger, delivery, result);
+      return { status: "queued", ...result };
+    }
+  }
   // Paused and completed responsibilities never run, however they are triggered. Nothing is
   // recorded for them, so resuming later does not replay what arrived while paused.
   if (!trigger.enabled)
@@ -82,44 +174,63 @@ export async function deliverToTrigger(
     type: delivery.type.slice(0, 128) || "received",
     payload: fitPayload(delivery.payload),
   });
-  if (deps.auditStore && !result.duplicate)
-    await recordAuditEvent(deps.auditStore, {
-      eventType: "responsibility.triggered",
-      targetType: "responsibility",
-      targetId: trigger.responsibilityId,
-      actorUserId: trigger.ownerUserId,
-      initiator: { kind: "responsibility", id: trigger.responsibilityId },
-      payload: {
-        source: trigger.kind,
-        triggerId: trigger.id,
-        eventType: delivery.type,
-        deliveryId: delivery.deliveryId.slice(0, 256),
-        eventId: result.eventId,
-        runIds: result.runIds,
-      },
-    }).catch((error) =>
-      log.error(
-        {
-          type: "responsibility-trigger-audit-failed",
-          triggerId: trigger.id,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        "responsibility-trigger-audit-failed",
-      ),
-    );
+  await auditTriggered(deps, trigger, delivery, result);
   return { status: "queued", ...result };
 }
 
+/** The post-ingest audit row, shared by the personal and enterprise-attributed paths. */
+async function auditTriggered(
+  deps: Pick<TriggerIngressDeps, "auditStore">,
+  trigger: ResolvedTrigger,
+  delivery: { deliveryId: string; type: string },
+  result: ResponsibilityEventResult,
+) {
+  if (!deps.auditStore || result.duplicate) return;
+  await recordAuditEvent(deps.auditStore, {
+    eventType: "responsibility.triggered",
+    targetType: "responsibility",
+    targetId: trigger.responsibilityId,
+    actorUserId: trigger.ownerUserId,
+    initiator: { kind: "responsibility", id: trigger.responsibilityId },
+    payload: {
+      source: trigger.kind,
+      triggerId: trigger.id,
+      eventType: delivery.type,
+      deliveryId: delivery.deliveryId.slice(0, 256),
+      eventId: result.eventId,
+      runIds: result.runIds,
+    },
+  }).catch((error) =>
+    log.error(
+      {
+        type: "responsibility-trigger-audit-failed",
+        triggerId: trigger.id,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "responsibility-trigger-audit-failed",
+    ),
+  );
+}
+
 function outcomeBody(outcome: DeliveryOutcome) {
-  return outcome.status === "queued"
-    ? {
-        accepted: true,
-        queued: outcome.runIds.length > 0,
-        duplicate: outcome.duplicate,
-        eventId: outcome.eventId,
-        runIds: outcome.runIds,
-      }
-    : { accepted: true, queued: false, reason: outcome.reason };
+  if (outcome.status === "queued")
+    return {
+      accepted: true,
+      queued: outcome.runIds.length > 0,
+      duplicate: outcome.duplicate,
+      eventId: outcome.eventId,
+      runIds: outcome.runIds,
+    };
+  if (outcome.status === "quarantined")
+    return {
+      accepted: true,
+      queued: false,
+      quarantined: true,
+      quarantineId: outcome.quarantine.id,
+      duplicateQuarantine: outcome.quarantine.status === "duplicate",
+      reason: outcome.reason,
+    };
+  return { accepted: true, queued: false, reason: outcome.reason };
 }
 
 function parseObject(raw: string): Record<string, unknown> | null {
