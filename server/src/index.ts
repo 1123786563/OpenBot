@@ -386,6 +386,11 @@ import {
 } from "./enterprise/tenancy/openmuse-voice-mobile-tenancy";
 import { createCompanyPeopleLifecycleService } from "./enterprise/tenancy/people-lifecycle";
 import {
+  createOpenMuseVoiceMobileTenancyService,
+  type OpenMuseVoiceMobileTenancyRows,
+} from "./enterprise/tenancy/openmuse-voice-mobile-tenancy";
+import { createCompanyPeopleLifecycleService } from "./enterprise/tenancy/people-lifecycle";
+import {
   createPersonalShareAdminService,
   createPersonalShareDecisionService,
 } from "./enterprise/tenancy/personal-share-rules";
@@ -423,22 +428,6 @@ import {
   createWorkspaceAdminService,
   createWorkspaceScopeLister,
 } from "./enterprise/tenancy/workspace-admin";
-import {
-  createCompanyAdminRoutes,
-  createUnavailableCompanyAdminRoutes,
-} from "./enterprise/tenancy/company-admin-routes";
-import { createCompanyCapabilitiesService } from "./enterprise/tenancy/company-capabilities";
-import { createCompanyConfigReader } from "./enterprise/tenancy/company-config";
-import { createCompanyPeopleLifecycleService } from "./enterprise/tenancy/people-lifecycle";
-import { createCompanySsoScimConfigService } from "./enterprise/tenancy/sso-scim-config";
-import { createLearningDemonstrationService } from "./enterprise/tenancy/learning-demonstrations";
-import {
-  createBillingManagementService,
-  exportTenantAuditEvents,
-  queryTenantAuditEvents,
-  recordTenantAuditEvent,
-} from "./enterprise/tenancy/audit-domains";
-import { createCompanyFinanceVisibilityService } from "./billing/company-finance-visibility";
 import {
   createUnavailableWorkspaceScopeRoutes,
   createWorkspaceScopeRoutes,

@@ -1109,7 +1109,12 @@
    "name": "server/tests/multitenancy part 5",
    "files": [
     "server/tests/multitenancy/telemetry-attribution.test.ts\nserver/tests/multitenancy/telemetry-usage.test.ts\nserver/tests/multitenancy/voice-mobile-bff.test.ts",
-    "server/tests/multitenancy/telemetry-usage.test.ts",
+    "server/tests/multitenancy/telemetry-usage.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests/multitenancy part 5",
+   "files": [
     "server/tests/multitenancy/tool-invocation.test.ts",
     "server/tests/multitenancy/vendor-billing.test.ts",
     "server/tests/multitenancy/voice-mobile-bff.test.ts",
