@@ -1,3 +1,4 @@
+import { clientUpload } from "../client";
 import {
   DICTATION_TIMEOUT_MS,
   dictationExtension,
@@ -117,11 +118,10 @@ export async function transcribeRecording(
   }
   const body = new FormData();
   body.set("file", audio, `recording.${extension}`);
-  const response = await fetch("/api/audio/transcriptions", {
-    method: "POST",
-    credentials: "include",
+  // The transport's multipart half (MT081 AC3): same credentials and scope-selection
+  // discipline as every other request, with this surface's own marker header riding along.
+  const response = await clientUpload("/api/audio/transcriptions", body, {
     headers: { "x-openbot-dictation": "1" },
-    body,
     signal: AbortSignal.any([
       signal,
       AbortSignal.timeout(DICTATION_TIMEOUT_MS + 5_000),

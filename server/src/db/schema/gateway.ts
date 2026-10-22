@@ -139,7 +139,7 @@ export const gatewayModelCatalogRefs = pgTable(
      */
     check(
       "gateway_model_catalog_refs_capability_allowed",
-      sql`${table.capability} IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'realtime', 'video', 'unknown')`,
+      sql`${table.capability} IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'ocr', 'realtime', 'video', 'unknown')`,
     ),
     check(
       "gateway_model_catalog_refs_source_allowed",
@@ -275,7 +275,7 @@ export const gatewayPriceSnapshots = pgTable(
     }),
     check(
       "gateway_price_snapshots_capability_allowed",
-      sql`${table.capability} IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'realtime', 'video', 'unknown')`,
+      sql`${table.capability} IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'ocr', 'realtime', 'video', 'unknown')`,
     ),
     check(
       "gateway_price_snapshots_version_positive",
@@ -480,7 +480,7 @@ export const gatewayModelOpenScopes = pgTable(
     ),
     check(
       "gateway_model_open_scopes_capability_allowed",
-      sql`${table.capability} IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'realtime', 'video', 'unknown')`,
+      sql`${table.capability} IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'ocr', 'realtime', 'video', 'unknown')`,
     ),
   ],
 );
@@ -613,7 +613,7 @@ export const gatewayModelPreferences = pgTable(
     ),
     check(
       "gateway_model_preferences_capability_allowed",
-      sql`${table.capability} IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'realtime', 'video', 'unknown')`,
+      sql`${table.capability} IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'ocr', 'realtime', 'video', 'unknown')`,
     ),
     /*
      * The scope's identity shape: `global` names neither a Bot nor a conversation,

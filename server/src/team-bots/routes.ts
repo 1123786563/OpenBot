@@ -33,6 +33,12 @@ export function createTeamBotRoutes(
     context.json({
       teamBots: await teamBots.list(context.var.actor),
       publishable: await teamBots.publishable(context.var.actor),
+      /**
+       * The audience ranges the design allows a publication to choose — the same enum the PUT
+       * below parses, answered here so a client renders the choices the server actually takes
+       * rather than a wider or cross-company option of its own invention (MT085 AC2).
+       */
+      publishAudiences: ["team", "people"],
     }),
   );
   routes.delete("/consents", async (context) => {

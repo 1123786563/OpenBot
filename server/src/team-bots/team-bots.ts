@@ -491,6 +491,20 @@ export function createTeamBots(options: {
           assigned: Boolean(row.assigned),
           /** False while its name or description would leave teammates unable to tell it apart. */
           visibleToTeam: Boolean(row.described),
+          /**
+           * Whether THIS person may take the publication away (`unpublish`: the owner, or an
+           * administrator). A capability the server answers, so a client renders the action from it
+           * rather than re-deriving it from ownership or role flags of its own (MT085).
+           */
+          canUnpublish: manages,
+          /**
+           * Whether THIS person may publish or re-aim the publication (`publish`: the owner only —
+           * an administrator may take a publication away but may not aim somebody else's). The
+           * same split `publish` and `unpublish` enforce, answered as one fact (MT085).
+           */
+          canEditPublication: row.ownerUserId === actor.id,
+          /** Whether THIS person may pin this Bot for groups (`assign`: an administrator, MT085). */
+          canAssign: actor.role === "admin",
           // Who it reaches is the owner's and administrators' business, not every teammate's.
           ...(manages
             ? {

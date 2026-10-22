@@ -769,7 +769,7 @@ test("a deep link to a scope that is gone opens revoked, never re-homed", async 
 // 7. The transport — the team half of the selection rides the same discipline
 // ---------------------------------------------------------------------------
 
-test("the workspace selector rides only same-origin enterprise paths, next to the tenant one", async () => {
+test("the workspace selector rides only same-origin reviewed paths, next to the tenant one", async () => {
   const asked: Asked[] = [];
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     asked.push({ input, init });
@@ -783,19 +783,29 @@ test("the workspace selector rides only same-origin enterprise paths, next to th
   expect(headerOf(asked[0]?.init, "x-openbot-tenant")).toBe("acme");
   expect(headerOf(asked[0]?.init, "x-openbot-workspace")).toBe("acme-finance");
 
+  // `/api/agents` earned its review at MT084 (the scoped Bot detail/config surface), so the pair
+  // rides it too — the reviewed inventory, not "enterprise paths only", is the rule. An
+  // unreviewed business path still attaches nothing.
   await client("/api/agents", {
     tenantId: "acme",
     workspaceId: "acme-finance",
   });
-  expect(headerOf(asked[1]?.init, "x-openbot-tenant")).toBeUndefined();
-  expect(headerOf(asked[1]?.init, "x-openbot-workspace")).toBeUndefined();
+  expect(headerOf(asked[1]?.init, "x-openbot-tenant")).toBe("acme");
+  expect(headerOf(asked[1]?.init, "x-openbot-workspace")).toBe("acme-finance");
+
+  await client("/api/channels", {
+    tenantId: "acme",
+    workspaceId: "acme-finance",
+  });
+  expect(headerOf(asked[2]?.init, "x-openbot-tenant")).toBeUndefined();
+  expect(headerOf(asked[2]?.init, "x-openbot-workspace")).toBeUndefined();
 
   await client("https://evil.example/api/enterprise/conversations", {
     tenantId: "acme",
     workspaceId: "acme-finance",
   });
-  expect(headerOf(asked[2]?.init, "x-openbot-workspace")).toBeUndefined();
-  expect(headerOf(asked[2]?.init, "x-openbot-tenant")).toBeUndefined();
+  expect(headerOf(asked[3]?.init, "x-openbot-workspace")).toBeUndefined();
+  expect(headerOf(asked[3]?.init, "x-openbot-tenant")).toBeUndefined();
 });
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   foreignKey,
   index,
@@ -101,7 +102,7 @@ export const creditReservations = pgTable(
      */
     check(
       "credit_reservations_lock_completeness_check",
-      sql`(${table.provider} IS NULL) = (${table.model} IS NULL) AND (${table.provider} IS NULL) = (${table.capability} IS NULL) AND (${table.provider} IS NULL) = (${table.snapshotVersion} IS NULL) AND (${table.provider} IS NULL) = (${table.rateVersion} IS NULL) AND (${table.provider} IS NULL OR (${table.provider} <> '' AND ${table.model} <> '' AND ${table.capability} IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'realtime', 'video', 'unknown') AND ${table.snapshotVersion} >= 1 AND ${table.rateVersion} >= 0))`,
+      sql`(${table.provider} IS NULL) = (${table.model} IS NULL) AND (${table.provider} IS NULL) = (${table.capability} IS NULL) AND (${table.provider} IS NULL) = (${table.snapshotVersion} IS NULL) AND (${table.provider} IS NULL) = (${table.rateVersion} IS NULL) AND (${table.provider} IS NULL OR (${table.provider} <> '' AND ${table.model} <> '' AND ${table.capability} IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'ocr', 'realtime', 'video', 'unknown') AND ${table.snapshotVersion} >= 1 AND ${table.rateVersion} >= 0))`,
     ),
     check(
       "credit_reservations_terminal_check",
@@ -693,5 +694,351 @@ export const creditRecoveryAlerts = pgTable(
       table.level,
       table.lastAlertedAt,
     ),
+  ],
+);
+
+/**
+ * One accepted async submit's durable record (Bifrost 17.2, #326): the local job identity
+ * a replayed submit converges on (the submit idempotency key is UNIQUE), with the
+ * attribution facts — grant, payer, model, locked versions — fixed at creation (17.1's
+ * contract members, carried here while the dedicated identity ticket is open) and the
+ * full-cap reservation the submit held BEFORE any provider dispatch.
+ *
+ * `providerJobId` is nullable on purpose: the provider's answer can be lost (17.3), and
+ * "not yet known" is a state the row must hold while the reservation stays occupied. The
+ * state CHECK keeps dispatch's own outcome honest — `submitted` carries a provider job id,
+ * `dispatch_unconfirmed` does not — while the money's terminal states stay on the
+ * reservation, where 06.x owns them.
+ */
+export const asyncJobs = pgTable(
+  "async_jobs",
+  {
+    /** `aj-` plus random bytes, minted by the submit path. */
+    jobId: text("job_id").primaryKey(),
+    /** The submit request's stable identity; one submit is one job, ever. */
+    submitIdempotencyKey: text("submit_idempotency_key").notNull(),
+    /** The authorization the submit ran under; attribution never re-resolves. */
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => accessGrants.grantId),
+    /** The payer the reservation billed, copied at creation (17.1's fixed attribution). */
+    payerKind: text("payer_kind").notNull(),
+    payerId: text("payer_id").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    capability: text("capability").notNull(),
+    snapshotVersion: integer("snapshot_version").notNull(),
+    rateVersion: integer("rate_version").notNull(),
+    /** The provider's job id when its answer arrived; null when lost (17.3's lane). */
+    providerJobId: text("provider_job_id"),
+    /** The full-cap hold; NOT NULL by migration — an accepted submit always holds one. */
+    reservationId: text("reservation_id")
+      .notNull()
+      .references(() => creditReservations.id),
+    /** The worst-case ceiling the submit reserved (all entries, one upward rounding). */
+    maximumCredits: integer("maximum_credits").notNull(),
+    /** How many entries the cap conversion covered. */
+    entryCount: integer("entry_count").notNull(),
+    /** Dispatch's own outcome; the money's states live on the reservation. */
+    state: text("state")
+      .$type<"submitted" | "dispatch_unconfirmed">()
+      .notNull()
+      .default("submitted"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("async_jobs_submit_idempotency_key_unique_idx").on(
+      table.submitIdempotencyKey,
+    ),
+    check(
+      "async_jobs_payer_kind_check",
+      sql`${table.payerKind} IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')`,
+    ),
+    check(
+      "async_jobs_capability_check",
+      sql`${table.capability} IN ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'ocr', 'realtime', 'video', 'unknown')`,
+    ),
+    check(
+      "async_jobs_state_check",
+      sql`${table.state} IN ('submitted', 'dispatch_unconfirmed')`,
+    ),
+    check(
+      "async_jobs_version_check",
+      sql`${table.snapshotVersion} >= 1 AND ${table.rateVersion} >= 0`,
+    ),
+    check("async_jobs_maximum_check", sql`${table.maximumCredits} > 0`),
+    check("async_jobs_entry_count_check", sql`${table.entryCount} > 0`),
+    check(
+      "async_jobs_dispatch_shape_check",
+      sql`(${table.state} = 'submitted' AND ${table.providerJobId} IS NOT NULL AND ${table.dispatchedAt} IS NOT NULL) OR (${table.state} = 'dispatch_unconfirmed' AND ${table.providerJobId} IS NULL)`,
+    ),
+    // The recovery sweep and the status read arrive by grant and by provider job id.
+    index("async_jobs_grant_idx").on(table.grantId, table.createdAt),
+    uniqueIndex("async_jobs_provider_job_id_idx").on(table.providerJobId),
+  ],
+);
+
+/**
+ * One established realtime session (Bifrost 15.1, #314): the durable identity a WebSocket
+ * or WebRTC session is born under — the grant, the payer the door RESOLVED server-side,
+ * the model cell and BOTH locked versions, frozen at establishment so the session's
+ * attribution and price basis cannot drift mid-flight (会话期间身份与账务基准固定不变).
+ * Disconnection or restart loses nothing: the row is the recovery input 15.8 restores
+ * from, and 15.2's billing units attribute to the same account this row names. The row
+ * carries no reservation — a session's money moves per unit, not per session, and the
+ * establishment path itself holds, charges and dispatches nothing.
+ */
+export const realtimeSessions = pgTable(
+  "realtime_sessions",
+  {
+    /** `rs-` plus random bytes, minted at establishment. */
+    sessionId: text("session_id").primaryKey(),
+    /** The authorization the session runs under; attribution never re-resolves. */
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => accessGrants.grantId),
+    /** The payer the establishment door resolved, copied at creation. */
+    payerKind: text("payer_kind").notNull(),
+    payerId: text("payer_id").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    capability: text("capability").notNull(),
+    snapshotVersion: integer("snapshot_version").notNull(),
+    rateVersion: integer("rate_version").notNull(),
+    /** `open` until 15.6's revocation/expiry stop closes it. */
+    state: text("state")
+      .$type<"open" | "closed">()
+      .notNull()
+      .default("open"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closeReason: text("close_reason"),
+  },
+  (table) => [
+    check(
+      "realtime_sessions_capability_check",
+      sql`${table.capability} = 'realtime'`,
+    ),
+    check(
+      "realtime_sessions_payer_kind_check",
+      sql`${table.payerKind} IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')`,
+    ),
+    check(
+      "realtime_sessions_state_check",
+      sql`${table.state} IN ('open', 'closed')`,
+    ),
+    check(
+      "realtime_sessions_version_check",
+      sql`${table.snapshotVersion} >= 1 AND ${table.rateVersion} >= 0`,
+    ),
+    check(
+      "realtime_sessions_closed_shape_check",
+      sql`(${table.state} = 'open' AND ${table.closedAt} IS NULL AND ${table.closeReason} IS NULL) OR (${table.state} = 'closed' AND ${table.closedAt} IS NOT NULL)`,
+    ),
+    // Recovery and the user's session list read by grant, newest first.
+    index("realtime_sessions_grant_idx").on(table.grantId, table.startedAt),
+  ],
+);
+
+/**
+ * One realtime billing unit (Bifrost 15.2, #315): the independently reserved, independently
+ * attempt-identified segment a realtime session's money moves in — the durable counterpart of
+ * the ticket's RealtimeUnit contract {unitId, sessionId, attemptId, reservationId, kind,
+ * boundCents}. The unit's admission facts (grant, payer, model cell, both locked versions)
+ * are NOT copied here: they live frozen on the unit's {@link realtimeSessions} row, and the
+ * unit's reserve composes 06.3's transactional door OVER that frozen identity, so a unit can
+ * never re-resolve what its session already fixed (会话期间身份与账务基准固定不变).
+ *
+ * THE STATE MACHINE IS THE CLOSED SET the ticket pins — pending → reserved → processing →
+ * settled | unknown | refused — and the shape CHECK keeps every state honest about its
+ * companions: the reserved family carries the attempt and reservation the door answered,
+ * `refused` carries the door's own reason code and NO reservation (the row is the recorded
+ * evidence that no provider input could be billed to this unit), and `pending` — which only
+ * exists inside the open transaction, the unit insert and the reserve outcome committing as
+ * one fact — carries neither. `(session_id, unit_key)` is UNIQUE: one unit per key, ever, so
+ * a replayed open converges on the original row and its original answer (结算重放不重扣).
+ */
+export const realtimeUnits = pgTable(
+  "realtime_units",
+  {
+    /** `ru-` plus random bytes, minted by the unit door. */
+    unitId: text("unit_id").primaryKey(),
+    /** The session whose frozen identity this unit reserves under. */
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => realtimeSessions.sessionId),
+    /** The caller's stable unit identity; one unit per (session, key), ever. */
+    unitKey: text("unit_key").notNull(),
+    /** Which side of the session's money this unit covers. */
+    kind: text("kind")
+      .$type<"input_audio" | "output_audio" | "response" | "duration">()
+      .notNull(),
+    /** The certified hold ceiling in scaled credit units (×100). */
+    boundCents: integer("bound_cents").notNull(),
+    state: text("state")
+      .$type<
+        | "pending"
+        | "reserved"
+        | "processing"
+        | "settled"
+        | "unknown"
+        | "refused"
+      >()
+      .notNull()
+      .default("pending"),
+    /** The unit's attempt identity (06.7's `att-` mapping of the reservation). */
+    attemptId: text("attempt_id"),
+    /** The hold this unit reserved; absent exactly when no hold ever formed. */
+    reservationId: text("reservation_id").references(() => creditReservations.id),
+    /** The 06.3 door's own refusal code, recorded on the refused unit. */
+    refusalReason: text("refusal_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    stateUpdatedAt: timestamp("state_updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "realtime_units_state_shape_check",
+      sql`(${table.state} = 'pending' AND ${table.attemptId} IS NULL AND ${table.reservationId} IS NULL AND ${table.refusalReason} IS NULL) OR (${table.state} IN ('reserved', 'processing', 'settled', 'unknown') AND ${table.attemptId} IS NOT NULL AND ${table.reservationId} IS NOT NULL AND ${table.refusalReason} IS NULL) OR (${table.state} = 'refused' AND ${table.attemptId} IS NULL AND ${table.reservationId} IS NULL AND ${table.refusalReason} IS NOT NULL)`,
+    ),
+    // One unit per (session, key), ever — the replay's convergence point.
+    uniqueIndex("realtime_units_session_key_idx").on(
+      table.sessionId,
+      table.unitKey,
+    ),
+    // One attempt identity names at most one unit, wherever present.
+    uniqueIndex("realtime_units_attempt_idx")
+      .on(table.attemptId)
+      .where(sql`${table.attemptId} IS NOT NULL`),
+    // The recovery and user reads walk a session's units oldest first.
+    index("realtime_units_session_created_idx").on(
+      table.sessionId,
+      table.createdAt,
+    ),
+  ],
+);
+
+/**
+ * One settlement's per-dimension split (Bifrost 20.3, #343): the integer share of a ledger
+ * row's credits each billing dimension accounts for, written only inside the credit
+ * writer's settle transaction with the write-time invariant that the rows sum to exactly
+ * the row they explain. The consumption view groups them — `surcharge_*` dimensions are
+ * the surcharge side, everything else the model side — so the two-level attribution
+ * reconciles with the ledger by construction. Tool/routing surcharge dimensions join this
+ * same table when 20.1's mapping lands (#341); nothing here pre-names them.
+ */
+export const creditSettlementDimensionBreakdown = pgTable(
+  "credit_settlement_dimension_breakdown",
+  {
+    ledgerId: text("ledger_id")
+      .primaryKey()
+      .references(() => creditLedger.id, { onDelete: "cascade" }),
+    dimension: text("dimension").primaryKey(),
+    /** The dimension's whole scaled units of this ledger row (≥ 0; Σ units = the row). */
+    units: integer("units").notNull(),
+  },
+  (table) => [
+    check(
+      "credit_settlement_dimension_breakdown_units_check",
+      sql`${table.units} >= 0`,
+    ),
+  ],
+);
+
+/**
+ * One row per REAL tool call — the tool execution's own billing identity (Bifrost 20.1,
+ * #341). Every real tool call gets a local `tc-` charge id plus the caller's idempotency
+ * key (a replay converges on the row its hold already minted), the entrance it arrived
+ * through (the closed registry in `billing/tool-surcharge-pricing.ts` — MCP, injected,
+ * responses, web search, A2A), the surcharge dimension it bills on, and the attribution
+ * frozen at creation exactly the way `async_jobs` freezes its own. A charged row carries
+ * its reservation's `att-` attempt id — the 07.x bijection — so tool fees and model fees
+ * are distinguishable by construction: the dimension is always a `surcharge_*` member,
+ * and the settlement breakdown's surcharge group says the same thing about the same call.
+ *
+ * `refused` rows never hold a reservation or an attempt — a refusal writes no money rows,
+ * and the refusal reason plus the audit trail carry the attempt; a `charged` row holds the
+ * reservation the call settled against, or carries `pricedFree` when the basis priced the
+ * call exactly zero (free is a price, executable hold-free). The routing-attached
+ * embedding call is deliberately not an entry: it bills on the attached model's own token
+ * dimensions through the request's reservation.
+ */
+export const toolCallCharges = pgTable(
+  "tool_call_charges",
+  {
+    /** The call's local identity, writer-minted — recognisable on sight, like `cr-`/`aj-`. */
+    chargeId: text("charge_id").primaryKey(),
+    /** The caller's durable request identity; a replay answers the existing row. */
+    idempotencyKey: text("idempotency_key").notNull(),
+    /** The entrance id, from the closed tool-execution registry. */
+    entry: text("entry").notNull(),
+    /** What executed: the `<client>-<tool>` pattern, the search tool, or the agent name. */
+    tool: text("tool").notNull(),
+    /** The surcharge dimension this call bills on (never a model dimension). */
+    dimension: text("dimension").notNull(),
+    /** The authorization the call ran under — frozen, like every attribution fact here. */
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => accessGrants.grantId),
+    /** The resolved payer the attribution froze at creation, never the request's spelling. */
+    payerKind: text("payer_kind").notNull(),
+    payerId: text("payer_id").notNull(),
+    /** The admission's own outcome: charged (with its hold, or priced exactly free) or refused. */
+    state: text("state")
+      .$type<"charged" | "refused">()
+      .notNull(),
+    /** The reservation this call's hold minted; absent exactly when no hold formed. */
+    reservationId: text("reservation_id").references(
+      () => creditReservations.id,
+    ),
+    /** True when the basis priced the call exactly zero — charged, hold-free. */
+    pricedFree: boolean("priced_free").notNull().default(false),
+    /** The admission's own refusal code, recorded on the refused row. */
+    refusalReason: text("refusal_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("tool_call_charges_idempotency_key_unique_idx").on(
+      table.idempotencyKey,
+    ),
+    check(
+      "tool_call_charges_entry_check",
+      sql`${table.entry} IN ('mcp.tool_call', 'injected.tool_call', 'injected.web_search', 'responses.tool_call', 'a2a.call')`,
+    ),
+    check(
+      "tool_call_charges_dimension_check",
+      sql`${table.dimension} IN ('surcharge_web_search', 'surcharge_tool_call', 'surcharge_a2a_call')`,
+    ),
+    check(
+      "tool_call_charges_payer_kind_check",
+      sql`${table.payerKind} IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')`,
+    ),
+    check(
+      "tool_call_charges_state_check",
+      sql`${table.state} IN ('charged', 'refused')`,
+    ),
+    check(
+      "tool_call_charges_state_shape_check",
+      sql`(${table.state} = 'charged' AND ${table.refusalReason} IS NULL AND (${table.reservationId} IS NOT NULL OR ${table.pricedFree} = true)) OR (${table.state} = 'refused' AND ${table.reservationId} IS NULL AND ${table.refusalReason} IS NOT NULL AND ${table.pricedFree} = false)`,
+    ),
+    // The user view and the sweep walk a grant's calls oldest first.
+    index("tool_call_charges_grant_idx").on(
+      table.grantId,
+      table.createdAt,
+    ),
+    // One charge per reservation: a hold mints exactly one tool-call identity.
+    uniqueIndex("tool_call_charges_reservation_idx")
+      .on(table.reservationId)
+      .where(sql`${table.reservationId} IS NOT NULL`),
   ],
 );

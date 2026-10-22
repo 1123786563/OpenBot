@@ -5,7 +5,7 @@ import {
   IconUsers,
   IconUsersGroup,
 } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import { Fragment, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -45,16 +45,16 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { countLabel } from "@/lib/agents/bot-summaries";
 import type { AgentProfile } from "@/lib/agents/queries";
-import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   assignTeamBotMutationOptions,
   publishTeamBotMutationOptions,
   type TeamBot,
+  type TeamBotsData,
   teamBotLink,
-  teamBotsQueryOptions,
+  scopedTeamBotsQueryOptions,
   unpublishTeamBotMutationOptions,
 } from "@/lib/team-bots";
-import { queryClient } from "@/query-client";
 
 const list = (value: string) =>
   value
@@ -66,12 +66,21 @@ const list = (value: string) =>
  * Who else can use this Bot. Its owner publishes it to the whole team or to named people and groups;
  * an administrator can also pin it at the top of a group's Bots lists. Each chat with a published
  * Bot is private to the person having it; its owner cannot read it.
+ *
+ * Every action here is offered because the SERVER says this person may take it (MT085): the
+ * publication rows carry `canUnpublish` and `canAssign`, the publish list (`publishable`) is the
+ * server's own answer, and the audience choices are the ranges the server names. No gate in this
+ * file re-derives permission from an ownership flag or a role — a capability the server did not
+ * answer does not exist here.
  */
 export function SharingSections({ agent }: { agent: AgentProfile }) {
   const { t } = useTranslation("agents");
-  const data = useQuery(teamBotsQueryOptions());
-  const me = useQuery(currentUserQueryOptions()).data;
-  const unpublish = useMutation(unpublishTeamBotMutationOptions(queryClient));
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const data = useQuery(scopedTeamBotsQueryOptions(queryClient, scope));
+  const unpublish = useMutation(
+    unpublishTeamBotMutationOptions(queryClient, scope),
+  );
   const [copied, setCopied] = useState(false);
   const [publishing, setPublishing] = useState(false);
   if (data.isPending) return null;
@@ -84,6 +93,10 @@ export function SharingSections({ agent }: { agent: AgentProfile }) {
   }
   const published = data.data.teamBots.find((bot) => bot.id === agent.id);
   const publishable = data.data.publishable.some((bot) => bot.id === agent.id);
+  // Who may change the publication at all: the server's own answers — an unpublished Bot of this
+  // person's (the publishable list), or a published one this person may re-aim. An administrator
+  // who may only retire a publication does not get an aim of their own.
+  const mayPublish = publishable || published?.canEditPublication === true;
 
   return (
     <>
@@ -118,7 +131,7 @@ export function SharingSections({ agent }: { agent: AgentProfile }) {
                     : t("sharing.hiddenDraft")}
                 </ItemDescription>
               </ItemContent>
-              {agent.mine ? (
+              {published.canUnpublish ? (
                 <ItemActions>
                   <Button
                     disabled={unpublish.isPending}
@@ -169,7 +182,7 @@ export function SharingSections({ agent }: { agent: AgentProfile }) {
           </PageEmpty>
         )}
       </PageSection>
-      {agent.mine && (published || publishable) ? (
+      {mayPublish ? (
         <PageSection
           description={t("sharing.publishNote")}
           title={published ? t("sharing.publishedToTitle") : t("sharing.publish")}
@@ -199,6 +212,7 @@ export function SharingSections({ agent }: { agent: AgentProfile }) {
           </PageRows>
           {publishing ? (
             <PublishDialog
+              audiences={data.data.publishAudiences}
               botId={agent.id}
               current={published}
               onClose={() => setPublishing(false)}
@@ -206,7 +220,7 @@ export function SharingSections({ agent }: { agent: AgentProfile }) {
           ) : null}
         </PageSection>
       ) : null}
-      {me?.role === "admin" && published ? (
+      {published?.canAssign === true ? (
         <PageSection
           description={t("sharing.assignDescription")}
           title={t("teamBots.assignTitle")}
@@ -248,25 +262,41 @@ function audienceSummary(
 /**
  * Who a Bot is published to: the whole team, or named people and groups. Mounted only while open,
  * so each opening starts from the current answer rather than from an abandoned edit.
+ *
+ * The choices offered are the ranges the server named in the list answer — never a wider set of
+ * this file's own invention, and never a cross-company one, which the design does not have (MT085
+ * AC2). A stored audience the server no longer offers falls back to the first range it does.
  */
 function PublishDialog({
+  audiences: offered,
   botId,
   current,
   onClose,
 }: {
+  audiences: TeamBotsData["publishAudiences"];
   botId: string;
   current?: TeamBot;
   onClose: () => void;
 }) {
   const { t } = useTranslation("agents");
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
   const formId = useId();
-  const audiences = {
-    team: t("teamBots.publishForm.wholeTeam"),
-    people: t("teamBots.publishForm.specificPeople"),
-  } as const;
-  const publish = useMutation(publishTeamBotMutationOptions(queryClient));
+  const audiences = Object.fromEntries(
+    offered.map((value) => [
+      value,
+      value === "team"
+        ? t("teamBots.publishForm.wholeTeam")
+        : t("teamBots.publishForm.specificPeople"),
+    ]),
+  ) as Record<string, string>;
+  const publish = useMutation(
+    publishTeamBotMutationOptions(queryClient, scope),
+  );
   const [audience, setAudience] = useState<"team" | "people">(
-    current?.audience ?? "team",
+    offered.includes(current?.audience ?? "team")
+      ? (current?.audience ?? "team")
+      : (offered[0] ?? "team"),
   );
   const [emails, setEmails] = useState((current?.people ?? []).join(", "));
   const [groups, setGroups] = useState((current?.groups ?? []).join(", "));
@@ -305,8 +335,10 @@ function PublishDialog({
                 <Select
                   items={audiences}
                   onValueChange={(value) => {
+                    // Only a range the server named may be chosen; anything else is not a value
+                    // this form knows, so it changes nothing.
                     if (value === "team" || value === "people") {
-                      setAudience(value);
+                      if (offered.includes(value)) setAudience(value);
                     }
                   }}
                   value={audience}
@@ -386,7 +418,11 @@ function PublishDialog({
  */
 function Assignments({ bot }: { bot: TeamBot }) {
   const { t } = useTranslation("agents");
-  const remove = useMutation(assignTeamBotMutationOptions(queryClient));
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const remove = useMutation(
+    assignTeamBotMutationOptions(queryClient, scope),
+  );
   const [assigning, setAssigning] = useState(false);
   const assigned = bot.assignments ?? [];
   return (
@@ -453,8 +489,12 @@ function Assignments({ bot }: { bot: TeamBot }) {
 /** One group to pin this Bot for, or * for the whole team. */
 function AssignDialog({ bot, onClose }: { bot: TeamBot; onClose: () => void }) {
   const { t } = useTranslation("agents");
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
   const formId = useId();
-  const assign = useMutation(assignTeamBotMutationOptions(queryClient));
+  const assign = useMutation(
+    assignTeamBotMutationOptions(queryClient, scope),
+  );
   const [group, setGroup] = useState("");
   return (
     <Dialog onOpenChange={(next) => !next && onClose()} open>

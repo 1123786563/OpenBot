@@ -1,5 +1,7 @@
-import { queryOptions } from "@tanstack/react-query";
+import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { client, tryClient } from "@/lib/client";
+import { guarded } from "@/lib/enterprise/tenant/queries";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 export type AgentVisibility = "public" | "private";
 
@@ -135,6 +137,90 @@ export function agentQueryOptions(agentId: string) {
       client(agentApiPath(agentId), "agent", {
         fallbackKey: "agents.loadOne",
       }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The scoped half (MT084 / Issue #127): the Bot detail and configuration pages read through here
+// ---------------------------------------------------------------------------
+
+/**
+ * The refusal a scoped detail read raises when the server answers that this coworker is not this
+ * person's to see under the scope they hold.
+ *
+ * A 404 is the server's canonical no-leak answer — the same status whether the coworker never
+ * existed or belongs to a scope this person has left — so the client maps every 404 to this one
+ * typed refusal and the pages answer it with ONE unavailable state, never a sentence that would
+ * tell the reader which of the two it was.
+ */
+export class AgentUnavailableError extends Error {
+  constructor() {
+    super("That coworker is not available under the scope you hold.");
+    this.name = "AgentUnavailableError";
+  }
+}
+
+/** The sentence a malformed-but-ok answer falls back to, a failed read rather than a missing one. */
+const DETAIL_FALLBACK = "That coworker could not be read.";
+
+/**
+ * The Bot detail read, bound to the scope the screen holds (MT084 / Issue #127, AC1).
+ *
+ * The key composes onto the scope's own cache prefix (`scoped-cache.ts`, MT083), so one person's
+ * two scopes never share an entry and a switch drops the old scope's row wholesale; the request
+ * carries the selection pair (client.ts's reviewed inventory carries it on `/api/agents`); and the
+ * answer passes the SAME generation guard the tenant face uses (`guarded`), so a response that left
+ * under one selection and lands under another is refused instead of decorating the new scope.
+ *
+ * `scope.status === "pending"` (the signed-in user unresolved) refuses rather than guesses, the
+ * same rule the streaming faces live by: the query sits disabled until the scope source answers.
+ */
+export function scopedAgentDetailQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+  agentId: string,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...agentKeys.detail(agentId)]
+        : [...agentKeys.detail(agentId), ":scope-pending"],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<AgentProfile>(() => {})
+        : async ({ signal }): Promise<AgentProfile> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient(agentApiPath(agentId), {
+                signal,
+                fallbackKey: "agents.loadOne",
+                ...(open.selection ?? {}),
+              });
+              if (!response.ok) {
+                if (response.status === 404) throw new AgentUnavailableError();
+                const body = (await response.json().catch(() => null)) as {
+                  error?: unknown;
+                } | null;
+                throw new Error(
+                  typeof body?.error === "string"
+                    ? body.error
+                    : DETAIL_FALLBACK,
+                );
+              }
+              const body = (await response.json().catch(() => null)) as {
+                agent?: AgentProfile;
+              } | null;
+              if (
+                body === null ||
+                typeof body !== "object" ||
+                body.agent === null ||
+                typeof body.agent !== "object"
+              ) {
+                throw new Error(DETAIL_FALLBACK);
+              }
+              return body.agent;
+            }),
   });
 }
 

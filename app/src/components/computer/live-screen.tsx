@@ -5,6 +5,10 @@ import {
   connectScreen,
   type ScreenSocket,
 } from "@/lib/computers/screen-connection";
+import {
+  useStreamScope,
+  withStreamScope,
+} from "@/lib/enterprise/tenant/stream-scope";
 import { keyOf } from "@/lib/hotkeys/hotkeys";
 import { socketUrl } from "@/lib/socket-url";
 import { currentPageVisible } from "./preview-visibility";
@@ -109,6 +113,14 @@ export function LiveScreen({
   retryKey = 0,
 }: Props) {
   const { t } = useTranslation("computer");
+  /*
+   * The screen socket is bound to the selection (MT082 / Issue #125): it opens only once the
+   * scope source has resolved, carries the current pair on its URL (a WebSocket upgrade cannot
+   * carry headers), and the effect's cleanup below — which `connection.stop()` closes the socket
+   * through — runs on every rebind, so a switch ends the old scope's stream before a frame from
+   * it can land.
+   */
+  const streamScope = useStreamScope();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   /** Keydowns handled locally whose matching keyup must not leak to the remote browser. */
@@ -131,6 +143,9 @@ export function LiveScreen({
     frameSize.current = null;
     latestFrame.current = null;
     latestFrameId.current++;
+    // Pending scope: no business subscription on a guess (MT082 AC1).
+    if (streamScope.status === "pending") return;
+    const selection = streamScope.selection;
 
     const drawFrame = async (frame: FrameMessage, frameId: number) => {
       /**
@@ -248,7 +263,12 @@ export function LiveScreen({
     const connection = connectScreen({
       open: () => {
         const socket = new WebSocket(
-          socketUrl(`/api/computers/${encodeURIComponent(computerId)}/stream`),
+          socketUrl(
+            withStreamScope(
+              `/api/computers/${encodeURIComponent(computerId)}/stream`,
+              selection,
+            ),
+          ),
         );
         socketRef.current = socket;
         // Event handlers use only data, so adapt the native event surface without changing the protocol.
@@ -298,7 +318,7 @@ export function LiveScreen({
       document.removeEventListener("visibilitychange", drawLatestFrame);
       socketRef.current = null;
     };
-  }, [computerId, onProblem, retryKey]);
+  }, [computerId, onProblem, retryKey, streamScope]);
 
   useEffect(() => {
     const wasDriving = previouslyDriving.current;

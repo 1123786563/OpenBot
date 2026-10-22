@@ -1,5 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import {
+  useStreamScope,
+  withStreamScope,
+} from "@/lib/enterprise/tenant/stream-scope";
 import { interruptSession, sendMessage, turnEventsUrl } from "./client";
 import { scheduledRunEventsUrl } from "./scheduled-tasks";
 import {
@@ -477,6 +481,16 @@ export function useBuildStreaming(sessionId: string): {
   });
   const abortRef = useRef<AbortController | null>(null);
   const queryClient = useQueryClient();
+  /*
+   * The selection this stream opens under (MT082 / Issue #125): the attach happens inside an
+   * action, not an effect, so the pair is read from a ref the render keeps current. `pending`
+   * (the scope source unresolved) reads as null — a send cannot outlive the auth read the route
+   * gate already made, and the rebind below is what keeps a stream from continuing under a scope
+   * that moved after it opened.
+   */
+  const streamScope = useStreamScope();
+  const streamScopeRef = useRef(streamScope);
+  streamScopeRef.current = streamScope;
 
   /** Open one SSE URL and drain it into the live list — the shape every attach path shares. */
   const runStream = useCallback(
@@ -484,11 +498,18 @@ export function useBuildStreaming(sessionId: string): {
       const controller = new AbortController();
       abortRef.current = controller;
       dispatch({ type: "reset" });
+      const scopeNow = streamScopeRef.current;
       try {
-        const response = await fetch(url, {
-          credentials: "include",
-          signal: controller.signal,
-        });
+        const response = await fetch(
+          withStreamScope(
+            url,
+            scopeNow.status === "open" ? scopeNow.selection : null,
+          ),
+          {
+            credentials: "include",
+            signal: controller.signal,
+          },
+        );
         if (!response.ok) {
           dispatch({ type: "finish" });
           return;
@@ -562,6 +583,23 @@ export function useBuildStreaming(sessionId: string): {
     },
     [],
   );
+
+  /*
+   * A switch moves the generation this hook reads with the rest of the tenant surface, so the
+   * live turn's stream — opened under the old selection — is torn down with it (MT082 AC2): the
+   * fetch aborts (the drain loop ends as an abort, never an error packet) and the live list
+   * resets, so no old-scope event renders after the switch. The next attach reads the new pair.
+   */
+  const streamScopeKey =
+    streamScope.status === "open" ? streamScope.key : "pending";
+  const seenScopeKey = useRef(streamScopeKey);
+  useEffect(() => {
+    if (seenScopeKey.current === streamScopeKey) return;
+    seenScopeKey.current = streamScopeKey;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    dispatch({ type: "reset" });
+  }, [streamScopeKey]);
 
   // The subagent map belongs to one session; a session switch clears it (the component
   // stays mounted across route params, so this is the switch's cleanup point — the

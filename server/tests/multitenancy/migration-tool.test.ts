@@ -417,6 +417,12 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
     // MT035（Issue #78）、MT039（Issue #82）、MT040（Issue #83）与
     // MT068（Issue #111）并入排序位（MT034<MT035<MT039<MT040<MT041、
     // MT067<MT068<MT069）。
+    // 波次 18（orca-dag-wave3 mt11）：MT061（Issue #104）与 MT062
+    // （Issue #105）两协会表迁移注册并入排序位（MT060<MT061<MT062<
+    // MT067）——mt11 交付时漏同步本断言，本波次补齐（基线红修复）。
+    // 波次 19（orca-dag-wave3 mt12，brief 预授权窄缝同款）：本票新增
+    // MT064（Issue #107）、MT065（Issue #108）与 MT066（Issue #109）
+    // 并入排序位（MT062<MT064<MT065<MT066<MT067）。
     expect(ALLOWED_TASK_IDS).toEqual([
       "MT000",
       "MT004",
@@ -439,6 +445,11 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
       "MT042",
       "MT059",
       "MT060",
+      "MT061",
+      "MT062",
+      "MT064",
+      "MT065",
+      "MT066",
       "MT067",
       "MT068",
       "MT069",

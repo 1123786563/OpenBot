@@ -89,6 +89,19 @@ export const PRICE_DIMENSIONS = [
   "surcharge_web_search",
   /** USD flat per billed request — the gateway's `pricing.request`. */
   "surcharge_per_request",
+  /**
+   * USD flat per real tool execution — MCP vendor tools, injected tools, Responses-declared
+   * tools (20.1, #341). The v1 wire's Pricing struct carries no field for it, so it is
+   * `not_on_wire_v1`: unknown on every basis until the wire (or an administrator-priced
+   * override) prices tool calls — never 0, and group 20's gates refuse to enable an
+   * unpriced tool call (Q20).
+   */
+  "surcharge_tool_call",
+  /**
+   * USD flat per A2A agent call (20.1, #341). Same wire gap and same discipline as
+   * `surcharge_tool_call`: unknown until priced, never silently free.
+   */
+  "surcharge_a2a_call",
 ] as const;
 
 export type PriceDimension = (typeof PRICE_DIMENSIONS)[number];
@@ -107,6 +120,8 @@ export const PRICE_DIMENSION_UNITS: Record<PriceDimension, string> = {
   video: "USD per video second",
   surcharge_web_search: "USD per web-search request",
   surcharge_per_request: "USD per billed request",
+  surcharge_tool_call: "USD per tool execution",
+  surcharge_a2a_call: "USD per A2A call",
 };
 
 /** Why a dimension is unknown. Fixed codes; safe to show on any screen. */
@@ -170,6 +185,8 @@ const WIRE_SOURCES: Readonly<Record<PriceDimension, string>> = {
   video: "not_on_wire_v1",
   surcharge_web_search: "web_search",
   surcharge_per_request: "request",
+  surcharge_tool_call: "not_on_wire_v1",
+  surcharge_a2a_call: "not_on_wire_v1",
 };
 
 /** Dimensions the v1 wire schema has no field for; they are unknown until the wire grows one. */
