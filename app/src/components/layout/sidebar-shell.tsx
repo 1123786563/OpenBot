@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
+import { type CSSProperties, type ReactNode, useState } from "react";
 
 import { SidebarProvider } from "@/components/ui/sidebar";
 import {

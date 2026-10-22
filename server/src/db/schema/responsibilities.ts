@@ -169,6 +169,16 @@ export const responsibilityTriggers = pgTable(
     kind: text("kind").$type<TriggerKind>().notNull(),
     config: jsonb("config").$type<TriggerConfig>().notNull(),
     credentialId: uuid("credential_id").references(() => credentials.id),
+    /**
+     * MT044 (Issue #87): the persisted mapping an inbound delivery's company and team come from.
+     * Null on both is the legacy personal trigger (owner user only); set on both means deliveries
+     * to this trigger are enterprise-attributed. No foreign keys on purpose — liveness of the
+     * mapping is a resolution-time fact, and the enterprise tables need not exist on a personal
+     * deployment. A payload never writes these: the strict trigger config schema rejects any
+     * attribution a sender might smuggle inside `config`.
+     */
+    tenantId: text("tenant_id"),
+    workspaceId: text("workspace_id"),
     /** Paused triggers acknowledge deliveries but never queue a run. */
     enabled: boolean("enabled").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -184,5 +194,47 @@ export const responsibilityTriggers = pgTable(
       table.responsibilityId,
     ),
     index("responsibility_triggers_kind_idx").on(table.kind),
+    index("responsibility_triggers_tenant_idx").on(table.tenantId),
+  ],
+);
+
+/**
+ * MT044 (Issue #87): quarantine for authenticated inbound deliveries whose ownership cannot be
+ * resolved — the mapping rotted (tenant gone, team moved, membership revoked) or the channel could
+ * not resolve any trigger at all (an email address that no longer routes). The delivery is recorded
+ * for operators instead of landing in any business scope; listing is gated on a platform machine
+ * identity, never a business reader. `triggerId` is "" when no trigger row could be resolved; the
+ * (channel, triggerId, deliveryId) triple deduplicates provider redeliveries of the same event.
+ */
+export const responsibilityInboundQuarantine = pgTable(
+  "responsibility_inbound_quarantine",
+  {
+    id: text("id").primaryKey(),
+    channel: text("channel").notNull(),
+    triggerId: text("trigger_id").notNull().default(""),
+    deliveryId: text("delivery_id").notNull(),
+    eventType: text("event_type").notNull().default(""),
+    reason: text("reason").notNull(),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** Set by an operator's disposition; null while still pending review. */
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewNote: text("review_note"),
+  },
+  (table) => [
+    uniqueIndex("responsibility_inbound_quarantine_delivery_idx").on(
+      table.channel,
+      table.triggerId,
+      table.deliveryId,
+    ),
+    index("responsibility_inbound_quarantine_pending_idx").on(
+      table.reviewedAt,
+      table.receivedAt,
+    ),
   ],
 );

@@ -192,7 +192,15 @@ export type ResponsibilityStore = {
     agentId?: string,
   ): Promise<Responsibility>;
   listRuns(ownerUserId: string, id: string): Promise<ResponsibilityRun[]>;
-  ingestEvent(input: unknown): Promise<ResponsibilityEventResult>;
+  /**
+   * Ingest one event and queue its runs in a single transaction. `options.queueItem` (MT044)
+   * selects the queue shape per run: the default is the personal `responsibility.run` item, an
+   * enterprise-attributed delivery passes the MT042 scan shape instead.
+   */
+  ingestEvent(
+    input: unknown,
+    options?: { queueItem?: (runId: string) => { kind: string; key: string } },
+  ): Promise<ResponsibilityEventResult>;
   beginRun(
     runId: string,
     options?: { recovered: boolean },
