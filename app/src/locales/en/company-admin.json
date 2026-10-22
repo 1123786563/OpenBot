@@ -1,0 +1,196 @@
+{
+  "title": "Company admin",
+  "description": "Your company's people, identity, audit and billing — what the server says you may manage here.",
+  "nav": {
+    "people": "People & credentials",
+    "audit": "Audit",
+    "enterprise": "Enterprise settings",
+    "learning": "Learning",
+    "billing": "Billing & usage"
+  },
+  "gate": {
+    "pending": "Reading your company…",
+    "noSelection": {
+      "title": "Choose a company first",
+      "description": "The company admin area works inside a selected company and team. Pick one to continue."
+    },
+    "refused": {
+      "title": "Nothing to manage here",
+      "description": "You hold no management capability in this company. Ask your company administrator if you need one."
+    },
+    "unavailable": {
+      "title": "Company admin unavailable",
+      "description": "The company admin surface did not answer. Try again in a moment."
+    }
+  },
+  "people": {
+    "title": "People",
+    "description": "Every member of this company — nothing else. Actions submit to this company and are audited by the server.",
+    "column": {
+      "principal": "Member",
+      "role": "Role",
+      "status": "Status",
+      "joined": "Joined",
+      "actions": "Actions"
+    },
+    "role": {
+      "tenant_admin": "Administrator",
+      "member": "Member",
+      "auditor": "Auditor"
+    },
+    "status": {
+      "active": "Active",
+      "suspended": "Offboarded"
+    },
+    "action": {
+      "promote": "Make administrator",
+      "demoteMember": "Demote to member",
+      "demoteAuditor": "Demote to auditor",
+      "offboard": "Offboard"
+    },
+    "refused": "This company's people are managed by its administrators. You are not one of them.",
+    "failed": "The roster could not be read."
+  },
+  "credentials": {
+    "title": "Credentials",
+    "description": "This company's connection and site-login credentials — masked by shape: the server's answer has no secret fields to show.",
+    "column": {
+      "label": "Credential",
+      "classification": "Scope",
+      "target": "Target",
+      "actions": "Actions"
+    },
+    "classification": {
+      "personal": "Personal",
+      "team": "Team",
+      "company": "Company"
+    },
+    "actionsLabel": "Use / Disclose grants",
+    "refused": "Credentials are managed by this company's administrators."
+  },
+  "identity": {
+    "title": "Identity providers",
+    "description": "This company's own SSO configuration and SCIM directory bindings — other companies' are not here by construction.",
+    "sso": {
+      "title": "SSO configuration",
+      "protocol": "Protocol",
+      "issuer": "Issuer",
+      "domain": "Routing domain",
+      "revision": "Revision",
+      "none": "No SSO configuration registered for this company."
+    },
+    "scim": {
+      "title": "SCIM directory bindings",
+      "connectionKey": "Connection key",
+      "status": "Status",
+      "none": "No SCIM bindings."
+    },
+    "refused": "Identity providers are managed by this company's administrators."
+  },
+  "audit": {
+    "title": "Audit",
+    "description": "This company's business audit trail. The export obeys the same scope and masking, and the server records the export itself.",
+    "column": {
+      "at": "When",
+      "event": "Event",
+      "actor": "Actor",
+      "target": "Target"
+    },
+    "filter": {
+      "label": "Event type",
+      "placeholder": "e.g. company_member.promoted",
+      "apply": "Filter"
+    },
+    "empty": "No audit events in this scope.",
+    "export": "Export CSV",
+    "exportDone": "Export downloaded. The server recorded it in the audit trail.",
+    "refused": "The audit trail is open to this company's auditors and administrators only.",
+    "failed": "The audit trail could not be read."
+  },
+  "enterprise": {
+    "title": "Enterprise settings",
+    "description": "This company's own configuration. Another company's selection answers refused, never displayed.",
+    "company": {
+      "title": "Company",
+      "status": "Status",
+      "teams": "Teams"
+    },
+    "members": {
+      "title": "Members by role",
+      "offboarded": "Offboarded"
+    },
+    "refused": "Enterprise settings are managed by this company's administrators.",
+    "failed": "The company configuration could not be read."
+  },
+  "learning": {
+    "title": "Learning",
+    "description": "Research and demonstration records of the selected scope. Other scopes' containers never appear here.",
+    "column": {
+      "title": "Title",
+      "kind": "Kind",
+      "container": "Container"
+    },
+    "kind": {
+      "research": "Research",
+      "demonstration": "Demonstration"
+    },
+    "empty": "No learning records in this scope.",
+    "refused": "Learning management is open to this company's administrators.",
+    "failed": "The learning records could not be read."
+  },
+  "billing": {
+    "title": "Billing & usage",
+    "description": "The company books an explicitly authorized finance reader may see: balance, team usage and the usage lines that evidence them. Personal direct consumption is not part of this view.",
+    "books": {
+      "balance": "Available balance",
+      "companyTotal": "Company total",
+      "held": "held",
+      "charged": "charged",
+      "teamUsage": "Usage by team",
+      "userUsage": "Usage by member",
+      "column": {
+        "team": "Team",
+        "member": "Member",
+        "held": "Held",
+        "charged": "Charged"
+      },
+      "authorization": "Authorized by {{grantor}} · {{at}}",
+      "noMapping": "This company has no billing customer mapping yet — an honest empty ledger."
+    },
+    "usage": {
+      "title": "Recent usage",
+      "description": "Read-only evidence from the company's usage records. Personal direct charges never appear here.",
+      "column": {
+        "at": "When",
+        "source": "Source",
+        "model": "Model",
+        "team": "Team",
+        "tokens": "Tokens (in / out)"
+      },
+      "empty": "No usage records for this company."
+    },
+    "refused": "The company books are open to an explicitly authorized finance reader only — being an administrator is not enough.",
+    "failed": "The company books could not be read.",
+    "entryRefused": "Billing management is open to explicitly authorized subjects only.",
+    "account": {
+      "quarantined": "Company account billing capabilities unavailable (quarantined): {{reason}}"
+    },
+    "payments": {
+      "title": "Payment records",
+      "description": "The company account's payment records: amount, currency, collection, delivery and anomaly progress.",
+      "empty": "This company account has no payment records yet.",
+      "column": {
+        "plan": "Plan / order",
+        "amount": "Amount",
+        "payer": "Paying account",
+        "status": "Payment status",
+        "fulfillment": "Delivery",
+        "paidAt": "Collected at"
+      },
+      "payer": {
+        "personal": "Personal",
+        "company": "Company"
+      }
+    }
+  }
+}

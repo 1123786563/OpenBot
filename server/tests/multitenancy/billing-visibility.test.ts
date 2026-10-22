@@ -92,18 +92,18 @@ describeDb(
           to: null,
           limit: 10,
           offset: 0,
-          scope: { actorId: mate.userId },
+          scope: { actorPayerRef: { kind: "personal" as const, id: mate.userId } },
         });
         expect(own).toHaveLength(2); // 一笔 canceled + 一笔 live
         const mateOrder = own[0];
         // 他人读 → null（不可见语义；连同 checkoutPayload 在内的支付资料不可达）。
         const invisible = await fixture.store.readOrder(mateOrder.id, {
-          actorId: reader.userId,
+          actorPayerRef: { kind: "personal" as const, id: reader.userId },
         });
         expect(invisible).toBeNull();
         // 自己读自己 → 看得到（正向业务回归同过）。
         const readable = await fixture.store.readOrder(mateOrder.id, {
-          actorId: mate.userId,
+          actorPayerRef: { kind: "personal" as const, id: mate.userId },
         });
         expect(readable?.id).toBe(mateOrder.id);
         expect(readable?.checkoutPayload).toBe(`mt073-qr-mate-live`);
@@ -120,7 +120,7 @@ describeDb(
           to: null,
           limit: 10,
           offset: 0,
-          scope: { actorId: reader.userId },
+          scope: { actorPayerRef: { kind: "personal" as const, id: reader.userId } },
         });
         expect(readerList).toHaveLength(1);
         expect(readerList[0]?.createdBy).toBe(reader.userId);
@@ -128,14 +128,14 @@ describeDb(
           await fixture.store.countOrdersInWindow({
             from: null,
             to: null,
-            scope: { actorId: reader.userId },
+            scope: { actorPayerRef: { kind: "personal" as const, id: reader.userId } },
           }),
         ).toBe(1);
         expect(
           await fixture.store.countOrdersInWindow({
             from: null,
             to: null,
-            scope: { actorId: mate.userId },
+            scope: { actorPayerRef: { kind: "personal" as const, id: mate.userId } },
           }),
         ).toBe(2);
         // 两个成员的列表不相交。
@@ -144,7 +144,7 @@ describeDb(
           to: null,
           limit: 10,
           offset: 0,
-          scope: { actorId: mate.userId },
+          scope: { actorPayerRef: { kind: "personal" as const, id: mate.userId } },
         });
         expect(mateList.every((row) => row.createdBy === mate.userId)).toBe(
           true,
@@ -158,11 +158,11 @@ describeDb(
         const reader = fixture.caller("a1-member");
         const mate = fixture.caller("a1-mate");
         const mateLive = await fixture.store.readLatestLiveOrder({
-          actorId: mate.userId,
+          actorPayerRef: { kind: "personal" as const, id: mate.userId },
         });
         expect(mateLive?.status).toBe("pending");
         const readerLive = await fixture.store.readLatestLiveOrder({
-          actorId: reader.userId,
+          actorPayerRef: { kind: "personal" as const, id: reader.userId },
         });
         expect(readerLive).toBeNull();
       },
@@ -617,12 +617,12 @@ describeDb(
           to: null,
           limit: 10,
           offset: 0,
-          scope: { actorId: mate.userId },
+          scope: { actorPayerRef: { kind: "personal" as const, id: mate.userId } },
         });
         expect(mateOrders.length).toBe(2);
         for (const order of mateOrders) {
           expect(
-            await fixture.store.readOrder(order.id, { actorId: reader.userId }),
+            await fixture.store.readOrder(order.id, { actorPayerRef: { kind: "personal" as const, id: reader.userId } }),
           ).toBeNull();
         }
         const readerList = await fixture.store.listOrdersInWindow({
@@ -630,7 +630,7 @@ describeDb(
           to: null,
           limit: 10,
           offset: 0,
-          scope: { actorId: reader.userId },
+          scope: { actorPayerRef: { kind: "personal" as const, id: reader.userId } },
         });
         expect(readerList).toHaveLength(1);
         expect(readerList[0]?.createdBy).toBe(reader.userId);
@@ -638,11 +638,11 @@ describeDb(
           await fixture.store.countOrdersInWindow({
             from: null,
             to: null,
-            scope: { actorId: reader.userId },
+            scope: { actorPayerRef: { kind: "personal" as const, id: reader.userId } },
           }),
         ).toBe(1);
         expect(
-          await fixture.store.readLatestLiveOrder({ actorId: reader.userId }),
+          await fixture.store.readLatestLiveOrder({ actorPayerRef: { kind: "personal" as const, id: reader.userId } }),
         ).toBeNull();
       },
     );
@@ -660,7 +660,7 @@ describeDb(
           to: null,
           limit: 10,
           offset: 0,
-          scope: { actorId: admin.userId },
+          scope: { actorPayerRef: { kind: "personal" as const, id: admin.userId } },
         });
         expect(adminList).toHaveLength(1);
         expect(adminList[0]?.createdBy).toBe(admin.userId);
@@ -670,15 +670,199 @@ describeDb(
           to: null,
           limit: 10,
           offset: 0,
-          scope: { actorId: mate.userId },
+          scope: { actorPayerRef: { kind: "personal" as const, id: mate.userId } },
         });
         expect(mateOrders.length).toBe(2);
         for (const order of mateOrders) {
           expect(
-            await fixture.store.readOrder(order.id, { actorId: admin.userId }),
+            await fixture.store.readOrder(order.id, { actorPayerRef: { kind: "personal" as const, id: admin.userId } }),
           ).toBeNull();
         }
         expect(adminOwn.status).toBe("canceled");
+      },
+    );
+  },
+);
+
+describeDb(
+  "BP07（#375）: the company books carry the company's payment records behind the same grant",
+  () => {
+    // 本组用的 finance 实例带上 orders/events 读侧（生产装配同款）：同一支付 store
+    // 的窗口读与异常读，判定门在服务内、先于一切订单行。
+    const financeWithBooks = () =>
+      createCompanyFinanceVisibilityService({
+        database: fixture.db,
+        writer: fixture.writer,
+        orders: fixture.store,
+        events: fixture.store,
+      });
+
+    /**
+     * 释放部署级 pending 单槽（insertOrder 的部分唯一索引仍按 deployment_scope 单槽，
+     * 与 beforeAll 的 mate-live 共存时任何新单都会冲突返回赢家）：把在途单取消掉。
+     * 本组是文件末组，mate-live 的 pending 断言（AC1）已在前面用例完成。
+     */
+    async function freePendingSlot() {
+      const live = await fixture.store.readPendingPurchase();
+      if (live) {
+        await fixture.store.cancelOrder(live.id, live.version);
+      }
+    }
+
+    /** 一笔公司归属订单：可付清（paid）并按需挂一条异常事件。 */
+    async function seedCompanyOrder(input: {
+      tenantId: string;
+      tag: string;
+      paid: boolean;
+      anomalyCode?: string;
+    }) {
+      const { order, conflict } = await fixture.store.insertOrder({
+        planCode: `bp07-plan-${input.tag}`,
+        provider: "alipay",
+        amountCents: 2000,
+        currency: "CNY",
+        expiresAt: new Date(Date.now() + 3600_000),
+        createdBy: fixture.caller("a-admin").userId,
+        ownerPayerRef: { kind: "company", id: input.tenantId },
+        checkoutPayload: null,
+      });
+      expect(conflict).toBeNull();
+      let current = order;
+      if (!input.paid) {
+        // 未收款变体立即取消：既释放部署级 pending 单槽，又正好构成「无收款即无交付」
+        // 的 canceled 记录（fulfillment=null 的公司面用例）。
+        await fixture.store.cancelOrder(order.id, order.version);
+        current = (await fixture.store.readOrder(order.id)) ?? order;
+        return current;
+      }
+      if (input.paid) {
+        const claimed = await fixture.store.confirmPaid({
+          id: order.id,
+          expectedVersion: order.version,
+          fromStatuses: ["pending"],
+          channelTransactionId: `bp07-txn-${input.tag}`,
+          amountCents: 2000,
+          periodStart: new Date(Date.now() + 1000),
+          periodEnd: new Date(Date.now() + 31 * 24 * 3600_000),
+        });
+        expect(claimed.claimed).toBe(true);
+        current = (await fixture.store.readOrder(order.id)) ?? order;
+      }
+      if (input.anomalyCode) {
+        await fixture.store.recordAnomaly({
+          orderId: order.id,
+          kind: "anomaly",
+          code: input.anomalyCode,
+          channelTransactionId: `bp07-txn-${input.tag}`,
+          amountCents: 2000,
+          detail: `bp07 fixture anomaly ${input.anomalyCode}`,
+        });
+      }
+      return current;
+    }
+
+    itDb(
+      "a finance reader sees the company's own records with delivery and anomaly progress — and nobody else's",
+      async () => {
+        const reader = fixture.caller("a2-member");
+        const admin = fixture.caller("a-admin");
+        await finance.grantCompanyFinanceReader({
+          tenantId: fixture.ids.companyA,
+          principalId: reader.principalId,
+          grantedBy: admin.principalId,
+        });
+        await freePendingSlot();
+        // 三面订单：公司 A 一笔已收款未交付（挂重复收款异常）+ 一笔已取消（无收款即无
+        // 交付）；公司 B 一笔已付；成员个人单（beforeAll 已种）。只有 A 的两笔可答。
+        const paidOrder = await seedCompanyOrder({
+          tenantId: fixture.ids.companyA,
+          tag: "a-paid",
+          paid: true,
+          anomalyCode: "duplicate_paid",
+        });
+        // 单槽仍被 a-paid 之前的取消释放后占用节奏限制：第二笔公司单走「种入即取消」，
+        // canceled 单同样回答 fulfillment=null（无收款即无交付）。
+        const pendingOrder = await seedCompanyOrder({
+          tenantId: fixture.ids.companyA,
+          tag: "a-canceled",
+          paid: false,
+        });
+        await seedCompanyOrder({
+          tenantId: fixture.ids.companyB,
+          tag: "b-paid",
+          paid: true,
+        });
+
+        const books = await financeWithBooks().companyBooks({
+          tenantId: fixture.ids.companyA,
+          principalId: reader.principalId,
+        });
+        expect(books.account?.quarantineReason).toBeNull();
+        const ids = books.payments.map((record) => record.invoiceId);
+        expect(ids).toContain(paidOrder.id);
+        expect(ids).toContain(pendingOrder.id);
+        // 公司 B 的订单与个人订单结构性不在答案里（owner scope 按 PayerRef 全字匹配）。
+        expect(
+          books.payments.every((record) => record.payerKind === "company"),
+        ).toBe(true);
+        const paid = books.payments.find(
+          (record) => record.invoiceId === paidOrder.id,
+        );
+        expect(paid).toMatchObject({
+          payerKind: "company",
+          status: "paid",
+          amountCents: 2000,
+          currency: "CNY",
+          fulfillment: { state: "processing" },
+        });
+        expect(paid?.anomalies.map((event) => event.code)).toEqual([
+          "duplicate_paid",
+        ]);
+        const pending = books.payments.find(
+          (record) => record.invoiceId === pendingOrder.id,
+        );
+        // 未收款的在途单不欠交付：fulfillment 为 null，异常为空。
+        expect(pending?.fulfillment).toBeNull();
+        expect(pending?.anomalies).toEqual([]);
+      },
+    );
+
+    itDb(
+      "without the finance grant the payment records stay behind the same single sentinel",
+      async () => {
+        const member = fixture.caller("a1-mate");
+        await expectSentinelRejection(
+          financeWithBooks().companyBooks({
+            tenantId: fixture.ids.companyA,
+            principalId: member.principalId,
+          }),
+          "COMPANY_FINANCE_REQUIRED",
+        );
+      },
+    );
+
+    itDb(
+      "an unwired orders store answers an honest empty payment list, never an error",
+      async () => {
+        const reader = fixture.caller("a2-member");
+        // a2-member 已在本组第一例获授（授权是一行显式事实、跨用例持久）：重复授予的
+        // 显式拒绝正是既有纪律，捕获后继续——本例断言的是未接 orders 的空语义。
+        await finance
+          .grantCompanyFinanceReader({
+            tenantId: fixture.ids.companyA,
+            principalId: reader.principalId,
+            grantedBy: fixture.caller("a-admin").principalId,
+          })
+          .catch((error: Error) => {
+            if (!error.message.startsWith("FINANCE_GRANT_EXISTS: ")) throw error;
+          });
+        // finance（beforeAll 的实例）未接 orders：支付记录为空列表，其余账簿照常。
+        const books = await finance.companyBooks({
+          tenantId: fixture.ids.companyA,
+          principalId: reader.principalId,
+        });
+        expect(books.payments).toEqual([]);
+        expect(books.balanceUnits).toBe(await fixture.balanceOf("company-a"));
       },
     );
   },

@@ -5,8 +5,9 @@ import {
 } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { hasUnseenActivity } from "@/components/app-sidebar/app-sidebar";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { markChannelReadMutationOptions } from "./mutations";
-import { channelListQueryOptions } from "./queries";
+import { scopedChannelListQueryOptions } from "./queries";
 
 /**
  * Opening a conversation marks it read; a Bot replying while it is open marks it read again. Used by
@@ -19,8 +20,15 @@ import { channelListQueryOptions } from "./queries";
  */
 export function useMarkOpenChannelRead(channelId: string) {
   const queryClient = useQueryClient();
-  const markRead = useMutation(markChannelReadMutationOptions(queryClient));
-  const roster = useInfiniteQuery(channelListQueryOptions());
+  // The read-marker rides the scope the screen holds (MT087): the roster it reads and the write
+  // it fires both carry the selection pair, and the optimistic patch lands in this scope's entry.
+  const scope = useScopedCache();
+  const markRead = useMutation(
+    markChannelReadMutationOptions(queryClient, scope),
+  );
+  const roster = useInfiniteQuery(
+    scopedChannelListQueryOptions(queryClient, scope),
+  );
   const summary = roster.data?.find((row) => row.id === channelId);
   const unseen = summary !== undefined && hasUnseenActivity(summary);
   const markReadMutate = markRead.mutate;

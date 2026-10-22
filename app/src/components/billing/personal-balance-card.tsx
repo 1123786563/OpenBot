@@ -43,6 +43,22 @@ export function PersonalBalanceCard({
             ? t("creditsPage.accountTypePersonal")
             : balance.accountType}
         </span>
+        {/*
+         * The account-level capability status (BP07/#375): a quarantined account's billing
+         * capabilities are unavailable — said as the fixed sentence, never with the row's raw
+         * quarantine reason interpolated, the same redaction pending-settlement-reasons.ts set:
+         * the reason is the operator's words (the finance/support surfaces read it); a reader
+         * is owed the state, not the diagnosis. An active account shows no chip: absence of a
+         * problem is not a fact worth a label.
+         */}
+        {balance.account.status === "quarantined" ? (
+          <span
+            data-testid="account-capability"
+            className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive"
+          >
+            {t("creditsPage.capabilityUnavailable")}
+          </span>
+        ) : null}
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -121,7 +137,9 @@ export function PersonalBalanceCard({
                         }
                         data-testid="reservation-status"
                       >
-                        {t(`creditsPage.reservationStatus.${reservation.status}`)}
+                        {t(
+                          `creditsPage.reservationStatus.${reservation.status}`,
+                        )}
                       </span>
                       <span className="tabular-nums">
                         {credits(reservation.maximum)}
@@ -133,7 +151,10 @@ export function PersonalBalanceCard({
                           .join(" · ") || "–"}
                       </span>
                       {reasonKey ? (
-                        <span className="truncate" data-testid="reservation-reason">
+                        <span
+                          className="truncate"
+                          data-testid="reservation-reason"
+                        >
                           {t("creditsPage.reservationReason")}
                           {t(reasonKey)}
                         </span>

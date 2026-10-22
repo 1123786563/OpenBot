@@ -44,6 +44,8 @@ const order = {
   currency: "CNY",
   status: "pending",
   activationState: "pending",
+  // BP07/#375：交付进度随购买面透传——未收款为 null（无收款即无交付可报）。
+  fulfillmentState: null,
   checkout: { kind: "qrcode", payload: "weixin://wxpay/bizpayurl?pr=abc" },
   expiresAt: "2026-10-10T12:15:00.000Z",
   periodEnd: null,
@@ -187,3 +189,26 @@ test("the poll query reads the order the server spells", async () => {
     queryClient.fetchQuery(purchaseOrderQueryOptions(order.orderId)),
   ).resolves.toEqual({ order });
 });
+
+/*
+ * BP07/#375 — the poll read carries the delivery progress the server spells: a PAID order that
+ * has not delivered answers "processing" (the 「已付款，权益处理中」 fact), a delivered one
+ * "delivered", and the deterministic conflicts "needs_resolution" — the wire type and the
+ * passthrough both, so the page's sentence can never drift from the server's word.
+ */
+test("the poll read passes the paid order's fulfillment state through untouched", async () => {
+  const paid = {
+    ...order,
+    orderId: "po-paid-processing",
+    status: "paid",
+    activationState: "failed",
+    fulfillmentState: "processing",
+    checkout: null,
+    periodEnd: "2026-11-10T12:00:00.000Z",
+  } satisfies PurchaseOrderView;
+  serve(200, { order: paid });
+  await expect(
+    queryClient.fetchQuery(purchaseOrderQueryOptions(paid.orderId)),
+  ).resolves.toEqual({ order: paid });
+});
+

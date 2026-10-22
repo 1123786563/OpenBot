@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { OrdersGrantsView } from "@/components/billing/orders-view";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 export const Route = createFileRoute("/_authed/settings/orders")({
   component: RouteComponent,
@@ -27,10 +28,12 @@ export const Route = createFileRoute("/_authed/settings/orders")({
 function RouteComponent() {
   const { page } = Route.useSearch();
   const navigate = Route.useNavigate();
+  const scope = useScopedCache();
   return (
     <OrdersGrantsView
       page={page}
       onPage={(next) => void navigate({ search: { page: next } })}
+      scope={scope}
     />
   );
 }

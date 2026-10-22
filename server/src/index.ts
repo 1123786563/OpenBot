@@ -386,6 +386,22 @@ import {
   createWorkspaceScopeLister,
 } from "./enterprise/tenancy/workspace-admin";
 import {
+  createCompanyAdminRoutes,
+  createUnavailableCompanyAdminRoutes,
+} from "./enterprise/tenancy/company-admin-routes";
+import { createCompanyCapabilitiesService } from "./enterprise/tenancy/company-capabilities";
+import { createCompanyConfigReader } from "./enterprise/tenancy/company-config";
+import { createCompanyPeopleLifecycleService } from "./enterprise/tenancy/people-lifecycle";
+import { createCompanySsoScimConfigService } from "./enterprise/tenancy/sso-scim-config";
+import { createLearningDemonstrationService } from "./enterprise/tenancy/learning-demonstrations";
+import {
+  createBillingManagementService,
+  exportTenantAuditEvents,
+  queryTenantAuditEvents,
+  recordTenantAuditEvent,
+} from "./enterprise/tenancy/audit-domains";
+import { createCompanyFinanceVisibilityService } from "./billing/company-finance-visibility";
+import {
   createUnavailableWorkspaceScopeRoutes,
   createWorkspaceScopeRoutes,
 } from "./enterprise/tenancy/workspace-scope-routes";
@@ -1086,25 +1102,96 @@ const enterpriseWorkspaceScopeRoutes = enterpriseCapabilities
             () => null,
           )
         : null;
+      // MT095/MT096/MT097 (Issues #138-#140): the company admin surface —
+      // people lifecycle (MT076), credential ownership roster (MT029),
+      // SSO/SCIM identity (MT026), company config, learning (MT040),
+      // business-domain audit (MT078) and the company books (MT073) — rides
+      // the same entrance as the workspace admin routes above, so the MT075
+      // company-plane classification covers every path it adds. Like the
+      // admin half it needs the restricted operator channel; without it the
+      // whole surface answers 503 (fail-closed, no permissive stand-in).
+      const companyAdminAuthorizer = operator
+        ? createCompanyAdminAuthorizer(enterpriseCapabilities.directory, {
+            authenticate: authenticateWorkspaceScopeRequest,
+            selectTenant: (request) => request.headers.get("x-openbot-tenant"),
+          })
+        : null;
+      // BP07/#375: the company books' payment records read through the payment store's own
+      // window seam — one instance answers both the orders and the anomaly-events reads, and
+      // the finance gate inside the visibility service stays ahead of every order row it reads.
+      const companyBooksPayments = createPaymentStore(database);
+      const companyAdminRoutes =
+        operator && companyAdminAuthorizer !== null
+          ? createCompanyAdminRoutes({
+              authorizer: companyAdminAuthorizer,
+              capabilities: createCompanyCapabilitiesService({
+                operator,
+                finance: createCompanyFinanceVisibilityService({
+                  database,
+                  writer: createCreditWriter(database),
+                  orders: companyBooksPayments,
+                  events: companyBooksPayments,
+                }),
+                billing: createBillingManagementService({
+                  database,
+                  operator,
+                  writer: createCreditWriter(database),
+                }),
+              }),
+              people: createCompanyPeopleLifecycleService(operator),
+              credentials: createCredentialOwnershipAdminService(operator, {
+                seal: async (plaintext) =>
+                  encryptSecret(config.keyEncryptionKey, plaintext),
+                open: async (envelope) =>
+                  decryptSecret(config.keyEncryptionKey, envelope),
+              }),
+              identity: createCompanySsoScimConfigService(operator),
+              config: createCompanyConfigReader(operator),
+              learning: createLearningDemonstrationService({
+                data: enterpriseCapabilities.data,
+                operator,
+              }),
+              resolveScope: (request) =>
+                enterpriseCapabilities.scopes.resolve(request),
+              audit: {
+                query: (actor, query) =>
+                  queryTenantAuditEvents(operator, actor, query),
+                exportEvents: (actor, query) =>
+                  exportTenantAuditEvents(operator, actor, query),
+                recordExport: async (tenantId, actorPrincipalId, input) => {
+                  await recordTenantAuditEvent(operator, {
+                    tenantId,
+                    domain: "business",
+                    eventType: "audit_export.performed",
+                    actorId: actorPrincipalId,
+                    payload: {
+                      exportedRows: input.exportedRows,
+                      truncated: input.truncated,
+                    },
+                  });
+                },
+              },
+              finance: createCompanyFinanceVisibilityService({
+                database,
+                writer: createCreditWriter(database),
+                orders: companyBooksPayments,
+                events: companyBooksPayments,
+              }),
+            })
+          : createUnavailableCompanyAdminRoutes();
       return createWorkspaceScopeRoutes({
         authenticate: authenticateWorkspaceScopeRequest,
         lister: createWorkspaceScopeLister(
           enterpriseCapabilities.directory,
           enterpriseCapabilities.data,
         ),
-        admin: operator
+        admin: operator && companyAdminAuthorizer !== null
           ? {
-              authorizer: createCompanyAdminAuthorizer(
-                enterpriseCapabilities.directory,
-                {
-                  authenticate: authenticateWorkspaceScopeRequest,
-                  selectTenant: (request) =>
-                    request.headers.get("x-openbot-tenant"),
-                },
-              ),
+              authorizer: companyAdminAuthorizer,
               service: createWorkspaceAdminService(operator),
             }
           : undefined,
+        companyAdmin: companyAdminRoutes,
       });
     })()
   : createUnavailableWorkspaceScopeRoutes();

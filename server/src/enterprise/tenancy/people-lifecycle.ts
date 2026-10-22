@@ -168,6 +168,26 @@ export interface CompanyPeopleLifecycleService {
     context: CompanyAdminContext,
     input: { readonly principalId: string },
   ): Promise<CompanyOffboardReport>;
+  /**
+   * The company roster the people page renders (MT095 / Issue #138 AC2): every membership row of
+   * the context's own company — the admin context already pins the tenant, so other companies'
+   * rows are structurally out of the answer (operator RLS tenant pin), not filtered out by the
+   * service's own where-clause discipline. Membership facts only: the roster carries no identity
+   * data beyond the principal and user ids the company admin already legitimately holds.
+   */
+  companyMembers(
+    context: CompanyAdminContext,
+  ): Promise<readonly CompanyMemberRow[]>;
+}
+
+/** One roster row: the membership facts of one principal in the administered company. */
+export interface CompanyMemberRow {
+  readonly principalId: string;
+  readonly userId: string;
+  readonly role: CompanyRole;
+  readonly status: "active" | "suspended";
+  readonly epoch: number;
+  readonly joinedAt: Date;
 }
 
 /** The advisory key the MT005 gate takes shared and admin writes take exclusive. */
@@ -484,6 +504,43 @@ export function createCompanyPeopleLifecycleService(
           grantsDeleted: grants.length,
           auditEventId,
         };
+      });
+    },
+
+    async companyMembers(context) {
+      assertTrustedAdminContext(context);
+      // The read rides the same operator channel the writes do: transaction
+      // with the tenant pin, so RLS answers with this company's rows only —
+      // the roster cannot name another company's member even by mistake.
+      return operator.transaction(async (tx) => {
+        await beginTransaction(tx);
+        await tx.execute(
+          sql`select set_config('app.tenant_id', ${context.tenantId}, true)`,
+        );
+        const rows = await tx
+          .select({
+            principalId: enterpriseMemberships.principalId,
+            userId: enterprisePrincipals.userId,
+            role: enterpriseMemberships.role,
+            status: enterpriseMemberships.status,
+            epoch: enterpriseMemberships.epoch,
+            joinedAt: enterpriseMemberships.createdAt,
+          })
+          .from(enterpriseMemberships)
+          .innerJoin(
+            enterprisePrincipals,
+            eq(enterprisePrincipals.id, enterpriseMemberships.principalId),
+          )
+          .where(eq(enterpriseMemberships.tenantId, context.tenantId))
+          .orderBy(enterpriseMemberships.createdAt);
+        return rows.map((row) => ({
+          principalId: row.principalId,
+          userId: row.userId,
+          role: row.role as CompanyRole,
+          status: row.status as "active" | "suspended",
+          epoch: row.epoch,
+          joinedAt: row.joinedAt,
+        }));
       });
     },
   };

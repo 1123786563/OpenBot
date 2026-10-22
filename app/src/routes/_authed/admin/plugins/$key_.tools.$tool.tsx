@@ -18,9 +18,10 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { grantRoster } from "@/lib/agents/grant-roster";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import { setPluginGrantMutationOptions } from "@/lib/plugins/mutations";
-import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import { scopedPluginsPageQueryOptions } from "@/lib/plugins/queries";
 
 /**
  * One tool, and which Bots hold it.
@@ -44,10 +45,14 @@ function RouteComponent() {
     from: "/_authed/admin/plugins/$key_/tools/$tool",
   });
   const queryClient = useQueryClient();
-  const plugins = useQuery(pluginsPageQueryOptions());
-  const { data: agents } = useQuery(agentListQueryOptions());
+  // The plugin config face is the scope's own answer (MT094 / Issue #137, AC2).
+  const scope = useScopedCache();
+  const plugins = useQuery(scopedPluginsPageQueryOptions(queryClient, scope));
+  const { data: agents } = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   /* The ones this person has hidden, so a grant one of them holds still has its switch here. */
-  const { data: hiddenAgents } = useQuery(agentListQueryOptions(true));
+  const { data: hiddenAgents } = useQuery(
+    scopedAgentListQueryOptions(queryClient, scope, true),
+  );
   /*
    * Whether a call from this Bot could be authenticated at all.
    *
@@ -65,7 +70,7 @@ function RouteComponent() {
   const [error, setError] = useState<string | null>(null);
 
   const setGrant = useMutation({
-    ...setPluginGrantMutationOptions(queryClient),
+    ...setPluginGrantMutationOptions(queryClient, scope),
     onError: (thrown: Error) => setError(thrown.message),
   });
 

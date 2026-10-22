@@ -189,6 +189,27 @@ async function assertQueryScope(
   }
 }
 
+/**
+ * 能力探针（MT096 / Issue #139）：一个公司主体现在能不能读这家公司的 business 域审计。
+ *
+ * 与查询/导出**同一判定门**（assertQueryScope 的布尔半边，不是第二套规则）：停用成员、
+ * 无 auditor/tenant_admin 角色与公司不存在同答 false——能力面不泄露存在性（A2）。判定
+ * 途中任何异常都按 false 收口（fail-closed，与哨兵同纪律）：一个探针从不把基础设施
+ * 故障翻译成「有权限」。
+ */
+export async function canReadBusinessAudit(
+  operator: OperatorDatabase,
+  actor: AuditQueryActor,
+  tenantId: string,
+): Promise<boolean> {
+  try {
+    await assertQueryScope(operator, actor, { tenantId, domain: "business" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export type TenantAuditQuery = {
   readonly tenantId: string;
   readonly domain: AuditDomain;
@@ -307,6 +328,16 @@ export interface BillingManagementService {
     readonly principalId: string;
     readonly action: BillingManageAction;
   }): Promise<BillingManageGrant>;
+  /**
+   * 能力探针（MT096 / Issue #139 AC4）：该主体是否持有本公司的任一计费管理授权
+   * （活跃成员 ∧ 授权行存在）。与 assertBillingManager 同一事实（grant 行 + 成员
+   * 活查），只是不区分动作位——入口可见性只需要「有没有」，动作级判定仍在
+   * assertBillingManager。无授权/非成员/公司不存在同答 false（不泄露存在性）。
+   */
+  holdsAnyBillingManageGrant(input: {
+    readonly tenantId: string;
+    readonly principalId: string;
+  }): Promise<boolean>;
   /**
    * 执行一次计费管理动作（发放/调整/退款）：判定门 → 存入（CreditWriter
    * 唯一存入面，幂等键随调用）→ business 域审计事件。账面或审计任一失败
@@ -464,6 +495,25 @@ export function createBillingManagementService({
         throw new Error(BILLING_MANAGE_REQUIRED);
       }
       return grantOfRow(row);
+    },
+
+    async holdsAnyBillingManageGrant(input) {
+      requireText(input?.tenantId, "tenantId");
+      requireText(input?.principalId, "principalId");
+      if (!(await activeMembership(input.tenantId, input.principalId))) {
+        return false;
+      }
+      const [row] = await database
+        .select({ actions: manageGrants.actions })
+        .from(manageGrants)
+        .where(
+          and(
+            eq(manageGrants.tenantId, input.tenantId),
+            eq(manageGrants.principalId, input.principalId),
+          ),
+        )
+        .limit(1);
+      return row !== undefined && row.actions !== 0;
     },
 
     async performBillingManagementAction(input) {

@@ -1,0 +1,196 @@
+{
+  "title": "公司管理",
+  "description": "本公司的人员、身份、审计与计费——每一项入口都以服务端给出的能力为准。",
+  "nav": {
+    "people": "人员与凭据",
+    "audit": "审计",
+    "enterprise": "企业设置",
+    "learning": "学习",
+    "billing": "计费与用量"
+  },
+  "gate": {
+    "pending": "正在读取你的公司…",
+    "noSelection": {
+      "title": "请先选择公司",
+      "description": "公司管理区在已选择的公司与团队内工作。请先选择一个范围。"
+    },
+    "refused": {
+      "title": "这里没有你可管理的内容",
+      "description": "你在本公司不持有任何管理能力。如需开通请联系公司管理员。"
+    },
+    "unavailable": {
+      "title": "公司管理暂不可用",
+      "description": "公司管理面未响应，请稍后重试。"
+    }
+  },
+  "people": {
+    "title": "人员",
+    "description": "本公司的全部成员——只有本公司。管理动作提交到本公司范围并由服务端留审计。",
+    "column": {
+      "principal": "成员",
+      "role": "角色",
+      "status": "状态",
+      "joined": "加入时间",
+      "actions": "操作"
+    },
+    "role": {
+      "tenant_admin": "管理员",
+      "member": "成员",
+      "auditor": "审计员"
+    },
+    "status": {
+      "active": "在职",
+      "suspended": "已离职"
+    },
+    "action": {
+      "promote": "提升为管理员",
+      "demoteMember": "降级为成员",
+      "demoteAuditor": "降级为审计员",
+      "offboard": "离职处理"
+    },
+    "refused": "本公司人员由公司管理员管理，你不是其中之一。",
+    "failed": "名册读取失败。"
+  },
+  "credentials": {
+    "title": "凭据",
+    "description": "本公司的连接与站点登录凭据——结构脱敏：服务端返回的形状里不存在任何秘密字段。",
+    "column": {
+      "label": "凭据",
+      "classification": "归属",
+      "target": "目标",
+      "actions": "授权"
+    },
+    "classification": {
+      "personal": "个人",
+      "team": "团队",
+      "company": "公司"
+    },
+    "actionsLabel": "可用 / 可披露授权",
+    "refused": "凭据由本公司管理员管理。"
+  },
+  "identity": {
+    "title": "身份提供方",
+    "description": "本公司自己的 SSO 配置与 SCIM 目录绑定——其他公司的内容结构上不在此页。",
+    "sso": {
+      "title": "SSO 配置",
+      "protocol": "协议",
+      "issuer": "签发方",
+      "domain": "路由域",
+      "revision": "版本",
+      "none": "本公司尚未登记 SSO 配置。"
+    },
+    "scim": {
+      "title": "SCIM 目录绑定",
+      "connectionKey": "连接键",
+      "status": "状态",
+      "none": "暂无 SCIM 绑定。"
+    },
+    "refused": "身份提供方由本公司管理员管理。"
+  },
+  "audit": {
+    "title": "审计",
+    "description": "本公司的业务审计轨迹。导出遵守同一范围与脱敏规则，且服务端会为导出本身留审计。",
+    "column": {
+      "at": "时间",
+      "event": "事件",
+      "actor": "操作者",
+      "target": "对象"
+    },
+    "filter": {
+      "label": "事件类型",
+      "placeholder": "如 company_member.promoted",
+      "apply": "筛选"
+    },
+    "empty": "本范围内暂无审计事件。",
+    "export": "导出 CSV",
+    "exportDone": "导出已下载。服务端已在审计轨迹中记录本次导出。",
+    "refused": "审计轨迹仅对本公司的审计员与管理员开放。",
+    "failed": "审计轨迹读取失败。"
+  },
+  "enterprise": {
+    "title": "企业设置",
+    "description": "本公司自己的配置。选择别家公司时会被拒绝，绝不显示。",
+    "company": {
+      "title": "公司",
+      "status": "状态",
+      "teams": "团队"
+    },
+    "members": {
+      "title": "按角色统计成员",
+      "offboarded": "已离职"
+    },
+    "refused": "企业设置由本公司管理员管理。",
+    "failed": "公司配置读取失败。"
+  },
+  "learning": {
+    "title": "学习",
+    "description": "所选范围的研究与演示记录。其他范围的容器不会出现在这里。",
+    "column": {
+      "title": "标题",
+      "kind": "类型",
+      "container": "容器"
+    },
+    "kind": {
+      "research": "研究",
+      "demonstration": "演示"
+    },
+    "empty": "本范围内暂无学习记录。",
+    "refused": "学习管理面对本公司管理员开放。",
+    "failed": "学习记录读取失败。"
+  },
+  "billing": {
+    "title": "计费与用量",
+    "description": "获显式授权的财务读取者看到的公司账簿：余额、团队用量与作为证据的用量行。个人直连消费不属于这个视图。",
+    "books": {
+      "balance": "可用余额",
+      "companyTotal": "公司总额",
+      "held": "持有",
+      "charged": "已结算",
+      "teamUsage": "按团队用量",
+      "userUsage": "按成员用量",
+      "column": {
+        "team": "团队",
+        "member": "成员",
+        "held": "持有",
+        "charged": "已结算"
+      },
+      "authorization": "由 {{grantor}} 授权 · {{at}}",
+      "noMapping": "本公司尚无计费客户映射——诚实的空账簿。"
+    },
+    "usage": {
+      "title": "最近用量",
+      "description": "来自公司用量记录的只读证据。个人直连消费不会出现在这里。",
+      "column": {
+        "at": "时间",
+        "source": "来源",
+        "model": "模型",
+        "team": "团队",
+        "tokens": "Token（入 / 出）"
+      },
+      "empty": "本公司暂无用量记录。"
+    },
+    "refused": "公司账簿仅对获显式授权的财务读取者开放——管理员身份本身并不足够。",
+    "failed": "公司账簿读取失败。",
+    "entryRefused": "计费管理入口仅对获显式授权的主体开放。",
+    "account": {
+      "quarantined": "公司账户计费能力暂不可用（隔离处理中）：{{reason}}"
+    },
+    "payments": {
+      "title": "支付记录",
+      "description": "公司账户的支付记录：金额、币种、收款、交付与异常进度。",
+      "empty": "该公司账户还没有支付记录。",
+      "column": {
+        "plan": "套餐 / 订单",
+        "amount": "金额",
+        "payer": "付款账户",
+        "status": "支付状态",
+        "fulfillment": "交付进度",
+        "paidAt": "收款时间"
+      },
+      "payer": {
+        "personal": "个人",
+        "company": "公司"
+      }
+    }
+  }
+}

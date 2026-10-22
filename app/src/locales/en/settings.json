@@ -141,7 +141,12 @@
     "access": "Access",
     "accessDescription": "What you agreed to, as the vendor recorded it — not what was asked for. The two differ when a consent screen is only partly accepted.",
     "granted": "Granted",
-    "noScope": "The vendor named no scope."
+    "noScope": "The vendor named no scope.",
+    "secretTitle": "Secret",
+    "secretMasked": "Masked. {{vendor}} holds the live credential; this deployment stores only a sealed copy.",
+    "revealSecret": "Reveal secret",
+    "hideSecret": "Hide",
+    "revealAudited": "Reading the secret in the clear is an action of its own, authorized separately from using the connection, and every read is written to the audit log."
   },
   "passwords": {
     "title": "Passwords",
@@ -268,8 +273,8 @@
     }
   },
   "invoicesPage": {
-    "title": "Bills",
-    "description": "What this deployment has been billed. Bills are raised here and settled through Alipay or WeChat Pay; open one for its detail, or download it.",
+    "title": "Payment records",
+    "description": "This deployment's payment records (a local order view, not a tax invoice). Orders settle through Alipay or WeChat Pay; view the detail or download it.",
     "rangeLabel": "Period",
     "ranges": {
       "3m": "Last 3 months",
@@ -278,21 +283,21 @@
       "all": "All time"
     },
     "refresh": "Refresh",
-    "columnPeriod": "Billing period",
+    "columnPeriod": "Order period",
     "columnAmount": "Amount",
     "columnStatus": "Status",
     "columnMethod": "Method",
-    "columnNumber": "Bill number",
+    "columnNumber": "Order number",
     "columnActions": "Actions",
     "viewDetail": "Detail",
-    "download": "Download bill",
-    "detailTitle": "Bill detail",
-    "detailLoading": "Loading this bill…",
+    "download": "Download payment record",
+    "detailTitle": "Payment record detail",
+    "detailLoading": "Loading the payment record…",
     "detailPlan": "Plan",
-    "detailIssued": "Issued",
-    "detailSettled": "Paid at",
+    "detailIssued": "Ordered at",
+    "detailSettled": "Collected at",
     "detailTransaction": "Channel transaction",
-    "detailLines": "Lines",
+    "detailLines": "Charges",
     "status": {
       "pending": "Awaiting payment",
       "paid": "Paid",
@@ -305,9 +310,9 @@
       "wechat": "WeChat Pay"
     },
     "pagerStatus": "Page {{page}} of {{totalPages}} · {{total}} bills",
-    "empty": "No bills yet",
-    "emptyDescription": "This deployment has not been billed for anything. Once a plan is purchased, its bills appear here.",
-    "emptyFiltered": "No bills in that period.",
+    "empty": "No payment records yet",
+    "emptyDescription": "This deployment has no payment records yet. Buy a plan and the record appears here.",
+    "emptyFiltered": "No payment records in that window.",
     "showAll": "Show all",
     "unavailable": "Billing is not enabled here",
     "unavailableDescription": "No billing provider is configured on this deployment, so there are no bills to show."
@@ -397,7 +402,8 @@
       "no_usage": "The model service reported zero usage for this call, so no charge was incurred.",
       "fallback": "This call is still being reconciled; the figure updates when it completes."
     },
-    "pendingHandling": "Pending amounts are held, not spent; the platform verifies the outcome with the model service and then settles or releases them automatically."
+    "pendingHandling": "Pending amounts are held, not spent; the platform verifies the outcome with the model service and then settles or releases them automatically.",
+    "capabilityUnavailable": "Account billing capabilities unavailable (under quarantine)"
   },
   "ordersPage": {
     "title": "Orders & credits",
@@ -424,7 +430,40 @@
     "columnAmount": "Amount",
     "columnStatus": "Status",
     "columnNumber": "Order",
-    "columnCreated": "Created"
+    "columnCreated": "Created",
+    "columnFulfillment": "Delivery",
+    "fulfillment": {
+      "processing": "Paid, entitlement processing",
+      "delivered": "Delivered",
+      "needs_resolution": "Awaiting operator resolution",
+      "nextRetry": "Next attempt {{at}}",
+      "reason": {
+        "ownership_unresolved": "Entitlement ownership being verified",
+        "duplicate_paid": "Duplicate collection, awaiting disposal",
+        "plan_not_found": "Plan no longer offered, awaiting handling",
+        "plan_interval_mismatch": "Plan cycle mismatch, awaiting handling",
+        "grant_no_period": "Period missing, payout held",
+        "grant_write_failed": "Credit payout failed, retrying",
+        "stamp_no_period": "Subscription period missing, being completed",
+        "stamp_missing": "Subscription record being completed",
+        "stamp_failed": "Subscription ownership write failed, retrying",
+        "provider_unreachable": "Billing provider unreachable, retrying",
+        "unmapped": "Entitlement processing"
+      }
+    },
+    "anomaly": {
+      "amount_mismatch": "Collected amount disagrees with the order",
+      "paid_after_blocked": "Payment arrived after the order was blocked",
+      "over_paid": "Over-collection on one order",
+      "duplicate_paid": "Collection on an already-covered entitlement period",
+      "late_payment": "Late payment",
+      "amount_unreadable": "Channel did not state an amount",
+      "currency_mismatch": "Collected currency disagrees with the order",
+      "activation_retry_exhausted": "Delivery retries exhausted, needs an operator",
+      "unowned_payout": "Collection with no attributable account",
+      "callback_unverified": "Callback failed signature verification",
+      "unmapped": "Recorded anomaly, awaiting disposal"
+    }
   },
   "welcomeBanner": {
     "badge": "Bonus until 10/31",

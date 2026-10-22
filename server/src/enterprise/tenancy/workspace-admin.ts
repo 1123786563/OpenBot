@@ -47,6 +47,8 @@ import type { AuthenticatedRequestIdentity } from "./store";
 // ---------------------------------------------------------------------------
 
 const issuedAdminContexts = new WeakSet<object>();
+/** The member-context twin of the registry above (same trust mechanism, see resolveMemberContext). */
+const issuedMemberContexts = new WeakSet<object>();
 
 export interface CompanyAdminContext {
   readonly tenantId: string;
@@ -62,6 +64,23 @@ export function assertTrustedAdminContext(context: CompanyAdminContext): void {
     !issuedAdminContexts.has(context)
   ) {
     throw new Error("UNVERIFIED_ADMIN_CONTEXT");
+  }
+}
+
+/**
+ * The trust check for member contexts: same shape discipline as the admin one, so a company face
+ * (audit, finance, capabilities) can only be handed a context the authorizer itself issued — a
+ * hand-built lookalike answers UNVERIFIED_ADMIN_CONTEXT's member twin.
+ */
+export function assertTrustedMemberContext(
+  context: CompanyMemberContext,
+): void {
+  if (
+    !context ||
+    typeof context !== "object" ||
+    !issuedMemberContexts.has(context)
+  ) {
+    throw new Error("UNVERIFIED_MEMBER_CONTEXT");
   }
 }
 
@@ -233,72 +252,126 @@ export interface CompanyAdminAuthorizer {
   resolveAdminContext(request: Request): Promise<CompanyAdminContext>;
 }
 
+/**
+ * A member's company context: the same facts the admin context is built from, without the
+ * tenant_admin gate (MT096 / Issues #138-#139). The audit face (an auditor is a member, not an
+ * admin) and the finance face (a finance reader is a member with an explicit grant) resolve their
+ * subject here; the capability answer composes this with each surface's own gate. The role rides
+ * along so callers can render server-side facts rather than re-deriving them client-side.
+ */
+export interface CompanyMemberContext {
+  readonly tenantId: string;
+  readonly principalId: string;
+  readonly actorId: string;
+  readonly role: "tenant_admin" | "member" | "auditor";
+  readonly memberEpoch: number;
+}
+
 export function createCompanyAdminAuthorizer(
   directory: DirectoryDatabase,
   options: CompanyAdminAuthorizerOptions,
-): CompanyAdminAuthorizer {
+): CompanyAdminAuthorizer & {
+  /** The member resolution every company face shares (no admin gate; see CompanyMemberContext). */
+  resolveMemberContext(request: Request): Promise<CompanyMemberContext>;
+} {
   assertDirectoryDatabase(directory);
   return {
     authenticate: (request) => options.authenticate(request),
+    async resolveMemberContext(request) {
+      const { membership } = await resolveCompanyMembership(
+        directory,
+        options,
+        request,
+      );
+      const context = Object.freeze(membership);
+      issuedMemberContexts.add(context);
+      return context;
+    },
     async resolveAdminContext(request) {
-      const identity = await options.authenticate(request);
-      if (!identity?.actorId) throw new Error("AUTH_REQUIRED");
-      const tenantId = options.selectTenant?.(request);
-      if (!tenantId?.trim()) throw new Error("TENANT_REQUIRED");
-      const context = await directory.transaction(async (tx) => {
-        await tx.execute(sql`set transaction isolation level read committed`);
-        await tx.execute(sql`set local lock_timeout = '2s'`);
-        await tx.execute(sql`set local statement_timeout = '5s'`);
-        await tx.execute(
-          sql`select set_config('app.user_id', ${identity.actorId}, true)`,
-        );
-        const [membership] = await tx
-          .select({
-            principalId: enterprisePrincipals.id,
-            tenantStatus: enterpriseTenants.status,
-            principalStatus: enterprisePrincipals.status,
-            memberStatus: enterpriseMemberships.status,
-            role: enterpriseMemberships.role,
-            memberEpoch: enterpriseMemberships.epoch,
-          })
-          .from(enterpriseMemberships)
-          .innerJoin(
-            enterprisePrincipals,
-            eq(enterprisePrincipals.id, enterpriseMemberships.principalId),
-          )
-          .innerJoin(
-            enterpriseTenants,
-            eq(enterpriseTenants.id, enterpriseMemberships.tenantId),
-          )
-          .where(
-            and(
-              eq(enterprisePrincipals.userId, identity.actorId),
-              eq(enterpriseMemberships.tenantId, tenantId),
-            ),
-          )
-          .limit(1);
-        if (
-          membership?.tenantStatus !== "active" ||
-          membership.principalStatus !== "active" ||
-          membership.memberStatus !== "active"
-        ) {
-          // Same code as the business resolver: no existence leak.
-          throw new Error("TENANT_FORBIDDEN");
-        }
-        if (membership.role !== "tenant_admin") {
-          throw new Error("TENANT_ADMIN_REQUIRED");
-        }
-        return Object.freeze({
-          tenantId,
-          principalId: membership.principalId,
-          actorId: identity.actorId,
-          memberEpoch: membership.memberEpoch,
-        } satisfies CompanyAdminContext);
-      });
+      const { tenantId, membership } = await resolveCompanyMembership(
+        directory,
+        options,
+        request,
+      );
+      if (membership.role !== "tenant_admin") {
+        throw new Error("TENANT_ADMIN_REQUIRED");
+      }
+      const context = Object.freeze({
+        tenantId,
+        principalId: membership.principalId,
+        actorId: membership.actorId,
+        memberEpoch: membership.memberEpoch,
+      } satisfies CompanyAdminContext);
       issuedAdminContexts.add(context);
       return context;
     },
   };
+}
+
+/**
+ * The membership half both resolvers share: authenticate → select tenant (ruling #1: the header
+ * only selects; the row decides) → one directory read of the active-membership facts. Split out
+ * so the admin gate and the member faces (audit, finance, capabilities) read the SAME facts and
+ * can never drift into two notions of "who is this in this company".
+ */
+async function resolveCompanyMembership(
+  directory: DirectoryDatabase,
+  options: CompanyAdminAuthorizerOptions,
+  request: Request,
+): Promise<{ tenantId: string; membership: CompanyMemberContext }> {
+  const identity = await options.authenticate(request);
+  if (!identity?.actorId) throw new Error("AUTH_REQUIRED");
+  const tenantId = options.selectTenant?.(request);
+  if (!tenantId?.trim()) throw new Error("TENANT_REQUIRED");
+  const membership = await directory.transaction(async (tx) => {
+    await tx.execute(sql`set transaction isolation level read committed`);
+    await tx.execute(sql`set local lock_timeout = '2s'`);
+    await tx.execute(sql`set local statement_timeout = '5s'`);
+    await tx.execute(
+      sql`select set_config('app.user_id', ${identity.actorId}, true)`,
+    );
+    const [row] = await tx
+      .select({
+        principalId: enterprisePrincipals.id,
+        tenantStatus: enterpriseTenants.status,
+        principalStatus: enterprisePrincipals.status,
+        memberStatus: enterpriseMemberships.status,
+        role: enterpriseMemberships.role,
+        memberEpoch: enterpriseMemberships.epoch,
+      })
+      .from(enterpriseMemberships)
+      .innerJoin(
+        enterprisePrincipals,
+        eq(enterprisePrincipals.id, enterpriseMemberships.principalId),
+      )
+      .innerJoin(
+        enterpriseTenants,
+        eq(enterpriseTenants.id, enterpriseMemberships.tenantId),
+      )
+      .where(
+        and(
+          eq(enterprisePrincipals.userId, identity.actorId),
+          eq(enterpriseMemberships.tenantId, tenantId),
+        ),
+      )
+      .limit(1);
+    if (
+      row?.tenantStatus !== "active" ||
+      row.principalStatus !== "active" ||
+      row.memberStatus !== "active"
+    ) {
+      // Same code as the business resolver: no existence leak.
+      throw new Error("TENANT_FORBIDDEN");
+    }
+    return {
+      tenantId,
+      principalId: row.principalId,
+      actorId: identity.actorId,
+      role: row.role as CompanyMemberContext["role"],
+      memberEpoch: row.memberEpoch,
+    } satisfies CompanyMemberContext;
+  });
+  return { tenantId, membership };
 }
 
 // ---------------------------------------------------------------------------

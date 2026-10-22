@@ -17,6 +17,32 @@ export type InvoiceStatus =
   | "canceled"
   | "expired";
 
+/**
+ * The delivery progress a PAID order owes its reader: 收款状态与交付状态独立 (spec), so a paid
+ * order that has not delivered says 「已付款，权益处理中」 instead of dressing up as complete.
+ * `needs_resolution` is the operator's queue (重复收款/确定性冲突) — progress with a clear
+ * pending word, never "done".
+ */
+export type InvoiceFulfillment = {
+  state: "processing" | "delivered" | "needs_resolution";
+  /** Why the last delivery pass did not land, in the server's stable word — null while clean. */
+  failureReason: string | null;
+  /** When the next delivery pass runs — null when no retry is coming (delivered/resolution). */
+  nextRetryAt: string | null;
+};
+
+/**
+ * One anomaly event on a payment order — 重复收款和异常的明确进度: the writer's stable code
+ * (`duplicate_paid`, `over_paid`, …) plus its recorded detail, quoted never re-derived.
+ */
+export type BillingPaymentAnomaly = {
+  code: string;
+  detail: string;
+  channelTransactionId: string | null;
+  amountCents: number | null;
+  occurredAt: string;
+};
+
 /** One bill as the list renders it. */
 export type BillingInvoice = {
   invoiceId: string;
@@ -31,6 +57,12 @@ export type BillingInvoice = {
   /** When money landed. Null unless the order actually settled as paid. */
   settledAt: string | null;
   channelTransactionId: string | null;
+  /** The paying account's own label — 个人/公司标识 carried from the order's owner ref. */
+  payerKind: "personal" | "company";
+  /** The delivery progress, null while no money landed (no money, no delivery owed). */
+  fulfillment: InvoiceFulfillment | null;
+  /** The order's recorded anomaly events, oldest first. */
+  anomalies: readonly BillingPaymentAnomaly[];
 };
 
 /** One line on a bill. v1 raises one: the plan the order bought. */

@@ -9,7 +9,7 @@ import {
   test,
 } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type * as React from "react";
 import { cloneElement, createContext, useContext } from "react";
 import type {
@@ -171,6 +171,20 @@ const queryClient = new QueryClient({
 const withProvider = (ui: React.ReactElement) => (
   <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
 );
+
+/*
+ * The paint flush this file's dialog tests need: the purchase-catalog read lands but the
+ * mounted tree does not repaint until an `act` wraps a real async gap (the hbc4-diagnosed
+ * e2e-native freeze — see personal-orders-ui.test.tsx for the longer account). Every dialog
+ * test below calls it once after mount, before its first async assertion.
+ */
+async function flushPaint() {
+  for (let round = 0; round < 2; round += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    });
+  }
+}
 
 // Module scope so afterEach can restore it; see the comment below.
 let realFetch: typeof globalThis.fetch;
@@ -360,6 +374,7 @@ test("UpgradeDialog draws every catalog tier, its cycles and its discount labels
       />,
     ),
   );
+  await flushPaint();
   // The dialog's title and the current plan line. The shell is a pass-through, so the title text
   // rides the container directly — matched on the container, not on a wrapping element.
   expect(view.container.textContent).toContain("Buddy AI 套餐");
@@ -409,6 +424,7 @@ test("UpgradeDialog gates the pay button behind the agreement, and the tick rele
       <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
     ),
   );
+  await flushPaint();
   // The cycles arrive from the fetched purchase catalog; the pay button needs BOTH a cycle and
   // the agreement, so the button starts disabled for the cycle alone and stays disabled after
   // the tick until the fetch lands (then the tick alone gates it).
@@ -570,7 +586,12 @@ test("CreditGrantList renders the held figure in the rewards summary, with no ra
 async function until(cond: () => boolean, ms = 4000, label = "condition") {
   for (let elapsed = 0; elapsed < ms; elapsed += 100) {
     if (cond()) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Each wait rides an act with a real timer gap: the runner repaints the mounted tree
+    // only inside act-batched updates (the freeze flushPaint documents above), and these
+    // waits poll for DOM the post-click reads must paint.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
   }
   expect(cond(), `${label} not met within ${ms}ms`).toBe(true);
 }
@@ -680,6 +701,7 @@ test("UpgradeDialog lets the reader cancel their pending order, and cancelling r
       <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
     ),
   );
+  await flushPaint();
   await openToAPayableDialog(view);
   fireEvent.click(view.getByRole("button", { name: "同意协议并支付" }));
   // The order lands: the status line says pending and the cancel entry appears.
@@ -715,13 +737,18 @@ test("UpgradeDialog says the pending-purchase refusal in the reader's language",
       <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
     ),
   );
+  await flushPaint();
   await openToAPayableDialog(view);
   fireEvent.click(view.getByRole("button", { name: "同意协议并支付" }));
-  await waitFor(() => {
-    expect(
-      view.getByText("已有一笔待支付订单，请先完成支付或取消该订单后再购买"),
-    ).toBeTruthy();
-  });
+  // The refusal read lands post-click, so the wait rides the act-flushing `until` (the
+  // plain waitFor does not repaint the post-click read in this runner).
+  await until(
+    () =>
+      view.queryByText("已有一笔待支付订单，请先完成支付或取消该订单后再购买") !==
+      null,
+    4000,
+    "localized refusal",
+  );
   // The raw English sentence is not what a zh-CN reader should see.
   expect(view.queryByText(/Another purchase is already pending/)).toBeNull();
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -747,6 +774,7 @@ test("UpgradeDialog says it is loading the payment options before the choosers a
       <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
     ),
   );
+  await flushPaint();
   await until(
     () => view.queryByText("正在加载支付方式…") !== null,
     4000,
@@ -796,6 +824,7 @@ test("the pay button stays inert while a cancel is in flight, and a cancel while
       <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
     ),
   );
+  await flushPaint();
   await openToAPayableDialog(view);
   const pay = view.getByRole("button", {
     name: "同意协议并支付",
@@ -843,6 +872,7 @@ test("a pending-purchase 409 on a remounted dialog restores the blocking order s
       <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
     ),
   );
+  await flushPaint();
   await openToAPayableDialog(view);
   fireEvent.click(view.getByRole("button", { name: "同意协议并支付" }));
   await until(
@@ -879,6 +909,7 @@ test("a failed cancel says the failure in the reader's language", async () => {
       <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
     ),
   );
+  await flushPaint();
   await openToAPayableDialog(view);
   fireEvent.click(view.getByRole("button", { name: "同意协议并支付" }));
   await until(

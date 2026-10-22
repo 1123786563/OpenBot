@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
@@ -8,14 +8,15 @@ import { Input } from "@/components/ui/input";
 import { isComposing } from "@/lib/composing";
 import { saveActionPolicyMutationOptions } from "@/lib/computers/mutations";
 import {
+  ComputersUnavailableError,
   type ActionPolicy,
-  actionPolicyQueryOptions,
+  scopedActionPolicyQueryOptions,
   type DryRunReport,
   dryRunActionPolicy,
   type PolicyMode,
 } from "@/lib/computers/queries";
 import { useDateTime } from "@/lib/i18n/datetime";
-import { queryClient } from "@/query-client";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * CEL computer-action boundary editor. Rules are shown as the gateway evaluates them, and denied
@@ -63,8 +64,14 @@ function BoundariesPage() {
   } | null>(null);
   const [testing, setTesting] = useState(false);
 
-  const stored = useQuery(actionPolicyQueryOptions());
-  const savePolicy = useMutation(saveActionPolicyMutationOptions(queryClient));
+  // The boundary read and save ride the scope this screen holds (MT086); a scope that refuses
+  // says so in one line instead of an editable-looking form over a refusal.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const stored = useQuery(scopedActionPolicyQueryOptions(queryClient, scope));
+  const savePolicy = useMutation(
+    saveActionPolicyMutationOptions(queryClient, scope),
+  );
 
   /*
    * The saved policy wins while a save is in flight and after it lands: the server normalises what
@@ -87,6 +94,20 @@ function BoundariesPage() {
    * since the read became a query, that sentence (or the server's own) is the query's error, and
    * without this the page sat on its title with nothing under it for as long as it was open.
    */
+  // A scope that refuses is not a read failure: the one unavailable state, in the same words as
+  // the fleet page (MT086 AC2), never a destructive error that would claim the boundary broke.
+  if (stored.error instanceof ComputersUnavailableError) {
+    return (
+      <PageShell title={t("boundaries.title")}>
+        <p
+          className="mt-4 text-muted-foreground text-sm"
+          data-testid="computers-unavailable"
+        >
+          {t("unavailable")}
+        </p>
+      </PageShell>
+    );
+  }
   const unreadable = problem ?? stored.error?.message ?? null;
   if (unreadable && !policy) {
     return (
