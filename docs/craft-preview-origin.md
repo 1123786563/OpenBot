@@ -415,3 +415,66 @@ unknown 的代价只是多一次重试。
    协议层 401 只能用顶层面板或 curl 形状复现。建议 AC1 明确两层各自可接受
    的证据形状。影响面：验收证据的判读方式；行为不变（两层都已由本 SHA 的
    单元与真实栈证据覆盖）。
+
+## 可复跑全栈 e2e（#416）
+
+验收脚本 `scripts/craft-preview-acceptance.ts` 支持两种拓扑 profile，用
+`CRAFT_ACCEPTANCE_TOPOLOGY` 选择（非法值 fail-fast，不静默回退）：
+
+| profile | 值 | 形态 | AC1 same-site 步骤 |
+| --- | --- | --- | --- |
+| dev（默认） | `dev` | 跨站拓扑，预览在 `http://127.0.0.1:<API 端口>/<label>` | SKIP（跨站 SameSite=Lax 不随行；dev form 的 Origin 不可识别是 #410 已知缺口） |
+| same-site | `same-site` | 生产形态，预览是主站子域（同 eTLD+1） | pass 类断言：预览页同 site 凭证写主站 → #410 origin-guard 403（server 日志增量归因 `verdict:"preview"`） |
+
+### 运行入口
+
+- `bun run test:live-craft-preview`：原入口（环境预检 app :3220 / API :3221
+  → 脚本 preflight 含 Casdoor :8000 / sandbox gateway :4300）。
+- `bun run test:craft-preview-e2e`（#416）：拓扑感知入口——校验
+  `CRAFT_ACCEPTANCE_TOPOLOGY` 与 `CRAFT_ACCEPTANCE_PREVIEW_ORIGIN`（same-site
+  必填，如 `https://preview.localhost`）后转入同一 live 预检。
+
+### same-site profile 的部署前置
+
+1. host-form server：`OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE=https://{session}.preview.localhost`
+   （`*.preview.localhost` 与 `localhost` 都解析到 127.0.0.1，无需 wildcard DNS）；
+   TLS 准入走 `OPENBOT_TLS_STATUS_FILE` 指向的状态文件（health 标量 `ok` 即开门，
+   本地签发写 `{"health":"ok"}` 即可）。
+2. #412 参考 TLS 终止（`docker/compose/preview-tls.yml`）：
+   `OPENBOT_PREVIEW_UPSTREAM=http://host.docker.internal:<server 端口>`，443 终止
+   并注入 `X-Forwarded-Proto: https`（通行证 cookie 是 `SameSite=None; Secure`，
+   需要 https 形态）。
+3. 主站与预览同 443（如 `https://localhost` 与 `https://<label>.preview.localhost`），
+   Chrome/Playwright 信任 localhost 族的自签形态。
+4. `CRAFT_ACCEPTANCE_SERVER_LOG` 指向 API server stdout 日志（AC1 协议层与
+   same-site 步骤的判决增量归因都读它）。
+
+### 拓扑差异的断言口径（脚本内同一事实源派生）
+
+- 地址形状：`expectOrigin(label)`（host：`https://<label>.<base>`；dev：
+  `http://127.0.0.1:<port>/<label>`）；label 永远从服务器铸造的 `webapp_url`
+  提取，不在脚本侧重算 HMAC。
+- 应用路径前缀：`appPrefix(label)`（host：根路径无前缀；dev：`/<label>`）。
+- 通行证 jar domain：`previewCookieDomain(label)`（host：`<label>.<base host>`；
+  dev：`127.0.0.1`）。
+- HMR socket：`hmrWsUrl(label)`（host：`wss://<label>.<base>/_next/webpack-hmr`；
+  dev：`ws://127.0.0.1:<port>/<label>/_next/webpack-hmr`）。
+- preflight 的 bogus 断言：host 形态断言未注册 label 子域 404 "Unknown preview
+  host"（fail-closed）；dev 形态保持旧契约（未注册首段回落主站，响应不带预览
+  拒绝文案）。
+
+### nightly / staging 接线
+
+`.github/workflows/ci.yml`（#416）：`schedule`（每日 19:31 UTC）+
+`workflow_dispatch`（`only-craft-preview-e2e` 输入）触发唯一的
+`craft-preview-e2e` job（same-site topology，`CRAFT_E2E_*` vars/secrets 命名
+staging 栈；证据 artifact 归档 `.archive/runs/craft-preview/verification/`）。
+其余 job 带 schedule/e2e-only 门，nightly 不重跑整份 CI。staging 环境接入前，
+该 job 由脚本自身的 fail-loud 预检保持 RED（环境未配置时显式失败，绝不静默
+绿灯）。
+
+### 证据归档
+
+运行产物（截图、`summary.json`、server 日志切片）落
+`.archive/runs/craft-preview/verification/<UTC 时间戳>/`，`summary.json` 含
+`topology` 字段标记本次 profile；票面 AC 回勾只认这里归档的产物。
