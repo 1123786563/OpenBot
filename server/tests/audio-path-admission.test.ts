@@ -52,6 +52,7 @@ const FULL_AMOUNTS: Readonly<Record<PriceDimension, string>> = {
   cache_read: "0.00000001",
   cache_write: "0.000000015",
   video: "0.01",
+  video_input: "0.0001",
   surcharge_web_search: "0.001",
   surcharge_per_request: "0.0001",
   surcharge_tool_call: "0.002",
