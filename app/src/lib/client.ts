@@ -45,6 +45,14 @@ export type ClientOptions = {
   /** For the calls a Bot makes on a person's behalf, which are abandoned when the turn is. */
   signal?: AbortSignal;
   /**
+   * Extra headers a request carries beyond the transport's own, for the surfaces whose protocol
+   * needs one of its own (`x-openbot-dictation` on the transcription upload). Merged in before the
+   * selection pair, which cannot be overridden this way: the scope headers are this client's own
+   * discipline (MT005 ruling #1 — the headers only select), so a caller "helpfully" passing them
+   * is a wiring mistake the transport quietly corrects rather than a second opinion it honors.
+   */
+  headers?: Record<string, string>;
+  /**
    * The tenant this request selects, sent as the enterprise API's per-request scope header
    * (`x-openbot-tenant`, read by the scope middleware at server/src/enterprise/app.ts). The
    * selector is an explicit argument carried per request — never a module-level "current tenant"
@@ -112,24 +120,68 @@ async function fallbackText(options: ClientOptions): Promise<string> {
 const TENANT_HEADER = "x-openbot-tenant";
 const WORKSPACE_HEADER = "x-openbot-workspace";
 
-/** The path prefix the enterprise API answers on; `/api/enterprise/v1` is its one mounted version. */
-const ENTERPRISE_PATH_PREFIX = "/api/enterprise/";
+/**
+ * The closed inventory of reviewed same-origin business paths the selection pair may ride
+ * (MT081 / Issue #124, AC4).
+ *
+ * A path is on this list because a ticket reviewed it — the same discipline as the server's
+ * MT030 global-exception registry (`GLOBAL_EXCEPTION_ENTRIES`, server/src/enterprise/tenancy/
+ * global-exceptions.ts), and the two are cross-checked in `app/tests/multitenancy/
+ * transport-rest.test.tsx`: no path under an allowed prefix may be covered by a registered
+ * global exception, because an exception surface (login, health, static directory) is global
+ * by design and must never receive a company/team selection. Widening this list is a review,
+ * not an accident — each entry names its owner ticket and why the path is trusted with the
+ * pair.
+ *
+ * TODAY the one reviewed path family is the enterprise API. The deployment's legacy REST
+ * surfaces (`/api/channels`, `/api/craft`, `/api/workshop`, the dictation upload…) deliberately
+ * are NOT here: the server's entry middleware passes those through untouched until they consume
+ * the scope seam themselves (MT125 lays the client headers onto the legacy assembly), so sending
+ * the pair there now would be a selection no one reads. The uploads and download issuances that
+ * target those surfaces ride the same attach logic below (`clientUpload` and `send` share
+ * `scopeSelection`, AC3) and start carrying the pair the moment their paths earn a review.
+ */
+export interface ScopeHeaderPathEntry {
+  /** Stable id, the cross-check test names entries by. */
+  readonly id: string;
+  /** The path prefix the pair may ride on; the prefix itself is included. */
+  readonly prefix: string;
+  /** Why this path is trusted with the selection pair (non-empty). */
+  readonly reason: string;
+  /** The ticket that reviewed it (non-empty). */
+  readonly ownerTicket: string;
+}
+
+export const SCOPE_HEADER_ALLOWED_PATHS: readonly ScopeHeaderPathEntry[] = [
+  {
+    id: "enterprise-api",
+    prefix: "/api/enterprise/",
+    reason:
+      "the enterprise API is the scope middleware's own surface: it resolves the selection pair into a trusted scope (MT005 ruling #1 — the headers only select; database membership decides)",
+    ownerTicket: "MT081",
+  },
+];
 
 /**
  * The selection headers a request carries, or nothing.
  *
  * Same-origin here is a relative path on this app's own origin: a string that starts with exactly
  * one slash. An absolute URL names some other origin, and a `//host/path` URL does too — the
- * browser resolves it against a scheme, so its host is not ours. Only a relative enterprise path
- * with a selector may carry the headers, and every other combination returns `undefined`, which
- * leaves the request's headers exactly as they were before the selectors existed.
+ * browser resolves it against a scheme, so its host is not ours. Only a reviewed business path
+ * (the closed inventory above) with a selector may carry the headers, and every other combination
+ * returns `undefined`, which leaves the request's headers exactly as they were before the
+ * selectors existed.
  */
 function scopeSelection(
   path: string,
   options: ClientOptions,
 ): Record<string, string> | undefined {
   if (!path.startsWith("/") || path.startsWith("//")) return undefined;
-  if (!path.startsWith(ENTERPRISE_PATH_PREFIX)) return undefined;
+  if (
+    !SCOPE_HEADER_ALLOWED_PATHS.some((entry) => path.startsWith(entry.prefix))
+  ) {
+    return undefined;
+  }
   const headers: Record<string, string> = {};
   if (options.tenantId !== undefined) headers[TENANT_HEADER] = options.tenantId;
   if (options.workspaceId !== undefined) {
@@ -167,15 +219,54 @@ async function refusalMessage(
 /** Every request in this app is authenticated, and every one of them is JSON or nothing. */
 async function send(path: string, options: ClientOptions): Promise<Response> {
   const selection = scopeSelection(path, options);
-  const headers: Record<string, string> | undefined =
+  const merged =
     options.body === undefined
-      ? selection
-      : { "content-type": "application/json", ...selection };
+      ? { ...options.headers, ...selection }
+      : {
+          "content-type": "application/json",
+          ...options.headers,
+          ...selection,
+        };
+  // An empty object would ride as `headers: {}` where the old call sent none at all.
+  const headers = Object.keys(merged).length > 0 ? merged : undefined;
   return fetch(path, {
     method: options.method,
     credentials: "include",
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    ...(options.signal ? { signal: options.signal } : {}),
+  });
+}
+
+/**
+ * The upload half of the same transport (MT081 / Issue #124, AC3).
+ *
+ * Multipart is the one body shape `send` cannot carry — it JSON-stringifies and sets the JSON
+ * content type, and a multipart body must let the browser name its own boundary — so the
+ * FormData paths used to open raw `fetch`es of their own, each a private copy of the credentials
+ * discipline the JSON half already owned. This is the one place an upload leaves the browser
+ * now: the SAME `scopeSelection` decides the selection pair (`scopeSelection`, not a reworking
+ * of it — there is no second attach logic to drift), `credentials` stays `include`, and the
+ * caller keeps its own envelope and refusal sentences, which are per-surface facts.
+ *
+ * Returns the `Response` verbatim: upload surfaces disagree about their envelopes (a file row
+ * here, a count there), so unwrapping here would be the client guessing at meaning again.
+ */
+export function clientUpload(
+  path: string,
+  body: FormData,
+  options: ClientOptions = {},
+): Promise<Response> {
+  const selection = scopeSelection(path, options);
+  const headers: Record<string, string> | undefined = {
+    ...options.headers,
+    ...selection,
+  };
+  return fetch(path, {
+    method: "POST",
+    credentials: "include",
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
+    body,
     ...(options.signal ? { signal: options.signal } : {}),
   });
 }

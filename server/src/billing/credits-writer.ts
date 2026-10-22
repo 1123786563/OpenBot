@@ -7,6 +7,7 @@ import {
   creditReservationAllocations,
   creditReservations,
   creditSettlementDetails,
+  creditSettlementDimensionBreakdown,
   creditSpeechSettlementDetails,
 } from "../db/schema/credit-reservations";
 import { creditGrants, creditLedger as ledger } from "../db/schema/credits";
@@ -16,6 +17,7 @@ import {
   readCapacity,
   type Tx,
 } from "./capacity";
+import { PRICE_DIMENSIONS, type PriceDimension } from "../gateway/price-snapshot";
 import type { ReservationLockedBasis } from "./reserve-bound";
 import type { CreditGrantSource } from "./types";
 
@@ -142,6 +144,114 @@ export type SettlementLineDetail =
   | ImageSettlementLineDetail
   | SpeechSettlementLineDetail;
 
+/**
+ * One dimension's share of a settlement (20.3): the exact scaled cost the caller's pricing
+ * computed for this dimension (the members of {@link computeDimensionScaledUnits}). The
+ * writer validates the members sum to the settlement's `actual` exactly, then allocates
+ * the row's whole units — the surcharge group rounds up, the model group carries the
+ * floor, and a group's leftover units distribute over its dimensions in the vocabulary's
+ * fixed order — so the stored rows sum to the ledger row's credits exactly.
+ */
+export type SettlementDimensionLine = {
+  dimension: PriceDimension;
+  numerator: bigint;
+  denominator: bigint;
+};
+
+/** ceil(p/q) for non-negative rationals — the one rounding the surcharge group takes. */
+function ceilRational(numerator: bigint, denominator: bigint): bigint {
+  return (numerator + denominator - 1n) / denominator;
+}
+
+/**
+ * The split's integer allocation (20.3): whole scaled units per dimension summing exactly
+ * to `chargedUnits`. Deterministic — the same members and charge always split the same way,
+ * so a re-derived split agrees with the stored one.
+ */
+export function allocateDimensionUnits(
+  members: readonly SettlementDimensionLine[],
+  chargedUnits: number,
+): { ok: true; rows: { dimension: PriceDimension; units: number }[] } | { ok: false } {
+  const known = new Set<string>(PRICE_DIMENSIONS);
+  let modelNumerator = 0n;
+  let modelDenominator = 1n;
+  let surchargeNumerator = 0n;
+  let surchargeDenominator = 1n;
+  const seen = new Set<string>();
+  for (const member of members) {
+    if (
+      !known.has(member.dimension) ||
+      member.numerator < 0n ||
+      member.denominator <= 0n ||
+      seen.has(member.dimension)
+    ) {
+      return { ok: false };
+    }
+    seen.add(member.dimension);
+    // Accumulate into the group's exact rational by cross-multiplication.
+    if (member.dimension.startsWith("surcharge_")) {
+      surchargeNumerator =
+        surchargeNumerator * member.denominator +
+        member.numerator * surchargeDenominator;
+      surchargeDenominator *= member.denominator;
+    } else {
+      modelNumerator =
+        modelNumerator * member.denominator +
+        member.numerator * modelDenominator;
+      modelDenominator *= member.denominator;
+    }
+  }
+  const charged = BigInt(chargedUnits);
+  // The surcharge group rounds UP (fee-conservative), clipped to the row; the model group
+  // carries the rest — both non-negative, their sum exactly the row.
+  let surchargeUnits = ceilRational(surchargeNumerator, surchargeDenominator);
+  if (surchargeUnits > charged) surchargeUnits = charged;
+  const modelUnits = charged - surchargeUnits;
+
+  // Within a group: floor per dimension, then the leftover units distribute in the
+  // vocabulary's fixed order — a stable order no caller configuration can change.
+  const allocate = (
+    group: SettlementDimensionLine[],
+    groupUnits: bigint,
+  ): { dimension: PriceDimension; units: number }[] => {
+    const ordered = PRICE_DIMENSIONS.map((dimension) =>
+      group.find((member) => member.dimension === dimension),
+    ).filter((member) => member !== undefined) as SettlementDimensionLine[];
+    let assigned = 0n;
+    const rows = ordered.map((member) => {
+      const floor = member.numerator / member.denominator;
+      assigned += floor;
+      return { dimension: member.dimension, units: Number(floor) };
+    });
+    let leftover = Number(groupUnits - assigned);
+    if (leftover > 0) {
+      if (rows.length === 0) return []; // units with no members to place: the caller's defect
+      // One unit per dimension in the vocabulary's fixed order, wrapping — bounded by
+      // construction (leftover ≤ the member count), fenced so a defect is loud, not a hang.
+      let i = 0;
+      while (leftover > 0) {
+        rows[i % rows.length].units += 1;
+        leftover -= 1;
+        i += 1;
+        if (i > rows.length + leftover + 1) return [];
+      }
+    }
+    return rows;
+  };
+
+  const modelGroup = members.filter((m) => !m.dimension.startsWith("surcharge_"));
+  const surchargeGroup = members.filter((m) =>
+    m.dimension.startsWith("surcharge_"),
+  );
+  const rows = [
+    ...allocate(modelGroup, modelUnits),
+    ...allocate(surchargeGroup, surchargeUnits),
+  ];
+  const total = rows.reduce((sum, row) => sum + row.units, 0);
+  if (total !== chargedUnits) return { ok: false };
+  return { ok: true, rows };
+}
+
 export type CreditWriter = {
   /**
    * Record one deposit. `totalCents` is scaled credit units (×100) already — the caller derived
@@ -218,6 +328,16 @@ export type CreditWriter = {
      * path that can name its line's spec, actual count and locked unit price passes one.
      */
     lineDetail?: SettlementLineDetail;
+    /**
+     * The settlement's per-dimension split (20.3): each used billing dimension's exact
+     * scaled cost, written in THIS settlement's transaction as integer shares of the ledger
+     * row — the rows always sum to exactly the row (the write-time invariant), so the
+     * consumption view's model/surcharge attribution reconciles with the ledger by
+     * construction. Optional: a settlement that cannot name its dimensions writes no split,
+     * and the view answers no split for it (never a misleading zero). The exact members
+     * must sum to `actual` exactly — a split that names a different total is a defect.
+     */
+    dimensionBreakdown?: SettlementDimensionLine[];
   }): Promise<CreditSettlementResult>;
 
   /**
@@ -616,6 +736,50 @@ export function createCreditWriter(database: Database): CreditWriter {
               voiceTier: input.lineDetail.voiceTier,
             });
           }
+        }
+
+        if (input.dimensionBreakdown !== undefined) {
+          // The per-dimension split (20.3): validated against THIS settlement's exact
+          // total, then allocated to whole units of the ledger row and written in the
+          // same transaction — the rows sum to the row they explain, by construction and
+          // by assertion, so the view's two-level attribution cannot drift from the
+          // ledger. A split that names a different total than the settlement priced is a
+          // caller defect and refuses the whole settlement.
+          let splitNumerator = 0n;
+          let splitDenominator = 1n;
+          for (const member of input.dimensionBreakdown) {
+            splitNumerator =
+              splitNumerator * member.denominator +
+              member.numerator * splitDenominator;
+            splitDenominator *= member.denominator;
+          }
+          if (
+            splitNumerator * actual.denominator !==
+            actual.numerator * splitDenominator
+          ) {
+            throw new TypeError(
+              "settleReservation: the dimension breakdown sums to a different total than the settlement's actual cost.",
+            );
+          }
+          const allocated = allocateDimensionUnits(
+            input.dimensionBreakdown,
+            charged,
+          );
+          if (!allocated.ok || allocated.rows.length === 0) {
+            throw new TypeError(
+              "settleReservation: the dimension breakdown cannot be allocated to this ledger row.",
+            );
+          }
+          await tx
+            .insert(creditSettlementDimensionBreakdown)
+            .values(
+              allocated.rows.map((row) => ({
+                ledgerId,
+                dimension: row.dimension,
+                units: row.units,
+              })),
+            )
+            .onConflictDoNothing();
         }
 
         const released = reservation.maximum - applied;

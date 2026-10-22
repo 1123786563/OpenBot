@@ -54,6 +54,7 @@ import {
 } from "../db/schema/hindsight-judgments";
 import type { PlatformScope } from "../enterprise/contracts";
 import { resolveHindsightBankScope } from "./bank-scope";
+import { type HindsightPauseControls, learningPausedFor } from "./pause-controls";
 import {
   type PreferenceAuthorityRow,
   type PreferenceRecordStore,
@@ -219,7 +220,9 @@ export type DerivedJudgmentRefusalReason =
   | "missing-evidence"
   | "cross-source-evidence"
   | "unconfirmed-evidence"
-  | "unauthorized-evidence";
+  | "unauthorized-evidence"
+  /** The person paused learning (#392): automatic proposals stop until they resume. */
+  | "learning-paused";
 
 export class DerivedJudgmentRefusedError extends Error {
   readonly reason: DerivedJudgmentRefusalReason;
@@ -505,7 +508,11 @@ export function createDerivedJudgmentService(
   sourceBound: SourceBoundRecordStore,
   judgments: DerivedJudgmentStore,
   authorizations: SourceBoundAuthorizationStore,
-  options: { now?: () => Date } = {},
+  options: {
+    now?: () => Date;
+    /** The person's pause switches (#392); learning-paused refuses automatic proposals. */
+    pause?: HindsightPauseControls;
+  } = {},
 ) {
   const now = options.now ?? (() => new Date());
 
@@ -634,6 +641,15 @@ export function createDerivedJudgmentService(
         throw new DerivedJudgmentRefusedError(
           "shape",
           "A derived judgment synthesizes multiple distinct experiences; the citations name only one.",
+        );
+      }
+      // Pause-learning (#392): the automatic candidate-generation seam is the thing the switch
+      // stops. Refused with its own reason — a pause is neither a dead basis nor a bad shape,
+      // and the surface must be able to say so.
+      if (await learningPausedFor(options.pause, scope)) {
+        throw new DerivedJudgmentRefusedError(
+          "learning-paused",
+          "Learning is paused for this person; automatic candidate proposals are stopped until they resume.",
         );
       }
       const { tenantId, principalId, snapshot } = await snapshotFor(scope);
@@ -818,6 +834,12 @@ export function refusalOf(
     return new DerivedJudgmentRefusedError(
       failure.reason,
       `Evidence at position ${failure.position || 1} is not a confirmed, living fact; unreviewed or forgotten bases cannot support a judgment; ${outcome}.`,
+    );
+  }
+  if (failure.reason === "learning-paused") {
+    return new DerivedJudgmentRefusedError(
+      failure.reason,
+      `Learning is paused for this person; automatic candidate proposals are stopped until they resume; ${outcome}.`,
     );
   }
   return new DerivedJudgmentRefusedError(

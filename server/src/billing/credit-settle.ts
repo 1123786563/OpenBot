@@ -24,6 +24,7 @@ import {
   lockedBasisOfReservation,
   resolveLockedReservationBasis,
   type ReservationBoundQuantities,
+  computeDimensionScaledUnits,
 } from "./reserve-bound";
 
 /**
@@ -493,6 +494,17 @@ export function createCreditSettleService(
         );
       }
 
+      // The per-dimension split (20.3): the same dims/quantities/rate the total priced,
+      // computed per dimension through the same exact arithmetic — the split the
+      // consumption detail separates model fees from surcharge fees on. Derived, never
+      // accepted from the caller, so it cannot disagree with the total it splits.
+      const split = computeDimensionScaledUnits({
+        dims: resolved.dims,
+        quantities: validated.request.actualUsage,
+        rate: resolved.rate,
+      });
+      const dimensionBreakdown = split.ok ? split.members : undefined;
+
       try {
         const settled = await writer.settleReservation({
           reservationId,
@@ -500,6 +512,7 @@ export function createCreditSettleService(
           title: `settle ${basis.provider}/${basis.model}`,
           requestId: validated.request.evidence.reference ?? null,
           model: basis.model,
+          ...(dimensionBreakdown !== undefined ? { dimensionBreakdown } : {}),
         });
         return {
           status: "settled",
