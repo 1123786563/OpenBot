@@ -733,7 +733,12 @@
    "files": [
     "server/tests/responsibilities-store.integration.test.ts",
     "server/tests/responsibility-triggers.integration.test.ts",
-    "server/tests/routine-run-now.integration.test.ts",
+    "server/tests/routine-run-now.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 14",
+   "files": [
     "server/tests/routine-sweep.integration.test.ts",
     "server/tests/routines-store.integration.test.ts",
     "server/tests/run-built-agent-cancellation.test.ts",
@@ -797,7 +802,12 @@
     "server/tests/voice-session-preview.integration.test.ts",
     "server/tests/voice-session-store.integration.test.ts",
     "server/tests/voice-summary-model.test.ts",
-    "server/tests/web-bot-auth.test.ts",
+    "server/tests/web-bot-auth.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 16",
+   "files": [
     "server/tests/work-queue.integration.test.ts",
     "server/tests/workbench-implicit-grant.test.ts",
     "server/tests/workshop-artifacts.test.ts",
