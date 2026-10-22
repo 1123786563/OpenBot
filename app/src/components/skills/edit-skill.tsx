@@ -5,6 +5,7 @@ import { SkillAgents } from "@/components/skills/skill-agents";
 import { SkillFields } from "@/components/skills/skill-fields";
 import { saveSkillMutationOptions } from "@/lib/plugins/mutations";
 import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import type { SkillFormValues } from "@/lib/skills/form";
 
 /**
  * Editing a skill, in the same panel that writes one.
@@ -14,7 +15,17 @@ import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
  * re-save changes the words and never quietly changes whose skill it is. The route has already
  * refused anyone editing a skill that is not theirs before it gets that far.
  */
-export function EditSkill({ slug }: { slug: string }) {
+export function EditSkill({
+  slug,
+  draftValues,
+  draftDirty,
+  onDraftChange,
+}: {
+  slug: string;
+  draftValues?: SkillFormValues;
+  draftDirty?: boolean;
+  onDraftChange?: (values: SkillFormValues, dirty: boolean) => void;
+}) {
   const { t } = useTranslation("skills");
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -84,7 +95,10 @@ export function EditSkill({ slug }: { slug: string }) {
           // than with an undefined the form would refuse to submit.
           tools: skill.tools ?? [],
         }}
+        draftValues={draftValues}
+        draftDirty={draftDirty}
         error={saveSkill.error}
+        onDraftChange={onDraftChange}
         /*
          * Passed down rather than rendered after the form, so it lands above Save changes. Granting
          * still saves on its own the instant a button is pressed — `SkillFields` keeps it out of the

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import type { AuditStore } from "../audit";
 import { recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
@@ -10,12 +10,16 @@ import { createCreditSettleService } from "./credit-settle";
 /**
  * The evidenced disposal (Bifrost 08.9, #284): the administrator's settle-or-release
  * command for a recovery item — the money decision the 08.8 review exists to inform, made
- * ONLY through this separately-authorized seam, never through the read surface.
+ * ONLY through this separately-authorized seam, never through the read surface. 08.10
+ * (#285) adds the third action, `compensate`: the platform-loss absorption, an
+ * INDEPENDENT audited act that stands on `still_unknown` evidence and is recorded under
+ * its own event type — never as a release, never read back as "confirmed no charge".
  *
- * THE COMMAND. { recoveryItemId, action: settle|release, evidence: { queryId },
- * expectedVersion, operatorId, idempotencyKey }. Every field is mandatory and
+ * THE COMMAND. { recoveryItemId, action: settle|release|compensate, evidence: { queryId },
+ * expectedVersion, operatorId, idempotencyKey, reason? }. Every field is mandatory and
  * operatorId is derived from the AUTHENTICATED session on the route, never read from the
- * body: a command that names its own operator would let anyone forge the trail.
+ * body: a command that names its own operator would let anyone forge the trail. `reason`
+ * is mandatory for compensate alone — the recorded justification for absorbing the loss.
  *
  * NO EVIDENCE, NO DISPOSAL. A settle stands on a specific `credit_recovery_queries` row
  * whose conclusion is `settled_evidence` WITH its usage — the amount is DERIVED from that
@@ -23,15 +27,22 @@ import { createCreditSettleService } from "./credit-settle";
  * by hope. A release stands on a `no_charge_evidence` row — the provider's own
  * confirmation the request was never billed — and NOTHING else: `still_unknown` is not
  * release evidence (Q12: 查不到不等于没发生), and a settle-evidence row is the opposite of a
- * no-charge proof.
+ * no-charge proof. A compensate stands on a `still_unknown` row and NOTHING else: settled
+ * evidence belongs to a settle, and no-charge evidence belongs to a release — absorbing a
+ * loss the trail can already resolve would be paying for nothing.
  *
  * THE ACCOUNTING GOES THROUGH THE PROTOCOL, NOT AROUND IT. Settle is 06.9's
  * `CreditSettleService` (exact pricing through the reservation's locked basis, the
  * ledger's `reservation:<id>` fence, the first terminal result standing); release is 06.11's
  * recovery door `releaseUnknownReservation` (a still-`reserved` hold refuses, a terminal
- * hold answers the first result). The disposal never writes a ledger row itself.
+ * hold answers the first result). Compensate is 08.10's own door
+ * `compensateUnknownReservation` — the held capacity returns to the user, the row's
+ * release reason carries the `platform_compensation:` marker, and the audit row records
+ * the absorbed amount; the ledger itself gains NO charge row, which is exactly the point:
+ * the user did not consume, the platform paid. The disposal never writes a ledger row
+ * itself.
  *
- * VERSION AND REPLAY. The item's `version` (0168) is the guard: the resolution lands in
+ * VERSION AND REPLAY. The item's `version` (0169) is the guard: the resolution lands in
  * ONE UPDATE fenced on `state <> 'resolved' AND version = expectedVersion`, so a command
  * built from a stale read refuses with `version_conflict` and two disposals racing resolve
  * to exactly one winner. A resolved item answers by its record: the SAME idempotency key
@@ -40,10 +51,13 @@ import { createCreditSettleService } from "./credit-settle";
  * no second accounting effect — the underlying protocol is terminal-once, and the item
  * names the one disposal that won.
  *
- * THE AUDIT RIDES THE ACT. Every disposal that lands writes `billing.recovery.disposed`
- * through the audit store (when the deployment wired one — the repo's rule: absent store
- * skips the trail, it never blocks the act). The refusal a non-administrator meets is the
- * ROUTE's own `billing.recovery.disposal_denied` row, mirroring the review surface.
+ * THE AUDIT RIDES THE ACT. Every settle-or-release that lands writes
+ * `billing.recovery.disposed`; a compensation writes `billing.recovery.compensated` — a
+ * different event TYPE, not a different payload of the same one, so the two acts cannot
+ * be confused after the fact (08.10's first AC). Both go through the audit store when the
+ * deployment wired one — the repo's rule: absent store skips the trail, it never blocks
+ * the act. The refusal a non-administrator meets is the ROUTE's own
+ * `billing.recovery.disposal_denied` row, mirroring the review surface.
  */
 
 /** The closed refusal vocabulary. A new member is a contract change, never a free string. */
@@ -55,6 +69,7 @@ export const DISPOSAL_REFUSAL_REASONS = [
   "evidence_mismatch",
   "settle_refused",
   "release_refused",
+  "compensate_refused",
 ] as const;
 
 export type RecoveryDisposalRefusalReasonCode =
@@ -75,12 +90,14 @@ export const DISPOSAL_REFUSAL_SENTENCES: Record<
     "The named evidence does not support this disposal action for this item.",
   settle_refused: "The settlement itself refused; nothing was disposed.",
   release_refused: "The release itself refused; nothing was disposed.",
+  compensate_refused:
+    "The compensation itself refused; nothing was absorbed and nothing was released.",
 };
 
 /** The command contract, as the ticket's Produces list names it. */
 export type RecoveryDisposalCommand = {
   recoveryItemId: string;
-  action: "settle" | "release";
+  action: "settle" | "release" | "compensate";
   /** The specific evidence row the action stands on (08.5's credit_recovery_queries). */
   evidence: { queryId: string };
   /** The version the operator read with the item; a stale version refuses. */
@@ -89,13 +106,15 @@ export type RecoveryDisposalCommand = {
   operatorId: string;
   /** The command's own retry identity: the same key replays the recorded answer. */
   idempotencyKey: string;
+  /** Compensate only: the recorded justification for absorbing the loss (08.10). */
+  reason?: string;
 };
 
 /** What a disposal answers: the landed act, the recorded replay, or a named refusal. */
 export type RecoveryDisposalOutcome =
   | {
       status: "disposed";
-      action: "settle" | "release";
+      action: "settle" | "release" | "compensate";
       itemId: string;
       reservationId: string;
       /** The evidence row the act stood on. */
@@ -108,10 +127,14 @@ export type RecoveryDisposalOutcome =
       appliedCredits?: number;
       /** Release only: the capacity handed back. */
       releasedCredits?: number;
+      /** Compensate only: the loss the platform absorbed (the hold's whole ceiling). */
+      absorbedCredits?: number;
+      /** Compensate only: the recorded justification for absorbing the loss. */
+      reason?: string;
     }
   | {
       status: "replayed";
-      action: "settle" | "release";
+      action: "settle" | "release" | "compensate";
       itemId: string;
       evidenceId: string;
       /** The recorded disposal's own key — the caller sees it answered itself. */
@@ -176,7 +199,7 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
     }
     const body = command as Record<string, unknown>;
     const action = body.action;
-    if (action !== "settle" && action !== "release") {
+    if (action !== "settle" && action !== "release" && action !== "compensate") {
       return refused("request_invalid", { field: "action" });
     }
     if (!isIdentifier(body.recoveryItemId, IDENTITY_MAX)) {
@@ -204,6 +227,16 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
     ) {
       return refused("request_invalid", { field: "expectedVersion" });
     }
+    // 08.10: the compensation's reason is part of the act it records — an absorbed loss
+    // without a recorded justification is a fact this seam refuses to hold. Identifier-
+    // shaped and bounded, exactly like every other free-ish string the seam accepts.
+    let reason: string | undefined;
+    if (action === "compensate") {
+      if (!isIdentifier(body.reason, 512)) {
+        return refused("request_invalid", { field: "reason" });
+      }
+      reason = body.reason;
+    }
     const typed: RecoveryDisposalCommand = {
       recoveryItemId: body.recoveryItemId,
       action,
@@ -211,6 +244,7 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
       expectedVersion,
       operatorId: body.operatorId,
       idempotencyKey: body.idempotencyKey,
+      ...(reason !== undefined ? { reason } : {}),
     };
 
     // ---- The item, and the resolved-state answers that never re-account.
@@ -282,13 +316,25 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
           reason: "the settled evidence carries no usage to settle from",
         });
       }
-    } else if (evidenceRow.conclusion !== "no_charge_evidence") {
-      // still_unknown is not release evidence — the provider has no record is NOT proof
-      // nothing was billed (Q12), and settled_evidence is the opposite of a no-charge.
+    } else if (typed.action === "release") {
+      if (evidenceRow.conclusion !== "no_charge_evidence") {
+        // still_unknown is not release evidence — the provider has no record is NOT proof
+        // nothing was billed (Q12), and settled_evidence is the opposite of a no-charge.
+        return refused("evidence_mismatch", {
+          queryId: evidenceRow.id,
+          conclusion: evidenceRow.conclusion,
+          reason: "a release stands on no_charge_evidence only",
+        });
+      }
+    } else if (evidenceRow.conclusion !== "still_unknown") {
+      // 08.10: the compensation is the act for the loss the trail CANNOT resolve — settled
+      // evidence belongs to a settle, no-charge evidence to a release, and absorbing a
+      // resolvable loss would be paying for nothing.
       return refused("evidence_mismatch", {
         queryId: evidenceRow.id,
         conclusion: evidenceRow.conclusion,
-        reason: "a release stands on no_charge_evidence only",
+        reason:
+          "a compensate stands on still_unknown only: settle the settled, release the no-charge",
       });
     }
 
@@ -332,6 +378,7 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
         evidenceRow.id,
         item.version,
         item.reservationId,
+        { absorbedCredits: 0 },
       );
       if (resolution.status === "refused") return resolution;
       return {
@@ -349,53 +396,115 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
 
     // The release: the recovery door only (a still-`reserved` hold refuses below), with
     // the reason naming the evidence the act stands on.
-    try {
-      await writer.releaseUnknownReservation(
+    if (typed.action === "release") {
+      try {
+        await writer.releaseUnknownReservation(
+          item.reservationId,
+          `recovery_disposal:${evidenceRow.id}`,
+        );
+      } catch (error) {
+        if (error instanceof CreditReservationConflictError) {
+          return refused("release_refused", {
+            kind: error.conflictKind,
+            reason: "the reservation's own state refused the recovery release",
+          });
+        }
+        throw error;
+      }
+      // The row that answered: terminal facts for the response (and an honest released
+      // amount even when the release converged on an earlier terminal write).
+      const [reservationAfter] = await database
+        .select({
+          status: creditReservations.status,
+          released: creditReservations.released,
+        })
+        .from(creditReservations)
+        .where(eq(creditReservations.id, item.reservationId))
+        .limit(1);
+      if (reservationAfter?.status !== "released") {
+        // The recovery door's own refusal shape: a hold that was never `unknown` (or a
+        // settle that landed first). Nothing moved on our say-so; say so.
+        return refused("release_refused", {
+          reservationStatus: reservationAfter?.status ?? "missing",
+          reason: "the reservation did not release",
+        });
+      }
+      const resolution = await resolveItem(
+        typed,
+        evidenceRow.id,
+        item.version,
         item.reservationId,
-        `recovery_disposal:${evidenceRow.id}`,
+        { absorbedCredits: 0 },
+      );
+      if (resolution.status === "refused") return resolution;
+      return {
+        status: "disposed",
+        action: "release",
+        itemId: item.id,
+        reservationId: item.reservationId,
+        evidenceId: evidenceRow.id,
+        version: resolution.version,
+        releasedCredits: reservationAfter.released ?? 0,
+      };
+    }
+
+    // The compensation (08.10): the platform's OWN door — not the release, not the settle
+    // — with the marker and the justification recorded on the act. The held capacity comes
+    // back to the user; the ledger gains no charge row; the absorbed amount is what the
+    // audit row carries.
+    try {
+      await writer.compensateUnknownReservation(
+        item.reservationId,
+        `platform_compensation:${evidenceRow.id}`,
       );
     } catch (error) {
       if (error instanceof CreditReservationConflictError) {
-        return refused("release_refused", {
+        return refused("compensate_refused", {
           kind: error.conflictKind,
-          reason: "the reservation's own state refused the recovery release",
+          reason:
+            "the reservation's own state refused the platform compensation",
         });
       }
       throw error;
     }
-    // The row that answered: terminal facts for the response (and an honest released
-    // amount even when the release converged on an earlier terminal write).
-    const [reservationAfter] = await database
+    const [compensatedAfter] = await database
       .select({
         status: creditReservations.status,
         released: creditReservations.released,
+        releaseReason: creditReservations.releaseReason,
       })
       .from(creditReservations)
       .where(eq(creditReservations.id, item.reservationId))
       .limit(1);
-    if (reservationAfter?.status !== "released") {
-      // The recovery door's own refusal shape: a hold that was never `unknown` (or a
-      // settle that landed first). Nothing moved on our say-so; say so.
-      return refused("release_refused", {
-        reservationStatus: reservationAfter?.status ?? "missing",
-        reason: "the reservation did not release",
+    if (
+      compensatedAfter?.status !== "released" ||
+      !compensatedAfter.releaseReason?.startsWith("platform_compensation:")
+    ) {
+      // A hold that converged on some OTHER terminal act (a settle or an ordinary release
+      // landing first): nothing was absorbed on our say-so; say so.
+      return refused("compensate_refused", {
+        reservationStatus: compensatedAfter?.status ?? "missing",
+        releaseReason: compensatedAfter?.releaseReason ?? null,
+        reason: "the reservation was not compensated",
       });
     }
-    const resolution = await resolveItem(
+    const compensationResolution = await resolveItem(
       typed,
       evidenceRow.id,
       item.version,
       item.reservationId,
+      { absorbedCredits: compensatedAfter.released ?? 0 },
     );
-    if (resolution.status === "refused") return resolution;
+    if (compensationResolution.status === "refused") return compensationResolution;
     return {
       status: "disposed",
-      action: "release",
+      action: "compensate",
       itemId: item.id,
       reservationId: item.reservationId,
       evidenceId: evidenceRow.id,
-      version: resolution.version,
-      releasedCredits: reservationAfter.released ?? 0,
+      version: compensationResolution.version,
+      absorbedCredits: compensatedAfter.released ?? 0,
+      reason: typed.reason,
     };
   }
 
@@ -410,6 +519,7 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
     evidenceId: string,
     expectedVersion: number,
     reservationId: string,
+    figures: { absorbedCredits: number },
   ): Promise<
     | { status: "resolved"; version: number }
     | Extract<RecoveryDisposalOutcome, { status: "refused" }>
@@ -431,6 +541,10 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
         and(
           eq(creditRecoveryItems.id, command.recoveryItemId),
           eq(creditRecoveryItems.version, expectedVersion),
+          // F3/R4-F3（评审两轮）：护栏与声明一致——已 resolved 的行不再被处置
+          // 覆写。ne(state) 才有效：08.2 handler 解决只写 state，不写
+          // resolved_action 也不递增 version，isNull(resolvedAction) 挡不住它。
+          ne(creditRecoveryItems.state, "resolved"),
         ),
       )
       .returning({ version: creditRecoveryItems.version });
@@ -461,20 +575,36 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
     }
 
     // The act's own trail: who disposed, what action, on which evidence, at which
-    // version — the audit the ticket demands rides the disposal itself.
+    // version — the audit the ticket demands rides the disposal itself. 08.10: the
+    // compensation's trail is its OWN event type, carrying the absorbed amount and the
+    // recorded justification, so it can never be read back as "confirmed no charge".
     if (dependencies.audit) {
       await recordAuditEvent(dependencies.audit, {
-        eventType: "billing.recovery.disposed",
+        eventType:
+          command.action === "compensate"
+            ? "billing.recovery.compensated"
+            : "billing.recovery.disposed",
         targetType: "billing",
         targetId: command.recoveryItemId,
         actorUserId: command.operatorId,
-        payload: {
-          action: command.action,
-          evidenceId,
-          reservationId,
-          expectedVersion,
-          idempotencyKey: command.idempotencyKey,
-        },
+        payload:
+          command.action === "compensate"
+            ? {
+                action: command.action,
+                reason: command.reason ?? null,
+                absorbedCredits: figures.absorbedCredits,
+                evidenceId,
+                reservationId,
+                expectedVersion,
+                idempotencyKey: command.idempotencyKey,
+              }
+            : {
+                action: command.action,
+                evidenceId,
+                reservationId,
+                expectedVersion,
+                idempotencyKey: command.idempotencyKey,
+              },
       });
     }
     return { status: "resolved", version: won[0]?.version ?? expectedVersion + 1 };
