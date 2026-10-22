@@ -224,6 +224,121 @@ export const creditReservationAttribution = pgTable(
 );
 
 /**
+ * One settlement's line detail (Bifrost 12.2, #303): the structured entry a capability's
+ * settlement writes beside its ledger row — the frozen request spec (12.1), the
+ * provider-reported actual count, and the locked unit price the settlement priced at.
+ * Written only inside the credit writer's settle transaction (one commit with the ledger
+ * row and the reservation's terminal update), keyed uniquely by the reservation: one
+ * settlement is one terminal fact of one hold, so one line. The MONEY stays on the ledger
+ * row (`credit_ledger.credits` is the amount the view shows); this row is what the
+ * consumption entry says was consumed, per capability — the closed `capability` vocabulary
+ * keeps entries distinguishable, and a new capability arrives with its own migration.
+ */
+export const creditSettlementDetails = pgTable(
+  "credit_settlement_details",
+  {
+    reservationId: text("reservation_id").primaryKey(),
+    ledgerId: text("ledger_id")
+      .notNull()
+      .references(() => creditLedger.id),
+    capability: text("capability").notNull(),
+    requestedCount: integer("requested_count").notNull(),
+    generatedCount: integer("generated_count").notNull(),
+    inputImages: integer("input_images").notNull().default(0),
+    size: text("size"),
+    quality: text("quality"),
+    /** The locked per-image USD the settlement priced at — an exact decimal string. */
+    unitPriceUsd: text("unit_price_usd").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "credit_settlement_details_reservation_id_fk",
+      columns: [table.reservationId],
+      foreignColumns: [creditReservations.id],
+    }),
+    check(
+      "credit_settlement_details_capability_check",
+      sql`${table.capability} in ('image')`,
+    ),
+    check(
+      "credit_settlement_details_counts_check",
+      sql`${table.requestedCount} > 0 and ${table.generatedCount} >= 0 and ${table.generatedCount} <= ${table.requestedCount} and ${table.inputImages} >= 0`,
+    ),
+    check(
+      "credit_settlement_details_unit_price_shape_check",
+      sql`${table.unitPriceUsd} ~ '^[0-9]+(\\.[0-9]+)?$'`,
+    ),
+    index("credit_settlement_details_ledger_idx").on(table.ledgerId),
+  ],
+);
+
+/**
+ * The SPEECH settlement line detail (Bifrost 13.2, #307) — the speech counterpart of
+ * {@link creditSettlementDetails}, in its own table because that one states the IMAGE
+ * facts in its NOT NULLs and a speech row would have to fake them to fit. Written only
+ * inside the credit writer's settle transaction (one commit with the ledger row and the
+ * reservation's terminal update), keyed uniquely by the reservation. The MONEY stays on
+ * the ledger row; this row carries what was actually spoken — the characters in, the
+ * seconds out (an exact decimal string, the shape the settlement priced), the cap the
+ * hold was certified against, and the TWO locked tier prices it priced at. The closed
+ * `capability` vocabulary stays closed on each side ('speech' here, 'image' there).
+ */
+export const creditSpeechSettlementDetails = pgTable(
+  "credit_speech_settlement_details",
+  {
+    reservationId: text("reservation_id").primaryKey(),
+    ledgerId: text("ledger_id")
+      .notNull()
+      .references(() => creditLedger.id),
+    capability: text("capability").notNull(),
+    inputCharacters: integer("input_characters").notNull(),
+    /** The output-duration cap the hold was certified against (13.1's frozen spec). */
+    cappedSeconds: integer("capped_seconds").notNull(),
+    /** The actual billed seconds — the exact decimal the settlement priced, never a float. */
+    actualSeconds: text("actual_seconds").notNull(),
+    /** The locked per-input-character USD the settlement priced at. */
+    perInputCharacterUsd: text("per_input_character_usd").notNull(),
+    /** The locked per-output-second USD the settlement priced at. */
+    perOutputSecondUsd: text("per_output_second_usd").notNull(),
+    voiceTier: text("voice_tier"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "credit_speech_settlement_details_reservation_id_fk",
+      columns: [table.reservationId],
+      foreignColumns: [creditReservations.id],
+    }),
+    check(
+      "credit_speech_settlement_details_capability_check",
+      sql`${table.capability} = 'speech'`,
+    ),
+    check(
+      "credit_speech_settlement_details_quantities_check",
+      sql`${table.inputCharacters} >= 0 and ${table.cappedSeconds} > 0`,
+    ),
+    check(
+      "credit_speech_settlement_details_actual_seconds_shape_check",
+      sql`${table.actualSeconds} ~ '^[0-9]+(\\.[0-9]+)?$'`,
+    ),
+    check(
+      "credit_speech_settlement_details_per_input_character_shape_check",
+      sql`${table.perInputCharacterUsd} ~ '^[0-9]+(\\.[0-9]+)?$'`,
+    ),
+    check(
+      "credit_speech_settlement_details_per_output_second_shape_check",
+      sql`${table.perOutputSecondUsd} ~ '^[0-9]+(\\.[0-9]+)?$'`,
+    ),
+    index("credit_speech_settlement_details_ledger_idx").on(table.ledgerId),
+  ],
+);
+
+/**
  * One unknown-dispatch recovery item (Bifrost 08.1): the durable name of one hold whose
  * provider result never reliably arrived, written by the recovery scan for the downstream
  * handlers (08.2's persisted-result replay, 08.4's background retry, 08.9's evidenced
@@ -286,6 +401,14 @@ export const creditRecoveryItems = pgTable(
     /** Why the item exists (the unknown mark's reason, or the expired-hold reason), later
      * the handler's last failure reason. */
     lastReason: text("last_reason"),
+    /**
+     * When the background retry scheduler (08.4) may claim the item again: stamped
+     * `now + backoff(failure_count)` by the failure path, NULL while never attempted or
+     * once the failure count reached the threshold (no next retry — the manual queue
+     * owns the item from there). The retry's own truth, never re-armed by unrelated
+     * writes (0175).
+     */
+    nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
     /** When the scan first saw the unknown hold. */
     detectedAt: timestamp("detected_at", { withTimezone: true }).notNull(),
     /** The claim: who owns the item and when, together or not at all (the CHECK). */
@@ -305,15 +428,19 @@ export const creditRecoveryItems = pgTable(
      * command's own idempotency key (a transport retry of the SAME command reads the
      * recorded answer; a DIFFERENT disposal of a resolved item refuses). The recovery
      * handlers' own resolutions (08.2's replay) leave these NULL — their evidence is the
-     * replay's reason, not an operator's evidence row.
+     * replay's reason, not an operator's evidence row. `compensate` (08.10) is the
+     * platform-loss action: it stands on still_unknown evidence and is audited under its
+     * OWN event type — never recorded as a release, never read back as "no charge".
      */
-    resolvedAction: text("resolved_action").$type<"settle" | "release">(),
+    resolvedAction: text("resolved_action").$type<
+      "settle" | "release" | "compensate"
+    >(),
     resolvedBy: text("resolved_by"),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
     // No drizzle-level FK here on purpose: this table and credit_recovery_queries already
     // reference each other (the trail's own item_id FK points back), and a second
     // cross-edge makes the schema's type inference circular. The REAL constraint lives in
-    // the SQL migration (0168), which is what any migrated database enforces; the drift
+    // the SQL migration (0169), which is what any migrated database enforces; the drift
     // gate checks columns, and the service validates the evidence row itself.
     resolutionEvidenceId: text("resolution_evidence_id"),
     resolutionIdempotencyKey: text("resolution_idempotency_key"),
@@ -341,32 +468,27 @@ export const creditRecoveryItems = pgTable(
       "credit_recovery_items_failure_count_check",
       sql`${table.failureCount} >= 0`,
     ),
-    check(
-      "credit_recovery_items_version_check",
-      sql`${table.version} >= 1`,
-    ),
+    check("credit_recovery_items_version_check", sql`${table.version} >= 1`),
     check(
       "credit_recovery_items_resolved_action_check",
-      sql`${table.resolvedAction} IS NULL OR ${table.resolvedAction} IN ('settle', 'release')`,
+      sql`${table.resolvedAction} IS NULL OR ${table.resolvedAction} IN ('settle', 'release', 'compensate')`,
     ),
     // A disposal record is complete or absent: an action without its operator, or an
     // evidence pointer without an action, is a half-fact this table refuses to hold.
     check(
       "credit_recovery_items_disposal_shape_check",
-      sql`(${table.resolvedAction} IS NULL AND ${table.resolvedBy} IS NULL AND ${table.resolvedAt} IS NULL AND ${table.resolutionEvidenceId} IS NULL AND ${table.resolutionIdempotencyKey} IS NULL) OR (${table.resolvedAction} IN ('settle', 'release') AND ${table.resolvedBy} IS NOT NULL AND ${table.resolvedAt} IS NOT NULL AND ${table.resolutionEvidenceId} IS NOT NULL AND ${table.resolutionIdempotencyKey} IS NOT NULL)`,
+      sql`(${table.resolvedAction} IS NULL AND ${table.resolvedBy} IS NULL AND ${table.resolvedAt} IS NULL AND ${table.resolutionEvidenceId} IS NULL AND ${table.resolutionIdempotencyKey} IS NULL) OR (${table.resolvedAction} IN ('settle', 'release', 'compensate') AND ${table.resolvedBy} IS NOT NULL AND ${table.resolvedAt} IS NOT NULL AND ${table.resolutionEvidenceId} IS NOT NULL AND ${table.resolutionIdempotencyKey} IS NOT NULL)`,
     ),
     // One disposal per command key, ever — a database-level truth, so two replicas racing
     // the same command cannot both record it (partial: the handlers' NULL keys don't
     // collide with each other).
-    uniqueIndex(
-      "credit_recovery_items_resolution_idempotency_key_unique_idx",
-    )
+    uniqueIndex("credit_recovery_items_resolution_idempotency_key_unique_idx")
       .on(table.resolutionIdempotencyKey)
       .where(sql`${table.resolutionIdempotencyKey} IS NOT NULL`),
     // A claim without its owner (or the reverse) is not a state this table can hold: the
     // who and the when are part of the claimed fact, not adjacent columns. A handler's
     // resolved item keeps both — who finished it is part of the resolution's evidence
-    // (08.2). The THIRD shape (08.9, 0168): an evidenced disposal resolves an item
+    // (08.2). The THIRD shape (08.9, 0169): an evidenced disposal resolves an item
     // straight out of `pending` — the review queue's items are unclaimed, that is why an
     // operator reads them — so `resolved` without a claim is legal exactly when a
     // disposal record exists (the disposal-shape CHECK above guarantees its

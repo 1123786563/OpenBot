@@ -4,6 +4,8 @@ import { botServices } from "../db/schema/bot-services";
 import {
   creditReservationAttribution,
   creditReservations,
+  creditSettlementDetails,
+  creditSpeechSettlementDetails,
 } from "../db/schema/credit-reservations";
 import { creditGrants, creditLedger } from "../db/schema/credits";
 import { type GrantCapacity, liveGrants, readCapacity } from "./capacity";
@@ -192,6 +194,16 @@ export function createCredits(deps: {
           createdAt: creditLedger.createdAt,
           botId: creditReservationAttribution.botId,
           botName: botServices.displayName,
+          lineCapability: creditSettlementDetails.capability,
+          lineRequestedCount: creditSettlementDetails.requestedCount,
+          lineGeneratedCount: creditSettlementDetails.generatedCount,
+          lineSize: creditSettlementDetails.size,
+          lineQuality: creditSettlementDetails.quality,
+          speechCapability: creditSpeechSettlementDetails.capability,
+          speechInputCharacters: creditSpeechSettlementDetails.inputCharacters,
+          speechCappedSeconds: creditSpeechSettlementDetails.cappedSeconds,
+          speechActualSeconds: creditSpeechSettlementDetails.actualSeconds,
+          speechVoiceTier: creditSpeechSettlementDetails.voiceTier,
         })
         .from(creditLedger)
         // The attribution walk: a reservation-born ledger row (the writer records
@@ -208,6 +220,19 @@ export function createCredits(deps: {
         .leftJoin(
           botServices,
           eq(botServices.botId, creditReservationAttribution.botId),
+        )
+        // The line detail (12.2): a capability settlement's ledger row carries the line
+        // it settled as — the image spec and counts — keyed by the same reservation.
+        // Rows without one (every non-capability charge) join nothing and stay null.
+        .leftJoin(
+          creditSettlementDetails,
+          eq(creditSettlementDetails.ledgerId, creditLedger.id),
+        )
+        // The speech line (13.2) joins the same way through its own table: a ledger row
+        // carries exactly one capability's line, whichever table holds it.
+        .leftJoin(
+          creditSpeechSettlementDetails,
+          eq(creditSpeechSettlementDetails.ledgerId, creditLedger.id),
         )
         .where(where)
         .orderBy(desc(creditLedger.createdAt))
@@ -231,6 +256,33 @@ export function createCredits(deps: {
           // the Bot the reserve ran for; every other row stays unattributed, never guessed.
           botId: row.botId,
           botName: row.botName,
+          // 12.2's line detail: a capability settlement's entry shows what was consumed —
+          // the image spec and counts, distinguishable from every other capability — with
+          // the amount this entry already carries. Other rows carry no line at all.
+          lineDetail:
+            row.lineCapability === "image"
+              ? {
+                  capability: row.lineCapability,
+                  image: {
+                    size: row.lineSize,
+                    quality: row.lineQuality,
+                    requestedCount: row.lineRequestedCount,
+                    generatedCount: row.lineGeneratedCount,
+                  },
+                }
+              : row.speechCapability === "speech"
+                ? // 13.2's speech line: the characters in, the seconds out — the entry a
+                  // speech consumption shows, distinguishable from image and chat.
+                  {
+                    capability: row.speechCapability,
+                    speech: {
+                      inputCharacters: row.speechInputCharacters,
+                      voiceTier: row.speechVoiceTier,
+                      cappedSeconds: row.speechCappedSeconds,
+                      actualSeconds: row.speechActualSeconds,
+                    },
+                  }
+                : null,
           timestamp: row.createdAt.toISOString(),
         })),
         pagination: {

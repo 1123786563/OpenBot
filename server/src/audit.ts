@@ -843,6 +843,44 @@ export const auditEventTypes = [
    */
   "billing.recovery.disposed",
   /**
+   * An administrator compensated a recovery item (Bifrost 08.10, #285): the platform
+   * absorbed a loss the trail could neither settle nor release — a distinct act from a
+   * disposal, recorded under its OWN event type so it can never be read back as
+   * "confirmed no charge". The payload carries the recorded justification (reason), the
+   * absorbed amount (the hold's ceiling), the still_unknown evidence row the absorption
+   * stood on, the reservation, the expectedVersion and the command key — the whole
+   * decision, reconstructable from the row alone. Replays of the same command are NOT
+   * re-audited: the first row is the act.
+   */
+  "billing.recovery.compensated",
+  /**
+   * A metered request's own metadata disagreed with what the server measured (Bifrost
+   * 14.2, #311): the client declared a duration the audio's container does not
+   * corroborate. The settlement priced the MEASUREMENT, not the claim — this row is why
+   * the claim cannot quietly lower a bill — and the payload carries the claim, the
+   * measurement, the difference and where the claim came from, so 系统性低报 shows up as
+   * a countable pattern in the trail rather than a discount nobody noticed. Deployment-
+   * initiated and keyed to the reservation: the FORGERY is the fact, and the audit trail
+   * is append-only, so the row stands even when the same settle later refuses.
+   */
+  "billing.audio_metadata_mismatch",
+  /**
+   * An authorized operator REGISTERED an account-scope billing resolution (Bifrost BP06,
+   * #374): the account-level disposal decision (补发/结算/释放/平台承担损失/人工退款)
+   * with its action, the evidence kind it stood on, and the command's identity. The row
+   * is the decision's record, not the money movement — the actions' effects go through
+   * their own doors (08.9 for holds, the activation path for redelivery). Replays of the
+   * same command are NOT re-audited: the first row is the act.
+   */
+  "billing.account_resolution.recorded",
+  /**
+   * A command was refused at the account-resolution door (Bifrost BP06, #374): the
+   * operator failed the authorization seam, or the refund passed the account's refundable
+   * ceiling. The payload names the action, the account and the refusal code — the probe
+   * and the overreach are both facts the trail keeps.
+   */
+  "billing.account_resolution.denied",
+  /**
    * A craft session's owner answered a connect_app card (connected/declined; the session,
    * the app id and the decision in the payload). The handshake itself rides ephemeral KV
    * (onyx parity — no approval row), so this audit row is the one durable record that a

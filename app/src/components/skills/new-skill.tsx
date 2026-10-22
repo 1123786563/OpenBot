@@ -4,6 +4,7 @@ import { Trans, useTranslation } from "react-i18next";
 import { SkillFields } from "@/components/skills/skill-fields";
 import { saveSkillMutationOptions } from "@/lib/plugins/mutations";
 import { emptySkillForm } from "@/lib/skills/form";
+import type { SkillFormValues } from "@/lib/skills/form";
 
 /**
  * Writing a skill, in the detail panel beside the list.
@@ -11,7 +12,15 @@ import { emptySkillForm } from "@/lib/skills/form";
  * The panel rather than a page of its own, so the skills you already have stay on screen while you
  * write the next one — the usual reason to open this is to make a variant of one that exists.
  */
-export function NewSkill() {
+export function NewSkill({
+  draftValues,
+  draftDirty,
+  onDraftChange,
+}: {
+  draftValues?: SkillFormValues;
+  draftDirty?: boolean;
+  onDraftChange?: (values: SkillFormValues, dirty: boolean) => void;
+}) {
   const { t } = useTranslation("skills");
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -33,7 +42,10 @@ export function NewSkill() {
 
       <SkillFields
         defaultValues={emptySkillForm}
+      draftValues={draftValues}
+      draftDirty={draftDirty}
         error={createSkill.error}
+      onDraftChange={onDraftChange}
         onSubmit={async (values) => {
           await createSkill.mutateAsync(values);
           // Panel closed rather than swapped for a detail view: there is nothing more to say about a

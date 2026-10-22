@@ -131,6 +131,77 @@ export function resolveHindsightBankScope(
   };
 }
 
+/** The current authorizations a source-bound recall may act on; read live by trusted server code. */
+export type ScopedMemoryAuthorization = {
+  /**
+   * Whether the principal's membership in the ASKING workspace is currently active. The team
+   * bank searched is the asking workspace's own — a conversation in team B never carries team
+   * A's bank however many teams the person belongs to.
+   */
+  workspaceActive: boolean;
+  /** Connected sources currently enabled for this principal (the registry's live answer). */
+  sourceIds: readonly string[];
+  /** The Bot asking, when one is: its own bank is searched only while it still holds its app. */
+  agentId?: string;
+};
+
+/**
+ * Resolve the placement of ONE trusted scope across its CURRENT source-bound authorizations
+ * (Hindsight 06 / #383). Same discipline as `resolveHindsightBankScope` — a server-issued
+ * scope in, a derived placement out — but the grant is the bank set the authorizations name:
+ * the asking workspace's team bank while membership there is active, one source bank per
+ * enabled connected source, and the asking Bot's own bank when one is asking and still
+ * authorized. The workspace itself comes from the trusted scope, never the request, and the
+ * authorization snapshot is the CALLER's responsibility, read from current server state
+ * (memberships, the grant registry); an inactive or empty snapshot resolves to a smaller or
+ * empty grant, which the recall seam answers with nothing rather than guessing a bank.
+ */
+export function resolveScopedHindsightBankScope(
+  scope: PlatformScope,
+  authorization: ScopedMemoryAuthorization,
+): HindsightBankScope {
+  assertTrustedScope(scope);
+  const banks: HindsightBankGrant[] = authorization.workspaceActive
+    ? [{ id: teamBankFor(scope.workspaceId), kind: "team" }]
+    : [];
+  banks.push(
+    ...[...new Set(authorization.sourceIds).values()].map(
+      (sourceId): HindsightBankGrant => ({
+        id: sourceBankFor(sourceId),
+        kind: "source",
+      }),
+    ),
+  );
+  if (authorization.agentId !== undefined) {
+    banks.push({ id: botBankFor(authorization.agentId), kind: "bot" });
+  }
+  return {
+    schema: companySchemaFor(scope.tenantId),
+    banks,
+    tenantId: scope.tenantId,
+    principalId: scope.principalId,
+  };
+}
+
+/**
+ * The placement of one authority row's own bank, for the persistent background tasks the spec
+ * names as the second legitimate identity source (the sync queue of Hindsight 07 / #384 is
+ * one). The identity comes from durable OpenBot state — the row's own attribution — and the
+ * bank from the same derivations as every other placement, so a background task can never
+ * name a bank its row does not own; there is deliberately no scope to assert here.
+ */
+export function backgroundTaskBankScope(
+  identity: { tenantId: string; principalId: string },
+  bank: HindsightBankGrant,
+): HindsightBankScope {
+  return {
+    schema: companySchemaFor(identity.tenantId),
+    banks: [bank],
+    tenantId: identity.tenantId,
+    principalId: identity.principalId,
+  };
+}
+
 /**
  * Read the assertion-signing secret from the environment. The secret is shared with the
  * Hindsight deployment (its custom tenant extension verifies with the same value), so an
