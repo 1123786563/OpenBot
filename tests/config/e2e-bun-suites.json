@@ -468,7 +468,12 @@
     "server/tests/hindsight-source-bound-recall.integration.test.ts",
     "server/tests/hindsight-sync-queue.integration.test.ts",
     "server/tests/hindsight-temporal-correction.integration.test.ts",
-    "server/tests/human-input-end-to-end.test.ts",
+    "server/tests/human-input-end-to-end.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 7",
+   "files": [
     "server/tests/identity-challenges.integration.test.ts",
     "server/tests/identity-github-callback.integration.test.ts",
     "server/tests/identity-retire.integration.test.ts",
@@ -566,7 +571,12 @@
     "server/tests/opik-bindings.test.ts",
     "server/tests/opik-case-review.integration.test.ts",
     "server/tests/opik-case-review.test.ts",
-    "server/tests/opik-comparison.integration.test.ts",
+    "server/tests/opik-comparison.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 9",
+   "files": [
     "server/tests/opik-comparison.test.ts",
     "server/tests/opik-contract.test.ts",
     "server/tests/opik-control-plane-auth.test.ts",
@@ -605,7 +615,12 @@
     "server/tests/opik-health.test.ts",
     "server/tests/opik-id-links.integration.test.ts",
     "server/tests/opik-id-links.test.ts",
-    "server/tests/opik-judge-scoring.integration.test.ts",
+    "server/tests/opik-judge-scoring.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 10",
+   "files": [
     "server/tests/opik-judge-scoring.test.ts",
     "server/tests/opik-model-span.test.ts",
     "server/tests/opik-module-skeleton.test.ts",
@@ -644,7 +659,12 @@
     "server/tests/organization-auth.test.ts",
     "server/tests/organization-store.integration.test.ts",
     "server/tests/otel-export-scrubbing.test.ts",
-    "server/tests/page-frame-retention.integration.test.ts",
+    "server/tests/page-frame-retention.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 11",
+   "files": [
     "server/tests/passwords-store.integration.test.ts",
     "server/tests/payer-account.integration.test.ts",
     "server/tests/payer-company-resolution.integration.test.ts",
@@ -683,7 +703,12 @@
     "server/tests/plugin-routes.integration.test.ts",
     "server/tests/plugin-store.integration.test.ts",
     "server/tests/plugin-user-credential.integration.test.ts",
-    "server/tests/policy-durability.integration.test.ts",
+    "server/tests/policy-durability.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 12",
+   "files": [
     "server/tests/policy-fanout.integration.test.ts",
     "server/tests/price-snapshot.integration.test.ts",
     "server/tests/price-status-classification.integration.test.ts",
@@ -723,7 +748,12 @@
     "server/tests/recovery-scan.integration.test.ts",
     "server/tests/recovery-unacked-replay.integration.test.ts",
     "server/tests/release-semantics.integration.test.ts",
-    "server/tests/remote-bot-handoff.integration.test.ts",
+    "server/tests/remote-bot-handoff.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 13",
+   "files": [
     "server/tests/remote-coordination.integration.test.ts",
     "server/tests/remote-coordination.test.ts",
     "server/tests/rerank-pricing.test.ts",
@@ -767,7 +797,12 @@
     "server/tests/server-side-tools.integration.test.ts",
     "server/tests/settle-conflict-grant-expiry.integration.test.ts",
     "server/tests/settle-idempotency.integration.test.ts",
-    "server/tests/settlement-resolution.integration.test.ts",
+    "server/tests/settlement-resolution.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 14",
+   "files": [
     "server/tests/shared-brokered-routes.test.ts",
     "server/tests/shared-brokered-schema.integration.test.ts",
     "server/tests/shared-brokered-store.integration.test.ts",
