@@ -1967,6 +1967,9 @@ try {
         }
       }, `${APP_ORIGIN}/api/craft/sessions`);
       await new Promise((r) => setTimeout(r, 2500));
+      // LOW-9：取证页是 guardPage——截图必须先于 close（shot 对已关闭页面的
+      // screenshot 会 reject 且被 catch 静默吞掉，08 取证图将永远缺失）。
+      await shot("08-same-site-guard", guardPage);
       await guardPage.close().catch(() => {});
       // 增量归因（与 AC1 协议层同款）：只读新增字节，首行非行首丢弃。
       const whole = readFileSync(SERVER_LOG);
@@ -1993,10 +1996,6 @@ try {
         guardLine !== undefined && guardLine.includes('"verdict":"preview"'),
         `403 但非 #410 origin-guard 判决（无 verdict:preview 的 warn 行）——需归因：${guardLine?.slice(0, 160) ?? "（无 guard warn 行）"}`,
       );
-      // LOW-9（取证对象对位）：本步骤的取证页是 guardPage（CSP 绕过、发起
-      // 凭证写的页面）；previewPage 是上游步骤建立的普通预览页，不是本步骤
-      // 的行为主体，截它会把“guard 拒绝”错记成无关页面状态。
-      await shot("08-same-site-guard", guardPage);
       return `同 site（${previewHost} → ${mainHost}）凭证写 ${sent} → server 日志 403 ×${refused403.length} + guard verdict=preview（主站 cookie 随行但被服务端扣住）`;
     },
   );

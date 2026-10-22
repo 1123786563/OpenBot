@@ -19,7 +19,7 @@ set -eu
 POLL_SECONDS="${OPENBOT_PREVIEW_TLS_RELOAD_POLL_SECONDS:-15}"
 case "$POLL_SECONDS" in
   ''|*[!0-9]*) POLL_SECONDS=15 ;;
-  0) POLL_SECONDS=15 ;;
+  0|00|000|0000|00000) POLL_SECONDS=15 ;;
 esac
 # Same overflow cap as the watcher: a value too large for `sleep` is a tight
 # loop in disguise. Length first so arithmetic never sees an oversized literal.

@@ -25,7 +25,7 @@ POLL_SECONDS="${OPENBOT_PREVIEW_TLS_RELOAD_POLL_SECONDS:-15}"
 # error-storm sleep; fall back to the default 15.
 case "$POLL_SECONDS" in
   ''|*[!0-9]*) POLL_SECONDS=15 ;;
-  0) POLL_SECONDS=15 ;;
+  0|00|000|0000|00000) POLL_SECONDS=15 ;;
 esac
 # An absurdly large value would pass the digits-only test but overflow `sleep`
 # (usage error, instant exit) — effectively a tight loop. Cap it: anything past
